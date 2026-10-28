@@ -23,7 +23,7 @@ export type CanvasEdge = { id: string; source: string; target: string; kind?: "a
  * what the user left empty, and the model of her chat (the run's root). */
 export type MotherSettings = { brief: string; model: string | null; provider: string | null };
 /** `maxAgents` is the most agents the graph may hold; `template` is the architecture it was loaded from. */
-export type CanvasGraph = { name: string; request?: string; workflowId?: string; nodes: CanvasNode[]; edges: CanvasEdge[]; frames?: CanvasFrame[]; minimap?: boolean; maxAgents?: number; template?: string; planningPattern?: string; mother?: MotherSettings; motherFlow?: string; roundLimit?: number };
+export type CanvasGraph = { name: string; request?: string; workflowId?: string; nodes: CanvasNode[]; edges: CanvasEdge[]; frames?: CanvasFrame[]; minimap?: boolean; maxAgents?: number; template?: string; planningPattern?: string; result?: string; mother?: MotherSettings; motherFlow?: string; roundLimit?: number };
 /** A task's state from /api/workflows, shared by ACP runs and retained native history. */
 export type TaskStatus = "pending" | "running" | "succeeded" | "failed" | "blocked" | "cancelled";
 /** The words both views of the board (flat and isometric) use for an agent's state, and for its check: the read-only
@@ -465,16 +465,22 @@ export function agentColor(id: string, data: AgentData): string {
  * six pages reads them by its own vision, never an OCR tool, and one agent joins the parts in page order. `reader` is the
  * readers' model (Gemini 3.8 Flash when the catalogue has it). */
 export const PAGE_IMAGE = /\.(png|jpe?g|webp|gif)$/i;
-export function transcriptionTeam(folder: string, files: string[], output: string, reader: Partial<AgentData> = {}) {
+export function transcriptionTeam(folder: string, files: string[], reader: Partial<AgentData> = {}): CanvasGraph {
+  const at = (name: string) => folder === "." ? name : `${folder}/${name}`, output = at("transcription.md");
   const pages = files.filter(name => PAGE_IMAGE.test(name)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   const batches = Array.from({ length: Math.ceil(pages.length / 6) }, (_, index) => pages.slice(index * 6, index * 6 + 6));
   const readers = batches.map((batch, index) => agent(`Pages ${index * 6 + 1}–${index * 6 + batch.length}`, [
     `Open each of these page images in order and read it with your own vision. Do not run OCR tools or scripts.`,
-    ...batch.map(name => `- ${folder}/${name}`),
+    ...batch.map(name => `- ${at(name)}`),
     `Transcribe the pages into clean Markdown in your own folder as pages.md: keep the wording exactly, headings as headings, lists and examples as they are; leave out page numbers and running headers and footers. Answer with the path of pages.md.`,
   ].join("\n"), { ...reader, acceptanceCriteria: [`pages.md holds pages ${index * 6 + 1}–${index * 6 + batch.length} in order`, "Its wording matches the page images word for word"] }));
-  const at = output.includes("/") ? output.slice(0, output.lastIndexOf("/")) : ".";
   const join = agent("Join the pages", `Join every reader's pages.md, in page order, into ${output}: one document, with paragraphs split across pages joined and repeated running headers removed. Change no other wording.`,
-    { ...reader, writeScopes: [at], acceptanceCriteria: [`${output} holds every page in order`, "No wording was changed"] });
-  return graphOf("Transcribe images", [...readers, join], fan(readers, [join]));
+    { ...reader, writeScopes: [folder], acceptanceCriteria: [`${output} holds every page in order`, "No wording was changed"] });
+  // Each reader writes only in its own folder, said outright, so Run graph has nothing to fill in and starts at once.
+  const team = graphOf("Transcribe images", [...readers, join], fan(readers, [join])), own = ownFolders(team);
+  return { ...team, result: output, planningPattern: "transcribe",
+    nodes: team.nodes.map(node => node.type === "agent" && node.id !== join.id ? { ...node, data: { ...node.data, writeScopes: [own.get(node.id)!] } } : node) };
 }
+/** The ready-made workflows: whole teams for one job, built from what the job needs (a folder of pages), with no planner. */
+export const WORKFLOWS = [{ id: "transcribe", name: "Transcribe images", description: "Choose a folder of page images: Gemini 3.8 Flash readers read six pages each by vision, and one agent joins them into transcription.md in that folder.",
+  shape: () => transcriptionTeam("pages", Array.from({ length: 12 }, (_, index) => `${index + 1}.png`)) }] as const;

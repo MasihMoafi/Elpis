@@ -68,9 +68,11 @@ export function ProjectMenu({ projects, selected, disabled, variant, onSelect, o
 export async function chooseProject(projects: Project[]): Promise<Project | null | undefined> {
   const choose = window.elpisDesktop?.chooseFolder; if (!choose) return undefined;
   const folder = await choose().catch((e: unknown) => { throw Error(message(e)); });
-  if (!folder) return null;
-  return projects.find(project => project.cwd.replace(/\/+$/, "") === folder.replace(/\/+$/, "")) ?? { id: crypto.randomUUID(), name: folder.split("/").filter(Boolean).at(-1) || folder, cwd: folder };
+  return folder ? projectAt(projects, folder) : null;
 }
+/** The project that has `folder`, or a new one named after it. */
+export const projectAt = (projects: Project[], folder: string): Project =>
+  projects.find(project => project.cwd.replace(/\/+$/, "") === folder.replace(/\/+$/, "")) ?? { id: crypto.randomUUID(), name: folder.split("/").filter(Boolean).at(-1) || folder, cwd: folder };
 
 /** A sidebar project's menu, after the ChatGPT app's project actions: one list drawn by the "…" button and by right-click on `area`.
  * `children` draws the area's contents; `menu` is the "…" button, to place where it belongs. */

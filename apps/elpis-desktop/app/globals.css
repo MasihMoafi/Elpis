@@ -339,7 +339,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .project-option small { font-size:var(--text-small); color:var(--muted-foreground); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .project-error { font-size:0.75rem; color:var(--destructive); padding:4px; overflow-wrap:anywhere; }
 .project-dialog { max-height:calc(100dvh - 32px); overflow:auto; }
-.elpis-select-content { max-height:min(320px,var(--available-height)); min-width:150px; }
+/* As wide as its longest option, up to the room it has, so short labels keep one line (28 Oct: "Transcribe images" broke in two). */
+.elpis-select-content { max-height:min(320px,var(--available-height)); min-width:max(150px,var(--anchor-width)); width:max-content; max-width:min(420px,var(--available-width)); }
 .model-picker-trigger { gap:8px; max-width:360px; cursor:pointer; padding:0 9px; border-color:var(--hairline); background:var(--background); }
 .model-picker-trigger > span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .model-trigger-label { color:var(--foreground); font-size:0.75rem; font-weight:500; }

@@ -4,7 +4,7 @@ import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import "@xyflow/react/dist/style.css";
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { Background, BackgroundVariant, BaseEdge, Controls, Handle, MarkerType, MiniMap, Position, ReactFlow, ReactFlowProvider, applyEdgeChanges, applyNodeChanges, getBezierPath, useReactFlow, useStoreApi, type Edge, type EdgeProps, type EdgeChange, type FinalConnectionState, type Node, type NodeChange, type NodeProps, type XYPosition } from "@xyflow/react";
-import { Check, ChevronRight, Copy, ExternalLink, ListOrdered, Pencil, Play, Plus, StickyNote, Trash2, X } from "lucide-react";
+import { Check, ChevronRight, Copy, ExternalLink, FileText, FolderOpen, ListOrdered, Pencil, Play, Plus, StickyNote, Trash2, X } from "lucide-react";
 import { AgentsIcon } from "@/components/elpis-icons";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,7 +29,7 @@ import { api, providerChoices, subscriptionOf, type Entry, type Model, type Prov
 import { useElpisSettings } from "@/lib/settings-store";
 import { appStorage } from "@/lib/projects";
 import { filesText, mergeStops, runPayload, stopText, wantsIsolation } from "@/lib/canvas-isolation";
-import { PATTERNS, agentCount, WHOLE_PROJECT, applyPattern, agent, transcriptionTeam, PAGE_IMAGE, ownFolders, agentColor, CHECK_LABEL, COLUMN, DONE, FATHER, MOTHER, STATUS_LABEL, TASKS_PER_AGENT, waits, TEMPLATES, agentName, promptName, applyPlan, arrange, boardForPlan, checkOf, commandParts, shapeOf, makesLoop, maxAgents, newAgents, newId, parseCommand, parents, initialGraph, runParts, saveGraph, waves, withMother, type AgentData, type CanvasEdge, type CanvasGraph, type CanvasNode, type CatalogModel, type Command, type MotherSettings, type NoteData, type Plan, type RunTask, type TaskStatus } from "@/lib/canvas";
+import { PATTERNS, WORKFLOWS, agentCount, WHOLE_PROJECT, applyPattern, agent, transcriptionTeam, PAGE_IMAGE, ownFolders, agentColor, CHECK_LABEL, COLUMN, DONE, FATHER, MOTHER, STATUS_LABEL, TASKS_PER_AGENT, waits, TEMPLATES, agentName, promptName, applyPlan, arrange, boardForPlan, checkOf, commandParts, shapeOf, makesLoop, maxAgents, newAgents, newId, parseCommand, parents, initialGraph, runParts, saveGraph, waves, withMother, type AgentData, type CanvasEdge, type CanvasGraph, type CanvasNode, type CatalogModel, type Command, type MotherSettings, type NoteData, type Plan, type RunTask, type TaskStatus } from "@/lib/canvas";
 
 /** A run: the Mother's part, and the Father's when the graph has more agents than she runs (lib/canvas.ts `parents`):
  * his tasks wait in `father` until her part has succeeded, then run in his own chat. */
@@ -53,7 +53,8 @@ const editKey = (graph: CanvasGraph) => JSON.stringify({ ...graph, nodes: graph.
 /** Fit the graph inside the available board, on opening and after layout changes. */
 const FIT = { padding: 0.06, maxZoom: 1, minZoom: 0.05 };
 const OVERVIEW = { padding: 0.08, maxZoom: 1 };
-const ENTRY_PATTERNS = [{ id: "split-parts", label: "Parallel" }, { id: "sequential", label: "Sequential" }, { id: "research", label: "Research" }, { id: "transcribe", label: "Transcribe images" }];
+// The ready-made workflow comes first (28 Oct, Masih: "move it on top").
+const ENTRY_PATTERNS = [{ id: "transcribe", label: "Transcribe images" }, { id: "auto", label: "Auto · Elpis chooses" }, { id: "split-parts", label: "Parallel" }, { id: "sequential", label: "Sequential" }, { id: "research", label: "Research" }];
 // Mother takes the strongest model this person has (28 Oct, Masih: "Depends on which model the user has available; for me, opus").
 const MOTHER_FIRST = [/^claude\/opus$/, /^agy\/gemini-4-argon-high$/, /^gpt-6\.1-sol$/, /^claude\/sonnet$/, /opus/i, /gemini-4-argon/i, /sonnet/i];
 
@@ -412,7 +413,9 @@ function AgentDashboard({ node, own, wave, status, check, clash, chat, waitsFor,
 /** The agents canvas: the Mother, ready-made architectures, agents wired by what they wait for and laid out in Kahn's
  * waves, and a run that follows each agent live. The graph is kept on this device (lib/canvas.ts). */
 /** `projectMenu` is the app's project chooser (components/project-picker.tsx), shown in the header: agents write inside the project. */
-type Props = { threads?: readonly Thread[]; workflowCatalog: WorkflowCatalog; models: Model[]; cwd?: string; dark: boolean; ready: boolean; onOpenChat: (id: string) => void; projectMenu?: React.ReactNode; recordedRun?: WorkflowRunRef; onLeaveRecordedRun?: () => void; onOpenRecordedRun?: (run: WorkflowRunRef) => void };
+type Props = { threads?: readonly Thread[]; workflowCatalog: WorkflowCatalog; models: Model[]; cwd?: string; dark: boolean; ready: boolean; onOpenChat: (id: string) => void; projectMenu?: React.ReactNode; recordedRun?: WorkflowRunRef; onLeaveRecordedRun?: () => void; onOpenRecordedRun?: (run: WorkflowRunRef) => void;
+  /** Makes `folder` the workflows' project (an existing project with it, or a new one named after it). */
+  onUseFolder?: (folder: string) => Promise<void> };
 export function AgentsCanvas(props: Props) {
   return <ReactFlowProvider><Canvas key={props.recordedRun?.id ?? "draft"} {...props} /></ReactFlowProvider>;
 }
@@ -426,7 +429,7 @@ function runFailure(detail: string) {
   return `${detail} Review this message and the agents' Info, then try Run graph again.`;
 }
 
-function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMenu, workflowCatalog, recordedRun, onLeaveRecordedRun, onOpenRecordedRun }: Props) {
+function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMenu, workflowCatalog, recordedRun, onLeaveRecordedRun, onOpenRecordedRun, onUseFolder }: Props) {
   const isoController = useRef<IsoController>(null);
   const flow = useReactFlow(), flowStore = useStoreApi(), board = useRef<HTMLDivElement>(null), pointer = useRef<XYPosition | null>(null), connectFrom = useRef<XYPosition | null>(null);
   const [graph, setGraph] = useState<CanvasGraph>(() => recordedRun ? { name: "Workflow", workflowId: recordedRun.id, nodes: [], edges: [] } : initialGraph());
@@ -668,7 +671,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
   // Loading an architecture replaces the board; Undo, offered for a while, puts the old one back.
   const [undoLoad, setUndoLoad] = useState<{ loaded: string; previous: CanvasGraph } | null>(null);
   useEffect(() => { if (!undoLoad) return; const timer = setTimeout(() => setUndoLoad(null), 12000); return () => clearTimeout(timer); }, [undoLoad]);
-  const shapes = useMemo(() => new Map(TEMPLATES.map(template => [template.id, shapeOf(template.build())])), []);
+  const shapes = useMemo(() => new Map([...TEMPLATES.map(template => [template.id, shapeOf(template.build())] as const), ...WORKFLOWS.map(workflow => [workflow.id, shapeOf(workflow.shape())] as const)]), []);
   const limit = maxAgents(graph), room = Math.max(0, limit - agents.length), order = useMemo(() => waves(graph), [graph]);
   // An agent is done once its check passes, unless its work clashed in the merge.
   const done = agents.filter(node => states[checkOf(node.id)]?.status === "succeeded" && !clashes[node.id]).length;
@@ -1348,26 +1351,43 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
   // bridge/canvas-plan.mjs). The board it returns replaces this one in one step, so Ctrl+Z undoes it.
   const [planning, setPlanning] = useState("");
   // `forRun`: Run graph's own fill of what agents lack, made while that run is starting.
-  /** Transcribe images: the folder named in the request (a project folder), one Gemini reader per six pages, one join. */
+  /** Transcribe images: a folder named in the request (one of the project's), or else the one chosen; one Gemini reader
+   * per six pages, one join. A chosen folder becomes the project, so everything the team writes stays inside it. */
   async function transcribe(goal: string): Promise<CanvasGraph | null> {
-    const folder = [...(project.folders ?? [])].sort((a, b) => b.length - a.length).find(name => goal.includes(name)) ?? goal.trim().replace(/^\.?\/+|\/+$/g, "");
+    const named = [...(project.folders ?? [])].sort((a, b) => b.length - a.length).find(name => goal.includes(name));
+    return named && cwd ? transcribeAt(cwd, named, goal) : chooseImages(goal);
+  }
+  async function chooseImages(goal = requestText.trim()): Promise<CanvasGraph | null> {
+    if (run && !over(run)) { setNotice("Wait for this run to finish before changing its pattern."); return null; }
+    const choose = window.elpisDesktop?.chooseFolder;
+    if (!choose) { setNotice("Choose the folder of page images in the desktop app."); return null; }
+    let picked: string | null = null;
+    try { picked = (await choose())?.replace(/\/+$/, "") || null; } catch (cause) { setNotice(cause instanceof Error ? cause.message : String(cause)); return null; }
+    if (!picked) return null;
+    if (picked !== cwd?.replace(/\/+$/, "")) await onUseFolder?.(picked);
+    return transcribeAt(picked, ".", goal || `Transcribe the page images in ${picked.split("/").at(-1)}`);
+  }
+  async function transcribeAt(base: string, folder: string, goal: string): Promise<CanvasGraph | null> {
     let files: string[] = [];
-    try { files = (await api<{ data: { name: string; dir: boolean }[] }>(`/files/dir?cwd=${encodeURIComponent(cwd!)}&dir=${encodeURIComponent(folder)}&hidden=0`)).data.filter(entry => !entry.dir).map(entry => entry.name); }
-    catch { setNotice("Name the folder of page images in the request: one of this project's folders."); return null; }
-    if (!files.some(name => PAGE_IMAGE.test(name))) { setNotice(`No page images (PNG, JPG or WebP) in ${folder}.`); return null; }
+    try { files = (await api<{ data: { name: string; dir: boolean }[] }>(`/files/dir?cwd=${encodeURIComponent(base)}&dir=${encodeURIComponent(folder)}&hidden=0`)).data.filter(entry => !entry.dir).map(entry => entry.name); }
+    catch (cause) { setNotice(cause instanceof Error ? cause.message : String(cause)); return null; }
+    const where = folder === "." ? base.split("/").at(-1) : folder;
+    if (!files.some(name => PAGE_IMAGE.test(name))) { setNotice(`No page images (PNG, JPG or WebP) in ${where}.`); return null; }
     // The subscriptions (Antigravity's Gemini, Claude) are in the engine's own list; a run routes them by their prefix.
     const listed = models.length ? models : (await api<{ data: Model[] }>("/models").catch(() => ({ data: [] as Model[] }))).data;
     const offered = [...listed.map(item => ({ model: item.model, provider: null as string | null })), ...catalog];
     const pick = (test: RegExp) => offered.find(item => test.test(item.model));
     const reader = pick(/gemini-3\.8-flash-high/i), boss = MOTHER_FIRST.map(pick).find(Boolean);
-    const team = transcriptionTeam(folder, files, `${folder}/transcription.md`, reader ? { model: reader.model, provider: reader.provider } : {});
+    const team = transcriptionTeam(folder, files, reader ? { model: reader.model, provider: reader.provider } : {});
     const readers = team.nodes.filter(node => node.type === "agent").length;
     checkpoint(); setSelection([]); setRun(null); setStates({});
-    setGraph(current => ({ ...team, request: goal, planningPattern: "transcribe", maxAgents: Math.max(current.maxAgents ?? 10, readers), mother: { brief: goal, model: boss?.model ?? null, provider: boss?.provider ?? null } }));
+    setGraph(current => ({ ...team, request: goal, maxAgents: Math.max(current.maxAgents ?? 10, readers), mother: { brief: goal, model: boss?.model ?? null, provider: boss?.provider ?? null } }));
     setNotice(reader ? "" : "Gemini 3.8 Flash is not available here, so the readers use the default model.");
     setTimeout(() => void flow.fitView({ ...FIT, duration: 250 }), 60);
     return team;
   }
+  /** The document a ready-made workflow writes, opened in the system's own app for it. */
+  const openResult = () => { if (cwd && graph.result) window.elpisDesktop?.openFile?.(`${cwd.replace(/\/+$/, "")}/${graph.result}`).catch((cause: unknown) => setNotice(cause instanceof Error ? cause.message : String(cause))); };
   async function letElpis(goal: string, scope?: CanvasGraph, newWorkflow = false, forRun = false): Promise<CanvasGraph | null> {
     const current = runtimeAttempt();
     if (!current()) return null;
@@ -1476,18 +1496,20 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
           // The catalogue stays open to read during a run; loading a pattern waits for the run.
           if (value === "more") { setSelection([]); setMorePatterns(true); showPanel(true); return; }
           if (value === "auto") { setGraph(current => ({ ...current, planningPattern: "auto" })); return; }
-          if (value === "transcribe") { setGraph(current => ({ ...current, planningPattern: "transcribe" })); setNotice("Name the folder of page images in the request, then choose New workflow."); return; }
+          if (value === "transcribe") { setGraph(current => ({ ...current, planningPattern: "transcribe" })); void chooseImages(); return; }
           if (run && !over(run)) { setNotice("Wait for this run to finish before changing its pattern."); return; }
           const template = TEMPLATES.find(item => item.id === value); if (template) loadTemplate(template);
-        }}><option value="auto">Auto · Elpis chooses</option>{ENTRY_PATTERNS.map(pattern => <option key={pattern.id} value={pattern.id}>{pattern.label}</option>)}
+        }}>{ENTRY_PATTERNS.map(pattern => <option key={pattern.id} value={pattern.id}>{pattern.label}</option>)}
           {graph.planningPattern && graph.planningPattern !== "auto" && !ENTRY_PATTERNS.some(pattern => pattern.id === graph.planningPattern) && <option value={graph.planningPattern}>{TEMPLATES.find(pattern => pattern.id === graph.planningPattern)?.name ?? "Custom pattern"}</option>}
           <option value="more">More patterns…</option></OptionSelect>
-        <Button type="submit" size="sm" aria-describedby={!ready ? offlineReasonId : undefined} disabled={!ready || !cwd || !requestText.trim() || Boolean(planning || starting)}>{planning ? "Designing…" : "New workflow"}</Button>
+        {graph.planningPattern === "transcribe" && <Button type="button" variant="outline" size="sm" disabled={!ready || Boolean(planning || starting)} title={cwd ? `The page images' folder: ${cwd}` : undefined} onClick={() => void chooseImages()}><FolderOpen size={14} />Choose folder</Button>}
+        <Button type="submit" size="sm" aria-describedby={!ready ? offlineReasonId : undefined} disabled={!ready || !cwd || !requestText.trim() && graph.planningPattern !== "transcribe" || Boolean(planning || starting)}>{planning ? "Designing…" : "New workflow"}</Button>
         <Button type="button" variant="outline" size="sm" aria-describedby={!ready ? offlineReasonId : undefined} disabled={!ready || !cwd || !requestText.trim() || Boolean(planning || starting || run && !over(run))} onClick={() => void letElpis(requestText)}>Update current</Button>
         {/* The run's status sits beside the request, which gives up the room, so the controls below stay on one row
             while it runs (28 Oct: a running board wrapped them onto a second row). */}
         {run && <span className="canvas-chip" role="status"><i className="canvas-dot" data-status={over(run) ? run.father?.status ?? run.status : "running"} />{over(run) ? "Finished" : run.father?.threadId ? "Running · the Father's part" : "Running"} · {done} of {agents.length} done</span>}
         {run && runClock}
+        {run && over(run) && graph.result && <Button type="button" variant="outline" size="sm" onClick={openResult}><FileText size={14} />Open {graph.result.split("/").at(-1)}</Button>}
         {!ready && <p id={offlineReasonId} role="status" className="w-full text-xs text-muted-foreground">{OFFLINE_WORKFLOW}</p>}
       </form>}
       {recordedRun && savedRecord && <div className="w-full"><WorkflowProgress compact run={savedRecord} team={liveTeam} onOpenChat={onOpenChat} /></div>}
@@ -1714,6 +1736,12 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
     </aside> : <aside className="canvas-side" aria-label="Architectures">
       <details open={morePatterns} onToggle={event => { if (event.target === event.currentTarget) setMorePatterns(event.currentTarget.open); }}>
         <DisclosureSummary>More patterns</DisclosureSummary>
+      <section className="canvas-templates" aria-label="Ready-made workflows"><p className="hud-menu-title">Ready-made workflows</p>
+        {WORKFLOWS.map(workflow => <div key={workflow.id}><Button variant="ghost" size="content" className="canvas-template w-full" aria-current={graph.result && graph.planningPattern === workflow.id || undefined} disabled={!ready || Boolean(planning || starting)}
+          onClick={() => { setGraph(current => ({ ...current, planningPattern: workflow.id })); void chooseImages(); }}>
+          <strong>{workflow.name}{graph.result && graph.planningPattern === workflow.id && <span className="canvas-template-loaded">On the board</span>}</strong>
+          <Shape shape={shapes.get(workflow.id) ?? []} /><small>{workflow.description}</small></Button></div>)}
+      </section>
       {(["Patterns", "Research", "Start"] as const).map(group => <section key={group} className="canvas-templates" aria-label={group}>
         <p className="hud-menu-title">{group === "Start" ? "Start fresh" : group}</p>
         {TEMPLATES.filter(template => template.group === group).map(template => <div key={template.id}><Button variant="ghost" size="content" className="canvas-template w-full" aria-current={graph.template === template.id || undefined} onClick={() => loadTemplate(template)}>

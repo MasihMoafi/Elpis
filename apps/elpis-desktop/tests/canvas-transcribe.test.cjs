@@ -51,3 +51,44 @@ test('Transcribe images builds one Gemini reader per six pages and a join, with 
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
+
+// 28 Oct, Masih: "it says Name the folder of page images in the request ... and no where I can do that! ... make it so I
+// can choose that folder properly; and view the writings ... move it on top; and it should be one of the built-in workflows."
+test('Transcribe images comes first, asks for its folder, keeps all it writes there, runs without planning and opens the result', async () => {
+  const f = await openCanvas({ desktop: true, files: { '.': ['page-2.png', 'page-1.png', 'notes.txt'] }, ...MODELS });
+  try {
+    await f.page.evaluate(() => { window.__chosen = []; window.__opened = [];
+      window.elpisDesktop.chooseFolder = async () => window.__chosen.shift() ?? null;
+      window.elpisDesktop.openFile = async target => { window.__opened.push(target); }; });
+    const pattern = f.canvas.getByRole('combobox', { name: 'Workflow pattern', exact: true });
+    await pattern.click();
+    assert.equal((await f.page.getByRole('option').first().innerText()).trim(), 'Transcribe images', 'the ready-made workflow is on top');
+    const tall = await f.page.getByRole('option').evaluateAll(options => options.map(option => option.firstElementChild ?? option)
+      .filter(label => label.getBoundingClientRect().height > 2.4 * parseFloat(getComputedStyle(label).fontSize)).map(label => label.textContent));
+    assert.deepEqual(tall, [], 'every label keeps one line');
+    await f.page.keyboard.press('Escape');
+    // Cancelling the chooser changes nothing; a chosen folder outside the project becomes the project.
+    const before = await f.saved();
+    await chooseOption(pattern, 'transcribe');
+    const choose = f.canvas.getByRole('button', { name: 'Choose folder', exact: true });
+    await choose.waitFor();
+    assert.deepEqual((await f.saved()).nodes, before.nodes, 'a cancelled chooser leaves the board alone');
+    await f.page.evaluate(() => window.__chosen.push('/tmp/books/sample'));
+    await choose.click();
+    await f.page.waitForFunction(() => JSON.parse(localStorage.getItem('elpis-workflow-draft-v1'))?.result === 'transcription.md');
+    const saved = await f.saved(), agents = saved.nodes.filter(n => n.type === 'agent');
+    assert.match(agents[0].data.instruction, /\n- page-1\.png\n- page-2\.png\n/, 'its pages, in order, by their names');
+    assert.ok(agents[0].data.writeScopes[0].startsWith('agents/'), 'a reader writes in its own folder');
+    assert.deepEqual([agents[1].data.writeScopes, saved.result], [['.'], 'transcription.md']);
+    await f.canvas.getByRole('button', { name: 'Choose project' }).filter({ hasText: 'sample' }).waitFor();
+    // Run graph starts at once, with no planner, and the finished run opens what it wrote.
+    await f.canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
+    await f.canvas.getByRole('button', { name: 'Open transcription.md', exact: true }).click();
+    assert.deepEqual(await f.page.evaluate(() => window.__opened), ['/tmp/books/sample/transcription.md']);
+    assert.equal(f.plans.length, 0, 'nothing was planned');
+    // It is one of the ready-made workflows in the library too.
+    await chooseOption(pattern, 'more');
+    await f.canvas.getByRole('region', { name: 'Ready-made workflows' }).getByRole('button', { name: /^Transcribe images/ }).waitFor();
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
