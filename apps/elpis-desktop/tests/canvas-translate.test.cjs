@@ -19,7 +19,7 @@ test('Translate to Farsi asks for its folder, writes a glossary first, translate
       window.elpisDesktop.openFile = async target => { window.__opened.push(target); }; });
     const pattern = f.canvas.getByRole('combobox', { name: 'Workflow pattern', exact: true });
     await pattern.click();
-    assert.deepEqual((await f.page.getByRole('option').allInnerTexts()).slice(0, 2).map(text => text.trim()), ['Transcribe images', 'Translate to Farsi'], 'the ready-made workflows are on top');
+    assert.deepEqual((await f.page.getByRole('option').allInnerTexts()).slice(0, 2).map(text => text.trim()), ['Transcribe images', 'Translate'], 'the ready-made workflows are on top');
     await f.page.keyboard.press('Escape');
     await chooseOption(pattern, 'translate');
     await f.page.evaluate(() => window.__chosen.push('/tmp/books/sample'));
@@ -51,7 +51,7 @@ test('Translate to Farsi asks for its folder, writes a glossary first, translate
     assert.deepEqual(await f.page.evaluate(() => window.__opened), ['/tmp/books/sample/translation.md']);
     assert.equal(f.plans.length, 0, 'nothing was planned');
     await chooseOption(pattern, 'more');
-    await f.canvas.getByRole('region', { name: 'Ready-made workflows' }).getByRole('button', { name: /^Translate to Farsi/ }).waitFor();
+    await f.canvas.getByRole('region', { name: 'Ready-made workflows' }).getByRole('button', { name: /^Translate/ }).waitFor();
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
@@ -64,5 +64,27 @@ test('Translate to Farsi says so when the folder has no English text, and leaves
     await chooseOption(f.canvas.getByRole('combobox', { name: 'Workflow pattern', exact: true }), 'translate');
     await f.canvas.getByText('No English text (Markdown or plain text) in pages.').waitFor();
     assert.deepEqual((await f.saved()).nodes, before.nodes);
+  } finally { await f.close(); }
+});
+
+// 28 Oct, Masih: "not translate to Farsi exclusively; translate to anything", and "the agent would pick, if the user
+// doesn't, the proper model from the OpenRouter". German, with no model chosen, goes to the OpenRouter model that writes
+// it best among those offered, the notice names it, and every agent speaks German; Farsi keeps its own rules (above).
+test('Translate to German picks the OpenRouter model that writes German best, names it, and writes German throughout', async () => {
+  const openrouter = [{ id: 'q', model: 'qwen/qwen3-max', displayName: 'Qwen3 Max' }, { id: 's', model: 'anthropic/claude-sonnet-5', displayName: 'Claude Sonnet 5' }, { id: 'g', model: 'google/gemini-3-pro', displayName: 'Gemini 3 Pro' }];
+  const f = await openCanvas({ desktop: true, files: { '/tmp/demo|.': ['transcription.md'] }, texts: { 'transcription.md': english }, ...MODELS,
+    settings: { providers: [{ id: 'openai', displayName: 'OpenAI' }, { id: 'openrouter', displayName: 'OpenRouter' }] }, providerModels: { openrouter } });
+  try {
+    await chooseOption(f.canvas.getByRole('combobox', { name: 'Workflow pattern', exact: true }), 'translate');
+    await f.page.waitForFunction(() => JSON.parse(localStorage.getItem('elpis-workflow-draft-v1'))?.result === 'translation.md');
+    await chooseOption(f.canvas.getByRole('combobox', { name: 'Language', exact: true }), 'de');
+    await f.page.waitForFunction(() => JSON.parse(localStorage.getItem('elpis-workflow-draft-v1'))?.language === 'de');
+    const saved = await f.saved(), workers = saved.nodes.filter(n => n.type === 'agent' && !n.data.join);
+    assert.ok(workers.every(a => a.data.model === 'anthropic/claude-sonnet-5' && a.data.provider === 'openrouter'), JSON.stringify(workers.map(a => [a.data.model, a.data.provider])));
+    await f.canvas.getByText('The translators use Claude Sonnet 5 on OpenRouter, the best writer of German among your models.').waitFor();
+    assert.equal(saved.request, 'Translate the English in demo into German in translation.md');
+    assert.match(workers[0].data.instruction, /English → German/);
+    assert.ok(workers.slice(1).every(a => /into German/.test(a.data.instruction) && !a.data.instruction.includes('«میرم»')), 'German rules, not Farsi ones');
+    assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

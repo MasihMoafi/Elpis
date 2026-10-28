@@ -3,6 +3,7 @@
 import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import "@xyflow/react/dist/style.css";
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
+import { ResizeEdge } from "@/components/resize-edge";
 import { Background, BackgroundVariant, BaseEdge, Controls, Handle, MarkerType, MiniMap, Position, ReactFlow, ReactFlowProvider, applyEdgeChanges, applyNodeChanges, getBezierPath, useReactFlow, useStoreApi, type Edge, type EdgeProps, type EdgeChange, type FinalConnectionState, type Node, type NodeChange, type NodeProps, type XYPosition } from "@xyflow/react";
 import { Check, ChevronRight, Copy, ExternalLink, FileText, FolderOpen, ListOrdered, Pencil, Play, Plus, Square, StickyNote, Trash2, X } from "lucide-react";
 import { AgentsIcon } from "@/components/elpis-icons";
@@ -29,7 +30,10 @@ import { api, providerChoices, subscriptionOf, type Entry, type Model, type Prov
 import { useElpisSettings } from "@/lib/settings-store";
 import { appStorage } from "@/lib/projects";
 import { filesText, mergeStops, runPayload, stopText, wantsIsolation } from "@/lib/canvas-isolation";
-import { PATTERNS, WORKFLOWS, type ReadyMade, agentCount, WHOLE_PROJECT, applyPattern, agent, ownFolders, agentColor, CHECK_LABEL, COLUMN, DONE, FATHER, MOTHER, STATUS_LABEL, TASKS_PER_AGENT, waits, TEMPLATES, agentName, promptName, applyPlan, arrange, boardForPlan, checkOf, commandParts, shapeOf, makesLoop, maxAgents, newAgents, newId, parseCommand, parents, initialGraph, runParts, saveGraph, waves, withMother, type AgentData, type CanvasEdge, type CanvasGraph, type CanvasNode, type CatalogModel, type Command, type MotherSettings, type NoteData, type Plan, type RunTask, type TaskStatus } from "@/lib/canvas";
+import { PATTERNS, WORKFLOWS, LANGUAGES, languageOf, type Language, type ReadyMade, agentCount, WHOLE_PROJECT, applyPattern, agent, ownFolders, agentColor, CHECK_LABEL, COLUMN, DONE, FATHER, MOTHER, STATUS_LABEL, TASKS_PER_AGENT, waits, TEMPLATES, agentName, promptName, applyPlan, arrange, boardForPlan, checkOf, commandParts, shapeOf, makesLoop, maxAgents, newAgents, newId, parseCommand, parents, initialGraph, runParts, saveGraph, waves, withMother, type AgentData, type CanvasEdge, type CanvasGraph, type CanvasNode, type CatalogModel, type Command, type MotherSettings, type NoteData, type Plan, type RunTask, type TaskStatus } from "@/lib/canvas";
+
+/** The workflow side panel: 290 px by default, dragged wider or narrower by its left edge. */
+const CANVAS_SIDE = { min: 240, initial: 290, max: 640 };
 
 /** A run: the Mother's part, and the Father's when the graph has more agents than she runs (lib/canvas.ts `parents`):
  * his tasks wait in `father` until her part has succeeded, then run in his own chat. */
@@ -482,6 +486,9 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
   // The side panel folds away to give the board the whole width, remembered on this device; choosing an agent or the
   // Mother brings it back.
   const [panelOpen, setPanelOpen] = useState(() => { try { return appStorage().getItem("elpis-canvas-panel") !== "closed"; } catch { return true; } });
+  // The side panel's width: dragged by the same edge as the chat side panel, kept across visits (Masih, 28 Oct).
+  const [sideWidth, setSideWidth] = useState<number | null>(() => { try { return Number(appStorage().getItem("elpis-canvas-panel-width")) || null; } catch { return null; } });
+  const resizeSide = (width: number) => { setSideWidth(width); try { appStorage().setItem("elpis-canvas-panel-width", String(width)); } catch { /* kept for this session only */ } };
   const showPanel = (open: boolean) => { setPanelOpen(open); try { appStorage().setItem("elpis-canvas-panel", open ? "open" : "closed"); } catch { /* kept for this session only */ } setTimeout(() => void flow.fitView({ ...FIT, duration: 250 }), 60); };
   useEffect(() => { if (selection.length && !panelOpen && !boxDrag.current) showPanel(true); }, [selection, selectionBox, stroke]); // eslint-disable-line react-hooks/exhaustive-deps
   const project = useProjectFolders(cwd);
@@ -1372,7 +1379,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
   }
   // `goal`: what was typed with New workflow. Chosen from the menu, its button or the library, the goal is the job itself:
   // old request text never rides along (28 Oct: a leftover "Create elpis-check.txt" became every reader's goal).
-  async function chooseFolderFor(workflow: ReadyMade, goal?: string): Promise<CanvasGraph | null> {
+  async function chooseFolderFor(workflow: ReadyMade, goal?: string, language = languageOf(graph.language)): Promise<CanvasGraph | null> {
     if (run && !over(run)) { setNotice("Wait for this run to finish before changing its pattern."); return null; }
     const choose = window.elpisDesktop?.chooseFolder;
     if (!choose) { setNotice(`Choose the folder of ${workflow.what} in the desktop app.`); return null; }
@@ -1380,17 +1387,17 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
     try { picked = (await choose())?.replace(/\/+$/, "") || null; } catch (cause) { setNotice(cause instanceof Error ? cause.message : String(cause)); return null; }
     if (!picked) return null;
     if (picked !== cwd?.replace(/\/+$/, "")) await onUseFolder?.(picked);
-    return readyMadeAt(workflow, picked, ".", goal || workflow.goal(picked.split("/").at(-1) ?? picked));
+    return readyMadeAt(workflow, picked, ".", goal || workflow.goal(picked.split("/").at(-1) ?? picked, language), language);
   }
   /** Picked from the menu or the library: the open project, when it plainly holds the job's files, or else the folder chosen. */
-  async function pickReadyMade(workflow: ReadyMade): Promise<CanvasGraph | null> {
+  async function pickReadyMade(workflow: ReadyMade, language = languageOf(graph.language)): Promise<CanvasGraph | null> {
     if (run && !over(run)) { setNotice("Wait for this run to finish before changing its pattern."); return null; }
     const base = cwd?.replace(/\/+$/, "");
     const files = base ? await listFolder(base, ".").catch(() => [] as string[]) : [];
-    return base && workflow.here(files) ? readyMadeAt(workflow, base, ".", workflow.goal(base.split("/").at(-1) ?? base)) : chooseFolderFor(workflow);
+    return base && workflow.here(files) ? readyMadeAt(workflow, base, ".", workflow.goal(base.split("/").at(-1) ?? base, language), language) : chooseFolderFor(workflow, undefined, language);
   }
   const listFolder = async (base: string, folder: string) => (await api<{ data: { name: string; dir: boolean }[] }>(`/files/dir?cwd=${encodeURIComponent(base)}&dir=${encodeURIComponent(folder)}&hidden=0`)).data.filter(entry => !entry.dir).map(entry => entry.name);
-  async function readyMadeAt(workflow: ReadyMade, base: string, folder: string, goal: string): Promise<CanvasGraph | null> {
+  async function readyMadeAt(workflow: ReadyMade, base: string, folder: string, goal: string, language = languageOf(graph.language)): Promise<CanvasGraph | null> {
     const at = (name: string) => folder === "." ? name : `${folder}/${name}`;
     let sources: { name: string; text: string }[] = [];
     try {
@@ -1408,12 +1415,15 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
     const listed = models.length ? models : (await api<{ data: Model[] }>("/models").catch(() => ({ data: [] as Model[] }))).data;
     const offered = [...listed.map(item => ({ model: item.model, provider: null as string | null })), ...catalog];
     const pick = (test: RegExp) => offered.find(item => test.test(item.model));
-    const worker = workflow.worker.map(pick).find(Boolean), boss = MOTHER_FIRST.map(pick).find(Boolean);
-    const team = workflow.team(folder, sources, worker ? { model: worker.model, provider: worker.provider } : {});
+    const byLanguage = typeof workflow.worker === "function", worker = (byLanguage ? (workflow.worker as (language: Language) => RegExp[])(language) : workflow.worker as RegExp[]).map(pick).find(Boolean), boss = MOTHER_FIRST.map(pick).find(Boolean);
+    const team = workflow.team(folder, sources, worker ? { model: worker.model, provider: worker.provider } : {}, language);
     const agents = team.nodes.filter(node => node.type === "agent").length;
     checkpoint(); setSelection([]); setRun(null); setStates({});
     setGraph(current => ({ ...team, request: goal, maxAgents: Math.max(current.maxAgents ?? 10, agents), mother: { brief: goal, model: boss?.model ?? null, provider: boss?.provider ?? null } }));
-    setNotice(worker ? "" : `${workflow.workerName} is not available here, so the ${workflow.workers} use the default model.`);
+    // A model chosen by the language is named, so the person sees what writes it (28 Oct: "the agent ... says which").
+    const named = worker && (catalog.find(item => item.model === worker.model && item.provider === worker.provider)?.label ?? listed.find(item => item.model === worker.model)?.displayName ?? worker.model);
+    setNotice(!worker ? `${workflow.workerName} is not available here, so the ${workflow.workers} use the default model.`
+      : byLanguage ? `The ${workflow.workers} use ${named}${worker.provider === "openrouter" ? " on OpenRouter" : ""}, the best writer of ${language.name} among your models.` : "");
     setTimeout(() => void flow.fitView({ ...FIT, duration: 250 }), 60);
     return team;
   }
@@ -1519,7 +1529,8 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
   const capturedLog = run && <ol ref={logList} className="canvas-log" role="log" aria-label="Run log" aria-live="polite" aria-relevant="additions" onScroll={event => { const el = event.currentTarget; followLog.current = el.scrollHeight - el.scrollTop - el.clientHeight < 12; }}>
     {log.map((line, index) => <li key={`${line.at}-${index}`} data-tone={line.tone}><Button variant="ghost" size="xs" className="w-full justify-start" title={line.at === undefined ? line.text : `Observed +${clock(line.at - run.startedAt)} · ${line.text}`} onClick={() => { if (line.agent) { setSelection([line.agent]); setDashboardId(line.agent); } else setSelection([MOTHER]); }}>{line.at !== undefined && <time>+{clock(line.at - run.startedAt)}</time>}<span title={line.text}>{line.text}</span></Button></li>)}
   </ol>;
-  return <section className="agents-canvas" aria-label="Workflows" data-recorded={recordedRun ? true : undefined} data-panel={panelOpen ? "open" : "closed"}>
+  const sideEdge = <ResizeEdge className="side-resize" label="Resize workflow panel" width={sideWidth} min={CANVAS_SIDE.min} max={CANVAS_SIDE.max} initial={CANVAS_SIDE.initial} grows="left" onResize={resizeSide} onClose={() => showPanel(false)} />;
+  return <section className="agents-canvas" aria-label="Workflows" style={sideWidth ? { "--canvas-side-width": `${sideWidth}px` } as CSSProperties : undefined} data-recorded={recordedRun ? true : undefined} data-panel={panelOpen ? "open" : "closed"}>
     <header className="canvas-header">
       {recordedRun ? <div className="flex w-full flex-wrap items-center justify-between gap-2"><span className="text-sm text-muted-foreground">Saved workflow{!run && " · Loading…"}</span><Button size="sm" onClick={onLeaveRecordedRun} disabled={!onLeaveRecordedRun}>New workflow</Button></div> : <form className="flex w-full min-w-0 flex-wrap items-end gap-2" aria-label="New workflow" onSubmit={event => { event.preventDefault(); void letElpis(requestText, undefined, true); }}>
         <label className="field canvas-request">What should the workflow do?<Input aria-label="Workflow request" value={requestText} maxLength={8000} placeholder="Describe what you want to achieve" onChange={event => setGraph(current => ({ ...current, request: event.target.value }))} /></label>
@@ -1536,6 +1547,11 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
           {graph.planningPattern && graph.planningPattern !== "auto" && !ENTRY_PATTERNS.some(pattern => pattern.id === graph.planningPattern) && <option value={graph.planningPattern}>{TEMPLATES.find(pattern => pattern.id === graph.planningPattern)?.name ?? "Custom pattern"}</option>}
           <option value="more">More patterns…</option></OptionSelect>
         {chosenWorkflow && <Button type="button" variant="outline" size="sm" disabled={!ready || Boolean(planning || starting)} title={cwd ? `The folder of ${chosenWorkflow.what}: ${cwd}` : undefined} onClick={() => void chooseFolderFor(chosenWorkflow)}><FolderOpen size={14} />Choose folder</Button>}
+        {chosenWorkflow?.id === "translate" && <OptionSelect aria-label="Language" value={languageOf(graph.language).id} disabled={Boolean(planning || starting)} onChange={event => {
+          // The language stays with the board; a translation team already built is rebuilt for the new one.
+          const language = languageOf(event.target.value); setGraph(current => ({ ...current, language: language.id }));
+          if (graph.planningPattern === "translate" && graph.result) void pickReadyMade(chosenWorkflow, language);
+        }}>{LANGUAGES.map(language => <option key={language.id} value={language.id}>{language.name}</option>)}</OptionSelect>}
         <Button type="submit" size="sm" aria-describedby={!ready ? offlineReasonId : undefined} disabled={!ready || !cwd || !requestText.trim() && !chosenWorkflow || Boolean(planning || starting)}>{planning ? "Designing…" : "New workflow"}</Button>
         <Button type="button" variant="outline" size="sm" aria-describedby={!ready ? offlineReasonId : undefined} disabled={!ready || !cwd || !requestText.trim() || Boolean(planning || starting || run && !over(run))} onClick={() => void letElpis(requestText)}>Update current</Button>
         {/* The run's status sits beside the request, which gives up the room, so the controls below stay on one row
@@ -1708,7 +1724,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
         <Button variant="outline" size="sm" onClick={() => { setGraph(undoLoad.previous); setUndoLoad(null); setTimeout(() => void flow.fitView({ ...FIT, duration: 250 }), 60); }}>Undo</Button>
         <Button variant="ghost" size="icon-xs" aria-label="Dismiss" onClick={() => setUndoLoad(null)}><X size={13} /></Button></p>}
     </div>
-    {!panelOpen ? null : sourceId ? <WorkflowSources id={sourceId} onBack={() => setSourceId(null)} /> : selected ? <aside className="canvas-side" aria-label="Selected agent">
+    {!panelOpen ? null : sourceId ? <WorkflowSources id={sourceId} onBack={() => setSourceId(null)} edge={sideEdge} /> : selected ? <aside className="canvas-side" aria-label="Selected agent">{sideEdge}
       <p className="hud-menu-title">Agent{states[selected.id] ? ` · ${STATUS_LABEL[states[selected.id].status]}` : ""} · {CHECK_LABEL[states[checkOf(selected.id)]?.status ?? "idle"]}</p>
       <label>Name<Input ref={nameField} aria-label="Name" title={selected.data.title} value={selected.data.title} maxLength={256} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); promptField.current?.focus(); } }} onChange={event => edit({ title: event.target.value })} /></label>
       <label>Prompt<Textarea ref={promptField} aria-label="Prompt" rows={5} value={selected.data.instruction} placeholder="What this agent should do; left empty, Elpis fills it from the goal" onChange={event => edit({ instruction: event.target.value, title: promptName(selected.data, event.target.value) })} /></label>
@@ -1740,7 +1756,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
         <Button variant="ghost" size="sm" className="text-destructive" onClick={() => remove([selected.id])}><Trash2 size={14} />Delete agent</Button>
         <Button variant="outline" size="sm" className="ml-auto" onClick={() => setSelection([])}>Done</Button>
       </div>
-    </aside> : chosen.length > 1 ? <aside className="canvas-side" aria-label="Selected agents">
+    </aside> : chosen.length > 1 ? <aside className="canvas-side" aria-label="Selected agents">{sideEdge}
       <p className="hud-menu-title">{chosen.length} agents selected</p>
       <p className="canvas-help">{chosen.map(node => node.data.title || "Untitled").join(", ")}</p>
       <label>Model<OptionSelect aria-label="Model" value={shared(choiceKey)} onChange={event => edit(modelPatch(event.target.value))}>{mixed}{modelOptions()}</OptionSelect></label>
@@ -1749,7 +1765,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
         <Button variant="ghost" size="sm" className="text-destructive" onClick={() => remove(chosen.map(node => node.id))}><Trash2 size={14} />Delete {chosen.length} agents <kbd>Delete</kbd></Button>
         <Button variant="outline" size="sm" className="ml-auto" onClick={() => setSelection([])}>Done</Button>
       </div>
-    </aside> : motherOpen ? <aside className="canvas-side" aria-label="Mother">
+    </aside> : motherOpen ? <aside className="canvas-side" aria-label="Mother">{sideEdge}
       <p className="hud-menu-title">Mother · the run&rsquo;s chat</p>
       <p className="canvas-help">Every agent is her child: she starts the ones that wait for no one, and every report comes back to her. These settings apply to the whole run.</p>
       <label>Goal (every agent gets it)<Textarea aria-label="Goal" rows={4} value={mother.brief} placeholder="What should this run achieve? Elpis can design the team from it." onChange={event => setMother({ brief: event.target.value })} /></label>
@@ -1769,7 +1785,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
         {run?.father?.threadId && <Button variant="outline" size="sm" onClick={() => onOpenChat(run.father!.threadId!)}><ExternalLink size={14} />Open the Father&rsquo;s chat</Button>}
         <Button variant="outline" size="sm" className="ml-auto" onClick={() => setSelection([])}>Done</Button>
       </div>
-    </aside> : <aside className="canvas-side" aria-label="Architectures">
+    </aside> : <aside className="canvas-side" aria-label="Architectures">{sideEdge}
       <details open={morePatterns} onToggle={event => { if (event.target === event.currentTarget) setMorePatterns(event.currentTarget.open); }}>
         <DisclosureSummary>More patterns</DisclosureSummary>
       <section className="canvas-templates" aria-label="Ready-made workflows"><p className="hud-menu-title">Ready-made workflows</p>
