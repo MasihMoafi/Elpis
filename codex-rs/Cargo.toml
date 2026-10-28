@@ -607,15 +607,15 @@ debug = "none"
 strip = "symbols"
 
 [profile.release]
-lto = "thin"
-debug = "line-tables-only"
-split-debuginfo = "off"
-# Keep release binaries symbolicateable until packaging has archived the
-# sidecar symbols and stripped the binaries.
-strip = false
-
-# Balance parallel release code generation against binary size.
-codegen-units = 4
+# Size first: measured on cold Actions runners (run 40673682317), fat LTO with
+# one codegen unit and opt-level "s" built codex at 119 MiB in 32 min, against
+# 315 MiB in 20 min (no LTO, opt 1) and 318 MiB in 44 min (thin LTO, opt 3).
+# panic stays "unwind": the runtime catches panics (exec, pty, code mode, transport).
+lto = "fat"
+codegen-units = 1
+opt-level = "s"
+debug = false
+strip = true
 
 [profile.profiling]
 inherits = "release"
