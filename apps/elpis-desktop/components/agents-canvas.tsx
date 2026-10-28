@@ -60,6 +60,8 @@ const editKey = (graph: CanvasGraph) => JSON.stringify({ ...graph, nodes: graph.
 /** Fit the graph inside the available board, on opening and after layout changes. */
 const FIT = { padding: 0.06, maxZoom: 1, minZoom: 0.05 };
 const OVERVIEW = { padding: 0.08, maxZoom: 1 };
+// React Flow lifts a selected agent to z-index 1000; a selected wire goes just above it.
+const ABOVE_AGENTS = 1001;
 // The ready-made workflow comes first (28 Oct, Masih: "move it on top").
 const ENTRY_PATTERNS = [...WORKFLOWS.map(workflow => ({ id: workflow.id, label: workflow.name })), { id: "auto", label: "Auto · Elpis chooses" }, { id: "split-parts", label: "Parallel" }, { id: "sequential", label: "Sequential" }, { id: "research", label: "Research" }];
 // Mother takes the strongest model this person has (28 Oct, Masih: "Depends on which model the user has available; for me, opus").
@@ -737,6 +739,9 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
     : { ...node, selected: selection.includes(node.id), data: node.type === "agent" ? { ...node.data, status: states[node.id]?.status, check: states[node.data.join ? node.id : checkOf(node.id)]?.status, clash: clashes[node.id], modelLabel: modelLabel(node.data), wave: order.get(node.id), onHandle, onQuick } : { ...node.data, onText: setText } }),
   )], [graph, identity, renamingFrame, selection, states, clashes, models, order, runState, fatherState, limit, catalog.length]); // eslint-disable-line react-hooks/exhaustive-deps
   const flowLabels = useMemo(() => flowLabelPositions(nodes.filter(node => node.type !== "frame"), graph.edges), [nodes, graph.edges]);
+  // A selected wire sits above the agents so its ends can be dragged to reconnect (af885eb49). Only the wire itself:
+  // React Flow's elevateEdgesOnSelect also lifts every wire of a selected agent, and those then cover the dot of the
+  // agent at their other end, so a new wire could not be drawn from it.
   const edges = useMemo<Edge[]>(() => [
     // The Mother's wires: she starts every agent of the first wave.
     ...agents.filter(node => order.get(node.id) === 1 && !his.has(node.id)).map((node, index) => ({ id: `${MOTHER}->${node.id}`, source: MOTHER, target: node.id, type: "mother", markerEnd: { type: MarkerType.ArrowClosed }, className: "canvas-edge-mother", selectable: false, deletable: false, reconnectable: false, focusable: false, selected: wireMenu?.edge.id === `${MOTHER}->${node.id}`, data: { trunk: index === 0, label: graph.motherFlow, live: states[node.id]?.status === "running" } })),
@@ -745,8 +750,9 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
     ...graph.edges.map(edge => {
       // A wire goes live once its first agent's check passed and the second agent is running.
       const from = states[checkOf(edge.source)]?.status, to = states[edge.target]?.status, live = waits(edge) && from === "succeeded" && to === "running";
-      if (edge.kind === "alongside") return { ...edge, type: "default", selected: wireMenu?.edge.id === edge.id || selection.includes(edge.id), data: { alongside: true, ...flowLabels.get(edge.id) }, className: "canvas-edge-alongside" };
-      return { ...edge, type: "default", markerEnd: { type: MarkerType.ArrowClosed }, selected: wireMenu?.edge.id === edge.id || insertWire === edge.id || selection.includes(edge.id), data: { live, ...flowLabels.get(edge.id) }, className: from === "failed" || to === "blocked" ? "canvas-edge-cut" : live ? "canvas-edge-live" : from === "succeeded" ? "canvas-edge-done" : undefined };
+      if (edge.kind === "alongside") { const selected = wireMenu?.edge.id === edge.id || selection.includes(edge.id); return { ...edge, type: "default", selected, zIndex: selected ? ABOVE_AGENTS : 0, data: { alongside: true, ...flowLabels.get(edge.id) }, className: "canvas-edge-alongside" }; }
+      const selected = wireMenu?.edge.id === edge.id || insertWire === edge.id || selection.includes(edge.id);
+      return { ...edge, type: "default", markerEnd: { type: MarkerType.ArrowClosed }, selected, zIndex: selected ? ABOVE_AGENTS : 0, data: { live, ...flowLabels.get(edge.id) }, className: from === "failed" || to === "blocked" ? "canvas-edge-cut" : live ? "canvas-edge-live" : from === "succeeded" ? "canvas-edge-done" : undefined };
     }),
   ], [graph.edges, graph.nodes, graph.motherFlow, states, order, wireMenu, flowLabels, insertWire, selection]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1661,7 +1667,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
         onReconnectStart={(_, edge) => { connectionCancelled.current = false; reconnecting.current = edge.id; }}
         onReconnect={(edge, connection) => reconnect(edge as CanvasEdge, connection.source, connection.target)} onReconnectEnd={() => { reconnecting.current = null; }}
         isValidConnection={connection => validConnection(connection.source, connection.target, reconnecting.current, alongsideDrag.current || graph.edges.find(edge => edge.id === reconnecting.current)?.kind === "alongside")} disableKeyboardA11y
-        onPaneClick={() => { setSelection([]); setMenu(null); }} elevateEdgesOnSelect deleteKeyCode={null} zoomOnDoubleClick={false} colorMode={dark ? "dark" : "light"} fitView fitViewOptions={FIT} minZoom={FIT.minZoom} proOptions={{ hideAttribution: true }}>
+        onPaneClick={() => { setSelection([]); setMenu(null); }} deleteKeyCode={null} zoomOnDoubleClick={false} colorMode={dark ? "dark" : "light"} fitView fitViewOptions={FIT} minZoom={FIT.minZoom} proOptions={{ hideAttribution: true }}>
         <Background variant={BackgroundVariant.Dots} gap={22} size={1.2} />
         <Controls showInteractive={false} fitViewOptions={OVERVIEW} />
         {minimap && <MiniMap pannable zoomable className="canvas-minimap" style={{ width: 150, height: 100 }} />}
