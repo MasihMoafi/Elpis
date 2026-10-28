@@ -213,12 +213,18 @@ jobs:
           if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
             sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           fi
+      - name: Build the helper binaries the core tests launch
+        working-directory: codex-rs
+        run: |
+          cargo build --profile dev-small --locked -p codex-rmcp-client --bins \
+            -p codex-cli --bin codex -p codex-exec --bin codex-exec -p codex-linux-sandbox --bin codex-linux-sandbox
       - name: Control - the updated test fails while root threads start MCP eagerly
         working-directory: codex-rs
         shell: bash
         run: |
           change=$(git log --format=%H -1 --grep='start cached MCP servers on first use')
           test -n "$change"
+          echo "CHANGE=$change" >> "$GITHUB_ENV"
           git show "$change" -- core/src/session/mcp_runtime.rs | git apply -R
           set +e
           cargo test --profile dev-small --locked -p codex-core --test all -- \
@@ -228,13 +234,33 @@ jobs:
           git checkout -- core/src/session/mcp_runtime.rs
           test "$status" -ne 0
           rg -q 'must stay dormant in a second root thread|must not start its own copy' "$RUNNER_TEMP/control.log"
-      - name: Touched MCP suites with lazy root startup
+      - name: Touched MCP suites with lazy root startup; failures are rerun without the change
         working-directory: codex-rs
+        shell: bash
         run: |
+          set +e
           cargo test --profile dev-small --locked -p codex-core --test all -- \
             suite::mcp_ suite::search_tool suite::codex_apps_protocol suite::scenarios \
             suite::guardian_subagent_authorization suite::hooks suite::remote_env \
-            suite::skills_extension suite::step_settings suite::sqlite_state
+            suite::skills_extension suite::step_settings suite::sqlite_state 2>&1 | tee "$RUNNER_TEMP/lazy.log"
+          status=${PIPESTATUS[0]}
+          set -e
+          rg '^test result:' "$RUNNER_TEMP/lazy.log" || true
+          [ "$status" -eq 0 ] && exit 0
+          mapfile -t failed < <(rg -o '^test (suite::\S+) \.\.\. FAILED' -r '$1' "$RUNNER_TEMP/lazy.log" | sort -u)
+          printf 'failed with lazy startup: %s\n' "${failed[@]}"
+          test "${#failed[@]}" -gt 0
+          git show "$CHANGE" -- core/src/session/mcp_runtime.rs | git apply -R
+          regressions=0
+          for name in "${failed[@]}"; do
+            if cargo test --profile dev-small --locked -p codex-core --test all -- "$name" --exact > "$RUNNER_TEMP/base.log" 2>&1; then
+              echo "REGRESSION (passes without the change): $name"; regressions=1
+            else
+              echo "pre-existing (fails without the change too): $name"
+            fi
+          done
+          git checkout -- core/src/session/mcp_runtime.rs
+          exit "$regressions"
 
   build:
     if: github.event_name != 'workflow_dispatch' || inputs.verification == 'full' || inputs.verification == 'ui' || inputs.verification == 'build'
