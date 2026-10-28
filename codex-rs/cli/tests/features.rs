@@ -151,21 +151,6 @@ url = "ws://127.0.0.1:4512"
     Ok(())
 }
 
-#[test]
-fn strict_config_is_not_supported_for_cloud_command() -> Result<()> {
-    let codex_home = TempDir::new()?;
-
-    let mut cmd = codex_command(codex_home.path())?;
-    cmd.args(["--strict-config", "-c", "foo=bar", "cloud", "list"])
-        .assert()
-        .failure()
-        .stderr(contains(
-            "`--strict-config` is not supported for `elpis cloud`",
-        ));
-
-    Ok(())
-}
-
 #[tokio::test]
 async fn features_enable_writes_feature_flag_to_config() -> Result<()> {
     let codex_home = TempDir::new()?;

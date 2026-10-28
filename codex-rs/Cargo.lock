@@ -2525,7 +2525,6 @@ dependencies = [
  "codex-build-info",
  "codex-chatgpt",
  "codex-cloud-config",
- "codex-cloud-tasks",
  "codex-config",
  "codex-core",
  "codex-core-plugins",
@@ -2648,63 +2647,6 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
-]
-
-[[package]]
-name = "codex-cloud-tasks"
-version = "0.162.0"
-dependencies = [
- "anyhow",
- "chrono",
- "clap",
- "codex-cloud-tasks-client",
- "codex-cloud-tasks-mock-client",
- "codex-core",
- "codex-git-utils",
- "codex-http-client",
- "codex-login",
- "codex-model-provider",
- "codex-tui",
- "codex-utils-cli",
- "crossterm",
- "http 1.4.0",
- "insta",
- "owo-colors",
- "pretty_assertions",
- "ratatui",
- "serde",
- "serde_json",
- "supports-color 3.0.2",
- "tokio",
- "tokio-stream",
- "tracing",
- "tracing-subscriber",
- "unicode-segmentation",
- "unicode-width 0.2.1",
-]
-
-[[package]]
-name = "codex-cloud-tasks-client"
-version = "0.162.0"
-dependencies = [
- "anyhow",
- "chrono",
- "codex-api",
- "codex-backend-client",
- "codex-git-utils",
- "codex-http-client",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "codex-cloud-tasks-mock-client"
-version = "0.162.0"
-dependencies = [
- "chrono",
- "codex-cloud-tasks-client",
- "diffy",
 ]
 
 [[package]]

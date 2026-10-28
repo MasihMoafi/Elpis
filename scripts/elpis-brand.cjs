@@ -147,11 +147,6 @@ const EXCEPTIONS = [
     sample: "Co-authored-by: Codex <noreply@openai.com>",
   },
   {
-    re: /Please run 'codex login'/g,
-    why: "text codex-rs/cloud-tasks prints; the CLI test asserts it",
-    sample: "Not signed in. Please run 'codex login'",
-  },
-  {
     re: /Codex Desktop/g,
     why: "client name the app server, core and otel match on (`name == \"Codex Desktop\"`, originator mapping); the desktop app is OpenAI's",
     sample: "(ConnectionOrigin::Stdio, \"Codex Desktop\", true, true, true)",
@@ -219,7 +214,7 @@ const LITERAL_EXCEPTIONS = [
 
 // The multitool's subcommands; `codex <one of these>` is a command the user types.
 const SUBCOMMANDS = [
-  "agents", "app", "app-server", "apply", "archive", "cloud", "completion", "debug",
+  "agents", "app", "app-server", "apply", "archive", "completion", "debug",
   "delete", "doctor", "exec", "exec-server", "features", "fork", "login", "logout", "mcp",
   "migrate-rollouts", "plugin", "queue", "remote-control", "resume", "review", "sandbox",
   "unarchive", "update",
