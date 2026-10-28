@@ -38,9 +38,10 @@ export function checkInventory(inventory, files) {
   if (errors.length) throw new Error(errors.join('\n'));
 }
 
-async function main(args) {
-  const inventory = JSON.parse(await fs.readFile(new URL('../test-inventory.json', import.meta.url), 'utf8'));
-  checkInventory(inventory, await discoverTests());
+// `dir`, `locks` and `seconds` let the gate's own tests run it on a fake app with short limits.
+export async function main(args, { dir = root, locks = { build: '/tmp/elpis-desktop-build.lock', ui: '/tmp/elpis-desktop-ui.lock' }, seconds: fileSeconds = 180 } = {}) {
+  const inventory = JSON.parse(await fs.readFile(path.join(dir, 'test-inventory.json'), 'utf8'));
+  checkInventory(inventory, await discoverTests(dir));
   if (args[0] === '--check') {
     console.log(tiers.map(tier => `${tier}: ${inventory[tier].length}`).join(', '));
     return;
@@ -48,19 +49,19 @@ async function main(args) {
   const selected = args.length ? args : tiers.filter(tier => tier !== 'opt-in');
   if (selected.some(tier => !tiers.includes(tier) || tier === 'opt-in')) throw new Error('Choose fast, bridge, desktop or ui. Run individual opt-in tests explicitly (see TESTING.md).');
   if (selected.includes('ui')) {
-    const holder = heldByAncestor('/tmp/elpis-desktop-ui.lock');
-    if (holder) throw new Error(`Run the gate without an outer flock: it takes /tmp/elpis-desktop-ui.lock itself for each browser file, and process ${holder} above it already holds that lock.`);
+    const holder = heldByAncestor(locks.ui);
+    if (holder) throw new Error(`Run the gate without an outer flock: it takes ${locks.ui} itself for each browser file, and process ${holder} above it already holds that lock.`);
     const missing = missingPlaywright();
     if (missing) throw new Error(missing);
   }
-  const git = args => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+  const git = args => execFileSync('git', args, { cwd: dir, encoding: 'utf8' }).trim();
   const start = { commit: git(['rev-parse', 'HEAD']), clean: git(['status', '--porcelain', '--untracked-files=no']) === '' };
   const evidence = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-test-gate-'));
   const home = path.join(evidence, 'home');
   await fs.mkdir(home);
   const summary = { wallMs: 0, testMs: 0, files: [], evidence }, started = performance.now();
   console.log(`Test evidence: ${evidence}`);
-  async function run(name, command, parameters, tier, seconds = 180) {
+  async function run(name, command, parameters, tier, seconds = fileSeconds) {
     const log = path.join(evidence, name.replaceAll('/', '-') + '.tap'), output = await fs.open(log, 'w');
     const at = performance.now();
     let code;
@@ -68,7 +69,7 @@ async function main(args) {
     try {
       code = await new Promise((resolve, reject) => {
         // Bound the whole process group, including lock acquisition and subprocesses left by a test.
-        const child = spawn('timeout', ['--kill-after=5s', `${seconds}s`, command, ...parameters], { cwd: root, env: { ...process.env, ELPIS_HOME: home,
+        const child = spawn('timeout', ['--kill-after=5s', `${seconds}s`, command, ...parameters], { cwd: dir, env: { ...process.env, ELPIS_HOME: home,
           EXCALIDRAW_LOCAL_DIR: path.join(home, 'love-spot'), EXCALIDRAW_SCREENSHOTS_DIR: path.join(home, 'Screenshots') }, stdio: ['ignore', output.fd, output.fd] });
         child.on('error', reject); child.on('exit', (status, signal) => resolve(signal ? 1 : status));
       });
@@ -81,20 +82,20 @@ async function main(args) {
     await fs.writeFile(path.join(evidence, 'summary.json'), JSON.stringify(summary, null, 2) + '\n');
     console.log(`${code === 0 ? 'PASS' : code === 124 || code === 137 ? 'TIMEOUT' : 'FAIL'} ${name} (${(testMs / 1000).toFixed(2)}s test; ${((performance.now() - at) / 1000).toFixed(2)}s wall; exit ${code}; ${log})`);
     if (code !== 0) { console.error(text.slice(-6000)); process.exitCode = 1; }
+    return code;
   }
   // Fast tests import bundled prompts too; desktop/package tests consume out/.
-  await run('bridge-resources', process.execPath, ['bridge/build-resources.mjs'], 'bridge', 120);
-  if (process.exitCode) return;
+  if (await run('bridge-resources', process.execPath, ['bridge/build-resources.mjs'], 'bridge', 120) !== 0) return;
   let rendererBuilt = false;
   for (const tier of selected) {
     if (!rendererBuilt && (tier === 'desktop' || tier === 'ui')) {
-      await run('renderer-build', 'flock', ['/tmp/elpis-desktop-build.lock', 'npm', 'run', '-s', 'build'], tier, 1200);
-      if (process.exitCode) return;
+      // Desktop and UI files need the renderer; an earlier tier's failure does not stop them.
+      if (await run('renderer-build', 'flock', [locks.build, 'npm', 'run', '-s', 'build'], tier, 1200) !== 0) return;
       rendererBuilt = true;
     }
     if (tier === 'ui') {
       // Keep every browser file bounded and serialized with the other workstation workers.
-      for (const file of inventory.ui) await run(file, 'flock', ['/tmp/elpis-desktop-ui.lock', process.execPath, '--test', '--test-timeout=180000', '--test-reporter=tap', file], tier);
+      for (const file of inventory.ui) await run(file, 'flock', [locks.ui, process.execPath, '--test', '--test-timeout=180000', '--test-reporter=tap', file], tier);
     } else {
       for (const file of inventory[tier]) await run(file, process.execPath, ['--test', '--test-timeout=180000', '--test-reporter=tap', file], tier);
     }
