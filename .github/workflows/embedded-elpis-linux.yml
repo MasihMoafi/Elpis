@@ -8,7 +8,7 @@ on:
         required: true
         default: full
         type: choice
-        options: [check, ui, full, build, size]
+        options: [check, ui, full, build, size, mcp]
   push:
     tags: ['v*']
     branches: [next]
@@ -190,6 +190,51 @@ jobs:
           path: ${{ runner.temp }}/out
           if-no-files-found: error
           retention-days: 3
+
+  mcp:
+    # Temporary: lazy MCP startup for root threads. A control run without the core change must
+    # fail the updated test; the touched MCP suites must pass with it.
+    if: github.event_name == 'workflow_dispatch' && inputs.verification == 'mcp'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    env:
+      CODEX_SKIP_BWRAP_BUILD: '1'
+      CARGO_BUILD_JOBS: '4'
+      RUST_TEST_THREADS: '1'
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 20
+      - name: Install Rust and system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libcap-dev libssl-dev pkg-config ripgrep
+          rustup toolchain install 1.95.0 --profile minimal --no-self-update
+          if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+      - name: Control - the updated test fails while root threads start MCP eagerly
+        working-directory: codex-rs
+        shell: bash
+        run: |
+          change=$(git log --format=%H -1 --grep='start cached MCP servers on first use')
+          test -n "$change"
+          git show "$change" -- core/src/session/mcp_runtime.rs | git apply -R
+          set +e
+          cargo test --profile dev-small --locked -p codex-core --test all -- \
+            suite::mcp_tool_cache::cached_mcp_startup_is_lazy_for_root_and_subagent_threads --exact 2>&1 | tee "$RUNNER_TEMP/control.log"
+          status=${PIPESTATUS[0]}
+          set -e
+          git checkout -- core/src/session/mcp_runtime.rs
+          test "$status" -ne 0
+          rg -q 'must stay dormant in a second root thread|must not start its own copy' "$RUNNER_TEMP/control.log"
+      - name: Touched MCP suites with lazy root startup
+        working-directory: codex-rs
+        run: |
+          cargo test --profile dev-small --locked -p codex-core --test all -- \
+            suite::mcp_ suite::search_tool suite::codex_apps_protocol suite::scenarios \
+            suite::guardian_subagent_authorization suite::hooks suite::remote_env \
+            suite::skills_extension suite::step_settings suite::sqlite_state
 
   build:
     if: github.event_name != 'workflow_dispatch' || inputs.verification == 'full' || inputs.verification == 'ui' || inputs.verification == 'build'
