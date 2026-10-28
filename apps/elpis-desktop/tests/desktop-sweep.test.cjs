@@ -142,7 +142,6 @@ for (const colorScheme of ['light', 'dark']) for (const [width, height] of [[128
       await page.getByRole('button', { name: 'Done', exact: true }).click();
       await check('Canvas add agents', () => page.getByRole('region', { name: 'Workflows', exact: true }).getByRole('button', { name: /^Command/ }).click());
       await page.keyboard.press('Escape');
-      await check('Canvas 3D', () => page.getByRole('radio', { name: 'Isometric', exact: true }).click());
       await check('Love Spot', async () => { await page.getByRole('button', { name: 'Love Spot', exact: true }).click(); await page.locator('.excalidraw canvas').first().waitFor(); });
       await f.open('chat-a');
       await check('side panel empty', () => page.getByRole('button', { name: 'Show side panel', exact: true }).click());

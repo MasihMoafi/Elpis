@@ -635,3 +635,15 @@ test('scrolling over Workflows never scrolls the whole page', async () => {
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
+
+// SPEC.md, 23 October: the isometric view was removed (R38, R57); the flat board is the only board.
+test('the Workflows page has no Flat/Isometric toggle', async () => {
+  const { page, canvas, errors, close } = await openCanvas();
+  try {
+    await page.locator('.react-flow').waitFor();
+    assert.equal(await canvas.locator('.react-flow').count(), 1, 'the flat board is shown');
+    assert.equal(await page.getByRole('radio', { name: 'Isometric' }).count(), 0);
+    assert.equal(await page.getByRole('radio', { name: 'Flat' }).count(), 0);
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});

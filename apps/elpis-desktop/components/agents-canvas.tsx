@@ -19,8 +19,6 @@ import { WorkflowColourMenu, WorkflowIdentityEditor, WorkflowMark } from "@/comp
 import type { WorkflowCatalog, WorkflowIdentity } from "@/lib/workflow-identity";
 import { WorkflowSources } from "@/components/workflow-sources";
 import { summarize, workedFor } from "@/components/transcript";
-import { isoLayout } from "@/lib/iso";
-import { IsoBoard, NoteText, ViewToggle, type IsoController } from "@/components/agents-iso";
 import { CanvasTextEdit } from "@/components/canvas-text-edit";
 import { deleteKeepingFlow } from "@/lib/canvas-delete-flow";
 import { extractAgent, frameBounds, insidePolygon, insertAgent, segmentsCross } from "@/lib/canvas-editing";
@@ -47,14 +45,15 @@ const FINISHED = new Set(["succeeded", "failed", "cancelled", "completed"]);
 const ended = (status: string): "running" | "finished" | "cancelled" | "failed" => !FINISHED.has(status) ? "running" : status === "failed" || status === "cancelled" ? status : "finished";
 /** An ended run in words: Finished only when it succeeded (28 Oct: "Finished · 0 of 2 done" over a cancelled run). */
 const ENDED: Record<string, string> = { succeeded: "Finished", completed: "Finished", failed: "Failed", cancelled: "Cancelled" };
-const stoppedLine = (status: string, error?: string | null): { at: number; text: string; tone: "fail" }[] => status === "failed" || status === "cancelled" ? [{ at: Date.now(), text: `RUN ${ENDED[status].toUpperCase()} · ${error || "no reason was recorded"}`, tone: "fail" }] : [];
+/** `at`: when it was seen; a saved run reopened later has no time to show, like its other lines. */
+const stoppedLine = (status: string, error?: string | null, at?: number): { at?: number; text: string; tone: "fail" }[] => status === "failed" || status === "cancelled" ? [{ ...(at === undefined ? {} : { at }), text: `RUN ${ENDED[status].toUpperCase()} · ${error || "no reason was recorded"}`, tone: "fail" }] : [];
 const lines = (text: string) => text.split("\n").map(line => line.trim()).filter(Boolean);
 /** What Elpis is asked when the user ran a team without writing a goal: keep what is drawn and set, and fill the rest. */
 const DRAWN = "Run this team as drawn: keep every agent, its wiring and whatever is already set; give each agent the prompt and folders it lacks, from its name and its place in the team.";
 /** A board's structure, without positions: its agents and wires. */
 const shapeKey = (graph: CanvasGraph) => `${graph.nodes.filter(node => node.type === "agent").map(node => node.id).join(",")}|${graph.edges.map(edge => `${edge.id}${edge.kind ?? ""}`).join(",")}`;
 /** Measurements belong to the renderer, not to an undoable user edit. */
-const editKey = (graph: CanvasGraph) => JSON.stringify({ ...graph, nodes: graph.nodes.map(({ id, type, position, isoPosition, data }) => ({ id, type, position, isoPosition, data })) });
+const editKey = (graph: CanvasGraph) => JSON.stringify({ ...graph, nodes: graph.nodes.map(({ id, type, position, data }) => ({ id, type, position, data })) });
 /** Fit the graph inside the available board, on opening and after layout changes. */
 const FIT = { padding: 0.06, maxZoom: 1, minZoom: 0.05 };
 const OVERVIEW = { padding: 0.08, maxZoom: 1 };
@@ -98,7 +97,7 @@ function MotherNode({ id, data }: NodeProps<Node<MotherData>>) {
 function NoteNode({ id, data }: NodeProps<Node<NoteData & { onText?: (id: string, text: string) => void }>>) {
   // The strip is the handle: dragging it moves the note, while the text below takes the keys.
   return <div className="canvas-note"><span className="canvas-note-grip" title="A note for you, never sent to an agent; drag here to move it">Note · for you</span>
-    <NoteText text={data.text} onText={text => data.onText?.(id, text)} /></div>;
+    <Textarea aria-label="Note" className="nodrag" value={data.text} placeholder="Write a note" onChange={event => data.onText?.(id, event.target.value)} /></div>;
 }
 /** The Father: he runs the agents past the Mother's ten, in his own chat, once her part has succeeded, and reports to
  * her. Drawn only when the graph needs him. */
@@ -163,7 +162,7 @@ function flowLabelPositions(nodes: Node[], edges: CanvasEdge[]) {
 
 /** Where the command bar drops its agents, and the agent it was opened from (`as` is the end the new agents take) or
  * the wire they are inserted on. */
-type Adding = { at: XYPosition; isoAt?: XYPosition; left: number; top: number; height: number; from?: { id: string; as: HandleEnd }; between?: CanvasEdge; seed?: string };
+type Adding = { at: XYPosition; left: number; top: number; height: number; from?: { id: string; as: HandleEnd }; between?: CanvasEdge; seed?: string };
 /** A menu's place: where it was asked for, and its corner inside the board. */
 type MenuAt = { client: XYPosition; left: number; top: number };
 type BoardMenu = (MenuAt & { kind: "wire"; edge: CanvasEdge }) | (MenuAt & { kind: "nodes"; ids: string[] }) | (MenuAt & { kind: "mother" }) | (MenuAt & { kind: "board" });
@@ -435,7 +434,6 @@ function runFailure(detail: string) {
 }
 
 function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMenu, workflowCatalog, recordedRun, onLeaveRecordedRun, onOpenRecordedRun, onUseFolder }: Props) {
-  const isoController = useRef<IsoController>(null);
   const flow = useReactFlow(), flowStore = useStoreApi(), board = useRef<HTMLDivElement>(null), pointer = useRef<XYPosition | null>(null), connectFrom = useRef<XYPosition | null>(null);
   const [graph, setGraph] = useState<CanvasGraph>(() => recordedRun ? { name: "Workflow", workflowId: recordedRun.id, nodes: [], edges: [] } : initialGraph());
   const connection = useRef({ ready, generation: 0 });
@@ -498,7 +496,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
   const startingRun = useRef(false);
   useEffect(() => {
     if (!run) return;
-    const timer = setTimeout(() => { if (isoController.current) isoController.current.fit(); else void flow.fitView(FIT); }, 60);
+    const timer = setTimeout(() => void flow.fitView(FIT), 60);
     return () => clearTimeout(timer);
   }, [run?.graphId, flow]); // eslint-disable-line react-hooks/exhaustive-deps
   const [savedStates, setStates] = useState<Record<string, { status: TaskStatus; chat: string | null }>>({});
@@ -518,7 +516,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
   useEffect(() => {
     if (!recordedRun || !savedRecord) return;
     setGraph(graphForWorkflow(savedRecord, liveTeam.agents));
-    const timer = setTimeout(() => { if (isoController.current) isoController.current.fit(); else void flow.fitView(FIT); }, 60);
+    const timer = setTimeout(() => void flow.fitView(FIT), 60);
     return () => clearTimeout(timer);
   }, [recordedRun?.id, savedRecord?.id, liveTopology, flow]);
   // Where the engine's merge clash stopped the run: the clashing files, by the agent whose work clashed.
@@ -652,7 +650,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
         const hers = await read(run.rootThreadId, run.graphId);
         if (hers && hers.status !== run.status) {
           next = { ...next, status: hers.status, ...(hers.error ? { error: hers.error } : {}) };
-          if (live) setLog(current => [...current, ...stoppedLine(hers.status, hers.error)]);
+          if (live) setLog(current => [...current, ...stoppedLine(hers.status, hers.error, Date.now())]);
         }
         const father = next.father, stage = hers?.next;
         if (father && stage && (stage.threadId !== father.threadId || stage.status !== father.status || !!stage.reported !== !!father.reported)) {
@@ -799,9 +797,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
   // Where new things go, as FigJam places them: never on an agent or a note. `place` takes the first free slot at or
   // below a spot, in steps of the grid; with no spot, new agents join the first wave's column, below what is there.
   const NODE_W = 210, NODE_H = 96, GAP = 28;
-  const ISO_NODE = { w: NODE_W, h: 180, top: 130 }; // Includes the pedestal and its upright name label.
   const boxes = () => graph.nodes.map(node => ({ x: node.position.x, y: node.position.y, w: (node as { measured?: { width?: number } }).measured?.width ?? NODE_W, h: (node as { measured?: { height?: number } }).measured?.height ?? NODE_H }));
-  const isoBoxes = (scene = isoLayout(graph, order, split.father.length ? FATHER : undefined)) => scene.map(item => ({ x: item.at.x - ISO_NODE.w / 2, y: item.at.y - ISO_NODE.top, w: ISO_NODE.w, h: ISO_NODE.h }));
   const freeAt = (x: number, y: number, taken = boxes(), size = { w: NODE_W, h: NODE_H }) => taken.every(item => x + size.w + GAP <= item.x || x >= item.x + item.w + GAP || y + size.h + GAP <= item.y || y >= item.y + item.h + GAP);
   const place = (near?: XYPosition, taken = boxes(), size = { w: NODE_W, h: NODE_H }, closest = false) => {
     const start = near ?? firstColumn(), x = closest ? start.x : Math.round(start.x / 20) * 20;
@@ -819,7 +815,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
     const first = agents.filter(node => order.get(node.id) === 1), motherAt = graph.nodes.find(node => node.type === "mother")?.position ?? { x: 0, y: 0 };
     return first.length ? { x: Math.min(...first.map(node => node.position.x)), y: Math.min(...first.map(node => node.position.y)) } : { x: motherAt.x + COLUMN, y: motherAt.y };
   };
-  const addAgents = (count: number, choice: { model: string | null; provider?: string | null; effort?: string | null }, where: Partial<Pick<Adding, "at" | "isoAt" | "from" | "between">> = {}, tasks: string[] = []) => {
+  const addAgents = (count: number, choice: { model: string | null; provider?: string | null; effort?: string | null }, where: Partial<Pick<Adding, "at" | "from" | "between">> = {}, tasks: string[] = []) => {
     if (!room) { setNotice(`The graph is at its limit of ${limit} agents. Raise Max agents to add more.`); return; }
     // Beside the agent they came from (right if they wait for it, left if it waits for them), else where asked, else in
     // the first wave's column; each in the next free slot below the last.
@@ -827,23 +823,14 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
     const spot = source ? { x: source.position.x + (from!.as === "target" ? COLUMN : -COLUMN), y: source.position.y } : where.at;
     const taken = boxes();
     const made = newAgents(Math.min(count, room), choice, { x: 0, y: 0 }, tasks, agents.map(node => node.data.title)).map(node => { const at = place(spot, taken); taken.push({ ...at, w: NODE_W, h: NODE_H }); return { ...node, position: at }; });
-    // In the isometric view every agent keeps the spot it is drawn at, applied to the latest board.
-    let pinned: Map<string, XYPosition> | null = null;
-    if (iso) {
-      const scene = isoLayout(graph, order, split.father.length ? FATHER : undefined), occupied = isoBoxes(scene);
-      const origin = scene.find(item => item.id === from?.id)?.at;
-      const at = where.isoAt ?? (origin ? { x: origin.x + (from?.as === "source" ? -COLUMN : COLUMN), y: origin.y } : { x: 300, y: 0 });
-      for (const node of made) { const slot = place({ x: at.x - ISO_NODE.w / 2, y: at.y - ISO_NODE.top }, occupied, ISO_NODE, Boolean(where.isoAt)); node.isoPosition = { x: slot.x + ISO_NODE.w / 2, y: slot.y + ISO_NODE.top }; occupied.push({ ...slot, w: ISO_NODE.w, h: ISO_NODE.h }); }
-      pinned = new Map(scene.map(item => [item.id, item.at])); isoController.current?.keepView();
-    }
     const wire = (source: string, target: string) => ({ id: `${source}->${target}`, source, target });
     // On a wire, the new agents take its place: each waits for its first agent and feeds its second. From a dot or a
     // dropped wire, they join that agent. The Mother's wires are implied, never drawn.
     const wires = between ? made.flatMap(node => [...(between.source === MOTHER ? [] : [wire(between.source, node.id)]), wire(node.id, between.target)])
       : from && from.id !== MOTHER ? made.map(node => from.as === "target" ? wire(from.id, node.id) : wire(node.id, from.id)) : [];
-    setGraph(current => ({ ...current, nodes: [...(pinned ? current.nodes.map(node => pinned!.has(node.id) ? { ...node, isoPosition: pinned!.get(node.id)! } : node) : current.nodes), ...made], edges: [...current.edges.filter(edge => edge.id !== between?.id), ...wires] }));
+    setGraph(current => ({ ...current, nodes: [...current.nodes, ...made], edges: [...current.edges.filter(edge => edge.id !== between?.id), ...wires] }));
     setSelection(made.map(node => node.id));
-    if (iso) setTimeout(() => isoController.current?.reveal(made.map(node => node.id)), 140); else reveal(made.map(node => node.id));
+    reveal(made.map(node => node.id));
     setNotice(count > room ? `Added ${room}: the limit is ${limit} agents.` : "");
   };
   // Direct creation keeps the requested position even when automatic run-order layout is enabled.
@@ -851,27 +838,15 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
     if (!room) { setNotice(`The graph is at its limit of ${limit} agents. Raise Max agents to add more.`); return; }
     checkpoint(); restored.current = true;
     const source = graph.nodes.find(node => node.id === from?.id);
-    const at = client && !iso ? flow.screenToFlowPosition(client) : undefined;
+    const at = client ? flow.screenToFlowPosition(client) : undefined;
     const near = at ? { x: at.x - NODE_W / 2, y: at.y - NODE_H / 2 }
       : source ? { x: source.position.x + (from?.as === "source" ? -COLUMN : COLUMN), y: source.position.y } : viewMiddle();
     const [made] = newAgents(1, { model: null }, place(near), [], agents.map(node => node.data.title));
-    let nodes = graph.nodes;
-    if (iso) {
-      const scene = isoLayout(graph, order, split.father.length ? FATHER : undefined);
-      const origin = scene.find(item => item.id === from?.id)?.at;
-      const wanted = client ? isoController.current!.position(client)
-        : origin ? { x: origin.x + (from?.as === "source" ? -COLUMN : COLUMN), y: origin.y } : { x: 300, y: 0 };
-      const position = place({ x: wanted.x - ISO_NODE.w / 2, y: wanted.y - ISO_NODE.top }, isoBoxes(scene), ISO_NODE, Boolean(client));
-      made.isoPosition = { x: position.x + ISO_NODE.w / 2, y: position.y + ISO_NODE.top };
-      // Freeze the existing scene so adding a wave does not recenter its neighbours or move the camera.
-      nodes = graph.nodes.map(node => { const at = scene.find(item => item.id === node.id)?.at; return at ? { ...node, isoPosition: at } : node; });
-      isoController.current?.keepView();
-    }
     const sourceId = from?.as === "source" ? made.id : from?.id, targetId = from?.as === "source" ? from.id : made.id;
     const wires = from && from.id !== MOTHER && from.id !== FATHER ? [{ id: `${sourceId}->${targetId}`, source: sourceId!, target: targetId }] : [];
-    setGraph({ ...graph, nodes: [...nodes, made], edges: [...graph.edges, ...wires] });
+    setGraph({ ...graph, nodes: [...graph.nodes, made], edges: [...graph.edges, ...wires] });
     setSelection([made.id]); setNameFocus(made.id); setMenu(null); setAdding(null); setNotice("");
-    if (iso) setTimeout(() => isoController.current?.reveal([made.id]), 140); else reveal([made.id]);
+    reveal([made.id]);
   };
   const viewMiddle = () => { const box = board.current?.getBoundingClientRect(); return box ? flow.screenToFlowPosition({ x: box.left + box.width / 2 - 100, y: box.top + box.height / 3 }) : undefined; };
   // A note from the toolbar lands in the free spot nearest the middle of the visible board; with none free, it goes
@@ -886,10 +861,9 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
     return best;
   };
   const addNote = (at?: XYPosition, text = "") => {
-    checkpoint(); const spot = at || iso ? undefined : visibleSpot(), position = spot ?? place(at ?? viewMiddle()), id = newId("note");
-    if (iso) isoController.current?.keepView();
-    setGraph(current => ({ ...current, nodes: [...current.nodes, { id, type: "note", position, ...(iso ? { isoPosition: at ?? { x: 300, y: 0 } } : {}), data: { text } }] }));
-    if (!at && !spot && !iso) reveal([id]);
+    checkpoint(); const spot = at ? undefined : visibleSpot(), position = spot ?? place(at ?? viewMiddle()), id = newId("note");
+    setGraph(current => ({ ...current, nodes: [...current.nodes, { id, type: "note", position, data: { text } }] }));
+    if (!at && !spot) reveal([id]);
   };
   // Tab, Command, a clicked dot or a context menu opens the command bar, kept inside the board.
   const openAdder = (client?: XYPosition, from?: Adding["from"], between?: CanvasEdge, seed?: string) => {
@@ -901,7 +875,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
     const spot = flow.screenToFlowPosition(point), at = from ? { x: spot.x + (from.as === "target" ? 80 : -300), y: spot.y - 40 } : { x: spot.x - (between ? 95 : 0), y: spot.y - 40 };
     // Kept inside the board: as low as the pointer allows, never past the bottom edge (the list scrolls instead).
     const top = Math.max(8, Math.min(point.y - box.top, box.height - 440));
-    setAdding({ at, ...(iso ? { isoAt: isoController.current?.position(point) } : {}), left: Math.max(8, Math.min(point.x - box.left, box.width - 348)), top, height: box.height - top - 8, ...(from ? { from } : {}), ...(between ? { between } : {}), ...(seed ? { seed } : {}) }); setMenu(null);
+    setAdding({ at, left: Math.max(8, Math.min(point.x - box.left, box.width - 348)), top, height: box.height - top - 8, ...(from ? { from } : {}), ...(between ? { between } : {}), ...(seed ? { seed } : {}) }); setMenu(null);
   };
   // Drop on an agent to connect, or on empty board to create a connected agent there.
   // A click without a drag keeps the dot's command menu.
@@ -924,8 +898,8 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
       if (!board.current?.getClientRects().length || target && target !== document.body && !target.closest(".agents-canvas")) return;
       // Fields, readable errors and popup owners consume their own keys, including navigation and copying.
       if (target?.closest("input, textarea, select, .canvas-error-details, [contenteditable]:not([contenteditable='false']), [role='dialog'], [role='menu'], [role='listbox']")) return;
-      if ((event.ctrlKey || event.metaKey) && event.code === "KeyA" && !target?.closest(".react-flow, .iso-board")) return;
-      const onBoard = !target || target === document.body || Boolean(target.closest(".react-flow, .iso-board"));
+      if ((event.ctrlKey || event.metaKey) && event.code === "KeyA" && !target?.closest(".react-flow")) return;
+      const onBoard = !target || target === document.body || Boolean(target.closest(".react-flow"));
       const editingKey = (event.ctrlKey || event.metaKey) && ["KeyA", "KeyZ", "KeyY", "KeyC", "KeyX", "KeyV", "KeyD"].includes(event.code) || ["Delete", "Backspace", "Home", "F2"].includes(event.key);
       if (!onBoard && !editingKey) return;
       if (event.key !== "Escape" && (boxDrag.current || cutter.current || nodeDrag.current || connectFrom.current)) return;
@@ -937,7 +911,6 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
         else if (cutter.current) { cutter.current.cancelled = true; setStroke(null); }
         else if (nodeDrag.current) { nodeDrag.current.cancelled = true; setGraph(nodeDrag.current.before); setInsertWire(null); }
         else if (flowStore.getState().connection.inProgress || connectFrom.current) { connectionCancelled.current = true; connectFrom.current = null; flowStore.getState().cancelConnection(); }
-        else if (iso && isoController.current?.cancelGesture()) { /* the wire's original stays */ }
         else if (lasso) setLasso(false);
         else setSelection([]);
       }
@@ -954,8 +927,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
       else if (!ctrl && !event.altKey && (event.key === "ContextMenu" || event.shiftKey && event.key === "F10")) { take(); keyboardMenu(); }
       else if (plain && event.code === "KeyL") { take(); setLasso(true); setMenu(null); setAdding(null); }
       else if (plain && event.code === "KeyM") { take(); mute(); }
-      // A focused isometric agent walks the run order itself (components/agents-iso.tsx).
-      else if (plain && event.key.startsWith("Arrow") && !target?.closest(".iso-node")) { take(); focusNearest(event.key); }
+      else if (plain && event.key.startsWith("Arrow")) { take(); focusNearest(event.key); }
       else if (!ctrl && !event.altKey && (event.key === "+" || event.code === "NumpadAdd" || event.code === "Equal")) { take(); zoom(1.25); }
       else if (!ctrl && !event.altKey && (event.key === "-" || event.code === "NumpadSubtract")) { take(); zoom(1 / 1.25); }
       else if (plain && ["Digit0", "Numpad0"].includes(event.code)) { take(); zoom(0); }
@@ -985,7 +957,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
   const loadTemplate = (template: (typeof TEMPLATES)[number]) => { setRenamingPreset(false); setUndoLoad({ loaded: template.name, previous: graph }); setGraph(current => ({ ...withMother(template.build()), maxAgents: current.maxAgents, mother: current.mother, request: current.request, template: template.id, planningPattern: template.id })); setSelection([]); setMenu(null); setDashboardId(null); setRun(null); setStates({}); setNotice("");
     // Keys go to the board again (Tab opens the command bar), not to the template just clicked.
     (document.activeElement as HTMLElement | null)?.blur(); setTimeout(() => void flow.fitView({ ...FIT, duration: 250 }), 60); };
-  const tidy = () => { checkpoint(); setGraph(current => arrange(current)); setTimeout(() => { if (iso) isoController.current?.fit(); else void flow.fitView({ ...FIT, duration: 250 }); }, 60); };
+  const tidy = () => { checkpoint(); setGraph(current => arrange(current)); setTimeout(() => void flow.fitView({ ...FIT, duration: 250 }), 60); };
   // Agents just made are brought into view if they landed outside it (after auto-arrange has placed them), at the same zoom.
   const reveal = (ids: string[]) => setTimeout(() => {
     const box = board.current?.querySelector(".react-flow")?.getBoundingClientRect(), made = ids.flatMap(id => { const node = flow.getNode(id); return node ? [node] : []; });
@@ -1021,10 +993,6 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
     setGraph(current => ({ ...current, nodes: current.nodes.filter(node => !gone.some(item => item.id === node.id)), edges: current.edges.filter(edge => !ids.includes(edge.id) && !ids.includes(edge.source) && !ids.includes(edge.target)),
       frames: current.frames?.filter(frame => !ids.includes(frame.id)).map(frame => ({ ...frame, nodeIds: frame.nodeIds.filter(id => !ids.includes(id)) })).filter(frame => frame.nodeIds.length) })); setSelection([]);
   };
-  const renameAgent = (id: string, title: string) => {
-    if (!title) return;
-    checkpoint(); setGraph(current => ({ ...current, nodes: current.nodes.map(node => node.id === id && node.type === "agent" ? { ...node, data: { ...node.data, title } } : node) }));
-  };
   // Turning a wire one-way or two-way: one-way must not close a loop.
   const setKind = (edge: CanvasEdge, kind: CanvasEdge["kind"]) => {
     if (!kind && makesLoop(graph.edges.filter(item => item.id !== edge.id), edge.source, edge.target)) { setNotice("One-way, that wire would make a loop: an agent can't wait for itself."); return; }
@@ -1058,7 +1026,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
     if (!flowEdit) return;
     checkpoint(); const { edge } = flowEdit;
     setGraph(current => edge.source === MOTHER ? { ...current, motherFlow: label } : { ...current, edges: current.edges.map(item => item.id === edge.id ? { ...item, label } : item) });
-    setFlowEdit(null); board.current?.querySelector<HTMLElement>(".iso-board, .react-flow")?.focus();
+    setFlowEdit(null); board.current?.querySelector<HTMLElement>(".react-flow")?.focus();
   };
   // A right-click on a node acts on the selection it belongs to, else on that node alone.
   const onNodeContextMenu = (event: ReactMouseEvent, node: Node) => {
@@ -1124,13 +1092,10 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
     const left = Math.min(...clip.nodes.map(node => node.position.x)), top = Math.min(...clip.nodes.map(node => node.position.y)), origin = at ?? place({ x: left, y: top + 100 });
     const ids = new Map(clip.nodes.map(node => [node.id, newId(node.type)]));
     const taken = agents.map(node => node.data.title);
-    const isoTaken = isoBoxes();
     const nodes = clip.nodes.map(node => {
       const title = node.type === "agent" ? agentName(taken, node.data.title.split(" · ").slice(1).join(" · ") || node.data.title) : "";
       if (title) taken.push(title);
-      const slot = node.isoPosition ? place({ x: node.isoPosition.x - ISO_NODE.w / 2, y: node.isoPosition.y }, isoTaken, ISO_NODE) : undefined;
-      if (slot) isoTaken.push({ ...slot, w: ISO_NODE.w, h: ISO_NODE.h });
-      return { ...node, isoPosition: slot ? { x: slot.x + ISO_NODE.w / 2, y: slot.y + ISO_NODE.top } : undefined, id: ids.get(node.id)!, ...(node.type === "agent" ? { data: { ...node.data, title } } : {}), position: { x: Math.round(node.position.x - left + origin.x), y: Math.round(node.position.y - top + origin.y) } } as CanvasNode;
+      return { ...node, id: ids.get(node.id)!, ...(node.type === "agent" ? { data: { ...node.data, title } } : {}), position: { x: Math.round(node.position.x - left + origin.x), y: Math.round(node.position.y - top + origin.y) } } as CanvasNode;
     });
     const edges = clip.edges.map(edge => ({ ...edge, id: `${ids.get(edge.source)}->${ids.get(edge.target)}`, source: ids.get(edge.source)!, target: ids.get(edge.target)! }));
     checkpoint();
@@ -1141,18 +1106,18 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
   const copy = (ids = selection) => { const clip = takeOut(ids); if (clip.nodes.length) clipboard.current = clip; };
   const paste = (at?: XYPosition) => { if (clipboard.current) putIn(clipboard.current, at ?? (pointer.current ? flow.screenToFlowPosition(pointer.current) : undefined)); };
   const duplicate = (ids = selection) => putIn(takeOut(ids));
-  const focusBoard = () => board.current?.querySelector<HTMLElement>(".iso-board, .react-flow")?.focus({ preventScroll: true });
-  const pointerPosition = () => pointer.current ? (iso ? isoController.current?.position(pointer.current) : flow.screenToFlowPosition(pointer.current)) : viewMiddle();
-  const frameView = () => { if (!selection.length) fitAll(); else if (iso) isoController.current?.frame(); else void flow.fitView({ nodes: selection.filter(id => graph.nodes.some(node => node.id === id)).map(id => ({ id })), padding: 0.3, maxZoom: 1.5, duration: 250 }); };
-  const zoom = (factor: number) => { if (iso) isoController.current?.zoom(factor); else void flow.zoomTo(factor ? flow.getZoom() * factor : 1, { duration: 150 }); };
+  const focusBoard = () => board.current?.querySelector<HTMLElement>(".react-flow")?.focus({ preventScroll: true });
+  const pointerPosition = () => pointer.current ? flow.screenToFlowPosition(pointer.current) : viewMiddle();
+  const frameView = () => { if (!selection.length) fitAll(); else void flow.fitView({ nodes: selection.filter(id => graph.nodes.some(node => node.id === id)).map(id => ({ id })), padding: 0.3, maxZoom: 1.5, duration: 250 }); };
+  const zoom = (factor: number) => { void flow.zoomTo(factor ? flow.getZoom() * factor : 1, { duration: 150 }); };
   const focusAgent = (id: string) => {
-    const element = [...(board.current?.querySelectorAll<HTMLElement | SVGGElement>(".react-flow__node-agent, .iso-node[data-kind='agent']") ?? [])].find(node => node.dataset.id === id);
+    const element = [...(board.current?.querySelectorAll<HTMLElement>(".react-flow__node-agent") ?? [])].find(node => node.dataset.id === id);
     if (!element) return;
-    setSelection([id]); element.focus({ preventScroll: true }); if (iso) isoController.current?.reveal([id]); else reveal([id]);
+    setSelection([id]); element.focus({ preventScroll: true }); reveal([id]);
   };
   const focusPrevious = () => { if (agents.length) { const index = agents.findIndex(node => node.id === selection.at(-1)); focusAgent(agents[((index < 0 ? agents.length : index) - 1 + agents.length) % agents.length].id); } };
   const focusNearest = (direction: string) => {
-    const candidates = [...(board.current?.querySelectorAll<HTMLElement | SVGGElement>(".react-flow__node-agent, .iso-node[data-kind='agent']") ?? [])];
+    const candidates = [...(board.current?.querySelectorAll<HTMLElement>(".react-flow__node-agent") ?? [])];
     const active = candidates.find(node => node.dataset.id === selection.at(-1)), origin = active?.getBoundingClientRect();
     const center = (box: DOMRect) => ({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
     const at = origin ? center(origin) : null;
@@ -1165,12 +1130,10 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
   const nudge = (direction: string, amount: number) => {
     if (!selection.some(id => graph.nodes.some(node => node.id === id && node.type !== "mother"))) return;
     const dx = direction === "ArrowRight" ? amount : direction === "ArrowLeft" ? -amount : 0, dy = direction === "ArrowDown" ? amount : direction === "ArrowUp" ? -amount : 0;
-    const scene = iso ? isoLayout(graph, order) : [];
-    checkpoint(); if (iso) isoController.current?.keepView();
+    checkpoint();
     setGraph(current => ({ ...current, nodes: current.nodes.map(node => {
       if (!selection.includes(node.id) || node.type === "mother") return node;
-      const at = scene.find(item => item.id === node.id)?.at;
-      return { ...node, position: { x: node.position.x + dx, y: node.position.y + dy }, ...(iso && at ? { isoPosition: { x: at.x + dx, y: at.y + dy } } : {}) };
+      return { ...node, position: { x: node.position.x + dx, y: node.position.y + dy } };
     }) }));
   };
   const tidySelection = () => {
@@ -1209,19 +1172,19 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
   };
   const keyboardMenu = () => {
     const id = selection.find(id => graph.nodes.some(node => node.id === id));
-    const target = [...(board.current?.querySelectorAll<HTMLElement | SVGGElement>(".react-flow__node, .iso-node") ?? [])].find(node => node.dataset.id === id)?.getBoundingClientRect();
+    const target = [...(board.current?.querySelectorAll<HTMLElement>(".react-flow__node") ?? [])].find(node => node.dataset.id === id)?.getBoundingClientRect();
     const bounds = board.current!.getBoundingClientRect(), point = target ? { clientX: target.x + target.width / 2, clientY: target.y + target.height / 2 } : { clientX: bounds.x + bounds.width / 2, clientY: bounds.y + bounds.height / 2 };
     const at = menuAt(point, 8); if (!at) return;
     setMenu(id === MOTHER ? { ...at, kind: "mother" } : id ? { ...at, kind: "nodes", ids: selection } : { ...at, kind: "board" });
   };
   // Hit testing follows the paths actually rendered by either view, in screen pixels.
-  const wirePaths = () => [...(board.current?.querySelectorAll<SVGPathElement>(".react-flow__edge:not(.canvas-edge-mother) .react-flow__edge-path, .iso-link:not([data-mother='true']):not([data-father='true']) .iso-wire") ?? [])];
+  const wirePaths = () => [...(board.current?.querySelectorAll<SVGPathElement>(".react-flow__edge:not(.canvas-edge-mother) .react-flow__edge-path") ?? [])];
   const pathPoints = (path: SVGPathElement) => {
     const matrix = path.getScreenCTM(); if (!matrix) return [];
     const length = path.getTotalLength(), count = Math.max(1, Math.ceil(length / 8));
     return Array.from({ length: count + 1 }, (_, index) => { const at = path.getPointAtLength(length * index / count), point = new DOMPoint(at.x, at.y).matrixTransform(matrix); return { x: point.x, y: point.y }; });
   };
-  const pathId = (path: SVGPathElement) => path.closest<SVGGElement>(".react-flow__edge, .iso-link")?.dataset.id;
+  const pathId = (path: SVGPathElement) => path.closest<SVGGElement>(".react-flow__edge")?.dataset.id;
   const cutCrossed = (from: XYPosition, to: XYPosition) => {
     for (const path of wirePaths()) {
       const points = pathPoints(path), id = pathId(path);
@@ -1230,7 +1193,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
   };
   const insertionAt = (id: string, current = graph) => {
     if (nodeDrag.current && nodeDrag.current.ids.filter(id => current.nodes.some(node => node.id === id && node.type === "agent")).length !== 1) return null;
-    const element = [...(board.current?.querySelectorAll<HTMLElement | SVGGElement>(".react-flow__node-agent, .iso-node[data-kind='agent']") ?? [])].find(node => node.dataset.id === id);
+    const element = [...(board.current?.querySelectorAll<HTMLElement>(".react-flow__node-agent") ?? [])].find(node => node.dataset.id === id);
     const box = element?.getBoundingClientRect(); if (!box) return null;
     for (const path of wirePaths()) {
       const edge = current.edges.find(edge => edge.id === pathId(path));
@@ -1258,16 +1221,6 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
     steps.settled = next; steps.restoring = true; setGraph(next);
     setTimeout(() => { dragged.current = false; });
   };
-  const moveIso = (id: string, dx: number, dy: number) => {
-    const start = nodeDrag.current; if (!start || start.cancelled) return;
-    const ids = start.before.frames?.find(frame => frame.id === id)?.nodeIds ?? start.ids;
-    const scene = isoLayout(start.before, waves(start.before)); isoController.current?.keepView();
-    setGraph({ ...start.before, nodes: start.before.nodes.map(node => {
-      const at = scene.find(item => item.id === node.id)?.at ?? node.isoPosition ?? node.position;
-      return { ...node, isoPosition: ids.includes(node.id) ? { x: at.x + dx, y: at.y + dy } : at,
-        position: ids.includes(node.id) ? { x: node.position.x + dx, y: node.position.y + dy } : node.position };
-    }) });
-  };
   // Contract every link kind across removed agents; Mother links remain derived from the surviving roots.
   const removeKeepingFlow = (ids: string[]) => {
     const gone = graph.nodes.filter(node => node.type !== "mother" && ids.includes(node.id));
@@ -1278,7 +1231,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
     setGraph({ ...next.graph, frames: next.graph.frames?.map(frame => ({ ...frame, nodeIds: frame.nodeIds.filter(id => !ids.includes(id)) })).filter(frame => frame.nodeIds.length) });
     setSelection([]);
   };
-  const fitAll = () => { if (iso) isoController.current?.fit(); else void flow.fitView({ ...OVERVIEW, duration: 250 }); };
+  const fitAll = () => { void flow.fitView({ ...OVERVIEW, duration: 250 }); };
   // F2 renames: the inspector's name field takes the keys, the name selected.
   const nameField = useRef<HTMLInputElement>(null), [nameFocus, setNameFocus] = useState<string | null>(null);
   useEffect(() => {
@@ -1308,7 +1261,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
       const clip = clipboard.current, inClip = clip?.nodes.filter(node => node.type === "agent").length ?? 0;
       return { name: "Board", title: "Board", items: [
         { label: "Add agents", keys: "Shift+A / Tab", take: () => openAdder(current.client) },
-        { label: "Add a note", keys: "Shift+S", take: () => { checkpoint(); addNote(iso ? isoController.current?.position(current.client) : flow.screenToFlowPosition(current.client)); } },
+        { label: "Add a note", keys: "Shift+S", take: () => { checkpoint(); addNote(flow.screenToFlowPosition(current.client)); } },
         ...(clip ? [{ label: `Paste ${describe(inClip, clip.nodes.length - inClip)}`, keys: "Ctrl+V", take: () => paste(flow.screenToFlowPosition(current.client)) }] : []),
         { label: "Arrange by run order", keys: "Shift+Alt+T", take: tidySelection },
         { label: "Fit the view", keys: "Home", take: fitAll }] };
@@ -1506,9 +1459,8 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
 
   const chat = selected ? states[selected.id]?.chat : null;
   // Both views share the graph, selection, settings and connection callbacks.
-  const [iso, setIso] = useState(false);
   const found = finding === null ? [] : agents.filter(node => `${node.data.title} ${node.data.instruction}`.toLowerCase().includes(finding.toLowerCase()));
-  const findAgent = (id: string) => { setSelection([id]); setFinding(null); focusBoard(); if (iso) isoController.current?.reveal([id]); else reveal([id]); };
+  const findAgent = (id: string) => { setSelection([id]); setFinding(null); focusBoard(); reveal([id]); };
   const scope = runTargets ? executionGraph(graph, runTargets).nodes.filter(node => node.type === "agent") : [];
   const historicalNotice = Boolean(recordedRun && savedRecord && notice && (notice === savedRecord.error || savedRecord.tasks?.some(task => task.failureReason === notice)));
   const runClock = run && <section className="canvas-hud" aria-label="Run clock"><span>{over(run) ? (["succeeded", "completed"].includes(run.father?.status ?? run.status) ? "Run done" : "Run ended") : "Running"}</span><>{over(run) && !run.endedAt ? <span>Duration not recorded</span> : <RunClock key={run.graphId} since={run.startedAt} until={run.endedAt} />}</></section>;
@@ -1552,7 +1504,6 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
       <Button variant="ghost" size="icon-sm" aria-label="Duplicate workflow" title="Duplicate workflow" onClick={() => { setGraph(current => ({ ...current, workflowId: undefined, name: identity?.name ?? current.name })); setRun(null); setStates({}); setSelection([]); }}><Copy size={14} /></Button>
       {projectMenu}
       <span className="canvas-spacer" />
-      <ViewToggle iso={iso} onChange={setIso} />
       {run && <Button variant="ghost" size="icon-sm" aria-label="Open run chat" title="Open run chat" onClick={() => onOpenChat(run.rootThreadId)}><ExternalLink size={14} /></Button>}
       <Button variant="ghost" size="sm" aria-pressed={motherOpen} onClick={() => setSelection([MOTHER])} title="The run's settings: the brief every agent gets, her model, how many agents"><i className="canvas-kind" data-kind="mother" />Mother</Button>
       <Button variant="ghost" size="icon-sm" aria-label="Auto-arrange" aria-pressed={autoLayout} onClick={toggleAuto} title={autoLayout ? "Auto-arrange is on: the board keeps run-order columns (Kahn's waves) after every change. Click to place agents freely." : "Auto-arrange is off. Click to arrange by run order and keep it so."}><ListOrdered size={14} /></Button>
@@ -1567,13 +1518,13 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
       onContextMenuCapture={event => { if (suppressContext.current || event.ctrlKey) { event.preventDefault(); event.stopPropagation(); } }}
       onPointerDownCapture={event => {
         const target = event.target;
-        if (!event.isPrimary || !(target instanceof Element) || target.closest("input, textarea, button, [role='dialog'], [role='menu'], .react-flow__controls, .react-flow__minimap, .iso-hud, .canvas-telemetry, .canvas-log-panel, .canvas-toolbar")) return;
+        if (!event.isPrimary || !(target instanceof Element) || target.closest("input, textarea, button, [role='dialog'], [role='menu'], .react-flow__controls, .react-flow__minimap, .canvas-telemetry, .canvas-log-panel, .canvas-toolbar")) return;
         if (event.button === 2 && (event.ctrlKey || event.metaKey)) {
           suppressContext.current = true; cutter.current = { points: [{ x: event.clientX, y: event.clientY }], ids: new Set() }; setStroke(cutter.current.points); setMenu(null);
           event.currentTarget.setPointerCapture(event.pointerId); event.preventDefault(); event.stopPropagation(); return;
         }
         if (event.button !== 0) return;
-        const empty = target.matches(".react-flow__pane") || target.closest(".iso-board") && !target.closest(".iso-node, .iso-port, .iso-label, .iso-link, .iso-hud, .iso-flow-label, .canvas-frame-title, .canvas-note");
+        const empty = target.matches(".react-flow__pane");
         if (!empty) return;
         boxDrag.current = { x: event.clientX, y: event.clientY, previous: [...selection], base: event.shiftKey || event.ctrlKey || event.metaKey || event.altKey ? [...selection] : [], subtract: event.altKey, moved: false, lasso, points: [{ x: event.clientX, y: event.clientY }] };
         event.currentTarget.setPointerCapture(event.pointerId); event.preventDefault(); event.stopPropagation();
@@ -1592,7 +1543,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
         const bounds = event.currentTarget.getBoundingClientRect(), left = Math.min(start.x, event.clientX), top = Math.min(start.y, event.clientY), right = Math.max(start.x, event.clientX), bottom = Math.max(start.y, event.clientY), crossing = event.clientX < start.x;
         if (start.lasso) { start.points = [...start.points, { x: event.clientX, y: event.clientY }]; setStroke(start.points); }
         else setSelectionBox({ x: left - bounds.left, y: top - bounds.top, width: right - left, height: bottom - top, crossing });
-        const picked = [...event.currentTarget.querySelectorAll<HTMLElement | SVGGElement>(".react-flow__node:not(.react-flow__node-father):not(.react-flow__node-frame), .iso-node:not([data-kind='father']), .iso-note")].filter(node => {
+        const picked = [...event.currentTarget.querySelectorAll<HTMLElement>(".react-flow__node:not(.react-flow__node-father):not(.react-flow__node-frame)")].filter(node => {
           const box = node.getBoundingClientRect();
           return start.lasso ? insidePolygon({ x: box.x + box.width / 2, y: box.y + box.height / 2 }, start.points)
             : crossing ? box.left <= right && box.right >= left && box.top <= bottom && box.bottom >= top : box.left >= left && box.right <= right && box.top >= top && box.bottom <= bottom;
@@ -1615,15 +1566,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
       onLostPointerCapture={() => { boxDrag.current = null; cutter.current = null; setSelectionBox(null); setStroke(null); }}
       // A double-click on empty board, whichever layer React Flow put under the pointer, creates an agent there.
       onDoubleClick={event => { const target = event.target as Element; if ((target === event.currentTarget || target.closest(".react-flow")) && !target.closest(".react-flow__node, .react-flow__edge, .react-flow__panel, .react-flow__controls, .react-flow__minimap")) addAgent({ x: event.clientX, y: event.clientY }); }}>
-      {iso ? <IsoBoard workflowIdentity={identity} graph={graph} father={split.father} states={states} selected={selection} onSelect={setSelection} onOpen={setDashboardId} onRename={renameAgent} onWireClick={(event, edge) => { if (edge.source !== MOTHER && edge.source !== FATHER) setSelection([edge.id]); editFlow(event, edge); }} dark={dark} controller={isoController} modelLabel={modelLabel}
-        canConnect={validConnection} inserting={insertWire}
-        onReconnect={(edge, source, target) => { connectionCancelled.current = false; reconnect(edge, source, target); }}
-        renamingFrame={renamingFrame} onFrameName={(id, title) => { if (title) { checkpoint(); setGraph(current => ({ ...current, frames: current.frames?.map(frame => frame.id === id ? { ...frame, title } : frame) })); } setRenamingFrame(null); focusBoard(); }} onNoteText={setText}
-        onMoveStart={beginDrag} onMove={moveIso} onMoveEnd={(shift, cancel) => { if (cancel && nodeDrag.current) nodeDrag.current.cancelled = true; finishDrag(shift); }} onMovePreview={id => setInsertWire(nodeDrag.current?.extract ? null : insertionAt(id)?.id ?? null)}
-        onConnect={connect} onAdd={(at, id, end) => addAgent(at, id ? { id, as: end === "source" ? "target" : "source" } : undefined)}
-        onCommand={(at, id, end) => openAdder(at, { id, as: end === "source" ? "target" : "source" })}
-        onNodeMenu={(event, id) => { const node = nodes.find(node => node.id === id); if (node) onNodeContextMenu(event, node); }}
-        onBoardMenu={onPaneContextMenu} onWireMenu={onEdgeClick} /> : <ReactFlow tabIndex={0} aria-label="Workflow board" nodes={nodes} edges={edges} nodeTypes={NODE_TYPES} edgeTypes={EDGE_TYPES} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={({ source, target }) => { if (!connectionCancelled.current) connect(source, target, alongsideDrag.current ? "alongside" : undefined); }} onConnectEnd={onConnectEnd}
+      <ReactFlow tabIndex={0} aria-label="Workflow board" nodes={nodes} edges={edges} nodeTypes={NODE_TYPES} edgeTypes={EDGE_TYPES} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={({ source, target }) => { if (!connectionCancelled.current) connect(source, target, alongsideDrag.current ? "alongside" : undefined); }} onConnectEnd={onConnectEnd}
         onConnectStart={event => { connectionCancelled.current = false; alongsideDrag.current = "altKey" in event && event.altKey; const spot = "touches" in event ? event.touches[0] : event; connectFrom.current = { x: spot.clientX, y: spot.clientY }; }} connectOnClick={false}
         onNodeDoubleClick={(_, node) => { if (node.type === "agent") setDashboardId(node.id); }}
         onEdgeClick={(event, edge) => { if (edge.source !== MOTHER && edge.source !== FATHER) setSelection([edge.id]); editFlow(event, { id: edge.id, source: edge.source, target: edge.target }); }} onEdgeContextMenu={(event, edge) => { event.preventDefault(); onEdgeClick(event, edge); }} onNodeContextMenu={onNodeContextMenu} onPaneContextMenu={onPaneContextMenu} multiSelectionKeyCode={["Shift", "Control", "Meta"]} nodeDragThreshold={5} nodeClickDistance={5} paneClickDistance={5} selectionKeyCode={null} panOnDrag={[1]} panActivationKeyCode={null} panOnScroll zoomOnScroll={false} zoomActivationKeyCode={["Control", "Meta"]} snapToGrid snapGrid={[20, 20]} connectionRadius={32} onNodeClick={onNodeClick}
@@ -1636,7 +1579,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
         <Background variant={BackgroundVariant.Dots} gap={22} size={1.2} />
         <Controls showInteractive={false} fitViewOptions={OVERVIEW} />
         {minimap && <MiniMap pannable zoomable className="canvas-minimap" style={{ width: 150, height: 100 }} />}
-      </ReactFlow>}
+      </ReactFlow>
       {stroke && <svg className="canvas-stroke" aria-hidden="true"><polyline data-tool={cutter.current ? "cut" : "lasso"} points={stroke.map(point => { const box = board.current!.getBoundingClientRect(); return `${point.x - box.left},${point.y - box.top}`; }).join(" ")} /></svg>}
       {lasso && <span className="canvas-gesture-hint" role="status">Lasso · drag to select · Shift adds · Alt subtracts · Esc cancels</span>}
       {insertWire && <span className="canvas-gesture-hint" role="status">Shift-drop to insert on the highlighted wire · Esc cancels</span>}
@@ -1666,10 +1609,10 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
         if (!Number.isInteger(number) || number < 1 || number > PATTERNS.length) { setNotice("Choose a pattern number from 1 to 5."); return; }
         if (run && !over(run)) { setNotice("Wait for this run to finish before changing its pattern."); return; }
         checkpoint(); setGraph(current => applyPattern(current, number)); setPatternCommand(null); setSelection([]); setRun(null); setStates({}); setNotice("");
-        setTimeout(() => fitAll(), 60); board.current?.querySelector<HTMLElement>(".iso-board, .react-flow")?.focus();
+        setTimeout(() => fitAll(), 60); board.current?.querySelector<HTMLElement>(".react-flow")?.focus();
       }}>
         <span className="text-xs">{PATTERNS.map((name, index) => `${index + 1} ${name}`).join(" · ")}</span>
-        <Input aria-label="Workflow pattern" autoFocus inputMode="numeric" value={patternCommand} placeholder="Pattern number · Enter applies · Esc cancels" onChange={event => setPatternCommand(event.target.value)} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setPatternCommand(null); board.current?.querySelector<HTMLElement>(".iso-board, .react-flow")?.focus(); } }} />
+        <Input aria-label="Workflow pattern" autoFocus inputMode="numeric" value={patternCommand} placeholder="Pattern number · Enter applies · Esc cancels" onChange={event => setPatternCommand(event.target.value)} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setPatternCommand(null); board.current?.querySelector<HTMLElement>(".react-flow")?.focus(); } }} />
       </form>}
       {finding !== null && <div className="quick-add hud-menu canvas-search" role="dialog" aria-label="Find on board" onKeyDown={event => {
         if (event.key === "Escape") { event.stopPropagation(); setFinding(null); focusBoard(); }
@@ -1696,7 +1639,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
         waitsFor={inputsNeeded(dashboard.id)} feeds={graph.edges.filter(edge => waits(edge) && edge.source === dashboard.id).map(edge => titleOf(edge.target))}
         onOpenChat={onOpenChat} onSettings={() => { setSelection([dashboard.id]); showPanel(true); setDashboardId(null); }} onClose={() => setDashboardId(null)} />}
       {flowEdit && <div className="canvas-flow-edit" style={{ left: flowEdit.left, top: flowEdit.top }}><CanvasTextEdit key={flowEdit.edge.id} label="Flow label" maxLength={60} value={flowEdit.edge.source === MOTHER ? graph.motherFlow ?? "" : graph.edges.find(edge => edge.id === flowEdit.edge.id)?.label ?? ""} onSave={saveFlow} onCancel={() => setFlowEdit(null)} /></div>}
-      {deleted && <p className="canvas-notice" data-tone="info" role="status"><span title={`Deleted ${deleted}`}>Deleted {deleted} ·</span><Button variant="outline" size="sm" onClick={() => { undo(); board.current?.querySelector<HTMLElement>(".iso-board, .react-flow")?.focus(); }}>Undo</Button></p>}
+      {deleted && <p className="canvas-notice" data-tone="info" role="status"><span title={`Deleted ${deleted}`}>Deleted {deleted} ·</span><Button variant="outline" size="sm" onClick={() => { undo(); board.current?.querySelector<HTMLElement>(".react-flow")?.focus(); }}>Undo</Button></p>}
       {planning && !deleted && <p className="canvas-notice" data-tone="info" role="status">Elpis is on it: {planning.length > 60 ? `${planning.slice(0, 60)}…` : planning}</p>}
       {undoLoad && !notice && !planning && !deleted && <p className="canvas-notice" data-tone="info" role="status">Loaded {undoLoad.loaded}.
         <Button variant="outline" size="sm" onClick={() => { setGraph(undoLoad.previous); setUndoLoad(null); setTimeout(() => void flow.fitView({ ...FIT, duration: 250 }), 60); }}>Undo</Button>

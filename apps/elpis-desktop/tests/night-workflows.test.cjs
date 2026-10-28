@@ -10,12 +10,11 @@ const matrix = (page, selector) => page.locator(selector).evaluate(el => {
   const m = new DOMMatrix(getComputedStyle(el).transform);
   return { zoom: m.a, x: m.e, y: m.f };
 });
-for (const iso of [false, true]) test(`${iso ? 'isometric' : 'flat'}: scroll pans, modifier and pinch zoom at the pointer`, async () => {
+test('scroll pans, modifier and pinch zoom at the pointer', async () => {
   const f = await openCanvas();
   try {
-    if (iso) await f.canvas.getByRole('radio', { name: 'Isometric', exact: true }).click();
-    const board = f.canvas.locator(iso ? '.iso-board' : '.react-flow__pane');
-    const selector = iso ? '.iso-world' : '.react-flow__viewport';
+    const board = f.canvas.locator('.react-flow__pane');
+    const selector = '.react-flow__viewport';
     const box = await board.boundingBox();
     await f.page.mouse.move(box.x + 35, box.y + 35);
     await f.fit(); await f.page.mouse.move(box.x + 35, box.y + 35);
@@ -52,14 +51,11 @@ test('Space opens the numbered command and Escape cancels it', async () => {
     await command.press('Escape'); assert.equal(await command.count(), 0);
   } finally { await f.close(); }
 });
-test('ordinary agents retain distinct identity colors in both views', async () => {
+test('ordinary agents retain distinct identity colors', async () => {
   const f = await openCanvas();
   try {
-    for (const iso of [false, true]) {
-      await f.canvas.getByRole('radio', { name: iso ? 'Isometric' : 'Flat', exact: true }).click();
-      const colors = await f.canvas.locator(iso ? '.iso-node[data-kind="agent"]' : '.agent-node[data-kind="agent"]').evaluateAll(nodes => nodes.map(n => getComputedStyle(n).getPropertyValue('--agent-color').trim()));
-      assert.equal(new Set(colors).size, 4);
-    }
+    const colors = await f.canvas.locator('.agent-node[data-kind="agent"]').evaluateAll(nodes => nodes.map(n => getComputedStyle(n).getPropertyValue('--agent-color').trim()));
+    assert.equal(new Set(colors).size, 4);
   } finally { await f.close(); }
 });
 
@@ -72,7 +68,7 @@ test('Space applies numbered patterns to agents, preserves editable prompts, Esc
     const first = initial.nodes.find(n => n.type === 'agent');
     const command = async number => {
       await f.page.keyboard.press('Escape');
-      await f.canvas.locator('.react-flow__pane, .iso-board').first().click({ position: { x: 20, y: 20 } });
+      await f.canvas.locator('.react-flow__pane').click({ position: { x: 20, y: 20 } });
       await f.page.keyboard.press('Space');
       const field = f.canvas.getByRole('textbox', { name: 'Workflow pattern', exact: true });
       await field.waitFor(); await f.page.keyboard.type(String(number)); await f.page.keyboard.press('Enter');
@@ -102,17 +98,13 @@ test('Space applies numbered patterns to agents, preserves editable prompts, Esc
     await f.page.keyboard.press('Space'); await f.canvas.getByRole('textbox', { name: 'Workflow pattern', exact: true }).press('Escape');
     assert.equal(await f.canvas.getByRole('textbox', { name: 'Workflow pattern', exact: true }).count(), 0);
     await command(5); await f.canvas.getByRole('button', { name: 'Side panel', exact: true }).click(); await fs.mkdir(shots, { recursive: true });
-    for (const iso of [false, true]) {
-      await f.canvas.getByRole('radio', { name: iso ? 'Isometric' : 'Flat', exact: true }).click();
-      if (iso) { await command(2); assert.equal((await f.saved()).edges.length, 0); await command(5); }
-      for (const theme of ['light', 'dark']) {
-        if (await f.page.locator('html').evaluate(el => el.classList.contains('dark')) !== (theme === 'dark')) await chooseTheme(f.page, theme); await f.fit();
-        const selector = iso ? '.iso-node[data-kind="agent"]' : '.agent-node[data-kind="agent"]';
-        const colors = await f.canvas.locator(selector).evaluateAll(nodes => nodes.map(n => getComputedStyle(n).getPropertyValue('--agent-color').trim()));
-        assert.equal(new Set(colors).size, 6, `${iso}/${theme}: one color per agent`);
-        assert.equal(await f.canvas.locator('.iso-portrait, .agent-portrait').count(), 0, 'Workflows shows no character pictures');
-        await f.page.screenshot({ path: `${shots}/${iso ? 'isometric' : 'flat'}-${theme}.png` });
-      }
+    for (const theme of ['light', 'dark']) {
+      if (await f.page.locator('html').evaluate(el => el.classList.contains('dark')) !== (theme === 'dark')) await chooseTheme(f.page, theme); await f.fit();
+      const selector = '.agent-node[data-kind="agent"]';
+      const colors = await f.canvas.locator(selector).evaluateAll(nodes => nodes.map(n => getComputedStyle(n).getPropertyValue('--agent-color').trim()));
+      assert.equal(new Set(colors).size, 6, `${theme}: one color per agent`);
+      assert.equal(await f.canvas.locator('.agent-portrait').count(), 0, 'Workflows shows no character pictures');
+      await f.page.screenshot({ path: `${shots}/flat-${theme}.png` });
     }
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }

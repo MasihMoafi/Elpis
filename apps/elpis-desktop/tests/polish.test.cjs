@@ -72,7 +72,7 @@ for (const theme of ['light', 'dark']) {
     } finally { await f.close(); }
   });
 
-  test(`POLISH R32: shared cut cards, fields and the isometric HUD keep their own border widths (${theme})`, async () => {
+  test(`POLISH R32: shared cut cards and fields keep their own border widths (${theme})`, async () => {
     const f = await settingsFixture(theme), measurements = [], problems = [];
     try {
       const cdp = await f.page.context().newCDPSession(f.page);
@@ -92,14 +92,7 @@ for (const theme of ['light', 'dark']) {
           try { checkWidths(measured, `${theme} ${name} ${selector}`); } catch (error) { problems.push(error.message); }
         }
       }
-      await leaveSettings(f.page);
-      await f.page.getByRole('button', { name: 'Workflows', exact: true }).first().click();
-      await f.page.getByRole('radio', { name: 'Isometric', exact: true }).click();
-      const card = f.page.locator('.iso-status'); await card.waitFor();
-      const measured = await cornerWidths(card); measurements.push({ name: 'Isometric status', ...measured });
-      if (measured.cssWidth <= 0) problems.push('isometric cards must draw a real border rather than a wider clipped background');
-      else try { checkWidths(measured, `${theme} isometric status`); } catch (error) { problems.push(error.message); }
-      if (evidence) { await fs.writeFile(path.join(evidence, `${theme}-shared-corners.json`), JSON.stringify(measurements, null, 2)); await shot(card, path.join(evidence, 'shots'), `${theme}-isometric-status`); }
+      if (evidence) await fs.writeFile(path.join(evidence, `${theme}-shared-corners.json`), JSON.stringify(measurements, null, 2));
       assert.deepEqual(problems, []);
     } finally { await f.close(); }
   });

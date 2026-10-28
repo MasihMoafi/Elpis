@@ -39,28 +39,26 @@ test('the complete chronological log retains starts, tasks, checks and actual re
     await log.getByRole('button', { name: /AGENT STARTED.*Quillon · Answer 1/ }).click();
     const dashboard = canvas.getByRole('dialog', { name: 'Quillon · Answer 1 info' }); await dashboard.waitFor();
     await dashboard.getByRole('button', { name: 'Close info' }).click();
-    await canvas.getByRole('radio', { name: 'Isometric', exact: true }).click();
     await log.getByRole('button', { name: /CHECK PASSED.*Tally/ }).focus(); await page.keyboard.press('Enter');
     await canvas.getByRole('dialog', { name: 'Nuvani · Tally the answers info' }).waitFor();
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
 
-test('the timer advances in either view and stops on completion, including a new run', async () => {
+test('the timer advances and stops on completion, including a new run', async () => {
   const f = await staged(); const { canvas, page } = f;
   try {
-    await canvas.getByRole('radio', { name: 'Isometric', exact: true }).click();
     await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
     const clock = canvas.getByRole('region', { name: 'Run clock', exact: true });
     await clock.waitFor(); const first = await clock.locator('strong').innerText();
     await page.waitForFunction(value => document.querySelector('[aria-label="Run clock"] strong')?.textContent !== value, first);
     // 27 Oct: the clock is a small time beside the run's status in the header, not a block on the board.
     assert.equal(await clock.evaluate(el => Boolean(el.closest('.canvas-header'))), true);
-    await canvas.getByRole('radio', { name: 'Flat', exact: true }).click(); await clock.waitFor();
+    await clock.waitFor();
     f.advance(4); await canvas.locator('.canvas-header').getByRole('status').filter({ hasText: 'Finished' }).waitFor();
     const ended = await clock.locator('strong').innerText(); await page.waitForTimeout(2100);
     assert.equal(await clock.locator('strong').innerText(), ended);
-    await canvas.getByRole('radio', { name: 'Isometric', exact: true }).click(); assert.equal(await clock.locator('strong').innerText(), ended);
+    assert.equal(await clock.locator('strong').innerText(), ended);
     f.advance(0); await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
     await page.waitForFunction(value => document.querySelector('[aria-label="Run clock"] strong')?.textContent !== value, ended);
     assert.equal(await clock.locator('strong').innerText(), '00:00');
@@ -119,11 +117,9 @@ for (const [width, height] of [[1280, 800], [900, 700]]) for (const theme of ['l
         await page.waitForTimeout(400); await assertUiFit(canvas, `automatic run layout ${width} ${theme}`);
       }
       if (state === 'after') { f.advance(4); await canvas.locator('.canvas-header').getByRole('status').filter({ hasText: 'Finished' }).waitFor(); }
-      for (const iso of [false, true]) {
-        await canvas.getByRole('radio', { name: iso ? 'Isometric' : 'Flat', exact: true }).click(); await f.fit();
-        await assertUiFit(canvas, `${state} ${iso ? '3D' : '2D'} ${width} ${theme}`);
-        await page.screenshot({ path: `/tmp/canvas-runlog/${width}-${theme}-${iso ? '3d' : '2d'}-${state}.png` });
-      }
+      await f.fit();
+      await assertUiFit(canvas, `${state} ${width} ${theme}`);
+      await page.screenshot({ path: `/tmp/canvas-runlog/${width}-${theme}-${state}.png` });
     }
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }

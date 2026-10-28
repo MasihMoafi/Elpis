@@ -15,7 +15,7 @@ const off = f => f.page.evaluate(() => document.activeElement?.blur());
 const pick = async (f, id) => { await f.canvas.locator(`.react-flow__node[data-id="${id}"]`).click(); await off(f); };
 const selectedIds = f => f.canvas.locator('.react-flow__node-agent.selected').evaluateAll(nodes => nodes.map(node => node.dataset.id).sort());
 const editing = () => openCanvas({ graph: editingGraph(), autoLayout: false });
-const geometry = graph => ({ nodes: graph.nodes.map(({ id, type, position, isoPosition, data }) => ({ id, type, position, isoPosition, muted: data.muted })), edges: graph.edges, frames: graph.frames });
+const geometry = graph => ({ nodes: graph.nodes.map(({ id, type, position, data }) => ({ id, type, position, muted: data.muted })), edges: graph.edges, frames: graph.frames });
 async function wirePoint(f, id, fraction = .5) {
   return f.canvas.locator(`.react-flow__edge[data-id="${id}"] .react-flow__edge-path`).evaluate((path, fraction) => {
     const point = path.getPointAtLength(path.getTotalLength() * fraction), screen = new DOMPoint(point.x, point.y).matrixTransform(path.getScreenCTM());
@@ -172,14 +172,12 @@ test('Ctrl+F finds existing agents; Enter reveals the chosen result and Escape c
   } finally { await f.close(); }
 });
 
-test('arrows select the nearest agent in that direction without moving it, in both views', async () => {
+test('arrows select the nearest agent in that direction without moving it', async () => {
   const f = await editing();
   try {
     const before = await f.saved(); await pick(f, 'a'); await f.page.keyboard.press('ArrowRight'); assert.deepEqual(await selectedIds(f), ['b']);
     await f.page.keyboard.press('ArrowDown'); assert.deepEqual(await selectedIds(f), ['d']); assert.deepEqual(geometry(await f.saved()), geometry(before));
     await f.canvas.getByRole('textbox', { name: 'Name', exact: true }).focus(); await f.page.keyboard.press('ArrowLeft'); assert.deepEqual(await selectedIds(f), ['d']);
-    await f.canvas.getByRole('radio', { name: 'Isometric', exact: true }).click(); await off(f); await f.page.keyboard.press('ArrowUp');
-    assert.equal(await f.canvas.locator('.iso-node[aria-pressed="true"]').count(), 1); assert.deepEqual(geometry(await f.saved()), geometry(before));
   } finally { await f.close(); }
 });
 
@@ -373,29 +371,26 @@ test('all new keys stay inside menus, Info dialogs and the Add dialog', async ()
   } finally { await f.close(); }
 });
 
-test('flat and isometric views share new editing commands, frame names, note text and the same history', async () => {
+test('the board keeps editing commands, frame names, note text and one history', async () => {
   const f = await editing();
   try {
-    for (const iso of [true, false]) {
-      await f.canvas.getByRole('radio', { name: iso ? 'Isometric' : 'Flat', exact: true }).click(); await f.fit();
-      const node = id => f.canvas.locator(iso ? `.iso-node[data-id="${id}"]` : `.react-flow__node[data-id="${id}"]`);
-      await node('b').click(); await off(f); const before = geometry(await f.saved());
-      await f.page.keyboard.press('Alt+ArrowRight'); assert.equal((await f.saved()).nodes.find(n => n.id === 'b').position.x, before.nodes.find(n => n.id === 'b').position.x + 20);
-      await f.page.keyboard.press('Control+z'); assert.deepEqual(geometry(await f.saved()), before);
-      await f.page.keyboard.press('m'); assert.equal((await f.saved()).nodes.find(n => n.id === 'b').data.muted, true); await f.page.keyboard.press('Control+z');
-      await f.page.keyboard.press('Control+g'); await f.page.keyboard.press('F2'); const field = f.canvas.getByRole('textbox', { name: 'Frame name', exact: true }); await field.fill('Shared stage'); await f.page.keyboard.press('Enter'); await off(f);
-      assert.equal((await f.saved()).frames[0].title, 'Shared stage'); await f.page.keyboard.press('Control+Shift+g'); assert.equal((await f.saved()).frames.length, 0);
-      const view = () => f.canvas.locator(iso ? '.iso-world' : '.react-flow__viewport').getAttribute(iso ? 'transform' : 'style');
-      const originalView = await view(); await f.page.keyboard.press('-'); await f.page.waitForTimeout(300); assert.notEqual(await view(), originalView); await f.page.keyboard.press('0');
-      await f.page.keyboard.press('Control+f'); await f.canvas.getByRole('textbox', { name: 'Find agents', exact: true }).fill('C'); await f.page.keyboard.press('Enter');
-      const selected = iso ? await f.canvas.locator('.iso-node[aria-pressed="true"]').getAttribute('data-id') : (await selectedIds(f))[0]; assert.equal(selected, 'c');
-      assert.equal(await f.canvas.getByRole('textbox', { name: 'Note', exact: true }).inputValue(), 'Personal');
-      // Find centred C, which can leave A outside the board: show the whole graph before pointing at it.
-      // Double-click opens Info on the flat board and renames on the isometric one (tests/canvas-editing.test.cjs pins it).
-      await f.fit(); await node('a').dblclick();
-      if (iso) { await f.canvas.getByRole('textbox', { name: 'Rename agent', exact: true }).waitFor(); await f.page.keyboard.press('Escape'); }
-      else { await f.canvas.getByRole('dialog', { name: 'A info', exact: true }).waitFor(); await f.page.keyboard.press('Escape'); }
-    }
+    await f.fit();
+    const node = id => f.canvas.locator(`.react-flow__node[data-id="${id}"]`);
+    await node('b').click(); await off(f); const before = geometry(await f.saved());
+    await f.page.keyboard.press('Alt+ArrowRight'); assert.equal((await f.saved()).nodes.find(n => n.id === 'b').position.x, before.nodes.find(n => n.id === 'b').position.x + 20);
+    await f.page.keyboard.press('Control+z'); assert.deepEqual(geometry(await f.saved()), before);
+    await f.page.keyboard.press('m'); assert.equal((await f.saved()).nodes.find(n => n.id === 'b').data.muted, true); await f.page.keyboard.press('Control+z');
+    await f.page.keyboard.press('Control+g'); await f.page.keyboard.press('F2'); const field = f.canvas.getByRole('textbox', { name: 'Frame name', exact: true }); await field.fill('Shared stage'); await f.page.keyboard.press('Enter'); await off(f);
+    assert.equal((await f.saved()).frames[0].title, 'Shared stage'); await f.page.keyboard.press('Control+Shift+g'); assert.equal((await f.saved()).frames.length, 0);
+    const view = () => f.canvas.locator('.react-flow__viewport').getAttribute('style');
+    const originalView = await view(); await f.page.keyboard.press('-'); await f.page.waitForTimeout(300); assert.notEqual(await view(), originalView); await f.page.keyboard.press('0');
+    await f.page.keyboard.press('Control+f'); await f.canvas.getByRole('textbox', { name: 'Find agents', exact: true }).fill('C'); await f.page.keyboard.press('Enter');
+    const selected = (await selectedIds(f))[0]; assert.equal(selected, 'c');
+    assert.equal(await f.canvas.getByRole('textbox', { name: 'Note', exact: true }).inputValue(), 'Personal');
+    // Find centred C, which can leave A outside the board: show the whole graph before pointing at it.
+    // Double-click opens Info.
+    await f.fit(); await node('a').dblclick();
+    await f.canvas.getByRole('dialog', { name: 'A info', exact: true }).waitFor(); await f.page.keyboard.press('Escape');
   } finally { await f.close(); }
 });
 

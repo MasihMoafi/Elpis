@@ -5,23 +5,21 @@ const { openCanvas } = require('./canvas-fixture.cjs');
 const { uiFit, assertUiFit } = require('./ui-fit.cjs');
 const { chooseTheme, openPatterns } = require('./controls.cjs');
 
-for (const [width, height] of [[1280, 800], [900, 700]]) for (const theme of ['light', 'dark']) test(`text fits in both views, Add and settings: ${width}×${height} ${theme}`, async () => {
+for (const [width, height] of [[1280, 800], [900, 700]]) for (const theme of ['light', 'dark']) test(`text fits on the board, Add and settings: ${width}×${height} ${theme}`, async () => {
   const f = await openCanvas({ width, height }); const { page, canvas } = f;
   try {
     if (await page.locator('html').evaluate(el => el.classList.contains('dark')) !== (theme === 'dark')) await chooseTheme(page, theme);
     await page.waitForTimeout(350);
-    for (const iso of [false, true]) {
-      await canvas.getByRole('radio', { name: iso ? 'Isometric' : 'Flat', exact: true }).click(); await f.fit();
-      await assertUiFit(canvas, `${iso ? '3D' : '2D'} canvas`);
-      if (iso) await canvas.locator('.iso-node[aria-label^="Quillon · Part 1:"]').click(); else await f.node('Quillon · Part 1').click();
-      const panel = canvas.getByRole('complementary', { name: 'Selected agent', exact: true });
-      await panel.getByRole('textbox', { name: 'Name', exact: true }).fill('A long agent name that needs a complete tooltip when the label is shortened');
-      await f.fit(); await assertUiFit(panel, 'agent settings');
-      await assertUiFit(canvas, `${iso ? '3D' : '2D'} long labels`);
-      await fs.mkdir('/tmp/canvas-rebuild', { recursive: true }); await page.screenshot({ path: `/tmp/canvas-rebuild/fit-${width}-${theme}-${iso ? 'iso' : 'flat'}.png` });
-      await panel.getByRole('textbox', { name: 'Name', exact: true }).fill('Quillon · Part 1');
-      await panel.getByRole('button', { name: 'Done', exact: true }).click();
-    }
+    await f.fit();
+    await assertUiFit(canvas, 'canvas');
+    await f.node('Quillon · Part 1').click();
+    const panel = canvas.getByRole('complementary', { name: 'Selected agent', exact: true });
+    await panel.getByRole('textbox', { name: 'Name', exact: true }).fill('A long agent name that needs a complete tooltip when the label is shortened');
+    await f.fit(); await assertUiFit(panel, 'agent settings');
+    await assertUiFit(canvas, 'long labels');
+    await fs.mkdir('/tmp/canvas-rebuild', { recursive: true }); await page.screenshot({ path: `/tmp/canvas-rebuild/fit-${width}-${theme}.png` });
+    await panel.getByRole('textbox', { name: 'Name', exact: true }).fill('Quillon · Part 1');
+    await panel.getByRole('button', { name: 'Done', exact: true }).click();
     await canvas.getByRole('button', { name: /^Command/ }).click();
     const add = canvas.getByRole('dialog', { name: 'Add agents', exact: true });
     await add.getByRole('textbox', { name: 'Command', exact: true }).fill('astra xhigh @anthropic-credits claude-opus-5-5 with a long prompt that wraps across several visible lines\nA second line that must remain readable');
@@ -31,7 +29,7 @@ for (const [width, height] of [[1280, 800], [900, 700]]) for (const theme of ['l
 });
 
 // The live run (tests/canvas-live.runtime.mjs) found the finished board's run clock taller than its line box.
-for (const theme of ['light', 'dark']) test(`a finished run's board fits in both views: clock, log and statuses, ${theme}`, async () => {
+for (const theme of ['light', 'dark']) test(`a finished run's board fits: clock, log and statuses, ${theme}`, async () => {
   const f = await openCanvas({ width: 1440, height: 900 }); const { page, canvas } = f;
   try {
     if (await page.locator('html').evaluate(el => el.classList.contains('dark')) !== (theme === 'dark')) await chooseTheme(page, theme);
@@ -40,10 +38,8 @@ for (const theme of ['light', 'dark']) test(`a finished run's board fits in both
     await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
     await page.waitForFunction(() => /Finished/.test(document.querySelector('.canvas-header')?.textContent ?? ''), null, { timeout: 20000 });
     await canvas.getByRole('region', { name: 'Run clock' }).or(canvas.getByLabel('Run clock')).first().waitFor();
-    for (const iso of [false, true]) {
-      await canvas.getByRole('radio', { name: iso ? 'Isometric' : 'Flat', exact: true }).click(); await f.fit();
-      await assertUiFit(canvas, `finished ${iso ? '3D' : '2D'} board`);
-    }
+    await f.fit();
+    await assertUiFit(canvas, 'finished board');
   } finally { await f.close(); }
 });
 
