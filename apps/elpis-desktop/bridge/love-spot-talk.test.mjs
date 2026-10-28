@@ -259,6 +259,18 @@ test('a recorded user item replaces the provisional prompt and only the final an
   assert.deepEqual((await f.store.read()).scene.elements.filter(e => e.type === 'text').map(e => e.originalText), ['The answer']);
 });
 
+test('without phases, only her last message becomes the note: words before a tool call are not written on the board', async t => {
+  const f = await fixture(t);
+  await f.talk.send({ text: 'Draw the engine', model: 'text' });
+  for (const item of [
+    { id: 'look', type: 'agentMessage', text: 'Need facts. Look quickly.' },
+    { id: 'answer', type: 'agentMessage', text: 'Here it is.' },
+  ]) f.client.emit('event', { type: 'message', data: { method: 'item/completed', params: { threadId: 'chat', turnId: 'turn-1', item } } });
+  f.client.emit('event', { type: 'message', data: { method: 'turn/completed', params: { threadId: 'chat', turn: { id: 'turn-1', status: 'completed', items: [] } } } });
+  await f.talk.idle();
+  assert.deepEqual((await f.store.read()).scene.elements.filter(e => e.type === 'text').map(e => e.originalText), ['Here it is.']);
+});
+
 test('a reply started on another page stays in Talk and does not write onto the newly selected page', async t => {
   const f = await fixture(t);
   await f.talk.send({ text: 'About the original page', model: 'text' });

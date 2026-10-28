@@ -7,6 +7,9 @@ const OPEN_FENCE = /```excalidraw[\s\S]*$/;
 const COLOR = /^#[0-9a-fA-F]{6}$/;
 const TYPES = new Set(['rectangle', 'ellipse', 'diamond', 'line', 'arrow', 'text']);
 const MAX_SHAPES = 60, MAX_POINTS = 50;
+// Styles she may choose; anything else falls back to the board's hand-drawn default. Fonts: 5 hand-drawn, 6 normal, 7 bold display, 8 code.
+const STROKES = new Set(['solid', 'dashed', 'dotted']), FILLS = new Set(['solid', 'hachure', 'cross-hatch']), ALIGNS = new Set(['left', 'center', 'right']);
+const FONTS = new Map([[5, 0.62], [6, 0.56], [7, 0.56], [8, 0.62]]); // average glyph width per font size, to size text boxes
 
 const number = (value, low, high, fallback) => Number.isFinite(value) ? Math.min(high, Math.max(low, value)) : fallback;
 
@@ -17,12 +20,17 @@ function shapeFrom(raw) {
     strokeColor: COLOR.test(raw.strokeColor) ? raw.strokeColor : '#e03131',
     backgroundColor: COLOR.test(raw.backgroundColor) ? raw.backgroundColor : 'transparent',
     strokeWidth: number(raw.strokeWidth, 1, 6, 2),
+    roughness: Math.round(number(raw.roughness, 0, 2, 1)),
+    strokeStyle: STROKES.has(raw.strokeStyle) ? raw.strokeStyle : 'solid',
+    fillStyle: FILLS.has(raw.fillStyle) ? raw.fillStyle : 'solid',
+    opacity: Math.round(number(raw.opacity, 10, 100, 100)),
   };
   if (raw.type === 'text') {
     if (typeof raw.text !== 'string' || !raw.text.trim()) return null;
     const text = raw.text.slice(0, 200), fontSize = number(raw.fontSize, 12, 48, 20), lines = text.split('\n');
-    return { ...shape, text, fontSize, x: number(raw.x, -4000, 4000, 0), y: number(raw.y, -4000, 4000, 0),
-      width: Math.ceil(Math.max(...lines.map(line => Array.from(line).length)) * fontSize * 0.62), height: Math.ceil(lines.length * fontSize * 1.4) };
+    const fontFamily = FONTS.has(raw.fontFamily) ? raw.fontFamily : 5, textAlign = ALIGNS.has(raw.textAlign) ? raw.textAlign : 'left';
+    return { ...shape, text, fontSize, fontFamily, textAlign, x: number(raw.x, -4000, 4000, 0), y: number(raw.y, -4000, 4000, 0),
+      width: Math.ceil(Math.max(...lines.map(line => Array.from(line).length)) * fontSize * FONTS.get(fontFamily)), height: Math.ceil(lines.length * fontSize * 1.4) };
   }
   if (raw.type === 'line' || raw.type === 'arrow') {
     if (!Array.isArray(raw.points) || raw.points.length < 2 || raw.points.length > MAX_POINTS) return null;
@@ -34,6 +42,11 @@ function shapeFrom(raw) {
   }
   return { ...shape, x: number(raw.x, -4000, 4000, 0), y: number(raw.y, -4000, 4000, 0), width: number(raw.width, 4, 2000, 60), height: number(raw.height, 4, 2000, 60) };
 }
+
+/** Her note as the board shows it: plain text, so Markdown marks (bold, code, headings, bullets) are taken out. */
+const plainNote = text => text.split('\n').map(line => line
+  .replace(/^\s{0,3}#{1,6}\s+/, '').replace(/^(\s*)[-*+]\s+/, '$1• ')
+  .replace(/\*\*(.+?)\*\*|__(.+?)__/g, (_, a, b) => a ?? b).replace(/`([^`\n]+)`/g, '$1')).join('\n');
 
 /** A reply split into the note to write and the shapes to draw; a block that is not valid JSON draws nothing and is still taken out. */
 function parsePainting(body) {
@@ -51,11 +64,11 @@ function splitPainting(reply) {
     shapes.push(...parsePainting(body).slice(0, MAX_SHAPES - shapes.length));
     return '';
   }).replace(OPEN_FENCE, '').replace(/\n{3,}/g, '\n\n').trim();
-  return { note, shapes };
+  return { note: plainNote(note), shapes };
 }
 
 /** What the person reads while a reply streams: the note without the block, finished or not. */
-const withoutPainting = reply => String(reply ?? '').replace(FENCE, '').replace(OPEN_FENCE, '').replace(/\n{3,}/g, '\n\n').trim();
+const withoutPainting = reply => plainNote(String(reply ?? '').replace(FENCE, '').replace(OPEN_FENCE, '').replace(/\n{3,}/g, '\n\n').trim());
 
 const left = shape => shape.left ?? shape.x, top = shape => shape.top ?? shape.y;
 /** The size of the painting the shapes make together. */
@@ -71,10 +84,10 @@ function paintElements(shapes, origin, turnId, outer, now = Date.now()) {
   const minX = Math.min(...shapes.map(left)), minY = Math.min(...shapes.map(top)), group = `love-paint-${turnId}`;
   return shapes.map((shape, index) => {
     const base = { id: `love-paint-${turnId}-${index}`, type: shape.type, x: origin.x + shape.x - minX, y: origin.y + shape.y - minY, width: shape.width, height: shape.height, angle: 0,
-      strokeColor: shape.strokeColor, backgroundColor: shape.backgroundColor, fillStyle: 'solid', strokeWidth: shape.strokeWidth, strokeStyle: 'solid', roughness: 1, opacity: 100,
+      strokeColor: shape.strokeColor, backgroundColor: shape.backgroundColor, fillStyle: shape.fillStyle, strokeWidth: shape.strokeWidth, strokeStyle: shape.strokeStyle, roughness: shape.roughness, opacity: shape.opacity,
       groupIds: outer ? [group, outer] : [group], frameId: null, roundness: shape.type === 'rectangle' || shape.type === 'diamond' ? { type: 3 } : null, seed: 1 + index, version: 1, versionNonce: index,
       isDeleted: false, boundElements: null, updated: now, link: null, locked: false };
-    if (shape.type === 'text') return { ...base, fontSize: shape.fontSize, fontFamily: 5, text: shape.text, originalText: shape.text, textAlign: 'left', verticalAlign: 'top', containerId: null, autoResize: true, lineHeight: 1.25 };
+    if (shape.type === 'text') return { ...base, fontSize: shape.fontSize, fontFamily: shape.fontFamily, text: shape.text, originalText: shape.text, textAlign: shape.textAlign, verticalAlign: 'top', containerId: null, autoResize: true, lineHeight: 1.25 };
     if (shape.type === 'line' || shape.type === 'arrow') return { ...base, points: shape.points, lastCommittedPoint: null, startBinding: null, endBinding: null, startArrowhead: null, endArrowhead: shape.type === 'arrow' ? 'arrow' : null };
     return base;
   });

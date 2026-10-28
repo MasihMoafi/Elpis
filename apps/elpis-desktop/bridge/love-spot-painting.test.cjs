@@ -20,3 +20,19 @@ test('inline SVG uses the same connector positions, escapes labels and refuses b
   assert.equal(diagramSvg('[broken]'), null);
   assert.equal(diagramSvg('[]'), null);
 });
+
+test('a painting keeps the clean styles she chooses and falls back to the board defaults for anything else', () => {
+  const [box, title, bad] = paintElements(splitPainting(fence([
+    { type: 'rectangle', x: 0, y: 0, width: 200, height: 60, roughness: 0, strokeStyle: 'dashed', fillStyle: 'hachure', opacity: 60 },
+    { type: 'text', x: 10, y: 10, text: 'Engine', fontFamily: 7, textAlign: 'center', roughness: 0 },
+    { type: 'text', x: 10, y: 40, text: 'Note', fontFamily: 99, textAlign: 'justify', roughness: 9, strokeStyle: 'wavy', fillStyle: 'gradient', opacity: 0 },
+  ])).shapes, { x: 0, y: 0 }, 'styles', undefined, 0);
+  assert.deepEqual([box.roughness, box.strokeStyle, box.fillStyle, box.opacity], [0, 'dashed', 'hachure', 60]);
+  assert.deepEqual([title.fontFamily, title.textAlign, title.roughness], [7, 'center', 0]);
+  assert.deepEqual([bad.fontFamily, bad.textAlign, bad.roughness, bad.strokeStyle, bad.fillStyle, bad.opacity], [5, 'left', 2, 'solid', 'solid', 10]);
+});
+
+test('her note is plain text: Markdown marks never reach the board', () => {
+  const { note } = splitPainting('## Plan\n**Engine** keeps the `thread`.\n- one\n* two\n1. three\n__done__');
+  assert.equal(note, 'Plan\nEngine keeps the thread.\n• one\n• two\n1. three\ndone');
+});
