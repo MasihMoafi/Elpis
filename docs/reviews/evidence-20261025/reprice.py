@@ -6,11 +6,15 @@ confirmatory experiment. Rates are the archived September 2026 estimates.
 """
 import hashlib
 import json
+import os
 import pathlib
 import subprocess
 
 REPO = pathlib.Path(__file__).resolve().parents[3]
-ARCHIVES = pathlib.Path('/home/masih/Desktop/p/Elpis/docs/evals/final-data')
+# The archives are gitignored, so they sit in the main checkout, not in a worktree; ELPIS_FINAL_DATA names another folder.
+MAIN = pathlib.Path(subprocess.run(['git', '-C', str(REPO), 'rev-parse', '--path-format=absolute', '--git-common-dir'],
+                                   capture_output=True, text=True, check=True).stdout.strip()).parent
+ARCHIVES = pathlib.Path(os.environ.get('ELPIS_FINAL_DATA') or MAIN / 'docs/evals/final-data')
 RATE_FILE = REPO / 'docs/evals/rq3/LUNA_PUBLISHED_RATES_2026-09-08.json'
 COHORTS = ['COST-E1-NONE-B-LUNA-20260908-01', 'COST-E2-32-NONE-LUNA-20260908-01']
 FIELDS = ['input_tokens', 'cached_input_tokens', 'cache_write_tokens', 'output_tokens', 'reasoning_output_tokens', 'total_tokens']
@@ -22,7 +26,9 @@ def read(p):
 
 
 def fingerprint(p):
-    return {'path': str(p), 'sha256': hashlib.sha256(p.read_bytes()).hexdigest()}
+    # Repo-relative, so the receipt is the same from any checkout and holds no home path.
+    name = pathlib.Path('docs/evals/final-data', p.relative_to(ARCHIVES)) if p.is_relative_to(ARCHIVES) else p.relative_to(REPO)
+    return {'path': str(name), 'sha256': hashlib.sha256(p.read_bytes()).hexdigest()}
 
 
 def total(usages):
