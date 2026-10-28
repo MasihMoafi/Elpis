@@ -146,8 +146,9 @@ const app = agent({ name: "fake-acp-agent" })
     if (text.includes("[ignore-cancel]")) await new Promise(() => {});
     if (text.includes("[hang]")) { await new Promise((resolve) => { s.cancelled = resolve; }); return { stopReason: "cancelled" }; }
     if (process.env.FAKE_ACP_WRITE) {
-      const { file, text } = JSON.parse(process.env.FAKE_ACP_WRITE);
-      fs.writeFileSync(file, text);
+      // `when`: write only when the prompt says so (a step that fixes its work only once its check's findings reach it).
+      const { file, text: content, when } = JSON.parse(process.env.FAKE_ACP_WRITE);
+      if (!when || text.includes(when)) fs.writeFileSync(file, content);
     }
     let checked;
     if (process.env.FAKE_ACP_EXPECT) {

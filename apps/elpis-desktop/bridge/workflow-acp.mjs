@@ -377,6 +377,9 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
         const answers = new Map(), running = new Map();
         record.tasks.forEach(task => { if (resuming && round === record.round && task.status === 'succeeded') { answers.set(task.id, task.result.summary); return; } task.status = 'pending'; task.failureReason = null; task.assignedThreadId = null; task.result = null; });
         const byId = new Map(record.tasks.map(t => [t.id, t]));
+        /** The one finished step a failed check sends back, once per check. */
+        const fixable = (task, error) => task.kind === 'verify' && !task.fixed && /^Check failed:/.test(error?.message ?? '')
+          && task.dependsOn.map(id => byId.get(id)).find(step => step?.kind !== 'verify' && step.status === 'succeeded');
         const run = async task => {
           try {
             if (controller.signal.aborted) throw new BridgeError('Workflow cancelled', 409);
@@ -416,13 +419,21 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
             try { completed = await attempt(); }
             catch (error) {
               task.failureReason = error.message;
+              // A failed check goes back to its step first (below); Mother is asked only once that fix is spent.
+              if (fixable(task, error)) throw error;
               if (!await supervise(record, task, error, root, controller)) throw error;
               completed = await attempt();
             }
             const { result, changes } = completed;
             answers.set(task.id, result.answer); task.result = { summary: result.answer, ...changes }; task.status = 'succeeded'; task.failureReason = null;
           } catch (error) {
-            task.status = controller.signal.aborted ? 'cancelled' : 'failed'; task.failureReason = error.message;
+            const step = !controller.signal.aborted && fixable(task, error);
+            if (step) {
+              // 28 Oct: a check found a dropped clause and the run stopped, since Mother may only retry the failed node, the
+              // check itself. Its step runs once more with the findings, then the check runs again; a second failure stops.
+              task.fixed = true; task.status = 'pending'; task.failureReason = null;
+              step.status = 'pending'; step.supervisorInstruction = `Your check found a problem: ${error.message.replace(/^Check failed: /, '')}\nFix exactly that in your files and change nothing else.`;
+            } else { task.status = controller.signal.aborted ? 'cancelled' : 'failed'; task.failureReason = error.message; }
           }
           cancelCheckpoints(record, task, 'The child finished before guidance could be delivered.');
           controls.delete(`${record.id}:${task.id}`);

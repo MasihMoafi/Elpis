@@ -176,6 +176,21 @@ test('failed verification cannot release a downstream writer', { timeout: 20000 
   const g = await f.finished(r.graphId); assert.equal(g.status, 'failed');
   assert.equal(g.tasks.find(t => t.id === 'check').status, 'failed'); assert.equal(f.log('next').length, 0);
 });
+// 28 Oct, Masih: the OCR run "shouldn't take this long" and must finish with no further input. Its check found a dropped
+// clause and the run stopped, because Mother may only retry the failed node, the check itself. A failed check now sends
+// its step back once with the check's findings, and the step is checked again.
+test('a failed check sends its step back once with the findings, then checks again and the run goes on', { timeout: 20000 }, async t => {
+  const env = { workflowFake: {} }, f = fixture(t, { env }); fs.mkdirSync(path.join(f.dir, 'src')); const out = path.join(f.dir, 'src', 'out.txt');
+  Object.assign(env.workflowFake, { writer: { FAKE_ACP_WRITE: JSON.stringify({ file: out, text: 'fixed', when: 'Your check found a problem' }) }, check: { FAKE_ACP_EXPECT: JSON.stringify({ file: out, text: 'fixed' }) } });
+  await f.client.initialize();
+  const r = await f.run([{ ...task('writer'), kind: 'implement', writeScopes: ['src'] }, { ...task('check', ['writer']), kind: 'verify' }, task('next', ['check'])]);
+  const g = await f.finished(r.graphId); assert.equal(g.status, 'succeeded', g.error);
+  const prompts = f.log('writer').filter(entry => entry.method === 'session/prompt').map(entry => JSON.stringify(entry.params));
+  assert.equal(prompts.length, 2, 'the step ran once more');
+  assert.match(prompts[1], /The planted result did not arrive/, 'with its check\u2019s findings');
+  assert.ok(f.log('next').length > 0, 'and the run went on');
+});
+
 test('every agent writes: a check gets its own folder, and folders the run names are created inside the project only', { timeout: 20000 }, async t => {
   const f = fixture(t); await f.client.initialize();
   const outside = fs.mkdtempSync(path.join(path.dirname(f.dir), 'outside-')); fs.symlinkSync(outside, path.join(f.dir, 'link'));
