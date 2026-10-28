@@ -119,6 +119,8 @@ test('Talk is Matilda: who she is goes with every message, and only as text she 
   assert.equal(f.sent[1].attachments[0].name, 'Love Spot notes.txt', 'the board notes stay first');
   f.finish('turn-2'); await f.talk.idle();
   await f.talk.send({ text: 'No persona sent', model: 'text' }); assert.equal(f.sent[2].attachments.some(a => a.name === 'Who you are.txt'), false);
+  // How to paint goes with every turn too, so a chat created before the painting rules changed still follows the current ones.
+  assert.deepEqual(f.sent.map(s => /roughness/.test(s.attachments.find(a => a.name === 'How to paint.txt')?.text ?? '')), [true, true, true]);
   f.finish('turn-3'); await f.talk.idle();
   await assert.rejects(f.talk.send({ text: 'Hi', model: 'text', persona: 'x'.repeat(4001) }), /persona/i); assert.equal(f.sent.length, 3);
 });
