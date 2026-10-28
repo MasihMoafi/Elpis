@@ -4,7 +4,7 @@ import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import "@xyflow/react/dist/style.css";
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { Background, BackgroundVariant, BaseEdge, Controls, Handle, MarkerType, MiniMap, Position, ReactFlow, ReactFlowProvider, applyEdgeChanges, applyNodeChanges, getBezierPath, useReactFlow, useStoreApi, type Edge, type EdgeProps, type EdgeChange, type FinalConnectionState, type Node, type NodeChange, type NodeProps, type XYPosition } from "@xyflow/react";
-import { Check, ChevronRight, Copy, ExternalLink, FileText, FolderOpen, ListOrdered, Pencil, Play, Plus, StickyNote, Trash2, X } from "lucide-react";
+import { Check, ChevronRight, Copy, ExternalLink, FileText, FolderOpen, ListOrdered, Pencil, Play, Plus, Square, StickyNote, Trash2, X } from "lucide-react";
 import { AgentsIcon } from "@/components/elpis-icons";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1491,6 +1491,9 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
             while it runs (28 Oct: a running board wrapped them onto a second row). */}
         {run && <span className="canvas-chip" role="status"><i className="canvas-dot" data-status={over(run) ? run.father?.status ?? run.status : "running"} />{over(run) ? ENDED[run.status === "succeeded" ? run.father?.status ?? run.status : run.status] ?? "Finished" : run.father?.threadId ? "Running · the Father's part" : "Running"} · {done} of {agents.length} done</span>}
         {run && runClock}
+        {/* Stop cancels the whole run: the engine treats an interrupt of the run's own chat as cancelling it (28 Oct:
+            "a running workflow has no cancel control anywhere"). */}
+        {run && !over(run) && <Button type="button" variant="outline" size="sm" aria-label="Stop run" title="Stop this run: every agent stops, finished work is kept" onClick={() => void api(`/threads/${encodeURIComponent(run.rootThreadId)}/interrupt`, {}).catch((cause: unknown) => setNotice(cause instanceof Error ? cause.message : String(cause)))}><Square size={14} />Stop</Button>}
         {run && over(run) && graph.result && <Button type="button" variant="outline" size="sm" onClick={openResult}><FileText size={14} />Open {graph.result.split("/").at(-1)}</Button>}
         {!ready && <p id={offlineReasonId} role="status" className="w-full text-xs text-muted-foreground">{OFFLINE_WORKFLOW}</p>}
       </form>}

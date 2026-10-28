@@ -5,7 +5,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { openCanvas, planFor } = require('./canvas-fixture.cjs');
 const { assertUiFit } = require('./ui-fit.cjs');
-const { captureReview, chooseTheme, openPatterns } = require('./controls.cjs');
+const { captureReview, chooseOption, chooseTheme, openPatterns } = require('./controls.cjs');
 const { fixture, THREADS } = require('./parity-fixture.cjs');
 const reportPlan = body => ({ name: 'Pointt review', agents: [{ key: 'evidence', title: 'Review evidence', prompt: body.goal, folders: [], doneWhen: ['Return the observed findings'], waitsFor: [] }] });
 
@@ -646,4 +646,26 @@ test('the Workflows page has no Flat/Isometric toggle', async () => {
     assert.equal(await page.getByRole('radio', { name: 'Flat' }).count(), 0);
     assert.deepEqual(errors, []);
   } finally { await close(); }
+});
+
+// 28 Oct (arch-drawer, filming for Masih): "Ctrl+click on agent nodes does not multi-select, so the shared Model menu
+// cannot put a team on one model." Ctrl+click adds an agent to the selection, a second Ctrl+click takes it out again,
+// and the selected team shares one Model menu.
+test('Ctrl+click picks several agents, and their shared Model menu puts the team on one model', async () => {
+  const f = await openCanvas();
+  try {
+    const node = title => f.canvas.locator('.react-flow__node-agent').filter({ hasText: title }).first();
+    const selected = f.canvas.locator('.react-flow__node-agent.selected');
+    await node('Part 1').click(); await node('Part 2').click({ modifiers: ['Control'] }); await node('Part 3').click({ modifiers: ['Control'] });
+    assert.equal(await selected.count(), 3, 'three agents picked');
+    await node('Part 3').click({ modifiers: ['Control'] });
+    assert.equal(await selected.count(), 2, 'a second Ctrl+click takes one out');
+    const group = f.canvas.getByRole('complementary', { name: 'Selected agents', exact: true });
+    await group.getByText(/^2 agents selected$/i).waitFor();
+    await chooseOption(group.getByRole('combobox', { name: 'Model', exact: true }), '|gpt-6.1-sol');
+    await f.page.waitForTimeout(400);
+    const models = (await f.saved()).nodes.filter(n => n.type === 'agent' && /Part [12]/.test(n.data.title)).map(n => n.data.model);
+    assert.deepEqual(models, ['gpt-6.1-sol', 'gpt-6.1-sol']);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
 });

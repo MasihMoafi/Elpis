@@ -42,6 +42,27 @@ test('a run asks for worktree isolation in a git repository with more than one w
   assert.equal('isolation' in await sent({ graph: ALONE, repository: true }), false);
 });
 
+// 28 Oct (arch-drawer, filming for Masih): "a running workflow has no cancel control anywhere". The run's status has
+// Stop beside it while the run goes on; Stop asks the engine to cancel the run (its root chat's interrupt), and the
+// status then says Cancelled. A board with no run has no Stop.
+test('a running workflow has Stop beside its status, and Stop cancels it', async () => {
+  let f;
+  const stopped = () => f.posts.some(post => /^\/api\/threads\/[^/]+\/interrupt$/.test(post.path));
+  const look = item => ({ id: item.graphId, name: item.name, status: stopped() ? 'cancelled' : 'running', error: stopped() ? 'Workflow cancelled' : undefined,
+    tasks: item.tasks.map(task => ({ id: task.id, kind: task.kind, title: task.title, status: stopped() ? 'cancelled' : 'running', assignedThreadId: null })) });
+  f = await openCanvas({ graph: TEAM, listed: look });
+  try {
+    const stop = f.canvas.getByRole('button', { name: 'Stop run', exact: true });
+    assert.equal(await stop.count(), 0, 'no run, no Stop');
+    await run(f.canvas);
+    await stop.click();
+    assert.equal(f.posts.filter(post => post.path.endsWith('/interrupt')).map(post => post.path)[0], `/api/threads/${f.runs[0].rootThreadId}/interrupt`);
+    await f.canvas.getByRole('status').filter({ hasText: /Cancelled · 0 of 3 done/ }).waitFor();
+    assert.equal(await stop.count(), 0, 'an ended run has no Stop');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
 // 28 Oct, Masih's screenshot: "Finished · 0 of 2 done" over a run whose steps were all cancelled. A run is Finished only
 // when it succeeded; one that stopped says Cancelled or Failed and the run log says why.
 test('a stopped run says Cancelled, not Finished, and the run log says why it stopped', async () => {
