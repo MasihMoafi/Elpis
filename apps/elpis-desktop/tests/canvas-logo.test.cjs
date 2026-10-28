@@ -7,7 +7,8 @@ const { openCanvas } = require('./canvas-fixture.cjs');
 const { chooseOption } = require('./controls.cjs');
 
 const OPUS = { id: 'opus', model: 'claude/opus', displayName: 'Opus 5.5' };
-const TRACE = 'SVG_STUDIO_MODULE=/home/masih/Desktop/p/svg/mcp-server/dist/vectorize.js node /home/masih/Desktop/p/skills/logo/scripts/trace.mjs';
+// Launch list (27 Oct): the tracer comes from the environment Elpis starts with, defaulting to this workstation's layout under $HOME.
+const TRACE = 'SVG_STUDIO_MODULE="${SVG_STUDIO_MODULE:-$HOME/Desktop/p/svg/mcp-server/dist/vectorize.js}" node "${ELPIS_LOGO_SCRIPTS:-$HOME/Desktop/p/skills/logo/scripts}/trace.mjs"';
 
 test('Logo builds Designer, Curator, Tracer and Critic in order for the brand in the request box, and runs with no planner', async () => {
   const f = await openCanvas({ desktop: true, files: { '.': ['README.md'] }, extraModels: [OPUS] });
@@ -37,6 +38,8 @@ test('Logo builds Designer, Curator, Tracer and Critic in order for the brand in
     assert.match(tracer.data.instruction, /logo\/logo\.svg/);
     assert.match(tracer.data.instruction, /24, 32 and 64 px/);
     assert.deepEqual(tracer.data.writeScopes, ['logo']);
+    assert.match(tracer.data.instruction, /if node cannot find vectorize\.js or trace\.mjs, stop and say SVG Studio is not set up/i, 'a missing tracer is reported, not worked around');
+    assert.ok(agents.every(a => !/\/home\//.test(a.data.instruction + a.data.check)), 'no instruction names one person\'s home folder');
     assert.match(critic.data.instruction, /logo\/logo\.svg/);
     assert.match(critic.data.instruction, /fail/);
     assert.ok(critic.data.writeScopes[0].startsWith('agents/'), 'the Critic writes only its own folder');

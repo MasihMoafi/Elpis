@@ -5,11 +5,15 @@ import { agent, chain, graphOf, ownFolders, type AgentData, type CanvasGraph } f
  * draws three numbered directions with the image generation tool, a Curator rejects and selects with reasons, a Tracer converts the
  * chosen original through SVG Studio and frames it, and a Critic judges the source/vector pair and the sheet. One after the other,
  * all in logo/ inside the project. `worker` is the model of the four: the ChatGPT route, whose agents have the image tool. */
-const SVG_STUDIO = "/home/masih/Desktop/p/svg/mcp-server/dist/vectorize.js";
-const SCRIPTS = "/home/masih/Desktop/p/skills/logo/scripts";
+// The tracer is outside this repository, so the agent's shell finds it in the environment Elpis starts with (README.md):
+// SVG_STUDIO_MODULE, SVG Studio's built vectorize.js, and ELPIS_LOGO_SCRIPTS, the logo skill's scripts; the defaults are this
+// workstation's layout. The renderer cannot read either, so the shell expands them.
+const SVG_STUDIO = `SVG_STUDIO_MODULE="\${SVG_STUDIO_MODULE:-$HOME/Desktop/p/svg/mcp-server/dist/vectorize.js}"`;
+const script = (name: string) => `"\${ELPIS_LOGO_SCRIPTS:-$HOME/Desktop/p/skills/logo/scripts}/${name}"`;
 /** The skill's CLI wrapper (its steps 5–6): workflow agents start with the person's MCP servers off, so the MCP tool is not there. */
-export const traceCommand = (source: string, output: string) => `SVG_STUDIO_MODULE=${SVG_STUDIO} node ${SCRIPTS}/trace.mjs ${source} ${output} 24`;
-const proofCommand = (sheet: string, source: string, vector: string) => `SVG_STUDIO_MODULE=${SVG_STUDIO} node ${SCRIPTS}/proof.mjs ${sheet} ${source} ${vector}`;
+export const traceCommand = (source: string, output: string) => `${SVG_STUDIO} node ${script("trace.mjs")} ${source} ${output} 24`;
+const proofCommand = (sheet: string, source: string, vector: string) => `${SVG_STUDIO} node ${script("proof.mjs")} ${sheet} ${source} ${vector}`;
+const MISSING = "If node cannot find vectorize.js or trace.mjs, stop and say SVG Studio is not set up: SVG_STUDIO_MODULE must name its built mcp-server/dist/vectorize.js and ELPIS_LOGO_SCRIPTS the logo skill's scripts folder, in the environment Elpis starts with. Draw no vector by hand.";
 // 28 Oct, the first live run: a check that may prove things any way it likes read the engine's session logs for seven
 // minutes. A check judges the named files by sight and opens nothing else.
 const VISION = "by your own vision. Run no scripts, and open only the files named here: no logs, chat records or tool output.";
@@ -31,7 +35,7 @@ export function logoTeam(folder: string, brand: string, worker: Partial<AgentDat
       check: `Open the three candidates beside choice.md, ${VISION} Say whether the chosen one is the cleanest mark with the clearest negative space, or which is.` });
   const tracer = agent("Tracer", [
     `Read ${choice}: its first line names the chosen candidate, N. Trace that original with SVG Studio's tracer through its CLI wrapper (the MCP tool is off in this chat), from the project's folder:`,
-    traceCommand(chosen, output),
+    traceCommand(chosen, output), MISSING,
     `Then frame the viewBox optically: the ink's bounds plus an even margin, the paths unchanged. Keep every hole (compound paths with their inner contours) and every explicit fill; redraw nothing.`,
     `Write ${sheet}: logo.svg inline at 24, 32 and 64 px, once on white and once on #10151d. Then make the proof sheet of the pair: ${proofCommand(proof, chosen, output)}`,
     `Answer with the paths of logo.svg, sheet.html and proof.png.`].join("\n"),
