@@ -3,7 +3,6 @@
 import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import "@xyflow/react/dist/style.css";
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
-import { ResizeEdge } from "@/components/resize-edge";
 import { Background, BackgroundVariant, BaseEdge, Controls, Handle, MarkerType, MiniMap, Position, ReactFlow, ReactFlowProvider, applyEdgeChanges, applyNodeChanges, getBezierPath, useReactFlow, useStoreApi, type Edge, type EdgeProps, type EdgeChange, type FinalConnectionState, type Node, type NodeChange, type NodeProps, type XYPosition } from "@xyflow/react";
 import { Check, ChevronRight, Copy, ExternalLink, FileText, FolderOpen, ListOrdered, Pencil, Play, Plus, Square, StickyNote, Trash2, X } from "lucide-react";
 import { AgentsIcon } from "@/components/elpis-icons";
@@ -32,8 +31,6 @@ import { appStorage } from "@/lib/projects";
 import { filesText, mergeStops, runPayload, stopText, wantsIsolation } from "@/lib/canvas-isolation";
 import { PATTERNS, WORKFLOWS, LANGUAGES, languageOf, type Language, type ReadyMade, agentCount, WHOLE_PROJECT, applyPattern, agent, ownFolders, agentColor, CHECK_LABEL, COLUMN, DONE, FATHER, MOTHER, STATUS_LABEL, TASKS_PER_AGENT, waits, TEMPLATES, agentName, promptName, applyPlan, arrange, boardForPlan, checkOf, commandParts, shapeOf, makesLoop, maxAgents, newAgents, newId, parseCommand, parents, initialGraph, runParts, saveGraph, waves, withMother, type AgentData, type CanvasEdge, type CanvasGraph, type CanvasNode, type CatalogModel, type Command, type MotherSettings, type NoteData, type Plan, type RunTask, type TaskStatus } from "@/lib/canvas";
 
-/** The workflow side panel: 290 px by default, dragged wider or narrower by its left edge. */
-const CANVAS_SIDE = { min: 240, initial: 290, max: 640 };
 
 /** A run: the Mother's part, and the Father's when the graph has more agents than she runs (lib/canvas.ts `parents`):
  * his tasks wait in `father` until her part has succeeded, then run in his own chat. */
@@ -486,9 +483,6 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
   // The side panel folds away to give the board the whole width, remembered on this device; choosing an agent or the
   // Mother brings it back.
   const [panelOpen, setPanelOpen] = useState(() => { try { return appStorage().getItem("elpis-canvas-panel") !== "closed"; } catch { return true; } });
-  // The side panel's width: dragged by the same edge as the chat side panel, kept across visits (Masih, 28 Oct).
-  const [sideWidth, setSideWidth] = useState<number | null>(() => { try { return Number(appStorage().getItem("elpis-canvas-panel-width")) || null; } catch { return null; } });
-  const resizeSide = (width: number) => { setSideWidth(width); try { appStorage().setItem("elpis-canvas-panel-width", String(width)); } catch { /* kept for this session only */ } };
   const showPanel = (open: boolean) => { setPanelOpen(open); try { appStorage().setItem("elpis-canvas-panel", open ? "open" : "closed"); } catch { /* kept for this session only */ } setTimeout(() => void flow.fitView({ ...FIT, duration: 250 }), 60); };
   useEffect(() => { if (selection.length && !panelOpen && !boxDrag.current) showPanel(true); }, [selection, selectionBox, stroke]); // eslint-disable-line react-hooks/exhaustive-deps
   const project = useProjectFolders(cwd);
@@ -1532,8 +1526,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
   const capturedLog = run && <ol ref={logList} className="canvas-log" role="log" aria-label="Run log" aria-live="polite" aria-relevant="additions" onScroll={event => { const el = event.currentTarget; followLog.current = el.scrollHeight - el.scrollTop - el.clientHeight < 12; }}>
     {log.map((line, index) => <li key={`${line.at}-${index}`} data-tone={line.tone}><Button variant="ghost" size="xs" className="w-full justify-start" title={line.at === undefined ? line.text : `Observed +${clock(line.at - run.startedAt)} · ${line.text}`} onClick={() => { if (line.agent) { setSelection([line.agent]); setDashboardId(line.agent); } else setSelection([MOTHER]); }}>{line.at !== undefined && <time>+{clock(line.at - run.startedAt)}</time>}<span title={line.text}>{line.text}</span></Button></li>)}
   </ol>;
-  const sideEdge = <ResizeEdge className="side-resize" label="Resize workflow panel" width={sideWidth} min={CANVAS_SIDE.min} max={CANVAS_SIDE.max} initial={CANVAS_SIDE.initial} grows="left" onResize={resizeSide} onClose={() => showPanel(false)} />;
-  return <section className="agents-canvas" aria-label="Workflows" style={sideWidth ? { "--canvas-side-width": `${sideWidth}px` } as CSSProperties : undefined} data-recorded={recordedRun ? true : undefined} data-panel={panelOpen ? "open" : "closed"}>
+  return <section className="agents-canvas" aria-label="Workflows" data-recorded={recordedRun ? true : undefined} data-panel={panelOpen ? "open" : "closed"}>
     <header className="canvas-header">
       {recordedRun ? <div className="flex w-full flex-wrap items-center justify-between gap-2"><span className="text-sm text-muted-foreground">Saved workflow{!run && " · Loading…"}</span><Button size="sm" onClick={onLeaveRecordedRun} disabled={!onLeaveRecordedRun}>New workflow</Button></div> : <form className="flex w-full min-w-0 flex-wrap items-end gap-2" aria-label="New workflow" onSubmit={event => { event.preventDefault(); void letElpis(requestText, undefined, true); }}>
         <label className="field canvas-request">What should the workflow do?<Input aria-label="Workflow request" value={requestText} maxLength={8000} placeholder="Describe what you want to achieve" onChange={event => setGraph(current => ({ ...current, request: event.target.value }))} /></label>
@@ -1727,7 +1720,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
         <Button variant="outline" size="sm" onClick={() => { setGraph(undoLoad.previous); setUndoLoad(null); setTimeout(() => void flow.fitView({ ...FIT, duration: 250 }), 60); }}>Undo</Button>
         <Button variant="ghost" size="icon-xs" aria-label="Dismiss" onClick={() => setUndoLoad(null)}><X size={13} /></Button></p>}
     </div>
-    {!panelOpen ? null : sourceId ? <WorkflowSources id={sourceId} onBack={() => setSourceId(null)} edge={sideEdge} /> : selected ? <aside className="canvas-side" aria-label="Selected agent">{sideEdge}
+    {!panelOpen ? null : sourceId ? <WorkflowSources id={sourceId} onBack={() => setSourceId(null)} /> : selected ? <aside className="canvas-side" aria-label="Selected agent">
       <p className="hud-menu-title">Agent{states[selected.id] ? ` · ${STATUS_LABEL[states[selected.id].status]}` : ""} · {CHECK_LABEL[states[checkOf(selected.id)]?.status ?? "idle"]}</p>
       <label>Name<Input ref={nameField} aria-label="Name" title={selected.data.title} value={selected.data.title} maxLength={256} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); promptField.current?.focus(); } }} onChange={event => edit({ title: event.target.value })} /></label>
       <label>Prompt<Textarea ref={promptField} aria-label="Prompt" rows={5} value={selected.data.instruction} placeholder="What this agent should do; left empty, Elpis fills it from the goal" onChange={event => edit({ instruction: event.target.value, title: promptName(selected.data, event.target.value) })} /></label>
@@ -1759,7 +1752,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
         <Button variant="ghost" size="sm" className="text-destructive" onClick={() => remove([selected.id])}><Trash2 size={14} />Delete agent</Button>
         <Button variant="outline" size="sm" className="ml-auto" onClick={() => setSelection([])}>Done</Button>
       </div>
-    </aside> : chosen.length > 1 ? <aside className="canvas-side" aria-label="Selected agents">{sideEdge}
+    </aside> : chosen.length > 1 ? <aside className="canvas-side" aria-label="Selected agents">
       <p className="hud-menu-title">{chosen.length} agents selected</p>
       <p className="canvas-help">{chosen.map(node => node.data.title || "Untitled").join(", ")}</p>
       <label>Model<OptionSelect aria-label="Model" value={shared(choiceKey)} onChange={event => edit(modelPatch(event.target.value))}>{mixed}{modelOptions()}</OptionSelect></label>
@@ -1768,7 +1761,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
         <Button variant="ghost" size="sm" className="text-destructive" onClick={() => remove(chosen.map(node => node.id))}><Trash2 size={14} />Delete {chosen.length} agents <kbd>Delete</kbd></Button>
         <Button variant="outline" size="sm" className="ml-auto" onClick={() => setSelection([])}>Done</Button>
       </div>
-    </aside> : motherOpen ? <aside className="canvas-side" aria-label="Mother">{sideEdge}
+    </aside> : motherOpen ? <aside className="canvas-side" aria-label="Mother">
       <p className="hud-menu-title">Mother · the run&rsquo;s chat</p>
       <p className="canvas-help">Every agent is her child: she starts the ones that wait for no one, and every report comes back to her. These settings apply to the whole run.</p>
       <label>Goal (every agent gets it)<Textarea aria-label="Goal" rows={4} value={mother.brief} placeholder="What should this run achieve? Elpis can design the team from it." onChange={event => setMother({ brief: event.target.value })} /></label>
@@ -1788,7 +1781,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
         {run?.father?.threadId && <Button variant="outline" size="sm" onClick={() => onOpenChat(run.father!.threadId!)}><ExternalLink size={14} />Open the Father&rsquo;s chat</Button>}
         <Button variant="outline" size="sm" className="ml-auto" onClick={() => setSelection([])}>Done</Button>
       </div>
-    </aside> : <aside className="canvas-side" aria-label="Architectures">{sideEdge}
+    </aside> : <aside className="canvas-side" aria-label="Architectures">
       <details open={morePatterns} onToggle={event => { if (event.target === event.currentTarget) setMorePatterns(event.currentTarget.open); }}>
         <DisclosureSummary>More patterns</DisclosureSummary>
       <section className="canvas-templates" aria-label="Ready-made workflows"><p className="hud-menu-title">Ready-made workflows</p>
