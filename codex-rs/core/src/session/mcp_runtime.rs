@@ -377,11 +377,9 @@ impl Session {
             desired.environments.ready_environment_handles(),
         );
         McpRuntimeInput {
-            startup_policy: if matches!(desired.session_source, SessionSource::SubAgent(_)) {
-                McpStartupPolicy::LazyWhenCached
-            } else {
-                McpStartupPolicy::Eager
-            },
+            // Every thread, not only subagents, waits for first use when its server's tools are
+            // already cached: each loaded thread otherwise started its own copy of every server.
+            startup_policy: McpStartupPolicy::LazyWhenCached,
             config: mcp_config,
             plugins_available,
             ready_selected_capability_roots: ready_selected_capability_roots.to_vec(),

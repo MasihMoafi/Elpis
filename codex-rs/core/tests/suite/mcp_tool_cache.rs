@@ -581,7 +581,7 @@ async fn cached_http_mcp_starts_lazily_for_subagents(
 
 // Keep spawned tasks on the thread with the scoped tracing subscriber.
 #[tokio::test(flavor = "current_thread")]
-async fn cached_mcp_startup_is_eager_for_root_and_lazy_for_subagents() -> anyhow::Result<()> {
+async fn cached_mcp_startup_is_lazy_for_root_and_subagent_threads() -> anyhow::Result<()> {
     skip_if_wine_exec!(
         Ok(()),
         "requires a Windows test_stdio_server in the Wine-exec environment"
@@ -671,17 +671,34 @@ async fn cached_mcp_startup_is_eager_for_root_and_lazy_for_subagents() -> anyhow
         &format!("Echo from {first_process}."),
     );
 
+    // A second root thread with the same server reuses the cached tools and starts nothing.
     let NewThread {
-        thread: eager_thread,
+        thread: root_thread,
         ..
     } = fixture
         .thread_manager
         .start_thread(StartThreadOptions::new(fixture.config.clone()))
         .await?;
-    let eager_pid = wait_for_new_pid(fs.as_ref(), &pid_file, Some(&first_pid)).await?;
-    wait_for_mcp_server(&eager_thread, SERVER_NAME).await?;
-    eager_thread.shutdown_and_wait().await?;
-    let cached_process = process_label(&eager_pid);
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let (root_mcp_config, _) = root_thread.current_mcp_config_and_runtime_context().await;
+    assert_eq!(
+        root_thread
+            .mcp_connection_statuses(&root_mcp_config)
+            .await
+            .get(SERVER_NAME),
+        Some(&McpServerConnectionStatus::NotStarted),
+        "a cached server must stay dormant in a second root thread"
+    );
+    assert_eq!(
+        fs.read_file_text(&pid_file, Default::default(), /*sandbox*/ None)
+            .await?
+            .trim(),
+        first_pid,
+        "a second root thread must not start its own copy of a cached MCP server"
+    );
+    root_thread.shutdown_and_wait().await?;
+    let eager_pid = first_pid.clone();
+    let cached_process = first_process.clone();
 
     fs.remove(
         &barrier_file,
