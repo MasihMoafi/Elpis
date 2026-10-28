@@ -787,6 +787,28 @@ test('a message to a chat the app wrongly thinks busy is delivered, not refused 
   await assert.rejects(client.steer(CREATED, { text: 'Review this', expectedTurnId: 'running-turn' }), /different output schema/);
 });
 
+test('a message steered into a compaction is handed back for the queue, not refused or sent as a new turn', async () => {
+  const { client, socket } = fixture(); await client.initialize(); await client.models();
+  await client.createThread({ model: MODEL });
+  // As the engine (codex-rs app-server turn_processor.rs): a compact turn cannot be steered.
+  const send = socket.send;
+  socket.send = raw => {
+    const request = JSON.parse(raw);
+    if (request.method !== 'turn/steer') return send(raw);
+    socket.sent.push(request); queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, error: { code: -32600, message: 'cannot steer a compact turn' } })));
+  };
+  assert.deepEqual(await client.steer(CREATED, { text: 'After compacting', expectedTurnId: 'compact-turn' }), { compacting: true });
+  assert.equal(socket.sent.filter(row => row.method === 'turn/start').length, 0, 'nothing starts beside the compaction');
+  assert.equal(socket.sent.filter(row => row.method === 'thread/turns/list').length, 0);
+  // A review turn still says why it refuses.
+  socket.send = raw => {
+    const request = JSON.parse(raw);
+    if (request.method !== 'turn/steer') return send(raw);
+    socket.sent.push(request); queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, error: { code: -32600, message: 'cannot steer a review turn' } })));
+  };
+  await assert.rejects(client.steer(CREATED, { text: 'Review this', expectedTurnId: 'review-turn' }), /cannot steer a review turn/);
+});
+
 test('approvals are only forwarded for owned roots and only accept exact offered decisions, including amendments', async () => {
   const { client, socket } = fixture(); await client.initialize(); await client.createThread({});
   const events = []; client.on('event', event => events.push(event));

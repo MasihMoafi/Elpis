@@ -71,8 +71,11 @@ export async function sendFollowUpNow(threadId: string, id: string, activeTurnId
   if (!item) return;
   removeFollowUp(threadId, id);
   try {
-    if (activeTurnId) await api(`/threads/${encodeURIComponent(threadId)}/steer`, { text: item.text, expectedTurnId: activeTurnId, ...(item.attachments.length ? { attachments: item.attachments } : {}), ...(item.mentions?.length ? { mentions: item.mentions } : {}) });
-    else await sendTurn(threadId, item);
+    if (activeTurnId) {
+      const reply = await api<{ compacting?: boolean }>(`/threads/${encodeURIComponent(threadId)}/steer`, { text: item.text, expectedTurnId: activeTurnId, ...(item.attachments.length ? { attachments: item.attachments } : {}), ...(item.mentions?.length ? { mentions: item.mentions } : {}) });
+      // The running turn compacts the chat's history: the message waits first in line for its end.
+      if (reply.compacting) set(threadId, [item, ...(queues[threadId] ?? [])]);
+    } else await sendTurn(threadId, item);
   } catch (error) { set(threadId, [item, ...(queues[threadId] ?? [])]); throw error; }
 }
 export function useFollowUps(threadId?: string) {

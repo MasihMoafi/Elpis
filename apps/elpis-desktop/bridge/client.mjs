@@ -2018,6 +2018,8 @@ export class DesktopClient extends EventEmitter {
       await this.#workflowRuns.noteManualSteer(id);
       try { return await this.#rpc('turn/steer', params); }
       catch (error) {
+        // A compaction cannot take a message (codex-rs turn_processor.rs): the app queues it for the compaction's end.
+        if (fallback && error.code === -32600 && /^cannot steer a compact turn/.test(error.engineMessage ?? '')) return { compacting: true };
         // The turn the app saw has ended or another replaced it: the message joins the running
         // turn, or starts a new one, as in the terminal, instead of failing.
         if (!fallback || error.code !== -32600 || !/^(no active turn to steer|expected active turn id)/.test(error.engineMessage)) throw error;

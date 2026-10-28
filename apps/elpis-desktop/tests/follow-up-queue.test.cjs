@@ -138,6 +138,19 @@ test('several queued messages collapse into a stack that opens, sends one now, r
   await collapse.waitFor({ state: 'detached' });
 }));
 
+test('a message sent while the chat compacts its history waits in the queue and goes when compaction ends', () => using({ routes: { '/api/threads/chat-a/steer': () => ({ compacting: true }) } }, async f => {
+  const { page } = f;
+  await type(f, 'after the compaction', 'Enter');
+  await queueList(page).getByText('after the compaction', { exact: true }).waitFor();
+  assert.deepEqual(steered(f), ['after the compaction'], 'it tried to steer first');
+  assert.equal(await page.getByText(/cannot steer a compact turn/).count(), 0, 'no error is shown');
+  const sent = () => f.posts.filter(post => post.path === '/api/threads/chat-a/turns').map(post => post.body.text);
+  assert.deepEqual(sent(), []);
+  f.emit('message', { method: 'turn/completed', params: { threadId: 'chat-a', turn: { id: 't4', status: 'completed', items: [] } } });
+  await queueList(page).waitFor({ state: 'detached' });
+  assert.deepEqual(sent(), ['after the compaction'], 'the compaction\'s end sends it as a new turn');
+}));
+
 test('Settings says how Follow-up behavior and the keys work together', () => using({}, async f => {
   const { page } = f;
   await openSettings(page);
