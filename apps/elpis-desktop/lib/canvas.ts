@@ -12,7 +12,9 @@ export { waits };
  * folders the agent may write ("." is the whole project) besides its own folder (`ownFolders`). */
 export type AgentData = { character?: string; characterImage?: string; muted?: boolean; title: string; instruction: string; model: string | null; provider?: string | null; effort?: string | null; writeScopes: string[]; acceptanceCriteria: string[];
   /** How its check proves the work, when a ready-made workflow knows better than running the build or the tests. */
-  check?: string };
+  check?: string;
+  /** Done by Elpis, not an agent: `parts` written in order into `output` (`flow`: pages that may end mid-sentence). */
+  join?: { parts: string[]; output: string; flow?: boolean } };
 export type NoteData = { text: string };
 type Position = { x: number; y: number };
 export type CanvasNode = { id: string; type: "agent"; position: Position; data: AgentData } | { id: string; type: "note"; position: Position; data: NoteData }
@@ -34,7 +36,7 @@ export const agentCount = (n: number) => `${n} ${n === 1 ? "agent" : "agents"}`;
 export const STATUS_LABEL: Record<TaskStatus | "idle", string> = { idle: "not run", pending: "waiting", running: "running", succeeded: "done", failed: "failed", blocked: "blocked", cancelled: "cancelled" };
 export const CHECK_LABEL: Record<TaskStatus | "idle", string> = { idle: "Checked after it runs", pending: "Check waits for it", running: "Being checked", succeeded: "Check passed", failed: "Check failed", blocked: "Check blocked", cancelled: "Check cancelled" };
 /** `reasoningEffort` is the agent's thinking level, checked by its adapter and model. */
-export type RunTask = { id: string; kind: "implement" | "verify"; title: string; instruction: string; dependsOn: string[]; writeScopes: string[]; acceptanceCriteria: string[]; provider?: string; model?: string; reasoningEffort?: string; feedbackFrom?: string[] };
+export type RunTask = { id: string; kind: "implement" | "verify" | "join"; parts?: string[]; output?: string; flow?: boolean; title: string; instruction: string; dependsOn: string[]; writeScopes: string[]; acceptanceCriteria: string[]; provider?: string; model?: string; reasoningEffort?: string; feedbackFrom?: string[] };
 
 /** The Mother node: the chat a run starts in. Every agent is her child; she starts the agents that wait for no one and
  * owns the run's reports. She is drawn, never sent: the scheduler takes her chat as its root thread. */
@@ -334,7 +336,7 @@ export function runTasks(graph: CanvasGraph): { tasks: RunTask[] } | { error: st
   }
   const own = ownFolders(graph);
   const brief = graph.mother?.brief.trim();
-  return { tasks: agents.flatMap(node => {
+  return { tasks: agents.flatMap((node): RunTask[] => {
     const title = node.data.title.trim(), prompt = node.data.instruction.trim();
     const folder = own.get(node.id)!, scopes = [...node.data.writeScopes.filter(scope => scope !== folder), folder];
     const partners = beside(node.id).map(other => `“${other.data.title}” (writes ${[...other.data.writeScopes, own.get(other.id)].join(", ")}): ${other.data.instruction.trim().split("\n")[0]}`);
@@ -344,10 +346,15 @@ export function runTasks(graph: CanvasGraph): { tasks: RunTask[] } | { error: st
     if (!incoming.some(waits) && graph.motherFlow?.trim()) receives.unshift(`Receives “${graph.motherFlow.trim()}” from Mother.`);
     const criteria = node.data.acceptanceCriteria.length ? node.data.acceptanceCriteria : [DONE];
     const model = { ...(node.data.provider ? { provider: node.data.provider } : {}), ...(node.data.model ? { model: node.data.model } : {}) };
+    // A join has no check, so what waits on it waits on the join alone.
+    const dependsOn = graph.edges.filter(edge => waits(edge) && edge.target === node.id && ids.has(edge.source)).flatMap(edge => byId.get(edge.source)?.data.join ? [edge.source] : [edge.source, checkOf(edge.source)]);
+    // Elpis does a join itself: no agent, no model, no check (28 Oct: an agent and its check spent three minutes pasting).
+    if (node.data.join) return [{ id: node.id, kind: "join",  title, instruction: prompt || title, dependsOn, writeScopes: scopes, acceptanceCriteria: criteria,
+      parts: node.data.join.parts, output: node.data.join.output, ...(node.data.join.flow ? { flow: true } : {}) } satisfies RunTask];
     return [
       // Every writer receives the shared brief and its own prompt. Its final ACP answer feeds its check and successors.
       { id: node.id, kind: "implement" as const, title, instruction: [brief && `Goal of the whole run: ${brief}`, receives.join("\n"), prompt, `Save your result as files inside your allowed folders. ${report(folder, false)} Include the answer and file paths in your final answer so the next agent can use them.`, graph.template === "voting" && node.id === agents.at(-1)?.id ? "Compare the connected agents’ independent answers. Give the majority conclusion and explain disagreements with evidence." : "", alongside].filter(Boolean).join("\n\n"),
-        dependsOn: graph.edges.filter(edge => waits(edge) && edge.target === node.id && ids.has(edge.source)).flatMap(edge => [edge.source, checkOf(edge.source)]),
+        dependsOn,
         ...(graph.template === "recursive" ? { feedbackFrom: graph.edges.filter(edge => edge.feedback && edge.target === node.id).flatMap(edge => [edge.source, checkOf(edge.source)]) } : {}),
         writeScopes: scopes, acceptanceCriteria: criteria, ...model, ...(node.data.effort ? { reasoningEffort: node.data.effort } : {}) },
       { id: checkOf(node.id), kind: "verify" as const, title: `Check: ${title}`.slice(0, 256),
@@ -466,26 +473,31 @@ export function agentColor(id: string, data: AgentData): string {
  * six pages reads them by its own vision, never an OCR tool, and one agent joins the parts in page order. `reader` is the
  * readers' model (Gemini 3.8 Flash when the catalogue has it). */
 export const PAGE_IMAGE = /\.(png|jpe?g|webp|gif)$/i;
-// A join only puts finished parts together, so it reads nothing else and a diff is its whole check (28 Oct: a join of one
-// reader's file ran OCR on the pages for two minutes).
-const JOIN_ONLY = "Open no other file or folder than the parts, and run no OCR.";
-const JOIN_CHECK = "Compare the joined file with the parts: a diff is enough. Run no OCR.";
+/** At most this many readers or translators at once; more pages are shared out evenly. */
+const AT_ONCE = 8;
+/** Items in order, shared over at most `most` groups as evenly as possible. */
+const share = <T,>(items: T[], most: number): T[][] => { const n = Math.min(items.length, most); return Array.from({ length: n }, (_, i) => items.slice(Math.round(i * items.length / n), Math.round((i + 1) * items.length / n))); };
+// 28 Oct, Masih: "Why is it taking so excruciatingly long?" One reader did two pages in a row, thinking hard first, and an
+// agent with its own check spent three minutes pasting one file: now one reader per page, side by side, and Elpis joins.
 export function transcriptionTeam(folder: string, files: string[], reader: Partial<AgentData> = {}): CanvasGraph {
   const at = (name: string) => folder === "." ? name : `${folder}/${name}`, output = at("transcription.md");
   const pages = files.filter(name => PAGE_IMAGE.test(name)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-  const batches = Array.from({ length: Math.ceil(pages.length / 6) }, (_, index) => pages.slice(index * 6, index * 6 + 6));
-  const readers = batches.map((batch, index) => agent(`Pages ${index * 6 + 1}–${index * 6 + batch.length}`, [
-    `Open each of these page images in order and read it with your own vision. Do not run OCR tools or scripts. Open no other file or folder: everything you need is on these pages.`,
+  let next = 1;
+  const groups = share(pages, AT_ONCE).map(batch => { const from = next; next += batch.length; return { batch, span: batch.length === 1 ? `Page ${from}` : `Pages ${from}–${from + batch.length - 1}` }; });
+  const readers = groups.map(({ batch, span }) => agent(span, [
+    `Open ${batch.length === 1 ? "this page image" : "each of these page images in order"} and read it with your own vision. Do not run OCR tools or scripts. Open no other file or folder: everything you need is on ${batch.length === 1 ? "this page" : "these pages"}.`,
     ...batch.map(name => `- ${at(name)}`),
-    `Transcribe the pages into clean Markdown in your own folder as pages.md: keep the wording exactly, headings as headings, lists and examples as they are; leave out page numbers and running headers and footers. Answer with the path of pages.md.`,
-  ].join("\n"), { ...reader, acceptanceCriteria: [`pages.md holds pages ${index * 6 + 1}–${index * 6 + batch.length} in order`, "Its wording matches the page images word for word"],
+    `Transcribe into clean Markdown in your own folder as pages.md: keep the wording exactly, headings as headings, lists and examples as they are; leave out page numbers and running headers and footers. If the last sentence runs on to the next page, end with it unfinished. Answer with the path of pages.md.`,
+  ].join("\n"), { ...reader, acceptanceCriteria: [`pages.md holds ${span.toLowerCase()}${batch.length > 1 ? " in order" : ""}`, "Its wording matches the page images word for word"],
     check: "Look at each page image beside pages.md, by your own vision, and compare them passage by passage. Run no scripts or OCR. Quote any passage that differs, or say none does." }));
-  const join = agent("Join the pages", `Join every reader's pages.md, in page order, into ${output}: one document, with paragraphs split across pages joined and repeated running headers removed. Change no other wording. ${JOIN_ONLY}`,
-    { ...reader, writeScopes: [folder], acceptanceCriteria: [`${output} holds every page in order`, "No wording was changed"], check: JOIN_CHECK });
+  const join = agent("Join the pages", "", { writeScopes: [folder], acceptanceCriteria: [`${output} holds every page in order`] });
   // Each reader writes only in its own folder, said outright, so Run graph has nothing to fill in and starts at once.
   const team = graphOf("Transcribe images", [...readers, join], fan(readers, [join])), own = ownFolders(team);
+  const parts = readers.map(item => `${own.get(item.id)}/pages.md`);
   return { ...team, result: output, planningPattern: "transcribe",
-    nodes: team.nodes.map(node => node.type === "agent" && node.id !== join.id ? { ...node, data: { ...node.data, writeScopes: [own.get(node.id)!] } } : node) };
+    nodes: team.nodes.map(node => node.type !== "agent" ? node : node.id === join.id
+      ? { ...node, data: { ...node.data, instruction: `Elpis puts the readers' pages together, in page order, into ${output}.`, join: { parts, output, flow: true } } }
+      : { ...node, data: { ...node.data, writeScopes: [own.get(node.id)!] } }) };
 }
 /** farsi-translator's translation rules (p/farsi-translator/workflow.md, the method of the pilot Masih accepted on 23 Oct). */
 const FARSI_RULES = `Translate every source clause into fluent conversational Farsi, preserving meaning and emphasis.
@@ -524,8 +536,7 @@ export function translationTeam(folder: string, parts: TextPart[], worker: Parti
     { ...worker, acceptanceCriteria: ["glossary.md lists every name and recurring term", "Each Farsi spelling is the one Farsi readers know"] });
   const translators = parts.map(part => agent(`${files.length > 1 ? `${part.file} ` : ""}${lines(part)[0].toUpperCase()}${lines(part).slice(1)}`, "",
     { ...worker, acceptanceCriteria: [`part.md translates every sentence of ${lines(part)} of ${part.file}, adding nothing`, "Its verbs are spoken Farsi («میرم», not «می‌روم»)", "Names and terms follow glossary.md"] }));
-  const join = agent("Join the parts", "", {
-    ...worker, writeScopes: [folder], acceptanceCriteria: [`${output} holds every part in order`, "No wording was changed"] });
+  const join = agent("Join the parts", "", { writeScopes: [folder], acceptanceCriteria: [`${output} holds every part in order`] });
   const team = graphOf("Translate to Farsi", [terms, ...translators, join], [...fan([terms], translators), ...fan(translators, [join])]), own = ownFolders(team);
   const glossary = `${own.get(terms.id)}/glossary.md`;
   const instruction = (part: TextPart) => [`Translate ${lines(part)} of ${at(part.file)} from English into Farsi. Read the lines just before them for context only.`,
@@ -535,23 +546,24 @@ export function translationTeam(folder: string, parts: TextPart[], worker: Parti
   const done = new Map<string, Partial<AgentData>>([[terms.id, { writeScopes: [own.get(terms.id)!] }],
     ...translators.map((item, index): [string, Partial<AgentData>] => [item.id, { writeScopes: [own.get(item.id)!], instruction: instruction(parts[index]),
       check: `Read part.md beside ${lines(parts[index])} of ${at(parts[index].file)}, sentence by sentence. Run no scripts. Quote any sentence left out, added or written in formal Farsi, or say none is.` }]),
-    [join.id, { instruction: [`Join these parts, in this order, into ${output}: one document. Change no wording. ${JOIN_ONLY}`, ...translators.map(item => `- ${own.get(item.id)}/part.md`)].join("\n"), check: JOIN_CHECK }]]);
+    [join.id, { instruction: `Elpis puts the translators' parts together, in order, into ${output}.`, join: { parts: translators.map(item => `${own.get(item.id)}/part.md`), output } }]]);
   return { ...team, result: output, planningPattern: "translate", nodes: team.nodes.map(node => node.type === "agent" && done.has(node.id) ? { ...node, data: { ...node.data, ...done.get(node.id) } } : node) };
 }
 /** The ready-made workflows: whole teams for one job, built from a chosen folder, with no planner. `sources` picks the
  * files the job works on; a job that `reads` them gets their text; `worker` is its agents' model. */
-export type ReadyMade = { id: string; name: string; description: string; what: string; workers: string; worker: RegExp; workerName: string; reads: boolean;
+export type ReadyMade = { id: string; name: string; description: string; what: string; workers: string; /** The workers' model, the first one the catalogue has. */
+  worker: RegExp[]; workerName: string; reads: boolean;
   /** A folder that is plainly this job's: the open project is used at once, with no folder dialog. */
   here: (files: string[]) => boolean;
   sources: (files: string[]) => string[]; goal: (where: string) => string; team: (folder: string, sources: { name: string; text: string }[], worker: Partial<AgentData>) => CanvasGraph; shape: () => CanvasGraph };
 export const WORKFLOWS: ReadyMade[] = [
-  { id: "transcribe", name: "Transcribe images", description: "Choose a folder of page images: Gemini 3.8 Flash readers read six pages each by vision, and one agent joins them into transcription.md in that folder.",
-    what: "page images (PNG, JPG or WebP)", workers: "readers", worker: /gemini-3\.8-flash-high/i, workerName: "Gemini 3.8 Flash", reads: false,
+  { id: "transcribe", name: "Transcribe images", description: "Choose a folder of page images: Gemini 3.8 Flash readers read a page each by vision, side by side, and Elpis joins them into transcription.md in that folder.",
+    what: "page images (PNG, JPG or WebP)", workers: "readers", worker: [/gemini-3\.8-flash-low/i, /gemini-3\.8-flash-medium/i, /gemini-3\.8-flash-high/i], workerName: "Gemini 3.8 Flash", reads: false,
     here: files => files.some(name => PAGE_IMAGE.test(name)), sources: files => files.filter(name => PAGE_IMAGE.test(name)), goal: where => `Transcribe the page images in ${where} into transcription.md`,
     team: (folder, sources, worker) => transcriptionTeam(folder, sources.map(source => source.name), worker),
     shape: () => transcriptionTeam("pages", Array.from({ length: 12 }, (_, index) => `${index + 1}.png`)) },
   { id: "translate", name: "Translate to Farsi", description: "Choose a folder of English text, such as a transcription.md: one agent writes a glossary of names and terms, Gemini translators write spoken Farsi about 1,500 words each, and one joins them into translation.md.",
-    what: "English text (Markdown or plain text)", workers: "translators", worker: /gemini-3\.8-flash-medium/i, workerName: "Gemini 3.8 Flash", reads: true,
+    what: "English text (Markdown or plain text)", workers: "translators", worker: [/gemini-3\.8-flash-medium/i], workerName: "Gemini 3.8 Flash", reads: true,
     here: files => files.includes("transcription.md"), sources: files => { const text = files.filter(name => ENGLISH_TEXT.test(name) && name !== "translation.md").sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
       return text.includes("transcription.md") ? ["transcription.md"] : text; },
     goal: where => `Translate the English in ${where} into Farsi in translation.md`,

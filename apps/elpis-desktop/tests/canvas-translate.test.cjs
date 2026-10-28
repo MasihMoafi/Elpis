@@ -27,7 +27,8 @@ test('Translate to Farsi asks for its folder, writes a glossary first, translate
     await f.page.waitForFunction(() => JSON.parse(localStorage.getItem('elpis-workflow-draft-v1'))?.result === 'translation.md');
     const saved = await f.saved(), agents = saved.nodes.filter(n => n.type === 'agent'), title = a => a.data.title.split(' · ')[1];
     assert.deepEqual(agents.map(title), ['Glossary', 'Lines 1–3', 'Line 5', 'Join the parts']);
-    assert.ok(agents.every(a => a.data.model === 'agy/gemini-3.8-flash-medium' && !a.data.provider), 'the Gemini login, as in the accepted pilot');
+    assert.ok(agents.slice(0, -1).every(a => a.data.model === 'agy/gemini-3.8-flash-medium' && !a.data.provider), 'the Gemini login, as in the accepted pilot');
+    assert.equal(agents.at(-1).data.join?.output, 'translation.md', 'Elpis joins the parts itself');
     const [terms, first, second, join] = agents, glossary = `${terms.data.writeScopes[0]}/glossary.md`;
     assert.ok(terms.data.writeScopes[0].startsWith('agents/') && /glossary\.md/.test(terms.data.instruction));
     assert.match(first.data.instruction, /lines 1–3 of transcription\.md/);

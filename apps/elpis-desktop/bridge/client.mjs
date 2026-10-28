@@ -1349,8 +1349,8 @@ export class DesktopClient extends EventEmitter {
   #workflowTasks(tasks) {
     if(!Array.isArray(tasks)||tasks.length<1||tasks.length>256)throw new BridgeError('A workflow must contain 1–256 tasks');
     return tasks.map(task=>{
-      object(task,['id','kind','title','instruction','dependsOn','environmentId','writeScopes','acceptanceCriteria','provider','model','reasoningEffort','feedbackFrom']);
-      if(!['explore','implement','verify','fix'].includes(task.kind))throw new BridgeError('Unknown task role');
+      object(task,['id','kind','title','instruction','dependsOn','environmentId','writeScopes','acceptanceCriteria','provider','model','reasoningEffort','feedbackFrom','parts','output','flow']);
+      if(!['explore','implement','verify','fix','join'].includes(task.kind))throw new BridgeError('Unknown task role');
       const next={id:text(task.id,'task ID',100),kind:task.kind,title:text(task.title,'task title',256),instruction:text(task.instruction,'task instructions')};
       for(const key of ['dependsOn','writeScopes','acceptanceCriteria']){
         if(!Array.isArray(task[key])||task[key].length>256)throw new BridgeError(`Invalid ${key}`);
@@ -1360,6 +1360,14 @@ export class DesktopClient extends EventEmitter {
         if(!Array.isArray(task.feedbackFrom)||task.feedbackFrom.length>256)throw new BridgeError('Invalid feedback dependencies');
         next.feedbackFrom=task.feedbackFrom.map(value=>text(value,'feedback dependency',100));
       }
+      // A join is done by Elpis, not an agent: its parts, in order, written into its output (28 Oct, Masih: "why is it taking
+      // so excruciatingly long"). The engine keeps both inside the project.
+      if(task.kind==='join'){
+        if(!Array.isArray(task.parts)||task.parts.length<1||task.parts.length>256)throw new BridgeError('A join needs 1–256 parts');
+        next.parts=task.parts.map(value=>text(value,'join part',4096)); next.output=text(task.output,'join output',4096);
+        // `flow`: pages of one text: a part that ends mid-sentence runs on into the next instead of a new paragraph.
+        if(task.flow!==undefined){ if(typeof task.flow!=='boolean')throw new BridgeError('Invalid join flow'); next.flow=task.flow; }
+      }else if(task.parts!==undefined||task.output!==undefined||task.flow!==undefined)throw new BridgeError('Only a join has parts and an output');
       if(task.environmentId!==undefined)throw new BridgeError('ACP workflows currently run in the selected local project; environment IDs are not supported');
       if(task.provider!==undefined){
         next.provider=text(task.provider,'task provider',100);

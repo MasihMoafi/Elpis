@@ -178,6 +178,25 @@ test('failed verification cannot release a downstream writer', { timeout: 20000 
   const g = await f.finished(r.graphId); assert.equal(g.status, 'failed');
   assert.equal(g.tasks.find(t => t.id === 'check').status, 'failed'); assert.equal(f.log('next').length, 0);
 });
+// 28 Oct, Masih: "Why is it taking so excruciatingly long?" Putting finished parts together needs no agent, no model and
+// no check: a join step writes its parts, in order, into its output, and nothing outside the project.
+test('a join step puts its parts together in order with no agent, and refuses a part outside the project', { timeout: 20000 }, async t => {
+  const f = fixture(t); await f.client.initialize();
+  fs.mkdirSync(path.join(f.dir, 'agents', 'a'), { recursive: true }); fs.mkdirSync(path.join(f.dir, 'agents', 'b'), { recursive: true });
+  fs.writeFileSync(path.join(f.dir, 'agents', 'a', 'pages.md'), 'Page one.\n'); fs.writeFileSync(path.join(f.dir, 'agents', 'b', 'pages.md'), 'Page two.\n');
+  const join = { id: 'join', kind: 'join', title: 'Join the pages', instruction: 'Join', dependsOn: [], writeScopes: ['.'], acceptanceCriteria: ['all parts'], parts: ['agents/a/pages.md', 'agents/b/pages.md'], output: 'transcription.md' };
+  const g = await f.finished((await f.run([join])).graphId);
+  assert.equal(g.status, 'succeeded', g.error);
+  assert.equal(fs.readFileSync(path.join(f.dir, 'transcription.md'), 'utf8'), 'Page one.\n\nPage two.\n');
+  assert.equal(f.log('join').length, 0, 'no agent was started');
+  // Pages of one text: a page that ends mid-sentence runs on into the next.
+  fs.writeFileSync(path.join(f.dir, 'agents', 'a', 'pages.md'), 'A sentence that runs\n');
+  const flowing = await f.finished((await f.run([{ ...join, id: 'flow', flow: true }])).graphId); assert.equal(flowing.status, 'succeeded', flowing.error);
+  assert.equal(fs.readFileSync(path.join(f.dir, 'transcription.md'), 'utf8'), 'A sentence that runs Page two.\n');
+  const outside = await f.finished((await f.run([{ ...join, id: 'outside', parts: ['../secret.md'] }])).graphId);
+  assert.equal(outside.status, 'failed'); assert.match(outside.error, /outside the project/);
+});
+
 // 28 Oct, Masih: the OCR run "shouldn't take this long" and must finish with no further input. Its check found a dropped
 // clause and the run stopped, because Mother may only retry the failed node, the check itself. A failed check now sends
 // its step back once with the check's findings, and the step is checked again.

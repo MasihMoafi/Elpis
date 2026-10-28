@@ -404,6 +404,12 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
               ...(round > 1 ? (task.feedbackFrom ?? []).map(id => ({ name: `${byId.get(id).title} · round ${round - 1}`, answer: previous.get(id) })) : [])];
             const requested = record.recovery?.model ? { model: record.recovery.model, provider: record.recovery.provider ?? root.modelProvider ?? '' } : { model: task.model ?? root.model ?? '', provider: task.provider ?? root.modelProvider ?? '' };
             const attempt = async () => {
+              if (task.kind === 'join') {
+                const inside = rel => { const full = path.resolve(cwd, rel); if (full !== cwd && !full.startsWith(`${cwd}${path.sep}`)) throw new BridgeError(`${rel} is outside the project`, 409); return full; };
+                const texts = await Promise.all(task.parts.map(async part => (await fs.readFile(inside(part), 'utf8')).trim()));
+                const out = inside(task.output); await fs.mkdir(path.dirname(out), { recursive: true }); await fs.writeFile(out, `${texts.reduce((all, part) => !all ? part : `${all}${task.flow && !/[.!?:;"”’)\]]$/.test(all) ? ' ' : '\n\n'}${part}`, '')}\n`);
+                return { result: { answer: `Joined ${task.parts.length} parts into ${task.output}.` }, changes: {} };
+              }
               const result = await runNode(record, task, requested, instructions, { task: (record.roundLimit ? `Round ${round} of ${record.roundLimit}.\n` : '') + task.instruction + (task.supervisorInstruction ? `\n\nMother's corrective guidance:\n${task.supervisorInstruction}` : ''), inputs }, {
                 cwd, signal: controller.signal, timeoutMs: Math.min(timeoutMs ?? Infinity, (record.maxRuntimeSeconds ?? 1800) * 1000),
                 onPermission: request => permission(record, task, request), onUpdate: update => checkpointProgress(record, task, update, root, controller), onControl: control => { controls.set(`${record.id}:${task.id}`, control); },

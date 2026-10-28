@@ -680,10 +680,12 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
   const shapes = useMemo(() => new Map([...TEMPLATES.map(template => [template.id, shapeOf(template.build())] as const), ...WORKFLOWS.map(workflow => [workflow.id, shapeOf(workflow.shape())] as const)]), []);
   const limit = maxAgents(graph), room = Math.max(0, limit - agents.length), order = useMemo(() => waves(graph), [graph]);
   // An agent is done once its check passes, unless its work clashed in the merge.
-  const done = agents.filter(node => states[checkOf(node.id)]?.status === "succeeded" && !clashes[node.id]).length;
+  // A join is done by Elpis and has no check: it is done when it is.
+  const done = agents.filter(node => states[node.data.join ? node.id : checkOf(node.id)]?.status === "succeeded" && !clashes[node.id]).length;
   const runState: MotherData["run"] = recordedRun ? workflowThreadActive(liveTeam.mother) ? "running" : "idle" : run ? (ended(run.status)) : "idle";
   const fatherState: MotherData["run"] = run?.father?.threadId ? ended(run.father.status) : "idle";
   const modelLabel = (data: AgentData) => {
+    if (data.join) return "Elpis";
     if (!data.model) return "Default model";
     const found = catalog.find(item => item.model === data.model && item.provider === canonicalProvider(data.provider));
     // A subscription's model (agy/…, claude/…) is named by the engine's own list (28 Oct: a card read "agy/gemini-3.8-flash-high").
@@ -728,7 +730,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
   });
   const nodes = useMemo<Node[]>(() => [...frames, ...nodesWithFather(graph.nodes.map(node => node.type === "mother"
     ? { ...node, deletable: false, selected: selection.includes(MOTHER), data: { run: runState, children: agents.length, limit, onHandle, identity } satisfies MotherData }
-    : { ...node, selected: selection.includes(node.id), data: node.type === "agent" ? { ...node.data, status: states[node.id]?.status, check: states[checkOf(node.id)]?.status, clash: clashes[node.id], modelLabel: modelLabel(node.data), wave: order.get(node.id), onHandle, onQuick } : { ...node.data, onText: setText } }),
+    : { ...node, selected: selection.includes(node.id), data: node.type === "agent" ? { ...node.data, status: states[node.id]?.status, check: states[node.data.join ? node.id : checkOf(node.id)]?.status, clash: clashes[node.id], modelLabel: modelLabel(node.data), wave: order.get(node.id), onHandle, onQuick } : { ...node.data, onText: setText } }),
   )], [graph, identity, renamingFrame, selection, states, clashes, models, order, runState, fatherState, limit, catalog.length]); // eslint-disable-line react-hooks/exhaustive-deps
   const flowLabels = useMemo(() => flowLabelPositions(nodes.filter(node => node.type !== "frame"), graph.edges), [nodes, graph.edges]);
   const edges = useMemo<Edge[]>(() => [
@@ -1358,7 +1360,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
     const listed = models.length ? models : (await api<{ data: Model[] }>("/models").catch(() => ({ data: [] as Model[] }))).data;
     const offered = [...listed.map(item => ({ model: item.model, provider: null as string | null })), ...catalog];
     const pick = (test: RegExp) => offered.find(item => test.test(item.model));
-    const worker = pick(workflow.worker), boss = MOTHER_FIRST.map(pick).find(Boolean);
+    const worker = workflow.worker.map(pick).find(Boolean), boss = MOTHER_FIRST.map(pick).find(Boolean);
     const team = workflow.team(folder, sources, worker ? { model: worker.model, provider: worker.provider } : {});
     const agents = team.nodes.filter(node => node.type === "agent").length;
     checkpoint(); setSelection([]); setRun(null); setStates({});
