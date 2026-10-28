@@ -6,7 +6,7 @@ body:
     id: version
     attributes:
       label: Elpis version
-      description: Run elpis --version. For the desktop app, add the version shown in Settings.
+      description: Run elpis --version. For the desktop app, add the version and commit from Settings > About.
     validations:
       required: true
   - type: dropdown
@@ -34,14 +34,32 @@ body:
     validations:
       required: true
   - type: textarea
-    id: reproduce
+    id: steps
     attributes:
-      label: Steps and expected result
-      description: What you did, what you expected and what happened. Use a small synthetic project; keep private code and conversations out of reports.
+      label: Steps to reproduce
+      description: Numbered steps from a fresh start. Use a small synthetic project; keep private code and conversations out of reports.
     validations:
       required: true
   - type: textarea
-    id: evidence
+    id: expected
     attributes:
-      label: Screenshots or terminal output
-      description: Optional. Remove personal information and credentials before sharing.
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What you saw
+      description: The exact error text, or what happened instead. For a desktop error notice, include its code and request ID.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs, screenshots or terminal output
+      description: |
+        Optional. Only the lines around the failure. $ELPIS_HOME defaults to ~/.elpis-next.
+        Terminal app: $ELPIS_HOME/logs_2.sqlite (an SQLite database; logs_client from codex-rs/cli reads it).
+        Desktop app: $ELPIS_HOME/logs/desktop-requests.jsonl, and the output of the terminal that started it.
+        Claude and Gemini turns: /tmp/acp-bridge/bridge.log, when that folder exists.
+        Remove personal information and credentials before sharing.
