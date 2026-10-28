@@ -1754,6 +1754,17 @@ export default function Home() {
   const workflowRoots = useMemo(() => new Map([...workflowRuns].sort((a, b) => (a.startedAt ?? a.createdAt ?? 0) - (b.startedAt ?? b.createdAt ?? 0)).map(run => [run.rootThreadId, run])), [workflowRuns]);
   const selectedWorkflow = selected ? workflowRoots.get(selected.id) : undefined;
   const workflowSteps = useMemo(() => new Map(workflowRuns.flatMap(run => workflowMembers(run).map(member => [member.threadId, { parent: run.rootThreadId, title: member.title, runId: run.id, mother: !!member.mother, check: !!member.check }] as const))), [workflowRuns]);
+  // A run started or moving on in another window tells this one nothing, and a new step's chat arrives before its run's
+  // record does: a workflow chat no run claims, or a run still going, reads the runs again (28 Oct: another window's run
+  // left its step, check and Mother chats loose here until a restart).
+  const unclaimedWorkflowChats = useMemo(() => threads.filter(thread => chatOrigin(thread) === "Workflows" && !workflowSteps.has(thread.id) && !workflowRoots.has(thread.id)).map(thread => thread.id).sort().join(" "), [threads, workflowSteps, workflowRoots]);
+  const workflowRunning = workflowCatalog.runs.some(run => run.status === "running"), refreshWorkflows = workflowCatalog.refresh;
+  useEffect(() => { if (ready && connected && unclaimedWorkflowChats) void refreshWorkflows(); }, [ready, connected, unclaimedWorkflowChats, refreshWorkflows]);
+  useEffect(() => {
+    if (!ready || !connected || !workflowRunning) return;
+    const timer = setInterval(() => void refreshWorkflows(), 4000);
+    return () => clearInterval(timer);
+  }, [ready, connected, workflowRunning, refreshWorkflows]);
   const sidebarThreads = useMemo(() => [...threads, ...[...workflowRoots.values()].filter(run => !threads.some(thread => thread.id === run.rootThreadId)).map(run => ({ id: run.rootThreadId, name: run.name, status: { type: run.status === "running" ? "active" : "idle" } } as Thread))], [threads, workflowRoots]);
   const sidebarTitle = (thread: Thread) => {
     const step = workflowSteps.get(thread.id), chosen = thread.name?.trim();

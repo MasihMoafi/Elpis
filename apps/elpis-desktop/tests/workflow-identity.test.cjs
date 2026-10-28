@@ -140,6 +140,24 @@ test('a run row says how the run went; its steps follow in run order with their 
   } finally { await f.close(); }
 });
 
+// 28 Oct, Masih: "mothers all over the place". A run going on in another window told this one nothing, so its new step,
+// check and Mother chats stayed loose here until a restart. A workflow chat no run claims, or a run still going, makes the
+// sidebar read the runs again by itself.
+test('a run moving on elsewhere reaches this sidebar by itself: its new step folds in and its row counts on', async () => {
+  const early = { ...runs[0], tasks: [{ id: 'build', title: 'Build', assignedThreadId: 'step-0-0', status: 'running' }] };
+  const final = { ...runs[0], status: 'succeeded', tasks: [{ ...early.tasks[0], status: 'succeeded' }, { id: 'join', title: 'Join', assignedThreadId: 'late-join', status: 'succeeded' }] };
+  let reads = 0;
+  const f = await open('light', [final], {}, {}, { '/api/workflows/history': () => ({ data: [reads++ ? final : early] }) });
+  try {
+    const page = f.page, root = row(page, final.rootThreadId);
+    await eventually(async () => assert.equal(await root.locator('.agent-model').innerText(), '2 of 2 done'));
+    assert.equal(await row(page, 'late-join').count(), 0, 'the new step is not loose');
+    await root.getByRole('button', { name: /^Expand / }).click();
+    assert.match(await row(page, 'late-join').getAttribute('class'), /child/, 'it sits under its run');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
 // 28 Oct, Masih: "I meant the workflows in the chat side bar" ("it should be able to hide"). Hidden, the section and its
 // chats leave the sidebar (none spill into Recents) and stay hidden after a reload; Settings → General shows them again.
 test('the Workflows section hides from the sidebar, stays hidden, and comes back from Settings', async () => {
