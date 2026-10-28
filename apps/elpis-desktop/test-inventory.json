@@ -351,6 +351,7 @@
     "tests/check-verdict.test.cjs",
     "tests/canvas-transcribe.test.cjs",
     "tests/canvas-translate.test.cjs",
+    "tests/canvas-logo.test.cjs",
     "tests/live-submissions.test.cjs",
     "tests/chat-labels.test.cjs"
   ],

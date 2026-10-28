@@ -1409,17 +1409,20 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
         return { name, text: file.content };
       }));
     } catch (cause) { setNotice(cause instanceof Error ? cause.message : String(cause)); return null; }
-    const where = folder === "." ? base.split("/").at(-1) : folder;
-    if (!sources.some(source => !workflow.reads || source.text.trim())) { setNotice(`No ${workflow.what} in ${where}.`); return null; }
+    const where = folder === "." ? base.split("/").at(-1) ?? base : folder;
+    if (!workflow.subject && !sources.some(source => !workflow.reads || source.text.trim())) { setNotice(`No ${workflow.what} in ${where}.`); return null; }
+    // A job about a subject (Logo's brand): what the request box says, or else the folder's name; the brief names it.
+    const subject = workflow.subject && requestText.trim() || where, brief = workflow.subject ? workflow.goal(subject, language) : goal;
     // The subscriptions (Antigravity's Gemini, Claude) are in the engine's own list; a run routes them by their prefix.
     const listed = models.length ? models : (await api<{ data: Model[] }>("/models").catch(() => ({ data: [] as Model[] }))).data;
     const offered = [...listed.map(item => ({ model: item.model, provider: null as string | null })), ...catalog];
     const pick = (test: RegExp) => offered.find(item => test.test(item.model));
     const byLanguage = typeof workflow.worker === "function", worker = (byLanguage ? (workflow.worker as (language: Language) => RegExp[])(language) : workflow.worker as RegExp[]).map(pick).find(Boolean), boss = MOTHER_FIRST.map(pick).find(Boolean);
-    const team = workflow.team(folder, sources, worker ? { model: worker.model, provider: worker.provider } : {}, language);
+    if (!worker && workflow.noWorker) { setNotice(workflow.noWorker); return null; }
+    const team = workflow.team(folder, sources, worker ? { model: worker.model, provider: worker.provider } : {}, language, subject);
     const agents = team.nodes.filter(node => node.type === "agent").length;
     checkpoint(); setSelection([]); setRun(null); setStates({});
-    setGraph(current => ({ ...team, request: goal, maxAgents: Math.max(current.maxAgents ?? 10, agents), mother: { brief: goal, model: boss?.model ?? null, provider: boss?.provider ?? null } }));
+    setGraph(current => ({ ...team, request: workflow.subject ? subject : brief, maxAgents: Math.max(current.maxAgents ?? 10, agents), mother: { brief, model: boss?.model ?? null, provider: boss?.provider ?? null } }));
     // A model chosen by the language is named, so the person sees what writes it (28 Oct: "the agent ... says which").
     const named = worker && (catalog.find(item => item.model === worker.model && item.provider === worker.provider)?.label ?? listed.find(item => item.model === worker.model)?.displayName ?? worker.model);
     setNotice(!worker ? `${workflow.workerName} is not available here, so the ${workflow.workers} use the default model.`

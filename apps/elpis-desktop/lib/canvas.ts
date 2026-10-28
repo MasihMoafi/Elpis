@@ -2,6 +2,7 @@ import { characters } from "./agent-characters";
 import { appStorage } from "@/lib/projects";
 import { deleteKeepingFlow, waits } from "./canvas-delete-flow";
 import type { CanvasFrame } from "./canvas-editing";
+import { logoTeam } from "./logo-team";
 export { waits };
 
 /** The agents canvas (components/agents-canvas.tsx): agents are nodes, a wire A → B means B waits for A, and a run
@@ -104,7 +105,7 @@ export function agentName(taken: string[], role = "") {
   do { name = `${AGENT_NAMES[index % AGENT_NAMES.length]}${index >= AGENT_NAMES.length ? ` ${Math.floor(index / AGENT_NAMES.length) + 1}` : ""}`; index++; } while (used.has(name));
   return role ? `${name} · ${role}` : name;
 }
-const graphOf = (name: string, nodes: CanvasNode[], edges: CanvasEdge[]) => {
+export const graphOf = (name: string, nodes: CanvasNode[], edges: CanvasEdge[]) => {
   const taken: string[] = [];
   return arrange(withMother({ name, nodes: nodes.map(node => {
     if (node.type !== "agent") return node;
@@ -112,7 +113,7 @@ const graphOf = (name: string, nodes: CanvasNode[], edges: CanvasEdge[]) => {
     return { ...node, data: { ...node.data, title } };
   }), edges }));
 };
-const chain = (...steps: CanvasNode[]) => steps.slice(1).map((step, index) => wire(steps[index], step));
+export const chain = (...steps: CanvasNode[]) => steps.slice(1).map((step, index) => wire(steps[index], step));
 const fan = (from: CanvasNode[], to: CanvasNode[]) => from.flatMap(source => to.map(target => wire(source, target)));
 export const TEMPLATES: Template[] = [
   // The default: split by parts, as Anthropic advises (context isolation and parallelism, not roles).
@@ -574,7 +575,11 @@ export type ReadyMade = { id: string; name: string; description: string; what: s
   worker: RegExp[] | ((language: Language) => RegExp[]); workerName: string; reads: boolean;
   /** A folder that is plainly this job's: the open project is used at once, with no folder dialog. */
   here: (files: string[]) => boolean;
-  sources: (files: string[]) => string[]; goal: (where: string, language: Language) => string; team: (folder: string, sources: { name: string; text: string }[], worker: Partial<AgentData>, language: Language) => CanvasGraph; shape: () => CanvasGraph };
+  sources: (files: string[]) => string[]; goal: (where: string, language: Language) => string; team: (folder: string, sources: { name: string; text: string }[], worker: Partial<AgentData>, language: Language, subject: string) => CanvasGraph; shape: () => CanvasGraph;
+  /** The job is about what the request box says (a brand), or else the folder's name, not the folder's files: the brief and the team name it. */
+  subject?: boolean;
+  /** Said instead of building the team when the workers' model is missing: the job needs that model's tool. */
+  noWorker?: string };
 export const WORKFLOWS: ReadyMade[] = [
   { id: "transcribe", name: "Transcribe images", description: "Choose a folder of page images: Gemini 3.8 Flash readers read a page each by vision, side by side, and Elpis joins them into transcription.md in that folder.",
     what: "page images (PNG, JPG or WebP)", workers: "readers", worker: [/gemini-3\.8-flash-low/i, /gemini-3\.8-flash-medium/i, /gemini-3\.8-flash-high/i], workerName: "Gemini 3.8 Flash", reads: false,
@@ -588,4 +593,11 @@ export const WORKFLOWS: ReadyMade[] = [
     goal: (where, language) => `Translate the English in ${where} into ${language.name} in translation.md`,
     team: (folder, sources, worker, language) => translationTeam(folder, textParts(sources), worker, language),
     shape: () => translationTeam("book", [1, 2, 3].map(index => ({ file: "transcription.md", from: index * 10 - 9, to: index * 10 - 1 }))) },
+  // The Designer needs the image generation tool, which agents on the ChatGPT route have (the engine's own models, `gpt-…`).
+  { id: "logo", name: "Logo", description: "Name the brand in the request box (or else the project is the brand): a Designer draws three directions with the image generation tool, a Curator picks one with reasons, a Tracer turns it into logo/logo.svg through SVG Studio with a 24/32/64 px sheet, and a Critic judges the pair.",
+    what: "the brand's project", workers: "logo agents", worker: [/^gpt-6\.1-sol$/, /^gpt-/], workerName: "A ChatGPT model", reads: false, subject: true,
+    noWorker: "Logo needs a ChatGPT model, whose agents have the image generation tool, and none is available here.",
+    here: () => true, sources: () => [], goal: brand => `Make the logo of ${brand}: three directions, one chosen and traced into logo/logo.svg with its 24/32/64 px sheet`,
+    team: (folder, _sources, worker, _language, brand) => logoTeam(folder, brand, worker),
+    shape: () => logoTeam("brand", "Brand") },
 ];

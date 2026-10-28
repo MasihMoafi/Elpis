@@ -23,7 +23,7 @@ function planFor(body, fill = ['src']) {
  * device before the page opens; `listed(run, looks)` answers a look at the run (workGraph/list) instead of the default,
  * which runs for one look and then succeeds. */
 const ENDED = new Set(['succeeded', 'completed', 'failed', 'cancelled']);
-async function openCanvas({ width = 1440, height = 900, repository = false, graph = null, listed = null, settings = {}, providerModels = {}, desktop = false, autoLayout, folders = ['docs', 'src', 'src/lib', 'tests'], refuseReport = '', files = {}, texts = {}, extraModels = [] } = {}) {
+async function openCanvas({ width = 1440, height = 900, repository = false, graph = null, listed = null, settings = {}, providerModels = {}, desktop = false, autoLayout, folders = ['docs', 'src', 'src/lib', 'tests'], refuseReport = '', files = {}, texts = {}, extraModels = [], models = null } = {}) {
   const posts = [], plans = [], runs = [];
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://local'); let raw = ''; for await (const chunk of req) raw += chunk;
@@ -35,7 +35,8 @@ async function openCanvas({ width = 1440, height = 900, repository = false, grap
       const offered = providerModels[url.searchParams.get('provider')];
       return json({ data: typeof offered === 'function' ? await offered() : offered, nextCursor: null });
     }
-    if (url.pathname === '/api/models') return json({ data: [...extraModels, { id: 'luna', model: 'gpt-6-luna', displayName: 'Luna 6' }, { id: 'sol', model: 'gpt-6.1-sol', displayName: 'Sol 6.1', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }], defaultReasoningEffort: 'low' }], nextCursor: null });
+    // `models`: the engine's whole list instead of the two OpenAI models; `extraModels` come before them.
+    if (url.pathname === '/api/models') return json({ data: models ?? [...extraModels, { id: 'luna', model: 'gpt-6-luna', displayName: 'Luna 6' }, { id: 'sol', model: 'gpt-6.1-sol', displayName: 'Sol 6.1', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }], defaultReasoningEffort: 'low' }], nextCursor: null });
     if (url.pathname === '/api/settings') return json({ main: { model: 'gpt-6.1-sol', provider: 'openai' }, background: {}, smartPrune: { enabled: false, explicitOverride: {} }, memory: {}, write: { available: false, reason: '' }, agents: { graph: 256, atOnce: 4, source: 'agents.max_threads' }, ...settings });
     if (url.pathname === '/api/folders') return json({ data: folders });
     // `files`: a folder's file names, as the Files pane lists them, by `dir` or by `cwd|dir`; `texts`: a file's text, by its path.
