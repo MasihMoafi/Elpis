@@ -133,3 +133,19 @@ test('an ordinary task failure shows its reason without a merge notice or merge 
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
+
+// 28 Oct (live check for Masih): Mother's model was silently claude/opus, and with Claude unavailable Run graph showed
+// only ELPIS_REQUEST_REJECTED. A Mother model that is not offered gives way to the best one that is, and the notice
+// says so; an offered one is kept.
+for (const offered of [false, true]) test(`Mother saved on Opus ${offered ? 'keeps it when it is offered' : 'runs on the best offered model when Opus is not, and says so'}`, async () => {
+  const graph = { ...TEAM, mother: { brief: 'Build it', model: 'claude/opus', provider: null } };
+  const f = await openCanvas({ graph, extraModels: offered ? [{ id: 'opus', model: 'claude/opus', displayName: 'Opus 5.5' }] : [] });
+  try {
+    await run(f.canvas);
+    const sent = await eventually(() => f.posts.find(post => post.path === '/api/threads'), 'the run chat was asked for');
+    assert.equal(sent.body.model, offered ? 'claude/opus' : 'gpt-6.1-sol');
+    const notice = f.canvas.getByText("Mother's model, claude/opus, is not available here, so she runs on Sol 6.1.");
+    if (offered) assert.equal(await notice.count(), 0); else await notice.waitFor();
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});

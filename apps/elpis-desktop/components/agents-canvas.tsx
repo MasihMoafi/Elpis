@@ -1505,11 +1505,22 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
       setNotice(""); setUndoLoad(null); setStates({}); setClashes({}); setLog([]); said.current = {}; reports.current.clear(); followLog.current = true;
       const runIdentity = workflowCatalog.ensure(identity?.rootThreadId ? crypto.randomUUID() : graph.workflowId || crypto.randomUUID(), ready.name);
       const created = await api<{ thread: Thread }>("/threads", { ...(cwd ? { cwd } : {}), agents: true, name: runIdentity.name,
-        ...(mother.model ? { model: mother.model, ...(mother.provider ? { provider: mother.provider } : {}) } : {}), ...(mother.brief.trim() ? { instructions: mother.brief.trim() } : {}) });
+        ...(motherRoute ? { model: motherRoute.model, ...(motherRoute.provider ? { provider: motherRoute.provider } : {}) } : {}), ...(mother.brief.trim() ? { instructions: mother.brief.trim() } : {}) });
       const result = await runPart(created.thread.id, runIdentity.name, built.mother, current, built.father.length ? await fatherPart(built.father, current) : undefined);
       workflowCatalog.attach(runIdentity.id, result.graphId, created.thread.id);
       setIdentity({ workflowId: result.graphId, name: runIdentity.name });
       setRun({ rootThreadId: created.thread.id, graphId: result.graphId, status: "running", startedAt: Date.now(), ...(built.father.length ? { father: { tasks: built.father, status: "pending" } } : {}) });
+      // Mother runs on her model only while it is offered here: a saved claude/opus with Claude signed out made Run graph
+      // fail with a bare ELPIS_REQUEST_REJECTED (28 Oct). Otherwise she takes the best one offered, and the notice says so.
+      const offered = [...models.map(item => ({ model: item.model, provider: null as string | null })), ...catalog];
+      const offers = (model: string, provider?: string | null) => offered.some(item => item.model === model && (item.provider ?? null) === (provider ?? null));
+      const named = (model: string) => catalog.find(item => item.model === model)?.label ?? models.find(item => item.model === model)?.displayName ?? model;
+      let motherRoute = mother.model ? { model: mother.model, provider: mother.provider ?? null } : null;
+      if (motherRoute && offered.length && !offers(motherRoute.model, motherRoute.provider)) {
+        const instead = MOTHER_FIRST.map(test => offered.find(item => test.test(item.model))).find(Boolean) ?? null;
+        setNotice(`Mother's model, ${named(motherRoute.model)}, is not available here, so she runs on ${instead ? named(instead.model) : "the default model"}.`);
+        motherRoute = instead;
+      }
     } catch (error) { if (current()) setNotice(runFailure(error instanceof Error ? error.message : String(error))); }
     finally { startingRun.current = false; setStarting(false); }
   }
