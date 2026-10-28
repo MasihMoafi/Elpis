@@ -28,6 +28,8 @@ export type CanvasGraph = { name: string; request?: string; workflowId?: string;
 export type TaskStatus = "pending" | "running" | "succeeded" | "failed" | "blocked" | "cancelled";
 /** The words both views of the board (flat and isometric) use for an agent's state, and for its check: the read-only
  * verify task Elpis runs after every agent that writes (`runTasks`). */
+/** "1 agent", "4 agents": the same words on the flat and the isometric board. */
+export const agentCount = (n: number) => `${n} ${n === 1 ? "agent" : "agents"}`;
 export const STATUS_LABEL: Record<TaskStatus | "idle", string> = { idle: "not run", pending: "waiting", running: "running", succeeded: "done", failed: "failed", blocked: "blocked", cancelled: "cancelled" };
 export const CHECK_LABEL: Record<TaskStatus | "idle", string> = { idle: "Checked after it runs", pending: "Check waits for it", running: "Being checked", succeeded: "Check passed", failed: "Check failed", blocked: "Check blocked", cancelled: "Check cancelled" };
 /** `reasoningEffort` is the agent's thinking level, checked by its adapter and model. */

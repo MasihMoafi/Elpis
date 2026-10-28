@@ -8,7 +8,7 @@ import { Maximize2, Minus, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { CanvasTextEdit } from "@/components/canvas-text-edit";
-import { agentColor, CHECK_LABEL as CHECK, FATHER, MOTHER, STATUS_LABEL as STATUS, checkOf, waits, waves, type AgentData, type CanvasEdge, type CanvasGraph, type TaskStatus } from "@/lib/canvas";
+import { agentColor, agentCount, CHECK_LABEL as CHECK, FATHER, MOTHER, STATUS_LABEL as STATUS, checkOf, waits, waves, type AgentData, type CanvasEdge, type CanvasGraph, type TaskStatus } from "@/lib/canvas";
 import { ISO_STEP, isoFit, isoLayout, isoRoute, project, type Box, type Ground, type IsoPlace, type Point } from "@/lib/iso";
 
 /** A note's text, the same field on both views. */
@@ -201,8 +201,7 @@ export function IsoBoard({ workflowIdentity, inserting, canConnect, onReconnect,
   const motherState = partState(true), fatherState = partState(false);
   const statusOf = (id: string): State => id === MOTHER ? motherState : id === FATHER ? fatherState : states[id]?.status ?? "idle";
   const titleOf = (id: string) => { const node = nodes.get(id); return id === MOTHER ? "Mother" : id === FATHER ? "Father" : node?.type === "agent" ? node.data.title || "Untitled" : id; };
-  const count = (n: number) => `${n} ${n === 1 ? "agent" : "agents"}`;
-  const parentLine = (id: string) => id === MOTHER ? ["This run's chat", count(agents.length), STATUS[motherState]] : ["His own chat", count(father.length), fatherState === "idle" ? "after her part" : STATUS[fatherState]];
+  const parentLine = (id: string) => id === MOTHER ? ["This run's chat", agentCount(agents.length), STATUS[motherState]] : ["His own chat", agentCount(father.length), fatherState === "idle" ? "after her part" : STATUS[fatherState]];
   const describe = (id: string) => id === MOTHER || id === FATHER ? parentLine(id).join(", ").replace(/^./, letter => letter.toLowerCase())
     : `${wave.has(id) ? `wave ${wave.get(id)}` : "no wave"}, ${nodes.get(id)?.type === "agent" && (nodes.get(id)!.data as AgentData).muted ? "muted, skipped in runs" : STATUS[statusOf(id)]}, ${CHECK[statusOf(checkOf(id))].toLowerCase()}`;
   const wires: CanvasEdge[] = [

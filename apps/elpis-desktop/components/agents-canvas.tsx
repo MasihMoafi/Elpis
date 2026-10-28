@@ -29,7 +29,7 @@ import { api, providerChoices, subscriptionOf, type Entry, type Model, type Prov
 import { useElpisSettings } from "@/lib/settings-store";
 import { appStorage } from "@/lib/projects";
 import { filesText, mergeStops, runPayload, stopText, wantsIsolation } from "@/lib/canvas-isolation";
-import { PATTERNS, WHOLE_PROJECT, applyPattern, agent, transcriptionTeam, PAGE_IMAGE, ownFolders, agentColor, CHECK_LABEL, COLUMN, DONE, FATHER, MOTHER, STATUS_LABEL, TASKS_PER_AGENT, waits, TEMPLATES, agentName, promptName, applyPlan, arrange, boardForPlan, checkOf, commandParts, shapeOf, makesLoop, maxAgents, newAgents, newId, parseCommand, parents, initialGraph, runParts, saveGraph, waves, withMother, type AgentData, type CanvasEdge, type CanvasGraph, type CanvasNode, type CatalogModel, type Command, type MotherSettings, type NoteData, type Plan, type RunTask, type TaskStatus } from "@/lib/canvas";
+import { PATTERNS, agentCount, WHOLE_PROJECT, applyPattern, agent, transcriptionTeam, PAGE_IMAGE, ownFolders, agentColor, CHECK_LABEL, COLUMN, DONE, FATHER, MOTHER, STATUS_LABEL, TASKS_PER_AGENT, waits, TEMPLATES, agentName, promptName, applyPlan, arrange, boardForPlan, checkOf, commandParts, shapeOf, makesLoop, maxAgents, newAgents, newId, parseCommand, parents, initialGraph, runParts, saveGraph, waves, withMother, type AgentData, type CanvasEdge, type CanvasGraph, type CanvasNode, type CatalogModel, type Command, type MotherSettings, type NoteData, type Plan, type RunTask, type TaskStatus } from "@/lib/canvas";
 
 /** A run: the Mother's part, and the Father's when the graph has more agents than she runs (lib/canvas.ts `parents`):
  * his tasks wait in `father` until her part has succeeded, then run in his own chat. */
@@ -83,7 +83,7 @@ function MotherNode({ id, data }: NodeProps<Node<MotherData>>) {
     title="The Mother is the run's chat: every agent is her child, she starts the ones that wait for no one, and every report comes back to her.">
     <span className="agent-node-kind">{data.identity && <WorkflowMark identity={data.identity} />}Mother</span>
     <strong className="agent-node-title">This run&rsquo;s chat</strong>
-    <small className="agent-node-meta">{data.children} of {data.limit} agents · {data.run === "idle" ? "not run" : data.run}</small>
+    <small className="agent-node-meta">{agentCount(data.children)} · {data.run === "idle" ? "not run" : data.run}</small>
     <Handle type="source" position={Position.Right} title="Add agents she starts" onClick={event => data.onHandle?.(id, "source", event)} />
   </div>;
 }
@@ -101,7 +101,7 @@ function FatherNode({ data }: NodeProps<Node<MotherData>>) {
     title="The Father runs the agents past the Mother's ten, in his own chat, after her part has succeeded, and reports to her.">
     <span className="agent-node-kind">Father</span>
     <strong className="agent-node-title">Reports to the Mother</strong>
-    <small className="agent-node-meta">{data.children} agents · {data.run === "idle" ? "after her part" : data.run}</small>
+    <small className="agent-node-meta">{agentCount(data.children)} · {data.run === "idle" ? "after her part" : data.run}</small>
     <Handle type="source" position={Position.Right} isConnectable={false} />
   </div>;
 }
@@ -550,7 +550,10 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
   useEffect(() => { if (recordedRun) return; const flush = () => saveGraph(latest.current); window.__elpisFlushWorkflow = flush; window.addEventListener("pagehide", flush); window.addEventListener("beforeunload", flush); return () => { flush(); if (window.__elpisFlushWorkflow === flush) delete window.__elpisFlushWorkflow; window.removeEventListener("pagehide", flush); window.removeEventListener("beforeunload", flush); }; }, [recordedRun]);
 
   // The existing provider catalog, shared by Add and the inspector; execution uses ACP.
-  const choices = useMemo(() => providerChoices(models, (settings ?? null) as ProviderSettings | null).filter(choice => !choice.id.endsWith("/")), [models, settings]);
+  const allChoices = useMemo(() => providerChoices(models, (settings ?? null) as ProviderSettings | null), [models, settings]);
+  const choices = useMemo(() => allChoices.filter(choice => !choice.id.endsWith("/")), [allChoices]);
+  // Antigravity and Claude: the model carries the route (agy/, claude/), so an agent on one keeps no provider (lib/api.ts).
+  const subscriptions = allChoices.filter(choice => choice.id.endsWith("/"));
   const version = settings?.version ?? "";
   useEffect(() => {
     for (const choice of choices) {
@@ -1331,12 +1334,13 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
   const inputsNeeded = (id: string) => graph.edges.filter(edge => waits(edge) && edge.target === id && agents.some(node => node.id === edge.source))
     .filter(edge => states[edge.source]?.status !== "succeeded" || states[checkOf(edge.source)]?.status !== "succeeded" || clashes[edge.source])
     .map(edge => `${titleOf(edge.source)} (${clashes[edge.source] ? "merge clash" : states[edge.source]?.status === "succeeded" ? CHECK_LABEL[states[checkOf(edge.source)]?.status ?? "idle"] : STATUS_LABEL[states[edge.source]?.status ?? "idle"]})`);
-  const choiceKey = (data: AgentData) => data.model ? `${canonicalProvider(data.provider) ?? ""}|${data.model}` : "";
+  const choiceKey = (data: AgentData) => data.model ? `${subscriptionOf(data.model) ? "" : canonicalProvider(data.provider) ?? ""}|${data.model}` : "";
   const shared = (key: (data: AgentData) => string) => new Set(chosen.map(node => key(node.data))).size === 1 ? key(chosen[0].data) : "mixed";
   const modelPatch = (value: string): Partial<AgentData> => { const [provider, ...rest] = value.split("|"); return value ? { provider: provider || null, model: rest.join("|"), effort: null } : { provider: null, model: null, effort: null }; };
   // The subscriptions' models (Claude, Antigravity's Gemini) come from the engine's own list (28 Oct: Mother's menu had no Opus).
   const subscribed = models.filter(item => subscriptionOf(item.model) && !catalog.some(entry => entry.model === item.model));
   const modelOptions = (provider?: string | null) => [<option key="" value="">Default model</option>, ...catalog.filter(item => provider === undefined || item.provider === provider).map(item => <option key={`${item.provider}|${item.model}`} value={`${item.provider ?? ""}|${item.model}`} data-hint={provider === undefined ? item.providerLabel : undefined}>{item.label}</option>), ...(provider === undefined ? subscribed.map(item => <option key={`|${item.model}`} value={`|${item.model}`} data-hint={subscriptionOf(item.model)?.label}>{item.displayName || item.model}</option>) : [])];
+  const subscriptionOptions = (prefix: string) => subscriptions.find(choice => choice.id === prefix)?.models.map(item => <option key={item.model} value={`|${item.model}`}>{item.displayName || item.model}</option>) ?? [];
   const mixed = <option value="mixed" disabled>Mixed</option>;
   const selectedModel = selected ? catalog.find(item => item.model === selected.data.model && item.provider === canonicalProvider(selected.data.provider)) : undefined;
 
@@ -1650,21 +1654,24 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
       <p className="hud-menu-title">Agent{states[selected.id] ? ` · ${STATUS_LABEL[states[selected.id].status]}` : ""} · {CHECK_LABEL[states[checkOf(selected.id)]?.status ?? "idle"]}</p>
       <label>Name<Input ref={nameField} aria-label="Name" title={selected.data.title} value={selected.data.title} maxLength={256} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); promptField.current?.focus(); } }} onChange={event => edit({ title: event.target.value })} /></label>
       <label>Prompt<Textarea ref={promptField} aria-label="Prompt" rows={5} value={selected.data.instruction} placeholder="What this agent should do; left empty, Elpis fills it from the goal" onChange={event => edit({ instruction: event.target.value, title: promptName(selected.data, event.target.value) })} /></label>
-      <label>Provider<OptionSelect aria-label="Provider" value={canonicalProvider(selected.data.provider) ?? ""} onChange={event => {
+      <label>Provider<OptionSelect aria-label="Provider" value={subscriptionOf(selected.data.model)?.prefix ?? canonicalProvider(selected.data.provider) ?? ""} onChange={event => {
+        const subscription = subscriptions.find(choice => choice.id === event.target.value);
+        if (subscription) { pendingProviderDefaults.current.delete(selected.id); edit({ provider: null, model: subscription.models[0]?.model ?? null, effort: null }); return; }
         const provider = event.target.value || null, offered = catalog.filter(item => item.provider === provider);
         const keep = offered.find(item => item.model === selected.data.model);
         const preferred = providerDefault(provider);
         if (!offered.length) pendingProviderDefaults.current.set(selected.id, { provider, model: selected.data.model, effort: selected.data.effort ?? null }); else pendingProviderDefaults.current.delete(selected.id);
         edit({ provider, model: keep?.model ?? preferred?.model ?? null, effort: keep?.efforts.includes(selected.data.effort ?? "") ? selected.data.effort : null });
-      }}>{choices.map(choice => <option key={choice.id} value={choice.provider ?? ""}>{choice.label}</option>)}</OptionSelect></label>
+      }}>{choices.map(choice => <option key={choice.id} value={choice.provider ?? ""}>{choice.label}</option>)}
+        {subscriptions.map(choice => <option key={choice.id} value={choice.id}>{choice.label}</option>)}</OptionSelect></label>
       <label>Model<OptionSelect aria-label="Model" title={modelLabel(selected.data)} value={choiceKey(selected.data)} onChange={event => {
         if (event.target.value) { pendingProviderDefaults.current.delete(selected.id); edit(modelPatch(event.target.value)); return; }
         const provider = canonicalProvider(selected.data.provider), fallback = provider ? providerDefault(provider) : undefined;
         if (provider && !fallback) pendingProviderDefaults.current.set(selected.id, { provider, model: null, effort: null }); else pendingProviderDefaults.current.delete(selected.id);
         edit({ provider, model: fallback?.model ?? null, effort: null });
       }}>
-        {modelOptions(canonicalProvider(selected.data.provider))}
-        {selected.data.model && !selectedModel && <option value={choiceKey(selected.data)}>{selected.data.model}</option>}</OptionSelect></label>
+        {subscriptionOf(selected.data.model) ? subscriptionOptions(subscriptionOf(selected.data.model)!.prefix) : modelOptions(canonicalProvider(selected.data.provider))}
+        {selected.data.model && !selectedModel && !subscriptionOf(selected.data.model) && <option value={choiceKey(selected.data)}>{selected.data.model}</option>}</OptionSelect></label>
       {selectedModel && selectedModel.efforts.length > 0 && <label>Thinking<OptionSelect aria-label="Thinking" value={selected.data.effort ?? ""} onChange={event => edit({ effort: event.target.value || null })}>
         <option value="">Model default{selectedModel.defaultEffort ? ` (${selectedModel.defaultEffort})` : ""}</option>{selectedModel.efforts.map(effort => <option key={effort} value={effort}>{effort}</option>)}</OptionSelect></label>}
       <FolderPicker cwd={cwd} {...project} value={selected.data.writeScopes} own={own.get(selected.id)} onChange={writeScopes => edit({ writeScopes })} />

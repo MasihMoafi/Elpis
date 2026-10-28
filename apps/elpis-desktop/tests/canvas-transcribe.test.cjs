@@ -32,6 +32,17 @@ test('Transcribe images builds one Gemini reader per six pages and a join, with 
     assert.match(await f.canvas.locator('.react-flow__node').filter({ hasText: 'Pages 1–6' }).innerText(), /Gemini 3\.8 Flash \(High\)/);
     await f.canvas.locator('.react-flow__node').filter({ hasText: 'MOTHER' }).first().click();
     assert.equal((await f.canvas.getByRole('combobox', { name: 'Her model', exact: true }).innerText()).trim(), 'Opus 5.5');
+    // A reader's own panel names its subscription and model (28 Oct: it said OpenAI and agy/gemini-3.8-flash-high), and
+    // picking another subscription keeps the route in the model, with no provider.
+    await f.canvas.locator('.react-flow__node').filter({ hasText: 'Pages 1–6' }).click();
+    const panel = f.canvas.getByRole('complementary', { name: 'Selected agent', exact: true });
+    const provider = panel.getByRole('combobox', { name: 'Provider', exact: true }), model = panel.getByRole('combobox', { name: 'Model', exact: true });
+    assert.deepEqual([(await provider.innerText()).trim(), (await model.innerText()).trim()], ['Antigravity', 'Gemini 3.8 Flash (High)']);
+    await chooseOption(model, '|agy/gemini-4-argon-high');
+    await chooseOption(provider, 'claude/');
+    assert.equal((await model.innerText()).trim(), 'Opus 5.5');
+    const reader = (await f.saved()).nodes.find(n => n.data.title?.endsWith('Pages 1–6'));
+    assert.deepEqual([reader.data.model, reader.data.provider], ['claude/opus', null]);
     // A folder without page images says so and leaves the board alone.
     await request.fill('Transcribe docs');
     await f.canvas.getByRole('button', { name: 'New workflow', exact: true }).click();

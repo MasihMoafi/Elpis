@@ -106,7 +106,7 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     // her panel: the run's settings, a brief every agent gets and her chat's model.
     const mother = canvas.locator('.react-flow__node-mother');
     assert.equal(await mother.count(), 1);
-    assert.match(await mother.innerText(), /Mother[\s\S]*4 of 10 agents/i);
+    assert.match(await mother.innerText(), /Mother[\s\S]*4 agents · not run/i);
     assert.equal(await canvas.locator('.react-flow__edge.canvas-edge-mother').count(), 3);
     await mother.click(); await page.keyboard.press('Delete');
     assert.equal(await mother.count(), 1, 'the Mother survives Delete');
