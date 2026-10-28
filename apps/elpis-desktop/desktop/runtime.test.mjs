@@ -60,3 +60,33 @@ test('desktop reuses a live private runtime even when the launcher points to an 
   } finally { await new Promise(resolve => server.close(resolve)); }
   await assert.rejects(ensureInstalledRuntime({ env: explicit }), /could not be found/);
 });
+
+// 27 Oct: after an engine install, Restart reopened the app on the engine already running, and "Update ready" stayed.
+test('a running engine from another installation is asked to hand over to the selected one; the same one is joined', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-app-handover-'));
+  const key = createHash('sha256').update(fs.realpathSync(dir)).digest('hex').slice(0, 16);
+  const socketDir = path.join(dir, 'elpis-bridge', key);
+  fs.mkdirSync(socketDir, { recursive: true, mode: 0o700 });
+  const socketPath = path.join(socketDir, 'bridge.sock');
+  const server = net.createServer(socket => socket.end());
+  await new Promise(resolve => server.listen(socketPath, resolve));
+  fs.chmodSync(socketPath, 0o600);
+  const install = name => {
+    const engine = path.join(dir, name, 'package/bin/codex'), tools = path.join(dir, name, 'tools/elpis-claude');
+    fs.mkdirSync(path.dirname(engine), { recursive: true }); fs.mkdirSync(tools, { recursive: true }); fs.writeFileSync(engine, 'fixture');
+    fs.writeFileSync(path.join(tools, 'acp-bridge.mjs'), '');
+    fs.writeFileSync(path.join(tools, 'shared-runtime.mjs'), `import fs from 'node:fs'; fs.writeFileSync(${JSON.stringify(path.join(dir, 'called.json'))}, JSON.stringify(process.env.ELPIS_ENGINE_BIN));`);
+    return fs.realpathSync(engine);
+  };
+  const old = install('old'), selected = install('new');
+  fs.mkdirSync(path.join(dir, '.local/bin'), { recursive: true }); fs.symlinkSync(selected, path.join(dir, '.local/bin/elpis-next'));
+  const env = { PATH: process.env.PATH, HOME: dir, ELPIS_HOME: dir, XDG_RUNTIME_DIR: dir };
+  try {
+    fs.writeFileSync(path.join(socketDir, 'state.json'), JSON.stringify({ engine: selected }));
+    await ensureInstalledRuntime({ env });
+    assert.equal(fs.existsSync(path.join(dir, 'called.json')), false, 'the selected engine already runs: the app joins it');
+    fs.writeFileSync(path.join(socketDir, 'state.json'), JSON.stringify({ engine: old }));
+    await ensureInstalledRuntime({ env });
+    assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'called.json'))), selected, 'the selected installation takes over');
+  } finally { await new Promise(resolve => server.close(resolve)); }
+});

@@ -27,12 +27,26 @@ export async function ensureInstalledRuntime({ env = process.env } = {}) {
       socket.once('connect', () => done(true));
       socket.once('error', () => done(false));
       socket.once('timeout', () => done(false));
-    })) return;
+    })) {
+      // 27 Oct: after an engine install, Restart reopened the app on the engine already running, so "Update ready"
+      // never went away. A runtime from another installation is asked to hand over to the selected one (its working
+      // chats finish where they are: shared-runtime.mjs); when it cannot, the app keeps the running one.
+      let running, selected;
+      try { running = JSON.parse(fs.readFileSync(path.join(path.dirname(socketPath), 'state.json'), 'utf8')).engine; } catch { /* unknown: keep it */ }
+      try { selected = fs.realpathSync(path.join(env.HOME || os.homedir(), '.local', 'bin', 'elpis-next')); } catch { /* none selected */ }
+      if (running && selected && running !== selected) await startRuntime(env, selected).catch(error => console.error(`Elpis kept the running engine: ${error.message}`));
+      return;
+    }
   }
-  const selected = env.ELPIS_ENGINE_BIN || path.join(os.homedir(), '.local', 'bin', 'elpis-next');
+  const selected = env.ELPIS_ENGINE_BIN || path.join(env.HOME || os.homedir(), '.local', 'bin', 'elpis-next');
   let engine;
   try { engine = fs.realpathSync(selected); }
   catch { throw new Error('Install Elpis before opening the app. The Elpis runtime executable could not be found.'); }
+  await startRuntime(env, engine);
+}
+
+/** Runs the installation's launcher helper: it starts that bridge, or has a running one from another installation hand over to it. */
+async function startRuntime(env, engine) {
   const bridgeDir = runtimeTools(engine);
   const helper = path.join(bridgeDir, 'shared-runtime.mjs');
   const bridge = path.join(bridgeDir, 'acp-bridge.mjs');
