@@ -8,7 +8,7 @@ on:
         required: true
         default: full
         type: choice
-        options: [check, ui, full, build, mcp]
+        options: [check, ui, full, build]
   push:
     tags: ['v*']
     branches: [next]
@@ -141,77 +141,6 @@ jobs:
             ~/.cargo/git
             codex-rs/target
           key: ${{ steps.cargo_cache.outputs.cache-primary-key }}
-
-  mcp:
-    # Temporary: lazy MCP startup for root threads. A control run without the core change must
-    # fail the updated test; the touched MCP suites must pass with it.
-    if: github.event_name == 'workflow_dispatch' && inputs.verification == 'mcp'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 150
-    env:
-      CODEX_SKIP_BWRAP_BUILD: '1'
-      CARGO_BUILD_JOBS: '4'
-      RUST_TEST_THREADS: '1'
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
-        with:
-          fetch-depth: 20
-      - name: Install Rust and system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libcap-dev libssl-dev pkg-config ripgrep
-          rustup toolchain install 1.95.0 --profile minimal --no-self-update
-          if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
-            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          fi
-      - name: Build the helper binaries the core tests launch
-        working-directory: codex-rs
-        run: |
-          cargo build --profile dev-small --locked -p codex-rmcp-client --bins \
-            -p codex-cli --bin codex -p codex-exec --bin codex-exec -p codex-linux-sandbox --bin codex-linux-sandbox
-      - name: Control - the updated test fails while root threads start MCP eagerly
-        working-directory: codex-rs
-        shell: bash
-        run: |
-          change=$(git log --format=%H -1 --grep='start cached MCP servers on first use')
-          test -n "$change"
-          echo "CHANGE=$change" >> "$GITHUB_ENV"
-          git show "$change" -- core/src/session/mcp_runtime.rs | git apply -R
-          set +e
-          cargo test --profile dev-small --locked -p codex-core --test all -- \
-            suite::mcp_tool_cache::cached_mcp_startup_is_lazy_for_root_and_subagent_threads --exact 2>&1 | tee "$RUNNER_TEMP/control.log"
-          status=${PIPESTATUS[0]}
-          set -e
-          git checkout -- core/src/session/mcp_runtime.rs
-          test "$status" -ne 0
-          rg -q 'must stay dormant in a second root thread|must not start its own copy' "$RUNNER_TEMP/control.log"
-      - name: Touched MCP suites with lazy root startup; failures are rerun without the change
-        working-directory: codex-rs
-        shell: bash
-        run: |
-          set +e
-          cargo test --profile dev-small --locked -p codex-core --test all -- \
-            suite::mcp_ suite::search_tool suite::codex_apps_protocol suite::scenarios \
-            suite::guardian_subagent_authorization suite::hooks suite::remote_env \
-            suite::skills_extension suite::step_settings suite::sqlite_state 2>&1 | tee "$RUNNER_TEMP/lazy.log"
-          status=${PIPESTATUS[0]}
-          set -e
-          rg '^test result:' "$RUNNER_TEMP/lazy.log" || true
-          [ "$status" -eq 0 ] && exit 0
-          mapfile -t failed < <(rg -o '^test (suite::\S+) \.\.\. FAILED' -r '$1' "$RUNNER_TEMP/lazy.log" | sort -u)
-          printf 'failed with lazy startup: %s\n' "${failed[@]}"
-          test "${#failed[@]}" -gt 0
-          git show "$CHANGE" -- core/src/session/mcp_runtime.rs | git apply -R
-          regressions=0
-          for name in "${failed[@]}"; do
-            if cargo test --profile dev-small --locked -p codex-core --test all -- "$name" --exact > "$RUNNER_TEMP/base.log" 2>&1; then
-              echo "REGRESSION (passes without the change): $name"; regressions=1
-            else
-              echo "pre-existing (fails without the change too): $name"
-            fi
-          done
-          git checkout -- core/src/session/mcp_runtime.rs
-          exit "$regressions"
 
   build:
     if: github.event_name != 'workflow_dispatch' || inputs.verification == 'full' || inputs.verification == 'ui' || inputs.verification == 'build'
