@@ -237,6 +237,17 @@ test('workflow names reject duplicates; canvas colour and separate sidebar names
     await chooseTheme(page, 'dark');
     assert.equal(await markColor(canvas.locator('.mother-node .workflow-mark')), await markColor(header));
     await shot(page, 'identity-dark');
+    await canvas.getByRole('radio', { name: 'Isometric', exact: true }).click();
+    await canvas.getByRole('button', { name: 'Fit view', exact: true }).click();
+    await page.waitForFunction(() => {
+      const world = document.querySelector('.iso-world'), target = world?.transform.baseVal.consolidate()?.matrix;
+      if (!target) return false;
+      const drawn = new DOMMatrix(getComputedStyle(world).transform);
+      return ['a', 'b', 'c', 'd', 'e', 'f'].every(key => Math.abs(drawn[key] - target[key]) < .01);
+    });
+    await eventually(async () => assert.equal(await markColor(canvas.locator('.iso-label[data-for="mother"] .workflow-mark')), await markColor(header)));
+    await shot(page, 'identity-iso-dark');
+    await canvas.getByRole('radio', { name: 'Flat', exact: true }).click();
     assert.equal(await row(page, 'root-1').getByRole('button', { name: /^Colour for / }).count(), 0);
     await row(page, 'root-1').locator('.thread-actions').click();
     await page.getByRole('menuitem', { name: 'Rename', exact: true }).click();
@@ -331,7 +342,7 @@ test('a manually named step keeps its name while legacy names use recorded step 
   } finally { await f.close(); }
 });
 
-test('saved failed workflow opens its live team in chat and on the board without replacing the draft', async () => {
+test('saved failed workflow opens its live team in chat and both canvas views without replacing the draft', async () => {
   const supervisionReport = 'Mother observed the source check and steered the current report toward verified evidence.';
   const saved = { id: 'legal-run', rootThreadId: 'chat-a', name: 'Legal current state', status: 'failed', startedAt: 100,
     mother: { decisions: [{ kind: 'checkpoint', taskId: 'evidence', decision: 'steer', status: 'delivered', summary: supervisionReport, reasons: 'The completed read lacked a source citation.' }] },
@@ -384,7 +395,12 @@ test('saved failed workflow opens its live team in chat and on the board without
     await previousAttempt.locator('summary').click();
     assert.match(await board.locator('.react-flow__node[data-id="evidence"]').innerText(), /Inspect Pointt evidence/);
     await shot(page, 'workflow-recorded-flat');
+    await page.getByRole('radio', { name: 'Isometric', exact: true }).click();
+    const iso = page.getByRole('region', { name: 'Isometric board', exact: true });
     await board.getByRole('status', { name: 'Mother supervision', exact: true }).getByText(supervisionReport, { exact: true }).waitFor();
+    await iso.getByRole('button', { name: /^Inspect Pointt evidence:/ }).hover();
+    await iso.locator('.iso-label[data-for="evidence"]').getByText('Inspect Pointt evidence', { exact: true }).waitFor();
+    await shot(page, 'workflow-recorded-isometric');
     assert.equal(await page.evaluate(() => localStorage.getItem('elpis-workflow-draft-v1')), before, 'viewing the actual saved run never overwrites an unfinished draft');
     await page.getByRole('button', { name: 'New workflow', exact: true }).click();
     await page.getByRole('textbox', { name: 'Workflow request', exact: true }).waitFor();
@@ -460,6 +476,22 @@ test('failed workflow follows a resumed agent and paginated descendants without 
     assert.ok(await visibleHeight(board.locator('.canvas-board > .react-flow')) >= 300, 'the actual flat canvas has at least 300 visible pixels');
     assert.equal(await board.locator('details.canvas-log-panel').getAttribute('open'), null, 'historical failure starts collapsed');
     await shot(page, 'resumed-team-flat');
+    await page.getByRole('radio', { name: 'Isometric', exact: true }).click();
+    const iso = page.getByRole('region', { name: 'Isometric board', exact: true });
+    await iso.getByRole('button', { name: /^Source checker:/ }).waitFor();
+    assert.ok(await visibleHeight(iso) >= 300, 'the actual isometric canvas has at least 300 visible pixels');
+    await eventually(async () => {
+      const framing = await iso.evaluate(element => {
+        const pane = element.getBoundingClientRect();
+        return [...element.querySelectorAll('.iso-node')].map(node => {
+          const box = node.getBoundingClientRect();
+          return { id: node.getAttribute('data-id'), fits: box.width > 0 && box.left >= pane.left && box.top >= pane.top && box.right <= pane.right && box.bottom <= pane.bottom };
+        });
+      });
+      assert.equal(framing.length, 3, 'Mother, child and nested helper are actually drawn');
+      assert.deepEqual(framing.filter(node => !node.fits), [], 'the settled view frames every agent, including Mother');
+    });
+    await shot(page, 'resumed-team-isometric');
     working = false;
     await board.getByRole('button', { name: 'Refresh live progress', exact: true }).click();
     await board.getByRole('region', { name: 'Live workflow progress', exact: true }).getByText(/Live: 0 working/).waitFor();

@@ -58,7 +58,7 @@ html { font-size:var(--interface-size, 16px); }
 :root[data-custom-palette] { --canvas:var(--palette-light-background); --ink:var(--palette-light-foreground); --background:var(--canvas); --foreground:var(--palette-light-foreground); --card:var(--palette-light-surface); --composer:var(--palette-light-surface); --sidebar:var(--palette-light-sidebar); --muted-foreground:var(--palette-light-muted); --subtle-foreground:var(--palette-light-muted); --accent-light:var(--palette-light-accent); --primary-foreground:var(--palette-light-accent-foreground); --destructive:var(--palette-light-critical); --warning:var(--palette-light-warning); --success:var(--palette-light-success); --context:var(--palette-light-context); }
 :root.dark[data-custom-palette] { --canvas:var(--palette-dark-background); --ink:var(--palette-dark-foreground); --background:var(--canvas); --foreground:var(--palette-dark-foreground); --card:var(--palette-dark-surface); --composer:var(--palette-dark-surface); --sidebar:var(--palette-dark-sidebar); --muted-foreground:var(--palette-dark-muted); --subtle-foreground:var(--palette-dark-muted); --accent-dark:var(--palette-dark-accent); --primary-foreground:var(--palette-dark-accent-foreground); --destructive:var(--palette-dark-critical); --warning:var(--palette-dark-warning); --success:var(--palette-dark-success); --context:var(--palette-dark-context); --gold-deep:var(--palette-dark-accent); }
 :root[data-custom-palette] .dark { --canvas:var(--palette-dark-background); --ink:var(--palette-dark-foreground); --background:var(--canvas); --foreground:var(--palette-dark-foreground); --card:var(--palette-dark-surface); --composer:var(--palette-dark-surface); --sidebar:var(--palette-dark-sidebar); --muted-foreground:var(--palette-dark-muted); --subtle-foreground:var(--palette-dark-muted); --accent-dark:var(--palette-dark-accent); --primary-foreground:var(--palette-dark-accent-foreground); --destructive:var(--palette-dark-critical); --warning:var(--palette-dark-warning); --success:var(--palette-dark-success); --context:var(--palette-dark-context); --gold-deep:var(--palette-dark-accent); }
-/* The HUD language, for every surface: chamfers cut the
+/* The HUD language, taken from the isometric lab (.iso-*, components/agents-iso.tsx), for every surface: chamfers cut the
  * top-left and bottom-right corners (border-radius + corner-shape:var(--corner-shape, bevel), so borders, outlines and shadows follow the
  * cut); --hud-edge and --hud-face are the lab key's edge and face; one label type; one motion scale.
  * Accent colours flow through the shared primary/gold tokens. */
@@ -69,8 +69,8 @@ html { font-size:var(--interface-size, 16px); }
 /* Shared native chamfers keep each element's border width, focus rings and shadows. Controls
  * (components/ui: buttons, fields, select triggers) take .hud-cut, those 24px tall or less .hud-cut-sm, and panels and
  * floating surfaces --cut-lg (below). Roundness stays only where it means something: dots, rings and switches. */
-.hud-cut, .hud-cut-sm { corner-shape:var(--corner-shape, bevel); }
-.hud-cut { border-radius:var(--corner-radius, var(--cut) 0); }
+.hud-cut, .hud-cut-sm, .iso-chamfer { corner-shape:var(--corner-shape, bevel); }
+.hud-cut, .iso-chamfer { border-radius:var(--corner-radius, var(--cut) 0); }
 .hud-cut-sm { border-radius:var(--corner-radius-sm, var(--cut-sm) 0); }
 /* The HUD label: every small uppercase caption (the lab's mono labels) in one type — 12px, never smaller (--text-small),
  * mono, .14em, uppercase. Each label keeps its own line-height, colour and spacing. */
@@ -990,7 +990,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 /* Dragging on the board never selects the page's text; fields keep their own selection. */
 .canvas-board { user-select:none; }
 .canvas-board :is(input, textarea, [contenteditable="true"]) { user-select:text; }
-.canvas-board[data-tool="lasso"] .react-flow__pane { cursor:crosshair; }
+.canvas-board[data-tool="lasso"] :is(.react-flow__pane, .iso-board) { cursor:crosshair; }
 .canvas-stroke { position:absolute; inset:0; z-index:10; width:100%; height:100%; pointer-events:none; }
 .canvas-stroke polyline { fill:color-mix(in oklab, var(--primary) 8%, transparent); stroke:var(--primary); stroke-width:1; stroke-dasharray:5 4; }
 .canvas-stroke polyline[data-tool="cut"] { fill:none; stroke:var(--destructive); stroke-width:2; }
@@ -1002,8 +1002,15 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .agents-canvas .react-flow__node.react-flow__node-frame { pointer-events:none !important; }
 .canvas-frame-title { min-height:30px; padding:6px 10px; overflow:hidden; color:var(--muted-foreground); font-size:var(--text-small); cursor:grab; pointer-events:auto; }
 .canvas-frame-title strong { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:500; }
-.agent-node[data-muted] { opacity:.5; }
+.agent-node[data-muted], .iso-node[data-muted] { opacity:.5; }
 .agent-node[data-muted] .agent-node-title { text-decoration:line-through; }
+.iso-frame { position:absolute; pointer-events:none; }
+.iso-frame .canvas-frame-title { pointer-events:auto; }
+.iso-note { position:absolute; }
+.iso-wire-end { border-color:var(--primary); }
+.iso-port[data-valid="true"] { outline:1px solid var(--primary); outline-offset:3px; }
+.iso-port[data-valid="false"] { opacity:.35; }
+.iso-link[data-inserting] .iso-wire { stroke:var(--primary); }
 /* The header fits any window: the name gives way first, then the controls wrap to a second row; nothing is cut off. */
 .canvas-header { grid-column:1 / -1; display:flex; flex-wrap:wrap; align-items:center; gap:8px 10px; padding:10px 16px; border-bottom:1px solid var(--hairline); background:var(--background); }
 .canvas-header > * { flex-shrink:0; }
@@ -1105,7 +1112,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 /* A short window keeps the board in view: the run clock and run log give up their height first (and scroll), the
    board keeps room, and nothing in it spills over the error below (27 Oct). */
 .canvas-board { overflow:hidden; }
-.canvas-board > .react-flow { min-height:min(140px, 45%); }
+.canvas-board > :is(.react-flow, .iso-board) { min-height:min(140px, 45%); }
 .canvas-board > :is(.canvas-telemetry, .canvas-log-panel) { flex:0 1 auto; min-height:0; overflow:auto; }
 .canvas-board .react-flow { --xy-background-color:var(--background); --xy-background-pattern-color:var(--border); --xy-edge-stroke:var(--muted-foreground); --xy-edge-stroke-selected:var(--foreground); --xy-connectionline-stroke:var(--context); --xy-controls-button-background-color:var(--card); --xy-controls-button-color:var(--foreground); --xy-controls-button-border-color:var(--hairline); --xy-minimap-background-color:var(--card); --xy-node-border-radius:10px; }
 /* Colour means state, as on Deus Ex's board: idle wires are a neutral grey in both themes, never the theme's gold. */
@@ -1188,10 +1195,99 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .canvas-folders .canvas-chip { height:26px; max-width:100%; gap:4px; padding:0 4px 0 8px; color:var(--foreground); font-family:var(--mono); font-size:0.75rem; }
 .canvas-chip-label { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .canvas-inspector-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:4px; }
+/* The isometric view (components/agents-iso.tsx), as Deus Ex's hacking screen: pedestals on a ground grid in one SVG,
+ * upright titles and chamfered controls in HTML over it. Colours come from the theme's tokens and the agent's --kind;
+ * state colours match the flat board's (done --success, live --context, cut --destructive). */
+.canvas-view { flex:none; }
+.iso-board { container:iso-board / inline-size; position:relative; flex:1 1 0; min-height:0; overflow:clip; outline:none; cursor:crosshair; touch-action:none; user-select:none; --iso-wire:var(--muted-foreground); }
+.dark .iso-board { --iso-wire:color-mix(in oklch, var(--foreground) 45%, transparent); background:radial-gradient(ellipse at 45% 40%, color-mix(in srgb, var(--gold) 7%, var(--accent-canvas)), var(--canvas) 70%); }
+.iso-board[data-panning] { cursor:grabbing; }
+.iso-board > svg { position:absolute; inset:0; width:100%; height:100%; }
+.iso-board :is(.iso-floor, .iso-grid, .iso-wire, .iso-wire-bed, .iso-chevron, .iso-ring, .iso-plate, .iso-focus, .iso-inlay, .iso-face-top) { vector-effect:non-scaling-stroke; }
+.iso-floor { fill:var(--recessed); stroke:var(--hairline); }
+.iso-grid { stroke:var(--hairline); stroke-width:1; pointer-events:none; }
+.dark .iso-floor { fill:color-mix(in srgb, var(--gold) 4%, var(--accent-surface)); stroke:color-mix(in oklch, var(--gold) 24%, transparent); }
+.dark .iso-grid { stroke:color-mix(in oklch, var(--gold) 11%, transparent); }
+.iso-glow { opacity:0; pointer-events:none; }
+.iso-glow[data-status="running"] { fill:var(--context); opacity:.5; animation:iso-pulse 1.6s ease-in-out infinite; }
+.iso-glow[data-status="succeeded"] { fill:var(--success); opacity:.35; }
+.iso-glow:is([data-status="failed"], [data-status="blocked"]) { fill:var(--destructive); opacity:.4; }
+@keyframes iso-pulse { 50% { opacity:.15; } }
+.iso-link { cursor:pointer; }
+.iso-wire-hit { fill:none; stroke:transparent; stroke-width:18; pointer-events:stroke; }
+.iso-link .iso-chevron { pointer-events:none; }
+.iso-world { transition:transform 250ms ease; }
+.iso-board[data-panning] .iso-world { transition:none; }
 .canvas-flow-edit { position:absolute; z-index:25; width:min(300px, calc(100% - 16px)); padding:8px; border:1px solid var(--hairline); border-radius:6px; background:var(--card); }
 .canvas-text-edit { width:100%; min-width:0; height:28px; font:inherit; }
+.iso-label:has(.canvas-text-edit) { width:176px; padding:3px; z-index:5; }
+.iso-flow-label { position:absolute; pointer-events:auto; max-width:176px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; transform:translate(-50%, -100%); padding:2px 7px; border:1px solid var(--hairline); border-radius:4px; color:var(--foreground); background:var(--card); font-size:0.75rem; line-height:18px; cursor:text; }
+.iso-flow-leader { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; stroke:var(--muted-foreground); stroke-width:1; stroke-dasharray:2 3; }
 .canvas-flow-leader { fill:none; pointer-events:none; stroke:var(--xy-edge-stroke); stroke-width:1; stroke-dasharray:2 3; }
 .canvas-notice > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+@media (prefers-reduced-motion: reduce) { .iso-world { transition:none; } }
+.iso-link[data-state="done"] { --iso-wire:var(--success); }
+.iso-link[data-state="live"] { --iso-wire:var(--context); }
+.iso-link[data-state="cut"] { --iso-wire:var(--destructive); }
+.iso-link[data-hot]:not([data-state]) { --iso-wire:var(--foreground); }
+.iso-wire { fill:none; stroke:var(--iso-wire); stroke-width:1.8; stroke-dasharray:7 5; stroke-linejoin:round; }
+.iso-wire-bed { fill:none; stroke:var(--iso-wire); stroke-width:6; stroke-linejoin:round; opacity:.13; }
+.iso-link:is([data-mother], [data-father]) .iso-wire { stroke-dasharray:2 5; }
+/* A two-way wire sets no order: a plain line, with no chevrons. */
+.iso-link[data-kind="alongside"] .iso-wire { stroke-dasharray:none; }
+.iso-link[data-state="cut"] .iso-wire { stroke-dasharray:3 5; }
+.iso-link[data-hot] .iso-wire { stroke-width:2.6; }
+.iso-link[data-hot] .iso-wire-bed { opacity:.24; }
+.iso-chevron { fill:none; stroke:var(--iso-wire); stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round; transform:translate(var(--x), var(--y)); }
+.iso-chevron[data-live] { stroke-width:2.6; animation:iso-stream 1.8s linear infinite; }
+@keyframes iso-stream { from { transform:translate(var(--sx), var(--sy)); opacity:0; } 20%, 80% { opacity:1; } to { transform:translate(var(--ex), var(--ey)); opacity:0; } }
+.iso-node { cursor:pointer; outline:none; }
+.iso-node:is([data-status="pending"], [data-status="cancelled"]) { opacity:.75; }
+.iso-hit { fill:transparent; }
+.iso-plate, .iso-focus { fill:none; pointer-events:none; }
+.iso-node[aria-pressed="true"] .iso-plate { fill:color-mix(in oklab, var(--context) 14%, transparent); stroke:var(--context); stroke-width:1.5; stroke-dasharray:5 4; }
+.iso-node:focus-visible .iso-focus { stroke:var(--ring); stroke-width:2; }
+.iso-ring { fill:none; stroke:var(--border); stroke-width:1.5; stroke-dasharray:2 5; pointer-events:none; }
+.iso-ring[data-check="pending"] { stroke:var(--muted-foreground); }
+.iso-ring[data-check="running"] { stroke:var(--context); stroke-width:2; stroke-dasharray:10 6; animation:iso-turn 1.2s linear infinite; }
+.iso-ring[data-check="succeeded"] { stroke:var(--success); stroke-width:2.5; stroke-dasharray:none; }
+.iso-ring:is([data-check="failed"], [data-check="blocked"]) { stroke:var(--destructive); stroke-width:2.5; stroke-dasharray:none; }
+@keyframes iso-turn { to { stroke-dashoffset:-32; } }
+.iso-lift { transition:transform .15s ease; }
+.iso-node:is(:hover, [data-hot]) .iso-lift { transform:translateY(-4px); }
+.iso-core .iso-face-top { fill:color-mix(in oklch, var(--kind) 82%, var(--card)); }
+.iso-core .iso-face-left { fill:color-mix(in oklch, var(--kind) 76%, #000); }
+.iso-core .iso-face-right { fill:color-mix(in oklch, var(--kind) 56%, #000); }
+.iso-base .iso-face-top { fill:var(--card); stroke:var(--border); }
+.iso-base .iso-face-left { fill:color-mix(in oklch, var(--ink) 12%, var(--canvas)); }
+.iso-base .iso-face-right { fill:color-mix(in oklch, var(--ink) 22%, var(--canvas)); }
+.dark .iso-base .iso-face-top { stroke:color-mix(in oklch, var(--gold) 35%, transparent); }
+.dark .iso-base .iso-face-left { fill:color-mix(in srgb, var(--gold) 12%, #151515); }
+.dark .iso-base .iso-face-right { fill:color-mix(in srgb, var(--gold) 6%, #0f0f0f); }
+.iso-node[data-status="running"] .iso-core .iso-face-top { stroke:var(--context); stroke-width:2; }
+.iso-node[data-status="succeeded"] .iso-core .iso-face-top { stroke:var(--success); stroke-width:2; }
+.iso-node:is([data-status="failed"], [data-status="blocked"]) .iso-core .iso-face-top { stroke:var(--destructive); stroke-width:2; }
+.iso-inlay { fill:none; stroke:color-mix(in oklch, var(--kind) 40%, #fff); stroke-width:1; opacity:.75; pointer-events:none; }
+.iso-port { position:absolute; z-index:1; width:16px; height:16px; padding:0; transform:translate(-50%, -50%); border:2px solid var(--card); border-radius:50%; background:var(--kind, var(--context)); box-shadow:0 0 0 1px var(--border); cursor:crosshair; touch-action:none; }
+.iso-port:hover, .iso-port:focus-visible { outline:2px solid var(--ring); outline-offset:2px; }
+.iso-connection { fill:none; stroke:var(--context); stroke-width:2; stroke-dasharray:4 4; pointer-events:none; }
+.iso-labels { position:absolute; inset:0; pointer-events:none; }
+.iso-label { pointer-events:auto; cursor:pointer; position:absolute; display:flex; align-items:center; gap:6px; max-width:176px; padding:2px 8px 2px 3px; transform:translate(-50%, -100%); border:1px solid var(--hairline); border-radius:4px; background:color-mix(in oklab, var(--card) 88%, transparent); color:var(--foreground); font-size:0.8125rem; font-weight:600; line-height:18px; white-space:nowrap; }
+.iso-label > span { min-width:0; overflow:hidden; text-overflow:ellipsis; }
+.iso-label:is([data-kind="mother"], [data-kind="father"]) { padding-inline-start:8px; }
+.iso-label[data-short] { padding:2px; }
+.iso-label:is([data-hot], [data-selected]) { z-index:1; }
+.iso-label[data-hot] { border-color:var(--foreground); }
+.iso-label[data-selected] { border-color:var(--context); box-shadow:0 0 0 1px var(--context); }
+.iso-badge { flex:none; display:grid; place-items:center; min-width:18px; height:18px; padding:0 4px; border-radius:3px; background:var(--kind); color:var(--card); font:600 0.75rem/1 var(--mono); }
+/* The isometric HUD uses the same native border as the other cut controls and cards. */
+.iso-chamfer { --cut:7px; border:1px solid var(--hud-edge); background:var(--hud-face); }
+.iso-hud { position:absolute; z-index:2; bottom:12px; }
+.iso-controls { left:12px; display:flex; align-items:center; gap:6px; }
+.iso-status { right:12px; --cut:10px; display:grid; gap:2px; min-width:0; width:min(320px, calc(100% - 180px)); padding:7px 14px 7px 15px; border-left-color:var(--kind, var(--border)); }
+.iso-status strong { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:0.84375rem; font-weight:600; color:var(--foreground); }
+.iso-status small { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:0.75rem; color:var(--muted-foreground); }
+@media (prefers-reduced-motion:reduce) { .iso-glow, .iso-ring, .iso-chevron { animation:none; } .iso-lift { transition:none; } }
 
 /* The browser toolbar never squeezes the address field (180px, above): as the panel narrows, Annotate and Draw become icons
  * and open-externally moves into the … menu. The panel's own floor (components/side-panel.tsx) keeps what is left enough. */
@@ -1322,6 +1418,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 /* Identity edges stay distinct; restrained tints keep secondary text readable in both themes. */
 .agent-node[data-kind="agent"] { --kind:var(--agent-color); border-left:5px solid var(--agent-color); background:color-mix(in oklab, var(--agent-color) 20%, var(--card)); }
 .dark .agent-node[data-kind="agent"] { background:color-mix(in oklab, var(--agent-color) 10%, var(--card)); }
+.iso-node[data-kind="agent"] { --kind:var(--agent-color); }
 .canvas-pattern-command { position:absolute; bottom:48px; left:12px; right:12px; z-index:12; display:grid; gap:6px; padding:10px; }
 .canvas-round-limit { position:absolute; bottom:48px; right:12px; z-index:3; display:flex; align-items:center; gap:8px; padding:6px 10px; background:var(--card); color:var(--foreground); border:1px solid var(--border); }
 /* Reuse the installed controls and theme: the offline desktop bundle has no daisyUI stylesheet. */
