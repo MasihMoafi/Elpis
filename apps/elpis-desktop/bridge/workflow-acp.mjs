@@ -7,6 +7,7 @@ import { runAcpNode } from './acp-nodes.mjs';
 import { workflowRoute, quotaFailure } from './workflow-models.mjs';
 import { agentParentId } from '../lib/agent-runs.mjs';
 import { workflowWorktrees, mergeWorkflowReview, checkWorkflowReview, workflowCandidateChanged } from './workflow-worktrees.mjs';
+import { workerBudget } from './memory-budget.mjs';
 
 const ended = new Set(['succeeded', 'failed', 'cancelled', 'blocked']);
 const writer = task => ['implement', 'fix'].includes(task.kind);
@@ -104,7 +105,7 @@ export function validateWorkflow(tasks, roundLimit) {
 /** ACP owns node execution. This scheduler owns Kahn dependencies, bounded rounds, concurrency and failure state. */
 /** `onEnd(record)` hears each run's final record once it is saved: the bridge starts a run's next stage from it. */
 export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = process.env, timeoutMs,
-  onSession, onEnd, modelRoutes, observeThread, listThreadDescendants } = {}) {
+  onSession, onEnd, modelRoutes, observeThread, listThreadDescendants, budget = workerBudget } = {}) {
   const records = new Map(), active = new Map();
   const controls = new Map(), progressTimers = new Map(), supervision = new Map(), routeSnapshots = new Map(), exhaustedProviders = new Map();
   const mergingSources = new Set(), mergeControllers = new Map(), checkpoints = new Map();
@@ -137,6 +138,7 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
     });
     saving = pending; return pending;
   };
+  const logLine = (record, text) => { (record.log ??= []).push({ at: Date.now(), text }); void save(record).catch(error => { record.persistenceError = error.message; }); };
   const progress = (record, task, update) => {
     const entries = task.progress ??= [], at = Date.now();
     if (['agent_message_chunk', 'agent_thought_chunk'].includes(update?.sessionUpdate) && update.content?.type === 'text') {
@@ -445,7 +447,12 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
             if (task.dependsOn.some(id => ['failed', 'blocked', 'cancelled'].includes(byId.get(id).status))) { task.status = 'blocked'; continue; }
             if (running.size >= (record.maxConcurrency ?? 3) || !task.dependsOn.every(id => byId.get(id).status === 'succeeded')) continue;
             if (!isolation && record.tasks.some(other => running.has(other.id) && task.writeScopes.some(a => other.writeScopes.some(b => a === '.' || b === '.' || a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`))))) continue;
-            const promise = run(task).finally(() => { running.delete(task.id); inflight.delete(promise); }); running.set(task.id, promise); inflight.add(promise);
+            // One budget for every workflow in this process: a node slot and enough memory (bridge/memory-budget.mjs).
+            const release = await budget.acquire(controller.signal, text => logLine(record, text)).catch(error => { if (controller.signal.aborted) return null; throw error; });
+            if (!release) continue;
+            // A check that failed during the wait sent its step back; that step finishes again first.
+            if (!task.dependsOn.every(id => byId.get(id).status === 'succeeded')) { release(); continue; }
+            const promise = run(task).finally(() => { release(); running.delete(task.id); inflight.delete(promise); }); running.set(task.id, promise); inflight.add(promise);
           }
           if (running.size) await Promise.race(running.values());
         }

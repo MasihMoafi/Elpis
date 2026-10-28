@@ -11,6 +11,8 @@ import { DesktopClient } from './client.mjs';
 import { startDesktopServer } from './server.mjs';
 import { workflowWorktrees } from './workflow-worktrees.mjs';
 import { loveNodeSpec } from './love-agents.mjs';
+import { createWorkflowRuns } from './workflow-acp.mjs';
+import { createMemoryBudget } from './memory-budget.mjs';
 
 const ROOT = '00000000-0000-0000-0000-000000000001';
 const FATHER = '00000000-0000-0000-0000-00000000000f';
@@ -353,4 +355,68 @@ test('isolation rejects staged changes outside scope even when the working file 
   fs.writeFileSync(path.join(cwd, 'outside'), 'original');
   await assert.rejects(isolation.complete(writer, 1), /outside its write scopes: outside/);
   assert.equal(fs.readFileSync(path.join(f.dir, 'outside'), 'utf8'), 'original');
+});
+
+// One bridge runs every workflow under one memory budget (bridge/memory-budget.mjs). Each node holds its turn until `release`.
+function budgetFixture(t, budget) {
+  const tempRoot = createTestTempDir(path.join(os.homedir(), '.cache/elpis-tests/workflow-budget-'));
+  const dir = path.join(tempRoot, 'project'); fs.mkdirSync(dir);
+  const release = path.join(tempRoot, 'release');
+  const log = id => { const file = path.join(tempRoot, `${id}.jsonl`); return fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse) : []; };
+  const runs = createWorkflowRuns({ stateDir: path.join(tempRoot, 'state'), budget, nodeSpec: node => ({ name: node.name, command: process.execPath, args: [FAKE], model: node.model,
+    env: { FAKE_ACP_NAME: node.name, FAKE_ACP_MODELS: 'm-fast', FAKE_ACP_LOG: path.join(tempRoot, `${node.name}.jsonl`), FAKE_ACP_HOLD_TURN: '1', FAKE_ACP_RELEASE: release } }) });
+  const record = async id => (await runs.list()).find(record => record.id === id);
+  const until = async (check, message) => { for (let n = 0; n < 500; n++) { if (await check()) return; await pause(20); } assert.fail(message); };
+  t.after(async () => { runs.close(); await until(async () => (await runs.list()).every(record => record.status !== 'running'), 'runs stopped'); removeTestTempDir(tempRoot); });
+  return { log, record, until, release: () => fs.writeFileSync(release, ''), cancel: rootThreadId => runs.cancel(rootThreadId),
+    started: ids => ids.filter(id => log(id).some(row => row.method === 'session/prompt')),
+    start: (rootThreadId, tasks, extra = {}) => runs.start({ rootThreadId, name: rootThreadId, tasks, ...extra }, { cwd: dir, model: 'm-fast', modelProvider: 'openai' }),
+    finished: async id => { await until(async () => (await record(id)).status !== 'running', 'workflow did not finish'); return record(id); } };
+}
+const plenty = { available: async () => 64, app: async () => 0, pollMs: 20 };
+
+test('two workflows of three nodes share the global cap of 4 and all six finish', { timeout: 20000 }, async t => {
+  const f = budgetFixture(t, createMemoryBudget({ env: {}, ...plenty }));
+  const ids = ['a1', 'a2', 'a3', 'b1', 'b2', 'b3'];
+  const one = await f.start('one', ids.slice(0, 3).map(id => task(id)), { maxConcurrency: 3 });
+  const two = await f.start('two', ids.slice(3).map(id => task(id)), { maxConcurrency: 3 });
+  await f.until(() => f.started(ids).length >= 4, 'four nodes start');
+  await pause(300);
+  assert.equal(f.started(ids).length, 4, 'a fifth node waits for a slot');
+  assert.equal(ids.filter(id => f.log(id).length).length, 4, 'no process starts for the waiting nodes');
+  f.release();
+  const ended = [await f.finished(one.graphId), await f.finished(two.graphId)];
+  assert.deepEqual(ended.flatMap(record => record.tasks.map(task => task.status)), Array(6).fill('succeeded'));
+  assert.equal(ended.some(record => record.log), false, 'nothing waited for memory');
+});
+
+test('no node starts below the memory floor; the run log says so once when the wait starts and once when it ends', { timeout: 20000 }, async t => {
+  let free = 3.1;
+  const f = budgetFixture(t, createMemoryBudget({ env: {}, ...plenty, available: async () => free }));
+  f.release();
+  const run = await f.start('low', [task('m1'), task('m2')]), stopped = await f.start('stopped', [task('s1')]);
+  await pause(300);
+  const waiting = await f.record(run.graphId);
+  assert.deepEqual(waiting.tasks.map(task => task.status), ['pending', 'pending']);
+  assert.equal(f.log('m1').length + f.log('m2').length, 0, 'no agent process starts');
+  assert.deepEqual(waiting.log.map(line => line.text), ['waiting for memory: 3.1 GB available, floor 4 GB'], 'one line however long the wait');
+  f.cancel('stopped');
+  assert.equal((await f.finished(stopped.graphId)).status, 'cancelled', 'a run cancelled while it waits for memory ends');
+  assert.equal(f.log('s1').length, 0);
+  free = 12;
+  const ended = await f.finished(run.graphId);
+  assert.deepEqual(ended.tasks.map(task => task.status), ['succeeded', 'succeeded']);
+  assert.deepEqual(ended.log.map(line => line.text), ['waiting for memory: 3.1 GB available, floor 4 GB', 'memory available: 12.0 GB available, the app uses 0.0 GB']);
+});
+
+test("a workflow's own maxConcurrency still bounds it when the global cap allows more", { timeout: 20000 }, async t => {
+  const f = budgetFixture(t, createMemoryBudget({ env: { ELPIS_WORKER_CAP: '8' }, ...plenty }));
+  const ids = ['c1', 'c2', 'c3'];
+  const run = await f.start('bounded', ids.map(id => task(id)), { maxConcurrency: 2 });
+  await f.until(() => f.started(ids).length >= 2, 'two nodes start');
+  await pause(300);
+  assert.deepEqual(f.started(ids), ['c1', 'c2']);
+  assert.equal(f.log('c3').length, 0, 'the third node waits for its own workflow');
+  f.release();
+  assert.deepEqual((await f.finished(run.graphId)).tasks.map(task => task.status), ['succeeded', 'succeeded', 'succeeded']);
 });
