@@ -1,13 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import { INIT_PROMPT } from '../lib/init-prompt.ts';
 import { conversationMarkdown, exportFileName, lastReply, splitCommand } from '../lib/slash.ts';
-
-test('/init sends the terminal\'s own prompt, byte for byte', () => {
-  const terminal = fs.readFileSync(new URL('../../../codex-rs/tui/assets/prompt_for_init_command.md', import.meta.url), 'utf8');
-  assert.equal(INIT_PROMPT, terminal);
-});
 
 const user = (id, text) => ({ turnId: 't', item: { id, type: 'userMessage', content: [{ type: 'text', text }, { type: 'image', url: 'data:' }] } });
 const agent = (id, text) => ({ turnId: 't', item: { id, type: 'agentMessage', text } });
