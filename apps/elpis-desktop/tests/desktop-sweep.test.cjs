@@ -9,7 +9,8 @@ const { openSettings } = require('./controls.cjs');
 const { uiFit } = require('./ui-fit.cjs');
 const { contextRoutes } = require('./context-files-fixture.cjs');
 
-const PAGES = ['Models & accounts', 'Configuration', 'Personalization', 'MCP servers', 'Voice', 'Git', 'Worktrees', 'Hooks', 'General', 'Notifications', 'Appearance', 'Keyboard shortcuts', 'Usage & limits', 'Import chats', 'Archived chats', 'About'];
+// Settings pages in ChatGPT's grouped order (d79d50cbe); Browser joined Integrations in c5e2a69fc.
+const PAGES = ['General', 'Notifications', 'Import chats', 'Appearance', 'Voice', 'Configuration', 'Personalization', 'Keyboard shortcuts', 'Usage & limits', 'Models & accounts', 'About', 'MCP servers', 'Browser', 'Hooks', 'Git', 'Worktrees', 'Archived chats'];
 const TOPICS = ['One agent or many', 'Mother and Father', 'Writers and checks', 'Choose a pattern', 'Read a run'];
 const description = 'Check the shared components and their rendered layout, then explain which parts need attention before changing the interface. '.repeat(3);
 function routes() {
