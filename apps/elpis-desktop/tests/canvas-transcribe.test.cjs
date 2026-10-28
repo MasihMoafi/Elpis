@@ -4,7 +4,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { openCanvas } = require('./canvas-fixture.cjs');
-const { chooseOption } = require('./controls.cjs');
+const { captureReview, chooseOption } = require('./controls.cjs');
 
 // As the engine lists them: the subscriptions' models in its own list, routed by prefix (bridge/workflow-models.mjs).
 const MODELS = { extraModels: [{ id: 'opus', model: 'claude/opus', displayName: 'Opus 5.5' }, { id: 'argon', model: 'agy/gemini-4-argon-high', displayName: 'Gemini 4 Argon' }, { id: 'g38', model: 'agy/gemini-3.8-flash-high', displayName: 'Gemini 3.8 Flash (High)' }, { id: 'g38l', model: 'agy/gemini-3.8-flash-low', displayName: 'Gemini 3.8 Flash (Low)' }] };
@@ -127,6 +127,25 @@ test('Transcribe images picked in a folder of pages builds its team there at onc
     assert.equal(saved.request, 'Transcribe the page images in demo into transcription.md');
     await f.canvas.getByRole('button', { name: 'Choose folder', exact: true }).click();
     assert.equal(await f.page.evaluate(() => window.__asked), 1, 'Choose folder still asks');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+// 28 Oct, Masih's screenshots: with a finished run's status and its Open button in the row, the request box shrank to
+// "Cr…" and "Tra", and its label stood one word per line. At 1100 px the box keeps a usable width and its label one line.
+test('the request box keeps its width and its label one line beside a finished run at 1100 px', async () => {
+  const f = await openCanvas({ desktop: true, width: 1100, files: { '/tmp/demo|.': ['page-1.png', 'page-2.png'] }, ...MODELS });
+  try {
+    await f.page.evaluate(() => { window.elpisDesktop.openFile = async () => {}; });
+    await chooseOption(f.canvas.getByRole('combobox', { name: 'Workflow pattern', exact: true }), 'transcribe');
+    await f.page.waitForFunction(() => JSON.parse(localStorage.getItem('elpis-workflow-draft-v1'))?.result === 'transcription.md');
+    await f.canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
+    await f.canvas.getByRole('button', { name: 'Open transcription.md', exact: true }).waitFor();
+    const box = await f.canvas.getByRole('textbox', { name: 'Workflow request', exact: true }).boundingBox();
+    assert.ok(box.width >= 240, `request box ${Math.round(box.width)} px wide`);
+    const label = await f.canvas.locator('label', { hasText: 'What should the workflow do?' }).evaluate(el => { const r = document.createRange(); r.selectNodeContents(el.firstChild); return r.getClientRects().length; });
+    assert.equal(label, 1, 'the label is one line');
+    await captureReview(f.page, 'workflow-toolbar-1100');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

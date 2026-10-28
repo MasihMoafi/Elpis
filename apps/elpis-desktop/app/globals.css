@@ -1012,6 +1012,9 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .iso-port[data-valid="false"] { opacity:.35; }
 .iso-link[data-inserting] .iso-wire { stroke:var(--primary); }
 /* The header fits any window: the name gives way first, then the controls wrap to a second row; nothing is cut off. */
+/* The request keeps a usable width: the controls beside it wrap to the next line instead of crushing it (28 Oct: "Cr…",
+ * "Tra" and a label one word per line). `.field` alone allows any width. */
+.canvas-request { flex:1 1 20rem; min-width:min(20rem, 100%); white-space:nowrap; }
 .canvas-header { grid-column:1 / -1; display:flex; flex-wrap:wrap; align-items:center; gap:8px 10px; padding:10px 16px; border-bottom:1px solid var(--hairline); background:var(--background); }
 .canvas-header > * { flex-shrink:0; }
 .canvas-header > .canvas-name { flex:0 1 280px; min-width:140px; font-weight:600; }

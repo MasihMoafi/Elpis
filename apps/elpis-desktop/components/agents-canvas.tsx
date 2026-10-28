@@ -1522,7 +1522,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
   return <section className="agents-canvas" aria-label="Workflows" data-recorded={recordedRun ? true : undefined} data-panel={panelOpen ? "open" : "closed"}>
     <header className="canvas-header">
       {recordedRun ? <div className="flex w-full flex-wrap items-center justify-between gap-2"><span className="text-sm text-muted-foreground">Saved workflow{!run && " · Loading…"}</span><Button size="sm" onClick={onLeaveRecordedRun} disabled={!onLeaveRecordedRun}>New workflow</Button></div> : <form className="flex w-full min-w-0 flex-wrap items-end gap-2" aria-label="New workflow" onSubmit={event => { event.preventDefault(); void letElpis(requestText, undefined, true); }}>
-        <label className="field min-w-48 flex-1">What should the workflow do?<Input aria-label="Workflow request" value={requestText} maxLength={8000} placeholder="Describe what you want to achieve" onChange={event => setGraph(current => ({ ...current, request: event.target.value }))} /></label>
+        <label className="field canvas-request">What should the workflow do?<Input aria-label="Workflow request" value={requestText} maxLength={8000} placeholder="Describe what you want to achieve" onChange={event => setGraph(current => ({ ...current, request: event.target.value }))} /></label>
         <OptionSelect aria-label="Workflow pattern" value={graph.planningPattern ?? "auto"} disabled={Boolean(planning || starting)} onChange={event => {
           const value = event.target.value;
           // The catalogue stays open to read during a run; loading a pattern waits for the run.
