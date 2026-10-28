@@ -46,7 +46,8 @@
     "tests/personalization-drafts.test.cjs",
     "tests/pre-install-cleanup.test.mjs",
     "tests/voice-handoff.test.cjs",
-    "tests/workflow-notice-parse.test.mjs"
+    "tests/workflow-notice-parse.test.mjs",
+    "tests/ui-rules.test.mjs"
   ],
   "bridge": [
     "tests/workflow-routing.mjs",

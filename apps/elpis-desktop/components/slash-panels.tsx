@@ -99,7 +99,7 @@ export function ReviewPanel({ threadId, onStart, onClose }: { threadId: string; 
   </CommandPanel>;
 }
 
-const diffTone = (line: string) => line.startsWith("+") && !line.startsWith("+++") ? "text-emerald-700 dark:text-emerald-400" : line.startsWith("-") && !line.startsWith("---") ? "text-red-700 dark:text-red-400" : line.startsWith("@@") ? "text-muted-foreground" : "";
+const diffTone = (line: string) => line.startsWith("+") && !line.startsWith("+++") ? "text-success" : line.startsWith("-") && !line.startsWith("---") ? "text-destructive" : line.startsWith("@@") ? "text-muted-foreground" : "";
 
 /** The terminal's /diff: the working tree's changes against HEAD, untracked files included. */
 export function DiffPanel({ threadId, onClose }: { threadId: string; onClose: () => void }) {

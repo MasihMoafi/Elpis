@@ -1,0 +1,6 @@
+{
+  "src": ["app", "components"],
+  "themeFiles": ["app/globals.css"],
+  "start": "node scripts/ui-check-serve.cjs {port}",
+  "routes": ["/#token=fixture"]
+}

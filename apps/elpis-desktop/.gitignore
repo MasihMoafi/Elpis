@@ -4,3 +4,4 @@ out/
 *.tsbuildinfo
 public/love-spot-assets/
 public/elpis-source-map.json
+.ui-check/

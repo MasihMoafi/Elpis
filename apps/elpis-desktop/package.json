@@ -10,6 +10,7 @@
     "predev": "node bridge/build-resources.mjs",
     "dev": "next dev --webpack --hostname 127.0.0.1",
     "build": "next build --webpack",
+    "postbuild": "test ! -f $HOME/Desktop/p/skills/web-dev/ui-check/ui-check.mjs || node $HOME/Desktop/p/skills/web-dev/ui-check/ui-check.mjs .",
     "typecheck": "tsc --noEmit",
     "start": "node bridge/server.mjs",
     "web": "node bridge/server.mjs",
