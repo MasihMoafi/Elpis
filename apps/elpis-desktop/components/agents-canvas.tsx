@@ -41,8 +41,10 @@ type Listed = { data: { id: string; status: string; error?: string | null; next?
 type HandleEnd = "source" | "target";
 /** `clash` is the files of a merge clash that stopped the run on this agent (lib/canvas-isolation.ts). */
 type AgentNodeData = AgentData & { status?: TaskStatus; check?: TaskStatus; clash?: string[]; modelLabel?: string; wave?: number; onHandle?: (id: string, end: HandleEnd, event: ReactMouseEvent) => void; onQuick?: (id: string) => void };
-type MotherData = { run: "idle" | "running" | "finished"; children: number; limit: number; identity?: WorkflowIdentity; onHandle?: AgentNodeData["onHandle"] };
+type MotherData = { run: "idle" | "running" | "finished" | "cancelled" | "failed"; children: number; limit: number; identity?: WorkflowIdentity; onHandle?: AgentNodeData["onHandle"] };
 const FINISHED = new Set(["succeeded", "failed", "cancelled", "completed"]);
+/** Her or his card in words, the same as the status chip: finished only when the run succeeded. */
+const ended = (status: string): "running" | "finished" | "cancelled" | "failed" => !FINISHED.has(status) ? "running" : status === "failed" || status === "cancelled" ? status : "finished";
 /** An ended run in words: Finished only when it succeeded (28 Oct: "Finished · 0 of 2 done" over a cancelled run). */
 const ENDED: Record<string, string> = { succeeded: "Finished", completed: "Finished", failed: "Failed", cancelled: "Cancelled" };
 const stoppedLine = (status: string, error?: string | null): { at: number; text: string; tone: "fail" }[] => status === "failed" || status === "cancelled" ? [{ at: Date.now(), text: `RUN ${ENDED[status].toUpperCase()} · ${error || "no reason was recorded"}`, tone: "fail" }] : [];
@@ -681,8 +683,8 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
   const limit = maxAgents(graph), room = Math.max(0, limit - agents.length), order = useMemo(() => waves(graph), [graph]);
   // An agent is done once its check passes, unless its work clashed in the merge.
   const done = agents.filter(node => states[checkOf(node.id)]?.status === "succeeded" && !clashes[node.id]).length;
-  const runState: MotherData["run"] = recordedRun ? workflowThreadActive(liveTeam.mother) ? "running" : "idle" : run ? (FINISHED.has(run.status) ? "finished" : "running") : "idle";
-  const fatherState: MotherData["run"] = run?.father?.threadId ? (FINISHED.has(run.father.status) ? "finished" : "running") : "idle";
+  const runState: MotherData["run"] = recordedRun ? workflowThreadActive(liveTeam.mother) ? "running" : "idle" : run ? (ended(run.status)) : "idle";
+  const fatherState: MotherData["run"] = run?.father?.threadId ? ended(run.father.status) : "idle";
   const modelLabel = (data: AgentData) => {
     if (!data.model) return "Default model";
     const found = catalog.find(item => item.model === data.model && item.provider === canonicalProvider(data.provider));

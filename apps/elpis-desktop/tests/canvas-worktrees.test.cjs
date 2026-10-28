@@ -52,6 +52,7 @@ test('a stopped run says Cancelled, not Finished, and the run log says why it st
     await canvas.getByRole('status').filter({ hasText: /Cancelled · 0 of 3 done/ }).waitFor();
     assert.equal(await canvas.getByRole('status').filter({ hasText: /Finished/ }).count(), 0);
     assert.match(await canvas.getByRole('log', { name: 'Run log' }).innerText(), /RUN CANCELLED · The desktop stopped before this ACP run finished\./);
+    assert.match(await canvas.locator('.react-flow__node').filter({ hasText: 'MOTHER' }).first().locator('.agent-node-meta').innerText(), /· cancelled$/, 'her card says so too');
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
