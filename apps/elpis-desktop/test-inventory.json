@@ -349,6 +349,7 @@
     "tests/excalidraw-diagram.test.cjs",
     "tests/check-verdict.test.cjs",
     "tests/canvas-transcribe.test.cjs",
+    "tests/canvas-translate.test.cjs",
     "tests/live-submissions.test.cjs",
     "tests/chat-labels.test.cjs"
   ],

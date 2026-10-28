@@ -23,7 +23,7 @@ function planFor(body, fill = ['src']) {
  * device before the page opens; `listed(run, looks)` answers a look at the run (workGraph/list) instead of the default,
  * which runs for one look and then succeeds. */
 const ENDED = new Set(['succeeded', 'completed', 'failed', 'cancelled']);
-async function openCanvas({ width = 1440, height = 900, repository = false, graph = null, listed = null, settings = {}, providerModels = {}, desktop = false, autoLayout, folders = ['docs', 'src', 'src/lib', 'tests'], refuseReport = '', files = {}, extraModels = [] } = {}) {
+async function openCanvas({ width = 1440, height = 900, repository = false, graph = null, listed = null, settings = {}, providerModels = {}, desktop = false, autoLayout, folders = ['docs', 'src', 'src/lib', 'tests'], refuseReport = '', files = {}, texts = {}, extraModels = [] } = {}) {
   const posts = [], plans = [], runs = [];
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://local'); let raw = ''; for await (const chunk of req) raw += chunk;
@@ -38,8 +38,9 @@ async function openCanvas({ width = 1440, height = 900, repository = false, grap
     if (url.pathname === '/api/models') return json({ data: [...extraModels, { id: 'luna', model: 'gpt-6-luna', displayName: 'Luna 6' }, { id: 'sol', model: 'gpt-6.1-sol', displayName: 'Sol 6.1', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }], defaultReasoningEffort: 'low' }], nextCursor: null });
     if (url.pathname === '/api/settings') return json({ main: { model: 'gpt-6.1-sol', provider: 'openai' }, background: {}, smartPrune: { enabled: false, explicitOverride: {} }, memory: {}, write: { available: false, reason: '' }, agents: { graph: 256, atOnce: 4, source: 'agents.max_threads' }, ...settings });
     if (url.pathname === '/api/folders') return json({ data: folders });
-    // `files`: a folder's file names, as the Files pane lists them.
+    // `files`: a folder's file names, as the Files pane lists them; `texts`: a file's text, by its path.
     if (url.pathname === '/api/files/dir') { const names = files[url.searchParams.get('dir')]; if (!names) { res.statusCode = 404; return json({ error: 'No such folder' }); } return json({ data: names.map(name => ({ name, dir: false })) }); }
+    if (url.pathname === '/api/file') { const path = url.searchParams.get('path'); if (!(path in texts)) { res.statusCode = 404; return json({ error: 'No such file' }); } return json({ path, content: texts[path], size: texts[path].length }); }
     if (url.pathname === '/api/repository') return json({ repository });
     if (url.pathname === '/api/canvas/plan') { const body = JSON.parse(raw); plans.push(body); return json(planFor(body, folders.length ? ['src'] : [])); }
     // Runs: each chat started gets an id; a graph run on it finishes after its first look.

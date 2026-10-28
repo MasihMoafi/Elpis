@@ -29,7 +29,7 @@ import { api, providerChoices, subscriptionOf, type Entry, type Model, type Prov
 import { useElpisSettings } from "@/lib/settings-store";
 import { appStorage } from "@/lib/projects";
 import { filesText, mergeStops, runPayload, stopText, wantsIsolation } from "@/lib/canvas-isolation";
-import { PATTERNS, WORKFLOWS, agentCount, WHOLE_PROJECT, applyPattern, agent, transcriptionTeam, PAGE_IMAGE, ownFolders, agentColor, CHECK_LABEL, COLUMN, DONE, FATHER, MOTHER, STATUS_LABEL, TASKS_PER_AGENT, waits, TEMPLATES, agentName, promptName, applyPlan, arrange, boardForPlan, checkOf, commandParts, shapeOf, makesLoop, maxAgents, newAgents, newId, parseCommand, parents, initialGraph, runParts, saveGraph, waves, withMother, type AgentData, type CanvasEdge, type CanvasGraph, type CanvasNode, type CatalogModel, type Command, type MotherSettings, type NoteData, type Plan, type RunTask, type TaskStatus } from "@/lib/canvas";
+import { PATTERNS, WORKFLOWS, type ReadyMade, agentCount, WHOLE_PROJECT, applyPattern, agent, ownFolders, agentColor, CHECK_LABEL, COLUMN, DONE, FATHER, MOTHER, STATUS_LABEL, TASKS_PER_AGENT, waits, TEMPLATES, agentName, promptName, applyPlan, arrange, boardForPlan, checkOf, commandParts, shapeOf, makesLoop, maxAgents, newAgents, newId, parseCommand, parents, initialGraph, runParts, saveGraph, waves, withMother, type AgentData, type CanvasEdge, type CanvasGraph, type CanvasNode, type CatalogModel, type Command, type MotherSettings, type NoteData, type Plan, type RunTask, type TaskStatus } from "@/lib/canvas";
 
 /** A run: the Mother's part, and the Father's when the graph has more agents than she runs (lib/canvas.ts `parents`):
  * his tasks wait in `father` until her part has succeeded, then run in his own chat. */
@@ -54,7 +54,7 @@ const editKey = (graph: CanvasGraph) => JSON.stringify({ ...graph, nodes: graph.
 const FIT = { padding: 0.06, maxZoom: 1, minZoom: 0.05 };
 const OVERVIEW = { padding: 0.08, maxZoom: 1 };
 // The ready-made workflow comes first (28 Oct, Masih: "move it on top").
-const ENTRY_PATTERNS = [{ id: "transcribe", label: "Transcribe images" }, { id: "auto", label: "Auto · Elpis chooses" }, { id: "split-parts", label: "Parallel" }, { id: "sequential", label: "Sequential" }, { id: "research", label: "Research" }];
+const ENTRY_PATTERNS = [...WORKFLOWS.map(workflow => ({ id: workflow.id, label: workflow.name })), { id: "auto", label: "Auto · Elpis chooses" }, { id: "split-parts", label: "Parallel" }, { id: "sequential", label: "Sequential" }, { id: "research", label: "Research" }];
 // Mother takes the strongest model this person has (28 Oct, Masih: "Depends on which model the user has available; for me, opus").
 const MOTHER_FIRST = [/^claude\/opus$/, /^agy\/gemini-4-argon-high$/, /^gpt-6\.1-sol$/, /^claude\/sonnet$/, /opus/i, /gemini-4-argon/i, /sonnet/i];
 
@@ -1351,40 +1351,50 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
   // bridge/canvas-plan.mjs). The board it returns replaces this one in one step, so Ctrl+Z undoes it.
   const [planning, setPlanning] = useState("");
   // `forRun`: Run graph's own fill of what agents lack, made while that run is starting.
-  /** Transcribe images: a folder named in the request (one of the project's), or else the one chosen; one Gemini reader
-   * per six pages, one join. A chosen folder becomes the project, so everything the team writes stays inside it. */
-  async function transcribe(goal: string): Promise<CanvasGraph | null> {
+  /** A ready-made workflow (Transcribe images, Translate to Farsi) works on a folder named in the request (one of the
+   * project's), or else the one chosen. A chosen folder becomes the project, so everything the team writes stays inside it. */
+  const readyMade = (id?: string) => WORKFLOWS.find(workflow => workflow.id === id);
+  const chosenWorkflow = readyMade(graph.planningPattern);
+  async function buildReadyMade(workflow: ReadyMade, goal: string): Promise<CanvasGraph | null> {
     const named = [...(project.folders ?? [])].sort((a, b) => b.length - a.length).find(name => goal.includes(name));
-    return named && cwd ? transcribeAt(cwd, named, goal) : chooseImages(goal);
+    return named && cwd ? readyMadeAt(workflow, cwd, named, goal) : chooseFolderFor(workflow, goal);
   }
   // `goal`: what was typed with New workflow. Chosen from the menu, its button or the library, the goal is the job itself:
   // old request text never rides along (28 Oct: a leftover "Create elpis-check.txt" became every reader's goal).
-  async function chooseImages(goal?: string): Promise<CanvasGraph | null> {
+  async function chooseFolderFor(workflow: ReadyMade, goal?: string): Promise<CanvasGraph | null> {
     if (run && !over(run)) { setNotice("Wait for this run to finish before changing its pattern."); return null; }
     const choose = window.elpisDesktop?.chooseFolder;
-    if (!choose) { setNotice("Choose the folder of page images in the desktop app."); return null; }
+    if (!choose) { setNotice(`Choose the folder of ${workflow.what} in the desktop app.`); return null; }
     let picked: string | null = null;
     try { picked = (await choose())?.replace(/\/+$/, "") || null; } catch (cause) { setNotice(cause instanceof Error ? cause.message : String(cause)); return null; }
     if (!picked) return null;
     if (picked !== cwd?.replace(/\/+$/, "")) await onUseFolder?.(picked);
-    return transcribeAt(picked, ".", goal || `Transcribe the page images in ${picked.split("/").at(-1)} into transcription.md`);
+    return readyMadeAt(workflow, picked, ".", goal || workflow.goal(picked.split("/").at(-1) ?? picked));
   }
-  async function transcribeAt(base: string, folder: string, goal: string): Promise<CanvasGraph | null> {
-    let files: string[] = [];
-    try { files = (await api<{ data: { name: string; dir: boolean }[] }>(`/files/dir?cwd=${encodeURIComponent(base)}&dir=${encodeURIComponent(folder)}&hidden=0`)).data.filter(entry => !entry.dir).map(entry => entry.name); }
-    catch (cause) { setNotice(cause instanceof Error ? cause.message : String(cause)); return null; }
+  async function readyMadeAt(workflow: ReadyMade, base: string, folder: string, goal: string): Promise<CanvasGraph | null> {
+    const at = (name: string) => folder === "." ? name : `${folder}/${name}`;
+    let sources: { name: string; text: string }[] = [];
+    try {
+      const files = (await api<{ data: { name: string; dir: boolean }[] }>(`/files/dir?cwd=${encodeURIComponent(base)}&dir=${encodeURIComponent(folder)}&hidden=0`)).data.filter(entry => !entry.dir).map(entry => entry.name);
+      sources = await Promise.all(workflow.sources(files).map(async name => {
+        if (!workflow.reads) return { name, text: "" };
+        const file = await api<{ content?: string; tooLarge?: boolean }>(`/file?cwd=${encodeURIComponent(base)}&path=${encodeURIComponent(at(name))}`);
+        if (typeof file.content !== "string") throw new Error(file.tooLarge ? `${name} is too large to read here.` : `${name} is not text.`);
+        return { name, text: file.content };
+      }));
+    } catch (cause) { setNotice(cause instanceof Error ? cause.message : String(cause)); return null; }
     const where = folder === "." ? base.split("/").at(-1) : folder;
-    if (!files.some(name => PAGE_IMAGE.test(name))) { setNotice(`No page images (PNG, JPG or WebP) in ${where}.`); return null; }
+    if (!sources.some(source => !workflow.reads || source.text.trim())) { setNotice(`No ${workflow.what} in ${where}.`); return null; }
     // The subscriptions (Antigravity's Gemini, Claude) are in the engine's own list; a run routes them by their prefix.
     const listed = models.length ? models : (await api<{ data: Model[] }>("/models").catch(() => ({ data: [] as Model[] }))).data;
     const offered = [...listed.map(item => ({ model: item.model, provider: null as string | null })), ...catalog];
     const pick = (test: RegExp) => offered.find(item => test.test(item.model));
-    const reader = pick(/gemini-3\.8-flash-high/i), boss = MOTHER_FIRST.map(pick).find(Boolean);
-    const team = transcriptionTeam(folder, files, reader ? { model: reader.model, provider: reader.provider } : {});
-    const readers = team.nodes.filter(node => node.type === "agent").length;
+    const worker = pick(workflow.worker), boss = MOTHER_FIRST.map(pick).find(Boolean);
+    const team = workflow.team(folder, sources, worker ? { model: worker.model, provider: worker.provider } : {});
+    const agents = team.nodes.filter(node => node.type === "agent").length;
     checkpoint(); setSelection([]); setRun(null); setStates({});
-    setGraph(current => ({ ...team, request: goal, maxAgents: Math.max(current.maxAgents ?? 10, readers), mother: { brief: goal, model: boss?.model ?? null, provider: boss?.provider ?? null } }));
-    setNotice(reader ? "" : "Gemini 3.8 Flash is not available here, so the readers use the default model.");
+    setGraph(current => ({ ...team, request: goal, maxAgents: Math.max(current.maxAgents ?? 10, agents), mother: { brief: goal, model: boss?.model ?? null, provider: boss?.provider ?? null } }));
+    setNotice(worker ? "" : `${workflow.workerName} is not available here, so the ${workflow.workers} use the default model.`);
     setTimeout(() => void flow.fitView({ ...FIT, duration: 250 }), 60);
     return team;
   }
@@ -1396,7 +1406,8 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
     if (recordedRun) return null;
     if (planning || startingRun.current && !forRun) { setNotice("Wait for the current design to finish."); return null; }
     if (!cwd) { setNotice("Choose the project the agents work in, then try again."); return null; }
-    if (newWorkflow && graph.planningPattern === "transcribe") return transcribe(goal);
+    const readyWorkflow = newWorkflow && readyMade(graph.planningPattern);
+    if (readyWorkflow) return buildReadyMade(readyWorkflow, goal);
     const chosenPattern = newWorkflow ? TEMPLATES.find(item => item.id === graph.planningPattern) : undefined;
     const starter = chosenPattern?.build();
     const base = newWorkflow ? withMother({ ...starter, name: "Workflow", request: goal,
@@ -1498,14 +1509,15 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
           // The catalogue stays open to read during a run; loading a pattern waits for the run.
           if (value === "more") { setSelection([]); setMorePatterns(true); showPanel(true); return; }
           if (value === "auto") { setGraph(current => ({ ...current, planningPattern: "auto" })); return; }
-          if (value === "transcribe") { setGraph(current => ({ ...current, planningPattern: "transcribe" })); void chooseImages(); return; }
+          const workflow = readyMade(value);
+          if (workflow) { setGraph(current => ({ ...current, planningPattern: workflow.id })); void chooseFolderFor(workflow); return; }
           if (run && !over(run)) { setNotice("Wait for this run to finish before changing its pattern."); return; }
           const template = TEMPLATES.find(item => item.id === value); if (template) loadTemplate(template);
         }}>{ENTRY_PATTERNS.map(pattern => <option key={pattern.id} value={pattern.id}>{pattern.label}</option>)}
           {graph.planningPattern && graph.planningPattern !== "auto" && !ENTRY_PATTERNS.some(pattern => pattern.id === graph.planningPattern) && <option value={graph.planningPattern}>{TEMPLATES.find(pattern => pattern.id === graph.planningPattern)?.name ?? "Custom pattern"}</option>}
           <option value="more">More patterns…</option></OptionSelect>
-        {graph.planningPattern === "transcribe" && <Button type="button" variant="outline" size="sm" disabled={!ready || Boolean(planning || starting)} title={cwd ? `The page images' folder: ${cwd}` : undefined} onClick={() => void chooseImages()}><FolderOpen size={14} />Choose folder</Button>}
-        <Button type="submit" size="sm" aria-describedby={!ready ? offlineReasonId : undefined} disabled={!ready || !cwd || !requestText.trim() && graph.planningPattern !== "transcribe" || Boolean(planning || starting)}>{planning ? "Designing…" : "New workflow"}</Button>
+        {chosenWorkflow && <Button type="button" variant="outline" size="sm" disabled={!ready || Boolean(planning || starting)} title={cwd ? `The folder of ${chosenWorkflow.what}: ${cwd}` : undefined} onClick={() => void chooseFolderFor(chosenWorkflow)}><FolderOpen size={14} />Choose folder</Button>}
+        <Button type="submit" size="sm" aria-describedby={!ready ? offlineReasonId : undefined} disabled={!ready || !cwd || !requestText.trim() && !chosenWorkflow || Boolean(planning || starting)}>{planning ? "Designing…" : "New workflow"}</Button>
         <Button type="button" variant="outline" size="sm" aria-describedby={!ready ? offlineReasonId : undefined} disabled={!ready || !cwd || !requestText.trim() || Boolean(planning || starting || run && !over(run))} onClick={() => void letElpis(requestText)}>Update current</Button>
         {/* The run's status sits beside the request, which gives up the room, so the controls below stay on one row
             while it runs (28 Oct: a running board wrapped them onto a second row). */}
@@ -1740,7 +1752,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
         <DisclosureSummary>More patterns</DisclosureSummary>
       <section className="canvas-templates" aria-label="Ready-made workflows"><p className="hud-menu-title">Ready-made workflows</p>
         {WORKFLOWS.map(workflow => <div key={workflow.id}><Button variant="ghost" size="content" className="canvas-template w-full" aria-current={graph.result && graph.planningPattern === workflow.id || undefined} disabled={!ready || Boolean(planning || starting)}
-          onClick={() => { setGraph(current => ({ ...current, planningPattern: workflow.id })); void chooseImages(); }}>
+          onClick={() => { setGraph(current => ({ ...current, planningPattern: workflow.id })); void chooseFolderFor(workflow); }}>
           <strong>{workflow.name}{graph.result && graph.planningPattern === workflow.id && <span className="canvas-template-loaded">On the board</span>}</strong>
           <Shape shape={shapes.get(workflow.id) ?? []} /><small>{workflow.description}</small></Button></div>)}
       </section>
