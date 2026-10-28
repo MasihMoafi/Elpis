@@ -40,7 +40,13 @@ test('Translate to Farsi asks for its folder, writes a glossary first, translate
     assert.deepEqual(edges, [`${terms.id}>${first.id}`, `${terms.id}>${second.id}`, `${first.id}>${join.id}`, `${second.id}>${join.id}`].sort());
     assert.deepEqual([saved.request, saved.mother.brief, saved.mother.model], [...Array(2).fill('Translate the English in sample into Farsi in translation.md'), 'claude/opus']);
     await f.canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
-    await f.canvas.getByRole('button', { name: 'Open translation.md', exact: true }).click();
+    const open = f.canvas.getByRole('button', { name: 'Open translation.md', exact: true });
+    await open.waitFor();
+    // A translator reads only its lines and the glossary, and its check reads the Farsi beside the English.
+    const part = f.runs[0].tasks.find(t => t.id === first.id), partCheck = f.runs[0].tasks.find(t => t.id !== first.id && t.dependsOn?.includes(first.id) && t.kind === 'verify');
+    assert.match(part.instruction, /Open no other file or folder/);
+    assert.match(partCheck.instruction, /Read part\.md beside lines 1–3 of transcription\.md[\s\S]*Run no scripts/);
+    await open.click();
     assert.deepEqual(await f.page.evaluate(() => window.__opened), ['/tmp/books/sample/translation.md']);
     assert.equal(f.plans.length, 0, 'nothing was planned');
     await chooseOption(pattern, 'more');

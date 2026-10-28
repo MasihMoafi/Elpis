@@ -86,7 +86,18 @@ test('Transcribe images comes first, asks for its folder, keeps all it writes th
     await f.canvas.getByRole('button', { name: 'Choose project' }).filter({ hasText: 'sample' }).waitFor();
     // Run graph starts at once, with no planner, and the finished run opens what it wrote.
     await f.canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
-    await f.canvas.getByRole('button', { name: 'Open transcription.md', exact: true }).click();
+    const open = f.canvas.getByRole('button', { name: 'Open transcription.md', exact: true });
+    await open.waitFor();
+    // 28 Oct, Masih: "For two pages? It shouldn't take that long." The reader had wandered other books' folders for four
+    // minutes and its check ran OCR and diffs: a reader opens only its pages, and its check compares them by sight.
+    const [read, readCheck] = f.runs[0].tasks;
+    assert.match(read.instruction, /Open no other file or folder/);
+    assert.match(readCheck.instruction, /Look at each page image beside pages\.md[\s\S]*Run no scripts or OCR/);
+    assert.doesNotMatch(readCheck.instruction, /the build, the tests/);
+    const [join, joinCheck] = f.runs[0].tasks.slice(2);
+    assert.match(join.instruction, /Open no other file or folder than the parts, and run no OCR/);
+    assert.match(joinCheck.instruction, /a diff is enough\. Run no OCR/);
+    await open.click();
     assert.deepEqual(await f.page.evaluate(() => window.__opened), ['/tmp/books/sample/transcription.md']);
     assert.equal(f.plans.length, 0, 'nothing was planned');
     // It is one of the ready-made workflows in the library too.

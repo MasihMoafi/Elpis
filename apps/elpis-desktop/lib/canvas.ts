@@ -10,7 +10,9 @@ export { waits };
  * (`runTasks`), and reading or planning happens inside the writers (lat.md/tasks.md, 17 October 2026). */
 /** `provider` is null for the engine's own provider; `effort` is the thinking level (sent per task); `writeScopes` are the project's
  * folders the agent may write ("." is the whole project) besides its own folder (`ownFolders`). */
-export type AgentData = { character?: string; characterImage?: string; muted?: boolean; title: string; instruction: string; model: string | null; provider?: string | null; effort?: string | null; writeScopes: string[]; acceptanceCriteria: string[] };
+export type AgentData = { character?: string; characterImage?: string; muted?: boolean; title: string; instruction: string; model: string | null; provider?: string | null; effort?: string | null; writeScopes: string[]; acceptanceCriteria: string[];
+  /** How its check proves the work, when a ready-made workflow knows better than running the build or the tests. */
+  check?: string };
 export type NoteData = { text: string };
 type Position = { x: number; y: number };
 /** `isoPosition` pins a manually placed pedestal in projected ground units until Arrange is used. */
@@ -350,7 +352,7 @@ export function runTasks(graph: CanvasGraph): { tasks: RunTask[] } | { error: st
         ...(graph.template === "recursive" ? { feedbackFrom: graph.edges.filter(edge => edge.feedback && edge.target === node.id).flatMap(edge => [edge.source, checkOf(edge.source)]) } : {}),
         writeScopes: scopes, acceptanceCriteria: criteria, ...model, ...(node.data.effort ? { reasoningEffort: node.data.effort } : {}) },
       { id: checkOf(node.id), kind: "verify" as const, title: `Check: ${title}`.slice(0, 256),
-        instruction: `Check the work of “${title}”. Its prompt was:\n${prompt}\n\nRun what proves it (the build, the tests, or reading what it wrote) and show the output. Say plainly whether each of these holds: ${criteria.join("; ")}\n\nChange nothing of its work. ${report(`${folder}/check`, true)}`,
+        instruction: `Check the work of “${title}”. Its prompt was:\n${prompt}\n\n${node.data.check?.trim() || "Run what proves it (the build, the tests, or reading what it wrote) and show the output."} Say plainly whether each of these holds: ${criteria.join("; ")}\n\nChange nothing of its work. ${report(`${folder}/check`, true)}`,
         dependsOn: [node.id], writeScopes: [`${folder}/check`], acceptanceCriteria: [`Each of “${title}”'s criteria is shown to hold or not, with evidence`], ...model },
     ];
   }) };
@@ -465,17 +467,22 @@ export function agentColor(id: string, data: AgentData): string {
  * six pages reads them by its own vision, never an OCR tool, and one agent joins the parts in page order. `reader` is the
  * readers' model (Gemini 3.8 Flash when the catalogue has it). */
 export const PAGE_IMAGE = /\.(png|jpe?g|webp|gif)$/i;
+// A join only puts finished parts together, so it reads nothing else and a diff is its whole check (28 Oct: a join of one
+// reader's file ran OCR on the pages for two minutes).
+const JOIN_ONLY = "Open no other file or folder than the parts, and run no OCR.";
+const JOIN_CHECK = "Compare the joined file with the parts: a diff is enough. Run no OCR.";
 export function transcriptionTeam(folder: string, files: string[], reader: Partial<AgentData> = {}): CanvasGraph {
   const at = (name: string) => folder === "." ? name : `${folder}/${name}`, output = at("transcription.md");
   const pages = files.filter(name => PAGE_IMAGE.test(name)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   const batches = Array.from({ length: Math.ceil(pages.length / 6) }, (_, index) => pages.slice(index * 6, index * 6 + 6));
   const readers = batches.map((batch, index) => agent(`Pages ${index * 6 + 1}–${index * 6 + batch.length}`, [
-    `Open each of these page images in order and read it with your own vision. Do not run OCR tools or scripts.`,
+    `Open each of these page images in order and read it with your own vision. Do not run OCR tools or scripts. Open no other file or folder: everything you need is on these pages.`,
     ...batch.map(name => `- ${at(name)}`),
     `Transcribe the pages into clean Markdown in your own folder as pages.md: keep the wording exactly, headings as headings, lists and examples as they are; leave out page numbers and running headers and footers. Answer with the path of pages.md.`,
-  ].join("\n"), { ...reader, acceptanceCriteria: [`pages.md holds pages ${index * 6 + 1}–${index * 6 + batch.length} in order`, "Its wording matches the page images word for word"] }));
-  const join = agent("Join the pages", `Join every reader's pages.md, in page order, into ${output}: one document, with paragraphs split across pages joined and repeated running headers removed. Change no other wording.`,
-    { ...reader, writeScopes: [folder], acceptanceCriteria: [`${output} holds every page in order`, "No wording was changed"] });
+  ].join("\n"), { ...reader, acceptanceCriteria: [`pages.md holds pages ${index * 6 + 1}–${index * 6 + batch.length} in order`, "Its wording matches the page images word for word"],
+    check: "Look at each page image beside pages.md, by your own vision, and compare them passage by passage. Run no scripts or OCR. Quote any passage that differs, or say none does." }));
+  const join = agent("Join the pages", `Join every reader's pages.md, in page order, into ${output}: one document, with paragraphs split across pages joined and repeated running headers removed. Change no other wording. ${JOIN_ONLY}`,
+    { ...reader, writeScopes: [folder], acceptanceCriteria: [`${output} holds every page in order`, "No wording was changed"], check: JOIN_CHECK });
   // Each reader writes only in its own folder, said outright, so Run graph has nothing to fill in and starts at once.
   const team = graphOf("Transcribe images", [...readers, join], fan(readers, [join])), own = ownFolders(team);
   return { ...team, result: output, planningPattern: "transcribe",
@@ -513,7 +520,7 @@ export function translationTeam(folder: string, parts: TextPart[], worker: Parti
   const at = (name: string) => folder === "." ? name : `${folder}/${name}`, output = at("translation.md");
   const files = [...new Set(parts.map(part => part.file))];
   const lines = (part: TextPart) => part.from === part.to ? `line ${part.from}` : `lines ${part.from}–${part.to}`;
-  const terms = agent("Glossary", [`Read in full: ${files.map(at).join(", ")}.`,
+  const terms = agent("Glossary", [`Read in full: ${files.map(at).join(", ")}. Open no other file or folder.`,
     `In your own folder, write glossary.md: every person's name, place, title and recurring term, one per line as English → Farsi, in the spellings Farsi readers know. Answer with the path of glossary.md.`].join("\n"),
     { ...worker, acceptanceCriteria: ["glossary.md lists every name and recurring term", "Each Farsi spelling is the one Farsi readers know"] });
   const translators = parts.map(part => agent(`${files.length > 1 ? `${part.file} ` : ""}${lines(part)[0].toUpperCase()}${lines(part).slice(1)}`, "",
@@ -523,12 +530,13 @@ export function translationTeam(folder: string, parts: TextPart[], worker: Parti
   const team = graphOf("Translate to Farsi", [terms, ...translators, join], [...fan([terms], translators), ...fan(translators, [join])]), own = ownFolders(team);
   const glossary = `${own.get(terms.id)}/glossary.md`;
   const instruction = (part: TextPart) => [`Translate ${lines(part)} of ${at(part.file)} from English into Farsi. Read the lines just before them for context only.`,
-    `Use the names and terms in ${glossary}.`, FARSI_RULES,
+    `Use the names and terms in ${glossary}. Open no other file or folder than these two.`, FARSI_RULES,
     `Write the Farsi in your own folder as part.md, and nothing else in it. Answer with the path of part.md.`].join("\n");
   // Every folder is known before the run, so each agent is told its own and the join is told the parts' exact paths.
   const done = new Map<string, Partial<AgentData>>([[terms.id, { writeScopes: [own.get(terms.id)!] }],
-    ...translators.map((item, index): [string, Partial<AgentData>] => [item.id, { writeScopes: [own.get(item.id)!], instruction: instruction(parts[index]) }]),
-    [join.id, { instruction: [`Join these parts, in this order, into ${output}: one document. Change no wording.`, ...translators.map(item => `- ${own.get(item.id)}/part.md`)].join("\n") }]]);
+    ...translators.map((item, index): [string, Partial<AgentData>] => [item.id, { writeScopes: [own.get(item.id)!], instruction: instruction(parts[index]),
+      check: `Read part.md beside ${lines(parts[index])} of ${at(parts[index].file)}, sentence by sentence. Run no scripts. Quote any sentence left out, added or written in formal Farsi, or say none is.` }]),
+    [join.id, { instruction: [`Join these parts, in this order, into ${output}: one document. Change no wording. ${JOIN_ONLY}`, ...translators.map(item => `- ${own.get(item.id)}/part.md`)].join("\n"), check: JOIN_CHECK }]]);
   return { ...team, result: output, planningPattern: "translate", nodes: team.nodes.map(node => node.type === "agent" && done.has(node.id) ? { ...node, data: { ...node.data, ...done.get(node.id) } } : node) };
 }
 /** The ready-made workflows: whole teams for one job, built from a chosen folder, with no planner. `sources` picks the
