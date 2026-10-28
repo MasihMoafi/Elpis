@@ -74,3 +74,24 @@ test('a failing fast file does not stop the desktop and UI tiers; a failing rend
   assert.match(broken.out, /^FAIL renderer-build/m);
   assert.doesNotMatch(broken.out, /^RUN tests\//m);
 });
+
+test('the per-file limit excludes the shared-lock wait, and a timed-out file leaves no process behind', async t => {
+  const leftover = path.join(os.tmpdir(), `elpis-gate-leftover-${process.pid}`);
+  const files = { 'quick.test.mjs': passing, 'hangs.test.mjs': `import test from 'node:test'; import fs from 'node:fs'; import { spawn } from 'node:child_process';
+test('hangs', async () => { const child = spawn('bash', ['-c', 'trap "" TERM; exec sleep 30'], { stdio: 'ignore' }); fs.writeFileSync(${JSON.stringify(leftover)}, String(child.pid)); await new Promise(() => {}); });` };
+  const { locks, gate } = await fakeApp(t, files, { ui: ['tests/quick.test.mjs', 'tests/hangs.test.mjs'] });
+  // Another worker holds the UI lock for longer than the file limit.
+  const holder = spawn('flock', [locks.ui, 'bash', '-c', 'echo held; sleep 3'], { stdio: ['ignore', 'pipe', 'ignore'] });
+  t.after(() => holder.kill('SIGKILL'));
+  await new Promise(resolve => holder.stdout.once('data', resolve));
+  const { code, out } = await gate(['ui'], 2);
+  const pid = Number(await fs.readFile(leftover, 'utf8').catch(() => 0));
+  await fs.rm(leftover, { force: true });
+  let alive = false;
+  if (pid) try { process.kill(pid, 0); alive = true; process.kill(pid, 'SIGKILL'); } catch {}
+  assert.equal(code, 1);
+  assert.match(out, /^PASS tests\/quick.test.mjs/m);
+  assert.match(out, /^TIMEOUT tests\/hangs.test.mjs/m);
+  assert.ok(pid, 'the hanging file started');
+  assert.equal(alive, false, 'the timed-out file left a process running');
+});

@@ -61,17 +61,20 @@ export async function main(args, { dir = root, locks = { build: '/tmp/elpis-desk
   await fs.mkdir(home);
   const summary = { wallMs: 0, testMs: 0, files: [], evidence }, started = performance.now();
   console.log(`Test evidence: ${evidence}`);
-  async function run(name, command, parameters, tier, seconds = fileSeconds) {
+  async function run(name, command, parameters, tier, { seconds = fileSeconds, lock } = {}) {
     const log = path.join(evidence, name.replaceAll('/', '-') + '.tap'), output = await fs.open(log, 'w');
     const at = performance.now();
     let code;
     console.log(`RUN ${name} (${tier}; limit ${seconds}s)`);
     try {
       code = await new Promise((resolve, reject) => {
-        // Bound the whole process group, including lock acquisition and subprocesses left by a test.
-        const child = spawn('timeout', ['--kill-after=5s', `${seconds}s`, command, ...parameters], { cwd: dir, env: { ...process.env, ELPIS_HOME: home,
-          EXCALIDRAW_LOCAL_DIR: path.join(home, 'love-spot'), EXCALIDRAW_SCREENSHOTS_DIR: path.join(home, 'Screenshots') }, stdio: ['ignore', output.fd, output.fd] });
-        child.on('error', reject); child.on('exit', (status, signal) => resolve(signal ? 1 : status));
+        // Wait for the shared lock outside the limit, so the limit counts only the file's own run. The file runs in its
+        // own process group (--foreground keeps timeout in it); whatever is left of that group when it exits is killed.
+        const bounded = ['timeout', '--foreground', '--kill-after=5s', `${seconds}s`, command, ...parameters];
+        const child = spawn(lock ? 'flock' : bounded[0], lock ? [lock, ...bounded] : bounded.slice(1), { cwd: dir, env: { ...process.env, ELPIS_HOME: home,
+          EXCALIDRAW_LOCAL_DIR: path.join(home, 'love-spot'), EXCALIDRAW_SCREENSHOTS_DIR: path.join(home, 'Screenshots') }, stdio: ['ignore', output.fd, output.fd], detached: true });
+        child.on('error', reject);
+        child.on('exit', (status, signal) => { try { process.kill(-child.pid, 'SIGKILL'); } catch {} resolve(signal ? 1 : status); });
       });
     } finally { await output.close(); }
     const text = await fs.readFile(log, 'utf8');
@@ -85,17 +88,17 @@ export async function main(args, { dir = root, locks = { build: '/tmp/elpis-desk
     return code;
   }
   // Fast tests import bundled prompts too; desktop/package tests consume out/.
-  if (await run('bridge-resources', process.execPath, ['bridge/build-resources.mjs'], 'bridge', 120) !== 0) return;
+  if (await run('bridge-resources', process.execPath, ['bridge/build-resources.mjs'], 'bridge', { seconds: 120 }) !== 0) return;
   let rendererBuilt = false;
   for (const tier of selected) {
     if (!rendererBuilt && (tier === 'desktop' || tier === 'ui')) {
       // Desktop and UI files need the renderer; an earlier tier's failure does not stop them.
-      if (await run('renderer-build', 'flock', [locks.build, 'npm', 'run', '-s', 'build'], tier, 1200) !== 0) return;
+      if (await run('renderer-build', 'npm', ['run', '-s', 'build'], tier, { seconds: 1200, lock: locks.build }) !== 0) return;
       rendererBuilt = true;
     }
     if (tier === 'ui') {
       // Keep every browser file bounded and serialized with the other workstation workers.
-      for (const file of inventory.ui) await run(file, 'flock', [locks.ui, process.execPath, '--test', '--test-timeout=180000', '--test-reporter=tap', file], tier);
+      for (const file of inventory.ui) await run(file, process.execPath, ['--test', '--test-timeout=180000', '--test-reporter=tap', file], tier, { lock: locks.ui });
     } else {
       for (const file of inventory[tier]) await run(file, process.execPath, ['--test', '--test-timeout=180000', '--test-reporter=tap', file], tier);
     }
