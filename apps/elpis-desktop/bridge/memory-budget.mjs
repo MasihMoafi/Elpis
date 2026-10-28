@@ -30,7 +30,8 @@ const ownTreeGb = async () => !process.versions.electron ? 0 : appTreeGb().catch
 export function createMemoryBudget({ env = process.env, available = async () => memAvailableGb(await fs.readFile('/proc/meminfo', 'utf8')),
   app = ownTreeGb, pollMs = 5000 } = {}) {
   const setting = (name, fallback) => Number(env[name]) > 0 ? Number(env[name]) : fallback;
-  const cap = setting('ELPIS_WORKER_CAP', 4), floor = setting('ELPIS_WORKER_MEMORY_FLOOR_GB', 4), budget = setting('ELPIS_APP_MEMORY_BUDGET_GB', 6);
+  // 8, not 6: the app idles near 6.4 GB because every loaded thread starts its own set of the user's MCP servers; lower to 6 once fixed.
+  const cap = setting('ELPIS_WORKER_CAP', 4), floor = setting('ELPIS_WORKER_MEMORY_FLOOR_GB', 4), budget = setting('ELPIS_APP_MEMORY_BUDGET_GB', 8);
   const gb = value => `${value.toFixed(1)} GB`, waiters = new Set();
   let running = 0;
   // Ends when a slot is released, after pollMs (memory changes on its own) or on abort.
