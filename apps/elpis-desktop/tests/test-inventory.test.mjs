@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { existsSync } from 'node:fs';
 import { execFileSync, spawn } from 'node:child_process';
 import { checkInventory, discoverTests } from '../scripts/test-gate.mjs';
 
@@ -46,7 +47,8 @@ async function fakeApp(t, files, inventory, build = 'node -e 0') {
   const git = (...args) => execFileSync('git', ['-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false', ...args], { cwd: dir });
   git('init', '-q'); git('add', '.'); git('-c', 'user.name=gate', '-c', 'user.email=gate@test', 'commit', '-qm', 'fake app');
   const locks = { build: path.join(dir, 'build.lock'), ui: path.join(dir, 'ui.lock') };
-  const gate = (args, seconds = 30) => new Promise((resolve, reject) => {
+  // `interrupt`: once that file exists, press Ctrl+C on the gate (SIGINT), as a person stopping it would.
+  const gate = (args, seconds = 30, interrupt) => new Promise((resolve, reject) => {
     const source = `import { main } from ${JSON.stringify(new URL('../scripts/test-gate.mjs', import.meta.url).href)}; await main(...JSON.parse(process.argv[1]));`;
     // Without NODE_TEST_CONTEXT the gate's own `node --test` children report as they do outside this runner.
     const { NODE_TEST_CONTEXT, ...env } = process.env;
@@ -56,7 +58,8 @@ async function fakeApp(t, files, inventory, build = 'node -e 0') {
     child.stdout.on('data', data => { out += data; });
     child.stderr.resume();
     child.on('error', reject);
-    child.on('exit', code => resolve({ code, out }));
+    if (interrupt) { const poll = setInterval(() => { if (existsSync(interrupt)) { clearInterval(poll); child.kill('SIGINT'); } }, 100); child.on('exit', () => clearInterval(poll)); }
+    child.on('exit', (code, signal) => resolve({ code, signal, out }));
   });
   return { dir, locks, gate };
 }
@@ -94,4 +97,19 @@ test('hangs', async () => { const child = spawn('bash', ['-c', 'trap "" TERM; ex
   assert.match(out, /^TIMEOUT tests\/hangs.test.mjs/m);
   assert.ok(pid, 'the hanging file started');
   assert.equal(alive, false, 'the timed-out file left a process running');
+});
+
+test('Ctrl+C on the gate also stops the file it is running', async t => {
+  const leftover = path.join(os.tmpdir(), `elpis-gate-interrupted-${process.pid}`);
+  const files = { 'hangs.test.mjs': `import test from 'node:test'; import fs from 'node:fs'; import { spawn } from 'node:child_process';
+test('hangs', async () => { const child = spawn('bash', ['-c', 'trap "" TERM INT; exec sleep 30'], { stdio: 'ignore' }); fs.writeFileSync(${JSON.stringify(leftover)}, String(child.pid)); await new Promise(() => {}); });` };
+  const { gate } = await fakeApp(t, files, { fast: ['tests/hangs.test.mjs'] });
+  const { code, signal } = await gate(['fast'], 20, leftover);
+  const pid = Number(await fs.readFile(leftover, 'utf8').catch(() => 0));
+  await fs.rm(leftover, { force: true });
+  let alive = false;
+  if (pid) try { process.kill(pid, 0); alive = true; process.kill(pid, 'SIGKILL'); } catch {}
+  assert.ok(pid, 'the hanging file started');
+  assert.ok(code !== 0 || signal, 'the interrupted gate does not report success');
+  assert.equal(alive, false, 'the interrupted gate left its file running');
 });

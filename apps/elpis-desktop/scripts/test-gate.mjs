@@ -61,6 +61,9 @@ export async function main(args, { dir = root, locks = { build: '/tmp/elpis-desk
   await fs.mkdir(home);
   const summary = { wallMs: 0, testMs: 0, files: [], evidence }, started = performance.now();
   console.log(`Test evidence: ${evidence}`);
+  // Files run detached, so Ctrl+C reaches only the gate: it stops the running file's group before it exits.
+  let running = null;
+  for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => { if (running) try { process.kill(-running, 'SIGKILL'); } catch {} process.exit(130); });
   async function run(name, command, parameters, tier, { seconds = fileSeconds, lock } = {}) {
     const log = path.join(evidence, name.replaceAll('/', '-') + '.tap'), output = await fs.open(log, 'w');
     const at = performance.now();
@@ -73,6 +76,7 @@ export async function main(args, { dir = root, locks = { build: '/tmp/elpis-desk
         const bounded = ['timeout', '--foreground', '--kill-after=5s', `${seconds}s`, command, ...parameters];
         const child = spawn(lock ? 'flock' : bounded[0], lock ? [lock, ...bounded] : bounded.slice(1), { cwd: dir, env: { ...process.env, ELPIS_HOME: home,
           EXCALIDRAW_LOCAL_DIR: path.join(home, 'love-spot'), EXCALIDRAW_SCREENSHOTS_DIR: path.join(home, 'Screenshots') }, stdio: ['ignore', output.fd, output.fd], detached: true });
+        running = child.pid;
         child.on('error', reject);
         child.on('exit', (status, signal) => { try { process.kill(-child.pid, 'SIGKILL'); } catch {} resolve(signal ? 1 : status); });
       });
