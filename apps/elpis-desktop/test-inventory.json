@@ -108,6 +108,7 @@
     "bridge/personal.test.mjs",
     "bridge/smart-prune.test.mjs",
     "bridge/workflow-acp.test.mjs",
+    "bridge/memory-budget.test.mjs",
     "bridge/settings-files.test.mjs",
     "bridge/love-spot-voice.test.mjs",
     "bridge/workflow-runs.test.mjs",
