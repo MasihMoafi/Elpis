@@ -1,7 +1,8 @@
 name: Elpis desktop
 
-# Builds the desktop renderer for every build/* branch, so no build runs on Masih's machine (20 October: "use github
-# actions for all builds"). scripts/install-desktop.mjs --actions installs the artifact of exactly that commit.
+# Builds the desktop renderer for every build/* branch. Since 22 October the GUI app builds locally (Masih: "do the GUI
+# app locally and only TUI on github"; docs/LOCAL_BUILD_RULES.md); this build is the alternative that
+# scripts/install-desktop.mjs --actions installs, the artifact of exactly that commit.
 on:
   workflow_dispatch:
   push:
