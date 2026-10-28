@@ -2492,6 +2492,33 @@ test('-32601 mid-conversation: a new chat before its first message is recorded o
   } finally { client.close(); }
 });
 
+// Live check, 28 Oct: an imported Claude Code chat showed "<EXTERNAL SESSION IMPORTED>" as its reply. The engine's
+// importer ends the last turn with that marker as an agent message, after the chat's real last reply.
+test('an imported Claude Code chat ends on its own last reply, not the engine import marker', async () => {
+  const MARKER = '<EXTERNAL SESSION IMPORTED>';
+  const user = (id, text) => ({ type: 'userMessage', id, content: [{ type: 'text', text, text_elements: [] }] });
+  const agent = (id, text) => ({ type: 'agentMessage', id, text });
+  const turns = [{ id: 't1', status: 'completed', items: [user('u1', 'hello import'), agent('a1', 'hi from claude code'), agent('marker', MARKER)] },
+    { id: 't2', status: 'completed', items: [user('u2', `What does ${MARKER} mean?`), agent('a2', `${MARKER} is the engine's import note.`)] }];
+  const pages = fixture(); await pages.client.initialize();
+  const answer = pages.socket.send;
+  pages.socket.send = raw => {
+    const request = JSON.parse(raw);
+    if (request.method !== 'thread/items/list') return answer(raw);
+    pages.socket.sent.push(request);
+    const data = turns.flatMap(turn => turn.items.map(item => ({ turnId: turn.id, item }))).reverse();
+    queueMicrotask(() => pages.socket.emit('message', JSON.stringify({ id: request.id, result: { data, nextCursor: null } })));
+  };
+  const whole = fixture(); await whole.client.initialize();
+  wholeTurnHistory(whole.socket, turns);
+  try {
+    for (const { client } of [pages, whole]) {
+      assert.deepEqual((await client.readThread(ROOT, {})).data.map(entry => entry.item.id), ['a2', 'u2', 'a1', 'u1'], 'the marker is dropped; a message that only quotes it stays');
+      assert.deepEqual((await client.readPrompts(ROOT)).data.map(row => row.reply), ['hi from claude code', `${MARKER} is the engine's import note.`]);
+    }
+  } finally { pages.client.close(); whole.client.close(); }
+});
+
 test('other failures to read a chat are still reported', async () => {
   const { client, socket } = fixture(); await client.initialize();
   const answer = socket.send;

@@ -143,6 +143,10 @@ function modeOf(result) {
 }
 /** The cursor of a page cut from whole turns (see #itemsPage); the engine's own cursors never start with it. */
 const WHOLE_TURNS = 'whole-turns:';
+/** The engine's Claude Code import ends the last turn with this agent message, after the chat's real last reply
+ * (codex-rs/external-agent-migration, EXTERNAL_SESSION_IMPORTED_MARKER). It is a note for the engine, not a reply. */
+const IMPORT_MARKER = '<EXTERNAL SESSION IMPORTED>';
+const notImportMarker = entry => !(entry?.item?.type === 'agentMessage' && entry.item.text === IMPORT_MARKER);
 /** Requests that download (a Git clone, a plugin bundle) can take minutes; the rest answer within the default wait. */
 const DOWNLOADS = new Set(['marketplace/add', 'marketplace/upgrade', 'plugin/install']);
 // The engine refuses to resume an archived chat and names its terminal command (`codex unarchive`), which this app does not have.
@@ -648,7 +652,7 @@ export class DesktopClient extends EventEmitter {
   async #itemsPage(params) {
     const own = typeof params.cursor === 'string' && params.cursor.startsWith(WHOLE_TURNS);
     if (!own) {
-      try { return await this.#rpc('thread/items/list', params); }
+      try { const page = await this.#rpc('thread/items/list', params); return Array.isArray(page?.data) ? { ...page, data: page.data.filter(notImportMarker) } : page; }
       catch (error) { if (error.code !== -32601) throw error; }
     }
     const start = own ? Number(params.cursor.slice(WHOLE_TURNS.length)) : 0;
@@ -657,7 +661,7 @@ export class DesktopClient extends EventEmitter {
     try { turns = (await this.#rpc('thread/read', { threadId: params.threadId, includeTurns: true })).thread?.turns ?? []; }
     catch (error) { if (/is not materialized yet/.test(error.engineMessage ?? '')) turns = []; else throw error; }
     const entries = turns.filter(turn => !params.turnId || turn.id === params.turnId)
-      .flatMap(turn => (Array.isArray(turn.items) ? turn.items : []).map(item => ({ turnId: turn.id, item })));
+      .flatMap(turn => (Array.isArray(turn.items) ? turn.items : []).map(item => ({ turnId: turn.id, item }))).filter(notImportMarker);
     if (params.sortDirection === 'desc') entries.reverse();
     const end = start + (params.limit ?? 30);
     return { data: entries.slice(start, end), nextCursor: end < entries.length ? `${WHOLE_TURNS}${end}` : null, backwardsCursor: null };
