@@ -234,87 +234,8 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
     cancelCheckpoints(record, null, reason);
     await supervision.get(record.id)?.catch(() => {});
   }
-  function checkpointProgress(record, task, update, root, controller) {
-    progress(record, task, update);
-    if (!modelRoutes || controller.signal.aborted || task.status !== 'running' || task.activeReview?.round === record.round || (record.supervisionReviews ?? 0) >= 3) return;
-    const tool = update?.sessionUpdate === 'tool_call_update' && update.status === 'completed' && update.toolCallId;
-    const report = update?.sessionUpdate === 'agent_message_chunk' && task.progress?.some(entry => entry.kind === 'text' && entry.messageId === update.messageId && entry.text.length >= 240);
-    if (!tool && !report) return;
-    const key = `${record.id}:${task.id}:${record.round}`, checkpoint = task.activeReview = { round: record.round, kind: tool ? 'tool' : 'report', id: tool || update.messageId, status: 'queued', at: Date.now() };
-    const context = { record, task, checkpoint, controller: new AbortController(), control: controls.get(`${record.id}:${task.id}`), sessionId: task.sessionId, manualRevision: task.manualRevision ?? 0 };
-    const abort = () => { context.reason = 'The workflow stopped before guidance could be delivered.'; context.controller.abort(); };
-    controller.signal.addEventListener('abort', abort, { once: true });
-    context.unlink = () => controller.signal.removeEventListener('abort', abort);
-    checkpoints.set(key, context);
-    context.timer = setTimeout(() => {
-      context.queued = true;
-      void queueSupervision(record, async () => {
-        try { await reviewCheckpoint(record, task, root, context); }
-        finally { context.unlink(); if (checkpoints.get(key) === context) checkpoints.delete(key); }
-      }).catch(error => { record.persistenceError = error.message; });
-    }, 1000);
-  }
-  function checkpointWait(context, promise) {
-    const signal = context.controller.signal;
-    return new Promise((resolve, reject) => {
-      const stop = () => reject(new BridgeError(context.reason || 'The live review was cancelled.', 409));
-      if (signal.aborted) { Promise.resolve(promise).catch(() => {}); stop(); return; }
-      signal.addEventListener('abort', stop, { once: true });
-      Promise.resolve(promise).then(value => { signal.removeEventListener('abort', stop); resolve(value); }, error => { signal.removeEventListener('abort', stop); reject(error); });
-    });
-  }
-  async function reviewCheckpoint(record, task, root, context) {
-    const current = () => !context.controller.signal.aborted && record.status === 'running' && task.status === 'running'
-      && task.sessionId === context.sessionId && controls.get(`${record.id}:${task.id}`) === context.control && (task.manualRevision ?? 0) === context.manualRevision;
-    if (!current() || (record.supervisionReviews ?? 0) >= 3) {
-      context.checkpoint.status = 'skipped'; context.checkpoint.reason = 'The checkpoint expired or the live-review budget was reached.'; return;
-    }
-    const mother = record.mother ??= { id: 'mother', title: 'Mother', progress: [], decisions: [] };
-    const entry = { kind: 'checkpoint', taskId: task.id, round: record.round, checkpoint: context.checkpoint.id, at: Date.now(), decision: 'review', status: 'queued' };
-    (mother.decisions ??= []).push(entry);
-    const timer = setTimeout(() => { context.reason = 'Mother’s live review timed out; the child continues its work.'; context.controller.abort(); }, 30000);
-    let reviewing = false, motherControl;
-    try {
-      if (observeThread) {
-        const observed = await checkpointWait(context, observeThread(mother.assignedThreadId ?? mother.sessionId ?? record.rootThreadId));
-        if (['active', 'running', 'inProgress'].includes(observed?.status?.type)) {
-          entry.status = 'skipped'; entry.reasons = 'Mother’s chat already has an active turn. Its current work was preserved.'; return;
-        }
-      }
-      const routes = (await checkpointWait(context, routesFor(record))).filter(lowEffort);
-      const desired = record.recovery?.model ? record.recovery : { model: root.model ?? '', provider: root.modelProvider ?? '' }, requested = workflowRoute(desired.model, desired.provider);
-      const route = routes.find(route => route.model === requested.model && route.provider === requested.provider)
-        ?? routes.find(route => !route.exhausted && !exhaustedProviders.get(record.id)?.has(route.provider)) ?? routes[0];
-      if (!route) { entry.status = 'skipped'; entry.reasons = 'No connected subscription offers a supported low-effort live review. The child continues its work.'; return; }
-      if (!current()) throw new BridgeError('Newer guidance or a finished child superseded this checkpoint.', 409);
-      record.supervisionReviews = (record.supervisionReviews ?? 0) + 1;
-      Object.assign(mother, { model: route.model, provider: route.provider, reasoningEffort: lowEffort(route), status: 'running' }); reviewing = true;
-      entry.status = context.checkpoint.status = 'reviewing'; await save(record);
-      const instructions = 'You are Mother, observing a live workflow checkpoint. Use only the supplied evidence; do not call tools, edit files, launch agents, change scope or claim completion. Return a short JSON object: {"action":"continue","summary":"what you observed","reason":"evidence"} or {"action":"steer","taskId":"the checkpoint task","message":"specific useful corrective guidance","summary":"what you observed","reason":"evidence"}. Steer only when the evidence supports a concrete improvement. Keep the current child turn and respect the latest human guidance. Keep the response below 400 words.';
-      const snapshot = record.tasks.map(node => ({ id: node.id, title: node.title, status: node.status, instruction: node.instruction.slice(0, 2000), acceptanceCriteria: node.acceptanceCriteria, evidence: node.result?.summary?.slice(0, 2000), failure: node.failureReason, recentProgress: node.progress?.slice(-3), recentGuidance: node.messages?.slice(-3) }));
-      const result = await runNode(record, mother, route, instructions, { task: `Workflow: ${record.name}. Goal: ${record.goal ?? ''}. Checkpoint task: ${task.id}.\nCurrent evidence:\n${JSON.stringify(snapshot).slice(0, 18000)}` }, {
-        cwd: root.cwd, signal: context.controller.signal, lowEffort: true, timeoutMs: Math.min(timeoutMs ?? 30000, 30000),
-        onUpdate: update => progress(record, mother, update), onPermission: () => null,
-        onControl: control => { motherControl = control; controls.set(`${record.id}:mother`, control); },
-      });
-      let decision; try { decision = JSON.parse(result.answer.replace(/^```(?:json)?\s*|\s*```$/g, '')); } catch { throw new BridgeError('Mother did not return a valid live-review decision.', 409); }
-      if (!['continue', 'steer'].includes(decision?.action) || typeof decision.summary !== 'string' || !decision.summary.trim() || decision.summary.length > 2000 || typeof decision.reason !== 'string' || !decision.reason.trim() || decision.reason.length > 2000) throw new BridgeError('Mother’s live-review decision lacked observed evidence.', 409);
-      Object.assign(entry, { decision: decision.action, summary: decision.summary.trim(), reasons: decision.reason.trim(), routing: structuredClone(mother.routing.actual) });
-      if (!current()) throw new BridgeError('Newer guidance or a finished child superseded this checkpoint.', 409);
-      if (decision.action === 'continue') { entry.status = 'observed'; return; }
-      if (decision.taskId !== task.id || typeof decision.message !== 'string' || !decision.message.trim() || decision.message.length > 4000) throw new BridgeError('Mother’s guidance did not target this live checkpoint.', 409);
-      const delivered = await context.control.steer(decision.message.trim(), { isCurrent: current });
-      entry.status = 'delivered'; entry.delivery = delivered.delivery;
-      (task.messages ??= []).push({ id: randomUUID(), text: decision.message.trim(), status: 'delivered', delivery: delivered.delivery, at: Date.now(), round: record.round, source: 'mother' });
-    } catch (error) {
-      entry.status = !current() ? 'not_delivered' : 'failed'; entry.reasons = context.reason || error.message;
-    } finally {
-      clearTimeout(timer); entry.endedAt = Date.now(); context.checkpoint.status = entry.status;
-      if (reviewing) mother.status = entry.status === 'failed' ? 'failed' : entry.status === 'not_delivered' ? 'cancelled' : 'succeeded';
-      if (motherControl && controls.get(`${record.id}:mother`) === motherControl) controls.delete(`${record.id}:mother`);
-      await save(record);
-    }
-  }
+  // Mother reviews a step only when it fails (supervise, below); she no longer looks in during every run, which spent the
+  // person's Claude quota on Opus for every step (28 Oct, Masih: no check-ins).
   function supervise(record, task, error, root, controller) {
     cancelCheckpoints(record, null, 'A failed node needs Mother’s recovery decision first.');
     return queueSupervision(record, () => superviseNode(record, task, error, root, controller));
@@ -412,7 +333,7 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
               }
               const result = await runNode(record, task, requested, instructions, { task: (record.roundLimit ? `Round ${round} of ${record.roundLimit}.\n` : '') + task.instruction + (task.supervisorInstruction ? `\n\nMother's corrective guidance:\n${task.supervisorInstruction}` : ''), inputs }, {
                 cwd, signal: controller.signal, timeoutMs: Math.min(timeoutMs ?? Infinity, (record.maxRuntimeSeconds ?? 1800) * 1000),
-                onPermission: request => permission(record, task, request), onUpdate: update => checkpointProgress(record, task, update, root, controller), onControl: control => { controls.set(`${record.id}:${task.id}`, control); },
+                onPermission: request => permission(record, task, request), onUpdate: update => progress(record, task, update), onControl: control => { controls.set(`${record.id}:${task.id}`, control); },
               });
               cancelCheckpoints(record, task, 'The child turn ended before guidance could be delivered.');
               controls.delete(`${record.id}:${task.id}`);

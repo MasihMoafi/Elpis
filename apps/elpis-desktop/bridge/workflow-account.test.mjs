@@ -7,10 +7,12 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { loveNodeSpec } from './love-agents.mjs';
 import { runAcpNode } from './acp-nodes.mjs';
+// gio trash refuses /tmp, so test roots live where the trash works.
+const TEST_ROOT = path.join(os.homedir(), '.cache/elpis-tests'); fs.mkdirSync(TEST_ROOT, { recursive: true });
 const FAKE = fileURLToPath(new URL('../../../tools/elpis-claude/test/fake-acp-agent.mjs', import.meta.url));
 
 test('Claude nodes use the account selected in Elpis and respect its sign-out', { timeout: 20000 }, async t => {
-  const homeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'wfrun-account-'));
+  const homeRoot = fs.mkdtempSync(path.join(TEST_ROOT, 'wfrun-account-'));
   const f = { home: homeRoot, cwd: homeRoot };
   t.after(() => execFileSync('gio', ['trash', homeRoot]));
   const install = path.join(f.home, 'installation'), tools = path.join(install, 'tools/elpis-claude'), engine = path.join(install, 'elpis');
