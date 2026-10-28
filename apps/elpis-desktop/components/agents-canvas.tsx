@@ -29,7 +29,7 @@ import { api, providerChoices, type Entry, type Model, type ProviderSettings, ty
 import { useElpisSettings } from "@/lib/settings-store";
 import { appStorage } from "@/lib/projects";
 import { filesText, mergeStops, runPayload, stopText, wantsIsolation } from "@/lib/canvas-isolation";
-import { PATTERNS, WHOLE_PROJECT, applyPattern, agent, ownFolders, agentColor, CHECK_LABEL, COLUMN, DONE, FATHER, MOTHER, STATUS_LABEL, TASKS_PER_AGENT, waits, TEMPLATES, agentName, promptName, applyPlan, arrange, boardForPlan, checkOf, commandParts, shapeOf, makesLoop, maxAgents, newAgents, newId, parseCommand, parents, initialGraph, runParts, saveGraph, waves, withMother, type AgentData, type CanvasEdge, type CanvasGraph, type CanvasNode, type CatalogModel, type Command, type MotherSettings, type NoteData, type Plan, type RunTask, type TaskStatus } from "@/lib/canvas";
+import { PATTERNS, WHOLE_PROJECT, applyPattern, agent, transcriptionTeam, PAGE_IMAGE, ownFolders, agentColor, CHECK_LABEL, COLUMN, DONE, FATHER, MOTHER, STATUS_LABEL, TASKS_PER_AGENT, waits, TEMPLATES, agentName, promptName, applyPlan, arrange, boardForPlan, checkOf, commandParts, shapeOf, makesLoop, maxAgents, newAgents, newId, parseCommand, parents, initialGraph, runParts, saveGraph, waves, withMother, type AgentData, type CanvasEdge, type CanvasGraph, type CanvasNode, type CatalogModel, type Command, type MotherSettings, type NoteData, type Plan, type RunTask, type TaskStatus } from "@/lib/canvas";
 
 /** A run: the Mother's part, and the Father's when the graph has more agents than she runs (lib/canvas.ts `parents`):
  * his tasks wait in `father` until her part has succeeded, then run in his own chat. */
@@ -53,7 +53,9 @@ const editKey = (graph: CanvasGraph) => JSON.stringify({ ...graph, nodes: graph.
 /** Fit the graph inside the available board, on opening and after layout changes. */
 const FIT = { padding: 0.06, maxZoom: 1, minZoom: 0.05 };
 const OVERVIEW = { padding: 0.08, maxZoom: 1 };
-const ENTRY_PATTERNS = [{ id: "split-parts", label: "Parallel" }, { id: "sequential", label: "Sequential" }, { id: "research", label: "Research" }];
+const ENTRY_PATTERNS = [{ id: "split-parts", label: "Parallel" }, { id: "sequential", label: "Sequential" }, { id: "research", label: "Research" }, { id: "transcribe", label: "Transcribe images" }];
+// Mother takes the strongest model this person has (28 Oct, Masih: "Depends on which model the user has available; for me, opus").
+const MOTHER_FIRST = [/opus/i, /gemini-4-argon/i, /6\.1-sol/i, /sonnet/i];
 
 /** An agent on the canvas: it writes. Its run-order wave, name, model and state, with an input on the left (what it
  * waits for) and an output on the right (what waits for it), as Deus Ex's hacking screen links its nodes. The ring at
@@ -1339,12 +1341,30 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
   // bridge/canvas-plan.mjs). The board it returns replaces this one in one step, so Ctrl+Z undoes it.
   const [planning, setPlanning] = useState("");
   // `forRun`: Run graph's own fill of what agents lack, made while that run is starting.
+  /** Transcribe images: the folder named in the request (a project folder), one Gemini reader per six pages, one join. */
+  async function transcribe(goal: string): Promise<CanvasGraph | null> {
+    const folder = [...(project.folders ?? [])].sort((a, b) => b.length - a.length).find(name => goal.includes(name)) ?? goal.trim().replace(/^\.?\/+|\/+$/g, "");
+    let files: string[] = [];
+    try { files = (await api<{ data: { name: string; dir: boolean }[] }>(`/files/dir?cwd=${encodeURIComponent(cwd!)}&dir=${encodeURIComponent(folder)}&hidden=0`)).data.filter(entry => !entry.dir).map(entry => entry.name); }
+    catch { setNotice("Name the folder of page images in the request: one of this project's folders."); return null; }
+    if (!files.some(name => PAGE_IMAGE.test(name))) { setNotice(`No page images (PNG, JPG or WebP) in ${folder}.`); return null; }
+    const pick = (test: RegExp) => catalog.find(item => test.test(item.model));
+    const reader = pick(/gemini-3\.8-flash-high/i), boss = MOTHER_FIRST.map(pick).find(Boolean);
+    const team = transcriptionTeam(folder, files, `${folder}/transcription.md`, reader ? { model: reader.model, provider: reader.provider } : {});
+    const readers = team.nodes.filter(node => node.type === "agent").length;
+    checkpoint(); setSelection([]); setRun(null); setStates({});
+    setGraph(current => ({ ...team, request: goal, planningPattern: "transcribe", maxAgents: Math.max(current.maxAgents ?? 10, readers), mother: { brief: goal, model: boss?.model ?? null, provider: boss?.provider ?? null } }));
+    setNotice(reader ? "" : "Gemini 3.8 Flash is not available here, so the readers use the default model.");
+    setTimeout(() => void flow.fitView({ ...FIT, duration: 250 }), 60);
+    return team;
+  }
   async function letElpis(goal: string, scope?: CanvasGraph, newWorkflow = false, forRun = false): Promise<CanvasGraph | null> {
     const current = runtimeAttempt();
     if (!current()) return null;
     if (recordedRun) return null;
     if (planning || startingRun.current && !forRun) { setNotice("Wait for the current design to finish."); return null; }
     if (!cwd) { setNotice("Choose the project the agents work in, then try again."); return null; }
+    if (newWorkflow && graph.planningPattern === "transcribe") return transcribe(goal);
     const chosenPattern = newWorkflow ? TEMPLATES.find(item => item.id === graph.planningPattern) : undefined;
     const starter = chosenPattern?.build();
     const base = newWorkflow ? withMother({ ...starter, name: "Workflow", request: goal,
@@ -1446,6 +1466,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
           // The catalogue stays open to read during a run; loading a pattern waits for the run.
           if (value === "more") { setSelection([]); setMorePatterns(true); showPanel(true); return; }
           if (value === "auto") { setGraph(current => ({ ...current, planningPattern: "auto" })); return; }
+          if (value === "transcribe") { setGraph(current => ({ ...current, planningPattern: "transcribe" })); setNotice("Name the folder of page images in the request, then choose New workflow."); return; }
           if (run && !over(run)) { setNotice("Wait for this run to finish before changing its pattern."); return; }
           const template = TEMPLATES.find(item => item.id === value); if (template) loadTemplate(template);
         }}><option value="auto">Auto · Elpis chooses</option>{ENTRY_PATTERNS.map(pattern => <option key={pattern.id} value={pattern.id}>{pattern.label}</option>)}

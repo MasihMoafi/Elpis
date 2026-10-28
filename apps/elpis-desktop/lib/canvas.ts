@@ -458,3 +458,21 @@ export function agentColor(id: string, data: AgentData): string {
   for (const c of id) hash = (Math.imul(hash, 31) + c.charCodeAt(0)) >>> 0;
   return `hsl(${(hash * 137.508) % 360} 58% 65%)`;
 }
+
+/** "Transcribe images" (28 Oct, Masih: OCR through agents, "subagents of gemini-3.8", started seamlessly): one reader per
+ * six pages reads them by its own vision, never an OCR tool, and one agent joins the parts in page order. `reader` is the
+ * readers' model (Gemini 3.8 Flash when the catalogue has it). */
+export const PAGE_IMAGE = /\.(png|jpe?g|webp|gif)$/i;
+export function transcriptionTeam(folder: string, files: string[], output: string, reader: Partial<AgentData> = {}) {
+  const pages = files.filter(name => PAGE_IMAGE.test(name)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  const batches = Array.from({ length: Math.ceil(pages.length / 6) }, (_, index) => pages.slice(index * 6, index * 6 + 6));
+  const readers = batches.map((batch, index) => agent(`Pages ${index * 6 + 1}–${index * 6 + batch.length}`, [
+    `Open each of these page images in order and read it with your own vision. Do not run OCR tools or scripts.`,
+    ...batch.map(name => `- ${folder}/${name}`),
+    `Transcribe the pages into clean Markdown in your own folder as pages.md: keep the wording exactly, headings as headings, lists and examples as they are; leave out page numbers and running headers and footers. Answer with the path of pages.md.`,
+  ].join("\n"), { ...reader, acceptanceCriteria: [`pages.md holds pages ${index * 6 + 1}–${index * 6 + batch.length} in order`, "Its wording matches the page images word for word"] }));
+  const at = output.includes("/") ? output.slice(0, output.lastIndexOf("/")) : ".";
+  const join = agent("Join the pages", `Join every reader's pages.md, in page order, into ${output}: one document, with paragraphs split across pages joined and repeated running headers removed. Change no other wording.`,
+    { ...reader, writeScopes: [at], acceptanceCriteria: [`${output} holds every page in order`, "No wording was changed"] });
+  return graphOf("Transcribe images", [...readers, join], fan(readers, [join]));
+}
