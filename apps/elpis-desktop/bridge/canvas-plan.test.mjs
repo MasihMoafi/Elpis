@@ -7,7 +7,8 @@ import { startDesktopServer } from './server.mjs';
 
 const THREAD = '00000000-0000-0000-0000-0000000000a1';
 const FOLDERS = ['api', 'docs', 'web', 'web/components'];
-const PLAN = { name: 'Notes app', agents: [
+const WHY = 'Two independent parts, the API and the screen.';
+const PLAN = { name: 'Notes app', mode: 'team', why: WHY, agents: [
   { key: 'api', title: 'Build the notes API', prompt: 'Add the notes endpoints in api/ with their tests.', folders: ['api'], doneWhen: ['the API tests pass'], waitsFor: [] },
   { key: 'web', title: 'Build the notes screen', prompt: 'Add the notes screen in web/ with its tests.', folders: ['web'], doneWhen: ['the screen lists notes'], waitsFor: ['api'] },
 ] };
@@ -57,7 +58,8 @@ test('plans in one ephemeral, read-only, no-approval conversation on the backgro
   assert.equal(params.input.length, 1); assert.equal(params.input[0].type, 'text');
   const { outputSchema } = params;
   assert.equal(outputSchema.type, 'object'); assert.equal(outputSchema.additionalProperties, false);
-  assert.deepEqual(outputSchema.required, ['name', 'agents']);
+  assert.deepEqual(outputSchema.required, ['name', 'mode', 'why', 'agents']);
+  assert.deepEqual(outputSchema.properties.mode, { type: 'string', enum: ['direct', 'team'] });
   const agent = outputSchema.properties.agents.items;
   assert.equal(agent.additionalProperties, false);
   assert.deepEqual([...agent.required].sort(), ['doneWhen', 'folders', 'key', 'prompt', 'title', 'waitsFor']);
@@ -93,13 +95,44 @@ test('the prompt carries the goal, the folder list, the limit and the planning r
   assert.doesNotMatch(prompt, /Keep every existing agent's key/);
 });
 
-test('returns the validated plan as { name, agents }', async () => {
+test('returns the validated plan as { name, mode, why, agents }', async () => {
   const { result } = await plan();
   assert.deepEqual(result, PLAN);
 });
 
+// 28 Oct: Mother decides first. A simple task she does herself, as the one agent whose prompt is the task; a complex one becomes a team.
+const DIRECT = { name: 'Hello file', mode: 'direct', why: 'One file, one line: no team needed.', agents: [
+  { key: 'hello', title: 'Write hello.txt', prompt: 'Create hello.txt in the project root.', folders: ['.'], doneWhen: ['hello.txt exists'], waitsFor: [] },
+] };
+test('the prompt asks the planner to decide, in the same call, between doing it directly and a team, and to say why', async () => {
+  const { client } = await plan();
+  const prompt = client.sent.find(row => row.method === 'turn/start').params.input[0].text;
+  assert.match(prompt, /mode/); assert.match(prompt, /"direct"/); assert.match(prompt, /"team"/);
+  assert.match(prompt, /why/);
+  assert.match(prompt, /exactly one agent/i);
+  assert.match(prompt, /prompt is the goal/i);
+});
+
+test('mode "direct" with one agent comes back as { mode: "direct", agents: [the one] }', async () => {
+  const { result } = await plan({ answer: DIRECT }, {}, { ...BODY, goal: 'Create hello.txt in the project root.' });
+  assert.deepEqual(result, DIRECT);
+  assert.equal(result.agents.length, 1);
+  assert.equal(result.agents[0].prompt, 'Create hello.txt in the project root.');
+});
+
+test('mode "direct" with two agents is refused with a clear message', async () => {
+  const two = { ...clone(PLAN), mode: 'direct' };
+  await refused(plan({ answer: two }), 502, /"direct"[^.]*(one agent|2 agents)/i);
+});
+
+test('mode "team" with several agents comes back as before, plus mode and why', async () => {
+  const { result } = await plan();
+  assert.equal(result.mode, 'team'); assert.equal(result.why, WHY);
+  assert.deepEqual(result.agents, PLAN.agents);
+});
+
 test('review-only agents need no project write folders even when project folders exist', async () => {
-  const review = { name: 'Project status review', agents: [
+  const review = { name: 'Project status review', mode: 'direct', why: 'One report, one agent.', agents: [
     { key: 'evidence', title: 'Review current project evidence', prompt: 'Read the project without changing it. Write the evidence-based status and next steps only in your own report folder.', folders: [], doneWhen: ['The report separates proven work, unknowns and next steps with source paths.'], waitsFor: [] },
   ] };
   const { result } = await plan({ answer: review }, {}, { ...BODY, goal: 'Review the latest project state without changing project files.' });
@@ -108,7 +141,7 @@ test('review-only agents need no project write folders even when project folders
 
 // 28 Oct: "create hello.txt in the sandbox" could never pass: no agent could write a file in the project root.
 test('an agent that writes a file in the project root may have the whole project, "."', async () => {
-  const root = { name: 'Hello check', agents: [
+  const root = { name: 'Hello check', mode: 'direct', why: 'One file.', agents: [
     { key: 'hello', title: 'Write hello.txt', prompt: 'Create hello.txt in the project root with one line: hello.', folders: ['.'], doneWhen: ['hello.txt holds one line: hello'], waitsFor: [] },
   ] };
   const { result } = await plan({ answer: root }, {}, { ...BODY, goal: 'Create hello.txt in the project root.' });
@@ -125,7 +158,7 @@ test('with a board, sends it and the keep-and-fill rule; the plan keeps the keys
     { key: 'agent-1', title: 'Notes API', prompt: 'Keep the API small.', folders: ['api'], doneWhen: ['Smoke test passes'], waitsFor: [] },
     { key: 'agent-2', title: 'Notes screen', prompt: '', folders: [], doneWhen: [], waitsFor: ['agent-1'] },
   ];
-  const filled = { name: 'Notes app', agents: [
+  const filled = { name: 'Notes app', mode: 'team', why: WHY, agents: [
     { key: 'agent-1', title: 'Notes API', prompt: 'Keep the API small.', folders: ['api'], doneWhen: ['the API tests pass'], waitsFor: [] },
     { key: 'agent-2', title: 'Notes screen', prompt: 'Add the notes screen in web/ with its tests.', folders: ['web'], doneWhen: ['the screen lists notes'], waitsFor: ['agent-1'] },
     { key: 'docs', title: 'Write the notes guide', prompt: 'Write docs/guide.md for the notes app.', folders: ['docs'], doneWhen: ['docs/guide.md exists'], waitsFor: ['agent-2'] },
@@ -144,22 +177,22 @@ test('with a board, sends it and the keep-and-fill rule; the plan keeps the keys
 
 test('an existing agent may keep a folder the user chose that is no longer listed; other agents may not use it', async () => {
   const board = [{ key: 'agent-1', title: 'Old', prompt: 'Work.', folders: ['legacy'], doneWhen: [], waitsFor: [] }];
-  const keeps = { name: 'Team', agents: [{ key: 'agent-1', title: 'Old', prompt: 'Work.', folders: ['legacy'], doneWhen: [], waitsFor: [] }] };
+  const keeps = { name: 'Team', mode: 'team', why: 'The board already has agents.', agents: [{ key: 'agent-1', title: 'Old', prompt: 'Work.', folders: ['legacy'], doneWhen: [], waitsFor: [] }] };
   assert.deepEqual((await plan({ answer: keeps }, {}, { ...BODY, agents: board })).result, keeps);
-  const other = { name: 'Team', agents: [...keeps.agents, { key: 'new', title: 'New', prompt: 'Work.', folders: ['legacy'], doneWhen: [], waitsFor: [] }] };
+  const other = { ...keeps, agents: [...keeps.agents, { key: 'new', title: 'New', prompt: 'Work.', folders: ['legacy'], doneWhen: [], waitsFor: [] }] };
   await refused(plan({ answer: other }, {}, { ...BODY, agents: board }), 502, /"new".*"legacy".*not in the project's folder list/);
 });
 
 test('a plan may return an existing agent\'s fields empty (the canvas keeps its own), but not a new agent\'s', async () => {
   const board = [{ key: 'agent-1', title: 'Notes API', prompt: 'Keep the API small.', folders: ['api'], doneWhen: ['Smoke test passes'], waitsFor: [] }];
-  const empty = { name: 'Team', agents: [{ key: 'agent-1', title: '', prompt: '', folders: [], doneWhen: [], waitsFor: [] }] };
+  const empty = { name: 'Team', mode: 'team', why: 'The board already has agents.', agents: [{ key: 'agent-1', title: '', prompt: '', folders: [], doneWhen: [], waitsFor: [] }] };
   assert.deepEqual((await plan({ answer: empty }, {}, { ...BODY, agents: board })).result, empty);
-  const added = { name: 'Team', agents: [...empty.agents, { key: 'fresh', title: 'Fresh', prompt: '', folders: ['web'], doneWhen: [], waitsFor: [] }] };
+  const added = { ...empty, agents: [...empty.agents, { key: 'fresh', title: 'Fresh', prompt: '', folders: ['web'], doneWhen: [], waitsFor: [] }] };
   await refused(plan({ answer: added }, {}, { ...BODY, agents: board }), 502, /Agent "fresh".*prompt/);
 });
 
 test('with no folder list every agent must come back with no folders', async () => {
-  const bare = { name: 'Team', agents: [{ key: 'a', title: 'Do it', prompt: 'Do it.', folders: [], doneWhen: [], waitsFor: [] }] };
+  const bare = { name: 'Team', mode: 'direct', why: 'One step.', agents: [{ key: 'a', title: 'Do it', prompt: 'Do it.', folders: [], doneWhen: [], waitsFor: [] }] };
   const { folders: _folders, ...body } = BODY;
   const { client, result } = await plan({ answer: bare }, {}, body);
   assert.deepEqual(result, bare);
@@ -175,8 +208,11 @@ const REFUSALS = [
   ['an unknown field on an agent', mutate(plan => { plan.agents[0].role = 'tester'; }), /Agent "api".*unknown field "role"/],
   ['a missing field on an agent', mutate(plan => { delete plan.agents[1].doneWhen; }), /Agent "web".*doneWhen/],
   ['a missing name', mutate(plan => { plan.name = ' '; }), /name/],
+  ['a missing mode', mutate(plan => { delete plan.mode; }), /mode/],
+  ['a mode that is neither direct nor team', mutate(plan => { plan.mode = 'solo'; }), /mode/],
+  ['a missing why', mutate(plan => { plan.why = ''; }), /why/],
   ['no agents', mutate(plan => { plan.agents = []; }), /no agents/],
-  ['more agents than maxAgents', { name: 'Big', agents: ['a', 'b', 'c', 'd'].map(key => ({ key, title: key, prompt: 'Work.', folders: ['api'], doneWhen: [], waitsFor: [] })) }, /4 agents.*limit is 3/],
+  ['more agents than maxAgents', { name: 'Big', mode: 'team', why: WHY, agents: ['a', 'b', 'c', 'd'].map(key => ({ key, title: key, prompt: 'Work.', folders: ['api'], doneWhen: [], waitsFor: [] })) }, /4 agents.*limit is 3/],
   ['a folder that is not in the list', mutate(plan => { plan.agents[0].folders = ['api', 'secrets']; }), /"api".*"secrets".*not in the project's folder list/],
   ['an agent without a prompt', mutate(plan => { plan.agents[0].prompt = ''; }), /Agent "api".*prompt/],
   ['an agent without a title', mutate(plan => { plan.agents[0].title = ' '; }), /Agent "api".*title/],
@@ -185,7 +221,7 @@ const REFUSALS = [
   ['a wait for a key that is not in the plan', mutate(plan => { plan.agents[1].waitsFor = ['nope']; }), /"web" waits for "nope"/],
   ['an agent that waits for itself', mutate(plan => { plan.agents[0].waitsFor = ['api']; }), /loop.*api -> api/],
   ['a loop between two agents', mutate(plan => { plan.agents[0].waitsFor = ['web']; }), /loop.*(api -> web -> api|web -> api -> web)/],
-  ['a loop through three agents', { name: 'Ring', agents: [['a', 'c'], ['b', 'a'], ['c', 'b']].map(([key, waits]) => ({ key, title: key, prompt: 'Work.', folders: ['api'], doneWhen: [], waitsFor: [waits] })) }, /loop/],
+  ['a loop through three agents', { name: 'Ring', mode: 'team', why: WHY, agents: [['a', 'c'], ['b', 'a'], ['c', 'b']].map(([key, waits]) => ({ key, title: key, prompt: 'Work.', folders: ['api'], doneWhen: [], waitsFor: [waits] })) }, /loop/],
 ];
 for (const [label, answer, pattern] of REFUSALS) {
   test(`refuses ${label} with a clear message and still releases the conversation`, async () => {

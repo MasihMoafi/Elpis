@@ -1,21 +1,26 @@
 import path from 'node:path';
 import { BridgeError, object, text, threadId } from './client.mjs';
 
-/** "Elpis handle it" on the agents canvas (POST /api/canvas/plan): a fast model turns a goal into a team of agents.
+/** "Elpis handle it" on the agents canvas (POST /api/canvas/plan): a fast model first decides whether the goal is one
+ * agent's job ("direct": one agent whose prompt is the goal) or a team's ("team"), and plans it, in one call.
  * One turn in an ephemeral conversation on the background model, answered as JSON the schema fixes, then
  * checked strictly: the canvas gets a plan it can draw and run, or a clear refusal. */
 export const PLAN_TIMEOUT_MS = 90000;
 const LIMIT = 128;
 const KEY = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$/;
 const AGENT_FIELDS = ['key', 'title', 'prompt', 'folders', 'doneWhen', 'waitsFor'];
+const PLAN_FIELDS = ['name', 'mode', 'why', 'agents'];
+const MODES = ['direct', 'team'];
 
 const strings = { type: 'array', items: { type: 'string' } };
 const string = { type: 'string' };
 /** Every property required and nothing extra, as strict structured output asks. */
 export const PLAN_SCHEMA = {
-  type: 'object', additionalProperties: false, required: ['name', 'agents'],
+  type: 'object', additionalProperties: false, required: PLAN_FIELDS,
   properties: {
     name: string,
+    mode: { type: 'string', enum: MODES },
+    why: string,
     agents: { type: 'array', items: { type: 'object', additionalProperties: false, required: AGENT_FIELDS,
       properties: { key: string, title: string, prompt: string, folders: strings, doneWhen: strings, waitsFor: strings } } },
   },
@@ -67,7 +72,8 @@ function parseRequest(input) {
 
 function promptFor({ goal, folders, agents, maxAgents }) {
   const rules = [
-    `Use at most ${maxAgents} agents. A small goal needs one or two.`,
+    `mode: first decide. "direct" when one agent can finish the goal in one sitting (one file, one small change, one answer): then agents holds exactly one agent, whose prompt is the goal, word for word. "team" when the goal has independent parts, or the board already has agents. why: one line that says which and why.`,
+    `Use at most ${maxAgents} agents.`,
     'Every agent writes: code or, for research and decisions, a markdown file in its own folder. No agent only reads or reports.',
     'Split by independent parts, not by role. An agent handling a feature also handles its tests. Never add a separate tester, reviewer or planner agent.',
     'folders: copy them from the folder list, the narrowest ones the agent writes; never the whole project, except "." for an agent that must write a file directly in the project root (such as a file the goal names there), which then runs alone. Two agents that run at the same time must not share a folder. Every agent also gets its own folder for its report, so an agent that changes no project files needs none.',
@@ -76,7 +82,7 @@ function promptFor({ goal, folders, agents, maxAgents }) {
     ...agents.length ? ["Keep every existing agent's key. For an existing agent, fill only what is empty (prompt, folders, doneWhen) unless the goal asks to change it. Return a field you leave alone as it is, or empty: the canvas keeps what it has. Add agents for parts the board lacks; leave an agent out only if the goal asks."] : [],
   ];
   return [
-    'You design a team of coding agents for a canvas. Turn the goal into the smallest team that achieves it. Answer only with the JSON the schema asks for. Use no tools: work from what is below.',
+    'You are the agent given this goal on a canvas. First decide whether to do it yourself or to split it into a team of coding agents; then give the smallest plan that achieves it. Answer only with the JSON the schema asks for. Use no tools: work from what is below.',
     `Goal:\n${goal}`,
     folders.length ? `Project folders (repository-relative). An agent's folders must be copied from this list, exactly:\n${folders.map(folder => `- ${folder}`).join('\n')}`
       : 'No folder list was given, so every agent\'s folders must be an empty list, or "." for an agent that writes a file directly in the project root.',
@@ -142,9 +148,12 @@ function textList(agent, field, label) {
 }
 
 function check(answer, { folders, agents: board, maxAgents }) {
-  const plan = shape(parse(answer), ['name', 'agents'], 'The plan');
+  const plan = shape(parse(answer), PLAN_FIELDS, 'The plan');
   if (typeof plan.name !== 'string' || !plan.name.trim() || plan.name.length > 200) throw refuse('the plan has no name');
+  if (!MODES.includes(plan.mode)) throw refuse('the plan has no mode ("direct" or "team")');
+  if (typeof plan.why !== 'string' || !plan.why.trim() || plan.why.length > 500) throw refuse('the plan does not say why it chose its mode');
   if (!Array.isArray(plan.agents) || !plan.agents.length) throw refuse('the plan has no agents');
+  if (plan.mode === 'direct' && plan.agents.length !== 1) throw refuse(`mode "direct" means one agent does the whole goal, but the plan has ${plan.agents.length} agents`);
   if (plan.agents.length > maxAgents) throw refuse(`the plan has ${plan.agents.length} agents; the limit is ${maxAgents}`);
   const known = new Map(board.map(agent => [agent.key, agent])), listed = new Set(folders), seen = new Set();
   const agents = plan.agents.map((raw, index) => {
@@ -175,12 +184,12 @@ function check(answer, { folders, agents: board, maxAgents }) {
     done.add(key);
   };
   for (const agent of agents) visit(agent.key, []);
-  return { name: plan.name.trim(), agents };
+  return { name: plan.name.trim(), mode: plan.mode, why: plan.why.trim(), agents };
 }
 
 // ---- The route's operation -----------------------------------------------------------------------------------
 
-/** Plans a team for `input.goal`. `client` is the bridge's DesktopClient (settings, sideRpc and 'side' notifications). */
+/** Decides and plans for `input.goal`: `{ name, mode, why, agents }`, one agent when mode is "direct". `client` is the bridge's DesktopClient (settings, sideRpc and 'side' notifications). */
 export async function planCanvas(client, input, { timeoutMs = PLAN_TIMEOUT_MS } = {}) {
   const request = parseRequest(input);
   const { main, background } = await client.settings();
