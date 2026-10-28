@@ -34,6 +34,7 @@
     "tests/reading.test.mjs",
     "tests/slash-helpers.test.mjs",
     "tests/steps.test.mjs",
+    "tests/run-card.test.mjs",
     "tests/submitted-messages.test.mjs",
     "tests/test-inventory.test.mjs",
     "tests/temp-root.test.mjs",

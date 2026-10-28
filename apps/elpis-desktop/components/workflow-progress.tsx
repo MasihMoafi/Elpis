@@ -1,5 +1,6 @@
 "use client";
 
+import { runCard } from "@/lib/run-card";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AgentIdentity } from "@/components/agent-identity";
 import { DisclosureSummary } from "@/components/ui/disclosure-summary";
@@ -93,7 +94,8 @@ export function useWorkflowTeam(run: RecordedWorkflow | undefined, ready: boolea
             merged.set(id, { ...merged.get(id), ...result.thread });
             const observedReport = report(result.data ?? []);
             if (!observedReport) continue;
-            const { text } = observedReport, at = observedReport.at || (result.thread.updatedAt ?? 0) * 1000;
+            const { text: said } = observedReport, at = observedReport.at || (result.thread.updatedAt ?? 0) * 1000;
+            const card = runCard(said), text = card ? [card.heading, card.summary].filter(Boolean).join(": ") : said;
             const labelled = `${id === motherId ? "Mother" : result.thread.name || result.thread.workflowTaskTitle || "Agent"}: ${text.length > 650 ? `${text.slice(0, 650)}…` : text}`;
             if (id === motherId) motherReport = labelled;
             else if (at >= latestAt) { latestAt = at; latest = labelled; }

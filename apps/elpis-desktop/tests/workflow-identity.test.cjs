@@ -13,8 +13,8 @@ const runs = ['Fix a bug', 'Fix a bug', 'Research pricing', 'Ship exporter'].map
 }));
 const base = (id, name, active = false) => ({ id, name, preview: name, cwd: CWD, model: 'sol', modelProvider: 'openai', status: { type: active ? 'active' : 'idle' }, desktopAccess: { writable: true, mode: 'direct' } });
 const graph = { workflowId: 'run-0', name: 'Fix a bug', nodes: [{ id: 'mother', type: 'mother', position: { x: 0, y: 0 }, data: {} }, { id: 'writer', type: 'agent', position: { x: 400, y: 0 }, data: { title: 'Build', instruction: 'Return the requested evidence.', model: null, writeScopes: ['.'], acceptanceCriteria: ['Return evidence'] } }], edges: [] };
-const open = async (colorScheme, savedRuns = runs, state = {}, names = {}, routes = {}) => {
-  const listed = [...new Map(savedRuns.flatMap(run => [base(run.rootThreadId, run.name), ...(run.tasks ?? []).filter(task => typeof task.assignedThreadId === 'string' && task.assignedThreadId).map(task => base(task.assignedThreadId, `Workflows · ${task.title}`, task.status === 'running')), ...(run.mother?.sessionId ? [base(run.mother.sessionId, 'Workflows · Mother')] : []), ...(run.tasks ?? []).flatMap(task => (task.threads ?? []).map(id => base(id, `Workflows · ${task.title}`))), ...(run.mother?.threads ?? []).map(id => base(id, 'Workflows · Mother'))]).map(thread => [thread.id, thread])).values()].map(thread => ({ ...thread, name: names[thread.id] ?? thread.name }));
+const open = async (colorScheme, savedRuns = runs, state = {}, names = {}, routes = {}, models = {}) => {
+  const listed = [...new Map(savedRuns.flatMap(run => [base(run.rootThreadId, run.name), ...(run.tasks ?? []).filter(task => typeof task.assignedThreadId === 'string' && task.assignedThreadId).map(task => base(task.assignedThreadId, `Workflows · ${task.title}`, task.status === 'running')), ...(run.mother?.sessionId ? [base(run.mother.sessionId, 'Workflows · Mother')] : []), ...(run.tasks ?? []).flatMap(task => (task.threads ?? []).map(id => base(id, `Workflows · ${task.title}`))), ...(run.mother?.threads ?? []).map(id => base(id, 'Workflows · Mother'))]).map(thread => [thread.id, thread])).values()].map(thread => ({ ...thread, name: names[thread.id] ?? thread.name, model: models[thread.id] ?? thread.model }));
   const f = await fixture({ desktop: true, width: 1440, height: 900, colorScheme, threads: listed,
   // The fixture waits for chat-a, a workflow here, so the Workflows section is open (it starts folded: sidebar-organize.runtime.mjs).
   storage: { 'elpis-sidebar-folds-v1': JSON.stringify({ sections: { workflows: false }, projects: {} }), 'elpis-workflow-draft-v1': JSON.stringify(graph), 'elpis-projects-v1': JSON.stringify({ projects: [{ id: 'p', name: 'Fixture', cwd: CWD }], selectedId: 'p' }), ...state },
@@ -113,18 +113,23 @@ for (const colorScheme of ['light', 'dark']) test(`four saved workflows have dis
 
 // 28 Oct: a retried step's first chat and Mother's earlier review chats lay loose in Workflows ("currently they are all
 // merged"): only the latest chat of each was linked to its run. Every chat a run opened folds under it.
-test('a retried step and every Mother review fold under their run, none loose', async () => {
+// 28 Oct, Masih: "mother should be here", at the run's row, where her reviews sat under it as one more worker. The row is
+// the Mother: it says so, with her model, and her reviews fold into it; a retried step's chats still sit under it.
+test('the run row is its Mother: her reviews fold into it, a retried step folds under it, none loose', async () => {
   const run = { ...runs[0], status: 'succeeded', tasks: [{ id: 'step-0', title: 'Check: Build', assignedThreadId: 'check-2', threads: ['check-1', 'check-2'], status: 'succeeded' }],
     mother: { assignedThreadId: 'mother-2', threads: ['mother-1', 'mother-2'] } };
-  const f = await open('light', [run]);
+  const f = await open('light', [run], {}, {}, {}, { [run.rootThreadId]: 'claude/opus', 'check-2': 'agy/gemini-3.8-flash-high' });
   try {
-    const page = f.page;
+    const page = f.page, model = id => row(page, id).locator('.agent-model').innerText();
     for (const id of ['check-1', 'check-2', 'mother-1', 'mother-2']) assert.equal(await row(page, id).count(), 0, `${id} is folded, not loose`);
+    assert.equal(await model(run.rootThreadId), 'Mother · Anthropic · opus');
     await row(page, run.rootThreadId).getByRole('button', { name: /^Expand / }).click();
-    for (const id of ['check-1', 'check-2', 'mother-1', 'mother-2']) {
+    for (const id of ['check-1', 'check-2']) {
       assert.equal(await row(page, id).count(), 1, `${id} shows once`);
       assert.equal(await row(page, id).getAttribute('class').then(value => value.includes('child')), true, `${id} sits under its run`);
     }
+    for (const id of ['mother-1', 'mother-2']) assert.equal(await row(page, id).count(), 0, `${id} is part of the run's row, not a worker under it`);
+    assert.equal(await model('check-2'), 'Antigravity · gemini-3.8-flash-high', 'a subscription is named by its model, not the engine');
     assert.equal(await workflows(page).locator('.thread-origin').count(), 0, 'the section names the origin: no row repeats "Workflows"');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
@@ -163,7 +168,7 @@ test('two runs in one root chat stay separate and never borrow one another’s s
     const latest = workflows(page).locator('.thread-row[data-workflow-run="run-1"]');
     await old.getByRole('button', { name: /^Expand / }).click();
     assert.equal(await row(page, 'step-0-0').count(), 1);
-    assert.equal(await row(page, 'review-old').locator('.thread-title').innerText(), 'Mother', 'saved review chat belongs under its run too');
+    assert.equal(await row(page, 'review-old').count(), 0, 'her saved review folds into its run’s row, never loose');
     await latest.getByRole('button', { name: /^Expand / }).click();
     await latest.getByRole('button', { name: /^Collapse / }).click();
     assert.equal(await row(page, 'step-1-0').count(), 0);
@@ -338,7 +343,7 @@ test('saved failed workflow opens its live team in chat and both canvas views wi
     const savedTasks = summary.getByRole('list', { name: 'Saved workflow tasks', exact: true });
     const marks = await savedTasks.getByRole('img', { name: /^Agent mark / }).evaluateAll(items => items.map(item => item.getAttribute('aria-label')));
     assert.equal(marks.length, 2); assert.equal(new Set(marks).size, 2, 'different agents have distinct stable marks');
-    await savedTasks.getByText('openai · gpt-6-luna', { exact: true }).waitFor();
+    await savedTasks.getByText('OpenAI · gpt-6-luna', { exact: true }).waitFor();
     const legacy = savedTasks.locator('li').filter({ has: page.getByText('Write next steps', { exact: true }) });
     await legacy.getByText('Claude (ACP) error: You have hit your weekly limit.', { exact: true }).waitFor();
     assert.equal(await legacy.locator('.agent-model').count(), 0, 'a historical failure without recorded routing never borrows the assigned chat’s current OpenAI model');

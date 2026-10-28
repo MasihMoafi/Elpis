@@ -1357,7 +1357,9 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
     const named = [...(project.folders ?? [])].sort((a, b) => b.length - a.length).find(name => goal.includes(name));
     return named && cwd ? transcribeAt(cwd, named, goal) : chooseImages(goal);
   }
-  async function chooseImages(goal = requestText.trim()): Promise<CanvasGraph | null> {
+  // `goal`: what was typed with New workflow. Chosen from the menu, its button or the library, the goal is the job itself:
+  // old request text never rides along (28 Oct: a leftover "Create elpis-check.txt" became every reader's goal).
+  async function chooseImages(goal?: string): Promise<CanvasGraph | null> {
     if (run && !over(run)) { setNotice("Wait for this run to finish before changing its pattern."); return null; }
     const choose = window.elpisDesktop?.chooseFolder;
     if (!choose) { setNotice("Choose the folder of page images in the desktop app."); return null; }
@@ -1365,7 +1367,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
     try { picked = (await choose())?.replace(/\/+$/, "") || null; } catch (cause) { setNotice(cause instanceof Error ? cause.message : String(cause)); return null; }
     if (!picked) return null;
     if (picked !== cwd?.replace(/\/+$/, "")) await onUseFolder?.(picked);
-    return transcribeAt(picked, ".", goal || `Transcribe the page images in ${picked.split("/").at(-1)}`);
+    return transcribeAt(picked, ".", goal || `Transcribe the page images in ${picked.split("/").at(-1)} into transcription.md`);
   }
   async function transcribeAt(base: string, folder: string, goal: string): Promise<CanvasGraph | null> {
     let files: string[] = [];

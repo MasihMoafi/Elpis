@@ -68,6 +68,8 @@ test('Transcribe images comes first, asks for its folder, keeps all it writes th
     assert.deepEqual(tall, [], 'every label keeps one line');
     await f.page.keyboard.press('Escape');
     // Cancelling the chooser changes nothing; a chosen folder outside the project becomes the project.
+    // Text left in the request box from another workflow never becomes this one's goal (28 Oct).
+    await f.canvas.getByRole('textbox', { name: 'Workflow request', exact: true }).fill('Create a file named elpis-check.txt');
     const before = await f.saved();
     await chooseOption(pattern, 'transcribe');
     const choose = f.canvas.getByRole('button', { name: 'Choose folder', exact: true });
@@ -80,6 +82,7 @@ test('Transcribe images comes first, asks for its folder, keeps all it writes th
     assert.match(agents[0].data.instruction, /\n- page-1\.png\n- page-2\.png\n/, 'its pages, in order, by their names');
     assert.ok(agents[0].data.writeScopes[0].startsWith('agents/'), 'a reader writes in its own folder');
     assert.deepEqual([agents[1].data.writeScopes, saved.result], [['.'], 'transcription.md']);
+    assert.deepEqual([saved.request, saved.mother.brief], Array(2).fill('Transcribe the page images in sample into transcription.md'));
     await f.canvas.getByRole('button', { name: 'Choose project' }).filter({ hasText: 'sample' }).waitFor();
     // Run graph starts at once, with no planner, and the finished run opens what it wrote.
     await f.canvas.getByRole('button', { name: 'Run graph', exact: true }).click();

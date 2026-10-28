@@ -35,7 +35,7 @@ for (const colorScheme of ['light', 'dark']) for (const sidebarWidth of [256, 20
   try {
     await f.open('chat-a'); await expand(page);
     const agentMark = await row(page, 'workflow-agent').getByRole('img', { name: /^Agent mark / }).getAttribute('aria-label');
-    assert.match(await row(page, 'workflow-agent').innerText(), /openai · sol/);
+    assert.match(await row(page, 'workflow-agent').innerText(), /OpenAI · sol/);
     for (const [id, name, colour] of choices) {
       const target = row(page, id), menu = target.locator('.thread-actions'), link = target.locator('.thread-link');
       await target.scrollIntoViewIfNeeded(); await unfocus(f);

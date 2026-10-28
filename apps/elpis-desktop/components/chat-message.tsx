@@ -29,6 +29,7 @@ import { noticeOf, type WorkflowNotice } from "@/lib/workflow-notice";
 import { reasoningOf, shellTokens, stepDuration, stepFailed, stepLabel, summarize, unwrapShell } from "@/lib/steps";
 // Built into the page, as the board has it: no request that can fail or arrive late (Masih, 23 Oct).
 import { FACE_DATA_URL } from "@/bridge/matilda-face.cjs";
+import { runCard } from "@/lib/run-card";
 
 const object = (value: unknown): Record<string,unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string,unknown> : {};
 const text = (value: unknown) => typeof value === "string" ? value : "";
@@ -80,26 +81,6 @@ function WorkflowNoticeStep({notice}:{notice:WorkflowNotice}) {
 /** A command as Claude's desktop app shows it in an opened group: a short title, the script in a bordered block
  * coloured as shell, then its output; a failed command's exit code and output in red. */
 
-/** Workflow agents answer the run in JSON (bridge/workflow-acp.mjs): a check's verdict, or Mother's decision. Their chats
- * show it as a card, not the JSON (27-28 Oct: "showing this way is wrong"). Anything else stays as written. */
-type RunCard = { label: string; heading: string; failed: boolean; mother: boolean; text: string };
-const MOTHER: Record<string, string> = { continue: "Mother lets the agent continue", steer: "Mother steers the agent", retry: "Mother retries the agent", stop: "Mother stops the run" };
-function runCard(value: string): RunCard | null {
-  if (!/^\s*(```(?:json)?\s*)?\{/.test(value)) return null;
-  let parsed: Record<string, unknown>;
-  try { parsed = JSON.parse(value.trim().replace(/^```(?:json)?\s*|\s*```$/g, "")); } catch { return null; }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
-  const keys = Object.keys(parsed), words = (key: string) => typeof parsed[key] === "string" ? (parsed[key] as string).trim() : "";
-  if (typeof parsed.passed === "boolean" && typeof parsed.summary === "string" && keys.length === 2)
-    return { label: "Check result", heading: parsed.passed ? "Check passed" : "Check failed", failed: !parsed.passed, mother: false, text: words("summary") };
-  const action = words("action");
-  if (MOTHER[action] && keys.every(key => ["action", "taskId", "message", "instruction", "summary", "reason"].includes(key) && typeof parsed[key] === "string")) {
-    const guidance = words("message") || words("instruction");
-    return { label: "Mother's decision", heading: MOTHER[action], failed: action === "stop", mother: true,
-      text: [words("summary"), guidance && `**Guidance:** ${guidance}`, words("reason") && `**Why:** ${words("reason")}`].filter(Boolean).join("\n\n") };
-  }
-  return null;
-}
 /** The evidence a workflow prompt carries as JSON (Mother's checkpoint and recovery prompts, an agent's connected answers):
  * the chat folds it under its label, pretty-printed, after the prompt's own words. */
 const EVIDENCE = /\n(Current evidence|Current nodes|Answers from connected agents \(source material\)):\n([\[{][\s\S]*)$/;
