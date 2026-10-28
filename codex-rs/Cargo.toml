@@ -7,7 +7,6 @@ members = [
     "agent-identity",
     "agent-roles",
     "backend-client",
-    "cloud-client",
     "bwrap",
     "build-info",
     "ansi-escape",
@@ -45,7 +44,6 @@ members = [
     "shell-escalation",
     "skills",
     "core",
-    "core-api",
     "core-plugin-common",
     "core-plugins",
     "diagnostics",
@@ -112,11 +110,9 @@ members = [
     "tui",
     "user-verification",
     "tools",
-    "v8-poc",
     "websocket-auth",
     "websocket-client",
     "windows-sandbox-rs/tests/support",
-    "windows-sandbox-service",
     "worktree",
     "workload-identity",
     "utils/absolute-path",
@@ -131,7 +127,6 @@ members = [
     "utils/home-dir",
     "utils/process",
     "utils/pty",
-    "utils/readiness",
     "utils/redacted-string",
     "utils/rustls-provider",
     "utils/string",
@@ -152,7 +147,6 @@ members = [
     "state",
     "terminal-detection",
     "test-binary-support",
-    "thread-manager-sample",
     "thread-store",
     "uds",
     "codex-experimental-api-macros",
@@ -215,7 +209,6 @@ codex-agent-message-board-extension = { path = "ext/agent-message-board" }
 codex-connectors-extension = { path = "ext/connectors" }
 codex-context-fragments = { path = "context-fragments" }
 codex-core = { path = "core" }
-codex-core-api = { path = "core-api" }
 codex-core-plugin-common = { path = "core-plugin-common" }
 codex-core-plugins = { path = "core-plugins" }
 codex-diagnostics = { path = "diagnostics" }
@@ -319,7 +312,6 @@ codex-utils-stream-parser = { path = "utils/stream-parser" }
 codex-utils-string = { path = "utils/string" }
 codex-utils-template = { path = "utils/template" }
 codex-user-verification = { path = "user-verification" }
-codex-v8-poc = { path = "v8-poc" }
 codex-workload-identity = { path = "workload-identity" }
 codex-windows-sandbox = { path = "windows-sandbox-rs" }
 codex-windows-sandbox-test-support = { path = "windows-sandbox-rs/tests/support" }
@@ -608,7 +600,6 @@ unwrap_used = "deny"
 ignored = [
     "icu_provider",
     "openssl-sys",
-    "codex-v8-poc",
 ]
 
 [profile.dev]

@@ -2625,30 +2625,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "codex-cloud-client"
-version = "0.162.0"
-dependencies = [
- "anyhow",
- "async-stream",
- "bytes",
- "codex-http-client",
- "futures",
- "http 1.4.0",
- "http-body-util",
- "hyper",
- "hyper-util",
- "pretty_assertions",
- "prost",
- "thiserror 2.0.18",
- "tokio",
- "tokio-rustls",
- "tonic",
- "tonic-prost",
- "tower",
- "url",
-]
-
-[[package]]
 name = "codex-cloud-config"
 version = "0.162.0"
 dependencies = [
@@ -3070,29 +3046,6 @@ dependencies = [
  "windows-sys 0.61.2",
  "wiremock",
  "zstd",
-]
-
-[[package]]
-name = "codex-core-api"
-version = "0.162.0"
-dependencies = [
- "codex-analytics",
- "codex-app-server-protocol",
- "codex-arg0",
- "codex-config",
- "codex-core",
- "codex-exec-server",
- "codex-extension-api",
- "codex-features",
- "codex-history",
- "codex-home",
- "codex-image-generation-extension",
- "codex-login",
- "codex-model-provider-info",
- "codex-models-manager",
- "codex-protocol",
- "codex-state",
- "codex-utils-absolute-path",
 ]
 
 [[package]]
@@ -4783,17 +4736,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "codex-thread-manager-sample"
-version = "0.162.0"
-dependencies = [
- "anyhow",
- "clap",
- "codex-core-api",
- "serde_json",
- "tracing",
-]
-
-[[package]]
 name = "codex-thread-store"
 version = "0.162.0"
 dependencies = [
@@ -5220,16 +5162,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "codex-utils-readiness"
-version = "0.162.0"
-dependencies = [
- "assert_matches",
- "thiserror 2.0.18",
- "time",
- "tokio",
-]
-
-[[package]]
 name = "codex-utils-redacted-string"
 version = "0.162.0"
 dependencies = [
@@ -5286,14 +5218,6 @@ name = "codex-utils-template"
 version = "0.162.0"
 dependencies = [
  "pretty_assertions",
-]
-
-[[package]]
-name = "codex-v8-poc"
-version = "0.162.0"
-dependencies = [
- "pretty_assertions",
- "v8",
 ]
 
 [[package]]
@@ -5406,23 +5330,6 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing-appender",
- "windows 0.58.0",
- "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "codex-windows-sandbox-service"
-version = "0.162.0"
-dependencies = [
- "anyhow",
- "codex-cloud-config",
- "codex-config",
- "codex-core",
- "codex-windows-sandbox",
- "pretty_assertions",
- "serde_json",
- "tokio",
- "toml 0.9.11+spec-1.1.0",
  "windows 0.58.0",
  "windows-sys 0.61.2",
 ]
