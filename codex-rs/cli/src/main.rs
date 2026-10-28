@@ -41,9 +41,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use supports_color::Stream;
 
+// Elpis ships glibc builds too: glibc's per-thread arenas held most of a
+// long-running engine's 1.8 GB (116 arena-sized regions, 28 Oct), so use
+// jemalloc on every 64-bit Linux build, not only musl.
 #[cfg(all(
     target_os = "linux",
-    target_env = "musl",
     any(target_arch = "x86_64", target_arch = "aarch64")
 ))]
 #[global_allocator]
