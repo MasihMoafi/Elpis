@@ -132,6 +132,18 @@ test('appearance choices persist through real desktop IPC, rebase across windows
     await assert.rejects(f.store.patch({ key: 'elpis-preferences-v1', baseRevision: f.store.snapshot().revision, changes }), /Unsupported/);
 });
 
+// 28 Oct, Masih: "Unsupported workspace patch". The sidebar's Workflows switch saved sidebarWorkflows, which the store did not
+// accept; every setting the app can save must be one the store takes, including the next one added.
+test('every setting the app can save is accepted by the desktop store', async t => {
+  const f = windows(t), a = f.open(1);
+  a.preferences.savePreferences({ ...a.preferences.DEFAULT_PREFERENCES }); await f.settle();
+  assert.deepEqual(a.errors, []);
+  assert.equal(JSON.parse(createStateStore(f.file).read()['elpis-preferences-v1']).sidebarWorkflows, true);
+  a.preferences.savePreferences({ sidebarWorkflows: false }); await f.settle();
+  assert.deepEqual(a.errors, []);
+  assert.equal(a.preferences.readPreferences().sidebarWorkflows, false);
+});
+
 test('Agent runs visibility persists through actual desktop IPC and synchronizes between windows', async t => {
   const f = windows(t), a = f.open(1), b = f.open(2);
   a.preferences.savePreferences({ showAgentRuns: false }); await f.settle();
