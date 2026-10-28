@@ -1453,6 +1453,10 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
           <option value="more">More patterns…</option></OptionSelect>
         <Button type="submit" size="sm" aria-describedby={!ready ? offlineReasonId : undefined} disabled={!ready || !cwd || !requestText.trim() || Boolean(planning || starting)}>{planning ? "Designing…" : "New workflow"}</Button>
         <Button type="button" variant="outline" size="sm" aria-describedby={!ready ? offlineReasonId : undefined} disabled={!ready || !cwd || !requestText.trim() || Boolean(planning || starting || run && !over(run))} onClick={() => void letElpis(requestText)}>Update current</Button>
+        {/* The run's status sits beside the request, which gives up the room, so the controls below stay on one row
+            while it runs (28 Oct: a running board wrapped them onto a second row). */}
+        {run && <span className="canvas-chip" role="status"><i className="canvas-dot" data-status={over(run) ? run.father?.status ?? run.status : "running"} />{over(run) ? "Finished" : run.father?.threadId ? "Running · the Father's part" : "Running"} · {done} of {agents.length} done</span>}
+        {run && runClock}
         {!ready && <p id={offlineReasonId} role="status" className="w-full text-xs text-muted-foreground">{OFFLINE_WORKFLOW}</p>}
       </form>}
       {recordedRun && savedRecord && <div className="w-full"><WorkflowProgress compact run={savedRecord} team={liveTeam} onOpenChat={onOpenChat} /></div>}
@@ -1464,8 +1468,6 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
       </div>
       <Button variant="ghost" size="icon-sm" aria-label="Duplicate workflow" title="Duplicate workflow" onClick={() => { setGraph(current => ({ ...current, workflowId: undefined, name: identity?.name ?? current.name })); setRun(null); setStates({}); setSelection([]); }}><Copy size={14} /></Button>
       {projectMenu}
-      {run && !recordedRun && <span className="canvas-chip" role="status"><i className="canvas-dot" data-status={over(run) ? run.father?.status ?? run.status : "running"} />{over(run) ? "Finished" : run.father?.threadId ? "Running · the Father's part" : "Running"} · {done} of {agents.length} done</span>}
-      {run && !recordedRun && runClock}
       <span className="canvas-spacer" />
       <ViewToggle iso={iso} onChange={setIso} />
       {run && <Button variant="ghost" size="icon-sm" aria-label="Open run chat" title="Open run chat" onClick={() => onOpenChat(run.rootThreadId)}><ExternalLink size={14} /></Button>}

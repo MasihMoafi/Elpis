@@ -1076,9 +1076,9 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .canvas-hud span { line-height:1.4; color:var(--muted-foreground); }
 .canvas-hud strong { font:600 2.25rem/1.25 var(--mono); font-variant-numeric:tabular-nums; color:var(--accent-text); }
 /* In the header the clock is one small time beside the run's status; its label is read out, not printed. */
-.canvas-header > .canvas-hud { display:inline-flex; padding:0; border:0; }
-.canvas-header > .canvas-hud span { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
-.canvas-header > .canvas-hud strong { font:500 0.8125rem/1 var(--mono); color:var(--muted-foreground); }
+.canvas-header .canvas-hud { display:inline-flex; align-items:center; height:32px; padding:0; border:0; }
+.canvas-header .canvas-hud span { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+.canvas-header .canvas-hud strong { font:500 0.8125rem/1 var(--mono); color:var(--muted-foreground); }
 .canvas-log-panel { flex:none; min-width:0; padding:6px 12px; border-top:1px solid var(--hairline); background:var(--card); }
 .canvas-log-panel .hud-menu-title { margin:0 0 4px; }
 .canvas-log { display:grid; align-content:start; gap:2px; height:76px; overflow:auto; margin:0; padding:0; list-style:none; }
