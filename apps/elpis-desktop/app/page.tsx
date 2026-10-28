@@ -82,7 +82,7 @@ import { MatildaCompanion } from "@/components/matilda-companion";
 import { chooseProject, projectAt, EnvironmentMenu, MoveChatDialog, ProjectActions, ProjectDialog, ProjectMenu } from "@/components/project-picker";
 import { PutUnderDialog } from "@/components/put-under-dialog";
 import { WorkflowMark } from "@/components/workflow-identity";
-import { useWorkflowCatalog, workflowMembers, type WorkflowRun } from "@/lib/workflow-identity";
+import { runSummary, useWorkflowCatalog, workflowMembers, type WorkflowRun } from "@/lib/workflow-identity";
 import { BranchChip } from "@/components/branch-chip";
 import { keptNotice, type WorktreeOutcome } from "@/lib/chat-worktree";
 import { AccountRow } from "@/components/account-row";
@@ -1753,7 +1753,7 @@ export default function Home() {
   const workflowRuns = useMemo(() => workflowCatalog.runs.filter(run => !hidden.current.has(run.rootThreadId) && (listedThreadIds.has(run.rootThreadId) || workflowMembers(run).some(member => listedThreadIds.has(member.threadId)))), [workflowCatalog.runs, listedThreadIds]);
   const workflowRoots = useMemo(() => new Map([...workflowRuns].sort((a, b) => (a.startedAt ?? a.createdAt ?? 0) - (b.startedAt ?? b.createdAt ?? 0)).map(run => [run.rootThreadId, run])), [workflowRuns]);
   const selectedWorkflow = selected ? workflowRoots.get(selected.id) : undefined;
-  const workflowSteps = useMemo(() => new Map(workflowRuns.flatMap(run => workflowMembers(run).map(member => [member.threadId, { parent: run.rootThreadId, title: member.title, runId: run.id, mother: !!member.mother }] as const))), [workflowRuns]);
+  const workflowSteps = useMemo(() => new Map(workflowRuns.flatMap(run => workflowMembers(run).map(member => [member.threadId, { parent: run.rootThreadId, title: member.title, runId: run.id, mother: !!member.mother, check: !!member.check }] as const))), [workflowRuns]);
   const sidebarThreads = useMemo(() => [...threads, ...[...workflowRoots.values()].filter(run => !threads.some(thread => thread.id === run.rootThreadId)).map(run => ({ id: run.rootThreadId, name: run.name, status: { type: run.status === "running" ? "active" : "idle" } } as Thread))], [threads, workflowRoots]);
   const sidebarTitle = (thread: Thread) => {
     const step = workflowSteps.get(thread.id), chosen = thread.name?.trim();
@@ -1768,7 +1768,7 @@ export default function Home() {
   const workflowOpen = (run: WorkflowRun) => expanded[`workflow:${run.id}`] ?? false;
   const workflowChild = (child: Thread, run: WorkflowRun) => {
     const owner = workflowSteps.get(child.id);
-    return !owner?.mother && sidebarParent(child) === run.rootThreadId && (owner?.parent === run.rootThreadId
+    return !owner?.mother && !owner?.check && sidebarParent(child) === run.rootThreadId && (owner?.parent === run.rootThreadId
       ? owner.runId === run.id : workflowRoots.get(run.rootThreadId)?.id === run.id);
   };
   const previousRuns = useRef(new Map<string, string>());
@@ -2148,7 +2148,7 @@ export default function Home() {
       {!canExpandAgents && depth > 0 && <span aria-hidden="true" className="size-6 shrink-0" />}
       <span className="conversation-state-slot">{state === "unread" ? <button data-slot="thread-dot" className="thread-dot conversation-status" data-state={state} aria-label="Unread response. Mark as read" title="Unread response. Mark as read" onClick={() => markRead(thread.id)} /> : state === "idle" ? <span className="thread-dot" data-state={state} aria-hidden="true" /> : <span className="thread-dot conversation-status" role="img" data-state={state} aria-label={stateLabels[state]} title={stateLabels[state]} />}</span>
       <button data-slot="chat-row" className="thread-link" onPointerEnter={() => prefetchThread(thread)} onFocus={() => prefetchThread(thread)} onMouseDown={event => { if (event.shiftKey || event.button === 1) event.preventDefault(); }} onAuxClick={event => { if (event.button === 1 && desktop) { event.preventDefault(); openInNewTab(thread); } }} onClick={event => clickRow(thread, event)} title={name}>
-        <>{isAgent(thread) || workflowSteps.has(thread.id) || run ? <AgentIdentity compact id={thread.id} name={name} nameClassName="thread-title" model={thread.model} provider={thread.modelProvider} role={run ? "Mother" : undefined} /> : <span className="thread-title" title={name}>{name}</span>}</>
+        <>{isAgent(thread) || workflowSteps.has(thread.id) || run ? <AgentIdentity compact id={thread.id} name={name} nameClassName="thread-title" model={run ? null : thread.model} provider={run ? null : thread.modelProvider} role={run ? runSummary(run) : undefined} /> : <span className="thread-title" title={name}>{name}</span>}</>
         {parentLabel && <span className="text-xs text-muted-foreground" title={parentLabel}>{parentLabel}</span>}
         {subtitle && <span className="thread-subtitle" title={subtitle}>{subtitle}</span>}
         {originLabel(origin, name) && !inOrigin && <span className="thread-nickname thread-origin" data-origin={origin}>{origin}</span>}
@@ -2199,7 +2199,8 @@ export default function Home() {
     if (seen.has(thread.id)) return null;
     const next = new Set(seen).add(thread.id);
     return workflowRuns.filter(run => run.rootThreadId === thread.id).map(run => {
-      const children = ordinaryThreads.filter(child => workflowChild(child, run));
+      const order = workflowMembers(run).map(member => member.threadId), at = (id: string) => order.includes(id) ? order.indexOf(id) : order.length;
+      const children = ordinaryThreads.filter(child => workflowChild(child, run)).sort((a, b) => at(a.id) - at(b.id));
       return <div key={run.id}>{threadRow(thread, depth, true, run)}{!searchTerm && workflowOpen(run) && <>{children.map(child => threadBranch(child, depth + 1, next, true))}{workflowRoots.get(thread.id)?.id === run.id && moreChildren(thread.id, depth + 1)}</>}</div>;
     });
   }

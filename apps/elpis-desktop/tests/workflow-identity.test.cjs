@@ -115,22 +115,26 @@ for (const colorScheme of ['light', 'dark']) test(`four saved workflows have dis
 // merged"): only the latest chat of each was linked to its run. Every chat a run opened folds under it.
 // 28 Oct, Masih: "mother should be here", at the run's row, where her reviews sat under it as one more worker. The row is
 // the Mother: it says so, with her model, and her reviews fold into it; a retried step's chats still sit under it.
-test('the run row is its Mother: her reviews fold into it, a retried step folds under it, none loose', async () => {
-  const run = { ...runs[0], status: 'succeeded', tasks: [{ id: 'step-0', title: 'Check: Build', assignedThreadId: 'check-2', threads: ['check-1', 'check-2'], status: 'succeeded' }],
+// 28 Oct, Masih: "mothers all over the place ... wrong stuff", in the sidebar: every run row said Mother, and a run's checks
+// were rows of their own in no order. A run's row says how it went, in the board's words; its steps follow in run order,
+// a retried step's chats each once, every check folded into its step as Mother's reviews fold into the run's row.
+test('a run row says how the run went; its steps follow in run order with their checks and Mother’s reviews folded in', async () => {
+  const run = { ...runs[0], status: 'succeeded', tasks: [
+    { id: 'build', title: 'Build', threads: ['build-0', 'build-1'], status: 'succeeded' },
+    { id: 'build-check', kind: 'verify', dependsOn: ['build'], title: 'Check: Build', assignedThreadId: 'check-2', threads: ['check-1', 'check-2'], status: 'succeeded' },
+    { id: 'join', title: 'Join', assignedThreadId: 'join-1', status: 'succeeded' },
+    { id: 'join-check', kind: 'verify', dependsOn: ['join'], title: 'Check: Join', assignedThreadId: 'join-check-1', status: 'succeeded' }],
     mother: { assignedThreadId: 'mother-2', threads: ['mother-1', 'mother-2'] } };
-  const f = await open('light', [run], {}, {}, {}, { [run.rootThreadId]: 'claude/opus', 'check-2': 'agy/gemini-3.8-flash-high' });
+  const f = await open('light', [run], {}, {}, {}, { [run.rootThreadId]: 'claude/opus', 'build-1': 'agy/gemini-3.8-flash-high' });
   try {
     const page = f.page, model = id => row(page, id).locator('.agent-model').innerText();
-    for (const id of ['check-1', 'check-2', 'mother-1', 'mother-2']) assert.equal(await row(page, id).count(), 0, `${id} is folded, not loose`);
-    assert.equal(await model(run.rootThreadId), 'Mother · Anthropic · opus');
+    assert.equal(await model(run.rootThreadId), '2 of 2 done', 'the run says how it went, not "Mother"');
     await row(page, run.rootThreadId).getByRole('button', { name: /^Expand / }).click();
-    for (const id of ['check-1', 'check-2']) {
-      assert.equal(await row(page, id).count(), 1, `${id} shows once`);
-      assert.equal(await row(page, id).getAttribute('class').then(value => value.includes('child')), true, `${id} sits under its run`);
-    }
-    for (const id of ['mother-1', 'mother-2']) assert.equal(await row(page, id).count(), 0, `${id} is part of the run's row, not a worker under it`);
-    assert.equal(await model('check-2'), 'Antigravity · gemini-3.8-flash-high', 'a subscription is named by its model, not the engine');
-    await captureReview(page, 'workflow-row-is-mother');
+    await row(page, 'join-1').waitFor();
+    assert.deepEqual(await workflows(page).locator('.thread-row').evaluateAll(rows => rows.map(item => item.dataset.threadId)), [run.rootThreadId, 'build-0', 'build-1', 'join-1'],
+      'its steps in run order (build-0 and build-1 are listed after join-1); no check or review is a row');
+    assert.equal(await model('build-1'), 'Antigravity · gemini-3.8-flash-high', 'a subscription is named by its model, not the engine');
+    await captureReview(page, 'workflow-run-rows');
     assert.equal(await workflows(page).locator('.thread-origin').count(), 0, 'the section names the origin: no row repeats "Workflows"');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
