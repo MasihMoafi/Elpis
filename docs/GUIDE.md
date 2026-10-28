@@ -47,7 +47,7 @@ The product succeeds only when these behaviors pass their acceptance checks and 
 
 ## Proof Standard
 
-The accepted October 9 recovery contract is [Codex parity](specs/codex-parity.md).
+The accepted October 9 recovery contract is Codex parity. Its file left the tree on 22 October (`77aa3bc42`); `git show ab1bb00e5:docs/specs/codex-parity.md` prints its last text.
 Use the installed Codex 0.162.0 foundation for shared terminal behavior and layout.
 Earlier Elpis-specific colors, animations and shortcut assignments yield to that
 contract. Keep the selected slash commands, per-agent model labels, and retained
@@ -101,11 +101,11 @@ Easy, Medium, and Hard are separate difficulty labels. They describe how much re
 
 **R9. Proportionate, measured development cycle** — Ordinary changes receive focused checks. Exhaustive inherited TUI/app-server regression runs belong to nightly/manual/release verification unless a change directly touches that surface. CI must not edit source or create status-only commits. Dependency deletion follows measured cost and product optionality, not crate names.
 
-**R10. Codex shared interface with Elpis controls** — Follow the accepted [Codex parity contract](specs/codex-parity.md). Elpis makes runtime, model, context, memory, permissions, and evidence visible through its retained controls. Earlier custom styling must not override the shared Codex interface.
+**R10. Codex shared interface with Elpis controls** — Follow the accepted Codex parity contract ([Proof Standard](#proof-standard)). Elpis makes runtime, model, context, memory, permissions, and evidence visible through its retained controls. Earlier custom styling must not override the shared Codex interface.
 
-**R11. Explicit Claude provider and subscription paths** — Preserve the native Anthropic API path and the later user-selected Claude subscription ACP bridge described in [claude-acp.md](specs/claude-acp.md). Authentication and provider selection remain explicit. `elpis claude` (accepted 2026-10-03) separately starts Claude Code through a loopback Smart Prune proxy.
+**R11. Explicit Claude provider and subscription paths** — Preserve the native Anthropic API path and the later user-selected Claude subscription ACP bridge, [`tools/elpis-claude/acp-bridge.mjs`](../tools/elpis-claude/acp-bridge.mjs). Authentication and provider selection remain explicit. `elpis claude` (accepted 2026-10-03) separately starts Claude Code through a loopback Smart Prune proxy.
 
-Masih's October 20 request adds two isolated Claude subscription logins and explicit account switching; see [Claude accounts](specs/claude-accounts.md). Installation and real sign-in acceptance remain open.
+Masih's October 20 request adds two isolated Claude subscription logins and explicit account switching; see [`claude-accounts.mjs`](../tools/elpis-claude/claude-accounts.mjs) and [its tests](../tools/elpis-claude/test/claude-accounts.test.mjs). Installation and real sign-in acceptance remain open.
 
 **R12. Deterministic multi-agent orchestration** — Elpis owns a persisted task DAG above the agent lineage graph. It validates dependencies and bounded task roles, controls concurrency and write authority, measures file changes, requires evidence, and requires a directly dependent read-only verifier for writable work. Branch/worktree creation and integration remain deliberate coordinator actions. The exact contract and verification state live in [WORK_GRAPHS.md](WORK_GRAPHS.md).
 
