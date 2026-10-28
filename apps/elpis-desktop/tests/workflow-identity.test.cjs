@@ -125,6 +125,7 @@ test('a retried step and every Mother review fold under their run, none loose', 
       assert.equal(await row(page, id).count(), 1, `${id} shows once`);
       assert.equal(await row(page, id).getAttribute('class').then(value => value.includes('child')), true, `${id} sits under its run`);
     }
+    assert.equal(await workflows(page).locator('.thread-origin').count(), 0, 'the section names the origin: no row repeats "Workflows"');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

@@ -2177,10 +2177,12 @@ export default function Home() {
     const cursor = childCursors[parentId];
     return !searchTerm && cursor && !hidden.current.has(parentId) ? <Button variant="ghost" size="xs" className="thread-more w-full justify-start" style={{ paddingLeft: `${depth * 14}px` }} disabled={loadingChildren[parentId]} onClick={() => void loadChildren(parentId, cursor, false)}><span className="truncate">More agents from {find(parentId) ? sidebarTitle(find(parentId)!) : "parent conversation"}</span></Button> : null;
   }
-  function threadBranch(thread: Thread, depth = 0, seen = new Set<string>()) {
+  /** `inOrigin`: drawn inside its origin's section (Workflows), which already names the origin (28 Oct: every row there
+   * read "… / Workflows"). */
+  function threadBranch(thread: Thread, depth = 0, seen = new Set<string>(), inOrigin = false) {
     if (seen.has(thread.id)) return null;
     if (workflowRoots.has(thread.id)) return workflowBranches(thread, depth, seen);
-    return <div key={thread.id}>{threadRow(thread, depth)}{!searchTerm && branchOpen(thread.id) && descendants(thread.id, depth + 1, seen)}</div>;
+    return <div key={thread.id}>{threadRow(thread, depth, inOrigin)}{!searchTerm && branchOpen(thread.id) && descendants(thread.id, depth + 1, seen)}</div>;
   }
   function runDescendants(parentId: string, depth: number, seen = new Set<string>()): React.ReactNode {
     if (seen.has(parentId)) return null; const next = new Set(seen).add(parentId);
@@ -2193,7 +2195,7 @@ export default function Home() {
     const next = new Set(seen).add(thread.id);
     return workflowRuns.filter(run => run.rootThreadId === thread.id).map(run => {
       const children = ordinaryThreads.filter(child => workflowChild(child, run));
-      return <div key={run.id}>{threadRow(thread, depth, true, run)}{!searchTerm && workflowOpen(run) && <>{children.map(child => threadBranch(child, depth + 1, next))}{workflowRoots.get(thread.id)?.id === run.id && moreChildren(thread.id, depth + 1)}</>}</div>;
+      return <div key={run.id}>{threadRow(thread, depth, true, run)}{!searchTerm && workflowOpen(run) && <>{children.map(child => threadBranch(child, depth + 1, next, true))}{workflowRoots.get(thread.id)?.id === run.id && moreChildren(thread.id, depth + 1)}</>}</div>;
     });
   }
   /** A group the person made, drawn as a project is: open or closed, its menu (Rename group, Delete group), its chats. A
@@ -2272,7 +2274,7 @@ export default function Home() {
         {pinnedChats.length > 0 && <section aria-label="Pinned"><div className="section-label-row">{foldable("pinned", "Pinned")}</div>{(searchTerm || !collapsedSections.pinned) && pinnedChats.map(chatRows)}</section>}
         {grouped && grouped.groups.length > 0 && <section aria-label="Groups"><div className="section-label-row">{foldable("groups", "Groups")}</div>{!collapsedSections.groups && grouped.groups.map(chatGroupSection)}</section>}
         {loveChats.length > 0 && <section role="group" aria-label="Love Spot"><div className="section-label-row">{foldable("love", "Love Spot")}</div>{!collapsedSections.love && loveChats.map(thread => <div key={thread.id}>{threadRow(thread, 0, true)}{expanded[thread.id] && descendants(thread.id, 1)}</div>)}</section>}
-        {workflowChats.length > 0 && <section role="group" aria-label="Workflows"><div className="section-label-row">{foldable("workflows", "Workflows")}<Button variant="ghost" size="icon-xs" className="section-hide" aria-label="Hide Workflows from the sidebar" title="Hide Workflows from the sidebar · Settings → General shows them again" onClick={() => { try { savePreferences({ sidebarWorkflows: false }); } catch { /* the section stays */ } }}><EyeOff size={14} /></Button></div>{!collapsedSections.workflows && workflowChats.map(chatRows)}</section>}
+        {workflowChats.length > 0 && <section role="group" aria-label="Workflows"><div className="section-label-row">{foldable("workflows", "Workflows")}<Button variant="ghost" size="icon-xs" className="section-hide" aria-label="Hide Workflows from the sidebar" title="Hide Workflows from the sidebar · Settings → General shows them again" onClick={() => { try { savePreferences({ sidebarWorkflows: false }); } catch { /* the section stays */ } }}><EyeOff size={14} /></Button></div>{!collapsedSections.workflows && workflowChats.map(thread => threadBranch(thread, 0, new Set(), true))}</section>}
         {(searchTerm ? recentChats.length > 0 : roots.length > 0 || ordinaryThreads.length > 0) && <section aria-label={searchTerm ? "Results" : "Recents"} {...(!searchTerm ? chatReorder.targetProps("recents", true) : {})}><div className="section-label-row" {...(grouped ? chatReorder.targetProps("recents", true) : {})}>{searchTerm ? <div className="section-label">Results</div> : foldable("recents", "Recents")}
           {!searchTerm && ordinaryUnread.length > 0 && <Button variant="ghost" size="xs" onClick={() => setAttention(previous => ({ ...previous, unread: [] }))}>Mark all as read</Button>}
           {!searchTerm && <GroupAndSortMenu state={chatGroups} onChange={change => updateGroups(state => ({ ...state, ...change }))} />}</div>
