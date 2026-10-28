@@ -33,7 +33,7 @@ import { PATTERNS, WORKFLOWS, type ReadyMade, agentCount, WHOLE_PROJECT, applyPa
 
 /** A run: the Mother's part, and the Father's when the graph has more agents than she runs (lib/canvas.ts `parents`):
  * his tasks wait in `father` until her part has succeeded, then run in his own chat. */
-type Run = { rootThreadId: string; graphId: string; status: string; startedAt: number; endedAt?: number; father?: { tasks: RunTask[]; threadId?: string; graphId?: string; status: string; reported?: boolean } };
+type Run = { rootThreadId: string; graphId: string; status: string; startedAt: number; endedAt?: number; error?: string; father?: { tasks: RunTask[]; threadId?: string; graphId?: string; status: string; reported?: boolean } };
 /** Whether the whole run is over: her part, and his if he has one. */
 const over = (run: Run) => FINISHED.has(run.status) && (!run.father || (FINISHED.has(run.father.status) && (!run.father.threadId || run.father.reported)));
 /** `next`: the stage the bridge runs after this one (the Father's part): his chat and run, and whether his report reached her. */
@@ -43,6 +43,9 @@ type HandleEnd = "source" | "target";
 type AgentNodeData = AgentData & { status?: TaskStatus; check?: TaskStatus; clash?: string[]; modelLabel?: string; wave?: number; onHandle?: (id: string, end: HandleEnd, event: ReactMouseEvent) => void; onQuick?: (id: string) => void };
 type MotherData = { run: "idle" | "running" | "finished"; children: number; limit: number; identity?: WorkflowIdentity; onHandle?: AgentNodeData["onHandle"] };
 const FINISHED = new Set(["succeeded", "failed", "cancelled", "completed"]);
+/** An ended run in words: Finished only when it succeeded (28 Oct: "Finished · 0 of 2 done" over a cancelled run). */
+const ENDED: Record<string, string> = { succeeded: "Finished", completed: "Finished", failed: "Failed", cancelled: "Cancelled" };
+const stoppedLine = (status: string, error?: string | null): { at: number; text: string; tone: "fail" }[] => status === "failed" || status === "cancelled" ? [{ at: Date.now(), text: `RUN ${ENDED[status].toUpperCase()} · ${error || "no reason was recorded"}`, tone: "fail" }] : [];
 const lines = (text: string) => text.split("\n").map(line => line.trim()).filter(Boolean);
 /** What Elpis is asked when the user ran a team without writing a goal: keep what is drawn and set, and fill the rest. */
 const DRAWN = "Run this team as drawn: keep every agent, its wiring and whatever is already set; give each agent the prompt and folders it lacks, from its name and its place in the team.";
@@ -537,8 +540,8 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
       const tasks = [...(record.tasks ?? []), ...(record.next?.tasks ?? [])];
       setStates(Object.fromEntries(tasks.map(task => [task.id, { status: taskState(task.status), chat: task.assignedThreadId ?? null }])));
       setRun({ rootThreadId: record.rootThreadId, graphId: record.id, status: record.status, startedAt: record.startedAt ?? record.createdAt ?? Date.now(),
-        ...(record.endedAt ? { endedAt: record.endedAt } : {}), ...(record.next ? { father: { tasks: [], threadId: record.next.threadId, graphId: record.next.graphId, status: record.next.status, reported: record.next.reported } } : {}) });
-      setLog(tasks.map(task => ({ agent: task.id, text: `${task.title || task.id} · ${task.status || "not recorded"}${task.failureReason ? ` · ${task.failureReason}` : ""}`, tone: task.status === "failed" || task.status === "blocked" ? "fail" : task.status === "succeeded" || task.status === "completed" ? "done" : "start" })));
+        ...(record.endedAt ? { endedAt: record.endedAt } : {}), ...(record.error ? { error: record.error } : {}), ...(record.next ? { father: { tasks: [], threadId: record.next.threadId, graphId: record.next.graphId, status: record.next.status, reported: record.next.reported } } : {}) });
+      setLog([...tasks.map(task => ({ agent: task.id, text: `${task.title || task.id} · ${task.status || "not recorded"}${task.failureReason ? ` · ${task.failureReason}` : ""}`, tone: task.status === "failed" || task.status === "blocked" ? "fail" : task.status === "succeeded" || task.status === "completed" ? "done" : "start" } as LogLine)), ...stoppedLine(record.status, record.error)]);
       setNotice(recordedRun ? "" : record.error || tasks.find(task => task.failureReason)?.failureReason || "");
     }).catch(cause => { if (live) setNotice(cause instanceof Error ? cause.message : String(cause)); });
     return () => { live = false; };
@@ -645,7 +648,10 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
         // Her record says how his stage goes: the bridge starts the Father after her part and delivers his report
         // (bridge/client.mjs #workflowEnded), so the run goes on when this screen is closed.
         const hers = await read(run.rootThreadId, run.graphId);
-        if (hers && hers.status !== run.status) next = { ...next, status: hers.status };
+        if (hers && hers.status !== run.status) {
+          next = { ...next, status: hers.status, ...(hers.error ? { error: hers.error } : {}) };
+          if (live) setLog(current => [...current, ...stoppedLine(hers.status, hers.error)]);
+        }
         const father = next.father, stage = hers?.next;
         if (father && stage && (stage.threadId !== father.threadId || stage.status !== father.status || !!stage.reported !== !!father.reported)) {
           next = { ...next, father: { ...father, threadId: stage.threadId, graphId: stage.graphId, status: stage.status, reported: stage.reported } };
@@ -1521,7 +1527,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
         <Button type="button" variant="outline" size="sm" aria-describedby={!ready ? offlineReasonId : undefined} disabled={!ready || !cwd || !requestText.trim() || Boolean(planning || starting || run && !over(run))} onClick={() => void letElpis(requestText)}>Update current</Button>
         {/* The run's status sits beside the request, which gives up the room, so the controls below stay on one row
             while it runs (28 Oct: a running board wrapped them onto a second row). */}
-        {run && <span className="canvas-chip" role="status"><i className="canvas-dot" data-status={over(run) ? run.father?.status ?? run.status : "running"} />{over(run) ? "Finished" : run.father?.threadId ? "Running · the Father's part" : "Running"} · {done} of {agents.length} done</span>}
+        {run && <span className="canvas-chip" role="status"><i className="canvas-dot" data-status={over(run) ? run.father?.status ?? run.status : "running"} />{over(run) ? ENDED[run.status === "succeeded" ? run.father?.status ?? run.status : run.status] ?? "Finished" : run.father?.threadId ? "Running · the Father's part" : "Running"} · {done} of {agents.length} done</span>}
         {run && runClock}
         {run && over(run) && graph.result && <Button type="button" variant="outline" size="sm" onClick={openResult}><FileText size={14} />Open {graph.result.split("/").at(-1)}</Button>}
         {!ready && <p id={offlineReasonId} role="status" className="w-full text-xs text-muted-foreground">{OFFLINE_WORKFLOW}</p>}

@@ -42,6 +42,20 @@ test('a run asks for worktree isolation in a git repository with more than one w
   assert.equal('isolation' in await sent({ graph: ALONE, repository: true }), false);
 });
 
+// 28 Oct, Masih's screenshot: "Finished · 0 of 2 done" over a run whose steps were all cancelled. A run is Finished only
+// when it succeeded; one that stopped says Cancelled or Failed and the run log says why.
+test('a stopped run says Cancelled, not Finished, and the run log says why it stopped', async () => {
+  const why = 'The desktop stopped before this ACP run finished.', cancelled = { status: 'cancelled' };
+  const { canvas, errors, close } = await openCanvas({ graph: TEAM, listed: ended('cancelled', why, { a1: cancelled, a2: cancelled, a3: cancelled, 'a1-check': cancelled, 'a2-check': cancelled, 'a3-check': cancelled }) });
+  try {
+    await run(canvas);
+    await canvas.getByRole('status').filter({ hasText: /Cancelled · 0 of 3 done/ }).waitFor();
+    assert.equal(await canvas.getByRole('status').filter({ hasText: /Finished/ }).count(), 0);
+    assert.match(await canvas.getByRole('log', { name: 'Run log' }).innerText(), /RUN CANCELLED · The desktop stopped before this ACP run finished\./);
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
 test('a clash at the end of the run stops it: the files are listed and the agent whose work clashed is marked', async () => {
   const error = `Not merged: elpis/graph-1/a2 clashes with main in src/app.ts, README.md; main is untouched. ${KEPT}`;
   const { page, canvas, node, errors, close } = await openCanvas({ graph: TEAM, repository: true, listed: ended('failed', error) });
@@ -58,7 +72,7 @@ test('a clash at the end of the run stops it: the files are listed and the agent
     // The run log says it too, and the run is over.
     assert.match(await canvas.getByRole('log', { name: 'Run log' }).innerText(), /Veyra · Part 2: merge clash in src\/app\.ts, README\.md/);
     // The run is over, and the agent whose work clashed is not counted as done.
-    await canvas.getByRole('status').filter({ hasText: /Finished · 2 of 3 done/ }).waitFor();
+    await canvas.getByRole('status').filter({ hasText: /Failed · 2 of 3 done/ }).waitFor();
     // The agent's dashboard lists every clashing file.
     await node('Veyra · Part 2').dblclick();
     const dashboard = canvas.getByRole('dialog', { name: 'Veyra · Part 2 info' });
@@ -89,7 +103,7 @@ test('an ordinary task failure shows its reason without a merge notice or merge 
     listed: ended('failed', 'one or more work graph tasks failed or were blocked. No worktree was created.', { a2: { status: 'failed', failureReason: 'the model stopped' } }) });
   try {
     await run(canvas);
-    await canvas.getByText(/Finished/).first().waitFor({ timeout: 8000 });
+    await canvas.getByText(/Failed ·/).first().waitFor({ timeout: 8000 });
     assert.equal(await canvas.locator('.canvas-notice').innerText(), "Veyra · Part 2: the model stopped Review this message and the agents' Info, then try Run graph again.");
     assert.doesNotMatch(await canvas.locator('.canvas-notice').innerText(), /Merge stopped/);
     assert.equal(await status(node('Veyra · Part 2')), 'failed');

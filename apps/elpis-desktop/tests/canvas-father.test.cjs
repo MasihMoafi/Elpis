@@ -91,7 +91,7 @@ test('a failed Mother does not start the Father or send his report', async () =>
   });
   try {
     await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
-    await page.waitForFunction(() => document.querySelector('.canvas-header [role=status]')?.textContent?.includes('Finished'));
+    await page.waitForFunction(() => document.querySelector('.canvas-header [role=status]')?.textContent?.includes('Failed ·'));
     assert.equal(runs.length, 1);
     assert.equal(posts.filter(post => post.path === '/api/threads').length, 1);
     assert.equal(posts.filter(post => /\/turns$/.test(post.path)).length, 0);
