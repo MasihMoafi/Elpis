@@ -235,15 +235,16 @@ test('the small chat starts fresh, keeps earlier turns behind a button, and asks
   assert.equal(await mini.getByText('An old answer', { exact: true }).count(), 0, 'a quick chat starts fresh');
   await mini.getByRole('textbox', { name: 'Message Matilda', exact: true }).fill('hey');
   await mini.getByRole('button', { name: 'Send to Matilda', exact: true }).click();
+  await page.locator('[aria-label="Pinned Matilda"] img[data-mood="smile"][data-shown="true"]').waitFor({ state: 'attached', timeout: 3000 });
   await mini.getByText('Hey, love.', { exact: true }).waitFor({ timeout: 10000 });
   await mini.getByRole('status').waitFor({ state: 'hidden' });
   assert.equal(await mini.getByText('hey', { exact: true }).count(), 1, 'what was just said shows');
   await earlier.click();
   await mini.getByText('An old answer', { exact: true }).waitFor();
-  // 28 Oct: "it should have some animation (some other shots of her)": a smile, a laugh and a kiss lie over her face.
+  // 28 Oct: "the second image I like, it can fade into that image when it's sending messages": only her smile.
   await page.keyboard.press('Escape'); await mini.waitFor({ state: 'hidden' });
   const avatar = presence.getByRole('button', { name: 'Chat with Matilda', exact: true }), shown = () => avatar.locator('img[data-shown="true"]').evaluateAll(els => els.map(el => el.dataset.mood));
-  assert.deepEqual(await avatar.locator('img.matilda-mood').evaluateAll(els => els.map(el => el.dataset.mood)), ['smile', 'laugh', 'kiss']);
+  assert.deepEqual(await avatar.locator('img.matilda-mood').evaluateAll(els => els.map(el => el.dataset.mood)), ['smile']);
   assert.equal(await avatar.getByAltText('Matilda', { exact: true }).count(), 1, 'her shots are decoration: one Matilda for a screen reader');
   await page.mouse.move(0, 400); await avatar.hover();
   assert.deepEqual(await shown(), ['smile'], 'she smiles while hovered');

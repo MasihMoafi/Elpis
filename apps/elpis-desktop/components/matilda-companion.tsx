@@ -26,30 +26,22 @@ function savedPlace(): Place {
   return { right: 16, bottom: 16, size: 64 };
 }
 type Mood = keyof typeof MATILDA_SHOTS;
-const MOODS: Mood[] = ["smile", "smile", "laugh", "kiss"];
 const stillness = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
-/** Now and then she turns to another shot for a moment (28 Oct: "it should have some animation (some other shots of her)"):
- * a smile while hovered, a kiss when she has just replied, otherwise one at random every 12-22 s. Never with reduced motion. */
-function useMood(pinned: boolean, replies: number) {
-  const [mood, setMood] = useState<Mood | null>(null), [hovered, setHovered] = useState(false), seen = useRef(replies);
-  useEffect(() => {
-    if (!pinned || stillness()) return;
-    let timer = 0;
-    const next = () => { timer = window.setTimeout(() => { setMood(MOODS[Math.floor(Math.random() * MOODS.length)]); timer = window.setTimeout(() => { setMood(null); next(); }, 2600); }, 12000 + Math.random() * 10000); };
-    next(); return () => window.clearTimeout(timer);
-  }, [pinned]);
+/** She fades into her smile while she replies, for a moment after her reply arrives, and while hovered (28 Oct: "it can
+ * fade into that image when it's sending messages"). Never with reduced motion. */
+function useMood(replying: boolean, replies: number) {
+  const [replied, setReplied] = useState(false), [hovered, setHovered] = useState(false), seen = useRef(replies);
   useEffect(() => {
     if (replies <= seen.current) { seen.current = replies; return; }
-    seen.current = replies;
-    if (stillness()) return;
-    setMood("kiss"); const timer = window.setTimeout(() => setMood(null), 3000); return () => window.clearTimeout(timer);
+    seen.current = replies; setReplied(true);
+    const timer = window.setTimeout(() => setReplied(false), 3000); return () => window.clearTimeout(timer);
   }, [replies]);
-  return { shown: hovered && !stillness() ? "smile" as Mood : mood, setHovered };
+  return { shown: (hovered || replying || replied) && !stillness() ? "smile" as Mood : null, setHovered };
 }
 export function MatildaCompanion() {
   const [state, setState] = useState<Companion | null>(null);
   const [chatOpen, setChatOpen] = useState(false), mini = useMatildaMiniChat(chatOpen);
-  const mood = useMood(Boolean(state?.pinned), mini.conversation.entries.filter(entry => entry.item.type === "agentMessage").length);
+  const mood = useMood(mini.posting || mini.conversation.busy, mini.conversation.entries.filter(entry => entry.item.type === "agentMessage").length);
   const suppressClick = useRef(false);
   useEffect(() => { if (!state?.pinned) setChatOpen(false); }, [state?.pinned]);
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
