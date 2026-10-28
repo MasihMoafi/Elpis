@@ -416,6 +416,7 @@ export default function Home() {
     ? chatOrigin(selected, loveActivity.threads) === "Love Spot" ? LOVE_SPOT_AUDIO.reason : !loveActivity.originsResolved ? LOVE_SPOT_AUDIO.pendingReason : undefined
     : undefined;
   const viewRef = useRef(view); viewRef.current = view;
+  const loveThreadsRef = useRef(loveActivity.threads); loveThreadsRef.current = loveActivity.threads;
   useEffect(() => {
     if (view !== "canvas" || !ready || !connected || workflowProject || workflowSandbox) return;
     let current = true;
@@ -759,7 +760,9 @@ export default function Home() {
           }
           if (threadId && method === "item/completed" && params.item?.type === "plan") planTurns.current.set(threadId, params.turnId);
           if (threadId && method === "turn/completed" && !completedTurns.current.has(params.turn.id) && params.turn.status === "completed" && !params.turn.error && !isAgentRun(threadsRef.current.find(thread => thread.id === threadId) ?? {})) {
-            const unread = selectedRef.current?.id !== threadId || viewRef.current !== "chat";
+            // A reply is read when it is on screen: in its open chat, or on the open Love Spot board for a Love Spot chat.
+            const unread = viewRef.current === "loveSpot" ? chatOrigin(threadsRef.current.find(thread => thread.id === threadId) ?? { id: threadId }, loveThreadsRef.current) !== "Love Spot"
+              : selectedRef.current?.id !== threadId || viewRef.current !== "chat";
             const planReady = planTurns.current.get(threadId) === params.turn.id || params.turn.items?.some((item: Item) => item.type === "plan");
             setAttention(previous => ({
               unread: unread ? [...new Set([...previous.unread, threadId])] : previous.unread.filter(id => id !== threadId),

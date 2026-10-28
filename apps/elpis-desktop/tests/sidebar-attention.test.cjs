@@ -5,7 +5,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture, THREADS } = require('./parity-fixture.cjs');
 const shots = process.env.ELPIS_PARITY_SHOTS;
 
 const row = (page, id) => page.locator(`aside.sidebar .thread-row[data-thread-id="${id}"]`).first();
@@ -87,6 +87,19 @@ test('a selected chat is unread on another page; a new turn clears a plan waitin
     await row(page, 'chat-b').getByText('Plan ready for review').waitFor();
     f.emit('message', { method: 'turn/started', params: { threadId: 'chat-b', turn: { id: 'next', status: 'inProgress', items: [] } } });
     await row(page, 'chat-b').locator('.thread-subtitle').waitFor({ state: 'detached' });
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+test('a Love Spot reply that arrives while the Love Spot board is open is read; another chat\'s reply is not', async () => {
+  const matilda = { ...THREADS[0], id: 'matilda-chat', name: 'Love Spot', preview: 'Love Spot' };
+  const f = await fixture({ threads: [...THREADS, matilda] }), { page } = f;
+  try {
+    await page.locator('aside.sidebar nav[aria-label="Workspace"]').getByRole('button', { name: 'Love Spot', exact: true }).click();
+    await page.locator('section.love-spot').waitFor();
+    finish(f, 'matilda-chat', 'matilda-reply'); finish(f, 'chat-b', 'tb');
+    await eventually(async () => assert.equal(await dot(page, 'chat-b').getAttribute('data-state'), 'unread'));
+    assert.equal(await dot(page, 'matilda-chat').count(), 0, 'Matilda\'s reply on the open board is read');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
