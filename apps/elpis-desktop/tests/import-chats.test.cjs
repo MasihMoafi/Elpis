@@ -45,3 +45,30 @@ test('with nothing to import both apps are still there and say so', async () => 
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
+
+// Live check, 28 Oct: chats that arrived while the window was open (or an import made elsewhere) left the old counts in place;
+// switching tabs or leaving Settings kept them, and only a reload showed the new ones.
+test('the counts are read again each time Import chats is shown, not only when the window loads', async () => {
+  let chats = 0, reads = 0;
+  const f = await fixture({ routes: { '/api/import-chats': body => {
+    if (body) return { imported: 0, skipped: [] };
+    reads++; return { days: 30, atATime: 50, sources: [{ id: 'claude-code', name: 'Claude Code', chats }, { id: 'codex', name: 'Codex', chats: 0 }] };
+  } } });
+  try {
+    const { page } = f; page.setDefaultTimeout(7000);
+    await openSettings(page, 'Import chats');
+    const panel = page.locator('#settings-panel-import');
+    await panel.getByText('No chats from the last 30 days.').first().waitFor();
+    chats = 2;
+    await page.getByRole('tab', { name: 'General', exact: true }).click();
+    const hidden = reads;
+    await page.waitForTimeout(300);
+    assert.equal(reads, hidden, 'a hidden Import chats page does not read the counts');
+    await page.getByRole('tab', { name: 'Import chats', exact: true }).click();
+    await panel.getByText('2 chats from the last 30 days.').waitFor();
+    chats = 1;
+    await openSettings(page, 'Import chats');
+    await panel.getByText('1 chat from the last 30 days.').waitFor();
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});

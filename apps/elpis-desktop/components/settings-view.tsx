@@ -103,7 +103,7 @@ export function SettingsView({ initialTab = "providers", navigationKey = 0, acti
       case "worktrees": return <WorktreeSettings />;
       case "hooks": return <HooksSettings />;
       case "configuration": return <><ConfigurationSettings />{threadId && onChatPermissions && <SettingsGroup title="Current chat"><SettingRow title="Current permissions" description={currentPermission ?? "Not reported"} scope="this chat"><Button variant="outline" onClick={onChatPermissions}>Change this chat permissions</Button></SettingRow></SettingsGroup>}</>;
-      case "import": return <ImportSettings onImported={onImported} />;
+      case "import": return <ImportSettings active={active && tab === "import"} onImported={onImported} />;
       case "archived": return <ArchivedView onUnarchived={onUnarchived} onDelete={onDeleteThread} />;
     }
   };

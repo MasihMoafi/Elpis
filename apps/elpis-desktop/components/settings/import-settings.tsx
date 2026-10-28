@@ -11,7 +11,8 @@ const message = (cause: unknown) => cause instanceof Error ? cause.message : Str
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
 /** Settings → Import chats, as in Cloudroom: Claude Code and Codex chats become chats of Elpis, with their history; the originals stay untouched. */
-export function ImportSettings({ onImported }: { onImported?: () => void }) {
+/** `active`: the page is on screen. Settings keeps a visited page mounted while hidden, so the counts are read again each time it shows. */
+export function ImportSettings({ active = true, onImported }: { active?: boolean; onImported?: () => void }) {
   const [listing, setListing] = useState<Listing | null>(null), [error, setError] = useState(""), [busy, setBusy] = useState(""), [outcome, setOutcome] = useState<Outcome | null>(null);
   const load = useCallback(async () => {
     try {
@@ -20,7 +21,7 @@ export function ImportSettings({ onImported }: { onImported?: () => void }) {
       setListing(data); setError("");
     } catch (cause) { setError(message(cause)); }
   }, []);
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { if (active) void load(); }, [active, load]);
   async function run(id: string, name: string) {
     setBusy(id); setOutcome(null); setError("");
     try {
