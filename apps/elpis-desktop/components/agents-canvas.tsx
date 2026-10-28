@@ -31,6 +31,8 @@ import { appStorage } from "@/lib/projects";
 import { filesText, mergeStops, runPayload, stopText, wantsIsolation } from "@/lib/canvas-isolation";
 import { PATTERNS, WORKFLOWS, LANGUAGES, languageOf, type Language, type ReadyMade, agentCount, WHOLE_PROJECT, applyPattern, agent, ownFolders, agentColor, CHECK_LABEL, COLUMN, DONE, FATHER, MOTHER, STATUS_LABEL, TASKS_PER_AGENT, waits, TEMPLATES, agentName, promptName, applyPlan, arrange, boardForPlan, checkOf, commandParts, shapeOf, makesLoop, maxAgents, newAgents, newId, parseCommand, parents, initialGraph, runParts, saveGraph, waves, withMother, type AgentData, type CanvasEdge, type CanvasGraph, type CanvasNode, type CatalogModel, type Command, type MotherSettings, type NoteData, type Plan, type RunTask, type TaskStatus } from "@/lib/canvas";
 
+/** The workflow side panel: 290 px by default, dragged wider or narrower by its left edge. */
+const CANVAS_SIDE = { min: 240, initial: 290, max: 640 };
 
 /** A run: the Mother's part, and the Father's when the graph has more agents than she runs (lib/canvas.ts `parents`):
  * his tasks wait in `father` until her part has succeeded, then run in his own chat. */
@@ -1390,6 +1392,8 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
     return readyMadeAt(workflow, picked, ".", goal || workflow.goal(picked.split("/").at(-1) ?? picked, language), language);
   }
   /** Picked from the menu or the library: the open project, when it plainly holds the job's files, or else the folder chosen. */
+  // A ready-made team writes in folders of its own, so it runs in the project itself: in git worktrees its files reached
+  // the project only after a final review (28 Oct: Logo's three candidates stayed in the run's worktrees).
   async function pickReadyMade(workflow: ReadyMade, language = languageOf(graph.language)): Promise<CanvasGraph | null> {
     if (run && !over(run)) { setNotice("Wait for this run to finish before changing its pattern."); return null; }
     const base = cwd?.replace(/\/+$/, "");
@@ -1477,7 +1481,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
   async function fatherPart(tasks: RunTask[], current: () => boolean) {
     if (!current()) throw Error(OFFLINE_WORKFLOW);
     const goal = mother.brief.trim(), name = `Father · ${graph.name || "Workflows"}`.slice(0, 120);
-    const repository = Boolean(cwd) && wantsIsolation(tasks) && await api<{ repository?: boolean }>(`/repository?cwd=${encodeURIComponent(cwd!)}`).then(result => result.repository === true, () => false);
+    const repository = Boolean(cwd) && !readyMade(graph.planningPattern) && wantsIsolation(tasks) && await api<{ repository?: boolean }>(`/repository?cwd=${encodeURIComponent(cwd!)}`).then(result => result.repository === true, () => false);
     if (!current()) throw Error(OFFLINE_WORKFLOW);
     const { rootThreadId: _root, name: _name, ...stage } = runPayload("", name, tasks, Math.max(1, Math.min(maxAtOnce, allowed.atOnce)), repository);
     return { ...stage, name, thread: { name, instructions: [goal && `Goal of the whole run: ${goal}`, "You are the Father: you run the agents past the Mother's ten, after her part has succeeded, and you report to her."].filter(Boolean).join("\n\n"),
@@ -1488,7 +1492,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
   // Elpis merges them into the project's branch after the run; without a repository Elpis refuses that, so it isn't asked.
   async function runPart(rootThreadId: string, name: string, tasks: RunTask[], current: () => boolean, next?: Awaited<ReturnType<typeof fatherPart>>) {
     if (!current()) throw Error(OFFLINE_WORKFLOW);
-    const repository = Boolean(cwd) && wantsIsolation(tasks) && await api<{ repository?: boolean }>(`/repository?cwd=${encodeURIComponent(cwd!)}`).then(result => result.repository === true, () => false);
+    const repository = Boolean(cwd) && !readyMade(graph.planningPattern) && wantsIsolation(tasks) && await api<{ repository?: boolean }>(`/repository?cwd=${encodeURIComponent(cwd!)}`).then(result => result.repository === true, () => false);
     if (!current()) throw Error(OFFLINE_WORKFLOW);
     return api<{ graphId: string }>("/workflows/run", { ...(graph.template === "recursive" ? { roundLimit: graph.roundLimit } : {}), ...runPayload(rootThreadId, name, tasks, Math.max(1, Math.min(maxAtOnce, allowed.atOnce)), repository), ...(next ? { next } : {}) });
   }

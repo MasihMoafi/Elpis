@@ -10,7 +10,9 @@ const SCRIPTS = "/home/masih/Desktop/p/skills/logo/scripts";
 /** The skill's CLI wrapper (its steps 5–6): workflow agents start with the person's MCP servers off, so the MCP tool is not there. */
 export const traceCommand = (source: string, output: string) => `SVG_STUDIO_MODULE=${SVG_STUDIO} node ${SCRIPTS}/trace.mjs ${source} ${output} 24`;
 const proofCommand = (sheet: string, source: string, vector: string) => `SVG_STUDIO_MODULE=${SVG_STUDIO} node ${SCRIPTS}/proof.mjs ${sheet} ${source} ${vector}`;
-const VISION = "by your own vision. Run no scripts.";
+// 28 Oct, the first live run: a check that may prove things any way it likes read the engine's session logs for seven
+// minutes. A check judges the named files by sight and opens nothing else.
+const VISION = "by your own vision. Run no scripts, and open only the files named here: no logs, chat records or tool output.";
 
 export function logoTeam(folder: string, brand: string, worker: Partial<AgentData> = {}): CanvasGraph {
   const at = (name: string) => folder === "." ? name : `${folder}/${name}`, output = at("logo/logo.svg");
@@ -19,8 +21,8 @@ export function logoTeam(folder: string, brand: string, worker: Partial<AgentDat
   const designer = agent("Designer", [
     `Design the logo of ${brand}. First write one brief in your own folder as brief.md: what the mark must say, flat fills, clean contours, large negative space, and that it must read at 24 px on light and on dark.`,
     `Then draw three distinct directions from that brief with the built-in image generation tool, one image a call, and save them as ${candidates}/1.png, 2.png and 3.png, with the exact prompt of each in ${candidates}/prompts.md.`,
-    `No hand-coded SVG, no other image service: if the tool is missing, say so and stop. Answer with the paths.`].join("\n"),
-    { ...worker, writeScopes: [candidates], acceptanceCriteria: [`${candidates}/1.png, 2.png and 3.png are three distinct directions from one brief`, "prompts.md holds the exact prompt of each"],
+    `Draw each direction once; redraw one at most once, only if it plainly fails the brief. No hand-coded SVG, no other image service: if the tool is missing, say so and stop. Answer with the paths.`].join("\n"),
+    { ...worker, writeScopes: [candidates], acceptanceCriteria: [`${candidates}/1.png, 2.png and 3.png are three distinct directions from one brief`, "prompts.md holds the prompt each was drawn from"],
       check: `Open the three candidates beside prompts.md and brief.md, ${VISION} Say whether they are three distinct directions of the brief, or which repeat each other or stray from it.` });
   const curator = agent("Curator", [
     `Open ${candidates}/1.png, 2.png and 3.png beside ${candidates}/prompts.md, with your own vision. Reject generic silhouettes, clutter, needless satellites, repeated meanings and weak negative space.`,

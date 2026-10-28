@@ -149,3 +149,17 @@ test('the request box keeps its width and its label one line beside a finished r
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
+
+// 28 Oct, the first live Logo run: in a git repository each agent got its own worktree, and the Designer's candidates
+// never reached the project. A ready-made team runs in the project itself; a drawn team still asks for worktrees.
+test('a ready-made team in a git repository runs in the project itself, with no worktrees', async () => {
+  const f = await openCanvas({ desktop: true, repository: true, files: { '/tmp/demo|.': ['page-1.png', 'page-2.png'] }, ...MODELS });
+  try {
+    await chooseOption(f.canvas.getByRole('combobox', { name: 'Workflow pattern', exact: true }), 'transcribe');
+    await f.page.waitForFunction(() => JSON.parse(localStorage.getItem('elpis-workflow-draft-v1'))?.result === 'transcription.md');
+    await f.canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
+    await f.canvas.getByRole('button', { name: 'Open transcription.md', exact: true }).waitFor();
+    assert.equal('isolation' in f.runs[0], false, 'no worktrees');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
