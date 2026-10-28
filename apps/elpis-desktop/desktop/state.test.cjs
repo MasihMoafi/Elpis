@@ -303,12 +303,12 @@ test('pinned chats, Matilda position and terminal height persist across a deskto
   const store = createStateStore(file), pins = JSON.stringify(['chat-1', 'chat-2']);
   await store.set('elpis-pinned-chats-v1', pins);
   await store.set('elpis-terminal-height', '360');
-  await store.set('elpis-matilda-position-v1', '{"x":-120,"y":180}');
+  await store.set('elpis-matilda-float-v1', '{"right":120,"bottom":180,"size":96}');
   const reopened = createStateStore(file);
   assert.equal(reopened.read()['elpis-pinned-chats-v1'], pins);
   assert.equal(reopened.read()['elpis-terminal-height'], '360');
-  assert.equal(reopened.read()['elpis-matilda-position-v1'], '{"x":-120,"y":180}');
-  await assert.rejects(store.set('elpis-matilda-position-v2', '{}'), /Unsupported/);
+  assert.equal(reopened.read()['elpis-matilda-float-v1'], '{"right":120,"bottom":180,"size":96}');
+  await assert.rejects(store.set('elpis-matilda-position-v1', '{}'), /Unsupported/);
   await assert.rejects(store.set('elpis-pinned-chats-v2', pins), /Unsupported/);
   await assert.rejects(store.set('elpis-terminal-height:other', '360'), /Unsupported/);
 });

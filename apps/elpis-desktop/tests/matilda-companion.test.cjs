@@ -23,7 +23,7 @@ test('a narrow window keeps Matilda on screen, then she returns to her place', {
   assert.deepEqual(f.errors ?? [], []);
 });
 
-for (const colorScheme of ['light', 'dark']) test(`Matilda stays at the top across app pages, with global Unpin (${colorScheme})`, { timeout: 60000 }, async t => {
+for (const colorScheme of ['light', 'dark']) test(`Matilda floats out of the title bar and stays put across app pages, with global Unpin (${colorScheme})`, { timeout: 60000 }, async t => {
   const f = await loveSpotFixture({ colorScheme });
   t.after(() => f.close());
   const page = f.page;
@@ -36,10 +36,12 @@ for (const colorScheme of ['light', 'dark']) test(`Matilda stays at the top acro
   await pin.click();
   const presence = page.getByRole('region', { name: 'Pinned Matilda', exact: true });
   await presence.waitFor();
+  // 28 Oct: "I don't like this to be here" (the title bar). She floats at the bottom right until moved.
+  const placed = await presence.boundingBox();
+  assert.ok(placed.y > 36 && placed.x + placed.width > 1000 - 120 && placed.y + placed.height > 800 - 120, JSON.stringify(placed));
   for (const name of ['Workflows', 'Customize', 'Love Spot']) {
     await page.locator('.nav-list').getByRole('button', { name, exact: true }).click();
-    const box = await presence.boundingBox();
-    assert.ok(box && box.y < 36, `${name}: ${JSON.stringify(box)}`);
+    assert.deepEqual(await presence.boundingBox(), placed, name);
   }
   const before = (await f.scene()).elements.filter(e => !e.isDeleted).map(e => e.id).sort();
   const avatar = presence.getByRole('button', { name: 'Chat with Matilda', exact: true });
@@ -59,7 +61,7 @@ for (const colorScheme of ['light', 'dark']) test(`Matilda stays at the top acro
   await presence.waitFor();
   await page.setViewportSize({ width: 360, height: 760 });
   const box = await presence.boundingBox();
-  assert.ok(box.x >= 0 && box.x + box.width <= 360 && box.y < 36, JSON.stringify(box));
+  assert.ok(box.x >= 0 && box.x + box.width <= 360 && box.y > 36 && box.y + box.height <= 760, JSON.stringify(box));
   await page.getByRole('button', { name: 'Unpin Matilda', exact: true }).focus();
   await page.keyboard.press('Enter');
   await pin.waitFor();
@@ -104,7 +106,7 @@ for (const colorScheme of ['light', 'dark']) test(`Matilda mini chat, mute and d
   const page = f.page, presence = page.getByRole('region', { name: 'Pinned Matilda', exact: true }); await presence.waitFor();
   const avatar = presence.getByRole('button', { name: 'Chat with Matilda', exact: true });
   assert.equal(await avatar.getByAltText('Matilda', { exact: true }).count(), 1, 'the avatar itself opens the mini chat');
-  assert.equal(await presence.getByRole('button').count(), 3, 'avatar, mute and unpin; no separate chat or music-menu button');
+  assert.equal(await presence.getByRole('button').count(), 4, 'avatar, resize, mute and unpin; no separate chat or music-menu button');
   const mini = page.getByRole('dialog', { name: 'Small chat with Matilda', exact: true });
   const field = mini.getByRole('textbox', { name: 'Message Matilda', exact: true });
   const sends = () => f.posts.filter(post => post.path === '/api/love-spot/talk');
@@ -156,21 +158,34 @@ for (const colorScheme of ['light', 'dark']) test(`Matilda mini chat, mute and d
 
   const before = await presence.boundingBox(), face = await avatar.boundingBox();
   await page.mouse.move(face.x + face.width / 2, face.y + face.height / 2);
-  await page.mouse.down(); await page.mouse.move(face.x - 180, face.y + 140, { steps: 8 }); await page.mouse.up();
+  await page.mouse.down(); await page.mouse.move(face.x - 180, face.y - 140, { steps: 8 }); await page.mouse.up();
   const dragged = await presence.boundingBox();
-  assert.ok(dragged.x < before.x - 150 && dragged.y > before.y + 100, JSON.stringify({ before, dragged }));
+  assert.ok(dragged.x < before.x - 150 && dragged.y < before.y - 100, JSON.stringify({ before, dragged }));
   assert.equal(await mini.count(), 0, 'a drag never opens the mini chat');
-  const hit = await avatar.evaluate(el => { const r = el.getBoundingClientRect(); return el.contains(document.elementFromPoint(r.x + 12, r.y + 12)); });
+  const hit = await avatar.evaluate(el => { const r = el.getBoundingClientRect(); return el.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)); });
   assert.equal(hit, true, 'the moved avatar stays visible and usable above the page');
   await page.reload(); await page.locator('.startup-splash').waitFor({ state: 'detached' }); await presence.waitFor();
   assert.deepEqual(await presence.boundingBox(), dragged, 'position survives a reload');
   await avatar.focus(); await page.keyboard.press('Shift+ArrowLeft');
   const keyed = await presence.boundingBox(); assert.equal(Math.round(dragged.x - keyed.x), 30);
   assert.equal(await mini.count(), 0, 'keyboard movement never opens the mini chat');
+  // 28 Oct: "I should be able to increase its size just like I could with Dot". Her corner grows her up and left.
+  const handle = presence.getByRole('button', { name: 'Resize Matilda', exact: true });
+  await avatar.hover(); const corner = await handle.boundingBox();
+  await page.mouse.move(corner.x + corner.width / 2, corner.y + corner.height / 2); await page.mouse.down();
+  await page.mouse.move(corner.x - 60, corner.y - 60, { steps: 6 }); await page.mouse.up();
+  const big = await presence.boundingBox();
+  assert.ok(big.width - keyed.width > 50 && big.width === big.height, JSON.stringify({ keyed, big }));
+  assert.ok(Math.abs(big.x + big.width - keyed.x - keyed.width) < 2 && Math.abs(big.y + big.height - keyed.y - keyed.height) < 2, 'her bottom-right corner stays put');
+  await handle.focus(); await page.keyboard.press('-');
+  const sized = await presence.boundingBox(); assert.equal(Math.round(big.width - sized.width), 8, 'the minus key makes her smaller');
+  assert.equal(await mini.count(), 0, 'resizing never opens the mini chat');
+  await page.reload(); await page.locator('.startup-splash').waitFor({ state: 'detached' }); await presence.waitFor();
+  assert.deepEqual(await presence.boundingBox(), sized, 'size survives a reload');
   await page.evaluate(() => window.__push({ visible: true, activeId: 'page-proof', fullView: 0, tabs: [{ id: 'page-proof', url: 'https://example.invalid/', title: 'Native page', comments: 0, zoom: 100 }] }));
   const viewport = page.locator('.browser-viewport'); await viewport.waitFor();
-  const browser = await viewport.boundingBox(), handle = await avatar.boundingBox();
-  await page.mouse.move(handle.x + 12, handle.y + 12); await page.mouse.down();
+  const browser = await viewport.boundingBox(), grip = await avatar.boundingBox();
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2); await page.mouse.down();
   await page.mouse.move(browser.x + browser.width / 2, browser.y + browser.height / 2, { steps: 8 }); await page.mouse.up();
   const kept = await presence.boundingBox();
   assert.ok(kept.y + kept.height <= browser.y || kept.x + kept.width <= browser.x || kept.x >= browser.x + browser.width, JSON.stringify({ kept, browser }));
