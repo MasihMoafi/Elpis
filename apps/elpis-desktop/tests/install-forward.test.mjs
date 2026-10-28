@@ -5,7 +5,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { assertApprovedLooks, assertMovesForward, installationCommit, recordSourceCheckout } from '../scripts/install-desktop.mjs';
+import { assertApprovedLooks, assertMovesForward, assertRendererCommit, installationCommit, recordSourceCheckout } from '../scripts/install-desktop.mjs';
 
 test('installation records the durable Elpis checkout, never the throwaway worktree', async () => {
   const { repo } = await history();
@@ -148,4 +148,15 @@ test('a missing installed commit is refused just like the forward check', async 
 test('a failed git comparison is refused even with --shown', async () => {
   const { repo, installed } = await lookHistory(splashFiles[0]);
   assert.throws(() => assertApprovedLooks(repo, installed, 'missing-commit', ['--shown=startup-splash']));
+});
+
+// 28 Oct: three local installs packaged the renderer of an older build: out/ was not rebuilt after a checkout.
+test('a local install refuses a renderer built from another commit, or with no record', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-renderer-commit-')), commit = 'b'.repeat(40);
+  assert.throws(() => assertRendererCommit(root, commit), /an unrecorded commit/);
+  await fs.mkdir(path.join(root, 'out'));
+  await fs.writeFile(path.join(root, 'out/.commit'), `${'a'.repeat(40)}\n`);
+  assert.throws(() => assertRendererCommit(root, commit), /built from aaaaaaaaa, not bbbbbbbbb/);
+  await fs.writeFile(path.join(root, 'out/.commit'), `${commit}\n`);
+  assertRendererCommit(root, commit);
 });

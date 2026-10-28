@@ -64,6 +64,13 @@ export function assertApprovedLooks(cwd, installed, commit, args = []) {
   if (accepted.length) console.log(`Shown to Masih: ${accepted.join(', ')}.`);
 }
 
+/** A local install packages `out/` as it is, so it must have been built from the commit being installed (28 Oct: three
+ * installs shipped the renderer of an older build, because `out/` was not rebuilt after a checkout). */
+export function assertRendererCommit(root, commit) {
+  let built = '';
+  try { built = fs.readFileSync(path.join(root, 'out/.commit'), 'utf8').trim(); } catch { /* no record */ }
+  if (built !== commit) throw new Error(`out/ was built from ${built ? built.slice(0, 9) : 'an unrecorded commit'}, not ${commit.slice(0, 9)}: build it and write the commit to out/.commit, or install with --actions.`);
+}
 /** Downloads the renderer GitHub Actions built for `commit` into a new temporary folder and returns that folder. */
 async function actionsRenderer(commit) {
   const [run] = JSON.parse(gh(['run', 'list', '--workflow', 'elpis-desktop.yml', '--commit', commit, '--status', 'success', '--json', 'databaseId', '--limit', '1']));
@@ -90,6 +97,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) try {
   const electron = path.join(path.dirname(fs.realpathSync(link)), 'runtime/electron');
   const destination = path.join(os.homedir(), '.local/lib/elpis-desktop/versions', `${name}-${commit.slice(0, 9)}`);
   if (fs.existsSync(destination)) throw new Error(`${destination} already exists.`);
+  if (!actions) assertRendererCommit(root, commit);
   const renderer = actions ? ['--out-directory', await actionsRenderer(commit)] : [];
   // The package list is checked against what the entry points import before anything is installed (22 Oct: an unlisted module kept Elpis from opening).
   if (fs.existsSync(path.join(root, 'desktop/package.test.mjs'))) execFileSync(process.execPath, ['--test', 'desktop/package.test.mjs'], { cwd: root, stdio: ['ignore', 'ignore', 'inherit'] });
