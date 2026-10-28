@@ -14,7 +14,7 @@ const runs = ['Fix a bug', 'Fix a bug', 'Research pricing', 'Ship exporter'].map
 const base = (id, name, active = false) => ({ id, name, preview: name, cwd: CWD, model: 'sol', modelProvider: 'openai', status: { type: active ? 'active' : 'idle' }, desktopAccess: { writable: true, mode: 'direct' } });
 const graph = { workflowId: 'run-0', name: 'Fix a bug', nodes: [{ id: 'mother', type: 'mother', position: { x: 0, y: 0 }, data: {} }, { id: 'writer', type: 'agent', position: { x: 400, y: 0 }, data: { title: 'Build', instruction: 'Return the requested evidence.', model: null, writeScopes: ['.'], acceptanceCriteria: ['Return evidence'] } }], edges: [] };
 const open = async (colorScheme, savedRuns = runs, state = {}, names = {}, routes = {}) => {
-  const listed = [...new Map(savedRuns.flatMap(run => [base(run.rootThreadId, run.name), ...(run.tasks ?? []).filter(task => typeof task.assignedThreadId === 'string' && task.assignedThreadId).map(task => base(task.assignedThreadId, `Workflows · ${task.title}`, task.status === 'running')), ...(run.mother?.sessionId ? [base(run.mother.sessionId, 'Workflows · Mother')] : [])]).map(thread => [thread.id, thread])).values()].map(thread => ({ ...thread, name: names[thread.id] ?? thread.name }));
+  const listed = [...new Map(savedRuns.flatMap(run => [base(run.rootThreadId, run.name), ...(run.tasks ?? []).filter(task => typeof task.assignedThreadId === 'string' && task.assignedThreadId).map(task => base(task.assignedThreadId, `Workflows · ${task.title}`, task.status === 'running')), ...(run.mother?.sessionId ? [base(run.mother.sessionId, 'Workflows · Mother')] : []), ...(run.tasks ?? []).flatMap(task => (task.threads ?? []).map(id => base(id, `Workflows · ${task.title}`))), ...(run.mother?.threads ?? []).map(id => base(id, 'Workflows · Mother'))]).map(thread => [thread.id, thread])).values()].map(thread => ({ ...thread, name: names[thread.id] ?? thread.name }));
   const f = await fixture({ desktop: true, width: 1440, height: 900, colorScheme, threads: listed,
   // The fixture waits for chat-a, a workflow here, so the Workflows section is open (it starts folded: sidebar-organize.runtime.mjs).
   storage: { 'elpis-sidebar-folds-v1': JSON.stringify({ sections: { workflows: false }, projects: {} }), 'elpis-workflow-draft-v1': JSON.stringify(graph), 'elpis-projects-v1': JSON.stringify({ projects: [{ id: 'p', name: 'Fixture', cwd: CWD }], selectedId: 'p' }), ...state },
@@ -107,6 +107,24 @@ for (const colorScheme of ['light', 'dark']) test(`four saved workflows have dis
     await eventually(async () => assert.equal(await workflows(page).locator('.thread-row:not(.child)').count(), 4));
     assert.deepEqual(await workflows(page).locator('.thread-row:not(.child) .thread-title').allTextContents(), names, 'identity survives reload');
     assert.equal(f.posts.some(post => /\/name$/.test(post.path)), false, 'legacy engine threads are never renamed');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+// 28 Oct: a retried step's first chat and Mother's earlier review chats lay loose in Workflows ("currently they are all
+// merged"): only the latest chat of each was linked to its run. Every chat a run opened folds under it.
+test('a retried step and every Mother review fold under their run, none loose', async () => {
+  const run = { ...runs[0], status: 'succeeded', tasks: [{ id: 'step-0', title: 'Check: Build', assignedThreadId: 'check-2', threads: ['check-1', 'check-2'], status: 'succeeded' }],
+    mother: { assignedThreadId: 'mother-2', threads: ['mother-1', 'mother-2'] } };
+  const f = await open('light', [run]);
+  try {
+    const page = f.page;
+    for (const id of ['check-1', 'check-2', 'mother-1', 'mother-2']) assert.equal(await row(page, id).count(), 0, `${id} is folded, not loose`);
+    await row(page, run.rootThreadId).getByRole('button', { name: /^Expand / }).click();
+    for (const id of ['check-1', 'check-2', 'mother-1', 'mother-2']) {
+      assert.equal(await row(page, id).count(), 1, `${id} shows once`);
+      assert.equal(await row(page, id).getAttribute('class').then(value => value.includes('child')), true, `${id} sits under its run`);
+    }
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

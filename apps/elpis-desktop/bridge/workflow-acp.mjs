@@ -201,7 +201,9 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
         if (effort) spec.reasoningEffort = effort;
         spec.meta = { ...spec.meta, elpis: { ...spec.meta?.elpis, name: `Workflows · ${owner.title}`, workflow: { kind: owner.kind ?? 'verify', writeScopes: owner.writeScopes ?? [], ...(effort ? { reasoningEffort: effort } : {}) } } };
         const result = await runAcpNode(spec, { ...input, task: input.task + recovery }, { ...options,
-          onSession: id => { owner.assignedThreadId = spec.elpis ? id : null; owner.sessionId = id; onSession?.(record, owner, id); void save(record).catch(() => {}); } });
+          // Every chat a step or Mother opens is kept, not only the latest (28 Oct: earlier review and retry chats fell out of
+          // their workflow and lay loose in the sidebar: "currently they are all merged").
+          onSession: id => { owner.assignedThreadId = spec.elpis ? id : null; owner.sessionId = id; if (spec.elpis) owner.threads = [...new Set([...(owner.threads ?? []), id])]; onSession?.(record, owner, id); void save(record).catch(() => {}); } });
         attempt.status = 'succeeded'; attempt.endedAt = Date.now(); return result;
       } catch (error) {
         attempt.status = 'failed'; attempt.reason = error.message; attempt.endedAt = Date.now();

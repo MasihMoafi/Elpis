@@ -6,14 +6,16 @@ import { appStorage } from "./projects";
 export const WORKFLOW_COLOURS = ["blue", "teal", "violet", "rose", "green", "amber"] as const;
 export type WorkflowColour = typeof WORKFLOW_COLOURS[number];
 export type WorkflowIdentity = { id: string; name: string; colour: WorkflowColour; rootThreadId?: string };
-export type WorkflowRun = { id: string; rootThreadId: string; name?: string; status: string; startedAt?: number; createdAt?: number; tasks?: { id: string; title?: string; assignedThreadId?: string | null; sessionId?: string; status?: string }[]; mother?: { assignedThreadId?: string; sessionId?: string } };
+export type WorkflowRun = { id: string; rootThreadId: string; name?: string; status: string; startedAt?: number; createdAt?: number; tasks?: { id: string; title?: string; assignedThreadId?: string | null; sessionId?: string; threads?: string[]; status?: string }[]; mother?: { threads?: string[]; assignedThreadId?: string; sessionId?: string } };
 type Identities = Record<string, WorkflowIdentity>;
 const KEY = "elpis-workflow-identities-v1";
+/** Every chat a run's steps and Mother opened, each once: they fold under the run's chat (SPEC OM1). */
 export function workflowMembers(run: WorkflowRun) {
-  const members = (run.tasks ?? []).flatMap(task => task.assignedThreadId ? [{ threadId: task.assignedThreadId, title: task.title || "Step" }] : []);
-  const mother = run.mother?.assignedThreadId ?? run.mother?.sessionId;
-  if (mother) members.push({ threadId: mother, title: "Mother" });
-  return members.filter(member => member.threadId !== run.rootThreadId);
+  const chats = (owner: { assignedThreadId?: string | null; sessionId?: string; threads?: string[] } | undefined, fallback?: boolean) =>
+    [...owner?.threads ?? [], ...owner?.assignedThreadId ? [owner.assignedThreadId] : fallback && owner?.sessionId ? [owner.sessionId] : []];
+  const members = [...(run.tasks ?? []).flatMap(task => chats(task).map(threadId => ({ threadId, title: task.title || "Step" }))),
+    ...chats(run.mother, true).map(threadId => ({ threadId, title: "Mother" }))];
+  return members.filter((member, index) => member.threadId !== run.rootThreadId && members.findIndex(other => other.threadId === member.threadId) === index);
 }
 const nameKey = (name: string) => name.trim().normalize("NFKC").toLocaleLowerCase();
 export function workflowNameProblem(identities: Identities, id: string, name: string): string | null {
