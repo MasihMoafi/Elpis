@@ -18,6 +18,7 @@ import { agent, ndJsonStream, RequestError } from "@agentclientprotocol/sdk";
 import { redactSecrets } from "./log-redaction.mjs";
 import { runtimeDir } from "./shared-runtime.mjs";
 import { defaultPermissionSettings, permissionSettingsAllowed } from './permission-policy.mjs';
+import { withoutUserMcp } from "./workflow-agents.mjs";
 import WebSocket from "ws";
 
 const VERSION = "0.1.0";
@@ -337,6 +338,8 @@ const app = agent({ name: "elpis" })
     const ephemeral = params._meta?.elpis?.ephemeral === true;
     const policy = workflowPolicy(params._meta?.elpis?.workflow, params.cwd);
     const config = mcpConfig(params.mcpServers);
+    // A Workflows node starts without the person's own MCP servers, as the runner's agents do; servers the client passes stay.
+    if (policy) Object.assign(config, await withoutUserMcp(engine, { cwd: params.cwd, mcpServers: (params.mcpServers ?? []).map(server => server.name) }, line => process.stderr.write(`${line}\n`)));
     const access = defaultPermissionSettings(await engine.call('config/read', { includeLayers: true, cwd: params.cwd }), true);
     const requirements = (await engine.call('configRequirements/read', {})).requirements ?? {};
     if (!permissionSettingsAllowed(access, requirements)) throw new RequestError(-32602, 'Managed settings forbid these automatic agent permissions.');

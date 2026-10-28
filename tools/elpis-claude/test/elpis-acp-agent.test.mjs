@@ -232,6 +232,29 @@ test("session/new forwards HTTP MCP URL and headers to the engine", { timeout: 2
   assert.ok(requests.includes("tools/call"));
 });
 
+// A desktop Workflows node's chat starts without the person's own MCP servers, as the runner's agents do
+// (workflow-agents.mjs): each loaded chat runs its own copy of them, about 300 MB.
+test("a Workflows node's chat starts with every configured MCP server off; Love Spot's chat and ELPIS_WORKFLOW_USER_MCP=1 keep them", { timeout: 20000 }, async t => {
+  const dir = createTestTempDir(path.join(os.homedir(), ".cache/elpis-tests/acp-config-"));
+  t.after(() => removeTestTempDir(dir));
+  const config = path.join(dir, "config.json");
+  fs.writeFileSync(config, JSON.stringify({ config: { mcp_servers: { alpha: { command: "alpha-mcp" }, beta: { command: "beta-mcp" }, gamma: { url: "http://127.0.0.1:9/mcp" } } } }));
+  const workflow = { elpis: { workflow: { kind: "explore", writeScopes: [] } } };
+  const started = async (env) => {
+    const a = start(t, { env: { FAKE_ENGINE_CONFIG: config, ...env } });
+    await a.open(workflow);
+    await a.conn.agent.request("session/new", { cwd: a.dir, mcpServers: [], _meta: { elpis: { name: "Love Spot · card" } } });
+    await a.conn.agent.request("session/new", { cwd: a.dir, mcpServers: [{ name: "beta", command: process.execPath, args: [], env: [] }], _meta: workflow });
+    return a.engine().filter(m => m.method === "thread/start").map(m => m.params.config ?? {});
+  };
+  const [node, loveSpot, passed] = await started({ ELPIS_WORKFLOW_USER_MCP: "" });
+  assert.deepEqual(node, { "mcp_servers.alpha.enabled": false, "mcp_servers.beta.enabled": false, "mcp_servers.gamma.enabled": false });
+  assert.deepEqual(loveSpot, {}, "a chat that is not a Workflows node keeps the person's servers");
+  assert.deepEqual(Object.keys(passed).sort(), ["mcp_servers.alpha.enabled", "mcp_servers.beta", "mcp_servers.gamma.enabled"], "a server the client passes stays on");
+  const [kept] = await started({ ELPIS_WORKFLOW_USER_MCP: "1" });
+  assert.deepEqual(kept, {}, "ELPIS_WORKFLOW_USER_MCP=1 keeps every server");
+});
+
 for (const shared of [true, "bridge"]) test(`desktop lists and follows an ACP turn live, steers it, then cancels another turn (${shared === true ? "mock runtime" : "provider bridge"})`, { timeout: 20000 }, async t => {
   const a = start(t, { shared });
   const { sessionId } = await a.open({ elpis: { name: "ACP live test" } });
