@@ -204,15 +204,20 @@ jobs:
       CODEX_SKIP_BWRAP_BUILD: '1'
       CARGO_BUILD_JOBS: ${{ inputs.verification == 'build' && '4' || '2' }}
       RUST_TEST_THREADS: '1'
-      CARGO_PROFILE_RELEASE_LTO: 'false'
-      CARGO_PROFILE_RELEASE_OPT_LEVEL: '1'
-      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: '256'
-      CARGO_PROFILE_RELEASE_DEBUG: 'none'
-      CARGO_PROFILE_RELEASE_STRIP: 'symbols'
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           fetch-depth: 50
+      - name: Compile test runs fast; build-only and tag runs use the release profile
+        if: inputs.verification != 'build' && !startsWith(github.ref, 'refs/tags/v')
+        run: |
+          {
+            echo CARGO_PROFILE_RELEASE_LTO=false
+            echo CARGO_PROFILE_RELEASE_OPT_LEVEL=1
+            echo CARGO_PROFILE_RELEASE_CODEGEN_UNITS=256
+            echo CARGO_PROFILE_RELEASE_DEBUG=none
+            echo CARGO_PROFILE_RELEASE_STRIP=symbols
+          } >> "$GITHUB_ENV"
       - uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7
         id: cargo_cache
         with:
@@ -285,7 +290,9 @@ jobs:
         if: ${{ !cancelled() && inputs.verification != 'ui' }}
         working-directory: codex-rs
         run: |
-          cargo build --release --locked -p codex-cli --bin codex -p codex-code-mode-host --bin codex-code-mode-host
+          # One binary per call: fat LTO peaks near 13 GB for codex alone on a 16 GB runner.
+          cargo build --release --locked -p codex-cli --bin codex
+          cargo build --release --locked -p codex-code-mode-host --bin codex-code-mode-host
           env -u CODEX_SKIP_BWRAP_BUILD cargo build --release --locked -p codex-bwrap --bin bwrap
           cp target/release/codex target/release/elpis
           mkdir -p target/release/codex-resources
