@@ -9,20 +9,22 @@ const bridged = (model) => /^(claude|agy)\//.test(model ?? "");
 const message = (e) => e?.message ?? (typeof e === "string" ? e : JSON.stringify(e));
 const failure = (why, extra = {}) => Object.assign(new Error(why), extra);
 
+// The person's own MCP servers stay off in an agent's chat, except those its definition names: every loaded chat runs
+// its own copy of them (about 300 MB). One `mcp_servers = {}` override would merge, not replace, so each configured
+// server is turned off by name. ELPIS_WORKFLOW_USER_MCP=1 keeps them all, as before. Also for the desktop's Workflows
+// nodes (elpis-acp-agent.mjs).
+export async function withoutUserMcp(conn, { cwd, mcpServers = [] } = {}, log = () => {}) {
+  if (process.env.ELPIS_WORKFLOW_USER_MCP === "1") return {};
+  const read = await conn.call("config/read", { includeLayers: false, ...(cwd && { cwd }) })
+    .catch((e) => { log(`workflow agent: its MCP servers stay on, the configuration could not be read: ${message(e)}`); return null; });
+  const names = Object.keys(read?.config?.mcp_servers ?? {}).filter((name) => !mcpServers.includes(name));
+  return Object.fromEntries(names.map((name) => [`mcp_servers.${name}.enabled`, false]));
+}
+
 export function bridgeExecutor({ url, log = () => {}, provider = () => null }) {
   const open = new Map(); // thread id -> { conn, bridged }
   const startedWith = new Map(); // thread id -> { cwd, mcpServers }, to reopen it alike
   const connect = () => connectAppServer({ url, name: "elpis-agents" });
-  // The person's own MCP servers stay off in an agent's chat, except those its definition names: every loaded chat runs
-  // its own copy of them (about 300 MB). One `mcp_servers = {}` override would merge, not replace, so each configured
-  // server is turned off by name. ELPIS_WORKFLOW_USER_MCP=1 keeps them all, as before.
-  async function withoutUserMcp(conn, { cwd, mcpServers = [] } = {}) {
-    if (process.env.ELPIS_WORKFLOW_USER_MCP === "1") return {};
-    const read = await conn.call("config/read", { includeLayers: false, ...(cwd && { cwd }) })
-      .catch((e) => { log(`workflow agent: its MCP servers stay on, the configuration could not be read: ${message(e)}`); return null; });
-    const names = Object.keys(read?.config?.mcp_servers ?? {}).filter((name) => !mcpServers.includes(name));
-    return Object.fromEntries(names.map((name) => [`mcp_servers.${name}.enabled`, false]));
-  }
 
   async function attach(threadId) {
     const known = open.get(threadId);
@@ -30,7 +32,7 @@ export function bridgeExecutor({ url, log = () => {}, provider = () => null }) {
     const conn = connect();
     try {
       await conn.ready;
-      const config = await withoutUserMcp(conn, startedWith.get(threadId));
+      const config = await withoutUserMcp(conn, startedWith.get(threadId), log);
       const r = await conn.call("thread/resume", { threadId, ...(Object.keys(config).length && { config }) });
       const entry = { conn, bridged: bridged(r?.model ?? r?.thread?.model) };
       open.set(threadId, entry);
@@ -49,7 +51,7 @@ export function bridgeExecutor({ url, log = () => {}, provider = () => null }) {
       const modelProvider = isBridged ? null : providerName ?? provider(parentThreadId, model);
       let started;
       try {
-        const config = { ...(effort && { model_reasoning_effort: effort }), ...await withoutUserMcp(conn, { cwd, mcpServers }) };
+        const config = { ...(effort && { model_reasoning_effort: effort }), ...await withoutUserMcp(conn, { cwd, mcpServers }, log) };
         started = await conn.call("thread/start", {
           cwd, approvalPolicy: "never", sandbox: "danger-full-access",
           ...(model && { model }), ...(modelProvider && { modelProvider }),
