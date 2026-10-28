@@ -326,6 +326,9 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .project-chip span { overflow:hidden; text-overflow:ellipsis; }
 .section-label-row { display:flex; align-items:center; gap:4px; padding:16px 8px 6px; }
 .section-label-row > .section-label { padding:0; margin-right:auto; }
+/* Hide shows on the heading's hover or focus, like a row's actions. */
+.section-label-row > .section-hide { opacity:0; color:var(--muted-foreground); }
+.section-label-row:is(:hover, :focus-within) > .section-hide { opacity:1; }
 .workspace-picker { display:flex; align-items:center; gap:6px; color:var(--muted-foreground); font-size:0.75rem; min-width:0; }
 .workspace-picker > button { height:24px; padding:0 6px; font-size:0.75rem; font-weight:450; color:var(--muted-foreground); }
 .workspace-header.untitled { border-bottom-color:transparent; }

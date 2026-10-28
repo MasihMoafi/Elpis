@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import { flushSync } from "react-dom";
 import { cloneElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { AgentsIcon, BrowserIcon, ChatIcon, ExperimentLabIcon, FolderIcon, LoveSpotIcon, NewChatIcon, PinIcon, PlusIcon, SendIcon, StopIcon, WorkflowsIcon } from "@/components/elpis-icons";
-import { Archive, ArrowDown, Blocks, Bookmark, ChevronRight, Layers, PanelLeft, PanelRightClose, PanelRightOpen, Pin, RefreshCw, Moon, Search, Settings as SettingsIcon, Sun, X, Zap } from "lucide-react";
+import { Archive, ArrowDown, Blocks, Bookmark, ChevronRight, EyeOff, Layers, PanelLeft, PanelRightClose, PanelRightOpen, Pin, RefreshCw, Moon, Search, Settings as SettingsIcon, Sun, X, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ReorderItem, useReorder } from "@/components/reorder";
 import { OptionSelect } from "@/components/ui/option-select";
@@ -1829,7 +1829,7 @@ export default function Home() {
   const grouped = !searchTerm && chatGroups.groupBy === "custom" ? groupSections(unpinnedChats, chatGroups) : null;
   const ungroupedChats = grouped ? grouped.ungrouped : unpinnedChats;
   const loveChats = searchTerm ? [] : ungroupedChats.filter(thread => originOf(thread) === "Love Spot");
-  const workflowChats = searchTerm || hiddenPages.includes("canvas") ? [] : ungroupedChats.filter(thread => originOf(thread) === "Workflows");
+  const workflowChats = searchTerm || hiddenPages.includes("canvas") || !preferences.sidebarWorkflows ? [] : ungroupedChats.filter(thread => originOf(thread) === "Workflows");
   const recentChats = searchTerm ? ungroupedChats : ungroupedChats.filter(thread => !originOf(thread));
   const ordered = [...(collapsedSections.pinned && !searchTerm ? [] : pinnedChats), ...(collapsedSections.groups ? [] : grouped?.groups.flatMap(section => chatGroups.collapsed.includes(section.group.id) ? [] : section.chats) ?? []), ...(collapsedSections.love ? [] : loveChats), ...(collapsedSections.workflows ? [] : workflowChats), ...(collapsedSections.recents ? [] : recentChats)];
   // An expanded chat owns its visible agents, including background runs. History must not duplicate those rows.
@@ -2272,7 +2272,7 @@ export default function Home() {
         {pinnedChats.length > 0 && <section aria-label="Pinned"><div className="section-label-row">{foldable("pinned", "Pinned")}</div>{(searchTerm || !collapsedSections.pinned) && pinnedChats.map(chatRows)}</section>}
         {grouped && grouped.groups.length > 0 && <section aria-label="Groups"><div className="section-label-row">{foldable("groups", "Groups")}</div>{!collapsedSections.groups && grouped.groups.map(chatGroupSection)}</section>}
         {loveChats.length > 0 && <section role="group" aria-label="Love Spot"><div className="section-label-row">{foldable("love", "Love Spot")}</div>{!collapsedSections.love && loveChats.map(thread => <div key={thread.id}>{threadRow(thread, 0, true)}{expanded[thread.id] && descendants(thread.id, 1)}</div>)}</section>}
-        {workflowChats.length > 0 && <section role="group" aria-label="Workflows"><div className="section-label-row">{foldable("workflows", "Workflows")}</div>{!collapsedSections.workflows && workflowChats.map(chatRows)}</section>}
+        {workflowChats.length > 0 && <section role="group" aria-label="Workflows"><div className="section-label-row">{foldable("workflows", "Workflows")}<Button variant="ghost" size="icon-xs" className="section-hide" aria-label="Hide Workflows from the sidebar" title="Hide Workflows from the sidebar · Settings → General shows them again" onClick={() => { try { savePreferences({ sidebarWorkflows: false }); } catch { /* the section stays */ } }}><EyeOff size={14} /></Button></div>{!collapsedSections.workflows && workflowChats.map(chatRows)}</section>}
         {(searchTerm ? recentChats.length > 0 : roots.length > 0 || ordinaryThreads.length > 0) && <section aria-label={searchTerm ? "Results" : "Recents"} {...(!searchTerm ? chatReorder.targetProps("recents", true) : {})}><div className="section-label-row" {...(grouped ? chatReorder.targetProps("recents", true) : {})}>{searchTerm ? <div className="section-label">Results</div> : foldable("recents", "Recents")}
           {!searchTerm && ordinaryUnread.length > 0 && <Button variant="ghost" size="xs" onClick={() => setAttention(previous => ({ ...previous, unread: [] }))}>Mark all as read</Button>}
           {!searchTerm && <GroupAndSortMenu state={chatGroups} onChange={change => updateGroups(state => ({ ...state, ...change }))} />}</div>

@@ -80,6 +80,9 @@ export function GeneralSettings() {
       <SettingRow title="Confirm before closing the window" description="Ask before Elpis closes. Running chats continue either way.">
         <Switch aria-label="Confirm before closing the window" checked={preferences.confirmClose} onCheckedChange={confirmClose => save({ confirmClose })} />
       </SettingRow>
+      <SettingRow title="Show workflows in the sidebar" description="List each workflow's chats in the sidebar, folded under the workflow. Off hides the section; the Workflows page keeps every run.">
+        <Switch aria-label="Show workflows in the sidebar" checked={preferences.sidebarWorkflows} onCheckedChange={sidebarWorkflows => save({ sidebarWorkflows })} />
+      </SettingRow>
       <SettingRow title="Confirm before deleting chats" description="Ask before Delete or D removes chats. “Don’t show me this again” turns this off.">
         <Switch aria-label="Confirm before deleting chats" checked={preferences.confirmDeleteChats} onCheckedChange={confirmDeleteChats => save({ confirmDeleteChats })} />
       </SettingRow>

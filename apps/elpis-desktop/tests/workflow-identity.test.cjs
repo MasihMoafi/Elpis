@@ -5,7 +5,7 @@ const path = require('node:path');
 const os = require('node:os');
 const { fixture, CWD } = require('./parity-fixture.cjs');
 const { assertUiFit } = require('./ui-fit.cjs');
-const { chooseTheme } = require('./controls.cjs');
+const { chooseTheme, openSettings, leaveSettings } = require('./controls.cjs');
 
 const runs = ['Fix a bug', 'Fix a bug', 'Research pricing', 'Ship exporter'].map((name, i) => ({
   id: `run-${i}`, rootThreadId: i ? `root-${i}` : 'chat-a', name, status: i < 2 ? 'running' : 'succeeded', startedAt: 100 + i,
@@ -125,6 +125,30 @@ test('a retried step and every Mother review fold under their run, none loose', 
       assert.equal(await row(page, id).count(), 1, `${id} shows once`);
       assert.equal(await row(page, id).getAttribute('class').then(value => value.includes('child')), true, `${id} sits under its run`);
     }
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+// 28 Oct, Masih: "I meant the workflows in the chat side bar" ("it should be able to hide"). Hidden, the section and its
+// chats leave the sidebar (none spill into Recents) and stay hidden after a reload; Settings → General shows them again.
+test('the Workflows section hides from the sidebar, stays hidden, and comes back from Settings', async () => {
+  const f = await open('light');
+  try {
+    const page = f.page, recents = sidebar(page).locator('section[aria-label="Recents"]');
+    await workflows(page).hover();
+    await workflows(page).getByRole('button', { name: 'Hide Workflows from the sidebar', exact: true }).click();
+    await workflows(page).waitFor({ state: 'detached' });
+    for (const run of runs) assert.equal(await recents.locator(`[data-thread-id="${run.rootThreadId}"]`).count(), 0, 'a hidden workflow does not spill into Recents');
+    await page.reload(); await sidebar(page).waitFor();
+    await page.waitForTimeout(500);
+    assert.equal(await workflows(page).count(), 0, 'still hidden after a reload');
+    await page.getByRole('button', { name: 'Workflows', exact: true }).first().waitFor();
+    await openSettings(page, 'General');
+    const show = page.getByRole('switch', { name: 'Show workflows in the sidebar', exact: true });
+    assert.equal(await show.getAttribute('aria-checked'), 'false');
+    await show.click();
+    await leaveSettings(page);
+    await workflows(page).waitFor();
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
