@@ -70,7 +70,7 @@ function promptFor({ goal, folders, agents, maxAgents }) {
     `Use at most ${maxAgents} agents. A small goal needs one or two.`,
     'Every agent writes: code or, for research and decisions, a markdown file in its own folder. No agent only reads or reports.',
     'Split by independent parts, not by role. An agent handling a feature also handles its tests. Never add a separate tester, reviewer or planner agent.',
-    'folders: copy them from the folder list, the narrowest ones the agent writes; never the whole project. Two agents that run at the same time must not share a folder. Every agent also gets its own folder for its report, so an agent that changes no project files needs none.',
+    'folders: copy them from the folder list, the narrowest ones the agent writes; never the whole project, except "." for an agent that must write a file directly in the project root (such as a file the goal names there), which then runs alone. Two agents that run at the same time must not share a folder. Every agent also gets its own folder for its report, so an agent that changes no project files needs none.',
     'waitsFor: the keys of the agents this one builds on (a DAG, no loops). Agents that build on nothing wait for nothing, so they run in parallel.',
     'prompt: short and concrete (what to build, where, what to leave alone). title: plain language, 6 words at most. doneWhen: one to three checks anyone can verify. key: a short lowercase word with dashes. name: two to five plain words for the team.',
     ...agents.length ? ["Keep every existing agent's key. For an existing agent, fill only what is empty (prompt, folders, doneWhen) unless the goal asks to change it. Return a field you leave alone as it is, or empty: the canvas keeps what it has. Add agents for parts the board lacks; leave an agent out only if the goal asks."] : [],
@@ -79,7 +79,7 @@ function promptFor({ goal, folders, agents, maxAgents }) {
     'You design a team of coding agents for a canvas. Turn the goal into the smallest team that achieves it. Answer only with the JSON the schema asks for. Use no tools: work from what is below.',
     `Goal:\n${goal}`,
     folders.length ? `Project folders (repository-relative). An agent's folders must be copied from this list, exactly:\n${folders.map(folder => `- ${folder}`).join('\n')}`
-      : "No folder list was given, so every agent's folders must be an empty list.",
+      : 'No folder list was given, so every agent\'s folders must be an empty list, or "." for an agent that writes a file directly in the project root.',
     agents.length ? `Current board (the agents the user already has; waitsFor lists the keys each builds on):\n${JSON.stringify(agents, null, 2)}` : 'The board is empty: every agent is new.',
     `Rules:\n${rules.map((rule, index) => `${index + 1}. ${rule}`).join('\n')}`,
   ].join('\n\n');
@@ -162,7 +162,8 @@ function check(answer, { folders, agents: board, maxAgents }) {
     }
     const own = new Set(existing?.folders);
     const chosen = [...new Set(textList(agent, 'folders', label))];
-    for (const folder of chosen) if (!listed.has(folder) && !own.has(folder)) throw refuse(`${label} uses the folder "${folder}", which is not in the project's folder list`);
+    // "." is the whole project: the only way to write a file in its root (28 Oct: "create hello.txt in the sandbox" could never pass).
+    for (const folder of chosen) if (folder !== '.' && !listed.has(folder) && !own.has(folder)) throw refuse(`${label} uses the folder "${folder}", which is not in the project's folder list`);
     return { key: agent.key, title: agent.title.trim(), prompt: agent.prompt.trim(), folders: chosen, doneWhen: textList(agent, 'doneWhen', label), waitsFor: [...new Set(textList(agent, 'waitsFor', label))] };
   });
   for (const agent of agents) for (const key of agent.waitsFor) if (!seen.has(key)) throw refuse(`Agent "${agent.key}" waits for "${key}", which is not in the plan`);

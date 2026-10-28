@@ -106,6 +106,15 @@ test('review-only agents need no project write folders even when project folders
   assert.deepEqual(result, review, 'a review agent needs only its own report folder, not a project write scope');
 });
 
+// 28 Oct: "create hello.txt in the sandbox" could never pass: no agent could write a file in the project root.
+test('an agent that writes a file in the project root may have the whole project, "."', async () => {
+  const root = { name: 'Hello check', agents: [
+    { key: 'hello', title: 'Write hello.txt', prompt: 'Create hello.txt in the project root with one line: hello.', folders: ['.'], doneWhen: ['hello.txt holds one line: hello'], waitsFor: [] },
+  ] };
+  const { result } = await plan({ answer: root }, {}, { ...BODY, goal: 'Create hello.txt in the project root.' });
+  assert.deepEqual(result, root);
+});
+
 test('reads a plan wrapped in a code fence, and the final answer rather than the commentary before it', async () => {
   const { result } = await plan({ answer: `\`\`\`json\n${JSON.stringify(PLAN)}\n\`\`\``, extra: [{ type: 'agentMessage', id: 'note', text: 'Let me plan.', phase: 'commentary' }] });
   assert.deepEqual(result, PLAN);
@@ -169,7 +178,6 @@ const REFUSALS = [
   ['no agents', mutate(plan => { plan.agents = []; }), /no agents/],
   ['more agents than maxAgents', { name: 'Big', agents: ['a', 'b', 'c', 'd'].map(key => ({ key, title: key, prompt: 'Work.', folders: ['api'], doneWhen: [], waitsFor: [] })) }, /4 agents.*limit is 3/],
   ['a folder that is not in the list', mutate(plan => { plan.agents[0].folders = ['api', 'secrets']; }), /"api".*"secrets".*not in the project's folder list/],
-  ['the whole project as a folder', mutate(plan => { plan.agents[0].folders = ['.']; }), /"\."/],
   ['an agent without a prompt', mutate(plan => { plan.agents[0].prompt = ''; }), /Agent "api".*prompt/],
   ['an agent without a title', mutate(plan => { plan.agents[0].title = ' '; }), /Agent "api".*title/],
   ['a wrong type', mutate(plan => { plan.agents[0].waitsFor = 'web'; }), /Agent "api".*waitsFor/],
