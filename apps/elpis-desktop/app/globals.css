@@ -145,8 +145,9 @@ button:disabled { cursor:not-allowed; }
 .kbd-hint, [data-shortcut]::after { flex-shrink:0; margin-left:auto; padding-left:12px; font:500 var(--text-small)/1 var(--ui-font, Inter, system-ui, sans-serif); color:var(--subtle-foreground); white-space:nowrap; }
 [data-shortcut]::after { content:attr(data-shortcut); }
 .thread-list { overflow-x:hidden; overflow-y:auto; flex:1; min-height:0; margin:0 -4px 0 -8px; padding:0 4px 10px 8px; scroll-snap-type:y proximity; }
-/* Rows and the "More …" buttons after them are snap points, so scrolling to the end can always reach those buttons. */
-.thread-list :is(.thread-row, .thread-more) { scroll-snap-align:end; }
+/* Rows, the "More …" buttons and every section heading (Agent runs too) are snap points, so scrolling to the end can
+   always reach the last of them, even when its section is folded. */
+.thread-list :is(.thread-row, .thread-more, .section-label-row, section > :first-child) { scroll-snap-align:end; }
 .thread-list > section:first-child > .section-label-row { padding-top:8px; }
 .thread-link { min-width:0; flex:1; text-align:left; background:none; border:0; padding:7px 4px 7px 8px; border-radius:7px; display:block; color:inherit; font-size:0.8125rem; line-height:20px; }
 .thread-link span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:block; }
