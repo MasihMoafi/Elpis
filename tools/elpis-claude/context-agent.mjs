@@ -3,6 +3,7 @@ import { ndJsonStream } from '@agentclientprotocol/sdk';
 import { v1AgentApp } from './node_modules/@agentclientprotocol/claude-agent-acp/dist/acp-agent.js';
 import { applyManagedPolicyEnv } from './node_modules/@agentclientprotocol/claude-agent-acp/dist/managed-policy.js';
 import { nodeToWebReadable, nodeToWebWritable } from './node_modules/@agentclientprotocol/claude-agent-acp/dist/utils.js';
+import { endWorkers, workerRequest } from './worker-lifecycle.mjs';
 
 await applyManagedPolicyEnv();
 console.log = console.error;
@@ -18,12 +19,14 @@ const app = v1AgentApp(console, value => { agent = value; }).onRequest('_elpis/c
   const usage = await session.query.getContextUsage({ detail: 'summary' });
   return { files: usage.memoryFiles.map(file => ({ path: file.path, estimatedTokens: file.tokens })) };
 });
-const connection = app.connect(ndJsonStream(nodeToWebWritable(process.stdout), nodeToWebReadable(process.stdin)));
+const stream = ndJsonStream(nodeToWebWritable(process.stdout), nodeToWebReadable(process.stdin));
+const connection = app.connect({ writable: stream.writable, readable: stream.readable.pipeThrough(new TransformStream({ transform: (msg, out) => out.enqueue(workerRequest(msg)) })) });
 let closing = false;
 async function shutdown() {
   if (closing) return;
   closing = true;
   await agent?.dispose().catch(error => console.error(error));
+  await endWorkers();
   process.exit(0);
 }
 connection.closed.then(shutdown);
