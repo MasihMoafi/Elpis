@@ -151,11 +151,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: ci-now, lto: 'false', cgu: '256', opt: '1' }
-          - { name: off-s-16, lto: 'false', cgu: '16', opt: 's' }
-          - { name: thin-3-16, lto: 'thin', cgu: '16', opt: '3' }
-          - { name: fat-3-1, lto: 'fat', cgu: '1', opt: '3' }
-          - { name: fat-s-1, lto: 'fat', cgu: '1', opt: 's' }
+          - { name: fat-z-1, lto: 'fat', cgu: '1', opt: 'z', panic: 'unwind' }
+          - { name: fat-s-1-abort, lto: 'fat', cgu: '1', opt: 's', panic: 'abort' }
     env:
       CODEX_SKIP_BWRAP_BUILD: '1'
       CARGO_BUILD_JOBS: '4'
@@ -164,6 +161,7 @@ jobs:
       CARGO_PROFILE_RELEASE_CODEGEN_UNITS: ${{ matrix.cgu }}
       CARGO_PROFILE_RELEASE_DEBUG: 'none'
       CARGO_PROFILE_RELEASE_STRIP: 'symbols'
+      CARGO_PROFILE_RELEASE_PANIC: ${{ matrix.panic }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
       - name: Install Rust and system dependencies
