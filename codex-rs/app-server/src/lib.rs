@@ -117,6 +117,9 @@ mod elpis_smart_prune;
 mod elpis_context_attribution;
 // Elpis: per-turn timing and cost state for the dashboard.
 mod elpis_turn_activity;
+// Elpis: hands glibc's retained free heap back to the OS while the engine idles.
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+mod elpis_malloc_trim;
 mod error_code;
 mod extensions;
 mod external_agent_migration;
@@ -516,6 +519,8 @@ pub async fn run_main_with_transport_options(
         && runtime_options.managed_daemon;
     #[cfg(unix)]
     let nofile_limit_result = managed_daemon.then(managed_daemon::raise_nofile_limit);
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    elpis_malloc_trim::start();
     let loader_overrides = loader_overrides_with_test_user_config_file(
         loader_overrides,
         test_user_config_file_from_env(),
