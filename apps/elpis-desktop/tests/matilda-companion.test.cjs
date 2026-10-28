@@ -240,5 +240,14 @@ test('the small chat starts fresh, keeps earlier turns behind a button, and asks
   assert.equal(await mini.getByText('hey', { exact: true }).count(), 1, 'what was just said shows');
   await earlier.click();
   await mini.getByText('An old answer', { exact: true }).waitFor();
+  // 28 Oct: "it should have some animation (some other shots of her)": a smile, a laugh and a kiss lie over her face.
+  await page.keyboard.press('Escape'); await mini.waitFor({ state: 'hidden' });
+  const avatar = presence.getByRole('button', { name: 'Chat with Matilda', exact: true }), shown = () => avatar.locator('img[data-shown="true"]').evaluateAll(els => els.map(el => el.dataset.mood));
+  assert.deepEqual(await avatar.locator('img.matilda-mood').evaluateAll(els => els.map(el => el.dataset.mood)), ['smile', 'laugh', 'kiss']);
+  assert.equal(await avatar.getByAltText('Matilda', { exact: true }).count(), 1, 'her shots are decoration: one Matilda for a screen reader');
+  await page.mouse.move(0, 400); await avatar.hover();
+  assert.deepEqual(await shown(), ['smile'], 'she smiles while hovered');
+  await page.mouse.move(0, 400);
+  await page.waitForFunction(() => !document.querySelector('[aria-label="Pinned Matilda"] img[data-shown="true"]'));
   assert.deepEqual(f.errors, []);
 });

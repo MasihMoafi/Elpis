@@ -9,6 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { api } from "@/lib/api";
 import { MATILDA_CHANGED } from "@/lib/matilda";
 import { appStorage } from "@/lib/projects";
+import { MATILDA_SHOTS } from "@/bridge/matilda-face.cjs";
 
 type Track = { title: string; artist: string; uri: string; status: string; canPlay: boolean; canPause: boolean; canNext: boolean; muted: boolean; canMute: boolean };
 type Companion = { pinned: boolean; face?: string; favorite: { title: string; uri: string; artist?: string } | null; threadId?: string | null; music: Track | null; reason: string };
@@ -24,9 +25,31 @@ function savedPlace(): Place {
   // In the corner, clear of the side panel's Done button and the composer's send button.
   return { right: 16, bottom: 16, size: 64 };
 }
+type Mood = keyof typeof MATILDA_SHOTS;
+const MOODS: Mood[] = ["smile", "smile", "laugh", "kiss"];
+const stillness = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+/** Now and then she turns to another shot for a moment (28 Oct: "it should have some animation (some other shots of her)"):
+ * a smile while hovered, a kiss when she has just replied, otherwise one at random every 12-22 s. Never with reduced motion. */
+function useMood(pinned: boolean, replies: number) {
+  const [mood, setMood] = useState<Mood | null>(null), [hovered, setHovered] = useState(false), seen = useRef(replies);
+  useEffect(() => {
+    if (!pinned || stillness()) return;
+    let timer = 0;
+    const next = () => { timer = window.setTimeout(() => { setMood(MOODS[Math.floor(Math.random() * MOODS.length)]); timer = window.setTimeout(() => { setMood(null); next(); }, 2600); }, 12000 + Math.random() * 10000); };
+    next(); return () => window.clearTimeout(timer);
+  }, [pinned]);
+  useEffect(() => {
+    if (replies <= seen.current) { seen.current = replies; return; }
+    seen.current = replies;
+    if (stillness()) return;
+    setMood("kiss"); const timer = window.setTimeout(() => setMood(null), 3000); return () => window.clearTimeout(timer);
+  }, [replies]);
+  return { shown: hovered && !stillness() ? "smile" as Mood : mood, setHovered };
+}
 export function MatildaCompanion() {
   const [state, setState] = useState<Companion | null>(null);
   const [chatOpen, setChatOpen] = useState(false), mini = useMatildaMiniChat(chatOpen);
+  const mood = useMood(Boolean(state?.pinned), mini.conversation.entries.filter(entry => entry.item.type === "agentMessage").length);
   const suppressClick = useRef(false);
   useEffect(() => { if (!state?.pinned) setChatOpen(false); }, [state?.pinned]);
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
@@ -141,9 +164,11 @@ export function MatildaCompanion() {
         onPointerDown={grab(false)} onPointerMove={pull} onPointerUp={release}
         onClick={event => { if (suppressClick.current) { event.preventDefault(); event.stopPropagation(); } }}
         onPointerCancel={() => { const start = drag.current; drag.current = null; if (start) put(start.left, start.top, start.size); }}
-        onKeyDown={keys(false)} />}>
+        onKeyDown={keys(false)} onPointerEnter={() => mood.setHovered(true)} onPointerLeave={() => mood.setHovered(false)} />}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={state.face} alt="Matilda" width={size} height={size} draggable={false} className="select-none" />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        {(Object.keys(MATILDA_SHOTS) as Mood[]).map(name => <img key={name} src={MATILDA_SHOTS[name]} alt="" aria-hidden="true" width={size} height={size} draggable={false} className="matilda-mood select-none" data-mood={name} data-shown={mood.shown === name} />)}
       </PopoverTrigger>
       <PopoverContent side={shown.top < 300 ? "bottom" : "top"} align="end" className="matilda-mini-popup"><MatildaMiniChat chat={mini} /></PopoverContent>
     </Popover>

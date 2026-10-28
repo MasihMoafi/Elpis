@@ -27,3 +27,11 @@
 .matilda-float-controls::before { content:""; position:absolute; left:0; right:0; top:100%; height:6px; }
 .matilda-float[data-controls="below"] .matilda-float-controls::before { top:auto; bottom:100%; }
 .matilda-mini-earlier { display:block; margin:0 auto 4px; color:var(--muted-foreground); }
+/* Her other shots lie over her face and fade in for a moment; she breathes slowly. */
+/* The pictures breathe, not the button, so the place she is clicked and dragged stays still. */
+.matilda-face { position:relative; }
+.matilda-face img { animation:matilda-breathe 4.8s ease-in-out infinite alternate; }
+.matilda-face img.matilda-mood { position:absolute; inset:0; opacity:0; transition:opacity 380ms ease; }
+.matilda-face img.matilda-mood[data-shown="true"] { opacity:1; }
+@keyframes matilda-breathe { from { transform:scale(1); } to { transform:scale(1.025); } }
+@media (prefers-reduced-motion: reduce) { .matilda-face img { animation:none; } .matilda-face img.matilda-mood { transition:none; } }
