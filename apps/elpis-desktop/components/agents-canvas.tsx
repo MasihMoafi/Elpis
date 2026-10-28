@@ -55,7 +55,7 @@ const FIT = { padding: 0.06, maxZoom: 1, minZoom: 0.05 };
 const OVERVIEW = { padding: 0.08, maxZoom: 1 };
 const ENTRY_PATTERNS = [{ id: "split-parts", label: "Parallel" }, { id: "sequential", label: "Sequential" }, { id: "research", label: "Research" }, { id: "transcribe", label: "Transcribe images" }];
 // Mother takes the strongest model this person has (28 Oct, Masih: "Depends on which model the user has available; for me, opus").
-const MOTHER_FIRST = [/opus/i, /gemini-4-argon/i, /6\.1-sol/i, /sonnet/i];
+const MOTHER_FIRST = [/^claude\/opus$/, /^agy\/gemini-4-argon-high$/, /^gpt-6\.1-sol$/, /^claude\/sonnet$/, /opus/i, /gemini-4-argon/i, /sonnet/i];
 
 /** An agent on the canvas: it writes. Its run-order wave, name, model and state, with an input on the left (what it
  * waits for) and an output on the right (what waits for it), as Deus Ex's hacking screen links its nodes. The ring at
@@ -1348,7 +1348,10 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
     try { files = (await api<{ data: { name: string; dir: boolean }[] }>(`/files/dir?cwd=${encodeURIComponent(cwd!)}&dir=${encodeURIComponent(folder)}&hidden=0`)).data.filter(entry => !entry.dir).map(entry => entry.name); }
     catch { setNotice("Name the folder of page images in the request: one of this project's folders."); return null; }
     if (!files.some(name => PAGE_IMAGE.test(name))) { setNotice(`No page images (PNG, JPG or WebP) in ${folder}.`); return null; }
-    const pick = (test: RegExp) => catalog.find(item => test.test(item.model));
+    // The subscriptions (Antigravity's Gemini, Claude) are in the engine's own list; a run routes them by their prefix.
+    const listed = models.length ? models : (await api<{ data: Model[] }>("/models").catch(() => ({ data: [] as Model[] }))).data;
+    const offered = [...listed.map(item => ({ model: item.model, provider: null as string | null })), ...catalog];
+    const pick = (test: RegExp) => offered.find(item => test.test(item.model));
     const reader = pick(/gemini-3\.8-flash-high/i), boss = MOTHER_FIRST.map(pick).find(Boolean);
     const team = transcriptionTeam(folder, files, `${folder}/transcription.md`, reader ? { model: reader.model, provider: reader.provider } : {});
     const readers = team.nodes.filter(node => node.type === "agent").length;
