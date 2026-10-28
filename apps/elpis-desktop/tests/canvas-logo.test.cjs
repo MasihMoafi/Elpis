@@ -16,7 +16,7 @@ test('Logo builds Designer, Curator, Tracer and Critic in order for the brand in
     await f.canvas.getByRole('textbox', { name: 'Workflow request', exact: true }).fill('Rustidian');
     const pattern = f.canvas.getByRole('combobox', { name: 'Workflow pattern', exact: true });
     await pattern.click();
-    assert.deepEqual((await f.page.getByRole('option').allInnerTexts()).slice(0, 3).map(text => text.trim()), ['Transcribe images', 'Translate to Farsi', 'Logo'], 'the ready-made workflows are on top');
+    assert.deepEqual((await f.page.getByRole('option').allInnerTexts()).slice(0, 3).map(text => text.trim()), ['Transcribe images', 'Translate', 'Logo'], 'the ready-made workflows are on top');
     await f.page.keyboard.press('Escape');
     await chooseOption(pattern, 'logo');
     await f.page.waitForFunction(() => JSON.parse(localStorage.getItem('elpis-workflow-draft-v1'))?.result === 'logo/logo.svg');
