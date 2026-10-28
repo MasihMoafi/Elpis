@@ -16,8 +16,8 @@ export function unwrapShell(command: string): string {
   }
   const match = command.trim().match(/^(?:\S*\/)?(?:bash|sh|zsh|dash)\s+-[a-z]*c\s+(['"])([\s\S]*)\1$/);
   if (!match) return command;
-  const [, quote, body] = match;
-  return quote === "'" ? body.replace(/'\\''|'"'"'/g, "'") : body.replace(/\\(["\\$`])/g, "$1");
+  const [, quote, body] = match, inner = quote === "'" ? body.replace(/'\\''|'"'"'/g, "'") : body.replace(/\\(["\\$`])/g, "$1");
+  return GUARDED.test(inner.trim()) ? unwrapShell(inner) : inner;
 }
 
 export type ShellTokenKind = "command" | "flag" | "string" | "variable" | "operator" | "comment" | "text";

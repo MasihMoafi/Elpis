@@ -27,6 +27,7 @@ test('a command run through the disk guard reads and shows as the command itself
   assert.equal(unwrapShell(guard + "'sleep 60'"), 'sleep 60');
   assert.equal(unwrapShell(guard + `'/bin/bash -lc '"'"'cd /tmp && ls'"'"''`), 'cd /tmp && ls', 'a wrapped shell inside the guard unwraps too');
   assert.equal(unwrapShell(guard + 'npm test'), 'npm test');
+  assert.equal(unwrapShell(`/bin/bash -lc "${guard}'sleep 60'"`), 'sleep 60', 'as the engine records it: the guard inside a shell');
   assert.equal(unwrapShell('python3 guard.py run -- npm test'), 'python3 guard.py run -- npm test', 'another guard.py is left as written');
   const running = command('g', { command: guard + "'npm test'", commandActions: [{ type: 'unknown', command: 'npm test' }], status: 'inProgress' });
   assert.equal(stepLabel(running), 'Running npm test');
