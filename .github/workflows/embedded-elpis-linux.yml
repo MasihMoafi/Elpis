@@ -8,7 +8,7 @@ on:
         required: true
         default: full
         type: choice
-        options: [check, ui, full, build, size, mcp]
+        options: [check, ui, full, build, mcp]
   push:
     tags: ['v*']
     branches: [next]
@@ -141,55 +141,6 @@ jobs:
             ~/.cargo/git
             codex-rs/target
           key: ${{ steps.cargo_cache.outputs.cache-primary-key }}
-
-  size:
-    # Measure release-profile choices on cold runners: build minutes, peak memory and binary size.
-    if: github.event_name == 'workflow_dispatch' && inputs.verification == 'size'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 180
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { name: fat-z-1, lto: 'fat', cgu: '1', opt: 'z', panic: 'unwind' }
-          - { name: fat-s-1-abort, lto: 'fat', cgu: '1', opt: 's', panic: 'abort' }
-    env:
-      CODEX_SKIP_BWRAP_BUILD: '1'
-      CARGO_BUILD_JOBS: '4'
-      CARGO_PROFILE_RELEASE_LTO: ${{ matrix.lto }}
-      CARGO_PROFILE_RELEASE_OPT_LEVEL: ${{ matrix.opt }}
-      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: ${{ matrix.cgu }}
-      CARGO_PROFILE_RELEASE_DEBUG: 'none'
-      CARGO_PROFILE_RELEASE_STRIP: 'symbols'
-      CARGO_PROFILE_RELEASE_PANIC: ${{ matrix.panic }}
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
-      - name: Install Rust and system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libcap-dev libssl-dev pkg-config
-          rustup toolchain install 1.95.0 --profile minimal --no-self-update
-      - name: Build the engine binary
-        working-directory: codex-rs
-        run: |
-          start=$(date +%s)
-          /usr/bin/time -v -o "$RUNNER_TEMP/time.txt" cargo build --release --locked -p codex-cli --bin codex
-          end=$(date +%s)
-          mkdir -p "$RUNNER_TEMP/out"
-          cp target/release/codex "$RUNNER_TEMP/out/codex"
-          {
-            echo "profile=${{ matrix.name }} lto=${{ matrix.lto }} cgu=${{ matrix.cgu }} opt=${{ matrix.opt }}"
-            echo "build_seconds=$((end - start))"
-            echo "binary_bytes=$(stat -c %s target/release/codex)"
-            grep -E 'Maximum resident|Elapsed' "$RUNNER_TEMP/time.txt"
-            size -A target/release/codex | sort -k2 -n -r | head -6
-          } | tee "$RUNNER_TEMP/out/size.txt" >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: size-${{ matrix.name }}
-          path: ${{ runner.temp }}/out
-          if-no-files-found: error
-          retention-days: 3
 
   mcp:
     # Temporary: lazy MCP startup for root threads. A control run without the core change must
