@@ -209,3 +209,36 @@ for (const colorScheme of ['light', 'dark']) test(`Matilda mini chat, mute and d
   await page.screenshot({ path: path.join(evidence, `drag-${colorScheme}.png`) });
   assert.deepEqual(f.errors, []);
 });
+
+// 28 Oct: "that small chatbox shouldn't show previous messages; it's for quick new chats", like Dot's "Start new chat".
+// And her reply had arrived while the small chat still said "Matilda is replying…": one failed read ended the asking.
+test('the small chat starts fresh, keeps earlier turns behind a button, and asks until her reply arrives', { timeout: 60000 }, async t => {
+  const { fixture } = require('./parity-fixture.cjs');
+  const { FACE_DATA_URL } = require('../bridge/matilda-face.cjs');
+  const say = (turnId, type, text) => ({ turnId, item: type === 'agentMessage' ? { id: `${turnId}-a`, type, text } : { id: `${turnId}-u`, type, content: [{ type: 'text', text }] } });
+  let entries = [say('old', 'userMessage', 'An old question'), say('old', 'agentMessage', 'An old answer')], busy = false, reads = 0;
+  const f = await fixture({ width: 1000, height: 800, routes: {
+    '/api/love-spot/companion': () => ({ pinned: true, face: FACE_DATA_URL, threadId: 'chat-a', favorite: null, music: null, reason: '' }),
+    '/api/love-spot/talk': body => {
+      if (body) { entries = [...entries, say('new', 'userMessage', body.text)]; busy = true; reads = 0; return { entries, busy }; }
+      if (busy && ++reads === 1) return { __http: 503, error: 'Temporarily disconnected' };
+      if (busy && reads >= 3) { entries = [...entries, say('new', 'agentMessage', 'Hey, love.')]; busy = false; }
+      return { entries, busy };
+    },
+  } });
+  t.after(() => f.close());
+  await f.open('chat-a');
+  const page = f.page, presence = page.getByRole('region', { name: 'Pinned Matilda', exact: true }); await presence.waitFor();
+  const mini = page.getByRole('dialog', { name: 'Small chat with Matilda', exact: true });
+  await presence.getByRole('button', { name: 'Chat with Matilda', exact: true }).click(); await mini.waitFor();
+  const earlier = mini.getByRole('button', { name: 'Show previous messages', exact: true }); await earlier.waitFor();
+  assert.equal(await mini.getByText('An old answer', { exact: true }).count(), 0, 'a quick chat starts fresh');
+  await mini.getByRole('textbox', { name: 'Message Matilda', exact: true }).fill('hey');
+  await mini.getByRole('button', { name: 'Send to Matilda', exact: true }).click();
+  await mini.getByText('Hey, love.', { exact: true }).waitFor({ timeout: 10000 });
+  await mini.getByRole('status').waitFor({ state: 'hidden' });
+  assert.equal(await mini.getByText('hey', { exact: true }).count(), 1, 'what was just said shows');
+  await earlier.click();
+  await mini.getByText('An old answer', { exact: true }).waitFor();
+  assert.deepEqual(f.errors, []);
+});

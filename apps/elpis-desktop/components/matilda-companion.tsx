@@ -21,7 +21,8 @@ const SIZE = { min: 40, max: 256, step: 8 };
 const sized = (size: number) => Math.min(SIZE.max, Math.max(SIZE.min, Math.round(size)));
 function savedPlace(): Place {
   try { const p = JSON.parse(appStorage().getItem(FLOAT_KEY) || "null"); if (p && [p.right, p.bottom, p.size].every(Number.isFinite)) return { right: p.right, bottom: p.bottom, size: sized(p.size) }; } catch {}
-  return { right: 24, bottom: 24, size: 72 };
+  // In the corner, clear of the side panel's Done button and the composer's send button.
+  return { right: 16, bottom: 16, size: 64 };
 }
 export function MatildaCompanion() {
   const [state, setState] = useState<Companion | null>(null);

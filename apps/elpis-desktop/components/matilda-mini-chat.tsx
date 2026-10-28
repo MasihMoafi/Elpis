@@ -22,28 +22,37 @@ export function useMatildaMiniChat(open: boolean) {
   const [conversation, setConversation] = useState<Conversation>({ entries: [], busy: false });
   const [error, setError] = useState(""), [posting, setPosting] = useState(false);
   const mounted = useRef(false), sending = useRef(false), latestRead = useRef(0);
+  // A quick chat starts fresh each time it opens, like Dot's "Start new chat" (28 Oct: "that small chatbox shouldn't show
+  // previous messages"): turns already there stay behind "Show previous messages". A reply still on its way stays shown.
+  const [earlier, setEarlier] = useState<Set<string> | null>(null), [showEarlier, setShowEarlier] = useState(false);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; latestRead.current++; }; }, []);
   const read = useCallback(async (signal?: AbortSignal) => {
     const request = ++latestRead.current;
     try {
       const result = received(await api<Conversation>("/love-spot/talk", undefined, signal));
-      if (mounted.current && request === latestRead.current) { setConversation(result); setError(result.error || ""); }
+      if (mounted.current && request === latestRead.current) { setConversation(result); setError(result.error || ""); return result; }
     } catch (cause) {
       if (!signal?.aborted && mounted.current && request === latestRead.current) setError(cause instanceof Error ? cause.message : "Matilda could not load. Try again.");
     }
   }, []);
   useEffect(() => {
     if (!open) return;
-    const controller = new AbortController(); void read(controller.signal);
+    const controller = new AbortController();
+    void read(controller.signal).then(result => {
+      const pending = result?.busy ? result.entries.at(-1)?.turnId : undefined;
+      if (result) setEarlier(new Set(result.entries.map(entry => entry.turnId).filter(turn => turn !== pending)));
+    });
     const changed = () => { if (!sending.current) void read(controller.signal); };
     window.addEventListener(MATILDA_CHANGED, changed);
-    return () => { controller.abort(); latestRead.current++; window.removeEventListener(MATILDA_CHANGED, changed); };
+    return () => { controller.abort(); latestRead.current++; window.removeEventListener(MATILDA_CHANGED, changed); setEarlier(null); setShowEarlier(false); };
   }, [open, read]);
+  // Ask again every second while she replies. A failed or superseded read must not end the asking (28 Oct: her reply had
+  // arrived, and the small chat still said "Matilda is replying…" minutes later).
   useEffect(() => {
     if (!open || !conversation.busy || posting) return;
-    const controller = new AbortController(), timer = setTimeout(() => void read(controller.signal), 1000);
-    return () => { clearTimeout(timer); controller.abort(); };
-  }, [open, conversation, posting, read]);
+    const controller = new AbortController(), timer = setInterval(() => void read(controller.signal), 1000);
+    return () => { clearInterval(timer); controller.abort(); };
+  }, [open, conversation.busy, posting, read]);
   async function send() {
     const sent = draft.trim();
     if (!sent || sending.current || conversation.busy) return;
@@ -56,7 +65,7 @@ export function useMatildaMiniChat(open: boolean) {
     } catch (cause) { if (mounted.current) setError(cause instanceof Error ? cause.message : "Message not sent. Try again."); }
     finally { sending.current = false; if (mounted.current) setPosting(false); }
   }
-  return { draft, setDraft, conversation, error, posting, send, retry: read };
+  return { draft, setDraft, conversation, error, posting, send, retry: read, earlier, showEarlier, setShowEarlier };
 }
 
 function message(entry: Entry) {
@@ -67,9 +76,12 @@ function message(entry: Entry) {
 
 export function MatildaMiniChat({ chat }: { chat: ReturnType<typeof useMatildaMiniChat> }) {
   const log = useRef<HTMLDivElement>(null);
-  const entries = chat.conversation.entries.filter(entry => message(entry).trim()).slice(-4);
+  const said = chat.conversation.entries.filter(entry => message(entry).trim());
+  const before = chat.earlier ? said.filter(entry => chat.earlier!.has(entry.turnId)) : said;
+  const entries = chat.showEarlier ? [...before.slice(-6), ...said.filter(entry => !before.includes(entry))] : said.filter(entry => !before.includes(entry));
   useEffect(() => { if (log.current) log.current.scrollTop = log.current.scrollHeight; }, [chat.conversation.entries]);
   return <div className="matilda-mini-chat" role="dialog" aria-label="Small chat with Matilda">
+    {!chat.showEarlier && before.length > 0 && <Button variant="ghost" size="xs" className="matilda-mini-earlier" onClick={() => chat.setShowEarlier(true)}>Show previous messages</Button>}
     {!!entries.length && <div ref={log} className="matilda-mini-messages" role="log" aria-label="Matilda conversation" aria-live="polite" aria-relevant="additions text">
       {entries.map(entry => <div key={`${entry.turnId}:${entry.item.id}`} className="matilda-mini-message" data-speaker={entry.item.type === "userMessage" ? "you" : "matilda"}>
         <span className="sr-only">{entry.item.type === "userMessage" ? "You" : "Matilda"}: </span><MarkdownText text={message(entry)} allowImages={false} />

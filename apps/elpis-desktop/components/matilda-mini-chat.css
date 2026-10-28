@@ -26,3 +26,4 @@
 /* Keeps the hover across the 4px between her and her controls. */
 .matilda-float-controls::before { content:""; position:absolute; left:0; right:0; top:100%; height:6px; }
 .matilda-float[data-controls="below"] .matilda-float-controls::before { top:auto; bottom:100%; }
+.matilda-mini-earlier { display:block; margin:0 auto 4px; color:var(--muted-foreground); }
