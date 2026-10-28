@@ -5,7 +5,7 @@ const path = require('node:path');
 const os = require('node:os');
 const { fixture, CWD } = require('./parity-fixture.cjs');
 const { assertUiFit } = require('./ui-fit.cjs');
-const { chooseTheme, openSettings, leaveSettings } = require('./controls.cjs');
+const { captureReview, chooseTheme, openSettings, leaveSettings } = require('./controls.cjs');
 
 const runs = ['Fix a bug', 'Fix a bug', 'Research pricing', 'Ship exporter'].map((name, i) => ({
   id: `run-${i}`, rootThreadId: i ? `root-${i}` : 'chat-a', name, status: i < 2 ? 'running' : 'succeeded', startedAt: 100 + i,
@@ -130,6 +130,7 @@ test('the run row is its Mother: her reviews fold into it, a retried step folds 
     }
     for (const id of ['mother-1', 'mother-2']) assert.equal(await row(page, id).count(), 0, `${id} is part of the run's row, not a worker under it`);
     assert.equal(await model('check-2'), 'Antigravity · gemini-3.8-flash-high', 'a subscription is named by its model, not the engine');
+    await captureReview(page, 'workflow-row-is-mother');
     assert.equal(await workflows(page).locator('.thread-origin').count(), 0, 'the section names the origin: no row repeats "Workflows"');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
