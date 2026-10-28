@@ -5,7 +5,7 @@ import type { Item } from "./api";
 
 /** The script inside `/bin/bash -lc '…'` (or sh/zsh/dash -c), as Elpis records shell commands; anything else as is. */
 // The workstation's disk guard runs each command as `python3 -B …/agent-resource-guard/guard.py run -- '<command>'`; a step
-// shows the command (28 Oct: one read "Running /usr/bin/python3 -B /home/masih/.local/lib/agent-resource-guard/guard.py run --…").
+// shows the command (28 Oct: one read "Running /usr/bin/python3 -B ~/.local/lib/agent-resource-guard/guard.py run --…", with the home folder spelled out).
 const GUARDED = /^(?:\S*\/)?python3?(?:\s+-\S+)*\s+\S*\/agent-resource-guard\/guard\.py\s+run\s+--\s+([\s\S]+)$/;
 const QUOTED = /^(['"])([\s\S]*)\1$/;
 export function unwrapShell(command: string): string {

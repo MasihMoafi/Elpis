@@ -12,8 +12,9 @@ KEY=$(sed -n 's/^ANTHROPIC_ENVIRONMENT_KEY=//p' "$KEYS"); ENV_ID=$(sed -n 's/^AN
 GIT_COMMON=$(git -C "$WORKDIR" rev-parse --path-format=absolute --git-common-dir)
 NODE_MODULES=$(readlink -f "$WORKDIR/apps/elpis-desktop/node_modules" 2>/dev/null || true)
 PLAYWRIGHT=$HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright
-# --check runs a probe of what the sandbox can see instead of the worker (used by the test below).
-CHECK=(); CHECK_ARGS=(); [ "${2:-}" = --check ] && { CHECK=(/bin/bash); CHECK_ARGS=(-c 'for p in "$0" /home/masih/.ssh /home/masih/.claude /home/masih/.elpis-next /home/masih/.config/elpis /home/masih/Desktop/p/Elpis-wt-continuity; do [ -e "$p" ] && echo "visible $p" || echo "hidden $p"; done; [ -w "$0" ] && echo "workdir writable"; ls /home/masih/Desktop/p/Elpis-wt-continuity; env | cut -d= -f1 | sort | tr "\n" " "'); }
+# --check runs a probe of what the sandbox can see instead of the worker: your home's secrets and anything beside the workdir
+# must be hidden. The probe gets your real home as $0 and the workdir as $1.
+CHECK=(); CHECK_ARGS=(); [ "${2:-}" = --check ] && { CHECK=(/bin/bash); CHECK_ARGS=(-c 'H=$0 W=$1; for p in "$W" "$H/.ssh" "$H/.claude" "$H/.elpis-next" "$H/.config/elpis"; do [ -e "$p" ] && echo "visible $p" || echo "hidden $p"; done; [ -w "$W" ] && echo "workdir writable"; echo "beside the workdir: $(ls -A "$(dirname "$W")" | tr "\n" " ")"; env | cut -d= -f1 | sort | tr "\n" " "' "$HOME"); }
 SANDBOX_HOME=$HOME/.cache/elpis-managed-home; mkdir -p "$SANDBOX_HOME"
 ro() { [ -e "$1" ] && printf '%s\0%s\0%s\0' --ro-bind "$1" "$1"; return 0; }
 mapfile -d '' OPTIONAL < <(ro /opt; ro /run/systemd/resolve; ro "$(readlink -f "$HERE/node_modules")"; ro "$NODE_MODULES"; ro "$PLAYWRIGHT"; ro "$HOME/.cache/ms-playwright")
