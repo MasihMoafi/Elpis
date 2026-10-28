@@ -6,7 +6,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { BranchIcon, BrowserIcon, PlanIcon } from "@/components/elpis-icons";
 import { BrowserComments } from "@/components/browser-comments";
 import { BROWSER_COMMENTS, DRAWING_NOTE } from "@/lib/browser-notes";
-import { CircleCheck, CircleX, Copy, FileText, Pencil, RefreshCw, Reply, Square, Terminal, Undo2, Volume2 } from "lucide-react";
+import { CircleCheck, CircleX, Copy, Signpost, FileText, Pencil, RefreshCw, Reply, Square, Terminal, Undo2, Volume2 } from "lucide-react";
 import { MoreMenu, RightClickMenu, type MenuAction } from "@/components/action-menu";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -80,11 +80,32 @@ function WorkflowNoticeStep({notice}:{notice:WorkflowNotice}) {
 /** A command as Claude's desktop app shows it in an opened group: a short title, the script in a bordered block
  * coloured as shell, then its output; a failed command's exit code and output in red. */
 
-/** A workflow check answers with JSON for the run to read (bridge/workflow-acp.mjs); its chat shows the verdict and the evidence instead. */
-function checkVerdict(value:string){
-  if(!/^\s*(```(?:json)?\s*)?\{/.test(value))return null;
-  try{const parsed=JSON.parse(value.trim().replace(/^```(?:json)?\s*|\s*```$/g,""));return typeof parsed?.passed==="boolean"&&typeof parsed.summary==="string"&&Object.keys(parsed).length===2?{passed:parsed.passed as boolean,summary:parsed.summary as string}:null;}
-  catch{return null;}
+/** Workflow agents answer the run in JSON (bridge/workflow-acp.mjs): a check's verdict, or Mother's decision. Their chats
+ * show it as a card, not the JSON (27-28 Oct: "showing this way is wrong"). Anything else stays as written. */
+type RunCard = { label: string; heading: string; failed: boolean; mother: boolean; text: string };
+const MOTHER: Record<string, string> = { continue: "Mother lets the agent continue", steer: "Mother steers the agent", retry: "Mother retries the agent", stop: "Mother stops the run" };
+function runCard(value: string): RunCard | null {
+  if (!/^\s*(```(?:json)?\s*)?\{/.test(value)) return null;
+  let parsed: Record<string, unknown>;
+  try { parsed = JSON.parse(value.trim().replace(/^```(?:json)?\s*|\s*```$/g, "")); } catch { return null; }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const keys = Object.keys(parsed), words = (key: string) => typeof parsed[key] === "string" ? (parsed[key] as string).trim() : "";
+  if (typeof parsed.passed === "boolean" && typeof parsed.summary === "string" && keys.length === 2)
+    return { label: "Check result", heading: parsed.passed ? "Check passed" : "Check failed", failed: !parsed.passed, mother: false, text: words("summary") };
+  const action = words("action");
+  if (MOTHER[action] && keys.every(key => ["action", "taskId", "message", "instruction", "summary", "reason"].includes(key) && typeof parsed[key] === "string")) {
+    const guidance = words("message") || words("instruction");
+    return { label: "Mother's decision", heading: MOTHER[action], failed: action === "stop", mother: true,
+      text: [words("summary"), guidance && `**Guidance:** ${guidance}`, words("reason") && `**Why:** ${words("reason")}`].filter(Boolean).join("\n\n") };
+  }
+  return null;
+}
+/** The evidence a workflow prompt carries as JSON (Mother's checkpoint and recovery prompts, an agent's connected answers):
+ * the chat folds it under its label, pretty-printed, after the prompt's own words. */
+const EVIDENCE = /\n(Current evidence|Current nodes|Answers from connected agents \(source material\)):\n([\[{][\s\S]*)$/;
+function promptEvidence(value: string) {
+  const found = value.match(EVIDENCE); if (!found) return null;
+  try { return { text: value.slice(0, found.index).trim(), label: found[1], json: JSON.stringify(JSON.parse(found[2]), null, 2) }; } catch { return null; }
 }
 export function CommandStep({item,open=true}:{item:Item;open?:boolean}) {
   const failed=stepFailed(item),output=text(item.aggregatedOutput).replace(/\n+$/,""),duration=stepDuration(item.durationMs);
@@ -166,18 +187,19 @@ export function ChatMessage({item,speaker="Elpis",threads=[],onOpenThread,onEdit
     const shown=attached.filter(({part,file})=>file!==DRAWING_NOTE&&(!file||!readReply({name:file,type:"text",text:text(part.text).slice(`File: ${file}\n`.length)}))),attachmentContent=shown.length ? <ul className="mt-2 space-y-3 text-sm" aria-label="Message attachments">{shown.map(({part,index,file})=><li key={index}>{file===BROWSER_COMMENTS ? <BrowserComments text={text(part.text).slice(`File: ${file}\n`.length)}/> : file ? <details className="max-w-full rounded-md border border-border p-2"><DisclosureSummary className="cursor-pointer break-all">{file}</DisclosureSummary><pre className="mt-2 max-h-80 max-w-full overflow-auto whitespace-pre-wrap break-words text-left">{text(part.text).slice(`File: ${file}\n`.length)}</pre></details> : <RecordedAttachment part={part} index={index} mediaBase={mediaBase}/>}</li>)}</ul> : undefined;
     const originalBody=content.filter(part=>part.type==="text"&&!fileAttachment(part)).map(part=>text(part.text)).join("\n"), answers=questionReplies(originalBody);
     const body=answers?questionReplyText(answers):originalBody;
-    const bodyContent=answers?<div className="space-y-3">{answers.map((reply,index)=><div key={index} className="space-y-1"><p className="text-sm text-muted-foreground" dir="auto">{reply.question}</p><p dir="auto">{reply.answer}</p></div>)}</div>:undefined;
+    const evidence=answers?null:promptEvidence(originalBody);
+    const bodyContent=evidence?<div className="space-y-2"><p className="whitespace-pre-wrap" dir="auto">{evidence.text}</p><details><DisclosureSummary>{evidence.label}</DisclosureSummary><pre className="step-output"><code>{evidence.json}</code></pre></details></div>:answers?<div className="space-y-3">{answers.map((reply,index)=><div key={index} className="space-y-1"><p className="text-sm text-muted-foreground" dir="auto">{reply.question}</p><p dir="auto">{reply.answer}</p></div>)}</div>:undefined;
     const copyText=answers?[body,...content.filter(part=>part.type!=="text"||fileAttachment(part)).map(part=>part.type==="text"?text(part.text):attachmentLabel(part))].join("\n"):content.map(part=>part.type==="text"?text(part.text):attachmentLabel(part)).join("\n");
     const edit=reason||!onEdit?undefined:answers?(value:string)=>onEdit(value===body?originalBody:value):onEdit;
     return <UserMessage onReply={onReply} reference={reference} replyContent={replies.map(reply=><ReplyPreview key={reply.reference} reply={reply}/>)} body={body} bodyContent={bodyContent} copyText={copyText} attachments={attachments} attachmentContent={attachmentContent} onEdit={edit} onRewind={onRewind} editBlockedReason={reason} editDraft={editDraft} onEditDraftChange={onEditDraftChange} editPending={editPending} time={time}/>;
   }
   if(item.type==="agentMessage"){
     if(item.text!==undefined&&typeof item.text!=="string")throw unreadable("message");
-    const speechId = reference ?? item.id, speaking = speech?.active === speechId, verdict = checkVerdict(item.text || "");
+    const speechId = reference ?? item.id, speaking = speech?.active === speechId, verdict = runCard(item.text || "");
     const spokenText = readAloud ? plainText(item.text || "") : "";
     const speechAction:MessageAction[] = speech && (speaking || (readAloud && spokenText.trim())) ? [{ id: "read-aloud", label: speaking ? "Stop" : "Read aloud", title: speaking ? "Stop reading aloud" : "Read aloud · ChatGPT voice", icon: speaking ? <Square size={14}/> : <Volume2 size={14}/>, run: () => speaking ? speech.stop() : speech.play(speechId, spokenText) }] : [];
     const actions:MessageAction[]=item.text?[...replyAction(onReply),copyTextAction(()=>item.text||""),copyAction("Copy reply",()=>item.text||""),...speechAction,...(onRegenerate?[{id:"regenerate",label:"Regenerate reply",title:"Regenerate",icon:<RefreshCw size={14}/>,run:onRegenerate}]:[]),...rewindAction(onRewind),...(onFork?[{id:"fork",label:"Fork chat from here",icon:<BranchIcon size={14}/>,run:onFork}]:[])]:[];
-    return <RightClickMenu actions={menuActions(actions)} area={<article className={speaker==="Matilda"?"message agent flow-root":"message agent"} id={reference ? messageDomId(reference) : undefined} data-message-reference={onReply ? reference : undefined} tabIndex={reference ? -1 : undefined} {...(speechAction.length ? { onPointerEnter: speech?.warm, onFocus: speech?.warm } : {})}/>}>{speaker==="Matilda"&&<img src={FACE_DATA_URL} alt="Matilda" width={64} height={64} className="float-left mb-2 mr-4 h-16 w-16 object-contain"/>}{speaker!=="Elpis"&&<div className="speaker">{speaker}</div>}<CollapsibleMessage>{verdict?<section className={verdict.passed?"plan-card":"plan-card check-failed"} aria-label="Check result"><p className="plan-card-heading">{verdict.passed?<CircleCheck size={14} aria-hidden="true"/>:<CircleX size={14} aria-hidden="true"/>}{verdict.passed?"Check passed":"Check failed"}</p><MarkdownText text={verdict.summary}/></section>:<MarkdownText text={item.text||""}/>}</CollapsibleMessage>{speech?.error?.id===speechId&&<p role="alert" className="text-sm text-destructive">{speech.error.message}</p>}{actions.length>0&&<div className="message-actions"><MessageButtons actions={actions}/></div>}</RightClickMenu>;
+    return <RightClickMenu actions={menuActions(actions)} area={<article className={speaker==="Matilda"?"message agent flow-root":"message agent"} id={reference ? messageDomId(reference) : undefined} data-message-reference={onReply ? reference : undefined} tabIndex={reference ? -1 : undefined} {...(speechAction.length ? { onPointerEnter: speech?.warm, onFocus: speech?.warm } : {})}/>}>{speaker==="Matilda"&&<img src={FACE_DATA_URL} alt="Matilda" width={64} height={64} className="float-left mb-2 mr-4 h-16 w-16 object-contain"/>}{speaker!=="Elpis"&&<div className="speaker">{speaker}</div>}<CollapsibleMessage>{verdict?<section className={verdict.failed?"plan-card check-failed":"plan-card"} aria-label={verdict.label}><p className="plan-card-heading">{verdict.mother?<Signpost size={14} aria-hidden="true"/>:verdict.failed?<CircleX size={14} aria-hidden="true"/>:<CircleCheck size={14} aria-hidden="true"/>}{verdict.heading}</p><MarkdownText text={verdict.text}/></section>:<MarkdownText text={item.text||""}/>}</CollapsibleMessage>{speech?.error?.id===speechId&&<p role="alert" className="text-sm text-destructive">{speech.error.message}</p>}{actions.length>0&&<div className="message-actions"><MessageButtons actions={actions}/></div>}</RightClickMenu>;
   }
   if(item.type==="smartPrune")return <SmartPruneLine value={item.prune} mediaBase={mediaBase}/>;
   if(item.type==="commandExecution")return <CommandStep item={item}/>;

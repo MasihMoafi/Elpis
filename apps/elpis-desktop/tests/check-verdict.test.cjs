@@ -21,3 +21,22 @@ test('a workflow check reply reads as Check failed or Check passed with its evid
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
+
+// 28 Oct: Mother's chat showed her prompt's evidence and her decision as raw JSON too.
+test("Mother's decision reads as a card, and the evidence in her prompt folds away, pretty-printed", async () => {
+  const decision = JSON.stringify({ action: 'steer', taskId: 'agent-1', message: 'Write hello.txt in the project root.', summary: 'The agent wrote the file elsewhere.', reason: 'The prompt names the root.' });
+  const prompt = 'Workflow: Hello Check. Checkpoint task: agent-1.\nCurrent evidence:\n' + JSON.stringify([{ id: 'agent-1', status: 'running' }]);
+  const f = await fixture({ chat: [['t1', prompt, decision]] });
+  try {
+    await f.page.locator('aside').getByText('Fix the parser', { exact: true }).click();
+    const card = f.page.getByRole('region', { name: "Mother's decision" }); await card.waitFor();
+    assert.equal((await card.locator('.plan-card-heading').textContent()).trim(), 'Mother steers the agent');
+    assert.match(await card.innerText(), /The agent wrote the file elsewhere\.[\s\S]*Guidance:\s*Write hello\.txt in the project root\.[\s\S]*Why:\s*The prompt names the root\./);
+    const turn = f.page.locator('.user-turn').first();
+    assert.match(await turn.innerText(), /Workflow: Hello Check/);
+    const fold = turn.locator('details'); assert.equal(await fold.getAttribute('open'), null, 'the evidence starts folded');
+    await fold.locator('summary').click();
+    assert.match(await fold.locator('pre').innerText(), /^\[\n  \{\n    "id": "agent-1"/, 'pretty-printed');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
