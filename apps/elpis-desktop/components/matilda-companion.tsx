@@ -25,18 +25,27 @@ function savedPlace(): Place {
   // In the corner, clear of the side panel's Done button and the composer's send button.
   return { right: 16, bottom: 16, size: 64 };
 }
-type Mood = keyof typeof MATILDA_SHOTS;
+type Mood = Exclude<keyof typeof MATILDA_SHOTS, "listening">;
+const MOODS = Object.keys(MATILDA_SHOTS).filter(name => name !== "listening") as Mood[];
 const stillness = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
-/** She fades into her smile while she replies, for a moment after her reply arrives, and while hovered (28 Oct: "it can
- * fade into that image when it's sending messages"). Never with reduced motion. */
+/** Her resting face is "listening"; the others fade in when they fit (28 Oct, Masih chose them): her smile while she
+ * replies, a warm tilted smile while hovered, a soft smile for 3 s after her reply, and now and then a wink. Never with
+ * reduced motion. */
 function useMood(replying: boolean, replies: number) {
-  const [replied, setReplied] = useState(false), [hovered, setHovered] = useState(false), seen = useRef(replies);
+  const [replied, setReplied] = useState(false), [hovered, setHovered] = useState(false), [winking, setWinking] = useState(false), seen = useRef(replies);
   useEffect(() => {
     if (replies <= seen.current) { seen.current = replies; return; }
     seen.current = replies; setReplied(true);
     const timer = window.setTimeout(() => setReplied(false), 3000); return () => window.clearTimeout(timer);
   }, [replies]);
-  return { shown: (hovered || replying || replied) && !stillness() ? "smile" as Mood : null, setHovered };
+  useEffect(() => {
+    if (stillness()) return;
+    let timer = 0;
+    const next = () => { timer = window.setTimeout(() => { setWinking(true); timer = window.setTimeout(() => { setWinking(false); next(); }, 1400); }, 25000 + Math.random() * 20000); };
+    next(); return () => window.clearTimeout(timer);
+  }, []);
+  const mood: Mood | null = replying ? "smile" : hovered ? "tiltSmile" : replied ? "softSmile" : winking ? "wink" : null;
+  return { shown: stillness() ? null : mood, setHovered };
 }
 export function MatildaCompanion() {
   const [state, setState] = useState<Companion | null>(null);
@@ -158,9 +167,9 @@ export function MatildaCompanion() {
         onPointerCancel={() => { const start = drag.current; drag.current = null; if (start) put(start.left, start.top, start.size); }}
         onKeyDown={keys(false)} onPointerEnter={() => mood.setHovered(true)} onPointerLeave={() => mood.setHovered(false)} />}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={state.face} alt="Matilda" width={size} height={size} draggable={false} className="select-none" />
+        <img src={MATILDA_SHOTS.listening} alt="Matilda" width={size} height={size} draggable={false} className="select-none" />
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        {(Object.keys(MATILDA_SHOTS) as Mood[]).map(name => <img key={name} src={MATILDA_SHOTS[name]} alt="" aria-hidden="true" width={size} height={size} draggable={false} className="matilda-mood select-none" data-mood={name} data-shown={mood.shown === name} />)}
+        {MOODS.map(name => <img key={name} src={MATILDA_SHOTS[name]} alt="" aria-hidden="true" width={size} height={size} draggable={false} className="matilda-mood select-none" data-mood={name} data-shown={mood.shown === name} />)}
       </PopoverTrigger>
       <PopoverContent side={shown.top < 300 ? "bottom" : "top"} align="end" className="matilda-mini-popup"><MatildaMiniChat chat={mini} /></PopoverContent>
     </Popover>

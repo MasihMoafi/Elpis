@@ -27,7 +27,7 @@
 .matilda-float-controls::before { content:""; position:absolute; left:0; right:0; top:100%; height:6px; }
 .matilda-float[data-controls="below"] .matilda-float-controls::before { top:auto; bottom:100%; }
 .matilda-mini-earlier { display:block; margin:0 auto 4px; color:var(--muted-foreground); }
-/* Her smile lies over her face and fades in while she replies; she breathes slowly. */
+/* Her other faces lie over her resting one and fade in when they fit; she breathes slowly. */
 /* The pictures breathe, not the button, so the place she is clicked and dragged stays still. */
 .matilda-face { position:relative; }
 .matilda-face img { animation:matilda-breathe 4.8s ease-in-out infinite alternate; }

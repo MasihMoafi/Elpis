@@ -237,17 +237,20 @@ test('the small chat starts fresh, keeps earlier turns behind a button, and asks
   await mini.getByRole('button', { name: 'Send to Matilda', exact: true }).click();
   await page.locator('[aria-label="Pinned Matilda"] img[data-mood="smile"][data-shown="true"]').waitFor({ state: 'attached', timeout: 3000 });
   await mini.getByText('Hey, love.', { exact: true }).waitFor({ timeout: 10000 });
+  await page.locator('[aria-label="Pinned Matilda"] img[data-mood="softSmile"][data-shown="true"]').waitFor({ state: 'attached', timeout: 3000 });
   await mini.getByRole('status').waitFor({ state: 'hidden' });
   assert.equal(await mini.getByText('hey', { exact: true }).count(), 1, 'what was just said shows');
   await earlier.click();
   await mini.getByText('An old answer', { exact: true }).waitFor();
-  // 28 Oct: "the second image I like, it can fade into that image when it's sending messages": only her smile.
+  // 28 Oct: Masih chose her faces: "listening" at rest ("make the last one the default"), the others when they fit.
   await page.keyboard.press('Escape'); await mini.waitFor({ state: 'hidden' });
   const avatar = presence.getByRole('button', { name: 'Chat with Matilda', exact: true }), shown = () => avatar.locator('img[data-shown="true"]').evaluateAll(els => els.map(el => el.dataset.mood));
-  assert.deepEqual(await avatar.locator('img.matilda-mood').evaluateAll(els => els.map(el => el.dataset.mood)), ['smile']);
-  assert.equal(await avatar.getByAltText('Matilda', { exact: true }).count(), 1, 'her shots are decoration: one Matilda for a screen reader');
+  const { MATILDA_SHOTS } = require('../bridge/matilda-face.cjs');
+  assert.equal(await avatar.getByAltText('Matilda', { exact: true }).getAttribute('src'), MATILDA_SHOTS.listening, 'her resting face listens');
+  assert.deepEqual(await avatar.locator('img.matilda-mood').evaluateAll(els => els.map(el => el.dataset.mood)), ['smile', 'softSmile', 'tiltSmile', 'wink']);
+  assert.equal(await avatar.getByAltText('Matilda', { exact: true }).count(), 1, 'her other faces are decoration: one Matilda for a screen reader');
   await page.mouse.move(0, 400); await avatar.hover();
-  assert.deepEqual(await shown(), ['smile'], 'she smiles while hovered');
+  assert.deepEqual(await shown(), ['tiltSmile'], 'a warm tilted smile while hovered');
   await page.mouse.move(0, 400);
   await page.waitForFunction(() => !document.querySelector('[aria-label="Pinned Matilda"] img[data-shown="true"]'));
   assert.deepEqual(f.errors, []);
