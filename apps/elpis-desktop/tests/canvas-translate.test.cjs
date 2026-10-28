@@ -12,7 +12,7 @@ const words = (n, word) => Array.from({ length: n }, () => word).join(' ');
 const english = [words(1000, 'one'), words(1000, 'two'), words(1000, 'three')].join('\n\n') + '\n';
 
 test('Translate to Farsi asks for its folder, writes a glossary first, translates in parts and joins them into translation.md', async () => {
-  const f = await openCanvas({ desktop: true, files: { '.': ['page-1.png', 'notes.txt', 'transcription.md', 'translation.md'] }, texts: { 'transcription.md': english, 'notes.txt': 'not this' }, ...MODELS });
+  const f = await openCanvas({ desktop: true, files: { '/tmp/books/sample|.': ['page-1.png', 'notes.txt', 'transcription.md', 'translation.md'] }, texts: { 'transcription.md': english, 'notes.txt': 'not this' }, ...MODELS });
   try {
     await f.page.evaluate(() => { window.__chosen = []; window.__opened = [];
       window.elpisDesktop.chooseFolder = async () => window.__chosen.shift() ?? null;

@@ -1379,11 +1379,19 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
     if (picked !== cwd?.replace(/\/+$/, "")) await onUseFolder?.(picked);
     return readyMadeAt(workflow, picked, ".", goal || workflow.goal(picked.split("/").at(-1) ?? picked));
   }
+  /** Picked from the menu or the library: the open project, when it plainly holds the job's files, or else the folder chosen. */
+  async function pickReadyMade(workflow: ReadyMade): Promise<CanvasGraph | null> {
+    if (run && !over(run)) { setNotice("Wait for this run to finish before changing its pattern."); return null; }
+    const base = cwd?.replace(/\/+$/, "");
+    const files = base ? await listFolder(base, ".").catch(() => [] as string[]) : [];
+    return base && workflow.here(files) ? readyMadeAt(workflow, base, ".", workflow.goal(base.split("/").at(-1) ?? base)) : chooseFolderFor(workflow);
+  }
+  const listFolder = async (base: string, folder: string) => (await api<{ data: { name: string; dir: boolean }[] }>(`/files/dir?cwd=${encodeURIComponent(base)}&dir=${encodeURIComponent(folder)}&hidden=0`)).data.filter(entry => !entry.dir).map(entry => entry.name);
   async function readyMadeAt(workflow: ReadyMade, base: string, folder: string, goal: string): Promise<CanvasGraph | null> {
     const at = (name: string) => folder === "." ? name : `${folder}/${name}`;
     let sources: { name: string; text: string }[] = [];
     try {
-      const files = (await api<{ data: { name: string; dir: boolean }[] }>(`/files/dir?cwd=${encodeURIComponent(base)}&dir=${encodeURIComponent(folder)}&hidden=0`)).data.filter(entry => !entry.dir).map(entry => entry.name);
+      const files = await listFolder(base, folder);
       sources = await Promise.all(workflow.sources(files).map(async name => {
         if (!workflow.reads) return { name, text: "" };
         const file = await api<{ content?: string; tooLarge?: boolean }>(`/file?cwd=${encodeURIComponent(base)}&path=${encodeURIComponent(at(name))}`);
@@ -1518,7 +1526,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
           if (value === "more") { setSelection([]); setMorePatterns(true); showPanel(true); return; }
           if (value === "auto") { setGraph(current => ({ ...current, planningPattern: "auto" })); return; }
           const workflow = readyMade(value);
-          if (workflow) { setGraph(current => ({ ...current, planningPattern: workflow.id })); void chooseFolderFor(workflow); return; }
+          if (workflow) { setGraph(current => ({ ...current, planningPattern: workflow.id })); void pickReadyMade(workflow); return; }
           if (run && !over(run)) { setNotice("Wait for this run to finish before changing its pattern."); return; }
           const template = TEMPLATES.find(item => item.id === value); if (template) loadTemplate(template);
         }}>{ENTRY_PATTERNS.map(pattern => <option key={pattern.id} value={pattern.id}>{pattern.label}</option>)}
@@ -1760,7 +1768,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
         <DisclosureSummary>More patterns</DisclosureSummary>
       <section className="canvas-templates" aria-label="Ready-made workflows"><p className="hud-menu-title">Ready-made workflows</p>
         {WORKFLOWS.map(workflow => <div key={workflow.id}><Button variant="ghost" size="content" className="canvas-template w-full" aria-current={graph.result && graph.planningPattern === workflow.id || undefined} disabled={!ready || Boolean(planning || starting)}
-          onClick={() => { setGraph(current => ({ ...current, planningPattern: workflow.id })); void chooseFolderFor(workflow); }}>
+          onClick={() => { setGraph(current => ({ ...current, planningPattern: workflow.id })); void pickReadyMade(workflow); }}>
           <strong>{workflow.name}{graph.result && graph.planningPattern === workflow.id && <span className="canvas-template-loaded">On the board</span>}</strong>
           <Shape shape={shapes.get(workflow.id) ?? []} /><small>{workflow.description}</small></Button></div>)}
       </section>

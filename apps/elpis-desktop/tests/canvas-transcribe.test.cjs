@@ -55,7 +55,7 @@ test('Transcribe images builds one Gemini reader per six pages and a join, with 
 // 28 Oct, Masih: "it says Name the folder of page images in the request ... and no where I can do that! ... make it so I
 // can choose that folder properly; and view the writings ... move it on top; and it should be one of the built-in workflows."
 test('Transcribe images comes first, asks for its folder, keeps all it writes there, runs without planning and opens the result', async () => {
-  const f = await openCanvas({ desktop: true, files: { '.': ['page-2.png', 'page-1.png', 'notes.txt'] }, ...MODELS });
+  const f = await openCanvas({ desktop: true, files: { '/tmp/books/sample|.': ['page-2.png', 'page-1.png', 'notes.txt'] }, ...MODELS });
   try {
     await f.page.evaluate(() => { window.__chosen = []; window.__opened = [];
       window.elpisDesktop.chooseFolder = async () => window.__chosen.shift() ?? null;
@@ -103,6 +103,25 @@ test('Transcribe images comes first, asks for its folder, keeps all it writes th
     // It is one of the ready-made workflows in the library too.
     await chooseOption(pattern, 'more');
     await f.canvas.getByRole('region', { name: 'Ready-made workflows' }).getByRole('button', { name: /^Transcribe images/ }).waitFor();
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+// 28 Oct: from his own window the run could not start without the system's folder dialog, though the project open was the
+// folder of pages. A ready-made workflow picked while the project already holds what it works on uses that folder at once;
+// "Choose folder" picks another. (A project without them asks for the folder: the test above.)
+test('Transcribe images picked in a folder of pages builds its team there at once, with no folder dialog', async () => {
+  const f = await openCanvas({ desktop: true, files: { '/tmp/demo|.': ['page-1.png', 'page-2.png'] }, ...MODELS });
+  try {
+    await f.page.evaluate(() => { window.__asked = 0; window.elpisDesktop.chooseFolder = async () => { window.__asked++; return null; }; });
+    await chooseOption(f.canvas.getByRole('combobox', { name: 'Workflow pattern', exact: true }), 'transcribe');
+    await f.page.waitForFunction(() => JSON.parse(localStorage.getItem('elpis-workflow-draft-v1'))?.result === 'transcription.md');
+    const saved = await f.saved();
+    assert.equal(await f.page.evaluate(() => window.__asked), 0, 'no dialog');
+    assert.match(saved.nodes.find(n => n.type === 'agent').data.instruction, /\n- page-1\.png\n- page-2\.png\n/);
+    assert.equal(saved.request, 'Transcribe the page images in demo into transcription.md');
+    await f.canvas.getByRole('button', { name: 'Choose folder', exact: true }).click();
+    assert.equal(await f.page.evaluate(() => window.__asked), 1, 'Choose folder still asks');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

@@ -542,16 +542,18 @@ export function translationTeam(folder: string, parts: TextPart[], worker: Parti
 /** The ready-made workflows: whole teams for one job, built from a chosen folder, with no planner. `sources` picks the
  * files the job works on; a job that `reads` them gets their text; `worker` is its agents' model. */
 export type ReadyMade = { id: string; name: string; description: string; what: string; workers: string; worker: RegExp; workerName: string; reads: boolean;
+  /** A folder that is plainly this job's: the open project is used at once, with no folder dialog. */
+  here: (files: string[]) => boolean;
   sources: (files: string[]) => string[]; goal: (where: string) => string; team: (folder: string, sources: { name: string; text: string }[], worker: Partial<AgentData>) => CanvasGraph; shape: () => CanvasGraph };
 export const WORKFLOWS: ReadyMade[] = [
   { id: "transcribe", name: "Transcribe images", description: "Choose a folder of page images: Gemini 3.8 Flash readers read six pages each by vision, and one agent joins them into transcription.md in that folder.",
     what: "page images (PNG, JPG or WebP)", workers: "readers", worker: /gemini-3\.8-flash-high/i, workerName: "Gemini 3.8 Flash", reads: false,
-    sources: files => files.filter(name => PAGE_IMAGE.test(name)), goal: where => `Transcribe the page images in ${where} into transcription.md`,
+    here: files => files.some(name => PAGE_IMAGE.test(name)), sources: files => files.filter(name => PAGE_IMAGE.test(name)), goal: where => `Transcribe the page images in ${where} into transcription.md`,
     team: (folder, sources, worker) => transcriptionTeam(folder, sources.map(source => source.name), worker),
     shape: () => transcriptionTeam("pages", Array.from({ length: 12 }, (_, index) => `${index + 1}.png`)) },
   { id: "translate", name: "Translate to Farsi", description: "Choose a folder of English text, such as a transcription.md: one agent writes a glossary of names and terms, Gemini translators write spoken Farsi about 1,500 words each, and one joins them into translation.md.",
     what: "English text (Markdown or plain text)", workers: "translators", worker: /gemini-3\.8-flash-medium/i, workerName: "Gemini 3.8 Flash", reads: true,
-    sources: files => { const text = files.filter(name => ENGLISH_TEXT.test(name) && name !== "translation.md").sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    here: files => files.includes("transcription.md"), sources: files => { const text = files.filter(name => ENGLISH_TEXT.test(name) && name !== "translation.md").sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
       return text.includes("transcription.md") ? ["transcription.md"] : text; },
     goal: where => `Translate the English in ${where} into Farsi in translation.md`,
     team: (folder, sources, worker) => translationTeam(folder, textParts(sources), worker),

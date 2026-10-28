@@ -38,8 +38,8 @@ async function openCanvas({ width = 1440, height = 900, repository = false, grap
     if (url.pathname === '/api/models') return json({ data: [...extraModels, { id: 'luna', model: 'gpt-6-luna', displayName: 'Luna 6' }, { id: 'sol', model: 'gpt-6.1-sol', displayName: 'Sol 6.1', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }], defaultReasoningEffort: 'low' }], nextCursor: null });
     if (url.pathname === '/api/settings') return json({ main: { model: 'gpt-6.1-sol', provider: 'openai' }, background: {}, smartPrune: { enabled: false, explicitOverride: {} }, memory: {}, write: { available: false, reason: '' }, agents: { graph: 256, atOnce: 4, source: 'agents.max_threads' }, ...settings });
     if (url.pathname === '/api/folders') return json({ data: folders });
-    // `files`: a folder's file names, as the Files pane lists them; `texts`: a file's text, by its path.
-    if (url.pathname === '/api/files/dir') { const names = files[url.searchParams.get('dir')]; if (!names) { res.statusCode = 404; return json({ error: 'No such folder' }); } return json({ data: names.map(name => ({ name, dir: false })) }); }
+    // `files`: a folder's file names, as the Files pane lists them, by `dir` or by `cwd|dir`; `texts`: a file's text, by its path.
+    if (url.pathname === '/api/files/dir') { const names = files[`${url.searchParams.get('cwd')}|${url.searchParams.get('dir')}`] ?? files[url.searchParams.get('dir')]; if (!names) { res.statusCode = 404; return json({ error: 'No such folder' }); } return json({ data: names.map(name => ({ name, dir: false })) }); }
     if (url.pathname === '/api/file') { const path = url.searchParams.get('path'); if (!(path in texts)) { res.statusCode = 404; return json({ error: 'No such file' }); } return json({ path, content: texts[path], size: texts[path].length }); }
     if (url.pathname === '/api/repository') return json({ repository });
     if (url.pathname === '/api/canvas/plan') { const body = JSON.parse(raw); plans.push(body); return json(planFor(body, folders.length ? ['src'] : [])); }
