@@ -79,7 +79,7 @@ rewrite remains exposed for emergency recovery and compatibility, but is not Sma
 | **Smart Prune — Experimental** | Enabled with `/prune`, `/smart-prune on`, the Context Ledger, or settings | Eligible fresh tool results | Optimizes a completed tool result before that result's first admission to model-visible history. It never revisits already-admitted history. | Fails open: the original tool result is admitted unchanged. |
 | **Legacy forced rewrite** | Explicit `/force-prune <1-100>` or app-server `thread/prune/start` | Eligible tool output already in history | Replaces selected old output and therefore changes the reusable prompt prefix. This is a separate retrospective mechanism, not Smart Prune. | A failed pass leaves history unchanged. |
 
-RTK is a separate binary: `scripts/install-elpis.sh` installs it alongside Elpis (skip with `ELPIS_SKIP_RTK=1`), and on a launch that finds `rtk` on `PATH` with no `~/.elpis/hooks.json` of your own, Elpis writes the `PreToolUse` hook that calls `rtk hook claude`. It then passes the normal startup hook review before it can run. An existing `hooks.json` is never modified, so `{"hooks":{}}` opts out permanently, and Elpis's hook runtime (`codex-rs/hooks/src/events/pre_tool_use.rs`) is what accepts RTK's rewrite response.
+RTK is a separate binary that you install yourself; `scripts/install-elpis.sh` only reports whether `rtk` is on `PATH`. On a launch that finds `rtk` on `PATH` with no `$ELPIS_HOME/hooks.json` of your own (`$ELPIS_HOME` defaults to `~/.elpis-next`), Elpis writes the `PreToolUse` hook that calls `rtk hook claude`. It then passes the normal startup hook review before it can run. An existing `hooks.json` is never modified, so `{"hooks":{}}` opts out permanently, and Elpis's hook runtime (`codex-rs/hooks/src/events/pre_tool_use.rs`) is what accepts RTK's rewrite response.
 
 Smart Prune is **off by default**. `/prune` is a one-way convenience command that enables it;
 `/smart-prune` toggles it and `/smart-prune on|off` sets it explicitly. A change applies to
@@ -431,15 +431,15 @@ that Elpis has proven superior memory or uniformly cheaper agent execution.
 
 Elpis provides interactive context admission control in the TUI:
 
-- **Context Ledger Panel (`Alt+C`):** A side panel listing portable context sources, byte sizes, estimates and context-window usage. It is up to 52 columns wide and narrows proportionally to keep room for the composer. Alt+C opens or focuses the Ledger; pressing it while focused hides the panel. `p` toggles Smart Prune while focused. Esc returns to editing; Tab closes the focused Ledger. Outside the Ledger, submission and completion keys follow the [Codex parity contract](specs/codex-parity.md): Enter steers an active reply, while Tab queues the draft when no completion popup owns it.
+- **Context Ledger Panel (`Alt+C`):** A side panel, shown by default, listing portable context sources, byte sizes, estimates and context-window usage. It is up to 52 columns wide and narrows proportionally to keep room for the composer. Alt+C, Ctrl+X or Tab focuses the Ledger; the same key pressed while it is focused hides it, and so does Esc. While it is focused, Up/Down or `j`/`k` move, Space or Enter admits or withdraws the selected row, `i` admits or withdraws every row, `p` toggles Smart Prune, `s` toggles subagents, `m` picks the pruning model and `w` shows why a row is there; typing goes back to the draft. A completion popup, a menu or pasted text takes Tab first. Tab opens the Ledger even during a reply and queues the draft only when `tui.keymap.composer.queue` binds it. Enter steers an active reply.
 - **Ctrl+X alternative:** The same Ledger action is available in ordinary text chat. During voice sessions it retains mute/unmute. Menus, completions and explicitly configured shortcuts/chords keep ownership of Ctrl+X; Alt+C remains available.
 
-- **`admission.toml` Control:** Toggling a row in the ledger writes `~/.elpis/context/workspaces/<workspace>/admission.toml`, which dynamically governs next-turn admission for:
+- **`admission.toml` Control:** Toggling a row in the ledger writes `$ELPIS_HOME/context/workspaces/<workspace>/admission.toml`, which dynamically governs next-turn admission for:
   - `GOAL.md` (Active Goal)
   - `ES.md` (Executive Summary)
   - Global & project-level `AGENTS.md` rules
   - Individual portable development rules installed by Elpis
-    (`~/.elpis/skills/dev/*.md`)
+    (`$ELPIS_HOME/skills/dev/*.md`, or the folders listed in `[skills] dev_rule_roots`)
 
 ### Saved Full Access
 
@@ -452,7 +452,7 @@ and leaves Full Access active only for the current chat.
 
 ### Terminal appearance
 
-Shared terminal styling and animations follow the [Codex parity contract](specs/codex-parity.md).
+Shared terminal styling and animations follow the Codex parity contract ([Proof Standard](GUIDE.md#proof-standard)).
 `/theme` opens the Codex syntax-theme picker with live preview and cancel/restore.
 It changes code highlighting, not the terminal's base colors. The retained Ledger
 uses its existing context colors; it does not impose a separate chatbox theme.
