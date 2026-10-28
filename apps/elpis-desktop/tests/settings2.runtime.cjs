@@ -1,6 +1,7 @@
 // node tests/settings2.runtime.cjs PACKAGED_APP [9476]
 // Real packaged Electron and bridge; no mocked routes or account credentials.
 const fs = require('node:fs/promises');
+const os = require('node:os');
 const path = require('node:path');
 const assert = require('node:assert/strict');
 const { spawn, execFileSync } = require('node:child_process');
@@ -105,7 +106,7 @@ async function main() {
     } finally {
       await browser?.close().catch(() => {});
       if (child?.pid) { try { process.kill(-child.pid, 'SIGTERM'); } catch {} }
-      execFileSync('/home/masih/.cache/elpis-tests/e2e/app.sh', ['stop', home], { stdio: 'ignore' });
+      execFileSync(process.env.ELPIS_E2E_APP_HELPER || path.join(os.homedir(), '.cache/elpis-tests/e2e/app.sh'), ['stop', home], { stdio: 'ignore' });
     }
   }
   if (failures.length) throw Error(failures.join('\n'));

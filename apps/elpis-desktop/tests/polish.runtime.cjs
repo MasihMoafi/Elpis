@@ -1,6 +1,7 @@
 // node tests/polish.runtime.cjs PACKAGED_APP [9486]
 // Real Electron, real bridge, empty isolated home, no route mocking or renderer patches.
 const fs = require('node:fs/promises');
+const os = require('node:os');
 const path = require('node:path');
 const assert = require('node:assert/strict');
 const { spawn, execFileSync } = require('node:child_process');
@@ -15,7 +16,7 @@ async function main() {
   assert.ok(port >= 9420 && port <= 9499, 'Use an isolated CDP port');
   const url = `http://127.0.0.1:${port}`;
   assert.ok(!await fetch(`${url}/json/version`).then(() => true, () => false), 'CDP port must be free');
-  const evidence = process.env.ELPIS_POLISH_EVIDENCE || '/home/masih/.cache/elpis-tests/polish/real';
+  const evidence = process.env.ELPIS_POLISH_EVIDENCE || path.join(os.homedir(), '.cache/elpis-tests/polish/real');
   await fs.mkdir(evidence, { recursive: true });
   const problems = [], measurements = [];
   const home = await fs.mkdtemp('/tmp/e2e-polish-');
@@ -89,7 +90,7 @@ async function main() {
   } finally {
     await browser?.close().catch(() => {});
     if (child.pid) { try { process.kill(-child.pid, 'SIGTERM'); } catch {} }
-    execFileSync(process.env.ELPIS_E2E_HELPER || '/home/masih/.cache/elpis-tests/e2e/app.sh', ['stop', home]);
+    execFileSync(process.env.ELPIS_E2E_HELPER || path.join(os.homedir(), '.cache/elpis-tests/e2e/app.sh'), ['stop', home]);
   }
 }
 main().catch(error => { console.error(error.message); process.exitCode = 1; });

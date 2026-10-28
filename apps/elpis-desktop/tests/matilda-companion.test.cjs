@@ -203,8 +203,8 @@ for (const colorScheme of ['light', 'dark']) test(`Matilda mini chat, mute and d
   await avatar.click(); await mini.waitFor();
   const small = await mini.boundingBox(); assert.ok(small.x >= 0 && small.x + small.width <= 361, JSON.stringify(small));
   await page.keyboard.press('Escape');
-  const fs = require('node:fs/promises'), path = require('node:path');
-  const evidence = '/home/masih/.cache/elpis-tests/avatar-proof'; await fs.mkdir(evidence, { recursive: true });
+  const fs = require('node:fs/promises'), path = require('node:path'), os = require('node:os');
+  const evidence = path.join(os.homedir(), '.cache/elpis-tests/avatar-proof'); await fs.mkdir(evidence, { recursive: true });
   await page.setViewportSize({ width: 1000, height: 800 });
   await page.screenshot({ path: path.join(evidence, `drag-${colorScheme}.png`) });
   assert.deepEqual(f.errors, []);

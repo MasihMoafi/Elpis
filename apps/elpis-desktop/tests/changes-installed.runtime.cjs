@@ -26,7 +26,7 @@ test('A25 packaged app: real recorded changes, file selection, manual edit, relo
   assert.ok(changes.length > 1, 'provide a copied real session with recorded edits');
   const names = [...new Set(changes.flatMap(row => Object.keys(row.payload.item.changes)))].map(name => path.relative(meta.cwd, name)).sort();
   await fs.writeFile(path.join(sessions, `rollout-2026-10-17T23-33-38-${meta.id}.jsonl`), raw.split(meta.cwd).join(folder));
-  const helper = process.env.ELPIS_E2E_APP_HELPER || '/home/masih/.cache/elpis-tests/e2e/app.sh';
+  const helper = process.env.ELPIS_E2E_APP_HELPER || path.join(os.homedir(), '.cache/elpis-tests/e2e/app.sh');
   const port = process.env.ELPIS_TEST_PORT || '9445', shots = process.env.ELPIS_CHANGES_SHOTS || '/tmp/a25-shots';
   await fs.mkdir(shots, { recursive: true });
   const env = { PATH: process.env.PATH, ELPIS_NODE_BIN: process.execPath, ELPIS_ENGINE_BIN: process.env.ELPIS_TEST_ENGINE };
