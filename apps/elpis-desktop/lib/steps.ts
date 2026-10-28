@@ -4,7 +4,16 @@ import type { Item } from "./api";
  * its shell wrapper, coloured as shell, and the sentence a running or finished step reads as. No dependencies. */
 
 /** The script inside `/bin/bash -lc '…'` (or sh/zsh/dash -c), as Elpis records shell commands; anything else as is. */
+// The workstation's disk guard runs each command as `python3 -B …/agent-resource-guard/guard.py run -- '<command>'`; a step
+// shows the command (28 Oct: one read "Running /usr/bin/python3 -B /home/masih/.local/lib/agent-resource-guard/guard.py run --…").
+const GUARDED = /^(?:\S*\/)?python3?(?:\s+-\S+)*\s+\S*\/agent-resource-guard\/guard\.py\s+run\s+--\s+([\s\S]+)$/;
+const QUOTED = /^(['"])([\s\S]*)\1$/;
 export function unwrapShell(command: string): string {
+  const guarded = command.trim().match(GUARDED);
+  if (guarded) {
+    const inner = guarded[1].trim(), quoted = inner.match(QUOTED);
+    return unwrapShell(!quoted ? inner : quoted[1] === "'" ? quoted[2].replace(/'\\''|'"'"'/g, "'") : quoted[2].replace(/\\(["\\$`])/g, "$1"));
+  }
   const match = command.trim().match(/^(?:\S*\/)?(?:bash|sh|zsh|dash)\s+-[a-z]*c\s+(['"])([\s\S]*)\1$/);
   if (!match) return command;
   const [, quote, body] = match;

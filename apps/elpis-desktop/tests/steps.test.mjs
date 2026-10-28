@@ -3,7 +3,7 @@
 // is "verb + what" phrases in the order the work began ("Edited and read app.ts, used rag, ran 2 commands (1 failed)").
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { elapsed, stepDuration, stepLabel, summarize } from '../lib/steps.ts';
+import { elapsed, stepDuration, stepLabel, summarize, unwrapShell } from '../lib/steps.ts';
 
 const command = (id, extra = {}) => ({ id, type: 'commandExecution', command: `run ${id}`, status: 'completed', exitCode: 0, commandActions: [{ type: 'unknown', command: `run ${id}` }], ...extra });
 const read = (id, path) => command(id, { commandActions: [{ type: 'read', command: `sed ${path}`, name: path.split('/').at(-1), path }] });
@@ -19,6 +19,17 @@ test('a command with a description reads as that sentence, running or done; with
   assert.equal(stepLabel(command('m', { description: '  First line.\nSecond line.  ' })), 'First line.');
   assert.equal(stepLabel(command('e', { description: '   ', command: 'npm test' }), true), 'Running npm test', 'a blank description is no description');
   assert.equal(stepLabel(command('f', { command: 'npm test' }), false), 'Ran npm test');
+});
+
+// 28 Oct: a running step read "Running /usr/bin/python3 -B …/agent-resource-guard/guard.py run --…" instead of its command.
+test('a command run through the disk guard reads and shows as the command itself', () => {
+  const guard = "/usr/bin/python3 -B /home/user/.local/lib/agent-resource-guard/guard.py run -- ";
+  assert.equal(unwrapShell(guard + "'sleep 60'"), 'sleep 60');
+  assert.equal(unwrapShell(guard + `'/bin/bash -lc '"'"'cd /tmp && ls'"'"''`), 'cd /tmp && ls', 'a wrapped shell inside the guard unwraps too');
+  assert.equal(unwrapShell(guard + 'npm test'), 'npm test');
+  assert.equal(unwrapShell('python3 guard.py run -- npm test'), 'python3 guard.py run -- npm test', 'another guard.py is left as written');
+  const running = command('g', { command: guard + "'npm test'", commandActions: [{ type: 'unknown', command: 'npm test' }], status: 'inProgress' });
+  assert.equal(stepLabel(running), 'Running npm test');
 });
 
 test('edits are worded by what they did to which file', () => {
