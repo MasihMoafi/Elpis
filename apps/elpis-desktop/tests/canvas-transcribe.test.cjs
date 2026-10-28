@@ -28,6 +28,10 @@ test('Transcribe images builds one Gemini reader per six pages and a join, with 
     assert.match(agents[2].data.instruction, /into book\/pages\/transcription\.md/);
     assert.deepEqual([saved.mother.model, saved.mother.provider], ['claude/opus', null], 'Mother takes the strongest model available');
     assert.equal(f.plans.length, 0, 'the team is built, not planned');
+    // The cards and Mother's menu name the subscriptions' models, not their ids.
+    assert.match(await f.canvas.locator('.react-flow__node').filter({ hasText: 'Pages 1–6' }).innerText(), /Gemini 3\.8 Flash \(High\)/);
+    await f.canvas.locator('.react-flow__node').filter({ hasText: 'MOTHER' }).first().click();
+    assert.equal((await f.canvas.getByRole('combobox', { name: 'Her model', exact: true }).innerText()).trim(), 'Opus 5.5');
     // A folder without page images says so and leaves the board alone.
     await request.fill('Transcribe docs');
     await f.canvas.getByRole('button', { name: 'New workflow', exact: true }).click();

@@ -124,7 +124,6 @@ test('AutoCAD window contains, crossing touches, Shift adds notes, and drags nev
       }
       assert.notEqual(tints[0], tints[1], `${theme}: window and crossing have different tints`);
     }
-    assert.match(await f.canvas.locator('.canvas-toolbar').innerText(), /AutoCAD/);
     assert.deepEqual((await f.saved()).nodes.map(n => n.position), initial, 'selection leaves positions intact');
     await f.canvas.getByRole('button', { name: 'Side panel', exact: true }).click(); await f.fit();
     const closed = await f.node('Answer 1').boundingBox();

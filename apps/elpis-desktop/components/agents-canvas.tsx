@@ -25,7 +25,7 @@ import { CanvasTextEdit } from "@/components/canvas-text-edit";
 import { deleteKeepingFlow } from "@/lib/canvas-delete-flow";
 import { extractAgent, frameBounds, insidePolygon, insertAgent, segmentsCross } from "@/lib/canvas-editing";
 import { executionGraph, linkedIds } from "@/lib/canvas";
-import { api, providerChoices, type Entry, type Model, type ProviderSettings, type Thread } from "@/lib/api";
+import { api, providerChoices, subscriptionOf, type Entry, type Model, type ProviderSettings, type Thread } from "@/lib/api";
 import { useElpisSettings } from "@/lib/settings-store";
 import { appStorage } from "@/lib/projects";
 import { filesText, mergeStops, runPayload, stopText, wantsIsolation } from "@/lib/canvas-isolation";
@@ -674,7 +674,8 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
   const modelLabel = (data: AgentData) => {
     if (!data.model) return "Default model";
     const found = catalog.find(item => item.model === data.model && item.provider === canonicalProvider(data.provider));
-    return found?.label ?? data.model;
+    // A subscription's model (agy/…, claude/…) is named by the engine's own list (28 Oct: a card read "agy/gemini-3.8-flash-high").
+    return found?.label ?? models.find(item => item.model === data.model)?.displayName ?? data.model;
   };
   const setText = (id: string, text: string) => setGraph(current => ({ ...current, nodes: current.nodes.map(node => node.id === id && node.type === "note" ? { ...node, data: { text } } : node) }));
   // Quick create adds one successor in the next column's nearest free slot, selected with its prompt focused.
@@ -1333,7 +1334,9 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
   const choiceKey = (data: AgentData) => data.model ? `${canonicalProvider(data.provider) ?? ""}|${data.model}` : "";
   const shared = (key: (data: AgentData) => string) => new Set(chosen.map(node => key(node.data))).size === 1 ? key(chosen[0].data) : "mixed";
   const modelPatch = (value: string): Partial<AgentData> => { const [provider, ...rest] = value.split("|"); return value ? { provider: provider || null, model: rest.join("|"), effort: null } : { provider: null, model: null, effort: null }; };
-  const modelOptions = (provider?: string | null) => [<option key="" value="">Default model</option>, ...catalog.filter(item => provider === undefined || item.provider === provider).map(item => <option key={`${item.provider}|${item.model}`} value={`${item.provider ?? ""}|${item.model}`} data-hint={provider === undefined ? item.providerLabel : undefined}>{item.label}</option>)];
+  // The subscriptions' models (Claude, Antigravity's Gemini) come from the engine's own list (28 Oct: Mother's menu had no Opus).
+  const subscribed = models.filter(item => subscriptionOf(item.model) && !catalog.some(entry => entry.model === item.model));
+  const modelOptions = (provider?: string | null) => [<option key="" value="">Default model</option>, ...catalog.filter(item => provider === undefined || item.provider === provider).map(item => <option key={`${item.provider}|${item.model}`} value={`${item.provider ?? ""}|${item.model}`} data-hint={provider === undefined ? item.providerLabel : undefined}>{item.label}</option>), ...(provider === undefined ? subscribed.map(item => <option key={`|${item.model}`} value={`|${item.model}`} data-hint={subscriptionOf(item.model)?.label}>{item.displayName || item.model}</option>) : [])];
   const mixed = <option value="mixed" disabled>Mixed</option>;
   const selectedModel = selected ? catalog.find(item => item.model === selected.data.model && item.provider === canonicalProvider(selected.data.provider)) : undefined;
 
