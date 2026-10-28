@@ -142,7 +142,7 @@
       "started_at": "2026-10-25T10:53:05.215710Z",
       "raw_trial_finished_at": "2026-10-25T10:56:53.828921Z",
       "finished_at": "2026-10-25T10:56:53.828921Z",
-      "raw_result": "/home/masih/Work/tries/elpis-rq3-20261025/runs/r4-01-configure-git-webserver-off/configure-git-webserver__BnMYMLu/result.json",
+      "raw_result": "~/Work/tries/elpis-rq3-20261025/runs/r4-01-configure-git-webserver-off/configure-git-webserver__BnMYMLu/result.json",
       "raw_result_sha256": "915e5e85980a9854ba5a8c9c8f2744629c56a0aebd6a19a069d98722c861d613",
       "raw_status_sha256": "23cbe5aec2275fea4b7dd32c45ac41c52bac2da420d889058c7619a6d03722a0",
       "grader_stdout_sha256": "6e9bb6c2ee00614ada557f5c2c6366152098c3670171ffd89fb51690f005106d",
@@ -198,7 +198,7 @@
           "INSTALLER_DOWNLOAD_URL": "file:///opt/rq3/grader-cache",
           "PATH": "/opt/rq3/grader-tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
         },
-        "stdout_file": "/home/masih/Work/tries/elpis-rq3-20261025/runs/r4-02-configure-git-webserver-on/configure-git-webserver__aDwEmGh/verifier/grading-repair-01.txt",
+        "stdout_file": "~/Work/tries/elpis-rq3-20261025/runs/r4-02-configure-git-webserver-on/configure-git-webserver__aDwEmGh/verifier/grading-repair-01.txt",
         "stdout_sha256": "d5f64e5ec71c93db3c68b5f9853bd303b65c985da08b12523e252d10cb487803",
         "official_tests_unchanged": true,
         "completed_at": "2026-10-25T11:29:56.482790+00:00"
@@ -235,7 +235,7 @@
       "admitted_outputs": 4,
       "optimizer_attempts": [
         {
-          "file": "/home/masih/Work/tries/elpis-rq3-20261025/runs/r4-02-configure-git-webserver-on/configure-git-webserver__aDwEmGh/agent/smart-prune/attempts/01a172b5-2fe9-7773-a7cc-b0b1ab36b96f.json",
+          "file": "~/Work/tries/elpis-rq3-20261025/runs/r4-02-configure-git-webserver-on/configure-git-webserver__aDwEmGh/agent/smart-prune/attempts/01a172b5-2fe9-7773-a7cc-b0b1ab36b96f.json",
           "sha256": "32121a4a9d21f395c732837a360b266c1c6c94492b99c5447f8433ef3020321f",
           "status": "admitted",
           "usage": {
@@ -255,7 +255,7 @@
           }
         },
         {
-          "file": "/home/masih/Work/tries/elpis-rq3-20261025/runs/r4-02-configure-git-webserver-on/configure-git-webserver__aDwEmGh/agent/smart-prune/attempts/01a172b5-4ba4-7c71-9d53-036e319cbaa8.json",
+          "file": "~/Work/tries/elpis-rq3-20261025/runs/r4-02-configure-git-webserver-on/configure-git-webserver__aDwEmGh/agent/smart-prune/attempts/01a172b5-4ba4-7c71-9d53-036e319cbaa8.json",
           "sha256": "7700ca72a2d15b974283fe76dd7ff990557aa380c2122ecb9ee9b65215b93661",
           "status": "admitted",
           "usage": {
@@ -275,7 +275,7 @@
           }
         },
         {
-          "file": "/home/masih/Work/tries/elpis-rq3-20261025/runs/r4-02-configure-git-webserver-on/configure-git-webserver__aDwEmGh/agent/smart-prune/attempts/01a172b5-b79c-7fa3-bfdc-96c5ac41b164.json",
+          "file": "~/Work/tries/elpis-rq3-20261025/runs/r4-02-configure-git-webserver-on/configure-git-webserver__aDwEmGh/agent/smart-prune/attempts/01a172b5-b79c-7fa3-bfdc-96c5ac41b164.json",
           "sha256": "40e1723bd39fe2fa3bb3c4faf7221e6d1e207cb15330dea8a53462aa355f47a1",
           "status": "unchanged",
           "usage": {
@@ -290,7 +290,7 @@
           "reasoning_effort": "low"
         },
         {
-          "file": "/home/masih/Work/tries/elpis-rq3-20261025/runs/r4-02-configure-git-webserver-on/configure-git-webserver__aDwEmGh/agent/smart-prune/attempts/01a172b5-d34a-7c32-ab0a-cd0aec81a4d6.json",
+          "file": "~/Work/tries/elpis-rq3-20261025/runs/r4-02-configure-git-webserver-on/configure-git-webserver__aDwEmGh/agent/smart-prune/attempts/01a172b5-d34a-7c32-ab0a-cd0aec81a4d6.json",
           "sha256": "277e0636c9b9fc115836a5e071ce0d803c3063b44ef1452614b4ac41fa0044be",
           "status": "admitted",
           "usage": {
@@ -310,7 +310,7 @@
           }
         },
         {
-          "file": "/home/masih/Work/tries/elpis-rq3-20261025/runs/r4-02-configure-git-webserver-on/configure-git-webserver__aDwEmGh/agent/smart-prune/attempts/01a172b6-55f0-7e31-9737-0985efb601d5.json",
+          "file": "~/Work/tries/elpis-rq3-20261025/runs/r4-02-configure-git-webserver-on/configure-git-webserver__aDwEmGh/agent/smart-prune/attempts/01a172b6-55f0-7e31-9737-0985efb601d5.json",
           "sha256": "b89fec5531f89aa084efee7e2d485a9d70ccbf986950f7543dcec21fa4c9f5ee",
           "status": "unchanged",
           "usage": {
@@ -325,7 +325,7 @@
           "reasoning_effort": "low"
         },
         {
-          "file": "/home/masih/Work/tries/elpis-rq3-20261025/runs/r4-02-configure-git-webserver-on/configure-git-webserver__aDwEmGh/agent/smart-prune/attempts/01a172b6-7f22-7920-ace6-d390651f1944.json",
+          "file": "~/Work/tries/elpis-rq3-20261025/runs/r4-02-configure-git-webserver-on/configure-git-webserver__aDwEmGh/agent/smart-prune/attempts/01a172b6-7f22-7920-ace6-d390651f1944.json",
           "sha256": "a7eaceffe06cf35598ae7e45801f9a1c55cba536620d1796d17ff20962f508ed",
           "status": "admitted",
           "usage": {
@@ -410,7 +410,7 @@
       "started_at": "2026-10-25T10:57:01.068340Z",
       "raw_trial_finished_at": "2026-10-25T11:17:17.715698Z",
       "finished_at": "2026-10-25T11:29:56.482790+00:00",
-      "raw_result": "/home/masih/Work/tries/elpis-rq3-20261025/runs/r4-02-configure-git-webserver-on/configure-git-webserver__aDwEmGh/result.json",
+      "raw_result": "~/Work/tries/elpis-rq3-20261025/runs/r4-02-configure-git-webserver-on/configure-git-webserver__aDwEmGh/result.json",
       "raw_result_sha256": "539e62e8f0a9d62439167bcaa0dd7171bda878a519d42db124c755fdb60ad799",
       "raw_status_sha256": "cd1fce644ee4425e1ffd9114fb405d80b4acf0294d5ca210c44e5ae63defa9e2",
       "grader_stdout_sha256": "d5f64e5ec71c93db3c68b5f9853bd303b65c985da08b12523e252d10cb487803",
@@ -466,7 +466,7 @@
       "admitted_outputs": 3,
       "optimizer_attempts": [
         {
-          "file": "/home/masih/Work/tries/elpis-rq3-20261025/runs/r4-03-sqlite-with-gcov-on/sqlite-with-gcov__nWmXEej/agent/smart-prune/attempts/01a172d6-0bb4-7423-9db1-961dd1257187.json",
+          "file": "~/Work/tries/elpis-rq3-20261025/runs/r4-03-sqlite-with-gcov-on/sqlite-with-gcov__nWmXEej/agent/smart-prune/attempts/01a172d6-0bb4-7423-9db1-961dd1257187.json",
           "sha256": "c5f6a81fbb41dbcffdb4f41b246ac4d8d3c728a9027e36cb7b53a29a1e0afe63",
           "status": "admitted",
           "usage": {
@@ -486,7 +486,7 @@
           }
         },
         {
-          "file": "/home/masih/Work/tries/elpis-rq3-20261025/runs/r4-03-sqlite-with-gcov-on/sqlite-with-gcov__nWmXEej/agent/smart-prune/attempts/01a172d6-772b-7162-85c7-ec9e3a41399c.json",
+          "file": "~/Work/tries/elpis-rq3-20261025/runs/r4-03-sqlite-with-gcov-on/sqlite-with-gcov__nWmXEej/agent/smart-prune/attempts/01a172d6-772b-7162-85c7-ec9e3a41399c.json",
           "sha256": "961e89fbb0b2bdd8cbb2b386376309dfcdf771802d024dae49deaa447c2ec653",
           "status": "unchanged",
           "usage": {
@@ -501,7 +501,7 @@
           "reasoning_effort": "low"
         },
         {
-          "file": "/home/masih/Work/tries/elpis-rq3-20261025/runs/r4-03-sqlite-with-gcov-on/sqlite-with-gcov__nWmXEej/agent/smart-prune/attempts/01a172d6-991f-7b91-bb21-8d1a815eddb6.json",
+          "file": "~/Work/tries/elpis-rq3-20261025/runs/r4-03-sqlite-with-gcov-on/sqlite-with-gcov__nWmXEej/agent/smart-prune/attempts/01a172d6-991f-7b91-bb21-8d1a815eddb6.json",
           "sha256": "67e1e297fff032c53e3a32f6c3c794838b43d113c811c7d049ea9e79483933f4",
           "status": "admitted",
           "usage": {
@@ -521,7 +521,7 @@
           }
         },
         {
-          "file": "/home/masih/Work/tries/elpis-rq3-20261025/runs/r4-03-sqlite-with-gcov-on/sqlite-with-gcov__nWmXEej/agent/smart-prune/attempts/01a172d7-2f40-7830-9e6e-a1ebd631d1cb.json",
+          "file": "~/Work/tries/elpis-rq3-20261025/runs/r4-03-sqlite-with-gcov-on/sqlite-with-gcov__nWmXEej/agent/smart-prune/attempts/01a172d7-2f40-7830-9e6e-a1ebd631d1cb.json",
           "sha256": "eeb93b38670d554e4b5fe02fc43727b56316a6bfd31b3d4d283c050858425605",
           "status": "admitted",
           "usage": {
@@ -606,7 +606,7 @@
       "started_at": "2026-10-25T11:32:33.783680Z",
       "raw_trial_finished_at": "2026-10-25T11:35:23.354365Z",
       "finished_at": "2026-10-25T11:35:23.354365Z",
-      "raw_result": "/home/masih/Work/tries/elpis-rq3-20261025/runs/r4-03-sqlite-with-gcov-on/sqlite-with-gcov__nWmXEej/result.json",
+      "raw_result": "~/Work/tries/elpis-rq3-20261025/runs/r4-03-sqlite-with-gcov-on/sqlite-with-gcov__nWmXEej/result.json",
       "raw_result_sha256": "1bc7dca36d0ad87ef69c33a4c3b9cc9cb2d00de546d26dc9c21729228b288480",
       "raw_status_sha256": "0c0ce71768ea2813e4d817307606d0e6625ef1d301444bc952ac2e7e0cafbdd1",
       "grader_stdout_sha256": "d242fef41262157de2d96ba453ba0a8efea97aa2a14a1fb86528dc5d0e40f026",
@@ -719,7 +719,7 @@
       "started_at": "2026-10-25T11:35:29.487064Z",
       "raw_trial_finished_at": "2026-10-25T11:37:52.576723Z",
       "finished_at": "2026-10-25T11:37:52.576723Z",
-      "raw_result": "/home/masih/Work/tries/elpis-rq3-20261025/runs/r4-04-sqlite-with-gcov-off/sqlite-with-gcov__ASAijqU/result.json",
+      "raw_result": "~/Work/tries/elpis-rq3-20261025/runs/r4-04-sqlite-with-gcov-off/sqlite-with-gcov__ASAijqU/result.json",
       "raw_result_sha256": "f074bcb7276d6e87c7b7c1de9341064041229a34af89eda5c0efb32ae725f4f3",
       "raw_status_sha256": "fbbfaef667b855f013c3575c9ebe8aea9afc6357b598ac1e77675363d26ec920",
       "grader_stdout_sha256": "5dfbee74772e650bcf12f834a01755d5c30eea4d1a8ba96b70f5571848308e6f",

@@ -1,19 +1,19 @@
 {
   "verified_at_utc": "2026-10-25T05:18:47.318782+00:00",
   "kind": "Offline reproduction of archived results; no new model inference",
-  "archive": "/home/masih/Desktop/p/Elpis/docs/evals/final-data/REMAINING-COVERAGE-LUNA-20260908-01",
+  "archive": "docs/evals/final-data/REMAINING-COVERAGE-LUNA-20260908-01",
   "cohort": "held-out-synthetic-coverage-after-oracle-correction",
   "model": "gpt-5.6-luna",
   "binary_sha256": "21cbb5e2cf325fb0e47a5c054a48fc337b74637074a7d28993c6f7b8950ef8b5",
   "distinct_synthetic_cases": 4,
   "conversations_across_five_conditions": 20,
   "core_manifest": {
-    "path": "/home/masih/Desktop/p/Elpis/docs/evals/final-data/REMAINING-COVERAGE-LUNA-20260908-01/SHA256SUMS",
+    "path": "docs/evals/final-data/REMAINING-COVERAGE-LUNA-20260908-01/SHA256SUMS",
     "sha256": "a59d581da8acf763e745c891ff37b12432af29d345feb89d6f8d006c4d48d7b4",
     "files_verified_this_session": 490
   },
   "frozen_audit": {
-    "harness": "/home/masih/Desktop/p/Elpis/docs/evals/final-data/REMAINING-COVERAGE-LUNA-20260908-01/harness/staged-study.mjs",
+    "harness": "docs/evals/final-data/REMAINING-COVERAGE-LUNA-20260908-01/harness/staged-study.mjs",
     "sha256": "d3c18c409eec4ef39ec80b46676383a5e4df7713de9b0941e791bf5ff15d0759",
     "reproduced_this_session": true,
     "matched_archive_report_and_existing_review_copy": true,
@@ -54,7 +54,7 @@
     "reason": "Documented rollout and exact-ID match in current session store unavailable; showcase attributes this result to the historical audit."
   },
   "reproduce": {
-    "cwd": "/home/masih/Desktop/p/Elpis/docs/evals/final-data/REMAINING-COVERAGE-LUNA-20260908-01",
+    "cwd": "docs/evals/final-data/REMAINING-COVERAGE-LUNA-20260908-01",
     "core_checksums": [
       "sha256sum",
       "--check",
@@ -63,9 +63,9 @@
     ],
     "frozen_audit": [
       "node",
-      "/home/masih/Desktop/p/Elpis/docs/evals/final-data/REMAINING-COVERAGE-LUNA-20260908-01/harness/staged-study.mjs",
+      "docs/evals/final-data/REMAINING-COVERAGE-LUNA-20260908-01/harness/staged-study.mjs",
       "--audit",
-      "/home/masih/Desktop/p/Elpis/docs/evals/final-data/REMAINING-COVERAGE-LUNA-20260908-01"
+      "docs/evals/final-data/REMAINING-COVERAGE-LUNA-20260908-01"
     ]
   }
 }

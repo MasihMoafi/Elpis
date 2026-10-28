@@ -12,7 +12,7 @@ locally (Masih, 22 October: “do the GUI app locally and only TUI on github”)
 `nice -n 19`, the `.next` cache on the New Volume, never while a game runs. This does not authorize
 a push or upload. Older local Cargo recipes below are historical; they do not authorize local
 compilation. The shared workstation disk guard covers new hooked shell commands and write tools;
-see `/home/masih/.local/lib/agent-resource-guard/README.md` for its checked scope.
+see `~/.local/lib/agent-resource-guard/README.md` (a workstation tool outside this repository) for its checked scope.
 
 Measured on 2026-09-23 at two jobs, with no thermal pauses: a cold `dev-small` TUI
 build took 13m38s and peaked at 72 °C; the optimized `local-release` build took

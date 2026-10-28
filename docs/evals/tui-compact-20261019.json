@@ -34,12 +34,12 @@
   },
   "artifacts": {
     "fast": {
-      "path": "/home/masih/.cache/elpis-tests/tui-compact-20261019-c2hcogww/fast/codex",
+      "path": "~/.cache/elpis-tests/tui-compact-20261019-c2hcogww/fast/codex",
       "bytes": 252874208,
       "sha256": "89592419f87395b33b427c03c02acc3d589bcf8b5ef9160b5a5bdf526e57c96a"
     },
     "compact": {
-      "path": "/home/masih/.cache/elpis-tests/tui-compact-20261019-c2hcogww/compact/codex",
+      "path": "~/.cache/elpis-tests/tui-compact-20261019-c2hcogww/compact/codex",
       "bytes": 182849856,
       "sha256": "328c793c903b5b7fd0365af2d080bc81a6b891212043d7588f41025c85ec3305"
     }
@@ -74,11 +74,11 @@
     "nativeThemeProfileScenariosPassed": 12,
     "bridgeTestsPassed": 12,
     "inspectedCaptures": [
-      "/home/masih/.cache/elpis-tests/tui-compact-20261019-c2hcogww/bench/compact-dark.png",
-      "/home/masih/.cache/elpis-tests/tui-compact-20261019-c2hcogww/bench/compact-light.png",
-      "/home/masih/.cache/elpis-tests/tui-compact-20261019-c2hcogww/bench/compact-owned-dark-draft-copied.png",
-      "/home/masih/.cache/elpis-tests/tui-compact-20261019-c2hcogww/bench/compact-owned-light-draft-copied.png",
-      "/home/masih/.cache/elpis-tests/tui-compact-20261019-c2hcogww/bench/fast-owned-dark-draft-copied.png"
+      "~/.cache/elpis-tests/tui-compact-20261019-c2hcogww/bench/compact-dark.png",
+      "~/.cache/elpis-tests/tui-compact-20261019-c2hcogww/bench/compact-light.png",
+      "~/.cache/elpis-tests/tui-compact-20261019-c2hcogww/bench/compact-owned-dark-draft-copied.png",
+      "~/.cache/elpis-tests/tui-compact-20261019-c2hcogww/bench/compact-owned-light-draft-copied.png",
+      "~/.cache/elpis-tests/tui-compact-20261019-c2hcogww/bench/fast-owned-dark-draft-copied.png"
     ],
     "externalModelCalls": 0
   },
@@ -90,17 +90,17 @@
     "ownedProcessesRemaining": 0
   },
   "installedOriginal": {
-    "path": "/home/masih/.local/lib/elpis-next/versions/tui-pointer-20261019-78ef58f2/package/bin/codex",
+    "path": "~/.local/lib/elpis-next/versions/tui-pointer-20261019-78ef58f2/package/bin/codex",
     "sha256": "78ef58f2b630930a55ec891e2e4c767e12a44a7ce7e478b7629975a851dfc24b",
     "unchangedAfterRuntime": true
   },
   "experimentalSharedTarget": {
-    "path": "/home/masih/Desktop/p/Elpis-wt-continuity/codex-rs/target/release/codex",
+    "path": "codex-rs/target/release/codex",
     "sha256": "328c793c903b5b7fd0365af2d080bc81a6b891212043d7588f41025c85ec3305",
     "installed": false,
     "profileDefaultsChanged": false
   },
-  "evidenceRoot": "/home/masih/.cache/elpis-tests/tui-compact-20261019-c2hcogww",
+  "evidenceRoot": "~/.cache/elpis-tests/tui-compact-20261019-c2hcogww",
   "limits": [
     "Warm --version timing measures CLI process startup, not interactive or inference speed.",
     "Engine only; code-mode host, bridge tools and package overhead unchanged and unmeasured.",
@@ -146,14 +146,14 @@
   },
   "buildCommands": {
     "fast": {
-      "fullLaunch": "/home/masih/.cache/elpis-tests/tui-compact-20261019-c2hcogww/fast-launch.json",
-      "capturedInputs": "/home/masih/.cache/elpis-tests/tui-compact-20261019-c2hcogww/fast/command.json",
-      "log": "/home/masih/.cache/elpis-tests/tui-compact-20261019-c2hcogww/fast-build.log"
+      "fullLaunch": "~/.cache/elpis-tests/tui-compact-20261019-c2hcogww/fast-launch.json",
+      "capturedInputs": "~/.cache/elpis-tests/tui-compact-20261019-c2hcogww/fast/command.json",
+      "log": "~/.cache/elpis-tests/tui-compact-20261019-c2hcogww/fast-build.log"
     },
     "compact": {
-      "fullLaunch": "/home/masih/.cache/elpis-tests/tui-compact-20261019-c2hcogww/compact-launch.json",
-      "capturedInputs": "/home/masih/.cache/elpis-tests/tui-compact-20261019-c2hcogww/compact/command.json",
-      "log": "/home/masih/.cache/elpis-tests/tui-compact-20261019-c2hcogww/compact-build.log"
+      "fullLaunch": "~/.cache/elpis-tests/tui-compact-20261019-c2hcogww/compact-launch.json",
+      "capturedInputs": "~/.cache/elpis-tests/tui-compact-20261019-c2hcogww/compact/command.json",
+      "log": "~/.cache/elpis-tests/tui-compact-20261019-c2hcogww/compact-build.log"
     }
   },
   "startupHistory": {

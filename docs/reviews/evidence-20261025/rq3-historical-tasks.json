@@ -72,21 +72,21 @@
         "task": "vector-db",
         "arm": "on",
         "reward": 0.3113,
-        "path": "/home/masih/Desktop/p/Elpis/docs/evals/archive/eval-archive-full/lhtb-grade-results-elpis/output/test_results.json",
+        "path": "docs/evals/archive/eval-archive-full/lhtb-grade-results-elpis/output/test_results.json",
         "sha256": "3a58ab3eb2d085ae9c9dcb5b3c51a1ea9562400d6c758979b7baf88d29f32a8a"
       },
       {
         "task": "vector-db",
         "arm": "baseline",
         "reward": 0.428,
-        "path": "/home/masih/Desktop/p/Elpis/docs/evals/archive/eval-archive-full/lhtb-grade-results-codex/output/test_results.json",
+        "path": "docs/evals/archive/eval-archive-full/lhtb-grade-results-codex/output/test_results.json",
         "sha256": "3cb7d170851f6b166251401d6b3695bfef410ee489c9fddda3a5bb13410c817e"
       }
     ],
     "langchain_migration": {
       "on_reward": 1.0,
       "comparison_arm_available": false,
-      "path": "/home/masih/Desktop/p/Elpis/docs/evals/archive/eval-archive-full/lhtb-langchain-migration-elpis.grade/reward.txt",
+      "path": "docs/evals/archive/eval-archive-full/lhtb-langchain-migration-elpis.grade/reward.txt",
       "sha256": "d0ff5974b6aa52cf562bea5921840c032a860a91a3512f7fe8f768f6bbe005f6"
     }
   },

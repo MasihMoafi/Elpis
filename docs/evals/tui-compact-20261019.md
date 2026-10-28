@@ -14,8 +14,8 @@ Both builds use source `333cc1e11`, Rust tree `ae7cdcc013` (identical to install
 
 Debug none/strip symbols both. Guarded offline builds passed without pauses/stops; mandatory kernel limits verified. I/O controller unavailable; both used ionice 7. [Contract](../specs/tui-compact-20261019.md).
 
-Passed: matching help/version; 12 native light/dark cases (startup selection, exact OSC52 payload, streaming copy without interrupt, scrolling, Agent click/provider identity); 12 bridge regressions including `08a` join/refusal. Five rendered captures inspected: [dark](/home/masih/.cache/elpis-tests/tui-compact-20261019-c2hcogww/bench/compact-dark.png), [light](/home/masih/.cache/elpis-tests/tui-compact-20261019-c2hcogww/bench/compact-light.png).
+Passed: matching help/version; 12 native light/dark cases (startup selection, exact OSC52 payload, streaming copy without interrupt, scrolling, Agent click/provider identity); 12 bridge regressions including `08a` join/refusal. Five rendered captures inspected, among them `bench/compact-dark.png` and `bench/compact-light.png` in the local evidence folder `~/.cache/elpis-tests/tui-compact-20261019-c2hcogww/` (not in the repository).
 
 Limits: one build each; fast dependencies already cached. CLI warm-version medians 50.95/48.94 ms (12 paired samples); coarse TUI timings establish no speed gain. Real inference, code-mode host, OS clipboard and daily use untested; full Rust suite not rerun.
 
-[Versioned receipt](tui-compact-20261019.json) · [full evidence](/home/masih/.cache/elpis-tests/tui-compact-20261019-c2hcogww/comparison.json). Private homes/link trashed; no own processes remain. **Shared target/release/codex is experimental `328c793c`; installed `78ef58f2` and defaults remain unchanged. Root owns shipping.**
+[Versioned receipt](tui-compact-20261019.json) · full evidence in that folder's `comparison.json`. Private homes/link trashed; no own processes remain. **Shared target/release/codex is experimental `328c793c`; installed `78ef58f2` and defaults remain unchanged. Root owns shipping.**

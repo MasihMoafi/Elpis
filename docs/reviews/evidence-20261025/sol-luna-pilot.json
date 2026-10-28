@@ -169,7 +169,7 @@
         "shell_environment_policy.exclude=[\"LD_LIBRARY_PATH\"]",
         "-"
       ],
-      "official_result": "/home/masih/Work/tries/elpis-rq3-20261025/runs/r3-01-regex-log-off/regex-log__bADe9Eo/result.json",
+      "official_result": "~/Work/tries/elpis-rq3-20261025/runs/r3-01-regex-log-off/regex-log__bADe9Eo/result.json",
       "official_result_sha256": "6a267c8d025878598059ee28e7fb7d542e7a326f32638477233ba5e32563c4df",
       "raw_status_sha256": "18b619825365f90828cd5afb66a97e09e7684ed8d12daca72f4644210c98476c",
       "runtime_controls_sha256": {
@@ -259,7 +259,7 @@
         "shell_environment_policy.exclude=[\"LD_LIBRARY_PATH\"]",
         "-"
       ],
-      "official_result": "/home/masih/Work/tries/elpis-rq3-20261025/runs/r3-02-regex-log-on/regex-log__vGvZwsE/result.json",
+      "official_result": "~/Work/tries/elpis-rq3-20261025/runs/r3-02-regex-log-on/regex-log__vGvZwsE/result.json",
       "official_result_sha256": "7e595ef5d9d86e2e215656de30553ed7369df86ba5e385e590b39f57fc72d5e4",
       "raw_status_sha256": "e958ab53faba20ecb2ce03e156c084446d40402d3fb3b19ebaa3286d1838b175",
       "runtime_controls_sha256": {
@@ -307,7 +307,7 @@
       },
       "optimizer_attempts": [
         {
-          "file": "/home/masih/Work/tries/elpis-rq3-20261025/runs/r3-03-configure-git-webserver-on/configure-git-webserver__j9GFic6/agent/smart-prune/attempts/01a1722b-567a-7d43-970a-535f977ad534.json",
+          "file": "~/Work/tries/elpis-rq3-20261025/runs/r3-03-configure-git-webserver-on/configure-git-webserver__j9GFic6/agent/smart-prune/attempts/01a1722b-567a-7d43-970a-535f977ad534.json",
           "sha256": "cb6bad53cac9f173a511787f316877912d5894aeea4879789f248e92fe2e76a0",
           "status": "admitted",
           "model": "gpt-6-luna",
@@ -327,7 +327,7 @@
           }
         },
         {
-          "file": "/home/masih/Work/tries/elpis-rq3-20261025/runs/r3-03-configure-git-webserver-on/configure-git-webserver__j9GFic6/agent/smart-prune/attempts/01a1722b-e212-72b2-b5a5-8f9fd0e1585c.json",
+          "file": "~/Work/tries/elpis-rq3-20261025/runs/r3-03-configure-git-webserver-on/configure-git-webserver__j9GFic6/agent/smart-prune/attempts/01a1722b-e212-72b2-b5a5-8f9fd0e1585c.json",
           "sha256": "397566c506248cd3133e15dec987cc4e200c6209d3cdb4f0f8cb8ae27b34c343",
           "status": "admitted",
           "model": "gpt-6-luna",
@@ -347,7 +347,7 @@
           }
         },
         {
-          "file": "/home/masih/Work/tries/elpis-rq3-20261025/runs/r3-03-configure-git-webserver-on/configure-git-webserver__j9GFic6/agent/smart-prune/attempts/01a1722c-49bf-7d21-8bc5-b5c0cd2e0d32.json",
+          "file": "~/Work/tries/elpis-rq3-20261025/runs/r3-03-configure-git-webserver-on/configure-git-webserver__j9GFic6/agent/smart-prune/attempts/01a1722c-49bf-7d21-8bc5-b5c0cd2e0d32.json",
           "sha256": "1bf171b741c33fc480dd26eff453386789341f3932f5b2ded085187f3880a168",
           "status": "admitted",
           "model": "gpt-6-luna",
@@ -417,7 +417,7 @@
         "shell_environment_policy.exclude=[\"LD_LIBRARY_PATH\"]",
         "-"
       ],
-      "official_result": "/home/masih/Work/tries/elpis-rq3-20261025/runs/r3-03-configure-git-webserver-on/configure-git-webserver__j9GFic6/result.json",
+      "official_result": "~/Work/tries/elpis-rq3-20261025/runs/r3-03-configure-git-webserver-on/configure-git-webserver__j9GFic6/result.json",
       "official_result_sha256": "ddc3d8ca5cc8450d647deba120dde048660b507e4fad16b66ae992c1bf9045fe",
       "raw_status_sha256": "cbea123bfe18c20d3d9150a4b2fc90855b6aecc1e52a9857da612993e75ab3e7",
       "runtime_controls_sha256": {
@@ -507,7 +507,7 @@
         "shell_environment_policy.exclude=[\"LD_LIBRARY_PATH\"]",
         "-"
       ],
-      "official_result": "/home/masih/Work/tries/elpis-rq3-20261025/runs/r3-04-configure-git-webserver-off/configure-git-webserver__r6M3QWa/result.json",
+      "official_result": "~/Work/tries/elpis-rq3-20261025/runs/r3-04-configure-git-webserver-off/configure-git-webserver__r6M3QWa/result.json",
       "official_result_sha256": "500930d61cdf1fe62148dda1e3710f724329d7c1f0a326f59f18cc7373ca8810",
       "raw_status_sha256": "be5bad7f1a3c519f475889df507317c3d980fe9d579db49bd5470be37dd88aae",
       "runtime_controls_sha256": {
@@ -597,7 +597,7 @@
         "shell_environment_policy.exclude=[\"LD_LIBRARY_PATH\"]",
         "-"
       ],
-      "official_result": "/home/masih/Work/tries/elpis-rq3-20261025/runs/r3-05-sqlite-with-gcov-off/sqlite-with-gcov__GqQKskT/result.json",
+      "official_result": "~/Work/tries/elpis-rq3-20261025/runs/r3-05-sqlite-with-gcov-off/sqlite-with-gcov__GqQKskT/result.json",
       "official_result_sha256": "b743c6677567f148b2a0cfae5b5a9f824937f89501510c428e1f836cbecf44dc",
       "raw_status_sha256": "7cac11db75b547d5a6de8aa1dcbfcec25893b2a7b06bec98751f3259c04754d6",
       "runtime_controls_sha256": {
@@ -645,7 +645,7 @@
       },
       "optimizer_attempts": [
         {
-          "file": "/home/masih/Work/tries/elpis-rq3-20261025/runs/r3-06-sqlite-with-gcov-on/sqlite-with-gcov__6GyUp8t/agent/smart-prune/attempts/01a1727b-2d2f-7952-ba5d-710f6a435931.json",
+          "file": "~/Work/tries/elpis-rq3-20261025/runs/r3-06-sqlite-with-gcov-on/sqlite-with-gcov__6GyUp8t/agent/smart-prune/attempts/01a1727b-2d2f-7952-ba5d-710f6a435931.json",
           "sha256": "073ce0c0a43235ddc59c917f01f21937e6984c1b0765012d42965160bb4f110e",
           "status": "admitted",
           "model": "gpt-6-luna",
@@ -665,7 +665,7 @@
           }
         },
         {
-          "file": "/home/masih/Work/tries/elpis-rq3-20261025/runs/r3-06-sqlite-with-gcov-on/sqlite-with-gcov__6GyUp8t/agent/smart-prune/attempts/01a1727b-a756-7ce0-8b58-e8a81830fe3c.json",
+          "file": "~/Work/tries/elpis-rq3-20261025/runs/r3-06-sqlite-with-gcov-on/sqlite-with-gcov__6GyUp8t/agent/smart-prune/attempts/01a1727b-a756-7ce0-8b58-e8a81830fe3c.json",
           "sha256": "9da919da243787e45cc67b3efd1a6dd765a41ea2136802499ae3210b0b07a63c",
           "status": "admitted",
           "model": "gpt-6-luna",
@@ -735,7 +735,7 @@
         "shell_environment_policy.exclude=[\"LD_LIBRARY_PATH\"]",
         "-"
       ],
-      "official_result": "/home/masih/Work/tries/elpis-rq3-20261025/runs/r3-06-sqlite-with-gcov-on/sqlite-with-gcov__6GyUp8t/result.json",
+      "official_result": "~/Work/tries/elpis-rq3-20261025/runs/r3-06-sqlite-with-gcov-on/sqlite-with-gcov__6GyUp8t/result.json",
       "official_result_sha256": "efcbf1e1f878e9aea539d521dd43ef49e81c4aa2ba4a1470759f473fe8abbb13",
       "raw_status_sha256": "4184d5c6b48e46a2ee6136be3a593ad8d8f033b608e5a8fc5d54c357891aeae8",
       "runtime_controls_sha256": {
@@ -775,7 +775,7 @@
     }
   ],
   "runtime_smoke": {
-    "artifact_directory": "/home/masih/Work/tries/elpis-rq3-20261025/runtime-smoke",
+    "artifact_directory": "~/Work/tries/elpis-rq3-20261025/runtime-smoke",
     "main_model": "gpt-6-luna",
     "auth": "saved ChatGPT login",
     "task_file_created": true,
