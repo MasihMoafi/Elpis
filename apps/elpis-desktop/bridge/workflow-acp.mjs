@@ -196,6 +196,7 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
         progress(record, owner, { sessionUpdate: 'agent_message_chunk', messageId: `route-${randomUUID()}`, content: { type: 'text', text: `Continuing with ${route.model} (${route.provider}). ${attempt.reason}` } });
       }
       await save(record);
+      let sessionEnded; // what onSession returned, called once this attempt's ACP agent has left
       try {
         const recovery = previousError ? '\n\nA previous attempt reached its subscription limit. Continue in this same workspace. Inspect existing files before acting; preserve completed work and do not repeat actions already evidenced there. Previous progress:\n' + (owner.progress ?? []).filter(entry => entry.kind === 'text').slice(-3).map(entry => entry.text).join('\n').slice(-3000) : '';
         const spec = fullAccess(nodeSpec({ name: owner.title, prompt: instructions, model: route.model, provider: route.provider }, env));
@@ -205,13 +206,13 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
         const result = await runAcpNode(spec, { ...input, task: input.task + recovery }, { ...options,
           // Every chat a step or Mother opens is kept, not only the latest (28 Oct: earlier review and retry chats fell out of
           // their workflow and lay loose in the sidebar: "currently they are all merged").
-          onSession: id => { owner.assignedThreadId = spec.elpis ? id : null; owner.sessionId = id; if (spec.elpis) owner.threads = [...new Set([...(owner.threads ?? []), id])]; onSession?.(record, owner, id); void save(record).catch(() => {}); } });
+          onSession: id => { owner.assignedThreadId = spec.elpis ? id : null; owner.sessionId = id; if (spec.elpis) owner.threads = [...new Set([...(owner.threads ?? []), id])]; sessionEnded = onSession?.(record, owner, id); void save(record).catch(() => {}); } });
         attempt.status = 'succeeded'; attempt.endedAt = Date.now(); return result;
       } catch (error) {
         attempt.status = 'failed'; attempt.reason = error.message; attempt.endedAt = Date.now();
         if (options.signal?.aborted || !quotaFailure(error)) throw error;
         unavailable.add(route.provider); previousError = error; await save(record);
-      }
+      } finally { sessionEnded?.(); }
     }
     throw previousError ?? new BridgeError('No connected subscription has available quota. Choose another connected model and resume this workflow; completed work is preserved.', 409);
   }

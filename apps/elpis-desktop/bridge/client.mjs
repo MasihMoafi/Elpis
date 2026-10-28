@@ -186,6 +186,8 @@ export class DesktopClient extends EventEmitter {
   #interviewThreads = new Set();
   #workflowTitles = new Map(); #workflowLookups = new Map();
   #workflowRuns; #workflowHistory;
+  /** Workflows node chats that have ended, which the list no longer follows; the chat last opened in the window. */
+  #endedNodes = new Set(); #opened = null;
   #checkingApprovals = new Map();
   #settingsWaiters = new Map();
   #turnRevisions = new Map();
@@ -216,7 +218,7 @@ export class DesktopClient extends EventEmitter {
     });
     this.#openSocket = openSocket; this.#retryDelay = reconnectDelayMs;
     this.#workflowRuns = createWorkflowRuns({ stateDir: path.join(profileHome, 'desktop-workflows'),
-      onSession: (_record, _task, id) => { this.#known.add(id); }, onEnd: record => this.#workflowEnded(record),
+      onSession: (_record, _task, id) => { this.#known.add(id); return () => void this.#releaseNode(id); }, onEnd: record => this.#workflowEnded(record),
       observeThread: id => this.readThreadMetadata(id),
       listThreadDescendants: options => this.listThreads(options),
       modelRoutes: async () => {
@@ -558,7 +560,7 @@ export class DesktopClient extends EventEmitter {
     // Auto-review's reviewer works in threads of its own; they are not the user's chats.
     const data = result.data.filter(thread => thread.source?.subAgent?.other !== 'guardian' && (includeAgentRuns || !isAgentRun(thread))).map(thread => this.#decorate(thread));
     // Follow working agents live: only subscribers receive their items, approvals and deltas.
-    if (!options.archived) for (const thread of data) if (thread.status?.type === 'active' && !this.#owned.has(thread.id)) void this.#attach(thread.id).catch(() => {});
+    if (!options.archived) for (const thread of data) if (thread.status?.type === 'active' && !this.#owned.has(thread.id) && !this.#endedNodes.has(thread.id)) void this.#attach(thread.id).catch(() => {});
     return { ...result, data };
   }
   async listArchivedThreads(options = {}) {
@@ -1790,7 +1792,7 @@ export class DesktopClient extends EventEmitter {
     let archived = false;
     const result = await this.#attach(id).catch(error => { if (!archivedSession(error)) throw error; archived = true; return null; })
       ?? (archived ? null : await this.#rpc('thread/resume', { threadId: id, excludeTurns: true, initialTurnsPage: { limit: 1, sortDirection: 'desc', itemsView: 'summary' } }).catch(() => null));
-    void this.#releaseLeft(id);
+    this.#opened = id; void this.#releaseLeft(id);
     if (result) {
       const active = (result.initialTurnsPage?.data ?? result.thread.turns ?? []).find(turn => turn.status === 'inProgress');
       return { thread: this.#decorate({ ...result.thread, model: result.model ?? result.thread.model, serviceTier: result.serviceTier ?? null, reasoningEffort: result.reasoningEffort ?? result.thread.reasoningEffort }), activeTurnId: active?.id ?? null, permissions: modeOf(result), planMode: result.collaborationMode?.mode === 'plan' };
@@ -1810,6 +1812,15 @@ export class DesktopClient extends EventEmitter {
       this.#forgetSubscription(id);
       await this.#rpc('thread/unsubscribe', { threadId: id }).catch(() => {});
     }
+  }
+  /** A Workflows node has ended and its ACP agent has left: stop following its chat unless it is open, so Elpis unloads
+   * it and ends its MCP servers (28 Oct: nine finished node chats stayed loaded, 2.9 GB of MCP servers). */
+  async #releaseNode(id) {
+    this.#endedNodes.add(id);
+    await this.#attaching.get(id)?.catch(() => {});
+    if (id === this.#opened || !this.#owned.has(id) || this.#mutating.has(id)) return;
+    this.#forgetSubscription(id);
+    await this.#rpc('thread/unsubscribe', { threadId: id }).catch(() => {});
   }
   async #current(id) {
     await this.#attach(id);

@@ -21,7 +21,7 @@ const ENGINE = fileURLToPath(new URL("./fake-app-server.mjs", import.meta.url));
 const BRIDGE = fileURLToPath(new URL("../acp-bridge.mjs", import.meta.url));
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function until(check, what, ms = 5000) {
-  for (const end = Date.now() + ms; Date.now() < end; await pause(10)) { const value = check(); if (value) return value; }
+  for (const end = Date.now() + ms; Date.now() < end; await pause(10)) { const value = await check(); if (value) return value; }
   throw new Error(`timed out waiting for ${what}`);
 }
 
@@ -263,6 +263,39 @@ for (const shared of [true, "bridge"]) test(`desktop lists and follows an ACP tu
   a.child.stdin.end(); await a.exited;
   assert.equal(a.runtime.exitCode, null, "ACP disconnect must leave the shared runtime alive");
   assert.ok((await desktop.listThreads()).data.some(row => row.id === sessionId));
+});
+
+// 28 Oct: nine node chats of one desktop Workflows run stayed loaded 10 to 20 minutes after they finished, each with its
+// own MCP servers, while the desktop still followed them.
+test("once a desktop Workflows node ends, no desktop connection follows its chat unless it is open", { timeout: 30000 }, async t => {
+  const a = start(t, { shared: true });
+  const { sessionId: chat } = await a.open({ elpis: { name: "Open chat" } });
+  a.child.stdin.end(); await a.exited; // from here only the desktop follows this chat
+  const desktop = await DesktopClient.connect({ socketPath: a.socketPath, home: path.join(a.dir, "profile"), rewindHome: path.join(a.dir, "rewind"), workflowOptions: {
+    stateDir: path.join(a.dir, "workflows"), modelRoutes: null,
+    nodeSpec: node => ({ name: node.name, instructions: node.prompt, elpis: true, command: process.execPath, args: [AGENT, "--model", "luna-test", "--provider", "openai"], env: { ELPIS_APP_BRIDGE_SOCKET: a.socketPath } }) } });
+  t.after(() => desktop.close());
+  const followers = id => a.engine().filter(m => m.subscribers?.threadId === id).at(-1)?.subscribers.count ?? 0;
+  await desktop.resume(chat, {});
+  const node = (id, instruction) => ({ id, title: id, kind: "explore", instruction, dependsOn: [], writeScopes: [], acceptanceCriteria: ["Return evidence"] });
+  const { graphId } = await desktop.runWorkflow({ rootThreadId: chat, name: "Release", maxConcurrency: 3,
+    tasks: [node("finishes", "[steer] wait for the go"), node("stopped", "[hang] wait to be stopped"), node("watched", "[hang] wait to be stopped")] });
+  const run = () => JSON.parse(fs.readFileSync(path.join(a.dir, "workflows", `${graphId}.json`), "utf8")); // the run record as saved
+  const [finishes, stopped, watched] = await until(() => { const ids = run().tasks.map(task => task.assignedThreadId); return ids.every(Boolean) && ids; }, "the node chats");
+  await until(() => a.engine().filter(m => m.method === "turn/start").length === 3, "the node turns");
+  // The desktop's list follows working chats live: each node chat now has two followers, its ACP agent and the desktop.
+  await desktop.listThreads();
+  await until(() => [finishes, stopped, watched].every(id => followers(id) === 2), "the desktop following the running nodes");
+  await until(() => desktop.steerWorkflow(graphId, "finishes", { text: "go" }).catch(() => null), "a steer the node accepts");
+  await until(() => run().tasks[0].status === "succeeded", "the first node to succeed");
+  await until(() => followers(finishes) === 0, "nobody following the succeeded node's chat");
+  assert.equal(followers(chat), 1, "the desktop keeps following the chat that is open");
+  await desktop.resume(watched, {}); // the person opens a running node's chat
+  await desktop.interrupt(chat, {});
+  await until(() => run().status === "cancelled", "the run to stop");
+  await until(() => followers(stopped) === 0, "nobody following the stopped node's chat");
+  await pause(300);
+  assert.equal(followers(watched), 1, "the desktop keeps following a stopped node's chat while it is open");
 });
 
 test("a mid-turn ACP prompt steers the existing turn without starting another", { timeout: 20000 }, async t => {

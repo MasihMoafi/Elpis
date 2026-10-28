@@ -28,6 +28,15 @@ if (process.env.FAKE_ENGINE_LAZY_PERSIST) for (const thread of threads.values())
 const persist = () => { if (process.env.FAKE_ENGINE_STATE) fs.writeFileSync(process.env.FAKE_ENGINE_STATE, JSON.stringify([...threads])); };
 const waiting = new Map(); // our request id -> resolve
 const turns = new Map(); // turn id -> { interrupt }
+// The connections following each thread, as the engine keeps them (it unloads a thread nobody follows); each change is
+// logged as { subscribers: { threadId, count } }.
+const followers = new Map(); // thread id -> Set of connections
+const follow = (threadId, connection = "stdio", on = true) => {
+  const set = followers.get(threadId) ?? new Set();
+  followers.set(threadId, set);
+  if (on) set.add(connection); else set.delete(connection);
+  log({ subscribers: { threadId, count: set.size } });
+};
 let seq = 0;
 const ask = (method, params) => new Promise((resolve) => { const id = `engine-${++seq}`; waiting.set(id, resolve); send({ id, method, params }); });
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -125,7 +134,10 @@ if (!mcp && socketPath) {
   const { createServer } = await import("node:http");
   const server = createServer();
   wss = new WebSocketServer({ server });
-  wss.on("connection", socket => socket.on("message", raw => handle(JSON.parse(raw), socket)));
+  wss.on("connection", socket => {
+    socket.on("message", raw => handle(JSON.parse(raw), socket));
+    socket.on("close", () => { for (const [id, set] of followers) if (set.has(socket)) follow(id, socket, false); });
+  });
   server.listen(socketPath, () => fs.chmodSync(socketPath, 0o600));
 }
 
@@ -165,6 +177,7 @@ function handle(msg, socket) {
       const id = randomUUID();
       const thread = { id, cwd: p.cwd, source: "appServer", status: { type: "idle" }, model: p.model ?? "default-model", config: p.config, historyMode: "paginated", turns: [] };
       threads.set(id, thread);
+      follow(id, socket);
       if (!process.env.FAKE_ENGINE_LAZY_PERSIST) persist();
       reply({ thread, model: thread.model, modelProvider: p.modelProvider ?? "openai", approvalPolicy: "on-request", sandbox: { type: "workspaceWrite" } });
       return notify("thread/started", { thread });
@@ -174,6 +187,7 @@ function handle(msg, socket) {
     case "thread/resume": {
       if (!threads.has(p.threadId)) return send({ id: msg.id, error: { code: -32600, message: `thread not loaded: ${p.threadId}` } }, socket);
       threads.get(p.threadId).status = { type: "idle" };
+      follow(p.threadId, socket);
       return reply({ thread: threads.get(p.threadId) });
     }
     case "thread/read": {
@@ -184,7 +198,7 @@ function handle(msg, socket) {
     }
     case "thread/turns/list": return reply({ data: threads.get(p.threadId).turns, nextCursor: null });
     case "thread/items/list": return reply({ data: [], nextCursor: null });
-    case "thread/unsubscribe": return reply({});
+    case "thread/unsubscribe": follow(p.threadId, socket, false); return reply({});
     // A provider chat's effort stays with the bridge; the engine only acknowledges the request.
     case "thread/settings/update": return reply({});
     case "turn/steer": {
