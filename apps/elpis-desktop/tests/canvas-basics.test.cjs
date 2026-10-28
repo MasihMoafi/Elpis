@@ -657,3 +657,19 @@ test('Ctrl+click picks several agents, and their shared Model menu puts the team
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
+
+// 28 Oct, Masih: Mother as a parent who does a simple request herself and splits a complex one; the planner decides in
+// its one call and says why, and New workflow shows that reason. A plan with no reason adds no notice.
+for (const [planned, said] of [[{ mode: 'direct', why: 'One file, one line: no team needed.' }, 'One agent does it: One file, one line: no team needed.'],
+  [{ mode: 'team', why: 'Two independent parts.' }, 'A team of 2: Two independent parts.'], [{}, null]]) test(`New workflow ${said ? `says "${said.split(':')[0]}"` : 'adds no notice without a reason'}`, async () => {
+  const f = await openCanvas({ planned });
+  try {
+    await f.canvas.getByRole('textbox', { name: 'Workflow request', exact: true }).fill('Write hello.txt from scratch');
+    await f.canvas.getByRole('button', { name: 'New workflow', exact: true }).click();
+    await f.page.waitForFunction(() => (JSON.parse(localStorage.getItem('elpis-workflow-draft-v1'))?.request ?? '').includes('hello.txt'));
+    await f.page.waitForTimeout(400);
+    if (said) await f.canvas.getByText(said, { exact: true }).waitFor();
+    else assert.equal(await f.canvas.getByText(/^(One agent does it|A team of \d+):/).count(), 0);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});

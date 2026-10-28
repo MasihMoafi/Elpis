@@ -23,7 +23,7 @@ function planFor(body, fill = ['src']) {
  * device before the page opens; `listed(run, looks)` answers a look at the run (workGraph/list) instead of the default,
  * which runs for one look and then succeeds. */
 const ENDED = new Set(['succeeded', 'completed', 'failed', 'cancelled']);
-async function openCanvas({ width = 1440, height = 900, repository = false, graph = null, listed = null, settings = {}, providerModels = {}, desktop = false, autoLayout, folders = ['docs', 'src', 'src/lib', 'tests'], refuseReport = '', files = {}, texts = {}, extraModels = [], models = null } = {}) {
+async function openCanvas({ width = 1440, height = 900, repository = false, graph = null, listed = null, settings = {}, providerModels = {}, desktop = false, autoLayout, folders = ['docs', 'src', 'src/lib', 'tests'], refuseReport = '', files = {}, texts = {}, extraModels = [], models = null, planned = {} } = {}) {
   const posts = [], plans = [], runs = [];
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://local'); let raw = ''; for await (const chunk of req) raw += chunk;
@@ -43,7 +43,7 @@ async function openCanvas({ width = 1440, height = 900, repository = false, grap
     if (url.pathname === '/api/files/dir') { const names = files[`${url.searchParams.get('cwd')}|${url.searchParams.get('dir')}`] ?? files[url.searchParams.get('dir')]; if (!names) { res.statusCode = 404; return json({ error: 'No such folder' }); } return json({ data: names.map(name => ({ name, dir: false })) }); }
     if (url.pathname === '/api/file') { const path = url.searchParams.get('path'); if (!(path in texts)) { res.statusCode = 404; return json({ error: 'No such file' }); } return json({ path, content: texts[path], size: texts[path].length }); }
     if (url.pathname === '/api/repository') return json({ repository });
-    if (url.pathname === '/api/canvas/plan') { const body = JSON.parse(raw); plans.push(body); return json(planFor(body, folders.length ? ['src'] : [])); }
+    if (url.pathname === '/api/canvas/plan') { const body = JSON.parse(raw); plans.push(body); return json({ ...planFor(body, folders.length ? ['src'] : []), ...planned }); }
     // Runs: each chat started gets an id; a graph run on it finishes after its first look.
     if (url.pathname === '/api/threads' && req.method === 'POST') { const id = `chat-${posts.filter(post => post.path === '/api/threads').length}`; return json({ thread: { id, name: JSON.parse(raw).name, cwd: '/tmp/demo', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } } }); }
     if (url.pathname === '/api/threads') return json({ data: [], nextCursor: null });

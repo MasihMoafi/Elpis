@@ -1469,6 +1469,8 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
       }) } : applyPlan(base, plan);
       if (newWorkflow) { checkpoint(); void workflowCatalog.refresh(); setRun(null); setStates({}); setDashboardId(null); setUndoLoad(null); }
       setGraph(next); setSelection([]);
+      // The planner says why it chose one agent or a team (28 Oct: Mother as a parent who does a simple task herself).
+      if (newWorkflow && plan.why?.trim()) setNotice(`${plan.mode === "direct" ? "One agent does it" : `A team of ${plan.agents.length}`}: ${plan.why.trim()}`);
       setTimeout(() => void flow.fitView({ ...FIT, duration: 250 }), 60);
       return next;
     } catch (error) { if (current()) setNotice(`Elpis could not fill in the team: ${error instanceof Error ? error.message : String(error)}`); return null; }

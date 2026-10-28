@@ -391,7 +391,8 @@ export function executionGraph(graph: CanvasGraph, targets?: string[]): CanvasGr
 
 /** What Elpis designs from a goal (POST /api/canvas/plan, bridge/canvas-plan.mjs): the whole team, each agent keyed
  * (an existing agent keeps its id as its key) and wired by `waitsFor`. */
-export type Plan = { name: string; agents: { key: string; title: string; prompt: string; folders: string[]; doneWhen: string[]; waitsFor: string[] }[] };
+/** `mode` and `why`: the planner's own decision, one agent doing the whole goal ("direct") or a team, and its reason. */
+export type Plan = { name: string; mode?: "direct" | "team"; why?: string; agents: { key: string; title: string; prompt: string; folders: string[]; doneWhen: string[]; waitsFor: string[] }[] };
 /** The board as the planner reads it. */
 export const boardForPlan = (graph: CanvasGraph) => agentsOf(graph).map(node => ({ key: node.id, title: node.data.title, prompt: node.data.instruction, folders: node.data.writeScopes, doneWhen: node.data.acceptanceCriteria,
   waitsFor: graph.edges.filter(edge => waits(edge) && edge.target === node.id).map(edge => edge.source) }));
