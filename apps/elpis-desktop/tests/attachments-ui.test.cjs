@@ -87,8 +87,11 @@ test('five files, two of them pictures, attach as five chips of one kind and sen
   const submitted = page.locator('.chat-content .message.user').last();
   await submitted.getByRole('list', { name: 'Message attachments', exact: true }).waitFor();
   assert.deepEqual(await submitted.locator('summary').allTextContents(), ['notes.md', 'todo.txt', 'brief.pdf'], 'submitted documents keep their names and folded previews');
-  assert.equal(await submitted.evaluate(node => [...node.childNodes].filter(child => child.nodeType === Node.TEXT_NODE).map(child => child.textContent).join('')), 'read these', 'file bodies do not spill into the message text');
-  const [sent] = turns(f); assert.equal(sent.body.attachments.length, 5);
+  const [sent] = turns(f);
+  // The typed text is the message body (in its collapsible wrapper since 540411af9); file bodies stay in the attachment list.
+  assert.equal(await submitted.locator('.message-body').textContent(), 'read these', 'file bodies do not spill into the message text');
+  assert.equal(sent.body.text, 'read these', 'the typed text is what is sent');
+  assert.equal(sent.body.attachments.length, 5);
   assert.deepEqual(sent.body.attachments.map(part => [part.name, part.type]), [['notes.md', 'text'], ['first.png', 'image'], ['todo.txt', 'text'], ['second.png', 'image'], ['brief.pdf', 'text']]);
 }));
 
