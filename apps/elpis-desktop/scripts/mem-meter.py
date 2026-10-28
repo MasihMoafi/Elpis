@@ -15,6 +15,7 @@ when it has been reparented. Components, by command line:
   engine    codex/elpis app-server
   workers   claude or agy processes run for threads and workflow nodes
   browser   headless Chromium
+  mcp       MCP servers started for threads and workers (one full set per loaded thread today)
   other     anything else under the roots
 Stdlib only; run with `python3 -I`.
 """
@@ -28,6 +29,7 @@ KINDS = [
     ('workers', re.compile(r'claude-code/bin/claude\.exe|(^|/)claude |/agy |/codex ')),
     ('adapters', re.compile(r'tools/elpis-claude/.*\.mjs')),
     ('app', re.compile(r'elpis-desktop/versions/.*/runtime/electron/electron')),
+    ('mcp', re.compile(r'(^|[ /])mcp([ @/-]|$)|npm exec|_mcp_server|mcp-server|mcp-for-|modelcontextprotocol')),
 ]
 ENGINE_SOCKET = re.compile(r'app-server --listen unix:///run/user/\d+/elpis-bridge')
 
