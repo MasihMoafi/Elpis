@@ -167,3 +167,19 @@ for (const newerTurn of [true, false]) test(`an in-flight idle list preserves on
     assert.deepEqual(f.errors, []);
   } finally { release(); await f.close(); }
 });
+
+// 29 Oct, Masih: "This mark all as read also doesn't make sense when I've already read all of them!" His one unread chat sat
+// in a collapsed section; only rows on screen count.
+test('an unread chat folded away in a collapsed section does not offer Mark all as read; one on screen does', async () => {
+  const f = await fixture({ storage: { 'elpis-pinned-chats-v1': JSON.stringify(['chat-b']), 'elpis-sidebar-folds-v1': JSON.stringify({ sections: { pinned: true }, projects: {} }) } }), { page } = f;
+  try {
+    await f.open('chat-a');
+    const recents = page.locator('aside.sidebar section[aria-label="Recents"]');
+    finish(f, 'chat-b', 'tb');
+    await page.waitForTimeout(300);
+    assert.equal(await recents.getByRole('button', { name: 'Mark all as read' }).count(), 0, 'the unread chat is in the collapsed Pinned section');
+    finish(f, 'chat-c', 'tc');
+    await recents.getByRole('button', { name: 'Mark all as read' }).waitFor();
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});

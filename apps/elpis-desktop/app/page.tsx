@@ -1894,9 +1894,11 @@ export default function Home() {
   const loveChats = searchTerm ? [] : ungroupedChats.filter(thread => originOf(thread) === "Love Spot");
   const workflowChats = searchTerm || hiddenPages.includes("canvas") || !preferences.sidebarWorkflows ? [] : ungroupedChats.filter(thread => originOf(thread) === "Workflows");
   const recentChats = searchTerm ? ungroupedChats : ungroupedChats.filter(thread => !originOf(thread));
-  /** Only a chat the sidebar lists as yours can be unread: hidden subagent and background threads never light Mark all as read. */
-  const ordinaryUnread = ordinaryThreads.filter(thread => attention.unread.includes(thread.id) && ownChat(thread) && !sidebarParent(thread) && !isAgentRun(thread));
   const ordered = [...(collapsedSections.pinned && !searchTerm ? [] : pinnedChats), ...(collapsedSections.groups ? [] : grouped?.groups.flatMap(section => chatGroups.collapsed.includes(section.group.id) ? [] : section.chats) ?? []), ...(collapsedSections.love ? [] : loveChats), ...(collapsedSections.workflows ? [] : workflowChats), ...(collapsedSections.recents ? [] : recentChats)];
+  /** Mark all as read counts only rows on screen: a chat folded away in a collapsed section or project, a hidden subagent or a
+   * background thread never lights it (29 Oct, Masih: "This mark all as read also doesn't make sense when I've already read all of them!"). */
+  const shownChats = [...ordered, ...ordinaryThreads.filter(thread => !isAgent(thread) && projectChats[thread.id] && !collapsedProjects[projectChats[thread.id]] && !collapsedSections.projects && !pins.includes(thread.id))];
+  const ordinaryUnread = shownChats.filter(thread => attention.unread.includes(thread.id));
   // An expanded chat owns its visible agents, including background runs. History must not duplicate those rows.
   const inlineAgents = new Set<string>();
   const collectAgents = (id: string, seen = new Set<string>()) => {
@@ -1906,7 +1908,7 @@ export default function Home() {
       inlineAgents.add(child.id); collectAgents(child.id, next);
     }
   };
-  for (const root of [...ordered, ...ordinaryThreads.filter(thread => !isAgent(thread) && projectChats[thread.id] && !collapsedProjects[projectChats[thread.id]] && !collapsedSections.projects && !pins.includes(thread.id))]) collectAgents(root.id);
+  for (const root of shownChats) collectAgents(root.id);
   for (const run of workflowRuns) if (workflowOpen(run) && !collapsedSections.workflows) for (const member of workflowMembers(run)) { inlineAgents.add(member.threadId); collectAgents(member.threadId); }
   const topLevelAgentRuns = agentRuns.filter(thread => !inlineAgents.has(thread.id) && (!thread.parentThreadId || !agentRunIds.has(thread.parentThreadId)));
   // Check newly visible agents once, so only agents with actual children get an expansion control.
