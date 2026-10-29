@@ -410,7 +410,7 @@ export async function startDesktopServer(options = {}) {
           if (action === 'session-intent' && method === 'POST') return json(response, 201, await client.createSessionIntent(id, await body(request)));
           throw new BridgeError('Method is not allowed', 405);
         }
-        const thread = url.pathname.match(/^\/api\/threads\/([^/]+)(?:\/(turns|steer|interrupt|resume|continue|context|prompts|delete|rename|archive|unarchive|revert|rewind|fork|compact|review|git|permissions|effort|service-tier|folder|shell|side-chat))?$/);
+        const thread = url.pathname.match(/^\/api\/threads\/([^/]+)(?:\/(turns|steer|interrupt|resume|continue|context|prompts|delete|rename|archive|unarchive|revert|rewind|versions|fork|compact|review|git|permissions|effort|service-tier|folder|shell|side-chat))?$/);
         if (thread) {
           const id = decodeURIComponent(thread[1]);
           if (thread[2] === 'shell' && method === 'POST') return json(response, 200, await client.shellCommand(id, await body(request)));
@@ -429,7 +429,7 @@ export async function startDesktopServer(options = {}) {
           }
           if (thread[2] === 'git' && method === 'POST') return json(response, 200, await client.discardChange(id, await body(request, 65536)));
           if (thread[2] && !['context', 'prompts', 'git'].includes(thread[2]) && method === 'POST') {
-            const operation = { turns: 'send', steer: 'steer', interrupt: 'interrupt', resume: 'resume', continue: 'continueThread', delete: 'deleteThread', rename: 'renameThread', archive: 'archiveThread', unarchive: 'unarchiveThread', revert: 'revert', rewind: 'rewind', fork: 'forkThread', compact: 'compact', review: 'review', permissions: 'setPermissions', effort: 'setEffort', 'service-tier': 'setServiceTier', folder: 'setFolder' }[thread[2]];
+            const operation = { turns: 'send', steer: 'steer', interrupt: 'interrupt', resume: 'resume', continue: 'continueThread', delete: 'deleteThread', rename: 'renameThread', archive: 'archiveThread', unarchive: 'unarchiveThread', revert: 'revert', rewind: 'rewind', versions: 'versions', fork: 'forkThread', compact: 'compact', review: 'review', permissions: 'setPermissions', effort: 'setEffort', 'service-tier': 'setServiceTier', folder: 'setFolder' }[thread[2]];
             return json(response, 200, await client[operation](id, await body(request, ['send', 'steer'].includes(operation) ? ATTACHMENT_BODY_LIMIT : 65536)));
           }
           throw new BridgeError('Method is not allowed', 405);

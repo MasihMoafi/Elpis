@@ -5,3 +5,5 @@
 .user-turn .message-actions, .message.agent .message-actions { gap:6px; margin-top:6px; }
 /* Keep sent-message actions discoverable while reading or selecting text. */
 .user-turn .message-actions { opacity:1; }
+/* ‹ 2 / 2 ›: an edited message's versions, before its other actions. */
+.message-versions { display:inline-flex; align-items:center; gap:2px; }

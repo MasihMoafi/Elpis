@@ -43,7 +43,7 @@ import { permissionLabel, PermissionsMenu, PlanPill, PlusMenu, SendOptionsMenu, 
 import { CopyButton } from "@/components/markdown-text";
 import { liveEventItemKey, mergeHistoryWithLive, mergeLiveItem, runtimeErrorNotice } from "@/lib/live-events";
 import { entryKey, rememberSubmittedMessages, submittedContent, withSubmittedMessages, type SubmittedMessage } from "@/lib/submitted-messages";
-import { replacementEligibility } from "@/lib/turn-replacement";
+import { replacementEligibility, editableMessage, editBlocked, versionControl, type MessageVersion } from "@/lib/turn-replacement";
 import { AgentsGuide } from "@/components/agents-guide";
 import { CanvasGuideHelp } from "@/components/canvas-guide-help";
 import { ExperimentLab } from "@/components/experiment-lab";
@@ -249,6 +249,8 @@ export default function Home() {
   /** The message whose "Rewind to here" is awaiting confirmation (its turn). */
   const [rewindTurn, setRewindTurn] = useState<string | null>(null);
   const [rewindActions, setRewindActions] = useState<Record<string, "undo" | "redo" | undefined>>({});
+  /** ChatGPT's ‹ 1/2 › under an edited message, per chat: its versions by turn (bridge/message-versions.mjs). */
+  const [messageVersions, setMessageVersions] = useState<Record<string, MessageVersion[]>>({});
   const [rewindBusy, setRewindBusy] = useState(false);
   const rewindSwitch = useRef<string | null>(null);
   /** The chats and pages visited, for Back and Forward (lib/nav-history.ts). */
@@ -909,6 +911,7 @@ export default function Home() {
     api<{ action?: "undo" | "redo" } | null>(`/threads/${encodeURIComponent(id)}/rewind`, { action: "status" }).then(result => {
       if (!disposed) setRewindActions(prev => ({ ...prev, [id]: result?.action }));
     }).catch(() => {});
+    loadVersions(id, () => disposed);
     return () => { disposed = true; };
   }, [ready, connected, selected?.id, activeTurn]);
   // A new chat starts in Settings' default permissions (Full access unless the config names an approval policy) until a
@@ -1397,6 +1400,7 @@ export default function Home() {
     if (overrides) setNextTurn(prev => without(prev, thread.id));
     if (selectedRef.current?.id === thread.id) { stickToBottom.current = true; setEntries(prev => prev.filter(entry => !stale.has(entry.turnId))); }
     if (!completedTurns.current.has(startedTurn.id)) setActiveTurns(prev => ({ ...prev, [thread.id]: startedTurn.id }));
+    loadVersions(thread.id);
     if (request.current === originalRequest && selectedRef.current?.id === thread.id) restoreComposerFocus(originalFocus);
   }
   /** "Rewind to here": Elpis drops the turn and every later one (thread/revert, as edit-and-resend does) without sending anything;
@@ -1421,6 +1425,25 @@ export default function Home() {
       if (draft.trim()) editDraft(draft);
       setRewindActions(prev => ({ ...prev, [thread.id]: undefined, [next.id]: result.undo }));
     } finally { rewindSwitch.current = null; setRewindBusy(false); }
+  }
+  function loadVersions(id: string, stale = () => false) {
+    api<{ versions?: MessageVersion[] }>(`/threads/${encodeURIComponent(id)}/versions`, { action: "list" }).then(result => {
+      if (!stale()) setMessageVersions(prev => ({ ...prev, [id]: result.versions ?? [] }));
+    }).catch(() => {});
+  }
+  /** ‹ / ›: the chat shows another version of an edited message; that version's chat takes this one's place. */
+  async function showVersion(target: string) {
+    const thread = selectedRef.current; if (!thread) return;
+    // The switch archives this chat; its archive notice must not close the chat that replaces it (as for Rewind).
+    rewindSwitch.current = thread.id;
+    try {
+      const result = await api<{ thread: Thread }>(`/threads/${encodeURIComponent(thread.id)}/versions`, { action: "switch", threadId: target });
+      if (!result.thread || typeof result.thread.id !== "string") throw unreadable("version");
+      if (selectedRef.current?.id !== thread.id) return;
+      transcripts.current.delete(result.thread.id); hidden.current.delete(result.thread.id); upsertThread(result.thread);
+      hidden.current.add(thread.id); setThreads(prev => prev.filter(item => item.id !== thread.id));
+      setEntries([]); await loadThread(result.thread);
+    } finally { rewindSwitch.current = null; }
   }
   /** Answers a request; `instead` is "Deny, and tell Elpis what to do instead" (body: { text }). */
   async function answer(id: string, body: unknown, key: string, instead = false) {
@@ -1524,15 +1547,17 @@ export default function Home() {
 
   // The transcript is redrawn only when what it shows changes, not on every keystroke in the message box; its
   // handlers call the current render's functions through a ref, so a reused row never calls a stale one.
-  const live = useRef({ openById, focusComposer, replaceFrom, forkFrom, setRewindTurn, setMessageEdits, setError, beginReply, beginImageReply });
-  live.current = { openById, focusComposer, replaceFrom, forkFrom, setRewindTurn, setMessageEdits, setError, beginReply, beginImageReply };
+  const live = useRef({ openById, focusComposer, replaceFrom, forkFrom, showVersion, setRewindTurn, setMessageEdits, setError, beginReply, beginImageReply });
+  live.current = { openById, focusComposer, replaceFrom, forkFrom, showVersion, setRewindTurn, setMessageEdits, setError, beginReply, beginImageReply };
+  const versionsShown = selected ? messageVersions[selected.id] : undefined;
   const conversation = useMemo(() => <ViewBoundary label="The conversation" resetKey={selected?.id}>{selected && !readOnlyRun && <SelectionReply key={selected.id} onQuote={(reference, text) => { const entry = shownEntries.find(entry => entryKey(entry) === reference); if (entry) live.current.beginReply(entry, text); }} />}<Transcript entries={shownEntries} activeTurnId={activeTurn ?? null} wrapItem={(entry, node) => <ImageReplyProvider reference={entryKey(entry)} onReply={selected && !readOnlyRun && !entry.clientPending ? image => { void live.current.beginImageReply(entry, image); } : undefined}>{node}</ImageReplyProvider>} onViewChanges={desktop && selected ? side.openChanges : undefined} mediaOf={e => selected ? mediaUrl(selected.id, e) : undefined} renderItem={e => { const editKey = JSON.stringify([selected?.id, e.turnId, e.item.id]); return <ChatMessage key={e.clientKey ?? editKey} item={e.item} readAloud={!e.clientPending && (e.turnId !== activeTurn || e.completedAtMs !== undefined) && e.item.status !== "inProgress"} reference={entryKey(e)} onReply={selected && !readOnlyRun && !e.clientPending && (e.item.type === "userMessage" || e.item.type === "agentMessage") ? () => live.current.beginReply(e) : undefined} mediaBase={selected ? mediaUrl(selected.id, e) : undefined} threads={threads} speaker={agentName(selected) || "Elpis"} onOpenThread={id => live.current.openById(id)}
             editDraft={messageEdits[editKey]} editPending={!!pendingDrafts[editKey]} onEditDraftChange={value => { live.current.setMessageEdits(previous => value === null ? without(previous, editKey) : { ...previous, [editKey]: value }); if (value === null) live.current.focusComposer(); }}
-            onEdit={!e.clientPending && replaceable && e.item.type === "userMessage" && replacementOptions.get(e.turnId)?.allowed ? text => live.current.replaceFrom(e.turnId, text, editKey) : undefined}
-            editBlockedReason={replaceable && e.item.type === "userMessage" && replacementOptions.get(e.turnId)?.allowed === false ? (replacementOptions.get(e.turnId) as { allowed: false; reason: string }).reason : undefined}
+            onEdit={!e.clientPending && replaceable && e.item.type === "userMessage" && editableMessage(replacementOptions.get(e.turnId), e.item.id) ? text => live.current.replaceFrom(e.turnId, text, editKey) : undefined}
+            editBlockedReason={replaceable && e.item.type === "userMessage" ? editBlocked(replacementOptions.get(e.turnId), e.item.id) : undefined}
+            version={e.item.type === "userMessage" ? versionControl(versionsShown, e.turnId, replacementOptions.get(e.turnId), e.item.id, replaceable, target => { live.current.showVersion(target).catch(error => live.current.setError(String(error instanceof Error ? error.message : error))); }) : undefined}
             time={e.item.type === "userMessage" ? e.startedAtMs : undefined}
             onFork={selected && !readOnlyRun && e.item.type === "agentMessage" && e.turnId !== activeTurn ? () => void live.current.forkFrom(selected, e.turnId, e.item.id) : undefined} onRewind={!e.clientPending && replaceable ? () => live.current.setRewindTurn(e.turnId) : undefined}
-            onRegenerate={regenerate && e.item.id === regenerate.replyId ? () => { live.current.replaceFrom(regenerate.turnId, regenerate.prompt).catch(error => live.current.setError(String(error instanceof Error ? error.message : error))); } : undefined} />; }} /></ViewBoundary>, [shownEntries, activeTurn, desktop, selected, side.openChanges, threads, messageEdits, pendingDrafts, replaceable, replacementOptionsKey, readOnlyRun, regenerate?.turnId, regenerate?.replyId, regenerate?.prompt]); // eslint-disable-line react-hooks/exhaustive-deps
+            onRegenerate={regenerate && e.item.id === regenerate.replyId ? () => { live.current.replaceFrom(regenerate.turnId, regenerate.prompt).catch(error => live.current.setError(String(error instanceof Error ? error.message : error))); } : undefined} />; }} /></ViewBoundary>, [shownEntries, activeTurn, desktop, selected, side.openChanges, threads, messageEdits, pendingDrafts, replaceable, replacementOptionsKey, readOnlyRun, versionsShown, regenerate?.turnId, regenerate?.replyId, regenerate?.prompt]); // eslint-disable-line react-hooks/exhaustive-deps
   // Keep the conversation's context providers outside composer-only renders.
   const chatConversation = useMemo(() => <ReadAloud threadId={selected?.id} enabled={connected && !!selected} unavailableReason={loveSpotAudioReason}>{selected && !loveSpotAudioReason && agentName(selected) === "Matilda" && <MatildaAutoVoice key={selected.id} threadId={selected.id} activeTurnId={activeTurn ?? null} entries={shownEntries} disabled={!connected || voiceBusy} />}{conversation}</ReadAloud>, [selected, connected, activeTurn, shownEntries, voiceBusy, conversation, loveSpotAudioReason]);
   /** A queued message's Edit in composer, as in Claude: it returns to the box above whatever is typed, with its files and @-mentions. */
@@ -1558,7 +1583,7 @@ export default function Home() {
     const last = entries.filter(entry => entry.item.type === "userMessage").at(-1); if (!last) return;
     const option = replacementOptions.get(last.turnId);
     if (!option?.allowed) { if (option) setSlashNotice(option.reason); return; }
-    setMessageEdits(previous => ({ ...previous, [JSON.stringify([selected.id, last.turnId, last.item.id])]: option.prompt }));
+    setMessageEdits(previous => ({ ...previous, [JSON.stringify([selected.id, last.turnId, option.messageId])]: option.prompt }));
   }
   /** The "+" menu's Add files or photos: the one chooser, for pictures and documents alike. */
   const pickFiles = () => filePickerRef.current?.click();

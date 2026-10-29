@@ -28,6 +28,7 @@ import { RewindSnapshots } from './rewind-snapshots.mjs';
 import { createWorkflowHistory, createWorkflowRuns } from './workflow-acp.mjs';
 import { MOTHER_MODEL, WORKFLOW_PRESETS, workflowPreset } from './workflow-presets.mjs';
 import { RewindHistory } from './rewind-history.mjs';
+import { MessageVersions } from './message-versions.mjs';
 import { SpawnLinks, createdThread } from './spawn-links.mjs';
 import { CustomizePage } from './customize-page.mjs';
 import { sessionContextFiles } from './session-context.mjs';
@@ -200,7 +201,7 @@ export class DesktopClient extends EventEmitter {
   #settingsConfirmMs;
   #browserConfig;
   #archiveHistory; #spawnLinks; #appHome;
-  #rewindSnapshots; #rewindHistory; #githubConnector; #customize;
+  #rewindSnapshots; #rewindHistory; #versions; #githubConnector; #customize;
   constructor(socket, { home, timeoutMs = 30000, openSocket, reconnectDelayMs = 500, settingsConfirmMs = 3000, browserConfig, archiveDirectory, rewindHome, spawnLinksFile, appHome = os.homedir(), githubConnector, skillTrashOptions, workflowOptions, reportAttempts = 4, reportRetryMs = 2000 } = {}) {
     super(); this.#socket = socket; this.timeoutMs = timeoutMs; this.#settingsConfirmMs = settingsConfirmMs;
     const workflowEnv = profileEnvironment(home, workflowOptions?.env);
@@ -215,6 +216,7 @@ export class DesktopClient extends EventEmitter {
     this.#customize = new CustomizePage({ rpc: (method, params) => this.#rpc(method, params), mcp: () => this.mcp(), settings: () => this.settings(), saveSettings: input => this.saveSettings(input),
       githubConnector, skillTrash: new SkillTrash(skillTrashOptions), appHome, home: () => profileHome });
     this.#rewindSnapshots = new RewindSnapshots(rewindHome);
+    this.#versions = new MessageVersions(path.join(rewindHome, 'versions.json'));
     this.#rewindHistory = new RewindHistory(rewindHome, async (method, params) => {
       const result = await this.#rpc(method, params);
       if (method === 'thread/archive') this.#forgetSubscription(params.threadId);
@@ -538,7 +540,7 @@ export class DesktopClient extends EventEmitter {
     // A native fork has no first_user_message of its own until another turn. Keep the current rewind checkpoint
     // discoverable across desktop restarts without inventing a user message just to make the engine list it.
     if (!options.cursor && !options.ancestorThreadId && !options.archived) {
-      for (const id of await this.#rewindHistory.currentIds()) {
+      for (const id of new Set([...await this.#rewindHistory.currentIds(), ...await this.#versions.listed()])) {
         if (result.data.some(thread => thread.id === id)) continue;
         const { thread } = await this.#rpc('thread/read', { threadId: id, includeTurns: false }).catch(() => ({}));
         if (!thread || thread.path?.includes('/archived_sessions/')) continue;
@@ -1653,6 +1655,7 @@ export class DesktopClient extends EventEmitter {
     const browserSession = `pending-${randomUUID()}`;
     const fork = await this.#rpc('thread/fork', { threadId: thread.id, ...(lastTurnId ? { lastTurnId } : {}), ...(thread.model ? { model: thread.model } : {}), ...(thread.modelProvider ? { modelProvider: thread.modelProvider } : {}), ...model, ...this.#browserOptions(browserSession) }).catch(error => { this.#browserConfig?.close?.(browserSession); throw error; });
     threadId(fork.thread?.id); this.#browserConfig?.bind?.(browserSession, fork.thread.id); this.#owned.add(fork.thread.id);
+    await this.#versions.list(fork.thread.id, true).catch(() => {});
     const name = `${(thread.name?.trim() || String(thread.preview ?? '').split('\n')[0].trim() || 'Chat').slice(0, 110)} (${suffix})`;
     try { await this.#rpc('thread/name/set', { threadId: fork.thread.id, name }); fork.thread.name = name; } catch { /* The fork stands; it keeps its default title. */ }
     return { thread: this.#decorate(fork.thread) };
@@ -1734,7 +1737,7 @@ export class DesktopClient extends EventEmitter {
     const rewind = body?.text === undefined && body?.model === undefined && body?.effort === undefined;
     object(body, rewind ? ['beforeTurnId'] : ['beforeTurnId', 'text', 'model', 'effort']);
     const beforeTurnId = text(body.beforeTurnId, 'turn ID', 200);
-    const input = rewind ? [] : [{ type: 'text', text: ragMessage(text(body.text, 'message')), text_elements: [] }];
+    const typed = rewind || (typeof body.text === 'string' && !body.text.trim()) ? [] : [{ type: 'text', text: ragMessage(text(body.text, 'message')), text_elements: [] }];
     const effort = this.#effort(body.effort);
     return this.#mutate(id, async () => {
       const thread = await this.#current(id);
@@ -1755,11 +1758,62 @@ export class DesktopClient extends EventEmitter {
       if (!complete) throw new BridgeError('This turn is too large to verify for replacement in this app. Nothing was replaced.', 409);
       const eligibility = replacementEligibility(entries, beforeTurnId, { historyComplete: true });
       if (!eligibility.allowed) throw new BridgeError(eligibility.reason, 409);
-      await this.#rpc('thread/revert', { threadId: id, beforeTurnId });
-      try { return await this.#startTurn(thread, { threadId: id, input, ...(model ? { model } : {}), ...(effort ? { effort } : {}) }); }
-      catch (error) {
-        return { rewound: true, beforeTurnId, sendError: `Conversation was rewound, but its replacement message was not confirmed: ${error instanceof Error ? error.message : String(error)}` };
-      }
+      // The edited text goes first; the message's files, images and quoted replies go with it, unchanged.
+      const input = [...typed, ...eligibility.kept];
+      if (!input.length) throw new BridgeError('Write a message');
+      // As ChatGPT does, the chat as it was stays one click away (‹ 1/2 ›): an archived copy keeps it.
+      const moved = await this.#turnIdsFrom(id, beforeTurnId);
+      const copy = await this.#keepVersion(thread);
+      try { await this.#rpc('thread/revert', { threadId: id, beforeTurnId }); }
+      catch (error) { await this.#rpc('thread/delete', { threadId: copy }).catch(() => {}); throw error; }
+      let started, sendError;
+      try { started = await this.#startTurn(thread, { threadId: id, input, ...(model ? { model } : {}), ...(effort ? { effort } : {}) }); }
+      catch (error) { sendError = `Conversation was rewound, but its replacement message was not confirmed: ${error instanceof Error ? error.message : String(error)}`; }
+      await this.#versions.record(id, beforeTurnId, copy, started?.turn?.id, moved);
+      return sendError ? { rewound: true, beforeTurnId, sendError } : started;
+    });
+  }
+  /** The turn IDs from `fromTurnId` to the end, oldest first: what a replacement moves into the kept version. */
+  async #turnIdsFrom(id, fromTurnId) {
+    const ids = [], seen = new Set(); let cursor;
+    for (let page = 0; page < 50; page++) {
+      const result = await this.#rpc('thread/turns/list', { threadId: id, limit: 100, sortDirection: 'asc', itemsView: 'notLoaded', ...(cursor ? { cursor } : {}) });
+      ids.push(...(result.data ?? []).map(turn => turn.id));
+      if (!(cursor = result.nextCursor) || seen.has(cursor)) break;
+      seen.add(cursor);
+    }
+    const at = ids.indexOf(fromTurnId);
+    return at < 0 ? [fromTurnId] : ids.slice(at);
+  }
+  /** An archived copy of the whole chat, under the same name; its ID. */
+  async #keepVersion(thread) {
+    const fork = await this.#rpc('thread/fork', { threadId: thread.id, ...(thread.model ? { model: thread.model } : {}), ...(thread.modelProvider ? { modelProvider: thread.modelProvider } : {}) });
+    const copy = threadId(fork.thread?.id);
+    if (copy === thread.id) throw new BridgeError('Could not keep the earlier version of this chat. Nothing was replaced.', 502);
+    try {
+      const name = thread.name?.trim() || String(thread.preview ?? '').split('\n')[0].trim().slice(0, 120);
+      if (name) await this.#rpc('thread/name/set', { threadId: copy, name });
+      await this.#rpc('thread/archive', { threadId: copy }); this.#forgetSubscription(copy);
+    } catch (error) { await this.#rpc('thread/delete', { threadId: copy }).catch(() => {}); throw new BridgeError(`Could not keep the earlier version of this chat. Nothing was replaced. ${error.message ?? ''}`.trim(), 502); }
+    return copy;
+  }
+  /** ChatGPT's ‹ 1/2 › under an edited message. `{ action: 'list' }` gives this chat's versions; `{ action: 'switch', threadId }`
+   * shows another version of one of its messages in its place: that chat comes back and this one is archived. */
+  async versions(id, body) {
+    object(body, ['action', 'threadId']);
+    if (body.action === 'list') return { versions: await this.#versions.of(threadId(id)) };
+    if (body.action !== 'switch') throw new BridgeError('Choose a version action.');
+    const target = threadId(body.threadId);
+    if (!(await this.#versions.of(id)).some(version => version.previous === target || version.next === target)) throw new BridgeError('That version is no longer linked to this chat.', 409);
+    return this.#mutate(id, async () => {
+      const current = await this.#current(id);
+      if (current.status?.type === 'active') throw new BridgeError('Stop the running turn before showing another version.', 409);
+      const result = await this.#rpc('thread/unarchive', { threadId: target });
+      try { await this.#rpc('thread/archive', { threadId: id }); this.#forgetSubscription(id); }
+      catch (error) { await this.#rpc('thread/archive', { threadId: target }).catch(() => {}); throw error; }
+      await this.#versions.list(id, false); await this.#versions.list(target, true);
+      await this.#attach(target);
+      return { thread: this.#decorate(result.thread) };
     });
   }
   /** Claude's restore scopes. File checkpoints are bridge-owned; native forks keep Undo/Redo lossless. */

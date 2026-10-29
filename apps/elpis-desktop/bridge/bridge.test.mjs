@@ -1473,10 +1473,8 @@ test('replacement checks every native page of the selected turn before reverting
 test('replacement refuses unsafe or incomplete native inputs before any mutation', async t => {
   const prompt = { turnId: 'turn-1', item: { type: 'userMessage', id: 'prompt', content: [{ type: 'text', text: 'Original prompt' }] } };
   const variants = {
-    'another delivered instruction': { start: { data: [prompt], nextCursor: 'next' }, next: { data: [{ ...prompt, item: { ...prompt.item, id: 'delivered' } }], nextCursor: null } },
-    'image attachment': { start: { data: [{ ...prompt, item: { ...prompt.item, content: [...prompt.item.content, { type: 'localImage', path: '/tmp/book.png' }] } }], nextCursor: null } },
-    'special text elements': { start: { data: [{ ...prompt, item: { ...prompt.item, content: [{ type: 'text', text: 'Image marker', textElements: [{ byteRange: { start: 0, end: 5 } }] }] } }], nextCursor: null } },
     'missing user input': { start: { data: [], nextCursor: null } },
+    'unreadable input part': { start: { data: [{ ...prompt, item: { ...prompt.item, content: ['not a part'] } }], nextCursor: null } },
     'unknown page completeness': { start: { data: [prompt] } },
     'wrong turn': { start: { data: [{ ...prompt, turnId: 'another-turn' }], nextCursor: null } },
     'repeating page cursor': { start: { data: [prompt], nextCursor: 'next' }, next: { data: [], nextCursor: 'next' } },
@@ -1488,6 +1486,29 @@ test('replacement refuses unsafe or incomplete native inputs before any mutation
       await client.initialize();
       await assert.rejects(client.revert(ROOT, { beforeTurnId: 'turn-1', text: 'Edited prompt' }));
       assert.equal(socket.sent.filter(row => ['thread/revert', 'turn/start'].includes(row.method)).length, 0);
+    } finally { client.close(); }
+  });
+});
+
+test('replacement resends the edited text with the message\'s attachments and keeps the chat as it was in an archived copy', async t => {
+  const prompt = { turnId: 'turn-1', item: { type: 'userMessage', id: 'prompt', content: [{ type: 'text', text: 'Original prompt' }] } };
+  const image = { type: 'localImage', path: '/tmp/book.png' }, quoted = { type: 'text', text: 'File: note.txt\nBody', textElements: [{ byteRange: { start: 0, end: 5 }, placeholder: 'Attachment: note.txt' }] };
+  const variants = {
+    'image and file attachments': { start: { data: [{ ...prompt, item: { ...prompt.item, content: [...prompt.item.content, image, quoted] } }], nextCursor: null }, kept: [image, quoted] },
+    'a delivered follow-up goes with its turn': { start: { data: [prompt], nextCursor: 'next' }, next: { data: [{ ...prompt, item: { ...prompt.item, id: 'delivered', content: [{ type: 'text', text: 'Follow-up' }] } }], nextCursor: null }, kept: [] },
+  };
+  for (const [name, { kept, ...replacementPages }] of Object.entries(variants)) await t.test(name, async () => {
+    const { client, socket } = fixture({ replacementPages });
+    try {
+      await client.initialize();
+      const result = await client.revert(ROOT, { beforeTurnId: 'turn-1', text: 'Edited prompt' });
+      assert.equal(result.turn.id, 'new-turn');
+      assert.deepEqual(socket.sent.find(row => row.method === 'turn/start').params.input, [{ type: 'text', text: 'Edited prompt', text_elements: [] }, ...kept]);
+      const order = ['thread/fork', 'thread/archive', 'thread/revert', 'turn/start'].map(method => socket.sent.findIndex(row => row.method === method));
+      assert.deepEqual([...order].sort((a, b) => a - b), order, 'the copy is kept and archived before anything is replaced');
+      assert.equal(socket.sent.find(row => row.method === 'thread/fork').params.beforeTurnId, undefined, 'the copy is the whole chat');
+      assert.deepEqual((await client.versions(ROOT, { action: 'list' })).versions, [{ turnId: 'new-turn', index: 2, count: 2, previous: FORK }]);
+      assert.deepEqual((await client.versions(FORK, { action: 'list' })).versions, [{ turnId: 'turn-1', index: 1, count: 2, next: ROOT }]);
     } finally { client.close(); }
   });
 });

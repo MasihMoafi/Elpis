@@ -390,6 +390,7 @@
     "tests/project-journey.runtime.mjs",
     "tests/documents.runtime.mjs",
     "tests/rewind.runtime.mjs",
+    "tests/edit-fork-real.test.cjs",
     "tests/runtime.mjs",
     "tests/session-windows-electron.test.cjs",
     "bridge/mcp.runtime.mjs",

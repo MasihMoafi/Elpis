@@ -4,7 +4,7 @@ import { readFileSync, existsSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { replacementEligibility } from '../lib/turn-replacement.ts';
+import { replacementEligibility, editableMessage, editBlocked, versionControl } from '../lib/turn-replacement.ts';
 
 const text = (value, extra = {}) => ({ type: 'text', text: value, ...extra });
 const entry = (content, id = 'user', turnId = 'turn') => ({ turnId, item: { id, type: 'userMessage', content } });
@@ -16,26 +16,31 @@ test('replacement permits a complete single-user text turn and ignores unrelated
     entry([text('First line\n\nمتن فارسی'), text('Last line', { textElements: [] })]),
     { turnId: 'turn', item: { id: 'reply', type: 'agentMessage', text: 'Done' } },
   ], 'turn', complete);
-  assert.deepEqual(result, { allowed: true, prompt: 'First line\n\nمتن فارسی\nLast line' });
+  assert.deepEqual(result, { allowed: true, prompt: 'First line\n\nمتن فارسی\nLast line', kept: [], messageId: 'user' });
 });
 
-test('replacement refuses another delivered instruction, attachments, mentions and text elements', () => {
-  const unsafe = [
-    [entry([text('Starting prompt')]), entry([text('Delivered follow-up')], 'follow-up')],
-    [entry([text('See image'), { type: 'localImage', path: '/tmp/book.png' }])],
-    [entry([{ type: 'image', url: 'https://example.invalid/private-image' }])],
-    [entry([{ type: 'audio', url: 'data:audio/wav;base64,private-audio' }])],
-    [entry([text('Use tool'), { type: 'mention', name: 'rag', path: 'app://rag' }])],
-    [entry([text('Use skill'), { type: 'skill', name: 'experiment', path: '/tmp/SKILL.md' }])],
-    [entry([text('Image placeholder', { textElements: [{ byteRange: { start: 0, end: 5 } }] })])],
-    [entry([text('Image placeholder', { text_elements: [{ byte_range: { start: 0, end: 5 } }] })])],
-    [entry([{ type: 'futureInput', text: 'Do not drop me' }])],
-  ];
-  for (const entries of unsafe) {
-    const result = replacementEligibility(entries, 'turn', complete);
-    assert.equal(result.allowed, false, JSON.stringify(entries));
-    assert.ok(result.reason);
+test('replacement edits the typed text and keeps attachments, images, mentions and quoted files as they were', () => {
+  for (const extra of [
+    { type: 'localImage', path: '/tmp/book.png' },
+    { type: 'image', url: 'data:image/png;base64,AAAA' },
+    { type: 'mention', name: 'rag', path: 'app://rag' },
+    { type: 'skill', name: 'experiment', path: '/tmp/SKILL.md' },
+    text('File: note.txt\nBody', { text_elements: [{ byteRange: { start: 0, end: 5 }, placeholder: 'Attachment: note.txt' }] }),
+    { type: 'futureInput', text: 'Do not drop me' },
+  ]) {
+    const result = replacementEligibility([entry([text('Typed'), extra])], 'turn', complete);
+    assert.deepEqual(result, { allowed: true, prompt: 'Typed', kept: [extra], messageId: 'user' }, JSON.stringify(extra));
   }
+  const imageOnly = replacementEligibility([entry([{ type: 'image', url: 'data:image/png;base64,AAAA' }])], 'turn', complete);
+  assert.equal(imageOnly.allowed, true); assert.equal(imageOnly.prompt, '');
+});
+
+test('a turn with delivered follow-ups is edited from its first message only', () => {
+  const entries = [entry([text('Starting prompt')]), entry([text('Delivered follow-up')], 'follow-up')];
+  const result = replacementEligibility(entries, 'turn', complete);
+  assert.deepEqual(result, { allowed: true, prompt: 'Starting prompt', kept: [], messageId: 'user' });
+  assert.equal(editableMessage(result, 'user'), true); assert.equal(editableMessage(result, 'follow-up'), false);
+  assert.equal(editBlocked(result, 'user'), undefined); assert.match(editBlocked(result, 'follow-up'), /first message/);
 });
 
 test('replacement refuses incomplete, absent and malformed turn input', () => {
@@ -46,11 +51,24 @@ test('replacement refuses incomplete, absent and malformed turn input', () => {
     [[entry([text('   ')])], 'turn', complete],
     [[entry([{ type: 'text', text: 42 }])], 'turn', complete],
     [[entry([{ type: 'text', text: 'Hello', textElements: 'unknown shape' }])], 'turn', complete],
+    [[entry(['not a part'])], 'turn', complete],
     [[{ turnId: 'turn', item: null }], 'turn', complete],
   ]) {
     const result = replacementEligibility(entries, turnId, options);
     assert.equal(result.allowed, false); assert.ok(result.reason);
   }
+});
+
+test('the version control shows on the edited message only, and moves only when switching is allowed', () => {
+  const option = { allowed: true, prompt: 'p', kept: [], messageId: 'user' };
+  const versions = [{ turnId: 'turn', index: 2, count: 2, previous: 'older-chat' }];
+  const shown = [];
+  const control = versionControl(versions, 'turn', option, 'user', true, id => shown.push(id));
+  assert.equal(control.index, 2); assert.equal(control.count, 2); assert.equal(control.onNext, undefined);
+  control.onPrevious(); assert.deepEqual(shown, ['older-chat']);
+  assert.equal(versionControl(versions, 'turn', option, 'follow-up', true, () => {}), undefined);
+  assert.equal(versionControl(versions, 'other-turn', option, 'user', true, () => {}), undefined);
+  assert.equal(versionControl(versions, 'turn', option, 'user', false, () => {}).onPrevious, undefined, 'no switching while a turn runs');
 });
 
 // Load the actual client component in memory: no Next server, browser, files written or remote images.
