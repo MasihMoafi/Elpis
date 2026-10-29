@@ -235,7 +235,9 @@ button:disabled { cursor:not-allowed; }
 .error-banner.warning { background:color-mix(in oklch, var(--warning), var(--background) 88%); border-bottom-color:color-mix(in oklch, var(--warning), transparent 60%); }
 /* A notice that is not an error, such as "Deleted …" with its Undo. */
 .error-banner.notice { background:var(--muted); border-bottom-color:var(--border); }
-.chat-scroll { --chat-top-inset:var(--thread-inset); flex:1; min-height:0; overflow:auto; padding:var(--chat-top-inset) 32px var(--thread-inset); scroll-timeline:--chat-scroll y; }
+/* The last reply's hover actions hang in its own 40px margin, so the foot needs only 12px more above the message box
+ * (29 Oct, Masih: "there is too much space between the message box and the gray things on top and the last mesasge"). */
+.chat-scroll { --chat-top-inset:var(--thread-inset); flex:1; min-height:0; overflow:auto; padding:var(--chat-top-inset) 32px 12px; scroll-timeline:--chat-scroll y; }
 /* One chat font role for main/side transcripts, messages in panels and both composers. */
 .chat-content, .side-chat-content, .message, .composer textarea, .side-chat-form textarea { font-family:var(--chat-font, var(--ui-font)); }
 /* Settings → Appearance sets the transcript text size and the columns' width (lib/reading.ts); these are the defaults. */
