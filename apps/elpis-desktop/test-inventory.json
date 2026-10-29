@@ -148,6 +148,7 @@
     "desktop/browser-identity.test.cjs"
   ],
   "ui": [
+    "tests/composer-icons.test.cjs",
     "tests/app-menus.test.cjs",
     "tests/workflow-identity.test.cjs",
     "tests/workflow-expand-follow.test.cjs",
