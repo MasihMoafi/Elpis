@@ -30,7 +30,9 @@ A coding agent usually loads every instruction file it finds and keeps the whole
 
 The desktop app is in development and has no package yet; [CONTRIBUTING.md](CONTRIBUTING.md#building-the-desktop-app) shows how to run it from source. It uses the same engine as the terminal app.
 
-<img src="docs/assets/desktop-chat-light.png" alt="An Elpis desktop chat in the light theme, with the model, permission and context controls under the composer" width="49%"> <img src="docs/assets/desktop-workflows-dark.png" alt="The Elpis Workflows board in the dark theme: Mother hands three parts to three agents and a fourth joins them" width="49%">
+<img src="docs/assets/desktop-chat-light.png" alt="An Elpis desktop chat in the light theme, with the model, permission and context controls under the composer" >
+
+<img src="docs/assets/desktop-workflows-dark.png" alt="The Elpis Workflows board in the dark theme: Mother hands three parts to three agents and a fourth joins them">
 
 - **Chats** with GPT, Claude (through your Claude subscription) and Gemini models, with the Ledger, Smart Prune and subagents under the composer.
 - **Workflows:** describe a job and Mother, the planning agent, either does it herself or splits it across a team you can see and edit. Ready-made teams: Transcribe images, Translate (into any of 12 languages) and Logo.
