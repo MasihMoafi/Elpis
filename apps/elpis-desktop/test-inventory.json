@@ -281,6 +281,7 @@
     "tests/personalization-files.test.cjs",
     "tests/shortcut-recorder.test.cjs",
     "tests/sidebar-order.test.cjs",
+    "tests/sidebar-own-chats.test.cjs",
     "tests/chat-to-edge.test.cjs",
     "tests/made-chats.test.cjs",
     "tests/busy-retry.test.cjs",
