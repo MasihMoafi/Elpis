@@ -1854,13 +1854,16 @@ export default function Home() {
   const needsYou = (thread: Thread) => sidebarState(thread) === "waiting" || !!attention.plans[thread.id];
   // Sorted lists show chats that need you or are working first; an order arranged by hand stays as arranged.
   const isTreeChat = (thread: Thread) => !isAgentRun(thread) || !!agentParentId(thread) || Object.hasOwn(chatGroups.parents ?? {}, thread.id) || workflowSteps.has(thread.id);
+  // S18: the sidebar lists only the chats Masih started himself, and any he pinned. Agent runs (codex exec, including the
+  // "Task ID …" chats), sub-agents, chats made by another chat and workflow runs stay reachable from their parent or Workflows.
+  const ownChat = (thread: Thread) => pins.includes(thread.id) || (!isAgentRun(thread) && !agentParentId(thread) && originOf(thread) !== "Workflows");
   const sortedChats = sortChats(sidebarThreads.filter(isTreeChat), chatGroups.sortBy, title, chatGroups.order);
   const chatListOrder = useChatListOrder(chatGroups.sortBy === "manual" ? sortedChats : prioritizeChats(sortedChats, thread => needsYou(thread) ? "waiting" : sidebarState(thread)));
   const ordinaryThreads = chatListOrder.chats;
   // Missing parents never hide chats (for example, when only part of history is loaded).
   const ordinaryIds = useMemo(() => new Set(sidebarThreads.map(thread => thread.id)), [sidebarThreads]);
   const displayParentIds = useMemo(() => new Set(Object.values(chatGroups.parents ?? {}).filter((id): id is string => !!id)), [chatGroups.parents]);
-  const agentRuns = threads.filter(thread => isAgentRun(thread) && !isTreeChat(thread));
+  const agentRuns = threads.filter(thread => isAgentRun(thread) && !isTreeChat(thread) && ownChat(thread));
   const agentRunIds = new Set(agentRuns.map(thread => thread.id));
   const agentParents = new Set(Object.values(treeParents));
   const runActions: MenuAction[] = [
@@ -1875,8 +1878,8 @@ export default function Home() {
   const filtered = searchedThreads.filter(t => isTreeChat(t) && (matchedOnServer.has(t.id) || `${title(t)} ${t.preview || ""} ${t.agentNickname || ""} ${t.model || ""} ${t.id}`.toLowerCase().includes(searchTerm.toLowerCase())));
   // Search results are one flat list of every matching chat, as in the ChatGPT app: a hit is never hidden in its parent.
   const isOrphan = (thread: Thread) => !searchTerm && !sidebarParent(thread) && !Object.hasOwn(chatGroups.parents ?? {}, thread.id) && !!agentParentId(thread) && !ordinaryIds.has(agentParentId(thread)!);
-  const roots = filtered.filter(t => !isOrphan(t) && (!!searchTerm || !sidebarParent(t))).filter(t => searchTerm || !projectChats[t.id] || pins.includes(t.id));
-  const unlinked = filtered.filter(isOrphan);
+  const roots = filtered.filter(t => !isOrphan(t) && (!!searchTerm || !sidebarParent(t))).filter(t => searchTerm || ((!projectChats[t.id] || pins.includes(t.id)) && ownChat(t)));
+  const unlinked = filtered.filter(isOrphan).filter(ownChat);
   // The chat list in screen order: Pinned, the groups (when the list is drawn by them), then Recents; sorted as chosen.
   // Search results rank by how well each chat matches (lib/search-rank.ts).
   const rootIds = new Set(roots.map(thread => thread.id));
@@ -2317,7 +2320,7 @@ export default function Home() {
       <div className="thread-list" ref={threadList} onKeyDown={listKeys} {...chatListOrder.pointer}>
         {workflowCatalog.error && <p role="alert" className="px-2 text-xs text-destructive">{workflowCatalog.error}</p>}
         {!searchTerm && <section aria-label="Projects"><div className="section-label-row">{foldable("projects", "Projects")}<Button variant="ghost" size="icon-xs" aria-label="Add new project" title="Add new project: choose a folder" onClick={() => void addProject()}><PlusIcon size={13} /></Button></div>
-          {!collapsedSections.projects && projects.map(item => { const open = !collapsedProjects[item.id], chats = ordinaryThreads.filter(t => !sidebarParent(t) && projectChats[t.id] === item.id && !pins.includes(t.id));
+          {!collapsedSections.projects && projects.map(item => { const open = !collapsedProjects[item.id], chats = ordinaryThreads.filter(t => !sidebarParent(t) && projectChats[t.id] === item.id && !pins.includes(t.id) && ownChat(t));
             return <SidebarGroup key={item.id} kind="project" dropProps={chatReorder.targetProps(`project:${item.id}`, true)} name={item.name} title={item.cwd} icon={<FolderIcon size={14} />} open={open} active={project?.id === item.id} onToggle={() => setCollapsedProjects(prev => ({ ...prev, [item.id]: open }))}
               wrap={(area, content) => <ProjectActions project={item} onEdit={setProjectEdit} onRemove={removeProject} area={<ReorderItem reorder={projectReorder} itemId={item.id} render={area as React.ReactElement<React.HTMLAttributes<HTMLElement>>} />}>{content}</ProjectActions>}
               trailing={<Button className="project-new-chat" variant="ghost" size="icon-xs" aria-label={`Start new chat in ${item.name}`} title="New chat in this project" disabled={!ready || busy} onClick={() => void selectProject(item)}><PlusIcon size={13} /></Button>}
