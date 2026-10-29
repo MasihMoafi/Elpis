@@ -13,7 +13,7 @@ export const productionFiles = [
   'bridge/resources/permission-policy.mjs',
   'bridge/import-chats.mjs',
   'bridge/settings-files.mjs', 'bridge/app-identity.mjs', 'desktop/sleep-blocker.cjs',
-  'bridge/session-context.mjs', 'bridge/side-turn.mjs',
+  'bridge/session-context.mjs', 'bridge/side-turn.mjs', 'bridge/thread-titles.mjs',
   'bridge/profile-env.mjs', 'lib/love-spot-audio.mjs',
   'bridge/love-interview.mjs',
   'bridge/improve.mjs', 'bridge/improve-source.mjs', 'bridge/improve-check.mjs', 'desktop/improve.cjs',

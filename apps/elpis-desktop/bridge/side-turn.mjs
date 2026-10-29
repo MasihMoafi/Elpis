@@ -1,19 +1,18 @@
 import { BridgeError, threadId } from './client.mjs';
 
-/** One turn in an ephemeral side conversation on the background model (the main model when none is set), with no
- * approvals and no chat in the app: the canvas planner and the Session Manager's titles. Returns the final answer's text,
- * shaped by `schema`, under the given permission profile. `failed` starts the error when the turn fails; `late` is the
- * error after `timeoutMs`. */
-export async function askBackground(client, { prompt, schema, cwd, permissions, timeoutMs, failed, late }) {
-  const { main, background } = await client.settings();
-  const choice = background?.model ? background : main;
+/** One turn in an ephemeral side conversation with no approvals and no chat in the app: the canvas planner and chat
+ * titles. It runs on `model` ({ model, provider }) when given, else the background model (the main model when none is
+ * set), under the given permission profile, with `config` overrides and the turn's `effort`. Returns the final answer's
+ * text, shaped by `schema`. `failed` starts the error when the turn fails; `late` is the error after `timeoutMs`. */
+export async function askBackground(client, { prompt, schema, cwd, permissions, timeoutMs, failed, late, model, config, effort }) {
+  const choice = model ?? await client.settings().then(({ main, background }) => background?.model ? background : main);
   const started = await client.sideRpc('thread/start', { ephemeral: true, ...(choice?.model ? { model: choice.model, ...(choice.provider ? { modelProvider: choice.provider } : {}) } : {}),
-    ...(cwd ? { cwd } : {}), approvalPolicy: 'never', permissions });
+    ...(cwd ? { cwd } : {}), approvalPolicy: 'never', permissions, ...(config ? { config } : {}) });
   const id = threadId(started.thread?.id);
   const turn = follow(client, id, timeoutMs, failed, late);
   let turnId;
   try {
-    const result = await client.sideRpc('turn/start', { threadId: id, input: [{ type: 'text', text: prompt, text_elements: [] }], outputSchema: schema });
+    const result = await client.sideRpc('turn/start', { threadId: id, input: [{ type: 'text', text: prompt, text_elements: [] }], outputSchema: schema, ...(effort ? { effort } : {}) });
     turnId = result?.turn?.id;
     return await turn.answer;
   } finally {

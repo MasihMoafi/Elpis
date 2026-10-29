@@ -26,6 +26,7 @@ import { createDevServers, devServerRequest } from './dev-servers.mjs';
 import { createImprovements } from './improve.mjs';
 import { dismissPersonalTip, openPersonal, personalStatus } from './personal.mjs';
 import { createSettingsFiles } from './settings-files.mjs';
+import { createThreadTitles } from './thread-titles.mjs';
 import { appIdentity } from './app-identity.mjs';
 
 const COOKIE = 'elpis_desktop';
@@ -148,6 +149,9 @@ export async function startDesktopServer(options = {}) {
     }
   };
   client.on('event', event);
+  // A chat Masih starts is named from its first message, as the TUI names it.
+  const titles = createThreadTitles(client);
+  client.on('event', value => { if (value.type === 'message') void titles.event(value.data); });
   const server = http.createServer(async (request, response) => {
     const requestId = randomUUID();
     let area = 'other';
