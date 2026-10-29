@@ -1,4 +1,5 @@
-.matilda-mini-popup { width:min(340px, calc(100vw - 24px)); padding:8px; }
+/* Her chat is part of the pinned Matilda (matilda-companion.tsx places it); it scrolls rather than leave the window. */
+.hud-popover.matilda-mini-popup { position:absolute; z-index:1; padding:8px; overflow:auto; }
 .matilda-mini-chat { min-width:0; font-size:var(--text-small); }
 .matilda-mini-composer { display:flex; align-items:center; gap:6px; min-height:36px; }
 .matilda-mini-composer textarea { min-width:0; min-height:32px; max-height:96px; flex:1; padding:6px 8px; resize:none; border:0; box-shadow:none; background:transparent; }
@@ -13,6 +14,10 @@
 /* Pinned Matilda floats over the app (matilda-companion.tsx): her face moves her, the corner handle resizes her, and
    Mute and Unpin show while she is hovered or focused. */
 .matilda-float { position:fixed; z-index:40; }
+/* Electron moves the window from any part of the title bar that nothing claims; she and her chat claim their own. */
+.matilda-float, .matilda-float *, .matilda-mini-popup { app-region:no-drag; -webkit-app-region:no-drag; }
+/* While she is held, the pointer carries her and selects no text on the way. */
+html.matilda-dragging { user-select:none; -webkit-user-select:none; }
 .matilda-face { display:block; width:100%; height:100%; padding:0; border:0; border-radius:9999px; background:transparent; cursor:grab; filter:drop-shadow(0 4px 10px rgb(0 0 0 / 0.22)); }
 .matilda-face:active { cursor:grabbing; }
 .matilda-face img { display:block; width:100%; height:100%; border-radius:9999px; }
@@ -21,7 +26,7 @@
 .matilda-float-controls { position:absolute; right:0; bottom:calc(100% + 4px); display:flex; align-items:center; gap:2px; padding:2px; border:1px solid var(--hairline); background:var(--background); }
 .matilda-float[data-controls="below"] .matilda-float-controls { top:calc(100% + 4px); bottom:auto; }
 .matilda-float :is(.matilda-resize, .matilda-float-controls) { opacity:0; transition:opacity 120ms; }
-.matilda-float:is(:hover, :focus-within) :is(.matilda-resize, .matilda-float-controls) { opacity:1; }
+.matilda-float:is(:hover, :focus-within):not(:has(.matilda-mini-popup:is(:hover, :focus-within))) :is(.matilda-resize, .matilda-float-controls) { opacity:1; }
 @media (prefers-reduced-motion: reduce) { .matilda-float :is(.matilda-resize, .matilda-float-controls) { transition:none; } }
 /* Keeps the hover across the 4px between her and her controls. */
 .matilda-float-controls::before { content:""; position:absolute; left:0; right:0; top:100%; height:6px; }

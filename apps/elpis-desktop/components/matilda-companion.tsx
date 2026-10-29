@@ -5,7 +5,6 @@ import { createPortal } from "react-dom";
 import { PinIcon } from "@/components/elpis-icons";
 import { MatildaMiniChat, useMatildaMiniChat } from "@/components/matilda-mini-chat";
 import { Button } from "@/components/ui/button";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { api } from "@/lib/api";
 import { MATILDA_CHANGED } from "@/lib/matilda";
 import { appStorage } from "@/lib/projects";
@@ -25,6 +24,8 @@ function savedPlace(): Place {
   // In the corner, clear of the side panel's Done button and the composer's send button.
   return { right: 16, bottom: 16, size: 64 };
 }
+/** The window's own chrome: she and her chat stay below the title bar, where Electron moves the window instead. */
+const chromeBottom = () => typeof document === "undefined" ? 0 : Math.ceil(document.querySelector(".title-bar")?.getBoundingClientRect().bottom ?? 0);
 type Mood = Exclude<keyof typeof MATILDA_SHOTS, "listening">;
 const MOODS = Object.keys(MATILDA_SHOTS).filter(name => name !== "listening") as Mood[];
 const stillness = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -51,8 +52,17 @@ export function MatildaCompanion() {
   const [state, setState] = useState<Companion | null>(null);
   const [chatOpen, setChatOpen] = useState(false), mini = useMatildaMiniChat(chatOpen);
   const mood = useMood(mini.posting || mini.conversation.busy, mini.conversation.entries.filter(entry => entry.item.type === "agentMessage").length);
-  const suppressClick = useRef(false);
+  const suppressClick = useRef(false), faceRef = useRef<HTMLButtonElement>(null), floatRef = useRef<HTMLElement>(null);
   useEffect(() => { if (!state?.pinned) setChatOpen(false); }, [state?.pinned]);
+  // Her chat is part of her, like a pet's (29 Oct: dragging her "broke" the chatbox, which trailed and jumped as a separate
+  // popover). Escape closes it and gives her the focus back; a press anywhere else closes it.
+  useEffect(() => {
+    if (!chatOpen) return;
+    const key = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape" && !event.defaultPrevented) { setChatOpen(false); faceRef.current?.focus(); } };
+    const press = (event: globalThis.PointerEvent) => { if (!floatRef.current?.contains(event.target as Node)) setChatOpen(false); };
+    document.addEventListener("keydown", key); document.addEventListener("pointerdown", press, true);
+    return () => { document.removeEventListener("keydown", key); document.removeEventListener("pointerdown", press, true); };
+  }, [chatOpen]);
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
   const generation = useRef(0), working = useRef(false);
   const refresh = useCallback(async () => {
@@ -86,14 +96,17 @@ export function MatildaCompanion() {
   const placeRef = useRef(place); placeRef.current = place;
   const shownRef = useRef(shown);
   const drag = useRef<{ x: number; y: number; left: number; top: number; size: number; resize: boolean; moved: boolean } | null>(null);
+  // While she is held her chat keeps the side it opened on, so it moves with her instead of jumping across her.
+  const [heldSide, setHeldSide] = useState<"top" | "bottom" | null>(null);
   const fit = () => {
     const { right, bottom, size } = placeRef.current;
-    const whole = (value: number, max: number) => Math.min(Math.max(Math.round(value), 0), Math.max(0, Math.floor(max)));
-    let left = whole(innerWidth - right - size, innerWidth - size), top = whole(innerHeight - bottom - size, innerHeight - size);
+    const whole = (value: number, min: number, max: number) => Math.min(Math.max(Math.round(value), min), Math.max(min, Math.floor(max)));
+    const chrome = chromeBottom();
+    let left = whole(innerWidth - right - size, 0, innerWidth - size), top = whole(innerHeight - bottom - size, chrome, innerHeight - size);
     for (const element of document.querySelectorAll(".browser-viewport")) {
       const pane = element.getBoundingClientRect();
       if (!pane.width || !pane.height || left >= pane.right || left + size <= pane.left || top >= pane.bottom || top + size <= pane.top) continue;
-      if (pane.top - size - 4 >= 0) top = Math.floor(pane.top - size - 4); else left = Math.max(0, Math.floor(pane.left - size - 4));
+      if (pane.top - size - 4 >= chrome) top = Math.floor(pane.top - size - 4); else left = Math.max(0, Math.floor(pane.left - size - 4));
     }
     if (left === shownRef.current.left && top === shownRef.current.top) return;
     shownRef.current = { left, top }; setShown(shownRef.current);
@@ -120,15 +133,22 @@ export function MatildaCompanion() {
   };
   const pull = (event: PointerEvent<HTMLElement>) => {
     const start = drag.current; if (!start) return;
+    // A release the window never passed on (over its title bar, or outside it) ends the drag; she never follows a free pointer.
+    if (!(event.buttons & 1)) { release(); return; }
     const dx = event.clientX - start.x, dy = event.clientY - start.y;
-    if (Math.hypot(dx, dy) >= 4) start.moved = true;
+    if (!start.moved && Math.hypot(dx, dy) >= 4) { start.moved = true; setHeldSide(side); document.documentElement.classList.add("matilda-dragging"); }
     if (!start.moved) return;
     event.stopPropagation();
     if (!start.resize) { put(start.left + dx, start.top + dy, start.size); return; }
     const next = sized(start.size - (dx + dy) / 2);
     put(start.left + start.size - next, start.top + start.size - next, next);
   };
-  const release = () => { const start = drag.current; drag.current = null; if (start?.moved) { suppressClick.current = true; requestAnimationFrame(() => { suppressClick.current = false; }); void save(); } };
+  const release = () => {
+    const start = drag.current; drag.current = null;
+    if (!start?.moved) return;
+    setHeldSide(null); document.documentElement.classList.remove("matilda-dragging");
+    suppressClick.current = true; requestAnimationFrame(() => { suppressClick.current = false; }); void save();
+  };
   const keys = (resizing: boolean) => (event: KeyboardEvent<HTMLElement>) => {
     const step = event.shiftKey ? 3 : 1, grow = ({ "+": 1, "=": 1, "-": -1, "_": -1, ...resizing ? { ArrowUp: 1, ArrowLeft: 1, ArrowDown: -1, ArrowRight: -1 } : {} } as Record<string, number>)[event.key];
     const delta = resizing ? undefined : ({ ArrowLeft: [-10, 0], ArrowRight: [10, 0], ArrowUp: [0, -10], ArrowDown: [0, 10] } as Record<string, [number, number]>)[event.key];
@@ -157,24 +177,30 @@ export function MatildaCompanion() {
     void capture.setSession(state?.pinned ? state.threadId ?? null : null).catch(cause => setError(cause instanceof Error ? cause.message : "Page capture could not connect."));
     return () => { void capture.setSession(null).catch(() => {}); };
   }, [state?.pinned, state?.threadId]);
+  useEffect(() => () => document.documentElement.classList.remove("matilda-dragging"), []);
   const track = state?.music;
-  const size = place.size;
-  const floating = state?.pinned && <section aria-label="Pinned Matilda" className="matilda-float" data-controls={shown.top < 44 ? "below" : "above"} style={{ left: shown.left, top: shown.top, width: size, height: size }}>
-    <Popover open={chatOpen} onOpenChange={open => { if (!suppressClick.current) setChatOpen(open); }}>
-      <PopoverTrigger render={<button type="button" className="matilda-face" aria-label="Chat with Matilda" title="Chat with Matilda · drag to move" style={{ touchAction: "none" }}
-        onPointerDown={grab(false)} onPointerMove={pull} onPointerUp={release}
-        onClick={event => { if (suppressClick.current) { event.preventDefault(); event.stopPropagation(); } }}
-        onPointerCancel={() => { const start = drag.current; drag.current = null; if (start) put(start.left, start.top, start.size); }}
-        onKeyDown={keys(false)} onPointerEnter={() => mood.setHovered(true)} onPointerLeave={() => mood.setHovered(false)} />}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={MATILDA_SHOTS.listening} alt="Matilda" width={size} height={size} draggable={false} className="select-none" />
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        {MOODS.map(name => <img key={name} src={MATILDA_SHOTS[name]} alt="" aria-hidden="true" width={size} height={size} draggable={false} className="matilda-mood select-none" data-mood={name} data-shown={mood.shown === name} />)}
-      </PopoverTrigger>
-      <PopoverContent side={shown.top < 300 ? "bottom" : "top"} align="end" className="matilda-mini-popup"><MatildaMiniChat chat={mini} /></PopoverContent>
-    </Popover>
+  const size = place.size, chrome = chromeBottom();
+  const side = heldSide ?? (shown.top - chrome < 300 ? "bottom" : "top");
+  // Her chat sits above her (below her near the top), right edges together, inside the window and below the title bar.
+  const chatPlace = () => {
+    const width = Math.min(340, innerWidth - 24), gap = 6, edge = 4;
+    const left = Math.min(Math.max(shown.left + size - width, edge), innerWidth - edge - width) - shown.left;
+    return side === "top" ? { left, width, bottom: size + gap, maxHeight: shown.top - gap - chrome - edge } : { left, width, top: size + gap, maxHeight: innerHeight - shown.top - size - gap - edge };
+  };
+  const floating = state?.pinned && <section ref={floatRef} aria-label="Pinned Matilda" className="matilda-float" data-controls={shown.top - chrome < 40 ? "below" : "above"} style={{ left: shown.left, top: shown.top, width: size, height: size }}>
+    <button ref={faceRef} type="button" className="matilda-face" aria-label="Chat with Matilda" aria-haspopup="dialog" aria-expanded={chatOpen} title="Chat with Matilda · drag to move" style={{ touchAction: "none" }}
+      onPointerDown={grab(false)} onPointerMove={pull} onPointerUp={release} onLostPointerCapture={release}
+      onClick={() => { if (!suppressClick.current) setChatOpen(open => !open); }}
+      onPointerCancel={() => { const start = drag.current; if (start) put(start.left, start.top, start.size); release(); }}
+      onKeyDown={keys(false)} onPointerEnter={() => mood.setHovered(true)} onPointerLeave={() => mood.setHovered(false)}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={MATILDA_SHOTS.listening} alt="Matilda" width={size} height={size} draggable={false} className="select-none" />
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      {MOODS.map(name => <img key={name} src={MATILDA_SHOTS[name]} alt="" aria-hidden="true" width={size} height={size} draggable={false} className="matilda-mood select-none" data-mood={name} data-shown={mood.shown === name} />)}
+    </button>
+    {chatOpen && <div className="hud-popover matilda-mini-popup" data-side={side} style={chatPlace()}><MatildaMiniChat chat={mini} /></div>}
     <button type="button" className="matilda-resize" aria-label="Resize Matilda" title="Drag to resize · + and − keys" style={{ touchAction: "none" }}
-      onPointerDown={grab(true)} onPointerMove={pull} onPointerUp={release} onKeyDown={keys(true)} />
+      onPointerDown={grab(true)} onPointerMove={pull} onPointerUp={release} onLostPointerCapture={release} onKeyDown={keys(true)} />
     <div className="matilda-float-controls">
       {track?.canMute && <Button variant="ghost" size="sm" className="px-2" aria-label={track.muted ? "Unmute music" : "Mute music"} aria-pressed={track.muted} title={track.muted ? "Unmute music" : "Mute music"} disabled={busy} onClick={() => void act("toggle-mute")}>{track.muted ? "Unmute" : "Mute"}</Button>}
       <Button variant="ghost" size="icon-xs" aria-label="Unpin Matilda" title="Unpin Matilda" aria-pressed="true" onClick={() => void act("unpin")}><PinIcon size={16} /></Button>
