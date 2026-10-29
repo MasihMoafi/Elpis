@@ -94,6 +94,7 @@
     "bridge/rewind-snapshots.test.mjs",
     "bridge/rewind.test.mjs",
     "bridge/session-frame.test.mjs",
+    "bridge/session-manager.test.mjs",
     "bridge/skill-switch.test.mjs",
     "bridge/skill-trash.test.mjs",
     "bridge/slash-routes.test.mjs",

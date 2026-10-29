@@ -605,6 +605,12 @@ export class DesktopClient extends EventEmitter {
     await this.#loadWorkflowTitles([thread]);
     return this.#decorate(thread);
   }
+  /** The newest saved turn, for the Session Manager's rules; never resumes a chat or starts a model. */
+  async readSessionTurn(id) {
+    const thread = await this.readThreadMetadata(id);
+    const { data } = await this.#rpc('thread/turns/list', { threadId: id, limit: 1, sortDirection: 'desc', itemsView: 'full' });
+    return { thread, turn: data?.[0] ?? null };
+  }
   async readThread(id, options = {}) {
     object(options, ['cursor', 'limit']);
     const revision = this.#turnRevisions.get(id);
@@ -1692,13 +1698,15 @@ export class DesktopClient extends EventEmitter {
     }
   }
   /** Archives a chat and, natively, the agents it spawned; Elpis announces each with thread/archived. The agents archived
-   * with it are kept in its archive record, so Unarchive brings them back with it. */
-  async archiveThread(id, body) {
+   * with it are kept in its archive record, so Unarchive brings them back with it. The Session Manager passes `check`: under
+   * the same lock it rereads the chat and returns the reason shown under Archived, or throws to leave the chat alone. */
+  async archiveThread(id, body, check) {
     object(body, []);
     const agents = await this.#listedUnder(id);
     const archived = await this.#mutate(id, async () => {
+      const reason = check ? await check(await this.readSessionTurn(id)) : 'Archived by you.';
       const cwd = await this.#folderOf(threadId(id)).catch(() => null);
-      await this.#archiveHistory.record(id, 'Archived by you.', agents);
+      await this.#archiveHistory.record(id, reason, agents);
       try { await this.#rpc('thread/archive', { threadId: id }); }
       catch (error) { await this.#archiveHistory.forget(id); throw error; }
       await this.#rewindHistory.hide(id, true);

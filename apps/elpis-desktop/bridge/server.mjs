@@ -26,6 +26,7 @@ import { createDevServers, devServerRequest } from './dev-servers.mjs';
 import { createImprovements } from './improve.mjs';
 import { dismissPersonalTip, openPersonal, personalStatus } from './personal.mjs';
 import { createSettingsFiles } from './settings-files.mjs';
+import { createSessionManager } from './session-manager.mjs';
 import { appIdentity } from './app-identity.mjs';
 
 const COOKIE = 'elpis_desktop';
@@ -140,7 +141,12 @@ export async function startDesktopServer(options = {}) {
   const transcription = createTranscription({ definition: () => client.transcriptionDefinition(), environment: () => client.transcriptionEnvironment() });
   const voice = createVoice(client);
   const importChats = createImportChats({ client, elpisHome: options.elpisHome ?? elpisHome(), ...(options.codexHome ? { codexHome: options.codexHome } : {}) });
+  let sessionManager;
+  const sessions = () => sessionManager ??= createSessionManager({ client, file: path.join(options.elpisHome ?? elpisHome(), 'desktop-session-manager-v2.json') });
   const event = value => {
+    // A chat Masih brings back stays until it has a new turn; the manager exists once the app has asked it to run.
+    if (sessionManager && value.data?.method === 'thread/unarchived' && typeof value.data.params?.threadId === 'string')
+      void sessionManager.then(manager => manager.unarchived(value.data.params.threadId)).catch(() => {});
     const bytes = `event: ${value.type}\ndata: ${JSON.stringify(value.data)}\n\n`;
     for (const response of listeners) {
       if (response.writableLength > 1024 * 1024) { response.destroy(); listeners.delete(response); }
@@ -258,6 +264,7 @@ export async function startDesktopServer(options = {}) {
         if (url.pathname === '/api/voice/choice' && method === 'POST') return json(response, 200, await client.setVoice(await body(request)));
         if (url.pathname === '/api/tools/transcription') return await transcription(request, response, json);
         if (url.pathname.startsWith('/api/tools/')) return await tools(request, response, url, json);
+        if (url.pathname === '/api/session-manager' && method === 'POST') return json(response, 200, await (await sessions()).run(object(await body(request), ['protectedIds'])));
         if (url.pathname === '/api/health' && method === 'GET') return json(response, 200, { connected: client.connected, ...(client.connectionError ? { error: client.connectionError } : {}) });
         if (url.pathname === '/api/improvements/source') {
           const store = await improvements();
