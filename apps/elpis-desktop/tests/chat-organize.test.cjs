@@ -15,7 +15,10 @@ const chats = [
   ['chat-z', 'Unrelated chat'],
 ].map(([id, name]) => ({ id, name, preview: name, cwd: CWD, model: 'sol', modelProvider: 'openai', status: { type: id === 'chat-b' ? 'active' : 'idle' }, desktopAccess: { writable: true, mode: 'direct' } }));
 const native = { ...chats[0], id: 'native-agent', name: 'Native worker', parentThreadId: 'chat-a', source: 'subAgentThreadSpawn', agentRole: 'explorer', status: { type: 'idle' } };
+// S18, Masih 29 Oct: Background runs and the sidebar's Workflows section are off by default; these tests turn them on.
+const SECTIONS = { 'elpis-preferences-v1': JSON.stringify({ showAgentRuns: true, sidebarWorkflows: true }) };
 const storage = {
+  ...SECTIONS,
   'elpis-projects-v1': JSON.stringify({ projects: [{ id: 'existing', name: 'Existing project', cwd: '/work/existing' }], selectedId: null }),
 };
 const open = (options = {}) => fixture({ desktop: true, width: 1440, height: 900, threads: [...chats, native], storage,
@@ -75,7 +78,7 @@ for (const colorScheme of ['light', 'dark']) test(`native agent generations keep
   const tree = [make('tree-root', 'Tree root'), make('tree-worker', 'Tree worker', 'tree-root'), make('tree-grandchild', 'Tree grandchild', 'tree-worker'),
     { ...make('tree-leaf', 'Tree leaf', 'tree-grandchild'), source: { subAgent: { thread_spawn: { parent_thread_id: 'tree-grandchild' } } } },
     make('tree-peer', 'Tree peer', 'tree-grandchild'), make('tree-sibling', 'Tree sibling', 'tree-root'), make('tree-other', 'Other root'), make('tree-orphan', 'Orphan worker', 'not-loaded')];
-  const f = await fixture({ desktop: true, width: 1440, height: 900, colorScheme, threads: tree, readyThreadId: 'tree-root' });
+  const f = await fixture({ desktop: true, width: 1440, height: 900, colorScheme, threads: tree, readyThreadId: 'tree-root', storage: SECTIONS });
   const { page } = f;
   const depth = async (id, expected) => eventually(async () => assert.equal(await row(page, id).getAttribute('data-depth'), String(expected), id));
   try {
@@ -143,7 +146,8 @@ for (const colorScheme of ['light', 'dark']) test(`native agent generations keep
     assert.equal(await row(page, 'tree-sibling').count(), 0, 'reparented branches also start collapsed');
     await expandPath(page, ['tree-other', 'tree-sibling', 'tree-grandchild', 'tree-root']); await depth('tree-leaf', 3);
     await eventually(async () => { const visible = await ids(recents(page)); assert.equal(visible.indexOf('tree-peer') + 1, visible.indexOf('tree-leaf')); });
-    await row(page, 'tree-orphan').waitFor();
+    // S18, Masih 29 Oct: an agent whose parent is not listed sits in Background runs, folded until opened.
+    await aside(page).getByRole('button', { name: /^Agent runs \(/ }).click(); await row(page, 'tree-orphan').waitFor();
     for (const thread of tree) assert.equal(await aside(page).locator(`.thread-row[data-thread-id="${thread.id}"]`).count(), 1, 'each loaded chat remains reachable once');
     await assertUiFit(aside(page), 'recursive native agent tree fits'); await shot(page, `recursive-${colorScheme}`);
     assert.equal(f.posts.some(post => /\/(parent|folder|permissions|turns|steer)$/.test(post.path)), false, 'display moves do not mutate runtime threads');
@@ -155,7 +159,7 @@ test('workflow descendants and manual branches use the same recursive placement 
   const tree = ['flow-root', 'flow-step', 'flow-grandchild', 'latest-step', 'other-root', 'other-step', 'older-step', 'manual-root', 'manual-child', 'manual-branch', 'manual-leaf', 'cycle-a', 'cycle-b'].map(id => ({ id, name: id, source: 'cli', model: 'sol', modelProvider: 'openai', status: { type: 'idle' },
     ...(id === 'flow-step' || id === 'latest-step' ? { parentThreadId: 'flow-root' } : id === 'flow-grandchild' ? { parentThreadId: 'flow-step' } : id === 'other-step' || id === 'older-step' ? { parentThreadId: 'other-root' } : {}) }));
   const f = await fixture({ desktop: true, threads: tree, readyThreadId: 'flow-root',
-    storage: { 'elpis-sidebar-folds-v1': JSON.stringify({ sections: { workflows: false }, projects: {} }),
+    storage: { ...SECTIONS, 'elpis-sidebar-folds-v1': JSON.stringify({ sections: { workflows: false }, projects: {} }),
       'elpis-chat-groups-v1': JSON.stringify({ groups: [], members: {}, groupBy: 'none', sortBy: 'recency', collapsed: [], order: [], parents: { 'manual-child': 'manual-root', 'manual-branch': 'manual-root', 'manual-leaf': 'manual-branch', 'cycle-a': 'cycle-b', 'cycle-b': 'cycle-a' } }) },
     routes: { '/api/workflows/history': () => ({ data: [
       { id: 'flow-run', rootThreadId: 'flow-root', name: 'Older workflow', startedAt: 1, status: 'succeeded', tasks: [{ id: 'step', title: 'flow-step', assignedThreadId: 'flow-step' }, { id: 'grandchild', title: 'flow-grandchild', assignedThreadId: 'flow-grandchild' }] },
@@ -321,8 +325,10 @@ test('ordinary recursive branches expose the second child and grandchild pages w
 test('several roots from malformed native lineage can be put under one chat and survive reload', async () => {
   const tree = [{ id: 'native-cycle-a', name: 'Native cycle A', parentThreadId: 'native-cycle-b' }, { id: 'native-cycle-b', name: 'Native cycle B', parentThreadId: 'native-cycle-a' }, { id: 'native-cycle-target', name: 'Safe parent' }]
     .map(thread => ({ ...thread, source: 'cli', model: 'sol', modelProvider: 'openai', status: { type: 'idle' } }));
-  const f = await fixture({ desktop: true, threads: tree, readyThreadId: 'native-cycle-target' }), { page } = f;
+  const f = await fixture({ desktop: true, threads: tree, readyThreadId: 'native-cycle-target', storage: SECTIONS }), { page } = f;
   try {
+    // S18, Masih 29 Oct: chats whose lineage cannot nest sit in Background runs until he places them.
+    await aside(page).getByRole('button', { name: /^Agent runs \(/ }).click();
     await row(page, 'native-cycle-a').waitFor(); await row(page, 'native-cycle-b').waitFor();
     await mark(page, ['native-cycle-a', 'native-cycle-b']); await putUnder(page, 'native-cycle-a', 'Safe parent');
     for (const id of ['native-cycle-a', 'native-cycle-b']) assert.equal(await row(page, id).getAttribute('data-depth'), '1');

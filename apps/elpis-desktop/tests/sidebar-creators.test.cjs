@@ -43,7 +43,9 @@ for (const colorScheme of ['light', 'dark']) test(`creator history uses the shar
     routes[`/api/threads/${thread.id}`] = async () => ({ thread: await read(), data: [], nextCursor: null });
     routes[`/api/threads/${thread.id}/resume`] = async () => ({ thread: await read(), activeTurnId: null });
   }
+  // S18, Masih 29 Oct: Background runs and the sidebar's Workflows section are off by default; this test turns them on.
   const f = await fixture({ desktop: true, width: 1440, height: 900, colorScheme, routes, threads: listed, storage: {
+    'elpis-preferences-v1': JSON.stringify({ showAgentRuns: true, sidebarWorkflows: true }),
     'elpis-last-chat': maker,
     'elpis-projects-v1': JSON.stringify({ projects: [{ id: 'p', name: 'Project', cwd: CWD }], selectedId: null }),
     'elpis-project-chats-v1': JSON.stringify({ native: 'p' }),

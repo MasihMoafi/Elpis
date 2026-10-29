@@ -138,10 +138,11 @@ test('every setting the app can save is accepted by the desktop store', async t 
   const f = windows(t), a = f.open(1);
   a.preferences.savePreferences({ ...a.preferences.DEFAULT_PREFERENCES }); await f.settle();
   assert.deepEqual(a.errors, []);
-  assert.equal(JSON.parse(createStateStore(f.file).read()['elpis-preferences-v1']).sidebarWorkflows, true);
-  a.preferences.savePreferences({ sidebarWorkflows: false }); await f.settle();
+  // S18, Masih 29 Oct: the sidebar's Workflows section is off by default.
+  assert.equal(JSON.parse(createStateStore(f.file).read()['elpis-preferences-v1']).sidebarWorkflows, false);
+  a.preferences.savePreferences({ sidebarWorkflows: true }); await f.settle();
   assert.deepEqual(a.errors, []);
-  assert.equal(a.preferences.readPreferences().sidebarWorkflows, false);
+  assert.equal(a.preferences.readPreferences().sidebarWorkflows, true);
 });
 
 test('Agent runs visibility persists through actual desktop IPC and synchronizes between windows', async t => {

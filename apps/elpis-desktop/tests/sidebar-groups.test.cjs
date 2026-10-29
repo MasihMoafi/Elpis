@@ -211,7 +211,8 @@ for (const colorScheme of ['light', 'dark']) test(`recorded spawned agents nest 
     const ancestor = url.searchParams.get('ancestorThreadId');
     return { data: ancestor === parent.id ? [child, grandchild, helper] : ancestor === child.id ? [grandchild] : ancestor ? [] : data, nextCursor: null };
   } };
-  const f = await fixture({ routes, colorScheme, height: 950 }), { page } = f;
+  // S18, Masih 29 Oct: Background runs is off by default; this test turns it on.
+  const f = await fixture({ routes, colorScheme, height: 950, storage: { 'elpis-preferences-v1': JSON.stringify({ showAgentRuns: true, sidebarWorkflows: true }) } }), { page } = f;
   const allRows = id => aside(page).locator(`.thread-row[data-thread-id="${id}"]`);
   try {
     await page.locator('.startup-splash').waitFor({ state: 'detached' });

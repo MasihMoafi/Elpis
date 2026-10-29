@@ -127,7 +127,8 @@ for (const colorScheme of ['light', 'dark']) test(`sidebar arrows cover navigati
 
 for (const colorScheme of ['light', 'dark']) test(`Agent runs hide persistently from menu and Settings, and history deletion confirms and undoes (${colorScheme})`, async t => {
   let listed = [personal, ...runs], deleted = [];
-  const f = await fixture({ colorScheme, height: 900, storage: { 'elpis-preferences-v1': JSON.stringify({ confirmDeleteChats: false }) }, routes: {
+  // S18, Masih 29 Oct: Background runs is off by default; this test turns it on, then hides it again.
+  const f = await fixture({ colorScheme, height: 900, storage: { 'elpis-preferences-v1': JSON.stringify({ confirmDeleteChats: false, showAgentRuns: true }) }, routes: {
     '/api/settings': settings,
     '/api/threads': (_body, url) => ({ data: url.searchParams.has('ancestorThreadId') ? [] : listed, nextCursor: null }),
     '/api/trash': body => { deleted = listed.filter(thread => body.threadIds.includes(thread.id)); listed = listed.filter(thread => !body.threadIds.includes(thread.id)); return { trashed: deleted.map(thread => thread.id) }; },
@@ -180,7 +181,8 @@ test('light-theme colour guard permits A87 accent paint and still rejects orange
 
 test('large Agent runs groups delete a labeled batch within the existing trash limit', async t => {
   const many = Array.from({ length: 105 }, (_, i) => chat(`run-${i}`, `Task ${i}`, { source: 'exec' }));
-  const f = await fixture({ routes: {
+  // S18, Masih 29 Oct: Background runs is off by default.
+  const f = await fixture({ storage: { 'elpis-preferences-v1': JSON.stringify({ showAgentRuns: true }) }, routes: {
     '/api/threads': (_body, url) => ({ data: url.searchParams.has('ancestorThreadId') ? [] : [personal, ...many], nextCursor: null }),
     '/api/trash': body => ({ trashed: body.threadIds }),
   } });

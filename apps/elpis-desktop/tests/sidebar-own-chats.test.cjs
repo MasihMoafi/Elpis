@@ -1,5 +1,7 @@
-// S18: the sidebar lists only the chats Masih started himself. Agent runs (codex exec, including the "Task ID …" chats
-// agents start), sub-agents, chats made by another chat and workflow runs stay reachable from their parent or Workflows.
+// S18, Masih 29 Oct: "those extra useless chats like the ones saying Task ID ... or chats I didn't start should not show in
+// my side-bar chats. I want that place to be organized". Pinned, Projects, Groups and Recents list only his own chats. Workflow
+// runs keep the Workflows section and agent runs (codex exec, including the "Task ID …" chats), orphaned agents and chats whose
+// maker is not listed sit in Background runs; both follow their switches, off by default. Nothing is lost or deleted.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture, CWD } = require('./parity-fixture.cjs');
@@ -17,11 +19,15 @@ const chats = [
 ].map(chat => ({ cwd: CWD, status: { type: 'idle' }, ...chat }));
 const OWN = ['own-named', 'own-unnamed'];
 
-test('the sidebar lists only the chats Masih started; agents, task runs, made chats and workflow runs stay out', async () => {
-  const f = await fixture({ threads: chats, readyThreadId: 'own-named', storage: { 'elpis-sidebar-folds-v1': JSON.stringify({ sections: { workflows: false }, projects: {} }) }, routes: {
-    '/api/threads': (_body, url) => ({ data: url.searchParams.has('ancestorThreadId') || url.searchParams.get('archived') === 'true' ? [] : chats, nextCursor: null }),
-    ...Object.fromEntries(chats.map(thread => [`/api/threads/${thread.id}`, () => ({ thread, data: [], nextCursor: null })])),
-  } });
+const open = (preferences = {}) => fixture({ threads: chats, readyThreadId: 'own-named', storage: {
+  'elpis-sidebar-folds-v1': JSON.stringify({ sections: { workflows: false }, projects: {} }), ...(Object.keys(preferences).length ? { 'elpis-preferences-v1': JSON.stringify(preferences) } : {}) }, routes: {
+  '/api/threads': (_body, url) => ({ data: url.searchParams.has('ancestorThreadId') || url.searchParams.get('archived') === 'true' ? [] : chats, nextCursor: null }),
+  ...Object.fromEntries(chats.map(thread => [`/api/threads/${thread.id}`, () => ({ thread, data: [], nextCursor: null })])),
+} });
+const rows = locator => locator.locator('.thread-row[data-thread-id]').evaluateAll(items => [...new Set(items.map(row => row.dataset.threadId))].sort());
+
+test('by default the sidebar lists only the chats Masih started; agents, task runs, made chats and workflow runs stay out', async () => {
+  const f = await open();
   try {
     const sidebar = f.page.locator('aside.sidebar');
     await sidebar.locator('.thread-row[data-thread-id="own-unnamed"]').waitFor();
@@ -30,5 +36,18 @@ test('the sidebar lists only the chats Masih started; agents, task runs, made ch
     for (const selector of ['section[aria-label="Background runs"]', 'section[aria-label="Workflows"]', '[aria-label="Agents whose parent is not listed"]'])
       assert.equal(await sidebar.locator(selector).count(), 0, `nothing matches ${selector}`);
     assert.deepEqual(f.posts.filter(post => /archive|delete|trash/.test(post.path)), [], 'a display rule: nothing is archived or deleted');
+  } finally { await f.close(); }
+});
+
+test('with their switches on, workflow runs show in Workflows and every other chat he did not start in Background runs, never in Recents', async () => {
+  const f = await open({ showAgentRuns: true, sidebarWorkflows: true });
+  try {
+    const sidebar = f.page.locator('aside.sidebar');
+    await sidebar.locator('section[aria-label="Workflows"] .thread-row[data-thread-id="workflow-run"]').waitFor();
+    assert.deepEqual(await rows(sidebar.locator('section[aria-label="Recents"]')), OWN);
+    await sidebar.getByRole('button', { name: 'Agent runs (4)', exact: true }).click();
+    assert.deepEqual(await rows(sidebar.getByRole('region', { name: 'Agent runs', exact: true })), ['exec-run', 'made-by-chat', 'orphan-agent', 'task']);
+    assert.equal(await sidebar.locator('[aria-label="Agents whose parent is not listed"]').count(), 0, 'no separate list of loose agents');
+    assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

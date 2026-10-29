@@ -77,7 +77,8 @@ for (const theme of ['light', 'dark']) test(`Love Spot keeps its blood-red nav m
 });
 
 test('Agents is absent from workspace navigation and commands; Workflows and sidebar Agent runs remain', async () => {
-  const f = await fixture({ routes: { '/api/threads': (_, url) => ({ data: url.searchParams.has('ancestorThreadId') ? [] : [
+  // S18, Masih 29 Oct: Background runs and the sidebar's Workflows section are off by default; this test turns them on.
+  const f = await fixture({ storage: { 'elpis-preferences-v1': JSON.stringify({ showAgentRuns: true, sidebarWorkflows: true }) }, routes: { '/api/threads': (_, url) => ({ data: url.searchParams.has('ancestorThreadId') ? [] : [
     { id: 'chat-a', name: 'Parent chat', status: { type: 'idle' } },
     { id: 'run-a', name: 'Retained agent run', parentThreadId: 'chat-a', source: { subAgent: { thread_spawn: { agent_path: '/root/check' } } }, status: { type: 'idle' } },
     { id: 'orphan-run', name: 'Unlinked background run', source: 'exec', status: { type: 'idle' } },

@@ -25,7 +25,8 @@ test('expanding a finished workflow follows its chat without a rejected request 
   const { threadId } = await import(path.join(__dirname, '../bridge/validate.mjs'));
   const asked = [], rejected = [];
   const listed = [thread('chat-a', 'Fix the parser'), thread(ROOT, 'Sea poem'), ...STEPS.map((id, i) => thread(id, `Workflows · ${['Write', 'Critique'][i]}`))];
-  const f = await fixture({ desktop: true, width: 1440, height: 900, threads: listed, routes: {
+  // S18, Masih 29 Oct: Background runs and the sidebar's Workflows section are off by default; this test turns them on.
+  const f = await fixture({ desktop: true, width: 1440, height: 900, threads: listed, storage: { 'elpis-preferences-v1': JSON.stringify({ showAgentRuns: true, sidebarWorkflows: true }) }, routes: {
     '/api/threads': (_body, url) => {
       const ancestor = url.searchParams.get('ancestorThreadId');
       if (ancestor !== null) {
