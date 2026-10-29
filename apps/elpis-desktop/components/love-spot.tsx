@@ -47,6 +47,15 @@ function snapshot(elements: readonly ExcalidrawElement[], appState: AppState, fi
   // be stringified and parsed again on every pointer move or keystroke.
   return { ...JSON.parse(serializeAsJSON([], appState, {}, "local")), elements: JSON.parse(JSON.stringify(elements)), files: { ...files }, page };
 }
+/** The part of the board Excalidraw's own toolbar, style panel and zoom bar leave clear (29 Oct: her notes ran under the
+ * toolbar). Showing a note or the drawing fits it there, so the board's chrome never covers what it shows. */
+function clearOfTools(area: HTMLElement | null) {
+  const board = area?.querySelector(".excalidraw")?.getBoundingClientRect();
+  if (!area || !board) return undefined;
+  const part = (selector: string) => area.querySelector(selector)?.getBoundingClientRect();
+  const tools = part(".App-toolbar"), panel = part(".App-menu__left"), footer = part(".layer-ui__wrapper__footer-left"), gap = 16;
+  return { top: (tools ? tools.bottom - board.top : 0) + gap, left: (panel?.width ? panel.right - board.left : 0) + gap, right: gap, bottom: (footer ? board.bottom - footer.top : 0) + gap };
+}
 async function lightDrawing(drawing: Drawing) { return { ...drawing, files: await lightFiles(drawing.elements, drawing.files) }; }
 async function savePicture(data: Saved) {
   const blob = await exportToBlob({ elements: restoreRemoteElements(data.scene.elements).filter(e => !e.isDeleted),
@@ -133,7 +142,7 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
     let frame = 0, tries = 60;
     const show = () => {
       const target = editor.getSceneElements().filter(e => ids.has(e.id));
-      if (target.length) editor.scrollToContent(target, { fitToViewport: true, viewportZoomFactor: 0.8, maxZoom: 1 });
+      if (target.length) editor.scrollToContent(target, { fitToViewport: true, viewportZoomFactor: 0.8, maxZoom: 1, canvasOffsets: clearOfTools(boardArea.current) });
       else if (--tries > 0) frame = requestAnimationFrame(show);
     };
     frame = requestAnimationFrame(show);
@@ -210,7 +219,7 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
       } finally { remote.current = false; }
       latest.current = snapshot(editor.getSceneElementsIncludingDeleted(), editor.getAppState(), editor.getFiles(), currentPage.current);
       setRenaming(false);
-      editor.scrollToContent(editor.getSceneElements(), { fitToViewport: true, viewportZoomFactor: 0.9, maxZoom: 1 });
+      editor.scrollToContent(editor.getSceneElements(), { fitToViewport: true, viewportZoomFactor: 0.9, maxZoom: 1, canvasOffsets: clearOfTools(boardArea.current) });
       if (hasRecovery || art || Object.keys(data.scene.files).length) queueMicrotask(() => void saveLatest.current?.());
       return;
     }
@@ -236,8 +245,8 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
       latest.current = snapshot(editor.getSceneElementsIncludingDeleted(), editor.getAppState(), editor.getFiles(), currentPage.current);
       if (screenshot) {
         editor.updateScene({ appState: { selectedElementIds: { [screenshot.id]: true } } });
-        editor.scrollToContent(screenshot, { fitToViewport: true, viewportZoomFactor: 0.9 });
-      } else if (reply) editor.scrollToContent(editor.getSceneElements(), { fitToViewport: true, viewportZoomFactor: 0.7, maxZoom: 1 });
+        editor.scrollToContent(screenshot, { fitToViewport: true, viewportZoomFactor: 0.9, canvasOffsets: clearOfTools(boardArea.current) });
+      } else if (reply) editor.scrollToContent(editor.getSceneElements(), { fitToViewport: true, viewportZoomFactor: 0.7, maxZoom: 1, canvasOffsets: clearOfTools(boardArea.current) });
       // Inbox images and older pages also pass through the same pixel limit once they arrive.
       if (hasRecovery || art || files.length) queueMicrotask(() => void saveLatest.current?.());
       // Excalidraw may notify after the merged snapshot is already current.

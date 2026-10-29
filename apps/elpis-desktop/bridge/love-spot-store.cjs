@@ -9,7 +9,7 @@ const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { newer } = require('./love-spot-order.cjs');
 const { paintElements, paintingSize } = require('./love-spot-painting.cjs');
-const { FACE_DATA_URL, FACE_MIME_TYPE, PORTRAIT_DATA_URL } = require('./matilda-face.cjs');
+const { BOARD_FACE, OLD_BOARD_FACES } = require('./matilda-face.cjs');
 const FACE = 96, FACE_SIDE = FACE + 12;
 const exec = promisify(execFile);
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -138,9 +138,9 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
         const redHearts = value => typeof value === 'string' ? value.replaceAll('💙', '❤️') : value;
         return { ...element, strokeColor: '#000000', text: redHearts(element.text), originalText: redHearts(element.originalText) };
       });
-      // Existing replies share this preset asset; preserve custom portraits.
-      if (scene.files['matilda-face']?.dataURL === PORTRAIT_DATA_URL) {
-        scene.files['matilda-face'] = { ...scene.files['matilda-face'], dataURL: FACE_DATA_URL, mimeType: FACE_MIME_TYPE };
+      // Existing replies share this preset asset; an older face is replaced, a custom portrait kept.
+      if (OLD_BOARD_FACES.includes(scene.files['matilda-face']?.dataURL)) {
+        scene.files['matilda-face'] = { ...scene.files['matilda-face'], ...BOARD_FACE };
       }
       if (!scene.page) {
         const existing = new Set(await names(pages)); let name = 'Current page', suffix = 2;
@@ -382,7 +382,7 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
         if (!hits.length) break;
         y = Math.max(...hits.map(e => e.y + e.height)) + 40;
       }
-      const now = Date.now(), file = { id: 'matilda-face', dataURL: FACE_DATA_URL, mimeType: FACE_MIME_TYPE, created: now, lastRetrieved: now };
+      const now = Date.now(), file = { id: 'matilda-face', ...BOARD_FACE, created: now, lastRetrieved: now };
       const face = { id: `love-face-${turnId}`, type: 'image', fileId: file.id, x, y, width: FACE, height: FACE, angle: 0, strokeColor: 'transparent', backgroundColor: 'transparent', fillStyle: 'solid', strokeWidth: 1,
         strokeStyle: 'solid', roughness: 0, opacity: 100, groupIds: [group], frameId: null, roundness: null, seed: 1, version: 1, versionNonce: 0, isDeleted: false, boundElements: null,
         updated: now, link: null, locked: false, status: 'saved', scale: [1, 1], crop: null };

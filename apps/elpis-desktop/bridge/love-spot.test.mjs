@@ -612,3 +612,16 @@ test('Love Spot saves prune unused image files, keep live references, and accept
   assert.deepEqual((await selected.json()).scene.files, {}, 'switching an archive also saves only live image references');
   assert.deepEqual(JSON.parse(await fs.readFile(path.join(f.directory, 'pages', 'Unused archive.excalidraw'), 'utf8')).files, {});
 });
+
+// 29 Oct, Masih on the dark board: "This is matilda in dark mode!" Her saved SVG face showed as a negative there.
+test('opening a board replaces her older faces with the raster one and keeps a custom portrait', async t => {
+  const { BOARD_FACE, FACE_DATA_URL, PORTRAIT_DATA_URL } = (await import('./matilda-face.cjs')).default;
+  for (const [saved, mimeType, wanted] of [[FACE_DATA_URL, 'image/svg+xml', BOARD_FACE], [PORTRAIT_DATA_URL, 'image/webp', BOARD_FACE], [`data:image/png;base64,${PNG.toString('base64')}`, 'image/png', null]]) {
+    const f = await fixture(t);
+    await fs.mkdir(f.directory, { recursive: true });
+    const face = { id: 'love-face-turn-1', type: 'image', fileId: 'matilda-face', version: 1, versionNonce: 1, x: 0, y: 0, width: 96, height: 96 };
+    await fs.writeFile(path.join(f.directory, 'scene.excalidraw'), JSON.stringify({ type: 'excalidraw', version: 2, elements: [face], appState: {}, files: { 'matilda-face': { id: 'matilda-face', dataURL: saved, mimeType, created: 1 } } }));
+    const file = (await f.load()).scene.files['matilda-face'];
+    assert.deepEqual({ dataURL: file.dataURL, mimeType: file.mimeType }, wanted ?? { dataURL: saved, mimeType }, mimeType);
+  }
+});

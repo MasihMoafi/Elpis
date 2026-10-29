@@ -194,7 +194,8 @@ test('her face sits beside every reply as one image of one file, moves with the 
   const faces = live.filter(e => e.type === 'image'), notes = ['turn-1', 'turn-2'].map(id => live.find(e => e.id === `love-reply-${id}`));
   assert.deepEqual(faces.map(e => e.id), ['love-face-turn-1', 'love-face-turn-2'], 'one face per reply, once, though the turn finished twice');
   assert.equal(Object.keys(scene.files).length, 1, 'one file for every face'); assert.equal(faces[0].fileId, faces[1].fileId);
-  assert.match(scene.files[faces[0].fileId].dataURL, /^data:image\/svg\+xml;base64,/);
+  assert.match(scene.files[faces[0].fileId].dataURL, /^data:image\/webp;base64,/, 'a raster face, which the dark board shows the right way round');
+  assert.equal(scene.files[faces[0].fileId].mimeType, 'image/webp');
   faces.forEach((face, i) => {
     assert.ok(face.x + face.width <= notes[i].x, 'the face is to the left of her note'); assert.ok(Math.abs(face.y - notes[i].y) <= 8, 'level with the first line');
     assert.ok(face.groupIds.includes(`love-reply-group-turn-${i + 1}`) && notes[i].groupIds.includes(`love-reply-group-turn-${i + 1}`), 'face and note move as one');
