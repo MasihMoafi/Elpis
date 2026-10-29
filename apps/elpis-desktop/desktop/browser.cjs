@@ -33,7 +33,7 @@ function createBrowser({host,origin,WebContentsView,session,ipcMain,openExternal
       tabs:[...tabs.values()].map(item=>({id:item.id,url:item.url,title:item.customTitle??item.title,customTitle:item.customTitle,muted:item.view.webContents.isAudioMuted?.()??false,loading:item.loading,error:item.error,failure:item.failure,security:pageSecurity(item.url),zoom:Math.round(item.view.webContents.getZoomFactor()*100),comments:item.comments.length,canGoBack:item.view.webContents.navigationHistory.canGoBack(),canGoForward:item.view.webContents.navigationHistory.canGoForward()}))};
   };
   const emit=()=>{if(disposed)return;onChange?.();if(presented&&!host.isDestroyed()&&!host.webContents.isDestroyed())host.webContents.send('elpis:browser:state',snapshot());};
-  const agent=createBrowserAgent({tabs,open,select,origin,emit,isPresented:()=>presented,prepare(){if(annotating)setAnnotating(false);}});
+  const agent=createBrowserAgent({tabs,open,origin,emit,prepare(id){if(annotating&&id===activeId)setAnnotating(false);}});
   // What the page layer draws: markers for saved comments and the outline of the one being written.
   function syncPage(tab){
     if(!tab||tab.view.webContents.isDestroyed())return;
@@ -51,12 +51,14 @@ function createBrowser({host,origin,WebContentsView,session,ipcMain,openExternal
     }
   }
   function focusInput(){focusAddress++;if(presented)host.webContents.focus();emit();}
+  // focus: true focuses the page, false the address bar of a blank tab, null nothing (the agent's tab).
   function select(id,focus=true){
     if(!tabs.has(id))throw Error('This browser tab is closed.');
     const previous=active();activeId=id;visible=true;place();
     if(previous&&previous.id!==id)syncPage(previous);
     syncPage(tabs.get(id));emit();
-    const tab=tabs.get(id);if(presented&&focus&&tab.url!=='about:blank')tab.view.webContents.focus();else if(tab.url==='about:blank')focusInput();
+    const tab=tabs.get(id);if(focus===null)return;
+    if(presented&&focus&&tab.url!=='about:blank')tab.view.webContents.focus();else if(tab.url==='about:blank')focusInput();
   }
   function close(id){
     const tab=tabs.get(id);if(!tab)return;
@@ -73,14 +75,16 @@ function createBrowser({host,origin,WebContentsView,session,ipcMain,openExternal
     // did-fail-load owns page errors; Stop and replaced navigations also reject loadURL.
     void tab.view.webContents.loadURL(tab.url).catch(()=>{});
   }
-  function open(url='about:blank',{focus=false,after=null,id=null,restoring=false}={}){
+  // An agent's tab opens behind the person's tab; it is shown only when he has none.
+  function open(url='about:blank',{focus=false,after=null,id=null,restoring=false,agent:owned=false}={}){
     const target=browserUrl(url,origin);if(tabs.size>=20)throw Error('Close a browser tab before opening another (20 tab limit).');
-    const view=new WebContentsView({webPreferences:{partition:'persist:elpis-browser',preload:PRELOAD,nodeIntegration:false,contextIsolation:true,sandbox:true,webSecurity:true,webviewTag:false}});
+    // Electron focuses a page on every navigation by default; an agent's page loads must never take the person's keyboard.
+    const view=new WebContentsView({webPreferences:{partition:'persist:elpis-browser',preload:PRELOAD,nodeIntegration:false,contextIsolation:true,sandbox:true,webSecurity:true,webviewTag:false,focusOnNavigation:owned!==true}});
     view.setVisible(false);
     // A session can receive agent input before its pane has ever been shown.
     const {width,height}=host.getContentBounds();view.setBounds({x:0,y:0,width,height});
     host.contentView.addChildView(view);
-    const tab={id:typeof id==='string'&&/^[A-Za-z0-9_-]{1,200}$/.test(id)&&!tabs.has(id)?id:randomUUID(),url:'about:blank',title:'New tab',customTitle:null,loading:false,error:null,failure:null,view,comments:[],draft:null,find:{open:false,text:'',matches:0,active:0,focus:0}};tabs.set(tab.id,tab);
+    const tab={id:typeof id==='string'&&/^[A-Za-z0-9_-]{1,200}$/.test(id)&&!tabs.has(id)?id:randomUUID(),url:'about:blank',title:'New tab',customTitle:null,agent:owned===true,loading:false,error:null,failure:null,view,comments:[],draft:null,find:{open:false,text:'',matches:0,active:0,focus:0}};tabs.set(tab.id,tab);
     if(after&&tabs.has(after)){const order=[...tabs.entries()].filter(([id])=>id!==tab.id),at=order.findIndex(([id])=>id===after)+1;order.splice(at,0,[tab.id,tab]);tabs.clear();for(const [id,item] of order)tabs.set(id,item);}
     const wc=view.webContents;tint(tab);
     agent.observe(tab);
@@ -89,7 +93,7 @@ function createBrowser({host,origin,WebContentsView,session,ipcMain,openExternal
     wc.on('will-navigate',guard);wc.on('will-redirect',guard);
     wc.setWindowOpenHandler(({url})=>{
       const now=Date.now();popups=popups.filter(time=>now-time<10000);
-      if(popups.length<5){try{open(url);popups.push(now);}catch{}}
+      if(popups.length<5){try{open(url,{agent:tab.agent});popups.push(now);}catch{}}
       return {action:'deny'};
     });
     wc.on('did-start-loading',()=>{tab.loading=true;tab.error=null;emit();});
@@ -104,7 +108,7 @@ function createBrowser({host,origin,WebContentsView,session,ipcMain,openExternal
     wc.on('context-menu',(_event,params)=>pageMenu(tab,params));
     wc.on('destroyed',()=>{if(!disposed)close(tab.id);});
     wc.on('before-input-event',(event,input)=>keyboard(event,input,tab));
-    select(tab.id,focus);
+    if(!tab.agent)select(tab.id,focus);else if(active())place();else select(tab.id,null);
     if(restoring){tab.url=target;emit();}else navigate(tab,target);
     return tab.id;
   }
@@ -189,7 +193,8 @@ function createBrowser({host,origin,WebContentsView,session,ipcMain,openExternal
   function zoom(tab,direction){const wc=tab.view.webContents;wc.setZoomFactor(zoomStep(wc.getZoomFactor(),direction));emit();}
   function openFind(tab){tab.find.open=true;tab.find.focus++;emit();host.webContents.focus();}
   function keyboard(event,input,tab=null){
-    if(input.type!=='keyDown'||!visible||!presented)return;
+    // Only the shown page has the person's keyboard; keys on a background page are the agent's.
+    if(input.type!=='keyDown'||!visible||!presented||tab&&tab.id!==activeId)return;
     const key=input.key.toLowerCase(),primary=(input.control||input.meta)&&!input.alt;
     const page=tab??null,act=fn=>{event.preventDefault();fn();};
     if(page&&input.alt&&!input.control&&!input.meta&&(key==='arrowleft'||key==='arrowright'))return act(()=>{const history=page.view.webContents.navigationHistory;if(key==='arrowleft'&&history.canGoBack())history.goBack();else if(key==='arrowright'&&history.canGoForward())history.goForward();});
@@ -312,7 +317,7 @@ function createBrowser({host,origin,WebContentsView,session,ipcMain,openExternal
       }
       presented=value;if(!value){bounds=null;obscured=true;}place();if(value)emit();
     },
-    saved(){return {visible,activeId,tabs:[...tabs.values()].map(tab=>({id:tab.id,url:tab.url,title:tab.title,customTitle:tab.customTitle,muted:tab.view.webContents.isAudioMuted?.()??false,zoom:tab.view.webContents.getZoomFactor(),
+    saved(){return {visible,activeId,tabs:[...tabs.values()].map(tab=>({id:tab.id,url:tab.url,title:tab.title,customTitle:tab.customTitle,agent:tab.agent,muted:tab.view.webContents.isAudioMuted?.()??false,zoom:tab.view.webContents.getZoomFactor(),
       history:tab.view.webContents.navigationHistory.getAllEntries?.(),historyIndex:tab.view.webContents.navigationHistory.getActiveIndex?.()}))};},
     async restore(saved){
       if(!saved||!Array.isArray(saved.tabs))return;
@@ -320,7 +325,7 @@ function createBrowser({host,origin,WebContentsView,session,ipcMain,openExternal
         try{
           const history=Array.isArray(item.history)&&item.history.length&&Number.isInteger(item.historyIndex)&&item.historyIndex>=0&&item.historyIndex<item.history.length
             ?item.history.map(entry=>({...entry,url:browserUrl(entry.url,origin)})):null;
-          const id=open(item.url,{id:item.id,restoring:!!history}),tab=tabs.get(id),wc=tab.view.webContents;
+          const id=open(item.url,{id:item.id,restoring:!!history,agent:item.agent===true}),tab=tabs.get(id),wc=tab.view.webContents;
           if(typeof item.title==='string')tab.title=item.title.slice(0,200);
           if(typeof item.customTitle==='string')tab.customTitle=item.customTitle.trim().slice(0,200)||null;
           if(item.muted===true)wc.setAudioMuted(true);

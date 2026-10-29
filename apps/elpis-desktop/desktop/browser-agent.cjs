@@ -13,8 +13,8 @@ const string = {type:'string'}, number = {type:'number'}, tabId = {type:'string'
 const target = {selector:string,nodeId:string};
 const tool = (name,description,properties,required=[]) => ({name,description,inputSchema:{type:'object',properties,required,additionalProperties:false}});
 const tools = [
-  tool('browser_tabs','List this session’s in-app browser tabs. Other sessions are inaccessible.',{}),
-  tool('browser_open','Open a URL in this session’s in-app browser. Returns tabId.',{url:string},['url']),
+  tool('browser_tabs','List this session’s in-app browser tabs. agent:true marks your own tabs; the others are the person’s, which you may read but not navigate or send input to. Other sessions are inaccessible.',{}),
+  tool('browser_open','Open a URL in a new tab of your own in this session’s in-app browser, beside the person’s tabs. Returns tabId.',{url:string},['url']),
   tool('browser_navigate','Navigate this tab. action: goto (requires url), back, forward, reload.',{tabId,url:string,action:{type:'string',enum:['goto','back','forward','reload']}},['tabId']),
   tool('browser_click','Click one visible element by CSS selector, snapshot nodeId, or viewport x/y.',{tabId,...target,x:number,y:number},['tabId']),
   tool('browser_type','Focus a selector/nodeId and type text. clear defaults to true. Omit target to type at the cursor.',{tabId,...target,text:string,clear:{type:'boolean'}},['tabId','text']),
@@ -93,7 +93,12 @@ function validate(name,args) {
   if(args.timeoutMs!==undefined&&(args.timeoutMs<0||args.timeoutMs>30000))throw Error('Invalid timeoutMs.');
 }
 
-function createBrowserAgent({tabs,open,select,origin,emit,prepare,isPresented=()=>true}) {
+// The person's own tabs: the agent may read them, never navigate them or send them input.
+const INPUT=new Set(['browser_navigate','browser_click','browser_type','browser_press','browser_scroll']);
+
+// The agent works only in tabs it opened (tab.agent), in the background: it never selects a tab or moves focus,
+// so the person keeps using his own tab, with his keyboard, at the same time.
+function createBrowserAgent({tabs,open,origin,emit,prepare}) {
   let enabled=true,tabId=null,epoch=0,disposed=false,queue=Promise.resolve();
   const logs=new Map();
   const state=()=>({enabled,tabId});
@@ -111,17 +116,18 @@ function createBrowserAgent({tabs,open,select,origin,emit,prepare,isPresented=()
   };
   async function run(name,args,generation) {
     guard(generation);validate(name,args);
-    if(name==='browser_tabs')return {tabs:[...tabs.values()].map(tab=>({id:tab.id,url:tab.url,title:tab.title})),control:state()};
+    if(name==='browser_tabs')return {tabs:[...tabs.values()].map(tab=>({id:tab.id,url:tab.url,title:tab.title,agent:!!tab.agent})),control:state()};
     if(name==='browser_open'){
-      const url=browserUrl(args.url,origin);tabId=open(url);select(tabId,false);prepare();emit();return {tabId,url};
+      const url=browserUrl(args.url,origin);tabId=open(url,{agent:true});emit();return {tabId,url};
     }
     const tab=tabs.get(args.tabId),wc=tab?.view.webContents;
     if(!wc||wc.isDestroyed())throw Error('This browser tab is closed.');
+    if(INPUT.has(name)&&!tab.agent)throw Error('This is the person’s tab: you may read it, not navigate it or send it input. Open your own tab with browser_open.');
     browserUrl(wc.getURL()||tab.url,origin);
     if(name==='browser_navigate'&&(!args.action||args.action==='goto'))browserUrl(args.url,origin);
     if(name==='browser_click'&&!(args.selector||args.nodeId)&&(!Number.isFinite(args.x)||!Number.isFinite(args.y)))throw Error('Choose a selector, nodeId or x/y.');
     if(name==='browser_click'&&(args.selector||args.nodeId)&&(args.x!==undefined||args.y!==undefined))throw Error('Choose a target or coordinates.');
-    tabId=tab.id;select(tabId,false);prepare();emit();
+    if(tab.agent){tabId=tab.id;prepare(tab.id);emit();}
     const dom=async action=>{
       guard(generation);
       const result=await wc.executeJavaScriptInIsolatedWorld(999,[{code:`(${pageOperation.toString()})(${JSON.stringify(action)},${JSON.stringify(args)})`}]);
@@ -157,9 +163,9 @@ function createBrowserAgent({tabs,open,select,origin,emit,prepare,isPresented=()
       }
       case 'browser_type':
         if(args.selector||args.nodeId)await dom('focus');
-        guard(generation);if(isPresented())wc.focus();if(args.clear!==false)press(process.platform==='darwin'?'Meta+A':'Control+A');
+        guard(generation);if(args.clear!==false)press(process.platform==='darwin'?'Meta+A':'Control+A');
         await wc.insertText(args.text);break;
-      case 'browser_press':if(args.selector||args.nodeId)await dom('focus');guard(generation);if(isPresented())wc.focus();press(args.key);break;
+      case 'browser_press':if(args.selector||args.nodeId)await dom('focus');guard(generation);press(args.key);break;
       case 'browser_scroll':return dom('scroll');
       case 'browser_screenshot': {
         // DOM updates can precede Chromium's displayed frame (as with annotation captures).

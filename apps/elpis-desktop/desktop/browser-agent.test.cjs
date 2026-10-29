@@ -6,7 +6,8 @@ const { createBrowserAgent, startBrowserAgentSocket } = require('./browser-agent
 
 function fixture() {
   const tabs = new Map(), inputs = [], scripts = []; let selected, count = 0;
-  const open = url => {
+  // The agent's tool opens its tabs with {agent: true}; `user` opens a tab as the person does.
+  const open = (url, { agent: owned = false } = {}) => {
     const id = `tab-${++count}`;
     const wc = Object.assign(new EventEmitter(), { getURL: () => url, isDestroyed: () => false, isLoading: () => false,
       navigationHistory: { canGoBack: () => true, canGoForward: () => true, goBack: () => inputs.push('back'), goForward: () => inputs.push('forward') },
@@ -14,17 +15,30 @@ function fixture() {
       getZoomFactor: () => 1, sendInputEvent: event => inputs.push(event), insertText: async text => inputs.push(text),
       executeJavaScriptInIsolatedWorld: async (world, source) => { scripts.push({world, source}); return { x: 10, y: 20 }; },
       capturePage: async () => ({ isEmpty: () => false, toJPEG: () => Buffer.from('jpeg') }) });
-    tabs.set(id, { id, url, title: 'Fixture', view: { webContents: wc } }); return id;
+    tabs.set(id, { id, url, title: 'Fixture', agent: owned, view: { webContents: wc } }); return id;
   };
   const agent = createBrowserAgent({ tabs, open, select: id => { selected = id; }, origin: 'http://127.0.0.1:4000', emit() {}, prepare() {} });
-  return { agent, tabs, inputs, scripts, selected: () => selected };
+  return { agent, tabs, inputs, scripts, user: url => open(url), selected: () => selected };
 }
 
-test('open/list/select use visible browser tabs and mark agent control', async () => {
+test('open/list use the agent’s own tab and mark agent control without selecting it', async () => {
   const f = fixture(), result = await f.agent.call('browser_open', { url: 'https://example.com' });
-  assert.equal(result.tabId, 'tab-1'); assert.equal(f.selected(), 'tab-1');
+  assert.equal(result.tabId, 'tab-1'); assert.equal(f.tabs.get('tab-1').agent, true);
   assert.equal(f.agent.state().tabId, 'tab-1');
-  assert.equal((await f.agent.call('browser_tabs', {})).tabs[0].id, 'tab-1');
+  await f.agent.call('browser_click', { tabId: 'tab-1', x: 1, y: 1 });
+  assert.equal(f.selected(), undefined, 'the agent never switches the shown tab');
+  assert.deepEqual((await f.agent.call('browser_tabs', {})).tabs[0], { id: 'tab-1', url: 'https://example.com/', title: 'Fixture', agent: true });
+});
+
+test('the person’s tabs refuse every agent action that navigates or sends input, and stay readable', async () => {
+  const f = fixture(), mine = f.user('https://example.com/mine');
+  for (const [name, args] of [['browser_navigate', { url: 'https://example.com/x' }], ['browser_navigate', { action: 'back' }], ['browser_click', { x: 1, y: 1 }],
+    ['browser_type', { text: 'INTRUDER' }], ['browser_press', { key: 'Enter' }], ['browser_scroll', { deltaY: 10 }]]) {
+    await assert.rejects(f.agent.call(name, { tabId: mine, ...args }), /person’s tab/);
+  }
+  assert.deepEqual(f.inputs, []); assert.equal(f.scripts.length, 0); assert.equal(f.agent.state().tabId, null);
+  await f.agent.call('browser_snapshot', { tabId: mine });
+  assert.equal((await f.agent.call('browser_screenshot', { tabId: mine })).content[0].type, 'image');
 });
 
 test('policy rejects files, credentials and Elpis before creating or navigating a tab', async () => {

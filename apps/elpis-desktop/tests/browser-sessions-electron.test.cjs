@@ -92,6 +92,9 @@ test('session browsers switch, start empty, restore history, isolate concurrent 
     assert.deepEqual(ta.tabs.map(tab => tab.id), [a.id]); assert.deepEqual(tb.tabs.map(tab => tab.id), [b.id]);
     await assert.rejects(call('a', 'browser_snapshot', { tabId: b.id }), /closed/);
     await assert.rejects(callBrowser(credentials.path, 'browser_tabs', {}), /session|capability/i);
+    // Each agent types in a tab of its own; the person's tabs a and b stay readable only.
+    const [agentA, agentB] = (await Promise.all([call('a', 'browser_open', { url: `${base}/a-agent` }), call('b', 'browser_open', { url: `${base}/b-agent` })])).map(result => result.tabId);
+    await Promise.all([call('a', 'browser_wait', { tabId: agentA, selector: 'button' }), call('b', 'browser_wait', { tabId: agentB, selector: 'button' })]);
     // Hold A's DOM read while B types and clicks. B must finish before A is released.
     await electron.evaluate(({ webContents }, url) => {
       const wc = webContents.getAllWebContents().find(wc => wc.getURL() === url), original = wc.executeJavaScriptInIsolatedWorld.bind(wc);
@@ -100,17 +103,17 @@ test('session browsers switch, start empty, restore history, isolate concurrent 
     }, `${base}/a-next`);
     const pendingA = call('a', 'browser_snapshot', { tabId: a.id });
     await electron.waitForEvent('console', { predicate: () => false, timeout: 50 }).catch(() => {});
-    await call('b', 'browser_type', { tabId: b.id, selector: 'input', text: 'Only session B' });
-    await call('b', 'browser_click', { tabId: b.id, selector: 'button' });
-    await call('b', 'browser_wait', { tabId: b.id, selector: 'h1[data-saved]' });
+    await call('b', 'browser_type', { tabId: agentB, selector: 'input', text: 'Only session B' });
+    await call('b', 'browser_click', { tabId: agentB, selector: 'button' });
+    await call('b', 'browser_wait', { tabId: agentB, selector: 'h1[data-saved]' });
     await electron.evaluate(() => { if (!global.releaseBrowserRead) throw Error('A read did not start'); global.releaseBrowserRead(); });
     assert.match((await pendingA).text, /Session page \/a-next/);
-    assert.match((await call('b', 'browser_snapshot', { tabId: b.id })).text, /Only session B/);
-    await call('a', 'browser_type', { tabId: a.id, selector: 'input', text: 'Only hidden session A' });
-    await call('a', 'browser_click', { tabId: a.id, selector: 'button' });
-    await call('a', 'browser_wait', { tabId: a.id, selector: 'h1[data-saved]' });
-    assert.match((await call('a', 'browser_snapshot', { tabId: a.id })).text, /Only hidden session A/);
-    assert.match((await call('b', 'browser_snapshot', { tabId: b.id })).text, /Only session B/);
+    assert.match((await call('b', 'browser_snapshot', { tabId: agentB })).text, /Only session B/);
+    await call('a', 'browser_type', { tabId: agentA, selector: 'input', text: 'Only hidden session A' });
+    await call('a', 'browser_click', { tabId: agentA, selector: 'button' });
+    await call('a', 'browser_wait', { tabId: agentA, selector: 'h1[data-saved]' });
+    assert.match((await call('a', 'browser_snapshot', { tabId: agentA })).text, /Only hidden session A/);
+    assert.match((await call('b', 'browser_snapshot', { tabId: agentB })).text, /Only session B/);
     await select('chat-a'); assert.equal(await address().inputValue(), `${base}/a-next`, 'B tools did not select or navigate A');
     if (shots) {
       await fs.mkdir(shots, { recursive: true });
@@ -128,7 +131,7 @@ test('session browsers switch, start empty, restore history, isolate concurrent 
     await (await threadMenuItem(page, 'Open session in new window')).click();
     const secondWindow = await opened; secondWindow.setDefaultTimeout(10000);
     await secondWindow.getByRole('textbox', { name: 'Search or enter a URL', exact: true }).waitFor();
-    assert.deepEqual((await secondWindow.evaluate(() => window.elpisDesktop.browser.command('state'))).tabs.map(tab => tab.id), [a.id]);
+    assert.deepEqual((await secondWindow.evaluate(() => window.elpisDesktop.browser.command('state'))).tabs.map(tab => tab.id), [a.id, agentA]);
     assert.equal(await electron.evaluate(({ webContents }, url) => webContents.getAllWebContents().filter(wc => wc.getURL() === url).length, `${base}/a-next`), 1, 'one session keeps one native page across windows');
     await secondWindow.close(); await page.bringToFront();
     await address().waitFor(); assert.equal(await address().inputValue(), `${base}/a-next`);
