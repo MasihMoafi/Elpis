@@ -256,6 +256,7 @@
     "tests/quick-entry.test.cjs",
     "tests/readable-polish.test.cjs",
     "tests/reading-options.test.cjs",
+    "tests/chat-math.test.cjs",
     "tests/renderer.test.cjs",
     "tests/request-diagnostics.test.cjs",
     "tests/rewind-parity.test.cjs",

@@ -5,6 +5,9 @@ import { Check, Copy } from "lucide-react";
 import Markdown, { defaultUrlTransform, type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
 import { Button } from "@/components/ui/button";
 import { FileRefLink } from "@/components/file-ref";
 import { linkFilePaths, parseHref, resolveRef } from "@/lib/file-refs";
@@ -77,11 +80,22 @@ const components: Components = {
 };
 
 /** Only blocks that name their language are coloured: guessing one paints plain text and logs in wrong colours. */
-const HIGHLIGHT: NonNullable<React.ComponentProps<typeof Markdown>["rehypePlugins"]> = [[rehypeHighlight, { detect: false }]];
+/** Math renders with KaTeX, as in the ChatGPT app; a formula still being typed shows its source instead of failing. */
+const HIGHLIGHT: NonNullable<React.ComponentProps<typeof Markdown>["rehypePlugins"]> = [[rehypeKatex, { throwOnError: false, strict: false }], [rehypeHighlight, { detect: false }]];
 
 /** file:/// links are kept (they are file refs); everything else is Markdown's own check. */
 const urlTransform = (url: string) => url.startsWith("file:///") ? url : defaultUrlTransform(url);
-const PLUGINS = [remarkGfm, linkFilePaths];
+const PLUGINS = [remarkGfm, remarkMath, linkFilePaths];
+
+/** Models write math as \( … \) and \[ … \] as often as $ … $ and $$ … $$; remark-math reads only dollars, so the
+ * bracket forms become dollars everywhere except inside code, and a line that is only $$ … $$ is a display formula. */
+export function dollarMath(text: string): string {
+  if (!text.includes("\\(") && !text.includes("\\[") && !text.includes("$$")) return text;
+  return text.split(/(```[\s\S]*?(?:```|$)|`[^`\n]*`)/).map((part, index) => index % 2 ? part : part
+    .replace(/^[ \t]*\$\$([^\n]+?)\$\$[ \t]*$/gm, (_, math: string) => `$$\n${math.trim()}\n$$`)
+    .replace(/\\\[([\s\S]+?)\\\]/g, (_, math: string) => `\n$$\n${math.trim()}\n$$\n`)
+    .replace(/\\\(([\s\S]+?)\\\)/g, (_, math: string) => `$${math.trim()}$`)).join("");
+}
 
 export const MarkdownText = memo(function MarkdownText({ text, file, allowImages = true }: { text: string; file?: { cwd: string; path: string }; allowImages?: boolean }) {
   const rendered = useMemo<Components>(() => {
@@ -102,5 +116,5 @@ export const MarkdownText = memo(function MarkdownText({ text, file, allowImages
       },
     };
   }, [file?.cwd, file?.path, allowImages]); // eslint-disable-line react-hooks/exhaustive-deps
-  return <div className="markdown"><Markdown remarkPlugins={PLUGINS} rehypePlugins={HIGHLIGHT} components={rendered} urlTransform={urlTransform}>{text}</Markdown></div>;
+  return <div className="markdown"><Markdown remarkPlugins={PLUGINS} rehypePlugins={HIGHLIGHT} components={rendered} urlTransform={urlTransform}>{dollarMath(text)}</Markdown></div>;
 });

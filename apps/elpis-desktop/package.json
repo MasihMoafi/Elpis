@@ -34,6 +34,7 @@
     "@xyflow/react": "12.12.0",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
+    "katex": "0.16.47",
     "lucide-react": "1.37.0",
     "next": "16.2.6",
     "node-pty": "1.1.0",
@@ -41,7 +42,9 @@
     "react-dom": "19.2.4",
     "react-markdown": "10.1.0",
     "rehype-highlight": "7.0.2",
+    "rehype-katex": "7.0.1",
     "remark-gfm": "4.0.1",
+    "remark-math": "6.0.0",
     "tailwind-merge": "3.6.0",
     "ws": "8.18.3"
   },
