@@ -2,7 +2,7 @@
 
 import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { SmartPruneLine } from "@/components/smart-prune";
-import { useEffect, useId, useRef, useState } from "react";
+import { useState } from "react";
 import { BranchIcon, BrowserIcon, PlanIcon, StopIcon } from "@/components/elpis-icons";
 import { BrowserComments } from "@/components/browser-comments";
 import { BROWSER_COMMENTS, DRAWING_NOTE } from "@/lib/browser-notes";
@@ -114,28 +114,6 @@ function MessageButtons({actions}:{actions:MessageAction[]}) {
     <MoreMenu actions={menuActions(actions)} label="More message actions" title="More actions" />
   </>;
 }
-/** Measure the rendered body so formatting, font size and narrow/RTL text use the same fold control. */
-function CollapsibleMessage({children, direction}:{children:React.ReactNode;direction?:"auto"}) {
-  const body = useRef<HTMLDivElement>(null), id = useId();
-  const [long, setLong] = useState(false), [collapsed, setCollapsed] = useState(false);
-  useEffect(() => {
-    const element = body.current; if (!element) return;
-    const measure = () => {
-      const style = getComputedStyle(element), line = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.5;
-      setLong(element.scrollHeight > line * 16);
-    };
-    measure();
-    const observer = new ResizeObserver(measure); observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
-  const folded = long && collapsed;
-  return <div className="message-body">
-    {long && <Button type="button" variant="ghost" size="xs" className="message-fold-control" data-preserve-scroll aria-expanded={!folded} aria-controls={id} onClick={() => setCollapsed(!folded)}>{folded ? "Expand message" : "Collapse message"}</Button>}
-    <div id={id} className={folded ? "message-body-preview" : undefined} inert={folded} aria-hidden={folded || undefined}>
-      <div ref={body} className="message-body-content" dir={direction}>{children}</div>
-    </div>
-  </div>;
-}
 /** ChatGPT's ‹ 2 / 2 › under an edited message: the other versions of it, one click away. */
 function MessageVersions({version}:{version:VersionControl}) {
   return <span className="message-versions" role="group" aria-label="Message versions">
@@ -161,7 +139,7 @@ function UserMessage({body,bodyContent,attachments,attachmentContent,copyText,on
   </form>;
   const whole=()=>copyText ?? [body,...attachments].filter(Boolean).join("\n");
   const actions:MessageAction[]=[...replyAction(onReply),copyTextAction(whole,false),copyAction("Copy message",whole),...(onEdit?[{id:"edit",label:"Edit message",menuLabel:"Edit and retry",title:"Edit and resend",icon:<Pencil size={14}/>,run:()=>{setDraft(body);setError("");setEditing(true);}}]:[]),...rewindAction(onRewind)];
-  return <RightClickMenu actions={menuActions(actions)} area={<div className="user-turn" id={reference ? messageDomId(reference) : undefined} data-message-reference={onReply ? reference : undefined} tabIndex={reference ? -1 : undefined}/>}><div className="message user">{replyContent}<CollapsibleMessage direction="auto">{bodyContent ?? body}</CollapsibleMessage>{attachmentContent || (attachments.length>0&&<ul className="mt-2 space-y-1 text-sm" aria-label="Message attachments">{attachments.map((label,index)=><li key={index}>{label}</li>)}</ul>)}{!body&&!attachments.length&&<span>Message content unavailable.</span>}</div><div className="message-actions">
+  return <RightClickMenu actions={menuActions(actions)} area={<div className="user-turn" id={reference ? messageDomId(reference) : undefined} data-message-reference={onReply ? reference : undefined} tabIndex={reference ? -1 : undefined}/>}><div className="message user">{replyContent}<div className="message-body" dir="auto">{bodyContent ?? body}</div>{attachmentContent || (attachments.length>0&&<ul className="mt-2 space-y-1 text-sm" aria-label="Message attachments">{attachments.map((label,index)=><li key={index}>{label}</li>)}</ul>)}{!body&&!attachments.length&&<span>Message content unavailable.</span>}</div><div className="message-actions">
     {time&&<time className="message-time" dateTime={new Date(time).toISOString()} title={new Date(time).toLocaleString()}>{new Date(time).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})}</time>}
     {version&&<MessageVersions version={version}/>}
     <MessageButtons actions={actions}/>
@@ -191,7 +169,7 @@ export function ChatMessage({item,speaker="Elpis",threads=[],onOpenThread,onEdit
     const spokenText = readAloud ? plainText(item.text || "") : "";
     const speechAction:MessageAction[] = speech && (speaking || (readAloud && spokenText.trim())) ? [{ id: "read-aloud", label: speaking ? "Stop" : "Read aloud", title: speaking ? "Stop reading aloud" : "Read aloud · ChatGPT voice", icon: speaking ? <StopIcon size={14}/> : <Volume2 size={14}/>, run: () => speaking ? speech.stop() : speech.play(speechId, spokenText) }] : [];
     const actions:MessageAction[]=item.text?[...replyAction(onReply),copyTextAction(()=>item.text||""),copyAction("Copy reply",()=>item.text||""),...speechAction,...(onRegenerate?[{id:"regenerate",label:"Regenerate reply",title:"Regenerate",icon:<RefreshCw size={14}/>,run:onRegenerate}]:[]),...rewindAction(onRewind),...(onFork?[{id:"fork",label:"Fork chat from here",icon:<BranchIcon size={14}/>,run:onFork}]:[])]:[];
-    return <RightClickMenu actions={menuActions(actions)} area={<article className={speaker==="Matilda"?"message agent flow-root":"message agent"} id={reference ? messageDomId(reference) : undefined} data-message-reference={onReply ? reference : undefined} tabIndex={reference ? -1 : undefined} {...(speechAction.length ? { onPointerEnter: speech?.warm, onFocus: speech?.warm } : {})}/>}>{speaker==="Matilda"&&<img src={FACE_DATA_URL} alt="Matilda" width={64} height={64} className="float-left mb-2 mr-4 h-16 w-16 object-contain"/>}{speaker!=="Elpis"&&<div className="speaker">{speaker}</div>}<CollapsibleMessage>{verdict?<section className={verdict.failed?"plan-card check-failed":"plan-card"} aria-label={verdict.label}><p className="plan-card-heading">{verdict.mother?<Signpost size={14} aria-hidden="true"/>:verdict.failed?<CircleX size={14} aria-hidden="true"/>:<CircleCheck size={14} aria-hidden="true"/>}{verdict.heading}</p><MarkdownText text={verdict.text}/></section>:<MarkdownText text={item.text||""}/>}</CollapsibleMessage>{speech?.error?.id===speechId&&<p role="alert" className="text-sm text-destructive">{speech.error.message}</p>}{actions.length>0&&<div className="message-actions"><MessageButtons actions={actions}/></div>}</RightClickMenu>;
+    return <RightClickMenu actions={menuActions(actions)} area={<article className={speaker==="Matilda"?"message agent flow-root":"message agent"} id={reference ? messageDomId(reference) : undefined} data-message-reference={onReply ? reference : undefined} tabIndex={reference ? -1 : undefined} {...(speechAction.length ? { onPointerEnter: speech?.warm, onFocus: speech?.warm } : {})}/>}>{speaker==="Matilda"&&<img src={FACE_DATA_URL} alt="Matilda" width={64} height={64} className="float-left mb-2 mr-4 h-16 w-16 object-contain"/>}{speaker!=="Elpis"&&<div className="speaker">{speaker}</div>}<div className="message-body">{verdict?<section className={verdict.failed?"plan-card check-failed":"plan-card"} aria-label={verdict.label}><p className="plan-card-heading">{verdict.mother?<Signpost size={14} aria-hidden="true"/>:verdict.failed?<CircleX size={14} aria-hidden="true"/>:<CircleCheck size={14} aria-hidden="true"/>}{verdict.heading}</p><MarkdownText text={verdict.text}/></section>:<MarkdownText text={item.text||""}/>}</div>{speech?.error?.id===speechId&&<p role="alert" className="text-sm text-destructive">{speech.error.message}</p>}{actions.length>0&&<div className="message-actions"><MessageButtons actions={actions}/></div>}</RightClickMenu>;
   }
   if(item.type==="smartPrune")return <SmartPruneLine value={item.prune} mediaBase={mediaBase}/>;
   if(item.type==="commandExecution")return <CommandStep item={item}/>;

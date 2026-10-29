@@ -355,12 +355,11 @@ The saved workflow chat and both canvas views share one observed live-team summa
 Sidebar status keeps its original automatic left-hand position and unread action; manual colour is a separate palette action. Bookmark changes must persist through native workspace IPC without losing existing state. Settings starts beside navigation at readable width, unsupported Flex is absent, and existing unsupported saved values are not silently rewritten. The sidebar settles on complete rows above its footer. Chat menus group organization and Open in actions; singular and multi-selection labels match their targets.
 
 
-## Long messages — 27 October 2026
+## Long messages — 29 October 2026
 
-Masih: “when a message is too long there should be an option to collapse it.”
+Masih: “This collapse message is actually implemented in the wrong place. remove it. it's nonsensical!” (replaces the 27 October Collapse/Expand control.)
 
-Long user messages and assistant replies share a visible Collapse message / Expand message control. Messages start expanded. Rendered height determines eligibility, including Persian text and narrow layouts; short messages gain no control. A collapsed message keeps a bounded preview. Resizing and streaming do not undo the chosen state. Stored text, complete Copy, attachments, reply context and editing stay intact. Check both roles/themes, keyboard operation, full Copy while collapsed and an unchanged composer draft through the existing chat owner; then build and install forward.
-
+Messages always render in full, user and assistant alike: no Collapse or Expand control and no folded preview. Copy takes the whole message (`tests/claude-chat.test.cjs`, both themes).
 
 ## Completion of the 26–27 October requests
 
