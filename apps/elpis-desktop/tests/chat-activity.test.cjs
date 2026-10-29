@@ -142,15 +142,16 @@ test('finished work folds into one row per group, opens by click or keyboard, an
     await mixed.locator('> summary').click();
     assert.equal((await mixed.locator('.step:has(.step-script) > .step-head > .step-title').first().innerText()).trim(), 'Read app.ts');
 
-    // Inline code: red text on a soft tint, readable.
+    // Inline code: the reply's ink on a 6% chip, as in the ChatGPT app (specs/chatgpt-chat-style.md; 29 Oct, Masih: "map every
+    // style feature of chatgpt app into a clear spec that's reusable and make our design match it").
     const chip = page.locator('.markdown :not(pre) > code').filter({ hasText: 'legal/evals/test-files/' });
     const chipStyle = () => chip.evaluate(node => ({ color: window.__rgb(getComputedStyle(node).color), background: window.__rgb(getComputedStyle(node).backgroundColor) }));
     let style = await chipStyle();
-    assert.ok(isRed(style.color), `light: inline code is red (${style.color})`);
+    assert.ok(!isRed(style.color), `light: inline code keeps the reply's ink (${style.color})`);
     assert.ok(luminance(style.background) > 0.75 && luminance(style.background) < 0.97, `light: the chip has a soft tint (${style.background})`);
     assert.ok(contrast(style.color, style.background) >= 4.5, `light: inline code is readable (${contrast(style.color, style.background).toFixed(2)})`);
 
-    const workingHexagon = page.locator('.activity-group .elpis-working-rotor');
+    const workingHexagon = page.locator('.turn-working .elpis-working-rotor');
     await workingHexagon.evaluate(node => { node.style.stroke = '#e89d34'; });
     assert.ok((await oranges(page)).some(hit => hit.startsWith('path.elpis-working-rotor: stroke')), 'the guard still rejects an orange stroke other than the approved Send colour');
     await workingHexagon.evaluate(node => node.style.removeProperty('stroke'));
@@ -158,7 +159,7 @@ test('finished work folds into one row per group, opens by click or keyboard, an
 
     await page.emulateMedia({ colorScheme: 'dark' }); await page.waitForTimeout(200);
     style = await chipStyle();
-    assert.ok(isRed(style.color), `dark: inline code is red (${style.color})`);
+    assert.ok(!isRed(style.color), `dark: inline code keeps the reply's ink (${style.color})`);
     assert.ok(luminance(style.background) < 0.1, `dark: the chip's tint is dark (${style.background})`);
     assert.ok(contrast(style.color, style.background) >= 4.5, `dark: inline code is readable (${contrast(style.color, style.background).toFixed(2)})`);
     assert.ok(isRed(await exit.evaluate(node => window.__rgb(getComputedStyle(node).color))), 'dark: the exit code line is red');
@@ -196,14 +197,15 @@ test('a running step reads as a sentence with a live timer and animated dots', a
     await page.waitForTimeout(2300);
     const later = seconds((await timer.innerText()).trim());
     assert.ok(later >= first + 2, `the timer advances (${first}s, then ${later}s)`);
-    const rotor = live.locator('.elpis-working-rotor');
+    // The working mark has one place, the turn's foot (29 Oct, Masih: "you can see the working animation changes its place!").
+    assert.equal(await live.locator('.elpis-working-mark').count(), 0, 'the running row has no mark of its own');
+    const rotor = page.locator('.turn-working .elpis-working-rotor');
     assert.equal(await rotor.evaluate(node => getComputedStyle(node).animationName), 'elpis-orbit', 'the filled shape rotates');
-    assert.equal(await page.locator('.turn-working').count(), 0, 'one live line at a time: the running step, not a second "Working"');
     assert.deepEqual(errors, []);
     await page.close();
 
     const still = await app.open({ reducedMotion: 'reduce' });
-    const slowRotor = still.page.locator('.activity-group .elpis-working-rotor');
+    const slowRotor = still.page.locator('.turn-working .elpis-working-rotor');
     await slowRotor.waitFor();
     assert.equal(await slowRotor.evaluate(node => getComputedStyle(node).animationDuration), '4s', 'the approved hexagon (d5fc7f16c) keeps its speed under reduced motion');
   } finally { await app.close(); }

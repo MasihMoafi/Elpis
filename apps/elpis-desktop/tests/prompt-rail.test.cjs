@@ -28,13 +28,13 @@ test('rail including the highlighted dash leaves 16px before text at desktop wid
       assert.equal(await f.page.locator('.prompt-rail').isVisible(), true, `${width}px keeps the rail available`);
       for (const index of [0, 1, 3]) {
         await marksOf(f.page).nth(index).hover();
-        await f.page.waitForFunction(() => document.querySelector('[data-distance="0"] i')?.getBoundingClientRect().width >= 37.9);
+        await f.page.waitForFunction(() => document.querySelector('[data-distance="0"] i')?.getBoundingClientRect().width >= 25.9);
         const geometry = await railGeometry(f.page);
-        assert.ok(geometry.highlighted >= 37.9, 'measure the widest hover state');
+        assert.ok(geometry.highlighted >= 25.9, 'measure the widest hover state (26 px, as ChatGPT)');
         assertRailGap(geometry);
         const preview = await f.page.locator('.prompt-preview').boundingBox();
         const mark = await marksOf(f.page).nth(index).boundingBox();
-        assert.ok(preview.x >= mark.x + mark.width + 12, 'preview stays clear of the pointer on the rail');
+        assert.ok(preview.x >= mark.x + mark.width - 0.5, 'the card opens at the rail\'s right edge, as ChatGPT\'s');
         assert.ok(preview.x + preview.width <= width, 'preview fits the viewport');
       }
     }
@@ -52,7 +52,7 @@ test('rail gap check rejects a deliberately narrow rendered gutter', async () =>
   try {
     await f.open('chat-a');
     await marksOf(f.page).nth(1).hover();
-    await f.page.waitForFunction(() => document.querySelector('[data-distance="0"] i')?.getBoundingClientRect().width >= 37.9);
+    await f.page.waitForFunction(() => document.querySelector('[data-distance="0"] i')?.getBoundingClientRect().width >= 25.9);
     assertRailGap(await railGeometry(f.page));
     await f.page.locator('.chat-content').evaluate(column => {
       const right = document.querySelector('.prompt-rail').getBoundingClientRect().right;
@@ -102,23 +102,25 @@ test('bookmarks restore from the desktop store when the loopback origin changes'
 });
 
 // Masih, 29 Oct: "When there is only one message we don't want this bar." The rail shows from the second prompt.
-test('one prompt shows no rail; two prompts show it, with usable ticks', async () => {
-  const one = [['only', 'The only prompt.', 'The only answer.']], two = [...one, ['next', 'The second prompt.', 'The second answer.']];
+// As in the ChatGPT app, the rail appears from four prompts (specs/chatgpt-chat-style.md; 29 Oct, Masih: "I explicitly told
+// you to create a parity of chatgpt app ... the spaces, distances, etc. should be exactly like that").
+test('three prompts show no rail; four show it, with usable ticks', async () => {
+  const one = [['only', 'The only prompt.', 'The only answer.'], ['p2', 'Prompt two.', 'Answer two.'], ['p3', 'Prompt three.', 'Answer three.']], two = [...one, ['next', 'The second prompt.', 'The second answer.']];
   let chat = one;
   const f = await fixture({ chat: one, routes: { '/api/threads/chat-a/prompts': () => indexOf(chat) } });
   try {
     await f.open('chat-a');
-    await f.page.getByText('The only answer.', { exact: true }).waitFor();
+    await f.page.getByText('Answer three.', { exact: true }).waitFor();
     await f.page.waitForTimeout(300);
-    assert.equal(await f.page.locator('.prompt-rail').count(), 0, 'one prompt: no rail');
+    assert.equal(await f.page.locator('.prompt-rail').count(), 0, 'three prompts: no rail');
     assert.equal(await marksOf(f.page).count(), 0);
     chat = two; f.turns.push(['next', 'The second prompt.', 'The second answer.']);
     await f.page.reload();
     await f.open('chat-a');
     const marks = marksOf(f.page);
-    await marks.nth(1).waitFor();
-    assert.equal(await marks.count(), 2, 'two prompts: two ticks');
-    await marks.nth(1).hover();
+    await marks.nth(3).waitFor();
+    assert.equal(await marks.count(), 4, 'four prompts: four ticks');
+    await marks.nth(3).hover();
     assert.match(await f.page.locator('.prompt-preview').innerText(), /The second prompt/);
     await marks.first().hover();
     assert.match(await f.page.locator('.prompt-preview').innerText(), /The only prompt/);
@@ -313,25 +315,26 @@ test('bookmark state persists per chat after reload', async () => {
 });
 
 test('a partially loaded turn pages past steering messages to the exact previewed prompt', async () => {
-  const chat = [['t1', 'The original prompt.', 'Original answer.'], ['t2', 'The latest prompt.', 'Latest answer.']];
+  // Two older prompts, listed by the index only, bring the rail to the four prompts it needs.
+  const chat = [['t0a', 'Earlier prompt A.', 'A.'], ['t0b', 'Earlier prompt B.', 'B.'], ['t1', 'The original prompt.', 'Original answer.'], ['t2', 'The latest prompt.', 'Latest answer.']];
   const thread = { id: 'chat-a', name: 'Fix the parser', cwd: '/tmp/parity-fixture', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } };
   const user = (turnId, id, text) => ({ turnId, item: { id, type: 'userMessage', content: [{ type: 'text', text }] } });
-  const reply = turnId => ({ turnId, item: { id: `a-${turnId}`, type: 'agentMessage', text: `${chat[turnId === 't2' ? 1 : 0][2]}\n\n${'A long explanation.\n\n'.repeat(25)}` } });
+  const reply = turnId => ({ turnId, item: { id: `a-${turnId}`, type: 'agentMessage', text: `${chat[turnId === 't2' ? 3 : 2][2]}\n\n${'A long explanation.\n\n'.repeat(25)}` } });
   const requested = [];
   const f = await fixture({ chat, width: 1280, height: 700, routes: {
     '/api/threads/chat-a': (_body, url) => {
       const cursor = url.searchParams.get('cursor'); requested.push(cursor);
-      if (cursor === 'oldest') return { thread, data: [user('t1', 'original', chat[0][1])], nextCursor: null };
+      if (cursor === 'oldest') return { thread, data: [user('t1', 'original', chat[2][1])], nextCursor: null };
       if (cursor === 'middle') return { thread, data: [user('t1', 'earlier-steer', 'An earlier follow-up.')], nextCursor: 'oldest' };
-      return { thread, data: [reply('t2'), user('t2', 'latest', chat[1][1]), reply('t1'), user('t1', 'later-steer', 'A later follow-up.')], nextCursor: 'middle' };
+      return { thread, data: [reply('t2'), user('t2', 'latest', chat[3][1]), reply('t1'), user('t1', 'later-steer', 'A later follow-up.')], nextCursor: 'middle' };
     },
-    '/api/threads/chat-a/prompts': () => ({ data: chat.map(([turnId, text, reply], index) => ({ turnId, itemId: index ? 'latest' : 'original', text, reply })) }),
+    '/api/threads/chat-a/prompts': () => ({ data: chat.map(([turnId, text, reply], index) => ({ turnId, itemId: ['old-a', 'old-b', 'original', 'latest'][index], text, reply })) }),
   } });
   try {
     await f.open('chat-a');
-    await marksOf(f.page).first().hover();
+    await marksOf(f.page).nth(2).hover();
     await f.page.getByText('The original prompt.', { exact: true }).waitFor();
-    await marksOf(f.page).first().click();
+    await marksOf(f.page).nth(2).click();
     await f.page.waitForFunction(() => {
       const root = document.querySelector('.chat-scroll'), bounds = root.getBoundingClientRect();
       return [...root.querySelectorAll('.message.user')].some(node => {
@@ -413,7 +416,7 @@ test('large-chat navigation preserves a visited message edit while older turns b
 });
 
 test('preview shows loading, empty, and unavailable reply states', async () => {
-  const chat = [['t1', 'First prompt.', 'First answer.'], ['t2', 'Second prompt.', 'Second answer.'], ['t3', 'Third prompt.', 'Third answer.']];
+  const chat = [['t1', 'First prompt.', 'First answer.'], ['t2', 'Second prompt.', 'Second answer.'], ['t3', 'Third prompt.', 'Third answer.'], ['t4', 'Fourth prompt.', 'Fourth answer.']];
   let resolveIndex;
   const index = new Promise(resolve => { resolveIndex = resolve; });
   const f = await fixture({ chat, width: 1280, routes: { '/api/threads/chat-a/prompts': () => index } });

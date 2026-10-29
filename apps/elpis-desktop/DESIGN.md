@@ -16,6 +16,9 @@ Next 16 static export (`app/page.tsx` is the one page shell), React 19, Tailwind
 | Shape | `--cut-sm` 4 px, `--cut` 7 px, `--cut-lg` 10 px; `.hud-cut` on controls, `.hud-cut-sm` on controls 24 px or less, `--cut-lg` on panels. Round only dots, rings, switches |
 | Motion | `--motion-fast` .12 s, `--motion` .2 s, `--ease` |
 
+### The chat thread follows the ChatGPT app
+`specs/chatgpt-chat-style.md` holds every measured value of ChatGPT's thread (column, insets, edge fades, bubble, reply type, fold row, actions, prompt rail, composer, scroll button). The thread's tokens (`--thread-tertiary`, `--thread-hairline`, `--thread-inset`, `--thread-edge-fade`, `--bubble-radius`, `--shadow-xl`) carry them; change a value there and in the spec together (29 Oct, Masih: "map every style feature of chatgpt app into a clear spec that's reusable and make our design match it").
+
 ## 3. Primitives (`components/ui`): use, do not re-make
 `button` (variants: default, outline, secondary, ghost, destructive, link; sizes: xs, sm, default, lg, icon, icon-xs, icon-sm, icon-lg), `input`, `textarea`, `search-field`, `switch`, `alert-dialog`, `dropdown-menu`, `context-menu`, `popover`, `tooltip`, `select`, `combobox`, `option-select`, `disclosure-summary`, `menu-row` (a row of a menu whose owner drives its own keys: the look of a dropdown item).
 

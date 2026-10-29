@@ -1,5 +1,6 @@
-// The user-message rail belongs beside the transcript, including when its
-// centered column leaves a wide gutter. Exercise the exported renderer only.
+// The user-message rail sits 16 px from its pane's left edge, as in the ChatGPT app, and the centred column keeps at least
+// 16 px clear of it (specs/chatgpt-chat-style.md; 29 Oct, Masih, of the old rail beside the text: "it's too dark and too
+// close to the actual chat"). Exercise the exported renderer only.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
@@ -20,8 +21,8 @@ async function geometry(page) {
 async function aligned(page, state) {
   await page.locator('.prompt-rail').waitFor({ state: 'visible' });
   const actual = await geometry(page);
-  assert.ok(actual.gap >= 15.5 && actual.gap <= 28,
-    `${state}: the rail must stay 16–28px beside the transcript, rather than float at the window edge: ${JSON.stringify(actual)}`);
+  assert.ok(Math.abs(actual.left - actual.paneLeft - 16) <= 0.5, `${state}: the rail sits 16px from the pane's edge: ${JSON.stringify(actual)}`);
+  assert.ok(actual.gap >= 15.5, `${state}: the text keeps 16px clear of the rail: ${JSON.stringify(actual)}`);
   assert.ok(actual.left >= actual.paneLeft && actual.right <= actual.paneRight,
     `${state}: the full rail hit area must stay in its chat pane: ${JSON.stringify(actual)}`);
 }
@@ -32,7 +33,7 @@ async function shot(page, theme, state) {
   await page.screenshot({ path: path.join(process.env.ELPIS_PARITY_SHOTS, `prompt-rail-alignment-${theme}-${state}.png`) });
 }
 
-for (const colorScheme of ['light', 'dark']) test(`prompt rail follows centered chat through pane and reading-width changes (${colorScheme})`, async () => {
+for (const colorScheme of ['light', 'dark']) test(`prompt rail keeps its pane edge through pane and reading-width changes (${colorScheme})`, async () => {
   const f = await fixture({ width: 1920, height: 800, colorScheme, showScrollbars: true });
   const { page } = f;
   try {
@@ -42,7 +43,7 @@ for (const colorScheme of ['light', 'dark']) test(`prompt rail follows centered 
       await page.setViewportSize({ width, height: 800 });
       await aligned(page, `sidebar open, ${width}px`);
       await marks.nth(1).hover();
-      await page.waitForFunction(() => document.querySelector('[data-distance="0"] i')?.getBoundingClientRect().width >= 37.9);
+      await page.waitForFunction(() => document.querySelector('[data-distance="0"] i')?.getBoundingClientRect().width >= 25.9);
       await aligned(page, `widest hovered dash, ${width}px`);
       await page.mouse.move(width - 8, 8);
     }
