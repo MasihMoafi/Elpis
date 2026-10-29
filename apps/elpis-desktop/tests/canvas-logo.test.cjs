@@ -29,6 +29,11 @@ test('Logo builds Designer, Curator, Tracer and Critic in order for the brand in
     assert.match(designer.data.instruction, /image generation tool/);
     assert.ok(['logo/candidates/1.png', '2.png', '3.png', 'logo/candidates/prompts.md'].every(name => designer.data.instruction.includes(name)), 'three numbered directions with their exact prompts');
     // 28 Oct, the first live run: a check read the session logs for seven minutes; it judges the named files only.
+    // 29 Oct (Masih: "What breaks it is bad image prompting"): prompts as in the approved collection ones, one concrete subject.
+    assert.match(designer.data.instruction, /one concrete, recognizable subject/i);
+    assert.match(designer.data.instruction, /part by part/i);
+    assert.match(designer.data.instruction, /never abstract planes, plain letters or generic geometry/i);
+    assert.match(designer.data.instruction, /one flat ink colour \(a hex code\) on genuine transparency/i);
     assert.match(designer.data.check, /open only the files named here: no logs/); assert.match(designer.data.instruction, /redraw one at most once/);
     assert.deepEqual(designer.data.writeScopes, ['logo/candidates']);
     assert.match(curator.data.instruction, /logo\/choice\.md/);

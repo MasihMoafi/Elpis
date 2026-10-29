@@ -14,6 +14,13 @@ const script = (name: string) => `"\${ELPIS_LOGO_SCRIPTS:-$HOME/Desktop/p/skills
 export const traceCommand = (source: string, output: string) => `${SVG_STUDIO} node ${script("trace.mjs")} ${source} ${output} 24`;
 const proofCommand = (sheet: string, source: string, vector: string) => `${SVG_STUDIO} node ${script("proof.mjs")} ${sheet} ${source} ${vector}`;
 const MISSING = "If node cannot find vectorize.js or trace.mjs, stop and say SVG Studio is not set up: SVG_STUDIO_MODULE must name its built mcp-server/dist/vectorize.js and ELPIS_LOGO_SCRIPTS the logo skill's scripts folder, in the environment Elpis starts with. Draw no vector by hand.";
+// 29 Oct, Masih: "What breaks it is bad image prompting." The first live run asked for abstract angular planes, a block R and a
+// chain link, and got generic marks. The approved collection prompts (p/skills/logo/SKILL.md, step 1) draw one concrete subject.
+const PROMPTS = ["Write each prompt as a logo designer would: one concrete, recognizable subject that carries the meaning (two offset robot heads",
+  "for many agents; a crane whose wing folds around a sun for a tea house), never abstract planes, plain letters or generic geometry. Describe it",
+  "part by part: pose, shapes, cutouts and where the empty space falls. Say its use and size: unmistakable at 24 px, no detail smaller than one",
+  "eighth of its width, filling 85% of the square canvas. Ask for one flat ink colour (a hex code) on genuine transparency, and end with a short",
+  "no-list: gradients, shading, outlines, text, badge, mockup."].join(" ");
 // 28 Oct, the first live run: a check that may prove things any way it likes read the engine's session logs for seven
 // minutes. A check judges the named files by sight and opens nothing else.
 const VISION = "by your own vision. Run no scripts, and open only the files named here: no logs, chat records or tool output.";
@@ -23,8 +30,9 @@ export function logoTeam(folder: string, brand: string, worker: Partial<AgentDat
   const candidates = at("logo/candidates"), choice = at("logo/choice.md"), proof = at("logo/proof.png"), sheet = at("logo/sheet.html");
   const chosen = `${candidates}/N.png`;
   const designer = agent("Designer", [
-    `Design the logo of ${brand}. First write one brief in your own folder as brief.md: what the mark must say, flat fills, clean contours, large negative space, and that it must read at 24 px on light and on dark.`,
-    `Then draw three distinct directions from that brief with the built-in image generation tool, one image a call, and save them as ${candidates}/1.png, 2.png and 3.png, with the exact prompt of each in ${candidates}/prompts.md.`,
+    `Design the logo of ${brand}. First read what ${brand} is (its README or VISION.md), then write brief.md in your own folder: what the mark must say, its ink colour and that it must read at 24 px on light and on dark.`,
+    `Then draw three distinct directions with the built-in image generation tool, one image a call, and save them as ${candidates}/1.png, 2.png and 3.png, with the exact prompt of each in ${candidates}/prompts.md.`,
+    PROMPTS,
     `Draw each direction once; redraw one at most once, only if it plainly fails the brief. No hand-coded SVG, no other image service: if the tool is missing, say so and stop. Answer with the paths.`].join("\n"),
     { ...worker, writeScopes: [candidates], acceptanceCriteria: [`${candidates}/1.png, 2.png and 3.png are three distinct directions from one brief`, "prompts.md holds the prompt each was drawn from"],
       check: `Open the three candidates beside prompts.md and brief.md, ${VISION} Say whether they are three distinct directions of the brief, or which repeat each other or stray from it.` });
