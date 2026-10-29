@@ -13,22 +13,22 @@
     "quota/model smoke is separate from official benchmark grading/task completion"
   ],
   "binary": {
-    "source": "/home/masih/.local/lib/elpis-next/versions/engine-20261024-bridge-ac4ce8d0c-a95c5dfb/package/bin/codex",
-    "installed_entry": "/home/masih/.local/bin/elpis-next",
+    "source": "$HOME/.local/lib/elpis-next/versions/engine-20261024-bridge-ac4ce8d0c-a95c5dfb/package/bin/codex",
+    "installed_entry": "$HOME/.local/bin/elpis-next",
     "version": "0.4.1",
     "sha256": "a95c5dfbb3845a4405c569912b1a760742bbf147c7c6568765c653393f841a22",
     "minimum_glibc": "2.39"
   },
   "harbor": {
     "version": "0.21.0",
-    "python": "/home/masih/.local/share/uv/tools/harbor/bin/python",
-    "package_source": "/home/masih/.local/share/uv/tools/harbor/lib/python3.13/site-packages/harbor",
+    "python": "$HOME/.local/share/uv/tools/harbor/bin/python",
+    "package_source": "$HOME/.local/share/uv/tools/harbor/lib/python3.13/site-packages/harbor",
     "package_sha256": "b02faf7f335a1e9128df900f8d39a9cfb1626f2797773be66968bfaa2049a2ce",
     "adapter_reference": "agents/installed/codex.py exec lifecycle and environments/docker/docker.py stdin_data API",
-    "launcher": "/home/masih/.local/bin/harbor"
+    "launcher": "$HOME/.local/bin/harbor"
   },
   "guard": {
-    "source": "/home/masih/.local/lib/agent-resource-guard/guard.py",
+    "source": "$HOME/.local/lib/agent-resource-guard/guard.py",
     "sha256": "1d73278e63e8ecc3e9b724de869d8830c16471a7cacb0219f3625a87446186db",
     "hook": "PreToolUse Bash and write/edit tools",
     "reserves": "existing guard unchanged: 40/15 GiB; 5/1 percent inodes; proportional small-filesystem reserves",
@@ -51,11 +51,11 @@
     "token_limit": null,
     "enabled": "pinned runtime/model default; no artificially reduced token window; identical per arm"
   },
-  "runtime_root": "/home/masih/Work/tries/elpis-rq3-20261025",
+  "runtime_root": "$HOME/Work/tries/elpis-rq3-20261025",
   "tasks": [
     {
       "name": "regex-log",
-      "source": "/home/masih/.cache/harbor/tasks/BYc8bXMR8yDuDfbFZoFMaf/regex-log",
+      "source": "$HOME/.cache/harbor/tasks/BYc8bXMR8yDuDfbFZoFMaf/regex-log",
       "fixture_sha256": "24bcbcbe44b11018ea79948b91d3a3f320203ae361f811945f396aaf8e8ec850",
       "task_toml_sha256": "ef8ef1498758d41c465c5ce6c4e01edbc141013861c7b929647b51d495da8176",
       "instruction_sha256": "4f7ac05e70cf9220ea0f1e5a052c5f908cd0fa884e847d80b0bd51bae2e96f9c",
@@ -67,7 +67,7 @@
     },
     {
       "name": "configure-git-webserver",
-      "source": "/home/masih/.cache/harbor/tasks/XvSZ8ep75ygfvFmonK4WcK/configure-git-webserver",
+      "source": "$HOME/.cache/harbor/tasks/XvSZ8ep75ygfvFmonK4WcK/configure-git-webserver",
       "fixture_sha256": "bb30c49fc50eb66eb1f90e57cf1fca935dfaa2350a422428621750147b41267f",
       "task_toml_sha256": "f6a4b4bf2ab8a554473a279152301ed7596aff04479407bb9054d9916919b92a",
       "instruction_sha256": "62151b7371bc364277a3c118bba755334c640fb0cefc7a5af106e6e763cf1d97",
@@ -79,7 +79,7 @@
     },
     {
       "name": "sqlite-with-gcov",
-      "source": "/home/masih/.cache/harbor/tasks/TZkz8FNfFEczUoS4UUaE8u/sqlite-with-gcov",
+      "source": "$HOME/.cache/harbor/tasks/TZkz8FNfFEczUoS4UUaE8u/sqlite-with-gcov",
       "fixture_sha256": "a0b3d68b3566e618022b66cb3e7547f70432735b0cbd947e54fe69bbc2f89e98",
       "task_toml_sha256": "17f889200f0d10c2919acd7c9dddc5642f29cf29ac248ad4ca9a337e3c585963",
       "instruction_sha256": "b6ba9acf62292bc2a0bab40d4805b3abceededbb0ccd4477a1ce9ccc42c14dd9",
@@ -180,12 +180,12 @@
   },
   "agent_python": {
     "source": "existing Miniconda CPython 3.13.5, standard library only; no packages installed or downloaded",
-    "bundle": "/home/masih/Work/tries/elpis-rq3-20261025/agent-python",
+    "bundle": "$HOME/Work/tries/elpis-rq3-20261025/agent-python",
     "tree_sha256": "73a95ddc6feb76d056c49b7f2352092bcfea2fbf563fce77fab343871eb3ad77",
     "container_path": "/opt/rq3/python/bin/python3"
   },
   "ca_bundle": {
-    "source": "/home/masih/Work/tries/elpis-rq3-20261025/bin/ca-certificates.crt",
+    "source": "$HOME/Work/tries/elpis-rq3-20261025/bin/ca-certificates.crt",
     "sha256": "c3a14cb0b4638d907d1edbabeae615b7c1f7d329e04ad0f08cc7eb22c735c2dc",
     "container_path": "/opt/rq3/ca-certificates.crt"
   },
@@ -215,23 +215,23 @@
     }
   ],
   "code_mode_host": {
-    "source": "/home/masih/.local/lib/elpis-next/versions/engine-20261024-bridge-ac4ce8d0c-a95c5dfb/package/bin/codex-code-mode-host",
+    "source": "$HOME/.local/lib/elpis-next/versions/engine-20261024-bridge-ac4ce8d0c-a95c5dfb/package/bin/codex-code-mode-host",
     "sha256": "b4dba40bbd397e0b75862a30e2e6828d90cfcad0cf032d201a19ac5f8a5226bf"
   },
   "helper_libraries": [
     {
-      "source": "/home/masih/Work/tries/elpis-rq3-20261025/lib/libssl.so.3",
+      "source": "$HOME/Work/tries/elpis-rq3-20261025/lib/libssl.so.3",
       "name": "libssl.so.3",
       "sha256": "05e3d52e3747fd6bdc94e30109ce3c355465b3e09a48110001e3d7371a77dfd5"
     },
     {
-      "source": "/home/masih/Work/tries/elpis-rq3-20261025/lib/libcrypto.so.3",
+      "source": "$HOME/Work/tries/elpis-rq3-20261025/lib/libcrypto.so.3",
       "name": "libcrypto.so.3",
       "sha256": "f812b89d93a1b24ebcc9888c0bfa7a8961790f9614e230f83b55e00d496d288a"
     }
   ],
   "runtime_smoke": {
-    "artifact_directory": "/home/masih/Work/tries/elpis-rq3-20261025/runtime-smoke",
+    "artifact_directory": "$HOME/Work/tries/elpis-rq3-20261025/runtime-smoke",
     "main_model": "gpt-6-luna",
     "auth": "saved ChatGPT login",
     "task_file_created": true,
