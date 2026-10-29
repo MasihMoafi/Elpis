@@ -13,7 +13,7 @@ export const productionFiles = [
   'bridge/resources/permission-policy.mjs',
   'bridge/import-chats.mjs',
   'bridge/settings-files.mjs', 'bridge/app-identity.mjs', 'desktop/sleep-blocker.cjs',
-  'bridge/session-context.mjs', 'bridge/session-manager.mjs', 'bridge/side-turn.mjs',
+  'bridge/session-context.mjs', 'bridge/side-turn.mjs',
   'bridge/profile-env.mjs', 'lib/love-spot-audio.mjs',
   'bridge/love-interview.mjs',
   'bridge/improve.mjs', 'bridge/improve-source.mjs', 'bridge/improve-check.mjs', 'desktop/improve.cjs',
@@ -23,7 +23,7 @@ export const productionFiles = [
   'bridge/workflow-presets.mjs', 'bridge/resources/rag.md', 'bridge/resources/personal.md', 'bridge/personal.mjs', 'desktop/browser-policy.cjs', 'desktop/browser.cjs', 'desktop/browser-sessions.cjs', 'desktop/browser-annotations.cjs', 'desktop/browser-page-preload.cjs', 'desktop/context-menu.cjs',
   'desktop/main.cjs', 'desktop/app-updates.cjs', 'desktop/wayland-ime.cjs', 'desktop/session-windows.cjs', 'desktop/window-ipc.cjs', 'desktop/media-policy.cjs', 'desktop/preferences.cjs', 'desktop/preload.cjs', 'desktop/files.cjs', 'desktop/editors.cjs',
   'desktop/terminal.cjs', 'desktop/open-thread.cjs', 'desktop/tray.cjs', 'desktop/quick-entry.cjs', 'desktop/theme.cjs', 'desktop/copy-keys.cjs', 'desktop/quick-entry-preload.cjs', 'desktop/quick-entry.html', 'desktop/screenshot-popup.cjs', 'desktop/screenshot-popup-preload.cjs', 'desktop/screenshot-popup.html',
-  'desktop/runtime.mjs', 'desktop/state.cjs', 'desktop/elpis-icon.png', 'lib/agent-runs.mjs', 'lib/session-rules.mjs', 'lib/service-tier.mjs', 'lib/chat-worktree.ts', 'lib/turn-replacement.ts', 'lib/thread-deletion.ts', 'lib/approvals.ts', 'bridge/love-spot-store.cjs', 'bridge/love-spot-order.cjs', 'bridge/love-spot-painting.cjs', 'bridge/matilda-face.cjs', 'bridge/love-spot-talk.mjs', 'bridge/speech-buffer.mjs', 'bridge/love-agents.mjs', 'bridge/acp-nodes.mjs', 'bridge/workflow-acp.mjs', 'bridge/workflow-models.mjs', 'bridge/workflow-worktrees.mjs', 'lib/love-spot.ts',
+  'desktop/runtime.mjs', 'desktop/state.cjs', 'desktop/elpis-icon.png', 'lib/agent-runs.mjs', 'lib/service-tier.mjs', 'lib/chat-worktree.ts', 'lib/turn-replacement.ts', 'lib/thread-deletion.ts', 'lib/approvals.ts', 'bridge/love-spot-store.cjs', 'bridge/love-spot-order.cjs', 'bridge/love-spot-painting.cjs', 'bridge/matilda-face.cjs', 'bridge/love-spot-talk.mjs', 'bridge/speech-buffer.mjs', 'bridge/love-agents.mjs', 'bridge/acp-nodes.mjs', 'bridge/workflow-acp.mjs', 'bridge/workflow-models.mjs', 'bridge/workflow-worktrees.mjs', 'lib/love-spot.ts',
   'bridge/memory-budget.mjs', 'scripts/mem-meter.py',
 ];
 

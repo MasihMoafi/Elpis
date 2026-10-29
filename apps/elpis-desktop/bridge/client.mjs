@@ -154,7 +154,7 @@ const DOWNLOADS = new Set(['marketplace/add', 'marketplace/upgrade', 'plugin/ins
 const ARCHIVED_SESSION = /^session \S+ is archived\./;
 const archivedSession = error => ARCHIVED_SESSION.test(error?.engineMessage ?? '');
 const EXPLAINED = new Set(['externalAgentConfig/import', 'thread/settings/update', 'account/read', 'account/rateLimits/read', 'thread/delete', 'thread/fork', 'thread/start', 'thread/resume', 'thread/name/set', 'thread/archive', 'thread/unarchive', 'thread/revert', 'thread/compact/start', 'review/start', 'turn/start', 'turn/steer', 'turn/interrupt', 'config/batchWrite', 'account/login/start', 'account/logout', 'claudeSubscription/write', 'hooks/list', 'memory/reset', 'plugin/list', 'plugin/search', 'plugin/install', 'plugin/uninstall', 'marketplace/add', 'marketplace/remove']);
-/** What a module with a conversation of its own (bridge/side-turn.mjs: the canvas planner and the Session Manager's titles) may ask of the engine; see `sideRpc`. */
+/** What a module with a conversation of its own (the canvas planner, bridge/canvas-plan.mjs) may ask of the engine; see `sideRpc`. */
 const SIDE_RPCS = new Set(['thread/start', 'turn/start', 'turn/interrupt', 'thread/unsubscribe', 'thread/delete']);
 
 /** The engine estimates ceil(UTF-8 bytes / 4). Keep every append below 900 tokens, without splitting a scalar. */
@@ -604,12 +604,6 @@ export class DesktopClient extends EventEmitter {
     if (thread?.id !== id) throw new BridgeError('Elpis returned another thread', 502);
     await this.#loadWorkflowTitles([thread]);
     return this.#decorate(thread);
-  }
-  /** The newest saved turn, for the Session Manager's rules; never resumes a chat or starts a model. */
-  async readSessionTurn(id) {
-    const thread = await this.readThreadMetadata(id);
-    const { data } = await this.#rpc('thread/turns/list', { threadId: id, limit: 1, sortDirection: 'desc', itemsView: 'full' });
-    return { thread, turn: data?.[0] ?? null };
   }
   async readThread(id, options = {}) {
     object(options, ['cursor', 'limit']);
@@ -1698,15 +1692,13 @@ export class DesktopClient extends EventEmitter {
     }
   }
   /** Archives a chat and, natively, the agents it spawned; Elpis announces each with thread/archived. The agents archived
-   * with it are kept in its archive record, so Unarchive brings them back with it. The Session Manager passes `check`: under
-   * the same lock it rereads the chat and returns the reason shown under Archived, or throws to leave the chat alone. */
-  async archiveThread(id, body, check) {
+   * with it are kept in its archive record, so Unarchive brings them back with it. */
+  async archiveThread(id, body) {
     object(body, []);
     const agents = await this.#listedUnder(id);
     const archived = await this.#mutate(id, async () => {
-      const reason = check ? await check(await this.readSessionTurn(id)) : 'Archived by you.';
       const cwd = await this.#folderOf(threadId(id)).catch(() => null);
-      await this.#archiveHistory.record(id, reason, agents);
+      await this.#archiveHistory.record(id, 'Archived by you.', agents);
       try { await this.#rpc('thread/archive', { threadId: id }); }
       catch (error) { await this.#archiveHistory.forget(id); throw error; }
       await this.#rewindHistory.hide(id, true);
