@@ -1333,7 +1333,7 @@ wss.on("connection", (ws) => {
   function claudeTurnsOf(store, threadId, depth = 0) {
     const own = store[threadId]?.turns ?? [];
     const link = forkParent.get(threadId) ?? store[threadId]?.forkOf;
-    if (!link || depth > 8) return own;
+    if (!link || link.copied || depth > 8) return own;
     const parent = claudeTurnsOf(store, link.threadId, depth + 1);
     const at = (id) => (id ? parent.find((t) => t.id === id)?.startedAt : undefined);
     const before = at(link.beforeTurnId), last = at(link.lastTurnId);
@@ -1960,8 +1960,13 @@ wss.on("connection", (ws) => {
         claudeModel.set(tid, pick.model);
         if (pick.effort) claudeEffort.set(tid, pick.effort);
         if (pick.forkOf) {
-          forkParent.set(tid, pick.forkOf);
-          if (!parsed.result.thread?.ephemeral) updateStore((st) => { st[tid] = { ...st[tid], forkOf: pick.forkOf }; });
+          // A fork with its own copy of the kept turns no longer reads them from its source.
+          // An ephemeral side chat is never stored, so it keeps reading its source.
+          const copied = pick.forkTurns && !parsed.result.thread?.ephemeral;
+          const forkOf = copied ? { ...pick.forkOf, copied: true } : pick.forkOf;
+          if (copied) await updateStore((st) => { st[tid] = { ...st[tid], forkOf, turns: [...pick.forkTurns, ...(st[tid]?.turns ?? [])] }; });
+          else if (!parsed.result.thread?.ephemeral) updateStore((st) => { st[tid] = { ...st[tid], forkOf }; });
+          forkParent.set(tid, forkOf);
         }
         nameModel(parsed.result, pick.model, pick.effort);
         claimProvider(tid, parsed.result);
@@ -2771,6 +2776,33 @@ wss.on("connection", (ws) => {
     log(`rewind of ${threadId} forked Claude session ${saved} after ${messageId} -> ${sessionId}`);
     return sessionId ?? null;
   }
+  // Fork chat from here, Rewind and Edit's kept version on a provider chat. Its turns live in the store, so the
+  // engine knows none of their ids: a boundary naming one becomes the engine's own (its first native turn after
+  // the cut, or none), and the fork gets its own copy of the kept turns, which a later edit of the source cannot drop.
+  async function forkProviderChat(msg) {
+    const { threadId, beforeTurnId, lastTurnId } = msg.params;
+    try {
+      await storeChain;
+      const parent = claudeTurnsOf(await loadStoreSnapshot(), threadId);
+      const mark = beforeTurnId ?? lastTurnId, at = mark ? parent.findIndex((t) => t.id === mark) : -1;
+      const params = { ...msg.params };
+      if (at >= 0) {
+        delete params.beforeTurnId; delete params.lastTurnId;
+        const cut = parent[beforeTurnId ? at : at + 1];
+        if (cut) {
+          const native = (await engineCall("thread/turns/list", { threadId, limit: 200, sortDirection: "asc", itemsView: "notLoaded" }).catch(() => ({ data: [] }))).data ?? [];
+          const engineCut = native.find((t) => (t.startedAt ?? 0) >= (cut.startedAt ?? 0));
+          if (engineCut) params.beforeTurnId = engineCut.id;
+        }
+      }
+      const pick = pendingStart.get(msg.id);
+      if (pick && (!mark || at >= 0)) pick.forkTurns = structuredClone(at >= 0 ? parent.slice(0, beforeTurnId ? at : at + 1) : parent);
+      engine.stdin.write(JSON.stringify({ ...msg, params }) + "\n");
+    } catch (e) {
+      pendingStart.delete(msg.id); startingProviders.get(`${connectionId}:${msg.id}`)?.resolve(); startingProviders.delete(`${connectionId}:${msg.id}`);
+      toTui({ id: msg.id, error: { code: -32603, message: `fork failed: ${e?.message ?? JSON.stringify(e)}` } });
+    }
+  }
   async function revertThread(msg) {
     const { threadId, beforeTurnId } = msg.params ?? {};
     await storeChain;
@@ -3025,7 +3057,7 @@ wss.on("connection", (ws) => {
         }
         if ([...pendingHelpers].some(helper => ids.has(helper.parentThreadId))) throw new Error("A helper is still starting. Retry deletion once it has started.");
         // Match the native store's refusal to erase history still used by a fork.
-        if (Object.entries(store).some(([id, saved]) => !ids.has(id) && ids.has(saved?.forkOf?.threadId))) throw new Error(`cannot delete thread ${tid}: forked history still references it`);
+        if (Object.entries(store).some(([id, saved]) => !ids.has(id) && ids.has(saved?.forkOf?.threadId) && !saved.forkOf.copied)) throw new Error(`cannot delete thread ${tid}: forked history still references it`);
         const next = [...ids].filter(id => !stopped.has(id));
         if (!next.length) break;
         await Promise.all([...contexts].flatMap(c => next.map(id => c.stopProvider(id))));
@@ -3265,6 +3297,7 @@ wss.on("connection", (ws) => {
       const src = msg.params.threadId;
       const forkOf = { threadId: src, at: Math.floor(now() / 1000), beforeTurnId: msg.params.beforeTurnId ?? null, lastTurnId: msg.params.lastTurnId ?? null };
       rememberStart(msg.id, { model: claudeModel.get(src), effort: claudeEffort.get(src) ?? null, forkOf });
+      forkProviderChat(msg); return;
     }
     if (msg.method === "thread/start") { startThread(msg); return; }
     if (msg.method === "thread/revert") { revertThread(msg); return; }
