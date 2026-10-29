@@ -642,11 +642,12 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .activity-group-body { margin:6px 0 4px 10px; padding-left:12px; border-left:1px solid var(--border); }
 .live-label { color:var(--foreground); }
 .live-timer { flex-shrink:0; color:var(--muted-foreground); font-variant-numeric:tabular-nums; }
-.elpis-working-mark { width:18px; height:18px; flex-shrink:0; vertical-align:middle; color:var(--primary-action, var(--primary)); fill:currentColor; }
-/* context--animation.svg: the ring turns about the gauge's centre (114, 114) once every 8 s; reduced motion holds it still. */
-.elpis-working-rotor { transform-box:view-box; transform-origin:114px 114px; animation:elpis-orbit 8s linear infinite; }
-@media (prefers-reduced-motion:reduce) { .elpis-working-rotor { animation:none; } }
+.elpis-working-mark { width:18px; height:18px; flex-shrink:0; vertical-align:middle; color:var(--primary-action, var(--primary)); }
+.elpis-working-mark path { fill:none; stroke:currentColor; stroke-width:4; stroke-linejoin:round; }
+.elpis-working-rotor { transform-origin:32px 32px; animation:elpis-orbit 4s linear infinite; }
+.elpis-working-dot { fill:currentColor; animation:elpis-blink 2s ease-in-out infinite; }
 @keyframes elpis-orbit { to { transform:rotate(360deg); } }
+@keyframes elpis-blink { 0%,100% { opacity:1; } 50% { opacity:.15; } }
 .turn-stopped, .context-event { margin:6px 0 18px; font-size:0.8125rem; color:var(--muted-foreground); }
 .turn-working { display:flex; align-items:center; gap:8px; width:fit-content; max-width:100%; margin-top:14px; padding:3px 0; font-size:0.875rem; color:var(--muted-foreground); }
 /* The live Working row sits 11px below its original place over the composer (29 Oct, Masih: "lower"). */

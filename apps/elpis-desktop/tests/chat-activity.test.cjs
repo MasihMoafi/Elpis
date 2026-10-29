@@ -151,9 +151,9 @@ test('finished work folds into one row per group, opens by click or keyboard, an
     assert.ok(contrast(style.color, style.background) >= 4.5, `light: inline code is readable (${contrast(style.color, style.background).toFixed(2)})`);
 
     const workingHexagon = page.locator('.activity-group .elpis-working-rotor');
-    await workingHexagon.evaluate(node => { node.style.fill = '#e89d34'; });
-    assert.ok((await oranges(page)).some(hit => /^(g\.elpis-working-rotor|path): fill/.test(hit)), 'the guard still rejects an orange fill other than the approved Send colour');
-    await workingHexagon.evaluate(node => node.style.removeProperty('fill'));
+    await workingHexagon.evaluate(node => { node.style.stroke = '#e89d34'; });
+    assert.ok((await oranges(page)).some(hit => hit.startsWith('path.elpis-working-rotor: stroke')), 'the guard still rejects an orange stroke other than the approved Send colour');
+    await workingHexagon.evaluate(node => node.style.removeProperty('stroke'));
     assert.deepEqual(await oranges(page), [], 'light theme, chat with open activity: no orange');
 
     await page.emulateMedia({ colorScheme: 'dark' }); await page.waitForTimeout(200);
@@ -205,7 +205,7 @@ test('a running step reads as a sentence with a live timer and animated dots', a
     const still = await app.open({ reducedMotion: 'reduce' });
     const slowRotor = still.page.locator('.activity-group .elpis-working-rotor');
     await slowRotor.waitFor();
-    assert.equal(await slowRotor.evaluate(node => getComputedStyle(node).animationName), 'none', 'the collection gauge holds still under reduced motion, as context--animation.svg does');
+    assert.equal(await slowRotor.evaluate(node => getComputedStyle(node).animationDuration), '4s', 'the approved hexagon (d5fc7f16c) keeps its speed under reduced motion');
   } finally { await app.close(); }
 });
 
