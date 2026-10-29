@@ -52,6 +52,10 @@ test('mixed chats keep projects, pins, tabs and searches while linked agents fol
     f.emit('message', { method: 'turn/completed', params: { threadId: 'exec-run', turn: { id: 'done', status: 'completed' } } });
     await page.waitForTimeout(150);
     assert.equal(await aside.getByRole('button', { name: 'Mark all as read' }).count(), 0, 'run completions do not enter unread counts');
+    // 29 Oct, Masih: "This mark all as read also doesn't make sense when I've already read all of them!" (78 hidden threads lit it).
+    for (const threadId of ['child-run', 'not-listed']) f.emit('message', { method: 'turn/completed', params: { threadId, turn: { id: `done-${threadId}`, status: 'completed' } } });
+    await page.waitForTimeout(150);
+    assert.equal(await aside.getByRole('button', { name: 'Mark all as read' }).count(), 0, 'a hidden subagent or an unlisted thread finishing does not offer Mark all as read');
     f.emit('message', { method: 'turn/completed', params: { threadId: 'chat-b', turn: { id: 'personal-reply', status: 'completed' } } });
     await aside.getByRole('button', { name: 'Mark all as read' }).click();
     await row(page, 'chat-b').click({ button: 'right' });

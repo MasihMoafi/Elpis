@@ -1876,7 +1876,6 @@ export default function Home() {
     } },
     { id: "delete", label: agentRuns.length > 100 ? "Delete 100 Agent runs…" : "Delete Agent run history…", destructive: true, run: () => { setDeleteRunHistory(true); setDeleteTargets(agentRuns.slice(0, 100)); } },
   ];
-  const ordinaryUnread = attention.unread.filter(id => ordinaryThreads.some(thread => thread.id === id && !isAgentRun(thread)));
   // The engine's search matches letter case exactly; a listed chat's title and first message match in any case here.
   const filtered = searchedThreads.filter(t => isTreeChat(t) && (matchedOnServer.has(t.id) || `${title(t)} ${t.preview || ""} ${t.agentNickname || ""} ${t.model || ""} ${t.id}`.toLowerCase().includes(searchTerm.toLowerCase())));
   // Search results are one flat list of every matching chat, as in the ChatGPT app: a hit is never hidden in its parent.
@@ -1895,6 +1894,8 @@ export default function Home() {
   const loveChats = searchTerm ? [] : ungroupedChats.filter(thread => originOf(thread) === "Love Spot");
   const workflowChats = searchTerm || hiddenPages.includes("canvas") || !preferences.sidebarWorkflows ? [] : ungroupedChats.filter(thread => originOf(thread) === "Workflows");
   const recentChats = searchTerm ? ungroupedChats : ungroupedChats.filter(thread => !originOf(thread));
+  /** Only a chat the sidebar lists as yours can be unread: hidden subagent and background threads never light Mark all as read. */
+  const ordinaryUnread = ordinaryThreads.filter(thread => attention.unread.includes(thread.id) && ownChat(thread) && !sidebarParent(thread) && !isAgentRun(thread));
   const ordered = [...(collapsedSections.pinned && !searchTerm ? [] : pinnedChats), ...(collapsedSections.groups ? [] : grouped?.groups.flatMap(section => chatGroups.collapsed.includes(section.group.id) ? [] : section.chats) ?? []), ...(collapsedSections.love ? [] : loveChats), ...(collapsedSections.workflows ? [] : workflowChats), ...(collapsedSections.recents ? [] : recentChats)];
   // An expanded chat owns its visible agents, including background runs. History must not duplicate those rows.
   const inlineAgents = new Set<string>();
