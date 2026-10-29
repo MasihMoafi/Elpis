@@ -61,7 +61,7 @@ test('finished groups read as Claude words them, and a described step reads as i
 }));
 
 test('a running step has its sentence, ticking timer and filled rotor, in both themes and under reduced motion', () => using(async ({ page }) => {
-  const live = page.locator('.activity-group').filter({ has: page.locator('.elpis-working-mark') });
+  const live = page.locator('.activity-group').filter({ has: page.locator('.live-timer') });
   await live.locator('.live-timer').waitFor();
   assert.equal((await live.locator('.live-label').innerText()).trim(), SENTENCE, 'the sentence, not "Running <command>"');
   assert.doesNotMatch(await live.locator('> summary').innerText(), /pkill|worktree move/, 'the raw command stays inside the opened step');
@@ -71,14 +71,15 @@ test('a running step has its sentence, ticking timer and filled rotor, in both t
   await page.waitForTimeout(2300);
   const later = seconds((await timer.innerText()).trim());
   assert.ok(later >= first + 2, `the timer ticks (${first}s, then ${later}s)`);
-  assert.equal(await page.locator('.turn-working').count(), 0, 'one live line: the running step, not a second "Working"');
-  const rotor = live.locator('.elpis-working-rotor');
+  // The working mark has one place, the turn's foot (29 Oct, Masih: "you can see the working animation changes its place!").
+  assert.equal(await live.locator('.elpis-working-mark').count(), 0, 'the running row has no mark of its own');
+  const rotor = page.locator('.turn-working .elpis-working-rotor');
   const rotation = () => rotor.evaluate(node => getComputedStyle(node).transform);
   assert.equal(await rotor.evaluate(node => getComputedStyle(node).animationName), 'elpis-orbit');
   const firstRotation = await rotation();
   await page.waitForTimeout(700);
   assert.notEqual(await rotation(), firstRotation, 'the filled shape rotates smoothly');
-  assert.equal(await live.locator('.elpis-working-mark image').count(), 0, 'the working mark has no E');
+  assert.equal(await page.locator('.turn-working .elpis-working-mark image').count(), 0, 'the working mark has no E');
   // Light, then dark: the row is fully inside the chat column and legible.
   for (const scheme of ['light', 'dark']) {
     await page.emulateMedia({ colorScheme: scheme }); await page.waitForTimeout(200);
@@ -142,7 +143,7 @@ test('empty reasoning stays hidden while real streamed summaries and recorded co
     await head.waitFor(); await head.focus(); await head.press('Enter');
     await group.getByText('The recorded streamed summary.', { exact: true }).waitFor();
     assert.equal(await group.locator('.step-title').filter({ hasText: /^Reasoning$/ }).count(), 1);
-    assert.equal(await f.page.locator('.turn-working').count(), 0, 'recorded live reasoning owns the working indicator');
+    assert.equal(await f.page.locator('.turn-working').count(), 1, 'the working mark stays at the turn\'s foot while reasoning streams');
     await group.getByRole('button', { name: 'Copy code', exact: true }).click();
     await f.page.waitForFunction(() => window.__copied === 'keep_exact()');
     assert.equal(await f.copied(), 'keep_exact()');

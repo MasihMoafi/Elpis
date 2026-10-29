@@ -175,8 +175,9 @@ function Turn({ turn, active, defer, observe, onViewChanges, renderItem, mediaOf
     <Flow entries={visible} renderItem={renderItem} mediaOf={mediaOf} wrapItem={wrapItem} live={active} end={finalReply >= 0 ? work[finalReply].item.id : undefined} />
     {!active && <CreatedFiles paths={createdFiles(work)} />}
     {!active && <TurnChanges items={work.map(entry => entry.item)} onViewChanges={onViewChanges} />}
-    {/* One live line at a time: a running step shows its own; otherwise the turn says it is working. */}
-    {active && !work.some(entry => entry.item.status === "inProgress") && <div className="turn-working" role="status"><LiveStep label="Working" since={earliest(turn.entries)} /></div>}
+    {/* The working mark has one place, the turn's foot, for the whole turn; a running step's row keeps its sentence and
+        timer without a mark (29 Oct, Masih: "you can see the working animation changes its place!"). */}
+    {active && <div className="turn-working" role="status"><LiveStep label="Working" since={earliest(turn.entries)} /></div>}
   </section>;
 }
 
@@ -214,7 +215,7 @@ function ActivityGroup({ entries, renderItem, mediaOf, wrapItem, live }: { entri
   return <details className="activity-group" onToggle={event => { if (event.target === event.currentTarget) setOpen(event.currentTarget.open); }}>
     <DisclosureSummary aria-expanded={open}>
       {running
-        ? <LiveStep key={running.item.id} label={stepLabel(running.item, true)} since={running.startedAtMs} />
+        ? <LiveStep key={running.item.id} label={stepLabel(running.item, true)} since={running.startedAtMs} mark={false} />
         : <span className="activity-group-label">{summaryParts(items).map((part, index) => <Fragment key={index}>{index > 0 && ", "}{part.text}{part.failed > 0 && <> <span className="activity-group-failed">({part.failed} failed)</span></>}</Fragment>)}</span>}
       {edits && edits.added + edits.removed > 0 && <Counts added={edits.added} removed={edits.removed} />}
       {views.map(entry => { const image = <ImageThumb src={`${mediaOf!(entry)}/0`} name={fileKind(String(entry.item.path)).name} />; return <Fragment key={entry.item.id}>{wrapItem ? wrapItem(entry, image) : image}</Fragment>; })}
@@ -226,12 +227,12 @@ function ActivityGroup({ entries, renderItem, mediaOf, wrapItem, live }: { entri
 /** The timer is not drawn for a step's first seconds, as in Claude's rows. */
 const TIMER_FROM_MS = 2000;
 /** Something in progress, as a sentence with animated dots and a timer counting from `since` (else from now). */
-function LiveStep({ label, since }: { label: string; since?: number }) {
+function LiveStep({ label, since, mark = true }: { label: string; since?: number; mark?: boolean }) {
   const [start] = useState(() => since ?? Date.now());
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
   return <>
-    <WorkingMark />
+    {mark && <WorkingMark />}
     <span className="live-label">{label}</span>
     {now - start >= TIMER_FROM_MS && <>{" "}<span className="live-timer">{elapsed(now - start)}</span></>}
   </>;
