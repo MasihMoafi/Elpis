@@ -1,5 +1,6 @@
 import path from 'node:path';
-import { BridgeError, object, text, threadId } from './client.mjs';
+import { BridgeError, object, text } from './client.mjs';
+import { askBackground } from './side-turn.mjs';
 
 /** "Elpis handle it" on the agents canvas (POST /api/canvas/plan): a fast model first decides whether the goal is one
  * agent's job ("direct": one agent whose prompt is the goal) or a team's ("team"), and plans it, in one call.
@@ -91,43 +92,6 @@ function promptFor({ goal, folders, agents, maxAgents }) {
   ].join('\n\n');
 }
 
-// ---- The conversation ----------------------------------------------------------------------------------------
-
-/** Follows one side conversation to the end of its turn. `stop` must be called when done; `ended` tells whether the turn finished. */
-function follow(client, id, timeoutMs) {
-  const state = { ended: false };
-  let listener, timer, final, last;
-  state.answer = new Promise((resolve, reject) => {
-    listener = ({ method, params }) => {
-      if (params?.threadId !== id) return;
-      if (method === 'item/completed' && params.item?.type === 'agentMessage' && typeof params.item.text === 'string') {
-        last = params.item.text;
-        if (params.item.phase !== 'commentary') final = params.item.text;
-      }
-      if (method !== 'turn/completed' || params.turn?.status === 'inProgress') return;
-      state.ended = true;
-      const { status, error, items } = params.turn ?? {};
-      if (status !== 'completed') return reject(new BridgeError(`Elpis could not plan: ${error?.message ?? `the turn was ${status ?? 'lost'}`}`, 502));
-      const answer = final ?? last ?? items?.findLast?.(item => item?.type === 'agentMessage' && typeof item.text === 'string')?.text;
-      if (answer === undefined) return reject(new BridgeError('Elpis could not plan: it gave no answer', 502));
-      resolve(answer);
-    };
-    timer = setTimeout(() => reject(new BridgeError(`Elpis did not finish planning within ${timeoutMs / 1000} seconds. Try again, or add the agents yourself.`, 504)), timeoutMs);
-    client.on('side', listener);
-  });
-  state.answer.catch(() => {});
-  state.stop = () => { clearTimeout(timer); client.off('side', listener); };
-  return state;
-}
-
-/** Stops a turn that is still running, lets the conversation go, and removes it if Elpis kept it. */
-async function release(client, id, turnId, ended, kept) {
-  const quietly = (method, params) => client.sideRpc(method, params).catch(() => {});
-  if (!ended && turnId) await quietly('turn/interrupt', { threadId: id, turnId });
-  await quietly('thread/unsubscribe', { threadId: id });
-  if (kept) await quietly('thread/delete', { threadId: id });
-}
-
 // ---- The answer ----------------------------------------------------------------------------------------------
 
 function parse(answer) {
@@ -189,23 +153,10 @@ function check(answer, { folders, agents: board, maxAgents }) {
 
 // ---- The route's operation -----------------------------------------------------------------------------------
 
-/** Decides and plans for `input.goal`: `{ name, mode, why, agents }`, one agent when mode is "direct". `client` is the bridge's DesktopClient (settings, sideRpc and 'side' notifications). */
+/** Decides and plans for `input.goal`: `{ name, mode, why, agents }`, one agent when mode is "direct". `client` is the bridge's DesktopClient. */
 export async function planCanvas(client, input, { timeoutMs = PLAN_TIMEOUT_MS } = {}) {
   const request = parseRequest(input);
-  const { main, background } = await client.settings();
-  const choice = background?.model ? background : main;
-  const started = await client.sideRpc('thread/start', { ephemeral: true, ...(choice?.model ? { model: choice.model, ...(choice.provider ? { modelProvider: choice.provider } : {}) } : {}),
-    ...(request.cwd ? { cwd: request.cwd } : {}), approvalPolicy: 'never', permissions: ':danger-full-access' });
-  const id = threadId(started.thread?.id);
-  const turn = follow(client, id, timeoutMs);
-  let turnId, answer;
-  try {
-    const result = await client.sideRpc('turn/start', { threadId: id, input: [{ type: 'text', text: promptFor(request), text_elements: [] }], outputSchema: PLAN_SCHEMA });
-    turnId = result?.turn?.id;
-    answer = await turn.answer;
-  } finally {
-    turn.stop();
-    await release(client, id, turnId, turn.ended, started.thread.ephemeral !== true);
-  }
+  const answer = await askBackground(client, { prompt: promptFor(request), schema: PLAN_SCHEMA, cwd: request.cwd, permissions: ':danger-full-access', timeoutMs,
+    failed: 'Elpis could not plan', late: `Elpis did not finish planning within ${timeoutMs / 1000} seconds. Try again, or add the agents yourself.` });
   return check(answer, request);
 }

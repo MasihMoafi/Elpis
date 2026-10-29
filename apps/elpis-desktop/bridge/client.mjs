@@ -154,7 +154,7 @@ const DOWNLOADS = new Set(['marketplace/add', 'marketplace/upgrade', 'plugin/ins
 const ARCHIVED_SESSION = /^session \S+ is archived\./;
 const archivedSession = error => ARCHIVED_SESSION.test(error?.engineMessage ?? '');
 const EXPLAINED = new Set(['externalAgentConfig/import', 'thread/settings/update', 'account/read', 'account/rateLimits/read', 'thread/delete', 'thread/fork', 'thread/start', 'thread/resume', 'thread/name/set', 'thread/archive', 'thread/unarchive', 'thread/revert', 'thread/compact/start', 'review/start', 'turn/start', 'turn/steer', 'turn/interrupt', 'config/batchWrite', 'account/login/start', 'account/logout', 'claudeSubscription/write', 'hooks/list', 'memory/reset', 'plugin/list', 'plugin/search', 'plugin/install', 'plugin/uninstall', 'marketplace/add', 'marketplace/remove']);
-/** What a module with a conversation of its own (the canvas planner, bridge/canvas-plan.mjs) may ask of the engine; see `sideRpc`. */
+/** What a module with a conversation of its own (bridge/side-turn.mjs: the canvas planner and the Session Manager's titles) may ask of the engine; see `sideRpc`. */
 const SIDE_RPCS = new Set(['thread/start', 'turn/start', 'turn/interrupt', 'thread/unsubscribe', 'thread/delete']);
 
 /** The engine estimates ceil(UTF-8 bytes / 4). Keep every append below 900 tokens, without splitting a scalar. */
