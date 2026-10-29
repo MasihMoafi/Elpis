@@ -1284,7 +1284,12 @@ export class DesktopClient extends EventEmitter {
     return [...byId.values()].sort((a, b) => (b.startedAt ?? b.createdAt ?? 0) - (a.startedAt ?? a.createdAt ?? 0));
   }
   async workflowHistory() { return this.#workflowHistory.list(await this.#workflowRecords()); }
-  async removeWorkflowHistory(id, body) { threadId(id); object(body, []); return this.#workflowHistory.remove(id, () => this.#workflowRecords()); }
+  /** Leaving History ends a run: its worktrees and branches are freed (Undo brings back only the record). */
+  async removeWorkflowHistory(id, body) {
+    threadId(id); object(body, []);
+    const result = await this.#workflowHistory.remove(id, () => this.#workflowRecords());
+    await this.#workflowRuns.free(id); return result;
+  }
   async undoWorkflowHistory(body) { object(body, []); return this.#workflowHistory.undo(); }
   async workflows(id) {
     threadId(id);

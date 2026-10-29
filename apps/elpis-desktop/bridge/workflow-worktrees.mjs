@@ -35,6 +35,38 @@ export async function mergeWorkflowReview(review, signal) {
   return { ...review, error: undefined, status: 'merged', mergedAt: Date.now() };
 }
 
+/** Frees a run's scratch the moment the run ends for good (Masih, 29 Oct: "so leftovers don't exist"): the worktrees
+ * under `<repo>-elpis/workflows/<id>/` that the record lists or that sit on an `elpis/<id>/` branch, every
+ * `elpis/<id>/` branch, then the run's folder and its parents once they are empty. Nothing else is touched. Throws,
+ * after trying everything, when any part is left; calling again retries. */
+export async function removeWorkflowWorkspace(record) {
+  if (!/^[0-9a-f-]{36}$/i.test(record.id ?? '')) throw new BridgeError('Invalid workflow ID', 400);
+  const project = record.review?.source ?? record.projectCwd;
+  if (!project) return;
+  const source = await git(project, ['rev-parse', '--show-toplevel']);
+  const home = path.join(path.dirname(source), `${path.basename(source)}-elpis`, 'workflows', record.id), prefix = `refs/heads/elpis/${record.id}/`;
+  const own = place => typeof place === 'string' && path.isAbsolute(place) && path.dirname(path.resolve(place)) === home;
+  const listed = new Set([...(record.worktrees ?? []).map(place => place?.path), record.review?.path].filter(own).map(place => path.resolve(place)));
+  const registered = [];
+  for (const line of (await git(source, ['worktree', 'list', '--porcelain', '-z'])).split('\0')) {
+    if (line.startsWith('worktree ')) registered.push({ path: line.slice(9) });
+    else if (line.startsWith('branch ') && registered.length) registered.at(-1).branch = line.slice(7);
+  }
+  const problems = [];
+  for (const place of registered.filter(place => own(place.path) && (listed.has(place.path) || place.branch?.startsWith(prefix)))) {
+    await git(source, ['worktree', 'remove', '--force', place.path]).catch(error => problems.push(error.message));
+  }
+  const branches = (await git(source, ['for-each-ref', '--format=%(refname)', prefix]).catch(error => { problems.push(error.message); return ''; }))
+    .split('\n').filter(ref => ref.startsWith(prefix));
+  for (const ref of branches) await git(source, ['branch', '-D', ref.slice('refs/heads/'.length)]).catch(error => problems.push(error.message));
+  for (const [at, dir] of [home, path.dirname(home), path.dirname(path.dirname(home))].entries()) {
+    const error = await fs.rmdir(dir).then(() => null, error => error);
+    if (error?.code === 'ENOTEMPTY' || error?.code === 'EEXIST') { if (!at) problems.push(`${home} still holds files`); break; }
+    if (error && error.code !== 'ENOENT') { problems.push(error.message); break; }
+  }
+  if (problems.length) throw new BridgeError(`Some of this run’s worktrees were not removed: ${problems.join('; ').slice(0, 1500)}`, 409);
+}
+
 /** Each task sees only committed prerequisites. All candidate commits combine in a separate worktree before a
  * guarded fast-forward touches the source checkout. Failed/conflicting candidates stay available for inspection. */
 export async function workflowWorktrees(project, id, saved) {

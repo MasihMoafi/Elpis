@@ -40,6 +40,32 @@ function fixture(t, options = {}) {
   return { home, cwd, git, log, runs, start, record, finished, runnerOptions, restore: () => createWorkflowRuns(runnerOptions) };
 }
 
+/** What a run left in its repository: its folder, its `elpis/<id>/` branches and its registered worktrees. */
+function leftovers(f, id) {
+  const elpis = `${f.cwd}-elpis`;
+  return { folder: fs.existsSync(path.join(elpis, 'workflows', id)), elpis: fs.existsSync(elpis),
+    branches: f.git('for-each-ref', '--format=%(refname:short)', `refs/heads/elpis/${id}/`).split('\n').filter(Boolean),
+    worktrees: f.git('worktree', 'list', '--porcelain').split('\n').filter(line => line.startsWith('worktree ') && line.includes(`/workflows/${id}/`)) };
+}
+const NOTHING = { folder: false, elpis: false, branches: [], worktrees: [] };
+
+/** A desktop client on the fixture's workflow state, over a stand-in runtime socket whose one chat is ROOT. */
+const ROOT = '00000000-0000-0000-0000-000000000001';
+function desktopClient(f) {
+  const socket = new EventEmitter(); socket.sent = []; socket.close = () => {};
+  const root = { id: ROOT, cwd: f.cwd, source: 'cli', model: 'm-fast', modelProvider: 'openai', status: { type: 'idle' } };
+  socket.send = raw => {
+    const message = JSON.parse(raw); socket.sent.push(message); if (!message.id) return;
+    const result = message.method === 'model/list' ? { data: ['m-fast', 'claude/opus', 'gpt-6.1-sol', 'agy/gemini-4-argon-high'].map(model => ({ id: model, model })) }
+      : message.method === 'thread/start' ? { thread: { ...root, model: message.params.model ?? root.model } }
+      : ['thread/read', 'thread/resume'].includes(message.method) ? { thread: root }
+      : ['workGraph/list', 'thread/list'].includes(message.method) ? { data: [] } : {};
+    queueMicrotask(() => socket.emit('message', JSON.stringify({ id: message.id, result })));
+  };
+  const client = new DesktopClient(socket, { appHome: f.home, archiveDirectory: path.join(f.home, 'archives'), rewindHome: path.join(f.home, 'rewind'), spawnLinksFile: path.join(f.home, 'spawns.json'), githubConnector: { instructions: async () => '' }, workflowOptions: f.runnerOptions });
+  return { client, socket };
+}
+
 test('node models and advertised effort are applied before prompting; unavailable effort fails before work', { timeout: 20000 }, async t => {
   const f = fixture(t);
   const started = await f.start([task('chosen', { provider: 'custom', model: 'm-slow', reasoningEffort: 'high' }), task('unsupported', { reasoningEffort: 'xhigh' })]);
@@ -118,17 +144,7 @@ test('authenticated HTTP task workflows use Claude Mother by default, expose the
     Fix: { FAKE_ACP_WRITE: JSON.stringify({ file: 'src/result', text: 'fixed' }) },
     Review: { FAKE_ACP_ANSWER: JSON.stringify({ passed: true, summary: 'Independent passing regression' }) },
   } });
-  const ROOT = '00000000-0000-0000-0000-000000000001', socket = new EventEmitter(); socket.sent = []; socket.close = () => {};
-  const root = { id: ROOT, cwd: f.cwd, source: 'cli', model: 'm-fast', modelProvider: 'openai', status: { type: 'idle' } };
-  socket.send = raw => {
-    const message = JSON.parse(raw); socket.sent.push(message); if (!message.id) return;
-    const result = message.method === 'model/list' ? { data: ['m-fast', 'claude/opus', 'gpt-6.1-sol', 'agy/gemini-4-argon-high'].map(model => ({ id: model, model })) }
-      : message.method === 'thread/start' ? { thread: { ...root, model: message.params.model ?? root.model } }
-      : ['thread/read', 'thread/resume'].includes(message.method) ? { thread: root }
-      : ['workGraph/list', 'thread/list'].includes(message.method) ? { data: [] } : {};
-    queueMicrotask(() => socket.emit('message', JSON.stringify({ id: message.id, result })));
-  };
-  const client = new DesktopClient(socket, { appHome: f.home, archiveDirectory: path.join(f.home, 'archives'), rewindHome: path.join(f.home, 'rewind'), spawnLinksFile: path.join(f.home, 'spawns.json'), githubConnector: { instructions: async () => '' }, workflowOptions: f.runnerOptions });
+  const { client, socket } = desktopClient(f);
   await client.initialize();
   const app = await startDesktopServer({ client, elpisHome: f.home, trashFile: path.join(f.home, 'trash.json'), loveSpot: { directory: path.join(f.home, 'drawing'), screenshots: path.join(f.home, 'screenshots') } });
   try {
@@ -229,12 +245,65 @@ test('isolated results expose commits and diff; final review merges only a succe
       assert.equal(fs.readFileSync(path.join(f.cwd, 'src/seed'), 'utf8'), mode === 'dirty' ? 'user edit' : 'new commit');
     } else {
       const merged = await restored.merge(started.graphId); assert.equal(merged.review.status, 'merged');
+      assert.deepEqual(leftovers(f, started.graphId), NOTHING, 'a merged run leaves no worktree, branch or folder');
       assert.equal(fs.readFileSync(path.join(f.cwd, 'src/result'), 'utf8'), 'planted review evidence\n');
       const head = f.git('rev-parse', 'HEAD'); await restored.merge(started.graphId); assert.equal(f.git('rev-parse', 'HEAD'), head, 'merge retries are idempotent');
     }
   }
 });
 
+
+// Masih, 29 Oct: "so leftovers don't exist". A run's worktrees and branches end when its work has reached the project.
+test('a run whose work reached the project, or that had none, leaves no worktree, branch or folder', { timeout: 20000 }, async t => {
+  const f = fixture(t, { env: { writer: { FAKE_ACP_WRITE: JSON.stringify({ file: 'src/result', text: 'merged evidence\n' }) } } });
+  const empty = await f.finished((await f.start([task('reader')], { isolation: 'worktree' })).graphId);
+  assert.equal(empty.status, 'succeeded', empty.error); assert.equal(empty.review.status, 'empty');
+  assert.ok(empty.worktrees.length, 'the run had a worktree to free');
+  assert.deepEqual(leftovers(f, empty.id), NOTHING, 'an empty run leaves nothing');
+  const merged = await f.finished((await f.start([task('writer', { writeScopes: ['src'] })], { isolation: 'worktree', autoMerge: true })).graphId);
+  assert.equal(merged.status, 'succeeded', merged.error); assert.equal(merged.review.status, 'merged');
+  assert.equal(fs.readFileSync(path.join(f.cwd, 'src/result'), 'utf8'), 'merged evidence\n');
+  assert.equal(merged.worktrees.length, 2, 'a task worktree and the integration worktree');
+  assert.deepEqual(leftovers(f, merged.id), NOTHING, 'a merged run leaves nothing');
+});
+
+test('failed and cancelled runs keep their worktrees until they leave History; only their own are freed, and a failed removal retries', { timeout: 30000 }, async t => {
+  const f = fixture(t), elpis = `${f.cwd}-elpis`, other = randomUUID(), otherPath = path.join(elpis, 'workflows', other, 'x-r1');
+  const failed = await f.finished((await f.start([task('broken', { writeScopes: ['src'], instruction: '[crash]' })], { isolation: 'worktree', rootThreadId: ROOT })).graphId);
+  assert.equal(failed.status, 'failed');
+  const waiting = await f.start([task('waiter', { writeScopes: ['src'], instruction: '[hang]' })], { isolation: 'worktree', rootThreadId: ROOT });
+  await until(() => f.log('waiter'), log => log.some(row => row.method === 'session/prompt'));
+  f.runs.cancel(ROOT); const cancelled = await f.finished(waiting.graphId); assert.equal(cancelled.status, 'cancelled');
+  for (const run of [failed, cancelled]) {
+    assert.equal(run.worktrees.length, 1);
+    const kept = leftovers(f, run.id);
+    assert.ok(kept.folder && fs.existsSync(run.worktrees[0].path), `a ${run.status} run keeps its worktree, so it can resume`);
+    assert.deepEqual(kept.branches, [run.worktrees[0].branch]); assert.equal(kept.worktrees.length, 1);
+  }
+  // Another run's worktree, and branches that only look like this run's, are not this run's to free. A record that
+  // lists paths outside its own folder cannot reach them either.
+  f.git('worktree', 'add', '-q', '-b', `elpis/${other}/x`, otherPath);
+  for (const branch of ['elpis-other', `elpis/${failed.id}-copy/x`]) f.git('branch', branch);
+  const file = path.join(f.runnerOptions.stateDir, `${failed.id}.json`), saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+  saved.worktrees.push({ path: otherPath, branch: `elpis/${other}/x` }, { path: f.cwd, branch: 'elpis-other' }); fs.writeFileSync(file, JSON.stringify(saved));
+  f.git('worktree', 'lock', cancelled.worktrees[0].path);
+  const { client } = desktopClient(f); await client.initialize(); t.after(() => client.close());
+  // A removal that Git refuses still removes the run from History, and is recorded.
+  assert.deepEqual(await client.removeWorkflowHistory(cancelled.id, {}), { removed: cancelled.id, canUndo: true });
+  assert.ok(fs.existsSync(cancelled.worktrees[0].path));
+  assert.match((await client.workflowRun(cancelled.id)).run.cleanup?.error ?? '', /locked/);
+  assert.ok(fs.existsSync(failed.worktrees[0].path), 'removing one run frees nothing of another');
+  f.git('worktree', 'unlock', cancelled.worktrees[0].path);
+  await client.removeWorkflowHistory(failed.id, {});
+  for (const run of [failed, cancelled]) assert.deepEqual({ ...leftovers(f, run.id), elpis: false }, NOTHING, `the removed ${run.status} run is freed, on retry too`);
+  assert.ok(fs.existsSync(path.join(otherPath, 'src/seed')), 'another run keeps its worktree');
+  assert.ok(fs.existsSync(path.join(f.cwd, 'src/seed')));
+  for (const branch of [`elpis/${other}/x`, 'elpis-other', `elpis/${failed.id}-copy/x`]) assert.equal(f.git('branch', '--list', branch).trim().replace(/^\+ /, ''), branch);
+  // Undo brings back the record only; its resume says plainly why it cannot continue.
+  assert.equal((await client.undoWorkflowHistory({})).restored, failed.id);
+  assert.ok((await client.workflowHistory()).data.some(run => run.id === failed.id));
+  await assert.rejects(client.resumeWorkflow(failed.id, {}), /worktrees were removed.*cannot resume/i);
+});
 
 test('Default workflow nodes skip an exhausted subscription and record their actual healthy route', { timeout: 20000 }, async t => {
   const routes = [{ model: 'claude/opus', provider: 'claude', exhausted: true, reason: 'Weekly usage limit reached' }, { model: 'm-fast', provider: 'openai', exhausted: false }];

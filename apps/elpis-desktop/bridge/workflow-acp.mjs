@@ -6,14 +6,15 @@ import { loveNodeSpec } from './love-agents.mjs';
 import { runAcpNode } from './acp-nodes.mjs';
 import { workflowRoute, quotaFailure } from './workflow-models.mjs';
 import { agentParentId } from '../lib/agent-runs.mjs';
-import { workflowWorktrees, mergeWorkflowReview, checkWorkflowReview, workflowCandidateChanged } from './workflow-worktrees.mjs';
+import { workflowWorktrees, mergeWorkflowReview, checkWorkflowReview, workflowCandidateChanged, removeWorkflowWorkspace } from './workflow-worktrees.mjs';
 import { workerBudget } from './memory-budget.mjs';
 
 const ended = new Set(['succeeded', 'failed', 'cancelled', 'blocked']);
 const writer = task => ['implement', 'fix'].includes(task.kind);
 const alive = pid => { if (!Number.isSafeInteger(pid) || pid < 1) return false; try { process.kill(pid, 0); return true; } catch { return false; } };
 
-/** History visibility only. Run files, chats and execution are never changed; Undo survives an app restart. */
+/** History visibility. Run files, chats and execution are never changed here; Undo survives an app restart. The client
+ * then frees the removed run's worktrees (`free` below), so Undo brings back the record only. */
 export function createWorkflowHistory(file) {
   let removed, loading, changing = Promise.resolve();
   const terminal = new Set([...ended, 'completed', 'stopped']);
@@ -138,6 +139,14 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
     });
     saving = pending; return pending;
   };
+  /** A run's worktrees and branches end with it: once its work reached the project, or when it leaves History. A Git
+   * failure never fails the run or the History action; it is kept on the record and the next `free` retries it. */
+  const freeRun = async record => {
+    if (!record.isolation && !record.worktrees) return;
+    try { await removeWorkflowWorkspace(record); record.cleanup = { status: 'done', at: Date.now() }; }
+    catch (error) { record.cleanup = { status: 'failed', at: Date.now(), error: error.message }; }
+  };
+  const gone = 'This run left History and its worktrees were removed, so it cannot resume. Start the workflow again.';
   const logLine = (record, text) => { (record.log ??= []).push({ at: Date.now(), text }); void save(record).catch(error => { record.persistenceError = error.message; }); };
   const progress = (record, task, update) => {
     const entries = task.progress ??= [], at = Date.now();
@@ -394,6 +403,8 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
       if (status === 'succeeded' && isolation) {
         record.review = await isolation.review(controller.signal);
         if ((record.autoMerge || record.next) && record.review.status === 'ready') await reviewAndMerge(record, controller.signal);
+        // Freed before the run shows as ended, so nothing it made outlives it.
+        if (['merged', 'empty'].includes(record.review.status)) { record.worktrees = isolation.paths(); await freeRun(record); }
       }
       record.status = status;
     } catch (error) {
@@ -445,6 +456,7 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
       if (!record) throw new BridgeError('Workflow not found', 404);
       if (!['failed', 'blocked', 'cancelled'].includes(record.status)) throw new BridgeError('Only failed or stopped workflow nodes need recovery', 409);
       if (active.has(record.rootThreadId) || mergeControllers.has(record.rootThreadId)) throw new BridgeError('This workflow is already running', 409);
+      if (record.cleanup) throw new BridgeError(gone, 409);
       if (observeThread) {
         const memberIds = new Set([record.mother?.assignedThreadId, record.mother?.sessionId, record.next?.threadId,
           ...[...record.tasks, ...record.next?.tasks ?? []].map(task => task.assignedThreadId)].filter(id => id && id !== record.rootThreadId));
@@ -497,6 +509,16 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
       void execute(record, root, controller, true).catch(error => console.error('Could not save recovered workflow state:', error.message));
       return { graphId: record.id, threadId: record.rootThreadId, turnId: record.id };
     },
+    /** Frees a run removed from History, whatever its status, and retries any earlier removal that failed. Never throws. */
+    async free(id) {
+      await load();
+      const busy = record => active.has(record.rootThreadId) || mergeControllers.has(record.rootThreadId);
+      for (const record of records.values()) {
+        if ((record.id !== id && record.cleanup?.status !== 'failed') || busy(record)) continue;
+        await freeRun(record); await save(record).catch(error => { record.persistenceError = error.message; });
+      }
+      return records.get(id)?.cleanup ?? null;
+    },
     cancel(rootThreadId) { const controller = active.get(rootThreadId) ?? mergeControllers.get(rootThreadId); if (!controller) return false; controller.abort(); return true; },
     async merge(id) {
       await load(); const record = records.get(id);
@@ -508,12 +530,13 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
         return { review: structuredClone(record.review) };
       }
       if (record.review?.status !== 'ready') throw new BridgeError('This workflow has no changes ready to merge', 409);
+      if (record.cleanup) throw new BridgeError(gone.replace('resume', 'merge'), 409);
       const source = record.review.source;
       if (mergingSources.has(source)) throw new BridgeError('A workflow merge is already running for this project', 409);
       mergingSources.add(source);
       const controller = new AbortController(); mergeControllers.set(record.rootThreadId, controller);
       try {
-        await reviewAndMerge(record, controller.signal); record.status = 'succeeded'; delete record.error; await save(record);
+        await reviewAndMerge(record, controller.signal); record.status = 'succeeded'; delete record.error; await freeRun(record); await save(record);
         return { review: structuredClone(record.review) };
       } catch (error) { record.review.error = error.message; await save(record); throw error; }
       finally { mergingSources.delete(source); mergeControllers.delete(record.rootThreadId); }
