@@ -51,7 +51,10 @@
 /* Forms space fields and save actions alike, including forms inside cards. */
 .settings-form { display:grid; }
 .settings-form, .settings-card:has(> .field) { gap:16px; }
-.settings-stack { display:grid; gap:12px; min-width:0; }
+/* A stack ends like every Settings section, 24px above the next one (29 Oct, Masih, of "Plugins & skills" under the MCP
+   servers: "hold one consistent design pattern. don't you see how these are too close?"). */
+.settings-stack { display:grid; gap:12px; min-width:0; margin-bottom:24px; }
+.settings-page .search-field:has(+ .settings-group) { margin-bottom:24px; }
 /* Archived chats: Select all and the selection's actions above the list, in the rows' column (row padding plus its
  * card's border); a checkbox before each row, 16px from its words like every row gap. */
 .archived-bulk { display:flex; align-items:center; gap:8px; min-height:36px; margin:12px 0 8px; padding-inline:17px; }
