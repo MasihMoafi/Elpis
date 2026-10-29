@@ -57,7 +57,8 @@ async function eventually(check, ms = 4000) {
   const deadline = Date.now() + ms;
   for (;;) { try { return await check(); } catch (error) { if (Date.now() >= deadline) throw error; await new Promise(resolve => setTimeout(resolve, 50)); } }
 }
-const changes = posts => posts.filter(post => !/\/(resume|read|rewind)$|^\/api\/session$/.test(post.path));
+// Reads, sign-in and the Session Manager's background run (it runs after connecting, whatever the user does) are not group changes.
+const changes = posts => posts.filter(post => !/\/(resume|read|rewind)$|^\/api\/session(?:-manager)?$/.test(post.path));
 
 test('a chat moves into a new group from its menu; the list switches to custom groups and keeps it after a reload', async () => {
   const f = await fixture(), { page } = f;
