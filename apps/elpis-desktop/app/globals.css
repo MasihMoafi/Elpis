@@ -650,8 +650,10 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 @keyframes elpis-blink { 0%,100% { opacity:1; } 50% { opacity:.15; } }
 .turn-stopped, .context-event { margin:6px 0 18px; font-size:0.8125rem; color:var(--muted-foreground); }
 .turn-working { display:flex; align-items:center; gap:8px; width:fit-content; max-width:100%; margin-top:14px; padding:3px 0; font-size:0.875rem; color:var(--muted-foreground); }
-/* Move the live row down one grid unit while retaining the turn’s overall spacing. */
-.turn:has(> .turn-working) { margin-bottom:6px; }
+/* The live Working row is the transcript's last line: it sits just above the composer, separated only by the composer
+ * wrap's own 6px, with no turn gap or scroll padding under it. */
+.turn:has(> .turn-working) { margin-bottom:0; }
+.chat-scroll:has(.turn-working) { padding-bottom:0; }
 .sh-command { color:var(--sh-command); }
 .sh-flag { color:color-mix(in oklch, var(--sh-command) 70%, var(--muted-foreground)); }
 .sh-string { color:var(--sh-string); }
@@ -678,6 +680,12 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .composer-controls { margin-top:6px; }
 .composer-right { display:flex; align-items:center; gap:var(--composer-control-gap, 8px); min-width:0; }
 .composer-actions { display:flex; align-items:center; gap:var(--composer-control-gap, 8px); flex-shrink:0; }
+/* Voice, mic, Stop, Send and its options: one 32 px box and one 18 px glyph each, on one centre line. Send is the one filled
+ * box, so it also keeps the glyph inset the plain buttons have on each side: the gaps the eye sees stay even. */
+.composer-actions { --action-box:32px; --action-glyph:18px; }
+.composer-actions :is(.dictation-buttons > button, .stop-button, .send-button, [aria-label="More send options"]) { height:var(--action-box); min-width:var(--action-box); }
+.composer-actions :is(.dictation-buttons > button, .stop-button, .send-button, [aria-label="More send options"]) svg { width:var(--action-glyph); height:var(--action-glyph); }
+.composer-actions > :is(.send-button, .send-button + *) { margin-inline-start:calc((var(--action-box) - var(--action-glyph)) / 2); }
 .composer-right .dictation-control { margin-top:0; }
 .composer .dictation-status:empty { display:none; }
 .fast-toggle[aria-pressed="true"] { color:var(--accent-text); background:var(--selected); }

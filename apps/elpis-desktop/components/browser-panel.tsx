@@ -1,7 +1,8 @@
 "use client";
 
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ExternalLink, ArrowLeft, ArrowRight, ChevronDown, ChevronUp, Ellipsis, RefreshCw, Square, PenLine, SquareDashedMousePointer, CircleAlert, X, Copy, Link, Pencil, Plus, Pin, Volume2, VolumeX } from "lucide-react";
+import { ExternalLink, ArrowLeft, ArrowRight, ChevronDown, ChevronUp, Ellipsis, RefreshCw, PenLine, SquareDashedMousePointer, CircleAlert, X, Copy, Link, Pencil, Plus, Pin, Volume2, VolumeX } from "lucide-react";
+import { StopIcon } from "@/components/elpis-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -125,7 +126,7 @@ export function BrowserPanel({ browser, covered, onAttach, imagesAllowed = true,
     <form className="browser-toolbar" aria-label="Browser navigation" onSubmit={event => { event.preventDefault(); const submitted = value; if (!submitted.trim()) return; void api.command("navigate", { url: submitted }).then(() => setEdit(current => current?.value === submitted ? null : current)).catch(() => {}); }}>
       <Button type="button" variant="ghost" size="icon-sm" aria-label="Back" disabled={!active?.canGoBack} onClick={() => void command("back")}><ArrowLeft size={15} /></Button>
       <Button type="button" variant="ghost" size="icon-sm" aria-label="Forward" disabled={!active?.canGoForward} onClick={() => void command("forward")}><ArrowRight size={15} /></Button>
-      <Button type="button" variant="ghost" size="icon-sm" aria-label={active?.loading ? "Stop loading page" : "Reload page"} onClick={() => void command(active?.loading ? "stop" : "reload")}>{active?.loading ? <Square size={13} /> : <RefreshCw size={14} />}</Button>
+      <Button type="button" variant="ghost" size="icon-sm" aria-label={active?.loading ? "Stop loading page" : "Reload page"} onClick={() => void command(active?.loading ? "stop" : "reload")}>{active?.loading ? <StopIcon size={13} /> : <RefreshCw size={14} />}</Button>
       <div className="browser-address">
         {active?.security === "insecure" && <span className="browser-security" title="This site does not use a secure connection"><CircleAlert size={12} aria-hidden="true" /><span className="browser-security-text">Not secure</span></span>}
         <Input ref={address} aria-label="Search or enter a URL" placeholder="Search or enter a URL" value={value} onChange={e => active && setEdit({ tab: active.id, value: e.target.value })} onKeyDown={e => { if (e.key === "Escape") { setEdit(null); address.current?.blur(); } }} spellCheck={false} autoComplete="off" />

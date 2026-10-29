@@ -13,8 +13,8 @@ function icon(viewBox: string, d: string, fill = "currentColor") {
   };
 }
 
-/** Stop uses the same hollow, bevelled geometry and line weight as the composer icon family. */
-export const StopIcon = icon("0 0 225 225", "M 50 27 H 175 L 198 50 V 175 L 175 198 H 50 L 27 175 V 50 Z M 58 45 L 45 58 V 167 L 58 180 H 167 L 180 167 V 58 L 167 45 Z");
+/** Stop: a solid square with the collection's bevelled corners, drawn to sit with send.svg (the collection has no stop). */
+export const StopIcon = icon("0 0 200 200", "M 60 38 H 140 L 162 60 V 140 L 140 162 H 60 L 38 140 V 60 Z");
 
 export const NewChatIcon = icon("0 0 225 225", "M 38.7 42.2 L 24.0 57.5 24.0 96.8 L 24 136.2 32.5 144.9 L 41 153.6 41 175.3 C 41 187.2, 41.3 197, 41.8 197 C 42.2 197, 52.8 189.3, 65.2 180 L 87.7 163 131.1 163 L 174.5 163 187.7 148.8 L 201 134.7 201 94.6 L 201 54.4 187.2 40.7 L 173.4 27 113.4 27 L 53.3 27 38.7 42.2 M 51.7 54.3 L 42 63.6 42 96.5 L 42 129.5 49.9 137.4 L 57.9 145.3 58.2 154.2 L 58.5 163.0 69.4 154.5 L 80.4 146 123.5 146 L 166.6 146 174.8 137.0 L 183 128.1 183 94.8 L 183 61.4 174.7 53.2 L 166.4 45 113.9 45 L 61.4 45 51.7 54.3 M 103.9 67.7 C 103.8 70.3, 103.9 75.5, 103.9 79.2 L 104.1 86 92.0 86 L 79.9 86 80.2 95.2 L 80.5 104.5 92 104.5 L 103.5 104.5 103.7 115.7 L 104.0 127 113.0 127 L 122 127 122 116 L 122 105 125.2 104.8 C 127.0 104.7, 132.1 104.6, 136.5 104.5 L 144.5 104.5 144.7 95.2 L 145.0 86 133.5 86 L 122.0 86 121.7 74.7 L 121.5 63.5 112.7 63.2 L 104 62.9 103.9 67.7");
 /** Agents: generated with ImageGen and traced through SVG Studio (A103 round 2). */
