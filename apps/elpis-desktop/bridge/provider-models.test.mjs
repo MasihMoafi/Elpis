@@ -227,3 +227,15 @@ test('the timeout also bounds a response body that never finishes', async t => {
   t.mock.timers.tick(8000);
   await assert.rejects(loading, /timed out|too long/i);
 });
+
+// 29 Oct, Masih, of the reranker menu's three fixed choices: "this is unacceptable; we want real call and showing of real
+// options." OpenRouter lists its rerankers apart from its chat models.
+test('OpenRouter rerankers are read from its own rerank listing, without the tools filter or the coding ranking', async () => {
+  const urls = [];
+  const result = await providerModels({ base_url: 'https://openrouter.ai/api/v1', wire_api: 'chat' }, { outputModality: 'rerank', fetchImpl: async url => {
+    urls.push(url);
+    return new Response(JSON.stringify({ data: [{ id: 'cohere/rerank-4-pro', name: 'Cohere: Rerank 4 Pro', supported_parameters: [] }, { id: 'nvidia/nemotron-3.5-rerank-8b:free', name: 'NVIDIA: Nemotron 3.5 Rerank 8B (free)' }] }), { headers: { 'content-type': 'application/json' } });
+  } });
+  assert.deepEqual(urls, ['https://openrouter.ai/api/v1/models?output_modalities=rerank']);
+  assert.deepEqual(result.data.map(model => [model.id, model.displayName]), [['cohere/rerank-4-pro', 'Cohere: Rerank 4 Pro'], ['nvidia/nemotron-3.5-rerank-8b:free', 'NVIDIA: Nemotron 3.5 Rerank 8B (free)']]);
+});

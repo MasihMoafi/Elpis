@@ -24,7 +24,8 @@ const message = (e: unknown) => e instanceof Error ? e.message : String(e);
 /** A reply without its server list (an older or failing bridge) reads as no servers, never as a broken page. */
 const readMcp = (value: Mcp): Mcp => ({ ...value, servers: Array.isArray(value?.servers) ? value.servers : [], write: value?.write ?? { available: false } });
 /** What the rag tool accepts for its reranker (bridge/tools.mjs): off, the local engine, or an OpenRouter reranker ID. */
-const RERANKERS: Model[] = [["off", "Off"], ["fastembed", "Local (FastEmbed)"], ["cohere/rerank-4-fast", "Cohere Rerank 4 Fast (OpenRouter)"]].map(([model, displayName]) => ({ id: model, model, displayName }));
+/** Off and the local reranker, then OpenRouter's own reranker catalogue, read live (29 Oct, Masih: "we want real call and showing of real options"). */
+const LOCAL_RERANKERS: Model[] = [["off", "Off"], ["fastembed", "Local (FastEmbed)"]].map(([model, displayName]) => ({ id: model, model, displayName }));
 const providerName = (stage: Stage) => stage.location === "local" ? "Local" : stage.provider === "openrouter" ? "OpenRouter" : stage.provider === "openai_compatible" ? "OpenAI-compatible API" : stage.provider ?? "Not set";
 const Key = ({ name, set, note, plain }: { name: string; set: boolean; note?: string; plain?: boolean }) => <li className={`key-state ${set ? "set" : "unset"}`}>{plain ? name : <code>{name}</code>} · {set ? "set" : "not set"}{note && <span className="text-muted-foreground"> ({note})</span>}</li>;
 
@@ -55,8 +56,10 @@ function RagSettings({ version }: { version: string | null }) {
   const [reranker, setReranker] = useState("");
   const [busy, setBusy] = useState(false);
   const [answerModels, setAnswerModels] = useState<Model[]>([]);
+  const [rerankModels, setRerankModels] = useState<Model[]>([]), [rerankError, setRerankError] = useState("");
   useEffect(() => { api<Rag>("/tools/rag").then(setRag).catch(e => setError(message(e))); }, [version]);
   useEffect(() => { api<{ data: Model[] }>("/models?provider=openrouter").then(result => setAnswerModels(Array.isArray(result?.data) ? result.data : [])).catch(() => setAnswerModels([])); }, []);
+  useEffect(() => { api<{ data: Model[] }>("/models?provider=openrouter&outputModality=rerank").then(result => { setRerankModels(Array.isArray(result?.data) ? result.data : []); setRerankError(""); }).catch(e => setRerankError(message(e))); }, []);
   async function save(stage: "generation" | "reranking", model: string) {
     setBusy(true); setError("");
     try { setRag(await api<Rag>("/tools/rag", { stage, model })); if (stage === "generation") setAnswer(""); else setReranker(""); }
@@ -73,9 +76,10 @@ function RagSettings({ version }: { version: string | null }) {
       <form className="field" onSubmit={e => { e.preventDefault(); void save("generation", answer.trim()); }}>Change answer model (OpenRouter)
         <div className="flex gap-2"><ModelChoice label="RAG answer model" value={answer || stage("generation")?.model || null} models={answerModels} provider="OpenRouter" disabled={busy} onChange={model => setAnswer(model ?? "")} /><Button type="submit" variant="outline" disabled={busy || !answer.trim() || answer === stage("generation")?.model}>Save</Button></div></form>
       <form className="field" onSubmit={e => { e.preventDefault(); void save("reranking", reranker.trim()); }}>Change reranker
-        <div className="flex gap-2"><ModelChoice label="RAG reranker" value={reranker || stage("reranking")?.model || null} models={RERANKERS} provider="OpenRouter" disabled={busy} onChange={model => setReranker(model ?? "")} /><Button type="submit" variant="outline" disabled={busy || !reranker.trim() || reranker === stage("reranking")?.model}>Save</Button></div></form>
+        <div className="flex gap-2"><ModelChoice label="RAG reranker" value={reranker || stage("reranking")?.model || null} models={[...LOCAL_RERANKERS, ...rerankModels]} provider="OpenRouter" disabled={busy} onChange={model => setReranker(model ?? "")} /><Button type="submit" variant="outline" disabled={busy || !reranker.trim() || reranker === stage("reranking")?.model}>Save</Button></div></form>
     </div>
     <p className="provider-note">Embeddings change with <code>rag setup</code> because documents are re-indexed. Agents search documents with the <code>rag</code> tool.</p>
+    {rerankError && <SettingsNotice tone="alert">Could not list OpenRouter's rerankers: {rerankError}</SettingsNotice>}
     {error && <SettingsNotice tone="alert">{error}</SettingsNotice>}
   </div>;
 }

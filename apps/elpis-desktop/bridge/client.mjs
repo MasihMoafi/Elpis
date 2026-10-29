@@ -690,8 +690,9 @@ export class DesktopClient extends EventEmitter {
     throw new BridgeError('Recorded media was not found', 404);
   }
   async models(options = {}) {
-    object(options, ['cursor', 'limit', 'provider', 'inputModality']);
+    object(options, ['cursor', 'limit', 'provider', 'inputModality', 'outputModality']);
     if (options.inputModality !== undefined && (options.inputModality !== 'audio' || options.provider !== 'openrouter')) throw new BridgeError('Choose OpenRouter audio models');
+    if (options.outputModality !== undefined && (options.outputModality !== 'rerank' || options.provider !== 'openrouter' || options.inputModality !== undefined)) throw new BridgeError('Choose OpenRouter rerank models');
     if (options.provider !== undefined) {
       text(options.provider, 'configured connection', 64);
       if (!/^[a-z][a-z0-9_-]*$/.test(options.provider)) throw new BridgeError('Choose an existing configured connection');
@@ -707,7 +708,7 @@ export class DesktopClient extends EventEmitter {
       if (options.provider !== 'openai' || options.provider !== read?.config?.model_provider) {
         const definitions = { ...BUILT_IN_KEY_PROVIDERS, ...(read?.config?.model_providers ?? {}), ...(managed?.modelProviders ?? {}) };
         if (!Object.hasOwn(definitions, options.provider)) throw new BridgeError('This connection needs a saved API address before Elpis can list its models. Add a connection in Settings → Models & accounts.');
-        try { return await providerModels(definitions[options.provider], { savedKey: savedProviderKey(configHome(read), options.provider), inputModality: options.inputModality }); }
+        try { return await providerModels(definitions[options.provider], { savedKey: savedProviderKey(configHome(read), options.provider), inputModality: options.inputModality, outputModality: options.outputModality }); }
         catch (error) { throw new BridgeError(error.message || 'Could not load models from this connection.', 502); }
       }
     }
