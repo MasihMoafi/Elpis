@@ -650,9 +650,9 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 @keyframes elpis-blink { 0%,100% { opacity:1; } 50% { opacity:.15; } }
 .turn-stopped, .context-event { margin:6px 0 18px; font-size:0.8125rem; color:var(--muted-foreground); }
 .turn-working { display:flex; align-items:center; gap:8px; width:fit-content; max-width:100%; margin-top:14px; padding:3px 0; font-size:0.875rem; color:var(--muted-foreground); }
-/* The live Working row sits 7px below its original place over the composer (29 Oct, Masih: "lower 2x"). */
+/* The live Working row sits 11px below its original place over the composer (29 Oct, Masih: "lower"). */
 .turn:has(> .turn-working) { margin-bottom:0; }
-.chat-scroll:has(.turn-working) { padding-bottom:10px; }
+.chat-scroll:has(.turn-working) { padding-bottom:6px; }
 .sh-command { color:var(--sh-command); }
 .sh-flag { color:color-mix(in oklch, var(--sh-command) 70%, var(--muted-foreground)); }
 .sh-string { color:var(--sh-string); }
