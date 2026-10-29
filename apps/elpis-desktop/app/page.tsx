@@ -406,12 +406,21 @@ export default function Home() {
   const [related, setRelated] = useState<Record<string, Thread>>({});
   const [accountRefresh, setAccountRefresh] = useState(0);
   const [view, setView] = useState<View>("chat");
-  // Draft edits may grow the input; a width-only resize keeps the height the user was typing in.
+  // The input fits its text at every width, and scrolls only past its 240 px ceiling (29 Oct, Masih: "the scroll bar here is
+  // unnecessary": a narrower window wrapped the draft onto more lines, and a fraction of a pixel showed a scrollbar).
   useLayoutEffect(() => {
     const box = composerRef.current;
     if (!box) return;
-    box.style.height = "auto";
-    box.style.height = `${Math.min(240, Math.max(44, box.scrollHeight))}px`;
+    const fit = () => {
+      box.style.height = "auto";
+      box.style.height = `${Math.min(240, Math.max(44, box.scrollHeight))}px`;
+      box.style.overflowY = box.scrollHeight > 241 ? "auto" : "hidden";
+    };
+    fit();
+    let width = box.clientWidth;
+    const observer = new ResizeObserver(() => { if (box.clientWidth !== width) { width = box.clientWidth; fit(); } });
+    observer.observe(box);
+    return () => observer.disconnect();
   }, [text, selected?.id, view]);
   const loveActivity = useLoveActivity(view === "loveSpot", ready, view === "chat" ? selected : null);
   const loveSpotAudioReason = selected && !LOVE_SPOT_AUDIO.available

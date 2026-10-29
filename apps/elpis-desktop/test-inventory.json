@@ -358,7 +358,8 @@
     "tests/live-submissions.test.cjs",
     "tests/chat-labels.test.cjs",
     "tests/browser-identity-electron.test.cjs",
-    "tests/browser-agent-tabs.test.cjs"
+    "tests/browser-agent-tabs.test.cjs",
+    "tests/composer-height.test.cjs"
   ],
   "opt-in": [
     "tests/screen-capture-electron.test.cjs",
