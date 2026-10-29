@@ -642,12 +642,11 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .activity-group-body { margin:6px 0 4px 10px; padding-left:12px; border-left:1px solid var(--border); }
 .live-label { color:var(--foreground); }
 .live-timer { flex-shrink:0; color:var(--muted-foreground); font-variant-numeric:tabular-nums; }
-.elpis-working-mark { width:18px; height:18px; flex-shrink:0; vertical-align:middle; color:var(--primary-action, var(--primary)); }
-.elpis-working-mark path { fill:none; stroke:currentColor; stroke-width:4; stroke-linejoin:round; }
-.elpis-working-rotor { transform-origin:32px 32px; animation:elpis-orbit 4s linear infinite; }
-.elpis-working-dot { fill:currentColor; animation:elpis-blink 2s ease-in-out infinite; }
+.elpis-working-mark { width:18px; height:18px; flex-shrink:0; vertical-align:middle; color:var(--primary-action, var(--primary)); fill:currentColor; }
+/* context--animation.svg: the ring turns about the gauge's centre (114, 114) once every 8 s; reduced motion holds it still. */
+.elpis-working-rotor { transform-box:view-box; transform-origin:114px 114px; animation:elpis-orbit 8s linear infinite; }
+@media (prefers-reduced-motion:reduce) { .elpis-working-rotor { animation:none; } }
 @keyframes elpis-orbit { to { transform:rotate(360deg); } }
-@keyframes elpis-blink { 0%,100% { opacity:1; } 50% { opacity:.15; } }
 .turn-stopped, .context-event { margin:6px 0 18px; font-size:0.8125rem; color:var(--muted-foreground); }
 .turn-working { display:flex; align-items:center; gap:8px; width:fit-content; max-width:100%; margin-top:14px; padding:3px 0; font-size:0.875rem; color:var(--muted-foreground); }
 /* The live Working row sits 11px below its original place over the composer (29 Oct, Masih: "lower"). */
@@ -732,10 +731,10 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .context-ring { display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; padding:0; border:1px solid transparent; background:transparent; cursor:pointer; }
 .context-ring:hover, .context-ring[data-popup-open] { background:var(--hover); border-color:var(--hairline); }
 .context-ring:focus-visible { outline:1.5px solid var(--ring); outline-offset:1px; }
-/* The context gauge (icon collection): segments fill clockwise, olive (the context colour), amber from 75% and red from 90%. */
-.context-ring-icon .context-ring-track { fill:var(--border); }
-.context-ring-icon .context-ring-fill { fill:none; stroke:var(--context); stroke-width:24; transition:stroke-dashoffset .3s; }
-.context-ring-icon .context-ring-core { fill:var(--muted-foreground); }
+/* Claude's context ring: a thin ring filling clockwise, olive (the context colour), amber from 75% and red from 90%. */
+.context-ring-icon circle { fill:none; stroke-width:2; }
+.context-ring-icon .context-ring-track { stroke:var(--border); }
+.context-ring-icon .context-ring-fill { stroke:var(--context); stroke-linecap:round; transition:stroke-dashoffset .3s; }
 .context-ring-icon[data-level="warning"] .context-ring-fill { stroke:var(--warning); }
 .context-ring-icon[data-level="critical"] .context-ring-fill { stroke:var(--destructive); }
 /* Claude's tooltip on its icon buttons: the text, and a quieter line under it. */

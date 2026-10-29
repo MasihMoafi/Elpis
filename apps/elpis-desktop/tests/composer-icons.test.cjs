@@ -140,8 +140,7 @@ test('every icon with a twin in the SVG collection draws the collection paths', 
   try {
     await f.open('chat-a');
     await page.locator('.composer [aria-label="Dictate message"]').waitFor();
-    // A clip path (the gauge's filled share) is not artwork.
-    const drawn = locator => locator.first().evaluate(svg => ({ viewBox: svg.getAttribute('viewBox'), paths: [...svg.querySelectorAll('path:not(clipPath path)')].map(p => p.getAttribute('d')) }));
+    const drawn = locator => locator.first().evaluate(svg => ({ viewBox: svg.getAttribute('viewBox'), paths: [...svg.querySelectorAll('path')].map(p => p.getAttribute('d')) }));
     const failures = [];
     const check = async (where, locator, name) => {
       const want = icons[name], got = await drawn(locator);
@@ -159,7 +158,6 @@ test('every icon with a twin in the SVG collection draws the collection paths', 
     await check('Add files and more', composer.locator('[aria-label="Add files and more"] svg'), 'plus');
     await check('Send', composer.locator('[aria-label="Send message"] svg'), 'send');
     await check('Dictate', composer.locator('[aria-label="Dictate message"] svg'), 'mic');
-    await check('Context gauge', composer.locator('.context-ring svg'), 'context');
     await composer.getByRole('button', { name: 'Add files and more', exact: true }).click();
     const menu = page.getByRole('menu');
     await check('Attach', menu.getByRole('menuitem', { name: /Add files or photos/ }).locator('svg'), 'attach');
@@ -172,7 +170,7 @@ test('every icon with a twin in the SVG collection draws the collection paths', 
     await page.keyboard.press('Escape');
     await side.getByRole('button', { name: 'Settings', exact: true }).click();
     for (const [id, name] of [['general', 'settings'], ['notifications', 'bell'], ['appearance', 'theme'], ['voice', 'mic'], ['configuration', 'file-edit'],
-      ['personalization', 'person'], ['shortcuts', 'keyboard'], ['usage', 'context'], ['providers', 'models'], ['about', 'context'], ['mcp', 'tool'],
+      ['personalization', 'person'], ['shortcuts', 'keyboard'], ['providers', 'models'], ['mcp', 'tool'],
       ['browser', 'browser'], ['hooks', 'workflows'], ['git', 'branch'], ['worktrees', 'folder'], ['archived', 'archive']])
       await check(`Settings → ${id}`, page.locator(`#settings-tab-${id} svg`), name);
     assert.deepEqual(failures, []);
