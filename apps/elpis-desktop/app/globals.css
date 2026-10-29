@@ -878,7 +878,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .section-label-row > .group-sort[data-active] { color:var(--primary); }
 .workspace-header h1 { display:flex; align-items:center; gap:4px; }
 .workspace-header h1 .thread-actions { opacity:.7; }
-.message-time { font-size:var(--text-small); color:var(--subtle-foreground); margin-right:4px; opacity:0; transition:opacity .12s; font-variant-numeric:tabular-nums; }
+.message-time { font-size:var(--text-small); color:var(--subtle-foreground); opacity:0; transition:opacity .12s; font-variant-numeric:tabular-nums; }
 .user-turn:hover .message-time { opacity:1; }
 .message-actions { opacity:.0; transition:opacity .12s; }
 .user-turn:hover .message-actions, .message.agent:hover .message-actions, .message-actions:focus-within { opacity:1; }

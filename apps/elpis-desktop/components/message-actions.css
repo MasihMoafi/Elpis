@@ -2,7 +2,8 @@
    "Worked for" line, the next prompt) holds the whole 28px button plus air, and neighbouring buttons do not touch. */
 .turn .user-turn { margin-bottom:44px; }
 .turn .message.agent, .chat-content .message.agent { margin-bottom:40px; }
-.user-turn .message-actions, .message.agent .message-actions { gap:6px; margin-top:6px; }
+/* InkRow spaces the actions by their ink: 16px between what the eye sees, not between boxes. */
+.user-turn .message-actions, .message.agent .message-actions { --ink-gap:16px; gap:0; margin-top:6px; }
 /* Keep sent-message actions discoverable while reading or selecting text. */
 .user-turn .message-actions { opacity:1; }
 /* ‹ 2 / 2 ›: an edited message's versions, before its other actions. */

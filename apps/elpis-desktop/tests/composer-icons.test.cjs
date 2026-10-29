@@ -81,6 +81,60 @@ for (const colorScheme of ['light', 'dark']) {
   });
 }
 
+// "spaces must be in harmony": a message's actions (time, ‹ 1 / 2 ›, Reply, Copy, Edit, More …) share one box size and
+// one centre line, and the gaps between what the eye sees (the ink of each glyph, the text of the time and the version
+// group as one unit) are even. Ink is measured from the SVG geometry plus its stroke, so wide and narrow glyphs count.
+const inkRow = row => {
+  const ink = element => {
+    const svgs = element.matches('svg') ? [element] : [...element.querySelectorAll('svg')];
+    if (svgs.length) {
+      const boxes = svgs.flatMap(svg => {
+        const scale = svg.getBoundingClientRect().width / (svg.viewBox.baseVal?.width || svg.getBoundingClientRect().width);
+        return [...svg.querySelectorAll('path, circle, rect, line, polyline, polygon, ellipse')].map(shape => {
+          const r = shape.getBoundingClientRect(), style = getComputedStyle(shape);
+          const half = style.stroke !== 'none' ? parseFloat(style.strokeWidth) * scale / 2 : 0;
+          return { left: r.left - half, right: r.right + half, top: r.top - half, bottom: r.bottom + half };
+        });
+      });
+      const text = [...element.childNodes].filter(node => node.nodeType === 3 && node.textContent.trim());
+      for (const node of text) { const range = document.createRange(); range.selectNodeContents(node); const r = range.getBoundingClientRect(); boxes.push(r); }
+      for (const span of element.querySelectorAll(':scope > span')) if (span.textContent.trim()) { const range = document.createRange(); range.selectNodeContents(span); boxes.push(range.getBoundingClientRect()); }
+      return { left: Math.min(...boxes.map(b => b.left)), right: Math.max(...boxes.map(b => b.right)), top: Math.min(...boxes.map(b => b.top)), bottom: Math.max(...boxes.map(b => b.bottom)) };
+    }
+    const range = document.createRange(); range.selectNodeContents(element); return range.getBoundingClientRect();
+  };
+  const items = [...row.children].filter(element => element.getClientRects().length && (element.textContent.trim() || element.querySelector('svg')) && getComputedStyle(element).visibility !== 'hidden');
+  return items.map(element => {
+    const box = element.getBoundingClientRect(), i = ink(element), icon = element.matches('button') ? element : null, glyph = element.querySelector('svg')?.getBoundingClientRect() ?? box;
+    return { name: element.getAttribute('aria-label') || element.className || element.tagName, box: icon ? `${box.width}x${box.height}` : null,
+      cy: +((box.top + box.bottom) / 2).toFixed(2), glyphCy: +((glyph.top + glyph.bottom) / 2).toFixed(2), inkLeft: i.left, inkRight: i.right };
+  });
+};
+for (const colorScheme of ['light', 'dark']) test(`message actions share one box, one centre line and even ink gaps, with and without versions (${colorScheme})`, async () => {
+  const f = await fixture(options(colorScheme, { routes: { ...routes, '/api/threads/chat-a/versions': () => ({ versions: [{ turnId: 't1', index: 2, count: 2, previous: 'chat-b' }] }) } })), { page } = f;
+  try {
+    await f.open('chat-a');
+    await page.locator('.user-turn').first().getByRole('group', { name: 'Message versions' }).waitFor();
+    const rows = { 'user with versions': page.locator('.user-turn').nth(0), 'user': page.locator('.user-turn').nth(1), 'agent': page.locator('.message.agent').nth(1) };
+    const failures = [];
+    for (const [label, message] of Object.entries(rows)) {
+      await message.evaluate(element => element.scrollIntoView({ block: 'center' })); await message.hover();
+      const row = message.locator('.message-actions');
+      await row.getByRole('button', { name: /^Copy (message|reply)$/ }).waitFor();
+      const m = await row.evaluate(inkRow);
+      await capture(page, `message-actions-${label.replace(/ /g, '-')}-${colorScheme}`, around([await row.boundingBox()], 16));
+      const boxes = [...new Set(m.filter(item => item.box).map(item => item.box))];
+      if (boxes.length !== 1) failures.push(`${label}: buttons differ in size: ${boxes.join(', ')}`);
+      const centres = m.flatMap(item => [item.cy, item.glyphCy]);
+      if (Math.max(...centres) - Math.min(...centres) > 0.5) failures.push(`${label}: not on one centre line: ${centres.join(', ')}`);
+      const gaps = m.slice(1).map((item, i) => +(item.inkLeft - m[i].inkRight).toFixed(1));
+      if (Math.max(...gaps) - Math.min(...gaps) > 1) failures.push(`${label}: uneven ink gaps ${m.map(item => item.name).join(' | ')}: ${gaps.join(', ')}`);
+    }
+    assert.deepEqual(failures, []);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
 test('every icon with a twin in the SVG collection draws the collection paths', async () => {
   const f = await fixture(options('light')), { page } = f;
   try {
