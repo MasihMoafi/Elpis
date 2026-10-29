@@ -48,11 +48,12 @@ export async function createSessionManager({ client, file, now = Date.now }) {
     return turns.get(thread.id).value;
   }
   async function rename(thread) {
+    // A chat with nothing worth a title is read again only once it changes; a failed rename is retried next run.
     if (prompted.get(thread.id) === changed(thread)) return false;
-    prompted.set(thread.id, changed(thread));
     const name = chatName((await client.readPrompts(thread.id)).data);
+    if (name) await client.renameThread(thread.id, { name });
+    prompted.set(thread.id, changed(thread));
     if (!name) return false;
-    await client.renameThread(thread.id, { name });
     state.named[thread.id] = { name, from: thread.name?.trim() || null }; thread.name = name; await save();
     return true;
   }
