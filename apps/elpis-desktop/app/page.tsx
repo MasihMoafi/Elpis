@@ -19,6 +19,7 @@ import { FailedTurnCard, type FailedTurn } from "@/components/failed-turn-card";
 import { ViewBoundary } from "@/components/view-boundary";
 import { Transcript } from "@/components/transcript";
 import { useBookmarks, useChatAttention, usePins } from "@/lib/use-sidebar-state";
+import { useSessionManager } from "@/lib/use-session-manager";
 import { SIDEBAR, useAppearance } from "@/lib/use-appearance";
 import { addGroup, chatSelectionRoots, chatSubtree, deleteGroup, emptyGroups, groupSections, moveChats, placeChat, prioritizeChats, putChatsUnder, readGroups, renameGroup, sidebarParents, sortChats, toggleCollapsed, writeGroups, type ChatGroup, type ChatGroups } from "@/lib/chat-groups";
 import { agentParentId } from "@/lib/agent-runs.mjs";
@@ -318,6 +319,8 @@ export default function Home() {
   const [connected, setConnected] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState("Connecting to Elpis…");
   const [ready, setReady] = useState(false);
+  // The Session Manager never archives a chat that is pinned, bookmarked, in a project, unread, or open in a tab.
+  const scheduleSessionManager = useSessionManager(ready && connected, [...pins, ...bookmarks, ...Object.keys(projectChats), ...attention.unread, ...tabs.tabs.flatMap(tab => tab.threadId ? [tab.threadId] : []), ...(selected ? [selected.id] : [])], setError);
   useEffect(() => {
     if (ready && connected && document.activeElement === document.body) composerRef.current?.focus();
   }, [ready, connected]);
@@ -785,6 +788,7 @@ export default function Home() {
           if (method === "turn/started") { setPlans(prev => prev[params.threadId] && prev[params.threadId].turnId !== params.turn.id ? without(prev, params.threadId) : prev); setRewindActions(prev => without(prev, params.threadId)); }
           if (method === "turn/started" && !completedTurns.current.has(params.turn.id)) { setActiveTurns(prev => ({ ...prev, [params.threadId]: params.turn.id })); setRuntimeNotices(prev => without(prev, params.threadId)); setFailedTurns(prev => without(prev, params.threadId)); patchThread(params.threadId, { status: { type: "active" } }); }
           if (method === "turn/started") setStoppedTurns(prev => without(prev, params.threadId));
+          if (method === "turn/completed") scheduleSessionManager();
           if (method === "turn/completed") {
             turnRevisions.current[params.threadId] = (turnRevisions.current[params.threadId] ?? 0) + 1;
             statusRevisions.current[params.threadId] = (statusRevisions.current[params.threadId] ?? 0) + 1;
@@ -855,7 +859,7 @@ export default function Home() {
       }
     }
     initialize(); return () => { disposed = true; clearTimeout(retryTimer); catalogRequest.current++; events?.close(); };
-  }, [refreshThreads, patchThread, upsertThread, removeThreads, select, liveKeysAfter, clearApprovalDraft, refreshModels, reconcileLiveThread, noteHistoryGap]);
+  }, [refreshThreads, patchThread, upsertThread, removeThreads, select, liveKeysAfter, clearApprovalDraft, refreshModels, reconcileLiveThread, noteHistoryGap, scheduleSessionManager]);
 
   const loadChildren = useCallback(async (id: string, cursor?: string, expand = false) => {
     if (childPaging.current.has(id)) return;
