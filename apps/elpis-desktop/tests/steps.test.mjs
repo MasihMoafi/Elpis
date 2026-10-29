@@ -3,7 +3,7 @@
 // is "verb + what" phrases in the order the work began ("Edited and read app.ts, used rag, ran 2 commands (1 failed)").
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { elapsed, stepDuration, stepLabel, summarize, unwrapShell } from '../lib/steps.ts';
+import { elapsed, foldSummary, stepDuration, stepLabel, summarize, unwrapShell } from '../lib/steps.ts';
 
 const command = (id, extra = {}) => ({ id, type: 'commandExecution', command: `run ${id}`, status: 'completed', exitCode: 0, commandActions: [{ type: 'unknown', command: `run ${id}` }], ...extra });
 const read = (id, path) => command(id, { commandActions: [{ type: 'read', command: `sed ${path}`, name: path.split('/').at(-1), path }] });
@@ -89,4 +89,12 @@ test('a finished step\'s duration is drawn from a tenth of a second: 0.8s, 9.0s,
   assert.equal(stepDuration(62000), '1m 2s');
   assert.equal(stepDuration(undefined), '', 'a step that never reported its time');
   assert.equal(stepDuration(null), '');
+});
+
+test("an untimed fold says what it holds, counted by kind, in the activity rows' words", () => {
+  const said = id => ({ id, type: 'agentMessage', text: 'Working on it.' });
+  assert.equal(foldSummary([said('a'), { id: 'w', type: 'webSearch', query: 'x' }, said('b'), command('c')]), '2 messages, browsed the web, ran a command');
+  assert.equal(foldSummary([command('c'), command('d')]), 'Ran 2 commands');
+  assert.equal(foldSummary([said('a')]), '1 message');
+  assert.equal(foldSummary([said('a'), change('e', ['update', 'src/app.ts'])]), '1 message, edited app.ts');
 });

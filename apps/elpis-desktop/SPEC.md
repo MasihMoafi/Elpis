@@ -381,3 +381,7 @@ Keep this full scope open until each row has current executable evidence. The us
 | C12 | Import existing Claude Code MCPs, including shadcn, without exposing keys or replacing connections; subscription child model selection. | Synthetic import boundary, UI/refusal, actual safe shadcn import and installed model/schema evidence. | MCP import coded; UI/actual import pending. |
 | C13 | Shared web skills carry bounded standard interaction rules; screenshot names are useful. (Finding the prior Codex contribution request was dropped as extra, Masih 27 Oct.) | Read actual rules and rename map. | Reconcile supporting requests. |
 | C14 | Read aloud is reliable with reusable audio/speed or unavailable controls are hidden; realtime Voice and dictation remain separate. | Hidden/zero-read/warm requests and preserved independent voice paths. | Shared fallback coded; fresh-renderer proof pending. |
+
+## Turn reading — 29 October 2026
+
+- A finished turn's fold says "Worked for …" when its times were recorded; otherwise it says what it holds, counted by kind in the activity rows' words: "2 messages, browsed the web, ran a command" (Masih: "I think it's wrong" of "6 previous messages"; `tests/previous-messages.test.cjs`).

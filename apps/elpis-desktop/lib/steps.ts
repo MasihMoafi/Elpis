@@ -269,3 +269,14 @@ export function summaryParts(items: Item[]): SummaryPart[] {
 
 /** "Ran 3 commands, edited 2 files (1 failed)": the group's parts as one line. */
 export const summarize = (items: Item[]) => summaryParts(items).map(part => part.failed > 0 ? `${part.text} (${part.failed} failed)` : part.text).join(", ");
+
+/** What a finished turn's folded work holds when its times are unknown, counted by kind in the activity rows' words:
+ * "2 messages, browsed the web, ran a command" (Masih, 29 Oct, on "6 previous messages" for searches and commands:
+ * "I think it's wrong."). */
+export function foldSummary(items: Item[]): string {
+  const said = (item: Item) => item.type === "agentMessage" || item.type === "exitedReviewMode";
+  const messages = items.filter(said).length, work = items.filter(item => !said(item));
+  if (!messages) return summarize(work);
+  const rest = work.length ? summarize(work) : "";
+  return [countWord(messages, "1 message", "# messages"), rest && rest[0].toLowerCase() + rest.slice(1)].filter(Boolean).join(", ");
+}

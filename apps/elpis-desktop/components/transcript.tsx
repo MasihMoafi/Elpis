@@ -7,7 +7,7 @@ import { WorkingMark } from "@/components/working-mark";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { pruneOf } from "@/lib/smart-prune";
 import type { Entry, Item } from "@/lib/api";
-import { elapsed, reasoningOf, stepLabel, summarize, summaryParts } from "@/lib/steps";
+import { elapsed, foldSummary, reasoningOf, stepLabel, summarize, summaryParts } from "@/lib/steps";
 import { CreatedFiles, ImageThumb, fileKind } from "@/components/file-cards";
 import { Counts } from "@/components/diff-view";
 import { TurnChanges } from "@/components/edit-rows";
@@ -168,8 +168,8 @@ function Turn({ turn, active, defer, observe, onViewChanges, renderItem, mediaOf
   return <section ref={section} className="turn" aria-label="Turn" data-prompt={users.length > 0 ? "" : undefined}>
     {users.map(renderItem)}
     {folded.length > 0 && <details className="worked-for" onToggle={event => { if (event.target === event.currentTarget) setWorkOpen(event.currentTarget.open); }}>
-      {/* Without recorded times, ChatGPT's "41 previous messages" says what the fold holds. */}
-      <DisclosureSummary><span>{turn.entries.some(entry => typeof entry.startedAtMs === "number") ? workedFor(turn.entries) : `${folded.length} previous ${folded.length === 1 ? "message" : "messages"}`}</span></DisclosureSummary>
+      {/* Without recorded times, the fold says what it holds, counted by kind: "2 messages, browsed the web, ran a command". */}
+      <DisclosureSummary><span>{turn.entries.some(entry => typeof entry.startedAtMs === "number") ? workedFor(turn.entries) : foldSummary(folded.map(entry => entry.item))}</span></DisclosureSummary>
       {workOpen && <div className="worked-for-body"><Flow entries={folded} renderItem={renderItem} mediaOf={mediaOf} wrapItem={wrapItem} /></div>}
     </details>}
     <Flow entries={visible} renderItem={renderItem} mediaOf={mediaOf} wrapItem={wrapItem} live={active} />
