@@ -1,10 +1,16 @@
-/* Her chat is part of the pinned Matilda (matilda-companion.tsx places it); it scrolls rather than leave the window. */
-.hud-popover.matilda-mini-popup { position:absolute; z-index:1; padding:8px; overflow:auto; }
-.matilda-mini-chat { min-width:0; font-size:var(--text-small); }
-.matilda-mini-composer { display:flex; align-items:center; gap:6px; min-height:36px; }
+/* Her chat is part of the pinned Matilda (matilda-companion.tsx places it): one column that hugs its messages and box.
+   Only the messages scroll, so it never leaves the window (29 Oct: the whole panel scrolled and left the box floating
+   over empty panel). */
+.hud-popover.matilda-mini-popup { position:absolute; z-index:1; display:flex; flex-direction:column; padding:8px; overflow:hidden; }
+.matilda-mini-chat { display:flex; flex-direction:column; min-width:0; min-height:0; font-size:var(--text-small); }
+.matilda-mini-composer { display:flex; flex:none; align-items:center; gap:6px; min-height:36px; }
 .matilda-mini-composer textarea { min-width:0; min-height:32px; max-height:96px; flex:1; padding:6px 8px; resize:none; border:0; box-shadow:none; background:transparent; }
 .matilda-mini-composer textarea:focus-visible { outline:none; }
-.matilda-mini-messages { display:flex; flex-direction:column; gap:12px; max-height:min(220px, 35vh); overflow:auto; padding:4px 6px 12px; border-bottom:1px solid var(--hairline); overflow-wrap:anywhere; }
+/* Positioned, so the screen-reader labels inside stay inside it instead of stretching the panel. Messages fade at its top
+   and bottom edges, inside the padding, rather than being cut mid-line. */
+.matilda-mini-messages { --fade:12px; position:relative; display:flex; flex-direction:column; gap:12px; min-height:0; max-height:min(220px, 35vh); overflow:auto; overscroll-behavior:contain; padding:var(--fade) 6px; border-bottom:1px solid var(--hairline); overflow-wrap:anywhere;
+  mask-image:linear-gradient(to bottom, transparent, black var(--fade), black calc(100% - var(--fade)), transparent); }
+.matilda-mini-message, .matilda-mini-status, .matilda-mini-error, .matilda-mini-earlier { flex:none; }
 .matilda-mini-message { min-width:0; }
 .matilda-mini-message[data-speaker="you"] { align-self:flex-end; max-width:90%; padding:6px 8px; background:var(--selected); }
 .matilda-mini-message :is(p,ul,ol,pre) { margin-block:4px; }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { SendIcon } from "@/components/elpis-icons";
@@ -79,7 +79,10 @@ export function MatildaMiniChat({ chat }: { chat: ReturnType<typeof useMatildaMi
   const said = chat.conversation.entries.filter(entry => message(entry).trim());
   const before = chat.earlier ? said.filter(entry => chat.earlier!.has(entry.turnId)) : said;
   const entries = chat.showEarlier ? [...before.slice(-6), ...said.filter(entry => !before.includes(entry))] : said.filter(entry => !before.includes(entry));
-  useEffect(() => { if (log.current) log.current.scrollTop = log.current.scrollHeight; }, [chat.conversation.entries]);
+  // The newest message is in view whenever one arrives, grows or the earlier ones open (29 Oct: they opened at the oldest,
+  // her answers below the fold); asking again while she replies changes nothing, so it never moves what he scrolled to.
+  const last = entries.at(-1), newest = last ? `${entries.length}:${last.turnId}:${last.item.id}:${message(last).length}` : "";
+  useLayoutEffect(() => { if (log.current) log.current.scrollTop = log.current.scrollHeight; }, [newest]);
   return <div className="matilda-mini-chat" role="dialog" aria-label="Small chat with Matilda">
     {!chat.showEarlier && before.length > 0 && <Button variant="ghost" size="xs" className="matilda-mini-earlier" onClick={() => chat.setShowEarlier(true)}>Show previous messages</Button>}
     {!!entries.length && <div ref={log} className="matilda-mini-messages" role="log" aria-label="Matilda conversation" aria-live="polite" aria-relevant="additions text">
