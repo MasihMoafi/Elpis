@@ -101,17 +101,27 @@ test('bookmarks restore from the desktop store when the loopback origin changes'
   } finally { await f.close(); }
 });
 
-test('a single prompt has a usable rail tick', async () => {
-  const chat = [['only', 'The only prompt.', 'The only answer.']];
-  const f = await fixture({ chat, routes: { '/api/threads/chat-a/prompts': () => indexOf(chat) } });
+// Masih, 29 Oct: "When there is only one message we don't want this bar." The rail shows from the second prompt.
+test('one prompt shows no rail; two prompts show it, with usable ticks', async () => {
+  const one = [['only', 'The only prompt.', 'The only answer.']], two = [...one, ['next', 'The second prompt.', 'The second answer.']];
+  let chat = one;
+  const f = await fixture({ chat: one, routes: { '/api/threads/chat-a/prompts': () => indexOf(chat) } });
   try {
     await f.open('chat-a');
-    const mark = marksOf(f.page);
-    await mark.waitFor();
-    await mark.hover();
+    await f.page.getByText('The only answer.', { exact: true }).waitFor();
+    await f.page.waitForTimeout(300);
+    assert.equal(await f.page.locator('.prompt-rail').count(), 0, 'one prompt: no rail');
+    assert.equal(await marksOf(f.page).count(), 0);
+    chat = two; f.turns.push(['next', 'The second prompt.', 'The second answer.']);
+    await f.page.reload();
+    await f.open('chat-a');
+    const marks = marksOf(f.page);
+    await marks.nth(1).waitFor();
+    assert.equal(await marks.count(), 2, 'two prompts: two ticks');
+    await marks.nth(1).hover();
+    assert.match(await f.page.locator('.prompt-preview').innerText(), /The second prompt/);
+    await marks.first().hover();
     assert.match(await f.page.locator('.prompt-preview').innerText(), /The only prompt/);
-    await mark.click();
-    assert.equal(await mark.getAttribute('aria-current'), 'true');
   } finally { await f.close(); }
 });
 

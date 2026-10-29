@@ -385,3 +385,4 @@ Keep this full scope open until each row has current executable evidence. The us
 ## Turn reading — 29 October 2026
 
 - A finished turn's fold says "Worked for …" when its times were recorded; otherwise it says what it holds, counted by kind in the activity rows' words: "2 messages, browsed the web, ran a command" (Masih: "I think it's wrong" of "6 previous messages"; `tests/previous-messages.test.cjs`).
+- The prompt rail shows from the second prompt; a chat with one prompt has none (Masih: "When there is only one message we don't want this bar."; `tests/prompt-rail.test.cjs`).

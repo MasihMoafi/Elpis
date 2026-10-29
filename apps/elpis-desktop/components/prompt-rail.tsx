@@ -203,7 +203,8 @@ export function PromptRail({ scroller, threadId, entries, onLoadEarlier, onNavig
   const reply = preview && indexedPrompts.find(prompt => prompt.turnId === preview.turnId)?.reply;
   const previewUnavailable = indexState?.threadId === threadId && indexState.status !== "loading";
   const activeIndex = hovered ? prompts.findIndex(prompt => prompt.turnId === hovered.turnId) : -1;
-  if (!prompts.length) return null;
+  // One prompt needs no navigation (Masih, 29 Oct: "When there is only one message we don't want this bar.").
+  if (prompts.length < 2) return null;
 
   const select = ({ turnId, itemId }: Prompt) => {
     if (threadId) setTarget({ threadId, turnId, itemId });
