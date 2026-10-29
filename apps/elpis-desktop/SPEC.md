@@ -344,7 +344,7 @@ Empty Files uses a compact tree width independent of the last browser/document w
 
 ## Focused visual corrections — 27 October 2026
 
-Right-panel paths and diff text wrap within their pane, preserving text and accessible actions. Shared diff rows keep line numbers aligned. Stop uses the composer’s hollow bevelled icon geometry. The live Working row sits 8px lower on the shared alignment grid without changing the composer or overall turn spacing. Verify light/dark screenshots, narrow controls and stop behavior; use only the affected owner checks before the standard install.
+Right-panel paths and diff text wrap within their pane, preserving text and accessible actions. Shared diff rows keep line numbers aligned. Stop is a solid bevelled square drawn to sit with the collection’s send icon. The composer’s actions (voice, mic, Stop, Send and its options) share one 32px box, one 18px glyph and one centre line, and the gaps the eye sees between them are even (29 Oct). The live Working row sits 6px above the composer (29 Oct: “this is too far away from the chatbox”). Every icon with a twin in Masih’s SVG collection (`vector-collection/review/assets/projects/elpis/interface`) draws its paths and viewBox; the context ring is the collection’s segmented gauge, filled by the share in use (`tests/composer-icons.test.cjs`). Verify light/dark screenshots, narrow controls and stop behavior; use only the affected owner checks before the standard install.
 
 The shared Load earlier messages control sits on its own row with a 24px gap before the transcript. Retain pagination, retry and scroll-position behavior; check both themes against the supplied spacing reference.
 

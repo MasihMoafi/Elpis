@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, type ReactElement, type ReactNode } from "react";
 import { Check, GitBranch, Laptop, X } from "lucide-react";
-import { FolderIcon, PlusIcon } from "@/components/elpis-icons";
+import { BranchIcon, FolderIcon, PlusIcon } from "@/components/elpis-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { OptionSelect } from "@/components/ui/option-select";
@@ -144,7 +144,7 @@ export function EnvironmentMenu({ folder, disabled, worktree, onWorktree }: { fo
     <DropdownMenuTrigger data-slot="composer-chip" className="composer-chip project-chip" aria-label="Where this chat works" title={worktree ? `A new worktree of ${folder}` : folder ?? DEFAULT_FOLDER} disabled={disabled}><Icon size={13} aria-hidden="true" /><span>{worktree ? "Worktree" : "Local"}</span></DropdownMenuTrigger>
     <DropdownMenuContent align="start" className="project-menu w-72">
       <DropdownMenuItem onClick={() => onWorktree(false)}><Laptop aria-hidden="true" /><span className="project-option"><strong>Local</strong><small>{folder ?? DEFAULT_FOLDER}</small></span>{!worktree && <Check className="ml-auto" aria-label="Current" />}</DropdownMenuItem>
-      <DropdownMenuItem disabled={repository !== true} onClick={() => onWorktree(true)}><GitBranch aria-hidden="true" /><span className="project-option"><strong>Worktree</strong><small>{repository === false ? "Needs a Git repository with a commit" : "Own worktree, new branch"}</small></span>{worktree && <Check className="ml-auto" aria-label="Current" />}</DropdownMenuItem>
+      <DropdownMenuItem disabled={repository !== true} onClick={() => onWorktree(true)}><BranchIcon aria-hidden="true" /><span className="project-option"><strong>Worktree</strong><small>{repository === false ? "Needs a Git repository with a commit" : "Own worktree, new branch"}</small></span>{worktree && <Check className="ml-auto" aria-label="Current" />}</DropdownMenuItem>
     </DropdownMenuContent>
   </DropdownMenu>;
 }

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Copy, GitBranch } from "lucide-react";
+import { Copy } from "lucide-react";
+import { BranchIcon } from "@/components/elpis-icons";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { api } from "@/lib/api";
 
@@ -18,7 +19,7 @@ export function BranchChip({ threadId, running, onNotice }: { threadId: string; 
   if (!branch) return null;
   const copy = () => navigator.clipboard.writeText(branch).then(() => onNotice("Branch name copied to clipboard."), () => onNotice("Could not copy: the clipboard is unavailable."));
   return <DropdownMenu>
-    <DropdownMenuTrigger className="composer-chip project-chip branch-chip" aria-label={`Branch ${branch}`} title={branch}><GitBranch size={13} aria-hidden="true" /><span>{branch}</span></DropdownMenuTrigger>
+    <DropdownMenuTrigger className="composer-chip project-chip branch-chip" aria-label={`Branch ${branch}`} title={branch}><BranchIcon size={13} aria-hidden="true" /><span>{branch}</span></DropdownMenuTrigger>
     <DropdownMenuContent align="start" className="w-56">
       <DropdownMenuItem onClick={() => void copy()}><Copy aria-hidden="true" />Copy branch name</DropdownMenuItem>
     </DropdownMenuContent>

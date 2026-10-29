@@ -4,8 +4,8 @@ import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import "@xyflow/react/dist/style.css";
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { Background, BackgroundVariant, BaseEdge, Controls, Handle, MarkerType, MiniMap, Position, ReactFlow, ReactFlowProvider, applyEdgeChanges, applyNodeChanges, getBezierPath, useReactFlow, useStoreApi, type Edge, type EdgeProps, type EdgeChange, type FinalConnectionState, type Node, type NodeChange, type NodeProps, type XYPosition } from "@xyflow/react";
-import { Check, ChevronRight, Copy, ExternalLink, FileText, FolderOpen, ListOrdered, Pencil, Play, Plus, StickyNote, Trash2, X } from "lucide-react";
-import { AgentsIcon, StopIcon } from "@/components/elpis-icons";
+import { Check, ChevronRight, Copy, ExternalLink, FileText, ListOrdered, Pencil, Play, StickyNote, Trash2, X } from "lucide-react";
+import { AgentsIcon, FolderIcon, PlusIcon, StopIcon } from "@/components/elpis-icons";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MenuRow } from "@/components/ui/menu-row";
@@ -84,8 +84,8 @@ function AgentNode({ id, data }: NodeProps<Node<AgentNodeData>>) {
     <span className="agent-node-mark" role="img" data-check={check} aria-label={CHECK_LABEL[check]} title={CHECK_LABEL[check]}>{check === "succeeded" ? <Check size={12} /> : check === "failed" || check === "blocked" ? <X size={12} /> : null}</span>
     <Handle type="source" position={Position.Right} title="Add agents that wait for this one" onClick={event => data.onHandle?.(id, "source", event)} />
     {/* Both quick-create buttons add one successor linked only from this agent. */}
-    <Button variant="outline" size="icon-xs" className="agent-node-plus nodrag" data-side="right" aria-label={`Add the next agent after ${data.title || "this one"}`} title="Add the next agent: it waits for this one" onClick={event => { event.stopPropagation(); data.onQuick?.(id); }}><Plus /></Button>
-    <Button variant="outline" size="icon-xs" className="agent-node-plus nodrag" data-side="bottom" aria-label={`Add an agent after ${data.title || "this one"}`} title="Add an agent after this one, connected only from this one" onClick={event => { event.stopPropagation(); data.onQuick?.(id); }}><Plus /></Button>
+    <Button variant="outline" size="icon-xs" className="agent-node-plus nodrag" data-side="right" aria-label={`Add the next agent after ${data.title || "this one"}`} title="Add the next agent: it waits for this one" onClick={event => { event.stopPropagation(); data.onQuick?.(id); }}><PlusIcon /></Button>
+    <Button variant="outline" size="icon-xs" className="agent-node-plus nodrag" data-side="bottom" aria-label={`Add an agent after ${data.title || "this one"}`} title="Add an agent after this one, connected only from this one" onClick={event => { event.stopPropagation(); data.onQuick?.(id); }}><PlusIcon /></Button>
   </div>;
 }
 
@@ -1577,7 +1577,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
         }}>{ENTRY_PATTERNS.map(pattern => <option key={pattern.id} value={pattern.id}>{pattern.label}</option>)}
           {graph.planningPattern && graph.planningPattern !== "auto" && !ENTRY_PATTERNS.some(pattern => pattern.id === graph.planningPattern) && <option value={graph.planningPattern}>{TEMPLATES.find(pattern => pattern.id === graph.planningPattern)?.name ?? "Custom pattern"}</option>}
           <option value="more">More patterns…</option></OptionSelect>
-        {chosenWorkflow && <Button type="button" variant="outline" size="sm" disabled={!ready || Boolean(planning || starting)} title={cwd ? `The folder of ${chosenWorkflow.what}: ${cwd}` : undefined} onClick={() => void chooseFolderFor(chosenWorkflow)}><FolderOpen size={14} />Choose folder</Button>}
+        {chosenWorkflow && <Button type="button" variant="outline" size="sm" disabled={!ready || Boolean(planning || starting)} title={cwd ? `The folder of ${chosenWorkflow.what}: ${cwd}` : undefined} onClick={() => void chooseFolderFor(chosenWorkflow)}><FolderIcon size={14} />Choose folder</Button>}
         {chosenWorkflow?.id === "translate" && <OptionSelect aria-label="Language" value={languageOf(graph.language).id} disabled={Boolean(planning || starting)} onChange={event => {
           // The language stays with the board; a translation team already built is rebuilt for the new one.
           const language = languageOf(event.target.value); setGraph(current => ({ ...current, language: language.id }));

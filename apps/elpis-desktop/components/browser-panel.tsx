@@ -1,8 +1,8 @@
 "use client";
 
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ExternalLink, ArrowLeft, ArrowRight, ChevronDown, ChevronUp, Ellipsis, RefreshCw, PenLine, SquareDashedMousePointer, CircleAlert, X, Copy, Link, Pencil, Plus, Pin, Volume2, VolumeX } from "lucide-react";
-import { StopIcon } from "@/components/elpis-icons";
+import { ExternalLink, ArrowLeft, ArrowRight, ChevronDown, ChevronUp, Ellipsis, RefreshCw, PenLine, SquareDashedMousePointer, CircleAlert, X, Copy, Link, Pencil, Pin, Volume2, VolumeX } from "lucide-react";
+import { PinIcon, PlusIcon, StopIcon } from "@/components/elpis-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -59,8 +59,8 @@ export function browserTabActions(browser: Browser, tab: BrowserTab, options: {
     for (const page of selected) if (!await browser.command(action, { id: page.id, ...(value === undefined ? {} : { value }) })) break;
   };
   return [
-    ...(page && pin ? [{ id: "pin", label: pinned ? "Unpin from sidebar" : "Pin to sidebar", icon: <Pin size={14} />, run: pin }] : []),
-    { id: "new", label: "New tab to the right", icon: <Plus size={14} />, separated: !!pin && page, run: () => void browser.command("new", { id: tab.id }) },
+    ...(page && pin ? [{ id: "pin", label: pinned ? "Unpin from sidebar" : "Pin to sidebar", icon: <PinIcon size={14} />, run: pin }] : []),
+    { id: "new", label: "New tab to the right", icon: <PlusIcon size={14} />, separated: !!pin && page, run: () => void browser.command("new", { id: tab.id }) },
     { id: "reload", label: many ? `Reload ${selected.length} tabs` : "Reload", icon: <RefreshCw size={14} />, run: () => void batch("reload") },
     { id: "duplicate", label: many ? `Duplicate ${selected.length} tabs` : "Duplicate", icon: <Copy size={14} />, run: () => void batch("duplicate") },
     ...(page ? [{ id: "copy", label: "Copy URL", icon: <Link size={14} />, run: () => void browser.command("copyUrl", { id: tab.id }) },

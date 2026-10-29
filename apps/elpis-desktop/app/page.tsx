@@ -4,8 +4,8 @@ import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import dynamic from "next/dynamic";
 import { flushSync } from "react-dom";
 import { cloneElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { AgentsIcon, BrowserIcon, ChatIcon, ExperimentLabIcon, FolderIcon, LoveSpotIcon, NewChatIcon, PinIcon, PlusIcon, SendIcon, StopIcon, WorkflowsIcon } from "@/components/elpis-icons";
-import { Archive, ArrowDown, Blocks, Bookmark, ChevronRight, EyeOff, Layers, PanelLeft, PanelRightClose, PanelRightOpen, Pin, RefreshCw, Moon, Search, Settings as SettingsIcon, Sun, X, Zap } from "lucide-react";
+import { AgentsIcon, BrowserIcon, ChatIcon, ExperimentLabIcon, FolderIcon, LoveSpotIcon, NewChatIcon, PinIcon, PlusIcon, SendIcon, SettingsIcon, StopIcon, ThemeIcon, WorkflowsIcon } from "@/components/elpis-icons";
+import { Archive, ArrowDown, Blocks, Bookmark, ChevronRight, EyeOff, Layers, PanelLeft, PanelRightClose, PanelRightOpen, Pin, RefreshCw, Search, X, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ReorderItem, useReorder } from "@/components/reorder";
 import { OptionSelect } from "@/components/ui/option-select";
@@ -2364,7 +2364,7 @@ export default function Home() {
       <div className="sidebar-status">
         <span className="status-line"><i className={`status-dot${connected ? " connected" : ""}`} />{connected ? "Local workspace" : "Disconnected"}</span>
         <span className="flex items-center gap-1">
-          <Button variant="ghost" size="icon-xs" aria-label={dark ? "Use light theme" : "Use dark theme"} title={dark ? "Use light theme" : "Use dark theme"} onClick={() => setTheme(dark ? "light" : "dark")}>{dark ? <Sun size={14} /> : <Moon size={14} />}</Button>
+          <Button variant="ghost" size="icon-xs" aria-label={dark ? "Use light theme" : "Use dark theme"} title={dark ? "Use light theme" : "Use dark theme"} onClick={() => setTheme(dark ? "light" : "dark")}><ThemeIcon size={14} /></Button>
           <Button variant="ghost" size="icon-xs" aria-label="Settings" title="Settings (Ctrl+,)" onClick={() => openSettings("general")}><SettingsIcon size={14} /></Button>
         </span>
       </div>

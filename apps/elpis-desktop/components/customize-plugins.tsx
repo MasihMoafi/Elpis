@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Plus, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
+import { PlusIcon } from "@/components/elpis-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -33,7 +34,7 @@ export function CustomizePlugins({ cwd, plugins, loaded, config, onChange, onRel
   };
   const writable = !!config.version && config.write?.available === true;
   return <>
-    <div className="customize-title"><h2>Your plugins</h2><Button size="sm" aria-expanded={browse} onClick={() => setBrowse(value => !value)}><Plus />Add plugins</Button></div>
+    <div className="customize-title"><h2>Your plugins</h2><Button size="sm" aria-expanded={browse} onClick={() => setBrowse(value => !value)}><PlusIcon />Add plugins</Button></div>
     <p className="customize-note">Plugins bundle skills, tools and connectors. Add a Codex or Claude Code marketplace to find more.</p>
     {notice && <SettingsNotice>{notice}</SettingsNotice>}
     {pending && <SettingsNotice>Saving plugin changes…</SettingsNotice>}

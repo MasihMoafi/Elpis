@@ -1,13 +1,14 @@
 "use client";
 import { useState } from "react";
 import { Workflow } from "lucide-react";
+import { WorkflowsIcon } from "@/components/elpis-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { WORKFLOW_COLOURS, workflowNameProblem, type WorkflowCatalog, type WorkflowIdentity } from "@/lib/workflow-identity";
 
 export function WorkflowMark({ identity, decorative = false, neutral = false }: { identity: WorkflowIdentity; decorative?: boolean; neutral?: boolean }) {
-  if (neutral) return <Workflow className="shrink-0 text-muted-foreground" size={14} role={decorative ? undefined : "img"} aria-hidden={decorative || undefined} aria-label={decorative ? undefined : "Workflow"} />;
+  if (neutral) return <WorkflowsIcon className="shrink-0 text-muted-foreground" size={14} role={decorative ? undefined : "img"} aria-hidden={decorative || undefined} aria-label={decorative ? undefined : "Workflow"} />;
   return <span className="thread-dot workflow-mark" data-colour={identity.colour} role={decorative ? undefined : "img"} aria-hidden={decorative || undefined} aria-label={decorative ? undefined : `Workflow colour: ${identity.colour}`} title={identity.name} />;
 }
 export function WorkflowColourMenu({ identity, catalog, label = "Workflow colour", onError }: { identity: WorkflowIdentity; catalog: WorkflowCatalog; label?: string; onError: (error: string) => void }) {

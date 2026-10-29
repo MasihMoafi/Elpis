@@ -3,7 +3,8 @@
 import "@/lib/love-spot-assets";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronDown, Heart, Info, Plus, Trash2, Volume2, VolumeX, X } from "lucide-react";
+import { Check, ChevronDown, Heart, Info, Trash2, Volume2, VolumeX, X } from "lucide-react";
+import { PlusIcon } from "@/components/elpis-icons";
 import { CaptureUpdateAction, Excalidraw, MainMenu, newElementWith, convertToExcalidrawElements, exportToBlob, serializeAsJSON, viewportCoordsToSceneCoords } from "@excalidraw/excalidraw";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { AppState, BinaryFiles, ExcalidrawImperativeAPI, ExcalidrawInitialDataState, PointerDownState } from "@excalidraw/excalidraw/types";
@@ -478,7 +479,7 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
             {pagesError && <DropdownMenuItem disabled className="whitespace-normal text-muted-foreground">{pagesError}</DropdownMenuItem>}
           </DropdownMenuContent>
         </DropdownMenu>
-        <Button variant="outline" size="sm" disabled={!editor || pageBusy} onClick={() => void changePage("new")}><Plus aria-hidden="true" />New page</Button>
+        <Button variant="outline" size="sm" disabled={!editor || pageBusy} onClick={() => void changePage("new")}><PlusIcon aria-hidden="true" />New page</Button>
         <Button variant="ghost" size="sm" aria-label="Delete current page" title="Delete current page" disabled={!editor || pageBusy || !page} onClick={() => setPageToDelete(page?.name)}><span className="inline-flex flex-row items-center gap-1"><Trash2 aria-hidden="true" />Delete</span></Button>
         {renaming && <form className="flex items-center gap-1" onSubmit={event => { event.preventDefault(); void changePage("rename", pageName.trim()); }}>
           <Input autoFocus aria-label="Page name" value={pageName} maxLength={100} className="max-w-48" onChange={event => setPageName(event.target.value)} onKeyDown={event => { if (event.key === "Escape") setRenaming(false); }} />

@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, type ElementType, type RefObject } from "react";
-import { AtSign, Check, ChevronDown, SquareSlash, Terminal, X, Zap } from "lucide-react";
-import { AskIcon, AttachIcon, AutoApproveIcon, BypassIcon, FullAccessIcon, PlanIcon, PlusIcon } from "@/components/elpis-icons";
+import { AtSign, Check, ChevronDown, SquareSlash, X, Zap } from "lucide-react";
+import { AskIcon, AttachIcon, AutoApproveIcon, BypassIcon, FullAccessIcon, PlanIcon, PlusIcon, TerminalIcon } from "@/components/elpis-icons";
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -89,7 +89,7 @@ export function PlusMenu({ disabled, attachDisabled, slashDisabled, plan, return
       {item(AtSign, "Mention", "A file in this project or another chat", { onClick: () => { afterClose.current = onMention; } })}
       {item(SquareSlash, "Slash commands", slashDisabled ? "Clear the message box first" : "Run a command such as /model or /review", { disabled: slashDisabled, onClick: () => { afterClose.current = onSlash; } })}
       {item(PlanIcon, "Plan mode", plan ? "Turn plan mode off" : "Turn plan mode on", { onClick: () => onPlan(!plan) }, plan)}
-      {item(Terminal, "Run as a shell command", "Run a command directly in this project's shell", { onClick: () => { afterClose.current = onShell; } })}
+      {item(TerminalIcon, "Run as a shell command", "Run a command directly in this project's shell", { onClick: () => { afterClose.current = onShell; } })}
       {compact && fast && item(Zap, "Fast mode", fast.on ? "Fast is on" : "Fast is off", { disabled: fast.disabled, onClick: fast.onChange }, fast.on)}
 
 

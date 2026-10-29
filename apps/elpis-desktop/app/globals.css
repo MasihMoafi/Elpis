@@ -733,10 +733,10 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .context-ring { display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; padding:0; border:1px solid transparent; background:transparent; cursor:pointer; }
 .context-ring:hover, .context-ring[data-popup-open] { background:var(--hover); border-color:var(--hairline); }
 .context-ring:focus-visible { outline:1.5px solid var(--ring); outline-offset:1px; }
-/* Claude's context ring: a thin ring filling clockwise, olive (the context colour), amber from 75% and red from 90%. */
-.context-ring-icon circle { fill:none; stroke-width:2; }
-.context-ring-icon .context-ring-track { stroke:var(--border); }
-.context-ring-icon .context-ring-fill { stroke:var(--context); stroke-linecap:round; transition:stroke-dashoffset .3s; }
+/* The context gauge (icon collection): segments fill clockwise, olive (the context colour), amber from 75% and red from 90%. */
+.context-ring-icon .context-ring-track { fill:var(--border); }
+.context-ring-icon .context-ring-fill { fill:none; stroke:var(--context); stroke-width:24; transition:stroke-dashoffset .3s; }
+.context-ring-icon .context-ring-core { fill:var(--muted-foreground); }
 .context-ring-icon[data-level="warning"] .context-ring-fill { stroke:var(--warning); }
 .context-ring-icon[data-level="critical"] .context-ring-fill { stroke:var(--destructive); }
 /* Claude's tooltip on its icon buttons: the text, and a quieter line under it. */

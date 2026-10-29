@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip } from "@/components/ui/tooltip";
 import { ContextFiles, readContext } from "@/components/context-files";
+import { CONTEXT_GAUGE } from "@/components/elpis-icons";
 import { api } from "@/lib/api";
 import { usePreferences } from "@/lib/preferences";
 
@@ -54,12 +55,15 @@ function describe(ledger: Ledger | null) {
   return { used, capacity, summary, pct: used !== null && capacity ? Math.min(100, used / capacity * 100) : 0, tooltip: summary === null ? "Context window" : `Context ${summary}` };
 }
 
-/** Claude's context ring: a thin ring that fills clockwise, amber from 75% and red from 90%. */
+/** The context gauge from the icon collection (CONTEXT_GAUGE): an arc as wide as its ring fills clockwise from the top with
+ * the share in use, showing only through the segments; amber from 75% and red from 90%, around the hexagon core. */
 export function ContextRingIcon({ pct, size = 16 }: { pct: number; size?: number }) {
-  const radius = (size - 2) / 2, circumference = 2 * Math.PI * radius, middle = size / 2;
-  return <svg className="context-ring-icon" data-level={levelOf(pct)} width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
-    <circle cx={middle} cy={middle} r={radius} className="context-ring-track" />
-    {pct > 0 && <circle cx={middle} cy={middle} r={radius} className="context-ring-fill" strokeDasharray={circumference} strokeDashoffset={circumference * (1 - pct / 100)} transform={`rotate(-90 ${middle} ${middle})`} />}
+  const segments = `${useId()}-segments`, middle = CONTEXT_GAUGE.centre, radius = 78, circumference = 2 * Math.PI * radius;
+  return <svg className="context-ring-icon" data-level={levelOf(pct)} width={size} height={size} viewBox={CONTEXT_GAUGE.viewBox} aria-hidden="true">
+    <clipPath id={segments}>{CONTEXT_GAUGE.ring.map(d => <path key={d} d={d} />)}</clipPath>
+    <g className="context-ring-track">{CONTEXT_GAUGE.ring.map(d => <path key={d} d={d} />)}</g>
+    {pct > 0 && <circle cx={middle} cy={middle} r={radius} className="context-ring-fill" clipPath={`url(#${segments})`} strokeDasharray={circumference} strokeDashoffset={circumference * (1 - pct / 100)} transform={`rotate(-90 ${middle} ${middle})`} />}
+    <path className="context-ring-core" d={CONTEXT_GAUGE.core} />
   </svg>;
 }
 

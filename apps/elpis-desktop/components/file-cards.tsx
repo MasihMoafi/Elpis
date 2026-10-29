@@ -2,7 +2,8 @@
 
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { FileCode, FileImage, FileSpreadsheet, FileText, Folder, Presentation, Workflow, File } from "lucide-react";
+import { FileCode, FileImage, FileSpreadsheet, FileText, Presentation, Workflow, File } from "lucide-react";
+import { FolderIcon } from "@/components/elpis-icons";
 import { MoreMenu } from "@/components/action-menu";
 import { useFileActions } from "@/components/file-actions";
 import { openRef, useHost } from "@/lib/files-pane";
@@ -58,7 +59,7 @@ function CreatedFile({ path, onError }: { path: string; onError: (message: strin
     <span className="file-card-text"><span className="file-card-name">{title}</span><span className="file-card-type">{ext ? `${kind} · ${ext.toUpperCase()}` : kind}</span></span>
     <span className="file-card-actions">
       <Button variant="outline" size="sm" aria-label={`Open ${name}`} onClick={open}>Open</Button>
-      <Button variant="ghost" size="icon-sm" aria-label={`Show ${name} in folder`} title="Show in folder" onClick={() => { onError(""); void run(window.elpisDesktop?.openFolder, folder, onError); }}><Folder size={16} /></Button>
+      <Button variant="ghost" size="icon-sm" aria-label={`Show ${name} in folder`} title="Show in folder" onClick={() => { onError(""); void run(window.elpisDesktop?.openFolder, folder, onError); }}><FolderIcon size={16} /></Button>
       <MoreMenu actions={actions} label={`More actions for ${name}`} title="More file actions" />
     </span>
   </li>;

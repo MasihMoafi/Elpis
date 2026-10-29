@@ -2,7 +2,8 @@
 
 import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FolderOpen, Plus, RefreshCw, Settings2, Trash2 } from "lucide-react";
+import { RefreshCw, Trash2 } from "lucide-react";
+import { FolderIcon, PlusIcon, SettingsIcon } from "@/components/elpis-icons";
 import { FileRefLink } from "@/components/file-ref";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -130,8 +131,8 @@ export function CustomizeView({ cwd, onCreateSkill, onOpenSettings, onConnectGit
     {!data && !error && <SettingsNotice>Reading what Elpis has…</SettingsNotice>}
     {data && section === "skills" && <section aria-label="Your skills">
       <div className="customize-title"><h2>Your skills</h2><span className="customize-actions">
-        {own && <Button variant="ghost" size="sm" onClick={() => void openFolder(folderOf(folderOf(own.path)))}><FolderOpen />Skills folder</Button>}
-        <Button size="sm" onClick={onCreateSkill}><Plus />Create skill</Button>
+        {own && <Button variant="ghost" size="sm" onClick={() => void openFolder(folderOf(folderOf(own.path)))}><FolderIcon />Skills folder</Button>}
+        <Button size="sm" onClick={onCreateSkill}><PlusIcon />Create skill</Button>
       </span></div>
       <p className="customize-note">Skills teach Elpis a way of working. It reads one when a task calls for it, or when you type <code>$</code> and its name.</p>
       {data.skills.error && <SettingsNotice tone="alert">{data.skills.error}</SettingsNotice>}
@@ -153,7 +154,7 @@ export function CustomizeView({ cwd, onCreateSkill, onOpenSettings, onConnectGit
       <CustomizePlugins cwd={cwd} plugins={plugins} loaded={Array.isArray(data.plugins.data)} config={data.plugins} onChange={changePlugin} onReload={load} />
     </section>}
     {data && section === "connectors" && <section aria-label="Your connectors">
-      <div className="customize-title"><h2>Your connectors</h2><span className="customize-actions"><Button size="icon-sm" variant="ghost" aria-label="Refresh connectors" onClick={() => void load()}><RefreshCw /></Button><Button size="sm" variant="outline" onClick={onOpenSettings}><Settings2 />Manage connectors</Button></span></div>
+      <div className="customize-title"><h2>Your connectors</h2><span className="customize-actions"><Button size="icon-sm" variant="ghost" aria-label="Refresh connectors" onClick={() => void load()}><RefreshCw /></Button><Button size="sm" variant="outline" onClick={onOpenSettings}><SettingsIcon />Manage connectors</Button></span></div>
       <p className="customize-note">Connectors give Elpis access to other apps and services.</p>
       {data.connectors.error && <SettingsNotice tone="alert">{data.connectors.error}</SettingsNotice>}
       {!data.connectors.error && !connectors.length && <SettingsEmpty title="No connectors yet">Add an MCP server under Manage connectors.</SettingsEmpty>}

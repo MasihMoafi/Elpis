@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { BROWSER_COMMENTS } from "@/lib/browser-notes";
 import { Eye, EyeOff, Send, SquareDashedMousePointer, Trash2, X } from "lucide-react";
+import { SendIcon } from "@/components/elpis-icons";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -107,7 +108,7 @@ export function AnnotationDock({ browser, onAttach, imagesAllowed }: { browser: 
         ? <Button type="button" variant="ghost" size="icon-sm" aria-label="Exit annotation mode" title="Exit annotation mode (comments are kept)" onClick={() => void command("annotate", { value: false })}><X size={15} /></Button>
         : <Button type="button" variant="ghost" size="sm" onClick={() => void command("annotate", { value: true })}>Continue</Button>}
       <Button type="button" variant="outline" size="sm" disabled={!count || busy || !onAttach} title="Add the comments to your message without sending it" onClick={() => void send(false)}>Add to message</Button>
-      <Button type="button" size="sm" disabled={!count || busy || !onAttach} aria-label={count ? `Send ${count} pending ${count === 1 ? "annotation" : "annotations"}` : "Send"} onClick={() => void send(true)}><Send size={14} />Send{count ? ` ${count}` : ""}</Button>
+      <Button type="button" size="sm" disabled={!count || busy || !onAttach} aria-label={count ? `Send ${count} pending ${count === 1 ? "annotation" : "annotations"}` : "Send"} onClick={() => void send(true)}><SendIcon size={14} />Send{count ? ` ${count}` : ""}</Button>
     </div>
     <AlertDialog open={discarding} onOpenChange={setDiscarding}>
       <AlertDialogContent>

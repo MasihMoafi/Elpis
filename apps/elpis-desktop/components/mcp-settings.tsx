@@ -2,7 +2,8 @@
 
 import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { useCallback, useEffect, useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
+import { PlusIcon } from "@/components/elpis-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -115,7 +116,7 @@ export function McpSettings({ onOpenVoice }: { onOpenVoice?: () => void }) {
     try { await save(draft.name.trim(), { action: "add", command: draft.command.trim(), args: draft.args.split("\n").map(arg => arg.trim()).filter(Boolean) }); setAdding(false); setDraft({ name: "", command: "", args: "" }); } catch {}
   }
   return <div aria-label="MCP servers">
-    <SettingsHeader title="MCP servers" description="Server choices apply to new chats; stored API keys stay on this device." action={<Button variant="outline" onClick={() => setAdding(true)} disabled={!data?.write?.available}><Plus />Add MCP server</Button>} />
+    <SettingsHeader title="MCP servers" description="Server choices apply to new chats; stored API keys stay on this device." action={<Button variant="outline" onClick={() => setAdding(true)} disabled={!data?.write?.available}><PlusIcon />Add MCP server</Button>} />
     <div className="settings-stack">
     {error && <SettingsNotice tone="alert">{error}</SettingsNotice>}
     {notice && <SettingsNotice>{notice}</SettingsNotice>}
