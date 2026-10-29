@@ -64,7 +64,7 @@ for (const colorScheme of ['light', 'dark']) {
     } finally { await f.close(); }
   });
 
-  test(`the live Working row sits 13 px below its original place over the composer (${colorScheme})`, async () => {
+  test(`the live Working row sits 11 px below its original place over the composer (${colorScheme})`, async () => {
     const f = await fixture(options(colorScheme, { running: true, height: 640 })), { page } = f;
     try {
       await f.open('chat-a');
@@ -75,7 +75,7 @@ for (const colorScheme of ['light', 'dark']) {
       const [w, c] = [await working.boundingBox(), await page.locator('form.composer').boundingBox()];
       const gap = c.y - (w.y + w.height);
       await capture(page, `working-row-${colorScheme}`, around([w, c], 16));
-      assert.ok(gap >= 9 && gap <= 11, `Working row to composer: ${gap}px (wanted 10 px: the original 23 less 13)`);
+      assert.ok(gap >= 11 && gap <= 13, `Working row to composer: ${gap}px (wanted 12 px: the original 23 less 11)`);
       assert.deepEqual(f.errors, []);
     } finally { await f.close(); }
   });
