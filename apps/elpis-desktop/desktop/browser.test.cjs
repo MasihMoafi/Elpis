@@ -2,6 +2,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const { createBrowser } = require('./browser.cjs');
+// createBrowser runs inside Electron, which names its Chromium version.
+process.versions.chrome ??= '152.0.7977.130';
 
 test('a destroyed sign-in popup closes safely after Electron detaches its webContents', async () => {
   const { EventEmitter } = require('node:events');
@@ -11,7 +13,7 @@ test('a destroyed sign-in popup closes safely after Electron detaches its webCon
   let view;
   class View { constructor() { this.webContents = wc; view = this; } setVisible() {} setBounds() {} }
   const host = Object.assign(new EventEmitter(), { getContentBounds: () => ({ width: 1320, height: 900 }), contentView: { addChildView() {}, removeChildView() {} }, webContents: Object.assign(new EventEmitter(), { isDestroyed: () => false, send() {}, focus() {} }), isDestroyed: () => false, focus() {} });
-  const browser = createBrowser({ host, WebContentsView: View, session: { fromPartition: () => ({ setPermissionRequestHandler() {}, setPermissionCheckHandler() {} }) }, origin: 'http://127.0.0.1:4000', ipcMain: { handle() {}, on() {}, removeHandler() {}, removeListener() {} } });
+  const browser = createBrowser({ host, WebContentsView: View, session: { fromPartition: () => ({ setPermissionRequestHandler() {}, setPermissionCheckHandler() {}, setUserAgent() {}, webRequest: { onHeadersReceived() {}, onBeforeSendHeaders() {} } }) }, origin: 'http://127.0.0.1:4000', ipcMain: { handle() {}, on() {}, removeHandler() {}, removeListener() {} } });
   browser.open('https://claude.ai');
   view.webContents = undefined;
   assert.doesNotThrow(() => wc.emit('destroyed'));
@@ -40,7 +42,7 @@ test('stopping a navigation does not turn its rejected load promise into a page 
       stop: () => { this.reject(Object.assign(Error("(-3) loading 'https://example.com/'"), { errno: -3 })); page.emit('did-stop-loading'); } }); }
     setVisible() {} setBounds() {}
   }
-  const browser = createBrowser({ host, origin, WebContentsView: View, session: { fromPartition: () => ({ setPermissionRequestHandler() {}, setPermissionCheckHandler() {} }) },
+  const browser = createBrowser({ host, origin, WebContentsView: View, session: { fromPartition: () => ({ setPermissionRequestHandler() {}, setPermissionCheckHandler() {}, setUserAgent() {}, webRequest: { onHeadersReceived() {}, onBeforeSendHeaders() {} } }) },
     ipcMain: { handle: (name, fn) => handlers.set(name, fn), on() {}, removeHandler() {}, removeListener() {} } });
   browser.open('https://example.com');
   handlers.get('elpis:browser')({ sender: root, senderFrame: root.mainFrame }, { action: 'stop' });

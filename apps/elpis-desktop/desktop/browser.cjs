@@ -5,6 +5,7 @@ const {browserUrl,trustedBrowserSender,nativeBounds,loadFailure,pageSecurity,zoo
 const {cleanPick,commentLabel,commentsPrompt}=require('./browser-annotations.cjs');
 const {contextMenuTemplate}=require('./context-menu.cjs');
 const {createBrowserAgent}=require('./browser-agent.cjs');
+const {presentAsChrome,presentPageAsChrome}=require('./browser-identity.cjs');
 
 const PRELOAD=path.join(__dirname,'browser-page-preload.cjs');
 const COMMANDS=['action','id','url','body','text','value'];
@@ -18,6 +19,7 @@ function createBrowser({host,origin,WebContentsView,session,ipcMain,openExternal
   const browserSession=session.fromPartition('persist:elpis-browser');
   browserSession.setPermissionRequestHandler((_contents,_permission,callback)=>callback(false));
   browserSession.setPermissionCheckHandler(()=>false);
+  presentAsChrome(browserSession);
   const active=()=>tabs.get(activeId);
   // The app's page background (its theme token): a tab's page is painted with it, so a blank tab matches the app, not white.
   let background=null;
@@ -79,7 +81,9 @@ function createBrowser({host,origin,WebContentsView,session,ipcMain,openExternal
   function open(url='about:blank',{focus=false,after=null,id=null,restoring=false,agent:owned=false}={}){
     const target=browserUrl(url,origin);if(tabs.size>=20)throw Error('Close a browser tab before opening another (20 tab limit).');
     // Electron focuses a page on every navigation by default; an agent's page loads must never take the person's keyboard.
-    const view=new WebContentsView({webPreferences:{partition:'persist:elpis-browser',preload:PRELOAD,nodeIntegration:false,contextIsolation:true,sandbox:true,webSecurity:true,webviewTag:false,focusOnNavigation:owned!==true}});
+    const view=new WebContentsView({webPreferences:{partition:'persist:elpis-browser',preload:PRELOAD,nodeIntegration:false,contextIsolation:true,sandbox:true,webSecurity:true,webviewTag:false,focusOnNavigation:owned!==true,
+      // A launch with --remote-debugging-port=0 (Playwright, agent-driven instances) marks every page as automated (navigator.webdriver); sign-in pages refuse that.
+      disableBlinkFeatures:'AutomationControlled'}});
     view.setVisible(false);
     // A session can receive agent input before its pane has ever been shown.
     const {width,height}=host.getContentBounds();view.setBounds({x:0,y:0,width,height});
@@ -87,6 +91,7 @@ function createBrowser({host,origin,WebContentsView,session,ipcMain,openExternal
     const tab={id:typeof id==='string'&&/^[A-Za-z0-9_-]{1,200}$/.test(id)&&!tabs.has(id)?id:randomUUID(),url:'about:blank',title:'New tab',customTitle:null,agent:owned===true,loading:false,error:null,failure:null,view,comments:[],draft:null,find:{open:false,text:'',matches:0,active:0,focus:0}};tabs.set(tab.id,tab);
     if(after&&tabs.has(after)){const order=[...tabs.entries()].filter(([id])=>id!==tab.id),at=order.findIndex(([id])=>id===after)+1;order.splice(at,0,[tab.id,tab]);tabs.clear();for(const [id,item] of order)tabs.set(id,item);}
     const wc=view.webContents;tint(tab);
+    presentPageAsChrome(wc);
     agent.observe(tab);
     wc.on('will-attach-webview',event=>event.preventDefault());
     const guard=(event,url)=>{try{browserUrl(url,origin);}catch{event.preventDefault();tab.error='This address cannot be opened in the browser.';emit();}};

@@ -5,6 +5,8 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const { createBrowser } = require('./browser.cjs');
+// createBrowser runs inside Electron, which names its Chromium version.
+process.versions.chrome ??= '152.0.7977.130';
 
 function fixture() {
   const origin = 'http://127.0.0.1:4000', states = [], handlers = new Map(), listeners = new Map(), pages = [], views = [], menus = [], externals = [];
@@ -30,7 +32,7 @@ function fixture() {
   }
   const clipboard = { writeText(text) { clipboard.text = text; }, writeImage(value) { clipboard.image = value; } };
   const Menu = { buildFromTemplate: template => ({ popup() { menus.push(template); } }) };
-  const browserSession = { setPermissionRequestHandler() {}, setPermissionCheckHandler() {}, async clearStorageData(options) { browserSession.cleared = options; }, async clearCache() { browserSession.cacheCleared = true; } };
+  const browserSession = { setPermissionRequestHandler() {}, setPermissionCheckHandler() {}, setUserAgent() {}, webRequest: { onHeadersReceived() {}, onBeforeSendHeaders() {} }, async clearStorageData(options) { browserSession.cleared = options; }, async clearCache() { browserSession.cacheCleared = true; } };
   const browser = createBrowser({ host, origin, WebContentsView: View, session: { fromPartition: () => browserSession }, Menu, clipboard,
     ipcMain: { handle: (name, fn) => handlers.set(name, fn), on: (name, fn) => listeners.set(name, fn), removeHandler() {}, removeListener() {} }, openExternal: url => externals.push(url) });
   const app = { sender: root, senderFrame: root.mainFrame };

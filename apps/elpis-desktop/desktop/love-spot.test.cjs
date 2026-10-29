@@ -106,7 +106,7 @@ function sessionFixture() {
     constructor() {
       super(); this.text = 'First words'; this.saved = ''; this.saves = 0;
       this.webContents = Object.assign(new EventEmitter(), {
-        session: { setPermissionRequestHandler() {}, setPermissionCheckHandler() {} },
+        session: { setPermissionRequestHandler() {}, setPermissionCheckHandler() {}, setUserAgent() {}, webRequest: { onHeadersReceived() {}, onBeforeSendHeaders() {} } },
         setWindowOpenHandler() {},
         executeJavaScript: async () => {
           this.saves++;
