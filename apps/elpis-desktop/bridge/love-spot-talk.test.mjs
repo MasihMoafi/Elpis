@@ -409,3 +409,26 @@ test('one speech queue preserves message order and bounds a backlog while the co
   f.finish('turn-2', 'completed', long); await f.talk.idle();
   assert.equal((await f.store.read()).scene.elements.find(e => e.id === 'love-reply-turn-2').originalText, long.trim());
 });
+
+// 29 Oct, "love-spot, in the chat, is too slow": a chat resends its whole history, so a picture on every turn made each
+// request carry every earlier picture. The picture goes when the drawing changed since she last saw it.
+test('the board picture goes with a message only when the drawing changed since she last saw it', async t => {
+  const f = await fixture(t);
+  const shape = (id, version = 1) => ({ ...note(id, ''), type: 'rectangle', text: undefined, version });
+  const send = async (text, elements, small = false) => {
+    if (elements) await f.store.save({ elements });
+    const { revision } = await f.store.read(); await f.store.picture({ revision, png: PNG });
+    await f.talk.send({ text, model: 'luna', ...(small ? {} : { revision }) });
+    const turn = f.sent.at(-1); f.finish(`turn-${f.sent.length}`); await f.talk.idle();
+    return { image: turn.attachments.some(a => a.type === 'image'), notes: turn.attachments.find(a => a.type === 'text').text };
+  };
+  assert.equal((await send('First', [shape('box'), note('masih', 'Apricot')])).image, true, 'she sees the board once');
+  // Her reply (note and face) and his new words change the board, not the drawing.
+  const again = await send('Second', [shape('box'), note('masih', 'Apricot'), note('masih-2', 'Plum')]);
+  assert.equal(again.image, false); assert.match(again.notes, /Plum/); assert.match(again.notes, /as it was in the last picture/);
+  assert.equal((await send('From the small chat', undefined, true)).image, false, 'the small chat too');
+  assert.equal((await send('Moved', [shape('box', 2), note('masih', 'Apricot')])).image, true, 'a changed shape goes again');
+  const drew = await send('I drew something on the board.', [shape('box', 2), shape('circle'), note('masih', 'Apricot')]);
+  assert.equal(drew.image, true, 'a new drawing goes again'); assert.doesNotMatch(drew.notes, /as it was/);
+  await assert.rejects(f.talk.send({ text: 'Stale', model: 'luna', revision: 'stale' }), /drawing changed/, 'a stale board picture is still refused');
+});

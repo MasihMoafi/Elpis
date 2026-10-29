@@ -46,11 +46,12 @@ async function loveSpotFixture({ colorScheme = 'light', reply = 'I am here with 
       const turn = { id: `turn-${turns.length + 1}` }; turns.push({ id, ...body });
       const prompt = { threadId: id, turnId: turn.id, item: { id: `user-${turn.id}`, type: 'userMessage', content: [{ type: 'text', text: body.text }] } }; entries.push(prompt);
       emitter.emit('event', { type: 'message', data: { method: 'turn/started', params: { threadId: id, turn } } });
+      // `replyDelay` may be a function of the turn and those before it: a provider whose wait depends on what the chat carries.
       setTimeout(() => {
         const item = { id: `agent-${turn.id}`, type: 'agentMessage', text: reply };
         if (reply) { entries.push({ threadId: id, turnId: turn.id, item }); emitter.emit('event', { type: 'message', data: { method: 'item/completed', params: { threadId: id, turnId: turn.id, item } } }); }
         emitter.emit('event', { type: 'message', data: { method: 'turn/completed', params: { threadId: id, turn: { ...turn, status: reply ? 'completed' : 'failed', items: reply ? [item] : [], ...(!reply ? { error: { message: 'Test provider failed' } } : {}) } } } });
-      }, replyDelay);
+      }, typeof replyDelay === 'function' ? replyDelay(turns) : replyDelay);
       return { turn };
     } });
   configureClient?.(emitter);

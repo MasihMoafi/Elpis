@@ -236,6 +236,7 @@
     "tests/love-spot-menu.test.cjs",
     "tests/love-spot-sync.test.cjs",
     "tests/love-spot-board.test.cjs",
+    "tests/love-spot-speed.test.cjs",
     "tests/love-spot.test.cjs",
     "tests/love-spot-pages.test.cjs",
     "tests/menus.test.cjs",
