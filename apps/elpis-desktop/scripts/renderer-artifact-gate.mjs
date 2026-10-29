@@ -80,9 +80,9 @@ export const retainedUpdates = {
       "reason": "Masih 27 Oct: \"it's ugly; showing all sorts of things it shouldn't. The workflow particularly.\" then \"Please fix them all\". Workflows drops Kahn's order, the critical path, the reading list, the key strip and wave labels (SPEC.md Workflows, Removed); the minimap starts hidden; the run clock is a small time in the header; patterns open from the pattern menu and the guide sits under the board. Only assertions on removed elements changed; the rest are kept."
     },
     "tests/desktop-sweep.test.cjs": {
-      "blob": "1c550507844e546b6d29ba4937caa971c71499fd",
-      "approval": "af885eb4978ee37e98e1df11423d545be9a1c75f",
-      "reason": "Masih 27 Oct: \"it's ugly; showing all sorts of things it shouldn't. The workflow particularly.\" then \"Please fix them all\". Workflows drops Kahn's order, the critical path, the reading list, the key strip and wave labels (SPEC.md Workflows, Removed); the minimap starts hidden; the run clock is a small time in the header; patterns open from the pattern menu and the guide sits under the board. Only assertions on removed elements changed; the rest are kept."
+      "blob": "4e764bbd85e785b650ff87c831045f9b6ffd2a76",
+      "approval": "4778be07db9e766833b6797f1884f05dd9666cd1",
+      "reason": "Masih 27 Oct (takeover list): \"Settings grouped as ChatGPT's (Personal, Integrations, Coding, Archived)\", built in d79d50cbe, with Browser settings added in c5e2a69fc. The sweep visits the pages in that order; its checks are unchanged."
     },
     "tests/history-paging.test.cjs": {
       "blob": "1d5a27b96dd6ee101bb2953ba0e4405d14c30a6f",

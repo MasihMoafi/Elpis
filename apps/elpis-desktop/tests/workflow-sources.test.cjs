@@ -13,7 +13,10 @@ function load(file, imports) {
   vm.runInNewContext(code, { exports, require: name => { assert.ok(name in imports, name); return imports[name]; }, crypto: require('node:crypto').webcrypto, console });
   return exports;
 }
-const canvas = load('canvas.ts', { './agent-characters': load('agent-characters.ts', { './love-characters': load('love-characters.ts', {}) }), './canvas-delete-flow': load('canvas-delete-flow.ts', {}), '@/lib/projects': { appStorage: () => ({ getItem: () => null }) } });
+// logo-team.ts and canvas.ts import each other; canvas calls logoTeam only when a Logo team is built, so it is filled in after.
+const logoTeam = {};
+const canvas = load('canvas.ts', { './logo-team': logoTeam, './agent-characters': load('agent-characters.ts', { './love-characters': load('love-characters.ts', {}) }), './canvas-delete-flow': load('canvas-delete-flow.ts', {}), '@/lib/projects': { appStorage: () => ({ getItem: () => null }) } });
+Object.assign(logoTeam, load('logo-team.ts', { './canvas': canvas }));
 const lab = load('experiment-lab.ts', { '@/lib/canvas': canvas });
 
 test('every actual starter has exactly one evidence entry, valid primary sources and an explicit limitation', () => {
