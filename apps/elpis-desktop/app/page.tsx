@@ -1854,16 +1854,19 @@ export default function Home() {
   const needsYou = (thread: Thread) => sidebarState(thread) === "waiting" || !!attention.plans[thread.id];
   // Sorted lists show chats that need you or are working first; an order arranged by hand stays as arranged.
   const isTreeChat = (thread: Thread) => !isAgentRun(thread) || !!agentParentId(thread) || Object.hasOwn(chatGroups.parents ?? {}, thread.id) || workflowSteps.has(thread.id);
-  // S18: the sidebar lists only the chats Masih started himself, and any he pinned. Agent runs (codex exec, including the
-  // "Task ID …" chats), sub-agents, chats made by another chat and workflow runs stay reachable from their parent or Workflows.
-  const ownChat = (thread: Thread) => pins.includes(thread.id) || (!isAgentRun(thread) && !agentParentId(thread) && originOf(thread) !== "Workflows");
+  // S18: Pinned, Projects, Groups and Recents list only the chats Masih started himself. Workflow runs
+  // keep their Workflows section; agent runs (codex exec, including the "Task ID …" chats) and agents or chats whose maker is
+  // not listed sit in Background runs; both sections follow their switches, off by default. Other agents nest under their parent.
+  // A chat he placed himself (pinned, moved, in a project or a group) counts as his.
+  const placedByHim = (thread: Thread) => pins.includes(thread.id) || Object.hasOwn(chatGroups.parents ?? {}, thread.id) || !!projectChats[thread.id] || !!chatGroups.members?.[thread.id];
+  const ownChat = (thread: Thread) => placedByHim(thread) || (!isAgentRun(thread) && !agentParentId(thread) && originOf(thread) !== "Workflows");
   const sortedChats = sortChats(sidebarThreads.filter(isTreeChat), chatGroups.sortBy, title, chatGroups.order);
   const chatListOrder = useChatListOrder(chatGroups.sortBy === "manual" ? sortedChats : prioritizeChats(sortedChats, thread => needsYou(thread) ? "waiting" : sidebarState(thread)));
   const ordinaryThreads = chatListOrder.chats;
   // Missing parents never hide chats (for example, when only part of history is loaded).
   const ordinaryIds = useMemo(() => new Set(sidebarThreads.map(thread => thread.id)), [sidebarThreads]);
   const displayParentIds = useMemo(() => new Set(Object.values(chatGroups.parents ?? {}).filter((id): id is string => !!id)), [chatGroups.parents]);
-  const agentRuns = threads.filter(thread => isAgentRun(thread) && !isTreeChat(thread) && ownChat(thread));
+  const agentRuns = threads.filter(thread => isAgentRun(thread) && !isTreeChat(thread));
   const agentRunIds = new Set(agentRuns.map(thread => thread.id));
   const agentParents = new Set(Object.values(treeParents));
   const runActions: MenuAction[] = [
@@ -1878,16 +1881,17 @@ export default function Home() {
   const filtered = searchedThreads.filter(t => isTreeChat(t) && (matchedOnServer.has(t.id) || `${title(t)} ${t.preview || ""} ${t.agentNickname || ""} ${t.model || ""} ${t.id}`.toLowerCase().includes(searchTerm.toLowerCase())));
   // Search results are one flat list of every matching chat, as in the ChatGPT app: a hit is never hidden in its parent.
   const isOrphan = (thread: Thread) => !searchTerm && !sidebarParent(thread) && !Object.hasOwn(chatGroups.parents ?? {}, thread.id) && !!agentParentId(thread) && !ordinaryIds.has(agentParentId(thread)!);
-  const roots = filtered.filter(t => !isOrphan(t) && (!!searchTerm || !sidebarParent(t))).filter(t => searchTerm || ((!projectChats[t.id] || pins.includes(t.id)) && ownChat(t)));
-  const unlinked = filtered.filter(isOrphan).filter(ownChat);
+  const roots = filtered.filter(t => !isOrphan(t) && (!!searchTerm || !sidebarParent(t))).filter(t => searchTerm || (ownChat(t) ? !projectChats[t.id] || pins.includes(t.id) : originOf(t) === "Workflows"));
+  // Agents and chats that cannot nest under a listed maker (missing or a broken lineage) join Background runs.
+  const unlinked = searchTerm ? [] : filtered.filter(t => isOrphan(t) || (!sidebarParent(t) && !ownChat(t) && originOf(t) !== "Workflows"));
   // The chat list in screen order: Pinned, the groups (when the list is drawn by them), then Recents; sorted as chosen.
   // Search results rank by how well each chat matches (lib/search-rank.ts).
   const rootIds = new Set(roots.map(thread => thread.id));
   const listedRoots = searchTerm ? rankBySearch(roots, searchTerm, title, thread => `${thread.preview || ""} ${thread.agentNickname || ""} ${thread.cwd || ""}`) : ordinaryThreads.filter(thread => rootIds.has(thread.id));
   // A search shows one ranked list: a pinned hit takes its rank among the others.
   const pinnedChats = searchTerm ? [] : listedRoots.filter(t => pins.includes(t.id)), unpinnedChats = searchTerm ? listedRoots : listedRoots.filter(t => !pins.includes(t.id));
-  const grouped = !searchTerm && chatGroups.groupBy === "custom" ? groupSections(unpinnedChats, chatGroups) : null;
-  const ungroupedChats = grouped ? grouped.ungrouped : unpinnedChats;
+  const grouped = !searchTerm && chatGroups.groupBy === "custom" ? groupSections(unpinnedChats.filter(ownChat), chatGroups) : null;
+  const ungroupedChats = grouped ? [...grouped.ungrouped, ...unpinnedChats.filter(thread => !ownChat(thread))] : unpinnedChats;
   const loveChats = searchTerm ? [] : ungroupedChats.filter(thread => originOf(thread) === "Love Spot");
   const workflowChats = searchTerm || hiddenPages.includes("canvas") || !preferences.sidebarWorkflows ? [] : ungroupedChats.filter(thread => originOf(thread) === "Workflows");
   const recentChats = searchTerm ? ungroupedChats : ungroupedChats.filter(thread => !originOf(thread));
@@ -2341,18 +2345,17 @@ export default function Home() {
           {!searchTerm && <GroupAndSortMenu state={chatGroups} onChange={change => updateGroups(state => ({ ...state, ...change }))} />}</div>
           {(searchTerm || !collapsedSections.recents) && recentChats.map(chatRows)}
         </section>}
-        {unlinked.length > 0 && <div className="unlinked-thread-list" aria-label="Agents whose parent is not listed"><div className="section-label-row mt-4" title="Their parent conversation is not in the current list.">{foldable("unlinked", "Other agents")}</div>{!collapsedSections.unlinked && unlinked.map(thread => threadBranch(thread))}</div>}
         {ready && !threads.length && <p className="px-2 text-xs text-muted-foreground">Your conversations will appear here.</p>}
         {searchTerm && searchResults.query === searchTerm && searchResults.loading && <p role="status" className="px-2 py-3 text-xs text-muted-foreground">Searching saved conversations…</p>}
         {searchTerm && searchResults.query === searchTerm && searchResults.error && <p role="alert" className="px-2 py-3 text-xs text-destructive">Could not search saved conversations: {searchResults.error}</p>}
         {searchTerm && searchResults.query === searchTerm && !searchResults.loading && !searchResults.error && !filtered.length && <p className="px-2 py-3 text-xs text-muted-foreground">No matching conversations.</p>}
         {searchTerm ? searchResults.nextCursor && <Button variant="ghost" className="thread-more w-full" disabled={searchResults.loading} onClick={() => void loadMoreSearch()}>More search results</Button> : nextCursor && <Button variant="ghost" className="thread-more w-full" disabled={moreLoading} onClick={() => void loadMoreConversations()}>Load more</Button>}
-        {!searchTerm && preferences.showAgentRuns && agentRuns.length > 0 && <section className="mt-4" aria-label="Background runs">
+        {!searchTerm && preferences.showAgentRuns && agentRuns.length + unlinked.length > 0 && <section className="mt-4" aria-label="Background runs">
           <RightClickMenu actions={runActions} area={<div className="flex items-center" />}>
-            <Button data-sidebar-stop variant="ghost" size="sm" className="min-w-0 flex-1 justify-start text-muted-foreground" aria-expanded={agentRunsOpen} aria-controls="agent-runs" onClick={() => setAgentRunsOpen(open => !open)}><ChevronRight size={13} className={agentRunsOpen ? "rotate-90" : undefined} /><AgentsIcon size={14} />Agent runs ({agentRuns.length})</Button>
+            <Button data-sidebar-stop variant="ghost" size="sm" className="min-w-0 flex-1 justify-start text-muted-foreground" aria-expanded={agentRunsOpen} aria-controls="agent-runs" onClick={() => setAgentRunsOpen(open => !open)}><ChevronRight size={13} className={agentRunsOpen ? "rotate-90" : undefined} /><AgentsIcon size={14} />Agent runs ({agentRuns.length + unlinked.length})</Button>
             <MoreMenu actions={runActions} label="Agent runs actions" title="Hide Agent runs or delete their history" />
           </RightClickMenu>
-          {agentRunsOpen && <div id="agent-runs" role="region" aria-label="Agent runs">{topLevelAgentRuns.map(thread => <div key={thread.id}>{threadRow(thread, 1)}{expanded[thread.id] && runDescendants(thread.id, 2)}</div>)}
+          {agentRunsOpen && <div id="agent-runs" role="region" aria-label="Agent runs">{topLevelAgentRuns.map(thread => <div key={thread.id}>{threadRow(thread, 1)}{expanded[thread.id] && runDescendants(thread.id, 2)}</div>)}{unlinked.map(thread => threadBranch(thread, 1))}
           </div>}
         </section>}
       </div>
