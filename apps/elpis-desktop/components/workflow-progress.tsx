@@ -37,6 +37,7 @@ function report(entries: Entry[]): { text: string; at: number } | undefined {
   return typeof latest?.item.text === "string" ? { text: latest.item.text.trim(), at: latest.completedAtMs ?? latest.startedAtMs ?? 0 } : undefined;
 }
 
+const LIVE_RUN = new Set(["running", "pending", "inProgress"]);
 export function useWorkflowTeam(run: RecordedWorkflow | undefined, ready: boolean, threads: readonly Thread[] = EMPTY_THREADS) {
   const [observed, setObserved] = useState<Thread[]>([]), [lastUpdate, setLastUpdate] = useState("");
   const [loading, setLoading] = useState(false), [error, setError] = useState(""), [revision, setRevision] = useState(0);
@@ -45,6 +46,9 @@ export function useWorkflowTeam(run: RecordedWorkflow | undefined, ready: boolea
   const motherId = run ? run.mother?.assignedThreadId ?? run.mother?.sessionId ?? run.rootThreadId : undefined;
   const seedKey = JSON.stringify(run ? [...run.tasks ?? [], ...run.next?.tasks ?? []].flatMap(task => task.assignedThreadId ? [task.assignedThreadId] : []) : []);
   const refresh = useCallback(() => setRevision(value => value + 1), []);
+  // Only a live run is re-read every 5s; a finished one is read once (29 Oct, Masih: "Check the load of the app when in
+  // workflows as it wasn't doing it efficiently before").
+  const live = !!run && (LIVE_RUN.has(run.status) || LIVE_RUN.has(run.next?.status ?? ""));
 
   useEffect(() => {
     setObserved([]); setLastUpdate(""); setError("");
@@ -110,11 +114,11 @@ export function useWorkflowTeam(run: RecordedWorkflow | undefined, ready: boolea
       } finally { pending = false; if (!disposed) setLoading(false); }
     };
     void read();
-    const timer = setInterval(() => void read(), 5000);
+    const timer = live ? setInterval(() => void read(), 5000) : undefined;
     const changed = () => void read();
     document.addEventListener("visibilitychange", changed); window.addEventListener("online", changed);
     return () => { disposed = true; controller.abort(); clearInterval(timer); document.removeEventListener("visibilitychange", changed); window.removeEventListener("online", changed); };
-  }, [run?.id, run?.rootThreadId, motherId, seedKey, ready, revision]);
+  }, [run?.id, run?.rootThreadId, motherId, seedKey, ready, revision, live]);
 
   const agents = useMemo(() => run ? members(run, observed) : [], [run, observed]);
   const mother = observed.find(thread => thread.id === motherId);
