@@ -36,13 +36,22 @@ class Answer {
   get text() { return this.#segments.filter(segment => !segment.commentary && segment.text.trim()).at(-1)?.text; }
 }
 
+// Each agent runs in its own process group, and the whole group ends with it: what the agent starts (MCP servers,
+// language servers) never outlives it (29 Oct, Masih: "so leftovers don't exist"). Groups still alive when the bridge
+// exits end with it.
+const groups = new Set();
+const endGroup = (pid, signal) => { try { process.kill(-pid, signal); } catch { /* already gone */ } };
+process.once('exit', () => { for (const pid of groups) endGroup(pid, 'SIGKILL'); });
+
 /** One ACP agent process over stdio (newline-delimited JSON-RPC 2.0). */
 class AcpProcess {
   #pending = new Map(); #seq = 0; #stderr = '';
   constructor(spec, cwd, { onRequest, onNotification }) {
     const name = spec.name || 'The agent';
     const env = Object.fromEntries(Object.entries({ ...process.env, ...spec.env }).filter(([, value]) => typeof value === 'string'));
-    this.child = spawn(spec.command, spec.args ?? [], { cwd, env: childEnv(env), stdio: ['pipe', 'pipe', 'pipe'] });
+    this.child = spawn(spec.command, spec.args ?? [], { cwd, env: childEnv(env), stdio: ['pipe', 'pipe', 'pipe'], detached: true });
+    const pid = this.child.pid;
+    if (pid) { groups.add(pid); this.child.once('exit', () => { endGroup(pid, 'SIGKILL'); groups.delete(pid); }); }
     this.child.stdin.on('error', () => {});
     this.child.stderr.on('data', data => { this.#stderr = (this.#stderr + data).slice(-4000); });
     let buffer = '';
@@ -83,14 +92,14 @@ class AcpProcess {
     });
   }
   notify(method, params) { this.#write({ method, params }); }
-  /** Ends stdin, then SIGTERM and SIGKILL if the process does not leave by itself. */
+  /** Ends stdin, then SIGTERM and SIGKILL to the agent's whole group if it does not leave by itself. */
   async close(graceMs) {
     if (this.gone) return;
     const wait = ms => Promise.race([this.ended, new Promise(resolve => setTimeout(resolve, ms).unref())]);
     this.child.stdin.end();
     await wait(graceMs);
-    if (!this.gone) { this.child.kill('SIGTERM'); await wait(1000); }
-    if (!this.gone) { this.child.kill('SIGKILL'); await wait(1000); }
+    if (!this.gone) { endGroup(this.child.pid, 'SIGTERM'); await wait(1000); }
+    if (!this.gone) { endGroup(this.child.pid, 'SIGKILL'); await wait(1000); }
   }
 }
 

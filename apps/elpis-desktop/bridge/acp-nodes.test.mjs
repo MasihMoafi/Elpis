@@ -37,6 +37,20 @@ test('handshake, model choice and instructions go over ACP; the final answer is 
   assert.ok(got.some(m => m.closed), 'the agent process is closed after its answer');
 });
 
+// 29 Oct (Masih: "so leftovers don't exist"): what an agent starts (MCP servers, language servers) ends with it, even a
+// process that ignores SIGTERM and outlives the agent.
+test('when an agent ends, every process it started ends too', { timeout: 20000 }, async t => {
+  const a = agentSpec(t, 'A'), pidFile = path.join(a.dir, 'helper.pid');
+  const spec = { ...a.spec, command: 'bash', args: ['-c', `(trap "" TERM HUP; exec sleep 30) & echo $! > ${JSON.stringify(pidFile)}; exec ${JSON.stringify(process.execPath)} ${JSON.stringify(FAKE)}`] };
+  const result = await runAcpNode(spec, { task: 'Seed 7d1e' }, { cwd: a.dir });
+  assert.equal(result.answer, 'A(default) answered: Seed 7d1e');
+  const helper = Number(fs.readFileSync(pidFile, 'utf8'));
+  await pause(300);
+  const left = alive(helper);
+  if (left) process.kill(helper, 'SIGKILL');
+  assert.equal(left, false, 'a process the agent started outlived it');
+});
+
 test('a model the agent does not offer fails before any prompt', { timeout: 20000 }, async t => {
   const a = agentSpec(t, 'A', { env: { FAKE_ACP_MODELS: 'm-fast' }, spec: { model: 'm-missing' } });
   await assert.rejects(runAcpNode(a.spec, { task: 'x' }, { cwd: a.dir }), /A does not offer the model m-missing/);
