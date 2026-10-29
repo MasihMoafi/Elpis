@@ -615,7 +615,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
  * is a title, its script in a bordered block coloured as shell, then its output, in red when it failed. */
 :root { --code-ink:#b3261e; --sh-command:#1f5fbf; --sh-string:#1a7f37; --sh-variable:#8241c8; }
 .dark { --code-ink:#ff8b7d; --sh-command:#7cb7ff; --sh-string:#8bd49c; --sh-variable:#c9a2ff; }
-.activity-group { margin:2px 0 12px; }
+.activity-group { margin:-3px 0 9px; }
 .activity-group > summary { display:flex; align-items:center; gap:8px; width:fit-content; max-width:100%; padding:3px 8px 3px 4px; margin-left:-4px; cursor:pointer; font-size:0.875rem; color:var(--muted-foreground); transition:color .12s, background .12s; }
 .activity-group > summary:hover { color:var(--foreground); background:var(--hover); }
 .activity-group[open] > summary { position:sticky; top:calc(-1 * var(--chat-top-inset, 0px)); z-index:1; width:100%; background:var(--background); }
@@ -658,13 +658,14 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .sh-variable { color:var(--sh-variable); }
 .sh-operator { color:var(--muted-foreground); }
 .sh-comment { color:var(--subtle-foreground); font-style:italic; }
-.worked-for { margin:4px 0 14px; }
+.worked-for { margin:4px 0 6px; }
+.worked-for[open] { margin-bottom:0; }
 .worked-for > summary { display:flex; align-items:center; gap:12px; cursor:pointer; color:color-mix(in oklch, var(--accent-text) 70%, var(--muted-foreground)); font:500 var(--text-small)/1 var(--mono); letter-spacing:.04em; padding:6px 0; }
 .worked-for > summary::before, .worked-for > summary::after { content:""; height:1px; flex:1; background:linear-gradient(90deg, transparent, var(--border)); }
 .worked-for > summary::after { background:linear-gradient(90deg, var(--border), transparent); }
 .worked-for > summary:hover { color:var(--accent-text); }
-.worked-for[open] > summary { margin-bottom:10px; }
-.worked-for-body { padding:2px 0 6px; }
+.worked-for[open] > summary { margin-bottom:4px; }
+.worked-for-body { padding:2px 0 0; }
 
 .composer, .composer-tray { --edge:var(--hud-edge); }
 .composer:focus-within, .composer-tray:has(+ .composer:focus-within) { --edge:color-mix(in srgb, var(--primary) 80%, var(--hud-edge)); }

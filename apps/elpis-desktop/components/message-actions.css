@@ -2,6 +2,12 @@
    "Worked for" line, the next prompt) holds the whole 28px button plus air, and neighbouring buttons do not touch. */
 .turn .user-turn { margin-bottom:44px; }
 .turn .message.agent, .chat-content .message.agent { margin-bottom:40px; }
+/* Inside a turn, rows sit 12px apart from text to text (Masih, 29 Oct: "too much empty space here."): a reply, an activity
+   row ("Ran a command", "Thought") and the next reply alike. Only the turn's final reply ([data-reply-end]) keeps the room
+   its hanging actions need; a reply mid-turn offers them in its right-click menu, so they never cover the row after it. */
+.turn .message.agent { margin-bottom:12px; }
+.turn [data-reply-end] .message.agent { margin-bottom:40px; }
+.turn .message.agent:not([data-reply-end] .message.agent) > .message-actions { display:none; }
 /* InkRow spaces the actions by their ink: 16px between what the eye sees, not between boxes. */
 .user-turn .message-actions, .message.agent .message-actions { --ink-gap:16px; gap:0; margin-top:6px; }
 /* Keep sent-message actions discoverable while reading or selecting text. */

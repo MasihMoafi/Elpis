@@ -172,7 +172,7 @@ function Turn({ turn, active, defer, observe, onViewChanges, renderItem, mediaOf
       <DisclosureSummary><span>{turn.entries.some(entry => typeof entry.startedAtMs === "number") ? workedFor(turn.entries) : foldSummary(folded.map(entry => entry.item))}</span></DisclosureSummary>
       {workOpen && <div className="worked-for-body"><Flow entries={folded} renderItem={renderItem} mediaOf={mediaOf} wrapItem={wrapItem} /></div>}
     </details>}
-    <Flow entries={visible} renderItem={renderItem} mediaOf={mediaOf} wrapItem={wrapItem} live={active} />
+    <Flow entries={visible} renderItem={renderItem} mediaOf={mediaOf} wrapItem={wrapItem} live={active} end={finalReply >= 0 ? work[finalReply].item.id : undefined} />
     {!active && <CreatedFiles paths={createdFiles(work)} />}
     {!active && <TurnChanges items={work.map(entry => entry.item)} onViewChanges={onViewChanges} />}
     {/* One live line at a time: a running step shows its own; otherwise the turn says it is working. */}
@@ -181,7 +181,8 @@ function Turn({ turn, active, defer, observe, onViewChanges, renderItem, mediaOf
 }
 
 /** Replies stay as they are; each run of tool activity between them becomes one line. */
-function Flow({ entries, renderItem, mediaOf, wrapItem, live = false }: { entries: Entry[]; live?: boolean } & Draw) {
+/** `end` names the turn's final reply: only it keeps room under it for its hover actions (message-actions.css). */
+function Flow({ entries, renderItem, mediaOf, wrapItem, live = false, end }: { entries: Entry[]; live?: boolean; end?: string } & Draw) {
   const blocks: ReactNode[] = [];
   let run: Entry[] = [];
   const flush = () => {
@@ -194,7 +195,7 @@ function Flow({ entries, renderItem, mediaOf, wrapItem, live = false }: { entrie
       blocks.push(<div key={entry.item.id}>{renderItem({ ...entry, item: { id: entry.item.id, type: "contextCompaction" } })}</div>);
     } else if (isReply(entry.item) || entry.item.type === "userMessage" || entry.item.type === "plan" || (entry.item.type === "commandExecution" && entry.item.source === "userShell")) {
       flush();
-      blocks.push(<div key={entry.item.id}>{renderItem(entry)}</div>);
+      blocks.push(<div key={entry.item.id} data-reply-end={entry.item.id === end || undefined}>{renderItem(entry)}</div>);
     } else run.push(entry);
   }
   flush();
