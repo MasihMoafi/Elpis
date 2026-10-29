@@ -62,3 +62,22 @@ for (const colorScheme of ['light', 'dark']) test(`rows in a turn sit at even, t
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
+
+// 29 Oct, Masih: "the chat protects the lower chat not being fully shown but it doesn't do that for the upper one; make it
+// so that the chats fit. So when the lower part is fixed so be the higher part." Both edges fade over 32px while there is
+// more to scroll toward them.
+test('the thread fades at the top and bottom alike, only toward content beyond the edge', async () => {
+  const chat = Array.from({ length: 12 }, (_, i) => [`t${i + 1}`, `Prompt ${i + 1}.`, `Answer ${i + 1}.\n\n${'A paragraph of history.\n\n'.repeat(6)}`]);
+  const f = await fixture({ chat, height: 700 }), { page } = f;
+  try {
+    await f.open('chat-a');
+    const fades = () => page.locator('.chat-scroll-wrap').evaluate(wrap => [getComputedStyle(wrap, '::before').opacity, getComputedStyle(wrap, '::after').opacity, getComputedStyle(wrap, '::before').height].join(' '));
+    await page.locator('.chat-scroll').evaluate(node => { node.scrollTop = node.scrollHeight; });
+    await page.waitForFunction(() => getComputedStyle(document.querySelector('.chat-scroll-wrap'), '::before').opacity === '1');
+    assert.equal(await fades(), '1 0 32px', 'at the end: the top fades, the bottom does not');
+    await page.locator('.chat-scroll').evaluate(node => { node.scrollTop = 0; });
+    await page.waitForFunction(() => getComputedStyle(document.querySelector('.chat-scroll-wrap'), '::after').opacity === '1');
+    assert.equal(await fades(), '0 1 32px', 'at the start: the bottom fades, the top does not');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});

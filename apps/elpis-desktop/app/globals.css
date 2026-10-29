@@ -286,7 +286,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .chat-scroll-wrap { position:relative; display:flex; flex-direction:column; flex:1; min-height:0; timeline-scope:--chat-scroll; }
 /* Content meets both edges of the thread the same way: a 32 px fade into the page, shown only while there is more to
  * scroll toward that edge (29 Oct, Masih: "So when the lower part is fixed so be the higher part"). */
-.chat-scroll-wrap::before, .chat-scroll-wrap::after { content:""; position:absolute; left:0; right:12px; height:var(--thread-edge-fade); z-index:1; pointer-events:none; opacity:0; animation:linear both; animation-duration:auto; animation-timeline:--chat-scroll; }
+.chat-scroll-wrap::before, .chat-scroll-wrap::after { content:""; position:absolute; left:0; right:12px; height:var(--thread-edge-fade); z-index:1; pointer-events:none; opacity:0; animation-timing-function:linear; animation-fill-mode:both; animation-duration:auto; animation-timeline:--chat-scroll; }
 .chat-scroll-wrap::before { top:0; background:linear-gradient(to bottom, var(--background), transparent); animation-name:thread-edge-in; animation-range:0 var(--thread-edge-fade); }
 .chat-scroll-wrap::after { bottom:0; background:linear-gradient(to top, var(--background), transparent); animation-name:thread-edge-out; animation-range:calc(100% - var(--thread-edge-fade)) 100%; }
 @keyframes thread-edge-in { from { opacity:0; } to { opacity:1; } }
