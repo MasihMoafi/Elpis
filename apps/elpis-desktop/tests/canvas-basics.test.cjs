@@ -97,6 +97,32 @@ test('workflow history dismisses outside and with Escape, restores focus and kee
   } finally { await f.close(); }
 });
 
+// 29 Oct, Masih: "similar to autocad design where I could press space and then pick a number and it would create my agents that
+// way - space again, pick another number". The number acts at once: an empty board gets that pattern's team, a team is rewired.
+test('Space, then a number, makes the team in that pattern at once; Space and another number reshape it', async () => {
+  const f = await openCanvas({ graph: { name: 'Empty', nodes: [{ id: 'mother', type: 'mother', position: { x: 0, y: 0 }, data: {} }], edges: [] } });
+  try {
+    const { page, canvas } = f, agents = async () => (await f.saved()).nodes.filter(n => n.type === 'agent');
+    assert.equal((await agents()).length, 0);
+    await canvas.locator('.react-flow').focus(); await page.keyboard.press('Space');
+    await page.keyboard.type('5');
+    await canvas.getByRole('form', { name: 'Workflow command' }).waitFor({ state: 'detached' });
+    const voting = await f.saved(), voters = voting.nodes.filter(n => n.type === 'agent');
+    assert.ok(voters.length >= 3, `the Voting team appears without Enter (${voters.length} agents)`);
+    assert.equal(voting.template, 'voting');
+    await canvas.locator('.react-flow').focus(); await page.keyboard.press('Space'); await page.keyboard.type('1');
+    await canvas.getByRole('form', { name: 'Workflow command' }).waitFor({ state: 'detached' });
+    const chained = await f.saved();
+    assert.equal(chained.template, 'sequential');
+    assert.equal(chained.nodes.filter(n => n.type === 'agent').length, voters.length, 'the same agents, rewired');
+    assert.equal(chained.edges.filter(e => !e.feedback && e.source !== 'mother').length, voters.length - 1, 'one after the other');
+    await canvas.locator('.react-flow').focus(); await page.keyboard.press('Space'); await page.keyboard.type('9');
+    await canvas.getByText('Choose a pattern number from 1 to 5.').waitFor();
+    assert.equal((await f.saved()).template, 'sequential', 'a number with no pattern changes nothing');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
 test('Ctrl+A selects only the focused workflow editor or board', async () => {
   const f = await openCanvas();
   try {

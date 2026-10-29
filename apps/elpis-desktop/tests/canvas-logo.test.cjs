@@ -1,6 +1,6 @@
-// 28 Oct, Masih: "we should expand the workflows; the /logo workflow". Logo builds the logo skill's team in the open project,
-// with no planner, for the brand in the request box (or else the project's name): a Designer on the ChatGPT route, whose
-// agents have the image generation tool, then a Curator, a Tracer through SVG Studio's CLI wrapper, and a Critic.
+// 28 Oct, Masih: "we should expand the workflows; the /logo workflow". 29 Oct: "four agents is too extra for this, one mother and
+// one child (the image generator which is a tool-call for the model) would do the job. use sol high or med in fast mode." Logo is
+// one agent, with no check and no planner, for the brand in the request box (or else the project's name).
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { openCanvas } = require('./canvas-fixture.cjs');
@@ -10,7 +10,7 @@ const OPUS = { id: 'opus', model: 'claude/opus', displayName: 'Opus 5.5' };
 // Launch list (27 Oct): the tracer comes from the environment Elpis starts with, defaulting to this workstation's layout under $HOME.
 const TRACE = 'SVG_STUDIO_MODULE="${SVG_STUDIO_MODULE:-$HOME/Desktop/p/svg/mcp-server/dist/vectorize.js}" node "${ELPIS_LOGO_SCRIPTS:-$HOME/Desktop/p/skills/logo/scripts}/trace.mjs"';
 
-test('Logo builds Designer, Curator, Tracer and Critic in order for the brand in the request box, and runs with no planner', async () => {
+test('Logo is one Sol agent in Fast mode that draws three directions and traces each, with no check and no planner', async () => {
   const f = await openCanvas({ desktop: true, files: { '.': ['README.md'] }, extraModels: [OPUS] });
   try {
     await f.page.evaluate(() => { window.__opened = []; window.elpisDesktop.openFile = async target => { window.__opened.push(target); }; });
@@ -20,48 +20,34 @@ test('Logo builds Designer, Curator, Tracer and Critic in order for the brand in
     assert.deepEqual((await f.page.getByRole('option').allInnerTexts()).slice(0, 3).map(text => text.trim()), ['Transcribe images', 'Translate', 'Logo'], 'the ready-made workflows are on top');
     await f.page.keyboard.press('Escape');
     await chooseOption(pattern, 'logo');
-    await f.page.waitForFunction(() => JSON.parse(localStorage.getItem('elpis-workflow-draft-v1'))?.result === 'logo/logo.svg');
-    const saved = await f.saved(), agents = saved.nodes.filter(n => n.type === 'agent'), title = a => a.data.title.split(' · ')[1];
-    assert.deepEqual(agents.map(title), ['Designer', 'Curator', 'Tracer', 'Critic']);
-    const [designer, curator, tracer, critic] = agents;
-    assert.deepEqual([designer.data.model, designer.data.provider ?? null], ['gpt-6.1-sol', null], 'the ChatGPT route, whose agents have the image generation tool');
-    assert.match(designer.data.instruction, /Rustidian/);
-    assert.match(designer.data.instruction, /image generation tool/);
-    assert.ok(['logo/candidates/1.png', '2.png', '3.png', 'logo/candidates/prompts.md'].every(name => designer.data.instruction.includes(name)), 'three numbered directions with their exact prompts');
-    // 28 Oct, the first live run: a check read the session logs for seven minutes; it judges the named files only.
+    await f.page.waitForFunction(() => JSON.parse(localStorage.getItem('elpis-workflow-draft-v1'))?.result === 'logo/1.svg');
+    const saved = await f.saved(), agents = saved.nodes.filter(n => n.type === 'agent');
+    assert.equal(agents.length, 1, 'one agent: its image tool is the only helper');
+    const [logo] = agents;
+    assert.deepEqual([logo.data.model, logo.data.provider ?? null, logo.data.effort, logo.data.fast, logo.data.check], ['gpt-6.1-sol', null, 'medium', true, false]);
+    assert.match(logo.data.instruction, /Rustidian/);
+    assert.match(logo.data.instruction, /image generation tool/);
+    assert.ok(['logo/1.png', '2.png', '3.png', 'logo/prompts.md', 'logo/1.svg'].every(name => logo.data.instruction.includes(name)), 'three numbered directions, their prompts and their SVGs');
     // 29 Oct (Masih: "What breaks it is bad image prompting"): prompts as in the approved collection ones, one concrete subject.
-    assert.match(designer.data.instruction, /one concrete, recognizable subject/i);
-    assert.match(designer.data.instruction, /part by part/i);
-    assert.match(designer.data.instruction, /never abstract planes, plain letters or generic geometry/i);
-    assert.match(designer.data.instruction, /one flat ink colour \(a hex code\) on genuine transparency/i);
-    assert.match(designer.data.check, /open only the files named here: no logs/); assert.match(designer.data.instruction, /redraw one at most once/);
-    assert.deepEqual(designer.data.writeScopes, ['logo/candidates']);
-    assert.match(curator.data.instruction, /logo\/choice\.md/);
-    assert.match(curator.data.instruction, /generic silhouettes/);
-    assert.deepEqual(curator.data.writeScopes, ['logo']);
-    assert.ok(tracer.data.instruction.includes(TRACE), 'the MCP servers are off, so the Tracer runs the skill\'s CLI wrapper');
-    assert.match(tracer.data.instruction, /logo\/logo\.svg/);
-    assert.match(tracer.data.instruction, /24, 32 and 64 px/);
-    assert.deepEqual(tracer.data.writeScopes, ['logo']);
-    assert.match(tracer.data.instruction, /if node cannot find vectorize\.js or trace\.mjs, stop and say SVG Studio is not set up/i, 'a missing tracer is reported, not worked around');
-    assert.ok(agents.every(a => !/\/home\//.test(a.data.instruction + a.data.check)), 'no instruction names one person\'s home folder');
-    assert.match(critic.data.instruction, /logo\/logo\.svg/);
-    assert.match(critic.data.instruction, /fail/);
-    assert.ok(critic.data.writeScopes[0].startsWith('agents/'), 'the Critic writes only its own folder');
-    assert.deepEqual(saved.edges.map(e => `${e.source}>${e.target}`), [`${designer.id}>${curator.id}`, `${curator.id}>${tracer.id}`, `${tracer.id}>${critic.id}`], 'each step waits for the one before');
+    assert.match(logo.data.instruction, /one concrete, recognizable subject/i);
+    assert.match(logo.data.instruction, /part by part/i);
+    assert.match(logo.data.instruction, /never abstract planes, plain letters or generic geometry/i);
+    assert.match(logo.data.instruction, /one flat ink colour \(a hex code\) on genuine transparency/i);
+    assert.ok(logo.data.instruction.includes(TRACE), 'the MCP servers are off, so it runs the skill\'s CLI wrapper');
+    assert.match(logo.data.instruction, /if node cannot find vectorize\.js or trace\.mjs, stop and say SVG Studio is not set up/i, 'a missing tracer is reported, not worked around');
+    assert.match(logo.data.instruction, /leave the choice to the person/);
+    assert.ok(!/\/home\//.test(logo.data.instruction), 'no instruction names one person\'s home folder');
+    assert.deepEqual(logo.data.writeScopes, ['logo']);
     assert.equal(saved.request, 'Rustidian', 'the request box keeps the brand');
     assert.match(saved.mother.brief, /Rustidian/);
-    assert.equal(saved.mother.model, 'claude/opus');
     await f.canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
-    const open = f.canvas.getByRole('button', { name: 'Open logo.svg', exact: true });
+    const open = f.canvas.getByRole('button', { name: 'Open 1.svg', exact: true });
     await open.waitFor();
-    const sent = f.runs[0].tasks, implement = sent.filter(t => t.kind === 'implement');
-    assert.deepEqual(implement.map(t => t.id), agents.map(a => a.id));
-    assert.deepEqual(implement.slice(1).map(t => t.dependsOn), [designer, curator, tracer].map(a => [a.id, `${a.id}-check`]), 'each step waits for the one before and its check');
-    assert.ok(implement[2].instruction.includes(TRACE));
+    const sent = f.runs[0].tasks;
+    assert.deepEqual(sent.map(t => [t.id, t.kind, t.model, t.reasoningEffort, t.serviceTier]), [[logo.id, 'implement', 'gpt-6.1-sol', 'medium', 'priority']], 'one task on Sol, medium, Fast, and no check');
     assert.equal(f.plans.length, 0, 'nothing was planned');
     await open.click();
-    assert.deepEqual(await f.page.evaluate(() => window.__opened), ['/tmp/demo/logo/logo.svg']);
+    assert.deepEqual(await f.page.evaluate(() => window.__opened), ['/tmp/demo/logo/1.svg']);
     await chooseOption(pattern, 'more');
     await f.canvas.getByRole('region', { name: 'Ready-made workflows' }).getByRole('button', { name: /^Logo/ }).waitFor();
     assert.deepEqual(f.errors, []);
@@ -72,7 +58,7 @@ test('Logo names the project when the request box is empty', async () => {
   const f = await openCanvas({ desktop: true, files: { '.': [] }, extraModels: [OPUS] });
   try {
     await chooseOption(f.canvas.getByRole('combobox', { name: 'Workflow pattern', exact: true }), 'logo');
-    await f.page.waitForFunction(() => JSON.parse(localStorage.getItem('elpis-workflow-draft-v1'))?.result === 'logo/logo.svg');
+    await f.page.waitForFunction(() => JSON.parse(localStorage.getItem('elpis-workflow-draft-v1'))?.result === 'logo/1.svg');
     const saved = await f.saved();
     assert.match(saved.mother.brief, /\bdemo\b/);
     assert.match(saved.nodes.find(n => n.type === 'agent').data.instruction, /\bdemo\b/);

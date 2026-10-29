@@ -93,7 +93,8 @@ export function validateWorkflow(tasks, roundLimit) {
   for (const task of tasks) {
     if ([...task.dependsOn, ...(task.feedbackFrom ?? [])].some(id => !ids.has(id))) throw new BridgeError('A task dependency is missing');
     if (task.feedbackFrom?.length && roundLimit === undefined) throw new BridgeError('Recursive feedback needs an explicit round limit');
-    if (writer(task) && (!task.writeScopes.length || !tasks.some(check => check.kind === 'verify' && check.dependsOn.includes(task.id)))) throw new BridgeError('Every writer needs folders and a directly dependent check');
+    // `unchecked`: the person judges the result (29 Oct, Logo: one agent and its image tool, no check agent).
+    if (writer(task) && (!task.writeScopes.length || task.unchecked !== true && !tasks.some(check => check.kind === 'verify' && check.dependsOn.includes(task.id)))) throw new BridgeError('Every writer needs folders and a directly dependent check');
   }
   const done = new Set();
   while (done.size < tasks.length) {
@@ -211,7 +212,7 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
         const spec = fullAccess(nodeSpec({ name: owner.title, prompt: instructions, model: route.model, provider: route.provider }, env));
         const effort = options.lowEffort ? lowEffort(route) : owner.reasoningEffort && Array.isArray(route.efforts) && !route.efforts.includes(owner.reasoningEffort) ? route.defaultEffort : owner.reasoningEffort;
         if (effort) spec.reasoningEffort = effort;
-        spec.meta = { ...spec.meta, elpis: { ...spec.meta?.elpis, name: `Workflows · ${owner.title}`, workflow: { kind: owner.kind ?? 'verify', writeScopes: owner.writeScopes ?? [], ...(effort ? { reasoningEffort: effort } : {}) } } };
+        spec.meta = { ...spec.meta, elpis: { ...spec.meta?.elpis, name: `Workflows · ${owner.title}`, workflow: { kind: owner.kind ?? 'verify', writeScopes: owner.writeScopes ?? [], ...(effort ? { reasoningEffort: effort } : {}), ...(owner.serviceTier ? { serviceTier: owner.serviceTier } : {}) } } };
         const result = await runAcpNode(spec, { ...input, task: input.task + recovery }, { ...options,
           // Every chat a step or Mother opens is kept, not only the latest (28 Oct: earlier review and retry chats fell out of
           // their workflow and lay loose in the sidebar: "currently they are all merged").

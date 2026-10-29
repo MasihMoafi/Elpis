@@ -29,7 +29,7 @@ import { api, providerChoices, subscriptionOf, type Entry, type Model, type Prov
 import { useElpisSettings } from "@/lib/settings-store";
 import { appStorage } from "@/lib/projects";
 import { filesText, mergeStops, runPayload, stopText, wantsIsolation } from "@/lib/canvas-isolation";
-import { PATTERNS, WORKFLOWS, LANGUAGES, languageOf, type Language, type ReadyMade, agentCount, WHOLE_PROJECT, applyPattern, agent, ownFolders, agentColor, CHECK_LABEL, COLUMN, DONE, FATHER, MOTHER, STATUS_LABEL, TASKS_PER_AGENT, waits, TEMPLATES, agentName, promptName, applyPlan, arrange, boardForPlan, checkOf, commandParts, shapeOf, makesLoop, maxAgents, newAgents, newId, parseCommand, parents, initialGraph, runParts, saveGraph, waves, withMother, type AgentData, type CanvasEdge, type CanvasGraph, type CanvasNode, type CatalogModel, type Command, type MotherSettings, type NoteData, type Plan, type RunTask, type TaskStatus } from "@/lib/canvas";
+import { PATTERNS, PATTERN_TEAMS, WORKFLOWS, LANGUAGES, languageOf, type Language, type ReadyMade, agentCount, WHOLE_PROJECT, applyPattern, agent, ownFolders, agentColor, CHECK_LABEL, COLUMN, DONE, FATHER, MOTHER, STATUS_LABEL, TASKS_PER_AGENT, waits, TEMPLATES, agentName, promptName, applyPlan, arrange, boardForPlan, checkOf, commandParts, shapeOf, makesLoop, maxAgents, newAgents, newId, parseCommand, parents, initialGraph, runParts, saveGraph, waves, withMother, type AgentData, type CanvasEdge, type CanvasGraph, type CanvasNode, type CatalogModel, type Command, type MotherSettings, type NoteData, type Plan, type RunTask, type TaskStatus } from "@/lib/canvas";
 
 /** The workflow side panel: 290 px by default, dragged wider or narrower by its left edge. */
 const CANVAS_SIDE = { min: 240, initial: 290, max: 640 };
@@ -994,6 +994,18 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
     window.addEventListener("keydown", keydown, true);
     return () => window.removeEventListener("keydown", keydown, true);
   });
+  // 29 Oct, Masih: "similar to autocad design where I could press space and then pick a number and it would create my agents that
+  // way - space again, pick another number". The number acts at once: an empty board gets that pattern's team, a team is rewired.
+  const patternNumber = (value: string) => {
+    const number = Number(value);
+    if (!Number.isInteger(number) || number < 1 || number > PATTERNS.length) { setNotice("Choose a pattern number from 1 to 5."); setPatternCommand(""); return; }
+    if (run && !over(run)) { setNotice("Wait for this run to finish before changing its pattern."); return; }
+    const team = PATTERN_TEAMS[number - 1], empty = !graph.nodes.some(node => node.type === "agent");
+    checkpoint();
+    setGraph(current => applyPattern(empty ? { ...withMother(TEMPLATES.find(template => template.id === team)!.build()), maxAgents: current.maxAgents, mother: current.mother, request: current.request } : current, number));
+    setPatternCommand(null); setSelection([]); setRun(null); setStates({}); setNotice("");
+    setTimeout(() => fitAll(), 60); board.current?.querySelector<HTMLElement>(".iso-board, .react-flow")?.focus();
+  };
   const loadTemplate = (template: (typeof TEMPLATES)[number]) => { setRenamingPreset(false); setUndoLoad({ loaded: template.name, previous: graph }); setGraph(current => ({ ...withMother(template.build()), maxAgents: current.maxAgents, mother: current.mother, request: current.request, template: template.id, planningPattern: template.id })); setSelection([]); setMenu(null); setDashboardId(null); setRun(null); setStates({}); setNotice("");
     // Keys go to the board again (Tab opens the command bar), not to the template just clicked.
     (document.activeElement as HTMLElement | null)?.blur(); setTimeout(() => void flow.fitView({ ...FIT, duration: 250 }), 60); };
@@ -1702,15 +1714,9 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
         <section className="canvas-guide" aria-label="Guide" />
       </div>
       {graph.template === "recursive" && <label className="canvas-round-limit">Round limit <Input className="w-20" type="number" aria-label="Round limit" min={1} max={100} value={graph.roundLimit ?? ""} onChange={event => setGraph(current => ({ ...current, roundLimit: event.target.value ? Number(event.target.value) : undefined }))} /></label>}
-      {patternCommand !== null && <form className="canvas-pattern-command hud-menu" aria-label="Workflow command" onSubmit={event => {
-        event.preventDefault(); const number = Number(patternCommand);
-        if (!Number.isInteger(number) || number < 1 || number > PATTERNS.length) { setNotice("Choose a pattern number from 1 to 5."); return; }
-        if (run && !over(run)) { setNotice("Wait for this run to finish before changing its pattern."); return; }
-        checkpoint(); setGraph(current => applyPattern(current, number)); setPatternCommand(null); setSelection([]); setRun(null); setStates({}); setNotice("");
-        setTimeout(() => fitAll(), 60); board.current?.querySelector<HTMLElement>(".iso-board, .react-flow")?.focus();
-      }}>
+      {patternCommand !== null && <form className="canvas-pattern-command hud-menu" aria-label="Workflow command" onSubmit={event => { event.preventDefault(); patternNumber(patternCommand); }}>
         <span className="text-xs">{PATTERNS.map((name, index) => `${index + 1} ${name}`).join(" · ")}</span>
-        <Input aria-label="Workflow pattern" autoFocus inputMode="numeric" value={patternCommand} placeholder="Pattern number · Enter applies · Esc cancels" onChange={event => setPatternCommand(event.target.value)} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setPatternCommand(null); board.current?.querySelector<HTMLElement>(".iso-board, .react-flow")?.focus(); } }} />
+        <Input aria-label="Workflow pattern" autoFocus inputMode="numeric" value={patternCommand} placeholder="Pattern number · Esc cancels" onChange={event => { setPatternCommand(event.target.value); if (/^\d$/.test(event.target.value)) patternNumber(event.target.value); }} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setPatternCommand(null); board.current?.querySelector<HTMLElement>(".iso-board, .react-flow")?.focus(); } }} />
       </form>}
       {finding !== null && <div className="quick-add hud-menu canvas-search" role="dialog" aria-label="Find on board" onKeyDown={event => {
         if (event.key === "Escape") { event.stopPropagation(); setFinding(null); focusBoard(); }

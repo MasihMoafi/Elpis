@@ -291,8 +291,9 @@ function workflowPolicy(value, cwd) {
     if (root !== base && !root.startsWith(`${base}${path.sep}`) || !fs.statSync(root).isDirectory()) throw RequestError.invalidParams(undefined, "Workflow write scope must be a project folder");
   }
   if (value.reasoningEffort !== undefined && (typeof value.reasoningEffort !== 'string' || !/^[a-z]{2,16}$/.test(value.reasoningEffort))) throw RequestError.invalidParams(undefined, "Invalid workflow reasoning effort");
-  // The task protocol describes what to change; every automatic role uses Full access.
-  return { turn: { approvalPolicy: 'never', permissions: ':danger-full-access', ...(value.reasoningEffort ? { effort: value.reasoningEffort } : {}) } };
+  if (value.serviceTier !== undefined && (typeof value.serviceTier !== 'string' || !/^[a-z]{2,16}$/.test(value.serviceTier))) throw RequestError.invalidParams(undefined, "Invalid workflow service tier");
+  // The task protocol describes what to change; every automatic role uses Full access. Fast is the turn's service tier.
+  return { turn: { approvalPolicy: 'never', permissions: ':danger-full-access', ...(value.reasoningEffort ? { effort: value.reasoningEffort } : {}), ...(value.serviceTier ? { serviceTier: value.serviceTier } : {}) } };
 }
 
 function mcpConfig(servers = []) {

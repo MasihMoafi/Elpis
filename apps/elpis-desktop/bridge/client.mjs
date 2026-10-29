@@ -1358,7 +1358,7 @@ export class DesktopClient extends EventEmitter {
   #workflowTasks(tasks) {
     if(!Array.isArray(tasks)||tasks.length<1||tasks.length>256)throw new BridgeError('A workflow must contain 1–256 tasks');
     return tasks.map(task=>{
-      object(task,['id','kind','title','instruction','dependsOn','environmentId','writeScopes','acceptanceCriteria','provider','model','reasoningEffort','feedbackFrom','parts','output','flow']);
+      object(task,['id','kind','title','instruction','dependsOn','environmentId','writeScopes','acceptanceCriteria','provider','model','reasoningEffort','serviceTier','unchecked','feedbackFrom','parts','output','flow']);
       if(!['explore','implement','verify','fix','join'].includes(task.kind))throw new BridgeError('Unknown task role');
       const next={id:text(task.id,'task ID',100),kind:task.kind,title:text(task.title,'task title',256),instruction:text(task.instruction,'task instructions')};
       for(const key of ['dependsOn','writeScopes','acceptanceCriteria']){
@@ -1388,6 +1388,8 @@ export class DesktopClient extends EventEmitter {
         if(!/^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}$/.test(next.model))throw new BridgeError('Invalid ACP model ID');
       }
       if(task.reasoningEffort!==undefined)next.reasoningEffort=this.#effort(task.reasoningEffort);
+      if(task.unchecked!==undefined){if(task.unchecked!==true||task.kind!=='implement')throw new BridgeError('Only a writer can go unchecked');next.unchecked=true;}
+      if(task.serviceTier!==undefined){if(task.serviceTier!=='priority'&&task.serviceTier!=='fast')throw new BridgeError('Invalid task service tier');next.serviceTier=task.serviceTier;}
       return next;
     });
   }

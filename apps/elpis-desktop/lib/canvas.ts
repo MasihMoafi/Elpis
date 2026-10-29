@@ -11,9 +11,9 @@ export { waits };
  * (`runTasks`), and reading or planning happens inside the writers (lat.md/tasks.md, 17 October 2026). */
 /** `provider` is null for the engine's own provider; `effort` is the thinking level (sent per task); `writeScopes` are the project's
  * folders the agent may write ("." is the whole project) besides its own folder (`ownFolders`). */
-export type AgentData = { character?: string; characterImage?: string; muted?: boolean; title: string; instruction: string; model: string | null; provider?: string | null; effort?: string | null; writeScopes: string[]; acceptanceCriteria: string[];
-  /** How its check proves the work, when a ready-made workflow knows better than running the build or the tests. */
-  check?: string;
+export type AgentData = { character?: string; characterImage?: string; muted?: boolean; title: string; instruction: string; model: string | null; provider?: string | null; effort?: string | null; /** OpenAI Fast: the turn's "priority" tier. */ fast?: boolean; writeScopes: string[]; acceptanceCriteria: string[];
+  /** How its check proves the work, when a ready-made workflow knows better than running the build or the tests; false: no check. */
+  check?: string | false;
   /** Done by Elpis, not an agent: `parts` written in order into `output` (`flow`: pages that may end mid-sentence). */
   join?: { parts: string[]; output: string; flow?: boolean } };
 export type NoteData = { text: string };
@@ -38,7 +38,7 @@ export const agentCount = (n: number) => `${n} ${n === 1 ? "agent" : "agents"}`;
 export const STATUS_LABEL: Record<TaskStatus | "idle", string> = { idle: "not run", pending: "waiting", running: "running", succeeded: "done", failed: "failed", blocked: "blocked", cancelled: "cancelled" };
 export const CHECK_LABEL: Record<TaskStatus | "idle", string> = { idle: "Checked after it runs", pending: "Check waits for it", running: "Being checked", succeeded: "Check passed", failed: "Check failed", blocked: "Check blocked", cancelled: "Check cancelled" };
 /** `reasoningEffort` is the agent's thinking level, checked by its adapter and model. */
-export type RunTask = { id: string; kind: "implement" | "verify" | "join"; parts?: string[]; output?: string; flow?: boolean; title: string; instruction: string; dependsOn: string[]; writeScopes: string[]; acceptanceCriteria: string[]; provider?: string; model?: string; reasoningEffort?: string; feedbackFrom?: string[] };
+export type RunTask = { id: string; kind: "implement" | "verify" | "join"; parts?: string[]; output?: string; flow?: boolean; title: string; instruction: string; dependsOn: string[]; writeScopes: string[]; acceptanceCriteria: string[]; provider?: string; model?: string; reasoningEffort?: string; serviceTier?: "priority" | "fast"; /** No check follows: the person judges it. */ unchecked?: true; feedbackFrom?: string[] };
 
 /** The Mother node: the chat a run starts in. Every agent is her child; she starts the agents that wait for no one and
  * owns the run's reports. She is drawn, never sent: the scheduler takes her chat as its root thread. */
@@ -349,16 +349,20 @@ export function runTasks(graph: CanvasGraph): { tasks: RunTask[] } | { error: st
     const criteria = node.data.acceptanceCriteria.length ? node.data.acceptanceCriteria : [DONE];
     const model = { ...(node.data.provider ? { provider: node.data.provider } : {}), ...(node.data.model ? { model: node.data.model } : {}) };
     // A join has no check, so what waits on it waits on the join alone.
-    const dependsOn = graph.edges.filter(edge => waits(edge) && edge.target === node.id && ids.has(edge.source)).flatMap(edge => byId.get(edge.source)?.data.join ? [edge.source] : [edge.source, checkOf(edge.source)]);
+    const dependsOn = graph.edges.filter(edge => waits(edge) && edge.target === node.id && ids.has(edge.source)).flatMap(edge => byId.get(edge.source)?.data.join || byId.get(edge.source)?.data.check === false ? [edge.source] : [edge.source, checkOf(edge.source)]);
     // Elpis does a join itself: no agent, no model, no check (28 Oct: an agent and its check spent three minutes pasting).
     if (node.data.join) return [{ id: node.id, kind: "join",  title, instruction: prompt || title, dependsOn, writeScopes: scopes, acceptanceCriteria: criteria,
       parts: node.data.join.parts, output: node.data.join.output, ...(node.data.join.flow ? { flow: true } : {}) } satisfies RunTask];
-    return [
+    const work = [
       // Every writer receives the shared brief and its own prompt. Its final ACP answer feeds its check and successors.
       { id: node.id, kind: "implement" as const, title, instruction: [brief && `Goal of the whole run: ${brief}`, receives.join("\n"), prompt, `Save your result as files inside your allowed folders. ${report(folder, false)} Include the answer and file paths in your final answer so the next agent can use them.`, graph.template === "voting" && node.id === agents.at(-1)?.id ? "Compare the connected agents’ independent answers. Give the majority conclusion and explain disagreements with evidence." : "", alongside].filter(Boolean).join("\n\n"),
         dependsOn,
         ...(graph.template === "recursive" ? { feedbackFrom: graph.edges.filter(edge => edge.feedback && edge.target === node.id).flatMap(edge => [edge.source, checkOf(edge.source)]) } : {}),
-        writeScopes: scopes, acceptanceCriteria: criteria, ...model, ...(node.data.effort ? { reasoningEffort: node.data.effort } : {}) },
+        writeScopes: scopes, acceptanceCriteria: criteria, ...model, ...(node.data.effort ? { reasoningEffort: node.data.effort } : {}), ...(node.data.fast ? { serviceTier: "priority" } : {}), ...(node.data.check === false ? { unchecked: true as const } : {}) } satisfies RunTask,
+    ];
+    // `check: false`: the person judges the result, so no check agent follows (29 Oct, Logo: one agent and its image tool).
+    if (node.data.check === false) return work;
+    return [...work,
       { id: checkOf(node.id), kind: "verify" as const, title: `Check: ${title}`.slice(0, 256),
         instruction: `Check the work of “${title}”. Its prompt was:\n${prompt}\n\n${node.data.check?.trim() || "Run what proves it (the build, the tests, or reading what it wrote) and show the output."} Say plainly whether each of these holds: ${criteria.join("; ")}\n\nChange nothing of its work. ${report(`${folder}/check`, true)}`,
         dependsOn: [node.id], writeScopes: [`${folder}/check`], acceptanceCriteria: [`Each of “${title}”'s criteria is shown to hold or not, with evidence`], ...model },
@@ -454,6 +458,8 @@ export function saveGraph(graph: CanvasGraph) {
 
 /** Pattern commands rewire the current team without replacing its prompts or identities. */
 export const PATTERNS = ["Sequential", "Parallel", "Kahn graph waves", "Recursive", "Voting"] as const;
+/** The team a pattern number makes on an empty board: the starter of that shape. */
+export const PATTERN_TEAMS = ["sequential", "split-parts", "plan-build", "evaluator-optimizer", "voting"] as const;
 export function applyPattern(graph: CanvasGraph, number: number): CanvasGraph {
   const agents = agentsOf(graph);
   const sequential = () => chain(...agents);
@@ -595,10 +601,10 @@ export const WORKFLOWS: ReadyMade[] = [
     team: (folder, sources, worker, language) => translationTeam(folder, textParts(sources), worker, language),
     shape: () => translationTeam("book", [1, 2, 3].map(index => ({ file: "transcription.md", from: index * 10 - 9, to: index * 10 - 1 }))) },
   // The Designer needs the image generation tool, which agents on the ChatGPT route have (the engine's own models, `gpt-…`).
-  { id: "logo", name: "Logo", description: "Name the brand in the request box (or else the project is the brand): a Designer draws three directions with the image generation tool, a Curator picks one with reasons, a Tracer turns it into logo/logo.svg through SVG Studio with a 24/32/64 px sheet, and a Critic judges the pair.",
-    what: "the brand's project", workers: "logo agents", worker: [/^gpt-6\.1-sol$/, /^gpt-/], workerName: "A ChatGPT model", reads: false, subject: true,
+  { id: "logo", name: "Logo", description: "Name the brand in the request box (or else the project is the brand): one agent draws three directions with the image generation tool and traces each into SVG through SVG Studio; you pick.",
+    what: "the brand's project", workers: "logo agents", worker: [/^gpt-6\.1-sol$/, /^gpt-/], workerName: "Sol in Fast mode", reads: false, subject: true,
     noWorker: "Logo needs a ChatGPT model, whose agents have the image generation tool, and none is available here.",
-    here: () => true, sources: () => [], goal: brand => `Make the logo of ${brand}: three directions, one chosen and traced into logo/logo.svg with its 24/32/64 px sheet`,
+    here: () => true, sources: () => [], goal: brand => `Make the logo of ${brand}: three directions, each traced into SVG, for you to pick`,
     team: (folder, _sources, worker, _language, brand) => logoTeam(folder, brand, worker),
     shape: () => logoTeam("brand", "Brand") },
 ];

@@ -98,6 +98,18 @@ test("every workflow role uses Full access without asking and keeps its effort",
   await assert.rejects(a.conn.agent.request('session/new', { cwd: a.dir, mcpServers: [], _meta: { elpis: { workflow: { kind: 'implement', writeScopes: ['../escape'] } } } }), /scope/i);
 });
 
+// 29 Oct, Masih: "use sol high or med in fast mode". A workflow agent in Fast sends the turn on the Fast tier; without it, none.
+test("a workflow agent in Fast runs its turn on the Fast tier", { timeout: 20000 }, async t => {
+  const a = start(t);
+  const fast = await a.open({ elpis: { workflow: { kind: 'verify', writeScopes: [], reasoningEffort: 'medium', serviceTier: 'priority' } } });
+  await a.prompt(fast.sessionId, 'Draw it');
+  assert.equal(a.engine().filter(m => m.method === 'turn/start').at(-1).params.serviceTier, 'priority');
+  const plain = await a.conn.agent.request('session/new', { cwd: a.dir, mcpServers: [], _meta: { elpis: { workflow: { kind: 'verify', writeScopes: [] } } } });
+  await a.prompt(plain.sessionId, 'Draw it');
+  assert.equal(a.engine().filter(m => m.method === 'turn/start').at(-1).params.serviceTier, undefined);
+  await assert.rejects(a.conn.agent.request('session/new', { cwd: a.dir, mcpServers: [], _meta: { elpis: { workflow: { kind: 'verify', writeScopes: [], serviceTier: 'Fast!' } } } }), /tier/i);
+});
+
 test('a private ACP agent follows changing default scopes and never asks', { timeout: 20000 }, async t => {
   let configFile;
   const write = mode => fs.writeFileSync(configFile, JSON.stringify({ config: { approval_policy: mode === 'full' ? 'never' : 'on-request', default_permissions: mode === 'full' ? ':danger-full-access' : ':workspace' } }));

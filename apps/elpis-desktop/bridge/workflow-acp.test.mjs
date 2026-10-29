@@ -226,6 +226,19 @@ test('every agent writes: a check gets its own folder, and folders the run names
   assert.deepEqual([opened.kind, opened.writeScopes], ['verify', ['agents/writer/check']]);
 });
 
+// 29 Oct, Masih: "use sol high or med in fast mode". A task's Fast tier reaches its agent; a task without it sends none.
+test('a task in Fast runs its agent on the Fast tier; an unknown tier is refused', { timeout: 20000 }, async t => {
+  const f = fixture(t); await f.client.initialize();
+  const fast = { ...task('fast'), kind: 'implement', writeScopes: ['agents/fast'], serviceTier: 'priority', unchecked: true };
+  const plain = { ...task('plain'), kind: 'implement', writeScopes: ['agents/plain'], unchecked: true };
+  const g = await f.finished((await f.run([fast, plain])).graphId);
+  assert.equal(g.status, 'succeeded', g.error);
+  assert.equal(f.log('fast').find(row => row.method === 'session/new').params._meta.elpis.workflow.serviceTier, 'priority');
+  assert.equal(f.log('plain').find(row => row.method === 'session/new').params._meta.elpis.workflow.serviceTier, undefined);
+  await assert.rejects(f.run([{ ...task('odd'), kind: 'implement', writeScopes: ['agents/odd'], serviceTier: 'turbo', unchecked: true }]), /service tier/i);
+  await assert.rejects(f.run([{ ...task('bare'), kind: 'implement', writeScopes: ['agents/bare'] }]), /directly dependent check/, 'a writer still needs a check unless it says it goes unchecked');
+});
+
 test('A30: an empty project runs real ACP processes; every writer and check creates its own report, including a whole-project writer', { timeout: 20000 }, async t => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'wf1-reports-'));
   const env = { workflowFake: {} };
