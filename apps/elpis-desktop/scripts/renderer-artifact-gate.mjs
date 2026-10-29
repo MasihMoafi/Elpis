@@ -180,9 +180,9 @@ export const retainedUpdates = {
       "reason": "Masih 27 Oct: restore the automatic orange completion/unread marker to the left; manual colour remains separate. Show observed Mother and recursively spawned live team despite a saved failure, keep recorded model evidence historical, and prevent duplicate recovery. Settings must fit beside navigation, hide unsupported Flex, show whole sidebar rows, and simplify chat actions into Organize/Open in with correct singular/bulk wording. Retain paging, keyboard, storage, action outcomes, isolation and alignment; shared test callers follow the same moved submenu actions. Immutable baseline retained."
     },
     "tests/agent-runs.test.cjs": {
-      "blob": "c1fb99d08cf66e7a4bd8090fc3d9252c3319a51a",
-      "approval": "3afa19f438d0051e46274949bc8bb8cc6e42abb9",
-      "reason": "R73, Masih 26 Oct: native agents share their recursive parent tree. Navigate linked runs via their collapsed parent and keep only real unlinked runs in Background runs. Retain pagination, read-only, Continue, refusal, no-send, no-interrupt, seeded unread, project and pin checks; linked search results stay flat."
+      "blob": "9b5894efff51b8bf16970c41edbc4ea541deea65",
+      "approval": "75d7eca37cc07cf92a9a648dcaeb0fbda7607b2e",
+      "reason": "Masih 29 Oct: \"those extra useless chats like the ones saying Task ID ... or chats I didn't start should not show in my side-bar chats. I want that place to be organized\". S18: Pinned, Projects, Groups and Recents list only his chats; Background runs and the sidebar Workflows section are off by default, so this test turns them on (orphans and broken-lineage chats are reached in Background runs)."
     },
     "tests/provider-model-pairs.test.cjs": {
       "blob": "d107afadc886c3923c6de250e33ee821fbb5c650",
@@ -290,9 +290,9 @@ export const retainedUpdates = {
       "reason": "Masih 27 Oct: \"it's ugly; showing all sorts of things it shouldn't. The workflow particularly.\" then \"Please fix them all\". Workflows drops Kahn's order, the critical path, the reading list, the key strip and wave labels (SPEC.md Workflows, Removed); the minimap starts hidden; the run clock is a small time in the header; patterns open from the pattern menu and the guide sits under the board. Only assertions on removed elements changed; the rest are kept."
     },
     "tests/sidebar-creators.test.cjs": {
-      "blob": "21f7ae074660ae529bc05d619b5fcab749512163",
-      "approval": "0ff5340483d4f94b7baa1de092fcd06cf4b5b4e2",
-      "reason": "Isolated fixtures use the standard temporary directory on a fresh runner, without depending on a personal cache folder. All creator-history, folded-branch, keyboard, provider and persistence assertions remain."
+      "blob": "35ac127fbcbb9dfb093a482bdbe68147a272b88f",
+      "approval": "75d7eca37cc07cf92a9a648dcaeb0fbda7607b2e",
+      "reason": "Masih 29 Oct: \"those extra useless chats like the ones saying Task ID ... or chats I didn't start should not show in my side-bar chats. I want that place to be organized\". S18: Pinned, Projects, Groups and Recents list only his chats; Background runs and the sidebar Workflows section are off by default, so this test turns them on (orphans and broken-lineage chats are reached in Background runs)."
     },
     "tests/browser-panel.test.cjs": {
       "blob": "beb411ca81a0cd2b14cc7b02944b1c9dc023d446",
@@ -315,14 +315,14 @@ export const retainedUpdates = {
       "reason": "Masih 27 Oct: Settings is grouped as ChatGPT's (Personal, Integrations, Coding, Archived); the old category names remain /config aliases and still open working pages."
     },
     "tests/workflow-polish.test.cjs": {
-      "blob": "6a91508074920acadebc49db298f2a47223d417e",
-      "approval": "9f5a612d1d2f2a17850a3a457b1f815724d2568e",
-      "reason": "SPEC O2 project creation uses known folder/chooser first; open Advanced: custom folder before typing. Deferred transcript bodies are opened and awaited before reading, preserving all activity/copy assertions. Historical activity content is materialized when its disclosures open. Wait for the real opened body before checking reasoning and tools; keep every copy, agent-discovery and activity assertion. Wait on stable disclosure owners: a :not([open]) locator changes identity after the click. Keep all reasoning, tool, copy and discovered-agent assertions after their bodies mount."
+      "blob": "b386a441853714121252ae4a4a42356496cba417",
+      "approval": "75d7eca37cc07cf92a9a648dcaeb0fbda7607b2e",
+      "reason": "Masih 29 Oct: \"those extra useless chats like the ones saying Task ID ... or chats I didn't start should not show in my side-bar chats. I want that place to be organized\". S18: Pinned, Projects, Groups and Recents list only his chats; Background runs and the sidebar Workflows section are off by default, so this test turns them on (orphans and broken-lineage chats are reached in Background runs)."
     },
     "tests/sidebar-groups.test.cjs": {
-      "blob": "6614ab6bb40c35701d16910c949ea29e362828a5",
-      "approval": "54442dcc73bbc892e6771cf881d43a03141affae",
-      "reason": "Masih 27 Oct: restore the automatic orange completion/unread marker to the left; manual colour remains separate. Show observed Mother and recursively spawned live team despite a saved failure, keep recorded model evidence historical, and prevent duplicate recovery. Settings must fit beside navigation, hide unsupported Flex, show whole sidebar rows, and simplify chat actions into Organize/Open in with correct singular/bulk wording. Retain paging, keyboard, storage, action outcomes, isolation and alignment; shared test callers follow the same moved submenu actions. Immutable baseline retained."
+      "blob": "ef2e3c25494e2ceb0c2dc87748e9c7959d369415",
+      "approval": "75d7eca37cc07cf92a9a648dcaeb0fbda7607b2e",
+      "reason": "Masih 29 Oct: \"those extra useless chats like the ones saying Task ID ... or chats I didn't start should not show in my side-bar chats. I want that place to be organized\". S18: Pinned, Projects, Groups and Recents list only his chats; Background runs and the sidebar Workflows section are off by default, so this test turns them on (orphans and broken-lineage chats are reached in Background runs)."
     },
     "tests/workflow-observer.test.cjs": {
       "blob": "ce9413f242253cf0c57d89cb9a3ec5d7532270c4",
@@ -415,9 +415,9 @@ export const retainedUpdates = {
       "reason": "Masih 27 Oct: explicit per-conversation colours replace idle markers while retaining active/unread/error semantics, alignment and keyboard proof; thinking stays visible as secondary controls collapse; GUI /resume visibly chooses and opens saved history. Retain document calculations, selected-text feedback before deliberate navigation fallback, paging and shared editing. Keep behavioral assertions and the immutable baseline."
     },
     "tests/desktop-small-fixes.test.cjs": {
-      "blob": "f02b388191828cac085bcbd12a80f994762ef192",
-      "approval": "d855d3ccd5400a484a1897f903f4876e67798331",
-      "reason": "The Session Manager row is a switch. Masih 22 Oct: \"people should be able to turn on and off the session manager right there\". The arrow-key walk still stops on the row, now a switch; every other step is unchanged. Then, Masih 22 Oct, \"Yes please\" to the page being called Customize; the label follows. Masih, 23 Oct: the Session Manager \"is non-functional ... either fix it; if you can\'t, delete it.\" It is deleted: its switch row and its hidden chat checks go; the remaining sidebar checks are unchanged."
+      "blob": "56d95eaf8a0f50e1feab8ebee0054c57a6c83a71",
+      "approval": "75d7eca37cc07cf92a9a648dcaeb0fbda7607b2e",
+      "reason": "Masih 29 Oct: \"those extra useless chats like the ones saying Task ID ... or chats I didn't start should not show in my side-bar chats. I want that place to be organized\". S18: Pinned, Projects, Groups and Recents list only his chats; Background runs and the sidebar Workflows section are off by default, so this test turns them on (orphans and broken-lineage chats are reached in Background runs)."
     },
     "tests/chat-groups.test.mjs": {
       "blob": "001cd63dac038dcd666cce877a4468ea7fe0b45e",
@@ -500,9 +500,9 @@ export const retainedUpdates = {
       "reason": "Masih 27 Oct: explicit per-conversation colours replace idle markers while retaining active/unread/error semantics, alignment and keyboard proof; thinking stays visible as secondary controls collapse; GUI /resume visibly chooses and opens saved history. Retain document calculations, selected-text feedback before deliberate navigation fallback, paging and shared editing. Keep behavioral assertions and the immutable baseline."
     },
     "tests/sidebar-nav-icons.test.cjs": {
-      "blob": "764daea50569416e6f0ada062786112bafbd82b5",
-      "approval": "3afa19f438d0051e46274949bc8bb8cc6e42abb9",
-"reason": "OBSRM, Masih 21 Oct 22:45: \"remove it; remove the observability page - keep its logo icon as it looks good. the rest, remove.\" Preserve the remaining navigation checks. R73, Masih 26 Oct: linked native runs appear once under their parent. Keep genuine unlinked history accessible, and preserve every workspace-navigation, command, icon, pixel, geometry and fit assertion."
+      "blob": "9a95e348b34396517804f68a04f1076694a75115",
+      "approval": "75d7eca37cc07cf92a9a648dcaeb0fbda7607b2e",
+"reason": "Masih 29 Oct: \"those extra useless chats like the ones saying Task ID ... or chats I didn't start should not show in my side-bar chats. I want that place to be organized\". S18: Pinned, Projects, Groups and Recents list only his chats; Background runs and the sidebar Workflows section are off by default, so this test turns them on (orphans and broken-lineage chats are reached in Background runs)."
     },
     "tests/usability.test.cjs": {
       "blob": "e5cb1ba443f4983879427b0a4ff10b9cdb8d28a5",
