@@ -619,7 +619,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .turn { margin-bottom:4px; content-visibility:auto; contain-intrinsic-size:auto 320px; }
 .turn-time { text-align:center; color:var(--muted-foreground); font-size:var(--text-small, 13px); margin:28px 0 20px; }
 .turn .user-turn { margin-bottom:24px; }
-.message.agent { position:relative; margin-bottom:0; }
+.message.agent { position:relative; margin-bottom:18px; }
 /* Agent work, as Claude's desktop app shows it (components/transcript.tsx, chat-message.tsx CommandStep): a finished
  * run of tools is one muted row with a chevron; a running step is a sentence with dots and a timer; an opened command
  * is a title, its script in a bordered block coloured as shell, then its output, in red when it failed. */
