@@ -651,8 +651,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .turn-stopped, .context-event { margin:6px 0 18px; font-size:0.8125rem; color:var(--muted-foreground); }
 .turn-working { display:flex; align-items:center; gap:8px; width:fit-content; max-width:100%; margin-top:14px; padding:3px 0; font-size:0.875rem; color:var(--muted-foreground); }
 /* The live Working row is the transcript's last line: it sits just above the composer, separated only by the composer
- * wrap's own 6px, with no turn gap or scroll padding under it. */
-.turn:has(> .turn-working) { margin-bottom:0; }
+ * wrap's own 6px plus 4px of its own (29 Oct: "a tad higher"), with no scroll padding under it. */
+.turn:has(> .turn-working) { margin-bottom:4px; }
 .chat-scroll:has(.turn-working) { padding-bottom:0; }
 .sh-command { color:var(--sh-command); }
 .sh-flag { color:color-mix(in oklch, var(--sh-command) 70%, var(--muted-foreground)); }
