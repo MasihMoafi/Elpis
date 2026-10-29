@@ -180,9 +180,9 @@ export const retainedUpdates = {
       "reason": "Masih 27 Oct: restore the automatic orange completion/unread marker to the left; manual colour remains separate. Show observed Mother and recursively spawned live team despite a saved failure, keep recorded model evidence historical, and prevent duplicate recovery. Settings must fit beside navigation, hide unsupported Flex, show whole sidebar rows, and simplify chat actions into Organize/Open in with correct singular/bulk wording. Retain paging, keyboard, storage, action outcomes, isolation and alignment; shared test callers follow the same moved submenu actions. Immutable baseline retained."
     },
     "tests/agent-runs.test.cjs": {
-      "blob": "9b5894efff51b8bf16970c41edbc4ea541deea65",
-      "approval": "75d7eca37cc07cf92a9a648dcaeb0fbda7607b2e",
-      "reason": "Masih 29 Oct: \"those extra useless chats like the ones saying Task ID ... or chats I didn't start should not show in my side-bar chats. I want that place to be organized\". S18: Pinned, Projects, Groups and Recents list only his chats; Background runs and the sidebar Workflows section are off by default, so this test turns them on (orphans and broken-lineage chats are reached in Background runs)."
+      "blob": "38a9d86b5019ba98dcb53ad2ba14dd50c036cb9a",
+      "approval": "50247373f624a24f0972f3922be179bdc260fece",
+      "reason": "Masih 29 Oct: \"those extra useless chats like the ones saying Task ID ... or chats I didn't start should not show in my side-bar chats. I want that place to be organized\". S18: Pinned, Projects, Groups and Recents list only his chats; Background runs and the sidebar Workflows section are off by default, so this test turns them on (orphans and broken-lineage chats are reached in Background runs). Masih 29 Oct: \"This mark all as read also doesn't make sense when I've already read all of them!\". Adds: a hidden subagent or unlisted thread finishing does not offer Mark all as read. Earlier S18 checks remain."
     },
     "tests/provider-model-pairs.test.cjs": {
       "blob": "d107afadc886c3923c6de250e33ee821fbb5c650",
@@ -200,9 +200,9 @@ export const retainedUpdates = {
       "reason": "S34, Masih 26 Oct: disconnected Elpis must still allow typing and saved drafts. Supersede the disabled-composer expectation; retain uncertain delivery, stale approvals, authoritative history, bottom notice geometry and all six A125 recovery cases. Exercise the real desktop store through an explicit shared browser context, clear the slash draft before empty-draft shell entry, and assert offline permissions, effort, folder and Stop cannot mutate the runtime. Keep every existing assertion and timeout. Masih overnight stability request, 26 Oct: exercise transient launch-token recovery, exact saved/edited draft ownership and restored Undo. Preserve all six A125 recovery cases and all prior refusal, delivery and offline-mutation assertions."
     },
     "tests/chat-activity.test.cjs": {
-      "blob": "b764612da30e5c3f5da30fdd9b1cde08d176abe8",
-      "approval": "81dd022e9dd5d055cbb15110fb2649751f8578f6",
-      "reason": "Wait for opened folded work and its activity body before selecting a tool; scope the long group to that finished turn so a still-loading fold cannot select the live group. Preserve every collapse, focus return, keyboard reopening and reduced-motion assertion."
+      "blob": "66400bde9db7f3b84cd15e2eeb211c8ac89ac1bb",
+      "approval": "d7df305f1efcbfb9cbb7227e0ff1d9bb73c552f2",
+      "reason": "Wait for opened folded work and its activity body before selecting a tool; scope the long group to that finished turn so a still-loading fold cannot select the live group. Preserve every collapse, focus return, keyboard reopening and reduced-motion assertion. Masih 29 Oct: \"I explicitly told you to create a parity of chatgpt app ... map every style feature of chatgpt app into a clear spec that's reusable and make our design match it\" (specs/chatgpt-chat-style.md). Inline code keeps the reply's ink on a 6% chip; the working rotor is checked at the turn's foot (Masih 29 Oct: \"you can see the working animation changes its place!\"). Every other assertion remains."
     },
     "tests/composer-consistency.test.cjs": {
       "blob": "b33d5c98abbd8ac1b34c7023a7e71bf02af10ac6",
@@ -225,9 +225,9 @@ export const retainedUpdates = {
       "reason": "Masih 27 Oct: \"it's ugly; showing all sorts of things it shouldn't. The workflow particularly.\" then \"Please fix them all\". Workflows drops Kahn's order, the critical path, the reading list, the key strip and wave labels (SPEC.md Workflows, Removed); the minimap starts hidden; the run clock is a small time in the header; patterns open from the pattern menu and the guide sits under the board. Only assertions on removed elements changed; the rest are kept."
     },
     "tests/step-sentences.test.cjs": {
-      "blob": "a137478ac4839fba2417d8274369404c0971fb2c",
-      "approval": "08d2e147eb2abd091cac7532bc62ceabf1e10bd9",
-      "reason": "Wait for each opened lazy activity body before reading all finished sentences; every sentence and pointer/keyboard disclosure assertion remains. S36/R74, Masih 26 Oct: hide empty Reasoning and missing-summary placeholders. Replace obsolete empty-disclosure pointer/keyboard cases with saved-empty to streamed-summary to recorded-content lifecycle proof; preserve real-summary pointer/keyboard in both themes, working status, disclosure and exact code-copy assertions. Raw history remains unchanged."
+      "blob": "35c9d36d67b257d1e3a40ad72e26c3fc76cbdf81",
+      "approval": "dcf3b67c6df4340a3edbe285658f3069be456e83",
+      "reason": "Wait for each opened lazy activity body before reading all finished sentences; every sentence and pointer/keyboard disclosure assertion remains. S36/R74, Masih 26 Oct: hide empty Reasoning and missing-summary placeholders. Replace obsolete empty-disclosure pointer/keyboard cases with saved-empty to streamed-summary to recorded-content lifecycle proof; preserve real-summary pointer/keyboard in both themes, working status, disclosure and exact code-copy assertions. Raw history remains unchanged. Masih 29 Oct: \"you can see the working animation changes its place!\". The working mark has one place, the turn's foot; a running row keeps its sentence and ticking timer without a mark. Every other assertion remains."
     },
     "tests/night-workflows.test.cjs": {
       "blob": "b7a51ea7c95482c50d29d9c0fd67ee0e360eece7",
@@ -445,9 +445,9 @@ export const retainedUpdates = {
       "reason": "Initial SSE connection refreshes accounts; retain exact request deltas for every subsequent action A233/A251: one Default permissions setting defaults to Full access and respects managed constraints. Retain all provider usage persistence, sign-out, queue and settings-write checks; A125 initial connection reconciliation remains required."
     },
     "tests/claude-chat.test.cjs": {
-      "blob": "4749b11d73fa1a96cc4f2ed7f5c41b90533dc117",
-      "approval": "4888c4c4fbd7fcaeb8eb03a2519a97a525c4e7eb",
-      "reason": "A121, Masih: \"You don't need to ask me that; I'm result-oriented.\" Await native scroll delivery alongside the mocked clock, keeping the last-prompt assertion and adding a no-pullback check. Keep the already approved OBSRM navigation update. Requested menu entries now include Read aloud, Bookmark, Put under, New project from these, Context and /goal. S32/S35, Masih 25 Oct: Fast applies within the current turn and has a lightning toggle. Preserve no-send, on/off, refusal and command coverage; compaction uses one shared label. S35 persistent menubar items are separate from popup choices. Wait for the opened menu and preserve exact message/context actions and all reply-edit checks. Masih 27 Oct: long messages need an option to collapse. Append both-theme shared user/reply folding, complete Copy, keyboard, short controls and streamed-growth checks; retain every existing test and assertion. Masih permits hiding unusable read aloud. Remove only unavailable read-aloud menu expectation; retain all action, copy, folding, context and editing assertions."
+      "blob": "a58d3a0ef03234d874047fed3c680167263378c7",
+      "approval": "e0c15cf40197bdb08388bac6f5fbb0d0659db642",
+      "reason": "A121, Masih: \"You don't need to ask me that; I'm result-oriented.\" Await native scroll delivery alongside the mocked clock, keeping the last-prompt assertion and adding a no-pullback check. Keep the already approved OBSRM navigation update. Requested menu entries now include Read aloud, Bookmark, Put under, New project from these, Context and /goal. S32/S35, Masih 25 Oct: Fast applies within the current turn and has a lightning toggle. Preserve no-send, on/off, refusal and command coverage; compaction uses one shared label. S35 persistent menubar items are separate from popup choices. Wait for the opened menu and preserve exact message/context actions and all reply-edit checks. Masih 27 Oct: long messages need an option to collapse. Append both-theme shared user/reply folding, complete Copy, keyboard, short controls and streamed-growth checks; retain every existing test and assertion. Masih permits hiding unusable read aloud. Remove only unavailable read-aloud menu expectation; retain all action, copy, folding, context and editing assertions. Masih 29 Oct, of \"Rewind to here\" on a reply: \"This option is nonsensical ... rewind what?\". A reply's menu lists Reply, Copy text, Copy as Markdown and Fork; prompts keep Rewind. Every other assertion remains."
     },
     "tests/command-menu.test.cjs": {
       "blob": "b5ee4928b92b7c915bc7a78b33fc75c848e8bf06",
@@ -582,6 +582,16 @@ export const retainedUpdates = {
       "blob": "bd411e5a0e6e7e5bb070f6e87054a7f3b0ed0b52",
       "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
       "reason": "Voice, 23 Oct: the composer asks GET /api/voice for whether a call is possible; this strict fixture reports any unknown request as a failure, so it answers that one (no call here). WI: unique workflow names and colours read workflow history at startup; fixture answers that read with an empty history. Preserve strict unknown-request rejection, archive, restore and deletion checks."
+    },
+    "tests/prompt-rail.test.cjs": {
+      "blob": "f21b16860980064fda3843c82cfdc344c68f7692",
+      "approval": "d7df305f1efcbfb9cbb7227e0ff1d9bb73c552f2",
+      "reason": "Masih 29 Oct: \"I explicitly told you to create a parity of chatgpt app ... map every style feature of chatgpt app into a clear spec that's reusable and make our design match it\" (specs/chatgpt-chat-style.md). The rail appears from four prompts (Masih 29 Oct earlier: \"When there is only one message we don't want this bar\"), its hovered dash is 26px and its card opens at the rail's edge; tests with fewer prompts gain prompts so every behaviour is still exercised."
+    },
+    "tests/previous-messages.test.cjs": {
+      "blob": "425373266203ddbea262a48cab16a38afcce2c7b",
+      "approval": "c3b5cca74144936d9d8c92a55be9ab06516e8a30",
+      "reason": "Masih 29 Oct: \"what does this mean? the 6 previous messages part. I think it's wrong.\" An untimed fold says what it holds, counted by kind (\"2 messages, browsed the web, ran a command\")."
     },
     "tests/view-errors.test.cjs": {
       "blob": "3aa697bf47386452b99868dae38662643f8d08fe",
