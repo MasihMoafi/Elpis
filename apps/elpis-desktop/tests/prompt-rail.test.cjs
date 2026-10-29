@@ -125,6 +125,27 @@ test('one prompt shows no rail; two prompts show it, with usable ticks', async (
   } finally { await f.close(); }
 });
 
+// R24: a hover card never covers text; here, the live "Working" row at the foot of a running chat.
+test('the hover card stays above the live Working row', async () => {
+  // The fixture runs turn t4, so it is the last of the 24.
+  const chat = Array.from({ length: 24 }, (_, i) => [i === 23 ? 't4' : `p${i + 1}`, `Prompt ${i + 1}.`, `Reply ${i + 1}, which runs to a second line of preview so the card has its usual height.`]);
+  const f = await fixture({ chat, running: true, height: 560, routes: { '/api/threads/chat-a/prompts': () => indexOf(chat) } });
+  try {
+    await f.open('chat-a');
+    const working = f.page.locator('.turn-working[role="status"]').last();
+    await working.waitFor();
+    await f.page.locator('.chat-scroll').evaluate(element => element.scrollTo({ top: element.scrollHeight }));
+    const marks = marksOf(f.page);
+    await marks.last().hover();
+    const card = f.page.locator('.prompt-preview');
+    await card.waitFor();
+    await f.page.waitForTimeout(100);
+    const [c, w] = [await card.boundingBox(), await working.boundingBox()];
+    assert.ok(c.y + c.height <= w.y, `card bottom ${c.y + c.height} stays above the Working row's top ${w.y}`);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
 test('a later loaded-tick click wins while an older page is arriving', async () => {
   const chat = Array.from({ length: 5 }, (_, index) => [`t${index + 1}`, `Prompt ${index + 1}.`, `Answer ${index + 1}.\n\n${'Long explanation.\n\n'.repeat(18)}`]);
   let release, requested;

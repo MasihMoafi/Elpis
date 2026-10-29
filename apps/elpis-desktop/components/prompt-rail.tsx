@@ -185,7 +185,10 @@ export function PromptRail({ scroller, threadId, entries, onLoadEarlier, onNavig
       if (!card.current || !rail.current || !scroller.current) return;
       const bounds = scroller.current.getBoundingClientRect(), railTop = rail.current.getBoundingClientRect().top;
       const half = card.current.getBoundingClientRect().height / 2;
-      const top = Math.max(bounds.top + half + 8, Math.min(bounds.bottom - half - 8, railTop + hovered.top)) - railTop;
+      // The card never covers the live "Working" row (R24): it stays above it while that row is in view.
+      const live = [...scroller.current.querySelectorAll(".turn-working, .activity-group:has(.elpis-working-mark) > summary")].at(-1)?.getBoundingClientRect();
+      const floor = live && live.top < bounds.bottom && live.bottom > bounds.top ? live.top : bounds.bottom;
+      const top = Math.max(bounds.top + half + 8, Math.min(floor - half - 8, railTop + hovered.top)) - railTop;
       if (Math.abs(top - hovered.top) > 0.5) setHovered(current => current === hovered ? { ...current, top } : current);
     };
     fit();
