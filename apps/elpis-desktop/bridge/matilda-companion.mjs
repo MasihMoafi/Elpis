@@ -10,7 +10,7 @@ export const PYTHON = existsSync('/usr/bin/python3') ? '/usr/bin/python3' : 'pyt
 // MPRIS stays on the user's session bus. Python/dbus is optional: no dependency is installed,
 // only an existing player is controlled, and a missing local service is returned as an ordinary explanation.
 const MPRIS = `
-import sys, json, dbus, subprocess, time
+import sys, json, re, dbus, subprocess, time
 bus = dbus.SessionBus()
 action, wanted, uri, volume = sys.argv[1:]
 players = []
@@ -20,6 +20,9 @@ for name in sorted(str(n) for n in bus.list_names() if n.startswith('org.mpris.M
         props = dbus.Interface(obj, 'org.freedesktop.DBus.Properties').GetAll('org.mpris.MediaPlayer2.Player', timeout=2)
         players.append((name, obj, props))
     except dbus.DBusException: pass
+# A browser playing a video is not music: its tab is never Matilda's player (29 Oct, Masih, with YouTube playing in Brave:
+# "no music is playing!").
+players = [p for p in players if not re.search(r'brave|chrom|firefox|edge|opera|vivaldi|epiphany|plasma-browser|kdeconnect', p[0], re.I)]
 if wanted:
     players = [p for p in players if p[0] == wanted]
 else:

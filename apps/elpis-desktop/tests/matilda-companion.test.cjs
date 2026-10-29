@@ -32,6 +32,9 @@ for (const colorScheme of ['light', 'dark']) test(`Matilda floats out of the tit
   const pin = page.getByRole('button', { name: 'Pin Matilda', exact: true });
   await pin.waitFor({ timeout: 3000 });
   const start = await pin.boundingBox();
+  // 29 Oct, Masih: "don't say pin matilda. the pin icon is enough."
+  assert.equal((await pin.innerText()).trim(), '', 'the pin is an icon, with no word');
+  assert.equal(await pin.locator('svg').count(), 1);
   assert.ok(start.y < 36, JSON.stringify(start));
   await pin.click();
   const presence = page.getByRole('region', { name: 'Pinned Matilda', exact: true });
@@ -113,6 +116,8 @@ for (const colorScheme of ['light', 'dark']) test(`Matilda mini chat, mute and d
   await f.composer.fill('Main chat draft stays here');
   const mainState = async () => ({ url: page.url(), active: await page.locator('.thread-row.active').getAttribute('data-thread-id'), draft: await f.composer.inputValue(), composer: await page.locator('.composer').boundingBox(), chat: await page.locator('.chat-scroll').boundingBox() });
   const mainBefore = await mainState();
+  // 29 Oct, Masih: "I don't like the word mute and there should be an icon".
+  assert.equal((await presence.getByRole('button', { name: 'Mute music', exact: true }).innerText()).trim(), '', 'sound is an icon, with no word');
   await presence.getByRole('button', { name: 'Mute music', exact: true }).click();
   await presence.getByRole('button', { name: 'Unmute music', exact: true }).waitFor();
   assert.equal(await mini.count(), 0, 'mute opens no panel');
@@ -253,5 +258,22 @@ test('the small chat starts fresh, keeps earlier turns behind a button, and asks
   assert.deepEqual(await shown(), ['tiltSmile'], 'a warm tilted smile while hovered');
   await page.mouse.move(0, 400);
   await page.waitForFunction(() => !document.querySelector('[aria-label="Pinned Matilda"] img[data-shown="true"]'));
+  assert.deepEqual(f.errors, []);
+});
+
+// 29 Oct, Masih, with nothing but a paused player: "what's this mute doing? ... no music is playing!"
+test('the sound control shows only while music plays', { timeout: 60000 }, async t => {
+  const { fixture } = require('./parity-fixture.cjs');
+  const { FACE_DATA_URL } = require('../bridge/matilda-face.cjs');
+  const music = { title: 'Linkin Park masterpiece', artist: 'Linkin Park', uri: 'file:///favorite.m4a', status: 'Paused', canMute: true, muted: false };
+  const f = await fixture({ width: 1000, height: 800, routes: {
+    '/api/love-spot/companion': () => ({ pinned: true, face: FACE_DATA_URL, threadId: 'chat-a', favorite: null, music, reason: '' }),
+  } });
+  t.after(() => f.close());
+  await f.open('chat-a');
+  const presence = f.page.getByRole('region', { name: 'Pinned Matilda', exact: true }); await presence.waitFor();
+  await presence.hover();
+  assert.equal(await presence.getByRole('button', { name: /mute music/i }).count(), 0, 'paused music: no sound control');
+  assert.equal(await presence.getByRole('button', { name: 'Unpin Matilda', exact: true }).count(), 1);
   assert.deepEqual(f.errors, []);
 });

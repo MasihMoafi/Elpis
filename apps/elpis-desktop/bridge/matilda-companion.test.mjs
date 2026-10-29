@@ -19,8 +19,8 @@ async function fixture(t) {
   return { directory, store, env, companion };
 }
 
-async function startPlayer(t, f, { name = 'matilda_test', openUri = true, volume = 0.37, writableVolume = true } = {}) {
-  const calls = path.join(f.directory, 'player-calls');
+async function startPlayer(t, f, { name = 'matilda_test', openUri = true, volume = 0.37, writableVolume = true, playing = false } = {}) {
+  const calls = path.join(f.directory, `${name}-calls`);
   const player = spawn(PYTHON, ['-u', '-c', `
 import sys, dbus, dbus.service, dbus.mainloop.glib
 from gi.repository import GLib
@@ -30,7 +30,7 @@ name = dbus.service.BusName('org.mpris.MediaPlayer2.' + sys.argv[1], bus)
 def log(action):
     with open(sys.argv[2], 'a') as output: output.write(action + '\\n')
 class Player(dbus.service.Object):
-    status = 'Paused'
+    status = 'Playing' if sys.argv[5] == 'true' else 'Paused'
     volume = ${volume === null ? 'None' : volume}
     url = 'file:///music/linkin%20park.m4a'
     @dbus.service.method('org.freedesktop.DBus.Properties', in_signature='s', out_signature='a{sv}')
@@ -56,7 +56,7 @@ class Player(dbus.service.Object):
 p = Player(bus, '/org/mpris/MediaPlayer2')
 print('ready', flush=True)
 GLib.MainLoop().run()
-`, name, calls, String(openUri), String(writableVolume)], { env: f.env, stdio: ['ignore', 'pipe', 'pipe'] });
+`, name, calls, String(openUri), String(writableVolume), String(playing)], { env: f.env, stdio: ['ignore', 'pipe', 'pipe'] });
   t.after(() => player.kill());
   let error = ''; player.stderr.on('data', data => { error += data; });
   await Promise.race([once(player.stdout, 'data'), once(player, 'exit').then(() => { throw new Error(error); })]);
@@ -216,4 +216,17 @@ test('a refused player volume write reports failure without pausing playback', a
   const f = await fixture(t), { calls } = await startPlayer(t, f, { writableVolume: false });
   await assert.rejects(f.companion.act({ action: 'toggle-mute', page: 'page' }), /volume|music controls/i);
   await assert.rejects(fs.access(calls), { code: 'ENOENT' });
+});
+
+// 29 Oct, Masih, with a YouTube video playing in Brave and Audacious paused: "no music is playing!" A browser tab is never
+// Matilda's music, and her sound control (shown only while music plays) never touches it.
+test('a browser playing a video is not music: the music player is chosen, and the browser is never written to', async t => {
+  const f = await fixture(t);
+  await startPlayer(t, f);
+  const browser = await startPlayer(t, f, { name: 'brave.instance42', playing: true, writableVolume: false });
+  await f.companion.act({ action: 'pin', page: 'page' });
+  const music = (await f.companion.read('page')).music;
+  assert.equal(music.player, 'org.mpris.MediaPlayer2.matilda_test');
+  assert.equal(music.status, 'Paused', 'nothing plays, so the control stays hidden');
+  await assert.rejects(fs.access(browser.calls), { code: 'ENOENT' });
 });

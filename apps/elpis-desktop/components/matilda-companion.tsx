@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { createPortal } from "react-dom";
-import { PinIcon } from "@/components/elpis-icons";
+import { PinIcon, SoundIcon, SoundOffIcon } from "@/components/elpis-icons";
 import { MatildaMiniChat, useMatildaMiniChat } from "@/components/matilda-mini-chat";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
@@ -202,12 +202,13 @@ export function MatildaCompanion() {
     <button type="button" className="matilda-resize" aria-label="Resize Matilda" title="Drag to resize · + and − keys" style={{ touchAction: "none" }}
       onPointerDown={grab(true)} onPointerMove={pull} onPointerUp={release} onLostPointerCapture={release} onKeyDown={keys(true)} />
     <div className="matilda-float-controls">
-      {track?.canMute && <Button variant="ghost" size="sm" className="px-2" aria-label={track.muted ? "Unmute music" : "Mute music"} aria-pressed={track.muted} title={track.muted ? "Unmute music" : "Mute music"} disabled={busy} onClick={() => void act("toggle-mute")}>{track.muted ? "Unmute" : "Mute"}</Button>}
-      <Button variant="ghost" size="icon-xs" aria-label="Unpin Matilda" title="Unpin Matilda" aria-pressed="true" onClick={() => void act("unpin")}><PinIcon size={16} /></Button>
+      {/* Only while music plays (or she muted it), as an icon (29 Oct, Masih: "no music is playing!", "I don't want texts; I want visuals"). */}
+      {track?.canMute && (track.status === "Playing" || track.muted) && <Button variant="ghost" size="icon-xs" aria-label={track.muted ? "Unmute music" : "Mute music"} aria-pressed={track.muted} disabled={busy} onClick={() => void act("toggle-mute")}>{track.muted ? <SoundOffIcon size={16} /> : <SoundIcon size={16} />}</Button>}
+      <Button variant="ghost" size="icon-xs" aria-label="Unpin Matilda" aria-pressed="true" onClick={() => void act("unpin")}><PinIcon size={16} /></Button>
     </div>
   </section>;
   return <div className="ml-auto flex min-w-0 shrink-0 items-center gap-1 pr-2">
-    {floating ? createPortal(floating, document.body) : <Button variant="ghost" size="sm" className="px-1 sm:px-2" aria-label="Pin Matilda" title="Pin Matilda" disabled={busy} onClick={() => void act("pin")}><PinIcon size={16} className="hidden sm:block" />Matilda</Button>}
+    {floating ? createPortal(floating, document.body) : <Button variant="ghost" size="icon-sm" aria-label="Pin Matilda" disabled={busy} onClick={() => void act("pin")}><PinIcon size={16} /></Button>}
     {error && <p role="alert" className="fixed bottom-4 right-4 z-50 max-w-sm border border-border bg-background p-2 text-xs text-destructive">{error}</p>}
   </div>;
 }
