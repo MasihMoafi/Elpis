@@ -34,6 +34,20 @@ async function fixture(t, { loveAgents, prepareScreenshots } = {}) {
   return { directory, screenshots, request, load, save, origin, client };
 }
 
+test('normal Love Spot chat turns receive portrait choices without changing other chats', async t => {
+  const f = await fixture(t);
+  await f.load();
+  await fs.writeFile(path.join(f.directory, '.love-spot-chat.json'), JSON.stringify({ threadId: 'love-chat' }));
+  const sent = [];
+  f.client.send = async (id, body) => { sent.push({ id, body }); return { turn: { id: 'turn-portrait' } }; };
+  for (const id of ['love-chat', 'other-chat']) {
+    const response = await f.request(`/../threads/${id}/turns`, { text: 'Hello', attachments: [] });
+    assert.equal(response.status, 200);
+  }
+  assert.match(sent[0].body.attachments.find(item => item.id === 'matilda-portrait').text, /kissPuckered/);
+  assert.deepEqual(sent[1].body.attachments, []);
+});
+
 test('Love Spot agent routes authenticate and run saved drawing agents over ACP without waiting for tool approval', async t => {
   // The card runs as an ACP agent process: the scripted SDK agent, which logs what reaches it.
   const logRoot = createTestTempDir(path.join(os.tmpdir(), 'love-route-'));
