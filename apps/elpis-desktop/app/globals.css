@@ -678,13 +678,13 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 @keyframes elpis-orbit { to { transform:rotate(360deg); } }
 @keyframes elpis-blink { 0%,100% { opacity:1; } 50% { opacity:.15; } }
 .turn-stopped, .context-event { margin:6px 0 18px; font-size:var(--text-sm); color:var(--muted-foreground); }
-.turn-working { display:flex; align-items:center; gap:8px; width:fit-content; max-width:100%; margin-top:13px; padding:3px 0; font-size:var(--text-base); color:var(--muted-foreground); }
+.turn-working { display:flex; align-items:center; gap:8px; width:fit-content; max-width:100%; margin-top:11px; padding:3px 0; font-size:var(--text-base); color:var(--muted-foreground); }
 /* The panel narrows a centred transcript by its width, moving its left edge by up to half that amount. Keep the live mark
    at the x where the person started the turn; narrow columns compensate only the centring space they actually lose. */
 @media(min-width:761px) {
   .workspace-body.panel-open:not(.full-view) .turn-working { transform:translateX(min(calc(var(--side-w, max(var(--sidebar-width,256px), var(--side-min,200px))) / 2), max(0px, calc((100vw - var(--chat-shell-sidebar) - 64px - var(--transcript-width,740px)) / 2)))); }
 }
-/* The live Working row sits 10px below its original place over the composer: 11px was approved, then raised 1px on 30 Oct. */
+/* The live Working row sits 8px below its original place over the composer: raised another 2px on 30 Oct. */
 .turn:has(> .turn-working) { margin-bottom:0; }
 .chat-scroll:has(.turn-working) { padding-bottom:6px; }
 .sh-command { color:var(--sh-command); }
