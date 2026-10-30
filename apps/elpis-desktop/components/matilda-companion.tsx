@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { MATILDA_CHANGED, MATILDA_CHAT_SHOWN } from "@/lib/matilda";
 import { appStorage } from "@/lib/projects";
-import { MATILDA_SHOTS } from "@/bridge/matilda-face.cjs";
+import { MATILDA_SHOTS, MATILDA_SHOTS_LIGHT } from "@/bridge/matilda-face.cjs";
 
 type Track = { title: string; artist: string; uri: string; status: string; canPlay: boolean; canPause: boolean; canNext: boolean; muted: boolean; canMute: boolean };
 type Companion = { pinned: boolean; face?: string; favorite: { title: string; uri: string; artist?: string } | null; threadId?: string | null; music: Track | null; reason: string };
@@ -198,9 +198,15 @@ export function MatildaCompanion() {
       onPointerCancel={() => { const start = drag.current; if (start) put(start.left, start.top, start.size); release(); }}
       onKeyDown={keys(false)} onPointerEnter={() => mood.setHovered(true)} onPointerLeave={() => mood.setHovered(false)}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={MATILDA_SHOTS.listening} alt="Matilda" width={size} height={size} draggable={false} className="select-none" />
+      <img src={MATILDA_SHOTS_LIGHT.listening} alt="Matilda" width={size} height={size} draggable={false} className="matilda-avatar-light select-none" />
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      {MOODS.map(name => <img key={name} src={MATILDA_SHOTS[name]} alt="" aria-hidden="true" width={size} height={size} draggable={false} className="matilda-mood select-none" data-mood={name} data-shown={mood.shown === name} />)}
+      <img src={MATILDA_SHOTS.listening} alt="" aria-hidden="true" width={size} height={size} draggable={false} className="matilda-avatar-dark select-none" />
+      {MOODS.flatMap(name => ([
+        // eslint-disable-next-line @next/next/no-img-element
+        <img key={`${name}-light`} src={MATILDA_SHOTS_LIGHT[name]} alt="" aria-hidden="true" width={size} height={size} draggable={false} className="matilda-avatar-light matilda-mood select-none" data-mood={name} data-shown={mood.shown === name} />,
+        // eslint-disable-next-line @next/next/no-img-element
+        <img key={`${name}-dark`} src={MATILDA_SHOTS[name]} alt="" aria-hidden="true" width={size} height={size} draggable={false} className="matilda-avatar-dark matilda-mood select-none" data-mood={name} data-shown={mood.shown === name} />,
+      ]))}
     </button>
     {chatOpen && <div className="hud-popover matilda-mini-popup" data-side={side} style={chatPlace()}><MatildaMiniChat chat={mini} /></div>}
     <button type="button" className="matilda-resize" aria-label="Resize Matilda" title="Drag to resize · + and − keys" style={{ touchAction: "none" }}

@@ -5,7 +5,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { loveSpotFixture } = require('./love-spot-fixture.cjs');
-const { BOARD_FACE, FACE_DATA_URL } = require('../bridge/matilda-face.cjs');
+const { BOARD_FACE, BOARD_FACE_LIGHT, FACE_DATA_URL, MATILDA_SHOTS, MATILDA_SHOTS_LIGHT } = require('../bridge/matilda-face.cjs');
 
 // Where Excalidraw shows the board: its own view state, read from the editor component that draws `.excalidraw`.
 const boardView = page => page.evaluate(() => {
@@ -54,7 +54,7 @@ for (const colorScheme of ['light', 'dark']) test(`on the board her face is the 
     const mean = v => v.reduce((s, n) => s + n, 0) / v.length, mx = mean(x), my = mean(y);
     let sxy = 0, sxx = 0, syy = 0; x.forEach((n, i) => { sxy += (n - mx) * (y[i] - my); sxx += (n - mx) ** 2; syy += (y[i] - my) ** 2; });
     return sxy / Math.sqrt(sxx * syy);
-  }, [`data:image/png;base64,${picture.toString('base64')}`, BOARD_FACE.dataURL]);
+  }, [`data:image/png;base64,${picture.toString('base64')}`, (colorScheme === 'light' ? BOARD_FACE_LIGHT : BOARD_FACE).dataURL]);
   assert.ok(match > 0.8, `her face on the ${colorScheme} board matches her picture, not its negative (brightness correlation ${match.toFixed(2)})`);
   if (process.env.ELPIS_SHOTS) await page.screenshot({ path: `${process.env.ELPIS_SHOTS}/matilda-pet-board-${colorScheme}.png` });
   assert.deepEqual(f.errors, []);
@@ -71,6 +71,9 @@ for (const colorScheme of ['light', 'dark']) test(`pinned Matilda drags anywhere
   const page = f.page, presence = page.getByRole('region', { name: 'Pinned Matilda', exact: true }); await presence.waitFor();
   const avatar = presence.getByRole('button', { name: 'Chat with Matilda', exact: true });
   const mini = page.getByRole('dialog', { name: 'Small chat with Matilda', exact: true });
+  const shownAvatar = avatar.locator(`.matilda-avatar-${colorScheme}`).first();
+  await shownAvatar.waitFor();
+  assert.equal(await shownAvatar.getAttribute('src'), (colorScheme === 'light' ? MATILDA_SHOTS_LIGHT : MATILDA_SHOTS).listening, `her ${colorScheme} avatar uses its own ground`);
   await f.composer.fill('Main chat draft stays here');
   const layout = async () => ({ draft: await f.composer.inputValue(), active: await page.locator('.thread-row.active').getAttribute('data-thread-id'), composer: await page.locator('.composer').boundingBox(), chat: await page.locator('.chat-scroll').boundingBox(), header: await page.locator('.workspace-header').boundingBox() });
   const before = await layout();
@@ -138,6 +141,12 @@ for (const colorScheme of ['light', 'dark']) test(`her chat hugs its messages, o
   const page = f.page, presence = page.getByRole('region', { name: 'Pinned Matilda', exact: true }); await presence.waitFor();
   const mini = page.getByRole('dialog', { name: 'Small chat with Matilda', exact: true });
   await presence.getByRole('button', { name: 'Chat with Matilda', exact: true }).click(); await mini.waitFor();
+  const panelRgb = await page.locator('.matilda-mini-popup').evaluate(el => {
+    const context = document.createElement('canvas').getContext('2d'); context.fillStyle = getComputedStyle(el).backgroundColor; context.fillRect(0, 0, 1, 1);
+    return [...context.getImageData(0, 0, 1, 1).data].slice(0, 3);
+  });
+  if (colorScheme === 'light') assert.ok(panelRgb.every(value => value >= 240 && value < 255), `her light panel is slightly darker: ${panelRgb}`);
+  else assert.deepEqual(panelRgb, [17, 19, 23], 'her dark panel is unchanged');
   await mini.getByRole('button', { name: 'Show previous messages', exact: true }).click();
   const log = mini.getByRole('log', { name: 'Matilda conversation', exact: true }); await log.waitFor();
   const geometry = () => page.evaluate(() => {
