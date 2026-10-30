@@ -119,6 +119,17 @@ test("ACP HTTP mapping resolves headers with native precedence and bearer overri
   assert.deepEqual(config, before, "resolved credentials stay out of the thread config");
 });
 
+test("ACP HTTP mapping accepts public servers and API-key headers without requiring OAuth credentials", () => {
+  assert.deepEqual(acpServersFrom({ "mcp_servers.public": { url: "https://public.example.test/mcp" } }, "thread-public", {}), [
+    { type: "http", name: "public", url: "https://public.example.test/mcp", headers: [] },
+  ]);
+  const [keyed] = acpServersFrom({ "mcp_servers.keyed": {
+    url: "https://keyed.example.test/mcp", auth: "oauth",
+    http_headers: { "X-Region": "eu" }, env_http_headers: { "X-API-Key": "MCP_KEY" },
+  } }, "thread-keyed", { MCP_KEY: "key-secret" });
+  assert.deepEqual(keyed.headers, [{ name: "X-Region", value: "eu" }, { name: "X-API-Key", value: "key-secret" }]);
+});
+
 test("ACP HTTP mapping refuses missing environment credentials without exposing values", () => {
   const config = { "mcp_servers.remote": { url: "https://mcp.example.test", env_http_headers: { Authorization: "MCP_SECRET" } } };
   assert.throws(() => acpServersFrom(config, "thread-3", {}), error => {
@@ -130,7 +141,6 @@ test("ACP HTTP mapping refuses missing environment credentials without exposing 
 });
 
 test("ACP HTTP mapping rejects unsupported authentication instead of dropping a selected server", () => {
-  assert.throws(() => acpServersFrom({ "mcp_servers.oauth": { url: "https://mcp.example.test" } }, "thread-4", {}), /requires OAuth authentication/);
   assert.throws(() => acpServersFrom({ "mcp_servers.chatgpt": { url: "https://mcp.example.test", auth: "chatgpt" } }, "thread-4", {}), /requires ChatGPT session authentication/);
   assert.throws(() => acpServersFrom({ "mcp_servers.ema": { url: "https://mcp.example.test", auth: "ema_auth" } }, "thread-4", {}), /requires enterprise authentication/);
   assert.throws(() => acpServersFrom({ "mcp_servers.helper": { url: "https://mcp.example.test", http_headers_helper: "echo secret" } }, "thread-4", {}), /local HTTP headers helper/);

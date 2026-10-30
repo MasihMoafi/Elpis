@@ -118,7 +118,6 @@ function httpHeaders(server, name, env) {
   if (auth !== "oauth" && auth !== "chatgpt") fail(name, "uses an unsupported HTTP authentication mode.");
   if (!headers.has("authorization")) {
     if (auth === "chatgpt") fail(name, "requires ChatGPT session authentication that this provider cannot provide.");
-    fail(name, "requires OAuth authentication that this provider cannot provide.");
   }
   return [...headers.values()];
 }
