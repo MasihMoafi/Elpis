@@ -26,6 +26,7 @@ import { recordedChanges } from './recorded-changes.mjs';
 import { elicitationResponse, grantedPermissions, permissionsResponse } from '../lib/approvals.ts';
 import { RewindSnapshots } from './rewind-snapshots.mjs';
 import { createWorkflowHistory, createWorkflowRuns } from './workflow-acp.mjs';
+import { agentOutput } from './agent-output.mjs';
 import { MOTHER_MODEL, WORKFLOW_PRESETS, workflowPreset } from './workflow-presets.mjs';
 import { RewindHistory } from './rewind-history.mjs';
 import { MessageVersions } from './message-versions.mjs';
@@ -1308,6 +1309,12 @@ export class DesktopClient extends EventEmitter {
     const run = (await this.#workflowRuns.list()).find(record => record.id === id);
     if (!run) throw new BridgeError('Workflow not found', 404);
     return { run };
+  }
+  async workflowAgentOutput(id, taskId) {
+    threadId(id); text(taskId, 'workflow node', 100);
+    const run = (await this.#workflowRuns.list()).find(record => record.id === id);
+    if (!run) throw new BridgeError('Workflow not found', 404);
+    return agentOutput(run, taskId);
   }
   // Workflows that run until they finish (SPEC WR7): the runtime's script runs, started from a chat or from here.
   async scriptRuns(threadIdValue) { if (threadIdValue !== undefined) threadId(threadIdValue); return this.#rpc('workflowRun/list', threadIdValue ? { threadId: threadIdValue } : {}); }

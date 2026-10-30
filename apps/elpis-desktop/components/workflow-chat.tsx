@@ -18,6 +18,7 @@ export type RecordedTask = {
   id: string; title?: string; status?: string; kind?: string; instruction?: string; dependsOn?: string[]; feedbackFrom?: string[];
   assignedThreadId?: string | null; model?: string; provider?: string; reasoningEffort?: string; writeScopes?: string[]; acceptanceCriteria?: string[];
   failureReason?: string | null; result?: { summary?: string } | string | null;
+  progress?: { kind?: string; text?: string; title?: string; status?: string; at?: number }[];
   routing?: { requested?: { model?: string; provider?: string }; actual?: { model?: string; provider?: string }; attempts?: { model?: string; provider?: string; status?: string; reason?: string }[] };
 };
 export type RecordedWorkflow = Omit<WorkflowRun, "tasks" | "mother"> & {

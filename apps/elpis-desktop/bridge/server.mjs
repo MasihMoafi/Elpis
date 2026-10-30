@@ -380,6 +380,8 @@ export async function startDesktopServer(options = {}) {
         if (url.pathname === '/api/workflows/presets' && method === 'POST') return json(response, 200, await client.runWorkflowPreset(await body(request)));
         const workflowRun = url.pathname.match(/^\/api\/workflows\/([a-f0-9-]{36})$/i);
         if (workflowRun && method === 'GET') return json(response, 200, await client.workflowRun(workflowRun[1]));
+        const workflowOutput = url.pathname.match(/^\/api\/workflows\/([a-f0-9-]{36})\/nodes\/([A-Za-z0-9_-]{1,100})\/output$/i);
+        if (workflowOutput && method === 'GET') return json(response, 200, await client.workflowAgentOutput(workflowOutput[1], workflowOutput[2]));
         const workflowMessage = url.pathname.match(/^\/api\/workflows\/([a-f0-9-]{36})\/nodes\/([A-Za-z0-9_-]{1,100})\/messages$/i);
         if (workflowMessage && method === 'POST') return json(response, 200, await client.steerWorkflow(workflowMessage[1], workflowMessage[2], await body(request)));
         const workflowMerge = url.pathname.match(/^\/api\/workflows\/([a-f0-9-]{36})\/merge$/i);

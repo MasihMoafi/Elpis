@@ -40,10 +40,10 @@ type Run = { rootThreadId: string; graphId: string; status: string; startedAt: n
 /** Whether the whole run is over: her part, and his if he has one. */
 const over = (run: Run) => FINISHED.has(run.status) && (!run.father || (FINISHED.has(run.father.status) && (!run.father.threadId || run.father.reported)));
 /** `next`: the stage the bridge runs after this one (the Father's part): his chat and run, and whether his report reached her. */
-type Listed = { data: { id: string; status: string; error?: string | null; next?: { threadId?: string; graphId?: string; status: string; reported?: boolean; error?: string | null }; tasks: { id: string; status: TaskStatus; assignedThreadId: string | null; failureReason?: string | null; result?: unknown }[] }[] };
+type Listed = { data: { id: string; name?: string; status: string; error?: string | null; next?: { threadId?: string; graphId?: string; status: string; reported?: boolean; error?: string | null }; tasks: { id: string; title?: string; kind?: string; status: TaskStatus; assignedThreadId: string | null; failureReason?: string | null; result?: unknown; progress?: { kind?: string; text?: string; title?: string; status?: string; at?: number }[] }[] }[] };
 type HandleEnd = "source" | "target";
 /** `clash` is the files of a merge clash that stopped the run on this agent (lib/canvas-isolation.ts). */
-type AgentNodeData = AgentData & { status?: TaskStatus; check?: TaskStatus; clash?: string[]; modelLabel?: string; wave?: number; onHandle?: (id: string, end: HandleEnd, event: ReactMouseEvent) => void; onQuick?: (id: string) => void };
+type AgentNodeData = AgentData & { status?: TaskStatus; check?: TaskStatus; clash?: string[]; modelLabel?: string; activity?: string; wave?: number; onHandle?: (id: string, end: HandleEnd, event: ReactMouseEvent) => void; onQuick?: (id: string) => void };
 type MotherData = { run: "idle" | "running" | "finished" | "cancelled" | "failed"; children: number; limit: number; identity?: WorkflowIdentity; onHandle?: AgentNodeData["onHandle"] };
 const FINISHED = new Set(["succeeded", "failed", "cancelled", "completed"]);
 /** Her or his card in words, the same as the status chip: finished only when the run succeeded. */
@@ -52,6 +52,18 @@ const ended = (status: string): "running" | "finished" | "cancelled" | "failed" 
 const ENDED: Record<string, string> = { succeeded: "Finished", completed: "Finished", failed: "Failed", cancelled: "Cancelled" };
 /** `at`: when it was seen; a saved run reopened later has no time to show, like its other lines. */
 const stoppedLine = (status: string, error?: string | null, at?: number): { at?: number; text: string; tone: "fail" }[] => status === "failed" || status === "cancelled" ? [{ ...(at === undefined ? {} : { at }), text: `RUN ${ENDED[status].toUpperCase()} · ${error || "no reason was recorded"}`, tone: "fail" }] : [];
+const plainActivity = (value: string) => {
+  const clean = value.replace(/`([^`]+)`/g, "$1").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").replace(/[*_#>]+/g, "").replace(/\s+/g, " ").trim();
+  return (clean.match(/^.*?[.!?](?=\s|$)/)?.[0] ?? clean).slice(0, 120);
+};
+const currentActivity = (task: { progress?: { text?: string; title?: string; at?: number }[] }) => {
+  const recent = [...(task.progress ?? [])].reverse().find(item => item.text?.trim() || item.title?.trim());
+  if (!recent) return "";
+  const text = recent.text || recent.title || "", sentences = text.match(/.*?[.!?](?=\s|$)|.+$/g)?.map(sentence => sentence.trim()).filter(Boolean) ?? [text];
+  const active = sentences.find(sentence => /\b(?:I am|I['’]m|we are|we['’]re)\b/i.test(sentence)) ?? sentences[0];
+  const plain = plainActivity(active).replace(/^(?:I am|I['’]m|we are|we['’]re)\s+/i, "");
+  return plain ? plain[0].toUpperCase() + plain.slice(1) : "";
+};
 const lines = (text: string) => text.split("\n").map(line => line.trim()).filter(Boolean);
 /** What Elpis is asked when the user ran a team without writing a goal: keep what is drawn and set, and fill the rest. */
 const DRAWN = "Run this team as drawn: keep every agent, its wiring and whatever is already set; give each agent the prompt and folders it lacks, from its name and its place in the team.";
@@ -80,7 +92,7 @@ function AgentNode({ id, data }: NodeProps<Node<AgentNodeData>>) {
     <Handle type="target" position={Position.Left} title="Add agents this one waits for" onClick={event => data.onHandle?.(id, "target", event)} />
     <span className="agent-node-kind">Agent</span>
     <strong className="agent-node-title" title={data.title || "Untitled"}>{data.title || "Untitled"}</strong>
-    <small className="agent-node-meta" title={`${data.modelLabel ?? "Default model"} · ${summary}`}>{data.modelLabel ?? "Default model"} · {summary}</small>
+    <small className="agent-node-meta" title={status === "running" ? `Now: ${data.activity || data.title}` : `${data.modelLabel ?? "Default model"} · ${summary}`}>{status === "running" ? `Now: ${data.activity || data.title}` : <>{data.modelLabel ?? "Default model"} · {summary}</>}</small>
     <span className="agent-node-mark" role="img" data-check={check} aria-label={CHECK_LABEL[check]} title={CHECK_LABEL[check]}>{check === "succeeded" ? <Check size={12} /> : check === "failed" || check === "blocked" ? <X size={12} /> : null}</span>
     <Handle type="source" position={Position.Right} title="Add agents that wait for this one" onClick={event => data.onHandle?.(id, "source", event)} />
     {/* Both quick-create buttons add one successor linked only from this agent. */}
@@ -344,6 +356,33 @@ function LiveFeed({ chat, working, idle, ready }: { chat: string | null; working
   </section>;
 }
 
+type AgentOutput = { did: string | null; report: string | null; outputs: { path: string; size: number; lines: string[] | null }[]; check: { report: string | null; verdicts: { state: "passed" | "failed" | "unclear"; criterion: string; detail: string }[] } | null };
+
+/** A saved run's own evidence, inside the selected-agent drawer. The bridge reads only reported files in the agent's
+ * allowed folders; the drawer refreshes while the task is still writing its report. */
+function AgentRunOutput({ runId, taskId, working, ready }: { runId: string; taskId: string; working: boolean; ready: boolean }) {
+  const [output, setOutput] = useState<AgentOutput | null>(null), [error, setError] = useState("");
+  useEffect(() => {
+    if (!ready) return;
+    let live = true;
+    const read = () => api<AgentOutput>(`/workflows/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(taskId)}/output`)
+      .then(result => { if (live) { setOutput(result); setError(""); } })
+      .catch(cause => { if (live) setError(cause instanceof Error ? cause.message : String(cause)); });
+    void read();
+    const timer = working ? setInterval(() => void read(), 2000) : undefined;
+    return () => { live = false; if (timer) clearInterval(timer); };
+  }, [runId, taskId, working, ready]);
+  return <div className="agent-run-output" aria-label="Agent output">
+    <section><h3>What it did</h3><p>{!ready && !output ? "Reconnect to read its report." : error ? <span role="alert">{error}</span> : !output ? "Reading its report…" : output.did || (working ? "It is still working. Its result will appear here." : "No result was recorded in its report.")}</p></section>
+    {output && <section><h3>Output</h3>{output.outputs.length ? <div className="agent-output-files">{output.outputs.map(file => <article key={file.path}>
+      <strong title={file.path}>{file.path}</strong>{file.lines ? <pre><code>{file.lines.join("\n")}</code></pre> : <p>Binary file · {file.size.toLocaleString()} bytes</p>}
+    </article>)}</div> : <p>{working ? "Output previews will appear after its report names the files." : "Its report named no output files to preview."}</p>}</section>}
+    {output?.check && <section><h3>Checker</h3>{output.check.verdicts.length ? <ul className="agent-verdicts">{output.check.verdicts.map((verdict, index) => <li key={`${verdict.criterion}-${index}`} data-state={verdict.state}>
+      <strong>{verdict.state === "passed" ? "Passed" : verdict.state === "failed" ? "Failed" : "Unclear"}</strong><span>{verdict.criterion}</span>{verdict.detail && <small>{verdict.detail}</small>}
+    </li>)}</ul> : <p>{working ? "The checker has not reported yet." : "The checker recorded no verdicts."}</p>}</section>}
+  </div>;
+}
+
 /** A pattern's shape: the Mother, then a column of agents per wave, in run order. */
 function Shape({ shape }: { shape: number[] }) {
   return <span className="canvas-shape" aria-hidden="true"><span><i className="canvas-kind" data-kind="mother" /></span>
@@ -507,7 +546,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
     const timer = setTimeout(() => { if (isoController.current) isoController.current.fit(); else void flow.fitView(FIT); }, 60);
     return () => clearTimeout(timer);
   }, [run?.graphId, flow]); // eslint-disable-line react-hooks/exhaustive-deps
-  const [savedStates, setStates] = useState<Record<string, { status: TaskStatus; chat: string | null }>>({});
+  const [savedStates, setStates] = useState<Record<string, { status: TaskStatus; chat: string | null; activity?: string }>>({});
   const [savedRecord, setSavedRecord] = useState<RecordedWorkflow>();
   const liveTeam = useWorkflowTeam(savedRecord, ready, threads);
   const states = useMemo(() => {
@@ -546,7 +585,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
       setSavedRecord(record);
       if (recordedRun) setGraph(graphForWorkflow(record));
       const tasks = [...(record.tasks ?? []), ...(record.next?.tasks ?? [])];
-      setStates(Object.fromEntries(tasks.map(task => [task.id, { status: taskState(task.status), chat: task.assignedThreadId ?? null }])));
+      setStates(Object.fromEntries(tasks.map(task => [task.id, { status: taskState(task.status), chat: task.assignedThreadId ?? null, activity: currentActivity(task) || undefined }])));
       setRun({ rootThreadId: record.rootThreadId, graphId: record.id, status: record.status, startedAt: record.startedAt ?? record.createdAt ?? Date.now(),
         ...(record.endedAt ? { endedAt: record.endedAt } : {}), ...(record.error ? { error: record.error } : {}), ...(record.next ? { father: { tasks: [], threadId: record.next.threadId, graphId: record.next.graphId, status: record.next.status, reported: record.next.reported } } : {}) });
       setLog([...tasks.map(task => ({ agent: task.id, text: `${task.title || task.id} · ${task.status || "not recorded"}${task.failureReason ? ` · ${task.failureReason}` : ""}`, tone: task.status === "failed" || task.status === "blocked" ? "fail" : task.status === "succeeded" || task.status === "completed" ? "done" : "start" } as LogLine)), ...stoppedLine(record.status, record.error)]);
@@ -614,9 +653,10 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
       const listed = await api<Listed>(`/workflows?threadId=${encodeURIComponent(threadId)}`), found = listed.data.find(item => item.id === graphId);
       if (found && live) {
         // A merge clash (lib/canvas-isolation.ts) stops the run on an agent: it shows as failed, though its own task may have succeeded.
-        const stops = mergeStops(found), listedStates = Object.fromEntries(found.tasks.map(task => [task.id, { status: task.status, chat: task.assignedThreadId }]));
+        const stops = mergeStops(found), listedStates = Object.fromEntries(found.tasks.map(task => [task.id, { status: task.status, chat: task.assignedThreadId, activity: currentActivity(task) || undefined }]));
         for (const stop of stops) if (stop.agent && listedStates[stop.agent]) listedStates[stop.agent] = { ...listedStates[stop.agent], status: "failed" };
         setStates(current => ({ ...current, ...listedStates }));
+        if (graphId === run.graphId) setSavedRecord({ ...found, rootThreadId: run.rootThreadId } as RecordedWorkflow);
         if (stops.some(stop => stop.agent)) setClashes(current => ({ ...current, ...Object.fromEntries(stops.flatMap(stop => stop.agent ? [[stop.agent, stop.files]] : [])) }));
         // Each stop is told once, in the log and in a notice that stays until dismissed.
         const fresh: typeof stops = [];
@@ -738,7 +778,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
   });
   const nodes = useMemo<Node[]>(() => [...frames, ...nodesWithFather(graph.nodes.map(node => node.type === "mother"
     ? { ...node, deletable: false, selected: selection.includes(MOTHER), data: { run: runState, children: agents.length, limit, onHandle, identity } satisfies MotherData }
-    : { ...node, selected: selection.includes(node.id), data: node.type === "agent" ? { ...node.data, status: states[node.id]?.status, check: states[node.data.join ? node.id : checkOf(node.id)]?.status, clash: clashes[node.id], modelLabel: modelLabel(node.data), wave: order.get(node.id), onHandle, onQuick } : { ...node.data, onText: setText } }),
+    : { ...node, selected: selection.includes(node.id), data: node.type === "agent" ? { ...node.data, status: states[node.id]?.status, check: states[node.data.join ? node.id : checkOf(node.id)]?.status, clash: clashes[node.id], modelLabel: modelLabel(node.data), activity: states[node.id]?.activity || plainActivity(node.data.instruction) || node.data.title, wave: order.get(node.id), onHandle, onQuick } : { ...node.data, onText: setText } }),
   )], [graph, identity, renamingFrame, selection, states, clashes, models, order, runState, fatherState, limit, catalog.length]); // eslint-disable-line react-hooks/exhaustive-deps
   const flowLabels = useMemo(() => flowLabelPositions(nodes.filter(node => node.type !== "frame"), graph.edges), [nodes, graph.edges]);
   // A selected wire sits above the agents so its ends can be dragged to reconnect (af885eb49). Only the wire itself:
@@ -1550,6 +1590,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
   }
 
   const chat = selected ? states[selected.id]?.chat : null;
+  const outputRunId = selected && savedRecord && [...(savedRecord.tasks ?? []), ...(savedRecord.next?.tasks ?? [])].some(task => task.id === selected.id) ? savedRecord.id : null;
   // Both views share the graph, selection, settings and connection callbacks.
   const [iso, setIso] = useState(false);
   const found = finding === null ? [] : agents.filter(node => `${node.data.title} ${node.data.instruction}`.toLowerCase().includes(finding.toLowerCase()));
@@ -1751,6 +1792,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
     </div>
     {!panelOpen ? null : sourceId ? <WorkflowSources id={sourceId} onBack={() => setSourceId(null)} /> : selected ? <aside className="canvas-side" aria-label="Selected agent">
       <p className="hud-menu-title">Agent{states[selected.id] ? ` · ${STATUS_LABEL[states[selected.id].status]}` : ""} · {CHECK_LABEL[states[checkOf(selected.id)]?.status ?? "idle"]}</p>
+      {outputRunId && <AgentRunOutput runId={outputRunId} taskId={selected.id} working={states[selected.id]?.status === "running"} ready={ready} />}
       <label>Name<Input ref={nameField} aria-label="Name" title={selected.data.title} value={selected.data.title} maxLength={256} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); promptField.current?.focus(); } }} onChange={event => edit({ title: event.target.value })} /></label>
       <label>Prompt<Textarea ref={promptField} aria-label="Prompt" rows={5} value={selected.data.instruction} placeholder="What this agent should do; left empty, Elpis fills it from the goal" onChange={event => edit({ instruction: event.target.value, title: promptName(selected.data, event.target.value) })} /></label>
       <label>Provider<OptionSelect aria-label="Provider" value={subscriptionOf(selected.data.model)?.prefix ?? canonicalProvider(selected.data.provider) ?? ""} onChange={event => {

@@ -80,7 +80,7 @@ function Prism({ ground, side, bottom, top, className }: { ground: Ground; side:
   </g>;
 }
 
-type States = Record<string, { status: TaskStatus }>;
+type States = Record<string, { status: TaskStatus; activity?: string }>;
 /** A wire's state, as the flat board colours it: live once its first agent's check passed and the second runs (a
  * Mother's or the Father's wire once its agent runs), done once that check passed, cut when it failed or the second
  * is blocked. A two-way wire sets no order, so it carries none. */
@@ -203,7 +203,7 @@ export function IsoBoard({ workflowIdentity, inserting, canConnect, onReconnect,
   const titleOf = (id: string) => { const node = nodes.get(id); return id === MOTHER ? "Mother" : id === FATHER ? "Father" : node?.type === "agent" ? node.data.title || "Untitled" : id; };
   const parentLine = (id: string) => id === MOTHER ? ["This run's chat", agentCount(agents.length), STATUS[motherState]] : ["His own chat", agentCount(father.length), fatherState === "idle" ? "after her part" : STATUS[fatherState]];
   const describe = (id: string) => id === MOTHER || id === FATHER ? parentLine(id).join(", ").replace(/^./, letter => letter.toLowerCase())
-    : `${wave.has(id) ? `wave ${wave.get(id)}` : "no wave"}, ${nodes.get(id)?.type === "agent" && (nodes.get(id)!.data as AgentData).muted ? "muted, skipped in runs" : STATUS[statusOf(id)]}, ${CHECK[statusOf(checkOf(id))].toLowerCase()}`;
+    : `${wave.has(id) ? `wave ${wave.get(id)}` : "no wave"}, ${states[id]?.status === "running" && states[id]?.activity ? `now: ${states[id].activity}` : nodes.get(id)?.type === "agent" && (nodes.get(id)!.data as AgentData).muted ? "muted, skipped in runs" : STATUS[statusOf(id)]}, ${CHECK[statusOf(checkOf(id))].toLowerCase()}`;
   const wires: CanvasEdge[] = [
     // The parents' wires, as on the flat board: the Mother starts her agents of the first wave; the Father starts his
     // agents that wait for none of his others.
@@ -466,7 +466,7 @@ export function IsoBoard({ workflowIdentity, inserting, canConnect, onReconnect,
     {/* The status panel, as Deus Ex's: what the pointer, the keys or the selection is on. */}
     <section className="iso-hud iso-status iso-chamfer" aria-label="Agent status" data-kind={subjectPlace?.kind}>
       {subjectPlace ? <><strong title={titleOf(subjectPlace.id)}>{titleOf(subjectPlace.id)}</strong>
-        <small title={subjectPlace.kind !== "agent" ? parentLine(subjectPlace.id).join(" · ") : `${STATUS[statusOf(subjectPlace.id)]} · ${CHECK[statusOf(checkOf(subjectPlace.id))]}`}>{subjectPlace.kind !== "agent" ? parentLine(subjectPlace.id).join(" · ") : `${STATUS[statusOf(subjectPlace.id)]} · ${CHECK[statusOf(checkOf(subjectPlace.id))]}`}</small>{subjectModel && <small title={subjectModel}>{subjectModel}</small>}</>
+        <small title={subjectPlace.kind !== "agent" ? parentLine(subjectPlace.id).join(" · ") : states[subjectPlace.id]?.status === "running" && states[subjectPlace.id]?.activity ? `Now: ${states[subjectPlace.id].activity}` : `${STATUS[statusOf(subjectPlace.id)]} · ${CHECK[statusOf(checkOf(subjectPlace.id))]}`}>{subjectPlace.kind !== "agent" ? parentLine(subjectPlace.id).join(" · ") : states[subjectPlace.id]?.status === "running" && states[subjectPlace.id]?.activity ? `Now: ${states[subjectPlace.id].activity}` : `${STATUS[statusOf(subjectPlace.id)]} · ${CHECK[statusOf(checkOf(subjectPlace.id))]}`}</small>{subjectModel && <small title={subjectModel}>{subjectModel}</small>}</>
         : <><strong title={overview}>{overview}</strong><small title="Click an agent to select it · Enter opens it">Click an agent to select it · Enter opens it</small></>}
     </section>
   </div>;
