@@ -27,35 +27,41 @@ export function useMatildaMiniChat(open: boolean) {
   // A quick chat starts fresh each time it opens, like Dot's "Start new chat" (28 Oct: "that small chatbox shouldn't show
   // previous messages"): turns already there stay behind "Show previous messages". A reply still on its way stays shown.
   const [earlier, setEarlier] = useState<Set<string> | null>(null), [showEarlier, setShowEarlier] = useState(false);
+  const openRef = useRef(open); openRef.current = open;
+  const rememberEarlier = useCallback((result: Conversation, sentTurn?: string) => {
+    const pending = sentTurn ?? (result.busy ? result.entries.at(-1)?.turnId : undefined);
+    setEarlier(current => current ?? new Set(result.entries.map(entry => entry.turnId).filter(turn => turn !== pending)));
+  }, []);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; latestRead.current++; }; }, []);
   const read = useCallback(async (signal?: AbortSignal) => {
     const request = ++latestRead.current;
     try {
       const result = received(await api<Conversation>("/love-spot/talk", undefined, signal));
-      if (mounted.current && request === latestRead.current) { setConversation(result); setError(result.error || ""); return result; }
+      if (mounted.current && request === latestRead.current) {
+        if (openRef.current && !sending.current) rememberEarlier(result);
+        setConversation(result); setError(result.error || ""); return result;
+      }
     } catch (cause) {
       if (!signal?.aborted && mounted.current && request === latestRead.current) setError(cause instanceof Error ? cause.message : "Matilda could not load. Try again.");
     }
-  }, []);
+  }, [rememberEarlier]);
   useEffect(() => {
     if (!open) return;
     const controller = new AbortController();
-    void read(controller.signal).then(result => {
-      const pending = result?.busy ? result.entries.at(-1)?.turnId : undefined;
-      if (result) setEarlier(new Set(result.entries.map(entry => entry.turnId).filter(turn => turn !== pending)));
-    });
+    void read(controller.signal);
     const stop = subscribeLoveSpotTalk(event => {
       try {
         latestRead.current++;
         const result = received(JSON.parse(event.data));
         if (sending.current) streamedWhileSending.current = result;
+        else rememberEarlier(result);
         setConversation(result); setError(result.error || "");
       } catch { if (!sending.current) void read(controller.signal); }
     }, () => { if (!sending.current) void read(controller.signal); });
     const changed = () => { if (!sending.current) void read(controller.signal); };
     window.addEventListener(MATILDA_CHANGED, changed);
     return () => { stop(); controller.abort(); latestRead.current++; window.removeEventListener(MATILDA_CHANGED, changed); setEarlier(null); setShowEarlier(false); };
-  }, [open, read]);
+  }, [open, read, rememberEarlier]);
   // Ask again every second while she replies. A failed or superseded read must not end the asking (28 Oct: her reply had
   // arrived, and the small chat still said "Matilda is replying…" minutes later).
   useEffect(() => {
@@ -73,6 +79,7 @@ export function useMatildaMiniChat(open: boolean) {
       const responseTurn = response.entries.at(-1)?.turnId;
       const streamed = streamedWhileSending.current as Conversation | null;
       const result = responseTurn && streamed?.entries.some(entry => entry.turnId === responseTurn && entry.item.type === "agentMessage") ? streamed : response;
+      if (openRef.current) rememberEarlier(result, responseTurn);
       setConversation(result); setDraft(current => current.trim() === sent ? "" : current); setError(result.error || "");
       window.dispatchEvent(new Event(MATILDA_CHANGED));
       // A scripted or cached model can complete before the POST snapshot catches its final entry and before the live

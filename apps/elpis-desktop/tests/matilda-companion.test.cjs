@@ -216,12 +216,12 @@ for (const colorScheme of ['light', 'dark']) test(`Matilda mini chat, mute and d
 
 // 28 Oct: "that small chatbox shouldn't show previous messages; it's for quick new chats", like Dot's "Start new chat".
 // And her reply had arrived while the small chat still said "Matilda is replying…": one failed read ended the asking.
-test('the small chat starts fresh, keeps earlier turns behind a button, and asks until her reply arrives', { timeout: 60000 }, async t => {
+for (const colorScheme of ['light', 'dark']) test(`the small chat starts fresh, keeps earlier turns behind a button, and asks until her reply arrives (${colorScheme})`, { timeout: 60000 }, async t => {
   const { fixture } = require('./parity-fixture.cjs');
   const { FACE_DATA_URL } = require('../bridge/matilda-face.cjs');
   const say = (turnId, type, text) => ({ turnId, item: type === 'agentMessage' ? { id: `${turnId}-a`, type, text } : { id: `${turnId}-u`, type, content: [{ type: 'text', text }] } });
   let entries = [say('old', 'userMessage', 'An old question'), say('old', 'agentMessage', 'An old answer')], busy = false, reads = 0;
-  const f = await fixture({ width: 1000, height: 800, routes: {
+  const f = await fixture({ colorScheme, width: 1000, height: 800, routes: {
     '/api/love-spot/companion': () => ({ pinned: true, face: FACE_DATA_URL, threadId: 'chat-a', favorite: null, music: null, reason: '' }),
     '/api/love-spot/talk': body => {
       if (body) { entries = [...entries, say('new', 'userMessage', body.text)]; busy = true; reads = 0; return { entries, busy }; }
@@ -233,27 +233,39 @@ test('the small chat starts fresh, keeps earlier turns behind a button, and asks
   t.after(() => f.close());
   await f.open('chat-a');
   const page = f.page, presence = page.getByRole('region', { name: 'Pinned Matilda', exact: true }); await presence.waitFor();
+  const avatar = presence.getByRole('button', { name: 'Chat with Matilda', exact: true });
+  const { MATILDA_SHOTS, MATILDA_SHOTS_LIGHT } = require('../bridge/matilda-face.cjs');
+  const shots = colorScheme === 'light' ? MATILDA_SHOTS_LIGHT : MATILDA_SHOTS;
+  const face = mood => avatar.locator(`img.matilda-avatar-${colorScheme}[data-mood="${mood}"][data-shown="true"]:visible`);
+  const checkMood = async mood => {
+    await face(mood).waitFor({ state: 'visible', timeout: 3000 });
+    assert.equal(await face(mood).getAttribute('src'), shots[mood], `${mood} uses the visible ${colorScheme} face`);
+    await page.waitForFunction(({ colorScheme, mood }) => {
+      const el = document.querySelector(`[aria-label="Pinned Matilda"] img.matilda-avatar-${colorScheme}[data-mood="${mood}"][data-shown="true"]`);
+      return el && getComputedStyle(el).display !== 'none' && Number(getComputedStyle(el).opacity) > 0.9;
+    }, { colorScheme, mood }, { timeout: 3000 });
+  };
   const mini = page.getByRole('dialog', { name: 'Small chat with Matilda', exact: true });
-  await presence.getByRole('button', { name: 'Chat with Matilda', exact: true }).click(); await mini.waitFor();
+  await avatar.click(); await mini.waitFor();
   const earlier = mini.getByRole('button', { name: 'Show previous messages', exact: true }); await earlier.waitFor();
   assert.equal(await mini.getByText('An old answer', { exact: true }).count(), 0, 'a quick chat starts fresh');
   await mini.getByRole('textbox', { name: 'Message Matilda', exact: true }).fill('hey');
   await mini.getByRole('button', { name: 'Send to Matilda', exact: true }).click();
-  await page.locator('[aria-label="Pinned Matilda"] img[data-mood="smile"][data-shown="true"]').first().waitFor({ state: 'attached', timeout: 3000 });
+  await checkMood('smile');
   await mini.getByText('Hey, love.', { exact: true }).waitFor({ timeout: 10000 });
-  await page.locator('[aria-label="Pinned Matilda"] img[data-mood="softSmile"][data-shown="true"]').waitFor({ state: 'attached', timeout: 3000 });
+  await checkMood('softSmile');
   await mini.getByRole('status').waitFor({ state: 'hidden' });
   assert.equal(await mini.getByText('hey', { exact: true }).count(), 1, 'what was just said shows');
   await earlier.click();
   await mini.getByText('An old answer', { exact: true }).waitFor();
   // 28 Oct: Masih chose her faces: "listening" at rest ("make the last one the default"), the others when they fit.
   await page.keyboard.press('Escape'); await mini.waitFor({ state: 'hidden' });
-  const avatar = presence.getByRole('button', { name: 'Chat with Matilda', exact: true }), shown = () => avatar.locator('img[data-shown="true"]').evaluateAll(els => els.map(el => el.dataset.mood));
-  const { MATILDA_SHOTS } = require('../bridge/matilda-face.cjs');
-  assert.equal(await avatar.getByAltText('Matilda', { exact: true }).getAttribute('src'), MATILDA_SHOTS.listening, 'her resting face listens');
-  assert.deepEqual(await avatar.locator('img.matilda-mood').evaluateAll(els => els.map(el => el.dataset.mood)), ['smile', 'softSmile', 'tiltSmile', 'wink']);
+  const shown = () => avatar.locator('img[data-shown="true"]:visible').evaluateAll(els => els.map(el => el.dataset.mood));
+  assert.equal(await avatar.locator('img:not(.matilda-mood):visible').getAttribute('src'), shots.listening, 'her resting face listens');
+  assert.deepEqual(await avatar.locator('img.matilda-mood:visible').evaluateAll(els => els.map(el => el.dataset.mood)), ['smile', 'softSmile', 'tiltSmile', 'wink']);
   assert.equal(await avatar.getByAltText('Matilda', { exact: true }).count(), 1, 'her other faces are decoration: one Matilda for a screen reader');
   await page.mouse.move(0, 400); await avatar.hover();
+  await checkMood('tiltSmile');
   assert.deepEqual(await shown(), ['tiltSmile'], 'a warm tilted smile while hovered');
   await page.mouse.move(0, 400);
   await page.waitForFunction(() => !document.querySelector('[aria-label="Pinned Matilda"] img[data-shown="true"]'));
