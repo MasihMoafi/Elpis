@@ -91,14 +91,10 @@ test('real engine and Claude adapter goal set/get/clear through authenticated de
       await composer.fill('/goal'); await composer.press('Enter'); await panel.getByText('No goal set.', { exact: true }).waitFor();
       evidence.push(`${thread.model}: packaged Electron keyboard /goal set/read and real Clear click`);
     }
-    await panel.getByRole('button', { name: 'Create ES.md', exact: true }).click();
-    await panel.getByRole('button', { name: 'Source', exact: true }).click();
-    const editor = panel.getByRole('textbox', { name: 'Contents of ES.md', exact: true });
-    await editor.fill('# Packaged session intent'); await editor.press('Control+s');
-    await until(async () => (await fs.readFile(path.join(project, 'ES.md'), 'utf8')) === '# Packaged session intent', 'packaged file edit saved');
-    await panel.getByRole('tab', { name: 'Context', exact: true }).click();
+    await panel.getByText('Not created yet', { exact: true }).waitFor();
+    assert.equal(await panel.getByRole('button', { name: 'Create ES.md', exact: true }).count(), 0, 'Elpis owns ES.md creation');
     for (const colorScheme of ['light', 'dark']) { await page.emulateMedia({ colorScheme }); await page.screenshot({ path: path.join(os.homedir(), `.cache/elpis-shots/goal-packaged-${colorScheme}.png`) }); }
-    evidence.push('packaged Electron creates project ES.md and saves an edit with Ctrl+S');
+    evidence.push('packaged Electron reports missing ES.md without a redundant Create action');
     await electron.close(); electronClosed = true;
   }
   await fs.writeFile(path.join(root, 'result.json'), JSON.stringify({ engine: process.env.ELPIS_GOAL_ENGINE, evidence, inference: 'scripted local providers', liveSubscription: 'UNVERIFIED' }, null, 2));

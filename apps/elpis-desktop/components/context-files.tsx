@@ -84,14 +84,14 @@ export function ContextFiles({ threadId, onOpenFile, onReady, session = false }:
     if (openRef({ path: file.path })) onOpenFile();
     else setError("Open a project folder to view this file.");
   };
-  const action = async (kind: "clear" | "create", file?: ContextFile) => {
+  const clearGoal = async () => {
     if (writing.current) return;
-    writing.current = true; setSaving(file?.path ?? "goal"); setError("");
+    writing.current = true; setSaving("goal"); setError("");
     const sequence = ++request.current;
     try {
-      await api(`${base}/${kind === "clear" ? "goal" : "session-intent"}`, kind === "clear" ? { clear: true } : {});
+      await api(`${base}/goal`, { clear: true });
       const value = sourcesOf(await readContext<unknown>(endpoint));
-      if (sequence === request.current) { setSources(value); if (file) open(file); }
+      if (sequence === request.current) setSources(value);
     } catch (cause) { if (sequence === request.current) setError(message(cause)); }
     finally { writing.current = false; if (sequence === request.current) setSaving(null); }
   };
@@ -100,7 +100,7 @@ export function ContextFiles({ threadId, onOpenFile, onReady, session = false }:
     {error && <div className="context-files-error"><p role="alert">{error}</p><Button size="sm" variant="ghost" disabled={saving !== null} onClick={() => void refresh()}>Retry context files</Button></div>}
     {session && sources && <section aria-label="Goal">
       <h3 className="context-files-heading">GOAL</h3>
-      {sources.goal ? <><p className="context-goal-objective">{sources.goal.objective}</p><div className="context-goal-actions"><span className="context-file-meta">{sources.goal.status.replaceAll("_", " ")}</span><Button size="sm" variant="ghost" disabled={saving !== null || sources.writable === false} onClick={() => void action("clear")}>Clear goal</Button></div></>
+      {sources.goal ? <><p className="context-goal-objective">{sources.goal.objective}</p><div className="context-goal-actions"><span className="context-file-meta">{sources.goal.status.replaceAll("_", " ")}</span><Button size="sm" variant="ghost" disabled={saving !== null || sources.writable === false} onClick={() => void clearGoal()}>Clear goal</Button></div></>
         : <p className="context-file-meta">No goal set.</p>}
     </section>}
     {sources?.files.length === 0 && <p className="context-ledger-note">No portable context is available.</p>}
@@ -116,7 +116,6 @@ export function ContextFiles({ threadId, onOpenFile, onReady, session = false }:
             {file.exists === false ? <span className="context-file-name">{file.name}</span> : <button data-slot="file-name-link" type="button" className="context-file-name" title={file.path} aria-label={`Open ${file.name}`} onClick={() => open(file)}><bdi>{file.name}</bdi></button>}
             <div className="context-file-meta">{file.exists === false ? <span>Not created yet</span> : <><span>≈{tokens(file.estimatedTokens)} est. tokens</span><span className="context-file-state">{saving === file.path ? "Saving…" : file.projectIntent && !file.included ? "PROJECT FILE" : file.included ? "INCLUDED" : "EXCLUDED"}</span></>}</div>
           </div>
-          {file.exists === false && <Button size="sm" variant="ghost" aria-label={`Create ${file.name}`} disabled={saving !== null || sources?.writable === false} onClick={() => void action("create", file)}>Create</Button>}
         </li>)}</ul>
       </section>;
     })}
