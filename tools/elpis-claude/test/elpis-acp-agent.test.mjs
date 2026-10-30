@@ -247,6 +247,7 @@ test("session/new forwards HTTP MCP URL and headers to the engine", { timeout: 2
 // A desktop Workflows node's chat starts without the person's own MCP servers, as the runner's agents do
 // (workflow-agents.mjs): each loaded chat runs its own copy of them, about 300 MB.
 test("a Workflows node's chat starts with every configured MCP server off; Love Spot's chat and ELPIS_WORKFLOW_USER_MCP=1 keep them", { timeout: 20000 }, async t => {
+  fs.mkdirSync(path.join(os.homedir(), ".cache/elpis-tests"), { recursive: true });
   const dir = createTestTempDir(path.join(os.homedir(), ".cache/elpis-tests/acp-config-"));
   t.after(() => removeTestTempDir(dir));
   const config = path.join(dir, "config.json");
