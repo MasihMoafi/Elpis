@@ -686,7 +686,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 }
 /* The live Working row sits 8px below its original place over the composer: raised another 2px on 30 Oct. */
 .turn:has(> .turn-working) { margin-bottom:0; }
-.chat-scroll:has(.turn-working) { padding-bottom:6px; }
+.chat-scroll:has(.turn-working) { padding-bottom:8px; }
 .sh-command { color:var(--sh-command); }
 .sh-flag { color:color-mix(in oklch, var(--sh-command) 70%, var(--muted-foreground)); }
 .sh-string { color:var(--sh-string); }
