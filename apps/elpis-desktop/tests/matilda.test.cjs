@@ -168,12 +168,11 @@ test('resuming a note while its picture is queued cancels dispatch and keeps the
   let release;
   try {
     const { page } = f; await f.open(page);
-    await write(f, 'The first part of my message.');
-    await page.getByRole('status', { name: 'Drawing save status' }).filter({ hasText: 'Saved' }).waitFor();
-    await page.waitForTimeout(1800);
     const queued = page.waitForRequest(request => new URL(request.url()).pathname === '/api/love-spot/picture', { timeout: 15000 });
     const blocked = new Promise(resolve => { release = resolve; });
     await page.route('**/api/love-spot/picture', async route => { await blocked; await route.continue(); });
+    await write(f, 'The first part of my message.');
+    await page.getByRole('status', { name: 'Drawing save status' }).filter({ hasText: 'Saved' }).waitFor();
     await queued;
     await write(f, 'And the next part, still being written', 500, false);
     release();
