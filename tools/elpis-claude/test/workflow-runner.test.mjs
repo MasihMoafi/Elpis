@@ -184,6 +184,19 @@ test("concurrency is capped and the rest queue; agent and item limits throw (WR2
   assert.equal(ex.turns.length, 12);
 });
 
+test("the concurrency cap is shared by simultaneous runs", async () => {
+  const ex = executor({ delay: () => 50 });
+  const r = runner(ex, home(), { concurrency: 3 });
+  const script = `${META}return await parallel(Array.from({ length: 6 }, (_, i) => () => agent('job ' + i)))`;
+  const first = await r.start({ script, parentThreadId: "chat-one", cwd: os.tmpdir(), model: "gpt-test" });
+  const firstDone = ended(r, first.runId);
+  const second = await r.start({ script, parentThreadId: "chat-two", cwd: os.tmpdir(), model: "gpt-test" });
+  const secondDone = ended(r, second.runId);
+  const runs = await Promise.all([firstDone, secondDone]);
+  assert.ok(runs.every(item => item.status === "completed"));
+  assert.equal(ex.maxActive, 3);
+});
+
 test("budget is a hard ceiling: spent counts output tokens and agent() throws once it is reached (WR2)", async () => {
   const ex = executor();
   const r = runner(ex);
