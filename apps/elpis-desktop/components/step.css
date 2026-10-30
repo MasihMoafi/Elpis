@@ -33,7 +33,7 @@ summary.step-head:focus-visible { outline:2px solid var(--ring); outline-offset:
 /* A turn's footer: "Changes · 3 files · +12 −4" and View changes; its files open as the same rows. */
 .turn-changes { margin:4px 0 14px; }
 .turn-changes-head { display:flex; align-items:baseline; justify-content:flex-start; gap:8px; min-height:28px; }
-.turn-changes-toggle { display:flex; align-items:baseline; gap:8px; min-width:0; padding:2px 6px; margin-inline:-6px; border:0; background:none; font-size:var(--text-sm); color:var(--muted-foreground); cursor:pointer; transition:color .12s, background .12s; }
+.turn-changes-toggle { display:flex; align-items:baseline; gap:8px; min-width:0; padding:2px 0; border:0; background:none; font-size:var(--text-sm); color:var(--muted-foreground); cursor:pointer; transition:color .12s, background .12s; }
 .turn-changes-toggle::after { content:"›"; flex:none; font-size:var(--text-base); line-height:1; color:var(--subtle-foreground); transition:transform .15s; }
 .turn-changes-toggle[aria-expanded="true"]::after { transform:rotate(90deg); }
 .turn-changes-toggle:hover { color:var(--foreground); background:var(--hover); }
