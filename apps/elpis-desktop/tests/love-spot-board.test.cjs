@@ -34,20 +34,30 @@ test('board microphone inserts one coloured note at the last click; empty and fa
   try {
     const respond = await microphone(f.page); await f.open(f.page);
     await note(f, 'Remember this');
+    await f.waitFor(s => s.elements.some(e => e.id === 'love-reply-turn-1'), 'Matilda reply did not arrive before voice note placement');
     // Pick an actual Excalidraw colour with the mouse, then choose the insertion point.
     await f.page.getByRole('button', { name: /^Stroke$/ }).click();
     await f.page.getByRole('button', { name: /#e03131/i }).first().click(); await f.page.keyboard.press('Escape');
-    const box = await f.page.locator('.excalidraw').boundingBox(); await f.page.mouse.click(box.x + 650, box.y + 420);
+    const box = await f.page.locator('.excalidraw').boundingBox(); await f.page.mouse.click(box.x + 650, box.y + 650);
     const mic = f.page.getByRole('group', { name: 'Voice note' });
     await record(mic);
     const saved = await f.waitFor(s => s.elements.some(e => e.text === 'A voice note from Masih'), 'transcription did not become a board note');
     const voice = saved.elements.find(e => e.text === 'A voice note from Masih');
     assert.equal(voice.strokeColor, '#e03131'); assert.equal(saved.elements.filter(e => e.text === voice.text).length, 1);
     const typed = saved.elements.find(e => e.text === 'Remember this');
-    assert.ok(Math.abs(voice.x - typed.x - 200) < 5); assert.ok(Math.abs(voice.y - typed.y - 120) < 25);
+    assert.ok(voice.x > typed.x && voice.y > typed.y, 'the dictated note lands down and right of the typed note');
+    for (const element of saved.elements.filter(e => !e.isDeleted && e.id !== voice.id)) {
+      const separated = voice.x >= element.x + element.width || element.x >= voice.x + voice.width ||
+        voice.y >= element.y + element.height || element.y >= voice.y + voice.height;
+      assert.ok(separated, `the dictated note does not overlap ${element.id}`);
+    }
     respond({ text: '  ' }); await record(mic); await mic.getByRole('status').filter({ hasText: 'No speech was recognized. Your draft is unchanged.' }).waitFor();
     respond({ error: 'Test transcription failed' }, 502); await record(mic); await mic.getByRole('status').filter({ hasText: 'Test transcription failed' }).waitFor();
-    assert.equal((await f.scene()).elements.filter(e => !e.isDeleted && !e.id.startsWith('love-')).length, 2); assert.deepEqual(f.errors, []);
+    const after = await f.scene();
+    assert.equal(after.elements.find(e => e.id === typed.id)?.originalText, 'Remember this');
+    assert.equal(after.elements.find(e => e.id === typed.id)?.text, 'Remember this');
+    assert.equal(after.elements.filter(e => !e.isDeleted && e.text === 'A voice note from Masih').length, 1);
+    assert.equal(after.elements.filter(e => !e.isDeleted && !e.id.startsWith('love-')).length, 2); assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
 
