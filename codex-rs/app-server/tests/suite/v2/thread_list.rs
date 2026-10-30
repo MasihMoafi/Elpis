@@ -1280,7 +1280,7 @@ async fn thread_list_imports_desktop_helper_ancestry() -> Result<()> {
         "Helper",
         Some("mock_provider"),
         /*git_info*/ None,
-        CoreSessionSource::AppServer,
+        CoreSessionSource::Mcp,
     )?;
     fs::write(
         codex_home.path().join("desktop-spawn-links.json"),
@@ -1308,7 +1308,7 @@ async fn thread_list_imports_desktop_helper_ancestry() -> Result<()> {
         })
         .await?;
     let response: ThreadListResponse =
-        timeout(DEFAULT_READ_TIMEOUT, mcp.read_jsonrpc_response(request_id)).await??;
+        timeout(DEFAULT_READ_TIMEOUT, mcp.read_response(request_id)).await??;
 
     assert_eq!(response.data.len(), 1);
     assert_eq!(response.data[0].id, child_id);
