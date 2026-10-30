@@ -858,6 +858,62 @@ async fn make_history_test_app() -> Result<(Box<App>, tempfile::TempDir)> {
 }
 
 #[tokio::test]
+async fn delete_current_thread_reports_forked_history_reference() -> Result<()> {
+    let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
+    let codex_home = tempdir()?;
+    app.config.codex_home = codex_home.path().to_path_buf().abs();
+    app.config.sqlite_home = SqliteConfig::new_for_testing(codex_home.path().abs());
+    let parent_id = create_history_rollout(&app.config, ThreadHistoryMode::Paginated, "parent")?;
+    let fork_id = create_history_rollout(&app.config, ThreadHistoryMode::Paginated, "fork")?;
+    let timestamp = "2026-01-02T00-00-00";
+    let parent_path = rollout_path(codex_home.path(), timestamp, &parent_id.to_string());
+    let fork_path = rollout_path(codex_home.path(), timestamp, &fork_id.to_string());
+    let mut records: Vec<serde_json::Value> = std::fs::read_to_string(&fork_path)?
+        .lines()
+        .map(serde_json::from_str)
+        .collect::<std::result::Result<_, _>>()?;
+    records[0]["payload"]["history_base"] = serde_json::json!({
+        "thread_id": parent_id.to_string(),
+        "end_ordinal_exclusive": 1,
+        "rollout_file_bytes": std::fs::metadata(&parent_path)?.len(),
+    });
+    let records = records
+        .iter()
+        .map(serde_json::to_string)
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    std::fs::write(&fork_path, format!("{}\n", records.join("\n")))?;
+
+    let (mut server, _requests, proxy) = start_recording_app_server(
+        &app.config,
+        /*blocked_thread_list*/ None,
+        /*failed_thread_name*/ None,
+    )
+    .await?;
+    app.active_thread_id = Some(parent_id);
+    let mut tui = crate::tui::test_support::make_test_tui()?;
+    assert_matches!(
+        app.handle_app_event(&mut tui, &mut server, AppEvent::DeleteCurrentThread)
+            .await?,
+        AppRunControl::Continue
+    );
+    let mut messages = String::new();
+    while let Ok(event) = app_event_rx.try_recv() {
+        if let AppEvent::InsertHistoryCell(cell) = event {
+            messages.push_str(&lines_to_single_string(&cell.transcript_lines(/*width*/ 160)));
+        }
+    }
+    assert!(
+        messages.contains("forked history still references it"),
+        "delete error omitted the fork reason: {messages}"
+    );
+    assert!(parent_path.exists());
+    assert!(fork_path.exists());
+    server.shutdown().await?;
+    proxy.await??;
+    Ok(())
+}
+
+#[tokio::test]
 async fn delete_current_thread_navigates_only_after_success() -> Result<()> {
     let endpoint = crate::resolve_remote_addr("ws://127.0.0.1:4500")?;
     for target in [
