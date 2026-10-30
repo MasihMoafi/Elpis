@@ -22,6 +22,8 @@ const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const quote = value => `'${String(value).replaceAll("'", "'\\''")}'`;
 const rows = Array.from({ length: 8 }, (_, i) =>
   `T10_ROW_${String(i).padStart(2, '0')} Alpha bravo charlie delta echo foxtrot golf hotel 界 india juliet kilo lima.`);
+const followupRows = Array.from({ length: 3 }, (_, i) =>
+  `T10_ROW_${String(i + 8).padStart(2, '0')} November oscar papa quebec romeo sierra tango 界 uniform victor.`);
 
 function verify(screen, expected) {
   let previous = -1;
@@ -84,6 +86,7 @@ async function runCase(mode, light) {
   let releaseStream;
   let streamStarted = false;
   let streamDone = false;
+  let followupDone = false;
   let providerError;
   const gate = new Promise(resolve => { releaseStream = resolve; });
   const provider = http.createServer(async (req, res) => {
@@ -93,19 +96,20 @@ async function runCase(mode, light) {
       const request = JSON.parse(Buffer.concat(body).toString('utf8'));
       const title = request.text?.format?.schema?.required?.includes('title');
       if (!title) requests.push(request);
-      if (!title && requests.length === 1) {
-        const item = { type: 'function_call', call_id: 't10-tool', name: 'exec_command', arguments: JSON.stringify({ cmd: "printf 'T10_TOOL_OUTPUT\\n'" }) };
+      if (!title && (requests.length === 1 || requests.length === 3)) {
+        const item = { type: 'function_call', call_id: `t10-tool-${requests.length}`, name: 'exec_command', arguments: JSON.stringify({ cmd: "printf 'T10_TOOL_OUTPUT\\n'" }) };
         const events = [
-          { type: 'response.created', response: { id: 't10-tool-response' } },
+          { type: 'response.created', response: { id: `t10-tool-response-${requests.length}` } },
           { type: 'response.output_item.done', output_index: 0, item },
-          { type: 'response.completed', response: { id: 't10-tool-response', usage: { input_tokens: 100, output_tokens: 10, total_tokens: 110 } } },
+          { type: 'response.completed', response: { id: `t10-tool-response-${requests.length}`, usage: { input_tokens: 100, output_tokens: 10, total_tokens: 110 } } },
         ];
         res.writeHead(200, { 'content-type': 'text/event-stream' });
         res.end(events.map(event => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join(''));
         return;
       }
-      const text = title ? JSON.stringify({ title: 'T10 fixture' }) : rows.join('\n\n');
-      const id = title ? 't10-title' : 't10-answer';
+      const activeRows = requests.length === 2 ? rows : followupRows;
+      const text = title ? JSON.stringify({ title: 'T10 fixture' }) : activeRows.join('\n\n');
+      const id = title ? 't10-title' : `t10-answer-${requests.length}`;
       const item = { type: 'message', id, role: 'assistant', content: [{ type: 'output_text', text }] };
       const send = event => res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
       res.writeHead(200, { 'content-type': 'text/event-stream' });
@@ -114,17 +118,18 @@ async function runCase(mode, light) {
       if (title) {
         send({ type: 'response.output_text.delta', item_id: id, output_index: 0, content_index: 0, delta: text });
       } else {
-        assert.equal(requests.length, 2, 'unexpected extra model request');
-        for (let i = 0; i < rows.length; i++) {
-          send({ type: 'response.output_text.delta', item_id: id, output_index: 0, content_index: 0, delta: `${i ? '\n\n' : ''}${rows[i]}` });
-          if (i === 1) { streamStarted = true; await gate; }
-          await pause(100);
+        assert([2, 4].includes(requests.length), 'unexpected extra model request');
+        for (let i = 0; i < activeRows.length; i++) {
+          send({ type: 'response.output_text.delta', item_id: id, output_index: 0, content_index: 0, delta: `${i ? '\n\n' : ''}${activeRows[i]}` });
+          if (requests.length === 2 && i === 1) { streamStarted = true; await gate; }
+          await pause(requests.length === 2 ? 100 : 350);
         }
       }
       send({ type: 'response.output_item.done', output_index: 0, item });
       send({ type: 'response.completed', response: { id: `${id}-response`, usage: { input_tokens: 500, output_tokens: 40, total_tokens: 540 } } });
       res.end();
-      if (!title) streamDone = true;
+      if (!title && requests.length === 2) streamDone = true;
+      if (!title && requests.length === 4) followupDone = true;
     } catch (error) {
       providerError = error;
       if (!res.headersSent) res.writeHead(500);
@@ -200,9 +205,24 @@ async function runCase(mode, light) {
     assert.throws(() => verify(transcript.replace(rows[3], rows[3].replace('bravo', 'brXavo')), rows), 'oracle must reject altered text');
     assert.throws(() => verify(`${transcript}\n${rows[3]}`, rows), 'oracle must reject duplicate text');
     assert.throws(() => verifyVisibleRows(final.replace(visible[1], `Q  W  E\n${visible[1]}`), visible), 'oracle must reject stray fragments');
-    assert.equal(requests.length, 2, `${label}: expected a tool call and final reply`);
+
+    // Return focus to the composer, then reopen the Ledger during another tool/reply turn.
+    key('Tab');
+    await until(() => !capture(false).includes('CONTEXT LEDGER'), 'Ledger close before follow-up');
+    literal('Render the next T10 reply');
+    key('Enter');
+    await until(() => requests.length >= 3, 'follow-up tool request');
+    key('Tab');
+    await until(() => capture(false).includes('CONTEXT LEDGER'), 'Ledger reopen during follow-up');
+    await until(() => followupDone && capture(false).includes('T10_ROW_10') && !capture(false).includes('esc to interrupt'), 'completed follow-up');
+    await pause(300);
+    const followup = save('followup');
+    verify(followup, followupRows);
+    verifyVisibleRows(followup, followupRows);
+    if (mode === 'inline') verify(save('followup-history', true), [...rows, ...followupRows]);
+    assert.equal(requests.length, 4, `${label}: expected two tool/reply turns`);
     assert.ifError(providerError);
-    console.log(`PASS ${label}: streamed rows, resize, Ledger reopen, and corruption controls`);
+    console.log(`PASS ${label}: two streamed tool/reply turns, resize, Ledger reopen, and corruption controls`);
   } catch (error) {
     errors.push(error.stack || String(error));
     try { save('failure'); } catch {}
