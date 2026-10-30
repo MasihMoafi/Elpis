@@ -3417,14 +3417,12 @@ async fn deferred_executor_loads_agents_md_when_environment_becomes_ready(
     ));
     let test = expect_startup(builder.build(&server)).await;
     // Elpis discovers both cases, but only a Ledger-admitted file reaches the model.
-    if admitted {
-        codex_core::elpis_context::set_continuity_source_admitted(
-            Some(codex_core::elpis_admission::memory_dir(&test.config).as_path()),
-            test.config.cwd.as_path(),
-            "Project AGENTS.md",
-            true,
-        )?;
-    }
+    codex_core::elpis_context::set_continuity_source_admitted(
+        Some(codex_core::elpis_admission::memory_dir(&test.config).as_path()),
+        test.config.cwd.as_path(),
+        "Project AGENTS.md",
+        admitted,
+    )?;
 
     test.codex
         .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {

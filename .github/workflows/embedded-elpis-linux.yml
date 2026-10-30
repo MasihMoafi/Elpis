@@ -381,6 +381,7 @@ jobs:
             agents_md scenarios_shared_instructions \
             deferred_executor_promotes_primary_environment_when_startup_completes \
             deferred_executor_stays_pending_after_materialization \
+            deferred_executor_loads_agents_md_when_environment_becomes_ready \
             auto_compact_accounts_for_encrypted_reasoning 2>&1 | tee "$RUNNER_TEMP/elpis-integration-checks.log"
           cargo test --profile dev-small --locked -p codex-app-server --test all -- \
             elpis_instructions_read turn_settings_update thread_read_paginated_carrier_persists_before_first_turn \
