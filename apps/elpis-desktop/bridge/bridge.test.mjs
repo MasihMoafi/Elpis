@@ -736,8 +736,10 @@ test('new roots send, steer and interrupt through typed protocol without overrid
   const created = await client.createThread({ model: MODEL });
   assert.equal(created.thread.desktopAccess.writable, true);
   const first = client.send(CREATED, { text: 'Do the task', model: MODEL });
-  await assert.rejects(client.send(CREATED, { text: 'Race' }), /pending/);
+  const duplicate = assert.rejects(client.send(CREATED, { text: 'Race' }), /Use Steer/);
   assert.equal((await first).turn.id, 'new-turn');
+  await duplicate;
+  assert.equal(socket.sent.filter(row => row.method === 'turn/start').length, 1, 'a queued duplicate never starts another turn or silently steers');
   await assert.rejects(client.send(CREATED, { text: 'Do not silently steer' }), /Use Steer/);
   assert.equal((await client.steer(CREATED, { text: 'Clarify', expectedTurnId: 'new-turn' })).turnId, 'new-turn');
   await client.interrupt(CREATED, { turnId: 'new-turn' });
