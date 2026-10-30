@@ -16,11 +16,44 @@ const FAKE_ACP_AGENT = fileURLToPath(new URL('../../../tools/elpis-claude/test/f
 const exec = promisify(execFile);
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGM4o6SEFTEMLQkAvM5EAT6yk8sAAAAASUVORK5CYII=', 'base64');
 const element = (id, version = 1, extra = {}) => ({ id, type: 'rectangle', version, versionNonce: 100, x: 0, y: 0, width: 100, height: 80, ...extra });
+
+test('only a brand-new Love Spot board gets the handwritten welcome and heart', async t => {
+  const base = path.join(os.homedir(), '.cache/elpis-tests'); await fs.mkdir(base, { recursive: true });
+  const root = createTestTempDir(path.join(base, 'love-spot-welcome-'));
+  const screenshots = path.join(root, 'Screenshots');
+  const fresh = createLoveSpot({ directory: path.join(root, 'fresh'), screenshots });
+  const emptyDirectory = path.join(root, 'saved-empty'), empty = createLoveSpot({ directory: emptyDirectory, screenshots });
+  const savedDirectory = path.join(root, 'saved'), saved = createLoveSpot({ directory: savedDirectory, screenshots });
+  const archivedDirectory = path.join(root, 'archived'), archived = createLoveSpot({ directory: archivedDirectory, screenshots });
+  const handDrawn = { id: 'hand-drawn', type: 'line', x: 1, y: 2, width: 8, height: 9, points: [[0, 0], [8, 9]], version: 1, versionNonce: 1 };
+  await fs.mkdir(emptyDirectory, { recursive: true });
+  await fs.writeFile(path.join(emptyDirectory, 'scene.excalidraw'), JSON.stringify({ elements: [], files: {}, appState: {} }));
+  await fs.mkdir(savedDirectory, { recursive: true });
+  await fs.writeFile(path.join(savedDirectory, 'scene.excalidraw'), JSON.stringify({ elements: [handDrawn], files: {}, appState: {} }));
+  await fs.mkdir(path.join(archivedDirectory, 'pages'), { recursive: true });
+  await fs.writeFile(path.join(archivedDirectory, 'pages', 'Original.excalidraw'), JSON.stringify({ elements: [], files: {}, appState: {} }));
+  t.after(async () => { await Promise.all([fresh.close(), empty.close(), saved.close(), archived.close()]); removeTestTempDir(root); });
+
+  const first = (await fresh.read()).scene;
+  const welcome = first.elements.find(e => e.type === 'text');
+  const heart = first.elements.find(e => e.type === 'line');
+  assert.equal(welcome?.text, 'Welcome to Love Spot');
+  assert.equal(welcome.fontFamily, 5, 'the welcome uses the board handwriting');
+  assert.equal(welcome.strokeColor, '#000000');
+  assert.equal(heart?.strokeColor, '#e03131');
+  assert.ok(heart.points.length >= 8, 'the heart is drawn as a hand-shaped path');
+  assert.deepEqual(heart.points[0], heart.points.at(-1), 'the hand-drawn heart closes');
+  assert.deepEqual((await empty.read()).scene.elements, [], 'a saved empty board stays empty');
+  assert.deepEqual((await saved.read()).scene.elements, [handDrawn], 'saved board content is left alone');
+  assert.deepEqual((await archived.read()).scene.elements, [], 'a missing current file with saved pages is not a new store');
+});
+
 async function fixture(t, { loveAgents, prepareScreenshots } = {}) {
   const base = path.join(os.homedir(), '.cache/elpis-tests'); await fs.mkdir(base, { recursive: true });
   const root = createTestTempDir(path.join(base, 'love-spot-'));
   const directory = path.join(root, 'drawing'), screenshots = path.join(root, 'Screenshots');
-  await fs.mkdir(screenshots);
+  await fs.mkdir(directory); await fs.mkdir(screenshots);
+  await fs.writeFile(path.join(directory, 'scene.excalidraw'), JSON.stringify({ type: 'excalidraw', version: 2, elements: [], files: {}, appState: {} }));
   if (prepareScreenshots) await prepareScreenshots(screenshots);
   const client = new EventEmitter(); Object.assign(client, { connected: true, pendingApprovals: [], close() {} });
   const app = await startDesktopServer({ client, loveSpot: { directory, screenshots }, trashFile: path.join(root, 'trash.json'), ...(loveAgents ? { loveAgents } : {}) });
@@ -269,7 +302,8 @@ test('opening Love Spot reports a background screenshot error and clearing it re
 
 test('unavailable private IPC keeps local capture working, reports the failure and retries sharing', async t => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'love-ipc-failure-'));
-  const directory = path.join(root, 'drawing'), screenshots = path.join(root, 'Screenshots'); await fs.mkdir(screenshots);
+  const directory = path.join(root, 'drawing'), screenshots = path.join(root, 'Screenshots'); await fs.mkdir(directory); await fs.mkdir(screenshots);
+  await fs.writeFile(path.join(directory, 'scene.excalidraw'), JSON.stringify({ type: 'excalidraw', version: 2, elements: [], files: {}, appState: {} }));
   const store = createLoveSpot({ directory, screenshots });
   let other;
   t.after(async () => { await store.close(); if (other) await other.close(); await fs.rm(root, { recursive: true, force: true }); });

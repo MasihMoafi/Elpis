@@ -11,7 +11,7 @@ const { guardDesktopStore } = require('./controls.cjs');
 // Retained tests live in a scratch checkout whose bridge links to the candidate.
 const FAKE_ACP_AGENT = path.resolve(path.dirname(require.resolve('../bridge/server.mjs')), '../../../tools/elpis-claude/test/fake-acp-agent.mjs');
 
-async function loveSpotFixture({ colorScheme = 'light', reply = 'I am here with you.', replyDelay = 80, configureClient, prepareDirectory, agentEnv, prepareScreenshots } = {}) {
+async function loveSpotFixture({ colorScheme = 'light', reply = 'I am here with you.', replyDelay = 80, configureClient, prepareDirectory, agentEnv, prepareScreenshots, newBoard = false } = {}) {
   const base = path.join(os.homedir(), '.cache/elpis-tests'); await fs.mkdir(base, { recursive: true });
   const root = createTestTempDir(path.join(base, 'love-spot-ui-'));
   // The renderer gate installs only desktop dependencies. Run the shared SDK
@@ -20,8 +20,9 @@ async function loveSpotFixture({ colorScheme = 'light', reply = 'I am here with 
   await fs.copyFile(FAKE_ACP_AGENT, fakeAgent);
   await fs.symlink(path.resolve(__dirname, '../node_modules'), path.join(root, 'node_modules'));
   const directory = path.join(root, 'drawing'), screenshots = path.join(root, 'Screenshots');
-  await fs.mkdir(screenshots);
+  await fs.mkdir(directory); await fs.mkdir(screenshots);
   if (prepareScreenshots) await prepareScreenshots(screenshots);
+  if (!newBoard) await fs.writeFile(path.join(directory, 'scene.excalidraw'), JSON.stringify({ type: 'excalidraw', version: 2, elements: [], files: {}, appState: {} }));
   if (prepareDirectory) await prepareDirectory(directory);
   const { startDesktopServer } = await import('../bridge/server.mjs');
   const emitter = new EventEmitter();

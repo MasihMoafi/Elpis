@@ -8,9 +8,13 @@ const { createHash, randomUUID } = require('node:crypto');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { newer } = require('./love-spot-order.cjs');
-const { paintElements, paintingSize } = require('./love-spot-painting.cjs');
+const { paintElements, paintingSize, splitPainting } = require('./love-spot-painting.cjs');
 const { BOARD_FACE, OLD_BOARD_FACES, replyPortrait } = require('./matilda-face.cjs');
 const FACE = 96, FACE_SIDE = FACE + 12;
+const WELCOME_SHAPES = splitPainting('```excalidraw\n' + JSON.stringify([
+  { type: 'text', x: 0, y: 0, text: 'Welcome to Love Spot', fontSize: 28, fontFamily: 5, textAlign: 'center', strokeColor: '#000000' },
+  { type: 'line', x: 144, y: 68, points: [[0, 15], [2, 8], [7, 3], [14, 0], [22, 1], [29, 7], [31, 13], [34, 7], [41, 1], [49, 0], [56, 3], [60, 8], [62, 14], [61, 20], [57, 25], [31, 45], [5, 25], [1, 20], [0, 15]], strokeColor: '#e03131', strokeWidth: 2.5, roughness: 1 },
+]) + '\n```').shapes;
 const exec = promisify(execFile);
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const fail = (message, status = 400) => Object.assign(new Error(message), { status, loveSpot: true });
@@ -146,7 +150,10 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
         scene.files['matilda-face'] = { ...scene.files['matilda-face'], ...BOARD_FACE };
       }
       if (!scene.page) {
-        const existing = new Set(await names(pages)); let name = 'Current page', suffix = 2;
+        const pageFiles = await names(pages), existing = new Set(pageFiles); let name = 'Current page', suffix = 2;
+        if (text === undefined && !pageFiles.some(file => file.endsWith('.excalidraw'))) {
+          scene.elements = paintElements(WELCOME_SHAPES, { x: -174, y: -56 }, 'welcome', undefined, 0);
+        }
         while (existing.has(`${name}.excalidraw`)) name = `Current page ${suffix++}`;
         scene.page = { name, session: 'legacy' };
       }

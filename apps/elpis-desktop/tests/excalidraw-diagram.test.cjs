@@ -52,6 +52,9 @@ for (const colorScheme of ['light', 'dark']) {
     assert.deepEqual([first.x - header.x, first.y - header.y, first.points], [95, 64, [[0, 0], [0, 50]]]);
     const last = drawing.elements.find(e => e.id === header.id.replace(/-0$/, '-27'));
     assert.deepEqual([last.x - header.x, last.y - header.y, last.points], [524, 305, [[0, 0], [290, 75]]]);
+    await f.page.keyboard.press('Escape');
+    await f.page.locator('.excalidraw').click({ position: { x: 250, y: 400 } });
+    await f.page.keyboard.press('Escape');
     await f.page.keyboard.press('Shift+1');
     if (evidence) {
       await fs.mkdir(evidence, { recursive: true });
@@ -60,6 +63,28 @@ for (const colorScheme of ['light', 'dark']) {
     assert.deepEqual(f.errors, []);
   });
 }
+
+for (const colorScheme of ['light', 'dark']) test(`a new Love Spot board opens with a handwritten welcome and heart (${colorScheme})`, { timeout: 30000 }, async t => {
+  const f = await loveSpotFixture({ colorScheme, newBoard: true });
+  t.after(() => f.close());
+  await f.page.setViewportSize({ width: 1400, height: 1200 });
+  await f.open(f.page);
+  const { scene } = await f.page.evaluate(async () => {
+    const response = await fetch('/api/love-spot');
+    if (!response.ok) throw new Error(`The first board returned ${response.status}`);
+    return response.json();
+  });
+  const welcome = scene.elements.find(e => e.id === 'love-paint-welcome-0'), heart = scene.elements.find(e => e.id === 'love-paint-welcome-1');
+  assert.deepEqual([welcome.text, welcome.fontFamily, welcome.strokeColor], ['Welcome to Love Spot', 5, '#000000']);
+  assert.deepEqual([heart.type, heart.strokeColor, heart.roughness], ['line', '#e03131', 1]);
+  assert.equal(f.turns.length, 0, 'the welcome needs no model call');
+  await f.page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  if (evidence) {
+    await fs.mkdir(evidence, { recursive: true });
+    await f.page.locator('.love-spot-editor').screenshot({ path: path.join(evidence, `welcome-${colorScheme}.png`) });
+  }
+  assert.deepEqual(f.errors, []);
+});
 
 for (const colorScheme of ['light', 'dark']) test(`the reported saved drawing repairs on opening without another model turn (${colorScheme})`, { timeout: 30000 }, async t => {
   const legacy = require('./fixtures/legacy-matilda-diagram.json');
