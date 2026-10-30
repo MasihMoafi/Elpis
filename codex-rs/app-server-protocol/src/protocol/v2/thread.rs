@@ -133,6 +133,11 @@ pub struct ThreadStartParams {
     #[experimental("thread/start.daybreakEnabled")]
     #[ts(optional = nullable)]
     pub daybreak_enabled: Option<bool>,
+    /// Elpis: the chat that started this thread as a helper. The engine records it as the
+    /// thread's parent, so `ancestorThreadId` lists and the agent tree nest it there.
+    #[experimental("thread/start.parentThreadId")]
+    #[ts(optional = nullable)]
+    pub parent_thread_id: Option<String>,
     /// Optional sticky environments for this thread.
     ///
     /// Omitted selects the default environment when environment access is

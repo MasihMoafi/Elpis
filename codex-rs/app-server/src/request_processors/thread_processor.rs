@@ -1213,6 +1213,7 @@ impl ThreadRequestProcessor {
             thread_source,
             project_id,
             daybreak_enabled,
+            parent_thread_id,
             environments,
         } = params;
         if matches!(
@@ -1229,6 +1230,12 @@ impl ThreadRequestProcessor {
                 "`permissions` cannot be combined with `sandbox`",
             ));
         }
+        let parent_thread_id = parent_thread_id
+            .map(|id| {
+                ThreadId::from_string(&id)
+                    .map_err(|err| invalid_request(format!("invalid parentThreadId: {err}")))
+            })
+            .transpose()?;
         if let Some(project_id) = project_id.as_ref() {
             if project_id.is_empty() {
                 return Err(invalid_request("projectId must not be empty"));
@@ -1300,6 +1307,7 @@ impl ThreadRequestProcessor {
                 thread_source.map(Into::into),
                 project_id,
                 daybreak_enabled,
+                parent_thread_id,
                 environment_requests,
                 service_name,
                 allow_provider_model_fallback,
@@ -1382,6 +1390,7 @@ impl ThreadRequestProcessor {
         thread_source: Option<codex_protocol::protocol::ThreadSource>,
         project_id: Option<String>,
         daybreak_enabled: Option<bool>,
+        parent_thread_id: Option<ThreadId>,
         environment_requests: Option<Vec<TurnEnvironmentRequest>>,
         service_name: Option<String>,
         allow_provider_model_fallback: bool,
@@ -1594,6 +1603,15 @@ impl ThreadRequestProcessor {
                 });
             }
         };
+        if let Some(parent_thread_id) = parent_thread_id
+            && !thread.config_snapshot().await.ephemeral
+            && let Err(err) = listener_task_context
+                .thread_manager
+                .record_helper_parent(parent_thread_id, thread_id)
+                .await
+        {
+            tracing::warn!(%thread_id, %parent_thread_id, %err, "failed to record helper parent");
+        }
         let session_telemetry = thread.session_telemetry();
         session_telemetry.record_startup_phase(
             "thread_start_create_thread",

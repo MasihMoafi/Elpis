@@ -1397,6 +1397,7 @@ async fn skills_changed_notification_is_emitted_after_skill_change() -> Result<(
             thread_source: None,
             project_id: None,
             daybreak_enabled: None,
+            parent_thread_id: None,
             dynamic_tools: None,
             environments: None,
             selected_capability_roots: None,

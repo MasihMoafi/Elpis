@@ -1016,6 +1016,26 @@ impl ThreadManager {
             .map_err(|err| thread_store_metadata_update_error(thread_id, err))
     }
 
+    /// Elpis: record that `parent_thread_id` started `child_thread_id` as a helper, so
+    /// thread lists and the agent tree nest it under the chat that started it.
+    pub async fn record_helper_parent(
+        &self,
+        parent_thread_id: ThreadId,
+        child_thread_id: ThreadId,
+    ) -> CodexResult<()> {
+        let Some(agent_graph_store) = self.state.agent_graph_store() else {
+            return Ok(());
+        };
+        agent_graph_store
+            .upsert_thread_spawn_edge(
+                parent_thread_id,
+                child_thread_id,
+                codex_agent_graph_store::ThreadSpawnEdgeStatus::Open,
+            )
+            .await
+            .map_err(|err| CodexErr::Fatal(format!("failed to persist thread-spawn edge: {err}")))
+    }
+
     /// List `thread_id` plus all known descendants in its spawn subtree.
     pub async fn list_agent_subtree_thread_ids(
         &self,

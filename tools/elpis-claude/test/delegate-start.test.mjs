@@ -66,3 +66,49 @@ test('a refused helper start preserves its managed-policy reason and closes its 
   assert.equal(closed, true, 'the refused helper leaves no app-server connection open');
   assert.equal(methods.includes('turn/start'), false, 'a refused helper never starts inference');
 });
+
+test('a helper is parented to the chat that called delegate, never another chat', { timeout: 10000 }, async t => {
+  const root = createTestTempDir(path.join(os.tmpdir(), 'elpis-delegate-parent-'));
+  const server = new WebSocketServer({ host: '127.0.0.1', port: 0 });
+  await once(server, 'listening');
+  const starts = [];
+  server.on('connection', socket => {
+    socket.on('message', data => {
+      const msg = JSON.parse(String(data));
+      if (msg.id === undefined) return;
+      if (msg.method === 'thread/start') starts.push(msg.params);
+      socket.send(JSON.stringify({ id: msg.id, ...(msg.method === 'thread/start'
+        ? { error: { code: -32600, message: 'fixture stops here' } } : { result: {} }) }));
+    });
+  });
+  const child = spawn(process.execPath, [new URL('../elpis-agents-mcp.mjs', import.meta.url).pathname], {
+    cwd: root, stdio: ['pipe', 'pipe', 'pipe'],
+    env: { PATH: process.env.PATH, HOME: root, ELPIS_HOME: root,
+      ELPIS_BRIDGE_URL: `ws://127.0.0.1:${server.address().port}`, ELPIS_AGENTS_LOG: path.join(root, 'agents.log') },
+  });
+  const pending = new Map();
+  let seq = 0;
+  readline.createInterface({ input: child.stdout }).on('line', line => {
+    const msg = JSON.parse(line), call = pending.get(msg.id);
+    if (!call) return;
+    pending.delete(msg.id);
+    msg.error ? call.reject(Error(msg.error.message)) : call.resolve(msg.result);
+  });
+  t.after(async () => {
+    for (const socket of server.clients) socket.terminate();
+    await new Promise(resolve => server.close(resolve));
+    if (child.exitCode === null && child.signalCode === null) { const exited = once(child, 'exit'); child.kill(); await exited; }
+    removeTestTempDir(root);
+  });
+  const rpc = (method, params) => new Promise((resolve, reject) => {
+    const id = ++seq; pending.set(id, { resolve, reject });
+    child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
+  });
+  await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'delegate-parent-test', version: '1' } });
+  child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
+  for (const caller of ['chat-a', 'chat-b']) {
+    const result = await rpc('tools/call', { name: 'delegate', arguments: { task: 'Do the fixture.', model: 'gpt-test', provider: 'fixture', cwd: root }, _meta: { threadId: caller } });
+    assert.match(result.content[0].text, /fixture stops here/, JSON.stringify(result));
+  }
+  assert.deepEqual(starts.map(params => params.elpisParentThreadId), ['chat-a', 'chat-b']);
+});
