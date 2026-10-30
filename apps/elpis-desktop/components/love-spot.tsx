@@ -7,7 +7,7 @@ import { Check, ChevronDown, Heart, Info, Trash2, Volume2, VolumeX, X } from "lu
 import { PlusIcon } from "@/components/elpis-icons";
 import { CaptureUpdateAction, Excalidraw, MainMenu, newElementWith, convertToExcalidrawElements, exportToBlob, serializeAsJSON, viewportCoordsToSceneCoords } from "@excalidraw/excalidraw";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
-import type { AppState, BinaryFiles, ExcalidrawImperativeAPI, ExcalidrawInitialDataState, PointerDownState } from "@excalidraw/excalidraw/types";
+import type { AppState, BinaryFileData, BinaryFiles, ExcalidrawImperativeAPI, ExcalidrawInitialDataState, PointerDownState } from "@excalidraw/excalidraw/types";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -30,6 +30,8 @@ import { LOVE_SPOT_AUDIO } from "@/lib/love-spot-audio";
 import { noticed, told } from "@/lib/matilda";
 import { newer } from "@/bridge/love-spot-order.cjs";
 import { BOARD_FACE, BOARD_FACE_LIGHT } from "@/bridge/matilda-face.cjs";
+import { boardExpression, boardPortrait, BOARD_PORTRAIT_PREFIX } from "@/lib/matilda-board-portrait";
+import { useMatildaPortraits } from "@/lib/use-matilda-portraits";
 import { upgradeAgentArt } from "@/lib/love-agents";
 import "@excalidraw/excalidraw/index.css";
 import "./love-spot.css";
@@ -110,7 +112,32 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
   const remote = useRef(false);
   const placingScreenshot = useRef<string>(undefined);
   const opening = useRef<string[]>([]);
+  const portraits = useMatildaPortraits();
   const report = useCallback((e: unknown) => { if (mounted.current) setError(e instanceof Error ? e.message : "Love Spot could not save the drawing."); }, []);
+  const syncPortrait = useCallback(() => {
+    const api = editorRef.current;
+    if (!api) return;
+    const files = api.getFiles(), pending = new Map<string, BinaryFileData>(), elements = api.getSceneElementsIncludingDeleted();
+    let changed = false;
+    const next = elements.map(element => {
+      if (element.type !== "image" || !element.id.startsWith("love-face-") || !element.fileId) return element;
+      const old = element.fileId === "matilda-face" ? BOARD_FACE : element.fileId.startsWith(BOARD_PORTRAIT_PREFIX) ? boardPortrait(boardExpression(element.fileId.slice(BOARD_PORTRAIT_PREFIX.length))) : null;
+      if (!old || files[element.fileId]?.dataURL !== old.dataURL || portraits.board === "auto" && element.fileId === "matilda-face") return element;
+      const expression = portraits.board === "auto" ? boardExpression(element.customData?.expression) : portraits.board;
+      const face = boardPortrait(expression);
+      if (element.fileId === face.id) return element;
+      if (!files[face.id]) pending.set(face.id, face);
+      changed = true; return { ...element, fileId: face.id };
+    });
+    if (!changed) return;
+    remote.current = true;
+    try {
+      if (pending.size) api.addFiles([...pending.values()]);
+      applyRemoteScene(api, next);
+      latest.current = snapshot(api.getSceneElementsIncludingDeleted(), api.getAppState(), api.getFiles(), currentPage.current);
+    } finally { remote.current = false; }
+  }, [portraits.board]);
+  useEffect(() => { if (editor) queueMicrotask(syncPortrait); }, [editor, syncPortrait]);
   if (!journal.current && typeof window !== "undefined") journal.current = createTextJournal(report);
   // A page list that fails is shown in the Pages menu it belongs to; the shared message line is cleared by every save.
   const loadPages = useCallback(() => { void api<PageList>("/love-spot/pages").then(data => {
@@ -225,6 +252,7 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
       setRenaming(false);
       editor.scrollToContent(editor.getSceneElements(), { fitToViewport: true, viewportZoomFactor: 0.9, maxZoom: 1, canvasOffsets: clearOfTools(boardArea.current) });
       if (hasRecovery || art || Object.keys(data.scene.files).length) queueMicrotask(() => void saveLatest.current?.());
+      queueMicrotask(syncPortrait);
       return;
     }
     const shown = new Map(editor.getSceneElementsIncludingDeleted().map(e => [e.id, e]));
@@ -256,7 +284,8 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
       // Excalidraw may notify after the merged snapshot is already current.
       schedulePicture();
     }
-  }, [dark, editor, loadPages, schedulePicture]);
+    queueMicrotask(syncPortrait);
+  }, [dark, editor, loadPages, schedulePicture, syncPortrait]);
 
   const capture = useCallback(() => {
     const value = editorRef.current, page = currentPage.current;

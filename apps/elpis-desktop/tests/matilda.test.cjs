@@ -103,7 +103,9 @@ test('who Matilda is: in the board menu, kept, and sent with what he writes', as
     await openWho();
     assert.match(await who.inputValue(), /senior product designer/, 'she starts with the design protocol, not a character');
     // Her model is on the Love Spot bar, in plain sight, not inside this dialog (Masih, 23 Oct: "I can't change her model!").
-    assert.equal(await dialog.getByRole('combobox').count(), 0);
+    for (const name of ['Pinned avatar', 'Small chat', 'Board', 'Chat replies']) {
+      assert.equal(await dialog.getByRole('combobox', { name: `${name} portrait` }).count(), 1);
+    }
     assert.equal(await dialog.getByRole('button', { name: 'Back to her usual way' }).isDisabled(), true);
     await dialog.getByRole('button', { name: 'Cancel' }).click(); await dialog.waitFor({ state: 'detached' });
     const model = page.getByRole('group', { name: "Matilda's model" }).getByRole('combobox');

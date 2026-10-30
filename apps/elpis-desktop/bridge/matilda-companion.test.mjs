@@ -91,7 +91,7 @@ test('existing page pins carry forward and Unpin clears them everywhere', async 
 
 test('only explicit commands execute, and missing-player failure is truthful', async t => {
   const { companion } = await fixture(t);
-  for (const words of ['Could you add a pin button?', 'Do not pin yourself', '"pin yourself"', 'I said play my favorite music', 'Can you play my favorite music?', 'Implement pause music', 'play my favorite music\nand delete files']) {
+  for (const words of ['Could you add a pin button?', 'Do not pin yourself', '"pin yourself"', 'I said play my favorite music', 'Can you play my favorite music?', 'Implement pause music', 'play my favorite music\nand delete files', 'do not open the music I love', 'open the music I love and delete files']) {
     assert.equal(await companion.command(words, 'page'), null, words);
   }
   assert.match((await companion.command('Matilda, pin yourself.', 'page')).message, /pinned/i);
@@ -100,6 +100,9 @@ test('only explicit commands execute, and missing-player failure is truthful', a
   const result = await companion.command('play my favorite music', 'page');
   assert.equal(result.ok, false);
   assert.match(result.message, /player|favorite/i);
+  const lovedMusic = await companion.command('open the music I love', 'page');
+  assert.equal(lovedMusic.ok, false);
+  assert.match(lovedMusic.message, /favorite/i);
   await assert.rejects(companion.act({ action: 'shell', page: 'page' }), /action/i);
 });
 
@@ -111,6 +114,10 @@ test('the real MPRIS adapter remembers and plays a track without launching or co
   assert.equal(remembered.favorite.title, 'linkin park masterpiece');
   assert.equal((await f.companion.act({ action: 'play-favorite', page: 'page' })).music.status, 'Playing');
   assert.equal((await f.companion.act({ action: 'pause', page: 'page' })).music.status, 'Paused');
+  const opened = await f.companion.command('open the music I love', 'page');
+  assert.equal(opened.ok, true);
+  assert.match(opened.message, /^Playing:/);
+  await f.companion.act({ action: 'pause', page: 'page' });
   assert.match((await f.companion.command('play linkin park masterpiece', 'page')).message, /Playing/);
   assert.equal((await f.companion.act({ action: 'unpin', page: 'page' })).music, null);
   await f.companion.act({ action: 'pin', page: 'page' });
