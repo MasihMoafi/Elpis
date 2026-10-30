@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { MicIcon, StopIcon } from "@/components/elpis-icons";
-import { LoaderCircle, X } from "lucide-react";
+import { LoaderCircle, Mic, Square, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { DictationSelection } from "@/lib/dictation";
 
@@ -100,7 +99,7 @@ export function Dictation({ disabled, provider, selection, onTranscript, onBusy,
       <Button type="button" size="icon" variant={active ? "secondary" : "ghost"} disabled={active ? phase !== "recording" : disabled} aria-disabled={unavailable || undefined} className={unavailable ? "opacity-50" : undefined}
         aria-label={phase === "recording" ? "Stop recording and transcribe" : "Dictate message"} title={active ? label : route?.available ? `Dictate with ${route.label}. ${purpose}` : reason}
         onClick={() => phase === "recording" ? recorder.current?.stop() : unavailable ? setError(reason) : void start()}>
-        {phase === "recording" ? <StopIcon size={15} className="text-red-400" /> : active ? <LoaderCircle size={17} className="animate-spin" /> : <MicIcon size={17} />}
+        {phase === "recording" ? <Square size={16} className="text-red-400" /> : active ? <LoaderCircle size={16} className="animate-spin" /> : <Mic size={16} />}
       </Button>
       {active && <Button type="button" size="icon" variant="ghost" aria-label="Cancel dictation" onClick={cancel}><X size={15} /></Button>}
     </div>

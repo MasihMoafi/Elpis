@@ -30,7 +30,7 @@ const around = (rects, pad = 24) => {
 };
 
 for (const colorScheme of ['light', 'dark']) {
-  test(`composer actions share one box size, one centre line and even visible gaps; Stop is solid (${colorScheme})`, async () => {
+  test(`composer actions share one 16px stroke, one centre line and an attached send menu (${colorScheme})`, async () => {
     const f = await fixture(options(colorScheme, { running: true })), { page } = f;
     try {
       await f.open('chat-a');
@@ -54,12 +54,15 @@ for (const colorScheme of ['light', 'dark']) {
       assert.equal(sizes[0], '28x28', 'the shared box uses --control-h at 28px');
       const glyphs = m.map(item => `${item.glyph.width}x${item.glyph.height}`);
       assert.deepEqual(glyphs, Array(names.length).fill(glyphs[0]), `every glyph has one size: ${glyphs.join(', ')}`);
+      assert.equal(glyphs[0], '16x16');
       const centres = m.flatMap(item => [item.box.cy, item.glyph.cy]);
       assert.ok(Math.max(...centres) - Math.min(...centres) <= 0.5, `one centre line: ${centres.join(', ')}`);
       assert.ok(Math.max(...gaps) - Math.min(...gaps) <= 0.5, `voice → mic → Stop → Send box gaps are even: ${gaps.join(', ')}`);
-      const stop = m[2].d;
-      assert.equal(stop.length, 1, 'Stop draws one shape');
-      assert.equal((stop[0].match(/M/gi) ?? []).length, 1, 'Stop is a solid mark, not a hollow frame');
+      assert.equal(await row.getByRole('button', { name: 'Stop response' }).locator('rect').count(), 1, 'Stop uses the same outlined icon language');
+      const send = await row.getByRole('button', { name: 'Send follow-up' }).boundingBox(), more = await row.getByRole('button', { name: 'More send options' }).boundingBox();
+      assert.ok(Math.abs(more.x - send.x - send.width) <= 1, 'send options attach to Send instead of floating outside it');
+      assert.equal(more.width, 20);
+      assert.equal(await page.locator('.composer textarea').evaluate(el => el.getBoundingClientRect().height), 22, 'an empty composer is one text line high');
       assert.deepEqual(f.errors, []);
     } finally { await f.close(); }
   });

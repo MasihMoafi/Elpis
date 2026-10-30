@@ -281,7 +281,7 @@ button:disabled { cursor:not-allowed; }
 .dictation-buttons { display:flex; flex-shrink:0; align-items:center; }
 .dictation-status { font-size:var(--text-small); color:var(--muted-foreground); overflow-wrap:anywhere; line-height:1.4; }
 .dictation-error { color:var(--destructive); }
-.composer textarea { field-sizing:fixed; border:0; box-shadow:none; background:transparent; min-height:44px; line-height:22px; max-height:240px; resize:none; font-size:var(--text-base); padding:0; }
+.composer textarea { field-sizing:fixed; border:0; box-shadow:none; background:transparent; min-height:22px; line-height:22px; max-height:240px; resize:none; font-size:var(--text-base); padding:0; }
 .dark .composer textarea { background:transparent; }
 .composer textarea:focus-visible { outline:none; box-shadow:none; }
 .composer-controls { --composer-control-gap:8px; display:flex; flex-wrap:nowrap; align-items:center; justify-content:space-between; gap:8px; margin-top:4px; }
@@ -726,7 +726,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .composer-controls svg:not(.context-ring-icon) { width:var(--icon-size); height:var(--icon-size); }
 .composer-actions :is(.dictation-buttons > button, .stop-button, .send-button, [aria-label="More send options"]) { height:var(--action-box); min-width:var(--action-box); }
 .composer-actions :is(.dictation-buttons > button, .stop-button, .send-button, [aria-label="More send options"]) svg { width:var(--action-glyph); height:var(--action-glyph); }
-.composer-actions > :is(.send-button, .send-button + *) { margin-inline-start:calc((var(--action-box) - var(--action-glyph)) / 2); }
+.composer-actions > .send-button { margin-inline-start:calc((var(--action-box) - var(--action-glyph)) / 2); }
+.composer-actions > .send-button + [aria-label="More send options"] { width:20px; min-width:20px; margin-inline-start:calc(-1 * var(--composer-control-gap)); padding:0 3px 0 0; border-inline-start:1px solid color-mix(in oklab, var(--primary-foreground) 24%, transparent); background:var(--primary); color:var(--primary-foreground); }
 .composer-right .dictation-control { margin-top:0; }
 .composer .dictation-status:empty { display:none; }
 .fast-toggle[aria-pressed="true"] { color:var(--accent-text); background:var(--selected); }
