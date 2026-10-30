@@ -37,6 +37,7 @@ async function fixture(t, { loveAgents, prepareScreenshots } = {}) {
 test('normal Love Spot chat turns receive portrait choices without changing other chats', async t => {
   const f = await fixture(t);
   await f.load();
+  await fs.mkdir(f.directory, { recursive: true });
   await fs.writeFile(path.join(f.directory, '.love-spot-chat.json'), JSON.stringify({ threadId: 'love-chat' }));
   const sent = [];
   f.client.send = async (id, body) => { sent.push({ id, body }); return { turn: { id: 'turn-portrait' } }; };
