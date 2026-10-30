@@ -1623,6 +1623,36 @@ test('deleting a chat waits for its pending operation and then releases its lock
   assert.equal((await f.client.archiveThread(id, {})).archived, true, 'the next deletion also works');
 });
 
+test('an annotation waits for a pending chat operation and is sent once', async t => {
+  const f = fixture(); t.after(() => f.client.close()); await f.client.initialize(); await f.client.listThreads();
+  const send = f.socket.send; let release;
+  f.socket.send = raw => {
+    const request = JSON.parse(raw);
+    if (request.method === 'thread/name/set' && request.params.threadId === ROOT) {
+      f.socket.sent.push(request);
+      release = () => { f.threads.get(ROOT).name = request.params.name; queueMicrotask(() => f.socket.emit('message', JSON.stringify({ id: request.id, result: {} }))); };
+      return;
+    }
+    send(raw);
+  };
+  const rename = f.client.renameThread(ROOT, { name: 'Renamed' });
+  for (let attempt = 0; !release && attempt < 20; attempt++) await new Promise(resolve => setImmediate(resolve));
+  assert.ok(release, 'the earlier operation holds the chat lock');
+  const attachment = { id: 'annotation', name: 'Browser comments.txt', type: 'text', mimeType: 'text/plain', text: 'Make this heading shorter.' };
+  const sent = f.client.send(ROOT, { text: '', attachments: [attachment] }).then(value => ({ value }), error => ({ error }));
+  await new Promise(resolve => setTimeout(resolve, 50));
+  assert.equal(f.socket.sent.filter(row => row.method === 'turn/start').length, 0);
+  release(); await rename;
+  const result = await sent;
+  assert.ifError(result.error);
+  assert.ok(result.value.turn.id);
+  const turns = f.socket.sent.filter(row => row.method === 'turn/start');
+  assert.equal(turns.length, 1);
+  assert.match(JSON.stringify(turns[0].params.input), /Make this heading shorter/);
+  await assert.rejects(f.client.send(ROOT, { text: '', attachments: [{ ...attachment, text: '' }] }), /empty or invalid/);
+  assert.equal(f.socket.sent.filter(row => row.method === 'turn/start').length, 1);
+});
+
 function pagedDeletionFixture(control = {}) {
   const f = fixture(), key = value => `00000000-0000-0000-0000-${String(value).padStart(12, '0')}`;
   const childIds = Array.from({ length: 125 }, (_, index) => key(1000 + index)), forkIds = [FORK, key(8), ...childIds.map((_, index) => key(2000 + index))];

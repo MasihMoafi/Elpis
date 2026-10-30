@@ -1982,7 +1982,7 @@ export class DesktopClient extends EventEmitter {
       }
       if (thread.status?.type === 'active') throw new BridgeError('This conversation is running. Use Steer with its active turn ID.', 409);
       return this.#startTurn(thread, { threadId: id, input, ...overrides });
-    });
+    }, true);
   }
   /** Changes a chat's permission mode now, as the terminal's /permissions does: the engine applies it to
    * the running turn and later ones, and a bridged (Claude, Antigravity) chat follows the engine's
