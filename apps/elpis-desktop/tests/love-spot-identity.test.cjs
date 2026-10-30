@@ -25,7 +25,8 @@ test('Love Spot conversations show their agent names and use the blood-red app i
     if (url.pathname === '/api/threads') return json({ data: threads, nextCursor: null });
     if (url.pathname.startsWith('/api/threads/')) {
       const thread = threads.find(item => url.pathname === `/api/threads/${item.id}`) || threads[0];
-      return json({ thread, data: [{ turnId: 'turn', item: { id: `answer-${thread.id}`, type: 'agentMessage', text: 'What should I help you with?' } }], nextCursor: null });
+      const message = thread.id === 'matilda' ? 'The first thought stays close to its next line.\n\nThe next paragraph starts half a line later.' : 'What should I help you with?';
+      return json({ thread, data: [{ turnId: 'turn', item: { id: `answer-${thread.id}`, type: 'agentMessage', text: message } }], nextCursor: null });
     }
     try {
       const file = path.join(process.env.ELPIS_TEST_OUT || path.join(__dirname, '../out'), url.pathname === '/' ? 'index.html' : url.pathname);
@@ -67,6 +68,12 @@ test('Love Spot conversations show their agent names and use the blood-red app i
     assert.ok(shape.portrait > 0.9, `the disc shows her portrait, not an empty or broken face (${shape.portrait})`);
     assert.ok(shape.rim.every(a => a > 200) && shape.beyond.every(a => a === 0), `24 Oct, Masih: "this should be circular avatar profile looking": opaque just inside the circle at 16 angles, clear just outside it on the diagonals (${JSON.stringify(shape)})`);
     assert.equal(await page.locator('.message.agent .speaker').textContent(), 'Matilda');
+    const rhythm = await page.locator('.message.agent.matilda-message').evaluate(element => {
+      const style = getComputedStyle(element), paragraphs = element.querySelectorAll('.markdown > p');
+      return { ratio: parseFloat(style.lineHeight) / parseFloat(style.fontSize), gap: parseFloat(getComputedStyle(paragraphs[1]).marginTop) / parseFloat(style.fontSize) };
+    });
+    assert.ok(Math.abs(rhythm.ratio - 1.45) < 0.01, `Matilda line height is ${rhythm.ratio}`);
+    assert.ok(Math.abs(rhythm.gap - 0.725) < 0.01, `Matilda paragraph gap is ${rhythm.gap}`);
     for (const theme of ['light', 'dark']) {
       await page.evaluate(theme => { document.documentElement.dataset.theme = theme; document.documentElement.classList.toggle('dark', theme === 'dark'); }, theme);
       await page.screenshot({ path: `/tmp/matilda-chat-shots/matilda-${theme}.png` });

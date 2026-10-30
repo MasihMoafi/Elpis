@@ -86,7 +86,7 @@ export function ChangesPanel({ threadId, running }: { threadId: string | undefin
   return <div className="changes">
     <div className="changes-head">
       <span className="changes-summary">{list ? list.files.length ? <>{list.files.length === 1 ? "1 file changed" : `${list.files.length} files changed`}{list.truncated ? " (first 200)" : ""} <Counts added={added} removed={removed} /></> : "No changes" : "Changes"}</span>
-      <Button type="button" variant="ghost" size="icon-xs" className="side-action" aria-label="Refresh changes" title="Read the changes again" disabled={!threadId} onClick={() => void load(true)}><RefreshCw size={14} /></Button>
+      <Button type="button" variant="ghost" size="icon-xs" className="side-action" aria-label="Refresh changes" title="Read the changes again" disabled={!threadId} onClick={() => void load(true)}><RefreshCw size={16} /></Button>
     </div>
     {!threadId ? <p className="changes-note">Open a chat to see the changes in its folder.</p>
       : error ? <p role="alert" className="changes-note changes-error">{error}</p>
@@ -100,13 +100,13 @@ export function ChangesPanel({ threadId, running }: { threadId: string | undefin
             <span className="change-path" title={file.path}>{file.path.includes("/") && <span className="dir">{file.path.slice(0, file.path.lastIndexOf("/") + 1)}</span>}{file.path.slice(file.path.lastIndexOf("/") + 1)}</span>
             {file.binary ? <span className="change-counts">binary</span> : <Counts added={file.added} removed={file.removed} />}
           </FileRefLink>
-          <Button type="button" variant="ghost" size="icon-xs" aria-label={`View diff of ${file.path}`} title={`View diff of ${file.path}`} onClick={() => open(file)}><FileDiff size={14} /></Button>
+          <Button type="button" variant="ghost" size="icon-xs" aria-label={`View diff of ${file.path}`} title={`View diff of ${file.path}`} onClick={() => open(file)}><FileDiff size={16} /></Button>
         </li>)}</ul>
         {shown && <section className="diff-view" aria-label={`Diff of ${shown.path}`}>
           <div className="diff-head">
             <span className="diff-title" title={shown.path}><FileRefLink target={{ path: pathOf(list.root, shown.path) }}>{shown.path}</FileRefLink></span>
-            {window.elpisDesktop?.openFolder && <Button type="button" variant="ghost" size="xs" onClick={() => showInFolder(shown)}><FolderIcon size={13} aria-hidden="true" />Show in folder</Button>}
-            {!list.recorded && <Button type="button" variant="destructive" size="xs" disabled={running} title={running ? "Wait for the turn to finish" : `Throw away the changes to ${shown.path}`} onClick={() => { setFailure(""); setConfirming(shown); }}><Undo2 size={13} aria-hidden="true" />Discard</Button>}
+            {window.elpisDesktop?.openFolder && <Button type="button" variant="ghost" size="xs" onClick={() => showInFolder(shown)}><FolderIcon size={16} aria-hidden="true" />Show in folder</Button>}
+            {!list.recorded && <Button type="button" variant="destructive" size="xs" disabled={running} title={running ? "Wait for the turn to finish" : `Throw away the changes to ${shown.path}`} onClick={() => { setFailure(""); setConfirming(shown); }}><Undo2 size={16} aria-hidden="true" />Discard</Button>}
           </div>
           {note && <p role="alert" className="changes-note changes-error">{note}</p>}
           <div className="diff-body" tabIndex={0}>

@@ -140,11 +140,11 @@ export type SidePanelState = ReturnType<typeof useSidePanel>;
 /** What a new tab can be, for the "+" menu and for an empty panel: one list. */
 function kindsOf(panel: SidePanelState, browser: Browser, hasTerminal: boolean, cwd: string, hasChat: boolean) {
   return [
-    ...(hasTerminal ? [{ id: "terminal", label: "Terminal", icon: <TerminalIcon size={14} />, run: () => panel.openTerminal(cwd) }] : []),
-    ...(browser.api ? [{ id: "browser", label: "Browser tab", icon: <BrowserIcon size={14} />, run: panel.openPage }] : []),
-    ...(hasChat ? [{ id: "changes", label: "Changes", icon: <FileEditIcon size={14} />, run: panel.openChanges }] : []),
-    ...(hasChat ? [{ id: "context", label: "Context", icon: <ListTree size={14} />, run: panel.openContext }] : []),
-    ...(cwd ? [{ id: "files", label: "Files", icon: <FolderIcon size={14} />, run: panel.openFiles }] : []),
+    ...(hasTerminal ? [{ id: "terminal", label: "Terminal", icon: <TerminalIcon size={16} />, run: () => panel.openTerminal(cwd) }] : []),
+    ...(browser.api ? [{ id: "browser", label: "Browser tab", icon: <BrowserIcon size={16} />, run: panel.openPage }] : []),
+    ...(hasChat ? [{ id: "changes", label: "Changes", icon: <FileEditIcon size={16} />, run: panel.openChanges }] : []),
+    ...(hasChat ? [{ id: "context", label: "Context", icon: <ListTree size={16} />, run: panel.openContext }] : []),
+    ...(cwd ? [{ id: "files", label: "Files", icon: <FolderIcon size={16} />, run: panel.openFiles }] : []),
   ];
 }
 
@@ -247,24 +247,24 @@ export function SidePanel({ panel, browser, hasTerminal, dark, cwd, threadId, ru
       onResize={panel.setWidth} onClose={panel.closePanel} onDraggingChange={setResizing} />
     <div className="side-header">
       <TabStrip multiple label="Side panel tabs" activeKey={shown?.key ?? null} add={kinds.length > 0 && <DropdownMenu>
-        <DropdownMenuTrigger render={<Button type="button" variant="ghost" size="icon-sm" className="task-tab-new" aria-label="New side panel tab" title="New tab: terminal, browser, changes or files" />}><PlusIcon size={15} /></DropdownMenuTrigger>
+        <DropdownMenuTrigger render={<Button type="button" variant="ghost" size="icon-sm" className="task-tab-new" aria-label="New side panel tab" title="New tab: terminal, browser, changes or files" />}><PlusIcon size={16} /></DropdownMenuTrigger>
         <DropdownMenuContent align="start">{kinds.map(kind => <DropdownMenuItem key={kind.id} onClick={kind.run}>{kind.icon}{kind.label}</DropdownMenuItem>)}</DropdownMenuContent>
       </DropdownMenu>}>
         {panel.items.map(item => {
           const active = item.key === shown?.key, close = () => panel.close(item.key), select = () => panel.select(item.key);
-          if (item.kind === "smartPrune") return <Tab key={item.key} icon={<Scissors size={14} />} label="Smart Prune" title={item.target.prune.tool} active={active} closeLabel="Close Smart Prune tab" actions={[{ id: "close", label: "Close tab", run: close }]} onSelect={select} onClose={close} />;
-          if (item.kind === "changes") return <Tab key={item.key} icon={<FileEditIcon size={14} />} label="Changes" title="Changes in this chat's folder" active={active} closeLabel="Close Changes tab"
+          if (item.kind === "smartPrune") return <Tab key={item.key} icon={<Scissors size={16} />} label="Smart Prune" title={item.target.prune.tool} active={active} closeLabel="Close Smart Prune tab" actions={[{ id: "close", label: "Close tab", run: close }]} onSelect={select} onClose={close} />;
+          if (item.kind === "changes") return <Tab key={item.key} icon={<FileEditIcon size={16} />} label="Changes" title="Changes in this chat's folder" active={active} closeLabel="Close Changes tab"
             actions={[{ id: "close", label: "Close tab", run: close }]} onSelect={select} onClose={close} />;
-          if (item.kind === "files") return <Tab key={item.key} icon={<FolderIcon size={14} />} label="Files" title="The files in this chat's folder" active={active} closeLabel="Close Files tab"
+          if (item.kind === "files") return <Tab key={item.key} icon={<FolderIcon size={16} />} label="Files" title="The files in this chat's folder" active={active} closeLabel="Close Files tab"
             actions={[{ id: "close", label: "Close tab", run: close }]} onSelect={select} onClose={close} />;
-          if (item.kind === "context") return <Tab key={item.key} icon={<ListTree size={14} />} label="Context" title="This chat's goal and context files" active={active} closeLabel="Close Context tab"
+          if (item.kind === "context") return <Tab key={item.key} icon={<ListTree size={16} />} label="Context" title="This chat's goal and context files" active={active} closeLabel="Close Context tab"
             actions={[{ id: "close", label: "Close tab", run: close }]} onSelect={select} onClose={close} />;
-          if (item.kind === "terminal") return <Tab key={item.key} icon={<TerminalIcon size={14} />} label={item.terminal.n > 1 ? `Terminal ${item.terminal.n}` : "Terminal"} title={item.terminal.cwd} active={active}
+          if (item.kind === "terminal") return <Tab key={item.key} icon={<TerminalIcon size={16} />} label={item.terminal.n > 1 ? `Terminal ${item.terminal.n}` : "Terminal"} title={item.terminal.cwd} active={active}
             closeLabel={`Close Terminal ${item.terminal.n} tab`} actions={[{ id: "close", label: "Close tab", run: close }]} onSelect={select} onClose={close} />;
           const { page } = item, targets = selected.includes(item.key) ? selected : [item.key];
           const selectedPages = panel.items.filter((candidate): candidate is Item & { kind: "browser" } => candidate.kind === "browser" && targets.includes(candidate.key)).map(candidate => candidate.page);
           const others = pageKeys.filter(key => !targets.includes(key)), right = pageKeys.slice(Math.max(...targets.map(key => pageKeys.indexOf(key))) + 1);
-          return <Tab key={item.key} icon={page.muted ? <VolumeX size={13} /> : <BrowserIcon size={13} />} label={page.title} title={page.url === "about:blank" ? page.title : `${page.title}\n${page.url}`} active={active} selected={selected.includes(item.key)}
+          return <Tab key={item.key} icon={page.muted ? <VolumeX size={16} /> : <BrowserIcon size={16} />} label={page.title} title={page.url === "about:blank" ? page.title : `${page.title}\n${page.url}`} active={active} selected={selected.includes(item.key)}
             closeLabel={`Close ${page.title} tab`} actions={browserTabActions(browser, page, { selected: selectedPages, close: () => closePages(targets),
               closeOthers: others.length ? () => closePages(others) : undefined, closeRight: right.length ? () => closePages(right) : undefined,
               pin: () => { setPinError(""); void browserPins.toggle({ url: page.url, title: page.title }); }, pinned: browserPins.pins.some(pin => pin.url === page.url),
@@ -272,8 +272,8 @@ export function SidePanel({ panel, browser, hasTerminal, dark, cwd, threadId, ru
             onContextMenu={() => { if (!selected.includes(item.key)) { setSelection([item.key]); anchor.current = item.key; } }} onSelect={event => selectPage(item.key, event)} onClose={() => closePages(targets)} />;
         })}
       </TabStrip>
-      <Button type="button" variant="ghost" size="icon-sm" className="side-action" aria-pressed={full} aria-label={full ? "Exit full view" : "Enter full view"} title={full ? "Exit full view (Ctrl+Shift+F)" : "Full view (Ctrl+Shift+F)"} onClick={() => panel.toggleFull()}>{full ? <Minimize2 size={15} /> : <Maximize2 size={15} />}</Button>
-      <Button type="button" variant="ghost" size="icon-sm" className="side-action" aria-label="Close side panel" title="Close side panel (Ctrl+`)" onClick={panel.closePanel}><X size={15} /></Button>
+      <Button type="button" variant="ghost" size="icon-sm" className="side-action" aria-pressed={full} aria-label={full ? "Exit full view" : "Enter full view"} title={full ? "Exit full view (Ctrl+Shift+F)" : "Full view (Ctrl+Shift+F)"} onClick={() => panel.toggleFull()}>{full ? <Minimize2 size={16} /> : <Maximize2 size={16} />}</Button>
+      <Button type="button" variant="ghost" size="icon-sm" className="side-action" aria-label="Close side panel" title="Close side panel (Ctrl+`)" onClick={panel.closePanel}><X size={16} /></Button>
     </div>
     <div className="side-body"><ViewBoundary label="This panel" resetKey={`${shown?.key}:${threadId}`}>
       {shown?.kind === "smartPrune" && <SmartPruneDetail target={shown.target} />}

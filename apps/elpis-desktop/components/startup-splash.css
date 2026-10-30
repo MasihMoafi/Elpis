@@ -9,10 +9,10 @@
 .startup-splash.splash-dark { background-color:#0a0b0d; color:#e6e0d3; color-scheme:dark; }
 @media (prefers-color-scheme:dark) { .startup-splash:not(.splash-light) { background-color:#0a0b0d; color:#e6e0d3; color-scheme:dark; } }
 .startup-splash.leaving { opacity:0; pointer-events:none; }
-.splash-stage { position:relative; display:grid; justify-items:center; gap:24px; }
+.splash-stage { position:relative; display:grid; justify-items:center; gap:var(--page-section-gap); }
 .splash-gyro { display:grid; place-items:center; width:clamp(128px, 20vmin, 176px); perspective:500px; }
 .startup-splash .splash-logo { display:block; width:100%; height:auto; user-select:none; transform-origin:center; animation:splash-gyro 5s cubic-bezier(.45,0,.2,1) -1.25s infinite; }
-.splash-name { margin:0 -.32em 0 0; font:300 26px/1 var(--serif, system-ui, sans-serif); letter-spacing:.32em; text-transform:uppercase; }
+.splash-name { margin:0 -.32em 0 0; font:300 var(--text-title)/1 var(--serif, system-ui, sans-serif); letter-spacing:.32em; text-transform:uppercase; }
 @media (prefers-reduced-motion:no-preference) {
   .splash-gyro { animation:splash-reveal 600ms cubic-bezier(.22,.7,.2,1) both; }
   .splash-name { animation:splash-colour 650ms ease both; }

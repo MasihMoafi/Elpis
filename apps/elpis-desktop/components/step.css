@@ -9,7 +9,7 @@ summary.step-head:focus-visible { outline:2px solid var(--ring); outline-offset:
 .step-verb { color:var(--muted-foreground); }
 .step-file { color:var(--foreground); }
 .step-hint { margin-inline-start:2px; font-size:var(--text-xs); color:var(--muted-foreground); }
-.step-meta { flex:none; display:inline-flex; align-items:baseline; gap:10px; font-size:var(--text-xs); color:var(--subtle-foreground); font-variant-numeric:tabular-nums; }
+.step-meta { flex:none; display:inline-flex; align-items:baseline; gap:8px; font-size:var(--text-xs); color:var(--subtle-foreground); font-variant-numeric:tabular-nums; }
 .step-status.failed, .step-status.declined { color:var(--destructive); }
 .step-card { margin-top:6px; border:1px solid var(--border); background:var(--card); overflow:hidden; }
 .step-script { margin:10px; padding:8px 12px; border:1px solid var(--hairline); background:var(--recessed); max-height:240px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font:var(--text-sm)/1.6 var(--mono); color:var(--foreground); }
@@ -32,8 +32,8 @@ summary.step-head:focus-visible { outline:2px solid var(--ring); outline-offset:
 .step-card .diff-body { flex:none; max-height:min(55vh, 420px); padding-bottom:6px; }
 /* A turn's footer: "Changes · 3 files · +12 −4" and View changes; its files open as the same rows. */
 .turn-changes { margin:4px 0 14px; }
-.turn-changes-head { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:28px; }
-.turn-changes-toggle { display:flex; align-items:baseline; gap:10px; min-width:0; padding:2px 6px; margin-inline:-6px; border:0; background:none; font-size:var(--text-sm); color:var(--muted-foreground); cursor:pointer; transition:color .12s, background .12s; }
+.turn-changes-head { display:flex; align-items:baseline; justify-content:flex-start; gap:8px; min-height:28px; }
+.turn-changes-toggle { display:flex; align-items:baseline; gap:8px; min-width:0; padding:2px 6px; margin-inline:-6px; border:0; background:none; font-size:var(--text-sm); color:var(--muted-foreground); cursor:pointer; transition:color .12s, background .12s; }
 .turn-changes-toggle::after { content:"›"; flex:none; font-size:var(--text-base); line-height:1; color:var(--subtle-foreground); transition:transform .15s; }
 .turn-changes-toggle[aria-expanded="true"]::after { transform:rotate(90deg); }
 .turn-changes-toggle:hover { color:var(--foreground); background:var(--hover); }

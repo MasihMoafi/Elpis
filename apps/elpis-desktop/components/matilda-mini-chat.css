@@ -8,12 +8,15 @@
 .matilda-mini-composer textarea:focus-visible { outline:none; }
 /* Positioned, so the screen-reader labels inside stay inside it instead of stretching the panel. Messages fade at its top
    and bottom edges, inside the padding, rather than being cut mid-line. */
-.matilda-mini-messages { --fade:12px; position:relative; display:flex; flex-direction:column; gap:12px; min-height:0; max-height:min(220px, 35vh); overflow:auto; overscroll-behavior:contain; padding:var(--fade) 6px; border-bottom:1px solid var(--hairline); overflow-wrap:anywhere;
+.matilda-mini-messages { --fade:12px; position:relative; display:flex; flex-direction:column; gap:8px; min-height:0; max-height:min(220px, 35vh); overflow:auto; overscroll-behavior:contain; padding:var(--fade) 6px; border-bottom:1px solid var(--hairline); overflow-wrap:anywhere;
   mask-image:linear-gradient(to bottom, transparent, black var(--fade), black calc(100% - var(--fade)), transparent); }
 .matilda-mini-message, .matilda-mini-status, .matilda-mini-error, .matilda-mini-earlier { flex:none; }
 .matilda-mini-message { min-width:0; }
 .matilda-mini-message[data-speaker="you"] { align-self:flex-end; max-width:90%; padding:6px 8px; background:var(--selected); }
-.matilda-mini-message :is(p,ul,ol,pre) { margin-block:4px; }
+/* The chat reading rhythm (30 Oct, Masih: "too much space between Love Spot's lines"): 1.45 lines, half a line between paragraphs. */
+.matilda-mini-chat .matilda-mini-message { line-height:var(--reply-line-height); }
+.matilda-mini-chat .matilda-mini-message :is(p,ul,ol,pre) { margin-block:0; }
+.matilda-mini-chat .matilda-mini-message :is(p,ul,ol,pre) + :is(p,ul,ol,pre) { margin-top:var(--reply-paragraph-gap); }
 .matilda-mini-message pre { max-width:100%; overflow:auto; }
 .matilda-mini-status { padding:6px 8px; color:var(--muted-foreground); }
 .matilda-mini-error { display:flex; align-items:center; gap:8px; padding:6px 8px; color:var(--destructive); overflow-wrap:anywhere; }

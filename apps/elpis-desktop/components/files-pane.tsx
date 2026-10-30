@@ -55,9 +55,9 @@ function FileViewer({ cwd, file, doc }: { cwd: string; file: OpenFile; doc: Doc 
         <Button type="button" variant={source ? "ghost" : "secondary"} size="xs" aria-pressed={!source} onClick={() => setFileView(cwd, file.path, "preview")}>Preview</Button>
         <Button type="button" variant={source ? "secondary" : "ghost"} size="xs" aria-pressed={source} onClick={() => setFileView(cwd, file.path, "source")}>Source</Button>
       </div>}
-      {dirty && <Button type="button" variant="ghost" size="icon-xs" aria-label="Revert changes" title="Throw away the edits" onClick={() => revert(cwd, file.path)}><Undo2 size={14} /></Button>}
+      {dirty && <Button type="button" variant="ghost" size="icon-xs" aria-label="Revert changes" title="Throw away the edits" onClick={() => revert(cwd, file.path)}><Undo2 size={16} /></Button>}
       {dirty && <Button type="button" variant="default" size="xs" disabled={ready?.saving} title="Save (Ctrl+S)" onClick={() => void save(cwd, file.path)}>{ready?.saving ? "Saving…" : "Save"}</Button>}
-      <MoreMenu actions={[{ id: "wrap", label: softWrap ? "Disable soft wrap" : "Enable soft wrap", run: () => savePreferences({ softWrap: !softWrap }) }, ...actions]} label="More file actions" title="More file actions" size={15} align="end" className="side-action" />
+      <MoreMenu actions={[{ id: "wrap", label: softWrap ? "Disable soft wrap" : "Enable soft wrap", run: () => savePreferences({ softWrap: !softWrap }) }, ...actions]} label="More file actions" title="More file actions" size={16} align="end" className="side-action" />
     </div>
     {note && <p role="alert" className="files-note files-error">{note}</p>}
     {ready?.saveError && <p role="alert" className="files-note files-error">{ready.saveError}</p>}
@@ -98,11 +98,11 @@ export function FilesPane({ cwd }: { cwd: string }) {
   return <div ref={root} className="files-pane" data-narrow={narrow || undefined}>
     <div className="files-bar">
       <Button type="button" variant="ghost" size="icon-sm" className="side-action" disabled={!cwd} aria-pressed={treeShown} aria-label={treeShown ? "Hide file tree" : "Show file tree"} title={treeShown ? "Hide file tree" : "Show file tree"} onClick={() => setShowTree(cwd, !treeShown)}>
-        {treeShown ? <PanelLeftClose size={15} /> : <PanelLeft size={15} />}
+        {treeShown ? <PanelLeftClose size={16} /> : <PanelLeft size={16} />}
       </Button>
       {treeShown && <>
-        <Button type="button" variant="ghost" size="icon-sm" className="side-action" aria-label="Refresh files" title="Read the folders again" onClick={() => refresh(cwd)}><RefreshCw size={14} /></Button>
-        <MoreMenu actions={treeMenu} label="File tree options" title="File tree options" size={15} align="start" className="side-action" />
+        <Button type="button" variant="ghost" size="icon-sm" className="side-action" aria-label="Refresh files" title="Read the folders again" onClick={() => refresh(cwd)}><RefreshCw size={16} /></Button>
+        <MoreMenu actions={treeMenu} label="File tree options" title="File tree options" size={16} align="start" className="side-action" />
       </>}
       <TabStrip label="Open files" add={null} activeKey={pane.active}>
         {pane.open.map(file => {
@@ -113,7 +113,7 @@ export function FilesPane({ cwd }: { cwd: string }) {
             { id: "others", label: "Close other files", run: () => close(pane.open.filter(item => item.path !== file.path).map(item => item.path)) },
             { id: "all", label: "Close all files", run: () => close(pane.open.map(item => item.path)) },
           ];
-          return <Tab key={file.path} icon={dirty ? <span role="img" aria-label="Unsaved changes" className="dirty-dot" /> : <Icon size={14} />} label={name} title={file.path} active={file.path === pane.active} preview={file.preview}
+          return <Tab key={file.path} icon={dirty ? <span role="img" aria-label="Unsaved changes" className="dirty-dot" /> : <Icon size={16} />} label={name} title={file.path} active={file.path === pane.active} preview={file.preview}
             closeLabel={`Close ${name}`} actions={actions} onSelect={() => activate(cwd, file.path)} onClose={() => close([file.path])} />;
         })}
       </TabStrip>
