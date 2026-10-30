@@ -862,7 +862,7 @@ async fn delete_current_thread_reports_forked_history_reference() -> Result<()> 
     let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
     let codex_home = tempdir()?;
     app.config.codex_home = codex_home.path().to_path_buf().abs();
-    app.config.sqlite_home = SqliteConfig::new_for_testing(codex_home.path().abs());
+    app.config.sqlite = SqliteConfig::new_for_testing(codex_home.path().abs());
     let parent_id = create_history_rollout(&app.config, ThreadHistoryMode::Paginated, "parent")?;
     let fork_id = create_history_rollout(&app.config, ThreadHistoryMode::Paginated, "fork")?;
     let timestamp = "2026-01-02T00-00-00";
@@ -893,8 +893,7 @@ async fn delete_current_thread_reports_forked_history_reference() -> Result<()> 
     app.active_thread_id = Some(parent_id);
     let mut tui = crate::tui::test_support::make_test_tui()?;
     assert_matches!(
-        app.handle_app_event(&mut tui, &mut server, AppEvent::DeleteCurrentThread)
-            .await?,
+        Box::pin(app.handle_event(&mut tui, &mut server, AppEvent::DeleteCurrentThread)).await?,
         AppRunControl::Continue
     );
     let mut messages = String::new();

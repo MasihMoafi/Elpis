@@ -402,7 +402,7 @@ async function run() {
   assert.deepEqual(requests.map(entry => entry.stage), STAGES, "provider request stages changed");
   for (const { stage, body } of requests) {
     const expectedMemoryCount = stage === "on" ? 1 : 0;
-    const expectedAgentsCount = stage === "on" ? 1 : 0;
+    const expectedAgentsCount = ["default", "off", "on"].includes(stage) ? 1 : 0;
     const expectedDevRuleCount = stage === "default" || stage === "off" || stage === "withdrawn" ? 1 : 0;
     const expectedAddedFileCount = stage === "on" ? 1 : 0;
     assert.equal(
@@ -458,7 +458,7 @@ async function run() {
       "MEMORY is admitted exactly once when enabled",
       "disabling admission removes MEMORY on the next turn in the same thread",
       "malformed admission fails closed",
-      "global and project AGENTS are absent by default, admitted once when enabled, then withdrawn",
+      "global and project AGENTS are admitted by default, then withdrawn when disabled",
       "the configured dev rule is admitted by default, excluded explicitly, then restored",
       "a file added with /add is sent only while it is included",
       "neighboring user and developer context survives slot replacement",

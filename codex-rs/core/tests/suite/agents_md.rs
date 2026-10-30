@@ -1296,7 +1296,7 @@ async fn thread_provider_composes_and_clears_only_its_instructions() -> Result<(
 
 /// Elpis: the Context Ledger gates instruction files. Host-provided text has no file behind
 /// it, so it is not a Ledger row and reaches the model while the workspace's global and
-/// project files stay out; admitting their rows then replaces the one copy with all of them.
+/// project files are explicitly excluded; admitting them then includes all three.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn ledger_withholds_files_but_not_source_less_thread_instructions() -> Result<()> {
     let server = start_mock_server().await;
@@ -1322,6 +1322,14 @@ async fn ledger_withholds_files_but_not_source_less_thread_instructions() -> Res
             Ok(())
         });
     let test = builder.build_with_auto_env(&server).await?;
+    for row in ["Global AGENTS.md", "Project AGENTS.md"] {
+        set_continuity_source_admitted(
+            Some(memory_dir(&test.config).as_path()),
+            test.config.cwd.as_path(),
+            row,
+            false,
+        )?;
+    }
     let thread = test
         .thread_manager
         .start_thread(StartThreadOptions {
@@ -1338,7 +1346,7 @@ async fn ledger_withholds_files_but_not_source_less_thread_instructions() -> Res
         test.workspace_path_uri(GLOBAL_AGENTS_FILENAME)?,
     ];
 
-    submit_thread_turn(&thread, "files not yet admitted").await?;
+    submit_thread_turn(&thread, "files excluded").await?;
     assert_eq!(
         thread.instruction_sources().await,
         sources,
