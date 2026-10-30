@@ -390,6 +390,7 @@
     "tests/changes-installed.runtime.cjs",
     "tests/app-update-native.test.cjs",
     "tests/love-spot-performance.test.cjs",
+    "tests/love-spot-latency.runtime.mjs",
     "tests/app-fix-2.runtime.mjs",
     "tests/browser.runtime.mjs",
     "tests/canvas-live.runtime.mjs",

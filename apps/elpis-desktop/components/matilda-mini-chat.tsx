@@ -7,6 +7,7 @@ import { SendIcon } from "@/components/elpis-icons";
 import { MarkdownText } from "@/components/markdown-text";
 import { api, unreadable, type Entry } from "@/lib/api";
 import { MATILDA_CHANGED, savedPersona } from "@/lib/matilda";
+import { subscribeLoveSpotTalk } from "@/lib/love-spot-talk-events";
 import { attachedFile } from "@/lib/prompt-history";
 import "@/components/matilda-mini-chat.css";
 
@@ -22,6 +23,7 @@ export function useMatildaMiniChat(open: boolean) {
   const [conversation, setConversation] = useState<Conversation>({ entries: [], busy: false });
   const [error, setError] = useState(""), [posting, setPosting] = useState(false);
   const mounted = useRef(false), sending = useRef(false), latestRead = useRef(0);
+  const streamedWhileSending = useRef<Conversation | null>(null);
   // A quick chat starts fresh each time it opens, like Dot's "Start new chat" (28 Oct: "that small chatbox shouldn't show
   // previous messages"): turns already there stay behind "Show previous messages". A reply still on its way stays shown.
   const [earlier, setEarlier] = useState<Set<string> | null>(null), [showEarlier, setShowEarlier] = useState(false);
@@ -42,9 +44,17 @@ export function useMatildaMiniChat(open: boolean) {
       const pending = result?.busy ? result.entries.at(-1)?.turnId : undefined;
       if (result) setEarlier(new Set(result.entries.map(entry => entry.turnId).filter(turn => turn !== pending)));
     });
+    const stop = subscribeLoveSpotTalk(event => {
+      try {
+        latestRead.current++;
+        const result = received(JSON.parse(event.data));
+        if (sending.current) streamedWhileSending.current = result;
+        setConversation(result); setError(result.error || "");
+      } catch { if (!sending.current) void read(controller.signal); }
+    }, () => { if (!sending.current) void read(controller.signal); });
     const changed = () => { if (!sending.current) void read(controller.signal); };
     window.addEventListener(MATILDA_CHANGED, changed);
-    return () => { controller.abort(); latestRead.current++; window.removeEventListener(MATILDA_CHANGED, changed); setEarlier(null); setShowEarlier(false); };
+    return () => { stop(); controller.abort(); latestRead.current++; window.removeEventListener(MATILDA_CHANGED, changed); setEarlier(null); setShowEarlier(false); };
   }, [open, read]);
   // Ask again every second while she replies. A failed or superseded read must not end the asking (28 Oct: her reply had
   // arrived, and the small chat still said "Matilda is replying…" minutes later).
@@ -56,12 +66,26 @@ export function useMatildaMiniChat(open: boolean) {
   async function send() {
     const sent = draft.trim();
     if (!sent || sending.current || conversation.busy) return;
-    sending.current = true; setPosting(true); setError(""); latestRead.current++;
+    sending.current = true; streamedWhileSending.current = null; setPosting(true); setError(""); latestRead.current++;
     try {
-      const result = received(await api<Conversation>("/love-spot/talk", { text: sent, persona: savedPersona() }));
+      const response = received(await api<Conversation>("/love-spot/talk", { text: sent, persona: savedPersona() }));
       if (!mounted.current) return;
+      const responseTurn = response.entries.at(-1)?.turnId;
+      const streamed = streamedWhileSending.current as Conversation | null;
+      const result = responseTurn && streamed?.entries.some(entry => entry.turnId === responseTurn && entry.item.type === "agentMessage") ? streamed : response;
       setConversation(result); setDraft(current => current.trim() === sent ? "" : current); setError(result.error || "");
       window.dispatchEvent(new Event(MATILDA_CHANGED));
+      // A scripted or cached model can complete before the POST snapshot catches its final entry and before the live
+      // stream finishes connecting. Reconcile that finished turn briefly; slow turns stay on the live stream.
+      const turnId = responseTurn;
+      if (!result.busy && turnId && !result.entries.some(entry => entry.turnId === turnId && entry.item.type === "agentMessage")) void (async () => {
+        for (const delay of [50, 75, 125, 250, 500]) {
+          await new Promise(resolve => setTimeout(resolve, delay));
+          if (!mounted.current) return;
+          const current = await read();
+          if (current?.entries.some(entry => entry.turnId === turnId && entry.item.type === "agentMessage")) return;
+        }
+      })();
     } catch (cause) { if (mounted.current) setError(cause instanceof Error ? cause.message : "Message not sent. Try again."); }
     finally { sending.current = false; if (mounted.current) setPosting(false); }
   }
