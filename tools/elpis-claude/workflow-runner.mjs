@@ -11,13 +11,13 @@ import { EventEmitter } from "node:events";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { Worker } from "node:worker_threads";
 import { parseScript, checkSchema, validate, strictSchema, fromStrict, jsonAnswer } from "./workflow-script.mjs";
 
 export const LIMITS = Object.freeze({ agents: 1000, items: 4096 });
-export const defaultConcurrency = () => Math.max(1, Math.min(16, (os.availableParallelism?.() ?? os.cpus().length) - 2));
+export const WORKFLOW_WORKER_CAP = 4;
+export const defaultConcurrency = () => WORKFLOW_WORKER_CAP;
 const EFFORTS = ["low", "medium", "high", "xhigh", "max"];
 const OPTS = ["label", "phase", "schema", "model", "effort", "isolation", "agentType"];
 const LOG_LINES = 2000;
@@ -71,7 +71,7 @@ export function noticeText(run) {
 }
 
 export class WorkflowRunner extends EventEmitter {
-  #home; #executor; #concurrency; #retry; #schemaTries; #maxAgents; #maxItems; #owner; #log; #now;
+  #home; #executor; #slots; #retry; #schemaTries; #maxAgents; #maxItems; #owner; #log; #now;
   #runs = new Map(); // run id -> state (what run.json holds)
   #live = new Map(); // run id -> { worker, controller, slots, agents: Map agentId -> AbortController }
   #saving = new Map();
@@ -80,7 +80,7 @@ export class WorkflowRunner extends EventEmitter {
     super();
     this.#home = path.join(home, "workflows");
     this.#executor = executor;
-    this.#concurrency = Math.max(1, concurrency);
+    this.#slots = { free: Math.max(1, concurrency), queue: [] };
     this.#retry = { attempts: retry.attempts ?? 4, delays: retry.delays ?? [2000, 8000, 30000] };
     this.#schemaTries = schemaTries;
     this.#maxAgents = maxAgents;
@@ -301,7 +301,7 @@ export class WorkflowRunner extends EventEmitter {
     const source = fs.readFileSync(run.scriptPath, "utf8");
     const spent = new SharedArrayBuffer(8);
     const controller = new AbortController();
-    const live = { controller, spent, slots: { free: this.#concurrency, queue: [] }, agents: new Map(), state, worker: null };
+    const live = { controller, spent, agents: new Map(), state, worker: null };
     Atomics.store(new BigInt64Array(spent), 0, BigInt(run.spent ?? 0));
     this.#live.set(run.id, live);
     const worker = live.worker = new Worker(new URL("./workflow-worker.mjs", import.meta.url), {
@@ -358,7 +358,7 @@ export class WorkflowRunner extends EventEmitter {
     this.#live.delete(run.id);
     live.controller.abort(Stopped());
     for (const c of live.agents.values()) c.abort(Stopped());
-    for (const w of live.slots.queue.splice(0)) w.reject(Stopped());
+    this.#slots.queue = this.#slots.queue.filter(slot => { if (slot.runId !== run.id) return true; slot.reject(Stopped()); return false; });
     live.worker.terminate().catch(() => {});
     this.#log(`workflow ${run.id} halted: ${why}`);
   }
@@ -425,7 +425,7 @@ export class WorkflowRunner extends EventEmitter {
       threadId: before?.threadId ?? null, model: null, startedAt: null, endedAt: null, attempts: 0, error: null, worktree: null, worktreeBranch: null, resumed: Boolean(again) };
     run.agents.push(rec);
     this.#changed(run, { kind: "agent", agent: rec });
-    await this.#acquire(live);
+    await this.#acquire(run.id);
     const control = new AbortController();
     live.agents.set(rec.id, control);
     try {
@@ -445,7 +445,7 @@ export class WorkflowRunner extends EventEmitter {
       throw e;
     } finally {
       live.agents.delete(rec.id);
-      this.#release(live);
+      this.#release();
     }
   }
 
@@ -456,13 +456,13 @@ export class WorkflowRunner extends EventEmitter {
     } catch {}
   }
 
-  #acquire(live) {
-    if (live.slots.free > 0) { live.slots.free--; return Promise.resolve(); }
-    return new Promise((resolve, reject) => live.slots.queue.push({ resolve, reject }));
+  #acquire(runId) {
+    if (this.#slots.free > 0) { this.#slots.free--; return Promise.resolve(); }
+    return new Promise((resolve, reject) => this.#slots.queue.push({ runId, resolve, reject }));
   }
-  #release(live) {
-    const next = live.slots.queue.shift();
-    if (next) next.resolve(); else live.slots.free++;
+  #release() {
+    const next = this.#slots.queue.shift();
+    if (next) next.resolve(); else this.#slots.free++;
   }
 
   // One agent: retried with backoff until its attempts run out; null after that.
