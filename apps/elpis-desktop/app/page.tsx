@@ -986,11 +986,14 @@ export default function Home() {
   const replaceable = !!selected && !continues && !activeTurn && selected.status?.type !== "active" && connected && !busy;
   const { turnEntries, replacementOptions, replacementOptionsKey } = useMemo(() => {
     const turnEntries = new Map<string, Entry[]>();
-    for (const entry of entries) { const group = turnEntries.get(entry.turnId) ?? []; group.push(entry); turnEntries.set(entry.turnId, group); }
+    // Live items may arrive out of order; target the first message the transcript actually shows.
+    for (const entry of shownEntries) { const group = turnEntries.get(entry.turnId) ?? []; group.push(entry); turnEntries.set(entry.turnId, group); }
     // Only the oldest turn can be cut by a descending history page.
-    const replacementOptions = new Map([...turnEntries].map(([id, group]) => [id, replacementEligibility(group, id, { historyComplete: !loading && (itemCursor === null || id !== entries[0]?.turnId) })]));
+    const replacementOptions = new Map([...turnEntries].map(([id, group]) => [id, group.some(entry => entry.clientPending && entry.item.type === "userMessage")
+      ? { allowed: false as const, reason: "Wait for this turn's messages to be recorded before editing." }
+      : replacementEligibility(group, id, { historyComplete: !loading && (itemCursor === null || id !== entries[0]?.turnId) })]));
     return { turnEntries, replacementOptions, replacementOptionsKey: JSON.stringify([...replacementOptions]) };
-  }, [entries, loading, itemCursor]);
+  }, [shownEntries, entries, loading, itemCursor]);
   const failedTurn = selected ? failedTurns[selected.id] : undefined;
   const failedInput = failedTurn ? replacementOptions.get(failedTurn.turnId) : undefined;
   const recoveredEdit = selected ? savedDraft(`recovery-${selected.id}`) : "";
@@ -2329,7 +2332,7 @@ export default function Home() {
     <GroupNameDialog open={!!newGroupFor} state={chatGroups} group={null} switches={chatGroups.groupBy !== "custom"} onClose={() => setNewGroupFor(null)}
       onSave={name => { const ids = newGroupFor ?? [], id = crypto.randomUUID(); updateGroups(state => moveChats(addGroup(state, name, id), ids, id)); setNewGroupFor(null); setMarked([]); }} />
     <DeleteChatsDialog threads={deleteTargets} trash={trashChats} alwaysConfirm={deleteRunHistory} onClose={() => { setDeleteTargets(null); setDeleteRunHistory(false); }} />
-    <RewindDialog threadId={selected?.id} turnId={rewindTurn} prompt={rewindTurn ? entries.find(entry => entry.turnId === rewindTurn && entry.item.type === "userMessage")?.item.content?.map(part => part.text ?? "").join("\n") ?? "" : ""} turns={rewindTurn ? Math.max(1, turnEntries.size - [...turnEntries.keys()].indexOf(rewindTurn)) : null} onConfirm={(mode, version) => rewindFrom(rewindTurn!, mode, version)} onClose={() => setRewindTurn(null)} />
+    <RewindDialog threadId={selected?.id} turnId={rewindTurn} prompt={rewindTurn ? turnEntries.get(rewindTurn)?.find(entry => entry.item.type === "userMessage")?.item.content?.map(part => part.text ?? "").join("\n") ?? "" : ""} turns={rewindTurn ? Math.max(1, turnEntries.size - [...turnEntries.keys()].indexOf(rewindTurn)) : null} onConfirm={(mode, version) => rewindFrom(rewindTurn!, mode, version)} onClose={() => setRewindTurn(null)} />
     <aside className={`sidebar${sidebar ? " open" : ""}`} aria-label="Workspace navigation" onKeyDown={sidebarKeys}>
       <div className="brand"><Button type="button" variant="ghost" size="logo" className="brand-home" aria-label="Elpis home" onClick={() => show("chat")}><img src={brandMark} alt="" width={73} height={36} /></Button><Button className="sidebar-toggle" variant="ghost" size="icon-sm" aria-label="Close sidebar" title={shortcutTitle("Close sidebar", "sidebar", preferences)} onClick={() => showSidebar(false)}><PanelLeft size={16} /></Button></div>
       <nav className="nav-list" aria-label="Workspace">

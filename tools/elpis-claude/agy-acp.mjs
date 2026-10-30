@@ -192,9 +192,8 @@ async function onEvent(s, m) {
     const r = m.result ?? {};
     const u = r.usage ?? {};
     turn.usage.input += u.input_tokens ?? 0; turn.usage.output += u.output_tokens ?? 0; turn.usage.cached += u.cache_read_tokens ?? 0;
-    // agy's stream input runs one turn per user message, not a tool-boundary steer. Keep
-    // unsent acknowledged messages on the session when the current turn fails or its process
-    // stops. Dequeue when handed to agy so failed/cancelled work is never silently replayed.
+    // agy's stream input runs one turn per user message, not a tool-boundary steer.
+    // Dequeue each follow-up only when it is handed to agy.
     const next = s.pendingSteers[0];
     if (next && r.status === "SUCCESS" && s.proc) { s.proc.stdin.write(JSON.stringify({ event: "user", message: { content: next } }) + "\n"); s.pendingSteers.shift(); return; }
     s.turn = null;
@@ -277,7 +276,8 @@ async function handle(msg) {
       });
     }
     case "session/cancel":
-      if (s?.turn) { s.turn.cancelled = true; const proc = s.proc; s.proc = null; proc?.kill("SIGTERM"); }
+      // These messages are already in the stopped transcript; do not send them as the next turn.
+      if (s?.turn) { s.turn.cancelled = true; s.pendingSteers.length = 0; const proc = s.proc; s.proc = null; proc?.kill("SIGTERM"); }
       return undefined;
     case "_session/steering": {
       if (!s?.turn) return { outcome: "promptRequired", reason: "noRunningTurn" };

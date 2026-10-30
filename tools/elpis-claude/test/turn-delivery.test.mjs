@@ -335,6 +335,84 @@ for (const count of [1, 4]) test(`A128: GPT keeps its native tool running throug
   assert.equal((await f.client.readThread(f.id)).thread.status.type, "idle");
 });
 
+async function agyFixture(t) {
+  return fixture(t, {}, { model: "agy/gemini-3.8-flash-medium", prepare: async (root, env) => {
+    const executable = path.join(root, "fake-agy");
+    fs.writeFileSync(executable, `#!/usr/bin/env node
+const fs = require('node:fs');
+if (process.argv[2] === 'models') { console.log('gemini-3.8-flash-medium\\tGemini Flash'); process.exit(); }
+if (process.argv.includes('/usage')) { console.log('{}'); process.exit(); }
+console.log(JSON.stringify({ event: 'init', conversation_id: 'fake-conversation' }));
+let buffer = '';
+process.stdin.on('data', chunk => {
+  buffer += chunk;
+  let newline;
+  while ((newline = buffer.indexOf('\\n')) >= 0) {
+    const line = buffer.slice(0, newline); buffer = buffer.slice(newline + 1);
+    const event = JSON.parse(line), text = event.message.content;
+    fs.appendFileSync(process.env.FAKE_AGY_LOG, JSON.stringify({ text }) + '\\n');
+    const reply = () => {
+      console.log(JSON.stringify({ event: 'step_update', step_update: { step_type: 'agent_response', text_delta: 'answered: ' + text } }));
+      console.log(JSON.stringify({ event: 'result', result: { status: 'SUCCESS' } }));
+    };
+    if (!text.includes('[wait]')) reply();
+    else { const timer = setInterval(() => { if (fs.existsSync(process.env.FAKE_AGY_RELEASE)) { clearInterval(timer); reply(); } }, 10); }
+  }
+});
+`, { mode: 0o755 });
+    delete env.ELPIS_NO_AGY;
+    Object.assign(env, { AGY_BIN: executable, FAKE_AGY_LOG: path.join(root, "agy.jsonl"), FAKE_AGY_RELEASE: path.join(root, "agy-release") });
+  } });
+}
+
+test("Antigravity answers both follow-ups folded into a running turn", { timeout: 20000 }, async t => {
+  const f = await agyFixture(t);
+  const { turn } = await f.client.send(f.id, { text: "[wait] original" });
+  await until(() => lines(f.env.FAKE_AGY_LOG).length === 1, "Antigravity starts the long turn");
+  for (const text of ["first follow-up", "second follow-up"]) await f.client.steer(f.id, { text, expectedTurnId: turn.id });
+  await until(() => f.store()[f.id]?.active?.userItems?.length === 3, "both follow-ups are recorded");
+  fs.writeFileSync(f.env.FAKE_AGY_RELEASE, "");
+  await until(() => f.ended(turn.id), "all three messages are answered");
+  const answer = f.store()[f.id].turns.find(saved => saved.id === turn.id).items.filter(item => item.type === "agentMessage").map(item => item.text).join("\n");
+  for (const text of ["original", "first follow-up", "second follow-up"]) assert.ok(answer.includes(text), `the reply answers ${text}`);
+  assert.deepEqual(lines(f.env.FAKE_AGY_LOG).map(row => row.text.includes('first follow-up') ? 'first' : row.text.includes('second follow-up') ? 'second' : 'original'), ['original', 'first', 'second']);
+});
+
+test("Antigravity does not send stopped follow-ups in place of the next message", { timeout: 20000 }, async t => {
+  const f = await agyFixture(t);
+  const { turn } = await f.client.send(f.id, { text: "[wait] original" });
+  await until(() => lines(f.env.FAKE_AGY_LOG).length === 1, "Antigravity starts the long turn");
+  for (const text of ["first follow-up", "second follow-up"]) await f.client.steer(f.id, { text, expectedTurnId: turn.id });
+  await until(() => f.store()[f.id]?.active?.userItems?.length === 3, "both follow-ups are recorded");
+  await f.client.interrupt(f.id, { turnId: turn.id });
+  await until(() => f.ended(turn.id), "the turn stops");
+  const next = await f.client.send(f.id, { text: "new message after stop" });
+  await until(() => f.ended(next.turn.id), "the next turn finishes");
+  const input = lines(f.env.FAKE_AGY_LOG).map(row => row.text);
+  assert.equal(input.length, 2);
+  assert.ok(input[1].includes('new message after stop'), 'the next turn sends the message shown in the chat');
+  const answer = f.store()[f.id].turns.find(saved => saved.id === next.turn.id).items.filter(item => item.type === 'agentMessage').map(item => item.text).join('\n');
+  assert.ok(answer.includes('answered:') && answer.includes('new message after stop'));
+  assert.ok(!answer.includes('first follow-up') && !answer.includes('second follow-up'));
+});
+
+test("a stopped turn with two delivered follow-ups can replace its first message", { timeout: 20000 }, async t => {
+  const f = await fixture(t);
+  const { turn } = await f.client.send(f.id, { text: "[wait] original long turn" });
+  await until(() => f.agent().some(e => e.method === "session/prompt"), "the long turn starts");
+  for (const text of ["first follow-up", "second follow-up"]) await f.client.steer(f.id, { text, expectedTurnId: turn.id });
+  await until(() => f.agent().filter(e => e.method === "_session/steering").length === 2, "both follow-ups arrive");
+  await f.client.interrupt(f.id, { turnId: turn.id });
+  await until(() => f.ended(turn.id), "the turn stops");
+  const history = await f.client.readThread(f.id);
+  assert.deepEqual([...history.data].reverse().filter(e => e.turnId === turn.id && e.item.type === "userMessage").map(e => e.item.content[0].text), ["[wait] original long turn", "first follow-up", "second follow-up"]);
+  const replaced = await f.client.revert(f.id, { beforeTurnId: turn.id, text: "replacement" });
+  assert.ok(replaced.turn?.id, replaced.sendError);
+  await until(() => f.ended(replaced.turn.id), "the replacement is answered");
+  const after = await f.client.readThread(f.id);
+  assert.deepEqual([...after.data].reverse().filter(e => e.item.type === "userMessage").map(e => e.item.content[0].text), ["replacement"]);
+});
+
 for (const count of [0, 1, 2, 4]) test(`Claude delivers a final answer and turn end after ${count} in-flight messages, then hello`, { timeout: 20000 }, async t => {
   const f = await fixture(t, { FAKE_ACP_STEER_DELAY: "120" });
   const started = await f.client.send(f.id, { text: "[wait] original" });

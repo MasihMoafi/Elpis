@@ -94,6 +94,63 @@ after(async () => {
   await h.log.close(); h.provider.close();
 });
 
+test('a stopped turn with two follow-ups can be edited from its first message', { skip, timeout: 60000 }, async () => {
+  const { page, client, project } = h;
+  const { thread } = await client.createThread({ cwd: project, model: 'claude/sonnet', permissions: 'full' });
+  const { turn } = await client.send(thread.id, { text: '[wait] original long turn' });
+  await until(async () => (await h.prompts()).some(prompt => prompt.includes('original long turn')), 'the long turn starts');
+  await h.open(thread.id);
+  const composer = page.getByRole('textbox', { name: 'Message Elpis', exact: true });
+  for (const text of ['first follow-up', 'second follow-up']) {
+    await composer.fill(text); await composer.press('Enter');
+    await h.turn(text).waitFor();
+  }
+  await until(async () => (await h.items(thread.id)).filter(row => row[1] === 'userMessage').length === 3, 'both follow-ups are recorded');
+  await page.getByRole('button', { name: 'Stop response', exact: true }).click();
+  await until(() => h.completed.has(turn.id), 'the turn stops');
+  await page.getByRole('button', { name: 'Stop response', exact: true }).waitFor({ state: 'hidden' });
+  const first = h.turn('original long turn');
+  await first.locator('.message.user').click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Rewind to here', exact: true }).click();
+  const dialog = page.getByRole('alertdialog');
+  await dialog.getByLabel('Restore', { exact: true }).waitFor();
+  await dialog.getByLabel('Restore', { exact: true }).press('Enter');
+  await page.getByRole('option', { name: 'Conversation only', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Rewind', exact: true }).click();
+  await dialog.waitFor({ state: 'hidden' });
+  await h.turn('first follow-up').waitFor({ state: 'hidden' });
+  await h.turn('second follow-up').waitFor({ state: 'hidden' });
+  await page.getByRole('button', { name: 'Undo rewind', exact: true }).click();
+  await h.turn('second follow-up').waitFor();
+  await first.getByRole('button', { name: 'Edit message', exact: true }).click();
+  const edit = page.getByRole('textbox', { name: 'Edited message', exact: true });
+  assert.equal(await edit.inputValue(), '[wait] original long turn');
+  if (process.env.ELPIS_APP_SHOTS) {
+    await fs.mkdir(process.env.ELPIS_APP_SHOTS, { recursive: true });
+    for (const scheme of ['light', 'dark']) {
+      if (scheme === 'dark') {
+        await page.getByRole('button', { name: 'Use dark theme', exact: true }).click();
+        await page.getByRole('button', { name: 'Use light theme', exact: true }).waitFor();
+        await page.waitForFunction(() => {
+          const element = document.querySelector('[aria-label="Edited message"]');
+          return element && (getComputedStyle(element).color.match(/\d+/g) ?? []).slice(0, 3).every(value => Number(value) >= 160);
+        });
+        await page.waitForTimeout(350);
+      }
+      await page.screenshot({ path: path.join(process.env.ELPIS_APP_SHOTS, `rewind-${scheme}.png`) });
+    }
+  }
+  await edit.fill('replacement after stop');
+  await page.getByRole('form', { name: 'Edit message', exact: true }).getByRole('button', { name: 'Send', exact: true }).click();
+  await until(async () => (await h.prompts()).some(prompt => prompt.includes('replacement after stop')), 'the replacement reaches the provider');
+  await h.turn('replacement after stop').waitFor();
+  await h.turn('first follow-up').waitFor({ state: 'hidden', timeout: 5000 });
+  await h.turn('second follow-up').waitFor({ state: 'hidden', timeout: 5000 });
+  const shown = await h.transcript();
+  assert.ok(!shown.includes('first follow-up') && !shown.includes('second follow-up'));
+  assert.deepEqual(h.errors, []);
+});
+
 test('editing an earlier message continues from the edit, keeps its attachment, and the earlier version stays reachable', { skip, timeout: 180000 }, () => h.diagnose('edit', async () => {
   const { page } = h;
   const id = await h.chat('gpt-5.5', [['first question', 'Answer one'], ['second question', 'Answer two', [NOTE]], ['third question', 'Answer three']]);
