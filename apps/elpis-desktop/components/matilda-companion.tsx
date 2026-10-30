@@ -9,8 +9,6 @@ import { api } from "@/lib/api";
 import { MATILDA_CHANGED, MATILDA_CHAT_SHOWN } from "@/lib/matilda";
 import { appStorage } from "@/lib/projects";
 import { MATILDA_SHOTS, MATILDA_SHOTS_LIGHT } from "@/bridge/matilda-face.cjs";
-import { portraitSources } from "@/lib/matilda-portraits.cjs";
-import { useMatildaPortraits } from "@/lib/use-matilda-portraits";
 
 type Track = { title: string; artist: string; uri: string; status: string; canPlay: boolean; canPause: boolean; canNext: boolean; muted: boolean; canMute: boolean };
 type Companion = { pinned: boolean; face?: string; favorite: { title: string; uri: string; artist?: string } | null; threadId?: string | null; music: Track | null; reason: string };
@@ -53,7 +51,6 @@ function useMood(replying: boolean, replies: number) {
 export function MatildaCompanion() {
   const [state, setState] = useState<Companion | null>(null);
   const [chatOpen, setChatOpen] = useState(false), mini = useMatildaMiniChat(chatOpen);
-  const portraits = useMatildaPortraits(), fixedFace = portraits.pinned === "auto" ? null : portraitSources(portraits.pinned);
   const mood = useMood(mini.posting || mini.conversation.busy, mini.conversation.entries.filter(entry => entry.item.type === "agentMessage").length);
   const suppressClick = useRef(false), faceRef = useRef<HTMLButtonElement>(null), floatRef = useRef<HTMLElement>(null);
   useEffect(() => { if (!state?.pinned) setChatOpen(false); }, [state?.pinned]);
@@ -201,9 +198,9 @@ export function MatildaCompanion() {
       onPointerCancel={() => { const start = drag.current; if (start) put(start.left, start.top, start.size); release(); }}
       onKeyDown={keys(false)} onPointerEnter={() => mood.setHovered(true)} onPointerLeave={() => mood.setHovered(false)}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={fixedFace?.light ?? MATILDA_SHOTS_LIGHT.listening} alt="Matilda" width={size} height={size} draggable={false} className="matilda-avatar-light select-none" />
+      <img src={MATILDA_SHOTS_LIGHT.listening} alt="Matilda" width={size} height={size} draggable={false} className="matilda-avatar-light select-none" />
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={fixedFace?.dark ?? MATILDA_SHOTS.listening} alt="" aria-hidden="true" width={size} height={size} draggable={false} className="matilda-avatar-dark select-none" />
+      <img src={MATILDA_SHOTS.listening} alt="" aria-hidden="true" width={size} height={size} draggable={false} className="matilda-avatar-dark select-none" />
       {MOODS.flatMap(name => ([
         // eslint-disable-next-line @next/next/no-img-element
         <img key={`${name}-light`} src={MATILDA_SHOTS_LIGHT[name]} alt="" aria-hidden="true" width={size} height={size} draggable={false} className="matilda-avatar-light matilda-mood select-none" data-mood={name} data-shown={mood.shown === name} />,
