@@ -317,10 +317,13 @@ test('pinned chats, Matilda position and terminal height persist across a deskto
   await store.set('elpis-pinned-chats-v1', pins);
   await store.set('elpis-terminal-height', '360');
   await store.set('elpis-matilda-float-v1', '{"right":120,"bottom":180,"size":96}');
+  await store.set('elpis-matilda-portraits-v1', '{"board":"smile","replies":"wink"}');
   const reopened = createStateStore(file);
   assert.equal(reopened.read()['elpis-pinned-chats-v1'], pins);
   assert.equal(reopened.read()['elpis-terminal-height'], '360');
   assert.equal(reopened.read()['elpis-matilda-float-v1'], '{"right":120,"bottom":180,"size":96}');
+  assert.equal(reopened.read()['elpis-matilda-portraits-v1'], '{"board":"smile","replies":"wink"}');
+  await assert.rejects(store.set('elpis-matilda-portraits-v2', '{}'), /Unsupported/);
   await assert.rejects(store.set('elpis-matilda-position-v1', '{}'), /Unsupported/);
   await assert.rejects(store.set('elpis-pinned-chats-v2', pins), /Unsupported/);
   await assert.rejects(store.set('elpis-terminal-height:other', '360'), /Unsupported/);

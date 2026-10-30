@@ -7,6 +7,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
 import { PROTOCOL, keepPersona, savedPersona } from "@/lib/matilda";
 import { appStorage } from "@/lib/projects";
+import { Choice, SettingRow } from "@/components/settings/rows";
+import { PORTRAITS } from "@/lib/matilda-portraits.cjs";
+import { saveMatildaPortraits, useMatildaPortraits } from "@/lib/use-matilda-portraits";
 
 /** How long the board stays quiet before she looks at what was written or drawn (ms). */
 const QUIET = 300;
@@ -106,15 +109,26 @@ export function MatildaWho({ open, onOpenChange, persona, onSave }: {
   open: boolean; onOpenChange: (open: boolean) => void; persona: string; onSave: (persona: string) => void;
 }) {
   const [draft, setDraft] = useState(persona);
-  useEffect(() => { if (open) setDraft(persona); }, [open, persona]);
+  const portraits = useMatildaPortraits(), [choices, setChoices] = useState(portraits), [error, setError] = useState(""), [saving, setSaving] = useState(false);
+  useEffect(() => { if (open) { setDraft(persona); setChoices(portraits); setError(""); } }, [open, persona]); // eslint-disable-line react-hooks/exhaustive-deps
+  async function save() {
+    if (saving) return;
+    setSaving(true); setError("");
+    try { await saveMatildaPortraits(choices); onSave(draft); onOpenChange(false); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "Portraits could not be saved."); }
+    finally { setSaving(false); }
+  }
   return <AlertDialog open={open} onOpenChange={onOpenChange}>
-    <AlertDialogContent role="dialog">
+    <AlertDialogContent role="dialog" className="max-h-[90vh] overflow-y-auto">
       <AlertDialogHeader><AlertDialogTitle>Who Matilda is</AlertDialogTitle><AlertDialogDescription>She follows this protocol in everything she answers. Write her the method of any profession you like.</AlertDialogDescription></AlertDialogHeader>
-      <Textarea aria-label="Who Matilda is" rows={8} value={draft} onChange={event => setDraft(event.target.value)} autoFocus />
+      <Textarea aria-label="Who Matilda is" rows={6} className="field-sizing-fixed max-h-36 overflow-y-auto" value={draft} onChange={event => setDraft(event.target.value)} autoFocus />
+      {([['pinned', 'Pinned avatar'], ['mini', 'Small chat'], ['board', 'Board'], ['replies', 'Chat replies']] as const).map(([place, label]) =>
+        <SettingRow key={place} title={label}><Choice label={`${label} portrait`} value={choices[place]} options={PORTRAITS} onChange={value => setChoices(previous => ({ ...previous, [place]: value }))} /></SettingRow>)}
+      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       <AlertDialogFooter>
-        <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+        <Button variant="outline" disabled={saving} onClick={() => onOpenChange(false)}>Cancel</Button>
         <Button variant="outline" disabled={draft === PROTOCOL} onClick={() => setDraft(PROTOCOL)}>Back to her usual way</Button>
-        <Button disabled={!draft.trim()} onClick={() => { onSave(draft); onOpenChange(false); }}>Save</Button>
+        <Button disabled={!draft.trim() || saving} onClick={() => void save()}>Save</Button>
       </AlertDialogFooter>
     </AlertDialogContent>
   </AlertDialog>;
