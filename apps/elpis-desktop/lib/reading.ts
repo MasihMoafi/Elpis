@@ -13,13 +13,6 @@ export const MONO = '"JetBrains Mono", "DejaVu Sans Mono", ui-monospace, monospa
 /** Medium is ChatGPT's thread size (14px text, specs/chatgpt-chat-style.md); Narrow keeps the 740px column. */
 const SIZES: Record<ReadingStep, string> = { s: "13px", m: "14px", l: "16px" };
 const WIDTHS: Record<ReadingStep, string> = { s: "740px", m: "900px", l: "1100px" };
-const FONTS: Record<InterfaceFont, string> = { sans: SANS, serif: SERIF };
-const CHAT_FONTS: Record<ChatFont, string> = {
-  default: "var(--ui-font)", sans: SANS,
-  serif: '"DejaVu Serif", ui-serif, serif',
-  mono: '"DejaVu Sans Mono", ui-monospace, monospace',
-  system: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-};
 const NAME_LIMIT = 80;
 const ONE_NAME = /^[\p{L}\p{N} ._-]*$/u;
 
@@ -39,8 +32,8 @@ export function readingStyle(choices: { [K in keyof Reading]?: unknown }): Recor
     "--code-size": ({ s: "12px", m: "13px", l: "16px" })[step(choices.codeSize, "m")],
     "--transcript-size": SIZES[step(choices.transcriptSize, "m")],
     "--transcript-width": WIDTHS[step(choices.transcriptWidth, "s")],
-    "--ui-font": FONTS[choices.interfaceFont === "serif" ? "serif" : "sans"],
-    "--chat-font": typeof choices.chatFont === "string" && Object.hasOwn(CHAT_FONTS, choices.chatFont) ? CHAT_FONTS[choices.chatFont as ChatFont] : CHAT_FONTS.default,
+    "--ui-font": SANS,
+    "--chat-font": SANS,
     "--mono": code ? `"${code}", ${MONO}` : MONO,
   };
 }

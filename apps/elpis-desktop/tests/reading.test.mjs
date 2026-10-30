@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { MONO, SANS, SERIF, codeFontProblem, readingStyle } from '../lib/reading.ts';
+import { MONO, SANS, codeFontProblem, readingStyle } from '../lib/reading.ts';
 
 const defaults = { transcriptSize: 'm', transcriptWidth: 's', interfaceFont: 'sans', codeFont: '' };
 
@@ -11,16 +11,15 @@ test('SETTINGS2 interface and code sizes have independent steps and reject obsol
 });
 
 test('the defaults are today’s look: 14px transcript, 740px columns, the sans stack, the mono stack', () => {
-  assert.deepEqual(readingStyle(defaults), { '--interface-size': '16px', '--code-size': '13px', '--transcript-size': '14px', '--transcript-width': '740px', '--ui-font': SANS, '--chat-font': 'var(--ui-font)', '--mono': MONO });
+  assert.deepEqual(readingStyle(defaults), { '--interface-size': '16px', '--code-size': '13px', '--transcript-size': '14px', '--transcript-width': '740px', '--ui-font': SANS, '--chat-font': SANS, '--mono': MONO });
   assert.match(SANS, /^Inter, system-ui/);
-  assert.match(SERIF, /serif$/);
   assert.match(MONO, /^"JetBrains Mono".*monospace$/);
 });
 
-test('text size and width each have three steps; Serif swaps the interface font', () => {
+test('text size and width each have three steps; the interface stays Inter', () => {
   assert.deepEqual(['s', 'm', 'l'].map(transcriptSize => readingStyle({ ...defaults, transcriptSize })['--transcript-size']), ['13px', '14px', '16px']);
   assert.deepEqual(['s', 'm', 'l'].map(transcriptWidth => readingStyle({ ...defaults, transcriptWidth })['--transcript-width']), ['740px', '900px', '1100px']);
-  assert.equal(readingStyle({ ...defaults, interfaceFont: 'serif' })['--ui-font'], SERIF);
+  assert.equal(readingStyle({ ...defaults, interfaceFont: 'serif' })['--ui-font'], SANS);
 });
 
 test('a code font goes first, quoted, before the usual monospace fonts', () => {
@@ -40,14 +39,9 @@ test('unknown stored values fall back to the defaults', () => {
   assert.deepEqual(readingStyle({ transcriptSize: 'xl', transcriptWidth: 7, interfaceFont: 'comic', codeFont: null }), readingStyle(defaults));
 });
 
-test('chat font has five roles, independent of interface and code fonts', () => {
+test('legacy font choices normalize to Inter without changing the code font', () => {
   const style = chatFont => readingStyle({ ...defaults, interfaceFont: 'serif', codeFont: 'Custom Mono', chatFont });
-  assert.equal(style('default')['--chat-font'], 'var(--ui-font)');
-  assert.equal(style('sans')['--chat-font'], SANS);
-  assert.match(style('serif')['--chat-font'], /^"DejaVu Serif"/);
-  assert.match(style('mono')['--chat-font'], /^"DejaVu Sans Mono"/);
-  assert.match(style('system')['--chat-font'], /^system-ui/);
-  assert.equal(style('bad')['--chat-font'], style('default')['--chat-font']);
+  for (const choice of ['default', 'sans', 'serif', 'mono', 'system', 'bad']) assert.equal(style(choice)['--chat-font'], SANS);
   assert.equal(style('mono')['--mono'], `"Custom Mono", ${MONO}`);
-  assert.equal(style('sans')['--ui-font'], SERIF);
+  assert.equal(style('sans')['--ui-font'], SANS);
 });
