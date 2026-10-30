@@ -73,6 +73,27 @@ test('installs a self-contained local package and preserves rollback across two 
   assert.equal(readlinkSync(`${f.bin}/elpis-next`), `${f.old}/elpis-next`);
 });
 
+test('engine bundle takes tracked ACP tools from the selected source', (t) => {
+  const f = fixture(t);
+  const host = '#!/bin/sh\necho new-host\n';
+  writeFileSync(`${f.source}/codex-rs/target/release/codex-code-mode-host`, host);
+  chmodSync(`${f.source}/codex-rs/target/release/codex-code-mode-host`, 0o755);
+  writeFileSync(`${f.old}/tools/elpis-claude/runtime.mjs`, 'old runtime\n');
+  writeFileSync(`${f.source}/tools/elpis-claude/runtime.mjs`, 'new runtime\n');
+  writeFileSync(`${f.source}/tools/elpis-claude/new-mapper.mjs`, 'new mapper\n');
+  f.git('add', 'tools/elpis-claude/runtime.mjs', 'tools/elpis-claude/new-mapper.mjs');
+  f.git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@localhost', 'commit', '-qm', 'new runtime');
+  writeFileSync(`${f.source}/tools/elpis-claude/untracked.mjs`, 'untracked\n');
+
+  const result = f.run('runtime-tools');
+  assert.equal(result.status, 0, result.stderr);
+  const tools = `${f.bundle()}/tools/elpis-claude`;
+  assert.equal(readFileSync(`${f.bundle()}/package/bin/codex-code-mode-host`, 'utf8'), host);
+  assert.equal(readFileSync(`${tools}/runtime.mjs`, 'utf8'), 'new runtime\n');
+  assert.equal(readFileSync(`${tools}/new-mapper.mjs`, 'utf8'), 'new mapper\n');
+  assert.ok(!existsSync(`${tools}/untracked.mjs`));
+});
+
 test('the live launcher is kept, with only its engine and bridge paths moved to the new bundle', (t) => {
   const f = fixture(t);
   // 21 Oct: the bundle's own wrapper copy was older than the live launcher and lacked its pinned TUI frontend.
