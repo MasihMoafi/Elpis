@@ -150,6 +150,10 @@ const app = agent({ name: "fake-acp-agent" })
       const { file, text: content, when } = JSON.parse(process.env.FAKE_ACP_WRITE);
       if (!when || text.includes(when)) fs.writeFileSync(file, content);
     }
+    if (process.env.FAKE_ACP_PROMPT_ERROR_AFTER_WRITE) {
+      s.running = false;
+      throw new RequestError(-32603, process.env.FAKE_ACP_PROMPT_ERROR_AFTER_WRITE, { errorKind: process.env.FAKE_ACP_ERROR_KIND || 'usage_limit_reached' });
+    }
     let checked;
     if (process.env.FAKE_ACP_EXPECT) {
       const { file, text } = JSON.parse(process.env.FAKE_ACP_EXPECT);

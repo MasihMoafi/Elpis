@@ -463,7 +463,7 @@ function AgentDashboard({ node, own, wave, status, check, clash, chat, waitsFor,
 /** The agents canvas: the Mother, ready-made architectures, agents wired by what they wait for and laid out in Kahn's
  * waves, and a run that follows each agent live. The graph is kept on this device (lib/canvas.ts). */
 /** `projectMenu` is the app's project chooser (components/project-picker.tsx), shown in the header: agents write inside the project. */
-type Props = { threads?: readonly Thread[]; workflowCatalog: WorkflowCatalog; models: Model[]; cwd?: string; dark: boolean; ready: boolean; onOpenChat: (id: string) => void; projectMenu?: React.ReactNode; recordedRun?: WorkflowRunRef; onLeaveRecordedRun?: () => void; onOpenRecordedRun?: (run: WorkflowRunRef) => void;
+type Props = { threads?: readonly Thread[]; workflowCatalog: WorkflowCatalog; models: Model[]; cwd?: string; dark: boolean; ready: boolean; onOpenChat: (id: string) => void; onRunStarted?: (thread: Thread) => void; projectMenu?: React.ReactNode; recordedRun?: WorkflowRunRef; onLeaveRecordedRun?: () => void; onOpenRecordedRun?: (run: WorkflowRunRef) => void;
   /** Makes `folder` the workflows' project (an existing project with it, or a new one named after it). */
   onUseFolder?: (folder: string) => Promise<void> };
 export function AgentsCanvas(props: Props) {
@@ -479,7 +479,7 @@ function runFailure(detail: string) {
   return `${detail} Review this message and the agents' Info, then try Run graph again.`;
 }
 
-function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMenu, workflowCatalog, recordedRun, onLeaveRecordedRun, onOpenRecordedRun, onUseFolder }: Props) {
+function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStarted, projectMenu, workflowCatalog, recordedRun, onLeaveRecordedRun, onOpenRecordedRun, onUseFolder }: Props) {
   const isoController = useRef<IsoController>(null);
   const flow = useReactFlow(), flowStore = useStoreApi(), board = useRef<HTMLDivElement>(null), pointer = useRef<XYPosition | null>(null), connectFrom = useRef<XYPosition | null>(null);
   const [graph, setGraph] = useState<CanvasGraph>(() => recordedRun ? { name: "Workflow", workflowId: recordedRun.id, nodes: [], edges: [] } : initialGraph());
@@ -713,7 +713,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
       finally { polling = false; }
     };
     void poll();
-    const timer = setInterval(() => void poll(), 1500);
+    const timer = setInterval(() => void poll(), 2500);
     return () => { live = false; clearInterval(timer); };
   }, [run, ready]);
 
@@ -1585,6 +1585,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
       workflowCatalog.attach(runIdentity.id, result.graphId, created.thread.id);
       setIdentity({ workflowId: result.graphId, name: runIdentity.name });
       setRun({ rootThreadId: created.thread.id, graphId: result.graphId, status: "running", startedAt: Date.now(), ...(built.father.length ? { father: { tasks: built.father, status: "pending" } } : {}) });
+      onRunStarted?.(created.thread);
     } catch (error) { if (current()) setNotice(runFailure(error instanceof Error ? error.message : String(error))); }
     finally { startingRun.current = false; setStarting(false); }
   }

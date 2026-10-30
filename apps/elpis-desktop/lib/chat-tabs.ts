@@ -33,6 +33,14 @@ export function addTab(state: ChatTabs, tab: ChatTab = makeTab()): ChatTabs {
   return { tabs: [...state.tabs, tab].slice(-MAX_TABS), activeId: tab.id };
 }
 
+/** Adds a chat beside the others without taking the current view away. */
+export function addBackgroundTab(state: ChatTabs, tab: ChatTab): ChatTabs {
+  const appended = [...state.tabs, tab];
+  if (appended.length <= MAX_TABS) return { tabs: appended, activeId: state.activeId };
+  const drop = appended.findIndex(item => item.id !== state.activeId);
+  return { tabs: appended.filter((_, index) => index !== drop), activeId: state.activeId };
+}
+
 export function activate(state: ChatTabs, id: string): ChatTabs {
   return state.activeId === id || !state.tabs.some(tab => tab.id === id) ? state : { ...state, activeId: id };
 }

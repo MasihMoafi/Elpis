@@ -3,7 +3,7 @@
 // driven by Playwright as a user drives the packaged app. The project is a throwaway git repository under /tmp; the
 // chats the run makes are archived at the end, by their ids. Nothing of an already running Elpis is touched.
 // Usage: [CANVAS_LIVE_PROJECT=/tmp/<new folder at a path config.toml already trusts>] ELPIS_PLAYWRIGHT_PACKAGE=...
-//   ELPIS_CHROMIUM=... node tests/canvas-live.runtime.mjs /abs/elpis-next voting|split|father|clash
+//   ELPIS_CHROMIUM=... node tests/canvas-live.runtime.mjs /abs/elpis-next tiny|voting|split|father|clash
 // father/clash use explicit saved boards and require a new project at an already trusted /tmp path.
 // Screenshots, the graph, the board and the archived ids go to /tmp/canvas-live (CANVAS_LIVE_EVIDENCE).
 import assert from 'node:assert/strict';
@@ -23,6 +23,8 @@ const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright
 const [engine, plan = 'voting'] = process.argv.slice(2);
 assert(engine && path.isAbsolute(engine), 'Provide the absolute path of the installed Elpis engine');
 const PLANS = {
+  tiny: { template: /^Sequential/, agents: 3, folders: ['page'],
+    goal: 'Write one short page/page.md that explains why 2 to the power of 10 is larger than 10 to the power of 3. Keep it under 20 lines, show both values, and run a final check of the file.' },
   father: { agents: 12, folders: Array.from({ length: 12 }, (_, i) => `writers/${String(i + 1).padStart(2, '0')}`),
     goal: 'Twelve tiny independent files, one writer per folder. Each result.txt contains its writer number and the absolute working directory from pwd -P. Do not commit or edit any other files.' },
   clash: { agents: 2, folders: ['shared'],
@@ -137,7 +139,7 @@ try {
   const started = Date.now();
   await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
   // The planner fills the empty folders first; then the run starts and the header follows it.
-  let last = '';
+  let last = '', tabVerified = false;
   for (;;) {
     const statusChip = canvas.locator('.canvas-header > .canvas-chip[role=status]');
     const chip = await statusChip.count() ? (await statusChip.innerText()).trim() : '';
@@ -145,6 +147,12 @@ try {
     const alert = canvas.locator('.canvas-notice[role=alert]');
     const notice = await alert.count() ? (await alert.innerText()).trim() : '';
     const listed = runs.length ? (await api(`/workflows?threadId=${encodeURIComponent(runs.at(-1).threadId)}`)).data.find(item => item.id === runs.at(-1).graphId) : null;
+    if (runs[0] && !tabVerified) {
+      await page.waitForFunction(threadId => JSON.parse(localStorage.getItem('elpis-chat-tabs-v1') || '{"tabs":[]}').tabs.some(tab => tab.threadId === threadId), runs[0].threadId);
+      assert.equal(await canvas.isVisible(), true, 'starting the run keeps the Workflows board open');
+      assert.equal(await canvas.getByRole('button', { name: 'New workflow', exact: true }).isEnabled(), true, 'New workflow stays usable during the run');
+      tabVerified = true;
+    }
     for (const row of git('worktree', 'list', '--porcelain').split('\n')) if (row.startsWith('worktree ')) worktrees.add(row.slice(9));
     const line = `${chip || 'no run yet'}${notice ? ` | notice: ${notice}` : ''}${listed ? ` | graph ${listed.status}: ${listed.tasks.map(task => `${task.id.replace(/^agent-[^-]+-/, '')}=${task.status}`).join(' ')}` : ''}`;
     if (line !== last) { say(line); last = line; }
@@ -154,6 +162,7 @@ try {
     await page.waitForTimeout(1000);
   }
   say(`Run took ${Math.round((Date.now() - started) / 1000)} s`);
+  assert.equal(tabVerified, true, 'the real run opened its Mother chat tab');
   const graphs = [];
   for (const run of runs) graphs.push((await api(`/workflows?threadId=${encodeURIComponent(run.threadId)}`)).data.find(item => item.id === run.graphId));
   const graph = graphs.at(-1);
