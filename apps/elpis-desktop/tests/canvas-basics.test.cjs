@@ -642,6 +642,7 @@ for (const colorScheme of ['light', 'dark']) test(`workflow pattern explicitly c
     assert.deepEqual(f.plans.at(-1).agents, [], 'Auto starts from the task, without carrying over the manual team');
     saved = await f.saved(); assert.equal(saved.planningPattern, 'auto');
     assert.equal(f.runs.length, 0, 'choosing/designing never runs the team before an explicit Run');
+    if (process.env.ELPIS_SHOTS) await f.page.screenshot({ path: `${process.env.ELPIS_SHOTS}/workflow-auto-manual-${colorScheme}.png` });
     await captureReview(f.page, `workflow-auto-manual-${colorScheme}`);
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
@@ -696,6 +697,39 @@ for (const [planned, said] of [[{ mode: 'direct', why: 'One file, one line: no t
     await f.page.waitForTimeout(400);
     if (said) await f.canvas.getByText(said, { exact: true }).waitFor();
     else assert.equal(await f.canvas.getByText(/^(One agent does it|A team of \d+):/).count(), 0);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+test('a started workflow opens its Mother chat in a background tab and leaves New workflow usable', async () => {
+  const saved = { name: 'Background run', request: 'Keep the board available.', workflowId: 'background-run', nodes: [
+    { id: 'writer', type: 'agent', position: { x: 300, y: 0 }, data: { title: 'Writer', instruction: 'Return one short report.', model: null, provider: null, effort: null, writeScopes: [], acceptanceCriteria: ['A report is returned'] } },
+  ], edges: [] };
+  const f = await openCanvas({ desktop: true, graph: saved, listed: run => ({ id: run.graphId, rootThreadId: run.rootThreadId, name: run.name, status: 'running', tasks: run.tasks.map(task => ({ id: task.id, title: task.title, status: 'running', assignedThreadId: null })) }) });
+  try {
+    const { page, canvas } = f;
+    const before = await page.evaluate(() => JSON.parse(localStorage.getItem('elpis-chat-tabs-v1')));
+    await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
+    await page.waitForFunction(() => JSON.parse(localStorage.getItem('elpis-chat-tabs-v1') || '{"tabs":[]}').tabs.some(tab => tab.threadId === 'chat-1'));
+    assert.equal(await canvas.getByRole('button', { name: 'New workflow', exact: true }).isEnabled(), true, 'the board remains ready for the next workflow');
+    const after = await page.evaluate(() => JSON.parse(localStorage.getItem('elpis-chat-tabs-v1')));
+    assert.equal(after.activeId, before.activeId, 'the running workflow does not take the board away');
+    assert.equal(after.tabs.filter(tab => tab.threadId === 'chat-1').length, 1, 'the Mother chat gets one background tab');
+    if (process.env.ELPIS_SHOTS) {
+      await page.screenshot({ path: `${process.env.ELPIS_SHOTS}/workflow-run-tab-light.png` });
+      await chooseTheme(page, 'dark');
+      await page.screenshot({ path: `${process.env.ELPIS_SHOTS}/workflow-run-tab-dark.png` });
+      await chooseTheme(page, 'light');
+    }
+    await canvas.getByRole('button', { name: 'Open run chat', exact: true }).click();
+    const strip = page.getByRole('tablist', { name: 'Chat tabs', exact: true });
+    await strip.getByRole('tab', { name: saved.name, exact: true }).waitFor();
+    assert.equal(await strip.getByRole('tab').count(), before.tabs.length + 1, 'opening the run activates its existing tab instead of replacing or duplicating one');
+    if (process.env.ELPIS_SHOTS) {
+      await page.screenshot({ path: `${process.env.ELPIS_SHOTS}/workflow-run-chat-light.png` });
+      await chooseTheme(page, 'dark');
+      await page.screenshot({ path: `${process.env.ELPIS_SHOTS}/workflow-run-chat-dark.png` });
+    }
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

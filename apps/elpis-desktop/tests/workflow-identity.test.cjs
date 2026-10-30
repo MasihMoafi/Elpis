@@ -452,6 +452,8 @@ test('failed workflow follows a resumed agent and paginated descendants without 
           assert.ok(column.identityRight <= column.statusX, `${colorScheme}/${width}: identity fits before status`);
         }
       }
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await shot(page, `resumed-team-chat-${colorScheme}`);
     }
     await chooseTheme(page, 'light'); await page.setViewportSize({ width: 1440, height: 900 });
     await eventually(async () => assert.ok(f.posts.some(post => post.path === '/api/threads/chat-a/resume')));
@@ -467,7 +469,6 @@ test('failed workflow follows a resumed agent and paginated descendants without 
     }
     assert.equal(await progress.getByText('Unrelated workflow worker', { exact: true }).count(), 0, 'another run cannot enter this team');
     assert.equal(await summary.getByRole('button', { name: 'Resume workflow', exact: true }).isDisabled(), true, 'a resumed child prevents duplicate recovery');
-    await shot(page, 'resumed-team-chat');
     await summary.getByRole('button', { name: 'Open workflow canvas', exact: true }).click();
     const board = page.getByRole('region', { name: 'Workflows', exact: true });
     await board.locator('.react-flow__node[data-id="live:observed-helper"]').waitFor();
@@ -476,7 +477,10 @@ test('failed workflow follows a resumed agent and paginated descendants without 
     const visibleHeight = locator => locator.evaluate(element => { const box = element.getBoundingClientRect(); return Math.min(innerHeight, box.bottom) - Math.max(0, box.top); });
     assert.ok(await visibleHeight(board.locator('.canvas-board > .react-flow')) >= 300, 'the actual flat canvas has at least 300 visible pixels');
     assert.equal(await board.locator('details.canvas-log-panel').getAttribute('open'), null, 'historical failure starts collapsed');
-    await shot(page, 'resumed-team-flat');
+    await shot(page, 'resumed-team-flat-light');
+    await chooseTheme(page, 'dark');
+    await shot(page, 'resumed-team-flat-dark');
+    await chooseTheme(page, 'light');
     await page.getByRole('radio', { name: 'Isometric', exact: true }).click();
     const iso = page.getByRole('region', { name: 'Isometric board', exact: true });
     await iso.getByRole('button', { name: /^Source checker:/ }).waitFor();
@@ -492,12 +496,43 @@ test('failed workflow follows a resumed agent and paginated descendants without 
       assert.equal(framing.length, 3, 'Mother, child and nested helper are actually drawn');
       assert.deepEqual(framing.filter(node => !node.fits), [], 'the settled view frames every agent, including Mother');
     });
-    await shot(page, 'resumed-team-isometric');
+    await shot(page, 'resumed-team-isometric-light');
+    await chooseTheme(page, 'dark');
+    await shot(page, 'resumed-team-isometric-dark');
     working = false;
     await board.getByRole('button', { name: 'Refresh live progress', exact: true }).click();
     await board.getByRole('region', { name: 'Live workflow progress', exact: true }).getByText(/Live: 0 working/).waitFor();
     assert.match(await board.locator('details.canvas-log-panel > summary').innerText(), /Previous attempt.*failed/, 'a live idle transition does not invent workflow success');
     assert.equal(f.posts.some(post => /^\/api\/workflows\/(?:run|[^/]+\/resume)$/.test(post.path)), false, 'viewing and refreshing never starts a model request');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+for (const colorScheme of ['light', 'dark']) test(`exact quota fallback shows the preserved run and actual subscription (${colorScheme})`, async () => {
+  const quota = 'Claude (ACP) error: You have hit your weekly limit.';
+  const saved = { id: 'fallback-run', rootThreadId: 'chat-a', name: 'Quota recovery', status: 'succeeded', startedAt: 100, endedAt: 200, tasks: [{
+    id: 'continue', title: 'Continue retained work', status: 'succeeded', assignedThreadId: 'fallback-child', dependsOn: [], writeScopes: [], acceptanceCriteria: ['Keep partial work'],
+    result: { summary: 'Read planted result: work from the exhausted subscription' },
+    routing: { requested: { model: 'claude/opus', provider: 'claude' }, actual: { model: 'gpt-6-luna', provider: 'openai' }, attempts: [
+      { model: 'claude/opus', provider: 'claude', status: 'failed', reason: quota },
+      { model: 'gpt-6-luna', provider: 'openai', status: 'succeeded' },
+    ] },
+  }] };
+  const f = await open(colorScheme, [saved], {}, {}, {
+    '/api/workflows': () => ({ data: [saved] }),
+    '/api/threads/chat-a': () => ({ thread: base('chat-a', saved.name), data: [], nextCursor: null }),
+  });
+  try {
+    const { page } = f;
+    await row(page, 'chat-a').locator('.thread-link').click();
+    const summary = page.getByRole('region', { name: 'Workflow run', exact: true });
+    const task = summary.locator('li').filter({ hasText: 'Continue retained work' });
+    await task.getByText('Result', { exact: true }).click();
+    await task.getByText('Read planted result: work from the exhausted subscription', { exact: true }).waitFor();
+    await summary.getByText('OpenAI · gpt-6-luna', { exact: true }).waitFor();
+    await task.getByText('Model attempts', { exact: true }).click();
+    await summary.getByText(quota, { exact: false }).waitFor();
+    await shot(page, `quota-fallback-${colorScheme}`);
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

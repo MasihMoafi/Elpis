@@ -351,12 +351,18 @@ for (const [error, kind, recovers] of [
   ['Weekly report failed because the file is missing', 'provider_error', false],
   ['Please review the weekly limit documentation', 'provider_error', false],
 ]) test(`quota recovery classifies ${error} without replaying unrelated failures`, { timeout: 20000 }, async t => {
+  const preservesPartialWork = error === 'Claude (ACP) error: You have hit your weekly limit.';
   let f;
   f = fixture(t, { runner: {
     modelRoutes: async () => [{ model: 'claude/opus', provider: 'claude' }, { model: 'm-fast', provider: 'openai' }],
     nodeSpec: node => ({ name: node.name, command: process.execPath, args: [FAKE], model: node.model.replace(/^(claude|agy)\//, ''), env: {
       FAKE_ACP_NAME: `${node.provider}-${node.name}`, FAKE_ACP_MODELS: 'opus,m-fast', FAKE_ACP_LOG: path.join(f.home, `${node.name}.jsonl`),
-      ...(node.provider === 'claude' ? { FAKE_ACP_PROMPT_ERROR: error, FAKE_ACP_ERROR_KIND: kind } : {}),
+      ...(node.provider === 'claude' ? { ...(preservesPartialWork ? {
+        FAKE_ACP_WRITE: JSON.stringify({ file: 'src/quota-partial', text: 'work from the exhausted subscription' }),
+        FAKE_ACP_PROMPT_ERROR_AFTER_WRITE: error,
+      } : { FAKE_ACP_PROMPT_ERROR: error }), FAKE_ACP_ERROR_KIND: kind } : preservesPartialWork ? {
+        FAKE_ACP_EXPECT: JSON.stringify({ file: 'src/quota-partial', text: 'work from the exhausted subscription' }),
+      } : {}),
     } }),
   } });
   const started = await f.start([task('limited', { model: 'claude/opus', provider: 'claude' })]);
@@ -366,6 +372,7 @@ for (const [error, kind, recovers] of [
   assert.deepEqual(node.routing.actual, recovers ? { model: 'm-fast', provider: 'openai' } : { model: 'claude/opus', provider: 'claude' });
   assert.ok(node.routing.attempts[0].reason.includes(error));
   assert.equal(f.log('limited').filter(row => row.method === 'session/prompt').length, recovers ? 2 : 1, 'only quota failures reach another subscription');
+  if (preservesPartialWork) assert.match(node.result.summary, /Read planted result: work from the exhausted subscription/, 'the fallback continues in the same workspace with the first subscription\'s work');
   if (recovers) assert.equal(completed.mother, undefined, 'successful quota recovery does not create an unnecessary supervisor turn');
 });
 

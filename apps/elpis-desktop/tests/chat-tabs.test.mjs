@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { activate, activeTab, addTab, closeTab, cycle, followChat, forgetChats, makeTab, readTabs, renameTabs, startTabs, tabFor, writeTabs } from '../lib/chat-tabs.ts';
+import { activate, activeTab, addBackgroundTab, addTab, closeTab, cycle, followChat, forgetChats, makeTab, readTabs, renameTabs, startTabs, tabFor, writeTabs } from '../lib/chat-tabs.ts';
 
 const storage = () => { const values = new Map(); return { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) }; };
 /** Alpha, Bravo, Charlie; Charlie is shown. */
@@ -14,6 +14,12 @@ test('a new tab is an empty sibling chat at the end and becomes the shown tab', 
   assert.equal(activeTab(state).threadId, null);
   assert.match(activeTab(state).draftKey, /^new-tab-/, 'each empty tab has its own draft');
   assert.notEqual(addTab(state).tabs.at(-1).draftKey, activeTab(state).draftKey);
+});
+
+test('a background tab opens beside the others without replacing the shown chat', () => {
+  const state = three(), next = addBackgroundTab(state, makeTab('workflow', 'Workflow'));
+  assert.deepEqual(ids(next), ['a', 'b', 'c', 'workflow']);
+  assert.equal(activeTab(next).threadId, 'c');
 });
 
 test('closing the shown tab shows its right neighbour, else its left; another tab leaves the shown one alone', () => {

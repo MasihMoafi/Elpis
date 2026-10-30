@@ -47,6 +47,10 @@ async function openCanvas({ width = 1440, height = 900, repository = false, grap
     // Runs: each chat started gets an id; a graph run on it finishes after its first look.
     if (url.pathname === '/api/threads' && req.method === 'POST') { const id = `chat-${posts.filter(post => post.path === '/api/threads').length}`; return json({ thread: { id, name: JSON.parse(raw).name, cwd: '/tmp/demo', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } } }); }
     if (url.pathname === '/api/threads') return json({ data: [], nextCursor: null });
+    if (req.method === 'GET' && /^\/api\/threads\/[^/]+$/.test(url.pathname)) {
+      const id = decodeURIComponent(url.pathname.split('/').at(-1)), run = runs.find(item => item.rootThreadId === id);
+      return json({ thread: { id, name: run?.name || 'Workflow', cwd: '/tmp/demo', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } }, data: [], nextCursor: null });
+    }
     if (url.pathname === '/api/workflows/run') { const body = JSON.parse(raw); runs.push({ ...body, graphId: `graph-${runs.length + 1}`, looks: 0 }); return json({ graphId: `graph-${runs.length}`, threadId: body.rootThreadId, turnId: 't' }); }
     if (url.pathname === '/api/workflows') {
       const mine = runs.filter(item => item.rootThreadId === url.searchParams.get('threadId'));
