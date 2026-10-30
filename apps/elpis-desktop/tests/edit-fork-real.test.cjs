@@ -75,10 +75,11 @@ before(async () => {
   }
   page.setDefaultTimeout(20000);
   const errors = []; page.on('pageerror', error => errors.push(error.message));
-  const completed = new Set(); client.on('event', event => { if (event.type === 'message' && event.data?.method === 'turn/completed') completed.add(event.data.params.turn?.id ?? event.data.params.turnId); });
+  const completed = new Set(), turnStatus = new Map();
+  client.on('event', event => { if (event.type === 'message' && event.data?.method === 'turn/completed') { const turn = event.data.params.turn, id = turn?.id ?? event.data.params.turnId; completed.add(id); if (turn?.status) turnStatus.set(id, turn.status); } });
   const prompts = async () => (await fs.readFile(acpLog, 'utf8').catch(() => '')).split('\n').filter(Boolean).map(JSON.parse).filter(row => row.method === 'session/prompt').map(row => JSON.stringify(row.params.prompt));
   const agyPrompts = async () => (await fs.readFile(agyLog, 'utf8').catch(() => '')).split('\n').filter(Boolean).map(JSON.parse).map(row => row.text);
-  Object.assign(h, { page, errors, completed, prompts, agyPrompts });
+  Object.assign(h, { page, errors, completed, turnStatus, prompts, agyPrompts });
   h.screenshot = async file => {
     if (!electron) return page.screenshot({ path: file });
     const png = await electron.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64'));
@@ -218,6 +219,8 @@ test('Antigravity answers in-flight messages and never replays stopped follow-up
 
 test('the model picker switches an existing chat across subscriptions', { skip, timeout: 60000 }, async () => {
   const { page, client } = h;
+  // The preceding follow-up test releases its fake provider; this test needs a fresh Stop gate.
+  await fs.rename(path.join(h.root, 'agy-release'), path.join(h.root, 'previous-agy-release')).catch(error => { if (error.code !== 'ENOENT') throw error; });
   const id = await h.chat('gpt-5.5', [['native start', 'native answer']]);
   await h.open(id);
   const picker = page.getByRole('combobox', { name: 'Model', exact: true });
@@ -254,8 +257,12 @@ test('the model picker switches an existing chat across subscriptions', { skip, 
   await choose('Antigravity', 'Gemini Flash', 'agy/gemini-3.8-flash-medium');
   const composer = page.getByRole('textbox', { name: 'Message Elpis', exact: true });
   await composer.fill('[wait] stop before switch'); await composer.press('Enter');
-  await until(async () => (await h.agyPrompts()).some(prompt => prompt.includes('stop before switch')), 'Gemini starts before Stop');
+  await until(async () => (await h.agyPrompts()).some(prompt => prompt.includes('[wait] stop before switch') && !prompt.includes('\nUser prompt:\n')), 'Gemini starts before Stop');
+  const { activeTurnId } = await client.resume(id, {});
+  assert.ok(activeTurnId && !h.completed.has(activeTurnId), 'the Gemini turn is running before Stop');
   await page.getByRole('button', { name: 'Stop response', exact: true }).click();
+  await until(() => h.completed.has(activeTurnId), 'Stop completes the Gemini turn');
+  assert.equal(h.turnStatus.get(activeTurnId), 'interrupted');
   await page.getByRole('button', { name: 'Stop response', exact: true }).waitFor({ state: 'hidden' });
   await fs.writeFile(path.join(h.root, 'claude-release'), '');
   await choose('Anthropic', 'sonnet', 'claude/sonnet');
