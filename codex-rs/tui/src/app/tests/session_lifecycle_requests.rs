@@ -893,8 +893,7 @@ async fn delete_current_thread_reports_forked_history_reference() -> Result<()> 
     app.active_thread_id = Some(parent_id);
     let mut tui = crate::tui::test_support::make_test_tui()?;
     assert_matches!(
-        app.handle_app_event(&mut tui, &mut server, AppEvent::DeleteCurrentThread)
-            .await?,
+        Box::pin(app.handle_event(&mut tui, &mut server, AppEvent::DeleteCurrentThread)).await?,
         AppRunControl::Continue
     );
     let mut messages = String::new();
