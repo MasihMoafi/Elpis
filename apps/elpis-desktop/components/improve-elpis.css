@@ -3,8 +3,8 @@
 .elpis-improve-preview { min-width:0; max-height:180px; overflow:auto; border:1px solid var(--border); border-radius:var(--radius); }
 .elpis-improve-region { display:block; max-width:none; }
 .elpis-improve-diff { max-height:260px; overflow:auto; border:1px solid var(--border); border-radius:var(--radius); }
-.elpis-improve-log { max-height:160px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; }
+.elpis-improve-log { max-height:160px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font-size:var(--text-xs); }
 .elpis-improve-review-button { flex-shrink:0; order:2; }
 .elpis-change-menu { position:fixed; z-index:100; min-width:160px; padding:4px; background:var(--popover); color:var(--popover-foreground); border:1px solid var(--border); border-radius:var(--radius); box-shadow:0 4px 18px #0002; }
-.elpis-change-menuitem { display:flex; width:100%; padding:6px 8px; border-radius:4px; font-size:13px; text-align:start; cursor:pointer; }
+.elpis-change-menuitem { display:flex; width:100%; padding:6px 8px; border-radius:4px; font-size:var(--text-sm); text-align:start; cursor:pointer; }
 .elpis-change-menuitem:hover, .elpis-change-menuitem:focus-visible { background:var(--accent); color:var(--accent-foreground); outline:none; }
