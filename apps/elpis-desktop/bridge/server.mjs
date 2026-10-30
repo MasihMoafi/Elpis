@@ -59,6 +59,15 @@ function cwdOf(url, ...others) {
   if ([...url.searchParams.keys()].some(key => key !== 'cwd' && !others.includes(key)) || url.searchParams.getAll('cwd').length !== 1 || others.some(key => url.searchParams.getAll(key).length > 1)) throw new BridgeError('Provide exactly one cwd');
   return url.searchParams.get('cwd');
 }
+function mcpCwdOf(url) {
+  if ([...url.searchParams.keys()].some(key => key !== 'cwd')) throw new BridgeError('Unsupported query parameter');
+  const values = url.searchParams.getAll('cwd');
+  if (values.length > 1) throw new BridgeError('Provide at most one cwd');
+  if (!values.length) return undefined;
+  const cwd = text(values[0], 'working folder', 4096);
+  if (!path.isAbsolute(cwd)) throw new BridgeError('Working folder must be absolute');
+  return cwd;
+}
 function pageQuery(url, ancestor = false, models = false) {
   const result = {};
   for (const [key, value] of url.searchParams) {
@@ -341,7 +350,7 @@ export async function startDesktopServer(options = {}) {
         if (url.pathname === '/api/providers/settings') return json(response, 200, method === 'GET' ? await client.providerSettings() : await client.saveProvider(await body(request)));
         if (url.pathname === '/api/providers/key' && method === 'POST') return json(response, 200, await client.saveProviderKey(await body(request)));
         if (url.pathname === '/api/mcp/import') return json(response, 200, method === 'GET' ? await client.previewClaudeMcp() : await client.importClaudeMcp(await body(request)));
-        if (url.pathname === '/api/mcp') return json(response, 200, method === 'GET' ? await client.mcp() : await client.saveMcp(await body(request)));
+        if (url.pathname === '/api/mcp') return json(response, 200, method === 'GET' ? await client.mcp(mcpCwdOf(url)) : await client.saveMcp(await body(request)));
         const inlinePrune = url.pathname.match(/^\/api\/threads\/([^/]+)\/smart-prune\/([^/]+)\/([^/]+)$/);
         if (inlinePrune && method === 'GET') return json(response, 200, await smartPruneDetail(options.elpisHome, ...inlinePrune.slice(1).map(decodeURIComponent)));
         if (url.pathname === '/api/customize' && method === 'GET') return json(response, 200, await client.customize(url.searchParams.get('cwd') || undefined));

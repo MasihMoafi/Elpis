@@ -14,6 +14,7 @@ const resources = new URL('./resources/', import.meta.url);
 await fs.mkdir(resources, { recursive: true });
 await fs.copyFile(new URL('../../../tools/elpis-claude/permission-policy.mjs', import.meta.url), new URL('./permission-policy.mjs', resources));
 await fs.copyFile(new URL('../../../tools/elpis-claude/workflow-concurrency.mjs', import.meta.url), new URL('./workflow-concurrency.mjs', resources));
+await fs.copyFile(new URL('../../../tools/elpis-claude/mcp-session-selections.mjs', import.meta.url), new URL('./mcp-session-selections.mjs', resources));
 await fs.copyFile(new URL('../../../codex-rs/core/src/prompts/rag.md', import.meta.url), new URL('./rag.md', resources));
 await fs.copyFile(new URL('../../../codex-rs/skills/src/assets/personal/SKILL.md', import.meta.url), new URL('./personal.md', resources));
 // Excalidraw's bundled fonts stay local, including during whole-drawing PNG export.

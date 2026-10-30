@@ -10,6 +10,7 @@ import http from 'node:http';
 import net from 'node:net';
 import { parseClaudeMcp } from './claude-mcp-import.mjs';
 import { DesktopClient, existingSocket } from './client.mjs';
+import { McpSessionSelections } from './resources/mcp-session-selections.mjs';
 import { startDesktopServer } from './server.mjs';
 import { isAgentRun } from '../lib/agent-runs.mjs';
 import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cjs';
@@ -21,6 +22,9 @@ const MODEL = 'test-model';
 const FORK = '00000000-0000-0000-0000-000000000007';
 // The engine's built-in permission profiles and the sandbox each one runs.
 const PROFILE_SANDBOX = { ':workspace': { type: 'workspaceWrite' }, ':danger-full-access': { type: 'dangerFullAccess' }, ':bypass-permissions': { type: 'dangerFullAccess' } };
+const defaultMcpConfig = read => Object.fromEntries(Object.entries(read.config.mcp_servers).map(([name, server]) => [
+  `mcp_servers.${name}`, server.enabled === false ? { enabled: false } : { ...server, enabled: true },
+]));
 
 test('A32 default effort uses the shared versioned writer and rejects invalid values', async () => {
   const { client, socket } = fixture(); await client.initialize();
@@ -74,7 +78,7 @@ test('A32 missing or disabled writable config layers explain why and write nothi
     assert.equal(socket.sent.filter(row => row.method === 'config/batchWrite').length, 0);
   } finally { client.close(); }
 });
-function fixture({ prunerSupported = false, omitWorkflowParentInList = false, replacementPages, promptPages, browserConfig, threadListPaging = false, archiveDirectory = path.join(os.tmpdir(), `bridge-archives-${randomUUID()}`), clientOptions = {} } = {}) {
+function fixture({ prunerSupported = false, omitWorkflowParentInList = false, replacementPages, promptPages, browserConfig, configByCwd = {}, threadListPaging = false, archiveDirectory = path.join(os.tmpdir(), `bridge-archives-${randomUUID()}`), clientOptions = {} } = {}) {
   const workflowRecords = [];
   let pruner = {model:"optimizer-original",provider:"openai",version:"pruner-v1",providers:[{id:"openai",displayName:"OpenAI"}],systemPrompt:"PRIVATE CONFIG SECRET"};
   const configRead = { config: {
@@ -105,7 +109,7 @@ function fixture({ prunerSupported = false, omitWorkflowParentInList = false, re
     let result;
     switch (request.method) {
       case 'initialize': result = { userAgent: 'protocol-test' }; break;
-      case 'config/read': result = configRead; break;
+      case 'config/read': result = Object.hasOwn(configByCwd, request.params?.cwd) ? configByCwd[request.params.cwd] : configRead; break;
       case 'configRequirements/read': result = requirementsRead; break;
       case 'pruner/read': if (prunerSupported) {result=pruner;break;} queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, error: {code: -32601, message: 'Unknown method'} }))); return;
       case 'pruner/write': pruner={...pruner,model:request.params.model,provider:request.params.provider,reasoningEffort:request.params.reasoningEffort ?? null,version:'pruner-v2'};result=pruner;break;
@@ -361,13 +365,267 @@ test('a failed model list is retried and non-default pages are read separately',
 
 test('desktop browser MCP follows new, resumed and forked desktop chats without writing user config', async () => {
   const browserConfig={'mcp_servers.elpis_browser':{command:'node',args:['browser-mcp.mjs'],env:{ELPIS_BROWSER_SOCKET:'/tmp/private-browser.sock'}}};
-  const {client,socket}=fixture({browserConfig});
+  const {client,socket,configRead}=fixture({browserConfig});
   try {
     await client.initialize();await client.createThread({});
-    assert.deepEqual(socket.sent.find(row=>row.method==='thread/start').params.config,browserConfig);
+    const started=socket.sent.find(row=>row.method==='thread/start').params.config;
+    assert.deepEqual(started['mcp_servers.elpis_browser'],browserConfig['mcp_servers.elpis_browser']);
+    assert.deepEqual(started['mcp_servers.rag'],{...configRead.config.mcp_servers.rag,enabled:true});
+    assert.deepEqual(started['mcp_servers.whispertype'],{...configRead.config.mcp_servers.whispertype,enabled:true});
+    assert.deepEqual(started['mcp_servers.remote'],{enabled:false});
     await client.resume(ROOT,{});await client.forkThread(ROOT,{});
     for(const method of ['thread/resume','thread/fork'])assert.deepEqual(socket.sent.find(row=>row.method===method).params.config,browserConfig);
     assert.equal(socket.sent.some(row=>row.method==='config/batchWrite'),false);
+  } finally {client.close();}
+});
+
+test('new chat MCP choices are scoped to each thread and leave existing chats and global config alone', async () => {
+  const {client,socket,configRead}=fixture(); await client.initialize();
+  try {
+    await Promise.all([
+      client.createThread({mcpServers:['rag']}),
+      client.createThread({mcpServers:['whispertype']}),
+    ]);
+    const starts=socket.sent.filter(row=>row.method==='thread/start').map(row=>row.params.config);
+    assert.equal(starts.length,2);
+    assert.deepEqual(starts[0]['mcp_servers.rag'],{...configRead.config.mcp_servers.rag,enabled:true});
+    assert.deepEqual(starts[0]['mcp_servers.whispertype'],{enabled:false});
+    assert.deepEqual(starts[0]['mcp_servers.remote'],{enabled:false});
+    assert.deepEqual(starts[1]['mcp_servers.rag'],{enabled:false});
+    assert.deepEqual(starts[1]['mcp_servers.whispertype'],{...configRead.config.mcp_servers.whispertype,enabled:true});
+    assert.deepEqual(starts[1]['mcp_servers.remote'],{enabled:false});
+    assert.equal(socket.sent.some(row=>row.method==='thread/settings/update'),false,'old chats receive no MCP setting update');
+    assert.equal(socket.sent.some(row=>row.method==='config/batchWrite'),false,'global MCP config is never written');
+  } finally {client.close();}
+});
+
+test('MCP choices survive client recreation and a fork without affecting an older chat', async t => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-session-profile-'));
+  t.after(() => fs.rm(home, { recursive: true, force: true }));
+  const browserConfig = { 'mcp_servers.elpis_browser': { command: 'node', args: ['browser-mcp.mjs'], env: { ELPIS_BROWSER_SOCKET: '/tmp/private-browser.sock' } } };
+  const first = fixture({ browserConfig, clientOptions: { home } });
+  const second = fixture({ browserConfig, clientOptions: { home } });
+  t.after(() => first.client.close()); t.after(() => second.client.close());
+  try {
+    await first.client.initialize(); await second.client.initialize();
+    const started = await first.client.createThread({ mcpServers: ['rag'] });
+    const directory = path.join(home, 'desktop-mcp-selections');
+    assert.deepEqual(first.socket.sent.find(row => row.method === 'thread/start').params.config['mcp_servers.elpis_browser'], browserConfig['mcp_servers.elpis_browser']);
+    const file = await fs.readFile(path.join(directory, `${CREATED}.json`), 'utf8');
+    assert.deepEqual(JSON.parse(file), { version: 1, threadId: CREATED, servers: ['rag'] });
+    assert.doesNotMatch(file, /command|url|env|secret|token/i);
+    await first.client.forkThread(CREATED, {});
+    const [savedParent, savedFork] = await Promise.all([
+      fs.readFile(path.join(directory, `${CREATED}.json`), 'utf8'),
+      fs.readFile(path.join(directory, `${FORK}.json`), 'utf8'),
+    ]);
+    assert.deepEqual(JSON.parse(savedParent), { version: 1, threadId: CREATED, servers: ['rag'] });
+    assert.deepEqual(JSON.parse(savedFork), { version: 1, threadId: FORK, servers: ['rag'] });
+    assert.deepEqual(first.socket.sent.find(row => row.method === 'thread/fork').params.config['mcp_servers.rag'], {
+      ...first.configRead.config.mcp_servers.rag, enabled: true,
+    });
+    assert.deepEqual(first.socket.sent.find(row => row.method === 'thread/fork').params.config['mcp_servers.elpis_browser'], browserConfig['mcp_servers.elpis_browser']);
+    assert.ok(started.thread.id === CREATED);
+    second.threads.set(FORK, { id: FORK, name: 'Fork', model: MODEL, modelProvider: 'openai', status: { type: 'idle' } });
+    const resumedFork = await second.client.resume(FORK, {});
+    assert.equal(resumedFork.thread.id, FORK);
+    const config = second.socket.sent.find(row => row.method === 'thread/resume').params.config;
+    assert.deepEqual(config['mcp_servers.rag'], { ...second.configRead.config.mcp_servers.rag, enabled: true });
+    assert.deepEqual(config['mcp_servers.elpis_browser'], browserConfig['mcp_servers.elpis_browser']);
+    assert.deepEqual(config['mcp_servers.whispertype'], { enabled: false });
+    assert.deepEqual(config['mcp_servers.remote'], { enabled: false });
+
+    await second.client.resume(ROOT, {});
+    const oldChatConfig = second.socket.sent.filter(row => row.method === 'thread/resume').at(-1).params.config;
+    assert.equal(oldChatConfig?.['mcp_servers.rag'], undefined, 'older chats keep their existing behavior');
+    assert.equal(second.socket.sent.some(row => row.method === 'config/batchWrite'), false);
+    assert.equal(second.socket.sent.some(row => row.method === 'thread/settings/update'), false);
+  } finally { first.client.close(); second.client.close(); }
+});
+
+test('a fresh chat from a saved MCP session keeps only its still-enabled selection', async t => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-session-profile-'));
+  t.after(() => fs.rm(home, { recursive: true, force: true }));
+  const { client, socket, configRead } = fixture({ clientOptions: { home } }); await client.initialize();
+  try {
+    await client.createThread({ mcpServers: ['rag'] });
+    configRead.config.mcp_servers.rag.enabled = false;
+    const result = await client.createThreadFromSession(CREATED, {});
+    assert.deepEqual(result.mcpServers, [], 'a server disabled in global settings is not copied as enabled');
+    assert.deepEqual(result.mcpWarnings, ['MCP server "rag" is disabled in MCP settings and stays off in this chat.']);
+    const starts = socket.sent.filter(row => row.method === 'thread/start');
+    assert.deepEqual(starts[1].params.config['mcp_servers.rag'], { enabled: false });
+    assert.deepEqual(starts[1].params.config['mcp_servers.whispertype'], { enabled: false }, 'another enabled global server is not added to an explicit subset');
+    assert.deepEqual(starts[1].params.config['mcp_servers.remote'], { enabled: false });
+    assert.deepEqual(JSON.parse(await fs.readFile(path.join(home, 'desktop-mcp-selections', `${CREATED}.json`), 'utf8')).servers, ['rag'], 'the new chat keeps the original name so resume can explain the global disable');
+    const resumed = await client.resume(CREATED, {});
+    assert.deepEqual(resumed.mcpWarnings, ['MCP server "rag" is disabled in MCP settings and stays off in this chat.']);
+    assert.equal(socket.sent.some(row => row.method === 'config/batchWrite'), false);
+  } finally { client.close(); }
+});
+
+test('a fresh chat from a legacy thread keeps configured MCP defaults', async () => {
+  const { client, socket, configRead } = fixture(); await client.initialize();
+  try {
+    await client.createThreadFromSession(ROOT, {});
+    assert.deepEqual(socket.sent.find(row => row.method === 'thread/start').params.config, defaultMcpConfig(configRead));
+  } finally { client.close(); }
+});
+
+test('continuing a background chat carries its saved MCP subset to the fork', async t => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-session-profile-'));
+  t.after(() => fs.rm(home, { recursive: true, force: true }));
+  const { client, socket, threads, configRead } = fixture({ clientOptions: { home } }); await client.initialize();
+  try {
+    await new McpSessionSelections(path.join(home, 'desktop-mcp-selections')).set(CHILD, ['rag']);
+    threads.get(CHILD).status = { type: 'idle' };
+    const result = await client.continueThread(CHILD, {});
+    assert.equal(result.thread.id, FORK);
+    const config = socket.sent.find(row => row.method === 'thread/fork').params.config;
+    assert.deepEqual(config['mcp_servers.rag'], { ...configRead.config.mcp_servers.rag, enabled: true });
+    assert.deepEqual(config['mcp_servers.whispertype'], { enabled: false });
+    assert.deepEqual(config['mcp_servers.remote'], { enabled: false });
+    assert.deepEqual(JSON.parse(await fs.readFile(path.join(home, 'desktop-mcp-selections', `${FORK}.json`), 'utf8')).servers, ['rag']);
+    assert.equal(socket.sent.some(row => row.method === 'config/batchWrite'), false);
+  } finally { client.close(); }
+});
+
+test('saved MCP choices keep deleted and globally disabled servers off while history still opens', async t => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-session-profile-'));
+  t.after(() => fs.rm(home, { recursive: true, force: true }));
+  const first = fixture({ clientOptions: { home } }); await first.client.initialize();
+  let created;
+  try { created = await first.client.createThread({ mcpServers: ['rag', 'whispertype'] }); }
+  finally { first.client.close(); }
+
+  const resumed = fixture({ clientOptions: { home } }); await resumed.client.initialize();
+  try {
+    resumed.threads.set(CREATED, created.thread);
+    resumed.configRead.config.mcp_servers.rag.enabled = false;
+    delete resumed.configRead.config.mcp_servers.whispertype;
+    const result = await resumed.client.resume(CREATED, {});
+    assert.equal(result.thread.id, CREATED, 'missing MCP servers do not block opening history');
+    assert.deepEqual(result.mcpWarnings, [
+      'MCP server "rag" is disabled in MCP settings and stays off in this chat.',
+      'MCP server "whispertype" is no longer configured and stays off in this chat.',
+    ]);
+    const config = resumed.socket.sent.find(row => row.method === 'thread/resume').params.config;
+    assert.deepEqual(config['mcp_servers.rag'], { enabled: false });
+    assert.equal(config['mcp_servers.whispertype'], undefined);
+    assert.equal(resumed.socket.sent.some(row => row.method === 'config/batchWrite'), false);
+  } finally { resumed.client.close(); }
+});
+
+test('a corrupt saved MCP choice fails closed after client restart and history remains readable', async t => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-session-profile-'));
+  t.after(() => fs.rm(home, { recursive: true, force: true }));
+  const first = fixture({ clientOptions: { home } }); await first.client.initialize();
+  let created;
+  try {
+    created = await first.client.createThread({ mcpServers: ['rag'] });
+  } finally { first.client.close(); }
+  await fs.writeFile(path.join(home, 'desktop-mcp-selections', `${CREATED}.json`), '{');
+
+  const browserConfig = { 'mcp_servers.elpis_browser': { command: 'node', args: ['browser-mcp.mjs'], env: {} } };
+  const resumed = fixture({ browserConfig, clientOptions: { home } }); await resumed.client.initialize();
+  resumed.threads.set(CREATED, created.thread);
+  try {
+    const result = await resumed.client.resume(CREATED, {});
+    assert.equal(result.thread.id, CREATED, 'history remains readable after the saved selection is corrupt');
+    assert.deepEqual(result.mcpWarnings, ["This chat's saved MCP choice could not be read; all user MCP servers stay off."]);
+    const config = resumed.socket.sent.find(row => row.method === 'thread/resume').params.config;
+    for (const name of ['rag', 'whispertype', 'remote']) assert.deepEqual(config[`mcp_servers.${name}`], { enabled: false });
+    assert.deepEqual(config['mcp_servers.elpis_browser'], browserConfig['mcp_servers.elpis_browser']);
+  } finally { resumed.client.close(); }
+});
+
+test('a corrupt selection with unreadable MCP config rejects resume before default tools can load', async t => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-session-profile-'));
+  t.after(() => fs.rm(home, { recursive: true, force: true }));
+  await fs.mkdir(path.join(home, 'desktop-mcp-selections'), { recursive: true });
+  await fs.writeFile(path.join(home, 'desktop-mcp-selections', `${CREATED}.json`), '{');
+  const resumed = fixture({ clientOptions: { home } }); await resumed.client.initialize();
+  resumed.threads.set(CREATED, { ...resumed.threads.get(ROOT), id: CREATED, name: 'Unreadable settings' });
+  const send = resumed.socket.send;
+  resumed.socket.send = raw => {
+    const request = JSON.parse(raw);
+    if (request.method === 'config/read') {
+      resumed.socket.sent.push(request);
+      queueMicrotask(() => resumed.socket.emit('message', JSON.stringify({ id: request.id, error: { code: -32603, message: 'settings temporarily unavailable' } })));
+      return;
+    }
+    send(raw);
+  };
+  try {
+    await assert.rejects(resumed.client.resume(CREATED, {}), error => error.status === 503 && /Could not verify MCP settings.*Retry before resuming/.test(error.message));
+    assert.equal(resumed.socket.sent.some(row => row.method === 'thread/resume'), false, 'no native resume runs with an incomplete override');
+    assert.equal((await resumed.client.readThread(CREATED)).thread.id, CREATED, 'direct history reads remain available');
+  } finally { resumed.client.close(); }
+});
+
+test('unavailable MCP selection storage rejects a new chat before thread start', async t => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-session-profile-'));
+  t.after(() => fs.rm(home, { recursive: true, force: true }));
+  await fs.writeFile(path.join(home, 'desktop-mcp-selections'), 'blocks the selection directory');
+  const { client, socket, threads } = fixture({ clientOptions: { home } }); await client.initialize();
+  try {
+    await assert.rejects(client.createThread({ mcpServers: ['rag'] }), /MCP server choices cannot be saved/);
+    assert.equal(socket.sent.some(row => row.method === 'thread/start'), false);
+    assert.equal(threads.has(CREATED), false);
+  } finally { client.close(); }
+});
+
+test('a late MCP selection write failure discards the empty new chat and keeps the draft retryable', async t => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-session-profile-'));
+  t.after(() => fs.rm(home, { recursive: true, force: true }));
+  await fs.mkdir(path.join(home, 'desktop-mcp-selections', `${CREATED}.json`), { recursive: true });
+  const { client, socket, threads } = fixture({ clientOptions: { home } }); await client.initialize();
+  try {
+    await assert.rejects(client.createThread({ mcpServers: ['rag'] }), /new chat was discarded; your draft was kept/);
+    assert.equal(threads.has(CREATED), false);
+    assert.equal(socket.sent.some(row => row.method === 'thread/delete' && row.params.threadId === CREATED), true);
+  } finally { client.close(); }
+});
+
+test('a late MCP selection write failure removes only the new fork and preserves source history', async t => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-session-profile-'));
+  t.after(() => fs.rm(home, { recursive: true, force: true }));
+  const selections = new McpSessionSelections(path.join(home, 'desktop-mcp-selections'));
+  await selections.set(ROOT, ['rag']);
+  await fs.mkdir(path.join(home, 'desktop-mcp-selections', `${FORK}.json`));
+  const { client, socket, threads } = fixture({ clientOptions: { home } }); await client.initialize();
+  try {
+    await assert.rejects(client.forkThread(ROOT, {}), /fork was discarded; the original chat history was kept/);
+    assert.equal(threads.has(ROOT), true);
+    assert.equal(threads.has(FORK), false);
+    assert.equal((await client.readThread(ROOT)).thread.id, ROOT);
+    assert.equal(socket.sent.some(row => row.method === 'thread/delete' && row.params.threadId === FORK), true);
+  } finally { client.close(); }
+});
+
+test('new chat rejects an unconfigured MCP choice before starting a thread', async () => {
+  const {client,socket}=fixture(); await client.initialize();
+  try {
+    const starts=()=>socket.sent.filter(row=>row.method==='thread/start').length;
+    await assert.rejects(client.createThread({mcpServers:['not-configured']}),/configured stdio or HTTP server/);
+    await assert.rejects(client.createThread({mcpServers:['remote']}),/disabled in MCP settings/);
+    await assert.rejects(client.createThread({mcpServers:['rag','rag']}),/Choose configured MCP servers/);
+    await assert.rejects(client.createThread({mcpServers:'rag'}),/Choose configured MCP servers/);
+    assert.equal(starts(),0);
+    assert.equal(socket.sent.some(row=>row.method==='config/batchWrite'),false);
+  } finally {client.close();}
+});
+
+test('an empty MCP choice disables configured user servers only for the new thread', async () => {
+  const {client,socket}=fixture(); await client.initialize();
+  try {
+    await client.createThread({mcpServers:[]});
+    const start=socket.sent.find(row=>row.method==='thread/start').params;
+    assert.deepEqual(start.config['mcp_servers.rag'],{enabled:false});
+    assert.deepEqual(start.config['mcp_servers.whispertype'],{enabled:false});
+    assert.deepEqual(start.config['mcp_servers.remote'],{enabled:false});
+    assert.equal(socket.sent.some(row=>row.method==='config/batchWrite'),false);
+    assert.equal(socket.sent.some(row=>row.method==='thread/settings/update'),false);
   } finally {client.close();}
 });
 
@@ -393,13 +651,18 @@ test('a chat that runs the canvas\'s agents turns the multi-agent runtime on for
   // The Ledger's SUBAGENTS switch (features.multi_agent = false) stops a model delegating in ordinary chats; with it the
   // engine refused every canvas run: "multi-agent runtime is disabled; this session cannot run a work graph".
   const browserConfig={'mcp_servers.elpis_browser':{command:'node',args:['browser-mcp.mjs']}};
-  const {client,socket}=fixture({browserConfig});
+  const {client,socket,configRead}=fixture({browserConfig});
+  const configuredMcp = {
+    'mcp_servers.rag': {...configRead.config.mcp_servers.rag,enabled:true},
+    'mcp_servers.whispertype': {...configRead.config.mcp_servers.whispertype,enabled:true},
+    'mcp_servers.remote': {enabled:false},
+  };
   try {
     await client.initialize();
     await client.createThread({cwd:'/tmp/project',agents:true});
-    assert.deepEqual(socket.sent.findLast(row=>row.method==='thread/start').params.config,{...browserConfig,'features.multi_agent':true});
+    assert.deepEqual(socket.sent.findLast(row=>row.method==='thread/start').params.config,{...browserConfig,...configuredMcp,'features.multi_agent':true});
     await client.createThread({cwd:'/tmp/project'});
-    assert.deepEqual(socket.sent.findLast(row=>row.method==='thread/start').params.config,browserConfig,'an ordinary chat keeps the user\'s switch');
+    assert.deepEqual(socket.sent.findLast(row=>row.method==='thread/start').params.config,{...browserConfig,...configuredMcp},'an ordinary chat keeps the user\'s switch');
     await assert.rejects(client.createThread({agents:'yes'}),/agents must be true or false/);
     assert.equal(socket.sent.some(row=>row.method==='config/batchWrite'||row.method==='config/value/write'),false,'the user config is never written');
   } finally {client.close();}
@@ -1052,6 +1315,63 @@ test('HTTP requires capability/cookie, strict origin/host, allowlisted routes an
   assert.equal(socket.sent.some(row => row.method === 'command/exec'), false);
 });
 
+test('MCP catalog and new-chat validation use the same project config', async t => {
+  const projectA = '/work/project-a', projectB = '/work/project-b', configByCwd = {};
+  const f = fixture({ configByCwd }); await f.client.initialize();
+  const scopedRead = servers => ({ ...structuredClone(f.configRead), config: { ...f.configRead.config, mcp_servers: servers } });
+  configByCwd[projectA] = scopedRead({
+    rag: { ...f.configRead.config.mcp_servers.rag, enabled: false },
+    project_a: { command: '/usr/bin/project-a', args: [] },
+  });
+  configByCwd[projectB] = scopedRead({
+    rag: { ...f.configRead.config.mcp_servers.rag, enabled: true },
+    project_b: { command: '/usr/bin/project-b', args: [] },
+  });
+  const app = await startDesktopServer({ client: f.client }); t.after(() => app.close());
+  const url = new URL(app.url), origin = url.origin, capability = new URLSearchParams(url.hash.slice(1)).get('token');
+  const login = await fetch(`${origin}/api/session`, { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ token: capability }) });
+  assert.equal(login.status, 200);
+  const cookie = login.headers.get('set-cookie').split(';', 1)[0];
+  const get = route => fetch(origin + route, { headers: { Cookie: cookie } });
+  const post = (route, value) => fetch(origin + route, { method: 'POST', headers: { Cookie: cookie, Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify(value) });
+
+  const catalogAResponse = await get(`/api/mcp?cwd=${encodeURIComponent(projectA)}`);
+  assert.equal(catalogAResponse.status, 200);
+  const catalogA = await catalogAResponse.json();
+  assert.deepEqual(catalogA.servers.map(server => server.name), ['project_a', 'rag']);
+  assert.equal(catalogA.servers.find(server => server.name === 'rag').enabled, false);
+  const catalogBResponse = await get(`/api/mcp?cwd=${encodeURIComponent(projectB)}`);
+  assert.equal(catalogBResponse.status, 200);
+  const catalogB = await catalogBResponse.json();
+  assert.deepEqual(catalogB.servers.map(server => server.name), ['project_b', 'rag']);
+  assert.equal(catalogB.servers.find(server => server.name === 'rag').enabled, true);
+  assert.equal((await get('/api/mcp')).status, 200, 'settings keep the no-cwd global catalog route');
+  for (const route of ['/api/mcp?cwd=relative', `/api/mcp?cwd=${encodeURIComponent(projectA)}&cwd=${encodeURIComponent(projectB)}`, `/api/mcp?cwd=${encodeURIComponent(projectA)}&other=x`]) {
+    assert.equal((await get(route)).status, 400, `reject invalid catalog query ${route}`);
+  }
+
+  const startedA = await post('/api/threads', { cwd: projectA, mcpServers: ['project_a'] });
+  assert.equal(startedA.status, 201);
+  const startedB = await post('/api/threads', { cwd: projectB, mcpServers: ['project_b'] });
+  assert.equal(startedB.status, 201);
+  const starts = f.socket.sent.filter(row => row.method === 'thread/start');
+  assert.deepEqual(starts.map(row => row.params.cwd), [projectA, projectB]);
+  assert.equal(starts[0].params.config['mcp_servers.project_a'].command, '/usr/bin/project-a');
+  assert.deepEqual(starts[0].params.config['mcp_servers.rag'], { enabled: false });
+  assert.equal(starts[0].params.config['mcp_servers.project_b'], undefined);
+  assert.equal(starts[1].params.config['mcp_servers.project_b'].command, '/usr/bin/project-b');
+  assert.equal(starts[1].params.config['mcp_servers.project_a'], undefined);
+  const invalidStart = await post('/api/threads', { cwd: projectB, mcpServers: ['project_a'] });
+  assert.equal(invalidStart.status, 400);
+  assert.match((await invalidStart.json()).error, /not a configured stdio or HTTP server/);
+  assert.equal(f.socket.sent.filter(row => row.method === 'thread/start').length, 2, 'invalid project choice never reaches native start');
+
+  const reads = f.socket.sent.filter(row => row.method === 'config/read' && row.params?.includeLayers === true);
+  assert.equal(reads.filter(row => row.params.cwd === projectA).length, 2, 'catalog and start read project A');
+  assert.equal(reads.filter(row => row.params.cwd === projectB).length, 3, 'catalog, start, and rejected choice read project B');
+  assert.ok(reads.some(row => row.params.cwd === undefined), 'no-cwd catalog still reads global settings');
+});
+
 test('workflow workers keep recorded task names and lineage when native list omits their parent', async () => {
   const {client,socket,threads,workflowRecords}=fixture({omitWorkflowParentInList:true}); await client.initialize();
   const graphId='10000000-0000-0000-0000-000000000001';
@@ -1303,7 +1623,7 @@ test('custom API models are validated under the selected native provider for cre
   await assert.rejects(client.createThread({ model: 'fixture/custom-model' }), /current Elpis model list/);
   assert.equal(socket.sent.filter(row => row.method === 'thread/start').length, 0);
   await client.createThread({ provider: 'local', model: 'fixture/custom-model' });
-  assert.deepEqual(socket.sent.findLast(row => row.method === 'thread/start').params, { model: 'fixture/custom-model', modelProvider: 'local', approvalPolicy: 'never', approvalsReviewer: 'user', permissions: ':danger-full-access', elpisPermissionSource: 'default' }, 'a new chat starts in the default mode, Full access');
+  assert.deepEqual(socket.sent.findLast(row => row.method === 'thread/start').params, { model: 'fixture/custom-model', modelProvider: 'local', approvalPolicy: 'never', approvalsReviewer: 'user', permissions: ':danger-full-access', elpisPermissionSource: 'default', config: defaultMcpConfig(configRead) }, 'a new chat starts in the default mode, Full access');
   // Reflect the native thread/read route rather than trusting the renderer's selection.
   threads.get(CREATED).modelProvider = 'local'; threads.get(CREATED).model = 'fixture/custom-model';
   await client.send(CREATED, { text: 'follow-up', model: 'fixture/custom-model' });
@@ -1806,7 +2126,7 @@ test('settings expose supported fields; providers require configured identity an
   await assert.rejects(client.createThread({ provider: 'local' }), /model for this provider/);
   assert.equal(socket.sent.filter(message => message.method === 'thread/start').length, 0);
   await client.createThread({ provider: 'local', model: 'remote-model' });
-  assert.deepEqual(socket.sent.find(message => message.method === 'thread/start').params, { model: 'remote-model', modelProvider: 'local', approvalPolicy: 'never', approvalsReviewer: 'user', permissions: ':danger-full-access', elpisPermissionSource: 'default' });
+  assert.deepEqual(socket.sent.find(message => message.method === 'thread/start').params, { model: 'remote-model', modelProvider: 'local', approvalPolicy: 'never', approvalsReviewer: 'user', permissions: ':danger-full-access', elpisPermissionSource: 'default', config: defaultMcpConfig(configRead) });
   requirementsRead.requirements = { modelProvider: 'openai', modelProviders: { local: { name: 'Managed', api_key: 'PRIVATE CONFIG SECRET' } } };
   await assert.rejects(client.createThread({ provider: 'local', model: 'remote-model' }), /restricted/);
   assert.equal(socket.sent.filter(message => message.method === 'thread/start').length, 1);
