@@ -128,6 +128,9 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
           decision.status = 'not_delivered'; decision.reasons = 'The desktop stopped before Mother’s guidance could be delivered.';
         }
       }
+      if (ended.has(record.status) && !alive(record.ownerPid) && ['running', 'reviewing'].includes(record.mother?.status)) {
+        record.mother.status = 'cancelled';
+      }
       records.set(record.id, record);
     }
   })();
