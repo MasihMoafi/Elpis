@@ -1192,6 +1192,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .canvas-edge-cut .canvas-chevron { stroke:var(--destructive); }
 .canvas-board .react-flow__edge-path { stroke-width:1.6; }
 .canvas-board .react-flow__controls-button { width:var(--control-h); height:var(--control-h); }
+.canvas-board .react-flow__controls-button svg { width:var(--icon-size); height:var(--icon-size); }
 /* No group rectangle after a box selection (Fusion and Slate have none): it sat over the agents, took the next click and
    dragged the whole group. Dragging any selected agent still moves them all. */
 .canvas-board .react-flow__nodesselection { display:none; }
