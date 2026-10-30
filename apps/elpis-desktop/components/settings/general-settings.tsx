@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -11,8 +11,29 @@ import { useSaver } from "@/components/settings/use-saver";
 import { ConfigChoice, SettingsLoader } from "@/components/settings/config-choice";
 import { SystemSettings } from "@/components/settings/system-settings";
 import { ProfileFields } from "@/components/profile-fields";
+import { readWorkflowConcurrency, saveWorkflowConcurrency } from "@/lib/workflow-concurrency";
 
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
+
+function WorkflowConcurrency() {
+  const [setting, setSetting] = useState<Awaited<ReturnType<typeof readWorkflowConcurrency>> | null>(null);
+  const [busy, setBusy] = useState(false), [error, setError] = useState("");
+  useEffect(() => {
+    let active = true;
+    void readWorkflowConcurrency().then(value => { if (active) setSetting(value); }).catch(cause => { if (active) setError(message(cause)); });
+    return () => { active = false; };
+  }, []);
+  async function save(value: string) {
+    setBusy(true); setError("");
+    try { setSetting(await saveWorkflowConcurrency(Number(value))); }
+    catch (cause) { setError(message(cause)); }
+    finally { setBusy(false); }
+  }
+  return <SettingRow title="Workflow agents at once" description="Maximum agents running together. New workflows use this limit.">
+    {setting ? <Choice label="Workflow agents at once" value={String(setting.value)} options={setting.choices.map(value => ({ value: String(value), label: String(value) }))} disabled={busy} onChange={value => void save(value)} /> : <span className="text-sm">{error ? "Unavailable" : "Loading…"}</span>}
+    {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+  </SettingRow>;
+}
 
 /** Where chats started outside a project run. The desktop app picks and checks the folder natively. */
 function DefaultFolder({ folder, onSave }: { folder: string; onSave: (folder: string) => void }) {
@@ -83,6 +104,7 @@ export function GeneralSettings() {
       <SettingRow title="Show workflows in the sidebar" description="List each workflow's chats in the sidebar, folded under the workflow. Off hides the section; the Workflows page keeps every run.">
         <Switch aria-label="Show workflows in the sidebar" checked={preferences.sidebarWorkflows} onCheckedChange={sidebarWorkflows => save({ sidebarWorkflows })} />
       </SettingRow>
+      <WorkflowConcurrency />
       <SettingRow title="Confirm before deleting chats" description="Ask before Delete or D removes chats. “Don’t show me this again” turns this off.">
         <Switch aria-label="Confirm before deleting chats" checked={preferences.confirmDeleteChats} onCheckedChange={confirmDeleteChats => save({ confirmDeleteChats })} />
       </SettingRow>

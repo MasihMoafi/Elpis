@@ -22,6 +22,7 @@ import { smartPruneDetail } from './smart-prune.mjs';
 import { createLoveSpot } from './love-spot-store.cjs';
 import { createLoveSpotTalk } from './love-spot-talk.mjs';
 import { createMatildaCompanion } from './matilda-companion.mjs';
+import { WORKFLOW_CONCURRENCY_CHOICES, readWorkflowConcurrency, saveWorkflowConcurrency } from './resources/workflow-concurrency.mjs';
 import { createLoveAgents } from './love-agents.mjs';
 import { createDevServers, devServerRequest } from './dev-servers.mjs';
 import { createImprovements } from './improve.mjs';
@@ -353,6 +354,16 @@ export async function startDesktopServer(options = {}) {
         if (url.pathname === '/api/context/switches') return json(response, 200, method === 'GET' ? await client.contextSwitches() : await client.saveContextSwitches(await body(request)));
         if (url.pathname === '/api/hooks') return json(response, 200, method === 'GET' ? await client.hooks() : await client.saveHook(await body(request)));
         if (url.pathname === '/api/memories/reset' && method === 'POST') return json(response, 200, await client.resetMemories(await body(request)));
+        if (url.pathname === '/api/workflows/concurrency' && ['GET', 'POST'].includes(method)) {
+          const home = options.elpisHome ?? elpisHome();
+          if (method === 'POST') {
+            const input = await body(request); object(input, ['value']);
+            if (!WORKFLOW_CONCURRENCY_CHOICES.includes(input.value)) throw new BridgeError('Choose a workflow concurrency from the list.');
+            try { await saveWorkflowConcurrency(home, input.value); } catch { throw new BridgeError('Could not save workflow concurrency.', 503); }
+          }
+          try { return json(response, 200, { value: readWorkflowConcurrency(home), choices: WORKFLOW_CONCURRENCY_CHOICES }); }
+          catch { throw new BridgeError('Could not read workflow concurrency.', 503); }
+        }
         if (url.pathname === '/api/workflows/workspace' && method === 'POST') { object(await body(request), []); return json(response, 200, await workflowWorkspace(options.elpisHome ?? elpisHome())); }
         if (url.pathname === '/api/workflows/history' && method === 'GET') {
           if ([...url.searchParams.keys()].length) throw new BridgeError('Unexpected workflow history parameters');

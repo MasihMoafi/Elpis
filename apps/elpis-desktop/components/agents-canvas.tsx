@@ -26,6 +26,7 @@ import { deleteKeepingFlow } from "@/lib/canvas-delete-flow";
 import { extractAgent, frameBounds, insidePolygon, insertAgent, segmentsCross } from "@/lib/canvas-editing";
 import { executionGraph, linkedIds } from "@/lib/canvas";
 import { api, providerChoices, subscriptionOf, type Entry, type Model, type ProviderSettings, type Thread } from "@/lib/api";
+import { readWorkflowConcurrency } from "@/lib/workflow-concurrency";
 import { useElpisSettings } from "@/lib/settings-store";
 import { appStorage } from "@/lib/projects";
 import { filesText, mergeStops, runPayload, stopText, wantsIsolation } from "@/lib/canvas-isolation";
@@ -537,7 +538,6 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
   const [deleted, setDeleted] = useState<string | null>(null);
   useEffect(() => { if (!deleted) return; const timer = setTimeout(() => setDeleted(null), 4000); return () => clearTimeout(timer); }, [deleted]);
   const [flowEdit, setFlowEdit] = useState<{ edge: CanvasEdge; left: number; top: number } | null>(null);
-  const [maxAtOnce, setMaxAtOnce] = useState(3);
   const [patternCommand, setPatternCommand] = useState<string | null>(null);
   const [adding, setAdding] = useState<Adding | null>(null);
   const [run, setRun] = useState<Run | null>(null), [starting, setStarting] = useState(false);
@@ -1534,12 +1534,17 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
   // The Father's part: his own chat, on her model, told who he is; it starts once hers has succeeded.
   /** The Father's part as the bridge starts it after hers: his chat (her model, the goal and his role as instructions)
    * and his tasks, in worktrees when he has several writers in a git repository. */
+  async function workflowLimit() {
+    if (allowed.atOnce < 1) throw Error("No workflow agents are available for this session.");
+    return Math.min((await readWorkflowConcurrency()).value, allowed.atOnce);
+  }
   async function fatherPart(tasks: RunTask[], current: () => boolean) {
     if (!current()) throw Error(OFFLINE_WORKFLOW);
     const goal = mother.brief.trim(), name = `Father · ${graph.name || "Workflows"}`.slice(0, 120);
     const repository = Boolean(cwd) && !readyMade(graph.planningPattern) && wantsIsolation(tasks) && await api<{ repository?: boolean }>(`/repository?cwd=${encodeURIComponent(cwd!)}`).then(result => result.repository === true, () => false);
     if (!current()) throw Error(OFFLINE_WORKFLOW);
-    const { rootThreadId: _root, name: _name, ...stage } = runPayload("", name, tasks, Math.max(1, Math.min(maxAtOnce, allowed.atOnce)), repository);
+    const limit = await workflowLimit(); if (!current()) throw Error(OFFLINE_WORKFLOW);
+    const { rootThreadId: _root, name: _name, ...stage } = runPayload("", name, tasks, limit, repository);
     return { ...stage, name, thread: { name, instructions: [goal && `Goal of the whole run: ${goal}`, "You are the Father: you run the agents past the Mother's ten, after her part has succeeded, and you report to her."].filter(Boolean).join("\n\n"),
       ...(mother.model ? { model: mother.model, ...(mother.provider ? { provider: mother.provider } : {}) } : {}) } };
   }
@@ -1550,7 +1555,8 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
     if (!current()) throw Error(OFFLINE_WORKFLOW);
     const repository = Boolean(cwd) && !readyMade(graph.planningPattern) && wantsIsolation(tasks) && await api<{ repository?: boolean }>(`/repository?cwd=${encodeURIComponent(cwd!)}`).then(result => result.repository === true, () => false);
     if (!current()) throw Error(OFFLINE_WORKFLOW);
-    return api<{ graphId: string }>("/workflows/run", { ...(graph.template === "recursive" ? { roundLimit: graph.roundLimit } : {}), ...runPayload(rootThreadId, name, tasks, Math.max(1, Math.min(maxAtOnce, allowed.atOnce)), repository), ...(next ? { next } : {}) });
+    const limit = await workflowLimit(); if (!current()) throw Error(OFFLINE_WORKFLOW);
+    return api<{ graphId: string }>("/workflows/run", { ...(graph.template === "recursive" ? { roundLimit: graph.roundLimit } : {}), ...runPayload(rootThreadId, name, tasks, limit, repository), ...(next ? { next } : {}) });
   }
 
   async function start(targets?: string[]) {
@@ -1844,8 +1850,6 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
       <div className="canvas-mother-counts">
         <CountField label="Max agents" value={limit} min={Math.max(1, agents.length)} max={Math.floor(allowed.graph / TASKS_PER_AGENT)} onChange={count => setGraph(current => ({ ...current, maxAgents: count }))}
           why={typed => typed > allowed.graph / TASKS_PER_AGENT ? `Elpis runs at most ${allowed.graph} tasks in a graph: ${Math.floor(allowed.graph / TASKS_PER_AGENT)} agents, each with its check.` : typed < agents.length ? `The graph already has ${agents.length} agents; remove some first.` : "Type a whole number from 1."} />
-        <CountField label="At once" value={Math.min(maxAtOnce, allowed.atOnce)} min={1} max={allowed.atOnce} onChange={setMaxAtOnce}
-          why={typed => typed > allowed.atOnce ? `Elpis allows ${allowed.atOnce} at once here (${allowed.source}).` : "At least 1 has to run."} />
       </div>
       {run && <p className="canvas-help" role="status">{(["running", "succeeded", "pending", "failed", "blocked"] as const).map(status => [status, agents.filter(node => states[node.id]?.status === status).length] as const).filter(([, count]) => count).map(([status, count]) => `${count} ${STATUS_LABEL[status]}`).join(" · ") || "Starting…"}</p>}
       {split.father.length > 0 && <p className="canvas-help" role="note">The Father runs {split.father.length} more {split.father.length === 1 ? "agent" : "agents"} in his own chat once her part has succeeded, and reports to her{run?.father ? `: ${run.father.threadId ? STATUS_LABEL[(run.father.status as TaskStatus)] ?? run.father.status : run.father.status === "cancelled" ? "not started, her part failed" : "waiting for her part"}` : "."}</p>}

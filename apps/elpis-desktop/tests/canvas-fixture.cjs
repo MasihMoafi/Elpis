@@ -31,6 +31,7 @@ async function openCanvas({ width = 1440, height = 900, repository = false, grap
     if (req.method === 'POST' && url.pathname !== '/api/session') posts.push({ path: url.pathname, body: raw ? JSON.parse(raw) : null });
     if (url.pathname === '/api/events') { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write('event: connection\ndata: {"connected":true}\n\n'); return; }
     if (url.pathname === '/api/health') return json({ connected: true });
+    if (url.pathname === '/api/workflows/concurrency') return json({ value: 4, choices: [1, 2, 3, 4] });
     if (url.pathname === '/api/models' && providerModels[url.searchParams.get('provider')]) {
       const offered = providerModels[url.searchParams.get('provider')];
       return json({ data: typeof offered === 'function' ? await offered() : offered, nextCursor: null });
