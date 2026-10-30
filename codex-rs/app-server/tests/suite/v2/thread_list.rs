@@ -1262,6 +1262,65 @@ async fn thread_list_relation_filters_reject_invalid_requests() -> Result<()> {
 }
 
 #[tokio::test]
+async fn thread_list_imports_desktop_helper_ancestry() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    create_minimal_config(codex_home.path())?;
+    let parent_id = create_fake_rollout(
+        codex_home.path(),
+        "2025-02-01T10-00-00",
+        "2025-02-01T10:00:00Z",
+        "Parent",
+        Some("mock_provider"),
+        /*git_info*/ None,
+    )?;
+    let child_id = create_fake_rollout_with_source(
+        codex_home.path(),
+        "2025-02-01T11-00-00",
+        "2025-02-01T11:00:00Z",
+        "Helper",
+        Some("mock_provider"),
+        /*git_info*/ None,
+        CoreSessionSource::AppServer,
+    )?;
+    fs::write(
+        codex_home.path().join("desktop-spawn-links.json"),
+        serde_json::to_vec(&HashMap::from([(child_id.clone(), parent_id.clone())]))?,
+    )?;
+
+    let mut mcp = init_mcp(codex_home.path()).await?;
+    let request_id = mcp
+        .send_thread_list_request(codex_app_server_protocol::ThreadListParams {
+            cursor: None,
+            limit: Some(10),
+            sort_key: None,
+            sort_direction: None,
+            model_providers: Some(vec!["mock_provider".to_string()]),
+            source_kinds: Some(vec![ThreadSourceKind::AppServer]),
+            originators: None,
+            archived: Some(false),
+            section_id: None,
+            project_id: None,
+            cwd: None,
+            use_state_db_only: false,
+            search_term: None,
+            parent_thread_id: None,
+            ancestor_thread_id: Some(parent_id.clone()),
+        })
+        .await?;
+    let response: ThreadListResponse =
+        timeout(DEFAULT_READ_TIMEOUT, mcp.read_jsonrpc_response(request_id)).await??;
+
+    assert_eq!(response.data.len(), 1);
+    assert_eq!(response.data[0].id, child_id);
+    assert_eq!(
+        response.data[0].parent_thread_id.as_deref(),
+        Some(parent_id.as_str())
+    );
+    assert_eq!(response.data[0].source, SessionSource::AppServer);
+    Ok(())
+}
+
+#[tokio::test]
 async fn thread_list_empty_source_kinds_defaults_to_interactive_only() -> Result<()> {
     let codex_home = TempDir::new()?;
     create_minimal_config(codex_home.path())?;
