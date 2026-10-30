@@ -24,10 +24,14 @@ const rows = Array.from({ length: 8 }, (_, i) =>
   `T10_ROW_${String(i).padStart(2, '0')} Alpha bravo charlie delta echo foxtrot golf hotel 界 india juliet kilo lima.`);
 
 function verify(screen, expected) {
+  let previous = -1;
   for (const row of expected) {
     const marker = row.slice(0, 10);
     assert.equal(screen.split(marker).length - 1, 1, `${marker} must appear once`);
     assert(screen.includes(row), `${marker} text was split or altered`);
+    const position = screen.indexOf(marker);
+    assert(position > previous, `${marker} appeared out of order`);
+    previous = position;
   }
 }
 
@@ -47,13 +51,14 @@ async function runCase(mode, light) {
   const tm = (...args) => execFileSync('tmux', ['-f', '/dev/null', '-S', socket, ...args], {
     env, encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'pipe'],
   });
-  const capture = ansi => tm('capture-pane', '-p', '-N', ...(ansi ? ['-e'] : []), '-t', 'check');
+  const capture = (ansi, history = false) => tm('capture-pane', '-p', '-N',
+    ...(history ? ['-S', '-2000', '-J'] : []), ...(ansi ? ['-e'] : []), '-t', 'check');
   const key = value => tm('send-keys', '-t', 'check', value);
   const literal = value => tm('send-keys', '-t', 'check', '-l', value);
-  const save = name => {
-    const screen = capture(false);
+  const save = (name, history = false) => {
+    const screen = capture(false, history);
     fs.writeFileSync(path.join(output, `${label}-${name}.txt`), screen);
-    fs.writeFileSync(path.join(output, `${label}-${name}.ansi`), capture(true));
+    fs.writeFileSync(path.join(output, `${label}-${name}.ansi`), capture(true, history));
     return screen;
   };
   const deadline = Date.now() + 90_000;
@@ -175,10 +180,12 @@ async function runCase(mode, light) {
     await until(() => streamDone && capture(false).includes('T10_ROW_07') && !capture(false).includes('esc to interrupt'), 'completed transcript');
     await pause(300);
     const final = save('final');
-    verify(final, rows);
+    const transcript = mode === 'inline' ? save('history', true) : final;
+    verify(transcript, rows);
+    if (mode === 'inline') verify(final, rows.slice(4));
     assert(final.includes('CONTEXT LEDGER'), `${label}: Ledger did not reopen`);
-    assert.throws(() => verify(final.replace(rows[3], rows[3].replace('bravo', 'brXavo')), rows), 'oracle must reject altered text');
-    assert.throws(() => verify(`${final}\n${rows[3]}`, rows), 'oracle must reject duplicate text');
+    assert.throws(() => verify(transcript.replace(rows[3], rows[3].replace('bravo', 'brXavo')), rows), 'oracle must reject altered text');
+    assert.throws(() => verify(`${transcript}\n${rows[3]}`, rows), 'oracle must reject duplicate text');
     assert.equal(requests.length, 2, `${label}: expected a tool call and final reply`);
     assert.ifError(providerError);
     console.log(`PASS ${label}: streamed rows, resize, Ledger reopen, and corruption controls`);
