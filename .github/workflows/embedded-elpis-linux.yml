@@ -8,7 +8,7 @@ on:
         required: true
         default: full
         type: choice
-        options: [check, ui, full, build, focused, repaint]
+        options: [check, ui, full, build, focused, repaint, repaint-inspect]
       runtime_run:
         description: 'Run containing the native runtime for the repaint probe'
         required: false
@@ -33,6 +33,34 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  tui-repaint-inspect:
+    if: github.event_name == 'workflow_dispatch' && inputs.verification == 'repaint-inspect'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Download hosted repaint captures
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: t10-tmux-repaint
+          path: captures
+          run-id: ${{ inputs.runtime_run }}
+          github-token: ${{ github.token }}
+      - name: Show capture checkpoints
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          files = sorted(Path('captures').rglob('*.txt'))
+          if not files:
+              raise SystemExit('repaint captures were not found')
+          for path in files:
+              print(f'--- {path.name} ---')
+              lines = path.read_text(errors='replace').splitlines()
+              selected = [line for line in lines if 'LEDGER' in line or 'T10_ROW_' in line or 'T10_TOOL' in line]
+              for line in (selected or lines[:6]):
+                  print(line[:220])
+          PY
+
   tui-repaint:
     if: github.event_name == 'workflow_dispatch' && inputs.verification == 'repaint'
     runs-on: ubuntu-24.04
