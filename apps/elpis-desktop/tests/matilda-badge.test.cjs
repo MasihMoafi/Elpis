@@ -21,9 +21,11 @@ for (const colorScheme of ['light', 'dark']) test(`an answer read in her small c
   const evidence = path.join(process.env.ELPIS_SHOTS || require('node:os').tmpdir(), `matilda-badge-${colorScheme}.png`);
   await page.screenshot({ path: evidence });
   assert.equal(await page.locator('.love-unread').count(), 0, 'he read her answer in her small chat: no unread badge');
+  assert.equal(await page.locator('aside .thread-dot[data-state="unread"]').count(), 0, 'and no unread dot on her row in the sidebar');
   await page.keyboard.press('Escape'); await mini.waitFor({ state: 'hidden' });
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await page.waitForTimeout(500);
   assert.equal(await page.locator('.love-unread').count(), 0, 'and it does not come back after the chat closes');
+  assert.equal(await page.locator('aside .thread-dot[data-state="unread"]').count(), 0, 'nor does the dot on her row');
   assert.deepEqual(f.errors, []);
 });

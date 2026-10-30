@@ -95,6 +95,7 @@ import { TaskList, type TaskPlan } from "@/components/task-list";
 import { chatOrigin, originLabel } from "@/lib/love-activity";
 import { useLoveActivity } from "@/lib/use-love-activity";
 import { LOVE_SPOT_AUDIO } from "@/lib/love-spot-audio";
+import { MATILDA_CHAT_SHOWN } from "@/lib/matilda";
 import { useScreenshotPopup } from "@/lib/use-screenshot-popup";
 import { AgentsCanvas } from "@/components/agents-canvas";
 import { WorkflowChat } from "@/components/workflow-chat";
@@ -428,6 +429,14 @@ export default function Home() {
     : undefined;
   const viewRef = useRef(view); viewRef.current = view;
   const loveThreadsRef = useRef(loveActivity.threads); loveThreadsRef.current = loveActivity.threads;
+  const matildaChatShown = useRef(false);
+  useEffect(() => {
+    const shown = (event: Event) => {
+      matildaChatShown.current = (event as CustomEvent<boolean>).detail === true;
+      if (matildaChatShown.current) setAttention(previous => ({ ...previous, unread: previous.unread.filter(id => chatOrigin(threadsRef.current.find(thread => thread.id === id) ?? { id }, loveThreadsRef.current) !== "Love Spot") }));
+    };
+    window.addEventListener(MATILDA_CHAT_SHOWN, shown); return () => window.removeEventListener(MATILDA_CHAT_SHOWN, shown);
+  }, [setAttention]);
   useEffect(() => {
     if (view !== "canvas" || !ready || !connected || workflowProject || workflowSandbox) return;
     let current = true;
@@ -772,7 +781,7 @@ export default function Home() {
           if (threadId && method === "item/completed" && params.item?.type === "plan") planTurns.current.set(threadId, params.turnId);
           if (threadId && method === "turn/completed" && !completedTurns.current.has(params.turn.id) && params.turn.status === "completed" && !params.turn.error && !isAgentRun(threadsRef.current.find(thread => thread.id === threadId) ?? {})) {
             // A reply is read when it is on screen: in its open chat, or on the open Love Spot board for a Love Spot chat.
-            const unread = viewRef.current === "loveSpot" ? chatOrigin(threadsRef.current.find(thread => thread.id === threadId) ?? { id: threadId }, loveThreadsRef.current) !== "Love Spot"
+            const unread = viewRef.current === "loveSpot" || matildaChatShown.current ? chatOrigin(threadsRef.current.find(thread => thread.id === threadId) ?? { id: threadId }, loveThreadsRef.current) !== "Love Spot"
               : selectedRef.current?.id !== threadId || viewRef.current !== "chat";
             const planReady = planTurns.current.get(threadId) === params.turn.id || params.turn.items?.some((item: Item) => item.type === "plan");
             setAttention(previous => ({
