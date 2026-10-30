@@ -63,6 +63,16 @@ test('rate limits have no overload switch; unsafe input explains why retry is un
   await card(page).waitFor();
 }));
 
+test('quota reset time is readable and changing the composer model clears the stale card', () => using(async ({ page, fail }) => {
+  await fail({ message: 'Gemini (ACP) error: Individual quota reached. Resets in 17h3m6s.', codexErrorInfo: 'usageLimitExceeded' });
+  const notice = card(page);
+  await notice.getByText('Gemini (ACP) error: Individual quota reached. Resets in 17 hours, 3 minutes, and 6 seconds.', { exact: true }).waitFor();
+  await page.getByRole('combobox', { name: 'Model' }).click();
+  await page.getByRole('option', { name: /GPT-6-Luna/ }).click();
+  await eventually(async () => assert.equal(await card(page).count(), 0));
+  assert.equal(await page.getByRole('combobox', { name: 'Model' }).getAttribute('data-value'), 'gpt-6-luna');
+}));
+
 test('a refused retry shows the refusal and allows another deliberate attempt', () => using(async ({ page, fail }) => {
   await fail({ message: 'Disconnected.', codexErrorInfo: 'other' });
   const notice = card(page); await notice.getByRole('button', { name: 'Try again', exact: true }).click();
