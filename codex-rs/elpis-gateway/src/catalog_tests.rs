@@ -33,7 +33,8 @@ fn anthropic_models_are_read_from_the_listing() {
     assert_eq!(models[0].description.as_deref(), Some("≈1000k context"));
     assert_eq!(models[1].context_window, Some(200_000));
     assert_eq!(models[1].max_context_window, Some(200_000));
-    assert!(models[0].supported_reasoning_levels.is_empty());
+    assert!(!models[0].supported_reasoning_levels.is_empty());
+    assert!(!models[1].supported_reasoning_levels.is_empty());
 }
 
 #[test]
