@@ -12,12 +12,14 @@ Next 16 static export (`app/page.tsx` is the one page shell), React 19, Tailwind
 | --- | --- |
 | Colour | `--canvas` `--ink` `--background` `--foreground` `--card` `--border` `--hairline` `--hover` `--selected` `--muted-foreground` `--subtle-foreground` `--destructive` |
 | Accent | `--primary` (set by `data-accent`: amber default, blue, teal, green, violet, rose, orange), `--accent-text` |
-| Type | `--text-small` (12 px, the floor), `--mono`, `--serif`, `--ui-font`; labels: `.hud-label` (mono, caps, .14em) |
+| Type | three sizes, as ChatGPT: `--text-xs` 12 (`--text-small`, the floor), `--text-sm` 13, `--text-base` 14 (Tailwind `text-xs/sm/base` read them); one family `--ui-font` (`--serif` is the same face); `--mono` for code and `.hud-label` only |
+| Size | `--icon-size` 16 (one per row), `--control-h` 28 (composer row), `--header-h` 52; pages `--page-pad`, `--page-content-width` 860, `--page-head-gap` 20, `--page-section-gap` 24 |
 | Shape | `--cut-sm` 4 px, `--cut` 7 px, `--cut-lg` 10 px; `.hud-cut` on controls, `.hud-cut-sm` on controls 24 px or less, `--cut-lg` on panels. Round only dots, rings, switches |
 | Motion | `--motion-fast` .12 s, `--motion` .2 s, `--ease` |
 
 ### The chat thread follows the ChatGPT app
 `specs/chatgpt-chat-style.md` holds every measured value of ChatGPT's thread (column, insets, edge fades, bubble, reply type, fold row, actions, prompt rail, composer, scroll button). The thread's tokens (`--thread-tertiary`, `--thread-hairline`, `--thread-inset`, `--thread-edge-fade`, `--shadow-xl`) carry them; change a value there and in the spec together. The Elpis marks stay: your messages are bevelled cards with the gold right edge (Masih, 29 Oct: "That needs to come back.") (29 Oct, Masih: "map every style feature of chatgpt app into a clear spec that's reusable and make our design match it").
+Its "Shared scale" section carries the same scale to every page (the Size and Type rows above): a new text size, icon size, control height or page gap uses a token, never a literal. The composer keeps the Elpis bevel and the gold focus edge; its surface sits one step above the chat (`--composer`, `--composer-edge`, `--elevation-composer`).
 
 ## 3. Primitives (`components/ui`): use, do not re-make
 `button` (variants: default, outline, secondary, ghost, destructive, link; sizes: xs, sm, default, lg, icon, icon-xs, icon-sm, icon-lg), `input`, `textarea`, `search-field`, `switch`, `alert-dialog`, `dropdown-menu`, `context-menu`, `popover`, `tooltip`, `select`, `combobox`, `option-select`, `disclosure-summary`, `menu-row` (a row of a menu whose owner drives its own keys: the look of a dropdown item).

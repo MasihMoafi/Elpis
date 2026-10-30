@@ -31,7 +31,7 @@ test('Appearance offers the reading options; Large, Wide and Serif change the tr
   try {
     await f.open('chat-a');
     const before = { text: await style(reply(page), 'fontSize'), prompt: await style(prompt(page), 'fontSize'), column: await style(page.locator('.chat-content'), 'maxWidth'), composer: await style(page.locator('.composer'), 'maxWidth'), box: await style(page.locator('.composer textarea'), 'fontSize'), sidebar: await style(page.locator('aside.sidebar .thread-title'), 'fontFamily') };
-    assert.deepEqual([before.text, before.column, before.composer], ['14.5px', '740px', '740px'], 'the defaults are today’s look');
+    assert.deepEqual([before.text, before.column, before.composer], ['14px', '740px', '740px'], 'the defaults are today’s look');
     assert.match(before.sidebar, /^Inter, system-ui/);
     const settings = await appearance(page);
     const size = settings.getByRole('radiogroup', { name: 'Transcript text size' }), width = settings.getByRole('radiogroup', { name: 'Transcript width' }), font = settings.getByRole('radiogroup', { name: 'Interface font' });
@@ -65,7 +65,7 @@ test('Appearance offers the reading options; Large, Wide and Serif change the tr
     await again.getByRole('radiogroup', { name: 'Transcript text size' }).getByRole('radio', { name: 'Small' }).click();
     await again.getByRole('radiogroup', { name: 'Transcript width' }).getByRole('radio', { name: 'Medium' }).click();
     await leaveSettings(page);
-    assert.equal(await style(reply(page), 'fontSize'), '13.5px');
+    assert.equal(await style(reply(page), 'fontSize'), '13px');
     assert.equal(await style(page.locator('.chat-content'), 'maxWidth'), '900px');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }

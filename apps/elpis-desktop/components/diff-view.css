@@ -1,7 +1,7 @@
 /* A diff's lines and its +N −M (components/diff-view.tsx): the Changes tab and the edit rows in the chat share them. Colours
    come from the app's own success and destructive tokens, so both themes follow. */
 .change-counts .add { color:var(--success); } .change-counts .del { color:var(--destructive); }
-.change-counts { flex-shrink:0; font:12px/1 var(--mono); color:var(--muted-foreground); white-space:nowrap; }
+.change-counts { flex-shrink:0; font:var(--text-xs)/1 var(--mono); color:var(--muted-foreground); white-space:nowrap; }
 .diff-body { flex:1; min-height:0; overflow:auto; padding-bottom:12px; font:var(--code-size, 12px)/1.6 var(--mono); }
 .diff-lines { width:100%; min-width:0; }  /* Shared width keeps wrapped lines and their colours within the pane. */
 .diff-line { display:grid; grid-template-columns:44px 44px 16px minmax(0, 1fr); }
