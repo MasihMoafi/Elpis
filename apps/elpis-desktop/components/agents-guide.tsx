@@ -40,7 +40,7 @@ const topics = [
 ];
 
 export function AgentsGuideLink({ onOpen }: { onOpen: () => void }) {
-  return <Button variant="ghost" size="sm" onClick={onOpen}><BookOpen size={14} />Guide to managing agents</Button>;
+  return <Button variant="ghost" size="sm" aria-label="Guide to managing agents" onClick={onOpen}><BookOpen size={14} /><span className="canvas-guide-wide">Guide to managing agents</span><span className="canvas-guide-short">Guide</span></Button>;
 }
 
 export function AgentsGuide({ onBack }: { onBack: () => void }) {

@@ -1084,6 +1084,13 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .canvas-template:focus-visible { outline:1.5px solid var(--ring); }
 .canvas-template small { color:var(--muted-foreground); font-size:var(--text-xs); line-height:1.35; }
 .canvas-toolbar { flex:none; display:flex; flex-wrap:wrap; justify-content:center; align-items:center; gap:2px; padding:5px 8px; border-top:1px solid var(--hairline); background:var(--card); }
+.canvas-guide-short { display:none; }
+@container agents-canvas (min-width:700px) and (max-width:900px) {
+  .canvas-toolbar { flex-wrap:nowrap; }
+  .canvas-toolbar kbd { display:none; }
+  .canvas-guide-wide { display:none; }
+  .canvas-guide-short { display:inline; }
+}
 .canvas-kind { width:9px; height:9px; border-radius:2px; background:var(--kind); }
 .canvas-toolbar-label { padding:0 6px 0 8px; line-height:1; color:var(--muted-foreground); }
 .canvas-toolbar-more { border-inline-start:1px solid var(--hairline); }

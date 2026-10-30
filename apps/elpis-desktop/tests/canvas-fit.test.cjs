@@ -1,9 +1,31 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
+const path = require('node:path');
 const { openCanvas } = require('./canvas-fixture.cjs');
 const { uiFit, assertUiFit } = require('./ui-fit.cjs');
 const { chooseTheme, openPatterns } = require('./controls.cjs');
+
+for (const theme of ['light', 'dark']) test(`the 1100px Workflows toolbar stays on one row above its bottom alert (${theme})`, async () => {
+  const f = await openCanvas({ width: 1100, height: 750 }); const { page, canvas } = f;
+  try {
+    if (await page.locator('html').evaluate(el => el.classList.contains('dark')) !== (theme === 'dark')) await chooseTheme(page, theme);
+    await page.evaluate(() => {
+      const notice = document.createElement('div'); notice.className = 'canvas-notice canvas-error-notice'; notice.setAttribute('role', 'alert');
+      notice.innerHTML = '<div class="canvas-error-details">The workflow stopped. Review the failed agent and run it again.</div>';
+      document.querySelector('.agents-canvas').append(notice);
+    });
+    const toolbar = await canvas.locator('.canvas-toolbar').boundingBox(), notice = await canvas.locator('.canvas-error-notice').boundingBox(), bounds = await canvas.boundingBox();
+    assert.ok(toolbar.height <= 44, `toolbar is one row, not ${Math.round(toolbar.height)}px`);
+    await assertUiFit(canvas.locator('.canvas-toolbar'), '1100px toolbar');
+    assert.ok(bounds.y + bounds.height - notice.y - notice.height >= 5, 'the alert keeps its normal bottom gap');
+    if (process.env.ELPIS_POLISH_SHOTS) {
+      await fs.mkdir(process.env.ELPIS_POLISH_SHOTS, { recursive: true });
+      await page.screenshot({ path: path.join(process.env.ELPIS_POLISH_SHOTS, `06-workflows-1100-${theme}.png`) });
+    }
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
 
 for (const [width, height] of [[1280, 800], [900, 700]]) for (const theme of ['light', 'dark']) test(`text fits in both views, Add and settings: ${width}×${height} ${theme}`, async () => {
   const f = await openCanvas({ width, height }); const { page, canvas } = f;
