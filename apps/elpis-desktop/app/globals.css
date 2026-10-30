@@ -128,7 +128,7 @@ button:disabled { cursor:not-allowed; }
 .app-shell { display:grid; grid-template-columns:var(--sidebar-width, 256px) minmax(0,1fr); height:100dvh; overflow:hidden; background:var(--background); color:var(--foreground); }
 .sidebar { position:relative; background:var(--sidebar); border-right:1px solid var(--hairline); display:flex; flex-direction:column; min-height:0; padding:10px 8px 8px; gap:6px; }
 .brand { font-size:var(--text-base); font-weight:600; letter-spacing:-.01em; padding:4px 8px 8px; display:flex; align-items:center; gap:8px; }
-.nav-list { display:grid; gap:1px; min-height:0; overflow-y:auto; }
+.nav-list { display:grid; gap:2px; min-height:0; overflow-y:auto; }
 /* Navigation rows: the sidebar's and Settings' (which takes the sidebar's place) are one item. */
 .nav-list button, .settings-nav button[role="tab"], .back-link { justify-content:flex-start; width:100%; gap:8px; height:34px; padding:0 8px; border:0; background:none; color:var(--foreground); font-size:var(--text-sm); font-weight:450; text-align:left; }
 .nav-list button:hover, .settings-nav button[role="tab"]:hover, .back-link:hover { background:var(--hover); }
@@ -462,8 +462,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .settings-mode .settings-page > :is([role="tabpanel"], .settings-page-header, .settings-group) { max-width:var(--settings-content-width); margin-inline:auto; }
 /* "Back to app" and "Back to Agents": one back row, its arrow on the content's left edge. */
 .settings-title { margin:10px 8px 4px; font:500 var(--text-base)/1.3 var(--serif); }
-.settings-nav [role="tablist"] { display:grid; gap:1px; }
-.settings-nav-group { display:grid; gap:1px; }
+.settings-nav [role="tablist"] { display:grid; gap:2px; }
+.settings-nav-group { display:grid; gap:2px; }
 .settings-nav-empty { padding:8px; font-size:var(--text-xs); color:var(--muted-foreground); }
 .settings-nav { display:grid; align-content:start; gap:2px; position:sticky; top:0; }
 /* Keep all settings destinations visible at desktop heights; very short windows retain scrolling. */
@@ -575,7 +575,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 /* Chat with its agents beside it (Cloudroom split). */
 .chat-split { display:flex; flex:1; min-height:0; }
 .chat-split > .chat-view { flex:1; min-width:0; }
-.team-panel { width:300px; flex-shrink:0; border-left:1px solid var(--hairline); background:var(--sidebar); overflow:auto; padding:10px 8px; display:flex; flex-direction:column; gap:1px; }
+.team-panel { width:300px; flex-shrink:0; border-left:1px solid var(--hairline); background:var(--sidebar); overflow:auto; padding:10px 8px; display:flex; flex-direction:column; gap:2px; }
 .team-heading { display:flex; align-items:baseline; justify-content:space-between; gap:8px; padding:4px 8px 10px; font-size:var(--text-sm); font-weight:600; }
 .team-heading small { font-size:var(--text-small); font-weight:450; color:var(--subtle-foreground); }
 .team-row { display:grid; grid-template-columns:16px minmax(0,1fr); column-gap:8px; align-items:center; text-align:left; padding:6px 8px; border:0; background:none; color:var(--foreground); }
@@ -1111,7 +1111,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .quick-add > .quick-add-list { flex:0 1 auto; min-height:60px; }
 .quick-add-title { display:flex; justify-content:space-between; gap:8px; }
 .quick-add-title span:last-child:not(:first-child) { text-transform:none; letter-spacing:0; font-family:inherit; font-size:var(--text-xs); }
-.quick-add-list { display:grid; gap:1px; max-height:300px; overflow:auto; }
+.quick-add-list { display:grid; gap:2px; max-height:300px; overflow:auto; }
 .quick-add-plan { display:flex; flex-wrap:wrap; gap:4px 6px; margin:0; padding:0 4px; font-size:var(--text-xs); color:var(--muted-foreground); }
 .quick-add-plan b { color:var(--foreground); font-weight:600; }
 .quick-add-plan span:not(:first-child)::before, .quick-add-plan b + span::before { content:"· "; }
