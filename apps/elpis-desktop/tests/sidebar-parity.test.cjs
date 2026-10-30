@@ -94,7 +94,7 @@ test('every project header has a "+" that starts a new chat in that project', as
 });
 
 test('sidebar rows share one height, one icon edge and an arrowless thin scrollbar', async () => {
-  const f = await openFixture(); const { page } = f;
+  const f = await fixture(); const { page } = f;
   try {
     const heights = await page.locator('.nav-list button, .section-label-row, .sidebar-group-row, .thread-row').evaluateAll(rows => [...new Set(rows.filter(row => row.getBoundingClientRect().height > 0).map(row => Math.round(row.getBoundingClientRect().height)))]);
     assert.deepEqual(heights, [34]);

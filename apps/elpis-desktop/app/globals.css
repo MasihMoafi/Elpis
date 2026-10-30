@@ -281,7 +281,7 @@ button:disabled { cursor:not-allowed; }
 .dictation-buttons { display:flex; flex-shrink:0; align-items:center; }
 .dictation-status { font-size:var(--text-small); color:var(--muted-foreground); overflow-wrap:anywhere; line-height:1.4; }
 .dictation-error { color:var(--destructive); }
-.composer textarea { field-sizing:fixed; border:0; box-shadow:none; background:transparent; min-height:22px; line-height:22px; max-height:240px; resize:none; font-size:var(--text-base); padding:0; }
+.composer textarea { field-sizing:content; height:22px; border:0; box-shadow:none; background:transparent; min-height:22px; line-height:22px; max-height:240px; resize:none; font-size:var(--text-base); padding:0; }
 .dark .composer textarea { background:transparent; }
 .composer textarea:focus-visible { outline:none; box-shadow:none; }
 .composer-controls { --composer-control-gap:8px; display:flex; flex-wrap:nowrap; align-items:center; justify-content:space-between; gap:8px; margin-top:4px; }

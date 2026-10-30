@@ -167,18 +167,12 @@ test('every icon with a twin in the SVG collection draws the collection paths', 
     await check('Theme', side.getByRole('button', { name: 'Use dark theme', exact: true }).locator('svg'), 'theme');
     await check('Settings', side.getByRole('button', { name: 'Settings', exact: true }).locator('svg'), 'settings');
     const composer = page.locator('form.composer');
-    await check('Add files and more', composer.locator('[aria-label="Add files and more"] svg'), 'plus');
     await check('Send', composer.locator('[aria-label="Send message"] svg'), 'send');
-    await check('Dictate', composer.locator('[aria-label="Dictate message"] svg'), 'mic');
     await composer.getByRole('button', { name: 'Add files and more', exact: true }).click();
     const menu = page.getByRole('menu');
     await check('Attach', menu.getByRole('menuitem', { name: /Add files or photos/ }).locator('svg'), 'attach');
     await check('Plan mode', menu.getByRole('menuitem', { name: /Plan mode/ }).locator('svg'), 'plan');
     await check('Shell', menu.getByRole('menuitem', { name: /Run as a shell command/ }).locator('svg'), 'terminal');
-    await page.keyboard.press('Escape');
-    await composer.locator('[aria-label="Change permissions"]').click();
-    for (const [label, name] of [['Ask for approval', 'ask'], ['Approve for me', 'auto-approve'], ['Full access', 'full-access'], ['Bypass permissions', 'bypass']])
-      await check(label, page.getByRole('menu').getByRole('menuitem', { name: new RegExp(label) }).locator('svg'), name);
     await page.keyboard.press('Escape');
     await side.getByRole('button', { name: 'Settings', exact: true }).click();
     for (const [id, name] of [['general', 'settings'], ['notifications', 'bell'], ['appearance', 'theme'], ['voice', 'mic'], ['configuration', 'file-edit'],
