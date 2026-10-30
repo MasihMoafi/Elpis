@@ -9,7 +9,8 @@ import { PROTOCOL, keepPersona, savedPersona } from "@/lib/matilda";
 import { appStorage } from "@/lib/projects";
 
 /** How long the board stays quiet before she looks at what was written or drawn (ms). */
-const QUIET = 4000;
+const QUIET = 300;
+const RETRY = 250;
 // Notes still waiting for her, per board page, outlive the board: leaving Love Spot unmounts it (27 Oct: a note written
 // just before leaving was never answered).
 const PENDING = "elpis-matilda-pending-v1";
@@ -34,7 +35,7 @@ export function useMatilda({ ready, context, told, send, onError }: {
   // What she would be told now; the editor is already gone when the board unmounts.
   const waiting = useRef("");
   useEffect(() => { generation.current++; ids.current.clear(); clearTimeout(timer.current); }, [context]);
-  /** Asks the bridge whether she is still writing, once a second while she is: no stream stays open, because each window's streams share the browser's six connections. */
+  /** Fallback when the shared live conversation stream disconnects. */
   const ask = useCallback(async () => {
     if (!mounted.current) return;
     clearTimeout(asking.current);
@@ -46,13 +47,14 @@ export function useMatilda({ ready, context, told, send, onError }: {
       // An error left from an earlier visit is not news.
       if (said.current !== null && state.error && state.error !== said.current) latest.current.onError(state.error);
       said.current = state.error ?? "";
-      if (busy.current) asking.current = setTimeout(ask, 1000);
-    } catch { if (mounted.current && request === poll.current) asking.current = setTimeout(ask, 1000); }
+      if (busy.current) asking.current = setTimeout(ask, RETRY);
+    } catch { if (mounted.current && request === poll.current) asking.current = setTimeout(ask, RETRY); }
   }, []);
   const look = useCallback(async () => {
     if (!mounted.current || !ids.current.size) return;
     const now = latest.current;
-    if (!now.ready() || busy.current || working.current) { timer.current = setTimeout(look, QUIET); return; }
+    if (!now.ready()) { timer.current = setTimeout(look, QUIET); return; }
+    if (busy.current || working.current) { timer.current = setTimeout(look, RETRY); return; }
     const batch = ids.current, token = generation.current;
     const text = now.told(batch); ids.current = new Set(); waiting.current = "";
     if (!text) { keepPending(now.context, ids.current); return; }
@@ -66,33 +68,36 @@ export function useMatilda({ ready, context, told, send, onError }: {
     finally {
       working.current = false;
       if (now.context === latest.current.context) keepPending(now.context, ids.current);
-      if (mounted.current && ids.current.size) { clearTimeout(timer.current); timer.current = setTimeout(look, QUIET); }
+      if (mounted.current && ids.current.size) { clearTimeout(timer.current); timer.current = setTimeout(look, latest.current.ready() ? 0 : QUIET); }
     }
   }, [ask]);
-  const notice = useCallback((found: string[]) => {
+  const notice = useCallback((found: string[], finished = false) => {
     generation.current++;
     for (const id of found) ids.current.add(id);
     keepPending(latest.current.context, ids.current);
     try { waiting.current = ids.current.size ? latest.current.told(ids.current) : ""; } catch { /* told again when she looks */ }
     clearTimeout(timer.current);
-    if (ids.current.size) timer.current = setTimeout(look, QUIET);
+    if (ids.current.size) timer.current = setTimeout(look, finished ? 0 : QUIET);
   }, [look]);
   // A page's waiting notes come back when it is shown again.
   useEffect(() => {
     for (const id of context ? pendingNotes()[context] ?? [] : []) ids.current.add(id);
     if (ids.current.size) { clearTimeout(timer.current); timer.current = setTimeout(look, QUIET); }
   }, [context, look]);
-  useEffect(() => { mounted.current = true; ask(); return () => {
-    mounted.current = false; poll.current++; clearTimeout(timer.current); clearTimeout(asking.current);
-    // Leaving the board sends what she has not been told yet; if she is still writing, it waits for the next visit.
-    const now = latest.current, batch = new Set(ids.current);
-    if (!batch.size || busy.current || working.current) return;
-    let text = ""; try { text = now.told(batch); } catch { /* the editor is gone */ }
-    text ||= waiting.current;
-    if (!text) return;
-    keepPending(now.context, new Set());
-    void api("/love-spot/talk", { text, persona: now.persona.trim() || PROTOCOL }).catch(() => keepPending(now.context, batch));
-  }; }, [ask]);
+  useEffect(() => {
+    mounted.current = true; ask();
+    return () => {
+      mounted.current = false; poll.current++; clearTimeout(timer.current); clearTimeout(asking.current);
+      // Leaving the board sends what she has not been told yet; if she is still writing, it waits for the next visit.
+      const now = latest.current, batch = new Set(ids.current);
+      if (!batch.size || busy.current || working.current) return;
+      let text = ""; try { text = now.told(batch); } catch { /* the editor is gone */ }
+      text ||= waiting.current;
+      if (!text) return;
+      keepPending(now.context, new Set());
+      void api("/love-spot/talk", { text, persona: now.persona.trim() || PROTOCOL }).catch(() => keepPending(now.context, batch));
+    };
+  }, [ask]);
   return { persona, keep: (value: string) => { setPersona(value); keepPersona(value); }, replying, notice };
 }
 
