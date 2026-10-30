@@ -187,7 +187,7 @@ export class DesktopClient extends EventEmitter {
   #catalog = null;
   /** The Claude account list last seen: which account is active and which are signed in. */
   #claudeAccountsKey;
-  #approvals = new Map(); #mutating = new Set(); #closed = false; #ready = false; #attaching = new Map();
+  #approvals = new Map(); #mutating = new Set(); #mutationWaiters = new Map(); #closed = false; #ready = false; #attaching = new Map();
   #context = new Map(); #restored = new Map(); #shares = new Map(); #turnModels = new Map(); #liveTurnModels = new Map(); #side = new Set();
   #sideChats = new Map();
   #interviewThreads = new Set();
@@ -1578,7 +1578,7 @@ export class DesktopClient extends EventEmitter {
       this.#forget(id);
       const worktree = await this.#releaseWorktree(cwd);
       return { deleted: true, alsoDeleted: removed, ...(worktree ? { worktree } : {}) };
-    });
+    }, true);
   }
   /** The composer's `!` deliberately uses the engine's user shell command, not a model turn. */
   async shellCommand(id, body) {
@@ -1736,7 +1736,7 @@ export class DesktopClient extends EventEmitter {
       this.#forget(id);
       const worktree = await this.#releaseWorktree(cwd);
       return { archived: true, ...(worktree ? { worktree } : {}) };
-    });
+    }, true);
     // The engine archives its own spawn tree with the chat (codex thread_archive_response). Archive everything else listed under
     // the chat too (the chats it made with create_thread, anything the engine left), so deleting it leaves nothing behind.
     for (const child of await this.#listedUnder(id)) await this.archiveThread(child, {}).catch(() => {});
@@ -2205,11 +2205,20 @@ export class DesktopClient extends EventEmitter {
     if (thread?.id !== id) throw new BridgeError('Elpis returned another thread', 502);
     return thread.cwd;
   }
-  async #mutate(id, run) {
+  async #mutate(id, run, wait = false) {
     threadId(id);
-    if (this.#mutating.has(id)) throw new BridgeError('Another operation on this conversation is pending', 409);
-    this.#mutating.add(id);
-    try { return await run(); } finally { this.#mutating.delete(id); }
+    if (this.#mutating.has(id)) {
+      if (!wait) throw new BridgeError('Another operation on this conversation is pending', 409);
+      await new Promise(resolve => {
+        const waiting = this.#mutationWaiters.get(id) ?? [];
+        waiting.push(resolve); this.#mutationWaiters.set(id, waiting);
+      });
+    } else this.#mutating.add(id);
+    try { return await run(); } finally {
+      const waiting = this.#mutationWaiters.get(id), next = waiting?.shift();
+      if (!waiting?.length) this.#mutationWaiters.delete(id);
+      if (next) next(); else this.#mutating.delete(id);
+    }
   }
   answerApproval(id, body) {
     const pending = this.#approvals.get(id);
