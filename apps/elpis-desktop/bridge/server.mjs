@@ -354,6 +354,10 @@ export async function startDesktopServer(options = {}) {
         if (url.pathname === '/api/customize/marketplace' && method === 'POST') return json(response, 200, await client.changeMarketplace(await body(request)));
         if (url.pathname === '/api/context/switches') return json(response, 200, method === 'GET' ? await client.contextSwitches() : await client.saveContextSwitches(await body(request)));
         if (url.pathname === '/api/hooks') return json(response, 200, method === 'GET' ? await client.hooks() : await client.saveHook(await body(request)));
+        if (url.pathname === '/api/memories/count' && method === 'GET') {
+          if ([...url.searchParams.keys()].length) throw new BridgeError('Unsupported memory count parameters');
+          return json(response, 200, { count: await settingsFiles.countMemoryFiles() });
+        }
         if (url.pathname === '/api/memories/reset' && method === 'POST') return json(response, 200, await client.resetMemories(await body(request)));
         if (url.pathname === '/api/workflows/concurrency' && ['GET', 'POST'].includes(method)) {
           const home = options.elpisHome ?? elpisHome();

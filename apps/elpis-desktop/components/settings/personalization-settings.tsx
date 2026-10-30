@@ -27,7 +27,7 @@ function CustomInstructions({ settings }: { settings: ElpisSettings }) {
   </SettingsGroup>;
 }
 
-export function PersonalizationSettings() {
+export function PersonalizationSettings({ active = true }: { active?: boolean }) {
   const { models, error } = useModelCatalog();
   return <div aria-label="Personalization">
     <SettingsHeader title="Personalization" description="Manage instructions and saved memories." />
@@ -36,7 +36,7 @@ export function PersonalizationSettings() {
     <SettingsLoader>{settings => <>
       <CustomInstructions settings={settings} />
       <CatalogNotice error={error} />
-      <MemorySettings value={settings} models={models} />
+      <MemorySettings value={settings} models={models} active={active} />
     </>}</SettingsLoader>
   </div>;
 }

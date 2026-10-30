@@ -1,7 +1,7 @@
 "use client";
 
 import { DisclosureSummary } from "@/components/ui/disclosure-summary";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, connectionOrder, effortsOf, isListedProvider, modelLabel, providerLabel, subscriptionOf, type Model } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { OptionSelect } from "@/components/ui/option-select";
@@ -183,9 +183,31 @@ function switchValue(memory: Memory, key: (typeof SWITCHES)[number]["key"]) {
 }
 
 /** Memories: switches apply at once; model choices are saved together; deleting asks first. */
-export function MemorySettings({ value, models }: { value: ElpisSettings; models: Model[] }) {
+export function MemorySettings({ value, models, active = true }: { value: ElpisSettings; models: Model[]; active?: boolean }) {
   const [draft, setDraft] = useState<Partial<Pick<Memory, "extractionModel" | "consolidationModel">>>({});
   const [confirming, setConfirming] = useState(false);
+  const [savedFiles, setSavedFiles] = useState<number | "unavailable" | null>(null);
+  const countRequest = useRef(0);
+  const countAbort = useRef<AbortController | null>(null);
+  const countActive = useRef(false);
+  const refreshCount = useCallback(async () => {
+    if (!countActive.current) return;
+    const request = ++countRequest.current;
+    countAbort.current?.abort();
+    const controller = new AbortController(); countAbort.current = controller;
+    setSavedFiles(null);
+    try {
+      const data = await api<{ count: unknown }>("/memories/count", undefined, controller.signal);
+      if (typeof data?.count !== "number" || !Number.isSafeInteger(data.count) || data.count < 0) throw Error("Invalid memory file count");
+      if (countRequest.current === request) setSavedFiles(data.count);
+    } catch { if (countRequest.current === request) setSavedFiles("unavailable"); }
+    finally { if (countAbort.current === controller) countAbort.current = null; }
+  }, []);
+  useEffect(() => {
+    countActive.current = active;
+    if (active) void refreshCount();
+    return () => { countActive.current = false; countRequest.current++; countAbort.current?.abort(); };
+  }, [active, refreshCount]);
   const saver = useSaver();
   const catalogs = useProviderCatalogs(value, models, []);
   const memory = { ...value.memory, ...draft };
@@ -193,8 +215,10 @@ export function MemorySettings({ value, models }: { value: ElpisSettings; models
   const reload = () => void saver.run("reload", async () => { await reloadSettings(); setDraft({}); }, reloaded.text);
   const toggle = (key: (typeof SWITCHES)[number]["key"], next: boolean) => void saver.run(key, () => saveSettings("/settings", { version: value.version, memory: key === "allowExternal" ? { skipExternalContext: !next } : { [key]: next } }), "Saved. Applies to new conversations.");
   const on = switchValue(value.memory, "enabled");
+  const savedFilesRow = <SettingRow title="Saved memory files" description="Markdown files in the memory folder and its subfolders."><span role="status" className="text-sm">{savedFiles === null ? "Loading…" : savedFiles === "unavailable" ? "Unavailable" : savedFiles}</span></SettingRow>;
   if (!editable(value)) return <SettingsGroup title="Memories">
     <SettingRow title="Memories" description={value.memory.enabled === false ? value.write.reason : undefined}><span className="text-sm">{shown(value.memory.enabled ?? null)}</span></SettingRow>
+    {savedFilesRow}
     {value.memory.enabled !== false && <>
       <SettingRow title="Generate memories"><span className="text-sm">{shown(value.memory.generate)}</span></SettingRow>
       <SettingRow title="Use memories"><span className="text-sm">{shown(value.memory.use)}</span></SettingRow>
@@ -206,6 +230,7 @@ export function MemorySettings({ value, models }: { value: ElpisSettings; models
     {SWITCHES.filter(item => item.key === "enabled" || on).map(item => <SettingRow key={item.key} title={item.title} description={item.description}>
       <Switch aria-label={item.title} checked={switchValue(value.memory, item.key)} disabled={saver.pending !== null} onCheckedChange={next => toggle(item.key, next)} />
     </SettingRow>)}
+    {savedFilesRow}
     {on && (["extractionModel", "consolidationModel"] as const).map(key => <SettingRow key={key} title={key === "extractionModel" ? "Memory extraction model" : "Memory consolidation model"} description={key === "extractionModel" ? "Summarizes each chat into memories." : "Merges memories into the saved set."}>
       <ModelChoice label={key === "extractionModel" ? "Memory extraction model" : "Memory consolidation model"} value={memory[key]} models={catalogs.mainModels} provider={catalogs.connectionLabel(value.main.provider)} disabled={saver.pending !== null} inheritLabel="Default conversation model"
         onChange={model => { saver.clear(); setDraft(old => { const patch = { ...old }; if (model === value.memory[key]) delete patch[key]; else patch[key] = model; return patch; }); }} />
@@ -224,7 +249,7 @@ export function MemorySettings({ value, models }: { value: ElpisSettings; models
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
-          <Button variant="destructive" onClick={() => { setConfirming(false); void saver.run("reset", () => api("/memories/reset", {}), "Memories deleted."); }}>Delete memories</Button>
+          <Button variant="destructive" onClick={() => { setConfirming(false); void saver.run("reset", async () => { countRequest.current++; countAbort.current?.abort(); setSavedFiles(null); try { await api("/memories/reset", {}); } finally { await refreshCount(); } }, "Memories deleted."); }}>Delete memories</Button>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

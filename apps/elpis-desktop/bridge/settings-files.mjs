@@ -45,6 +45,35 @@ export function createSettingsFiles(home, io = fs) {
       throw error;
     } finally { await handle?.close(); }
   }
+  async function countMemoryFiles() {
+    const root = path.dirname(fileFor('memory'));
+    let metadata;
+    try { metadata = await io.lstat(root); }
+    catch (error) {
+      if (error.code === 'ENOENT') return 0;
+      throw new BridgeError('Saved memory file count is unavailable.', 503);
+    }
+    // Reset refuses a linked memory root; a count must not follow one either.
+    if (!metadata.isDirectory()) throw new BridgeError('Saved memory file count is unavailable.', 503);
+    let count = 0; const directories = [root];
+    try {
+      while (directories.length) {
+        const directory = directories.pop();
+        for (const entry of await io.readdir(directory, { withFileTypes: true })) {
+          const file = path.join(directory, entry.name), markdown = /\.(?:md|markdown)$/i.test(entry.name);
+          let type = entry;
+          if (!entry.isDirectory() && !entry.isFile() && !entry.isSymbolicLink()) type = await io.lstat(file);
+          if (type.isDirectory()) directories.push(file);
+          else if (markdown && type.isFile()) count++;
+          else if (markdown && type.isSymbolicLink()) {
+            const target = await io.stat(file).catch(error => { if (error.code === 'ENOENT') return null; throw error; });
+            if (target?.isFile()) count++;
+          }
+        }
+      }
+    } catch { throw new BridgeError('Saved memory file count is unavailable.', 503); }
+    return count;
+  }
   function save(kind, input) {
     const run = async () => {
       const data = object(input, ['version', 'content']);
@@ -69,5 +98,5 @@ export function createSettingsFiles(home, io = fs) {
     };
     const next = queue.then(run); queue = next.catch(() => {}); return next;
   }
-  return { read, save };
+  return { read, save, countMemoryFiles };
 }
