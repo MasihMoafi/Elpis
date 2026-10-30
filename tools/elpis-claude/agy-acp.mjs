@@ -151,7 +151,7 @@ function startProcess(s) {
     s.proc = null;
     s.initWaiters.splice(0).forEach((r) => r(null));
     const turn = s.turn;
-    if (turn) { s.turn = null; s.pendingSteers.length = 0; turn.cancelled ? turn.resolve({ stopReason: "cancelled" }) : turn.reject({ code: -32603, message: `Antigravity stopped (exit ${code})` }); }
+    if (turn) { s.turn = null; turn.cancelled ? turn.resolve({ stopReason: "cancelled" }) : turn.reject({ code: -32603, message: `Antigravity stopped (exit ${code})` }); }
   });
   return new Promise((resolve) => { s.initWaiters.push(resolve); setTimeout(() => resolve(null), 60_000); });
 }
@@ -200,11 +200,11 @@ async function onEvent(s, m) {
     const u = r.usage ?? {};
     turn.usage.input += u.input_tokens ?? 0; turn.usage.output += u.output_tokens ?? 0; turn.usage.cached += u.cache_read_tokens ?? 0;
     // agy's stream input runs one turn per user message, not a tool-boundary steer.
-    // Dequeue each follow-up only when it is handed to agy.
+    // Dequeue follow-ups only when handed to agy; unsent ones survive failure.
     const next = s.pendingSteers[0];
     if (next && r.status === "SUCCESS" && s.proc) { s.proc.stdin.write(JSON.stringify({ event: "user", message: { content: next } }) + "\n"); s.pendingSteers.shift(); return; }
     s.turn = null;
-    if (r.status !== "SUCCESS") { s.pendingSteers.length = 0; return turn.cancelled ? turn.resolve({ stopReason: "cancelled" }) : turn.reject({ code: -32603, message: r.error || `Antigravity turn ${r.status ?? "failed"}` }); }
+    if (r.status !== "SUCCESS") return turn.cancelled ? turn.resolve({ stopReason: "cancelled" }) : turn.reject({ code: -32603, message: r.error || `Antigravity turn ${r.status ?? "failed"}` });
     turn.resolve({ stopReason: "end_turn", usage: { inputTokens: turn.usage.input - turn.usage.cached, outputTokens: turn.usage.output, cachedReadTokens: turn.usage.cached, cachedWriteTokens: 0, totalTokens: turn.usage.input + turn.usage.output } });
   }
 }
