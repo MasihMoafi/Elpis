@@ -14,6 +14,7 @@ const execFile = promisify(require('node:child_process').execFile);
 const { fixture } = require('./parity-fixture.cjs');
 const { unapprovedOranges, widenSidePanel } = require('./controls.cjs');
 const CWD = path.join(os.homedir(), '.cache', `elpis-file-previews-${process.pid}`);
+const FILE_AGENT_ACTIONS = ['Mark for agent', 'Suggest edit', 'Ask agent to remove'];
 const trashProject = async () => { if (await fs.stat(CWD).catch(() => null)) await execFile('gio', ['trash', CWD]); };
 /** Retries `check` until it stops throwing: a folder is read by the bridge after the click that opens it. */
 async function eventually(check, ms = 5000) {
@@ -583,7 +584,7 @@ test('Open in: a path\'s menu offers the Files pane, each installed editor, the 
     const menu = f.page.getByRole('menu');
     await menu.waitFor();
     assert.equal(await f.page.getByRole('menu').count(), 1, 'only the path\'s menu opens, not the message\'s');
-    assert.deepEqual(await menu.getByRole('menuitem').allInnerTexts(), ['Open in Files pane', 'Open in Zed', 'Open in gedit', 'Open in default app', 'Show in folder', 'Copy absolute path', 'Copy relative path', 'Copy filename', 'Change this…']);
+    assert.deepEqual(await menu.getByRole('menuitem').allInnerTexts(), ['Open in Files pane', 'Open in Zed', 'Open in gedit', 'Open in default app', 'Show in folder', 'Copy absolute path', 'Copy relative path', 'Copy filename', ...FILE_AGENT_ACTIONS, 'Change this…']);
     await f.shot('files-open-in-menu');
     await menu.getByRole('menuitem', { name: 'Open in Zed', exact: true }).click();
     assert.deepEqual(await f.page.evaluate(() => window.__edited), [{ target: `${CWD}/src/lib/parser.ts`, editor: 'zed', line: 2 }]);
@@ -630,10 +631,10 @@ test('with no editor chosen, or none installed, Open in uses the system\'s defau
     assert.deepEqual(await f.page.evaluate(() => window.__opened), [`${CWD}/src/lib/lexer.ts:1`]);
     await f.row('lexer.ts').click({ button: 'right' });
     const items = await f.page.getByRole('menu').getByRole('menuitem').allInnerTexts();
-    assert.deepEqual(items, ['Open in default app', 'Show in folder', 'Copy absolute path', 'Copy relative path', 'Copy filename', 'Change this…']);
+    assert.deepEqual(items, ['Open in default app', 'Show in folder', 'Copy absolute path', 'Copy relative path', 'Copy filename', ...FILE_AGENT_ACTIONS, 'Change this…']);
     await f.page.keyboard.press('Escape');
     await f.ref('/etc/hosts.conf:3').click({ button: 'right' });
-    assert.deepEqual(await f.page.getByRole('menu').getByRole('menuitem').allInnerTexts(), ['Open in Files pane', 'Open in default app', 'Show in folder', 'Copy absolute path', 'Copy filename', 'Change this…'], 'outside the project: Files is available, relative paths are not');
+    assert.deepEqual(await f.page.getByRole('menu').getByRole('menuitem').allInnerTexts(), ['Open in Files pane', 'Open in default app', 'Show in folder', 'Copy absolute path', 'Copy filename', ...FILE_AGENT_ACTIONS, 'Change this…'], 'outside the project: Files is available, relative paths are not');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

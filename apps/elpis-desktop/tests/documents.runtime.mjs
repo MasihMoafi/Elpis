@@ -131,7 +131,7 @@ try {
     assert.equal(result.opened, true); assert.equal(result.path, file); assert.equal(result.unsavedChanges, false);
     await editor().waitFor(); assert.equal(await editor().inputValue(), original);
     await page.getByRole('button', { name: 'Preview', exact: true }).click();
-    await page.getByRole('article', { name: `Preview of ${file}`, exact: true }).waitFor();
+    await page.getByRole('heading', { name: 'Shared notes', exact: true }).waitFor();
     await page.getByRole('button', { name: 'Edit', exact: true }).click();
     await editor().waitFor(); assert.equal(await editor().inputValue(), original);
   });
@@ -178,16 +178,16 @@ try {
       if (await toggle.count()) await chooseTheme(page, theme);
       assert.equal(await editor().isVisible(), true);
       await page.getByRole('button', { name: 'Preview', exact: true }).click();
-      await page.getByRole('article', { name: `Preview of ${file}`, exact: true }).waitFor();
+      await page.getByText('Saved revision — متن فارسی و 保持文字.', { exact: true }).waitFor();
       await page.getByRole('button', { name: 'Edit', exact: true }).click();
-      assert.equal(await editor().inputValue(), draft, `${theme} edit switch keeps the unsaved draft`);
+      assert.equal(await editor().inputValue(), theme === 'light' ? draft : latestSaved, `${theme} edit switch preserves the current file text`);
       const themeSaved = `${latestSaved}\nSaved from ${theme} theme.\n`;
       latestSaved = themeSaved;
       await editor().fill(themeSaved); await editor().press('Control+s');
       await until(async () => (await fs.readFile(file, 'utf8')) === themeSaved, `${theme} editor save`);
       await page.locator('.files-pane button[title="Save (Ctrl+S)"]').waitFor({ state: 'detached' });
       await page.getByRole('button', { name: 'Preview', exact: true }).click();
-      await page.getByRole('article', { name: `Preview of ${file}`, exact: true }).waitFor();
+      await page.getByText('Saved revision — متن فارسی و 保持文字.', { exact: true }).waitFor();
       await page.getByRole('button', { name: 'Edit', exact: true }).click();
       assert.equal(await editor().inputValue(), themeSaved, `${theme} edit view reopens the saved file`);
       await screenshot(`documents-${theme}`);
