@@ -7,6 +7,16 @@ import type { Model } from "@/lib/api";
 
 export type FailedTurn = { turnId: string; error: { message: string; codexErrorInfo?: string | Record<string, unknown>; additionalDetails?: string | null } };
 
+function plainResetTime(message: string) {
+  return message.replace(/\bResets in\s*((?:\d+\s*[dhms]\s*)+)(?=[.!?]|$)/gi, (match, duration: string) => {
+    const labels: Record<string, string> = { d: "day", h: "hour", m: "minute", s: "second" };
+    const parts = [...duration.matchAll(/(\d+)\s*([dhms])/gi)].map(([, count, unit]) => `${count} ${labels[unit.toLowerCase()]}${count === "1" ? "" : "s"}`);
+    if (!parts.length) return match;
+    const list = parts.length === 1 ? parts[0] : parts.length === 2 ? `${parts[0]} and ${parts[1]}` : `${parts.slice(0, -1).join(", ")}, and ${parts.at(-1)}`;
+    return `Resets in ${list}`;
+  });
+}
+
 /** Keep recovery beside the failed answer. Only complete text input can use thread/revert. */
 export function FailedTurnCard({ failure, models, currentModel, disabled, blockedReason, onRetry }: {
   failure: FailedTurn; models: Model[]; currentModel?: string | null; disabled: boolean; blockedReason?: string;
@@ -30,7 +40,7 @@ export function FailedTurnCard({ failure, models, currentModel, disabled, blocke
   return <div role="alert" className="failed-turn-card rounded-lg border">
     <div className="grid gap-2 p-4">
       <h3 className="text-sm font-semibold">{overloaded ? "Model overloaded" : limited ? "Rate limited" : "Turn failed"}</h3>
-      <p>{overloaded ? "Service is busy. Try again in a moment, or switch to a different model." : failure.error.message || "The turn could not finish. Try again in a moment."}</p>
+      <p>{overloaded ? "Service is busy. Try again in a moment, or switch to a different model." : plainResetTime(failure.error.message) || "The turn could not finish. Try again in a moment."}</p>
       {blockedReason && <p className="text-muted-foreground">{blockedReason}</p>}
       {error && <p className="text-destructive">{error}</p>}
       {onRetry && <div className="mt-1 flex flex-wrap gap-2">

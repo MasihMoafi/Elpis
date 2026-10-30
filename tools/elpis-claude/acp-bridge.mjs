@@ -19,6 +19,7 @@ import { join, dirname, basename } from "node:path";
 import { randomUUID } from "node:crypto";
 import { defaultPermissionMode, defaultPermissionSettings, permissionSettingsAllowed, permissionSettings, permissionMode } from './permission-policy.mjs';
 import { PermissionChoices } from './permission-choices.mjs';
+import { acpErrorInfo } from './acp-errors.mjs';
 
 const HOME = process.env.HOME;
 const permissionChoices = new PermissionChoices(process.env.ELPIS_HOME || join(HOME, '.elpis-next'));
@@ -237,7 +238,7 @@ const agentOf = (model) => (typeof model === "string" ? AGENTS.find((a) => model
 // Whether a model (or agent) is one Elpis has signed out of, and the error that refuses its turn.
 const signedOutModel = (model) => agentOf(model)?.signedOut?.() === true;
 const refuseSignedOut = (agent) => { if (agent?.signedOut?.()) throw Object.assign(new Error(SIGNED_OUT_MESSAGE), { signedOut: true }); };
-const acpErrorMessage = (e) => (e?.signedOut ? e.message : `Claude (ACP) error: ${e?.message ?? JSON.stringify(e)}`);
+const acpErrorMessage = (e, agent = AGENTS[0]) => (e?.signedOut ? e.message : `${agent.speaker} (ACP) error: ${e?.message ?? JSON.stringify(e)}`);
 // A dropped or timed-out connection is no error to show: the chat retries on its own (any message retries at once).
 const RECONNECT_MS = Number(process.env.ELPIS_RECONNECT_MS) || 180_000;
 const connectionDropped = (e) => /API Error/.test(e?.message ?? "") && /connection|timed? ?out|ECONN|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|socket hang up|fetch failed|network/i.test(e.message);
@@ -768,7 +769,7 @@ wss.on("connection", (ws) => {
   loadStore().then((st) => { for (const [id, saved] of Object.entries(st)) if (saved?.parentThreadId) childIds.add(id); });
   async function answerChild(msg) {
     const { threadId, includeTurns } = msg.params;
-    if (msg.method === "thread/resume") return toTui({ id: msg.id, error: { code: -32600, message: "a Claude subagent's thread is read-only; it is shown from thread/read" } });
+    if (msg.method === "thread/resume") return toTui({ id: msg.id, error: { code: -32600, message: "this subagent's thread is read-only; it is shown from thread/read" } });
     const c = (await storedChildren(null)).get(threadId);
     if (!c) return toTui({ id: msg.id, error: { code: -32600, message: `thread not found: ${threadId}` } });
     toTui({ id: msg.id, result: { thread: { ...c.thread, turns: includeTurns ? c.turns : [] } } });
@@ -2347,15 +2348,15 @@ wss.on("connection", (ws) => {
       const spawnSubagent = (u, parent) => {
         if (!u.subagentSessionId || subLanes.has(u.subagentSessionId)) return;
         const childId = randomUUID();
-        const name = u.name?.trim() || "Claude subagent";
+        const name = u.name?.trim() || `${agent.speaker} subagent`;
         const task = (u.prompt ?? u.task ?? "").trim();
         const base = threadSeen.get(threadId) ?? {};
         const t = Math.floor(now() / 1000);
         const depth = (parent.depth ?? 0) + 1;
         const thread = {
           ...base, id: childId, turns: [], forkedFromId: null, parentThreadId: parent.threadId, preview: task.slice(0, 200), ephemeral: false,
-          name, agentNickname: name, agentRole: "Claude", canAcceptDirectInput: false, threadSource: "subagent", historyMode: "legacy",
-          source: { subAgent: { thread_spawn: { parent_thread_id: parent.threadId, depth, agent_path: null, agent_nickname: name, agent_role: "Claude" } } },
+          name, agentNickname: name, agentRole: agent.speaker, canAcceptDirectInput: false, threadSource: "subagent", historyMode: "legacy",
+          source: { subAgent: { thread_spawn: { parent_thread_id: parent.threadId, depth, agent_path: null, agent_nickname: name, agent_role: agent.speaker } } },
           model: claudeModel.get(threadId) ?? base.model ?? null, createdAt: t, updatedAt: t, recencyAt: t, path: null,
         };
         const sub = newLane(childId, randomUUID(), cwd, false);
@@ -2542,7 +2543,7 @@ wss.on("connection", (ws) => {
       const record = [];
       const say = (role, text) => record.push({ type: "message", role, content: [{ type: role === "user" ? "input_text" : "output_text", text }] });
       let used = [];
-      const flush = () => { if (used.length) say("assistant", `[${claudeModel.get(threadId) ?? "Claude"} used tools: ${used.join("; ")}]`); used = []; };
+      const flush = () => { if (used.length) say("assistant", `[${claudeModel.get(threadId) ?? agent.speaker} used tools: ${used.join("; ")}]`); used = []; };
       if (!followup) say("user", userText);
       for (const it of items) {
         if (it.type === "userMessage") { flush(); say("user", inputSummary(it.content)); }
@@ -2564,7 +2565,7 @@ wss.on("connection", (ws) => {
     } catch (e) {
       status = "failed";
       const dropped = connectionDropped(e) && !compacting;
-      error = { message: dropped ? RECONNECT_NOTE : acpErrorMessage(e), codexErrorInfo: null, additionalDetails: null };
+      error = { message: dropped ? RECONNECT_NOTE : acpErrorMessage(e, agent), codexErrorInfo: dropped ? null : acpErrorInfo(e), additionalDetails: null };
       log(`turn error ${JSON.stringify(e)}`);
       if (dropped) reconnects.set(threadId, setTimeout(() => {
         reconnects.delete(threadId);
@@ -2599,7 +2600,7 @@ wss.on("connection", (ws) => {
         for (const item of record.items) if (item.status === 'completed') for (const action of item.commandActions ?? []) {
           if (action.type === 'read' && typeof action.path === 'string' && action.path.endsWith('/SKILL.md')) {
             let bytes = 0; try { bytes = statSync(action.path).size; } catch {}
-            loaded.set(action.path, { name: basename(dirname(action.path)), path: action.path, group: 'skills', estimatedTokens: Math.ceil(bytes / 4), included: true, selectable: false, reason: 'Read by Claude in this session' });
+            loaded.set(action.path, { name: basename(dirname(action.path)), path: action.path, group: 'skills', estimatedTokens: Math.ceil(bytes / 4), included: true, selectable: false, reason: `Read by ${agent.speaker} in this session` });
           }
         }
         st[threadId] = { ...rest, turns: [...(rest.turns ?? []), record], contextSessionId: sessionId, contextFiles: [...loaded.values()] };
@@ -2895,7 +2896,7 @@ wss.on("connection", (ws) => {
       log(`structured request on Claude ${STRUCTURED_MODEL} for hidden thread ${threadId}: ${status}`);
     } catch (e) {
       status = "failed";
-      error = { message: acpErrorMessage(e), codexErrorInfo: null, additionalDetails: null };
+      error = { message: acpErrorMessage(e), codexErrorInfo: acpErrorInfo(e), additionalDetails: null };
       log(`structured request error ${JSON.stringify(e?.message ?? e)}`);
     }
     structured.delete(threadId);

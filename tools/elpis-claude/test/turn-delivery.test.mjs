@@ -471,6 +471,16 @@ test("A37: Claude's report on a background job that ends after its reply opens a
   assert.equal(new Set(f.agent().filter(e => e.method === "session/prompt").map(e => e.params.sessionId)).size, 1, "the same Claude session goes on");
 });
 
+for (const [message, expected] of [
+  ["Individual quota reached. Resets in 17h3m6s.", "usageLimitExceeded"],
+  ["Weekly report failed because the file is missing.", null],
+]) test(`ACP turn errors expose the right recovery kind: ${message}`, { timeout: 20000 }, async t => {
+  const f = await fixture(t, { FAKE_ACP_PROMPT_ERROR: message, FAKE_ACP_ERROR_KIND: "provider_error" });
+  const { turn } = await f.client.send(f.id, { text: "hello" });
+  await until(() => f.ended(turn.id), "the failed turn ends");
+  assert.equal(f.ended(turn.id).params.turn.error.codexErrorInfo, expected);
+});
+
 test("a dropped connection retries on its own until Claude answers, without an ACP error", { timeout: 20000 }, async t => {
   const f = await fixture(t, { ELPIS_RECONNECT_MS: "300" }, { prepare: (root, env) => { env.FAKE_ACP_OFFLINE = path.join(root, "offline"); fs.writeFileSync(env.FAKE_ACP_OFFLINE, ""); } });
   const { turn } = await f.client.send(f.id, { text: "hello" });
