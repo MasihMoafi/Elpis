@@ -215,7 +215,7 @@ export function MemorySettings({ value, models, active = true }: { value: ElpisS
   const reload = () => void saver.run("reload", async () => { await reloadSettings(); setDraft({}); }, reloaded.text);
   const toggle = (key: (typeof SWITCHES)[number]["key"], next: boolean) => void saver.run(key, () => saveSettings("/settings", { version: value.version, memory: key === "allowExternal" ? { skipExternalContext: !next } : { [key]: next } }), "Saved. Applies to new conversations.");
   const on = switchValue(value.memory, "enabled");
-  const savedFilesRow = <SettingRow title="Saved memory files" description="Markdown files in the memory folder and its subfolders."><span role="status" className="text-sm">{savedFiles === null ? "Loading…" : savedFiles === "unavailable" ? "Unavailable" : savedFiles}</span></SettingRow>;
+  const savedFilesRow = <SettingRow title="Saved memory files"><span role="status" className="text-sm">{savedFiles === null ? "Loading…" : savedFiles === "unavailable" ? "Unavailable" : savedFiles}</span></SettingRow>;
   if (!editable(value)) return <SettingsGroup title="Memories">
     <SettingRow title="Memories" description={value.memory.enabled === false ? value.write.reason : undefined}><span className="text-sm">{shown(value.memory.enabled ?? null)}</span></SettingRow>
     {savedFilesRow}
