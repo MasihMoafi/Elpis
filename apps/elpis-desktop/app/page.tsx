@@ -96,7 +96,7 @@ import { TaskList, type TaskPlan } from "@/components/task-list";
 import { chatOrigin, originLabel } from "@/lib/love-activity";
 import { useLoveActivity } from "@/lib/use-love-activity";
 import { LOVE_SPOT_AUDIO } from "@/lib/love-spot-audio";
-import { MATILDA_CHAT_SHOWN } from "@/lib/matilda";
+import { MATILDA_CHAT_SHOWN, savedPersona } from "@/lib/matilda";
 import { useScreenshotPopup } from "@/lib/use-screenshot-popup";
 import { AgentsCanvas } from "@/components/agents-canvas";
 import { WorkflowChat } from "@/components/workflow-chat";
@@ -1014,8 +1014,33 @@ export default function Home() {
 
   function openNewChat(draftKey = newDraftKey.current) { saveDraft(selectedRef.current?.id || newDraftKey.current, textRef.current); newDraftKey.current = draftKey; request.current++; stickToBottom.current = true; followingBottom.current = false; restoreScroll.current = null; select(null); setEntries([]); setItemCursor(null); setText(savedDraft(draftKey)); setError(""); restoreAttachments(draftKey); setLoading(false); setView("chat"); setSidebar(false); requestAnimationFrame(() => composerRef.current?.focus()); }
   const newChat = () => { setProjectId(null); setCwd(""); openNewChat(activeTab(tabsRef.current).draftKey ?? "new"); };
-  const clearChat = () => {
+  const clearChat = async () => {
     const previous = selectedRef.current;
+    if (previous && chatOrigin(previous, loveActivity.threads) === "Love Spot" && agentName(previous) === "Matilda") {
+      if (activeTurns[previous.id]) { setError("Love Spot is already replying. Wait for this turn."); return; }
+      const originalRequest = request.current;
+      const settings = { ...previous, ...settingsOf.current[previous.id] };
+      try {
+        const result = await api<{ thread: Thread; permissions?: PermissionMode | null }>("/love-spot/talk/new", {
+          threadId: previous.id,
+          ...(settings.model ? { model: settings.model } : {}),
+          ...(settings.modelProvider ? { provider: settings.modelProvider } : {}),
+          ...(previous.cwd ? { cwd: previous.cwd } : {}),
+          permissions: threadModes[previous.id] ?? permissionMode,
+          persona: savedPersona(),
+        });
+        if (!result.thread || typeof result.thread.id !== "string") throw new Error("Matilda could not start a fresh chat.");
+        upsertThread(result.thread);
+        noteStartedMode(result.thread.id, result.permissions ?? threadModes[previous.id] ?? permissionMode);
+        setProjectId(projectChatsRef.current[previous.id] ?? projectId);
+        setCwd(result.thread.cwd ?? previous.cwd ?? cwd);
+        if (request.current === originalRequest) {
+          await loadThread(result.thread);
+          requestAnimationFrame(() => composerRef.current?.focus());
+        }
+      } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+      return;
+    }
     if (previous) { setCwd(previous.cwd || cwd); setProjectId(projectChatsRef.current[previous.id] ?? projectId); }
     openNewChat(`clear-${crypto.randomUUID()}`);
   };

@@ -12,14 +12,20 @@ const INIT_PROMPT_FILE = path.resolve(__dirname, '../../../codex-rs/tui/assets/p
 
 const access = { writable: true, mode: 'direct', reason: null };
 const chat = { id: 'chat', name: 'Cache chat', cwd: '/tmp/elpis-fixture', model: 'gpt-6-luna', modelProvider: 'openai', reasoningEffort: 'high', status: { type: 'idle' }, desktopAccess: access };
+const matilda = { id: 'matilda', name: 'Love Spot', cwd: '/tmp/elpis-fixture', model: 'gpt-6-sonnet', modelProvider: 'openrouter', status: { type: 'idle' }, desktopAccess: access };
+const freshMatilda = { ...matilda, id: 'matilda-fresh', reasoningEffort: null };
 const child = { id: 'child', name: 'Helper', agentNickname: 'Sagan', parentThreadId: 'chat', cwd: '/tmp/elpis-fixture', model: 'gpt-6-luna', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: access };
 const fork = { ...chat, id: 'fork', name: 'Cache chat (fork)', forkedFromId: 'chat' };
 const created = { ...chat, id: 'created', name: null, preview: 'New chat', reasoningEffort: null };
 // Newest first, as the bridge pages history.
 const history = [{ turnId: 'turn-1', item: { id: 'reply', type: 'agentMessage', text: 'The cache is fixed.' } }, { turnId: 'turn-1', item: { id: 'ask', type: 'userMessage', content: [{ type: 'text', text: 'Fix the cache.' }] } }];
-const models = [{ id: 'luna', model: 'gpt-6-luna', displayName: 'Luna 6', serviceTiers: [{ id: 'priority', name: 'Fast' }], supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }] }];
+const matildaHistory = [{ turnId: 'matilda-turn', item: { id: 'matilda-reply', type: 'agentMessage', text: 'Matilda kept the old conversation.' } }, { turnId: 'matilda-turn', item: { id: 'matilda-ask', type: 'userMessage', content: [{ type: 'text', text: 'Keep this history.' }] } }];
+const models = [
+  { id: 'luna', model: 'gpt-6-luna', displayName: 'Luna 6', serviceTiers: [{ id: 'priority', name: 'Fast' }], supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }] },
+  { id: 'sonnet', model: 'gpt-6-sonnet', displayName: 'Sonnet', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }] },
+];
 const commits = [{ sha: 'a'.repeat(40), subject: 'Fix the cache' }, { sha: 'b'.repeat(40), subject: 'Add the cache' }];
-let server, browser, url; const posts = [], clients = new Set();
+let server, browser, url, showMatilda = false, freshMatildaCreated = false, matildaBusy = false; const posts = [], clients = new Set();
 const emit = (method, params) => { for (const client of clients) client.write(`event: message\ndata: ${JSON.stringify({ method, params })}\n\n`); };
 /** What the engine reports after a command starts a turn: it starts, produces these items, and ends. */
 const turnAfter = (threadId, turnId, items = []) => setTimeout(() => {
@@ -37,10 +43,11 @@ before(async () => {
     if (route.pathname === '/api/session') return json({ authenticated: true });
     if (route.pathname === '/api/health') return json({ connected: true });
     if (route.pathname === '/api/models') return json({ data: models, nextCursor: null });
-    if (route.pathname === '/api/settings') return json({ version: 'v1', main: { model: 'gpt-6-luna', provider: 'openai' }, background: { model: null, provider: null }, providers: [{ id: 'openai', displayName: 'OpenAI' }], smartPrune: { enabled: false, explicitOverride: {} }, memory: { generate: null, use: null, extractionModel: null, consolidationModel: null }, options: { defaultPermissions: 'full' }, managed: {}, write: { available: true } });
+    if (route.pathname === '/api/settings') return json({ version: 'v1', main: { model: 'gpt-6-luna', provider: 'openai' }, background: { model: null, provider: null }, providers: [{ id: 'openai', displayName: 'OpenAI' }, { id: 'openrouter', displayName: 'OpenRouter' }], smartPrune: { enabled: false, explicitOverride: {} }, memory: { generate: null, use: null, extractionModel: null, consolidationModel: null }, options: { defaultPermissions: 'full' }, managed: {}, write: { available: true } });
     if (route.pathname === '/api/threads/chat/service-tier') return json({ serviceTier: JSON.parse(body || '{}').enabled === false ? 'default' : 'priority' });
     if (route.pathname === '/api/threads' && req.method === 'POST') return json({ thread: created });
-    if (route.pathname === '/api/threads') return json({ data: route.searchParams.get('ancestorThreadId') === 'chat' ? [child] : route.searchParams.has('ancestorThreadId') ? [] : [chat], nextCursor: null });
+    if (route.pathname === '/api/love-spot/talk/new' && req.method === 'POST') { freshMatildaCreated = true; return json({ thread: freshMatilda, permissions: JSON.parse(body).permissions }); }
+    if (route.pathname === '/api/threads') return json({ data: route.searchParams.get('ancestorThreadId') === 'chat' ? [child] : route.searchParams.has('ancestorThreadId') ? [] : [chat, ...(showMatilda ? [matilda, ...(freshMatildaCreated ? [freshMatilda] : [])] : [])], nextCursor: null });
     if (route.pathname === '/api/threads/chat/fork') return json({ thread: fork });
     if (route.pathname.endsWith('/rename')) return json({ thread: { ...chat, name: JSON.parse(body).name } });
     if (route.pathname.endsWith('/delete')) return json({ deleted: true, alsoDeleted: [] });
@@ -49,8 +56,11 @@ before(async () => {
     if (route.pathname === '/api/threads/chat/compact') { turnAfter('chat', 'compact-turn', [{ id: 'compaction', type: 'contextCompaction' }]); return json({}); }
     if (route.pathname === '/api/threads/chat/review') { turnAfter('chat', 'review-turn', [{ id: 'review-done', type: 'exitedReviewMode', review: 'No problems found in the cache.' }]); return json({ turn: { id: 'review-turn' }, reviewThreadId: 'chat' }); }
     if (route.pathname === '/api/threads/chat/turns' || route.pathname === '/api/threads/created/turns') { const id = `turn-${posts.filter(post => post.path.endsWith('/turns')).length + 1}`; turnAfter(route.pathname.split('/')[3], id); return json({ turn: { id } }); }
-    const read = route.pathname.match(/^\/api\/threads\/(chat|fork|created)(\/resume)?$/);
-    if (read) return json({ thread: read[1] === 'fork' ? fork : read[1] === 'created' ? created : chat, data: read[1] === 'created' ? [] : history, nextCursor: null, activeTurnId: null, planMode: false, permissions: read[1] === 'created' ? 'full' : 'ask' });
+    const read = route.pathname.match(/^\/api\/threads\/(chat|fork|created|matilda|matilda-fresh)(\/resume)?$/);
+    if (read) {
+      const thread = { chat, fork, created, matilda, 'matilda-fresh': freshMatilda }[read[1]];
+      return json({ thread, data: read[1] === 'created' || read[1] === 'matilda-fresh' ? [] : read[1] === 'matilda' ? matildaHistory : history, nextCursor: null, activeTurnId: read[1] === 'matilda' && matildaBusy ? 'matilda-active' : null, planMode: false, permissions: read[1] === 'created' ? 'full' : 'ask' });
+    }
     if (route.pathname.startsWith('/api/')) return json({});
     try { const file = path.join(root, route.pathname === '/' ? 'index.html' : route.pathname); const content = await fs.readFile(file); res.setHeader('content-type', file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : file.endsWith('.svg') ? 'image/svg+xml' : 'text/html'); res.end(content); } catch { res.statusCode = 404; res.end(); }
   });
@@ -65,9 +75,9 @@ const sentTo = path => posts.filter(post => post.path === path);
 /** Waits for a request the page makes in the background; fixtures answer at once, so this is short. */
 async function posted(path, count) { for (let attempt = 0; attempt < 100 && sentTo(path).length < count; attempt++) await sleep(30); assert.ok(sentTo(path).length >= count, `${path} was requested ${count} time(s)`); return sentTo(path).at(-1).body; }
 
-async function open() {
+async function open({ colorScheme } = {}) {
   posts.length = 0;
-  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, permissions: ['clipboard-read', 'clipboard-write'], acceptDownloads: true });
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, permissions: ['clipboard-read', 'clipboard-write'], acceptDownloads: true, ...(colorScheme ? { colorScheme } : {}) });
   const page = await context.newPage(); page.setDefaultTimeout(8000);
   const errors = []; page.on('pageerror', error => errors.push(error.message));
   await page.goto(url); await page.getByText('Local workspace', { exact: true }).waitFor();
@@ -76,6 +86,7 @@ async function open() {
   return { page, context, errors, composer, menu,
     /** Opens the chat from the sidebar, with its agents listed. */
     async openChat() { await page.locator('.thread-row[data-thread-id="chat"] .thread-link').click(); await page.getByText('The cache is fixed.', { exact: true }).waitFor(); await page.locator('.team-row', { hasText: 'Helper' }).waitFor(); },
+    async openMatildaChat() { await page.locator('.thread-row[data-thread-id="matilda"] .thread-link').click(); await page.getByText('Matilda kept the old conversation.', { exact: true }).waitFor(); },
     /** Types a command as a person does: waits until the menu offers it, enters it whole, and checks what every command leaves behind (a clean composer, no menu). */
     async run(text) {
       const name = text.slice(1).split(/\s/)[0];
@@ -124,6 +135,47 @@ test('"/" lists the terminal\'s commands the app can run, in its order: a new ch
     await composer.fill(''); await composer.fill('/'); assert.deepEqual(await names(menu), OPEN_CHAT, 'and come back when it ends');
     assert.deepEqual(errors, []);
   } finally { await context.close(); }
+});
+
+test('clearing a Matilda chat starts a fresh Love Spot chat in both themes and keeps its old history', async () => {
+  showMatilda = true;
+  try {
+    for (const colorScheme of ['light', 'dark']) {
+      freshMatildaCreated = false; matildaBusy = false;
+      const { page, context, errors, composer, run, openMatildaChat } = await open({ colorScheme });
+      try {
+        await openMatildaChat();
+        await page.evaluate(() => localStorage.setItem('elpis-matilda-persona', 'Use concise systems design reasoning.'));
+        await run('/clear');
+        assert.deepEqual(await posted('/api/love-spot/talk/new', 1), {
+          threadId: 'matilda', model: 'gpt-6-sonnet', provider: 'openrouter', cwd: '/tmp/elpis-fixture', permissions: 'ask', persona: 'Use concise systems design reasoning.',
+        });
+        assert.equal(await page.getByText('Matilda kept the old conversation.', { exact: true }).count(), 0, 'the new chat starts empty');
+        await page.getByRole('heading', { name: 'Love Spot', exact: true }).waitFor();
+        await page.getByText('Matilda', { exact: true }).waitFor();
+        await page.locator('.thread-row[data-thread-id="matilda"]').waitFor();
+        await page.locator('.thread-row[data-thread-id="matilda-fresh"]').waitFor();
+        if (process.env.ELPIS_SHOTS) await page.screenshot({ path: `${process.env.ELPIS_SHOTS}/clear-matilda-${colorScheme}.png` });
+        assert.equal(await composer.inputValue(), '');
+        assert.equal(posts.some(post => /\/matilda\/(delete|archive)$/.test(post.path)), false, 'the old Matilda history remains');
+        assert.deepEqual(errors, []);
+      } finally { await context.close(); }
+    }
+  } finally { showMatilda = false; freshMatildaCreated = false; matildaBusy = false; }
+});
+
+test('clearing Matilda waits for her active turn and keeps Love Spot on the current chat', async () => {
+  showMatilda = true; freshMatildaCreated = false; matildaBusy = true;
+  const { page, context, run, openMatildaChat } = await open();
+  try {
+    await openMatildaChat();
+    await page.getByRole('button', { name: 'Stop response', exact: true }).waitFor();
+    await run('/clear');
+    await page.getByText('Love Spot is already replying. Wait for this turn.', { exact: true }).waitFor();
+    assert.equal(sentTo('/api/love-spot/talk/new').length, 0, 'an active Matilda conversation is not replaced');
+    assert.equal(await page.getByText('Matilda kept the old conversation.', { exact: true }).count(), 1);
+    assert.equal(await page.locator('.thread-row[data-thread-id="matilda-fresh"]').count(), 0);
+  } finally { await context.close(); showMatilda = false; matildaBusy = false; }
 });
 
 test('the menu filters (names that start with the text first, then names that contain it), moves with the arrows, and closes on Escape', async () => {
