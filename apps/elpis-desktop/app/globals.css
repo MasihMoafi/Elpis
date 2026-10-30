@@ -110,6 +110,10 @@ html { font-size:var(--interface-size, 16px); }
   .hud-menu, .hud-popover, .hud-dialog, .side-chat, .pending-input-panel, .full-view > .workspace-content, .composer) { border-radius:var(--corner-radius-lg, var(--cut-lg) 0); corner-shape:var(--corner-shape, bevel); }
 @layer base { * { box-sizing:border-box; border-color:var(--border); } [hidden] { display:none!important; } }
 * { scrollbar-width:thin; scrollbar-color:color-mix(in oklch, var(--foreground) 16%, transparent) transparent; }
+*::-webkit-scrollbar { width:8px; height:8px; }
+*::-webkit-scrollbar-track { background:transparent; }
+*::-webkit-scrollbar-thumb { border:2px solid transparent; border-radius:999px; background:color-mix(in oklch, var(--foreground) 22%, transparent); background-clip:content-box; }
+*::-webkit-scrollbar-button { display:none; width:0; height:0; }
 /* The app fills the window and scrolls only inside its panes; the page itself never scrolls (27 Oct). */
 html, body { overflow:hidden; }
 body { margin:0; background:var(--background); color:var(--foreground); font:var(--text-sm)/1.5 var(--ui-font, Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif); font-feature-settings:"cv11","ss01"; -webkit-font-smoothing:antialiased; }
@@ -160,7 +164,7 @@ button:disabled { cursor:not-allowed; }
 /* Rows, the "More …" buttons and every section heading (Agent runs too) are snap points, so scrolling to the end can
    always reach the last of them, even when its section is folded. */
 .thread-list :is(.thread-row, .thread-more, .section-label-row, section > :first-child) { scroll-snap-align:start; scroll-snap-stop:always; }
-.thread-list > section:first-child > .section-label-row { padding-top:8px; }
+.thread-list > section:first-child > .section-label-row { padding-top:0; }
 .thread-link { min-width:0; flex:1; text-align:left; background:none; border:0; padding:7px 4px 7px 8px; border-radius:7px; display:block; color:inherit; font-size:var(--text-sm); line-height:20px; }
 .thread-link span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:block; }
 /* In the sidebar tree the agent mark follows the name, so names step by the same indent as their status dots. */
@@ -351,7 +355,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .project-chip { background:none; cursor:pointer; }
 .project-chip:hover, .project-chip[aria-expanded="true"] { color:var(--foreground); background:var(--hover); border-color:var(--hairline); }
 .project-chip span { overflow:hidden; text-overflow:ellipsis; }
-.section-label-row { display:flex; align-items:center; gap:4px; padding:16px 8px 6px; }
+.section-label-row { display:flex; align-items:center; gap:4px; height:34px; padding:0 8px; }
 .section-label-row > .section-label { padding:0; margin-right:auto; }
 /* Hide shows on the heading's hover or focus, like a row's actions. */
 .section-label-row > .section-hide { opacity:0; color:var(--muted-foreground); }
@@ -847,7 +851,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .composer .model-trigger-provider { display:none; }
 /* Sidebar */
 /* Group labels in the sidebar and in Settings' navigation. */
-.section-label { line-height:1; color:var(--muted-foreground); padding:16px 8px 6px; }
+.section-label { display:flex; align-items:center; height:34px; line-height:1; color:var(--muted-foreground); padding:0 8px; }
+.section-label-row > .section-label { height:auto; }
 .thread-row { position:relative; }
 /* Match the group chevron's center (6px inset + half its 13px icon); only circles and names indent for agents. */
 .thread-row > button[aria-expanded]:first-child { position:absolute; left:calc(6.5px + var(--thread-depth, 0) * 14px); width:14px; background:transparent; box-shadow:none; }
@@ -880,7 +885,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .thread-subtitle { font-size:var(--text-xs); color:var(--warning); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .thread-dot[data-state="error"] { border-color:var(--destructive); background:var(--destructive); }
 .thread-dot.workflow-mark { display:inline-block; margin:0 3px; border-color:var(--workflow-colour); background:var(--workflow-colour); vertical-align:middle; }
-.conversation-state-slot { display:flex; align-items:center; justify-content:center; flex-shrink:0; width:20px; height:24px; margin-left:20px; }
+.conversation-state-slot { display:flex; align-items:center; justify-content:center; flex-shrink:0; width:20px; height:24px; margin-left:6px; }
 .conversation-state-slot .thread-dot { margin:0; }
 .conversation-colour-swatch { display:inline-block; flex-shrink:0; box-sizing:border-box; width:9px; height:9px; border:1.5px solid var(--workflow-colour, var(--subtle-foreground)); border-radius:50%; background:var(--workflow-colour, transparent); }
 .thread-row > .conversation-status { margin:0 2px; }
@@ -897,13 +902,13 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 @keyframes spin { to { transform:rotate(360deg); } }
 /* A collapsible group of chats (components/sidebar-group.tsx): a project, or a group the person made. */
 .sidebar-group { margin-bottom:2px; }
-.sidebar-group-row { display:flex; align-items:center; padding-inline-end:8px; }  /* the "+" lines up with the Projects header's */
+.sidebar-group-row { display:flex; align-items:center; min-height:34px; padding-inline-end:8px; }  /* the "+" lines up with the Projects header's */
 .sidebar-group-row:hover, .sidebar-group-row[data-popup-open] { background:var(--hover); }
 .sidebar-group-actions { display:flex; opacity:0; }
 .project-new-chat { flex-shrink:0; color:var(--muted-foreground); }
 .project-new-chat:hover { color:var(--foreground); }
 .sidebar-group-row:hover .sidebar-group-actions, .sidebar-group-row[data-popup-open] .sidebar-group-actions, .sidebar-group-row:focus-within .sidebar-group-actions, .sidebar-group-actions:has([aria-expanded="true"]) { opacity:1; }
-.sidebar-group-toggle { flex:1; min-width:0; display:flex; align-items:center; gap:6px; border:0; background:none; color:var(--foreground); padding:5px 6px; font-size:var(--text-sm); text-align:left; }
+.sidebar-group-toggle { flex:1; min-width:0; display:flex; align-items:center; gap:6px; height:34px; border:0; background:none; color:var(--foreground); padding:0 6px; font-size:var(--text-sm); text-align:left; }
 .sidebar-group-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .sidebar-group-toggle svg { flex-shrink:0; color:var(--muted-foreground); }
 /* One icon size in the sidebar, as in ChatGPT: rows, groups, search and the footer (chevrons keep their own). */
