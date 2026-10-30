@@ -62,6 +62,10 @@ for (const colorScheme of ['light', 'dark']) test(`Matilda floats out of the tit
   await page.locator('.app-menus').waitFor();
   await presence.waitFor();
   await page.setViewportSize({ width: 360, height: 760 });
+  await page.waitForFunction(() => {
+    const box = document.querySelector('.matilda-float')?.getBoundingClientRect();
+    return box && box.x >= 0 && box.right <= innerWidth && box.y > 36 && box.bottom <= innerHeight;
+  });
   const box = await presence.boundingBox();
   assert.ok(box.x >= 0 && box.x + box.width <= 360 && box.y > 36 && box.y + box.height <= 760, JSON.stringify(box));
   await page.getByRole('button', { name: 'Unpin Matilda', exact: true }).focus();
