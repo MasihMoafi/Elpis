@@ -83,7 +83,7 @@ try {
     // He writes on the board as he would; the moment the note is done is time zero.
     const bounds = await page.locator('.excalidraw').boundingBox();
     await page.mouse.click(bounds.x + 400, bounds.y + 300); await page.keyboard.press('t'); await page.mouse.click(bounds.x + 400, bounds.y + 300);
-    await page.keyboard.type('Matilda, tell me in six short sentences about a lighthouse keeper and her cat. Do not use tools.'); await page.keyboard.press('Escape');
+    await page.keyboard.type('Matilda, tell me in six short sentences about a lighthouse keeper and a storm. Do not use tools.'); await page.keyboard.press('Escape');
     speechEnd = Date.now();
   } else {
     if (live) await page.getByRole('button', { name: 'Start voice chat', exact: true }).click();
@@ -149,8 +149,8 @@ try {
     if (barge) assert.equal(result.board.filter(e => e.id.startsWith('love-reply-')).length, 2, 'the interrupted reply and the new reply each have one note');
     await page.getByRole('button', { name: 'End voice chat' }).click();
     assert.ok(await page.evaluate(() => window.playbackProof.audio.every(audio => audio.paused && audio.srcObject === null)), 'hang-up stops all played audio');
-    await page.getByRole('switch', { name: /^Voice/ }).click();
-    await page.getByRole('switch', { name: /^Voice/, checked: false, disabled: false }).waitFor();
+    await page.getByRole('switch', { name: /^(Voice|Read replies aloud)/ }).click();
+    await page.getByRole('switch', { name: /^(Voice|Read replies aloud)/, checked: false, disabled: false }).waitFor();
     assert.ok(await page.getByRole('button', { name: 'Start voice chat', exact: true }).isDisabled(), 'saved Mute cannot start another call');
     assert.ok(result.firstPlayedAudioMs < 1500, `Speech took ${result.firstPlayedAudioMs} ms (budget 1500 ms)`);
   }

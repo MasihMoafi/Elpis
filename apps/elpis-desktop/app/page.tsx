@@ -2,6 +2,7 @@
 
 import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import dynamic from "next/dynamic";
+import { BrandWordmark } from "@/components/brand-wordmark";
 import { flushSync } from "react-dom";
 import { cloneElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { AgentsIcon, BrowserIcon, ChatIcon, ExperimentLabIcon, FolderIcon, LoveSpotIcon, NewChatIcon, PinIcon, PlusIcon, SendIcon, SettingsIcon, StopIcon, ThemeIcon, WorkflowsIcon } from "@/components/elpis-icons";
@@ -481,7 +482,6 @@ export default function Home() {
   const [loveToolbarHost, setLoveToolbarHost] = useState<HTMLDivElement | null>(null);
   const { theme, dark, setTheme, sidebarWidth, resizeSidebar } = useAppearance(setError);
   // The website's animated wordmark, its dark or light version (website/assets/branding).
-  const brandMark = dark ? "/branding/elpis-wordmark-amber-loop.svg" : "/branding/elpis-wordmark-amber-light-loop.svg";
   const searchInput = useRef<HTMLInputElement>(null);
   const shortcutsReturnFocus = useRef<HTMLElement | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -1582,7 +1582,7 @@ export default function Home() {
             onFork={selected && !readOnlyRun && e.item.type === "agentMessage" && e.turnId !== activeTurn ? () => void live.current.forkFrom(selected, e.turnId, e.item.id) : undefined} onRewind={!e.clientPending && replaceable && e.item.type === "userMessage" ? () => live.current.setRewindTurn(e.turnId) : undefined}
             onRegenerate={regenerate && e.item.id === regenerate.replyId ? () => { live.current.replaceFrom(regenerate.turnId, regenerate.prompt).catch(error => live.current.setError(String(error instanceof Error ? error.message : error))); } : undefined} />; }} /></ViewBoundary>, [shownEntries, activeTurn, desktop, selected, side.openChanges, threads, messageEdits, pendingDrafts, replaceable, replacementOptionsKey, readOnlyRun, versionsShown, regenerate?.turnId, regenerate?.replyId, regenerate?.prompt]); // eslint-disable-line react-hooks/exhaustive-deps
   // Keep the conversation's context providers outside composer-only renders.
-  const chatConversation = useMemo(() => <ReadAloud threadId={selected?.id} enabled={connected && !!selected} unavailableReason={loveSpotAudioReason}>{selected && !loveSpotAudioReason && agentName(selected) === "Matilda" && <MatildaAutoVoice key={selected.id} threadId={selected.id} activeTurnId={activeTurn ?? null} entries={shownEntries} disabled={!connected || voiceBusy} />}{conversation}</ReadAloud>, [selected, connected, activeTurn, shownEntries, voiceBusy, conversation, loveSpotAudioReason]);
+  const chatConversation = useMemo(() => <ReadAloud threadId={selected?.id} enabled={connected && !!selected} available={selected && agentName(selected) === "Matilda" ? LOVE_SPOT_AUDIO.available : undefined} unavailableReason={loveSpotAudioReason}>{selected && !loveSpotAudioReason && agentName(selected) === "Matilda" && <MatildaAutoVoice key={selected.id} threadId={selected.id} activeTurnId={activeTurn ?? null} entries={shownEntries} disabled={!connected || voiceBusy} />}{conversation}</ReadAloud>, [selected, connected, activeTurn, shownEntries, voiceBusy, conversation, loveSpotAudioReason]);
   /** A queued message's Edit in composer, as in Claude: it returns to the box above whatever is typed, with its files and @-mentions. */
   function editQueued(item: FollowUp) {
     editDraft([item.text, textRef.current].filter(part => part.trim()).join("\n\n"));
@@ -2331,7 +2331,7 @@ export default function Home() {
     <DeleteChatsDialog threads={deleteTargets} trash={trashChats} alwaysConfirm={deleteRunHistory} onClose={() => { setDeleteTargets(null); setDeleteRunHistory(false); }} />
     <RewindDialog threadId={selected?.id} turnId={rewindTurn} prompt={rewindTurn ? entries.find(entry => entry.turnId === rewindTurn && entry.item.type === "userMessage")?.item.content?.map(part => part.text ?? "").join("\n") ?? "" : ""} turns={rewindTurn ? Math.max(1, turnEntries.size - [...turnEntries.keys()].indexOf(rewindTurn)) : null} onConfirm={(mode, version) => rewindFrom(rewindTurn!, mode, version)} onClose={() => setRewindTurn(null)} />
     <aside className={`sidebar${sidebar ? " open" : ""}`} aria-label="Workspace navigation" onKeyDown={sidebarKeys}>
-      <div className="brand"><Button type="button" variant="ghost" size="logo" className="brand-home" aria-label="Elpis home" onClick={() => show("chat")}><img src={brandMark} alt="" width={73} height={36} /></Button><Button className="sidebar-toggle" variant="ghost" size="icon-sm" aria-label="Close sidebar" title={shortcutTitle("Close sidebar", "sidebar", preferences)} onClick={() => showSidebar(false)}><PanelLeft size={16} /></Button></div>
+      <div className="brand"><Button type="button" variant="ghost" size="logo" className="brand-home" aria-label="Elpis home" onClick={() => show("chat")}><BrandWordmark dark={dark} width={73} height={36} /></Button><Button className="sidebar-toggle" variant="ghost" size="icon-sm" aria-label="Close sidebar" title={shortcutTitle("Close sidebar", "sidebar", preferences)} onClick={() => showSidebar(false)}><PanelLeft size={16} /></Button></div>
       <nav className="nav-list" aria-label="Workspace">
         <Button data-slot="nav-row" className="new-chat" variant="ghost" aria-label="New chat" data-shortcut={shortcutHint("new-chat", preferences)} aria-current={view === "chat" && !selected ? "page" : undefined} disabled={projectChanging} onClick={newChat}><NewChatIcon size={16} />New chat</Button>
         {arrangedPages.map(page => <ReorderItem key={page.id} reorder={pageReorder} itemId={page.id} render={<Button data-slot="nav-row" variant="ghost" data-nav-page={page.id} aria-label={page.name} aria-current={view === page.id ? "page" : undefined} onClick={() => show(page.id)} title={`${page.name} (drag, or Alt+Up/Down, to reorder)`}>
@@ -2392,7 +2392,7 @@ export default function Home() {
         <ImproveElpis threadId={view === "chat" ? selected?.id : undefined} onChat={loadThread} />
         {outsideChatApprovals.length > 0 && <div className="pending-input-anchor"><Button ref={pendingInputButton} className="pending-input-trigger" variant="secondary" size="sm" aria-label={`Needs input (${outsideChatApprovals.length})`} aria-expanded={pendingInputOpen} aria-controls="pending-input-panel" onKeyDown={event => { if (event.key === "Escape") setPendingInputOpen(false); }} onClick={() => setPendingInputOpen(value => !value)}><span className="pending-count">{outsideChatApprovals.length}</span>Needs input<span className="pending-task-name">{title(threads.find(thread => thread.id === outsideChatApprovals[0].params.threadId) || outsideChatApprovals[0].thread || {id:outsideChatApprovals[0].params.threadId || "unreported"})}</span></Button></div>}
         <Button className="mobile-menu sidebar-open" variant="ghost" size="icon-sm" aria-label="Open sidebar" title={shortcutTitle("Open sidebar", "sidebar", preferences)} onClick={() => showSidebar(true)}><PanelLeft size={16} /></Button>
-        <img className="mobile-brand" src={brandMark} alt="" aria-hidden="true" width={49} height={24} />
+        <BrandWordmark className="mobile-brand" dark={dark} width={49} height={24} />
         <div className="header-titles min-w-0 flex-1">
           {view === "chat" && desktop && !split.pane
             ? <TabStrip label="Chat tabs" activeKey={tabs.activeId} add={<Button type="button" variant="ghost" size="icon-sm" className="task-tab-new" aria-label="New chat tab" title="New chat tab (Ctrl+T)" onClick={newChatTab}><PlusIcon size={15} /></Button>}>
@@ -2437,7 +2437,7 @@ export default function Home() {
             : !loading && selected && historyGaps.has(selected.id) && <div className="context-event" role="note">The earliest part of this chat is missing, so it opened with the history that remains.</div>}
           {loading && !shownEntries.length && <p role="status" className="chat-loading text-muted-foreground">Loading conversation…</p>}
           {selectedWorkflow && <WorkflowChat threads={threads} run={selectedWorkflow} identity={workflowCatalog.identities[selectedWorkflow.id]} ready={ready && connected} models={models} onOpenChat={id => void openById(id)} onOpenCanvas={run => { setRecordedWorkflow({ id: run.id, rootThreadId: run.rootThreadId }); show("canvas"); }} />}
-          {!selectedWorkflow && !loading && !shownEntries.length && !activeTurn && <div className="empty-state">{selected ? <><h2>This conversation has no messages yet.</h2><p>Messages and tool activity appear here.</p></> : <><img className="empty-mark" src={brandMark} alt="" aria-hidden="true" /><h2>{project ? <>What should we build in <ProjectMenu variant="heading" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} />?</> : "What should we build?"}</h2>{personal.showTip && <PersonalTip onOpen={personal.open} onDismiss={personal.dismiss} />}</>}</div>}
+          {!selectedWorkflow && !loading && !shownEntries.length && !activeTurn && <div className="empty-state">{selected ? <><h2>This conversation has no messages yet.</h2><p>Messages and tool activity appear here.</p></> : <><BrandWordmark className="empty-mark" dark={dark} /><h2>{project ? <>What should we build in <ProjectMenu variant="heading" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} />?</> : "What should we build?"}</h2>{personal.showTip && <PersonalTip onOpen={personal.open} onDismiss={personal.dismiss} />}</>}</div>}
           {chatConversation}
           {selected && stoppedTurns[selected.id] && !activeTurn && <p className="turn-stopped" role="status">Stopped. The reply above is where it was when the turn was stopped.</p>}
           {failedTurn && <FailedTurnCard key={`${selected?.id}:${failedTurn.turnId}`} failure={failedTurn} models={selectedChoice?.models ?? models} currentModel={selected?.model} disabled={!replaceable}

@@ -8,6 +8,7 @@ import { MarkdownText } from "@/components/markdown-text";
 import { api, unreadable, type Entry } from "@/lib/api";
 import { MATILDA_CHANGED, savedPersona } from "@/lib/matilda";
 import { subscribeLoveSpotTalk } from "@/lib/love-spot-talk-events";
+import { replyPortrait } from "@/bridge/matilda-face.cjs";
 import { attachedFile } from "@/lib/prompt-history";
 import "@/components/matilda-mini-chat.css";
 
@@ -111,7 +112,7 @@ export function MatildaMiniChat({ chat }: { chat: ReturnType<typeof useMatildaMi
     {!chat.showEarlier && before.length > 0 && <Button variant="ghost" size="xs" className="matilda-mini-earlier" onClick={() => chat.setShowEarlier(true)}>Show previous messages</Button>}
     {!!entries.length && <div ref={log} className="matilda-mini-messages" role="log" aria-label="Matilda conversation" aria-live="polite" aria-relevant="additions text">
       {entries.map(entry => <div key={`${entry.turnId}:${entry.item.id}`} className="matilda-mini-message" data-speaker={entry.item.type === "userMessage" ? "you" : "matilda"}>
-        <span className="sr-only">{entry.item.type === "userMessage" ? "You" : "Matilda"}: </span><MarkdownText text={message(entry)} allowImages={false} />
+        <span className="sr-only">{entry.item.type === "userMessage" ? "You" : "Matilda"}: </span><MarkdownText text={entry.item.type === "agentMessage" ? replyPortrait(message(entry)).text : message(entry)} allowImages={false} />
       </div>)}
     </div>}
     {(chat.posting || chat.conversation.busy) && <p className="matilda-mini-status" role="status">Matilda is replying…</p>}

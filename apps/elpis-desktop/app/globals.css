@@ -427,7 +427,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .send-button { height:var(--control-h); min-width:var(--control-h); }
 
 /* APP-FIX-2: task-titled rows, live agents, settings sections. */
-.brand img { width:73px; height:36px; flex-shrink:0; }
+.brand svg { width:73px; height:36px; flex-shrink:0; }
 .brand-home { flex:0 0 auto; }
 /* The mark is not a row: no tinted box appears behind it (Masih, 23 Oct: "the light orange shadow behind the elpis shouldn't show to the user"). */
 .brand .brand-home:hover, .brand .brand-home:active, .brand .brand-home[aria-expanded="true"] { background:transparent; }
@@ -709,7 +709,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 /* The native bevel draws the border once, using the same width and colour as its straight edges. */
 .composer:focus-within { box-shadow:var(--elevation-composer); }
 .empty-state h2 { font-family:var(--serif); font-weight:300; letter-spacing:.01em; }
-.dark .empty-state .empty-mark { filter:drop-shadow(0 0 18px rgba(229,173,85,.35)); }
+.dark .empty-state .empty-mark { filter:drop-shadow(0 0 18px color-mix(in srgb, var(--primary) 35%, transparent)); }
 .composer-controls { margin-top:6px; }
 .composer-right { display:flex; align-items:center; gap:var(--composer-control-gap, 8px); min-width:0; }
 .composer-actions { display:flex; align-items:center; gap:var(--composer-control-gap, 8px); flex-shrink:0; }
@@ -907,7 +907,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .sidebar-group-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .sidebar-group-toggle svg { flex-shrink:0; color:var(--muted-foreground); }
 /* One icon size in the sidebar, as in ChatGPT: rows, groups, search and the footer (chevrons keep their own). */
-.sidebar :is(.brand, .nav-list button, .sidebar-group-toggle, .section-label-row, .sidebar-footer, .sidebar-status) svg:not(.sidebar-group-chevron, .section-chevron),
+.sidebar :is(.brand, .nav-list button, .sidebar-group-toggle, .section-label-row, .sidebar-footer, .sidebar-status) svg:not(.sidebar-group-chevron, .section-chevron, .size-wordmark),
 .workspace-header :is(.header-action, .task-tab-new, .sidebar-open) svg { width:var(--icon-size); height:var(--icon-size); }
 .sidebar-group-chevron, .section-chevron { width:14px; height:14px; transition:transform .15s; }
 .sidebar-group-toggle[aria-expanded="true"] .sidebar-group-chevron, .section-toggle[aria-expanded="true"] .section-chevron { transform:rotate(90deg); }

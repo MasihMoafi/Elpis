@@ -1,4 +1,5 @@
 'use strict';
+const { replyPortrait } = require('./matilda-face.cjs');
 // How an agent paints on the Love Spot board: a fenced ```excalidraw block in its reply holds a JSON list of simple shapes. The bridge
 // takes the block out of the note, checks every shape and draws them beside the note, as ordinary Excalidraw elements Masih can move,
 // recolour and delete. Nothing in the block can reach the file system or the model: it is data, bounded and validated here.
@@ -68,7 +69,7 @@ function splitPainting(reply) {
 }
 
 /** What the person reads while a reply streams: the note without the block, finished or not. */
-const withoutPainting = reply => plainNote(String(reply ?? '').replace(FENCE, '').replace(OPEN_FENCE, '').replace(/\n{3,}/g, '\n\n').trim());
+const withoutPainting = reply => plainNote(replyPortrait(reply).text.replace(FENCE, '').replace(OPEN_FENCE, '').replace(/\n{3,}/g, '\n\n').trim());
 
 const left = shape => shape.left ?? shape.x, top = shape => shape.top ?? shape.y;
 /** The size of the painting the shapes make together. */

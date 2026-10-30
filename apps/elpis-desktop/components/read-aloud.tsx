@@ -12,7 +12,7 @@ const SpeechContext = createContext<Speech | null>(null);
 export const useReadAloud = () => useContext(SpeechContext);
 
 /** One player with generated silence as input. Closing its request also retires its native session. */
-export function ReadAloud({ threadId, enabled, unavailableReason, children }: { threadId?: string; enabled: boolean; unavailableReason?: string; children: ReactNode }) {
+export function ReadAloud({ threadId, enabled, available = READ_ALOUD_AUDIO.available, unavailableReason, children }: { threadId?: string; enabled: boolean; available?: boolean; unavailableReason?: string; children: ReactNode }) {
   const [active, setActive] = useState<string | null>(null);
   const [error, setError] = useState<Speech["error"]>(null);
   const call = useRef<Playback | null>(null), warmed = useRef("");
@@ -175,5 +175,5 @@ export function ReadAloud({ threadId, enabled, unavailableReason, children }: { 
       if (call.current === current) fail("Read aloud disconnected.");
     } catch (cause) { fail(cause instanceof Error ? cause.message : "Read aloud could not start."); }
   }
-  return <SpeechContext.Provider value={unavailableReason || !READ_ALOUD_AUDIO.available ? null : { active, error, play: (id, text) => void play(id, text), stream: id => void play(id), stop, warm }}>{children}</SpeechContext.Provider>;
+  return <SpeechContext.Provider value={unavailableReason || !available ? null : { active, error, play: (id, text) => void play(id, text), stream: id => void play(id), stop, warm }}>{children}</SpeechContext.Provider>;
 }

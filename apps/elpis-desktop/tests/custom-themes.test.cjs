@@ -13,6 +13,33 @@ async function appearance(page) {
 const token = (page, name) => page.evaluate(name => getComputedStyle(document.documentElement).getPropertyValue(name).trim(), name);
 const waitToken = (page, name, value) => page.waitForFunction(({ name, value }) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() === value, { name, value });
 
+test('all visible Elpis wordmarks follow the chosen accent in light and dark', async t => {
+  const fs = require('node:fs/promises');
+  const evidence = process.env.ELPIS_THEME_SHOTS;
+  if (evidence) await fs.mkdir(evidence, { recursive: true });
+  const f = await fixture(), { page } = f; t.after(f.close);
+  await f.open('chat-a');
+  for (const mode of ['Light', 'Dark']) {
+    await appearance(page);
+    await page.getByRole('radiogroup', { name: 'Theme', exact: true }).getByRole('radio', { name: mode, exact: true }).click();
+    for (const accent of ['amber', 'blue', 'teal', 'green', 'violet', 'rose', 'orange']) {
+      await chooseOption(page.getByLabel('Accent colour', { exact: true }), accent);
+      await page.waitForFunction(value => document.documentElement.dataset.accent === value, accent);
+      await leaveSettings(page);
+      const color = await page.locator('.brand-home svg stop[stop-color="var(--primary)"]').first().evaluate(stop => getComputedStyle(stop).stopColor);
+      const expected = await page.evaluate(() => {
+        const el = document.createElement('span'); el.style.color = 'var(--primary)';
+        document.body.append(el); const value = getComputedStyle(el).color; el.remove(); return value;
+      });
+      assert.equal(color, expected, `${mode} ${accent}: wordmark uses the selected accent`);
+      assert.ok((await page.locator('.brand-home').boundingBox()).width > 60, 'logo retains its width beside the sidebar toggle');
+      if (evidence && accent === 'teal') await page.screenshot({ path: `${evidence}/teal-${mode.toLowerCase()}.png` });
+      await appearance(page);
+    }
+    await leaveSettings(page);
+  }
+});
+
 async function typeValue(page, label, value) {
   const input = page.getByLabel(label, { exact: true });
   await input.click();

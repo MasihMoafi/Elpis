@@ -30,7 +30,7 @@ import type { VersionControl } from "@/lib/turn-replacement";
 import { noticeOf, type WorkflowNotice } from "@/lib/workflow-notice";
 import { reasoningOf, shellTokens, stepDuration, stepFailed, stepLabel, summarize, unwrapShell } from "@/lib/steps";
 // Built into the page, as the board has it: no request that can fail or arrive late (Masih, 23 Oct).
-import { FACE_DATA_URL } from "@/bridge/matilda-face.cjs";
+import { replyPortrait } from "@/bridge/matilda-face.cjs";
 import { runCard } from "@/lib/run-card";
 
 const object = (value: unknown): Record<string,unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string,unknown> : {};
@@ -166,12 +166,14 @@ export function ChatMessage({item,model,speaker="Elpis",threads=[],onOpenThread,
   }
   if(item.type==="agentMessage"){
     if(item.text!==undefined&&typeof item.text!=="string")throw unreadable("message");
+    const portrait = speaker === "Matilda" ? replyPortrait(item.text) : null;
+    if (portrait) item = { ...item, text: portrait.text };
     const speechId = reference ?? item.id, speaking = speech?.active === speechId, verdict = runCard(item.text || "");
     const spokenText = readAloud ? plainText(item.text || "") : "";
     const speechAction:MessageAction[] = speech && (speaking || (readAloud && spokenText.trim())) ? [{ id: "read-aloud", label: speaking ? "Stop" : "Read aloud", title: speaking ? "Stop reading aloud" : "Read aloud · ChatGPT voice", icon: speaking ? <StopIcon size={14}/> : <Volume2 size={14}/>, run: () => speaking ? speech.stop() : speech.play(speechId, spokenText) }] : [];
     const modelAction:MessageAction[]=model?[{id:"model",label:model,icon:null,run:()=>{}}]:[];
     const actions:MessageAction[]=item.text?[...modelAction,...replyAction(onReply),copyTextAction(()=>item.text||""),copyAction("Copy reply",()=>item.text||""),...speechAction,...(onRegenerate?[{id:"regenerate",label:"Regenerate reply",title:"Regenerate",icon:<RefreshCw size={14}/>,run:onRegenerate}]:[]),...rewindAction(onRewind),...(onFork?[{id:"fork",label:"Fork chat from here",icon:<BranchIcon size={14}/>,run:onFork}]:[])]:modelAction;
-    return <RightClickMenu actions={menuActions(actions)} area={<article className={speaker==="Matilda"?"message agent matilda-message flow-root":"message agent"} id={reference ? messageDomId(reference) : undefined} data-message-reference={onReply ? reference : undefined} tabIndex={reference ? -1 : undefined} {...(speechAction.length ? { onPointerEnter: speech?.warm, onFocus: speech?.warm } : {})}/>}>{speaker==="Matilda"&&<img src={FACE_DATA_URL} alt="Matilda" width={64} height={64} className="float-left mb-2 mr-4 h-16 w-16 object-contain"/>}{speaker!=="Elpis"&&<div className="speaker">{speaker}</div>}<div className="message-body">{verdict?<section className={verdict.failed?"plan-card check-failed":"plan-card"} aria-label={verdict.label}><p className="plan-card-heading">{verdict.mother?<Signpost size={14} aria-hidden="true"/>:verdict.failed?<CircleX size={14} aria-hidden="true"/>:<CircleCheck size={14} aria-hidden="true"/>}{verdict.heading}</p><MarkdownText text={verdict.text}/></section>:<MarkdownText text={item.text||""}/>}</div>{speech?.error?.id===speechId&&<p role="alert" className="text-sm text-destructive">{speech.error.message}</p>}{actions.length>0&&<InkRow className="message-actions"><MessageButtons actions={actions}/></InkRow>}</RightClickMenu>;
+    return <RightClickMenu actions={menuActions(actions)} area={<article className={speaker==="Matilda"?"message agent matilda-message flow-root":"message agent"} id={reference ? messageDomId(reference) : undefined} data-message-reference={onReply ? reference : undefined} tabIndex={reference ? -1 : undefined} {...(speechAction.length ? { onPointerEnter: speech?.warm, onFocus: speech?.warm } : {})}/>}>{speaker==="Matilda"&&<img src={portrait?.dataURL} alt="Matilda" width={64} height={64} className="float-left mb-2 mr-4 h-16 w-16 object-contain"/>}{speaker!=="Elpis"&&<div className="speaker">{speaker}</div>}<div className="message-body">{verdict?<section className={verdict.failed?"plan-card check-failed":"plan-card"} aria-label={verdict.label}><p className="plan-card-heading">{verdict.mother?<Signpost size={14} aria-hidden="true"/>:verdict.failed?<CircleX size={14} aria-hidden="true"/>:<CircleCheck size={14} aria-hidden="true"/>}{verdict.heading}</p><MarkdownText text={verdict.text}/></section>:<MarkdownText text={item.text||""}/>}</div>{speech?.error?.id===speechId&&<p role="alert" className="text-sm text-destructive">{speech.error.message}</p>}{actions.length>0&&<InkRow className="message-actions"><MessageButtons actions={actions}/></InkRow>}</RightClickMenu>;
   }
   if(item.type==="smartPrune")return <SmartPruneLine value={item.prune} mediaBase={mediaBase}/>;
   if(item.type==="commandExecution")return <CommandStep item={item}/>;

@@ -9,7 +9,7 @@ const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { newer } = require('./love-spot-order.cjs');
 const { paintElements, paintingSize } = require('./love-spot-painting.cjs');
-const { BOARD_FACE, OLD_BOARD_FACES } = require('./matilda-face.cjs');
+const { BOARD_FACE, OLD_BOARD_FACES, replyPortrait } = require('./matilda-face.cjs');
 const FACE = 96, FACE_SIDE = FACE + 12;
 const exec = promisify(execFile);
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -349,6 +349,8 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
   /** Writes the reply as a black note with her face to its left, and draws her painting (shapes from bridge/love-spot-painting.cjs) beneath it; either may be missing. Face, note and painting are one group. */
   async function reply(turnId, text, agentColor, page, shapes = [], { preview = false } = {}) {
     if (typeof text === 'string') text = text.replaceAll('💙', '❤️');
+    const portrait = replyPortrait(text, preview);
+    text = portrait.text;
     const note = typeof text === 'string' && text.trim() !== '';
     if (!note && !shapes.length) return;
     return locked(async () => {
@@ -385,7 +387,7 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
         if (!hits.length) break;
         y = Math.max(...hits.map(e => e.y + e.height)) + 40;
       }
-      const now = Date.now(), file = { id: 'matilda-face', ...BOARD_FACE, created: now, lastRetrieved: now };
+      const now = Date.now(), file = { id: `matilda-face-${portrait.expression}`, ...portrait.board, created: now, lastRetrieved: now };
       const face = { id: `love-face-${turnId}`, type: 'image', fileId: file.id, x, y, width: FACE, height: FACE, angle: 0, strokeColor: 'transparent', backgroundColor: 'transparent', fillStyle: 'solid', strokeWidth: 1,
         strokeStyle: 'solid', roughness: 0, opacity: 100, groupIds: [group], frameId: null, roundness: null, seed: 1, version: 1, versionNonce: 0, isDeleted: false, boundElements: null,
         updated: now, link: null, locked: false, status: 'saved', scale: [1, 1], crop: null };
@@ -393,7 +395,7 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
         strokeStyle: 'solid', roughness: 0, opacity: 100, groupIds: [group], frameId: null, roundness: null, seed: 1, version: 1, versionNonce: 0,
         isDeleted: false, boundElements: null, updated: now, link: null, locked: false, fontSize: 20, fontFamily: 6, text: lines.join('\n'),
         originalText: text.trim(), textAlign: 'left', verticalAlign: 'top', containerId: null, autoResize: false, lineHeight: 1.25 };
-      face.customData = { streaming: preview };
+      face.customData = { streaming: preview, expression: portrait.expression };
       const updated = [face, ...(element ? [element] : []), ...paintElements(shapes, { x: x + FACE_SIDE, y: y + noteHeight + gap }, turnId, group)].map(e => {
         const previous = scene.elements.find(old => old.id === e.id);
         return previous ? { ...e, version: previous.version + 1, versionNonce: previous.versionNonce + 1 } : e;

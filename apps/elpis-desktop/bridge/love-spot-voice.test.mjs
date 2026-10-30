@@ -75,7 +75,8 @@ test('the live microphone endpoint starts the saved subscription voice with cont
   assert.equal(starts.length, 1, 'refused requests must not start another subscription session');
 });
 
-test('the production text-only HTTP path skips legacy voice files, status and native audio', async t => {
+test('disabled audio skips legacy voice files, status and native audio', async t => {
+  const disabledAudio = { available: false, reason: 'Voice is unavailable.' };
   const home = createTestTempDir(path.join(os.tmpdir(), 'lovevoice-disabled-'));
   let app;
   t.after(async () => { await app?.close(); removeTestTempDir(home); });
@@ -88,14 +89,14 @@ test('the production text-only HTTP path skips legacy voice files, status and na
     voiceStatus: async () => { statuses++; throw Error('Disabled audio status must not load'); },
     createSpeechThread: async () => { starts++; throw Error('Disabled audio must not warm'); },
     startSpeechThread: async () => { starts++; throw Error('Disabled audio must not start'); } });
-  app = await startDesktopServer({ client, elpisHome: home, trashFile: path.join(home, 'trash.json'), loveSpot: { directory, screenshots: path.join(home, 'shots') } });
+  app = await startDesktopServer({ client, loveSpotAudio: disabledAudio, elpisHome: home, trashFile: path.join(home, 'trash.json'), loveSpot: { directory, screenshots: path.join(home, 'shots') } });
   const url = new URL(app.url), token = new URLSearchParams(url.hash.slice(1)).get('token');
   const auth = await fetch(new URL('/api/session', url), { method: 'POST', headers: { origin: url.origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) });
   const headers = { origin: url.origin, cookie: auth.headers.get('set-cookie').split(';')[0], 'Content-Type': 'application/json' };
   for (const route of ['love-spot/talk', 'love-spot/voice/settings']) {
     const response = await fetch(new URL(`/api/${route}`, url), { headers });
     assert.equal(response.status, 200);
-    const state = await response.json(); assert.equal((state.voice ?? state).reason, LOVE_SPOT_AUDIO.reason);
+    const state = await response.json(); assert.equal((state.voice ?? state).reason, disabledAudio.reason);
   }
   for (const [route, body] of [['love-spot/voice/settings', { enabled: true }], ['love-spot/voice', { sdp: 'v=0\r\n' }], ['love-spot/voice/call', { sdp: 'v=0\r\n', persona: 'Be brief.' }]]) {
     const response = await fetch(new URL(`/api/${route}`, url), { method: 'POST', headers, body: JSON.stringify(body) });

@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { BridgeError, DesktopClient, elpisHome, MAX_BRIDGE_MESSAGE_BYTES, object, text } from './client.mjs';
 import { profileEnvironment } from './profile-env.mjs';
 import { LOVE_SPOT_AUDIO } from '../lib/love-spot-audio.mjs';
+import { PORTRAIT_INSTRUCTIONS } from './matilda-face.cjs';
 import { planCanvas } from './canvas-plan.mjs';
 import { createExperimentLab } from './experiment-lab.mjs';
 import { listDirectory, listFiles, readFile, readFileAsset, searchFiles, writeFile } from './files.mjs';
@@ -436,7 +437,12 @@ export async function startDesktopServer(options = {}) {
           if (thread[2] === 'git' && method === 'POST') return json(response, 200, await client.discardChange(id, await body(request, 65536)));
           if (thread[2] && !['context', 'prompts', 'git'].includes(thread[2]) && method === 'POST') {
             const operation = { turns: 'send', steer: 'steer', interrupt: 'interrupt', resume: 'resume', continue: 'continueThread', delete: 'deleteThread', rename: 'renameThread', archive: 'archiveThread', unarchive: 'unarchiveThread', revert: 'revert', rewind: 'rewind', versions: 'versions', fork: 'forkThread', compact: 'compact', review: 'review', permissions: 'setPermissions', effort: 'setEffort', 'service-tier': 'setServiceTier', folder: 'setFolder' }[thread[2]];
-            return json(response, 200, await client[operation](id, await body(request, ['send', 'steer'].includes(operation) ? ATTACHMENT_BODY_LIMIT : 65536)));
+            const input = await body(request, ['send', 'steer'].includes(operation) ? ATTACHMENT_BODY_LIMIT : 65536);
+            // A normal chat tab uses the same portrait choices as the board, including existing conversations.
+            if (['send', 'steer'].includes(operation) && await loveSpot.chat() === id && input && typeof input === 'object' && !Array.isArray(input) && (input.attachments === undefined || Array.isArray(input.attachments))) {
+              input.attachments = [...(input.attachments ?? []), { id: 'matilda-portrait', name: 'Reply portrait.txt', type: 'text', mimeType: 'text/plain', text: PORTRAIT_INSTRUCTIONS }];
+            }
+            return json(response, 200, await client[operation](id, input));
           }
           throw new BridgeError('Method is not allowed', 405);
         }

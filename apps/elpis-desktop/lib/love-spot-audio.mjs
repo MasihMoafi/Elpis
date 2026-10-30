@@ -1,7 +1,7 @@
-/** Keep Love Spot text-only until its playback and live-call acceptance checks pass. */
+/** Availability still requires a signed-in ChatGPT voice connection at runtime. */
 export const LOVE_SPOT_AUDIO = Object.freeze({
-  available: false,
-  reason: "Love Spot audio is temporarily unavailable.",
+  available: true,
+  reason: "",
   pendingReason: "Audio is unavailable while chat information loads.",
 });
 

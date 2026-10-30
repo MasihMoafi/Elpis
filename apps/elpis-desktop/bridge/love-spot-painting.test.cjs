@@ -3,6 +3,24 @@ const assert = require('node:assert/strict');
 const { splitPainting, paintElements, diagramSvg } = require('./love-spot-painting.cjs');
 const fence = shapes => '```excalidraw\n' + JSON.stringify(shapes) + '\n```';
 
+test('each approved reply portrait is distinct, and its mood marker stays out of text and speech', () => {
+  const { replyPortrait, MATILDA_SHOTS } = require('./matilda-face.cjs');
+  const { withoutPainting } = require('./love-spot-painting.cjs');
+  const portraits = [];
+  for (const expression of Object.keys(MATILDA_SHOTS)) {
+    const raw = `<!--matilda:${expression}--> Hello.`;
+    const portrait = replyPortrait(raw);
+    assert.equal(portrait.expression, expression);
+    assert.equal(portrait.text, 'Hello.');
+    assert.equal(withoutPainting(raw), 'Hello.');
+    assert.equal(portrait.board.mimeType, 'image/webp');
+    portraits.push(portrait.board.dataURL);
+  }
+  assert.equal(new Set(portraits).size, 7);
+  assert.equal(replyPortrait('Check the error.').expression, 'listening');
+  assert.equal(withoutPainting('<!--matilda:kissSoft'), '');
+});
+
 test('positioned connectors and absolute-point connectors produce the same board geometry', () => {
   const positioned = splitPainting(fence([{ type: 'rectangle', x: 0, y: 0, width: 200, height: 60 }, { type: 'arrow', x: 100, y: 60, points: [[0, 0], [0, 50], [-40, 80]] }])).shapes;
   const absolute = splitPainting(fence([{ type: 'rectangle', x: 0, y: 0, width: 200, height: 60 }, { type: 'arrow', points: [[100, 60], [100, 110], [60, 140]] }])).shapes;
