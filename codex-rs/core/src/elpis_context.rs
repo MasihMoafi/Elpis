@@ -18,7 +18,7 @@ pub const ELPIS_CONTINUITY_PROMPT_PREFIX: &str = "## Elpis Admitted Context\n\n\
     transcript. Verify mutable repository state before acting, and prefer the current user\n\
     message when it changes the task.\n\n";
 const ADMISSION_FILE: &str = "admission.toml";
-const MANUAL_MEMORY_FILE: &str = "MEMORY.md";
+pub const MANUAL_MEMORY_FILE: &str = "MEMORY.md";
 /// Public so tests can strip exactly what the prompt inserts ahead of the memory body.
 pub const MEMORY_SCOPE_GUIDANCE: &str = "The user activates saved memories, including automatically saved memories, \
     by selecting MEMORY.md in the Context Ledger. Saving a memory does not activate it; \
@@ -2958,7 +2958,7 @@ mod tests {
         tokio::fs::create_dir_all(nested_rules.parent().expect("nested parent")).await?;
         tokio::fs::write(&root_rules, "Root rules").await?;
         tokio::fs::write(&nested_rules, "Nested rules").await?;
-        admit_all(&memories, &cwd)?;
+        admit_all(Some(&memories), &cwd, &[PROJECT_RULES])?;
 
         let sources = continuity_sources(
             Some(&memories),

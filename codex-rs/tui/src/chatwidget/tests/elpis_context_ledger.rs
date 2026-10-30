@@ -5,6 +5,7 @@
 
 use super::*;
 use crate::elpis_app_event::ElpisAppEvent;
+use crate::elpis_ledger_events::ManualMemoryMutation;
 use crate::elpis_ledger_events::ManualMemoryRequestTarget;
 use crate::elpis_ledger_events::ManualMemoryStatusCompletion;
 use crate::elpis_ledger_events::ManualMemoryStorageTarget;
