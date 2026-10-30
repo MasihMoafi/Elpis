@@ -359,6 +359,8 @@
     "tests/workflow-notice.test.cjs",
     "tests/matilda-companion.test.cjs",
     "tests/matilda-pet.test.cjs",
+    "tests/matilda-music.test.cjs",
+    "tests/matilda-badge.test.cjs",
     "tests/excalidraw-diagram.test.cjs",
     "tests/check-verdict.test.cjs",
     "tests/canvas-transcribe.test.cjs",

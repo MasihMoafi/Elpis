@@ -3,12 +3,18 @@
 import { useEffect, useRef, useState } from "react";
 import { chatOrigin, loveActivity, newLoveReplies } from "./love-activity";
 import { subscribeLoveSpotEvents } from "./love-spot-events";
+import { MATILDA_CHAT_SHOWN } from "./matilda";
 
 export function useLoveActivity(active: boolean, ready: boolean, activeThread?: { id: string; name?: string | null } | null) {
   const [unread, setUnread] = useState<string[]>([]);
   const [origins, setOrigins] = useState<{ threads: Record<string, string>; resolved: boolean }>({ threads: {}, resolved: false });
   const threads = origins.threads;
-  const reading = active || !!activeThread && chatOrigin(activeThread, threads) === "Love Spot";
+  const [chatShown, setChatShown] = useState(false);
+  useEffect(() => {
+    const shown = (event: Event) => setChatShown((event as CustomEvent<boolean>).detail === true);
+    window.addEventListener(MATILDA_CHAT_SHOWN, shown); return () => window.removeEventListener(MATILDA_CHAT_SHOWN, shown);
+  }, []);
+  const reading = active || chatShown || !!activeThread && chatOrigin(activeThread, threads) === "Love Spot";
   const activeRef = useRef(reading); activeRef.current = reading;
   useEffect(() => { if (reading) setUnread([]); }, [reading]);
   useEffect(() => {

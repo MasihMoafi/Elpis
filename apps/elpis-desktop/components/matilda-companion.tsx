@@ -6,7 +6,7 @@ import { PinIcon, SoundIcon, SoundOffIcon } from "@/components/elpis-icons";
 import { MatildaMiniChat, useMatildaMiniChat } from "@/components/matilda-mini-chat";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
-import { MATILDA_CHANGED } from "@/lib/matilda";
+import { MATILDA_CHANGED, MATILDA_CHAT_SHOWN } from "@/lib/matilda";
 import { appStorage } from "@/lib/projects";
 import { MATILDA_SHOTS } from "@/bridge/matilda-face.cjs";
 
@@ -54,6 +54,10 @@ export function MatildaCompanion() {
   const mood = useMood(mini.posting || mini.conversation.busy, mini.conversation.entries.filter(entry => entry.item.type === "agentMessage").length);
   const suppressClick = useRef(false), faceRef = useRef<HTMLButtonElement>(null), floatRef = useRef<HTMLElement>(null);
   useEffect(() => { if (!state?.pinned) setChatOpen(false); }, [state?.pinned]);
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent(MATILDA_CHAT_SHOWN, { detail: chatOpen }));
+    return () => { if (chatOpen) window.dispatchEvent(new CustomEvent(MATILDA_CHAT_SHOWN, { detail: false })); };
+  }, [chatOpen]);
   // Her chat is part of her, like a pet's (29 Oct: dragging her "broke" the chatbox, which trailed and jumped as a separate
   // popover). Escape closes it and gives her the focus back; a press anywhere else closes it.
   useEffect(() => {
