@@ -30,6 +30,7 @@ html.matilda-dragging { user-select:none; -webkit-user-select:none; }
 .matilda-face { display:block; width:100%; height:100%; padding:0; border:0; border-radius:9999px; background:transparent; cursor:grab; filter:drop-shadow(0 4px 10px rgb(0 0 0 / 0.22)); }
 .matilda-face:active { cursor:grabbing; }
 .matilda-face img { display:block; width:100%; height:100%; border-radius:9999px; }
+.matilda-pin-face { display:block; width:20px; height:20px; border-radius:50%; object-fit:cover; }
 .matilda-face:focus-visible { outline:2px solid var(--ring); outline-offset:2px; }
 .matilda-resize { position:absolute; left:-3px; top:-3px; width:14px; height:14px; padding:0; border:2px solid var(--primary); border-right:0; border-bottom:0; background:transparent; cursor:nwse-resize; }
 .matilda-float-controls { position:absolute; right:0; bottom:calc(100% + 4px); display:flex; align-items:center; gap:2px; padding:2px; border:1px solid var(--hairline); background:var(--background); }
