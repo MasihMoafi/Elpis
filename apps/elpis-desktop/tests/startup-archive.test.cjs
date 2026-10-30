@@ -13,6 +13,7 @@ async function eventually(check) {
 }
 const sol = { id: 'sol', model: 'sol', displayName: 'Sol' };
 const latest = { id: 'latest-model', model: 'latest-model', displayName: 'Latest model' };
+const mutatingPosts = fixture => fixture.posts.filter(post => !(post.path.endsWith('/versions') && post.body.action === 'list'));
 
 async function fixture(t, { modelFailure = false, holdModels = false, descendantCount = 0, archivedDescendantCount = 0, descendantFailure = false, descendantCursor = null } = {}) {
   const clients = new Set(), loveClients = new Set(), posts = [], requests = [], errors = [], held = [];
@@ -38,9 +39,12 @@ async function fixture(t, { modelFailure = false, holdModels = false, descendant
     const json = (data, status = 200) => { res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(data)); };
     if (pathname === '/api/events') { res.writeHead(200, { 'Content-Type': 'text/event-stream' }); res.write(': connected\n\n'); clients.add(res); req.on('close', () => clients.delete(res)); return; }
     if (/^\/api\/love-spot\/(?:talk\/)?events$/.test(pathname)) { res.writeHead(200, { 'Content-Type': 'text/event-stream' }); res.write(': fixture\n\n'); loveClients.add(res); req.on('close', () => loveClients.delete(res)); return; }
+    if (req.method === 'GET' && pathname === '/api/love-spot/companion') return json({ pinned: false, favorite: null, music: null, reason: '' });
+    if (req.method === 'GET' && pathname === '/api/workflows/concurrency') return json({ value: 4, choices: [1, 2, 3, 4] });
     if (req.method === 'POST') {
       let raw = ''; for await (const chunk of req) raw += chunk;
       const body = raw ? JSON.parse(raw) : {}; if (!(pathname.endsWith('/rewind') && body.action === 'status')) posts.push({ path: pathname, body });
+      if (/^\/api\/threads\/[^/]+\/versions$/.test(pathname) && body.action === 'list') return json({ versions: [] });
       const id = pathname.split('/')[3], thread = threads.find(item => item.id === id);
       if (pathname.endsWith('/resume')) return json({ thread, activeTurnId: null });
       if (pathname.endsWith('/rewind') && body.action === 'status') return json({});
@@ -142,7 +146,7 @@ test('native archive events retain drafts; native deletion clears only that conv
   const f = await fixture(t); await f.ready(); await eventually(() => assert.equal(f.clients.size, 1)); await f.open('a'); await f.composer.fill('SSE draft A');
   f.external('thread/archived', 'a'); await f.restore('a'); assert.equal(await f.composer.inputValue(), 'SSE draft A', 'A native archive event must preserve the composer draft'); assert.equal(await f.saved('recovery-a'), 'Recovered edit A'); assert.equal(await f.saved('c'), 'Unsent child C'); assert.equal(await f.saved('recovery-c'), 'Recovered child C');
   f.external('thread/deleted', 'a'); await eventually(async () => assert.equal(await f.saved('a'), null)); assert.equal(await f.saved('recovery-a'), null); assert.equal(await f.saved('c'), null); assert.equal(await f.saved('recovery-c'), null); assert.equal(await f.saved('b'), 'Unsent B'); assert.equal(await f.saved('recovery-b'), 'Recovered edit B');
-  assert.equal(f.posts.filter(post => !post.path.endsWith('/resume') && !post.path.endsWith('/unarchive')).length, 0);
+  assert.equal(mutatingPosts(f).filter(post => !post.path.endsWith('/resume') && !post.path.endsWith('/unarchive')).length, 0);
 });
 
 test('deletion disposes later-page active and archived descendant drafts and preserves an unrelated edit', async t => {
@@ -214,7 +218,7 @@ test('catalogue sign-in failure leaves healthy history and live feed usable; ret
     }
   }
   f.control.modelFailure = false; await f.page.getByRole('button', { name: 'Retry models', exact: true }).click();
-  await eventually(async () => assert.equal((await f.page.getByRole('alert').allTextContents()).join('\n').includes('Fixture sign-in required for models'), false)); assert.equal(await model.getAttribute('data-value'), previous); assert.equal(f.clients.size, 1); assert.equal(f.posts.filter(post => !post.path.endsWith('/resume')).length, 0);
+  await eventually(async () => assert.equal((await f.page.getByRole('alert').allTextContents()).join('\n').includes('Fixture sign-in required for models'), false)); assert.equal(await model.getAttribute('data-value'), previous); assert.equal(f.clients.size, 1); assert.equal(mutatingPosts(f).filter(post => !post.path.endsWith('/resume')).length, 0);
 });
 
 test('slow catalogues never gate startup; old success cannot overwrite newer models/errors or an explicit choice', async t => {
@@ -226,5 +230,5 @@ test('slow catalogues never gate startup; old success cannot overwrite newer mod
   const oldResponse = f.page.waitForResponse(response => response.headers()['x-fixture-model-read'] === '1'); f.held[0]({ data: [{ id: 'old-model', model: 'old-model', displayName: 'Old model' }], nextCursor: null }); await (await oldResponse).finished(); await f.page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   assert.ok((await f.page.getByRole('alert').allTextContents()).join('\n').includes('Newer catalogue failure')); assert.equal(await model.getAttribute('data-value'), 'local-choice'); assert.equal(await model.locator('.model-trigger-provider').innerText(), provider);
   await model.click(); await f.page.getByRole('tab', { name: 'All', exact: true }).click(); await eventually(async () => assert.equal(await f.page.getByRole('option').filter({ hasText: 'Latest model' }).count(), 1)); await f.page.keyboard.press('Escape');
-  await f.page.getByRole('button', { name: 'Retry models', exact: true }).click(); await eventually(() => assert.equal(f.held.length, 4)); f.held[3]({ data: [sol, latest], nextCursor: null }); await eventually(async () => assert.equal((await f.page.getByRole('alert').allTextContents()).join('\n').includes('Newer catalogue failure'), false)); assert.equal(await model.getAttribute('data-value'), 'local-choice'); assert.equal(await model.locator('.model-trigger-provider').innerText(), provider); assert.equal(f.posts.filter(post => !post.path.endsWith('/resume')).length, 0);
+  await f.page.getByRole('button', { name: 'Retry models', exact: true }).click(); await eventually(() => assert.equal(f.held.length, 4)); f.held[3]({ data: [sol, latest], nextCursor: null }); await eventually(async () => assert.equal((await f.page.getByRole('alert').allTextContents()).join('\n').includes('Newer catalogue failure'), false)); assert.equal(await model.getAttribute('data-value'), 'local-choice'); assert.equal(await model.locator('.model-trigger-provider').innerText(), provider); assert.equal(mutatingPosts(f).filter(post => !post.path.endsWith('/resume')).length, 0);
 });

@@ -16,7 +16,7 @@ async function choose(page, id, colour, waitForSave = true) {
 }
 async function open(colorScheme = 'light', sidebarWidth = 256) {
   return fixture({ staticDir: process.env.ELPIS_GEOMETRY_STATIC_DIR, width: sidebarWidth === 200 ? 820 : 1280, height: 900, colorScheme, threads,
-    storage: { 'elpis-sidebar-width': String(sidebarWidth), 'elpis-sidebar-folds-v1': JSON.stringify({ sections: { workflows: false, love: false }, projects: {} }) },
+    storage: { 'elpis-preferences-v1': JSON.stringify({ sidebarWorkflows: true }), 'elpis-sidebar-width': String(sidebarWidth), 'elpis-sidebar-folds-v1': JSON.stringify({ sections: { workflows: false, love: false }, projects: {} }) },
     routes: { '/api/workflows/history': () => ({ data: [run] }) } });
 }
 async function expand(page) {
