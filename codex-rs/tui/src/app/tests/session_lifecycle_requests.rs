@@ -872,11 +872,12 @@ async fn delete_current_thread_reports_forked_history_reference() -> Result<()> 
         .lines()
         .map(serde_json::from_str)
         .collect::<std::result::Result<_, _>>()?;
-    records[0]["payload"]["history_base"] = serde_json::json!({
-        "thread_id": parent_id.to_string(),
-        "end_ordinal_exclusive": 1,
-        "rollout_file_bytes": std::fs::metadata(&parent_path)?.len(),
-    });
+    records[0]["payload"]["history_base"] =
+        serde_json::to_value(codex_protocol::protocol::HistoryPosition {
+            thread_id: parent_id,
+            end_ordinal_exclusive: 1,
+            end_byte_offset: std::fs::metadata(&parent_path)?.len(),
+        })?;
     let records = records
         .iter()
         .map(serde_json::to_string)
