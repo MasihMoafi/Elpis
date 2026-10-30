@@ -212,8 +212,47 @@ export function createLoveSpotTalk({ client, store, companion, audio = LOVE_SPOT
     publish();
   };
   client.on('event', event);
+  async function startFresh(input) {
+    object(input, ['threadId', 'model', 'provider', 'cwd', 'permissions', 'persona']);
+    const sourceId = text(input.threadId, 'thread ID', 200);
+    const model = input.model === undefined ? undefined : text(input.model, 'model', 200);
+    const provider = input.provider === undefined ? undefined : text(input.provider, 'provider', 200);
+    const persona = input.persona === undefined ? '' : text(input.persona, 'persona', 4000);
+    await load();
+    await work;
+
+    const currentId = await store.chat();
+    if (sending || (activeTurnId && threadId === currentId)) throw new BridgeError('Love Spot is already replying. Wait for this turn.', 409);
+    for (const id of new Set([currentId, sourceId].filter(Boolean))) {
+      if (id === stale) continue;
+      const live = await client.resume(id, {});
+      if (live.activeTurnId) throw new BridgeError('Love Spot is already replying. Wait for this turn.', 409);
+    }
+
+    let made;
+    const nextId = await store.chat(async directory => {
+      made = await client.createThread({
+        cwd: input.cwd ?? thread?.cwd ?? directory,
+        name: 'Love Spot',
+        ...(model ? { model } : {}),
+        ...(provider ? { provider } : {}),
+        ...(input.permissions ? { permissions: input.permissions } : {}),
+        instructions: `${INSTRUCTIONS}\n\nCurrent persona from Who you are.txt:\n${persona}`,
+        automatic: true,
+      });
+      return made.thread.id;
+    }, currentId ?? stale);
+    if (!made || nextId !== made.thread.id) throw new BridgeError('Love Spot changed in another window. Try again.', 409);
+
+    speechFeed?.emit({ type: 'stop' });
+    if (writing) { clearTimeout(writing.timer); for (const item of writing.items.values()) item.buffer.cancel(); }
+    threadId = nextId; thread = made.thread; entries = []; activeTurnId = null; finishedTurnId = null; error = ''; stale = undefined; loaded = true; writing = undefined; sendingPage = undefined;
+    publish();
+    return { thread, permissions: made.permissions ?? input.permissions };
+  }
   return {
     busy: () => sending || !!activeTurnId,
+    startFresh,
     async read() { await load(); return snapshot(); },
     async voice() { await load(); return refreshVoice(); },
     async setVoice(body) {

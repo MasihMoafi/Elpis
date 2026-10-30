@@ -8,7 +8,7 @@ import { EventEmitter } from 'node:events';
 import { createLoveSpot } from './love-spot-store.cjs';
 import { createLoveSpotTalk } from './love-spot-talk.mjs';
 import { createMatildaCompanion } from './matilda-companion.mjs';
-import { LOVE_SPOT_AUDIO } from '../lib/love-spot-audio.mjs';
+import { LOVE_SPOT_AUDIO, READ_ALOUD_AUDIO } from '../lib/love-spot-audio.mjs';
 import { splitPainting } from './love-spot-painting.cjs';
 
 const enabledAudio = { available: true };
@@ -35,6 +35,39 @@ async function fixture(t, { refuseFast = false, audio = enabledAudio, companion 
   const finish = (id = 'turn-1', status = 'completed', reply = 'Here with you.') => client.emit('event', { type: 'message', data: { method: 'turn/completed', params: { threadId: 'chat', turn: { id, status, items: [{ id: 'reply', type: 'agentMessage', text: reply }] } } } });
   return { directory, store, talk, client, created, sent, finish, entries, speeds, presence };
 }
+test('a fresh Matilda chat keeps its persona and settings, moves Love Spot forward, and leaves the board and old chat intact', async t => {
+  const f = await fixture(t);
+  f.client.createThread = async value => {
+    const id = f.created.length ? 'chat-fresh' : 'chat';
+    f.created.push(value); return { thread: { id, ...value } };
+  };
+  await f.store.save({ elements: [note('masih-drawing', 'Keep this board note.')] });
+  await f.talk.send({ text: 'Keep this conversation.', model: 'luna', provider: 'openai', persona: 'Use concise systems design reasoning.' });
+  await assert.rejects(f.talk.startFresh({ threadId: 'chat', model: 'luna', provider: 'openai', permissions: 'ask', persona: 'Use concise systems design reasoning.' }), error => error.status === 409);
+  assert.equal(await f.store.chat(), 'chat', 'an active turn keeps the current Love Spot chat');
+  f.finish('turn-1', 'completed', 'The previous reply stays in history.');
+  await f.talk.idle();
+  const board = await f.store.read();
+
+  const result = await f.talk.startFresh({ threadId: 'chat', model: 'luna', provider: 'openai', cwd: f.directory, permissions: 'ask', persona: 'Use concise systems design reasoning.' });
+
+  assert.equal(result.thread.id, 'chat-fresh');
+  assert.equal(result.permissions, 'ask');
+  assert.equal(await f.store.chat(), 'chat-fresh');
+  assert.equal(f.created[1].name, 'Love Spot');
+  assert.equal(f.created[1].model, 'luna');
+  assert.equal(f.created[1].provider, 'openai');
+  assert.equal(f.created[1].cwd, f.directory);
+  assert.equal(f.created[1].permissions, 'ask');
+  assert.match(f.created[1].instructions, /Use concise systems design reasoning\./);
+  assert.equal(f.sent.length, 1, 'starting the fresh chat sends no message');
+  assert.deepEqual(await f.store.read(), board, 'starting a fresh chat leaves every board element unchanged');
+  let snapshot;
+  const stop = await f.talk.watch(value => { snapshot = value; });
+  stop();
+  assert.equal(snapshot.thread.id, 'chat-fresh');
+  assert.deepEqual(snapshot.entries, []);
+});
 test('board commands attach actual action results to the normal reply without treating discussion as a command', async t => {
   const f = await fixture(t, { companion: true, audio: LOVE_SPOT_AUDIO });
   await f.talk.send({ text: 'Matilda, pin yourself.', model: 'text' });
@@ -49,25 +82,15 @@ test('board commands attach actual action results to the normal reply without tr
   assert.match(f.sent[2].attachments.find(a => a.name === 'Matilda action result.txt').text, /"ok":false/);
 });
 
-test('text-only Matilda never reads voice preferences or status and still delivers board replies', async t => {
+test('a text-only model does not disable real-time Voice while typed read-aloud stays unavailable', async t => {
   const f = await fixture(t, { audio: LOVE_SPOT_AUDIO });
-  const preferences = path.join(f.directory, '.voice.json'), saved = '{legacy malformed voice preference';
-  await fs.writeFile(preferences, saved);
-  let preferenceReads = 0, statusReads = 0;
-  f.store.voice = async () => { preferenceReads++; throw Error('Retired voice preferences must not be loaded'); };
-  f.client.voiceStatus = async () => { statusReads++; throw Error('Retired voice status must not be queried'); };
-  const unavailable = { enabled: false, available: false, reason: LOVE_SPOT_AUDIO.reason, error: '' };
-  assert.deepEqual((await f.talk.read()).voice, unavailable);
-  assert.deepEqual(await f.talk.voice(), unavailable);
+  assert.equal(LOVE_SPOT_AUDIO.available, true, 'real-time Voice is available');
+  assert.equal(READ_ALOUD_AUDIO.available, false, 'automatic typed read-aloud remains unavailable');
   await f.talk.send({ text: 'Keep writing', model: 'text' });
   f.finish('turn-1', 'completed', 'The text reply still arrives.'); await f.talk.idle();
   assert.equal((await f.store.read()).scene.elements.find(element => element.id === 'love-reply-turn-1').originalText, 'The text reply still arrives.');
-  for (const action of [() => f.talk.setVoice({ enabled: true }), () => f.talk.speech(), () => f.talk.conversation('Be kind.')]) {
-    await assert.rejects(action(), error => error.status === 403 && error.message === LOVE_SPOT_AUDIO.reason);
-  }
-  assert.deepEqual([preferenceReads, statusReads], [0, 0], 'startup, writing and refused audio actions never touch disabled audio');
-  assert.deepEqual((await f.talk.read()).voice, unavailable);
-  assert.equal(await fs.readFile(preferences, 'utf8'), saved, 'the fallback preserves saved preferences byte for byte');
+  assert.deepEqual((await f.talk.read()).voice, { enabled: true, available: true, reason: '', error: '' }, 'text-only image support does not disable real-time Voice');
+  assert.match((await f.talk.conversation('Be kind.')).context, /Be kind\./, 'real-time Voice keeps its own conversation route');
 });
 
 test('Talk creates one persistent normal chat, attributes live notes by colour, includes PNG only for image models', async t => {
