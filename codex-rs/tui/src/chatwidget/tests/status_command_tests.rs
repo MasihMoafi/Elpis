@@ -291,6 +291,7 @@ async fn status_command_reports_admitted_ledger_instructions_and_filters_ordinar
         chat.manual_memory_cache.sources = vec![ContinuitySource {
             name: file.to_string(),
             path: chat.config.cwd.join(file).to_path_buf(),
+            additional_paths: Vec::new(),
             bytes: 40,
             estimated_tokens: 10,
             category,
@@ -382,6 +383,7 @@ async fn status_command_keeps_queued_admission_separate_until_commit() {
         chat.manual_memory_cache.sources = vec![ContinuitySource {
             name: "Project AGENTS.md".to_string(),
             path: path.to_path_buf(),
+            additional_paths: Vec::new(),
             bytes: 40,
             estimated_tokens: 10,
             category: ContinuitySourceCategory::Instructions,

@@ -239,6 +239,8 @@ fn fail_if_injected(stage: InjectedPersistenceFailure) -> std::io::Result<()> {
 pub struct ContinuitySource {
     pub name: String,
     pub path: PathBuf,
+    /// Other instruction files governed by this same ledger row.
+    pub additional_paths: Vec<PathBuf>,
     pub bytes: u64,
     pub estimated_tokens: u64,
     pub category: ContinuitySourceCategory,
@@ -767,6 +769,7 @@ fn continuity_sources_with_state(
             }
             if let Some(index) = instruction_row_indexes.get(&source.name).copied() {
                 let existing: &mut ContinuitySource = &mut sources[index];
+                existing.additional_paths.push(source.path);
                 existing.bytes = existing.bytes.saturating_add(source.bytes);
                 existing.estimated_tokens = existing
                     .estimated_tokens
@@ -828,6 +831,7 @@ fn continuity_sources_with_state(
     if let Some(status) = manual_memory {
         let source = ContinuitySource {
             name: MANUAL_MEMORY_FILE.to_string(),
+            additional_paths: Vec::new(),
             path: memory_path.clone(),
             bytes: status.bytes,
             estimated_tokens: (status.request_chars_if_admitted as u64).div_ceil(4),
@@ -872,6 +876,7 @@ fn continuity_sources_with_state(
                 let metadata = std::fs::metadata(&path).ok()?;
                 (metadata.is_file() && metadata.len() > 0).then_some(ContinuitySource {
                     name: path.display().to_string(),
+                    additional_paths: Vec::new(),
                     estimated_tokens: estimate_tokens(&path, metadata.len(), MAX_RULE_CHARS),
                     category: if is_memory {
                         ContinuitySourceCategory::Memory
@@ -1004,6 +1009,7 @@ fn existing_file_source(
         estimated_tokens: estimate_tokens(&path, metadata.len(), source_char_limit(&name)),
         name,
         path,
+        additional_paths: Vec::new(),
         bytes: metadata.len(),
         category,
         origin,
@@ -3071,6 +3077,7 @@ mod tests {
         assert_eq!(project_rows.len(), 1);
         assert_eq!(project_rows[0].bytes, 22);
         assert_eq!(project_rows[0].estimated_tokens, 6);
+        assert_eq!(project_rows[0].additional_paths, vec![nested_rules.clone()]);
 
         set_continuity_source_admitted(Some(&memories), &cwd, PROJECT_RULES, false)?;
         assert!(!instruction_source_admitted(
