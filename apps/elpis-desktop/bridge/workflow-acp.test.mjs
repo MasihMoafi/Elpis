@@ -11,7 +11,7 @@ import { DesktopClient } from './client.mjs';
 import { startDesktopServer } from './server.mjs';
 import { workflowWorktrees } from './workflow-worktrees.mjs';
 import { loveNodeSpec } from './love-agents.mjs';
-import { createWorkflowRuns } from './workflow-acp.mjs';
+import { createWorkflowHistory, createWorkflowRuns } from './workflow-acp.mjs';
 import { createMemoryBudget } from './memory-budget.mjs';
 
 const ROOT = '00000000-0000-0000-0000-000000000001';
@@ -137,6 +137,33 @@ test('workflow history lists persisted teams without a selected conversation', {
   assert.equal(record.name, 'ACP team');
   assert.equal(record.status, 'succeeded');
   assert.equal(record.tasks[0].id, 'saved-team');
+});
+
+test('a dead workflow owner cannot leave Mother running and block history removal', async t => {
+  const stateDir = createTestTempDir(path.join(os.tmpdir(), 'workflow-orphan-'));
+  t.after(() => removeTestTempDir(stateDir));
+  const cases = [
+    { status: 'running', mother: 'running', ownerPid: 2147483647, removable: true },
+    { status: 'cancelled', mother: 'running', ownerPid: 2147483647, removable: true },
+    { status: 'failed', mother: 'reviewing', ownerPid: 2147483647, removable: true },
+    { status: 'cancelled', mother: 'running', ownerPid: process.pid, removable: false },
+  ];
+  const ids = cases.map((entry, index) => {
+    const id = `00000000-0000-0000-0000-${String(index + 2).padStart(12, '0')}`;
+    fs.writeFileSync(path.join(stateDir, `${id}.json`), JSON.stringify({ id, rootThreadId: ROOT,
+      status: entry.status, ownerPid: entry.ownerPid, mother: { status: entry.mother }, tasks: [] }));
+    return id;
+  });
+  const runs = createWorkflowRuns({ stateDir });
+  const history = createWorkflowHistory(path.join(stateDir, 'history.json'));
+  const read = () => runs.list();
+  const listed = await history.list(await read());
+  for (const [index, entry] of cases.entries()) {
+    const row = listed.data.find(row => row.id === ids[index]);
+    assert.equal(row.removable, entry.removable, `${entry.status}/${entry.mother}, owner ${entry.ownerPid}`);
+    if (entry.removable) assert.equal((await history.remove(row.id, read)).removed, row.id);
+    else await assert.rejects(history.remove(row.id, read), /Finish this workflow/);
+  }
 });
 
 test('failure blocks dependent ACP nodes; an independent node can finish', { timeout: 20000 }, async t => {
