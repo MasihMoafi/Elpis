@@ -15,7 +15,7 @@ export const productionFiles = [
   'bridge/settings-files.mjs', 'bridge/app-identity.mjs', 'desktop/sleep-blocker.cjs',
   'bridge/session-context.mjs', 'bridge/side-turn.mjs', 'bridge/thread-titles.mjs',
   'bridge/profile-env.mjs', 'lib/love-spot-audio.mjs',
-  'bridge/love-interview.mjs',
+  'bridge/love-interview.mjs', 'bridge/agent-output.mjs',
   'bridge/improve.mjs', 'bridge/improve-source.mjs', 'bridge/improve-check.mjs', 'desktop/improve.cjs',
   'bridge/browser-mcp.mjs', 'bridge/claude-mcp-import.mjs', 'desktop/browser-agent.cjs', 'desktop/browser-identity.cjs', 'desktop/documents.cjs', 'desktop/screen-capture.cjs',
   'bridge/canvas-plan.mjs', 'bridge/experiment-lab.mjs', 'bridge/client.mjs', 'bridge/permission-presets.mjs', 'bridge/customize.mjs', 'bridge/skill-trash.mjs', 'bridge/github-connector.mjs', 'bridge/elpis-features.mjs', 'bridge/smart-prune.mjs', 'bridge/files.mjs', 'bridge/folders.mjs', 'bridge/git.mjs', 'bridge/recorded-changes.mjs', 'bridge/provider-keys.mjs', 'bridge/provider-settings.mjs', 'bridge/provider-models.mjs',
