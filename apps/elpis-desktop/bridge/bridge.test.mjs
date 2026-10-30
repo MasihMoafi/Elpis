@@ -1565,6 +1565,35 @@ test('deleting a chat also deletes chats continued from its agents, then forgets
   client.close();
 });
 
+test('delete locks release across sequential, descendant and bulk deletes, but still reject a concurrent mutation of the same chat', async t => {
+  const f = fixture(); t.after(() => f.client.close()); await f.client.initialize(); await f.client.listThreads();
+  f.threads.get(CHILD).status = { type: 'idle' };
+  await f.client.send(CHILD, { text: 'Follow up', continueAs: 'Failure reporting (continued)' });
+  assert.deepEqual(await f.client.deleteThread(ROOT, {}), { deleted: true, alsoDeleted: [FORK] });
+  assert.ok(!f.threads.has(ROOT) && !f.threads.has(CHILD) && !f.threads.has(FORK), 'the root, child and continued fork are gone');
+
+  const ids = [8, 9, 10, 11, 12].map(value => `00000000-0000-0000-0000-${String(value).padStart(12, '0')}`);
+  for (const id of ids) f.threads.set(id, { id, cwd: os.tmpdir(), source: 'cli', status: { type: 'idle' } });
+  assert.deepEqual(await f.client.deleteThread(ids[0], {}), { deleted: true, alsoDeleted: [] }, 'the next delete starts after the first released its lock');
+  assert.deepEqual(await Promise.all(ids.slice(1, 4).map(id => f.client.deleteThread(id, {}))), ids.slice(1, 4).map(() => ({ deleted: true, alsoDeleted: [] })), 'independent bulk deletes may run together');
+
+  const held = ids[4], send = f.socket.send; let release;
+  f.socket.send = raw => {
+    const request = JSON.parse(raw);
+    if (request.method === 'thread/delete' && request.params.threadId === held && !release) {
+      f.socket.sent.push(request);
+      release = () => { f.threads.delete(held); queueMicrotask(() => f.socket.emit('message', JSON.stringify({ id: request.id, result: {} }))); };
+      return;
+    }
+    send(raw);
+  };
+  const deleting = f.client.deleteThread(held, {});
+  for (let attempt = 0; !release && attempt < 20; attempt++) await new Promise(resolve => setImmediate(resolve));
+  await assert.rejects(f.client.renameThread(held, { name: 'Too soon' }), error => error?.status === 409 && /Another operation/.test(error.message));
+  release(); await deleting;
+  assert.deepEqual(await f.client.deleteThread(held, {}), { deleted: true, alsoDeleted: [] }, 'a deleted ID holds no stale lock');
+});
+
 function pagedDeletionFixture(control = {}) {
   const f = fixture(), key = value => `00000000-0000-0000-0000-${String(value).padStart(12, '0')}`;
   const childIds = Array.from({ length: 125 }, (_, index) => key(1000 + index)), forkIds = [FORK, key(8), ...childIds.map((_, index) => key(2000 + index))];
