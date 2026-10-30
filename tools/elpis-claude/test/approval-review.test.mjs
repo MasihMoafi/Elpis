@@ -37,6 +37,9 @@ if (role) {
       socket.on("data", data => { reply += data; });
       await once(socket, "end");
       record({ selection: JSON.parse(reply) });
+      send({ event: "step_update", agent_state: { context_window_usage: {
+        estimated_tokens_used: 238336, max_context_tokens: 256000,
+      } }, step_update: { step_type: "agent_response", text_delta: "fixture", usage: { input_tokens: 2800, output_tokens: 60 } } });
       send({ event: "result", result: {} });
       return;
     }
@@ -126,6 +129,7 @@ if (role) {
       assert.ifError((await call("turn/start", { threadId: "chat", input: [{ type: "text", text: "Do the fixture" }] })).error);
       const records = () => fs.readFileSync(trace, "utf8").trim().split("\n").filter(Boolean).map(JSON.parse);
       await until(() => records().some(row => agy ? row.role === "agy" && row.selection : row.role === "acp" && row.id === "permission" && row.result), "permission result");
+      if (agy) await until(() => seen.some(row => row.method === "thread/tokenUsage/updated" && row.params.tokenUsage?.last?.totalTokens === 238336), "Gemini context usage");
       const rows = records(), review = rows.filter(row => row.method === "thread/approval/review");
       const asks = seen.filter(row => row.method === "item/commandExecution/requestApproval");
       assert.equal(review.length, ["plan", "manual", "full", "read-only"].includes(scenario) ? 0 : 1);
@@ -138,6 +142,11 @@ if (role) {
       if (review.length) assert.deepEqual(review[0].params, { threadId: "chat", command: "echo review-fixture", cwd: root, reason: `${agy ? "Gemini" : "Claude"} wants to run: echo review-fixture` });
       if (scenario === "error") assert.match(asks[0].params.reason, /review fixture unavailable/);
       if (scenario === "denied") assert.ok(seen.some(row => row.method === "item/agentMessage/delta" && row.params.delta.includes("fixture guardian rationale")));
+      if (agy) {
+        const context = seen.find(row => row.method === "thread/tokenUsage/updated" && row.params.tokenUsage?.last?.totalTokens === 238336)?.params.tokenUsage;
+        assert.equal(context?.last?.totalTokens, 238336, "Gemini usage is its current request context, not the step sum");
+        assert.equal(context?.modelContextWindow, 256000, "Gemini's reported context window reaches the desktop");
+      }
       // Full access uses the normal permission hook, answered by Elpis without asking the person.
       if (!agy) assert.ok(rows.some(row => row.method === "session/set_mode" && row.params.modeId === ({ manual: "acceptEdits", full: "default" }[scenario] ?? "auto")));
     });
