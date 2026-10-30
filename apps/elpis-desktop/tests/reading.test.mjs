@@ -6,19 +6,19 @@ const defaults = { transcriptSize: 'm', transcriptWidth: 's', interfaceFont: 'sa
 
 test('SETTINGS2 interface and code sizes have independent steps and reject obsolete choices', () => {
   assert.deepEqual(['s', 'm', 'l'].map(interfaceSize => readingStyle({ interfaceSize })['--interface-size']), ['14px', '16px', '18px']);
-  assert.deepEqual(['s', 'm', 'l'].map(codeSize => readingStyle({ codeSize })['--code-size']), ['11px', '12.5px', '16px']);
+  assert.deepEqual(['s', 'm', 'l'].map(codeSize => readingStyle({ codeSize })['--code-size']), ['12px', '13px', '16px']);
   assert.equal(readingStyle({ interfaceSize: 'giant', codeSize: false })['--interface-size'], '16px');
 });
 
-test('the defaults are today’s look: 14.5px transcript, 740px columns, the sans stack, the mono stack', () => {
-  assert.deepEqual(readingStyle(defaults), { '--interface-size': '16px', '--code-size': '12.5px', '--transcript-size': '14.5px', '--transcript-width': '740px', '--ui-font': SANS, '--chat-font': 'var(--ui-font)', '--mono': MONO });
+test('the defaults are today’s look: 14px transcript, 740px columns, the sans stack, the mono stack', () => {
+  assert.deepEqual(readingStyle(defaults), { '--interface-size': '16px', '--code-size': '13px', '--transcript-size': '14px', '--transcript-width': '740px', '--ui-font': SANS, '--chat-font': 'var(--ui-font)', '--mono': MONO });
   assert.match(SANS, /^Inter, system-ui/);
   assert.match(SERIF, /serif$/);
   assert.match(MONO, /^"JetBrains Mono".*monospace$/);
 });
 
 test('text size and width each have three steps; Serif swaps the interface font', () => {
-  assert.deepEqual(['s', 'm', 'l'].map(transcriptSize => readingStyle({ ...defaults, transcriptSize })['--transcript-size']), ['13.5px', '14.5px', '16px']);
+  assert.deepEqual(['s', 'm', 'l'].map(transcriptSize => readingStyle({ ...defaults, transcriptSize })['--transcript-size']), ['13px', '14px', '16px']);
   assert.deepEqual(['s', 'm', 'l'].map(transcriptWidth => readingStyle({ ...defaults, transcriptWidth })['--transcript-width']), ['740px', '900px', '1100px']);
   assert.equal(readingStyle({ ...defaults, interfaceFont: 'serif' })['--ui-font'], SERIF);
 });

@@ -104,3 +104,14 @@ Sources: `/tmp/cgpt/webview/assets/*.css` (`app-shared-3424…`, `app-initial-e5
 - Text ramp from one ink: secondary 69.5%, tertiary 49.5% (= codex-description), border 7.8%, strong 11.7%.
 - Rail: `--rail-left: 16px`, `--rail-pitch: 10px`, `--rail-dash: 6px→26px × 2px`, opacities .4/.6/1, card 320/12/8 + `--shadow-xl`.
 - `--elevation-composer`, `--shadow-xl`, scroll button 32/24.
+
+## Shared scale (the whole app, 30 Oct; tokens in `app/globals.css`, listed in `DESIGN.md` §2)
+| ChatGPT | Elpis token | Value | Where |
+|---|---|---|---|
+| `text-xs` / `text-sm` / `text-base` (4 sizes with the page title; 1 family) | `--text-xs` / `--text-sm` / `--text-base` | 12 / 13 / 14 | every CSS `font-size` maps to one of the three; titles keep their own size; `--serif` = `--ui-font` |
+| thread text 14 (`--codex-chat-font-size`) | `--transcript-size` (Medium) | 14 (Small 13, Large 16) | `lib/reading.ts` |
+| composer controls in one row, send 28 | `--control-h`, `--icon-size` | 28, 16 glyph | `.composer-controls` (plus, pills, model, effort, mic, send, stop) |
+| composer: send 9 from right and bottom; one line 99 tall, text line centre 25, control row centre 76 | `.composer` border 1 + padding 11/8/8/13; textarea 44 (22 px lines); 6 gap; 28 row | 99 | `.composer` |
+| composer surface `surface-elevated-secondary` + `--elevation-composer`, ring 4% ink | `--composer`, `--composer-edge`, `--elevation-composer` | light `#fff`, ring 8% ink; dark `#17191d` (one step above the `#0a0b0d` chat), ring 14% ink | the gold focus edge stays (Elpis) |
+| header / tab bar 52 | `--header-h` | 52, 14 px title | `.workspace-header` |
+| Settings page: 48 top, header → 20 → sections 24 apart | `--page-pad`, `--page-head-gap`, `--page-section-gap`, `--page-content-width` | 48 32 64 / 20 / 24 / 860 | Settings, Customize, the Guide (`.page-scroll`) |

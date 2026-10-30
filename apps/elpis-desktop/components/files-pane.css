@@ -6,7 +6,7 @@
 .file-ref { display:inline; padding:0; border:0; font:inherit; color:inherit; background:transparent; text-align:inherit; cursor:pointer; border-radius:4px; text-decoration:underline dotted; text-decoration-color:var(--muted-foreground); text-underline-offset:3px; }
 .file-ref:hover { text-decoration-style:solid; text-decoration-color:var(--foreground); background:var(--hover); }
 .file-ref:focus-visible { outline:2px solid var(--ring); outline-offset:1px; }
-.file-ref-error { margin-inline-start:8px; font-size:13px; color:var(--destructive); }
+.file-ref-error { margin-inline-start:8px; font-size:var(--text-sm); color:var(--destructive); }
 
 .files-pane { display:flex; flex-direction:column; flex:1; min-height:0; min-width:0; background:var(--background); }
 .files-bar { display:flex; align-items:center; gap:4px; flex-shrink:0; min-height:40px; padding:0 8px; border-bottom:1px solid var(--hairline); }
@@ -15,7 +15,7 @@
 .files-bar .task-tab { min-width:96px; }
 .files-bar .task-tab.preview > button[role="tab"] span { font-style:italic; }
 .files-split { position:relative; display:flex; flex:1; min-height:0; min-width:0; }
-.files-note { margin:0; padding:10px 12px; font-size:13px; line-height:1.45; color:var(--muted-foreground); }
+.files-note { margin:0; padding:10px 12px; font-size:var(--text-sm); line-height:1.45; color:var(--muted-foreground); }
 .files-error { color:var(--destructive); }
 .dirty-dot { flex-shrink:0; width:8px; height:8px; margin:3px; border-radius:50%; background:var(--primary); }
 
@@ -27,7 +27,7 @@
 .tree-head { display:flex; align-items:center; gap:2px; flex-shrink:0; padding:8px 6px 6px 8px; }
 .tree-filter { flex:1; min-width:0; height:32px; }
 .tree-list { flex:1; min-height:0; overflow:auto; padding:2px 0 8px; outline:none; }
-.tree-row { display:flex; align-items:center; gap:4px; min-height:28px; padding-inline-end:10px; font-size:13px; color:var(--foreground); cursor:pointer; white-space:nowrap; outline:none; }
+.tree-row { display:flex; align-items:center; gap:4px; min-height:28px; padding-inline-end:10px; font-size:var(--text-sm); color:var(--foreground); cursor:pointer; white-space:nowrap; outline:none; }
 .tree-row:hover { background:var(--hover); }
 .tree-row[aria-selected="true"] { background:var(--selected); }
 .tree-row[aria-current="true"] .tree-name { font-weight:600; }
@@ -37,22 +37,22 @@
 .tree-chevron.open { transform:rotate(90deg); }
 .tree-icon { flex-shrink:0; color:var(--muted-foreground); }
 .tree-name { flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; }
-.tree-where { flex:1 1 0; min-width:0; overflow:hidden; text-overflow:ellipsis; color:var(--muted-foreground); font-size:12px; }
+.tree-where { flex:1 1 0; min-width:0; overflow:hidden; text-overflow:ellipsis; color:var(--muted-foreground); font-size:var(--text-xs); }
 .tree-note { padding-block:4px; }
 .tree-match { gap:8px; }
-.tree-line { flex-shrink:0; min-width:2.5ch; text-align:end; font:12px var(--mono); color:var(--muted-foreground); }
-.tree-snippet { min-width:0; overflow:hidden; text-overflow:ellipsis; font:13px var(--mono); }
+.tree-line { flex-shrink:0; min-width:2.5ch; text-align:end; font:var(--text-xs) var(--mono); color:var(--muted-foreground); }
+.tree-snippet { min-width:0; overflow:hidden; text-overflow:ellipsis; font:var(--text-sm) var(--mono); }
 .tree-snippet mark, .tree-name mark { background:color-mix(in oklab, var(--context) 38%, transparent); color:inherit; border-radius:2px; }
 
 /* The open file. */
 .files-view { display:flex; flex-direction:column; flex:1; min-width:0; min-height:0; }
 .files-empty { flex:1; display:flex; align-items:center; justify-content:center; padding:24px; text-align:center; }
-.files-empty p { margin:0; max-width:36ch; font-size:13px; line-height:1.5; color:var(--muted-foreground); }
-.file-view-head { display:flex; align-items:center; gap:6px; flex-shrink:0; min-height:36px; padding:0 8px 0 12px; border-bottom:1px solid var(--hairline); font-size:13px; }
+.files-empty p { margin:0; max-width:36ch; font-size:var(--text-sm); line-height:1.5; color:var(--muted-foreground); }
+.file-view-head { display:flex; align-items:center; gap:6px; flex-shrink:0; min-height:36px; padding:0 8px 0 12px; border-bottom:1px solid var(--hairline); font-size:var(--text-sm); }
 .file-view-path { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted-foreground); }
 .file-view-body { display:flex; flex-direction:column; flex:1; min-height:0; min-width:0; }
 .file-view-mode { display:flex; gap:2px; }
-.file-markdown { flex:1; min-height:0; overflow:auto; padding:16px; font-size:13px; line-height:1.6; overflow-wrap:anywhere; background:var(--card); }
+.file-markdown { flex:1; min-height:0; overflow:auto; padding:16px; font-size:var(--text-sm); line-height:1.6; overflow-wrap:anywhere; background:var(--card); }
 .file-markdown .markdown > :first-child { margin-top:0; }
 .file-markdown img { max-width:100%; height:auto; }
 .file-image-unavailable { color:var(--muted-foreground); }
@@ -60,10 +60,10 @@
 
 /* The editor: line numbers and a layer for the marks, behind a textarea that draws the text. All three share one font, one
    line height and one padding, so a number, a mark and a line sit on the same row. */
-.fe { --fe-line:calc(var(--code-size, 12.5px) * 1.6); --fe-pad:8px; display:flex; flex-direction:column; flex:1; min-height:0; min-width:0; }
+.fe { --fe-line:calc(var(--code-size, 13px) * 1.6); --fe-pad:8px; display:flex; flex-direction:column; flex:1; min-height:0; min-width:0; }
 .fe-find { display:flex; align-items:center; gap:4px; flex-shrink:0; padding:6px 8px; border-bottom:1px solid var(--hairline); background:var(--recessed); }
 .fe-find-field { flex:1; min-width:0; height:30px; }
-.fe-find-count { flex-shrink:0; min-width:9ch; font-size:12.5px; color:var(--muted-foreground); text-align:center; }
+.fe-find-count { flex-shrink:0; min-width:9ch; font-size:var(--text-sm); color:var(--muted-foreground); text-align:center; }
 .fe-body { position:relative; display:flex; flex:1; min-height:0; min-width:0; background:var(--card); }
 .fe-gutter { flex:none; overflow:hidden; padding-block:var(--fe-pad); background:var(--recessed); border-inline-end:1px solid var(--hairline); font:var(--code-size, 13px)/var(--fe-line) var(--mono); color:var(--muted-foreground); text-align:end; user-select:none; }
 .fe-gutter-line { height:var(--fe-line); padding-inline:10px 12px; }

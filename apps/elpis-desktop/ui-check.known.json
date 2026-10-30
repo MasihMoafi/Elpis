@@ -60,9 +60,6 @@
   "R3|/#token=fixture|buttons in one row are not top-aligned (5px): <button data-slot=button>": 1,
   "R7|/#token=fixture|icons side by side differ in stroke (1px, 2px): <nav .nav-list> \"New chat Lab Workflows Love Sp\"": 1,
   "R7|/#token=fixture|icons side by side differ in stroke (2px, 1px): <div .composer-tray> \"Local Work in a project\"": 1,
-  "R7|/#token=fixture|icons side by side differ in size (16x16, 14x14): <div .model-controls> \"Full access\"": 1,
   "R7|/#token=fixture|icons side by side differ in stroke (1px, 2px): <div .model-controls> \"Full access\"": 1,
-  "R7|/#token=fixture|icons side by side differ in size (16x16, 14x14): <div .composer-right> \"Choose model\"": 1,
-  "R7|/#token=fixture|icons side by side differ in stroke (1px, 2px): <div .composer-right> \"Choose model\"": 1,
-  "R7|/#token=fixture|icons side by side differ in size (16x16, 14x14): <div .model-controls>": 1
+  "R7|/#token=fixture|icons side by side differ in stroke (1px, 2px): <div .composer-right> \"Choose model\"": 1
 }

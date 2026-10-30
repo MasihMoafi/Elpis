@@ -1,12 +1,12 @@
 /* The side panel's Changes tab (components/changes-panel.tsx): a header with the totals, the list of changed files, and
    the open file's diff. Colours come from the app's own success and destructive tokens, so both themes follow. */
 .changes { container:changes / inline-size; display:flex; flex-direction:column; flex:1; min-height:0; min-width:0; background:var(--background); }
-.changes-head { display:flex; align-items:center; gap:8px; height:34px; flex-shrink:0; padding:0 8px 0 12px; border-bottom:1px solid var(--hairline); font-size:12.5px; }
+.changes-head { display:flex; align-items:center; gap:8px; height:34px; flex-shrink:0; padding:0 8px 0 12px; border-bottom:1px solid var(--hairline); font-size:var(--text-sm); }
 .changes-summary { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--foreground); font-weight:500; }
-.changes-note { margin:0; padding:12px; font-size:13px; color:var(--muted-foreground); }
+.changes-note { margin:0; padding:12px; font-size:var(--text-sm); color:var(--muted-foreground); }
 .changes-error { color:var(--destructive); }
 .change-list { list-style:none; margin:0; padding:4px; flex:0 1 auto; max-height:38%; min-height:34px; overflow:auto; border-bottom:1px solid var(--hairline); }
-.change-row { display:flex; align-items:center; gap:8px; width:100%; min-height:30px; padding:4px 8px; border:0; background:none; color:var(--foreground); font-size:13px; text-align:left; }
+.change-row { display:flex; align-items:center; gap:8px; width:100%; min-height:30px; padding:4px 8px; border:0; background:none; color:var(--foreground); font-size:var(--text-sm); text-align:left; }
 .change-row:hover { background:var(--hover); }
 .change-row[aria-current="true"] { background:var(--selected); }
 .change-status { flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px; font:600 var(--text-small)/1 var(--mono); color:var(--muted-foreground); background:var(--muted); }
@@ -15,7 +15,7 @@
 .change-path { flex:1; min-width:0; overflow-wrap:anywhere; white-space:normal; }
 .change-path .dir { color:var(--muted-foreground); }
 .diff-view { display:flex; flex-direction:column; flex:1 1 0; min-height:0; min-width:0; }
-.diff-head { display:flex; align-items:center; gap:6px; min-height:34px; flex-shrink:0; padding:6px 8px 6px 12px; font-size:12.5px; }
+.diff-head { display:flex; align-items:center; gap:6px; min-height:34px; flex-shrink:0; padding:6px 8px 6px 12px; font-size:var(--text-sm); }
 .diff-title { flex:1; min-width:0; overflow-wrap:anywhere; white-space:normal; color:var(--muted-foreground); }
 .diff-head > button { flex-shrink:0; }
 

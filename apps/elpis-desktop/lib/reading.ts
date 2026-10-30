@@ -10,8 +10,8 @@ export type Reading = { transcriptSize: ReadingStep; transcriptWidth: ReadingSte
 export const SANS = 'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 export const SERIF = 'ui-serif, "Iowan Old Style", "Source Serif 4", Georgia, "DejaVu Serif", serif';
 export const MONO = '"JetBrains Mono", "DejaVu Sans Mono", ui-monospace, monospace';
-/** Medium and Narrow are the sizes Elpis always had (14.5px text, 740px columns). */
-const SIZES: Record<ReadingStep, string> = { s: "13.5px", m: "14.5px", l: "16px" };
+/** Medium is ChatGPT's thread size (14px text, specs/chatgpt-chat-style.md); Narrow keeps the 740px column. */
+const SIZES: Record<ReadingStep, string> = { s: "13px", m: "14px", l: "16px" };
 const WIDTHS: Record<ReadingStep, string> = { s: "740px", m: "900px", l: "1100px" };
 const FONTS: Record<InterfaceFont, string> = { sans: SANS, serif: SERIF };
 const CHAT_FONTS: Record<ChatFont, string> = {
@@ -36,7 +36,7 @@ export function readingStyle(choices: { [K in keyof Reading]?: unknown }): Recor
   const code = typeof choices.codeFont === "string" && !codeFontProblem(choices.codeFont) ? choices.codeFont.trim() : "";
   return {
     "--interface-size": ({ s: "14px", m: "16px", l: "18px" })[step(choices.interfaceSize, "m")],
-    "--code-size": ({ s: "11px", m: "12.5px", l: "16px" })[step(choices.codeSize, "m")],
+    "--code-size": ({ s: "12px", m: "13px", l: "16px" })[step(choices.codeSize, "m")],
     "--transcript-size": SIZES[step(choices.transcriptSize, "m")],
     "--transcript-width": WIDTHS[step(choices.transcriptWidth, "s")],
     "--ui-font": FONTS[choices.interfaceFont === "serif" ? "serif" : "sans"],
