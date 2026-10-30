@@ -163,6 +163,7 @@
     "tests/polish.test.cjs",
     "tests/approved-working-mark.test.cjs",
     "tests/effort-shortcuts.test.cjs",
+    "tests/mcp-session-menu-ui.test.cjs",
     "tests/project-membership.test.cjs",
     "tests/config-defaults.test.cjs",
     "tests/config-navigation.test.cjs",

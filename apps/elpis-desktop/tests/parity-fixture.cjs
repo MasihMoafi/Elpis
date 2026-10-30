@@ -110,7 +110,7 @@ async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660,
   if (clockTime) await page.clock.install({ time: clockTime });
   await page.goto(`http://127.0.0.1:${server.address().port}/#token=fixture`);
   const composer = page.getByRole('textbox', { name: 'Message Elpis', exact: true });
-  await page.locator(`.thread-row[data-thread-id="${readyThreadId}"] .thread-link`).first().waitFor();
+  if (readyThreadId !== null) await page.locator(`.thread-row[data-thread-id="${readyThreadId}"] .thread-link`).first().waitFor();
   const deadline = Date.now() + 6000;
   while (streams.size === 0 && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 20));
   if (streams.size === 0) throw new Error('The fixture did not connect to /api/events');
