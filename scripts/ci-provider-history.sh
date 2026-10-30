@@ -5,6 +5,8 @@ mkdir -p apps/elpis-desktop/bridge/resources
 for resource in permission-policy.mjs workflow-concurrency.mjs mcp-session-selections.mjs; do
   cp "tools/elpis-claude/$resource" "apps/elpis-desktop/bridge/resources/$resource"
 done
+cp codex-rs/core/src/prompts/rag.md apps/elpis-desktop/bridge/resources/rag.md
+cp codex-rs/skills/src/assets/personal/SKILL.md apps/elpis-desktop/bridge/resources/personal.md
 
 node scripts/store-guard.test.cjs
 node scripts/history-list.test.cjs
