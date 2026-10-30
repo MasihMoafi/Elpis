@@ -35,13 +35,15 @@ before(async () => {
   const catalog = require(path.join(repo, 'codex-rs/models-manager/models.json'));
   await fs.writeFile(path.join(home, 'models.json'), JSON.stringify({ models: catalog.models.filter(model => model.slug === 'gpt-5.5') }));
   await fs.writeFile(path.join(home, 'config.toml'), `model="gpt-5.5"\nmodel_provider="fixture"\nmodel_catalog_json=${JSON.stringify(path.join(home, 'models.json'))}\napproval_policy="never"\nsandbox_mode="workspace-write"\n[features]\ncode_mode=false\n[model_providers.fixture]\nname="Edit test"\nbase_url=${JSON.stringify(provider.url)}\nwire_api="responses"\nrequires_openai_auth=false\n[projects.${JSON.stringify(project)}]\ntrust_level="trusted"\n`);
-  const socketPath = path.join(root, 'b.sock'), acpLog = path.join(root, 'acp.jsonl');
+  const socketPath = path.join(root, 'b.sock'), acpLog = path.join(root, 'acp.jsonl'), agyLog = path.join(root, 'agy.jsonl');
+  const agy = path.join(root, 'fake-agy');
+  await fs.copyFile(path.join(repo, 'tools/elpis-claude/test/fake-agy.cjs'), agy); await fs.chmod(agy, 0o755);
   const log = await fs.open(path.join(root, 'bridge.log'), 'a');
   const env = { PATH: process.env.PATH, HOME: root, ELPIS_HOME: home, CODEX_HOME: home, CODEX_AUTH_HOME: home, CODEX_SQLITE_HOME: home,
     XDG_CONFIG_HOME: path.join(root, '.config'), XDG_RUNTIME_DIR: root, TMPDIR: root, LANG: 'C.UTF-8', ELPIS_SHARED_BRIDGE: '1', ELPIS_BRIDGE_SOCKET: socketPath,
     ELPIS_ENGINE_BIN: engine, ACP_ADAPTER: path.join(repo, 'tools/elpis-claude/test/fake-acp-agent.mjs'),
-    ACP_BRIDGE_STORE: path.join(root, 'sessions.json'), ACP_BRIDGE_LOG: path.join(root, 'adapter.log'), ELPIS_NO_AGY: '1', ACP_BRIDGE_NO_AGENTS: '1',
-    FAKE_ACP_LOG: acpLog, FAKE_ACP_NAME: 'Claude', FAKE_ACP_MODELS: 'sonnet' };
+    ACP_BRIDGE_STORE: path.join(root, 'sessions.json'), ACP_BRIDGE_LOG: path.join(root, 'adapter.log'), ACP_BRIDGE_NO_AGENTS: '1',
+    FAKE_ACP_LOG: acpLog, FAKE_ACP_NAME: 'Claude', FAKE_ACP_MODELS: 'sonnet', AGY_BIN: agy, FAKE_AGY_LOG: agyLog, FAKE_AGY_RELEASE: path.join(root, 'agy-release') };
   const bridge = spawn(process.execPath, [path.join(repo, 'tools/elpis-claude/acp-bridge.mjs')], { env, cwd: project, detached: true, stdio: ['ignore', log.fd, log.fd] });
   await until(async () => { if (bridge.exitCode !== null) throw new Error(`provider bridge exited; see ${root}/bridge.log`); return fs.stat(socketPath).then(() => true, () => false); }, 'provider bridge socket');
   const { DesktopClient } = await import('../bridge/client.mjs');
@@ -56,7 +58,8 @@ before(async () => {
   const errors = []; page.on('pageerror', error => errors.push(error.message));
   const completed = new Set(); client.on('event', event => { if (event.type === 'message' && event.data?.method === 'turn/completed') completed.add(event.data.params.turn?.id ?? event.data.params.turnId); });
   const prompts = async () => (await fs.readFile(acpLog, 'utf8').catch(() => '')).split('\n').filter(Boolean).map(JSON.parse).filter(row => row.method === 'session/prompt').map(row => JSON.stringify(row.params.prompt));
-  h = { root, project, provider, replies, bridge, log, client, app, browser, page, errors, completed, prompts };
+  const agyPrompts = async () => (await fs.readFile(agyLog, 'utf8').catch(() => '')).split('\n').filter(Boolean).map(JSON.parse).map(row => row.text);
+  h = { root, project, provider, replies, bridge, log, client, app, browser, page, errors, completed, prompts, agyPrompts };
   /** Setup only: a chat with these turns, sent through the bridge as the composer would send them. */
   h.chat = async (model, turns) => {
     const { thread } = await client.createThread({ cwd: project, model, permissions: 'full' });
@@ -94,11 +97,12 @@ after(async () => {
   await h.log.close(); h.provider.close();
 });
 
-test('a stopped turn with two follow-ups can be edited from its first message', { skip, timeout: 60000 }, async () => {
+for (const [provider, model] of [['Claude', 'claude/sonnet'], ['Antigravity', 'agy/gemini-3.8-flash-medium']]) test(`a stopped ${provider} turn with two follow-ups can be rewound and edited`, { skip, timeout: 60000 }, async () => {
   const { page, client, project } = h;
-  const { thread } = await client.createThread({ cwd: project, model: 'claude/sonnet', permissions: 'full' });
+  const prompts = provider === 'Claude' ? h.prompts : h.agyPrompts;
+  const { thread } = await client.createThread({ cwd: project, model, permissions: 'full' });
   const { turn } = await client.send(thread.id, { text: '[wait] original long turn' });
-  await until(async () => (await h.prompts()).some(prompt => prompt.includes('original long turn')), 'the long turn starts');
+  await until(async () => (await prompts()).some(prompt => prompt.includes('original long turn')), 'the long turn starts');
   await h.open(thread.id);
   const composer = page.getByRole('textbox', { name: 'Message Elpis', exact: true });
   for (const text of ['first follow-up', 'second follow-up']) {
@@ -137,12 +141,13 @@ test('a stopped turn with two follow-ups can be edited from its first message', 
         });
         await page.waitForTimeout(350);
       }
-      await page.screenshot({ path: path.join(process.env.ELPIS_APP_SHOTS, `rewind-${scheme}.png`) });
+      await page.screenshot({ path: path.join(process.env.ELPIS_APP_SHOTS, `${provider.toLowerCase()}-rewind-${scheme}.png`) });
     }
   }
   await edit.fill('replacement after stop');
   await page.getByRole('form', { name: 'Edit message', exact: true }).getByRole('button', { name: 'Send', exact: true }).click();
-  await until(async () => (await h.prompts()).some(prompt => prompt.includes('replacement after stop')), 'the replacement reaches the provider');
+  await until(async () => (await prompts()).some(prompt => prompt.includes('replacement after stop')), 'the replacement reaches the provider');
+  await page.locator('.message.agent', { hasText: 'replacement after stop' }).waitFor();
   await h.turn('replacement after stop').waitFor();
   await h.turn('first follow-up').waitFor({ state: 'hidden', timeout: 5000 });
   await h.turn('second follow-up').waitFor({ state: 'hidden', timeout: 5000 });
