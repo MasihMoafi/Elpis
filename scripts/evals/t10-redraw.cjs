@@ -35,6 +35,17 @@ function verify(screen, expected) {
   }
 }
 
+function verifyVisibleRows(screen, expected) {
+  const lines = screen.split('\n');
+  const first = lines.findIndex(line => line.includes(expected[0].slice(0, 10)));
+  const last = lines.findIndex(line => line.includes(expected.at(-1).slice(0, 10)));
+  assert(first >= 0 && last >= first, 'visible transcript row bounds are missing');
+  for (const line of lines.slice(first, last + 1)) {
+    const left = line.split(/[│┃]/, 1)[0].trim().replace(/^•\s*/, '');
+    assert(!left || expected.includes(left), `unexpected transcript fragment: ${left}`);
+  }
+}
+
 async function runCase(mode, light) {
   const label = `${mode}-${light ? 'light' : 'dark'}`;
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-t10-'));
@@ -182,10 +193,13 @@ async function runCase(mode, light) {
     const final = save('final');
     const transcript = mode === 'inline' ? save('history', true) : final;
     verify(transcript, rows);
-    if (mode === 'inline') verify(final, rows.slice(4));
+    const visible = mode === 'inline' ? rows.slice(4) : rows;
+    verify(final, visible);
+    verifyVisibleRows(final, visible);
     assert(final.includes('CONTEXT LEDGER'), `${label}: Ledger did not reopen`);
     assert.throws(() => verify(transcript.replace(rows[3], rows[3].replace('bravo', 'brXavo')), rows), 'oracle must reject altered text');
     assert.throws(() => verify(`${transcript}\n${rows[3]}`, rows), 'oracle must reject duplicate text');
+    assert.throws(() => verifyVisibleRows(final.replace(visible[1], `Q  W  E\n${visible[1]}`), visible), 'oracle must reject stray fragments');
     assert.equal(requests.length, 2, `${label}: expected a tool call and final reply`);
     assert.ifError(providerError);
     console.log(`PASS ${label}: streamed rows, resize, Ledger reopen, and corruption controls`);
