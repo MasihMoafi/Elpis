@@ -67,7 +67,7 @@ async function savePicture(data: Saved) {
 type LoveSpotProps = { dark: boolean; cwd?: string; onOpenChat?: (id: string) => void; toolbarHost?: HTMLElement | null };
 type MatildaVoice = { enabled: boolean; available: boolean; reason: string; error: string };
 export default function LoveSpot(props: LoveSpotProps) {
-  return <ReadAloud threadId="love-spot" enabled available={LOVE_SPOT_AUDIO.available} unavailableReason={LOVE_SPOT_AUDIO.available ? undefined : LOVE_SPOT_AUDIO.reason}><LoveSpotBoard {...props} /></ReadAloud>;
+  return <ReadAloud threadId="love-spot" enabled available={LOVE_SPOT_AUDIO.readAloudAvailable} unavailableReason={LOVE_SPOT_AUDIO.available ? undefined : LOVE_SPOT_AUDIO.reason}><LoveSpotBoard {...props} /></ReadAloud>;
 }
 function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
   const speech = useReadAloud();
@@ -498,8 +498,8 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
       </div>
       {/* Masih, 23 Oct: "I can't change her model!" It sat inside the ☰ menu's dialog; it belongs on the bar, beside the page. */}
       <div role="group" aria-label="Matilda's model"><ModelPicker choices={choices} models={models} model={pick.model || settings?.main.model || ""} choiceId={pick.choiceId} disabled={!choices.length} allowCustom={false} onChange={value => { setPick(value); keepModel(value); }} /></div>
-      {LOVE_SPOT_AUDIO.available && <div className="flex flex-wrap items-center gap-2 text-xs" role="group" aria-label="Matilda's voice">
-        <label className="flex items-center gap-2" title={LOVE_SPOT_AUDIO.available ? "Matilda reads each reply in your ChatGPT voice. It may use your ChatGPT allowance." : LOVE_SPOT_AUDIO.reason}><span aria-hidden="true">{LOVE_SPOT_AUDIO.available && voice?.enabled ? <Volume2 size={16} /> : <VolumeX size={16} />}</span>Read replies aloud<Switch aria-label="Read replies aloud" checked={LOVE_SPOT_AUDIO.available && !!voice?.enabled} disabled={!LOVE_SPOT_AUDIO.available || !voice?.available || voiceSaving} onCheckedChange={enabled => void changeVoice(enabled)} /></label>
+      {LOVE_SPOT_AUDIO.available && voice?.available && <div className="flex flex-wrap items-center gap-2 text-xs" role="group" aria-label="Matilda's voice">
+        <label className="flex items-center gap-2" title={LOVE_SPOT_AUDIO.readAloudAvailable ? "Matilda reads each reply in your ChatGPT voice." : "Enable live voice conversation with Matilda."}><span aria-hidden="true">{LOVE_SPOT_AUDIO.available && voice?.enabled ? <Volume2 size={16} /> : <VolumeX size={16} />}</span>{LOVE_SPOT_AUDIO.readAloudAvailable ? "Read replies aloud" : "Voice"}<Switch aria-label={LOVE_SPOT_AUDIO.readAloudAvailable ? "Read replies aloud" : "Voice"} checked={LOVE_SPOT_AUDIO.available && !!voice?.enabled} disabled={!LOVE_SPOT_AUDIO.available || !voice?.available || voiceSaving} onCheckedChange={enabled => void changeVoice(enabled)} /></label>
         {(!LOVE_SPOT_AUDIO.available || voice && !voice.available) && <Tooltip content={LOVE_SPOT_AUDIO.available ? voice?.reason || "ChatGPT voice is unavailable." : LOVE_SPOT_AUDIO.reason}><Button variant="ghost" size="icon-xs" aria-label="Why read aloud is unavailable"><Info aria-hidden="true" size={16} /></Button></Tooltip>}
         <Voice key={page?.session} threadId="love-spot" persona={matilda.persona} disabled={!editor || !voice?.enabled} unavailableReason={LOVE_SPOT_AUDIO.available ? undefined : LOVE_SPOT_AUDIO.reason} onBusy={busy => { setCalling(busy); if (busy) speech?.stop(); }} />
         {voiceSaving && <span className="sr-only" role="status">Saving Voice…</span>}

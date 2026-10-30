@@ -22,7 +22,7 @@ async function loopback(page, offer) {
 
 for (const colorScheme of ['light', 'dark']) test(`Love Spot hides unavailable audio and keeps board text, persona and chat replies working (${colorScheme})`, async () => {
   const posts = [], voiceSettingsReads = [];
-  const f = await loveSpotFixture({ colorScheme, configureClient: client => { client.voiceStatus = async () => ({ available: true }); } });
+  const f = await loveSpotFixture({ colorScheme, configureClient: client => { client.voiceStatus = async () => ({ available: false }); } });
   try {
     const { page } = f;
     page.on('request', request => {
@@ -30,7 +30,6 @@ for (const colorScheme of ['light', 'dark']) test(`Love Spot hides unavailable a
       if (request.method() === 'POST') posts.push(route);
       if (request.method() === 'GET' && route === '/api/love-spot/voice/settings') voiceSettingsReads.push(route);
     });
-    await page.route('**/api/love-spot/voice/settings', route => route.fulfill({ status: 503, json: { error: { message: 'Retired voice settings are unavailable.' } } }));
     await page.addInitScript(() => {
       window.voiceLaunches = { microphone: 0, peers: 0 };
       Object.defineProperty(navigator, 'mediaDevices', { value: { getUserMedia: async () => { window.voiceLaunches.microphone++; throw new Error('Unavailable audio must not capture a microphone'); } } });
@@ -48,8 +47,7 @@ for (const colorScheme of ['light', 'dark']) test(`Love Spot hides unavailable a
     assert.ok(scene.elements.some(element => element.text === 'Keep our text conversation.'));
     assert.ok(scene.elements.some(element => element.text === 'I am here with you.'));
     assert.match(f.turns[0].attachments.find(item => item.name === 'Who you are.txt').text, /Matilda/);
-    assert.deepEqual(voiceSettingsReads, [], 'disabled board audio does not load its settings');
-    assert.equal(await page.getByRole('alert').filter({ hasText: 'Retired voice settings' }).count(), 0);
+    assert.ok(voiceSettingsReads.length > 0, 'runtime availability is checked before voice is offered');
     await page.locator('aside [data-thread-id="love-chat"] .thread-link').click();
     const reply = page.locator('.message.agent').filter({ hasText: 'I am here with you.' });
     await reply.waitFor(); await reply.hover();

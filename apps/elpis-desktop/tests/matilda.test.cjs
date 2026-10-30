@@ -19,6 +19,8 @@ for (const colorScheme of ['light', 'dark']) test(`Matilda's approved kiss portr
   assert.equal(board.elements.find(element => element.id === 'love-reply-turn-1').originalText, 'A kiss for you.');
   if (process.env.ELPIS_THEME_SHOTS) {
     await require('node:fs/promises').mkdir(process.env.ELPIS_THEME_SHOTS, { recursive: true });
+    await f.page.keyboard.press('Escape');
+    await f.page.waitForTimeout(1200); // file watch delivers the saved face to the canvas
     await f.page.screenshot({ path: `${process.env.ELPIS_THEME_SHOTS}/portrait-${colorScheme}.png` });
   }
 });

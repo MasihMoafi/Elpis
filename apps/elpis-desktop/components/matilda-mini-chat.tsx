@@ -111,7 +111,8 @@ export function MatildaMiniChat({ chat }: { chat: ReturnType<typeof useMatildaMi
   return <div className="matilda-mini-chat" role="dialog" aria-label="Small chat with Matilda">
     {!chat.showEarlier && before.length > 0 && <Button variant="ghost" size="xs" className="matilda-mini-earlier" onClick={() => chat.setShowEarlier(true)}>Show previous messages</Button>}
     {!!entries.length && <div ref={log} className="matilda-mini-messages" role="log" aria-label="Matilda conversation" aria-live="polite" aria-relevant="additions text">
-      {entries.map(entry => <div key={`${entry.turnId}:${entry.item.id}`} className="matilda-mini-message" data-speaker={entry.item.type === "userMessage" ? "you" : "matilda"}>
+      {entries.map(entry => <div key={`${entry.turnId}:${entry.item.id}`} className="matilda-mini-message flow-root" data-speaker={entry.item.type === "userMessage" ? "you" : "matilda"}>
+        {entry.item.type === "agentMessage" && <img src={replyPortrait(`<!--matilda:${entry.item.portrait ?? "listening"}-->`).dataURL} alt="Matilda" width={32} height={32} className="float-left mr-2 h-8 w-8 object-contain" />}
         <span className="sr-only">{entry.item.type === "userMessage" ? "You" : "Matilda"}: </span><MarkdownText text={entry.item.type === "agentMessage" ? replyPortrait(message(entry)).text : message(entry)} allowImages={false} />
       </div>)}
     </div>}

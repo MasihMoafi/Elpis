@@ -252,7 +252,7 @@ test('the small chat starts fresh, keeps earlier turns behind a button, and asks
   const avatar = presence.getByRole('button', { name: 'Chat with Matilda', exact: true }), shown = () => avatar.locator('img[data-shown="true"]').evaluateAll(els => els.map(el => el.dataset.mood));
   const { MATILDA_SHOTS } = require('../bridge/matilda-face.cjs');
   assert.equal(await avatar.getByAltText('Matilda', { exact: true }).getAttribute('src'), MATILDA_SHOTS.listening, 'her resting face listens');
-  assert.deepEqual(await avatar.locator('img.matilda-mood').evaluateAll(els => els.map(el => el.dataset.mood)), ['smile', 'softSmile', 'tiltSmile', 'wink']);
+  assert.deepEqual(await avatar.locator('img.matilda-mood').evaluateAll(els => els.map(el => el.dataset.mood)), Object.keys(MATILDA_SHOTS).filter(mood => mood !== 'listening'));
   assert.equal(await avatar.getByAltText('Matilda', { exact: true }).count(), 1, 'her other faces are decoration: one Matilda for a screen reader');
   await page.mouse.move(0, 400); await avatar.hover();
   assert.deepEqual(await shown(), ['tiltSmile'], 'a warm tilted smile while hovered');

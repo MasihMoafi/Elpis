@@ -427,7 +427,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .send-button { height:var(--control-h); min-width:var(--control-h); }
 
 /* APP-FIX-2: task-titled rows, live agents, settings sections. */
-.brand svg { width:73px; height:36px; flex-shrink:0; }
+.brand .size-wordmark { width:73px; height:36px; flex-shrink:0; }
 .brand-home { flex:0 0 auto; }
 /* The mark is not a row: no tinted box appears behind it (Masih, 23 Oct: "the light orange shadow behind the elpis shouldn't show to the user"). */
 .brand .brand-home:hover, .brand .brand-home:active, .brand .brand-home[aria-expanded="true"] { background:transparent; }

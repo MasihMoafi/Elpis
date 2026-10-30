@@ -33,7 +33,10 @@ test('all visible Elpis wordmarks follow the chosen accent in light and dark', a
       });
       assert.equal(color, expected, `${mode} ${accent}: wordmark uses the selected accent`);
       assert.ok((await page.locator('.brand-home').boundingBox()).width > 60, 'logo retains its width beside the sidebar toggle');
-      if (evidence && accent === 'teal') await page.screenshot({ path: `${evidence}/teal-${mode.toLowerCase()}.png` });
+      if (evidence && accent === 'teal') {
+        await page.waitForTimeout(900); // the approved logo's entrance animation
+        await page.screenshot({ path: `${evidence}/teal-${mode.toLowerCase()}.png` });
+      }
       await appearance(page);
     }
     await leaveSettings(page);

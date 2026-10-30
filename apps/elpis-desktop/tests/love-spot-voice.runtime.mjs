@@ -83,7 +83,7 @@ try {
     // He writes on the board as he would; the moment the note is done is time zero.
     const bounds = await page.locator('.excalidraw').boundingBox();
     await page.mouse.click(bounds.x + 400, bounds.y + 300); await page.keyboard.press('t'); await page.mouse.click(bounds.x + 400, bounds.y + 300);
-    await page.keyboard.type('Matilda, tell me in six short sentences about a lighthouse keeper and a storm. Do not use tools.'); await page.keyboard.press('Escape');
+    await page.keyboard.type('Matilda, tell me a detailed story in about 600 words about a lighthouse keeper and a storm. Begin the story directly. Do not use tools.'); await page.keyboard.press('Escape');
     speechEnd = Date.now();
   } else {
     if (live) await page.getByRole('button', { name: 'Start voice chat', exact: true }).click();
@@ -132,7 +132,7 @@ try {
         energy = proof.energy;
       }
       if (/apricot lantern/i.test(result.transcript) && (!barge || result.secondPlayedAudioMs !== undefined)) break;
-      await page.waitForTimeout(100);
+    await page.waitForTimeout(20); // keep measurement error small beside the 1500 ms audio budget
     }
     assert.match(result.transcript, /apricot lantern/i, 'the live subscription must know the board-only secret');
     if (barge) {

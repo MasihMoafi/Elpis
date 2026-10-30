@@ -4,7 +4,7 @@ import { splitPainting, withoutPainting } from './love-spot-painting.cjs';
 import { createSentenceBuffer } from './speech-buffer.mjs';
 import { createHash, randomUUID } from 'node:crypto';
 import { LOVE_SPOT_AUDIO } from '../lib/love-spot-audio.mjs';
-import { PORTRAIT_INSTRUCTIONS } from './matilda-face.cjs';
+import { PORTRAIT_INSTRUCTIONS, replyPortrait } from './matilda-face.cjs';
 
 // The engine names an unknown thread in these ways; thread/read of a purged one answers only "rejected the operation (-32600)".
 const MISSING = /thread not (found|loaded)|no rollout found|rejected the operation \(-32600\)/i;
@@ -28,7 +28,7 @@ export function createLoveSpotTalk({ client, store, companion, audio = LOVE_SPOT
   /** The panel shows her note, not the block she paints with. */
   const shown = entry => {
     const buffer = writing?.id === entry.turnId && writing.items.get(entry.item.id)?.buffer;
-    return entry.item.type === 'agentMessage' ? { ...entry, item: { ...entry.item, text: buffer && !writing.done ? buffer.text() : withoutPainting(entry.item.text ?? '') } } : entry;
+    return entry.item.type === 'agentMessage' ? { ...entry, item: { ...entry.item, portrait: replyPortrait(entry.item.text).expression, text: buffer && !writing.done ? buffer.text() : withoutPainting(entry.item.text ?? '') } } : entry;
   };
   const voice = () => ({ enabled: available && !muted, available, reason: voiceReason, error: voiceError });
   const snapshot = () => ({ thread, entries: entries.map(shown), busy: sending || !!activeTurnId, error, voice: voice() });
