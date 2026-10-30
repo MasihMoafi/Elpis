@@ -8,6 +8,7 @@ const { fixture } = require('./parity-fixture.cjs');
 for (const colorScheme of ['light', 'dark']) test(`one icon size, one control height and one error at a time (${colorScheme})`, async () => {
   const f = await fixture({ width: 1300, height: 860, colorScheme }), { page } = f;
   try {
+    await page.locator('.thread-link').first().click();
     await page.getByRole('button', { name: 'Show side panel' }).click();
     const side = page.getByRole('region', { name: 'Side panel' });
     await side.getByRole('button', { name: 'New side panel tab', exact: true }).click();
