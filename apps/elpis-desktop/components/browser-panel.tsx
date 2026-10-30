@@ -59,17 +59,17 @@ export function browserTabActions(browser: Browser, tab: BrowserTab, options: {
     for (const page of selected) if (!await browser.command(action, { id: page.id, ...(value === undefined ? {} : { value }) })) break;
   };
   return [
-    ...(page && pin ? [{ id: "pin", label: pinned ? "Unpin from sidebar" : "Pin to sidebar", icon: <PinIcon size={14} />, run: pin }] : []),
-    { id: "new", label: "New tab to the right", icon: <PlusIcon size={14} />, separated: !!pin && page, run: () => void browser.command("new", { id: tab.id }) },
-    { id: "reload", label: many ? `Reload ${selected.length} tabs` : "Reload", icon: <RefreshCw size={14} />, run: () => void batch("reload") },
-    { id: "duplicate", label: many ? `Duplicate ${selected.length} tabs` : "Duplicate", icon: <Copy size={14} />, run: () => void batch("duplicate") },
-    ...(page ? [{ id: "copy", label: "Copy URL", icon: <Link size={14} />, run: () => void browser.command("copyUrl", { id: tab.id }) },
-      { id: "external", label: "Open in external browser", icon: <ExternalLink size={14} />, run: () => void browser.command("external", { id: tab.id }) }] : []),
-    { id: "rename", label: "Rename", icon: <Pencil size={14} />, separated: true, run: rename },
-    { id: "mute", label: many ? `${muted ? "Unmute" : "Mute"} ${selected.length} tabs` : muted ? "Unmute tab" : "Mute tab", icon: muted ? <Volume2 size={14} /> : <VolumeX size={14} />, run: () => void batch("mute", !muted) },
-    { id: "close", label: many ? `Close ${selected.length} tabs` : "Close tab", icon: <X size={14} />, separated: true, run: close },
-    ...(closeOthers ? [{ id: "closeOthers", label: "Close other tabs", icon: <X size={14} />, run: closeOthers }] : []),
-    ...(closeRight ? [{ id: "closeRight", label: "Close tabs to the right", icon: <X size={14} />, run: closeRight }] : []),
+    ...(page && pin ? [{ id: "pin", label: pinned ? "Unpin from sidebar" : "Pin to sidebar", icon: <PinIcon size={16} />, run: pin }] : []),
+    { id: "new", label: "New tab to the right", icon: <PlusIcon size={16} />, separated: !!pin && page, run: () => void browser.command("new", { id: tab.id }) },
+    { id: "reload", label: many ? `Reload ${selected.length} tabs` : "Reload", icon: <RefreshCw size={16} />, run: () => void batch("reload") },
+    { id: "duplicate", label: many ? `Duplicate ${selected.length} tabs` : "Duplicate", icon: <Copy size={16} />, run: () => void batch("duplicate") },
+    ...(page ? [{ id: "copy", label: "Copy URL", icon: <Link size={16} />, run: () => void browser.command("copyUrl", { id: tab.id }) },
+      { id: "external", label: "Open in external browser", icon: <ExternalLink size={16} />, run: () => void browser.command("external", { id: tab.id }) }] : []),
+    { id: "rename", label: "Rename", icon: <Pencil size={16} />, separated: true, run: rename },
+    { id: "mute", label: many ? `${muted ? "Unmute" : "Mute"} ${selected.length} tabs` : muted ? "Unmute tab" : "Mute tab", icon: muted ? <Volume2 size={16} /> : <VolumeX size={16} />, run: () => void batch("mute", !muted) },
+    { id: "close", label: many ? `Close ${selected.length} tabs` : "Close tab", icon: <X size={16} />, separated: true, run: close },
+    ...(closeOthers ? [{ id: "closeOthers", label: "Close other tabs", icon: <X size={16} />, run: closeOthers }] : []),
+    ...(closeRight ? [{ id: "closeRight", label: "Close tabs to the right", icon: <X size={16} />, run: closeRight }] : []),
   ];
 }
 
@@ -124,9 +124,9 @@ export function BrowserPanel({ browser, covered, onAttach, imagesAllowed = true,
   const value = edit && edit.tab === active?.id ? edit.value : active?.url === "about:blank" ? "" : active?.url ?? "";
   return <section className="browser-panel" aria-label="Built-in browser">
     <form className="browser-toolbar" aria-label="Browser navigation" onSubmit={event => { event.preventDefault(); const submitted = value; if (!submitted.trim()) return; void api.command("navigate", { url: submitted }).then(() => setEdit(current => current?.value === submitted ? null : current)).catch(() => {}); }}>
-      <Button type="button" variant="ghost" size="icon-sm" aria-label="Back" disabled={!active?.canGoBack} onClick={() => void command("back")}><ArrowLeft size={15} /></Button>
-      <Button type="button" variant="ghost" size="icon-sm" aria-label="Forward" disabled={!active?.canGoForward} onClick={() => void command("forward")}><ArrowRight size={15} /></Button>
-      <Button type="button" variant="ghost" size="icon-sm" aria-label={active?.loading ? "Stop loading page" : "Reload page"} onClick={() => void command(active?.loading ? "stop" : "reload")}>{active?.loading ? <StopIcon size={13} /> : <RefreshCw size={14} />}</Button>
+      <Button type="button" variant="ghost" size="icon-sm" aria-label="Back" disabled={!active?.canGoBack} onClick={() => void command("back")}><ArrowLeft size={16} /></Button>
+      <Button type="button" variant="ghost" size="icon-sm" aria-label="Forward" disabled={!active?.canGoForward} onClick={() => void command("forward")}><ArrowRight size={16} /></Button>
+      <Button type="button" variant="ghost" size="icon-sm" aria-label={active?.loading ? "Stop loading page" : "Reload page"} onClick={() => void command(active?.loading ? "stop" : "reload")}>{active?.loading ? <StopIcon size={16} /> : <RefreshCw size={16} />}</Button>
       <div className="browser-address">
         {active?.security === "insecure" && <span className="browser-security" title="This site does not use a secure connection"><CircleAlert size={12} aria-hidden="true" /><span className="browser-security-text">Not secure</span></span>}
         <Input ref={address} aria-label="Search or enter a URL" placeholder="Search or enter a URL" value={value} onChange={e => active && setEdit({ tab: active.id, value: e.target.value })} onKeyDown={e => { if (e.key === "Escape") { setEdit(null); address.current?.blur(); } }} spellCheck={false} autoComplete="off" />
@@ -134,13 +134,13 @@ export function BrowserPanel({ browser, covered, onAttach, imagesAllowed = true,
       </div>
       <Button type="button" variant="ghost" size="sm" className="browser-annotate" aria-pressed={state.annotating} aria-label="Annotate this page" title="Annotate: point at items to ask about or change"
         disabled={!active || !/^https?:/.test(active.url)} onClick={() => void command("annotate")}>
-        <SquareDashedMousePointer size={15} aria-hidden="true" /><span className="browser-annotate-label">Annotate</span>{!state.annotating && !!active?.comments && <span className="browser-badge" aria-label={`${active.comments} pending`}>{active.comments}</span>}
+        <SquareDashedMousePointer size={16} aria-hidden="true" /><span className="browser-annotate-label">Annotate</span>{!state.annotating && !!active?.comments && <span className="browser-badge" aria-label={`${active.comments} pending`}>{active.comments}</span>}
       </Button>
       <Button ref={drawButton} type="button" variant="ghost" size="sm" className="browser-annotate" aria-label="Draw on this page" title={drawingBlocked || "Draw on this page: arrows, pen, shapes and text over a screenshot"}
         disabled={!active || !/^https?:/.test(active.url) || !!drawingBlocked || capturing} onClick={() => void startDrawing()}>
-        <PenLine size={15} aria-hidden="true" /><span className="browser-annotate-label">Draw</span>
+        <PenLine size={16} aria-hidden="true" /><span className="browser-annotate-label">Draw</span>
       </Button>
-      <Button type="button" variant="ghost" size="icon-sm" className="browser-external" aria-label="Open in external browser" title="Open in external browser" disabled={!active || active.url === "about:blank"} onClick={() => void command("external")}><ExternalLink size={14} /></Button>
+      <Button type="button" variant="ghost" size="icon-sm" className="browser-external" aria-label="Open in external browser" title="Open in external browser" disabled={!active || active.url === "about:blank"} onClick={() => void command("external")}><ExternalLink size={16} /></Button>
       <BrowserOptions browser={browser} tab={active} onNotice={setNotice} onAttach={onAttach} imagesAllowed={imagesAllowed} />
     </form>
     <DevServerPreview key={cwd} cwd={cwd} browser={browser} />
@@ -196,7 +196,7 @@ function FindBar({ browser }: { browser: Browser }) {
     <span className="browser-find-count" aria-live="polite">{text ? find.matches ? `${find.active} of ${find.matches}` : "No results" : ""}</span>
     <Button type="button" variant="ghost" size="icon-xs" aria-label="Previous match" disabled={!find.matches} onClick={() => search(text, true)}><ChevronUp size={14} /></Button>
     <Button type="button" variant="ghost" size="icon-xs" aria-label="Next match" disabled={!find.matches} onClick={() => search(text)}><ChevronDown size={14} /></Button>
-    <Button type="button" variant="ghost" size="icon-xs" aria-label="Close find bar" onClick={() => void command("findClose")}><X size={13} /></Button>
+    <Button type="button" variant="ghost" size="icon-xs" aria-label="Close find bar" onClick={() => void command("findClose")}><X size={16} /></Button>
   </div>;
 }
 
@@ -209,7 +209,7 @@ function BrowserOptions({ browser, tab, onNotice, onAttach, imagesAllowed }: { b
     if (await onAttach([{ id: crypto.randomUUID(), name: "Page screenshot.jpg", type: "image", mimeType: "image/jpeg", dataUrl: image }], false)) onNotice("Screenshot added to your message");
   }
   return <DropdownMenu>
-    <DropdownMenuTrigger render={<Button type="button" variant="ghost" size="icon-sm" aria-label="Browser options" title="Browser options" disabled={!tab} />}><Ellipsis size={15} /></DropdownMenuTrigger>
+    <DropdownMenuTrigger render={<Button type="button" variant="ghost" size="icon-sm" aria-label="Browser options" title="Browser options" disabled={!tab} />}><Ellipsis size={16} /></DropdownMenuTrigger>
     <DropdownMenuContent className="browser-options">
       <DropdownMenuItem disabled={!page} onClick={() => void command("findOpen")}>Find in page<kbd className="kbd-hint" aria-hidden="true">Ctrl+F</kbd></DropdownMenuItem>
       <DropdownMenuItem disabled={!page} onClick={() => void command("print")}>Print<kbd className="kbd-hint" aria-hidden="true">Ctrl+P</kbd></DropdownMenuItem>
