@@ -315,7 +315,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
  * 6 px long in the tertiary ink at 40%; dashes in view at 60% of the ink; the hovered one 26 px in full ink, its neighbours
  * 20, 14 and 10 px. At most min(70vh, 40rem) tall, then it scrolls. */
 .prompt-rail { position:absolute; left:16px; top:50%; transform:translateY(-50%); z-index:2; display:flex; flex-direction:column; width:36px; max-height:min(70vh, 40rem, calc(100% - 24px)); }
-.prompt-rail-marks { display:flex; flex-direction:column; width:100%; min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:none; }
+.prompt-rail-marks { display:flex; flex-direction:column; width:100%; min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:none; opacity:0; transition:opacity var(--motion-fast) var(--ease); }
+.prompt-rail:is(:hover, :focus-within) .prompt-rail-marks { opacity:1; }
 .prompt-rail-marks::-webkit-scrollbar { display:none; }
 .prompt-tick { flex:none; display:flex; align-items:center; justify-content:flex-start; width:36px; height:10px; padding:0 0 0 5px; border:0; border-radius:0; background:none; cursor:pointer; }
 .prompt-tick i { display:block; width:6px; height:2px; border-radius:1px; background:var(--thread-tertiary); opacity:.4; transition:width .16s, opacity .16s, background-color .16s; }

@@ -221,7 +221,7 @@ export function PromptRail({ scroller, threadId, entries, onLoadEarlier, onNavig
     setSaved({ threadId, ids });
     try { appStorage().setItem("elpis:prompt-rail-bookmarks:" + threadId, JSON.stringify([...ids])); } catch { /* The current chat still reflects the choice. */ }
   };
-  return <nav ref={rail} className="prompt-rail" aria-label="User messages" data-indexed={indexedPrompts.length > 0}
+  return <nav ref={rail} className="prompt-rail" aria-label="User messages" title="Jump to an earlier prompt" data-indexed={indexedPrompts.length > 0}
     onMouseLeave={() => { if (!rail.current?.contains(document.activeElement)) setHovered(null); }}
     onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setHovered(null); }}
     onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); (event.target as HTMLElement).blur(); setHovered(null); } }}>
