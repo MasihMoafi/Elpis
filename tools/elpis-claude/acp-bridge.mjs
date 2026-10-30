@@ -237,7 +237,7 @@ const agentOf = (model) => (typeof model === "string" ? AGENTS.find((a) => model
 // Whether a model (or agent) is one Elpis has signed out of, and the error that refuses its turn.
 const signedOutModel = (model) => agentOf(model)?.signedOut?.() === true;
 const refuseSignedOut = (agent) => { if (agent?.signedOut?.()) throw Object.assign(new Error(SIGNED_OUT_MESSAGE), { signedOut: true }); };
-const acpErrorMessage = (e) => (e?.signedOut ? e.message : `Claude (ACP) error: ${e?.message ?? JSON.stringify(e)}`);
+const acpErrorMessage = (e, agent = AGENTS[0]) => (e?.signedOut ? e.message : `${agent.speaker} (ACP) error: ${e?.message ?? JSON.stringify(e)}`);
 // A dropped or timed-out connection is no error to show: the chat retries on its own (any message retries at once).
 const RECONNECT_MS = Number(process.env.ELPIS_RECONNECT_MS) || 180_000;
 const connectionDropped = (e) => /API Error/.test(e?.message ?? "") && /connection|timed? ?out|ECONN|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|socket hang up|fetch failed|network/i.test(e.message);
@@ -2564,7 +2564,7 @@ wss.on("connection", (ws) => {
     } catch (e) {
       status = "failed";
       const dropped = connectionDropped(e) && !compacting;
-      error = { message: dropped ? RECONNECT_NOTE : acpErrorMessage(e), codexErrorInfo: null, additionalDetails: null };
+      error = { message: dropped ? RECONNECT_NOTE : acpErrorMessage(e, agent), codexErrorInfo: null, additionalDetails: null };
       log(`turn error ${JSON.stringify(e)}`);
       if (dropped) reconnects.set(threadId, setTimeout(() => {
         reconnects.delete(threadId);
