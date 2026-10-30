@@ -68,29 +68,24 @@ async function selected(page, label, value) {
   assert.equal(await controlValue(page.getByLabel(label, { exact: true })), value);
 }
 
-test('accent and chat font apply instantly, persist after restart, and keep their separate roles', async t => {
+test('accent applies instantly and persists while every interface surface stays Inter', async t => {
   const f = await fixture({ width: 1280, height: 900 }), { page } = f; t.after(f.close);
   await f.open('chat-a');
-  const original = await font(page.locator('.message.agent .markdown').first());
   await appearance(page); await theme(page, 'Dark');
   const amber = await token(page, '--primary');
   await chooseOption(page.getByLabel('Accent colour', { exact: true }), 'teal');
   assert.notEqual(await token(page, '--primary'), amber);
-  await chooseOption(page.getByLabel('Chat font', { exact: true }), 'serif'); await leaveSettings(page);
-  assert.match(await font(page.locator('.message.agent .markdown').first()), /DejaVu Serif/);
-  assert.match(await font(f.composer), /DejaVu Serif/);
-  assert.match(await font(page.locator('.markdown code').first()), /Mono|monospace/);
-  assert.doesNotMatch(await font(page.locator('.account-row')), /DejaVu Serif/);
-  await page.reload(); await f.open('chat-a'); assert.match(await font(f.composer), /DejaVu Serif/);
-  await appearance(page);
-  await selected(page, 'Accent colour', 'teal'); await selected(page, 'Chat font', 'serif');
-  assert.equal(await page.getByRole('radiogroup', { name: 'Theme' }).getByRole('radio', { name: 'Dark', exact: true }).getAttribute('aria-checked'), 'true');
-  for (const [choice, expected] of [['mono', /DejaVu Sans Mono/], ['sans', /Inter/], ['system', /system-ui/], ['default', /Inter/]]) {
-    await chooseOption(page.getByLabel('Chat font', { exact: true }), choice);
-    await leaveSettings(page); assert.match(await font(f.composer), expected); await appearance(page);
-  }
   await leaveSettings(page);
-  assert.equal(await font(page.locator('.message.agent .markdown').first()), original);
+  assert.match(await font(page.locator('.message.agent .markdown').first()), /Inter/);
+  assert.match(await font(f.composer), /Inter/);
+  assert.match(await font(page.locator('.markdown code').first()), /Mono|monospace/);
+  assert.match(await font(page.locator('.account-row')), /Inter/);
+  await page.reload(); await f.open('chat-a'); assert.match(await font(f.composer), /Inter/);
+  await appearance(page);
+  await selected(page, 'Accent colour', 'teal');
+  assert.equal(await page.getByRole('radiogroup', { name: 'Theme' }).getByRole('radio', { name: 'Dark', exact: true }).getAttribute('aria-checked'), 'true');
+  await leaveSettings(page);
+  assert.match(await font(page.locator('.message.agent .markdown').first()), /Inter/);
   assert.deepEqual(f.errors, []);
 });
 
@@ -199,7 +194,7 @@ test('system theme follows OS changes while explicit theme ignores them', async 
   assert.deepEqual(f.errors, []);
 });
 
-test('settings and chat fit in three light/dark combinations, including keyboard and a narrow window', async t => {
+test('settings and chat fit in three light/dark combinations and a narrow window', async t => {
   const f = await fixture({ width: 1280, height: 900, chat: [
     ['t1', 'How does the parser work?', 'The parser runs in **two passes**.\n\n1. Scan the source into tokens.\n2. Build a syntax tree from those tokens.\n\n```ts\nconst tokens = scan(source);\nconst result = parse(tokens);\n```\n\nUse `parse` for a complete expression. [Read the guide](https://example.invalid/guide) for examples.'],
     ['t2', 'What should I test first?', 'Start with an empty input, then try one valid expression.'],
@@ -208,10 +203,6 @@ test('settings and chat fit in three light/dark combinations, including keyboard
   for (const [mode, accent, choice] of [['Light', 'blue', 'sans'], ['Dark', 'teal', 'serif'], ['Dark', 'amber', 'mono']]) {
     await appearance(page); await theme(page, mode);
     await chooseOption(page.getByLabel('Accent colour', { exact: true }), accent);
-    const chatFont = page.getByLabel('Chat font', { exact: true });
-    await chatFont.focus(); await page.keyboard.press('Enter');
-    await page.keyboard.type(choice, { delay: 80 });
-    await page.keyboard.press('Enter'); await selected(page, 'Chat font', choice);
     assert.deepEqual(await uiFit(page.getByRole('tabpanel', { name: 'Appearance' })), []);
     const name = `${mode.toLowerCase()}-${accent}-${choice}`;
     await page.screenshot({ path: path.join(SHOTS, `${name}-settings.png`) });
@@ -224,9 +215,9 @@ test('settings and chat fit in three light/dark combinations, including keyboard
   assert.deepEqual(f.errors, []);
 });
 
-test('unknown saved accent/font values recover to the defaults', async t => {
+test('an unknown saved accent recovers to the default', async t => {
   const f = await fixture({ storage: { 'elpis-preferences-v1': JSON.stringify({ accent: 'bad', chatFont: 'url(bad)' }) } }), { page } = f; t.after(f.close);
-  await appearance(page); await selected(page, 'Accent colour', 'amber'); await selected(page, 'Chat font', 'default');
+  await appearance(page); await selected(page, 'Accent colour', 'amber');
   assert.deepEqual(f.errors, []);
 });
 
@@ -248,29 +239,27 @@ test('saved appearance is applied by the shared layout on a standalone page', as
   const f = await fixture(), { page } = f; t.after(f.close);
   await appearance(page); await theme(page, 'Light');
   await chooseOption(page.getByLabel('Accent colour', { exact: true }), 'teal');
-  await chooseOption(page.getByLabel('Chat font', { exact: true }), 'serif');
   const primary = await token(page, '--primary');
   // The exported error page uses the root layout without mounting the chat app.
   await page.goto(new URL('/404.html', page.url()).href);
   await page.getByRole('heading', { name: '404', exact: true }).waitFor();
   await page.waitForFunction(() => document.documentElement.dataset.accent === 'teal');
   assert.equal(await token(page, '--primary'), primary);
-  assert.match(await token(page, '--chat-font'), /DejaVu Serif/);
+  assert.match(await token(page, '--chat-font'), /Inter/);
   assert.deepEqual(f.errors, []);
 });
 
-test('the chat font also reaches side-chat messages and its composer', async t => {
+test('Inter also reaches side-chat messages and its composer', async t => {
   const f = await fixture({ routes: {
     '/api/threads/chat-a/side-chat': () => ({ threadId: 'side-a' }),
     '/api/side-chats/side-a/turns': () => ({ turn: { id: 'side-turn' } }),
   } }), { page } = f; t.after(f.close);
-  await f.open('chat-a'); await appearance(page);
-  await chooseOption(page.getByLabel('Chat font', { exact: true }), 'serif'); await leaveSettings(page);
+  await f.open('chat-a');
   await f.composer.press('Control+;');
   const box = page.getByRole('textbox', { name: 'Side question', exact: true });
-  assert.match(await font(box), /DejaVu Serif/);
+  assert.match(await font(box), /Inter/);
   await box.fill('A side question in the selected font.'); await box.press('Enter');
   const message = page.getByRole('region', { name: 'Side chat' }).locator('.message.user').first();
-  await message.waitFor(); assert.match(await font(message), /DejaVu Serif/);
+  await message.waitFor(); assert.match(await font(message), /Inter/);
   assert.deepEqual(f.errors, []);
 });

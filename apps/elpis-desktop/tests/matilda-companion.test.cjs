@@ -32,9 +32,8 @@ for (const colorScheme of ['light', 'dark']) test(`Matilda floats out of the tit
   const pin = page.getByRole('button', { name: 'Pin Matilda', exact: true });
   await pin.waitFor({ timeout: 3000 });
   const start = await pin.boundingBox();
-  // 29 Oct, Masih: "don't say pin matilda. the pin icon is enough."
-  assert.equal((await pin.innerText()).trim(), '', 'the pin is an icon, with no word');
-  assert.equal(await pin.locator('svg').count(), 1);
+  assert.equal((await pin.innerText()).trim(), '', 'Matilda is a portrait, with no word');
+  assert.equal(await pin.locator('img.matilda-pin-face').count(), 1);
   assert.ok(start.y < 36, JSON.stringify(start));
   await pin.click();
   const presence = page.getByRole('region', { name: 'Pinned Matilda', exact: true });

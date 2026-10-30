@@ -30,7 +30,7 @@ const around = (rects, pad = 24) => {
 };
 
 for (const colorScheme of ['light', 'dark']) {
-  test(`composer actions share one box size, one centre line and even visible gaps; Stop is solid (${colorScheme})`, async () => {
+  test(`composer actions share one 16px stroke, one centre line and an attached send menu (${colorScheme})`, async () => {
     const f = await fixture(options(colorScheme, { running: true })), { page } = f;
     try {
       await f.open('chat-a');
@@ -54,12 +54,24 @@ for (const colorScheme of ['light', 'dark']) {
       assert.equal(sizes[0], '28x28', 'the shared box uses --control-h at 28px');
       const glyphs = m.map(item => `${item.glyph.width}x${item.glyph.height}`);
       assert.deepEqual(glyphs, Array(names.length).fill(glyphs[0]), `every glyph has one size: ${glyphs.join(', ')}`);
+      assert.equal(glyphs[0], '16x16');
       const centres = m.flatMap(item => [item.box.cy, item.glyph.cy]);
       assert.ok(Math.max(...centres) - Math.min(...centres) <= 0.5, `one centre line: ${centres.join(', ')}`);
       assert.ok(Math.max(...gaps) - Math.min(...gaps) <= 0.5, `voice → mic → Stop → Send box gaps are even: ${gaps.join(', ')}`);
-      const stop = m[2].d;
-      assert.equal(stop.length, 1, 'Stop draws one shape');
-      assert.equal((stop[0].match(/M/gi) ?? []).length, 1, 'Stop is a solid mark, not a hollow frame');
+      assert.equal(await row.getByRole('button', { name: 'Stop response' }).locator('rect').count(), 1, 'Stop uses the same outlined icon language');
+      const send = await row.getByRole('button', { name: 'Send follow-up' }).boundingBox(), more = await row.getByRole('button', { name: 'More send options' }).boundingBox();
+      assert.ok(Math.abs(more.x - send.x - send.width) <= 1, 'send options attach to Send instead of floating outside it');
+      assert.equal(more.width, 20);
+      assert.equal(await page.locator('.composer textarea').evaluate(el => el.getBoundingClientRect().height), 22, 'an empty composer is one text line high');
+      const features = page.getByRole('group', { name: 'Elpis features' }).locator('.feature-chip');
+      await features.first().waitFor();
+      const featureMetrics = await features.evaluateAll(chips => chips.map(chip => {
+        const style = getComputedStyle(chip), mark = chip.querySelector('.feature-dot, .context-ring-icon')?.getBoundingClientRect();
+        return { font: style.fontSize, color: style.color, mark: mark?.width };
+      }));
+      assert.deepEqual([...new Set(featureMetrics.map(item => item.font))], ['12px']);
+      assert.equal(new Set(featureMetrics.map(item => item.color)).size, 1, 'Ledger and feature labels use one colour');
+      assert.deepEqual([...new Set(featureMetrics.map(item => item.mark))], [7], 'every status mark uses one dot size');
       assert.deepEqual(f.errors, []);
     } finally { await f.close(); }
   });
@@ -155,18 +167,12 @@ test('every icon with a twin in the SVG collection draws the collection paths', 
     await check('Theme', side.getByRole('button', { name: 'Use dark theme', exact: true }).locator('svg'), 'theme');
     await check('Settings', side.getByRole('button', { name: 'Settings', exact: true }).locator('svg'), 'settings');
     const composer = page.locator('form.composer');
-    await check('Add files and more', composer.locator('[aria-label="Add files and more"] svg'), 'plus');
     await check('Send', composer.locator('[aria-label="Send message"] svg'), 'send');
-    await check('Dictate', composer.locator('[aria-label="Dictate message"] svg'), 'mic');
     await composer.getByRole('button', { name: 'Add files and more', exact: true }).click();
     const menu = page.getByRole('menu');
     await check('Attach', menu.getByRole('menuitem', { name: /Add files or photos/ }).locator('svg'), 'attach');
     await check('Plan mode', menu.getByRole('menuitem', { name: /Plan mode/ }).locator('svg'), 'plan');
     await check('Shell', menu.getByRole('menuitem', { name: /Run as a shell command/ }).locator('svg'), 'terminal');
-    await page.keyboard.press('Escape');
-    await composer.locator('[aria-label="Change permissions"]').click();
-    for (const [label, name] of [['Ask for approval', 'ask'], ['Approve for me', 'auto-approve'], ['Full access', 'full-access'], ['Bypass permissions', 'bypass']])
-      await check(label, page.getByRole('menu').getByRole('menuitem', { name: new RegExp(label) }).locator('svg'), name);
     await page.keyboard.press('Escape');
     await side.getByRole('button', { name: 'Settings', exact: true }).click();
     for (const [id, name] of [['general', 'settings'], ['notifications', 'bell'], ['appearance', 'theme'], ['voice', 'mic'], ['configuration', 'file-edit'],

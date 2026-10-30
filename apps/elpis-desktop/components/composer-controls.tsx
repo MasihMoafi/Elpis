@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, type ElementType, type RefObject } from "react";
-import { AtSign, Check, ChevronDown, SquareSlash, X, Zap } from "lucide-react";
-import { AskIcon, AttachIcon, AutoApproveIcon, BypassIcon, FullAccessIcon, PlanIcon, PlusIcon, TerminalIcon } from "@/components/elpis-icons";
+import { AtSign, Check, ChevronDown, CircleHelp, LockKeyholeOpen, Plus, ShieldAlert, ShieldCheck, SquareSlash, X, Zap } from "lucide-react";
+import { AttachIcon, PlanIcon, TerminalIcon } from "@/components/elpis-icons";
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -14,11 +14,11 @@ export type PermissionMode = "ask" | "auto" | "full" | "bypass";
 
 /** ChatGPT's three approval modes plus Elpis's Bypass permissions; the bridge maps each to Elpis
  * approval and sandbox settings. */
-export const PERMISSION_MODES: { id: PermissionMode; label: string; /** What the button says when room is short. */ short: string; description: string; Icon: typeof AskIcon }[] = [
-  { id: "ask", label: "Ask for approval", short: "Ask", description: "Always ask to edit files outside the workspace and to use the internet", Icon: AskIcon },
-  { id: "auto", label: "Approve for me", short: "Auto", description: "Only ask for actions a reviewer judges potentially unsafe", Icon: AutoApproveIcon },
-  { id: "full", label: "Full access", short: "Full", description: "Unrestricted access to the internet and any file on this computer", Icon: FullAccessIcon },
-  { id: "bypass", label: "Bypass permissions", short: "Bypass", description: "Run anything without asking, even commands Elpis would otherwise refuse", Icon: BypassIcon },
+export const PERMISSION_MODES: { id: PermissionMode; label: string; /** What the button says when room is short. */ short: string; description: string; Icon: ElementType }[] = [
+  { id: "ask", label: "Ask for approval", short: "Ask", description: "Always ask to edit files outside the workspace and to use the internet", Icon: CircleHelp },
+  { id: "auto", label: "Approve for me", short: "Auto", description: "Only ask for actions a reviewer judges potentially unsafe", Icon: ShieldCheck },
+  { id: "full", label: "Full access", short: "Full", description: "Unrestricted access to the internet and any file on this computer", Icon: LockKeyholeOpen },
+  { id: "bypass", label: "Bypass permissions", short: "Bypass", description: "Run anything without asking, even commands Elpis would otherwise refuse", Icon: ShieldAlert },
 ];
 /** A mode's name, as the permissions menu words it. */
 export const permissionLabel = (mode: PermissionMode) => (PERMISSION_MODES.find(item => item.id === mode) ?? PERMISSION_MODES[0]).label;
@@ -31,7 +31,7 @@ export function PermissionsMenu({ mode, disabled, managed, onChange }: { mode: P
   return <>
     <DropdownMenu>
       <DropdownMenuTrigger data-slot="composer-chip" className={`composer-pill permissions-${mode} ${dangerous(mode)}`} disabled={disabled} aria-label="Change permissions" aria-description={current.label} title={`${current.label}. Change permissions (Shift+Tab in the message box cycles Ask, Approve for me and Plan)`}>
-        <current.Icon size={14} aria-hidden="true" /><span className="pill-long">{current.label}</span><span className="pill-short">{current.short}</span><ChevronDown size={14} aria-hidden="true" />
+        <current.Icon size={16} aria-hidden="true" /><span className="pill-long">{current.label}</span><span className="pill-short">{current.short}</span><ChevronDown size={16} aria-hidden="true" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="hud-menu w-80">
         {PERMISSION_MODES.map(item => <DropdownMenuItem key={item.id} disabled={!permissionAllowed(item.id, managed)} title={!permissionAllowed(item.id, managed) ? "Restricted by managed settings" : undefined} onClick={() => item.id === "bypass" && mode !== "bypass" ? setConfirming(true) : onChange(item.id)} className={`hud-menu-item ${dangerous(item.id)}`}>
@@ -82,7 +82,7 @@ export function PlusMenu({ disabled, attachDisabled, slashDisabled, plan, return
   const item = (Icon: ElementType, name: string, hint: string, props: { disabled?: boolean; onClick: () => void }, on?: boolean) =>
     <DropdownMenuItem className="hud-menu-item" {...props}><Icon aria-hidden="true" /><span className="grid gap-0.5"><span>{name}</span><small>{hint}</small></span>{on && <Check className="ml-auto" aria-label="On" />}</DropdownMenuItem>;
   return <DropdownMenu onOpenChangeComplete={open => { if (!open) { const run = afterClose.current; afterClose.current = null; run?.(); } }}>
-    <DropdownMenuTrigger render={<Button type="button" variant="ghost" size="icon-sm" className="composer-plus" aria-label="Add files and more" title="Add files and more" disabled={disabled} />}><PlusIcon className="size-4" /></DropdownMenuTrigger>
+    <DropdownMenuTrigger render={<Button type="button" variant="ghost" size="icon-sm" className="composer-plus" aria-label="Add files and more" title="Add files and more" disabled={disabled} />}><Plus size={16} /></DropdownMenuTrigger>
     <DropdownMenuContent align="start" className="hud-menu w-80" finalFocus={returnFocus}>
       <p className="hud-menu-title">Add</p>
       {item(AttachIcon, "Add files or photos", "Pictures, PDFs and text", { disabled: attachDisabled, onClick: onAttach })}
@@ -107,7 +107,7 @@ export function PlanPill({ disabled, onOff }: { disabled?: boolean; onOff: () =>
  * workspace under 680px wide, where the row of controls has no room for it; the keys still work. */
 export function SendOptionsMenu({ choice, disabled, returnFocus, onChoose }: { choice: FollowUpChoice; disabled?: boolean; returnFocus: RefObject<HTMLElement | null>; onChoose: (follow: FollowUpChoice["follow"]) => void }) {
   return <DropdownMenu>
-    <DropdownMenuTrigger render={<Button type="button" variant="ghost" size="icon-xs" className="@max-[680px]/workspace:hidden" aria-label="More send options" title="More send options" disabled={disabled} />}><ChevronDown size={14} /></DropdownMenuTrigger>
+    <DropdownMenuTrigger render={<Button type="button" variant="ghost" size="icon-xs" className="@max-[680px]/workspace:hidden" aria-label="More send options" title="More send options" disabled={disabled} />}><ChevronDown size={16} /></DropdownMenuTrigger>
     <DropdownMenuContent align="end" side="top" finalFocus={returnFocus}>
       <DropdownMenuItem onClick={() => onChoose(choice.follow)}>{choice.label}<kbd aria-hidden="true" className="kbd-hint">{choice.keys}</kbd></DropdownMenuItem>
     </DropdownMenuContent>

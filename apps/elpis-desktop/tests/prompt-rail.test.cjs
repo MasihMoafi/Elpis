@@ -120,7 +120,10 @@ test('three prompts show no rail; four show it, with usable ticks', async () => 
     const marks = marksOf(f.page);
     await marks.nth(3).waitFor();
     assert.equal(await marks.count(), 4, 'four prompts: four ticks');
+    assert.equal(await f.page.locator('.prompt-rail-marks').evaluate(el => getComputedStyle(el).opacity), '0', 'the history rail stays quiet until it is used');
     await marks.nth(3).hover();
+    await f.page.waitForFunction(() => getComputedStyle(document.querySelector('.prompt-rail-marks')).opacity === '1');
+    assert.equal(await f.page.locator('.prompt-rail-marks').evaluate(el => getComputedStyle(el).opacity), '1');
     assert.match(await f.page.locator('.prompt-preview').innerText(), /The second prompt/);
     await marks.first().hover();
     assert.match(await f.page.locator('.prompt-preview').innerText(), /The only prompt/);
