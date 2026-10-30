@@ -2,6 +2,15 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cjs');
 
+// A wrapped draft grows until its input ceiling; width changes must not clip it or add an early scrollbar.
+async function waitForDraftFit(page) {
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await page.waitForFunction(() => {
+    const input = document.querySelector('.composer textarea'), style = getComputedStyle(input);
+    return input.scrollHeight <= input.clientHeight + 1 || (input.clientHeight >= parseFloat(style.maxHeight) - 1 && style.overflowY === 'auto');
+  });
+}
+
 // The composer's toolbar is one layout whatever the chat, provider or neighbouring pane: the model button names the model
 // only (the provider never rides inside it), the permission label is the full "Approve for me" until the workspace itself
 // is narrow, the box's inset follows the workspace's width (not the window's), and nothing leaves the box.
@@ -9,7 +18,7 @@ const probe = page => page.evaluate(() => {
   const q = selector => document.querySelector(selector), box = element => element.getBoundingClientRect();
   const workspace = box(q('.workspace-body')), composer = box(q('.composer')), wrap = q('.composer-wrap');
   const visible = element => element.getClientRects().length > 0 && getComputedStyle(element).visibility !== 'hidden';
-  const controls = [...q('.composer-controls').querySelectorAll('button, select, [role="combobox"]')].filter(visible).map(box);
+  const controls = [...q('.composer-controls').querySelectorAll('button, select, [role="combobox"]')].filter(visible).map(element => ({ ...box(element).toJSON(), label: element.getAttribute('aria-label') || element.textContent }));
   const approval = box(q('button.composer-pill')), model = box(q('.model-picker-trigger'));
   return {
     shown: composer.width > 0 && composer.height > 0, workspace: Math.round(workspace.width), inset: getComputedStyle(wrap).paddingLeft,
@@ -20,6 +29,7 @@ const probe = page => page.evaluate(() => {
     rowOffset: Math.abs((approval.top + approval.bottom - model.top - model.bottom) / 2),
     toolbarRows: new Set(controls.map(rect => Math.round((rect.top + rect.bottom) / 2))).size,
     overlaps: controls.flatMap((a, i) => controls.slice(i + 1).filter(b => Math.min(a.right, b.right) - Math.max(a.left, b.left) > 0.5 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 0.5)).length,
+    overlapPairs: controls.flatMap((a, i) => controls.slice(i + 1).filter(b => Math.min(a.right, b.right) - Math.max(a.left, b.left) > 0.5 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 0.5).map(b => [a.label, b.label, a, b])),
   };
 });
 
@@ -55,8 +65,8 @@ for (const model of ['sol', 'claude/claude-sonnet-5-5']) for (const running of [
   });
 }
 
-for (const running of [false, true]) test(`composer options collapse into one row at 600, 400 and 320px (${running ? 'running' : 'idle'})`, async t => {
-  const f = await fixture({ width: 1100, height: 700, colorScheme: 'dark', running, routes: {
+for (const colorScheme of ['light', 'dark']) for (const running of [false, true]) test(`composer options collapse into one row at 600, 400 and 320px (${colorScheme}, ${running ? 'running' : 'idle'})`, async t => {
+  const f = await fixture({ width: 1100, height: 700, colorScheme, running, routes: {
     '/api/models': () => ({ data: [{ id: 'sol', model: 'sol', displayName: 'Sol', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }], serviceTiers: [{ id: 'priority', name: 'Fast' }] }] }),
     '/api/voice': () => ({ available: true }),
   } });
@@ -68,11 +78,10 @@ for (const running of [false, true]) test(`composer options collapse into one ro
   await f.page.getByRole('button', { name: 'Start voice chat', exact: true }).waitFor();
   const draft = 'Keep this unfinished message while resizing the pane. I still need to add details before sending it to the agent.';
   await f.composer.fill(draft);
-  const height = await f.page.locator('.composer').evaluate(element => element.getBoundingClientRect().height);
   for (const width of [1100, 760, 500, 390]) {
     await f.page.setViewportSize({ width, height: 700 });
+    await waitForDraftFit(f.page);
     const m = await probe(f.page);
-    assert.ok(Math.abs(await f.page.locator('.composer').evaluate(element => element.getBoundingClientRect().height) - height) <= 1, `width-only resizing preserves composer height at ${width}px`);
     assert.ok(m.rowOffset <= 4, `approval and model share a row at ${width}px`);
     assert.equal(m.leaks, 0, `controls stay inside the composer at ${width}px`);
     assert.equal(m.overlaps, 0, `controls do not overlap at ${width}px`);
@@ -80,12 +89,13 @@ for (const running of [false, true]) test(`composer options collapse into one ro
   await f.page.setViewportSize({ width: 1100, height: 700 });
   for (const width of [600, 400, 320]) {
     await f.page.locator('.composer').evaluate((element, width) => { element.style.width = `${width}px`; }, width);
+    await waitForDraftFit(f.page);
     const floating = await probe(f.page);
-    assert.ok(Math.abs(await f.page.locator('.composer').evaluate(element => element.getBoundingClientRect().height) - height) <= 1, `floating width-only resizing preserves composer height at ${width}px`);
+    if (process.env.ELPIS_PARITY_SHOTS) await f.page.screenshot({ path: `${process.env.ELPIS_PARITY_SHOTS}/composer-${colorScheme}-${running ? 'running' : 'idle'}-${width}.png` });
     assert.equal(floating.toolbarRows, 1, `all controls share one row in the ${width}px composer`);
     assert.ok(floating.rowOffset <= 4, 'the narrow floating composer keeps approval on the same row');
     assert.equal(floating.leaks, 0, 'floating controls stay inside the composer');
-    assert.equal(floating.overlaps, 0, 'floating controls do not overlap');
+    assert.equal(floating.overlaps, 0, `floating controls do not overlap at ${width}px: ${JSON.stringify(floating.overlapPairs)}`);
     assert.equal(await f.composer.inputValue(), draft);
     assert.equal(await f.page.getByRole('combobox', { name: 'Reasoning effort', exact: true }).isVisible(), true, 'thinking/effort stays visible at every composer width');
     assert.equal(await f.page.getByRole('button', { name: running ? 'Send follow-up' : 'Send message', exact: true }).isVisible(), true);
