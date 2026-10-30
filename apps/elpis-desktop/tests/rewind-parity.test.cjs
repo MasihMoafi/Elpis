@@ -60,3 +60,36 @@ for (const colorScheme of ['light', 'dark']) for (const [width, height] of [[128
     const dir = path.resolve('../../.tmp/rewind'); await fs.mkdir(dir, { recursive: true }); await f.page.screenshot({ path: path.join(dir, `${colorScheme}-${width}.png`) });
   } finally { await f.close(); }
 });
+
+test('a stopped turn still edits its first visible message when recorded items arrive out of order', async () => {
+  const f = await fixture();
+  try {
+    await f.open('chat-a');
+    for (const text of ['original message', 'first follow-up', 'second follow-up']) {
+      await f.composer.fill(text); await f.composer.press('Enter');
+      await f.page.locator('.user-turn', { hasText: text }).waitFor();
+      if (text === 'original message') await f.page.getByRole('button', { name: 'Stop response', exact: true }).waitFor();
+    }
+    const item = (id, text) => f.emit('message', { method: 'item/completed', params: { threadId: 'chat-a', turnId: 't-new', item: { id, type: 'userMessage', content: [{ type: 'text', text, text_elements: [] }] } } });
+    item('follow-1', 'first follow-up'); item('follow-2', 'second follow-up');
+    f.emit('message', { method: 'turn/completed', params: { threadId: 'chat-a', turn: { id: 't-new', status: 'interrupted' } } });
+    await f.page.getByText('Stopped. The reply above is where it was when the turn was stopped.').waitFor();
+    const first = f.page.locator('.user-turn', { hasText: 'original message' });
+    await first.getByRole('button', { name: 'Why editing is unavailable', exact: true }).click();
+    await first.getByText("Wait for this turn's messages to be recorded before editing.").waitFor();
+    item('original', 'original message');
+    await first.getByRole('button', { name: 'Edit message', exact: true }).waitFor();
+    await first.locator('.message.user').click({ button: 'right' });
+    await f.page.getByRole('menuitem', { name: 'Rewind to here', exact: true }).click();
+    const dialog = f.page.getByRole('alertdialog');
+    await dialog.waitFor();
+    assert.match(await dialog.innerText(), /original message/, `message order: ${(await f.page.locator('.user-turn').allInnerTexts()).join(' | ')}`);
+    await f.page.keyboard.press('Escape'); await dialog.waitFor({ state: 'hidden' });
+    await first.getByRole('button', { name: 'Edit message', exact: true }).click();
+    assert.equal(await f.page.getByRole('textbox', { name: 'Edited message', exact: true }).inputValue(), 'original message');
+    for (const text of ['first follow-up', 'second follow-up']) {
+      assert.equal(await f.page.locator('.user-turn', { hasText: text }).getByRole('button', { name: 'Why editing is unavailable' }).count(), 1);
+    }
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
