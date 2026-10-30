@@ -239,7 +239,7 @@ test('the small chat starts fresh, keeps earlier turns behind a button, and asks
   assert.equal(await mini.getByText('An old answer', { exact: true }).count(), 0, 'a quick chat starts fresh');
   await mini.getByRole('textbox', { name: 'Message Matilda', exact: true }).fill('hey');
   await mini.getByRole('button', { name: 'Send to Matilda', exact: true }).click();
-  await page.locator('[aria-label="Pinned Matilda"] img[data-mood="smile"][data-shown="true"]').waitFor({ state: 'attached', timeout: 3000 });
+  await page.locator('[aria-label="Pinned Matilda"] img[data-mood="smile"][data-shown="true"]').first().waitFor({ state: 'attached', timeout: 3000 });
   await mini.getByText('Hey, love.', { exact: true }).waitFor({ timeout: 10000 });
   await page.locator('[aria-label="Pinned Matilda"] img[data-mood="softSmile"][data-shown="true"]').waitFor({ state: 'attached', timeout: 3000 });
   await mini.getByRole('status').waitFor({ state: 'hidden' });
