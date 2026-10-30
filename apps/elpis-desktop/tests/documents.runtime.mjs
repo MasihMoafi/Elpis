@@ -130,6 +130,10 @@ try {
     const result = await agentTool('document_open', { path: file });
     assert.equal(result.opened, true); assert.equal(result.path, file); assert.equal(result.unsavedChanges, false);
     await editor().waitFor(); assert.equal(await editor().inputValue(), original);
+    await page.getByRole('button', { name: 'Preview', exact: true }).click();
+    await page.getByRole('article', { name: `Preview of ${file}`, exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Edit', exact: true }).click();
+    await editor().waitFor(); assert.equal(await editor().inputValue(), original);
   });
   const saved = '# Elpis to the rescue\nSaved revision — متن فارسی و 保持文字.\n';
   await check('user save reaches disk and the agent reads the exact saved Unicode revision', async () => {
@@ -139,7 +143,7 @@ try {
     const result = await agentTool('document_read', { path: file });
     assert.equal(result.content, saved); assert.equal(result.unsavedChanges, false);
   });
-  const draft = `${saved}\nUnfinished user revision — هنوز ذخیره نشده.\n`;
+  let draft = `${saved}\nUnfinished user revision — هنوز ذخیره نشده.\n`;
   await check('agent reopen preserves an unfinished draft and reads only the saved file', async () => {
     await editor().fill(draft);
     const opened = await tool('document_open', { path: file }); assert.equal(opened.unsavedChanges, true);
@@ -168,10 +172,25 @@ try {
     assert.equal(await editor().inputValue(), draft);
   });
   await check('the shared document fits light, dark and a narrow packaged window', async () => {
+    let latestSaved = saved;
     for (const theme of ['light', 'dark']) {
       const toggle = page.locator('aside.sidebar').getByRole('button', { name: `Use ${theme} theme`, exact: true });
       if (await toggle.count()) await chooseTheme(page, theme);
-      assert.equal(await editor().isVisible(), true); await screenshot(`documents-${theme}`);
+      assert.equal(await editor().isVisible(), true);
+      await page.getByRole('button', { name: 'Preview', exact: true }).click();
+      await page.getByRole('article', { name: `Preview of ${file}`, exact: true }).waitFor();
+      await page.getByRole('button', { name: 'Edit', exact: true }).click();
+      assert.equal(await editor().inputValue(), draft, `${theme} edit switch keeps the unsaved draft`);
+      const themeSaved = `${latestSaved}\nSaved from ${theme} theme.\n`;
+      latestSaved = themeSaved;
+      await editor().fill(themeSaved); await editor().press('Control+s');
+      await until(async () => (await fs.readFile(file, 'utf8')) === themeSaved, `${theme} editor save`);
+      await page.locator('.files-pane button[title="Save (Ctrl+S)"]').waitFor({ state: 'detached' });
+      await page.getByRole('button', { name: 'Preview', exact: true }).click();
+      await page.getByRole('article', { name: `Preview of ${file}`, exact: true }).waitFor();
+      await page.getByRole('button', { name: 'Edit', exact: true }).click();
+      assert.equal(await editor().inputValue(), themeSaved, `${theme} edit view reopens the saved file`);
+      await screenshot(`documents-${theme}`);
     }
     await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window => !window.isDestroyed()).setSize(820, 900));
     const closeSidebar = page.getByRole('button', { name: 'Close sidebar', exact: true });
@@ -184,9 +203,11 @@ try {
     await chooseTheme(page, 'light');
     if (await closeSidebar.isVisible()) await closeSidebar.click();
     await editor().waitFor(); await screenshot('documents-light-820');
+    draft = `${latestSaved}\nUnfinished user revision — هنوز ذخیره نشده.\n`;
   });
   await check('stale saves preserve user text and never overwrite an external saved revision', async () => {
     const external = '# External saved revision\nKept on disk.\n';
+    await editor().fill(draft);
     await fs.writeFile(file, external); await fs.utimes(file, new Date(), new Date(Date.now() + 5000));
     await editor().press('Control+s');
     await page.locator('.files-pane').getByRole('alert').filter({ hasText: /changed on disk/ }).waitFor();

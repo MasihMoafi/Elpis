@@ -197,11 +197,11 @@ test('Markdown opens as a document; source editing and relative links/images kee
       assert.deepEqual(requested, [], 'remote images and paths outside the project are not loaded');
       assert.equal(await f.page.evaluate(() => window.markdownExecuted), undefined, 'Markdown HTML is never executed');
       await f.shot(`files-markdown-${colorScheme}`);
-      await f.view.getByRole('button', { name: 'Source', exact: true }).click();
+      await f.view.getByRole('button', { name: 'Edit', exact: true }).click();
       await f.editor('docs/preview.md').fill(`${document}\n## Unsaved edit\n`);
       await f.view.getByRole('button', { name: 'Preview', exact: true }).click();
       await f.view.getByRole('heading', { name: 'Unsaved edit', exact: true }).waitFor();
-      await f.view.getByRole('button', { name: 'Source', exact: true }).click();
+      await f.view.getByRole('button', { name: 'Edit', exact: true }).click();
       assert.equal(await f.editor('docs/preview.md').inputValue(), `${document}\n## Unsaved edit\n`, 'switching views preserves the draft');
       await f.editor('docs/preview.md').focus(); await f.page.keyboard.press('Control+s');
       await eventually(async () => assert.equal(await fs.readFile(path.join(CWD, 'docs/preview.md'), 'utf8'), `${document}\n## Unsaved edit\n`));
@@ -403,7 +403,7 @@ test('a click on a file previews it in a tab the next click replaces; a double c
     await f.row('README.md').click();
     await f.view.getByRole('heading', { name: 'Parser', exact: true }).waitFor();
     assert.deepEqual(await f.tabs.getByRole('tab').allInnerTexts(), ['package.json', 'README.md']);
-    await f.view.getByRole('button', { name: 'Source', exact: true }).click();
+    await f.view.getByRole('button', { name: 'Edit', exact: true }).click();
     await f.editor('README.md').click();
     await f.page.keyboard.press('End');
     await f.page.keyboard.type('!');
@@ -521,7 +521,7 @@ test('code is coloured by its language, as in a code block, and long lines wrap 
     assert.ok(colours.every(colour => colour !== plain), `keywords have their own colour (${colours[0]} vs ${plain})`);
     assert.equal(await text.evaluate(node => getComputedStyle(node).webkitTextFillColor), 'rgba(0, 0, 0, 0)', 'the textarea draws only the caret and selection; the coloured layer shows the letters');
     await f.row('README.md').dblclick();
-    await f.view.getByRole('button', { name: 'Source', exact: true }).click();
+    await f.view.getByRole('button', { name: 'Edit', exact: true }).click();
     const log = f.editor('README.md');
     await log.waitFor();
     const box = await log.evaluate(node => ({ client: node.clientWidth, scroll: node.scrollWidth }));

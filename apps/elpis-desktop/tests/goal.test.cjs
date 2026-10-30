@@ -45,7 +45,7 @@ for (const colorScheme of ['light', 'dark']) test(`goal slash and right Context 
       await panel.getByRole('tab', { name: 'Context', exact: true }).click();
       await panel.getByRole('button', { name: `Open ${file.name}`, exact: true }).click();
       await panel.getByRole('article', { name: `Preview of ${displayedPath}`, exact: true }).waitFor();
-      await panel.getByRole('button', { name: 'Source', exact: true }).click();
+      await panel.getByRole('button', { name: 'Edit', exact: true }).click();
       await panel.getByRole('textbox', { name: `Contents of ${displayedPath}`, exact: true }).waitFor();
     }
     await panel.getByRole('tab', { name: 'Context', exact: true }).click();

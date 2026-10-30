@@ -28,7 +28,7 @@ function FileViewer({ cwd, file, doc }: { cwd: string; file: OpenFile; doc: Doc 
   const selectedPassage = useRef("");
   const { softWrap } = usePreferences();
   const abs = file.path.startsWith("/") ? file.path : `${cwd.replace(/\/+$/, "")}/${file.path}`, dirty = isDirty(doc), ready = doc?.status === "ready" ? doc : null;
-  const markdown = /\.(md|markdown)$/i.test(file.path), html = /\.html?$/i.test(file.path), source = file.view === "source";
+  const markdown = /\.(md|markdown)$/i.test(file.path), html = /\.html?$/i.test(file.path), source = file.view === "source", editLabel = markdown && ready ? "Edit" : "Source";
   const actions: MenuAction[] = useFileActions({ abs, rel: file.path, inside: !file.path.startsWith("/"), line: file.line }, setNote, undefined, () => selectedPassage.current);
   const rememberSelection = (event: React.SyntheticEvent<HTMLDivElement>) => {
     const field = event.target instanceof HTMLTextAreaElement ? event.target : null;
@@ -53,7 +53,7 @@ function FileViewer({ cwd, file, doc }: { cwd: string; file: OpenFile; doc: Doc 
       <span className="file-view-path" title={abs} dir="ltr">{file.path}</span>
       {(markdown || html) && (ready || doc?.status === "preview" && html) && <div className="file-view-mode" role="group" aria-label="Document view">
         <Button type="button" variant={source ? "ghost" : "secondary"} size="xs" aria-pressed={!source} onClick={() => setFileView(cwd, file.path, "preview")}>Preview</Button>
-        <Button type="button" variant={source ? "secondary" : "ghost"} size="xs" aria-pressed={source} onClick={() => setFileView(cwd, file.path, "source")}>Source</Button>
+        <Button type="button" variant={source ? "secondary" : "ghost"} size="xs" aria-pressed={source} onClick={() => setFileView(cwd, file.path, "source")}>{editLabel}</Button>
       </div>}
       {dirty && <Button type="button" variant="ghost" size="icon-xs" aria-label="Revert changes" title="Throw away the edits" onClick={() => revert(cwd, file.path)}><Undo2 size={16} /></Button>}
       {dirty && <Button type="button" variant="default" size="xs" disabled={ready?.saving} title="Save (Ctrl+S)" onClick={() => void save(cwd, file.path)}>{ready?.saving ? "Saving…" : "Save"}</Button>}
