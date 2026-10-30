@@ -1,6 +1,8 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cjs');
+const fs = require('node:fs/promises');
+const path = require('node:path');
 
 // A wrapped draft grows until its input ceiling; width changes must not clip it or add an early scrollbar.
 async function waitForDraftFit(page) {
@@ -32,6 +34,36 @@ const probe = page => page.evaluate(() => {
     overlapPairs: controls.flatMap((a, i) => controls.slice(i + 1).filter(b => Math.min(a.right, b.right) - Math.max(a.left, b.left) > 0.5 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 0.5).map(b => [a.label, b.label, a, b])),
   };
 });
+
+for (const colorScheme of ['light', 'dark']) {
+  test(`a wide side panel leaves room for the running chat controls (${colorScheme})`, async t => {
+    const f = await fixture({ width: 1000, height: 800, colorScheme, running: true });
+    t.after(async () => { await f.close(); assert.deepEqual(f.errors, []); });
+    await f.open('chat-a');
+    await f.page.keyboard.press('Control+`');
+    for (const kind of ['Files', 'Browser tab', 'Context']) {
+      await f.page.getByRole('button', { name: 'New side panel tab' }).click();
+      await f.page.getByRole('menuitem', { name: kind, exact: true }).click();
+      const edge = f.page.getByRole('separator', { name: 'Resize side panel' });
+      await edge.focus();
+      for (let step = 0; step < 16; step++) await edge.press('ArrowLeft');
+      for (const width of [1000, 1100, 1280]) {
+        await f.page.setViewportSize({ width, height: 800 });
+        await f.page.waitForTimeout(100);
+        const m = await probe(f.page), where = `${kind}, ${width}px, ${colorScheme}`;
+        assert.equal(m.shown, true, where);
+        assert.equal(m.leaks, 0, `${where}: ${JSON.stringify(m)}`);
+        assert.equal(m.overlaps, 0, `${where}: ${JSON.stringify(m)}`);
+        assert.equal(m.toolbarRows, 1, where);
+        assert.equal(m.page, false, where);
+        if (process.env.ELPIS_SHOTS && width === 1000) {
+          await fs.mkdir(process.env.ELPIS_SHOTS, { recursive: true });
+          await f.page.screenshot({ path: path.join(process.env.ELPIS_SHOTS, `side-panel-${kind.split(' ')[0].toLowerCase()}-${colorScheme}.png`) });
+        }
+      }
+    }
+  });
+}
 
 for (const model of ['sol', 'claude/claude-sonnet-5-5']) for (const running of [false, true]) {
   test(`toolbar is stable across widths and a browser split (${model}, ${running ? 'running' : 'idle'})`, async t => {

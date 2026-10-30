@@ -188,9 +188,9 @@ button:disabled { cursor:not-allowed; }
 .workspace-notices { display:flex; flex-direction:column; flex-shrink:0; min-width:0; max-height:32vh; overflow:auto; }
 /* With the side panel beside the chat (not full view, not a narrow window) the work area is one grid: the panel runs the full
  * height at the right and its header shares a row with the chat's header, so the two line up whatever the chat's header holds.
- * The panel is as wide as the sidebar, or what its dragged edge set (`--side-w`, from app/page.tsx, floored at sideMinWidth in side-panel.tsx). */
+ * The panel follows its dragged width, while the chat keeps the 320px needed by its compact controls. */
 @media(min-width:761px) {
-  .workspace:has(> .workspace-body.panel-open:not(.full-view)) { display:grid; grid-template-columns:minmax(0,1fr) var(--side-w, max(var(--sidebar-width,256px), var(--side-min,200px))); grid-template-rows:auto minmax(0,1fr) auto; }
+  .workspace:has(> .workspace-body.panel-open:not(.full-view)) { display:grid; grid-template-columns:minmax(0,1fr) min(var(--side-w, max(var(--sidebar-width,256px), var(--side-min,200px))), max(0px, calc(100% - 320px))); grid-template-rows:auto minmax(0,1fr) auto; }
   .workspace:has(> .workspace-body.panel-open:not(.full-view)) > .workspace-header { grid-column:1; grid-row:1; }
   .workspace:has(> .workspace-body.panel-open:not(.full-view)) > .workspace-notices { grid-column:1; grid-row:3; }
   .workspace-body.panel-open:not(.full-view) { display:contents; }
