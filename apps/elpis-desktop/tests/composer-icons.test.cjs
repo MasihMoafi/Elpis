@@ -63,6 +63,15 @@ for (const colorScheme of ['light', 'dark']) {
       assert.ok(Math.abs(more.x - send.x - send.width) <= 1, 'send options attach to Send instead of floating outside it');
       assert.equal(more.width, 20);
       assert.equal(await page.locator('.composer textarea').evaluate(el => el.getBoundingClientRect().height), 22, 'an empty composer is one text line high');
+      const features = page.getByRole('group', { name: 'Elpis features' }).locator('.feature-chip');
+      await features.first().waitFor();
+      const featureMetrics = await features.evaluateAll(chips => chips.map(chip => {
+        const style = getComputedStyle(chip), mark = chip.querySelector('.feature-dot, .context-ring-icon')?.getBoundingClientRect();
+        return { font: style.fontSize, color: style.color, mark: mark?.width };
+      }));
+      assert.deepEqual([...new Set(featureMetrics.map(item => item.font))], ['12px']);
+      assert.equal(new Set(featureMetrics.map(item => item.color)).size, 1, 'Ledger and feature labels use one colour');
+      assert.deepEqual([...new Set(featureMetrics.map(item => item.mark))], [7], 'every status mark uses one dot size');
       assert.deepEqual(f.errors, []);
     } finally { await f.close(); }
   });

@@ -839,13 +839,14 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .task-list li[data-status="completed"] .task-mark { box-shadow:none; background:var(--muted-foreground); clip-path:polygon(14% 52%, 0 66%, 38% 100%, 100% 22%, 86% 8%, 38% 72%); }
 /* Elpis's features under the message box (components/elpis-features.tsx): a chip each, its dot olive when on. */
 .elpis-features { display:flex; align-items:center; gap:2px; margin-left:auto; }
-.feature-chip { display:inline-flex; align-items:center; gap:6px; height:28px; padding:0 8px; border:1px solid transparent; background:transparent; color:var(--muted-foreground); font-size:var(--text-sm); white-space:nowrap; cursor:pointer; }
-.feature-chip:hover:not(:disabled) { background:var(--hover); color:var(--foreground); }
+.feature-chip { display:inline-flex; align-items:center; gap:6px; height:28px; padding:0 8px; border:1px solid transparent; background:transparent; color:var(--muted-foreground); font-size:var(--text-xs); white-space:nowrap; cursor:pointer; }
+.feature-chip:hover:not(:disabled) { background:var(--hover); color:var(--muted-foreground); }
 .feature-chip:focus-visible { outline:1.5px solid var(--ring); outline-offset:1px; }
 .feature-chip:disabled { cursor:default; opacity:.55; }
-.feature-chip[aria-pressed="true"] { color:var(--foreground); }
+.feature-chip[aria-pressed="true"] { color:var(--muted-foreground); }
 .feature-dot { width:7px; height:7px; border-radius:50%; box-shadow:inset 0 0 0 1.5px var(--muted-foreground); }
-.feature-chip[aria-pressed="true"] .feature-dot { background:var(--context); box-shadow:0 0 0 3px color-mix(in oklab, var(--context) 24%, transparent); }
+.feature-chip[aria-pressed="true"] .feature-dot { background:var(--muted-foreground); box-shadow:none; }
+.feature-chip .context-ring-icon :is(.context-ring-track, .context-ring-fill) { stroke:currentColor; }
 .composer .model-picker-trigger { border-color:transparent; background:transparent; }
 /* The composer's toolbar controls (permissions, model, effort) are one pill: height, corner, text size and hover. */
 .composer-pill, .composer .model-select { height:28px; font-size:var(--text-xs); }
