@@ -24,7 +24,7 @@ export function SidebarGroup({ kind, name, title, icon, open, active, onToggle, 
   return <div className={`sidebar-group ${own.group}`} role="group" aria-label={name} {...dropProps}>
     {wrap(<div className={`sidebar-group-row ${own.row}${active ? " active" : ""}`} />, menu => <>
       <button data-slot="group-toggle" type="button" className={`sidebar-group-toggle ${own.toggle}`} aria-expanded={open} title={title} onClick={onToggle}>
-        <ChevronRight size={13} className="sidebar-group-chevron" aria-hidden="true" />{icon}<span className="sidebar-group-name" title={title === undefined ? name : undefined}>{name}</span>{note}
+        <ChevronRight size={14} className="sidebar-group-chevron" aria-hidden="true" />{icon}<span className="sidebar-group-name" title={title === undefined ? name : undefined}>{name}</span>{note}
       </button>
       <span className={`sidebar-group-actions ${own.actions}`}>{menu}</span>{trailing}
     </>)}

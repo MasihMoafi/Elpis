@@ -2220,7 +2220,7 @@ export default function Home() {
       {canExpandAgents && <Button variant="ghost" size="icon-xs" aria-label={`${open ? "Collapse" : "Expand"} ${branchName} in ${name}`} aria-expanded={!!open} title={`${open ? "Collapse" : "Expand"} ${branchName} in ${name}`} onClick={() => {
         if (open) setExpanded(previous => ({ ...previous, [expandId]: false }));
         else { setExpanded(previous => ({ ...previous, [expandId]: true })); if (!checkedChildren.current.has(thread.id)) void loadChildren(thread.id, undefined, false); }
-      }}><ChevronRight size={13} viewBox="4 4 16 16" className={open ? "rotate-90" : undefined} /></Button>}
+      }}><ChevronRight size={14} className={open ? "rotate-90" : undefined} /></Button>}
       {!canExpandAgents && depth > 0 && <span aria-hidden="true" className="size-6 shrink-0" />}
       <span className="conversation-state-slot">{state === "unread" ? <button data-slot="thread-dot" className="thread-dot conversation-status" data-state={state} aria-label="Unread response. Mark as read" title="Unread response. Mark as read" onClick={() => markRead(thread.id)} /> : state === "idle" ? <span className="thread-dot" data-state={state} aria-hidden="true" /> : <span className="thread-dot conversation-status" role="img" data-state={state} aria-label={stateLabels[state]} title={stateLabels[state]} />}</span>
       <button data-slot="chat-row" className="thread-link" onPointerEnter={() => prefetchThread(thread)} onFocus={() => prefetchThread(thread)} onMouseDown={event => { if (event.shiftKey || event.button === 1) event.preventDefault(); }} onAuxClick={event => { if (event.button === 1 && desktop) { event.preventDefault(); openInNewTab(thread); } }} onClick={event => clickRow(thread, event)} title={name}>
