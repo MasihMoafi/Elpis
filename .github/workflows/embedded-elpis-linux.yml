@@ -401,6 +401,7 @@ jobs:
         run: |
           cargo test --profile dev-small --locked -p codex-elpis-gateway --lib
           cargo test --profile dev-small --locked -p codex-model-provider-info --lib
+          cargo test --profile dev-small --locked -p codex-external-agent-migration --lib claude_home_follows_claude_config_dir
           cargo test --profile dev-small --locked -p codex-cli --lib
           cargo test --profile dev-small --locked -p codex-tui --lib branding::tests
       - name: Native permission regressions
