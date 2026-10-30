@@ -13,7 +13,7 @@ Next 16 static export (`app/page.tsx` is the one page shell), React 19, Tailwind
 | Colour | `--canvas` `--ink` `--background` `--foreground` `--card` `--border` `--hairline` `--hover` `--selected` `--muted-foreground` `--subtle-foreground` `--destructive` |
 | Accent | `--primary` (set by `data-accent`: amber default, blue, teal, green, violet, rose, orange), `--accent-text` |
 | Type | three sizes, as ChatGPT: `--text-xs` 12 (`--text-small`, the floor), `--text-sm` 13, `--text-base` 14 (Tailwind `text-xs/sm/base` read them); one family `--ui-font` (`--serif` is the same face); `--mono` for code and `.hud-label` only |
-| Size | `--icon-size` 16 (one per row), `--control-h` 28 (composer row), `--header-h` 52; pages `--page-pad`, `--page-content-width` 860, `--page-head-gap` 20, `--page-section-gap` 24 |
+| Size | `--icon-size` 16 (one per row and in every `Button`; the one smaller glyph is a 14px disclosure chevron); gaps 2/4/6/8/12/16 only; `--text-title` 28 for page titles; `--control-h` 28 (composer row), `--header-h` 52; pages `--page-pad`, `--page-content-width` 860, `--page-head-gap` 20, `--page-section-gap` 24 |
 | Shape | `--cut-sm` 4 px, `--cut` 7 px, `--cut-lg` 10 px; `.hud-cut` on controls, `.hud-cut-sm` on controls 24 px or less, `--cut-lg` on panels. Round only dots, rings, switches |
 | Motion | `--motion-fast` .12 s, `--motion` .2 s, `--ease` |
 
