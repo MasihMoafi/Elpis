@@ -24,7 +24,7 @@ for (const colorScheme of ['light', 'dark']) test(`one icon size, one control he
     });
     assert.deepEqual(found.glyphs, [16], 'every glyph in a title-bar, sidebar, header or side-panel button is 16px');
     assert.deepEqual(found.titleBar, [28], 'Back, Forward and the menus are one height');
-    assert.deepEqual(found.tabs, [26], 'side-panel tabs are one height');
+    assert.deepEqual(found.tabs, [28], 'side-panel tabs use the shared control height');
     assert.equal(found.sideHeader, found.chatHeader, 'the side panel header lines up with the chat header');
     await page.evaluate(() => { const list = document.querySelector('.workspace-notices'); for (const text of ['First failure', 'Second failure']) { const banner = document.createElement('div'); banner.className = 'error-banner'; banner.setAttribute('role', 'alert'); banner.textContent = text; list.append(banner); } });
     assert.deepEqual(await page.locator('.workspace-notices > .error-banner[role="alert"]:visible').allInnerTexts(), ['First failure'], 'one error shows; the next waits until it is dismissed');
