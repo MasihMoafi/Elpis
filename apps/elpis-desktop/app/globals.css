@@ -44,6 +44,7 @@ html { font-size:var(--interface-size, 16px); }
  * in Settings' rhythm (48px top, 20px under the header, 24px between sections, one 860px column). */
 :root { --text-xs:0.75rem; --text-sm:0.8125rem; --text-base:0.875rem; --text-title:1.75rem; --icon-size:16px; --control-h:28px; --header-h:52px;
   --page-pad:48px 32px 64px; --page-content-width:860px; --page-head-gap:20px; --page-section-gap:24px;
+  --reply-line-height:1.45; --reply-paragraph-gap:.725em;
   --composer-edge:color-mix(in oklab, var(--foreground) 8%, transparent); --elevation-composer:0 2px 8px #0000000a, 0 4px 40px 8px #00000006; }
 .dark { --composer-edge:color-mix(in oklab, var(--foreground) 14%, transparent); --elevation-composer:0 2px 8px #0000004d, 0 4px 40px 8px #00000033; }
 :root, :root[data-accent="amber"] { --accent-light:var(--brand-accent); --accent-dark:var(--brand-accent); }
@@ -811,6 +812,10 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .dark [data-category="toolCalls"] { --category:#ffa13a; } .dark [data-category="toolResults"] { --category:#d9db75; } .dark [data-category="systemInstructions"] { --category:#f0445d; }
 .dark [data-category="developerMessages"] { --category:#ff99c2; } .dark [data-category="toolDefinitions"] { --category:#a0a0a0; } .dark [data-category="unrecognizedItems"] { --category:#1dd1e2; }
 .message.agent p, .message.agent li { white-space:pre-line; }
+/* Matilda's full Love Spot conversation and floating chat share one reading rhythm: compact lines and half a line between blocks. */
+.message.agent.matilda-message { line-height:var(--reply-line-height); }
+.message.agent.matilda-message .markdown > :is(p, ul, ol, pre) { margin-block:0; }
+.message.agent.matilda-message .markdown > :is(p, ul, ol, pre) + :is(p, ul, ol, pre) { margin-top:var(--reply-paragraph-gap); }
 .no-browser > .side-panel { display:none; }
 .composer-hint:empty { display:none; }
 /* The agent's task list above the message box (components/task-list.tsx), as Claude Code shows its todo list. */
