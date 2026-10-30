@@ -24,7 +24,16 @@ import { acpErrorInfo } from './acp-errors.mjs';
 const HOME = process.env.HOME;
 const permissionChoices = new PermissionChoices(process.env.ELPIS_HOME || join(HOME, '.elpis-next'));
 const LOG = process.env.ACP_BRIDGE_LOG ?? "/tmp/acp-bridge/bridge.log";
-const log = (s) => { try { appendLog(LOG, s); } catch {} };
+let logFailureReported = false;
+const log = (s) => {
+  try { appendLog(LOG, s); }
+  catch (error) {
+    if (logFailureReported) return;
+    logFailureReported = true;
+    const detail = typeof error?.code === "string" ? ` (${error.code})` : "";
+    process.stderr.write(`[acp-bridge] could not write bridge log${detail}\n`);
+  }
+};
 const ADAPTER = process.env.ACP_ADAPTER ?? new URL("./context-agent.mjs", import.meta.url).pathname;
 const CLAUDE = process.env.ELPIS_CLAUDE_PRUNE
   ? new URL("./claude-via-elpis", import.meta.url).pathname

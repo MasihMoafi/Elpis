@@ -16,12 +16,16 @@ for (const packaged of [false, true]) test(`desktop reuses ${packaged ? 'package
   fs.mkdirSync(bridgeDir, { recursive: true }); fs.writeFileSync(engine, 'fixture');
   const marker = path.join(dir, 'called.json');
   fs.writeFileSync(path.join(bridgeDir, 'acp-bridge.mjs'), '');
-  fs.writeFileSync(path.join(bridgeDir, 'shared-runtime.mjs'), `import fs from 'node:fs'; fs.writeFileSync(${JSON.stringify(marker)}, JSON.stringify({ engine:process.env.ELPIS_ENGINE_BIN, home:process.env.ELPIS_HOME, bridge:process.argv[2] }));`);
-  const env = { PATH: process.env.PATH, ELPIS_ENGINE_BIN: engine, ELPIS_HOME: dir };
+  fs.writeFileSync(path.join(bridgeDir, 'shared-runtime.mjs'), `import fs from 'node:fs'; fs.writeFileSync(${JSON.stringify(marker)}, JSON.stringify({ engine:process.env.ELPIS_ENGINE_BIN, home:process.env.ELPIS_HOME, bridge:process.argv[2], agentEnv:Object.keys(process.env).filter(key => /^(CLAUDE|AI_AGENT)/.test(key)) }));`);
+  const env = {
+    PATH: process.env.PATH, ELPIS_ENGINE_BIN: engine, ELPIS_HOME: dir,
+    CLAUDE_CONFIG_DIR: '/agent/claude-config', CLAUDE_CODE_CHILD_SESSION: '1',
+    AI_AGENT_SESSION_ID: 'agent-session', AI_AGENT_WORKER: 'worker-1',
+  };
   await ensureInstalledRuntime({ env: { ...env, ELPIS_APP_BRIDGE_SOCKET: '/explicit/runtime.sock' } });
   assert.equal(fs.existsSync(marker), false);
   await ensureInstalledRuntime({ env });
-  assert.deepEqual(JSON.parse(fs.readFileSync(marker)), { engine, home: dir, bridge: path.join(bridgeDir, 'acp-bridge.mjs') });
+  assert.deepEqual(JSON.parse(fs.readFileSync(marker)), { engine, home: dir, bridge: path.join(bridgeDir, 'acp-bridge.mjs'), agentEnv: [] });
   // A graphical session need not have node on PATH; the launcher passes its resolved executable.
   const dockHome = path.join(dir, 'dock-profile');
   await ensureInstalledRuntime({ env: { ...env, PATH: dir, ELPIS_NODE_BIN: process.execPath, ELPIS_HOME: dockHome } });
