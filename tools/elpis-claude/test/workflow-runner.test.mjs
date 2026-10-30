@@ -8,6 +8,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import test from "node:test";
 import { WorkflowRunner, agentKey, personAskedForWorkflow, noticeText, NOTICE_TAG } from "../workflow-runner.mjs";
+import { saveWorkflowConcurrency } from "../workflow-concurrency.mjs";
 import { parseScript } from "../workflow-script.mjs";
 import { createTestTempDir, removeTestTempDir } from "./temp-root.mjs";
 
@@ -195,6 +196,17 @@ test("the concurrency cap is shared by simultaneous runs", async () => {
   const runs = await Promise.all([firstDone, secondDone]);
   assert.ok(runs.every(item => item.status === "completed"));
   assert.equal(ex.maxActive, 3);
+});
+
+test("the saved concurrency controls the next work across workflow runs", async () => {
+  const h = home(), ex = executor({ delay: () => 30 }), r = runner(ex, h);
+  const script = `${META}return await parallel(Array.from({ length: 3 }, (_, i) => () => agent('job ' + i)))`;
+  await saveWorkflowConcurrency(h, 1);
+  assert.equal((await run(r, script)).run.status, "completed");
+  assert.equal(ex.maxActive, 1);
+  ex.maxActive = 0; await saveWorkflowConcurrency(h, 2);
+  assert.equal((await run(r, script)).run.status, "completed");
+  assert.equal(ex.maxActive, 2);
 });
 
 test("budget is a hard ceiling: spent counts output tokens and agent() throws once it is reached (WR2)", async () => {

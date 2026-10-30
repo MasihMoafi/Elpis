@@ -10,7 +10,7 @@ export const productionFiles = [
   'bridge/matilda-companion.mjs',
   'desktop/app-menu.cjs', 'lib/app-menu-commands.cjs',
   'bridge/voice.mjs', 'bridge/voice-handoff.cjs',
-  'bridge/resources/permission-policy.mjs',
+  'bridge/resources/permission-policy.mjs', 'bridge/resources/workflow-concurrency.mjs',
   'bridge/import-chats.mjs',
   'bridge/settings-files.mjs', 'bridge/app-identity.mjs', 'desktop/sleep-blocker.cjs',
   'bridge/session-context.mjs', 'bridge/side-turn.mjs', 'bridge/thread-titles.mjs',

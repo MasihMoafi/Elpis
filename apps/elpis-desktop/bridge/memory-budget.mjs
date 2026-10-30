@@ -2,6 +2,8 @@ import fs from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+import { DEFAULT_WORKFLOW_CONCURRENCY, safeWorkflowConcurrency } from './resources/workflow-concurrency.mjs';
 
 const run = promisify(execFile);
 const KB_PER_GB = 1024 * 1024; // as `free -h` and scripts/mem-meter.py count
@@ -27,11 +29,13 @@ const ownTreeGb = async () => !process.versions.electron ? 0 : appTreeGb().catch
 /** One budget for every workflow node this process runs (28 Oct: several workflows at once took the app to 10.2 GB and
  * systemd-oomd killed it): at most ELPIS_WORKER_CAP nodes at once, each started only while the machine has
  * ELPIS_WORKER_MEMORY_FLOOR_GB available and the app's tree is under ELPIS_APP_MEMORY_BUDGET_GB. */
-export function createMemoryBudget({ env = process.env, available = async () => memAvailableGb(await fs.readFile('/proc/meminfo', 'utf8')),
+export function createMemoryBudget({ env = process.env, cap, available = async () => memAvailableGb(await fs.readFile('/proc/meminfo', 'utf8')),
   app = ownTreeGb, pollMs = 5000 } = {}) {
   const setting = (name, fallback) => Number(env[name]) > 0 ? Number(env[name]) : fallback;
   // 8, not 6: the app idles near 6.4 GB because every loaded thread starts its own set of the user's MCP servers; lower to 6 once fixed.
-  const cap = setting('ELPIS_WORKER_CAP', 4), floor = setting('ELPIS_WORKER_MEMORY_FLOOR_GB', 4), budget = setting('ELPIS_APP_MEMORY_BUDGET_GB', 8);
+  const home = env.ELPIS_HOME || (env.HOME && path.join(env.HOME, '.elpis-next'));
+  const limit = () => Math.min(cap === undefined ? (home ? safeWorkflowConcurrency(home) : DEFAULT_WORKFLOW_CONCURRENCY) : typeof cap === 'function' ? cap() : cap, setting('ELPIS_WORKER_CAP', Infinity));
+  const floor = setting('ELPIS_WORKER_MEMORY_FLOOR_GB', 4), budget = setting('ELPIS_APP_MEMORY_BUDGET_GB', 8);
   const gb = value => `${value.toFixed(1)} GB`, waiters = new Set();
   let running = 0;
   // Ends when a slot is released, after pollMs (memory changes on its own) or on abort.
@@ -53,10 +57,10 @@ export function createMemoryBudget({ env = process.env, available = async () => 
       let waiting = false;
       for (;;) {
         signal?.throwIfAborted();
-        if (running < cap) {
+        if (running < limit()) {
           const { short, ok } = await measure();
           // Another node may have taken the last slot while this one measured.
-          if (!short && running < cap) {
+          if (!short && running < limit()) {
             running++;
             if (waiting) log(`memory available: ${ok}`);
             return () => { running--; [...waiters].forEach(wake => wake()); };

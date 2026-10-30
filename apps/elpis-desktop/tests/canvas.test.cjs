@@ -19,6 +19,7 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     if (req.method === 'POST' && url.pathname !== '/api/session') posts.push({ path: url.pathname, body: raw ? JSON.parse(raw) : null });
     if (url.pathname === '/api/events') { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write('event: connection\ndata: {"connected":true}\n\n'); return; }
     if (url.pathname === '/api/health') return json({ connected: true });
+    if (url.pathname === '/api/workflows/concurrency') return json({ value: 4, choices: [1, 2, 3, 4] });
     if (url.pathname === '/api/models') return json({ data: [{ id: 'luna', model: 'gpt-6-luna', displayName: 'Luna 6' }, { id: 'sol', model: 'gpt-6.1-sol', displayName: 'Sol 6.1', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'medium' }, { reasoningEffort: 'high' }], defaultReasoningEffort: 'medium' }], nextCursor: null });
     if (url.pathname === '/api/settings') return json({ main: { model: 'gpt-6.1-sol', provider: 'openai' }, background: {}, smartPrune: { enabled: false, explicitOverride: {} }, memory: {}, write: { available: false, reason: '' }, agents: { graph: 256, atOnce: 4, source: 'agents.max_threads' } });
     // The project's folders, which the canvas offers as what an agent may write.
@@ -209,7 +210,7 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     assert.equal(await node('Quillon · Part 1').locator('.agent-node-mark').getAttribute('aria-label'), 'Check passed');
     // A live wire streams its chevrons: Quillon · Part 1's checked work feeds the running joiner.
     assert.ok(await canvas.locator('.canvas-edge-live').count() > 0, 'live wires show running state');
-    assert.equal(ran.maxConcurrency, 3);
+    assert.equal(ran.maxConcurrency, 4);
 
     // The command bar, typed AutoCAD-style: Tab over the board, then what you want done.
     const adder = canvas.getByRole('dialog', { name: 'Add agents', exact: true }), command = adder.getByRole('textbox', { name: 'Command', exact: true });
@@ -258,7 +259,7 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     // header's Mother button opens her panel wherever she is on the board.
     const motherButton = canvas.getByRole('button', { name: 'Mother', exact: true });
     await motherButton.click();
-    const maxField = motherPanel.getByRole('textbox', { name: 'Max agents', exact: true }), atOnce = motherPanel.getByRole('textbox', { name: 'At once', exact: true });
+    const maxField = motherPanel.getByRole('textbox', { name: 'Max agents', exact: true });
     await maxField.fill('300');
     await canvas.getByText('Elpis runs at most 256 tasks in a graph: 128 agents, each with its check.').waitFor();
     await maxField.fill('5');
@@ -266,10 +267,7 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     await maxField.fill('13'); await maxField.blur();
     await page.waitForTimeout(400);
     assert.equal((await saved()).maxAgents, 13);
-    await atOnce.fill('6');
-    await canvas.getByText('Elpis allows 4 at once here (agents.max_threads).').waitFor();
-    await atOnce.fill('4'); await atOnce.blur();
-    assert.equal(await atOnce.inputValue(), '4');
+    assert.equal(await motherPanel.getByRole('textbox', { name: 'At once', exact: true }).count(), 0);
 
     // Browsing by keyboard: Tab on the board opens the bar; with one provider its models are listed; → opens a model's
     // thinking levels; Enter takes one, and Enter again asks for the prompts.

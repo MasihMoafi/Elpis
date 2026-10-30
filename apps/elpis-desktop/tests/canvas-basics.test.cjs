@@ -20,6 +20,7 @@ for (const colorScheme of ['light', 'dark']) test(`workflows start in their sand
     '/api/canvas/plan': reportPlan,
     '/api/threads': body => body ? { thread: root } : { data: THREADS.map(thread => ({ ...thread, cwd: '' })), nextCursor: null },
     '/api/repository': () => ({ repository: false }),
+    '/api/workflows/concurrency': () => ({ value: 1, choices: [1, 2, 3, 4] }),
     '/api/workflows/run': () => ({ graphId: '00000000-0000-0000-0000-000000000011' }),
     '/api/workflows': () => ({ data: [] }),
   } });
@@ -39,7 +40,7 @@ for (const colorScheme of ['light', 'dark']) test(`workflows start in their sand
     await canvas.getByRole('button', { name: 'Run graph', exact: true }).click(); await sent;
     assert.equal(f.posts.find(post => post.path === '/api/threads').body.cwd, sandbox);
     const run = f.posts.find(post => post.path === '/api/workflows/run').body;
-    assert.equal(run.isolation, undefined);
+    assert.equal(run.maxConcurrency, 1); assert.equal(run.isolation, undefined);
     assert.ok(run.tasks.every(task => task.writeScopes.length === 1 && task.writeScopes[0].startsWith('agents/')), 'review tasks write only their own report/check folders');
     assert.equal(await request.inputValue(), goal);
     assert.equal(f.posts.filter(post => post.path === '/api/workflows/workspace').length, 1);

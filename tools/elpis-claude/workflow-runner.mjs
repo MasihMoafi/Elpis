@@ -14,10 +14,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { Worker } from "node:worker_threads";
 import { parseScript, checkSchema, validate, strictSchema, fromStrict, jsonAnswer } from "./workflow-script.mjs";
+import { safeWorkflowConcurrency } from "./workflow-concurrency.mjs";
 
 export const LIMITS = Object.freeze({ agents: 1000, items: 4096 });
-export const WORKFLOW_WORKER_CAP = 4;
-export const defaultConcurrency = () => WORKFLOW_WORKER_CAP;
 const EFFORTS = ["low", "medium", "high", "xhigh", "max"];
 const OPTS = ["label", "phase", "schema", "model", "effort", "isolation", "agentType"];
 const LOG_LINES = 2000;
@@ -76,11 +75,11 @@ export class WorkflowRunner extends EventEmitter {
   #live = new Map(); // run id -> { worker, controller, slots, agents: Map agentId -> AbortController }
   #saving = new Map();
 
-  constructor({ home, executor, concurrency = defaultConcurrency(), retry = {}, schemaTries = 3, maxAgents = LIMITS.agents, maxItems = LIMITS.items, log = () => {}, now = Date.now }) {
+  constructor({ home, executor, concurrency, retry = {}, schemaTries = 3, maxAgents = LIMITS.agents, maxItems = LIMITS.items, log = () => {}, now = Date.now }) {
     super();
     this.#home = path.join(home, "workflows");
     this.#executor = executor;
-    this.#slots = { free: Math.max(1, concurrency), queue: [] };
+    this.#slots = { running: 0, queue: [], limit: () => concurrency === undefined ? safeWorkflowConcurrency(home) : Math.max(1, concurrency) };
     this.#retry = { attempts: retry.attempts ?? 4, delays: retry.delays ?? [2000, 8000, 30000] };
     this.#schemaTries = schemaTries;
     this.#maxAgents = maxAgents;
@@ -457,12 +456,17 @@ export class WorkflowRunner extends EventEmitter {
   }
 
   #acquire(runId) {
-    if (this.#slots.free > 0) { this.#slots.free--; return Promise.resolve(); }
+    this.#drain();
+    if (!this.#slots.queue.length && this.#slots.running < this.#slots.limit()) { this.#slots.running++; return Promise.resolve(); }
     return new Promise((resolve, reject) => this.#slots.queue.push({ runId, resolve, reject }));
   }
+  #drain() {
+    while (this.#slots.queue.length && this.#slots.running < this.#slots.limit()) {
+      this.#slots.running++; this.#slots.queue.shift().resolve();
+    }
+  }
   #release() {
-    const next = this.#slots.queue.shift();
-    if (next) next.resolve(); else this.#slots.free++;
+    this.#slots.running--; this.#drain();
   }
 
   // One agent: retried with backoff until its attempts run out; null after that.

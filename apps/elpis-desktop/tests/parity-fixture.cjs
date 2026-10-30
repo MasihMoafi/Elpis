@@ -68,6 +68,7 @@ async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660,
       if (reply?.__asset) { res.writeHead(200, { 'Content-Type': reply.__asset.mimeType, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...reply.__asset.headers }); return res.end(reply.__asset.bytes); }
       return json(reply);
     }
+    if (url.pathname === '/api/workflows/concurrency') return json({ value: 4, choices: [1, 2, 3, 4] });
     if (url.pathname === '/api/models') return json({ data: [{ id: 'sol', model: 'sol', displayName: 'GPT-6.1-Sol', inputModalities: ['text', 'image'], supportedReasoningEfforts: ['low', 'medium', 'high'].map(reasoningEffort => ({ reasoningEffort })) }], nextCursor: null });
     if (url.pathname === '/api/providers/claude-accounts') return json({ activeId: '', accounts: [] });
     if (url.pathname === '/api/files') return json({ data: FILES });

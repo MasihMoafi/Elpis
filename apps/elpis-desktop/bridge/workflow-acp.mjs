@@ -383,7 +383,7 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
           for (const task of record.tasks.filter(t => t.status === 'pending')) {
             if (controller.signal.aborted) { task.status = 'cancelled'; continue; }
             if (task.dependsOn.some(id => ['failed', 'blocked', 'cancelled'].includes(byId.get(id).status))) { task.status = 'blocked'; continue; }
-            if (running.size >= (record.maxConcurrency ?? 3) || !task.dependsOn.every(id => byId.get(id).status === 'succeeded')) continue;
+            if (running.size >= (record.maxConcurrency ?? Infinity) || !task.dependsOn.every(id => byId.get(id).status === 'succeeded')) continue;
             if (!isolation && record.tasks.some(other => running.has(other.id) && task.writeScopes.some(a => other.writeScopes.some(b => a === '.' || b === '.' || a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`))))) continue;
             // One budget for every workflow in this process: a node slot and enough memory (bridge/memory-budget.mjs).
             const release = await budget.acquire(controller.signal, text => logLine(record, text)).catch(error => { if (controller.signal.aborted) return null; throw error; });
