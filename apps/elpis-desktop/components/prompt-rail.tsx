@@ -50,7 +50,8 @@ export function PromptRail({ scroller, threadId, entries, onLoadEarlier, onNavig
     const root = scroller.current, element = elementOf(target);
     if (!root || !element || !root.contains(element)) return false;
     onNavigate();
-    root.scrollTo({ top: root.scrollTop + element.getBoundingClientRect().top - root.getBoundingClientRect().top - 16, behavior: "instant" });
+    const inset = parseFloat(getComputedStyle(root).paddingTop) || 0;
+    root.scrollTo({ top: root.scrollTop + element.getBoundingClientRect().top - root.getBoundingClientRect().top - inset, behavior: "instant" });
     setCurrent(target.turnId);
     return true;
   };

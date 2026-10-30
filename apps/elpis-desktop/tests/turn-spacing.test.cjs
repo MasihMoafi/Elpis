@@ -81,3 +81,24 @@ test('the thread fades at the top and bottom alike, only toward content beyond t
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
+
+for (const colorScheme of ['light', 'dark']) test(`the first message is fully below the transcript top when scrolled there (${colorScheme})`, async () => {
+  const history = Array.from({ length: 8 }, (_, i) => [`top-${i + 1}`, `First message ${i + 1}.`, `Reply ${i + 1}.\n\n${'Saved history. '.repeat(20)}`]);
+  const f = await fixture({ chat: history, colorScheme, height: 700 }), { page } = f;
+  try {
+    await f.open('chat-a');
+    await page.getByRole('navigation', { name: 'User messages' }).locator('[data-slot="prompt-mark"]').first().click();
+    await page.waitForTimeout(100);
+    const place = await page.evaluate(() => {
+      const scroll = document.querySelector('.chat-scroll').getBoundingClientRect();
+      const first = document.querySelector('.turn .user-turn').getBoundingClientRect();
+      return { gap: Math.round(first.top - scroll.top), inset: parseFloat(getComputedStyle(document.querySelector('.chat-scroll')).paddingTop), visible: first.top >= scroll.top && first.bottom <= scroll.bottom };
+    });
+    assert.ok(place.visible && place.gap >= place.inset, `first message is fully visible: ${JSON.stringify(place)}`);
+    if (process.env.ELPIS_POLISH_SHOTS) {
+      await fs.mkdir(process.env.ELPIS_POLISH_SHOTS, { recursive: true });
+      await page.screenshot({ path: path.join(process.env.ELPIS_POLISH_SHOTS, `05-transcript-top-${colorScheme}.png`) });
+    }
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
