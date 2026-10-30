@@ -17,7 +17,9 @@ const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGM4o6SEFTE
 const note = (id, text, color = '#e03131', extra = {}) => ({ id, type: 'text', text, strokeColor: color, version: 1, versionNonce: 1, x: 20, y: 30, width: 240, height: 40, updated: 1, ...extra });
 async function fixture(t, { refuseFast = false, audio = enabledAudio, companion = false } = {}) {
   const base = os.tmpdir();
-  const directory = createTestTempDir(path.join(base, 'love-talk-')), store = createLoveSpot({ directory, screenshots: path.join(directory, 'shots') });
+  const directory = createTestTempDir(path.join(base, 'love-talk-'));
+  await fs.writeFile(path.join(directory, 'scene.excalidraw'), JSON.stringify({ type: 'excalidraw', version: 2, elements: [], files: {}, appState: {} }));
+  const store = createLoveSpot({ directory, screenshots: path.join(directory, 'shots') });
   const client = new EventEmitter(), created = [], sent = [], entries = [], speeds = [];
   Object.assign(client, {
     settings: async () => ({ main: { model: 'luna', provider: 'openai' } }),
