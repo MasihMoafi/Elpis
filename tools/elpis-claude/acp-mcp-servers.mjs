@@ -31,10 +31,18 @@ export function restoredMcpOverrides(read, saved) {
 
 /** Refresh a cached per-thread MCP map on resume; missing metadata leaves legacy/live mappings intact. */
 export async function restoreMcpSession(threadId, { selections, cache, readConfig, onWarning = () => {} }) {
-  const saved = selections.get(threadId);
+  let saved, selectionUnreadable = false;
+  try { saved = selections.get(threadId); }
+  catch { saved = []; selectionUnreadable = true; }
   if (saved === undefined) return [];
   const internal = Object.fromEntries(Object.entries(cache.get(threadId) ?? {})
     .filter(([key]) => key === `${PREFIX}elpis_browser`));
+  if (selectionUnreadable) {
+    const warning = "Saved MCP choices for this chat could not be read; user MCP servers stay off.";
+    cache.set(threadId, internal);
+    onWarning(warning);
+    return [warning];
+  }
   try {
     const restored = restoredMcpOverrides(await readConfig(), saved);
     cache.set(threadId, { ...internal, ...(restored.config ?? {}) });

@@ -17,11 +17,32 @@ export class McpSessionSelections {
 
   get(id) {
     const file = this.#file(id);
-    if (!file) return undefined;
+    if (!file) throw new TypeError('Invalid MCP thread ID');
+    let raw;
+    try { raw = fs.readFileSync(file, 'utf8'); }
+    catch (error) { if (error.code === 'ENOENT') return undefined; throw error; }
+    let saved;
+    try { saved = JSON.parse(raw); }
+    catch (error) { throw new Error('Unreadable per-thread MCP selection', { cause: error }); }
+    if (saved?.version !== 1 || saved.threadId !== id || !validServers(saved.servers)) {
+      throw new Error('Invalid per-thread MCP selection record');
+    }
+    return [...saved.servers];
+  }
+
+  async assertWritable() {
+    await fsp.mkdir(this.#directory, { recursive: true, mode: 0o700 });
+    const pending = path.join(this.#directory, `.write-check-${randomUUID()}.pending`);
+    const ready = `${pending}.ready`;
     try {
-      const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
-      return saved?.version === 1 && saved.threadId === id && validServers(saved.servers) ? [...saved.servers] : undefined;
-    } catch { return undefined; }
+      await fsp.writeFile(pending, '', { flag: 'wx', mode: 0o600 });
+      await fsp.rename(pending, ready);
+      await fsp.unlink(ready);
+    } catch (error) {
+      await fsp.unlink(pending).catch(() => {});
+      await fsp.unlink(ready).catch(() => {});
+      throw error;
+    }
   }
 
   async set(id, servers) {

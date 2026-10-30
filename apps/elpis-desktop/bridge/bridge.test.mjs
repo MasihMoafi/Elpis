@@ -516,19 +516,66 @@ test('saved MCP choices keep deleted and globally disabled servers off while his
   } finally { resumed.client.close(); }
 });
 
-test('MCP persistence failure leaves the new chat usable but reports that resume settings were not saved', async t => {
+test('a corrupt saved MCP choice fails closed after client restart and history remains readable', async t => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-session-profile-'));
+  t.after(() => fs.rm(home, { recursive: true, force: true }));
+  const first = fixture({ clientOptions: { home } }); await first.client.initialize();
+  let created;
+  try {
+    created = await first.client.createThread({ mcpServers: ['rag'] });
+  } finally { first.client.close(); }
+  await fs.writeFile(path.join(home, 'desktop-mcp-selections', `${CREATED}.json`), '{');
+
+  const browserConfig = { 'mcp_servers.elpis_browser': { command: 'node', args: ['browser-mcp.mjs'], env: {} } };
+  const resumed = fixture({ browserConfig, clientOptions: { home } }); await resumed.client.initialize();
+  resumed.threads.set(CREATED, created.thread);
+  try {
+    const result = await resumed.client.resume(CREATED, {});
+    assert.equal(result.thread.id, CREATED, 'history remains readable after the saved selection is corrupt');
+    assert.deepEqual(result.mcpWarnings, ["This chat's saved MCP choice could not be read; all user MCP servers stay off."]);
+    const config = resumed.socket.sent.find(row => row.method === 'thread/resume').params.config;
+    for (const name of ['rag', 'whispertype', 'remote']) assert.deepEqual(config[`mcp_servers.${name}`], { enabled: false });
+    assert.deepEqual(config['mcp_servers.elpis_browser'], browserConfig['mcp_servers.elpis_browser']);
+  } finally { resumed.client.close(); }
+});
+
+test('unavailable MCP selection storage rejects a new chat before thread start', async t => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-session-profile-'));
+  t.after(() => fs.rm(home, { recursive: true, force: true }));
+  await fs.writeFile(path.join(home, 'desktop-mcp-selections'), 'blocks the selection directory');
+  const { client, socket, threads } = fixture({ clientOptions: { home } }); await client.initialize();
+  try {
+    await assert.rejects(client.createThread({ mcpServers: ['rag'] }), /MCP server choices cannot be saved/);
+    assert.equal(socket.sent.some(row => row.method === 'thread/start'), false);
+    assert.equal(threads.has(CREATED), false);
+  } finally { client.close(); }
+});
+
+test('a late MCP selection write failure discards the empty new chat and keeps the draft retryable', async t => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-session-profile-'));
   t.after(() => fs.rm(home, { recursive: true, force: true }));
   await fs.mkdir(path.join(home, 'desktop-mcp-selections', `${CREATED}.json`), { recursive: true });
-  const { client, socket } = fixture({ clientOptions: { home } }); await client.initialize();
+  const { client, socket, threads } = fixture({ clientOptions: { home } }); await client.initialize();
   try {
-    const result = await client.createThread({ mcpServers: ['rag'] });
-    assert.equal(result.thread.id, CREATED);
-    assert.equal(result.mcpServersSaved, false);
-    assert.deepEqual(socket.sent.find(row => row.method === 'thread/start').params.config['mcp_servers.rag'], {
-      command: '/usr/bin/python', args: ['--token', 'PRIVATE CONFIG SECRET'],
-      env: { OPENROUTER_API_KEY: 'PRIVATE CONFIG SECRET', RAG_MCP_BACKEND: 'lancedb' }, enabled: true,
-    });
+    await assert.rejects(client.createThread({ mcpServers: ['rag'] }), /new chat was discarded; your draft was kept/);
+    assert.equal(threads.has(CREATED), false);
+    assert.equal(socket.sent.some(row => row.method === 'thread/delete' && row.params.threadId === CREATED), true);
+  } finally { client.close(); }
+});
+
+test('a late MCP selection write failure removes only the new fork and preserves source history', async t => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-session-profile-'));
+  t.after(() => fs.rm(home, { recursive: true, force: true }));
+  const selections = new McpSessionSelections(path.join(home, 'desktop-mcp-selections'));
+  await selections.set(ROOT, ['rag']);
+  await fs.mkdir(path.join(home, 'desktop-mcp-selections', `${FORK}.json`));
+  const { client, socket, threads } = fixture({ clientOptions: { home } }); await client.initialize();
+  try {
+    await assert.rejects(client.forkThread(ROOT, {}), /fork was discarded; the original chat history was kept/);
+    assert.equal(threads.has(ROOT), true);
+    assert.equal(threads.has(FORK), false);
+    assert.equal((await client.readThread(ROOT)).thread.id, ROOT);
+    assert.equal(socket.sent.some(row => row.method === 'thread/delete' && row.params.threadId === FORK), true);
   } finally { client.close(); }
 });
 

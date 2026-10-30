@@ -328,11 +328,36 @@ export class DesktopClient extends EventEmitter {
     const config = this.#browserConfig ? (this.#browserConfig.forSession ? this.#browserConfig.forSession(id) : this.#browserConfig) : {};
     return Object.keys(config).length ? { config } : {};
   }
+  #readMcpSelection(id) {
+    threadId(id);
+    try {
+      const servers = this.#mcpSelections.get(id);
+      return { servers, hasSelection: servers !== undefined, warnings: [] };
+    } catch {
+      return {
+        servers: [], hasSelection: true,
+        warnings: ["This chat's saved MCP choice could not be read; all user MCP servers stay off."],
+      };
+    }
+  }
+  async #ensureMcpSelectionsWritable() {
+    try { await this.#mcpSelections.assertWritable(); }
+    catch { throw new BridgeError('MCP server choices cannot be saved. No new chat was created.', 503); }
+  }
+  async #discardUnpersistedMcpThread(id, worktree) {
+    let threadDeleted = false, worktreeRemoved = !worktree;
+    try { await this.#rpc('thread/delete', { threadId: id }); threadDeleted = true; } catch {}
+    this.#forget(id);
+    if (worktree) {
+      try { await undoChatWorktree(worktree); worktreeRemoved = true; } catch {}
+    }
+    return { threadDeleted, worktreeRemoved };
+  }
   async #sessionOptions(id, browserId = id) {
-    const selected = this.#mcpSelections.get(id);
+    const selection = this.#readMcpSelection(id), selected = selection.servers;
     const browser = this.#browserOptions(browserId).config;
     let restored = { config: {}, warnings: [] };
-    if (selected !== undefined) {
+    if (selection.hasSelection) {
       try { restored = restoredThreadMcpConfig(await this.#rpc('config/read', { includeLayers: true }), selected); }
       catch {
         restored = {
@@ -341,10 +366,11 @@ export class DesktopClient extends EventEmitter {
         };
       }
     }
-    if (restored.warnings.length) this.#mcpWarnings.set(id, restored.warnings);
+    const warnings = [...selection.warnings, ...restored.warnings];
+    if (warnings.length) this.#mcpWarnings.set(id, warnings);
     else this.#mcpWarnings.delete(id);
     const config = { ...browser, ...restored.config };
-    return { ...(Object.keys(config).length ? { config } : {}), warnings: restored.warnings };
+    return { ...(Object.keys(config).length ? { config } : {}), warnings, hasSelection: selection.hasSelection };
   }
   get pendingApprovals() { return [...this.#approvals.values()].map(({ wireId, ...visible }) => visible); }
   #disconnect() {
@@ -660,10 +686,9 @@ export class DesktopClient extends EventEmitter {
     if (this.#attaching.has(id)) return this.#attaching.get(id);
     this.#owned.add(id);
     const attempt = (async () => {
-      const hasMcpSelection = this.#mcpSelections.get(id) !== undefined;
       const options = await this.#sessionOptions(id);
       const result = await this.#rpc('thread/resume', { threadId: id, excludeTurns: true, initialTurnsPage: { limit: 1, sortDirection: 'desc', itemsView: 'summary' }, ...(options.config ? { config: options.config } : {}) });
-      return hasMcpSelection ? { ...result, mcpWarnings: options.warnings } : result;
+      return options.hasSelection ? { ...result, mcpWarnings: options.warnings } : result;
     })()
       .then(result => {
         if (result.thread?.id !== id) throw new BridgeError('Elpis resumed another conversation', 502);
@@ -1577,6 +1602,7 @@ export class DesktopClient extends EventEmitter {
     if (body.worktree !== undefined && typeof body.worktree !== 'boolean') throw new BridgeError('worktree must be true or false');
     if (body.agents !== undefined && typeof body.agents !== 'boolean') throw new BridgeError('agents must be true or false');
     if (body.worktree && body.cwd === undefined) throw new BridgeError('A worktree needs the project\'s folder');
+    await this.#ensureMcpSelectionsWritable();
     // A chat started without a mode gets the default one explicitly (Settings > Default permissions; Full access when
     // the config names no approval policy), so the engine's own fallback, which asks, never decides it.
     const configRead = await this.#rpc('config/read', { includeLayers: true, ...(typeof body.cwd === 'string' && path.isAbsolute(body.cwd) ? { cwd: body.cwd } : {}) });
@@ -1613,17 +1639,23 @@ export class DesktopClient extends EventEmitter {
     } catch (error) { this.#browserConfig?.close?.(browserSession); if (made) await undoChatWorktree(made); throw error; }
     this.#browserConfig?.bind?.(browserSession, result.thread.id);
     this.#owned.add(result.thread.id);
-    let mcpServersSaved = true;
-    try { await this.#mcpSelections.set(result.thread.id, mcp.servers); } catch { mcpServersSaved = false; }
+    try { await this.#mcpSelections.set(result.thread.id, mcp.servers); }
+    catch {
+      const cleanup = await this.#discardUnpersistedMcpThread(result.thread.id, made);
+      const reason = cleanup.threadDeleted && cleanup.worktreeRemoved
+        ? 'The new chat was discarded; your draft was kept.'
+        : 'The new chat could not be removed; do not use it. Your draft was kept.';
+      throw new BridgeError(`Could not save this chat's MCP choice. ${reason}`, 503);
+    }
     if (name) { await this.#rpc('thread/name/set', { threadId: result.thread.id, name }); result.thread.name = name; }
-    return { ...result, thread: this.#decorate(result.thread), permissions: modeOf(result), mcpServers: mcp.servers, mcpServersSaved, ...(made ? { worktree: { path: made.root, branch: made.branch } } : {}) };
+    return { ...result, thread: this.#decorate(result.thread), permissions: modeOf(result), mcpServers: mcp.servers, mcpServersSaved: true, ...(made ? { worktree: { path: made.root, branch: made.branch } } : {}) };
   }
   /** A deliberate fresh chat from an existing chat (for example Matilda's /clear) keeps its saved MCP subset. */
   async createThreadFromSession(sourceId, body) {
     threadId(sourceId);
     object(body, ['cwd', 'model', 'provider', 'name', 'instructions', 'permissions', 'worktree', 'agents', 'automatic']);
-    const saved = this.#mcpSelections.get(sourceId);
-    if (saved === undefined) return this.createThread(body);
+    const sourceSelection = this.#readMcpSelection(sourceId), saved = sourceSelection.servers;
+    if (!sourceSelection.hasSelection) return this.createThread(body);
     const cwd = typeof body?.cwd === 'string' && path.isAbsolute(body.cwd) ? body.cwd : undefined;
     const read = await this.#rpc('config/read', { includeLayers: true, ...(cwd ? { cwd } : {}) });
     const restored = restoredThreadMcpConfig(read, saved);
@@ -1632,7 +1664,8 @@ export class DesktopClient extends EventEmitter {
     const result = await this.createThread({ ...body, mcpServers: selected });
     let mcpServersSaved = true;
     try { await this.#mcpSelections.set(result.thread.id, saved); } catch { mcpServersSaved = false; }
-    return { ...result, mcpServersSaved, ...(restored.warnings.length ? { mcpWarnings: restored.warnings } : {}) };
+    const mcpWarnings = [...sourceSelection.warnings, ...restored.warnings];
+    return { ...result, mcpServersSaved, ...(mcpWarnings.length ? { mcpWarnings } : {}) };
   }
   /** After a chat is archived or deleted: its worktree, when it has one that no open chat still works in, is removed if
    * nothing in it is uncommitted, and kept otherwise (bridge/git.mjs releaseChatWorktree). */
@@ -1754,14 +1787,16 @@ export class DesktopClient extends EventEmitter {
   async forkThread(id, body) {
     object(body, ['lastTurnId', 'lastItemId', 'mcpServers']);
     const requestedServers = requestedMcpServers(body.mcpServers);
-    const mcpServers = requestedServers ?? this.#mcpSelections.get(id);
+    const sourceSelection = requestedServers === undefined ? this.#readMcpSelection(id) : null;
+    const mcpServers = requestedServers ?? sourceSelection?.servers;
     const restoreMcp = requestedServers === undefined;
     const lastTurnId = body.lastTurnId === undefined ? undefined : text(body.lastTurnId, 'turn ID', 200);
     const lastItemId = body.lastItemId === undefined ? undefined : text(body.lastItemId, 'message ID', 200);
     if (lastItemId && !lastTurnId) throw new BridgeError('Choose the turn containing this message');
     const thread = await this.#current(id);
     if (isAgentRun(thread) && !thread.desktopAccess.canContinue) throw new BridgeError('Wait for this background run to finish before continuing here.', 409);
-    try { return await this.#forkChat(thread, lastTurnId, 'fork', {}, mcpServers, restoreMcp); }
+    const selectionWarnings = sourceSelection?.warnings ?? [];
+    try { return await this.#forkChat(thread, lastTurnId, 'fork', {}, mcpServers, restoreMcp, selectionWarnings); }
     catch (error) {
       if (!lastTurnId || !/turn not found|lastTurnId .*was not found/i.test(error.engineMessage ?? error.message ?? '')) throw error;
       // A rendered message can retain a live turn ID after history is reconciled.
@@ -1772,7 +1807,7 @@ export class DesktopClient extends EventEmitter {
         for (let page = 0; page < 20; page++) {
           const items = await this.#itemsPage({ threadId: id, limit: 100, sortDirection: 'desc', ...(cursor ? { cursor } : {}) });
           const entry = items.data?.find(row => row.item?.id === lastItemId && row.item.type === 'agentMessage');
-          if (entry?.turnId && entry.turnId !== lastTurnId) return this.#forkChat(thread, entry.turnId, 'fork', {}, mcpServers, restoreMcp);
+          if (entry?.turnId && entry.turnId !== lastTurnId) return this.#forkChat(thread, entry.turnId, 'fork', {}, mcpServers, restoreMcp, selectionWarnings);
           if (entry || !items.nextCursor || seen.has(items.nextCursor)) break;
           cursor = items.nextCursor; seen.add(cursor);
         }
@@ -1780,24 +1815,32 @@ export class DesktopClient extends EventEmitter {
       throw new BridgeError('That message no longer has a saved fork point. Refresh this conversation and fork from the saved reply.', 409);
     }
   }
-  async #forkChat(thread, lastTurnId, suffix = 'fork', model = {}, mcpServers, restoreMcp = false) {
+  async #forkChat(thread, lastTurnId, suffix = 'fork', model = {}, mcpServers, restoreMcp = false, selectionWarnings = []) {
     const browserSession = `pending-${randomUUID()}`;
     let mcp = null, fork;
     try {
+      if (mcpServers !== undefined) await this.#ensureMcpSelectionsWritable();
       const cwd = typeof thread.cwd === 'string' && path.isAbsolute(thread.cwd) ? thread.cwd : undefined;
       const read = mcpServers === undefined ? null : await this.#rpc('config/read', { includeLayers: true, ...(cwd ? { cwd } : {}) });
       mcp = mcpServers === undefined ? null : restoreMcp ? restoredThreadMcpConfig(read, mcpServers) : newThreadMcpConfig(read, mcpServers);
+      if (mcp) mcp.warnings = [...selectionWarnings, ...mcp.warnings];
       const config = { ...this.#browserOptions(browserSession).config, ...(mcp?.config ?? {}) };
       fork = await this.#rpc('thread/fork', { threadId: thread.id, ...(lastTurnId ? { lastTurnId } : {}), ...(thread.model ? { model: thread.model } : {}), ...(thread.modelProvider ? { modelProvider: thread.modelProvider } : {}), ...model, ...(Object.keys(config).length ? { config } : {}) });
     } catch (error) { this.#browserConfig?.close?.(browserSession); throw error; }
     threadId(fork.thread?.id); this.#browserConfig?.bind?.(browserSession, fork.thread.id); this.#owned.add(fork.thread.id);
-    let mcpServersSaved = true;
-    if (mcp) try { await this.#mcpSelections.set(fork.thread.id, mcp.servers); } catch { mcpServersSaved = false; }
+    if (mcp) try { await this.#mcpSelections.set(fork.thread.id, mcp.servers); }
+    catch {
+      const cleanup = await this.#discardUnpersistedMcpThread(fork.thread.id);
+      const reason = cleanup.threadDeleted
+        ? 'The fork was discarded; the original chat history was kept.'
+        : 'The fork could not be removed; do not use it. The original chat history was kept.';
+      throw new BridgeError(`Could not save this chat's MCP choice. ${reason}`, 503);
+    }
     if (mcp?.warnings?.length) this.#mcpWarnings.set(fork.thread.id, mcp.warnings);
     await this.#versions.list(fork.thread.id, true).catch(() => {});
     const name = `${(thread.name?.trim() || String(thread.preview ?? '').split('\n')[0].trim() || 'Chat').slice(0, 110)} (${suffix})`;
     try { await this.#rpc('thread/name/set', { threadId: fork.thread.id, name }); fork.thread.name = name; } catch { /* The fork stands; it keeps its default title. */ }
-    return { thread: this.#decorate(fork.thread), ...(mcp ? { mcpServers: mcp.servers, mcpServersSaved, ...(mcp.warnings.length ? { mcpWarnings: mcp.warnings } : {}) } : {}) };
+    return { thread: this.#decorate(fork.thread), ...(mcp ? { mcpServers: mcp.servers, mcpServersSaved: true, ...(mcp.warnings.length ? { mcpWarnings: mcp.warnings } : {}) } : {}) };
   }
   /** Explicitly continue a finished agent history in a user-owned chat, without starting a turn. */
   async continueThread(id, body) {
@@ -1809,8 +1852,8 @@ export class DesktopClient extends EventEmitter {
       const thread = this.#decorate(result.thread);
       if (thread.desktopAccess.writable) throw new BridgeError('This is already a normal chat.', 409);
       if (!thread.desktopAccess.canContinue) throw new BridgeError('Wait for this background run to finish before continuing here.', 409);
-      const mcpServers = this.#mcpSelections.get(id);
-      return this.#forkChat(thread, undefined, 'continued', {}, mcpServers, mcpServers !== undefined);
+      const selection = this.#readMcpSelection(id);
+      return this.#forkChat(thread, undefined, 'continued', {}, selection.servers, selection.hasSelection, selection.warnings);
     });
   }
   async renameThread(id, body) {
@@ -2002,7 +2045,8 @@ export class DesktopClient extends EventEmitter {
   /** Opens a chat live in this app: subscribes it and reports the turn it is running, if any. */
   async resume(id, body) {
     object(body, []);
-    const hasMcpSelection = this.#mcpSelections.get(id) !== undefined;
+    const mcpSelection = this.#readMcpSelection(id), hasMcpSelection = mcpSelection.hasSelection;
+    if (mcpSelection.warnings.length) this.#mcpWarnings.set(id, mcpSelection.warnings);
     // A chat already followed (the list follows running ones) is read again, so its mode, Plan and effort still show.
     // An archived chat opens read from the engine, without following it: the engine resumes it only once it is back.
     let archived = false;

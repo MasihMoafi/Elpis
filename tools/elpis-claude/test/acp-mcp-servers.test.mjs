@@ -76,6 +76,30 @@ test("failed MCP refresh clears selected user servers but keeps the internal bro
   assert.deepEqual(warnings, ["MCP servers in this chat could not be checked and stay off for this session."]);
 });
 
+test("an unreadable saved selection fails closed in the cached ACP session", async () => {
+  const cache = new Map([[
+    "thread-corrupt", {
+      "mcp_servers.rag": { command: "/old/rag", enabled: true },
+      "mcp_servers.elpis_browser": { command: "browser-internal", enabled: true },
+    },
+  ]]);
+  const warnings = [];
+  let configReads = 0;
+  await restoreMcpSession("thread-corrupt", {
+    selections: { get: () => { throw new Error("corrupt record"); } }, cache,
+    readConfig: async () => { configReads++; return {}; },
+    onWarning: warning => warnings.push(warning),
+  });
+  assert.deepEqual(cache.get("thread-corrupt"), {
+    "mcp_servers.elpis_browser": { command: "browser-internal", enabled: true },
+  });
+  assert.deepEqual(acpServersFrom(cache.get("thread-corrupt"), "thread-corrupt"), [{
+    name: "elpis_browser", command: "browser-internal", args: [], env: [{ name: "ELPIS_THREAD_ID", value: "thread-corrupt" }],
+  }]);
+  assert.equal(configReads, 0);
+  assert.deepEqual(warnings, ["Saved MCP choices for this chat could not be read; user MCP servers stay off."]);
+});
+
 test("ACP HTTP mapping resolves headers with native precedence and bearer override", () => {
   const config = {
     "mcp_servers.remote": {

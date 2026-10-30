@@ -25,14 +25,35 @@ test('per-thread server names survive a DesktopClient recreation and contain no 
   assert.equal(afterRestart.get('old-thread'), undefined);
 });
 
+test('only a missing record means legacy; malformed, unreadable, or invalid records fail closed', async t => {
+  const file = await temp(t), selections = new McpSessionSelections(file);
+  assert.equal(selections.get('legacy'), undefined);
+
+  await fs.mkdir(file, { recursive: true });
+  await fs.writeFile(path.join(file, 'corrupt.json'), '{');
+  assert.throws(() => selections.get('corrupt'), /Unreadable per-thread MCP selection/);
+  await fs.writeFile(path.join(file, 'invalid.json'), JSON.stringify({ version: 1, threadId: 'invalid', servers: ['bad.name'] }));
+  assert.throws(() => selections.get('invalid'), /Invalid per-thread MCP selection record/);
+  await fs.mkdir(path.join(file, 'unreadable.json'));
+  assert.throws(() => selections.get('unreadable'), error => error.code === 'EISDIR');
+  assert.throws(() => selections.get('../escape'), /Invalid MCP thread ID/);
+});
+
 test('the per-thread store rejects invalid names and deletes only the requested thread', async t => {
   const file = await temp(t), selections = new McpSessionSelections(file);
   await selections.set('thread-a', ['rag']); await selections.set('thread-b', ['remote']);
   await assert.rejects(selections.set('thread-a', ['not.valid']), /Invalid per-thread MCP server names/);
   await assert.rejects(selections.set('../escape', ['rag']), /Invalid per-thread MCP server names/);
-  assert.equal(selections.get('../escape'), undefined);
   await selections.delete('thread-a');
   const restarted = new McpSessionSelections(file);
-  assert.equal(restarted.get('thread-a'), undefined);
+  assert.equal(restarted.get('thread-a'), undefined, 'only an absent record means legacy');
   assert.deepEqual(restarted.get('thread-b'), ['remote']);
+});
+
+test('the session store checks its write and rename path before a thread starts', async t => {
+  const file = await temp(t), selections = new McpSessionSelections(file);
+  await selections.assertWritable();
+  await fs.rm(file, { recursive: true });
+  await fs.writeFile(file, 'blocks the store directory');
+  await assert.rejects(selections.assertWritable());
 });
