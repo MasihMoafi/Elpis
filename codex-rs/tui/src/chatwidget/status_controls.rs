@@ -250,7 +250,13 @@ impl ChatWidget {
         let mut instruction_sources = Vec::new();
         let mut unverified_sources = Vec::new();
         for path in &self.instruction_source_paths {
-            if let Some((source, _)) = sources.iter().find(|(_, candidate)| candidate == path) {
+            if let Some((source, _)) = sources.iter().find(|(source, candidate)| {
+                candidate == path
+                    || source.additional_paths.iter().any(|additional| {
+                        PathUri::from_host_native_path(additional)
+                            .is_ok_and(|additional| &additional == path)
+                    })
+            }) {
                 if source.admitted && !instruction_sources.contains(path) {
                     instruction_sources.push(path.clone());
                 }
