@@ -19,7 +19,7 @@ function DropdownMenuContent({ className, align = "end", side, sideOffset = 4, a
       <MenuPrimitive.Positioner className="z-50 outline-none" align={align} side={side} sideOffset={sideOffset} alignOffset={alignOffset}>
         <MenuPrimitive.Popup
           data-slot="dropdown-menu-content"
-          className={cn("hud-menu min-w-36 outline-none", className)}
+          className={cn("hud-menu min-w-36 max-w-(--available-width) outline-none", className)}
           {...props}
         />
       </MenuPrimitive.Positioner>

@@ -36,7 +36,9 @@ export function McpSessionMenu({ value, disabled, cwd, onChange }: { value?: str
     if (valid.length !== value.length) onChange(valid);
   }, [servers, value, onChange]);
 
-  if (error) return <span role="status" className="px-2 text-xs text-muted-foreground" title={error}>MCP choices unavailable</span>;
+  if (error) return <span role="status" data-slot="composer-chip" className="composer-pill" aria-label="MCP choices unavailable" title={error}>
+    <Plug size={16} aria-hidden="true" /><span className="pill-long">MCP choices unavailable</span><span className="pill-short">MCP</span>
+  </span>;
   if (!servers?.length) return null;
   const available = new Set(servers.filter(server => server.enabled).map(server => server.name));
   const selected = new Set((value ?? [...available]).filter(name => available.has(name)));
@@ -50,7 +52,7 @@ export function McpSessionMenu({ value, disabled, cwd, onChange }: { value?: str
       <p className="hud-menu-title">MCP servers for this chat</p>
       {servers.map(server => {
         const checked = selected.has(server.name);
-        return <DropdownMenuItem key={server.name} role="menuitemcheckbox" aria-checked={checked} aria-disabled={!server.enabled} disabled={!server.enabled} className="hud-menu-item" onClick={event => { if (!server.enabled) return; event.preventDefault(); toggle(server.name); }}>
+        return <DropdownMenuItem key={server.name} role="menuitemcheckbox" aria-checked={checked} aria-disabled={!server.enabled} disabled={!server.enabled} closeOnClick={false} className="hud-menu-item" onClick={event => { if (!server.enabled) return; event.preventDefault(); toggle(server.name); }}>
           <span className={`flex size-4 items-center justify-center rounded-sm border ${checked ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/50"}`}>{checked && <Check size={12} aria-hidden="true" />}</span>
           <span className="grid gap-0.5"><span>{server.name}</span><small>{server.enabled ? (server.transport === "http" ? "HTTP" : "Local process") : "Disabled in MCP settings"}</small></span>
         </DropdownMenuItem>;
