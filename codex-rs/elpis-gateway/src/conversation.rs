@@ -16,6 +16,9 @@ use crate::GatewayError;
 /// Opaque Gemini reasoning state rides in a reasoning item's `encrypted_content`, never in tool
 /// arguments. Same envelope as v0.3.0, so v0.3.0 histories keep their signatures.
 pub(crate) const GEMINI_SIGNATURE_PREFIX: &str = "elpis:gemini-tool-signature:v1:";
+/// Anthropic thinking blocks ride in a reasoning item's `encrypted_content`: the next request
+/// must send them back unchanged beside a tool call, and core replays the item verbatim.
+pub(crate) const ANTHROPIC_THINKING_PREFIX: &str = "elpis:anthropic-thinking:v1:";
 /// The strictest common limit across Anthropic, Gemini and OpenAI Chat tool names.
 const MAX_TOOL_NAME_LEN: usize = 64;
 pub(crate) const IMAGE_OMITTED: &str = "[image omitted: this provider route does not carry images]";
@@ -51,6 +54,8 @@ pub(crate) enum Turn {
     /// A user message that carries at least one image.
     UserParts(Vec<Part>),
     Assistant(String),
+    /// A thinking block (`thinking` or `redacted_thinking`) the Anthropic model produced.
+    Thinking(Value),
     /// A tool call the model made; `name` is the vendor-safe alias.
     ToolCall {
         call_id: String,
@@ -274,6 +279,14 @@ impl Conversation {
                 });
             }
             "reasoning" => {
+                if let Some(block) = item
+                    .get("encrypted_content")
+                    .and_then(Value::as_str)
+                    .and_then(|content| content.strip_prefix(ANTHROPIC_THINKING_PREFIX))
+                    .and_then(|payload| serde_json::from_str::<Value>(payload).ok())
+                {
+                    self.turns.push(Turn::Thinking(block));
+                }
                 if let Some(payload) = item
                     .get("encrypted_content")
                     .and_then(Value::as_str)

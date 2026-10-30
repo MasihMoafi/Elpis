@@ -356,3 +356,101 @@ fn an_image_is_sent_as_an_image_block_also_inside_a_tool_result() {
         ])
     );
 }
+
+fn request_with_effort(model: &str, effort: Option<&str>, history: Value) -> Value {
+    let mut raw = responses_request(history, core_tools());
+    raw["model"] = json!(model);
+    raw["reasoning"] = effort.map_or(Value::Null, |effort| json!({"effort": effort}));
+    request(&conversation(&raw)).expect("the request translates")
+}
+
+fn hello() -> Value {
+    json!([{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "Hi"}]}])
+}
+
+#[test]
+fn a_requested_effort_turns_thinking_on_with_the_field_the_model_family_takes() {
+    let adaptive = request_with_effort("claude-opus-5-5", Some("high"), hello());
+    assert_eq!(adaptive["thinking"], json!({"type": "adaptive"}));
+    assert_eq!(adaptive["output_config"], json!({"effort": "high"}));
+    assert_eq!(adaptive["max_tokens"], 8192);
+
+    let budgeted = request_with_effort("claude-haiku-4-5-20251001", Some("medium"), hello());
+    assert_eq!(
+        budgeted["thinking"],
+        json!({"type": "enabled", "budget_tokens": 4096})
+    );
+    assert_eq!(budgeted["output_config"], Value::Null);
+    let max_tokens = budgeted["max_tokens"].as_u64().expect("max_tokens");
+    assert!(max_tokens > 4096);
+}
+
+#[test]
+fn thinking_stays_off_without_an_effort_or_for_models_that_cannot_think() {
+    let thinking = json!([{"type": "reasoning", "summary": [], "encrypted_content":
+        format!("{ANTHROPIC_THINKING_PREFIX}{}", json!({"type": "thinking", "thinking": "t", "signature": "s"}))}]);
+    for (model, effort) in [
+        ("claude-opus-5-5", None),
+        ("claude-sonnet-4-20250514", Some("high")),
+        ("claude-3-7-sonnet-latest", Some("high")),
+        ("some-other-model", Some("high")),
+    ] {
+        let body = request_with_effort(model, effort, hello());
+        assert_eq!(body["thinking"], Value::Null, "{model}");
+        assert_eq!(body["output_config"], Value::Null, "{model}");
+        assert_eq!(body["max_tokens"], 8192, "{model}");
+    }
+    let mut history = hello().as_array().cloned().expect("array");
+    history.extend(thinking.as_array().cloned().expect("array"));
+    let body = request_with_effort("claude-opus-5-5", None, json!(history));
+    assert!(!body["messages"].to_string().contains("\"thinking\""));
+}
+
+#[test]
+fn thinking_blocks_are_kept_and_replayed_before_the_tool_call() {
+    let events = vec![
+        event(
+            "content_block_start",
+            json!({"type": "content_block_start", "index": 0, "content_block": {"type": "thinking", "thinking": ""}}),
+        ),
+        event(
+            "content_block_delta",
+            json!({"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": "Let me "}}),
+        ),
+        event(
+            "content_block_delta",
+            json!({"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": "see."}}),
+        ),
+        event(
+            "content_block_delta",
+            json!({"type": "content_block_delta", "index": 0, "delta": {"type": "signature_delta", "signature": "SIG"}}),
+        ),
+        event(
+            "content_block_stop",
+            json!({"type": "content_block_stop", "index": 0}),
+        ),
+        event("message_stop", json!({"type": "message_stop"})),
+    ];
+    let out = run(&events, /*close*/ true);
+    let state = out
+        .iter()
+        .find(|event| event["item"]["type"] == "reasoning" && event["type"] == "response.output_item.done")
+        .and_then(|event| event["item"]["encrypted_content"].as_str())
+        .expect("a reasoning item carries the thinking block")
+        .to_string();
+
+    let history = json!([
+        {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "Hi"}]},
+        {"type": "reasoning", "summary": [], "encrypted_content": state},
+        {"type": "function_call", "call_id": "c1", "name": "exec_command", "arguments": "{}"},
+        {"type": "function_call_output", "call_id": "c1", "output": "ok"},
+    ]);
+    let body = request_with_effort("claude-opus-5-5", Some("low"), history);
+    assert_eq!(
+        body["messages"][1]["content"],
+        json!([
+            {"type": "thinking", "thinking": "Let me see.", "signature": "SIG"},
+            {"type": "tool_use", "id": "c1", "name": "exec_command", "input": {}},
+        ])
+    );
+}

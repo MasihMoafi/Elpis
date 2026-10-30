@@ -10,6 +10,7 @@ use serde_json::Value;
 use serde_json::json;
 
 use crate::GatewayError;
+use crate::conversation::ANTHROPIC_THINKING_PREFIX;
 use crate::conversation::Conversation;
 use crate::conversation::IMAGE_OMITTED;
 use crate::conversation::Part;
@@ -22,7 +23,60 @@ use crate::emitter::Usage;
 /// `max_tokens` is fixed, as in v0.3.0.
 const ANTHROPIC_MAX_TOKENS: u64 = 8192;
 
+/// The thinking a request asks for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Thinking {
+    /// Claude 4.6 and later decide how long to think; `output_config.effort` guides them.
+    Adaptive(&'static str),
+    /// Claude 4.5 thinks within a fixed token budget.
+    Budget(u64),
+}
+
+/// The family and version of a Claude model id such as `claude-opus-5-5`, `claude-sonnet-4-6`
+/// or `claude-haiku-4-5-20251001`. A date suffix is not a minor version.
+fn claude_version(model: &str) -> Option<(u32, u32)> {
+    let mut parts = model.strip_prefix("claude-")?.split('-');
+    if !matches!(parts.next()?, "opus" | "sonnet" | "haiku" | "fable") {
+        return None;
+    }
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts
+        .next()
+        .filter(|part| part.len() <= 2)
+        .and_then(|part| part.parse().ok())
+        .unwrap_or(0);
+    Some((major, minor))
+}
+
+/// Whether the model thinks: the Claude families from 4.5 on.
+pub(crate) fn supports_thinking(model: &str) -> bool {
+    claude_version(model).is_some_and(|version| version >= (4, 5))
+}
+
+fn thinking_for(model: &str, effort: Option<&str>) -> Option<Thinking> {
+    let version = claude_version(model).filter(|version| *version >= (4, 5))?;
+    let level = match effort? {
+        "minimal" | "low" => "low",
+        "medium" => "medium",
+        "high" | "xhigh" => "high",
+        _ => return None,
+    };
+    Some(if version >= (4, 6) {
+        Thinking::Adaptive(level)
+    } else {
+        Thinking::Budget(match level {
+            "low" => 1024,
+            "medium" => 4096,
+            _ => 12288,
+        })
+    })
+}
+
 pub(crate) fn request(conversation: &Conversation) -> Result<Value, GatewayError> {
+    let thinking = thinking_for(
+        &conversation.model,
+        conversation.reasoning_effort.as_deref(),
+    );
     let mut system = vec![conversation.instructions.clone()];
     let mut messages = Vec::<Value>::new();
     let mut current_role: Option<&str> = None;
@@ -58,6 +112,12 @@ pub(crate) fn request(conversation: &Conversation) -> Result<Value, GatewayError
                 continue;
             }
             Turn::Assistant(text) => ("assistant", json!({"type": "text", "text": text})),
+            Turn::Thinking(block) => {
+                if thinking.is_none() {
+                    continue;
+                }
+                ("assistant", block.clone())
+            }
             Turn::ToolCall {
                 call_id,
                 name,
@@ -122,6 +182,17 @@ pub(crate) fn request(conversation: &Conversation) -> Result<Value, GatewayError
         "messages": messages,
         "cache_control": {"type": "ephemeral"},
     });
+    match thinking {
+        Some(Thinking::Adaptive(effort)) => {
+            body["thinking"] = json!({"type": "adaptive"});
+            body["output_config"] = json!({"effort": effort});
+        }
+        Some(Thinking::Budget(budget)) => {
+            body["thinking"] = json!({"type": "enabled", "budget_tokens": budget});
+            body["max_tokens"] = json!(ANTHROPIC_MAX_TOKENS + budget);
+        }
+        None => {}
+    }
     if !system.is_empty() {
         body["system"] = Value::Array(system);
     }
@@ -244,6 +315,7 @@ pub(crate) struct AnthropicStream {
     usage: Usage,
     stop_reason: Option<String>,
     tools: HashMap<u64, ToolAccumulator>,
+    thinking: HashMap<u64, Value>,
     called_tool: bool,
 }
 
@@ -304,6 +376,25 @@ impl AnthropicStream {
                             },
                         );
                     }
+                    Some("thinking") => {
+                        self.thinking.insert(
+                            index,
+                            json!({
+                                "type": "thinking",
+                                "thinking": text_at(&value, "/content_block/thinking"),
+                                "signature": "",
+                            }),
+                        );
+                    }
+                    Some("redacted_thinking") => {
+                        self.thinking.insert(
+                            index,
+                            json!({
+                                "type": "redacted_thinking",
+                                "data": text_at(&value, "/content_block/data"),
+                            }),
+                        );
+                    }
                     _ => {}
                 }
             }
@@ -327,10 +418,28 @@ impl AnthropicStream {
                             );
                         }
                     }
+                    Some(delta @ ("thinking_delta" | "signature_delta")) => {
+                        if let Some(block) = self.thinking.get_mut(&index) {
+                            let (field, pointer) = if delta == "thinking_delta" {
+                                ("thinking", "/delta/thinking")
+                            } else {
+                                ("signature", "/delta/signature")
+                            };
+                            let joined = format!(
+                                "{}{}",
+                                text_at(block, &format!("/{field}")),
+                                text_at(&value, pointer)
+                            );
+                            block[field] = json!(joined);
+                        }
+                    }
                     _ => {}
                 }
             }
             "content_block_stop" => {
+                if let Some(block) = self.thinking.remove(&index) {
+                    out.reasoning_state(format!("{ANTHROPIC_THINKING_PREFIX}{block}"));
+                }
                 if let Some(tool) = self.tools.remove(&index) {
                     let arguments = if tool.arguments.trim().is_empty() {
                         "{}".to_string()

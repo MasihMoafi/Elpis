@@ -65,6 +65,7 @@ pub(crate) fn request(conversation: &Conversation) -> Result<Value, GatewayError
             Turn::User(text) => ("user", json!({"text": text})),
             Turn::UserParts(parts) => ("user", json!({"text": parts_text(parts)})),
             Turn::Assistant(text) => ("model", json!({"text": text})),
+            Turn::Thinking(_) => continue,
             Turn::ToolCall {
                 call_id,
                 name,

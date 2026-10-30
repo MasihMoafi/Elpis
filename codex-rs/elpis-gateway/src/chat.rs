@@ -35,6 +35,7 @@ pub(crate) fn request(conversation: &Conversation) -> Value {
                 messages.push(json!({"role": "user", "content": parts_text(parts)}))
             }
             Turn::Assistant(text) => messages.push(json!({"role": "assistant", "content": text})),
+            Turn::Thinking(_) => {}
             Turn::ToolCall {
                 call_id,
                 name,

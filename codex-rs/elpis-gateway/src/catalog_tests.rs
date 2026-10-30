@@ -237,3 +237,28 @@ fn only_routes_that_send_images_mark_their_models_image_capable() {
     assert_eq!(gemini[0].input_modalities, vec![InputModality::Text]);
     assert_eq!(chat[0].input_modalities, vec![InputModality::Text]);
 }
+
+#[test]
+fn only_claude_models_that_think_offer_effort_levels() {
+    let models = read(
+        GatewayWire::AnthropicMessages,
+        json!({"data": [
+            {"id": "claude-opus-5-5"},
+            {"id": "claude-sonnet-4-6"},
+            {"id": "claude-haiku-4-5-20251001"},
+            {"id": "claude-3-5-haiku-latest"},
+            {"id": "claude-opus-4-1-20250805"},
+        ]}),
+    );
+    let thinks: Vec<bool> = models
+        .iter()
+        .map(|model| !model.supported_reasoning_levels.is_empty())
+        .collect();
+
+    assert_eq!(thinks, vec![true, true, true, false, false]);
+    assert_eq!(
+        models[0].default_reasoning_level,
+        Some(ReasoningEffort::Medium)
+    );
+    assert_eq!(models[3].default_reasoning_level, None);
+}
