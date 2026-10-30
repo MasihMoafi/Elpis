@@ -160,11 +160,14 @@ async function runCase(mode, light) {
     save('stream-before');
     key('Tab');
     await pause(250);
+    // The first Tab may focus an already-visible Ledger; the next one closes it.
+    if (capture(false).includes('CONTEXT LEDGER')) key('Tab');
+    await until(() => !capture(false).includes('CONTEXT LEDGER'), 'Ledger close');
     save('ledger-hidden');
     tm('resize-window', '-t', 'check', '-x', '125', '-y', '38');
     await pause(250);
     key('Tab');
-    await pause(250);
+    await until(() => capture(false).includes('CONTEXT LEDGER'), 'Ledger reopen');
     save('narrow-reopened');
     tm('resize-window', '-t', 'check', '-x', '170', '-y', '42');
     await pause(250);
