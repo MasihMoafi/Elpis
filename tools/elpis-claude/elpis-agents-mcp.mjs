@@ -215,7 +215,9 @@ if (process.env.ELPIS_AGENT_TOOLS !== "0") {
             cwd: folder, model, ...(bridgedModel(model) ? {} : { modelProvider: provider }), approvalPolicy: "never",
             sandbox: allow_writes ? "workspace-write" : "read-only",
             ...(effort && { config: { model_reasoning_effort: effort } }),
-            ...(BRIDGE && parent && { elpisParentThreadId: parent }),
+            // Through the bridge, which also scopes the helper; on the engine alone, the engine
+            // records the parent itself.
+            ...(parent && (BRIDGE ? { elpisParentThreadId: parent } : { parentThreadId: parent })),
           });
         } catch (error) {
           conn.close();

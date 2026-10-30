@@ -87,29 +87,39 @@ fn plant_continuity_sources(home: &Path) -> Result<()> {
     Ok(())
 }
 
-/// A file on disk is not admission; admitting it sends one copy; withdrawing it removes
-/// the copy an earlier turn appended; re-admitting restores exactly one.
+/// Rules start admitted; withdrawing them removes the previous copy, and re-admitting
+/// restores exactly one.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn agents_md_reaches_the_request_only_while_the_ledger_admits_it() -> Result<()> {
     let server = start_mock_server().await;
-    let requests = mount_sse_sequence(&server, turn_responses(/*count*/ 4)).await;
+    let requests = mount_sse_sequence(&server, turn_responses(/*count*/ 5)).await;
     let home = Arc::new(TempDir::new()?);
     std::fs::write(home.path().join("AGENTS.md"), GLOBAL_AGENTS)?;
     let mut builder = test_codex()
         .with_home(Arc::clone(&home))
+        .with_config(|config| {
+            config.cwd = config.cwd.join("nested/workspace");
+        })
         .with_workspace_setup(|cwd, _fs| async move {
-            std::fs::write(cwd.as_path().join("AGENTS.md"), PROJECT_AGENTS)?;
+            let root = cwd
+                .parent()
+                .and_then(|parent| parent.parent())
+                .expect("nested workspace has a project root");
+            std::fs::create_dir_all(cwd.as_path())?;
+            std::fs::write(root.join(".git"), "gitdir: /tmp/mock-git-dir\n")?;
+            std::fs::write(root.join("AGENTS.md"), PROJECT_AGENTS)?;
             Ok(())
         });
     let test = builder.build(&server).await?;
 
     test.submit_turn("default turn").await?;
-    set_row(&test.config, GLOBAL_RULES_ROW, /*admitted*/ true)?;
-    set_row(&test.config, PROJECT_RULES_ROW, /*admitted*/ true)?;
-    test.submit_turn("admitted turn").await?;
     set_row(&test.config, GLOBAL_RULES_ROW, /*admitted*/ false)?;
+    test.submit_turn("global withdrawn turn").await?;
+    set_row(&test.config, GLOBAL_RULES_ROW, /*admitted*/ true)?;
     set_row(&test.config, PROJECT_RULES_ROW, /*admitted*/ false)?;
-    test.submit_turn("withdrawn turn").await?;
+    test.submit_turn("project withdrawn turn").await?;
+    set_row(&test.config, GLOBAL_RULES_ROW, /*admitted*/ false)?;
+    test.submit_turn("both withdrawn turn").await?;
     set_row(&test.config, GLOBAL_RULES_ROW, /*admitted*/ true)?;
     set_row(&test.config, PROJECT_RULES_ROW, /*admitted*/ true)?;
     test.submit_turn("readmitted turn").await?;
@@ -126,8 +136,8 @@ async fn agents_md_reaches_the_request_only_while_the_ledger_admits_it() -> Resu
         .collect::<Vec<_>>();
     assert_eq!(
         counts,
-        vec![(0, 0), (1, 1), (0, 0), (1, 1)],
-        "(global, project) AGENTS.md copies per request: default, admitted, withdrawn, readmitted"
+        vec![(1, 1), (0, 1), (1, 0), (0, 0), (1, 1)],
+        "(global, project) AGENTS.md copies: default, global off, project off, both off, both on"
     );
     for (index, request) in requests.iter().enumerate() {
         assert!(

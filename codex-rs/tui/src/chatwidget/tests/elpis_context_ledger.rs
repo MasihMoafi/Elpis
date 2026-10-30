@@ -5,6 +5,7 @@
 
 use super::*;
 use crate::elpis_app_event::ElpisAppEvent;
+use crate::elpis_ledger_events::ManualMemoryMutation;
 use crate::elpis_ledger_events::ManualMemoryRequestTarget;
 use crate::elpis_ledger_events::ManualMemoryStatusCompletion;
 use crate::elpis_ledger_events::ManualMemoryStorageTarget;
@@ -967,7 +968,7 @@ async fn source_headings_are_teal_and_included_markers_are_olive() -> anyhow::Re
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     show_context_ledger(&mut chat);
     configure_ledger_sources(&mut chat, root.path())?;
-    // Admission defaults are off; this rendering fixture needs an included row.
+    // This rendering fixture needs an included row.
     chat.manual_memory_cache
         .sources
         .first_mut()
@@ -1656,6 +1657,26 @@ async fn clicking_a_source_row_writes_its_admission() -> anyhow::Result<()> {
     assert!(
         !chat.context_ledger_has_focus(),
         "a click leaves typing in the composer"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn pending_manual_memory_write_labels_source_rows_locked() -> anyhow::Result<()> {
+    let root = tempdir()?;
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
+    configure_ledger_sources(&mut chat, root.path())?;
+    chat.manual_memory_cache.pending_mutation = Some(ManualMemoryMutation::Create);
+
+    let ledger = ledger_words(&chat);
+    assert!(
+        ledger.contains("LOCKED · creating Manual Memory"),
+        "{ledger}"
+    );
+    assert!(
+        !click_ledger_row(&mut chat, "ES.md", KeyModifiers::NONE),
+        "locked rows must not present an active click target"
     );
     Ok(())
 }

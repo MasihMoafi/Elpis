@@ -55,8 +55,8 @@ fn instruction_files_follow_the_ledger_and_fail_closed() {
     let workspace = workspace();
     assert_eq!(
         admitted_text(&workspace),
-        Some("internal guidance".to_string()),
-        "a file on disk is not admission: the global row starts excluded"
+        Some("global rule\n\ninternal guidance".to_string()),
+        "the global row starts admitted"
     );
 
     set_continuity_source_admitted(

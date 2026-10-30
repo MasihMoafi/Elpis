@@ -3921,7 +3921,7 @@ impl App {
             }
             Err(err) => {
                 self.chat_widget
-                    .add_error_message(format!("Failed to delete current thread: {err}"));
+                    .add_error_message(format!("Failed to delete current thread: {err:#}"));
                 AppRunControl::Continue
             }
         })

@@ -136,25 +136,49 @@ fn tools_only_openai_can_run_are_dropped_not_refused() {
 }
 
 #[test]
-fn an_image_becomes_a_placeholder_and_its_data_never_leaves() {
+fn an_image_stays_a_part_and_text_only_routes_see_the_omitted_note() {
     let request = responses_request(
-        json!([{
-            "type": "message",
-            "role": "user",
-            "content": [
-                {"type": "input_text", "text": "What is this?"},
-                {"type": "input_image", "image_url": "data:image/png;base64,SECRETPIXELS"},
-            ],
-        }]),
+        json!([
+            {
+                "type": "message",
+                "role": "user",
+                "content": [
+                    {"type": "input_text", "text": "What is this?"},
+                    {"type": "input_image", "image_url": "data:image/png;base64,PIXELS"},
+                ],
+            },
+            {"type": "function_call", "call_id": "c1", "name": "view_image", "arguments": "{}"},
+            {
+                "type": "function_call_output",
+                "call_id": "c1",
+                "output": [{"type": "input_image", "image_url": "https://example.com/a.png"}],
+            },
+        ]),
         json!([]),
     );
     let turns = conversation(&request).turns;
 
+    let Turn::UserParts(parts) = &turns[0] else {
+        panic!("a message with an image keeps its parts: {turns:?}");
+    };
     assert_eq!(
-        turns,
-        vec![Turn::User(format!("What is this?\n{IMAGE_OMITTED}"))]
+        parts,
+        &vec![
+            Part::Text("What is this?".to_string()),
+            Part::Image("data:image/png;base64,PIXELS".to_string()),
+        ]
     );
-    assert!(!format!("{turns:?}").contains("SECRETPIXELS"));
+    assert_eq!(
+        parts_text(parts),
+        format!("What is this?\n{IMAGE_OMITTED}")
+    );
+    assert_eq!(
+        turns[2],
+        Turn::ToolResultParts {
+            call_id: "c1".to_string(),
+            parts: vec![Part::Image("https://example.com/a.png".to_string())],
+        }
+    );
 }
 
 #[test]

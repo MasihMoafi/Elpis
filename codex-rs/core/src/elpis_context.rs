@@ -18,7 +18,7 @@ pub const ELPIS_CONTINUITY_PROMPT_PREFIX: &str = "## Elpis Admitted Context\n\n\
     transcript. Verify mutable repository state before acting, and prefer the current user\n\
     message when it changes the task.\n\n";
 const ADMISSION_FILE: &str = "admission.toml";
-const MANUAL_MEMORY_FILE: &str = "MEMORY.md";
+pub const MANUAL_MEMORY_FILE: &str = "MEMORY.md";
 /// Public so tests can strip exactly what the prompt inserts ahead of the memory body.
 pub const MEMORY_SCOPE_GUIDANCE: &str = "The user activates saved memories, including automatically saved memories, \
     by selecting MEMORY.md in the Context Ledger. Saving a memory does not activate it; \
@@ -43,10 +43,9 @@ const DEFAULT_DEV_RULE_ADMISSION: bool = true;
 
 /// Which context sources the user has admitted for this workspace.
 ///
-/// Every non-development-rule field defaults to off: an unset row means the user has not
-/// asked for that file, not that Elpis may spend context on it. Development rules are
-/// admitted by default; rows the user has never touched are absent from the stored maps.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
+/// Global, project and development rules are admitted by default. Other sources stay off
+/// until selected; explicit choices remain authoritative.
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(default)]
 struct ContinuityAdmission {
     global_rules: bool,
@@ -57,6 +56,20 @@ struct ContinuityAdmission {
     /// Per-file admission for `skills/dev/*.md`, keyed by file name.
     dev_sources: BTreeMap<String, bool>,
     custom_sources: BTreeMap<String, bool>,
+}
+
+impl Default for ContinuityAdmission {
+    fn default() -> Self {
+        Self {
+            global_rules: true,
+            project_rules: true,
+            goal: DEFAULT_OPTIONAL_ADMISSION,
+            checkpoint: DEFAULT_OPTIONAL_ADMISSION,
+            memory: DEFAULT_OPTIONAL_ADMISSION,
+            dev_sources: BTreeMap::new(),
+            custom_sources: BTreeMap::new(),
+        }
+    }
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -733,8 +746,9 @@ fn continuity_sources_with_state(
         }
     }
 
+    let mut instruction_row_indexes = std::collections::HashMap::new();
     for path in &instruction_paths {
-        let (name, reason) = instruction_source_row(path, cwd);
+        let (name, reason) = instruction_source_row(path, cwd, memories_root);
         let admitted = admission.admits_row(&name);
         if let Some(source) = existing_file_source(
             name,
@@ -751,7 +765,16 @@ fn continuity_sources_with_state(
             if let Ok(canonical) = path.canonicalize() {
                 canonical_paths.insert(canonical);
             }
-            sources.push(source);
+            if let Some(index) = instruction_row_indexes.get(&source.name).copied() {
+                let existing: &mut ContinuitySource = &mut sources[index];
+                existing.bytes = existing.bytes.saturating_add(source.bytes);
+                existing.estimated_tokens = existing
+                    .estimated_tokens
+                    .saturating_add(source.estimated_tokens);
+            } else {
+                instruction_row_indexes.insert(source.name.clone(), sources.len());
+                sources.push(source);
+            }
         }
     }
 
@@ -877,7 +900,15 @@ fn continuity_sources_with_state(
 /// `project_doc_fallback_filenames`; giving each filename its own row would mean rows that
 /// `set_continuity_source_admitted` cannot switch, so an override file could be listed and
 /// never admitted.
-fn instruction_source_row(path: &Path, cwd: &Path) -> (String, &'static str) {
+fn instruction_source_row(
+    path: &Path,
+    cwd: &Path,
+    memories_root: &Path,
+) -> (String, &'static str) {
+    // The home instruction is global even when the workspace is inside that home.
+    if path.parent() == memories_root.parent() {
+        return (GLOBAL_RULES.to_string(), "applicable global rules");
+    }
     let is_dev_source = path.to_string_lossy().contains("skills/dev")
         || path.to_string_lossy().contains("/dev/")
         || path
@@ -892,7 +923,16 @@ fn instruction_source_row(path: &Path, cwd: &Path) -> (String, &'static str) {
             format!("{DEV_SOURCE_PREFIX}{file_name}"),
             "configured development rules",
         )
-    } else if path.starts_with(cwd) {
+    } else if path.starts_with(cwd)
+        || path.parent().is_some_and(|directory| {
+            let project_directory = if directory.file_name().is_some_and(|name| name == ".codex") {
+                directory.parent().unwrap_or(directory)
+            } else {
+                directory
+            };
+            cwd.starts_with(project_directory)
+        })
+    {
         (PROJECT_RULES.to_string(), "applicable project rules")
     } else {
         (GLOBAL_RULES.to_string(), "applicable global rules")
@@ -912,10 +952,13 @@ pub fn instruction_source_admitted(
     cwd: &Path,
     path: &Path,
 ) -> std::io::Result<bool> {
-    let Some(workspace_dir) = workspace_context_dir(memories_root, cwd) else {
+    let Some(memories_root) = memories_root else {
         return Ok(true);
     };
-    let (name, _) = instruction_source_row(path, cwd);
+    let Some(workspace_dir) = workspace_context_dir(Some(memories_root), cwd) else {
+        return Ok(true);
+    };
+    let (name, _) = instruction_source_row(path, cwd, memories_root);
     Ok(read_admission(&workspace_dir)?.admits_row(&name))
 }
 
@@ -1746,6 +1789,20 @@ mod tests {
     }
 
     #[test]
+    fn omitted_rule_choices_default_on_but_saved_exclusions_stay_off() -> anyhow::Result<()> {
+        let unspecified = parse_admission("goal = true\n")?;
+        assert!(unspecified.global_rules);
+        assert!(unspecified.project_rules);
+        assert!(unspecified.goal);
+
+        let excluded = parse_admission("global_rules = false\nproject_rules = false\ngoal = true\n")?;
+        assert!(!excluded.global_rules);
+        assert!(!excluded.project_rules);
+        assert!(excluded.goal);
+        Ok(())
+    }
+
+    #[test]
     fn admission_not_found_defaults_but_unknown_or_duplicate_data_errors() -> anyhow::Result<()> {
         let memories = tempdir()?;
         let cwd = tempdir()?;
@@ -2559,7 +2616,7 @@ mod tests {
     /// Context Ledger admits them, while development rules start admitted on a fresh
     /// workspace and remain switchable.
     #[tokio::test]
-    async fn optional_sources_start_excluded_while_dev_rules_start_admitted() -> anyhow::Result<()>
+    async fn instructions_start_admitted_while_optional_sources_start_excluded() -> anyhow::Result<()>
     {
         let home = tempdir()?;
         let memories = home.path().join(".elpis/memories");
@@ -2582,7 +2639,15 @@ mod tests {
         let project = cwd.join("AGENTS.md");
         let instructions = vec![global.clone(), project.clone()];
         let sources = continuity_sources(Some(&memories), &cwd, &instructions)?;
-        for name in [GLOBAL_RULES, PROJECT_RULES, "GOAL.md", "ES.md", "MEMORY.md"] {
+        for name in [GLOBAL_RULES, PROJECT_RULES] {
+            let source = sources
+                .iter()
+                .find(|source| source.name == name)
+                .unwrap_or_else(|| panic!("{name} must stay listed so it can be switched off"));
+            assert!(source.admitted, "{name} must default to on");
+            assert!(source.selectable, "{name} must stay switchable");
+        }
+        for name in ["GOAL.md", "ES.md", "MEMORY.md"] {
             let source = sources
                 .iter()
                 .find(|source| source.name == name)
@@ -2630,18 +2695,18 @@ mod tests {
         std::fs::write(cwd.join("AGENTS.md"), "Project rule")?;
         let project = cwd.join("AGENTS.md");
 
-        assert!(!instruction_source_admitted(
+        assert!(instruction_source_admitted(
             Some(&memories),
             &cwd,
             &global
         )?);
-        assert!(!instruction_source_admitted(
+        assert!(instruction_source_admitted(
             Some(&memories),
             &cwd,
             &project
         )?);
 
-        for expected in [true, false, true] {
+        for expected in [false, true, false, true] {
             set_continuity_source_admitted(Some(&memories), &cwd, GLOBAL_RULES, expected)?;
             set_continuity_source_admitted(Some(&memories), &cwd, PROJECT_RULES, expected)?;
             assert_eq!(
@@ -2935,6 +3000,87 @@ mod tests {
         assert!(!prompt.contains("Skill rule"));
         assert!(!prompt.contains("Global rule"));
         assert!(!prompt.contains("Project rule"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn ancestor_project_instructions_share_the_project_toggle() -> anyhow::Result<()> {
+        let home = tempdir()?;
+        let memories = home.path().join("memories");
+        let project = home.path().join("project");
+        let cwd = project.join("src");
+        tokio::fs::create_dir_all(project.join(".codex")).await?;
+        tokio::fs::create_dir_all(&cwd).await?;
+        let global = home.path().join("AGENTS.md");
+        let root = project.join("AGENTS.md");
+        let local = project.join(".codex/AGENTS.md");
+        let nested = cwd.join("AGENTS.md");
+        for path in [&global, &root, &local, &nested] {
+            tokio::fs::write(path, "rules").await?;
+        }
+
+        set_continuity_source_admitted(Some(&memories), &cwd, GLOBAL_RULES, true)?;
+        set_continuity_source_admitted(Some(&memories), &cwd, PROJECT_RULES, false)?;
+        let paths = vec![global.clone(), root.clone(), local.clone(), nested.clone()];
+        let sources = continuity_sources(Some(&memories), &cwd, &paths)?;
+        assert_eq!(
+            sources.iter().filter(|source| source.name == GLOBAL_RULES).count(),
+            1
+        );
+        assert_eq!(
+            sources.iter().filter(|source| source.name == PROJECT_RULES).count(),
+            1
+        );
+        assert!(instruction_source_admitted(Some(&memories), &cwd, &global)?);
+        for path in [&root, &local, &nested] {
+            assert!(!instruction_source_admitted(Some(&memories), &cwd, path)?);
+        }
+
+        set_continuity_source_admitted(Some(&memories), &cwd, GLOBAL_RULES, false)?;
+        set_continuity_source_admitted(Some(&memories), &cwd, PROJECT_RULES, true)?;
+        assert!(!instruction_source_admitted(Some(&memories), &cwd, &global)?);
+        for path in [&root, &local, &nested] {
+            assert!(instruction_source_admitted(Some(&memories), &cwd, path)?);
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn project_instruction_files_share_one_toggle_row() -> anyhow::Result<()> {
+        let home = tempdir()?;
+        let memories = home.path().join(".elpis/memories");
+        let cwd = home.path().join("project");
+        let root_rules = cwd.join("AGENTS.md");
+        let nested_rules = cwd.join("src/AGENTS.md");
+        tokio::fs::create_dir_all(nested_rules.parent().expect("nested parent")).await?;
+        tokio::fs::write(&root_rules, "Root rules").await?;
+        tokio::fs::write(&nested_rules, "Nested rules").await?;
+        admit_all(Some(&memories), &cwd, &[PROJECT_RULES])?;
+
+        let sources = continuity_sources(
+            Some(&memories),
+            &cwd,
+            &[root_rules.clone(), nested_rules.clone()],
+        )?;
+        let project_rows: Vec<_> = sources
+            .iter()
+            .filter(|source| source.name == PROJECT_RULES)
+            .collect();
+        assert_eq!(project_rows.len(), 1);
+        assert_eq!(project_rows[0].bytes, 22);
+        assert_eq!(project_rows[0].estimated_tokens, 6);
+
+        set_continuity_source_admitted(Some(&memories), &cwd, PROJECT_RULES, false)?;
+        assert!(!instruction_source_admitted(
+            Some(&memories),
+            &cwd,
+            &root_rules
+        )?);
+        assert!(!instruction_source_admitted(
+            Some(&memories),
+            &cwd,
+            &nested_rules
+        )?);
         Ok(())
     }
 

@@ -381,9 +381,10 @@ jobs:
             agents_md scenarios_shared_instructions \
             deferred_executor_promotes_primary_environment_when_startup_completes \
             deferred_executor_stays_pending_after_materialization \
+            deferred_executor_loads_agents_md_when_environment_becomes_ready \
             auto_compact_accounts_for_encrypted_reasoning 2>&1 | tee "$RUNNER_TEMP/elpis-integration-checks.log"
           cargo test --profile dev-small --locked -p codex-app-server --test all -- \
-            elpis_instructions_read thread_read_paginated_carrier_persists_before_first_turn \
+            elpis_instructions_read turn_settings_update thread_read_paginated_carrier_persists_before_first_turn \
             thread_register_copied_codex_rollout_lists_reads_resumes_and_forks_idempotently \
             thread_register_rejects_external_and_malformed_rollouts \
             2>&1 | tee -a "$RUNNER_TEMP/elpis-integration-checks.log"
@@ -401,6 +402,7 @@ jobs:
         run: |
           cargo test --profile dev-small --locked -p codex-elpis-gateway --lib
           cargo test --profile dev-small --locked -p codex-model-provider-info --lib
+          cargo test --profile dev-small --locked -p codex-external-agent-migration --lib claude_home_follows_claude_config_dir
           cargo test --profile dev-small --locked -p codex-cli --lib
           cargo test --profile dev-small --locked -p codex-tui --lib branding::tests
       - name: Native permission regressions

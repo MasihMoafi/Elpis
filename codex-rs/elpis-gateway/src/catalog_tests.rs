@@ -1,5 +1,6 @@
 use super::*;
 use codex_protocol::openai_models::ApplyPatchToolType;
+use codex_protocol::openai_models::InputModality;
 use codex_protocol::openai_models::ModelInfo;
 use codex_protocol::openai_models::ReasoningEffort;
 use pretty_assertions::assert_eq;
@@ -32,7 +33,8 @@ fn anthropic_models_are_read_from_the_listing() {
     assert_eq!(models[0].description.as_deref(), Some("≈1000k context"));
     assert_eq!(models[1].context_window, Some(200_000));
     assert_eq!(models[1].max_context_window, Some(200_000));
-    assert!(models[0].supported_reasoning_levels.is_empty());
+    assert!(!models[0].supported_reasoning_levels.is_empty());
+    assert!(!models[1].supported_reasoning_levels.is_empty());
 }
 
 #[test]
@@ -215,4 +217,49 @@ fn a_bare_array_listing_is_read_like_a_data_envelope() {
 #[test]
 fn a_row_core_cannot_read_is_caught_before_it_leaves() {
     assert!(catalog_response(vec![json!({"slug": "only-a-slug"})]).is_err());
+}
+
+#[test]
+fn only_routes_that_send_images_mark_their_models_image_capable() {
+    let anthropic = read(
+        GatewayWire::AnthropicMessages,
+        json!({"data": [{"id": "claude-opus-5-5"}]}),
+    );
+    let gemini = read(
+        GatewayWire::GeminiGenerateContent,
+        json!({"models": [{"name": "models/gemini-3", "supportedGenerationMethods": ["generateContent"]}]}),
+    );
+    let chat = read(GatewayWire::Chat, json!({"data": [{"id": "some/model"}]}));
+
+    assert_eq!(
+        anthropic[0].input_modalities,
+        vec![InputModality::Text, InputModality::Image]
+    );
+    assert_eq!(gemini[0].input_modalities, vec![InputModality::Text]);
+    assert_eq!(chat[0].input_modalities, vec![InputModality::Text]);
+}
+
+#[test]
+fn only_claude_models_that_think_offer_effort_levels() {
+    let models = read(
+        GatewayWire::AnthropicMessages,
+        json!({"data": [
+            {"id": "claude-opus-5-5"},
+            {"id": "claude-sonnet-4-6"},
+            {"id": "claude-haiku-4-5-20251001"},
+            {"id": "claude-3-5-haiku-latest"},
+            {"id": "claude-opus-4-1-20250805"},
+        ]}),
+    );
+    let thinks: Vec<bool> = models
+        .iter()
+        .map(|model| !model.supported_reasoning_levels.is_empty())
+        .collect();
+
+    assert_eq!(thinks, vec![true, true, true, false, false]);
+    assert_eq!(
+        models[0].default_reasoning_level,
+        Some(ReasoningEffort::Medium)
+    );
+    assert_eq!(models[3].default_reasoning_level, None);
 }

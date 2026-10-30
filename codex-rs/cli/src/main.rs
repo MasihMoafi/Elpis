@@ -990,7 +990,7 @@ async fn run_session_archive_cli_command(
         },
     )
     .await
-    .map_err(|err| anyhow::anyhow!("{err}"))
+    .map_err(|err| anyhow::anyhow!("{err:#}"))
 }
 
 fn delete_action(target: &str, force: bool) -> anyhow::Result<codex_tui::SessionArchiveAction> {

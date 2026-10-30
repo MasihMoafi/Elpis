@@ -796,7 +796,26 @@ impl ExternalAgentConfigService {
 }
 
 fn default_external_agent_home(source: ExternalAgentSource) -> PathBuf {
-    if let Some(home) = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")) {
+    external_agent_home(
+        source,
+        std::env::var_os("CLAUDE_CONFIG_DIR"),
+        std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")),
+    )
+}
+
+/// Claude Code keeps its home in `CLAUDE_CONFIG_DIR` when that is set, as Elpis's Claude accounts do
+/// (27 Oct 2026: Import chats found none, because every chat was there and none in `~/.claude`).
+fn external_agent_home(
+    source: ExternalAgentSource,
+    claude_config_dir: Option<std::ffi::OsString>,
+    home: Option<std::ffi::OsString>,
+) -> PathBuf {
+    if matches!(source, ExternalAgentSource::Cla) {
+        if let Some(dir) = claude_config_dir.filter(|dir| !dir.is_empty()) {
+            return PathBuf::from(dir);
+        }
+    }
+    if let Some(home) = home {
         return PathBuf::from(home).join(source.config_dir());
     }
 

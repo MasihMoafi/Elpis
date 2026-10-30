@@ -114,6 +114,14 @@ impl App {
         let scrollbar_width =
             u16::from(self.transcript_view.reserves_scrollbar()).min(transcript_width);
         let body_width = transcript_width.saturating_sub(scrollbar_width);
+        let previous_body_width = self.transcript_view.rendered_width();
+        if previous_body_width != 0 && previous_body_width != body_width {
+            // Opening, closing, or resizing the Ledger rewraps every retained row. A normal
+            // buffer diff can leave terminal-owned continuation cells from the old width in
+            // place, especially after wide glyphs. Repaint spaces too so stale rows cannot look
+            // like a second, corrupted conversation or cut holes in the divider.
+            tui.terminal.invalidate_viewport();
+        }
         let frame_requester = tui.frame_requester();
         // Elpis: the hint row shares the composer's column, left of the Context Ledger.
         let composer_hint = self.composer_hint(transcript_width);

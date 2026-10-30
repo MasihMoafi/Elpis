@@ -2415,6 +2415,81 @@ async fn open_agent_picker_selects_path_backed_agent() -> Result<()> {
 }
 
 #[tokio::test]
+async fn open_agent_picker_selects_delegated_app_server_helper() -> Result<()> {
+    let (mut app, mut app_event_rx, _op_rx) = Box::pin(make_test_app_with_channels()).await;
+    let mut app_server = Box::pin(crate::start_embedded_app_server_for_picker(
+        app.chat_widget.config_ref(),
+    ))
+    .await
+    .expect("embedded app server");
+    let parent_thread_id =
+        ThreadId::from_string("00000000-0000-0000-0000-000000000122").expect("valid parent id");
+    let helper_thread_id =
+        ThreadId::from_string("00000000-0000-0000-0000-000000000123").expect("valid helper id");
+    app.primary_thread_id = Some(parent_thread_id);
+    app.active_thread_id = Some(parent_thread_id);
+    let request_id = app
+        .agent_navigation
+        .begin_picker_refresh(parent_thread_id)
+        .expect("delegated helper refresh");
+    app.apply_agent_picker_thread_refresh(
+        &app_server,
+        parent_thread_id,
+        request_id,
+        Ok(crate::app_event::AgentPickerThreadRefresh {
+            threads: vec![Thread {
+                originator: None,
+                environments: None,
+                id: helper_thread_id.to_string(),
+                extra: None,
+                session_id: helper_thread_id.to_string(),
+                forked_from_id: None,
+                parent_thread_id: Some(parent_thread_id.to_string()),
+                preview: "delegated helper".to_string(),
+                ephemeral: false,
+                section: None,
+                section_entered_at: None,
+                project_id: None,
+                daybreak_enabled: None,
+                history_mode: Default::default(),
+                model_provider: "openai".to_string(),
+                model: Some("gpt-test".to_string()),
+                reasoning_effort: None,
+                created_at: 1,
+                updated_at: 2,
+                recency_at: Some(2),
+                status: codex_app_server_protocol::ThreadStatus::Idle,
+                path: None,
+                cwd: test_path_buf("/tmp/helper").abs(),
+                cli_version: "0.0.0".to_string(),
+                source: codex_app_server_protocol::SessionSource::AppServer,
+                can_accept_direct_input: Some(true),
+                thread_source: None,
+                agent_nickname: Some("Helper".to_string()),
+                agent_role: Some("worker".to_string()),
+                git_info: None,
+                name: Some("delegated helper".to_string()),
+                turns: Vec::new(),
+            }],
+            archived_thread_ids: std::collections::HashSet::new(),
+        }),
+    );
+
+    Box::pin(app.open_agent_picker(&mut app_server)).await;
+    let picker = render_bottom_popup(&app.chat_widget, /*width*/ 80);
+    assert!(picker.contains("Helper"), "{picker}");
+    while app_event_rx.try_recv().is_ok() {}
+    app.chat_widget
+        .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    assert_matches!(
+        app_event_rx.try_recv(),
+        Ok(AppEvent::SelectAgentThread(selected_thread_id))
+            if selected_thread_id == helper_thread_id
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn open_agent_picker_refreshes_replay_only_path_backed_liveness() -> Result<()> {
     let mut app = Box::pin(make_test_app()).await;
     let mut app_server = Box::pin(crate::start_embedded_app_server_for_picker(

@@ -463,6 +463,7 @@ pub(crate) struct ThreadRequestProcessor {
     pub(super) skills_watcher: Arc<SkillsWatcher>,
     pub(super) turn_cost_worker: Option<crate::turn_cost_worker::TurnCostWorkerHandle>,
     pub(super) initial_config_warnings: Arc<Vec<ConfigWarningNotification>>,
+    desktop_spawn_links_imported: Arc<tokio::sync::OnceCell<()>>,
 }
 
 /// Whether resume attaches a client or restores a cold runtime during daemon startup.
@@ -522,7 +523,53 @@ impl ThreadRequestProcessor {
             skills_watcher,
             turn_cost_worker,
             initial_config_warnings: Arc::new(initial_config_warnings),
+            desktop_spawn_links_imported: Arc::new(tokio::sync::OnceCell::new()),
         }
+    }
+
+    async fn import_desktop_spawn_links_once(&self) {
+        self.desktop_spawn_links_imported
+            .get_or_init(|| async {
+                let path = self.config.codex_home.join("desktop-spawn-links.json");
+                let bytes = match tokio::fs::read(&path).await {
+                    Ok(bytes) => bytes,
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
+                    Err(error) => {
+                        tracing::warn!(?path, %error, "failed to read desktop helper ancestry");
+                        return;
+                    }
+                };
+                let links: std::collections::HashMap<String, String> =
+                    match serde_json::from_slice(&bytes) {
+                        Ok(links) => links,
+                        Err(error) => {
+                            tracing::warn!(?path, %error, "failed to parse desktop helper ancestry");
+                            return;
+                        }
+                    };
+                for (child, parent) in links {
+                    let Ok(child) = ThreadId::from_string(&child) else {
+                        tracing::warn!(%child, "ignored invalid desktop helper thread id");
+                        continue;
+                    };
+                    let Ok(parent) = ThreadId::from_string(&parent) else {
+                        tracing::warn!(%parent, "ignored invalid desktop helper parent id");
+                        continue;
+                    };
+                    if child == parent {
+                        tracing::warn!(%child, "ignored self-parented desktop helper");
+                        continue;
+                    }
+                    if let Err(error) = self
+                        .thread_manager
+                        .record_helper_parent(parent, child)
+                        .await
+                    {
+                        tracing::warn!(%parent, %child, %error, "failed to import desktop helper ancestry");
+                    }
+                }
+            })
+            .await;
     }
 
     pub(crate) async fn thread_start(
@@ -1213,6 +1260,7 @@ impl ThreadRequestProcessor {
             thread_source,
             project_id,
             daybreak_enabled,
+            parent_thread_id,
             environments,
         } = params;
         if matches!(
@@ -1229,6 +1277,12 @@ impl ThreadRequestProcessor {
                 "`permissions` cannot be combined with `sandbox`",
             ));
         }
+        let parent_thread_id = parent_thread_id
+            .map(|id| {
+                ThreadId::from_string(&id)
+                    .map_err(|err| invalid_request(format!("invalid parentThreadId: {err}")))
+            })
+            .transpose()?;
         if let Some(project_id) = project_id.as_ref() {
             if project_id.is_empty() {
                 return Err(invalid_request("projectId must not be empty"));
@@ -1300,6 +1354,7 @@ impl ThreadRequestProcessor {
                 thread_source.map(Into::into),
                 project_id,
                 daybreak_enabled,
+                parent_thread_id,
                 environment_requests,
                 service_name,
                 allow_provider_model_fallback,
@@ -1382,6 +1437,7 @@ impl ThreadRequestProcessor {
         thread_source: Option<codex_protocol::protocol::ThreadSource>,
         project_id: Option<String>,
         daybreak_enabled: Option<bool>,
+        parent_thread_id: Option<ThreadId>,
         environment_requests: Option<Vec<TurnEnvironmentRequest>>,
         service_name: Option<String>,
         allow_provider_model_fallback: bool,
@@ -1594,6 +1650,15 @@ impl ThreadRequestProcessor {
                 });
             }
         };
+        if let Some(parent_thread_id) = parent_thread_id
+            && !thread.config_snapshot().await.ephemeral
+            && let Err(err) = listener_task_context
+                .thread_manager
+                .record_helper_parent(parent_thread_id, thread_id)
+                .await
+        {
+            tracing::warn!(%thread_id, %parent_thread_id, %err, "failed to record helper parent");
+        }
         let session_telemetry = thread.session_telemetry();
         session_telemetry.record_startup_phase(
             "thread_start_create_thread",
@@ -2606,6 +2671,9 @@ impl ThreadRequestProcessor {
             parent_thread_id,
             ancestor_thread_id,
         } = params;
+        if parent_thread_id.is_some() || ancestor_thread_id.is_some() {
+            self.import_desktop_spawn_links_once().await;
+        }
         if originators
             .as_ref()
             .is_some_and(|values| !values.is_empty())

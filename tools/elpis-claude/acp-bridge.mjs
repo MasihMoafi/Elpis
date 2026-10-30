@@ -2752,6 +2752,9 @@ wss.on("connection", (ws) => {
       // still applies: a denied action fails instead of asking the parent chat.
       p.approvalPolicy = 'never';
       delete p.elpisParentThreadId;
+      // The engine records the calling chat as this helper's parent, so every client's
+      // thread list and agent tree nest it under that chat.
+      p.parentThreadId = parentThreadId;
     }
     delete p.elpisWorkflow;
     let pick = null;
@@ -3295,7 +3298,7 @@ wss.on("connection", (ws) => {
     }
 
     if (msg.method === "thread/loaded/list") pendingChildList.set(msg.id, null);
-    if (msg.method === "thread/list" && msg.params?.ancestorThreadId && !msg.params.cursor) pendingChildList.set(msg.id, msg.params.ancestorThreadId);
+    if (msg.method === "thread/list" && msg.params?.ancestorThreadId && !msg.params.cursor && !msg.params.archived) pendingChildList.set(msg.id, msg.params.ancestorThreadId);
     if (msg.method === "thread/list" || msg.method === "thread/read") pendingHelperMark.add(msg.id);
     if (msg.method === "model/list") pendingModelList.add(msg.id);
     if (msg.method === "thread/resume") { pendingResume.set(msg.id, msg.params?.threadId); resumeOptions.set(msg.id, msg.params ?? {}); resumeThread(msg); return; }

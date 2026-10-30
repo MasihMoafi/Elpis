@@ -793,6 +793,10 @@ impl ChatWidget {
     fn ledger_lines(&self, content_width: usize, owned_column: bool, compact: bool) -> LedgerLines {
         let mut source_links: Vec<(usize, String)> = Vec::new();
         let sources = self.continuity_sources();
+        let source_lock_reasons = sources
+            .iter()
+            .map(|source| self.context_source_lock_reason(source))
+            .collect::<Vec<_>>();
         let accounting_sources = self.accounted_continuity_sources();
         let admitted_source_tokens = accounting_sources
             .iter()
@@ -1274,6 +1278,8 @@ impl ChatWidget {
             }
             lines.push(Line::from(heading));
             for (index, source) in category_sources {
+                let lock_reason = source_lock_reasons[index];
+                let source_unlocked = source.selectable && lock_reason.is_none();
                 let source_line_start = lines.len();
                 // A switch above can hold the cursor, and then no source does.
                 // Without this the mark stayed on whichever row was last chosen
@@ -1282,7 +1288,7 @@ impl ChatWidget {
                     && !self.context_ledger.smart_prune_selected
                     && !self.context_ledger.subagents_selected
                     && index == self.context_ledger.selected;
-                let marker = if source.selectable {
+                let marker = if source_unlocked {
                     if source.admitted { "[x]" } else { "[ ]" }
                 } else {
                     "[-]"
@@ -1297,9 +1303,14 @@ impl ChatWidget {
                 let prefix = if selected { "› " } else { "  " };
                 // Per-source estimates stay exact so similarly sized files remain
                 // distinguishable; category and context totals remain compact.
-                let right = format!(
-                    "≈{} est. tokens {state}",
-                    format_source_count(source.estimated_tokens),
+                let right = lock_reason.map_or_else(
+                    || {
+                        format!(
+                            "≈{} est. tokens {state}",
+                            format_source_count(source.estimated_tokens),
+                        )
+                    },
+                    ToOwned::to_owned,
                 );
                 // Inline rows retain their compact layout. The owned column has room to wrap
                 // full names and keep their metadata on a separate line when necessary.
@@ -1362,16 +1373,14 @@ impl ChatWidget {
                 } else {
                     row.push(Span::raw(" ".repeat(pad)));
                 }
-                row.extend(vec![
-                    Span::styled(
-                        format!(
-                            "≈{} est. tokens ",
-                            format_source_count(source.estimated_tokens),
-                        ),
-                        muted,
-                    ),
-                    Span::styled(state, state_style),
-                ]);
+                row.push(Span::styled(
+                    right,
+                    if lock_reason.is_some() {
+                        warning
+                    } else {
+                        state_style
+                    },
+                ));
                 lines.push(Line::from(row));
 
                 if selected && self.context_ledger.why_visible && !compact {
@@ -1445,7 +1454,9 @@ impl ChatWidget {
             source_line_ranges
                 .iter()
                 .enumerate()
-                .filter(|(index, _)| sources[*index].selectable)
+                .filter(|(index, _)| {
+                    sources[*index].selectable && source_lock_reasons[*index].is_none()
+                })
                 .map(|(index, range)| {
                     (
                         row_of(range.start)..row_of(range.end),
@@ -2073,7 +2084,9 @@ impl ChatWidget {
                     .iter()
                     .enumerate()
                     .filter(move |(_, source)| {
-                        source.selectable && LedgerSourceGroup::for_source(source) == *group
+                        source.selectable
+                            && self.context_source_lock_reason(source).is_none()
+                            && LedgerSourceGroup::for_source(source) == *group
                     })
                     .map(|(index, _)| index)
             })
@@ -2409,6 +2422,38 @@ impl ChatWidget {
                 status.state
                     != crate::legacy_core::elpis_context::ManualMemoryAdmissionState::Missing
             })
+    }
+
+    fn context_source_lock_reason(
+        &self,
+        source: &crate::legacy_core::elpis_context::ContinuitySource,
+    ) -> Option<&'static str> {
+        if let Some(mutation) = self.manual_memory_cache.pending_mutation {
+            return Some(match mutation {
+                ManualMemoryMutation::Create => "LOCKED · creating Manual Memory",
+                ManualMemoryMutation::Admission { .. } => "LOCKED · saving Manual Memory",
+            });
+        }
+        if source.name != crate::legacy_core::elpis_context::MANUAL_MEMORY_FILE
+            || self.manual_memory_can_toggle()
+        {
+            return None;
+        }
+        Some(
+            if self
+                .manual_memory_cache
+                .status
+                .as_ref()
+                .is_some_and(|status| {
+                    status.state
+                        == crate::legacy_core::elpis_context::ManualMemoryAdmissionState::Missing
+                })
+            {
+                "LOCKED · create MEMORY.md first"
+            } else {
+                "LOCKED · checking Manual Memory"
+            },
+        )
     }
 
     pub(super) fn reject_manual_memory_writer_conflict(&mut self) -> bool {

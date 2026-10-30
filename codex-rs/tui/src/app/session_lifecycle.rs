@@ -147,6 +147,10 @@ impl App {
             return;
         }
 
+        if let Some(primary_thread_id) = self.primary_thread_id {
+            self.refresh_agent_picker_threads(app_server, primary_thread_id);
+        }
+
         if self.agent_navigation.is_empty() {
             self.chat_widget
                 .add_info_message("No agents available yet.".to_string(), /*hint*/ None);
@@ -163,9 +167,6 @@ impl App {
         {
             let params = self.agent_picker_selection_view_params(selected);
             self.chat_widget.show_selection_view(params);
-        }
-        if let Some(primary_thread_id) = self.primary_thread_id {
-            self.refresh_agent_picker_threads(app_server, primary_thread_id);
         }
     }
 

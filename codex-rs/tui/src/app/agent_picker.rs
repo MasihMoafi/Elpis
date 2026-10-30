@@ -46,7 +46,10 @@ impl App {
                                     sort_key: None,
                                     sort_direction: Some(SortDirection::Desc),
                                     model_providers: Some(vec![]),
-                                    source_kinds: Some(vec![ThreadSourceKind::SubAgentThreadSpawn]),
+                                    source_kinds: Some(vec![
+                                        ThreadSourceKind::SubAgentThreadSpawn,
+                                        ThreadSourceKind::AppServer,
+                                    ]),
                                     archived: Some(archived),
                                     section_id: None,
                                     project_id: None,

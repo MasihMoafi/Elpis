@@ -271,6 +271,28 @@ if (process.argv.includes("app-server")) {
     assert.equal((await fixture.call("thread/turns/list", { threadId: "huge", limit: 1, itemsView: "notLoaded" })).result.data.length, 1);
   });
 
+  test("a delegated helper's start tells the engine the calling chat is its parent", async t => {
+    const fixture = await setup(t, { threads: {}, pages: { first: { data: [], nextCursor: null } } }, {});
+    await fixture.call("thread/start", { cwd: "/fixture/work", model: "gpt-5.5", sandbox: "read-only", elpisParentThreadId: "calling-chat" });
+    const starts = fixture.records().filter(row => row.method === "thread/start");
+    assert.equal(starts.length, 1);
+    assert.equal(starts[0].params.parentThreadId, "calling-chat");
+    assert.equal(starts[0].params.elpisParentThreadId, undefined);
+    await fixture.call("thread/start", { cwd: "/fixture/work", model: "gpt-5.5" });
+    assert.equal(fixture.records().filter(row => row.method === "thread/start")[1].params.parentThreadId, undefined, "a chat the person starts has no parent");
+  });
+
+  test("a chat's helpers list as its live descendants, never as archived ones", async t => {
+    const helper = thread("helper", 2, { source: "vscode" });
+    const store = { _delegations: { helper: { parentThreadId: "chat", model: "gpt-5.5" } },
+      child: { parentThreadId: "chat", rootThreadId: "chat", thread: thread("child", 1, { parentThreadId: "chat" }), turns: [] } };
+    const fixture = await setup(t, { threads: { helper: { thread: helper } }, pages: { first: { data: [], nextCursor: null } } }, store);
+    const params = { ancestorThreadId: "chat", sourceKinds: ["subAgentThreadSpawn"], modelProviders: [], limit: 100, useStateDbOnly: true };
+    const live = (await fixture.call("thread/list", { ...params, archived: false })).result.data;
+    assert.deepEqual(live.map(row => [row.id, row.parentThreadId]).sort(), [["child", "chat"], ["helper", "chat"]]);
+    assert.deepEqual((await fixture.call("thread/list", { ...params, archived: true })).result.data, []);
+  });
+
   test("81 saved roots are discovered concurrently with a bounded read window", async t => {
     const store = {}, threads = {};
     for (let i = 0; i < 81; i++) {
