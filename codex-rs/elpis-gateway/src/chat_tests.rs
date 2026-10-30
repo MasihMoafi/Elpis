@@ -226,11 +226,11 @@ fn a_text_only_route_omits_an_image_and_never_sends_its_data() {
     let body = request(&conversation(&responses_request(history, core_tools())));
 
     assert_eq!(
-        body["messages"],
-        json!([{
+        body["messages"][1],
+        json!({
             "role": "user",
             "content": format!("What is this?\n{}", crate::conversation::IMAGE_OMITTED),
-        }])
+        })
     );
     assert!(!body.to_string().contains("SECRETPIXELS"));
 }

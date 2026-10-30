@@ -125,15 +125,14 @@ fn anthropic_models(body: &Value) -> Vec<Value> {
                 .get("max_input_tokens")
                 .and_then(Value::as_u64)
                 .filter(|window| *window > 0 && i64::try_from(*window).is_ok());
-            // The listing does not say which models think, and the Messages wire carries no
-            // thinking budget yet, so no effort levels are offered.
+            // The listing does not say which models think, so the family and version decide.
             // The Messages wire sends images as image blocks.
             Some(model_row(
                 slug,
                 display_name,
                 context_window,
                 index,
-                /*reasons*/ false,
+                crate::anthropic::supports_thinking(slug),
                 /*images*/ true,
             ))
         })
