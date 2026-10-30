@@ -1,6 +1,8 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
 const { fixture } = require('./parity-fixture.cjs');
+const shots = '/home/masih/.cache/elpis-briefs/20261030/shots/quota-card';
 
 async function using(run, options = {}) {
   const f = await fixture({ width: 1280, height: 800, ...options, routes: {
@@ -63,15 +65,18 @@ test('rate limits have no overload switch; unsafe input explains why retry is un
   await card(page).waitFor();
 }));
 
-test('quota reset time is readable and changing the composer model clears the stale card', () => using(async ({ page, fail }) => {
+for (const colorScheme of ['light', 'dark']) test(`${colorScheme} quota reset time is readable and changing the composer model clears the stale card`, () => using(async ({ page, fail }) => {
+  await fs.mkdir(shots, { recursive: true });
   await fail({ message: 'Gemini (ACP) error: Individual quota reached. Resets in 17h3m6s.', codexErrorInfo: 'usageLimitExceeded' });
   const notice = card(page);
   await notice.getByText('Gemini (ACP) error: Individual quota reached. Resets in 17 hours, 3 minutes, and 6 seconds.', { exact: true }).waitFor();
+  await page.screenshot({ path: `${shots}/${colorScheme}-quota-card.png` });
   await page.getByRole('combobox', { name: 'Model' }).click();
   await page.getByRole('option', { name: /GPT-6-Luna/ }).click();
   await eventually(async () => assert.equal(await card(page).count(), 0));
   assert.equal(await page.getByRole('combobox', { name: 'Model' }).getAttribute('data-value'), 'gpt-6-luna');
-}));
+  await page.screenshot({ path: `${shots}/${colorScheme}-model-switched.png` });
+}, { colorScheme }));
 
 test('a refused retry shows the refusal and allows another deliberate attempt', () => using(async ({ page, fail }) => {
   await fail({ message: 'Disconnected.', codexErrorInfo: 'other' });
