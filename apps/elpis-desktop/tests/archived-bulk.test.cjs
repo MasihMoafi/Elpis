@@ -11,7 +11,7 @@ const root = path.resolve(__dirname, '../out');
 
 test('archived chats: select all across pages, delete all after one confirmation, unarchive a selection', async () => {
   const threads = Array.from({ length: 130 }, (_, index) => ({ id: `old-${index + 1}`, name: `Old chat ${index + 1}`, preview: '', cwd: '/tmp/elpis-archive-fixture', model: 'gpt-6-luna', modelProvider: 'openai', status: { type: 'idle' }, archivedAt: Date.UTC(2026, 9, 21, 12) - index * 60000, archiveReason: 'Name unset or irrelevant; no activity for more than 7 days; idle in this review’s project.' }));
-  const archived = new Set(threads.map(thread => thread.id)), deleted = [], restored = [];
+  const archived = new Set(threads.map(thread => thread.id)), deleted = [], restored = [], deleting = new Set(); let duplicateDeletes = 0;
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost'); for await (const _ of req) { /* drain */ }
     const json = value => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(value)); };
@@ -25,7 +25,10 @@ test('archived chats: select all across pages, delete all after one confirmation
       const after = url.searchParams.get('cursor'), rows = threads.filter(item => archived.has(item.id) && (!after || threads.indexOf(item) > threads.findIndex(t => t.id === after))), data = rows.slice(0, 100);
       return json({ data, nextCursor: rows.length > 100 ? data.at(-1).id : null });
     }
-    if (url.pathname.endsWith('/delete')) { deleted.push(id); archived.delete(id); return json({ deleted: true, alsoDeleted: [] }); }
+    if (url.pathname.endsWith('/delete')) {
+      if (deleting.has(id)) { duplicateDeletes++; res.statusCode = 409; return json({ error: 'Another operation on this conversation is pending' }); }
+      deleting.add(id); await new Promise(resolve => setTimeout(resolve, 80)); deleting.delete(id); deleted.push(id); archived.delete(id); return json({ deleted: true, alsoDeleted: [] });
+    }
     if (url.pathname.endsWith('/unarchive')) { restored.push(id); archived.delete(id); return json({ thread }); }
     if (thread) return json({ thread, data: [], nextCursor: null });
     if (url.pathname.startsWith('/api/')) return json({});
@@ -65,9 +68,11 @@ test('archived chats: select all across pages, delete all after one confirmation
     await list.getByRole('checkbox', { name: 'Select all', exact: true }).check();
     await list.getByRole('button', { name: 'Delete 128', exact: true }).click();
     await dialog.getByText('Delete 128 chats?').waitFor();
-    await dialog.getByRole('button', { name: 'Delete', exact: true }).click();
+    // Two clicks can arrive in one render before React paints the busy state. They still make one request per chat.
+    await dialog.getByRole('button', { name: 'Delete', exact: true }).evaluate(button => { button.click(); button.click(); });
     await list.getByText('No archived conversations').waitFor({ timeout: 20000 });
     assert.equal(deleted.length, 128);
+    assert.equal(duplicateDeletes, 0, 'the dialog never starts the same delete twice');
     assert.deepEqual(errors, []);
     await leaveSettings(page);
   } finally { await browser.close(); server.close(); }

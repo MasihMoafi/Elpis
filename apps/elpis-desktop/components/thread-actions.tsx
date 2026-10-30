@@ -158,11 +158,13 @@ export function ThreadActions({ thread, onDelete, onRequestDelete, onRename, ren
 export function DeleteChatsDialog({ threads, onDelete, trash, onClose, alwaysConfirm }: { threads: Thread[] | null; onDelete?: (thread: Thread) => Promise<void>; trash?: (threads: Thread[]) => Promise<void>; onClose: () => void; /** Bulk deletes ask even when confirmation is off. */ alwaysConfirm?: boolean }) {
   const [opened, setOpened] = useState<Thread[] | null>(null), [confirm, setConfirm] = useState(true), [skip, setSkip] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState("");
   const deleted = useRef(new Set<string>());
+  const removing = useRef(false);
   // A new request is decided before it renders, so a turned-off confirmation never flashes open.
   if (opened !== threads) { setOpened(threads); setConfirm(threads ? alwaysConfirm || readPreferences().confirmDeleteChats : true); setSkip(false); setError(""); }
   useEffect(() => { deleted.current.clear(); if (threads && !confirm) void remove(); }, [threads]); // eslint-disable-line react-hooks/exhaustive-deps
   async function remove() {
-    if (!threads) return;
+    if (!threads || removing.current) return;
+    removing.current = true;
     setBusy(true); setError("");
     try {
       if (skip) savePreferences({ confirmDeleteChats: false });
@@ -177,7 +179,7 @@ export function DeleteChatsDialog({ threads, onDelete, trash, onClose, alwaysCon
       }));
       onClose();
     } catch (e) { setError(message(e)); }
-    finally { setBusy(false); }
+    finally { removing.current = false; setBusy(false); }
   }
   const only = threads?.length === 1 ? threads[0] : null;
   return <AlertDialog open={!!threads && (confirm || !!error)} onOpenChange={value => { if (!busy && !value) onClose(); }}>

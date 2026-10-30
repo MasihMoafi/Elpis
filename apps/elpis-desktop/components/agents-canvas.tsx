@@ -69,6 +69,8 @@ const lines = (text: string) => text.split("\n").map(line => line.trim()).filter
 const DRAWN = "Run this team as drawn: keep every agent, its wiring and whatever is already set; give each agent the prompt and folders it lacks, from its name and its place in the team.";
 /** A board's structure, without positions: its agents and wires. */
 const shapeKey = (graph: CanvasGraph) => `${graph.nodes.filter(node => node.type === "agent").map(node => node.id).join(",")}|${graph.edges.map(edge => `${edge.id}${edge.kind ?? ""}`).join(",")}`;
+/** Polls can return the same run repeatedly. Keep React's state references when the visible data did not change. */
+const sameData = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
 /** Measurements belong to the renderer, not to an undoable user edit. */
 const editKey = (graph: CanvasGraph) => JSON.stringify({ ...graph, nodes: graph.nodes.map(({ id, type, position, isoPosition, data }) => ({ id, type, position, isoPosition, data })) });
 /** Fit the graph inside the available board, on opening and after layout changes. */
@@ -655,8 +657,8 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
         // A merge clash (lib/canvas-isolation.ts) stops the run on an agent: it shows as failed, though its own task may have succeeded.
         const stops = mergeStops(found), listedStates = Object.fromEntries(found.tasks.map(task => [task.id, { status: task.status, chat: task.assignedThreadId, activity: currentActivity(task) || undefined }]));
         for (const stop of stops) if (stop.agent && listedStates[stop.agent]) listedStates[stop.agent] = { ...listedStates[stop.agent], status: "failed" };
-        setStates(current => ({ ...current, ...listedStates }));
-        if (graphId === run.graphId) setSavedRecord({ ...found, rootThreadId: run.rootThreadId } as RecordedWorkflow);
+        setStates(current => { const next = { ...current, ...listedStates }; return sameData(current, next) ? current : next; });
+        if (graphId === run.graphId) setSavedRecord(current => { const next = { ...found, rootThreadId: run.rootThreadId } as RecordedWorkflow; return sameData(current, next) ? current : next; });
         if (stops.some(stop => stop.agent)) setClashes(current => ({ ...current, ...Object.fromEntries(stops.flatMap(stop => stop.agent ? [[stop.agent, stop.files]] : [])) }));
         // Each stop is told once, in the log and in a notice that stays until dismissed.
         const fresh: typeof stops = [];
@@ -708,7 +710,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
         if (stage?.error && live) setNotice(runFailure(stage.error));
         // His own run is read in a poll that did not just change him: the change restarts this effect, which reads at once.
         if (next.father === father && father?.threadId && father.graphId && !father.reported) await read(father.threadId, father.graphId);
-        if (live && next !== run) setRun(over(next) ? { ...next, endedAt: Date.now() } : next);
+        if (live) setRun(current => { const value = over(next) ? { ...next, endedAt: Date.now() } : next; return sameData(current, value) ? current : value; });
       } catch (error) { if (live) setNotice(runFailure(error instanceof Error ? error.message : String(error))); }
       finally { polling = false; }
     };

@@ -416,7 +416,7 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
     // Loading, selection and pointer movement do not need a save or a new PNG.
     const filesChanged = before && (Object.keys(before.files).length !== Object.keys(files).length || Object.entries(files).some(([id, file]) => before.files[id]?.dataURL !== file.dataURL));
     const drawingChanged = before && (filesChanged || versions(before.elements) !== versions(all) || JSON.stringify(before.appState) !== JSON.stringify(latest.current.appState));
-    if (!remote.current && (drawingChanged || editChanged)) matilda.notice(drawingChanged ? noticed(before.elements, all) : []);
+    if (!remote.current && (drawingChanged || editChanged)) matilda.notice(drawingChanged ? noticed(before.elements, all) : [], !!endedEdit);
     if (!remote.current && drawingChanged) {
       setSaveStatus("Unsaved");
       clearTimeout(saveTimer.current); saveTimer.current = setTimeout(() => save(), 150);
