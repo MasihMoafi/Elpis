@@ -56,6 +56,47 @@ async fn closed_ledger_returns_the_full_width_to_the_transcript() -> Result<()> 
 }
 
 #[tokio::test]
+async fn opening_ledger_repaints_wide_history_once_beside_a_continuous_divider() -> Result<()> {
+    let size = Size::new(/*width*/ 100, /*height*/ 24);
+    let (mut app, _events, _ops) = make_test_app_with_channels().await;
+    app.local_settings.tui.animations = false;
+    app.transcript_cells = vec![Arc::new(crate::history_cell::PlainHistoryCell::new(vec![
+        Line::from(format!(
+            "WIDE-LEDGER-MARKER {}",
+            "alpha界beta gamma界delta ".repeat(10)
+        )),
+    ]))];
+    let mut tui = crate::tui::test_support::make_test_tui_with_size(size)?;
+    tui.set_owned_screen(true)?;
+
+    crate::chatwidget::tests::helpers::hide_context_ledger(&mut app.chat_widget);
+    app.render_owned_transcript(&mut tui, size)?;
+    crate::chatwidget::tests::helpers::show_context_ledger(&mut app.chat_widget);
+    app.render_owned_transcript(&mut tui, size)?;
+    app.render_owned_transcript(&mut tui, size)?;
+
+    let buffer = crate::custom_terminal::test_support::last_rendered_buffer(&tui.terminal);
+    let screen = buffer_text(buffer);
+    let ledger_width = app.chat_widget.context_ledger_width(size.width);
+    let divider_x = size.width.saturating_sub(ledger_width);
+    let divider_intact = (0..size.height).all(|y| buffer[(divider_x, y)].symbol() == "│");
+    let standalone_wide_rows = screen.lines().filter(|line| line.trim() == "界").count();
+    insta::assert_snapshot!(
+        format!(
+            "message copies: {}\ndivider intact: {divider_intact}\nstandalone wide rows: {standalone_wide_rows}",
+            screen.matches("WIDE-LEDGER-MARKER").count(),
+        ),
+        @r###"
+        message copies: 1
+        divider intact: true
+        standalone wide rows: 0
+        "###
+    );
+    tui.set_owned_screen(false)?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn ledger_wheel_and_focused_paging_leave_the_real_transcript_viewport_in_place() -> Result<()>
 {
     for size in [Size::new(80, 24), Size::new(120, 40), Size::new(200, 60)] {
