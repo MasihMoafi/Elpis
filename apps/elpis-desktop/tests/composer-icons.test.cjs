@@ -51,7 +51,7 @@ for (const colorScheme of ['light', 'dark']) {
       const gaps = seen.slice(1).map((item, i) => +(item.left - seen[i].right).toFixed(2));
       const sizes = m.map(item => `${item.box.width}x${item.box.height}`);
       assert.deepEqual(sizes, Array(names.length).fill(sizes[2]), `every action has the box Stop has: ${sizes.join(', ')} (visible gaps ${gaps.join(', ')})`);
-      assert.equal(sizes[0], '32x32', 'the shared box is the 32 px icon button');
+      assert.equal(sizes[0], '28x28', 'the shared box uses --control-h at 28px');
       const glyphs = m.map(item => `${item.glyph.width}x${item.glyph.height}`);
       assert.deepEqual(glyphs, Array(names.length).fill(glyphs[0]), `every glyph has one size: ${glyphs.join(', ')}`);
       const centres = m.flatMap(item => [item.box.cy, item.glyph.cy]);

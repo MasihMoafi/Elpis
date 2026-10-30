@@ -10,7 +10,9 @@ for (const colorScheme of ['light', 'dark']) test(`one icon size, one control he
   try {
     await page.getByRole('button', { name: 'Show side panel' }).click();
     const side = page.getByRole('region', { name: 'Side panel' });
-    for (const kind of ['Files', 'Changes']) { await side.getByRole('button', { name: 'New side panel tab', exact: true }).click(); await page.getByRole('menuitem', { name: kind, exact: true }).click(); }
+    await side.locator('.task-tab').filter({ hasText: 'Files' }).first().waitFor();
+    await side.getByRole('button', { name: 'New side panel tab', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Changes', exact: true }).click();
     await page.waitForTimeout(300);
     const found = await page.evaluate(() => {
       const height = e => Math.round(e.getBoundingClientRect().height);
