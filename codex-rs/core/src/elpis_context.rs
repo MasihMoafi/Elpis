@@ -43,10 +43,9 @@ const DEFAULT_DEV_RULE_ADMISSION: bool = true;
 
 /// Which context sources the user has admitted for this workspace.
 ///
-/// Every non-development-rule field defaults to off: an unset row means the user has not
-/// asked for that file, not that Elpis may spend context on it. Development rules are
-/// admitted by default; rows the user has never touched are absent from the stored maps.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
+/// Global, project and development rules are admitted by default. Other sources stay off
+/// until selected; explicit choices remain authoritative.
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(default)]
 struct ContinuityAdmission {
     global_rules: bool,
@@ -57,6 +56,20 @@ struct ContinuityAdmission {
     /// Per-file admission for `skills/dev/*.md`, keyed by file name.
     dev_sources: BTreeMap<String, bool>,
     custom_sources: BTreeMap<String, bool>,
+}
+
+impl Default for ContinuityAdmission {
+    fn default() -> Self {
+        Self {
+            global_rules: true,
+            project_rules: true,
+            goal: DEFAULT_OPTIONAL_ADMISSION,
+            checkpoint: DEFAULT_OPTIONAL_ADMISSION,
+            memory: DEFAULT_OPTIONAL_ADMISSION,
+            dev_sources: BTreeMap::new(),
+            custom_sources: BTreeMap::new(),
+        }
+    }
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -2589,7 +2602,7 @@ mod tests {
     /// Context Ledger admits them, while development rules start admitted on a fresh
     /// workspace and remain switchable.
     #[tokio::test]
-    async fn optional_sources_start_excluded_while_dev_rules_start_admitted() -> anyhow::Result<()>
+    async fn instructions_start_admitted_while_optional_sources_start_excluded() -> anyhow::Result<()>
     {
         let home = tempdir()?;
         let memories = home.path().join(".elpis/memories");
@@ -2612,7 +2625,15 @@ mod tests {
         let project = cwd.join("AGENTS.md");
         let instructions = vec![global.clone(), project.clone()];
         let sources = continuity_sources(Some(&memories), &cwd, &instructions)?;
-        for name in [GLOBAL_RULES, PROJECT_RULES, "GOAL.md", "ES.md", "MEMORY.md"] {
+        for name in [GLOBAL_RULES, PROJECT_RULES] {
+            let source = sources
+                .iter()
+                .find(|source| source.name == name)
+                .unwrap_or_else(|| panic!("{name} must stay listed so it can be switched off"));
+            assert!(source.admitted, "{name} must default to on");
+            assert!(source.selectable, "{name} must stay switchable");
+        }
+        for name in ["GOAL.md", "ES.md", "MEMORY.md"] {
             let source = sources
                 .iter()
                 .find(|source| source.name == name)
@@ -2660,18 +2681,18 @@ mod tests {
         std::fs::write(cwd.join("AGENTS.md"), "Project rule")?;
         let project = cwd.join("AGENTS.md");
 
-        assert!(!instruction_source_admitted(
+        assert!(instruction_source_admitted(
             Some(&memories),
             &cwd,
             &global
         )?);
-        assert!(!instruction_source_admitted(
+        assert!(instruction_source_admitted(
             Some(&memories),
             &cwd,
             &project
         )?);
 
-        for expected in [true, false, true] {
+        for expected in [false, true, false, true] {
             set_continuity_source_admitted(Some(&memories), &cwd, GLOBAL_RULES, expected)?;
             set_continuity_source_admitted(Some(&memories), &cwd, PROJECT_RULES, expected)?;
             assert_eq!(

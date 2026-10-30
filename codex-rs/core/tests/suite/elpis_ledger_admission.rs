@@ -87,8 +87,8 @@ fn plant_continuity_sources(home: &Path) -> Result<()> {
     Ok(())
 }
 
-/// A file on disk is not admission; admitting it sends one copy; withdrawing it removes
-/// the copy an earlier turn appended; re-admitting restores exactly one.
+/// Rules start admitted; withdrawing them removes the previous copy, and re-admitting
+/// restores exactly one.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn agents_md_reaches_the_request_only_while_the_ledger_admits_it() -> Result<()> {
     let server = start_mock_server().await;
@@ -126,7 +126,7 @@ async fn agents_md_reaches_the_request_only_while_the_ledger_admits_it() -> Resu
         .collect::<Vec<_>>();
     assert_eq!(
         counts,
-        vec![(0, 0), (1, 1), (0, 0), (1, 1)],
+        vec![(1, 1), (1, 1), (0, 0), (1, 1)],
         "(global, project) AGENTS.md copies per request: default, admitted, withdrawn, readmitted"
     );
     for (index, request) in requests.iter().enumerate() {

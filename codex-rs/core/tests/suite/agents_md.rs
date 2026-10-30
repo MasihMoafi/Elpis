@@ -178,9 +178,8 @@ impl ThreadInstructionsProvider for RecordingThreadInstructionsProvider {
 }
 
 /// Elpis: global and project AGENTS.md reach the model only while the Context Ledger admits
-/// their rows, and a workspace the user has not touched admits neither. This admits both for
-/// `config`'s workspace, as the TUI does. Discovery and `instruction_sources` do not depend
-/// on it. Call it only where a test exercises an admitted source.
+/// their rows. This explicitly admits both for `config`'s workspace. Discovery and
+/// `instruction_sources` do not depend on it. Call it only when testing admitted sources.
 fn admit_agents_md_rows(config: &Config) -> Result<()> {
     for row in ["Global AGENTS.md", "Project AGENTS.md"] {
         set_continuity_source_admitted(
