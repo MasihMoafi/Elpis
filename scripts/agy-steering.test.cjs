@@ -138,17 +138,22 @@ if (process.argv.includes('--fake-agy')) {
         assert.deepEqual(readLog(log), ['initial:success', 'retained one', 'retained two']);
         assert.equal(ended.result.usage.totalTokens, 45);
       } else {
-        if (kind === 'cancel' || kind === 'deliveredCancel') assert.equal(ended.result?.stopReason, 'cancelled');
+        const stopped = kind === 'cancel' || kind === 'deliveredCancel';
+        if (stopped) assert.equal(ended.result?.stopReason, 'cancelled');
         else assert(ended.error, 'failed provider turn must still report failure');
         const recovered = await rpc('session/prompt', { sessionId: kind, prompt: prompt('new prompt') });
         assert.equal(recovered.result?.stopReason, 'end_turn');
-        assert.deepEqual(readLog(log), [`initial:${kind}`, 'retained one', 'retained two', 'new prompt'],
-          'acknowledged messages must survive failure and arrive before newer input');
+        const expected = stopped
+          ? [`initial:${kind}`, ...(deliveredCase ? ['retained one'] : []), 'new prompt']
+          : [`initial:${kind}`, 'retained one', 'retained two', 'new prompt'];
+        assert.deepEqual(readLog(log), expected, stopped
+          ? 'stopped follow-ups must not be sent later'
+          : 'acknowledged messages must survive failure and arrive before newer input');
       }
       const idle = await rpc('_session/steering', { sessionId: kind, prompt: prompt('idle rejected') });
       assert.equal(idle.result?.outcome, 'promptRequired');
       assert(!readLog(log).includes('idle rejected'), 'an unacknowledged idle steer must not run');
-      checks.push(`${kind}: unsent messages retained; sent messages not replayed`);
+      checks.push(`${kind}: ${kind === 'cancel' || kind === 'deliveredCancel' ? 'stopped follow-ups not replayed' : 'unsent messages retained; sent messages not replayed'}`);
       console.log(`PASS ${checks.at(-1)}`);
     } finally {
       evidence.push({ kind, messages, inputs: readLog(log), stderr });

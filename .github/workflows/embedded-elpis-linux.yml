@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       verification:
-        description: 'Compiler, UI-only, full runtime validation, or build-only install package'
+        description: 'Compiler, UI, full runtime, build-only, or focused provider-history checks'
         required: true
         default: full
         type: choice
-        options: [check, ui, full, build]
+        options: [check, ui, full, build, focused]
   push:
     tags: ['v*']
     branches: [next]
@@ -24,6 +24,23 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  provider-history:
+    if: github.event_name == 'workflow_dispatch' && inputs.verification == 'focused'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Install locked bridge dependencies
+        working-directory: tools/elpis-claude
+        run: npm ci --ignore-scripts
+      - name: Provider history and message retention checks
+        run: |
+          mkdir -p "$HOME/.cache/elpis-tests"
+          bash scripts/ci-provider-history.sh
+
   schemas:
     if: github.event_name == 'workflow_dispatch' && inputs.verification == 'check'
     runs-on: ubuntu-24.04
@@ -220,18 +237,7 @@ jobs:
         working-directory: tools/elpis-claude
         run: npm ci --ignore-scripts
       - name: Provider history and message retention checks
-        run: |
-          node scripts/store-guard.test.cjs
-          node scripts/history-list.test.cjs
-          node --test tools/elpis-claude/test/acp-mcp-servers.test.mjs apps/elpis-desktop/bridge/mcp-session-selections.test.mjs
-          node --test tools/elpis-claude/test/resume-list.test.mjs
-          node --test tools/elpis-claude/test/bridge-idle.test.mjs
-          node --test --test-concurrency=1 tools/elpis-claude/test/approval-review.test.mjs tools/elpis-claude/test/delegate-start.test.mjs
-          node --test --test-concurrency=1 tools/elpis-claude/test/context-agent-worker.test.mjs
-          node --test --test-name-pattern="a Workflows node's chat starts" tools/elpis-claude/test/elpis-acp-agent.test.mjs
-          node scripts/bridge-launcher.test.cjs
-          node scripts/agy-steering.test.cjs
-          node scripts/build-elpis-local.test.cjs
+        run: bash scripts/ci-provider-history.sh
       - name: Build the runtime, Code Mode host, and sandbox
         id: runtime_build
         if: ${{ !cancelled() && inputs.verification != 'ui' }}
@@ -428,6 +434,7 @@ jobs:
           cp codex-rs/core/src/prompts/rag.md apps/elpis-desktop/bridge/resources/rag.md
           cp codex-rs/skills/src/assets/personal/SKILL.md apps/elpis-desktop/bridge/resources/personal.md
           cp tools/elpis-claude/permission-policy.mjs apps/elpis-desktop/bridge/resources/permission-policy.mjs
+          cp tools/elpis-claude/workflow-concurrency.mjs apps/elpis-desktop/bridge/resources/workflow-concurrency.mjs
           cp tools/elpis-claude/mcp-session-selections.mjs apps/elpis-desktop/bridge/resources/mcp-session-selections.mjs
           node --test --test-reporter=tap tools/elpis-claude/test/claude-turn-record.test.mjs tools/elpis-claude/test/turn-delivery.test.mjs | tee "$RUNNER_TEMP/elpis-claude-turn-checks.log"
           for attempt in {1..10}; do
