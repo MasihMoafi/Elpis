@@ -178,6 +178,7 @@ button:disabled { cursor:not-allowed; }
 .sidebar-status .status-line { color:var(--subtle-foreground); font-size:var(--text-small); }
 .header-action { order:3; }
 .workspace { display:flex; flex-direction:column; min-width:0; min-height:0; position:relative; }
+.app-shell { --chat-shell-sidebar:var(--sidebar-width,256px); }
 .workspace-body { display:flex; flex:1; min-width:0; min-height:0; }
 .workspace-notices { display:flex; flex-direction:column; flex-shrink:0; min-width:0; max-height:32vh; overflow:auto; }
 /* With the side panel beside the chat (not full view, not a narrow window) the work area is one grid: the panel runs the full
@@ -222,7 +223,7 @@ button:disabled { cursor:not-allowed; }
 .browser-empty span { display:block; margin-top:4px; font-size:var(--text-small); }
 .browser-error { padding:8px 12px; font-size:var(--text-xs); color:var(--destructive); overflow-wrap:anywhere; }
 @media(min-width:761px) and (max-width:1000px) {
- .app-shell.panel-active { grid-template-columns:1fr; }
+ .app-shell.panel-active { --chat-shell-sidebar:0px; grid-template-columns:1fr; }
  .app-shell.panel-active > .sidebar { display:none; }
  .app-shell.panel-active > .sidebar.open { display:flex; position:fixed; inset:0 auto 0 0; width:280px; z-index:30; box-shadow:0 0 0 100vmax #0008; }
  .app-shell.panel-active .mobile-menu { display:inline-flex; }
@@ -673,8 +674,13 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 @keyframes elpis-orbit { to { transform:rotate(360deg); } }
 @keyframes elpis-blink { 0%,100% { opacity:1; } 50% { opacity:.15; } }
 .turn-stopped, .context-event { margin:6px 0 18px; font-size:var(--text-sm); color:var(--muted-foreground); }
-.turn-working { display:flex; align-items:center; gap:8px; width:fit-content; max-width:100%; margin-top:14px; padding:3px 0; font-size:var(--text-base); color:var(--muted-foreground); }
-/* The live Working row sits 11px below its original place over the composer (29 Oct, Masih: "lower"). */
+.turn-working { display:flex; align-items:center; gap:8px; width:fit-content; max-width:100%; margin-top:13px; padding:3px 0; font-size:var(--text-base); color:var(--muted-foreground); }
+/* The panel narrows a centred transcript by its width, moving its left edge by up to half that amount. Keep the live mark
+   at the x where the person started the turn; narrow columns compensate only the centring space they actually lose. */
+@media(min-width:761px) {
+  .workspace-body.panel-open:not(.full-view) .turn-working { transform:translateX(min(calc(var(--side-w, max(var(--sidebar-width,256px), var(--side-min,200px))) / 2), max(0px, calc((100vw - var(--chat-shell-sidebar) - 64px - var(--transcript-width,740px)) / 2)))); }
+}
+/* The live Working row sits 10px below its original place over the composer: 11px was approved, then raised 1px on 30 Oct. */
 .turn:has(> .turn-working) { margin-bottom:0; }
 .chat-scroll:has(.turn-working) { padding-bottom:6px; }
 .sh-command { color:var(--sh-command); }
