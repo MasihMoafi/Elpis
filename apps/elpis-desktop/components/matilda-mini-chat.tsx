@@ -70,12 +70,14 @@ export function useMatildaMiniChat(open: boolean) {
     try {
       const response = received(await api<Conversation>("/love-spot/talk", { text: sent, persona: savedPersona() }));
       if (!mounted.current) return;
-      const result = streamedWhileSending.current || response;
+      const responseTurn = response.entries.at(-1)?.turnId;
+      const streamed = streamedWhileSending.current as Conversation | null;
+      const result = responseTurn && streamed?.entries.some(entry => entry.turnId === responseTurn && entry.item.type === "agentMessage") ? streamed : response;
       setConversation(result); setDraft(current => current.trim() === sent ? "" : current); setError(result.error || "");
       window.dispatchEvent(new Event(MATILDA_CHANGED));
       // A scripted or cached model can complete before the POST snapshot catches its final entry and before the live
       // stream finishes connecting. Reconcile that finished turn briefly; slow turns stay on the live stream.
-      const turnId = result.entries.at(-1)?.turnId;
+      const turnId = responseTurn;
       if (!result.busy && turnId && !result.entries.some(entry => entry.turnId === turnId && entry.item.type === "agentMessage")) void (async () => {
         for (const delay of [50, 75, 125, 250, 500]) {
           await new Promise(resolve => setTimeout(resolve, delay));
