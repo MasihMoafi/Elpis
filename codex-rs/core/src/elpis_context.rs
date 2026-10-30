@@ -733,6 +733,7 @@ fn continuity_sources_with_state(
         }
     }
 
+    let mut instruction_row_indexes = std::collections::HashMap::new();
     for path in &instruction_paths {
         let (name, reason) = instruction_source_row(path, cwd);
         let admitted = admission.admits_row(&name);
@@ -751,7 +752,16 @@ fn continuity_sources_with_state(
             if let Ok(canonical) = path.canonicalize() {
                 canonical_paths.insert(canonical);
             }
-            sources.push(source);
+            if let Some(index) = instruction_row_indexes.get(&source.name).copied() {
+                let existing: &mut ContinuitySource = &mut sources[index];
+                existing.bytes = existing.bytes.saturating_add(source.bytes);
+                existing.estimated_tokens = existing
+                    .estimated_tokens
+                    .saturating_add(source.estimated_tokens);
+            } else {
+                instruction_row_indexes.insert(source.name.clone(), sources.len());
+                sources.push(source);
+            }
         }
     }
 
@@ -2935,6 +2945,45 @@ mod tests {
         assert!(!prompt.contains("Skill rule"));
         assert!(!prompt.contains("Global rule"));
         assert!(!prompt.contains("Project rule"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn project_instruction_files_share_one_toggle_row() -> anyhow::Result<()> {
+        let home = tempdir()?;
+        let memories = home.path().join(".elpis/memories");
+        let cwd = home.path().join("project");
+        let root_rules = cwd.join("AGENTS.md");
+        let nested_rules = cwd.join("src/AGENTS.md");
+        tokio::fs::create_dir_all(nested_rules.parent().expect("nested parent")).await?;
+        tokio::fs::write(&root_rules, "Root rules").await?;
+        tokio::fs::write(&nested_rules, "Nested rules").await?;
+        admit_all(&memories, &cwd)?;
+
+        let sources = continuity_sources(
+            Some(&memories),
+            &cwd,
+            &[root_rules.clone(), nested_rules.clone()],
+        )?;
+        let project_rows: Vec<_> = sources
+            .iter()
+            .filter(|source| source.name == PROJECT_RULES)
+            .collect();
+        assert_eq!(project_rows.len(), 1);
+        assert_eq!(project_rows[0].bytes, 22);
+        assert_eq!(project_rows[0].estimated_tokens, 6);
+
+        set_continuity_source_admitted(Some(&memories), &cwd, PROJECT_RULES, false)?;
+        assert!(!instruction_source_admitted(
+            Some(&memories),
+            &cwd,
+            &root_rules
+        )?);
+        assert!(!instruction_source_admitted(
+            Some(&memories),
+            &cwd,
+            &nested_rules
+        )?);
         Ok(())
     }
 

@@ -1661,6 +1661,26 @@ async fn clicking_a_source_row_writes_its_admission() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+async fn pending_manual_memory_write_labels_source_rows_locked() -> anyhow::Result<()> {
+    let root = tempdir()?;
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
+    configure_ledger_sources(&mut chat, root.path())?;
+    chat.manual_memory_cache.pending_mutation = Some(ManualMemoryMutation::Create);
+
+    let ledger = ledger_words(&chat);
+    assert!(
+        ledger.contains("LOCKED · creating Manual Memory"),
+        "{ledger}"
+    );
+    assert!(
+        !click_ledger_row(&mut chat, "ES.md", KeyModifiers::NONE),
+        "locked rows must not present an active click target"
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn ctrl_click_on_a_source_row_leaves_its_admission_to_the_file_link() -> anyhow::Result<()> {
     let root = tempdir()?;
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
