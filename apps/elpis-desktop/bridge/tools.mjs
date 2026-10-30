@@ -11,7 +11,9 @@ const PROXIES = ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy', 'ALL_
 
 /** Background Node children ignore the proxy unless asked; loopback must still bypass it. */
 export function childEnv(env = process.env) {
-  const next = { ...env, PATH: `${path.join(os.homedir(), '.local/bin')}:${env.PATH ?? ''}` };
+  // A desktop launched from an agent must not reuse that agent's Claude config or session markers.
+  const next = Object.fromEntries(Object.entries(env).filter(([key]) => !/^(CLAUDE|AI_AGENT)/.test(key)));
+  next.PATH = `${path.join(os.homedir(), '.local/bin')}:${env.PATH ?? ''}`;
   if (!PROXIES.some(key => env[key])) return next;
   next.NODE_USE_ENV_PROXY = '1';
   const bypass = [...new Set([...String(env.NO_PROXY ?? env.no_proxy ?? '').split(',').map(entry => entry.trim()).filter(Boolean), ...LOCAL])].join(',');
