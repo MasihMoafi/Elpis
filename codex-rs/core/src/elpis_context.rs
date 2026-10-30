@@ -735,7 +735,7 @@ fn continuity_sources_with_state(
 
     let mut instruction_row_indexes = std::collections::HashMap::new();
     for path in &instruction_paths {
-        let (name, reason) = instruction_source_row(path, cwd);
+        let (name, reason) = instruction_source_row(path, cwd, memories_root);
         let admitted = admission.admits_row(&name);
         if let Some(source) = existing_file_source(
             name,
@@ -887,7 +887,15 @@ fn continuity_sources_with_state(
 /// `project_doc_fallback_filenames`; giving each filename its own row would mean rows that
 /// `set_continuity_source_admitted` cannot switch, so an override file could be listed and
 /// never admitted.
-fn instruction_source_row(path: &Path, cwd: &Path) -> (String, &'static str) {
+fn instruction_source_row(
+    path: &Path,
+    cwd: &Path,
+    memories_root: &Path,
+) -> (String, &'static str) {
+    // The home instruction is global even when the workspace is inside that home.
+    if path.parent() == memories_root.parent() {
+        return (GLOBAL_RULES.to_string(), "applicable global rules");
+    }
     let is_dev_source = path.to_string_lossy().contains("skills/dev")
         || path.to_string_lossy().contains("/dev/")
         || path
@@ -902,7 +910,16 @@ fn instruction_source_row(path: &Path, cwd: &Path) -> (String, &'static str) {
             format!("{DEV_SOURCE_PREFIX}{file_name}"),
             "configured development rules",
         )
-    } else if path.starts_with(cwd) {
+    } else if path.starts_with(cwd)
+        || path.parent().is_some_and(|directory| {
+            let project_directory = if directory.file_name().is_some_and(|name| name == ".codex") {
+                directory.parent().unwrap_or(directory)
+            } else {
+                directory
+            };
+            cwd.starts_with(project_directory)
+        })
+    {
         (PROJECT_RULES.to_string(), "applicable project rules")
     } else {
         (GLOBAL_RULES.to_string(), "applicable global rules")
@@ -922,10 +939,13 @@ pub fn instruction_source_admitted(
     cwd: &Path,
     path: &Path,
 ) -> std::io::Result<bool> {
-    let Some(workspace_dir) = workspace_context_dir(memories_root, cwd) else {
+    let Some(memories_root) = memories_root else {
         return Ok(true);
     };
-    let (name, _) = instruction_source_row(path, cwd);
+    let Some(workspace_dir) = workspace_context_dir(Some(memories_root), cwd) else {
+        return Ok(true);
+    };
+    let (name, _) = instruction_source_row(path, cwd, memories_root);
     Ok(read_admission(&workspace_dir)?.admits_row(&name))
 }
 
@@ -2945,6 +2965,48 @@ mod tests {
         assert!(!prompt.contains("Skill rule"));
         assert!(!prompt.contains("Global rule"));
         assert!(!prompt.contains("Project rule"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn ancestor_project_instructions_share_the_project_toggle() -> anyhow::Result<()> {
+        let home = tempdir()?;
+        let memories = home.path().join("memories");
+        let project = home.path().join("project");
+        let cwd = project.join("src");
+        tokio::fs::create_dir_all(project.join(".codex")).await?;
+        tokio::fs::create_dir_all(&cwd).await?;
+        let global = home.path().join("AGENTS.md");
+        let root = project.join("AGENTS.md");
+        let local = project.join(".codex/AGENTS.md");
+        let nested = cwd.join("AGENTS.md");
+        for path in [&global, &root, &local, &nested] {
+            tokio::fs::write(path, "rules").await?;
+        }
+
+        set_continuity_source_admitted(Some(&memories), &cwd, GLOBAL_RULES, true)?;
+        set_continuity_source_admitted(Some(&memories), &cwd, PROJECT_RULES, false)?;
+        let paths = vec![global.clone(), root.clone(), local.clone(), nested.clone()];
+        let sources = continuity_sources(Some(&memories), &cwd, &paths)?;
+        assert_eq!(
+            sources.iter().filter(|source| source.name == GLOBAL_RULES).count(),
+            1
+        );
+        assert_eq!(
+            sources.iter().filter(|source| source.name == PROJECT_RULES).count(),
+            1
+        );
+        assert!(instruction_source_admitted(Some(&memories), &cwd, &global)?);
+        for path in [&root, &local, &nested] {
+            assert!(!instruction_source_admitted(Some(&memories), &cwd, path)?);
+        }
+
+        set_continuity_source_admitted(Some(&memories), &cwd, GLOBAL_RULES, false)?;
+        set_continuity_source_admitted(Some(&memories), &cwd, PROJECT_RULES, true)?;
+        assert!(!instruction_source_admitted(Some(&memories), &cwd, &global)?);
+        for path in [&root, &local, &nested] {
+            assert!(instruction_source_admitted(Some(&memories), &cwd, path)?);
+        }
         Ok(())
     }
 
