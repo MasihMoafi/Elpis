@@ -8,11 +8,7 @@ on:
         required: true
         default: full
         type: choice
-        options: [check, ui, full, build, focused, diagnose]
-      diagnostic_run:
-        description: 'Run with preserved TUI failure diagnostics'
-        required: false
-        type: string
+        options: [check, ui, full, build, focused]
   push:
     tags: ['v*']
     branches: [next]
@@ -22,51 +18,12 @@ on:
 
 permissions:
   contents: read
-  actions: read
 
 concurrency:
   group: elpis-linux-${{ github.ref }}-${{ inputs.verification || 'full' }}
   cancel-in-progress: false
 
 jobs:
-  tui-diagnostics:
-    if: github.event_name == 'workflow_dispatch' && inputs.verification == 'diagnose'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - name: Validate diagnostic run
-        env:
-          DIAGNOSTIC_RUN: ${{ inputs.diagnostic_run }}
-        run: '[[ "$DIAGNOSTIC_RUN" =~ ^[0-9]+$ ]]'
-      - name: Download hosted TUI diagnostics
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with:
-          name: candidate-rendering-differences
-          path: diagnostics
-          run-id: ${{ inputs.diagnostic_run }}
-          github-token: ${{ github.token }}
-      - name: Report failing TUI tests
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-
-          logs = list(Path('diagnostics').rglob('elpis-ui-checks.log'))
-          if not logs:
-              raise SystemExit('TUI check log was not found in the diagnostic artifact')
-          ansi = re.compile(r'\x1b\[[0-?]*[ -/]*[@-~]')
-          for log in logs:
-              lines = [ansi.sub('', line) for line in log.read_text(errors='replace').splitlines()]
-              matches = [i for i, line in enumerate(lines) if 'FAILED' in line or line.startswith('failures:') or re.search(r'error\[E\d+\]', line)]
-              selected = set()
-              for index in matches:
-                  selected.update(range(max(0, index - 2), min(len(lines), index + 10)))
-              if not selected:
-                  selected.update(range(max(0, len(lines) - 60), len(lines)))
-              for index in sorted(selected):
-                  print(f'{index + 1}: {lines[index][:1200]}')
-          PY
-
   provider-history:
     if: github.event_name == 'workflow_dispatch' && inputs.verification == 'focused'
     runs-on: ubuntu-24.04
