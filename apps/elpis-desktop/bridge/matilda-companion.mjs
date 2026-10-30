@@ -125,6 +125,7 @@ export function createMatildaCompanion({ store, env = process.env }) {
       ['pin yourself', 'pin'], ['pin yourself to this page', 'pin'], ['pin yourself to the page', 'pin'], ['pin you to the page', 'pin'], ['come here', 'pin'],
       ['unpin yourself', 'unpin'], ['unpin', 'unpin'], ['tuck yourself away', 'unpin'],
       ['play my favorite music', 'play-favorite'], ['play my favourite music', 'play-favorite'], ['play my favorites', 'play-favorite'], ['play my favorite', 'play-favorite'],
+      ['open the music i love', 'play-favorite'], ['play the music i love', 'play-favorite'], ['open my favorite music', 'play-favorite'], ['open my favourite music', 'play-favorite'],
       ['remember this song as my favorite', 'favorite'], ['remember this track as my favorite', 'favorite'],
       ['pause music', 'pause'], ['pause the music', 'pause'], ['resume music', 'play'], ['resume the music', 'play'], ['next track', 'next'],
     ]);
