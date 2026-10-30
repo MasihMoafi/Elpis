@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+mkdir -p apps/elpis-desktop/bridge/resources
+for resource in permission-policy.mjs workflow-concurrency.mjs mcp-session-selections.mjs; do
+  cp "tools/elpis-claude/$resource" "apps/elpis-desktop/bridge/resources/$resource"
+done
+
 node scripts/store-guard.test.cjs
 node scripts/history-list.test.cjs
 node --test tools/elpis-claude/test/acp-mcp-servers.test.mjs apps/elpis-desktop/bridge/mcp-session-selections.test.mjs
