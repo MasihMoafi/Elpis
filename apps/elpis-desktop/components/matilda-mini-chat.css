@@ -14,9 +14,9 @@
 .matilda-mini-message { min-width:0; }
 .matilda-mini-message[data-speaker="you"] { align-self:flex-end; max-width:90%; padding:6px 8px; background:var(--selected); }
 /* The chat reading rhythm (30 Oct, Masih: "too much space between Love Spot's lines"): 1.45 lines, half a line between paragraphs. */
-.matilda-mini-message { line-height:1.45; }
-.matilda-mini-message :is(p,ul,ol,pre) { margin-block:0; }
-.matilda-mini-message :is(p,ul,ol,pre) + :is(p,ul,ol,pre) { margin-top:.725em; }
+.matilda-mini-chat .matilda-mini-message { line-height:1.45; }
+.matilda-mini-chat .matilda-mini-message :is(p,ul,ol,pre) { margin-block:0; }
+.matilda-mini-chat .matilda-mini-message :is(p,ul,ol,pre) + :is(p,ul,ol,pre) { margin-top:.725em; }
 .matilda-mini-message pre { max-width:100%; overflow:auto; }
 .matilda-mini-status { padding:6px 8px; color:var(--muted-foreground); }
 .matilda-mini-error { display:flex; align-items:center; gap:8px; padding:6px 8px; color:var(--destructive); overflow-wrap:anywhere; }
