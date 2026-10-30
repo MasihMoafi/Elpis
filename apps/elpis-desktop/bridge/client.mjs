@@ -1298,6 +1298,11 @@ export class DesktopClient extends EventEmitter {
     }
     return this.#model(model);
   }
+  async #chatModel(model, provider) {
+    // An existing chat can switch to a subscription even if its carrier uses an API provider.
+    if (typeof model === 'string' && /^(?:claude|agy)\//.test(model)) return this.#model(model);
+    return this.#providerModel(model, provider);
+  }
   async #workflowRecords() {
     const saved = await this.#workflowRuns.list();
     const threads = (await this.listThreads({ limit: 100, includeAgentRuns: true })).data ?? [];
@@ -1775,7 +1780,7 @@ export class DesktopClient extends EventEmitter {
       if (thread.desktopAccess.mode === 'continue') throw new BridgeError('Elpis takes turns for this agent only from its parent, so its earlier messages cannot be replaced here.', 409);
       if (thread.status?.type === 'active') throw new BridgeError('Stop the running turn before replacing an earlier message.', 409);
       if (rewind) { await this.#rpc('thread/revert', { threadId: id, beforeTurnId }); return { rewound: true, beforeTurnId }; }
-      const model = await this.#providerModel(body.model, thread.modelProvider);
+      const model = await this.#chatModel(body.model, thread.modelProvider);
       const entries = [], cursors = new Set(); let cursor, complete = false;
       for (let pageIndex = 0; pageIndex < 20; pageIndex++) {
   /** Brings a chat back; a worktree removed when it was archived is put back on its branch. */
@@ -1957,7 +1962,7 @@ export class DesktopClient extends EventEmitter {
       const thread = await this.#current(id);
       if (!thread.desktopAccess.writable && !body.continueAs) throw new BridgeError(`${AGENT_RUN_NOTICE}. Choose Continue here after it finishes (continued conversation name required).`, 409);
       if (!thread.desktopAccess.writable && !thread.desktopAccess.canContinue) throw new BridgeError('Wait for this background run to finish before continuing here.', 409);
-      const model = await this.#providerModel(body.model, thread.modelProvider);
+      const model = await this.#chatModel(body.model, thread.modelProvider);
       const overrides = { ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...permissionSetting(permissions), ...(permissions ? { elpisPermissionSource: 'chat' } : body.automatic ? { elpisPermissionSource: 'automatic' } : {}), ...collaborationMode(body.mode, model ?? thread.model, effort ?? thread.reasoningEffort) };
       if (thread.desktopAccess.mode === 'continue') {
         // The agent's own thread refuses direct turns; a fork carries its whole history and recorded model.

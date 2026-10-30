@@ -134,6 +134,7 @@ function startProcess(s) {
   s.proc = proc; s.flags = `${s.model}|${s.mode}`;
   let buf = "";
   proc.stdout.on("data", (d) => {
+    if (s.proc !== proc) return;
     buf += d;
     let i;
     while ((i = buf.indexOf("\n")) >= 0) {
@@ -145,10 +146,12 @@ function startProcess(s) {
   });
   proc.stderr.on("data", (d) => process.stderr.write(`agy: ${String(d).trim().slice(0, 300)}\n`));
   proc.on("exit", (code) => {
-    if (s.proc === proc) s.proc = null;
+    // A model change can start a replacement before the previous process exits.
+    if (s.proc !== proc) return;
+    s.proc = null;
     s.initWaiters.splice(0).forEach((r) => r(null));
     const turn = s.turn;
-    if (turn) { s.turn = null; turn.cancelled ? turn.resolve({ stopReason: "cancelled" }) : turn.reject({ code: -32603, message: `Antigravity stopped (exit ${code})` }); }
+    if (turn) { s.turn = null; s.pendingSteers.length = 0; turn.cancelled ? turn.resolve({ stopReason: "cancelled" }) : turn.reject({ code: -32603, message: `Antigravity stopped (exit ${code})` }); }
   });
   return new Promise((resolve) => { s.initWaiters.push(resolve); setTimeout(() => resolve(null), 60_000); });
 }
@@ -197,7 +200,7 @@ async function onEvent(s, m) {
     const next = s.pendingSteers[0];
     if (next && r.status === "SUCCESS" && s.proc) { s.proc.stdin.write(JSON.stringify({ event: "user", message: { content: next } }) + "\n"); s.pendingSteers.shift(); return; }
     s.turn = null;
-    if (r.status !== "SUCCESS") return turn.cancelled ? turn.resolve({ stopReason: "cancelled" }) : turn.reject({ code: -32603, message: r.error || `Antigravity turn ${r.status ?? "failed"}` });
+    if (r.status !== "SUCCESS") { s.pendingSteers.length = 0; return turn.cancelled ? turn.resolve({ stopReason: "cancelled" }) : turn.reject({ code: -32603, message: r.error || `Antigravity turn ${r.status ?? "failed"}` }); }
     turn.resolve({ stopReason: "end_turn", usage: { inputTokens: turn.usage.input - turn.usage.cached, outputTokens: turn.usage.output, cachedReadTokens: turn.usage.cached, cachedWriteTokens: 0, totalTokens: turn.usage.input + turn.usage.output } });
   }
 }
@@ -277,7 +280,7 @@ async function handle(msg) {
     }
     case "session/cancel":
       // These messages are already in the stopped transcript; do not send them as the next turn.
-      if (s?.turn) { s.turn.cancelled = true; s.pendingSteers.length = 0; const proc = s.proc; s.proc = null; proc?.kill("SIGTERM"); }
+      if (s?.turn) { s.turn.cancelled = true; s.pendingSteers.length = 0; s.proc?.kill("SIGTERM"); }
       return undefined;
     case "_session/steering": {
       if (!s?.turn) return { outcome: "promptRequired", reason: "noRunningTurn" };

@@ -21,13 +21,13 @@ async function until(check, label, ms = 5000) {
   assert.fail(label);
 }
 
-async function fixture(t, extra = {}, { model = "claude/sonnet", prepare, connectOptions } = {}) {
+async function fixture(t, extra = {}, { model = "claude/sonnet", prepare, connectOptions, nativeCalls = false } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "a124-"));
   const carrier = new mockProvider.Provider();
   await carrier.start();
   t.after(() => {
     carrier.close();
-    assert.equal(carrier.requests.length + carrier.titleRequests.length, 0, "the native carrier must not perform inference for a provider turn");
+    if (!nativeCalls) assert.equal(carrier.requests.length + carrier.titleRequests.length, 0, "the native carrier must not perform inference for a provider turn");
   });
   const home = path.join(root, "elpis");
   fs.mkdirSync(home);
@@ -94,7 +94,7 @@ async function fixture(t, extra = {}, { model = "claude/sonnet", prepare, connec
     if (reconnect) { await until(() => desktop.client.connected, "the existing desktop reconnects"); return desktop; }
     return connect();
   };
-  return { ...desktop, id, root, connect, restart, bridge, env,
+  return { ...desktop, id, root, connect, restart, bridge, env, carrier,
     freeze: async () => { bridge.kill("SIGSTOP"); await until(() => /^State:\s+T/m.test(fs.readFileSync(`/proc/${bridge.pid}/status`, "utf8")), "the old bridge is stopped before Claude writes"); },
     agent: () => lines(agentLog), store: () => fs.existsSync(storeFile) ? JSON.parse(fs.readFileSync(storeFile, "utf8")) : {},
     release: () => fs.writeFileSync(release, ""), releaseTools: () => fs.writeFileSync(toolRelease, ""),
@@ -335,8 +335,8 @@ for (const count of [1, 4]) test(`A128: GPT keeps its native tool running throug
   assert.equal((await f.client.readThread(f.id)).thread.status.type, "idle");
 });
 
-async function agyFixture(t) {
-  return fixture(t, {}, { model: "agy/gemini-3.8-flash-medium", prepare: async (root, env) => {
+async function agyFixture(t, extra = {}, { nativeCalls = false } = {}) {
+  return fixture(t, extra, { model: "agy/gemini-3.8-flash-medium", nativeCalls, prepare: async (root, env) => {
     const executable = path.join(root, "fake-agy");
     fs.copyFileSync(path.join(source, "test/fake-agy.cjs"), executable);
     fs.chmodSync(executable, 0o755);
@@ -344,6 +344,74 @@ async function agyFixture(t) {
     Object.assign(env, { AGY_BIN: executable, FAKE_AGY_LOG: path.join(root, "agy.jsonl"), FAKE_AGY_RELEASE: path.join(root, "agy-release") });
   } });
 }
+
+test("a new Antigravity model survives the old model process exiting", { timeout: 20000 }, async t => {
+  const f = await agyFixture(t, { FAKE_AGY_DELAY_TERM: '500' });
+  const first = await f.client.send(f.id, { text: 'first model' });
+  await until(() => f.ended(first.turn.id), 'the first model finishes');
+  assert.equal(f.ended(first.turn.id).params.turn.status, 'completed');
+  const next = await f.client.send(f.id, { text: '[wait] switched model', model: 'agy/gemini-3.8-pro' });
+  await until(() => lines(f.env.FAKE_AGY_LOG).some(row => row.text.includes('switched model')), 'the new model starts');
+  await pause(700);
+  assert.equal(f.ended(next.turn.id), undefined, 'the old process cannot stop the new model');
+  fs.writeFileSync(f.env.FAKE_AGY_RELEASE, '');
+  await until(() => f.ended(next.turn.id), 'the new model finishes');
+  assert.equal(f.ended(next.turn.id).params.turn.status, 'completed');
+  const answer = f.store()[f.id].turns.find(turn => turn.id === next.turn.id).items.filter(item => item.type === 'agentMessage').map(item => item.text).join('\n');
+  assert.ok(answer.includes('switched model') && !answer.includes('stale model output'));
+});
+
+test("an existing chat changes models across providers after idle, stop and failure", { timeout: 30000 }, async t => {
+  const f = await agyFixture(t, { FAKE_ACP_MODELS: 'sonnet,opus' }, { nativeCalls: true });
+  const nativeReply = request => {
+    f.carrier.actions.unshift(nativeReply);
+    const last = [...(request.input ?? [])].reverse().find(item => item.role === 'user');
+    return mockProvider.message(`native answered ${last?.content?.map(part => part.text ?? '').join(' ') ?? 'context'}`);
+  };
+  f.carrier.actions.push(nativeReply);
+  const send = async (model, text, expected = 'completed') => {
+    const { turn } = await f.client.send(f.id, { text, model });
+    await until(() => f.ended(turn.id), `${model} finishes`);
+    assert.equal(f.ended(turn.id).params.turn.status, expected, `${model}: ${f.ended(turn.id).params.turn.error?.message ?? ''}; native requests: ${JSON.stringify(f.carrier.requests.map(row => ({ model: row.body.model, input: JSON.stringify(row.body.input).slice(-300) })))}`);
+    await until(async () => (await f.client.readThread(f.id)).thread.status.type === 'idle', `${model} becomes idle`);
+  };
+  await assert.rejects(f.client.send(f.id, { text: 'invalid', model: 'agy/not-listed' }), /current Elpis model list/);
+  await assert.rejects(f.client.createThread({ cwd: f.root, provider: 'carrier', model: 'agy/gemini-3.8-pro' }), /Subscription model/);
+  await send('agy/gemini-3.8-flash-medium', 'Gemini first');
+  await send('claude/sonnet', 'Claude from Gemini');
+  await send('claude/opus', 'Claude model changed');
+  await send('gpt-5.5', 'OpenAI from Claude');
+  await send('gpt-6.1-sol', 'OpenAI model changed');
+  await send('agy/gemini-3.8-pro', 'Gemini from OpenAI');
+  const stopped = await f.client.send(f.id, { text: '[wait] stopped Gemini' });
+  await until(() => lines(f.env.FAKE_AGY_LOG).some(row => row.text.includes('stopped Gemini')), 'the turn starts');
+  await f.client.interrupt(f.id, { turnId: stopped.turn.id });
+  await until(() => f.ended(stopped.turn.id), 'the Gemini turn stops');
+  assert.equal(f.ended(stopped.turn.id).params.turn.status, 'interrupted');
+  f.release(); // The fake Claude sees the earlier [wait] in the seeded history.
+  await send('claude/sonnet', 'Claude after stop');
+  await send('agy/gemini-3.8-flash-medium', '[fail] Gemini fails', 'failed');
+  await send('gpt-5.5', 'OpenAI after failure');
+  await send('claude/opus', 'Claude from OpenAI');
+  await send('gpt-6.1-sol', 'OpenAI from Claude again');
+  for (const [model, text] of [['gpt-5.5', 'OpenAI from Claude'], ['gpt-6.1-sol', 'OpenAI model changed'], ['gpt-5.5', 'OpenAI after failure'], ['gpt-6.1-sol', 'OpenAI from Claude again']]) {
+    assert.ok(f.carrier.requests.some(row => row.body.model === model && JSON.stringify(row.body.input).includes(text)), `${model} reaches the local carrier`);
+  }
+});
+
+test("retrying a failed Gemini turn with Claude replaces the failed turn", { timeout: 20000 }, async t => {
+  const f = await agyFixture(t);
+  const failed = await f.client.send(f.id, { text: '[fail] original request' });
+  await until(() => f.ended(failed.turn.id), 'Gemini reports the failure');
+  assert.equal(f.ended(failed.turn.id).params.turn.status, 'failed');
+  const retry = await f.client.revert(f.id, { beforeTurnId: failed.turn.id, text: 'retry with Claude', model: 'claude/sonnet' });
+  assert.ok(retry.turn?.id, retry.sendError);
+  await until(() => f.ended(retry.turn.id), 'Claude answers the replacement');
+  assert.equal(f.ended(retry.turn.id).params.turn.status, 'completed');
+  assert.ok(f.agent().some(row => row.method === 'session/prompt' && JSON.stringify(row.params.prompt).includes('retry with Claude')));
+  const history = await f.client.readThread(f.id);
+  assert.ok(!history.data.some(entry => entry.turnId === failed.turn.id));
+});
 
 test("Antigravity answers both follow-ups folded into a running turn", { timeout: 20000 }, async t => {
   const f = await agyFixture(t);

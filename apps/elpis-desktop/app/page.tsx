@@ -948,9 +948,11 @@ export default function Home() {
   const newChoice = choiceById(choices, choiceId);
   const missingChoiceNotice = !selected && choiceId && !newChoice ? "This connection is no longer available. Choose another model." : "";
   const needsModelId = !selected && !!newChoice?.provider && newChoice.provider !== providerSettings?.main.provider;
-  const selectedChoice = selected ? choiceOf(selected, choices) : null;
   const pending = selected ? nextTurn[selected.id] : undefined;
   const turnModel = selected ? pending?.model ?? selected.model ?? "" : model;
+  const selectedChoice = selected ? choiceOf({ ...selected, model: turnModel }, choices) : null;
+  const chatChoices = selected ? choices.filter(choice => !choice.provider || choice.provider === selected.modelProvider) : choices;
+  const modelChoices = selectedChoice?.provider && !chatChoices.some(choice => choice.id === selectedChoice.id) ? [selectedChoice, ...chatChoices] : chatChoices;
   const dictationProvider = chatProvider(turnModel, selected ? selected.modelProvider : newChoice?.provider, providerSettings?.main.provider);
   const turnEfforts = effortsOf(turnModel || providerSettings?.main.model, models);
   const turnEffort = selected ? selected.reasoningEffort ?? "" : effort;
@@ -2480,7 +2482,7 @@ export default function Home() {
               <PermissionsMenu mode={permissionMode} disabled={permissionsLocked} managed={settingsSnapshot?.managed} onChange={choosePermissions} />
             </div><div className="composer-right">
               <ContextUsage threadId={selected?.id} />
-              <ModelPicker choices={!selected ? choices : selectedChoice?.provider ? [selectedChoice] : choices.filter(choice => !choice.provider)} models={models}
+              <ModelPicker choices={modelChoices} models={models}
                 model={selected ? turnModel : model} choiceId={selected ? selectedChoice?.id || "" : choiceId} defaultModel={selected ? null : providerSettings?.main.model}
                 disabled={!ready || busy || projectChanging} onConfigure={manageConnections} onKeySaved={() => void reloadSettings().catch(() => {})} onChange={choice => { if (selected) { setOverride(selected.id, { model: choice.model }); setFailedTurns(previous => without(previous, selected.id)); } else { setChoiceId(choice.choiceId); setModel(choice.model); setEffort(""); } }} />
               {turnEfforts.length > 0 && <OptionSelect aria-label="Reasoning effort" size="sm" className="model-select" value={turnEffort} onChange={e => selected ? void saveEffort(selected.id, e.target.value) : setEffort(e.target.value)} disabled={!ready || !connected || busy}>

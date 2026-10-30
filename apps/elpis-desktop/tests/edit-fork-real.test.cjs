@@ -29,6 +29,12 @@ before(async () => {
   const home = path.join(root, 'home'), project = path.join(root, 'project');
   await fs.mkdir(home); await fs.mkdir(project);
   const provider = new Provider(); await provider.start();
+  const providerRequest = provider.server.listeners('request')[0];
+  provider.server.removeListener('request', providerRequest);
+  provider.server.on('request', (req, res) => {
+    if (req.method === 'GET' && req.url === '/v1/models') { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ data: [{ id: 'gpt-5.5', name: 'GPT-5.5' }] })); }
+    else providerRequest(req, res);
+  });
   // Every native request is answered with the next queued reply, or "reply N".
   const replies = []; let n = 0;
   provider.actions = { shift: () => message(replies.shift() ?? `reply ${++n}`) };
@@ -43,7 +49,7 @@ before(async () => {
     XDG_CONFIG_HOME: path.join(root, '.config'), XDG_RUNTIME_DIR: root, TMPDIR: root, LANG: 'C.UTF-8', ELPIS_SHARED_BRIDGE: '1', ELPIS_BRIDGE_SOCKET: socketPath,
     ELPIS_ENGINE_BIN: engine, ACP_ADAPTER: path.join(repo, 'tools/elpis-claude/test/fake-acp-agent.mjs'),
     ACP_BRIDGE_STORE: path.join(root, 'sessions.json'), ACP_BRIDGE_LOG: path.join(root, 'adapter.log'), ACP_BRIDGE_NO_AGENTS: '1',
-    FAKE_ACP_LOG: acpLog, FAKE_ACP_NAME: 'Claude', FAKE_ACP_MODELS: 'sonnet', AGY_BIN: agy, FAKE_AGY_LOG: agyLog, FAKE_AGY_RELEASE: path.join(root, 'agy-release') };
+    FAKE_ACP_LOG: acpLog, FAKE_ACP_NAME: 'Claude', FAKE_ACP_MODELS: 'sonnet', FAKE_ACP_RELEASE: path.join(root, 'claude-release'), AGY_BIN: agy, FAKE_AGY_LOG: agyLog, FAKE_AGY_RELEASE: path.join(root, 'agy-release') };
   const bridge = spawn(process.execPath, [path.join(repo, 'tools/elpis-claude/acp-bridge.mjs')], { env, cwd: project, detached: true, stdio: ['ignore', log.fd, log.fd] });
   await until(async () => { if (bridge.exitCode !== null) throw new Error(`provider bridge exited; see ${root}/bridge.log`); return fs.stat(socketPath).then(() => true, () => false); }, 'provider bridge socket');
   const { DesktopClient } = await import('../bridge/client.mjs');
@@ -51,15 +57,33 @@ before(async () => {
   const client = await DesktopClient.connect({ socketPath, appHome: root, home });
   await client.models();
   const app = await startDesktopServer({ client, elpisHome: home, trashFile: path.join(home, 'trash.json'), loveSpot: { directory: path.join(root, 'drawing') } });
-  const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-  const browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM || undefined, headless: true });
-  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } }); page.setDefaultTimeout(20000);
-  await page.addInitScript(fakeDesktop);
+  const { chromium, _electron } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
+  h = { root, project, provider, replies, bridge, log, client, app };
+  let browser, electron, page;
+  if (process.env.ELPIS_TEST_PACKAGE) {
+    electron = await _electron.launch({ executablePath: path.join(process.env.ELPIS_TEST_PACKAGE, 'runtime/electron/electron'),
+      args: ['--no-sandbox', '--ozone-platform=x11', path.join(process.env.ELPIS_TEST_PACKAGE, 'app')],
+      env: { ...env, DISPLAY: process.env.DISPLAY, XAUTHORITY: process.env.XAUTHORITY, XDG_SESSION_TYPE: 'x11', WAYLAND_DISPLAY: '', ELPIS_APP_BRIDGE_SOCKET: socketPath,
+        ELPIS_DESKTOP_PROFILE: path.join(root, 'desktop-profile'), ELPIS_NODE_BIN: process.execPath } });
+    h.electron = electron;
+    page = await electron.firstWindow();
+  } else {
+    browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM || undefined, headless: true });
+    h.browser = browser;
+    page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    await page.addInitScript(fakeDesktop);
+  }
+  page.setDefaultTimeout(20000);
   const errors = []; page.on('pageerror', error => errors.push(error.message));
   const completed = new Set(); client.on('event', event => { if (event.type === 'message' && event.data?.method === 'turn/completed') completed.add(event.data.params.turn?.id ?? event.data.params.turnId); });
   const prompts = async () => (await fs.readFile(acpLog, 'utf8').catch(() => '')).split('\n').filter(Boolean).map(JSON.parse).filter(row => row.method === 'session/prompt').map(row => JSON.stringify(row.params.prompt));
   const agyPrompts = async () => (await fs.readFile(agyLog, 'utf8').catch(() => '')).split('\n').filter(Boolean).map(JSON.parse).map(row => row.text);
-  h = { root, project, provider, replies, bridge, log, client, app, browser, page, errors, completed, prompts, agyPrompts };
+  Object.assign(h, { page, errors, completed, prompts, agyPrompts });
+  h.screenshot = async file => {
+    if (!electron) return page.screenshot({ path: file });
+    const png = await electron.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64'));
+    await fs.writeFile(file, Buffer.from(png, 'base64'));
+  };
   /** Setup only: a chat with these turns, sent through the bridge as the composer would send them. */
   h.chat = async (model, turns) => {
     const { thread } = await client.createThread({ cwd: project, model, permissions: 'full' });
@@ -70,9 +94,17 @@ before(async () => {
     }
     return thread.id;
   };
+  let onboardingHandled = false;
   h.open = async id => {
-    await page.goto(app.url); await page.locator('.startup-splash').waitFor({ state: 'detached' }).catch(() => {});
-    await page.locator(`.thread-row[data-thread-id="${id}"] .thread-link`).first().click();
+    if (!electron) await page.goto(app.url);
+    const link = page.locator(`.thread-row[data-thread-id="${id}"] .thread-link`).first();
+    await link.waitFor(); await page.locator('.startup-splash').waitFor({ state: 'detached' });
+    if (electron && !onboardingHandled) { await page.getByRole('button', { name: 'Not now', exact: true }).click(); onboardingHandled = true; }
+    try { await link.click(); }
+    catch (error) {
+      if (electron && process.env.ELPIS_APP_SHOTS) { await fs.mkdir(process.env.ELPIS_APP_SHOTS, { recursive: true }); await h.screenshot(path.join(process.env.ELPIS_APP_SHOTS, 'desktop-blocked.png')); }
+      throw error;
+    }
     await page.locator('.chat-content .user-turn').first().waitFor();
   };
   h.transcript = () => page.locator('.chat-content').innerText();
@@ -91,7 +123,7 @@ before(async () => {
 
 after(async () => {
   if (!h) return;
-  await h.browser?.close(); await h.app?.close(); h.client?.close();
+  await h.electron?.close(); await h.browser?.close(); await h.app?.close(); h.client?.close();
   if (h.bridge.exitCode === null) { const ended = once(h.bridge, 'exit'); h.bridge.kill('SIGTERM'); await Promise.race([ended, pause(5000)]); }
   try { process.kill(-h.bridge.pid, 'SIGKILL'); } catch { /* already gone */ }
   await h.log.close(); h.provider.close();
@@ -141,7 +173,7 @@ for (const [provider, model] of [['Claude', 'claude/sonnet'], ['Antigravity', 'a
         });
         await page.waitForTimeout(350);
       }
-      await page.screenshot({ path: path.join(process.env.ELPIS_APP_SHOTS, `${provider.toLowerCase()}-rewind-${scheme}.png`) });
+      await h.screenshot(path.join(process.env.ELPIS_APP_SHOTS, `${provider.toLowerCase()}-rewind-${scheme}.png`));
     }
   }
   await edit.fill('replacement after stop');
@@ -174,13 +206,66 @@ test('Antigravity answers in-flight messages and never replays stopped follow-up
   await page.getByRole('button', { name: 'Stop response', exact: true }).waitFor({ state: 'hidden' });
   await stopped.composer.fill('new message after stop'); await stopped.composer.press('Enter');
   await page.locator('.message.agent', { hasText: 'new message after stop' }).waitFor();
-  const sent = await h.agyPrompts();
+  const sent = (await h.agyPrompts()).filter(prompt => !prompt.includes('\nUser prompt:\n'));
   assert.ok(sent.some(prompt => prompt.includes('new message after stop')));
   assert.ok(!sent.some(prompt => /stopped follow-up (one|two)/.test(prompt)), 'stopped follow-ups are not sent later');
   const continued = await begin('[wait] continued original', ['answered follow-up one', 'answered follow-up two']);
   await fs.writeFile(path.join(h.root, 'agy-release'), '');
   await until(() => h.completed.has(continued.turn.id), 'the turn answers the follow-ups');
   for (const text of ['answered follow-up one', 'answered follow-up two']) await page.locator('.message.agent', { hasText: text }).waitFor();
+  assert.deepEqual(h.errors, []);
+});
+
+test('the model picker switches an existing chat across subscriptions', { skip, timeout: 60000 }, async () => {
+  const { page, client } = h;
+  const id = await h.chat('gpt-5.5', [['native start', 'native answer']]);
+  await h.open(id);
+  const picker = page.getByRole('combobox', { name: 'Model', exact: true });
+  const choose = async (connection, name, model) => {
+    await picker.click();
+    await page.getByRole('tab', { name: connection, exact: true }).click();
+    if (process.env.ELPIS_APP_SHOTS && model === 'agy/gemini-3.8-flash-medium' && !(await page.getByRole('button', { name: 'Use light theme', exact: true }).count())) {
+      await fs.mkdir(process.env.ELPIS_APP_SHOTS, { recursive: true });
+      await h.screenshot(path.join(process.env.ELPIS_APP_SHOTS, 'model-light.png'));
+      await page.keyboard.press('Escape');
+      await page.getByRole('button', { name: 'Use dark theme', exact: true }).click();
+      await page.getByRole('button', { name: 'Use light theme', exact: true }).waitFor(); await page.waitForTimeout(350);
+      await picker.click(); await page.getByRole('tab', { name: connection, exact: true }).click();
+      await h.screenshot(path.join(process.env.ELPIS_APP_SHOTS, 'model-dark.png'));
+    }
+    await page.getByRole('option').filter({ hasText: name }).click();
+    assert.equal(await picker.getAttribute('data-value'), model);
+    assert.match(await picker.getAttribute('title'), new RegExp(connection));
+  };
+  const send = async (text, check) => {
+    const composer = page.getByRole('textbox', { name: 'Message Elpis', exact: true });
+    await composer.fill(text); await composer.press('Enter');
+    await until(check, `${text} reaches its provider`);
+    await page.getByRole('button', { name: 'Stop response', exact: true }).waitFor({ state: 'hidden' });
+  };
+  await choose('Antigravity', 'Gemini Flash', 'agy/gemini-3.8-flash-medium');
+  await send('Gemini from OpenAI', async () => (await h.agyPrompts()).some(prompt => prompt.includes('Gemini from OpenAI')));
+  await choose('Antigravity', 'Gemini Pro', 'agy/gemini-3.8-pro');
+  await send('Gemini model changed', async () => (await h.agyPrompts()).some(prompt => prompt.includes('Gemini model changed')));
+  await choose('Anthropic', 'sonnet', 'claude/sonnet');
+  await send('Claude from Gemini', async () => (await h.prompts()).some(prompt => prompt.includes('Claude from Gemini')));
+  await choose('Edit test', 'GPT-5.5', 'gpt-5.5');
+  await send('OpenAI from Claude', () => h.provider.requests.some(request => JSON.stringify(request.body.input).includes('OpenAI from Claude')));
+  await choose('Antigravity', 'Gemini Flash', 'agy/gemini-3.8-flash-medium');
+  const composer = page.getByRole('textbox', { name: 'Message Elpis', exact: true });
+  await composer.fill('[wait] stop before switch'); await composer.press('Enter');
+  await until(async () => (await h.agyPrompts()).some(prompt => prompt.includes('stop before switch')), 'Gemini starts before Stop');
+  await page.getByRole('button', { name: 'Stop response', exact: true }).click();
+  await page.getByRole('button', { name: 'Stop response', exact: true }).waitFor({ state: 'hidden' });
+  await fs.writeFile(path.join(h.root, 'claude-release'), '');
+  await choose('Anthropic', 'sonnet', 'claude/sonnet');
+  await send('Claude after stop', async () => (await h.prompts()).some(prompt => prompt.includes('Claude after stop')));
+  await choose('Antigravity', 'Gemini Flash', 'agy/gemini-3.8-flash-medium');
+  await send('[fail] Gemini before switch', async () => (await h.agyPrompts()).some(prompt => prompt.includes('Gemini before switch')));
+  await page.getByText('Turn failed', { exact: true }).waitFor();
+  await choose('Edit test', 'GPT-5.5', 'gpt-5.5');
+  await send('OpenAI after failure', () => h.provider.requests.some(request => JSON.stringify(request.body.input).includes('OpenAI after failure')));
+  assert.equal((await client.readThread(id)).thread.id, id);
   assert.deepEqual(h.errors, []);
 });
 
