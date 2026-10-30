@@ -164,3 +164,24 @@ fn a_blocked_prompt_fails_with_the_reason() {
         Some("Gemini blocked the prompt: SAFETY")
     );
 }
+
+#[test]
+fn a_text_only_route_omits_an_image_and_never_sends_its_data() {
+    let history = json!([
+        {"type": "message", "role": "user", "content": [
+            {"type": "input_text", "text": "What is this?"},
+            {"type": "input_image", "image_url": "data:image/png;base64,SECRETPIXELS"},
+        ]},
+    ]);
+    let body = request(&conversation(&responses_request(history, core_tools())))
+        .expect("the request translates");
+
+    assert_eq!(
+        body["contents"],
+        json!([{
+            "role": "user",
+            "parts": [{"text": format!("What is this?\n{}", crate::conversation::IMAGE_OMITTED)}],
+        }])
+    );
+    assert!(!body.to_string().contains("SECRETPIXELS"));
+}

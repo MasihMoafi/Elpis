@@ -16,10 +16,34 @@ use crate::GatewayError;
 /// Opaque Gemini reasoning state rides in a reasoning item's `encrypted_content`, never in tool
 /// arguments. Same envelope as v0.3.0, so v0.3.0 histories keep their signatures.
 pub(crate) const GEMINI_SIGNATURE_PREFIX: &str = "elpis:gemini-tool-signature:v1:";
+/// Anthropic thinking blocks ride in a reasoning item's `encrypted_content`: the next request
+/// must send them back unchanged beside a tool call, and core replays the item verbatim.
+pub(crate) const ANTHROPIC_THINKING_PREFIX: &str = "elpis:anthropic-thinking:v1:";
 /// The strictest common limit across Anthropic, Gemini and OpenAI Chat tool names.
 const MAX_TOOL_NAME_LEN: usize = 64;
-const IMAGE_OMITTED: &str = "[image omitted: this provider route does not carry images]";
+pub(crate) const IMAGE_OMITTED: &str = "[image omitted: this provider route does not carry images]";
 const AUDIO_OMITTED: &str = "[audio omitted: this provider route does not carry audio]";
+
+/// One piece of a message or tool output that carries an image.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Part {
+    Text(String),
+    /// The `image_url` of an `input_image`: a base64 data URL or an http(s) URL.
+    Image(String),
+}
+
+/// The text of `parts`, with each image replaced by the omitted note. Routes that cannot send
+/// images use this, so the model learns something was there.
+pub(crate) fn parts_text(parts: &[Part]) -> String {
+    parts
+        .iter()
+        .map(|part| match part {
+            Part::Text(text) => text.as_str(),
+            Part::Image(_) => IMAGE_OMITTED,
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
 
 /// One step of the conversation, in the order the vendor must see it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -27,7 +51,11 @@ pub(crate) enum Turn {
     /// A developer or system message. Anthropic and Gemini hoist these into the system prompt.
     System(String),
     User(String),
+    /// A user message that carries at least one image.
+    UserParts(Vec<Part>),
     Assistant(String),
+    /// A thinking block (`thinking` or `redacted_thinking`) the Anthropic model produced.
+    Thinking(Value),
     /// A tool call the model made; `name` is the vendor-safe alias.
     ToolCall {
         call_id: String,
@@ -37,6 +65,11 @@ pub(crate) enum Turn {
     ToolResult {
         call_id: String,
         output: String,
+    },
+    /// A tool result that carries at least one image (`view_image`).
+    ToolResultParts {
+        call_id: String,
+        parts: Vec<Part>,
     },
 }
 
@@ -179,13 +212,15 @@ impl Conversation {
             .unwrap_or("message");
         match kind {
             "message" => {
-                let text = content_text(item.get("content"));
+                let parts = content_parts(item.get("content"));
+                let text = parts_text(&parts);
                 if text.is_empty() {
                     return Ok(());
                 }
                 let turn = match item.get("role").and_then(Value::as_str).unwrap_or("user") {
                     "system" | "developer" => Turn::System(text),
                     "assistant" => Turn::Assistant(text),
+                    _ if has_image(&parts) => Turn::UserParts(parts),
                     _ => Turn::User(text),
                 };
                 self.turns.push(turn);
@@ -230,12 +265,28 @@ impl Conversation {
                     .and_then(Value::as_str)
                     .filter(|call_id| !call_id.is_empty())
                     .ok_or_else(|| GatewayError::bad_request("a tool result has no call_id"))?;
-                self.turns.push(Turn::ToolResult {
-                    call_id: call_id.to_string(),
-                    output: content_text(item.get("output")),
+                let parts = content_parts(item.get("output"));
+                self.turns.push(if has_image(&parts) {
+                    Turn::ToolResultParts {
+                        call_id: call_id.to_string(),
+                        parts,
+                    }
+                } else {
+                    Turn::ToolResult {
+                        call_id: call_id.to_string(),
+                        output: parts_text(&parts),
+                    }
                 });
             }
             "reasoning" => {
+                if let Some(block) = item
+                    .get("encrypted_content")
+                    .and_then(Value::as_str)
+                    .and_then(|content| content.strip_prefix(ANTHROPIC_THINKING_PREFIX))
+                    .and_then(|payload| serde_json::from_str::<Value>(payload).ok())
+                {
+                    self.turns.push(Turn::Thinking(block));
+                }
                 if let Some(payload) = item
                     .get("encrypted_content")
                     .and_then(Value::as_str)
@@ -286,26 +337,39 @@ fn required_text<'a>(item: &'a Value, field: &str) -> Result<&'a str, GatewayErr
         .ok_or_else(|| GatewayError::bad_request(format!("a history item has no `{field}`")))
 }
 
-/// The text of a message or tool output. Images and audio become a visible placeholder: the
-/// model learns something was there, and one attachment does not make every later request fail.
-pub(crate) fn content_text(content: Option<&Value>) -> String {
+fn has_image(parts: &[Part]) -> bool {
+    parts.iter().any(|part| matches!(part, Part::Image(_)))
+}
+
+/// The pieces of a message or tool output. Audio becomes a visible placeholder: the model
+/// learns something was there, and one attachment does not make every later request fail.
+fn content_parts(content: Option<&Value>) -> Vec<Part> {
     match content {
-        Some(Value::String(text)) => text.clone(),
+        Some(Value::String(text)) => vec![Part::Text(text.clone())],
         Some(Value::Array(parts)) => parts
             .iter()
             .filter_map(|part| match part.get("type").and_then(Value::as_str) {
                 Some("input_text" | "output_text" | "text") => part
                     .get("text")
                     .and_then(Value::as_str)
-                    .map(str::to_string),
-                Some("input_image") => Some(IMAGE_OMITTED.to_string()),
-                Some("input_audio") => Some(AUDIO_OMITTED.to_string()),
+                    .map(|text| Part::Text(text.to_string())),
+                Some("input_image") => Some(Part::Image(
+                    part.get("image_url")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_string(),
+                )),
+                Some("input_audio") => Some(Part::Text(AUDIO_OMITTED.to_string())),
                 _ => None,
             })
-            .collect::<Vec<_>>()
-            .join("\n"),
-        _ => String::new(),
+            .collect(),
+        _ => Vec::new(),
     }
+}
+
+/// The text of a message or tool output, with images replaced by the omitted note.
+pub(crate) fn content_text(content: Option<&Value>) -> String {
+    parts_text(&content_parts(content))
 }
 
 fn description(tool: &Value) -> String {

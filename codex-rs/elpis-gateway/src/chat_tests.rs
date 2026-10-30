@@ -214,3 +214,23 @@ fn a_provider_error_in_the_stream_fails_with_its_message() {
         Some("Rate limit exceeded: free-models-per-day")
     );
 }
+
+#[test]
+fn a_text_only_route_omits_an_image_and_never_sends_its_data() {
+    let history = json!([
+        {"type": "message", "role": "user", "content": [
+            {"type": "input_text", "text": "What is this?"},
+            {"type": "input_image", "image_url": "data:image/png;base64,SECRETPIXELS"},
+        ]},
+    ]);
+    let body = request(&conversation(&responses_request(history, core_tools())));
+
+    assert_eq!(
+        body["messages"][1],
+        json!({
+            "role": "user",
+            "content": format!("What is this?\n{}", crate::conversation::IMAGE_OMITTED),
+        })
+    );
+    assert!(!body.to_string().contains("SECRETPIXELS"));
+}
