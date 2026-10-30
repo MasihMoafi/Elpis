@@ -5,8 +5,8 @@ import dynamic from "next/dynamic";
 import { BrandWordmark } from "@/components/brand-wordmark";
 import { flushSync } from "react-dom";
 import { cloneElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { AgentsIcon, BrowserIcon, ChatIcon, ExperimentLabIcon, FolderIcon, LoveSpotIcon, NewChatIcon, PinIcon, PlusIcon, SendIcon, SettingsIcon, StopIcon, ThemeIcon, WorkflowsIcon } from "@/components/elpis-icons";
-import { Archive, ArrowDown, Blocks, Bookmark, ChevronRight, EyeOff, Layers, PanelLeft, PanelRightClose, PanelRightOpen, Pin, RefreshCw, Search, X, Zap } from "lucide-react";
+import { AgentsIcon, BrowserIcon, ChatIcon, ExperimentLabIcon, FolderIcon, LoveSpotIcon, NewChatIcon, PinIcon, PlusIcon, SendIcon, SettingsIcon, ThemeIcon, WorkflowsIcon } from "@/components/elpis-icons";
+import { Archive, ArrowDown, Blocks, Bookmark, ChevronRight, EyeOff, Layers, PanelLeft, PanelRightClose, PanelRightOpen, Pin, Plus as PlusStroke, RefreshCw, Search, Square, X, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ReorderItem, useReorder } from "@/components/reorder";
 import { OptionSelect } from "@/components/ui/option-select";
@@ -2395,7 +2395,7 @@ export default function Home() {
         <BrandWordmark className="mobile-brand" dark={dark} width={49} height={24} />
         <div className="header-titles min-w-0 flex-1">
           {view === "chat" && desktop && !split.pane
-            ? <TabStrip label="Chat tabs" activeKey={tabs.activeId} add={<Button type="button" variant="ghost" size="icon-sm" className="task-tab-new" aria-label="New chat tab" title="New chat tab (Ctrl+T)" onClick={newChatTab}><PlusIcon size={15} /></Button>}>
+            ? <TabStrip label="Chat tabs" activeKey={tabs.activeId} add={<Button type="button" variant="ghost" size="icon-sm" className="task-tab-new" aria-label="New chat tab" title="New chat tab (Ctrl+T)" onClick={newChatTab}><PlusStroke size={16} /></Button>}>
                 {tabs.tabs.map(chatTab)}
               </TabStrip>
             : chatActions(<div className="header-title-row" />, <h1>{heading}</h1>)}
@@ -2494,7 +2494,7 @@ export default function Home() {
                   const result = insertTranscript(textRef.current, selection, transcript); editDraft(result.text);
                   requestAnimationFrame(() => { composerRef.current?.focus(); composerRef.current?.setSelectionRange(result.caret, result.caret); });
                 }} />}
-              {activeTurn && <Button type="button" size="sm" variant="secondary" className="stop-button shrink-0 gap-1.5" aria-label="Stop response" title="Stop response: stops the agent’s current turn." disabled={!ready || !connected} onClick={() => selected && stop(selected)}><StopIcon aria-hidden="true" /><span className="composer-action-label">Stop response</span></Button>}<Button type="submit" variant="cutPrimary" className="send-button" size={activeTurn && !continues ? "sm" : "icon"} aria-label={shellMode ? "Run shell command" : activeTurn && !continues ? "Send follow-up" : "Send message"} title={activeTurn && !continues ? followUpTooltip(preferences) : undefined} disabled={sendBlocked}>{activeTurn && !continues && !shellMode ? <><span className="composer-action-label">Send follow-up</span><SendIcon size={18} className="followup-send-icon" aria-hidden="true" /></> : <SendIcon size={18} />}</Button>{activeTurn && !continues && !shellMode && <SendOptionsMenu choice={followUpChoices(preferences)[1]} disabled={sendBlocked} returnFocus={composerRef} onChoose={follow => void send(undefined, follow)} />}</div></div></div>
+              {activeTurn && <Button type="button" size="sm" variant="secondary" className="stop-button shrink-0 gap-1.5" aria-label="Stop response" title="Stop response: stops the agent’s current turn." disabled={!ready || !connected} onClick={() => selected && stop(selected)}><Square size={16} aria-hidden="true" /><span className="composer-action-label">Stop response</span></Button>}<Button type="submit" variant="cutPrimary" className="send-button" size={activeTurn && !continues ? "sm" : "icon"} aria-label={shellMode ? "Run shell command" : activeTurn && !continues ? "Send follow-up" : "Send message"} title={activeTurn && !continues ? followUpTooltip(preferences) : undefined} disabled={sendBlocked}>{activeTurn && !continues && !shellMode ? <><span className="composer-action-label">Send follow-up</span><SendIcon size={18} className="followup-send-icon" aria-hidden="true" /></> : <SendIcon size={18} />}</Button>{activeTurn && !continues && !shellMode && <SendOptionsMenu choice={followUpChoices(preferences)[1]} disabled={sendBlocked} returnFocus={composerRef} onChoose={follow => void send(undefined, follow)} />}</div></div></div>
           </form>}
           <div className="composer-meta">
             {selected && <ProjectMenu variant="chip" label="Change folder" addLabel="Choose folder…" allowNone={false} projects={projects} disabled={!ready || !connected || !!activeTurn || readOnlyRun}

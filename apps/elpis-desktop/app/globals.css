@@ -110,11 +110,15 @@ html { font-size:var(--interface-size, 16px); }
   .hud-menu, .hud-popover, .hud-dialog, .side-chat, .pending-input-panel, .full-view > .workspace-content, .composer) { border-radius:var(--corner-radius-lg, var(--cut-lg) 0); corner-shape:var(--corner-shape, bevel); }
 @layer base { * { box-sizing:border-box; border-color:var(--border); } [hidden] { display:none!important; } }
 * { scrollbar-width:thin; scrollbar-color:color-mix(in oklch, var(--foreground) 16%, transparent) transparent; }
+*::-webkit-scrollbar { width:8px; height:8px; }
+*::-webkit-scrollbar-track { background:transparent; }
+*::-webkit-scrollbar-thumb { border:2px solid transparent; border-radius:999px; background:color-mix(in oklch, var(--foreground) 22%, transparent); background-clip:content-box; }
+*::-webkit-scrollbar-button { display:none; width:0; height:0; }
 /* The app fills the window and scrolls only inside its panes; the page itself never scrolls (27 Oct). */
 html, body { overflow:hidden; }
 body { margin:0; background:var(--background); color:var(--foreground); font:var(--text-sm)/1.5 var(--ui-font, Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif); font-feature-settings:"cv11","ss01"; -webkit-font-smoothing:antialiased; }
 /* --text-small: the smallest text in the app (Masih: icons and text larger, never smaller). */
-:root { --serif:var(--ui-font, Inter, system-ui, sans-serif); --mono:"JetBrains Mono", "DejaVu Sans Mono", ui-monospace, monospace; --text-small:0.75rem; }
+:root { --serif:ui-serif, "Iowan Old Style", "Source Serif 4", Georgia, "DejaVu Serif", serif; --mono:"JetBrains Mono", "DejaVu Sans Mono", ui-monospace, monospace; --text-small:0.75rem; }
 button, select { cursor:pointer; }
 /* Hide browser disclosure triangles everywhere, including recorded Markdown. */
 summary { list-style:none; }
@@ -160,7 +164,7 @@ button:disabled { cursor:not-allowed; }
 /* Rows, the "More …" buttons and every section heading (Agent runs too) are snap points, so scrolling to the end can
    always reach the last of them, even when its section is folded. */
 .thread-list :is(.thread-row, .thread-more, .section-label-row, section > :first-child) { scroll-snap-align:start; scroll-snap-stop:always; }
-.thread-list > section:first-child > .section-label-row { padding-top:8px; }
+.thread-list > section:first-child > .section-label-row { padding-top:0; }
 .thread-link { min-width:0; flex:1; text-align:left; background:none; border:0; padding:7px 4px 7px 8px; border-radius:7px; display:block; color:inherit; font-size:var(--text-sm); line-height:20px; }
 .thread-link span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:block; }
 /* In the sidebar tree the agent mark follows the name, so names step by the same indent as their status dots. */
@@ -170,7 +174,7 @@ button:disabled { cursor:not-allowed; }
 .sidebar-footer { flex-shrink:0; display:flex; align-items:center; gap:4px; padding-top:6px; border-top:1px solid var(--hairline); }
 /* The account row (components/account-row.tsx): avatar, name and plan; it only shows. */
 .account-row { display:flex; align-items:center; gap:8px; flex:1; min-width:0; min-height:40px; padding:0 8px; color:var(--foreground); font-size:var(--text-sm); text-align:left; cursor:default; }
-.account-avatar { flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; border-radius:50%; background:var(--primary); color:var(--primary-foreground); font:700 var(--text-base)/1 var(--serif); }
+.account-avatar { flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; border-radius:50%; background:var(--primary); color:var(--primary-foreground); font:700 var(--text-base)/1 var(--ui-font); }
 .account-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:450; }
 .account-plan { flex-shrink:0; color:var(--muted-foreground); }
 .account-plan::before { content:"· "; }
@@ -258,7 +262,7 @@ button:disabled { cursor:not-allowed; }
 .load-earlier-messages { display:flex; width:fit-content; margin-bottom:24px; }
 @keyframes appear { from { opacity:0; } }
 .empty-state { min-height:45vh; display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center; gap:6px; }
-.empty-state h2 { font-family:var(--serif); font-size:var(--text-title); line-height:1.2; letter-spacing:-.02em; font-weight:500; margin:0; }
+.empty-state h2 { font-family:var(--ui-font); font-size:var(--text-title); line-height:1.2; letter-spacing:-.02em; font-weight:500; margin:0; }
 .empty-state .empty-mark { width:147px; height:72px; margin-bottom:12px; }
 .empty-state p { margin:0; color:var(--muted-foreground); max-width:440px; font-size:var(--text-base); }
 .message { margin-bottom:22px; min-width:0; overflow-wrap:anywhere; }
@@ -277,7 +281,8 @@ button:disabled { cursor:not-allowed; }
 .dictation-buttons { display:flex; flex-shrink:0; align-items:center; }
 .dictation-status { font-size:var(--text-small); color:var(--muted-foreground); overflow-wrap:anywhere; line-height:1.4; }
 .dictation-error { color:var(--destructive); }
-.composer textarea { field-sizing:fixed; border:0; box-shadow:none; background:transparent; min-height:44px; line-height:22px; max-height:240px; resize:none; font-size:var(--text-base); padding:0; }
+.composer textarea { field-sizing:content; height:22px; border:0; box-shadow:none; background:transparent; min-height:22px; line-height:22px; max-height:240px; resize:none; font-size:var(--text-base); padding:0; }
+.composer textarea:placeholder-shown { block-size:22px!important; min-block-size:22px!important; }
 .dark .composer textarea { background:transparent; }
 .composer textarea:focus-visible { outline:none; box-shadow:none; }
 .composer-controls { --composer-control-gap:8px; display:flex; flex-wrap:nowrap; align-items:center; justify-content:space-between; gap:8px; margin-top:4px; }
@@ -311,7 +316,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
  * 6 px long in the tertiary ink at 40%; dashes in view at 60% of the ink; the hovered one 26 px in full ink, its neighbours
  * 20, 14 and 10 px. At most min(70vh, 40rem) tall, then it scrolls. */
 .prompt-rail { position:absolute; left:16px; top:50%; transform:translateY(-50%); z-index:2; display:flex; flex-direction:column; width:36px; max-height:min(70vh, 40rem, calc(100% - 24px)); }
-.prompt-rail-marks { display:flex; flex-direction:column; width:100%; min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:none; }
+.prompt-rail-marks { display:flex; flex-direction:column; width:100%; min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:none; opacity:0; transition:opacity var(--motion-fast) var(--ease); }
+.prompt-rail:is(:hover, :focus-within) .prompt-rail-marks { opacity:1; }
 .prompt-rail-marks::-webkit-scrollbar { display:none; }
 .prompt-tick { flex:none; display:flex; align-items:center; justify-content:flex-start; width:36px; height:10px; padding:0 0 0 5px; border:0; border-radius:0; background:none; cursor:pointer; }
 .prompt-tick i { display:block; width:6px; height:2px; border-radius:1px; background:var(--thread-tertiary); opacity:.4; transition:width .16s, opacity .16s, background-color .16s; }
@@ -351,7 +357,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .project-chip { background:none; cursor:pointer; }
 .project-chip:hover, .project-chip[aria-expanded="true"] { color:var(--foreground); background:var(--hover); border-color:var(--hairline); }
 .project-chip span { overflow:hidden; text-overflow:ellipsis; }
-.section-label-row { display:flex; align-items:center; gap:4px; padding:16px 8px 6px; }
+.section-label-row { display:flex; align-items:center; gap:4px; height:34px; padding:0 8px; }
 .section-label-row > .section-label { padding:0; margin-right:auto; }
 /* Hide shows on the heading's hover or focus, like a row's actions. */
 .section-label-row > .section-hide { opacity:0; color:var(--muted-foreground); }
@@ -461,7 +467,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 /* The content column is centred in the space beside the navigation, as in ChatGPT and Claude (27 Oct). */
 .settings-mode .settings-page > :is([role="tabpanel"], .settings-page-header, .settings-group) { max-width:var(--settings-content-width); margin-inline:auto; }
 /* "Back to app" and "Back to Agents": one back row, its arrow on the content's left edge. */
-.settings-title { margin:10px 8px 4px; font:500 var(--text-base)/1.3 var(--serif); }
+.settings-title { margin:10px 8px 4px; font:500 var(--text-base)/1.3 var(--ui-font); }
 .settings-nav [role="tablist"] { display:grid; gap:2px; }
 .settings-nav-group { display:grid; gap:2px; }
 .settings-nav-empty { padding:8px; font-size:var(--text-xs); color:var(--muted-foreground); }
@@ -708,7 +714,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 /* No colour transition: the dark edge is gold, and a theme switch must not fade gold into the light theme. */
 /* The native bevel draws the border once, using the same width and colour as its straight edges. */
 .composer:focus-within { box-shadow:var(--elevation-composer); }
-.empty-state h2 { font-family:var(--serif); font-weight:300; letter-spacing:.01em; }
+.empty-state h2 { font-family:var(--ui-font); font-weight:300; letter-spacing:.01em; }
 .dark .empty-state .empty-mark { filter:drop-shadow(0 0 18px color-mix(in srgb, var(--primary) 35%, transparent)); }
 .composer-controls { margin-top:6px; }
 .composer-right { display:flex; align-items:center; gap:var(--composer-control-gap, 8px); min-width:0; }
@@ -721,7 +727,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .composer-controls svg:not(.context-ring-icon) { width:var(--icon-size); height:var(--icon-size); }
 .composer-actions :is(.dictation-buttons > button, .stop-button, .send-button, [aria-label="More send options"]) { height:var(--action-box); min-width:var(--action-box); }
 .composer-actions :is(.dictation-buttons > button, .stop-button, .send-button, [aria-label="More send options"]) svg { width:var(--action-glyph); height:var(--action-glyph); }
-.composer-actions > :is(.send-button, .send-button + *) { margin-inline-start:calc((var(--action-box) - var(--action-glyph)) / 2); }
+.composer-actions > .send-button { margin-inline-start:calc((var(--action-box) - var(--action-glyph)) / 2); }
+.composer-actions > .send-button + [aria-label="More send options"] { width:20px; min-width:20px; margin-inline-start:calc(-1 * var(--composer-control-gap)); padding:0 3px 0 0; border-inline-start:1px solid color-mix(in oklab, var(--primary-foreground) 24%, transparent); background:var(--primary); color:var(--primary-foreground); }
 .composer-right .dictation-control { margin-top:0; }
 .composer .dictation-status:empty { display:none; }
 .fast-toggle[aria-pressed="true"] { color:var(--accent-text); background:var(--selected); }
@@ -833,13 +840,14 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .task-list li[data-status="completed"] .task-mark { box-shadow:none; background:var(--muted-foreground); clip-path:polygon(14% 52%, 0 66%, 38% 100%, 100% 22%, 86% 8%, 38% 72%); }
 /* Elpis's features under the message box (components/elpis-features.tsx): a chip each, its dot olive when on. */
 .elpis-features { display:flex; align-items:center; gap:2px; margin-left:auto; }
-.feature-chip { display:inline-flex; align-items:center; gap:6px; height:28px; padding:0 8px; border:1px solid transparent; background:transparent; color:var(--muted-foreground); font-size:var(--text-sm); white-space:nowrap; cursor:pointer; }
-.feature-chip:hover:not(:disabled) { background:var(--hover); color:var(--foreground); }
+.feature-chip { display:inline-flex; align-items:center; gap:6px; height:28px; padding:0 8px; border:1px solid transparent; background:transparent; color:var(--muted-foreground); font-size:var(--text-xs); white-space:nowrap; cursor:pointer; }
+.feature-chip:hover:not(:disabled) { background:var(--hover); color:var(--muted-foreground); }
 .feature-chip:focus-visible { outline:1.5px solid var(--ring); outline-offset:1px; }
 .feature-chip:disabled { cursor:default; opacity:.55; }
-.feature-chip[aria-pressed="true"] { color:var(--foreground); }
+.feature-chip[aria-pressed="true"] { color:var(--muted-foreground); }
 .feature-dot { width:7px; height:7px; border-radius:50%; box-shadow:inset 0 0 0 1.5px var(--muted-foreground); }
-.feature-chip[aria-pressed="true"] .feature-dot { background:var(--context); box-shadow:0 0 0 3px color-mix(in oklab, var(--context) 24%, transparent); }
+.feature-chip[aria-pressed="true"] .feature-dot { background:var(--muted-foreground); box-shadow:none; }
+.feature-chip .context-ring-icon :is(.context-ring-track, .context-ring-fill) { stroke:currentColor; }
 .composer .model-picker-trigger { border-color:transparent; background:transparent; }
 /* The composer's toolbar controls (permissions, model, effort) are one pill: height, corner, text size and hover. */
 .composer-pill, .composer .model-select { height:28px; font-size:var(--text-xs); }
@@ -847,7 +855,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .composer .model-trigger-provider { display:none; }
 /* Sidebar */
 /* Group labels in the sidebar and in Settings' navigation. */
-.section-label { line-height:1; color:var(--muted-foreground); padding:16px 8px 6px; }
+.section-label { display:flex; align-items:center; height:34px; line-height:1; color:var(--muted-foreground); padding:0 8px; }
+.section-label-row > .section-label { height:auto; }
 .thread-row { position:relative; }
 /* Match the group chevron's center (6px inset + half its 13px icon); only circles and names indent for agents. */
 .thread-row > button[aria-expanded]:first-child { position:absolute; left:calc(6.5px + var(--thread-depth, 0) * 14px); width:14px; background:transparent; box-shadow:none; }
@@ -880,7 +889,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .thread-subtitle { font-size:var(--text-xs); color:var(--warning); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .thread-dot[data-state="error"] { border-color:var(--destructive); background:var(--destructive); }
 .thread-dot.workflow-mark { display:inline-block; margin:0 3px; border-color:var(--workflow-colour); background:var(--workflow-colour); vertical-align:middle; }
-.conversation-state-slot { display:flex; align-items:center; justify-content:center; flex-shrink:0; width:20px; height:24px; margin-left:20px; }
+.conversation-state-slot { display:flex; align-items:center; justify-content:center; flex-shrink:0; width:20px; height:24px; margin-left:6px; }
 .conversation-state-slot .thread-dot { margin:0; }
 .conversation-colour-swatch { display:inline-block; flex-shrink:0; box-sizing:border-box; width:9px; height:9px; border:1.5px solid var(--workflow-colour, var(--subtle-foreground)); border-radius:50%; background:var(--workflow-colour, transparent); }
 .thread-row > .conversation-status { margin:0 2px; }
@@ -897,13 +906,13 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 @keyframes spin { to { transform:rotate(360deg); } }
 /* A collapsible group of chats (components/sidebar-group.tsx): a project, or a group the person made. */
 .sidebar-group { margin-bottom:2px; }
-.sidebar-group-row { display:flex; align-items:center; padding-inline-end:8px; }  /* the "+" lines up with the Projects header's */
+.sidebar-group-row { display:flex; align-items:center; min-height:34px; padding-inline-end:8px; }  /* the "+" lines up with the Projects header's */
 .sidebar-group-row:hover, .sidebar-group-row[data-popup-open] { background:var(--hover); }
 .sidebar-group-actions { display:flex; opacity:0; }
 .project-new-chat { flex-shrink:0; color:var(--muted-foreground); }
 .project-new-chat:hover { color:var(--foreground); }
 .sidebar-group-row:hover .sidebar-group-actions, .sidebar-group-row[data-popup-open] .sidebar-group-actions, .sidebar-group-row:focus-within .sidebar-group-actions, .sidebar-group-actions:has([aria-expanded="true"]) { opacity:1; }
-.sidebar-group-toggle { flex:1; min-width:0; display:flex; align-items:center; gap:6px; border:0; background:none; color:var(--foreground); padding:5px 6px; font-size:var(--text-sm); text-align:left; }
+.sidebar-group-toggle { flex:1; min-width:0; display:flex; align-items:center; gap:6px; height:34px; border:0; background:none; color:var(--foreground); padding:0 6px; font-size:var(--text-sm); text-align:left; }
 .sidebar-group-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .sidebar-group-toggle svg { flex-shrink:0; color:var(--muted-foreground); }
 /* One icon size in the sidebar, as in ChatGPT: rows, groups, search and the footer (chevrons keep their own). */
@@ -1192,6 +1201,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .canvas-edge-cut .canvas-chevron { stroke:var(--destructive); }
 .canvas-board .react-flow__edge-path { stroke-width:1.6; }
 .canvas-board .react-flow__controls-button { width:var(--control-h); height:var(--control-h); }
+.canvas-board .react-flow__controls-button svg { width:var(--icon-size); height:var(--icon-size); max-width:var(--icon-size); max-height:var(--icon-size); }
 /* No group rectangle after a box selection (Fusion and Slate have none): it sat over the agents, took the next click and
    dragged the whole group. Dragging any selected agent still moves them all. */
 .canvas-board .react-flow__nodesselection { display:none; }

@@ -3,7 +3,7 @@
 .settings-page-heading { min-width:0; }
 /* A page action (Refresh, Add) sits level with the title. */
 .settings-page-header > :not(.settings-page-heading) { flex-shrink:0; margin-top:2px; }
-.settings-page-header h2 { font:400 var(--text-title)/1.2 var(--serif); letter-spacing:-.01em; }
+.settings-page-header h2 { font:400 var(--text-title)/1.2 var(--ui-font); letter-spacing:-.01em; }
 .settings-page-header p { margin-top:4px; font-size:var(--text-sm); color:var(--muted-foreground); }
 .settings-group { margin-bottom:24px; min-width:0; }
 .settings-group-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0 0 8px; min-height:24px; }

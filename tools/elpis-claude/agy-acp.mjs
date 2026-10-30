@@ -163,9 +163,13 @@ async function onEvent(s, m) {
   if (!turn) return;
   if (m.event === "step_update") {
     const u = m.step_update ?? {};
+    const context = m.agent_state?.context_window_usage;
+    if (Number.isFinite(context?.estimated_tokens_used) && Number.isFinite(context?.max_context_tokens)) {
+      notify(s.id, { sessionUpdate: "usage_update", used: context.estimated_tokens_used, size: context.max_context_tokens,
+        _meta: { "elpis/contextWindow": { actual: true } } });
+    }
     if (u.step_type === "agent_response") {
       if (u.text_delta) notify(s.id, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: u.text_delta } });
-      if (u.usage) { turn.used = (u.usage.input_tokens ?? 0) + (u.usage.output_tokens ?? 0); notify(s.id, { sessionUpdate: "usage_update", used: turn.used }); } // agy reports no window, so none is claimed
     } else if (u.step_type === "tool") {
       const id = `agy-${s.conversationId}-${u.step_index}`;
       const d = describe(u.tool_info ?? { name: u.tool_name });

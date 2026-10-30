@@ -29,6 +29,7 @@ import { MASIH_PEN, latestMessage, lightFiles, lightImage } from "@/lib/love-spo
 import { LOVE_SPOT_AUDIO } from "@/lib/love-spot-audio";
 import { noticed, told } from "@/lib/matilda";
 import { newer } from "@/bridge/love-spot-order.cjs";
+import { BOARD_FACE, BOARD_FACE_LIGHT } from "@/bridge/matilda-face.cjs";
 import { upgradeAgentArt } from "@/lib/love-agents";
 import "@excalidraw/excalidraw/index.css";
 import "./love-spot.css";
@@ -56,7 +57,10 @@ function clearOfTools(area: HTMLElement | null) {
   const tools = part(".App-toolbar"), panel = part(".App-menu__left"), footer = part(".layer-ui__wrapper__footer-left"), gap = 16;
   return { top: (tools ? tools.bottom - board.top : 0) + gap, left: (panel?.width ? panel.right - board.left : 0) + gap, right: gap, bottom: (footer ? board.bottom - footer.top : 0) + gap };
 }
-async function lightDrawing(drawing: Drawing) { return { ...drawing, files: await lightFiles(drawing.elements, drawing.files) }; }
+const boardFiles = (files: BinaryFiles, dark: boolean) => Object.fromEntries(Object.entries(files).map(([id, file]) => [id,
+  id === "matilda-face" && (file.dataURL === BOARD_FACE.dataURL || file.dataURL === BOARD_FACE_LIGHT.dataURL) ? { ...file, ...(dark ? BOARD_FACE : BOARD_FACE_LIGHT) } : file])) as BinaryFiles;
+const savedBoardFiles = (files: BinaryFiles) => boardFiles(files, true);
+async function lightDrawing(drawing: Drawing) { const files = savedBoardFiles(drawing.files); return { ...drawing, files: await lightFiles(drawing.elements, files) }; }
 async function savePicture(data: Saved) {
   const blob = await exportToBlob({ elements: restoreRemoteElements(data.scene.elements).filter(e => !e.isDeleted),
     appState: { ...data.scene.appState, exportBackground: true }, files: data.scene.files, mimeType: "image/png", exportPadding: 24, maxWidthOrHeight: 2400 });
@@ -171,13 +175,13 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
       // Read before restoring: index repair stamps every unindexed element (her replies) with the time of opening.
       const note = latestMessage(recovered);
       opening.current = (note.length ? note : recovered.filter(e => !e.isDeleted)).map(e => e.id);
-      setInitial({ elements, files: data.scene.files, scrollToContent: false,
+      setInitial({ elements, files: boardFiles(data.scene.files, dark), scrollToContent: false,
         appState: { ...data.scene.appState, currentItemStrokeColor: MASIH_PEN, collaborators: new Map() } });
       recoveryPending.current = versions(recovered) !== versions(data.scene.elements);
       setError("");
     }).catch(report);
     return () => { active = false; };
-  }, [attempt, loadPages, report]);
+  }, [attempt, dark, loadPages, report]);
 
   const schedulePicture = useCallback(() => {
     clearTimeout(viewTimer.current);
@@ -213,7 +217,7 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
       remote.current = true;
       try {
         editor.resetScene();
-        editor.addFiles(Object.values(data.scene.files));
+        editor.addFiles(Object.values(boardFiles(data.scene.files, dark)));
         applyRemoteScene(editor, restoreRemoteElements(data.scene.elements),
           { ...editor.getAppState(), ...data.scene.appState, selectedElementIds: {}, collaborators: new Map() });
       } finally { remote.current = false; }
@@ -230,7 +234,7 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
     const changed = mergeRemoteElements(shown, data.scene.elements, newer);
     // File IDs are immutable in Excalidraw: addFiles only accepts missing IDs.
     // Keep originals for undo instead of repeatedly resaving a normalized copy.
-    const files = Object.values(data.scene.files).filter(f => !editor.getFiles()[f.id]);
+    const files = Object.values(boardFiles(data.scene.files, dark)).filter(f => !editor.getFiles()[f.id]);
     if (files.length || changed) {
       remote.current = true;
       try {
@@ -252,7 +256,7 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
       // Excalidraw may notify after the merged snapshot is already current.
       schedulePicture();
     }
-  }, [editor, loadPages, schedulePicture]);
+  }, [dark, editor, loadPages, schedulePicture]);
 
   const capture = useCallback(() => {
     const value = editorRef.current, page = currentPage.current;

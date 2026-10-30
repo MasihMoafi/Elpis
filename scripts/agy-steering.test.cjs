@@ -45,6 +45,12 @@ if (process.argv.includes('--fake-agy')) {
           tool_info: { name: 'run_command', parameters: { CommandLine: 'fixture tool' }, output: 'completed' },
         } });
       }
+      send({ event: 'step_update', agent_state: { context_window_usage: {
+        estimated_tokens_used: 238336, max_context_tokens: 256000,
+      } }, step_update: {
+        step_type: 'agent_response', text_delta: 'fixture answer',
+        usage: { input_tokens: 2800, output_tokens: 60 },
+      } });
       send({ event: 'result', result: {
         status: text === 'initial:failure' || firstSteer && process.env.AGY_FIXTURE_KIND === 'deliveredFailure' ? 'FAILURE' : 'SUCCESS',
         ...(text === 'initial:failure' || firstSteer && process.env.AGY_FIXTURE_KIND === 'deliveredFailure' ? { error: 'fixture failure' } : {}),
@@ -102,6 +108,10 @@ if (process.argv.includes('--fake-agy')) {
         assert(delivered.raw.startsWith('<elpis_session>\n'), 'resumed turns must identify the actual project');
         assert(delivered.raw.includes(`Project directory: ${JSON.stringify(cwd)}`));
         assert(delivered.raw.includes('permission infrastructure'));
+        const usage = messages.find(message => message.params?.update?.sessionUpdate === 'usage_update')?.params.update;
+        assert.deepEqual(usage, { sessionUpdate: 'usage_update', used: 238336, size: 256000,
+          _meta: { 'elpis/contextWindow': { actual: true } } },
+          'context usage is the latest request input against the model window, not the turn token sum');
         checks.push('workspace: resumed prompts identify the real project separately from approval hooks');
         console.log(`PASS ${checks.at(-1)}`);
         return;

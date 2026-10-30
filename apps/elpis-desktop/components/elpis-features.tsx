@@ -11,7 +11,7 @@ export function ElpisFeatures({ threadId }: { threadId?: string }) {
   if (!state && !threadId) return null;
   return <div role="group" aria-label="Elpis features" className="elpis-features">
     {threadId && <Tooltip content={ledger.tooltip} detail="Open what this chat's context holds (/context)">
-      <button data-slot="feature-chip" type="button" className="feature-chip" {...{ [CONTEXT_TOGGLE_ATTRIBUTE]: "" }} onClick={() => window.dispatchEvent(new Event(TOGGLE_CONTEXT_EVENT))}><ContextRingIcon pct={ledger.pct} size={14} />Ledger</button>
+      <button data-slot="feature-chip" type="button" className="feature-chip" {...{ [CONTEXT_TOGGLE_ATTRIBUTE]: "" }} onClick={() => window.dispatchEvent(new Event(TOGGLE_CONTEXT_EVENT))}><ContextRingIcon pct={ledger.pct} size={7} />Ledger</button>
     </Tooltip>}
     {state && switchRows(state).map(row => {
       const on = saving === row.field ? !row.on : row.on;

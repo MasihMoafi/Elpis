@@ -1,5 +1,5 @@
 // Reading options in Settings → Appearance, as Claude's desktop app has them: Transcript text size (Small, Medium,
-// Large), Transcript width (Narrow, Medium, Wide), Interface font and Code font (code, diffs and the terminal). Saved on
+// Large), Transcript width (Narrow, Medium, Wide), and Code font (code, diffs and the terminal). Saved on
 // this device with the other preferences. The exported UI against tests/parity-fixture.cjs, a mock bridge with no
 // engine or model. Captures go to $ELPIS_PARITY_SHOTS when it is set.
 const { test } = require('node:test');
@@ -26,7 +26,7 @@ async function eventually(check, ms = 4000) {
   for (;;) { try { return await check(); } catch (error) { if (Date.now() >= deadline) throw error; await new Promise(resolve => setTimeout(resolve, 50)); } }
 }
 
-test('Appearance offers the reading options; Large, Wide and Serif change the transcript, its columns and the interface, and survive a reload', async () => {
+test('Appearance offers the reading options; Large and Wide change the transcript and its columns and survive a reload', async () => {
   const f = await fixture({ width: 1440, height: 900 }), { page } = f;
   try {
     await f.open('chat-a');
@@ -34,34 +34,31 @@ test('Appearance offers the reading options; Large, Wide and Serif change the tr
     assert.deepEqual([before.text, before.column, before.composer], ['14px', '740px', '740px'], 'the defaults are today’s look');
     assert.match(before.sidebar, /^Inter, system-ui/);
     const settings = await appearance(page);
-    const size = settings.getByRole('radiogroup', { name: 'Transcript text size' }), width = settings.getByRole('radiogroup', { name: 'Transcript width' }), font = settings.getByRole('radiogroup', { name: 'Interface font' });
+    const size = settings.getByRole('radiogroup', { name: 'Transcript text size' }), width = settings.getByRole('radiogroup', { name: 'Transcript width' });
     assert.deepEqual(await size.getByRole('radio').allInnerTexts(), ['Small', 'Medium', 'Large']);
     assert.deepEqual(await width.getByRole('radio').allInnerTexts(), ['Narrow', 'Medium', 'Wide']);
-    assert.deepEqual(await font.getByRole('radio').allInnerTexts(), ['Sans', 'Serif']);
-    assert.deepEqual([await checked(size), await checked(width), await checked(font)], ['Medium', 'Narrow', 'Sans']);
-    for (const text of ['Size of the conversation transcript text.', 'Maximum width of the transcript and composer columns.', 'Font for the whole interface — menus, sidebars, and panels.', 'Set a custom monospace font for code and terminal.']) await settings.getByText(text, { exact: true }).waitFor();
+    assert.deepEqual([await checked(size), await checked(width)], ['Medium', 'Narrow']);
+    for (const text of ['Size of the conversation transcript text.', 'Maximum width of the transcript and composer columns.', 'Set a custom monospace font for code and terminal.']) await settings.getByText(text, { exact: true }).waitFor();
     assert.equal(await settings.getByRole('textbox', { name: 'Code font' }).inputValue(), '');
     await size.getByRole('radio', { name: 'Large' }).click();
     await width.getByRole('radio', { name: 'Wide' }).click();
-    await font.getByRole('radio', { name: 'Serif' }).click();
-    assert.match(await style(settings.locator('.settings-row-title'), 'fontFamily'), /^ui-serif/, 'Settings takes the interface font at once');
-    assert.deepEqual(await saved(page), { ...await saved(page), transcriptSize: 'l', transcriptWidth: 'l', interfaceFont: 'serif' });
+    const stored = await saved(page); assert.equal(stored.transcriptSize, 'l'); assert.equal(stored.transcriptWidth, 'l');
     await leaveSettings(page);
     await eventually(async () => assert.equal(await style(reply(page), 'fontSize'), '16px'));
     assert.equal(await style(prompt(page), 'fontSize'), '16px', 'your messages too');
     assert.equal(await style(page.locator('.chat-content'), 'maxWidth'), '1100px');
     assert.equal(await style(page.locator('.composer'), 'maxWidth'), '1100px', 'the composer column follows');
     assert.equal(await style(page.locator('.composer textarea'), 'fontSize'), before.box, 'the message box keeps its size');
-    assert.match(await style(page.locator('aside.sidebar .thread-title'), 'fontFamily'), /^ui-serif/);
+    assert.match(await style(page.locator('aside.sidebar .thread-title'), 'fontFamily'), /^Inter/);
     await page.locator('aside.sidebar .thread-row').first().click({ button: 'right' });
-    assert.match(await style(page.getByRole('menu'), 'fontFamily'), /^ui-serif/, 'menus too');
+    assert.match(await style(page.getByRole('menu'), 'fontFamily'), /^Inter/, 'menus use the same interface font');
     await page.keyboard.press('Escape');
     await page.reload();
     await f.open('chat-a');
     assert.equal(await style(reply(page), 'fontSize'), '16px', 'after a reload');
     assert.equal(await style(page.locator('.chat-content'), 'maxWidth'), '1100px');
     const again = await appearance(page);
-    assert.deepEqual([await checked(again.getByRole('radiogroup', { name: 'Transcript text size' })), await checked(again.getByRole('radiogroup', { name: 'Transcript width' })), await checked(again.getByRole('radiogroup', { name: 'Interface font' }))], ['Large', 'Wide', 'Serif']);
+    assert.deepEqual([await checked(again.getByRole('radiogroup', { name: 'Transcript text size' })), await checked(again.getByRole('radiogroup', { name: 'Transcript width' }))], ['Large', 'Wide']);
     await again.getByRole('radiogroup', { name: 'Transcript text size' }).getByRole('radio', { name: 'Small' }).click();
     await again.getByRole('radiogroup', { name: 'Transcript width' }).getByRole('radio', { name: 'Medium' }).click();
     await leaveSettings(page);
@@ -129,7 +126,6 @@ for (const colorScheme of ['light', 'dark']) for (const width of [1280, 1440]) t
     assert.deepEqual(await uiFit(page.locator('.chat-view')), [], 'the chat');
     if (shots) await page.screenshot({ path: path.join(shots, `reading-chat-${colorScheme}-${width}.png`) });
     const settings = await appearance(page);
-    await settings.getByRole('radiogroup', { name: 'Interface font' }).getByRole('radio', { name: 'Serif' }).click();
     assert.deepEqual(await uiFit(settings), [], 'the Appearance page');
     if (shots) await page.screenshot({ path: path.join(shots, `reading-appearance-${colorScheme}-${width}.png`) });
     assert.deepEqual(f.errors, []);

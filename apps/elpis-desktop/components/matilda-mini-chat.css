@@ -1,7 +1,9 @@
 /* Her chat is part of the pinned Matilda (matilda-companion.tsx places it): one column that hugs its messages and box.
    Only the messages scroll, so it never leaves the window (29 Oct: the whole panel scrolled and left the box floating
    over empty panel). */
-.hud-popover.matilda-mini-popup { position:absolute; z-index:1; display:flex; flex-direction:column; padding:8px; overflow:hidden; }
+:root { --matilda-panel:var(--recessed); }
+.dark { --matilda-panel:var(--card); }
+.hud-popover.matilda-mini-popup { position:absolute; z-index:1; display:flex; flex-direction:column; padding:8px; overflow:hidden; background:var(--matilda-panel); }
 .matilda-mini-chat { display:flex; flex-direction:column; min-width:0; min-height:0; font-size:var(--text-small); }
 .matilda-mini-composer { display:flex; flex:none; align-items:center; gap:6px; min-height:36px; }
 .matilda-mini-composer textarea { min-width:0; min-height:32px; max-height:96px; flex:1; padding:6px 8px; resize:none; border:0; box-shadow:none; background:transparent; }
@@ -29,7 +31,11 @@
 html.matilda-dragging { user-select:none; -webkit-user-select:none; }
 .matilda-face { display:block; width:100%; height:100%; padding:0; border:0; border-radius:9999px; background:transparent; cursor:grab; filter:drop-shadow(0 4px 10px rgb(0 0 0 / 0.22)); }
 .matilda-face:active { cursor:grabbing; }
-.matilda-face img { display:block; width:100%; height:100%; border-radius:9999px; }
+.matilda-face img { position:absolute; inset:0; display:block; width:100%; height:100%; border-radius:9999px; }
+.matilda-face .matilda-avatar-dark { display:none; }
+.dark .matilda-face .matilda-avatar-light { display:none; }
+.dark .matilda-face .matilda-avatar-dark { display:block; }
+.matilda-pin-face { display:block; width:20px; height:20px; border-radius:50%; object-fit:cover; }
 .matilda-face:focus-visible { outline:2px solid var(--ring); outline-offset:2px; }
 .matilda-resize { position:absolute; left:-3px; top:-3px; width:14px; height:14px; padding:0; border:2px solid var(--primary); border-right:0; border-bottom:0; background:transparent; cursor:nwse-resize; }
 .matilda-float-controls { position:absolute; right:0; bottom:calc(100% + 4px); display:flex; align-items:center; gap:2px; padding:2px; border:1px solid var(--hairline); background:var(--background); }

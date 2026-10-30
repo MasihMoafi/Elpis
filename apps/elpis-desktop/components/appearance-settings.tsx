@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Choice, Segmented, SettingRow, SettingsGroup, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
 import { savePreferences, usePreferences, type Accent, type Preferences } from "@/lib/preferences";
 import { parseCustomThemes, STARTER_THEME, THEME_COLORS, validTheme, type CustomTheme, type ThemeColor } from "@/lib/theme-palettes";
-import { codeFontProblem, type ChatFont, type InterfaceFont, type ReadingStep } from "@/lib/reading";
+import { codeFontProblem, type ReadingStep } from "@/lib/reading";
 
 export type ThemeChoice = "system" | "light" | "dark";
 const OPTIONS: { value: ThemeChoice; label: string; icon: React.ReactNode }[] = [
@@ -17,19 +17,14 @@ const OPTIONS: { value: ThemeChoice; label: string; icon: React.ReactNode }[] = 
 ];
 const SIZES: { value: ReadingStep; label: string }[] = [{ value: "s", label: "Small" }, { value: "m", label: "Medium" }, { value: "l", label: "Large" }];
 const WIDTHS: { value: ReadingStep; label: string }[] = [{ value: "s", label: "Narrow" }, { value: "m", label: "Medium" }, { value: "l", label: "Wide" }];
-const FONTS: { value: InterfaceFont; label: string }[] = [{ value: "sans", label: "Sans" }, { value: "serif", label: "Serif" }];
 const ACCENTS: { value: Accent; label: string }[] = [
   { value: "amber", label: "Amber (default)" }, { value: "blue", label: "Blue" },
   { value: "teal", label: "Teal" }, { value: "green", label: "Green" },
   { value: "violet", label: "Violet" }, { value: "rose", label: "Rose" }, { value: "orange", label: "Orange" },
 ];
-const CHAT_FONTS: { value: ChatFont; label: string }[] = [
-  { value: "default", label: "Default" }, { value: "sans", label: "Sans" },
-  { value: "serif", label: "Serif" }, { value: "mono", label: "Mono" }, { value: "system", label: "System UI" },
-];
 
-/** Theme for this app window (System follows the operating system and changes with it), and Claude's reading options:
- * transcript text size and width, interface font and code font (lib/reading.ts). All saved on this device. */
+/** Theme for this app window (System follows the operating system and changes with it), and reading options:
+ * transcript text size and width plus the code font (lib/reading.ts). All saved on this device. */
 export function AppearanceSettings({ theme, onTheme }: { theme: ThemeChoice; onTheme: (theme: ThemeChoice) => void }) {
   const preferences = usePreferences();
   const [notice, setNotice] = useState("");
@@ -63,12 +58,6 @@ export function AppearanceSettings({ theme, onTheme }: { theme: ThemeChoice; onT
       {selectedId === "elpis" && <SettingRow title="Accent colour" description="Highlights, links and controls in every view.">
         <Choice label="Accent colour" value={preferences.accent} options={ACCENTS} onChange={accent => save({ accent })} />
       </SettingRow>}
-      <SettingRow title="Chat font" description="Font for messages and the composer. Default follows the interface font.">
-        <Choice label="Chat font" value={preferences.chatFont} options={CHAT_FONTS} onChange={chatFont => save({ chatFont })} />
-      </SettingRow>
-      <SettingRow title="Interface font" description="Font for the whole interface — menus, sidebars, and panels.">
-        <Segmented label="Interface font" value={preferences.interfaceFont} options={FONTS} onChange={interfaceFont => save({ interfaceFont })} />
-      </SettingRow>
       <SettingRow title="Transcript text size" description="Size of the conversation transcript text.">
         <Segmented label="Transcript text size" value={preferences.transcriptSize} options={SIZES} onChange={transcriptSize => save({ transcriptSize })} />
       </SettingRow>

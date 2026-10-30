@@ -17,6 +17,7 @@ for (const theme of ['light', 'dark']) test(`the 1100px Workflows toolbar stays 
     });
     const toolbar = await canvas.locator('.canvas-toolbar').boundingBox(), notice = await canvas.locator('.canvas-error-notice').boundingBox(), bounds = await canvas.boundingBox();
     assert.ok(toolbar.height <= 44, `toolbar is one row, not ${Math.round(toolbar.height)}px`);
+    assert.deepEqual(await canvas.locator('.react-flow__controls-button svg').evaluateAll(els => [...new Set(els.map(el => el.getBoundingClientRect().width))]), [16], 'fixed canvas controls use the shared icon size');
     await assertUiFit(canvas.locator('.canvas-toolbar'), '1100px toolbar');
     assert.ok(bounds.y + bounds.height - notice.y - notice.height >= 5, 'the alert keeps its normal bottom gap');
     if (process.env.ELPIS_POLISH_SHOTS) {

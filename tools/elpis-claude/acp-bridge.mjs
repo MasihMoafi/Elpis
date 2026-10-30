@@ -2095,10 +2095,11 @@ wss.on("connection", (ws) => {
         chars("reasoning", u.content.text.length);
       } else if (u.sessionUpdate === "usage_update" && typeof u.used === "number") {
         if (!root) return;
-        // The adapter reports a guessed 200k window until a turn's result gives the model's real
-        // one, and only a result's update carries a cost. Until then the window is unknown.
+        // Claude reports a guessed 200k window until a turn result carries a cost. Antigravity's
+        // agent state reports the actual window directly and marks it as such.
         const known = lastContext.get(threadId)?.size ?? null;
-        const size = u.cost && typeof u.size === "number" ? u.size : known;
+        const actual = u.cost || u._meta?.["elpis/contextWindow"]?.actual === true;
+        const size = actual && typeof u.size === "number" ? u.size : known;
         lastContext.set(threadId, { used: u.used, size });
         sendUsage(threadId, turnId, null);
       } else if (u.sessionUpdate === "plan" && Array.isArray(u.entries)) {

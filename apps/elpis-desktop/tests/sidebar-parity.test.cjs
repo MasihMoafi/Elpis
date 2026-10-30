@@ -93,6 +93,17 @@ test('every project header has a "+" that starts a new chat in that project', as
   });
 });
 
+test('sidebar rows share one height, one icon edge and an arrowless thin scrollbar', async () => {
+  await fixture(async ({ page }) => {
+    const heights = await page.locator('.nav-list button, .section-label-row, .sidebar-group-row, .thread-row').evaluateAll(rows => [...new Set(rows.filter(row => row.getBoundingClientRect().height > 0).map(row => Math.round(row.getBoundingClientRect().height)))]);
+    assert.deepEqual(heights, [34]);
+    const nav = await page.locator('.nav-list button svg').first().boundingBox();
+    const dot = await page.locator('[data-thread-id="t-run"] .thread-dot').boundingBox();
+    assert.ok(Math.abs((nav.x + nav.width / 2) - (dot.x + dot.width / 2)) <= 1, 'navigation icons and root chat marks share one left edge');
+    assert.equal(await page.locator('.thread-list').evaluate(el => getComputedStyle(el, '::-webkit-scrollbar-button').display), 'none');
+  });
+});
+
 test('every chat keeps its automatic status at the left', async () => {
   await fixture(async ({ page, aside, emit, shoot }) => {
     const row = id => aside.locator(`.thread-row[data-thread-id="${id}"]`).first();

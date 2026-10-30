@@ -88,6 +88,19 @@ const contrast = (a, b) => { const [x, y] = [luminance(a), luminance(b)].sort((p
 const isRed = value => { const [r, g, b] = rgb(value); return (hue(value) < 12 || hue(value) > 345) && r > g + 60 && r > b + 60; };
 const seconds = text => { const m = text.match(/^(?:(\d+)m )?(\d+)s$/); assert.ok(m, `a timer reads "39s" or "1m 2s", not "${text}"`); return Number(m[1] ?? 0) * 60 + Number(m[2]); };
 
+for (const colorScheme of ['light', 'dark']) test(`scrollTop 0 keeps the first work row below the tab bar (${colorScheme})`, async () => {
+  const app = await fixture();
+  try {
+    const { page, errors } = await app.open({ colorScheme });
+    await page.locator('.chat-scroll').evaluate(el => { el.scrollTop = 0; });
+    await page.waitForTimeout(100);
+    const header = await page.locator('.workspace-header').boundingBox(), row = await page.locator('.worked-for > summary').first().boundingBox();
+    assert.ok(row.y >= header.y + header.height, `work row ${row.y} starts below header ${header.y + header.height}`);
+    if (process.env.ELPIS_REVIEW_SHOTS) { await fs.mkdir(process.env.ELPIS_REVIEW_SHOTS, { recursive: true }); await page.screenshot({ path: path.join(process.env.ELPIS_REVIEW_SHOTS, `chat-top-${colorScheme}.png`) }); }
+    assert.deepEqual(errors, []);
+  } finally { await app.close(); }
+});
+
 test('finished work folds into one row per group, opens by click or keyboard, and shows commands as Claude does', async () => {
   const app = await fixture();
   try {
