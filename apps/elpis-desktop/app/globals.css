@@ -756,6 +756,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .hud-dialog { padding:20px; }
 .hud-menu-title { line-height:1.2; color:var(--muted-foreground); padding:6px 8px 8px; margin:0; }
 .hud-menu-item { display:flex; align-items:center; gap:8px; padding:7px 8px; }
+.hud-menu-item > .grid { min-width:0; overflow-wrap:anywhere; }
 .hud-menu-item small { color:var(--muted-foreground); font-size:var(--text-small); line-height:1.35; }
 .hud-menu-item[data-highlighted], .hud-menu-item[aria-selected="true"] { background:var(--selected); }
 /* A row the keys reach (components/ui/menu-row.tsx) shows focus as a dropdown item does: by its fill, not the page outline. */
