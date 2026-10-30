@@ -10,6 +10,8 @@ import { recordedClaudeEnd } from "./claude-turn-record.mjs";
 import { WorkflowRunner, noticeText, personAskedForWorkflow } from "./workflow-runner.mjs";
 import { bridgeExecutor } from "./workflow-agents.mjs";
 import { connectAppServer } from "./app-server-connection.mjs";
+import { acpServersFrom, appMcpConfig, redactMcpConfigForLog, restoreMcpSession } from "./acp-mcp-servers.mjs";
+import { McpSessionSelections } from "./mcp-session-selections.mjs";
 import { execFile, spawn } from "node:child_process";
 import { existsSync, readFileSync, renameSync, rmSync, statSync, watch, writeFileSync } from "node:fs";
 import { readFile, mkdir } from "node:fs/promises";
@@ -89,18 +91,6 @@ const mcpServersFor = (subagents, parentThreadId, memoryCwd, workflow = false) =
     ],
   }];
 };
-// A37: the app hands a chat its own MCP servers (the built-in browser) as `config["mcp_servers.<name>"]`
-// overrides on thread/start, /fork and /resume. A Claude session gets the same servers in ACP's form;
-// Claude's MCP calls carry no `_meta.threadId`, so the server's environment names the thread.
-const appMcpConfig = (config) => {
-  const entries = Object.entries(config ?? {}).filter(([key, s]) =>
-    key.startsWith("mcp_servers.") && key !== "mcp_servers.elpis-agents" && typeof s?.command === "string");
-  return entries.length ? Object.fromEntries(entries) : null;
-};
-const acpServersFrom = (config, threadId) => Object.entries(config ?? {}).map(([key, s]) => ({
-  name: key.slice("mcp_servers.".length), command: s.command, args: Array.isArray(s.args) ? s.args.map(String) : [],
-  env: [...Object.entries(s.env ?? {}).map(([name, value]) => ({ name, value: String(value) })), { name: "ELPIS_THREAD_ID", value: threadId }],
-}));
 const MIME = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp" };
 async function toAcpPrompt(input) {
   const { readFile } = await import("node:fs/promises");
@@ -161,6 +151,8 @@ const clipItem = (it) => it.type === "fileChange" ? { ...it, changes: it.changes
 const clipTurn = (turn) => ({ ...turn, items: turn.items.map(clipItem) });
 const ELPIS_HOME = process.env.ELPIS_HOME || `${HOME}/.elpis-next`;
 const STORE = process.env.ACP_BRIDGE_STORE ?? `${ELPIS_HOME}/elpis-claude/sessions.json`;
+const MCP_SELECTIONS_FILE = join(ELPIS_HOME, "desktop-mcp-selections");
+const MCP_SELECTIONS = new McpSessionSelections(MCP_SELECTIONS_FILE);
 async function readStore() {
   try {
     const store = JSON.parse(await readFile(STORE, "utf8"));
@@ -795,7 +787,7 @@ wss.on("connection", (ws) => {
     forgetThread: (tid) => {
       cancelRelays(ws, tid);
       for (const cache of [threadCwd, threadSeen, childThreads, childIds, threadPolicy, smartPrune,
-        threadSandbox, sessions, claudeModel, claudeEffort, resumeResults, sessionModel,
+        threadSandbox, sessions, threadMcp, claudeModel, claudeEffort, resumeResults, sessionModel,
         threadCollab, threadAccess, lastTurnUsage, forkParent, queues, goals, ownHelpers, pendingSteers, materializedProviders]) cache.delete(tid);
     },
     // An abandoned request is bookkeeping, not running work. Turns (including native
@@ -1656,6 +1648,14 @@ wss.on("connection", (ws) => {
   // permissions by its ceiling before the engine loads it, so the reopened thread and what the
   // TUI shows are already within it.
   const pendingAdopt = new Map(); // thread/resume id -> the helper it reopens
+  async function restoreThreadMcp(tid) {
+    return restoreMcpSession(tid, {
+      selections: MCP_SELECTIONS,
+      cache: threadMcp,
+      readConfig: () => engineCall("config/read", { includeLayers: true }, 5000),
+      onWarning: warning => log(`MCP restore warning for thread ${tid}: ${warning}`),
+    });
+  }
   async function resumeThread(msg) {
     const tid = msg.params?.threadId;
     await storeChain;
@@ -1666,6 +1666,7 @@ wss.on("connection", (ws) => {
       const route = forwarded.get(msg.id); forwarded.delete(msg.id); pendingResume.delete(msg.id); resumeOptions.delete(msg.id); openingReplies.delete(msg.id);
       existing.dispatch({ ...msg, id: route?.id ?? msg.id }, route?.client ?? ws); return;
     }
+    if (tid) await restoreThreadMcp(tid);
     if ((claudeModel.has(tid) || existing?.nativeHelper) && resumeResults.has(tid)) {
       const params = { threadId: tid };
       for (const k of ["approvalPolicy", "approvalsReviewer", "permissions", "model", "effort"]) if (msg.params[k] != null) params[k] = msg.params[k];
@@ -3258,7 +3259,7 @@ wss.on("connection", (ws) => {
       if (appMcp && msg.method === "thread/resume") threadMcp.set(msg.params.threadId, appMcp);
       else if (appMcp) openingMcp.set(msg.id, appMcp);
     }
-    if (process.env.ACP_BRIDGE_DEBUG && msg.method && (process.env.ACP_BRIDGE_DEBUG === "all" || !/^thread\/(read|turns\/list|list|loaded)/.test(msg.method))) log(`tui-> ${redactSecrets(line).slice(0, 600)}`);
+    if (process.env.ACP_BRIDGE_DEBUG && msg.method && (process.env.ACP_BRIDGE_DEBUG === "all" || !/^thread\/(read|turns\/list|list|loaded)/.test(msg.method))) log(`tui-> ${redactSecrets(redactMcpConfigForLog(line)).slice(0, 600)}`);
     if (msg.method === "thread/read" && claudeModel.has(msg.params?.threadId) && resumeResults.has(msg.params.threadId)) {
       const tid = msg.params.threadId;
       storeChain.then(loadStore).then(async (store) => {

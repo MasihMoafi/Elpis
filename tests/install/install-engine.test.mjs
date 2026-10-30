@@ -32,10 +32,11 @@ function fixture(t, spaces = false) {
   symlinkSync(source, `${old}/tools/elpis-claude/node_modules`);
   writeFileSync(`${source}/tools/elpis-claude/runtime.mjs`, 'export const fixture = true;\n');
   writeFileSync(`${source}/tools/elpis-claude/elpis-wrapper`, `#!/bin/sh\n${direct}\n`);
+  writeFileSync(`${source}/tools/elpis-claude/mcp-session-selections.mjs`, 'export class McpSessionSelections {}\n');
   writeFileSync(`${source}/codex-rs/prompts/fixture.md`, 'prompt\n');
   const git = (...args) => execFileSync('git', ['-C', source, ...args], { stdio: 'pipe' });
   git('init', '-q');
-  git('add', 'tools/elpis-claude/runtime.mjs', 'tools/elpis-claude/elpis-wrapper', 'codex-rs/prompts/fixture.md');
+  git('add', 'tools/elpis-claude/runtime.mjs', 'tools/elpis-claude/elpis-wrapper', 'tools/elpis-claude/mcp-session-selections.mjs', 'codex-rs/prompts/fixture.md');
   git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@localhost', 'commit', '-qm', 'fixture');
   const head = git('rev-parse', 'HEAD').toString().trim();
   writeFileSync(`${frontend}/verification.json`, JSON.stringify({ head: head.slice(0, 9), run: 1 }));
@@ -62,6 +63,8 @@ test('installs a self-contained local package and preserves rollback across two 
   inspect(pkg);
   assert.ok(existsSync(`${bundle}/tools/elpis-claude/node_modules`));
   assert.equal(execFileSync(`${f.bin}/elpis`, ['--version'], { encoding: 'utf8' }).trim(), 'elpis 0.4.1');
+  assert.equal(readFileSync(`${bundle}/tools/elpis-claude/mcp-session-selections.mjs`, 'utf8'), readFileSync(`${f.source}/tools/elpis-claude/mcp-session-selections.mjs`, 'utf8'));
+  assert.equal(existsSync(`${bundle}/apps`), false, 'the installed ACP bridge has no source app directory to fall back to');
   assert.equal(execFileSync(`${f.bin}/elpis`, [], { encoding: 'utf8' }).trim(), 'old-frontend');
   assert.equal(f.run('first').status, 1, 'duplicate bundle must be refused');
   const second = f.run('second');

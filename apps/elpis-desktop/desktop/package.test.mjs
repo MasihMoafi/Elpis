@@ -23,6 +23,14 @@ test('the package holds every local file its entry points import', async () => {
   for (const name of seen) assert(production.includes(name), `${name} is imported but not packaged`);
 });
 
+test('the desktop resource is the same MCP selection store shipped with the engine bridge', async () => {
+  const root = fileURLToPath(new URL('../', import.meta.url));
+  const relative = 'bridge/resources/mcp-session-selections.mjs';
+  const canonical = fileURLToPath(new URL('../../../tools/elpis-claude/mcp-session-selections.mjs', import.meta.url));
+  assert(production.includes(relative), 'the desktop package includes the copied store');
+  assert.equal(await fs.readFile(path.join(root, relative), 'utf8'), await fs.readFile(canonical, 'utf8'));
+});
+
 // Files a window loads by path (a preload, a page, an icon) are not imports: Quick Entry's page and preload would be missing.
 test('the package holds every file the desktop code loads by path', async () => {
   const root = fileURLToPath(new URL('../', import.meta.url));

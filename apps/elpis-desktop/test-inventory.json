@@ -63,6 +63,7 @@
     "bridge/approvals.test.mjs",
     "bridge/attachments.test.mjs",
     "bridge/bridge.test.mjs",
+    "bridge/mcp-session-selections.test.mjs",
     "bridge/claude-turn-delivery.test.mjs",
     "bridge/browser-mcp.test.mjs",
     "bridge/canvas-plan.test.mjs",

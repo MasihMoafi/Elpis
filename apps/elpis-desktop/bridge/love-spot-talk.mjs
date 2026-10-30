@@ -230,8 +230,9 @@ export function createLoveSpotTalk({ client, store, companion, audio = LOVE_SPOT
     }
 
     let made;
+    const sourceThreadId = currentId ?? (sourceId === 'stale' ? undefined : sourceId);
     const nextId = await store.chat(async directory => {
-      made = await client.createThread({
+      const freshThread = {
         cwd: input.cwd ?? thread?.cwd ?? directory,
         name: 'Love Spot',
         ...(model ? { model } : {}),
@@ -239,7 +240,10 @@ export function createLoveSpotTalk({ client, store, companion, audio = LOVE_SPOT
         ...(input.permissions ? { permissions: input.permissions } : {}),
         instructions: `${INSTRUCTIONS}\n\nCurrent persona from Who you are.txt:\n${persona}`,
         automatic: true,
-      });
+      };
+      made = sourceThreadId && typeof client.createThreadFromSession === 'function'
+        ? await client.createThreadFromSession(sourceThreadId, freshThread)
+        : await client.createThread(freshThread);
       return made.thread.id;
     }, currentId ?? stale);
     if (!made || nextId !== made.thread.id) throw new BridgeError('Love Spot changed in another window. Try again.', 409);
@@ -248,7 +252,7 @@ export function createLoveSpotTalk({ client, store, companion, audio = LOVE_SPOT
     if (writing) { clearTimeout(writing.timer); for (const item of writing.items.values()) item.buffer.cancel(); }
     threadId = nextId; thread = made.thread; entries = []; activeTurnId = null; finishedTurnId = null; error = ''; stale = undefined; loaded = true; writing = undefined; sendingPage = undefined;
     publish();
-    return { thread, permissions: made.permissions ?? input.permissions };
+    return { thread, permissions: made.permissions ?? input.permissions, ...(Array.isArray(made.mcpWarnings) && made.mcpWarnings.length ? { mcpWarnings: made.mcpWarnings } : {}), ...(made.mcpServersSaved === false ? { mcpServersSaved: false } : {}) };
   }
   return {
     busy: () => sending || !!activeTurnId,

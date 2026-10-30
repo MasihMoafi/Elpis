@@ -18,12 +18,13 @@ const note = (id, text, color = '#e03131', extra = {}) => ({ id, type: 'text', t
 async function fixture(t, { refuseFast = false, audio = enabledAudio, companion = false } = {}) {
   const base = os.tmpdir();
   const directory = createTestTempDir(path.join(base, 'love-talk-')), store = createLoveSpot({ directory, screenshots: path.join(directory, 'shots') });
-  const client = new EventEmitter(), created = [], sent = [], entries = [], speeds = [];
+  const client = new EventEmitter(), created = [], copiedMcpFrom = [], sent = [], entries = [], speeds = [];
   Object.assign(client, {
     settings: async () => ({ main: { model: 'luna', provider: 'openai' } }),
     voiceStatus: async () => ({ available: true, voice: 'juniper' }),
     models: async () => ({ data: [{ model: 'luna', inputModalities: ['text', 'image'] }, { model: 'text', inputModalities: ['text'] }], nextCursor: null }),
     createThread: async value => { created.push(value); return { thread: { id: 'chat', ...value } }; },
+    createThreadFromSession: async (sourceId, value) => { copiedMcpFrom.push(sourceId); return client.createThread(value); },
     readThread: async () => ({ thread: { id: 'chat', name: 'Love Spot', cwd: directory }, data: [...entries].reverse(), nextCursor: null }),
     resume: async () => ({ activeTurnId: null }),
     send: async (id, value) => { sent.push({ id, ...value }); return { turn: { id: `turn-${sent.length}` } }; },
@@ -33,7 +34,7 @@ async function fixture(t, { refuseFast = false, audio = enabledAudio, companion 
   const talk = createLoveSpotTalk({ client, store, audio, companion: presence });
   t.after(async () => { talk.close(); store.close(); removeTestTempDir(directory); });
   const finish = (id = 'turn-1', status = 'completed', reply = 'Here with you.') => client.emit('event', { type: 'message', data: { method: 'turn/completed', params: { threadId: 'chat', turn: { id, status, items: [{ id: 'reply', type: 'agentMessage', text: reply }] } } } });
-  return { directory, store, talk, client, created, sent, finish, entries, speeds, presence };
+  return { directory, store, talk, client, created, copiedMcpFrom, sent, finish, entries, speeds, presence };
 }
 test('a fresh Matilda chat keeps its persona and settings, moves Love Spot forward, and leaves the board and old chat intact', async t => {
   const f = await fixture(t);
@@ -59,6 +60,8 @@ test('a fresh Matilda chat keeps its persona and settings, moves Love Spot forwa
   assert.equal(f.created[1].provider, 'openai');
   assert.equal(f.created[1].cwd, f.directory);
   assert.equal(f.created[1].permissions, 'ask');
+  assert.deepEqual(f.copiedMcpFrom, ['chat'], 'clear asks the session-aware creator to preserve this chat\'s MCP choice');
+  assert.equal(Object.hasOwn(f.created[1], 'mcpServers'), false, 'a legacy chat without a saved choice keeps configured defaults');
   assert.match(f.created[1].instructions, /Use concise systems design reasoning\./);
   assert.equal(f.sent.length, 1, 'starting the fresh chat sends no message');
   assert.deepEqual(await f.store.read(), board, 'starting a fresh chat leaves every board element unchanged');
@@ -67,6 +70,22 @@ test('a fresh Matilda chat keeps its persona and settings, moves Love Spot forwa
   stop();
   assert.equal(snapshot.thread.id, 'chat-fresh');
   assert.deepEqual(snapshot.entries, []);
+});
+test('Matilda /clear asks the session-aware creator to carry the saved MCP subset', async t => {
+  const f = await fixture(t);
+  await f.talk.send({ text: 'Keep this conversation.', model: 'luna', provider: 'openai' });
+  f.finish(); await f.talk.idle();
+  f.client.createThread = async value => {
+    const id = f.created.length ? 'chat-fresh' : 'chat';
+    f.created.push(value); return { thread: { id, ...value } };
+  };
+  f.client.createThreadFromSession = async (sourceId, value) => {
+    f.copiedMcpFrom.push(sourceId);
+    return f.client.createThread({ ...value, mcpServers: ['rag'] });
+  };
+  await f.talk.startFresh({ threadId: 'chat', model: 'luna', permissions: 'ask' });
+  assert.deepEqual(f.copiedMcpFrom, ['chat']);
+  assert.deepEqual(f.created[1].mcpServers, ['rag']);
 });
 test('board commands attach actual action results to the normal reply without treating discussion as a command', async t => {
   const f = await fixture(t, { companion: true, audio: LOVE_SPOT_AUDIO });

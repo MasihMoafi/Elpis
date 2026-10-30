@@ -41,6 +41,7 @@ import { rankBySearch } from "@/lib/search-rank";
 import { AppUpdate } from "@/components/app-update";
 import { AppMenus } from "@/components/app-menus";
 import { permissionLabel, PermissionsMenu, PlanPill, PlusMenu, SendOptionsMenu, type PermissionMode } from "@/components/composer-controls";
+import { McpSessionMenu } from "@/components/mcp-session-menu";
 import { CopyButton } from "@/components/markdown-text";
 import { liveEventItemKey, mergeHistoryWithLive, mergeLiveItem, runtimeErrorNotice } from "@/lib/live-events";
 import { entryKey, rememberSubmittedMessages, submittedContent, withSubmittedMessages, type SubmittedMessage } from "@/lib/submitted-messages";
@@ -131,7 +132,7 @@ const LoveSpot = dynamic(() => import("@/components/love-spot"), { ssr: false, l
 
 type View = "chat" | "agentsGuide" | "canvas" | "experimentLab" | "loveSpot" | "customize" | "settings";
 type NextTurn = { model?: string; plan?: boolean };
-type Live = { thread: Thread; activeTurnId?: string | null; permissions?: PermissionMode | null; planMode?: boolean };
+type Live = { thread: Thread; activeTurnId?: string | null; permissions?: PermissionMode | null; planMode?: boolean; mcpWarnings?: string[] };
 /** A page of a chat's history; `earliestHistoryMissing` when the record it continued was deleted. */
 type HistoryPage = { data: Entry[]; nextCursor: string | null; earliestHistoryMissing?: boolean };
 /** The terminal's answer to a finished plan: Plan mode off, then this message. */
@@ -298,6 +299,7 @@ export default function Home() {
   const drafts = useRef<Record<string, string>>({});
   const [messageEdits, setMessageEdits] = useState<Record<string, string>>({});
   const [approvalDrafts, setApprovalDrafts] = useState<Record<string, { id: string; answers: QuestionAnswers }>>({});
+  const [mcpServersByDraft, setMcpServersByDraft] = useState<Record<string, string[]>>({});
   const submitting = useRef(new Set<string>());
   const [pendingDrafts, setPendingDrafts] = useState<Record<string, boolean>>({});
   async function submitDraft<T,>(key: string, send: () => Promise<T>): Promise<T> {
@@ -402,6 +404,18 @@ export default function Home() {
   const [activity, setActivity] = useState<Record<string, string>>({});
   const [liveError, setLiveError] = useState<Record<string, string>>({});
   const [runtimeNotices, setRuntimeNotices] = useState<Record<string, string>>({});
+  const [mcpNotices, setMcpNotices] = useState<Record<string, string>>({});
+  const reportMcpOutcome = useCallback((id: string, result: { mcpWarnings?: string[]; mcpServersSaved?: boolean }) => {
+    const notes = [
+      ...(result.mcpServersSaved === false ? ["This chat's MCP choice could not be saved for future resumes."] : []),
+      ...(Array.isArray(result.mcpWarnings) ? result.mcpWarnings.filter(value => typeof value === "string") : []),
+    ];
+    if (!notes.length) {
+      if (Array.isArray(result.mcpWarnings)) setMcpNotices(previous => without(previous, id));
+      return;
+    }
+    setMcpNotices(previous => ({ ...previous, [id]: notes.join(" ") }));
+  }, []);
   const [failedTurns, setFailedTurns] = useState<Record<string, FailedTurn>>({});
   // A turn that ended stopped (by Stop, Esc, another window or the engine) says so until the next turn starts.
   const [stoppedTurns, setStoppedTurns] = useState<Record<string, string>>({});
@@ -624,6 +638,7 @@ export default function Home() {
       const turnRevision = turnRevisions.current[thread.id], modeRevision = modeRevisions.current[thread.id];
       const live = await api<Live>(`/threads/${encodeURIComponent(thread.id)}/resume`, {});
       if (request.current !== id || live.thread?.id !== thread.id) return;
+      reportMcpOutcome(thread.id, live);
       if (modeRevisions.current[thread.id] === modeRevision) rememberModes(thread.id, live);
       if (turnRevisions.current[thread.id] === turnRevision) reconcileLiveThread(thread.id, live);
       if (unread) {
@@ -631,7 +646,7 @@ export default function Home() {
         if (request.current === id && Array.isArray(again.data)) { setEntries(previous => mergeHistoryWithLive(previous, [...again.data].reverse(), liveKeysAfter(historyRevision))); setItemCursor(again.nextCursor); noteHistoryGap(thread.id, again); heldEarlier.current.delete(thread.id); }
       }
     } catch (e) { if (request.current === id) setLiveError(prev => ({ ...prev, [thread.id]: e instanceof Error ? e.message : String(e) })); }
-  }, [select, setText, reconcileLiveThread, saveDraft, savedDraft, liveKeysAfter, restoreAttachments, updateTabs, markRead, noteHistoryGap]);
+  }, [select, setText, reconcileLiveThread, saveDraft, savedDraft, liveKeysAfter, restoreAttachments, updateTabs, markRead, noteHistoryGap, reportMcpOutcome]);
 
   // Navigation to the visible chat preserves its live transcript, draft and scroll. Explicit reloads still use loadThread.
   const openThread = useCallback(async (thread: Thread) => {
@@ -718,6 +733,7 @@ export default function Home() {
         const resume = (async () => {
           const live = await api<Live>(`/threads/${encodeURIComponent(id)}/resume`, {});
           if (!open() || live.thread?.id !== id) return;
+          reportMcpOutcome(id, live);
           if (modeRevisions.current[id] === modeRevision) rememberModes(id, live);
           if (turnRevisions.current[id] === turnRevision) reconcileLiveThread(id, live);
         })();
@@ -864,7 +880,7 @@ export default function Home() {
       }
     }
     initialize(); return () => { disposed = true; clearTimeout(retryTimer); catalogRequest.current++; events?.close(); };
-  }, [refreshThreads, patchThread, upsertThread, removeThreads, select, liveKeysAfter, clearApprovalDraft, refreshModels, reconcileLiveThread, noteHistoryGap]);
+  }, [refreshThreads, patchThread, upsertThread, removeThreads, select, liveKeysAfter, clearApprovalDraft, refreshModels, reconcileLiveThread, noteHistoryGap, reportMcpOutcome]);
 
   const loadChildren = useCallback(async (id: string, cursor?: string, expand = false) => {
     if (childPaging.current.has(id)) return;
@@ -1026,7 +1042,7 @@ export default function Home() {
       const originalRequest = request.current;
       const settings = { ...previous, ...settingsOf.current[previous.id] };
       try {
-        const result = await api<{ thread: Thread; permissions?: PermissionMode | null }>("/love-spot/talk/new", {
+        const result = await api<{ thread: Thread; permissions?: PermissionMode | null; mcpWarnings?: string[]; mcpServersSaved?: boolean }>("/love-spot/talk/new", {
           threadId: previous.id,
           ...(settings.model ? { model: settings.model } : {}),
           ...(settings.modelProvider ? { provider: settings.modelProvider } : {}),
@@ -1035,6 +1051,7 @@ export default function Home() {
           persona: savedPersona(),
         });
         if (!result.thread || typeof result.thread.id !== "string") throw new Error("Matilda could not start a fresh chat.");
+        reportMcpOutcome(result.thread.id, result);
         upsertThread(result.thread);
         noteStartedMode(result.thread.id, result.permissions ?? threadModes[previous.id] ?? permissionMode);
         setProjectId(projectChatsRef.current[previous.id] ?? projectId);
@@ -1190,7 +1207,7 @@ export default function Home() {
   async function forkFrom(thread: Thread, lastTurnId: string, lastItemId?: string) {
     const originalFocus = document.activeElement, originalRequest = request.current;
     try {
-      const result = await api<{ thread: Thread }>(`/threads/${encodeURIComponent(thread.id)}/fork`, { lastTurnId, ...(lastItemId ? { lastItemId } : {}) }); if (!result.thread || typeof result.thread.id !== "string") throw unreadable("fork"); upsertThread(result.thread);
+      const result = await api<{ thread: Thread; mcpWarnings?: string[]; mcpServersSaved?: boolean }>(`/threads/${encodeURIComponent(thread.id)}/fork`, { lastTurnId, ...(lastItemId ? { lastItemId } : {}) }); if (!result.thread || typeof result.thread.id !== "string") throw unreadable("fork"); reportMcpOutcome(result.thread.id, result); upsertThread(result.thread);
       if (request.current !== originalRequest || selectedRef.current?.id !== thread.id) return;
       await loadThread(result.thread);
       if (selectedRef.current?.id === result.thread.id) restoreComposerFocus(originalFocus);
@@ -1201,8 +1218,9 @@ export default function Home() {
     const originalRequest = request.current;
     setBusy(true); setError("");
     try {
-      const result = await api<{ thread: Thread }>(`/threads/${encodeURIComponent(thread.id)}/continue`, {});
+      const result = await api<{ thread: Thread; mcpWarnings?: string[]; mcpServersSaved?: boolean }>(`/threads/${encodeURIComponent(thread.id)}/continue`, {});
       if (!result.thread?.id) throw unreadable("continued chat");
+      reportMcpOutcome(result.thread.id, result);
       upsertThread(result.thread);
       if (request.current === originalRequest && selectedRef.current?.id === thread.id) await loadThread(result.thread);
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
@@ -1296,6 +1314,7 @@ export default function Home() {
     const sentMentions = own === undefined ? usedMentions(outgoing, [...pickedMentions.current.values()]) : [];
     pickedMentions.current = new Map();
     const originalId = selected?.id || newDraftKey.current, originalRequest = request.current, browserDraft = `draft:${tabsRef.current.activeId}`;
+    const requestedMcpServers = selected ? undefined : mcpServersByDraft[originalId];
     const submissionKey = crypto.randomUUID();
     const clearsComposer = own === undefined;
     if (clearsComposer) { setText(""); saveDraft(originalId, ""); setAttachments([]); saveAttachments(originalId, []); }
@@ -1312,8 +1331,10 @@ export default function Home() {
     try {
       let thread = selected;
       if (!thread) {
-        const result = await api<{ thread: Thread; permissions?: PermissionMode | null }>("/threads", { ...(newMode ? { permissions: newMode } : {}), ...(model.trim() ? { model: model.trim() } : {}), ...(newChoice?.provider ? { provider: newChoice.provider } : {}), ...(newChatFolder(cwd) ? { cwd: newChatFolder(cwd) } : {}), ...(newWorktree ? { worktree: true } : {}) });
+        const result = await api<{ thread: Thread; permissions?: PermissionMode | null; mcpServersSaved?: boolean; mcpWarnings?: string[] }>("/threads", { ...(newMode ? { permissions: newMode } : {}), ...(model.trim() ? { model: model.trim() } : {}), ...(newChoice?.provider ? { provider: newChoice.provider } : {}), ...(newChatFolder(cwd) ? { cwd: newChatFolder(cwd) } : {}), ...(newWorktree ? { worktree: true } : {}), ...(requestedMcpServers !== undefined ? { mcpServers: requestedMcpServers } : {}) });
+        setMcpServersByDraft(previous => previous[originalId] === requestedMcpServers ? without(previous, originalId) : previous);
         thread = result.thread; errorThreadId = thread.id; noteStartedMode(result.thread.id, result.permissions ?? newMode);
+        reportMcpOutcome(thread.id, result);
         updateSubmission({ scope: thread.id });
         await browser.adoptSession(browserDraft, thread.id);
         saveDraft(thread.id, originalRequest === request.current ? textRef.current : sentText);
@@ -1385,10 +1406,13 @@ export default function Home() {
     setBusy(true); setError("");
     let thread = selectedRef.current;
     const originalId = thread?.id || newDraftKey.current, browserDraft = `draft:${tabsRef.current.activeId}`;
+    const requestedMcpServers = thread ? undefined : mcpServersByDraft[originalId];
     try {
       if (!thread) {
-        const result = await api<{ thread: Thread; permissions?: PermissionMode | null }>("/threads", { ...(newMode ? { permissions: newMode } : {}), ...(model.trim() ? { model: model.trim() } : {}), ...(newChoice?.provider ? { provider: newChoice.provider } : {}), ...(newChatFolder(cwd) ? { cwd: newChatFolder(cwd) } : {}) });
+        const result = await api<{ thread: Thread; permissions?: PermissionMode | null; mcpServersSaved?: boolean; mcpWarnings?: string[] }>("/threads", { ...(newMode ? { permissions: newMode } : {}), ...(model.trim() ? { model: model.trim() } : {}), ...(newChoice?.provider ? { provider: newChoice.provider } : {}), ...(newChatFolder(cwd) ? { cwd: newChatFolder(cwd) } : {}), ...(requestedMcpServers !== undefined ? { mcpServers: requestedMcpServers } : {}) });
+        setMcpServersByDraft(previous => previous[originalId] === requestedMcpServers ? without(previous, originalId) : previous);
         thread = result.thread; upsertThread(thread); noteStartedMode(thread.id, result.permissions ?? newMode);
+        reportMcpOutcome(thread.id, result);
         await browser.adoptSession(browserDraft, thread.id);
         if (request.current === originalRequest) { saveDraft(originalId, ""); saveDraft(thread.id, command); shellCreated.current = thread.id; select(thread); }
       }
@@ -2505,6 +2529,7 @@ export default function Home() {
                 onAttach={pickFiles} onMention={() => { setShellMode(false); startMention(); }} onSlash={() => { setShellMode(false); startSlash(); }} onPlan={setPlan} onShell={() => { setShellMode(true); slash.close(); mention.close(); promptKeys.cancel(); focusComposer(); }} />
               {planMode && <PlanPill disabled={!ready || busy} onOff={() => setPlan(false)} />}
               <PermissionsMenu mode={permissionMode} disabled={permissionsLocked} managed={settingsSnapshot?.managed} onChange={choosePermissions} />
+              {!selected && <McpSessionMenu value={mcpServersByDraft[newDraftKey.current]} disabled={!ready || !connected || busy || projectChanging} onChange={servers => setMcpServersByDraft(previous => servers === undefined ? without(previous, newDraftKey.current) : { ...previous, [newDraftKey.current]: servers })} />}
             </div><div className="composer-right">
               <ContextUsage threadId={selected?.id} />
               <ModelPicker choices={modelChoices} models={models}
@@ -2558,6 +2583,7 @@ export default function Home() {
       {/* Only the first load shows this line: account events refresh the list during turns, and a line appearing above the chat for each refresh shook it. */}
       {catalogLoading && !catalogError && !models.length && <p className="px-4 py-2 text-sm text-muted-foreground" role="status">Loading models…</p>}
       {selected && runtimeNotices[selected.id] && <div className="error-banner" role="alert"><span>{runtimeNotices[selected.id]}</span><Button variant="ghost" size="icon-sm" aria-label="Dismiss conversation error" onClick={() => setRuntimeNotices(prev => without(prev, selected.id))}><X size={15} /></Button></div>}
+      {selected && mcpNotices[selected.id] && <div className="error-banner warning" role="status"><span>{mcpNotices[selected.id]}</span><Button variant="ghost" size="icon-sm" aria-label="Dismiss MCP notice" onClick={() => setMcpNotices(prev => without(prev, selected.id))}><X size={15} /></Button></div>}
       {selected && (recoveredEdit || recoveryAttachments.length > 0) && <div className="error-banner"><details className="min-w-0 w-full"><DisclosureSummary>Recover unsent message</DisclosureSummary><pre className="whitespace-pre-wrap break-words py-2" dir="auto">{recoveredEdit}</pre>{recoveryAttachments.length > 0 && <p>Files: {recoveryAttachments.map(part => part.name).join(", ")}</p>}<div className="flex flex-wrap items-center gap-2">{recoveredEdit && <CopyButton label="Copy unsent message" text={() => recoveredEdit} />}<Button variant="outline" size="sm" disabled={!!text.trim() || attachments.length > 0} title={text.trim() || attachments.length ? "Keep or clear your current draft before restoring this message." : undefined} onClick={() => { saveDraft(`recovery-${selected.id}`, ""); saveAttachments(`recovery-${selected.id}`, []); editDraft(recoveredEdit); setAttachments(recoveryAttachments); saveAttachments(selected.id, recoveryAttachments); }}>Use in composer</Button>{(!!text.trim() || attachments.length > 0) && <span>Your current draft is kept. Save it, or clear it to restore the unsent message.</span>}</div></details></div>}
       </div>
       {split.thread && view === "chat" && <iframe key={split.thread.id} ref={split.frame} className="split-session" title="Split session" src={`/?pane=1&session=${encodeURIComponent(split.thread.id)}`} />}
