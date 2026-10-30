@@ -1796,6 +1796,21 @@ test('the context ledger measures the latest request and reconciles the estimate
   client.close();
 });
 
+test('saved replies use the model recorded in each turn context and never guess a missing one', async () => {
+  const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-turn-models-'));
+  const rollout = path.join(temp, 'rollout.jsonl');
+  await fs.writeFile(rollout, [
+    JSON.stringify({ type: 'turn_context', payload: { turn_id: 't1', model: 'gpt-6.1-sol' } }),
+    JSON.stringify({ type: 'turn_context', payload: { turn_id: 'older' } }),
+  ].join('\n'));
+  const { rolloutTurnModels } = await import('./elpis-features.mjs');
+  assert.deepEqual([...await rolloutTurnModels(rollout)], [['t1', 'gpt-6.1-sol']]);
+  const { client, threads } = fixture(); await client.initialize(); threads.get(ROOT).path = rollout;
+  const page = await client.readThread(ROOT);
+  assert.equal(page.data[0].model, 'gpt-6.1-sol');
+  client.close();
+});
+
 test('an old chat shows the last usage its rollout recorded, plain or compressed, until live events replace it', async () => {
   const { restoredTokenUsage } = await import('./elpis-features.mjs');
   const zlib = await import('node:zlib');

@@ -8,6 +8,22 @@ const reply = async page => page.locator('.message.agent').first().getByRole('bu
 async function using(options, run) { const f = await fixture({ staticDir: process.env.ELPIS_RENDERER_OUT, ...options }); try { await f.open('chat-a'); await run(f); assert.deepEqual(f.errors, []); } finally { await f.close(); } }
 const picture = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGM4o6SEFTEMLQkAvM5EAT6yk8sAAAAASUVORK5CYII=', 'base64');
 const firstPicture = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEUlEQVR4nGMQiT2DFTEMLQkAyYpPQS+5mBEAAAAASUVORK5CYII=', 'base64');
+for (const colorScheme of ['light', 'dark']) test(`reply hover shows only its recorded model (${colorScheme})`, () => using({ colorScheme, routes: {
+  '/api/threads/chat-a': () => ({ thread: { id: 'chat-a', name: 'Model labels', cwd: CWD, model: 'current-model', status: { type: 'idle' } }, nextCursor: null, data: [
+    { turnId: 'fixture-tail', item: { id: 'fixture-tail-reply', type: 'agentMessage', text: 'All green.' } },
+    { turnId: 'new', item: { id: 'reply-new', type: 'agentMessage', text: 'No model was recorded here.' } },
+    { turnId: 'saved', model: 'gpt-6.1-sol', item: { id: 'reply-saved', type: 'agentMessage', text: 'This reply has its model.' } },
+  ] }),
+} }, async f => {
+  const { page } = f, saved = page.locator('.message.agent', { hasText: 'This reply has its model.' }), missing = page.locator('.message.agent', { hasText: 'No model was recorded here.' });
+  await saved.hover();
+  await saved.locator('.message-model').getByText('gpt-6.1-sol', { exact: true }).waitFor();
+  assert.equal(await missing.locator('.message-model').count(), 0, 'the current chat model is not guessed for an old reply');
+  if (process.env.ELPIS_POLISH_SHOTS) {
+    await fs.promises.mkdir(process.env.ELPIS_POLISH_SHOTS, { recursive: true });
+    await page.screenshot({ path: path.join(process.env.ELPIS_POLISH_SHOTS, `04-reply-model-${colorScheme}.png`) });
+  }
+}));
 test('uploaded pictures and viewed-image thumbnails reply to their own source and bytes', () => using({ chat: [['image-turn', 'My picture', 'Pictures ready']], routes: {
   '/api/threads/chat-a': () => ({ thread: { id: 'chat-a', name: 'Fix the parser', cwd: CWD, model: 'sol', modelProvider: 'openai', status: { type: 'idle' } }, nextCursor: null, data: [
     { turnId: 'image-turn', item: { id: 'answer', type: 'agentMessage', text: 'Pictures ready' } },

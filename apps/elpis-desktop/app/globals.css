@@ -389,6 +389,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .activity-heading > span { min-width:0; overflow:hidden; text-overflow:ellipsis; }
 /* The hover buttons sit in the gap under their message, so a message that is not hovered holds no room for them. */
 .message-actions { display:flex; align-items:center; gap:2px; position:absolute; top:100%; left:0; color:var(--subtle-foreground); }
+.message-model { padding-inline:4px; font-size:var(--text-xs); line-height:var(--control-sm); white-space:nowrap; }
 .feature-section { border:1px solid var(--border); background:var(--card); padding:20px; }
 .feature-section h2 { font-size:var(--text-base); font-weight:600; margin-bottom:14px; }
 .feature-section > .muted { color:var(--muted-foreground); font-size:var(--text-sm); line-height:1.6; margin-bottom:18px; }

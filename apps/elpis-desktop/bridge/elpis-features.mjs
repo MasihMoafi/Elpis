@@ -229,6 +229,23 @@ export function sizedItem(item) {
   }
 }
 const rolloutPath = file => typeof file === 'string' && path.isAbsolute(file) && /\.jsonl(\.zst)?$/.test(file);
+/** The model recorded for each saved turn. Old or imported rows without a model stay absent. */
+export async function rolloutTurnModels(file, limit = 1 << 28) {
+  const models = new Map();
+  if (!rolloutPath(file)) return models;
+  try {
+    if ((await fsp.stat(file)).size > limit) return models;
+    const input = file.endsWith('.zst') ? (typeof zlib.createZstdDecompress === 'function' ? fs.createReadStream(file).pipe(zlib.createZstdDecompress()) : null) : fs.createReadStream(file);
+    if (!input) return models;
+    for await (const line of readline.createInterface({ input, crlfDelay: Infinity })) {
+      if (!line.includes('"turn_context"')) continue;
+      let row; try { row = JSON.parse(line); } catch { continue; }
+      const turnId = string(row?.payload?.turn_id), model = string(row?.payload?.model);
+      if (row?.type === 'turn_context' && turnId && model?.trim()) models.set(turnId, model);
+    }
+  } catch { /* An unreadable transcript has no model labels. */ }
+  return models;
+}
 /** The estimated tokens per category of a chat's saved transcript, as the engine would attribute its history, or null when
  * the transcript cannot say what the model last saw: no readable rollout, a compaction saved without its replacement
  * history, or a rolled-back turn. Plain rollouts are read whole, compressed ones streamed. The tool definitions and the

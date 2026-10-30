@@ -30,6 +30,14 @@ test('early deltas create visible items and reasoning summaries keep their indic
   assert.equal(entries[3].item.output, 'Patch applied');
 });
 
+test('a live reply keeps the model recorded on its turn, and omits an absent model', () => {
+  let entries = mergeLiveItem([], 'item/agentMessage/delta', params({ itemId: 'reply', delta: 'Hello', model: 'gpt-6.1-sol' }), 'chat');
+  assert.equal(entries[0].model, 'gpt-6.1-sol');
+  entries = mergeLiveItem(entries, 'item/completed', params({ item: { id: 'reply', type: 'agentMessage', text: 'Hello.' }, model: 'gpt-6.1-sol' }), 'chat');
+  assert.equal(entries[0].model, 'gpt-6.1-sol');
+  assert.equal(mergeLiveItem([], 'item/completed', params({ item: { id: 'old', type: 'agentMessage', text: 'Old.' } }), 'chat')[0].model, undefined);
+});
+
 test('unrelated chats, unsupported events and malformed deltas never change the transcript', () => {
   const entries = [{ turnId: 'turn', item: { id: 'cmd', type: 'commandExecution', aggregatedOutput: 'Keep' } }];
   for (const [method, value] of [

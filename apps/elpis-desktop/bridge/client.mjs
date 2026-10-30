@@ -14,7 +14,7 @@ import { ragMessage } from './rag-command.mjs';
 import { acceptsPastedKey, BUILT_IN_KEY_PROVIDERS, configHome, providerDefinition, providerSettingsSnapshot, providerEdits, privateConfigFile } from './provider-settings.mjs';
 import { saveProviderKey, savedProviderKey, savedProviderKeyIds } from './provider-keys.mjs';
 import { PERMISSION_PRESETS, PROFILES } from './permission-presets.mjs';
-import { settingsSnapshot, userConfigVersion, tokenUsageSnapshot, contextLedger, restoredTokenUsage, rolloutShares, contextSwitchesSnapshot, CONTEXT_SWITCH_KEYS, smartPruneSnapshot, providersSnapshot, mcpSnapshot, optionEdits, hooksSnapshot, defaultPermissionMode } from './elpis-features.mjs';
+import { settingsSnapshot, userConfigVersion, tokenUsageSnapshot, contextLedger, restoredTokenUsage, rolloutShares, rolloutTurnModels, contextSwitchesSnapshot, CONTEXT_SWITCH_KEYS, smartPruneSnapshot, providersSnapshot, mcpSnapshot, optionEdits, hooksSnapshot, defaultPermissionMode } from './elpis-features.mjs';
 import { replacementEligibility } from '../lib/turn-replacement.ts';
 import { providerModels } from './provider-models.mjs';
 import { attachmentInput, recordedMedia } from './attachments.mjs';
@@ -188,7 +188,7 @@ export class DesktopClient extends EventEmitter {
   /** The Claude account list last seen: which account is active and which are signed in. */
   #claudeAccountsKey;
   #approvals = new Map(); #mutating = new Set(); #closed = false; #ready = false; #attaching = new Map();
-  #context = new Map(); #restored = new Map(); #shares = new Map(); #side = new Set();
+  #context = new Map(); #restored = new Map(); #shares = new Map(); #turnModels = new Map(); #liveTurnModels = new Map(); #side = new Set();
   #sideChats = new Map();
   #interviewThreads = new Set();
   #workflowTitles = new Map(); #workflowLookups = new Map();
@@ -416,6 +416,15 @@ export class DesktopClient extends EventEmitter {
       message.params = { ...message.params, permissions: modeOf(message.params?.threadSettings) };
     }
     if (message.method === 'item/completed' && id) void this.#learnSpawn(id, message.params.item);
+    const turnId = message.params?.turnId ?? message.params?.turn?.id;
+    if (id && turnId && message.method === 'turn/started') {
+      const model = message.params?.turn?.model;
+      if (typeof model === 'string' && model.trim()) this.#liveTurnModels.set(`${id}:${turnId}`, model);
+    }
+    if (id && turnId && message.method?.startsWith('item/')) {
+      const model = this.#liveTurnModels.get(`${id}:${turnId}`);
+      if (model) message.params = { ...message.params, model };
+    }
     // Chat-level news (a chat started, renamed, or changed state) is listed anyway; item streams stay scoped.
     const tracked = this.#known.has(id) || this.#owned.has(id) || LISTED.has(message.method);
     if (message.method === 'thread/deleted' && tracked) this.#forget(id);
@@ -432,6 +441,7 @@ export class DesktopClient extends EventEmitter {
       }
       this.emit('event', { type: 'message', data: { method: message.method, params: message.params } });
     }
+    if (message.method === 'turn/completed' && id && turnId) this.#liveTurnModels.delete(`${id}:${turnId}`);
   }
   async #approvalOwner(id) {
     const seen = new Set();
@@ -618,7 +628,7 @@ export class DesktopClient extends EventEmitter {
       const turns = interviewTurns(saved.thread?.turns ?? []);
       const entries = turns.flatMap(turn => turn.items.map(item => ({ turnId: turn.id, item }))).reverse();
       const end = start + (options.limit ?? 30);
-      return { thread, data: entries.slice(start, end), nextCursor: end < entries.length ? `${WHOLE_TURNS}${end}` : null };
+      return { thread, data: await this.#withTurnModels(thread.path, entries.slice(start, end)), nextCursor: end < entries.length ? `${WHOLE_TURNS}${end}` : null };
     }
     const items = await this.#itemsPage({ threadId: id, cursor: options.cursor, limit: options.limit ?? 30, sortDirection: 'desc' });
     // A missed renderer event must not leave its Stop/Working state behind the saved
@@ -626,7 +636,7 @@ export class DesktopClient extends EventEmitter {
     if (thread.model?.startsWith('claude/') && thread.status?.type === 'idle' && this.#turnRevisions.get(id) === revision) {
       this.emit('event', { type: 'message', data: { method: 'thread/status/changed', params: { threadId: id, status: thread.status } } });
     }
-    return { thread, ...items };
+    return { thread, ...items, data: await this.#withTurnModels(thread.path, items.data) };
   }
   async readPrompts(id) {
     threadId(id);
@@ -1225,6 +1235,18 @@ export class DesktopClient extends EventEmitter {
     const value = await rolloutShares(file);
     this.#shares.set(file, { key, value });
     return value;
+  }
+  async #withTurnModels(file, entries) {
+    if (!Array.isArray(entries) || !entries.length) return entries;
+    const stat = typeof file === 'string' ? await fs.promises.stat(file).catch(() => null) : null;
+    if (!stat?.isFile()) return entries;
+    const key = `${stat.size}:${stat.mtimeMs}`, cached = this.#turnModels.get(file);
+    const models = cached?.key === key ? cached.value : await rolloutTurnModels(file);
+    if (cached?.key !== key) this.#turnModels.set(file, { key, value: models });
+    return entries.map(entry => {
+      const model = models.get(entry.turnId);
+      return model ? { ...entry, model } : entry;
+    });
   }
   async #restoredUsage(file) {
     const stat = typeof file === 'string' ? await fs.promises.stat(file).catch(() => null) : null;
@@ -1862,6 +1884,8 @@ export class DesktopClient extends EventEmitter {
     const pending = `pending-${randomUUID()}`; let snapshot = false;
     try { await this.#rewindSnapshots.capture(thread.id, pending, thread.cwd); snapshot = true; } catch { /* Preview reports unavailable. */ }
     const result = await this.#rpc('turn/start', params);
+    const model = typeof params.model === 'string' && params.model.trim() ? params.model : thread.model;
+    if (result.turn?.id && typeof model === 'string' && model.trim()) this.#liveTurnModels.set(`${thread.id}:${result.turn.id}`, model);
     await this.#rewindHistory.invalidate(thread.id);
     if (snapshot && result.turn?.id) await this.#rewindSnapshots.alias(thread.id, pending, result.turn.id).catch(() => {});
     return result;

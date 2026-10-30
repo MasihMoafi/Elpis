@@ -12,16 +12,17 @@ const deltaItemTypes: Record<string, "agentMessage" | "commandExecution" | "file
   "item/reasoning/summaryTextDelta": "reasoning",
 };
 
-type LiveItemEvent = { turnId: string; item: Item } | {
-  turnId: string; itemId: string; type: string; delta: string; summaryIndex: number;
+type LiveItemEvent = { turnId: string; item: Item; model?: string } | {
+  turnId: string; itemId: string; type: string; delta: string; summaryIndex: number; model?: string;
 };
 
 function liveItemEvent(method: string, params: Record<string, unknown>): LiveItemEvent | null {
   const { turnId, itemId, delta } = params;
+  const model = nonEmptyString(params.model) ? params.model : undefined;
   if (!nonEmptyString(turnId)) return null;
   if (method === "item/started" || method === "item/completed") {
     const item = record(params.item);
-    return nonEmptyString(item.id) && nonEmptyString(item.type) ? { turnId, item: item as Item } : null;
+    return nonEmptyString(item.id) && nonEmptyString(item.type) ? { turnId, item: item as Item, model } : null;
   }
   const type = Object.hasOwn(deltaItemTypes, method) ? deltaItemTypes[method] : undefined;
   if (!type || !nonEmptyString(itemId) || typeof delta !== "string") return null;
@@ -31,7 +32,7 @@ function liveItemEvent(method: string, params: Record<string, unknown>): LiveIte
     if (typeof index !== "number" || !Number.isSafeInteger(index) || index < 0 || index > 1024) return null;
     summaryIndex = index;
   }
-  return { turnId, itemId, type, delta, summaryIndex };
+  return { turnId, itemId, type, delta, summaryIndex, model };
 }
 
 /** Call after checking the event belongs to the selected chat. */
@@ -79,8 +80,8 @@ export function mergeLiveItem(entries: Entry[], method: string, params: Record<s
     }
   }
   const index = entries.findIndex(entry => entry.turnId === event.turnId && entry.item.id === item.id);
-  if (index < 0) return [...entries, { turnId: event.turnId, item }];
-  return entries.map((entry, i) => i === index ? { ...entry, item } : entry);
+  if (index < 0) return [...entries, { turnId: event.turnId, item, ...(event.model ? { model: event.model } : {}) }];
+  return entries.map((entry, i) => i === index ? { ...entry, item, ...(event.model ? { model: event.model } : {}) } : entry);
 }
 
 export function runtimeErrorNotice(params: Record<string, unknown>): string | null {
