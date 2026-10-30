@@ -150,6 +150,16 @@ test('light and dark: the rows, counts and diff are legible and inside the chat 
     }
     const title = await group.locator('> summary .activity-group-label').boundingBox(), counts = await group.locator('> summary .change-counts').boundingBox();
     assert.ok(title.x + title.width <= counts.x + 1, `${colorScheme}: the counts do not overlap the label`);
+    const footer = page.locator('.turn-changes-head').first();
+    const placement = await footer.evaluate(head => {
+      const summary = head.querySelector('.turn-changes-toggle'), action = head.querySelector('button:last-child'), name = head.querySelector('.turn-changes-name');
+      const box = node => node.getBoundingClientRect(), textBottom = node => { const range = document.createRange(); range.selectNodeContents(node); return range.getBoundingClientRect().bottom; };
+      const summaryBox = box(summary), actionBox = box(action), style = getComputedStyle(head);
+      return { align: style.alignItems, gap: actionBox.left - summaryBox.right, baseline: Math.abs(textBottom(name) - textBottom(action)) };
+    });
+    assert.equal(placement.align, 'baseline', `${colorScheme}: the Changes action shares the summary baseline`);
+    assert.ok(placement.gap >= 7 && placement.gap <= 9, `${colorScheme}: View changes sits beside the summary (${placement.gap}px)`);
+    assert.ok(placement.baseline <= 1, `${colorScheme}: Changes and View changes text baselines differ by ${placement.baseline}px`);
     for (const sign of ['.add', '.del']) {
       const colour = await group.locator(`> summary .change-counts ${sign}`).evaluate(node => window.__rgb(getComputedStyle(node).color));
       assert.ok(contrast(colour, page_) >= 3.2, `${colorScheme}: ${sign} counts read against the page (${colour} on ${page_}: ${contrast(colour, page_).toFixed(2)})`);
