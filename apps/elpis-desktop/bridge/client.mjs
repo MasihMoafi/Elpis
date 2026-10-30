@@ -358,13 +358,10 @@ export class DesktopClient extends EventEmitter {
     const browser = this.#browserOptions(browserId).config;
     let restored = { config: {}, warnings: [] };
     if (selection.hasSelection) {
-      try { restored = restoredThreadMcpConfig(await this.#rpc('config/read', { includeLayers: true }), selected); }
-      catch {
-        restored = {
-          config: Object.fromEntries(selected.map(name => [`mcp_servers.${name}`, { enabled: false }])),
-          warnings: ["MCP servers in this chat could not be checked and stay off for this session."],
-        };
-      }
+      let read;
+      try { read = await this.#rpc('config/read', { includeLayers: true }); }
+      catch { throw new BridgeError('Could not verify MCP settings for this chat. Retry before resuming.', 503); }
+      restored = restoredThreadMcpConfig(read, selected);
     }
     const warnings = [...selection.warnings, ...restored.warnings];
     if (warnings.length) this.#mcpWarnings.set(id, warnings);
@@ -1018,7 +1015,7 @@ export class DesktopClient extends EventEmitter {
     this.emit('event', { type: 'account', data: { method: 'claudeSubscription/write' } });
     return { anthropicSignedOut: answer?.signedOut === true };
   }
-  async mcp() { return mcpSnapshot(await this.#rpc('config/read', { includeLayers: true })); }
+  async mcp(cwd) { return mcpSnapshot(await this.#rpc('config/read', { includeLayers: true, ...(cwd ? { cwd } : {}) })); }
   // The Customize page (skills, plugins, connectors): bridge/customize-page.mjs.
   customize(cwd) { return this.#customize.customize(cwd); }
   pluginCatalog(input) { return this.#customize.pluginCatalog(input); }

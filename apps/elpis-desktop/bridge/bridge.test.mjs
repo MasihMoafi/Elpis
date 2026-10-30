@@ -78,7 +78,7 @@ test('A32 missing or disabled writable config layers explain why and write nothi
     assert.equal(socket.sent.filter(row => row.method === 'config/batchWrite').length, 0);
   } finally { client.close(); }
 });
-function fixture({ prunerSupported = false, omitWorkflowParentInList = false, replacementPages, promptPages, browserConfig, threadListPaging = false, archiveDirectory = path.join(os.tmpdir(), `bridge-archives-${randomUUID()}`), clientOptions = {} } = {}) {
+function fixture({ prunerSupported = false, omitWorkflowParentInList = false, replacementPages, promptPages, browserConfig, configByCwd = {}, threadListPaging = false, archiveDirectory = path.join(os.tmpdir(), `bridge-archives-${randomUUID()}`), clientOptions = {} } = {}) {
   const workflowRecords = [];
   let pruner = {model:"optimizer-original",provider:"openai",version:"pruner-v1",providers:[{id:"openai",displayName:"OpenAI"}],systemPrompt:"PRIVATE CONFIG SECRET"};
   const configRead = { config: {
@@ -109,7 +109,7 @@ function fixture({ prunerSupported = false, omitWorkflowParentInList = false, re
     let result;
     switch (request.method) {
       case 'initialize': result = { userAgent: 'protocol-test' }; break;
-      case 'config/read': result = configRead; break;
+      case 'config/read': result = Object.hasOwn(configByCwd, request.params?.cwd) ? configByCwd[request.params.cwd] : configRead; break;
       case 'configRequirements/read': result = requirementsRead; break;
       case 'pruner/read': if (prunerSupported) {result=pruner;break;} queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, error: {code: -32601, message: 'Unknown method'} }))); return;
       case 'pruner/write': pruner={...pruner,model:request.params.model,provider:request.params.provider,reasoningEffort:request.params.reasoningEffort ?? null,version:'pruner-v2'};result=pruner;break;
@@ -536,6 +536,30 @@ test('a corrupt saved MCP choice fails closed after client restart and history r
     const config = resumed.socket.sent.find(row => row.method === 'thread/resume').params.config;
     for (const name of ['rag', 'whispertype', 'remote']) assert.deepEqual(config[`mcp_servers.${name}`], { enabled: false });
     assert.deepEqual(config['mcp_servers.elpis_browser'], browserConfig['mcp_servers.elpis_browser']);
+  } finally { resumed.client.close(); }
+});
+
+test('a corrupt selection with unreadable MCP config rejects resume before default tools can load', async t => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-session-profile-'));
+  t.after(() => fs.rm(home, { recursive: true, force: true }));
+  await fs.mkdir(path.join(home, 'desktop-mcp-selections'), { recursive: true });
+  await fs.writeFile(path.join(home, 'desktop-mcp-selections', `${CREATED}.json`), '{');
+  const resumed = fixture({ clientOptions: { home } }); await resumed.client.initialize();
+  resumed.threads.set(CREATED, { ...resumed.threads.get(ROOT), id: CREATED, name: 'Unreadable settings' });
+  const send = resumed.socket.send;
+  resumed.socket.send = raw => {
+    const request = JSON.parse(raw);
+    if (request.method === 'config/read') {
+      resumed.socket.sent.push(request);
+      queueMicrotask(() => resumed.socket.emit('message', JSON.stringify({ id: request.id, error: { code: -32603, message: 'settings temporarily unavailable' } })));
+      return;
+    }
+    send(raw);
+  };
+  try {
+    await assert.rejects(resumed.client.resume(CREATED, {}), error => error.status === 503 && /Could not verify MCP settings.*Retry before resuming/.test(error.message));
+    assert.equal(resumed.socket.sent.some(row => row.method === 'thread/resume'), false, 'no native resume runs with an incomplete override');
+    assert.equal((await resumed.client.readThread(CREATED)).thread.id, CREATED, 'direct history reads remain available');
   } finally { resumed.client.close(); }
 });
 
@@ -1289,6 +1313,63 @@ test('HTTP requires capability/cookie, strict origin/host, allowlisted routes an
   assert.equal((await post('/api/threads', {}, { Cookie: cookie, Origin: 'null' })).status, 403);
   assert.equal((await get('/leak.txt')).status, 403);
   assert.equal(socket.sent.some(row => row.method === 'command/exec'), false);
+});
+
+test('MCP catalog and new-chat validation use the same project config', async t => {
+  const projectA = '/work/project-a', projectB = '/work/project-b', configByCwd = {};
+  const f = fixture({ configByCwd }); await f.client.initialize();
+  const scopedRead = servers => ({ ...structuredClone(f.configRead), config: { ...f.configRead.config, mcp_servers: servers } });
+  configByCwd[projectA] = scopedRead({
+    rag: { ...f.configRead.config.mcp_servers.rag, enabled: false },
+    project_a: { command: '/usr/bin/project-a', args: [] },
+  });
+  configByCwd[projectB] = scopedRead({
+    rag: { ...f.configRead.config.mcp_servers.rag, enabled: true },
+    project_b: { command: '/usr/bin/project-b', args: [] },
+  });
+  const app = await startDesktopServer({ client: f.client }); t.after(() => app.close());
+  const url = new URL(app.url), origin = url.origin, capability = new URLSearchParams(url.hash.slice(1)).get('token');
+  const login = await fetch(`${origin}/api/session`, { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ token: capability }) });
+  assert.equal(login.status, 200);
+  const cookie = login.headers.get('set-cookie').split(';', 1)[0];
+  const get = route => fetch(origin + route, { headers: { Cookie: cookie } });
+  const post = (route, value) => fetch(origin + route, { method: 'POST', headers: { Cookie: cookie, Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify(value) });
+
+  const catalogAResponse = await get(`/api/mcp?cwd=${encodeURIComponent(projectA)}`);
+  assert.equal(catalogAResponse.status, 200);
+  const catalogA = await catalogAResponse.json();
+  assert.deepEqual(catalogA.servers.map(server => server.name), ['project_a', 'rag']);
+  assert.equal(catalogA.servers.find(server => server.name === 'rag').enabled, false);
+  const catalogBResponse = await get(`/api/mcp?cwd=${encodeURIComponent(projectB)}`);
+  assert.equal(catalogBResponse.status, 200);
+  const catalogB = await catalogBResponse.json();
+  assert.deepEqual(catalogB.servers.map(server => server.name), ['project_b', 'rag']);
+  assert.equal(catalogB.servers.find(server => server.name === 'rag').enabled, true);
+  assert.equal((await get('/api/mcp')).status, 200, 'settings keep the no-cwd global catalog route');
+  for (const route of ['/api/mcp?cwd=relative', `/api/mcp?cwd=${encodeURIComponent(projectA)}&cwd=${encodeURIComponent(projectB)}`, `/api/mcp?cwd=${encodeURIComponent(projectA)}&other=x`]) {
+    assert.equal((await get(route)).status, 400, `reject invalid catalog query ${route}`);
+  }
+
+  const startedA = await post('/api/threads', { cwd: projectA, mcpServers: ['project_a'] });
+  assert.equal(startedA.status, 201);
+  const startedB = await post('/api/threads', { cwd: projectB, mcpServers: ['project_b'] });
+  assert.equal(startedB.status, 201);
+  const starts = f.socket.sent.filter(row => row.method === 'thread/start');
+  assert.deepEqual(starts.map(row => row.params.cwd), [projectA, projectB]);
+  assert.equal(starts[0].params.config['mcp_servers.project_a'].command, '/usr/bin/project-a');
+  assert.deepEqual(starts[0].params.config['mcp_servers.rag'], { enabled: false });
+  assert.equal(starts[0].params.config['mcp_servers.project_b'], undefined);
+  assert.equal(starts[1].params.config['mcp_servers.project_b'].command, '/usr/bin/project-b');
+  assert.equal(starts[1].params.config['mcp_servers.project_a'], undefined);
+  const invalidStart = await post('/api/threads', { cwd: projectB, mcpServers: ['project_a'] });
+  assert.equal(invalidStart.status, 400);
+  assert.match((await invalidStart.json()).error, /not a configured stdio or HTTP server/);
+  assert.equal(f.socket.sent.filter(row => row.method === 'thread/start').length, 2, 'invalid project choice never reaches native start');
+
+  const reads = f.socket.sent.filter(row => row.method === 'config/read' && row.params?.includeLayers === true);
+  assert.equal(reads.filter(row => row.params.cwd === projectA).length, 2, 'catalog and start read project A');
+  assert.equal(reads.filter(row => row.params.cwd === projectB).length, 3, 'catalog, start, and rejected choice read project B');
+  assert.ok(reads.some(row => row.params.cwd === undefined), 'no-cwd catalog still reads global settings');
 });
 
 test('workflow workers keep recorded task names and lineage when native list omits their parent', async () => {

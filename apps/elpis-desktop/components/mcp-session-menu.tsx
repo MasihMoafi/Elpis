@@ -11,19 +11,24 @@ const NAME = /^[A-Za-z0-9_-]{1,64}$/;
 const INTERNAL = new Set(["elpis-agents", "elpis_browser"]);
 
 /** Start-only choices for the new chat. The bridge applies this list to thread/start and never writes config. */
-export function McpSessionMenu({ value, disabled, onChange }: { value?: string[]; disabled?: boolean; onChange: (servers?: string[]) => void }) {
-  const [servers, setServers] = useState<Server[] | null>(null);
-  const [error, setError] = useState("");
+export function McpSessionMenu({ value, disabled, cwd, onChange }: { value?: string[]; disabled?: boolean; cwd?: string; onChange: (servers?: string[]) => void }) {
+  const [catalog, setCatalog] = useState<{ cwd?: string; servers: Server[] } | null>(null);
+  const [failure, setFailure] = useState<{ cwd?: string; error: string } | null>(null);
   const [open, setOpen] = useState(false);
   useEffect(() => {
     let disposed = false;
-    api<Snapshot>("/mcp").then(result => {
+    api<Snapshot>(`/mcp${cwd ? `?cwd=${encodeURIComponent(cwd)}` : ""}`).then(result => {
       if (!Array.isArray(result.servers)) throw new Error("Elpis returned an unreadable MCP server list.");
-      if (!disposed) setServers(result.servers.filter(server => NAME.test(server.name) && !INTERNAL.has(server.name)
-        && ((server.transport === "stdio" && typeof server.command === "string") || (server.transport === "http" && typeof server.url === "string"))));
-    }).catch(cause => { if (!disposed) setError(cause instanceof Error ? cause.message : String(cause)); });
+      if (!disposed) {
+        setCatalog({ cwd, servers: result.servers.filter(server => NAME.test(server.name) && !INTERNAL.has(server.name)
+          && ((server.transport === "stdio" && typeof server.command === "string") || (server.transport === "http" && typeof server.url === "string"))) });
+        setFailure(null);
+      }
+    }).catch(cause => { if (!disposed) setFailure({ cwd, error: cause instanceof Error ? cause.message : String(cause) }); });
     return () => { disposed = true; };
-  }, []);
+  }, [cwd]);
+  const servers = catalog && catalog.cwd === cwd ? catalog.servers : null;
+  const error = failure && failure.cwd === cwd ? failure.error : "";
   useEffect(() => {
     if (!servers || value === undefined) return;
     const enabled = new Set(servers.filter(server => server.enabled).map(server => server.name));

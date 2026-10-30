@@ -27,6 +27,7 @@
     "tests/message-copy.test.mjs",
     "tests/model-picker-configure.test.mjs",
     "tests/model-settings.test.mjs",
+    "tests/mcp-session-menu.test.mjs",
     "tests/nav-history.test.mjs",
     "tests/panel-tabs.test.mjs",
     "tests/provider-choices.test.mjs",

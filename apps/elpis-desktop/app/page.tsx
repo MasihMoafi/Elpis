@@ -2529,7 +2529,7 @@ export default function Home() {
                 onAttach={pickFiles} onMention={() => { setShellMode(false); startMention(); }} onSlash={() => { setShellMode(false); startSlash(); }} onPlan={setPlan} onShell={() => { setShellMode(true); slash.close(); mention.close(); promptKeys.cancel(); focusComposer(); }} />
               {planMode && <PlanPill disabled={!ready || busy} onOff={() => setPlan(false)} />}
               <PermissionsMenu mode={permissionMode} disabled={permissionsLocked} managed={settingsSnapshot?.managed} onChange={choosePermissions} />
-              {!selected && <McpSessionMenu value={mcpServersByDraft[newDraftKey.current]} disabled={!ready || !connected || busy || projectChanging} onChange={servers => setMcpServersByDraft(previous => servers === undefined ? without(previous, newDraftKey.current) : { ...previous, [newDraftKey.current]: servers })} />}
+              {!selected && <McpSessionMenu cwd={chatFolder || undefined} value={mcpServersByDraft[newDraftKey.current]} disabled={!ready || !connected || busy || projectChanging} onChange={servers => setMcpServersByDraft(previous => servers === undefined ? without(previous, newDraftKey.current) : { ...previous, [newDraftKey.current]: servers })} />}
             </div><div className="composer-right">
               <ContextUsage threadId={selected?.id} />
               <ModelPicker choices={modelChoices} models={models}
