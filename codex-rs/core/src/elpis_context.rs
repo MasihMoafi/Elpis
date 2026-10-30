@@ -1789,6 +1789,20 @@ mod tests {
     }
 
     #[test]
+    fn omitted_rule_choices_default_on_but_saved_exclusions_stay_off() -> anyhow::Result<()> {
+        let unspecified = parse_admission("goal = true\n")?;
+        assert!(unspecified.global_rules);
+        assert!(unspecified.project_rules);
+        assert!(unspecified.goal);
+
+        let excluded = parse_admission("global_rules = false\nproject_rules = false\ngoal = true\n")?;
+        assert!(!excluded.global_rules);
+        assert!(!excluded.project_rules);
+        assert!(excluded.goal);
+        Ok(())
+    }
+
+    #[test]
     fn admission_not_found_defaults_but_unknown_or_duplicate_data_errors() -> anyhow::Result<()> {
         let memories = tempdir()?;
         let cwd = tempdir()?;
