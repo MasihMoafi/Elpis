@@ -49,7 +49,10 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
   const choicesFile = path.join(directory, '.screenshot-choices.json');
   // Same-user local IPC keeps private trays available to a later dock process
   // without journaling screenshot names or pixels to the board directory.
-  const peerDirectory = path.join(os.tmpdir(), `elpis-shots-${process.getuid?.() ?? 'user'}-${hash(path.resolve(directory)).slice(0, 16)}`);
+  // Linux limits Unix socket paths to 107 bytes. TMPDIR can be a long isolated test/app home,
+  // so keep these tiny private sockets under the short system temp root.
+  const peerRoot = process.platform === 'linux' ? '/tmp' : os.tmpdir();
+  const peerDirectory = path.join(peerRoot, `elpis-shots-${process.getuid?.() ?? 'user'}-${hash(path.resolve(directory)).slice(0, 16)}`);
   const peerSocket = path.join(peerDirectory, `${randomUUID()}.sock`), sockets = new Set();
   const trayError = 'Love Spot could not sync its private screenshot trays between windows. It will retry.';
   let peerServer, peerError, nextPeerAttempt = 0;

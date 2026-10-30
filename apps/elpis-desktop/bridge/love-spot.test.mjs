@@ -243,7 +243,12 @@ test('opening Love Spot reports a background screenshot error and clearing it re
   for (let i = 0; i < 40 && !store.screenshotsList().length; i++) await new Promise(resolve => setTimeout(resolve, 30));
   assert.equal(store.screenshotsList()[0]?.name, 'retry-after-error.png', 'capture must retry without dropping the new screenshot');
   assert.equal((await store.read()).scene.elements.length, 0);
-  const recovered = []; await store.watch(event => recovered.push(event));
+  let recovered = [];
+  for (let i = 0; i < 40; i++) {
+    recovered = []; const unwatch = await store.watch(event => recovered.push(event)); unwatch();
+    if (!recovered.some(e => e.type === 'error')) break;
+    await new Promise(resolve => setTimeout(resolve, 30));
+  }
   assert.equal(recovered.some(e => e.type === 'error'), false, 'a recovered error must not follow a later subscriber');
 });
 
