@@ -909,6 +909,17 @@ fn instruction_source_row(
     if path.parent() == memories_root.parent() {
         return (GLOBAL_RULES.to_string(), "applicable global rules");
     }
+    // An ancestor instruction is a project rule even under a directory named `dev`.
+    if path.parent().is_some_and(|directory| {
+        let project_directory = if directory.file_name().is_some_and(|name| name == ".codex") {
+            directory.parent().unwrap_or(directory)
+        } else {
+            directory
+        };
+        cwd.starts_with(project_directory)
+    }) {
+        return (PROJECT_RULES.to_string(), "applicable project rules");
+    }
     let is_dev_source = path.to_string_lossy().contains("skills/dev")
         || path.to_string_lossy().contains("/dev/")
         || path
@@ -923,16 +934,7 @@ fn instruction_source_row(
             format!("{DEV_SOURCE_PREFIX}{file_name}"),
             "configured development rules",
         )
-    } else if path.starts_with(cwd)
-        || path.parent().is_some_and(|directory| {
-            let project_directory = if directory.file_name().is_some_and(|name| name == ".codex") {
-                directory.parent().unwrap_or(directory)
-            } else {
-                directory
-            };
-            cwd.starts_with(project_directory)
-        })
-    {
+    } else if path.starts_with(cwd) {
         (PROJECT_RULES.to_string(), "applicable project rules")
     } else {
         (GLOBAL_RULES.to_string(), "applicable global rules")
@@ -3007,7 +3009,7 @@ mod tests {
     async fn ancestor_project_instructions_share_the_project_toggle() -> anyhow::Result<()> {
         let home = tempdir()?;
         let memories = home.path().join("memories");
-        let project = home.path().join("project");
+        let project = home.path().join("dev/project");
         let cwd = project.join("src");
         tokio::fs::create_dir_all(project.join(".codex")).await?;
         tokio::fs::create_dir_all(&cwd).await?;
