@@ -322,3 +322,37 @@ fn an_overloaded_error_is_reported_as_overload() {
         .expect("failed");
     assert_eq!(failed["response"]["error"]["code"], "server_is_overloaded");
 }
+
+#[test]
+fn an_image_is_sent_as_an_image_block_also_inside_a_tool_result() {
+    let history = json!([
+        {"type": "message", "role": "user", "content": [
+            {"type": "input_text", "text": "What is this?"},
+            {"type": "input_image", "image_url": "data:image/png;base64,PIXELS"},
+        ]},
+        {"type": "function_call", "call_id": "c1", "name": "exec_command", "arguments": "{}"},
+        {"type": "function_call_output", "call_id": "c1", "output": [
+            {"type": "input_image", "image_url": "https://example.com/a.png"},
+        ]},
+    ]);
+    let body = request(&conversation(&responses_request(history, core_tools())))
+        .expect("the request translates");
+
+    assert_eq!(
+        body["messages"],
+        json!([
+            {"role": "user", "content": [
+                {"type": "text", "text": "What is this?"},
+                {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "PIXELS"}},
+            ]},
+            {"role": "assistant", "content": [
+                {"type": "tool_use", "id": "c1", "name": "exec_command", "input": {}},
+            ]},
+            {"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": "c1", "content": [
+                    {"type": "image", "source": {"type": "url", "url": "https://example.com/a.png"}},
+                ]},
+            ]},
+        ])
+    );
+}

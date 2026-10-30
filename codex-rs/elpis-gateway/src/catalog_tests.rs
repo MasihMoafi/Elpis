@@ -1,5 +1,6 @@
 use super::*;
 use codex_protocol::openai_models::ApplyPatchToolType;
+use codex_protocol::openai_models::InputModality;
 use codex_protocol::openai_models::ModelInfo;
 use codex_protocol::openai_models::ReasoningEffort;
 use pretty_assertions::assert_eq;
@@ -215,4 +216,24 @@ fn a_bare_array_listing_is_read_like_a_data_envelope() {
 #[test]
 fn a_row_core_cannot_read_is_caught_before_it_leaves() {
     assert!(catalog_response(vec![json!({"slug": "only-a-slug"})]).is_err());
+}
+
+#[test]
+fn only_routes_that_send_images_mark_their_models_image_capable() {
+    let anthropic = read(
+        GatewayWire::AnthropicMessages,
+        json!({"data": [{"id": "claude-opus-5-5"}]}),
+    );
+    let gemini = read(
+        GatewayWire::GeminiGenerateContent,
+        json!({"models": [{"name": "models/gemini-3", "supportedGenerationMethods": ["generateContent"]}]}),
+    );
+    let chat = read(GatewayWire::Chat, json!({"data": [{"id": "some/model"}]}));
+
+    assert_eq!(
+        anthropic[0].input_modalities,
+        vec![InputModality::Text, InputModality::Image]
+    );
+    assert_eq!(gemini[0].input_modalities, vec![InputModality::Text]);
+    assert_eq!(chat[0].input_modalities, vec![InputModality::Text]);
 }

@@ -14,6 +14,7 @@ use serde_json::json;
 
 use crate::conversation::Conversation;
 use crate::conversation::Turn;
+use crate::conversation::parts_text;
 use crate::emitter::Emitter;
 use crate::emitter::StreamError;
 use crate::emitter::Usage;
@@ -30,6 +31,9 @@ pub(crate) fn request(conversation: &Conversation) -> Value {
         match turn {
             Turn::System(text) => messages.push(json!({"role": "system", "content": text})),
             Turn::User(text) => messages.push(json!({"role": "user", "content": text})),
+            Turn::UserParts(parts) => {
+                messages.push(json!({"role": "user", "content": parts_text(parts)}))
+            }
             Turn::Assistant(text) => messages.push(json!({"role": "assistant", "content": text})),
             Turn::ToolCall {
                 call_id,
@@ -62,6 +66,11 @@ pub(crate) fn request(conversation: &Conversation) -> Value {
                 "role": "tool",
                 "tool_call_id": call_id,
                 "content": output,
+            })),
+            Turn::ToolResultParts { call_id, parts } => messages.push(json!({
+                "role": "tool",
+                "tool_call_id": call_id,
+                "content": parts_text(parts),
             })),
         }
     }

@@ -11,6 +11,8 @@ use serde_json::json;
 
 use crate::GatewayError;
 use crate::conversation::Conversation;
+use crate::conversation::IMAGE_OMITTED;
+use crate::conversation::Part;
 use crate::conversation::Turn;
 use crate::emitter::Emitter;
 use crate::emitter::StreamError;
@@ -45,6 +47,16 @@ pub(crate) fn request(conversation: &Conversation) -> Result<Value, GatewayError
                 continue;
             }
             Turn::User(text) => ("user", json!({"type": "text", "text": text})),
+            Turn::UserParts(parts) => {
+                // A user turn is a list of blocks, so the parts join the turn directly.
+                trailing_system = 0;
+                if current_role != Some("user") {
+                    flush(&mut messages, &mut current_role, &mut current_content);
+                    current_role = Some("user");
+                }
+                current_content.extend(parts.iter().map(content_block));
+                continue;
+            }
             Turn::Assistant(text) => ("assistant", json!({"type": "text", "text": text})),
             Turn::ToolCall {
                 call_id,
@@ -65,6 +77,14 @@ pub(crate) fn request(conversation: &Conversation) -> Result<Value, GatewayError
                     "type": "tool_result",
                     "tool_use_id": call_id,
                     "content": output,
+                }),
+            ),
+            Turn::ToolResultParts { call_id, parts } => (
+                "user",
+                json!({
+                    "type": "tool_result",
+                    "tool_use_id": call_id,
+                    "content": parts.iter().map(content_block).collect::<Vec<_>>(),
                 }),
             ),
         };
@@ -123,6 +143,31 @@ pub(crate) fn request(conversation: &Conversation) -> Result<Value, GatewayError
         );
     }
     Ok(body)
+}
+
+/// One content block for a message part. An image becomes an image block: a base64 data URL
+/// carries its bytes, an http(s) URL is fetched by Anthropic. Any other image reference cannot
+/// be sent, so it stays the omitted note.
+fn content_block(part: &Part) -> Value {
+    match part {
+        Part::Text(text) => json!({"type": "text", "text": text}),
+        Part::Image(url) => match image_source(url) {
+            Some(source) => json!({"type": "image", "source": source}),
+            None => json!({"type": "text", "text": IMAGE_OMITTED}),
+        },
+    }
+}
+
+fn image_source(url: &str) -> Option<Value> {
+    if url.starts_with("http://") || url.starts_with("https://") {
+        return Some(json!({"type": "url", "url": url}));
+    }
+    let (header, data) = url.strip_prefix("data:")?.split_once(',')?;
+    let media_type = header.strip_suffix(";base64")?;
+    if media_type.is_empty() || data.is_empty() {
+        return None;
+    }
+    Some(json!({"type": "base64", "media_type": media_type, "data": data}))
 }
 
 /// Anthropic refuses `anyOf`, `oneOf` and `allOf` at the top of an input schema, where MCP

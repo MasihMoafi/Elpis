@@ -54,6 +54,7 @@ fn model_row(
     context_window: Option<u64>,
     priority: usize,
     reasons: bool,
+    images: bool,
 ) -> Value {
     let description = match context_window {
         Some(window) => format!("≈{}k context", window / 1_000),
@@ -66,6 +67,11 @@ fn model_row(
             .collect()
     } else {
         Vec::new()
+    };
+    let input_modalities: &[&str] = if images {
+        &["text", "image"]
+    } else {
+        &["text"]
     };
     let mut row = json!({
         "slug": slug,
@@ -89,7 +95,7 @@ fn model_row(
         "apply_patch_tool_type": "freeform",
         "truncation_policy": {"mode": "bytes", "limit": 10_000},
         "experimental_supported_tools": [],
-        "input_modalities": ["text"],
+        "input_modalities": input_modalities,
     });
     if reasons {
         row["default_reasoning_level"] = json!("medium");
@@ -121,12 +127,14 @@ fn anthropic_models(body: &Value) -> Vec<Value> {
                 .filter(|window| *window > 0 && i64::try_from(*window).is_ok());
             // The listing does not say which models think, and the Messages wire carries no
             // thinking budget yet, so no effort levels are offered.
+            // The Messages wire sends images as image blocks.
             Some(model_row(
                 slug,
                 display_name,
                 context_window,
                 index,
                 /*reasons*/ false,
+                /*images*/ true,
             ))
         })
         .collect()
@@ -169,6 +177,7 @@ fn gemini_models(body: &Value) -> Vec<Value> {
                 context_window,
                 index,
                 /*reasons*/ false,
+                /*images*/ false,
             ))
         })
         .collect()
@@ -216,7 +225,14 @@ fn openai_compatible_models(body: &Value) -> Vec<Value> {
                 .filter(|window| *window > 0);
             let reasons = parameters(entry)
                 .is_some_and(|parameters| parameters.iter().any(|p| p == "reasoning"));
-            Some(model_row(slug, display_name, context_window, index, reasons))
+            Some(model_row(
+                slug,
+                display_name,
+                context_window,
+                index,
+                reasons,
+                /*images*/ false,
+            ))
         })
         .collect()
 }

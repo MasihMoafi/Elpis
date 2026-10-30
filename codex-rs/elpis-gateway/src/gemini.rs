@@ -16,10 +16,30 @@ use crate::anthropic::parse_object;
 use crate::conversation::Conversation;
 use crate::conversation::GEMINI_SIGNATURE_PREFIX;
 use crate::conversation::Turn;
+use crate::conversation::parts_text;
 use crate::emitter::Emitter;
 use crate::emitter::StreamError;
 use crate::emitter::Usage;
 use crate::emitter::new_id;
+
+fn function_response(
+    call_names: &HashMap<&str, &str>,
+    call_id: &str,
+    output: &str,
+) -> Result<Value, GatewayError> {
+    let name = call_names.get(call_id).ok_or_else(|| {
+        GatewayError::bad_request(format!(
+            "Gemini function result `{call_id}` has no preceding function call"
+        ))
+    })?;
+    Ok(json!({
+        "functionResponse": {
+            "id": call_id,
+            "name": name,
+            "response": {"output": output},
+        }
+    }))
+}
 
 pub(crate) fn request(conversation: &Conversation) -> Result<Value, GatewayError> {
     let mut system = vec![conversation.instructions.clone()];
@@ -43,6 +63,7 @@ pub(crate) fn request(conversation: &Conversation) -> Result<Value, GatewayError
                 continue;
             }
             Turn::User(text) => ("user", json!({"text": text})),
+            Turn::UserParts(parts) => ("user", json!({"text": parts_text(parts)})),
             Turn::Assistant(text) => ("model", json!({"text": text})),
             Turn::ToolCall {
                 call_id,
@@ -63,22 +84,12 @@ pub(crate) fn request(conversation: &Conversation) -> Result<Value, GatewayError
                 ("model", part)
             }
             Turn::ToolResult { call_id, output } => {
-                let name = call_names.get(call_id.as_str()).ok_or_else(|| {
-                    GatewayError::bad_request(format!(
-                        "Gemini function result `{call_id}` has no preceding function call"
-                    ))
-                })?;
-                (
-                    "user",
-                    json!({
-                        "functionResponse": {
-                            "id": call_id,
-                            "name": name,
-                            "response": {"output": output},
-                        }
-                    }),
-                )
+                ("user", function_response(&call_names, call_id, output)?)
             }
+            Turn::ToolResultParts { call_id, parts } => (
+                "user",
+                function_response(&call_names, call_id, &parts_text(parts))?,
+            ),
         };
         if current_role != Some(role) {
             flush(&mut contents, &mut current_role, &mut current_parts);
