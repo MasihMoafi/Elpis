@@ -301,6 +301,20 @@ jobs:
             !${{ runner.temp }}/elpis-ledger-native/trash-data/**
           if-no-files-found: error
           retention-days: 7
+      - name: Streamed transcript repaint in tmux
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification != 'build' }}
+        run: node scripts/evals/t10-redraw.cjs "$PWD/codex-rs/target/release/elpis" "$RUNNER_TEMP/t10-captures"
+      - name: Preserve transcript repaint evidence
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification != 'build' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: t10-tmux-repaint
+          path: |
+            ${{ runner.temp }}/t10-captures/**
+            !${{ runner.temp }}/t10-captures/trash-data/**
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
       - name: Prove status regression detects the original missing instructions
         if: ${{ !cancelled() && inputs.verification != 'build' }}
         working-directory: codex-rs
