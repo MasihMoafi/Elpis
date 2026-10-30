@@ -338,28 +338,8 @@ for (const count of [1, 4]) test(`A128: GPT keeps its native tool running throug
 async function agyFixture(t) {
   return fixture(t, {}, { model: "agy/gemini-3.8-flash-medium", prepare: async (root, env) => {
     const executable = path.join(root, "fake-agy");
-    fs.writeFileSync(executable, `#!/usr/bin/env node
-const fs = require('node:fs');
-if (process.argv[2] === 'models') { console.log('gemini-3.8-flash-medium\\tGemini Flash'); process.exit(); }
-if (process.argv.includes('/usage')) { console.log('{}'); process.exit(); }
-console.log(JSON.stringify({ event: 'init', conversation_id: 'fake-conversation' }));
-let buffer = '';
-process.stdin.on('data', chunk => {
-  buffer += chunk;
-  let newline;
-  while ((newline = buffer.indexOf('\\n')) >= 0) {
-    const line = buffer.slice(0, newline); buffer = buffer.slice(newline + 1);
-    const event = JSON.parse(line), text = event.message.content;
-    fs.appendFileSync(process.env.FAKE_AGY_LOG, JSON.stringify({ text }) + '\\n');
-    const reply = () => {
-      console.log(JSON.stringify({ event: 'step_update', step_update: { step_type: 'agent_response', text_delta: 'answered: ' + text } }));
-      console.log(JSON.stringify({ event: 'result', result: { status: 'SUCCESS' } }));
-    };
-    if (!text.includes('[wait]')) reply();
-    else { const timer = setInterval(() => { if (fs.existsSync(process.env.FAKE_AGY_RELEASE)) { clearInterval(timer); reply(); } }, 10); }
-  }
-});
-`, { mode: 0o755 });
+    fs.copyFileSync(path.join(source, "test/fake-agy.cjs"), executable);
+    fs.chmodSync(executable, 0o755);
     delete env.ELPIS_NO_AGY;
     Object.assign(env, { AGY_BIN: executable, FAKE_AGY_LOG: path.join(root, "agy.jsonl"), FAKE_AGY_RELEASE: path.join(root, "agy-release") });
   } });

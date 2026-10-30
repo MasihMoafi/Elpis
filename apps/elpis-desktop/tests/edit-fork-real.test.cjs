@@ -156,6 +156,34 @@ for (const [provider, model] of [['Claude', 'claude/sonnet'], ['Antigravity', 'a
   assert.deepEqual(h.errors, []);
 });
 
+test('Antigravity answers in-flight messages and never replays stopped follow-ups', { skip, timeout: 60000 }, async () => {
+  const { page, client, project } = h;
+  const begin = async (original, followups) => {
+    const { thread } = await client.createThread({ cwd: project, model: 'agy/gemini-3.8-flash-medium', permissions: 'full' });
+    const { turn } = await client.send(thread.id, { text: original });
+    await until(async () => (await h.agyPrompts()).some(prompt => prompt.includes(original)), 'the provider starts');
+    await h.open(thread.id);
+    const composer = page.getByRole('textbox', { name: 'Message Elpis', exact: true });
+    for (const text of followups) { await composer.fill(text); await composer.press('Enter'); await h.turn(text).waitFor(); }
+    await until(async () => (await h.items(thread.id)).filter(row => row[1] === 'userMessage').length === 3, 'both follow-ups are recorded');
+    return { thread, turn, composer };
+  };
+  const stopped = await begin('[wait] stopped original', ['stopped follow-up one', 'stopped follow-up two']);
+  await page.getByRole('button', { name: 'Stop response', exact: true }).click();
+  await until(() => h.completed.has(stopped.turn.id), 'the first turn stops');
+  await page.getByRole('button', { name: 'Stop response', exact: true }).waitFor({ state: 'hidden' });
+  await stopped.composer.fill('new message after stop'); await stopped.composer.press('Enter');
+  await page.locator('.message.agent', { hasText: 'new message after stop' }).waitFor();
+  const sent = await h.agyPrompts();
+  assert.ok(sent.some(prompt => prompt.includes('new message after stop')));
+  assert.ok(!sent.some(prompt => /stopped follow-up (one|two)/.test(prompt)), 'stopped follow-ups are not sent later');
+  const continued = await begin('[wait] continued original', ['answered follow-up one', 'answered follow-up two']);
+  await fs.writeFile(path.join(h.root, 'agy-release'), '');
+  await until(() => h.completed.has(continued.turn.id), 'the turn answers the follow-ups');
+  for (const text of ['answered follow-up one', 'answered follow-up two']) await page.locator('.message.agent', { hasText: text }).waitFor();
+  assert.deepEqual(h.errors, []);
+});
+
 test('editing an earlier message continues from the edit, keeps its attachment, and the earlier version stays reachable', { skip, timeout: 180000 }, () => h.diagnose('edit', async () => {
   const { page } = h;
   const id = await h.chat('gpt-5.5', [['first question', 'Answer one'], ['second question', 'Answer two', [NOTE]], ['third question', 'Answer three']]);
