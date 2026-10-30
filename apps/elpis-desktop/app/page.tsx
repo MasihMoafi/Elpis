@@ -1389,6 +1389,7 @@ export default function Home() {
       if (!thread) {
         const result = await api<{ thread: Thread; permissions?: PermissionMode | null }>("/threads", { ...(newMode ? { permissions: newMode } : {}), ...(model.trim() ? { model: model.trim() } : {}), ...(newChoice?.provider ? { provider: newChoice.provider } : {}), ...(newChatFolder(cwd) ? { cwd: newChatFolder(cwd) } : {}) });
         thread = result.thread; upsertThread(thread); noteStartedMode(thread.id, result.permissions ?? newMode);
+        if (projectId) await assignProject(thread.id, projectId);
         await browser.adoptSession(browserDraft, thread.id);
         if (request.current === originalRequest) { saveDraft(originalId, ""); saveDraft(thread.id, command); shellCreated.current = thread.id; select(thread); }
       }

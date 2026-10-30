@@ -12,7 +12,7 @@ test('projects: explicit membership, drag, menu moves, persistence, and unscoped
   const projects = [{ id: 'one', name: 'First project', cwd: '/tmp/project-one' }, { id: 'two', name: 'Second project', cwd: '/tmp/project-two' }];
   const threads = ['alpha', 'bravo'].map(id => ({ id, name: id === 'alpha' ? 'Alpha' : 'Bravo', cwd: projects[0].cwd, model: 'gpt-6-luna', modelProvider: 'openai', status: { type: 'idle' } }));
   threads.push({ ...threads[0], id: 'alpha-worker', name: 'Alpha worker', parentThreadId: 'alpha', agentNickname: 'Alpha worker' });
-  const creates = [];
+  const creates = [], shells = [];
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost'); let raw = ''; for await (const chunk of req) raw += chunk;
     const json = value => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(value)); };
@@ -24,6 +24,8 @@ test('projects: explicit membership, drag, menu moves, persistence, and unscoped
       if (req.method === 'POST') { const body = JSON.parse(raw); creates.push(body); const created = { ...threads[0], id: `created-${creates.length}`, name: `Created ${creates.length}`, cwd: body.cwd ?? '/tmp/project-one' }; threads.push(created); return json({ thread: created }); }
       return json({ data: threads, nextCursor: null });
     }
+    const shell = url.pathname.match(/^\/api\/threads\/([^/]+)\/shell$/);
+    if (req.method === 'POST' && shell) { shells.push({ threadId: decodeURIComponent(shell[1]), body: JSON.parse(raw) }); return json({}); }
     if (url.pathname.endsWith('/resume')) return json({ thread, activeTurnId: null });
     if (url.pathname.endsWith('/turns')) return json({ turn: { id: 'fixture-turn' } });
     if (thread) return json({ thread, data: [], nextCursor: null });
@@ -120,8 +122,31 @@ test('projects: explicit membership, drag, menu moves, persistence, and unscoped
     await first.locator('.thread-row[data-thread-id="created-2"]').waitFor();
     assert.equal(creates[1].cwd, projects[0].cwd);
     await page.reload(); await first.locator('.thread-row[data-thread-id="created-2"]').waitFor();
+    await page.getByRole('button', { name: 'Start new chat in First project', exact: true }).click();
+    await page.getByRole('button', { name: 'Add files and more', exact: true }).click();
+    await page.getByRole('menuitem', { name: /^Run as a shell command/ }).click();
+    await page.getByLabel('Message Elpis', { exact: true }).fill('pwd');
+    await page.getByRole('button', { name: 'Run shell command', exact: true }).click();
+    await first.locator('.thread-row[data-thread-id="created-3"]').waitFor();
+    assert.equal(creates[2].cwd, projects[0].cwd, 'a shell chat started from a project must retain its selected project cwd');
+    assert.deepEqual(shells[0], { threadId: 'created-3', body: { command: 'pwd' } });
+    assert.equal(await sidebar.locator('.thread-row[data-thread-id="created-3"]').count(), 0, 'a project shell chat must not also appear in Recents');
+    await page.reload();
+    await first.locator('.thread-row[data-thread-id="created-3"]').waitFor();
+    assert.equal(await sidebar.locator('.thread-row[data-thread-id="created-3"]').count(), 0, 'project shell membership must persist after reload');
     await page.getByRole('button', { name: 'New chat', exact: true }).click();
     assert.match(await page.getByRole('button', { name: 'Choose project', exact: true }).innerText(), /Work in a project/);
+    await page.getByRole('button', { name: 'Add files and more', exact: true }).click();
+    await page.getByRole('menuitem', { name: /^Run as a shell command/ }).click();
+    await page.getByLabel('Message Elpis', { exact: true }).fill('pwd');
+    await page.getByRole('button', { name: 'Run shell command', exact: true }).click();
+    await row('created-4').waitFor();
+    assert.equal(creates[3].cwd, undefined, 'global shell start must not gain a project from the server-returned cwd');
+    assert.deepEqual(shells[1], { threadId: 'created-4', body: { command: 'pwd' } });
+    assert.equal(await first.locator('.thread-row[data-thread-id="created-4"]').count(), 0, 'an unselected-folder shell chat must remain unassigned');
+    await page.reload();
+    await row('created-4').waitFor();
+    assert.equal(await first.locator('.thread-row[data-thread-id="created-4"]').count(), 0, 'unselected-folder shell chat must remain unassigned after reload');
     if (process.env.ELPIS_PROJECT_SCREENSHOT) {
       for (const theme of ['light', 'dark']) {
         await page.evaluate(theme => localStorage.setItem('elpis-theme', theme), theme);
