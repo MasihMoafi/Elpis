@@ -9,9 +9,8 @@
 .side-chat-heading p { margin-top:4px; font-size:var(--text-xs); line-height:1.5; color:var(--muted-foreground); }
 .side-chat-content { flex:1; min-height:0; overflow:auto; padding:12px; overflow-wrap:anywhere; }
 .side-chat-content .message { max-width:100%; }
-.side-chat-form { display:flex; align-items:flex-end; gap:8px; margin:0 8px 8px; padding:12px; }
-.side-chat-form textarea { min-width:0; max-height:120px; overflow:auto; border:0; box-shadow:none; background:transparent; }
-.side-chat-form textarea:focus-visible { outline:none; box-shadow:none; }
+.side-chat-form { display:flex; align-items:flex-end; gap:8px; padding:12px; border-top:1px solid var(--border); }
+.side-chat-form textarea { min-width:0; max-height:120px; overflow:auto; }
 html { font-size:var(--interface-size, 16px); }
 :root[data-corners="sharp"] { --corner-shape:round; --corner-radius:0; --corner-radius-sm:0; --corner-radius-lg:0; --corner-tray:0; --radius:0px; --radius-sm:0px; --radius-md:0px; --radius-lg:0px; }
 :root[data-corners="rounded"] { --corner-shape:round; --corner-radius:var(--radius); --corner-radius-sm:var(--radius-sm); --corner-radius-lg:var(--radius-lg); --corner-tray:var(--radius-lg) var(--radius-lg) 0 0; }
@@ -108,8 +107,8 @@ html { font-size:var(--interface-size, 16px); }
   .canvas-inspector-actions kbd, .settings-badge, .choice-key:not([data-radio]), .change-status, .browser-zoom, .annotation-hint kbd) { border-radius:var(--corner-radius-sm, var(--cut-sm) 0); corner-shape:var(--corner-shape, bevel); }
 /* Panels (edge --border) and the accented ones: floating surfaces and the composer (edge --hud-edge, set by each): --cut-lg. */
 :where(.view-error, .tool-item, .feature-section, .customize-list, .agent-conversation-group, .file-card, .provider-key-form, .plan-card, .task-list, .canvas-notice, .agent-node,
-  .settings-rows, .settings-card, .step-card, .decision-card, .failed-turn-card, .message.user, .matilda-mini-message[data-speaker="you"],
-  .hud-menu, .hud-popover, .hud-dialog, .side-chat, .pending-input-panel, .full-view > .workspace-content, .composer, .side-chat-form, .matilda-mini-composer) { border-radius:var(--corner-radius-lg, var(--cut-lg) 0); corner-shape:var(--corner-shape, bevel); }
+  .settings-rows, .settings-card, .step-card, .decision-card, .failed-turn-card, .message.user,
+  .hud-menu, .hud-popover, .hud-dialog, .side-chat, .pending-input-panel, .full-view > .workspace-content, .composer) { border-radius:var(--corner-radius-lg, var(--cut-lg) 0); corner-shape:var(--corner-shape, bevel); }
 @layer base { * { box-sizing:border-box; border-color:var(--border); } [hidden] { display:none!important; } }
 * { scrollbar-width:thin; scrollbar-color:color-mix(in oklch, var(--foreground) 16%, transparent) transparent; }
 *::-webkit-scrollbar { width:8px; height:8px; }
@@ -270,13 +269,12 @@ button:disabled { cursor:not-allowed; }
 .message { margin-bottom:22px; min-width:0; overflow-wrap:anywhere; }
 /* Your messages keep the Elpis mark: a card with bevelled corners and the gold right edge (29 Oct, Masih: "why did you change
  * the mark of Elpis in the UI chats? That needs to come back."); ChatGPT's padding and width (specs/chatgpt-chat-style.md). */
-.message.user, .matilda-mini-message[data-speaker="you"] { background:var(--card); border:1px solid var(--hairline); border-right-color:color-mix(in oklch, var(--gold, var(--primary)) 70%, transparent); }
-.message.user { padding:10px 16px; margin-left:auto; width:fit-content; max-width:70%; white-space:pre-wrap; }
+.message.user { background:var(--card); border:1px solid var(--hairline); border-right:2px solid color-mix(in oklch, var(--gold, var(--primary)) 70%, transparent); padding:10px 16px; margin-left:auto; width:fit-content; max-width:70%; white-space:pre-wrap; }
 .message.agent .speaker { font-size:var(--text-xs); font-weight:600; color:var(--muted-foreground); margin-bottom:6px; }
 .markdown p { margin:0 0 1em; } .markdown > :last-child { margin-bottom:0; } .markdown pre { background:var(--recessed); border:1px solid var(--hairline); padding:12px 14px; overflow:auto; line-height:1.55; } .markdown code { font-size:var(--code-size, 13px); font-family:var(--mono); } .markdown :not(pre) > code { color:inherit; background:color-mix(in oklab, var(--foreground) 6%, var(--background)); padding:1px 6px; border-radius:6px; corner-shape:round; font-size:var(--text-sm); } .markdown ul,.markdown ol { padding-inline-start:22px; margin:8px 0 12px; } .markdown li { margin:3px 0; } .markdown ul { list-style:disc; } .markdown ol { list-style:decimal; } .markdown a { color:inherit; text-decoration:underline dotted 1px; text-underline-offset:2px; text-decoration-color:var(--thread-tertiary); } .markdown a:hover { color:var(--accent-text); } .markdown-table { max-width:100%; overflow:auto; margin:0 0 14px; } .markdown table { border-collapse:collapse; font-size:var(--text-sm); width:max-content; } .markdown td,.markdown th { border:1px solid var(--border); padding:6px 10px; min-width:6rem; overflow-wrap:normal; word-break:normal; } .markdown h1,.markdown h2,.markdown h3,.markdown h4,.markdown h5,.markdown h6 { font-weight:600; margin:18px 0 8px; letter-spacing:-.01em; } .markdown h1 { font-size:var(--text-base); } .markdown h2 { font-size:var(--text-base); } .markdown h3 { font-size:var(--text-base); }
 .tool-item { border:1px solid var(--border); margin:12px 0; font-size:var(--text-xs); } .tool-item summary { padding:10px 14px; cursor:pointer; } .tool-item pre { margin:0; padding:12px; overflow:auto; max-height:340px; white-space:pre-wrap; }
 .composer-wrap { position:relative; padding:6px 32px 16px; }
-.composer { max-width:var(--transcript-width, 740px); margin:auto; padding:11px 8px 8px 13px; }
+.composer { max-width:var(--transcript-width, 740px); margin:auto; border:1px solid var(--border); background:var(--composer); padding:11px 8px 8px 13px; box-shadow:var(--elevation-composer); }
 /* Stop stays plain in both themes; keyboard focus uses an outline instead of a shadow ring. */
 .stop-button { background:transparent; box-shadow:none; }
 .stop-button:focus-visible { outline:2px solid var(--ring); outline-offset:-2px; }
@@ -284,8 +282,8 @@ button:disabled { cursor:not-allowed; }
 .dictation-buttons { display:flex; flex-shrink:0; align-items:center; }
 .dictation-status { font-size:var(--text-small); color:var(--muted-foreground); overflow-wrap:anywhere; line-height:1.4; }
 .dictation-error { color:var(--destructive); }
-.composer textarea { field-sizing:content; height:44px; border:0; box-shadow:none; background:transparent; min-height:44px; line-height:22px; max-height:240px; resize:none; font-size:var(--text-base); padding:0; }
-.composer textarea:placeholder-shown { block-size:44px!important; min-block-size:44px!important; }
+.composer textarea { field-sizing:content; height:66px; border:0; box-shadow:none; background:transparent; min-height:66px; line-height:22px; max-height:240px; resize:none; font-size:var(--text-base); padding:0; }
+.composer textarea:placeholder-shown { block-size:66px!important; min-block-size:66px!important; }
 .dark .composer textarea { background:transparent; }
 .composer textarea:focus-visible { outline:none; box-shadow:none; }
 .composer-controls { --composer-control-gap:8px; display:flex; flex-wrap:nowrap; align-items:center; justify-content:space-between; gap:8px; margin-top:4px; }
@@ -704,10 +702,9 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .worked-for > summary:hover { color:var(--foreground); }
 .worked-for-body { padding:6px 0 0; }
 
-.composer, .composer-tray, .side-chat-form, .matilda-mini-composer { --edge:var(--composer-edge); }
-.composer:focus-within, .composer-tray:has(+ .composer:focus-within), .composer-tray:has(+ .composer-working:empty + .composer:focus-within), .side-chat-form:focus-within, .matilda-mini-composer:focus-within { --edge:color-mix(in srgb, var(--primary) 80%, var(--hud-edge)); }
-.composer, .side-chat-form, .matilda-mini-composer { background:var(--composer); border:1px solid var(--edge); box-shadow:var(--elevation-composer); }
-.composer { position:relative; }
+.composer, .composer-tray { --edge:var(--composer-edge); }
+.composer:focus-within, .composer-tray:has(+ .composer:focus-within), .composer-tray:has(+ .composer-working:empty + .composer:focus-within) { --edge:color-mix(in srgb, var(--primary) 80%, var(--hud-edge)); }
+.composer { position:relative; background:var(--composer); border-color:var(--edge); box-shadow:var(--elevation-composer); }
 .composer-tray { border-color:var(--edge); }
 /* No colour transition: the dark edge is gold, and a theme switch must not fade gold into the light theme. */
 /* The native bevel draws the border once, using the same width and colour as its straight edges. */

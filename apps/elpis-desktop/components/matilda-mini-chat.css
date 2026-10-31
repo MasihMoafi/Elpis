@@ -5,7 +5,7 @@
 .dark { --matilda-panel:var(--card); }
 .hud-popover.matilda-mini-popup { position:absolute; z-index:1; display:flex; flex-direction:column; padding:8px; overflow:hidden; background:var(--matilda-panel); }
 .matilda-mini-chat { display:flex; flex-direction:column; min-width:0; min-height:0; font-size:var(--text-small); }
-.matilda-mini-composer { display:flex; flex:none; align-items:center; gap:8px; min-height:36px; padding-inline:4px; }
+.matilda-mini-composer { display:flex; flex:none; align-items:center; gap:6px; min-height:36px; }
 .matilda-mini-composer textarea { min-width:0; min-height:32px; max-height:96px; flex:1; padding:6px 8px; resize:none; border:0; box-shadow:none; background:transparent; }
 .matilda-mini-composer textarea:focus-visible { outline:none; }
 /* Positioned, so the screen-reader labels inside stay inside it instead of stretching the panel. Messages fade at its top
@@ -14,7 +14,7 @@
   mask-image:linear-gradient(to bottom, transparent, black var(--fade), black calc(100% - var(--fade)), transparent); }
 .matilda-mini-message, .matilda-mini-status, .matilda-mini-error, .matilda-mini-earlier { flex:none; }
 .matilda-mini-message { min-width:0; }
-.matilda-mini-message[data-speaker="you"] { align-self:flex-end; max-width:90%; padding:6px 8px; }
+.matilda-mini-message[data-speaker="you"] { align-self:flex-end; max-width:90%; padding:6px 8px; background:var(--selected); }
 /* The chat reading rhythm (30 Oct, Masih: "too much space between Love Spot's lines"): 1.45 lines, half a line between paragraphs. */
 .matilda-mini-chat .matilda-mini-message { line-height:var(--reply-line-height); }
 .matilda-mini-chat .matilda-mini-message :is(p,ul,ol,pre) { margin-block:0; }

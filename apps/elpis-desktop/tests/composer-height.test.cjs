@@ -11,7 +11,7 @@ test('the message box fits its text when the window narrows, and scrolls only pa
     const fits = () => composer.evaluate(box => ({ fits: box.scrollHeight <= box.clientHeight + 1, overflow: getComputedStyle(box).overflowY }));
     const message = 'I wrote to the professor that I would like to talk about the research and the interview next week, and asked which day suits him.';
     const emptyHeight = await composer.evaluate(box => box.getBoundingClientRect().height);
-    assert.ok(emptyHeight >= 44, `empty composer starts at the measured one-line height: ${emptyHeight}px`);
+    assert.ok(emptyHeight >= 66, `empty composer starts at the requested taller default: ${emptyHeight}px`);
     await composer.fill('e');
     const typedHeight = await composer.evaluate(box => box.getBoundingClientRect().height);
     assert.ok(Math.abs(typedHeight - emptyHeight) <= 1, 'the empty composer starts at the same height as a one-line draft');
@@ -21,7 +21,7 @@ test('the message box fits its text when the window narrows, and scrolls only pa
     await page.waitForTimeout(300);
     await composer.fill('');
     const narrowEmptyHeight = await composer.evaluate(box => box.getBoundingClientRect().height);
-    assert.ok(narrowEmptyHeight >= 44, `narrow empty composer keeps its default height: ${narrowEmptyHeight}px`);
+    assert.ok(narrowEmptyHeight >= 66, `narrow empty composer keeps its default height: ${narrowEmptyHeight}px`);
     await composer.fill(message);
     const narrow = await fits();
     assert.equal(narrow.fits, true, 'narrower: the box grows with the wrapped lines instead of scrolling');

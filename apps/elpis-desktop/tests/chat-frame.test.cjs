@@ -22,7 +22,7 @@ const frames = locator => locator.evaluate(element => {
 });
 
 for (const colorScheme of ['light', 'dark']) for (const width of [1440, 960]) {
-  test(`shared chat frames in ${colorScheme} at ${width}px`, { timeout: 90000 }, async t => {
+  test(`restored chat frames retain actions and local accents in ${colorScheme} at ${width}px`, { timeout: 90000 }, async t => {
     const threads = [THREADS[0], { ...THREADS[1], name: 'Love Spot' }, { ...THREADS[2], name: 'Love Spot · Newton' }];
     const child = { ...THREADS[0], id: 'agent-0', name: 'Agent · inspect', parentThreadId: 'chat-a', source: { subagent: { agent_nickname: 'Agent', task_path: '/root/inspect' } } };
     const talk = [
@@ -93,8 +93,8 @@ for (const colorScheme of ['light', 'dark']) for (const width of [1440, 960]) {
     }
     await mini.getByRole('textbox', { name: 'Message Matilda' }).fill('A new note for Matilda');
     const miniSend = mini.getByRole('button', { name: 'Send to Matilda' });
-    assert.equal(await miniSend.getAttribute('data-variant'), 'cutPrimary');
-    assert.deepEqual(await miniSend.locator('svg').evaluate(icon => [getComputedStyle(icon).width, getComputedStyle(icon).height]), ['16px', '16px']);
+    assert.equal(await miniSend.getAttribute('data-variant'), 'ghost');
+    assert.deepEqual(await miniSend.locator('svg').evaluate(icon => [getComputedStyle(icon).width, getComputedStyle(icon).height]), ['18px', '18px']);
     await shot('mini-ready'); await miniSend.click();
     await mini.getByText('A new note for Matilda', { exact: true }).waitFor();
     assert.equal(f.posts.filter(post => post.path === '/api/love-spot/talk').at(-1).body.text, 'A new note for Matilda');
@@ -113,23 +113,21 @@ for (const colorScheme of ['light', 'dark']) for (const width of [1440, 960]) {
     await f.composer.focus();
     const newTray = await frames(tray), newComposer = await frames(mainForm);
     await shot('new-chat');
-    const allCards = [ordinary, sideMessage, miniMessage, ...love];
+    const allCards = [ordinary, sideMessage, ...love];
     const result = { ordinary, sideMessage, miniMessage, love, focusedMain, focusedSide, focusedMini };
     if (process.env.ELPIS_SHOTS) fs.writeFileSync(`${process.env.ELPIS_SHOTS}/${process.env.ELPIS_SHOT_LABEL || 'after'}-${colorScheme}-${width}.json`, JSON.stringify(result, null, 2));
     for (const [index, card] of allCards.entries()) {
-      assert.deepEqual(card.widths, ['1px', '1px', '1px', '1px'], `sent card ${index} uses one border width`);
+      assert.deepEqual(card.widths, ['1px', '2px', '1px', '1px'], `sent card ${index} retains its earlier accented edge`);
       assert.equal(card.edge, card.accent, `sent card ${index} uses its local accent`);
       assert.equal(card.background, ordinary.background, `sent card ${index} uses the shared card surface`);
       assert.equal(card.radius, ordinary.radius, `sent card ${index} uses the shared corner`);
       assert.equal(card.shape, ordinary.shape, `sent card ${index} uses the shared corner shape`);
     }
-    for (const [index, form] of [focusedMain, focusedSide, focusedMini].entries()) {
-      assert.deepEqual(form.widths, ['1px', '1px', '1px', '1px'], `composer ${index} uses one border width`);
-      assert.equal(form.background, ordinaryForm.background, `composer ${index} uses the shared composer surface`);
-      assert.equal(form.radius, ordinaryForm.radius, `composer ${index} uses the shared corner`);
-      assert.equal(form.shape, ordinaryForm.shape, `composer ${index} uses the shared corner shape`);
-      assert.equal(form.edge, form.focus, `composer ${index} shows its local accent when focused`);
-    }
+    assert.deepEqual(miniMessage.widths, ['0px', '0px', '0px', '0px'], 'the small chat retains its earlier unframed messages');
+    assert.deepEqual(focusedMain.widths, ['1px', '1px', '1px', '1px'], 'the main composer retains its earlier frame');
+    assert.equal(focusedMain.edge, focusedMain.focus, 'the main composer retains its local focus accent');
+    assert.deepEqual(focusedSide.widths, ['1px', '0px', '0px', '0px'], 'the side chat retains its earlier top divider');
+    assert.deepEqual(focusedMini.widths, ['0px', '0px', '0px', '0px'], 'the small composer retains its earlier unframed shape');
     assert.notEqual(ordinary.primary, ordinary.love, 'ordinary chats keep the chosen teal accent');
     for (const [index, card] of [miniMessage, ...love].entries()) assert.equal(card.primary, card.love, `Love Spot chat ${index} keeps red`);
     if (popupEdge) assert.equal(popupEdge.actual, popupEdge.expected, 'the pinned Love Spot popup edge follows its red accent');

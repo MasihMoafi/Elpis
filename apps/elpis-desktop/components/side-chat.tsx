@@ -91,7 +91,7 @@ export function SideChat({ parentId, open, question, onClose, onForward }: { par
       <Textarea ref={input} aria-label="Side question" placeholder="Ask a side question…" value={draft} onChange={event => setDraft(event.target.value)} onKeyDown={event => {
         if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void send(); }
       }} />
-      <Button type="submit" variant="cutPrimary" size="sm" disabled={busy || !draft.trim()}>Send</Button>
+      <Button type="submit" size="sm" disabled={busy || !draft.trim()}>Send</Button>
     </form>
   </section>;
 }

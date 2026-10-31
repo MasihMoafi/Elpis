@@ -86,7 +86,7 @@ for (const colorScheme of ['light', 'dark']) {
       assert.equal(stopShape.fill, 'none', 'Stop is outlined');
       assert.ok(stopShape.minimum >= .8 && stopShape.maximum <= 1.2, `Stop is a diamond rather than a square: ${JSON.stringify(stopShape)}`);
       assert.equal(await row.getByRole('button', { name: 'More send options', exact: true }).count(), 0, 'Send has no extra queue menu');
-      assert.equal(await page.locator('.composer textarea').evaluate(el => el.getBoundingClientRect().height), 44, 'an empty composer starts at the taller typing height');
+      assert.equal(await page.locator('.composer textarea').evaluate(el => el.getBoundingClientRect().height), 66, 'an empty composer starts at the taller typing height');
       const features = page.getByRole('group', { name: 'Elpis features' }).locator('.feature-chip');
       await features.first().waitFor();
       const featureMetrics = await features.evaluateAll(chips => chips.map(chip => {
