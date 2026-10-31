@@ -2,28 +2,36 @@ use anyhow::Context;
 use anyhow::Result;
 use anyhow::bail;
 use app_test_support::DISABLE_PLUGIN_STARTUP_TASKS_ARG;
+use app_test_support::MockResponsesConfig;
 use app_test_support::create_mock_responses_server_sequence_unchecked;
 use app_test_support::to_response;
+use app_test_support::write_models_cache;
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use codex_app_server_protocol::ClientInfo;
 use codex_app_server_protocol::ConfigWarningNotification;
 use codex_app_server_protocol::InitializeParams;
+use codex_app_server_protocol::ItemCompletedNotification;
 use codex_app_server_protocol::JSONRPCError;
 use codex_app_server_protocol::JSONRPCMessage;
 use codex_app_server_protocol::JSONRPCNotification;
 use codex_app_server_protocol::JSONRPCRequest;
 use codex_app_server_protocol::JSONRPCResponse;
 use codex_app_server_protocol::RequestId;
+use codex_app_server_protocol::SubAgentActivityKind;
+use codex_app_server_protocol::ThreadItem;
 use codex_app_server_protocol::ThreadLoadedListParams;
 use codex_app_server_protocol::ThreadLoadedListResponse;
+use codex_app_server_protocol::ThreadReadResponse;
 use codex_app_server_protocol::ThreadStartParams;
 use codex_app_server_protocol::ThreadStartResponse;
 use codex_core::config::set_project_trust_level;
+use codex_features::Feature;
 use codex_http_client::HttpClient;
 use codex_http_client::HttpClientBuilder;
 use codex_http_client::HttpResponse;
 use codex_protocol::config_types::TrustLevel;
+use core_test_support::responses;
 use futures::SinkExt;
 use futures::StreamExt;
 use hmac::Hmac;
@@ -53,6 +61,10 @@ use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::http::HeaderValue;
 use tokio_tungstenite::tungstenite::http::header::AUTHORIZATION;
 use tokio_tungstenite::tungstenite::http::header::ORIGIN;
+use wiremock::Mock;
+use wiremock::ResponseTemplate;
+use wiremock::matchers::method;
+use wiremock::matchers::path_regex;
 
 // macOS and Windows CI can spend tens of seconds starting the app-server test
 // binary under Bazel before it accepts JSON-RPC or reports its websocket bind
@@ -63,6 +75,149 @@ pub(super) const DEFAULT_READ_TIMEOUT: Duration = Duration::from_secs(60);
 pub(super) const DEFAULT_READ_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub(super) type WsClient = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
+
+#[tokio::test]
+async fn websocket_read_only_follow_delivers_child_events_to_early_and_late_connections()
+-> Result<()> {
+    const PARENT: &str = "start a live worker";
+    const CHILD: &str = "live worker task";
+    const SPAWN: &str = "live-follow-spawn";
+    const MARKER: &str = "live child delta";
+    let server = responses::start_mock_server().await;
+    let spawn_args = serde_json::to_string(
+        &json!({"message": CHILD, "task_name": "worker", "fork_turns": "none"}),
+    )?;
+    let _parent = responses::mount_sse_once_match(
+        &server,
+        |req: &wiremock::Request| String::from_utf8_lossy(&req.body).contains(PARENT),
+        responses::sse(vec![
+            responses::ev_response_created("parent"),
+            responses::ev_function_call_with_namespace(
+                SPAWN,
+                "collaboration",
+                "spawn_agent",
+                &spawn_args,
+            ),
+            responses::ev_completed("parent"),
+        ]),
+    )
+    .await;
+    let child_body = responses::sse(vec![
+        responses::ev_response_created("child"),
+        responses::ev_message_item_added("child-message", ""),
+        responses::ev_output_text_delta(MARKER),
+        responses::ev_assistant_message("child-message", MARKER),
+        responses::ev_completed("child"),
+    ]);
+    Mock::given(method("POST"))
+        .and(path_regex(".*/responses$"))
+        .and(|req: &wiremock::Request| {
+            String::from_utf8_lossy(&req.body).contains(CHILD)
+                && !String::from_utf8_lossy(&req.body).contains(SPAWN)
+        })
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_raw(child_body, "text/event-stream")
+                .set_delay(Duration::from_secs(10)),
+        )
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+    let _parent_done = responses::mount_sse_once_match(
+        &server,
+        |req: &wiremock::Request| String::from_utf8_lossy(&req.body).contains(SPAWN),
+        responses::sse(vec![
+            responses::ev_response_created("parent-done"),
+            responses::ev_assistant_message("parent-message", "done"),
+            responses::ev_completed("parent-done"),
+        ]),
+    )
+    .await;
+    let codex_home = TempDir::new()?;
+    MockResponsesConfig::new(&server.uri())
+        .enable_feature(Feature::MultiAgentV2)
+        .with_root_config(&format!("chatgpt_base_url = \"{}\"", server.uri()))
+        .write(codex_home.path())?;
+    write_models_cache(codex_home.path()).await?;
+    let (_process, bind_addr) = spawn_websocket_server(codex_home.path()).await?;
+    let mut root = connect_websocket(bind_addr).await?;
+    let mut early = connect_websocket(bind_addr).await?;
+    send_request(&mut root, "initialize", 1, Some(json!({"clientInfo": {"name": "root", "version": "0.1.0"}, "capabilities": {"experimentalApi": true}}))).await?;
+    read_response_for_id(&mut root, 1).await?;
+    send_request(&mut early, "initialize", 1, Some(json!({"clientInfo": {"name": "early-viewer", "version": "0.1.0"}, "capabilities": {"experimentalApi": true}}))).await?;
+    read_response_for_id(&mut early, 1).await?;
+    send_request(
+        &mut root,
+        "thread/start",
+        2,
+        Some(json!({"model": "gpt-5.4"})),
+    )
+    .await?;
+    let parent: ThreadStartResponse = to_response(read_response_for_id(&mut root, 2).await?)?;
+    send_request(&mut root, "turn/start", 3, Some(json!({"threadId": parent.thread.id, "input": [{"type": "text", "text": PARENT, "text_elements": []}]}))).await?;
+    read_response_for_id(&mut root, 3).await?;
+    let child_id = timeout(Duration::from_secs(30), async {
+        loop {
+            let notification = read_notification_for_method(&mut root, "item/completed").await?;
+            let completed: ItemCompletedNotification =
+                serde_json::from_value(notification.params.context("missing params")?)?;
+            if let ThreadItem::SubAgentActivity {
+                id,
+                kind: SubAgentActivityKind::Started,
+                agent_thread_id,
+                ..
+            } = completed.item
+                && id == SPAWN
+            {
+                return Ok::<String, anyhow::Error>(agent_thread_id);
+            }
+        }
+    })
+    .await??;
+    let mut late = connect_websocket(bind_addr).await?;
+    send_request(&mut late, "initialize", 1, Some(json!({"clientInfo": {"name": "late-viewer", "version": "0.1.0"}, "capabilities": {"experimentalApi": true}}))).await?;
+    read_response_for_id(&mut late, 1).await?;
+    send_request(
+        &mut late,
+        "thread/subscribe",
+        2,
+        Some(json!({"threadId": child_id, "includeTurns": false})),
+    )
+    .await?;
+    let read: ThreadReadResponse = to_response(read_response_for_id(&mut late, 2).await?)?;
+    assert_eq!(read.thread.id, child_id);
+    assert_eq!(read.thread.can_accept_direct_input, Some(false));
+    for viewer in [&mut early, &mut late] {
+        timeout(Duration::from_secs(30), async {
+            loop {
+                let notification =
+                    read_notification_for_method(viewer, "item/agentMessage/delta").await?;
+                let params = notification.params.context("missing delta params")?;
+                if params["threadId"] == child_id && params["delta"] == MARKER {
+                    return Ok::<(), anyhow::Error>(());
+                }
+            }
+        })
+        .await??;
+    }
+    send_request(&mut late, "turn/start", 3, Some(json!({"threadId": child_id, "input": [{"type": "text", "text": "forbidden", "text_elements": []}]}))).await?;
+    let error = read_error_for_id(&mut late, 3).await?;
+    assert!(
+        error
+            .error
+            .message
+            .contains("direct app-server input is not allowed for multi-agent v2 sub-agents")
+    );
+    send_request(
+        &mut root,
+        "thread/settings/update",
+        4,
+        Some(json!({"threadId": parent.thread.id})),
+    )
+    .await?;
+    read_response_for_id(&mut root, 4).await?;
+    Ok(())
+}
 type HmacSha256 = Hmac<Sha256>;
 
 #[tokio::test]

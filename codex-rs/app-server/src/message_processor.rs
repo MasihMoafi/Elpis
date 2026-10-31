@@ -1549,6 +1549,11 @@ impl MessageProcessor {
             ClientRequest::ThreadRead { params, .. } => {
                 self.thread_processor.thread_read(&request_id, params).await
             }
+            ClientRequest::ThreadSubscribe { params, .. } => {
+                self.thread_processor
+                    .thread_subscribe(&request_id, params)
+                    .await
+            }
             // Elpis: the work graphs a root thread ran.
             ClientRequest::WorkGraphRunWithProviders { params, .. } => {
                 self.thread_processor
