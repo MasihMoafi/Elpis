@@ -5,7 +5,7 @@ const { openCanvas } = require('./canvas-fixture.cjs');
 const { chooseTheme } = require('./controls.cjs');
 const drag = async (page, a, b, button = 'left') => { await page.mouse.move(a.x, a.y); await page.mouse.down({ button }); await page.mouse.move(b.x, b.y, { steps: 12 }); await page.mouse.up({ button }); };
 
-test('agent wires keep bezier target arrows; Mother has one shared trunk and arrowed branches', async () => {
+test('agent wires keep bezier target arrows; Mother agent has one shared trunk and arrowed branches', async () => {
   const f = await openCanvas();
   try {
     assert.equal(await f.canvas.locator('.canvas-chevron').count(), 0);

@@ -71,7 +71,7 @@ test('agents canvas, isometric: agents as buttons to select and open, run state,
     assert.equal(await agent('Nuvani · Join the parts').getAttribute('aria-label'), 'Nuvani · Join the parts: wave 2, not run, checked after it runs');
     assert.equal(await board.getByRole('button', { name: /^Mother:/ }).count(), 1);
     const labels = await board.locator('.iso-label').evaluateAll(list => list.map(item => ({ text: item.textContent, size: parseFloat(getComputedStyle(item).fontSize), transform: getComputedStyle(item).transform })));
-    assert.deepEqual(labels.map(item => item.text).sort(), ['1Quillon · Part 1', '1Veyra · Part 2', '1Orilo · Part 3', '2Nuvani · Join the parts', 'Mother'].sort(), 'each title, with its wave as a badge');
+    assert.deepEqual(labels.map(item => item.text).sort(), ['1Quillon · Part 1', '1Veyra · Part 2', '1Orilo · Part 3', '2Nuvani · Join the parts', 'Mother agent'].sort(), 'each title, with its wave as a badge');
     for (const label of labels) {
       assert.ok(label.size >= 12, `${label.text} is at least 12px (${label.size})`);
       // Centred with a translate only: no rotation, skew or scale.
@@ -90,7 +90,7 @@ test('agents canvas, isometric: agents as buttons to select and open, run state,
     await canvas.getByRole('complementary', { name: 'Architectures', exact: true }).waitFor();
     // The Mother opens her panel.
     await board.getByRole('button', { name: /^Mother:/ }).click();
-    await canvas.getByRole('complementary', { name: 'Mother', exact: true }).waitFor();
+    await canvas.getByRole('complementary', { name: 'Mother agent', exact: true }).waitFor();
 
     // Enter opens the dashboard; double-click now opens the inline name editor.
     await agent('Quillon · Part 1').click(); await page.keyboard.press('Enter');
@@ -109,7 +109,7 @@ test('agents canvas, isometric: agents as buttons to select and open, run state,
     await agent('Quillon · Part 1').focus();
     const walked = [];
     for (const key of ['ArrowRight', 'ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'ArrowUp', 'ArrowUp']) { await page.keyboard.press(key); walked.push(await focused()); }
-    assert.deepEqual(walked, ['Veyra · Part 2', 'Orilo · Part 3', 'Nuvani · Join the parts', 'Orilo · Part 3', 'Veyra · Part 2', 'Quillon · Part 1', 'Mother']);
+    assert.deepEqual(walked, ['Veyra · Part 2', 'Orilo · Part 3', 'Nuvani · Join the parts', 'Orilo · Part 3', 'Veyra · Part 2', 'Quillon · Part 1', 'Mother agent']);
     // Space opens patterns without changing the current selection.
     const selectedBefore = await inspector.getByRole('textbox', { name: 'Name', exact: true }).inputValue();
     await page.keyboard.press('ArrowRight'); await page.keyboard.press('Space');

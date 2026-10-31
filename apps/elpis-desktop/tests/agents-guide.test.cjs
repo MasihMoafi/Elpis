@@ -10,7 +10,7 @@ async function fixture(options) {
 }
 const { assertUiFit } = require('./ui-fit.cjs');
 
-const topics = ['One agent or many', 'Mother and Father', 'Writers and checks', 'Choose a pattern', 'Read a run'];
+const topics = ['One agent or many', 'Mother agent and Father agent', 'Writers and checks', 'Choose a pattern', 'Read a run'];
 const guide = page => page.getByRole('region', { name: 'Guide to managing agents' });
 async function command(page, name) {
   await page.keyboard.press('Control+k');
@@ -54,7 +54,7 @@ test('The command menu opens the guide; topics and the Workflows back link work 
       assert.equal(await popup.title(), 'Guide reference');
       await popup.close();
     }
-    await guide(page).getByRole('button', { name: 'Mother and Father', exact: true }).click();
+    await guide(page).getByRole('button', { name: 'Mother agent and Father agent', exact: true }).click();
     assert.match(await guide(page).innerText(), /10/);
     await guide(page).getByRole('button', { name: 'Writers and checks', exact: true }).click();
     assert.match(await guide(page).innerText(), /worktree/);

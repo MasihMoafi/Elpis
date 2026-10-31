@@ -10,7 +10,7 @@ const { captureReview, chooseOption } = require('./controls.cjs');
 const MODELS = { extraModels: [{ id: 'opus', model: 'claude/opus', displayName: 'Opus 5.5' }, { id: 'argon', model: 'agy/gemini-4-argon-high', displayName: 'Gemini 4 Argon' }, { id: 'g38', model: 'agy/gemini-3.8-flash-high', displayName: 'Gemini 3.8 Flash (High)' }, { id: 'g38l', model: 'agy/gemini-3.8-flash-low', displayName: 'Gemini 3.8 Flash (Low)' }] };
 const pages = [...Array.from({ length: 8 }, (_, i) => `screen-${i + 1}.png`), 'screen-10.png', 'notes.txt'];
 
-test('Transcribe images builds one Gemini reader a page, side by side, and a join by Elpis, with Mother on the strongest model', async () => {
+test('Transcribe images builds one Gemini reader a page, side by side, and a join by Elpis, with Mother agent on the strongest model', async () => {
   const f = await openCanvas({ folders: ['docs', 'book/pages'], files: { 'book/pages': pages, docs: ['readme.md'] }, ...MODELS });
   try {
     await chooseOption(f.canvas.getByRole('combobox', { name: 'Workflow pattern', exact: true }), 'transcribe');
@@ -31,7 +31,7 @@ test('Transcribe images builds one Gemini reader a page, side by side, and a joi
     assert.equal(agents.some(a => a.data.instruction.includes('notes.txt')), false, 'only images are pages');
     assert.deepEqual(join.data.writeScopes, ['book/pages']);
     assert.match(join.data.instruction, /into book\/pages\/transcription\.md/);
-    assert.deepEqual([saved.mother.model, saved.mother.provider], ['claude/opus', null], 'Mother takes the strongest model available');
+    assert.deepEqual([saved.mother.model, saved.mother.provider], ['claude/opus', null], 'Mother agent takes the strongest model available');
     assert.equal(f.plans.length, 0, 'the team is built, not planned');
     // The cards and Mother's menu name the subscriptions' models, not their ids.
     assert.match(await f.canvas.locator('.react-flow__node').filter({ has: f.page.locator('.agent-node-title', { hasText: /· Page 1$/ }) }).innerText(), /Gemini 3\.8 Flash \(Low\)/);

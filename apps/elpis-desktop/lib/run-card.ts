@@ -1,7 +1,7 @@
-/** Workflow agents answer the run in JSON (bridge/workflow-acp.mjs): a check's verdict, or Mother's decision. Chats show it
+/** Workflow agents answer the run in JSON (bridge/workflow-acp.mjs): a check's verdict, or Mother agent's decision. Chats show it
  * as a card and the run's progress as a sentence, never the JSON (27-28 Oct: "showing this way is wrong"). */
 export type RunCard = { label: string; heading: string; failed: boolean; mother: boolean; text: string; summary: string };
-const MOTHER: Record<string, string> = { continue: "Mother lets the agent continue", steer: "Mother steers the agent", retry: "Mother retries the agent", stop: "Mother stops the run" };
+const MOTHER: Record<string, string> = { continue: "Mother agent lets the agent continue", steer: "Mother agent steers the agent", retry: "Mother agent retries the agent", stop: "Mother agent stops the run" };
 export function runCard(value: string): RunCard | null {
   if (!/^\s*(```(?:json)?\s*)?\{/.test(value)) return null;
   let parsed: Record<string, unknown>;
@@ -13,7 +13,7 @@ export function runCard(value: string): RunCard | null {
   const action = words("action");
   if (MOTHER[action] && keys.every(key => ["action", "taskId", "message", "instruction", "summary", "reason"].includes(key) && typeof parsed[key] === "string")) {
     const guidance = words("message") || words("instruction");
-    return { label: "Mother's decision", heading: MOTHER[action], failed: action === "stop", mother: true, summary: words("summary"),
+    return { label: "Mother agent's decision", heading: MOTHER[action], failed: action === "stop", mother: true, summary: words("summary"),
       text: [words("summary"), guidance && `**Guidance:** ${guidance}`, words("reason") && `**Why:** ${words("reason")}`].filter(Boolean).join("\n\n") };
   }
   return null;

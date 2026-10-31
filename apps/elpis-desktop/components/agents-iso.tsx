@@ -83,7 +83,7 @@ function Prism({ ground, side, bottom, top, className }: { ground: Ground; side:
 
 type States = Record<string, { status: TaskStatus; activity?: string }>;
 /** A wire's state, as the flat board colours it: live once its first agent's check passed and the second runs (a
- * Mother's or the Father's wire once its agent runs), done once that check passed, cut when it failed or the second
+ * Mother's or the Father agent's wire once its agent runs), done once that check passed, cut when it failed or the second
  * is blocked. A two-way wire sets no order, so it carries none. */
 function wireState({ source, target, kind }: CanvasEdge, states: States) {
   const to = states[target]?.status;
@@ -201,7 +201,7 @@ export function IsoBoard({ workflowIdentity, inserting, canConnect, onReconnect,
   };
   const motherState = partState(true), fatherState = partState(false);
   const statusOf = (id: string): State => id === MOTHER ? motherState : id === FATHER ? fatherState : states[id]?.status ?? "idle";
-  const titleOf = (id: string) => { const node = nodes.get(id); return id === MOTHER ? "Mother" : id === FATHER ? "Father" : node?.type === "agent" ? node.data.title || "Untitled" : id; };
+  const titleOf = (id: string) => { const node = nodes.get(id); return id === MOTHER ? "Mother agent" : id === FATHER ? "Father agent" : node?.type === "agent" ? node.data.title || "Untitled" : id; };
   const parentLine = (id: string) => id === MOTHER ? ["This run's chat", agentCount(agents.length), STATUS[motherState]] : ["His own chat", agentCount(father.length), fatherState === "idle" ? "after her part" : STATUS[fatherState]];
   const describe = (id: string) => id === MOTHER || id === FATHER ? parentLine(id).join(", ").replace(/^./, letter => letter.toLowerCase())
     : `${wave.has(id) ? `wave ${wave.get(id)}` : "no wave"}, ${states[id]?.status === "running" && states[id]?.activity ? `now: ${states[id].activity}` : nodes.get(id)?.type === "agent" && (nodes.get(id)!.data as AgentData).muted ? "muted, skipped in runs" : STATUS[statusOf(id)]}, ${CHECK[statusOf(checkOf(id))].toLowerCase()}`;

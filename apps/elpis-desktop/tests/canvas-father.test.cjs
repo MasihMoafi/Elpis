@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 const { openCanvas } = require('./canvas-fixture.cjs');
 const { chooseOption } = require('./controls.cjs');
 
-test('past ten agents the Father runs the rest in his own chat, after the Mother, and reports to her', async () => {
+test('past ten agents the Father agent runs the rest in his own chat, after the Mother agent, and reports to her', async () => {
   const { page, canvas, node, runs, posts, agentCount, fit, errors, close } = await openCanvas({
     listed: (run, looks) => looks ? { id: run.graphId, name: run.name, status: 'succeeded',
       tasks: run.tasks.map(task => ({ id: task.id, status: 'succeeded', assignedThreadId: null, result: { summary: `Accepted result: ${task.title}` } })) } : undefined,
@@ -15,10 +15,10 @@ test('past ten agents the Father runs the rest in his own chat, after the Mother
     const off = () => page.evaluate(() => document.activeElement?.blur());
     const father = canvas.locator('.react-flow__node-father');
     await agentCount(4, 'the default board');
-    assert.equal(await father.count(), 0, 'no Father within ten agents');
+    assert.equal(await father.count(), 0, 'no Father agent within ten agents');
     // Room for thirteen, then nine more agents, one prompt each.
-    await canvas.getByRole('button', { name: 'Mother', exact: true }).click();
-    const motherPanel = canvas.getByRole('complementary', { name: 'Mother', exact: true });
+    await canvas.getByRole('button', { name: 'Mother agent', exact: true }).click();
+    const motherPanel = canvas.getByRole('complementary', { name: 'Mother agent', exact: true });
     await motherPanel.getByRole('textbox', { name: 'Max agents', exact: true }).fill('13');
     await off(); await page.keyboard.press('Tab');
     const command = canvas.getByRole('dialog', { name: 'Add agents', exact: true }).getByRole('textbox', { name: 'Command', exact: true });
@@ -34,9 +34,9 @@ test('past ten agents the Father runs the rest in his own chat, after the Mother
     // The Father appears, starting his own agents; the Mother's panel says he reports to her.
     await fit();
     await father.waitFor();
-    assert.match(await father.innerText(), /Father[\s\S]*Reports to the Mother[\s\S]*3 agents/i);
-    await canvas.getByRole('button', { name: 'Mother', exact: true }).click();
-    await motherPanel.getByText(/The Father runs 3 more agents in his own chat once her part has succeeded, and reports to her/).waitFor();
+    assert.match(await father.innerText(), /Father agent[\s\S]*Reports to the Mother agent[\s\S]*3 agents/i);
+    await canvas.getByRole('button', { name: 'Mother agent', exact: true }).click();
+    await motherPanel.getByText(/The Father agent runs 3 more agents in his own chat once her part has succeeded, and reports to her/).waitFor();
     await motherPanel.getByRole('button', { name: 'Done', exact: true }).click();
 
     // The run: her ten first, in her chat; when her part has succeeded, the bridge starts his three in his own chat and
@@ -48,7 +48,7 @@ test('past ten agents the Father runs the rest in his own chat, after the Mother
     const [hers, his] = runs, chats = posts.filter(post => post.path === '/api/threads');
     assert.deepEqual([hers.tasks.length, hers.next.tasks.length], [20, 6], 'ten agents and their checks for her; three and theirs for him');
     assert.equal(his.rootThreadId, 'chat-father', 'he has his own chat');
-    assert.match(hers.next.thread.name, /^Father · /);
+    assert.match(hers.next.thread.name, /^Father agent · /);
     assert.match(hers.next.thread.instructions, /You are the Father/);
     assert.deepEqual(chats.map(chat => chat.body.agents), [true], 'the screen opens only her chat, with the multi-agent runtime');
     const hisIds = new Set(his.tasks.map(task => task.id));
@@ -70,22 +70,22 @@ const twelve = { name: 'Twelve writers', maxAgents: 12, edges: [], nodes: Array.
   data: { title: `Writer ${i + 1}`, instruction: 'Write the result', model: null, writeScopes: ['src'], acceptanceCriteria: [] },
 })) };
 
-test('a Father report the bridge could not deliver says why, and the run stays open without a second Father', async () => {
+test('a Father agent report the bridge could not deliver says why, and the run stays open without a second Father agent', async () => {
   const { page, canvas, runs, posts, errors, close } = await openCanvas({ graph: twelve, refuseReport: 'try again',
     listed: (run, looks) => looks ? { id: run.graphId, status: run.graphId === 'graph-1' ? 'succeeded' : 'failed',
       tasks: run.tasks.map(task => ({ id: task.id, status: 'succeeded', assignedThreadId: null, result: { summary: `Evidence ${task.id}` } })) } : undefined,
   });
   try {
     await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
-    await canvas.getByRole('alert').filter({ hasText: 'Father report not delivered: try again' }).waitFor();
+    await canvas.getByRole('alert').filter({ hasText: 'Father agent report not delivered: try again' }).waitFor();
     assert.match(await canvas.locator('.canvas-header [role=status]').innerText(), /^Running/);
-    assert.equal(runs.length, 2, 'no second Father run');
+    assert.equal(runs.length, 2, 'no second Father agent run');
     assert.equal(posts.filter(post => /\/turns$/.test(post.path)).length, 0);
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
 
-test('a failed Mother does not start the Father or send his report', async () => {
+test('a failed Mother agent does not start the Father agent or send his report', async () => {
   const { page, canvas, runs, posts, close } = await openCanvas({ graph: twelve,
     listed: (run, looks) => looks ? { id: run.graphId, status: 'failed', tasks: run.tasks.map(task => ({ id: task.id, status: 'failed', assignedThreadId: null })) } : undefined,
   });
@@ -98,7 +98,7 @@ test('a failed Mother does not start the Father or send his report', async () =>
   } finally { await close(); }
 });
 
-test('an unchanged Father status waits for the next poll instead of polling continuously', async () => {
+test('an unchanged Father agent status waits for the next poll instead of polling continuously', async () => {
   const fatherReads = [];
   const { page, canvas, close } = await openCanvas({ graph: twelve, listed: (run, looks) => {
     if (run.graphId === 'graph-2') fatherReads.push(Date.now());

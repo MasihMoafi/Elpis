@@ -129,7 +129,7 @@ export function WorkflowChat({ run, identity, ready, models = [], threads = [], 
       {task.result && <details><DisclosureSummary>Result</DisclosureSummary><MarkdownText text={typeof task.result === "string" ? task.result : task.result.summary || "A result was recorded without a text summary."} allowImages={false} /></details>}
       {task.assignedThreadId && <Button variant="ghost" size="sm" onClick={() => onOpenChat(task.assignedThreadId!)}>Open {task.title || task.id} chat</Button>}
     </li>)}</ol></details>
-    {record.mother?.status && <p>Mother: {record.mother.status}{record.mother.model ? ` · ${record.mother.model}` : ""}</p>}
-    {!!record.mother?.decisions?.length && <details><DisclosureSummary>Mother decisions</DisclosureSummary><ol>{record.mother.decisions.map((decision, index) => <li key={index}>{decision.taskId ? `${decision.taskId}: ` : ""}{decision.decision}{decision.reasons ? ` · ${Array.isArray(decision.reasons) ? decision.reasons.join("; ") : decision.reasons}` : ""}{decision.delivery ? ` · ${decision.delivery}` : ""}</li>)}</ol></details>}
+    {record.mother?.status && <p>Mother agent: {record.mother.status}{record.mother.model ? ` · ${record.mother.model}` : ""}</p>}
+    {!!record.mother?.decisions?.length && <details><DisclosureSummary>Mother agent decisions</DisclosureSummary><ol>{record.mother.decisions.map((decision, index) => <li key={index}>{decision.taskId ? `${decision.taskId}: ` : ""}{decision.decision}{decision.reasons ? ` · ${Array.isArray(decision.reasons) ? decision.reasons.join("; ") : decision.reasons}` : ""}{decision.delivery ? ` · ${decision.delivery}` : ""}</li>)}</ol></details>}
   </section>;
 }

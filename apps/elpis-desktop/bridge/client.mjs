@@ -1403,7 +1403,7 @@ export class DesktopClient extends EventEmitter {
     const preset = workflowPreset(body.preset, body.goal);
     await this.models();
     for (const model of new Set([MOTHER_MODEL, ...preset.tasks.map(task => task.model)])) this.#model(model);
-    const created = await this.createThread({ cwd: body.cwd, model: MOTHER_MODEL, name: preset.name, agents: true, instructions: `You are Mother, the workflow coordinator. Goal: ${body.goal}. Review the children’s candidate commits and merge only after passing checks.` });
+    const created = await this.createThread({ cwd: body.cwd, model: MOTHER_MODEL, name: preset.name, agents: true, instructions: `You are the Mother agent, the workflow coordinator. Goal: ${body.goal}. Review the children’s candidate commits and merge only after passing checks.` });
     return this.#workflowRuns.start({ ...preset, rootThreadId: created.thread.id }, created.thread);
   }
   /** One stage's tasks, checked as the scheduler takes them. */
@@ -1485,14 +1485,14 @@ export class DesktopClient extends EventEmitter {
     const from=record.report?.from??record.id;
     try{
       if(record.report){
-        const lines=[`Report from the Father · ${record.rootThreadId}`,`Work graph: ${record.id}`,`Status: ${record.status}`,record.error,
+        const lines=[`Report from the Father agent · ${record.rootThreadId}`,`Work graph: ${record.id}`,`Status: ${record.status}`,record.error,
           ...record.tasks.map(task=>`${task.title}: ${task.status}\n${JSON.stringify(task.result??{failure:task.failureReason??null})}`),
-          "This is the Father's completed run report. Acknowledge it briefly without tools, edits, or another run."].filter(Boolean);
+          "This is the Father agent's completed run report. Acknowledge it briefly without tools, edits, or another run."].filter(Boolean);
         // A refused delivery is tried again a few times; the reason stays on her record if it never goes through.
         for(let attempt=1;;attempt++){
           try{await this.send(record.report.to,{text:lines.join('\n\n')});break;}
           catch(error){
-            if(attempt>=this.#reportAttempts){await this.#workflowRuns.note(from,{status:record.status,reported:false,error:`Father report not delivered: ${String(error?.message??error).slice(0,300)}`});return;}
+            if(attempt>=this.#reportAttempts){await this.#workflowRuns.note(from,{status:record.status,reported:false,error:`Father agent report not delivered: ${String(error?.message??error).slice(0,300)}`});return;}
             await new Promise(resolve=>setTimeout(resolve,this.#reportRetryMs*attempt));
           }
         }

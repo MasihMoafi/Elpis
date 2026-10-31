@@ -24,7 +24,7 @@ test('the projection is isometric: both ground axes run 30° off the horizontal,
   close(lifted.x, ground.x, 'height keeps x'); close(lifted.y, ground.y - 50, 'height lifts y');
 });
 
-test('the layout: the Mother in column 0, each agent in its wave column, a wave in the flat board\'s top-to-bottom order, centred; notes left out', () => {
+test('the layout: the Mother agent in column 0, each agent in its wave column, a wave in the flat board\'s top-to-bottom order, centred; notes left out', () => {
   const places = isoLayout(graph, waves);
   assert.deepEqual(places.map(place => [place.id, place.kind, place.column, place.row]), [['mother', 'mother', 0, 0], ['p1', 'agent', 1, -1], ['p2', 'agent', 1, 0], ['p3', 'agent', 1, 1], ['join', 'agent', 2, 0]]);
   for (const place of places) assert.deepEqual(place.at, project(place.column * ISO_STEP.column, place.row * ISO_STEP.row), `${place.id} is its ground point, projected`);
@@ -34,14 +34,14 @@ test('the layout: the Mother in column 0, each agent in its wave column, a wave 
   assert.equal(new Set(places.map(place => `${place.at.x},${place.at.y}`)).size, places.length);
 });
 
-test('past the Mother\'s ten, the Father stands in her column one row under her; without him nothing moves', () => {
+test('past the Mother agent\'s ten, the Father stands in her column one row under her; without him nothing moves', () => {
   const places = isoLayout(graph, waves, 'father');
   assert.deepEqual(places.slice(0, 2).map(place => [place.id, place.kind, place.column, place.row]), [['mother', 'mother', 0, 0], ['father', 'father', 0, 1]]);
   assert.deepEqual(places.find(place => place.id === 'father').at, project(0, ISO_STEP.row));
   assert.deepEqual(places.filter(place => place.kind === 'agent'), isoLayout(graph, waves).filter(place => place.kind === 'agent'));
 });
 
-test('an agent on a loop (no wave) stands in a column after the last wave, never on the Mother', () => {
+test('an agent on a loop (no wave) stands in a column after the last wave, never on the Mother agent', () => {
   const places = isoLayout({ nodes: [...graph.nodes, node('stray', 'agent')] }, waves);
   assert.deepEqual(places.filter(place => place.id === 'stray').map(place => [place.column, place.row]), [[3, 0]]);
   assert.deepEqual(isoLayout({ nodes: [node('mother', 'mother')] }, new Map()).map(place => place.id), ['mother']);

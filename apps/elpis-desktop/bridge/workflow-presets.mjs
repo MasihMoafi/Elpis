@@ -3,8 +3,8 @@ import { BridgeError, text } from './validate.mjs';
 export const MOTHER_MODEL = 'claude/opus';
 const SOL = 'gpt-6.1-sol', GEMINI = 'agy/gemini-4-argon-high';
 export const WORKFLOW_PRESETS = [
-  { id: 'bug', name: 'Fix a bug', steps: ['Reproduce · GPT-6.1 Sol · low', 'Fix · GPT-6.1 Sol · high', 'Review · Gemini 4 Argon', 'Mother · Claude Opus 5.5 · review and merge'] },
-  { id: 'ui', name: 'UI change', steps: ['Build · GPT-6.1 Sol · high', 'Screenshots · GPT-6.1 Sol · low', 'Review · Gemini 4 Argon', 'Mother · Claude Opus 5.5 · review and merge'] },
+  { id: 'bug', name: 'Fix a bug', steps: ['Reproduce · GPT-6.1 Sol · low', 'Fix · GPT-6.1 Sol · high', 'Review · Gemini 4 Argon', 'Mother agent · Claude Opus 5.5 · review and merge'] },
+  { id: 'ui', name: 'UI change', steps: ['Build · GPT-6.1 Sol · high', 'Screenshots · GPT-6.1 Sol · low', 'Review · Gemini 4 Argon', 'Mother agent · Claude Opus 5.5 · review and merge'] },
 ];
 
 /** Three bounded children, followed by Mother's guarded review/merge. No recursive planning or hidden checks. */

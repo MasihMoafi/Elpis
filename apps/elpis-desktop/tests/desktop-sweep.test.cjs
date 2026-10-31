@@ -11,7 +11,7 @@ const { contextRoutes } = require('./context-files-fixture.cjs');
 
 // Settings pages in ChatGPT's grouped order (d79d50cbe); Browser joined Integrations in c5e2a69fc.
 const PAGES = ['General', 'Notifications', 'Import chats', 'Appearance', 'Voice', 'Configuration', 'Personalization', 'Keyboard shortcuts', 'Usage & limits', 'Models & accounts', 'About', 'MCP servers', 'Browser', 'Hooks', 'Git', 'Worktrees', 'Archived chats'];
-const TOPICS = ['One agent or many', 'Mother and Father', 'Writers and checks', 'Choose a pattern', 'Read a run'];
+const TOPICS = ['One agent or many', 'Mother agent and Father agent', 'Writers and checks', 'Choose a pattern', 'Read a run'];
 const description = 'Check the shared components and their rendered layout, then explain which parts need attention before changing the interface. '.repeat(3);
 function routes() {
   const settings = { version: 's1', main: { model: 'sol', provider: 'openai' }, background: {}, providers: [{ id: 'openai', displayName: 'OpenAI' }], agents: { graph: 256, atOnce: 4, source: 'agents.max_threads' },

@@ -94,7 +94,7 @@ try {
   browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM || undefined, headless: true });
   page = await browser.newPage({ viewport: { width: 1440, height: 900 } }); page.setDefaultTimeout(20000);
   const errors = []; page.on('pageerror', error => errors.push(error.message));
-  // Every chat the run makes: the Mother's (and a Father's), and each agent's, read from the app's own requests.
+  // Every chat the run makes: the Mother's (and a Father agent's), and each agent's, read from the app's own requests.
   page.on('response', async response => {
     const url = new URL(response.url());
     if (response.request().method() !== 'POST' || !response.ok()) return;
@@ -123,10 +123,10 @@ try {
 
   say(`engine models: ${(await api('/models')).data.map(model => model.model).join(', ')}`);
   if (!custom) { await canvas.getByText('More patterns', { exact: true }).click(); await canvas.getByRole('button', { name: chosen.template }).click(); }
-  await canvas.getByRole('button', { name: 'Mother', exact: true }).click();
-  const mother = canvas.getByRole('complementary', { name: 'Mother', exact: true });
+  await canvas.getByRole('button', { name: 'Mother agent', exact: true }).click();
+  const mother = canvas.getByRole('complementary', { name: 'Mother agent', exact: true });
   await mother.getByRole('textbox', { name: 'Goal', exact: true }).fill(chosen.goal);
-  say(`Mother on ${await luna(mother.getByRole('combobox', { name: 'Her model', exact: true }))}`);
+  say(`Mother agent on ${await luna(mother.getByRole('combobox', { name: 'Her model', exact: true }))}`);
   if (custom) await mother.getByRole('button', { name: 'Done', exact: true }).click();
   const titles = custom ? [] : await canvas.locator('.react-flow__node-agent .agent-node-title').allInnerTexts();
   for (const title of titles) {
@@ -162,7 +162,7 @@ try {
     await page.waitForTimeout(1000);
   }
   say(`Run took ${Math.round((Date.now() - started) / 1000)} s`);
-  assert.equal(tabVerified, true, 'the real run opened its Mother chat tab');
+  assert.equal(tabVerified, true, 'the real run opened its Mother agent chat tab');
   const graphs = [];
   for (const run of runs) graphs.push((await api(`/workflows?threadId=${encodeURIComponent(run.threadId)}`)).data.find(item => item.id === run.graphId));
   const graph = graphs.at(-1);
@@ -201,7 +201,7 @@ try {
       assert.match(await canvas.locator('.canvas-notice').innerText(), /Merge stopped:.*shared\/result.txt/);
       assert.equal(await fs.readFile(path.join(project, 'shared/result.txt'), 'utf8'), 'baseline\n', 'conflict leaves main unchanged');
     } else {
-      assert.equal(graphs.length, 2, 'Mother and Father each ran a graph');
+      assert.equal(graphs.length, 2, 'Mother agent and Father agent each ran a graph');
       assert.deepEqual(graphs.map(item => item.tasks.length), [20, 4]);
       const paths = [];
       for (const item of graphs) {
@@ -223,13 +223,13 @@ try {
       for (const until = Date.now() + 60000; ;) {
         items = await api(`/threads/${encodeURIComponent(runs[0].threadId)}?limit=100`);
         if (items.thread.status.type !== 'active') break;
-        assert.ok(Date.now() < until, 'the Mother finished receiving the report'); await page.waitForTimeout(1000);
+        assert.ok(Date.now() < until, 'the Mother agent finished receiving the report'); await page.waitForTimeout(1000);
       }
       await fs.writeFile(path.join(evidence, `${plan}-mother-items.json`), JSON.stringify(items, null, 1));
       assert.equal(items.thread.model, 'gpt-6-luna');
       const asked = items.data.filter(row => row.item?.type === 'userMessage').flatMap(row => row.item.content ?? []).map(item => item.text ?? '').join('\n');
-      assert.ok(asked.includes(runs[1].threadId), 'the Father reports back to the Mother with his chat id');
-      for (const task of graphs[1].tasks) assert.ok(asked.includes(JSON.stringify(task.result)), `${task.id} accepted result reached the Mother`);
+      assert.ok(asked.includes(runs[1].threadId), 'the Father agent reports back to the Mother agent with his chat id');
+      for (const task of graphs[1].tasks) assert.ok(asked.includes(JSON.stringify(task.result)), `${task.id} accepted result reached the Mother agent`);
     }
     assert.deepEqual(errors, []); say('PASS');
   } else {

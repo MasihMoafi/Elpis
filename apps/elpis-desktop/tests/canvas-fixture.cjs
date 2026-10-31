@@ -68,7 +68,7 @@ async function openCanvas({ width = 1440, height = 900, repository = false, grap
             else { const his = { ...item.next, rootThreadId: 'chat-father', graphId: `graph-${runs.length + 1}`, looks: 0 }; runs.push(his); item.stage = { threadId: his.rootThreadId, graphId: his.graphId, status: 'running' }; }
           }
           const his = item.stage?.graphId && runs.find(run => run.graphId === item.stage.graphId);
-          if (his?.ended && !item.stage.reported) item.stage = { ...item.stage, status: his.ended, ...(refuseReport ? { error: `Father report not delivered: ${refuseReport}` } : { reported: true }) };
+          if (his?.ended && !item.stage.reported) item.stage = { ...item.stage, status: his.ended, ...(refuseReport ? { error: `Father agent report not delivered: ${refuseReport}` } : { reported: true }) };
           graph.next = { ...(item.stage ?? { status: 'waiting' }) };
         }
         if (ENDED.has(graph.status)) item.ended = graph.status;

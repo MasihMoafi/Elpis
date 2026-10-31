@@ -21,17 +21,17 @@ const run = promisify(execFile);
 const ready = !!(process.env.ELPIS_TEST_APP && process.env.ELPIS_TEST_ENGINE);
 const helper = process.env.ELPIS_E2E_APP_HELPER || path.join(os.homedir(), '.cache/elpis-tests/e2e/app.sh');
 const port = process.env.ELPIS_TEST_PORT || '9431';
-const MAINS = ['Mother', 'Plain one', 'Plain two', 'Host', 'Guest', 'Proj A', 'Proj B', 'Old host', 'Old guest'];
+const MAINS = ['Mother agent', 'Plain one', 'Plain two', 'Host', 'Guest', 'Proj A', 'Proj B', 'Old host', 'Old guest'];
 const CHILDREN = ['Agent one', 'Agent one child', 'Agent two', 'Legacy agent', 'Inspect code', 'Write tests'];
 
 /** A mother with a native agent (and its agent), a chat it made with create_thread, a workflow run with two helper chats,
  * and plain chats to organize. The run is the desktop's own record of an ACP workflow, as the bridge saves it. */
 async function seed(dir) {
   const ids = seedChats(dir, [
-    { key: 'Mother', name: 'Mother', text: 'Plan the release', minutesAgo: 30 },
-    { key: 'Agent one', name: 'Agent one', text: 'Check the tests', minutesAgo: 29, subAgentOf: 'Mother' },
+    { key: 'Mother agent', name: 'Mother agent', text: 'Plan the release', minutesAgo: 30 },
+    { key: 'Agent one', name: 'Agent one', text: 'Check the tests', minutesAgo: 29, subAgentOf: 'Mother agent' },
     { key: 'Agent one child', name: 'Agent one child', text: 'Run one test', minutesAgo: 28, subAgentOf: 'Agent one' },
-    { key: 'Agent two', name: 'Agent two', text: 'Draft the notes', minutesAgo: 27, parentKey: 'Mother' },
+    { key: 'Agent two', name: 'Agent two', text: 'Draft the notes', minutesAgo: 27, parentKey: 'Mother agent' },
     { key: 'Legacy agent', name: 'Legacy agent', text: 'Summarise the log', minutesAgo: 26.5 },
     { key: 'Review team', name: 'Review team', text: 'Review the change', minutesAgo: 26 },
     { key: 'Inspect code', name: 'Workflows · Inspect code', text: 'Inspect the code', minutesAgo: 25 },
@@ -51,7 +51,7 @@ async function seed(dir) {
   const legacy = await rollout('Legacy agent'), legacyText = await fs.readFile(legacy, 'utf8');
   await fs.writeFile(legacy, legacyText.replace('"thread_source":"user",', ''));
   const made = new Date(Number.parseInt(ids['Legacy agent'].replaceAll('-', '').slice(0, 12), 16) + 3000).toISOString();
-  await fs.appendFile(await rollout('Mother'), JSON.stringify({ timestamp: made, type: 'response_item', payload: { type: 'function_call_output', call_id: 'call-1', output: JSON.stringify({ threadId: ids['Legacy agent'] }) } }) + '\n');
+  await fs.appendFile(await rollout('Mother agent'), JSON.stringify({ timestamp: made, type: 'response_item', payload: { type: 'function_call_output', call_id: 'call-1', output: JSON.stringify({ threadId: ids['Legacy agent'] }) } }) + '\n');
   const runId = randomUUID(), at = Date.now() - 26 * 60000;
   const task = (id, key) => ({ id, title: key, kind: 'code', instruction: key, acceptanceCriteria: ['done'], dependsOn: [], writeScopes: [], status: 'succeeded', assignedThreadId: ids[key], result: { summary: 'done' } });
   await fs.mkdir(path.join(dir, 'desktop-workflows'), { recursive: true, mode: 0o700 });
@@ -137,8 +137,8 @@ test('the sidebar lists only main chats; children sit folded under them; organiz
   });
 
   await t.test('a mother starts folded, also when opened; her agents and their agents are one click away', async () => {
-    await link('Mother').click(); await page.waitForTimeout(1500);
-    const expand = row('Mother').getByRole('button', { name: /^(Expand|Collapse) agents in Mother$/ });
+    await link('Mother agent').click(); await page.waitForTimeout(1500);
+    const expand = row('Mother agent').getByRole('button', { name: /^(Expand|Collapse) agents in Mother$/ });
     assert.equal(await expand.getAttribute('aria-expanded'), 'false', 'opening the mother leaves her folded');
     assert.equal(await row('Agent two').count(), 0);
     await expand.click();
@@ -146,7 +146,7 @@ test('the sidebar lists only main chats; children sit folded under them; organiz
     await row('Agent one').getByRole('button', { name: /^Expand agents in / }).click();
     await row('Agent one child').waitFor();
     await shoot('mother-open');
-    await row('Mother').getByRole('button', { name: 'Collapse agents in Mother', exact: true }).click();
+    await row('Mother agent').getByRole('button', { name: 'Collapse agents in Mother agent', exact: true }).click();
     await eventually(async () => assert.equal(await row('Agent two').count(), 0));
     await noError('mother branches');
   });
@@ -155,7 +155,7 @@ test('the sidebar lists only main chats; children sit folded under them; organiz
     await page.getByLabel('Search conversations', { exact: true }).fill('Agent two');
     await eventually(async () => assert.ok((await rowsIn(section('Results'))).includes('Agent two')));
     await page.getByLabel('Search conversations', { exact: true }).fill('');
-    await row('Mother').waitFor();
+    await row('Mother agent').waitFor();
   });
 
   await t.test('Put under nests a chat under another and leaves the list', async () => {
@@ -181,10 +181,10 @@ test('the sidebar lists only main chats; children sit folded under them; organiz
   });
 
   await t.test('archiving the mother takes her agents and the chat she made; deleting a chat takes the chat put under it', async () => {
-    await settle(); await row('Mother').hover(); await page.getByRole('button', { name: 'Archive Mother', exact: true }).click();
-    await eventually(async () => assert.equal(await row('Mother').count(), 0));
-    await eventually(async () => { const list = await archived(); for (const name of ['Mother', 'Agent two', 'Legacy agent']) assert.ok(list.includes(name), `${name} is archived`); });
-    assert.deepEqual((await listed()).filter(name => ['Mother', 'Agent two', 'Legacy agent'].includes(name)), [], 'nothing of the mother stays live');
+    await settle(); await row('Mother agent').hover(); await page.getByRole('button', { name: 'Archive Mother agent', exact: true }).click();
+    await eventually(async () => assert.equal(await row('Mother agent').count(), 0));
+    await eventually(async () => { const list = await archived(); for (const name of ['Mother agent', 'Agent two', 'Legacy agent']) assert.ok(list.includes(name), `${name} is archived`); });
+    assert.deepEqual((await listed()).filter(name => ['Mother agent', 'Agent two', 'Legacy agent'].includes(name)), [], 'nothing of the mother stays live');
     await action('Old guest', 'Put under…');
     await page.getByRole('combobox', { name: 'Parent chat' }).click(); await page.getByRole('option', { name: 'Old host', exact: true }).click();
     await page.getByRole('button', { name: 'Put under', exact: true }).click();
@@ -218,7 +218,7 @@ test('the sidebar lists only main chats; children sit folded under them; organiz
     await sectionToggle('Workflows').click();
     const lists = await chatLists();
     assert.deepEqual(CHILDREN.filter(name => lists.includes(name)), [], 'still no child listed');
-    assert.deepEqual(['Mother', 'Agent two', 'Old host', 'Old guest'].filter(name => lists.includes(name)), [], 'archived and deleted chats stay gone');
+    assert.deepEqual(['Mother agent', 'Agent two', 'Old host', 'Old guest'].filter(name => lists.includes(name)), [], 'archived and deleted chats stay gone');
     await noError('after restart');
     const after = await fs.readFile(path.join(home, 'elpis/logs/desktop-requests.jsonl'), 'utf8').catch(() => '');
     assert.equal(after.trim(), '', `no failed request after the restart: ${after.slice(0, 400)}`);

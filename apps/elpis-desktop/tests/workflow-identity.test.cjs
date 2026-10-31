@@ -14,7 +14,7 @@ const runs = ['Fix a bug', 'Fix a bug', 'Research pricing', 'Ship exporter'].map
 const base = (id, name, active = false) => ({ id, name, preview: name, cwd: CWD, model: 'sol', modelProvider: 'openai', status: { type: active ? 'active' : 'idle' }, desktopAccess: { writable: true, mode: 'direct' } });
 const graph = { workflowId: 'run-0', name: 'Fix a bug', nodes: [{ id: 'mother', type: 'mother', position: { x: 0, y: 0 }, data: {} }, { id: 'writer', type: 'agent', position: { x: 400, y: 0 }, data: { title: 'Build', instruction: 'Return the requested evidence.', model: null, writeScopes: ['.'], acceptanceCriteria: ['Return evidence'] } }], edges: [] };
 const open = async (colorScheme, savedRuns = runs, state = {}, names = {}, routes = {}, models = {}) => {
-  const listed = [...new Map(savedRuns.flatMap(run => [base(run.rootThreadId, run.name), ...(run.tasks ?? []).filter(task => typeof task.assignedThreadId === 'string' && task.assignedThreadId).map(task => base(task.assignedThreadId, `Workflows · ${task.title}`, task.status === 'running')), ...(run.mother?.sessionId ? [base(run.mother.sessionId, 'Workflows · Mother')] : []), ...(run.tasks ?? []).flatMap(task => (task.threads ?? []).map(id => base(id, `Workflows · ${task.title}`))), ...(run.mother?.threads ?? []).map(id => base(id, 'Workflows · Mother'))]).map(thread => [thread.id, thread])).values()].map(thread => ({ ...thread, name: names[thread.id] ?? thread.name, model: models[thread.id] ?? thread.model }));
+  const listed = [...new Map(savedRuns.flatMap(run => [base(run.rootThreadId, run.name), ...(run.tasks ?? []).filter(task => typeof task.assignedThreadId === 'string' && task.assignedThreadId).map(task => base(task.assignedThreadId, `Workflows · ${task.title}`, task.status === 'running')), ...(run.mother?.sessionId ? [base(run.mother.sessionId, 'Workflows · Mother agent')] : []), ...(run.tasks ?? []).flatMap(task => (task.threads ?? []).map(id => base(id, `Workflows · ${task.title}`))), ...(run.mother?.threads ?? []).map(id => base(id, 'Workflows · Mother agent'))]).map(thread => [thread.id, thread])).values()].map(thread => ({ ...thread, name: names[thread.id] ?? thread.name, model: models[thread.id] ?? thread.model }));
   const f = await fixture({ desktop: true, width: 1440, height: 900, colorScheme, threads: listed,
   // The fixture waits for chat-a, a workflow here, so the Workflows section is open (it starts folded: sidebar-organize.runtime.mjs).
   // S18, Masih 29 Oct: the sidebar's Workflows section is off by default; these tests turn it on.
@@ -112,14 +112,14 @@ for (const colorScheme of ['light', 'dark']) test(`four saved workflows have dis
   } finally { await f.close(); }
 });
 
-// 28 Oct: a retried step's first chat and Mother's earlier review chats lay loose in Workflows ("currently they are all
+// 28 Oct: a retried step's first chat and Mother agent's earlier review chats lay loose in Workflows ("currently they are all
 // merged"): only the latest chat of each was linked to its run. Every chat a run opened folds under it.
 // 28 Oct, Masih: "mother should be here", at the run's row, where her reviews sat under it as one more worker. The row is
 // the Mother: it says so, with her model, and her reviews fold into it; a retried step's chats still sit under it.
 // 28 Oct, Masih: "mothers all over the place ... wrong stuff", in the sidebar: every run row said Mother, and a run's checks
 // were rows of their own in no order. A run's row says how it went, in the board's words; its steps follow in run order,
-// a retried step's chats each once, every check folded into its step as Mother's reviews fold into the run's row.
-test('a run row says how the run went; its steps follow in run order with their checks and Mother’s reviews folded in', async () => {
+// a retried step's chats each once, every check folded into its step as Mother agent's reviews fold into the run's row.
+test('a run row says how the run went; its steps follow in run order with their checks and Mother agent’s reviews folded in', async () => {
   const run = { ...runs[0], status: 'succeeded', tasks: [
     { id: 'build', title: 'Build', threads: ['build-0', 'build-1'], status: 'succeeded' },
     { id: 'build-check', kind: 'verify', dependsOn: ['build'], title: 'Check: Build', assignedThreadId: 'check-2', threads: ['check-1', 'check-2'], status: 'succeeded' },
@@ -129,7 +129,7 @@ test('a run row says how the run went; its steps follow in run order with their 
   const f = await open('light', [run], {}, {}, {}, { [run.rootThreadId]: 'claude/opus', 'build-1': 'agy/gemini-3.8-flash-high' });
   try {
     const page = f.page, model = id => row(page, id).locator('.agent-model').innerText();
-    assert.equal(await model(run.rootThreadId), '2 of 2 done', 'the run says how it went, not "Mother"');
+    assert.equal(await model(run.rootThreadId), '2 of 2 done', 'the run says how it went, not "Mother agent"');
     await row(page, run.rootThreadId).getByRole('button', { name: /^Expand / }).click();
     await row(page, 'join-1').waitFor();
     assert.deepEqual(await workflows(page).locator('.thread-row').evaluateAll(rows => rows.map(item => item.dataset.threadId)), [run.rootThreadId, 'build-0', 'build-1', 'join-1'],
@@ -231,7 +231,7 @@ test('workflow names reject duplicates; canvas colour and separate sidebar names
     const header = canvas.locator('.canvas-header .workflow-mark').first();
     const chosenColour = await markColor(header);
     assert.equal(await row(page, 'chat-a').locator('.workflow-mark').count(), 0, 'the canvas colour is not a duplicate sidebar dot');
-    assert.equal(await markColor(canvas.locator('.mother-node .workflow-mark')), await markColor(header), 'Mother and header use the same mark');
+    assert.equal(await markColor(canvas.locator('.mother-node .workflow-mark')), await markColor(header), 'Mother agent and header use the same mark');
     await page.keyboard.press('Escape');
     await assertUiFit(canvas.locator('.canvas-header'), 'identity controls fit');
     await shot(page, 'identity-light');
@@ -344,7 +344,7 @@ test('a manually named step keeps its name while legacy names use recorded step 
 });
 
 test('saved failed workflow opens its live team in chat and both canvas views without replacing the draft', async () => {
-  const supervisionReport = 'Mother observed the source check and steered the current report toward verified evidence.';
+  const supervisionReport = 'Mother agent observed the source check and steered the current report toward verified evidence.';
   const saved = { id: 'legal-run', rootThreadId: 'chat-a', name: 'Legal current state', status: 'failed', startedAt: 100,
     mother: { decisions: [{ kind: 'checkpoint', taskId: 'evidence', decision: 'steer', status: 'delivered', summary: supervisionReport, reasons: 'The completed read lacked a source citation.' }] },
     tasks: [{ id: 'evidence', kind: 'research', title: 'Inspect Pointt evidence', instruction: 'Review the saved project evidence.', dependsOn: [], writeScopes: [], acceptanceCriteria: ['Return evidence'], assignedThreadId: 'legal-step', status: 'failed', failureReason: 'Weekly usage limit reached.', routing: { actual: { model: 'gpt-6-luna', provider: 'openai' } } },
@@ -361,7 +361,7 @@ test('saved failed workflow opens its live team in chat and both canvas views wi
     await page.locator('.thread-row.active[data-thread-id="chat-a"]').waitFor();
     const summary = page.getByRole('region', { name: 'Workflow run', exact: true });
     await summary.getByText('Inspect Pointt evidence', { exact: true }).waitFor();
-    await summary.getByRole('status', { name: 'Mother supervision', exact: true }).getByText(supervisionReport, { exact: true }).waitFor();
+    await summary.getByRole('status', { name: 'Mother agent supervision', exact: true }).getByText(supervisionReport, { exact: true }).waitFor();
     await summary.getByText('Weekly usage limit reached.', { exact: true }).waitFor();
     assert.equal(await page.getByText('This conversation has no messages yet.', { exact: true }).count(), 0);
     const savedTasks = summary.getByRole('list', { name: 'Saved workflow tasks', exact: true });
@@ -388,7 +388,7 @@ test('saved failed workflow opens its live team in chat and both canvas views wi
     await summary.getByRole('button', { name: 'Open workflow canvas', exact: true }).click();
     const board = page.getByRole('region', { name: 'Workflows', exact: true });
     await board.locator('.react-flow__node[data-id="evidence"]').waitFor();
-    await board.getByRole('status', { name: 'Mother supervision', exact: true }).getByText(supervisionReport, { exact: true }).waitFor();
+    await board.getByRole('status', { name: 'Mother agent supervision', exact: true }).getByText(supervisionReport, { exact: true }).waitFor();
     const previousAttempt = board.locator('details.canvas-log-panel[aria-label="Previous attempt"]');
     await previousAttempt.locator('summary').click();
     await board.getByRole('region', { name: 'Run clock', exact: true }).getByText('Duration not recorded', { exact: true }).waitFor();
@@ -398,7 +398,7 @@ test('saved failed workflow opens its live team in chat and both canvas views wi
     await shot(page, 'workflow-recorded-flat');
     await page.getByRole('radio', { name: 'Isometric', exact: true }).click();
     const iso = page.getByRole('region', { name: 'Isometric board', exact: true });
-    await board.getByRole('status', { name: 'Mother supervision', exact: true }).getByText(supervisionReport, { exact: true }).waitFor();
+    await board.getByRole('status', { name: 'Mother agent supervision', exact: true }).getByText(supervisionReport, { exact: true }).waitFor();
     await iso.getByRole('button', { name: /^Inspect Pointt evidence:/ }).hover();
     await iso.locator('.iso-label[data-for="evidence"]').getByText('Inspect Pointt evidence', { exact: true }).waitFor();
     await shot(page, 'workflow-recorded-isometric');
@@ -434,9 +434,9 @@ test('failed workflow follows a resumed agent and paginated descendants without 
     const summary = page.getByRole('region', { name: 'Workflow run', exact: true });
     const progress = page.getByRole('region', { name: 'Live workflow progress', exact: true });
     await progress.getByText(/Live: 2 working/).waitFor();
-    await progress.getByText('Mother', { exact: true }).waitFor();
+    await progress.getByText('Mother agent', { exact: true }).waitFor();
     await progress.getByText('Source checker', { exact: true }).waitFor();
-    await progress.getByText(/Mother: The evidence agent is checking/).waitFor();
+    await progress.getByText(/Mother agent: The evidence agent is checking/).waitFor();
     for (const colorScheme of ['light', 'dark']) {
       if (await sidebar(page).getByRole('button', { name: `Use ${colorScheme} theme`, exact: true }).count()) await chooseTheme(page, colorScheme);
       for (const width of [1440, 820]) {
@@ -445,7 +445,7 @@ test('failed workflow follows a resumed agent and paginated descendants without 
           const status = row.querySelector('.workflow-progress-status').getBoundingClientRect(), open = row.querySelector('button').getBoundingClientRect(), identity = row.querySelector('.agent-identity').getBoundingClientRect();
           return { statusX: status.x, actionX: open.x, actionRight: open.right, identityRight: identity.right };
         }));
-        assert.equal(columns.length, 3, 'Mother, child and nested child share the row layout');
+        assert.equal(columns.length, 3, 'Mother agent, child and nested child share the row layout');
         const colours = await progress.locator('.workflow-progress-row .agent-mark').evaluateAll(marks => marks.map(mark => getComputedStyle(mark).backgroundColor));
         assert.equal(new Set(colours).size, 3, `${colorScheme}/${width}: workflow agent identities use distinct colors`);
         for (const column of columns) {
@@ -461,7 +461,7 @@ test('failed workflow follows a resumed agent and paginated descendants without 
     await eventually(async () => assert.ok(f.posts.some(post => post.path === '/api/threads/chat-a/resume')));
     const beforeOpen = { history: rootHistoryReads, resumes: f.posts.filter(post => post.path === '/api/threads/chat-a/resume').length };
     await f.composer.fill('Keep this unsent draft');
-    for (const target of [progress.getByRole('button', { name: 'Open Mother chat', exact: true }), row(page, 'chat-a').locator('.thread-link')]) {
+    for (const target of [progress.getByRole('button', { name: 'Open Mother agent chat', exact: true }), row(page, 'chat-a').locator('.thread-link')]) {
       await target.click(); await target.click();
       await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
       assert.equal(rootHistoryReads, beforeOpen.history, 'opening the visible chat does not reload its history');
@@ -474,7 +474,7 @@ test('failed workflow follows a resumed agent and paginated descendants without 
     await summary.getByRole('button', { name: 'Open workflow canvas', exact: true }).click();
     const board = page.getByRole('region', { name: 'Workflows', exact: true });
     await board.locator('.react-flow__node[data-id="live:observed-helper"]').waitFor();
-    assert.equal(await board.locator('.mother-node[data-status="running"]').count(), 1, 'Mother shows the observed active root');
+    assert.equal(await board.locator('.mother-node[data-status="running"]').count(), 1, 'Mother agent shows the observed active root');
     assert.equal(await board.locator('.react-flow__node[data-id="inspect"] .agent-node').getAttribute('data-status'), 'running');
     const visibleHeight = locator => locator.evaluate(element => { const box = element.getBoundingClientRect(); return Math.min(innerHeight, box.bottom) - Math.max(0, box.top); });
     assert.ok(await visibleHeight(board.locator('.canvas-board > .react-flow')) >= 300, 'the actual flat canvas has at least 300 visible pixels');
@@ -495,8 +495,8 @@ test('failed workflow follows a resumed agent and paginated descendants without 
           return { id: node.getAttribute('data-id'), fits: box.width > 0 && box.left >= pane.left && box.top >= pane.top && box.right <= pane.right && box.bottom <= pane.bottom };
         });
       });
-      assert.equal(framing.length, 3, 'Mother, child and nested helper are actually drawn');
-      assert.deepEqual(framing.filter(node => !node.fits), [], 'the settled view frames every agent, including Mother');
+      assert.equal(framing.length, 3, 'Mother agent, child and nested helper are actually drawn');
+      assert.deepEqual(framing.filter(node => !node.fits), [], 'the settled view frames every agent, including Mother agent');
     });
     await shot(page, 'resumed-team-isometric-light');
     await chooseTheme(page, 'dark');

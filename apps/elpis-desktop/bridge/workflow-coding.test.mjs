@@ -30,7 +30,7 @@ function fixture(t, options = {}) {
   const runnerOptions = { stateDir: path.join(home, 'state'), timeoutMs: 10000,
     nodeSpec: node => { const spec = { name: node.name, command: process.execPath, args: [FAKE], model: node.model?.replace(/^(claude|agy)\//, ''),
       env: { FAKE_ACP_NAME: `${node.provider ?? 'default'}-${node.name}`, FAKE_ACP_MODELS: 'm-fast,m-slow,opus,gpt-6.1-sol,gemini-4-argon-high', FAKE_ACP_EFFORTS: 'low,high', FAKE_ACP_LOG: path.join(home, `${node.name}.jsonl`),
-        ...(node.name === 'Mother' ? { FAKE_ACP_ANSWER: JSON.stringify({ passed: true, summary: 'Reviewed the candidate diff and tests' }) } : {}),
+        ...(node.name === 'Mother agent' ? { FAKE_ACP_ANSWER: JSON.stringify({ passed: true, summary: 'Reviewed the candidate diff and tests' }) } : {}),
         ...(options.env?.[node.name] ?? {}) } }; return options.nodeSpec?.(node, spec) ?? spec; }, ...options.runner };
   const runs = createWorkflowRuns(runnerOptions);
   t.after(async () => { runs.close(); await until(() => runs.list(), list => list.every(record => record.status !== 'running')); execFileSync('gio', ['trash', home]); });
@@ -79,7 +79,7 @@ test('node models and advertised effort are applied before prompting; unavailabl
   assert.equal(f.log('unsupported').some(row => row.method === 'session/prompt'), false);
 });
 
-test('all automatic workflow roles and Mother use Full access and log offered decisions; missing allow and verifier scope escape cannot grant more access', { timeout: 20000 }, async t => {
+test('all automatic workflow roles and Mother agent use Full access and log offered decisions; missing allow and verifier scope escape cannot grant more access', { timeout: 20000 }, async t => {
   const env = {};
   for (const id of ['check-implement', 'check-fix', 'verify']) env[id] = { FAKE_ACP_ANSWER: JSON.stringify({ passed: true, summary: 'Observed the requested check' }) };
   env.refused = { FAKE_ACP_PERMISSION_OPTIONS: JSON.stringify([{ optionId: 'deny-only', kind: 'reject_once', name: 'Reject' }]) };
@@ -111,16 +111,16 @@ test('all automatic workflow roles and Mother use Full access and log offered de
   assert.equal(rejected.review, undefined, 'a verifier scope escape cannot reach review or merge');
 });
 
-test('Mother uses Claude Opus to approve the reviewed commit; a rejected review never merges', { timeout: 20000 }, async t => {
+test('Mother agent uses Claude Opus to approve the reviewed commit; a rejected review never merges', { timeout: 20000 }, async t => {
   for (const mode of ['approve', 'reject', 'next-stage']) {
     const approved = mode !== 'reject';
-    const f = fixture(t, { env: { writer: { FAKE_ACP_WRITE: JSON.stringify({ file: 'src/result', text: 'mother review evidence\n' }) }, Mother: { FAKE_ACP_ANSWER: JSON.stringify({ passed: approved, summary: approved ? 'Observed passing checks' : 'Regression remains' }) } } });
+    const f = fixture(t, { env: { writer: { FAKE_ACP_WRITE: JSON.stringify({ file: 'src/result', text: 'mother review evidence\n' }) }, 'Mother agent': { FAKE_ACP_ANSWER: JSON.stringify({ passed: approved, summary: approved ? 'Observed passing checks' : 'Regression remains' }) } } });
     const baseline = f.git('rev-parse', 'HEAD');
     const run = await f.start([task('writer', { writeScopes: ['src'] })], { isolation: 'worktree', autoMerge: mode !== 'next-stage', ...(mode === 'next-stage' ? { next: { name: 'Next stage' } } : {}) });
     const completed = await f.finished(run.graphId);
     assert.equal(completed.mother.model, 'claude/opus');
-    assert.equal(f.log('Mother').find(row => row.method === 'session/set_config_option').params.value, 'opus');
-    assert.match(f.log('Mother').find(row => row.method === 'session/prompt').params.prompt[0].text, /candidate|commit/i);
+    assert.equal(f.log('Mother agent').find(row => row.method === 'session/set_config_option').params.value, 'opus');
+    assert.match(f.log('Mother agent').find(row => row.method === 'session/prompt').params.prompt[0].text, /candidate|commit/i);
     if (approved) {
       assert.equal(completed.status, 'succeeded', completed.error); assert.equal(completed.review.status, 'merged');
       assert.equal(fs.readFileSync(path.join(f.cwd, 'src/result'), 'utf8'), 'mother review evidence\n');
@@ -138,7 +138,7 @@ test('Mother uses Claude Opus to approve the reviewed commit; a rejected review 
   }
 });
 
-test('authenticated HTTP task workflows use Claude Mother by default, expose the run, and refuse invalid or late requests', { timeout: 20000 }, async t => {
+test('authenticated HTTP task workflows use Claude Mother agent by default, expose the run, and refuse invalid or late requests', { timeout: 20000 }, async t => {
   const f = fixture(t, { env: {
     Reproduce: { FAKE_ACP_WRITE: JSON.stringify({ file: 'tests/regression.txt', text: 'failing reproduction' }) },
     Fix: { FAKE_ACP_WRITE: JSON.stringify({ file: 'src/result', text: 'fixed' }) },
@@ -376,15 +376,15 @@ for (const [error, kind, recovers] of [
   if (recovers) assert.equal(completed.mother, undefined, 'successful quota recovery does not create an unnecessary supervisor turn');
 });
 
-test('Mother actually steers a running sibling after a node fails without blindly replaying the failed operation', { timeout: 20000 }, async t => {
+test('Mother agent actually steers a running sibling after a node fails without blindly replaying the failed operation', { timeout: 20000 }, async t => {
   const env = {}, f = fixture(t, { env });
   const offline = path.join(f.home, 'offline'), release = path.join(f.home, 'tool-release'), finish = path.join(f.home, 'finish'); fs.writeFileSync(offline, 'offline');
   env.bad = { FAKE_ACP_OFFLINE: offline };
   env.live = { FAKE_ACP_TOOL_RELEASE: release, FAKE_ACP_HOLD_TOOL: '1', FAKE_ACP_RELEASE: finish, FAKE_ACP_HOLD_TURN: '1' };
-  env.Mother = { FAKE_ACP_ANSWER: JSON.stringify({ action: 'steer', taskId: 'live', message: 'Include MOTHER_GUIDANCE_2710 in your final evidence.', reason: 'The independent sibling can finish while the unavailable node waits for manual recovery.' }) };
+  env['Mother agent'] = { FAKE_ACP_ANSWER: JSON.stringify({ action: 'steer', taskId: 'live', message: 'Include MOTHER_GUIDANCE_2710 in your final evidence.', reason: 'The independent sibling can finish while the unavailable node waits for manual recovery.' }) };
   const started = await f.start([task('seed'), task('live', { instruction: 'Continue the independent work.' }), task('bad', { dependsOn: ['seed'] })]);
-  await until(() => f.log('Mother'), log => log.some(row => row.method === 'session/prompt'));
-  assert.equal(f.log('live').some(row => row.method === '_session/steering'), false, 'Mother waits for a foreground tool before steering');
+  await until(() => f.log('Mother agent'), log => log.some(row => row.method === 'session/prompt'));
+  assert.equal(f.log('live').some(row => row.method === '_session/steering'), false, 'Mother agent waits for a foreground tool before steering');
   fs.writeFileSync(release, 'done');
   await until(() => f.record(started.graphId), record => record.mother?.decisions?.some(decision => decision.decision === 'steer' && decision.delivery === 'currentTurn'));
   fs.writeFileSync(finish, 'done');
@@ -393,7 +393,7 @@ test('Mother actually steers a running sibling after a node fails without blindl
   assert.match(completed.tasks.find(node => node.id === 'live').result.summary, /MOTHER_GUIDANCE_2710/);
   const decision = completed.mother.decisions.find(decision => decision.decision === 'steer');
   assert.equal(decision.taskId, 'live'); assert.equal(decision.delivery, 'currentTurn');
-  assert.equal(f.log('Mother').filter(row => row.method === 'session/prompt').length, 1, 'supervision is one bounded actual ACP decision');
+  assert.equal(f.log('Mother agent').filter(row => row.method === 'session/prompt').length, 1, 'supervision is one bounded actual ACP decision');
   assert.equal(f.log('bad').filter(row => row.method === 'session/prompt').length, 1, 'a generic provider failure never blindly replays the operation');
 });
 
@@ -445,7 +445,7 @@ test('recovery refuses an independently resumed assigned agent without changing 
 });
 
 
-for (const failure of ['failed verification', 'invalid verification', 'corrected verification', 'out-of-scope candidate']) test(`Mother supervises ${failure} with one visible corrective decision`, { timeout: 20000 }, async t => {
+for (const failure of ['failed verification', 'invalid verification', 'corrected verification', 'out-of-scope candidate']) test(`Mother agent supervises ${failure} with one visible corrective decision`, { timeout: 20000 }, async t => {
   const env = {}, f = fixture(t, { env });
   env.evidence = failure === 'out-of-scope candidate'
     ? { FAKE_ACP_WRITE: JSON.stringify({ file: 'outside-report', text: 'Preserve this rejected candidate' }) }
@@ -454,18 +454,18 @@ for (const failure of ['failed verification', 'invalid verification', 'corrected
     let attempts = 0;
     Object.defineProperty(env, 'evidence', { get: () => ({ FAKE_ACP_ANSWER: JSON.stringify({ passed: ++attempts > 1, summary: 'Observed the requested evidence after focused correction' }) }) });
   }
-  env.Mother = { FAKE_ACP_ANSWER: JSON.stringify({ action: 'retry', taskId: 'evidence', instruction: 'Inspect the failed evidence and correct only the existing scope.', reason: 'The retained result needs one focused correction.' }) };
+  env['Mother agent'] = { FAKE_ACP_ANSWER: JSON.stringify({ action: 'retry', taskId: 'evidence', instruction: 'Inspect the failed evidence and correct only the existing scope.', reason: 'The retained result needs one focused correction.' }) };
   const started = await f.start([task('evidence', { kind: failure === 'out-of-scope candidate' ? 'explore' : 'verify', writeScopes: failure === 'out-of-scope candidate' ? ['src'] : [] })], failure === 'out-of-scope candidate' ? { isolation: 'worktree' } : {});
   const completed = await f.finished(started.graphId);
   assert.equal(completed.status, failure === 'corrected verification' ? 'succeeded' : 'failed');
-  assert.equal(completed.mother?.decisions.length, 1, 'Mother makes a single bounded decision even if the correction also fails');
+  assert.equal(completed.mother?.decisions.length, 1, 'Mother agent makes a single bounded decision even if the correction also fails');
   assert.equal(completed.mother.decisions[0].decision, 'retry');
-  assert.equal(f.log('Mother').filter(row => row.method === 'session/prompt').length, 1);
+  assert.equal(f.log('Mother agent').filter(row => row.method === 'session/prompt').length, 1);
   assert.equal(f.log('evidence').filter(row => row.method === 'session/prompt').length, 2, 'the correction executes exactly once');
   if (failure === 'corrected verification') {
     assert.equal(completed.tasks[0].failureReason, null, 'a corrected task cannot retain a current failure');
     assert.match(completed.tasks[0].result.summary, /Observed the requested evidence/);
-    assert.match(f.log('evidence').filter(row => row.method === 'session/prompt')[1].params.prompt[0].text, /Mother's corrective guidance/);
+    assert.match(f.log('evidence').filter(row => row.method === 'session/prompt')[1].params.prompt[0].text, /Mother agent's corrective guidance/);
   } else {
     assert.match(completed.tasks[0].failureReason, failure === 'out-of-scope candidate' ? /outside its write scopes/ : /Check failed/);
     assert.equal(completed.tasks[0].result, null);
@@ -511,12 +511,12 @@ const routes = async () => [
   { model: 'm-fast', provider: 'openai', efforts: ['low', 'high'], defaultEffort: 'high' },
   { model: 'claude/opus', provider: 'claude', efforts: ['low'] },
 ];
-test('a run whose steps succeed never asks Mother, even after their tools and long reports', { timeout: 20000 }, async t => {
+test('a run whose steps succeed never asks Mother agent, even after their tools and long reports', { timeout: 20000 }, async t => {
   const env = {}, f = fixture(t, { env, runner: { modelRoutes: routes } });
   env.live = { FAKE_ACP_ANSWER: 'A long report. '.repeat(40) };
-  env.Mother = { FAKE_ACP_ANSWER: JSON.stringify({ action: 'continue', reason: 'should not be asked' }) };
+  env['Mother agent'] = { FAKE_ACP_ANSWER: JSON.stringify({ action: 'continue', reason: 'should not be asked' }) };
   const completed = await f.finished((await f.start([task('live')])).graphId);
   assert.equal(completed.status, 'succeeded', completed.error);
-  assert.equal(f.log('Mother').filter(row => row.method === 'session/prompt').length, 0, 'Mother was never asked');
+  assert.equal(f.log('Mother agent').filter(row => row.method === 'session/prompt').length, 0, 'Mother agent was never asked');
   assert.equal(completed.mother?.decisions?.length ?? 0, 0);
 });

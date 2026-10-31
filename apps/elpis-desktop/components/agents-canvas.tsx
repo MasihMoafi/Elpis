@@ -35,7 +35,7 @@ import { PATTERNS, PATTERN_TEAMS, WORKFLOWS, LANGUAGES, languageOf, type Languag
 /** The workflow side panel: 290 px by default, dragged wider or narrower by its left edge. */
 const CANVAS_SIDE = { min: 240, initial: 290, max: 640 };
 
-/** A run: the Mother's part, and the Father's when the graph has more agents than she runs (lib/canvas.ts `parents`):
+/** A run: the Mother's part, and the Father agent's when the graph has more agents than she runs (lib/canvas.ts `parents`):
  * his tasks wait in `father` until her part has succeeded, then run in his own chat. */
 type Run = { rootThreadId: string; graphId: string; status: string; startedAt: number; endedAt?: number; error?: string; father?: { tasks: RunTask[]; threadId?: string; graphId?: string; status: string; reported?: boolean } };
 /** Whether the whole run is over: her part, and his if he has one. */
@@ -107,8 +107,8 @@ function AgentNode({ id, data }: NodeProps<Node<AgentNodeData>>) {
 /** The Mother: the run's chat. She starts the agents that wait for no one (her wires) and receives every report. */
 function MotherNode({ id, data }: NodeProps<Node<MotherData>>) {
   return <div className="agent-node mother-node" data-kind="mother" data-status={data.run === "running" ? "running" : undefined}
-    title="The Mother is the run's chat: every agent is her child, she starts the ones that wait for no one, and every report comes back to her.">
-    <span className="agent-node-kind">{data.identity && <WorkflowMark identity={data.identity} />}Mother</span>
+    title="The Mother agent is the run's chat: every agent is her child, she starts the ones that wait for no one, and every report comes back to her.">
+    <span className="agent-node-kind">{data.identity && <WorkflowMark identity={data.identity} />}Mother agent</span>
     <strong className="agent-node-title">This run&rsquo;s chat</strong>
     <small className="agent-node-meta">{agentCount(data.children)} · {data.run === "idle" ? "not run" : data.run}</small>
     <Handle type="source" position={Position.Right} title="Add agents she starts" onClick={event => data.onHandle?.(id, "source", event)} />
@@ -125,9 +125,9 @@ function NoteNode({ id, data }: NodeProps<Node<NoteData & { onText?: (id: string
  * her. Drawn only when the graph needs him. */
 function FatherNode({ data }: NodeProps<Node<MotherData>>) {
   return <div className="agent-node mother-node" data-kind="mother" data-status={data.run === "running" ? "running" : undefined}
-    title="The Father runs the agents past the Mother's ten, in his own chat, after her part has succeeded, and reports to her.">
-    <span className="agent-node-kind">Father</span>
-    <strong className="agent-node-title">Reports to the Mother</strong>
+    title="The Father agent runs the agents past the Mother agent's ten, in his own chat, after her part has succeeded, and reports to her.">
+    <span className="agent-node-kind">Father agent</span>
+    <strong className="agent-node-title">Reports to the Mother agent</strong>
     <small className="agent-node-meta">{agentCount(data.children)} · {data.run === "idle" ? "after her part" : data.run}</small>
     <Handle type="source" position={Position.Right} isConnectable={false} />
   </div>;
@@ -350,7 +350,7 @@ function CountField({ label, value, min, max, why, onChange }: { label: string; 
 
 /** One agent's info panel (Enter or double-click): what it is, what it waits for and feeds, and, once it runs, what it
  * has done so far from its own chat, refreshed while it works. */
-/** What a chat has done so far, read from it, and again every 2 s while it works: an agent's, or the Mother's. */
+/** What a chat has done so far, read from it, and again every 2 s while it works: an agent's, or the Mother agent's. */
 function LiveFeed({ chat, working, idle, ready }: { chat: string | null; working: boolean; idle: string; ready: boolean }) {
   const [entries, setEntries] = useState<Entry[] | null>(null), [error, setError] = useState("");
   useEffect(() => {
@@ -464,7 +464,7 @@ function AgentDashboard({ node, own, wave, status, check, clash, chat, waitsFor,
     <dl>
       <div><dt>Model</dt><dd>{modelLabel}{data.effort ? ` · ${data.effort} thinking` : ""}</dd></div>
       <div><dt>Inputs needed</dt><dd>{waitsFor.length ? waitsFor.join(", ") : "All inputs captured"}</dd></div>
-      <div><dt>Feeds</dt><dd>{feeds.length ? feeds.join(", ") : "The Mother's report"}</dd></div>
+      <div><dt>Feeds</dt><dd>{feeds.length ? feeds.join(", ") : "The Mother agent's report"}</dd></div>
       <div><dt>May write</dt><dd>{[own, ...data.writeScopes.map(folderLabel)].join(", ")}</dd></div>
       <div><dt>Prompt</dt><dd>{data.instruction || "No prompt yet: write one before the run"}</dd></div>
       <div><dt>Done when</dt><dd>{(data.acceptanceCriteria.length ? data.acceptanceCriteria : [DONE]).join("; ")}</dd></div>
@@ -719,7 +719,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
         const father = next.father, stage = hers?.next;
         if (father && stage && (stage.threadId !== father.threadId || stage.status !== father.status || !!stage.reported !== !!father.reported)) {
           next = { ...next, father: { ...father, threadId: stage.threadId, graphId: stage.graphId, status: stage.status, reported: stage.reported } };
-          if (stage.reported && !father.reported) setLog(current => [...current, { at: Date.now(), text: "FATHER REPORT RECEIVED · DATASTORE CAPTURED · Mother", tone: "done" }]);
+          if (stage.reported && !father.reported) setLog(current => [...current, { at: Date.now(), text: "FATHER REPORT RECEIVED · DATASTORE CAPTURED · Mother agent", tone: "done" }]);
         }
         if (stage?.error && live) setNotice(runFailure(stage.error));
         // His own run is read in a poll that did not just change him: the change restarts this effect, which reads at once.
@@ -852,7 +852,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
   // Wiring: a wire orders its agents (the target waits for the source), or, `alongside`, joins two agents working at the
   // same time. The Mother and Father start their agents themselves, so they take no wires.
   const connect = (source: string, target: string, kind?: CanvasEdge["kind"]) => {
-    if ([source, target].some(id => id === MOTHER || id === FATHER)) { setNotice("The Mother starts every agent that waits for no one, so she takes no wires: wire agents to each other."); return; }
+    if ([source, target].some(id => id === MOTHER || id === FATHER)) { setNotice("The Mother agent starts every agent that waits for no one, so she takes no wires: wire agents to each other."); return; }
     if (![source, target].every(id => agents.some(node => node.id === id))) return;
     if (graph.edges.some(edge => (edge.source === source && edge.target === target) || (edge.source === target && edge.target === source))) { setNotice("Those two are already wired: click the wire to change or remove it."); return; }
     const feedback = !kind && makesLoop(graph.edges, source, target);
@@ -1373,15 +1373,15 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
       const from = current.edge.source === MOTHER ? null : titleOf(current.edge.source), to = titleOf(current.edge.target);
       const removeIt = from ? () => removeWire(current.edge.id) : undefined;
       const sideBySide = current.edge.kind === "alongside";
-      return { name: "Wire", title: "Wire", detail: `${from ?? "Mother"} ${sideBySide ? "↔" : "→"} ${to}`, onDelete: removeIt, items: [
+      return { name: "Wire", title: "Wire", detail: `${from ?? "Mother agent"} ${sideBySide ? "↔" : "→"} ${to}`, onDelete: removeIt, items: [
         { label: "Describe the flow", hint: "Name what the receiving agent gets", take: () => { const at = menuAt({ clientX: current.client.x, clientY: current.client.y }, 1); if (at) setFlowEdit({ edge: current.edge, left: at.left, top: at.top }); } },
-        ...(sideBySide ? [] : [{ label: "Insert agents here", hint: from ? `Between ${from} and ${to}` : `Before ${to}, started by the Mother`, take: () => openAdder(current.client, undefined, current.edge) }]),
+        ...(sideBySide ? [] : [{ label: "Insert agents here", hint: from ? `Between ${from} and ${to}` : `Before ${to}, started by the Mother agent`, take: () => openAdder(current.client, undefined, current.edge) }]),
         ...(from ? [sideBySide
           ? { label: "Make it one-way", hint: `${to} waits for ${from}`, take: () => setKind(current.edge, undefined) }
           : { label: "Make it two-way", hint: `${from} and ${to} work at the same time, each told about the other`, take: () => setKind(current.edge, "alongside") }] : []),
         ...(removeIt ? [{ label: "Remove wire", hint: sideBySide ? `${from} and ${to} stop working alongside` : `${to} stops waiting for ${from}`, keys: "Delete", take: removeIt }] : [])] };
     }
-    if (current.kind === "mother") return { name: "Mother", title: "Mother", detail: "the run's chat", items: [
+    if (current.kind === "mother") return { name: "Mother agent", title: "Mother agent", detail: "the run's chat", items: [
       { label: "Run settings", hint: "The brief, her model, how many agents", take: () => setSelection([MOTHER]) },
       { label: "Add agents she starts", take: () => openAdder(current.client, { id: MOTHER, as: "target" }) }] };
     if (current.kind === "board") {
@@ -1428,7 +1428,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
   const choiceKey = (data: AgentData) => data.model ? `${subscriptionOf(data.model) ? "" : canonicalProvider(data.provider) ?? ""}|${data.model}` : "";
   const shared = (key: (data: AgentData) => string) => new Set(chosen.map(node => key(node.data))).size === 1 ? key(chosen[0].data) : "mixed";
   const modelPatch = (value: string): Partial<AgentData> => { const [provider, ...rest] = value.split("|"); return value ? { provider: provider || null, model: rest.join("|"), effort: null } : { provider: null, model: null, effort: null }; };
-  // The subscriptions' models (Claude, Antigravity's Gemini) come from the engine's own list (28 Oct: Mother's menu had no Opus).
+  // The subscriptions' models (Claude, Antigravity's Gemini) come from the engine's own list (28 Oct: Mother agent's menu had no Opus).
   const subscribed = models.filter(item => subscriptionOf(item.model) && !catalog.some(entry => entry.model === item.model));
   const modelOptions = (provider?: string | null) => [<option key="" value="">Default model</option>, ...catalog.filter(item => provider === undefined || item.provider === provider).map(item => <option key={`${item.provider}|${item.model}`} value={`${item.provider ?? ""}|${item.model}`} data-hint={provider === undefined ? item.providerLabel : undefined}>{item.label}</option>), ...(provider === undefined ? subscribed.map(item => <option key={`|${item.model}`} value={`|${item.model}`} data-hint={subscriptionOf(item.model)?.label}>{item.displayName || item.model}</option>) : [])];
   const subscriptionOptions = (prefix: string) => subscriptions.find(choice => choice.id === prefix)?.models.map(item => <option key={item.model} value={`|${item.model}`}>{item.displayName || item.model}</option>) ?? [];
@@ -1554,12 +1554,12 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
   }
   async function fatherPart(tasks: RunTask[], current: () => boolean) {
     if (!current()) throw Error(OFFLINE_WORKFLOW);
-    const goal = mother.brief.trim(), name = `Father · ${graph.name || "Workflows"}`.slice(0, 120);
+    const goal = mother.brief.trim(), name = `Father agent · ${graph.name || "Workflows"}`.slice(0, 120);
     const repository = Boolean(cwd) && !readyMade(graph.planningPattern) && wantsIsolation(tasks) && await api<{ repository?: boolean }>(`/repository?cwd=${encodeURIComponent(cwd!)}`).then(result => result.repository === true, () => false);
     if (!current()) throw Error(OFFLINE_WORKFLOW);
     const limit = await workflowLimit(); if (!current()) throw Error(OFFLINE_WORKFLOW);
     const { rootThreadId: _root, name: _name, ...stage } = runPayload("", name, tasks, limit, repository);
-    return { ...stage, name, thread: { name, instructions: [goal && `Goal of the whole run: ${goal}`, "You are the Father: you run the agents past the Mother's ten, after her part has succeeded, and you report to her."].filter(Boolean).join("\n\n"),
+    return { ...stage, name, thread: { name, instructions: [goal && `Goal of the whole run: ${goal}`, "You are the Father agent: you run the agents past the Mother agent's ten, after her part has succeeded, and you report to her."].filter(Boolean).join("\n\n"),
       ...(mother.model ? { model: mother.model, ...(mother.provider ? { provider: mother.provider } : {}) } : {}) } };
   }
 
@@ -1598,7 +1598,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
       let motherRoute = mother.model ? { model: mother.model, provider: mother.provider ?? null } : null;
       if (motherRoute && offered.length && !offers(motherRoute.model, motherRoute.provider)) {
         const instead = MOTHER_FIRST.map(test => offered.find(item => test.test(item.model))).find(Boolean) ?? null;
-        setNotice(`Mother's model, ${named(motherRoute.model)}, is not available here, so she runs on ${instead ? named(instead.model) : "the default model"}.`);
+        setNotice(`Mother agent's model, ${named(motherRoute.model)}, is not available here, so she runs on ${instead ? named(instead.model) : "the default model"}.`);
         motherRoute = instead;
       }
       const created = await api<{ thread: Thread }>("/threads", { ...(cwd ? { cwd } : {}), agents: true, name: runIdentity.name,
@@ -1651,7 +1651,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
         <Button type="button" variant="outline" size="sm" aria-describedby={!ready ? offlineReasonId : undefined} disabled={!ready || !cwd || !requestText.trim() || Boolean(planning || starting || run && !over(run))} onClick={() => void letElpis(requestText)}>Update current</Button>
         {/* The run's status sits beside the request, which gives up the room, so the controls below stay on one row
             while it runs (28 Oct: a running board wrapped them onto a second row). */}
-        {run && <span className="canvas-chip" role="status"><i className="canvas-dot" data-status={over(run) ? run.father?.status ?? run.status : "running"} />{over(run) ? ENDED[run.status === "succeeded" ? run.father?.status ?? run.status : run.status] ?? "Finished" : run.father?.threadId ? "Running · the Father's part" : "Running"} · {done} of {agents.length} done</span>}
+        {run && <span className="canvas-chip" role="status"><i className="canvas-dot" data-status={over(run) ? run.father?.status ?? run.status : "running"} />{over(run) ? ENDED[run.status === "succeeded" ? run.father?.status ?? run.status : run.status] ?? "Finished" : run.father?.threadId ? "Running · the Father agent's part" : "Running"} · {done} of {agents.length} done</span>}
         {run && runClock}
         {/* Stop cancels the whole run: the engine treats an interrupt of the run's own chat as cancelling it (28 Oct:
             "a running workflow has no cancel control anywhere"). */}
@@ -1671,7 +1671,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
       <span className="canvas-spacer" />
       <ViewToggle iso={iso} onChange={setIso} />
       {run && <Button variant="ghost" size="icon-sm" aria-label="Open run chat" title="Open run chat" onClick={() => onOpenChat(run.rootThreadId)}><ExternalLink size={14} /></Button>}
-      <Button variant="ghost" size="sm" aria-pressed={motherOpen} onClick={() => setSelection([MOTHER])} title="The run's settings: the brief every agent gets, her model, how many agents"><i className="canvas-kind" data-kind="mother" />Mother</Button>
+      <Button variant="ghost" size="sm" aria-pressed={motherOpen} onClick={() => setSelection([MOTHER])} title="The run's settings: the brief every agent gets, her model, how many agents"><i className="canvas-kind" data-kind="mother" />Mother agent</Button>
       <Button variant="ghost" size="icon-sm" aria-label="Auto-arrange" aria-pressed={autoLayout} onClick={toggleAuto} title={autoLayout ? "Auto-arrange is on: the board keeps run-order columns (Kahn's waves) after every change. Click to place agents freely." : "Auto-arrange is off. Click to arrange by run order and keep it so."}><ListOrdered size={14} /></Button>
       <Button variant="ghost" size="sm" aria-label="Side panel" aria-pressed={panelOpen} title={panelOpen ? "Hide the side panel: the board takes the whole width" : "Show the side panel: patterns and the selected agent"} onClick={() => showPanel(!panelOpen)}><AgentsIcon size={16} /></Button>
       {!recordedRun && <div className="canvas-run-control">
@@ -1855,8 +1855,8 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
         <Button variant="ghost" size="sm" className="text-destructive" onClick={() => remove(chosen.map(node => node.id))}><Trash2 size={14} />Delete {chosen.length} agents <kbd>Delete</kbd></Button>
         <Button variant="outline" size="sm" className="ml-auto" onClick={() => setSelection([])}>Done</Button>
       </div>
-    </aside> : motherOpen ? <aside className="canvas-side" aria-label="Mother">
-      <p className="hud-menu-title">Mother · the run&rsquo;s chat</p>
+    </aside> : motherOpen ? <aside className="canvas-side" aria-label="Mother agent">
+      <p className="hud-menu-title">Mother agent · the run&rsquo;s chat</p>
       <p className="canvas-help">Every agent is her child: she starts the ones that wait for no one, and every report comes back to her. These settings apply to the whole run.</p>
       <label>Goal (every agent gets it)<Textarea aria-label="Goal" rows={4} value={mother.brief} placeholder="What should this run achieve? Elpis can design the team from it." onChange={event => setMother({ brief: event.target.value })} /></label>
       <Button size="sm" onClick={() => void letElpis(mother.brief)} aria-describedby={!ready ? offlineReasonId : undefined} disabled={!ready || !mother.brief.trim() || Boolean(planning)} title="Elpis designs the team from the goal: how many agents, their prompts, folders and wiring; Ctrl+Z undoes it">{planning ? "Elpis is designing…" : "Let Elpis design the team"}</Button>
@@ -1866,11 +1866,11 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
           why={typed => typed > allowed.graph / TASKS_PER_AGENT ? `Elpis runs at most ${allowed.graph} tasks in a graph: ${Math.floor(allowed.graph / TASKS_PER_AGENT)} agents, each with its check.` : typed < agents.length ? `The graph already has ${agents.length} agents; remove some first.` : "Type a whole number from 1."} />
       </div>
       {run && <p className="canvas-help" role="status">{(["running", "succeeded", "pending", "failed", "blocked"] as const).map(status => [status, agents.filter(node => states[node.id]?.status === status).length] as const).filter(([, count]) => count).map(([status, count]) => `${count} ${STATUS_LABEL[status]}`).join(" · ") || "Starting…"}</p>}
-      {split.father.length > 0 && <p className="canvas-help" role="note">The Father runs {split.father.length} more {split.father.length === 1 ? "agent" : "agents"} in his own chat once her part has succeeded, and reports to her{run?.father ? `: ${run.father.threadId ? STATUS_LABEL[(run.father.status as TaskStatus)] ?? run.father.status : run.father.status === "cancelled" ? "not started, her part failed" : "waiting for her part"}` : "."}</p>}
+      {split.father.length > 0 && <p className="canvas-help" role="note">The Father agent runs {split.father.length} more {split.father.length === 1 ? "agent" : "agents"} in his own chat once her part has succeeded, and reports to her{run?.father ? `: ${run.father.threadId ? STATUS_LABEL[(run.father.status as TaskStatus)] ?? run.father.status : run.father.status === "cancelled" ? "not started, her part failed" : "waiting for her part"}` : "."}</p>}
       <LiveFeed chat={run?.rootThreadId ?? null} working={runState === "running"} ready={ready} idle="Not started. Every agent's report arrives here once the graph runs." />
       <div className="canvas-inspector-actions">
         {run && <Button variant="outline" size="sm" onClick={() => onOpenChat(run.rootThreadId)}><ExternalLink size={14} />Open her chat</Button>}
-        {run?.father?.threadId && <Button variant="outline" size="sm" onClick={() => onOpenChat(run.father!.threadId!)}><ExternalLink size={14} />Open the Father&rsquo;s chat</Button>}
+        {run?.father?.threadId && <Button variant="outline" size="sm" onClick={() => onOpenChat(run.father!.threadId!)}><ExternalLink size={14} />Open the Father agent&rsquo;s chat</Button>}
         <Button variant="outline" size="sm" className="ml-auto" onClick={() => setSelection([])}>Done</Button>
       </div>
     </aside> : <aside className="canvas-side" aria-label="Architectures">

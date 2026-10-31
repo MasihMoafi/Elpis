@@ -125,7 +125,7 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
           if (['queued', 'reviewing'].includes(t.activeReview?.status)) t.activeReview.status = 'expired';
         });
         for (const decision of record.mother?.decisions ?? []) if (decision.kind === 'checkpoint' && ['queued', 'reviewing'].includes(decision.status)) {
-          decision.status = 'not_delivered'; decision.reasons = 'The desktop stopped before Mother’s guidance could be delivered.';
+          decision.status = 'not_delivered'; decision.reasons = 'The desktop stopped before Mother agent’s guidance could be delivered.';
         }
       }
       if (ended.has(record.status) && !alive(record.ownerPid) && ['running', 'reviewing'].includes(record.mother?.status)) {
@@ -250,30 +250,30 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
   // Mother reviews a step only when it fails (supervise, below); she no longer looks in during every run, which spent the
   // person's Claude quota on Opus for every step (28 Oct, Masih: no check-ins).
   function supervise(record, task, error, root, controller) {
-    cancelCheckpoints(record, null, 'A failed node needs Mother’s recovery decision first.');
+    cancelCheckpoints(record, null, 'A failed node needs Mother agent’s recovery decision first.');
     return queueSupervision(record, () => superviseNode(record, task, error, root, controller));
   }
   async function superviseNode(record, task, error, root, controller) {
     if (controller.signal.aborted || task.supervisedRound === record.round) return false;
     task.supervisedRound = record.round;
-    const mother = record.mother ??= { id: 'mother', title: 'Mother', model: 'claude/opus', provider: 'claude', reasoningEffort: 'low', progress: [], decisions: [] };
+    const mother = record.mother ??= { id: 'mother', title: 'Mother agent', model: 'claude/opus', provider: 'claude', reasoningEffort: 'low', progress: [], decisions: [] };
     mother.decisions ??= []; mother.status = 'running'; await save(record);
     try {
-      const instructions = 'You are Mother, the active workflow supervisor. Inspect the failed node and current evidence. Read only; do not edit files, run agents, merge, install or change permissions. Return only JSON: {"action":"retry","taskId":"the failed node","instruction":"specific corrective guidance","reason":"evidence"}, {"action":"steer","taskId":"one currently running node","message":"specific guidance","reason":"evidence"}, or {"action":"stop","reason":"actionable recovery needed"}. Retry only when specific new guidance can address the failure. Never repeat an unchanged failing tool, alter scope, or claim success without checks.';
+      const instructions = 'You are the Mother agent, the active workflow supervisor. Inspect the failed node and current evidence. Read only; do not edit files, run agents, merge, install or change permissions. Return only JSON: {"action":"retry","taskId":"the failed node","instruction":"specific corrective guidance","reason":"evidence"}, {"action":"steer","taskId":"one currently running node","message":"specific guidance","reason":"evidence"}, or {"action":"stop","reason":"actionable recovery needed"}. Retry only when specific new guidance can address the failure. Never repeat an unchanged failing tool, alter scope, or claim success without checks.';
       const result = await runNode(record, mother, { model: 'claude/opus', provider: 'claude' }, instructions, { task: `Workflow: ${record.name}. Goal: ${record.goal ?? ''}. Failed node: ${task.id}. Failure: ${error.message}.\nCurrent nodes:\n${JSON.stringify(record.tasks.map(node => ({ id: node.id, status: node.status, instruction: node.instruction, evidence: node.result?.summary?.slice(0, 2000), failure: node.failureReason, recentProgress: node.progress?.slice(-3) }))).slice(0, 22000)}` }, {
         cwd: root.cwd, signal: controller.signal, timeoutMs: Math.min(timeoutMs ?? Infinity, (record.maxRuntimeSeconds ?? 1800) * 1000),
         onUpdate: update => progress(record, mother, update), onControl: control => controls.set(`${record.id}:mother`, control), onPermission: request => permission(record, mother, request),
       });
-      let decision; try { decision = JSON.parse(result.answer.replace(/^```(?:json)?\s*|\s*```$/g, '')); } catch { throw new BridgeError('Mother could not give a valid recovery decision. Choose a model and resume the failed nodes.', 409); }
-      if (!['retry', 'steer', 'stop'].includes(decision?.action) || typeof decision.reason !== 'string' || !decision.reason.trim()) throw new BridgeError('Mother did not give an actionable recovery decision. Choose a model and resume the failed nodes.', 409);
+      let decision; try { decision = JSON.parse(result.answer.replace(/^```(?:json)?\s*|\s*```$/g, '')); } catch { throw new BridgeError('Mother agent could not give a valid recovery decision. Choose a model and resume the failed nodes.', 409); }
+      if (!['retry', 'steer', 'stop'].includes(decision?.action) || typeof decision.reason !== 'string' || !decision.reason.trim()) throw new BridgeError('Mother agent did not give an actionable recovery decision. Choose a model and resume the failed nodes.', 409);
       const entry = { at: Date.now(), taskId: decision.taskId ?? task.id, decision: decision.action, reasons: decision.reason.slice(0, 2000) }; mother.decisions.push(entry);
       if (decision.action === 'retry') {
-        if (decision.taskId !== task.id || typeof decision.instruction !== 'string' || !decision.instruction.trim() || decision.instruction.length > 4000) throw new BridgeError('Mother requested an invalid retry. Completed work was preserved.', 409);
+        if (decision.taskId !== task.id || typeof decision.instruction !== 'string' || !decision.instruction.trim() || decision.instruction.length > 4000) throw new BridgeError('Mother agent requested an invalid retry. Completed work was preserved.', 409);
         task.supervisorInstruction = decision.instruction.trim(); mother.status = 'succeeded'; await save(record); return true;
       }
       if (decision.action === 'steer') {
         const target = record.tasks.find(node => node.id === decision.taskId && node.id !== task.id && node.status === 'running'), control = target && controls.get(`${record.id}:${target.id}`);
-        if (!control || typeof decision.message !== 'string' || !decision.message.trim() || decision.message.length > 4000) throw new BridgeError('Mother could not reach that running node. Resume the failed work after choosing a model.', 409);
+        if (!control || typeof decision.message !== 'string' || !decision.message.trim() || decision.message.length > 4000) throw new BridgeError('Mother agent could not reach that running node. Resume the failed work after choosing a model.', 409);
         const delivered = await control.steer(decision.message.trim()); entry.delivery = delivered.delivery;
         (target.messages ??= []).push({ id: randomUUID(), text: decision.message.trim(), status: 'delivered', delivery: delivered.delivery, at: Date.now(), round: record.round, source: 'mother' });
       }
@@ -285,10 +285,10 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
   }
   async function reviewAndMerge(record, signal) {
     if (await checkWorkflowReview(record.review, signal)) { record.review = await mergeWorkflowReview(record.review, signal); return; }
-    const mother = record.mother = { ...record.mother, id: 'mother', title: 'Mother', model: 'claude/opus', provider: 'claude', reasoningEffort: 'low', status: 'running', progress: record.mother?.progress ?? [], decisions: record.mother?.decisions ?? [] };
+    const mother = record.mother = { ...record.mother, id: 'mother', title: 'Mother agent', model: 'claude/opus', provider: 'claude', reasoningEffort: 'low', status: 'running', progress: record.mother?.progress ?? [], decisions: record.mother?.decisions ?? [] };
     record.review.status = 'reviewing'; await save(record);
     try {
-      const instructions = 'You are Mother, the workflow coordinator. Review the children’s candidate commits and focused test evidence. Read and run checks only; do not change files, commit, merge, delegate or push. Approve only if the requested task is complete and the checks pass. Return only JSON: {"passed":true or false,"summary":"observed evidence and any remaining failure"}.';
+      const instructions = 'You are the Mother agent, the workflow coordinator. Review the children’s candidate commits and focused test evidence. Read and run checks only; do not change files, commit, merge, delegate or push. Approve only if the requested task is complete and the checks pass. Return only JSON: {"passed":true or false,"summary":"observed evidence and any remaining failure"}.';
       const result = await runNode(record, mother, record.recovery?.model ? record.recovery : { model: mother.model, provider: mother.provider }, instructions, { task: `Review candidate commit ${record.review.commit}. Workflow: ${record.name}.\n${record.goal ?? ''}\n\nChange summary:\n${record.review.stat}`, inputs: record.tasks.map(task => ({ name: task.title, answer: task.result?.summary ?? task.failureReason ?? task.status })) }, {
         cwd: record.review.path, signal, timeoutMs: Math.min(timeoutMs ?? Infinity, (record.maxRuntimeSeconds ?? 1800) * 1000),
         onUpdate: update => progress(record, mother, update), onControl: control => controls.set(`${record.id}:mother`, control), onPermission: request => permission(record, mother, request),
@@ -296,8 +296,8 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
       let verdict;
       try { verdict = JSON.parse(result.answer.replace(/^```(?:json)?\s*|\s*```$/g, '')); } catch { /* malformed review cannot authorize a merge */ }
       mother.result = { summary: result.answer, reviewedCommit: record.review.commit };
-      if (verdict?.passed !== true || typeof verdict.summary !== 'string' || !verdict.summary.trim()) throw new BridgeError(`Mother did not approve: ${verdict?.summary || 'no passing review with evidence'}`, 409);
-      if (await workflowCandidateChanged(record.review)) throw new BridgeError('Mother changed the candidate during review; nothing was merged', 409);
+      if (verdict?.passed !== true || typeof verdict.summary !== 'string' || !verdict.summary.trim()) throw new BridgeError(`Mother agent did not approve: ${verdict?.summary || 'no passing review with evidence'}`, 409);
+      if (await workflowCandidateChanged(record.review)) throw new BridgeError('Mother agent changed the candidate during review; nothing was merged', 409);
       record.review = await mergeWorkflowReview(record.review, signal); mother.status = 'succeeded';
     } catch (error) { mother.status = signal?.aborted ? 'cancelled' : 'failed'; mother.failureReason = error.message; record.review.status = 'ready'; record.review.error = error.message; throw error; }
     finally { controls.delete(`${record.id}:mother`); clearTimeout(progressTimers.get(record.id)); progressTimers.delete(record.id); await save(record); }
@@ -344,7 +344,7 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
                 const out = inside(task.output); await fs.mkdir(path.dirname(out), { recursive: true }); await fs.writeFile(out, `${texts.reduce((all, part) => !all ? part : `${all}${task.flow && !/[.!?:;"”’)\]]$/.test(all) ? ' ' : '\n\n'}${part}`, '')}\n`);
                 return { result: { answer: `Joined ${task.parts.length} parts into ${task.output}.` }, changes: {} };
               }
-              const result = await runNode(record, task, requested, instructions, { task: (record.roundLimit ? `Round ${round} of ${record.roundLimit}.\n` : '') + task.instruction + (task.supervisorInstruction ? `\n\nMother's corrective guidance:\n${task.supervisorInstruction}` : ''), inputs }, {
+              const result = await runNode(record, task, requested, instructions, { task: (record.roundLimit ? `Round ${round} of ${record.roundLimit}.\n` : '') + task.instruction + (task.supervisorInstruction ? `\n\nMother agent's corrective guidance:\n${task.supervisorInstruction}` : ''), inputs }, {
                 cwd, signal: controller.signal, timeoutMs: Math.min(timeoutMs ?? Infinity, (record.maxRuntimeSeconds ?? 1800) * 1000),
                 onPermission: request => permission(record, task, request), onUpdate: update => progress(record, task, update), onControl: control => { controls.set(`${record.id}:${task.id}`, control); },
               });
@@ -435,7 +435,7 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
     async list(rootThreadId) { await load(); return structuredClone([...records.values()].filter(r => rootThreadId === undefined || r.rootThreadId === rootThreadId)); },
     async start(params, root) {
       validateWorkflow(params.tasks, params.roundLimit); await load();
-      if (mergeControllers.has(params.rootThreadId)) throw new BridgeError('Mother is reviewing this workflow', 409);
+      if (mergeControllers.has(params.rootThreadId)) throw new BridgeError('Mother agent is reviewing this workflow', 409);
       if (!path.isAbsolute(root.cwd ?? '')) throw new BridgeError('Choose a project folder before running a workflow');
       root = { ...root, cwd: await fs.realpath(root.cwd) };
       for (const task of params.tasks) for (const scope of task.writeScopes) await projectFolder(root.cwd, scope);

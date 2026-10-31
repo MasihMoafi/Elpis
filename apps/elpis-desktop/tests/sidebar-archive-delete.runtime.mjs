@@ -24,8 +24,8 @@ async function seed(dir) {
   const sessions = path.join(dir, 'sessions/2026/10/24'), cwd = path.join(dir, 'work'), ids = {};
   await fs.mkdir(sessions, { recursive: true }); await fs.mkdir(cwd, { recursive: true });
   const chats = [['Open one'], ['Pick A'], ['Pick B'], ['Range A'], ['Range B'], ['Menu A'], ['Menu B'], ['Del A'], ['Del B'],
-    ['Host'], ['Nested'], ['Mother'], ['Worker one', 'Mother', 1], ['Worker one child', 'Worker one', 2], ['Worker two', 'Mother', 1],
-    ['Father'], ['Son', 'Father', 1], ['Last']];
+    ['Host'], ['Nested'], ['Mother agent'], ['Worker one', 'Mother agent', 1], ['Worker one child', 'Worker one', 2], ['Worker two', 'Mother agent', 1],
+    ['Father agent'], ['Son', 'Father agent', 1], ['Last']];
   for (const [index, [name, parent, depth]] of chats.entries()) {
     const id = randomUUID(), stamp = new Date(Date.UTC(2026, 9, 24, 10, 59 - index)), ts = stamp.toISOString();
     const source = parent ? { subagent: { thread_spawn: { parent_thread_id: ids[parent], depth, agent_nickname: name, agent_role: 'worker' } } } : 'vscode';
@@ -57,7 +57,7 @@ test('sidebar archive and delete: one chat, a selection, by key and menu, with a
     // keeps it from staying open over every later click when the machine is busy.
     const notNow = page.getByRole('button', { name: 'Not now', exact: true });
     await notNow.waitFor({ timeout: 4000 }).then(() => notNow.click(), () => {});
-    await page.locator(`.thread-row[data-thread-id="${ids.Mother}"]`).waitFor();
+    await page.locator(`.thread-row[data-thread-id="${ids.Mother agent}"]`).waitFor();
   };
   const stop = async () => { await browser?.close().catch(() => {}); if (home) await run(helper, ['stop', home]).catch(() => {}); };
   t.after(stop);
@@ -118,24 +118,24 @@ test('sidebar archive and delete: one chat, a selection, by key and menu, with a
   });
 
   await t.test('archiving a chat archives its agents; Unarchive brings it back with them', async () => {
-    await settle(); await expand('Mother'); await row('Worker one').waitFor();
-    await row('Mother').click({ button: 'right' }); await page.getByRole('menuitem', { name: /^Archive/ }).click(); await without('Mother', 'Worker one', 'Worker two');
-    assert.deepEqual(await agentsOf('Mother'), [], 'no agent of the archived chat stays listed');
+    await settle(); await expand('Mother agent'); await row('Worker one').waitFor();
+    await row('Mother agent').click({ button: 'right' }); await page.getByRole('menuitem', { name: /^Archive/ }).click(); await without('Mother agent', 'Worker one', 'Worker two');
+    assert.deepEqual(await agentsOf('Mother agent'), [], 'no agent of the archived chat stays listed');
     await page.keyboard.press('Control+,'); await page.getByText('Archived chats', { exact: true }).first().click();
-    await page.getByRole('button', { name: 'Unarchive Mother', exact: true }).click();
-    await page.locator(`.archived-row[data-thread-id="${ids.Mother}"]`).waitFor({ state: 'detached' });
-    await page.getByRole('button', { name: 'Back to app', exact: true }).click(); await row('Mother').waitFor();
-    assert.deepEqual((await agentsOf('Mother')).sort(), ['Worker one', 'Worker one child', 'Worker two']);
+    await page.getByRole('button', { name: 'Unarchive Mother agent', exact: true }).click();
+    await page.locator(`.archived-row[data-thread-id="${ids.Mother agent}"]`).waitFor({ state: 'detached' });
+    await page.getByRole('button', { name: 'Back to app', exact: true }).click(); await row('Mother agent').waitFor();
+    assert.deepEqual((await agentsOf('Mother agent')).sort(), ['Worker one', 'Worker one child', 'Worker two']);
     await row('Worker one').waitFor(); await row('Worker two').waitFor();
     await noError('unarchive with agents');
   });
 
   await t.test('a chat and its agent selected together are deleted in one step, and Ctrl+Z restores both', async () => {
-    await settle(); await expand('Father'); await link('Father').click(); await link('Son').click({ modifiers: ['Control'] });
-    await page.keyboard.press('d'); await confirmDelete(); await without('Father', 'Son');
+    await settle(); await expand('Father agent'); await link('Father agent').click(); await link('Son').click({ modifiers: ['Control'] });
+    await page.keyboard.press('d'); await confirmDelete(); await without('Father agent', 'Son');
     await noError('chat with its agent');
-    await page.keyboard.press('Control+z'); await row('Father').waitFor();
-    assert.deepEqual(await agentsOf('Father'), ['Son']);
+    await page.keyboard.press('Control+z'); await row('Father agent').waitFor();
+    assert.deepEqual(await agentsOf('Father agent'), ['Son']);
     await noError('undo chat with its agent');
   });
 
@@ -152,7 +152,7 @@ test('sidebar archive and delete: one chat, a selection, by key and menu, with a
   }
   const gone = ['Open one', 'Pick A', 'Pick B', 'Range A', 'Range B', 'Menu A', 'Menu B', 'Host', 'Nested', 'Last'];
   await t.test('after reloading the window nothing comes back', async () => {
-    await page.reload(); await page.locator('.startup-splash').waitFor({ state: 'detached' }); await row('Mother').waitFor();
+    await page.reload(); await page.locator('.startup-splash').waitFor({ state: 'detached' }); await row('Mother agent').waitFor();
     const list = await shown(); assert.deepEqual(gone.filter(name => list.includes(name)), []);
   });
   await t.test('after restarting the app nothing comes back, and the deleted chat is gone for good', async () => {
@@ -163,6 +163,6 @@ test('sidebar archive and delete: one chat, a selection, by key and menu, with a
     await start(path.join(snapshot, 'elpis'), path.join(snapshot, 'config'));
     const list = await shown(); assert.deepEqual(gone.filter(name => list.includes(name)), []);
     assert.ok(!(await archived()).includes('Last') && !(await live()).includes('Last'), 'the deleted chat was deleted for good');
-    assert.deepEqual((await agentsOf('Mother')).sort(), ['Worker one', 'Worker one child', 'Worker two']);
+    assert.deepEqual((await agentsOf('Mother agent')).sort(), ['Worker one', 'Worker one child', 'Worker two']);
   });
 });

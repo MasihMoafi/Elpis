@@ -42,7 +42,7 @@ function fixture(t, overrides = {}, clientOptions = {}) {
     const p = path.join(dir, `${id}.jsonl`);
     return fs.existsSync(p) ? fs.readFileSync(p, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse) : [];
   };
-  const client = new DesktopClient(socket, { home: overrides.env?.ELPIS_HOME ?? path.join(dir, 'profile'), rewindHome: path.join(dir, 'rewind'), reportRetryMs: 20, workflowOptions: { stateDir: path.join(dir, 'state'), nodeSpec: (node, env) => ({ name: node.name, instructions: node.prompt, elpis: true, command: process.execPath, args: [FAKE], env: { FAKE_ACP_NAME: node.name, FAKE_ACP_MODELS: node.name === 'Mother' ? 'opus' : 'm-fast', FAKE_ACP_LOG: path.join(dir, `${node.name}.jsonl`), ...(node.prompt.includes('Return only JSON:') ? { FAKE_ACP_ANSWER: JSON.stringify({ passed: !node.prompt.includes('[fail-check]'), summary: 'Observed the planted evidence' }) } : {}), ...(env.workflowFake?.[node.name] ?? {}) }, model: node.name === 'Mother' ? 'opus' : node.model }), ...overrides }, ...clientOptions });
+  const client = new DesktopClient(socket, { home: overrides.env?.ELPIS_HOME ?? path.join(dir, 'profile'), rewindHome: path.join(dir, 'rewind'), reportRetryMs: 20, workflowOptions: { stateDir: path.join(dir, 'state'), nodeSpec: (node, env) => ({ name: node.name, instructions: node.prompt, elpis: true, command: process.execPath, args: [FAKE], env: { FAKE_ACP_NAME: node.name, FAKE_ACP_MODELS: node.name === 'Mother agent' ? 'opus' : 'm-fast', FAKE_ACP_LOG: path.join(dir, `${node.name}.jsonl`), ...(node.prompt.includes('Return only JSON:') ? { FAKE_ACP_ANSWER: JSON.stringify({ passed: !node.prompt.includes('[fail-check]'), summary: 'Observed the planted evidence' }) } : {}), ...(env.workflowFake?.[node.name] ?? {}) }, model: node.name === 'Mother agent' ? 'opus' : node.model }), ...overrides }, ...clientOptions });
   t.after(() => { client.close(); removeTestTempDir(tempRoot); });
   const run = (tasks, extra = {}) => client.runWorkflow({ rootThreadId: ROOT, name: 'ACP team', tasks, maxConcurrency: 2, ...extra });
   const finished = async id => {
@@ -139,7 +139,7 @@ test('workflow history lists persisted teams without a selected conversation', {
   assert.equal(record.tasks[0].id, 'saved-team');
 });
 
-test('a dead workflow owner cannot leave Mother running and block history removal', async t => {
+test('a dead workflow owner cannot leave Mother agent running and block history removal', async t => {
   const stateDir = createTestTempDir(path.join(os.tmpdir(), 'workflow-orphan-'));
   t.after(() => removeTestTempDir(stateDir));
   const cases = [
@@ -303,30 +303,30 @@ test('A30: an empty project runs real ACP processes; every writer and check crea
 });
 // A41: stages belong to the bridge, not to the Workflows screen, so a run goes on when that screen is closed.
 const staged = async (f, id) => { let graph; for (let n = 0; n < 400; n++) { graph = (await f.client.workflows(ROOT)).data.find(item => item.id === id); if (graph?.next && ['cancelled', 'failed'].includes(graph.next.status) || graph?.next?.reported || graph?.next?.error) return graph; await pause(25); } throw Error(`the next stage did not settle: ${JSON.stringify(graph?.next)}`); };
-const fatherPart = { name: 'Father · Team', thread: { name: 'Father · Team', instructions: 'You are the Father.' }, tasks: [task('f')] };
-test('the Father part starts from the bridge after the Mother part, in his own chat, and his report reaches hers', { timeout: 30000 }, async t => {
+const fatherPart = { name: 'Father agent · Team', thread: { name: 'Father agent · Team', instructions: 'You are the Father agent.' }, tasks: [task('f')] };
+test('the Father agent part starts from the bridge after the Mother agent part, in his own chat, and his report reaches hers', { timeout: 30000 }, async t => {
   const f = fixture(t); await f.client.initialize();
   const r = await f.run([task('m')], { next: fatherPart });
   assert.equal((await f.finished(r.graphId)).status, 'succeeded');
   const graph = await staged(f, r.graphId);
   assert.deepEqual([graph.next.threadId, graph.next.status, graph.next.reported], [FATHER, 'succeeded', true]);
-  assert.equal(f.log('f').filter(row => row.method === 'session/prompt').length, 1, "the Father's agent ran");
-  assert.match(f.socket.sent.find(row => row.method === 'thread/start').params.developerInstructions, /You are the Father\./);
+  assert.equal(f.log('f').filter(row => row.method === 'session/prompt').length, 1, "the Father agent's agent ran");
+  assert.match(f.socket.sent.find(row => row.method === 'thread/start').params.developerInstructions, /You are the Father agent\./);
   const report = f.socket.sent.find(row => row.method === 'turn/start' && row.params.threadId === ROOT);
-  assert.match(JSON.stringify(report.params.input), /Report from the Father[\s\S]*Status: succeeded/);
+  assert.match(JSON.stringify(report.params.input), /Report from the Father agent[\s\S]*Status: succeeded/);
 });
-test("a refused Father report is tried again, and its reason is kept when it never goes through", { timeout: 30000 }, async t => {
+test("a refused Father agent report is tried again, and its reason is kept when it never goes through", { timeout: 30000 }, async t => {
   for (const [refusals, reported] of [[2, true], [9, false]]) {
     const f = fixture(t); await f.client.initialize(); f.socket.refuseTurns = refusals;
     const r = await f.run([task('m')], { next: fatherPart });
     const graph = await staged(f, r.graphId);
     if (!reported) for (let n = 0; n < 200 && !graph.next.error; n++) Object.assign(graph, (await f.client.workflows(ROOT)).data.find(item => item.id === r.graphId)), await pause(25);
     assert.equal(!!graph.next.reported, reported);
-    if (!reported) assert.match(graph.next.error, /^Father report not delivered: busy/);
+    if (!reported) assert.match(graph.next.error, /^Father agent report not delivered: busy/);
     assert.equal(f.socket.sent.filter(row => row.method === 'turn/start' && row.params.threadId === ROOT).length, reported ? 3 : 4);
   }
 });
-test('a Mother part that fails never starts the Father', { timeout: 30000 }, async t => {
+test('a Mother agent part that fails never starts the Father agent', { timeout: 30000 }, async t => {
   const f = fixture(t); await f.client.initialize();
   const r = await f.run([task('m', [], '[crash]')], { next: fatherPart });
   assert.equal((await f.finished(r.graphId)).status, 'failed');
@@ -371,7 +371,7 @@ test('isolated ACP writes reach their verifier, then the source; scope escape or
     if (mode === 'dirty') fs.writeFileSync(path.join(f.dir, 'src', 'seed'), 'user edit');
     const r = await f.run([a, check], { isolation: 'worktree' }); const g = await f.finished(r.graphId);
     if (mode === 'success') {
-      assert.equal(fs.existsSync(path.join(f.dir, 'src/result')), false, 'the candidate waits for Mother');
+      assert.equal(fs.existsSync(path.join(f.dir, 'src/result')), false, 'the candidate waits for Mother agent');
       await f.client.mergeWorkflow(r.graphId, {});
       assert.equal(g.status, 'succeeded', g.error); assert.equal(fs.readFileSync(path.join(f.dir, 'src/result'), 'utf8'), 'workflow planted result');
       assert.notEqual(git('rev-parse', 'HEAD'), baseline);

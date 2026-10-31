@@ -110,8 +110,8 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     assert.match(await mother.innerText(), /Mother[\s\S]*4 agents · not run/i);
     assert.equal(await canvas.locator('.react-flow__edge.canvas-edge-mother').count(), 3);
     await mother.click(); await page.keyboard.press('Delete');
-    assert.equal(await mother.count(), 1, 'the Mother survives Delete');
-    const motherPanel = canvas.getByRole('complementary', { name: 'Mother', exact: true });
+    assert.equal(await mother.count(), 1, 'the Mother agent survives Delete');
+    const motherPanel = canvas.getByRole('complementary', { name: 'Mother agent', exact: true });
     await motherPanel.getByRole('textbox', { name: 'Goal', exact: true }).fill('Keep the public API unchanged.');
     await chooseOption(motherPanel.getByRole('combobox', { name: 'Her model', exact: true }), '|gpt-6-luna');
     assert.equal(await motherPanel.getByRole('textbox', { name: 'Max agents', exact: true }).inputValue(), '10');
@@ -184,7 +184,7 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     // wired after another waits for that one's check, so it builds on checked work.
     await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
     await until('an agent shows as running', () => document.querySelector('.react-flow__node-agent [data-status="running"]'));
-    assert.equal(await canvas.locator('.react-flow__node-mother [data-status]').getAttribute('data-status'), 'running', 'the Mother shows the run');
+    assert.equal(await canvas.locator('.react-flow__node-mother [data-status]').getAttribute('data-status'), 'running', 'the Mother agent shows the run');
     assert.equal(ran.rootThreadId, 'root');
     assert.equal(ran.tasks.length, 10);
     const byTitle = Object.fromEntries(ran.tasks.map(task => [task.title, task]));
@@ -257,7 +257,7 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
 
     // Counts are typed in the Mother's panel, and only what Elpis allows is taken, with the reason when it is not. The
     // header's Mother button opens her panel wherever she is on the board.
-    const motherButton = canvas.getByRole('button', { name: 'Mother', exact: true });
+    const motherButton = canvas.getByRole('button', { name: 'Mother agent', exact: true });
     await motherButton.click();
     const maxField = motherPanel.getByRole('textbox', { name: 'Max agents', exact: true });
     await maxField.fill('300');
@@ -399,7 +399,7 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     assert.equal(await edges.count(), wires - 1, 'the wire was removed');
     // The Mother's dotted wires take a click too: agents inserted there start first, and her agent waits for them.
     await clickWire(canvas.locator(`.react-flow__edge[data-id="mother->${id('Orilo · Part 3')}"]`), 0.85);
-    assert.deepEqual(await wireMenu.getByRole('menuitem').allInnerTexts(), ['Describe the flow\nName what the receiving agent gets', 'Insert agents here\nBefore Orilo · Part 3, started by the Mother', 'Change this…']);
+    assert.deepEqual(await wireMenu.getByRole('menuitem').allInnerTexts(), ['Describe the flow\nName what the receiving agent gets', 'Insert agents here\nBefore Orilo · Part 3, started by the Mother agent', 'Change this…']);
     await wireMenu.getByRole('menuitem', { name: /^Insert agents here/ }).click(); await command.waitFor();
     await page.keyboard.type('Read the issue'); await page.keyboard.press('Enter');
     await until('the agent before Orilo · Part 3 was added', () => document.querySelectorAll('.react-flow__node-agent').length === 15);

@@ -496,8 +496,8 @@ test('canvas basics: undo and redo, copy and paste, duplicate, delete keeping th
     assert.equal(runs.length, 1);
     assert.ok(runs[0].tasks.filter(task => task.kind === 'implement').every(task => task.writeScopes.length), 'every agent got a folder');
     // "Let Elpis handle it": from a goal, Elpis designs the team; one Ctrl+Z puts the old board back.
-    await canvas.getByRole('button', { name: 'Mother', exact: true }).click();
-    const motherPanel = canvas.getByRole('complementary', { name: 'Mother', exact: true });
+    await canvas.getByRole('button', { name: 'Mother agent', exact: true }).click();
+    const motherPanel = canvas.getByRole('complementary', { name: 'Mother agent', exact: true });
     await motherPanel.getByRole('textbox', { name: 'Goal', exact: true }).fill('Build a dark theme from scratch');
     await page.waitForTimeout(400);
     await motherPanel.getByRole('button', { name: 'Let Elpis design the team', exact: true }).click();
@@ -702,7 +702,7 @@ for (const [planned, said] of [[{ mode: 'direct', why: 'One file, one line: no t
   } finally { await f.close(); }
 });
 
-test('a started workflow opens its Mother chat in a background tab and leaves New workflow usable', async () => {
+test('a started workflow opens its Mother agent chat in a background tab and leaves New workflow usable', async () => {
   const saved = { name: 'Background run', request: 'Keep the board available.', workflowId: 'background-run', nodes: [
     { id: 'writer', type: 'agent', position: { x: 300, y: 0 }, data: { title: 'Writer', instruction: 'Return one short report.', model: null, provider: null, effort: null, writeScopes: [], acceptanceCriteria: ['A report is returned'] } },
   ], edges: [] };
@@ -715,7 +715,7 @@ test('a started workflow opens its Mother chat in a background tab and leaves Ne
     assert.equal(await canvas.getByRole('button', { name: 'New workflow', exact: true }).isEnabled(), true, 'the board remains ready for the next workflow');
     const after = await page.evaluate(() => JSON.parse(localStorage.getItem('elpis-chat-tabs-v1')));
     assert.equal(after.activeId, before.activeId, 'the running workflow does not take the board away');
-    assert.equal(after.tabs.filter(tab => tab.threadId === 'chat-1').length, 1, 'the Mother chat gets one background tab');
+    assert.equal(after.tabs.filter(tab => tab.threadId === 'chat-1').length, 1, 'the Mother agent chat gets one background tab');
     if (process.env.ELPIS_SHOTS) {
       await page.screenshot({ path: `${process.env.ELPIS_SHOTS}/workflow-run-tab-light.png` });
       await chooseTheme(page, 'dark');

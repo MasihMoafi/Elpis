@@ -34,7 +34,7 @@ async function captures(f, stage, iso = true) {
   }
 }
 
-test('inline rename: Enter/blur save, Escape cancels, Mother is fixed, both views and inspector agree', async () => {
+test('inline rename: Enter/blur save, Escape cancels, Mother agent is fixed, both views and inspector agree', async () => {
   const f = await openCanvas({ graph });
   try {
     await mode(f, true);
@@ -71,7 +71,7 @@ for (const iso of [true, false]) test(`delete with four-second toast, Undo butto
   } finally { await f.close(); }
 });
 
-for (const iso of [true, false]) test(`wire noun labels persist and reach receiving briefs, shared Mother trunk: ${iso ? '3D' : 'flat'}`, async () => {
+for (const iso of [true, false]) test(`wire noun labels persist and reach receiving briefs, shared Mother agent trunk: ${iso ? '3D' : 'flat'}`, async () => {
   const f = await openCanvas({ graph });
   try {
     await mode(f, iso);
@@ -88,7 +88,7 @@ for (const iso of [true, false]) test(`wire noun labels persist and reach receiv
     assert.equal(await f.canvas.locator(iso ? '.iso-flow-label' : '.react-flow__edge-text').filter({ hasText: 'the instructions' }).count(), 1);
     await f.canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
     await f.page.waitForFunction(() => /Running|Finished/.test(document.querySelector('.canvas-header')?.textContent ?? ''));
-    for (const id of ['a', 'b']) assert.match(f.runs[0].tasks.find(t => t.id === id).instruction, /Receives “the instructions” from Mother/);
+    for (const id of ['a', 'b']) assert.match(f.runs[0].tasks.find(t => t.id === id).instruction, /Receives “the instructions” from Mother agent/);
     assert.match(f.runs[0].tasks.find(t => t.id === 'c').instruction, /Receives “three answers” from Kivo/);
     if (!iso) await captures(f, 'wires-flat-view', false);
     await captures(f, `wires-${iso ? 'iso' : 'flat'}`); assert.deepEqual(f.errors, []);

@@ -9,14 +9,14 @@ export type WorkflowIdentity = { id: string; name: string; colour: WorkflowColou
 export type WorkflowRun = { id: string; rootThreadId: string; name?: string; status: string; startedAt?: number; createdAt?: number; tasks?: { id: string; title?: string; kind?: string; dependsOn?: string[]; assignedThreadId?: string | null; sessionId?: string; threads?: string[]; status?: string }[]; mother?: { threads?: string[]; assignedThreadId?: string; sessionId?: string } };
 type Identities = Record<string, WorkflowIdentity>;
 const KEY = "elpis-workflow-identities-v1";
-/** Every chat a run's steps and Mother opened, each once, in run order: they fold under the run's chat (SPEC OM1). The
+/** Every chat a run's steps and Mother agent opened, each once, in run order: they fold under the run's chat (SPEC OM1). The
  * Mother's own reviews are marked: the run's row is the Mother, so they fold into it rather than under it (28 Oct, Masih:
  * "mother should be here", at the run's row). Checks are marked too: each folds into the step it checks. */
 export function workflowMembers(run: WorkflowRun) {
   const chats = (owner: { assignedThreadId?: string | null; sessionId?: string; threads?: string[] } | undefined, fallback?: boolean) =>
     [...owner?.threads ?? [], ...owner?.assignedThreadId ? [owner.assignedThreadId] : fallback && owner?.sessionId ? [owner.sessionId] : []];
   const members: { threadId: string; title: string; mother?: true; check?: true }[] = [...(run.tasks ?? []).flatMap(task => chats(task).map(threadId => ({ threadId, title: task.title || "Step", ...(task.kind === "verify" ? { check: true as const } : {}) }))),
-    ...chats(run.mother, true).map(threadId => ({ threadId, title: "Mother", mother: true as const }))];
+    ...chats(run.mother, true).map(threadId => ({ threadId, title: "Mother agent", mother: true as const }))];
   return members.filter((member, index) => member.threadId !== run.rootThreadId && members.findIndex(other => other.threadId === member.threadId) === index);
 }
 /** A run row's second line, "2 of 2 done": how the run went, not who leads it (28 Oct, Masih: "mothers all over the

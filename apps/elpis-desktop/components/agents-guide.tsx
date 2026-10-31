@@ -11,12 +11,12 @@ const topics = [
   { title: "One agent or many", intro: "Start with one chat for a small change, a question, or work that needs the same context throughout.", points: [
     "Use several agents when each can own an independent part with a clear result and a way to check it. Give each part its own files; agree on shared interfaces first.",
     "In Workflows, Split by parts is the default: each writer plans, builds and tests its part; a final writer joins the parts. Keep tightly connected work together.",
-    "Choose a project before running. In the Mother’s settings, Max agents limits the team; At once limits how many tasks can run together.",
+    "Choose a project before running. In the Mother agent’s settings, Max agents limits the team; At once limits how many tasks can run together.",
   ], links: [effective, research] },
-  { title: "Mother and Father", intro: "The Mother is the run’s chat. Click her to set the shared brief and her model, and to read the run’s feed.", points: [
+  { title: "Mother agent and Father agent", intro: "The Mother agent is the run’s chat. Click her to set the shared brief and her model, and to read the run’s feed.", points: [
     "Every writer receives her brief. She starts the agents that have no prerequisites and receives their reports. A wire tells an agent what it must wait for.",
-    "With more than 10 writers, the first 10 in run order belong to the Mother. The remaining writers belong to the Father, who gets his own chat.",
-    "The Father starts only after the Mother’s part succeeds, then reports to her. If her part fails, his part does not start. Raising Max agents makes room for a larger team.",
+    "With more than 10 writers, the first 10 in run order belong to the Mother agent. The remaining writers belong to the Father agent, who gets his own chat.",
+    "The Father agent starts only after the Mother agent’s part succeeds, then reports to her. If her part fails, his part does not start. Raising Max agents makes room for a larger team.",
   ], links: [research] },
   { title: "Writers and checks", intro: "Every board agent writes files; reading and planning happen inside that writer.", points: [
     "Give each writer a prompt, folders it may change (or the whole project), and a “Done when” check. Elpis fills missing prompts or folders. Each agent writes its report in agents/<its name>.",
@@ -33,7 +33,7 @@ const topics = [
   ], points: ["Every wired branch runs. Workflows cannot choose just one branch."], links: [effective, research] },
   { title: "Read a run", intro: "Read the work and its check together. “Task done” means the writer finished; “Check passed” means its separate check succeeded.", points: [
     "Waves show run order: the first wave has no prerequisites; later waves wait for earlier work and its checks. At once can limit how many tasks actually run together.",
-    "Click a writer for its inputs, status, check and chat. The Mother’s panel shows the feed. States include waiting, running, done, failed, blocked and cancelled.",
+    "Click a writer for its inputs, status, check and chat. The Mother agent’s panel shows the feed. States include waiting, running, done, failed, blocked and cancelled.",
     "If a check fails or an input is blocked, open the chat and failure reason. Merge conflicts name the files and kept work. A finished task may still have unmerged changes.",
     "Review the result and evidence before accepting it. Checks do not replace your acceptance.",
   ], links: [effective] },

@@ -93,15 +93,15 @@ export function useWorkflowTeam(run: RecordedWorkflow | undefined, ready: boolea
           const details = await Promise.allSettled(ids.slice(offset, offset + 3).map(async id => ({ id, result: await api<{ thread: Thread; data?: Entry[] }>(`/threads/${encodeURIComponent(id)}?limit=20`, undefined, controller.signal) })));
           for (let index = 0; index < details.length; index++) {
             const detail = details[index], id = ids[offset + index];
-            if (detail.status === "rejected") { failures.push(`Could not read ${id === motherId ? "Mother" : "an agent"}: ${detail.reason instanceof Error ? detail.reason.message : String(detail.reason)}`); continue; }
+            if (detail.status === "rejected") { failures.push(`Could not read ${id === motherId ? "Mother agent" : "an agent"}: ${detail.reason instanceof Error ? detail.reason.message : String(detail.reason)}`); continue; }
             const { result } = detail.value;
-            if (result.thread?.id !== id) { failures.push(`Could not read ${id === motherId ? "Mother’s" : "an agent’s"} current status.`); continue; }
+            if (result.thread?.id !== id) { failures.push(`Could not read ${id === motherId ? "Mother agent’s" : "an agent’s"} current status.`); continue; }
             merged.set(id, { ...merged.get(id), ...result.thread });
             const observedReport = report(result.data ?? []);
             if (!observedReport) continue;
             const { text: said } = observedReport, at = observedReport.at || (result.thread.updatedAt ?? 0) * 1000;
             const card = runCard(said), text = card ? [card.heading, card.summary].filter(Boolean).join(": ") : said;
-            const labelled = `${id === motherId ? "Mother" : result.thread.name || result.thread.workflowTaskTitle || "Agent"}: ${text.length > 650 ? `${text.slice(0, 650)}…` : text}`;
+            const labelled = `${id === motherId ? "Mother agent" : result.thread.name || result.thread.workflowTaskTitle || "Agent"}: ${text.length > 650 ? `${text.slice(0, 650)}…` : text}`;
             if (id === motherId) motherReport = labelled;
             else if (at >= latestAt) { latestAt = at; latest = labelled; }
           }
@@ -148,13 +148,13 @@ export function WorkflowProgress({ run, team, onOpenChat, onRefresh, compact = f
       <Button variant="ghost" size="sm" disabled={team.loading} onClick={onRefresh ?? team.refresh} aria-label="Refresh live progress">Refresh progress</Button>
     </div>
     <div className="workflow-progress-row">
-      <AgentIdentity id={team.motherId || run.rootThreadId} colourSlot={agentColours.get(team.motherId || run.rootThreadId)} name="Mother" model={team.mother?.model} provider={team.mother?.modelProvider} />
+      <AgentIdentity id={team.motherId || run.rootThreadId} colourSlot={agentColours.get(team.motherId || run.rootThreadId)} name="Mother agent" model={team.mother?.model} provider={team.mother?.modelProvider} />
       <span className="workflow-progress-status" role="status">{status(team.mother)}</span>
-      {team.motherId && <Button variant="ghost" size="sm" onClick={() => onOpenChat(team.motherId!)}>Open Mother chat</Button>}
+      {team.motherId && <Button variant="ghost" size="sm" onClick={() => onOpenChat(team.motherId!)}>Open Mother agent chat</Button>}
     </div>
-    {!run.mother?.assignedThreadId && !run.mother?.sessionId && !compact && <p className="text-xs text-muted-foreground">Mother is the run’s parent chat. No separate supervisor was recorded.</p>}
-    {supervision && <div className="workflow-progress-report space-y-1" role="status" aria-label="Mother supervision">
-      <p className="text-muted-foreground">Mother · {supervisionStatus}</p>
+    {!run.mother?.assignedThreadId && !run.mother?.sessionId && !compact && <p className="text-xs text-muted-foreground">Mother agent is the run’s parent chat. No separate supervisor was recorded.</p>}
+    {supervision && <div className="workflow-progress-report space-y-1" role="status" aria-label="Mother agent supervision">
+      <p className="text-muted-foreground">Mother agent · {supervisionStatus}</p>
       {supervision.summary && <p>{supervision.summary}</p>}
       {supervision.reasons && <p className="text-xs text-muted-foreground">{Array.isArray(supervision.reasons) ? supervision.reasons.join("; ") : supervision.reasons}</p>}
     </div>}

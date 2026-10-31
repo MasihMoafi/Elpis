@@ -51,7 +51,7 @@ test('a cycle wholly among removed agents terminates and reconnects each survivi
   assert.ok(has(result.graph, 'a', 'd'));
 });
 
-test('Mother remains protected and new dotted links count while existing roots do not', () => {
+test('Mother agent remains protected and new dotted links count while existing roots do not', () => {
   const before = graph([edge('a', 'b'), edge('a', 'c')]);
   before.nodes.unshift({ id: '__mother__', type: 'mother', position: { x: 0, y: 0 }, data: {} });
   const result = deleteKeepingFlow(before, ['a', '__mother__']);

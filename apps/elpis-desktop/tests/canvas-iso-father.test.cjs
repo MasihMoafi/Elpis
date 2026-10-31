@@ -4,13 +4,13 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { openCanvas } = require('./canvas-fixture.cjs');
 
-test('isometric: the Father and his wires past ten agents, and two-way wires without arrows', async () => {
+test('isometric: the Father agent and his wires past ten agents, and two-way wires without arrows', async () => {
   const { page, canvas, node, agentCount, fit, errors, close } = await openCanvas();
   try {
     const off = () => page.evaluate(() => document.activeElement?.blur());
     await agentCount(4, 'the default board');
-    await canvas.getByRole('button', { name: 'Mother', exact: true }).click();
-    await canvas.getByRole('complementary', { name: 'Mother', exact: true }).getByRole('textbox', { name: 'Max agents', exact: true }).fill('13');
+    await canvas.getByRole('button', { name: 'Mother agent', exact: true }).click();
+    await canvas.getByRole('complementary', { name: 'Mother agent', exact: true }).getByRole('textbox', { name: 'Max agents', exact: true }).fill('13');
     await off(); await page.keyboard.press('Tab');
     await canvas.getByRole('dialog', { name: 'Add agents', exact: true }).getByRole('textbox', { name: 'Command', exact: true }).waitFor();
     await page.keyboard.type(`9: ${Array.from({ length: 9 }, (_, index) => `Task ${index + 1}`).join('; ')}`);
@@ -25,25 +25,25 @@ test('isometric: the Father and his wires past ten agents, and two-way wires wit
     await page.keyboard.up('Alt');
     await canvas.locator('.react-flow__edge.canvas-edge-alongside').waitFor();
     const flatFatherWires = await canvas.locator('.react-flow__edge[data-id^="father->"]').count();
-    assert.ok(flatFatherWires > 0, 'the flat board has the Father starting his agents');
+    assert.ok(flatFatherWires > 0, 'the flat board has the Father agent starting his agents');
 
     await canvas.getByRole('radiogroup', { name: 'Workflows view', exact: true }).getByRole('radio', { name: 'Isometric', exact: true }).click();
     const board = canvas.getByRole('region', { name: 'Isometric board', exact: true }); await board.waitFor();
     // The Father stands on his own pillar, under the Mother, and starts the same agents as on the flat board.
-    const father = board.getByRole('button', { name: /^Father:/ });
-    assert.equal(await father.count(), 1, 'the Father is on the isometric board');
+    const father = board.getByRole('button', { name: /^Father agent:/ });
+    assert.equal(await father.count(), 1, 'the Father agent is on the isometric board');
     assert.match(await father.getAttribute('aria-label'), /his own chat, 3 agents/);
     assert.equal(await board.locator('.iso-link[data-father]').count(), flatFatherWires, 'his wires, as on the flat board');
-    assert.equal(await board.locator('.iso-link[data-mother]:not(.iso-mother-trunk)').count(), 10, 'the Mother starts only her ten');
+    assert.equal(await board.locator('.iso-link[data-mother]:not(.iso-mother-trunk)').count(), 10, 'the Mother agent starts only her ten');
     assert.equal(await board.locator('.iso-mother-trunk').count(), 1, 'all ten share one trunk');
-    assert.equal(await board.locator('.iso-label[data-for="father"]').innerText(), 'Father');
+    assert.equal(await board.locator('.iso-label[data-for="father"]').innerText(), 'Father agent');
     // The two-way wire shows, with no chevrons.
     const twoWay = board.locator('.iso-link[data-kind="alongside"]');
     assert.equal(await twoWay.count(), 1, 'the two-way wire is drawn');
     assert.equal(await twoWay.locator('.iso-chevron').count(), 0, 'no arrows on a two-way wire');
     // Clicking the Father names him in the status panel.
     await father.click();
-    assert.match(await board.getByRole('region', { name: 'Agent status' }).innerText(), /Father[\s\S]*His own chat · 3 agents/);
+    assert.match(await board.getByRole('region', { name: 'Agent status' }).innerText(), /Father agent[\s\S]*His own chat · 3 agents/);
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });

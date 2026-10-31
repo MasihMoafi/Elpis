@@ -42,7 +42,7 @@ for (const middle of [false, true]) test(`bottom + adds only a successor: ${midd
       const made = saved.nodes.filter(n => !beforeIds.has(n.id) && n.type === 'agent');
       assert.equal(made.length, 1, 'one click adds exactly one agent');
       const id = made[0].id; added.push(id);
-      assert.deepEqual(saved.edges.filter(e => e.source === id || e.target === id), [wire('Start', id)], 'only Start → new: no inherited inputs, outputs or Mother link');
+      assert.deepEqual(saved.edges.filter(e => e.source === id || e.target === id), [wire('Start', id)], 'only Start → new: no inherited inputs, outputs or Mother agent link');
       assert.deepEqual(saved.edges.filter(e => !added.includes(e.source) && !added.includes(e.target)), original.edges, 'existing links stay intact');
       assert.deepEqual(saved.nodes.filter(n => original.nodes.some(old => old.id === n.id)).map(n => n.position), original.nodes.map(n => n.position), 'quick creation preserves the existing layout');
       assert.ok(made[0].position.x > original.nodes[0].position.x, 'the successor occupies the next column');
@@ -188,13 +188,13 @@ test('keep-flow bridges alongside and feedback chains, reports links, Undo resto
   } finally { await f.close(); }
 });
 
-test('keep-flow reconnects the implicit Mother and does not duplicate an existing survivor link', async () => {
-  const f = await openCanvas({ graph: { name: 'Mother flow', nodes: ['Answer 3', 'Output 1', 'Output 2'].map((id, i) => agent(id, i * 260)), edges: [wire('Answer 3', 'Output 1'), wire('Answer 3', 'Output 2')] } });
+test('keep-flow reconnects the implicit Mother agent and does not duplicate an existing survivor link', async () => {
+  const f = await openCanvas({ graph: { name: 'Mother agent flow', nodes: ['Answer 3', 'Output 1', 'Output 2'].map((id, i) => agent(id, i * 260)), edges: [wire('Answer 3', 'Output 1'), wire('Answer 3', 'Output 2')] } });
   try {
     await f.fit(); await f.node('Answer 3').click(); await f.page.keyboard.press('Control+Delete');
     await f.canvas.getByRole('status').filter({ hasText: 'Deleted Answer 3 · kept 2 links' }).waitFor();
     assert.equal(await f.canvas.locator('.canvas-edge-mother').count(), 2);
-    assert.equal((await f.saved()).edges.length, 0, 'Mother remains implicit');
+    assert.equal((await f.saved()).edges.length, 0, 'Mother agent remains implicit');
   } finally { await f.close(); }
 });
 

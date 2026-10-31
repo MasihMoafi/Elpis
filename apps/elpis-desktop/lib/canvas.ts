@@ -304,7 +304,7 @@ export function makesLoop(edges: CanvasEdge[], source: string, target: string) {
 /** The graph as the tasks Elpis runs, or what is missing first. Notes are not sent. Each agent is a writer followed by
  * its own check (a verify task, which Elpis requires after every writer, writing only its report); an agent wired after it waits
  * for that check and the original result, so it receives both the answer and its verification. */
-/** The run in its parts: the Mother's tasks, and the Father's (empty within PER_PARENT agents). The Father's part
+/** The run in its parts: the Mother's tasks, and the Father agent's (empty within PER_PARENT agents). The Father's part
  * starts after hers has succeeded, so waiting on her agents is dropped from his tasks. */
 export function runParts(graph: CanvasGraph): { mother: RunTask[]; father: RunTask[] } | { error: string } {
   graph = executionGraph(graph);
@@ -325,7 +325,7 @@ export function runTasks(graph: CanvasGraph): { tasks: RunTask[] } | { error: st
   const ids = new Set(agents.map(node => node.id));
   for (const node of agents) {
     if (!node.data.title.trim()) return { error: "Every agent needs a name." };
-    if (!node.data.instruction.trim()) return { error: `“${node.data.title}” has no prompt: write one, or give the run a goal (Mother) and Elpis fills it in.` };
+    if (!node.data.instruction.trim()) return { error: `“${node.data.title}” has no prompt: write one, or give the run a goal (Mother agent) and Elpis fills it in.` };
     if (node.data.provider && !node.data.model) return { error: `“${node.data.title}” needs a model from its provider.` };
   }
   // Agents working alongside each other must not share a folder: they run at the same time.
@@ -345,7 +345,7 @@ export function runTasks(graph: CanvasGraph): { tasks: RunTask[] } | { error: st
     const alongside = partners.length ? `Working alongside you, at the same time:\n${partners.map(line => `- ${line}`).join("\n")}\nDo not write in their folders; leave them what they need as files in yours.` : "";
     const incoming = graph.edges.filter(edge => edge.target === node.id && byId.has(edge.source));
     const receives = incoming.filter(edge => edge.label?.trim()).map(edge => `Receives “${edge.label!.trim()}” from ${byId.get(edge.source)!.data.title}.`);
-    if (!incoming.some(waits) && graph.motherFlow?.trim()) receives.unshift(`Receives “${graph.motherFlow.trim()}” from Mother.`);
+    if (!incoming.some(waits) && graph.motherFlow?.trim()) receives.unshift(`Receives “${graph.motherFlow.trim()}” from Mother agent.`);
     const criteria = node.data.acceptanceCriteria.length ? node.data.acceptanceCriteria : [DONE];
     const model = { ...(node.data.provider ? { provider: node.data.provider } : {}), ...(node.data.model ? { model: node.data.model } : {}) };
     // A join has no check, so what waits on it waits on the join alone.
