@@ -66,7 +66,7 @@ type PlusActions = { onAttach: () => void; onMention: () => void; onSlash: () =>
 export function PlusMenu({ disabled, attachDisabled, slashDisabled, plan, returnFocus, onAttach, onMention, onSlash, onPlan, onShell, fast }: PlusActions & {
   disabled?: boolean; attachDisabled?: boolean;
   slashDisabled?: boolean; plan: boolean; returnFocus: RefObject<HTMLElement | null>;
-  fast?: { on: boolean; disabled: boolean; onChange: () => void };
+  fast?: { on: boolean; disabled: boolean; onChange: () => void; unavailable?: string };
 }) {
   const [compact, setCompact] = useState(false);
   useEffect(() => {
@@ -89,7 +89,7 @@ export function PlusMenu({ disabled, attachDisabled, slashDisabled, plan, return
       {item(SquareSlash, "Slash commands", slashDisabled ? "Clear the message box first" : "Run a command such as /model or /review", { disabled: slashDisabled, onClick: () => { afterClose.current = onSlash; } })}
       {item(PlanIcon, "Plan mode", plan ? "Turn plan mode off" : "Turn plan mode on", { onClick: () => onPlan(!plan) }, plan)}
       {item(TerminalIcon, "Run as a shell command", "Run a command directly in this project's shell", { onClick: () => { afterClose.current = onShell; } })}
-      {compact && fast && item(Zap, "Fast mode", fast.on ? "Fast is on" : "Fast is off", { disabled: fast.disabled, onClick: fast.onChange }, fast.on)}
+      {compact && fast && item(Zap, "Fast mode", fast.unavailable ?? (fast.on ? "Fast is on" : "Fast is off"), { disabled: fast.disabled, onClick: fast.onChange }, fast.on)}
 
 
     </DropdownMenuContent>

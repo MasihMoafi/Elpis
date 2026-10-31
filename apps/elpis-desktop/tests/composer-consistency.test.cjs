@@ -207,4 +207,10 @@ test('Fast stays on screen, switched off with its reason, when the chat model of
   assert.equal(await fast.isDisabled(), true, 'a model without a Fast tier cannot switch Fast on');
   assert.equal(await fast.getAttribute('aria-pressed'), 'false');
   assert.match(await fast.getAttribute('title'), /not offered for this model/);
+  await f.page.locator('.composer').evaluate(element => { element.style.width = '520px'; });
+  await fast.waitFor({ state: 'hidden' });
+  await f.page.getByRole('button', { name: 'Add files and more' }).click();
+  const item = f.page.getByRole('menuitem', { name: /Fast mode/ });
+  await item.waitFor();
+  assert.match(await item.innerText(), /Not offered for this model/);
 });

@@ -1479,6 +1479,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 @container composer (max-width:520px) {
   .composer-controls { --composer-control-gap:4px; gap:4px; }
 }
+/* A Fast the model does not offer leaves the toolbar in a compact composer; the "+" menu still lists it with its reason. */
+@container composer (max-width:640px) { .composer-right > .fast-toggle[data-unavailable] { display:none; } }
 @container composer (max-width:380px) {
   .composer-right > .fast-toggle { display:none; }
   .composer-controls { flex-wrap:wrap; }
