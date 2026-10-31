@@ -244,7 +244,9 @@ export default function Home() {
     let frame = 0, scrollTimer = 0;
     const fitRows = () => {
       frame = 0;
+      const wasAtEnd = list.scrollTop >= list.scrollHeight - list.clientHeight - .5;
       list.style.maxHeight = "";
+      list.style.marginTop = "";
       list.style.marginBottom = "";
       list.style.minHeight = "";
       let viewport = list.getBoundingClientRect();
@@ -261,7 +263,23 @@ export default function Home() {
           box = firstChat.getBoundingClientRect();
         }
         if (box.top < viewport.top - .5) {
-          list.scrollTop = Math.max(0, list.scrollTop + box.top - viewport.top);
+          if (wasAtEnd) {
+            const firstFull = [...list.querySelectorAll<HTMLElement>(targets)].find(target => {
+              const targetBox = target.getBoundingClientRect();
+              return targetBox.height > 0 && targetBox.top >= viewport.top - .5 && targetBox.bottom <= viewport.bottom + .5;
+            });
+            if (firstFull) {
+              const offset = firstFull.getBoundingClientRect().top - viewport.top;
+              const cap = viewport.height - offset;
+              if (offset > .5 && cap >= firstFull.getBoundingClientRect().height - .5) {
+                list.style.marginTop = `${offset}px`;
+                list.style.maxHeight = `${cap}px`;
+                list.style.marginBottom = "auto";
+                list.scrollTop = list.scrollHeight;
+                viewport = list.getBoundingClientRect();
+              }
+            }
+          } else list.scrollTop = Math.max(0, list.scrollTop + box.top - viewport.top);
           viewport = list.getBoundingClientRect();
         }
       }
@@ -280,6 +298,7 @@ export default function Home() {
       if (cap > 0 && cap < viewport.height - .5) {
         list.style.maxHeight = `${cap}px`;
         list.style.marginBottom = "auto";
+        if (wasAtEnd) list.scrollTop = list.scrollHeight;
       }
     };
     const schedule = () => {

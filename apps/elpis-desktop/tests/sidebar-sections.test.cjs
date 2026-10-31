@@ -169,9 +169,10 @@ test('long sidebar lists keep every visible chat row whole at rest, through resi
       await page.waitForTimeout(250);
       const lastGeometry = await last.evaluate(row => {
         const rowBox = row.getBoundingClientRect(), listBox = row.closest('.thread-list').getBoundingClientRect();
-        return { visible: rowBox.top >= listBox.top - .5 && rowBox.bottom <= listBox.bottom + .5, height: rowBox.height, viewport: listBox.height };
+        const list = row.closest('.thread-list');
+        return { visible: rowBox.top >= listBox.top - .5 && rowBox.bottom <= listBox.bottom + .5, height: rowBox.height, top: rowBox.top, bottom: rowBox.bottom, viewport: listBox.height, listTop: listBox.top, listBottom: listBox.bottom, scrollTop: list.scrollTop, maxScroll: list.scrollHeight - list.clientHeight };
       });
-      assert.equal(lastGeometry.visible, true, `the final chat stays reachable as a complete ${lastGeometry.height}px row in the ${lastGeometry.viewport}px list`);
+      assert.equal(lastGeometry.visible, true, `the final chat stays reachable as a complete ${lastGeometry.height}px row at ${height}px: ${JSON.stringify(lastGeometry)}`);
     }
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
