@@ -347,7 +347,7 @@ fn thread_resume_response_round_trips_initial_turns_page() {
             history_mode: Default::default(),
             model_provider: "openai".to_string(),
             model: None,
-            mcp_server_selection: Some(vec!["alpha".to_string()]),
+            mcp_server_selection: Some(Some(vec!["alpha".to_string()])),
             reasoning_effort: None,
             created_at: 1,
             updated_at: 1,
@@ -390,6 +390,17 @@ fn thread_resume_response_round_trips_initial_turns_page() {
 
     let value = serde_json::to_value(&response).expect("serialize thread resume response");
     assert_eq!(value["thread"]["originator"], json!("future_client"));
+    assert_eq!(value["thread"]["mcpServerSelection"], json!(["alpha"]));
+    let mut default_selection_thread = response.thread.clone();
+    default_selection_thread.mcp_server_selection = Some(None);
+    let default_selection =
+        serde_json::to_value(default_selection_thread).expect("serialize global default selection");
+    assert_eq!(default_selection["mcpServerSelection"], Value::Null);
+    let mut unknown_selection_thread = response.thread.clone();
+    unknown_selection_thread.mcp_server_selection = None;
+    let unknown_selection =
+        serde_json::to_value(unknown_selection_thread).expect("serialize unknown selection");
+    assert!(unknown_selection.get("mcpServerSelection").is_none());
     assert_eq!(
         value["thread"]["environments"],
         json!([{
@@ -424,7 +435,7 @@ fn thread_resume_response_round_trips_initial_turns_page() {
     assert_eq!(legacy_thread.originator, None);
     assert_eq!(
         legacy_thread.mcp_server_selection,
-        Some(vec!["alpha".to_string()])
+        Some(Some(vec!["alpha".to_string()]))
     );
 
     assert_eq!(

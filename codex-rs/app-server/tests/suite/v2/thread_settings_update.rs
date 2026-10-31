@@ -319,7 +319,7 @@ async fn mcp_server_selection_updates_the_model_visible_catalog() -> Result<()> 
         timeout(DEFAULT_TIMEOUT, app.read_response(read_request_id)).await??;
     assert_eq!(
         read.thread.mcp_server_selection,
-        Some(vec!["alpha".to_string()])
+        Some(Some(vec!["alpha".to_string()]))
     );
     start_text_turn(&mut app, thread.id.clone()).await?;
     timeout(DEFAULT_TIMEOUT, app.read_notification("turn/completed")).await??;
@@ -349,7 +349,7 @@ async fn mcp_server_selection_updates_the_model_visible_catalog() -> Result<()> 
         timeout(DEFAULT_TIMEOUT, app.read_response(read_request_id)).await??;
     assert_eq!(
         read.thread.mcp_server_selection,
-        Some(vec!["alpha".to_string()])
+        Some(Some(vec!["alpha".to_string()]))
     );
     start_text_turn(&mut app, thread.id.clone()).await?;
     timeout(DEFAULT_TIMEOUT, app.read_notification("turn/completed")).await??;
@@ -400,7 +400,10 @@ async fn mcp_server_selection_restores_on_resume_and_inherited_fork() -> Result<
             ..Default::default()
         })
         .await?;
-    assert_eq!(started.thread.mcp_server_selection, Some(start_selection));
+    assert_eq!(
+        started.thread.mcp_server_selection,
+        Some(Some(start_selection))
+    );
     send_thread_settings_update(
         &mut app,
         ThreadSettingsUpdateParams {
@@ -426,6 +429,16 @@ async fn mcp_server_selection_restores_on_resume_and_inherited_fork() -> Result<
         .with_codex_home(codex_home.path())
         .build_initialized_with_timeout(DEFAULT_TIMEOUT)
         .await?;
+    let unloaded_read_id = app
+        .send_thread_read_request(ThreadReadParams {
+            thread_id: thread_id.clone(),
+            include_turns: Some(false),
+            ..Default::default()
+        })
+        .await?;
+    let unloaded: ThreadReadResponse =
+        timeout(DEFAULT_TIMEOUT, app.read_response(unloaded_read_id)).await??;
+    assert_eq!(unloaded.thread.mcp_server_selection, None);
     let resume_request_id = app
         .send_thread_resume_request(ThreadResumeParams {
             thread_id: thread_id.clone(),
@@ -436,7 +449,7 @@ async fn mcp_server_selection_restores_on_resume_and_inherited_fork() -> Result<
         timeout(DEFAULT_TIMEOUT, app.read_response(resume_request_id)).await??;
     assert_eq!(
         resumed.thread.mcp_server_selection,
-        Some(selected_names.clone())
+        Some(Some(selected_names.clone()))
     );
 
     let fork_request_id = app
@@ -447,7 +460,10 @@ async fn mcp_server_selection_restores_on_resume_and_inherited_fork() -> Result<
         .await?;
     let forked: ThreadForkResponse =
         timeout(DEFAULT_TIMEOUT, app.read_response(fork_request_id)).await??;
-    assert_eq!(forked.thread.mcp_server_selection, Some(selected_names));
+    assert_eq!(
+        forked.thread.mcp_server_selection,
+        Some(Some(selected_names))
+    );
 
     let empty_fork_request_id = app
         .send_thread_fork_request(ThreadForkParams {
@@ -458,7 +474,10 @@ async fn mcp_server_selection_restores_on_resume_and_inherited_fork() -> Result<
         .await?;
     let empty_fork: ThreadForkResponse =
         timeout(DEFAULT_TIMEOUT, app.read_response(empty_fork_request_id)).await??;
-    assert_eq!(empty_fork.thread.mcp_server_selection, Some(Vec::new()));
+    assert_eq!(
+        empty_fork.thread.mcp_server_selection,
+        Some(Some(Vec::new()))
+    );
 
     let default_fork_request_id = app
         .send_thread_fork_request(ThreadForkParams {
@@ -469,7 +488,7 @@ async fn mcp_server_selection_restores_on_resume_and_inherited_fork() -> Result<
         .await?;
     let default_fork: ThreadForkResponse =
         timeout(DEFAULT_TIMEOUT, app.read_response(default_fork_request_id)).await??;
-    assert_eq!(default_fork.thread.mcp_server_selection, None);
+    assert_eq!(default_fork.thread.mcp_server_selection, Some(None));
     Ok(())
 }
 

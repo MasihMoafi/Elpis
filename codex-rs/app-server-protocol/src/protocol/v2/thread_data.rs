@@ -245,9 +245,15 @@ pub struct Thread {
     /// Null when unavailable. This is not per-turn execution telemetry.
     pub model: Option<String>,
     /// Thread-owned MCP server names. `null` uses the global default; an empty list selects none.
-    #[serde(default)]
+    /// Omitted when a metadata-only read cannot recover the latest settings from history.
+    #[serde(
+        default,
+        deserialize_with = "crate::protocol::serde_helpers::deserialize_double_option",
+        serialize_with = "crate::protocol::serde_helpers::serialize_double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     #[ts(optional = nullable)]
-    pub mcp_server_selection: Option<Vec<String>>,
+    pub mcp_server_selection: Option<Option<Vec<String>>>,
     /// Current configured reasoning effort when loaded, otherwise the latest persisted effort.
     /// Null when unset or unavailable. This is not per-turn execution telemetry.
     pub reasoning_effort: Option<ReasoningEffort>,
@@ -321,8 +327,11 @@ struct ThreadCompatibility {
     history_mode: ThreadHistoryMode,
     model_provider: String,
     model: Option<String>,
-    #[serde(default)]
-    mcp_server_selection: Option<Vec<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::protocol::serde_helpers::deserialize_double_option"
+    )]
+    mcp_server_selection: Option<Option<Vec<String>>>,
     reasoning_effort: Option<ReasoningEffort>,
     created_at: i64,
     updated_at: i64,

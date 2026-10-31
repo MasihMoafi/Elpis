@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       verification:
-        description: 'Compiler, UI-only, full runtime validation, or build-only install package'
+        description: 'Compiler, schema-only, UI-only, full runtime validation, or build-only install package'
         required: true
         default: full
         type: choice
-        options: [check, ui, full, build]
+        options: [check, schemas, ui, full, build]
   push:
     tags: ['v*']
     branches: [next]
@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   schemas:
-    if: github.event_name == 'workflow_dispatch' && inputs.verification == 'check'
+    if: github.event_name == 'workflow_dispatch' && (inputs.verification == 'check' || inputs.verification == 'schemas')
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -250,6 +250,10 @@ jobs:
           # Test harness binaries also need the pinned sandbox on PATH.
           echo "$PWD/target/release/codex-resources" >> "$GITHUB_PATH"
           test "$(target/release/elpis --version)" = "elpis $ELPIS_VERSION"
+      - name: Run native MCP selection catalog regressions for the release source
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification == 'build' }}
+        working-directory: codex-rs
+        run: cargo test --locked -p codex-app-server --test all -- mcp_server_selection_
       - name: Record diagnostic runtime provenance
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
         working-directory: codex-rs/target/release

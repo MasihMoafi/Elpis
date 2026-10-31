@@ -118,7 +118,7 @@ pub(crate) async fn run_codex_thread_interactive(
         extensions,
         conversation_history,
         disabled_plugin_ids: None,
-        mcp_server_selection,
+        mcp_server_selection: Some(mcp_server_selection),
         requested_history_mode: None,
         fork_persistence: ForkPersistence::Copied,
         session_source,

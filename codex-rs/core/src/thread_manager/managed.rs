@@ -63,6 +63,7 @@ impl ThreadManager {
                     options,
                     /*forked_from_thread_id*/ None,
                     Some(Arc::clone(&startup)),
+                    None,
                 );
                 tokio::select! {
                     biased;

@@ -6515,7 +6515,7 @@ fn build_thread_from_snapshot(
         history_mode: config_snapshot.history_mode.into(),
         model_provider: config_snapshot.model_provider_id.clone(),
         model: Some(config_snapshot.model.clone()),
-        mcp_server_selection: config_snapshot.mcp_server_selection.clone(),
+        mcp_server_selection: Some(config_snapshot.mcp_server_selection.clone()),
         reasoning_effort: config_snapshot.reasoning_effort.clone(),
         created_at: now,
         updated_at: now,

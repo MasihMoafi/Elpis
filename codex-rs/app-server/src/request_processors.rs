@@ -624,6 +624,7 @@ pub(crate) fn apply_live_thread_settings(
     config_snapshot: &ThreadConfigSnapshot,
 ) {
     thread.model = Some(config_snapshot.model.clone());
+    thread.mcp_server_selection = Some(config_snapshot.mcp_server_selection.clone());
     thread.reasoning_effort = config_snapshot.reasoning_effort.clone();
     thread.environments = Some(
         config_snapshot
