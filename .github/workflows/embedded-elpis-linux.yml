@@ -8,7 +8,19 @@ on:
         required: true
         default: full
         type: choice
-        options: [check, ui, full, build, focused, status]
+        options: [check, ui, full, build, focused, status, provenance]
+      runtime_run:
+        description: 'Run containing the runtime and repaint evidence'
+        required: false
+        type: string
+      runtime_source:
+        description: 'Expected runtime build commit'
+        required: false
+        type: string
+      runtime_tree:
+        description: 'Expected codex-rs tree'
+        required: false
+        type: string
   push:
     tags: ['v*']
     branches: [next]
@@ -18,12 +30,67 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: elpis-linux-${{ github.ref }}-${{ (inputs.verification == 'status' || inputs.verification == 'build' || inputs.verification == 'ui' || inputs.verification == 'check') && 'full' || inputs.verification || 'full' }}
   cancel-in-progress: false
 
 jobs:
+  runtime-provenance:
+    if: github.event_name == 'workflow_dispatch' && inputs.verification == 'provenance'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - name: Validate provenance inputs
+        env:
+          RUNTIME_RUN: ${{ inputs.runtime_run }}
+          RUNTIME_SOURCE: ${{ inputs.runtime_source }}
+          RUNTIME_TREE: ${{ inputs.runtime_tree }}
+        run: |
+          [[ "$RUNTIME_RUN" =~ ^[0-9]+$ ]]
+          [[ "$RUNTIME_SOURCE" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$RUNTIME_TREE" =~ ^[0-9a-f]{40}$ ]]
+      - name: Download hosted runtime
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: unverified-diagnostic-runtime
+          path: runtime
+          run-id: ${{ inputs.runtime_run }}
+          github-token: ${{ github.token }}
+      - name: Download hosted repaint evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: t10-tmux-repaint
+          path: captures
+          run-id: ${{ inputs.runtime_run }}
+          github-token: ${{ github.token }}
+      - name: Verify source, checksums and tested binary
+        env:
+          RUNTIME_SOURCE: ${{ inputs.runtime_source }}
+          RUNTIME_TREE: ${{ inputs.runtime_tree }}
+        run: |
+          set -euo pipefail
+          test "$(cat runtime/runtime-source.txt)" = "$RUNTIME_SOURCE"
+          git fetch --no-tags --depth=1 origin "$RUNTIME_SOURCE"
+          test "$(git rev-parse "$RUNTIME_SOURCE:codex-rs")" = "$RUNTIME_TREE"
+          (cd runtime && sha256sum -c runtime-SHA256SUMS)
+          python3 - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          digest = hashlib.sha256()
+          with Path('runtime/elpis').open('rb') as binary:
+              for chunk in iter(lambda: binary.read(1024 * 1024), b''):
+                  digest.update(chunk)
+          result = json.loads(Path('captures/result.json').read_text())
+          assert digest.hexdigest() == result['binarySha256']
+          assert result['binaryUnchanged'] and len(result['cases']) == 4
+          assert all(case['requests'] == 4 and not case['errors'] for case in result['cases'])
+          print(f"Runtime SHA-256: {digest.hexdigest()}")
+          print('All four repaint cases used the uploaded binary')
+          PY
+
   tui-status:
     if: github.event_name == 'workflow_dispatch' && inputs.verification == 'status'
     runs-on: ubuntu-24.04
