@@ -2059,7 +2059,8 @@ wss.on("connection", (ws) => {
       ws.send(JSON.stringify(parsed));
       return;
     }
-    ws.send(helpersMarked ? JSON.stringify(parsed) : line);
+    const deletingNotification = parsed?.method === "thread/deleted" && deletingThreads.has(parsed.params?.threadId);
+    if (!deletingNotification) ws.send(helpersMarked ? JSON.stringify(parsed) : line);
     if (reopened) replayPlan(reopened);
   });
 
@@ -3106,7 +3107,7 @@ wss.on("connection", (ws) => {
         deletedThreads.add(id);
         for (const c of contexts) c.forgetThread(id);
         providerOwners.delete(id); chatAccess.delete(id); helperScope.delete(id); helperThreads.delete(id);
-        if (!nativeDeleted) notify("thread/deleted", { threadId: id });
+        notify("thread/deleted", { threadId: id });
         for (const watched of subscriptions.values()) watched.delete(id);
       }
       if (!await updateStore(() => {})) throw new Error("The native chat was deleted, but bridge history could not be removed. Retry deletion.");
