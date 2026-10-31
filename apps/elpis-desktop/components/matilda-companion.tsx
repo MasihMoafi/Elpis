@@ -217,7 +217,7 @@ export function MatildaCompanion() {
       <Button variant="ghost" size="icon-xs" aria-label="Unpin Matilda" aria-pressed="true" onClick={() => void act("unpin")}><PinIcon size={16} /></Button>
     </div>
   </section>;
-  return <div className="ml-auto flex min-w-0 shrink-0 items-center gap-1 pr-2">
+  return <div className="flex min-w-0 shrink-0 items-center gap-1 pr-2">
     {floating ? createPortal(floating, document.body) : <Button variant="ghost" size="icon-sm" aria-label="Pin Matilda" title="Pin Matilda" disabled={busy} onClick={() => void act("pin")}><img className="matilda-pin-face" src={MATILDA_SHOTS.softSmile} alt="" /></Button>}
     {error && <p role="alert" className="fixed bottom-4 right-4 z-50 max-w-sm border border-border bg-background p-2 text-xs text-destructive">{error}</p>}
   </div>;

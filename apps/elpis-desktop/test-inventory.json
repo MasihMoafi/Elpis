@@ -359,6 +359,7 @@
     "tests/love-spot-voice.test.cjs",
     "tests/workflow-notice.test.cjs",
     "tests/matilda-companion.test.cjs",
+    "tests/matilda-titlebar-layout.test.cjs",
     "tests/matilda-pet.test.cjs",
     "tests/matilda-music.test.cjs",
     "tests/matilda-badge.test.cjs",
