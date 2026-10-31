@@ -25,7 +25,7 @@ for (const colorScheme of ['light', 'dark']) test(`Working stays with the compos
         hollow: getComputedStyle(mark.querySelector('path')).fill, stroke: getComputedStyle(mark.querySelector('path')).strokeWidth, rotation: getComputedStyle(mark.querySelector('.elpis-working-rotor')).animationDuration, blink: getComputedStyle(mark.querySelector('.elpis-working-dot')).animationDuration };
     });
     assert.ok(Math.abs(m.x - m.composerX) <= 1, `${label}: horizontal drift ${JSON.stringify(m)}`);
-    assert.ok(Math.abs(m.gap - 14) <= 1, `${label}: vertical drift ${JSON.stringify(m)}`);
+    assert.ok(Math.abs(m.gap - 18) <= 1, `${label}: vertical drift ${JSON.stringify(m)}`);
     assert.equal(m.count, 1, `${label}: exactly one live status`);
     assert.equal(m.transform, 'none', `${label}: the status row never rotates or translates`);
     assert.ok(m.icon.every(n => Math.abs(n - 18) < 1), `${label}: the approved mark stays 18px`);

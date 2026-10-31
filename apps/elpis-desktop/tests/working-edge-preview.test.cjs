@@ -1,4 +1,4 @@
-// Preview only: do not change the accepted Working placement without Masih's selection.
+// The 31 October preview: retain the composer anchor while edge opacity changes.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');

@@ -113,7 +113,7 @@ for (const colorScheme of ['light', 'dark']) {
       const [w, c] = [await working.boundingBox(), await page.locator('form.composer').boundingBox()];
       const gap = c.y - (w.y + w.height);
       await capture(page, `working-row-${colorScheme}`, around([w, c], 16));
-      assert.ok(gap >= 13 && gap <= 15, `Working row to composer: ${gap}px (wanted 14px after moving the row 2px higher)`);
+      assert.ok(gap >= 17 && gap <= 19, `Working row to composer: ${gap}px (wanted 18px after the approved 1 mm lift)`);
       assert.deepEqual(f.errors, []);
     } finally { await f.close(); }
   });

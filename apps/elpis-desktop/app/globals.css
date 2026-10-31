@@ -698,7 +698,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .composer-working { width:100%; max-width:var(--transcript-width,740px); margin-inline:auto; }
 .composer-working:empty { display:none; }
 .composer-working > .turn-working { margin:0 0 18px; }
-/* Preview only: raise the accepted Working placement by another 4px. */
+/* Raised about 1 mm after the 31 October preview; the composer remains its anchor. */
 .turn:has(> .turn-working) { margin-bottom:0; }
 .chat-scroll:has(.turn-working) { padding-bottom:8px; }
 .sh-command { color:var(--sh-command); }
