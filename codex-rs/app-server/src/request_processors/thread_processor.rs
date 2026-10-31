@@ -1267,7 +1267,7 @@ impl ThreadRequestProcessor {
 
         if config
             .as_ref()
-            .is_some_and(config_overrides_user_mcp_server_definitions)
+            .is_some_and(Self::config_overrides_user_mcp_server_definitions)
         {
             return Err(invalid_request(
                 "MCP server definitions and credentials must come from global config".to_string(),
@@ -1801,23 +1801,23 @@ impl ThreadRequestProcessor {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
-fn config_overrides_user_mcp_server_definitions(
-    config: &HashMap<String, serde_json::Value>,
-) -> bool {
-    config.iter().any(|(key, value)| {
-        if key == "mcp_servers" {
-            return value.as_object().is_some_and(|servers| {
-                servers.keys().any(|name| name != "elpis-agents")
-            });
-        }
-        key.strip_prefix("mcp_servers.")
-            .and_then(|name| name.split('.').next())
-            .is_some_and(|name| name != "elpis-agents")
-    })
-}
+    fn config_overrides_user_mcp_server_definitions(
+        config: &HashMap<String, serde_json::Value>,
+    ) -> bool {
+        config.iter().any(|(key, value)| {
+            if key == "mcp_servers" {
+                return value
+                    .as_object()
+                    .is_some_and(|servers| servers.keys().any(|name| name != "elpis-agents"));
+            }
+            key.strip_prefix("mcp_servers.")
+                .and_then(|name| name.split('.').next())
+                .is_some_and(|name| name != "elpis-agents")
+        })
+    }
 
-fn build_thread_config_overrides(
+    #[allow(clippy::too_many_arguments)]
+    fn build_thread_config_overrides(
         &self,
         model: Option<String>,
         model_provider: Option<String>,
@@ -3840,7 +3840,7 @@ fn build_thread_config_overrides(
         if params
             .config
             .as_ref()
-            .is_some_and(config_overrides_user_mcp_server_definitions)
+            .is_some_and(Self::config_overrides_user_mcp_server_definitions)
         {
             return Err(invalid_request(
                 "MCP server definitions and credentials must come from global config".to_string(),
@@ -5087,7 +5087,7 @@ fn build_thread_config_overrides(
         } = params;
         if cli_overrides
             .as_ref()
-            .is_some_and(config_overrides_user_mcp_server_definitions)
+            .is_some_and(Self::config_overrides_user_mcp_server_definitions)
         {
             return Err(invalid_request(
                 "MCP server definitions and credentials must come from global config".to_string(),

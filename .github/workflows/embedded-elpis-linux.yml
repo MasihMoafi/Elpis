@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       verification:
-        description: 'Compiler, schema-only, UI-only, full runtime validation, or build-only install package'
+        description: 'Compiler, native compiler, schema-only, UI-only, full runtime validation, or build-only install package'
         required: true
         default: full
         type: choice
-        options: [check, schemas, ui, full, build]
+        options: [check, native-check, schemas, ui, full, build]
   push:
     tags: ['v*']
     branches: [next]
@@ -75,7 +75,7 @@ jobs:
           key: ${{ steps.schema_cache.outputs.cache-primary-key }}
 
   check:
-    if: github.event_name == 'workflow_dispatch' && inputs.verification == 'check'
+    if: github.event_name == 'workflow_dispatch' && (inputs.verification == 'check' || inputs.verification == 'native-check')
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
@@ -130,8 +130,13 @@ jobs:
         run: |
           bash scripts/restore-cargo-cache-source-times.sh "$CACHE_KEY"
       - name: Check core, UI, CLI and their tests
+        if: inputs.verification == 'check'
         working-directory: codex-rs
         run: cargo check --locked --tests -p codex-core -p codex-tui -p codex-cli -p codex-app-server
+      - name: Check the native app server and its tests
+        if: inputs.verification == 'native-check'
+        working-directory: codex-rs
+        run: cargo check --locked --tests -p codex-app-server
       - name: Run native MCP selection catalog regressions
         working-directory: codex-rs
         run: cargo test --locked -p codex-app-server --test all -- mcp_server_selection_
@@ -227,6 +232,8 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Provider history and message retention checks
         run: |
+          mkdir -p apps/elpis-desktop/bridge/resources
+          cp tools/elpis-claude/permission-policy.mjs apps/elpis-desktop/bridge/resources/permission-policy.mjs
           node scripts/store-guard.test.cjs
           node scripts/history-list.test.cjs
           node --test tools/elpis-claude/test/resume-list.test.mjs
@@ -440,7 +447,6 @@ jobs:
           mkdir -p apps/elpis-desktop/bridge/resources
           cp codex-rs/core/src/prompts/rag.md apps/elpis-desktop/bridge/resources/rag.md
           cp codex-rs/skills/src/assets/personal/SKILL.md apps/elpis-desktop/bridge/resources/personal.md
-          cp tools/elpis-claude/permission-policy.mjs apps/elpis-desktop/bridge/resources/permission-policy.mjs
           node --test --test-reporter=tap tools/elpis-claude/test/claude-turn-record.test.mjs tools/elpis-claude/test/turn-delivery.test.mjs | tee "$RUNNER_TEMP/elpis-claude-turn-checks.log"
           for attempt in {1..10}; do
             node --test --test-reporter=tap --test-name-pattern='a bridge restart recovers' tools/elpis-claude/test/turn-delivery.test.mjs > "$RUNNER_TEMP/elpis-claude-restart-$attempt-checks.log" 2>&1

@@ -849,7 +849,7 @@ impl TurnRequestProcessor {
                 .config_manager
                 .load_for_cwd(None, ConfigOverrides::default(), Some(cwd))
                 .await
-                .map_err(config_load_error)?;
+                .map_err(|err| config_load_error(&err))?;
             if let Some(unknown) = selection
                 .iter()
                 .find(|name| !config.mcp_servers.contains_key(name.as_str()))
