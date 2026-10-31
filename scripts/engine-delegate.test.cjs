@@ -41,6 +41,7 @@ async function main() {
   const home = path.join(root, 'home'), cwd = path.join(root, 'work'), store = path.join(root, 'sessions.json');
   for (const p of [home, cwd]) fs.mkdirSync(p);
   fs.writeFileSync(path.join(home, 'config.toml'), `model="gpt-5.5"\nmodel_provider="fixture"\nthread_unload_delay_secs=1\n[features]\nmulti_agent=true\n[model_providers.fixture]\nname="offline fixture"\nbase_url=${JSON.stringify(provider.url)}\nwire_api="responses"\nrequires_openai_auth=false\nrequest_max_retries=0\nstream_max_retries=0\n`);
+  let alphaFixtureConfig;
   if (mcpInheritanceOnly) {
     const fixture = path.resolve(__dirname, 'mcp-reset-runtime.test.cjs');
     const mcpLog = path.join(root, 'mcp.jsonl');
@@ -53,7 +54,8 @@ async function main() {
       'MCP_RESET_GENERATION = ' + JSON.stringify(name),
       '',
     ].join('\n');
-    fs.appendFileSync(path.join(home, 'config.toml'), '\n' + serverConfig('alpha') + serverConfig('beta'));
+    alphaFixtureConfig = serverConfig('alpha');
+    fs.appendFileSync(path.join(home, 'config.toml'), '\n' + alphaFixtureConfig + serverConfig('beta'));
   }
   const sock = path.join(root, 'bridge.sock');
   const bridge = spawn(process.execPath, [bridgePath], { cwd, env: {
@@ -80,6 +82,7 @@ async function main() {
       { label: 'default', expected: ['alpha', 'beta'] },
       { label: 'empty', selection: [], expected: [] },
       { label: 'alpha', selection: ['alpha'], expected: ['alpha'] },
+      { label: 'stale', selection: ['alpha'], expected: [], remove: 'alpha' },
     ];
     const results = [];
     for (const testCase of cases) {
@@ -88,9 +91,19 @@ async function main() {
       const thread = (await req('thread/start', params)).thread;
       const expectedSelection = Object.hasOwn(testCase, 'selection') ? testCase.selection : null;
       assert.deepEqual(thread.mcpServerSelection, expectedSelection, testCase.label + ': parent selection snapshot');
+      if (testCase.remove === 'alpha') {
+        const configPath = path.join(home, 'config.toml');
+        const current = fs.readFileSync(configPath, 'utf8');
+        assert(current.includes(alphaFixtureConfig), 'alpha fixture must exist before removal');
+        fs.writeFileSync(configPath, current.replace(alphaFixtureConfig, ''));
+        await req('config/mcpServer/reload', null);
+        const parentRead = await req('thread/read', { threadId: thread.id, includeTurns: false });
+        assert.deepEqual(parentRead.thread.mcpServerSelection, ['alpha'], 'removed parent selection stays readable');
+      }
 
       let parentCatalog;
       let childCatalog;
+      let childThreadId;
       const childMarker = 'ENGINE_MCP_INHERITANCE_CHILD_' + testCase.label;
       provider.actions.push(mcpCatalogSearch('parent_' + testCase.label));
       provider.actions.push(body => {
@@ -106,7 +119,11 @@ async function main() {
           assert(JSON.stringify(childBody).includes(childMarker), testCase.label + ': captured a non-child model request');
           return message('Child MCP catalog observed.');
         });
-        provider.actions.push(() => message('Parent turn completed.'));
+        provider.actions.push(body => {
+          childThreadId = JSON.stringify(body.input || []).match(/thread_id=([0-9a-f-]+)/i)?.[1];
+          assert(childThreadId, testCase.label + ': delegate did not return a child thread id');
+          return message('Parent turn completed.');
+        });
         return call('delegate_' + testCase.label, found.name, {
           task: childMarker + ': inspect the available MCP tools, then finish.',
           model: 'gpt-5.5', provider: 'fixture', allow_writes: false,
@@ -131,9 +148,15 @@ async function main() {
       }));
       assert.deepEqual(mcpCatalogServers(parentCatalog), testCase.expected, testCase.label + ': parent model-visible MCP catalog');
       assert.deepEqual(mcpCatalogServers(childCatalog), testCase.expected, testCase.label + ': delegated child model-visible MCP catalog');
+      let child = (await req('thread/read', { threadId: childThreadId, includeTurns: false })).thread;
+      if (!Object.hasOwn(child, 'mcpServerSelection')) {
+        child = (await req('thread/resume', { threadId: childThreadId, excludeTurns: true })).thread;
+      }
+      assert.deepEqual(child.mcpServerSelection, expectedSelection, testCase.label + ': child selection snapshot');
       results.push({
         selection: Object.hasOwn(testCase, 'selection') ? testCase.selection : 'omitted',
         parentSelectionSnapshot: thread.mcpServerSelection,
+        childSelectionSnapshot: child.mcpServerSelection,
         parentCatalog,
         childCatalog,
       });
