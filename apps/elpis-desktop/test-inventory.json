@@ -284,6 +284,7 @@
     "tests/sidebar-focus.test.cjs",
     "tests/sidebar-groups.test.cjs",
     "tests/sidebar-indent.test.cjs",
+    "tests/working-edge-preview.test.cjs",
     "tests/sidebar-creators.test.cjs",
     "tests/sidebar-sections.test.cjs",
     "tests/sidebar-chevron-column.test.cjs",
