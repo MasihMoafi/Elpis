@@ -355,6 +355,30 @@
             },
             "method": {
               "enum": [
+                "thread/subscribe"
+              ],
+              "title": "Thread/subscribeRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/v2/ThreadReadParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "Thread/subscribeRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/v2/RequestId"
+            },
+            "method": {
+              "enum": [
                 "thread/unsubscribe"
               ],
               "title": "Thread/unsubscribeRequestMethod",
@@ -2636,6 +2660,54 @@
             "params"
           ],
           "title": "Config/readRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/v2/RequestId"
+            },
+            "method": {
+              "enum": [
+                "claudeAccounts/read"
+              ],
+              "title": "ClaudeAccounts/readRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/v2/ClaudeAccountsReadParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "ClaudeAccounts/readRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/v2/RequestId"
+            },
+            "method": {
+              "enum": [
+                "claudeAccounts/write"
+              ],
+              "title": "ClaudeAccounts/writeRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/v2/ClaudeAccountsWriteParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "ClaudeAccounts/writeRequest",
           "type": "object"
         },
         {
@@ -8642,6 +8714,153 @@
             "type": "object"
           }
         ]
+      },
+      "ClaudeAccount": {
+        "properties": {
+          "authenticated": {
+            "type": "boolean"
+          },
+          "duplicate": {
+            "type": "boolean"
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "plan": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "signingIn": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "authenticated",
+          "duplicate",
+          "id",
+          "label",
+          "signingIn"
+        ],
+        "type": "object"
+      },
+      "ClaudeAccountsReadParams": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "title": "ClaudeAccountsReadParams",
+        "type": "object"
+      },
+      "ClaudeAccountsReadResponse": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "accounts": {
+            "items": {
+              "$ref": "#/definitions/v2/ClaudeAccount"
+            },
+            "type": "array"
+          },
+          "activeId": {
+            "type": "string"
+          },
+          "authUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "accounts",
+          "activeId"
+        ],
+        "title": "ClaudeAccountsReadResponse",
+        "type": "object"
+      },
+      "ClaudeAccountsWriteParams": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "enum": [
+                  "select"
+                ],
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "action",
+              "id"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "enum": [
+                  "login"
+                ],
+                "type": "string"
+              },
+              "id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "action"
+            ],
+            "title": "Actionv2::ClaudeAccountsWriteParams",
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "enum": [
+                  "code"
+                ],
+                "type": "string"
+              },
+              "code": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "action",
+              "code",
+              "id"
+            ],
+            "type": "object"
+          }
+        ],
+        "title": "ClaudeAccountsWriteParams"
       },
       "CliAuthCredentialsStoreMode": {
         "enum": [
@@ -18138,6 +18357,19 @@
           "recencyAt"
         ],
         "type": "string"
+      },
+      "PrunerPromptEdit": {
+        "additionalProperties": false,
+        "description": "Omitted preserves the prompt; an explicit null inside this edit restores the default.",
+        "properties": {
+          "systemPrompt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
       },
       "PrunerProviderChoice": {
         "properties": {
