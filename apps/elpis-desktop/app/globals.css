@@ -745,7 +745,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 /* A failed workflow check: its bar, icon, heading and underline take the destructive colour. */
 .plan-card.check-failed { --primary:var(--destructive); --accent-text:var(--destructive); }
 .permissions-auto svg:first-child { color:var(--primary); }
-.permissions-full { color:var(--warning); }
+.permissions-full { color:var(--primary); }
 /* Floating surfaces: menus, list pop-ups (selects, the model picker, slash commands), popovers and dialogs share one
    edge, corner, fill and glow. The components in components/ui apply these classes; callers add only width. */
 .hud-menu, .hud-popover, .hud-dialog { border:1px solid var(--hud-edge); background:var(--card); color:var(--foreground); box-shadow:var(--shadow), var(--glow); }
@@ -775,10 +775,10 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .context-ring { display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; padding:0; border:1px solid transparent; background:transparent; cursor:pointer; }
 .context-ring:hover, .context-ring[data-popup-open] { background:var(--hover); border-color:var(--hairline); }
 .context-ring:focus-visible { outline:1.5px solid var(--ring); outline-offset:1px; }
-/* Claude's context ring: a thin ring filling clockwise, olive (the context colour), amber from 75% and red from 90%. */
+/* Claude's context ring fills clockwise in the theme accent, amber from 75% and red from 90%. */
 .context-ring-icon circle { fill:none; stroke-width:2; }
 .context-ring-icon .context-ring-track { stroke:var(--border); }
-.context-ring-icon .context-ring-fill { stroke:var(--context); stroke-linecap:round; transition:stroke-dashoffset .3s; }
+.context-ring-icon .context-ring-fill { stroke:var(--primary); stroke-linecap:round; transition:stroke-dashoffset .3s; }
 .context-ring-icon[data-level="warning"] .context-ring-fill { stroke:var(--warning); }
 .context-ring-icon[data-level="critical"] .context-ring-fill { stroke:var(--destructive); }
 /* Claude's tooltip on its icon buttons: the text, and a quieter line under it. */

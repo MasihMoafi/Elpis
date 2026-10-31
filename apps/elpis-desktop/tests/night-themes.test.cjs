@@ -126,6 +126,61 @@ test('all seven accents change shared tokens and meet text contrast in both them
   assert.deepEqual(f.errors, []);
 });
 
+test('Full access and healthy context ring use the selected theme accent', async t => {
+  const routes = {
+    '/api/threads/chat-a/context': () => ({
+      threadId: 'chat-a',
+      ledger: { used: 100, window: 1000, categories: [], basis: 'engine' },
+      compact: { available: true },
+    }),
+    '/api/threads/chat-a/permissions': ({ permissions }) => ({ permissions }),
+  };
+  const f = await fixture({ width: 1280, height: 900, routes }), { page } = f; t.after(f.close);
+  await f.open('chat-a');
+  await page.getByRole('button', { name: 'Change permissions', exact: true }).click();
+  await page.getByRole('menuitem', { name: /Full access/ }).click();
+  await page.locator('.context-ring .context-ring-fill').waitFor();
+
+  for (const mode of ['Light', 'Dark']) {
+    await appearance(page);
+    await theme(page, mode);
+    for (const accent of ['teal', ...ACCENTS.filter(accent => accent !== 'teal')]) {
+      await chooseOption(page.getByLabel('Accent colour', { exact: true }), accent);
+      await page.waitForFunction(value => document.documentElement.dataset.accent === value, accent);
+      await leaveSettings(page);
+      const actual = await page.evaluate(() => {
+        const primary = document.createElement('span');
+        primary.style.color = 'var(--primary)'; document.body.append(primary);
+        const expected = getComputedStyle(primary).color; primary.remove();
+        const permission = document.querySelector('.composer-pill.permissions-full');
+        const icons = permission?.querySelectorAll('svg');
+        const ring = document.querySelector('.context-ring .context-ring-fill');
+        return {
+          expected,
+          permission: permission && getComputedStyle(permission).color,
+          lock: icons?.[0] && getComputedStyle(icons[0]).color,
+          caret: icons?.[1] && getComputedStyle(icons[1]).color,
+          ring: ring && getComputedStyle(ring).stroke,
+        };
+      });
+      const label = `${mode} ${accent}`;
+      const exactTeal = mode === 'Light' && accent === 'teal' ? 'rgb(20, 107, 103)' : mode === 'Dark' && accent === 'teal' ? 'rgb(104, 212, 199)' : null;
+      if (exactTeal) {
+        assert.equal(actual.expected, exactTeal, `${label}: selected accent resolves to exact theme teal`);
+        assert.deepEqual({ permission: actual.permission, lock: actual.lock, caret: actual.caret, ring: actual.ring },
+          { permission: exactTeal, lock: exactTeal, caret: exactTeal, ring: exactTeal }, `${label}: rendered controls use exact theme teal`);
+      }
+      assert.equal(actual.permission, actual.expected, `${label}: Full access text uses theme primary`);
+      assert.equal(actual.lock, actual.expected, `${label}: Full access lock uses theme primary`);
+      assert.equal(actual.caret, actual.expected, `${label}: Full access caret uses theme primary`);
+      assert.ok(actual.ring, `${label}: the healthy context ring is rendered`);
+      assert.equal(actual.ring, actual.expected, `${label}: healthy context ring uses theme primary`);
+      await appearance(page);
+    }
+  }
+  assert.deepEqual(f.errors, []);
+});
+
 test('light orange accents keep real chat and Settings text readable, with orange markers and dark fill labels', async t => {
   const f = await fixture({ width: 1280, height: 900, chat: [
     ['t1', 'How does the parser work?', 'The parser runs in **two passes**.\n\n1. Scan the source into tokens.\n2. Build a syntax tree.\n\nSee [the guide](https://example.invalid/guide) for examples.', [], null],
