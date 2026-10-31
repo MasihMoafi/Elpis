@@ -110,7 +110,7 @@ export function runtimeDir(home = homeDir()) {
     if (Buffer.byteLength(sock) > SOCKET_PATH_MAX) continue;
     ensurePrivateDir(base);
     ensurePrivateDir(dir);
-    return { home: real, dir, sock, state: path.join(dir, "state.json"), lock: path.join(dir, "launch.lock"), log: path.join(dir, "daemon.log"), successor: path.join(dir, "successor") };
+    return { home: real, dir, sock, state: path.join(dir, "state.json"), lock: path.join(dir, "launch.lock"), log: path.join(dir, "daemon.log"), successor: path.join(dir, "successor"), successorDirect: path.join(dir, "successor-direct") };
   }
   throw new Error(`no runtime directory with a socket path under ${SOCKET_PATH_MAX} bytes (set XDG_RUNTIME_DIR or TMPDIR to a shorter path)`);
 }
@@ -401,8 +401,9 @@ const sha = (data) => createHash("sha256").update(data).digest("hex");
 // The environment the bridge inherits from the terminal that started it and that changes what it
 // does: network proxy, the Claude and Antigravity programs and adapters, stores and auth homes.
 // Request, working-directory, terminal and log-path variables are incidental and not listed.
+const PROXY_ENV_NAMES = ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy", "no_proxy"];
 const ENV_NAMES = [
-  "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy", "no_proxy",
+  ...PROXY_ENV_NAMES,
   "NODE_USE_ENV_PROXY", "NODE_EXTRA_CA_CERTS",
   "CLAUDE_CODE_EXECUTABLE", "CLAUDE_CONFIG_DIR", "ELPIS_CLAUDE_PRUNE", "ELPIS_CLAUDE_USAGE_URL",
   "ELPIS_NO_AGY", "AGY_BIN", "AGY_DEFAULT_MODEL", "ACP_ADAPTER", "ACP_BRIDGE_STORE", "ACP_BRIDGE_NO_AGENTS", "ELPIS_AGENT_TOOLS",
@@ -478,6 +479,35 @@ async function installedEngine(bundle) {
   return engine;
 }
 
+function writeDirectSuccessor(rt, script) {
+  const tmp = `${rt.successorDirect}.${process.pid}.${randomBytes(8).toString("hex")}`;
+  const fd = fs.openSync(tmp, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | (fs.constants.O_NOFOLLOW ?? 0), 0o600);
+  try { fs.writeFileSync(fd, script); } finally { fs.closeSync(fd); }
+  fs.renameSync(tmp, rt.successorDirect);
+}
+function isDirectSuccessor(rt, script) {
+  let fd;
+  try { fd = fs.openSync(rt.successorDirect, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0)); }
+  catch (error) { if (error.code === "ENOENT") return false; throw new Error("The direct handover marker is invalid."); }
+  try {
+    const st = fs.fstatSync(fd);
+    if (!st.isFile() || st.uid !== process.getuid() || (st.mode & 0o077) || st.size > 4096 || fs.readFileSync(fd, "utf8").trim() !== script) {
+      throw new Error("The direct handover marker is invalid.");
+    }
+    return true;
+  } finally { fs.closeSync(fd); }
+}
+async function managedSuccessorPair(state, identity) {
+  try {
+    const previous = fs.realpathSync(state.engine), next = fs.realpathSync(identity.engine);
+    const oldBundle = path.resolve(path.dirname(previous), "../.."), newBundle = path.resolve(path.dirname(next), "../..");
+    return path.dirname(oldBundle) === path.dirname(newBundle)
+      && fs.realpathSync(path.dirname(state.script)) === fs.realpathSync(path.join(oldBundle, "tools/elpis-claude"))
+      && fs.realpathSync(path.dirname(identity.script)) === fs.realpathSync(path.join(newBundle, "tools/elpis-claude"))
+      && await installedEngine(oldBundle) === previous && await installedEngine(newBundle) === next;
+  } catch { return false; }
+}
+
 async function selectSuccessorEngine(rt, bridgeScript) {
   let successor;
   try { successor = fs.realpathSync(fs.readFileSync(rt.successor, "utf8").trim()); } catch { return; }
@@ -493,6 +523,7 @@ async function selectSuccessorEngine(rt, bridgeScript) {
   }
   // Old deployed bridges spawn this helper with their own engine still in the environment.
   process.env.ELPIS_ENGINE_BIN = await installedEngine(bundle);
+  if (isDirectSuccessor(rt, successor)) for (const name of PROXY_ENV_NAMES) delete process.env[name];
 }
 
 // A lock file naming its holder's pid and start token; one whose holder is gone is taken over.
@@ -561,7 +592,14 @@ async function ensureBridge(rt, bridgeScript, identity) {
     if (reachable.ok) {
       const config = differingNames(state, process.env);
       if (state.identity === identity.hash && !config.length) return;
-      if (state.identity !== identity.hash && await retireUnattachedBridge(rt, state)) return ensureBridge(rt, bridgeScript, identity);
+      const directHandover = config.length > 0 && config.every(name => PROXY_ENV_NAMES.includes(name))
+        && PROXY_ENV_NAMES.every(name => process.env[name] === undefined);
+      if (state.identity !== identity.hash && directHandover && usable(state.engine) && await managedSuccessorPair(state, identity)) {
+        writeDirectSuccessor(rt, identity.script);
+        fs.writeFileSync(rt.successor, identity.script, { mode: 0o600 });
+        return { engine: state.engine, running: state.script };
+      }
+      if (state.identity !== identity.hash && !config.length && await retireUnattachedBridge(rt, state)) return ensureBridge(rt, bridgeScript, identity);
       // Like the desktop app, a terminal joins the Elpis that is already running instead of refusing (19 Oct: every
       // install made while the app was open stopped `elpis` from starting). It uses that installation's engine, so the
       // pair matches. The running bridge hands over to this installation within seconds; chats working then finish in it (acp-bridge.mjs startDrain).
@@ -586,6 +624,10 @@ async function ensureBridge(rt, bridgeScript, identity) {
     if (alive(state.pid, state.token)) throw new Error(`the Elpis bridge (pid ${state.pid}) is running but does not accept connections at ${rt.sock} (it may be shutting down; try again in a few seconds); see ${rt.log}`);
   } else if (reachable.ok) {
     throw new Error(`${rt.sock} is served by a process this launcher did not record; close the Elpis terminals using it and start again`);
+  }
+  const directSuccessor = isDirectSuccessor(rt, identity.script);
+  if (directSuccessor && PROXY_ENV_NAMES.some(name => process.env[name] !== undefined)) {
+    throw new Error("The direct handover cannot start with proxy variables.");
   }
   // Nothing living: remove what a crashed bridge left.
   fs.rmSync(rt.state, { force: true });
@@ -613,7 +655,10 @@ async function ensureBridge(rt, bridgeScript, identity) {
       fs.rmSync(rt.state, { force: true });
       throw new Error(`the bridge ${early ?? "exited"} before it listened.\n${tailOf(rt.log, from)}`);
     }
-    if ((await probe(rt.sock)).ok) return;
+    if ((await probe(rt.sock)).ok) {
+      if (directSuccessor) fs.rmSync(rt.successorDirect, { force: true });
+      return;
+    }
     if (Date.now() > deadline) {
       try { process.kill(child.pid, "SIGTERM"); } catch {}
       fs.rmSync(rt.state, { force: true });
