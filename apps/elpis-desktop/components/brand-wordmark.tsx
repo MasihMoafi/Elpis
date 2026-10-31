@@ -10,11 +10,11 @@ export const BrandWordmark = memo(function BrandWordmark({ dark, className, widt
   const id = useId().replaceAll(":", "");
   // Transform each approved Orange stop relative to its main accent in OKLCH; the gradient's geometry and motion stay unchanged.
   const markup = (dark ? DARK : LIGHT)
-    .replaceAll("color-mix(in srgb, var(--primary), black 15%)", "oklch(from var(--primary) calc(l * .903554) calc(c * .985836) calc(h - 3.612764))")
-    .replaceAll("color-mix(in srgb, var(--primary), white 75%)", "oklch(from var(--primary) calc(l * .150046 + .849954) calc(c * .277898) calc(h + 17.222161))")
-    .replace(/#D2AB58/gi, "oklch(from var(--primary) calc(l * .965125) calc(c * .757709) calc(h + 11.364856))")
-    .replace(/#ECA342/gi, "oklch(from var(--primary) calc(l * .978078) calc(c * .949257) calc(h - 2.700273))")
-    .replace(/#EDC367/gi, "oklch(from var(--primary) calc(l * .771693 + .228307) calc(c * .819685) calc(h + 12.089539))")
+    .replaceAll("color-mix(in srgb, var(--primary), black 15%)", "var(--wordmark-shadow)")
+    .replaceAll("color-mix(in srgb, var(--primary), white 75%)", "var(--wordmark-sheen)")
+    .replace(/#D2AB58/gi, "var(--wordmark-gold)")
+    .replace(/#ECA342/gi, "var(--wordmark-core)")
+    .replace(/#EDC367/gi, "var(--wordmark-glint)")
     .replaceAll("elpis-word", `brand-${id}-word`);
   return <svg className={`size-wordmark ${className ?? ""}`} width={width} height={height} viewBox="0 5 224 110" aria-hidden="true" focusable="false" dangerouslySetInnerHTML={{ __html: markup }} />;
 });

@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { providerLabel, subscriptionOf } from "@/lib/api";
 /** One stable mark per agent; callers supply only observed runtime model/provider values. */
 export function AgentIdentity({ id, name, model, provider, role, compact = false, nameClassName }: {
@@ -15,7 +16,7 @@ export function AgentIdentity({ id, name, model, provider, role, compact = false
   const subscription = subscriptionOf(model);
   const runtime = [role, providerLabel(model, provider?.trim()), subscription ? model!.slice(subscription.prefix.length) : model?.trim()].filter(Boolean).join(" · ");
   return <span className="agent-identity inline-flex min-w-0 max-w-full items-center gap-2" data-compact={compact || undefined}>
-    <span className={`agent-mark inline-flex shrink-0 items-center justify-center rounded border border-border bg-muted font-mono text-xs leading-none ${compact ? "size-7" : "size-8"}`} style={{ color: `light-dark(oklch(52% 0.14 ${hue}), oklch(78% 0.14 ${hue}))` }} role="img" aria-label={`Agent mark ${mark}`}><svg aria-hidden="true" viewBox="0 0 9 9" className="size-5" fill="currentColor">{Array.from({ length: 28 }, (_, bit) => {
+    <span className={`agent-mark inline-flex shrink-0 items-center justify-center rounded border border-border bg-muted font-mono text-xs leading-none ${compact ? "size-7" : "size-8"}`} style={{ "--agent-hue": hue } as CSSProperties} role="img" aria-label={`Agent mark ${mark}`}><svg aria-hidden="true" viewBox="0 0 9 9" className="size-5" fill="currentColor">{Array.from({ length: 28 }, (_, bit) => {
       if (!((hash >>> bit) & 1)) return null;
       const x = bit % 4, y = Math.floor(bit / 4);
       return <g key={bit}><rect x={x + 1} y={y + 1} width="0.8" height="0.8" />{x !== 3 && <rect x={7 - x} y={y + 1} width="0.8" height="0.8" />}</g>;
