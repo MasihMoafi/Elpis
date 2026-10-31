@@ -6,7 +6,7 @@ import { BrandWordmark } from "@/components/brand-wordmark";
 import { flushSync } from "react-dom";
 import { cloneElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { AgentsIcon, BrowserIcon, ChatIcon, ExperimentLabIcon, FolderIcon, LoveSpotIcon, NewChatIcon, PinIcon, PlusIcon, SendIcon, SettingsIcon, ThemeIcon, WorkflowsIcon, StopIcon } from "@/components/elpis-icons";
-import { Archive, ArrowDown, Blocks, Bookmark, ChevronRight, EyeOff, Layers, PanelLeft, PanelRightClose, PanelRightOpen, Pin, RefreshCw, Search, X, Zap } from "lucide-react";
+import { Archive, ArrowDown, Blocks, Bookmark, ChevronRight, EyeOff, Layers, ListFilter, PanelLeft, PanelRightClose, PanelRightOpen, Pin, RefreshCw, Search, X, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ReorderItem, useReorder } from "@/components/reorder";
 import { OptionSelect } from "@/components/ui/option-select";
@@ -102,7 +102,7 @@ import { useScreenshotPopup } from "@/lib/use-screenshot-popup";
 import { AgentsCanvas } from "@/components/agents-canvas";
 import { WorkflowChat } from "@/components/workflow-chat";
 import { DocumentReviewProvider } from "@/components/document-review";
-import { AgentIdentity } from "@/components/agent-identity";
+import { AgentIdentity, agentColourSlots } from "@/components/agent-identity";
 import { ResumeConversation } from "@/components/resume-conversation";
 import { selectElementContent } from "@/lib/pane-select";
 import { agentState, attentionLine, mergeListedThreads, stateLabels } from "@/lib/agents";
@@ -584,6 +584,7 @@ export default function Home() {
     return () => media.removeEventListener("change", update);
   }, []);
   const [agentsPanelState, setAgentsPanelState] = useState<{ open: boolean; held: ReadonlySet<string> }>({ open: true, held: new Set() });
+  const [workingAgentsOnly, setWorkingAgentsOnly] = useState(true);
   const [loveToolbarHost, setLoveToolbarHost] = useState<HTMLDivElement | null>(null);
   const [workingHost, setWorkingHost] = useState<HTMLDivElement | null>(null);
   const { theme, dark, setTheme, sidebarWidth, resizeSidebar } = useAppearance(setError);
@@ -1140,6 +1141,9 @@ export default function Home() {
   // The chat's team: a root shows its agents; an agent shows its siblings and the way back to the root.
   const teamRoot = selected ? (selected.parentThreadId ? find(selected.parentThreadId) ?? { id: selected.parentThreadId } as Thread : selected) : null;
   const team = teamRoot ? prioritizeChats(threads.filter(thread => thread.parentThreadId === teamRoot.id), thread => agentState(thread, waitingIds)) : [];
+  const workingTeam = team.filter(thread => agentState(thread, waitingIds) === "working");
+  const shownTeam = workingAgentsOnly ? workingTeam : team;
+  const agentColours = useMemo(() => agentColourSlots(threads), [threads]);
   const agentsPanel = agentsPanelState.open && !(selected && teamRoot && (agentsPanelState.held.has(selected.id) || agentsPanelState.held.has(teamRoot.id)));
   const awaitingTeam = !!(selected && teamRoot && agentsPanel && !panelShown && ready && connected &&
     ((!checkedChildren.current.has(teamRoot.id) && !team.length) || (loading && !find(selected.id))));
@@ -2397,7 +2401,7 @@ export default function Home() {
       {!canExpandAgents && depth > 0 && <span aria-hidden="true" className="size-6 shrink-0" />}
       <span className="conversation-state-slot">{state === "unread" ? <button data-slot="thread-dot" className="thread-dot conversation-status" data-state={state} aria-label="Unread response. Mark as read" title="Unread response. Mark as read" onClick={() => markRead(thread.id)} /> : state === "idle" ? <span className="thread-dot" data-state={state} aria-hidden="true" /> : <span className="thread-dot conversation-status" role="img" data-state={state} aria-label={stateLabels[state]} title={stateLabels[state]} />}</span>
       <button data-slot="chat-row" className="thread-link" onPointerEnter={() => prefetchThread(thread)} onFocus={() => prefetchThread(thread)} onMouseDown={event => { if (event.shiftKey || event.button === 1) event.preventDefault(); }} onAuxClick={event => { if (event.button === 1 && desktop) { event.preventDefault(); openInNewTab(thread); } }} onClick={event => clickRow(thread, event)} title={name}>
-        <>{isAgent(thread) || workflowSteps.has(thread.id) || run ? <AgentIdentity compact id={thread.id} name={name} nameClassName="thread-title" model={run ? null : thread.model} provider={run ? null : thread.modelProvider} role={run ? runSummary(run) : undefined} /> : <span className="thread-title" title={name}>{name}</span>}</>
+        <>{isAgent(thread) || workflowSteps.has(thread.id) || run ? <AgentIdentity compact id={thread.id} colourSlot={agentColours.get(thread.id)} name={name} nameClassName="thread-title" model={run ? null : thread.model} provider={run ? null : thread.modelProvider} role={run ? runSummary(run) : undefined} /> : <span className="thread-title" title={name}>{name}</span>}</>
         {parentLabel && <span className="text-xs text-muted-foreground" title={parentLabel}>{parentLabel}</span>}
         {subtitle && <span className="thread-subtitle" title={subtitle}>{subtitle}</span>}
         {originLabel(origin, name) && !inOrigin && <span className="thread-nickname thread-origin" data-origin={origin}>{origin}</span>}
@@ -2687,12 +2691,13 @@ export default function Home() {
         </div>
       </div>
       {selected && teamRoot && team.length > 0 && agentsPanel && !panelShown && <aside className="team-panel" aria-label="Agents in this chat">
-        <div className="team-heading"><span className="inline-flex items-center gap-2"><AgentsIcon size={16} />Agents</span><small>{team.filter(thread => agentState(thread, waitingIds) === "working").length} working · {team.length} total</small></div>
+        <div className="team-heading"><span className="inline-flex items-center gap-2"><AgentsIcon size={16} />Agents</span><span className="inline-flex items-center gap-1"><small>{workingTeam.length} working · {team.length} total</small><Button variant="ghost" size="icon-xs" aria-label="Working agents only" aria-pressed={workingAgentsOnly} title={workingAgentsOnly ? "Show all agents" : "Show working agents only"} className={workingAgentsOnly ? "text-primary" : undefined} onClick={() => setWorkingAgentsOnly(value => !value)}><ListFilter size={13} viewBox="-2 -2 28 28" /></Button></span></div>
         <button data-slot="team-row" className={`team-row root${selected.id === teamRoot.id ? " active" : ""}`} onClick={() => openById(teamRoot.id)}><span className="team-state"><i /></span><span className="team-title">{title(teamRoot)}</span><small>Main chat</small></button>
-        {team.map(thread => { const state = agentState(thread, waitingIds), runtime = state === "working" && activity[thread.id] ? activity[thread.id] : [modelLabel(thread.model, models), thread.reasoningEffort].filter(Boolean).join(" · ");
+        {workingAgentsOnly && !shownTeam.length && <p className="px-2 text-xs text-muted-foreground">No working agents</p>}
+        {shownTeam.map(thread => { const state = agentState(thread, waitingIds), runtime = state === "working" && activity[thread.id] ? activity[thread.id] : [modelLabel(thread.model, models), thread.reasoningEffort].filter(Boolean).join(" · ");
           return <button data-slot="team-row" data-thread-id={thread.id} key={thread.id} className={`team-row ${state}${selected.id === thread.id ? " active" : ""}`} onClick={() => openThread(thread)} title={activity[thread.id] || title(thread)}>
             <span className="team-state" aria-label={stateLabels[state]}><i /></span>
-            <AgentIdentity compact id={thread.id} name={title(thread)} nameClassName="team-title" model={null} provider={null} role={runtime || undefined} />
+            <AgentIdentity compact id={thread.id} colourSlot={agentColours.get(thread.id)} name={title(thread)} nameClassName="team-title" model={null} provider={null} role={runtime || undefined} />
           </button>; })}
       </aside>}
       </div></ViewBoundary>}

@@ -66,6 +66,12 @@ for (const theme of ['light', 'dark']) test(`Agents shares the selected agents a
     if (theme === 'dark') await chooseTheme(page, theme);
     await f.open('chat-a');
     const { path: artwork } = await checkAgentsIcon(page);
+    const filter = page.getByRole('button', { name: 'Working agents only', exact: true });
+    assert.equal(await filter.getAttribute('aria-pressed'), 'true', 'the working-only filter starts enabled');
+    assert.equal(await page.locator('.team-row').count(), 2, 'only the main chat and working agent start visible');
+    assert.equal(await page.locator('.team-row[data-thread-id]').last().getAttribute('data-thread-id'), 'agent-1');
+    await filter.click();
+    assert.equal(await filter.getAttribute('aria-pressed'), 'false', 'the filter can show all agents');
     assert.equal(await page.locator('.team-row[data-thread-id]').first().getAttribute('data-thread-id'), 'agent-1', 'working subagents are listed first');
     const identityRow = page.locator('.team-row[data-thread-id="agent-0"]');
     const teamMark = await identityRow.locator('.agent-mark').getAttribute('aria-label');
@@ -81,12 +87,13 @@ for (const theme of ['light', 'dark']) test(`Agents shares the selected agents a
       const luminance = rgb => rgb.map(value => { const c = value / 255; return c <= .04045 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4; })
         .reduce((sum, value, index) => sum + value * [.2126, .7152, .0722][index], 0);
       const a = luminance(foreground), b = luminance(background);
-      return { color: getComputedStyle(mark).color, contrast: (Math.max(a, b) + .05) / (Math.min(a, b) + .05) };
+      return { color: getComputedStyle(mark).backgroundColor, contrast: (Math.max(a, b) + .05) / (Math.min(a, b) + .05), name: mark.dataset.agentColour };
     }));
     assert.equal(teamColours.length, children.length);
     assert.equal(new Set(teamColours.map(mark => mark.color)).size, children.length, 'each fixture agent has a distinct stable color');
-    assert.ok(teamColours.every(mark => mark.contrast >= 3), 'agent marks contrast with their actual backgrounds');
-    const teamColour = await identityRow.locator('.agent-mark').evaluate(mark => getComputedStyle(mark).color);
+    assert.ok(teamColours.every(mark => mark.contrast >= 4.5), 'each badge glyph contrasts with its actual background');
+    for (const colour of ['gold', 'purple', 'black']) assert.ok(teamColours.some(mark => mark.name === colour), `${colour} is visibly represented`);
+    const teamColour = await identityRow.locator('.agent-mark').evaluate(mark => getComputedStyle(mark).backgroundColor);
     assert.equal(await identityRow.locator('.agent-name').innerText(), 'inspect · Agent 1', 'the task comes first and the recorded agent name follows once');
     assert.equal(await identityRow.getByText('Agent 1', { exact: true }).count(), 0, 'the nickname is not repeated as a second label');
     assert.equal(await identityRow.locator('.agent-model').count(), 1, 'the row keeps one runtime line inside the shared identity');
@@ -103,7 +110,7 @@ for (const theme of ['light', 'dark']) test(`Agents shares the selected agents a
     const sidebarAgent = page.locator('.thread-row[data-thread-id="agent-0"]');
     await sidebarAgent.waitFor();
     assert.equal(await sidebarAgent.locator('.agent-mark').getAttribute('aria-label'), teamMark, 'the Agents pane uses the same ID-stable mark as the sidebar');
-    assert.equal(await sidebarAgent.locator('.agent-mark').evaluate(mark => getComputedStyle(mark).color), teamColour, 'sidebar and Agents pane share the same identity color');
+    assert.equal(await sidebarAgent.locator('.agent-mark').evaluate(mark => getComputedStyle(mark).backgroundColor), teamColour, 'sidebar and Agents pane share the same identity color');
     for (const index of [0, 8, 15]) {
       await page.locator('.team-row:not(.root)').nth(index).click();
       await checkAgentsIcon(page);
@@ -116,13 +123,47 @@ for (const theme of ['light', 'dark']) test(`Agents shares the selected agents a
     await page.locator('.startup-splash').waitFor({ state: 'detached' });
     await f.open('chat-a');
     await checkAgentsIcon(page);
+    await page.getByRole('button', { name: 'Working agents only', exact: true }).click();
     assert.equal(await page.locator('.team-row[data-thread-id="agent-0"] .agent-mark').getAttribute('aria-label'), teamMark, 'the generated identity stays stable after reload');
-    assert.equal(await page.locator('.team-row[data-thread-id="agent-0"] .agent-mark').evaluate(mark => getComputedStyle(mark).color), teamColour, 'the identity color stays stable after reload');
+    assert.equal(await page.locator('.team-row[data-thread-id="agent-0"] .agent-mark').evaluate(mark => getComputedStyle(mark).backgroundColor), teamColour, 'the identity color stays stable after reload');
     await page.getByRole('button', { name: 'Workflows', exact: true }).click();
     const workflowPanel = page.getByRole('button', { name: 'Side panel', exact: true });
     await workflowPanel.waitFor();
     assert.equal(await workflowPanel.locator('svg[data-icon="agents"] path').getAttribute('d'), artwork, 'workflow agents panel shares the artwork');
     assert.equal(await workflowPanel.locator('.lucide-panel-right, .lucide-panel-right-close').count(), 0);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+test('working-only Agents filter follows live status without closing the selected chat', async () => {
+  const f = await fixture({ staticDir: process.env.ELPIS_RENDERER_OUT, width: 1440, height: 1000, routes: {
+    '/api/threads': (_, url) => ({ data: url.searchParams.has('ancestorThreadId') ? children : [parent, ...children], nextCursor: null }),
+    ...Object.fromEntries(children.flatMap(thread => [
+      [`/api/threads/${thread.id}`, () => ({ thread, data: [], nextCursor: null })],
+      [`/api/threads/${thread.id}/resume`, () => ({ thread, activeTurnId: null })],
+    ])),
+  } });
+  try {
+    const { page } = f;
+    await f.open('chat-a');
+    const filter = page.getByRole('button', { name: 'Working agents only', exact: true });
+    assert.equal(await filter.getAttribute('aria-pressed'), 'true');
+    await page.locator('.team-row[data-thread-id="agent-1"]').click();
+    await page.locator('.workspace-header h1').filter({ hasText: 'Agent 2' }).waitFor();
+    const colour = await page.locator('.team-row[data-thread-id="agent-1"] .agent-mark').evaluate(mark => getComputedStyle(mark).backgroundColor);
+    f.emit('message', { method: 'thread/status/changed', params: { threadId: 'agent-1', status: { type: 'idle' } } });
+    await page.locator('.team-row[data-thread-id="agent-1"]').waitFor({ state: 'hidden' });
+    await page.getByText('No working agents', { exact: true }).waitFor();
+    assert.equal(await page.locator('.team-row.root').count(), 1, 'the main chat stays in the panel');
+    await page.locator('.workspace-header h1').filter({ hasText: 'Agent 2' }).waitFor();
+    f.emit('message', { method: 'thread/status/changed', params: { threadId: 'agent-2', status: { type: 'active', activeFlags: [] } } });
+    await page.locator('.team-row[data-thread-id="agent-2"]').waitFor();
+    await filter.click();
+    assert.equal(await page.locator('.team-row').count(), 17, 'show all restores every agent');
+    assert.equal(await page.locator('.team-row[data-thread-id="agent-1"] .agent-mark').evaluate(mark => getComputedStyle(mark).backgroundColor), colour, 'status and filter changes do not recolor an agent');
+    await page.locator('.workspace-header h1').filter({ hasText: 'Agent 2' }).waitFor();
+    await filter.click();
+    assert.equal(await page.locator('.team-row').count(), 2, 'working-only can be restored');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

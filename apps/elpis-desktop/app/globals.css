@@ -442,7 +442,6 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 /* APP-FIX-2: task-titled rows, live agents, settings sections. */
 .brand .size-wordmark { width:73px; height:36px; flex-shrink:0; }
 .size-wordmark { --wordmark-shadow:oklch(from var(--primary) calc(l * .903554) calc(c * .985836) calc(h - 3.612764)); --wordmark-sheen:oklch(from var(--primary) calc(l * .150046 + .849954) calc(c * .277898) calc(h + 17.222161)); --wordmark-gold:oklch(from var(--primary) calc(l * .965125) calc(c * .757709) calc(h + 11.364856)); --wordmark-core:oklch(from var(--primary) calc(l * .978078) calc(c * .949257) calc(h - 2.700273)); --wordmark-glint:oklch(from var(--primary) calc(l * .771693 + .228307) calc(c * .819685) calc(h + 12.089539)); }
-.agent-mark { color:light-dark(oklch(52% 0.14 var(--agent-hue)), oklch(78% 0.14 var(--agent-hue))); }
 .brand-home { flex:0 0 auto; }
 /* The mark is not a row: no tinted box appears behind it (Masih, 23 Oct: "the light orange shadow behind the elpis shouldn't show to the user"). */
 .brand .brand-home:hover, .brand .brand-home:active, .brand .brand-home[aria-expanded="true"] { background:transparent; }

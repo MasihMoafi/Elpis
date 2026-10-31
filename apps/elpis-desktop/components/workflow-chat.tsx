@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { Button } from "@/components/ui/button";
-import { AgentIdentity } from "@/components/agent-identity";
+import { AgentIdentity, agentColourSlots } from "@/components/agent-identity";
 import { ModelPicker } from "@/components/model-picker";
 import { MarkdownText } from "@/components/markdown-text";
 import { WorkflowProgress, useWorkflowTeam, workflowThreadActive } from "@/components/workflow-progress";
@@ -107,6 +107,8 @@ export function WorkflowChat({ run, identity, ready, models = [], threads = [], 
     finally { setPending(false); }
   }
   const tasks = record.tasks ?? [], complete = tasks.filter(task => ["succeeded", "completed"].includes(task.status ?? "")).length;
+  const liveColours = agentColourSlots(team.agents.map(thread => ({ ...thread, parentThreadId: agentParentId(thread) || team.motherId || record.rootThreadId })));
+  const savedColours = agentColourSlots(tasks.map(task => ({ id: task.assignedThreadId || `${record.id}:${task.id}`, parentThreadId: record.rootThreadId })));
   return <section className="context-event space-y-3" role="region" aria-label="Workflow run">
     <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="flex min-w-0 items-center gap-2 text-base font-semibold">{identity && <WorkflowMark identity={identity} neutral />}{identity?.name || record.name || "Workflow"}</h2><span role="status">{record.status} · {complete}/{tasks.length} tasks complete</span></div>
     <WorkflowProgress run={record} team={team} onOpenChat={onOpenChat} onRefresh={() => { team.refresh(); setRevision(value => value + 1); }} />
@@ -119,7 +121,7 @@ export function WorkflowChat({ run, identity, ready, models = [], threads = [], 
     {error && <p role="alert" className="text-destructive">{error}</p>}
     {!tasks.length && <p>No task details have been recorded for this run.</p>}
     <details open={!working}><DisclosureSummary>Saved attempt · {record.status}</DisclosureSummary>{record.error && !tasks.some(task => task.failureReason === record.error) && <p className="text-destructive">{record.error}</p>}<ol className="space-y-3 pt-3" aria-label="Saved workflow tasks">{tasks.map(task => <li key={task.id} className="space-y-2 rounded-md border border-border p-3">
-      <div className="flex flex-wrap items-center justify-between gap-2"><AgentIdentity id={task.assignedThreadId || `${record.id}:${task.id}`} name={task.title || task.id} model={task.routing?.actual?.model} provider={task.routing?.actual?.provider} /><span>{task.status || "not recorded"}</span></div>
+      <div className="flex flex-wrap items-center justify-between gap-2"><AgentIdentity id={task.assignedThreadId || `${record.id}:${task.id}`} colourSlot={liveColours.get(task.assignedThreadId || `${record.id}:${task.id}`) ?? savedColours.get(task.assignedThreadId || `${record.id}:${task.id}`)} name={task.title || task.id} model={task.routing?.actual?.model} provider={task.routing?.actual?.provider} /><span>{task.status || "not recorded"}</span></div>
       {!!task.dependsOn?.length && <p className="text-xs text-muted-foreground">After: {task.dependsOn.map(id => tasks.find(item => item.id === id)?.title || id).join(", ")}</p>}
       {task.failureReason && <p className="text-destructive">{task.failureReason}</p>}
       {task.routing?.requested && (task.routing.requested.model !== task.routing.actual?.model || task.routing.requested.provider !== task.routing.actual?.provider) && <p className="text-xs text-muted-foreground">Requested: {task.routing.requested.provider || "not recorded"} / {task.routing.requested.model || "not recorded"}</p>}

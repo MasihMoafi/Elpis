@@ -2,7 +2,7 @@
 
 import { runCard } from "@/lib/run-card";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AgentIdentity } from "@/components/agent-identity";
+import { AgentIdentity, agentColourSlots } from "@/components/agent-identity";
 import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { Button } from "@/components/ui/button";
 import { api, title, type Entry, type Thread } from "@/lib/api";
@@ -133,6 +133,7 @@ function status(thread?: Thread) {
 
 export function WorkflowProgress({ run, team, onOpenChat, onRefresh, compact = false }: { run: RecordedWorkflow; team: Team; onOpenChat: (id: string) => void; onRefresh?: () => void; compact?: boolean }) {
   const active = team.agents.filter(workflowThreadActive).length;
+  const agentColours = agentColourSlots(team.agents.map(thread => ({ ...thread, parentThreadId: agentParentId(thread) || team.motherId || run.rootThreadId })));
   const supervision = [...run.mother?.decisions ?? []].reverse().find(decision => decision.kind === "checkpoint");
   const supervisionStatus = supervision?.status === "reviewing" ? "Reviewing current work" : supervision?.status === "delivered" ? "Guidance delivered" : supervision?.status === "observed" ? "Continue current work" : supervision?.status === "not_delivered" ? "Guidance was not delivered" : supervision?.status === "skipped" ? "Review skipped" : "Review unavailable";
   const byId = new Map(team.agents.map(thread => [thread.id, thread]));
@@ -147,7 +148,7 @@ export function WorkflowProgress({ run, team, onOpenChat, onRefresh, compact = f
       <Button variant="ghost" size="sm" disabled={team.loading} onClick={onRefresh ?? team.refresh} aria-label="Refresh live progress">Refresh progress</Button>
     </div>
     <div className="workflow-progress-row">
-      <AgentIdentity id={team.motherId || run.rootThreadId} name="Mother" model={team.mother?.model} provider={team.mother?.modelProvider} />
+      <AgentIdentity id={team.motherId || run.rootThreadId} colourSlot={agentColours.get(team.motherId || run.rootThreadId)} name="Mother" model={team.mother?.model} provider={team.mother?.modelProvider} />
       <span className="workflow-progress-status" role="status">{status(team.mother)}</span>
       {team.motherId && <Button variant="ghost" size="sm" onClick={() => onOpenChat(team.motherId!)}>Open Mother chat</Button>}
     </div>
@@ -161,7 +162,7 @@ export function WorkflowProgress({ run, team, onOpenChat, onRefresh, compact = f
     {!team.lastUpdate && <p className="text-muted-foreground">{team.loading ? "Reading live progress…" : "No agent report observed yet."}</p>}
     {team.error && <div className="flex flex-wrap items-center gap-2"><p role="alert" className="text-destructive">{team.error}</p></div>}
     {!!team.agents.length && <details open={!compact && active > 0}><DisclosureSummary>Live team · {team.agents.length}</DisclosureSummary><ol className="space-y-2 pt-2">{prioritizeChats(team.agents, thread => workflowThreadActive(thread) ? "working" : "idle").map(thread => <li key={thread.id} className="workflow-progress-row workflow-progress-agent" style={{ paddingInlineStart: `${depth(thread) * 16}px` }}>
-      <AgentIdentity compact id={thread.id} name={title(thread)} model={thread.model} provider={thread.modelProvider} />
+      <AgentIdentity compact id={thread.id} colourSlot={agentColours.get(thread.id)} name={title(thread)} model={thread.model} provider={thread.modelProvider} />
       <span className="workflow-progress-status">{status(thread)}</span><Button variant="ghost" size="sm" onClick={() => onOpenChat(thread.id)}>Open chat</Button>
     </li>)}</ol></details>}
   </section>;

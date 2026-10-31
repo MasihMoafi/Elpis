@@ -94,6 +94,7 @@ test('the first visible chat and a switched chat keep their width while delayed 
     await shot(page, 'before-first-team.png');
     a.release();
     await page.locator('.team-panel').waitFor({ state: 'visible' });
+    await page.getByRole('button', { name: 'Working agents only', exact: true }).click();
     await page.locator('.chat-content .message').first().waitFor({ state: 'visible' });
     await page.waitForTimeout(300);
     await shot(page, 'first-team-ready.png');
@@ -125,6 +126,8 @@ test('explicit panel toggle resizes, empty teams do not reserve space, and stale
   const f = await fixture({ staticDir: process.env.ELPIS_RENDERER_OUT, width: 1450, height: 820, colorScheme: 'dark', threads: roots, routes: routes({ 'chat-b': b }), storage });
   const { page, composer } = f;
   try {
+    await page.locator('.team-panel').waitFor({ state: 'visible' });
+    await page.getByRole('button', { name: 'Working agents only', exact: true }).click();
     await page.locator('.team-row[data-thread-id="agent-a"]').waitFor({ state: 'visible' });
     const width = () => page.locator('.composer').evaluate(el => el.getBoundingClientRect().width);
     const withPanel = await width();
@@ -254,7 +257,7 @@ test('narrow chats stay editable while the hidden team panel loads', async () =>
     await f.composer.fill('Draft on a narrow screen');
     await shot(f.page, 'narrow-team-loading.png');
     a.release();
-    await f.page.locator('.team-row[data-thread-id="agent-a"]').waitFor({ state: 'attached' });
+    await f.page.locator('.team-panel small').filter({ hasText: '0 working · 1 total' }).waitFor({ state: 'attached' });
     assert.equal(await f.page.locator('.team-panel').isVisible(), false);
     assert.equal(await f.composer.inputValue(), 'Draft on a narrow screen');
     const after = await f.composer.boundingBox();

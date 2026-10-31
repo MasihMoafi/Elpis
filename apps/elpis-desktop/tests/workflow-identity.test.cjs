@@ -446,7 +446,7 @@ test('failed workflow follows a resumed agent and paginated descendants without 
           return { statusX: status.x, actionX: open.x, actionRight: open.right, identityRight: identity.right };
         }));
         assert.equal(columns.length, 3, 'Mother, child and nested child share the row layout');
-        const colours = await progress.locator('.workflow-progress-row .agent-mark').evaluateAll(marks => marks.map(mark => getComputedStyle(mark).color));
+        const colours = await progress.locator('.workflow-progress-row .agent-mark').evaluateAll(marks => marks.map(mark => getComputedStyle(mark).backgroundColor));
         assert.equal(new Set(colours).size, 3, `${colorScheme}/${width}: workflow agent identities use distinct colors`);
         for (const column of columns) {
           assert.ok(Math.abs(column.statusX - columns[0].statusX) <= 1, `${colorScheme}/${width}: statuses share a column`);
