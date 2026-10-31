@@ -51,7 +51,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y libcap-dev libssl-dev pkg-config ripgrep
           rustup toolchain install 1.95.0 --profile minimal --no-self-update
-      - name: Download and verify the pinned sandbox V8
+      - name: Download and verify the pinned sandbox V8 for status
         run: |
           base=https://github.com/openai/codex/releases/download/rusty-v8-v150.4.0
           archive="$RUNNER_TEMP/librusty_v8_ptrcomp_sandbox_release_x86_64-unknown-linux-gnu.a.gz"
