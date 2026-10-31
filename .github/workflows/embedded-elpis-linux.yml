@@ -8,7 +8,11 @@ on:
         required: true
         default: full
         type: choice
-        options: [check, ui, full, build, focused, status]
+        options: [check, ui, full, build, focused, status, snapshots]
+      diagnostic_run:
+        description: 'Run containing saved TUI diagnostics'
+        required: false
+        type: string
   push:
     tags: ['v*']
     branches: [next]
@@ -18,12 +22,40 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: elpis-linux-${{ github.ref }}-${{ (inputs.verification == 'status' || inputs.verification == 'build' || inputs.verification == 'ui' || inputs.verification == 'check') && 'full' || inputs.verification || 'full' }}
   cancel-in-progress: false
 
 jobs:
+  tui-snapshots:
+    if: github.event_name == 'workflow_dispatch' && inputs.verification == 'snapshots'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Validate diagnostic run
+        env:
+          DIAGNOSTIC_RUN: ${{ inputs.diagnostic_run }}
+        run: '[[ "$DIAGNOSTIC_RUN" =~ ^[0-9]+$ ]]'
+      - name: Download hosted TUI diagnostics
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: candidate-rendering-differences
+          path: diagnostics
+          run-id: ${{ inputs.diagnostic_run }}
+          github-token: ${{ github.token }}
+      - name: Report pending rendering snapshots
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          pending = sorted(p for p in Path('diagnostics').rglob('*') if p.is_file() and
+                           (p.name.endswith('.snap.new') or p.name.endswith('.pending-snap')))
+          print(f'Pending rendering snapshots: {len(pending)}')
+          for path in pending:
+              print(path)
+          PY
+
   tui-status:
     if: github.event_name == 'workflow_dispatch' && inputs.verification == 'status'
     runs-on: ubuntu-24.04
