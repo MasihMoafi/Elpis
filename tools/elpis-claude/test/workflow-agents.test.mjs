@@ -1,5 +1,5 @@
-// A workflow agent's chat and the person's own MCP servers (mem/threads): its chat starts, and reopens, with each
-// configured server off unless its definition names it (ELPIS_WORKFLOW_USER_MCP=1 keeps them all), and its engine,
+// A workflow agent's chat starts with configured MCP servers off unless its definition names them; reopening
+// preserves its saved selection (ELPIS_WORKFLOW_USER_MCP=1 keeps all servers), and its engine,
 // with that chat and its servers, ends when the agent is done, while a chat's engine stays.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -24,7 +24,7 @@ const until = async (what, check, ms = 10_000) => {
 };
 
 // The bridge as the executor sees it: every request recorded, a configuration with three MCP servers.
-async function fakeElpis(t) {
+async function fakeElpis(t, { legacy = false } = {}) {
   const wss = new WebSocketServer({ host: "127.0.0.1", port: 0 });
   await once(wss, "listening");
   const requests = [];
@@ -34,7 +34,10 @@ async function fakeElpis(t) {
     requests.push(m);
     const reply = (result) => ws.send(JSON.stringify({ id: m.id, result }));
     if (m.method === "config/read") return reply({ config: { model: "gpt-test", mcp_servers: SERVERS } });
-    if (m.method === "thread/start" || m.method === "thread/resume") return reply({ thread: { id: m.params.threadId ?? "node-1" }, model: "gpt-test" });
+    if (m.method === "thread/start" || m.method === "thread/resume") return reply({
+      thread: { id: m.params.threadId ?? "node-1", ...(!legacy && { mcpServerSelection: m.method === "thread/start" ? [] : null }) },
+      model: "gpt-test",
+    });
     if (m.method !== "turn/start") return reply({});
     reply({ turn: { id: "turn-1" } });
     ws.send(JSON.stringify({ method: "turn/completed", params: { threadId: m.params.threadId, turn: { id: "turn-1", status: "completed" } } }));
@@ -54,9 +57,18 @@ test("a workflow agent's chat starts and reopens with the person's MCP servers o
   assert.deepEqual(named, { model_reasoning_effort: "high", ...others }, "the server the agent's definition names stays on");
   assert.deepEqual(elpis.sent("config/read")[0], { includeLayers: false, cwd: NODE.cwd }, "the project's own servers count too");
 
-  // After a restart the runner reopens the agent's chat in a new engine: alike.
+  // After a restart, reopen without reapplying stale restrictions over a reset.
   await bridgeExecutor({ url: elpis.url }).turn({ threadId: "node-1", text: "again" });
-  assert.deepEqual(elpis.sent("thread/resume").at(-1), { threadId: "node-1", config: ALL_OFF });
+  assert.deepEqual(elpis.sent("thread/resume").at(-1), { threadId: "node-1" });
+});
+
+test("reopening a restricted workflow on an old engine fails before a turn", async (t) => {
+  const elpis = await fakeElpis(t, { legacy: true });
+  await assert.rejects(
+    bridgeExecutor({ url: elpis.url }).turn({ threadId: "node-1", text: "again" }),
+    /cannot preserve this workflow chat's MCP selection/,
+  );
+  assert.equal(elpis.sent("turn/start").length, 0);
 });
 
 test("with ELPIS_WORKFLOW_USER_MCP=1 a workflow agent's chat starts and reopens as before", async (t) => {

@@ -23,7 +23,6 @@ export async function withoutUserMcp(conn, { cwd, mcpServers = [] } = {}, log = 
 
 export function bridgeExecutor({ url, log = () => {}, provider = () => null }) {
   const open = new Map(); // thread id -> { conn, bridged }
-  const startedWith = new Map(); // thread id -> { cwd, mcpServers }, to reopen it alike
   const connect = () => connectAppServer({ url, name: "elpis-agents" });
 
   async function attach(threadId) {
@@ -32,8 +31,10 @@ export function bridgeExecutor({ url, log = () => {}, provider = () => null }) {
     const conn = connect();
     try {
       await conn.ready;
-      const config = await withoutUserMcp(conn, startedWith.get(threadId), log);
-      const r = await conn.call("thread/resume", { threadId, ...(Object.keys(config).length && { config }) });
+      const r = await conn.call("thread/resume", { threadId });
+      if (process.env.ELPIS_WORKFLOW_USER_MCP !== "1" && !Object.hasOwn(r.thread ?? {}, "mcpServerSelection")) {
+        throw new Error("The engine cannot preserve this workflow chat's MCP selection.");
+      }
       const entry = { conn, bridged: bridged(r?.model ?? r?.thread?.model) };
       open.set(threadId, entry);
       return entry;
@@ -63,7 +64,6 @@ export function bridgeExecutor({ url, log = () => {}, provider = () => null }) {
       const threadId = started.thread.id;
       await conn.call("thread/name/set", { threadId, name: label }).catch(() => {});
       open.set(threadId, { conn, bridged: isBridged });
-      startedWith.set(threadId, { cwd, mcpServers });
       log(`workflow ${runId}: agent ${agentId} is chat ${threadId} (${model ?? "default model"})`);
       return { threadId, model: started.model ?? model ?? null };
     },
@@ -110,7 +110,6 @@ export function bridgeExecutor({ url, log = () => {}, provider = () => null }) {
     // Its private engine ends with its connection, once the agent is done.
     close(threadId) {
       const entry = open.get(threadId);
-      startedWith.delete(threadId);
       if (!entry) return;
       open.delete(threadId);
       entry.conn.close();
