@@ -227,7 +227,8 @@ jobs:
       - name: Provider history and message retention checks
         run: |
           node apps/elpis-desktop/bridge/build-resources.mjs --bridge-only
-          node --test --test-concurrency=1 --test-name-pattern='existing chats are written directly|opening a chat rejoins|opening a completed parent-owned child' apps/elpis-desktop/bridge/bridge.test.mjs
+          node --test --test-concurrency=1 --test-name-pattern='existing chats are written directly|opening a chat rejoins|opening a completed parent-owned child|a child in a legacy drain' apps/elpis-desktop/bridge/bridge.test.mjs
+          node --test tools/elpis-claude/test/handover-subscribe.test.mjs
           node scripts/store-guard.test.cjs
           node scripts/history-list.test.cjs
           node --test tools/elpis-claude/test/resume-list.test.mjs
