@@ -397,3 +397,97 @@ for (const colorScheme of ['light', 'dark']) for (const width of [1280, 1440]) t
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
+
+test('saved sidebar and transcript widths stay stable after the startup splash', async () => {
+  const f = await fixture({ width: 1729, height: 1185, staticDir: process.env.ELPIS_RENDERER_OUT, storage: {
+    'elpis-sidebar-width': '376',
+    'elpis-preferences-v1': JSON.stringify({ transcriptWidth: 'l' }),
+  } }), { page } = f;
+  try {
+    await page.addInitScript(() => {
+      window.__layoutSamples = [];
+      let splashSeen = false;
+      const sample = () => {
+        const shell = document.querySelector('.app-shell');
+        if (shell) {
+          const sidebar = shell.querySelector('.sidebar'), content = shell.querySelector('.chat-content'), splash = document.querySelector('.startup-splash');
+          const splashStyle = splash && getComputedStyle(splash);
+          const splashVisible = !!splashStyle && splashStyle.display !== 'none' && splashStyle.visibility !== 'hidden' && Number(splashStyle.opacity) > .1;
+          splashSeen ||= splashVisible;
+          window.__layoutSamples.push({
+            time: Math.round(performance.now()),
+            sidebar: sidebar?.getBoundingClientRect().width,
+            content: content?.getBoundingClientRect().width,
+            transcript: getComputedStyle(document.documentElement).getPropertyValue('--transcript-width').trim(),
+            splash: splashVisible,
+            splashSeen,
+          });
+        }
+        if (performance.now() < 4000) requestAnimationFrame(sample);
+      };
+      requestAnimationFrame(sample);
+    });
+    await page.reload();
+    await page.waitForTimeout(4200);
+    const samples = await page.evaluate(() => window.__layoutSamples);
+    const afterSplash = samples.filter(sample => sample.splashSeen && !sample.splash);
+    assert.ok(afterSplash.length > 5, 'the fixture records several frames after the splash disappears');
+    assert.ok(afterSplash.every(sample => sample.sidebar === 376), 'the saved sidebar width is already stable');
+    assert.ok(afterSplash.every(sample => sample.content === 1100 && sample.transcript === '1100px'), 'the saved transcript width is already stable');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+test('delayed agent-child restoration changes the visible chat width after loading and when switching chats', async () => {
+  const rootA = { ...LISTED[0], id: 'chat-a', name: 'Conversation with an agent team' };
+  const rootB = { ...LISTED[1], id: 'chat-b', name: 'Second conversation with an agent team' };
+  const childA = { ...LISTED[2], id: 'agent-a', name: 'Agent for the first conversation', parentThreadId: rootA.id, source: { subAgent: { thread_spawn: { agent_path: '/root/agent-a', parent_thread_id: rootA.id, depth: 1 } } } };
+  const childB = { ...LISTED[3], id: 'agent-b', name: 'Agent for the second conversation', parentThreadId: rootB.id, source: { subAgent: { thread_spawn: { agent_path: '/root/agent-b', parent_thread_id: rootB.id, depth: 1 } } } };
+  const roots = [rootA, rootB], children = { [rootA.id]: childA, [rootB.id]: childB };
+  const routes = { '/api/threads': async (_body, url) => {
+    const ancestor = url.searchParams.get('ancestorThreadId');
+    if (ancestor && children[ancestor]) await new Promise(resolve => setTimeout(resolve, 2500));
+    return { data: ancestor ? (children[ancestor] ? [children[ancestor]] : []) : roots, nextCursor: null };
+  } };
+  const f = await fixture({ width: 1450, height: 820, staticDir: process.env.ELPIS_RENDERER_OUT, threads: roots, readyThreadId: rootA.id, routes, storage: {
+    'elpis-sidebar-width': '376',
+    'elpis-preferences-v1': JSON.stringify({ transcriptWidth: 'l', agentsPanel: true }),
+  } });
+  try {
+    const { page } = f;
+    await page.locator('.startup-splash').waitFor({ state: 'detached' });
+    await page.evaluate(() => {
+      window.__chatLayout = [];
+      const started = performance.now();
+      const sample = () => {
+        const shell = document.querySelector('.app-shell'), chat = document.querySelector('.chat-content'), main = document.querySelector('.workspace-content'), panel = document.querySelector('.team-panel'), splash = document.querySelector('.startup-splash');
+        if (shell) {
+          const style = splash && getComputedStyle(splash);
+          window.__chatLayout.push({
+            time: Math.round(performance.now() - started),
+            splash: !!style && style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity) > .1,
+            panel: !!panel && getComputedStyle(panel).display !== 'none',
+            main: main?.getBoundingClientRect().width,
+            chat: chat?.getBoundingClientRect().width,
+          });
+        }
+        if (performance.now() - started < 8000) requestAnimationFrame(sample);
+      };
+      requestAnimationFrame(sample);
+    });
+    await page.locator('.team-panel').waitFor();
+    const beforeSwitch = await page.locator('.chat-content').evaluate(element => element.getBoundingClientRect().width);
+    await page.locator(`.thread-row[data-thread-id="${rootB.id}"] .thread-link`).click();
+    await page.locator(`.thread-row.active[data-thread-id="${rootB.id}"]`).waitFor();
+    await page.locator('.team-panel').waitFor({ state: 'detached' });
+    const whileLoading = await page.locator('.chat-content').evaluate(element => element.getBoundingClientRect().width);
+    await page.locator('.team-panel').waitFor();
+    const afterRestore = await page.locator('.chat-content').evaluate(element => element.getBoundingClientRect().width);
+    const samples = await page.evaluate(() => window.__chatLayout);
+    const visible = samples.filter(sample => !sample.splash);
+    const widths = [...new Set(visible.map(sample => sample.chat))];
+    console.log('agent panel chat widths', JSON.stringify({ beforeSwitch, whileLoading, afterRestore, widths }));
+    assert.ok(beforeSwitch > whileLoading && afterRestore < whileLoading, 'the panel loads after the splash and changes chat width again after switching chats');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
