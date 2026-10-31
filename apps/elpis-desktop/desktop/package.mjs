@@ -14,7 +14,7 @@ export const productionFiles = [
   'bridge/import-chats.mjs',
   'bridge/settings-files.mjs', 'bridge/app-identity.mjs', 'desktop/sleep-blocker.cjs',
   'bridge/session-context.mjs', 'bridge/side-turn.mjs', 'bridge/thread-titles.mjs',
-  'bridge/profile-env.mjs', 'lib/love-spot-audio.mjs',
+  'bridge/profile-env.mjs', 'lib/love-spot-audio.mjs', 'lib/audio-path.mjs',
   'bridge/love-interview.mjs', 'bridge/agent-output.mjs',
   'bridge/improve.mjs', 'bridge/improve-source.mjs', 'bridge/improve-check.mjs', 'desktop/improve.cjs',
   'bridge/browser-mcp.mjs', 'bridge/claude-mcp-import.mjs', 'desktop/browser-agent.cjs', 'desktop/browser-identity.cjs', 'desktop/documents.cjs', 'desktop/screen-capture.cjs',
