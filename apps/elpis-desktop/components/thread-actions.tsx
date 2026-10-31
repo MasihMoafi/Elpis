@@ -2,7 +2,7 @@
 
 import { cloneElement, useEffect, useRef, useState, type KeyboardEvent, type ReactElement, type ReactNode } from "react";
 import { AgentsIcon, ArchiveIcon, PinIcon, TerminalIcon } from "@/components/elpis-icons";
-import { Bookmark, BookmarkMinus, CircleCheck, Columns2, Eye, EyeOff, FolderInput, FolderPlus, Pencil, PinOff, Plus, SquareArrowOutUpRight, Trash2 } from "lucide-react";
+import { Bookmark, BookmarkMinus, CircleCheck, Columns2, Eye, EyeOff, FolderInput, FolderPlus, Pencil, Plus, SquareArrowOutUpRight, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -113,7 +113,7 @@ export function ThreadActions({ thread, onDelete, onRequestDelete, onRename, ren
   const openItems = openIn.filter((action): action is MenuAction => !!action);
   const actions = (many ? [organize, archive, remove] : [
     onRename ? { id: "rename", label: "Rename", icon: <Pencil size={14} />, hint: "F2", run: rename } : undefined,
-    onPin ? { id: "pin", label: pinned ? "Unpin" : "Pin", icon: pinned ? <PinOff size={14} /> : <PinIcon size={14} />, hint: shortcutHint("pin"), run: () => onPin(thread) } : undefined,
+    onPin ? { id: "pin", label: pinned ? "Unpin" : "Pin", icon: <PinIcon size={14} />, hint: shortcutHint("pin"), run: () => onPin(thread) } : undefined,
     onBookmark ? { id: "bookmark", label: bookmarked ? "Remove bookmark" : "Bookmark", icon: bookmarked ? <BookmarkMinus size={14} /> : <Bookmark size={14} />, run: () => onBookmark(thread) } : undefined,
     // Colour marks a chat in the sidebar; an archived chat (no Archive action) is not there, so it is not offered.
     onArchive ? { id: "colour", label: "Colour", run: () => {}, items: [

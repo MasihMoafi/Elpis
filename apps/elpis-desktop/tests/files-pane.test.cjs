@@ -365,6 +365,7 @@ test('the Files tab is a project tree: folders open and close by click and by ke
     assert.equal(await f.row('lib').getAttribute('aria-level'), '2');
     await f.row('lib').click();
     await eventually(async () => assert.deepEqual(await f.tree.getByRole('treeitem').allInnerTexts(), ['docs', 'src', 'lib', 'lexer.ts', 'parser.ts', 'app.ts', 'package.json', 'README.md']));
+    for (const folder of ['src', 'lib']) await assertCollectionIcon(f.row(folder).locator('svg.tree-icon'), 'folder', `Expanded folder ${folder}`);
     await f.row('src').click();
     await eventually(async () => assert.deepEqual(await f.tree.getByRole('treeitem').allInnerTexts(), ['docs', 'src', 'package.json', 'README.md'], 'a closed folder hides what it held'));
     await f.row('src').click();

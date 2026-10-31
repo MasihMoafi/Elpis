@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
-import { ChevronRight, FolderOpen } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { FolderIcon } from "@/components/elpis-icons";
 import { RightClickMenu } from "@/components/action-menu";
 import { useFileActions } from "@/components/file-actions";
@@ -25,7 +25,7 @@ const TreeRow = memo(function TreeRow({ cwd, path, name, depth, dir, expanded, s
   onError: (message: string) => void; onOpen: (path: string, dir: boolean, keep: boolean) => void;
 }) {
   const actions = useFileActions({ abs: `${cwd.replace(/\/+$/, "")}/${path}`, rel: path, inside: true, dir }, onError);
-  const Icon = dir ? expanded ? FolderOpen : FolderIcon : fileKind(name).Icon;
+  const Icon = dir ? FolderIcon : fileKind(name).Icon;
   const click = (event: MouseEvent) => onOpen(path, dir, event.detail !== 1);
   const area = <div role="treeitem" aria-level={depth + 1} aria-expanded={dir ? !!expanded : undefined} aria-selected={selected} aria-current={current || undefined}
     tabIndex={tab ? 0 : -1} data-path={path} data-dir={dir || undefined} data-flash={flash || undefined} className="tree-row" style={{ paddingInlineStart: pad(depth) }} title={path} onClick={click} />;

@@ -6,6 +6,7 @@ const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const { fakeDesktop } = require('./fake-desktop.cjs');
 const { rowAction, threadMenuItem } = require('./controls.cjs');
+const { assertCollectionIcon } = require('./collection-icon-assertions.cjs');
 
 test('projects: explicit membership, drag, menu moves, persistence, and unscoped new chats', async () => {
   const root = process.env.ELPIS_RENDERER_OUT || path.resolve(__dirname, '../out');
@@ -55,9 +56,14 @@ test('projects: explicit membership, drag, menu moves, persistence, and unscoped
     await first.locator('.thread-row[data-thread-id="alpha"]').waitFor();
     assert.equal(await sidebar.locator('.thread-row[data-thread-id="alpha"]').count(), 1, 'a project chat must not also appear in global Recents');
     assert.equal(await sidebar.locator('.thread-row[data-thread-id="alpha-worker"]').count(), 0, 'children of a project chat must not become global root chats');
-    await rowAction(page, row('alpha'), 'Alpha', 'Pin');
-    assert.equal(await sidebar.locator('.thread-row[data-thread-id="alpha"]').count(), 1, 'pinning a project chat must not duplicate it in the global list');
-    await rowAction(page, row('alpha'), 'Alpha', 'Unpin');
+    for (const label of ['Pin', 'Unpin']) {
+      await row('alpha').hover();
+      await page.getByRole('button', { name: 'Actions for Alpha' }).click();
+      const action = await threadMenuItem(page, label);
+      await assertCollectionIcon(action.locator('svg'), 'pin', label);
+      await action.click();
+      assert.equal(await sidebar.locator('.thread-row[data-thread-id="alpha"]').count(), 1, `${label} must not duplicate a project chat`);
+    }
     await page.getByLabel('Search conversations', { exact: true }).fill('Alpha');
     await row('alpha').waitFor();
     assert.equal(await sidebar.locator('.thread-row[data-thread-id="alpha"]').count(), 1, 'global search must still find a project chat');
