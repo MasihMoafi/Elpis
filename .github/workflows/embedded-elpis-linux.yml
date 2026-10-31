@@ -244,6 +244,8 @@ jobs:
           mkdir -p apps/elpis-desktop/bridge/resources
           cp tools/elpis-claude/permission-policy.mjs apps/elpis-desktop/bridge/resources/permission-policy.mjs
           cp tools/elpis-claude/workflow-concurrency.mjs apps/elpis-desktop/bridge/resources/workflow-concurrency.mjs
+          cp codex-rs/core/src/prompts/rag.md apps/elpis-desktop/bridge/resources/rag.md
+          cp codex-rs/skills/src/assets/personal/SKILL.md apps/elpis-desktop/bridge/resources/personal.md
           node scripts/store-guard.test.cjs
           node scripts/history-list.test.cjs
           node --test tools/elpis-claude/test/resume-list.test.mjs
@@ -456,9 +458,6 @@ jobs:
         env:
           A124_ENGINE: ${{ github.workspace }}/codex-rs/target/release/elpis
         run: |
-          mkdir -p apps/elpis-desktop/bridge/resources
-          cp codex-rs/core/src/prompts/rag.md apps/elpis-desktop/bridge/resources/rag.md
-          cp codex-rs/skills/src/assets/personal/SKILL.md apps/elpis-desktop/bridge/resources/personal.md
           node --test --test-reporter=tap tools/elpis-claude/test/claude-turn-record.test.mjs tools/elpis-claude/test/turn-delivery.test.mjs | tee "$RUNNER_TEMP/elpis-claude-turn-checks.log"
           for attempt in {1..10}; do
             node --test --test-reporter=tap --test-name-pattern='a bridge restart recovers' tools/elpis-claude/test/turn-delivery.test.mjs > "$RUNNER_TEMP/elpis-claude-restart-$attempt-checks.log" 2>&1
@@ -590,6 +589,8 @@ jobs:
           mkdir -p apps/elpis-desktop/bridge/resources
           cp tools/elpis-claude/permission-policy.mjs apps/elpis-desktop/bridge/resources/permission-policy.mjs
           cp tools/elpis-claude/workflow-concurrency.mjs apps/elpis-desktop/bridge/resources/workflow-concurrency.mjs
+          cp codex-rs/core/src/prompts/rag.md apps/elpis-desktop/bridge/resources/rag.md
+          cp codex-rs/skills/src/assets/personal/SKILL.md apps/elpis-desktop/bridge/resources/personal.md
       - name: Check delegation and workflow MCP compatibility
         run: |
           node --test --test-concurrency=1 tools/elpis-claude/test/delegate-start.test.mjs tools/elpis-claude/test/workflow-agents.test.mjs
