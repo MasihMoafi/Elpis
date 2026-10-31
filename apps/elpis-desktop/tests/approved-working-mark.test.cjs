@@ -106,10 +106,10 @@ for (const colorScheme of ['light', 'dark']) {
     const f = await fixture({ colorScheme, running: true, width: 1600, height: 900 }), { page } = f;
     try {
       await f.open('chat-a');
-      const mark = page.locator('.turn-working .working-mark').last();
+      const mark = page.locator('.elpis-working-mark').last();
       await mark.waitFor();
       const before = await geometry(page);
-      await page.getByRole('button', { name: 'Side panel', exact: true }).click();
+      await page.getByRole('button', { name: 'Show side panel', exact: true }).click();
       await page.getByRole('tab', { name: 'Files', exact: true }).click();
       await page.getByRole('treeitem', { name: 'README.md' }).waitFor();
       const opened = await geometry(page);
