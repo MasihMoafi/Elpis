@@ -1,0 +1,73 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "ClaudeAccount": {
+      "properties": {
+        "authenticated": {
+          "type": "boolean"
+        },
+        "duplicate": {
+          "type": "boolean"
+        },
+        "email": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "plan": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "signingIn": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "authenticated",
+        "duplicate",
+        "id",
+        "label",
+        "signingIn"
+      ],
+      "type": "object"
+    }
+  },
+  "properties": {
+    "accounts": {
+      "items": {
+        "$ref": "#/definitions/ClaudeAccount"
+      },
+      "type": "array"
+    },
+    "activeId": {
+      "type": "string"
+    },
+    "authUrl": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "accounts",
+    "activeId"
+  ],
+  "title": "ClaudeAccountsReadResponse",
+  "type": "object"
+}
