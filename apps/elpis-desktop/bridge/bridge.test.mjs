@@ -2413,9 +2413,10 @@ test('bypass permissions selects the engine profile, never a sandbox, and resume
   assert.equal(await reopened({ ...unsandboxed, approvalPolicy: 'on-request', activePermissionProfile: { id: ':bypass-permissions' } }), 'ask', 'bypass needs approvals set to never');
 });
 
-test('a chat moves to another folder for its next turns through the engine settings; only an idle chat, only a real folder', async () => {
+test('a chat can change folders during a turn through native settings for later turns', async () => {
   const { client, socket, threads } = fixture(); await client.initialize();
   const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-move-')));
+  const nextDir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-move-next-')));
   try {
     assert.deepEqual(await client.setFolder(ROOT, { cwd: dir }), { cwd: dir });
     assert.deepEqual(socket.sent.findLast(message => message.method === 'thread/settings/update').params, { threadId: ROOT, cwd: dir });
@@ -2423,9 +2424,14 @@ test('a chat moves to another folder for its next turns through the engine setti
     for (const cwd of ['relative/folder', path.join(dir, 'missing'), 42]) await assert.rejects(client.setFolder(ROOT, { cwd }), /folder/i);
     threads.get(ROOT).status = { type: 'active' };
     const updates = socket.sent.filter(message => message.method === 'thread/settings/update').length;
-    await assert.rejects(client.setFolder(ROOT, { cwd: os.tmpdir() }), /finish/i);
-    assert.equal(socket.sent.filter(message => message.method === 'thread/settings/update').length, updates, 'a running chat is not moved');
-  } finally { client.close(); await fs.rm(dir, { recursive: true, force: true }); }
+    assert.deepEqual(await client.setFolder(ROOT, { cwd: nextDir }), { cwd: nextDir });
+    assert.equal(threads.get(ROOT).status.type, 'active', 'the running turn stays active');
+    assert.equal(threads.get(ROOT).cwd, nextDir, 'the engine saves the new folder for later turns');
+    assert.equal(socket.sent.filter(message => message.method === 'thread/settings/update').length, updates + 1);
+    assert.deepEqual(socket.sent.findLast(message => message.method === 'thread/settings/update').params, { threadId: ROOT, cwd: nextDir });
+  } finally {
+    client.close(); await fs.rm(dir, { recursive: true, force: true }); await fs.rm(nextDir, { recursive: true, force: true });
+  }
 });
 
 test('changing a chat\'s permissions applies now through the engine settings and reads the mode back', async () => {
