@@ -70,7 +70,7 @@ test('selected chat frames keep their size and share the theme accent in both sc
           assert.match(tabFrame.background, /linear-gradient/, `${id}: tab has an accent gradient`);
           assert.ok(tabFrame.mask.split(',').every(value => value.trim() === 'exclude'), `${id}: tab keeps the fill clear`);
           assert.equal(tabFrame.pointer, 'none', `${id}: tab does not block controls`);
-          assert.equal(tabFrame.border, '1px');
+          assert.equal(tabFrame.border, '2px');
           // The selected row keeps its LEFT mark as Masih drew it: a vertical line with a diagonal top, with its original glow.
           const mark = await row.evaluate(element => {
             const line = getComputedStyle(element, '::before'), glow = getComputedStyle(element, '::after');
@@ -78,11 +78,11 @@ test('selected chat frames keep their size and share the theme accent in both sc
               glowLeft: glow.left, glowTop: glow.top, glowBottom: glow.bottom, glowWidth: glow.width, shadow: glow.boxShadow };
           });
           assert.equal(mark.content, '""', `${id}: the row mark exists`);
-          assert.match(mark.clip, /^polygon\(/, `${id}: the mark is a line with a diagonal top`);
-          assert.deepEqual([mark.left, mark.bottom], ['0px', '6px'], `${id}: the mark stays on the left edge`);
-          assert.deepEqual([mark.glowLeft, mark.glowTop, mark.glowBottom, mark.glowWidth], ['0px', '6px', '6px', '2px'], `${id}: the line keeps its original size`);
-          assert.match(mark.shadow, /\b8px\b/, `${id}: the mark keeps its 8px glow`);
-          assert.equal(mark.image, 'none', `${id}: the row has no frame gradient`);
+          // The shared angular edge (Masih, 31 Oct): the WHOLE left side, bending into the top-left cut, with its glow.
+          assert.match(mark.image, /linear-gradient/, `${id}: the row edge is drawn by the shared edge rule`);
+          assert.deepEqual([mark.left, mark.bottom], ['0px', '0px'], `${id}: the edge runs the whole left side`);
+          assert.deepEqual([mark.glowLeft, mark.glowTop, mark.glowBottom, mark.glowWidth], ['0px', '7px', '0px', '2px'], `${id}: the glow follows the whole straight part`);
+          assert.match(mark.shadow, /\b4px\b/, `${id}: the edge keeps its 4px glow`);
           assert.equal(mark.pointer, 'none', `${id}: the mark does not block controls`);
           if (composerFrame) assert.equal(composerFrame.content, 'none', 'the optional composer redesign remains a preview');
 
@@ -91,7 +91,7 @@ test('selected chat frames keep their size and share the theme accent in both sc
             probe.style.color = 'var(--primary)'; element.append(probe);
             const color = getComputedStyle(probe).color; probe.remove(); return color;
           });
-          assert.equal(mark.fill, accent, `${id}: the mark uses its theme accent`);
+          assert.ok(mark.image.includes(accent), `${id}: the edge uses its theme accent`);
           assert.ok(tabFrame.background.includes(accent), `${id}: the tab frame uses its theme accent`);
           if (id === love.id) assert.equal(accent, colorScheme === 'light' ? 'rgb(139, 16, 23)' : 'rgb(236, 87, 94)');
           const inactive = page.locator('.thread-row:not(.active)').first();

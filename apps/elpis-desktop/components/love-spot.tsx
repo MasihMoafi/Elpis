@@ -490,8 +490,8 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
   const tools = <div className="navbar love-spot-tools">
       <div className="love-spot-pages">
         <DropdownMenu onOpenChange={open => { if (open) loadPages(); }}>
-          <DropdownMenuTrigger render={<Button variant="outline" size="sm" aria-label="Pages" disabled={!editor || pageBusy} />}>
-            <span className="truncate max-w-40">{page?.name ?? "Pages"}</span><ChevronDown aria-hidden="true" size={14} />
+          <DropdownMenuTrigger render={<Button variant="outline" size="sm" aria-label="Pages" className="w-44 justify-between" disabled={!editor || pageBusy} />}>
+            <span className="min-w-0 truncate">{page?.name ?? "Pages"}</span><ChevronDown aria-hidden="true" size={14} />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="max-h-96 max-w-80 overflow-y-auto">
             <DropdownMenuItem onClick={() => { setPageName(page?.name ?? ""); setRenaming(true); }}>Rename page</DropdownMenuItem>

@@ -280,7 +280,7 @@ button:disabled { cursor:not-allowed; }
 .message { margin-bottom:22px; min-width:0; overflow-wrap:anywhere; }
 /* Your messages keep the Elpis mark: a card with bevelled corners and the gold right edge (29 Oct, Masih: "why did you change
  * the mark of Elpis in the UI chats? That needs to come back."); ChatGPT's padding and width (specs/chatgpt-chat-style.md). */
-.message.user { background:var(--card); border:1px solid var(--hairline); border-right:2px solid color-mix(in oklch, var(--gold, var(--primary)) 70%, transparent); padding:10px 16px; margin-left:auto; width:fit-content; max-width:70%; white-space:pre-wrap; }
+.message.user { background:var(--card); border:1px solid var(--hairline); padding:10px 16px; margin-left:auto; width:fit-content; max-width:70%; white-space:pre-wrap; }
 .message.agent .speaker { font-size:var(--text-xs); font-weight:600; color:var(--muted-foreground); margin-bottom:6px; }
 .markdown p { margin:0 0 1em; } .markdown > :last-child { margin-bottom:0; } .markdown pre { background:var(--recessed); border:1px solid var(--hairline); padding:12px 14px; overflow:auto; line-height:1.55; } .markdown code { font-size:var(--code-size, 13px); font-family:var(--mono); } .markdown :not(pre) > code { color:inherit; background:color-mix(in oklab, var(--foreground) 6%, var(--background)); padding:1px 6px; border-radius:6px; corner-shape:round; font-size:var(--text-sm); } .markdown ul,.markdown ol { padding-inline-start:22px; margin:8px 0 12px; } .markdown li { margin:3px 0; } .markdown ul { list-style:disc; } .markdown ol { list-style:decimal; } .markdown a { color:inherit; text-decoration:underline dotted 1px; text-underline-offset:2px; text-decoration-color:var(--thread-tertiary); } .markdown a:hover { color:var(--accent-text); } .markdown-table { max-width:100%; overflow:auto; margin:0 0 14px; } .markdown table { border-collapse:collapse; font-size:var(--text-sm); width:max-content; } .markdown td,.markdown th { border:1px solid var(--border); padding:6px 10px; min-width:6rem; overflow-wrap:normal; word-break:normal; } .markdown h1,.markdown h2,.markdown h3,.markdown h4,.markdown h5,.markdown h6 { font-weight:600; margin:18px 0 8px; letter-spacing:-.01em; } .markdown h1 { font-size:var(--text-base); } .markdown h2 { font-size:var(--text-base); } .markdown h3 { font-size:var(--text-base); }
 .tool-item { border:1px solid var(--border); margin:12px 0; font-size:var(--text-xs); } .tool-item summary { padding:10px 14px; cursor:pointer; } .tool-item pre { margin:0; padding:12px; overflow:auto; max-height:340px; white-space:pre-wrap; }
@@ -327,7 +327,10 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 /* The prompt rail sits just left of the transcript column (in the 32 px gutter when the pane is narrow), centred vertically, with one 10 px slot per prompt, a 2 px dash
  * 6 px long in the tertiary ink at 40%; dashes in view at 60% of the ink; the hovered one 26 px in full ink, its neighbours
  * 20, 14 and 10 px. At most min(70vh, 40rem) tall, then it scrolls. */
-.prompt-rail { position:absolute; left:max(0px, calc((100% - min(var(--transcript-width, 740px), 100% - 64px)) / 2 - 40px)); top:50%; transform:translateY(-50%); z-index:2; display:flex; flex-direction:column; width:28px; max-height:min(70vh, 40rem, calc(100% - 24px)); }
+/* Where the ChatGPT app puts it: 16px from the chat pane's left edge, not beside the column (Masih, 31 Oct: "check chatgpt app").
+ * The component hides it when the pane is too narrow to keep it clear of the text. */
+.prompt-rail { position:absolute; left:16px; top:50%; transform:translateY(-50%); z-index:2; display:flex; flex-direction:column; width:28px; max-height:min(70vh, 40rem, calc(100% - 24px)); }
+.prompt-rail[data-clear="false"] { display:none; }
 .prompt-rail-marks { display:flex; flex-direction:column; width:100%; min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:none; opacity:0; transition:opacity var(--motion-fast) var(--ease); }
 .prompt-rail:is(:hover, :focus-within) .prompt-rail-marks { opacity:1; }
 .prompt-rail-marks::-webkit-scrollbar { display:none; }
@@ -367,7 +370,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .project-chip:hover, .project-chip[aria-expanded="true"] { color:var(--foreground); background:var(--hover); border-color:var(--hairline); }
 .project-chip span { overflow:hidden; text-overflow:ellipsis; }
 /* More room above a section heading than below it: the heading belongs to the chats under it (Masih, 31 Oct: more space between Love Spot and Recents, less between Recents and its chats). The row keeps the shared 34 px height. */
-.section-label-row { display:flex; align-items:center; gap:4px; height:34px; padding:16px 8px 0; }
+/* A section heading sits closer to its own chats than to the section above, with clear room under it (shadcn SidebarGroupLabel spacing). Masih, 31 Oct: the heading was crowding its first row. */
+.section-label-row { display:flex; align-items:center; gap:4px; height:auto; min-height:34px; padding:16px 8px 10px; }
 .section-label-row > .section-label { padding:0; margin-right:auto; }
 /* Hide shows on the heading's hover or focus, like a row's actions. */
 .section-label-row > .section-hide { opacity:0; color:var(--muted-foreground); }
@@ -900,20 +904,29 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 [data-reorder][data-drop="before"] { box-shadow:inset 0 2px 0 0 var(--primary); }
 [data-reorder][data-drop="after"] { box-shadow:inset 0 -2px 0 0 var(--primary); }
 [data-reorder][data-drop="into"] { background:var(--selected); box-shadow:inset 0 0 0 1px var(--primary); }
-/* The tab keeps the drawn accent frame (bottom and right edges). */
-.task-tab.chat-tab.active::before {
-  --selection-line:1px;
-  content:""; position:absolute; inset:0; pointer-events:none; border:var(--selection-line) solid transparent;
-  border-radius:inherit; corner-shape:inherit;
-  background:linear-gradient(var(--primary),var(--primary)) bottom / 100% var(--selection-line) no-repeat,
-    linear-gradient(to top,var(--primary),color-mix(in oklab,var(--primary) 30%,transparent)) right / calc(var(--cut) + var(--selection-line)) 100% no-repeat,
-    linear-gradient(to top,color-mix(in oklab,var(--primary) 15%,transparent),transparent) border-box;
+/* The angular edge (Masih's drawing on the Love Spot board, 31 Oct): ONE unbroken line in the theme colour that runs the whole
+ * length of one side and carries on round that side's cut corner. Every surface that shows it uses this rule and only chooses
+ * its side through --edge-paint, so a change to the line (width, colour, glow) is made here once.
+ *   selected sidebar row: the whole left side, bending into the top-left cut;
+ *   selected chat tab:    the whole bottom side, bending into the bottom-right cut;
+ *   your message box:     the whole right side, bending into the bottom-right cut. */
+:root { --edge-line:2px; --edge-glow:0 0 4px var(--edge-color, var(--primary)); }
+.thread-row.active::before, .task-tab.chat-tab.active::before, .message.user::after {
+  content:""; position:absolute; inset:0; pointer-events:none; border:var(--edge-line) solid transparent;
+  border-radius:inherit; corner-shape:inherit; background:var(--edge-paint);
   mask:linear-gradient(#000 0 0) padding-box, linear-gradient(#000 0 0) border-box; mask-composite:exclude;
 }
-/* A selected sidebar row keeps its LEFT mark, in the shape Masih drew on the Love Spot board (31 Oct): a vertical line whose top
- * bends into a short diagonal up to the row's top edge. The line stays 2px wide and 6px from the bottom, in the theme colour, with the 8px glow. */
-.thread-row.active::before { content:""; position:absolute; left:0; top:0; bottom:6px; width:10px; pointer-events:none; background:var(--primary); clip-path:polygon(0 100%, 2px 100%, 2px 7.83px, 9.83px 0, 7px 0, 0 7px); }
-.thread-row.active::after { content:""; position:absolute; left:0; top:6px; bottom:6px; width:2px; pointer-events:none; box-shadow:0 0 4px var(--primary); }
+.thread-row.active, .task-tab.chat-tab.active, .message.user {
+  --edge-color:var(--primary); --edge-ink:linear-gradient(var(--edge-color), var(--edge-color));
+  --edge-corner:calc(var(--edge-cut, var(--cut)) + var(--edge-line));
+}
+.thread-row.active { --edge-paint:var(--edge-ink) left top / var(--edge-line) 100% no-repeat border-box, var(--edge-ink) left top / var(--edge-corner) var(--edge-corner) no-repeat border-box; }
+.task-tab.chat-tab.active { --edge-paint:var(--edge-ink) left bottom / 100% var(--edge-line) no-repeat border-box, var(--edge-ink) right bottom / var(--edge-corner) var(--edge-corner) no-repeat border-box; }
+.message.user { position:relative; --edge-cut:var(--cut-lg); --edge-color:color-mix(in oklch, var(--gold, var(--primary)) 70%, transparent);
+  --edge-paint:var(--edge-ink) right top / var(--edge-line) 100% no-repeat border-box, var(--edge-ink) right bottom / var(--edge-corner) var(--edge-corner) no-repeat border-box; }
+/* The glow follows the straight part of the line. */
+.thread-row.active::after { content:""; position:absolute; left:0; top:var(--edge-cut, var(--cut)); bottom:0; width:var(--edge-line); pointer-events:none; box-shadow:var(--edge-glow); }
+.task-tab.chat-tab.active::after { left:0; right:var(--edge-cut, var(--cut)); bottom:0; height:var(--edge-line); background:none; box-shadow:var(--edge-glow); }
 /* One focus ring, round the whole row, and only for the keyboard (a click only highlights the row, as in Claude). */
 .thread-link:focus-visible { outline:none; }
 .thread-row:has(.thread-link:focus-visible) { outline:1px solid color-mix(in oklch, var(--primary) 40%, transparent); outline-offset:-1px; }

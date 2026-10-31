@@ -20,16 +20,16 @@ async function railGeometry(page) {
 function assertRailGap(geometry) {
   assert.ok(geometry.left >= -0.5 && Math.abs(geometry.width - 28) < 0.5, `rail keeps its 28px width inside its pane: ${JSON.stringify(geometry)}`);
   assert.ok(geometry.gap >= 3.5, `rail stays clear of message text: ${JSON.stringify(geometry)}`);
-  assert.ok(geometry.gap <= 48, `rail sits beside the chat column, not at the window edge: ${JSON.stringify(geometry)}`);
+  assert.ok(Math.abs(geometry.left - 16) < 0.5, `rail sits 16px from the pane edge, as in ChatGPT: ${JSON.stringify(geometry)}`);
 }
 
 test('rail fits the gutter and its highlighted dash stays clear of text at desktop widths', async () => {
   const f = await fixture({ width: 900, height: 800 });
   try {
     await f.open('chat-a');
-    for (const width of [900, 1130, 1440, 1920]) {
+    for (const width of [1130, 1440, 1920]) {
       await f.page.setViewportSize({ width, height: 800 });
-      assert.equal(await f.page.locator('.prompt-rail').isVisible(), true, `${width}px keeps the rail available`);
+      await f.page.locator('.prompt-rail').waitFor({ state: 'visible', timeout: 2000 });
       for (const index of [0, 1, 3]) {
         await marksOf(f.page).nth(index).hover();
         await f.page.waitForFunction(() => document.querySelector('[data-distance="0"] i')?.getBoundingClientRect().width >= 25.9);
@@ -42,17 +42,15 @@ test('rail fits the gutter and its highlighted dash stays clear of text at deskt
         assert.ok(preview.x + preview.width <= width, 'preview fits the viewport');
       }
     }
-    // A resized sidebar can leave a fractional pane width between 640 and 641px.
+    // Too narrow for the column to leave the rail its room: the rail hides rather than covering text or hugging the window edge.
     await f.page.setViewportSize({ width: 900, height: 800 });
-    await f.page.locator('.app-shell').evaluate(node => node.style.setProperty('--sidebar-width', '259.5px'));
-    assert.equal(await f.page.locator('.prompt-rail').isVisible(), true);
-    assertRailGap(await railGeometry(f.page));
+    await f.page.locator('.prompt-rail').waitFor({ state: 'hidden', timeout: 2000 });
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
 
 test('rail gap check rejects a deliberately narrow rendered gutter', async () => {
-  const f = await fixture({ width: 900, height: 800 });
+  const f = await fixture({ width: 1440, height: 800 });
   try {
     await f.open('chat-a');
     await marksOf(f.page).nth(1).hover();
@@ -79,7 +77,7 @@ test('a hidden rail releases its gutter in narrow windows and panes', async () =
       assert.equal(await f.page.locator('.chat-scroll').evaluate(node => parseFloat(getComputedStyle(node).paddingLeft)), padding);
     }
     await f.page.setViewportSize({ width: 1130, height: 800 });
-    assert.equal(await f.page.locator('.prompt-rail').isVisible(), true);
+    await f.page.locator('.prompt-rail').waitFor({ state: 'visible', timeout: 2000 });
     assertRailGap(await railGeometry(f.page));
     await f.page.getByRole('button', { name: 'Show side panel', exact: true }).click();
     assert.equal(await f.page.locator('.prompt-rail').isVisible(), false);

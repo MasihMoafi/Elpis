@@ -36,6 +36,7 @@ export function PromptRail({ scroller, threadId, entries, onLoadEarlier, onNavig
   const [saved, setSaved] = useState<{ threadId: string; ids: Set<string> } | null>(null);
   const [target, setTarget] = useState<Target | null>(null);
   const [loadRevision, setLoadRevision] = useState(0);
+  const [clear, setClear] = useState(true);
   const previewId = useId();
   const rail = useRef<HTMLElement>(null);
   const card = useRef<HTMLDivElement>(null);
@@ -198,6 +199,26 @@ export function PromptRail({ scroller, threadId, entries, onLoadEarlier, onNavig
     return () => observer.disconnect();
   }, [hovered, indexed, indexState, scroller]);
 
+  // The rail sits at a fixed place in the pane, as in ChatGPT; when the pane is too narrow for the column to leave it room,
+  // it hides instead of covering the text or moving.
+  const railShown = (indexed?.threadId === threadId ? indexed.data.length : 0) >= 4 || (loaded?.threadId === threadId ? loaded.data.length : 0) >= 4;
+  useLayoutEffect(() => {
+    const root = scroller.current, element = rail.current;
+    if (!root || !element) return;
+    const check = () => {
+      const column = root.querySelector(".chat-content");
+      if (!column || !element.parentElement) return;
+      const pane = element.parentElement.getBoundingClientRect().left;
+      setClear(column.getBoundingClientRect().left - pane >= 16 + 28 + 4);
+    };
+    check();
+    const observer = new ResizeObserver(check);
+    observer.observe(root);
+    const column = root.querySelector(".chat-content");
+    if (column) observer.observe(column);
+    return () => observer.disconnect();
+  }, [scroller, railShown, threadId]);
+
   const loadedPrompts = loaded?.threadId === threadId ? loaded.data : [];
   const indexedPrompts = indexed?.threadId === threadId ? indexed.data : [];
   const indexedIds = new Set(indexedPrompts.map(prompt => prompt.turnId));
@@ -221,7 +242,7 @@ export function PromptRail({ scroller, threadId, entries, onLoadEarlier, onNavig
     setSaved({ threadId, ids });
     try { appStorage().setItem("elpis:prompt-rail-bookmarks:" + threadId, JSON.stringify([...ids])); } catch { /* The current chat still reflects the choice. */ }
   };
-  return <nav ref={rail} className="prompt-rail" aria-label="User messages" title="Jump to an earlier prompt" data-indexed={indexedPrompts.length > 0}
+  return <nav ref={rail} className="prompt-rail" data-clear={clear} aria-label="User messages" title="Jump to an earlier prompt" data-indexed={indexedPrompts.length > 0}
     onMouseLeave={() => { if (!rail.current?.contains(document.activeElement)) setHovered(null); }}
     onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setHovered(null); }}
     onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); (event.target as HTMLElement).blur(); setHovered(null); } }}>
