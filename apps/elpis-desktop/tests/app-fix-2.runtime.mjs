@@ -23,8 +23,13 @@ const designOnly = process.argv.includes('--only-design');
 const modelsOnly = process.argv.includes('--only-models');
 const followOnly = process.argv.includes('--only-follow');
 const wireRequests = [];
+const wireErrors = [], observedSockets = new WeakSet();
 const originalWebSocketSend = WebSocket.prototype.send;
 if (followOnly) WebSocket.prototype.send = function (data, ...args) {
+  if (!observedSockets.has(this)) {
+    observedSockets.add(this);
+    this.on('message', raw => { try { const reply = JSON.parse(String(raw)); if (reply.error) wireErrors.push(reply); } catch {} });
+  }
   try { wireRequests.push(JSON.parse(String(data))); } catch {}
   return originalWebSocketSend.call(this, data, ...args);
 };
@@ -197,6 +202,7 @@ async function check(name, run) {
   try { await run(); results.push({ name, ok: true }); console.log(`PASS ${name}`); }
   catch (error) {
     results.push({ name, ok: false, error: String(error.message).split('\n')[0] }); console.log(`FAIL ${name}: ${String(error.message).split('\n')[0]}`);
+    if (followOnly) console.error(error.stack);
     await page?.screenshot({ path: path.join(root, `failed-${results.length}.png`) }).catch(() => {});
     await page?.keyboard.press('Escape').catch(() => {});
   }
@@ -271,29 +277,47 @@ try {
     await check('read-only child reconnects live without refreshing and keeps its history and parent draft', async () => {
       await until(() => fixture.gated, 'child output held', 30000);
       await composer().fill('Parent draft survives reconnect');
+      await nav('New chat').click();
+      await page.locator(`.thread-row[data-thread-id="${rootThread.id}"] .thread-link`).first().click();
       const showChild = async () => {
-        const rootRow = page.locator(`.thread-row[data-thread-id="${rootThread.id}"]`).first();
-        await rootRow.getByRole('button', { name: /^Actions for / }).click();
-        const agentsItem = page.getByRole('menuitem', { name: /^(Show|Hide) agents$/ });
-        if ((await agentsItem.innerText()).startsWith('Show')) await agentsItem.click(); else await page.keyboard.press('Escape');
-        await page.locator(`.thread-row[data-thread-id="${childThread.id}"] .thread-link`).click();
+        if (await page.getByRole('heading', { level: 1, name: childTitle }).isVisible()) return;
+        await page.locator(`.thread-row[data-thread-id="${rootThread.id}"] .thread-link`).first().click();
+        const row = page.locator(`.team-row[data-thread-id="${childThread.id}"]`);
+        await page.waitForFunction(() => document.querySelector('.team-panel') || document.querySelector('button[aria-label="Show agents panel"]'), null, { timeout: 15000 });
+        const toggle = page.getByRole('button', { name: 'Show agents panel', exact: true });
+        if (await toggle.isVisible()) await toggle.click();
+        await row.waitFor({ timeout: 15000 });
+        await row.click();
         await page.getByRole('heading', { level: 1, name: childTitle }).waitFor();
       };
+      const followResponse = () => page.waitForResponse(response => new URL(response.url()).pathname === `/api/threads/${childThread.id}/resume`, { timeout: 30000 }).then(response => response, error => error);
+      const checkFollow = async response => {
+        if (response instanceof Error) throw response;
+        if (response.status() !== 200) {
+          const request = wireRequests.findLast(item => item.method === 'thread/subscribe' && item.params?.threadId === childThread.id);
+          const wire = wireErrors.findLast(item => item.id === request?.id);
+          const native = wire?.error && { code: wire.error.code, message: String(wire.error.message).slice(0, 100) };
+          throw new Error(`Child follow failed: ${JSON.stringify(await response.json())}; native error: ${JSON.stringify(native)}`);
+        }
+      };
+      const initialFollow = followResponse();
       await showChild();
+      await checkFollow(await initialFollow);
       assert.equal(await composer().count(), 0, 'active child is read-only');
       assert.equal(await page.getByText(/Not following live/).count(), 0);
       const port = Number(new URL(app.url).port);
       await app.close();
       app = await startApp(port);
-      await page.goto(app.url);
-      await page.getByText('Local workspace', { exact: true }).waitFor();
       let historyReads = 0;
       page.on('request', request => {
         if (request.method() === 'GET' && new URL(request.url()).pathname === `/api/threads/${childThread.id}`) historyReads++;
       });
-      const followed = page.waitForResponse(response => new URL(response.url()).pathname === `/api/threads/${childThread.id}/resume` && response.status() === 200);
+      const followed = followResponse();
+      await page.goto('about:blank');
+      await page.goto(app.url);
+      await page.getByText('Local workspace', { exact: true }).waitFor();
       await showChild();
-      await followed;
+      await checkFollow(await followed);
       await wait(500);
       const reads = historyReads, pageLoads = loads;
       await wait(3500);
@@ -309,7 +333,7 @@ try {
       reply('FOLLOW_PARENT_4242', message('FOLLOW_PARENT_OK_4242'));
       await send('FOLLOW_PARENT_4242');
       await page.getByText('FOLLOW_PARENT_OK_4242', { exact: true }).waitFor({ timeout: 30000 });
-      await page.locator(`.thread-row[data-thread-id="${childThread.id}"] .thread-link`).click();
+      await showChild();
       await page.getByText('CHILD_FOLLOW_LIVE_4242', { exact: true }).waitFor();
       assert.equal(await page.getByText('CHILD_FOLLOW_LIVE_4242', { exact: true }).count(), 1, 'completed history has one copy');
       const bridgeRequests = wireRequests.filter(request => request?.params?.threadId === childThread.id);
