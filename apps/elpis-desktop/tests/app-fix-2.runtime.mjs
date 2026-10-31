@@ -22,6 +22,12 @@ const shots = process.argv.includes('--shots') ? path.resolve(process.argv[proce
 const designOnly = process.argv.includes('--only-design');
 const modelsOnly = process.argv.includes('--only-models');
 const followOnly = process.argv.includes('--only-follow');
+const wireRequests = [];
+const originalWebSocketSend = WebSocket.prototype.send;
+if (followOnly) WebSocket.prototype.send = function (data, ...args) {
+  try { wireRequests.push(JSON.parse(String(data))); } catch {}
+  return originalWebSocketSend.call(this, data, ...args);
+};
 const appRoot = fileURLToPath(new URL('..', import.meta.url));
 const root = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-app-fix-2-'));
 const home = path.join(root, 'home'), cwd = path.join(root, 'workspace'), agentCwd = path.join(root, 'agent-folder');
@@ -174,7 +180,7 @@ const bridgeLog = path.join(root, 'bridge.log');
 const bridgeScript = fileURLToPath(new URL('../../../tools/elpis-claude/acp-bridge.mjs', import.meta.url));
 const child = spawn(followOnly ? process.execPath : binary, followOnly ? [bridgeScript] : ['app-server', '--listen', `unix://${socketPath}`], { cwd,
   env: { PATH: process.env.PATH, HOME: home, CODEX_HOME: home, CODEX_AUTH_HOME: home, ELPIS_HOME: home, LANG: 'C.UTF-8',
-    ...(followOnly ? { ELPIS_SHARED_BRIDGE: '1', ELPIS_BRIDGE_SOCKET: socketPath, ELPIS_ENGINE_BIN: binary, ACP_BRIDGE_LOG: bridgeLog, ACP_BRIDGE_DEBUG: 'all' } : {}) }, stdio: ['ignore', 'pipe', 'pipe'] });
+    ...(followOnly ? { ELPIS_SHARED_BRIDGE: '1', ELPIS_BRIDGE_SOCKET: socketPath, ELPIS_ENGINE_BIN: binary, ACP_BRIDGE_LOG: bridgeLog } : {}) }, stdio: ['ignore', 'pipe', 'pipe'] });
 let logs = '', app, browser, page;
 child.stdout.on('data', data => { logs += data; }); child.stderr.on('data', data => { logs += data; });
 const exited = once(child, 'exit');
@@ -306,9 +312,7 @@ try {
       await page.locator(`.thread-row[data-thread-id="${childThread.id}"] .thread-link`).click();
       await page.getByText('CHILD_FOLLOW_LIVE_4242', { exact: true }).waitFor();
       assert.equal(await page.getByText('CHILD_FOLLOW_LIVE_4242', { exact: true }).count(), 1, 'completed history has one copy');
-      const bridgeRequests = (await fs.readFile(bridgeLog, 'utf8')).split('\n').filter(line => line.includes('tui-> ')).map(line => {
-        try { return JSON.parse(line.split('tui-> ')[1]); } catch { return null; }
-      }).filter(request => request?.params?.threadId === childThread.id);
+      const bridgeRequests = wireRequests.filter(request => request?.params?.threadId === childThread.id);
       assert(bridgeRequests.some(request => request.method === 'thread/subscribe'), 'viewer uses the native read-only subscription');
       assert.equal(bridgeRequests.some(request => ['thread/resume', 'thread/settings/update', 'turn/start'].includes(request.method)), false, 'viewer sends no child mutation or resume');
     });
@@ -713,6 +717,7 @@ try {
 } finally {
   releaseFollow?.();
   await browser?.close(); await app?.close(); server.close(); workflowServer.close();
+  WebSocket.prototype.send = originalWebSocketSend;
   for (const response of fixture.hanging) response.destroy();
   child.kill('SIGTERM');
   const stopped = await Promise.race([exited.then(() => true), wait(5000).then(() => false)]);
