@@ -381,15 +381,28 @@ impl Session {
                         == SandboxType::WindowsMxc,
             );
         let mut mcp_servers = effective_mcp_servers(&config, auth.as_ref());
-        if let Some(selection) = desired.mcp_server_selection.as_deref() {
-            mcp_servers.retain(|name, _| {
-                let source = config
-                    .mcp_server_catalog
-                    .server(name)
-                    .map(|registration| registration.source());
-                mcp_server_is_selected_for_thread(name, source, Some(selection))
-            });
-        }
+        let (global_names, host_names) = config.mcp_server_layer_names();
+        mcp_servers.retain(|name, _| {
+            let host = host_names.contains(name);
+            if host
+                && (global_names.contains(name)
+                    || desired
+                        .mcp_server_selection
+                        .as_ref()
+                        .is_some_and(|selection| selection.contains(name)))
+            {
+                return false;
+            }
+            let source = config
+                .mcp_server_catalog
+                .server(name)
+                .map(|registration| registration.source());
+            host || mcp_server_is_selected_for_thread(
+                name,
+                source,
+                desired.mcp_server_selection.as_deref(),
+            )
+        });
         config.set_server_permission_profiles(
             &mcp_servers,
             desired.environments.turn_environments().map(|environment| {

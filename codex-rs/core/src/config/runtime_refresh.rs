@@ -5,6 +5,7 @@ use crate::config::Config;
 use crate::config::ManagedFeatures;
 use crate::config::constrain_mcp_servers;
 use crate::config::resolve_tool_suggest_config_from_layer_stack;
+use codex_config::ConfigLayerSource;
 use codex_config::McpServerAuth;
 use codex_config::McpServerConfig;
 use codex_features::Feature;
@@ -14,6 +15,7 @@ use codex_features::Features;
 use codex_features::FeaturesToml;
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::collections::HashSet;
 
 #[cfg(test)]
 #[path = "runtime_refresh_tests.rs"]
@@ -33,6 +35,34 @@ struct McpRefreshToml {
 }
 
 impl Config {
+    pub(crate) fn mcp_server_layer_names(&self) -> (HashSet<String>, HashSet<String>) {
+        // Host/client servers arrive in session flags. A bare enabled=false is
+        // a restriction on a configured server, not a new host definition.
+        let mut global_names = HashSet::new();
+        let mut host_names = HashSet::new();
+        for layer in self.config_layer_stack.layers_low_to_high() {
+            let Some(servers) = layer
+                .config
+                .get("mcp_servers")
+                .and_then(toml::Value::as_table)
+            else {
+                continue;
+            };
+            for (name, definition) in servers {
+                if matches!(layer.name, ConfigLayerSource::SessionFlags) {
+                    if definition.as_table().is_some_and(|fields| {
+                        fields.contains_key("command") || fields.contains_key("url")
+                    }) {
+                        host_names.insert(name.clone());
+                    }
+                } else {
+                    global_names.insert(name.clone());
+                }
+            }
+        }
+        (global_names, host_names)
+    }
+
     pub(crate) fn resolve_runtime_refresh(
         &self,
         incoming: &Self,
@@ -92,6 +122,10 @@ impl Config {
         };
         // Refresh ordinary servers from the complete host-owned set. Keep the
         // initially admitted EMA configuration until a fresh session is constructed.
+        // A global server added after this session started owns its name, even
+        // if an older host definition used that name. Fail closed on collision.
+        let (incoming_global_names, _) = incoming.mcp_server_layer_names();
+        let (_, session_host_names) = self.mcp_server_layer_names();
         let mut servers: HashMap<_, _> = incoming
             .mcp_servers
             .get()
@@ -99,6 +133,8 @@ impl Config {
             .filter(|(name, server)| {
                 !is_enterprise(server)
                     && !self.mcp_servers.get().get(*name).is_some_and(is_enterprise)
+                    && !(incoming_global_names.contains(*name)
+                        && session_host_names.contains(*name))
             })
             .map(|(name, server)| (name.clone(), server.clone()))
             .collect();

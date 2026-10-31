@@ -99,26 +99,87 @@ mod mcp_selection_config_override_tests {
     use super::super::ThreadRequestProcessor;
     use serde_json::json;
     use std::collections::HashMap;
+    use std::collections::HashSet;
 
     #[test]
     fn thread_config_blocks_user_server_definition_overrides_but_allows_host_route() {
+        let globals = HashSet::from(["alpha".to_string()]);
         let user_server = HashMap::from([(
             "mcp_servers.alpha".to_string(),
             json!({"command": "alternate", "env": {"TOKEN": "replacement"}}),
         )]);
-        assert!(ThreadRequestProcessor::config_overrides_user_mcp_server_definitions(&user_server));
+        assert!(
+            ThreadRequestProcessor::config_overrides_user_mcp_server_definitions(
+                &user_server,
+                &globals,
+                None
+            )
+        );
 
         let mixed_servers = HashMap::from([(
             "mcp_servers".to_string(),
             json!({"alpha": {"url": "https://override.invalid"}, "elpis-agents": {"command": "host"}}),
         )]);
-        assert!(ThreadRequestProcessor::config_overrides_user_mcp_server_definitions(&mixed_servers));
+        assert!(
+            ThreadRequestProcessor::config_overrides_user_mcp_server_definitions(
+                &mixed_servers,
+                &globals,
+                None
+            )
+        );
 
         let host_route = HashMap::from([(
             "mcp_servers.elpis-agents".to_string(),
             json!({"command": "host"}),
         )]);
-        assert!(!ThreadRequestProcessor::config_overrides_user_mcp_server_definitions(&host_route));
+        assert!(
+            !ThreadRequestProcessor::config_overrides_user_mcp_server_definitions(
+                &host_route,
+                &globals,
+                None
+            )
+        );
+        let browser = HashMap::from([(
+            "mcp_servers.elpis_browser".to_string(),
+            json!({"command": "host"}),
+        )]);
+        assert!(
+            !ThreadRequestProcessor::config_overrides_user_mcp_server_definitions(
+                &browser, &globals, None
+            )
+        );
+        let disable = HashMap::from([("mcp_servers.alpha.enabled".to_string(), json!(false))]);
+        assert!(
+            !ThreadRequestProcessor::config_overrides_user_mcp_server_definitions(
+                &disable, &globals, None
+            )
+        );
+        let enable = HashMap::from([("mcp_servers.alpha.enabled".to_string(), json!(true))]);
+        assert!(
+            ThreadRequestProcessor::config_overrides_user_mcp_server_definitions(
+                &enable, &globals, None
+            )
+        );
+        let stale = vec!["elpis_browser".to_string()];
+        assert!(
+            ThreadRequestProcessor::config_overrides_user_mcp_server_definitions(
+                &browser,
+                &globals,
+                Some(&stale)
+            )
+        );
+
+        let mut legacy = HashMap::from([
+            ("mcp_servers.alpha.enabled".to_string(), json!(false)),
+            (
+                "mcp_servers.elpis_browser".to_string(),
+                json!({"command": "host"}),
+            ),
+        ]);
+        let disabled =
+            ThreadRequestProcessor::take_legacy_mcp_disables(Some(&mut legacy), &globals, None);
+        assert_eq!(disabled, HashSet::from(["alpha".to_string()]));
+        assert_eq!(legacy, browser);
     }
 }
 

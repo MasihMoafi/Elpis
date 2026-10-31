@@ -1265,14 +1265,6 @@ impl ThreadRequestProcessor {
             environments,
         } = params;
 
-        if config
-            .as_ref()
-            .is_some_and(Self::config_overrides_user_mcp_server_definitions)
-        {
-            return Err(invalid_request(
-                "MCP server definitions and credentials must come from global config".to_string(),
-            ));
-        }
         if matches!(
             history_mode,
             Some(codex_app_server_protocol::ThreadHistoryMode::Paginated)
@@ -1439,8 +1431,8 @@ impl ThreadRequestProcessor {
         app_server_client_name: Option<String>,
         app_server_client_version: Option<String>,
         client_mcp_extensions: ClientMcpExtensions,
-        config_overrides: Option<HashMap<String, serde_json::Value>>,
-        mcp_server_selection: Option<Vec<String>>,
+        mut config_overrides: Option<HashMap<String, serde_json::Value>>,
+        mut mcp_server_selection: Option<Vec<String>>,
         typesafe_overrides: ConfigOverrides,
         dynamic_tools: Option<Vec<DynamicToolSpec>>,
         selected_capability_roots: Vec<SelectedCapabilityRoot>,
@@ -1459,20 +1451,62 @@ impl ThreadRequestProcessor {
     ) -> Result<(), JSONRPCErrorError> {
         let thread_start_started_at = std::time::Instant::now();
         let requested_cwd = typesafe_overrides.cwd.clone();
+        let global_mcp_names = if mcp_server_selection.is_some()
+            || config_overrides
+                .as_ref()
+                .is_some_and(Self::has_mcp_config_overrides)
+        {
+            Self::global_mcp_server_names(&config_manager, requested_cwd.clone()).await?
+        } else {
+            HashSet::new()
+        };
+        Self::validate_mcp_config_overrides(
+            config_overrides.as_ref(),
+            &global_mcp_names,
+            mcp_server_selection.as_deref(),
+        )?;
+        if let Some(selection) = &mcp_server_selection {
+            if let Some(unknown) = selection
+                .iter()
+                .find(|name| !global_mcp_names.contains(*name))
+            {
+                let inherited = if let Some(parent_id) = parent_thread_id {
+                    if let Ok(parent) = listener_task_context
+                        .thread_manager
+                        .get_thread(parent_id)
+                        .await
+                    {
+                        parent.config_snapshot().await.mcp_server_selection.as_ref()
+                            == Some(selection)
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
+                if !inherited {
+                    return Err(invalid_request(format!(
+                        "MCP server `{unknown}` is not globally configured"
+                    )));
+                }
+            }
+        }
+        let disabled_names = Self::take_legacy_mcp_disables(
+            config_overrides.as_mut(),
+            &global_mcp_names,
+            mcp_server_selection.as_deref(),
+        );
+        if !disabled_names.is_empty() {
+            mcp_server_selection = Some(Self::restrict_mcp_selection(
+                mcp_server_selection.take(),
+                &global_mcp_names,
+                &disabled_names,
+            ));
+        }
         let mut config = config_manager
             .load_with_overrides(config_overrides.clone(), typesafe_overrides.clone())
             .await
             .map_err(|err| config_load_error(&err))?;
-        if let Some(selection) = &mcp_server_selection {
-            if let Some(unknown) = selection
-                .iter()
-                .find(|name| !config.mcp_servers.contains_key(*name))
-            {
-                return Err(invalid_request(format!(
-                    "MCP server `{unknown}` is not globally configured"
-                )));
-            }
-        }
         if config.ephemeral && daybreak_enabled.is_some() {
             return Err(invalid_request(
                 "daybreakEnabled is not supported for ephemeral threads",
@@ -1626,24 +1660,31 @@ impl ThreadRequestProcessor {
         let create_thread_started_at = std::time::Instant::now();
         let new_thread = listener_task_context
             .thread_manager
-            .start_thread_with_mcp_server_selection(StartThreadOptions {
-                allow_provider_model_fallback,
-                initial_history: match session_start_source
-                    .unwrap_or(codex_app_server_protocol::ThreadStartSource::Startup)
-                {
-                    codex_app_server_protocol::ThreadStartSource::Startup => InitialHistory::New,
-                    codex_app_server_protocol::ThreadStartSource::Clear => InitialHistory::Cleared,
+            .start_thread_with_mcp_server_selection(
+                StartThreadOptions {
+                    allow_provider_model_fallback,
+                    initial_history: match session_start_source
+                        .unwrap_or(codex_app_server_protocol::ThreadStartSource::Startup)
+                    {
+                        codex_app_server_protocol::ThreadStartSource::Startup => {
+                            InitialHistory::New
+                        }
+                        codex_app_server_protocol::ThreadStartSource::Clear => {
+                            InitialHistory::Cleared
+                        }
+                    },
+                    history_mode,
+                    thread_source,
+                    dynamic_tools,
+                    metrics_service_name: service_name,
+                    parent_trace: request_trace,
+                    environments: Some(environment_requests),
+                    thread_extension_init,
+                    client_mcp_extensions,
+                    ..start_options
                 },
-                history_mode,
-                thread_source,
-                dynamic_tools,
-                metrics_service_name: service_name,
-                parent_trace: request_trace,
-                environments: Some(environment_requests),
-                thread_extension_init,
-                client_mcp_extensions,
-                ..start_options
-            }, mcp_server_selection)
+                mcp_server_selection,
+            )
             .instrument(tracing::info_span!(
                 "app_server.thread_start.create_thread",
                 otel.name = "app_server.thread_start.create_thread",
@@ -1803,17 +1844,127 @@ impl ThreadRequestProcessor {
 
     fn config_overrides_user_mcp_server_definitions(
         config: &HashMap<String, serde_json::Value>,
+        global_names: &HashSet<String>,
+        selection: Option<&[String]>,
     ) -> bool {
+        let is_user_owned = |name: &str| {
+            global_names.contains(name)
+                || selection.is_some_and(|names| names.iter().any(|candidate| candidate == name))
+        };
         config.iter().any(|(key, value)| {
             if key == "mcp_servers" {
-                return value
-                    .as_object()
-                    .is_some_and(|servers| servers.keys().any(|name| name != "elpis-agents"));
+                return value.as_object().is_none_or(|servers| {
+                    servers.iter().any(|(name, definition)| {
+                        is_user_owned(name) && !Self::is_mcp_disable_only(definition)
+                    })
+                });
             }
-            key.strip_prefix("mcp_servers.")
-                .and_then(|name| name.split('.').next())
-                .is_some_and(|name| name != "elpis-agents")
+            let Some(path) = key.strip_prefix("mcp_servers.") else {
+                return false;
+            };
+            let (name, field) = path.split_once('.').unwrap_or((path, ""));
+            is_user_owned(name)
+                && !(field == "enabled" && value.as_bool() == Some(false))
+                && !(field.is_empty() && Self::is_mcp_disable_only(value))
         })
+    }
+
+    fn is_mcp_disable_only(value: &serde_json::Value) -> bool {
+        value.as_object().is_some_and(|fields| {
+            fields.len() == 1
+                && fields.get("enabled").and_then(serde_json::Value::as_bool) == Some(false)
+        })
+    }
+
+    fn take_legacy_mcp_disables(
+        config: Option<&mut HashMap<String, serde_json::Value>>,
+        global_names: &HashSet<String>,
+        selection: Option<&[String]>,
+    ) -> HashSet<String> {
+        let mut disabled_names = HashSet::new();
+        let Some(config) = config else {
+            return disabled_names;
+        };
+        let is_user_owned = |name: &str| {
+            global_names.contains(name)
+                || selection.is_some_and(|names| names.iter().any(|candidate| candidate == name))
+        };
+        config.retain(|key, value| {
+            if key == "mcp_servers" {
+                if let Some(servers) = value.as_object_mut() {
+                    servers.retain(|name, definition| {
+                        if is_user_owned(name) && Self::is_mcp_disable_only(definition) {
+                            disabled_names.insert(name.clone());
+                            false
+                        } else {
+                            true
+                        }
+                    });
+                    return !servers.is_empty();
+                }
+                return true;
+            }
+            let Some(path) = key.strip_prefix("mcp_servers.") else {
+                return true;
+            };
+            let (name, field) = path.split_once('.').unwrap_or((path, ""));
+            if is_user_owned(name)
+                && ((field == "enabled" && value.as_bool() == Some(false))
+                    || (field.is_empty() && Self::is_mcp_disable_only(value)))
+            {
+                disabled_names.insert(name.to_string());
+                false
+            } else {
+                true
+            }
+        });
+        disabled_names
+    }
+
+    fn restrict_mcp_selection(
+        selection: Option<Vec<String>>,
+        global_names: &HashSet<String>,
+        disabled_names: &HashSet<String>,
+    ) -> Vec<String> {
+        let mut selection = selection.unwrap_or_else(|| {
+            let mut names: Vec<_> = global_names.iter().cloned().collect();
+            names.sort();
+            names
+        });
+        selection.retain(|name| !disabled_names.contains(name));
+        selection
+    }
+
+    fn has_mcp_config_overrides(config: &HashMap<String, serde_json::Value>) -> bool {
+        config
+            .keys()
+            .any(|key| key == "mcp_servers" || key.starts_with("mcp_servers."))
+    }
+
+    async fn global_mcp_server_names(
+        config_manager: &ConfigManager,
+        cwd: Option<PathBuf>,
+    ) -> Result<HashSet<String>, JSONRPCErrorError> {
+        let config = config_manager
+            .load_for_cwd(None, ConfigOverrides::default(), cwd)
+            .await
+            .map_err(|err| config_load_error(&err))?;
+        Ok(config.mcp_servers.keys().cloned().collect())
+    }
+
+    fn validate_mcp_config_overrides(
+        config: Option<&HashMap<String, serde_json::Value>>,
+        global_names: &HashSet<String>,
+        selection: Option<&[String]>,
+    ) -> Result<(), JSONRPCErrorError> {
+        if config.is_some_and(|config| {
+            Self::config_overrides_user_mcp_server_definitions(config, global_names, selection)
+        }) {
+            return Err(invalid_request(
+                "MCP server definitions and credentials must come from global config".to_string(),
+            ));
+        }
+        Ok(())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -3837,15 +3988,58 @@ impl ThreadRequestProcessor {
                 "`permissions` cannot be combined with `sandbox`",
             ));
         }
-        if params
+        let mut normalized_params = params.clone();
+        let mut global_mcp_names = HashSet::new();
+        let mut legacy_disabled_names = HashSet::new();
+        if normalized_params
             .config
             .as_ref()
-            .is_some_and(Self::config_overrides_user_mcp_server_definitions)
+            .is_some_and(Self::has_mcp_config_overrides)
         {
-            return Err(invalid_request(
-                "MCP server definitions and credentials must come from global config".to_string(),
-            ));
+            let mut cwd = normalized_params
+                .cwd
+                .as_ref()
+                .map(|cwd| PathBuf::from(cwd.as_str()));
+            let mut saved_selection = None;
+            if let Ok(thread_id) = ThreadId::from_string(&normalized_params.thread_id) {
+                if let Ok(thread) = self.thread_manager.get_thread(thread_id).await {
+                    let snapshot = thread.config_snapshot().await;
+                    if cwd.is_none() {
+                        cwd = Some(snapshot.cwd().to_path_buf());
+                    }
+                    saved_selection = snapshot.mcp_server_selection;
+                }
+            }
+            if cwd.is_none() && normalized_params.history.is_none() {
+                let source = self
+                    .read_stored_thread_for_resume(
+                        &normalized_params.thread_id,
+                        normalized_params.path.as_ref(),
+                        false,
+                    )
+                    .await?;
+                cwd = Some(source.cwd);
+            }
+            global_mcp_names = Self::global_mcp_server_names(&self.config_manager, cwd).await?;
+            Self::validate_mcp_config_overrides(
+                normalized_params.config.as_ref(),
+                &global_mcp_names,
+                saved_selection.as_deref(),
+            )?;
+            legacy_disabled_names = Self::take_legacy_mcp_disables(
+                normalized_params.config.as_mut(),
+                &global_mcp_names,
+                saved_selection.as_deref(),
+            );
+            if normalized_params
+                .config
+                .as_ref()
+                .is_some_and(HashMap::is_empty)
+            {
+                normalized_params.config = None;
+            }
         }
+        let params = &normalized_params;
         let redact_resume_payloads =
             should_redact_thread_resume_payloads(app_server_client_name.as_deref());
 
@@ -3858,6 +4052,8 @@ impl ThreadRequestProcessor {
                     app_server_client_name.clone(),
                     app_server_client_version.clone(),
                     /*cold_resume_history*/ None,
+                    &global_mcp_names,
+                    &legacy_disabled_names,
                 )
                 .await?
             {
@@ -3903,7 +4099,7 @@ impl ThreadRequestProcessor {
             personality,
             exclude_turns,
             initial_turns_page,
-        } = params.clone();
+        } = normalized_params;
         let include_turns = !exclude_turns;
 
         let resume_result = if let Some(history) = history {
@@ -4012,6 +4208,8 @@ impl ThreadRequestProcessor {
                     app_server_client_name,
                     app_server_client_version,
                     cold_resume_history,
+                    &HashSet::new(),
+                    &HashSet::new(),
                 )
                 .await?
             {
@@ -4040,6 +4238,25 @@ impl ThreadRequestProcessor {
         } else {
             None
         };
+        let saved_mcp_selection =
+            history_settings.and_then(|settings| settings.mcp_server_selection.clone());
+        Self::validate_mcp_config_overrides(
+            request_overrides.as_ref(),
+            &global_mcp_names,
+            saved_mcp_selection.as_deref(),
+        )?;
+        legacy_disabled_names.extend(Self::take_legacy_mcp_disables(
+            request_overrides.as_mut(),
+            &global_mcp_names,
+            saved_mcp_selection.as_deref(),
+        ));
+        let legacy_mcp_selection = (!legacy_disabled_names.is_empty()).then(|| {
+            Some(Self::restrict_mcp_selection(
+                saved_mcp_selection,
+                &global_mcp_names,
+                &legacy_disabled_names,
+            ))
+        });
         let history_cwd = history_settings
             .map(|settings| settings.cwd.to_path_buf())
             .or_else(|| thread_history.session_cwd());
@@ -4169,7 +4386,7 @@ impl ThreadRequestProcessor {
 
         match self
             .thread_manager
-            .resume_thread_with_history(
+            .resume_thread_with_history_and_mcp_server_selection(
                 config,
                 thread_history,
                 self.auth_manager.clone(),
@@ -4180,6 +4397,7 @@ impl ThreadRequestProcessor {
                     ThreadResumeTarget::DaemonRecovery(_) => None,
                 },
                 client_mcp_extensions,
+                legacy_mcp_selection,
             )
             .await
         {
@@ -4471,6 +4689,8 @@ impl ThreadRequestProcessor {
         app_server_client_name: Option<String>,
         app_server_client_version: Option<String>,
         cold_resume_history: Option<&[RolloutItem]>,
+        global_mcp_names: &HashSet<String>,
+        legacy_disabled_names: &HashSet<String>,
     ) -> Result<RunningThreadResumeResult, JSONRPCErrorError> {
         let running_thread = if params.history.is_some() {
             if let Ok(existing_thread_id) = ThreadId::from_string(&params.thread_id)
@@ -4531,7 +4751,7 @@ impl ThreadRequestProcessor {
                     active_path.display()
                 )));
             }
-            let config_snapshot = existing_thread.config_snapshot().await;
+            let mut config_snapshot = existing_thread.config_snapshot().await;
             let mismatch_details = collect_resume_override_mismatches(params, &config_snapshot);
             if !mismatch_details.is_empty() {
                 let has_subscribers = !self
@@ -4582,6 +4802,32 @@ impl ThreadRequestProcessor {
                     existing_thread_id,
                     mismatch_details.join("; ")
                 );
+            }
+            if !legacy_disabled_names.is_empty() {
+                if !can_accept_direct_input(
+                    existing_thread.multi_agent_version(),
+                    &config_snapshot.session_source,
+                    config_snapshot.thread_source.as_ref(),
+                ) {
+                    return Err(invalid_request(
+                        "cannot change MCP selection for a parent-owned child",
+                    ));
+                }
+                let selection = Self::restrict_mcp_selection(
+                    config_snapshot.mcp_server_selection.clone(),
+                    global_mcp_names,
+                    legacy_disabled_names,
+                );
+                existing_thread
+                    .update_thread_settings(codex_protocol::protocol::ThreadSettingsOverrides {
+                        mcp_server_selection: Some(Some(selection)),
+                        ..Default::default()
+                    })
+                    .await
+                    .map_err(|err| {
+                        internal_error(format!("failed to update MCP selection: {err}"))
+                    })?;
+                config_snapshot = existing_thread.config_snapshot().await;
             }
             let redact_resume_payloads =
                 should_redact_thread_resume_payloads(app_server_client_name.as_deref());
@@ -5077,7 +5323,7 @@ impl ThreadRequestProcessor {
             sandbox,
             permissions,
             config: cli_overrides,
-            mcp_server_selection,
+            mut mcp_server_selection,
             base_instructions,
             developer_instructions,
             ephemeral,
@@ -5085,14 +5331,6 @@ impl ThreadRequestProcessor {
             exclude_turns,
             defer_goal_continuation,
         } = params;
-        if cli_overrides
-            .as_ref()
-            .is_some_and(Self::config_overrides_user_mcp_server_definitions)
-        {
-            return Err(invalid_request(
-                "MCP server definitions and credentials must come from global config".to_string(),
-            ));
-        }
         let include_turns = !exclude_turns;
         if sandbox.is_some() && permissions.is_some() {
             return Err(invalid_request(
@@ -5206,7 +5444,7 @@ impl ThreadRequestProcessor {
                 cli_overrides.insert("windows.sandbox".to_string(), serde_json::json!(mode));
             }
         }
-        let request_overrides = if cli_overrides.is_empty() {
+        let mut request_overrides = if cli_overrides.is_empty() {
             None
         } else {
             Some(cli_overrides)
@@ -5303,22 +5541,77 @@ impl ThreadRequestProcessor {
                     .map(|profile| profile.id);
             }
         }
-        // Derive a Config using the same logic as new conversation, honoring overrides if provided.
-        let config = self
-            .config_manager
-            .load_for_cwd(request_overrides, typesafe_overrides, history_cwd)
-            .await
-            .map_err(|err| config_load_error(&err))?;
+        let global_mcp_names = if mcp_server_selection.is_some()
+            || request_overrides
+                .as_ref()
+                .is_some_and(Self::has_mcp_config_overrides)
+        {
+            Self::global_mcp_server_names(
+                &self.config_manager,
+                typesafe_overrides
+                    .cwd
+                    .clone()
+                    .or_else(|| history_cwd.clone()),
+            )
+            .await?
+        } else {
+            HashSet::new()
+        };
         if let Some(Some(selection)) = &mcp_server_selection {
             if let Some(unknown) = selection
                 .iter()
-                .find(|name| !config.mcp_servers.contains_key(*name))
+                .find(|name| !global_mcp_names.contains(*name))
             {
                 return Err(invalid_request(format!(
                     "MCP server `{unknown}` is not globally configured"
                 )));
             }
         }
+        let inherited_mcp_selection = if mcp_server_selection.is_none()
+            && request_overrides
+                .as_ref()
+                .is_some_and(Self::has_mcp_config_overrides)
+        {
+            if let Some(parent) = &parent_thread {
+                parent.config_snapshot().await.mcp_server_selection
+            } else {
+                let items = latest_source_model_context
+                    .as_ref()
+                    .map(|context| context.items.as_ref())
+                    .unwrap_or(source_history_items.as_ref());
+                codex_core::latest_mcp_server_selection(items, source_thread_id)
+                    .map(|names| names.to_vec())
+            }
+        } else {
+            None
+        };
+        let selected_mcp_names = mcp_server_selection
+            .as_ref()
+            .cloned()
+            .unwrap_or(inherited_mcp_selection);
+        Self::validate_mcp_config_overrides(
+            request_overrides.as_ref(),
+            &global_mcp_names,
+            selected_mcp_names.as_deref(),
+        )?;
+        let disabled_names = Self::take_legacy_mcp_disables(
+            request_overrides.as_mut(),
+            &global_mcp_names,
+            selected_mcp_names.as_deref(),
+        );
+        if !disabled_names.is_empty() {
+            mcp_server_selection = Some(Some(Self::restrict_mcp_selection(
+                selected_mcp_names,
+                &global_mcp_names,
+                &disabled_names,
+            )));
+        }
+        // Derive a Config using the same logic as new conversation, honoring overrides if provided.
+        let config = self
+            .config_manager
+            .load_for_cwd(request_overrides, typesafe_overrides, history_cwd)
+            .await
+            .map_err(|err| config_load_error(&err))?;
         let goals_enabled = config.features.enabled(Feature::Goals);
 
         let fallback_model_provider = config.model_provider_id.clone();

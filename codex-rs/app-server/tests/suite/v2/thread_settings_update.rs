@@ -109,6 +109,14 @@ async fn mcp_server_selection_updates_the_model_visible_catalog() -> Result<()> 
         create_final_assistant_message_sse_response("done")?,
         create_final_assistant_message_sse_response("done")?,
         create_final_assistant_message_sse_response("done")?,
+        create_final_assistant_message_sse_response("done")?,
+        create_final_assistant_message_sse_response("done")?,
+        create_final_assistant_message_sse_response("done")?,
+        create_final_assistant_message_sse_response("done")?,
+        create_final_assistant_message_sse_response("done")?,
+        create_final_assistant_message_sse_response("done")?,
+        create_final_assistant_message_sse_response("done")?,
+        create_final_assistant_message_sse_response("done")?,
     ])
     .await;
     let mcp_server = MockServer::start().await;
@@ -155,9 +163,12 @@ async fn mcp_server_selection_updates_the_model_visible_catalog() -> Result<()> 
     let override_request_id = app
         .send_thread_start_request_with_auto_env(ThreadStartParams {
             config: Some(
-                [("mcp_servers.alpha".to_string(), json!({"url": host_url.clone()}))]
-                    .into_iter()
-                    .collect(),
+                [(
+                    "mcp_servers.alpha".to_string(),
+                    json!({"url": host_url.clone()}),
+                )]
+                .into_iter()
+                .collect(),
             ),
             ..Default::default()
         })
@@ -176,7 +187,10 @@ async fn mcp_server_selection_updates_the_model_visible_catalog() -> Result<()> 
             model: Some("mock-model".to_string()),
             config: Some(
                 [
-                    ("mcp_servers.elpis_browser".to_string(), json!({"url": host_url.clone()})),
+                    (
+                        "mcp_servers.elpis_browser".to_string(),
+                        json!({"url": host_url.clone()}),
+                    ),
                     (
                         "mcp_servers.client_fixture".to_string(),
                         json!({"url": host_url.clone(), "enabled": true}),
@@ -299,30 +313,21 @@ async fn mcp_server_selection_updates_the_model_visible_catalog() -> Result<()> 
         let tools = body["tools"]
             .as_array()
             .context("model request tools should be an array")?;
-        let alpha_visible = tools.iter().any(|tool| {
-            tool["name"]
-                .as_str()
-                .is_some_and(|name| name.starts_with("mcp__alpha__"))
-        });
-        let beta_visible = tools.iter().any(|tool| {
-            tool["name"]
-                .as_str()
-                .is_some_and(|name| name.starts_with("mcp__beta__"))
-        });
-        let gamma_visible = tools.iter().any(|tool| {
-            tool["name"]
-                .as_str()
-                .is_some_and(|name| name.starts_with("mcp__gamma__"))
-        });
-        assert_eq!(alpha_visible, *alpha_expected);
-        assert_eq!(beta_visible, *beta_expected);
-        assert_eq!(gamma_visible, *gamma_expected);
+        for (name, expected) in [
+            ("alpha", alpha_expected),
+            ("beta", beta_expected),
+            ("gamma", gamma_expected),
+        ] {
+            assert_eq!(
+                model_offers_mcp_server(tools, name),
+                *expected,
+                "server {name}, tools: {tools:?}"
+            );
+        }
         for name in ["elpis_browser", "client_fixture"] {
             assert!(
-                tools.iter().any(|tool| tool["name"]
-                    .as_str()
-                    .is_some_and(|tool_name| tool_name.starts_with(&format!("mcp__{name}__")))),
-                "host-owned {name} must remain available"
+                model_offers_mcp_server(tools, name),
+                "host-owned {name} must remain available; tools: {tools:?}"
             );
         }
     }
@@ -422,17 +427,13 @@ async fn mcp_server_selection_updates_the_model_visible_catalog() -> Result<()> 
             .as_array()
             .context("model request tools should be an array")?;
         assert!(
-            tools.iter().all(|tool| tool["name"]
-                .as_str()
-                .is_none_or(|name| !name.starts_with("mcp__alpha__"))),
-            "a globally {state} MCP server must not leave model-visible tools"
+            !model_offers_mcp_server(tools, "alpha"),
+            "a globally {state} MCP server must not leave model-visible tools; tools: {tools:?}"
         );
         for name in ["elpis_browser", "client_fixture"] {
             assert!(
-                tools.iter().any(|tool| tool["name"]
-                    .as_str()
-                    .is_some_and(|tool_name| tool_name.starts_with(&format!("mcp__{name}__")))),
-                "host-owned {name} must remain available"
+                model_offers_mcp_server(tools, name),
+                "host-owned {name} must remain available; tools: {tools:?}"
             );
         }
     }
@@ -473,15 +474,11 @@ async fn mcp_server_selection_updates_the_model_visible_catalog() -> Result<()> 
         .as_array()
         .context("model request tools should be an array")?;
     assert!(
-        tools.iter().all(|tool| tool["name"]
-            .as_str()
-            .is_none_or(|name| !name.starts_with("mcp__client_fixture__"))),
+        !model_offers_mcp_server(tools, "client_fixture"),
         "a newly disabled global server must override an older host definition"
     );
     assert!(
-        tools.iter().any(|tool| tool["name"]
-            .as_str()
-            .is_some_and(|name| name.starts_with("mcp__elpis_browser__"))),
+        model_offers_mcp_server(tools, "elpis_browser"),
         "the unrelated host-owned browser server must remain available"
     );
 
@@ -501,6 +498,10 @@ async fn mcp_server_selection_updates_the_model_visible_catalog() -> Result<()> 
         .await?;
     let restricted: ThreadStartResponse =
         timeout(DEFAULT_TIMEOUT, app.read_response(restricted_start)).await??;
+    assert_eq!(
+        restricted.thread.mcp_server_selection,
+        Some(Some(vec!["client_fixture".to_string()]))
+    );
     start_text_turn(&mut app, restricted.thread.id.clone()).await?;
     let completed: TurnCompletedNotification =
         timeout(DEFAULT_TIMEOUT, app.read_notification("turn/completed")).await??;
@@ -511,10 +512,268 @@ async fn mcp_server_selection_updates_the_model_visible_catalog() -> Result<()> 
     let tools = bodies[8]["tools"]
         .as_array()
         .context("model request tools should be an array")?;
-    assert!(tools.iter().all(|tool| tool["name"]
-        .as_str()
-        .is_none_or(|name| !name.starts_with("mcp__"))),
-        "legacy per-thread disable overrides must narrow the model-visible catalog");
+    assert!(
+        tools.iter().all(|tool| tool["name"]
+            .as_str()
+            .is_none_or(|name| !name.starts_with("mcp__"))),
+        "legacy per-thread disable overrides must narrow the model-visible catalog"
+    );
+
+    send_thread_settings_update(
+        &mut app,
+        ThreadSettingsUpdateParams {
+            thread_id: restricted.thread.id.clone(),
+            mcp_server_selection: Some(Some(vec!["beta".to_string()])),
+            ..Default::default()
+        },
+    )
+    .await?;
+    let updated = read_thread_settings_updated(&mut app).await?;
+    assert_eq!(
+        updated.thread_settings.mcp_server_selection,
+        Some(vec!["beta".to_string()])
+    );
+    start_text_turn(&mut app, restricted.thread.id.clone()).await?;
+    let completed: TurnCompletedNotification =
+        timeout(DEFAULT_TIMEOUT, app.read_notification("turn/completed")).await??;
+    assert_eq!(completed.turn.status, TurnStatus::Completed);
+    let bodies = received_response_bodies(&responses).await?;
+    let tools = bodies[9]["tools"]
+        .as_array()
+        .context("model request tools should be an array")?;
+    assert!(
+        model_offers_mcp_server(tools, "beta"),
+        "the explicit update must replace the legacy restriction"
+    );
+    assert!(!model_offers_mcp_server(tools, "gamma"));
+
+    send_thread_settings_update(
+        &mut app,
+        ThreadSettingsUpdateParams {
+            thread_id: restricted.thread.id.clone(),
+            mcp_server_selection: Some(None),
+            ..Default::default()
+        },
+    )
+    .await?;
+    let updated = read_thread_settings_updated(&mut app).await?;
+    assert_eq!(updated.thread_settings.mcp_server_selection, None);
+    let restricted_id = restricted.thread.id;
+    drop(app);
+    let mut app = TestAppServer::builder()
+        .with_codex_home(codex_home.path())
+        .build_initialized_with_timeout(DEFAULT_TIMEOUT)
+        .await?;
+    let resume_id = app
+        .send_thread_resume_request(ThreadResumeParams {
+            thread_id: restricted_id.clone(),
+            ..Default::default()
+        })
+        .await?;
+    let resumed: ThreadResumeResponse =
+        timeout(DEFAULT_TIMEOUT, app.read_response(resume_id)).await??;
+    assert_eq!(resumed.thread.mcp_server_selection, Some(None));
+    start_text_turn(&mut app, restricted_id.clone()).await?;
+    let completed: TurnCompletedNotification =
+        timeout(DEFAULT_TIMEOUT, app.read_notification("turn/completed")).await??;
+    assert_eq!(completed.turn.status, TurnStatus::Completed);
+    let bodies = received_response_bodies(&responses).await?;
+    assert_eq!(bodies.len(), 11);
+    let tools = bodies[10]["tools"]
+        .as_array()
+        .context("model request tools should be an array")?;
+    assert!(
+        model_offers_mcp_server(tools, "beta"),
+        "reset must survive a cold resume"
+    );
+    assert!(
+        model_offers_mcp_server(tools, "gamma"),
+        "reset must restore the current global default"
+    );
+    assert!(
+        !model_offers_mcp_server(tools, "client_fixture"),
+        "global disable must still win"
+    );
+
+    let disable_beta = || {
+        Some(
+            [("mcp_servers.beta.enabled".to_string(), json!(false))]
+                .into_iter()
+                .collect(),
+        )
+    };
+    let fork_id = app
+        .send_thread_fork_request(ThreadForkParams {
+            thread_id: restricted_id.clone(),
+            config: disable_beta(),
+            ..Default::default()
+        })
+        .await?;
+    let forked: ThreadForkResponse = timeout(DEFAULT_TIMEOUT, app.read_response(fork_id)).await??;
+    assert_eq!(
+        forked.thread.mcp_server_selection,
+        Some(Some(vec![
+            "client_fixture".to_string(),
+            "gamma".to_string()
+        ]))
+    );
+    start_text_turn(&mut app, forked.thread.id.clone()).await?;
+    let completed: TurnCompletedNotification =
+        timeout(DEFAULT_TIMEOUT, app.read_notification("turn/completed")).await??;
+    assert_eq!(completed.turn.status, TurnStatus::Completed);
+    let bodies = received_response_bodies(&responses).await?;
+    let tools = bodies[11]["tools"]
+        .as_array()
+        .context("model request tools should be an array")?;
+    assert!(!model_offers_mcp_server(tools, "beta"));
+    assert!(model_offers_mcp_server(tools, "gamma"));
+    send_thread_settings_update(
+        &mut app,
+        ThreadSettingsUpdateParams {
+            thread_id: forked.thread.id.clone(),
+            mcp_server_selection: Some(None),
+            ..Default::default()
+        },
+    )
+    .await?;
+    let updated = read_thread_settings_updated(&mut app).await?;
+    assert_eq!(updated.thread_settings.mcp_server_selection, None);
+    start_text_turn(&mut app, forked.thread.id).await?;
+    let completed: TurnCompletedNotification =
+        timeout(DEFAULT_TIMEOUT, app.read_notification("turn/completed")).await??;
+    assert_eq!(completed.turn.status, TurnStatus::Completed);
+    let bodies = received_response_bodies(&responses).await?;
+    let tools = bodies[12]["tools"]
+        .as_array()
+        .context("model request tools should be an array")?;
+    assert!(
+        model_offers_mcp_server(tools, "beta"),
+        "a fork reset must clear the legacy restriction"
+    );
+    assert!(model_offers_mcp_server(tools, "gamma"));
+
+    drop(app);
+    let mut app = TestAppServer::builder()
+        .with_codex_home(codex_home.path())
+        .build_initialized_with_timeout(DEFAULT_TIMEOUT)
+        .await?;
+    let resume_id = app
+        .send_thread_resume_request(ThreadResumeParams {
+            thread_id: restricted_id.clone(),
+            config: disable_beta(),
+            ..Default::default()
+        })
+        .await?;
+    let resumed: ThreadResumeResponse =
+        timeout(DEFAULT_TIMEOUT, app.read_response(resume_id)).await??;
+    assert_eq!(
+        resumed.thread.mcp_server_selection,
+        Some(Some(vec![
+            "client_fixture".to_string(),
+            "gamma".to_string()
+        ]))
+    );
+    start_text_turn(&mut app, restricted_id.clone()).await?;
+    let completed: TurnCompletedNotification =
+        timeout(DEFAULT_TIMEOUT, app.read_notification("turn/completed")).await??;
+    assert_eq!(completed.turn.status, TurnStatus::Completed);
+    let bodies = received_response_bodies(&responses).await?;
+    let tools = bodies[13]["tools"]
+        .as_array()
+        .context("model request tools should be an array")?;
+    assert!(!model_offers_mcp_server(tools, "beta"));
+    assert!(model_offers_mcp_server(tools, "gamma"));
+    send_thread_settings_update(
+        &mut app,
+        ThreadSettingsUpdateParams {
+            thread_id: restricted_id.clone(),
+            mcp_server_selection: Some(None),
+            ..Default::default()
+        },
+    )
+    .await?;
+    let updated = read_thread_settings_updated(&mut app).await?;
+    assert_eq!(updated.thread_settings.mcp_server_selection, None);
+    drop(app);
+    let mut app = TestAppServer::builder()
+        .with_codex_home(codex_home.path())
+        .build_initialized_with_timeout(DEFAULT_TIMEOUT)
+        .await?;
+    let resume_id = app
+        .send_thread_resume_request(ThreadResumeParams {
+            thread_id: restricted_id.clone(),
+            ..Default::default()
+        })
+        .await?;
+    let resumed: ThreadResumeResponse =
+        timeout(DEFAULT_TIMEOUT, app.read_response(resume_id)).await??;
+    assert_eq!(resumed.thread.mcp_server_selection, Some(None));
+    start_text_turn(&mut app, restricted_id.clone()).await?;
+    let completed: TurnCompletedNotification =
+        timeout(DEFAULT_TIMEOUT, app.read_notification("turn/completed")).await??;
+    assert_eq!(completed.turn.status, TurnStatus::Completed);
+    let bodies = received_response_bodies(&responses).await?;
+    assert_eq!(bodies.len(), 15);
+    let tools = bodies[14]["tools"]
+        .as_array()
+        .context("model request tools should be an array")?;
+    assert!(
+        model_offers_mcp_server(tools, "beta"),
+        "a resumed reset must clear the legacy restriction"
+    );
+    assert!(model_offers_mcp_server(tools, "gamma"));
+
+    let warm_resume_id = app
+        .send_thread_resume_request(ThreadResumeParams {
+            thread_id: restricted_id.clone(),
+            config: disable_beta(),
+            ..Default::default()
+        })
+        .await?;
+    let warm: ThreadResumeResponse =
+        timeout(DEFAULT_TIMEOUT, app.read_response(warm_resume_id)).await??;
+    assert_eq!(
+        warm.thread.mcp_server_selection,
+        Some(Some(vec![
+            "client_fixture".to_string(),
+            "gamma".to_string()
+        ]))
+    );
+    start_text_turn(&mut app, restricted_id.clone()).await?;
+    let completed: TurnCompletedNotification =
+        timeout(DEFAULT_TIMEOUT, app.read_notification("turn/completed")).await??;
+    assert_eq!(completed.turn.status, TurnStatus::Completed);
+    let bodies = received_response_bodies(&responses).await?;
+    let tools = bodies[15]["tools"]
+        .as_array()
+        .context("model request tools should be an array")?;
+    assert!(!model_offers_mcp_server(tools, "beta"));
+    assert!(model_offers_mcp_server(tools, "gamma"));
+    send_thread_settings_update(
+        &mut app,
+        ThreadSettingsUpdateParams {
+            thread_id: restricted_id.clone(),
+            mcp_server_selection: Some(None),
+            ..Default::default()
+        },
+    )
+    .await?;
+    let updated = read_thread_settings_updated(&mut app).await?;
+    assert_eq!(updated.thread_settings.mcp_server_selection, None);
+    start_text_turn(&mut app, restricted_id).await?;
+    let completed: TurnCompletedNotification =
+        timeout(DEFAULT_TIMEOUT, app.read_notification("turn/completed")).await??;
+    assert_eq!(completed.turn.status, TurnStatus::Completed);
+    let bodies = received_response_bodies(&responses).await?;
+    assert_eq!(bodies.len(), 17);
+    let tools = bodies[16]["tools"]
+        .as_array()
+        .context("model request tools should be an array")?;
+    assert!(
+        model_offers_mcp_server(tools, "beta"),
+        "a warm resume reset must clear the legacy restriction"
+    );
+    assert!(model_offers_mcp_server(tools, "gamma"));
     Ok(())
 }
 
@@ -1211,6 +1470,20 @@ async fn read_thread_settings_updated(
         mcp.read_notification("thread/settings/updated"),
     )
     .await?
+}
+
+fn model_offers_mcp_server(tools: &[Value], server: &str) -> bool {
+    let namespace = format!("mcp__{server}");
+    let flat_prefix = format!("{namespace}__");
+    tools.iter().any(|tool| {
+        tool["name"].as_str().is_some_and(|name| {
+            name.starts_with(&flat_prefix)
+                || (name == namespace
+                    && tool["tools"]
+                        .as_array()
+                        .is_some_and(|members| !members.is_empty()))
+        })
+    })
 }
 
 async fn received_response_bodies(server: &wiremock::MockServer) -> Result<Vec<Value>> {

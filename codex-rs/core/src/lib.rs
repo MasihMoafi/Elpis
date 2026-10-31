@@ -15,6 +15,7 @@ mod realtime_conversation;
 mod realtime_history;
 mod realtime_prompt;
 mod responses_headers;
+pub use codex_history::latest_mcp_server_selection;
 pub use responses_headers::CodexResponsesHeaders;
 mod responses_metadata;
 mod responses_retry;
