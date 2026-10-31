@@ -1434,9 +1434,12 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
   .composer-pill, .composer .model-select { padding-inline:4px; gap:4px; }
   .composer .model-picker-trigger { min-width:56px; max-width:130px; flex:0 1 auto; }
 }
+@container composer (max-width:520px) {
+  .composer-controls { --composer-control-gap:4px; gap:4px; }
+}
 @container composer (max-width:380px) {
   .composer-right > .fast-toggle { display:none; }
-  .composer-controls { --composer-control-gap:4px; gap:4px; flex-wrap:wrap; }
+  .composer-controls { flex-wrap:wrap; }
   .composer .model-picker-trigger { min-width:40px; max-width:100px; padding-inline:4px; gap:4px; }
   .composer-actions:has([aria-label="End voice chat"]) > .dictation-control:has([aria-label="Dictate message"]):not(:has([aria-label="Cancel dictation"])),
   .composer-actions:has([aria-label="Cancel dictation"]) > .dictation-control:has([aria-label="Start voice chat"]) { display:none; }
