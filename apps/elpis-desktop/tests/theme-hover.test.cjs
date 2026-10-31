@@ -12,11 +12,17 @@ const shots = process.env.ELPIS_POLISH_SHOTS;
 
 async function expectHover(locator, formula, label) {
   await locator.hover();
-  const hover = await locator.evaluate((element, value) => {
+  const hover = await locator.evaluate(async (element, value) => {
     const probe = document.createElement('span');
     probe.style.cssText = `position:absolute;background:${value}`;
     element.append(probe); const expected = getComputedStyle(probe).backgroundColor; probe.remove();
-    return { actual: getComputedStyle(element).backgroundColor, expected };
+    const deadline = performance.now() + 2000;
+    let actual = getComputedStyle(element).backgroundColor;
+    while (actual !== expected && performance.now() < deadline) {
+      await new Promise(resolve => requestAnimationFrame(resolve));
+      actual = getComputedStyle(element).backgroundColor;
+    }
+    return { actual, expected };
   }, formula);
   assert.equal(hover.actual, hover.expected, label);
 }
