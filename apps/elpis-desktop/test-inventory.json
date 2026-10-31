@@ -300,6 +300,7 @@
     "tests/busy-retry.test.cjs",
     "tests/chat-prefetch.test.cjs",
     "tests/prompt-rail-stability.test.cjs",
+    "tests/chat-load-layout.test.cjs",
     "tests/profile.test.cjs",
     "tests/arrow-selects.test.cjs",
     "tests/plugin-app-catalogs.test.cjs",

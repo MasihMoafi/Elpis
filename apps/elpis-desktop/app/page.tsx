@@ -581,7 +581,7 @@ export default function Home() {
     update(); media.addEventListener("change", update);
     return () => media.removeEventListener("change", update);
   }, []);
-  const [agentsPanel, setAgentsPanel] = useState(true);
+  const [agentsPanelState, setAgentsPanelState] = useState<{ open: boolean; held: ReadonlySet<string> }>({ open: true, held: new Set() });
   const [loveToolbarHost, setLoveToolbarHost] = useState<HTMLDivElement | null>(null);
   const [workingHost, setWorkingHost] = useState<HTMLDivElement | null>(null);
   const { theme, dark, setTheme, sidebarWidth, resizeSidebar } = useAppearance(setError);
@@ -625,6 +625,13 @@ export default function Home() {
   const remember = (thread: Thread) => { if (thread.model) settingsOf.current[thread.id] = { model: thread.model, modelProvider: thread.modelProvider, reasoningEffort: thread.reasoningEffort ?? null }; return thread; };
   const threadsRef = useRef<Thread[]>([]);
   useEffect(() => { threadsRef.current = threads; }, [threads]);
+  // Once an unavailable team read lets a draft appear, a later reply must not move it.
+  const holdAgentPanel = useCallback((thread: Thread) => {
+    const root = thread.parentThreadId ?? thread.id;
+    if (checkedChildren.current.has(root) || threadsRef.current.some(item => item.parentThreadId === root)) return;
+    setAgentsPanelState(previous => previous.open && !previous.held.has(root)
+      ? { ...previous, held: new Set([...previous.held, root]) } : previous);
+  }, []);
   const statusRevisions = useRef<Record<string, number>>({});
   const patchThread = useCallback((id: string, patch: Partial<Thread>) => {
     if (patch.status) statusRevisions.current[id] = (statusRevisions.current[id] ?? 0) + 1;
@@ -972,7 +979,6 @@ export default function Home() {
 
   const loadChildren = useCallback(async (id: string, cursor?: string, expand = false) => {
     if (childPaging.current.has(id)) return;
-    checkedChildren.current.add(id);
     childPaging.current.add(id); setLoadingChildren(prev => ({ ...prev, [id]: true }));
     try {
       const result = await api<{ data: Thread[]; nextCursor: string | null }>(`/threads?ancestorThreadId=${encodeURIComponent(id)}&limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`); if (!Array.isArray(result.data)) throw unreadable("conversations");
@@ -980,10 +986,14 @@ export default function Home() {
       if (cursor) loadedChildPages.current.add(id);
       if (cursor || !loadedChildPages.current.has(id)) setChildCursors(prev => ({ ...prev, [id]: result.nextCursor }));
       if (expand) setExpanded(prev => ({ ...prev, [id]: true }));
-    } catch (e) { setError(String(e)); }
-    finally { childPaging.current.delete(id); setLoadingChildren(prev => ({ ...prev, [id]: false })); }
-  }, []);
-  useEffect(() => { if (ready && selected?.id && !selected.parentThreadId) loadChildren(selected.id); }, [ready, selected?.id, selected?.parentThreadId, loadChildren]);
+    } catch (e) {
+      const current = selectedRef.current;
+      if (current && (current.parentThreadId ?? current.id) === id) holdAgentPanel(current);
+      setError(String(e));
+    } finally { checkedChildren.current.add(id); childPaging.current.delete(id); setLoadingChildren(prev => ({ ...prev, [id]: false })); }
+  }, [holdAgentPanel]);
+  const selectedTeamId = selected?.parentThreadId ?? selected?.id;
+  useEffect(() => { if (ready && selectedTeamId) loadChildren(selectedTeamId); }, [ready, selectedTeamId, loadChildren]);
   // Chats this app could not subscribe to are refreshed by reading them instead.
   const selectedLiveError = selected ? liveError[selected.id] : undefined;
   useEffect(() => {
@@ -1119,6 +1129,15 @@ export default function Home() {
   // The chat's team: a root shows its agents; an agent shows its siblings and the way back to the root.
   const teamRoot = selected ? (selected.parentThreadId ? find(selected.parentThreadId) ?? { id: selected.parentThreadId } as Thread : selected) : null;
   const team = teamRoot ? prioritizeChats(threads.filter(thread => thread.parentThreadId === teamRoot.id), thread => agentState(thread, waitingIds)) : [];
+  const agentsPanel = agentsPanelState.open && !(selected && teamRoot && (agentsPanelState.held.has(selected.id) || agentsPanelState.held.has(teamRoot.id)));
+  const awaitingTeam = !!(selected && teamRoot && agentsPanel && !panelShown && ready && connected &&
+    ((!checkedChildren.current.has(teamRoot.id) && !team.length) || (loading && !find(selected.id))));
+  const openAgentsPanel = () => setAgentsPanelState(previous => {
+    const held = new Set(previous.held);
+    if (selected) held.delete(selected.id);
+    if (teamRoot) held.delete(teamRoot.id);
+    return { open: true, held };
+  });
   const folder = (path?: string | null) => path ? path.split("/").filter(Boolean).at(-1) || path : "";
 
   function openNewChat(draftKey = newDraftKey.current) { saveDraft(selectedRef.current?.id || newDraftKey.current, textRef.current); newDraftKey.current = draftKey; request.current++; stickToBottom.current = true; followingBottom.current = false; restoreScroll.current = null; select(null); setEntries([]); setItemCursor(null); setText(savedDraft(draftKey)); setError(""); restoreAttachments(draftKey); setLoading(false); setView("chat"); setSidebar(false); requestAnimationFrame(() => composerRef.current?.focus()); }
@@ -1157,7 +1176,14 @@ export default function Home() {
     const restore = () => { editDraft(remaining.text); setAttachments(remaining.attachments); saveAttachments(remaining.thread?.id || newDraftKey.current, remaining.attachments); };
     if (remaining.thread) void loadThread(remaining.thread).then(restore); else { newChat(); restore(); }
   });
-  const openSplit = (thread: Thread) => { side.closePanel(); setAgentsPanel(false); setView("chat"); split.open(thread); };
+  // A disconnected chat must remain editable even if the team could not be read.
+  useLayoutEffect(() => {
+    if (view !== "chat" || !selected || (ready && connected) || panelShown || split.thread ||
+        (!desktop && window.elpisDesktop) || document.querySelector(".startup-splash:not(.leaving)") ||
+        !window.matchMedia("(min-width: 1101px)").matches) return;
+    holdAgentPanel(selected);
+  }, [view, selected, ready, connected, desktop, panelShown, split.thread, holdAgentPanel]);
+  const openSplit = (thread: Thread) => { side.closePanel(); setAgentsPanelState(previous => ({ ...previous, open: false })); setView("chat"); split.open(thread); };
   const openSessionWindow = (thread?: Thread) => { void sessionWindowApi()?.(thread?.id).catch(cause => setError(String(cause))); };
 
   /** An empty tab keeps its unsent text under its own key; the first one uses the project's new-chat draft. */
@@ -1917,7 +1943,7 @@ export default function Home() {
     } },
     { name: "prune", description: "turn Smart Prune on for new chats", available: idle, run: () => void turnSmartPruneOn() },
     { name: "plan", description: planMode ? "turn Plan mode off" : "turn Plan mode on", available: !busy, run: () => setPlan(!planMode) },
-    { name: "agent", description: "switch the active agent thread", available: team.length > 0 && !panelShown, run: () => { setAgentsPanel(true); requestAnimationFrame(() => document.querySelector<HTMLElement>(".team-panel .team-row.active, .team-panel .team-row")?.focus()); } },
+    { name: "agent", description: "switch the active agent thread", available: team.length > 0 && !panelShown, run: () => { openAgentsPanel(); requestAnimationFrame(() => document.querySelector<HTMLElement>(".team-panel .team-row.active, .team-panel .team-row")?.focus()); } },
     { name: "copy", description: "copy the last response", available: !!lastReply(entries), run: () => { const reply = lastReply(entries); if (reply) navigator.clipboard.writeText(reply).then(() => setSlashNotice("Copied the last reply."), () => setError("Could not copy: the clipboard is unavailable.")); } },
     { name: "export", description: "export the conversation as markdown", available: !!selected && entries.length > 0 && idle, run: () => { if (selected) void exportChat(selected); } },
     { name: "diff", description: "show git diff (including untracked files)", available: !!selected, run: () => setPanel("diff") },
@@ -2456,7 +2482,9 @@ export default function Home() {
     <ProfileDialog ready={ready && connected} />
     <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} returnFocus={shortcutsReturnFocus} />
     {commandMenuOpen && <CommandMenu threads={ordinaryThreads} projects={busy || projectChanging ? [] : projects} actions={commandActions} returnFocus={commandReturnFocus} onClose={() => setCommandMenuOpen(false)} onThread={thread => { void openThread(thread); }} onProject={item => { void selectProject(item).catch(cause => setError(cause instanceof Error ? cause.message : String(cause))); }} onNewChat={prompt => { newChat(); setDesktopPrompt(prompt); }} />}
-    {desktop && <StartupSplash />}
+    {desktop && <StartupSplash onLeaving={() => {
+      if (view === "chat" && selected && (!ready || !connected) && !panelShown && !split.thread && window.matchMedia("(min-width: 1101px)").matches) holdAgentPanel(selected);
+    }} />}
     <ProjectDialog projects={projects} editing={projectEdit} folders={projectEdit !== undefined ? [cwd, ...ordinaryThreads.map(thread => thread.cwd ?? "")] : []} description={newProjectFor ? `${newProjectFor.length} chats will move into this project. Their working folders stay as they are.` : undefined} onClose={() => { setProjectEdit(undefined); setNewProjectFor(null); }} onSave={newProjectFor ? saveProjectFromChats : saveProject} />
     <MoveChatDialog name={projectMove ? projectMove.length === 1 ? title(projectMove[0]) : `${projectMove.length} selected chats` : null} count={projectMove?.length} projects={projects} currentId={projectMove ? new Set(projectMove.map(chat => projectChats[chat.id] ?? null)).size === 1 ? projectChats[projectMove[0].id] ?? null : undefined : null} onMove={id => projectMove ? assignProject(projectMove.map(chat => chat.id), id) : Promise.resolve()} onClose={() => setProjectMove(null)} />
     <ResumeConversation open={resumeOpen} chats={sidebarThreads} returnFocus={composerRef} onClose={() => setResumeOpen(false)} onChoose={thread => { setResumeOpen(false); void openThread(thread); }} />
@@ -2543,7 +2571,10 @@ export default function Home() {
         </div>
         {view === "loveSpot" && <div ref={setLoveToolbarHost} className="love-spot-toolbar-host" />}
         {view === "chat" && desktop && <Button className="header-action" variant="ghost" size="icon-sm" aria-pressed={side.open} aria-label={side.open ? "Hide side panel" : "Show side panel"} title={side.open ? "Hide side panel" : "Side panel: terminals and browser tabs"} onClick={() => side.open ? side.closePanel() : side.openPanel()}>{side.open ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}</Button>}
-        {selected && view === "chat" && team.length > 0 && !panelShown && <Button className="header-action" variant="ghost" size="icon-sm" aria-label={agentsPanel ? "Hide agents panel" : "Show agents panel"} aria-pressed={agentsPanel} onClick={() => setAgentsPanel(value => !value)}><AgentsIcon size={16} /></Button>}
+        {selected && view === "chat" && (team.length > 0 || awaitingTeam) && !panelShown && <Button className={`header-action${team.length ? "" : " team-pending-toggle"}`} variant="ghost" size="icon-sm" aria-label={agentsPanel ? "Hide agents panel" : "Show agents panel"} aria-pressed={agentsPanel} title={awaitingTeam && !team.length ? "Hide agents panel and open the chat" : agentsPanel ? "Hide agents panel" : "Show agents panel"} onClick={() => {
+          if (agentsPanel) { setAgentsPanelState(previous => ({ ...previous, open: false })); if (awaitingTeam) requestAnimationFrame(() => composerRef.current?.focus()); }
+          else openAgentsPanel();
+        }}><AgentsIcon size={16} /></Button>}
         {(split.pane || (split.thread && view === "chat")) && <Button className="header-action" variant="ghost" size="icon-sm" aria-label="Close split view" title="Close split view" onClick={split.close}><X size={16} /></Button>}
         {selected && view === "chat" && <Button className="header-action" variant="ghost" size="icon-sm" aria-label="Refresh conversation" disabled={loading} onClick={() => loadThread(selected)}><RefreshCw size={16} /></Button>}
       </header>
@@ -2566,8 +2597,8 @@ export default function Home() {
       {view === "customize" && <div className="page-scroll"><ViewBoundary label="Customize"><CustomizeView cwd={cwd} onOpenSettings={() => openSettings("mcp")}
         onConnectGithub={hasTerminal ? () => { show("chat"); setTuiLaunch({ key: side.openTerminal(cwd), command: "github-login", token: Date.now() }); } : undefined}
         onCreateSkill={() => { newChat(); requestAnimationFrame(() => editDraft("Use $skill-creator to create a new skill that ")); }} /></ViewBoundary></div>}
-      {view === "chat" && <ViewBoundary label="Chat" resetKey={selected?.id}><div className="chat-split"><div className={`chat-view${!selected && !shownEntries.length ? " empty-chat" : ""}`}>
-        <div className="chat-scroll-wrap"><div className="chat-scroll" ref={scroll} onClickCapture={event => { if (event.target instanceof Element && event.target.closest("[data-preserve-scroll]")) { followingBottom.current = false; stickToBottom.current = false; } }} onWheel={() => { followingBottom.current = false; }} onPointerDown={() => { followingBottom.current = false; }} onKeyDown={event => { if (["PageUp", "PageDown", "Home", "End", "ArrowUp", "ArrowDown"].includes(event.key)) followingBottom.current = false; }} onScrollEnd={event => { if (followingBottom.current) { followingBottom.current = false; event.currentTarget.scrollTo({ top: event.currentTarget.scrollHeight }); } }} onScroll={event => { const element = event.currentTarget; const atBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 80; stickToBottom.current = followingBottom.current || atBottom; setAwayFromBottom(!atBottom); }}><div className="chat-content">
+      {view === "chat" && <ViewBoundary label="Chat" resetKey={selected?.id}><div className="chat-split"><div className={`chat-view${!selected && !shownEntries.length ? " empty-chat" : ""}`} data-team-loading={awaitingTeam || undefined}>
+        <div className="chat-scroll-wrap"><div className="chat-scroll" aria-busy={awaitingTeam || undefined} ref={scroll} onClickCapture={event => { if (event.target instanceof Element && event.target.closest("[data-preserve-scroll]")) { followingBottom.current = false; stickToBottom.current = false; } }} onWheel={() => { followingBottom.current = false; }} onPointerDown={() => { followingBottom.current = false; }} onKeyDown={event => { if (["PageUp", "PageDown", "Home", "End", "ArrowUp", "ArrowDown"].includes(event.key)) followingBottom.current = false; }} onScrollEnd={event => { if (followingBottom.current) { followingBottom.current = false; event.currentTarget.scrollTo({ top: event.currentTarget.scrollHeight }); } }} onScroll={event => { const element = event.currentTarget; const atBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 80; stickToBottom.current = followingBottom.current || atBottom; setAwayFromBottom(!atBottom); }}><div className="chat-content">
           {(itemCursor || heldCount >= 0 && earlierHeld(selected?.id)) ? <Button variant="outline" className="load-earlier-messages" disabled={loading} onClick={() => void older()}>Load earlier messages</Button>
             : !loading && selected && historyGaps.has(selected.id) && <div className="context-event" role="note">The earliest part of this chat is missing, so it opened with the history that remains.</div>}
           {loading && !shownEntries.length && <p role="status" className="chat-loading text-muted-foreground">Loading conversation…</p>}
@@ -2581,7 +2612,8 @@ export default function Home() {
           {selected && proposedPlan && !readOnlyRun && <PlanCard mode={permissionMode} busy={busy || !connected} onImplement={permissions => answerPlan(selected, proposedPlan, { implement: true, permissions })} onKeepPlanning={feedback => answerPlan(selected, proposedPlan, { feedback })} />}
           {approvals.filter(a => a.params.threadId === selected?.id).map(a => <ApprovalCard key={approvalDraftKey(a)} approval={a} answer={(id, body) => answer(id, body, approvalDraftKey(a))} deny={(id, text) => answer(id, { text }, approvalDraftKey(a), true)} busy={!!pendingDrafts[approvalDraftKey(a)]} answers={approvalDrafts[approvalDraftKey(a)]?.answers ?? {}} onAnswerChange={(id, value) => draftAnswer(a, id, value)} />)}
         </div><PromptRail scroller={scroll} threadId={selected?.id ?? null} entries={shownEntries} onLoadEarlier={older} onNavigate={() => { followingBottom.current = false; stickToBottom.current = false; }} />
-          {awayFromBottom && <Button variant="outline" size="icon-lg" className="scroll-to-bottom" aria-label="Scroll to bottom" title="Scroll to bottom" onClick={() => { followingBottom.current = true; stickToBottom.current = true; scroll.current?.scrollTo({ top: scroll.current.scrollHeight, behavior: "smooth" }); }}><ArrowDown size={16} /></Button>}</div></div>
+          {awayFromBottom && <Button variant="outline" size="icon-lg" className="scroll-to-bottom" aria-label="Scroll to bottom" title="Scroll to bottom" onClick={() => { followingBottom.current = true; stickToBottom.current = true; scroll.current?.scrollTo({ top: scroll.current.scrollHeight, behavior: "smooth" }); }}><ArrowDown size={16} /></Button>}</div>
+          {awaitingTeam && <p role="status" className="chat-loading chat-team-loading text-muted-foreground">Loading conversation…</p>}</div>
         <div className="composer-wrap">
           {sideChat && selected?.id === sideChat.parentId && <SideChat key={`${sideChat.parentId}:${sideChat.question?.kind === "recap" ? sideChat.question.id : "side"}`} parentId={sideChat.parentId} open={sideChat.open} question={sideChat.question} onClose={() => { setSideChat(previous => previous ? { ...previous, open: false } : null); focusComposer(); }}  onForward={answer => void send(`From the side chat:\n\n${answer}`)} />}
           <ViewBoundary label="This panel" resetKey={panel}>

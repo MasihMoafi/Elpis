@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./startup-splash.css";
 import { appStorage } from "@/lib/projects";
 
@@ -8,13 +8,15 @@ const FADE_MS = 240;
 const INTRO_MS = 700;
 
 /** The third motion study's E gyroscope, with its surrounding rings removed. */
-export function StartupSplash() {
+export function StartupSplash({ onLeaving }: { onLeaving?: () => void }) {
   const [leaving, setLeaving] = useState(false), [gone, setGone] = useState(false), [theme, setTheme] = useState("");
+  const onLeavingRef = useRef(onLeaving);
+  useEffect(() => { onLeavingRef.current = onLeaving; }, [onLeaving]);
   useEffect(() => {
     // The saved theme wins over the system's (lib/use-appearance.ts); System keeps the media query in charge.
     try { const saved = appStorage().getItem("elpis-theme"); if (saved === "light" || saved === "dark") setTheme(saved); } catch { /* System */ }
     // The introduction is visual only. Bridge health, lists and restored history load in the app.
-    const intro = setTimeout(() => setLeaving(true), INTRO_MS);
+    const intro = setTimeout(() => { onLeavingRef.current?.(); setLeaving(true); }, INTRO_MS);
     const timer = setTimeout(() => setGone(true), INTRO_MS + FADE_MS);
     return () => { clearTimeout(intro); clearTimeout(timer); };
   }, []);
