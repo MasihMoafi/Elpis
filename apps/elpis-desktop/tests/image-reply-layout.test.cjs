@@ -45,10 +45,10 @@ async function gapBelowVisibleImage(page, name, visibleRatio) {
   }
   await image.evaluate(img => img.decode()); await button.waitFor();
   const imageBox = await image.boundingBox(), buttonBox = await button.boundingBox();
-  return { gap: near(buttonBox.y - (imageBox.y + imageBox.height * visibleRatio)), width: near(imageBox.width), image, button };
+  return { gap: near(buttonBox.y - (imageBox.y + imageBox.height * visibleRatio)), width: near(imageBox.width), state: await image.evaluate(img => { const s = getComputedStyle(img); return { complete: img.complete, size: [img.naturalWidth, img.naturalHeight], background: s.backgroundColor, image: s.backgroundImage, border: [s.borderTopWidth, s.borderBottomWidth], margin: s.marginBottom, trimmed: img.parentElement?.dataset.trimmed, origins: [new URL(img.currentSrc || img.src).origin, location.origin], alpha: (() => { try { const c = document.createElement('canvas'); c.width=img.naturalWidth; c.height=img.naturalHeight; const ctx=c.getContext('2d'); ctx.drawImage(img,0,0); return [...ctx.getImageData(10,img.naturalHeight-1,1,1).data]; } catch (e) { return e.name; } })(), direct: !!img.parentElement?.querySelector(':scope > img') }; }), image, button };
 }
 function assertReplyGap(result, label) {
-  assert.ok(result.gap >= 4 && result.gap <= 8, `${label} has a ${result.gap}px gap from visible pixels to Reply (expected 4–8px)`);
+  assert.ok(result.gap >= 4 && result.gap <= 8, `${label} has a ${result.gap}px gap from visible pixels to Reply (expected 4–8px): ${JSON.stringify(result.state)}`);
 }
 
 for (const colorScheme of ['light', 'dark']) test(`transparent image Reply stays under visible pixels through resize without crowding Matilda (${colorScheme})`, async t => {
@@ -64,7 +64,7 @@ for (const colorScheme of ['light', 'dark']) test(`transparent image Reply stays
       { turnId: 'image-turn', item: { id: 'viewed', type: 'imageView', path: '/tmp/viewed.png' } },
       { turnId: 'image-turn', item: { id: 'prompt', type: 'userMessage', content: [{ type: 'text', text: 'Look at these.' }] } },
       ] }),
-      '/api/file/asset': (_body, url) => ({ __asset: { mimeType: 'image/png', bytes: url.searchParams.get('path') === 'reply-images/transparent.png' ? transparentPng : opaquePng } }),
+      '/api/file/asset': (_body, url) => ({ __asset: { mimeType: 'image/png', bytes: url.searchParams.get('path')?.split('/').pop() === 'transparent.png' ? transparentPng : opaquePng } }),
       '/api/threads/chat-a/turns/image-turn/items/viewed/media/0': () => ({ __asset: { mimeType: 'image/png', bytes: transparentPng } }),
     },
   });
