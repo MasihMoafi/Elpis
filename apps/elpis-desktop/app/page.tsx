@@ -1470,7 +1470,7 @@ export default function Home() {
       const used: (NextTurn & { effort?: string }) | undefined = selected ? pending : effort || newPlan ? { ...(effort ? { effort } : {}), ...(newPlan ? { plan: true } : {}) } : undefined;
       const turnOptions: FollowUpOptions = { ...(used?.model ? { model: used.model } : {}), ...(used?.effort ? { effort: used.effort } : {}), ...(used?.plan !== undefined ? { mode: used.plan ? "plan" : "default" } : {}) };
       if (activeTurn && !continues && queueFollowUp(thread.id, sentText, sentAttachments, { ...turnOptions, ...(sentMentions.length ? { mentions: sentMentions } : {}) }, followUp)) { /* queued until the running turn completes */ } else if (activeTurn && !continues) {
-        const steered = await api<{ turn?: { id: string }; compacting?: boolean }>(`/threads/${encodeURIComponent(thread.id)}/steer`, { text: sentText, expectedTurnId: activeTurn, ...attached });
+        const steered = await api<{ turn?: { id: string }; turnId?: string; compacting?: boolean }>(`/threads/${encodeURIComponent(thread.id)}/steer`, { text: sentText, expectedTurnId: activeTurn, ...attached });
         // The running turn compacts the history and takes no message: it waits in the queue for the compaction's end.
         if (steered.compacting) {
           queueFollowUp(thread.id, sentText, sentAttachments, { ...turnOptions, ...(sentMentions.length ? { mentions: sentMentions } : {}) }, "queue");
@@ -1479,6 +1479,8 @@ export default function Home() {
         } else if (steered.turn?.id) {
           updateSubmission({ turnId: steered.turn.id, newTurn: true });
           if (!completedTurns.current.has(steered.turn.id)) setActiveTurns(prev => ({ ...prev, [thread!.id]: steered.turn!.id }));
+        } else if (steered.turnId && steered.turnId !== activeTurn) {
+          updateSubmission({ turnId: steered.turnId });
         }
       } else {
         const result = await api<{ turn?: { id: string }; thread?: Thread; continuedFrom?: string; sendError?: string }>(`/threads/${encodeURIComponent(thread.id)}/turns`, { text: sentText, ...attached, ...turnOptions, ...(continues ? { continueAs: `${title(thread)} (continued)` } : {}) });

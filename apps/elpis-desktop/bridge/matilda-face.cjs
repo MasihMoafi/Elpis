@@ -43,9 +43,9 @@ OLD_BOARD_FACES.push(BOARD_FACE.dataURL, BOARD_FACE_LIGHT.dataURL, FACE_DATA_URL
 for (const [expression, source] of Object.entries(MATILDA_SHOTS)) {
   const portrait = atob(source.split(',')[1]).match(/xlink:href="(data:image\/webp;base64,[^"]+)"/)?.[1];
   if (!portrait) throw new Error(`Missing approved portrait: ${expression}`);
-  // Reuse the original circular crop and black dress; only the light backdrop is discarded.
-  MATILDA_SHOTS_LIGHT[expression] = source;
-  BOARD_SHOTS[expression] = source;
+  // Keep the approved circle and black dress; clear only the upper backdrop stop.
+  const clear = `data:image/svg+xml;base64,${btoa(atob(source.split(',')[1]).replace(/(<stop\b[^>]*?)(\/>)/, '$1 stop-opacity="0"$2'))}`;
+  MATILDA_SHOTS[expression] = MATILDA_SHOTS_LIGHT[expression] = BOARD_SHOTS[expression] = clear;
   if (expression === 'listening') OLD_BOARD_FACES.push(portrait);
 }
 FACE_DATA_URL = FACE_DATA_URL_LIGHT = MATILDA_SHOTS.listening;
