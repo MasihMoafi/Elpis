@@ -43,12 +43,13 @@ OLD_BOARD_FACES.push(BOARD_FACE.dataURL, BOARD_FACE_LIGHT.dataURL, FACE_DATA_URL
 for (const [expression, source] of Object.entries(MATILDA_SHOTS)) {
   const portrait = atob(source.split(',')[1]).match(/xlink:href="(data:image\/webp;base64,[^"]+)"/)?.[1];
   if (!portrait) throw new Error(`Missing approved portrait: ${expression}`);
-  MATILDA_SHOTS[expression] = portrait;
-  MATILDA_SHOTS_LIGHT[expression] = portrait;
-  BOARD_SHOTS[expression] = portrait;
+  // Reuse the original circular crop and black dress; only the light backdrop is discarded.
+  MATILDA_SHOTS_LIGHT[expression] = source;
+  BOARD_SHOTS[expression] = source;
+  if (expression === 'listening') OLD_BOARD_FACES.push(portrait);
 }
 FACE_DATA_URL = FACE_DATA_URL_LIGHT = MATILDA_SHOTS.listening;
-BOARD_FACE = BOARD_FACE_LIGHT = { dataURL: FACE_DATA_URL, mimeType: 'image/webp' };
+BOARD_FACE = BOARD_FACE_LIGHT = { dataURL: FACE_DATA_URL, mimeType: 'image/svg+xml' };
 // Match only Elpis's exact internal guidance; a real file with the same name stays visible.
 function isPortraitInstruction(part) {
   return part !== null && typeof part === "object" && part.type === "text" && part.text === `File: ${PORTRAIT_ATTACHMENT_NAME}\n${PORTRAIT_INSTRUCTIONS}`;
@@ -59,7 +60,7 @@ function replyPortrait(value, preview = false) {
   const match = text.match(PORTRAIT_MARKER);
   const expression = preview ? 'listening' : match?.[1] ?? 'listening';
   return { text: text.replace(/^\s*<!--\s*matilda:[\s\S]*?(?:-->|$)\s*/, ''), expression,
-    dataURL: MATILDA_SHOTS[expression], lightDataURL: MATILDA_SHOTS_LIGHT[expression], board: { dataURL: BOARD_SHOTS[expression], mimeType: 'image/webp' } };
+    dataURL: MATILDA_SHOTS[expression], lightDataURL: MATILDA_SHOTS_LIGHT[expression], board: { dataURL: BOARD_SHOTS[expression], mimeType: 'image/svg+xml' } };
 }
 
 module.exports = { isPortraitInstruction, BOARD_FACE, BOARD_FACE_LIGHT, FACE_DATA_URL, FACE_DATA_URL_LIGHT, MATILDA_SHOTS, MATILDA_SHOTS_LIGHT, OLD_BOARD_FACES, PORTRAIT_DATA_URL, PORTRAIT_MARKER, PORTRAIT_ATTACHMENT_NAME, PORTRAIT_INSTRUCTIONS, replyPortrait };
