@@ -285,3 +285,12 @@ for (const colorScheme of ['light', 'dark']) test(`a section heading has more ro
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
+
+for (const colorScheme of ['light', 'dark']) test(`the chat box glows on all four sides in the theme colour (${colorScheme})`, async () => {
+  const f = await setup(colorScheme), { page } = f;
+  try {
+    const glow = await page.locator('.composer').first().evaluate(element => getComputedStyle(element).boxShadow);
+    assert.match(glow, /rgb\([^)]*\) 0px 0px 8px|0px 0px 8px/, `the chat box has an 8px glow in the theme colour: ${glow}`);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});

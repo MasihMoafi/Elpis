@@ -220,7 +220,7 @@ export function MatildaCompanion() {
   </section>;
   return <div className="flex min-w-0 shrink-0 items-center gap-1 pr-2">
     <MatildaHeartBurst />
-    {floating ? createPortal(floating, document.body) : <Button variant="ghost" size="icon-sm" aria-label="Pin Matilda" title="Pin Matilda" disabled={busy} onClick={() => void act("pin")}><img className="matilda-pin-face" src={MATILDA_SHOTS.softSmile} alt="" /></Button>}
+    {floating ? createPortal(floating, document.body) : <Button variant="ghost" size="icon-sm" aria-label="Pin Matilda" title="Pin Matilda" disabled={busy} onClick={() => void act("pin")}><><img className="matilda-pin-face matilda-avatar-light" src={MATILDA_SHOTS_LIGHT.softSmile} alt="" /><img className="matilda-pin-face matilda-avatar-dark" src={MATILDA_SHOTS.softSmile} alt="" /></></Button>}
     {error && <p role="alert" className="fixed bottom-4 right-4 z-50 max-w-sm border border-border bg-background p-2 text-xs text-destructive">{error}</p>}
   </div>;
 }

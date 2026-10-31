@@ -738,6 +738,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .composer, .composer-tray { --edge:var(--composer-edge); }
 .composer:focus-within, .composer-tray:has(+ .composer:focus-within), .composer-tray:has(+ .composer-working:empty + .composer:focus-within) { --edge:color-mix(in srgb, var(--primary) 80%, var(--hud-edge)); }
 .composer { position:relative; background:var(--composer); border-color:var(--edge); box-shadow:var(--elevation-composer); }
+/* The chat box glows in the theme colour on all four sides, as the selected sidebar chat does (Masih, 31 Oct). */
+.composer { box-shadow:var(--elevation-composer), 0 0 8px var(--primary); }
 .composer-tray { border-color:var(--edge); }
 /* No colour transition: the dark edge is gold, and a theme switch must not fade gold into the light theme. */
 /* The native bevel draws the border once, using the same width and colour as its straight edges. */
