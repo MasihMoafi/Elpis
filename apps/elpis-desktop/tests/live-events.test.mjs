@@ -1,6 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { liveEventItemKey, mergeHistoryWithLive, mergeLiveItem, runtimeErrorNotice } from '../lib/live-events.ts';
+import { createHeartDeduper, nativeHeartReaction, talkHeartReaction } from '../lib/heart-reactions.ts';
+
+test('fresh affectionate commentary reacts once per assistant item, never from history or emoji in code', () => {
+  const item = (id, text, phase = 'commentary') => ({ threadId: 'chat', turnId: 'long-turn', item: { id, type: 'agentMessage', phase, text } });
+  const first = nativeHeartReaction('item/completed', item('reply-1', '<!--matilda:kissSoft--> Here for you.'));
+  assert.deepEqual(first, { threadId: 'chat', itemId: 'reply-1' });
+  assert.equal(nativeHeartReaction('item/started', item('reply-1', '<!--matilda:kissSoft--> Here for you.')), null);
+  assert.equal(nativeHeartReaction('item/completed', item('reply-2', 'Example: `😘`')), null);
+  assert.equal(nativeHeartReaction('item/completed', item('reply-2', '<!--matilda:smile--> Hello.')), null);
+  assert.equal(talkHeartReaction({ entries: [{ turnId: 'old', item: { id: 'reply-1', type: 'agentMessage', portrait: 'kissSoft' } }], busy: false }), null);
+
+  const remember = createHeartDeduper();
+  assert.equal(remember(first), true);
+  assert.equal(remember(first), false);
+  assert.equal(remember(talkHeartReaction({ heartReaction: { threadId: 'chat', itemId: 'reply-1', portrait: 'kissSoft' } })), false);
+  assert.equal(remember(nativeHeartReaction('item/completed', item('reply-3', '<!--matilda:kissPuckered--> Again.'))), true);
+});
 
 const params = (fields = {}) => ({ threadId: 'chat', turnId: 'turn', itemId: 'cmd', ...fields });
 

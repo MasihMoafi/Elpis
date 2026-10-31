@@ -37,6 +37,24 @@ async function fixture(t, { refuseFast = false, audio = enabledAudio, companion 
   const finish = (id = 'turn-1', status = 'completed', reply = 'Here with you.') => client.emit('event', { type: 'message', data: { method: 'turn/completed', params: { threadId: 'chat', turn: { id, status, items: [{ id: 'reply', type: 'agentMessage', text: reply }] } } } });
   return { directory, store, talk, client, created, sent, finish, entries, speeds, presence };
 }
+test('Matilda sends a heart reaction only with a fresh completed kiss reply', async t => {
+  const f = await fixture(t), updates = [];
+  await f.talk.send({ text: 'Hello' });
+  await f.talk.watch(update => updates.push(update));
+  f.finish('turn-1', 'completed', '<!--matilda:kissSoft--> Hello.');
+  const reactions = () => updates.flatMap(update => update.heartReaction ? [update.heartReaction] : []);
+  assert.deepEqual(reactions(), [{ threadId: 'chat', itemId: 'reply', portrait: 'kissSoft' }]);
+
+  const reconnected = [];
+  await f.talk.watch(update => reconnected.push(update));
+  assert.equal(reconnected[0].heartReaction, undefined);
+  f.finish('turn-1', 'completed', '<!--matilda:kissSoft--> Hello.');
+  await f.talk.send({ text: 'Show me a code example' });
+  f.finish('turn-2', 'completed', 'Example: `😘`');
+  await f.talk.send({ text: 'Again' });
+  f.finish('turn-3', 'failed', '<!--matilda:kissPuckered--> Failed.');
+  assert.equal(reactions().length, 1);
+});
 test('a fresh Matilda chat keeps its persona and settings, moves Love Spot forward, and leaves the board and old chat intact', async t => {
   const f = await fixture(t);
   f.client.createThread = async value => {

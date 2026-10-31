@@ -32,7 +32,7 @@ export function createLoveSpotTalk({ client, store, companion, audio = LOVE_SPOT
   };
   const voice = () => ({ enabled: available && !muted, available, reason: voiceReason, error: voiceError });
   const snapshot = () => ({ thread, entries: entries.map(shown), busy: sending || !!activeTurnId, error, voice: voice() });
-  const publish = () => { if (!closed) for (const listen of listeners) listen(snapshot()); };
+  const publish = heartReaction => { if (!closed) for (const listen of listeners) listen(heartReaction ? { ...snapshot(), heartReaction } : snapshot()); };
   async function refreshVoice() {
     if (!audio.available) {
       available = false; voiceReason = audio.reason; voiceError = '';
@@ -157,6 +157,7 @@ export function createLoveSpotTalk({ client, store, companion, audio = LOVE_SPOT
     if (closed || value.type !== 'message') return;
     const { method, params } = value.data;
     if (params.threadId !== threadId) return;
+    let heartReaction;
     if (method === 'turn/started') { activeTurnId = params.turn.id; error = ''; if (!writing || writing.done) begin(params.turn.id); else writing.id ??= params.turn.id; }
     if (method === 'item/started' && params.item?.type === 'agentMessage') upsert(params.turnId, params.item);
     if (method === 'item/completed' && ['userMessage', 'agentMessage'].includes(params.item?.type)) {
@@ -192,6 +193,8 @@ export function createLoveSpotTalk({ client, store, companion, audio = LOVE_SPOT
       // Her final answer only: with phases, the final_answer items; without them (Claude, Gemini), her last message, so words she wrote before a tool call stay off the board.
       const answers = messages.some(item => item.phase === 'final_answer') ? messages.filter(item => item.phase === 'final_answer') : messages.filter(item => !item.phase).slice(-1);
       const final = answers.map(item => item.text ?? '').join('\n\n').trim();
+      const affectionate = completed && answers.findLast(item => ['kissSoft', 'kissPuckered'].includes(replyPortrait(item.text).expression));
+      if (affectionate?.id && threadId) heartReaction = { threadId, itemId: affectionate.id, portrait: replyPortrait(affectionate.text).expression };
       parts.delete(turn.id);
       error = turn.error?.message || (turn.status === 'failed' ? 'Love Spot could not get a reply. Try again.' : '');
       const { note, shapes } = splitPainting(final);
@@ -209,7 +212,7 @@ export function createLoveSpotTalk({ client, store, companion, audio = LOVE_SPOT
       speechFeed?.emit({ type: 'stop' });
       if (writing) { clearTimeout(writing.timer); for (const item of writing.items.values()) item.buffer.cancel(); }
     }
-    publish();
+    publish(heartReaction);
   };
   client.on('event', event);
   async function startFresh(input) {

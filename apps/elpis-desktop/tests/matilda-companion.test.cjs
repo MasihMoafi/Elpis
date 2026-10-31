@@ -1,6 +1,38 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { loveSpotFixture } = require('./love-spot-fixture.cjs');
+const { fixture } = require('./parity-fixture.cjs');
+
+test('a fresh affectionate native reply shows the Love Spot heart once and respects reduced motion', async t => {
+  const f = await fixture({ chat: [['old', 'Earlier', '<!--matilda:kissSoft--> An old reply.'], ['last', 'Now', 'Latest saved reply.']] });
+  t.after(() => f.close());
+  await f.open('chat-a');
+  const burst = f.page.locator('.matilda-heart-burst');
+  assert.equal(await burst.count(), 0, 'historical portraits do not replay a reaction');
+  const reply = (id, text) => f.emit('message', { method: 'item/completed', params: {
+    threadId: 'chat-a', turnId: 'long-running-turn', item: { id, type: 'agentMessage', phase: 'commentary', text },
+  } });
+  reply('code', 'Code example: `😘`');
+  await f.page.getByText('Code example:', { exact: false }).first().waitFor();
+  assert.equal(await burst.count(), 0, 'emoji inside code does not react');
+  reply('kiss-1', '<!--matilda:kissSoft--> Here with you.');
+  await burst.waitFor();
+  assert.equal(await burst.getAttribute('aria-hidden'), 'true');
+  assert.equal(await burst.evaluate(node => getComputedStyle(node).pointerEvents), 'none');
+  assert.equal(await burst.locator('svg').count(), 11);
+  assert.equal(await burst.locator('svg path').first().getAttribute('d'), await f.page.locator('[data-nav-page="loveSpot"] svg path').first().getAttribute('d'));
+  await burst.waitFor({ state: 'detached', timeout: 3500 });
+  reply('kiss-1', '<!--matilda:kissSoft--> Here with you.');
+  reply('plain', 'A plain reply.');
+  await f.page.getByText('A plain reply.', { exact: true }).waitFor();
+  assert.equal(await burst.count(), 0, 'a repeated item does not react twice');
+  await f.page.emulateMedia({ reducedMotion: 'reduce' });
+  reply('kiss-2', '<!--matilda:kissPuckered--> Another reply.');
+  await burst.waitFor();
+  assert.equal(await burst.locator('svg').first().evaluate(node => getComputedStyle(node).animationName), 'none');
+  await burst.waitFor({ state: 'detached', timeout: 3500 });
+  assert.deepEqual(f.errors, []);
+});
 
 // Fitting her into a narrow window is temporary: it never rewrites where she was put (27 Oct: she "jumps from top
 // right to that position when I opened something").

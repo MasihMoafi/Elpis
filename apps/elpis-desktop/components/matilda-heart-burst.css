@@ -1,0 +1,14 @@
+.matilda-heart-burst { position:fixed; inset:0; z-index:2001; overflow:hidden; pointer-events:none; }
+.matilda-heart-burst svg {
+  position:absolute; left:clamp(24px, var(--heart-left), calc(100% - 24px)); bottom:var(--heart-bottom);
+  opacity:0; animation:matilda-heart-rise 1.8s ease-out var(--heart-delay) both;
+}
+@keyframes matilda-heart-rise {
+  0% { opacity:0; transform:translate3d(0, 20px, 0) scale(.45); }
+  18% { opacity:.95; }
+  70% { opacity:.9; }
+  100% { opacity:0; transform:translate3d(var(--heart-drift), calc(-1 * var(--heart-rise)), 0) scale(1.1) rotate(14deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .matilda-heart-burst svg { animation:none; opacity:.85; }
+}

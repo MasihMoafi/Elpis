@@ -43,6 +43,7 @@ import { AppMenus } from "@/components/app-menus";
 import { permissionLabel, PermissionsMenu, PlanPill, PlusMenu, type PermissionMode } from "@/components/composer-controls";
 import { CopyButton } from "@/components/markdown-text";
 import { liveEventItemKey, mergeHistoryWithLive, mergeLiveItem, runtimeErrorNotice } from "@/lib/live-events";
+import { HEART_REACTION, nativeHeartReaction } from "@/lib/heart-reactions";
 import { entryKey, rememberSubmittedMessages, submittedContent, withSubmittedMessages, type SubmittedMessage } from "@/lib/submitted-messages";
 import { replacementEligibility, editableMessage, editBlocked, versionControl, type MessageVersion } from "@/lib/turn-replacement";
 import { AgentsGuide } from "@/components/agents-guide";
@@ -890,6 +891,10 @@ export default function Home() {
           if (method === "thread/goal/updated" || method === "thread/goal/cleared") window.dispatchEvent(new CustomEvent("elpis:goal-updated", { detail: { threadId: params.threadId } }));
           notifyRuntimeEvent(method, params, threadsRef.current, id => void openThread({ id } as Thread)); void sendQueuedFollowUp(method, params).catch(e => setError(String(e)));
           const threadId: string | undefined = params.threadId ?? params.thread?.id;
+          if (viewRef.current === "chat" && selectedRef.current?.id === threadId) {
+            const reaction = nativeHeartReaction(method, params);
+            if (reaction) window.dispatchEvent(new CustomEvent(HEART_REACTION, { detail: reaction }));
+          }
           if (threadId && method === "turn/started" && !completedTurns.current.has(params.turn.id)) {
             turnRevisions.current[threadId] = (turnRevisions.current[threadId] ?? 0) + 1;
             planTurns.current.delete(threadId);
