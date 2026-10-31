@@ -69,6 +69,24 @@ for (const theme of ['light', 'dark']) test(`Agents shares the selected agents a
     assert.equal(await page.locator('.team-row[data-thread-id]').first().getAttribute('data-thread-id'), 'agent-1', 'working subagents are listed first');
     const identityRow = page.locator('.team-row[data-thread-id="agent-0"]');
     const teamMark = await identityRow.locator('.agent-mark').getAttribute('aria-label');
+    const teamColours = await page.locator('.team-row[data-thread-id^="agent-"] .agent-mark').evaluateAll(marks => marks.map(mark => {
+      const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
+      const ctx = canvas.getContext('2d');
+      const chain = []; for (let node = mark; node; node = node.parentElement) chain.push(node);
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, 1, 1);
+      for (const node of chain.reverse()) { ctx.fillStyle = getComputedStyle(node).backgroundColor; ctx.fillRect(0, 0, 1, 1); }
+      const background = [...ctx.getImageData(0, 0, 1, 1).data].slice(0, 3);
+      ctx.clearRect(0, 0, 1, 1); ctx.fillStyle = getComputedStyle(mark).color; ctx.fillRect(0, 0, 1, 1);
+      const foreground = [...ctx.getImageData(0, 0, 1, 1).data].slice(0, 3);
+      const luminance = rgb => rgb.map(value => { const c = value / 255; return c <= .04045 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4; })
+        .reduce((sum, value, index) => sum + value * [.2126, .7152, .0722][index], 0);
+      const a = luminance(foreground), b = luminance(background);
+      return { color: getComputedStyle(mark).color, contrast: (Math.max(a, b) + .05) / (Math.min(a, b) + .05) };
+    }));
+    assert.equal(teamColours.length, children.length);
+    assert.equal(new Set(teamColours.map(mark => mark.color)).size, children.length, 'each fixture agent has a distinct stable color');
+    assert.ok(teamColours.every(mark => mark.contrast >= 3), 'agent marks contrast with their actual backgrounds');
+    const teamColour = await identityRow.locator('.agent-mark').evaluate(mark => getComputedStyle(mark).color);
     assert.equal(await identityRow.locator('.agent-name').innerText(), 'inspect · Agent 1', 'the task comes first and the recorded agent name follows once');
     assert.equal(await identityRow.getByText('Agent 1', { exact: true }).count(), 0, 'the nickname is not repeated as a second label');
     assert.equal(await identityRow.locator('.agent-model').count(), 1, 'the row keeps one runtime line inside the shared identity');
@@ -85,6 +103,7 @@ for (const theme of ['light', 'dark']) test(`Agents shares the selected agents a
     const sidebarAgent = page.locator('.thread-row[data-thread-id="agent-0"]');
     await sidebarAgent.waitFor();
     assert.equal(await sidebarAgent.locator('.agent-mark').getAttribute('aria-label'), teamMark, 'the Agents pane uses the same ID-stable mark as the sidebar');
+    assert.equal(await sidebarAgent.locator('.agent-mark').evaluate(mark => getComputedStyle(mark).color), teamColour, 'sidebar and Agents pane share the same identity color');
     for (const index of [0, 8, 15]) {
       await page.locator('.team-row:not(.root)').nth(index).click();
       await checkAgentsIcon(page);
@@ -98,6 +117,7 @@ for (const theme of ['light', 'dark']) test(`Agents shares the selected agents a
     await f.open('chat-a');
     await checkAgentsIcon(page);
     assert.equal(await page.locator('.team-row[data-thread-id="agent-0"] .agent-mark').getAttribute('aria-label'), teamMark, 'the generated identity stays stable after reload');
+    assert.equal(await page.locator('.team-row[data-thread-id="agent-0"] .agent-mark').evaluate(mark => getComputedStyle(mark).color), teamColour, 'the identity color stays stable after reload');
     await page.getByRole('button', { name: 'Workflows', exact: true }).click();
     const workflowPanel = page.getByRole('button', { name: 'Side panel', exact: true });
     await workflowPanel.waitFor();
