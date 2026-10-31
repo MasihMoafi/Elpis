@@ -73,7 +73,7 @@ function createBrowser({host,origin,WebContentsView,session,ipcMain,openExternal
     place();emit();
   }
   function navigate(tab,url){
-    tab.url=browserUrl(url,origin);tab.error=null;tab.failure=null;tab.title=tab.url==='about:blank'?'New tab':new URL(tab.url).hostname;emit();
+    tab.url=browserUrl(url,origin);tab.error=null;tab.failure=null;tab.title=tab.url==='about:blank'?'New tab':new URL(tab.url).hostname||decodeURIComponent(new URL(tab.url).pathname.split('/').pop()||'File');emit();
     // did-fail-load owns page errors; Stop and replaced navigations also reject loadURL.
     void tab.view.webContents.loadURL(tab.url).catch(()=>{});
   }
@@ -81,7 +81,7 @@ function createBrowser({host,origin,WebContentsView,session,ipcMain,openExternal
   function open(url='about:blank',{focus=false,after=null,id=null,restoring=false,agent:owned=false}={}){
     const target=browserUrl(url,origin);if(tabs.size>=20)throw Error('Close a browser tab before opening another (20 tab limit).');
     // Electron focuses a page on every navigation by default; an agent's page loads must never take the person's keyboard.
-    const view=new WebContentsView({webPreferences:{partition:'persist:elpis-browser',preload:PRELOAD,nodeIntegration:false,contextIsolation:true,sandbox:true,webSecurity:true,webviewTag:false,focusOnNavigation:owned!==true,
+    const view=new WebContentsView({webPreferences:{partition:'persist:elpis-browser',preload:PRELOAD,nodeIntegration:false,contextIsolation:true,sandbox:true,webSecurity:true,plugins:true,webviewTag:false,focusOnNavigation:owned!==true,
       // A launch with --remote-debugging-port=0 (Playwright, agent-driven instances) marks every page as automated (navigator.webdriver); sign-in pages refuse that.
       disableBlinkFeatures:'AutomationControlled'}});
     view.setVisible(false);

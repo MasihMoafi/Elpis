@@ -41,14 +41,14 @@ test('the person’s tabs refuse every agent action that navigates or sends inpu
   assert.equal((await f.agent.call('browser_screenshot', { tabId: mine })).content[0].type, 'image');
 });
 
-test('policy rejects files, credentials and Elpis before creating or navigating a tab', async () => {
+test('policy rejects scripts, credentials, remote files and Elpis before creating or navigating a tab', async () => {
   const f = fixture();
-  for (const url of ['file:///etc/passwd', 'javascript:alert(1)', 'http://127.0.0.1:4000/settings', 'https://user:pass@example.com']) {
+  for (const url of ['file://server/share/x.pdf', 'javascript:alert(1)', 'http://127.0.0.1:4000/settings', 'https://user:pass@example.com']) {
     await assert.rejects(f.agent.call('browser_open', { url }));
   }
   assert.equal(f.tabs.size, 0);
   await f.agent.call('browser_open', {url:'https://example.com'});
-  await assert.rejects(f.agent.call('browser_navigate', {tabId:'tab-1',url:'file:///etc/passwd'}));
+  await assert.rejects(f.agent.call('browser_navigate', {tabId:'tab-1',url:'javascript:alert(1)'}));
   await assert.rejects(f.agent.call('browser_snapshot', {tabId:'renderer-webcontents'}));
 });
 

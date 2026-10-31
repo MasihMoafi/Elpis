@@ -201,7 +201,7 @@ try {
     await assert.rejects(toolCall('browser_open',{url:siteUrl}),/taken over/);
     grab('elpis-real-agent-takeover');
     await app.getByRole('button',{name:'Allow agent control',exact:true}).click();
-    for(const url of ['file:///etc/passwd',app.url().split('/#')[0]])await assert.rejects(toolCall('browser_open',{url}),/HTTP or HTTPS/);
+    for(const url of ['javascript:alert(1)',app.url().split('/#')[0]])await assert.rejects(toolCall('browser_open',{url}),/web address|file on this computer/);
   });
 
   await check('agent navigation, history, reload, scrolling and coordinates operate on the page',async()=>{

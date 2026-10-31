@@ -479,3 +479,14 @@ test("a workflow's own maxConcurrency still bounds it when the global cap allows
   f.release();
   assert.deepEqual((await f.finished(run.graphId)).tasks.map(task => task.status), ['succeeded', 'succeeded', 'succeeded']);
 });
+
+test('a run stops at its time limit and says so; a run within its limit finishes', { timeout: 20000 }, async t => {
+  const f = budgetFixture(t, createMemoryBudget({ env: {}, ...plenty }));
+  const slow = await f.start('slow', [task('held')], { runLimitSeconds: 1 });
+  const ended = await f.finished(slow.graphId);
+  assert.equal(ended.status, 'cancelled');
+  assert.match(ended.error, /time limit/);
+  f.release();
+  const quick = await f.start('quick', [task('fine')], { runLimitSeconds: 60 });
+  assert.equal((await f.finished(quick.graphId)).status, 'succeeded');
+});

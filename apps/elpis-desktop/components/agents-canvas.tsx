@@ -76,6 +76,8 @@ const sameData = (left: unknown, right: unknown) => JSON.stringify(left) === JSO
 const editKey = (graph: CanvasGraph) => JSON.stringify({ ...graph, nodes: graph.nodes.map(({ id, type, position, isoPosition, data }) => ({ id, type, position, isoPosition, data })) });
 /** Fit the graph inside the available board, on opening and after layout changes. */
 const FIT = { padding: 0.06, maxZoom: 1, minZoom: 0.05 };
+/** A run's time limit unless the Mother agent's settings change it. */
+const RUN_MINUTES = 60;
 const OVERVIEW = { padding: 0.08, maxZoom: 1 };
 // React Flow lifts a selected agent to z-index 1000; a selected wire goes just above it.
 const ABOVE_AGENTS = 1001;
@@ -327,6 +329,19 @@ function CanvasMenu({ at, name, title, detail, items, onDelete, onClose }: { at:
     <div ref={list} className="quick-add-list">{items.map((item, index) => <MenuRow key={item.label} role="menuitem" autoFocus={index === 0} onClick={() => { onClose(); item.take(); }}>
       <span className="select-option">{item.label}{item.hint && <small>{item.hint}</small>}</span>{item.keys && <kbd className="kbd-hint" aria-hidden="true">{item.keys}</kbd>}</MenuRow>)}</div>
   </div>;
+}
+
+/** The language a translation goes into: any he types, with the tuned ones offered as he types; it applies when he leaves
+ * the field or presses Enter, so the team is not rebuilt on every letter. */
+function LanguageField({ value, disabled, onChange }: { value: string; disabled: boolean; onChange: (name: string) => void }) {
+  const [text, setText] = useState(value), id = useId();
+  useEffect(() => { setText(value); }, [value]);
+  const apply = () => { const name = text.trim(); if (name && name !== value) onChange(name); else setText(value); };
+  return <>
+    <Input className="h-7 w-36" list={id} aria-label="Language" placeholder="Any language" value={text} disabled={disabled}
+      onChange={event => setText(event.target.value)} onBlur={apply} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); apply(); } if (event.key === "Escape") setText(value); }} />
+    <datalist id={id}>{LANGUAGES.map(language => <option key={language.id} value={language.name} />)}</datalist>
+  </>;
 }
 
 /** A count the user types, kept within what Elpis allows: a valid number applies as it is typed; one out of range is
@@ -1570,7 +1585,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
     const repository = Boolean(cwd) && !readyMade(graph.planningPattern) && wantsIsolation(tasks) && await api<{ repository?: boolean }>(`/repository?cwd=${encodeURIComponent(cwd!)}`).then(result => result.repository === true, () => false);
     if (!current()) throw Error(OFFLINE_WORKFLOW);
     const limit = await workflowLimit(); if (!current()) throw Error(OFFLINE_WORKFLOW);
-    return api<{ graphId: string }>("/workflows/run", { ...(graph.template === "recursive" ? { roundLimit: graph.roundLimit } : {}), ...runPayload(rootThreadId, name, tasks, limit, repository), ...(next ? { next } : {}) });
+    return api<{ graphId: string }>("/workflows/run", { ...(graph.template === "recursive" ? { roundLimit: graph.roundLimit } : {}), ...runPayload(rootThreadId, name, tasks, limit, repository), runLimitSeconds: (graph.timeLimit ?? RUN_MINUTES) * 60, ...(next ? { next } : {}) });
   }
 
   async function start(targets?: string[]) {
@@ -1642,11 +1657,11 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
           {graph.planningPattern && graph.planningPattern !== "auto" && !ENTRY_PATTERNS.some(pattern => pattern.id === graph.planningPattern) && <option value={graph.planningPattern}>{TEMPLATES.find(pattern => pattern.id === graph.planningPattern)?.name ?? "Custom pattern"}</option>}
           <option value="more">More patterns…</option></OptionSelect>
         {chosenWorkflow && <Button type="button" variant="outline" size="sm" disabled={!ready || Boolean(planning || starting)} title={cwd ? `The folder of ${chosenWorkflow.what}: ${cwd}` : undefined} onClick={() => void chooseFolderFor(chosenWorkflow)}><FolderIcon size={14} />Choose folder</Button>}
-        {chosenWorkflow?.id === "translate" && <OptionSelect aria-label="Language" value={languageOf(graph.language).id} disabled={Boolean(planning || starting)} onChange={event => {
+        {chosenWorkflow?.id === "translate" && <LanguageField value={languageOf(graph.language).name} disabled={Boolean(planning || starting)} onChange={name => {
           // The language stays with the board; a translation team already built is rebuilt for the new one.
-          const language = languageOf(event.target.value); setGraph(current => ({ ...current, language: language.id }));
+          const language = languageOf(name); setGraph(current => ({ ...current, language: language.id }));
           if (graph.planningPattern === "translate" && graph.result) void pickReadyMade(chosenWorkflow, language);
-        }}>{LANGUAGES.map(language => <option key={language.id} value={language.id}>{language.name}</option>)}</OptionSelect>}
+        }} />}
         <Button type="submit" size="sm" aria-describedby={!ready ? offlineReasonId : undefined} disabled={!ready || !cwd || !requestText.trim() && !chosenWorkflow || Boolean(planning || starting)}>{planning ? "Designing…" : "New workflow"}</Button>
         <Button type="button" variant="outline" size="sm" aria-describedby={!ready ? offlineReasonId : undefined} disabled={!ready || !cwd || !requestText.trim() || Boolean(planning || starting || run && !over(run))} onClick={() => void letElpis(requestText)}>Update current</Button>
         {/* The run's status sits beside the request, which gives up the room, so the controls below stay on one row
@@ -1862,6 +1877,8 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
       <Button size="sm" onClick={() => void letElpis(mother.brief)} aria-describedby={!ready ? offlineReasonId : undefined} disabled={!ready || !mother.brief.trim() || Boolean(planning)} title="Elpis designs the team from the goal: how many agents, their prompts, folders and wiring; Ctrl+Z undoes it">{planning ? "Elpis is designing…" : "Let Elpis design the team"}</Button>
       <label>Her model<OptionSelect aria-label="Her model" value={mother.model ? `${mother.provider ?? ""}|${mother.model}` : ""} onChange={event => { const patch = modelPatch(event.target.value); setMother({ model: patch.model ?? null, provider: patch.provider ?? null }); }}>{modelOptions()}</OptionSelect></label>
       <div className="canvas-mother-counts">
+        <CountField label="Time limit (min)" value={graph.timeLimit ?? RUN_MINUTES} min={1} max={1440} onChange={minutes => setGraph(current => ({ ...current, timeLimit: minutes }))}
+          why={typed => typed < 1 ? "A run needs at least a minute." : "A run can last at most a day (1440 minutes)."} />
         <CountField label="Max agents" value={limit} min={Math.max(1, agents.length)} max={Math.floor(allowed.graph / TASKS_PER_AGENT)} onChange={count => setGraph(current => ({ ...current, maxAgents: count }))}
           why={typed => typed > allowed.graph / TASKS_PER_AGENT ? `Elpis runs at most ${allowed.graph} tasks in a graph: ${Math.floor(allowed.graph / TASKS_PER_AGENT)} agents, each with its check.` : typed < agents.length ? `The graph already has ${agents.length} agents; remove some first.` : "Type a whole number from 1."} />
       </div>

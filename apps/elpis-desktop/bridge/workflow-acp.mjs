@@ -305,6 +305,10 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
   async function execute(record, root, controller, resuming = false) {
     let isolation;
     const inflight = new Set();
+    // The whole run's time limit (Masih, 29 Oct: "set a time limit for these workflows"): past it, every agent stops and the
+    // run ends as stopped, saying why. Each agent also keeps its own maxRuntimeSeconds.
+    let overTime = false;
+    const deadline = record.runLimitSeconds ? setTimeout(() => { overTime = true; controller.abort(); }, Math.max(0, (resuming ? Date.now() : record.startedAt) + record.runLimitSeconds * 1000 - Date.now())) : null;
     try {
       isolation = record.isolation ? await workflowWorktrees(root.cwd, record.id, resuming ? record : undefined) : null;
       if (isolation) record.worktreeBase = isolation.base;
@@ -411,11 +415,13 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
         if (['merged', 'empty'].includes(record.review.status)) { record.worktrees = isolation.paths(); await freeRun(record); }
       }
       record.status = status;
+      if (overTime) record.error = `Stopped at its ${Math.round(record.runLimitSeconds / 60)}-minute time limit.`;
     } catch (error) {
       const cancelled = controller.signal.aborted; controller.abort(); await Promise.allSettled(inflight);
-      record.status = cancelled ? 'cancelled' : 'failed'; record.error = error.message;
+      record.status = cancelled ? 'cancelled' : 'failed'; record.error = overTime ? `Stopped at its ${Math.round(record.runLimitSeconds / 60)}-minute time limit.` : error.message;
     }
     finally {
+      clearTimeout(deadline);
       await finishCheckpoints(record, 'The workflow ended before guidance could be delivered.');
       record.tasks.forEach(task => { if (!ended.has(task.status)) task.status = record.status === 'cancelled' ? 'cancelled' : 'blocked'; });
       record.endedAt = Date.now();

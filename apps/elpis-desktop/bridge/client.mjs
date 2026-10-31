@@ -1447,8 +1447,8 @@ export class DesktopClient extends EventEmitter {
   }
   /** A stage's limits: how many agents at once, how long, and whether writers work in worktrees. */
   #workflowLimits(body,params){
-    for(const key of ['maxConcurrency','maxRuntimeSeconds'])if(body[key]!==undefined){
-      if(!Number.isSafeInteger(body[key])||body[key]<1||(key==='maxConcurrency'&&body[key]>32)||(key==='maxRuntimeSeconds'&&body[key]>2147483))throw new BridgeError(`Invalid ${key}`);
+    for(const key of ['maxConcurrency','maxRuntimeSeconds','runLimitSeconds'])if(body[key]!==undefined){
+      if(!Number.isSafeInteger(body[key])||body[key]<1||(key==='maxConcurrency'&&body[key]>32)||(key!=='maxConcurrency'&&body[key]>2147483))throw new BridgeError(`Invalid ${key}`);
       params[key]=body[key];
     }
     // 'worktree': each implement/fix task works in its own git worktree, merged after the run.
@@ -1461,7 +1461,7 @@ export class DesktopClient extends EventEmitter {
   /** `next`: the stage that runs after this one has succeeded (the Father's part), in its own chat (`thread`). The bridge
    * starts it and delivers its report here (#workflowEnded), so the run goes on with the Workflows screen closed. */
   async runWorkflow(body) {
-    object(body, ['rootThreadId','name','tasks','maxConcurrency','maxRuntimeSeconds','isolation','roundLimit','next']);
+    object(body, ['rootThreadId','name','tasks','maxConcurrency','maxRuntimeSeconds','runLimitSeconds','isolation','roundLimit','next']);
     const id=threadId(body.rootThreadId);
     const params=this.#workflowLimits(body,{rootThreadId:id,name:text(body.name,'workflow name',256),tasks:this.#workflowTasks(body.tasks)});
     if(body.roundLimit!==undefined)params.roundLimit=body.roundLimit;

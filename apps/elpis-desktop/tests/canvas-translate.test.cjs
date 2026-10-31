@@ -77,7 +77,9 @@ test('Translate to German picks the OpenRouter model that writes German best, na
   try {
     await chooseOption(f.canvas.getByRole('combobox', { name: 'Workflow pattern', exact: true }), 'translate');
     await f.page.waitForFunction(() => JSON.parse(localStorage.getItem('elpis-workflow-draft-v1'))?.result === 'translation.md');
-    await chooseOption(f.canvas.getByRole('combobox', { name: 'Language', exact: true }), 'de');
+    // Any language can be typed; a tuned one is matched by name (28 Oct: "translate to anything").
+    const language = f.canvas.getByRole('combobox', { name: 'Language', exact: true });
+    await language.fill('German'); await language.press('Enter');
     await f.page.waitForFunction(() => JSON.parse(localStorage.getItem('elpis-workflow-draft-v1'))?.language === 'de');
     const saved = await f.saved(), workers = saved.nodes.filter(n => n.type === 'agent' && !n.data.join);
     assert.ok(workers.every(a => a.data.model === 'anthropic/claude-sonnet-5' && a.data.provider === 'openrouter'), JSON.stringify(workers.map(a => [a.data.model, a.data.provider])));
@@ -85,6 +87,10 @@ test('Translate to German picks the OpenRouter model that writes German best, na
     assert.equal(saved.request, 'Translate the English in demo into German in translation.md');
     assert.match(workers[0].data.instruction, /English → German/);
     assert.ok(workers.slice(1).every(a => /into German/.test(a.data.instruction) && !a.data.instruction.includes('«میرم»')), 'German rules, not Farsi ones');
+    // A language that is not in the list is used as typed.
+    await language.fill('swahili'); await language.press('Enter');
+    await f.page.waitForFunction(() => JSON.parse(localStorage.getItem('elpis-workflow-draft-v1'))?.language === 'swahili');
+    await f.page.waitForFunction(() => /into Swahili/.test(JSON.parse(localStorage.getItem('elpis-workflow-draft-v1'))?.request ?? ''));
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
