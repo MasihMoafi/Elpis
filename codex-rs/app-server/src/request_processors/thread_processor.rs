@@ -959,6 +959,25 @@ impl ThreadRequestProcessor {
         Ok(Some(ThreadRegisterResponse { thread }.into()))
     }
 
+    pub(crate) async fn thread_subscribe(
+        &self,
+        request_id: &ConnectionRequestId,
+        params: ThreadReadParams,
+    ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
+        let thread_id = ThreadId::from_string(&params.thread_id)
+            .map_err(|err| invalid_request(format!("invalid thread id: {err}")))?;
+        if matches!(
+            self.ensure_conversation_listener(thread_id, request_id.connection_id, false)
+                .await?,
+            EnsureConversationListenerResult::ConnectionClosed
+        ) {
+            return Err(internal_error(format!(
+                "connection closed before thread {thread_id} could be subscribed"
+            )));
+        }
+        self.thread_read(request_id, params).await
+    }
+
     pub(crate) async fn thread_read(
         &self,
         request_id: &ConnectionRequestId,
