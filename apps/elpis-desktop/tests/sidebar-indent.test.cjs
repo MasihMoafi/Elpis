@@ -277,7 +277,7 @@ for (const colorScheme of ['light', 'dark']) test(`a section heading has more ro
   const f = await setup(colorScheme, true), { page } = f;
   try {
     const rooms = await page.locator('aside.sidebar .section-label-row').evaluateAll(rows => rows
-      .filter(row => row.previousElementSibling && row.getBoundingClientRect().height > 0)
+      .filter(row => row.closest('section')?.previousElementSibling && row.getBoundingClientRect().height > 0)
       .map(row => { const label = row.querySelector('.section-label').getBoundingClientRect(), box = row.getBoundingClientRect(), mid = label.top + label.height / 2;
         return { name: row.textContent.trim().slice(0, 24), above: mid - box.top, below: box.bottom - mid }; }));
     assert.ok(rooms.length > 0, 'the sidebar shows a heading that follows another section');

@@ -375,7 +375,11 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
   // Masih, 31 Oct: "the agent keeps talking in the love-spot; I was drawing that for you; there should be a disable button there."
   const [replies, setReplies] = useState(() => appStorage().getItem(REPLIES_KEY) !== "off");
   const repliesRef = useRef(replies); repliesRef.current = replies;
-  const chooseReplies = (on: boolean) => { setReplies(on); try { appStorage().setItem(REPLIES_KEY, on ? "on" : "off"); } catch { /* The choice still holds in this window. */ } };
+  const chooseReplies = (on: boolean) => {
+    setReplies(on);
+    const value = on ? "on" : "off", desktop = window.elpisDesktop?.storage;
+    try { if (desktop?.saveItem) void desktop.saveItem(REPLIES_KEY, value).catch(() => {}); else appStorage().setItem(REPLIES_KEY, value); } catch { /* The choice still holds in this window. */ }
+  };
   const matilda = useMatilda({ context: page?.session, ready: () => repliesRef.current && !!editorRef.current && !!settings && !calling && !pageBusy && !editorRef.current.getAppState().editingTextElement && !document.querySelector("textarea.excalidraw-wysiwyg"), onError: setError,
     told: ids => told(editorRef.current?.getSceneElements() ?? [], ids),
     send: (text, persona, isCurrent) => sendWithBoard(async revision => {

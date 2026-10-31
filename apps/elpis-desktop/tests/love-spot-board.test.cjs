@@ -167,3 +167,24 @@ test('the toolbar fits in light and dark at 1280 and 1440, with Matilda writing'
     }
   } finally { await f.close(); }
 });
+
+test('the Matilda replies switch keeps her quiet while he draws, and she answers what waited once it is on', async () => {
+  const f = await loveSpotFixture();
+  try {
+    await f.open(f.page);
+    const replies = f.page.getByRole('switch', { name: 'Matilda replies' });
+    await replies.waitFor();
+    assert.equal(await replies.getAttribute('aria-checked'), 'true', 'replies are on by default');
+    await replies.click();
+    assert.equal(await replies.getAttribute('aria-checked'), 'false');
+    await note(f, 'Drawing for you, stay quiet');
+    await f.page.waitForTimeout(4000);
+    assert.equal(f.turns.length, 0, 'with replies off she sends nothing while he draws');
+    await f.page.reload(); await f.open(f.page);
+    assert.equal(await f.page.getByRole('switch', { name: 'Matilda replies' }).getAttribute('aria-checked'), 'false', 'the choice survives a reload');
+    await f.page.getByRole('switch', { name: 'Matilda replies' }).click();
+    await f.waitFor(() => f.turns.length === 1, 'turning replies on did not release the waiting note', 20000);
+    assert.match(f.turns[0].attachments.find(a => a.type === 'text').text, /Drawing for you, stay quiet/);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
