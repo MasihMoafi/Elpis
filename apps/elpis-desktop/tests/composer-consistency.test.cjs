@@ -116,6 +116,7 @@ for (const colorScheme of ['light', 'dark']) for (const running of [false, true]
     const m = await probe(f.page);
     assert.ok(m.rowOffset <= 4 || m.toolbarWidth <= 380 && m.toolbarRows <= 2, `controls share a row or wrap at the tight width ${width}px`);
     assert.equal(await f.page.locator('.composer .context-ring').isVisible(), true, 'the context icon stays visible');
+    assert.equal(await f.page.locator('.composer .fast-toggle').isVisible(), m.toolbarWidth > 380, 'Fast stays visible except in a genuinely tight composer');
     assert.equal(m.leaks, 0, `controls stay inside the composer at ${width}px`);
     assert.equal(m.overlaps, 0, `controls do not overlap at ${width}px`);
   }
@@ -129,6 +130,7 @@ for (const colorScheme of ['light', 'dark']) for (const running of [false, true]
     assert.ok(floating.rowOffset <= 4 || floating.toolbarWidth <= 380, 'only the tight composer can wrap its control groups');
     const context = f.page.locator('.composer .context-ring');
     assert.equal(await context.count(), 1); assert.equal(await context.isVisible(), true);
+    assert.equal(await f.page.locator('.composer .fast-toggle').isVisible(), floating.toolbarWidth > 380, 'Fast remains on the toolbar when there is room');
     const contextBox = await context.boundingBox(); assert.ok(contextBox.width >= 28 && contextBox.height >= 28, 'the icon keeps its 28px target');
     await context.click();
     await f.page.getByRole('dialog', { name: 'Context window usage', exact: true }).waitFor();
