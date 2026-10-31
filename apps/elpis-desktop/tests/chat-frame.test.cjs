@@ -67,7 +67,7 @@ for (const colorScheme of ['light', 'dark']) for (const width of [1440, 960]) {
     await f.composer.focus(); await f.composer.press('Control+;');
     const side = page.getByRole('region', { name: 'Side chat', exact: true });
     const sideInput = side.getByRole('textbox', { name: 'Side question', exact: true });
-    assert.equal(await side.getByRole('button', { name: 'Send', exact: true }).getAttribute('data-variant'), 'cutPrimary');
+    assert.equal(await side.getByRole('button', { name: 'Send', exact: true }).getAttribute('data-variant'), 'default');
     await sideInput.fill('What is the result?'); await sideInput.press('Enter');
     const sideCard = side.locator('.message.user'); await sideCard.waitFor();
     assert.equal(await f.composer.inputValue(), 'Main draft stays here');
@@ -94,7 +94,7 @@ for (const colorScheme of ['light', 'dark']) for (const width of [1440, 960]) {
     await mini.getByRole('textbox', { name: 'Message Matilda' }).fill('A new note for Matilda');
     const miniSend = mini.getByRole('button', { name: 'Send to Matilda' });
     assert.equal(await miniSend.getAttribute('data-variant'), 'ghost');
-    assert.deepEqual(await miniSend.locator('svg').evaluate(icon => [getComputedStyle(icon).width, getComputedStyle(icon).height]), ['18px', '18px']);
+    assert.deepEqual(await miniSend.locator('svg').evaluate(icon => [getComputedStyle(icon).width, getComputedStyle(icon).height]), ['16px', '16px']);
     await shot('mini-ready'); await miniSend.click();
     await mini.getByText('A new note for Matilda', { exact: true }).waitFor();
     assert.equal(f.posts.filter(post => post.path === '/api/love-spot/talk').at(-1).body.text, 'A new note for Matilda');

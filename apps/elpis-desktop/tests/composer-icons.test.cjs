@@ -14,6 +14,7 @@ const { icons: selectedMusicIcons } = require('./fixtures/selected-music-icons.j
 
 const shots = process.env.ELPIS_PARITY_SHOTS;
 const routes = {
+  '/api/context/switches': () => ({ version: 'test', write: { available: true }, smartPrune: false, subagents: false, rag: false }),
   '/api/voice': () => ({ available: true }),
   '/api/tools/transcription': () => ({ available: true, backend: 'local', label: 'Local Whisper' }),
 };
@@ -89,12 +90,13 @@ for (const colorScheme of ['light', 'dark']) {
       assert.equal(await page.locator('.composer textarea').evaluate(el => el.getBoundingClientRect().height), 66, 'an empty composer starts at the taller typing height');
       const features = page.getByRole('group', { name: 'Elpis features' }).locator('.feature-chip');
       await features.first().waitFor();
+      assert.equal(await features.count(), 3, 'the three feature switches are shown without a duplicate Ledger control');
       const featureMetrics = await features.evaluateAll(chips => chips.map(chip => {
         const style = getComputedStyle(chip), mark = chip.querySelector('.feature-dot, .context-ring-icon')?.getBoundingClientRect();
         return { font: style.fontSize, color: style.color, mark: mark?.width };
       }));
       assert.deepEqual([...new Set(featureMetrics.map(item => item.font))], ['12px']);
-      assert.equal(new Set(featureMetrics.map(item => item.color)).size, 1, 'Ledger and feature labels use one colour');
+      assert.equal(new Set(featureMetrics.map(item => item.color)).size, 1, 'inactive feature labels use one colour');
       assert.deepEqual([...new Set(featureMetrics.map(item => item.mark))], [7], 'every status mark uses one dot size');
       assert.deepEqual(f.errors, []);
     } finally { await f.close(); }
