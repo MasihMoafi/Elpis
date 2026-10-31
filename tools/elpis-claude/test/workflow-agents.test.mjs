@@ -24,7 +24,7 @@ const until = async (what, check, ms = 10_000) => {
 };
 
 // The bridge as the executor sees it: every request recorded, a configuration with three MCP servers.
-async function fakeElpis(t, { legacy = false } = {}) {
+async function fakeElpis(t, { legacy = false, configError = false } = {}) {
   const wss = new WebSocketServer({ host: "127.0.0.1", port: 0 });
   await once(wss, "listening");
   const requests = [];
@@ -33,7 +33,10 @@ async function fakeElpis(t, { legacy = false } = {}) {
     if (m.id === undefined) return;
     requests.push(m);
     const reply = (result) => ws.send(JSON.stringify({ id: m.id, result }));
-    if (m.method === "config/read") return reply({ config: { model: "gpt-test", mcp_servers: SERVERS } });
+    if (m.method === "config/read") {
+      if (configError) return ws.send(JSON.stringify({ id: m.id, error: { code: -32603, message: "unreadable settings" } }));
+      return reply({ config: { model: "gpt-test", mcp_servers: SERVERS } });
+    }
     if (m.method === "thread/start" || m.method === "thread/resume") return reply({
       thread: { id: m.params.threadId ?? "node-1", ...(!legacy && { mcpServerSelection: m.method === "thread/start" ? [] : null }) },
       model: "gpt-test",
@@ -69,6 +72,12 @@ test("reopening a restricted workflow on an old engine fails before a turn", asy
     /cannot preserve this workflow chat's MCP selection/,
   );
   assert.equal(elpis.sent("turn/start").length, 0);
+});
+
+test("unreadable MCP settings stop a workflow before its chat starts", async (t) => {
+  const elpis = await fakeElpis(t, { configError: true });
+  await assert.rejects(bridgeExecutor({ url: elpis.url }).open(NODE), /MCP settings could not be read/);
+  assert.equal(elpis.sent("thread/start").length, 0);
 });
 
 test("with ELPIS_WORKFLOW_USER_MCP=1 a workflow agent's chat starts and reopens as before", async (t) => {

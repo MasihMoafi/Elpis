@@ -16,7 +16,14 @@ const failure = (why, extra = {}) => Object.assign(new Error(why), extra);
 export async function withoutUserMcp(conn, { cwd, mcpServers = [] } = {}, log = () => {}) {
   if (process.env.ELPIS_WORKFLOW_USER_MCP === "1") return {};
   const read = await conn.call("config/read", { includeLayers: false, ...(cwd && { cwd }) })
-    .catch((e) => { log(`workflow agent: its MCP servers stay on, the configuration could not be read: ${message(e)}`); return null; });
+    .catch((e) => {
+      log(`workflow agent: MCP settings could not be read: ${message(e)}`);
+      throw new Error("The workflow agent's MCP settings could not be read.");
+    });
+  if (!read?.config || typeof read.config !== "object" || Array.isArray(read.config) ||
+      (read.config.mcp_servers !== undefined && (!read.config.mcp_servers || typeof read.config.mcp_servers !== "object" || Array.isArray(read.config.mcp_servers)))) {
+    throw new Error("The workflow agent's MCP settings could not be read.");
+  }
   const names = Object.keys(read?.config?.mcp_servers ?? {}).filter((name) => !mcpServers.includes(name));
   return Object.fromEntries(names.map((name) => [`mcp_servers.${name}.enabled`, false]));
 }
