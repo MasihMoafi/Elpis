@@ -18,7 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ChatMessage } from "@/components/chat-message";
 import { FailedTurnCard, type FailedTurn } from "@/components/failed-turn-card";
 import { ViewBoundary } from "@/components/view-boundary";
-import { Transcript } from "@/components/transcript";
+import { Transcript, WorkingPlacement } from "@/components/transcript";
 import { useBookmarks, useChatAttention, usePins } from "@/lib/use-sidebar-state";
 import { SIDEBAR, useAppearance } from "@/lib/use-appearance";
 import { addGroup, chatSelectionRoots, chatSubtree, deleteGroup, emptyGroups, groupSections, moveChats, placeChat, prioritizeChats, putChatsUnder, readGroups, renameGroup, sidebarParents, sortChats, toggleCollapsed, writeGroups, type ChatGroup, type ChatGroups } from "@/lib/chat-groups";
@@ -480,6 +480,7 @@ export default function Home() {
   }, []);
   const [agentsPanel, setAgentsPanel] = useState(true);
   const [loveToolbarHost, setLoveToolbarHost] = useState<HTMLDivElement | null>(null);
+  const [workingHost, setWorkingHost] = useState<HTMLDivElement | null>(null);
   const { theme, dark, setTheme, sidebarWidth, resizeSidebar } = useAppearance(setError);
   // The website's animated wordmark, its dark or light version (website/assets/branding).
   const searchInput = useRef<HTMLInputElement>(null);
@@ -2418,7 +2419,7 @@ export default function Home() {
       </div>
       <ResizeEdge label="Resize sidebar" width={sidebarWidth} min={SIDEBAR.min} max={SIDEBAR.max} initial={SIDEBAR.initial} grows="right" onResize={resizeSidebar} onClose={() => showSidebar(false)} />
     </aside>
-    <main className="workspace" style={panelShown && !fullView ? { "--side-min": `${sideMinWidth(side.shown)}px`, ...(side.width ? { "--side-w": `clamp(${sideMinWidth(side.shown)}px, ${side.width}px, 70%)`, "--side-request-width": `${side.width}px` } : {}) } as CSSProperties : undefined}>
+    <main className="workspace" style={panelShown && !fullView ? { "--side-min": `${sideMinWidth(side.shown)}px`, ...(side.width ? { "--side-w": `clamp(${sideMinWidth(side.shown)}px, ${side.width}px, 70%)` } : {}) } as CSSProperties : undefined}>
       <header className={`workspace-header${heading ? "" : " untitled"}`}>
         <ImproveElpis threadId={view === "chat" ? selected?.id : undefined} onChat={loadThread} />
         {outsideChatApprovals.length > 0 && <div className="pending-input-anchor"><Button ref={pendingInputButton} className="pending-input-trigger" variant="secondary" size="sm" aria-label={`Needs input (${outsideChatApprovals.length})`} aria-expanded={pendingInputOpen} aria-controls="pending-input-panel" onKeyDown={event => { if (event.key === "Escape") setPendingInputOpen(false); }} onClick={() => setPendingInputOpen(value => !value)}><span className="pending-count">{outsideChatApprovals.length}</span>Needs input<span className="pending-task-name">{title(threads.find(thread => thread.id === outsideChatApprovals[0].params.threadId) || outsideChatApprovals[0].thread || {id:outsideChatApprovals[0].params.threadId || "unreported"})}</span></Button></div>}
@@ -2469,7 +2470,7 @@ export default function Home() {
           {loading && !shownEntries.length && <p role="status" className="chat-loading text-muted-foreground">Loading conversation…</p>}
           {selectedWorkflow && <WorkflowChat threads={threads} run={selectedWorkflow} identity={workflowCatalog.identities[selectedWorkflow.id]} ready={ready && connected} models={models} onOpenChat={id => void openById(id)} onOpenCanvas={run => { setRecordedWorkflow({ id: run.id, rootThreadId: run.rootThreadId }); show("canvas"); }} />}
           {!selectedWorkflow && !loading && !shownEntries.length && !activeTurn && <div className="empty-state">{selected ? <><h2>This conversation has no messages yet.</h2><p>Messages and tool activity appear here.</p></> : <><BrandWordmark className="empty-mark" dark={dark} /><h2>{project ? <>What should we build in <ProjectMenu variant="heading" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} />?</> : "What should we build?"}</h2>{personal.showTip && <PersonalTip onOpen={personal.open} onDismiss={personal.dismiss} />}</>}</div>}
-          {chatConversation}
+          <WorkingPlacement.Provider value={workingHost}>{chatConversation}</WorkingPlacement.Provider>
           {selected && stoppedTurns[selected.id] && !activeTurn && <p className="turn-stopped" role="status">Stopped. The reply above is where it was when the turn was stopped.</p>}
           {failedTurn && <FailedTurnCard key={`${selected?.id}:${failedTurn.turnId}`} failure={failedTurn} models={selectedChoice?.models ?? models} currentModel={selected?.model} disabled={!replaceable}
             blockedReason={continues ? "Continue this conversation here before trying again." : failedInput?.allowed ? undefined : failedInput?.reason ?? "The original complete input is unavailable, so this turn cannot be safely resent."}
@@ -2489,6 +2490,7 @@ export default function Home() {
           {selected && plans[selected.id] && <TaskList plan={plans[selected.id]} running={activeTurns[selected.id] === plans[selected.id].turnId} />}
           <QueuedFollowUps threadId={selected?.id} activeTurnId={activeTurn} onError={setError} onComplete={restoreComposerFocus} onEdit={editQueued} />
           {!selected && <div className="composer-tray"><EnvironmentMenu folder={chatFolder || null} disabled={!ready || busy} worktree={newWorktree} onWorktree={setNewWorktree} /><ProjectMenu variant="chip" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} /></div>}
+          <div className="composer-working" ref={setWorkingHost} />
           {readOnlyRun ? <div className="mx-auto flex w-full max-w-[var(--transcript-width,740px)] flex-col gap-3 rounded-lg border p-4 text-sm text-muted-foreground" role="status">
             <p>{AGENT_RUN_NOTICE}</p>
             {selected?.desktopAccess?.canContinue && !activeTurn && selected.status?.type !== "active" && <Button variant="outline" size="sm" className="self-start" disabled={busy || !connected || loading} onClick={() => void continueHere(selected)}>Continue here</Button>}

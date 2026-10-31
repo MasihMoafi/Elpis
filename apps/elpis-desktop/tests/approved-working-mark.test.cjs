@@ -1,134 +1,62 @@
+// Masih, 31 Oct: shrink the window, restore full size, open the right sidebar;
+// Working must keep its approved place above the composer. A fixed viewport X
+// was the wrong guard: it drifted from the composer after responsive layout.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture, CWD, THREADS } = require('./parity-fixture.cjs');
-const { threadMenuItem } = require('./controls.cjs');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const { fixture, THREADS, CWD } = require('./parity-fixture.cjs');
 
-const geometry = page => page.evaluate(() => {
-  const box = selector => {
-    const rect = document.querySelector(selector)?.getBoundingClientRect();
-    return rect ? { x: Math.round(rect.x * 10) / 10, y: Math.round(rect.y * 10) / 10, width: Math.round(rect.width * 10) / 10, height: Math.round(rect.height * 10) / 10 } : null;
-  };
-  return { teamParent: document.querySelector('.team-panel')?.parentElement?.className, transform: getComputedStyle(document.querySelector('.turn-working')).transform, teamLayoutMatch: !!document.querySelector('.chat-split:has(> .team-panel)'), viewport: window.innerWidth, workspace: box('.workspace-body'), content: box('.workspace-content'), scroll: box('.chat-scroll'), chat: box('.chat-content'), turn: box('.turn'), working: box('.turn-working'), mark: box('.turn-working .elpis-working-mark'), sidePanel: box('[aria-label="Side panel"]'), teamPanel: box('.team-panel') };
-});
-
-for (const colorScheme of ['light', 'dark']) {
-  test(`approved working animation remains hollow with a blinking dot in ${colorScheme}`, async t => {
-    const f = await fixture({ staticDir: process.env.ELPIS_RENDERER_OUT, colorScheme, running: true, width: 1440, height: 900 });
-    t.after(() => f.close());
-    await f.open('chat-a');
-    const mark = f.page.locator('.elpis-working-mark').last();
-    await mark.waitFor();
-    const x = async () => Math.round((await mark.boundingBox()).x * 10) / 10;
-    const initialX = await x();
-    await f.page.waitForTimeout(2200);
-    assert.equal(await x(), initialX, 'the timer appearing during a turn does not move the mark');
-    await f.page.getByRole('button', { name: 'Show side panel', exact: true }).click();
-    await f.page.getByRole('region', { name: 'Side panel', exact: true }).waitFor();
-    assert.equal(await x(), initialX, 'opening the right panel does not move the mark');
-    assert.equal(await f.page.locator('.turn-working').last().evaluate(row => getComputedStyle(row).marginTop), '7px', 'the Working row sits about one millimetre higher');
-    for (const reducedMotion of ['no-preference', 'reduce']) {
-      await f.page.emulateMedia({ reducedMotion });
-      const actual = await mark.evaluate(svg => {
-        const shape = svg.querySelector('path');
-        const dot = svg.querySelector('circle');
-        return {
-          width: svg.getBoundingClientRect().width,
-          height: svg.getBoundingClientRect().height,
-          fill: getComputedStyle(shape).fill,
-          strokeWidth: getComputedStyle(shape).strokeWidth,
-          rotation: getComputedStyle(svg.querySelector('.elpis-working-rotor')).animationDuration,
-          blinkingDot: !!dot && getComputedStyle(dot).animationName !== 'none',
-          blink: dot && getComputedStyle(dot).animationDuration,
-        };
-      });
-      assert.equal(actual.width, 18, 'the mark keeps the approved send-icon size');
-      assert.equal(actual.height, 18);
-      assert.equal(actual.fill, 'none', 'the previous filled diamond must not return');
-      assert.notEqual(actual.strokeWidth, '0px');
-      assert.equal(actual.rotation, '4s', 'system motion settings must not halve the approved speed');
-      assert.equal(actual.blinkingDot, true);
-      assert.equal(actual.blink, '2s');
+for (const colorScheme of ['light', 'dark']) test(`Working stays with the composer through resize, restore and both right panels (${colorScheme})`, async t => {
+  const child = { id: 'anchor-agent', name: 'Anchor helper', cwd: CWD, parentThreadId: 'chat-a', source: { subAgent: { thread_spawn: { agent_path: '/root/anchor' } } }, status: { type: 'idle' } };
+  const f = await fixture({ colorScheme, running: true, width: 1600, height: 900, threads: [...THREADS, child] });
+  t.after(() => f.close());
+  const { page } = f;
+  await f.open('chat-a');
+  const hide = page.getByRole('button', { name: 'Hide agents panel', exact: true });
+  if (await hide.count()) await hide.click();
+  const check = async label => {
+    await page.locator('.turn-working').last().waitFor();
+    const m = await page.evaluate(() => {
+      const w = document.querySelector('.turn-working'), c = document.querySelector('form.composer');
+      const a = w.getBoundingClientRect(), b = c.getBoundingClientRect();
+      const mark = w.querySelector('.elpis-working-mark'), icon = mark.getBoundingClientRect();
+      return { width: innerWidth, x: a.x, composerX: b.x, gap: b.y - a.bottom, icon: [icon.width, icon.height], count: document.querySelectorAll('.turn-working').length, transform: getComputedStyle(w).transform,
+        hollow: getComputedStyle(mark.querySelector('path')).fill, stroke: getComputedStyle(mark.querySelector('path')).strokeWidth, rotation: getComputedStyle(mark.querySelector('.elpis-working-rotor')).animationDuration, blink: getComputedStyle(mark.querySelector('.elpis-working-dot')).animationDuration };
+    });
+    assert.ok(Math.abs(m.x - m.composerX) <= 1, `${label}: horizontal drift ${JSON.stringify(m)}`);
+    assert.ok(Math.abs(m.gap - 14) <= 1, `${label}: vertical drift ${JSON.stringify(m)}`);
+    assert.equal(m.count, 1, `${label}: exactly one live status`);
+    assert.equal(m.transform, 'none', `${label}: the status row never rotates or translates`);
+    assert.ok(m.icon.every(n => Math.abs(n - 18) < 1), `${label}: the approved mark stays 18px`);
+    assert.equal(m.hollow, 'none'); assert.notEqual(m.stroke, '0px');
+    assert.equal(m.rotation, '4s'); assert.equal(m.blink, '2s');
+    if (process.env.ELPIS_PARITY_SHOTS && /wide|restore|closed/.test(label)) {
+      await fs.mkdir(process.env.ELPIS_PARITY_SHOTS, { recursive: true });
+      await page.screenshot({ path: path.join(process.env.ELPIS_PARITY_SHOTS, `working-${colorScheme}-${label}.png`) });
     }
-    assert.deepEqual(f.errors, []);
-  });
-}
-
-test('working mark stays anchored when the Agents pane opens', async t => {
-  const agent = { id: 'agent-panel', name: 'Agent panel helper', cwd: CWD, parentThreadId: 'chat-a', source: { subAgent: { thread_spawn: { agent_path: '/root/agent-panel' } } }, status: { type: 'idle' } };
-  const f = await fixture({ staticDir: process.env.ELPIS_RENDERER_OUT, running: true, width: 1440, height: 900, threads: [...THREADS, agent] });
-  t.after(() => f.close());
-  await f.open('chat-a');
-  const mark = f.page.locator('.turn-working .elpis-working-mark').last(); await mark.waitFor();
-  await f.page.getByRole('button', { name: 'Hide agents panel', exact: true }).click();
-  await f.page.locator('.team-panel').waitFor({ state: 'detached' });
-  const closed = await geometry(f.page), closedX = Math.round((await mark.boundingBox()).x * 10) / 10;
-  await f.page.getByRole('button', { name: 'Show agents panel', exact: true }).click();
-  await f.page.locator('.team-panel').waitFor();
-  const open = await geometry(f.page), openX = Math.round((await mark.boundingBox()).x * 10) / 10;
-  assert.equal(openX, closedX, `opening the right Agents pane does not move the working mark: ${JSON.stringify({ closed, open })}`);
+  };
+  await check('wide');
+  await page.waitForTimeout(2200); await check('timer');
+  for (const width of [1440, 1205, 1004, 900, 820, 760, 680, 1004, 1600]) {
+    await page.setViewportSize({ width, height: 900 }); await check(`resize-${width}`);
+  }
+  await page.getByRole('button', { name: 'Show agents panel', exact: true }).click();
+  await page.locator('.team-panel').waitFor(); await check('restored-agents');
+  for (const width of [1205, 1004, 820, 1600]) { await page.setViewportSize({ width, height: 900 }); await check(`agents-${width}`); }
+  await page.getByRole('button', { name: 'Hide agents panel', exact: true }).click();
+  await page.getByRole('button', { name: 'Show side panel', exact: true }).click();
+  await page.getByRole('region', { name: 'Side panel' }).waitFor(); await check('restored-sidebar');
+  for (const width of [1205, 1004, 820, 1600]) { await page.setViewportSize({ width, height: 900 }); await check(`sidebar-${width}`); }
+  await page.getByRole('button', { name: 'Close side panel', exact: true }).click(); await check('closed-sidebar');
+  for (const reducedMotion of ['reduce', 'no-preference']) { await page.emulateMedia({ reducedMotion }); await check(reducedMotion); }
   assert.deepEqual(f.errors, []);
 });
 
-test('working mark stays anchored when the right panel opens at a 1004px CSS viewport and 1.64 device scale', async t => {
-  const f = await fixture({ staticDir: process.env.ELPIS_RENDERER_OUT, running: true, width: 1004, height: 900, deviceScaleFactor: 1.64 });
-  t.after(() => f.close());
+test('an idle composer has no Working status or reserved status space', async t => {
+  const f = await fixture({ running: false }); t.after(() => f.close());
   await f.open('chat-a');
-  assert.equal(await f.page.evaluate(() => window.innerWidth), 1004, 'the fixture uses the reported CSS viewport width');
-  assert.ok(Math.abs(await f.page.evaluate(() => window.devicePixelRatio) - 1.64) < 0.01, 'the fixture matches the reported device scale');
-  const mark = f.page.locator('.turn-working .elpis-working-mark').last(); await mark.waitFor();
-  const closed = await geometry(f.page), initialX = Math.round((await mark.boundingBox()).x * 10) / 10;
-  await f.page.getByRole('button', { name: 'Show side panel', exact: true }).click();
-  await f.page.getByRole('region', { name: 'Side panel', exact: true }).waitFor();
-  const open = await geometry(f.page), panelX = Math.round((await mark.boundingBox()).x * 10) / 10;
-  assert.equal(panelX, initialX, `opening the right panel at this width does not move the working mark: ${JSON.stringify({ closed, open })}`);
+  assert.equal(await f.page.locator('.turn-working').count(), 0);
+  assert.equal(await f.page.locator('.composer-working').evaluate(el => el.getBoundingClientRect().height), 0);
   assert.deepEqual(f.errors, []);
 });
-
-test('working mark stays anchored when the right panel opens in split view at 1004px', async t => {
-  const f = await fixture({ staticDir: process.env.ELPIS_RENDERER_OUT, running: true, width: 1004, height: 900, deviceScaleFactor: 1.64 });
-  t.after(() => f.close());
-  await f.open('chat-a');
-  await f.page.locator('.thread-row[data-thread-id="chat-b"]').getByRole('button', { name: /^Actions for/ }).click();
-  await (await threadMenuItem(f.page, 'Open session in split view')).click();
-  const split = f.page.frameLocator('iframe[title="Split session"]');
-  await split.getByRole('textbox', { name: 'Message Elpis', exact: true }).waitFor();
-  const mark = f.page.locator('.turn-working .elpis-working-mark').last(); await mark.waitFor();
-  const closed = await geometry(f.page), initialX = Math.round((await mark.boundingBox()).x * 10) / 10;
-  await f.page.getByRole('button', { name: 'Show side panel', exact: true }).click();
-  await f.page.getByRole('region', { name: 'Side panel', exact: true }).waitFor();
-  const open = await geometry(f.page), panelX = Math.round((await mark.boundingBox()).x * 10) / 10;
-  assert.equal(panelX, initialX, `opening the right panel in split view does not move the working mark: ${JSON.stringify({ closed, open })}`);
-  assert.deepEqual(f.errors, []);
-});
-
-for (const colorScheme of ['light', 'dark']) {
-  test(`Working mark stays put with populated Files and a resized panel (${colorScheme})`, async () => {
-    const f = await fixture({ colorScheme, running: true, width: 1600, height: 900, routes: {
-      '/api/files/dir': () => ({ data: [{ name: 'README.md', dir: false }] }),
-      '/api/file': () => ({ path: 'README.md', content: '# Fixture', size: 9, mtimeMs: 1 }),
-    } }), { page } = f;
-    try {
-      await f.open('chat-a');
-      const mark = page.locator('.elpis-working-mark').last();
-      await mark.waitFor();
-      const before = await geometry(page);
-      await page.getByRole('button', { name: 'Show side panel', exact: true }).click();
-      await page.getByRole('button', { name: 'New side panel tab', exact: true }).click();
-      await page.getByRole('menuitem', { name: 'Files', exact: true }).click();
-      await page.getByRole('treeitem', { name: 'README.md', exact: true }).click();
-      const opened = await geometry(page);
-      assert.ok(opened.sidePanel.width >= 600, `populated Files has its real wide default: ${JSON.stringify(opened)}`);
-      assert.equal(opened.mark.x, before.mark.x, `populated Files: ${JSON.stringify({ before, opened })}`);
-      const edge = page.getByRole('separator', { name: 'Resize side panel' });
-      const box = await edge.boundingBox();
-      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-      await page.mouse.down();
-      await page.mouse.move(box.x - 100, box.y + box.height / 2);
-      await page.mouse.up();
-      const resized = await geometry(page);
-      assert.ok(resized.sidePanel.width > opened.sidePanel.width + 80, `real divider resized: ${JSON.stringify({ opened, resized })}`);
-      assert.equal(resized.mark.x, before.mark.x, `resized Files: ${JSON.stringify({ before, resized })}`);
-      assert.deepEqual(f.errors, []);
-    } finally { await f.close(); }
-  });
-}

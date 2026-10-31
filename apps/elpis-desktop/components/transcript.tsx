@@ -4,7 +4,8 @@ import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { CollapseDetails } from "@/components/step";
 import { WorkingMark } from "@/components/working-mark";
 
-import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, createContext, useContext, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { pruneOf } from "@/lib/smart-prune";
 import type { Entry, Item } from "@/lib/api";
 import { elapsed, foldSummary, reasoningOf, stepLabel, summarize, summaryParts } from "@/lib/steps";
@@ -21,6 +22,13 @@ import { entryKey } from "@/lib/submitted-messages";
  * an item's recorded pictures (lib/api.ts `mediaUrl`). */
 type Draw = { renderItem: (entry: Entry) => ReactNode; mediaOf?: (entry: Entry) => string | undefined; wrapItem?: (entry: Entry, node: ReactNode) => ReactNode };
 type ObserveTurn = (element: HTMLElement, show: () => void) => () => void;
+export const WorkingPlacement = createContext<HTMLElement | null>(null);
+function WorkingStatus({ children }: { children: ReactNode }) {
+  const host = useContext(WorkingPlacement);
+  const status = <div className="turn-working" role="status">{children}</div>;
+  return host ? createPortal(status, host) : status;
+}
+
 export function Transcript({ entries, activeTurnId, onViewChanges, ...draw }: { entries: Entry[]; activeTurnId: string | null; onViewChanges?: () => void } & Draw) {
   const viewport = useRef<HTMLElement | null>(null);
   const targets = useRef(new Map<Element, () => void>());
@@ -71,7 +79,7 @@ export function Transcript({ entries, activeTurnId, onViewChanges, ...draw }: { 
       <Turn turn={turn} active={turn.id === activeTurnId} defer={turns.length > 40 && index < turns.length - 1} observe={observe} onViewChanges={onViewChanges} {...wrapped} />
     </Fragment>;
   })}
-    {activeTurnId && !turns.some(turn => turn.id === activeTurnId) && <div className="turn-working" role="status"><LiveStep key={activeTurnId} label="Working" /></div>}
+    {activeTurnId && !turns.some(turn => turn.id === activeTurnId) && <WorkingStatus><LiveStep key={activeTurnId} label="Working" /></WorkingStatus>}
   </>;
 }
 
@@ -177,7 +185,7 @@ function Turn({ turn, active, defer, observe, onViewChanges, renderItem, mediaOf
     {!active && <TurnChanges items={work.map(entry => entry.item)} onViewChanges={onViewChanges} />}
     {/* The working mark has one place, the turn's foot, for the whole turn; a running step's row keeps its sentence and
         timer without a mark (29 Oct, Masih: "you can see the working animation changes its place!"). */}
-    {active && <div className="turn-working" role="status"><LiveStep label="Working" since={earliest(turn.entries)} /></div>}
+    {active && <WorkingStatus><LiveStep label="Working" since={earliest(turn.entries)} /></WorkingStatus>}
   </section>;
 }
 
