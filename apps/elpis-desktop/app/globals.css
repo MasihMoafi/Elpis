@@ -9,8 +9,9 @@
 .side-chat-heading p { margin-top:4px; font-size:var(--text-xs); line-height:1.5; color:var(--muted-foreground); }
 .side-chat-content { flex:1; min-height:0; overflow:auto; padding:12px; overflow-wrap:anywhere; }
 .side-chat-content .message { max-width:100%; }
-.side-chat-form { display:flex; align-items:flex-end; gap:8px; padding:12px; border-top:1px solid var(--border); }
-.side-chat-form textarea { min-width:0; max-height:120px; overflow:auto; }
+.side-chat-form { display:flex; align-items:flex-end; gap:8px; margin:0 8px 8px; padding:12px; }
+.side-chat-form textarea { min-width:0; max-height:120px; overflow:auto; border:0; box-shadow:none; background:transparent; }
+.side-chat-form textarea:focus-visible { outline:none; box-shadow:none; }
 html { font-size:var(--interface-size, 16px); }
 :root[data-corners="sharp"] { --corner-shape:round; --corner-radius:0; --corner-radius-sm:0; --corner-radius-lg:0; --corner-tray:0; --radius:0px; --radius-sm:0px; --radius-md:0px; --radius-lg:0px; }
 :root[data-corners="rounded"] { --corner-shape:round; --corner-radius:var(--radius); --corner-radius-sm:var(--radius-sm); --corner-radius-lg:var(--radius-lg); --corner-tray:var(--radius-lg) var(--radius-lg) 0 0; }
@@ -31,7 +32,8 @@ html { font-size:var(--interface-size, 16px); }
 /* Light text tokens meet WCAG AA on every light ground, selected rows included: --muted-foreground #636361 is 4.52:1 on a
  * selected sidebar row and 6.0:1 on a card; --success #16703f is 4.61:1 and 6.1:1. */
 :root { --radius:0.625rem; --radius-sm:0.375rem; --radius-md:0.5rem; --radius-lg:0.625rem; --ring:var(--primary); --canvas:#fbfbfa; --ink:#2f2f2e; --background:var(--canvas); --foreground:#252524; --card:#fff; --composer:#fff; --muted:color-mix(in oklch, var(--ink) 7%, var(--canvas)); --secondary:var(--muted); --recessed:color-mix(in oklch, var(--ink) 4.5%, var(--canvas)); --hover:color-mix(in oklab, var(--ink) 6%, transparent); --selected:color-mix(in oklab, var(--ink) 9.5%, transparent); --muted-foreground:#636361; --subtle-foreground:#6c6c68; --border:color-mix(in oklch, var(--ink) 13%, var(--canvas)); --hairline:color-mix(in oklch, var(--ink) 9%, var(--canvas)); --primary:var(--accent-light); --primary-foreground:#fff; --gold:var(--primary); --accent-mark:var(--primary); --glow:0 0 #0000; --sidebar:#f2f2f1; --destructive:#b5102e; --success:#16703f; --warning:#76680a; --context:#66760f; --shadow:0 1px 2px #0000000a, 0 4px 16px #0000000d; color-scheme:light; }
-.dark { --canvas:#0a0b0d; --ink:#d8d2c4; --gold-deep:var(--primary); --background:var(--canvas); --foreground:#e6e0d3; --card:#111317; --composer:#17191d; --sidebar:#0d0e11; --muted:color-mix(in oklch, var(--ink) 9%, var(--canvas)); --secondary:var(--muted); --recessed:#0e1013; --hover:color-mix(in oklab, var(--gold) 7%, transparent); --selected:color-mix(in oklab, var(--gold) 13%, transparent); --muted-foreground:#9c9587; --subtle-foreground:#8b8579; --border:color-mix(in srgb, var(--gold) 20%, #191919); --hairline:color-mix(in srgb, var(--gold) 11%, #151515); --primary:var(--accent-dark); --primary-foreground:#0a0b0d; --accent-mark:var(--gold); --destructive:#ff2147; --success:#5fd3a0; --warning:#f2c26b; --context:#cfd46e; --glow:0 0 0 1px color-mix(in oklch, var(--gold) 30%, transparent), 0 0 28px -8px color-mix(in oklch, var(--gold) 55%, transparent); --shadow:0 1px 2px #000a, 0 10px 30px #0008; color-scheme:dark; }
+.dark { --canvas:#0a0b0d; --ink:#d8d2c4; --gold-deep:var(--primary); --background:var(--canvas); --foreground:#e6e0d3; --card:#111317; --composer:#17191d; --sidebar:#0d0e11; --muted:color-mix(in oklch, var(--ink) 9%, var(--canvas)); --secondary:var(--muted); --recessed:#0e1013; --hover:color-mix(in oklab, var(--gold) 7%, transparent); --selected:color-mix(in oklab, var(--gold) 13%, transparent); --muted-foreground:#9c9587; --subtle-foreground:#8b8579; --border:color-mix(in srgb, var(--gold) 20%, #191919); --hairline:color-mix(in srgb, var(--gold) 11%, #151515); --primary:var(--accent-dark); --primary-foreground:#0a0b0d; --accent-mark:var(--gold); --destructive:#ff2147; --success:#5fd3a0; --warning:#f2c26b; --context:#cfd46e; --shadow:0 1px 2px #000a, 0 10px 30px #0008; color-scheme:dark; }
+.dark, .dark .matilda-mini-popup { --glow:0 0 0 1px color-mix(in oklch, var(--gold) 30%, transparent), 0 0 28px -8px color-mix(in oklch, var(--gold) 55%, transparent); }
 /* A87: the light new-chat wordmark's main gradient stop, shared by both themes.
  * Primary/gold draw accents; accent-text keeps light labels readable in ink. */
 :root { --brand-accent:#f2a93b; }
@@ -77,7 +79,7 @@ html { font-size:var(--interface-size, 16px); }
 /* Neutral tint grounds and sRGB mixes preserve the accent hue, including on blue-black dark surfaces. */
 :root { --accent-surface:rgb(from var(--card) r r r); --accent-canvas:rgb(from var(--canvas) r r r); --cut-sm:4px; --cut:7px; --cut-lg:10px; --hud-edge:var(--border); --hud-face:var(--card); --hud-face-hover:color-mix(in oklab, var(--card), var(--foreground) 8%);
   --label-size:var(--text-small); --label-track:.14em; --motion-fast:.12s; --motion:.2s; --ease:cubic-bezier(.2,.7,.2,1); }
-.dark { --hud-edge:color-mix(in oklch, var(--gold) 60%, transparent); --hud-face:color-mix(in srgb, var(--gold) 8%, var(--accent-surface)); --hud-face-hover:color-mix(in srgb, var(--gold) 22%, var(--accent-surface)); }
+.dark, .dark .matilda-mini-popup { --hud-edge:color-mix(in oklch, var(--gold) 60%, transparent); --hud-face:color-mix(in srgb, var(--gold) 8%, var(--accent-surface)); --hud-face-hover:color-mix(in srgb, var(--gold) 22%, var(--accent-surface)); }
 /* Shared native chamfers keep each element's border width, focus rings and shadows. Controls
  * (components/ui: buttons, fields, select triggers) take .hud-cut, those 24px tall or less .hud-cut-sm, and panels and
  * floating surfaces --cut-lg (below). Roundness stays only where it means something: dots, rings and switches. */
@@ -106,8 +108,8 @@ html { font-size:var(--interface-size, 16px); }
   .canvas-inspector-actions kbd, .settings-badge, .choice-key:not([data-radio]), .change-status, .browser-zoom, .annotation-hint kbd) { border-radius:var(--corner-radius-sm, var(--cut-sm) 0); corner-shape:var(--corner-shape, bevel); }
 /* Panels (edge --border) and the accented ones: floating surfaces and the composer (edge --hud-edge, set by each): --cut-lg. */
 :where(.view-error, .tool-item, .feature-section, .customize-list, .agent-conversation-group, .file-card, .provider-key-form, .plan-card, .task-list, .canvas-notice, .agent-node,
-  .settings-rows, .settings-card, .step-card, .decision-card, .failed-turn-card, .message.user,
-  .hud-menu, .hud-popover, .hud-dialog, .side-chat, .pending-input-panel, .full-view > .workspace-content, .composer) { border-radius:var(--corner-radius-lg, var(--cut-lg) 0); corner-shape:var(--corner-shape, bevel); }
+  .settings-rows, .settings-card, .step-card, .decision-card, .failed-turn-card, .message.user, .matilda-mini-message[data-speaker="you"],
+  .hud-menu, .hud-popover, .hud-dialog, .side-chat, .pending-input-panel, .full-view > .workspace-content, .composer, .side-chat-form, .matilda-mini-composer) { border-radius:var(--corner-radius-lg, var(--cut-lg) 0); corner-shape:var(--corner-shape, bevel); }
 @layer base { * { box-sizing:border-box; border-color:var(--border); } [hidden] { display:none!important; } }
 * { scrollbar-width:thin; scrollbar-color:color-mix(in oklch, var(--foreground) 16%, transparent) transparent; }
 *::-webkit-scrollbar { width:8px; height:8px; }
@@ -268,12 +270,13 @@ button:disabled { cursor:not-allowed; }
 .message { margin-bottom:22px; min-width:0; overflow-wrap:anywhere; }
 /* Your messages keep the Elpis mark: a card with bevelled corners and the gold right edge (29 Oct, Masih: "why did you change
  * the mark of Elpis in the UI chats? That needs to come back."); ChatGPT's padding and width (specs/chatgpt-chat-style.md). */
-.message.user { background:var(--card); border:1px solid var(--hairline); border-right:2px solid color-mix(in oklch, var(--gold, var(--primary)) 70%, transparent); padding:10px 16px; margin-left:auto; width:fit-content; max-width:70%; white-space:pre-wrap; }
+.message.user, .matilda-mini-message[data-speaker="you"] { background:var(--card); border:1px solid var(--hairline); border-right-color:color-mix(in oklch, var(--gold, var(--primary)) 70%, transparent); }
+.message.user { padding:10px 16px; margin-left:auto; width:fit-content; max-width:70%; white-space:pre-wrap; }
 .message.agent .speaker { font-size:var(--text-xs); font-weight:600; color:var(--muted-foreground); margin-bottom:6px; }
 .markdown p { margin:0 0 1em; } .markdown > :last-child { margin-bottom:0; } .markdown pre { background:var(--recessed); border:1px solid var(--hairline); padding:12px 14px; overflow:auto; line-height:1.55; } .markdown code { font-size:var(--code-size, 13px); font-family:var(--mono); } .markdown :not(pre) > code { color:inherit; background:color-mix(in oklab, var(--foreground) 6%, var(--background)); padding:1px 6px; border-radius:6px; corner-shape:round; font-size:var(--text-sm); } .markdown ul,.markdown ol { padding-inline-start:22px; margin:8px 0 12px; } .markdown li { margin:3px 0; } .markdown ul { list-style:disc; } .markdown ol { list-style:decimal; } .markdown a { color:inherit; text-decoration:underline dotted 1px; text-underline-offset:2px; text-decoration-color:var(--thread-tertiary); } .markdown a:hover { color:var(--accent-text); } .markdown-table { max-width:100%; overflow:auto; margin:0 0 14px; } .markdown table { border-collapse:collapse; font-size:var(--text-sm); width:max-content; } .markdown td,.markdown th { border:1px solid var(--border); padding:6px 10px; min-width:6rem; overflow-wrap:normal; word-break:normal; } .markdown h1,.markdown h2,.markdown h3,.markdown h4,.markdown h5,.markdown h6 { font-weight:600; margin:18px 0 8px; letter-spacing:-.01em; } .markdown h1 { font-size:var(--text-base); } .markdown h2 { font-size:var(--text-base); } .markdown h3 { font-size:var(--text-base); }
 .tool-item { border:1px solid var(--border); margin:12px 0; font-size:var(--text-xs); } .tool-item summary { padding:10px 14px; cursor:pointer; } .tool-item pre { margin:0; padding:12px; overflow:auto; max-height:340px; white-space:pre-wrap; }
 .composer-wrap { position:relative; padding:6px 32px 16px; }
-.composer { max-width:var(--transcript-width, 740px); margin:auto; border:1px solid var(--border); background:var(--composer); padding:11px 8px 8px 13px; box-shadow:var(--elevation-composer); }
+.composer { max-width:var(--transcript-width, 740px); margin:auto; padding:11px 8px 8px 13px; }
 /* Stop stays plain in both themes; keyboard focus uses an outline instead of a shadow ring. */
 .stop-button { background:transparent; box-shadow:none; }
 .stop-button:focus-visible { outline:2px solid var(--ring); outline-offset:-2px; }
@@ -353,7 +356,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .project-heading-trigger { font:inherit; color:var(--accent-text); background:none; border:0; padding:0; cursor:pointer; text-decoration:underline dotted 1px; text-underline-offset:6px; text-decoration-color:var(--primary); }
 .project-heading-trigger:hover, .project-heading-trigger[aria-expanded="true"] { text-decoration-style:solid; }
 .composer-tray { max-width:var(--transcript-width, 740px); margin:0 auto -1px; display:flex; align-items:center; gap:4px; padding:5px 10px 4px; border:1px solid var(--hairline); border-bottom:0; border-radius:var(--corner-tray, var(--cut-lg) 0 0 0); corner-shape:var(--corner-shape, bevel); background:color-mix(in oklch, var(--composer) 60%, transparent); }
-.composer-tray + .composer { border-top-left-radius:0; border-top-right-radius:0; }
+.composer-tray + .composer, .composer-tray + .composer-working:empty + .composer { border-top-left-radius:0; border-top-right-radius:0; }
 .project-chip { background:none; cursor:pointer; }
 .project-chip:hover, .project-chip[aria-expanded="true"] { color:var(--foreground); background:var(--hover); border-color:var(--hairline); }
 .project-chip span { overflow:hidden; text-overflow:ellipsis; }
@@ -426,7 +429,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .model-select:hover:not(:disabled) { background-color:var(--hover); color:var(--foreground); }
 /* Shared primary action. White sRGB tints preserve its hue; hud-cut owns the parallel chamfers. */
 :root { --primary-action:var(--primary); --primary-action-content:var(--primary-foreground); }
-:root, :is(.love-spot, .love-spot-tools, .love-chat) { --primary-action-hover:color-mix(in srgb, var(--primary-action), white 8%); --primary-action-pressed:color-mix(in srgb, var(--primary-action), white 16%); }
+:root, :is(.love-spot, .love-spot-tools, .love-chat, .matilda-mini-popup) { --primary-action-hover:color-mix(in srgb, var(--primary-action), white 8%); --primary-action-pressed:color-mix(in srgb, var(--primary-action), white 16%); }
 .primary-cut { background:var(--primary-action); color:var(--primary-action-content); }
 .primary-cut:hover:not(:disabled) { background:var(--primary-action-hover); }
 .primary-cut:active:not(:disabled) { background:var(--primary-action-pressed); }
@@ -705,9 +708,10 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .worked-for > summary:hover { color:var(--foreground); }
 .worked-for-body { padding:6px 0 0; }
 
-.composer, .composer-tray { --edge:var(--composer-edge); }
-.composer:focus-within, .composer-tray:has(+ .composer:focus-within) { --edge:color-mix(in srgb, var(--primary) 80%, var(--hud-edge)); }
-.composer { position:relative; background:var(--composer); border-color:var(--edge); box-shadow:var(--elevation-composer); }
+.composer, .composer-tray, .side-chat-form, .matilda-mini-composer { --edge:var(--composer-edge); }
+.composer:focus-within, .composer-tray:has(+ .composer:focus-within), .composer-tray:has(+ .composer-working:empty + .composer:focus-within), .side-chat-form:focus-within, .matilda-mini-composer:focus-within { --edge:color-mix(in srgb, var(--primary) 80%, var(--hud-edge)); }
+.composer, .side-chat-form, .matilda-mini-composer { background:var(--composer); border:1px solid var(--edge); box-shadow:var(--elevation-composer); }
+.composer { position:relative; }
 .composer-tray { border-color:var(--edge); }
 /* No colour transition: the dark edge is gold, and a theme switch must not fade gold into the light theme. */
 /* The native bevel draws the border once, using the same width and colour as its straight edges. */
@@ -1518,8 +1522,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 /* Love Spot's brand color stays local to its navigation mark and drawing controls. */
 :root { --love-red:#8B1017; }
 .dark { --love-red:#ec575e; }
-:is(.love-spot, .love-spot-tools, .love-chat) { --primary:var(--love-red); --accent-text:var(--primary); --primary-foreground:#fff; --gold:var(--primary); --ring:var(--primary); --accent-mark:var(--primary); --primary-action:var(--love-red); --primary-action-content:#fff; }
-.dark :is(.love-spot, .love-spot-tools, .love-chat) { --primary-foreground:var(--background); --primary-action-content:var(--background); }
+:is(.love-spot, .love-spot-tools, .love-chat, .matilda-mini-popup) { --primary:var(--love-red); --accent-text:var(--primary); --primary-foreground:#fff; --gold:var(--primary); --ring:var(--primary); --accent-mark:var(--primary); --primary-action:var(--love-red); --primary-action-content:#fff; }
+.dark :is(.love-spot, .love-spot-tools, .love-chat, .matilda-mini-popup) { --primary-foreground:var(--background); --primary-action-content:var(--background); }
 .nav-list button[data-nav-page="loveSpot"] svg { color:var(--love-red); }
 .thread-origin[data-origin="Love Spot"] { color:var(--foreground); }
 .love-unread { display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:18px; border-radius:50%; font-size:var(--text-xs); line-height:1; font-weight:600; margin-left:auto; background:var(--love-red); color:#fff; box-shadow:0 0 12px color-mix(in oklab, var(--love-red) 55%, transparent); }

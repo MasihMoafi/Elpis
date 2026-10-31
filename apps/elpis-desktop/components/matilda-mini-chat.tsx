@@ -127,7 +127,7 @@ export function MatildaMiniChat({ chat }: { chat: ReturnType<typeof useMatildaMi
     {chat.error && <div className="matilda-mini-error" role="alert"><span>{chat.error}</span><Button variant="ghost" size="xs" onClick={() => void chat.retry()}>Retry</Button></div>}
     <form aria-label="Message Matilda" className="matilda-mini-composer" onSubmit={event => { event.preventDefault(); void chat.send(); }}>
       <Textarea aria-label="Message Matilda" placeholder="Message Matilda…" rows={1} autoFocus value={chat.draft} onChange={event => chat.setDraft(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} />
-      <Button type="submit" variant="ghost" size="icon-sm" aria-label="Send to Matilda" title="Send to Matilda" disabled={!chat.draft.trim() || chat.posting || chat.conversation.busy}><SendIcon size={18} /></Button>
+      <Button type="submit" variant="cutPrimary" size="icon-sm" aria-label="Send to Matilda" title="Send to Matilda" disabled={!chat.draft.trim() || chat.posting || chat.conversation.busy}><SendIcon size={16} /></Button>
     </form>
   </div>;
 }
