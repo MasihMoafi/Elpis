@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture, THREADS } = require('./parity-fixture.cjs');
 const { PORTRAIT_INSTRUCTIONS } = require('../bridge/matilda-face.cjs');
 
 for (const colorScheme of ['light', 'dark']) test(`automatic portrait guidance does not duplicate a live message (${colorScheme})`, async t => {
@@ -39,6 +39,69 @@ for (const colorScheme of ['light', 'dark']) test(`automatic portrait guidance d
     await fs.mkdir(process.env.ELPIS_LIVE_EVIDENCE, { recursive: true });
     await f.page.screenshot({ path: path.join(process.env.ELPIS_LIVE_EVIDENCE, `portrait-echo-${colorScheme}.png`) });
   }
+});
+
+test('a follow-up stays after earlier work when the loaded history starts mid-turn', async t => {
+  const turnId = 't4';
+  const thread = { ...THREADS[0], status: { type: 'active' } };
+  const entry = item => ({ turnId, item });
+  const entries = [
+    entry({ id: 'command-before', type: 'commandExecution', command: 'echo first', status: 'completed' }),
+    entry({ id: 'reply-before', type: 'agentMessage', text: 'Earlier reply.' }),
+    entry({ id: 'command-next', type: 'commandExecution', command: 'echo second', status: 'completed' }),
+    entry({ id: 'compaction', type: 'contextCompaction' }),
+    entry({ id: 'reply-latest', type: 'agentMessage', text: 'All green.' }),
+  ];
+  const f = await fixture({ running: true, routes: {
+    '/api/threads/chat-a': (_body, url) => url.searchParams.has('cursor')
+      ? { thread, data: [entry({ id: 'first-prompt', type: 'userMessage', content: [{ type: 'text', text: 'First prompt.' }] })], nextCursor: null }
+      : { thread, data: [...entries].reverse(), nextCursor: 'earlier' },
+    '/api/threads/chat-a/steer': () => ({ turnId }),
+  } });
+  t.after(() => f.close());
+  await f.open('chat-a');
+  await f.page.getByRole('button', { name: 'Load earlier messages' }).waitFor();
+  const order = () => f.page.locator('.activity-group, .message.user, .message.agent, .context-event').allTextContents();
+  const checkOrder = async expected => {
+    const rows = await order();
+    let previous = -1;
+    for (const text of expected) {
+      const next = rows.findIndex((row, index) => index > previous && row.includes(text));
+      assert.ok(next > previous, `Missing or reordered ${text}: ${rows.join(' | ')}`);
+      previous = next;
+    }
+  };
+  const earlier = ['Ran', 'Earlier reply.', 'Ran', 'Compacted the context', 'All green.'];
+  await checkOrder(earlier);
+  await f.composer.fill('Follow up now.');
+  await f.composer.press('Enter');
+  await f.page.locator('.message.user').getByText('Follow up now.', { exact: true }).waitFor();
+  await checkOrder([...earlier, 'Follow up now.']);
+
+  const echo = { id: 'follow-up-echo', type: 'userMessage', content: [{ type: 'text', text: 'Follow up now.' }] };
+  const later = { id: 'reply-after', type: 'agentMessage', text: 'Later reply.' };
+  for (const item of [echo, later]) {
+    entries.push(entry(item));
+    f.emit('message', { method: 'item/completed', params: { threadId: 'chat-a', turnId, item } });
+  }
+  await f.page.getByText('Later reply.', { exact: true }).waitFor();
+  await checkOrder([...earlier, 'Follow up now.', 'Later reply.']);
+  const refreshed = f.page.waitForResponse(response => new URL(response.url()).pathname === '/api/threads/chat-a' && response.request().method() === 'GET');
+  await f.page.getByRole('button', { name: 'Refresh conversation', exact: true }).click();
+  await refreshed;
+  await checkOrder([...earlier, 'Follow up now.', 'Later reply.']);
+  assert.equal(await f.page.getByText('Follow up now.', { exact: true }).count(), 1);
+  assert.equal(f.posts.filter(post => post.path === '/api/threads/chat-a/steer').length, 1);
+  await f.page.getByRole('button', { name: 'Load earlier messages' }).click();
+  await f.page.getByText('First prompt.', { exact: true }).waitFor();
+  await checkOrder(['First prompt.', ...earlier, 'Follow up now.', 'Later reply.']);
+  await f.page.reload();
+  await f.open('chat-a');
+  await f.page.getByText('Later reply.', { exact: true }).waitFor();
+  await checkOrder([...earlier, 'Follow up now.', 'Later reply.']);
+  assert.equal(await f.page.getByText('Follow up now.', { exact: true }).count(), 1);
+  assert.equal(f.posts.filter(post => post.path === '/api/threads/chat-a/steer').length, 1);
+  assert.deepEqual(f.errors, []);
 });
 
 for (const colorScheme of ['light', 'dark']) test(`three messages appear immediately during a turn and keep their position after acknowledgement (${colorScheme})`, { timeout: 30000 }, async t => {

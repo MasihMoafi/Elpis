@@ -159,11 +159,10 @@ function Turn({ turn, active, defer, observe, onViewChanges, renderItem, mediaOf
   if (!active && compact && compactOnly) {
     return <section className="turn" aria-label="Turn">{renderItem({ ...compact, item: { id: compact.item.id, type: "contextCompaction" } })}</section>;
   }
-  // The prompt that started the turn heads it; a message sent while it ran (a steer) stays where it was sent.
-  const prompt = ordered.findIndex(entry => entry.item.type === "userMessage");
-  const leading = prompt < 0 ? 0 : ordered.findIndex((entry, index) => index > prompt && entry.item.type !== "userMessage");
-  const users = prompt < 0 ? [] : ordered.slice(0, leading < 0 ? ordered.length : leading).filter(entry => entry.item.type === "userMessage");
-  const work = ordered.filter(entry => !users.includes(entry));
+  // Only prompts at the start head the turn. A partial history can start with work before a later steer.
+  const leading = ordered.findIndex(entry => entry.item.type !== "userMessage");
+  const users = ordered.slice(0, leading < 0 ? ordered.length : leading);
+  const work = ordered.slice(users.length);
   // A proposed plan is the turn's answer as much as its last reply, so neither folds away.
   const lastReply = findLastIndex(work, entry => isReply(entry.item)), plan = work.findIndex(entry => entry.item.type === "plan");
   const finalReply = active ? -1 : plan >= 0 && (lastReply < 0 || plan < lastReply) ? plan : lastReply;
