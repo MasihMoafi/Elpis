@@ -27,3 +27,27 @@ test('approved portraits have a clear backdrop in light, dark and board modes', 
   }
   assert.deepEqual(f.errors, []);
 });
+
+test('her clothing follows the theme: a white silk shirt in light mode, black silk in dark mode, for every expression', async t => {
+  const f = await fixture(); t.after(() => f.close());
+  const rooms = await f.page.evaluate(async sources => {
+    const out = [];
+    for (const [theme, portraits] of Object.entries(sources)) for (const [name, src] of Object.entries(portraits)) {
+      const image = new Image(); image.src = src; await image.decode();
+      const canvas = document.createElement('canvas'); canvas.width = canvas.height = 192;
+      const context = canvas.getContext('2d'); context.drawImage(image, 0, 0, 192, 192);
+      const { data } = context.getImageData(60, 160, 72, 24);
+      let sum = 0, count = 0;
+      for (let i = 0; i < data.length; i += 4) if (data[i + 3] > 200) { sum += 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]; count++; }
+      out.push({ theme, name, count, brightness: sum / Math.max(count, 1) });
+    }
+    return out;
+  }, { dark: MATILDA_SHOTS, light: MATILDA_SHOTS_LIGHT });
+  assert.equal(rooms.length, 14, 'seven expressions in each theme');
+  for (const room of rooms) {
+    assert.ok(room.count > 200, `${room.theme}/${room.name}: she is dressed at the foot of the circle`);
+    if (room.theme === 'light') assert.ok(room.brightness > 140, `${room.theme}/${room.name}: the shirt is light (${Math.round(room.brightness)})`);
+    else assert.ok(room.brightness < 75, `${room.theme}/${room.name}: the silk is black (${Math.round(room.brightness)})`);
+  }
+  assert.deepEqual(f.errors, []);
+});

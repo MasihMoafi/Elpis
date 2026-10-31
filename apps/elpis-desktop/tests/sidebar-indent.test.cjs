@@ -71,14 +71,16 @@ test('selected chat frames keep their size and share the theme accent in both sc
           assert.ok(tabFrame.mask.split(',').every(value => value.trim() === 'exclude'), `${id}: tab keeps the fill clear`);
           assert.equal(tabFrame.pointer, 'none', `${id}: tab does not block controls`);
           assert.equal(tabFrame.border, '1px');
-          // The selected row keeps its original LEFT mark, not a frame: same place, size and glow as before.
+          // The selected row keeps its LEFT mark as Masih drew it: a vertical line with a diagonal top, with its original glow.
           const mark = await row.evaluate(element => {
-            const style = getComputedStyle(element, '::before');
-            return { content: style.content, left: style.left, top: style.top, bottom: style.bottom, width: style.width,
-              shadow: style.boxShadow, pointer: style.pointerEvents, fill: style.backgroundColor, image: style.backgroundImage };
+            const line = getComputedStyle(element, '::before'), glow = getComputedStyle(element, '::after');
+            return { content: line.content, left: line.left, bottom: line.bottom, clip: line.clipPath, pointer: line.pointerEvents, fill: line.backgroundColor, image: line.backgroundImage,
+              glowLeft: glow.left, glowTop: glow.top, glowBottom: glow.bottom, glowWidth: glow.width, shadow: glow.boxShadow };
           });
           assert.equal(mark.content, '""', `${id}: the row mark exists`);
-          assert.deepEqual([mark.left, mark.top, mark.bottom, mark.width], ['0px', '6px', '6px', '2px'], `${id}: the mark stays on the left at its original size`);
+          assert.match(mark.clip, /^polygon\(/, `${id}: the mark is a line with a diagonal top`);
+          assert.deepEqual([mark.left, mark.bottom], ['0px', '6px'], `${id}: the mark stays on the left edge`);
+          assert.deepEqual([mark.glowLeft, mark.glowTop, mark.glowBottom, mark.glowWidth], ['0px', '6px', '6px', '2px'], `${id}: the line keeps its original size`);
           assert.match(mark.shadow, /\b8px\b/, `${id}: the mark keeps its 8px glow`);
           assert.equal(mark.image, 'none', `${id}: the row has no frame gradient`);
           assert.equal(mark.pointer, 'none', `${id}: the mark does not block controls`);
@@ -267,6 +269,19 @@ for (const colorScheme of ['light', 'dark']) test(`agent badges share one column
     const edge = id => row(id).locator('.agent-mark').evaluate(element => element.getBoundingClientRect().right);
     const [long, short] = [await edge(child.id), await edge(leaf.id)];
     assert.ok(Math.abs(long - short) <= 0.5, `a long and a short title put their badges ${Math.abs(long - short)}px apart`);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+for (const colorScheme of ['light', 'dark']) test(`a section heading has more room above it than below, before its chats (${colorScheme})`, async () => {
+  const f = await setup(colorScheme, true), { page } = f;
+  try {
+    const rooms = await page.locator('aside.sidebar .section-label-row').evaluateAll(rows => rows
+      .filter(row => row.previousElementSibling && row.getBoundingClientRect().height > 0)
+      .map(row => { const label = row.querySelector('.section-label').getBoundingClientRect(), box = row.getBoundingClientRect(), mid = label.top + label.height / 2;
+        return { name: row.textContent.trim().slice(0, 24), above: mid - box.top, below: box.bottom - mid }; }));
+    assert.ok(rooms.length > 0, 'the sidebar shows a heading that follows another section');
+    for (const room of rooms) assert.ok(room.above - room.below >= 6, `${room.name}: ${room.above}px above the heading text and ${room.below}px below it`);
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

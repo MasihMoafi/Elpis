@@ -10,6 +10,7 @@ import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { AppState, BinaryFiles, ExcalidrawImperativeAPI, ExcalidrawInitialDataState, PointerDownState } from "@excalidraw/excalidraw/types";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { appStorage } from "@/lib/projects";
 import { Tooltip } from "@/components/ui/tooltip";
 import { ReadAloud, useReadAloud } from "@/components/read-aloud";
 import { useDrawingStyle } from "@/components/drawing-style";
@@ -33,6 +34,7 @@ import { BOARD_FACE, BOARD_FACE_LIGHT } from "@/bridge/matilda-face.cjs";
 import { upgradeAgentArt } from "@/lib/love-agents";
 import "@excalidraw/excalidraw/index.css";
 import "./love-spot.css";
+const REPLIES_KEY = "elpis:love-spot:matilda-replies";
 
 type BoardPage = { name: string; session: string };
 type Drawing = { elements: readonly ExcalidrawElement[]; files: BinaryFiles; appState: Partial<AppState>; page?: BoardPage };
@@ -370,7 +372,11 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
   }, [editor, receive]);
 
   // Matilda answers what he writes or draws; the board is the conversation. `told` reads the notes as they stand when she looks.
-  const matilda = useMatilda({ context: page?.session, ready: () => !!editorRef.current && !!settings && !calling && !pageBusy && !editorRef.current.getAppState().editingTextElement && !document.querySelector("textarea.excalidraw-wysiwyg"), onError: setError,
+  // Masih, 31 Oct: "the agent keeps talking in the love-spot; I was drawing that for you; there should be a disable button there."
+  const [replies, setReplies] = useState(() => appStorage().getItem(REPLIES_KEY) !== "off");
+  const repliesRef = useRef(replies); repliesRef.current = replies;
+  const chooseReplies = (on: boolean) => { setReplies(on); try { appStorage().setItem(REPLIES_KEY, on ? "on" : "off"); } catch { /* The choice still holds in this window. */ } };
+  const matilda = useMatilda({ context: page?.session, ready: () => repliesRef.current && !!editorRef.current && !!settings && !calling && !pageBusy && !editorRef.current.getAppState().editingTextElement && !document.querySelector("textarea.excalidraw-wysiwyg"), onError: setError,
     told: ids => told(editorRef.current?.getSceneElements() ?? [], ids),
     send: (text, persona, isCurrent) => sendWithBoard(async revision => {
       const version = voiceVersion.current;
@@ -510,6 +516,7 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
         {voiceProblem && <span className="text-destructive" role="alert">{voiceProblem}</span>}
       </div>}
       <div role="group" aria-label="Voice note"><Dictation provider={provider} disabled={!editor || !settings} onBusy={() => {}} selection={insertion} onTranscript={addVoiceNote} purpose="Adds a note to the board." /></div>
+      <label className="flex items-center gap-2 text-xs" title={replies ? "Matilda answers what you write or draw. Turn off to draw undisturbed." : "Matilda stays quiet while you draw. Turn on and she answers what is waiting."}>Matilda replies<Switch aria-label="Matilda replies" checked={replies} onCheckedChange={chooseReplies} /></label>
       {matilda.replying && <span className="badge badge-sm badge-ghost shrink-0" role="status" aria-label="Matilda status">Matilda is writing…</span>}
       {saveStatus && <span className="badge badge-sm badge-ghost shrink-0" role="status" aria-label="Drawing save status">{saveStatus}</span>}
     </div>;

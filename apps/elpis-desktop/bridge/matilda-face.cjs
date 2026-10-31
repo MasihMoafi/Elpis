@@ -48,8 +48,17 @@ for (const [expression, source] of Object.entries(MATILDA_SHOTS)) {
   MATILDA_SHOTS[expression] = MATILDA_SHOTS_LIGHT[expression] = BOARD_SHOTS[expression] = clear;
   if (expression === 'listening') OLD_BOARD_FACES.push(portrait);
 }
-FACE_DATA_URL = FACE_DATA_URL_LIGHT = MATILDA_SHOTS.listening;
-BOARD_FACE = BOARD_FACE_LIGHT = { dataURL: FACE_DATA_URL, mimeType: 'image/svg+xml' };
+// Her clothing follows the theme (Masih, 31 Oct): white silk in light mode, black silk of the same texture in dark mode.
+// The circle clips the picture and leaves its backdrop clear; the board keeps one raster face, the dark one.
+const CLOTHES = require('./matilda-clothes.cjs');
+const clothed = portrait => `data:image/svg+xml;base64,${btoa(`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="192" height="192" viewBox="0 0 192 192"><defs><clipPath id="avatar"><circle cx="96" cy="96" r="96"/></clipPath></defs><g clip-path="url(#avatar)"><image width="192" height="192" xlink:href="${portrait}"/></g></svg>`)}`;
+for (const expression of Object.keys(MATILDA_SHOTS)) {
+  MATILDA_SHOTS[expression] = BOARD_SHOTS[expression] = clothed(CLOTHES.DARK[expression]);
+  MATILDA_SHOTS_LIGHT[expression] = clothed(CLOTHES.LIGHT[expression]);
+}
+FACE_DATA_URL = MATILDA_SHOTS.listening; FACE_DATA_URL_LIGHT = MATILDA_SHOTS_LIGHT.listening;
+BOARD_FACE = { dataURL: FACE_DATA_URL, mimeType: 'image/svg+xml' };
+BOARD_FACE_LIGHT = { dataURL: FACE_DATA_URL_LIGHT, mimeType: 'image/svg+xml' };
 // Match only Elpis's exact internal guidance; a real file with the same name stays visible.
 function isPortraitInstruction(part) {
   return part !== null && typeof part === "object" && part.type === "text" && part.text === `File: ${PORTRAIT_ATTACHMENT_NAME}\n${PORTRAIT_INSTRUCTIONS}`;
