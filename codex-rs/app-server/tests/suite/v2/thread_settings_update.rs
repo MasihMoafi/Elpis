@@ -385,22 +385,34 @@ async fn mcp_server_selection_restores_on_resume_and_inherited_fork() -> Result<
     let responses = create_mock_responses_server_sequence_unchecked(Vec::new()).await;
     let codex_home = TempDir::new()?;
     MockResponsesConfig::new(&responses.uri())
-        .with_extra_config("[mcp_servers.alpha]\nenabled = false\nurl = \"http://127.0.0.1:9/mcp\"")
+        .with_extra_config("[mcp_servers.alpha]\nenabled = false\nurl = \"http://127.0.0.1:9/mcp\"\n\n[mcp_servers.beta]\nenabled = false\nurl = \"http://127.0.0.1:9/mcp\"")
         .write(codex_home.path())?;
     let mut app = TestAppServer::builder()
         .with_codex_home(codex_home.path())
         .build_initialized_with_timeout(DEFAULT_TIMEOUT)
         .await?;
-    let selected_names = vec!["alpha".to_string()];
+    let selected_names = vec!["beta".to_string()];
+    let start_selection = vec!["alpha".to_string()];
     let started = app
         .start_thread(ThreadStartParams {
             model: Some("mock-model".to_string()),
-            mcp_server_selection: Some(selected_names.clone()),
+            mcp_server_selection: Some(start_selection.clone()),
             ..Default::default()
         })
         .await?;
+    assert_eq!(started.thread.mcp_server_selection, Some(start_selection));
+    send_thread_settings_update(
+        &mut app,
+        ThreadSettingsUpdateParams {
+            thread_id: started.thread.id.clone(),
+            mcp_server_selection: Some(Some(selected_names.clone())),
+            ..Default::default()
+        },
+    )
+    .await?;
+    let updated = read_thread_settings_updated(&mut app).await?;
     assert_eq!(
-        started.thread.mcp_server_selection,
+        updated.thread_settings.mcp_server_selection,
         Some(selected_names.clone())
     );
     let thread_id = started.thread.id;
