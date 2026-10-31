@@ -180,6 +180,10 @@ jobs:
             refs/heads/fix/tui-integrate-20261030:refs/remotes/origin/fix/tui-integrate-20261030
           test "$(git -C "$GITHUB_WORKSPACE" rev-parse "$EXPECTED_RUNTIME_SOURCE:codex-rs")" = "$EXPECTED_CODEX_TREE"
           test "$(git -C "$GITHUB_WORKSPACE" rev-parse HEAD:codex-rs)" = "$EXPECTED_CODEX_TREE"
+          chmod 0755 elpis codex-code-mode-host bwrap
+          mkdir -p codex-resources
+          install -m 0755 bwrap codex-resources/bwrap
+          echo "$PWD/codex-resources" >> "$GITHUB_PATH"
           test -x elpis
           echo "SHARED_PROVIDER_TEST_BINARY=$PWD/elpis" >> "$GITHUB_ENV"
       - name: Run shared provider session tests with both providers
