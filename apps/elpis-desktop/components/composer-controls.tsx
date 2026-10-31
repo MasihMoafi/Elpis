@@ -6,7 +6,6 @@ import { AttachIcon, PlanIcon, TerminalIcon } from "@/components/elpis-icons";
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import type { FollowUpChoice } from "@/lib/preferences";
 import type { PermissionRequirements } from "@/lib/api";
 import { permissionAllowed } from "../bridge/permission-presets.mjs";
 
@@ -100,16 +99,4 @@ export function PlusMenu({ disabled, attachDisabled, slashDisabled, plan, return
 /** Shown beside "+" while Plan mode is on; its button turns it off. */
 export function PlanPill({ disabled, onOff }: { disabled?: boolean; onOff: () => void }) {
   return <span className="composer-pill plan-pill"><PlanIcon size={14} aria-hidden="true" /><span>Plan</span><button data-slot="pill-remove" type="button" aria-label="Turn plan mode off" title="Turn plan mode off" disabled={disabled} onClick={onOff}><X size={12} /></button></span>;
-}
-
-/** Beside Send while a turn runs, as Claude's "More send options": sends this one message the way the send key does not
- * (Queue for later, or Send now when Settings queue by default). `choice` is that other way, with its key. Hidden in a
- * workspace under 680px wide, where the row of controls has no room for it; the keys still work. */
-export function SendOptionsMenu({ choice, disabled, returnFocus, onChoose }: { choice: FollowUpChoice; disabled?: boolean; returnFocus: RefObject<HTMLElement | null>; onChoose: (follow: FollowUpChoice["follow"]) => void }) {
-  return <DropdownMenu>
-    <DropdownMenuTrigger render={<Button type="button" variant="ghost" size="icon-xs" className="@max-[680px]/workspace:hidden" aria-label="More send options" title="More send options" disabled={disabled} />}><ChevronDown size={16} /></DropdownMenuTrigger>
-    <DropdownMenuContent align="end" side="top" finalFocus={returnFocus}>
-      <DropdownMenuItem onClick={() => onChoose(choice.follow)}>{choice.label}<kbd aria-hidden="true" className="kbd-hint">{choice.keys}</kbd></DropdownMenuItem>
-    </DropdownMenuContent>
-  </DropdownMenu>;
 }

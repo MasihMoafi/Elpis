@@ -59,9 +59,7 @@ for (const colorScheme of ['light', 'dark']) {
       assert.ok(Math.max(...centres) - Math.min(...centres) <= 0.5, `one centre line: ${centres.join(', ')}`);
       assert.ok(Math.max(...gaps) - Math.min(...gaps) <= 0.5, `voice → mic → Stop → Send box gaps are even: ${gaps.join(', ')}`);
       assert.equal(await row.getByRole('button', { name: 'Stop response' }).locator('rect').count(), 1, 'Stop uses the same outlined icon language');
-      const send = await row.getByRole('button', { name: 'Send follow-up' }).boundingBox(), more = await row.getByRole('button', { name: 'More send options' }).boundingBox();
-      assert.ok(Math.abs(more.x - send.x - send.width) <= 1, 'send options attach to Send instead of floating outside it');
-      assert.equal(more.width, 20);
+      assert.equal(await row.getByRole('button', { name: 'More send options', exact: true }).count(), 0, 'Send has no extra queue menu');
       assert.equal(await page.locator('.composer textarea').evaluate(el => el.getBoundingClientRect().height), 22, 'an empty composer is one text line high');
       const features = page.getByRole('group', { name: 'Elpis features' }).locator('.feature-chip');
       await features.first().waitFor();

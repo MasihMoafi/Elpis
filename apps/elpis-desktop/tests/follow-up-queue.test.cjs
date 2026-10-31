@@ -53,26 +53,12 @@ test('Enter sends into the running turn, Ctrl+Enter queues that one message, and
   assert.equal(await sendButton(page).getAttribute('title'), 'Queue for later (Enter)\nSend now (Ctrl+Enter)');
 }));
 
-test('the send button\'s menu sends this one message the other way, with the mouse', () => using({}, async f => {
-  const { page, composer } = f;
-  const more = page.getByRole('button', { name: 'More send options', exact: true });
-  assert.equal(await more.isDisabled(), true, 'nothing to send yet');
-  await composer.fill('queued from the menu');
-  await more.click();
-  const item = page.getByRole('menuitem', { name: 'Queue for later', exact: true });
-  assert.match(await item.innerText(), /Ctrl\+Enter/, 'the item shows its key');
-  assert.equal(await page.getByRole('menu').getByRole('menuitem').count(), 1, 'only the other choice is offered');
-  await item.click();
-  await queueList(page).getByText('queued from the menu', { exact: true }).waitFor();
-  assert.deepEqual(steered(f), []);
-  assert.equal(await composer.inputValue(), '');
-
-  await choose(f, 'Queue');
-  await composer.fill('sent from the menu');
-  await more.click();
-  await page.getByRole('menuitem', { name: 'Send now', exact: true }).click();
-  await page.waitForFunction(() => !document.querySelector('[aria-label="Message Elpis"]').value);
-  assert.deepEqual(steered(f), ['sent from the menu']);
+test('the running composer has one send button and no extra queue menu', () => using({}, async f => {
+  await f.composer.fill('a follow-up');
+  assert.equal(await f.page.getByRole('button', { name: 'More send options', exact: true }).count(), 0);
+  await sendButton(f.page).click();
+  await f.page.waitForFunction(() => !document.querySelector('[aria-label="Message Elpis"]').value);
+  assert.deepEqual(steered(f), ['a follow-up']);
 }));
 
 test('one queued message: Send now, Edit in composer and Remove from queue', () => using({}, async f => {
