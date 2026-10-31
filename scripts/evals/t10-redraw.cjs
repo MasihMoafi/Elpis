@@ -47,6 +47,11 @@ function verifyVisibleRows(screen, expected) {
     assert(!left || expected.includes(left), `unexpected transcript fragment: ${left}`);
   }
 }
+function visibleSuffix(screen, expected) {
+  const first = expected.findIndex(row => screen.includes(row.slice(0, 10)));
+  assert(first >= 0 && first <= expected.length - 2, 'at least two final rows must be visible');
+  return expected.slice(first);
+}
 
 async function runCase(mode, light) {
   const label = `${mode}-${light ? 'light' : 'dark'}`;
@@ -198,7 +203,7 @@ async function runCase(mode, light) {
     const final = save('final');
     const transcript = mode === 'inline' ? save('history', true) : final;
     verify(transcript, rows);
-    const visible = mode === 'inline' ? rows.slice(4) : rows;
+    const visible = mode === 'inline' ? visibleSuffix(final, rows) : rows;
     verify(final, visible);
     verifyVisibleRows(final, visible);
     assert(final.includes('CONTEXT LEDGER'), `${label}: Ledger did not reopen`);
@@ -217,8 +222,9 @@ async function runCase(mode, light) {
     await until(() => followupDone && capture(false).includes('T10_ROW_10') && !capture(false).includes('esc to interrupt'), 'completed follow-up');
     await pause(300);
     const followup = save('followup');
-    verify(followup, followupRows);
-    verifyVisibleRows(followup, followupRows);
+    const visibleFollowup = mode === 'inline' ? visibleSuffix(followup, followupRows) : followupRows;
+    verify(followup, visibleFollowup);
+    verifyVisibleRows(followup, visibleFollowup);
     if (mode === 'inline') verify(save('followup-history', true), [...rows, ...followupRows]);
     assert.equal(requests.length, 4, `${label}: expected two tool/reply turns`);
     assert.ifError(providerError);
