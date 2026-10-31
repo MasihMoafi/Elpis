@@ -23,7 +23,7 @@ const probe = page => page.evaluate(() => {
   const controls = [...q('.composer-controls').querySelectorAll('button, select, [role="combobox"]')].filter(visible).map(element => ({ ...box(element).toJSON(), label: element.getAttribute('aria-label') || element.textContent }));
   const approval = box(q('button.composer-pill')), model = box(q('.model-picker-trigger'));
   return {
-    shown: composer.width > 0 && composer.height > 0, workspace: Math.round(workspace.width), inset: getComputedStyle(wrap).paddingLeft,
+    shown: composer.width > 0 && composer.height > 0, toolbarWidth: q('.composer-controls').clientWidth, workspace: Math.round(workspace.width), inset: getComputedStyle(wrap).paddingLeft,
     permission: q('.composer-pill .pill-long').offsetParent ? q('.composer-pill .pill-long').textContent : q('.composer-pill .pill-short').textContent,
     model: q('.model-picker-trigger').innerText, providerLabel: !!q('.composer .model-trigger-provider') && visible(q('.composer .model-trigger-provider')),
     leaks: controls.filter(rect => rect.left < composer.left - 0.5 || rect.right > composer.right + 0.5).length,
@@ -97,7 +97,7 @@ for (const model of ['sol', 'claude/claude-sonnet-5-5']) for (const running of [
   });
 }
 
-for (const colorScheme of ['light', 'dark']) for (const running of [false, true]) test(`composer options collapse into one row at 600, 400 and 320px (${colorScheme}, ${running ? 'running' : 'idle'})`, async t => {
+for (const colorScheme of ['light', 'dark']) for (const running of [false, true]) test(`composer options and context icon fit at 600, 400 and 320px (${colorScheme}, ${running ? 'running' : 'idle'})`, async t => {
   const f = await fixture({ width: 1100, height: 700, colorScheme, running, routes: {
     '/api/models': () => ({ data: [{ id: 'sol', model: 'sol', displayName: 'Sol', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }], serviceTiers: [{ id: 'priority', name: 'Fast' }] }] }),
     '/api/voice': () => ({ available: true }),
@@ -114,7 +114,8 @@ for (const colorScheme of ['light', 'dark']) for (const running of [false, true]
     await f.page.setViewportSize({ width, height: 700 });
     await waitForDraftFit(f.page);
     const m = await probe(f.page);
-    assert.ok(m.rowOffset <= 4, `approval and model share a row at ${width}px`);
+    assert.ok(m.rowOffset <= 4 || m.toolbarWidth <= 380 && m.toolbarRows <= 2, `controls share a row or wrap at the tight width ${width}px`);
+    assert.equal(await f.page.locator('.composer .context-ring').isVisible(), true, 'the context icon stays visible');
     assert.equal(m.leaks, 0, `controls stay inside the composer at ${width}px`);
     assert.equal(m.overlaps, 0, `controls do not overlap at ${width}px`);
   }
@@ -124,8 +125,14 @@ for (const colorScheme of ['light', 'dark']) for (const running of [false, true]
     await waitForDraftFit(f.page);
     const floating = await probe(f.page);
     if (process.env.ELPIS_PARITY_SHOTS) await f.page.screenshot({ path: `${process.env.ELPIS_PARITY_SHOTS}/composer-${colorScheme}-${running ? 'running' : 'idle'}-${width}.png` });
-    assert.equal(floating.toolbarRows, 1, `all controls share one row in the ${width}px composer`);
-    assert.ok(floating.rowOffset <= 4, 'the narrow floating composer keeps approval on the same row');
+    assert.ok(floating.toolbarRows >= 1 && floating.toolbarRows <= (floating.toolbarWidth <= 380 ? 2 : 1), `controls fit the ${width}px composer without hiding context`);
+    assert.ok(floating.rowOffset <= 4 || floating.toolbarWidth <= 380, 'only the tight composer can wrap its control groups');
+    const context = f.page.locator('.composer .context-ring');
+    assert.equal(await context.count(), 1); assert.equal(await context.isVisible(), true);
+    const contextBox = await context.boundingBox(); assert.ok(contextBox.width >= 28 && contextBox.height >= 28, 'the icon keeps its 28px target');
+    await context.click();
+    await f.page.getByRole('dialog', { name: 'Context window usage', exact: true }).waitFor();
+    await f.page.keyboard.press('Escape');
     assert.equal(floating.leaks, 0, 'floating controls stay inside the composer');
     assert.equal(floating.overlaps, 0, `floating controls do not overlap at ${width}px: ${JSON.stringify(floating.overlapPairs)}`);
     assert.equal(await f.composer.inputValue(), draft);

@@ -17,7 +17,7 @@ const ledgers = {
   older: { used: 12000, window: 200000, categories: [['userMessages', 'User messages', 300], ['toolResults', 'Tool results', 9000], ['systemInstructions', 'System instructions', 1700], ['toolDefinitions', 'Tool definitions + schema', 1000]].map(([id, label, tokens]) => ({ id, label, tokens })), basis: 'transcript' },
   // A chat whose transcript cannot be attributed (its history was shortened): only the measured total.
   bare: { used: 9000, window: 200000, categories: [] },
-  // Past 75% the ring turns amber and past 90% red; from half full the popover offers Compact session.
+  // Usage levels retain their state while the ring follows the theme; compact is offered from half full.
   heavy: { used: 160000, window: 200000, categories: [['toolResults', 'Tool results', 140000], ['systemInstructions', 'System instructions', 20000]].map(([id, label, tokens]) => ({ id, label, tokens })), basis: 'engine' },
   full: { used: 190000, window: 200000, categories: [['toolResults', 'Tool results', 170000], ['systemInstructions', 'System instructions', 20000]].map(([id, label, tokens]) => ({ id, label, tokens })), basis: 'engine' },
 };
@@ -167,7 +167,7 @@ test('the context ring is Claude\'s: a tooltip on hover, the breakdown on click,
     const close = async () => { await page.keyboard.press('Escape'); await popup.waitFor({ state: 'hidden' }); };
     const strokeOf = locator => locator.locator('.context-ring-fill').evaluate(node => getComputedStyle(node).stroke);
     await page.getByRole('button', { name: 'Older chat', exact: true }).click();
-    const olive = await strokeOf(ring_('Context window: 6% used'));
+    const themeAccent = await strokeOf(ring_('Context window: 6% used'));
     await open('Context window: 6% used');
     assert.match(await popup.innerText(), /12k \/ 200k \(6%\)/);
     assert.match(await popup.innerText(), /Measured total · category shares estimated from the saved chat; exact after the next request/);
@@ -185,12 +185,12 @@ test('the context ring is Claude\'s: a tooltip on hover, the breakdown on click,
     assert.equal(await popup.locator('.context-bar-segment').count(), 1);
     await close();
 
-    // The ring is amber from 75% and red from 90%; from half full the popover offers Compact session, which compacts this chat.
+    // The theme accent stays consistent; from half full the popover offers Compact session.
     await page.getByRole('button', { name: 'Heavy chat', exact: true }).click();
     await ring_('Context window: 80% used').waitFor();
     assert.equal(await ring_('Context window: 80% used').locator('svg.context-ring-icon').getAttribute('data-level'), 'warning');
-    const amber = await strokeOf(ring_('Context window: 80% used'));
-    assert.notEqual(amber, olive, 'amber differs from the olive of a ring under 75%');
+    const warningAccent = await strokeOf(ring_('Context window: 80% used'));
+    assert.equal(warningAccent, themeAccent, 'high usage keeps the selected theme accent');
     await open('Context window: 80% used');
     const compact = popup.getByRole('button', { name: 'Compact session', exact: true });
     assert.equal(await compact.isEnabled(), true);
@@ -200,6 +200,7 @@ test('the context ring is Claude\'s: a tooltip on hover, the breakdown on click,
     await page.getByRole('button', { name: 'Full chat', exact: true }).click();
     await ring_('Context window: 95% used').waitFor();
     assert.equal(await ring_('Context window: 95% used').locator('svg.context-ring-icon').getAttribute('data-level'), 'critical');
+    assert.equal(await strokeOf(ring_('Context window: 95% used')), themeAccent, 'critical usage also keeps the theme accent');
     await open('Context window: 95% used');
     assert.equal(await popup.getByRole('button', { name: 'Compact session', exact: true }).isDisabled(), true, 'not while the chat is in the middle of a turn');
     assert.equal(await popup.getByRole('button', { name: 'Compact session', exact: true }).locator('xpath=..').getAttribute('title'), 'Available when Elpis finishes this turn');

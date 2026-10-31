@@ -32,8 +32,8 @@ for (const [colorScheme, width, height] of [['light', 1280, 800], ['dark', 900, 
     const f = await fixture({ staticDir: process.env.A20_STATIC_DIR || undefined, width, height, colorScheme, routes: { ...contextRoutes(), '/api/threads/chat-a/context-files': async () => { if (++reads === 1) { requested(); await new Promise(resolve => release = resolve); } return { files: files() }; } } });
     try {
       await f.open('chat-a'); const ring = f.page.getByRole('button', { name: 'Context window: 25% used', exact: true, includeHidden: true }); await ring.waitFor({ state: 'attached' });
-      assert.equal(await ring.isVisible(), width === 1280, 'narrow composers use the Ledger button instead of the hidden ring');
-      const trigger = width === 1280 ? ring : f.page.locator('.composer .context-ring');
+      assert.equal(await ring.isVisible(), true, 'the context icon stays available in narrow composers');
+      const trigger = ring;
       await traceOpening(f.page); await trigger.click(); await held; await animationFrames(f.page);
       if (process.env.ELPIS_A20_SHOTS) { await fs.mkdir(process.env.ELPIS_A20_SHOTS, { recursive: true }); await f.page.screenshot({ path: `${process.env.ELPIS_A20_SHOTS}/${colorScheme}-${width}x${height}-pending.png` }); }
       release(); await popupOf(f.page).getByRole('switch', { name: 'Include ES.md', exact: true }).waitFor(); await animationFrames(f.page);
@@ -118,7 +118,7 @@ for (const colorScheme of ['light', 'dark']) for (const [width, height] of [[128
       await assertUiFit(popup, 'Ledger file rows fit');
       await fs.mkdir('/tmp/ctxdesk-shots', { recursive: true }); await f.page.screenshot({ path: `/tmp/ctxdesk-shots/${colorScheme}-${width}.png` });
       await popup.getByRole('button', { name: 'Open ES.md', exact: true }).click();
-      await f.page.getByRole('button', { name: 'Source', exact: true }).click();
+      await f.page.getByRole('button', { name: 'Edit', exact: true }).click();
       await f.page.getByRole('textbox', { name: /Contents of/ }).waitFor();
       assert.equal(await popup.isVisible(), false);
       assert.match(await f.page.getByRole('textbox', { name: /Contents of/ }).inputValue(), /Ledger source contents/);
