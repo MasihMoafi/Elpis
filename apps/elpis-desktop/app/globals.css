@@ -713,7 +713,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
     transform:translateX(calc((var(--working-before-width) - var(--working-before-transcript-width) - var(--working-current-width) + var(--working-current-transcript-width)) / 2));
   }
   .app-shell .workspace-body.panel-open:not(.full-view) .turn-working {
-    --working-panel-width:min(var(--side-w, max(var(--sidebar-width,256px), var(--side-min,200px))), max(0px, calc(var(--working-grid-width) - 320px)));
+    --working-panel-width:min(max(var(--side-min,200px), var(--side-request-width,var(--sidebar-width,256px))), calc(var(--working-grid-width) * .7), max(0px, calc(var(--working-grid-width) - 320px)));
   }
   .app-shell:not(.session-split) .workspace-body:has(> .team-panel) .turn-working { --working-panel-width:300px; }
 }
