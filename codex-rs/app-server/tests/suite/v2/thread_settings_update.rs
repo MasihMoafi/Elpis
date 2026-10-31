@@ -107,6 +107,8 @@ async fn mcp_server_selection_updates_the_model_visible_catalog() -> Result<()> 
         create_final_assistant_message_sse_response("done")?,
         create_final_assistant_message_sse_response("done")?,
         create_final_assistant_message_sse_response("done")?,
+        create_final_assistant_message_sse_response("done")?,
+        create_final_assistant_message_sse_response("done")?,
     ])
     .await;
     let mcp_server = MockServer::start().await;
@@ -149,24 +151,65 @@ async fn mcp_server_selection_updates_the_model_visible_catalog() -> Result<()> 
         .with_codex_home(codex_home.path())
         .build_initialized_with_timeout(DEFAULT_TIMEOUT)
         .await?;
-    let thread = start_thread(&mut app).await?.thread;
-
-    let invalid_request_id = app
-        .send_thread_settings_update_request(ThreadSettingsUpdateParams {
-            thread_id: thread.id.clone(),
-            mcp_server_selection: Some(Some(vec!["missing".to_string()])),
+    let host_url = format!("{}/mcp", mcp_server.uri());
+    let override_request_id = app
+        .send_thread_start_request_with_auto_env(ThreadStartParams {
+            config: Some(
+                [("mcp_servers.alpha".to_string(), json!({"url": host_url.clone()}))]
+                    .into_iter()
+                    .collect(),
+            ),
             ..Default::default()
         })
         .await?;
-    let invalid_selection: JSONRPCError = timeout(
+    let override_error: JSONRPCError = timeout(
         DEFAULT_TIMEOUT,
-        app.read_stream_until_error_message(RequestId::Integer(invalid_request_id)),
+        app.read_stream_until_error_message(RequestId::Integer(override_request_id)),
     )
     .await??;
     assert_eq!(
-        invalid_selection.error.message,
-        "MCP server `missing` is not globally configured"
+        override_error.error.message,
+        "MCP server definitions and credentials must come from global config"
     );
+    let start_request_id = app
+        .send_thread_start_request_with_auto_env(ThreadStartParams {
+            model: Some("mock-model".to_string()),
+            config: Some(
+                [
+                    ("mcp_servers.elpis_browser".to_string(), json!({"url": host_url.clone()})),
+                    (
+                        "mcp_servers.client_fixture".to_string(),
+                        json!({"url": host_url.clone(), "enabled": true}),
+                    ),
+                ]
+                .into_iter()
+                .collect(),
+            ),
+            ..Default::default()
+        })
+        .await?;
+    let started: ThreadStartResponse =
+        timeout(DEFAULT_TIMEOUT, app.read_response(start_request_id)).await??;
+    let thread = started.thread;
+
+    for name in ["missing", "client_fixture"] {
+        let invalid_request_id = app
+            .send_thread_settings_update_request(ThreadSettingsUpdateParams {
+                thread_id: thread.id.clone(),
+                mcp_server_selection: Some(Some(vec![name.to_string()])),
+                ..Default::default()
+            })
+            .await?;
+        let invalid_selection: JSONRPCError = timeout(
+            DEFAULT_TIMEOUT,
+            app.read_stream_until_error_message(RequestId::Integer(invalid_request_id)),
+        )
+        .await??;
+        assert_eq!(
+            invalid_selection.error.message,
+            format!("MCP server `{name}` is not globally configured")
+        );
+    }
 
     let selection_alpha = vec!["alpha".to_string()];
     let selection_beta = vec!["beta".to_string()];
@@ -274,6 +317,14 @@ async fn mcp_server_selection_updates_the_model_visible_catalog() -> Result<()> 
         assert_eq!(alpha_visible, *alpha_expected);
         assert_eq!(beta_visible, *beta_expected);
         assert_eq!(gamma_visible, *gamma_expected);
+        for name in ["elpis_browser", "client_fixture"] {
+            assert!(
+                tools.iter().any(|tool| tool["name"]
+                    .as_str()
+                    .is_some_and(|tool_name| tool_name.starts_with(&format!("mcp__{name}__")))),
+                "host-owned {name} must remain available"
+            );
+        }
     }
 
     send_thread_settings_update(
@@ -366,28 +417,104 @@ async fn mcp_server_selection_updates_the_model_visible_catalog() -> Result<()> 
     assert_eq!(completed.turn.status, TurnStatus::Completed);
     let bodies = received_response_bodies(&responses).await?;
     assert_eq!(bodies.len(), 7);
-    let tools = bodies[5]["tools"]
+    for (index, state) in [(5, "disabled"), (6, "removed")] {
+        let tools = bodies[index]["tools"]
+            .as_array()
+            .context("model request tools should be an array")?;
+        assert!(
+            tools.iter().all(|tool| tool["name"]
+                .as_str()
+                .is_none_or(|name| !name.starts_with("mcp__alpha__"))),
+            "a globally {state} MCP server must not leave model-visible tools"
+        );
+        for name in ["elpis_browser", "client_fixture"] {
+            assert!(
+                tools.iter().any(|tool| tool["name"]
+                    .as_str()
+                    .is_some_and(|tool_name| tool_name.starts_with(&format!("mcp__{name}__")))),
+                "host-owned {name} must remain available"
+            );
+        }
+    }
+
+    send_thread_settings_update(
+        &mut app,
+        ThreadSettingsUpdateParams {
+            thread_id: thread.id.clone(),
+            mcp_server_selection: Some(None),
+            ..Default::default()
+        },
+    )
+    .await?;
+    let updated = read_thread_settings_updated(&mut app).await?;
+    assert_eq!(updated.thread_settings.mcp_server_selection, None);
+
+    let mut config = std::fs::read_to_string(&config_path)?;
+    config.push_str(&format!(
+        "\n[mcp_servers.client_fixture]\nurl = \"{host_url}\"\nenabled = false\n"
+    ));
+    std::fs::write(&config_path, config)?;
+    let reload_request_id = app
+        .send_raw_request("config/mcpServer/reload", None)
+        .await?;
+    timeout(
+        DEFAULT_TIMEOUT,
+        app.read_stream_until_response_message(RequestId::Integer(reload_request_id)),
+    )
+    .await??;
+    start_text_turn(&mut app, thread.id.clone()).await?;
+    let completed: TurnCompletedNotification =
+        timeout(DEFAULT_TIMEOUT, app.read_notification("turn/completed")).await??;
+    assert_eq!(completed.thread_id, thread.id);
+    assert_eq!(completed.turn.status, TurnStatus::Completed);
+    let bodies = received_response_bodies(&responses).await?;
+    assert_eq!(bodies.len(), 8);
+    let tools = bodies[7]["tools"]
         .as_array()
         .context("model request tools should be an array")?;
     assert!(
-        tools.iter().all(|tool| {
-            tool["name"]
-                .as_str()
-                .is_none_or(|name| !name.starts_with("mcp__"))
-        }),
-        "a globally disabled MCP server must not leave model-visible tools"
+        tools.iter().all(|tool| tool["name"]
+            .as_str()
+            .is_none_or(|name| !name.starts_with("mcp__client_fixture__"))),
+        "a newly disabled global server must override an older host definition"
     );
-    let tools = bodies[6]["tools"]
+    assert!(
+        tools.iter().any(|tool| tool["name"]
+            .as_str()
+            .is_some_and(|name| name.starts_with("mcp__elpis_browser__"))),
+        "the unrelated host-owned browser server must remain available"
+    );
+
+    let restricted_start = app
+        .send_thread_start_request_with_auto_env(ThreadStartParams {
+            model: Some("mock-model".to_string()),
+            config: Some(
+                [
+                    ("mcp_servers.beta.enabled".to_string(), json!(false)),
+                    ("mcp_servers.gamma.enabled".to_string(), json!(false)),
+                ]
+                .into_iter()
+                .collect(),
+            ),
+            ..Default::default()
+        })
+        .await?;
+    let restricted: ThreadStartResponse =
+        timeout(DEFAULT_TIMEOUT, app.read_response(restricted_start)).await??;
+    start_text_turn(&mut app, restricted.thread.id.clone()).await?;
+    let completed: TurnCompletedNotification =
+        timeout(DEFAULT_TIMEOUT, app.read_notification("turn/completed")).await??;
+    assert_eq!(completed.thread_id, restricted.thread.id);
+    assert_eq!(completed.turn.status, TurnStatus::Completed);
+    let bodies = received_response_bodies(&responses).await?;
+    assert_eq!(bodies.len(), 9);
+    let tools = bodies[8]["tools"]
         .as_array()
         .context("model request tools should be an array")?;
-    assert!(
-        tools.iter().all(|tool| {
-            tool["name"]
-                .as_str()
-                .is_none_or(|name| !name.starts_with("mcp__"))
-        }),
-        "a globally removed MCP server must not leave model-visible tools"
-    );
+    assert!(tools.iter().all(|tool| tool["name"]
+        .as_str()
+        .is_none_or(|name| !name.starts_with("mcp__"))),
+        "legacy per-thread disable overrides must narrow the model-visible catalog");
     Ok(())
 }
 
