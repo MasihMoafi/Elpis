@@ -200,6 +200,7 @@ async function loadStoreSnapshot() {
 let storeChain = Promise.resolve();
 let pendingStoreUpdates = [];
 const deletingThreads = new Set();
+const archivingThreads = new Set();
 const deletedThreads = new Set();
 // Resolves true once saved, false if saving failed.
 function updateStore(fn) {
@@ -800,12 +801,20 @@ wss.on("connection", (ws) => {
     failed: false,
     claudeBusy: () => [...activeTurns.keys()].some(tid => agentOf(claudeModel.get(tid))?.key === "claude") || structured.size > 0,
     stopProvider: (tid) => stopProvider(tid, "deleted"),
+    stopProviderFor: (tid, action) => stopProvider(tid, action),
+    nativeLifecycle: (method, tid) => engineCall(method, { threadId: tid }),
+    isBridgeChild: (tid) => childThreads.has(tid),
     childrenOf: (ids) => [...childThreads].filter(([, child]) => ids.has(child.rootThreadId) || ids.has(child.thread.parentThreadId)).map(([id]) => id),
     forgetThread: (tid) => {
       cancelRelays(ws, tid);
       for (const cache of [threadCwd, threadSeen, childThreads, childIds, threadPolicy, smartPrune,
         threadSandbox, sessions, claudeModel, claudeEffort, resumeResults, sessionModel,
         threadCollab, threadAccess, lastTurnUsage, forkParent, queues, goals, ownHelpers, pendingSteers, materializedProviders]) cache.delete(tid);
+    },
+    forgetArchived: (tid) => {
+      providerOwners.delete(tid); claudeModel.delete(tid); resumeResults.delete(tid);
+      sessions.delete(tid); threadSeen.delete(tid); queues.delete(tid);
+      for (const watched of subscriptions.values()) watched.delete(tid);
     },
     // An abandoned request is bookkeeping, not running work. Turns (including native
     // background agents) and structured tool calls still outlive their terminal, and so does a chat
@@ -2057,7 +2066,9 @@ wss.on("connection", (ws) => {
       ws.send(JSON.stringify(parsed));
       return;
     }
-    ws.send(helpersMarked ? JSON.stringify(parsed) : line);
+    const lifecycleNotification = (parsed?.method === "thread/deleted" && deletingThreads.has(parsed.params?.threadId))
+      || (parsed?.method === "thread/archived" && archivingThreads.has(parsed.params?.threadId));
+    if (!lifecycleNotification) ws.send(helpersMarked ? JSON.stringify(parsed) : line);
     if (reopened) replayPlan(reopened);
   });
 
@@ -2634,7 +2645,7 @@ wss.on("connection", (ws) => {
   const queueOf = (threadId) => queues.get(threadId) ?? queues.set(threadId, []).get(threadId);
   const shown = (threadId) => queueOf(threadId).filter((q) => !q.goal).map(({ id, input, clientUserMessageId }) => ({ id, input, clientUserMessageId }));
   function runNext(threadId) {
-    if (activeTurns.has(threadId) || deletingThreads.has(threadId) || deletedThreads.has(threadId)) return;
+    if (activeTurns.has(threadId) || deletingThreads.has(threadId) || archivingThreads.has(threadId) || deletedThreads.has(threadId)) return;
     const next = queueOf(threadId).shift();
     if (!next) return;
     if (!next.goal) notify("thread/queue/changed", { threadId });
@@ -2935,7 +2946,7 @@ wss.on("connection", (ws) => {
     // tool completion before replying would block the TUI's cancellation request.
     toTui({ id: msg.id, result: { turnId: turn.turnId } });
     const queueForNextTurn = () => {
-      if (turn.cancelled || steer.cancelled || deletedThreads.has(threadId) || deletingThreads.has(threadId)) return;
+      if (turn.cancelled || steer.cancelled || deletedThreads.has(threadId) || deletingThreads.has(threadId) || archivingThreads.has(threadId)) return;
       steer.phase = "queued";
       queueOf(threadId).push({ id: randomUUID(), input, clientUserMessageId, steer });
       notify("thread/queue/changed", { threadId });
@@ -3031,13 +3042,69 @@ wss.on("connection", (ws) => {
       await Promise.race([stopped, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`The provider has not stopped yet; the chat was not ${action}.`)), 10000); })]);
     } finally { clearTimeout(timer); }
   }
+  async function nativeThreadLifecycle(method, tid) {
+    const failures = [];
+    for (const c of [...contexts]) {
+      if (c.failed) continue;
+      try { return { found: true, result: await c.nativeLifecycle(method, tid) }; }
+      catch (e) {
+        failures.push(e);
+        if (!/already has an active writer|active writer|thread not found|no rollout found/i.test(e.message ?? "")) throw e;
+      }
+    }
+    const missing = failures.length > 0 && failures.every(e => /thread not found|no rollout found/i.test(e.message ?? ""));
+    if (missing) return { found: false, error: failures.at(-1) };
+    throw failures.find(e => /active writer/i.test(e.message ?? "")) ?? failures.at(-1) ?? new Error(`no live engine can ${method} ${tid}`);
+  }
   async function archiveProvider(msg) {
     const tid = msg.params.threadId;
-    queueOf(tid).splice(0);
+    const ids = new Set([tid]);
     try {
-      await stopProvider(tid, "archived");
-      engine.stdin.write(JSON.stringify(msg) + "\n");
-    } catch (e) { pendingArchive.delete(msg.id); toTui({ id: msg.id, error: { code: -32603, message: e.message } }); }
+      await storeChain;
+      const store = await loadStore();
+      let changed;
+      do {
+        changed = false;
+        for (const [id, saved] of Object.entries(store)) {
+          const parent = store._delegations?.[id]?.parentThreadId ?? saved?.parentThreadId ?? saved?.rootThreadId;
+          if (!id.startsWith("_") && ids.has(parent) && !ids.has(id)) { ids.add(id); changed = true; }
+        }
+        for (const [id, helper] of Object.entries(store._delegations ?? {})) {
+          if (ids.has(helper.parentThreadId) && !ids.has(id)) { ids.add(id); changed = true; }
+        }
+        for (const c of contexts) for (const id of c.childrenOf(ids)) {
+          if (!ids.has(id)) { ids.add(id); changed = true; }
+        }
+      } while (changed);
+      if ([...ids].some(id => archivingThreads.has(id) || deletingThreads.has(id) || deletedThreads.has(id))) throw new Error("A chat in this subtree is already being archived or deleted.");
+      for (const id of ids) archivingThreads.add(id);
+      await Promise.all([...contexts].flatMap(c => [...ids].map(id => c.stopProviderFor(id, "archived"))));
+      const attempt = await nativeThreadLifecycle("thread/archive", tid);
+      if (!attempt.found) {
+        if (!store[tid] && !store._delegations?.[tid] && !claudeModel.has(tid)) throw attempt.error ?? new Error(`no rollout found for thread id ${tid}`);
+        await updateStore(st => { delete st[tid]; if (st._delegations) delete st._delegations[tid]; });
+        for (const id of ids) queueOf(id).splice(0);
+        for (const c of contexts) c.forgetArchived(tid);
+        pendingArchive.delete(msg.id);
+        toTui({ id: msg.id, result: {} });
+        notify("thread/archived", { threadId: tid });
+        return;
+      }
+      for (const id of ids) queueOf(id).splice(0);
+      const archived = [...ids].filter(id => id === tid || ![...contexts].some(c => c.isBridgeChild(id)));
+      for (const id of archived) {
+        for (const c of contexts) c.forgetArchived(id);
+      }
+      pendingArchive.delete(msg.id);
+      toTui({ id: msg.id, result: attempt.result ?? {} });
+      for (const id of archived) notify("thread/archived", { threadId: id });
+    } catch (e) {
+      pendingArchive.delete(msg.id);
+      toTui({ id: msg.id, error: { code: Number.isInteger(e.code) ? e.code : -32603, message: e.message ?? String(e) } });
+    } finally {
+      for (const id of ids) archivingThreads.delete(id);
+      for (const id of ids) runNext(id);
+    }
   }
   async function deleteThread(msg) {
     const tid = msg.params.threadId;
@@ -3070,8 +3137,8 @@ wss.on("connection", (ws) => {
           deletingThreads.add(id); acquired.add(id);
         }
         if ([...pendingHelpers].some(helper => ids.has(helper.parentThreadId))) throw new Error("A helper is still starting. Retry deletion once it has started.");
-        // Match the native store's refusal to erase history still used by a fork.
-        if (Object.entries(store).some(([id, saved]) => !ids.has(id) && ids.has(saved?.forkOf?.threadId) && !saved.forkOf.copied)) throw new Error(`cannot delete thread ${tid}: forked history still references it`);
+      // Native rollouts can still reference a parent even after provider turns were copied.
+      if (Object.entries(store).some(([id, saved]) => !ids.has(id) && ids.has(saved?.forkOf?.threadId))) throw new Error(`cannot delete thread ${tid}: forked history still references it`);
         const next = [...ids].filter(id => !stopped.has(id));
         if (!next.length) break;
         await Promise.all([...contexts].flatMap(c => next.map(id => c.stopProvider(id))));
@@ -3079,18 +3146,24 @@ wss.on("connection", (ws) => {
         // Cancellation can finish and persist a child that did not exist in the first snapshot.
       }
       // Validate/delete the root first so a native fork conflict cannot erase its helpers.
+      let nativeSubtreeDeleted = false;
       for (const id of ids) {
-        let nativeDeleted = true;
-        try { await engineCall("thread/delete", { threadId: id }); }
-        catch (e) {
-          // Bridge-only children and retries after a persistence failure have no native row.
-          if (!/thread not found|no rollout found/.test(e.message ?? "") || (id === tid && !store[id] && !store._delegations?.[id] && !deletedThreads.has(id))) throw e;
-          nativeDeleted = false;
+        const bridgeOnly = id !== tid && [...contexts].some(c => c.isBridgeChild(id));
+        let nativeDeleted = nativeSubtreeDeleted && id !== tid && !bridgeOnly;
+        // A thread may still have a writer in another terminal's engine. Each app-server
+        // must prepare its own loaded subtree before the shared store can delete it.
+        if (!nativeDeleted && !nativeSubtreeDeleted) {
+          const attempt = await nativeThreadLifecycle("thread/delete", id);
+          nativeDeleted = attempt.found;
+          if (!nativeDeleted && id === tid && !store[id] && !store._delegations?.[id] && !deletedThreads.has(id)) {
+            throw attempt.error ?? new Error(`could not delete thread ${id}`);
+          }
         }
+        if (id === tid && nativeDeleted) nativeSubtreeDeleted = true;
         deletedThreads.add(id);
         for (const c of contexts) c.forgetThread(id);
         providerOwners.delete(id); chatAccess.delete(id); helperScope.delete(id); helperThreads.delete(id);
-        if (!nativeDeleted) notify("thread/deleted", { threadId: id });
+        notify("thread/deleted", { threadId: id });
         for (const watched of subscriptions.values()) watched.delete(id);
       }
       if (!await updateStore(() => {})) throw new Error("The native chat was deleted, but bridge history could not be removed. Retry deletion.");
@@ -3099,7 +3172,10 @@ wss.on("connection", (ws) => {
       // Persist cleanup even if native deletion stopped partway through a subtree.
       if ([...ids].some(id => deletedThreads.has(id))) await updateStore(() => {});
       toTui({ id: msg.id, error: Number.isInteger(e.code) ? e : { code: -32603, message: e.message ?? String(e) } });
-    } finally { for (const id of acquired) deletingThreads.delete(id); }
+    } finally {
+      for (const id of acquired) deletingThreads.delete(id);
+      for (const id of acquired) runNext(id);
+    }
   }
   const openingReplies = new Set();
   // WR6: a chat's workflow tool starts a run only inside a turn the person started whose own words asked for one.
@@ -3225,8 +3301,9 @@ wss.on("connection", (ws) => {
     if (msg.method === "initialize" && msg.params?.clientInfo?.name === "elpis-workflow") workflowToolConns.add(ws);
     if (context.failed && msg.method && msg.id !== undefined) { toTui({ id: msg.id, error: { code: -32603, message: "The session backend disconnected; reopen this chat." } }); return; }
     const target = msg.params?.threadId ?? msg.params?.elpisParentThreadId;
-    if (msg.method && (deletingThreads.has(target) || (deletedThreads.has(target) && msg.method !== "thread/delete"))) {
-      toTui({ id: msg.id, error: { code: -32600, message: deletedThreads.has(target) ? `thread not found: ${target}` : "The chat is being deleted; wait for deletion to finish." } }); return;
+    if (msg.method && (deletingThreads.has(target) || archivingThreads.has(target) || (deletedThreads.has(target) && msg.method !== "thread/delete"))) {
+      const message = deletedThreads.has(target) ? `thread not found: ${target}` : archivingThreads.has(target) ? "The chat is being archived; wait for archiving to finish." : "The chat is being deleted; wait for deletion to finish.";
+      toTui({ id: msg.id, error: { code: -32600, message } }); return;
     }
     if (typeof msg.method === "string" && msg.method.startsWith("workflowRun/")) {
       workflowRequest(msg).catch((e) => toTui({ id: msg.id, error: { code: Number.isInteger(e.code) ? e.code : -32603, message: e.message ?? String(e) } }));
