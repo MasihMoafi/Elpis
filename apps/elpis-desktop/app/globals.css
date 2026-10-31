@@ -597,6 +597,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .team-row:hover { background:var(--hover); }
 .team-row.active { background:var(--selected); }
 .team-row.root { margin-bottom:6px; }
+.team-row.root > small { grid-column:2; }
 .team-title { font-size:var(--text-sm); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .team-row .agent-model { font-size:var(--text-small); }
 .team-state { display:grid; place-items:center; width:16px; height:16px; }
