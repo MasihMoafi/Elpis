@@ -7,6 +7,7 @@ const { openSettings, leaveSettings, chooseOption } = require('./controls.cjs');
 
 const accents = ['amber', 'orange', 'blue', 'teal', 'green', 'violet', 'rose'];
 const palettes = ['palette-paper', 'palette-midnight', 'palette-plum'];
+const paletteAccent = { 'palette-paper': ['#8c542c', '#deb382'], 'palette-midnight': ['#3158a6', '#9cb9f5'], 'palette-plum': ['#87478f', '#d9a2e0'] };
 const shots = process.env.ELPIS_POLISH_SHOTS;
 
 async function expectHover(locator, formula, label) {
@@ -58,10 +59,13 @@ test('hover follows every accent and built-in palette without changing selected 
       };
       for (const accent of accents) {
         await chooseOption(page.getByLabel('Accent colour', { exact: true }), accent);
+        await page.waitForFunction(value => document.documentElement.dataset.accent === value, accent);
         await inspect(accent);
       }
       for (const palette of palettes) {
         await chooseOption(page.getByLabel('Theme palette', { exact: true }), palette);
+        await page.waitForFunction(value => getComputedStyle(document.documentElement).getPropertyValue('--primary').trim().toLowerCase() === value,
+          paletteAccent[palette][mode === 'Light' ? 0 : 1]);
         await inspect(palette);
       }
       await leaveSettings(page);
