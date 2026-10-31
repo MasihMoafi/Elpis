@@ -1,6 +1,5 @@
-// The user-message rail sits 16 px from its pane's left edge, as in the ChatGPT app, and the centred column keeps at least
-// 16 px clear of it (specs/chatgpt-chat-style.md; 29 Oct, Masih, of the old rail beside the text: "it's too dark and too
-// close to the actual chat"). Exercise the exported renderer only.
+// The user-message rail stays in the existing gutter, clear of the transcript, through pane and reading-width changes.
+// A narrow pane hides it rather than covering text. Exercise the exported renderer only.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
@@ -14,15 +13,15 @@ async function geometry(page) {
     const pane = rail.parentElement.getBoundingClientRect();
     const box = rail.getBoundingClientRect();
     const right = Math.max(box.right, ...[...rail.querySelectorAll('.prompt-tick i')].map(mark => mark.getBoundingClientRect().right));
-    return { gap: column.left - right, left: box.left, right, paneLeft: pane.left, paneRight: pane.right };
+    return { gap: column.left - right, left: box.left, right, width: box.width, paneLeft: pane.left, paneRight: pane.right };
   });
 }
 
 async function aligned(page, state) {
   await page.locator('.prompt-rail').waitFor({ state: 'visible' });
   const actual = await geometry(page);
-  assert.ok(Math.abs(actual.left - actual.paneLeft - 16) <= 0.5, `${state}: the rail sits 16px from the pane's edge: ${JSON.stringify(actual)}`);
-  assert.ok(actual.gap >= 15.5, `${state}: the text keeps 16px clear of the rail: ${JSON.stringify(actual)}`);
+  assert.ok(Math.abs(actual.left - actual.paneLeft) <= 0.5 && Math.abs(actual.width - 28) <= 0.5, `${state}: the rail stays in its 28px gutter target: ${JSON.stringify(actual)}`);
+  assert.ok(actual.gap >= 3.5, `${state}: the rail stays clear of the text: ${JSON.stringify(actual)}`);
   assert.ok(actual.left >= actual.paneLeft && actual.right <= actual.paneRight,
     `${state}: the full rail hit area must stay in its chat pane: ${JSON.stringify(actual)}`);
 }

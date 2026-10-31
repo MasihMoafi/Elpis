@@ -66,6 +66,8 @@ Sources: `/tmp/cgpt/webview/assets/*.css` (`app-shared-3424…`, `app-initial-e5
 | Turn to turn (meas.) | last reply line box → next user bubble 44 (inferred: a 26–28 px action row plus about 16) ; items inside a turn use `flex flex-col gap-3` (12). Source of the gap between turns: unknown |
 
 ## Prompt rail (`thread-user-message-navigation-rail-app`, `floating-navigation-rail-layout` CSS)
+
+Elpis keeps the rail in a 28px target within the existing 32px gutter, so showing it does not resize the transcript.
 | Item | Value |
 |---|---|
 | Shown | only with **≥ 4** user messages |

@@ -584,9 +584,9 @@ export const retainedUpdates = {
       "reason": "Voice, 23 Oct: the composer asks GET /api/voice for whether a call is possible; this strict fixture reports any unknown request as a failure, so it answers that one (no call here). WI: unique workflow names and colours read workflow history at startup; fixture answers that read with an empty history. Preserve strict unknown-request rejection, archive, restore and deletion checks."
     },
     "tests/prompt-rail.test.cjs": {
-      "blob": "f21b16860980064fda3843c82cfdc344c68f7692",
+      "blob": "5c7cf5c97fc3bb4d6d262385c67c370dfe1befbf",
       "approval": "d7df305f1efcbfb9cbb7227e0ff1d9bb73c552f2",
-      "reason": "Masih 29 Oct: \"I explicitly told you to create a parity of chatgpt app ... map every style feature of chatgpt app into a clear spec that's reusable and make our design match it\" (specs/chatgpt-chat-style.md). The rail appears from four prompts (Masih 29 Oct earlier: \"When there is only one message we don't want this bar\"), its hovered dash is 26px and its card opens at the rail's edge; tests with fewer prompts gain prompts so every behaviour is still exercised."
+      "reason": "Masih 31 Oct: \"the chat changes its size when it loads—like a few seconds,2 seconds after it's loaded—is that by design?\". Keep the rail in the existing gutter so the transcript width remains stable; require a 28px target, a clear gap and a negative overlap check. Masih 29 Oct: \"I explicitly told you to create a parity of chatgpt app ... map every style feature of chatgpt app into a clear spec that's reusable and make our design match it\" (specs/chatgpt-chat-style.md). The rail appears from four prompts (Masih 29 Oct earlier: \"When there is only one message we don't want this bar\"), its hovered dash is 26px and its card opens at the rail's edge; tests with fewer prompts gain prompts so every behaviour is still exercised."
     },
     "tests/previous-messages.test.cjs": {
       "blob": "425373266203ddbea262a48cab16a38afcce2c7b",

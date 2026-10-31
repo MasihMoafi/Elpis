@@ -8,18 +8,21 @@ const marksOf = page => page.getByRole('navigation', { name: 'User messages' }).
 async function railGeometry(page) {
   return page.locator('.prompt-rail').evaluate(rail => {
     const column = document.querySelector('.chat-content').getBoundingClientRect();
+    const pane = rail.closest('.chat-scroll-wrap').getBoundingClientRect(), railBox = rail.getBoundingClientRect();
     const boxes = [rail, ...rail.querySelectorAll('.prompt-tick, .prompt-tick i')].map(node => node.getBoundingClientRect());
     return {
       gap: column.left - Math.max(...boxes.map(box => box.right)),
+      left: railBox.left - pane.left, width: railBox.width,
       highlighted: rail.querySelector('[data-distance="0"] i')?.getBoundingClientRect().width ?? 0,
     };
   });
 }
 function assertRailGap(geometry) {
-  assert.ok(geometry.gap >= 16, `rail leaves at least 16px before message text: ${JSON.stringify(geometry)}`);
+  assert.ok(Math.abs(geometry.left) < 0.5 && Math.abs(geometry.width - 28) < 0.5, `rail fits its 28px gutter target: ${JSON.stringify(geometry)}`);
+  assert.ok(geometry.gap >= 3.5, `rail stays clear of message text: ${JSON.stringify(geometry)}`);
 }
 
-test('rail including the highlighted dash leaves 16px before text at desktop widths', async () => {
+test('rail fits the gutter and its highlighted dash stays clear of text at desktop widths', async () => {
   const f = await fixture({ width: 900, height: 800 });
   try {
     await f.open('chat-a');
@@ -56,11 +59,11 @@ test('rail gap check rejects a deliberately narrow rendered gutter', async () =>
     assertRailGap(await railGeometry(f.page));
     await f.page.locator('.chat-content').evaluate(column => {
       const right = document.querySelector('.prompt-rail').getBoundingClientRect().right;
-      column.style.transform = `translateX(${right + 8 - column.getBoundingClientRect().left}px)`;
+      column.style.transform = `translateX(${right + 2 - column.getBoundingClientRect().left}px)`;
     });
     const geometry = await railGeometry(f.page);
-    assert.ok(Math.abs(geometry.gap - 8) < 0.1, JSON.stringify(geometry));
-    assert.throws(() => assertRailGap(geometry), /rail leaves at least 16px/);
+    assert.ok(Math.abs(geometry.gap - 2) < 0.1, JSON.stringify(geometry));
+    assert.throws(() => assertRailGap(geometry), /rail stays clear of message text/);
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
