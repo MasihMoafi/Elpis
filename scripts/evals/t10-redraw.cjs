@@ -125,7 +125,11 @@ async function runCase(mode, light) {
       } else {
         assert([2, 4].includes(requests.length), 'unexpected extra model request');
         for (let i = 0; i < activeRows.length; i++) {
-          send({ type: 'response.output_text.delta', item_id: id, output_index: 0, content_index: 0, delta: `${i ? '\n\n' : ''}${activeRows[i]}` });
+          const chars = Array.from(`${i ? '\n\n' : ''}${activeRows[i]}`);
+          for (let j = 0; j < chars.length; j += 8) {
+            send({ type: 'response.output_text.delta', item_id: id, output_index: 0, content_index: 0, delta: chars.slice(j, j + 8).join('') });
+            await pause(12);
+          }
           if (requests.length === 2 && i === 1) { streamStarted = true; await gate; }
           await pause(requests.length === 2 ? 100 : 350);
         }
@@ -182,21 +186,30 @@ async function runCase(mode, light) {
     save('initial');
     literal('Render the T10 repaint fixture');
     key('Enter');
-    await until(() => streamStarted && capture(false).includes('T10_ROW_01'), 'first streamed rows');
-    save('stream-before');
+    const firstRows = rows.slice(0, 2);
+    await until(() => streamStarted && capture(false).includes(firstRows[1]), 'first streamed rows');
+    const streamBefore = save('stream-before');
+    verify(streamBefore, firstRows);
+    verifyVisibleRows(streamBefore, firstRows);
     key('Tab');
     await pause(250);
     // The first Tab may focus an already-visible Ledger; the next one closes it.
     if (capture(false).includes('CONTEXT LEDGER')) key('Tab');
     await until(() => !capture(false).includes('CONTEXT LEDGER'), 'Ledger close');
-    save('ledger-hidden');
+    const hidden = save('ledger-hidden');
+    verify(hidden, firstRows);
+    verifyVisibleRows(hidden, firstRows);
     tm('resize-window', '-t', 'check', '-x', '125', '-y', '38');
     await pause(250);
     key('Tab');
     await until(() => capture(false).includes('CONTEXT LEDGER'), 'Ledger reopen');
-    save('narrow-reopened');
+    const narrow = save('narrow-reopened');
+    verify(narrow, firstRows.map(row => row.slice(0, 45)));
     tm('resize-window', '-t', 'check', '-x', '170', '-y', '42');
     await pause(250);
+    const restored = save('wide-restored');
+    verify(restored, firstRows);
+    verifyVisibleRows(restored, firstRows);
     releaseStream();
     await until(() => streamDone && capture(false).includes('T10_ROW_07') && !capture(false).includes('esc to interrupt'), 'completed transcript');
     await pause(300);
