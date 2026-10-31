@@ -29,6 +29,19 @@ export const STARTER_THEME: CustomTheme = {
   },
 };
 
+/** Built-in full palettes use the same saved-theme tokens as user-created palettes. */
+export const BUILT_IN_THEMES: CustomTheme[] = [
+  { id: "palette-paper", name: "Paper",
+    light: { ...STARTER_THEME.light, background: "#faf7f0", foreground: "#302a22", muted: "#696158", surface: "#fffefa", sidebar: "#f1ede4", accent: "#8c542c" },
+    dark: { ...STARTER_THEME.dark, background: "#15120f", foreground: "#eee5d8", muted: "#b0a18e", surface: "#201b16", sidebar: "#100e0c", accent: "#deb382", accentForeground: "#17110b" } },
+  { id: "palette-midnight", name: "Midnight",
+    light: { ...STARTER_THEME.light, background: "#f6f8fc", foreground: "#24314a", muted: "#596379", surface: "#ffffff", sidebar: "#eef2f9", accent: "#3158a6" },
+    dark: { ...STARTER_THEME.dark, background: "#101521", foreground: "#e7edf9", muted: "#a4b1ca", surface: "#171f30", sidebar: "#0c101a", accent: "#9cb9f5", accentForeground: "#101827" } },
+  { id: "palette-plum", name: "Plum",
+    light: { ...STARTER_THEME.light, background: "#fcf6fb", foreground: "#342637", muted: "#6b5c6e", surface: "#fffafe", sidebar: "#f4edf3", accent: "#87478f" },
+    dark: { ...STARTER_THEME.dark, background: "#161018", foreground: "#f0e4f1", muted: "#b5a3b8", surface: "#211625", sidebar: "#120d14", accent: "#d9a2e0", accentForeground: "#190d1c" } },
+];
+
 const hex = /^#[\da-f]{6}$/i;
 const idPattern = /^[\w-]{1,80}$/;
 

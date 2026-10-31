@@ -123,3 +123,34 @@ test('custom palettes can author light and dark colours, switch, and persist', a
   assert.equal(await token(page, '--canvas'), '#0a0b0d');
   assert.deepEqual(f.errors, []);
 });
+
+
+test('built-in palettes change both modes, persist, and can be copied without editing the original', async t => {
+  const f = await fixture(), { page } = f; t.after(f.close);
+  await f.open('chat-a');
+  for (const mode of ['Light', 'Dark']) {
+    await appearance(page);
+    await page.getByRole('radiogroup', { name: 'Theme', exact: true }).getByRole('radio', { name: mode, exact: true }).click();
+    const backgrounds = new Set();
+    for (const id of ['palette-paper', 'palette-midnight', 'palette-plum']) {
+      await chooseOption(page.getByLabel('Theme palette', { exact: true }), id);
+      await page.waitForFunction(() => document.documentElement.hasAttribute('data-custom-palette'));
+      const background = await token(page, '--canvas'); backgrounds.add(background);
+      assert.notEqual(await token(page, '--foreground'), background, `${mode}/${id}: text differs from its ground`);
+      assert.equal(await page.getByLabel('Theme name', { exact: true }).count(), 0, 'built-in palettes do not expose a mutable editor');
+    }
+    assert.equal(backgrounds.size, 3, `${mode}: every preset has its own canvas`);
+    await page.reload(); await f.composer.waitFor(); await appearance(page);
+    assert.equal(await page.getByLabel('Theme palette', { exact: true }).getAttribute('data-value'), 'palette-plum');
+  }
+  await page.getByRole('radiogroup', { name: 'Theme', exact: true }).getByRole('radio', { name: 'Light', exact: true }).click();
+  const original = await token(page, '--canvas');
+  await page.getByRole('button', { name: 'Create theme', exact: true }).click();
+  assert.ok((await page.getByLabel('Theme palette', { exact: true }).getAttribute('data-value')).startsWith('theme-'));
+  assert.equal(await page.getByLabel('Light Background hex', { exact: true }).inputValue(), original, 'a copy starts from the selected preset');
+  await typeValue(page, 'Light Background hex', '#f0f0f0');
+  await page.getByRole('button', { name: 'Save theme', exact: true }).click();
+  await chooseOption(page.getByLabel('Theme palette', { exact: true }), 'palette-plum');
+  await waitToken(page, '--canvas', original);
+  assert.deepEqual(f.errors, []);
+});

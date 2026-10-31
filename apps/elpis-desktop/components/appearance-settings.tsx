@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Choice, Segmented, SettingRow, SettingsGroup, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
 import { savePreferences, usePreferences, type Accent, type Preferences } from "@/lib/preferences";
-import { parseCustomThemes, STARTER_THEME, THEME_COLORS, validTheme, type CustomTheme, type ThemeColor } from "@/lib/theme-palettes";
+import { BUILT_IN_THEMES, parseCustomThemes, STARTER_THEME, THEME_COLORS, validTheme, type CustomTheme, type ThemeColor } from "@/lib/theme-palettes";
 import { codeFontProblem, type ReadingStep } from "@/lib/reading";
 
 export type ThemeChoice = "system" | "light" | "dark";
@@ -29,19 +29,20 @@ export function AppearanceSettings({ theme, onTheme }: { theme: ThemeChoice; onT
   const preferences = usePreferences();
   const [notice, setNotice] = useState("");
   const save = (patch: Partial<Preferences>) => { setNotice(""); try { savePreferences(patch); } catch (cause) { setNotice(`Could not save this preference: ${cause instanceof Error ? cause.message : String(cause)}`); } };
-  const themes = parseCustomThemes(preferences.customThemes);
+  const savedThemes = parseCustomThemes(preferences.customThemes);
+  const themes = [...BUILT_IN_THEMES, ...savedThemes];
   const selectedId = themes.some(item => item.id === preferences.selectedPalette) ? preferences.selectedPalette : "elpis";
-  const selectedTheme = themes.find(item => item.id === selectedId) ?? null;
+  const selectedTheme = savedThemes.find(item => item.id === selectedId) ?? null;
   const createTheme = () => {
-    const source = selectedTheme ?? STARTER_THEME;
+    const source = themes.find(item => item.id === selectedId) ?? STARTER_THEME;
     const id = `theme-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-    const created = { ...source, id, name: `My theme ${themes.length + 1}`, light: { ...source.light }, dark: { ...source.dark } };
-    save({ customThemes: JSON.stringify([...themes, created]), selectedPalette: id });
+    const created = { ...source, id, name: `My theme ${savedThemes.length + 1}`, light: { ...source.light }, dark: { ...source.dark } };
+    save({ customThemes: JSON.stringify([...savedThemes, created]), selectedPalette: id });
   };
-  const saveTheme = (updated: CustomTheme) => save({ customThemes: JSON.stringify(themes.map(item => item.id === updated.id ? updated : item)) });
+  const saveTheme = (updated: CustomTheme) => save({ customThemes: JSON.stringify(savedThemes.map(item => item.id === updated.id ? updated : item)) });
   const deleteTheme = (removed: CustomTheme) => {
     if (!window.confirm(`Delete the “${removed.name}” theme?`)) return;
-    save({ customThemes: JSON.stringify(themes.filter(item => item.id !== removed.id)), selectedPalette: "elpis" });
+    save({ customThemes: JSON.stringify(savedThemes.filter(item => item.id !== removed.id)), selectedPalette: "elpis" });
   };
   return <div aria-label="Appearance">
     <SettingsHeader title="Appearance" description="Saved on this device." />
