@@ -730,7 +730,7 @@ export default function Home() {
       if (request.current !== id || live.thread?.id !== thread.id) return;
       if (modeRevisions.current[thread.id] === modeRevision) rememberModes(thread.id, live);
       if (turnRevisions.current[thread.id] === turnRevision) reconcileLiveThread(thread.id, live);
-      if (unread) {
+      if (unread || live.thread?.canAcceptDirectInput === false) {
         const again = await api<HistoryPage>(`/threads/${encodeURIComponent(thread.id)}?limit=100`);
         if (request.current === id && Array.isArray(again.data)) { setEntries(previous => mergeHistoryWithLive(previous, [...again.data].reverse(), liveKeysAfter(historyRevision))); setItemCursor(again.nextCursor); noteHistoryGap(thread.id, again); heldEarlier.current.delete(thread.id); }
       }

@@ -578,7 +578,7 @@ export class DesktopClient extends EventEmitter {
     // Auto-review's reviewer works in threads of its own; they are not the user's chats.
     const data = result.data.filter(thread => thread.source?.subAgent?.other !== 'guardian' && (includeAgentRuns || !isAgentRun(thread))).map(thread => this.#decorate(thread));
     // Follow working agents live: only subscribers receive their items, approvals and deltas.
-    if (!options.archived) for (const thread of data) if (thread.status?.type === 'active' && !this.#owned.has(thread.id) && !this.#endedNodes.has(thread.id)) void this.#attach(thread.id).catch(() => {});
+    if (!options.archived) for (const thread of data) if (thread.status?.type === 'active' && !this.#owned.has(thread.id) && !this.#endedNodes.has(thread.id)) void this.#attach(thread.id, thread).catch(() => {});
     return { ...result, data };
   }
   async listArchivedThreads(options = {}) {
@@ -586,13 +586,25 @@ export class DesktopClient extends EventEmitter {
   }
   /** Rejoins without model, policy, history or workspace changes. Desktop MCP follows cold resumes;
    * the engine preserves the configuration of threads still loaded by another client. */
-  #attach(id) {
+  #attach(id, knownThread = null) {
     threadId(id);
     if (this.#owned.has(id) && !this.#attaching.has(id)) return Promise.resolve(null);
     if (this.#attaching.has(id)) return this.#attaching.get(id);
-    const browserOptions = this.#browserOptions(id);
     this.#owned.add(id);
-    const attempt = this.#rpc('thread/resume', { threadId: id, excludeTurns: true, initialTurnsPage: { limit: 1, sortDirection: 'desc', itemsView: 'summary' }, ...browserOptions })
+    const attempt = (async () => {
+      const thread = knownThread ?? (await this.#rpc('thread/read', { threadId: id, includeTurns: false })).thread;
+      if (!thread || thread.id !== id) throw new BridgeError('Elpis returned another thread', 502);
+      if (thread.canAcceptDirectInput === false) {
+        if (thread.status?.type !== 'active') { this.#owned.delete(id); return { thread }; }
+        try { return await this.#rpc('thread/subscribe', { threadId: id, includeTurns: false }); }
+        catch (error) {
+          const current = await this.#rpc('thread/read', { threadId: id, includeTurns: false }).catch(() => null);
+          if (current?.thread?.id === id && current.thread.status?.type !== 'active') { this.#owned.delete(id); return current; }
+          throw error;
+        }
+      }
+      return this.#rpc('thread/resume', { threadId: id, excludeTurns: true, initialTurnsPage: { limit: 1, sortDirection: 'desc', itemsView: 'summary' }, ...this.#browserOptions(id) });
+    })()
       .then(result => {
         if (result.thread?.id !== id) throw new BridgeError('Elpis resumed another conversation', 502);
         return result;
@@ -1898,10 +1910,17 @@ export class DesktopClient extends EventEmitter {
   /** Opens a chat live in this app: subscribes it and reports the turn it is running, if any. */
   async resume(id, body) {
     object(body, []);
+    const metadata = await this.readThreadMetadata(id);
+    if (metadata.canAcceptDirectInput === false) {
+      const joined = await this.#attach(id, metadata);
+      this.#opened = id; void this.#releaseLeft(id);
+      const turns = await this.#rpc('thread/turns/list', { threadId: id, limit: 1, sortDirection: 'desc', itemsView: 'summary', notLoaded: true }).catch(() => ({ data: [] }));
+      return { thread: this.#decorate(joined?.thread ?? metadata), activeTurnId: turns.data?.find(turn => turn.status === 'inProgress')?.id ?? null };
+    }
     // A chat already followed (the list follows running ones) is read again, so its mode, Plan and effort still show.
     // An archived chat opens read from the engine, without following it: the engine resumes it only once it is back.
     let archived = false;
-    const result = await this.#attach(id).catch(error => { if (!archivedSession(error)) throw error; archived = true; return null; })
+    const result = await this.#attach(id, metadata).catch(error => { if (!archivedSession(error)) throw error; archived = true; return null; })
       ?? (archived ? null : await this.#rpc('thread/resume', { threadId: id, excludeTurns: true, initialTurnsPage: { limit: 1, sortDirection: 'desc', itemsView: 'summary' } }).catch(() => null));
     this.#opened = id; void this.#releaseLeft(id);
     if (result) {
