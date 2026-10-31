@@ -2486,7 +2486,7 @@ export default function Home() {
           {panel === "review" && selected && <ReviewPanel threadId={selected.id} onStart={target => void startReview(selected, target)} onClose={closePanel} />}
           {panel === "diff" && selected && <DiffPanel threadId={selected.id} onClose={closePanel} />}
           </ViewBoundary>
-          {visibleSlashNotice && <p key={visibleSlashNotice} role="status" data-fast-notice={fastNoticeState ? "" : undefined} onAnimationEnd={fastNoticeState ? () => setSlashNotice(current => current === slashNotice ? "" : current) : undefined} className="mx-auto mb-2 w-full max-w-[var(--transcript-width,740px)] px-1 text-sm text-muted-foreground">{visibleSlashNotice}</p>}
+          {visibleSlashNotice && <p key={visibleSlashNotice} role="status" data-fast-notice={fastSuccess ? "" : undefined} onAnimationEnd={fastSuccess ? () => setSlashNotice(current => current === slashNotice ? "" : current) : undefined} className="mx-auto mb-2 w-full max-w-[var(--transcript-width,740px)] px-1 text-sm text-muted-foreground">{visibleSlashNotice}</p>}
           {selected && plans[selected.id] && <TaskList plan={plans[selected.id]} running={activeTurns[selected.id] === plans[selected.id].turnId} />}
           <QueuedFollowUps threadId={selected?.id} activeTurnId={activeTurn} onError={setError} onComplete={restoreComposerFocus} onEdit={editQueued} />
           {!selected && <div className="composer-tray"><EnvironmentMenu folder={chatFolder || null} disabled={!ready || busy} worktree={newWorktree} onWorktree={setNewWorktree} /><ProjectMenu variant="chip" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} /></div>}
