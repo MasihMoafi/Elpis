@@ -8,7 +8,7 @@ const geometry = page => page.evaluate(() => {
     const rect = document.querySelector(selector)?.getBoundingClientRect();
     return rect ? { x: Math.round(rect.x * 10) / 10, y: Math.round(rect.y * 10) / 10, width: Math.round(rect.width * 10) / 10, height: Math.round(rect.height * 10) / 10 } : null;
   };
-  return { viewport: window.innerWidth, workspace: box('.workspace-body'), content: box('.workspace-content'), scroll: box('.chat-scroll'), chat: box('.chat-content'), turn: box('.turn'), working: box('.turn-working'), mark: box('.turn-working .elpis-working-mark'), sidePanel: box('[aria-label="Side panel"]'), teamPanel: box('.team-panel') };
+  return { teamParent: document.querySelector('.team-panel')?.parentElement?.className, transform: getComputedStyle(document.querySelector('.turn-working')).transform, teamLayoutMatch: !!document.querySelector('.chat-split:has(> .team-panel)'), viewport: window.innerWidth, workspace: box('.workspace-body'), content: box('.workspace-content'), scroll: box('.chat-scroll'), chat: box('.chat-content'), turn: box('.turn'), working: box('.turn-working'), mark: box('.turn-working .elpis-working-mark'), sidePanel: box('[aria-label="Side panel"]'), teamPanel: box('.team-panel') };
 });
 
 for (const colorScheme of ['light', 'dark']) {

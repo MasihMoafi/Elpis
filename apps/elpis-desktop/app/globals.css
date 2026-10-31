@@ -704,7 +704,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 /* Above the sidebar-collapse breakpoint, preserve the mark by comparing the centered transcript widths before and after a panel opens. */
 @media(min-width:1001px) {
   .app-shell .workspace-body.panel-open:not(.full-view) .turn-working,
-  .app-shell:not(.session-split) .workspace:has(> .team-panel) .turn-working {
+  .app-shell:not(.session-split) .chat-split:has(> .team-panel) .turn-working {
     --working-before-chat-width:calc(var(--working-before-width) - 2 * var(--working-before-rail));
     --working-current-width:calc(var(--working-grid-width) - var(--working-panel-width));
     --working-current-chat-width:calc(var(--working-current-width) - 2 * var(--working-current-rail));
@@ -715,7 +715,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
   .app-shell .workspace-body.panel-open:not(.full-view) .turn-working {
     --working-panel-width:min(max(var(--side-min,200px), var(--side-request-width,var(--sidebar-width,256px))), calc(var(--working-grid-width) * .7), max(0px, calc(var(--working-grid-width) - 320px)));
   }
-  .app-shell:not(.session-split) .workspace:has(> .team-panel) .turn-working { --working-panel-width:300px; }
+  .app-shell:not(.session-split) .chat-split:has(> .team-panel) .turn-working { --working-panel-width:300px; }
 }
 /* The live Working row sits 8px below its original place over the composer; raised 4px (about 1mm) on 31 Oct. */
 .turn:has(> .turn-working) { margin-bottom:0; }
