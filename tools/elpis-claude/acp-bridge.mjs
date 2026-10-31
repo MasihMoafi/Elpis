@@ -801,6 +801,7 @@ wss.on("connection", (ws) => {
     claudeBusy: () => [...activeTurns.keys()].some(tid => agentOf(claudeModel.get(tid))?.key === "claude") || structured.size > 0,
     stopProvider: (tid) => stopProvider(tid, "deleted"),
     deleteNative: (tid) => engineCall("thread/delete", { threadId: tid }),
+    isBridgeChild: (tid) => childThreads.has(tid),
     childrenOf: (ids) => [...childThreads].filter(([, child]) => ids.has(child.rootThreadId) || ids.has(child.thread.parentThreadId)).map(([id]) => id),
     forgetThread: (tid) => {
       cancelRelays(ws, tid);
@@ -3082,7 +3083,7 @@ wss.on("connection", (ws) => {
       // Validate/delete the root first so a native fork conflict cannot erase its helpers.
       let nativeSubtreeDeleted = false;
       for (const id of ids) {
-        const bridgeOnly = id !== tid && [...contexts].some(c => c.childThreads.has(id));
+        const bridgeOnly = id !== tid && [...contexts].some(c => c.isBridgeChild(id));
         let nativeDeleted = nativeSubtreeDeleted && id !== tid && !bridgeOnly;
         const failures = [];
         // A thread may still have a writer in another terminal's engine. Each app-server
