@@ -290,7 +290,7 @@ for (const colorScheme of ['light', 'dark']) test(`the chat box glows on all fou
   const f = await setup(colorScheme), { page } = f;
   try {
     const glow = await page.locator('.composer').first().evaluate(element => getComputedStyle(element).boxShadow);
-    assert.match(glow, /rgb\([^)]*\) 0px 0px 8px|0px 0px 8px/, `the chat box has an 8px glow in the theme colour: ${glow}`);
+    assert.match(glow, /0px 0px 4px/, `the chat box has a 4px glow in the theme colour: ${glow}`);
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
