@@ -4,7 +4,8 @@ import { createTestTempDir, removeTestTempDir } from "./temp-root.mjs";
 // Claude (fake-acp-agent.mjs) and engine (fake-app-server.mjs); no provider calls.
 // Run: node --test tools/elpis-claude/test/handover-claude.test.mjs
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { once } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
@@ -24,15 +25,29 @@ async function until(check, label, ms = 5000) {
   assert.fail(label);
 }
 
-async function fixture(t) {
-  const root = createTestTempDir(path.join(os.tmpdir(), "ebh-"));
-  const bundle = (name) => {
-    const dir = path.join(root, name); fs.mkdirSync(dir);
-    for (const file of fs.readdirSync(source).filter((file) => file.endsWith(".mjs") || ["package.json", "package-lock.json"].includes(file))) fs.copyFileSync(path.join(source, file), path.join(dir, file));
-    fs.symlinkSync(path.join(source, "node_modules"), path.join(dir, "node_modules"));
-    return dir;
-  };
-  const [first, second] = [bundle("a"), bundle("b")];
+function bundle(root, name, managed) {
+  const home = managed ? path.join(root, "versions", name) : null;
+  const dir = home ? path.join(home, "tools/elpis-claude") : path.join(root, name);
+  fs.mkdirSync(dir, { recursive: true });
+  for (const file of fs.readdirSync(source).filter((file) => file.endsWith(".mjs") || ["package.json", "package-lock.json"].includes(file))) fs.copyFileSync(path.join(source, file), path.join(dir, file));
+  fs.symlinkSync(path.join(source, "node_modules"), path.join(dir, "node_modules"));
+  if (!home) return { dir };
+  const engine = path.join(home, "package/bin/codex");
+  fs.mkdirSync(path.dirname(engine), { recursive: true });
+  fs.copyFileSync(path.join(source, "test/fake-app-server.mjs"), engine);
+  fs.chmodSync(engine, 0o755);
+  fs.symlinkSync(path.join(source, "node_modules"), path.join(home, "package/node_modules"));
+  fs.writeFileSync(path.join(home, "package/codex-package.json"), JSON.stringify({ layoutVersion: 1, variant: "elpis", entrypoint: "bin/codex" }));
+  fs.writeFileSync(path.join(home, "source.json"), JSON.stringify({ source_head: "a".repeat(40), runtime_sha256: createHash("sha256").update(fs.readFileSync(engine)).digest("hex") }));
+  return { dir, engine };
+}
+
+async function fixture(t, { directMode = null } = {}) {
+  const base = directMode ? path.join(os.homedir(), ".cache/elpis-tests") : os.tmpdir();
+  if (directMode) fs.mkdirSync(base, { recursive: true });
+  const root = createTestTempDir(path.join(base, "ebh-"));
+  const [firstBundle, secondBundle] = [bundle(root, "a", directMode), bundle(root, "b", directMode)];
+  const [first, second] = [firstBundle.dir, secondBundle.dir];
   const agentLog = path.join(root, "agent.jsonl"), release = path.join(root, "release");
   fs.mkdirSync(path.join(root, "elpis"));
   // A124_ENGINE=/absolute/native/binary runs the real engine, kept offline: it must never call a model here.
@@ -40,14 +55,25 @@ async function fixture(t) {
   fs.writeFileSync(path.join(root, "elpis", "config.toml"), `model="gpt-5.5"\nmodel_provider="carrier"\nmodel_catalog_json=${JSON.stringify(path.resolve(source, "../../codex-rs/models-manager/models.json"))}\n[features]\ncode_mode=false\n[model_providers.carrier]\nname="offline carrier"\nbase_url=${JSON.stringify(carrier.url)}\nwire_api="responses"\nrequires_openai_auth=false\nrequest_max_retries=0\nstream_max_retries=0\n`);
   const env = { PATH: process.env.PATH, HOME: root, ELPIS_HOME: path.join(root, "elpis"), CODEX_HOME: path.join(root, "elpis"), CODEX_AUTH_HOME: root,
     XDG_RUNTIME_DIR: root, XDG_CONFIG_HOME: root, TMPDIR: root, ELPIS_NO_AGY: "1", ACP_BRIDGE_NO_AGENTS: "1",
-    ELPIS_ENGINE_BIN: process.env.A124_ENGINE ?? path.join(source, "test/fake-app-server.mjs"), ACP_ADAPTER: path.join(source, "test/fake-acp-agent.mjs"),
+    ELPIS_ENGINE_BIN: firstBundle.engine ?? process.env.A124_ENGINE ?? path.join(source, "test/fake-app-server.mjs"), ACP_ADAPTER: path.join(source, "test/fake-acp-agent.mjs"),
     ACP_BRIDGE_STORE: path.join(root, "sessions.json"), ACP_BRIDGE_LOG: path.join(root, "bridge.log"), FAKE_ENGINE_STATE: path.join(root, "native.json"),
     FAKE_ACP_LOG: agentLog, FAKE_ACP_MODELS: "sonnet", FAKE_ACP_NAME: "Claude", FAKE_ACP_RELEASE: release };
-  const launch = async (dir) => {
-    const child = spawn(process.execPath, [path.join(dir, "shared-runtime.mjs"), path.join(dir, "acp-bridge.mjs")], { env, stdio: ["ignore", "pipe", "pipe"] });
+  const proxyNames = ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy", "no_proxy"];
+  if (directMode && directMode !== "reverse") for (const name of proxyNames) env[name] = /^no_proxy$/i.test(name) ? "localhost,127.0.0.1,::1,example.invalid" : "http://127.0.0.1:9";
+  if (directMode) { env.NODE_USE_ENV_PROXY = "1"; env.AGY_DEFAULT_MODEL = "old-fixture"; }
+  const nextEnv = { ...env, ...(secondBundle.engine ? { ELPIS_ENGINE_BIN: secondBundle.engine } : {}) };
+  if (directMode === "positive" || directMode === "mixed") for (const name of proxyNames) delete nextEnv[name];
+  if (directMode === "nonproxy" || directMode === "mixed") nextEnv.AGY_DEFAULT_MODEL = "changed-fixture";
+  if (directMode === "reverse") for (const name of proxyNames) nextEnv[name] = /^no_proxy$/i.test(name) ? "localhost,127.0.0.1,::1,example.invalid" : "http://127.0.0.1:9";
+  const launchResult = async (dir, launchEnv = env) => {
+    const child = spawn(process.execPath, [path.join(dir, "shared-runtime.mjs"), path.join(dir, "acp-bridge.mjs")], { env: launchEnv, stdio: ["ignore", "pipe", "pipe"] });
     let out = "", err = ""; child.stdout.on("data", (d) => { out += d; }); child.stderr.on("data", (d) => { err += d; });
     await once(child, "exit");
-    assert.equal(child.exitCode, 0, err);
+    return { code: child.exitCode, out, err };
+  };
+  const launch = async (dir, launchEnv = env) => {
+    const { code, out, err } = await launchResult(dir, launchEnv);
+    assert.equal(code, 0, err);
     return out.split("\n")[0].trim().replace(/^unix:\/\//, "");
   };
   const socketPath = await launch(first);
@@ -59,22 +85,112 @@ async function fixture(t) {
     client.close();
     for (const pid of [old.pid, state().pid]) { try { process.kill(pid, "SIGTERM"); } catch {} }
     await pause(300);
-    removeTestTempDir(root);
+    if (directMode) assert.equal(spawnSync("gio", ["trash", root]).status, 0);
+    else removeTestTempDir(root);
   });
   await client.models();
   const id = (await client.createThread({ model: "claude/sonnet", cwd: root })).thread.id;
   /** Installs the newer bundle and waits until it serves; the old bridge keeps working. */
   const install = async () => {
     const installedAt = Date.now();
-    await launch(second);
+    const from = connection.length;
+    await launch(second, nextEnv);
     await until(() => state().pid && state().pid !== old.pid, "the newer bundle serves while the Claude turn works", 10000);
     t.diagnostic(`hand-over took ${Date.now() - installedAt} ms`);
     assert.ok(oldAlive(), "the old bridge keeps the working turn");
     // The desktop is asked to reconnect and does so by itself, as the app does.
-    const from = connection.length;
     await until(() => connection.slice(from).includes(false) && connection.at(-1) === true, "the desktop reconnects to the newer bridge", 10000);
   };
-  return { client, events, id, agentLog, release, env, oldAlive, install, socketPath };
+  return { client, events, id, agentLog, release, env, old, oldAlive, install, socketPath, state, root, launchResult, second, nextEnv, proxyNames };
+}
+
+test("direct handover keeps a running turn and starts the new engine without proxy variables", { timeout: 60000 }, async (t) => {
+  const { client, events, id, agentLog, release, old, oldAlive, install, socketPath, state, proxyNames } = await fixture(t, { directMode: "positive" });
+  const { turn } = await client.send(id, { text: "[wait] a long task" });
+  await until(() => lines(agentLog).some((entry) => entry.method === "session/prompt"), "the old turn works");
+  await install();
+  assert.ok(oldAlive(), "old work is still running");
+  const oldEnv = fs.readFileSync(`/proc/${old.pid}/environ`).toString().split("\0").map(item => item.split("=", 1)[0]);
+  assert.deepEqual(proxyNames.filter(name => oldEnv.includes(name)), proxyNames, "the old process retains its own environment");
+  const current = state();
+  const bridgeEnv = fs.readFileSync(`/proc/${current.pid}/environ`).toString().split("\0").map(item => item.split("=", 1)[0]);
+  assert.deepEqual(proxyNames.filter(name => bridgeEnv.includes(name)), [], "new bridge is direct");
+  let newEngine;
+  const runtime = path.dirname(socketPath);
+  assert.equal(fs.existsSync(path.join(runtime, "successor-direct")), false, "the consumed marker is removed");
+  await until(() => {
+    for (const entry of fs.readdirSync(runtime).filter(name => name.startsWith("engine-"))) {
+      try {
+        const record = JSON.parse(fs.readFileSync(path.join(runtime, entry, "engine.json"), "utf8"));
+        if (record.bridgePid === current.pid) { newEngine = record.pid; return true; }
+      } catch {}
+    }
+    return false;
+  }, "the new bridge starts its own engine", 10000);
+  const engineEnv = fs.readFileSync(`/proc/${newEngine}/environ`).toString().split("\0").map(item => item.split("=", 1)[0]);
+  assert.deepEqual(proxyNames.filter(name => engineEnv.includes(name)), [], "new engine is direct");
+  assert.equal((await client.resume(id, {})).activeTurnId, turn.id, "the running parent remains reachable through the drain");
+  fs.writeFileSync(release, "");
+  await until(() => events.some(event => event.method === "turn/completed" && event.params.turn.id === turn.id), "the old turn finishes", 10000);
+  assert.equal(events.filter(event => event.method === "turn/completed" && event.params.turn.id === turn.id).length, 1);
+  await until(() => !oldAlive(), "old bridge exits after its turn", 10000);
+});
+
+for (const mode of ["nonproxy", "mixed", "reverse"]) {
+  test(`direct handover rejects ${mode} configuration changes`, { timeout: 60000 }, async (t) => {
+    const { oldAlive, launchResult, second, nextEnv, state, socketPath } = await fixture(t, { directMode: mode });
+    const before = state().pid;
+    const result = await launchResult(second, nextEnv);
+    assert.notEqual(result.code, 0, "the normal configuration guard rejects this change");
+    assert.match(result.err, /different configuration|configuration also differs/);
+    assert.equal(state().pid, before);
+    assert.ok(oldAlive());
+    assert.equal(fs.existsSync(path.join(path.dirname(socketPath), "successor")), false);
+  });
+}
+
+test("mixed configuration changes do not stop an unattached bridge", { timeout: 60000 }, async (t) => {
+  const { client, oldAlive, launchResult, second, nextEnv, state, socketPath } = await fixture(t, { directMode: "mixed" });
+  const before = state().pid;
+  client.close();
+  await until(() => !spawnSync("ss", ["-xHn", "state", "connected", "src", socketPath], { encoding: "utf8" }).stdout.trim(), "the viewer disconnects");
+  const result = await launchResult(second, nextEnv);
+  assert.notEqual(result.code, 0);
+  assert.match(result.err, /configuration also differs/);
+  assert.equal(state().pid, before);
+  assert.ok(oldAlive(), "the old bridge was not stopped");
+});
+
+for (const mode of ["symlink", "public", "wrong-target"]) {
+  test(`direct handover rejects a ${mode} marker`, { timeout: 15000 }, async (t) => {
+    const base = path.join(os.homedir(), ".cache/elpis-tests");
+    fs.mkdirSync(base, { recursive: true });
+    const root = createTestTempDir(path.join(base, "edh-"));
+    t.after(() => assert.equal(spawnSync("gio", ["trash", root]).status, 0));
+    const old = bundle(root, "a", true), next = bundle(root, "b", true);
+    const home = path.join(root, "elpis");
+    fs.mkdirSync(home);
+    const key = createHash("sha256").update(fs.realpathSync(home)).digest("hex").slice(0, 16);
+    const runtime = path.join(root, "elpis-bridge", key);
+    fs.mkdirSync(runtime, { recursive: true, mode: 0o700 });
+    const target = path.join(next.dir, "acp-bridge.mjs"), marker = path.join(runtime, "successor-direct");
+    fs.writeFileSync(path.join(runtime, "successor"), target, { mode: 0o600 });
+    if (mode === "symlink") {
+      const file = path.join(root, "marker-target");
+      fs.writeFileSync(file, target, { mode: 0o600 });
+      fs.symlinkSync(file, marker);
+    } else {
+      fs.writeFileSync(marker, mode === "wrong-target" ? path.join(root, "other") : target, { mode: 0o600 });
+      if (mode === "public") fs.chmodSync(marker, 0o644);
+    }
+    const env = { PATH: process.env.PATH, HOME: root, ELPIS_HOME: home, XDG_RUNTIME_DIR: root, ELPIS_ENGINE_BIN: old.engine };
+    const child = spawn(process.execPath, [path.join(next.dir, "shared-runtime.mjs"), target], { env, stdio: ["ignore", "pipe", "pipe"] });
+    let stderr = ""; child.stderr.on("data", data => { stderr += data; });
+    await once(child, "exit");
+    assert.notEqual(child.exitCode, 0);
+    assert.match(stderr, /direct handover marker is invalid/i);
+    assert.equal(fs.existsSync(path.join(runtime, "state.json")), false, "no bridge started");
+  });
 }
 
 test("a Claude turn working during an install finishes in the old bridge; the newer one serves within seconds", { timeout: 60000 }, async (t) => {
