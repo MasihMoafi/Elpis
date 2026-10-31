@@ -4,11 +4,15 @@ on:
   workflow_dispatch:
     inputs:
       verification:
-        description: 'Compiler, native compiler, schema-only, UI-only, full runtime validation, or build-only install package'
+        description: 'Choose the verification to run'
         required: true
         default: full
         type: choice
-        options: [check, native-check, schemas, ui, full, build]
+        options: [check, native-check, child-catalog, schemas, ui, full, build]
+      runtime_run_id:
+        description: 'Run containing the diagnostic runtime (child-catalog only)'
+        required: false
+        type: string
   push:
     tags: ['v*']
     branches: [next]
@@ -561,6 +565,56 @@ jobs:
             ~/.cargo/git
             codex-rs/target
           key: ${{ steps.cargo_cache.outputs.cache-primary-key }}
+
+  child-catalog:
+    if: github.event_name == 'workflow_dispatch' && inputs.verification == 'child-catalog'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 50
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Install locked bridge dependencies
+        working-directory: tools/elpis-claude
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: unverified-diagnostic-runtime
+          path: ${{ runner.temp }}/native-runtime
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.runtime_run_id }}
+      - name: Verify runtime provenance and native source tree
+        working-directory: ${{ runner.temp }}/native-runtime
+        run: |
+          set -euo pipefail
+          sha256sum -c runtime-SHA256SUMS
+          source=$(cat runtime-source.txt)
+          cd "$GITHUB_WORKSPACE"
+          git cat-file -e "$source^{commit}" || git fetch --no-tags --depth=1 origin "$source"
+          test "$(git rev-parse "$source:codex-rs")" = "$(git rev-parse "$GITHUB_SHA:codex-rs")"
+          chmod +x "$RUNNER_TEMP/native-runtime/"{elpis,codex-code-mode-host,bwrap}
+          mkdir -p "$RUNNER_TEMP/native-runtime/codex-resources"
+          cp "$RUNNER_TEMP/native-runtime/bwrap" "$RUNNER_TEMP/native-runtime/codex-resources/bwrap"
+          printf 'Runtime source: %s\nTest source: %s\n' "$source" "$GITHUB_SHA"
+      - name: Verify delegated child model-visible MCP catalogs
+        env:
+          ELPIS_MCP_INHERITANCE_EVIDENCE: ${{ runner.temp }}/mcp-inheritance-evidence.json
+        run: node scripts/engine-delegate.test.cjs --mcp-inheritance "$RUNNER_TEMP/native-runtime/elpis"
+      - name: Preserve child catalog evidence and diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: child-mcp-catalog-evidence
+          path: |
+            ${{ runner.temp }}/mcp-inheritance-evidence.json
+            /tmp/elpis-engine-delegate-*/stderr.log
+            /tmp/elpis-engine-delegate-*/bridge.log
+            /tmp/elpis-engine-delegate-*/mcp.jsonl
+          if-no-files-found: warn
+          retention-days: 7
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
