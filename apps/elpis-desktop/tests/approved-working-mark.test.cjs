@@ -1,10 +1,19 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture, CWD, THREADS } = require('./parity-fixture.cjs');
+const { threadMenuItem } = require('./controls.cjs');
+
+const geometry = page => page.evaluate(() => {
+  const box = selector => {
+    const rect = document.querySelector(selector)?.getBoundingClientRect();
+    return rect ? { x: Math.round(rect.x * 10) / 10, y: Math.round(rect.y * 10) / 10, width: Math.round(rect.width * 10) / 10, height: Math.round(rect.height * 10) / 10 } : null;
+  };
+  return { viewport: window.innerWidth, workspace: box('.workspace-body'), content: box('.workspace-content'), scroll: box('.chat-scroll'), chat: box('.chat-content'), turn: box('.turn'), working: box('.turn-working'), mark: box('.turn-working .elpis-working-mark'), sidePanel: box('[aria-label="Side panel"]'), teamPanel: box('.team-panel') };
+});
 
 for (const colorScheme of ['light', 'dark']) {
   test(`approved working animation remains hollow with a blinking dot in ${colorScheme}`, async t => {
-    const f = await fixture({ colorScheme, running: true, width: 1440, height: 900 });
+    const f = await fixture({ staticDir: process.env.ELPIS_RENDERER_OUT, colorScheme, running: true, width: 1440, height: 900 });
     t.after(() => f.close());
     await f.open('chat-a');
     const mark = f.page.locator('.elpis-working-mark').last();
@@ -16,7 +25,7 @@ for (const colorScheme of ['light', 'dark']) {
     await f.page.getByRole('button', { name: 'Show side panel', exact: true }).click();
     await f.page.getByRole('region', { name: 'Side panel', exact: true }).waitFor();
     assert.equal(await x(), initialX, 'opening the right panel does not move the mark');
-    assert.equal(await f.page.locator('.turn-working').last().evaluate(row => getComputedStyle(row).marginTop), '11px', 'the Working row moves another two pixels higher');
+    assert.equal(await f.page.locator('.turn-working').last().evaluate(row => getComputedStyle(row).marginTop), '7px', 'the Working row sits about one millimetre higher');
     for (const reducedMotion of ['no-preference', 'reduce']) {
       await f.page.emulateMedia({ reducedMotion });
       const actual = await mark.evaluate(svg => {
@@ -43,3 +52,51 @@ for (const colorScheme of ['light', 'dark']) {
     assert.deepEqual(f.errors, []);
   });
 }
+
+test('working mark stays anchored when the Agents pane opens', async t => {
+  const agent = { id: 'agent-panel', name: 'Agent panel helper', cwd: CWD, parentThreadId: 'chat-a', source: { subAgent: { thread_spawn: { agent_path: '/root/agent-panel' } } }, status: { type: 'idle' } };
+  const f = await fixture({ staticDir: process.env.ELPIS_RENDERER_OUT, running: true, width: 1440, height: 900, threads: [...THREADS, agent] });
+  t.after(() => f.close());
+  await f.open('chat-a');
+  const mark = f.page.locator('.turn-working .elpis-working-mark').last(); await mark.waitFor();
+  await f.page.getByRole('button', { name: 'Hide agents panel', exact: true }).click();
+  await f.page.locator('.team-panel').waitFor({ state: 'detached' });
+  const closed = await geometry(f.page), closedX = Math.round((await mark.boundingBox()).x * 10) / 10;
+  await f.page.getByRole('button', { name: 'Show agents panel', exact: true }).click();
+  await f.page.locator('.team-panel').waitFor();
+  const open = await geometry(f.page), openX = Math.round((await mark.boundingBox()).x * 10) / 10;
+  assert.equal(openX, closedX, `opening the right Agents pane does not move the working mark: ${JSON.stringify({ closed, open })}`);
+  assert.deepEqual(f.errors, []);
+});
+
+test('working mark stays anchored when the right panel opens at a 1004px CSS viewport and 1.64 device scale', async t => {
+  const f = await fixture({ staticDir: process.env.ELPIS_RENDERER_OUT, running: true, width: 1004, height: 900, deviceScaleFactor: 1.64 });
+  t.after(() => f.close());
+  await f.open('chat-a');
+  assert.equal(await f.page.evaluate(() => window.innerWidth), 1004, 'the fixture uses the reported CSS viewport width');
+  assert.ok(Math.abs(await f.page.evaluate(() => window.devicePixelRatio) - 1.64) < 0.01, 'the fixture matches the reported device scale');
+  const mark = f.page.locator('.turn-working .elpis-working-mark').last(); await mark.waitFor();
+  const closed = await geometry(f.page), initialX = Math.round((await mark.boundingBox()).x * 10) / 10;
+  await f.page.getByRole('button', { name: 'Show side panel', exact: true }).click();
+  await f.page.getByRole('region', { name: 'Side panel', exact: true }).waitFor();
+  const open = await geometry(f.page), panelX = Math.round((await mark.boundingBox()).x * 10) / 10;
+  assert.equal(panelX, initialX, `opening the right panel at this width does not move the working mark: ${JSON.stringify({ closed, open })}`);
+  assert.deepEqual(f.errors, []);
+});
+
+test('working mark stays anchored when the right panel opens in split view at 1004px', async t => {
+  const f = await fixture({ staticDir: process.env.ELPIS_RENDERER_OUT, running: true, width: 1004, height: 900, deviceScaleFactor: 1.64 });
+  t.after(() => f.close());
+  await f.open('chat-a');
+  await f.page.locator('.thread-row[data-thread-id="chat-b"]').getByRole('button', { name: /^Actions for/ }).click();
+  await (await threadMenuItem(f.page, 'Open session in split view')).click();
+  const split = f.page.frameLocator('iframe[title="Split session"]');
+  await split.getByRole('textbox', { name: 'Message Elpis', exact: true }).waitFor();
+  const mark = f.page.locator('.turn-working .elpis-working-mark').last(); await mark.waitFor();
+  const closed = await geometry(f.page), initialX = Math.round((await mark.boundingBox()).x * 10) / 10;
+  await f.page.getByRole('button', { name: 'Show side panel', exact: true }).click();
+  await f.page.getByRole('region', { name: 'Side panel', exact: true }).waitFor();
+  const open = await geometry(f.page), panelX = Math.round((await mark.boundingBox()).x * 10) / 10;
+  assert.equal(panelX, initialX, `opening the right panel in split view does not move the working mark: ${JSON.stringify({ closed, open })}`);
+  assert.deepEqual(f.errors, []);
+});

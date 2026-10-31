@@ -32,7 +32,7 @@ const TURNS = [
  * with read/write permissions instead of the default writeText recorder. `showScrollbars` keeps native scrollbar
  * geometry in headless Chromium, where Playwright otherwise passes --hide-scrollbars. `loveScene: null` holds the
  * initial board snapshot until emitLove sends it, for origin-resolution checks. */
-async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660, colorScheme = 'light', running = false, desktop = true, chat: start = TURNS, threads: initialThreads = THREADS, readyThreadId = 'chat-a', routes = {}, storage = {}, browserChannel, browserArgs, nativeClipboard = false, showScrollbars = false, clockTime, loveScene = { elements: [], files: {}, appState: {}, page: { name: 'Current page', session: 'fixture-page' } } } = {}) {
+async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660, colorScheme = 'light', deviceScaleFactor = 1, running = false, desktop = true, chat: start = TURNS, threads: initialThreads = THREADS, readyThreadId = 'chat-a', routes = {}, storage = {}, browserChannel, browserArgs, nativeClipboard = false, showScrollbars = false, clockTime, loveScene = { elements: [], files: {}, appState: {}, page: { name: 'Current page', session: 'fixture-page' } } } = {}) {
   const posts = [], turns = start.map(turn => [...turn]), streams = new Set(), loveStreams = new Set(), loveBoardStreams = new Set();
   const threads = initialThreads.map(item => ({ ...item, cwd }));
   let rewindSaved = null, rewindAction;
@@ -100,7 +100,7 @@ async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660,
   browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM || undefined, channel: browserChannel, headless: !process.env.ELPIS_UI_HEADED,
     args: browserArgs,
     ignoreDefaultArgs: showScrollbars ? ['--hide-scrollbars'] : undefined });
-  const page = await browser.newPage({ viewport: { width, height }, colorScheme }); page.setDefaultTimeout(6000);
+  const page = await browser.newPage({ viewport: { width, height }, colorScheme, deviceScaleFactor }); page.setDefaultTimeout(6000);
   const errors = []; page.on('pageerror', error => errors.push(error.message));
   await guardDesktopStore(page);
   await page.addInitScript(values => { for (const [key, value] of Object.entries(values)) if (localStorage.getItem(key) === null) localStorage.setItem(key, value); }, storage);
