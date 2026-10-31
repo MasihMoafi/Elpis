@@ -467,6 +467,7 @@ pub(crate) struct SessionSpawnArgs {
     pub(crate) extensions: Arc<codex_extension_api::ExtensionRegistry<crate::config::Config>>,
     pub(crate) conversation_history: InitialHistory,
     pub(crate) disabled_plugin_ids: Option<Vec<String>>,
+    pub(crate) mcp_server_selection: Option<Option<Vec<String>>>,
     pub(crate) requested_history_mode: Option<ThreadHistoryMode>,
     pub(crate) fork_persistence: ForkPersistence,
     pub(crate) session_source: SessionSource,
@@ -580,6 +581,7 @@ impl Session {
             extensions,
             conversation_history,
             disabled_plugin_ids,
+            mcp_server_selection,
             requested_history_mode,
             fork_persistence,
             session_source,
@@ -812,6 +814,21 @@ impl Session {
                 .map(<[String]>::to_vec)
                 .unwrap_or_default()
         });
+        let mcp_server_selection = mcp_server_selection.unwrap_or_else(|| {
+            let settings_owner = match &conversation_history {
+                InitialHistory::Resumed(resumed) => Some(resumed.conversation_id),
+                InitialHistory::Forked(_) => forked_from_thread_id,
+                InitialHistory::New | InitialHistory::Cleared => None,
+            };
+            settings_owner
+                .and_then(|thread_id| {
+                    codex_history::latest_mcp_server_selection(
+                        conversation_history.get_rollout_items(),
+                        thread_id,
+                    )
+                })
+                .map(<[String]>::to_vec)
+        });
         // TODO (aibrahim): Consolidate config.model and config.model_reasoning_effort into config.collaboration_mode
         // to avoid extracting these fields separately and constructing CollaborationMode here.
         let persisted_collaboration_mode = match &conversation_history {
@@ -894,6 +911,7 @@ impl Session {
             codex_home: config.codex_home.clone(),
             thread_name: None,
             disabled_plugin_ids,
+            mcp_server_selection,
             original_config_do_not_use: Arc::clone(&config),
             metrics_service_name,
             app_server_client_name: None,
@@ -1625,6 +1643,14 @@ impl Session {
                 // turn/start overrides can be merged before we write model-visible context.
                 self.set_previous_turn_settings(/*previous_turn_settings*/ None)
                     .await;
+                // Persist the thread-owned selection before its first model request.
+                self.persist_rollout_items(&[RolloutItem::EventMsg(
+                    thread_settings::applied_event(self).await,
+                )])
+                .await;
+                if !is_subagent {
+                    let _ = self.flush_rollout().await;
+                }
                 None
             }
             InitialHistory::Resumed(resumed_history) => {

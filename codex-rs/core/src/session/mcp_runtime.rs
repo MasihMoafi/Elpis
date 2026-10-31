@@ -30,6 +30,24 @@ pub(super) struct McpDesiredState {
     pub(super) environments: TurnEnvironmentSnapshot,
     pub(super) local_process_cwd: PathBuf,
     pub(super) disabled_plugin_ids: Vec<String>,
+    pub(super) mcp_server_selection: Option<Vec<String>>,
+}
+
+fn mcp_server_is_selected_for_thread(
+    name: &str,
+    source: Option<&McpServerSource>,
+    selection: Option<&[String]>,
+) -> bool {
+    let Some(selection) = selection else {
+        return true;
+    };
+    match source {
+        Some(McpServerSource::Config) => {
+            name == "elpis-agents" || selection.iter().any(|selected| selected == name)
+        }
+        Some(_) => true,
+        None => false,
+    }
 }
 
 impl Session {
@@ -44,6 +62,9 @@ impl Session {
             || current.step_settings.approvals_reviewer != next.step_settings.approvals_reviewer
             || current.permission_profile() != next.permission_profile()
             || current.windows_sandbox_level != next.windows_sandbox_level
+            || current.original_config_do_not_use.mcp_servers
+                != next.original_config_do_not_use.mcp_servers
+            || current.mcp_server_selection != next.mcp_server_selection
     }
 
     /// Waits on this session's refreshed server before tool execution is admitted.
@@ -102,6 +123,7 @@ impl Session {
             environments,
             local_process_cwd,
             disabled_plugin_ids,
+            mcp_server_selection: session_configuration.mcp_server_selection.clone(),
         }
     }
 
@@ -133,6 +155,7 @@ impl Session {
             environments: resolved_environments.clone(),
             local_process_cwd,
             disabled_plugin_ids: session_configuration.disabled_plugin_ids.clone(),
+            mcp_server_selection: session_configuration.mcp_server_selection.clone(),
         };
         self.publish_mcp_runtime(
             &desired,
@@ -357,7 +380,16 @@ impl Session {
                     && desired.config.effective_local_windows_sandbox_type()
                         == SandboxType::WindowsMxc,
             );
-        let mcp_servers = effective_mcp_servers(&config, auth.as_ref());
+        let mut mcp_servers = effective_mcp_servers(&config, auth.as_ref());
+        if let Some(selection) = desired.mcp_server_selection.as_deref() {
+            mcp_servers.retain(|name, _| {
+                let source = config
+                    .mcp_server_catalog
+                    .server(name)
+                    .map(|registration| registration.source());
+                mcp_server_is_selected_for_thread(name, source, Some(selection))
+            });
+        }
         config.set_server_permission_profiles(
             &mcp_servers,
             desired.environments.turn_environments().map(|environment| {
@@ -399,5 +431,71 @@ impl Session {
             elicitation_reviewer,
             elicitation_lifecycle: Some(self.mcp_elicitation_lifecycle()),
         }
+    }
+}
+
+#[cfg(test)]
+mod selection_tests {
+    use super::*;
+
+    #[test]
+    fn explicit_selection_does_not_widen_and_keeps_host_owned_servers() {
+        let selected = vec!["alpha".to_string()];
+        let config_source = McpServerSource::Config;
+        let compatibility_source = McpServerSource::Compatibility {
+            id: "host-compat".to_string(),
+        };
+        let extension_source = McpServerSource::Extension {
+            id: "host-extension".to_string(),
+            host_owned_apps: false,
+        };
+
+        assert!(mcp_server_is_selected_for_thread(
+            "alpha",
+            Some(&config_source),
+            Some(&selected),
+        ));
+        assert!(!mcp_server_is_selected_for_thread(
+            "beta",
+            Some(&config_source),
+            Some(&selected),
+        ));
+        // Adding a new global server cannot widen an explicit thread selection.
+        assert!(!mcp_server_is_selected_for_thread(
+            "new-global-server",
+            Some(&config_source),
+            Some(&selected),
+        ));
+        // A deleted global definition has no catalog registration and cannot leave a ghost.
+        assert!(!mcp_server_is_selected_for_thread(
+            "alpha",
+            None,
+            Some(&selected),
+        ));
+        assert!(!mcp_server_is_selected_for_thread(
+            "alpha",
+            Some(&config_source),
+            Some(&[]),
+        ));
+        assert!(mcp_server_is_selected_for_thread(
+            "elpis-agents",
+            Some(&config_source),
+            Some(&[]),
+        ));
+        assert!(mcp_server_is_selected_for_thread(
+            "compat",
+            Some(&compatibility_source),
+            Some(&[]),
+        ));
+        assert!(mcp_server_is_selected_for_thread(
+            "extension",
+            Some(&extension_source),
+            Some(&[]),
+        ));
+        assert!(mcp_server_is_selected_for_thread(
+            "alpha",
+            Some(&config_source),
+            None,
+        ));
     }
 }

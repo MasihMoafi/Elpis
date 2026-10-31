@@ -1245,6 +1245,7 @@ impl ThreadRequestProcessor {
             sandbox,
             permissions,
             config,
+            mcp_server_selection,
             service_name,
             base_instructions,
             developer_instructions,
@@ -1263,6 +1264,15 @@ impl ThreadRequestProcessor {
             parent_thread_id,
             environments,
         } = params;
+
+        if config
+            .as_ref()
+            .is_some_and(config_overrides_user_mcp_server_definitions)
+        {
+            return Err(invalid_request(
+                "MCP server definitions and credentials must come from global config".to_string(),
+            ));
+        }
         if matches!(
             history_mode,
             Some(codex_app_server_protocol::ThreadHistoryMode::Paginated)
@@ -1346,6 +1356,7 @@ impl ThreadRequestProcessor {
                 app_server_client_version,
                 client_mcp_extensions,
                 config,
+                mcp_server_selection,
                 typesafe_overrides,
                 dynamic_tools,
                 selected_capability_roots.unwrap_or_default(),
@@ -1429,6 +1440,7 @@ impl ThreadRequestProcessor {
         app_server_client_version: Option<String>,
         client_mcp_extensions: ClientMcpExtensions,
         config_overrides: Option<HashMap<String, serde_json::Value>>,
+        mcp_server_selection: Option<Vec<String>>,
         typesafe_overrides: ConfigOverrides,
         dynamic_tools: Option<Vec<DynamicToolSpec>>,
         selected_capability_roots: Vec<SelectedCapabilityRoot>,
@@ -1451,6 +1463,16 @@ impl ThreadRequestProcessor {
             .load_with_overrides(config_overrides.clone(), typesafe_overrides.clone())
             .await
             .map_err(|err| config_load_error(&err))?;
+        if let Some(selection) = &mcp_server_selection {
+            if let Some(unknown) = selection
+                .iter()
+                .find(|name| !config.mcp_servers.contains_key(*name))
+            {
+                return Err(invalid_request(format!(
+                    "MCP server `{unknown}` is not globally configured"
+                )));
+            }
+        }
         if config.ephemeral && daybreak_enabled.is_some() {
             return Err(invalid_request(
                 "daybreakEnabled is not supported for ephemeral threads",
@@ -1604,7 +1626,7 @@ impl ThreadRequestProcessor {
         let create_thread_started_at = std::time::Instant::now();
         let new_thread = listener_task_context
             .thread_manager
-            .start_thread(StartThreadOptions {
+            .start_thread_with_mcp_server_selection(StartThreadOptions {
                 allow_provider_model_fallback,
                 initial_history: match session_start_source
                     .unwrap_or(codex_app_server_protocol::ThreadStartSource::Startup)
@@ -1621,7 +1643,7 @@ impl ThreadRequestProcessor {
                 thread_extension_init,
                 client_mcp_extensions,
                 ..start_options
-            })
+            }, mcp_server_selection)
             .instrument(tracing::info_span!(
                 "app_server.thread_start.create_thread",
                 otel.name = "app_server.thread_start.create_thread",
@@ -1780,7 +1802,22 @@ impl ThreadRequestProcessor {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn build_thread_config_overrides(
+fn config_overrides_user_mcp_server_definitions(
+    config: &HashMap<String, serde_json::Value>,
+) -> bool {
+    config.iter().any(|(key, value)| {
+        if key == "mcp_servers" {
+            return value.as_object().is_some_and(|servers| {
+                servers.keys().any(|name| name != "elpis-agents")
+            });
+        }
+        key.strip_prefix("mcp_servers.")
+            .and_then(|name| name.split('.').next())
+            .is_some_and(|name| name != "elpis-agents")
+    })
+}
+
+fn build_thread_config_overrides(
         &self,
         model: Option<String>,
         model_provider: Option<String>,
@@ -3800,6 +3837,15 @@ impl ThreadRequestProcessor {
                 "`permissions` cannot be combined with `sandbox`",
             ));
         }
+        if params
+            .config
+            .as_ref()
+            .is_some_and(config_overrides_user_mcp_server_definitions)
+        {
+            return Err(invalid_request(
+                "MCP server definitions and credentials must come from global config".to_string(),
+            ));
+        }
         let redact_resume_payloads =
             should_redact_thread_resume_payloads(app_server_client_name.as_deref());
 
@@ -5031,6 +5077,7 @@ impl ThreadRequestProcessor {
             sandbox,
             permissions,
             config: cli_overrides,
+            mcp_server_selection,
             base_instructions,
             developer_instructions,
             ephemeral,
@@ -5038,6 +5085,14 @@ impl ThreadRequestProcessor {
             exclude_turns,
             defer_goal_continuation,
         } = params;
+        if cli_overrides
+            .as_ref()
+            .is_some_and(config_overrides_user_mcp_server_definitions)
+        {
+            return Err(invalid_request(
+                "MCP server definitions and credentials must come from global config".to_string(),
+            ));
+        }
         let include_turns = !exclude_turns;
         if sandbox.is_some() && permissions.is_some() {
             return Err(invalid_request(
@@ -5254,6 +5309,16 @@ impl ThreadRequestProcessor {
             .load_for_cwd(request_overrides, typesafe_overrides, history_cwd)
             .await
             .map_err(|err| config_load_error(&err))?;
+        if let Some(Some(selection)) = &mcp_server_selection {
+            if let Some(unknown) = selection
+                .iter()
+                .find(|name| !config.mcp_servers.contains_key(*name))
+            {
+                return Err(invalid_request(format!(
+                    "MCP server `{unknown}` is not globally configured"
+                )));
+            }
+        }
         let goals_enabled = config.features.enabled(Feature::Goals);
 
         let fallback_model_provider = config.model_provider_id.clone();
@@ -5337,11 +5402,15 @@ impl ThreadRequestProcessor {
         };
         let new_thread = if let Some(prepared_fork) = prepared_fork {
             self.thread_manager
-                .fork_prepared_thread(fork_options, prepared_fork)
+                .fork_prepared_thread_with_mcp_server_selection(
+                    fork_options,
+                    prepared_fork,
+                    mcp_server_selection,
+                )
                 .await
         } else {
             self.thread_manager
-                .fork_thread_from_history(
+                .fork_thread_from_history_with_mcp_server_selection(
                     ForkSnapshot::Interrupted,
                     fork_options,
                     InitialHistory::Resumed(ResumedHistory {
@@ -5350,6 +5419,7 @@ impl ThreadRequestProcessor {
                         history: history_items,
                         rollout_path: source_thread.rollout_path.clone(),
                     }),
+                    mcp_server_selection,
                 )
                 .await
         };

@@ -3274,6 +3274,29 @@ async fn record_initial_history_new_defers_initial_context_until_first_turn() {
     assert_eq!(session.previous_turn_settings().await, None);
 }
 
+#[tokio::test]
+async fn record_initial_history_persists_mcp_selection_before_first_turn() {
+    let (mut session, _turn_context) = make_session_and_context().await;
+    let rollout_path = open_thread_persistence(&mut session).await;
+    let selection = vec!["alpha".to_string()];
+    {
+        let mut state = session.state.lock().await;
+        state.session_configuration.mcp_server_selection = Some(selection.clone());
+    }
+
+    session.record_initial_history(InitialHistory::New).await;
+    session.flush_rollout().await.expect("flush initial settings");
+
+    let (items, thread_id, parse_errors) = RolloutRecorder::load_rollout_items(&rollout_path)
+        .await
+        .expect("read initial settings rollout");
+    assert_eq!((thread_id, parse_errors), (Some(session.thread_id), 0));
+    assert_eq!(
+        codex_history::latest_mcp_server_selection(&items, session.thread_id),
+        Some(selection.as_slice())
+    );
+}
+
 fn session_meta_item(
     thread_id: ThreadId,
     multi_agent_version: Option<MultiAgentVersion>,
@@ -4506,6 +4529,7 @@ async fn set_rate_limits_retains_previous_credits() {
         codex_home: config.codex_home.clone(),
         thread_name: None,
         disabled_plugin_ids: Vec::new(),
+        mcp_server_selection: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
         app_server_client_name: None,
@@ -4629,6 +4653,7 @@ async fn set_rate_limits_updates_plan_type_when_present() {
         codex_home: config.codex_home.clone(),
         thread_name: None,
         disabled_plugin_ids: Vec::new(),
+        mcp_server_selection: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
         app_server_client_name: None,
@@ -5253,6 +5278,7 @@ pub(crate) async fn make_session_configuration_for_tests() -> SessionConfigurati
         codex_home: config.codex_home.clone(),
         thread_name: None,
         disabled_plugin_ids: Vec::new(),
+        mcp_server_selection: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
         app_server_client_name: None,
@@ -6727,6 +6753,7 @@ async fn session_new_fails_when_zsh_fork_enabled_without_packaged_zsh() {
         codex_home: config.codex_home.clone(),
         thread_name: None,
         disabled_plugin_ids: Vec::new(),
+        mcp_server_selection: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
         app_server_client_name: None,
@@ -6955,6 +6982,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         codex_home: config.codex_home.clone(),
         thread_name: None,
         disabled_plugin_ids: Vec::new(),
+        mcp_server_selection: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
         app_server_client_name: None,
@@ -7281,6 +7309,7 @@ async fn make_session_with_config_and_rx(
         codex_home: config.codex_home.clone(),
         thread_name: None,
         disabled_plugin_ids: Vec::new(),
+        mcp_server_selection: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
         app_server_client_name: None,
@@ -7414,6 +7443,7 @@ async fn make_session_with_history_source_and_agent_control_and_rx(
         codex_home: config.codex_home.clone(),
         thread_name: None,
         disabled_plugin_ids: Vec::new(),
+        mcp_server_selection: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
         app_server_client_name: None,
@@ -9224,6 +9254,7 @@ where
         codex_home: config.codex_home.clone(),
         thread_name: None,
         disabled_plugin_ids: Vec::new(),
+        mcp_server_selection: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
         app_server_client_name: None,

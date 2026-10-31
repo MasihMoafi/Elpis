@@ -559,6 +559,22 @@ pub fn latest_disabled_plugin_ids(items: &[RolloutItem], thread_id: ThreadId) ->
         .and_then(|context| context.disabled_plugin_ids.as_deref())
 }
 
+/// Returns the latest MCP server allowlist owned by this thread.
+///
+/// MCP selection has no TurnContext fallback: missing or legacy data means the global default.
+/// A later owned snapshot without a selection therefore clears an earlier explicit allowlist.
+pub fn latest_mcp_server_selection(
+    items: &[RolloutItem],
+    thread_id: ThreadId,
+) -> Option<&[String]> {
+    let selection = items.iter().rev().find_map(|item| match item {
+        RolloutItem::EventMsg(EventMsg::ThreadSettingsApplied(event))
+            if event.thread_id == Some(thread_id) => Some(&event.thread_settings.mcp_server_selection),
+        _ => None,
+    })?;
+    selection.as_deref()
+}
+
 fn multi_agent_version_from_items(
     items: &[RolloutItem],
     thread_id: Option<ThreadId>,

@@ -2293,6 +2293,25 @@ pub struct ThreadSettingsSnapshot {
     /// Thread-owned plugin selection, retained even when a plugin is unavailable.
     #[serde(default)]
     pub disabled_plugin_ids: Vec<String>,
+    /// Thread-owned allowlist of globally configured MCP server names. An absent value uses
+    /// the current global default; an empty list selects no user-configured MCP servers.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_mcp_server_selection"
+    )]
+    #[ts(optional = nullable)]
+    pub mcp_server_selection: Option<Vec<String>>,
+}
+
+fn deserialize_mcp_server_selection<'de, D>(deserializer: D) -> Result<Option<Vec<String>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    // Keep a damaged selection fail-closed without making the rest of the saved history
+    // unreadable. A missing field is the legacy/default case; a present invalid value hides all.
+    let value = Value::deserialize(deserializer)?;
+    Ok(Some(serde_json::from_value(value).unwrap_or_default()))
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq, Eq, JsonSchema, TS)]

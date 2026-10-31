@@ -31,6 +31,7 @@ fn settings_item(
             thread_id: None,
             thread_settings: ThreadSettingsSnapshot {
                 disabled_plugin_ids: Vec::new(),
+                mcp_server_selection: None,
                 model: "gpt-5".to_string(),
                 model_provider_id: "openai".to_string(),
                 service_tier: None,

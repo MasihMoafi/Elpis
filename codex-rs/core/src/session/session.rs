@@ -141,6 +141,8 @@ pub(crate) struct SessionConfiguration {
     pub(super) thread_name: Option<String>,
     /// Thread-owned plugin selection inherited by future turns.
     pub(super) disabled_plugin_ids: Vec<String>,
+    /// Thread-owned allowlist of globally configured MCP servers; `None` uses global defaults.
+    pub(super) mcp_server_selection: Option<Vec<String>>,
 
     // TODO(pakrym): Remove config from here
     pub(super) original_config_do_not_use: Arc<Config>,
@@ -332,6 +334,7 @@ impl SessionConfiguration {
             personality: self.step_settings.personality,
             collaboration_mode: self.step_settings.collaboration_mode.clone(),
             disabled_plugin_ids: self.disabled_plugin_ids.clone(),
+            mcp_server_selection: self.mcp_server_selection.clone(),
         }
     }
 

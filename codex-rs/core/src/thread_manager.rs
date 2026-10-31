@@ -331,6 +331,7 @@ impl StartThreadOptions {
 struct ThreadSpawnRequest {
     startup: Option<Arc<crate::session::startup::SessionStartup>>,
     options: StartThreadOptions,
+    mcp_server_selection: Option<Option<Vec<String>>>,
     auth_manager: Arc<AuthManager>,
     agent_control: AgentControlInit,
     parent_thread_id: Option<ThreadId>,
@@ -352,6 +353,7 @@ impl ThreadSpawnRequest {
         Self {
             startup: None,
             options,
+            mcp_server_selection: None,
             auth_manager,
             agent_control: agent_control.into(),
             parent_thread_id: None,
@@ -1076,7 +1078,26 @@ impl ThreadManager {
 
     pub async fn start_thread(&self, options: StartThreadOptions) -> CodexResult<NewThread> {
         Box::pin(self.start_thread_inner(
-            options, /*forked_from_thread_id*/ None, /*startup*/ None,
+            options,
+            /*forked_from_thread_id*/ None,
+            /*startup*/ None,
+            /*mcp_server_selection*/ None,
+        ))
+        .await
+    }
+
+    /// Starts a thread with an optional allowlist of global MCP server names.
+    /// `None` uses the global default; an empty list selects no user-configured servers.
+    pub async fn start_thread_with_mcp_server_selection(
+        &self,
+        options: StartThreadOptions,
+        mcp_server_selection: Option<Vec<String>>,
+    ) -> CodexResult<NewThread> {
+        Box::pin(self.start_thread_inner(
+            options,
+            /*forked_from_thread_id*/ None,
+            /*startup*/ None,
+            /*mcp_server_selection*/ Some(mcp_server_selection),
         ))
         .await
     }
@@ -1152,6 +1173,7 @@ impl ThreadManager {
         mut options: StartThreadOptions,
         forked_from_thread_id: Option<ThreadId>,
         startup: Option<Arc<crate::session::startup::SessionStartup>>,
+        mcp_server_selection: Option<Option<Vec<String>>>,
     ) -> CodexResult<NewThread> {
         let (resumed_session_source, resumed_thread_source) = options
             .initial_history
@@ -1192,6 +1214,7 @@ impl ThreadManager {
             request
         };
         request.startup = startup;
+        request.mcp_server_selection = mcp_server_selection;
         Box::pin(self.state.spawn_thread(request)).await
     }
 
@@ -1231,8 +1254,13 @@ impl ThreadManager {
                 inherited_multi_agent_version,
             ),
         );
-        self.start_thread_inner(options, Some(forked_from_thread_id), /*startup*/ None)
-            .await
+        self.start_thread_inner(
+            options,
+            Some(forked_from_thread_id),
+            /*startup*/ None,
+            /*mcp_server_selection*/ None,
+        )
+        .await
     }
 
     /// Resume a legacy thread by reading its full rollout history.
@@ -1515,6 +1543,27 @@ impl ThreadManager {
     where
         S: Into<ForkSnapshot>,
     {
+        self.fork_thread_from_history_with_mcp_server_selection(
+            snapshot,
+            options,
+            history,
+            None,
+        )
+        .await
+    }
+
+    /// Forks stored history and optionally replaces the source thread's MCP selection.
+    /// An outer `None` inherits the source choice; `Some(None)` uses the global default.
+    pub async fn fork_thread_from_history_with_mcp_server_selection<S>(
+        &self,
+        snapshot: S,
+        options: StartThreadOptions,
+        history: InitialHistory,
+        mcp_server_selection: Option<Option<Vec<String>>>,
+    ) -> CodexResult<NewThread>
+    where
+        S: Into<ForkSnapshot>,
+    {
         self.fork_thread_with_initial_history(
             options,
             ForkHistory {
@@ -1522,6 +1571,7 @@ impl ThreadManager {
                 initial_history: history,
                 persistence: ForkPersistence::Copied,
             },
+            mcp_server_selection,
         )
         .await
     }
@@ -1531,6 +1581,18 @@ impl ThreadManager {
         &self,
         options: StartThreadOptions,
         prepared: PreparedFork,
+    ) -> CodexResult<NewThread> {
+        self.fork_prepared_thread_with_mcp_server_selection(options, prepared, None)
+            .await
+    }
+
+    /// Forks prepared history and optionally replaces the source thread's MCP selection.
+    /// An outer `None` inherits the source choice; `Some(None)` uses the global default.
+    pub async fn fork_prepared_thread_with_mcp_server_selection(
+        &self,
+        options: StartThreadOptions,
+        prepared: PreparedFork,
+        mcp_server_selection: Option<Option<Vec<String>>>,
     ) -> CodexResult<NewThread> {
         let history = InitialHistory::Resumed(ResumedHistory {
             history_revision: None,
@@ -1550,6 +1612,7 @@ impl ThreadManager {
                     initial_history: history,
                     persistence: fork_persistence,
                 },
+                mcp_server_selection,
             )
             .await;
         drop(prepared);
@@ -1560,6 +1623,7 @@ impl ThreadManager {
         &self,
         mut options: StartThreadOptions,
         fork_history: ForkHistory,
+        mcp_server_selection: Option<Option<Vec<String>>>,
     ) -> CodexResult<NewThread> {
         let ForkHistory {
             snapshot,
@@ -1606,6 +1670,7 @@ impl ThreadManager {
         let mut request =
             ThreadSpawnRequest::new(options, Arc::clone(&self.state.auth_manager), agent_control);
         request.forked_from_thread_id = source_thread_id;
+        request.mcp_server_selection = mcp_server_selection;
         request.fork_persistence = fork_persistence;
         request.inherited_instructions = Some(instructions);
         Box::pin(self.state.spawn_thread(request)).await
@@ -2134,6 +2199,7 @@ impl ThreadManagerState {
         let ThreadSpawnRequest {
             startup,
             options,
+            mcp_server_selection,
             auth_manager,
             agent_control,
             parent_thread_id,
@@ -2385,6 +2451,7 @@ impl ThreadManagerState {
             extensions,
             conversation_history: initial_history,
             disabled_plugin_ids,
+            mcp_server_selection,
             requested_history_mode: history_mode,
             fork_persistence,
             // Keep only the manager registration internal. The session and its saved

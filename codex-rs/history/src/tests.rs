@@ -116,6 +116,67 @@ fn latest_disabled_plugin_ids_falls_back_only_to_latest_turn_context() -> Result
 }
 
 #[test]
+fn latest_mcp_server_selection_uses_latest_owned_settings_and_clears() -> Result<()> {
+    let thread_id = ThreadId::new();
+    let ancestor_id = ThreadId::new();
+    let mut selected = thread_settings_snapshot(Vec::new())?;
+    selected.mcp_server_selection = Some(vec!["alpha".to_string()]);
+    let mut cleared = thread_settings_snapshot(Vec::new())?;
+    cleared.mcp_server_selection = Some(Vec::new());
+    let mut reset_to_default = thread_settings_snapshot(Vec::new())?;
+    reset_to_default.mcp_server_selection = None;
+    let mut forked = thread_settings_snapshot(Vec::new())?;
+    forked.mcp_server_selection = Some(vec!["beta".to_string()]);
+    let item = |thread_id, thread_settings| {
+        RolloutItem::EventMsg(EventMsg::ThreadSettingsApplied(
+            codex_protocol::protocol::ThreadSettingsAppliedEvent {
+                thread_id,
+                thread_settings,
+            },
+        ))
+    };
+
+    let mut history = vec![item(Some(thread_id), selected)];
+    history.push(item(Some(ancestor_id), cleared.clone()));
+    let alpha = vec!["alpha".to_string()];
+    assert_eq!(latest_mcp_server_selection(&history, thread_id), Some(alpha.as_slice()));
+
+    history.push(item(Some(thread_id), cleared));
+    let empty: &[String] = &[];
+    assert_eq!(latest_mcp_server_selection(&history, thread_id), Some(empty));
+
+    history.push(item(Some(thread_id), reset_to_default));
+    assert_eq!(latest_mcp_server_selection(&history, thread_id), None);
+
+    let fork_id = ThreadId::new();
+    history.push(item(Some(fork_id), forked));
+    let beta = vec!["beta".to_string()];
+    assert_eq!(latest_mcp_server_selection(&history, fork_id), Some(beta.as_slice()));
+    Ok(())
+}
+
+#[test]
+fn malformed_mcp_server_selection_fails_closed_without_invalidating_settings() -> Result<()> {
+    let mut snapshot = serde_json::to_value(thread_settings_snapshot(Vec::new())?)?;
+    snapshot["mcp_server_selection"] = json!({"alpha": true});
+
+    let restored: ThreadSettingsSnapshot = serde_json::from_value(snapshot)?;
+    assert_eq!(restored.mcp_server_selection, Some(Vec::new()));
+    assert_eq!(restored.model, "gpt-5");
+
+    let thread_id = ThreadId::new();
+    let item = RolloutItem::EventMsg(EventMsg::ThreadSettingsApplied(
+        codex_protocol::protocol::ThreadSettingsAppliedEvent {
+            thread_id: Some(thread_id),
+            thread_settings: restored,
+        },
+    ));
+    let empty: &[String] = &[];
+    assert_eq!(latest_mcp_server_selection(&[item], thread_id), Some(empty));
+    Ok(())
+}
+
+#[test]
 fn older_thread_settings_snapshot_defaults_disabled_plugins_to_empty() -> Result<()> {
     let expected = thread_settings_snapshot(Vec::new())?;
     let mut legacy = serde_json::to_value(&expected)?;

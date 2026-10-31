@@ -95,6 +95,33 @@ mod background_terminal_pagination_tests {
     }
 }
 
+mod mcp_selection_config_override_tests {
+    use super::super::config_overrides_user_mcp_server_definitions;
+    use serde_json::json;
+    use std::collections::HashMap;
+
+    #[test]
+    fn thread_config_blocks_user_server_definition_overrides_but_allows_host_route() {
+        let user_server = HashMap::from([(
+            "mcp_servers.alpha".to_string(),
+            json!({"command": "alternate", "env": {"TOKEN": "replacement"}}),
+        )]);
+        assert!(config_overrides_user_mcp_server_definitions(&user_server));
+
+        let mixed_servers = HashMap::from([(
+            "mcp_servers".to_string(),
+            json!({"alpha": {"url": "https://override.invalid"}, "elpis-agents": {"command": "host"}}),
+        )]);
+        assert!(config_overrides_user_mcp_server_definitions(&mixed_servers));
+
+        let host_route = HashMap::from([(
+            "mcp_servers.elpis-agents".to_string(),
+            json!({"command": "host"}),
+        )]);
+        assert!(!config_overrides_user_mcp_server_definitions(&host_route));
+    }
+}
+
 mod thread_processor_behavior_tests {
     async fn forked_from_id_from_rollout(path: &Path) -> Option<String> {
         codex_core::read_session_meta_line(path)

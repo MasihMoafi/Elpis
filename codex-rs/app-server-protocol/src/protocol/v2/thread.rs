@@ -98,6 +98,11 @@ pub struct ThreadStartParams {
     pub permissions: Option<String>,
     #[ts(optional = nullable)]
     pub config: Option<HashMap<String, JsonValue>>,
+    /// Select globally configured MCP server names for this thread. Definitions,
+    /// credentials, and enabled state stay owned by global config. An empty list selects none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional = nullable)]
+    pub mcp_server_selection: Option<Vec<String>>,
     #[ts(optional = nullable)]
     pub service_name: Option<String>,
     #[ts(optional = nullable)]
@@ -607,6 +612,16 @@ pub struct ThreadForkParams {
     pub permissions: Option<String>,
     #[ts(optional = nullable)]
     pub config: Option<HashMap<String, serde_json::Value>>,
+    /// Override the source thread's MCP server selection. Omission inherits it; `null`
+    /// resets to the configured default; an empty list selects none.
+    #[serde(
+        default,
+        deserialize_with = "crate::protocol::serde_helpers::deserialize_double_option",
+        serialize_with = "crate::protocol::serde_helpers::serialize_double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[ts(optional = nullable)]
+    pub mcp_server_selection: Option<Option<Vec<String>>>,
     #[ts(optional = nullable)]
     pub base_instructions: Option<String>,
     #[ts(optional = nullable)]
