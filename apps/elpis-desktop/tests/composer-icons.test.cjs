@@ -30,7 +30,7 @@ const around = (rects, pad = 24) => {
 };
 
 for (const colorScheme of ['light', 'dark']) {
-  test(`composer actions share one 16px stroke, one centre line and an attached send menu (${colorScheme})`, async () => {
+  test(`composer actions share one 16px stroke, one centre line without an extra send menu (${colorScheme})`, async () => {
     const f = await fixture(options(colorScheme, { running: true })), { page } = f;
     try {
       await f.open('chat-a');
@@ -60,7 +60,7 @@ for (const colorScheme of ['light', 'dark']) {
       assert.ok(Math.max(...gaps) - Math.min(...gaps) <= 0.5, `voice → mic → Stop → Send box gaps are even: ${gaps.join(', ')}`);
       assert.equal(await row.getByRole('button', { name: 'Stop response' }).locator('rect').count(), 1, 'Stop uses the same outlined icon language');
       assert.equal(await row.getByRole('button', { name: 'More send options', exact: true }).count(), 0, 'Send has no extra queue menu');
-      assert.equal(await page.locator('.composer textarea').evaluate(el => el.getBoundingClientRect().height), 22, 'an empty composer is one text line high');
+      assert.equal(await page.locator('.composer textarea').evaluate(el => el.getBoundingClientRect().height), 44, 'an empty composer starts at the taller typing height');
       const features = page.getByRole('group', { name: 'Elpis features' }).locator('.feature-chip');
       await features.first().waitFor();
       const featureMetrics = await features.evaluateAll(chips => chips.map(chip => {
