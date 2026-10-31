@@ -97,7 +97,7 @@ for (const colorScheme of ['light', 'dark']) test(`Matilda floats out of the tit
   await pin.waitFor({ timeout: 3000 });
   const start = await pin.boundingBox();
   assert.equal((await pin.innerText()).trim(), '', 'Matilda is a portrait, with no word');
-  assert.equal(await pin.locator('img.matilda-pin-face').count(), 1);
+  assert.equal(await pin.locator('img.matilda-pin-face:visible').count(), 1);
   assert.ok(start.y < 36, JSON.stringify(start));
   await pin.click();
   const presence = page.getByRole('region', { name: 'Pinned Matilda', exact: true });

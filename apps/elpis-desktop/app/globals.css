@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 .bash-mode-notice { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:8px 12px 0; font-size:var(--text-xs); color:var(--muted-foreground); }
-.side-chat { position:absolute; z-index:25; right:16px; bottom:calc(100% + 12px); display:flex; flex-direction:column; width:min(400px, calc(100% - 32px)); height:min(460px, 55dvh); min-height:220px; border:1px solid var(--hud-edge); background:var(--background); color:var(--foreground); box-shadow:0 8px 30px #0002; overflow:hidden; }
+.side-chat { position:absolute; z-index:25; right:16px; bottom:calc(100% + 12px); display:flex; flex-direction:column; width:min(400px, calc(100% - 32px)); height:min(460px, 55dvh); min-height:220px; border:1px solid var(--hud-edge); background:var(--background); color:var(--foreground); box-shadow:0 8px 30px #0002, var(--chat-box-glow); overflow:hidden; }
 .side-chat[hidden] { display:none; }
 .side-chat-heading { display:flex; align-items:flex-start; gap:8px; padding:12px; border-bottom:1px solid var(--border); }
 .side-chat-heading > div { flex:1; min-width:0; }
@@ -47,6 +47,7 @@ html { font-size:var(--interface-size, 16px); }
   --page-pad:48px 32px 64px; --page-content-width:860px; --page-head-gap:20px; --page-section-gap:24px;
   --reply-line-height:1.45; --reply-paragraph-gap:.725em;
   --composer-edge:color-mix(in oklab, var(--foreground) 8%, transparent); --elevation-composer:0 2px 8px #0000000a, 0 4px 40px 8px #00000006; }
+:root { --chat-box-glow:0 0 4px var(--primary); }
 .dark { --composer-edge:color-mix(in oklab, var(--foreground) 14%, transparent); --elevation-composer:0 2px 8px #0000004d, 0 4px 40px 8px #00000033; }
 :root, :root[data-accent="amber"] { --accent-light:var(--brand-accent); --accent-dark:var(--brand-accent); }
 :root[data-accent="blue"] { --accent-light:#2458b8; --accent-dark:#8bb7ff; }
@@ -739,11 +740,11 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .composer:focus-within, .composer-tray:has(+ .composer:focus-within), .composer-tray:has(+ .composer-working:empty + .composer:focus-within) { --edge:color-mix(in srgb, var(--primary) 80%, var(--hud-edge)); }
 .composer { position:relative; background:var(--composer); border-color:var(--edge); box-shadow:var(--elevation-composer); }
 /* The chat box glows in the theme colour on all four sides, as the selected sidebar chat does (Masih, 31 Oct). */
-.composer { box-shadow:var(--elevation-composer), 0 0 4px var(--primary); }
+.composer { box-shadow:var(--elevation-composer), var(--chat-box-glow); }
 .composer-tray { border-color:var(--edge); }
 /* No colour transition: the dark edge is gold, and a theme switch must not fade gold into the light theme. */
 /* The native bevel draws the border once, using the same width and colour as its straight edges. */
-.composer:focus-within { box-shadow:var(--elevation-composer), 0 0 4px var(--primary); }
+.composer:focus-within { box-shadow:var(--elevation-composer), var(--chat-box-glow); }
 .empty-state h2 { font-family:var(--ui-font); font-weight:300; letter-spacing:.01em; }
 .dark .empty-state .empty-mark { filter:drop-shadow(0 0 18px color-mix(in srgb, var(--primary) 35%, transparent)); }
 .composer-controls { margin-top:6px; }
