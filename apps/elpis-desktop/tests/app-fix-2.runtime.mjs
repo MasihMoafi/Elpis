@@ -21,6 +21,7 @@ assert(binary && path.isAbsolute(binary), 'Provide an absolute Elpis executable'
 const shots = process.argv.includes('--shots') ? path.resolve(process.argv[process.argv.indexOf('--shots') + 1]) : null;
 const designOnly = process.argv.includes('--only-design');
 const modelsOnly = process.argv.includes('--only-models');
+const followOnly = process.argv.includes('--only-follow');
 const appRoot = fileURLToPath(new URL('..', import.meta.url));
 const root = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-app-fix-2-'));
 const home = path.join(root, 'home'), cwd = path.join(root, 'workspace'), agentCwd = path.join(root, 'agent-folder');
@@ -45,6 +46,7 @@ const spawnChild = request => {
 const HANG = { hang: true };
 // Replies are keyed by the marker in the latest user message, so compaction or title requests cannot take them.
 const fixture = { requests: [], keyed: new Map(), child: [], hanging: new Set(), titles: 0, error: null };
+let releaseFollow;
 const roleOf = body => (body.input || []).some(i => i.type === 'agent_message' && String(i.recipient || '').startsWith('/root/')) ? 'child' : 'root';
 const latestUser = body => { const users = (body.input || []).filter(i => i.type === 'message' && i.role === 'user'); return JSON.stringify(users.at(-1)?.content ?? ''); };
 const reply = (marker, ...actions) => fixture.keyed.set(marker, actions);
@@ -168,8 +170,11 @@ const fakeRun = async (command, args) => {
 };
 
 const socketPath = path.join(root, 'runtime.sock');
-const child = spawn(binary, ['app-server', '--listen', `unix://${socketPath}`], { cwd,
-  env: { PATH: process.env.PATH, HOME: home, CODEX_HOME: home, CODEX_AUTH_HOME: home, ELPIS_HOME: home, LANG: 'C.UTF-8' }, stdio: ['ignore', 'pipe', 'pipe'] });
+const bridgeLog = path.join(root, 'bridge.log');
+const bridgeScript = fileURLToPath(new URL('../../../tools/elpis-claude/acp-bridge.mjs', import.meta.url));
+const child = spawn(followOnly ? process.execPath : binary, followOnly ? [bridgeScript] : ['app-server', '--listen', `unix://${socketPath}`], { cwd,
+  env: { PATH: process.env.PATH, HOME: home, CODEX_HOME: home, CODEX_AUTH_HOME: home, ELPIS_HOME: home, LANG: 'C.UTF-8',
+    ...(followOnly ? { ELPIS_SHARED_BRIDGE: '1', ELPIS_BRIDGE_SOCKET: socketPath, ELPIS_ENGINE_BIN: binary, ACP_BRIDGE_LOG: bridgeLog, ACP_BRIDGE_DEBUG: 'all' } : {}) }, stdio: ['ignore', 'pipe', 'pipe'] });
 let logs = '', app, browser, page;
 child.stdout.on('data', data => { logs += data; }); child.stderr.on('data', data => { logs += data; });
 const exited = once(child, 'exit');
@@ -230,7 +235,7 @@ try {
     await wait(100);
   }
   await fs.chmod(socketPath, 0o600);
-  const startApp = async () => startDesktopServer({ staticDir: path.join(appRoot, 'out'), socketPath: await fs.realpath(socketPath), tools: createTools({ run: fakeRun }) });
+  const startApp = async port => startDesktopServer({ staticDir: path.join(appRoot, 'out'), socketPath: await fs.realpath(socketPath), tools: createTools({ run: fakeRun }), ...(port ? { port } : {}) });
   app = await startApp();
   browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM || undefined, headless: true });
   page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, permissions: ['clipboard-read', 'clipboard-write'] }); page.setDefaultTimeout(12000); page.setDefaultTimeout(12000);
@@ -241,7 +246,8 @@ try {
   // Setup: one root conversation that spawns one real multi-agent v2 child.
   const marker = path.join(root, 'child-approved.txt');
   reply('SPAWN_4242', spawnChild, message('ROOT_SPAWN_DONE_4242'));
-  fixture.child.push(exec('child_approval', `printf approved > '${marker}'`, true), exec('child_sleep', 'sleep 8'), HANG);
+  if (followOnly) fixture.child.push({ gate: new Promise(resolve => { releaseFollow = resolve; }), item: message('CHILD_FOLLOW_LIVE_4242') });
+  else fixture.child.push(exec('child_approval', `printf approved > '${marker}'`, true), exec('child_sleep', 'sleep 8'), HANG);
   await send('SPAWN_4242 spawn the fixture child');
   await page.getByText('ROOT_SPAWN_DONE_4242', { exact: true }).waitFor({ timeout: 30000 });
   await until(() => requestsOf('child').length >= 1, 'child started', 30000);
@@ -254,6 +260,58 @@ try {
   const childTitle = childThread.name || childThread.preview || humanTask(childThread.source?.subAgent?.thread_spawn?.agent_path);
   assert.equal(childTitle, 'Failure reporting');
 
+  if (followOnly) {
+    await check('read-only child reconnects live without refreshing and keeps its history and parent draft', async () => {
+      await until(() => fixture.gated, 'child output held', 30000);
+      await composer().fill('Parent draft survives reconnect');
+      const showChild = async () => {
+        const rootRow = page.locator(`.thread-row[data-thread-id="${rootThread.id}"]`).first();
+        await rootRow.getByRole('button', { name: /^Actions for / }).click();
+        const agentsItem = page.getByRole('menuitem', { name: /^(Show|Hide) agents$/ });
+        if ((await agentsItem.innerText()).startsWith('Show')) await agentsItem.click(); else await page.keyboard.press('Escape');
+        await page.locator(`.thread-row[data-thread-id="${childThread.id}"] .thread-link`).click();
+        await page.getByRole('heading', { level: 1, name: childTitle }).waitFor();
+      };
+      await showChild();
+      assert.equal(await composer().count(), 0, 'active child is read-only');
+      assert.equal(await page.getByText(/Not following live/).count(), 0);
+      const port = Number(new URL(app.url).port);
+      await app.close();
+      app = await startApp(port);
+      await page.goto(app.url);
+      await page.getByText('Local workspace', { exact: true }).waitFor();
+      let historyReads = 0;
+      page.on('request', request => {
+        if (request.method() === 'GET' && new URL(request.url()).pathname === `/api/threads/${childThread.id}`) historyReads++;
+      });
+      const followed = page.waitForResponse(response => new URL(response.url()).pathname === `/api/threads/${childThread.id}/resume` && response.status() === 200);
+      await showChild();
+      await followed;
+      await wait(500);
+      const reads = historyReads, pageLoads = loads;
+      await wait(3500);
+      assert.equal(historyReads, reads, 'following a child does not poll its history');
+      assert.equal(loads, pageLoads, 'the page does not refresh');
+      assert.equal(await page.getByText(/Not following live/).count(), 0);
+      releaseFollow();
+      await page.getByText('CHILD_FOLLOW_LIVE_4242', { exact: true }).waitFor({ timeout: 30000 });
+      assert.equal(await page.getByText('CHILD_FOLLOW_LIVE_4242', { exact: true }).count(), 1);
+      if (shots) { await fs.mkdir(shots, { recursive: true }); await page.screenshot({ path: path.join(shots, 'subagent-live-follow.png') }); }
+      await page.locator(`.thread-row[data-thread-id="${rootThread.id}"] .thread-link`).first().click();
+      assert.equal(await composer().inputValue(), 'Parent draft survives reconnect');
+      reply('FOLLOW_PARENT_4242', message('FOLLOW_PARENT_OK_4242'));
+      await send('FOLLOW_PARENT_4242');
+      await page.getByText('FOLLOW_PARENT_OK_4242', { exact: true }).waitFor({ timeout: 30000 });
+      await page.locator(`.thread-row[data-thread-id="${childThread.id}"] .thread-link`).click();
+      await page.getByText('CHILD_FOLLOW_LIVE_4242', { exact: true }).waitFor();
+      assert.equal(await page.getByText('CHILD_FOLLOW_LIVE_4242', { exact: true }).count(), 1, 'completed history has one copy');
+      const bridgeRequests = (await fs.readFile(bridgeLog, 'utf8')).split('\n').filter(line => line.includes('tui-> ')).map(line => {
+        try { return JSON.parse(line.split('tui-> ')[1]); } catch { return null; }
+      }).filter(request => request?.params?.threadId === childThread.id);
+      assert(bridgeRequests.some(request => request.method === 'thread/subscribe'), 'viewer uses the native read-only subscription');
+      assert.equal(bridgeRequests.some(request => ['thread/resume', 'thread/settings/update', 'turn/start'].includes(request.method)), false, 'viewer sends no child mutation or resume');
+    });
+  } else {
   await check('child approval is answered from the app (expanded, with session option)', async () => {
     await page.getByRole('button', { name: /^Needs input \(1\)$/ }).click();
     const panel = page.locator('.approval').filter({ hasText: 'printf approved' });
@@ -646,11 +704,13 @@ try {
     await nav('New chat').click();
     await shoot('header-logo');
   });
+  }
   assert.deepEqual(pageErrors, []);
 } catch (error) {
   results.push({ name: 'setup', ok: false, error: String(error.stack || error.message).split('\n').slice(0, 3).join(' | ') });
   console.log(`FAIL setup: ${error.message}`);
 } finally {
+  releaseFollow?.();
   await browser?.close(); await app?.close(); server.close(); workflowServer.close();
   for (const response of fixture.hanging) response.destroy();
   child.kill('SIGTERM');
