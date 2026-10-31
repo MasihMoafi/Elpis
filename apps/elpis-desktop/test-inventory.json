@@ -339,6 +339,7 @@
     "tests/composer-consistency.test.cjs",
     "tests/conversation-colors.test.cjs",
     "tests/chat-feedback.test.cjs",
+    "tests/image-reply-layout.test.cjs",
     "tests/message-replies.test.cjs",
     "tests/question-replies.test.cjs",
     "tests/love-clarity.test.cjs",
