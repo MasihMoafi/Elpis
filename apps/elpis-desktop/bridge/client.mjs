@@ -594,7 +594,7 @@ export class DesktopClient extends EventEmitter {
     const attempt = (async () => {
       const thread = knownThread ?? (await this.#rpc('thread/read', { threadId: id, includeTurns: false })).thread;
       if (!thread || thread.id !== id) throw new BridgeError('Elpis returned another thread', 502);
-      if (thread.canAcceptDirectInput === false) {
+      if (thread.canAcceptDirectInput === false || (thread.status?.type !== 'active' && !this.#decorate(thread).desktopAccess.writable)) {
         if (thread.status?.type !== 'active') { this.#owned.delete(id); return { thread }; }
         try { return await this.#rpc('thread/subscribe', { threadId: id, includeTurns: false }); }
         catch (error) {
@@ -1911,7 +1911,7 @@ export class DesktopClient extends EventEmitter {
   async resume(id, body) {
     object(body, []);
     const metadata = await this.readThreadMetadata(id);
-    if (metadata.canAcceptDirectInput === false) {
+    if (metadata.canAcceptDirectInput === false || (metadata.status?.type !== 'active' && !metadata.desktopAccess.writable)) {
       const joined = await this.#attach(id, metadata);
       this.#opened = id; void this.#releaseLeft(id);
       const turns = await this.#rpc('thread/turns/list', { threadId: id, limit: 1, sortDirection: 'desc', itemsView: 'summary', notLoaded: true }).catch(() => ({ data: [] }));

@@ -559,6 +559,19 @@ test('background runs are read-only; only an idle run may explicitly continue in
   } finally { client.close(); }
 });
 
+test('opening a completed parent-owned child reads history without resuming it', async () => {
+  const { client, socket, threads } = fixture(); await client.initialize();
+  threads.get(CHILD).status = { type: 'notLoaded' };
+  delete threads.get(CHILD).canAcceptDirectInput;
+  try {
+    const opened = await client.resume(CHILD, {});
+    assert.equal(opened.thread.desktopAccess.writable, false);
+    assert.equal(opened.activeTurnId, null);
+    assert.equal((await client.readThread(CHILD)).data[0].item.text, 'Actual fixture transcript');
+    assert.equal(socket.sent.some(row => ['thread/resume', 'thread/subscribe', 'thread/settings/update'].includes(row.method) && row.params.threadId === CHILD), false);
+  } finally { client.close(); }
+});
+
 test('a finished child can continue from stored history when its parent is not loaded', async () => {
   const { client, socket, threads } = fixture(); await client.initialize();
   threads.get(CHILD).status = { type: 'notLoaded' };
