@@ -773,7 +773,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 /* A failed workflow check: its bar, icon, heading and underline take the destructive colour. */
 .plan-card.check-failed { --primary:var(--destructive); --accent-text:var(--destructive); }
 .permissions-auto svg:first-child { color:var(--primary); }
-.permissions-full { color:var(--primary); }
+.permissions-full { color:var(--accent-text); }
 /* Floating surfaces: menus, list pop-ups (selects, the model picker, slash commands), popovers and dialogs share one
    edge, corner, fill and glow. The components in components/ui apply these classes; callers add only width. */
 .hud-menu, .hud-popover, .hud-dialog { border:1px solid var(--hud-edge); background:var(--card); color:var(--foreground); box-shadow:var(--shadow), var(--glow); }

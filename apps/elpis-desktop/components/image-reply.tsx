@@ -53,7 +53,9 @@ export function ReplyableImage({ src, name, children }: ReplyImage & { children:
     const inspect = () => {
       if (!image.complete || !image.naturalWidth || !image.naturalHeight || restore) return;
       const style = getComputedStyle(image);
-      if (style.backgroundImage !== "none" || !["transparent", "rgba(0, 0, 0, 0)"].includes(style.backgroundColor)
+      const background = style.backgroundColor.match(/[\d.]+/g);
+      const clearBackground = style.backgroundColor === "transparent" || background?.length === 4 && Number(background[3]) === 0;
+      if (style.backgroundImage !== "none" || !clearBackground
         || Number.parseFloat(style.borderTopWidth) || Number.parseFloat(style.borderBottomWidth)) return;
       const ratio = transparentTail(image);
       if (!ratio) return;

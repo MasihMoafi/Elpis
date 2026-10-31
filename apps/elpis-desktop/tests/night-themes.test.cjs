@@ -126,7 +126,7 @@ test('all seven accents change shared tokens and meet text contrast in both them
   assert.deepEqual(f.errors, []);
 });
 
-test('Full access and healthy context ring use the selected theme accent', async t => {
+test('Full access and healthy context ring use the readable theme accent', async t => {
   const routes = {
     '/api/threads/chat-a/context': () => ({
       threadId: 'chat-a',
