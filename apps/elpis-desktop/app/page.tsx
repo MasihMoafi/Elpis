@@ -2033,7 +2033,7 @@ export default function Home() {
   const unreadIds = new Set(attention.unread);
   const sidebarState = (thread: Thread) => agentState(thread, waitingIds, unreadIds);
   const needsYou = (thread: Thread) => sidebarState(thread) === "waiting" || !!attention.plans[thread.id];
-  // Sorted lists show chats that need you or are working first; an order arranged by hand stays as arranged.
+  // Working chats stay first; the selected sort orders chats within each status tier.
   const isTreeChat = (thread: Thread) => !isAgentRun(thread) || !!agentParentId(thread) || Object.hasOwn(chatGroups.parents ?? {}, thread.id) || workflowSteps.has(thread.id);
   // S18: Pinned, Projects, Groups and Recents list only the chats Masih started himself. Workflow runs
   // keep their Workflows section; agent runs (codex exec, including the "Task ID …" chats) and agents or chats whose maker is
@@ -2042,8 +2042,9 @@ export default function Home() {
   const placedByHim = (thread: Thread) => pins.includes(thread.id) || Object.hasOwn(chatGroups.parents ?? {}, thread.id) || !!projectChats[thread.id] || !!chatGroups.members?.[thread.id];
   const ownChat = (thread: Thread) => placedByHim(thread) || (!isAgentRun(thread) && !agentParentId(thread) && originOf(thread) !== "Workflows");
   const sortedChats = sortChats(sidebarThreads.filter(isTreeChat), chatGroups.sortBy, title, chatGroups.order);
-  const chatListOrder = useChatListOrder(chatGroups.sortBy === "manual" ? sortedChats : prioritizeChats(sortedChats, thread => needsYou(thread) ? "waiting" : sidebarState(thread)));
-  const ordinaryThreads = chatListOrder.chats;
+  const chatListOrder = useChatListOrder(prioritizeChats(sortedChats, thread => sidebarState(thread) === "working" ? "working" : needsYou(thread) ? "waiting" : sidebarState(thread)));
+  // Hover holds ordinary rows still, but a newly working chat must still rise immediately.
+  const ordinaryThreads = prioritizeChats(chatListOrder.chats, thread => sidebarState(thread) === "working" ? "working" : "idle");
   // Missing parents never hide chats (for example, when only part of history is loaded).
   const ordinaryIds = useMemo(() => new Set(sidebarThreads.map(thread => thread.id)), [sidebarThreads]);
   const displayParentIds = useMemo(() => new Set(Object.values(chatGroups.parents ?? {}).filter((id): id is string => !!id)), [chatGroups.parents]);

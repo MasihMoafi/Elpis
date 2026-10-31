@@ -23,6 +23,35 @@ function open(chats, storage = {}, extra = {}) {
 }
 const attention = unread => ({ 'elpis-chat-attention-v1': JSON.stringify({ unread, plans: {} }) });
 
+for (const sortBy of ['recency', 'manual']) test(`working ungrouped chats rise above idle chats while the pointer is over the sidebar (${sortBy})`, async () => {
+  const chats = [chat('chat-a', 50, { type: 'active' }), chat('idle-a', 40), chat('idle-b', 30), chat('chat-d', 20), chat('idle-c', 10)];
+  const groups = { groups: [], members: {}, groupBy: 'none', sortBy, collapsed: [], order: [...chats.map(item => item.id), ...Array.from({ length: 299 }, (_, index) => `old-${index}`)] };
+  const f = await open(chats, { 'elpis-chat-groups-v1': JSON.stringify(groups) }), { page } = f;
+  try {
+    await eventually(async () => assert.deepEqual(await ids(section(page, 'Recents')), ['chat-a', 'idle-a', 'idle-b', 'chat-d', 'idle-c']));
+    await row(page, 'idle-b').hover();
+    f.emit('message', { method: 'thread/status/changed', params: { threadId: 'chat-d', status: { type: 'active' } } });
+    await eventually(async () => assert.equal(await row(page, 'chat-d').locator('.thread-dot').getAttribute('data-state'), 'working'));
+    await eventually(async () => assert.deepEqual(await ids(section(page, 'Recents')), ['chat-a', 'chat-d', 'idle-a', 'idle-b', 'idle-c']));
+    f.emit('message', { method: 'thread/status/changed', params: { threadId: 'chat-d', status: { type: 'idle' } } });
+    await eventually(async () => assert.deepEqual(await ids(section(page, 'Recents')), ['chat-a', 'idle-a', 'idle-b', 'chat-d', 'idle-c']));
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+test('a working child stays below its explicitly grouped parent', async () => {
+  const chats = [chat('chat-a', 30, { type: 'active' }), chat('parent', 20), chat('child', 10, { type: 'active' })];
+  const groups = { groups: [], members: {}, groupBy: 'none', sortBy: 'manual', collapsed: [], order: ['parent', 'child', 'chat-a'], parents: { child: 'parent' } };
+  const f = await open(chats, { 'elpis-chat-groups-v1': JSON.stringify(groups) }), { page } = f;
+  try {
+    await eventually(async () => assert.deepEqual(await ids(section(page, 'Recents')), ['chat-a', 'parent']));
+    await page.getByRole('button', { name: 'Expand chats in parent' }).click();
+    await eventually(async () => assert.deepEqual(await ids(section(page, 'Recents')), ['chat-a', 'parent', 'child']));
+    assert.equal(await row(page, 'child').getAttribute('data-depth'), '1');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
 test('A102: bridge recency changes reorder idle chats outside interaction; equal timestamps keep their place', async () => {
   const chats = [chat('chat-a', 10), chat('chat-b', 30), chat('chat-c', 30)];
   const f = await open(chats);
@@ -69,20 +98,20 @@ test('A102: archived unseen/waiting chats never enter the live list; a not-loade
   } finally { await f.close(); }
 });
 
-test('A102: waiting flags and approvals come first, running chats next, then unseen replies; errors and seen replies keep their place', async () => {
+test('A102: working chats come first, then waiting and unseen replies; errors and seen replies keep their place', async () => {
   const chats = [chat('chat-a', 100), chat('working', 90, { type: 'active' }), chat('error', 80, { type: 'systemError' }), chat('done', 20), chat('question', 10, { type: 'active', activeFlags: ['waitingOnUserInput'] }), chat('approval', 5, { type: 'active', activeFlags: ['waitingOnApproval'] })];
   const f = await open(chats, attention(['done', 'working', 'error']));
   try {
     const recents = section(f.page, 'Recents');
-    await eventually(async () => assert.deepEqual(await ids(recents), ['question', 'approval', 'working', 'done', 'chat-a', 'error']));
+    await eventually(async () => assert.deepEqual(await ids(recents), ['working', 'question', 'approval', 'done', 'chat-a', 'error']));
     f.emit('approval', { id: 'ap', ownerThreadId: 'chat-a', method: 'item/tool/requestUserInput', params: { questions: [] } });
-    await eventually(async () => assert.deepEqual(await ids(recents), ['chat-a', 'question', 'approval', 'working', 'done', 'error']));
+    await eventually(async () => assert.deepEqual(await ids(recents), ['working', 'chat-a', 'question', 'approval', 'done', 'error']));
     f.emit('approvalResolved', { id: 'ap' });
-    await eventually(async () => assert.equal((await ids(recents))[0], 'question'));
+    await eventually(async () => assert.deepEqual((await ids(recents)).slice(0, 2), ['working', 'question']));
     await row(f.page, 'done').locator('.thread-link').click();
     await f.page.mouse.move(700, 300);
     await eventually(async () => assert.equal(await row(f.page, 'done').locator('.conversation-status').count(), 0));
-    assert.deepEqual(await ids(recents), ['question', 'approval', 'working', 'chat-a', 'error', 'done']);
+    assert.deepEqual(await ids(recents), ['working', 'question', 'approval', 'chat-a', 'error', 'done']);
     await f.page.reload();
     await row(f.page, 'chat-a').waitFor();
     assert.equal(await row(f.page, 'done').locator('.conversation-status').count(), 0);

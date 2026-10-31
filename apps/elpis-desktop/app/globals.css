@@ -363,7 +363,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .project-chip { background:none; cursor:pointer; }
 .project-chip:hover, .project-chip[aria-expanded="true"] { color:var(--foreground); background:var(--hover); border-color:var(--hairline); }
 .project-chip span { overflow:hidden; text-overflow:ellipsis; }
-.section-label-row { display:flex; align-items:center; gap:4px; height:34px; padding:0 8px; }
+.section-label-row { display:flex; align-items:center; gap:4px; height:34px; padding:8px 8px 0; }
 .section-label-row > .section-label { padding:0; margin-right:auto; }
 /* Hide shows on the heading's hover or focus, like a row's actions. */
 .section-label-row > .section-hide { opacity:0; color:var(--muted-foreground); }

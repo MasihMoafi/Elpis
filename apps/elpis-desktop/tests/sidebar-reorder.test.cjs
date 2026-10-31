@@ -181,17 +181,16 @@ test('typing is untouched: Alt+Up/Down and F2 in the search box reorder and rena
   } finally { await f.close(); }
 });
 
-// Masih, 24 Oct screenshot: an idle chat dragged above a working one snapped back, because Recents kept running chats first.
-test('a chat dropped above a working one stays where it was dropped', async () => {
+test('manual order keeps working chats first and retains the idle order after reload', async () => {
   const working = LISTED.map(chat => chat.id === 'chat-d' ? { ...chat, status: { type: 'active', activeFlags: [] } } : chat);
   const f = await fixture({ routes: { '/api/threads': (_body, url) => ({ data: url.searchParams.has('ancestorThreadId') || url.searchParams.get('archived') === 'true' ? [] : working, nextCursor: null }) }, storage: storage(), height: 1100 }), { page } = f;
   try {
     await row(page, 'chat-f').waitFor();
     assert.equal((await idsIn(section(page, 'Recents')))[0], 'chat-d', 'a working chat comes first while the list is sorted');
     await drag(page, row(page, 'chat-f'), row(page, 'chat-d'), 'top');
-    await eventually(async () => assert.deepEqual(await idsIn(section(page, 'Recents')), ['chat-f', 'chat-d', 'chat-e']));
+    await eventually(async () => assert.deepEqual(await idsIn(section(page, 'Recents')), ['chat-d', 'chat-f', 'chat-e']));
     await page.reload(); await row(page, 'chat-d').waitFor();
-    assert.deepEqual(await idsIn(section(page, 'Recents')), ['chat-f', 'chat-d', 'chat-e'], 'and after a reload');
+    assert.deepEqual(await idsIn(section(page, 'Recents')), ['chat-d', 'chat-f', 'chat-e'], 'and after a reload');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
