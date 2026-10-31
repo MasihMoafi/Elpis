@@ -14,13 +14,13 @@ const buttonVariants = cva(
         cutPrimary: "primary-cut",
         // The lab's key (.iso-key): the accented edge and face, gold text in dark.
         outline:
-          "border-(--hud-edge) bg-(--hud-face) hover:bg-(--hud-face-hover) hover:text-foreground aria-expanded:bg-(--hud-face-hover) aria-expanded:text-foreground dark:text-primary dark:hover:text-primary",
+          "border-(--hud-edge) bg-(--hud-face) hover:bg-[color-mix(in_oklab,var(--hud-face),var(--primary)_8%)] hover:text-foreground aria-expanded:bg-(--hud-face-hover) aria-expanded:text-foreground dark:text-primary dark:hover:text-primary",
         secondary:
-          "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklab,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
+          "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklab,var(--secondary),var(--primary)_6%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
         ghost:
           "hover:bg-(--hover) hover:text-foreground aria-expanded:bg-(--hover) aria-expanded:text-foreground",
         destructive:
-          "bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
+          "bg-destructive/10 text-destructive hover:bg-(--hover) focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:focus-visible:ring-destructive/40",
         link: "text-primary underline-offset-4 hover:underline",
       },
       size: {

@@ -10,7 +10,7 @@ function MenuRow({ className, ...props }: ButtonPrimitive.Props) {
   return (
     <ButtonPrimitive
       data-slot="menu-row"
-      className={cn("hud-menu-item w-full cursor-pointer text-left text-sm outline-none select-none hover:bg-(--selected) focus-visible:bg-(--selected)", className)}
+      className={cn("hud-menu-item w-full cursor-pointer text-left text-sm outline-none select-none hover:bg-(--hover) focus-visible:bg-(--selected)", className)}
       {...props}
     />
   )

@@ -30,8 +30,8 @@ html { font-size:var(--interface-size, 16px); }
 }
 /* Light text tokens meet WCAG AA on every light ground, selected rows included: --muted-foreground #636361 is 4.52:1 on a
  * selected sidebar row and 6.0:1 on a card; --success #16703f is 4.61:1 and 6.1:1. */
-:root { --radius:0.625rem; --radius-sm:0.375rem; --radius-md:0.5rem; --radius-lg:0.625rem; --ring:var(--primary); --canvas:#fbfbfa; --ink:#2f2f2e; --background:var(--canvas); --foreground:#252524; --card:#fff; --composer:#fff; --muted:color-mix(in oklch, var(--ink) 7%, var(--canvas)); --secondary:var(--muted); --recessed:color-mix(in oklch, var(--ink) 4.5%, var(--canvas)); --hover:color-mix(in oklab, var(--ink) 6%, transparent); --selected:color-mix(in oklab, var(--ink) 9.5%, transparent); --muted-foreground:#636361; --subtle-foreground:#6c6c68; --border:color-mix(in oklch, var(--ink) 13%, var(--canvas)); --hairline:color-mix(in oklch, var(--ink) 9%, var(--canvas)); --primary:var(--accent-light); --primary-foreground:#fff; --gold:var(--primary); --accent-mark:var(--primary); --glow:0 0 #0000; --sidebar:#f2f2f1; --destructive:#b5102e; --success:#16703f; --warning:#76680a; --context:#66760f; --shadow:0 1px 2px #0000000a, 0 4px 16px #0000000d; color-scheme:light; }
-.dark { --canvas:#0a0b0d; --ink:#d8d2c4; --gold-deep:var(--primary); --background:var(--canvas); --foreground:#e6e0d3; --card:#111317; --composer:#17191d; --sidebar:#0d0e11; --muted:color-mix(in oklch, var(--ink) 9%, var(--canvas)); --secondary:var(--muted); --recessed:#0e1013; --hover:color-mix(in oklab, var(--gold) 7%, transparent); --selected:color-mix(in oklab, var(--gold) 13%, transparent); --muted-foreground:#9c9587; --subtle-foreground:#8b8579; --border:color-mix(in srgb, var(--gold) 20%, #191919); --hairline:color-mix(in srgb, var(--gold) 11%, #151515); --primary:var(--accent-dark); --primary-foreground:#0a0b0d; --accent-mark:var(--gold); --destructive:#ff2147; --success:#5fd3a0; --warning:#f2c26b; --context:#cfd46e; --shadow:0 1px 2px #000a, 0 10px 30px #0008; color-scheme:dark; }
+:root { --radius:0.625rem; --radius-sm:0.375rem; --radius-md:0.5rem; --radius-lg:0.625rem; --ring:var(--primary); --canvas:#fbfbfa; --ink:#2f2f2e; --background:var(--canvas); --foreground:#252524; --card:#fff; --composer:#fff; --muted:color-mix(in oklch, var(--ink) 7%, var(--canvas)); --secondary:var(--muted); --recessed:color-mix(in oklch, var(--ink) 4.5%, var(--canvas)); --hover:color-mix(in oklab, var(--primary) 6%, transparent); --selected:color-mix(in oklab, var(--ink) 9.5%, transparent); --muted-foreground:#636361; --subtle-foreground:#6c6c68; --border:color-mix(in oklch, var(--ink) 13%, var(--canvas)); --hairline:color-mix(in oklch, var(--ink) 9%, var(--canvas)); --primary:var(--accent-light); --primary-foreground:#fff; --gold:var(--primary); --accent-mark:var(--primary); --glow:0 0 #0000; --sidebar:#f2f2f1; --destructive:#b5102e; --success:#16703f; --warning:#76680a; --context:#66760f; --shadow:0 1px 2px #0000000a, 0 4px 16px #0000000d; color-scheme:light; }
+.dark { --canvas:#0a0b0d; --ink:#d8d2c4; --gold-deep:var(--primary); --background:var(--canvas); --foreground:#e6e0d3; --card:#111317; --composer:#17191d; --sidebar:#0d0e11; --muted:color-mix(in oklch, var(--ink) 9%, var(--canvas)); --secondary:var(--muted); --recessed:#0e1013; --hover:color-mix(in oklab, var(--primary) 7%, transparent); --selected:color-mix(in oklab, var(--gold) 13%, transparent); --muted-foreground:#9c9587; --subtle-foreground:#8b8579; --border:color-mix(in srgb, var(--gold) 20%, #191919); --hairline:color-mix(in srgb, var(--gold) 11%, #151515); --primary:var(--accent-dark); --primary-foreground:#0a0b0d; --accent-mark:var(--gold); --destructive:#ff2147; --success:#5fd3a0; --warning:#f2c26b; --context:#cfd46e; --shadow:0 1px 2px #000a, 0 10px 30px #0008; color-scheme:dark; }
 .dark, .dark .matilda-mini-popup { --glow:0 0 0 1px color-mix(in oklch, var(--gold) 30%, transparent), 0 0 28px -8px color-mix(in oklch, var(--gold) 55%, transparent); }
 /* A87: the light new-chat wordmark's main gradient stop, shared by both themes.
  * Primary/gold draw accents; accent-text keeps light labels readable in ink. */
@@ -344,7 +344,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .prompt-preview-title { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:var(--text-sm); font-weight:500; line-height:20px; }
 .prompt-preview-reply { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; margin:4px 0 0; overflow:hidden; overflow-wrap:anywhere; white-space:pre-line; font-size:var(--text-sm); line-height:21px; color:var(--muted-foreground); }
 .prompt-bookmark { display:inline-flex; flex:none; align-items:center; justify-content:center; width:24px; height:24px; min-height:0; padding:0; border:0; border-radius:var(--radius-sm); color:var(--muted-foreground); background:transparent; }
-.prompt-bookmark:hover, .prompt-bookmark:focus-visible { background:var(--muted); color:var(--foreground); }
+.prompt-bookmark:hover { background:var(--hover); color:var(--foreground); }
+.prompt-bookmark:focus-visible { background:var(--muted); color:var(--foreground); }
 .prompt-bookmark[aria-pressed="true"] { color:var(--primary); }
 .prompt-preview-skeleton { display:grid; gap:6px; margin-top:8px; }
 .prompt-preview-skeleton .skeleton { display:block; width:100%; height:11px; border-radius:var(--radius-sm); background:var(--muted); }
@@ -660,7 +661,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .activity-group > summary { display:flex; align-items:center; gap:8px; width:fit-content; max-width:100%; padding:3px 8px 3px 4px; margin-left:-4px; cursor:pointer; font-size:var(--text-base); color:var(--muted-foreground); transition:color .12s, background .12s; }
 .activity-group > summary:hover { color:var(--foreground); background:var(--hover); }
 .activity-group[open] > summary { position:sticky; top:calc(-1 * var(--chat-top-inset, 0px)); z-index:1; width:100%; background:var(--background); }
-.activity-group[open] > summary:hover { background:var(--card); }
+.activity-group[open] > summary:hover { background:var(--hover); }
 .activity-group > summary:focus-visible { outline:2px solid var(--ring); outline-offset:1px; }
 .activity-group-label, .live-label { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 /* What the agent viewed and made, as Claude's chats show it (components/file-cards.tsx): thumbnails on a row, a larger
@@ -761,7 +762,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .hud-menu-item { display:flex; align-items:center; gap:8px; padding:7px 8px; }
 .hud-menu-item > .grid { min-width:0; overflow-wrap:anywhere; }
 .hud-menu-item small { color:var(--muted-foreground); font-size:var(--text-small); line-height:1.35; }
-.hud-menu-item[data-highlighted], .hud-menu-item[aria-selected="true"] { background:var(--selected); }
+.hud-menu-item[data-highlighted] { background:var(--hover); }
+.hud-menu-item[aria-selected="true"] { background:var(--selected); }
 /* A row the keys reach (components/ui/menu-row.tsx) shows focus as a dropdown item does: by its fill, not the page outline. */
 [data-slot="menu-row"]:focus-visible { outline:none; }
 .hud-menu-item svg { flex-shrink:0; }
@@ -910,7 +912,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 :is(.workflow-mark, .conversation-colour-swatch)[data-colour="green"], .thread-row[data-conversation-colour="green"] { --workflow-colour:light-dark(#29683f,#8bd49f); }
 :is(.workflow-mark, .conversation-colour-swatch)[data-colour="amber"], .thread-row[data-conversation-colour="amber"] { --workflow-colour:var(--brand-accent); }
 .thread-row[data-conversation-colour] { background:color-mix(in oklch, var(--workflow-colour) 12%, var(--sidebar)); }
-.thread-row[data-conversation-colour]:is(:hover, [data-popup-open], :focus-within) { background:color-mix(in oklch, var(--workflow-colour) 18%, var(--sidebar)); }
+.thread-row[data-conversation-colour]:is([data-popup-open], :focus-within) { background:color-mix(in oklch, var(--workflow-colour) 18%, var(--sidebar)); }
+.thread-row[data-conversation-colour]:hover { background:color-mix(in oklch, var(--primary) 6%, color-mix(in oklch, var(--workflow-colour) 12%, var(--sidebar))); }
 .thread-row[data-conversation-colour].active { background:color-mix(in oklch, var(--workflow-colour) 22%, var(--selected)); }
 @keyframes spin { to { transform:rotate(360deg); } }
 /* A collapsible group of chats (components/sidebar-group.tsx): a project, or a group the person made. */
@@ -1531,8 +1534,10 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 /* Love Spot's brand color stays local to its navigation mark and drawing controls. */
 :root { --love-red:#8B1017; }
 .dark { --love-red:#ec575e; }
-:is(.love-spot, .love-spot-tools, .love-chat, .matilda-mini-popup) { --primary:var(--love-red); --accent-text:var(--primary); --primary-foreground:#fff; --gold:var(--primary); --ring:var(--primary); --accent-mark:var(--primary); --primary-action:var(--love-red); --primary-action-content:#fff; }
-.dark :is(.love-spot, .love-spot-tools, .love-chat, .matilda-mini-popup) { --primary-foreground:var(--background); --primary-action-content:var(--background); }
+:is(.love-spot, .love-spot-tools, .love-chat, .matilda-mini-popup) { --hover:color-mix(in oklab, var(--primary) 6%, transparent); --primary:var(--love-red); --accent-text:var(--primary); --primary-foreground:#fff; --gold:var(--primary); --ring:var(--primary); --accent-mark:var(--primary); --primary-action:var(--love-red); --primary-action-content:#fff; }
+.dark :is(.love-spot, .love-spot-tools, .love-chat, .matilda-mini-popup) { --hover:color-mix(in oklab, var(--primary) 7%, transparent); --primary-foreground:var(--background); --primary-action-content:var(--background); }
+.nav-list button[data-nav-page="loveSpot"] { --primary:var(--love-red); --hover:color-mix(in oklab, var(--primary) 6%, transparent); }
+.dark .nav-list button[data-nav-page="loveSpot"] { --hover:color-mix(in oklab, var(--primary) 7%, transparent); }
 .nav-list button[data-nav-page="loveSpot"] svg { color:var(--love-red); }
 .thread-origin[data-origin="Love Spot"] { color:var(--foreground); }
 .love-unread { display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:18px; border-radius:50%; font-size:var(--text-xs); line-height:1; font-weight:600; margin-left:auto; background:var(--love-red); color:#fff; box-shadow:0 0 12px color-mix(in oklab, var(--love-red) 55%, transparent); }
@@ -1547,6 +1552,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .workflow-history-list small, .workflow-history-list p { color:var(--muted-foreground); }
 
 .nav-list button[data-nav-page="loveSpot"]:has(.love-unread) { background:color-mix(in oklab, var(--love-red) 12%, transparent); box-shadow:inset 2px 0 var(--love-red); }
+.nav-list button[data-nav-page="loveSpot"]:has(.love-unread):hover:not([aria-current="page"]) { background:color-mix(in oklab, var(--love-red) 18%, transparent); }
 
 [data-drop-target="true"] { outline:1px solid var(--primary); outline-offset:-1px; background:var(--hover); }
 

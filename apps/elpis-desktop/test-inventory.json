@@ -177,6 +177,7 @@
     "tests/love-spot-screenshots.test.cjs",
     "tests/view-boundaries.test.cjs",
     "tests/night-themes.test.cjs",
+    "tests/theme-hover.test.cjs",
     "tests/logo-accent.test.cjs",
     "tests/custom-themes.test.cjs",
     "tests/agents-guide.test.cjs",
