@@ -28,8 +28,10 @@ use codex_app_server_protocol::ThreadStartResponse;
 use codex_app_server_protocol::ThreadUnsubscribeParams;
 use codex_app_server_protocol::ThreadUnsubscribeResponse;
 use codex_app_server_protocol::ThreadUnsubscribeStatus;
+use codex_app_server_protocol::TurnCompletedNotification;
 use codex_app_server_protocol::TurnStartParams;
 use codex_app_server_protocol::TurnStartResponse;
+use codex_app_server_protocol::TurnStatus;
 use codex_app_server_protocol::UserInput as V2UserInput;
 use codex_core::test_support::all_model_presets;
 use codex_protocol::config_types::CollaborationMode;
@@ -240,7 +242,10 @@ async fn mcp_server_selection_updates_the_model_visible_catalog() -> Result<()> 
         );
 
         start_text_turn(&mut app, thread.id.clone()).await?;
-        timeout(DEFAULT_TIMEOUT, app.read_notification("turn/completed")).await??;
+        let completed: TurnCompletedNotification =
+            timeout(DEFAULT_TIMEOUT, app.read_notification("turn/completed")).await??;
+        assert_eq!(completed.thread_id, thread.id);
+        assert_eq!(completed.turn.status, TurnStatus::Completed);
     }
 
     let bodies = received_response_bodies(&responses).await?;
@@ -322,7 +327,10 @@ async fn mcp_server_selection_updates_the_model_visible_catalog() -> Result<()> 
         Some(Some(vec!["alpha".to_string()]))
     );
     start_text_turn(&mut app, thread.id.clone()).await?;
-    timeout(DEFAULT_TIMEOUT, app.read_notification("turn/completed")).await??;
+    let completed: TurnCompletedNotification =
+        timeout(DEFAULT_TIMEOUT, app.read_notification("turn/completed")).await??;
+    assert_eq!(completed.thread_id, thread.id);
+    assert_eq!(completed.turn.status, TurnStatus::Completed);
 
     let config = std::fs::read_to_string(&config_path)?;
     let config_without_alpha = config.replacen(&alpha_disabled_config, "", 1);
@@ -352,7 +360,10 @@ async fn mcp_server_selection_updates_the_model_visible_catalog() -> Result<()> 
         Some(Some(vec!["alpha".to_string()]))
     );
     start_text_turn(&mut app, thread.id.clone()).await?;
-    timeout(DEFAULT_TIMEOUT, app.read_notification("turn/completed")).await??;
+    let completed: TurnCompletedNotification =
+        timeout(DEFAULT_TIMEOUT, app.read_notification("turn/completed")).await??;
+    assert_eq!(completed.thread_id, thread.id);
+    assert_eq!(completed.turn.status, TurnStatus::Completed);
     let bodies = received_response_bodies(&responses).await?;
     assert_eq!(bodies.len(), 7);
     let tools = bodies[5]["tools"]
@@ -432,8 +443,7 @@ async fn mcp_server_selection_restores_on_resume_and_inherited_fork() -> Result<
     let unloaded_read_id = app
         .send_thread_read_request(ThreadReadParams {
             thread_id: thread_id.clone(),
-            include_turns: Some(false),
-            ..Default::default()
+            include_turns: false,
         })
         .await?;
     let unloaded: ThreadReadResponse =

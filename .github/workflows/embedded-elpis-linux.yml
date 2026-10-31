@@ -144,6 +144,9 @@ jobs:
       - name: Run native MCP selection catalog regressions
         working-directory: codex-rs
         run: cargo test --locked -p codex-app-server --test all -- mcp_server_selection_
+      - name: Check MCP server definitions remain globally owned
+        working-directory: codex-rs
+        run: cargo test --locked -p codex-app-server --lib thread_config_blocks_user_server_definition_overrides_but_allows_host_route
       - name: Run MCP selection history recovery regressions
         working-directory: codex-rs
         run: cargo test --locked -p codex-history --lib mcp_server_selection_
@@ -265,6 +268,10 @@ jobs:
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification == 'build' }}
         working-directory: codex-rs
         run: cargo test --locked -p codex-app-server --test all -- mcp_server_selection_
+      - name: Check MCP server definition ownership for the release source
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification == 'build' }}
+        working-directory: codex-rs
+        run: cargo test --locked -p codex-app-server --lib thread_config_blocks_user_server_definition_overrides_but_allows_host_route
       - name: Run MCP selection history regressions for the release source
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification == 'build' }}
         working-directory: codex-rs
@@ -570,6 +577,9 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && inputs.verification == 'child-catalog'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
