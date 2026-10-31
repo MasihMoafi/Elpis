@@ -975,7 +975,15 @@ impl ThreadRequestProcessor {
                 "connection closed before thread {thread_id} could be subscribed"
             )));
         }
-        self.thread_read(request_id, params).await
+        Ok(self
+            .thread_read(request_id, params)
+            .await?
+            .map(|payload| match payload {
+                ClientResponsePayload::ThreadRead(response) => {
+                    ClientResponsePayload::ThreadSubscribe(response)
+                }
+                other => other,
+            }))
     }
 
     pub(crate) async fn thread_read(

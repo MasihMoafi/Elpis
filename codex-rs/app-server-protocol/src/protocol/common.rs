@@ -580,6 +580,7 @@ client_request_definitions! {
     ThreadSubscribe => "thread/subscribe" {
         params: v2::ThreadReadParams,
         serialization: thread_id(params.thread_id),
+        manual_payload_conversion: manual,
         response: v2::ThreadReadResponse,
     },
     ThreadUnsubscribe => "thread/unsubscribe" {
