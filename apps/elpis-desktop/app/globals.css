@@ -743,7 +743,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .composer-tray { border-color:var(--edge); }
 /* No colour transition: the dark edge is gold, and a theme switch must not fade gold into the light theme. */
 /* The native bevel draws the border once, using the same width and colour as its straight edges. */
-.composer:focus-within { box-shadow:var(--elevation-composer); }
+.composer:focus-within { box-shadow:var(--elevation-composer), 0 0 8px var(--primary); }
 .empty-state h2 { font-family:var(--ui-font); font-weight:300; letter-spacing:.01em; }
 .dark .empty-state .empty-mark { filter:drop-shadow(0 0 18px color-mix(in srgb, var(--primary) 35%, transparent)); }
 .composer-controls { margin-top:6px; }
