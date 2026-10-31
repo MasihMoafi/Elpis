@@ -103,7 +103,10 @@ test('working mark stays anchored when the right panel opens in split view at 10
 
 for (const colorScheme of ['light', 'dark']) {
   test(`Working mark stays put with populated Files and a resized panel (${colorScheme})`, async () => {
-    const f = await fixture({ colorScheme, running: true, width: 1600, height: 900 }), { page } = f;
+    const f = await fixture({ colorScheme, running: true, width: 1600, height: 900, routes: {
+      '/api/files/dir': () => ({ data: [{ name: 'README.md', dir: false }] }),
+      '/api/file': () => ({ path: 'README.md', content: '# Fixture', size: 9, mtimeMs: 1 }),
+    } }), { page } = f;
     try {
       await f.open('chat-a');
       const mark = page.locator('.elpis-working-mark').last();
