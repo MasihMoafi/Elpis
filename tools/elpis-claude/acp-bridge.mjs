@@ -3071,8 +3071,8 @@ wss.on("connection", (ws) => {
           deletingThreads.add(id); acquired.add(id);
         }
         if ([...pendingHelpers].some(helper => ids.has(helper.parentThreadId))) throw new Error("A helper is still starting. Retry deletion once it has started.");
-        // Match the native store's refusal to erase history still used by a fork.
-        if (Object.entries(store).some(([id, saved]) => !ids.has(id) && ids.has(saved?.forkOf?.threadId) && !saved.forkOf.copied)) throw new Error(`cannot delete thread ${tid}: forked history still references it`);
+      // Native rollouts can still reference a parent even after provider turns were copied.
+      if (Object.entries(store).some(([id, saved]) => !ids.has(id) && ids.has(saved?.forkOf?.threadId))) throw new Error(`cannot delete thread ${tid}: forked history still references it`);
         const next = [...ids].filter(id => !stopped.has(id));
         if (!next.length) break;
         await Promise.all([...contexts].flatMap(c => next.map(id => c.stopProvider(id))));
@@ -3080,23 +3080,28 @@ wss.on("connection", (ws) => {
         // Cancellation can finish and persist a child that did not exist in the first snapshot.
       }
       // Validate/delete the root first so a native fork conflict cannot erase its helpers.
+      let nativeSubtreeDeleted = false;
       for (const id of ids) {
-        let nativeDeleted = false;
+        const bridgeOnly = id !== tid && [...contexts].some(c => c.childThreads.has(id));
+        let nativeDeleted = nativeSubtreeDeleted && id !== tid && !bridgeOnly;
         const failures = [];
         // A thread may still have a writer in another terminal's engine. Each app-server
         // must prepare its own loaded subtree before the shared store can delete it.
-        for (const c of [...contexts]) {
-          try { await c.deleteNative(id); nativeDeleted = true; break; }
-          catch (e) {
-            failures.push(e);
-            if (!/already has an active writer|active writer|thread not found|no rollout found/i.test(e.message ?? "")) throw e;
+        if (!nativeDeleted && !nativeSubtreeDeleted) {
+          for (const c of [...contexts]) {
+            try { await c.deleteNative(id); nativeDeleted = true; break; }
+            catch (e) {
+              failures.push(e);
+              if (!/already has an active writer|active writer|thread not found|no rollout found/i.test(e.message ?? "")) throw e;
+            }
           }
         }
-        if (!nativeDeleted) {
+        if (!nativeDeleted && !nativeSubtreeDeleted) {
           const missing = failures.length > 0 && failures.every(e => /thread not found|no rollout found/.test(e.message ?? ""));
           const failure = failures.find(e => /active writer/i.test(e.message ?? "")) ?? failures.at(-1);
           if (!missing || (id === tid && !store[id] && !store._delegations?.[id] && !deletedThreads.has(id))) throw failure ?? new Error(`could not delete thread ${id}`);
         }
+        if (id === tid && nativeDeleted) nativeSubtreeDeleted = true;
         deletedThreads.add(id);
         for (const c of contexts) c.forgetThread(id);
         providerOwners.delete(id); chatAccess.delete(id); helperScope.delete(id); helperThreads.delete(id);
@@ -3248,17 +3253,6 @@ wss.on("connection", (ws) => {
     }
     if (msg.method === "claudeSubscription/read" || msg.method === "claudeSubscription/write") { claudeSubscriptionRequest(msg); return; }
     if (msg.method === "claudeAccounts/read" || msg.method === "claudeAccounts/write") { void claudeAccountsRequest(msg); return; }
-    const threadId = msg.params?.threadId;
-    if (msg.method === "turn/start" && threadId && !providerOwners.has(threadId) && !pendingNativeRoutes.has(threadId)
-      && !deletingThreads.has(threadId) && !deletedThreads.has(threadId)) {
-      await storeChain;
-      const saved = (await loadStore())[threadId];
-      if (isBridged(saved?.model)) {
-        claudeModel.set(threadId, saved.model);
-        if (saved.effort) claudeEffort.set(threadId, saved.effort);
-        claimProvider(threadId);
-      }
-    }
     const owner = providerOwners.get(msg.params?.threadId);
     if (msg.method === "thread/unsubscribe" && owner) {
       const tid = msg.params.threadId;
