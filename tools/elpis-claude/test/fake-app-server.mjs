@@ -37,6 +37,20 @@ const follow = (threadId, connection = "stdio", on = true) => {
   if (on) set.add(connection); else set.delete(connection);
   log({ subscribers: { threadId, count: set.size } });
 };
+// FAKE_ENGINE_LOCKS=<dir> models the real engine's per-thread writer lock: loading a thread that another live engine
+// holds fails with the real error text, and the lock is dropped when this process exits.
+const locksDir = process.env.FAKE_ENGINE_LOCKS;
+const heldLocks = new Set();
+const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+const takeWriter = (threadId) => {
+  if (!locksDir || heldLocks.has(threadId)) return null;
+  fs.mkdirSync(locksDir, { recursive: true });
+  const file = `${locksDir}/${threadId}`;
+  try { const holder = Number(fs.readFileSync(file, "utf8")); if (holder !== process.pid && alive(holder)) return `thread-store conflict: thread ${threadId} already has an active writer`; } catch {}
+  fs.writeFileSync(file, String(process.pid)); heldLocks.add(threadId);
+  return null;
+};
+process.on("exit", () => { for (const id of heldLocks) { try { fs.rmSync(`${locksDir}/${id}`); } catch {} } });
 let seq = 0;
 const ask = (method, params) => new Promise((resolve) => { const id = `engine-${++seq}`; waiting.set(id, resolve); send({ id, method, params }); });
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -177,6 +191,7 @@ function handle(msg, socket) {
       const id = randomUUID();
       const thread = { id, cwd: p.cwd, source: "appServer", status: { type: "idle" }, model: p.model ?? "default-model", config: p.config, historyMode: "paginated", turns: [] };
       threads.set(id, thread);
+      takeWriter(id);
       follow(id, socket);
       if (!process.env.FAKE_ENGINE_LAZY_PERSIST) persist();
       reply({ thread, model: thread.model, modelProvider: p.modelProvider ?? "openai", approvalPolicy: "on-request", sandbox: { type: "workspaceWrite" } });
@@ -186,6 +201,8 @@ function handle(msg, socket) {
     case "thread/list": return reply({ data: [...threads.values()], nextCursor: null });
     case "thread/resume": {
       if (!threads.has(p.threadId)) return send({ id: msg.id, error: { code: -32600, message: `thread not loaded: ${p.threadId}` } }, socket);
+      const conflict = takeWriter(p.threadId);
+      if (conflict) return send({ id: msg.id, error: { code: -32600, message: conflict } }, socket);
       threads.get(p.threadId).status = { type: "idle" };
       follow(p.threadId, socket);
       return reply({ thread: threads.get(p.threadId) });

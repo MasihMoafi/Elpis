@@ -42,7 +42,7 @@ function bundle(root, name, managed) {
   return { dir, engine };
 }
 
-async function fixture(t, { directMode = null } = {}) {
+async function fixture(t, { directMode = null, locks = false } = {}) {
   const base = directMode ? path.join(os.homedir(), ".cache/elpis-tests") : os.tmpdir();
   if (directMode) fs.mkdirSync(base, { recursive: true });
   const root = createTestTempDir(path.join(base, "ebh-"));
@@ -58,6 +58,7 @@ async function fixture(t, { directMode = null } = {}) {
     ELPIS_ENGINE_BIN: firstBundle.engine ?? process.env.A124_ENGINE ?? path.join(source, "test/fake-app-server.mjs"), ACP_ADAPTER: path.join(source, "test/fake-acp-agent.mjs"),
     ACP_BRIDGE_STORE: path.join(root, "sessions.json"), ACP_BRIDGE_LOG: path.join(root, "bridge.log"), FAKE_ENGINE_STATE: path.join(root, "native.json"),
     FAKE_ACP_LOG: agentLog, FAKE_ACP_MODELS: "sonnet", FAKE_ACP_NAME: "Claude", FAKE_ACP_RELEASE: release };
+  if (locks) env.FAKE_ENGINE_LOCKS = path.join(root, "locks");
   const proxyNames = ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy", "no_proxy"];
   if (directMode && directMode !== "reverse") for (const name of proxyNames) env[name] = /^no_proxy$/i.test(name) ? "localhost,127.0.0.1,::1,example.invalid" : "http://127.0.0.1:9";
   if (directMode) { env.NODE_USE_ENV_PROXY = "1"; env.AGY_DEFAULT_MODEL = "old-fixture"; }
@@ -248,4 +249,16 @@ test("a helper working at the install stays connected to the old bridge; its sta
   await until(() => !oldAlive(), "the old bridge exits once the helper is done", 10000);
   // The desktop reconnects once more (the helper's chat moved) and then reads it from the newer bridge as done.
   await until(async () => client.connected && (await client.readThreadMetadata(helperId).catch(() => null))?.status?.type === "idle", "afterwards the newer bridge reads it as done", 10000);
+});
+
+test("an idle chat held by the old engine is served through the old bridge, not refused by the newer engine", { timeout: 60000 }, async (t) => {
+  const { client, id, agentLog, release, install, state, old } = await fixture(t, { locks: true });
+  const idle = (await client.createThread({ model: "luna-test", cwd: process.cwd() })).thread.id;
+  await client.send(id, { text: "[wait] a long task" });
+  await until(() => lines(agentLog).some((entry) => entry.method === "session/prompt"), "the old turn works");
+  await install();
+  const resumed = await client.resume(idle, {});
+  assert.equal(resumed.thread.id, idle, "the idle chat opens in the newer bridge without a writer conflict");
+  assert.notEqual(state().pid, old.pid);
+  fs.writeFileSync(release, "");
 });

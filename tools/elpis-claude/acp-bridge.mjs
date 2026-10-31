@@ -554,11 +554,13 @@ async function stopBridge(successor) {
 }
 // A newer installation takes over while chats work (handover.mjs): this bridge gives it bridge.sock at once and keeps
 // only the chats working now, which the newer bridge reaches through this drain socket until each is done.
-let draining = null; // { threads, released, server }
+let draining = null; // { threads, held, released, server }
 function busyThreads() { const ids = new Set(); for (const c of contexts) for (const id of c.busyThreads()) ids.add(id); return ids; }
+// `threads` are the chats working now (released one by one); `held` are the idle chats this bridge's engines have
+// locked for writing. Both are served here until this bridge ends, so the newer engine never meets their lock.
 function writeDrain() {
   const file = drainFile();
-  writeFileSync(`${file}.tmp`, JSON.stringify({ pid: process.pid, token: startToken(process.pid), sock: draining.server.sock, threads: [...draining.threads] }), { mode: 0o600 });
+  writeFileSync(`${file}.tmp`, JSON.stringify({ pid: process.pid, token: startToken(process.pid), sock: draining.server.sock, threads: [...new Set([...draining.threads, ...draining.held])] }), { mode: 0o600 });
   renameSync(`${file}.tmp`, file);
 }
 async function startDrain(successor) {
@@ -568,7 +570,8 @@ async function startDrain(successor) {
   if (![...contexts].some((c) => c.busy())) return void stopBridge(successor);
   const server = createDrainServer();
   server.wss.on("connection", (ws) => { ws.drainShadow = true; wss.emit("connection", ws); });
-  draining = { threads: busyThreads(), released: new Set(), server };
+  const held = new Set((await Promise.all([...contexts].map((c) => c.loadedThreads()))).flat());
+  draining = { threads: busyThreads(), held, released: new Set(), server };
   const started = Date.now();
   await server.listening;
   writeDrain();
@@ -589,7 +592,9 @@ function checkDrain() {
   let changed = false;
   for (const id of [...draining.threads]) {
     if (now.has(id)) continue;
-    draining.threads.delete(id); draining.released.add(id); changed = true;
+    draining.threads.delete(id);
+    if (draining.held.has(id)) continue; // its engine still locks it: it stays here until this bridge ends
+    draining.released.add(id); changed = true;
     log(`handing over: chat ${id} is done here`);
     for (const ws of clients) if (ws.drainShadow) sendClient(ws, { method: "bridge/released", params: { threadId: id } });
   }
@@ -829,6 +834,9 @@ wss.on("connection", (ws) => {
     busyThreads: () => [...activeTurns.keys(), ...engineTurns.keys(), ...structured.keys(),
       ...[...helperScope].filter(([tid, h]) => threadSeen.has(h.parentThreadId) && providerOwners.get(tid)?.status().type === "active").flatMap(([tid, h]) => [tid, h.parentThreadId]),
       ...[...relayed.values()].filter((r) => r.origin === ws).map((r) => r.threadId)],
+    // Every chat this engine has loaded, idle ones too: the engine keeps each locked for writing until it unloads, which
+    // an idle chat never does while this bridge stays subscribed. A newer engine cannot open such a chat (hand-over).
+    loadedThreads: async () => { try { return (await engineCall("thread/loaded/list", {}, 3000)).data ?? []; } catch { return []; } },
     close: () => { cancelRelays(ws); engine.kill(); for (const a of acps.values()) a.kill(); },
     releaseIfUnused: () => {
       if (ws.readyState === 1 || context.busy() || [...relayed.values()].some((r) => r.origin === ws)
