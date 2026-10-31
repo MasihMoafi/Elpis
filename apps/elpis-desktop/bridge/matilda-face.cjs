@@ -4,11 +4,11 @@ const PORTRAIT_DATA_URL = 'data:image/webp;base64,UklGRm4qAABXRUJQVlA4WAoAAAAQAA
 // Clip a portrait as a profile avatar: in chat and her pinned faces; the board has the raster copy below.
 // Her picture ends a few pixels above the circle's foot; below 88% the ground is her dress, not the light backdrop
 // (29 Oct, Masih: "what's the white or light color below the avatar of Matilda? Fix it. it should be black (her dress)").
-const avatar = portrait => `data:image/svg+xml;base64,${btoa(`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="192" height="192" viewBox="0 0 192 192"><defs><clipPath id="avatar"><circle cx="96" cy="96" r="96"/></clipPath><linearGradient id="avatar-ground" x1="0" y1="0" x2="0" y2="1"><stop offset="0.88" stop-color="#edf2ff"/><stop offset="0.88" stop-color="#141010"/></linearGradient></defs><g clip-path="url(#avatar)"><circle cx="96" cy="96" r="96" fill="url(#avatar-ground)"/><image width="192" height="192" xlink:href="${portrait}"/></g></svg>`)}`;
+const avatar = portrait => `data:image/svg+xml;base64,${btoa(`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="192" height="192" viewBox="0 0 192 192"><defs><clipPath id="avatar"><circle cx="96" cy="96" r="96"/></clipPath><linearGradient id="avatar-ground" x1="0" y1="0" x2="0" y2="1"><stop offset="0.88" stop-color="#edf2ff" stop-opacity="0"/><stop offset="0.88" stop-color="#141010"/></linearGradient></defs><g clip-path="url(#avatar)"><circle cx="96" cy="96" r="96" fill="url(#avatar-ground)"/><image width="192" height="192" xlink:href="${portrait}"/></g></svg>`)}`;
 const legacyAvatar = portrait => `data:image/svg+xml;base64,${btoa(`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="192" height="192" viewBox="0 0 192 192"><defs><clipPath id="avatar"><circle cx="96" cy="96" r="96"/></clipPath></defs><g clip-path="url(#avatar)"><circle cx="96" cy="96" r="96" fill="#edf2ff"/><image width="192" height="192" xlink:href="${portrait}"/></g></svg>`)}`;
 const FACE_DATA_URL = avatar(PORTRAIT_DATA_URL);
 const LIGHT_AVATAR_GROUND = '#e3e9f7';
-const lightAvatar = source => `data:image/svg+xml;base64,${btoa(atob(source.split(',')[1]).replaceAll('#edf2ff', LIGHT_AVATAR_GROUND))}`;
+const lightAvatar = source => `data:image/svg+xml;base64,${btoa(atob(source.split(',')[1]).replaceAll('#edf2ff', LIGHT_AVATAR_GROUND).replace(' stop-opacity="0"', ''))}`;
 const FACE_DATA_URL_LIGHT = lightAvatar(FACE_DATA_URL);
 // Pinned Matilda's faces, made from that portrait on 28 Oct (Codex image generation, 256 px; components/matilda-companion.tsx).
 // Masih chose them: "listening" is her resting face, the others come and go; a laugh and a blown kiss looked "too fake".
