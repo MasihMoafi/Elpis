@@ -77,12 +77,14 @@ pub(super) const DEFAULT_READ_TIMEOUT: Duration = Duration::from_secs(10);
 pub(super) type WsClient = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
 
 #[tokio::test]
-async fn websocket_read_only_follow_delivers_child_events_to_early_and_late_connections()
+async fn websocket_read_only_follow_delivers_child_events_across_connections_and_reconnect()
 -> Result<()> {
     const PARENT: &str = "start a live worker";
     const CHILD: &str = "live worker task";
     const SPAWN: &str = "live-follow-spawn";
     const MARKER: &str = "live child delta";
+    const STEP: &str = "child-follow-step";
+    const AFTER_RECONNECT: &str = "live child after reconnect";
     let server = responses::start_mock_server().await;
     let spawn_args = serde_json::to_string(
         &json!({"message": CHILD, "task_name": "worker", "fork_turns": "none"}),
@@ -107,6 +109,7 @@ async fn websocket_read_only_follow_delivers_child_events_to_early_and_late_conn
         responses::ev_message_item_added("child-message", ""),
         responses::ev_output_text_delta(MARKER),
         responses::ev_assistant_message("child-message", MARKER),
+        responses::ev_function_call(STEP, "exec_command", r#"{"cmd":"printf follow"}"#),
         responses::ev_completed("child"),
     ]);
     Mock::given(method("POST"))
@@ -114,11 +117,30 @@ async fn websocket_read_only_follow_delivers_child_events_to_early_and_late_conn
         .and(|req: &wiremock::Request| {
             String::from_utf8_lossy(&req.body).contains(CHILD)
                 && !String::from_utf8_lossy(&req.body).contains(SPAWN)
+                && !String::from_utf8_lossy(&req.body).contains(STEP)
         })
         .respond_with(
             ResponseTemplate::new(200)
                 .set_body_raw(child_body, "text/event-stream")
-                .set_delay(Duration::from_secs(10)),
+                .set_delay(Duration::from_secs(5)),
+        )
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+    let resumed_child_body = responses::sse(vec![
+        responses::ev_response_created("child-after-reconnect"),
+        responses::ev_message_item_added("child-message-after-reconnect", ""),
+        responses::ev_output_text_delta(AFTER_RECONNECT),
+        responses::ev_assistant_message("child-message-after-reconnect", AFTER_RECONNECT),
+        responses::ev_completed("child-after-reconnect"),
+    ]);
+    Mock::given(method("POST"))
+        .and(path_regex(".*/responses$"))
+        .and(|req: &wiremock::Request| String::from_utf8_lossy(&req.body).contains(STEP))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_raw(resumed_child_body, "text/event-stream")
+                .set_delay(Duration::from_secs(5)),
         )
         .up_to_n_times(1)
         .mount(&server)
@@ -200,8 +222,61 @@ async fn websocket_read_only_follow_delivers_child_events_to_early_and_late_conn
         })
         .await??;
     }
-    send_request(&mut late, "turn/start", 3, Some(json!({"threadId": child_id, "input": [{"type": "text", "text": "forbidden", "text_elements": []}]}))).await?;
-    let error = read_error_for_id(&mut late, 3).await?;
+    early.close(None).await?;
+    late.close(None).await?;
+    drop(early);
+    drop(late);
+    let mut reconnected = connect_websocket(bind_addr).await?;
+    send_request(&mut reconnected, "initialize", 1, Some(json!({"clientInfo": {"name": "reconnected-viewer", "version": "0.1.0"}, "capabilities": {"experimentalApi": true}}))).await?;
+    read_response_for_id(&mut reconnected, 1).await?;
+    send_request(
+        &mut reconnected,
+        "thread/subscribe",
+        2,
+        Some(json!({"threadId": child_id, "includeTurns": false})),
+    )
+    .await?;
+    let _: ThreadReadResponse = to_response(read_response_for_id(&mut reconnected, 2).await?)?;
+    timeout(Duration::from_secs(30), async {
+        loop {
+            let notification =
+                read_notification_for_method(&mut reconnected, "item/agentMessage/delta").await?;
+            let params = notification
+                .params
+                .context("missing reconnected delta params")?;
+            if params["threadId"] == child_id && params["delta"] == AFTER_RECONNECT {
+                return Ok::<(), anyhow::Error>(());
+            }
+        }
+    })
+    .await??;
+    timeout(Duration::from_secs(30), async {
+        loop {
+            let notification =
+                read_notification_for_method(&mut reconnected, "turn/completed").await?;
+            if notification.params.context("missing completion params")?["threadId"] == child_id {
+                return Ok::<(), anyhow::Error>(());
+            }
+        }
+    })
+    .await??;
+    send_request(
+        &mut reconnected,
+        "thread/read",
+        3,
+        Some(json!({"threadId": child_id, "includeTurns": true})),
+    )
+    .await?;
+    let history: ThreadReadResponse =
+        to_response(read_response_for_id(&mut reconnected, 3).await?)?;
+    for text in [MARKER, AFTER_RECONNECT] {
+        let count = history.thread.turns.iter().flat_map(|turn| &turn.items).filter(|item| {
+            matches!(item, ThreadItem::AgentMessage { text: actual, .. } if actual.as_str() == text)
+        }).count();
+        assert_eq!(count, 1, "child history retains each message once: {text}");
+    }
+    send_request(&mut reconnected, "turn/start", 4, Some(json!({"threadId": child_id, "input": [{"type": "text", "text": "forbidden", "text_elements": []}]}))).await?;
+    let error = read_error_for_id(&mut reconnected, 4).await?;
     assert!(
         error
             .error
