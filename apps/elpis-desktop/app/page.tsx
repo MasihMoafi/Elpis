@@ -2539,11 +2539,10 @@ export default function Home() {
       {selected && teamRoot && team.length > 0 && agentsPanel && !panelShown && <aside className="team-panel" aria-label="Agents in this chat">
         <div className="team-heading"><span className="inline-flex items-center gap-2"><AgentsIcon size={16} />Agents</span><small>{team.filter(thread => agentState(thread, waitingIds) === "working").length} working · {team.length} total</small></div>
         <button data-slot="team-row" className={`team-row root${selected.id === teamRoot.id ? " active" : ""}`} onClick={() => openById(teamRoot.id)}><span className="team-state"><i /></span><span className="team-title">{title(teamRoot)}</span><small>Main chat</small></button>
-        {team.map(thread => { const state = agentState(thread, waitingIds);
-          return <button data-slot="team-row" key={thread.id} className={`team-row ${state}${selected.id === thread.id ? " active" : ""}`} onClick={() => openThread(thread)} title={activity[thread.id] || title(thread)}>
+        {team.map(thread => { const state = agentState(thread, waitingIds), runtime = state === "working" && activity[thread.id] ? activity[thread.id] : [modelLabel(thread.model, models), thread.reasoningEffort].filter(Boolean).join(" · ");
+          return <button data-slot="team-row" data-thread-id={thread.id} key={thread.id} className={`team-row ${state}${selected.id === thread.id ? " active" : ""}`} onClick={() => openThread(thread)} title={activity[thread.id] || title(thread)}>
             <span className="team-state" aria-label={stateLabels[state]}><i /></span>
-            <span className="team-title">{title(thread)}{thread.agentNickname && thread.agentNickname !== title(thread) && <em>{thread.agentNickname}</em>}</span>
-            <small>{state === "working" && activity[thread.id] ? activity[thread.id] : [modelLabel(thread.model, models), thread.reasoningEffort].filter(Boolean).join(" · ")}</small>
+            <AgentIdentity compact id={thread.id} name={title(thread)} nameClassName="team-title" model={null} provider={null} role={runtime || undefined} />
           </button>; })}
       </aside>}
       </div></ViewBoundary>}

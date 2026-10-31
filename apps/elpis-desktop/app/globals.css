@@ -281,8 +281,8 @@ button:disabled { cursor:not-allowed; }
 .dictation-buttons { display:flex; flex-shrink:0; align-items:center; }
 .dictation-status { font-size:var(--text-small); color:var(--muted-foreground); overflow-wrap:anywhere; line-height:1.4; }
 .dictation-error { color:var(--destructive); }
-.composer textarea { field-sizing:content; height:22px; border:0; box-shadow:none; background:transparent; min-height:22px; line-height:22px; max-height:240px; resize:none; font-size:var(--text-base); padding:0; }
-.composer textarea:placeholder-shown { block-size:22px!important; min-block-size:22px!important; }
+.composer textarea { field-sizing:content; height:44px; border:0; box-shadow:none; background:transparent; min-height:44px; line-height:22px; max-height:240px; resize:none; font-size:var(--text-base); padding:0; }
+.composer textarea:placeholder-shown { block-size:44px!important; min-block-size:44px!important; }
 .dark .composer textarea { background:transparent; }
 .composer textarea:focus-visible { outline:none; box-shadow:none; }
 .composer-controls { --composer-control-gap:8px; display:flex; flex-wrap:nowrap; align-items:center; justify-content:space-between; gap:8px; margin-top:4px; }
@@ -589,8 +589,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .team-row.active { background:var(--selected); }
 .team-row.root { margin-bottom:6px; }
 .team-title { font-size:var(--text-sm); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.team-title em { font-style:normal; font-size:var(--text-small); color:var(--subtle-foreground); margin-left:6px; }
-.team-row small { grid-column:2; font-size:var(--text-small); color:var(--muted-foreground); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.team-row .agent-model { font-size:var(--text-small); }
 .team-state { display:grid; place-items:center; width:16px; height:16px; }
 .team-state i { width:10px; height:10px; border-radius:50%; border:1.5px dashed var(--subtle-foreground); }
 .team-row.root .team-state i { border-style:solid; border-color:var(--muted-foreground); background:var(--muted-foreground); width:8px; height:8px; }

@@ -50,7 +50,7 @@ test('Agents artwork matches Users in size and ink at 16, 20 and 24 px', async (
 });
 
 const parent = { id: 'chat-a', name: 'Agents icon acceptance', cwd: CWD, status: { type: 'idle' } };
-const children = Array.from({ length: 16 }, (_, i) => ({ id: `agent-${i}`, name: i === 8 ? 'An agent with a very long descriptive name '.repeat(8) : `Agent ${i + 1}`, cwd: CWD, parentThreadId: parent.id, source: { subAgent: { thread_spawn: { agent_path: `/root/agent-${i}` } } }, status: { type: ['idle', 'notLoaded', 'systemError'][i % 3] } }));
+const children = Array.from({ length: 16 }, (_, i) => ({ id: `agent-${i}`, name: i === 0 ? 'Agent 1 · inspect' : i === 8 ? 'An agent with a very long descriptive name '.repeat(8) : `Agent ${i + 1}`, ...(i === 0 ? { agentNickname: 'Agent 1' } : {}), cwd: CWD, model: 'gpt-6-luna', modelProvider: 'openai', reasoningEffort: 'max', parentThreadId: parent.id, source: { subAgent: { thread_spawn: { agent_path: `/root/agent-${i}` } } }, status: { type: i === 1 ? 'active' : ['idle', 'notLoaded', 'systemError'][i % 3] } }));
 
 for (const theme of ['light', 'dark']) test(`Agents shares the selected agents artwork in ${theme}, open, closed and after reload`, async () => {
   const f = await fixture({ staticDir: process.env.ELPIS_RENDERER_OUT, width: 1440, height: 1000, routes: {
@@ -66,11 +66,24 @@ for (const theme of ['light', 'dark']) test(`Agents shares the selected agents a
     if (theme === 'dark') await chooseTheme(page, theme);
     await f.open('chat-a');
     const { path: artwork } = await checkAgentsIcon(page);
+    const identityRow = page.locator('.team-row[data-thread-id="agent-0"]');
+    const teamMark = await identityRow.locator('.agent-mark').getAttribute('aria-label');
+    assert.equal(await identityRow.locator('.agent-name').innerText(), 'Agent 1 · inspect', 'the task name appears once without the duplicate nickname');
+    assert.equal(await identityRow.getByText('Agent 1', { exact: true }).count(), 0, 'the nickname is not repeated as a second label');
+    assert.equal(await identityRow.locator('.agent-model').count(), 1, 'the row keeps one runtime line inside the shared identity');
+    assert.equal(await identityRow.locator('small').count(), 0, 'the separate runtime line does not duplicate the identity');
+    assert.equal(await page.locator('.team-row[data-thread-id="agent-1"] .team-state').getAttribute('aria-label'), 'Working', 'the live status indicator remains visible');
     if (process.env.ELPIS_A103_SHOTS) {
       await fs.mkdir(process.env.ELPIS_A103_SHOTS, { recursive: true });
       await page.screenshot({ path: path.join(process.env.ELPIS_A103_SHOTS, `renderer-${theme}-100.png`) });
     }
     assert.equal(await page.locator('.team-row').count(), 17, 'all sixteen agents and parent stay listed');
+    const sidebarParent = page.locator('.thread-row[data-thread-id="chat-a"]');
+    const expand = sidebarParent.getByRole('button', { name: /^Expand agents/ });
+    if (await expand.count() && await expand.getAttribute('aria-expanded') !== 'true') await expand.click();
+    const sidebarAgent = page.locator('.thread-row[data-thread-id="agent-0"]');
+    await sidebarAgent.waitFor();
+    assert.equal(await sidebarAgent.locator('.agent-mark').getAttribute('aria-label'), teamMark, 'the Agents pane uses the same ID-stable mark as the sidebar');
     for (const index of [0, 8, 15]) {
       await page.locator('.team-row:not(.root)').nth(index).click();
       await checkAgentsIcon(page);
@@ -83,6 +96,7 @@ for (const theme of ['light', 'dark']) test(`Agents shares the selected agents a
     await page.locator('.startup-splash').waitFor({ state: 'detached' });
     await f.open('chat-a');
     await checkAgentsIcon(page);
+    assert.equal(await page.locator('.team-row[data-thread-id="agent-0"] .agent-mark').getAttribute('aria-label'), teamMark, 'the generated identity stays stable after reload');
     await page.getByRole('button', { name: 'Workflows', exact: true }).click();
     const workflowPanel = page.getByRole('button', { name: 'Side panel', exact: true });
     await workflowPanel.waitFor();

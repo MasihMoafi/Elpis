@@ -138,6 +138,12 @@ test('image-only paste previews a real attachment and sends its exact bytes with
     assert.equal(await view.page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
     await view.page.setViewportSize({ width: 1280, height: 900 });
   }
+  await view.page.setViewportSize({ width: 390, height: 900 });
+  const composerBox = await view.page.locator('.composer').boundingBox(), imageBox = await image.boundingBox();
+  assert.ok(composerBox && imageBox, 'the composer and attached image stay visible in the narrow Files layout');
+  assert.ok(imageBox.x >= composerBox.x && imageBox.x + imageBox.width <= composerBox.x + composerBox.width, 'the attachment preview stays inside the composer');
+  assert.equal(await view.page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, 'the taller composer does not create horizontal overflow');
+  await view.page.setViewportSize({ width: 1280, height: 900 });
   await view.page.getByRole('button', { name: 'Send message', exact: true }).click();
   await eventually(async () => assert.equal(sends(view).length, 1));
   assert.equal(sends(view)[0].body.text, ''); assert.equal(sends(view)[0].body.attachments[0].dataUrl, dataUrl);
