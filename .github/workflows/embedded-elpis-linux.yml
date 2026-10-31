@@ -142,8 +142,55 @@ jobs:
             codex-rs/target
           key: ${{ steps.cargo_cache.outputs.cache-primary-key }}
 
+  shared-provider-diagnostic:
+    if: github.event_name == 'workflow_dispatch' && inputs.verification == 'ui'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 50
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Install locked bridge dependencies
+        working-directory: tools/elpis-claude
+        run: npm ci --ignore-scripts
+      - name: Download the native runtime from run 41157692563
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: unverified-diagnostic-runtime
+          run-id: 41157692563
+          repository: ${{ github.repository }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/tui-runtime
+      - name: Verify runtime provenance and native source tree
+        env:
+          EXPECTED_RUNTIME_SOURCE: fdff5bd7313bd62b516fd0085c3e5a86e3559bc5
+          EXPECTED_CODEX_TREE: ae42143e8d3d9e38030d7bb11d00f6b640dd6f62
+        run: |
+          cd "$RUNNER_TEMP/tui-runtime"
+          test "$(cat runtime-source.txt)" = "$EXPECTED_RUNTIME_SOURCE"
+          sha256sum -c runtime-SHA256SUMS
+          env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u all_proxy -u ALL_PROXY \
+            git -C "$GITHUB_WORKSPACE" fetch --no-tags --depth=50 origin \
+            refs/heads/fix/tui-integrate-20261030:refs/remotes/origin/fix/tui-integrate-20261030
+          test "$(git -C "$GITHUB_WORKSPACE" rev-parse "$EXPECTED_RUNTIME_SOURCE:codex-rs")" = "$EXPECTED_CODEX_TREE"
+          test "$(git -C "$GITHUB_WORKSPACE" rev-parse HEAD:codex-rs)" = "$EXPECTED_CODEX_TREE"
+          test -x elpis
+          echo "SHARED_PROVIDER_TEST_BINARY=$PWD/elpis" >> "$GITHUB_ENV"
+      - name: Run shared provider session tests with both providers
+        run: |
+          failed=0
+          node scripts/shared-provider-sessions.test.cjs "$SHARED_PROVIDER_TEST_BINARY" || failed=1
+          node scripts/shared-provider-sessions.test.cjs "$SHARED_PROVIDER_TEST_BINARY" --gemini || failed=1
+          exit "$failed"
+
   build:
-    if: github.event_name != 'workflow_dispatch' || inputs.verification == 'full' || inputs.verification == 'ui' || inputs.verification == 'build'
+    if: github.event_name != 'workflow_dispatch' || inputs.verification == 'full' || inputs.verification == 'build'
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     defaults:
