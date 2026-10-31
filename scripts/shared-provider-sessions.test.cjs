@@ -174,6 +174,7 @@ async function main() {
     assert(JSON.stringify(sourceAfterForkDelete).includes('FORK_HISTORY_TO_KEEP'), 'deleting the fork must leave its source readable');
     await later.req('thread/resume', { threadId: deleted.id });
     const deleteChild = (await helper.req('thread/start', { cwd: other, model, approvalPolicy: 'on-request', sandbox: 'read-only', elpisParentThreadId: deleted.id })).thread;
+    console.log(`Delete fixture IDs: parent=${deleted.id} child=${deleteChild.id}`);
     const deleteHold = hold();
     await later.req('turn/start', { threadId: deleted.id, input: [{ type: 'text', text: 'deletion must stop this task', text_elements: [] }] });
     await wait(() => fs.existsSync(deleteHold.ready), 'delete held turn');
