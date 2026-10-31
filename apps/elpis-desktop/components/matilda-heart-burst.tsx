@@ -3,8 +3,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { LoveSpotIcon } from "@/components/elpis-icons";
-import { HEART_REACTION, createHeartDeduper, talkHeartReaction, type HeartReaction } from "@/lib/heart-reactions";
-import { subscribeLoveSpotTalk } from "@/lib/love-spot-talk-events";
+import { HEART_REACTION, createHeartDeduper, type HeartReaction } from "@/lib/heart-reactions";
 import "@/components/matilda-heart-burst.css";
 
 const hearts = [
@@ -26,12 +25,9 @@ export function MatildaHeartBurst() {
       setBurst(current => current + 1);
       timer = setTimeout(() => setBurst(0), 2200);
     };
-    const native = (event: Event) => show((event as CustomEvent<HeartReaction>).detail);
-    window.addEventListener(HEART_REACTION, native);
-    const stop = subscribeLoveSpotTalk(event => {
-      try { show(talkHeartReaction(JSON.parse(event.data))); } catch { /* Ignore unreadable snapshots. */ }
-    });
-    return () => { window.removeEventListener(HEART_REACTION, native); stop(); clearTimeout(timer); };
+    const onReaction = (event: Event) => show((event as CustomEvent<HeartReaction>).detail);
+    window.addEventListener(HEART_REACTION, onReaction);
+    return () => { window.removeEventListener(HEART_REACTION, onReaction); clearTimeout(timer); };
   }, []);
   if (!burst) return null;
   return createPortal(<div key={burst} className="matilda-heart-burst" aria-hidden="true">

@@ -8,6 +8,7 @@ import { MarkdownText } from "@/components/markdown-text";
 import { api, unreadable, type Entry } from "@/lib/api";
 import { MATILDA_CHANGED, savedPersona } from "@/lib/matilda";
 import { subscribeLoveSpotTalk } from "@/lib/love-spot-talk-events";
+import { HEART_REACTION, talkHeartReaction } from "@/lib/heart-reactions";
 import { replyPortrait } from "@/bridge/matilda-face.cjs";
 import { attachedFile } from "@/lib/prompt-history";
 import "@/components/matilda-mini-chat.css";
@@ -54,6 +55,8 @@ export function useMatildaMiniChat(open: boolean) {
       try {
         latestRead.current++;
         const result = received(JSON.parse(event.data));
+        const reaction = talkHeartReaction(result);
+        if (reaction) window.dispatchEvent(new CustomEvent(HEART_REACTION, { detail: reaction }));
         if (sending.current) streamedWhileSending.current = result;
         else rememberEarlier(result);
         setConversation(result); setError(result.error || "");

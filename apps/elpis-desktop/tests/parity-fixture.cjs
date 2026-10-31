@@ -33,7 +33,7 @@ const TURNS = [
  * geometry in headless Chromium, where Playwright otherwise passes --hide-scrollbars. `loveScene: null` holds the
  * initial board snapshot until emitLove sends it, for origin-resolution checks. */
 async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660, colorScheme = 'light', deviceScaleFactor = 1, running = false, desktop = true, chat: start = TURNS, threads: initialThreads = THREADS, readyThreadId = 'chat-a', routes = {}, storage = {}, browserChannel, browserArgs, nativeClipboard = false, showScrollbars = false, clockTime, loveScene = { elements: [], files: {}, appState: {}, page: { name: 'Current page', session: 'fixture-page' } } } = {}) {
-  const posts = [], turns = start.map(turn => [...turn]), streams = new Set(), loveStreams = new Set(), loveBoardStreams = new Set();
+  const posts = [], requests = [], turns = start.map(turn => [...turn]), streams = new Set(), loveStreams = new Set(), loveBoardStreams = new Set(), loveTalkStreams = new Set();
   const threads = initialThreads.map(item => ({ ...item, cwd }));
   let rewindSaved = null, rewindAction;
   // A turn may give its start time (ms) fifth, or null for a turn with no recorded times; otherwise turns are two
@@ -47,6 +47,7 @@ async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660,
   });
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://local'); let raw = ''; for await (const chunk of req) raw += chunk;
+    requests.push({ method: req.method, path: url.pathname });
     const json = value => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(value)); };
     const chat = threads.find(item => item.id === url.pathname.split('/')[3]);
     if (req.method === 'POST') posts.push({ path: url.pathname, body: raw ? JSON.parse(raw) : {} });
@@ -56,8 +57,8 @@ async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660,
       if (url.pathname === '/api/love-spot/events') {
         loveBoardStreams.add(res);
         res.write(loveScene === null ? ': fixture\n\n' : `data: ${JSON.stringify({ type: 'scene', scene: loveScene, revision: '0'.repeat(64) })}\n\n`);
-      } else res.write(': fixture\n\n');
-      loveStreams.add(res); req.on('close', () => { loveStreams.delete(res); loveBoardStreams.delete(res); }); return;
+      } else { loveTalkStreams.add(res); res.write(': fixture\n\n'); }
+      loveStreams.add(res); req.on('close', () => { loveStreams.delete(res); loveBoardStreams.delete(res); loveTalkStreams.delete(res); }); return;
     }
     if (url.pathname === '/api/health') return json({ connected: true });
     // A route answers with its value, or with { __http: status, error } for a refusal.
@@ -130,8 +131,9 @@ async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660,
   const listening = () => streams.size;
   const disconnectEvents = () => { for (const stream of streams) stream.end(); };
   const emitLove = data => { for (const stream of loveBoardStreams) stream.write(`data: ${JSON.stringify(data)}\n\n`); };
+  const emitLoveTalk = data => { for (const stream of loveTalkStreams) stream.write(`data: ${JSON.stringify(data)}\n\n`); };
   const loveListening = () => loveBoardStreams.size;
-  return { page, composer, errors, posts, open, shown, copied, close, turns, emit, listening, disconnectEvents, emitLove, loveListening };
+  return { page, composer, errors, posts, requests, open, shown, copied, close, turns, emit, listening, disconnectEvents, emitLove, emitLoveTalk, loveListening };
   } catch (error) {
     await browser?.close().catch(() => {});
     for (const stream of new Set([...streams, ...loveStreams, ...loveBoardStreams])) stream.end();
