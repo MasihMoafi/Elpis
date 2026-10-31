@@ -29,7 +29,8 @@ for (const colorScheme of ['light', 'dark']) test(`chat indicators follow their 
         row.append(probe); probe.style.color = 'var(--primary)'; const rowAccent = getComputedStyle(probe).color; probe.remove();
         return { expected, main: getComputedStyle(main).getPropertyValue('--primary').trim(), rings: [...main.querySelectorAll('.context-ring-fill')].map(node => getComputedStyle(node).stroke), dots: [...main.querySelectorAll('.feature-chip[aria-pressed="true"] .feature-dot')].map(node => getComputedStyle(node).backgroundColor), row: rowAccent };
       }, thread.id);
-      assert.ok(colours.rings.length >= 2, 'the composer and Ledger both expose the context amount');
+      assert.equal(colours.rings.length, 1, 'the composer retains the one context-ring control');
+      assert.equal(await page.getByRole('button', { name: 'Ledger', exact: true }).count(), 0, 'there is no duplicate Ledger button');
       assert.ok(colours.dots.length >= 2, 'enabled feature controls are present');
       for (const colour of [...colours.rings, ...colours.dots, colours.row]) assert.equal(colour, colours.expected, `${thread.name} at ${percent}% uses its own accent`);
     }

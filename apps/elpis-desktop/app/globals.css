@@ -774,7 +774,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .context-ring { display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; padding:0; border:1px solid transparent; background:transparent; cursor:pointer; }
 .context-ring:hover, .context-ring[data-popup-open] { background:var(--hover); border-color:var(--hairline); }
 .context-ring:focus-visible { outline:1.5px solid var(--ring); outline-offset:1px; }
-/* Claude's context ring fills clockwise in the theme accent, amber from 75% and red from 90%. */
+/* The context ring fills clockwise in its chat accent at every usage level. */
 .context-ring-icon circle { fill:none; stroke-width:2; }
 .context-ring-icon .context-ring-track { stroke:var(--border); }
 .context-ring-icon .context-ring-fill { stroke:var(--primary); stroke-linecap:round; transition:stroke-dashoffset .3s; }

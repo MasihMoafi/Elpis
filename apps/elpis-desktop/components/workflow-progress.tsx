@@ -7,6 +7,7 @@ import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { Button } from "@/components/ui/button";
 import { api, title, type Entry, type Thread } from "@/lib/api";
 import { agentParentId } from "@/lib/agent-runs.mjs";
+import { prioritizeChats } from "@/lib/chat-groups";
 import type { RecordedWorkflow } from "./workflow-chat";
 import "./workflow-progress.css";
 
@@ -159,7 +160,7 @@ export function WorkflowProgress({ run, team, onOpenChat, onRefresh, compact = f
     {team.lastUpdate && <p className="workflow-progress-report"><span className="text-muted-foreground">Latest observed report · </span>{team.lastUpdate}</p>}
     {!team.lastUpdate && <p className="text-muted-foreground">{team.loading ? "Reading live progress…" : "No agent report observed yet."}</p>}
     {team.error && <div className="flex flex-wrap items-center gap-2"><p role="alert" className="text-destructive">{team.error}</p></div>}
-    {!!team.agents.length && <details open={!compact && active > 0}><DisclosureSummary>Live team · {team.agents.length}</DisclosureSummary><ol className="space-y-2 pt-2">{team.agents.map(thread => <li key={thread.id} className="workflow-progress-row workflow-progress-agent" style={{ paddingInlineStart: `${depth(thread) * 16}px` }}>
+    {!!team.agents.length && <details open={!compact && active > 0}><DisclosureSummary>Live team · {team.agents.length}</DisclosureSummary><ol className="space-y-2 pt-2">{prioritizeChats(team.agents, thread => workflowThreadActive(thread) ? "working" : "idle").map(thread => <li key={thread.id} className="workflow-progress-row workflow-progress-agent" style={{ paddingInlineStart: `${depth(thread) * 16}px` }}>
       <AgentIdentity compact id={thread.id} name={title(thread)} model={thread.model} provider={thread.modelProvider} />
       <span className="workflow-progress-status">{status(thread)}</span><Button variant="ghost" size="sm" onClick={() => onOpenChat(thread.id)}>Open chat</Button>
     </li>)}</ol></details>}

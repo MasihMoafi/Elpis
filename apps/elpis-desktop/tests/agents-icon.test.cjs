@@ -66,6 +66,7 @@ for (const theme of ['light', 'dark']) test(`Agents shares the selected agents a
     if (theme === 'dark') await chooseTheme(page, theme);
     await f.open('chat-a');
     const { path: artwork } = await checkAgentsIcon(page);
+    assert.equal(await page.locator('.team-row[data-thread-id]').first().getAttribute('data-thread-id'), 'agent-1', 'working subagents are listed first');
     const identityRow = page.locator('.team-row[data-thread-id="agent-0"]');
     const teamMark = await identityRow.locator('.agent-mark').getAttribute('aria-label');
     assert.equal(await identityRow.locator('.agent-name').innerText(), 'inspect · Agent 1', 'the task comes first and the recorded agent name follows once');

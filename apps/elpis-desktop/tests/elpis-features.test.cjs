@@ -89,9 +89,10 @@ test('the main chat shows Elpis features under the message box, one click each, 
     await chip('RAG').click(); await page.waitForFunction(() => [...document.querySelectorAll('[aria-label="Elpis features"] button')].find(b => b.textContent.includes('RAG'))?.getAttribute('aria-pressed') === 'true');
     assert.deepEqual(saved.at(-1), { version: 'v2', rag: true });
 
-    // In a chat, Ledger opens the breakdown, which does not repeat the switches the chips carry.
+    // One context-ring control opens the breakdown; the footer has no duplicate Ledger button.
     await page.getByRole('button', { name: 'Ledger chat', exact: true }).click();
-    await chip('Ledger').click();
+    assert.equal(await chip('Ledger').count(), 0);
+    await page.locator('.composer .context-ring').click();
     const popup = page.getByRole('dialog', { name: 'Context window usage', exact: true });
     await popup.waitFor();
     assert.equal(await popup.getByRole('switch').count(), 0);
@@ -99,11 +100,19 @@ test('the main chat shows Elpis features under the message box, one click each, 
     await chip('Smart Prune').click();
     await page.waitForFunction(() => [...document.querySelectorAll('[aria-label="Elpis features"] button')].find(b => b.textContent.includes('Smart Prune'))?.getAttribute('aria-pressed') === 'false');
 
-    // The ledger's context colour is olive (a yellowish green), in both themes.
-    const hueOf = () => page.evaluate(() => { const ring = document.querySelector('.context-ring-fill'); const [r, g, b] = getComputedStyle(ring).stroke.match(/[\d.]+/g).map(Number); const max = Math.max(r, g, b), min = Math.min(r, g, b); return max === min ? -1 : max === r ? 60 * (((g - b) / (max - min)) % 6) : max === g ? 60 * ((b - r) / (max - min) + 2) : 60 * ((r - g) / (max - min) + 4); });
-    assert.ok((await hueOf()) >= 55 && (await hueOf()) <= 80, `light: olive context colour (hue ${await hueOf()})`);
-    await page.emulateMedia({ colorScheme: 'dark' }); await page.waitForTimeout(200);
-    assert.ok((await hueOf()) >= 55 && (await hueOf()) <= 80, `dark: olive context colour (hue ${await hueOf()})`);
+    // Context keeps the active theme colour in both modes.
+    const ringColour = () => page.evaluate(() => {
+      const ring = document.querySelector('.context-ring-fill'), probe = document.createElement('span');
+      ring.closest('.composer').append(probe); probe.style.color = 'var(--primary)';
+      const expected = getComputedStyle(probe).color; probe.remove();
+      return { actual: getComputedStyle(ring).stroke, expected };
+    });
+    for (const colorScheme of ['light', 'dark']) {
+      await page.emulateMedia({ colorScheme });
+      await page.waitForFunction(dark => document.documentElement.classList.contains('dark') === dark, colorScheme === 'dark');
+      const colours = await ringColour();
+      assert.equal(colours.actual, colours.expected, `${colorScheme}: the context ring follows the theme`);
+    }
     assert.deepEqual(refused, [], 'nothing asks the bridge before the session exists');
     assert.deepEqual(errors, []);
   } finally { await browser.close(); server.close(); }

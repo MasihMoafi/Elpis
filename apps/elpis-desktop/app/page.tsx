@@ -1015,7 +1015,7 @@ export default function Home() {
   const waitingIds = new Set(approvals.map(approval => approval.params.threadId ?? approval.ownerThreadId));
   // The chat's team: a root shows its agents; an agent shows its siblings and the way back to the root.
   const teamRoot = selected ? (selected.parentThreadId ? find(selected.parentThreadId) ?? { id: selected.parentThreadId } as Thread : selected) : null;
-  const team = teamRoot ? threads.filter(thread => thread.parentThreadId === teamRoot.id) : [];
+  const team = teamRoot ? prioritizeChats(threads.filter(thread => thread.parentThreadId === teamRoot.id), thread => agentState(thread, waitingIds)) : [];
   const folder = (path?: string | null) => path ? path.split("/").filter(Boolean).at(-1) || path : "";
 
   function openNewChat(draftKey = newDraftKey.current) { saveDraft(selectedRef.current?.id || newDraftKey.current, textRef.current); newDraftKey.current = draftKey; request.current++; stickToBottom.current = true; followingBottom.current = false; restoreScroll.current = null; select(null); setEntries([]); setItemCursor(null); setText(savedDraft(draftKey)); setError(""); restoreAttachments(draftKey); setLoading(false); setView("chat"); setSidebar(false); requestAnimationFrame(() => composerRef.current?.focus()); }
@@ -2535,7 +2535,7 @@ export default function Home() {
               onSelect={moveChat} onAdd={() => void moveChatToFolder()} />}
             {selected?.cwd && <BranchChip key={selected.id} threadId={selected.id} running={!!activeTurn} onNotice={setSlashNotice} />}
             <span className="composer-hint">{selectedLiveError ? `Not following live (${selectedLiveError}); the chat refreshes every few seconds.` : ""}</span>
-            <ElpisFeatures threadId={selected?.id} />
+            <ElpisFeatures />
           </div>
         </div>
       </div>

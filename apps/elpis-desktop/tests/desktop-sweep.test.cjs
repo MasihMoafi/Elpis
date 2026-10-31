@@ -73,7 +73,7 @@ for (const colorScheme of ['light', 'dark']) for (const [width, height] of [[128
       await page.keyboard.press('Escape');
       await check('chat', () => f.open('chat-a'));
       const ledger = page.getByRole('dialog', { name: 'Context window usage', exact: true });
-      await check('Ledger context files included', async () => { await page.getByRole('group', { name: 'Elpis features', exact: true }).getByRole('button', { name: 'Ledger', exact: true }).click(); await ledger.getByRole('switch', { name: 'Include ES.md', exact: true }).waitFor(); }, () => ledger);
+      await check('Ledger context files included', async () => { await page.locator('.composer .context-ring').click(); await ledger.getByRole('switch', { name: 'Include ES.md', exact: true }).waitFor(); }, () => ledger);
       await check('Ledger context file excluded', async () => { await ledger.getByRole('switch', { name: 'Include ES.md', exact: true }).click(); await page.waitForFunction(() => document.querySelector('[aria-label="Include ES.md"]').getAttribute('aria-checked') === 'false'); }, () => ledger);
       await check('Ledger categories collapsed', async () => { await ledger.getByRole('button', { name: /^Context window/ }).click(); }, () => ledger);
       await page.keyboard.press('Escape');

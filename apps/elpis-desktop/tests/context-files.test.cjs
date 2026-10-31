@@ -5,7 +5,7 @@ const { fixture } = require('./parity-fixture.cjs');
 const { files, contextRoutes } = require('./context-files-fixture.cjs');
 const { assertUiFit } = require('./ui-fit.cjs');
 const popupOf = page => page.getByRole('dialog', { name: 'Context window usage', exact: true });
-async function open(f) { await f.open('chat-a'); await f.page.getByRole('group', { name: 'Elpis features', exact: true }).getByRole('button', { name: 'Ledger', exact: true }).click(); await popupOf(f.page).getByRole('switch', { name: 'Include ES.md', exact: true }).waitFor(); }
+async function open(f) { await f.open('chat-a'); await f.page.locator('.composer .context-ring').click(); await popupOf(f.page).getByRole('switch', { name: 'Include ES.md', exact: true }).waitFor(); }
 const animationFrames = (page, count = 12) => page.evaluate(count => new Promise(resolve => {
   const tick = () => --count > 0 ? requestAnimationFrame(tick) : resolve(); requestAnimationFrame(tick);
 }), count);
@@ -33,7 +33,7 @@ for (const [colorScheme, width, height] of [['light', 1280, 800], ['dark', 900, 
     try {
       await f.open('chat-a'); const ring = f.page.getByRole('button', { name: 'Context window: 25% used', exact: true, includeHidden: true }); await ring.waitFor({ state: 'attached' });
       assert.equal(await ring.isVisible(), width === 1280, 'narrow composers use the Ledger button instead of the hidden ring');
-      const trigger = width === 1280 ? ring : f.page.getByRole('group', { name: 'Elpis features', exact: true }).getByRole('button', { name: 'Ledger', exact: true });
+      const trigger = width === 1280 ? ring : f.page.locator('.composer .context-ring');
       await traceOpening(f.page); await trigger.click(); await held; await animationFrames(f.page);
       if (process.env.ELPIS_A20_SHOTS) { await fs.mkdir(process.env.ELPIS_A20_SHOTS, { recursive: true }); await f.page.screenshot({ path: `${process.env.ELPIS_A20_SHOTS}/${colorScheme}-${width}x${height}-pending.png` }); }
       release(); await popupOf(f.page).getByRole('switch', { name: 'Include ES.md', exact: true }).waitFor(); await animationFrames(f.page);
@@ -53,7 +53,7 @@ test('Ledger waits for initial usage, reveals at stable bounds, and stops file p
   } });
   try {
     await f.open('chat-a'); await requested;
-    await traceOpening(f.page); await f.page.getByRole('group', { name: 'Elpis features', exact: true }).getByRole('button', { name: 'Ledger', exact: true }).click();
+    await traceOpening(f.page); await f.page.locator('.composer .context-ring').click();
     await f.page.getByRole('button', { name: 'Loading context window…', exact: true }).waitFor(); await animationFrames(f.page);
     assert.equal(await popupOf(f.page).isVisible(), false, 'files do not reveal a card that still awaits usage');
     release(); await popupOf(f.page).getByRole('switch', { name: 'Include ES.md', exact: true }).waitFor(); await animationFrames(f.page); await assertStableOpening(f.page, 'cold usage');
@@ -75,7 +75,7 @@ test('Ledger cancels pending files across chats and ignores their late reply', a
     await f.page.keyboard.press('Escape'); assert.match((await cancelled).failure().errorText, /aborted/i);
     await f.page.getByRole('button', { name: 'Loading context window…', exact: true }).waitFor({ state: 'hidden' }); assert.equal(await popupOf(f.page).isVisible(), false);
     await f.open('chat-b');
-    await f.page.getByRole('group', { name: 'Elpis features', exact: true }).getByRole('button', { name: 'Ledger', exact: true }).click();
+    await f.page.locator('.composer .context-ring').click();
     await popupOf(f.page).getByRole('button', { name: 'Open Chat B memory.md', exact: true }).waitFor();
     release(); await animationFrames(f.page);
     assert.equal(await popupOf(f.page).getByRole('button', { name: 'Open ES.md', exact: true }).count(), 0); assert.equal(reads, 1); assert.deepEqual(f.errors, []);
@@ -89,7 +89,7 @@ test('Ledger times out a stalled initial read, exposes Retry and ignores the lat
   } });
   try {
     await f.open('chat-a'); const timedOut = f.page.waitForEvent('requestfailed', { predicate: request => request.url().endsWith('/api/threads/chat-a/context-files'), timeout: 14000 });
-    await f.page.getByRole('group', { name: 'Elpis features', exact: true }).getByRole('button', { name: 'Ledger', exact: true }).click(); await requested;
+    await f.page.locator('.composer .context-ring').click(); await requested;
     const busy = f.page.getByRole('button', { name: 'Loading context window…', exact: true }); assert.equal(await busy.getAttribute('aria-busy'), 'true'); assert.equal(await busy.innerText(), '…');
     await popupOf(f.page).getByRole('alert').waitFor({ timeout: 14000 }); assert.match((await timedOut).failure().errorText, /aborted/i); assert.match(await popupOf(f.page).innerText(), /Reading context took too long/); assert.match(await popupOf(f.page).innerText(), /Context usage unavailable/);
     if (process.env.ELPIS_A20_SHOTS) await f.page.screenshot({ path: `${process.env.ELPIS_A20_SHOTS}/timeout-error.png` });
@@ -139,9 +139,9 @@ test('Ledger reports unavailable context files with retry, and a new chat never 
   let failed = true;
   const f = await fixture({ routes: { ...contextRoutes(), '/api/threads/chat-a/context-files': () => failed ? { __http: 502, error: 'Context files unavailable' } : { files: files() }, '/api/threads/chat-b/context-files': () => ({ files: [] }) } });
   try {
-    await f.open('chat-a'); await f.page.getByRole('group', { name: 'Elpis features', exact: true }).getByRole('button', { name: 'Ledger', exact: true }).click(); const popup = popupOf(f.page);
+    await f.open('chat-a'); await f.page.locator('.composer .context-ring').click(); const popup = popupOf(f.page);
     await popup.getByRole('alert').waitFor(); failed = false; await popup.getByRole('button', { name: 'Retry context files' }).click(); await popup.getByRole('switch', { name: 'Include ES.md', exact: true }).waitFor();
-    await f.page.keyboard.press('Escape'); await f.open('chat-b'); await f.page.getByRole('group', { name: 'Elpis features', exact: true }).getByRole('button', { name: 'Ledger', exact: true }).click(); await popup.getByText('No portable context is available.', { exact: true }).waitFor(); assert.equal(await popup.getByRole('switch').count(), 0);
+    await f.page.keyboard.press('Escape'); await f.open('chat-b'); await f.page.locator('.composer .context-ring').click(); await popup.getByText('No portable context is available.', { exact: true }).waitFor(); assert.equal(await popup.getByRole('switch').count(), 0);
   } finally { await f.close(); }
 });
 
@@ -149,7 +149,7 @@ test('Ledger rejects a malformed source response and recovers without losing the
   let malformed = true;
   const f = await fixture({ routes: { ...contextRoutes(), '/api/threads/chat-a/context-files': () => malformed ? { files: [{ name: 'ES.md' }] } : { files: files() } } });
   try {
-    await f.open('chat-a'); await f.page.getByRole('group', { name: 'Elpis features', exact: true }).getByRole('button', { name: 'Ledger', exact: true }).click(); const popup = popupOf(f.page);
+    await f.open('chat-a'); await f.page.locator('.composer .context-ring').click(); const popup = popupOf(f.page);
     await popup.getByRole('alert').waitFor(); assert.match(await popup.getByRole('alert').innerText(), /Context files unavailable/);
     assert.match(await popup.innerText(), /50k \/ 200k/); assert.equal(f.errors.length, 0);
     malformed = false; await popup.getByRole('button', { name: 'Retry context files' }).click(); await popup.getByRole('switch', { name: 'Include ES.md', exact: true }).waitFor();

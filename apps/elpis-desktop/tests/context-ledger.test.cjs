@@ -237,7 +237,7 @@ test('the Ledger button under the message box toggles the breakdown like any pop
     const errors = []; page.on('pageerror', error => errors.push(error.message));
     await page.goto(fixture.url);
     await page.getByRole('button', { name: 'Ledger chat', exact: true }).click();
-    const chip = page.getByRole('group', { name: 'Elpis features', exact: true }).getByRole('button', { name: 'Ledger', exact: true });
+    const chip = page.locator('.composer .context-ring');
     const popup = page.getByRole('dialog', { name: 'Context window usage', exact: true });
     const settled = () => page.waitForTimeout(450);
     await chip.waitFor();

@@ -49,9 +49,9 @@ test('A102: recency uses bridge timestamps after merges, with stable ties and no
   assert.deepEqual(ids(list), ['old', 'new', 'run', 'tie', 'unknown']);
 });
 
-test('A102: waiting, then running, then unread; errors, idle and unknown have no priority', () => {
+test('working chats come first by default, followed by waiting and unread', () => {
   const list = ['working', 'idle', 'unread', 'error', 'waiting', 'unknown', 'unread', 'waiting', 'working'];
-  assert.deepEqual(prioritizeChats(list, value => value), ['waiting', 'waiting', 'working', 'working', 'unread', 'unread', 'idle', 'error', 'unknown']);
+  assert.deepEqual(prioritizeChats(list, value => value), ['working', 'working', 'waiting', 'waiting', 'unread', 'unread', 'idle', 'error', 'unknown']);
   assert.deepEqual(prioritizeChats(['idle', 'working'], value => value), ['working', 'idle']);
 });
 

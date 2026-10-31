@@ -42,34 +42,25 @@ const trim = (value: number) => value.toFixed(1).replace(/\.0$/, "");
 const tokens = (value: number) => value >= 1e6 ? `${trim(value / 1e6)}m` : value >= 1e3 ? `${trim(value / 1e3)}k` : String(value);
 const share = (part: number, whole: number) => { const tenths = Math.floor((part * 1000 + Math.floor(whole / 2)) / whole); return `${Math.floor(tenths / 10)}.${tenths % 10}%`; };
 const percent = (part: number, whole: number) => Math.floor((part * 100 + Math.floor(whole / 2)) / whole);
-/** Claude's ring turns amber from 75% and red from 90%. */
+/** Retain usage levels for state while the ring keeps the chat accent. */
 const levelOf = (pct: number) => pct >= 90 ? "critical" : pct >= 75 ? "warning" : "normal";
 /** Claude shows "Compact session" once the context is half full. */
 const COMPACT_FROM_PERCENT = 50;
 
-/** What the ring, its tooltip and the Ledger button say about a ledger: Claude's "Context 73.8k / 475k (16%)". */
+/** The usage amount shared by the ring, its tooltip and context breakdown. */
 function describe(ledger: Ledger | null) {
   const used = ledger?.used ?? null, capacity = ledger?.window ?? null;
   const summary = used === null ? null : capacity ? `${tokens(used)} / ${tokens(capacity)} (${percent(used, capacity)}%)` : tokens(used);
   return { used, capacity, summary, pct: used !== null && capacity ? Math.min(100, used / capacity * 100) : 0, tooltip: summary === null ? "Context window" : `Context ${summary}` };
 }
 
-/** Claude's context ring: a thin ring that fills clockwise, amber from 75% and red from 90%. */
+/** A thin context ring that fills clockwise in the chat accent. */
 export function ContextRingIcon({ pct, size = 16 }: { pct: number; size?: number }) {
   const radius = (size - 2) / 2, circumference = 2 * Math.PI * radius, middle = size / 2;
   return <svg className="context-ring-icon" data-level={levelOf(pct)} width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
     <circle cx={middle} cy={middle} r={radius} className="context-ring-track" />
     {pct > 0 && <circle cx={middle} cy={middle} r={radius} className="context-ring-fill" strokeDasharray={circumference} strokeDashoffset={circumference * (1 - pct / 100)} transform={`rotate(-90 ${middle} ${middle})`} />}
   </svg>;
-}
-
-/** The ledger the ring last read, for the Ledger button under the message box to draw the same ring and say the same numbers. */
-let sharedNow: { threadId?: string; ledger: Ledger | null } = { ledger: null };
-const sharedListeners = new Set<() => void>();
-const publishShared = (next: typeof sharedNow) => { sharedNow = next; for (const listener of sharedListeners) listener(); };
-export function useSharedLedger(threadId?: string) {
-  const now = useSyncExternalStore(listener => { sharedListeners.add(listener); return () => { sharedListeners.delete(listener); }; }, () => sharedNow, () => sharedNow);
-  return describe(threadId && now.threadId === threadId ? now.ledger : null);
 }
 
 /** The chat's context ring, as Claude's composer has it: hovering shows "Context 73.8k / 475k (16%)", a click or Enter opens
@@ -100,8 +91,8 @@ export function ContextUsage({ threadId }: { threadId?: string }) {
       if (document.visibilityState === "visible") try {
         const value = await readContext<{ threadId: string; ledger?: Ledger; compact?: Compact }>(`/threads/${encodeURIComponent(threadId)}/context`, controller.signal);
         if (value.threadId !== threadId) throw new Error("Context reply belongs to another chat.");
-        if (!disposed && value.threadId === threadId) { setRead({ threadId, ledger: value.ledger ?? UNMEASURED, compact: value.compact ?? null }); publishShared({ threadId, ledger: value.ledger ?? UNMEASURED }); }
-      } catch { if (!disposed) { setRead({ threadId, ledger: UNMEASURED, compact: null, unavailable: true }); publishShared({ threadId, ledger: UNMEASURED }); } }
+        if (!disposed && value.threadId === threadId) { setRead({ threadId, ledger: value.ledger ?? UNMEASURED, compact: value.compact ?? null }); }
+      } catch { if (!disposed) { setRead({ threadId, ledger: UNMEASURED, compact: null, unavailable: true }); } }
       if (!disposed) timer = setTimeout(poll, 5000);
     };
     void poll();

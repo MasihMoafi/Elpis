@@ -51,6 +51,8 @@
     "tests/ui-rules.test.mjs"
   ],
   "bridge": [
+    "bridge/workflow-concurrency.test.mjs",
+    "bridge/memory-count.test.mjs",
     "tests/workflow-routing.mjs",
     "tests/workflow-titles.mjs",
     "bridge/acp-nodes.test.mjs",
@@ -149,6 +151,11 @@
     "desktop/browser-identity.test.cjs"
   ],
   "ui": [
+    "tests/ui-scale.test.cjs",
+    "tests/memory-count.test.cjs",
+    "tests/matilda-avatar-ground.test.cjs",
+    "tests/audio-file-links.test.cjs",
+    "tests/chat-accent.test.cjs",
     "tests/turn-spacing.test.cjs",
     "tests/composer-icons.test.cjs",
     "tests/app-menus.test.cjs",

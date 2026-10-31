@@ -159,13 +159,13 @@ export function sortChats<T extends { id: string; createdAt?: number; updatedAt?
   return indexed.sort((a, b) => compare(a, b) || a.index - b.index).map(entry => entry.thread);
 }
 
-/** Use the row's state: waiting first, then the chats that are running, then unseen finished replies. Failed and
+/** Use the row's state: running first, then waiting chats, then unseen finished replies. Failed and
  * idle chats retain their ordinary place. Within each tier keep the selected sort, including the person's manual order. */
 export function prioritizeChats<T>(threads: T[], stateOf: (thread: T) => string): T[] {
   const tiers: T[][] = [[], [], [], []];
   for (const thread of threads) {
     const state = stateOf(thread);
-    tiers[state === "waiting" ? 0 : state === "working" ? 1 : state === "unread" ? 2 : 3].push(thread);
+    tiers[state === "working" ? 0 : state === "waiting" ? 1 : state === "unread" ? 2 : 3].push(thread);
   }
   return tiers.flat();
 }

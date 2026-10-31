@@ -44,7 +44,7 @@ test('Customize names the sidebar, heading, command action and window; customize
     await option.waitFor(); await page.keyboard.press('Enter');
     await page.getByRole('heading', { name: 'Customize', exact: true }).waitFor();
     await f.open('chat-a');
-    assert.equal(await page.getByRole('group', { name: 'Elpis features', exact: true }).getByRole('button', { name: 'Ledger', exact: true }).count(), 1);
+    assert.equal(await page.locator('.composer .context-ring').count(), 1);
     assert.equal(await page.locator('.nav-list').getByRole('button', { name: 'Customize', exact: true }).count(), 1);
     await windowTitle(page, 'Elpis');
     await page.getByRole('button', { name: 'Back', exact: true }).click();
