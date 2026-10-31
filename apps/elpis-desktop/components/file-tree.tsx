@@ -7,7 +7,8 @@ import { useFileActions } from "@/components/file-actions";
 import { fileKind } from "@/components/file-cards";
 import { SearchField } from "@/components/ui/search-field";
 import { api } from "@/lib/api";
-import { loadDir, loadNames, openFile, paneIn, refresh, select as selectPath, toggleDir, treeRows, useFiles, type Row } from "@/lib/files-pane";
+import { loadDir, loadNames, openFile, openRef, paneIn, refresh, select as selectPath, toggleDir, treeRows, useFiles, type Row } from "@/lib/files-pane";
+import { isAudioPath } from "@/lib/audio-path.mjs";
 import { rankFiles } from "@/lib/mentions";
 
 const SHOWN = 200;
@@ -87,7 +88,10 @@ export function FileTree({ cwd }: { cwd: string }) {
 
   const open = useCallback((path: string, dir: boolean, keep: boolean, line?: number) => {
     selectPath(cwd, path); setFocus(path);
-    if (dir) toggleDir(cwd, path); else openFile(cwd, path, { preview: !keep, line, endLine: line });
+    setProblem("");
+    if (dir) toggleDir(cwd, path);
+    else if (isAudioPath(path)) { if (!openRef({ path }, { onError: setProblem })) setProblem("Open a project folder to play this file."); }
+    else openFile(cwd, path, { preview: !keep, line, endLine: line });
   }, [cwd]);
   const onError = useCallback((text: string) => setProblem(text), []);
 

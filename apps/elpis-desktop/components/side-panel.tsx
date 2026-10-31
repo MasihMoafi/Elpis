@@ -211,7 +211,7 @@ export function SidePanel({ panel, browser, hasTerminal, dark, cwd, threadId, ru
   // Tells the Files tab where this chat works and that it can open files (a path clicked in a reply is a file ref only then).
   useEffect(() => { attach(cwd); }, [cwd]);
   useEffect(() => detach, []);
-  useEffect(() => window.elpisDesktop?.onOpenFile?.(target => { openRef(target); }), []);
+  useEffect(() => window.elpisDesktop?.onOpenFile?.(target => { openRef(target, { onError: setPinError }); }), []);
   const documentSession = useRef({ cwd, threadId });
   documentSession.current = { cwd, threadId };
   useEffect(() => window.elpisDesktop?.documents?.subscribe(async request => {

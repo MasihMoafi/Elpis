@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { api } from "@/lib/api";
 import { openRef } from "@/lib/files-pane";
+import { isAudioPath } from "@/lib/audio-path.mjs";
 
 // thread/contextFiles/list and /set return the refreshed sources, including rows sharing one admission setting.
 type ContextFile = {
@@ -81,7 +82,7 @@ export function ContextFiles({ threadId, onOpenFile, onReady, session = false }:
     finally { writing.current = false; if (sequence === request.current) setSaving(null); }
   };
   const open = (file: ContextFile) => {
-    if (openRef({ path: file.path })) onOpenFile();
+    if (openRef({ path: file.path }, { onError: setError })) { if (!isAudioPath(file.path)) onOpenFile(); }
     else setError("Open a project folder to view this file.");
   };
   const clearGoal = async () => {

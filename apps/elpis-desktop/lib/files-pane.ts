@@ -5,6 +5,8 @@
 import { useSyncExternalStore } from "react";
 import { api } from "@/lib/api";
 import { resolveRef, type FileRef } from "@/lib/file-refs";
+import { isAudioPath } from "@/lib/audio-path.mjs";
+import { MATILDA_CHANGED } from "@/lib/matilda";
 
 export type Entry = { name: string; dir: boolean; link?: boolean };
 export type Listing = { status: "loading" } | { status: "error"; message: string } | { status: "ready"; entries: Entry[] };
@@ -152,10 +154,15 @@ export function openFile(cwd: string, path: string, { preview = false, line, end
 /** Where an HTML file opens as a page: the side panel registers the session's built-in browser here. */
 let pageOpener: ((abs: string) => void) | null = null;
 export function onOpenPage(open: (abs: string) => void) { pageOpener = open; return () => { if (pageOpener === open) pageOpener = null; }; }
-export function openRef(ref: FileRef, { asText = false }: { asText?: boolean } = {}): boolean {
+export function openRef(ref: FileRef, { asText = false, onError }: { asText?: boolean; onError?: (message: string) => void } = {}): boolean {
   const { attached, cwd } = state.host;
   if (!attached || !cwd) return false;
   const found = resolveRef(ref, cwd);
+  if (!asText && isAudioPath(found.abs)) {
+    void api("/love-spot/companion", { action: "play-file", page: "global", path: found.abs })
+      .then(() => window.dispatchEvent(new Event(MATILDA_CHANGED)), cause => onError?.(message(cause)));
+    return true;
+  }
   if (!asText && pageOpener && /\.html?$/i.test(found.abs) && found.line === undefined) { pageOpener(found.abs); for (const request of requests) request(); return true; }
   openFile(cwd, found.rel, { line: found.line, endLine: found.endLine, show: true });
   for (const request of requests) request();

@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 import { once } from 'node:events';
 import { createLoveSpot } from './love-spot-store.cjs';
 import { createMatildaCompanion, PYTHON } from './matilda-companion.mjs';
@@ -15,7 +16,7 @@ async function fixture(t) {
   const env = { ...process.env, DBUS_SESSION_BUS_ADDRESS: String(address).trim() };
   const store = createLoveSpot({ directory, screenshots: path.join(directory, 'shots') });
   const companion = createMatildaCompanion({ store, env });
-  t.after(async () => { bus.kill(); await store.close(); await fs.rm(directory, { recursive: true, force: true }); });
+  t.after(async () => { bus.kill(); await store.close(); execFileSync('gio', ['trash', directory]); });
   return { directory, store, env, companion };
 }
 
@@ -87,6 +88,27 @@ test('existing page pins carry forward and Unpin clears them everywhere', async 
   assert.equal((await f.companion.read('settings')).pinned, true);
   await f.companion.act({ action: 'unpin', page: 'settings' });
   assert.equal((await f.companion.read('legacy-board-page')).pinned, false);
+});
+
+test('a local audio link plays on the existing Matilda player without a preview size limit', async t => {
+  const f = await fixture(t), player = await startPlayer(t, f);
+  const audio = path.join(f.directory, 'long recording with spaces.mp3');
+  const file = await fs.open(audio, 'w'); await file.truncate(31 * 1024 * 1024); await file.close();
+  const result = await f.companion.act({ action: 'play-file', page: 'chat', path: audio });
+  assert.equal(result.music.uri, pathToFileURL(audio).href);
+  assert.equal(result.music.status, 'Playing');
+  assert.match(await fs.readFile(player.calls, 'utf8'), /^OpenUri$/m);
+  await f.companion.act({ action: 'play-file', page: 'chat', path: audio });
+  assert.equal((await fs.readFile(player.calls, 'utf8')).trim().split('\n').filter(call => call === 'OpenUri').length, 2, 'a clicked file is reopened even when its path is already loaded');
+  await assert.rejects(f.companion.act({ action: 'play-file', page: 'chat', path: path.join(f.directory, 'document.txt') }), /audio/i);
+  await assert.rejects(f.companion.act({ action: 'play-file', page: 'chat', path: path.join(f.directory, 'missing.mp3') }), /unavailable|exist/i);
+  await assert.rejects(f.companion.act({ action: 'play-file', page: 'chat', path: 'relative.mp3' }), /absolute|path/i);
+});
+
+test('opening audio without a music player reports what is needed', async t => {
+  const f = await fixture(t), audio = path.join(f.directory, 'recording.mp3');
+  await fs.writeFile(audio, 'audio');
+  await assert.rejects(f.companion.act({ action: 'play-file', page: 'chat', path: audio }), /open your music player first/i);
 });
 
 test('only explicit commands execute, and missing-player failure is truthful', async t => {
@@ -171,6 +193,13 @@ if ${confirms ? 'True' : 'False'}:
     await assert.rejects(companion.act({ action: 'play-favorite', page: 'page' }), /could not open|not confirmed/i);
   }
   assert.deepEqual(JSON.parse(await fs.readFile(argsFile, 'utf8')), ['--headless', '--play', favorite.uri]);
+  if (confirms) {
+    const audio = path.join(f.directory, 'new recording.mp3');
+    await fs.writeFile(audio, 'audio');
+    const result = await companion.act({ action: 'play-file', page: 'page', path: audio });
+    assert.equal(result.music.uri, pathToFileURL(audio).href);
+    assert.deepEqual(JSON.parse(await fs.readFile(argsFile, 'utf8')), ['--headless', '--play', pathToFileURL(audio).href]);
+  }
 });
 
 test('an unsupported player never invokes the Audacious fallback', async t => {

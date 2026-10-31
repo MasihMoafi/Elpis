@@ -7,6 +7,7 @@ import { FolderIcon } from "@/components/elpis-icons";
 import { MoreMenu } from "@/components/action-menu";
 import { useFileActions } from "@/components/file-actions";
 import { openRef, useHost } from "@/lib/files-pane";
+import { isAudioPath } from "@/lib/audio-path.mjs";
 import { resolveRef } from "@/lib/file-refs";
 import { Button } from "@/components/ui/button";
 import { ReplyableImage } from "@/components/image-reply";
@@ -52,8 +53,9 @@ export function CreatedFiles({ paths }: { paths: string[] }) {
 function CreatedFile({ path, onError }: { path: string; onError: (message: string) => void }) {
   const { cwd } = useHost(), found = resolveRef({ path }, cwd);
   const { name, title, ext, kind, Icon } = fileKind(path), folder = found.abs.slice(0, found.abs.lastIndexOf("/")) || "/";
-  const open = () => onError(openRef({ path }) ? "" : "Open a project folder to view this file.");
-  const actions = useFileActions(found, onError, open);
+  const open = () => { onError(""); if (!openRef({ path }, { onError })) onError("Open a project folder to view this file."); };
+  const openInFiles = () => { if (!isAudioPath(found.abs)) return open(); onError(openRef({ path }, { asText: true }) ? "" : "Open a project folder to view this file."); };
+  const actions = useFileActions(found, onError, openInFiles);
   return <li className="file-card" title={found.abs}>
     <Icon size={20} strokeWidth={1.5} className="file-card-icon" aria-hidden="true" />
     <span className="file-card-text"><span className="file-card-name">{title}</span><span className="file-card-type">{ext ? `${kind} · ${ext.toUpperCase()}` : kind}</span></span>

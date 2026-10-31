@@ -1,8 +1,12 @@
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { BridgeError, object, text } from './validate.mjs';
 import { FACE_DATA_URL } from './matilda-face.cjs';
+import { isAudioPath } from '../lib/audio-path.mjs';
 
 const exec = promisify(execFile);
 /** The system Python, which has dbus; a python3 earlier on PATH (conda) may not. */
@@ -41,10 +45,10 @@ if action == 'volume':
     if abs(float(props.get('Volume', -1)) - target) > 0.000001: raise Exception('The player has not confirmed this volume change.')
 elif action != 'read':
     if not props.get('CanControl', False): raise Exception('This player does not support music controls.')
-    capability = {'play': 'CanPlay', 'pause': 'CanPause', 'next': 'CanGoNext', 'open': 'CanPlay'}[action]
+    capability = {'play': 'CanPlay', 'pause': 'CanPause', 'next': 'CanGoNext', 'open': 'CanPlay', 'open-file': 'CanPlay'}[action]
     if not props.get(capability, False): raise Exception('This player does not support that action.')
-    if action == 'open':
-        if str(props.get('Metadata', {}).get('xesam:url', '')) == uri:
+    if action in ('open', 'open-file'):
+        if action == 'open' and str(props.get('Metadata', {}).get('xesam:url', '')) == uri:
             player.Play(timeout=2)
         else:
             try: player.OpenUri(uri, timeout=2)
@@ -74,7 +78,7 @@ export function createMatildaCompanion({ store, env = process.env }) {
     } catch (cause) {
       const detail = cause.stderr?.trim().split('\n').at(-1)?.replace(/^Exception: /, '');
       const explained = /^(Open your music player first|Several music players are available|This player does not support|The player has not confirmed)/.test(detail ?? '');
-      throw new BridgeError(explained ? detail : cause.killed ? 'The player has not confirmed this request. Check playback before trying again.' : action === 'open' ? 'The player could not open your favorite. Check that the track is still available.' : 'Music controls are unavailable. Open your music player and try again.');
+      throw new BridgeError(explained ? detail : cause.killed ? 'The player has not confirmed this request. Check playback before trying again.' : action === 'open' ? 'The player could not open your favorite. Check that the track is still available.' : action === 'open-file' ? 'The player could not open this audio file.' : 'Music controls are unavailable. Open your music player and try again.');
     }
   }
   async function state(page, track) {
@@ -88,7 +92,7 @@ export function createMatildaCompanion({ store, env = process.env }) {
     return { pinned, favorite: saved.favorite, music: pinned || track ? track ?? null : null, reason, threadId: await store.chat(), face: pinned ? FACE_DATA_URL : undefined };
   }
   async function act(input) {
-    object(input, ['action', 'page']); text(input.page, 'page', 200);
+    object(input, input?.action === 'play-file' ? ['action', 'page', 'path'] : ['action', 'page']); text(input.page, 'page', 200);
     const { action, page } = input;
     if (action === 'pin' || action === 'unpin') {
       await store.companion(saved => ({ ...saved, pinned: action === 'pin' ? ['global'] : [] }));
@@ -106,6 +110,15 @@ export function createMatildaCompanion({ store, env = process.env }) {
       if (!favorite) throw new BridgeError('Play a track and ask me to remember this song as your favorite first.');
       if (!/^(file|https?):\/\//.test(favorite.uri ?? '') || !/^org\.mpris\.MediaPlayer2\.[\w.-]+$/.test(favorite.player ?? '')) throw new BridgeError('The saved favorite is invalid. Remember the track again.');
       return state(page, await music('open', favorite));
+    }
+    if (action === 'play-file') {
+      const file = text(input.path, 'audio path', 4096);
+      if (!path.isAbsolute(file) || /[\x00-\x1f\x7f]/.test(file)) throw new BridgeError('Choose an absolute audio file path.');
+      if (!isAudioPath(file)) throw new BridgeError('Choose an audio file.');
+      let resolved;
+      try { resolved = await fs.realpath(file); if (!(await fs.stat(resolved)).isFile()) throw Error('Not a file'); }
+      catch { throw new BridgeError('This audio file is unavailable.'); }
+      return state(page, await music('open-file', { uri: pathToFileURL(resolved).href }));
     }
     if (action === 'toggle-mute') {
       const track = await music(), saved = await store.companion();

@@ -5,14 +5,16 @@ import { RightClickMenu } from "@/components/action-menu";
 import { useFileActions } from "@/components/file-actions";
 import { parseCodeRef, parseHref, resolveRef, withoutTail, type FileRef } from "@/lib/file-refs";
 import { openRef, useHost } from "@/lib/files-pane";
+import { isAudioPath } from "@/lib/audio-path.mjs";
 import "@/components/files-pane.css";
 
-/** One default action for every local file reference; external apps are explicit menu choices. */
+/** One default action for every local file reference. */
 export function FileRefLink({ target, children, label, className = "", current }: { target: FileRef; children: ReactNode; label?: string; className?: string; current?: boolean }) {
   const { cwd } = useHost(), [error, setError] = useState("");
   const found = resolveRef(target, cwd);
-  const open = () => { setError(openRef(target) ? "" : "Open a project folder to view this file."); };
-  const actions = useFileActions({ abs: found.abs, rel: found.rel, inside: found.inside, line: found.line }, setError, open);
+  const open = () => { setError(""); if (!openRef(target, { onError: setError })) setError("Open a project folder to view this file."); };
+  const openInFiles = () => { if (!isAudioPath(found.abs)) return open(); setError(openRef(target, { asText: true }) ? "" : "Open a project folder to view this file."); };
+  const actions = useFileActions({ abs: found.abs, rel: found.rel, inside: found.inside, line: found.line }, setError, openInFiles);
   const key = (event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(); } };
   return <>
     <RightClickMenu actions={actions} area={<button data-slot="file-ref" type="button" aria-label={label} aria-current={current || undefined} className={`file-ref ${className}`} title={found.abs} onClick={event => { event.preventDefault(); event.stopPropagation(); open(); }} onKeyDown={event => { if (event.key === "Enter" || event.key === " ") event.stopPropagation(); key(event); }} />}>{children}</RightClickMenu>
