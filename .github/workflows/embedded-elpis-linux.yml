@@ -8,7 +8,7 @@ on:
         required: true
         default: full
         type: choice
-        options: [check, ui, full, build, focused]
+        options: [check, ui, full, build, focused, status]
   push:
     tags: ['v*']
     branches: [next]
@@ -24,6 +24,59 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  tui-status:
+    if: github.event_name == 'workflow_dispatch' && inputs.verification == 'status'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    env:
+      CODEX_SKIP_BWRAP_BUILD: '1'
+      CARGO_BUILD_JOBS: '2'
+      RUST_TEST_THREADS: '1'
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 50
+      - uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7
+        id: cache
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            codex-rs/target
+          key: elpis-040-${{ runner.os }}-${{ hashFiles('codex-rs/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            elpis-040-${{ runner.os }}-${{ hashFiles('codex-rs/Cargo.lock') }}-
+      - name: Install Rust test dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libcap-dev libssl-dev pkg-config ripgrep
+          rustup toolchain install 1.95.0 --profile minimal --no-self-update
+      - name: Download and verify the pinned sandbox V8
+        run: |
+          base=https://github.com/openai/codex/releases/download/rusty-v8-v150.4.0
+          archive="$RUNNER_TEMP/librusty_v8_ptrcomp_sandbox_release_x86_64-unknown-linux-gnu.a.gz"
+          binding="$RUNNER_TEMP/src_binding_ptrcomp_sandbox_release_x86_64-unknown-linux-gnu.rs"
+          curl -fL "$base/$(basename "$archive")" -o "$archive"
+          curl -fL "$base/$(basename "$binding")" -o "$binding"
+          echo "a35c75d1f26e6a983885a45b33490a4ebe54f05050568b32b89cfb421b30b583  $archive" | sha256sum -c -
+          echo "7727826ae479bdb645e807239fb12d1f8e2e23de7a6cf16f5ee592690d1d8506  $binding" | sha256sum -c -
+          echo "RUSTY_V8_ARCHIVE=$archive" >> "$GITHUB_ENV"
+          echo "RUSTY_V8_SRC_BINDING_PATH=$binding" >> "$GITHUB_ENV"
+      - name: Reuse only unchanged cached Rust sources
+        env:
+          CACHE_KEY: ${{ steps.cache.outputs.cache-matched-key }}
+        run: bash scripts/restore-cargo-cache-source-times.sh "$CACHE_KEY"
+      - name: Check grouped Ledger paths and status admission
+        working-directory: codex-rs
+        run: |
+          set -euo pipefail
+          cargo test --profile dev-small --locked -p codex-core --lib \
+            elpis_context::tests::project_instruction_files_share_one_toggle_row -- --exact | tee "$RUNNER_TEMP/status-core.log"
+          rg -q 'test result: ok\. 1 passed; 0 failed;' "$RUNNER_TEMP/status-core.log"
+          cargo test --profile dev-small --locked -p codex-tui --lib \
+            chatwidget::tests::status_command_tests::status_command_deduplicates_ancestors_and_obeys_persisted_native_exclusion -- --exact | tee "$RUNNER_TEMP/status-tui.log"
+          rg -q 'test result: ok\. 1 passed; 0 failed;' "$RUNNER_TEMP/status-tui.log"
+
   provider-history:
     if: github.event_name == 'workflow_dispatch' && inputs.verification == 'focused'
     runs-on: ubuntu-24.04
