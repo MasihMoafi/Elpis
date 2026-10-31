@@ -9,6 +9,8 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { fixture } = require('./parity-fixture.cjs');
 const { assertCollectionIcon } = require('./collection-icon-assertions.cjs');
+const { FACE_DATA_URL } = require('../bridge/matilda-face.cjs');
+const { icons: selectedMusicIcons } = require('./fixtures/selected-music-icons.json');
 
 const shots = process.env.ELPIS_PARITY_SHOTS;
 const routes = {
@@ -22,6 +24,20 @@ async function capture(page, name, clip) {
   await page.screenshot({ path: path.join(shots, `${name}.png`), clip });
 }
 const box = rect => ({ x: rect.x, y: rect.y, width: rect.width, height: rect.height });
+const normalizedPath = value => value.replace(/,/g, ' ').trim().split(/\s+/).join(' ');
+const luminance = color => {
+  const rgb = color.match(/[\d.]+/g)?.slice(0, 3).map(Number);
+  assert.ok(rgb?.length === 3, `expected an opaque RGB color, got ${color}`);
+  const channels = rgb.map(value => {
+    const channel = value / 255;
+    return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+};
+const contrast = (foreground, background) => {
+  const values = [luminance(foreground), luminance(background)].sort((a, b) => b - a);
+  return (values[0] + 0.05) / (values[1] + 0.05);
+};
 const around = (rects, pad = 24) => {
   const left = Math.min(...rects.map(r => r.x)), top = Math.min(...rects.map(r => r.y));
   const right = Math.max(...rects.map(r => r.x + r.width)), bottom = Math.max(...rects.map(r => r.y + r.height));
@@ -181,6 +197,92 @@ test('approved collection paths cover all shared icon consumers in the composer 
       ['personalization', 'person'], ['shortcuts', 'keyboard'], ['providers', 'models'], ['mcp', 'tool'],
       ['browser', 'browser'], ['hooks', 'workflows'], ['git', 'branch'], ['worktrees', 'folder'], ['archived', 'archive']])
       await check(`Settings → ${id}`, page.locator(`#settings-tab-${id} svg`), name);
+    await check('Settings → usage', page.locator('#settings-tab-usage svg'), 'context');
+    await check('Settings → about', page.locator('#settings-tab-about svg'), 'context');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+for (const colorScheme of ['light', 'dark']) test(`approved music icons keep exact paths, contrast and aligned geometry (${colorScheme})`, { timeout: 60000 }, async () => {
+  let muted = false;
+  const actions = [];
+  const music = { title: 'Masterpiece', artist: 'Linkin Park', uri: 'file:///music/masterpiece.m4a', status: 'Playing', canMute: true, muted };
+  const f = await fixture(options(colorScheme, {
+    routes: {
+      ...routes,
+      '/api/love-spot/companion': body => {
+        if (body?.action === 'toggle-mute') { muted = !muted; actions.push(body.action); }
+        return { pinned: true, face: FACE_DATA_URL, threadId: 'chat-a', favorite: { ...music, muted }, music: { ...music, muted }, reason: '' };
+      },
+    },
+  }));
+  try {
+    await f.open('chat-a');
+    await f.page.getByRole('button', { name: 'Chat with Matilda', exact: true }).hover();
+    const states = [];
+    for (const state of [
+      { name: 'Mute music', icon: 'music-note', pressed: 'false' },
+      { name: 'Unmute music', icon: 'music-muted', pressed: 'true' },
+    ]) {
+      const button = f.page.getByRole('button', { name: state.name, exact: true });
+      await button.waitFor();
+      assert.equal(await button.getAttribute('aria-pressed'), state.pressed);
+      const svg = button.locator('svg');
+      const expected = selectedMusicIcons[state.icon];
+      const actual = await svg.evaluate((element, sizes) => {
+        const path = element.querySelector('path');
+        const originalStyle = { width: element.style.width, height: element.style.height };
+        const measurements = sizes.map(size => {
+          element.style.width = `${size}px`;
+          element.style.height = `${size}px`;
+          const rect = element.getBoundingClientRect(), bounds = path.getBBox();
+          return {
+            size, width: rect.width, height: rect.height,
+            centerX: (path.getBoundingClientRect().left + path.getBoundingClientRect().width / 2) - rect.left,
+            centerY: (path.getBoundingClientRect().top + path.getBoundingClientRect().height / 2) - rect.top,
+            geometry: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
+          };
+        });
+        element.style.width = originalStyle.width;
+        element.style.height = originalStyle.height;
+        const fill = getComputedStyle(path).fill;
+        return {
+          viewBox: element.getAttribute('viewBox'),
+          paths: [...element.querySelectorAll('path')].map(item => item.getAttribute('d')),
+          fillAttribute: element.getAttribute('fill'),
+          fillRule: path.getAttribute('fill-rule'),
+          transforms: [element, ...element.querySelectorAll('path')].filter(item => item.hasAttribute('transform')).length,
+          color: getComputedStyle(element).color,
+          fill,
+          surface: getComputedStyle(element.closest('.matilda-float-controls')).backgroundColor,
+          measurements,
+        };
+      }, [16, 20, 24]);
+      assert.equal(actual.viewBox, expected.viewBox, `${state.icon}: approved frame`);
+      assert.deepEqual(actual.paths.map(normalizedPath), expected.paths.map(normalizedPath), `${state.icon}: exact approved path`);
+      assert.equal(actual.fillAttribute, 'currentColor');
+      assert.equal(actual.fillRule, 'evenodd');
+      assert.equal(actual.transforms, 0, 'approved paths have no transforms');
+      assert.equal(actual.fill, actual.color, 'path uses the visible control colour');
+      assert.ok(contrast(actual.fill, actual.surface) >= 3, `${state.icon}: control contrast is below 3:1`);
+      for (const measurement of actual.measurements) {
+        assert.ok(Math.abs(measurement.width - measurement.size) < 0.1, `${state.icon}: ${measurement.size}px width`);
+        assert.ok(Math.abs(measurement.height - measurement.size) < 0.1, `${state.icon}: ${measurement.size}px height`);
+        const { x, y, width, height } = measurement.geometry;
+        const [minX, minY, viewWidth, viewHeight] = expected.viewBox.split(' ').map(Number);
+        assert.ok(x >= minX && y >= minY && x + width <= minX + viewWidth && y + height <= minY + viewHeight,
+          `${state.icon}: path geometry stays inside the approved frame`);
+      }
+      states.push(actual.measurements);
+      if (state.name === 'Mute music') await button.click();
+    }
+    for (let index = 0; index < states[0].length; index++) {
+      assert.ok(Math.abs(states[0][index].centerX - states[1][index].centerX) <= 1,
+        `music and muted glyph centres align at ${states[0][index].size}px`);
+      assert.ok(Math.abs(states[0][index].centerY - states[1][index].centerY) <= 1,
+        `music and muted glyph centres align at ${states[0][index].size}px`);
+    }
+    assert.deepEqual(actions, ['toggle-mute']);
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
