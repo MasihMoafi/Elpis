@@ -46,7 +46,7 @@ export function ReplyableImage({ src, name, children }: ReplyImage & { children:
   const enabled = Boolean(reply);
   useEffect(() => {
     const wrapper = root.current;
-    const image = wrapper?.querySelector(":scope > img");
+    const image = wrapper?.querySelector<HTMLImageElement>(":scope > img");
     if (!enabled || !wrapper || !image || image.classList.contains("activity-thumb")) return;
     let observer: ResizeObserver | undefined;
     let restore: (() => void) | undefined;
