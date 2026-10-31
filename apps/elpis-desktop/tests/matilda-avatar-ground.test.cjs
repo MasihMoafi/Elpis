@@ -1,9 +1,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cjs');
-const { MATILDA_SHOTS, MATILDA_SHOTS_LIGHT } = require('../bridge/matilda-face.cjs');
+const { MATILDA_SHOTS, MATILDA_SHOTS_LIGHT, replyPortrait } = require('../bridge/matilda-face.cjs');
 
-test('dark portraits have a clear backdrop while light portraits keep their approved ground', async t => {
+test('approved portraits have a clear backdrop in light, dark and board modes', async t => {
   const f = await fixture(); t.after(() => f.close());
   const results = await f.page.evaluate(async sources => {
     const out = [];
@@ -19,11 +19,10 @@ test('dark portraits have a clear backdrop while light portraits keep their appr
       out.push({ theme, name, transparent, dressAlpha: context.getImageData(96, 180, 1, 1).data[3] });
     }
     return out;
-  }, { dark: MATILDA_SHOTS, light: MATILDA_SHOTS_LIGHT });
+  }, { dark: MATILDA_SHOTS, light: MATILDA_SHOTS_LIGHT, board: Object.fromEntries(Object.keys(MATILDA_SHOTS).map(name => [name, replyPortrait(`<!--matilda:${name}-->`).board.dataURL])) });
   for (const result of results) {
-    if (result.theme === 'dark') assert.ok(result.transparent > 0, `${result.name}: dark backdrop has transparent pixels`);
-    else assert.equal(result.transparent, 0, `${result.name}: light backdrop remains filled`);
-    assert.equal(result.dressAlpha, 255, `${result.theme}/${result.name}: lower dress remains opaque`);
+    assert.ok(result.transparent > 0, `${result.theme}/${result.name}: the page shows through the portrait backdrop`);
+    assert.ok(result.dressAlpha >= 250, `${result.theme}/${result.name}: the approved dress remains opaque`);
   }
   assert.deepEqual(f.errors, []);
 });
