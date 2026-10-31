@@ -49,9 +49,9 @@ async function main() {
     ws.on('message', data => {
       const m = JSON.parse(String(data)); c.seen.push(m);
       if (m.method && m.id !== undefined) { c.approvals.push(m); ws.send(JSON.stringify({ id: m.id, result: { decision: 'decline' } })); }
-      else if (!m.method) { const p = c.pending.get(m.id); if (p) { c.pending.delete(m.id); clearTimeout(p.timer); m.error ? p.reject(Error(m.error.message)) : p.resolve(m.result); } }
+      else if (!m.method) { const p = c.pending.get(m.id); if (p) { c.pending.delete(m.id); clearTimeout(p.timer); if (m.error) { const error = Error(m.error.message); error.stack += `\nRequest: ${p.label}`; p.reject(error); } else p.resolve(m.result); } }
     });
-    c.req = (method, params = {}) => new Promise((resolve, reject) => { const id = c.next++; const timer = setTimeout(() => { c.pending.delete(id); reject(Error(`timeout ${method}: ${errors}`)); }, 20000); c.pending.set(id, { resolve, reject, timer }); ws.send(JSON.stringify({ id, method, params })); });
+    c.req = (method, params = {}) => new Promise((resolve, reject) => { const id = c.next++; const label = `${method}${params.threadId ? ` (${params.threadId})` : ''}`; const timer = setTimeout(() => { c.pending.delete(id); reject(Error(`timeout ${label}: ${errors}`)); }, 20000); c.pending.set(id, { resolve, reject, timer, label }); ws.send(JSON.stringify({ id, method, params })); });
     c.event = (method, tid) => c.seen.filter(m => m.method === method && (m.params.threadId ?? m.params.thread?.id) === tid);
     await c.req('initialize', { clientInfo: { name, version: '1' }, capabilities: { experimentalApi: true } }); ws.send(JSON.stringify({ method: 'initialized' }));
     return c;
