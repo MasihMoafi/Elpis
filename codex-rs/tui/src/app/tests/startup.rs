@@ -1058,6 +1058,7 @@ async fn known_thread_started_preserves_session_without_reading_unmaterialized_r
             history_mode: Default::default(),
             model_provider: "notification-provider".to_string(),
             model: None,
+            mcp_server_selection: None,
             reasoning_effort: None,
             created_at: 1,
             updated_at: 2,

@@ -310,6 +310,7 @@ impl SessionConfiguration {
             thread_source: self.thread_source.clone(),
             originator: self.originator.clone(),
             disabled_plugin_ids: self.disabled_plugin_ids.clone(),
+            mcp_server_selection: self.mcp_server_selection.clone(),
             turn_extension_init: self.turn_extension_init.clone(),
         }
     }
@@ -367,6 +368,7 @@ impl SessionConfiguration {
             collaboration_mode: Some(self.step_settings.collaboration_mode.clone()),
             personality: self.step_settings.personality,
             disabled_plugin_ids: Some(self.disabled_plugin_ids.clone()),
+            mcp_server_selection: Some(self.mcp_server_selection.clone()),
             turn_extension_init: Some(self.turn_extension_init.clone()),
             ..Default::default()
         }
@@ -413,6 +415,9 @@ impl SessionConfiguration {
         }
         if let Some(disabled_plugin_ids) = &updates.disabled_plugin_ids {
             next_configuration.disabled_plugin_ids = disabled_plugin_ids.clone();
+        }
+        if let Some(mcp_server_selection) = &updates.mcp_server_selection {
+            next_configuration.mcp_server_selection = mcp_server_selection.clone();
         }
         let current_file_system_sandbox_policy =
             self.file_system_sandbox_policy(current_environments);
@@ -621,6 +626,7 @@ pub(crate) struct SessionSettingsUpdate {
     pub(crate) app_server_client_name: Option<String>,
     pub(crate) app_server_client_version: Option<String>,
     pub(crate) disabled_plugin_ids: Option<Vec<String>>,
+    pub(crate) mcp_server_selection: Option<Option<Vec<String>>>,
 }
 
 pub(crate) struct AppServerClientMetadata {

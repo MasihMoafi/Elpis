@@ -864,6 +864,7 @@ fn sample_thread_start_response() -> ThreadStartResponse {
             history_mode: Default::default(),
             model_provider: "openai".to_string(),
             model: None,
+            mcp_server_selection: None,
             reasoning_effort: None,
             created_at: 0,
             updated_at: 0,

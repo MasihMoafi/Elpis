@@ -46,6 +46,11 @@ use std::time::Duration;
 use tempfile::TempDir;
 use test_case::test_case;
 use tokio::time::timeout;
+use wiremock::Mock;
+use wiremock::MockServer;
+use wiremock::ResponseTemplate;
+use wiremock::matchers::method;
+use wiremock::matchers::path;
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -87,6 +92,372 @@ async fn disabled_plugin_ids_replace_preserve_and_clear_without_inference() -> R
         assert_eq!(updated.thread_settings.disabled_plugin_ids, expected);
     }
     assert!(received_response_bodies(&server).await?.is_empty());
+    Ok(())
+}
+
+#[tokio::test]
+async fn mcp_server_selection_updates_the_model_visible_catalog() -> Result<()> {
+    let responses = create_mock_responses_server_sequence_unchecked(vec![
+        create_final_assistant_message_sse_response("done")?,
+        create_final_assistant_message_sse_response("done")?,
+        create_final_assistant_message_sse_response("done")?,
+        create_final_assistant_message_sse_response("done")?,
+        create_final_assistant_message_sse_response("done")?,
+        create_final_assistant_message_sse_response("done")?,
+        create_final_assistant_message_sse_response("done")?,
+    ])
+    .await;
+    let mcp_server = MockServer::start().await;
+    let tool = json!({
+        "name": "selection_probe",
+        "description": "Used to verify the native model-visible MCP catalog.",
+        "inputSchema": { "type": "object", "properties": {} }
+    });
+    Mock::given(method("POST"))
+        .and(path("/mcp"))
+        .respond_with(move |request: &wiremock::Request| {
+            let request: Value = serde_json::from_slice(&request.body).unwrap();
+            let result = match request["method"].as_str() {
+                Some("initialize") => json!({
+                    "protocolVersion": "2025-11-25",
+                    "capabilities": { "tools": {} },
+                    "serverInfo": { "name": "selection-fixture", "version": "1.0.0" }
+                }),
+                Some("tools/list") => json!({ "tools": [tool.clone()] }),
+                _ => return ResponseTemplate::new(202),
+            };
+            ResponseTemplate::new(200).set_body_json(json!({
+                "jsonrpc": "2.0",
+                "id": request["id"],
+                "result": result
+            }))
+        })
+        .mount(&mcp_server)
+        .await;
+
+    let codex_home = TempDir::new()?;
+    MockResponsesConfig::new(&responses.uri())
+        .with_extra_config(&format!(
+            "[mcp_servers.alpha]\nurl = \"{}/mcp\"\n\n[mcp_servers.beta]\nurl = \"{}/mcp\"",
+            mcp_server.uri(),
+            mcp_server.uri()
+        ))
+        .write(codex_home.path())?;
+    let mut app = TestAppServer::builder()
+        .with_codex_home(codex_home.path())
+        .build_initialized_with_timeout(DEFAULT_TIMEOUT)
+        .await?;
+    let thread = start_thread(&mut app).await?.thread;
+
+    let invalid_request_id = app
+        .send_thread_settings_update_request(ThreadSettingsUpdateParams {
+            thread_id: thread.id.clone(),
+            mcp_server_selection: Some(Some(vec!["missing".to_string()])),
+            ..Default::default()
+        })
+        .await?;
+    let invalid_selection: JSONRPCError = timeout(
+        DEFAULT_TIMEOUT,
+        app.read_stream_until_error_message(RequestId::Integer(invalid_request_id)),
+    )
+    .await??;
+    assert_eq!(
+        invalid_selection.error.message,
+        "MCP server `missing` is not globally configured"
+    );
+
+    let selection_alpha = vec!["alpha".to_string()];
+    let selection_beta = vec!["beta".to_string()];
+    let cases = [
+        (
+            Some(Some(selection_alpha.clone())),
+            None,
+            Some(selection_alpha.clone()),
+            true,
+            false,
+            false,
+        ),
+        (
+            None,
+            Some("mock-model-2".to_string()),
+            Some(selection_alpha),
+            true,
+            false,
+            false,
+        ),
+        (Some(None), None, None, true, true, true),
+        (
+            Some(Some(selection_beta.clone())),
+            None,
+            Some(selection_beta),
+            false,
+            true,
+            false,
+        ),
+        (
+            Some(Some(Vec::new())),
+            None,
+            Some(Vec::new()),
+            false,
+            false,
+            false,
+        ),
+    ];
+    for (index, (selection_update, model, expected_selection, _, _, _)) in cases.iter().enumerate()
+    {
+        if index == 1 {
+            let config_path = codex_home.path().join("config.toml");
+            let mut config = std::fs::read_to_string(&config_path)?;
+            config.push_str(&format!(
+                "\n\n[mcp_servers.gamma]\nurl = \"{}/mcp\"\n",
+                mcp_server.uri()
+            ));
+            std::fs::write(&config_path, config)?;
+            let reload_request_id = app
+                .send_raw_request("config/mcpServer/reload", None)
+                .await?;
+            timeout(
+                DEFAULT_TIMEOUT,
+                app.read_stream_until_response_message(RequestId::Integer(reload_request_id)),
+            )
+            .await??;
+        }
+        send_thread_settings_update(
+            &mut app,
+            ThreadSettingsUpdateParams {
+                thread_id: thread.id.clone(),
+                mcp_server_selection: selection_update.clone(),
+                model: model.clone(),
+                ..Default::default()
+            },
+        )
+        .await?;
+        let updated = read_thread_settings_updated(&mut app).await?;
+        assert_eq!(updated.thread_id, thread.id);
+        assert_eq!(
+            updated.thread_settings.mcp_server_selection,
+            expected_selection.clone()
+        );
+
+        start_text_turn(&mut app, thread.id.clone()).await?;
+        timeout(DEFAULT_TIMEOUT, app.read_notification("turn/completed")).await??;
+    }
+
+    let bodies = received_response_bodies(&responses).await?;
+    assert_eq!(bodies.len(), cases.len());
+    for (body, (_, _, _, alpha_expected, beta_expected, gamma_expected)) in
+        bodies.iter().zip(&cases)
+    {
+        let tools = body["tools"]
+            .as_array()
+            .context("model request tools should be an array")?;
+        let alpha_visible = tools.iter().any(|tool| {
+            tool["name"]
+                .as_str()
+                .is_some_and(|name| name.starts_with("mcp__alpha__"))
+        });
+        let beta_visible = tools.iter().any(|tool| {
+            tool["name"]
+                .as_str()
+                .is_some_and(|name| name.starts_with("mcp__beta__"))
+        });
+        let gamma_visible = tools.iter().any(|tool| {
+            tool["name"]
+                .as_str()
+                .is_some_and(|name| name.starts_with("mcp__gamma__"))
+        });
+        assert_eq!(alpha_visible, *alpha_expected);
+        assert_eq!(beta_visible, *beta_expected);
+        assert_eq!(gamma_visible, *gamma_expected);
+    }
+
+    send_thread_settings_update(
+        &mut app,
+        ThreadSettingsUpdateParams {
+            thread_id: thread.id.clone(),
+            mcp_server_selection: Some(Some(vec!["alpha".to_string()])),
+            ..Default::default()
+        },
+    )
+    .await?;
+    let updated = read_thread_settings_updated(&mut app).await?;
+    assert_eq!(
+        updated.thread_settings.mcp_server_selection,
+        Some(vec!["alpha".to_string()])
+    );
+    let config_path = codex_home.path().join("config.toml");
+    let config = std::fs::read_to_string(&config_path)?;
+    let alpha_config = format!(
+        "[mcp_servers.alpha]\nurl = \"{}/mcp\"\n\n",
+        mcp_server.uri()
+    );
+    let alpha_disabled_config = format!(
+        "[mcp_servers.alpha]\nenabled = false\nurl = \"{}/mcp\"\n\n",
+        mcp_server.uri()
+    );
+    let config_with_alpha_disabled = config.replacen(&alpha_config, &alpha_disabled_config, 1);
+    assert_ne!(
+        config_with_alpha_disabled, config,
+        "alpha should be enabled before the global disable"
+    );
+    std::fs::write(&config_path, config_with_alpha_disabled)?;
+    let reload_request_id = app
+        .send_raw_request("config/mcpServer/reload", None)
+        .await?;
+    timeout(
+        DEFAULT_TIMEOUT,
+        app.read_stream_until_response_message(RequestId::Integer(reload_request_id)),
+    )
+    .await??;
+    let read_request_id = app
+        .send_thread_read_request(ThreadReadParams {
+            thread_id: thread.id.clone(),
+            include_turns: false,
+        })
+        .await?;
+    let read: ThreadReadResponse =
+        timeout(DEFAULT_TIMEOUT, app.read_response(read_request_id)).await??;
+    assert_eq!(
+        read.thread.mcp_server_selection,
+        Some(vec!["alpha".to_string()])
+    );
+    start_text_turn(&mut app, thread.id.clone()).await?;
+    timeout(DEFAULT_TIMEOUT, app.read_notification("turn/completed")).await??;
+
+    let config = std::fs::read_to_string(&config_path)?;
+    let config_without_alpha = config.replacen(&alpha_disabled_config, "", 1);
+    assert_ne!(
+        config_without_alpha, config,
+        "alpha should be removed from global config"
+    );
+    std::fs::write(&config_path, config_without_alpha)?;
+    let reload_request_id = app
+        .send_raw_request("config/mcpServer/reload", None)
+        .await?;
+    timeout(
+        DEFAULT_TIMEOUT,
+        app.read_stream_until_response_message(RequestId::Integer(reload_request_id)),
+    )
+    .await??;
+    let read_request_id = app
+        .send_thread_read_request(ThreadReadParams {
+            thread_id: thread.id.clone(),
+            include_turns: false,
+        })
+        .await?;
+    let read: ThreadReadResponse =
+        timeout(DEFAULT_TIMEOUT, app.read_response(read_request_id)).await??;
+    assert_eq!(
+        read.thread.mcp_server_selection,
+        Some(vec!["alpha".to_string()])
+    );
+    start_text_turn(&mut app, thread.id.clone()).await?;
+    timeout(DEFAULT_TIMEOUT, app.read_notification("turn/completed")).await??;
+    let bodies = received_response_bodies(&responses).await?;
+    assert_eq!(bodies.len(), 7);
+    let tools = bodies[5]["tools"]
+        .as_array()
+        .context("model request tools should be an array")?;
+    assert!(
+        tools.iter().all(|tool| {
+            tool["name"]
+                .as_str()
+                .is_none_or(|name| !name.starts_with("mcp__"))
+        }),
+        "a globally disabled MCP server must not leave model-visible tools"
+    );
+    let tools = bodies[6]["tools"]
+        .as_array()
+        .context("model request tools should be an array")?;
+    assert!(
+        tools.iter().all(|tool| {
+            tool["name"]
+                .as_str()
+                .is_none_or(|name| !name.starts_with("mcp__"))
+        }),
+        "a globally removed MCP server must not leave model-visible tools"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn mcp_server_selection_restores_on_resume_and_inherited_fork() -> Result<()> {
+    let responses = create_mock_responses_server_sequence_unchecked(Vec::new()).await;
+    let codex_home = TempDir::new()?;
+    MockResponsesConfig::new(&responses.uri())
+        .with_extra_config("[mcp_servers.alpha]\nenabled = false\nurl = \"http://127.0.0.1:9/mcp\"")
+        .write(codex_home.path())?;
+    let mut app = TestAppServer::builder()
+        .with_codex_home(codex_home.path())
+        .build_initialized_with_timeout(DEFAULT_TIMEOUT)
+        .await?;
+    let selected_names = vec!["alpha".to_string()];
+    let started = app
+        .start_thread(ThreadStartParams {
+            model: Some("mock-model".to_string()),
+            mcp_server_selection: Some(selected_names.clone()),
+            ..Default::default()
+        })
+        .await?;
+    assert_eq!(
+        started.thread.mcp_server_selection,
+        Some(selected_names.clone())
+    );
+    let thread_id = started.thread.id;
+    app.shutdown_gracefully().await?;
+
+    // Removing a selected global definition must not make saved history unreadable,
+    // nor prevent an inherited fork from preserving the exact saved names.
+    MockResponsesConfig::new(&responses.uri()).write(codex_home.path())?;
+
+    let mut app = TestAppServer::builder()
+        .with_codex_home(codex_home.path())
+        .build_initialized_with_timeout(DEFAULT_TIMEOUT)
+        .await?;
+    let resume_request_id = app
+        .send_thread_resume_request(ThreadResumeParams {
+            thread_id: thread_id.clone(),
+            ..Default::default()
+        })
+        .await?;
+    let resumed: ThreadResumeResponse =
+        timeout(DEFAULT_TIMEOUT, app.read_response(resume_request_id)).await??;
+    assert_eq!(
+        resumed.thread.mcp_server_selection,
+        Some(selected_names.clone())
+    );
+
+    let fork_request_id = app
+        .send_thread_fork_request(ThreadForkParams {
+            thread_id,
+            ..Default::default()
+        })
+        .await?;
+    let forked: ThreadForkResponse =
+        timeout(DEFAULT_TIMEOUT, app.read_response(fork_request_id)).await??;
+    assert_eq!(forked.thread.mcp_server_selection, Some(selected_names));
+
+    let empty_fork_request_id = app
+        .send_thread_fork_request(ThreadForkParams {
+            thread_id: forked.thread.id.clone(),
+            mcp_server_selection: Some(Some(Vec::new())),
+            ..Default::default()
+        })
+        .await?;
+    let empty_fork: ThreadForkResponse =
+        timeout(DEFAULT_TIMEOUT, app.read_response(empty_fork_request_id)).await??;
+    assert_eq!(empty_fork.thread.mcp_server_selection, Some(Vec::new()));
+
+    let default_fork_request_id = app
+        .send_thread_fork_request(ThreadForkParams {
+            thread_id: forked.thread.id,
+            mcp_server_selection: Some(None),
+            ..Default::default()
+        })
+        .await?;
+    let default_fork: ThreadForkResponse =
+        timeout(DEFAULT_TIMEOUT, app.read_response(default_fork_request_id)).await??;
+    assert_eq!(default_fork.thread.mcp_server_selection, None);
     Ok(())
 }
 

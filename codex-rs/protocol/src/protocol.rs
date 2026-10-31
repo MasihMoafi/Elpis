@@ -552,6 +552,10 @@ pub struct ThreadSettingsOverrides {
     /// Replace the thread's disabled plugin IDs. Omission preserves the current
     /// selection, and an empty list clears it.
     pub disabled_plugin_ids: Option<Vec<String>>,
+    /// Thread-owned allowlist of globally configured MCP server names.
+    /// `Some(None)` restores the current global default; `Some(Some([]))`
+    /// selects no user-configured servers.
+    pub mcp_server_selection: Option<Option<Vec<String>>>,
 }
 
 /// Source classification for client-supplied context.
@@ -2304,7 +2308,9 @@ pub struct ThreadSettingsSnapshot {
     pub mcp_server_selection: Option<Vec<String>>,
 }
 
-fn deserialize_mcp_server_selection<'de, D>(deserializer: D) -> Result<Option<Vec<String>>, D::Error>
+fn deserialize_mcp_server_selection<'de, D>(
+    deserializer: D,
+) -> Result<Option<Vec<String>>, D::Error>
 where
     D: Deserializer<'de>,
 {

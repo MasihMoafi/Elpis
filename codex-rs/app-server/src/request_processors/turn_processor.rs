@@ -136,6 +136,7 @@ struct ThreadSettingsBuildParams {
     permissions: Option<String>,
     model: Option<String>,
     service_tier: Option<Option<String>>,
+    mcp_server_selection: Option<Option<Vec<String>>>,
     effort: Option<ReasoningEffort>,
     summary: Option<ReasoningSummary>,
     collaboration_mode: Option<CollaborationMode>,
@@ -673,6 +674,7 @@ impl TurnRequestProcessor {
                     permissions: params.permissions,
                     model: params.model,
                     service_tier: params.service_tier,
+                    mcp_server_selection: None,
                     effort: params.effort,
                     summary: params.summary,
                     collaboration_mode: params.collaboration_mode,
@@ -834,11 +836,29 @@ impl TurnRequestProcessor {
             permissions,
             model,
             service_tier,
+            mcp_server_selection,
             effort,
             summary,
             collaboration_mode,
             personality,
         } = params;
+
+        if let Some(Some(selection)) = &mcp_server_selection {
+            let cwd = thread.config_snapshot().await.cwd().to_path_buf();
+            let config = self
+                .config_manager
+                .load_for_cwd(None, ConfigOverrides::default(), Some(cwd))
+                .await
+                .map_err(config_load_error)?;
+            if let Some(unknown) = selection
+                .iter()
+                .find(|name| !config.mcp_servers.contains_key(name.as_str()))
+            {
+                return Err(invalid_request(format!(
+                    "MCP server `{unknown}` is not globally configured"
+                )));
+            }
+        }
 
         if sandbox_policy.is_some() && permissions.is_some() {
             return Err(invalid_request(
@@ -866,6 +886,7 @@ impl TurnRequestProcessor {
             || permissions.is_some()
             || model.is_some()
             || service_tier.is_some()
+            || mcp_server_selection.is_some()
             || effort.is_some()
             || summary.is_some()
             || collaboration_mode.is_some()
@@ -931,6 +952,7 @@ impl TurnRequestProcessor {
                     effort: effort.clone(),
                     summary,
                     service_tier: service_tier.clone(),
+                    mcp_server_selection: mcp_server_selection.clone(),
                     collaboration_mode: collaboration_mode.clone(),
                     personality,
                 })
@@ -955,6 +977,7 @@ impl TurnRequestProcessor {
             effort,
             summary,
             service_tier,
+            mcp_server_selection,
             collaboration_mode,
             personality,
         })
@@ -990,6 +1013,7 @@ impl TurnRequestProcessor {
                     permissions: params.permissions,
                     model: params.model,
                     service_tier: params.service_tier,
+                    mcp_server_selection: params.mcp_server_selection,
                     effort: params.effort,
                     summary: params.summary,
                     collaboration_mode: params.collaboration_mode,

@@ -6332,6 +6332,7 @@ pub(crate) fn thread_from_stored_thread(
             thread.model_provider
         },
         model: thread.model,
+        mcp_server_selection: None,
         reasoning_effort: thread.reasoning_effort,
         created_at: thread.created_at.timestamp(),
         updated_at: thread.updated_at.timestamp(),
@@ -6514,6 +6515,7 @@ fn build_thread_from_snapshot(
         history_mode: config_snapshot.history_mode.into(),
         model_provider: config_snapshot.model_provider_id.clone(),
         model: Some(config_snapshot.model.clone()),
+        mcp_server_selection: config_snapshot.mcp_server_selection.clone(),
         reasoning_effort: config_snapshot.reasoning_effort.clone(),
         created_at: now,
         updated_at: now,

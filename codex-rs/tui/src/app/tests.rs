@@ -2454,6 +2454,7 @@ async fn open_agent_picker_selects_delegated_app_server_helper() -> Result<()> {
                 history_mode: Default::default(),
                 model_provider: "openai".to_string(),
                 model: Some("gpt-test".to_string()),
+                mcp_server_selection: None,
                 reasoning_effort: None,
                 created_at: 1,
                 updated_at: 2,
@@ -4635,6 +4636,7 @@ async fn inactive_thread_started_notification_initializes_replay_session() -> Re
                 history_mode: Default::default(),
                 model_provider: "agent-provider".to_string(),
                 model: Some("gpt-agent".to_string()),
+                mcp_server_selection: None,
                 reasoning_effort: None,
                 created_at: 1,
                 updated_at: 2,
@@ -4741,6 +4743,7 @@ async fn inactive_thread_started_notification_preserves_primary_model_when_path_
                 history_mode: Default::default(),
                 model_provider: "agent-provider".to_string(),
                 model: None,
+                mcp_server_selection: None,
                 reasoning_effort: None,
                 created_at: 1,
                 updated_at: 2,
@@ -4812,6 +4815,7 @@ async fn thread_read_session_state_does_not_reuse_primary_permission_profile() {
         history_mode: Default::default(),
         model_provider: "read-provider".to_string(),
         model: Some("server-reported-model".to_string()),
+        mcp_server_selection: None,
         reasoning_effort: None,
         created_at: 1,
         updated_at: 2,
@@ -6159,7 +6163,7 @@ async fn make_test_app() -> Box<App> {
         pending_server_profiles: HashMap::new(),
         agents_overview: Default::default(),
         manual_memory_status: Default::default(), // Elpis
-        elpis_turn_items: Default::default(), // Elpis
+        elpis_turn_items: Default::default(),     // Elpis
         side_threads: HashMap::new(),
         abandoned_side_threads: HashSet::new(),
         active_thread_id: None,
@@ -6281,7 +6285,7 @@ pub(super) async fn make_test_app_with_channels() -> (
             pending_server_profiles: HashMap::new(),
             agents_overview: Default::default(),
             manual_memory_status: Default::default(), // Elpis
-            elpis_turn_items: Default::default(), // Elpis
+            elpis_turn_items: Default::default(),     // Elpis
             side_threads: HashMap::new(),
             abandoned_side_threads: HashSet::new(),
             active_thread_id: None,
@@ -9500,6 +9504,7 @@ async fn inactive_thread_settings_notification_updates_cached_collaboration_mode
         thread_id: inactive_thread_id.to_string(),
         thread_settings: ThreadSettings {
             disabled_plugin_ids: Vec::new(),
+            mcp_server_selection: None,
             cwd: test_absolute_path("/tmp/thread-settings"),
             approval_policy: AskForApproval::OnRequest,
             approvals_reviewer: codex_app_server_protocol::ApprovalsReviewer::AutoReview,

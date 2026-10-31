@@ -264,6 +264,37 @@ fn thread_turns_list_params_accepts_items_view() {
 }
 
 #[test]
+fn thread_settings_update_preserves_mcp_selection_null_and_empty_distinctions() {
+    let omitted = serde_json::from_value::<ThreadSettingsUpdateParams>(json!({
+        "threadId": "thr_123"
+    }))
+    .expect("settings update should deserialize without a selection");
+    assert_eq!(omitted.mcp_server_selection, None);
+
+    let reset_default = serde_json::from_value::<ThreadSettingsUpdateParams>(json!({
+        "threadId": "thr_123",
+        "mcpServerSelection": null
+    }))
+    .expect("null selection should deserialize");
+    assert_eq!(reset_default.mcp_server_selection, Some(None));
+    assert_eq!(
+        serde_json::to_value(&reset_default).expect("selection should serialize")["mcpServerSelection"],
+        json!(null)
+    );
+
+    let select_none = serde_json::from_value::<ThreadSettingsUpdateParams>(json!({
+        "threadId": "thr_123",
+        "mcpServerSelection": []
+    }))
+    .expect("empty selection should deserialize");
+    assert_eq!(select_none.mcp_server_selection, Some(Some(Vec::new())));
+    assert_eq!(
+        serde_json::to_value(&select_none).expect("selection should serialize")["mcpServerSelection"],
+        json!([])
+    );
+}
+
+#[test]
 fn thread_resume_params_accept_turns_page_bootstrap() {
     let params = serde_json::from_value::<ThreadResumeParams>(json!({
         "threadId": "thr_123",
@@ -316,6 +347,7 @@ fn thread_resume_response_round_trips_initial_turns_page() {
             history_mode: Default::default(),
             model_provider: "openai".to_string(),
             model: None,
+            mcp_server_selection: Some(vec!["alpha".to_string()]),
             reasoning_effort: None,
             created_at: 1,
             updated_at: 1,
@@ -390,6 +422,10 @@ fn thread_resume_response_round_trips_initial_turns_page() {
     assert_eq!(legacy_thread.project_id, None);
     assert_eq!(legacy_thread.environments, None);
     assert_eq!(legacy_thread.originator, None);
+    assert_eq!(
+        legacy_thread.mcp_server_selection,
+        Some(vec!["alpha".to_string()])
+    );
 
     assert_eq!(
         value.get("initialTurnsPage"),

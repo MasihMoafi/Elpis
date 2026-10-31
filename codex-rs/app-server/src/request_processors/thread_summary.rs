@@ -177,6 +177,7 @@ pub(crate) fn thread_settings_from_config_snapshot(
 ) -> ThreadSettings {
     ThreadSettings {
         disabled_plugin_ids: config_snapshot.disabled_plugin_ids.clone(),
+        mcp_server_selection: config_snapshot.mcp_server_selection.clone(),
         cwd: config_snapshot.cwd().clone(),
         approval_policy: config_snapshot.approval_policy.into(),
         approvals_reviewer: config_snapshot.approvals_reviewer.into(),
@@ -276,6 +277,7 @@ pub(crate) fn summary_to_thread(
         model_provider,
         created_at: created_at.map(|dt| dt.timestamp()).unwrap_or(0),
         model: None,
+        mcp_server_selection: None,
         reasoning_effort: None,
         updated_at: updated_at.map(|dt| dt.timestamp()).unwrap_or(0),
         recency_at: updated_at.map(|dt| dt.timestamp()),

@@ -157,6 +157,7 @@ pub(super) fn prepare_update(
         collaboration_mode,
         personality,
         disabled_plugin_ids,
+        mcp_server_selection,
     } = overrides;
     SessionSettingsUpdate {
         turn_extension_init,
@@ -178,6 +179,7 @@ pub(super) fn prepare_update(
         active_permission_profile,
         windows_sandbox_level,
         disabled_plugin_ids,
+        mcp_server_selection,
         ..Default::default()
     }
 }

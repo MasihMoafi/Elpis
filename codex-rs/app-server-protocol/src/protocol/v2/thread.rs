@@ -280,6 +280,16 @@ pub struct ThreadSettingsUpdateParams {
     )]
     #[ts(optional = nullable)]
     pub service_tier: Option<Option<String>>,
+    /// Thread-owned allowlist of globally configured MCP server names.
+    /// Omission preserves the current selection; `null` restores the global default.
+    #[serde(
+        default,
+        deserialize_with = "crate::protocol::serde_helpers::deserialize_double_option",
+        serialize_with = "crate::protocol::serde_helpers::serialize_double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[ts(optional = nullable)]
+    pub mcp_server_selection: Option<Option<Vec<String>>>,
     /// Override the reasoning effort for subsequent turns.
     #[ts(optional = nullable)]
     pub effort: Option<ReasoningEffort>,
@@ -315,6 +325,10 @@ pub struct ThreadSettings {
     /// Saved list of disabled plugin IDs. Does not yet filter plugin capabilities.
     #[serde(default)]
     pub disabled_plugin_ids: Vec<String>,
+    /// Thread-owned MCP server names. `null` uses the global default; an empty list selects none.
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub mcp_server_selection: Option<Vec<String>>,
     pub cwd: AbsolutePathBuf,
     pub approval_policy: AskForApproval,
     pub approvals_reviewer: ApprovalsReviewer,

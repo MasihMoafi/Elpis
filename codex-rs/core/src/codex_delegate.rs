@@ -80,6 +80,10 @@ pub(crate) async fn run_codex_thread_interactive(
 
     let conversation_history = initial_history.unwrap_or(InitialHistory::New);
     let forked_from_thread_id = conversation_history.forked_from_id();
+    let mcp_server_selection = parent_session
+        .thread_config_snapshot()
+        .await
+        .mcp_server_selection;
     let runtime = parent_session.services.local_agent_runtime.clone();
     let startup = Arc::new(SessionStartup::default());
     startup.hold_membership(runtime.admit_start()?);
@@ -114,7 +118,7 @@ pub(crate) async fn run_codex_thread_interactive(
         extensions,
         conversation_history,
         disabled_plugin_ids: None,
-        mcp_server_selection: None,
+        mcp_server_selection,
         requested_history_mode: None,
         fork_persistence: ForkPersistence::Copied,
         session_source,

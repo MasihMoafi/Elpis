@@ -114,6 +114,7 @@ pub struct ThreadConfigSnapshot {
     pub thread_source: Option<ThreadSource>,
     pub originator: String,
     pub disabled_plugin_ids: Vec<String>,
+    pub mcp_server_selection: Option<Vec<String>>,
 }
 
 impl ThreadConfigSnapshot {
@@ -166,6 +167,7 @@ pub struct CodexThreadSettingsOverrides {
     pub collaboration_mode: Option<CollaborationMode>,
     pub personality: Option<Personality>,
     pub disabled_plugin_ids: Option<Vec<String>>,
+    pub mcp_server_selection: Option<Option<Vec<String>>>,
 }
 
 /// Result of publishing a loaded configuration snapshot for a thread.
@@ -774,6 +776,7 @@ impl CodexThread {
             collaboration_mode,
             personality,
             disabled_plugin_ids,
+            mcp_server_selection,
         } = overrides;
         SessionSettingsUpdate {
             turn_extension_init,
@@ -796,6 +799,7 @@ impl CodexThread {
             active_permission_profile,
             windows_sandbox_level,
             disabled_plugin_ids,
+            mcp_server_selection,
             ..Default::default()
         }
     }

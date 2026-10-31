@@ -47,7 +47,7 @@ async fn fresh_context_subagent_inherits_disabled_view_image_and_mcp_tools() -> 
         .with_model("gpt-5.4")
         .with_provider_config("supports_websockets = false")
         .with_extra_config(&format!(
-            "[mcp_servers.{TEST_SERVER_NAME}]\nurl = \"{mcp_server_url}/mcp\"\n\n[features.multi_agent_v2]\nenabled = true"
+            "[mcp_servers.{TEST_SERVER_NAME}]\nurl = \"{mcp_server_url}/mcp\"\n\n[mcp_servers.unselected_server]\nurl = \"{mcp_server_url}/mcp\"\n\n[features.multi_agent_v2]\nenabled = true"
         ))
         .write(codex_home.path())?;
     write_models_cache(codex_home.path()).await?;
@@ -59,6 +59,7 @@ async fn fresh_context_subagent_inherits_disabled_view_image_and_mcp_tools() -> 
     let ThreadStartResponse { thread, .. } = mcp
         .start_thread(ThreadStartParams {
             model: Some("gpt-5.4".to_string()),
+            mcp_server_selection: Some(vec![TEST_SERVER_NAME.to_string()]),
             config: Some(
                 [("features.view_image".to_string(), json!(false))]
                     .into_iter()
@@ -178,6 +179,14 @@ async fn fresh_context_subagent_inherits_disabled_view_image_and_mcp_tools() -> 
                 .iter()
                 .any(|tool| tool["type"] == "tool_search"),
         "the namespaced MCP tool must remain directly visible or searchable"
+    );
+    assert!(
+        visible_tools.iter().all(|tool| {
+            tool["name"]
+                .as_str()
+                .is_none_or(|name| !name.starts_with("mcp__unselected_server__"))
+        }),
+        "the child must inherit the parent's exact MCP allowlist"
     );
     let tool_output = child_followup
         .last_request()

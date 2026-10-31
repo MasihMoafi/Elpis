@@ -263,6 +263,7 @@ fn overview_thread(
         history_mode: Default::default(),
         model_provider: "openai".to_string(),
         model: None,
+        mcp_server_selection: None,
         reasoning_effort: None,
         created_at: *OVERVIEW_TIMESTAMP,
         updated_at: *OVERVIEW_TIMESTAMP,

@@ -132,6 +132,12 @@ jobs:
       - name: Check core, UI, CLI and their tests
         working-directory: codex-rs
         run: cargo check --locked --tests -p codex-core -p codex-tui -p codex-cli -p codex-app-server
+      - name: Run native MCP selection catalog regressions
+        working-directory: codex-rs
+        run: cargo test --locked -p codex-app-server --test all -- mcp_server_selection_
+      - name: Run MCP selection history recovery regressions
+        working-directory: codex-rs
+        run: cargo test --locked -p codex-history --lib mcp_server_selection_
       - name: Retain compiler outputs
         if: always() && steps.cargo_cache.outputs.cache-hit != 'true' && steps.cargo_cache.outputs.cache-primary-key != ''
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7

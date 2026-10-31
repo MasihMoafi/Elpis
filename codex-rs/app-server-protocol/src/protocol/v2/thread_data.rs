@@ -244,6 +244,10 @@ pub struct Thread {
     /// Current configured model when loaded, otherwise the latest persisted model.
     /// Null when unavailable. This is not per-turn execution telemetry.
     pub model: Option<String>,
+    /// Thread-owned MCP server names. `null` uses the global default; an empty list selects none.
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub mcp_server_selection: Option<Vec<String>>,
     /// Current configured reasoning effort when loaded, otherwise the latest persisted effort.
     /// Null when unset or unavailable. This is not per-turn execution telemetry.
     pub reasoning_effort: Option<ReasoningEffort>,
@@ -317,6 +321,8 @@ struct ThreadCompatibility {
     history_mode: ThreadHistoryMode,
     model_provider: String,
     model: Option<String>,
+    #[serde(default)]
+    mcp_server_selection: Option<Vec<String>>,
     reasoning_effort: Option<ReasoningEffort>,
     created_at: i64,
     updated_at: i64,
@@ -358,6 +364,7 @@ impl<'de> Deserialize<'de> for Thread {
             history_mode: thread.history_mode,
             model_provider: thread.model_provider,
             model: thread.model,
+            mcp_server_selection: thread.mcp_server_selection,
             reasoning_effort: thread.reasoning_effort,
             created_at: thread.created_at,
             updated_at: thread.updated_at,
