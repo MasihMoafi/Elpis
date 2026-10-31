@@ -23,12 +23,14 @@
     .close { position:absolute; top:10px; right:10px; display:none; width:22px; height:22px; padding:0; border:1px solid var(--border); border-radius:50%;
       background:var(--card); color:var(--foreground); font:14px/1 system-ui, sans-serif; cursor:pointer; }
     .shot:hover .close { display:block; }
+    /* A stack behind the card when several screenshots wait. */
+    .shot[data-count]:not([data-count=""]) { box-shadow:4px -4px 0 -1px var(--card), 4px -4px 0 0 var(--border), 0 6px 20px rgb(0 0 0 / .28); }
   </style>
 </head>
 <body>
   <div class="shot" role="button" tabindex="0" aria-label="Draw on this screenshot in Love Spot">
     <img alt="">
-    <div class="hint"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 21s-7.5-4.6-9.6-9.2C.9 8.3 3 4.5 6.7 4.5c2.1 0 3.6 1.1 4.3 2.5h2c.7-1.4 2.2-2.5 4.3-2.5 3.7 0 5.8 3.8 4.3 7.3C19.5 16.4 12 21 12 21z"/></svg>Click to draw on it in Love Spot</div>
+    <div class="hint"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 21s-7.5-4.6-9.6-9.2C.9 8.3 3 4.5 6.7 4.5c2.1 0 3.6 1.1 4.3 2.5h2c.7-1.4 2.2-2.5 4.3-2.5 3.7 0 5.8 3.8 4.3 7.3C19.5 16.4 12 21 12 21z"/></svg><span class="label">Click to draw on it in Love Spot</span></div>
     <button class="close" type="button" aria-label="Close">×</button>
   </div>
   <script>
@@ -44,6 +46,10 @@
     window.elpisScreenshot.onShow(shot => {
       document.documentElement.classList.toggle('dark', shot.dark);
       image.src = shot.image; image.alt = shot.name;
+      // Several screenshots in a row open together, in the order they were taken (Masih, 31 Oct).
+      const many = shot.count > 1, label = many ? `Open all ${shot.count} in Love Spot` : 'Click to draw on it in Love Spot';
+      document.querySelector('.label').textContent = label; card.setAttribute('aria-label', many ? label : 'Draw on this screenshot in Love Spot');
+      card.dataset.count = many ? String(shot.count) : '';
       card.classList.remove('in'); requestAnimationFrame(() => card.classList.add('in'));
       wait(6000);
     });

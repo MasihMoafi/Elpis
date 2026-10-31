@@ -1627,3 +1627,5 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 /* components/load-on-scroll.tsx: the edge marker that loads more of any list; a 16px spinner while it loads, nothing at rest. */
 .load-on-scroll { flex:none; display:flex; justify-content:center; min-height:1px; color:var(--muted-foreground); }
 .load-on-scroll[data-loading] { padding:8px 0; }
+/* components/matilda-switch.tsx: the one Matilda on/off. */
+.matilda-switch { display:flex; align-items:center; gap:8px; font-size:var(--text-xs); white-space:nowrap; }

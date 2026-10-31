@@ -23,6 +23,8 @@ import { MatildaWho, useMatilda } from "@/components/love-spot-matilda";
 import { ModelPicker } from "@/components/model-picker";
 import { api, chatProvider, providerChoices, unreadable, type Model, type ProviderSettings } from "@/lib/api";
 import { keepModel, savedModel, MATILDA_CHANGED } from "@/lib/matilda";
+import { useMatildaSettings, type MatildaSettings } from "@/lib/matilda-settings";
+import { MatildaSwitch } from "@/components/matilda-switch";
 import { applyRemoteScene, mergeRemoteElements, restoreRemoteElements } from "@/lib/love-spot-history";
 import { createTextJournal, saveWithTextDrafts } from "@/lib/love-spot-drafts";
 import { subscribeLoveSpotEvents } from "@/lib/love-spot-events";
@@ -30,7 +32,7 @@ import { MASIH_PEN, latestMessage, lightFiles, lightImage } from "@/lib/love-spo
 import { LOVE_SPOT_AUDIO } from "@/lib/love-spot-audio";
 import { noticed, told } from "@/lib/matilda";
 import { newer } from "@/bridge/love-spot-order.cjs";
-import { BOARD_FACE, BOARD_FACE_LIGHT } from "@/bridge/matilda-face.cjs";
+import { BOARD_THEMED } from "@/bridge/matilda-face.cjs";
 import { upgradeAgentArt } from "@/lib/love-agents";
 import "@excalidraw/excalidraw/index.css";
 import "./love-spot.css";
@@ -41,7 +43,7 @@ type Drawing = { elements: readonly ExcalidrawElement[]; files: BinaryFiles; app
 type Saved = { scene: Drawing & { page: BoardPage }; revision: string };
 type PageList = { pages: { name: string; modified: number; kept?: boolean; expires?: number }[] };
 type Screenshot = { id: string; name: string; dataURL: string };
-type Update = ({ type: "scene" } & Saved) | { type: "screenshots"; screenshots: Screenshot[] } | { type: "error"; message: string };
+type Update = ({ type: "scene" } & Saved) | { type: "screenshots"; screenshots: Screenshot[] } | { type: "error"; message: string } | { type: "matilda" };
 const screenshotDrag = "application/x-elpis-screenshot";
 const versions = (elements: readonly ExcalidrawElement[]) => JSON.stringify(elements.map(e => [e.id, e.version, e.versionNonce, e.isDeleted]));
 function snapshot(elements: readonly ExcalidrawElement[], appState: AppState, files: BinaryFiles, page?: BoardPage): Drawing {
@@ -59,8 +61,13 @@ function clearOfTools(area: HTMLElement | null) {
   const tools = part(".App-toolbar"), panel = part(".App-menu__left"), footer = part(".layer-ui__wrapper__footer-left"), gap = 16;
   return { top: (tools ? tools.bottom - board.top : 0) + gap, left: (panel?.width ? panel.right - board.left : 0) + gap, right: gap, bottom: (footer ? board.bottom - footer.top : 0) + gap };
 }
-const boardFiles = (files: BinaryFiles, dark: boolean) => Object.fromEntries(Object.entries(files).map(([id, file]) => [id,
-  id === "matilda-face" && (file.dataURL === BOARD_FACE.dataURL || file.dataURL === BOARD_FACE_LIGHT.dataURL) ? { ...file, ...(dark ? BOARD_FACE : BOARD_FACE_LIGHT) } : file])) as BinaryFiles;
+// Her faces on the board wear the theme's clothes: the saved scene keeps the dark-clothed picture, display swaps it.
+const boardFiles = (files: BinaryFiles, dark: boolean) => Object.fromEntries(Object.entries(files).map(([id, file]) => {
+  const themed = (BOARD_THEMED as Record<string, { dark: string; light: string }>)[file.dataURL];
+  if (!themed) return [id, file];
+  const dataURL = dark ? themed.dark : themed.light;
+  return [id, { ...file, dataURL, mimeType: dataURL.slice(5, dataURL.indexOf(";")) }];
+})) as BinaryFiles;
 const savedBoardFiles = (files: BinaryFiles) => boardFiles(files, true);
 async function lightDrawing(drawing: Drawing) { const files = savedBoardFiles(drawing.files); return { ...drawing, files: await lightFiles(drawing.elements, files) }; }
 async function savePicture(data: Saved) {
@@ -304,6 +311,7 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
         const data: Update = JSON.parse(event.data);
         if (data.type === "error") setError(data.message);
         else if (data.type === "screenshots") setScreenshots(data.screenshots);
+        else if (data.type === "matilda") return;
         else if (data.revision !== revision.current) receive(data);
       } catch (e) { report(e); }
     }, () => setError("Love Spot is reconnecting… Your drawing is still here."));
@@ -373,20 +381,31 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
 
   // Matilda answers what he writes or draws; the board is the conversation. `told` reads the notes as they stand when she looks.
   // Masih, 31 Oct: "the agent keeps talking in the love-spot; I was drawing that for you; there should be a disable button there."
-  const [replies, setReplies] = useState(() => appStorage().getItem(REPLIES_KEY) !== "off");
+  const shared = useMatildaSettings(), replies = shared.settings?.replies !== false;
   const repliesRef = useRef(replies); repliesRef.current = replies;
+  // Until 31 Oct the board kept its own switch and model; carry them into the one shared setting once.
+  const migrated = useRef(false);
+  useEffect(() => {
+    if (!shared.settings || migrated.current) return;
+    migrated.current = true;
+    const change: Partial<MatildaSettings> = {};
+    if (appStorage().getItem(REPLIES_KEY) === "off" && shared.settings.replies) change.replies = false;
+    if (!shared.settings.model && pick.model) Object.assign(change, { model: pick.model, provider: pickedProvider ?? null });
+    try { appStorage().removeItem(REPLIES_KEY); } catch { /* nothing to carry next time either way */ }
+    if (Object.keys(change).length) void shared.update(change).catch(report);
+  }, [shared, pick.model, pickedProvider, report]);
   const chooseReplies = (on: boolean) => {
-    setReplies(on); repliesRef.current = on;
+    repliesRef.current = on;
     if (!on) void matilda.quiet();
-    const value = on ? "on" : "off", desktop = window.elpisDesktop?.storage;
-    try { if (desktop?.saveItem) void desktop.saveItem(REPLIES_KEY, value).catch(() => {}); else appStorage().setItem(REPLIES_KEY, value); } catch { /* The choice still holds in this window. */ }
+    void shared.update({ replies: on }).catch(report);
   };
   const matilda = useMatilda({ context: page?.session, enabled: () => repliesRef.current, ready: () => repliesRef.current && !placingAll.current && !!editorRef.current && !!settings && !calling && !pageBusy && !editorRef.current.getAppState().editingTextElement && !document.querySelector("textarea.excalidraw-wysiwyg"), onError: setError,
     told: ids => told(editorRef.current?.getSceneElements() ?? [], ids),
     send: (text, persona, isCurrent) => sendWithBoard(async revision => {
       const version = voiceVersion.current;
       speech?.stop();
-      const reply = await api<{ voice: MatildaVoice }>("/love-spot/talk", { text, persona, revision, ...(pick.model ? { model: pick.model, ...(pickedProvider ? { provider: pickedProvider } : {}) } : {}) });
+      // Her model is the one shared setting (lib/matilda-settings.ts); the bridge applies it to every message.
+      const reply = await api<{ voice: MatildaVoice }>("/love-spot/talk", { text, persona, revision });
       window.dispatchEvent(new Event(MATILDA_CHANGED));
       if (mounted.current && version === voiceVersion.current) { setVoice(reply.voice); voiceEnabled.current = reply.voice.enabled; }
       if (mounted.current && voiceEnabled.current && reply.voice.enabled) speech?.stream("matilda");
@@ -525,8 +544,9 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
         </form>}
       </div>
       {/* Masih, 23 Oct: "I can't change her model!" It sat inside the ☰ menu's dialog; it belongs on the bar, beside the page. */}
-      <div role="group" aria-label="Matilda's model"><ModelPicker choices={choices} models={models} model={pick.model || settings?.main.model || ""} choiceId={pick.choiceId} disabled={!choices.length} allowCustom={false} onChange={value => { setPick(value); keepModel(value); }} /></div>
-      {LOVE_SPOT_AUDIO.available && voice?.available && <div className="flex flex-wrap items-center gap-2 text-xs" role="group" aria-label="Matilda's voice">
+      <div role="group" aria-label="Matilda's model"><ModelPicker choices={choices} models={models} model={shared.settings?.model || pick.model || settings?.main.model || ""} choiceId={pick.choiceId} disabled={!choices.length} allowCustom={false} onChange={value => { setPick(value); keepModel(value); void shared.update({ model: value.model, provider: choices.find(choice => choice.id === value.choiceId)?.provider ?? null }).catch(report); }} /></div>
+      {/* Her voice only means something while she answers (Masih, 31 Oct: "the voice button there makes no sense"). */}
+      {replies && LOVE_SPOT_AUDIO.available && voice?.available && <div className="flex flex-wrap items-center gap-2 text-xs" role="group" aria-label="Matilda's voice">
         <label className="flex items-center gap-2" title={LOVE_SPOT_AUDIO.readAloudAvailable ? "Matilda reads each reply in your ChatGPT voice." : "Enable live voice conversation with Matilda."}><span aria-hidden="true">{LOVE_SPOT_AUDIO.available && voice?.enabled ? <Volume2 size={16} /> : <VolumeX size={16} />}</span>{LOVE_SPOT_AUDIO.readAloudAvailable ? "Read replies aloud" : "Voice"}<Switch aria-label={LOVE_SPOT_AUDIO.readAloudAvailable ? "Read replies aloud" : "Voice"} checked={LOVE_SPOT_AUDIO.available && !!voice?.enabled} disabled={!LOVE_SPOT_AUDIO.available || !voice?.available || voiceSaving} onCheckedChange={enabled => void changeVoice(enabled)} /></label>
         {(!LOVE_SPOT_AUDIO.available || voice && !voice.available) && <Tooltip content={LOVE_SPOT_AUDIO.available ? voice?.reason || "ChatGPT voice is unavailable." : LOVE_SPOT_AUDIO.reason}><Button variant="ghost" size="icon-xs" aria-label="Why read aloud is unavailable"><Info aria-hidden="true" size={16} /></Button></Tooltip>}
         <Voice key={page?.session} threadId="love-spot" persona={matilda.persona} disabled={!editor || !voice?.enabled} unavailableReason={LOVE_SPOT_AUDIO.available ? undefined : LOVE_SPOT_AUDIO.reason} onBusy={busy => { setCalling(busy); if (busy) speech?.stop(); }} />
@@ -534,7 +554,7 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
         {voiceProblem && <span className="text-destructive" role="alert">{voiceProblem}</span>}
       </div>}
       <div role="group" aria-label="Voice note"><Dictation provider={provider} disabled={!editor || !settings} onBusy={() => {}} selection={insertion} onTranscript={addVoiceNote} purpose="Adds a note to the board." /></div>
-      <label className="flex items-center gap-2 text-xs" title={replies ? "Matilda answers what you write or draw. Turn off to draw undisturbed." : "Matilda stays quiet while you draw. Turn on and she answers what is waiting."}>Matilda replies<Switch aria-label="Matilda replies" checked={replies} onCheckedChange={chooseReplies} /></label>
+      <MatildaSwitch settings={shared.settings} onChange={chooseReplies} />
       {matilda.replying && <span className="badge badge-sm badge-ghost shrink-0" role="status" aria-label="Matilda status">Matilda is writing…</span>}
       {saveStatus && <span className="badge badge-sm badge-ghost shrink-0" role="status" aria-label="Drawing save status">{saveStatus}</span>}
     </div>;

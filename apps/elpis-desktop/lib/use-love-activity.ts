@@ -25,7 +25,7 @@ export function useLoveActivity(active: boolean, ready: boolean, activeThread?: 
     return subscribeLoveSpotEvents(event => {
       let data: { type?: string; scene?: { elements?: unknown } } | null;
       try { data = JSON.parse(event.data); } catch { unresolved(); return; }
-      if (data?.type === "screenshots") return;
+      if (data?.type === "screenshots" || data?.type === "matilda") return;
       const elements = data?.scene?.elements;
       if (data?.type !== "scene" || !Array.isArray(elements)) { unresolved(); return; }
       const agents = loveActivity(elements);

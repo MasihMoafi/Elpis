@@ -172,7 +172,7 @@ test('the Matilda replies switch keeps her quiet while he draws, and she answers
   const f = await loveSpotFixture();
   try {
     await f.open(f.page);
-    const replies = f.page.getByRole('switch', { name: 'Matilda replies' });
+    const replies = f.page.getByRole('switch', { name: 'Matilda', exact: true });
     await replies.waitFor();
     assert.equal(await replies.getAttribute('aria-checked'), 'true', 'replies are on by default');
     await replies.click();
@@ -181,8 +181,8 @@ test('the Matilda replies switch keeps her quiet while he draws, and she answers
     await f.page.waitForTimeout(4000);
     assert.equal(f.turns.length, 0, 'with replies off she sends nothing while he draws');
     await f.page.reload(); await f.open(f.page);
-    assert.equal(await f.page.getByRole('switch', { name: 'Matilda replies' }).getAttribute('aria-checked'), 'false', 'the choice survives a reload');
-    await f.page.getByRole('switch', { name: 'Matilda replies' }).click();
+    assert.equal(await f.page.getByRole('switch', { name: 'Matilda', exact: true }).getAttribute('aria-checked'), 'false', 'the choice survives a reload');
+    await f.page.getByRole('switch', { name: 'Matilda', exact: true }).click();
     await f.waitFor(() => f.turns.length === 1, 'turning replies on did not release the waiting note', 20000);
     assert.match(f.turns[0].attachments.find(a => a.type === 'text').text, /Drawing for you, stay quiet/);
     assert.deepEqual(f.errors, []);

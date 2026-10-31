@@ -32,7 +32,7 @@ function createScreenshotPopup({ BrowserWindow, screen, ipcMain, dark }) {
     await ready;
     if (window !== own || own.isDestroyed()) return;
     shown = { id: shot.id, host };
-    own.webContents.send('elpis:screenshot-popup:show', { image: shot.dataURL, name: shot.name, dark: dark() });
+    own.webContents.send('elpis:screenshot-popup:show', { image: shot.dataURL, name: shot.name, dark: dark(), count: shot.count });
     own.showInactive();
   }
   const fromPopup = event => open() && event.sender === window.webContents;
@@ -54,7 +54,8 @@ function createScreenshotPopup({ BrowserWindow, screen, ipcMain, dark }) {
       const request = (event, shot) => {
         if (!trustedBrowserSender(event, host.webContents, origin)) return;
         if (typeof shot?.id !== 'string' || typeof shot.name !== 'string' || typeof shot.dataURL !== 'string' || !shot.dataURL.startsWith('data:image/png;base64,')) return;
-        void show(host, { id: shot.id, name: shot.name.slice(0, 200), dataURL: shot.dataURL });
+        const count = Number.isInteger(shot.count) && shot.count > 0 && shot.count <= 50 ? shot.count : 1;
+        void show(host, { id: shot.id, name: shot.name.slice(0, 200), dataURL: shot.dataURL, count });
       };
       windowIpc.on('elpis:screenshot-popup:request', request);
       return () => { windowIpc.removeListener('elpis:screenshot-popup:request', request); if (shown?.host === host) close(); };

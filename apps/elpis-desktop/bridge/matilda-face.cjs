@@ -52,13 +52,25 @@ for (const [expression, source] of Object.entries(MATILDA_SHOTS)) {
 // The circle clips the picture and leaves its backdrop clear; the board keeps one raster face, the dark one.
 const CLOTHES = require('./matilda-clothes.cjs');
 const clothed = portrait => `data:image/svg+xml;base64,${btoa(`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="192" height="192" viewBox="0 0 192 192"><defs><clipPath id="avatar"><circle cx="96" cy="96" r="96"/></clipPath></defs><g clip-path="url(#avatar)"><image width="192" height="192" xlink:href="${portrait}"/></g></svg>`)}`;
+// On the board her faces are always the clothed RASTER pictures: Excalidraw's dark theme inverts SVG images but turns raster
+// ones back, so an SVG face showed as a photo negative (29 Oct and again 31 Oct, Masih: "this wrong obviously"). One rule for
+// every face on the board: the single shared face and each reply's expression. The board shows the dark-clothed file in its
+// saved scene and swaps to the light-clothed one for display in light mode (BOARD_THEMED).
+const OLD_BOARD_SHOTS = {}, BOARD_THEMED = {};
 for (const expression of Object.keys(MATILDA_SHOTS)) {
-  MATILDA_SHOTS[expression] = BOARD_SHOTS[expression] = clothed(CLOTHES.DARK[expression]);
+  OLD_BOARD_SHOTS[BOARD_SHOTS[expression]] = expression;
+  MATILDA_SHOTS[expression] = clothed(CLOTHES.DARK[expression]);
   MATILDA_SHOTS_LIGHT[expression] = clothed(CLOTHES.LIGHT[expression]);
+  OLD_BOARD_SHOTS[MATILDA_SHOTS[expression]] = expression;
+  BOARD_SHOTS[expression] = CLOTHES.DARK[expression];
+  BOARD_THEMED[CLOTHES.DARK[expression]] = { dark: CLOTHES.DARK[expression], light: CLOTHES.LIGHT[expression] };
+  BOARD_THEMED[CLOTHES.LIGHT[expression]] = BOARD_THEMED[CLOTHES.DARK[expression]];
 }
+const rasterType = dataURL => dataURL.slice(5, dataURL.indexOf(';'));
 FACE_DATA_URL = MATILDA_SHOTS.listening; FACE_DATA_URL_LIGHT = MATILDA_SHOTS_LIGHT.listening;
-BOARD_FACE = { dataURL: FACE_DATA_URL, mimeType: 'image/svg+xml' };
-BOARD_FACE_LIGHT = { dataURL: FACE_DATA_URL_LIGHT, mimeType: 'image/svg+xml' };
+OLD_BOARD_FACES.push(FACE_DATA_URL, FACE_DATA_URL_LIGHT);
+BOARD_FACE = { dataURL: CLOTHES.DARK.listening, mimeType: rasterType(CLOTHES.DARK.listening) };
+BOARD_FACE_LIGHT = { dataURL: CLOTHES.LIGHT.listening, mimeType: rasterType(CLOTHES.LIGHT.listening) };
 // Match only Elpis's exact internal guidance; a real file with the same name stays visible.
 function isPortraitInstruction(part) {
   return part !== null && typeof part === "object" && part.type === "text" && part.text === `File: ${PORTRAIT_ATTACHMENT_NAME}\n${PORTRAIT_INSTRUCTIONS}`;
@@ -69,7 +81,7 @@ function replyPortrait(value, preview = false) {
   const match = text.match(PORTRAIT_MARKER);
   const expression = preview ? 'listening' : match?.[1] ?? 'listening';
   return { text: text.replace(/^\s*<!--\s*matilda:[\s\S]*?(?:-->|$)\s*/, ''), expression,
-    dataURL: MATILDA_SHOTS[expression], lightDataURL: MATILDA_SHOTS_LIGHT[expression], board: { dataURL: BOARD_SHOTS[expression], mimeType: 'image/svg+xml' } };
+    dataURL: MATILDA_SHOTS[expression], lightDataURL: MATILDA_SHOTS_LIGHT[expression], board: { dataURL: BOARD_SHOTS[expression], mimeType: rasterType(BOARD_SHOTS[expression]) } };
 }
 
-module.exports = { isPortraitInstruction, BOARD_FACE, BOARD_FACE_LIGHT, FACE_DATA_URL, FACE_DATA_URL_LIGHT, MATILDA_SHOTS, MATILDA_SHOTS_LIGHT, OLD_BOARD_FACES, PORTRAIT_DATA_URL, PORTRAIT_MARKER, PORTRAIT_ATTACHMENT_NAME, PORTRAIT_INSTRUCTIONS, replyPortrait };
+module.exports = { isPortraitInstruction, BOARD_FACE, BOARD_FACE_LIGHT, BOARD_THEMED, OLD_BOARD_SHOTS, FACE_DATA_URL, FACE_DATA_URL_LIGHT, MATILDA_SHOTS, MATILDA_SHOTS_LIGHT, OLD_BOARD_FACES, PORTRAIT_DATA_URL, PORTRAIT_MARKER, PORTRAIT_ATTACHMENT_NAME, PORTRAIT_INSTRUCTIONS, replyPortrait };

@@ -9,7 +9,7 @@ const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { newer } = require('./love-spot-order.cjs');
 const { paintElements, paintingSize, splitPainting } = require('./love-spot-painting.cjs');
-const { BOARD_FACE, OLD_BOARD_FACES, replyPortrait } = require('./matilda-face.cjs');
+const { BOARD_FACE, OLD_BOARD_FACES, OLD_BOARD_SHOTS, replyPortrait } = require('./matilda-face.cjs');
 const FACE = 96, FACE_SIDE = FACE + 12;
 const WELCOME_SHAPES = splitPainting('```excalidraw\n' + JSON.stringify([
   { type: 'text', x: 0, y: 0, text: 'Welcome to Love Spot', fontSize: 28, fontFamily: 5, textAlign: 'center', strokeColor: '#000000' },
@@ -149,6 +149,11 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
       if (OLD_BOARD_FACES.includes(scene.files['matilda-face']?.dataURL)) {
         scene.files['matilda-face'] = { ...scene.files['matilda-face'], ...BOARD_FACE };
       }
+      // Each reply's expression face moves to its raster picture the same way.
+      for (const [id, file] of Object.entries(scene.files)) {
+        const expression = id.startsWith('matilda-face-') && OLD_BOARD_SHOTS[file?.dataURL];
+        if (expression) scene.files[id] = { ...file, ...replyPortrait(`<!--matilda:${expression}-->`).board };
+      }
       if (!scene.page) {
         const pageFiles = await names(pages), existing = new Set(pageFiles); let name = 'Current page', suffix = 2;
         if (text === undefined && !pageFiles.some(file => file.endsWith('.excalidraw'))) {
@@ -273,6 +278,23 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
     return fresh;
   }
   const expiresAt = (modified, { since }) => Math.max(modified, since) + PAGE_DAYS * DAY;
+  // One Matilda (Masih, 31 Oct: "what happens with Matilda in the chat isn't the same as what happens on the board"): whether
+  // she answers, and with which model, is one setting here that the board, the small chat and her chat tab all read.
+  const matildaFile = path.join(directory, '.matilda-settings.json');
+  async function matildaSettings(update) {
+    let value = {};
+    try { const saved = JSON.parse(await fs.readFile(matildaFile, 'utf8')); if (record(saved)) value = saved; }
+    catch (e) { if (e.code !== 'ENOENT' && !(e instanceof SyntaxError)) throw e; }
+    if (update) {
+      value = { ...value, ...update };
+      for (const key of Object.keys(value)) if (value[key] === null) delete value[key];
+      await atomic(matildaFile, JSON.stringify(value));
+    }
+    const settings = { replies: value.replies !== false, model: typeof value.model === 'string' ? value.model : null, provider: typeof value.provider === 'string' ? value.provider : null };
+    // Every open window hears a change on the Love Spot stream it already has open (no extra connection per window).
+    if (update) for (const listen of listeners) listen({ type: 'matilda', matilda: settings });
+    return settings;
+  }
   async function listPages() {
     const life = await lifecycle(), now = Date.now(), current0 = (await read()).scene.page.name;
     await locked(async () => {
@@ -544,6 +566,7 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
     listeners.add(listen);
     try { listen({ type: 'scene', ...await read() }); } catch (e) { listen({ type: 'error', message: e.message }); }
     listen({ type: 'screenshots', screenshots: screenshotsList() });
+    try { listen({ type: 'matilda', matilda: await matildaSettings() }); } catch { /* the setting is read again on its next change */ }
     if (syncError) listen({ type: 'error', message: syncError });
     return () => { listeners.delete(listen); };
   }
@@ -617,6 +640,6 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
       return value;
     });
   }
-  return { read, save, saveText, listPages, changePage, picture, boardPicture, currentPicture, chat, reply, voice, start, watch, screenshotsList, chooseScreenshot, companion, repairPaintings, close };
+  return { matildaSettings, read, save, saveText, listPages, changePage, picture, boardPicture, currentPicture, chat, reply, voice, start, watch, screenshotsList, chooseScreenshot, companion, repairPaintings, close };
 }
 module.exports = { createLoveSpot, newer, merge };

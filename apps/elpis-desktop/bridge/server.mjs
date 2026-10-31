@@ -208,6 +208,7 @@ export async function startDesktopServer(options = {}) {
         if (url.pathname === '/api/love-spot/companion' && ['GET', 'POST'].includes(method)) {
           return json(response, 200, method === 'GET' ? await companion.read(url.searchParams.get('page') ?? '') : await companion.act(await body(request)));
         }
+        if (url.pathname === '/api/love-spot/matilda') return json(response, 200, method === 'POST' ? await loveTalk.setMatilda(await body(request)) : await loveTalk.matilda());
         if (url.pathname === '/api/love-spot/talk/stop' && method === 'POST') return json(response, 200, await loveTalk.stop());
         if (url.pathname === '/api/love-spot/talk/new' && method === 'POST') return json(response, 201, await loveTalk.startFresh(await body(request)));
         if (url.pathname === '/api/love-spot/talk') return json(response, 200, method === 'GET' ? await loveTalk.read() : await loveTalk.send(await body(request)));
@@ -456,6 +457,8 @@ export async function startDesktopServer(options = {}) {
             const operation = { turns: 'send', steer: 'steer', interrupt: 'interrupt', resume: 'resume', continue: 'continueThread', delete: 'deleteThread', rename: 'renameThread', archive: 'archiveThread', unarchive: 'unarchiveThread', revert: 'revert', rewind: 'rewind', versions: 'versions', fork: 'forkThread', compact: 'compact', review: 'review', permissions: 'setPermissions', effort: 'setEffort', 'service-tier': 'setServiceTier', folder: 'setFolder' }[thread[2]];
             const input = await body(request, ['send', 'steer'].includes(operation) ? ATTACHMENT_BODY_LIMIT : 65536);
             // A normal chat tab uses the same portrait choices as the board, including existing conversations.
+            // Matilda off means off in her own chat tab too, not only on the board.
+            if (['send', 'steer'].includes(operation) && await loveSpot.chat() === id && !(await loveSpot.matildaSettings()).replies) throw new BridgeError('Matilda is off. Turn her on to talk to her.', 409);
             if (['send', 'steer'].includes(operation) && await loveSpot.chat() === id && input && typeof input === 'object' && !Array.isArray(input) && (input.attachments === undefined || Array.isArray(input.attachments))) {
               input.attachments = [...(input.attachments ?? []), { id: 'matilda-portrait', name: PORTRAIT_ATTACHMENT_NAME, type: 'text', mimeType: 'text/plain', text: PORTRAIT_INSTRUCTIONS }];
             }

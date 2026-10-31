@@ -22,6 +22,7 @@ const drawing = scene => createHash('sha256').update(JSON.stringify(scene.elemen
 export function createLoveSpotTalk({ client, store, companion, audio = LOVE_SPOT_AUDIO }) {
   let threadId = null, thread = null, entries = [], activeTurnId = null, finishedTurnId = null, error = '', loaded = false, sending = false, closed = false, stale;
   let work = Promise.resolve(), loading, sendingPage;
+  let matilda = { replies: true, model: null, provider: null };
   let muted = false, available = false, voiceReason = '', voiceError = '', writing, speechFeed;
   const finished = new Set();
   const listeners = new Set(), parts = new Map(), turnPages = new Map(), fastAsked = new Set(), seen = new Map();
@@ -31,7 +32,7 @@ export function createLoveSpotTalk({ client, store, companion, audio = LOVE_SPOT
     return entry.item.type === 'agentMessage' ? { ...entry, item: { ...entry.item, portrait: replyPortrait(entry.item.text).expression, text: buffer && !writing.done ? buffer.text() : withoutPainting(entry.item.text ?? '') } } : entry;
   };
   const voice = () => ({ enabled: available && !muted, available, reason: voiceReason, error: voiceError });
-  const snapshot = () => ({ thread, entries: entries.map(shown), busy: sending || !!activeTurnId, error, voice: voice() });
+  const snapshot = () => ({ thread, entries: entries.map(shown), busy: sending || !!activeTurnId, error, voice: voice(), matilda });
   const publish = heartReaction => { if (!closed) for (const listen of listeners) listen(heartReaction ? { ...snapshot(), heartReaction } : snapshot()); };
   async function refreshVoice() {
     if (!audio.available) {
@@ -117,6 +118,7 @@ export function createLoveSpotTalk({ client, store, companion, audio = LOVE_SPOT
     if (loading) return loading;
     loading = (async () => {
       await refreshVoice();
+      matilda = await store.matildaSettings();
       threadId = await store.chat();
       // A chat deleted from the sidebar is gone for good once Elpis quits; the next message starts a new one.
       const result = threadId && await client.readThread(threadId, { limit: 100 }).catch(cause => {
@@ -257,6 +259,17 @@ export function createLoveSpotTalk({ client, store, companion, audio = LOVE_SPOT
     busy: () => sending || !!activeTurnId,
     startFresh,
     /** Replies off: the reply she is writing stops, and her voice with it. */
+    /** The one Matilda setting: on or off, and her model. Off also stops the reply she is writing. */
+    async setMatilda(body) {
+      object(body, ['replies', 'model', 'provider']);
+      if (body.replies !== undefined && typeof body.replies !== 'boolean') throw new BridgeError('Invalid Matilda setting');
+      for (const key of ['model', 'provider']) if (body[key] !== undefined && body[key] !== null) text(body[key], key, 200);
+      matilda = await store.matildaSettings(body);
+      if (!matilda.replies) await this.stop();
+      publish();
+      return snapshot();
+    },
+    async matilda() { matilda = await store.matildaSettings(); return matilda; },
     async stop() {
       await load();
       speechFeed?.emit({ type: 'stop' });
@@ -337,6 +350,9 @@ export function createLoveSpotTalk({ client, store, companion, audio = LOVE_SPOT
       if (body.persona !== undefined) text(body.persona, 'persona', 4000);
       if (body.model !== undefined) text(body.model, 'model', 200);
       if (body.provider !== undefined) text(body.provider, 'provider', 200);
+      matilda = await store.matildaSettings();
+      if (!matilda.replies) throw new BridgeError('Matilda is off. Turn her on to talk to her.', 409);
+      body = { ...body, model: body.model ?? matilda.model ?? undefined, provider: body.provider ?? matilda.provider ?? undefined };
       if (sending) throw new BridgeError('Love Spot is already replying. Wait for this turn.', 409);
       sending = true; error = ''; publish();
       try {

@@ -486,3 +486,22 @@ test('replies off stops the reply she is writing, and does nothing when she is q
   await f.talk.stop();
   assert.deepEqual(interrupts, [{ id: 'chat', turnId: 'turn-1' }], 'her running reply is interrupted');
 });
+test('one Matilda setting: off refuses every message and stops her; her model is the same wherever she is asked', async t => {
+  const f = await fixture(t), interrupts = [];
+  f.client.interrupt = async (id, body) => { interrupts.push({ id, ...body }); return {}; };
+  await f.talk.setMatilda({ model: 'text' });
+  await f.talk.send({ text: 'From the small chat' });
+  assert.equal(f.sent.at(-1).model, 'text', 'a message without a model uses her one model');
+  f.finish('turn-1');
+  await f.talk.send({ text: 'From the board' });
+  const off = await f.talk.setMatilda({ replies: false });
+  assert.equal(off.matilda.replies, false);
+  assert.deepEqual(interrupts, [{ id: 'chat', turnId: 'turn-2' }], 'turning her off stops the reply she is writing');
+  await assert.rejects(f.talk.send({ text: 'Still there?' }), /Matilda is off/);
+  assert.equal(f.sent.length, 2, 'nothing reaches her while she is off');
+  assert.equal((await f.talk.read()).matilda.replies, false, 'every surface reads the same setting');
+  await f.talk.setMatilda({ replies: true });
+  f.finish('turn-2');
+  await f.talk.send({ text: 'Back again' });
+  assert.equal(f.sent.length, 3);
+});

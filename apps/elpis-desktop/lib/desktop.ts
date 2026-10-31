@@ -59,4 +59,4 @@ declare global { interface Window { elpisDesktop?:{menu?:DesktopMenu;improve?:{c
   /** A new chat from Quick Entry (sent with its text) or the tray's New chat (empty). */
   openSessionWindow?:(threadId?:string)=>Promise<void>;
   onNewChat?:(callback:(text:string)=>void)=>()=>void;
-  screenshotPopup?:{show:(shot:{id:string;name:string;dataURL:string})=>void; onOpen:(callback:(id:string)=>void)=>()=>void}; quickEntry?:DesktopQuickEntry; updates?:DesktopUpdates} } }
+  screenshotPopup?:{show:(shot:{id:string;name:string;dataURL:string;count?:number})=>void; onOpen:(callback:(id:string)=>void)=>()=>void}; quickEntry?:DesktopQuickEntry; updates?:DesktopUpdates} } }

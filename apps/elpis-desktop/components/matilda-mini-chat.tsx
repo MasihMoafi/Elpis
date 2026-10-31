@@ -12,6 +12,9 @@ import { HEART_REACTION, talkHeartReaction } from "@/lib/heart-reactions";
 import { replyPortrait } from "@/bridge/matilda-face.cjs";
 import { attachedFile } from "@/lib/prompt-history";
 import { LoadOnScroll } from "@/components/load-on-scroll";
+import { MatildaFace } from "@/components/matilda-face";
+import { MatildaSwitch } from "@/components/matilda-switch";
+import { useMatildaSettings } from "@/lib/matilda-settings";
 import "@/components/matilda-mini-chat.css";
 
 /** Earlier messages shown when the chat opens, and how many more each scroll to the top reveals (Masih, 31 Oct: "show some by
@@ -115,6 +118,7 @@ function message(entry: Entry) {
 }
 
 export function MatildaMiniChat({ chat }: { chat: ReturnType<typeof useMatildaMiniChat> }) {
+  const shared = useMatildaSettings(), off = shared.settings?.replies === false;
   const log = useRef<HTMLDivElement>(null), fromBottom = useRef<number | null>(null);
   // Revealing earlier messages keeps what he is reading where it is.
   const reveal = () => { if (log.current) fromBottom.current = log.current.scrollHeight - log.current.scrollTop; chat.showMoreEarlier(); };
@@ -134,14 +138,15 @@ export function MatildaMiniChat({ chat }: { chat: ReturnType<typeof useMatildaMi
     {!!entries.length && <div ref={log} className="matilda-mini-messages" role="log" aria-label="Matilda conversation" aria-live="polite" aria-relevant="additions text">
       {moreEarlier && <LoadOnScroll label="Loading earlier messages" onLoad={reveal} />}
       {entries.map(entry => <div key={`${entry.turnId}:${entry.item.id}`} className="matilda-mini-message flow-root" data-speaker={entry.item.type === "userMessage" ? "you" : "matilda"}>
-        {entry.item.type === "agentMessage" && <img src={replyPortrait(`<!--matilda:${entry.item.portrait ?? "listening"}-->`).dataURL} alt="Matilda" width={32} height={32} className="float-left mr-2 h-8 w-8 object-contain" />}
+        {entry.item.type === "agentMessage" && <MatildaFace expression={typeof entry.item.portrait === "string" ? entry.item.portrait : undefined} size={32} className="float-left mr-2" />}
         <span className="sr-only">{entry.item.type === "userMessage" ? "You" : "Matilda"}: </span><MarkdownText text={entry.item.type === "agentMessage" ? replyPortrait(message(entry)).text : message(entry)} allowImages={false} />
       </div>)}
     </div>}
     {(chat.posting || chat.conversation.busy) && <p className="matilda-mini-status" role="status">Matilda is replying…</p>}
     {chat.error && <div className="matilda-mini-error" role="alert"><span>{chat.error}</span><Button variant="ghost" size="xs" onClick={() => void chat.retry()}>Retry</Button></div>}
+    <div className="matilda-mini-bar"><MatildaSwitch settings={shared.settings} onChange={on => void shared.update({ replies: on })} /></div>
     <form aria-label="Message Matilda" className="matilda-mini-composer" onSubmit={event => { event.preventDefault(); void chat.send(); }}>
-      <Textarea aria-label="Message Matilda" placeholder="Message Matilda…" rows={1} autoFocus value={chat.draft} onChange={event => chat.setDraft(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} />
+      <Textarea aria-label="Message Matilda" placeholder={off ? "Matilda is off" : "Message Matilda…"} disabled={off} rows={1} autoFocus value={chat.draft} onChange={event => chat.setDraft(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} />
       <Button type="submit" variant="ghost" size="icon-sm" aria-label="Send to Matilda" title="Send to Matilda" disabled={!chat.draft.trim() || chat.posting || chat.conversation.busy}><SendIcon size={18} /></Button>
     </form>
   </div>;

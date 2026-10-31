@@ -1328,9 +1328,12 @@ export default function Home() {
   }
   const show = (next: View) => { if (next !== "chat") side.toggleFull(false); if (next === "settings") { setSettingsVisited(true); setSettingsNavigation(value => value + 1); } setView(next); setSidebar(false); };
   // A click on the screenshot thumbnail puts that screenshot alone on a new Love Spot page, then shows it (A239).
-  useScreenshotPopup(ready, id => {
-    void api("/love-spot/screenshots", { id, action: "page" }).then(() => show("loveSpot"))
-      .catch(cause => setError(cause instanceof Error ? cause.message : "The screenshot could not open in Love Spot."));
+  // The first opens as a new Love Spot page; the rest follow on it, one below the other, in the order they were taken.
+  useScreenshotPopup(ready, ids => {
+    void (async () => {
+      for (const [index, id] of ids.entries()) await api("/love-spot/screenshots", { id, action: index ? "place" : "page" });
+      show("loveSpot");
+    })().catch(cause => setError(cause instanceof Error ? cause.message : "The screenshots could not open in Love Spot."));
   });
   const manageConnections = () => { setSettingsSection("providers"); show("settings"); };
   /** ChatGPT's "Fork chat from here": a new chat with the history through that turn, opened at once. */
