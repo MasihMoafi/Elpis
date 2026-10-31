@@ -34,7 +34,7 @@ import { BOARD_FACE, BOARD_FACE_LIGHT } from "@/bridge/matilda-face.cjs";
 import { upgradeAgentArt } from "@/lib/love-agents";
 import "@excalidraw/excalidraw/index.css";
 import "./love-spot.css";
-const REPLIES_KEY = "elpis:love-spot:matilda-replies";
+const REPLIES_KEY = "elpis-matilda-replies";
 
 type BoardPage = { name: string; session: string };
 type Drawing = { elements: readonly ExcalidrawElement[]; files: BinaryFiles; appState: Partial<AppState>; page?: BoardPage };
