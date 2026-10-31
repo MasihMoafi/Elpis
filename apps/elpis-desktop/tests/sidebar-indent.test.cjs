@@ -23,6 +23,97 @@ for (const thread of threads) {
   routes[`/api/threads/${thread.id}/resume`] = () => ({ thread, activeTurnId: null });
 }
 
+test('selected chat frames keep their size and share the theme accent in both schemes', async () => {
+  const love = chat('love-frame', 'Love Spot: Frame reference');
+  const sample = [...threads.map(thread => thread.parentThreadId ? { ...thread, source: { subAgent: { thread_spawn: {
+    agent_path: `/root/${thread.id}`, parent_thread_id: thread.parentThreadId, depth: thread.id === nested.id ? 2 : 1,
+  } } } } : thread), love];
+  const frameRoutes = { '/api/threads': (_body, url) => ({ data: url.searchParams.get('archived') === 'true' ? []
+    : url.searchParams.has('ancestorThreadId') ? sample.filter(thread => thread.parentThreadId === url.searchParams.get('ancestorThreadId'))
+    : sample, nextCursor: null }) };
+  for (const thread of sample) {
+    frameRoutes[`/api/threads/${thread.id}`] = () => ({ thread, data: [], nextCursor: null });
+    frameRoutes[`/api/threads/${thread.id}/resume`] = () => ({ thread, activeTurnId: null });
+  }
+  const inspect = async (colorScheme, width, staticDir, proposed) => {
+    const f = await fixture({ routes: frameRoutes, colorScheme, width, height: 760, staticDir });
+    const { page } = f, states = {};
+    try {
+      await page.locator(`.thread-row[data-thread-id="${parent.id}"] > button[aria-expanded]:first-child`).click();
+      await page.locator(`.thread-row[data-thread-id="${child.id}"]`).waitFor();
+      for (const id of [plain.id, child.id, love.id]) {
+        const row = page.locator(`.thread-row[data-thread-id="${id}"]`);
+        const before = await row.boundingBox();
+        const beforeTitle = await row.locator('.thread-title').boundingBox();
+        await f.open(id);
+        await page.locator('.chat-view[data-team-loading="true"]').waitFor({ state: 'hidden' });
+        const tab = page.locator('.task-tab.chat-tab.active'), composer = page.locator('.composer');
+        await tab.waitFor();
+        const after = await row.boundingBox(), afterTitle = await row.locator('.thread-title').boundingBox();
+        assert.deepEqual(after, before, `${id}: selection must not move or resize the row`);
+        assert.deepEqual(afterTitle, beforeTitle, `${id}: selection must not move the title`);
+        const geometry = async locator => locator.evaluate(element => {
+          const bounds = element.getBoundingClientRect(), style = getComputedStyle(element);
+          return { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height, background: style.backgroundColor,
+            padding: style.padding, radius: style.borderRadius, corner: style.cornerShape };
+        });
+        const frame = async locator => locator.evaluate(element => {
+          const style = getComputedStyle(element, '::before');
+          return { content: style.content, background: style.backgroundImage, mask: style.maskComposite,
+            border: style.borderTopWidth, pointer: style.pointerEvents };
+        });
+        const hasComposer = await composer.count() > 0;
+        assert.equal(hasComposer, id !== child.id, `${id}: delegated runs keep their read-only state`);
+        const rowFrame = await frame(row), tabFrame = await frame(tab), composerFrame = hasComposer ? await frame(composer) : null;
+        if (proposed) {
+          for (const [name, actual] of Object.entries({ row: rowFrame, tab: tabFrame })) {
+            assert.equal(actual.content, '""', `${id}: ${name} frame exists`);
+            assert.match(actual.background, /linear-gradient/, `${id}: ${name} has an accent gradient`);
+            assert.ok(actual.mask.split(',').every(value => value.trim() === 'exclude'), `${id}: ${name} keeps the fill clear`);
+            assert.equal(actual.pointer, 'none', `${id}: ${name} does not block controls`);
+          }
+          assert.equal(rowFrame.border, '2px', `${id}: retain the old highlight width`);
+          assert.equal(tabFrame.border, '1px');
+          if (composerFrame) assert.equal(composerFrame.content, 'none', 'the optional composer redesign remains a preview');
+          assert.equal(rowFrame.background, tabFrame.background, `${id}: row and tab use the same accent`);
+
+          const accent = await row.evaluate(element => {
+            const probe = document.createElement('span');
+            probe.style.color = 'var(--primary)'; element.append(probe);
+            const color = getComputedStyle(probe).color; probe.remove(); return color;
+          });
+          assert.ok(rowFrame.background.includes(accent), `${id}: the frame uses its theme accent`);
+          if (id === love.id) assert.equal(accent, colorScheme === 'light' ? 'rgb(139, 16, 23)' : 'rgb(236, 87, 94)');
+          const inactive = page.locator('.thread-row:not(.active)').first();
+          assert.equal((await frame(inactive)).content, 'none', 'inactive rows have no active frame');
+        }
+        const glow = await row.evaluate((element, candidate) => {
+          const style = getComputedStyle(element, candidate ? '::after' : '::before');
+          return { left: style.left, top: style.top, bottom: style.bottom, width: style.width, shadow: style.boxShadow };
+        }, proposed);
+        states[id] = { row: await geometry(row), title: await geometry(row.locator('.thread-title')),
+          tab: await geometry(tab), composer: hasComposer ? await geometry(composer) : null, glow };
+      }
+      await f.composer.fill('draft remains editable');
+      assert.equal(await f.composer.inputValue(), 'draft remains editable');
+      await f.composer.fill('');
+      if (proposed && shots) {
+        await fs.mkdir(shots, { recursive: true });
+        if (colorScheme === 'light') await f.open(plain.id);
+        await page.screenshot({ path: path.join(shots, `chat-frame-${colorScheme}-${width}.png`), animations: 'disabled' });
+      }
+      assert.deepEqual(f.errors, []);
+      return states;
+    } finally { await f.close(); }
+  };
+  for (const [colorScheme, width] of [['light', 1440], ['dark', 820]]) {
+    const baseline = process.env.ELPIS_FRAME_BASELINE_OUT
+      ? await inspect(colorScheme, width, process.env.ELPIS_FRAME_BASELINE_OUT, false) : null;
+    const candidate = await inspect(colorScheme, width, process.env.ELPIS_RENDERER_OUT, true);
+    if (baseline) assert.deepEqual(candidate, baseline, `${colorScheme}: frame must preserve installed geometry and fill`);
+  }
+});
+
 async function setup(colorScheme, project = false) {
   const storage = project ? {
     'elpis-projects-v1': JSON.stringify({ projects: [{ id: 'alignment', name: 'Alignment project', cwd: CWD }], selectedId: null }),

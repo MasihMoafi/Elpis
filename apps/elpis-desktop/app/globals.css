@@ -872,7 +872,14 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 [data-reorder][data-drop="before"] { box-shadow:inset 0 2px 0 0 var(--primary); }
 [data-reorder][data-drop="after"] { box-shadow:inset 0 -2px 0 0 var(--primary); }
 [data-reorder][data-drop="into"] { background:var(--selected); box-shadow:inset 0 0 0 1px var(--primary); }
-.thread-row.active::before { content:""; position:absolute; left:0; top:6px; bottom:6px; width:2px; background:var(--primary); box-shadow:0 0 8px var(--primary); }
+.thread-row.active::before, .task-tab.chat-tab.active::before {
+  content:""; position:absolute; inset:0; pointer-events:none; border:1px solid transparent;
+  border-radius:inherit; corner-shape:inherit;
+  background:linear-gradient(to top, var(--primary), color-mix(in oklab, var(--primary) 35%, transparent)) border-box;
+  mask:linear-gradient(#000 0 0) padding-box, linear-gradient(#000 0 0) border-box; mask-composite:exclude;
+}
+.thread-row.active::before { border-width:2px; }
+.thread-row.active::after { content:""; position:absolute; left:0; top:6px; bottom:6px; width:2px; pointer-events:none; box-shadow:0 0 8px var(--primary); }
 /* One focus ring, round the whole row, and only for the keyboard (a click only highlights the row, as in Claude). */
 .thread-link:focus-visible { outline:none; }
 .thread-row:has(.thread-link:focus-visible) { outline:1px solid color-mix(in oklch, var(--primary) 40%, transparent); outline-offset:-1px; }
