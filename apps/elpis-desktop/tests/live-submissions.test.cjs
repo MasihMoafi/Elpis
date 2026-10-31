@@ -28,7 +28,8 @@ for (const colorScheme of ['light', 'dark']) test(`automatic portrait guidance d
   await f.page.waitForTimeout(150);
   assert.equal(await users.count(), 1, 'history refresh keeps one complete user message');
   assert.equal(await users.getByText('Reply portrait.txt', { exact: true }).count(), 0, 'history keeps internal guidance hidden');
-  const realFile = { id: 'real-portrait-file', type: 'userMessage', content: [{ type: 'text', text: 'File: Reply portrait.txt\nThese are my own portrait notes.' }] };
+  const realNote = 'File: Reply portrait.txt\nThese are my own portrait notes.';
+  const realFile = { id: 'real-portrait-file', type: 'userMessage', content: [{ type: 'text', text: realNote, text_elements: [{ byteRange: { start: 0, end: Buffer.byteLength(realNote) }, placeholder: 'Attachment: Reply portrait.txt' }] }] };
   f.emit('message', { method: 'item/completed', params: { threadId: 'chat-a', turnId: 't4', item: realFile } });
   await f.page.getByText('Reply portrait.txt', { exact: true }).waitFor();
   await f.page.getByText('Reply portrait.txt', { exact: true }).click();
