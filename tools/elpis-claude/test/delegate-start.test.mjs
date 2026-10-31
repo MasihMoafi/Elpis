@@ -24,7 +24,7 @@ test('a refused helper start preserves its managed-policy reason and closes its 
       if (msg.id === undefined) return;
       socket.send(JSON.stringify({ id: msg.id, ...(msg.method === 'thread/start'
         ? { error: { code: -32600, message: reason } }
-        : { result: {} }) }));
+        : { result: msg.method === 'thread/read' ? { thread: { mcpServerSelection: null } } : {} }) }));
     });
   });
   const child = spawn(process.execPath, [new URL('../elpis-agents-mcp.mjs', import.meta.url).pathname], {
@@ -72,13 +72,19 @@ test('a helper is parented to the chat that called delegate, never another chat'
   const server = new WebSocketServer({ host: '127.0.0.1', port: 0 });
   await once(server, 'listening');
   const starts = [];
+  const archived = [];
+  const selections = { 'chat-a': null, 'chat-b': [], 'chat-c': ['alpha'], 'chat-old': [] };
   server.on('connection', socket => {
     socket.on('message', data => {
       const msg = JSON.parse(String(data));
       if (msg.id === undefined) return;
       if (msg.method === 'thread/start') starts.push(msg.params);
-      socket.send(JSON.stringify({ id: msg.id, ...(msg.method === 'thread/start'
-        ? { error: { code: -32600, message: 'fixture stops here' } } : { result: {} }) }));
+      if (msg.method === 'thread/archive') archived.push(msg.params.threadId);
+      const result = msg.method === 'thread/read'
+        ? { thread: Object.hasOwn(selections, msg.params.threadId) ? { mcpServerSelection: selections[msg.params.threadId] } : {} }
+        : msg.method === 'thread/start' && msg.params.elpisParentThreadId === 'chat-old' ? { thread: { id: 'old-child' } } : {};
+      socket.send(JSON.stringify({ id: msg.id, ...(msg.method === 'thread/start' && msg.params.elpisParentThreadId !== 'chat-old'
+        ? { error: { code: -32600, message: 'fixture stops here' } } : { result }) }));
     });
   });
   const child = spawn(process.execPath, [new URL('../elpis-agents-mcp.mjs', import.meta.url).pathname], {
@@ -106,9 +112,19 @@ test('a helper is parented to the chat that called delegate, never another chat'
   });
   await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'delegate-parent-test', version: '1' } });
   child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
-  for (const caller of ['chat-a', 'chat-b']) {
+  for (const caller of ['chat-a', 'chat-b', 'chat-c']) {
     const result = await rpc('tools/call', { name: 'delegate', arguments: { task: 'Do the fixture.', model: 'gpt-test', provider: 'fixture', cwd: root }, _meta: { threadId: caller } });
     assert.match(result.content[0].text, /fixture stops here/, JSON.stringify(result));
   }
-  assert.deepEqual(starts.map(params => params.elpisParentThreadId), ['chat-a', 'chat-b']);
+  assert.deepEqual(starts.map(params => params.elpisParentThreadId), ['chat-a', 'chat-b', 'chat-c']);
+  assert.deepEqual(starts.map(params => params.mcpServerSelection), [null, [], ['alpha']]);
+
+  const missing = await rpc('tools/call', { name: 'delegate', arguments: { task: 'No selection.', model: 'gpt-test', provider: 'fixture', cwd: root }, _meta: { threadId: 'chat-missing' } });
+  assert.match(missing.content[0].text, /MCP selection is unavailable/);
+  const unsupported = await rpc('tools/call', { name: 'delegate', arguments: { task: 'Unsupported selection.', model: 'agy/gemini-test', cwd: root }, _meta: { threadId: 'chat-c' } });
+  assert.match(unsupported.content[0].text, /MCP choices are unavailable/);
+  const old = await rpc('tools/call', { name: 'delegate', arguments: { task: 'Old engine.', model: 'gpt-test', provider: 'fixture', cwd: root }, _meta: { threadId: 'chat-old' } });
+  assert.match(old.content[0].text, /could not preserve/);
+  assert.deepEqual(starts.map(params => params.elpisParentThreadId), ['chat-a', 'chat-b', 'chat-c', 'chat-old']);
+  assert.deepEqual(archived, ['old-child']);
 });

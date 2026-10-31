@@ -257,13 +257,13 @@ test("a Workflows node's chat starts with every configured MCP server off; Love 
     const a = start(t, { env: { FAKE_ENGINE_CONFIG: config, ...env } });
     await a.open(workflow);
     await a.conn.agent.request("session/new", { cwd: a.dir, mcpServers: [], _meta: { elpis: { name: "Love Spot · card" } } });
-    await a.conn.agent.request("session/new", { cwd: a.dir, mcpServers: [{ name: "beta", command: process.execPath, args: [], env: [] }], _meta: workflow });
+    await a.conn.agent.request("session/new", { cwd: a.dir, mcpServers: [{ name: "client_fixture", command: process.execPath, args: [], env: [] }], _meta: workflow });
     return a.engine().filter(m => m.method === "thread/start").map(m => m.params.config ?? {});
   };
   const [node, loveSpot, passed] = await started({ ELPIS_WORKFLOW_USER_MCP: "" });
   assert.deepEqual(node, { "mcp_servers.alpha.enabled": false, "mcp_servers.beta.enabled": false, "mcp_servers.gamma.enabled": false });
   assert.deepEqual(loveSpot, {}, "a chat that is not a Workflows node keeps the person's servers");
-  assert.deepEqual(Object.keys(passed).sort(), ["mcp_servers.alpha.enabled", "mcp_servers.beta", "mcp_servers.gamma.enabled"], "a server the client passes stays on");
+  assert.deepEqual(Object.keys(passed).sort(), ["mcp_servers.alpha.enabled", "mcp_servers.beta.enabled", "mcp_servers.client_fixture", "mcp_servers.gamma.enabled"], "a host-owned server the client passes stays on");
   const [kept] = await started({ ELPIS_WORKFLOW_USER_MCP: "1" });
   assert.deepEqual(kept, {}, "ELPIS_WORKFLOW_USER_MCP=1 keeps every server");
 });

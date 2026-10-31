@@ -211,14 +211,33 @@ if (process.env.ELPIS_AGENT_TOOLS !== "0") {
         let started;
         try {
           await conn.ready;
+          let inheritedMcp;
+          if (parent) {
+            const parentThread = (await conn.call("thread/read", { threadId: parent, includeTurns: false }))?.thread;
+            if (!parentThread || !Object.hasOwn(parentThread, "mcpServerSelection") ||
+                !(parentThread.mcpServerSelection === null ||
+                  (Array.isArray(parentThread.mcpServerSelection) && parentThread.mcpServerSelection.every(name => typeof name === "string")))) {
+              throw new Error("The parent chat MCP selection is unavailable. Retry after its settings load.");
+            }
+            inheritedMcp = parentThread.mcpServerSelection;
+            if (/^agy\//.test(model) && inheritedMcp?.length) {
+              throw new Error("Per-chat MCP choices are unavailable for Gemini through Antigravity.");
+            }
+          }
           started = await conn.call("thread/start", {
             cwd: folder, model, ...(bridgedModel(model) ? {} : { modelProvider: provider }), approvalPolicy: "never",
             sandbox: allow_writes ? "workspace-write" : "read-only",
             ...(effort && { config: { model_reasoning_effort: effort } }),
+            ...(parent ? { mcpServerSelection: inheritedMcp } : {}),
             // Through the bridge, which also scopes the helper; on the engine alone, the engine
             // records the parent itself.
             ...(parent && (BRIDGE ? { elpisParentThreadId: parent } : { parentThreadId: parent })),
           });
+          if (parent && (!Object.hasOwn(started?.thread ?? {}, "mcpServerSelection") ||
+              JSON.stringify(started.thread.mcpServerSelection) !== JSON.stringify(inheritedMcp))) {
+            if (started?.thread?.id) await conn.call("thread/archive", { threadId: started.thread.id }).catch(() => {});
+            throw new Error("The engine could not preserve the parent chat MCP selection.");
+          }
         } catch (error) {
           conn.close();
           return { content: [{ type: "text", text: `Could not start helper: ${error.message ?? JSON.stringify(error)}` }], isError: true };

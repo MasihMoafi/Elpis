@@ -8,7 +8,7 @@ on:
         required: true
         default: full
         type: choice
-        options: [check, native-check, child-catalog, schemas, ui, full, build]
+        options: [check, native-check, bridge-check, child-catalog, schemas, ui, full, build]
       runtime_run_id:
         description: 'Run containing the diagnostic runtime (child-catalog only)'
         required: false
@@ -239,8 +239,11 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Provider history and message retention checks
         run: |
+          # DesktopClient only needs ws here; reuse the locked bridge dependencies.
+          ln -s "$PWD/tools/elpis-claude/node_modules" apps/elpis-desktop/node_modules
           mkdir -p apps/elpis-desktop/bridge/resources
           cp tools/elpis-claude/permission-policy.mjs apps/elpis-desktop/bridge/resources/permission-policy.mjs
+          cp tools/elpis-claude/workflow-concurrency.mjs apps/elpis-desktop/bridge/resources/workflow-concurrency.mjs
           node scripts/store-guard.test.cjs
           node scripts/history-list.test.cjs
           node --test tools/elpis-claude/test/resume-list.test.mjs
@@ -453,8 +456,6 @@ jobs:
         env:
           A124_ENGINE: ${{ github.workspace }}/codex-rs/target/release/elpis
         run: |
-          # DesktopClient only needs ws here; reuse the locked bridge dependencies.
-          ln -s "$PWD/tools/elpis-claude/node_modules" apps/elpis-desktop/node_modules
           mkdir -p apps/elpis-desktop/bridge/resources
           cp codex-rs/core/src/prompts/rag.md apps/elpis-desktop/bridge/resources/rag.md
           cp codex-rs/skills/src/assets/personal/SKILL.md apps/elpis-desktop/bridge/resources/personal.md
@@ -573,6 +574,27 @@ jobs:
             codex-rs/target
           key: ${{ steps.cargo_cache.outputs.cache-primary-key }}
 
+  bridge-check:
+    if: github.event_name == 'workflow_dispatch' && inputs.verification == 'bridge-check'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Install locked bridge dependencies and desktop resources
+        run: |
+          npm ci --prefix tools/elpis-claude --ignore-scripts --no-audit --no-fund
+          ln -s "$PWD/tools/elpis-claude/node_modules" apps/elpis-desktop/node_modules
+          mkdir -p apps/elpis-desktop/bridge/resources
+          cp tools/elpis-claude/permission-policy.mjs apps/elpis-desktop/bridge/resources/permission-policy.mjs
+          cp tools/elpis-claude/workflow-concurrency.mjs apps/elpis-desktop/bridge/resources/workflow-concurrency.mjs
+      - name: Check delegation and workflow MCP compatibility
+        run: |
+          node --test --test-concurrency=1 tools/elpis-claude/test/delegate-start.test.mjs tools/elpis-claude/test/workflow-agents.test.mjs
+          node --test --test-name-pattern="session/new forwards|a Workflows node's chat starts" tools/elpis-claude/test/elpis-acp-agent.test.mjs
+
   child-catalog:
     if: github.event_name == 'workflow_dispatch' && inputs.verification == 'child-catalog'
     runs-on: ubuntu-24.04
@@ -612,7 +634,9 @@ jobs:
       - name: Verify delegated child model-visible MCP catalogs
         env:
           ELPIS_MCP_INHERITANCE_EVIDENCE: ${{ runner.temp }}/mcp-inheritance-evidence.json
-        run: node scripts/engine-delegate.test.cjs --mcp-inheritance "$RUNNER_TEMP/native-runtime/elpis"
+        run: |
+          node --test tools/elpis-claude/test/delegate-start.test.mjs
+          node scripts/engine-delegate.test.cjs --mcp-inheritance "$RUNNER_TEMP/native-runtime/elpis"
       - name: Preserve child catalog evidence and diagnostics
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
