@@ -235,7 +235,8 @@ try {
     await wait(100);
   }
   await fs.chmod(socketPath, 0o600);
-  const startApp = async port => startDesktopServer({ staticDir: path.join(appRoot, 'out'), socketPath: await fs.realpath(socketPath), tools: createTools({ run: fakeRun }), ...(port ? { port } : {}) });
+  const startApp = async port => startDesktopServer({ staticDir: path.join(appRoot, 'out'), socketPath: await fs.realpath(socketPath), elpisHome: home, codexHome: home,
+    loveSpot: { directory: path.join(root, 'love-spot'), screenshots: path.join(root, 'screenshots') }, tools: createTools({ run: fakeRun }), ...(port ? { port } : {}) });
   app = await startApp();
   browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM || undefined, headless: true });
   page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, permissions: ['clipboard-read', 'clipboard-write'] }); page.setDefaultTimeout(12000); page.setDefaultTimeout(12000);
