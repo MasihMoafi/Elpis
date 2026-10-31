@@ -136,7 +136,7 @@ jobs:
       - name: Read-only child follow across app-server connections
         if: inputs.verification == 'follow-check'
         working-directory: codex-rs
-        run: cargo test --profile dev-small --locked -p codex-app-server --test all -- websocket_read_only_follow_delivers_child_events_to_early_and_late_connections
+        run: cargo test --profile dev-small --locked -p codex-app-server --test all -- websocket_read_only_follow_delivers_child_events_across_connections_and_reconnect
       - name: Retain compiler outputs
         if: always() && steps.cargo_cache.outputs.cache-hit != 'true' && steps.cargo_cache.outputs.cache-primary-key != ''
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
@@ -227,7 +227,7 @@ jobs:
       - name: Provider history and message retention checks
         run: |
           node apps/elpis-desktop/bridge/build-resources.mjs --bridge-only
-          node --test --test-concurrency=1 --test-name-pattern='existing chats are written directly|opening a chat rejoins' apps/elpis-desktop/bridge/bridge.test.mjs
+          node --test --test-concurrency=1 --test-name-pattern='existing chats are written directly|opening a chat rejoins|opening a completed parent-owned child' apps/elpis-desktop/bridge/bridge.test.mjs
           node scripts/store-guard.test.cjs
           node scripts/history-list.test.cjs
           node --test tools/elpis-claude/test/resume-list.test.mjs
@@ -254,7 +254,7 @@ jobs:
       - name: Read-only child follow across app-server connections
         if: inputs.verification == 'build'
         working-directory: codex-rs
-        run: cargo test --profile dev-small --locked -p codex-app-server --test all -- websocket_read_only_follow_delivers_child_events_to_early_and_late_connections
+        run: cargo test --profile dev-small --locked -p codex-app-server --test all -- websocket_read_only_follow_delivers_child_events_across_connections_and_reconnect
       - name: Record diagnostic runtime provenance
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
         working-directory: codex-rs/target/release
