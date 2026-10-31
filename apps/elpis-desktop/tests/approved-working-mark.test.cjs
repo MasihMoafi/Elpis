@@ -100,3 +100,31 @@ test('working mark stays anchored when the right panel opens in split view at 10
   assert.equal(panelX, initialX, `opening the right panel in split view does not move the working mark: ${JSON.stringify({ closed, open })}`);
   assert.deepEqual(f.errors, []);
 });
+
+for (const colorScheme of ['light', 'dark']) {
+  test(`Working mark stays put with populated Files and a resized panel (${colorScheme})`, async () => {
+    const f = await fixture({ colorScheme, running: true, width: 1600, height: 900 }), { page } = f;
+    try {
+      await f.open('chat-a');
+      const mark = page.locator('.turn-working .working-mark').last();
+      await mark.waitFor();
+      const before = await geometry(page);
+      await page.getByRole('button', { name: 'Side panel', exact: true }).click();
+      await page.getByRole('tab', { name: 'Files', exact: true }).click();
+      await page.getByRole('treeitem', { name: 'README.md' }).waitFor();
+      const opened = await geometry(page);
+      assert.ok(opened.panel.width >= 600, `populated Files has its real wide default: ${JSON.stringify(opened)}`);
+      assert.equal(opened.mark.x, before.mark.x, `populated Files: ${JSON.stringify({ before, opened })}`);
+      const edge = page.getByRole('separator', { name: 'Resize side panel' });
+      const box = await edge.boundingBox();
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(box.x - 100, box.y + box.height / 2);
+      await page.mouse.up();
+      const resized = await geometry(page);
+      assert.ok(resized.panel.width > opened.panel.width + 80, `real divider resized: ${JSON.stringify({ opened, resized })}`);
+      assert.equal(resized.mark.x, before.mark.x, `resized Files: ${JSON.stringify({ before, resized })}`);
+      assert.deepEqual(f.errors, []);
+    } finally { await f.close(); }
+  });
+}
