@@ -183,7 +183,7 @@ const EFFORT = /^[a-z]{2,16}$/;
 const MCP_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 
 export class DesktopClient extends EventEmitter {
-  #socket; #pending = new Map(); #owned = new Set(); #known = new Set(); #models = new Set();
+  #socket; #pending = new Map(); #owned = new Set(); #known = new Set(); #models = new Set(); #historyOnly = new Set();
   #catalog = null;
   /** The Claude account list last seen: which account is active and which are signed in. */
   #claudeAccountsKey;
@@ -289,7 +289,7 @@ export class DesktopClient extends EventEmitter {
     for (const pending of this.#pending.values()) { clearTimeout(pending.timer); pending.reject(new BridgeError(pending.reading ? 'Elpis connection closed while reading. Reload the view after reconnecting.' : 'Elpis connection closed; the request outcome is unknown. Check the conversation before retrying.', 503)); }
     this.#workflowRuns.close();
     this.#pending.clear(); this.#approvals.clear(); this.#checkingApprovals.clear();
-    this.#owned.clear(); this.#attaching.clear(); this.#context.clear(); this.#models.clear(); this.#turnRevisions.clear();
+    this.#owned.clear(); this.#historyOnly.clear(); this.#attaching.clear(); this.#context.clear(); this.#models.clear(); this.#turnRevisions.clear();
     this.#catalog = null;
     for (const id of this.#sideChats.keys()) this.emit('event', { type: 'sideChat', data: { method: 'thread/closed', params: { threadId: id } } });
     this.#sideChats.clear(); this.#side.clear();
@@ -607,6 +607,7 @@ export class DesktopClient extends EventEmitter {
     })()
       .then(result => {
         if (result.thread?.id !== id) throw new BridgeError('Elpis resumed another conversation', 502);
+        if (result.followingLive === false) this.#historyOnly.add(id); else this.#historyOnly.delete(id);
         return result;
       })
       .catch(error => { this.#forgetSubscription(id); throw error; })
@@ -616,6 +617,7 @@ export class DesktopClient extends EventEmitter {
   }
   #forgetSubscription(id) {
     this.#owned.delete(id);
+    this.#historyOnly.delete(id);
     for (const [key, approval] of this.#approvals) if (approval.ownerThreadId === id || approval.params.threadId === id) {
       this.#approvals.delete(key);
       this.emit('event', { type: 'approvalResolved', data: { id: key } });
@@ -1915,7 +1917,8 @@ export class DesktopClient extends EventEmitter {
       const joined = await this.#attach(id, metadata);
       this.#opened = id; void this.#releaseLeft(id);
       const turns = await this.#rpc('thread/turns/list', { threadId: id, limit: 1, sortDirection: 'desc', itemsView: 'summary', notLoaded: true }).catch(() => ({ data: [] }));
-      return { thread: this.#decorate(joined?.thread ?? metadata), activeTurnId: turns.data?.find(turn => turn.status === 'inProgress')?.id ?? null };
+      return { thread: this.#decorate(joined?.thread ?? metadata), activeTurnId: turns.data?.find(turn => turn.status === 'inProgress')?.id ?? null,
+        ...(this.#historyOnly.has(id) ? { followingLive: false } : {}) };
     }
     // A chat already followed (the list follows running ones) is read again, so its mode, Plan and effort still show.
     // An archived chat opens read from the engine, without following it: the engine resumes it only once it is back.
