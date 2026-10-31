@@ -800,6 +800,7 @@ wss.on("connection", (ws) => {
     failed: false,
     claudeBusy: () => [...activeTurns.keys()].some(tid => agentOf(claudeModel.get(tid))?.key === "claude") || structured.size > 0,
     stopProvider: (tid) => stopProvider(tid, "deleted"),
+    deleteNative: (tid) => engineCall("thread/delete", { threadId: tid }),
     childrenOf: (ids) => [...childThreads].filter(([, child]) => ids.has(child.rootThreadId) || ids.has(child.thread.parentThreadId)).map(([id]) => id),
     forgetThread: (tid) => {
       cancelRelays(ws, tid);
@@ -3080,12 +3081,21 @@ wss.on("connection", (ws) => {
       }
       // Validate/delete the root first so a native fork conflict cannot erase its helpers.
       for (const id of ids) {
-        let nativeDeleted = true;
-        try { await engineCall("thread/delete", { threadId: id }); }
-        catch (e) {
-          // Bridge-only children and retries after a persistence failure have no native row.
-          if (!/thread not found|no rollout found/.test(e.message ?? "") || (id === tid && !store[id] && !store._delegations?.[id] && !deletedThreads.has(id))) throw e;
-          nativeDeleted = false;
+        let nativeDeleted = false;
+        const failures = [];
+        // A thread may still have a writer in another terminal's engine. Each app-server
+        // must prepare its own loaded subtree before the shared store can delete it.
+        for (const c of [...contexts]) {
+          try { await c.deleteNative(id); nativeDeleted = true; break; }
+          catch (e) {
+            failures.push(e);
+            if (!/already has an active writer|active writer|thread not found|no rollout found/i.test(e.message ?? "")) throw e;
+          }
+        }
+        if (!nativeDeleted) {
+          const missing = failures.length > 0 && failures.every(e => /thread not found|no rollout found/.test(e.message ?? ""));
+          const failure = failures.find(e => /active writer/i.test(e.message ?? "")) ?? failures.at(-1);
+          if (!missing || (id === tid && !store[id] && !store._delegations?.[id] && !deletedThreads.has(id))) throw failure ?? new Error(`could not delete thread ${id}`);
         }
         deletedThreads.add(id);
         for (const c of contexts) c.forgetThread(id);
@@ -3238,6 +3248,17 @@ wss.on("connection", (ws) => {
     }
     if (msg.method === "claudeSubscription/read" || msg.method === "claudeSubscription/write") { claudeSubscriptionRequest(msg); return; }
     if (msg.method === "claudeAccounts/read" || msg.method === "claudeAccounts/write") { void claudeAccountsRequest(msg); return; }
+    const threadId = msg.params?.threadId;
+    if (msg.method === "turn/start" && threadId && !providerOwners.has(threadId) && !pendingNativeRoutes.has(threadId)
+      && !deletingThreads.has(threadId) && !deletedThreads.has(threadId)) {
+      await storeChain;
+      const saved = (await loadStore())[threadId];
+      if (isBridged(saved?.model)) {
+        claudeModel.set(threadId, saved.model);
+        if (saved.effort) claudeEffort.set(threadId, saved.effort);
+        claimProvider(threadId);
+      }
+    }
     const owner = providerOwners.get(msg.params?.threadId);
     if (msg.method === "thread/unsubscribe" && owner) {
       const tid = msg.params.threadId;
