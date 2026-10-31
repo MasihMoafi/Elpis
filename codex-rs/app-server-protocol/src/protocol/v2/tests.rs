@@ -395,7 +395,7 @@ fn thread_resume_response_round_trips_initial_turns_page() {
     default_selection_thread.mcp_server_selection = Some(None);
     let default_selection =
         serde_json::to_value(default_selection_thread).expect("serialize global default selection");
-    assert_eq!(default_selection["mcpServerSelection"], Value::Null);
+    assert_eq!(default_selection["mcpServerSelection"], JsonValue::Null);
     let mut unknown_selection_thread = response.thread.clone();
     unknown_selection_thread.mcp_server_selection = None;
     let unknown_selection =

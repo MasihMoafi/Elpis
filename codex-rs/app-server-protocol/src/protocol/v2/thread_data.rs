@@ -245,7 +245,7 @@ pub struct Thread {
     /// Null when unavailable. This is not per-turn execution telemetry.
     pub model: Option<String>,
     /// Thread-owned MCP server names. `null` uses the global default; an empty list selects none.
-    /// Omitted when a metadata-only read cannot recover the latest settings from history.
+    /// Omitted when the response does not have the thread's current settings snapshot.
     #[serde(
         default,
         deserialize_with = "crate::protocol::serde_helpers::deserialize_double_option",

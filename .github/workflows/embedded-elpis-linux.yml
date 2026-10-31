@@ -254,6 +254,10 @@ jobs:
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification == 'build' }}
         working-directory: codex-rs
         run: cargo test --locked -p codex-app-server --test all -- mcp_server_selection_
+      - name: Run MCP selection history regressions for the release source
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification == 'build' }}
+        working-directory: codex-rs
+        run: cargo test --locked -p codex-history --lib mcp_server_selection_
       - name: Record diagnostic runtime provenance
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
         working-directory: codex-rs/target/release
