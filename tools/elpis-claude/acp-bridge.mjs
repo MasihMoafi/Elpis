@@ -802,6 +802,7 @@ wss.on("connection", (ws) => {
     claudeBusy: () => [...activeTurns.keys()].some(tid => agentOf(claudeModel.get(tid))?.key === "claude") || structured.size > 0,
     stopProvider: (tid) => stopProvider(tid, "deleted"),
     stopProviderFor: (tid, action) => stopProvider(tid, action),
+    resumeQueue: (tid) => { if (queues.has(tid)) runNext(tid); },
     nativeLifecycle: (method, tid) => engineCall(method, { threadId: tid }),
     isBridgeChild: (tid) => childThreads.has(tid),
     childrenOf: (ids) => [...childThreads].filter(([, child]) => ids.has(child.rootThreadId) || ids.has(child.thread.parentThreadId)).map(([id]) => id),
@@ -3103,7 +3104,7 @@ wss.on("connection", (ws) => {
       toTui({ id: msg.id, error: { code: Number.isInteger(e.code) ? e.code : -32603, message: e.message ?? String(e) } });
     } finally {
       for (const id of ids) archivingThreads.delete(id);
-      for (const id of ids) runNext(id);
+      for (const id of ids) for (const c of contexts) c.resumeQueue(id);
     }
   }
   async function deleteThread(msg) {
@@ -3174,7 +3175,7 @@ wss.on("connection", (ws) => {
       toTui({ id: msg.id, error: Number.isInteger(e.code) ? e : { code: -32603, message: e.message ?? String(e) } });
     } finally {
       for (const id of acquired) deletingThreads.delete(id);
-      for (const id of acquired) runNext(id);
+      for (const id of acquired) for (const c of contexts) c.resumeQueue(id);
     }
   }
   const openingReplies = new Set();

@@ -170,7 +170,8 @@ async function main() {
     await later.req('turn/start', { threadId: deleted.id, input: [{ type: 'text', text: 'deletion must stop this task', text_elements: [] }] });
     await wait(() => fs.existsSync(refusalHold.ready), 'fork refusal held source turn');
     const refusalPrompts = history().filter(m => m.method === (gemini ? 'agy/prompt' : 'session/prompt')).length;
-    await later.req('thread/queue/add', { threadId: deleted.id, input: [{ type: 'text', text: 'queued work survives a refused delete', text_elements: [] }] });
+    await later.req('thread/queue/add', { threadId: deleted.id, input: [{ type: 'text', text: 'queued work first after refused delete', text_elements: [] }] });
+    await later.req('thread/queue/add', { threadId: deleted.id, input: [{ type: 'text', text: 'queued work second after refused delete', text_elements: [] }] });
     const sourceClosedBeforeRefusal = later.event('thread/closed', deleted.id).length;
     const sourceDeletedBeforeRefusal = later.event('thread/deleted', deleted.id).length;
     await assert.rejects(unrelated.req('thread/delete', { threadId: deleted.id }), /forked history/i);
@@ -178,10 +179,15 @@ async function main() {
     assert(!fs.existsSync(refusalHold.marker), 'a fork-reference refusal must not cancel the source tool');
     assert.equal(history().filter(m => m.method === (gemini ? 'agy/prompt' : 'session/prompt')).length, refusalPrompts, 'queued work must stay queued while deletion is refused');
     fs.writeFileSync(refusalHold.release, 'release');
-    await wait(() => later.event('turn/completed', deleted.id).length >= refusalCompletions + 2, 'source and queued turns after refused delete');
+    await wait(() => later.event('turn/completed', deleted.id).length >= refusalCompletions + 3
+      && history().filter(m => m.method === (gemini ? 'agy/prompt' : 'session/prompt')).length >= refusalPrompts + 2,
+    'source and queued turns after refused delete');
     assert(fs.existsSync(refusalHold.marker), 'the source turn must complete after a refused delete');
-    assert.equal(history().filter(m => m.method === (gemini ? 'agy/prompt' : 'session/prompt')).length, refusalPrompts + 2, 'queued work must resume after deletion is refused');
-    assert(JSON.stringify(history()).includes('queued work survives a refused delete'), 'the queued turn must reach its provider after refusal');
+    const resumedPrompts = history().filter(m => m.method === (gemini ? 'agy/prompt' : 'session/prompt')).slice(refusalPrompts).map(m => JSON.stringify(m));
+    assert.equal(resumedPrompts.length, 2, 'each queued turn must reach its provider once, without replaying delivered input');
+    const firstQueuedPrompt = resumedPrompts.findIndex(m => m.includes('queued work first after refused delete'));
+    const secondQueuedPrompt = resumedPrompts.findIndex(m => m.includes('queued work second after refused delete'));
+    assert(firstQueuedPrompt >= 0 && secondQueuedPrompt > firstQueuedPrompt, 'queued turns must resume in their original order');
     assert(JSON.stringify(await later.req('thread/resume', { threadId: keptFork.id })).includes('FORK_HISTORY_TO_KEEP'));
     assert(JSON.stringify(await later.req('thread/read', { threadId: deleted.id, includeTurns: true })).includes('FORK_HISTORY_TO_KEEP'));
     assert.equal(later.event('thread/closed', deleted.id).length, sourceClosedBeforeRefusal, 'a fork-reference refusal must not unload the source');
