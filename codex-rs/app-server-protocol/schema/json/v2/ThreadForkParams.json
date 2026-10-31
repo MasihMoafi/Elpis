@@ -137,6 +137,16 @@
         "null"
       ]
     },
+    "mcpServerSelection": {
+      "description": "Override the source thread's MCP server selection. Omission inherits it; `null` resets to the configured default; an empty list selects none.",
+      "items": {
+        "type": "string"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
     "model": {
       "description": "Configuration overrides for the forked thread, if any.",
       "type": [

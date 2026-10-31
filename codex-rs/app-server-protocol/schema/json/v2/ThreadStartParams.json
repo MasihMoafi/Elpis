@@ -354,6 +354,16 @@
         "null"
       ]
     },
+    "mcpServerSelection": {
+      "description": "Select globally configured MCP server names for this thread. Definitions, credentials, and enabled state stay owned by global config. An empty list selects none.",
+      "items": {
+        "type": "string"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
     "model": {
       "type": [
         "string",

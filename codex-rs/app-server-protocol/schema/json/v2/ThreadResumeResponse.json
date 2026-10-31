@@ -1503,6 +1503,16 @@
           "description": "Identifier for this thread. Codex-generated thread IDs are UUIDv7.",
           "type": "string"
         },
+        "mcpServerSelection": {
+          "description": "Thread-owned MCP server names. `null` uses the global default; an empty list selects none. Omitted when the response does not have the thread's current settings snapshot.",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
         "model": {
           "description": "Current configured model when loaded, otherwise the latest persisted model. Null when unavailable. This is not per-turn execution telemetry.",
           "type": [

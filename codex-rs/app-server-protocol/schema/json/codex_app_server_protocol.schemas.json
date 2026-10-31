@@ -2645,6 +2645,54 @@
             },
             "method": {
               "enum": [
+                "claudeAccounts/read"
+              ],
+              "title": "ClaudeAccounts/readRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/v2/ClaudeAccountsReadParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "ClaudeAccounts/readRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/v2/RequestId"
+            },
+            "method": {
+              "enum": [
+                "claudeAccounts/write"
+              ],
+              "title": "ClaudeAccounts/writeRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/v2/ClaudeAccountsWriteParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "ClaudeAccounts/writeRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/v2/RequestId"
+            },
+            "method": {
+              "enum": [
                 "externalAgentConfig/detect"
               ],
               "title": "ExternalAgentConfig/detectRequestMethod",
@@ -8642,6 +8690,153 @@
             "type": "object"
           }
         ]
+      },
+      "ClaudeAccount": {
+        "properties": {
+          "authenticated": {
+            "type": "boolean"
+          },
+          "duplicate": {
+            "type": "boolean"
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "plan": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "signingIn": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "authenticated",
+          "duplicate",
+          "id",
+          "label",
+          "signingIn"
+        ],
+        "type": "object"
+      },
+      "ClaudeAccountsReadParams": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "title": "ClaudeAccountsReadParams",
+        "type": "object"
+      },
+      "ClaudeAccountsReadResponse": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "accounts": {
+            "items": {
+              "$ref": "#/definitions/v2/ClaudeAccount"
+            },
+            "type": "array"
+          },
+          "activeId": {
+            "type": "string"
+          },
+          "authUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "accounts",
+          "activeId"
+        ],
+        "title": "ClaudeAccountsReadResponse",
+        "type": "object"
+      },
+      "ClaudeAccountsWriteParams": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "enum": [
+                  "select"
+                ],
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "action",
+              "id"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "enum": [
+                  "login"
+                ],
+                "type": "string"
+              },
+              "id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "action"
+            ],
+            "title": "Actionv2::ClaudeAccountsWriteParams",
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "enum": [
+                  "code"
+                ],
+                "type": "string"
+              },
+              "code": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "action",
+              "code",
+              "id"
+            ],
+            "type": "object"
+          }
+        ],
+        "title": "ClaudeAccountsWriteParams"
       },
       "CliAuthCredentialsStoreMode": {
         "enum": [
@@ -18139,6 +18334,19 @@
         ],
         "type": "string"
       },
+      "PrunerPromptEdit": {
+        "additionalProperties": false,
+        "description": "Omitted preserves the prompt; an explicit null inside this edit restores the default.",
+        "properties": {
+          "systemPrompt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "PrunerProviderChoice": {
         "properties": {
           "displayName": {
@@ -21206,6 +21414,16 @@
             "description": "Identifier for this thread. Codex-generated thread IDs are UUIDv7.",
             "type": "string"
           },
+          "mcpServerSelection": {
+            "description": "Thread-owned MCP server names. `null` uses the global default; an empty list selects none. Omitted when the response does not have the thread's current settings snapshot.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "model": {
             "description": "Current configured model when loaded, otherwise the latest persisted model. Null when unavailable. This is not per-turn execution telemetry.",
             "type": [
@@ -22128,6 +22346,16 @@
             "description": "Optional last turn id to fork through, inclusive.\n\nWhen specified, turns after `last_turn_id` are omitted from the fork. The referenced turn cannot be in progress.",
             "type": [
               "string",
+              "null"
+            ]
+          },
+          "mcpServerSelection": {
+            "description": "Override the source thread's MCP server selection. Omission inherits it; `null` resets to the configured default; an empty list selects none.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
               "null"
             ]
           },
@@ -25138,6 +25366,17 @@
               }
             ]
           },
+          "mcpServerSelection": {
+            "default": null,
+            "description": "Thread-owned MCP server names. `null` uses the global default; an empty list selects none.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "model": {
             "type": "string"
           },
@@ -25595,6 +25834,16 @@
           "ephemeral": {
             "type": [
               "boolean",
+              "null"
+            ]
+          },
+          "mcpServerSelection": {
+            "description": "Select globally configured MCP server names for this thread. Definitions, credentials, and enabled state stay owned by global config. An empty list selects none.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
               "null"
             ]
           },

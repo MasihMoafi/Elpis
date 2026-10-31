@@ -274,6 +274,78 @@
         }
       ]
     },
+    "ClaudeAccountsReadParams": {
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "ClaudeAccountsWriteParams": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "enum": [
+                "select"
+              ],
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "action",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "enum": [
+                "login"
+              ],
+              "type": "string"
+            },
+            "id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "title": "ActionClaudeAccountsWriteParams",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "enum": [
+                "code"
+              ],
+              "type": "string"
+            },
+            "code": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "action",
+            "code",
+            "id"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "ClientInfo": {
       "properties": {
         "name": {
@@ -2776,6 +2848,19 @@
       ],
       "type": "string"
     },
+    "PrunerPromptEdit": {
+      "additionalProperties": false,
+      "description": "Omitted preserves the prompt; an explicit null inside this edit restores the default.",
+      "properties": {
+        "systemPrompt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
     "RealtimeConversationVersion": {
       "enum": [
         "v1",
@@ -4526,6 +4611,16 @@
             "null"
           ]
         },
+        "mcpServerSelection": {
+          "description": "Override the source thread's MCP server selection. Omission inherits it; `null` resets to the configured default; an empty list selects none.",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
         "model": {
           "description": "Configuration overrides for the forked thread, if any.",
           "type": [
@@ -5525,6 +5620,16 @@
         "ephemeral": {
           "type": [
             "boolean",
+            "null"
+          ]
+        },
+        "mcpServerSelection": {
+          "description": "Select globally configured MCP server names for this thread. Definitions, credentials, and enabled state stay owned by global config. An empty list selects none.",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
             "null"
           ]
         },
@@ -8719,6 +8824,54 @@
         "params"
       ],
       "title": "Config/readRequest",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/RequestId"
+        },
+        "method": {
+          "enum": [
+            "claudeAccounts/read"
+          ],
+          "title": "ClaudeAccounts/readRequestMethod",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/definitions/ClaudeAccountsReadParams"
+        }
+      },
+      "required": [
+        "id",
+        "method",
+        "params"
+      ],
+      "title": "ClaudeAccounts/readRequest",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/RequestId"
+        },
+        "method": {
+          "enum": [
+            "claudeAccounts/write"
+          ],
+          "title": "ClaudeAccounts/writeRequestMethod",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/definitions/ClaudeAccountsWriteParams"
+        }
+      },
+      "required": [
+        "id",
+        "method",
+        "params"
+      ],
+      "title": "ClaudeAccounts/writeRequest",
       "type": "object"
     },
     {

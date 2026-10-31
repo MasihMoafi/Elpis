@@ -13,7 +13,11 @@ export type ThreadStartParams = {model?: string | null, modelProvider?: string |
  * Override where approval requests are routed for review on this thread
  * and subsequent turns.
  */
-approvalsReviewer?: ApprovalsReviewer | null, sandbox?: SandboxMode | null, config?: { [key in string]?: JsonValue } | null, serviceName?: string | null, baseInstructions?: string | null, developerInstructions?: string | null, /**
+approvalsReviewer?: ApprovalsReviewer | null, sandbox?: SandboxMode | null, config?: { [key in string]?: JsonValue } | null, /**
+ * Select globally configured MCP server names for this thread. Definitions,
+ * credentials, and enabled state stay owned by global config. An empty list selects none.
+ */
+mcpServerSelection?: Array<string> | null, serviceName?: string | null, baseInstructions?: string | null, developerInstructions?: string | null, /**
  * @deprecated `friendly` and `pragmatic` no longer select a style.
  */
 personality?: Personality | null, ephemeral?: boolean | null, sessionStartSource?: ThreadStartSource | null, /**

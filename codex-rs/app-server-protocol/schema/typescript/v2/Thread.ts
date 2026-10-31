@@ -49,6 +49,10 @@ modelProvider: string, /**
  * Null when unavailable. This is not per-turn execution telemetry.
  */
 model: string | null, /**
+ * Thread-owned MCP server names. `null` uses the global default; an empty list selects none.
+ * Omitted when the response does not have the thread's current settings snapshot.
+ */
+mcpServerSelection?: Array<string> | null | null, /**
  * Current configured reasoning effort when loaded, otherwise the latest persisted effort.
  * Null when unset or unavailable. This is not per-turn execution telemetry.
  */
