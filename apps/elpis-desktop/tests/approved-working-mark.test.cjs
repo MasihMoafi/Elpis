@@ -117,7 +117,7 @@ for (const colorScheme of ['light', 'dark']) {
       await page.getByRole('menuitem', { name: 'Files', exact: true }).click();
       await page.getByRole('treeitem', { name: 'README.md', exact: true }).click();
       const opened = await geometry(page);
-      assert.ok(opened.panel.width >= 600, `populated Files has its real wide default: ${JSON.stringify(opened)}`);
+      assert.ok(opened.sidePanel.width >= 600, `populated Files has its real wide default: ${JSON.stringify(opened)}`);
       assert.equal(opened.mark.x, before.mark.x, `populated Files: ${JSON.stringify({ before, opened })}`);
       const edge = page.getByRole('separator', { name: 'Resize side panel' });
       const box = await edge.boundingBox();
@@ -126,7 +126,7 @@ for (const colorScheme of ['light', 'dark']) {
       await page.mouse.move(box.x - 100, box.y + box.height / 2);
       await page.mouse.up();
       const resized = await geometry(page);
-      assert.ok(resized.panel.width > opened.panel.width + 80, `real divider resized: ${JSON.stringify({ opened, resized })}`);
+      assert.ok(resized.sidePanel.width > opened.sidePanel.width + 80, `real divider resized: ${JSON.stringify({ opened, resized })}`);
       assert.equal(resized.mark.x, before.mark.x, `resized Files: ${JSON.stringify({ before, resized })}`);
       assert.deepEqual(f.errors, []);
     } finally { await f.close(); }
