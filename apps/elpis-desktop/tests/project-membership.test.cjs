@@ -130,10 +130,10 @@ test('projects: explicit membership, drag, menu moves, persistence, and unscoped
     await first.locator('.thread-row[data-thread-id="created-3"]').waitFor();
     assert.equal(creates[2].cwd, projects[0].cwd, 'a shell chat started from a project must retain its selected project cwd');
     assert.deepEqual(shells[0], { threadId: 'created-3', body: { command: 'pwd' } });
-    assert.equal(await sidebar.locator('.thread-row[data-thread-id="created-3"]').count(), 0, 'a project shell chat must not also appear in Recents');
+    assert.equal(await sidebar.getByRole('region', { name: 'Recents', exact: true }).locator('.thread-row[data-thread-id="created-3"]').count(), 0, 'a project shell chat must not also appear in Recents');
     await page.reload();
     await first.locator('.thread-row[data-thread-id="created-3"]').waitFor();
-    assert.equal(await sidebar.locator('.thread-row[data-thread-id="created-3"]').count(), 0, 'project shell membership must persist after reload');
+    assert.equal(await sidebar.getByRole('region', { name: 'Recents', exact: true }).locator('.thread-row[data-thread-id="created-3"]').count(), 0, 'project shell membership must persist after reload');
     await page.getByRole('button', { name: 'New chat', exact: true }).click();
     assert.match(await page.getByRole('button', { name: 'Choose project', exact: true }).innerText(), /Work in a project/);
     await page.getByRole('button', { name: 'Add files and more', exact: true }).click();
