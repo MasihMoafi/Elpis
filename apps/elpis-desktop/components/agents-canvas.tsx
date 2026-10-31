@@ -2,7 +2,7 @@
 
 import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import "@xyflow/react/dist/style.css";
-import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { Background, BackgroundVariant, BaseEdge, Controls, Handle, MarkerType, MiniMap, Position, ReactFlow, ReactFlowProvider, applyEdgeChanges, applyNodeChanges, getBezierPath, useReactFlow, useStoreApi, type Edge, type EdgeProps, type EdgeChange, type FinalConnectionState, type Node, type NodeChange, type NodeProps, type XYPosition } from "@xyflow/react";
 import { Check, ChevronRight, Copy, ExternalLink, FileText, ListOrdered, Pencil, Play, StickyNote, Trash2, X } from "lucide-react";
 import { AgentsIcon, FolderIcon, PlusIcon, StopIcon } from "@/components/elpis-icons";
@@ -251,11 +251,12 @@ function CommandBar({ adding, room, limit, catalog, providers, onAgents, onNote,
   };
   const close = (event: React.FocusEvent) => { if (!event.currentTarget.contains(event.relatedTarget as globalThis.Node | null)) onClose(); };
   const count = Math.max(1, command.count ?? 1, command.tasks.length);
+  const [fit, fitted] = useFitted(adding, asking, text);
 
   if (asking) {
     // The prompts: line n is agent n's; lines past the count add agents, up to the limit.
     const typed = lines(tasks), total = Math.min(room, Math.max(asking.count ?? 1, typed.length)), given = Math.min(typed.length, total);
-    return <div className="quick-add hud-menu nodrag nowheel" role="dialog" aria-label="Add agents" style={{ left: adding.left, top: adding.top, maxHeight: adding.height }} onBlur={close}>
+    return <div ref={fit} className="quick-add hud-menu nodrag nowheel" role="dialog" aria-label="Add agents" style={fitted} onBlur={close}>
       <p className="hud-menu-title quick-add-title"><span>{total === 1 ? "Prompt for the new agent" : `Prompts for the ${total} new agents`}</span><span>{asking.model?.label ?? "Default model"}</span></p>
       <Textarea autoFocus className="min-h-0" aria-label="Prompts, one per line" rows={Math.min(8, Math.max(3, total))} value={tasks}
         placeholder={Array.from({ length: Math.min(3, total) }, (_, index) => `Prompt for agent ${index + 1}`).join("\n")} onChange={event => setTasks(event.target.value)}
@@ -269,7 +270,7 @@ function CommandBar({ adding, room, limit, catalog, providers, onAgents, onNote,
       <p className="quick-add-help">One prompt per line · Shift+Enter new line · Enter add · Esc close · Backspace back</p>
     </div>;
   }
-  return <div className="quick-add hud-menu nodrag nowheel" role="dialog" aria-label="Add agents" style={{ left: adding.left, top: adding.top, maxHeight: adding.height }} onBlur={close}>
+  return <div ref={fit} className="quick-add hud-menu nodrag nowheel" role="dialog" aria-label="Add agents" style={fitted} onBlur={close}>
     <p className="hud-menu-title quick-add-title"><span>{room ? "Add agents" : "No room for more agents"}</span><span>{room} of {limit} left</span></p>
     <Textarea ref={field} autoFocus className="min-h-0 resize-none" aria-label="Command" value={text} spellCheck={false} placeholder="Tell Elpis what to do, or 3 sol high: prompt; prompt"
       rows={Math.min(6, text.split("\n").length)} onChange={event => { setText(event.target.value); setActive(0); setLevel(null); }} onKeyDown={keys} />
@@ -296,13 +297,26 @@ function CommandBar({ adding, room, limit, catalog, providers, onAgents, onNote,
 type MenuItem = { label: string; hint?: string; keys?: string; take: () => void };
 /** A menu where the board was clicked, as ComfyUI's, Slate's and Grasshopper's: on a wire (insert agents or remove
  * it), an agent, the Mother or the empty board. ↑↓ move, Enter takes, Esc closes; Delete answers `onDelete`. */
+/** Every menu that opens at a point on the board: it moves up or left until all of it shows, and scrolls only when even the
+ * whole board is too short for it (Masih, 31 Oct: "these scrollbars shouldn't exist when they can not exist"). */
+function useFitted(at: { left: number; top: number }, ...changes: unknown[]) {
+  const box = useRef<HTMLDivElement>(null), [place, setPlace] = useState({ left: at.left, top: at.top });
+  useLayoutEffect(() => {
+    const menu = box.current, area = menu?.offsetParent as HTMLElement | null;
+    if (!menu || !area) return;
+    const gap = 8, left = Math.max(gap, Math.min(at.left, area.clientWidth - menu.offsetWidth - gap)), top = Math.max(gap, Math.min(at.top, area.clientHeight - menu.scrollHeight - gap));
+    setPlace(current => current.left === left && current.top === top ? current : { left, top });
+  }, [at.left, at.top, ...changes]); // eslint-disable-line react-hooks/exhaustive-deps
+  return [box, { ...place, maxHeight: `calc(100% - ${place.top + 8}px)` }] as const;
+}
+
 function CanvasMenu({ at, name, title, detail, items, onDelete, onClose }: { at: MenuAt; name: string; title: string; detail?: string; items: MenuItem[]; onDelete?: () => void; onClose: () => void }) {
-  const list = useRef<HTMLDivElement>(null);
+  const list = useRef<HTMLDivElement>(null), [box, place] = useFitted(at, items.length);
   const move = (step: number) => {
     const buttons = [...(list.current?.querySelectorAll("button") ?? [])], index = buttons.indexOf(document.activeElement as HTMLButtonElement);
     buttons[(index + step + buttons.length) % buttons.length]?.focus();
   };
-  return <div className="quick-add hud-menu nodrag nowheel" role="menu" tabIndex={-1} aria-label={name} style={{ left: at.left, top: at.top, maxHeight: `calc(100% - ${at.top + 8}px)` }} onContextMenu={event => event.preventDefault()}
+  return <div ref={box} className="quick-add hud-menu nodrag nowheel" role="menu" tabIndex={-1} aria-label={name} style={place} onContextMenu={event => event.preventDefault()}
     onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as globalThis.Node | null)) onClose(); }}
     onKeyDown={event => {
       if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); move(event.key === "ArrowDown" ? 1 : -1); }

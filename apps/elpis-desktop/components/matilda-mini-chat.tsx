@@ -13,7 +13,6 @@ import { replyPortrait } from "@/bridge/matilda-face.cjs";
 import { attachedFile } from "@/lib/prompt-history";
 import { LoadOnScroll } from "@/components/load-on-scroll";
 import { MatildaFace } from "@/components/matilda-face";
-import { MatildaSwitch } from "@/components/matilda-switch";
 import { useMatildaSettings } from "@/lib/matilda-settings";
 import "@/components/matilda-mini-chat.css";
 
@@ -118,6 +117,7 @@ function message(entry: Entry) {
 }
 
 export function MatildaMiniChat({ chat }: { chat: ReturnType<typeof useMatildaMiniChat> }) {
+  // Off shows in the message field; she is turned on and off on the Love Spot bar (Masih, 31 Oct: "no need for the off box here").
   const shared = useMatildaSettings(), off = shared.settings?.replies === false;
   const log = useRef<HTMLDivElement>(null), fromBottom = useRef<number | null>(null);
   // Revealing earlier messages keeps what he is reading where it is.
@@ -144,7 +144,6 @@ export function MatildaMiniChat({ chat }: { chat: ReturnType<typeof useMatildaMi
     </div>}
     {(chat.posting || chat.conversation.busy) && <p className="matilda-mini-status" role="status">Matilda is replying…</p>}
     {chat.error && <div className="matilda-mini-error" role="alert"><span>{chat.error}</span><Button variant="ghost" size="xs" onClick={() => void chat.retry()}>Retry</Button></div>}
-    <div className="matilda-mini-bar"><MatildaSwitch settings={shared.settings} onChange={on => void shared.update({ replies: on })} /></div>
     <form aria-label="Message Matilda" className="matilda-mini-composer" onSubmit={event => { event.preventDefault(); void chat.send(); }}>
       <Textarea aria-label="Message Matilda" placeholder={off ? "Matilda is off" : "Message Matilda…"} disabled={off} rows={1} autoFocus value={chat.draft} onChange={event => chat.setDraft(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} />
       <Button type="submit" variant="ghost" size="icon-sm" aria-label="Send to Matilda" title="Send to Matilda" disabled={!chat.draft.trim() || chat.posting || chat.conversation.busy}><SendIcon size={18} /></Button>

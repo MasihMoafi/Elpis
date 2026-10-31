@@ -318,8 +318,22 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
     pages: [...listed.values()].sort((a, b) => b.name.localeCompare(a.name, undefined, { numeric: true })) };
   }
   async function changePage(input) {
-    if (!record(input) || !['new', 'switch', 'rename', 'delete', 'keep', 'release'].includes(input.action) || Object.keys(input).some(k => !['action', 'name', 'page'].includes(k))
-      || (['delete', 'keep', 'release'].includes(input.action) && (input.name === undefined || !input.page))) throw fail('Invalid page action');
+    if (!record(input) || !['new', 'switch', 'rename', 'delete', 'keep', 'release', 'clear'].includes(input.action) || Object.keys(input).some(k => !['action', 'name', 'page'].includes(k))
+      || (['delete', 'keep', 'release'].includes(input.action) && (input.name === undefined || !input.page)) || (input.action === 'clear' && (!input.page || input.name !== undefined))) throw fail('Invalid page action');
+    // Delete all (Masih, 31 Oct: "so many chats here. I said there should be an option to delete them all"): every page but the
+    // open one and the kept ones goes to the system trash, where it can be restored.
+    if (input.action === 'clear') {
+      const life = await lifecycle();
+      return locked(async () => {
+        const current = await read();
+        samePage(input.page, current.scene.page);
+        for (const file of (await names(pages)).filter(n => n.endsWith('.excalidraw'))) {
+          const name = file.slice(0, -11);
+          if (name !== current.scene.page.name && !life.kept.includes(name)) await trashFile(path.join(pages, file));
+        }
+        return current;
+      });
+    }
     if (input.name !== undefined) pageName(input.name);
     if (['keep', 'release', 'rename', 'delete'].includes(input.action)) {
       const life = await lifecycle(), current = (await read()).scene.page.name;

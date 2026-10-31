@@ -152,6 +152,7 @@
     "desktop/browser-identity.test.cjs"
   ],
   "ui": [
+    "tests/no-idle-scrollbars.test.cjs",
     "tests/ui-scale.test.cjs",
     "tests/memory-count.test.cjs",
     "tests/matilda-avatar-ground.test.cjs",

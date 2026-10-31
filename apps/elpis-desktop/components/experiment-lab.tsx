@@ -74,7 +74,7 @@ function Lab({ graph }: { graph: CanvasGraph }) {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
   const status = record ? ({ running: "Running", completed: "Completed", stopped: "Stopped", failed: "Failed", interrupted: "Interrupted" }[record.status]) : "Ready";
-  return <section aria-label="Lab" className={`min-h-0 flex-1 ${styles.lab}`}>
+  return <section aria-label="Lab" className={`page-scroll ${styles.lab}`}>
     <div className={styles.intro}><div className={styles.heading}><h1>Lab</h1><Button type="button" size="sm" variant="outline" disabled={!loaded || running || busy} onClick={fresh}>New experiment</Button></div><p>Does a pattern earn its extra calls? Compare it with one agent on the same task.</p>
       <p className={styles.muted}>ChatGPT subscription · gpt-6-luna · low thinking · fresh context for every stage</p></div>
     {entries.length > 0 && <section className={styles.history} aria-label="Saved experiments"><h2>Experiments</h2><ul className="list">{entries.map(entry => <li className="list-row" key={entry.id}><button type="button" aria-current={record?.id === entry.id ? "true" : undefined} disabled={busy} onClick={() => void open(entry.id)}><span>{entry.task.trim().slice(0, 60) || "Untitled task"}</span><small>{new Date(entry.startedAt).toLocaleDateString()} · {entry.status}</small></button></li>)}</ul></section>}

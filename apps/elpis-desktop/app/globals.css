@@ -123,7 +123,8 @@ html { font-size:var(--interface-size, 16px); }
   .settings-rows, .settings-card, .step-card, .decision-card, .failed-turn-card, .message.user,
   .hud-menu, .hud-popover, .hud-dialog, .side-chat, .pending-input-panel, .full-view > .workspace-content, .composer) { border-radius:var(--corner-radius-lg, var(--cut-lg) 0); corner-shape:var(--corner-shape, bevel); }
 @layer base { * { box-sizing:border-box; border-color:var(--border); } [hidden] { display:none!important; } }
-* { scrollbar-width:thin; scrollbar-color:color-mix(in oklch, var(--foreground) 16%, transparent) transparent; }
+/* Chromium ignores the ::-webkit-scrollbar rules below on any element that sets scrollbar-width or scrollbar-color, and then
+ * draws its native bar with arrow buttons. So those two are never set globally: one scrollbar look, here. */
 *::-webkit-scrollbar { width:8px; height:8px; }
 *::-webkit-scrollbar-track { background:transparent; }
 *::-webkit-scrollbar-thumb { border:2px solid transparent; border-radius:999px; background:color-mix(in oklch, var(--foreground) 22%, transparent); background-clip:content-box; }
@@ -317,6 +318,9 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .composer-chip > svg:first-child, .model-select > svg:first-child { width:16px; height:16px; }
 .composer-hint { margin-left:auto; color:var(--subtle-foreground); font-size:var(--text-small); text-align:right; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .page-scroll { flex:1; min-height:0; overflow:auto; padding:var(--page-pad); }
+/* A page scrolls only for content, never for trailing space: the last section's own bottom margin is dropped (Masih, 31 Oct:
+ * "these scrollbars shouldn't exist when they can not exist"). Every page that uses --page-pad gets this through .page-scroll. */
+.page-scroll > :last-child, .page-scroll > :last-child > :last-child { margin-bottom:0; }
 /* Page surfaces reserve scrollbar space; Settings owns its scroll inside the layout. */
 .workspace-body.no-browser > .workspace-content > :not(:has(> .settings-layout)), .settings-page { scrollbar-gutter:stable; }
 .status-line { display:flex; gap:6px; align-items:center; } .status-dot { width:6px; height:6px; border-radius:50%; background:var(--muted-foreground); } .status-dot.connected { background:var(--success); }

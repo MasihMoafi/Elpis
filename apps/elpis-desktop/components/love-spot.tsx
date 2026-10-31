@@ -100,7 +100,7 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
   const [models, setModels] = useState<Model[]>([]), [pick, setPick] = useState(savedModel);
   const [screenshots, setScreenshots] = useState<Screenshot[]>([]), [choosing, setChoosing] = useState(false);
   const [page, setPage] = useState<BoardPage>(), [pages, setPages] = useState<PageList["pages"]>([]), [pagesError, setPagesError] = useState("");
-  const [pageToDelete, setPageToDelete] = useState<string>();
+  const [pageToDelete, setPageToDelete] = useState<string>(), [clearing, setClearing] = useState(false);
   const [pageBusy, setPageBusy] = useState(false), [renaming, setRenaming] = useState(false), [pageName, setPageName] = useState("");
   const currentPage = useRef<BoardPage>(undefined);
   const lastPoint = useRef<{ x: number; y: number }>(undefined);
@@ -485,7 +485,7 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
     finally { placingAll.current = false; }
   }
 
-  async function changePage(action: "new" | "switch" | "rename" | "delete" | "keep" | "release", name?: string) {
+  async function changePage(action: "new" | "switch" | "rename" | "delete" | "keep" | "release" | "clear", name?: string) {
     if (pageBusy || !editor) return;
     setPageBusy(true);
     try {
@@ -527,6 +527,7 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
           <DropdownMenuContent align="start" className="max-h-96 max-w-80 overflow-y-auto">
             <DropdownMenuItem onClick={() => { setPageName(page?.name ?? ""); setRenaming(true); }}>Rename page</DropdownMenuItem>
             {page && <DropdownMenuItem onClick={() => void changePage(currentKept ? "release" : "keep", page.name)}><Pin aria-hidden="true" fill={currentKept ? "currentColor" : "none"} />{currentKept ? "Kept" : "Keep this page"}</DropdownMenuItem>}
+            {pages.some(item => item.name !== page?.name && !item.kept) && <DropdownMenuItem variant="destructive" onClick={() => setClearing(true)}><Trash2 aria-hidden="true" />Delete all pages</DropdownMenuItem>}
             {pages.map(item => <DropdownMenuItem key={item.name} onClick={() => void changePage("switch", item.name)}>
               <Check aria-hidden="true" className={item.name === page?.name ? "shrink-0" : "invisible shrink-0"} />
               <span className="min-w-0"><span className="block truncate">{item.name}</span><time className="block text-xs text-muted-foreground" dateTime={new Date(item.modified).toISOString()}>{new Date(item.modified).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}{item.kept ? "" : item.expires && item.name !== page?.name ? ` · to trash in ${Math.max(1, Math.ceil((item.expires - Date.now()) / 86400000))} d` : ""}</time></span>
@@ -569,6 +570,18 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
         <AlertDialogFooter>
           <AlertDialogClose render={<Button type="button" variant="outline" />}>Cancel</AlertDialogClose>
           <Button type="button" variant="destructive" disabled={pageBusy} onClick={() => { const name = pageToDelete; setPageToDelete(undefined); if (name) void changePage("delete", name); }}>Delete page</Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    <AlertDialog open={clearing} onOpenChange={setClearing}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete all pages?</AlertDialogTitle>
+          <AlertDialogDescription>Every page except this one and the ones you keep moves to Trash, where you can restore it.</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogClose render={<Button type="button" variant="outline" />}>Cancel</AlertDialogClose>
+          <Button type="button" variant="destructive" disabled={pageBusy} onClick={() => { setClearing(false); void changePage("clear"); }}>Delete all pages</Button>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

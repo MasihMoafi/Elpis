@@ -1,4 +1,5 @@
-.lab { grid-column:1 / -1; overflow:auto; padding:var(--page-pad); min-width:0; color:var(--foreground); }
+/* Scrolling, padding and the trailing-space rule come from the shared .page-scroll (app/globals.css). */
+.lab { grid-column:1 / -1; min-width:0; color:var(--foreground); }
 .intro, .form, .results, .history { width:100%; max-width:var(--page-content-width); margin:0 auto var(--page-section-gap); }
 .heading { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
 .history h2 { margin-bottom:8px; }

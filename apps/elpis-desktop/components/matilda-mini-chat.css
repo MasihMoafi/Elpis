@@ -58,4 +58,3 @@ html.matilda-dragging { user-select:none; -webkit-user-select:none; }
 .matilda-face img.matilda-mood[data-shown="true"] { opacity:1; }
 @keyframes matilda-breathe { from { transform:scale(1); } to { transform:scale(1.025); } }
 @media (prefers-reduced-motion: reduce) { .matilda-face img { animation:none; } .matilda-face img.matilda-mood { transition:none; } }
-.matilda-mini-bar { display:flex; justify-content:flex-end; padding:4px 6px 0; }
