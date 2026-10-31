@@ -151,12 +151,14 @@ test('Full access and healthy context ring use the readable theme accent', async
       const actual = await page.evaluate(() => {
         const primary = document.createElement('span');
         primary.style.color = 'var(--primary)'; document.body.append(primary);
-        const expected = getComputedStyle(primary).color; primary.remove();
+        const expected = getComputedStyle(primary).color;
+        primary.style.color = 'var(--accent-text)';
+        const readableAccent = getComputedStyle(primary).color; primary.remove();
         const permission = document.querySelector('.composer-pill.permissions-full');
         const icons = permission?.querySelectorAll('svg');
         const ring = document.querySelector('.context-ring .context-ring-fill');
         return {
-          expected,
+          expected, readableAccent,
           permission: permission && getComputedStyle(permission).color,
           lock: icons?.[0] && getComputedStyle(icons[0]).color,
           caret: icons?.[1] && getComputedStyle(icons[1]).color,
@@ -170,9 +172,9 @@ test('Full access and healthy context ring use the readable theme accent', async
         assert.deepEqual({ permission: actual.permission, lock: actual.lock, caret: actual.caret, ring: actual.ring },
           { permission: exactTeal, lock: exactTeal, caret: exactTeal, ring: exactTeal }, `${label}: rendered controls use exact theme teal`);
       }
-      assert.equal(actual.permission, actual.expected, `${label}: Full access text uses theme primary`);
-      assert.equal(actual.lock, actual.expected, `${label}: Full access lock uses theme primary`);
-      assert.equal(actual.caret, actual.expected, `${label}: Full access caret uses theme primary`);
+      assert.equal(actual.permission, actual.readableAccent, `${label}: Full access text uses the readable theme accent`);
+      assert.equal(actual.lock, actual.readableAccent, `${label}: Full access lock uses the readable theme accent`);
+      assert.equal(actual.caret, actual.readableAccent, `${label}: Full access caret uses the readable theme accent`);
       assert.ok(actual.ring, `${label}: the healthy context ring is rendered`);
       assert.equal(actual.ring, actual.expected, `${label}: healthy context ring uses theme primary`);
       await appearance(page);
