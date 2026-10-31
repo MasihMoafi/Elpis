@@ -2,7 +2,7 @@
 // smoke-launch.mjs PACKAGE_DIR: opens an installed package for real, with its own launcher, a throwaway Elpis home and profile and a
 // virtual screen, and waits until its window shows the app, connected to its engine. The install runs this before it switches
 // `elpis-app` to a new package (22 Oct: two installs shipped a package Elpis could not open; no test started the real thing).
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
@@ -64,7 +64,7 @@ export async function smokeLaunch(packageDir, { timeoutMs = 90_000 } = {}) {
   } finally {
     if (app?.pid) { try { process.kill(-app.pid, 'SIGKILL'); } catch { /* Already gone. */ } }
     screen.kill();
-    fs.rmSync(scratch, { recursive: true, force: true });
+    execFileSync('gio', ['trash', scratch], { stdio: 'ignore' });
   }
 }
 
