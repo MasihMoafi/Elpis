@@ -1,5 +1,6 @@
 import type { Entry, Item } from "./api";
 import type { Attachment } from "./attachments";
+import { PORTRAIT_ATTACHMENT_NAME, PORTRAIT_INSTRUCTIONS } from "../bridge/matilda-face.cjs";
 
 /** Renderer-only identity, kept across the bridge's acknowledgement and recorded user item. */
 export type SubmittedMessage = {
@@ -14,7 +15,9 @@ export function submittedContent(text: string, files: Attachment[]): NonNullable
     return { type: "text", text: contents, text_elements: [{ byteRange: { start: 0, end: new TextEncoder().encode(contents).length }, placeholder: `Attachment: ${file.name}` }] };
   })];
 }
-const textParts = (content: Item["content"]) => JSON.stringify(content?.filter(part => part.type === "text").map(part => part.text) ?? []);
+// The bridge adds this exact internal note after submission. It is guidance, not another user message.
+const portraitNote = `File: ${PORTRAIT_ATTACHMENT_NAME}\n${PORTRAIT_INSTRUCTIONS}`;
+const textParts = (content: Item["content"]) => JSON.stringify(content?.filter(part => part.type === "text" && part.text !== portraitNote).map(part => part.text) ?? []);
 const imageCount = (content: Item["content"]) => content?.filter(part => part.type === "image" || part.type === "localImage").length ?? 0;
 function matchingEntry(entries: Entry[], sent: SubmittedMessage, used: Set<string>) {
   return entries.find(entry => entry.item.type === "userMessage" && !used.has(entryKey(entry)) && (!sent.turnId || sent.turnId === entry.turnId)

@@ -1,6 +1,31 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { entryKey, rememberSubmittedMessages, submittedContent, withSubmittedMessages } from '../lib/submitted-messages.ts';
+import { PORTRAIT_INSTRUCTIONS } from '../bridge/matilda-face.cjs';
+
+test('the recorded Matilda message replaces its pending copy after automatic portrait instructions are added', () => {
+  const content = [{ type: 'text', text: 'Keep the taller composer. ' }];
+  const recorded = { turnId: 'live-turn', item: { id: 'recorded', type: 'userMessage', content: [
+    ...content, ...submittedContent('', [{ type: 'text', name: 'Reply portrait.txt', text: PORTRAIT_INSTRUCTIONS }]),
+  ] } };
+  const sent = { key: 'pending', scope: 'matilda', content, previousKeys: [], newTurn: false };
+  const shown = withSubmittedMessages([recorded], [sent], 'matilda');
+  assert.equal(shown.length, 1, 'one send produces one visible message');
+  assert.equal(shown[0].item.id, 'recorded', 'keep the complete canonical item and its attachment');
+  const remembered = rememberSubmittedMessages([recorded], [sent], 'matilda');
+  assert.equal(remembered[0].recorded, entryKey(recorded));
+  assert.equal(withSubmittedMessages([recorded], remembered, 'matilda').length, 1);
+});
+
+test('an ordinary attachment with the same portrait filename cannot consume a different pending message', () => {
+  const content = [{ type: 'text', text: 'Keep the taller composer. ' }];
+  const recorded = { turnId: 'live-turn', item: { id: 'different', type: 'userMessage', content: [
+    ...content, ...submittedContent('', [{ type: 'text', name: 'Reply portrait.txt', text: 'My own different document.' }]),
+  ] } };
+  const sent = { key: 'pending', scope: 'matilda', content, previousKeys: [], newTurn: false };
+  assert.equal(withSubmittedMessages([recorded], [sent], 'matilda').length, 2);
+  assert.equal(rememberSubmittedMessages([recorded], [sent], 'matilda')[0].recorded, undefined);
+});
 
 const entry = (turnId, id, text) => ({ turnId, item: { id, type: 'userMessage', content: [{ type: 'text', text }] } });
 const sent = (patch = {}) => ({ key: 'local', scope: 'chat', content: submittedContent('Again', []), previousKeys: [], newTurn: true, ...patch });
