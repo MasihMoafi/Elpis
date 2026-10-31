@@ -52,7 +52,7 @@ export function currentDrain() {
 /** The newer bridge's side, for one client: `take(msg)` handles (returns true) what belongs to the old bridge. */
 export function drainProxy(ws, log = () => {}) {
   let shadow = null, initialize = null, seq = 0;
-  const waiting = new Map(); // shadow request id -> client request id
+  const waiting = new Map(); // shadow request id -> client request and optional legacy follow
   const asked = new Map();   // id shown to the client -> the old bridge's own request id
   const touched = new Set(); // chats of the old bridge this client used
   const outbox = [];
@@ -74,8 +74,17 @@ export function drainProxy(ws, log = () => {}) {
       }
       if (msg.id !== undefined && !msg.method) {
         if (!waiting.has(msg.id)) return;
-        const id = waiting.get(msg.id); waiting.delete(msg.id);
-        ws.sendWire(JSON.stringify({ ...msg, id }));
+        const route = waiting.get(msg.id); waiting.delete(msg.id);
+        if (route.subscribe && msg.error?.code === -32600 && typeof msg.error.message === "string"
+          && msg.error.message.startsWith("Invalid request: unknown variant `thread/subscribe`")) {
+          const id = `drain-${++seq}`;
+          waiting.set(id, { id: route.id, threadId: route.threadId, legacyRead: true });
+          send({ id, method: "thread/read", params: { threadId: route.threadId, includeTurns: false } });
+          return;
+        }
+        const result = route.legacyRead && msg.result?.thread?.id === route.threadId
+          ? { ...msg.result, followingLive: false } : msg.result;
+        ws.sendWire(JSON.stringify({ ...msg, ...(result === undefined ? {} : { result }), id: route.id }));
       } else if (msg.method && msg.id !== undefined) {
         const id = `drain-ask-${++seq}`; asked.set(id, msg.id); log(`drain: the old bridge asks ${msg.method}`);
         ws.sendWire(JSON.stringify({ ...msg, id }));
@@ -99,7 +108,7 @@ export function drainProxy(ws, log = () => {}) {
       touched.add(threadId);
       if (!shadow) open(old.sock);
       if (msg.id === undefined) { send(msg); return true; }
-      const id = `drain-${++seq}`; waiting.set(id, msg.id);
+      const id = `drain-${++seq}`; waiting.set(id, { id: msg.id, threadId, subscribe: msg.method === "thread/subscribe" });
       send({ ...msg, id });
       return true;
     },
