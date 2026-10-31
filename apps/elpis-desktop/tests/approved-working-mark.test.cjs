@@ -110,8 +110,9 @@ for (const colorScheme of ['light', 'dark']) {
       await mark.waitFor();
       const before = await geometry(page);
       await page.getByRole('button', { name: 'Show side panel', exact: true }).click();
-      await page.getByRole('tab', { name: 'Files', exact: true }).click();
-      await page.getByRole('treeitem', { name: 'README.md' }).waitFor();
+      await page.getByRole('button', { name: 'New side panel tab', exact: true }).click();
+      await page.getByRole('menuitem', { name: 'Files', exact: true }).click();
+      await page.getByRole('treeitem', { name: 'README.md', exact: true }).click();
       const opened = await geometry(page);
       assert.ok(opened.panel.width >= 600, `populated Files has its real wide default: ${JSON.stringify(opened)}`);
       assert.equal(opened.mark.x, before.mark.x, `populated Files: ${JSON.stringify({ before, opened })}`);
