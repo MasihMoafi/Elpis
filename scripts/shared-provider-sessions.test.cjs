@@ -24,7 +24,24 @@ async function main() {
   const sock = path.join(root, 'bridge.sock'), log = path.join(root, 'bridge.log'), control = path.join(root, 'control.json'), calls = path.join(root, 'calls.jsonl');
   const adapter = path.join(root, 'adapter.cjs');
   const agy = path.join(root, 'agy.cjs');
-  fs.writeFileSync(agy, `#!/usr/bin/env node\nconst fs=require('node:fs');if(process.argv.includes('--input-format'))process.stdin.on('data',()=>fs.appendFileSync(${JSON.stringify(calls)},JSON.stringify({method:'agy/prompt',args:process.argv.slice(2)})+'\\n'));process.argv.push('--agy-fixture');require(${JSON.stringify(path.resolve(__dirname, 'permissions-bridge.test.cjs'))});\n`, { mode: 0o755 });
+  fs.writeFileSync(agy, `#!/usr/bin/env node
+const fs = require('node:fs');
+const newline = String.fromCharCode(10);
+let pending = '';
+const logPrompt = input => {
+  if (input) fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify({ method: 'agy/prompt', args: process.argv.slice(2), input }) + newline);
+};
+if (process.argv.includes('--input-format')) {
+  process.stdin.on('data', chunk => {
+    pending += chunk;
+    let end;
+    while ((end = pending.indexOf(newline)) >= 0) { logPrompt(pending.slice(0, end)); pending = pending.slice(end + 1); }
+  });
+  process.stdin.on('end', () => logPrompt(pending));
+}
+process.argv.push('--agy-fixture');
+require(${JSON.stringify(path.resolve(__dirname, 'permissions-bridge.test.cjs'))});
+`, { mode: 0o755 });
   fs.writeFileSync(adapter, `const fs=require('node:fs');let b='';process.stdin.on('data',c=>{b+=c;let i;while((i=b.indexOf('\\n'))>=0){const l=b.slice(0,i);b=b.slice(i+1);if(l)fs.appendFileSync(${JSON.stringify(calls)},l+'\\n');}});require(${JSON.stringify(path.resolve(__dirname, 'permissions-bridge.test.cjs'))});\n`);
   const bridge = spawn(process.execPath, [process.env.SHARED_PROVIDER_BRIDGE ?? path.resolve(__dirname, '../tools/elpis-claude/acp-bridge.mjs')], { cwd, env: {
     PATH: process.env.PATH, HOME: home, CODEX_HOME: home, ELPIS_HOME: home, CODEX_AUTH_HOME: home,
@@ -49,9 +66,9 @@ async function main() {
     ws.on('message', data => {
       const m = JSON.parse(String(data)); c.seen.push(m);
       if (m.method && m.id !== undefined) { c.approvals.push(m); ws.send(JSON.stringify({ id: m.id, result: { decision: 'decline' } })); }
-      else if (!m.method) { const p = c.pending.get(m.id); if (p) { c.pending.delete(m.id); clearTimeout(p.timer); m.error ? p.reject(Error(m.error.message)) : p.resolve(m.result); } }
+      else if (!m.method) { const p = c.pending.get(m.id); if (p) { c.pending.delete(m.id); clearTimeout(p.timer); if (m.error) { const error = Error(m.error.message); error.stack += `\nRequest: ${p.label}`; p.reject(error); } else p.resolve(m.result); } }
     });
-    c.req = (method, params = {}) => new Promise((resolve, reject) => { const id = c.next++; const timer = setTimeout(() => { c.pending.delete(id); reject(Error(`timeout ${method}: ${errors}`)); }, 20000); c.pending.set(id, { resolve, reject, timer }); ws.send(JSON.stringify({ id, method, params })); });
+    c.req = (method, params = {}) => new Promise((resolve, reject) => { const id = c.next++; const label = `${method}${params.threadId ? ` (${params.threadId})` : ''}`; const timer = setTimeout(() => { c.pending.delete(id); reject(Error(`timeout ${label}: ${errors}`)); }, 20000); c.pending.set(id, { resolve, reject, timer, label }); ws.send(JSON.stringify({ id, method, params })); });
     c.event = (method, tid) => c.seen.filter(m => m.method === method && (m.params.threadId ?? m.params.thread?.id) === tid);
     await c.req('initialize', { clientInfo: { name, version: '1' }, capabilities: { experimentalApi: true } }); ws.send(JSON.stringify({ method: 'initialized' }));
     return c;
@@ -165,17 +182,49 @@ async function main() {
     await wait(() => later.event('turn/completed', deleted.id).length, 'delete fixture initial completion');
     assert(fs.existsSync(initialDelete.marker), 'Full Access fixture writes before deletion');
     const keptFork = (await later.req('thread/fork', { threadId: deleted.id })).thread;
+    const refusalHold = hold();
+    const refusalCompletions = later.event('turn/completed', deleted.id).length;
+    await later.req('turn/start', { threadId: deleted.id, input: [{ type: 'text', text: 'deletion must stop this task', text_elements: [] }] });
+    await wait(() => fs.existsSync(refusalHold.ready), 'fork refusal held source turn');
+    const refusalPrompts = history().filter(m => m.method === (gemini ? 'agy/prompt' : 'session/prompt')).length;
+    await later.req('thread/queue/add', { threadId: deleted.id, input: [{ type: 'text', text: 'queued work first after refused delete', text_elements: [] }] });
+    await later.req('thread/queue/add', { threadId: deleted.id, input: [{ type: 'text', text: 'queued work second after refused delete', text_elements: [] }] });
+    const sourceClosedBeforeRefusal = later.event('thread/closed', deleted.id).length;
+    const sourceDeletedBeforeRefusal = later.event('thread/deleted', deleted.id).length;
     await assert.rejects(unrelated.req('thread/delete', { threadId: deleted.id }), /forked history/i);
+    assert.equal(later.event('turn/completed', deleted.id).length, refusalCompletions, 'a fork-reference refusal must leave the source turn running');
+    assert(!fs.existsSync(refusalHold.marker), 'a fork-reference refusal must not cancel the source tool');
+    assert.equal(history().filter(m => m.method === (gemini ? 'agy/prompt' : 'session/prompt')).length, refusalPrompts, 'queued work must stay queued while deletion is refused');
+    fs.writeFileSync(refusalHold.release, 'release');
+    await wait(() => later.event('turn/completed', deleted.id).length >= refusalCompletions + 3
+      && history().filter(m => m.method === (gemini ? 'agy/prompt' : 'session/prompt')).length >= refusalPrompts + 2,
+    'source and queued turns after refused delete');
+    assert(fs.existsSync(refusalHold.marker), 'the source turn must complete after a refused delete');
+    const resumedPrompts = history().filter(m => m.method === (gemini ? 'agy/prompt' : 'session/prompt')).slice(refusalPrompts).map(m => JSON.stringify(m));
+    assert.equal(resumedPrompts.length, 2, 'each queued turn must reach its provider once, without replaying delivered input');
+    const firstQueuedPrompt = resumedPrompts.findIndex(m => m.includes('queued work first after refused delete'));
+    const secondQueuedPrompt = resumedPrompts.findIndex(m => m.includes('queued work second after refused delete'));
+    assert(firstQueuedPrompt >= 0 && secondQueuedPrompt > firstQueuedPrompt, 'queued turns must resume in their original order');
     assert(JSON.stringify(await later.req('thread/resume', { threadId: keptFork.id })).includes('FORK_HISTORY_TO_KEEP'));
     assert(JSON.stringify(await later.req('thread/read', { threadId: deleted.id, includeTurns: true })).includes('FORK_HISTORY_TO_KEEP'));
+    assert.equal(later.event('thread/closed', deleted.id).length, sourceClosedBeforeRefusal, 'a fork-reference refusal must not unload the source');
+    assert.equal(later.event('thread/deleted', deleted.id).length, sourceDeletedBeforeRefusal, 'a fork-reference refusal must not delete the source');
     pass('deletion preserves parent and fork when inherited history still references the parent');
     await later.req('thread/delete', { threadId: keptFork.id });
+    const sourceCompletions = later.event('turn/completed', deleted.id).length;
+    const sourcePrompts = history().filter(m => m.method === (gemini ? 'agy/prompt' : 'session/prompt')).length;
+    await later.req('turn/start', { threadId: deleted.id, input: [{ type: 'text', text: 'source remains usable after fork deletion', text_elements: [] }] });
+    await wait(() => later.event('turn/completed', deleted.id).length > sourceCompletions, 'source turn immediately after fork deletion');
+    assert.equal(history().filter(m => m.method === (gemini ? 'agy/prompt' : 'session/prompt')).length, sourcePrompts + 1, 'the source turn after fork deletion must use its provider session');
+    pass('source remains usable immediately after deleting its fork');
     const deleteChild = (await helper.req('thread/start', { cwd: other, model, approvalPolicy: 'on-request', sandbox: 'read-only', elpisParentThreadId: deleted.id })).thread;
     const deleteHold = hold();
     await later.req('turn/start', { threadId: deleted.id, input: [{ type: 'text', text: 'deletion must stop this task', text_elements: [] }] });
     await wait(() => fs.existsSync(deleteHold.ready), 'delete held turn');
     await later.req('thread/queue/add', { threadId: deleted.id, input: [{ type: 'text', text: 'QUEUED_MUST_NOT_RUN', text_elements: [] }] });
     const promptsBeforeDelete = history().filter(m => m.method === (gemini ? 'agy/prompt' : 'session/prompt')).length;
+    const parentDeletesBefore = later.event('thread/deleted', deleted.id).length;
+    const childDeletesBefore = later.event('thread/deleted', deleteChild.id).length;
     await unrelated.req('thread/delete', { threadId: deleted.id });
     fs.writeFileSync(deleteHold.release, 'release'); await pause(300);
     assert(!fs.existsSync(deleteHold.marker), 'deleting a provider chat must stop its running tools');
@@ -185,6 +234,12 @@ async function main() {
     await assert.rejects(helper.req('thread/read', { threadId: deleteChild.id, includeTurns: true }), missingThread(deleteChild.id));
     const savedAfterDelete = JSON.parse(fs.readFileSync(path.join(home, 'elpis-claude/sessions.json'), 'utf8'));
     assert(!savedAfterDelete[deleted.id] && !savedAfterDelete[deleteChild.id] && !savedAfterDelete._delegations?.[deleteChild.id]);
+    assert.equal(later.event('thread/deleted', deleted.id).length, parentDeletesBefore + 1, 'deleting the parent should publish one successful parent deletion');
+    assert.equal(later.event('thread/deleted', deleteChild.id).length, childDeletesBefore + 1, 'deleting the parent should publish one successful child deletion');
+    const laterLoaded = (await later.req('thread/loaded/list', {})).data ?? [];
+    const helperLoaded = (await helper.req('thread/loaded/list', {})).data ?? [];
+    assert(!laterLoaded.includes(deleted.id) && !laterLoaded.includes(deleteChild.id), 'deletion must unload the source subtree from the terminal engine');
+    assert(!helperLoaded.includes(deleted.id) && !helperLoaded.includes(deleteChild.id), 'deletion must release the helper engine writer');
     const freshReader = await connect();
     await assert.rejects(freshReader.req('thread/resume', { threadId: deleted.id }), missingThread(deleted.id));
     pass('deletion stops provider tools and queued work and removes child/history caches');
@@ -192,14 +247,34 @@ async function main() {
     await assert.rejects(unrelated.req('thread/delete', { threadId: ephemeral.id }), /not persisted/i);
     assert.equal((await later.req('thread/read', { threadId: ephemeral.id, includeTurns: false })).thread.id, ephemeral.id);
     pass('native deletion failure remains visible and preserves the readable provider chat');
+    const unrelatedArchiveThread = (await unrelated.req('thread/start', { cwd: other, model, approvalPolicy: 'never', permissions: ':danger-full-access' })).thread;
+    const unrelatedArchiveHold = hold();
+    const unrelatedArchiveCompletions = unrelated.event('turn/completed', unrelatedArchiveThread.id).length;
+    await unrelated.req('turn/start', { threadId: unrelatedArchiveThread.id, input: [{ type: 'text', text: 'unrelated archive task must keep running', text_elements: [] }] });
+    await wait(() => fs.existsSync(unrelatedArchiveHold.ready), 'unrelated archive task');
+    const archivedBefore = later.event('thread/archived', thread.id).length;
+    const helperArchivedBefore = later.event('thread/archived', h.thread.id).length;
     const f5 = hold();
     await later.req('turn/start', { threadId: thread.id, input: [{ type: 'text', text: 'archive stops this task', text_elements: [] }] });
     await wait(() => fs.existsSync(f5.ready), 'archive held turn');
+    const archivePrompts = history().filter(m => m.method === (gemini ? 'agy/prompt' : 'session/prompt')).length;
+    await later.req('thread/queue/add', { threadId: thread.id, input: [{ type: 'text', text: 'ARCHIVE_QUEUED_MUST_NOT_RUN', text_elements: [] }] });
     await unrelated.req('thread/archive', { threadId: thread.id });
-    await wait(() => later.event('thread/archived', thread.id).length, 'archive broadcast');
+    await wait(() => later.event('thread/archived', thread.id).length > archivedBefore, 'archive broadcast');
+    assert.equal(later.event('thread/archived', thread.id).length, archivedBefore + 1, 'the archived thread should be announced once');
+    assert.equal(later.event('thread/archived', h.thread.id).length, helperArchivedBefore + 1, 'the archived helper should be announced once');
+    assert(!fs.existsSync(unrelatedArchiveHold.marker), 'archiving a parent must not stop an unrelated provider thread');
+    assert.equal(unrelated.event('turn/completed', unrelatedArchiveThread.id).length, unrelatedArchiveCompletions, 'the unrelated provider turn must remain active during archive');
+    assert.equal(history().filter(m => m.method === (gemini ? 'agy/prompt' : 'session/prompt')).length, archivePrompts, 'successful archive must discard queued work without starting it');
+    assert(!JSON.stringify(history()).includes('ARCHIVE_QUEUED_MUST_NOT_RUN'), 'archived queued work must not reach its provider');
+    fs.writeFileSync(unrelatedArchiveHold.release, 'release');
+    await wait(() => unrelated.event('turn/completed', unrelatedArchiveThread.id).length > unrelatedArchiveCompletions, 'unrelated archive task completion');
+    assert(fs.existsSync(unrelatedArchiveHold.marker), 'the unrelated provider turn should finish after archive');
     fs.writeFileSync(f5.release, 'release'); await pause(150);
     const active = await unrelated.req('thread/loaded/list');
     assert(!active.data.includes(thread.id)); assert(!fs.existsSync(f5.marker));
+    const helperActive = await helper.req('thread/loaded/list');
+    assert(!helperActive.data.includes(thread.id) && !helperActive.data.includes(h.thread.id), 'archive must unload the complete native subtree');
     pass('archiving from another terminal ends its provider turn and unloads the session');
     // Leaving a chat changes the viewer subscription, never the runtime's permission subscription.
     const subscriber = await connect();
