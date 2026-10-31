@@ -3078,18 +3078,19 @@ wss.on("connection", (ws) => {
       } while (changed);
       if ([...ids].some(id => archivingThreads.has(id) || deletingThreads.has(id) || deletedThreads.has(id))) throw new Error("A chat in this subtree is already being archived or deleted.");
       for (const id of ids) archivingThreads.add(id);
-      for (const id of ids) queueOf(id).splice(0);
       await Promise.all([...contexts].flatMap(c => [...ids].map(id => c.stopProviderFor(id, "archived"))));
       const attempt = await nativeThreadLifecycle("thread/archive", tid);
       if (!attempt.found) {
         if (!store[tid] && !store._delegations?.[tid] && !claudeModel.has(tid)) throw attempt.error ?? new Error(`no rollout found for thread id ${tid}`);
         await updateStore(st => { delete st[tid]; if (st._delegations) delete st._delegations[tid]; });
+        for (const id of ids) queueOf(id).splice(0);
         for (const c of contexts) c.forgetArchived(tid);
         pendingArchive.delete(msg.id);
         toTui({ id: msg.id, result: {} });
         notify("thread/archived", { threadId: tid });
         return;
       }
+      for (const id of ids) queueOf(id).splice(0);
       const archived = [...ids].filter(id => id === tid || ![...contexts].some(c => c.isBridgeChild(id)));
       for (const id of archived) {
         for (const c of contexts) c.forgetArchived(id);
@@ -3100,7 +3101,10 @@ wss.on("connection", (ws) => {
     } catch (e) {
       pendingArchive.delete(msg.id);
       toTui({ id: msg.id, error: { code: Number.isInteger(e.code) ? e.code : -32603, message: e.message ?? String(e) } });
-    } finally { for (const id of ids) archivingThreads.delete(id); }
+    } finally {
+      for (const id of ids) archivingThreads.delete(id);
+      for (const id of ids) runNext(id);
+    }
   }
   async function deleteThread(msg) {
     const tid = msg.params.threadId;
@@ -3168,7 +3172,10 @@ wss.on("connection", (ws) => {
       // Persist cleanup even if native deletion stopped partway through a subtree.
       if ([...ids].some(id => deletedThreads.has(id))) await updateStore(() => {});
       toTui({ id: msg.id, error: Number.isInteger(e.code) ? e : { code: -32603, message: e.message ?? String(e) } });
-    } finally { for (const id of acquired) deletingThreads.delete(id); }
+    } finally {
+      for (const id of acquired) deletingThreads.delete(id);
+      for (const id of acquired) runNext(id);
+    }
   }
   const openingReplies = new Set();
   // WR6: a chat's workflow tool starts a run only inside a turn the person started whose own words asked for one.
