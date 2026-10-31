@@ -44,6 +44,11 @@ for (const [expression, source] of Object.entries(MATILDA_SHOTS)) {
   MATILDA_SHOTS[expression] = `data:image/svg+xml;base64,${btoa(svg)}`;
 }
 FACE_DATA_URL = MATILDA_SHOTS.listening;
+// Match only Elpis's exact internal guidance; a real file with the same name stays visible.
+function isPortraitInstruction(part) {
+  return part !== null && typeof part === "object" && part.type === "text" && part.text === `File: ${PORTRAIT_ATTACHMENT_NAME}\n${PORTRAIT_INSTRUCTIONS}`;
+}
+
 function replyPortrait(value, preview = false) {
   const text = typeof value === 'string' ? value : '';
   const match = text.match(PORTRAIT_MARKER);
@@ -52,4 +57,4 @@ function replyPortrait(value, preview = false) {
     dataURL: MATILDA_SHOTS[expression], lightDataURL: MATILDA_SHOTS_LIGHT[expression], board: { dataURL: BOARD_SHOTS[expression], mimeType: 'image/webp' } };
 }
 
-module.exports = { BOARD_FACE, BOARD_FACE_LIGHT, FACE_DATA_URL, FACE_DATA_URL_LIGHT, MATILDA_SHOTS, MATILDA_SHOTS_LIGHT, OLD_BOARD_FACES, PORTRAIT_DATA_URL, PORTRAIT_MARKER, PORTRAIT_ATTACHMENT_NAME, PORTRAIT_INSTRUCTIONS, replyPortrait };
+module.exports = { isPortraitInstruction, BOARD_FACE, BOARD_FACE_LIGHT, FACE_DATA_URL, FACE_DATA_URL_LIGHT, MATILDA_SHOTS, MATILDA_SHOTS_LIGHT, OLD_BOARD_FACES, PORTRAIT_DATA_URL, PORTRAIT_MARKER, PORTRAIT_ATTACHMENT_NAME, PORTRAIT_INSTRUCTIONS, replyPortrait };

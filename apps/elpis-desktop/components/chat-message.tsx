@@ -30,7 +30,7 @@ import type { VersionControl } from "@/lib/turn-replacement";
 import { noticeOf, type WorkflowNotice } from "@/lib/workflow-notice";
 import { reasoningOf, shellTokens, stepDuration, stepFailed, stepLabel, summarize, unwrapShell } from "@/lib/steps";
 // Built into the page, as the board has it: no request that can fail or arrive late (Masih, 23 Oct).
-import { replyPortrait } from "@/bridge/matilda-face.cjs";
+import { isPortraitInstruction, replyPortrait } from "@/bridge/matilda-face.cjs";
 import { runCard } from "@/lib/run-card";
 
 const object = (value: unknown): Record<string,unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string,unknown> : {};
@@ -152,7 +152,7 @@ export function ChatMessage({item,model,speaker="Elpis",threads=[],onOpenThread,
   const notice=noticeOf(item);
   if(notice)return <WorkflowNoticeStep notice={notice}/>;
   if(item.type==="userMessage"){
-    const content=list(item.content).map(object),attached=content.map((part,index)=>({part,index,file:fileAttachment(part)})).filter(({part,file})=>part.type!=="text" || file),attachments=attached.map(({part,file})=>file || attachmentLabel(part));
+    const content=list(item.content).map(object).filter(part=>!isPortraitInstruction(part)),attached=content.map((part,index)=>({part,index,file:fileAttachment(part)})).filter(({part,file})=>part.type!=="text" || file),attachments=attached.map(({part,file})=>file || attachmentLabel(part));
     const replies=attached.flatMap(({part,file})=>{const reply=file?readReply({name:file,type:"text",text:text(part.text).slice(`File: ${file}\n`.length)}):null;return reply?[reply]:[];});
     const reason=editBlockedReason;
     const shown=attached.filter(({part,file})=>file!==DRAWING_NOTE&&(!file||!readReply({name:file,type:"text",text:text(part.text).slice(`File: ${file}\n`.length)}))),attachmentContent=shown.length ? <ul className="mt-2 space-y-3 text-sm" aria-label="Message attachments">{shown.map(({part,index,file})=><li key={index}>{file===BROWSER_COMMENTS ? <BrowserComments text={text(part.text).slice(`File: ${file}\n`.length)}/> : file ? <details className="max-w-full rounded-md border border-border p-2"><DisclosureSummary className="cursor-pointer break-all">{file}</DisclosureSummary><pre className="mt-2 max-h-80 max-w-full overflow-auto whitespace-pre-wrap break-words text-left">{text(part.text).slice(`File: ${file}\n`.length)}</pre></details> : <RecordedAttachment part={part} index={index} mediaBase={mediaBase}/>}</li>)}</ul> : undefined;

@@ -36,6 +36,7 @@ Its "Shared scale" section carries the same scale to every page (the Size and Ty
 | Chat rows, agents, projects | `thread-row`, `ReorderItem`, `chat-groups` | `app/page.tsx`, `components/reorder.tsx` |
 
 ## 5. Layout
+The accepted live Working status belongs to the composer layout: `WorkingPlacement` portals `WorkingStatus` into `.composer-working`, directly above the composer, with the same left edge and a 14 px gap. Preserve it through window resize, full-size restore and opening either side panel. Never position it with viewport or panel offset calculations; only its rotor and dot animate. Regression: `tests/approved-working-mark.test.cjs` checks these transitions in both themes and reduced motion.
 `title-bar` → `aside.sidebar` (brand, nav, search, chat list, footer) + `main.workspace` (header, one page column, composer) + optional side panel (browser, files, terminal). Settings replaces the sidebar and has its own page column. Sidebar footer, left to right: the user's name (shown, never clickable), a status line, the Theme button, the Settings gear.
 
 ## 6. Rules that apply to every screen

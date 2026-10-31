@@ -778,8 +778,6 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .context-ring-icon circle { fill:none; stroke-width:2; }
 .context-ring-icon .context-ring-track { stroke:var(--border); }
 .context-ring-icon .context-ring-fill { stroke:var(--primary); stroke-linecap:round; transition:stroke-dashoffset .3s; }
-.context-ring-icon[data-level="warning"] .context-ring-fill { stroke:var(--warning); }
-.context-ring-icon[data-level="critical"] .context-ring-fill { stroke:var(--destructive); }
 /* Claude's tooltip on its icon buttons: the text, and a quieter line under it. */
 .hud-tooltip { display:grid; gap:2px; max-width:260px; padding:6px 10px; border:1px solid var(--hud-edge); background:var(--card); color:var(--foreground); font-size:var(--text-small); line-height:1.35; box-shadow:var(--shadow); pointer-events:none; }
 .hud-tooltip small { color:var(--muted-foreground); font-size:var(--text-small); }
@@ -842,10 +840,10 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .feature-chip:hover:not(:disabled) { background:var(--hover); color:var(--muted-foreground); }
 .feature-chip:focus-visible { outline:1.5px solid var(--ring); outline-offset:1px; }
 .feature-chip:disabled { cursor:default; opacity:.55; }
-.feature-chip[aria-pressed="true"] { color:var(--muted-foreground); }
+.feature-chip[aria-pressed="true"] { color:var(--primary); }
 .feature-dot { width:7px; height:7px; border-radius:50%; box-shadow:inset 0 0 0 1.5px var(--muted-foreground); }
-.feature-chip[aria-pressed="true"] .feature-dot { background:var(--muted-foreground); box-shadow:none; }
-.feature-chip .context-ring-icon :is(.context-ring-track, .context-ring-fill) { stroke:currentColor; }
+.feature-chip[aria-pressed="true"] .feature-dot { background:var(--primary); box-shadow:none; }
+.feature-chip .context-ring-icon .context-ring-track { stroke:currentColor; }
 .composer .model-picker-trigger { border-color:transparent; background:transparent; }
 /* The composer's toolbar controls (permissions, model, effort) are one pill: height, corner, text size and hover. */
 .composer-pill, .composer .model-select { height:28px; font-size:var(--text-xs); }

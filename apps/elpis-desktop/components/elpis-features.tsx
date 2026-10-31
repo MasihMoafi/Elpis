@@ -4,7 +4,7 @@ import { CONTEXT_TOGGLE_ATTRIBUTE, ContextRingIcon, TOGGLE_CONTEXT_EVENT, switch
 import { Tooltip } from "@/components/ui/tooltip";
 
 /** Elpis's own features under the message box, always in view, as the TUI's ledger sits beside its composer: the
- * chat's Context Ledger, and the Smart Prune, Subagents and RAG switches, one click each (olive when on). */
+ * chat's Context Ledger, and the Smart Prune, Subagents and RAG switches, one click each (the chat accent when on). */
 export function ElpisFeatures({ threadId }: { threadId?: string }) {
   const { state, saving, error, save } = useContextSwitches();
   const ledger = useSharedLedger(threadId);

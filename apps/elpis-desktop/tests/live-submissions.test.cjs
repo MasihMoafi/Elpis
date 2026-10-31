@@ -20,12 +20,19 @@ for (const colorScheme of ['light', 'dark']) test(`automatic portrait guidance d
     { type: 'text', text }, { type: 'text', text: note, text_elements: [{ byteRange: { start: 0, end: Buffer.byteLength(note) }, placeholder: 'Attachment: Reply portrait.txt' }] },
   ] };
   f.emit('message', { method: 'item/completed', params: { threadId: 'chat-a', turnId: 't4', item: echo } });
-  await f.page.getByText('Reply portrait.txt', { exact: true }).waitFor();
+  await f.page.locator('.user-turn[data-message-reference*="portrait-echo"]').waitFor();
+  assert.equal(await users.getByText('Reply portrait.txt', { exact: true }).count(), 0, 'internal portrait guidance stays out of the message');
   assert.equal(await users.count(), 1, 'the enriched engine echo replaces the temporary bubble');
   f.turns.at(-1)[3] = [echo];
   await f.page.getByRole('button', { name: 'Refresh conversation', exact: true }).click();
   await f.page.waitForTimeout(150);
   assert.equal(await users.count(), 1, 'history refresh keeps one complete user message');
+  assert.equal(await users.getByText('Reply portrait.txt', { exact: true }).count(), 0, 'history keeps internal guidance hidden');
+  const realFile = { id: 'real-portrait-file', type: 'userMessage', content: [{ type: 'text', text: 'File: Reply portrait.txt\nThese are my own portrait notes.' }] };
+  f.emit('message', { method: 'item/completed', params: { threadId: 'chat-a', turnId: 't4', item: realFile } });
+  await f.page.getByText('Reply portrait.txt', { exact: true }).waitFor();
+  await f.page.getByText('Reply portrait.txt', { exact: true }).click();
+  await f.page.getByText('These are my own portrait notes.', { exact: true }).waitFor();
   assert.deepEqual(f.errors, []);
   if (process.env.ELPIS_LIVE_EVIDENCE) {
     await fs.mkdir(process.env.ELPIS_LIVE_EVIDENCE, { recursive: true });
