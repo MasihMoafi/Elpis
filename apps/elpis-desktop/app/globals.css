@@ -426,7 +426,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .model-select:hover:not(:disabled) { background-color:var(--hover); color:var(--foreground); }
 /* Shared primary action. White sRGB tints preserve its hue; hud-cut owns the parallel chamfers. */
 :root { --primary-action:var(--primary); --primary-action-content:var(--primary-foreground); }
-:root, :is(.love-spot, .love-spot-tools) { --primary-action-hover:color-mix(in srgb, var(--primary-action), white 8%); --primary-action-pressed:color-mix(in srgb, var(--primary-action), white 16%); }
+:root, :is(.love-spot, .love-spot-tools, .love-chat) { --primary-action-hover:color-mix(in srgb, var(--primary-action), white 8%); --primary-action-pressed:color-mix(in srgb, var(--primary-action), white 16%); }
 .primary-cut { background:var(--primary-action); color:var(--primary-action-content); }
 .primary-cut:hover:not(:disabled) { background:var(--primary-action-hover); }
 .primary-cut:active:not(:disabled) { background:var(--primary-action-pressed); }
@@ -1520,8 +1520,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 /* Love Spot's brand color stays local to its navigation mark and drawing controls. */
 :root { --love-red:#8B1017; }
 .dark { --love-red:#ec575e; }
-:is(.love-spot, .love-spot-tools) { --primary:var(--love-red); --accent-text:var(--primary); --primary-foreground:#fff; --gold:var(--primary); --ring:var(--primary); --accent-mark:var(--primary); --primary-action:var(--love-red); --primary-action-content:#fff; }
-.dark :is(.love-spot, .love-spot-tools) { --primary-foreground:var(--background); --primary-action-content:var(--background); }
+:is(.love-spot, .love-spot-tools, .love-chat) { --primary:var(--love-red); --accent-text:var(--primary); --primary-foreground:#fff; --gold:var(--primary); --ring:var(--primary); --accent-mark:var(--primary); --primary-action:var(--love-red); --primary-action-content:#fff; }
+.dark :is(.love-spot, .love-spot-tools, .love-chat) { --primary-foreground:var(--background); --primary-action-content:var(--background); }
 .nav-list button[data-nav-page="loveSpot"] svg { color:var(--love-red); }
 .thread-origin[data-origin="Love Spot"] { color:var(--foreground); }
 .love-unread { display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:18px; border-radius:50%; font-size:var(--text-xs); line-height:1; font-weight:600; margin-left:auto; background:var(--love-red); color:#fff; box-shadow:0 0 12px color-mix(in oklab, var(--love-red) 55%, transparent); }
@@ -1541,3 +1541,16 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 
 /* A hidden drawing style panel keeps its place, so its slider still measures its width; only the toggle in its corner stays visible (components/drawing-style.tsx). */
 .drawing-style-hidden .selected-shape-actions .App-menu__left { visibility: hidden; }
+
+[data-fast-notice] { animation:fast-notice-dismiss 4s ease forwards; }
+@keyframes fast-notice-dismiss {
+  0%,88% { opacity:1; filter:blur(0); }
+  100% { opacity:0; filter:blur(4px); }
+}
+@media(prefers-reduced-motion:reduce) {
+  [data-fast-notice] { animation-name:fast-notice-dismiss-reduced; }
+}
+@keyframes fast-notice-dismiss-reduced {
+  0%,97% { opacity:1; }
+  100% { opacity:0; }
+}

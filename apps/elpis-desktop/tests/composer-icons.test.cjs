@@ -73,7 +73,18 @@ for (const colorScheme of ['light', 'dark']) {
       const centres = m.flatMap(item => [item.box.cy, item.glyph.cy]);
       assert.ok(Math.max(...centres) - Math.min(...centres) <= 0.5, `one centre line: ${centres.join(', ')}`);
       assert.ok(Math.max(...gaps) - Math.min(...gaps) <= 0.5, `voice → mic → Stop → Send box gaps are even: ${gaps.join(', ')}`);
-      assert.equal(await row.getByRole('button', { name: 'Stop response' }).locator('rect').count(), 1, 'Stop uses the same outlined icon language');
+      const stopShape = await row.getByRole('button', { name: 'Stop response' }).locator('svg').evaluate(svg => {
+        const path = svg.querySelector('path');
+        if (!path) return { fill: getComputedStyle(svg).fill, minimum: 0, maximum: 2 };
+        const box = path.getBBox(), length = path.getTotalLength();
+        const distances = Array.from({ length: 32 }, (_, i) => {
+          const p = path.getPointAtLength(length * i / 32);
+          return Math.abs((p.x - box.x - box.width / 2) / (box.width / 2)) + Math.abs((p.y - box.y - box.height / 2) / (box.height / 2));
+        });
+        return { fill: getComputedStyle(svg).fill, minimum: Math.min(...distances), maximum: Math.max(...distances) };
+      });
+      assert.equal(stopShape.fill, 'none', 'Stop is outlined');
+      assert.ok(stopShape.minimum >= .8 && stopShape.maximum <= 1.2, `Stop is a diamond rather than a square: ${JSON.stringify(stopShape)}`);
       assert.equal(await row.getByRole('button', { name: 'More send options', exact: true }).count(), 0, 'Send has no extra queue menu');
       assert.equal(await page.locator('.composer textarea').evaluate(el => el.getBoundingClientRect().height), 44, 'an empty composer starts at the taller typing height');
       const features = page.getByRole('group', { name: 'Elpis features' }).locator('.feature-chip');

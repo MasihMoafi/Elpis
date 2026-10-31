@@ -13,7 +13,18 @@ test('an unnamed helper is shown by its terminal label, not as an untitled agent
 });
 
 test('names and ordinary chats keep their titles', () => {
-  assert.equal(title({ ...helper, name: 'Fix the ledger' }), 'Fix the ledger');
+  assert.equal(title({ ...helper, name: 'Fix the ledger' }), 'Fix the ledger · Plato [worker]');
   assert.equal(title({ id: 'chat', source: 'vscode', agentNickname: 'Plato', preview: 'hello there' }), 'hello there');
   assert.match(title({ ...helper, agentNickname: null, agentRole: null }), /^Untitled agent · /);
+});
+
+
+test('helper tasks lead and their recorded names follow without duplication', () => {
+  const agent = { ...helper, agentNickname: 'Nash', agentRole: null, source: { subAgent: { thread_spawn: { agent_path: '/root/compaction_review' } } } };
+  assert.equal(title(agent), 'Compaction review · Nash');
+  assert.equal(title({ ...agent, name: 'Nash · Compaction review' }), 'Compaction review · Nash');
+  assert.equal(title({ ...agent, name: 'Compaction review · Nash' }), 'Compaction review · Nash');
+  assert.equal(title({ ...agent, name: 'Nash', workflowTaskTitle: 'Review compaction' }), 'Review compaction · Nash');
+  assert.equal(title({ id: 'ordinary', source: 'vscode', name: 'Nash · My notes', agentNickname: 'Nash' }), 'Nash · My notes');
+  assert.equal(title({ ...agent, name: 'Compaction review', agentNickname: null, agentRole: null }), 'Compaction review');
 });

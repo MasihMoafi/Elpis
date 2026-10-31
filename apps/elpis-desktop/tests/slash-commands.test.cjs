@@ -574,3 +574,24 @@ test('the Fast lightning control changes a running turn without sending or losin
     assert.deepEqual(errors, []);
   } finally { await context.close(); }
 });
+
+test('Fast feedback blurs out at four seconds without hiding other notices or disabling Fast', async () => {
+  const { page, context, errors, openChat, run } = await open();
+  try {
+    await openChat(); await run('/fast');
+    const notice = page.getByText('Fast is on. It uses plan limits faster.', { exact: true });
+    await notice.waitFor();
+    await page.waitForFunction(() => {
+      const el = document.querySelector('[data-fast-notice]');
+      if (!el) return false;
+      const s = getComputedStyle(el), opacity = Number(s.opacity);
+      return opacity > 0 && opacity < .95 && s.filter !== 'none' && s.filter !== 'blur(0px)';
+    }, null, { timeout: 4500 });
+    await notice.waitFor({ state: 'detached', timeout: 1000 });
+    assert.equal(await page.getByRole('button', { name: 'Fast mode', exact: true }).getAttribute('aria-pressed'), 'true');
+    await run('/fast maybe');
+    const warning = page.getByText('Use /fast, /fast on or /fast off.', { exact: true });
+    await warning.waitFor(); await page.waitForTimeout(4200); await warning.waitFor();
+    assert.deepEqual(errors, []);
+  } finally { await context.close(); }
+});

@@ -3,7 +3,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture, THREADS } = require('./parity-fixture.cjs');
 const { LOGO_ACCENT, openSettings, leaveSettings, chooseOption, controlValue } = require('./controls.cjs');
 const { uiFit } = require('./ui-fit.cjs');
 const { contrastFailures } = require('./hud-contrast.cjs');
@@ -318,5 +318,30 @@ test('Inter also reaches side-chat messages and its composer', async t => {
   await box.fill('A side question in the selected font.'); await box.press('Enter');
   const message = page.getByRole('region', { name: 'Side chat' }).locator('.message.user').first();
   await message.waitFor(); assert.match(await font(message), /Inter/);
+  assert.deepEqual(f.errors, []);
+});
+
+
+test('Love Spot chat keeps its own red while ordinary chats keep the global accent', async t => {
+  const f = await fixture({ running: true, width: 1440, height: 900, threads: [{ ...THREADS[0], name: 'Love Spot' }, ...THREADS.slice(1)] });
+  t.after(() => f.close()); const { page } = f; await f.open('chat-a');
+  const colour = async () => page.evaluate(() => {
+    const main = document.querySelector('.workspace'), probe = document.createElement('span'); main.append(probe);
+    probe.style.color = 'var(--primary)'; const primary = getComputedStyle(probe).color;
+    probe.style.color = 'var(--love-red)'; const love = getComputedStyle(probe).color; probe.remove();
+    const mark = main.querySelector('.elpis-working-mark');
+    return { primary, love, mark: mark && getComputedStyle(mark).color };
+  });
+  for (const mode of ['Light', 'Dark']) {
+    await appearance(page); await theme(page, mode);
+    await chooseOption(page.getByLabel('Accent colour', { exact: true }), 'teal'); await leaveSettings(page);
+    await f.open('chat-a'); const love = await colour();
+    assert.equal(love.primary, love.love, `${mode}: Love Spot has its existing red`);
+    assert.equal(love.mark, love.love, `${mode}: the visible Working mark follows Love Spot red`);
+    await f.open('chat-b'); const ordinary = await colour();
+    assert.notEqual(ordinary.primary, ordinary.love, `${mode}: the colour stays local to Love Spot`);
+    assert.equal(ordinary.primary, mode === 'Light' ? 'rgb(20, 107, 103)' : 'rgb(104, 212, 199)');
+    await f.open('chat-a');
+  }
   assert.deepEqual(f.errors, []);
 });

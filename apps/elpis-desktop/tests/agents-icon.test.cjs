@@ -68,7 +68,7 @@ for (const theme of ['light', 'dark']) test(`Agents shares the selected agents a
     const { path: artwork } = await checkAgentsIcon(page);
     const identityRow = page.locator('.team-row[data-thread-id="agent-0"]');
     const teamMark = await identityRow.locator('.agent-mark').getAttribute('aria-label');
-    assert.equal(await identityRow.locator('.agent-name').innerText(), 'Agent 1 · inspect', 'the task name appears once without the duplicate nickname');
+    assert.equal(await identityRow.locator('.agent-name').innerText(), 'inspect · Agent 1', 'the task comes first and the recorded agent name follows once');
     assert.equal(await identityRow.getByText('Agent 1', { exact: true }).count(), 0, 'the nickname is not repeated as a second label');
     assert.equal(await identityRow.locator('.agent-model').count(), 1, 'the row keeps one runtime line inside the shared identity');
     assert.equal(await identityRow.locator('small').count(), 0, 'the separate runtime line does not duplicate the identity');

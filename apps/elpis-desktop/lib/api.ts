@@ -108,15 +108,27 @@ export function agentLabel(thread: Thread): string {
 }
 /** Use recorded task metadata before an agent's instruction preamble; an unnamed helper leads with its agent label. */
 export function title(thread: Thread) {
-  if (thread.name?.trim()) return thread.name.trim();
-  if (thread.workflowTaskTitle?.trim()) return thread.workflowTaskTitle.trim();
-  const task = taskOf(thread), label = isAgent(thread) ? agentLabel(thread) : "";
-  if (task) return label ? `${label} · ${task}` : task;
-  if (label) return label;
+  let named = thread.name?.trim() || "";
+  if (isAgent(thread)) {
+    const label = agentLabel(thread);
+    for (const known of new Set([thread.agentNickname?.trim(), label])) {
+      if (!known) continue;
+      if (named === known) named = "";
+      if (named.startsWith(`${known} · `)) named = named.slice(known.length + 3);
+      if (named.endsWith(` · ${known}`)) named = named.slice(0, -known.length - 3);
+    }
+    const task = thread.workflowTaskTitle?.trim() || named || taskOf(thread);
+    if (task) return label ? `${task} · ${label}` : task;
+    if (label) return label;
+  } else {
+    if (named) return named;
+    if (thread.workflowTaskTitle?.trim()) return thread.workflowTaskTitle.trim();
+  }
   const preview = thread.preview?.trim().split(/\r?\n/)[0].slice(0, 80);
   if (preview && (!isAgent(thread) || !/^you are\b/i.test(preview))) return preview;
   return isAgent(thread) ? `Untitled agent · ${thread.id.slice(-8)}` : "Untitled conversation";
 }
+
 const subAgentSource = (thread: Thread) => typeof thread.source === "object" && thread.source !== null && "subAgent" in thread.source;
 export const isUnlinkedAgent = (thread:Thread,threads:Thread[]) => agentParentId(thread)
   ? !threads.some(parent=>parent.id===agentParentId(thread))

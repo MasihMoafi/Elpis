@@ -5,8 +5,8 @@ import dynamic from "next/dynamic";
 import { BrandWordmark } from "@/components/brand-wordmark";
 import { flushSync } from "react-dom";
 import { cloneElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { AgentsIcon, BrowserIcon, ChatIcon, ExperimentLabIcon, FolderIcon, LoveSpotIcon, NewChatIcon, PinIcon, PlusIcon, SendIcon, SettingsIcon, ThemeIcon, WorkflowsIcon } from "@/components/elpis-icons";
-import { Archive, ArrowDown, Blocks, Bookmark, ChevronRight, EyeOff, Layers, PanelLeft, PanelRightClose, PanelRightOpen, Pin, RefreshCw, Search, Square, X, Zap } from "lucide-react";
+import { AgentsIcon, BrowserIcon, ChatIcon, ExperimentLabIcon, FolderIcon, LoveSpotIcon, NewChatIcon, PinIcon, PlusIcon, SendIcon, SettingsIcon, ThemeIcon, WorkflowsIcon, StopIcon } from "@/components/elpis-icons";
+import { Archive, ArrowDown, Blocks, Bookmark, ChevronRight, EyeOff, Layers, PanelLeft, PanelRightClose, PanelRightOpen, Pin, RefreshCw, Search, X, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ReorderItem, useReorder } from "@/components/reorder";
 import { OptionSelect } from "@/components/ui/option-select";
@@ -2419,7 +2419,7 @@ export default function Home() {
       </div>
       <ResizeEdge label="Resize sidebar" width={sidebarWidth} min={SIDEBAR.min} max={SIDEBAR.max} initial={SIDEBAR.initial} grows="right" onResize={resizeSidebar} onClose={() => showSidebar(false)} />
     </aside>
-    <main className="workspace" style={panelShown && !fullView ? { "--side-min": `${sideMinWidth(side.shown)}px`, ...(side.width ? { "--side-w": `clamp(${sideMinWidth(side.shown)}px, ${side.width}px, 70%)` } : {}) } as CSSProperties : undefined}>
+    <main className={`workspace${view === "chat" && selected && agentName(selected) === "Matilda" ? " love-chat" : ""}`} style={panelShown && !fullView ? { "--side-min": `${sideMinWidth(side.shown)}px`, ...(side.width ? { "--side-w": `clamp(${sideMinWidth(side.shown)}px, ${side.width}px, 70%)` } : {}) } as CSSProperties : undefined}>
       <header className={`workspace-header${heading ? "" : " untitled"}`}>
         <ImproveElpis threadId={view === "chat" ? selected?.id : undefined} onChat={loadThread} />
         {outsideChatApprovals.length > 0 && <div className="pending-input-anchor"><Button ref={pendingInputButton} className="pending-input-trigger" variant="secondary" size="sm" aria-label={`Needs input (${outsideChatApprovals.length})`} aria-expanded={pendingInputOpen} aria-controls="pending-input-panel" onKeyDown={event => { if (event.key === "Escape") setPendingInputOpen(false); }} onClick={() => setPendingInputOpen(value => !value)}><span className="pending-count">{outsideChatApprovals.length}</span>Needs input<span className="pending-task-name">{title(threads.find(thread => thread.id === outsideChatApprovals[0].params.threadId) || outsideChatApprovals[0].thread || {id:outsideChatApprovals[0].params.threadId || "unreported"})}</span></Button></div>}
@@ -2486,7 +2486,7 @@ export default function Home() {
           {panel === "review" && selected && <ReviewPanel threadId={selected.id} onStart={target => void startReview(selected, target)} onClose={closePanel} />}
           {panel === "diff" && selected && <DiffPanel threadId={selected.id} onClose={closePanel} />}
           </ViewBoundary>
-          {visibleSlashNotice && <p role="status" className="mx-auto mb-2 w-full max-w-[var(--transcript-width,740px)] px-1 text-sm text-muted-foreground">{visibleSlashNotice}</p>}
+          {visibleSlashNotice && <p key={visibleSlashNotice} role="status" data-fast-notice={fastNoticeState ? "" : undefined} onAnimationEnd={fastNoticeState ? () => setSlashNotice(current => current === slashNotice ? "" : current) : undefined} className="mx-auto mb-2 w-full max-w-[var(--transcript-width,740px)] px-1 text-sm text-muted-foreground">{visibleSlashNotice}</p>}
           {selected && plans[selected.id] && <TaskList plan={plans[selected.id]} running={activeTurns[selected.id] === plans[selected.id].turnId} />}
           <QueuedFollowUps threadId={selected?.id} activeTurnId={activeTurn} onError={setError} onComplete={restoreComposerFocus} onEdit={editQueued} />
           {!selected && <div className="composer-tray"><EnvironmentMenu folder={chatFolder || null} disabled={!ready || busy} worktree={newWorktree} onWorktree={setNewWorktree} /><ProjectMenu variant="chip" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} /></div>}
@@ -2527,7 +2527,7 @@ export default function Home() {
                   const result = insertTranscript(textRef.current, selection, transcript); editDraft(result.text);
                   requestAnimationFrame(() => { composerRef.current?.focus(); composerRef.current?.setSelectionRange(result.caret, result.caret); });
                 }} />}
-              {activeTurn && <Button type="button" size="sm" variant="secondary" className="stop-button shrink-0 gap-1.5" aria-label="Stop response" title="Stop response: stops the agent’s current turn." disabled={!ready || !connected} onClick={() => selected && stop(selected)}><Square size={16} aria-hidden="true" /><span className="composer-action-label">Stop response</span></Button>}<Button type="submit" variant="cutPrimary" className="send-button" size={activeTurn && !continues ? "sm" : "icon"} aria-label={shellMode ? "Run shell command" : activeTurn && !continues ? "Send follow-up" : "Send message"} title={activeTurn && !continues ? followUpTooltip(preferences) : undefined} disabled={sendBlocked}>{activeTurn && !continues && !shellMode ? <><span className="composer-action-label">Send follow-up</span><SendIcon size={18} className="followup-send-icon" aria-hidden="true" /></> : <SendIcon size={18} />}</Button></div></div></div>
+              {activeTurn && <Button type="button" size="sm" variant="secondary" className="stop-button shrink-0 gap-1.5" aria-label="Stop response" title="Stop response: stops the agent’s current turn." disabled={!ready || !connected} onClick={() => selected && stop(selected)}><StopIcon size={16} aria-hidden="true" /><span className="composer-action-label">Stop response</span></Button>}<Button type="submit" variant="cutPrimary" className="send-button" size={activeTurn && !continues ? "sm" : "icon"} aria-label={shellMode ? "Run shell command" : activeTurn && !continues ? "Send follow-up" : "Send message"} title={activeTurn && !continues ? followUpTooltip(preferences) : undefined} disabled={sendBlocked}>{activeTurn && !continues && !shellMode ? <><span className="composer-action-label">Send follow-up</span><SendIcon size={18} className="followup-send-icon" aria-hidden="true" /></> : <SendIcon size={18} />}</Button></div></div></div>
           </form>}
           <div className="composer-meta">
             {selected && <ProjectMenu variant="chip" label="Change folder" addLabel="Choose folder…" allowNone={false} projects={projects} disabled={!ready || !connected || readOnlyRun}
