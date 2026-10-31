@@ -256,6 +256,13 @@ export function createLoveSpotTalk({ client, store, companion, audio = LOVE_SPOT
   return {
     busy: () => sending || !!activeTurnId,
     startFresh,
+    /** Replies off: the reply she is writing stops, and her voice with it. */
+    async stop() {
+      await load();
+      speechFeed?.emit({ type: 'stop' });
+      if (threadId && activeTurnId) await client.interrupt(threadId, { turnId: activeTurnId });
+      return snapshot();
+    },
     async read() { await load(); return snapshot(); },
     async voice() { await load(); return refreshVoice(); },
     async setVoice(body) {

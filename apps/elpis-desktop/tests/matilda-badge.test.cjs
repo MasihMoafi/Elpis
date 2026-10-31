@@ -68,7 +68,7 @@ for (const first of ['stream', 'send']) test(`a reply stays visible when ${first
   await page.getByRole('button', { name: 'Chat with Matilda', exact: true }).click();
   const mini = page.getByRole('dialog', { name: 'Small chat with Matilda', exact: true });
   await started;
-  if (first === 'stream') await mini.getByRole('button', { name: 'Show previous messages', exact: true }).waitFor();
+  if (first === 'stream') await mini.getByText('An old question', { exact: true }).waitFor();
   else await stream;
   const completed = nextReply();
   await mini.getByRole('textbox', { name: 'Message Matilda', exact: true }).fill('How are you?');
@@ -76,10 +76,9 @@ for (const first of ['stream', 'send']) test(`a reply stays visible when ${first
   await mini.getByText('How are you?', { exact: true }).waitFor({ timeout: 5000 });
   await completed;
   release();
-  await mini.getByText('Here is my answer, love.', { exact: true }).waitFor({ timeout: 5000 });
+  await mini.getByText('Here is my answer, love.', { exact: true }).last().waitFor({ timeout: 5000 });
   assert.equal(await mini.getByText('How are you?', { exact: true }).count(), 1);
-  assert.equal(await mini.getByText('An old question', { exact: true }).count(), 0);
-  await mini.getByRole('button', { name: 'Show previous messages', exact: true }).click();
+  // 31 Oct: the last earlier messages show at once, without a button.
   await mini.getByText('An old question', { exact: true }).waitFor();
   assert.deepEqual(f.errors, []);
 });

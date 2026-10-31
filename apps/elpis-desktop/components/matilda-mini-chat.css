@@ -12,7 +12,7 @@
    and bottom edges, inside the padding, rather than being cut mid-line. */
 .matilda-mini-messages { --fade:12px; position:relative; display:flex; flex-direction:column; gap:8px; min-height:0; max-height:min(220px, 35vh); overflow:auto; overscroll-behavior:contain; padding:var(--fade) 6px; border-bottom:1px solid var(--hairline); overflow-wrap:anywhere;
   mask-image:linear-gradient(to bottom, transparent, black var(--fade), black calc(100% - var(--fade)), transparent); }
-.matilda-mini-message, .matilda-mini-status, .matilda-mini-error, .matilda-mini-earlier { flex:none; }
+.matilda-mini-message, .matilda-mini-status, .matilda-mini-error { flex:none; }
 .matilda-mini-message { min-width:0; }
 .matilda-mini-message[data-speaker="you"] { align-self:flex-end; max-width:90%; padding:6px 8px; background:var(--selected); }
 /* The chat reading rhythm (30 Oct, Masih: "too much space between Love Spot's lines"): 1.45 lines, half a line between paragraphs. */
@@ -49,7 +49,6 @@ html.matilda-dragging { user-select:none; -webkit-user-select:none; }
 /* Keeps the hover across the 4px between her and her controls. */
 .matilda-float-controls::before { content:""; position:absolute; left:0; right:0; top:100%; height:6px; }
 .matilda-float[data-controls="below"] .matilda-float-controls::before { top:auto; bottom:100%; }
-.matilda-mini-earlier { display:block; margin:0 auto 4px; color:var(--muted-foreground); }
 /* Her other faces lie over her resting one and fade in when they fit; she breathes slowly. */
 /* The pictures breathe, not the button, so the place she is clicked and dragged stays still. */
 .matilda-face { position:relative; }

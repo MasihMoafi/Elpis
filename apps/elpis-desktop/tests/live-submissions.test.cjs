@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { fixture, THREADS } = require('./parity-fixture.cjs');
+const { scrollToLoadEarlier } = require('./controls.cjs');
 const { PORTRAIT_INSTRUCTIONS } = require('../bridge/matilda-face.cjs');
 
 for (const colorScheme of ['light', 'dark']) test(`automatic portrait guidance does not duplicate a live message (${colorScheme})`, async t => {
@@ -60,7 +61,7 @@ test('a follow-up stays after earlier work when the loaded history starts mid-tu
   } });
   t.after(() => f.close());
   await f.open('chat-a');
-  await f.page.getByRole('button', { name: 'Load earlier messages' }).waitFor();
+  await f.page.locator('.load-earlier-messages').waitFor({ state: 'attached' });
   const order = () => f.page.locator('.activity-group, .message.user, .message.agent, .context-event').allTextContents();
   const checkOrder = async expected => {
     const rows = await order();
@@ -92,7 +93,7 @@ test('a follow-up stays after earlier work when the loaded history starts mid-tu
   await checkOrder([...earlier, 'Follow up now.', 'Later reply.']);
   assert.equal(await f.page.getByText('Follow up now.', { exact: true }).count(), 1);
   assert.equal(f.posts.filter(post => post.path === '/api/threads/chat-a/steer').length, 1);
-  await f.page.getByRole('button', { name: 'Load earlier messages' }).click();
+  await scrollToLoadEarlier(f.page);
   await f.page.getByText('First prompt.', { exact: true }).waitFor();
   await checkOrder(['First prompt.', ...earlier, 'Follow up now.', 'Later reply.']);
   await f.page.reload();

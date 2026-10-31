@@ -1,6 +1,7 @@
 {
   "fast": [
     "tests/bookmarks.test.cjs",
+    "tests/accent-scope.test.mjs",
     "tests/polish-source.test.cjs",
     "tests/dialog-actions.test.cjs",
     "tests/install-forward.test.mjs",

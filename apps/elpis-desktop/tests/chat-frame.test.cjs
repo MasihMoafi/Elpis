@@ -16,7 +16,7 @@ const frames = locator => locator.evaluate(element => {
   const focus = getComputedStyle(probe).color; probe.remove();
   return {
     widths: [style.borderTopWidth, style.borderRightWidth, style.borderBottomWidth, style.borderLeftWidth],
-    edge: style.borderRightColor, background: style.backgroundColor, radius: style.borderTopLeftRadius,
+    edge: style.borderRightColor, line: getComputedStyle(element, '::after').backgroundImage, background: style.backgroundColor, radius: style.borderTopLeftRadius,
     shape: style.getPropertyValue('corner-shape'), primary, love, accent, focus,
   };
 });
@@ -77,7 +77,6 @@ for (const colorScheme of ['light', 'dark']) for (const width of [1440, 960]) {
 
     const avatar = page.getByRole('region', { name: 'Pinned Matilda' }).getByRole('button', { name: 'Chat with Matilda' });
     await avatar.click(); const mini = page.getByRole('dialog', { name: 'Small chat with Matilda' });
-    await mini.getByRole('button', { name: 'Show previous messages' }).click();
     const miniCard = mini.locator('.matilda-mini-message[data-speaker="you"]'); await miniCard.waitFor();
     const miniMessage = await frames(miniCard), miniForm = mini.locator('.matilda-mini-composer');
     await mini.getByRole('textbox', { name: 'Message Matilda' }).focus();
@@ -117,8 +116,9 @@ for (const colorScheme of ['light', 'dark']) for (const width of [1440, 960]) {
     const result = { ordinary, sideMessage, miniMessage, love, focusedMain, focusedSide, focusedMini };
     if (process.env.ELPIS_SHOTS) fs.writeFileSync(`${process.env.ELPIS_SHOTS}/${process.env.ELPIS_SHOT_LABEL || 'after'}-${colorScheme}-${width}.json`, JSON.stringify(result, null, 2));
     for (const [index, card] of allCards.entries()) {
-      assert.deepEqual(card.widths, ['1px', '2px', '1px', '1px'], `sent card ${index} retains its earlier accented edge`);
-      assert.equal(card.edge, card.accent, `sent card ${index} uses its local accent`);
+      // 31 Oct: the accented right edge is the shared angular edge, drawn whole round the bottom-right cut, over a 1px frame.
+      assert.deepEqual(card.widths, ['1px', '1px', '1px', '1px'], `sent card ${index} keeps its hairline frame`);
+      assert.ok(card.line.includes(card.accent), `sent card ${index} draws its edge in its local accent: ${card.line} / ${card.accent}`);
       assert.equal(card.background, ordinary.background, `sent card ${index} uses the shared card surface`);
       assert.equal(card.radius, ordinary.radius, `sent card ${index} uses the shared corner`);
       assert.equal(card.shape, ordinary.shape, `sent card ${index} uses the shared corner shape`);

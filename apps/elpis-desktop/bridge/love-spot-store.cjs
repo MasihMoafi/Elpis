@@ -259,7 +259,30 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
       return { scene: merged, revision: hash(text) };
     });
   }
+  // Page lifecycle (Masih, 31 Oct: "pages have accumulated; things shouldn't just stay here permanently"). A page he has not
+  // marked Keep goes to the system trash, where it can be restored, after PAGE_DAYS untouched; the page he is on never does.
+  // Pages from before this rule count from the day it first ran, so nothing old leaves without a week shown in the page menu.
+  const lifecycleFile = path.join(directory, '.page-lifecycle.json'), PAGE_DAYS = 7, DAY = 24 * 60 * 60 * 1000;
+  async function lifecycle() {
+    try {
+      const value = JSON.parse(await fs.readFile(lifecycleFile, 'utf8'));
+      if (record(value) && Number.isFinite(value.since) && Array.isArray(value.kept)) return { since: value.since, kept: value.kept.filter(name => typeof name === 'string') };
+    } catch (e) { if (e.code !== 'ENOENT' && !(e instanceof SyntaxError)) throw e; }
+    const fresh = { since: Date.now(), kept: [] };
+    await atomic(lifecycleFile, JSON.stringify(fresh));
+    return fresh;
+  }
+  const expiresAt = (modified, { since }) => Math.max(modified, since) + PAGE_DAYS * DAY;
   async function listPages() {
+    const life = await lifecycle(), now = Date.now(), current0 = (await read()).scene.page.name;
+    await locked(async () => {
+      for (const file of (await names(pages)).filter(n => n.endsWith('.excalidraw'))) {
+        const name = file.slice(0, -11);
+        if (name === current0 || life.kept.includes(name)) continue;
+        const stat = await fs.stat(path.join(pages, file)).catch(() => null);
+        if (stat?.isFile() && expiresAt(stat.mtimeMs, life) <= now) await trashFile(path.join(pages, file));
+      }
+    });
     const current = await read(), listed = new Map();
     for (const file of (await names(pages)).filter(n => n.endsWith('.excalidraw'))) {
       const name = file.slice(0, -11);
@@ -268,13 +291,23 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
     }
     const modified = await fs.stat(sceneFile).then(s => s.mtimeMs).catch(e => { if (e.code === 'ENOENT') return Date.now(); throw e; });
     listed.set(current.scene.page.name, { name: current.scene.page.name, modified });
+    for (const page of listed.values()) Object.assign(page, life.kept.includes(page.name) ? { kept: true } : { kept: false, expires: expiresAt(page.modified, life) });
     return { current: current.scene.page, // Page 13 before Page 12 before Page 9: the order never depends on which page was touched last, which the person cannot see (Masih, 23 Oct: "the order of these don't make any sense").
     pages: [...listed.values()].sort((a, b) => b.name.localeCompare(a.name, undefined, { numeric: true })) };
   }
   async function changePage(input) {
-    if (!record(input) || !['new', 'switch', 'rename', 'delete'].includes(input.action) || Object.keys(input).some(k => !['action', 'name', 'page'].includes(k))
-      || (input.action === 'delete' && (input.name === undefined || !input.page))) throw fail('Invalid page action');
+    if (!record(input) || !['new', 'switch', 'rename', 'delete', 'keep', 'release'].includes(input.action) || Object.keys(input).some(k => !['action', 'name', 'page'].includes(k))
+      || (['delete', 'keep', 'release'].includes(input.action) && (input.name === undefined || !input.page))) throw fail('Invalid page action');
     if (input.name !== undefined) pageName(input.name);
+    if (['keep', 'release', 'rename', 'delete'].includes(input.action)) {
+      const life = await lifecycle(), current = (await read()).scene.page.name;
+      const from = input.action === 'rename' ? current : input.name, kept = new Set(life.kept);
+      // A renamed page stays kept under its new name; the old name stays listed too, in case the rename is refused.
+      if (input.action === 'keep' || input.action === 'rename' && kept.has(from)) kept.add(input.action === 'keep' ? from : input.name);
+      else if (input.action !== 'rename') kept.delete(from);
+      await atomic(lifecycleFile, JSON.stringify({ since: life.since, kept: [...kept] }));
+      if (input.action === 'keep' || input.action === 'release') return read();
+    }
     return locked(async () => {
       const current = await read();
       if (input.page) samePage(input.page, current.scene.page);

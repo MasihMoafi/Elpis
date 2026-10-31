@@ -679,3 +679,32 @@ test('opening a board replaces her older faces with the raster one and keeps a c
     assert.deepEqual({ dataURL: file.dataURL, mimeType: file.mimeType }, wanted ?? { dataURL: saved, mimeType }, mimeType);
   }
 });
+
+test('pages not kept go to the trash after a week untouched; kept pages and the open page stay', async t => {
+  const fsp = (await import('node:fs/promises')).default, pathm = (await import('node:path')).default, osm = (await import('node:os')).default;
+  const { createLoveSpot } = await import('./love-spot-store.cjs');
+  const { createTestTempDir, removeTestTempDir } = await import('../tests/temp-root.cjs');
+  const base = pathm.join(osm.homedir(), '.cache/elpis-tests'); await fsp.mkdir(base, { recursive: true });
+  const directory = createTestTempDir(pathm.join(base, 'love-pages-'));
+  t.after(() => removeTestTempDir(directory));
+  await fsp.writeFile(pathm.join(directory, 'scene.excalidraw'), JSON.stringify({ type: 'excalidraw', version: 2, elements: [], files: {}, appState: {}, page: { name: 'Open', session: 's' } }));
+  await fsp.mkdir(pathm.join(directory, 'pages'));
+  const old = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  for (const name of ['Old note', 'Old kept', 'Fresh']) await fsp.writeFile(pathm.join(directory, 'pages', `${name}.excalidraw`), JSON.stringify({ type: 'excalidraw', version: 2, elements: [], files: {}, appState: {} }));
+  for (const name of ['Old note', 'Old kept']) await fsp.utimes(pathm.join(directory, 'pages', `${name}.excalidraw`), old / 1000, old / 1000);
+  const store = createLoveSpot({ directory, screenshots: pathm.join(directory, 'shots') });
+  t.after(() => store.close());
+  // The rule's first run: old pages get their week from today, not at once.
+  let listed = await store.listPages();
+  assert.deepEqual(listed.pages.map(p => p.name).sort(), ['Fresh', 'Old kept', 'Old note', 'Open']);
+  const page = (await store.read()).scene.page;
+  await store.changePage({ action: 'keep', name: 'Old kept', page });
+  listed = await store.listPages();
+  assert.equal(listed.pages.find(p => p.name === 'Old kept').kept, true);
+  assert.ok(listed.pages.find(p => p.name === 'Old note').expires > Date.now(), 'an unkept page shows when it will leave');
+  // A week after the rule began.
+  const life = JSON.parse(await fsp.readFile(pathm.join(directory, '.page-lifecycle.json'), 'utf8'));
+  await fsp.writeFile(pathm.join(directory, '.page-lifecycle.json'), JSON.stringify({ ...life, since: old }));
+  listed = await store.listPages();
+  assert.deepEqual(listed.pages.map(p => p.name).sort(), ['Fresh', 'Old kept', 'Open'], 'only the old page nobody kept left');
+});

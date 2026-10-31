@@ -3,6 +3,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture, THREADS } = require('./parity-fixture.cjs');
+const { scrollToLoadEarlier } = require('./controls.cjs');
 
 const PAGE = 100, PAGES = 30;
 const pageOf = n => Array.from({ length: PAGE }, (_, i) => i === 0
@@ -14,17 +15,17 @@ const routes = { [`/api/threads/${thread.id}`]: (_body, url) => {
   return { thread, data: pageOf(n), nextCursor: n > 1 ? String(n - 1) : null };
 } };
 
-test('Load earlier messages brings ten more messages, however many tool steps lie between them', async () => {
+test('scrolling to the top brings ten more messages, however many tool steps lie between them', async () => {
   const f = await fixture({ routes }), { page } = f;
   try {
     await f.open(thread.id);
     const messages = page.locator('.user-turn');
     await messages.first().waitFor();
     const before = await messages.count();
-    await page.getByRole('button', { name: 'Load earlier messages' }).click();
+    await scrollToLoadEarlier(page);
     await page.waitForFunction(count => document.querySelectorAll('.user-turn').length >= count + 10, before, { timeout: 8000 }).catch(() => {});
     assert.ok(await messages.count() >= before + 10, `${await messages.count() - before} more messages after one press`);
-    assert.ok(await page.getByRole('button', { name: 'Load earlier messages' }).count(), 'earlier ones remain to load');
+    assert.ok(await page.locator('.load-earlier-messages').count(), 'earlier ones remain to load');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

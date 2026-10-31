@@ -30,9 +30,23 @@ html { font-size:var(--interface-size, 16px); }
 }
 /* Light text tokens meet WCAG AA on every light ground, selected rows included: --muted-foreground #636361 is 4.52:1 on a
  * selected sidebar row and 6.0:1 on a card; --success #16703f is 4.61:1 and 6.1:1. */
-:root { --radius:0.625rem; --radius-sm:0.375rem; --radius-md:0.5rem; --radius-lg:0.625rem; --ring:var(--primary); --canvas:#fbfbfa; --ink:#2f2f2e; --background:var(--canvas); --foreground:#252524; --card:#fff; --composer:#fff; --muted:color-mix(in oklch, var(--ink) 7%, var(--canvas)); --secondary:var(--muted); --recessed:color-mix(in oklch, var(--ink) 4.5%, var(--canvas)); --hover:color-mix(in oklab, var(--primary) 6%, transparent); --selected:color-mix(in oklab, var(--ink) 9.5%, transparent); --muted-foreground:#636361; --subtle-foreground:#6c6c68; --border:color-mix(in oklch, var(--ink) 13%, var(--canvas)); --hairline:color-mix(in oklch, var(--ink) 9%, var(--canvas)); --primary:var(--accent-light); --primary-foreground:#fff; --gold:var(--primary); --accent-mark:var(--primary); --glow:0 0 #0000; --sidebar:#f2f2f1; --destructive:#b5102e; --success:#16703f; --warning:#76680a; --context:#66760f; --shadow:0 1px 2px #0000000a, 0 4px 16px #0000000d; color-scheme:light; }
-.dark { --canvas:#0a0b0d; --ink:#d8d2c4; --gold-deep:var(--primary); --background:var(--canvas); --foreground:#e6e0d3; --card:#111317; --composer:#17191d; --sidebar:#0d0e11; --muted:color-mix(in oklch, var(--ink) 9%, var(--canvas)); --secondary:var(--muted); --recessed:#0e1013; --hover:color-mix(in oklab, var(--primary) 7%, transparent); --selected:color-mix(in oklab, var(--gold) 13%, transparent); --muted-foreground:#9c9587; --subtle-foreground:#8b8579; --border:color-mix(in srgb, var(--gold) 20%, #191919); --hairline:color-mix(in srgb, var(--gold) 11%, #151515); --primary:var(--accent-dark); --primary-foreground:#0a0b0d; --accent-mark:var(--gold); --destructive:#ff2147; --success:#5fd3a0; --warning:#f2c26b; --context:#cfd46e; --shadow:0 1px 2px #000a, 0 10px 30px #0008; color-scheme:dark; }
-.dark, .dark .matilda-mini-popup { --glow:0 0 0 1px color-mix(in oklch, var(--gold) 30%, transparent), 0 0 28px -8px color-mix(in oklch, var(--gold) 55%, transparent); }
+:root { --radius:0.625rem; --radius-sm:0.375rem; --radius-md:0.5rem; --radius-lg:0.625rem; --canvas:#fbfbfa; --ink:#2f2f2e; --background:var(--canvas); --foreground:#252524; --card:#fff; --composer:#fff; --muted:color-mix(in oklch, var(--ink) 7%, var(--canvas)); --secondary:var(--muted); --recessed:color-mix(in oklch, var(--ink) 4.5%, var(--canvas)); --selected:color-mix(in oklab, var(--ink) 9.5%, transparent); --muted-foreground:#636361; --subtle-foreground:#6c6c68; --border:color-mix(in oklch, var(--ink) 13%, var(--canvas)); --hairline:color-mix(in oklch, var(--ink) 9%, var(--canvas)); --primary:var(--accent-light); --primary-foreground:#fff; --glow:0 0 #0000; --sidebar:#f2f2f1; --destructive:#b5102e; --success:#16703f; --warning:#76680a; --context:#66760f; --shadow:0 1px 2px #0000000a, 0 4px 16px #0000000d; color-scheme:light; }
+.dark { --canvas:#0a0b0d; --ink:#d8d2c4; --background:var(--canvas); --foreground:#e6e0d3; --card:#111317; --composer:#17191d; --sidebar:#0d0e11; --muted:color-mix(in oklch, var(--ink) 9%, var(--canvas)); --secondary:var(--muted); --recessed:#0e1013; --muted-foreground:#9c9587; --subtle-foreground:#8b8579; --primary:var(--accent-dark); --primary-foreground:#0a0b0d; --destructive:#ff2147; --success:#5fd3a0; --warning:#f2c26b; --context:#cfd46e; --shadow:0 1px 2px #000a, 0 10px 30px #0008; color-scheme:dark; }
+
+/* Colours derived from the theme colour (--primary). They are worked out on the page AND again in every accent scope: an
+ * element with its own --primary, marked with the "accent-scope" class (Love Spot's red, a failed check's red). A custom property
+ * that names var(--primary) is resolved where it is declared, so a derived colour declared only on the page would keep the
+ * page's colour inside Love Spot: that was the red-and-teal mix (Masih, 31 Oct). Inside a scope, set only --primary. */
+:root, .accent-scope { --ring:var(--primary); --hover:color-mix(in oklab, var(--primary) 6%, transparent); --gold:var(--primary);
+  --accent-mark:var(--primary); --accent-text:var(--primary); --primary-action:var(--primary); --primary-action-content:var(--primary-foreground);
+  --primary-action-hover:color-mix(in srgb, var(--primary-action), white 8%); --primary-action-pressed:color-mix(in srgb, var(--primary-action), white 16%);
+  --hud-edge:var(--border); --hud-face:var(--card); --hud-face-hover:color-mix(in oklab, var(--card), var(--foreground) 8%);
+  --chat-box-glow:0 0 4px var(--primary); --edge-glow:0 0 4px var(--edge-color, var(--primary)); }
+.dark, .dark .accent-scope { --gold-deep:var(--primary); --hover:color-mix(in oklab, var(--primary) 7%, transparent);
+  --selected:color-mix(in oklab, var(--gold) 13%, transparent); --border:color-mix(in srgb, var(--gold) 20%, #191919);
+  --hairline:color-mix(in srgb, var(--gold) 11%, #151515); --accent-mark:var(--gold);
+  --glow:0 0 0 1px color-mix(in oklch, var(--gold) 30%, transparent), 0 0 28px -8px color-mix(in oklch, var(--gold) 55%, transparent);;
+  --hud-edge:color-mix(in oklch, var(--gold) 60%, transparent); --hud-face:color-mix(in srgb, var(--gold) 8%, var(--accent-surface)); --hud-face-hover:color-mix(in srgb, var(--gold) 22%, var(--accent-surface)); }
 /* A87: the light new-chat wordmark's main gradient stop, shared by both themes.
  * Primary/gold draw accents; accent-text keeps light labels readable in ink. */
 :root { --brand-accent:#f2a93b; }
@@ -47,7 +61,6 @@ html { font-size:var(--interface-size, 16px); }
   --page-pad:48px 32px 64px; --page-content-width:860px; --page-head-gap:20px; --page-section-gap:24px;
   --reply-line-height:1.45; --reply-paragraph-gap:.725em;
   --composer-edge:color-mix(in oklab, var(--foreground) 8%, transparent); --elevation-composer:0 2px 8px #0000000a, 0 4px 40px 8px #00000006; }
-:root { --chat-box-glow:0 0 4px var(--primary); }
 .dark { --composer-edge:color-mix(in oklab, var(--foreground) 14%, transparent); --elevation-composer:0 2px 8px #0000004d, 0 4px 40px 8px #00000033; }
 :root, :root[data-accent="amber"] { --accent-light:var(--brand-accent); --accent-dark:var(--brand-accent); }
 :root[data-accent="blue"] { --accent-light:#2458b8; --accent-dark:#8bb7ff; }
@@ -56,7 +69,6 @@ html { font-size:var(--interface-size, 16px); }
 :root[data-accent="violet"] { --accent-light:#6b44ac; --accent-dark:#c1a0fa; }
 :root[data-accent="rose"] { --accent-light:#a73459; --accent-dark:#f39cbb; }
 :root[data-accent="orange"] { --accent-light:var(--brand-accent); --accent-dark:var(--brand-accent); }
-:root, .dark { --accent-text:var(--primary); }
 :root:not(.dark):not([data-custom-palette]):is(:not([data-accent]), [data-accent="amber"], [data-accent="orange"]) {
   --accent-text:var(--foreground); --primary-foreground:var(--foreground);
   /* Ink text retains an orange cue; lines, fills and icons continue to use primary. */
@@ -77,9 +89,9 @@ html { font-size:var(--interface-size, 16px); }
  * cut); --hud-edge and --hud-face are the lab key's edge and face; one label type; one motion scale.
  * Accent colours flow through the shared primary/gold tokens. */
 /* Neutral tint grounds and sRGB mixes preserve the accent hue, including on blue-black dark surfaces. */
-:root { --accent-surface:rgb(from var(--card) r r r); --accent-canvas:rgb(from var(--canvas) r r r); --cut-sm:4px; --cut:7px; --cut-lg:10px; --hud-edge:var(--border); --hud-face:var(--card); --hud-face-hover:color-mix(in oklab, var(--card), var(--foreground) 8%);
+:root { --accent-surface:rgb(from var(--card) r r r); --accent-canvas:rgb(from var(--canvas) r r r); --cut-sm:4px; --cut:7px; --cut-lg:10px;
   --label-size:var(--text-small); --label-track:.14em; --motion-fast:.12s; --motion:.2s; --ease:cubic-bezier(.2,.7,.2,1); }
-.dark, .dark .matilda-mini-popup { --hud-edge:color-mix(in oklch, var(--gold) 60%, transparent); --hud-face:color-mix(in srgb, var(--gold) 8%, var(--accent-surface)); --hud-face-hover:color-mix(in srgb, var(--gold) 22%, var(--accent-surface)); }
+
 /* Shared native chamfers keep each element's border width, focus rings and shadows. Controls
  * (components/ui: buttons, fields, select triggers) take .hud-cut, those 24px tall or less .hud-cut-sm, and panels and
  * floating surfaces --cut-lg (below). Roundness stays only where it means something: dots, rings and switches. */
@@ -144,9 +156,6 @@ button:disabled { cursor:not-allowed; }
 .nav-list button svg, .settings-nav button[role="tab"] svg, .back-link svg { flex-shrink:0; width:var(--icon-size); height:var(--icon-size); color:var(--muted-foreground); }
 .back-link { display:flex; align-items:center; cursor:pointer; }
 .nav-list button[aria-current="page"] svg, .settings-nav button[role="tab"].active svg { color:var(--primary); }
-:root { --love-red:#8B1017; }
-.dark { --love-red:#e83b43; }
-.nav-list button[data-nav-page="loveSpot"] svg { color:var(--love-red); }
 @keyframes pulse { 50% { opacity:.35; } }
 /* Search fields: one component (components/ui/search-field.tsx), one look, wherever they are. */
 /* The magnifier and text line up with the navigation rows' icons and labels (same 8px inset, 18px icon, 10px gap). */
@@ -331,8 +340,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
  * The component hides it when the pane is too narrow to keep it clear of the text. */
 .prompt-rail { position:absolute; left:16px; top:50%; transform:translateY(-50%); z-index:2; display:flex; flex-direction:column; width:28px; max-height:min(70vh, 40rem, calc(100% - 24px)); }
 .prompt-rail[data-clear="false"] { display:none; }
-.prompt-rail-marks { display:flex; flex-direction:column; width:100%; min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:none; opacity:0; transition:opacity var(--motion-fast) var(--ease); }
-.prompt-rail:is(:hover, :focus-within) .prompt-rail-marks { opacity:1; }
+.prompt-rail-marks { display:flex; flex-direction:column; width:100%; min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:none; }
+/* The dashes show at rest, faint, as in the ChatGPT app (Masih, 31 Oct, with its screenshot: "I don't see that mark"). */
 .prompt-rail-marks::-webkit-scrollbar { display:none; }
 .prompt-tick { flex:none; display:flex; align-items:center; justify-content:flex-start; width:28px; height:10px; padding:0 0 0 1px; border:0; border-radius:0; background:none; cursor:pointer; }
 .prompt-tick i { display:block; width:6px; height:2px; border-radius:1px; background:var(--thread-tertiary); opacity:.4; transition:width .16s, opacity .16s, background-color .16s; }
@@ -439,8 +448,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .provider-model-input { max-width:240px; min-width:0; background:transparent; color:var(--foreground); height:28px; padding:0 8px; font-size:var(--text-sm); }
 .model-select:hover:not(:disabled) { background-color:var(--hover); color:var(--foreground); }
 /* Shared primary action. White sRGB tints preserve its hue; hud-cut owns the parallel chamfers. */
-:root { --primary-action:var(--primary); --primary-action-content:var(--primary-foreground); }
-:root, :is(.love-spot, .love-spot-tools, .love-chat, .matilda-mini-popup) { --primary-action-hover:color-mix(in srgb, var(--primary-action), white 8%); --primary-action-pressed:color-mix(in srgb, var(--primary-action), white 16%); }
+
 .primary-cut { background:var(--primary-action); color:var(--primary-action-content); }
 .primary-cut:hover:not(:disabled) { background:var(--primary-action-hover); }
 .primary-cut:active:not(:disabled) { background:var(--primary-action-pressed); }
@@ -779,7 +787,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .plan-card { margin:10px 0; padding:12px 16px 4px; border:1px solid var(--border); border-left:2px solid var(--primary); background:var(--card); }
 .plan-card-heading { display:flex; align-items:center; gap:6px; margin:0 0 6px; line-height:1.2; color:var(--accent-text); }
 /* A failed workflow check: its bar, icon, heading and underline take the destructive colour. */
-.plan-card.check-failed { --primary:var(--destructive); --accent-text:var(--destructive); }
+.plan-card.check-failed { --primary:var(--destructive); }
 .permissions-auto svg:first-child { color:var(--primary); }
 .permissions-full { color:var(--accent-text); }
 /* Floating surfaces: menus, list pop-ups (selects, the model picker, slash commands), popovers and dialogs share one
@@ -910,7 +918,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
  *   selected sidebar row: the whole left side, bending into the top-left cut;
  *   selected chat tab:    the whole bottom side, bending into the bottom-right cut;
  *   your message box:     the whole right side, bending into the bottom-right cut. */
-:root { --edge-line:2px; --edge-glow:0 0 4px var(--edge-color, var(--primary)); }
+:root { --edge-line:2px; }
 .thread-row.active::before, .task-tab.chat-tab.active::before, .message.user::after {
   content:""; position:absolute; inset:0; pointer-events:none; border:var(--edge-line) solid transparent;
   border-radius:inherit; corner-shape:inherit; background:var(--edge-paint);
@@ -1581,10 +1589,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 /* Love Spot's brand color stays local to its navigation mark and drawing controls. */
 :root { --love-red:#8B1017; }
 .dark { --love-red:#ec575e; }
-:is(.love-spot, .love-spot-tools, .love-chat, .matilda-mini-popup) { --hover:color-mix(in oklab, var(--primary) 6%, transparent); --primary:var(--love-red); --accent-text:var(--primary); --primary-foreground:#fff; --gold:var(--primary); --ring:var(--primary); --accent-mark:var(--primary); --primary-action:var(--love-red); --primary-action-content:#fff; }
-.dark :is(.love-spot, .love-spot-tools, .love-chat, .matilda-mini-popup) { --hover:color-mix(in oklab, var(--primary) 7%, transparent); --primary-foreground:var(--background); --primary-action-content:var(--background); }
-.nav-list button[data-nav-page="loveSpot"] { --primary:var(--love-red); --hover:color-mix(in oklab, var(--primary) 6%, transparent); }
-.dark .nav-list button[data-nav-page="loveSpot"] { --hover:color-mix(in oklab, var(--primary) 7%, transparent); }
+:is(.love-spot, .love-spot-tools, .love-chat, .matilda-mini-popup, .nav-list button[data-nav-page="loveSpot"]) { --primary:var(--love-red); --primary-foreground:#fff; }
+.dark :is(.love-spot, .love-spot-tools, .love-chat, .matilda-mini-popup, .nav-list button[data-nav-page="loveSpot"]) { --primary-foreground:var(--background); }
 .nav-list button[data-nav-page="loveSpot"] svg { color:var(--love-red); }
 .thread-origin[data-origin="Love Spot"] { color:var(--foreground); }
 .love-unread { display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:18px; border-radius:50%; font-size:var(--text-xs); line-height:1; font-weight:600; margin-left:auto; background:var(--love-red); color:#fff; box-shadow:0 0 12px color-mix(in oklab, var(--love-red) 55%, transparent); }
@@ -1618,3 +1624,6 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
   0%,97% { opacity:1; }
   100% { opacity:0; }
 }
+/* components/load-on-scroll.tsx: the edge marker that loads more of any list; a 16px spinner while it loads, nothing at rest. */
+.load-on-scroll { flex:none; display:flex; justify-content:center; min-height:1px; color:var(--muted-foreground); }
+.load-on-scroll[data-loading] { padding:8px 0; }

@@ -3,7 +3,7 @@
 import "@/lib/love-spot-assets";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronDown, Heart, Info, Trash2, Volume2, VolumeX, X } from "lucide-react";
+import { Check, ChevronDown, Heart, ImagePlus, Info, Pin, Trash2, Volume2, VolumeX, X } from "lucide-react";
 import { PlusIcon } from "@/components/elpis-icons";
 import { CaptureUpdateAction, Excalidraw, MainMenu, newElementWith, convertToExcalidrawElements, exportToBlob, serializeAsJSON, viewportCoordsToSceneCoords } from "@excalidraw/excalidraw";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
@@ -39,7 +39,7 @@ const REPLIES_KEY = "elpis-matilda-replies";
 type BoardPage = { name: string; session: string };
 type Drawing = { elements: readonly ExcalidrawElement[]; files: BinaryFiles; appState: Partial<AppState>; page?: BoardPage };
 type Saved = { scene: Drawing & { page: BoardPage }; revision: string };
-type PageList = { pages: { name: string; modified: number }[] };
+type PageList = { pages: { name: string; modified: number; kept?: boolean; expires?: number }[] };
 type Screenshot = { id: string; name: string; dataURL: string };
 type Update = ({ type: "scene" } & Saved) | { type: "screenshots"; screenshots: Screenshot[] } | { type: "error"; message: string };
 const screenshotDrag = "application/x-elpis-screenshot";
@@ -110,7 +110,7 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
   const recoveryPending = useRef(false);
   const mounted = useRef(true);
   const remote = useRef(false);
-  const placingScreenshot = useRef<string>(undefined);
+  const placingScreenshot = useRef<string>(undefined), placingAll = useRef(false);
   const opening = useRef<string[]>([]);
   const report = useCallback((e: unknown) => { if (mounted.current) setError(e instanceof Error ? e.message : "Love Spot could not save the drawing."); }, []);
   if (!journal.current && typeof window !== "undefined") journal.current = createTextJournal(report);
@@ -376,11 +376,12 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
   const [replies, setReplies] = useState(() => appStorage().getItem(REPLIES_KEY) !== "off");
   const repliesRef = useRef(replies); repliesRef.current = replies;
   const chooseReplies = (on: boolean) => {
-    setReplies(on);
+    setReplies(on); repliesRef.current = on;
+    if (!on) void matilda.quiet();
     const value = on ? "on" : "off", desktop = window.elpisDesktop?.storage;
     try { if (desktop?.saveItem) void desktop.saveItem(REPLIES_KEY, value).catch(() => {}); else appStorage().setItem(REPLIES_KEY, value); } catch { /* The choice still holds in this window. */ }
   };
-  const matilda = useMatilda({ context: page?.session, ready: () => repliesRef.current && !!editorRef.current && !!settings && !calling && !pageBusy && !editorRef.current.getAppState().editingTextElement && !document.querySelector("textarea.excalidraw-wysiwyg"), onError: setError,
+  const matilda = useMatilda({ context: page?.session, enabled: () => repliesRef.current, ready: () => repliesRef.current && !placingAll.current && !!editorRef.current && !!settings && !calling && !pageBusy && !editorRef.current.getAppState().editingTextElement && !document.querySelector("textarea.excalidraw-wysiwyg"), onError: setError,
     told: ids => told(editorRef.current?.getSceneElements() ?? [], ids),
     send: (text, persona, isCurrent) => sendWithBoard(async revision => {
       const version = voiceVersion.current;
@@ -456,7 +457,16 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
     finally { placingScreenshot.current = undefined; setChoosing(false); }
   }
 
-  async function changePage(action: "new" | "switch" | "rename" | "delete", name?: string) {
+  /** Every new screenshot at once, in the order they were taken, one below the other; Matilda looks only once all are on the
+   * board (Masih, 31 Oct: "when I take multiple screenshots there is no option to paste them all one after the other"). */
+  async function placeAllScreenshots() {
+    if (choosing || placingAll.current) return;
+    placingAll.current = true;
+    try { for (const shot of [...screenshots].reverse()) await chooseScreenshot(shot.id, "place"); }
+    finally { placingAll.current = false; }
+  }
+
+  async function changePage(action: "new" | "switch" | "rename" | "delete" | "keep" | "release", name?: string) {
     if (pageBusy || !editor) return;
     setPageBusy(true);
     try {
@@ -487,7 +497,9 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
   }
 
   const voiceProblem = LOVE_SPOT_AUDIO.available ? voiceError || speech?.error?.message || voice?.error : "";
-  const tools = <div className="navbar love-spot-tools">
+  // Pages not kept go to the system trash after a week untouched (bridge/love-spot-store.cjs, "Page lifecycle").
+  const currentKept = !!pages.find(item => item.name === page?.name)?.kept;
+  const tools = <div className="navbar love-spot-tools accent-scope">
       <div className="love-spot-pages">
         <DropdownMenu onOpenChange={open => { if (open) loadPages(); }}>
           <DropdownMenuTrigger render={<Button variant="outline" size="sm" aria-label="Pages" className="w-44 justify-between" disabled={!editor || pageBusy} />}>
@@ -495,9 +507,11 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="max-h-96 max-w-80 overflow-y-auto">
             <DropdownMenuItem onClick={() => { setPageName(page?.name ?? ""); setRenaming(true); }}>Rename page</DropdownMenuItem>
+            {page && <DropdownMenuItem onClick={() => void changePage(currentKept ? "release" : "keep", page.name)}><Pin aria-hidden="true" fill={currentKept ? "currentColor" : "none"} />{currentKept ? "Kept" : "Keep this page"}</DropdownMenuItem>}
             {pages.map(item => <DropdownMenuItem key={item.name} onClick={() => void changePage("switch", item.name)}>
               <Check aria-hidden="true" className={item.name === page?.name ? "shrink-0" : "invisible shrink-0"} />
-              <span className="min-w-0"><span className="block truncate">{item.name}</span><time className="block text-xs text-muted-foreground" dateTime={new Date(item.modified).toISOString()}>{new Date(item.modified).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}</time></span>
+              <span className="min-w-0"><span className="block truncate">{item.name}</span><time className="block text-xs text-muted-foreground" dateTime={new Date(item.modified).toISOString()}>{new Date(item.modified).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}{item.kept ? "" : item.expires && item.name !== page?.name ? ` · to trash in ${Math.max(1, Math.ceil((item.expires - Date.now()) / 86400000))} d` : ""}</time></span>
+              {item.kept && <Pin aria-label="Kept" className="ml-auto shrink-0" fill="currentColor" />}
             </DropdownMenuItem>)}
             {pagesError && <DropdownMenuItem disabled className="whitespace-normal text-muted-foreground">{pagesError}</DropdownMenuItem>}
           </DropdownMenuContent>
@@ -524,7 +538,7 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
       {matilda.replying && <span className="badge badge-sm badge-ghost shrink-0" role="status" aria-label="Matilda status">Matilda is writing…</span>}
       {saveStatus && <span className="badge badge-sm badge-ghost shrink-0" role="status" aria-label="Drawing save status">{saveStatus}</span>}
     </div>;
-  return <section className="love-spot" aria-label="Love Spot">
+  return <section className="love-spot accent-scope" aria-label="Love Spot">
     {toolbarHost ? createPortal(tools, toolbarHost) : tools}
     <AlertDialog open={!!pageToDelete} onOpenChange={open => { if (!open) setPageToDelete(undefined); }}>
       <AlertDialogContent>
@@ -539,7 +553,8 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
       </AlertDialogContent>
     </AlertDialog>
     {screenshots.length > 0 && <section className="love-spot-screenshots" aria-label="New screenshots">
-      <div className="love-spot-screenshots-heading"><strong>New screenshots</strong><span>Only shared when you add them. Click or drag onto the drawing.</span></div>
+      <div className="love-spot-screenshots-heading"><strong>New screenshots</strong><span>Only shared when you add them. Click or drag onto the drawing.</span>
+        {screenshots.length > 1 && <Button variant="outline" size="sm" disabled={choosing} onClick={() => void placeAllScreenshots()}><ImagePlus aria-hidden="true" />Add all</Button>}</div>
       <ul className="love-spot-screenshots-list">{screenshots.map(shot => <li key={shot.id}>
         <Button variant="outline" className="love-spot-screenshot" aria-label={`Add ${shot.name} to drawing`} title={`Add ${shot.name} to drawing`} disabled={choosing} draggable onDragStart={event => {
           event.dataTransfer.setData(screenshotDrag, shot.id); event.dataTransfer.effectAllowed = "copy";

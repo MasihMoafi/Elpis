@@ -147,7 +147,6 @@ for (const colorScheme of ['light', 'dark']) test(`her chat hugs its messages, o
   });
   if (colorScheme === 'light') assert.ok(panelRgb.every(value => value >= 240 && value < 255), `her light panel is slightly darker: ${panelRgb}`);
   else assert.deepEqual(panelRgb, [17, 19, 23], 'her dark panel is unchanged');
-  await mini.getByRole('button', { name: 'Show previous messages', exact: true }).click();
   const log = mini.getByRole('log', { name: 'Matilda conversation', exact: true }); await log.waitFor();
   const geometry = () => page.evaluate(() => {
     const popup = document.querySelector('.matilda-mini-popup'), log = document.querySelector('.matilda-mini-messages'), box = document.querySelector('.matilda-mini-composer');

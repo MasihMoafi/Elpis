@@ -7,6 +7,7 @@ import { SearchField } from "@/components/ui/search-field";
 import { SettingRow, SettingsEmpty, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
 import { DeleteChatsDialog, ThreadActions } from "@/components/thread-actions";
 import { api, unreadable, title, type Thread } from "@/lib/api";
+import { LoadOnScroll } from "@/components/load-on-scroll";
 
 type Props = { onUnarchived: (thread: Thread, restored: string[]) => void; onDelete: (thread: Thread) => Promise<void> };
 
@@ -96,6 +97,6 @@ export function ArchivedView({ onUnarchived, onDelete }: Props) {
           {menu}
       </SettingRow>}</ThreadActions>)}
     </ul>}
-    {cursor && <Button variant="ghost" className="mt-2 w-full" onClick={() => load(cursor)}>Load more</Button>}
+    {cursor && <LoadOnScroll label="Loading more archived chats" onLoad={() => load(cursor)} />}
   </div>;
 }

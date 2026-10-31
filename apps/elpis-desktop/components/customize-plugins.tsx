@@ -10,6 +10,7 @@ import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { SettingsEmpty, SettingsNotice } from "@/components/settings/rows";
 import { CustomizeRow } from "@/components/customize-row";
 import { api, unreadable } from "@/lib/api";
+import { LoadOnScroll } from "@/components/load-on-scroll";
 
 export type Plugin = { id: string; name: string; description: string; marketplace: string; enabled: boolean };
 export type ConfigWrite = { version?: string | null; write?: { available: boolean } };
@@ -93,7 +94,7 @@ function PluginCatalog({ cwd, version, pending, install, errors, onReload }: { c
     <ul className="customize-list">{catalog?.plugins.map(plugin => <CustomizeRow key={plugin.id} name={plugin.name} description={plugin.description} badge={plugin.marketplace} error={errors[plugin.id]} notice={!plugin.installed && !plugin.installable ? plugin.reason || "Unavailable" : undefined}>
       {plugin.installed ? <span className="customize-state">Installed</span> : <Button size="sm" variant="outline" aria-label={`Install ${plugin.name}`} disabled={busy || !plugin.installable} onClick={() => void install(plugin).then(ok => { if (ok) void load(); })}>Install</Button>}
     </CustomizeRow>)}</ul>
-    {catalog?.nextCursor && <Button variant="ghost" disabled={busy} onClick={() => void load(catalog.nextCursor!)}>Load more</Button>}
+    {catalog?.nextCursor && <LoadOnScroll loading={busy} label="Loading more plugins" onLoad={() => void load(catalog.nextCursor!)} />}
     <section aria-label="Marketplaces" className="grid gap-3">
       <div className="customize-title"><h2>Marketplaces</h2></div>
       <details className="grid gap-3">

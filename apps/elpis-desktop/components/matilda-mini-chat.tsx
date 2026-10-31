@@ -11,7 +11,12 @@ import { subscribeLoveSpotTalk } from "@/lib/love-spot-talk-events";
 import { HEART_REACTION, talkHeartReaction } from "@/lib/heart-reactions";
 import { replyPortrait } from "@/bridge/matilda-face.cjs";
 import { attachedFile } from "@/lib/prompt-history";
+import { LoadOnScroll } from "@/components/load-on-scroll";
 import "@/components/matilda-mini-chat.css";
+
+/** Earlier messages shown when the chat opens, and how many more each scroll to the top reveals (Masih, 31 Oct: "show some by
+ * default, and when I hover up load them"). */
+const EARLIER_STEP = 6;
 
 type Conversation = { entries: Entry[]; busy: boolean; error?: string };
 function received(value: Conversation) {
@@ -26,9 +31,9 @@ export function useMatildaMiniChat(open: boolean) {
   const [error, setError] = useState(""), [posting, setPosting] = useState(false);
   const mounted = useRef(false), sending = useRef(false), latestRead = useRef(0);
   const streamedWhileSending = useRef<Conversation | null>(null);
-  // A quick chat starts fresh each time it opens, like Dot's "Start new chat" (28 Oct: "that small chatbox shouldn't show
-  // previous messages"): turns already there stay behind "Show previous messages". A reply still on its way stays shown.
-  const [earlier, setEarlier] = useState<Set<string> | null>(null), [showEarlier, setShowEarlier] = useState(false);
+  // Turns already there when the chat opens are "earlier": the last few show at once, and more as he scrolls up. A reply still
+  // on its way stays shown.
+  const [earlier, setEarlier] = useState<Set<string> | null>(null), [shownEarlier, setShownEarlier] = useState(EARLIER_STEP);
   const openRef = useRef(open); openRef.current = open;
   const rememberEarlier = useCallback((result: Conversation, sentTurn?: string) => {
     const pending = sentTurn ?? (result.busy ? result.entries.at(-1)?.turnId : undefined);
@@ -64,7 +69,7 @@ export function useMatildaMiniChat(open: boolean) {
     }, () => { if (!sending.current) void read(controller.signal); });
     const changed = () => { if (!sending.current) void read(controller.signal); };
     window.addEventListener(MATILDA_CHANGED, changed);
-    return () => { stop(); controller.abort(); latestRead.current++; window.removeEventListener(MATILDA_CHANGED, changed); setEarlier(null); setShowEarlier(false); };
+    return () => { stop(); controller.abort(); latestRead.current++; window.removeEventListener(MATILDA_CHANGED, changed); setEarlier(null); setShownEarlier(EARLIER_STEP); };
   }, [open, read, rememberEarlier]);
   // Ask again every second while she replies. A failed or superseded read must not end the asking (28 Oct: her reply had
   // arrived, and the small chat still said "Matilda is replying…" minutes later).
@@ -100,7 +105,7 @@ export function useMatildaMiniChat(open: boolean) {
     } catch (cause) { if (mounted.current) setError(cause instanceof Error ? cause.message : "Message not sent. Try again."); }
     finally { sending.current = false; if (mounted.current) setPosting(false); }
   }
-  return { draft, setDraft, conversation, error, posting, send, retry: read, earlier, showEarlier, setShowEarlier };
+  return { draft, setDraft, conversation, error, posting, send, retry: read, earlier, shownEarlier, showMoreEarlier: () => setShownEarlier(count => count + EARLIER_STEP) };
 }
 
 function message(entry: Entry) {
@@ -110,17 +115,24 @@ function message(entry: Entry) {
 }
 
 export function MatildaMiniChat({ chat }: { chat: ReturnType<typeof useMatildaMiniChat> }) {
-  const log = useRef<HTMLDivElement>(null);
+  const log = useRef<HTMLDivElement>(null), fromBottom = useRef<number | null>(null);
+  // Revealing earlier messages keeps what he is reading where it is.
+  const reveal = () => { if (log.current) fromBottom.current = log.current.scrollHeight - log.current.scrollTop; chat.showMoreEarlier(); };
+  useLayoutEffect(() => {
+    if (log.current && fromBottom.current !== null) log.current.scrollTop = log.current.scrollHeight - fromBottom.current;
+    fromBottom.current = null;
+  }, [chat.shownEarlier]);
   const said = chat.conversation.entries.filter(entry => message(entry).trim());
   const before = chat.earlier ? said.filter(entry => chat.earlier!.has(entry.turnId)) : said;
-  const entries = chat.showEarlier ? [...before.slice(-6), ...said.filter(entry => !before.includes(entry))] : said.filter(entry => !before.includes(entry));
+  const entries = [...before.slice(-chat.shownEarlier), ...said.filter(entry => !before.includes(entry))];
+  const moreEarlier = before.length > chat.shownEarlier;
   // The newest message is in view whenever one arrives, grows or the earlier ones open (29 Oct: they opened at the oldest,
   // her answers below the fold); asking again while she replies changes nothing, so it never moves what he scrolled to.
-  const last = entries.at(-1), newest = last ? `${entries.length}:${last.turnId}:${last.item.id}:${message(last).length}` : "";
+  const last = entries.at(-1), newest = last ? `${last.turnId}:${last.item.id}:${message(last).length}` : "";
   useLayoutEffect(() => { if (log.current) log.current.scrollTop = log.current.scrollHeight; }, [newest]);
   return <div className="matilda-mini-chat" role="dialog" aria-label="Small chat with Matilda">
-    {!chat.showEarlier && before.length > 0 && <Button variant="ghost" size="xs" className="matilda-mini-earlier" onClick={() => chat.setShowEarlier(true)}>Show previous messages</Button>}
     {!!entries.length && <div ref={log} className="matilda-mini-messages" role="log" aria-label="Matilda conversation" aria-live="polite" aria-relevant="additions text">
+      {moreEarlier && <LoadOnScroll label="Loading earlier messages" onLoad={reveal} />}
       {entries.map(entry => <div key={`${entry.turnId}:${entry.item.id}`} className="matilda-mini-message flow-root" data-speaker={entry.item.type === "userMessage" ? "you" : "matilda"}>
         {entry.item.type === "agentMessage" && <img src={replyPortrait(`<!--matilda:${entry.item.portrait ?? "listening"}-->`).dataURL} alt="Matilda" width={32} height={32} className="float-left mr-2 h-8 w-8 object-contain" />}
         <span className="sr-only">{entry.item.type === "userMessage" ? "You" : "Matilda"}: </span><MarkdownText text={entry.item.type === "agentMessage" ? replyPortrait(message(entry)).text : message(entry)} allowImages={false} />

@@ -208,4 +208,11 @@ async function openPatterns(scope) {
   await chooseOption(scope.getByRole('combobox', { name: 'Workflow pattern', exact: true }), 'more');
   await scope.getByRole('complementary', { name: 'Architectures', exact: true }).waitFor();
 }
-module.exports = { openPatterns, rowAction, threadMenuItem, LOGO_ACCENT, assertDialogActionsExplained, captureReview, chooseOption, chooseTheme, controlValue, guardDesktopStore, leaveSettings, openSettings, optionsCut, oranges, unapprovedOranges, sidebar, widenSidePanel };
+/** Lists load more as their edge scrolls into view (components/load-on-scroll.tsx): scroll the chat to its top once and wait for that part. */
+async function scrollToLoadEarlier(page, scroller = '.chat-scroll') {
+  await page.locator(scroller).evaluate(node => { node.scrollTop = 0; });
+  await page.waitForTimeout(150);
+  await page.waitForFunction(() => !document.querySelector('.load-on-scroll[data-loading]'));
+}
+
+module.exports = { scrollToLoadEarlier, openPatterns, rowAction, threadMenuItem, LOGO_ACCENT, assertDialogActionsExplained, captureReview, chooseOption, chooseTheme, controlValue, guardDesktopStore, leaveSettings, openSettings, optionsCut, oranges, unapprovedOranges, sidebar, widenSidePanel };

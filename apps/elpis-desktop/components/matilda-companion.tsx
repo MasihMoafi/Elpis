@@ -209,7 +209,7 @@ export function MatildaCompanion() {
         <img key={`${name}-dark`} src={MATILDA_SHOTS[name]} alt="" aria-hidden="true" width={size} height={size} draggable={false} className="matilda-avatar-dark matilda-mood select-none" data-mood={name} data-shown={mood.shown === name} />,
       ]))}
     </button>
-    {chatOpen && <div className="hud-popover matilda-mini-popup" data-side={side} style={chatPlace()}><MatildaMiniChat chat={mini} /></div>}
+    {chatOpen && <div className="hud-popover matilda-mini-popup accent-scope" data-side={side} style={chatPlace()}><MatildaMiniChat chat={mini} /></div>}
     <button type="button" className="matilda-resize" aria-label="Resize Matilda" title="Drag to resize · + and − keys" style={{ touchAction: "none" }}
       onPointerDown={grab(true)} onPointerMove={pull} onPointerUp={release} onLostPointerCapture={release} onKeyDown={keys(true)} />
     <div className="matilda-float-controls">

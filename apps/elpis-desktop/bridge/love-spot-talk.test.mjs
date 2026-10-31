@@ -476,3 +476,13 @@ test('the board picture goes with a message only when the drawing changed since 
   assert.equal(drew.image, true, 'a new drawing goes again'); assert.doesNotMatch(drew.notes, /as it was/);
   await assert.rejects(f.talk.send({ text: 'Stale', model: 'luna', revision: 'stale' }), /drawing changed/, 'a stale board picture is still refused');
 });
+test('replies off stops the reply she is writing, and does nothing when she is quiet', async t => {
+  const f = await fixture(t), interrupts = [];
+  f.client.interrupt = async (id, body) => { interrupts.push({ id, ...body }); return {}; };
+  await f.talk.stop();
+  assert.deepEqual(interrupts, [], 'nothing to stop while she is quiet');
+  await f.talk.send({ text: 'Look at this' });
+  assert.equal((await f.talk.read()).busy, true);
+  await f.talk.stop();
+  assert.deepEqual(interrupts, [{ id: 'chat', turnId: 'turn-1' }], 'her running reply is interrupted');
+});

@@ -23,12 +23,12 @@ function keepPending(context: string | undefined, ids: ReadonlySet<string>) {
 }
 
 /** Matilda reads the board once it has been quiet for a moment, then answers on it; the bridge places the reply (bridge/love-spot-talk.mjs). */
-export function useMatilda({ ready, context, told, send, onError }: {
-  ready: () => boolean; context?: string; told: (ids: ReadonlySet<string>) => string; send: (text: string, persona: string, isCurrent: () => boolean) => Promise<boolean>; onError: (message: string) => void;
+export function useMatilda({ ready, enabled, context, told, send, onError }: {
+  ready: () => boolean; /** Replies on: off means nothing is sent, not even on leaving the board. */ enabled: () => boolean; context?: string; told: (ids: ReadonlySet<string>) => string; send: (text: string, persona: string, isCurrent: () => boolean) => Promise<boolean>; onError: (message: string) => void;
 }) {
   const [persona, setPersona] = useState(savedPersona), [replying, setReplying] = useState(false);
-  const latest = useRef({ ready, context, told, send, onError, persona });
-  latest.current = { ready, context, told, send, onError, persona };
+  const latest = useRef({ ready, enabled, context, told, send, onError, persona });
+  latest.current = { ready, enabled, context, told, send, onError, persona };
   const ids = useRef(new Set<string>()), timer = useRef<ReturnType<typeof setTimeout>>(undefined), busy = useRef(false), working = useRef(false);
   const said = useRef<string | null>(null), asking = useRef<ReturnType<typeof setTimeout>>(undefined);
   const mounted = useRef(false), poll = useRef(0), generation = useRef(0);
@@ -90,6 +90,7 @@ export function useMatilda({ ready, context, told, send, onError }: {
       mounted.current = false; poll.current++; clearTimeout(timer.current); clearTimeout(asking.current);
       // Leaving the board sends what she has not been told yet; if she is still writing, it waits for the next visit.
       const now = latest.current, batch = new Set(ids.current);
+      if (!now.enabled()) { keepPending(now.context, new Set()); return; }
       if (!batch.size || busy.current || working.current) return;
       let text = ""; try { text = now.told(batch); } catch { /* the editor is gone */ }
       text ||= waiting.current;
@@ -98,7 +99,13 @@ export function useMatilda({ ready, context, told, send, onError }: {
       void api("/love-spot/talk", { text, persona: now.persona.trim() || PROTOCOL }).catch(() => keepPending(now.context, batch));
     };
   }, [ask]);
-  return { persona, keep: (value: string) => { setPersona(value); keepPersona(value); }, replying, notice };
+  /** Replies off (Masih, 31 Oct: "I disabled her replies yet she still was thinking"): forget what was waiting and stop the reply she is writing. */
+  const quiet = useCallback(async () => {
+    generation.current++; ids.current.clear(); waiting.current = ""; clearTimeout(timer.current);
+    keepPending(latest.current.context, new Set());
+    try { await api("/love-spot/talk/stop", {}); } catch (cause) { latest.current.onError(cause instanceof Error ? cause.message : "Matilda could not be stopped."); }
+  }, []);
+  return { persona, keep: (value: string) => { setPersona(value); keepPersona(value); }, replying, notice, quiet };
 }
 
 /** Who Matilda is: the person writes her the protocol she works by; it goes with everything she is told. Her model is on the Love Spot bar. */

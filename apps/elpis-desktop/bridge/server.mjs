@@ -208,6 +208,7 @@ export async function startDesktopServer(options = {}) {
         if (url.pathname === '/api/love-spot/companion' && ['GET', 'POST'].includes(method)) {
           return json(response, 200, method === 'GET' ? await companion.read(url.searchParams.get('page') ?? '') : await companion.act(await body(request)));
         }
+        if (url.pathname === '/api/love-spot/talk/stop' && method === 'POST') return json(response, 200, await loveTalk.stop());
         if (url.pathname === '/api/love-spot/talk/new' && method === 'POST') return json(response, 201, await loveTalk.startFresh(await body(request)));
         if (url.pathname === '/api/love-spot/talk') return json(response, 200, method === 'GET' ? await loveTalk.read() : await loveTalk.send(await body(request)));
         if (url.pathname === '/api/love-spot/voice/settings' && ['GET', 'POST'].includes(method)) {

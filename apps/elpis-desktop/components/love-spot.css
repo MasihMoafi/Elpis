@@ -36,3 +36,4 @@
 .love-spot-screenshot-dismiss { position: absolute; top: 2px; right: 2px; background: var(--background); }
 .love-spot-tools .dictation-status:empty { display: none; }
 /* The renderer's existing theme owns colour; no remote component stylesheet is loaded. */
+.love-spot-screenshots-heading > button { margin-left: auto; align-self: center; }

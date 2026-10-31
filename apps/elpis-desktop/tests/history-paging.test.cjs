@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { fixture } = require('./parity-fixture.cjs');
+const { scrollToLoadEarlier } = require('./controls.cjs');
 
 for (const colorScheme of ['light', 'dark']) {
   test(`earlier messages remain reachable across compaction and a refused page · ${colorScheme}`, async () => {
@@ -29,10 +30,10 @@ for (const colorScheme of ['light', 'dark']) {
     try {
       await f.open('chat-a');
       await f.page.locator('.prompt-rail[data-indexed="true"]').waitFor();
-      const earlier = f.page.getByRole('button', { name: 'Load earlier messages', exact: true });
-      assert.equal(await earlier.isVisible(), true, 'the prompt rail must not hide history pagination');
-      const gap = await earlier.evaluate(button => button.nextElementSibling.getBoundingClientRect().top - button.getBoundingClientRect().bottom);
-      assert.ok(gap >= 20, `history pagination keeps a clear gap before the transcript (${gap}px)`);
+      // 31 Oct: history loads as the chat scrolls to its top; there is no button.
+      const earlier = f.page.locator('.load-earlier-messages');
+      await earlier.waitFor({ state: 'attached' });
+      assert.equal(await f.page.getByRole('button', { name: /load earlier/i }).count(), 0, 'no button for earlier messages');
       if (process.env.ELPIS_HISTORY_SPACING_SHOTS) {
         await fs.mkdir(process.env.ELPIS_HISTORY_SPACING_SHOTS, { recursive: true });
         await earlier.scrollIntoViewIfNeeded();
@@ -40,15 +41,14 @@ for (const colorScheme of ['light', 'dark']) {
       }
       assert.equal(await f.page.getByText('History prompt 0', { exact: true }).count(), 0, 'opening shows only the latest page');
       const latest = await f.page.locator('.message.user').allTextContents();
-      await earlier.click();
+      await scrollToLoadEarlier(f.page);
       await f.page.getByText('Error: Earlier page temporarily unavailable', { exact: true }).waitFor();
       assert.deepEqual(await f.page.locator('.message.user').allTextContents(), latest, 'a refused page preserves loaded messages');
-      assert.equal(await earlier.isEnabled(), true, 'a refused page can be retried');
-      for (let page = 0; page < 4 && await earlier.count(); page++) {
-        await earlier.click();
-        await f.page.waitForFunction(() => !document.querySelector('.load-earlier-messages:disabled'));
-      }
-      assert.equal(await earlier.count(), 0, 'the control disappears only at the first page');
+      await f.page.waitForTimeout(400);
+      assert.deepEqual(await f.page.locator('.message.user').allTextContents(), latest, 'a refused page is not asked for again and again');
+      await f.page.getByRole('button', { name: 'Dismiss error', exact: true }).click();
+      for (let page = 0; page < 6 && await earlier.count(); page++) await scrollToLoadEarlier(f.page);
+      assert.equal(await earlier.count(), 0, 'loading stops only at the first page');
       assert.equal(await f.page.getByText('History prompt 0', { exact: true }).isVisible(), true);
       assert.deepEqual((await f.page.locator('.message.user').allTextContents()).map(text => text.trim()), chat.filter((_, index) => index !== 12).map(turn => turn[1]));
       const markers = f.page.locator('.context-event').filter({ hasText: 'Compacted the context' });
@@ -86,10 +86,10 @@ for (const colorScheme of ['light', 'dark']) {
     try {
       await f.open('chat-a');
       const note = f.page.getByRole('note').filter({ hasText: 'The earliest part of this chat is missing' });
-      const earlier = f.page.getByRole('button', { name: 'Load earlier messages', exact: true });
-      await earlier.waitFor();
+      const earlier = f.page.locator('.load-earlier-messages');
+      await earlier.waitFor({ state: 'attached' });
       assert.equal(await note.count(), 0, 'not before the start of what remains is shown');
-      while (await earlier.count()) { await earlier.click(); await f.page.waitForFunction(() => !document.querySelector('.load-earlier-messages:disabled')); }
+      for (let page = 0; page < 10 && await earlier.count(); page++) await scrollToLoadEarlier(f.page);
       await note.waitFor();
       assert.equal(await note.count(), 1);
       const [noteTop, firstTop] = await Promise.all([note.boundingBox(), f.page.getByText('Remaining prompt 0', { exact: true }).boundingBox()]);

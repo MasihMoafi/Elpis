@@ -284,11 +284,13 @@ for (const colorScheme of ['light', 'dark']) test(`Matilda mini chat, mute and d
 
 // 28 Oct: "that small chatbox shouldn't show previous messages; it's for quick new chats", like Dot's "Start new chat".
 // And her reply had arrived while the small chat still said "Matilda is replying…": one failed read ended the asking.
-for (const colorScheme of ['light', 'dark']) test(`the small chat starts fresh, keeps earlier turns behind a button, and asks until her reply arrives (${colorScheme})`, { timeout: 60000 }, async t => {
+for (const colorScheme of ['light', 'dark']) test(`the small chat shows its last messages, loads older ones as he scrolls up, and asks until her reply arrives (${colorScheme})`, { timeout: 60000 }, async t => {
   const { fixture } = require('./parity-fixture.cjs');
   const { FACE_DATA_URL } = require('../bridge/matilda-face.cjs');
   const say = (turnId, type, text) => ({ turnId, item: type === 'agentMessage' ? { id: `${turnId}-a`, type, text } : { id: `${turnId}-u`, type, content: [{ type: 'text', text }] } });
-  let entries = [say('old', 'userMessage', 'An old question'), say('old', 'agentMessage', 'An old answer')], busy = false, reads = 0;
+  let entries = [say('first', 'userMessage', 'The first question'), say('first', 'agentMessage', 'The first answer'),
+    ...Array.from({ length: 5 }, (_, n) => [say(`mid${n}`, 'userMessage', `Question ${n}`), say(`mid${n}`, 'agentMessage', `Answer ${n}`)]).flat(),
+    say('old', 'userMessage', 'An old question'), say('old', 'agentMessage', 'An old answer')], busy = false, reads = 0;
   const f = await fixture({ colorScheme, width: 1000, height: 800, routes: {
     '/api/love-spot/companion': () => ({ pinned: true, face: FACE_DATA_URL, threadId: 'chat-a', favorite: null, music: null, reason: '' }),
     '/api/love-spot/talk': body => {
@@ -315,8 +317,10 @@ for (const colorScheme of ['light', 'dark']) test(`the small chat starts fresh, 
   };
   const mini = page.getByRole('dialog', { name: 'Small chat with Matilda', exact: true });
   await avatar.click(); await mini.waitFor();
-  const earlier = mini.getByRole('button', { name: 'Show previous messages', exact: true }); await earlier.waitFor();
-  assert.equal(await mini.getByText('An old answer', { exact: true }).count(), 0, 'a quick chat starts fresh');
+  // 31 Oct: "show some by default, and when I hover up load them; no need for that button".
+  await mini.getByText('An old answer', { exact: true }).waitFor();
+  assert.equal(await mini.getByRole('button', { name: /previous messages/i }).count(), 0, 'no button for earlier messages');
+  assert.equal(await mini.getByText('The first answer', { exact: true }).count(), 0, 'only the last few earlier messages show at first');
   await mini.getByRole('textbox', { name: 'Message Matilda', exact: true }).fill('hey');
   await mini.getByRole('button', { name: 'Send to Matilda', exact: true }).click();
   await checkMood('smile');
@@ -324,8 +328,11 @@ for (const colorScheme of ['light', 'dark']) test(`the small chat starts fresh, 
   await checkMood('softSmile');
   await mini.getByRole('status').waitFor({ state: 'hidden' });
   assert.equal(await mini.getByText('hey', { exact: true }).count(), 1, 'what was just said shows');
-  await earlier.click();
-  await mini.getByText('An old answer', { exact: true }).waitFor();
+  // Each scroll to the top reveals more, until the first message.
+  await page.waitForFunction(() => {
+    const log = document.querySelector('[aria-label="Matilda conversation"]'); log.scrollTop = 0;
+    return log.textContent.includes('The first answer');
+  }, null, { timeout: 5000, polling: 200 });
   // 28 Oct: Masih chose her faces: "listening" at rest ("make the last one the default"), the others when they fit.
   await page.keyboard.press('Escape'); await mini.waitFor({ state: 'hidden' });
   const shown = () => avatar.locator('img[data-shown="true"]:visible').evaluateAll(els => els.map(el => el.dataset.mood));

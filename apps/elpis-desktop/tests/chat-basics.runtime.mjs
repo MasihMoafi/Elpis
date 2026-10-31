@@ -56,29 +56,30 @@ test('chat view basics: a long saved chat opens with its messages and loads ten 
   const row = id => page.locator(`.thread-row[data-thread-id="${id}"]`);
   /** The question numbers the transcript shows (not the sidebar or tab titles). */
   const questions = () => page.locator('.chat-content').evaluate(content => { const found = [], walk = document.createTreeWalker(content, NodeFilter.SHOW_TEXT); while (walk.nextNode()) { const match = /^Question (\d+)$/.exec(walk.currentNode.data.trim()); if (match) found.push(Number(match[1])); } return found; });
-  const earlier = page.getByRole('button', { name: 'Load earlier messages', exact: true });
+  const earlier = page.locator('.load-earlier-messages');
   const redBars = () => page.locator('.error-banner:not(.notice):not(.warning)').allInnerTexts();
 
-  await t.test('load earlier: about ten earlier messages per press, reading position kept, button gone at the start', async () => {
+  await t.test('load earlier: scrolling to the top brings about ten earlier messages, reading position kept, nothing left to load at the start', async () => {
     await row(long).locator('.thread-link').click();
     await page.getByText('Answer 45', { exact: true }).waitFor();
     const first = await questions();
     assert.ok(first.includes(45), `the last question shows: ${first}`);
     assert.ok(Math.min(...first) > 1, 'a long chat does not open with every message');
-    await earlier.waitFor({ timeout: 5000 });
+    await earlier.waitFor({ state: 'attached', timeout: 5000 });
     let shown = first;
-    for (let press = 0; press < 10 && await earlier.isVisible(); press++) {
+    for (let press = 0; press < 10 && await earlier.count(); press++) {
       const top = Math.min(...shown);
-      await page.locator('.chat-scroll').evaluate(element => { element.scrollTop = 0; }); await page.waitForTimeout(200);
-      const anchor = page.locator('.chat-content').getByText(`Question ${top}`, { exact: true }).first(), before = (await anchor.boundingBox()).y;
-      await earlier.click(); await page.locator('.chat-content').getByText(`Question ${top - 1}`, { exact: true }).first().waitFor();
+      const anchor = page.locator('.chat-content').getByText(`Question ${top}`, { exact: true }).first();
+      await page.locator('.chat-scroll').evaluate(element => { element.scrollTop = 0; });
+      await page.locator('.chat-content').getByText(`Question ${top - 1}`, { exact: true }).first().waitFor();
       await page.waitForTimeout(300);
       const now = await questions(), added = Math.min(...shown) - Math.min(...now);
       assert.ok(added >= Math.min(9, top - 1) && added <= 12, `press ${press + 1} adds about ten earlier messages (added ${added}, from ${top})`);
-      const after = (await anchor.boundingBox()).y; assert.ok(Math.abs(after - before) < 60, `the reading position stays (within the button height) (moved ${after - before}px)`);
+      const [after, view] = await Promise.all([anchor.boundingBox(), page.locator('.chat-scroll').boundingBox()]);
+      assert.ok(after.y >= view.y && after.y < view.y + view.height, `the reading position stays: the message he was at is still in view (${after.y} in ${view.y}..${view.y + view.height})`);
       shown = now;
     }
-    assert.equal(Math.min(...shown), 1, 'the chat start is reached'); assert.equal(await earlier.count(), 0, 'the button goes at the start');
+    assert.equal(Math.min(...shown), 1, 'the chat start is reached'); assert.equal(await earlier.count(), 0, 'nothing is left to load at the start');
     await page.screenshot({ path: path.join(shots, 'load-earlier.png') });
   });
 });

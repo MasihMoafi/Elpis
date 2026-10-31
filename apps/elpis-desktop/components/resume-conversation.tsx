@@ -4,6 +4,7 @@ import { Dialog } from "@base-ui/react/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api, title, type Thread } from "@/lib/api";
+import { LoadOnScroll } from "@/components/load-on-scroll";
 
 type Page = { data: Thread[]; nextCursor?: string | null };
 /** Resume is an explicit saved-chat choice, independent of sidebar visibility or folds. */
@@ -54,8 +55,9 @@ export function ResumeConversation({ open, chats, onClose, onChoose, returnFocus
           <span className="w-full truncate font-medium">{title(chat)}</span>{chat.cwd && <span className="w-full truncate text-xs text-muted-foreground" title={chat.cwd}>{chat.cwd}</span>}
         </Button>)}
         {!loading && !error && !visible.length && <p className="py-4 text-sm text-muted-foreground">{term ? "No matching conversations." : "No saved conversations yet."}</p>}
+        {cursor && <LoadOnScroll loading={loading} label="Loading more conversations" onLoad={() => void more()} />}
       </div>
-      <div className="flex justify-end gap-2">{cursor && <Button variant="outline" disabled={loading} onClick={() => void more()}>Load more</Button>}<Dialog.Close render={<Button variant="outline" />}>Close</Dialog.Close></div>
+      <div className="flex justify-end gap-2"><Dialog.Close render={<Button variant="outline" />}>Close</Dialog.Close></div>
     </Dialog.Popup>
   </Dialog.Portal></Dialog.Root>;
 }
