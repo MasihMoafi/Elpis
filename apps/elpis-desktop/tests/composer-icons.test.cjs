@@ -8,7 +8,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { fixture } = require('./parity-fixture.cjs');
-const { icons } = require('./fixtures/elpis-icon-collection.json');
+const { assertCollectionIcon } = require('./collection-icon-assertions.cjs');
 
 const shots = process.env.ELPIS_PARITY_SHOTS;
 const routes = {
@@ -16,7 +16,6 @@ const routes = {
   '/api/tools/transcription': () => ({ available: true, backend: 'local', label: 'Local Whisper' }),
 };
 const options = (colorScheme, extra = {}) => ({ colorScheme, width: 1130, height: 800, routes, ...extra });
-const words = d => d.replace(/,/g, ' ').trim().split(/\s+/).join(' ');
 async function capture(page, name, clip) {
   if (!shots) return;
   await fs.mkdir(shots, { recursive: true });
@@ -145,19 +144,15 @@ for (const colorScheme of ['light', 'dark']) test(`message actions share one box
   } finally { await f.close(); }
 });
 
-test('every icon with a twin in the SVG collection draws the collection paths', async () => {
+test('approved collection paths cover all shared icon consumers in the composer and settings', async () => {
   const f = await fixture(options('light')), { page } = f;
   try {
     await f.open('chat-a');
     await page.locator('.composer [aria-label="Dictate message"]').waitFor();
-    const drawn = locator => locator.first().evaluate(svg => ({ viewBox: svg.getAttribute('viewBox'), paths: [...svg.querySelectorAll('path')].map(p => p.getAttribute('d')) }));
-    const failures = [];
-    const check = async (where, locator, name) => {
-      const want = icons[name], got = await drawn(locator);
-      if (got.viewBox !== want.viewBox || got.paths.map(words).join(' ') !== want.paths.map(words).join(' ')) failures.push(`${where} is not the collection's ${name}`);
-    };
+    const check = (where, locator, name) => assertCollectionIcon(locator, name, where);
     const side = page.locator('aside.sidebar');
     await check('New chat', side.locator('[aria-label="New chat"] svg'), 'new-chat');
+    await check('New chat tab', page.getByRole('button', { name: 'New chat tab', exact: true }).locator('svg'), 'plus');
     await check('Workflows', side.locator('[data-nav-page="canvas"] svg'), 'workflows');
     await check('Love Spot', side.locator('[data-nav-page="loveSpot"] svg'), 'love-spot');
     await check('Lab', side.locator('[data-nav-page="experimentLab"] svg'), 'experiment-lab');
@@ -166,6 +161,15 @@ test('every icon with a twin in the SVG collection draws the collection paths', 
     await check('Settings', side.getByRole('button', { name: 'Settings', exact: true }).locator('svg'), 'settings');
     const composer = page.locator('form.composer');
     await check('Send', composer.locator('[aria-label="Send message"] svg'), 'send');
+    await check('Add files and more', composer.getByRole('button', { name: 'Add files and more', exact: true }).locator('svg'), 'plus');
+    await check('Dictate message', composer.getByRole('button', { name: 'Dictate message', exact: true }).locator('svg'), 'mic');
+    const permissions = composer.getByRole('button', { name: 'Change permissions', exact: true });
+    await permissions.click();
+    const permissionMenu = page.getByRole('menu');
+    for (const [label, asset] of [['Ask for approval', 'ask'], ['Approve for me', 'auto-approve'], ['Full access', 'full-access'], ['Bypass permissions', 'bypass']]) {
+      await check(`Permission: ${label}`, permissionMenu.getByRole('menuitem', { name: new RegExp(label) }).locator('svg').first(), asset);
+    }
+    await page.keyboard.press('Escape');
     await composer.getByRole('button', { name: 'Add files and more', exact: true }).click();
     const menu = page.getByRole('menu');
     await check('Attach', menu.getByRole('menuitem', { name: /Add files or photos/ }).locator('svg'), 'attach');
@@ -177,7 +181,6 @@ test('every icon with a twin in the SVG collection draws the collection paths', 
       ['personalization', 'person'], ['shortcuts', 'keyboard'], ['providers', 'models'], ['mcp', 'tool'],
       ['browser', 'browser'], ['hooks', 'workflows'], ['git', 'branch'], ['worktrees', 'folder'], ['archived', 'archive']])
       await check(`Settings → ${id}`, page.locator(`#settings-tab-${id} svg`), name);
-    assert.deepEqual(failures, []);
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

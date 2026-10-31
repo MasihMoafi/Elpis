@@ -4,7 +4,8 @@ import { WorkflowMark } from "@/components/workflow-identity";
 import type { WorkflowIdentity } from "@/lib/workflow-identity";
 import { Segmented } from "@/components/settings/rows";
 import { useEffect, useId, useLayoutEffect, useImperativeHandle, useMemo, useRef, useState, type CSSProperties, type Ref, type MouseEvent as ReactMouseEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import { Maximize2, Minus, Plus } from "lucide-react";
+import { Maximize2, Minus } from "lucide-react";
+import { PlusIcon } from "@/components/elpis-icons";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { CanvasTextEdit } from "@/components/canvas-text-edit";
@@ -460,7 +461,7 @@ export function IsoBoard({ workflowIdentity, inserting, canConnect, onReconnect,
     </div>
     <div className="iso-hud iso-controls" role="toolbar" aria-label="Zoom">
       <Button variant="outline" size="icon-sm" aria-label="Zoom out" title="Zoom out (−)" onClick={() => zoomBy(1 / 1.25)}><Minus /></Button>
-      <Button variant="outline" size="icon-sm" aria-label="Zoom in" title="Zoom in (+)" onClick={() => zoomBy(1.25)}><Plus /></Button>
+      <Button variant="outline" size="icon-sm" aria-label="Zoom in" title="Zoom in (+)" onClick={() => zoomBy(1.25)}><PlusIcon /></Button>
       <Button variant="outline" size="sm" aria-label="Fit view" title="Show the whole graph (Home)" onClick={() => setMoved(null)}><Maximize2 />Fit</Button>
     </div>
     {/* The status panel, as Deus Ex's: what the pointer, the keys or the selection is on. */}

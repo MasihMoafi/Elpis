@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState, type ReactElement, type ReactNode } from "react";
-import { Check, GitBranch, Laptop, X } from "lucide-react";
+import { Check, Laptop, X } from "lucide-react";
 import { BranchIcon, FolderIcon, PlusIcon } from "@/components/elpis-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -139,7 +139,7 @@ export function EnvironmentMenu({ folder, disabled, worktree, onWorktree }: { fo
     return () => { live = false; };
   }, [folder]);
   useEffect(() => { if (repository === false && worktree) onWorktree(false); }, [repository, worktree, onWorktree]);
-  const Icon = worktree ? GitBranch : Laptop;
+  const Icon = worktree ? BranchIcon : Laptop;
   return <DropdownMenu>
     <DropdownMenuTrigger data-slot="composer-chip" className="composer-chip project-chip" aria-label="Where this chat works" title={worktree ? `A new worktree of ${folder}` : folder ?? DEFAULT_FOLDER} disabled={disabled}><Icon size={13} aria-hidden="true" /><span>{worktree ? "Worktree" : "Local"}</span></DropdownMenuTrigger>
     <DropdownMenuContent align="start" className="project-menu w-72">

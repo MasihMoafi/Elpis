@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AudioLines, Mic, MicOff, PhoneOff } from "lucide-react";
+import { AudioLines, MicOff, PhoneOff } from "lucide-react";
+import { MicIcon } from "@/components/elpis-icons";
 import { Button } from "@/components/ui/button";
 import { api, sessionReady } from "@/lib/api";
 
@@ -140,7 +141,7 @@ export function Voice({ threadId, disabled, onBusy, persona, unavailableReason }
   return <div className="dictation-control">
     <div className="dictation-buttons">
       {!active ? <Button type="button" size="icon" variant="ghost" disabled={disabled} aria-label="Start voice chat" title="Voice: talk with Elpis" onClick={() => void start()}><AudioLines size={16} /></Button> : <>
-        {phase === "listening" && <Button type="button" size="icon" variant="ghost" aria-label={muted ? "Unmute microphone" : "Mute microphone"} title={muted ? "Unmute microphone" : "Mute microphone"} onClick={() => { const next = !muted; call.current?.stream?.getAudioTracks().forEach(track => { track.enabled = !next; }); setMuted(next); }}>{muted ? <MicOff size={16} /> : <Mic size={16} />}</Button>}
+        {phase === "listening" && <Button type="button" size="icon" variant="ghost" aria-label={muted ? "Unmute microphone" : "Mute microphone"} title={muted ? "Unmute microphone" : "Mute microphone"} onClick={() => { const next = !muted; call.current?.stream?.getAudioTracks().forEach(track => { track.enabled = !next; }); setMuted(next); }}>{muted ? <MicOff size={16} /> : <MicIcon size={16} />}</Button>}
         <Button type="button" size="icon" variant="ghost" aria-label="End voice chat" title="End voice chat" onClick={() => end()}><PhoneOff size={16} /></Button>
       </>}
     </div>

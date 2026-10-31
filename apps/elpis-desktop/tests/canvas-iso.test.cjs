@@ -8,6 +8,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const { chooseOption, unapprovedOranges, chooseTheme, openPatterns } = require('./controls.cjs');
+const { assertCollectionIcon } = require('./collection-icon-assertions.cjs');
 const shots = process.env.ELPIS_SHOTS;
 
 test('agents canvas, isometric: agents as buttons to select and open, run state, inside the window, only approved amber/orange accents in light', async () => {
@@ -57,6 +58,7 @@ test('agents canvas, isometric: agents as buttons to select and open, run state,
     await iso.click();
     assert.equal(await iso.getAttribute('aria-checked'), 'true');
     const board = canvas.getByRole('region', { name: 'Isometric board', exact: true }); await board.waitFor();
+    await assertCollectionIcon(board.getByRole('button', { name: 'Zoom in', exact: true }).locator('svg'), 'plus', 'Isometric Zoom in');
     assert.equal(await canvas.locator('.react-flow').count(), 0, 'the isometric view takes the flat board\'s place');
 
     // Every agent, and the Mother, is a button named for it and its state, with its title upright above it.

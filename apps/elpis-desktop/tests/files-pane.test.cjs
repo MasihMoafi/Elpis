@@ -13,6 +13,7 @@ const { promisify } = require('node:util');
 const execFile = promisify(require('node:child_process').execFile);
 const { fixture } = require('./parity-fixture.cjs');
 const { unapprovedOranges, widenSidePanel } = require('./controls.cjs');
+const { assertCollectionIcon } = require('./collection-icon-assertions.cjs');
 const CWD = path.join(os.homedir(), '.cache', `elpis-file-previews-${process.pid}`);
 const FILE_AGENT_ACTIONS = ['Mark for agent', 'Suggest edit', 'Ask agent to remove'];
 const trashProject = async () => { if (await fs.stat(CWD).catch(() => null)) await execFile('gio', ['trash', CWD]); };
@@ -356,6 +357,7 @@ test('the Files tab is a project tree: folders open and close by click and by ke
     assert.equal(await f.side.getByRole('tab', { name: 'Files', exact: true }).getAttribute('aria-selected'), 'true');
     assert.match(await f.view.innerText(), /Pick a file in the tree, or click a file path in the conversation\./);
     await eventually(async () => assert.deepEqual(await f.tree.getByRole('treeitem').allInnerTexts(), ['docs', 'src', 'package.json', 'README.md'], 'folders first, then files, by name'));
+    for (const folder of ['docs', 'src']) await assertCollectionIcon(f.row(folder).locator('svg.tree-icon'), 'folder', `Collapsed folder ${folder}`);
     assert.equal(await f.row('src').getAttribute('aria-expanded'), 'false');
     await f.row('src').click();
     assert.equal(await f.row('src').getAttribute('aria-expanded'), 'true');

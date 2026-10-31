@@ -2,6 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cjs');
 const { controlValue, openSettings } = require('./controls.cjs');
+const { assertCollectionIcon } = require('./collection-icon-assertions.cjs');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 async function eventually(check, ms = 4000) { const end = Date.now() + ms; for (;;) { try { return await check(); } catch (error) { if (Date.now() > end) throw error; await new Promise(resolve => setTimeout(resolve, 50)); } } }
@@ -193,6 +194,7 @@ test('voice controls release the microphone after denial, cancelled startup, mut
     await start.click();
     const status = page.getByRole('status').filter({ hasText: /Listening|Hearing you|Working on it|Speaking|Muted/ });
     await status.filter({ hasText: 'Listening' }).waitFor();
+    await assertCollectionIcon(page.getByRole('button', { name: 'Mute microphone', exact: true }).locator('svg'), 'mic', 'Voice call unmuted control');
     const said = type => page.evaluate(type => window.voiceTest.channel.onmessage({ data: JSON.stringify({ type }) }), type);
     await said('input_transcript.added'); await status.filter({ hasText: 'Hearing you' }).waitFor();
     await said('delegation.created'); await status.filter({ hasText: 'Working on it' }).waitFor();

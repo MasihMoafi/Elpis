@@ -7,6 +7,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { fixture, CWD } = require('./parity-fixture.cjs');
+const { assertCollectionIcon } = require('./collection-icon-assertions.cjs');
 
 const BRANCH = 'elpis/chat-1a2b3c', KEPT = `${CWD}-elpis/chats/chat-1a2b3c`;
 const chat = (id, name, cwd = CWD) => ({ id, name, preview: name, cwd, model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } });
@@ -82,6 +83,7 @@ for (const colorScheme of ['light', 'dark']) test(`a new chat can start in its o
   await where(page).click();
   const worktree = page.getByRole('menuitem', { name: /^Worktree/ });
   await worktree.waitFor(); await shoot(page, `worktree-menu-${colorScheme}`);
+  await assertCollectionIcon(worktree.locator('svg').first(), 'branch', 'Worktree location option');
   assert.equal(await worktree.getAttribute('aria-disabled'), null, 'offered inside a Git repository with a commit');
   await worktree.click();
   assert.match(await where(page).innerText(), /Worktree/, 'the chip says where the chat will work');
