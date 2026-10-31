@@ -572,6 +572,23 @@ test('opening a completed parent-owned child reads history without resuming it',
   } finally { client.close(); }
 });
 
+test('a child in a legacy drain reports history-only until its viewer reconnects', async () => {
+  const { client, socket, threads } = fixture(); await client.initialize();
+  const send = socket.send;
+  socket.send = raw => {
+    const request = JSON.parse(raw);
+    if (request.method !== 'thread/subscribe' || request.params.threadId !== CHILD) return send(raw);
+    socket.sent.push(request);
+    queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, result: { thread: structuredClone(threads.get(CHILD)), followingLive: false } })));
+  };
+  try {
+    assert.equal((await client.resume(CHILD, {})).followingLive, false);
+    assert.equal((await client.resume(CHILD, {})).followingLive, false, 'a second open keeps the truthful state');
+    assert.equal(socket.sent.filter(row => row.method === 'thread/subscribe' && row.params.threadId === CHILD).length, 1);
+    assert.equal(socket.sent.some(row => ['thread/resume', 'thread/settings/update', 'turn/start'].includes(row.method) && row.params.threadId === CHILD), false);
+  } finally { client.close(); }
+});
+
 test('a finished child can continue from stored history when its parent is not loaded', async () => {
   const { client, socket, threads } = fixture(); await client.initialize();
   threads.get(CHILD).status = { type: 'notLoaded' };

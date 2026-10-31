@@ -131,7 +131,7 @@ const LoveSpot = dynamic(() => import("@/components/love-spot"), { ssr: false, l
 
 type View = "chat" | "agentsGuide" | "canvas" | "experimentLab" | "loveSpot" | "customize" | "settings";
 type NextTurn = { model?: string; plan?: boolean };
-type Live = { thread: Thread; activeTurnId?: string | null; permissions?: PermissionMode | null; planMode?: boolean };
+type Live = { thread: Thread; activeTurnId?: string | null; permissions?: PermissionMode | null; planMode?: boolean; followingLive?: boolean };
 /** A page of a chat's history; `earliestHistoryMissing` when the record it continued was deleted. */
 type HistoryPage = { data: Entry[]; nextCursor: string | null; earliestHistoryMissing?: boolean };
 /** The terminal's answer to a finished plan: Plan mode off, then this message. */
@@ -504,6 +504,7 @@ export default function Home() {
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [activity, setActivity] = useState<Record<string, string>>({});
   const [liveError, setLiveError] = useState<Record<string, string>>({});
+  const [historyOnly, setHistoryOnly] = useState<Record<string, boolean>>({});
   const [runtimeNotices, setRuntimeNotices] = useState<Record<string, string>>({});
   const [failedTurns, setFailedTurns] = useState<Record<string, FailedTurn>>({});
   // A turn that ended stopped (by Stop, Esc, another window or the engine) says so until the next turn starts.
@@ -683,6 +684,9 @@ export default function Home() {
     } catch (cause) { setSearchResults(previous => previous.query === query ? { ...previous, loading: false, error: cause instanceof Error ? cause.message : String(cause) } : previous); }
   }
 
+  const rememberFollowing = useCallback((id: string, live: Live) => {
+    setHistoryOnly(previous => live.followingLive === false ? { ...previous, [id]: true } : without(previous, id));
+  }, []);
   const reconcileLiveThread = useCallback((id: string, live: Live) => {
     remember(live.thread); upsertThread(live.thread);
     if (selectedRef.current?.id === id) select({ ...selectedRef.current, ...live.thread });
@@ -728,6 +732,7 @@ export default function Home() {
       const turnRevision = turnRevisions.current[thread.id], modeRevision = modeRevisions.current[thread.id];
       const live = await api<Live>(`/threads/${encodeURIComponent(thread.id)}/resume`, {});
       if (request.current !== id || live.thread?.id !== thread.id) return;
+      rememberFollowing(thread.id, live);
       if (modeRevisions.current[thread.id] === modeRevision) rememberModes(thread.id, live);
       if (turnRevisions.current[thread.id] === turnRevision) reconcileLiveThread(thread.id, live);
       if (unread || live.thread?.canAcceptDirectInput === false) {
@@ -735,7 +740,7 @@ export default function Home() {
         if (request.current === id && Array.isArray(again.data)) { setEntries(previous => mergeHistoryWithLive(previous, [...again.data].reverse(), liveKeysAfter(historyRevision))); setItemCursor(again.nextCursor); noteHistoryGap(thread.id, again); heldEarlier.current.delete(thread.id); }
       }
     } catch (e) { if (request.current === id) setLiveError(prev => ({ ...prev, [thread.id]: e instanceof Error ? e.message : String(e) })); }
-  }, [select, setText, reconcileLiveThread, saveDraft, savedDraft, liveKeysAfter, restoreAttachments, updateTabs, markRead, noteHistoryGap]);
+  }, [select, setText, reconcileLiveThread, rememberFollowing, saveDraft, savedDraft, liveKeysAfter, restoreAttachments, updateTabs, markRead, noteHistoryGap]);
 
   // Navigation to the visible chat preserves its live transcript, draft and scroll. Explicit reloads still use loadThread.
   const openThread = useCallback(async (thread: Thread) => {
@@ -822,6 +827,7 @@ export default function Home() {
         const resume = (async () => {
           const live = await api<Live>(`/threads/${encodeURIComponent(id)}/resume`, {});
           if (!open() || live.thread?.id !== id) return;
+          rememberFollowing(id, live);
           if (modeRevisions.current[id] === modeRevision) rememberModes(id, live);
           if (turnRevisions.current[id] === turnRevision) reconcileLiveThread(id, live);
         })();
@@ -968,7 +974,7 @@ export default function Home() {
       }
     }
     initialize(); return () => { disposed = true; clearTimeout(retryTimer); catalogRequest.current++; events?.close(); };
-  }, [refreshThreads, patchThread, upsertThread, removeThreads, select, liveKeysAfter, clearApprovalDraft, refreshModels, reconcileLiveThread, noteHistoryGap]);
+  }, [refreshThreads, patchThread, upsertThread, removeThreads, select, liveKeysAfter, clearApprovalDraft, refreshModels, reconcileLiveThread, rememberFollowing, noteHistoryGap]);
 
   const loadChildren = useCallback(async (id: string, cursor?: string, expand = false) => {
     if (childPaging.current.has(id)) return;
@@ -2637,7 +2643,7 @@ export default function Home() {
               selected={projects.find(item => item.cwd.replace(/\/+$/, "") === selected.cwd?.replace(/\/+$/, "")) ?? (selected.cwd ? { id: `folder:${selected.cwd}`, name: folder(selected.cwd), cwd: selected.cwd } : null)}
               onSelect={moveChat} onAdd={() => void moveChatToFolder()} />}
             {selected?.cwd && <BranchChip key={selected.id} threadId={selected.id} running={!!activeTurn} onNotice={setSlashNotice} />}
-            <span className="composer-hint">{selectedLiveError ? `Not following live (${selectedLiveError}); the chat refreshes every few seconds.` : ""}</span>
+            <span className="composer-hint">{selectedLiveError ? `Not following live (${selectedLiveError}); the chat refreshes every few seconds.` : selected && historyOnly[selected.id] ? "This agent is running in an earlier Elpis runtime. Its completed history will appear when it finishes." : ""}</span>
             <ElpisFeatures />
           </div>
         </div>
