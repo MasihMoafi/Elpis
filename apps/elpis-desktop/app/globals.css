@@ -169,7 +169,8 @@ button:disabled { cursor:not-allowed; }
 .thread-link { min-width:0; flex:1; text-align:left; background:none; border:0; padding:7px 4px 7px 8px; border-radius:7px; display:block; color:inherit; font-size:var(--text-sm); line-height:20px; }
 .thread-link span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:block; }
 /* In the sidebar tree the agent mark follows the name, so names step by the same indent as their status dots. */
-.thread-link .agent-identity { display:flex; flex-direction:row-reverse; justify-content:flex-end; align-items:center; gap:8px; }
+/* The badge sits in one right-hand column, whatever the title's width; the name truncates before it. */
+.thread-link .agent-identity { display:flex; flex:1 1 0; min-width:0; flex-direction:row-reverse; justify-content:space-between; align-items:center; gap:8px; }
 .thread-link .agent-mark { display:inline-flex; flex-shrink:0; }
 .thread-link .agent-identity-text { display:flex; flex-direction:column; min-width:0; }
 .sidebar-footer { flex-shrink:0; display:flex; align-items:center; gap:4px; padding-top:6px; border-top:1px solid var(--hairline); }
@@ -322,10 +323,10 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 @keyframes thread-edge-in { from { opacity:0; } to { opacity:1; } }
 @keyframes thread-edge-out { from { opacity:1; } to { opacity:0; } }
 .scroll-to-bottom { position:absolute; left:50%; bottom:24px; width:32px; height:32px; min-width:32px; transform:translateX(-50%); z-index:5; corner-shape:round; border-radius:9999px; border-color:var(--border); background:var(--background); box-shadow:0 2px 8px rgb(0 0 0 / .12); }
-/* The prompt rail sits in the existing 32 px gutter, centred vertically, with one 10 px slot per prompt, a 2 px dash
+/* The prompt rail sits just left of the transcript column (in the 32 px gutter when the pane is narrow), centred vertically, with one 10 px slot per prompt, a 2 px dash
  * 6 px long in the tertiary ink at 40%; dashes in view at 60% of the ink; the hovered one 26 px in full ink, its neighbours
  * 20, 14 and 10 px. At most min(70vh, 40rem) tall, then it scrolls. */
-.prompt-rail { position:absolute; left:0; top:50%; transform:translateY(-50%); z-index:2; display:flex; flex-direction:column; width:28px; max-height:min(70vh, 40rem, calc(100% - 24px)); }
+.prompt-rail { position:absolute; left:max(0px, calc((100% - min(var(--transcript-width, 740px), 100% - 64px)) / 2 - 40px)); top:50%; transform:translateY(-50%); z-index:2; display:flex; flex-direction:column; width:28px; max-height:min(70vh, 40rem, calc(100% - 24px)); }
 .prompt-rail-marks { display:flex; flex-direction:column; width:100%; min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:none; opacity:0; transition:opacity var(--motion-fast) var(--ease); }
 .prompt-rail:is(:hover, :focus-within) .prompt-rail-marks { opacity:1; }
 .prompt-rail-marks::-webkit-scrollbar { display:none; }
@@ -895,7 +896,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 [data-reorder][data-drop="before"] { box-shadow:inset 0 2px 0 0 var(--primary); }
 [data-reorder][data-drop="after"] { box-shadow:inset 0 -2px 0 0 var(--primary); }
 [data-reorder][data-drop="into"] { background:var(--selected); box-shadow:inset 0 0 0 1px var(--primary); }
-.thread-row.active::before, .task-tab.chat-tab.active::before {
+/* The tab keeps the drawn accent frame (bottom and right edges). */
+.task-tab.chat-tab.active::before {
   --selection-line:1px;
   content:""; position:absolute; inset:0; pointer-events:none; border:var(--selection-line) solid transparent;
   border-radius:inherit; corner-shape:inherit;
@@ -904,7 +906,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
     linear-gradient(to top,color-mix(in oklab,var(--primary) 15%,transparent),transparent) border-box;
   mask:linear-gradient(#000 0 0) padding-box, linear-gradient(#000 0 0) border-box; mask-composite:exclude;
 }
-.thread-row.active::before { --selection-line:2px; }
+/* A selected sidebar row keeps its original LEFT mark: 2px wide, 6px from top and bottom, 8px glow. Only its pattern may change. */
+.thread-row.active::before { content:""; position:absolute; left:0; top:6px; bottom:6px; width:2px; pointer-events:none; background:var(--primary); box-shadow:0 0 8px var(--primary); }
 /* One focus ring, round the whole row, and only for the keyboard (a click only highlights the row, as in Claude). */
 .thread-link:focus-visible { outline:none; }
 .thread-row:has(.thread-link:focus-visible) { outline:1px solid color-mix(in oklch, var(--primary) 40%, transparent); outline-offset:-1px; }

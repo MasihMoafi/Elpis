@@ -18,8 +18,9 @@ async function railGeometry(page) {
   });
 }
 function assertRailGap(geometry) {
-  assert.ok(Math.abs(geometry.left) < 0.5 && Math.abs(geometry.width - 28) < 0.5, `rail fits its 28px gutter target: ${JSON.stringify(geometry)}`);
+  assert.ok(geometry.left >= -0.5 && Math.abs(geometry.width - 28) < 0.5, `rail keeps its 28px width inside its pane: ${JSON.stringify(geometry)}`);
   assert.ok(geometry.gap >= 3.5, `rail stays clear of message text: ${JSON.stringify(geometry)}`);
+  assert.ok(geometry.gap <= 48, `rail sits beside the chat column, not at the window edge: ${JSON.stringify(geometry)}`);
 }
 
 test('rail fits the gutter and its highlighted dash stays clear of text at desktop widths', async () => {

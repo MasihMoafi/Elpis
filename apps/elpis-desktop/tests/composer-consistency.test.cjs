@@ -194,3 +194,17 @@ for (const model of ['sol', 'claude/claude-sonnet-5-5']) {
     assert.equal(p.model, model);
   });
 }
+
+test('Fast stays on screen, switched off with its reason, when the chat model offers no Fast tier', async t => {
+  const f = await fixture({ width: 1100, height: 700, colorScheme: 'light', routes: {
+    '/api/models': () => ({ data: [{ id: 'sol', model: 'sol', displayName: 'Sol', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }], serviceTiers: [] }], nextCursor: null }),
+    '/api/voice': () => ({ available: true }),
+  } });
+  t.after(async () => { await f.close(); assert.deepEqual(f.errors, []); });
+  await f.open('chat-a');
+  const fast = f.page.getByRole('button', { name: 'Fast mode', exact: true });
+  await fast.waitFor();
+  assert.equal(await fast.isDisabled(), true, 'a model without a Fast tier cannot switch Fast on');
+  assert.equal(await fast.getAttribute('aria-pressed'), 'false');
+  assert.match(await fast.getAttribute('title'), /not offered for this model/);
+});

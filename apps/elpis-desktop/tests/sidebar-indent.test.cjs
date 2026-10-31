@@ -66,29 +66,37 @@ test('selected chat frames keep their size and share the theme accent in both sc
         assert.equal(hasComposer, id !== child.id, `${id}: delegated runs keep their read-only state`);
         const rowFrame = await frame(row), tabFrame = await frame(tab), composerFrame = hasComposer ? await frame(composer) : null;
         if (proposed) {
-          for (const [name, actual] of Object.entries({ row: rowFrame, tab: tabFrame })) {
-            assert.equal(actual.content, '""', `${id}: ${name} frame exists`);
-            assert.match(actual.background, /linear-gradient/, `${id}: ${name} has an accent gradient`);
-            assert.ok(actual.mask.split(',').every(value => value.trim() === 'exclude'), `${id}: ${name} keeps the fill clear`);
-            assert.equal(actual.pointer, 'none', `${id}: ${name} does not block controls`);
-          }
-          assert.equal(rowFrame.border, '2px', `${id}: retain the old highlight width`);
+          assert.equal(tabFrame.content, '""', `${id}: tab frame exists`);
+          assert.match(tabFrame.background, /linear-gradient/, `${id}: tab has an accent gradient`);
+          assert.ok(tabFrame.mask.split(',').every(value => value.trim() === 'exclude'), `${id}: tab keeps the fill clear`);
+          assert.equal(tabFrame.pointer, 'none', `${id}: tab does not block controls`);
           assert.equal(tabFrame.border, '1px');
+          // The selected row keeps its original LEFT mark, not a frame: same place, size and glow as before.
+          const mark = await row.evaluate(element => {
+            const style = getComputedStyle(element, '::before');
+            return { content: style.content, left: style.left, top: style.top, bottom: style.bottom, width: style.width,
+              shadow: style.boxShadow, pointer: style.pointerEvents, fill: style.backgroundColor, image: style.backgroundImage };
+          });
+          assert.equal(mark.content, '""', `${id}: the row mark exists`);
+          assert.deepEqual([mark.left, mark.top, mark.bottom, mark.width], ['0px', '6px', '6px', '2px'], `${id}: the mark stays on the left at its original size`);
+          assert.match(mark.shadow, /\b8px\b/, `${id}: the mark keeps its 8px glow`);
+          assert.equal(mark.image, 'none', `${id}: the row has no frame gradient`);
+          assert.equal(mark.pointer, 'none', `${id}: the mark does not block controls`);
           if (composerFrame) assert.equal(composerFrame.content, 'none', 'the optional composer redesign remains a preview');
-          assert.equal(rowFrame.background, tabFrame.background, `${id}: row and tab use the same accent`);
 
           const accent = await row.evaluate(element => {
             const probe = document.createElement('span');
             probe.style.color = 'var(--primary)'; element.append(probe);
             const color = getComputedStyle(probe).color; probe.remove(); return color;
           });
-          assert.ok(rowFrame.background.includes(accent), `${id}: the frame uses its theme accent`);
+          assert.equal(mark.fill, accent, `${id}: the mark uses its theme accent`);
+          assert.ok(tabFrame.background.includes(accent), `${id}: the tab frame uses its theme accent`);
           if (id === love.id) assert.equal(accent, colorScheme === 'light' ? 'rgb(139, 16, 23)' : 'rgb(236, 87, 94)');
           const inactive = page.locator('.thread-row:not(.active)').first();
           assert.equal((await frame(inactive)).content, 'none', 'inactive rows have no active frame');
         }
         const glow = await row.evaluate((element, candidate) => {
-          const style = getComputedStyle(element, candidate ? '::after' : '::before');
+          const style = getComputedStyle(element, '::before');
           return { left: style.left, top: style.top, bottom: style.bottom, width: style.width, shadow: style.boxShadow };
         }, proposed);
         states[id] = { row: await geometry(row), title: await geometry(row.locator('.thread-title')),
@@ -249,3 +257,16 @@ for (const colorScheme of ['light', 'dark']) {
     } finally { await f.close(); }
   });
 }
+
+for (const colorScheme of ['light', 'dark']) test(`agent badges share one column whatever the title length (${colorScheme})`, async () => {
+  const f = await setup(colorScheme), { row, toggle } = f;
+  try {
+    await toggle().click();
+    await row(child.id).waitFor();
+    await row(leaf.id).waitFor();
+    const edge = id => row(id).locator('.agent-mark').evaluate(element => element.getBoundingClientRect().right);
+    const [long, short] = [await edge(child.id), await edge(leaf.id)];
+    assert.ok(Math.abs(long - short) <= 0.5, `a long and a short title put their badges ${Math.abs(long - short)}px apart`);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});

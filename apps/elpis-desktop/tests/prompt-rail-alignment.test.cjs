@@ -20,8 +20,9 @@ async function geometry(page) {
 async function aligned(page, state) {
   await page.locator('.prompt-rail').waitFor({ state: 'visible' });
   const actual = await geometry(page);
-  assert.ok(Math.abs(actual.left - actual.paneLeft) <= 0.5 && Math.abs(actual.width - 28) <= 0.5, `${state}: the rail stays in its 28px gutter target: ${JSON.stringify(actual)}`);
+  assert.ok(Math.abs(actual.width - 28) <= 0.5, `${state}: the rail keeps its 28px width: ${JSON.stringify(actual)}`);
   assert.ok(actual.gap >= 3.5, `${state}: the rail stays clear of the text: ${JSON.stringify(actual)}`);
+  assert.ok(actual.gap <= 48, `${state}: the rail sits beside the chat column, not at the window edge: ${JSON.stringify(actual)}`);
   assert.ok(actual.left >= actual.paneLeft && actual.right <= actual.paneRight,
     `${state}: the full rail hit area must stay in its chat pane: ${JSON.stringify(actual)}`);
 }
@@ -32,7 +33,7 @@ async function shot(page, theme, state) {
   await page.screenshot({ path: path.join(process.env.ELPIS_PARITY_SHOTS, `prompt-rail-alignment-${theme}-${state}.png`) });
 }
 
-for (const colorScheme of ['light', 'dark']) test(`prompt rail keeps its pane edge through pane and reading-width changes (${colorScheme})`, async () => {
+for (const colorScheme of ['light', 'dark']) test(`prompt rail stays beside the chat column through pane and reading-width changes (${colorScheme})`, async () => {
   const f = await fixture({ width: 1920, height: 800, colorScheme, showScrollbars: true });
   const { page } = f;
   try {
