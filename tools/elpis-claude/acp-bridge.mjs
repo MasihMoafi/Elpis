@@ -3327,7 +3327,7 @@ wss.on("connection", (ws) => {
       toTui({ id: msg.id, result: { status: subscribed ? "unsubscribed" : "notSubscribed" } });
       checkIdle(); return;
     }
-    if (msg.method && owner && owner.ws !== ws && (!owner.nativeHelper || ["thread/resume", "thread/read", "thread/turns/list", "thread/items/list", "thread/settings/update", "turn/start", "turn/steer", "turn/interrupt"].includes(msg.method))) {
+    if (msg.method && owner && owner.ws !== ws && (!owner.nativeHelper || ["thread/resume", "thread/read", "thread/subscribe", "thread/turns/list", "thread/items/list", "thread/settings/update", "turn/start", "turn/steer", "turn/interrupt"].includes(msg.method))) {
       owner.dispatch(msg, ws); return;
     }
     if (pendingMirrors.has(msg.params?.threadId) && ["turn/start", "thread/settings/update", "thread/fork", "thread/revert", "thread/archive", "thread/delete"].includes(msg.method)) {
@@ -3342,6 +3342,7 @@ wss.on("connection", (ws) => {
       return;
     }
     if (msg.method === "thread/delete") { deleteThread(msg); return; }
+    if (msg.method === "thread/subscribe") openingReplies.add(msg.id);
     if (["thread/start", "thread/fork", "thread/resume"].includes(msg.method)) {
       openingReplies.add(msg.id);
       const appMcp = appMcpConfig(msg.params?.config);
@@ -3359,7 +3360,7 @@ wss.on("connection", (ws) => {
       }).catch((e) => toTui({ id: msg.id, error: { code: -32603, message: e.message } }));
       return;
     }
-    if ((msg.method === "thread/read" || msg.method === "thread/resume") && childIds.has(msg.params?.threadId)) { answerChild(msg); return; }
+    if ((msg.method === "thread/read" || msg.method === "thread/resume" || msg.method === "thread/subscribe") && childIds.has(msg.params?.threadId)) { answerChild(msg); return; }
     if (msg.method === "thread/read" && msg.params?.includeTurns) {
       (async () => {
         await storeChain;

@@ -5,7 +5,7 @@ export type Thread = {
   reasoningEffort?: string | null; serviceTier?: string | null; parentThreadId?: string | null; forkedFromId?: string | null;
   updatedAt?: number; recencyAt?: number; createdAt?: number;
   archivedAt?: number | null; archiveReason?: string;
-  agentNickname?: string | null; agentRole?: string | null;
+  agentNickname?: string | null; agentRole?: string | null; canAcceptDirectInput?: boolean | null;
   source?: string | {subAgent?:unknown;custom?:string};
   status?: { type: string; activeFlags?: string[] };
   desktopAccess?: { writable: boolean; mode?: "direct" | "continue"; canContinue?: boolean; reason: string | null };

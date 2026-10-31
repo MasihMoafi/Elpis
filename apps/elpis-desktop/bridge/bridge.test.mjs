@@ -127,6 +127,7 @@ function fixture({ prunerSupported = false, omitWorkflowParentInList = false, re
         result = { data: data.map(thread => ({ ...thread, forkedFromId: null, ...(omitWorkflowParentInList && thread.source?.subAgent?.other?.startsWith('work_graph:') ? {parentThreadId:null} : {}) })), nextCursor }; break;
       }
       case 'thread/read': result = { thread: structuredClone(threads.get(request.params.threadId)) }; break;
+      case 'thread/subscribe': result = { thread: structuredClone(threads.get(request.params.threadId)) }; break;
       // Like the engine (thread_processor.rs), an archived chat refuses to resume, naming the terminal's command.
       case 'thread/resume': if (threads.get(request.params.threadId)?.archived) { queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, error: { code: -32600, message: `session ${request.params.threadId} is archived. Run \`codex unarchive ${request.params.threadId}\` to unarchive it first.` } }))); return; }
         result = { ...(engineSettings.has(request.params.threadId) ? (({ sandboxPolicy, ...rest }) => ({ ...rest, sandbox: sandboxPolicy }))(engineSettings.get(request.params.threadId)) : {}), thread: structuredClone(threads.get(request.params.threadId)), model: threads.get(request.params.threadId).model ?? MODEL, collaborationMode: threads.get(request.params.threadId).collaborationMode, initialTurnsPage: { data: threads.get(request.params.threadId).status?.type === 'active' ? [{ id: 'running-turn', status: 'inProgress' }] : [] } }; break;
@@ -593,12 +594,18 @@ test('existing chats are written directly after a native rejoin; parent-owned ag
   assert.deepEqual(listed.data.map(thread => [thread.desktopAccess.writable, thread.desktopAccess.mode]), [[true, 'direct'], [false, 'continue']]);
   assert.ok(socket.sent.find(row => row.method === 'thread/list').params.sourceKinds.includes('subAgentThreadSpawn'));
   await new Promise(resolve => setImmediate(resolve));
-  assert.deepEqual(socket.sent.filter(row => row.method === 'thread/resume').map(row => row.params.threadId), [CHILD], 'working agents are followed live');
+  assert.deepEqual(socket.sent.filter(row => row.method === 'thread/subscribe').map(row => row.params.threadId), [CHILD], 'working agents are followed live without resuming them');
+  const liveChild = await client.resume(CHILD, {});
+  assert.equal(liveChild.activeTurnId, 'running-turn');
+  assert.equal(liveChild.thread.desktopAccess.writable, false);
+  assert.equal(socket.sent.some(row => ['thread/resume', 'thread/settings/update', 'turn/start'].includes(row.method) && row.params.threadId === CHILD), false);
+  const events = []; client.on('event', event => events.push(event));
+  socket.emit('message', JSON.stringify({ method: 'item/agentMessage/delta', params: { threadId: CHILD, turnId: 'running-turn', itemId: 'child-message', delta: 'live child' } }));
+  assert.ok(events.some(event => event.data?.method === 'item/agentMessage/delta' && event.data.params.delta === 'live child'));
   const child = await client.readThread(CHILD);
   assert.equal(child.data[0].item.text, 'Actual fixture transcript');
   await client.send(ROOT, { text: 'Continue the root' });
   assert.deepEqual(socket.sent.filter(row => row.method === 'thread/resume').map(row => row.params), [
-    { threadId: CHILD, excludeTurns: true, initialTurnsPage: { limit: 1, sortDirection: 'desc', itemsView: 'summary' } },
     { threadId: ROOT, excludeTurns: true, initialTurnsPage: { limit: 1, sortDirection: 'desc', itemsView: 'summary' } }]);
   assert.deepEqual(socket.sent.filter(row => row.method === 'turn/start').map(row => row.params.threadId), [ROOT]);
   // Elpis refuses direct turns for a multi-agent v2 agent, so its history continues in a fork with its model.
