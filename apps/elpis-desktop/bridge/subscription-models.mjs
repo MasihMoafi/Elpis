@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 const MINUTES = 10;
-let cached = null;
+const cached = new Map(); // provider → { at, result }
 
 /** Maps one `debug models` entry to the shape model/list returns. */
 export const toModel = entry => ({
@@ -18,16 +18,19 @@ export const toModel = entry => ({
 });
 
 /** `run` is replaceable for tests; it resolves to the command's stdout. */
-export async function subscriptionModels({ env = process.env, now = Date.now(), run = defaultRun } = {}) {
-  if (cached && now - cached.at < MINUTES * 60000) return cached.result;
+/** `provider` is a connection the engine signs in to itself (ChatGPT `openai`, or one configured such as `anthropic-credits`). */
+export async function subscriptionModels({ env = process.env, now = Date.now(), run = defaultRun, provider = 'openai' } = {}) {
+  if (!/^[a-z][a-z0-9_-]*$/.test(provider)) throw new Error('Choose an existing configured connection.');
+  const hit = cached.get(provider);
+  if (hit && now - hit.at < MINUTES * 60000) return hit.result;
   const engine = env.ELPIS_ENGINE_BIN || path.join(os.homedir(), '.local', 'bin', 'elpis-next');
-  const parsed = JSON.parse(await run(engine, ['-c', 'model_provider=openai', 'debug', 'models'], env));
-  if (!Array.isArray(parsed?.models)) throw new Error('The ChatGPT model list could not be read.');
+  const parsed = JSON.parse(await run(engine, ['-c', `model_provider=${provider}`, 'debug', 'models'], env));
+  if (!Array.isArray(parsed?.models)) throw new Error(`The ${provider} model list could not be read.`);
   const result = { data: parsed.models.map(toModel).filter(model => !model.hidden), nextCursor: null };
-  cached = { at: now, result };
+  cached.set(provider, { at: now, result });
   return result;
 }
-export const forgetSubscriptionModels = () => { cached = null; };
+export const forgetSubscriptionModels = () => { cached.clear(); };
 
 function defaultRun(command, args, env) {
   return new Promise((resolve, reject) => execFile(command, args, { env, timeout: 30000, maxBuffer: 8 << 20 }, (error, stdout) => error ? reject(error) : resolve(stdout)));

@@ -24,6 +24,17 @@ test('the engine is asked for the openai catalog with the profile home; hidden m
   assert.equal(calls.length, 2, 'read again after ten minutes');
 });
 
+test('another engine-signed connection lists its own models, kept apart from ChatGPT\'s (1 Nov: the Anthropic credits vanished)', async () => {
+  forgetSubscriptionModels();
+  const calls = [];
+  const claude = JSON.stringify({ models: [{ slug: 'claude-haiku-5-5', display_name: 'Claude Haiku 5.5', visibility: 'list' }] });
+  const run = async (command, args) => { calls.push(args[1]); return args[1] === 'model_provider=anthropic-credits' ? claude : catalog; };
+  assert.deepEqual((await subscriptionModels({ run, now: 0, provider: 'anthropic-credits' })).data.map(model => model.model), ['claude-haiku-5-5']);
+  assert.deepEqual((await subscriptionModels({ run, now: 0 })).data.map(model => model.model), ['gpt-6-luna']);
+  assert.deepEqual(calls, ['model_provider=anthropic-credits', 'model_provider=openai']);
+  await assert.rejects(subscriptionModels({ run, now: 0, provider: 'x;rm' }), /existing configured connection/);
+});
+
 test('an unreadable answer is an error, not an empty menu', async () => {
   forgetSubscriptionModels();
   await assert.rejects(subscriptionModels({ run: async () => '{"nothing":1}', now: 0 }), /could not be read/);
