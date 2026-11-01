@@ -201,7 +201,8 @@ export function PromptRail({ scroller, threadId, entries, onLoadEarlier, onNavig
 
   // The rail sits at a fixed place in the pane, as in ChatGPT; when the pane is too narrow for the column to leave it room,
   // it hides instead of covering the text or moving.
-  const railShown = (indexed?.threadId === threadId ? indexed.data.length : 0) >= 4 || (loaded?.threadId === threadId ? loaded.data.length : 0) >= 4;
+  // The same merged count the render uses below: three indexed prompts and one new one show the rail, so measure it then too.
+  const railShown = new Set([...(indexed?.threadId === threadId ? indexed.data : []), ...(loaded?.threadId === threadId ? loaded.data : [])].map(prompt => prompt.turnId)).size >= 4;
   useLayoutEffect(() => {
     const root = scroller.current, element = rail.current;
     if (!root || !element) return;

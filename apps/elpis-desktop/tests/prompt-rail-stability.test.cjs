@@ -82,9 +82,11 @@ async function shot(page, name) {
 }
 
 test('a late prompt index does not narrow the visible transcript', async () => {
+  // The rail sits 16px into the pane and hides when the column leaves it no room (c35a20a6c, 31 Oct, "prompt rail back at
+  // ChatGPT's place"); beside the team panel and the 1100px reading width, 1450px left none, so the window is wide enough for the rail to show.
   const index = gate();
   const delayed = routes();
-  const f = await fixture({ staticDir: process.env.ELPIS_RENDERER_OUT, width: 1450, height: 820, threads: roots, chat: TURNS.slice(0, 1), storage, routes: {
+  const f = await fixture({ staticDir: process.env.ELPIS_RENDERER_OUT, width: 2000, height: 820, threads: roots, chat: TURNS.slice(0, 1), storage, routes: {
     ...delayed,
     '/api/threads/chat-a/prompts': async () => {
       await index.wait();
@@ -108,8 +110,10 @@ test('a late prompt index does not narrow the visible transcript', async () => {
 });
 
 test('a new visible prompt can reveal the rail without moving the transcript', async () => {
+  // The rail sits 16px into the pane and hides when the column leaves it no room (c35a20a6c, 31 Oct, "prompt rail back at
+  // ChatGPT's place"); beside the team panel and the 1100px reading width, 1450px left none, so the window is wide enough for the rail to show.
   const base = routes();
-  const f = await fixture({ staticDir: process.env.ELPIS_RENDERER_OUT, width: 1450, height: 820, threads: roots, chat: TURNS.slice(0, 1), storage, routes: {
+  const f = await fixture({ staticDir: process.env.ELPIS_RENDERER_OUT, width: 2000, height: 820, threads: roots, chat: TURNS.slice(0, 1), storage, routes: {
     ...base,
     '/api/threads/chat-a/prompts': () => ({ threadId: 'chat-a', data: [
       { turnId: 'old-one', text: 'Earlier one' }, { turnId: 'old-two', text: 'Earlier two' }, { turnId: 't1', text: TURNS[0][1] },
