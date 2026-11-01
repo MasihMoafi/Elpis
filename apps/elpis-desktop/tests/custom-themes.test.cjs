@@ -26,11 +26,16 @@ test('all visible Elpis wordmarks follow the chosen accent in light and dark', a
       await chooseOption(page.getByLabel('Accent colour', { exact: true }), accent);
       await page.waitForFunction(value => document.documentElement.dataset.accent === value, accent);
       await leaveSettings(page);
-      const color = await page.locator('.brand-home svg stop[stop-color="var(--primary)"]').first().evaluate(stop => getComputedStyle(stop).stopColor);
-      const expected = await page.evaluate(() => {
-        const el = document.createElement('span'); el.style.color = 'var(--primary)';
-        document.body.append(el); const value = getComputedStyle(el).color; el.remove(); return value;
-      });
+      // The light mark's main stop is the accent itself. The dark mark keeps the approved Orange shading as OKLCH
+      // transforms of the accent (Masih, 31 Oct, commit 4b993137f "Preserve the approved wordmark shading across themes";
+      // exact values are pinned by wordmark-gradient.test.cjs), so its core stop is that transform of the selected accent.
+      const [token, accentColour] = mode === 'Light' ? ['var(--primary)', 'var(--primary)']
+        : ['var(--wordmark-core)', 'oklch(from var(--primary) calc(l * .978078) calc(c * .949257) calc(h - 2.700273))'];
+      const { color, expected } = await page.locator(`.brand-home svg stop[stop-color="${token}"]`).first().evaluate((stop, value) => {
+        const probe = document.createElement('span'); probe.style.color = value;
+        document.body.append(probe); const expected = getComputedStyle(probe).color; probe.remove();
+        return { color: getComputedStyle(stop).stopColor, expected };
+      }, accentColour);
       assert.equal(color, expected, `${mode} ${accent}: wordmark uses the selected accent`);
       assert.ok((await page.locator('.brand-home').boundingBox()).width > 60, 'logo retains its width beside the sidebar toggle');
       if (evidence && accent === 'teal') {
