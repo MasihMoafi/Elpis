@@ -286,6 +286,13 @@ pub(crate) struct Translation {
 }
 
 impl Translation {
+    /// Anthropic: binds the thinking blocks this stream yields to the request that asked.
+    pub(crate) fn bind_thinking(&mut self, binding: String) {
+        if let VendorStream::Anthropic(stream) = &mut self.vendor {
+            stream.bind_thinking(binding);
+        }
+    }
+
     pub(crate) fn new(wire: GatewayWire, tools: ToolMap) -> Self {
         let vendor = match wire {
             GatewayWire::Chat => VendorStream::Chat(ChatStream::default()),

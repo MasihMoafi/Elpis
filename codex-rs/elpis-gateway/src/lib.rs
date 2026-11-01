@@ -359,10 +359,12 @@ async fn serve_responses(
         let text = response.text().await.unwrap_or_default();
         return Err(GatewayError::from_vendor(status, &text, &route.provider_id));
     }
-    Ok(stream_response(
-        response,
-        Translation::new(route.wire, conversation.tool_map),
-    ))
+    let mut translation = Translation::new(route.wire, conversation.tool_map);
+    if route.wire == GatewayWire::AnthropicMessages {
+        let sent = vendor_body["messages"].as_array().map_or(0, Vec::len);
+        translation.bind_thinking(anthropic::thinking_binding(&vendor_body, sent));
+    }
+    Ok(stream_response(response, translation))
 }
 
 /// Translates the vendor's SSE stream as it arrives. A client that goes away stops the read.

@@ -8,6 +8,8 @@ use std::collections::HashMap;
 
 use serde_json::Value;
 use serde_json::json;
+use sha2::Digest;
+use sha2::Sha256;
 
 use crate::GatewayError;
 use crate::conversation::ANTHROPIC_THINKING_PREFIX;
@@ -244,7 +246,76 @@ pub(crate) fn request(conversation: &Conversation) -> Result<Value, GatewayError
                 .collect(),
         );
     }
+    keep_only_bound_thinking(&mut body);
     Ok(body)
+}
+
+/// The field, in the gateway's own reasoning state only, that records what a signed thinking
+/// block is bound to. It never reaches Anthropic.
+const BINDING_FIELD: &str = "elpis_binding";
+
+/// What a signed thinking block in the assistant turn after `messages_before` messages is bound
+/// to: the model, system, tools and those messages exactly as sent. Anthropic rejects a block
+/// replayed under any other prefix ("bound to a different conversation", 1 Nov).
+pub(crate) fn thinking_binding(body: &Value, messages_before: usize) -> String {
+    let messages = body["messages"]
+        .as_array()
+        .map(|messages| &messages[..messages_before.min(messages.len())])
+        .unwrap_or_default();
+    let prefix = json!({
+        "model": body["model"],
+        "system": body["system"],
+        "tools": body["tools"],
+        "messages": messages,
+    });
+    format!("{:x}", Sha256::digest(prefix.to_string().as_bytes()))
+}
+
+/// Replays a thinking block only into the conversation it was produced in: a fork, a child
+/// agent's history shown to another agent, or a changed system or tool list drops it. An
+/// assistant message left empty is removed, and same-role neighbours are joined.
+fn keep_only_bound_thinking(body: &mut Value) {
+    let count = body["messages"].as_array().map_or(0, Vec::len);
+    for index in 0..count {
+        if body["messages"][index]["role"] != "assistant" {
+            continue;
+        }
+        let binding = thinking_binding(body, index);
+        if let Some(content) = body["messages"][index]["content"].as_array_mut() {
+            content.retain_mut(|block| {
+                if !matches!(
+                    block["type"].as_str(),
+                    Some("thinking" | "redacted_thinking")
+                ) {
+                    return true;
+                }
+                let bound = block
+                    .as_object_mut()
+                    .and_then(|block| block.remove(BINDING_FIELD));
+                bound.as_ref().and_then(Value::as_str) == Some(binding.as_str())
+            });
+        }
+    }
+    let Some(messages) = body["messages"].as_array_mut() else {
+        return;
+    };
+    let mut joined: Vec<Value> = Vec::with_capacity(messages.len());
+    for message in messages.drain(..) {
+        if message["content"].as_array().is_some_and(Vec::is_empty) {
+            continue;
+        }
+        match joined.last_mut() {
+            Some(last) if last["role"] == message["role"] => {
+                if let (Some(into), Some(from)) =
+                    (last["content"].as_array_mut(), message["content"].as_array())
+                {
+                    into.extend(from.iter().cloned());
+                }
+            }
+            _ => joined.push(message),
+        }
+    }
+    *messages = joined;
 }
 
 /// One content block for a message part. An image becomes an image block: a base64 data URL
@@ -348,9 +419,15 @@ pub(crate) struct AnthropicStream {
     tools: HashMap<u64, ToolAccumulator>,
     thinking: HashMap<u64, Value>,
     called_tool: bool,
+    /// `thinking_binding` of the request this stream answers; stored with each thinking block.
+    binding: Option<String>,
 }
 
 impl AnthropicStream {
+    pub(crate) fn bind_thinking(&mut self, binding: String) {
+        self.binding = Some(binding);
+    }
+
     pub(crate) fn on_event(
         &mut self,
         event: &str,
@@ -468,7 +545,10 @@ impl AnthropicStream {
                 }
             }
             "content_block_stop" => {
-                if let Some(block) = self.thinking.remove(&index) {
+                if let Some(mut block) = self.thinking.remove(&index) {
+                    if let Some(binding) = &self.binding {
+                        block[BINDING_FIELD] = json!(binding);
+                    }
                     out.reasoning_state(format!("{ANTHROPIC_THINKING_PREFIX}{block}"));
                 }
                 if let Some(tool) = self.tools.remove(&index) {

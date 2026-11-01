@@ -406,9 +406,9 @@ fn thinking_stays_off_without_an_effort_or_for_models_that_cannot_think() {
     assert!(!body["messages"].to_string().contains("\"thinking\""));
 }
 
-#[test]
-fn thinking_blocks_are_kept_and_replayed_before_the_tool_call() {
-    let events = vec![
+/// The thinking stream of one turn, signed `SIG`.
+fn thinking_turn() -> Vec<(&'static str, String)> {
+    vec![
         event(
             "content_block_start",
             json!({"type": "content_block_start", "index": 0, "content_block": {"type": "thinking", "thinking": ""}}),
@@ -430,22 +430,45 @@ fn thinking_blocks_are_kept_and_replayed_before_the_tool_call() {
             json!({"type": "content_block_stop", "index": 0}),
         ),
         event("message_stop", json!({"type": "message_stop"})),
-    ];
-    let out = run(&events, /*close*/ true);
-    let state = out
+    ]
+}
+
+/// The reasoning state the gateway hands core for a turn that answered `request`.
+fn thinking_state_for(request: &Value) -> String {
+    let events: Vec<(&str, String)> = thinking_turn();
+    let events: Vec<(&str, &str)> = events
+        .iter()
+        .map(|(kind, data)| (*kind, data.as_str()))
+        .collect();
+    translate(GatewayWire::AnthropicMessages, request, &events, /*close*/ true)
         .iter()
         .find(|event| event["item"]["type"] == "reasoning" && event["type"] == "response.output_item.done")
         .and_then(|event| event["item"]["encrypted_content"].as_str())
         .expect("a reasoning item carries the thinking block")
-        .to_string();
+        .to_string()
+}
 
-    let history = json!([
+fn opus_request(input: Value) -> Value {
+    let mut raw = responses_request(input, core_tools());
+    raw["model"] = json!("claude-opus-5-5");
+    raw["reasoning"] = json!({"effort": "low"});
+    raw
+}
+
+fn replay(input: Value) -> Value {
+    request(&conversation(&opus_request(input))).expect("the request translates")
+}
+
+#[test]
+fn thinking_blocks_are_kept_and_replayed_before_the_tool_call() {
+    let state = thinking_state_for(&opus_request(hello()));
+    let body = replay(json!([
         {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "Hi"}]},
         {"type": "reasoning", "summary": [], "encrypted_content": state},
         {"type": "function_call", "call_id": "c1", "name": "exec_command", "arguments": "{}"},
         {"type": "function_call_output", "call_id": "c1", "output": "ok"},
-    ]);
-    let body = request_with_effort("claude-opus-5-5", Some("low"), history);
+    ]));
+    // Replayed exactly as Anthropic signed it: the gateway's binding never leaves it.
     assert_eq!(
         body["messages"][1]["content"],
         json!([
@@ -453,6 +476,62 @@ fn thinking_blocks_are_kept_and_replayed_before_the_tool_call() {
             {"type": "tool_use", "id": "c1", "name": "exec_command", "input": {}},
         ])
     );
+}
+
+/// 1 Nov, a Workflows run on Haiku 5.5 via the Anthropic credits: "Invalid `signature` in
+/// `thinking` block. The block is bound to a different conversation." A block signed in one
+/// conversation and replayed in another (a fork, a child agent's history, changed instructions)
+/// is dropped, so the request is accepted.
+#[test]
+fn a_thinking_block_from_another_conversation_is_not_replayed() {
+    let state = thinking_state_for(&opus_request(hello()));
+    let tool_turn = |opening: &str| {
+        json!([
+            {"type": "message", "role": "user", "content": [{"type": "input_text", "text": opening}]},
+            {"type": "reasoning", "summary": [], "encrypted_content": state},
+            {"type": "function_call", "call_id": "c1", "name": "exec_command", "arguments": "{}"},
+            {"type": "function_call_output", "call_id": "c1", "output": "ok"},
+        ])
+    };
+    // Another conversation: a different opening message before the same assistant turn.
+    let other = replay(tool_turn("A child agent's task"));
+    assert!(!other["messages"].to_string().contains("\"thinking\""), "{other}");
+    assert_eq!(
+        other["messages"][1]["content"],
+        json!([{"type": "tool_use", "id": "c1", "name": "exec_command", "input": {}}])
+    );
+    // The same conversation under other instructions is another conversation too.
+    let mut raw = opus_request(tool_turn("Hi"));
+    raw["instructions"] = json!("You are the Mother agent.");
+    let forked = request(&conversation(&raw)).expect("the request translates");
+    assert!(!forked["messages"].to_string().contains("\"thinking\""));
+    // A block stored before bindings existed is never replayed either.
+    let unbound = format!(
+        "{ANTHROPIC_THINKING_PREFIX}{}",
+        json!({"type": "thinking", "thinking": "t", "signature": "s"})
+    );
+    let legacy = replay(json!([
+        {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "Hi"}]},
+        {"type": "reasoning", "summary": [], "encrypted_content": unbound},
+        {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "Done."}]},
+        {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "Next"}]},
+    ]));
+    assert!(!legacy["messages"].to_string().contains("\"thinking\""));
+    assert_eq!(legacy["messages"].as_array().map(Vec::len), Some(3));
+}
+
+/// A block whose assistant turn held nothing else leaves no empty message behind.
+#[test]
+fn dropping_a_lone_thinking_block_leaves_no_empty_assistant_message() {
+    let state = thinking_state_for(&opus_request(hello()));
+    let body = replay(json!([
+        {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "Other"}]},
+        {"type": "reasoning", "summary": [], "encrypted_content": state},
+        {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "Again"}]},
+    ]));
+    let messages = body["messages"].as_array().expect("messages");
+    assert!(messages.iter().all(|message| message["content"].as_array().is_some_and(|c| !c.is_empty())));
+    assert!(messages.windows(2).all(|pair| pair[0]["role"] != pair[1]["role"]), "{body}");
 }
 
 /// Each level a model offers reaches the request as `output_config.effort` unchanged, including

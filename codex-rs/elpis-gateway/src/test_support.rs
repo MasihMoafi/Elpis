@@ -61,6 +61,12 @@ pub(crate) fn translate(
     close: bool,
 ) -> Vec<Value> {
     let mut translation = Translation::new(wire, conversation(request).tool_map);
+    if wire == GatewayWire::AnthropicMessages
+        && let Ok(body) = crate::anthropic::request(&conversation(request))
+    {
+        let sent = body["messages"].as_array().map_or(0, Vec::len);
+        translation.bind_thinking(crate::anthropic::thinking_binding(&body, sent));
+    }
     let mut out = translation.start();
     for (event, data) in events {
         out.extend(translation.push(event, data));
