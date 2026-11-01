@@ -245,6 +245,8 @@ jobs:
         id: runtime_build
         if: ${{ !cancelled() && inputs.verification != 'ui' }}
         working-directory: codex-rs
+        env:
+          CARGO_BUILD_JOBS: '4'
         run: |
           cargo build --release --locked -p codex-cli --bin codex -p codex-code-mode-host --bin codex-code-mode-host
           env -u CODEX_SKIP_BWRAP_BUILD cargo build --release --locked -p codex-bwrap --bin bwrap
@@ -308,120 +310,6 @@ jobs:
             !${{ runner.temp }}/elpis-ledger-native/trash-data/**
           if-no-files-found: error
           retention-days: 7
-      - name: Prove status regression detects the original missing instructions
-        if: ${{ !cancelled() && inputs.verification != 'build' }}
-        working-directory: codex-rs
-        shell: bash
-        run: |
-          set -euo pipefail
-          status_source=tui/src/chatwidget/status_controls.rs
-          # Parent of 85ad6c41e, before /status included admitted Ledger instructions.
-          status_baseline=653ff4e7e1868265c5c5868521f79346135b9cf8
-          original_status="$status_baseline:codex-rs/$status_source"
-          trap 'git restore --source=HEAD --worktree -- "$status_source"' EXIT
-          # Keep the pinned baseline available after it leaves the shallow checkout.
-          if ! git cat-file -e "$original_status"; then
-            git fetch --no-tags --depth=1 origin "$status_baseline"
-          fi
-          git show "$original_status" > "$status_source"
-          # A75 added a caller; the original implementation did not refresh status.
-          cat >> "$status_source" <<'RS'
-
-          impl ChatWidget {
-              pub(super) fn refresh_status_instruction_sources(&self) {}
-          }
-          RS
-          set +e
-          cargo test --profile dev-small --locked -p codex-tui --lib \
-            chatwidget::tests::status_command_tests::status_command_reports_admitted_development_rules \
-            -- --exact --nocapture 2>&1 | tee "$RUNNER_TEMP/elpis-status-negative-checks.log"
-          control_status=${PIPESTATUS[0]}
-          set -e
-          test "$control_status" -ne 0
-          rg -q 'test result: FAILED\. 0 passed; 1 failed;' "$RUNNER_TEMP/elpis-status-negative-checks.log"
-          # --nocapture interleaves stdout/stderr; identity need not start a line.
-          rg -Fq 'chatwidget::tests::status_command_tests::status_command_reports_admitted_development_rules' "$RUNNER_TEMP/elpis-status-negative-checks.log"
-          rg -q '/status omitted an admitted development rule' "$RUNNER_TEMP/elpis-status-negative-checks.log"
-      - name: Native UI and retained Elpis interaction tests
-        env:
-          INSTA_UPDATE: new
-          INSTA_FORCE_PASS: '1'
-        if: ${{ !cancelled() && inputs.verification != 'build' }}
-        working-directory: codex-rs
-        shell: bash
-        run: |
-          # The product's working label appears across the TUI; review every affected render.
-          cargo test --profile dev-small --locked -p codex-tui --lib 2>&1 | tee "$RUNNER_TEMP/elpis-ui-checks.log"
-          # Collect all renders in each test, while still rejecting unreviewed changes.
-          shopt -s globstar nullglob
-          snapshots=(tui/**/*.snap.new tui/**/.*.pending-snap)
-          if ((${#snapshots[@]})); then
-            printf 'Rendering changes require review: %s snapshots\n' "${#snapshots[@]}"
-            exit 1
-          fi
-      - name: Preserve UI failures and rendering snapshots immediately
-        if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: candidate-rendering-differences
-          path: |
-            ${{ runner.temp }}/elpis-ui-checks.log
-            ${{ runner.temp }}/elpis-status-negative-checks.log
-            codex-rs/**/*.snap.new
-            codex-rs/**/.*.pending-snap
-          include-hidden-files: true
-          if-no-files-found: ignore
-          retention-days: 7
-      - name: Core permissions and continuity unit tests
-        if: ${{ !cancelled() && inputs.verification != 'ui' && inputs.verification != 'build' }}
-        working-directory: codex-rs
-        run: |
-          cargo test --profile dev-small --locked -p codex-core --lib -- \
-            elpis_ memory_save save_memory smart_prune compact_instructions world_state build_agent_spawn_config \
-            live_permissions inherited_permissions step_activation thread_settings turn_input \
-            loaded_children_give_up_the_full_access_their_parent_gives_up \
-            revocation regains_full_access \
-            recompute_token_usage record_initial_history_seeds_token_info_from_rollout
-          # A chat whose earlier rollout is gone still opens (24 Oct, his rust-obsidian chat).
-          cargo test --profile dev-small --locked -p codex-thread-store --lib -- \
-            rollout_lineage model_context list_items_reads_what_remains list_items_pages_whole_thread
-          # Its history pages say the earliest part is missing (the desktop's note).
-          cargo test --profile dev-small --locked -p codex-app-server-protocol --lib -- thread_items_list_round_trips
-      - name: Context and session integration tests
-        if: ${{ !cancelled() && inputs.verification != 'ui' && inputs.verification != 'build' }}
-        working-directory: codex-rs
-        shell: bash
-        run: |
-          cargo test --profile dev-small --locked -p codex-core --test all -- \
-            elpis_ledger_admission elpis_context_attribution work_graphs settings_commits \
-            agents_md scenarios_shared_instructions \
-            deferred_executor_promotes_primary_environment_when_startup_completes \
-            deferred_executor_stays_pending_after_materialization \
-            deferred_executor_loads_agents_md_when_environment_becomes_ready \
-            auto_compact_accounts_for_encrypted_reasoning 2>&1 | tee "$RUNNER_TEMP/elpis-integration-checks.log"
-          cargo test --profile dev-small --locked -p codex-app-server --test all -- \
-            elpis_instructions_read turn_settings_update thread_read_paginated_carrier_persists_before_first_turn \
-            thread_register_copied_codex_rollout_lists_reads_resumes_and_forks_idempotently \
-            thread_register_rejects_external_and_malformed_rollouts \
-            list_models_refresh \
-            2>&1 | tee -a "$RUNNER_TEMP/elpis-integration-checks.log"
-      - name: Preserve UI and integration check diagnostics
-        if: ${{ !cancelled() && inputs.verification != 'build' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: candidate-check-diagnostics
-          path: ${{ runner.temp }}/elpis-*-checks.log
-          if-no-files-found: error
-          retention-days: 7
-      - name: Provider configuration and CLI tests
-        if: ${{ !cancelled() && inputs.verification != 'ui' && inputs.verification != 'build' }}
-        working-directory: codex-rs
-        run: |
-          cargo test --profile dev-small --locked -p codex-elpis-gateway --lib
-          cargo test --profile dev-small --locked -p codex-model-provider-info --lib
-          cargo test --profile dev-small --locked -p codex-external-agent-migration --lib claude_home_follows_claude_config_dir
-          cargo test --profile dev-small --locked -p codex-cli --lib
-          cargo test --profile dev-small --locked -p codex-tui --lib branding::tests
       - name: Native permission regressions
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification != 'build' }}
         run: node scripts/permissions-runtime.test.cjs "$PWD/codex-rs/target/release/elpis"
@@ -557,9 +445,201 @@ jobs:
             codex-rs/target
           key: ${{ steps.cargo_cache.outputs.cache-primary-key }}
 
+  # The Rust test builds (dev-small) need no release binary, so they run beside the build on their own runner
+  # (1 Nov: one runner did both in ~111 minutes).
+  rust-tests:
+    if: github.event_name != 'workflow_dispatch' || inputs.verification == 'full' || inputs.verification == 'ui'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    defaults:
+      run:
+        shell: bash
+    env:
+      CODEX_SKIP_BWRAP_BUILD: '1'
+      CARGO_BUILD_JOBS: '3'
+      RUST_TEST_THREADS: '1'
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 50
+      - uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7
+        id: cargo_cache
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            codex-rs/target
+          # Build-only runs keep a small release-only cache of their own, so the next one compiles only what changed.
+          key: elpis-040-tests-${{ runner.os }}-${{ hashFiles('codex-rs/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            elpis-040-tests-${{ runner.os }}-${{ hashFiles('codex-rs/Cargo.lock') }}-
+            elpis-040-${{ runner.os }}-${{ hashFiles('codex-rs/Cargo.lock') }}-
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Install build dependencies and Rust
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libcap-dev libssl-dev pkg-config strace iproute2 tmux ripgrep
+          rustup toolchain install 1.95.0 --profile minimal --no-self-update
+          # This disposable runner must permit the namespaces that the sandbox tests create.
+          # https://github.com/ubuntu/ubuntu-release-notes/blob/main/docs/24.04/index.md
+          if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+      - name: Read the Elpis version from the CLI manifest
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' codex-rs/cli/Cargo.toml | head -n 1)
+          test -n "$version"
+          echo "ELPIS_VERSION=$version" >> "$GITHUB_ENV"
+      - name: Download and verify the pinned sandbox V8
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=https://github.com/openai/codex/releases/download/rusty-v8-v150.4.0
+          directory="$RUNNER_TEMP/elpis-v8"
+          mkdir -p "$directory"
+          archive=librusty_v8_ptrcomp_sandbox_release_x86_64-unknown-linux-gnu.a.gz
+          binding=src_binding_ptrcomp_sandbox_release_x86_64-unknown-linux-gnu.rs
+          curl -fL "$base/$archive" -o "$directory/$archive"
+          curl -fL "$base/$binding" -o "$directory/$binding"
+          printf '%s  %s\n' a35c75d1f26e6a983885a45b33490a4ebe54f05050568b32b89cfb421b30b583 "$archive" \
+            7727826ae479bdb645e807239fb12d1f8e2e23de7a6cf16f5ee592690d1d8506 "$binding" > "$directory/SHA256SUMS"
+          (cd "$directory" && sha256sum -c SHA256SUMS)
+          echo "RUSTY_V8_ARCHIVE=$directory/$archive" >> "$GITHUB_ENV"
+          echo "RUSTY_V8_SRC_BINDING_PATH=$directory/$binding" >> "$GITHUB_ENV"
+      - name: Reuse only unchanged cached Rust sources
+        env:
+          CACHE_KEY: ${{ steps.cargo_cache.outputs.cache-matched-key }}
+        run: |
+          bash scripts/restore-cargo-cache-source-times.sh "$CACHE_KEY"
+      - name: Prove status regression detects the original missing instructions
+        if: ${{ !cancelled() && inputs.verification != 'build' }}
+        working-directory: codex-rs
+        shell: bash
+        run: |
+          set -euo pipefail
+          status_source=tui/src/chatwidget/status_controls.rs
+          # Parent of 85ad6c41e, before /status included admitted Ledger instructions.
+          status_baseline=653ff4e7e1868265c5c5868521f79346135b9cf8
+          original_status="$status_baseline:codex-rs/$status_source"
+          trap 'git restore --source=HEAD --worktree -- "$status_source"' EXIT
+          # Keep the pinned baseline available after it leaves the shallow checkout.
+          if ! git cat-file -e "$original_status"; then
+            git fetch --no-tags --depth=1 origin "$status_baseline"
+          fi
+          git show "$original_status" > "$status_source"
+          # A75 added a caller; the original implementation did not refresh status.
+          cat >> "$status_source" <<'RS'
+
+          impl ChatWidget {
+              pub(super) fn refresh_status_instruction_sources(&self) {}
+          }
+          RS
+          set +e
+          cargo test --profile dev-small --locked -p codex-tui --lib \
+            chatwidget::tests::status_command_tests::status_command_reports_admitted_development_rules \
+            -- --exact --nocapture 2>&1 | tee "$RUNNER_TEMP/elpis-status-negative-checks.log"
+          control_status=${PIPESTATUS[0]}
+          set -e
+          test "$control_status" -ne 0
+          rg -q 'test result: FAILED\. 0 passed; 1 failed;' "$RUNNER_TEMP/elpis-status-negative-checks.log"
+          # --nocapture interleaves stdout/stderr; identity need not start a line.
+          rg -Fq 'chatwidget::tests::status_command_tests::status_command_reports_admitted_development_rules' "$RUNNER_TEMP/elpis-status-negative-checks.log"
+          rg -q '/status omitted an admitted development rule' "$RUNNER_TEMP/elpis-status-negative-checks.log"
+      - name: Native UI and retained Elpis interaction tests
+        env:
+          INSTA_UPDATE: new
+          INSTA_FORCE_PASS: '1'
+        if: ${{ !cancelled() && inputs.verification != 'build' }}
+        working-directory: codex-rs
+        shell: bash
+        run: |
+          # The product's working label appears across the TUI; review every affected render.
+          cargo test --profile dev-small --locked -p codex-tui --lib 2>&1 | tee "$RUNNER_TEMP/elpis-ui-checks.log"
+          # Collect all renders in each test, while still rejecting unreviewed changes.
+          shopt -s globstar nullglob
+          snapshots=(tui/**/*.snap.new tui/**/.*.pending-snap)
+          if ((${#snapshots[@]})); then
+            printf 'Rendering changes require review: %s snapshots\n' "${#snapshots[@]}"
+            exit 1
+          fi
+      - name: Preserve UI failures and rendering snapshots immediately
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: candidate-rendering-differences
+          path: |
+            ${{ runner.temp }}/elpis-ui-checks.log
+            ${{ runner.temp }}/elpis-status-negative-checks.log
+            codex-rs/**/*.snap.new
+            codex-rs/**/.*.pending-snap
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Core permissions and continuity unit tests
+        if: ${{ !cancelled() && inputs.verification != 'ui' && inputs.verification != 'build' }}
+        working-directory: codex-rs
+        run: |
+          cargo test --profile dev-small --locked -p codex-core --lib -- \
+            elpis_ memory_save save_memory smart_prune compact_instructions world_state build_agent_spawn_config \
+            live_permissions inherited_permissions step_activation thread_settings turn_input \
+            loaded_children_give_up_the_full_access_their_parent_gives_up \
+            revocation regains_full_access \
+            recompute_token_usage record_initial_history_seeds_token_info_from_rollout
+          # A chat whose earlier rollout is gone still opens (24 Oct, his rust-obsidian chat).
+          cargo test --profile dev-small --locked -p codex-thread-store --lib -- \
+            rollout_lineage model_context list_items_reads_what_remains list_items_pages_whole_thread
+          # Its history pages say the earliest part is missing (the desktop's note).
+          cargo test --profile dev-small --locked -p codex-app-server-protocol --lib -- thread_items_list_round_trips
+      - name: Context and session integration tests
+        if: ${{ !cancelled() && inputs.verification != 'ui' && inputs.verification != 'build' }}
+        working-directory: codex-rs
+        shell: bash
+        run: |
+          cargo test --profile dev-small --locked -p codex-core --test all -- \
+            elpis_ledger_admission elpis_context_attribution work_graphs settings_commits \
+            agents_md scenarios_shared_instructions \
+            deferred_executor_promotes_primary_environment_when_startup_completes \
+            deferred_executor_stays_pending_after_materialization \
+            deferred_executor_loads_agents_md_when_environment_becomes_ready \
+            auto_compact_accounts_for_encrypted_reasoning 2>&1 | tee "$RUNNER_TEMP/elpis-integration-checks.log"
+          cargo test --profile dev-small --locked -p codex-app-server --test all -- \
+            elpis_instructions_read turn_settings_update thread_read_paginated_carrier_persists_before_first_turn \
+            thread_register_copied_codex_rollout_lists_reads_resumes_and_forks_idempotently \
+            thread_register_rejects_external_and_malformed_rollouts \
+            list_models_refresh \
+            2>&1 | tee -a "$RUNNER_TEMP/elpis-integration-checks.log"
+      - name: Preserve UI and integration check diagnostics
+        if: ${{ !cancelled() && inputs.verification != 'build' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: candidate-check-diagnostics
+          path: ${{ runner.temp }}/elpis-*-checks.log
+          if-no-files-found: error
+          retention-days: 7
+      - name: Provider configuration and CLI tests
+        if: ${{ !cancelled() && inputs.verification != 'ui' && inputs.verification != 'build' }}
+        working-directory: codex-rs
+        run: |
+          cargo test --profile dev-small --locked -p codex-elpis-gateway --lib
+          cargo test --profile dev-small --locked -p codex-model-provider-info --lib
+          cargo test --profile dev-small --locked -p codex-external-agent-migration --lib claude_home_follows_claude_config_dir
+          cargo test --profile dev-small --locked -p codex-cli --lib
+          cargo test --profile dev-small --locked -p codex-tui --lib branding::tests
+      - name: Retain test build outputs
+        if: always() && steps.cargo_cache.outputs.cache-hit != 'true' && steps.cargo_cache.outputs.cache-primary-key != ''
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            codex-rs/target
+          key: ${{ steps.cargo_cache.outputs.cache-primary-key }}
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    needs: [build, rust-tests]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
