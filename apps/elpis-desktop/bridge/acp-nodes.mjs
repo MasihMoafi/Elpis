@@ -48,8 +48,11 @@ class AcpProcess {
   #pending = new Map(); #seq = 0; #stderr = '';
   constructor(spec, cwd, { onRequest, onNotification }) {
     const name = spec.name || 'The agent';
-    const env = Object.fromEntries(Object.entries({ ...process.env, ...spec.env }).filter(([, value]) => typeof value === 'string'));
-    this.child = spawn(spec.command, spec.args ?? [], { cwd, env: childEnv(env), stdio: ['pipe', 'pipe', 'pipe'], detached: true });
+    const strings = entries => Object.fromEntries(Object.entries(entries ?? {}).filter(([, value]) => typeof value === 'string'));
+    const env = strings({ ...process.env, ...spec.env });
+    // childEnv drops the Claude settings this process inherited; the ones the spec sets (the selected Claude account) stay.
+    const own = Object.fromEntries(Object.entries(strings(spec.env)).filter(([key]) => /^(CLAUDE|AI_AGENT)/.test(key)));
+    this.child = spawn(spec.command, spec.args ?? [], { cwd, env: { ...childEnv(env), ...own }, stdio: ['pipe', 'pipe', 'pipe'], detached: true });
     const pid = this.child.pid;
     if (pid) { groups.add(pid); this.child.once('exit', () => { endGroup(pid, 'SIGKILL'); groups.delete(pid); }); }
     this.child.stdin.on('error', () => {});
