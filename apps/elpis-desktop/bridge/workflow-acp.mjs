@@ -256,11 +256,12 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
   async function superviseNode(record, task, error, root, controller) {
     if (controller.signal.aborted || task.supervisedRound === record.round) return false;
     task.supervisedRound = record.round;
-    const mother = record.mother ??= { id: 'mother', title: 'Mother agent', model: 'claude/opus', provider: 'claude', reasoningEffort: 'low', progress: [], decisions: [] };
+    // She runs on the model chosen for her chat (the run's root), not on a fixed Opus that spent his Claude subscription.
+    const mother = record.mother ??= { id: 'mother', title: 'Mother agent', model: root.model || 'claude/opus', provider: root.model ? root.modelProvider ?? '' : 'claude', reasoningEffort: 'low', progress: [], decisions: [] };
     mother.decisions ??= []; mother.status = 'running'; await save(record);
     try {
       const instructions = 'You are the Mother agent, the active workflow supervisor. Inspect the failed node and current evidence. Read only; do not edit files, run agents, merge, install or change permissions. Return only JSON: {"action":"retry","taskId":"the failed node","instruction":"specific corrective guidance","reason":"evidence"}, {"action":"steer","taskId":"one currently running node","message":"specific guidance","reason":"evidence"}, or {"action":"stop","reason":"actionable recovery needed"}. Retry only when specific new guidance can address the failure. Never repeat an unchanged failing tool, alter scope, or claim success without checks.';
-      const result = await runNode(record, mother, { model: 'claude/opus', provider: 'claude' }, instructions, { task: `Workflow: ${record.name}. Goal: ${record.goal ?? ''}. Failed node: ${task.id}. Failure: ${error.message}.\nCurrent nodes:\n${JSON.stringify(record.tasks.map(node => ({ id: node.id, status: node.status, instruction: node.instruction, evidence: node.result?.summary?.slice(0, 2000), failure: node.failureReason, recentProgress: node.progress?.slice(-3) }))).slice(0, 22000)}` }, {
+      const result = await runNode(record, mother, { model: mother.model, provider: mother.provider }, instructions, { task: `Workflow: ${record.name}. Goal: ${record.goal ?? ''}. Failed node: ${task.id}. Failure: ${error.message}.\nCurrent nodes:\n${JSON.stringify(record.tasks.map(node => ({ id: node.id, status: node.status, instruction: node.instruction, evidence: node.result?.summary?.slice(0, 2000), failure: node.failureReason, recentProgress: node.progress?.slice(-3) }))).slice(0, 22000)}` }, {
         cwd: root.cwd, signal: controller.signal, timeoutMs: Math.min(timeoutMs ?? Infinity, (record.maxRuntimeSeconds ?? 1800) * 1000),
         onUpdate: update => progress(record, mother, update), onControl: control => controls.set(`${record.id}:mother`, control), onPermission: request => permission(record, mother, request),
       });

@@ -173,10 +173,11 @@ test('failure blocks dependent ACP nodes; an independent node can finish', { tim
   assert.equal(g.tasks.find(n => n.id === 'b').status, 'blocked'); assert.equal(f.log('b').length, 0);
   assert.equal(g.tasks.find(n => n.id === 'c').status, 'succeeded');
 });
-test('the run\'s goal reaches the Mother agent when she rescues a failed step; a run without one sends none', { timeout: 20000 }, async t => {
+test('the Mother agent rescues a failed step on her chat\'s model and knows the run\'s goal; a blank goal is not kept', { timeout: 20000 }, async t => {
   const f = fixture(t); await f.client.initialize();
   const g = await f.finished((await f.run([task('a', [], '[crash]')], { goal: 'Translate the leaflet into Farsi' })).graphId);
   assert.equal(g.goal, 'Translate the leaflet into Farsi');
+  assert.deepEqual([g.mother.model, g.mother.provider], ['m-fast', 'openai'], 'she rescues on her chat\'s model, not a fixed Claude Opus');
   const rescue = f.log('Mother agent').filter(row => row.method === 'session/prompt').map(row => row.params.prompt[0].text).join('\n');
   assert.match(rescue, /Goal: Translate the leaflet into Farsi\./);
   const blank = await f.finished((await f.run([task('b')], { goal: '   ' })).graphId);
