@@ -445,3 +445,45 @@ async fn a_switch_that_fails_keeps_the_follow_up_on_the_old_chat() -> Result<()>
     assert_eq!(turns[0].1, old_model);
     Ok(())
 }
+
+/// A configured connection that is not the one the app server started with, and not served by
+/// the gateway (1 Nov: the Anthropic credits while ChatGPT is the default), is listed live by the
+/// app server (`model/list` with `modelProvider`), not refused with "restart Elpis".
+#[tokio::test]
+async fn another_configured_connection_is_listed_by_the_app_server() -> Result<()> {
+    let mut fixture = Fixture::with_provider_list_open().await?;
+    fixture.choose_the_gateway_provider().await?;
+    let event = loop {
+        if let Some(event) = fixture.held.pop() {
+            break event;
+        }
+        let event = tokio::time::timeout(std::time::Duration::from_secs(10), fixture.events.recv())
+            .await
+            .expect("the app server replies")
+            .expect("the event channel stays open");
+        if matches!(
+            event,
+            AppEvent::Elpis(ElpisAppEvent::Provider(
+                ElpisProviderEvent::ModelsLoaded { .. }
+            ))
+        ) {
+            break event;
+        }
+    };
+    let AppEvent::Elpis(ElpisAppEvent::Provider(ElpisProviderEvent::ModelsLoaded {
+        provider_id,
+        result,
+        ..
+    })) = event
+    else {
+        unreachable!("only model replies are kept");
+    };
+    assert_eq!(provider_id, GATEWAY);
+    // The app server asked that provider itself: a list, or that provider's own failure, never
+    // the old "set model_provider and restart" refusal.
+    match result {
+        Ok(models) => assert!(!models.is_empty()),
+        Err(error) => assert!(!error.contains("restart"), "{error}"),
+    }
+    Ok(())
+}
