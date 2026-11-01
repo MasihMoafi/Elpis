@@ -539,7 +539,8 @@ test('canvas basics: undo and redo, copy and paste, duplicate, delete keeping th
     assert.deepEqual(alongside, [['Quillon · Step 1: the base', 'Fix the login bug', 'alongside']], 'Alt: the two work alongside');
     assert.equal(await canvas.locator('.react-flow__edge.canvas-edge-alongside .canvas-chevron').count(), 0, 'no arrows on a two-way wire');
     await dragTo(canvas.locator('.react-flow__node-mother'), 'source', finisher);
-    await canvas.getByText(/The Mother starts every agent that waits for no one/).waitFor();
+    // Masih, 29 Oct: "it's not mother; it's mother agent." The board names her Mother agent (917480ef4).
+    await canvas.getByText(/The Mother agent starts every agent that waits for no one/).waitFor();
     // The wire's menu turns a two-way wire one-way, and back.
     const twoWay = canvas.locator('.react-flow__edge.canvas-edge-alongside .react-flow__edge-path');
     // Clicked where the wire shows, as a hand would: the first point along it that no agent covers.

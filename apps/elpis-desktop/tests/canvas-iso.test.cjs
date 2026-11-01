@@ -69,7 +69,8 @@ test('agents canvas, isometric: agents as buttons to select and open, run state,
     for (const title of titles) assert.equal(await agent(title).count(), 1, `${title} is a button`);
     assert.equal(await agent('Quillon · Part 1').getAttribute('aria-label'), 'Quillon · Part 1: wave 1, not run, checked after it runs');
     assert.equal(await agent('Nuvani · Join the parts').getAttribute('aria-label'), 'Nuvani · Join the parts: wave 2, not run, checked after it runs');
-    assert.equal(await board.getByRole('button', { name: /^Mother:/ }).count(), 1);
+    // Masih, 29 Oct: "it's not mother; it's mother agent." The board names her Mother agent (917480ef4).
+    assert.equal(await board.getByRole('button', { name: /^Mother agent:/ }).count(), 1);
     const labels = await board.locator('.iso-label').evaluateAll(list => list.map(item => ({ text: item.textContent, size: parseFloat(getComputedStyle(item).fontSize), transform: getComputedStyle(item).transform })));
     assert.deepEqual(labels.map(item => item.text).sort(), ['1Quillon · Part 1', '1Veyra · Part 2', '1Orilo · Part 3', '2Nuvani · Join the parts', 'Mother agent'].sort(), 'each title, with its wave as a badge');
     for (const label of labels) {
@@ -89,7 +90,7 @@ test('agents canvas, isometric: agents as buttons to select and open, run state,
     await page.mouse.click(empty.x + 8, empty.y + 8);
     await canvas.getByRole('complementary', { name: 'Architectures', exact: true }).waitFor();
     // The Mother opens her panel.
-    await board.getByRole('button', { name: /^Mother:/ }).click();
+    await board.getByRole('button', { name: /^Mother agent:/ }).click();
     await canvas.getByRole('complementary', { name: 'Mother agent', exact: true }).waitFor();
 
     // Enter opens the dashboard; double-click now opens the inline name editor.
@@ -179,7 +180,7 @@ test('agents canvas, isometric: agents as buttons to select and open, run state,
     assert.equal(await agent('Nuvani · Join the parts').getAttribute('aria-label'), 'Nuvani · Join the parts: wave 2, running, being checked');
     assert.equal(await agent('Quillon · Part 1').getAttribute('data-status'), 'succeeded');
     assert.equal(await board.locator('.iso-ring[data-check="succeeded"]').count(), 1);
-    assert.match(await board.getByRole('button', { name: /^Mother:/ }).getAttribute('aria-label'), /running$/);
+    assert.match(await board.getByRole('button', { name: /^Mother agent:/ }).getAttribute('aria-label'), /running$/);
     // Quillon · Part 1's checked work feeds the running joiner: that wire is live and its chevrons stream.
     assert.equal(await board.locator('.iso-link[data-state="live"]:not([data-mother])').count(), 1);
     assert.ok(await board.locator('.iso-link[data-state="live"] .iso-chevron[data-live]').count() >= 3, 'live wires stream their chevrons');
