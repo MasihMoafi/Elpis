@@ -44,8 +44,10 @@ for (const colorScheme of ['light', 'dark']) test(`on the board her face is the 
   // What he sees of her face, against the face itself: brightness rises and falls together (a negative turns it around).
   const picture = await page.screenshot({ clip: shownFace });
   const match = await page.evaluate(async ([shown, wanted]) => {
-    const load = async source => { const image = Object.assign(new Image(), { src: source }); await image.decode(); const context = Object.assign(document.createElement('canvas'), { width: 64, height: 64 }).getContext('2d'); context.drawImage(image, 0, 0, 64, 64); return context.getImageData(0, 0, 64, 64).data; };
-    const a = await load(shown), b = await load(wanted), x = [], y = [];
+    // Her board face is cut to a circle with a clear backdrop (1 Nov, cf4c490ac): the picture is laid on the board's own
+    // colour, read from the screenshot's corner, outside her circle.
+    const load = async (source, ground) => { const image = Object.assign(new Image(), { src: source }); await image.decode(); const context = Object.assign(document.createElement('canvas'), { width: 64, height: 64 }).getContext('2d'); if (ground) { context.fillStyle = `rgb(${ground.join(',')})`; context.fillRect(0, 0, 64, 64); } context.drawImage(image, 0, 0, 64, 64); return context.getImageData(0, 0, 64, 64).data; };
+    const a = await load(shown), b = await load(wanted, [...a.slice(0, 3)]), x = [], y = [];
     for (let i = 0; i < a.length; i += 4) {
       const px = i / 4 % 64, py = Math.floor(i / 4 / 64);
       if ((px - 32) ** 2 + (py - 32) ** 2 > 26 ** 2) continue;
@@ -147,11 +149,15 @@ for (const colorScheme of ['light', 'dark']) test(`her chat hugs its messages, o
   });
   if (colorScheme === 'light') assert.ok(panelRgb.every(value => value >= 240 && value < 255), `her light panel is slightly darker: ${panelRgb}`);
   else assert.deepEqual(panelRgb, [17, 19, 23], 'her dark panel is unchanged');
-  const log = mini.getByRole('log', { name: 'Matilda conversation', exact: true }); await log.waitFor();
+  // 1 Nov, Masih (commit 0a1e78459): like a pinned pet, the pop-up shows only what is said now; its history icon opens the
+  // earlier messages. His 29 Oct screenshots were of those earlier messages, so they are opened first.
+  const log = mini.getByRole('log', { name: 'Matilda conversation', exact: true });
+  assert.equal(await log.count(), 0, 'no earlier messages until the history icon is pressed');
+  await mini.getByRole('button', { name: 'Show earlier messages', exact: true }).click(); await log.waitFor();
   const geometry = () => page.evaluate(() => {
     const popup = document.querySelector('.matilda-mini-popup'), log = document.querySelector('.matilda-mini-messages'), box = document.querySelector('.matilda-mini-composer');
     const p = popup.getBoundingClientRect(), l = log.getBoundingClientRect(), b = box.getBoundingClientRect(), last = [...log.querySelectorAll('.matilda-mini-message')].at(-1).getBoundingClientRect();
-    return { popupScroll: popup.scrollTop, popupOverflow: popup.scrollHeight - popup.clientHeight, height: Math.round(p.height), below: Math.round(p.bottom - b.bottom), above: Math.round(l.top - p.top), logScroll: Math.round(log.scrollTop), newestShown: last.top >= l.top - 1 && last.bottom <= l.bottom + 1 };
+    return { popupScroll: popup.scrollTop, popupOverflow: popup.scrollHeight - popup.clientHeight, height: Math.round(p.height), below: Math.round(p.bottom - b.bottom), above: Math.round(l.top - (popup.querySelector('.matilda-mini-bar')?.getBoundingClientRect().bottom ?? p.top)), logScroll: Math.round(log.scrollTop), newestShown: last.top >= l.top - 1 && last.bottom <= l.bottom + 1 };
   });
   // His screenshots, in order: in order and in turn, his questions and her answers; the newest shown on opening.
   assert.deepEqual(await log.locator('.matilda-mini-message').evaluateAll(els => els.map(el => `${el.dataset.speaker} ${el.textContent.replace(/^(You|Matilda): /, '').slice(0, 8)}`)),
@@ -166,6 +172,7 @@ for (const colorScheme of ['light', 'dark']) test(`her chat hugs its messages, o
     await page.mouse.wheel(0, dy); await page.waitForTimeout(120);
     const now = await geometry();
     assert.ok(now.popupScroll === 0 && now.popupOverflow <= 1, `the panel itself never scrolls: ${JSON.stringify(now)}`);
+    // The messages start right under the history icon's bar (1 Nov, commit 0a1e78459), or the panel's top without it.
     assert.ok(now.below <= 10 && now.above <= 10, `the message box sits at the bottom and the messages at the top, inside the panel's padding: ${JSON.stringify(now)}`);
     assert.equal(now.height, opened.height, 'and the panel keeps its height');
   }
