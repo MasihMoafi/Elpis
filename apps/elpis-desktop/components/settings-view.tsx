@@ -1,7 +1,8 @@
 "use client";
 
 import "@/components/settings/settings.css";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useWholeRows } from "@/lib/whole-rows";
 import { AppearanceSettings, type ThemeChoice } from "@/components/appearance-settings";
 import { ArchivedView } from "@/components/archived-view";
 import { McpSettings } from "@/components/mcp-settings";
@@ -74,6 +75,9 @@ export function SettingsView({ initialTab = "providers", navigationKey = 0, acti
   // the order"; "Don't make users change them"). Chats keep their drag order; Settings has none.
   const groups = SECTIONS, pages = TABS;
   const [query, setQuery] = useState("");
+  // A short window scrolls the navigation; its tabs stay whole, as the sidebar's chats do.
+  const nav = useRef<HTMLElement>(null);
+  useWholeRows(nav, '[role="tab"]', '[role="tab"], .settings-section-link, .back-link, .settings-title, .search-field');
   const terms = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
   const shown = pages.filter(item => terms.every(term => `${item.label} ${item.words} ${groups.find(group => group.id === item.group)?.label}`.toLowerCase().includes(term)));
   const visibleGroups = groups.filter(group => shown.some(item => item.group === group.id));
@@ -108,7 +112,7 @@ export function SettingsView({ initialTab = "providers", navigationKey = 0, acti
     }
   };
   return <div className="settings-layout">
-    <nav className="settings-nav" aria-label="Settings navigation">
+    <nav ref={nav} className="settings-nav" aria-label="Settings navigation">
       {onBack && <button data-slot="nav-row" type="button" className="back-link" onClick={onBack}><ArrowLeft size={18} aria-hidden="true" />Back to app</button>}
       <h1 className="settings-title">Settings</h1>
       <SearchField aria-label="Search settings" placeholder="Search" value={query} maxLength={80} onChange={event => setQuery(event.target.value)} />
