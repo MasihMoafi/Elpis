@@ -200,7 +200,9 @@ if (process.argv.includes("--elpis-local-bridge")) {
   test("two private bundles hand over gracefully and reopen saved chats", async t => {
     const f = await setup(t, {}, process.env.ELPIS_IDLE_OLD_BUNDLE ?? source);
     const second = f.bundle("b");
-    assert.equal((await f.launch(f.first)).exitCode, 0);
+    // Started as the desktop app and the shell launcher start it, with NODE_USE_ENV_PROXY=1: a bridge whose settings
+    // differ is deliberately not stopped (handover-claude.test.mjs, "mixed configuration changes").
+    assert.equal((await f.launch(f.first, { NODE_USE_ENV_PROXY: "1" })).exitCode, 0);
     const c = await f.connect();
     assert.equal((await c.call("thread/read", { threadId: "chat", includeTurns: true })).result.thread.turns[0].items[0].text, "preserve this answer");
     // A bridge-owned write, beyond the already saved transcript, must survive stopBridge.
