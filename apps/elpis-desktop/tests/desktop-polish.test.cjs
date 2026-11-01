@@ -44,7 +44,11 @@ for (const running of [false, true]) test(`composer labels fit at every desktop 
 test('the prompt rail yields to chat text in a narrow pane', () => using({ width: 1280 }, async ({ page }) => {
   assert.equal(await page.locator('.prompt-rail').isVisible(), true);
   await panel(page);
-  assert.equal(await page.locator('.prompt-rail').isVisible(), true);
+  // The rail keeps ChatGPT's fixed place and hides rather than cover the text when the column leaves it no room
+  // (c35a20a6c, 31 Oct, "prompt rail back at ChatGPT's place"): beside the panel it is shown only clear of the text.
+  const rail = page.locator('.prompt-rail');
+  if (await rail.isVisible()) assert.ok((await rail.boundingBox()).x + (await rail.boundingBox()).width <= (await page.locator('.chat-content').first().boundingBox()).x, 'a shown rail stays clear of the text');
+  else assert.equal(await rail.getAttribute('data-clear'), 'false', 'the rail hides only for lack of room');
   // The panel opens as wide as the sidebar (A217), which leaves the chat wide; widening it narrows the chat to 640px or less.
   await widenSidePanel(page, 420);
   assert.ok((await page.locator('.chat-view').boundingBox()).width <= 640);
