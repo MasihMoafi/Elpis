@@ -50,7 +50,7 @@ export function AgentIdentity({ id, name, model, provider, role, compact = false
       return <g key={bit}><rect x={x + 1} y={y + 1} width="0.8" height="0.8" />{x !== 3 && <rect x={7 - x} y={y + 1} width="0.8" height="0.8" />}</g>;
     })}</svg></span>
     <span className="agent-identity-text flex min-w-0 flex-col">
-      <span className={`agent-name block truncate font-medium ${nameClassName || ""}`}>{name}</span>
+      <span className={`agent-name block truncate font-medium ${nameClassName || ""}`} title={name}>{name}</span>
       {runtime && <span className="agent-model block truncate text-xs text-muted-foreground" title={runtime}>{runtime}</span>}
     </span>
   </span>;
