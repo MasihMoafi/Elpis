@@ -548,7 +548,8 @@ for (const desktop of [true, false]) test(`single-chat organizing actions are sh
       await page.getByRole('alertdialog').getByRole('button', { name: 'Cancel', exact: true }).click();
     }
     await row(page, 'chat-a').getByRole('button', { name: /^Expand agents/ }).click();
-    await row(page, 'native-agent').getByRole('button', { name: 'Actions for Native worker', exact: true }).click();
+    // An agent is named task first, then its role (efcdecd60, 31 Oct, "agent order"): "Native worker · [explorer]".
+    await row(page, 'native-agent').getByRole('button', { name: 'Actions for Native worker · [explorer]', exact: true }).click();
     await page.getByRole('menu').waitFor();
     for (const name of ['Put under…', 'Move to project…', 'New project from this chat…', 'Take out']) assert.equal(await (await threadMenuItem(page, name)).count(), 1, 'native agents share the same display organization actions');
     assert.deepEqual(f.errors, []);
