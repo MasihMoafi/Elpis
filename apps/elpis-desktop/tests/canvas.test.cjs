@@ -40,6 +40,8 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
       { turnId: 't', item: { id: 'i1', type: 'commandExecution', command: 'rg lexer' }, startedAtMs: 1000, completedAtMs: 4000 },
       { turnId: 't', item: { id: 'i2', type: 'agentMessage', text: 'Quillon · Part 1 is built: the lexer now reads numbers.' }, startedAtMs: 4000, completedAtMs: 65000 }], nextCursor: null });
     if (url.pathname.startsWith('/api/threads/root')) return json({ thread: root, data: [], nextCursor: null });
+    // A selected agent's report (13dc48677), as the bridge answers before the agent writes one.
+    if (/^\/api\/workflows\/[^/]+\/nodes\/[^/]+\/output$/.test(url.pathname)) return json({ did: null, report: null, outputs: [], check: null });
     if (url.pathname.startsWith('/api/')) return json({});
     const relative = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
     try { const content = await fs.readFile(path.join(__dirname, '../out', relative)); res.setHeader('content-type', relative.endsWith('.js') ? 'text/javascript' : relative.endsWith('.css') ? 'text/css' : relative.endsWith('.svg') ? 'image/svg+xml' : 'text/html'); res.end(content); }
