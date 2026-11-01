@@ -206,6 +206,7 @@
     "tests/canvas-iso.test.cjs",
     "tests/canvas-run.test.cjs",
     "tests/canvas-runlog.test.cjs",
+    "tests/canvas-replan.test.cjs",
     "tests/canvas-settings.test.cjs",
     "tests/canvas-shared-controls.test.cjs",
     "tests/canvas-store.test.cjs",

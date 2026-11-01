@@ -16,7 +16,7 @@ import type { WorkflowIdentity, WorkflowRun } from "@/lib/workflow-identity";
 
 export type RecordedTask = {
   id: string; title?: string; status?: string; kind?: string; instruction?: string; dependsOn?: string[]; feedbackFrom?: string[];
-  assignedThreadId?: string | null; model?: string; provider?: string; reasoningEffort?: string; writeScopes?: string[]; acceptanceCriteria?: string[];
+  assignedThreadId?: string | null; /** "mother": the Mother added it during the run. */ addedBy?: string; model?: string; provider?: string; reasoningEffort?: string; writeScopes?: string[]; acceptanceCriteria?: string[];
   failureReason?: string | null; result?: { summary?: string } | string | null;
   progress?: { kind?: string; text?: string; title?: string; status?: string; at?: number }[];
   routing?: { requested?: { model?: string; provider?: string }; actual?: { model?: string; provider?: string }; attempts?: { model?: string; provider?: string; status?: string; reason?: string }[] };
@@ -67,6 +67,24 @@ export function graphForWorkflow(run: RecordedWorkflow, liveAgents: readonly Thr
   }
   return arrange(withMother({ name: run.name || "Workflow", workflowId: run.id, nodes, edges }));
 }
+
+/** The agents the Mother added during a run (bridge/workflow-acp.mjs `decide`), put on the live board with their
+ * wiring; the board is returned unchanged when there are none new. Their checks stay inside them, as on any board. */
+export function withAddedAgents(graph: CanvasGraph, tasks: readonly Omit<RecordedTask, "result" | "status">[]): CanvasGraph {
+  const present = new Set(graph.nodes.map(node => node.id)), fresh = tasks.filter(task => task.addedBy === "mother" && task.kind !== "verify" && !present.has(task.id));
+  if (!fresh.length) return graph;
+  const byId = new Map(tasks.map(task => [task.id, task])), agentIds = new Set([...present, ...fresh.map(task => task.id)]);
+  const source = (id: string) => byId.get(id)?.kind === "verify" ? byId.get(id)?.dependsOn?.[0] ?? id : id;
+  const right = Math.max(0, ...graph.nodes.map(node => node.position.x)), low = Math.max(0, ...graph.nodes.map(node => node.position.y));
+  const nodes: CanvasNode[] = fresh.map((task, index) => ({ id: task.id, type: "agent", position: { x: right + 300, y: low + (index + 1) * 140 }, data: {
+    title: task.title || task.id, instruction: task.instruction ?? "", model: task.model ?? null, provider: task.provider ?? null,
+    effort: task.reasoningEffort ?? null, writeScopes: task.writeScopes ?? [], acceptanceCriteria: task.acceptanceCriteria ?? [] } }));
+  const edges = fresh.flatMap(task => [...new Set((task.dependsOn ?? []).map(source))].filter(id => id !== task.id && agentIds.has(id)).map(from => ({ id: `${from}->${task.id}`, source: from, target: task.id })));
+  return { ...graph, nodes: [...graph.nodes, ...nodes], edges: [...graph.edges, ...edges.filter(edge => !graph.edges.some(old => old.id === edge.id))] };
+}
+/** The Mother's re-plan decisions as lines for the run history ("Added: Fact-checker 4 — section 4 was missed"). */
+export const motherDecisionLines = (run: Pick<RecordedWorkflow, "mother">) => (run.mother?.decisions ?? []).filter(item => item.kind === "replan" && item.summary)
+  .map(item => ({ ...(item.at === undefined ? {} : { at: item.at }), text: `MOTHER · ${item.summary}`, tone: item.decision === "invalid" ? "fail" as const : "done" as const }));
 
 export function WorkflowChat({ run, identity, ready, models = [], threads = [], onOpenChat, onOpenCanvas }: {
   run: WorkflowRun; identity?: WorkflowIdentity; ready: boolean; models?: Model[]; threads?: readonly Thread[];

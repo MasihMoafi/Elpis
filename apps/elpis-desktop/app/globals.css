@@ -1247,6 +1247,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .canvas-shape > span { position:relative; display:grid; gap:4px; }
 .canvas-shape > span + span::before { content:""; position:absolute; right:calc(100% + 2px); top:50%; width:8px; border-top:1px solid var(--muted-foreground); opacity:.6; }
 .canvas-mother-counts { display:flex; flex-wrap:wrap; gap:8px; }
+.canvas-side .canvas-mother-switch { display:flex; align-items:center; justify-content:space-between; gap:8px; }
 .canvas-side .canvas-count { display:flex; flex-wrap:wrap; height:auto; min-height:32px; padding-block:4px; }
 .canvas-help kbd, .canvas-inspector-actions kbd { padding:0 4px; border:1px solid var(--hairline); font:var(--text-xs)/1.4 var(--mono); }
 /* Run order: Kahn's waves, each with how it is doing. */

@@ -28,7 +28,7 @@ export type CanvasEdge = { id: string; source: string; target: string; kind?: "a
  * what the user left empty, and the model of her chat (the run's root). */
 export type MotherSettings = { brief: string; model: string | null; provider: string | null };
 /** `maxAgents` is the most agents the graph may hold; `template` is the architecture it was loaded from. */
-export type CanvasGraph = { name: string; request?: string; workflowId?: string; nodes: CanvasNode[]; edges: CanvasEdge[]; frames?: CanvasFrame[]; minimap?: boolean; maxAgents?: number; /** The whole run's time limit, in minutes. */ timeLimit?: number; template?: string; planningPattern?: string; result?: string; /** Translate: the target language's id. */ language?: string; mother?: MotherSettings; motherFlow?: string; roundLimit?: number };
+export type CanvasGraph = { name: string; request?: string; workflowId?: string; nodes: CanvasNode[]; edges: CanvasEdge[]; frames?: CanvasFrame[]; minimap?: boolean; maxAgents?: number; /** The whole run's time limit, in minutes. */ timeLimit?: number; template?: string; planningPattern?: string; result?: string; /** Translate: the target language's id. */ language?: string; mother?: MotherSettings; motherFlow?: string; roundLimit?: number; /** "Mother re-plans" (1 Nov): she may add, cancel or steer agents when one succeeds; on unless turned off. */ replan?: boolean };
 /** A task's state from /api/workflows, shared by ACP runs and retained native history. */
 export type TaskStatus = "pending" | "running" | "succeeded" | "failed" | "blocked" | "cancelled";
 /** The words both views of the board (flat and isometric) use for an agent's state, and for its check: the read-only

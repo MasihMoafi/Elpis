@@ -10,11 +10,12 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MenuRow } from "@/components/ui/menu-row";
 import { OptionSelect } from "@/components/ui/option-select";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { WorkflowProgress, useWorkflowTeam, workflowThreadActive } from "@/components/workflow-progress";
 import { agentParentId } from "@/lib/agent-runs.mjs";
 import { WorkflowHistory } from "@/components/workflow-history";
-import { graphForWorkflow, readWorkflowRun, taskState, type WorkflowRunRef, type RecordedWorkflow } from "@/components/workflow-chat";
+import { graphForWorkflow, motherDecisionLines, readWorkflowRun, taskState, withAddedAgents, type WorkflowRunRef, type RecordedWorkflow } from "@/components/workflow-chat";
 import { WorkflowColourMenu, WorkflowIdentityEditor, WorkflowMark } from "@/components/workflow-identity";
 import type { WorkflowCatalog, WorkflowIdentity } from "@/lib/workflow-identity";
 import { WorkflowSources } from "@/components/workflow-sources";
@@ -41,7 +42,7 @@ type Run = { rootThreadId: string; graphId: string; status: string; startedAt: n
 /** Whether the whole run is over: her part, and his if he has one. */
 const over = (run: Run) => FINISHED.has(run.status) && (!run.father || (FINISHED.has(run.father.status) && (!run.father.threadId || run.father.reported)));
 /** `next`: the stage the bridge runs after this one (the Father's part): his chat and run, and whether his report reached her. */
-type Listed = { data: { id: string; name?: string; status: string; error?: string | null; next?: { threadId?: string; graphId?: string; status: string; reported?: boolean; error?: string | null }; tasks: { id: string; title?: string; kind?: string; status: TaskStatus; assignedThreadId: string | null; failureReason?: string | null; result?: unknown; progress?: { kind?: string; text?: string; title?: string; status?: string; at?: number }[] }[] }[] };
+type Listed = { data: { id: string; name?: string; status: string; error?: string | null; next?: { threadId?: string; graphId?: string; status: string; reported?: boolean; error?: string | null }; mother?: RecordedWorkflow["mother"]; tasks: { id: string; title?: string; kind?: string; status: TaskStatus; assignedThreadId: string | null; addedBy?: string; dependsOn?: string[]; instruction?: string; writeScopes?: string[]; acceptanceCriteria?: string[]; failureReason?: string | null; result?: unknown; progress?: { kind?: string; text?: string; title?: string; status?: string; at?: number }[] }[] }[] };
 type HandleEnd = "source" | "target";
 /** `clash` is the files of a merge clash that stopped the run on this agent (lib/canvas-isolation.ts). */
 type AgentNodeData = AgentData & { status?: TaskStatus; check?: TaskStatus; clash?: string[]; modelLabel?: string; activity?: string; wave?: number; onHandle?: (id: string, end: HandleEnd, event: ReactMouseEvent) => void; onQuick?: (id: string) => void };
@@ -602,7 +603,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
   // The run log, as Deus Ex's event cards: what started, finished, passed its check or failed, newest last.
   type LogLine = { at?: number; agent?: string; text: string; tone: "start" | "done" | "fail" };
   const [log, setLog] = useState<LogLine[]>([]);
-  const said = useRef<Record<string, TaskStatus>>({});
+  const said = useRef<Record<string, TaskStatus>>({}), decisionsSeen = useRef(0);
   const reports = useRef(new Set<string>()), logList = useRef<HTMLOListElement>(null);
   const followLog = useRef(true);
   useEffect(() => { if (followLog.current && logList.current) logList.current.scrollTop = logList.current.scrollHeight; }, [log]);
@@ -619,7 +620,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
       setStates(Object.fromEntries(tasks.map(task => [task.id, { status: taskState(task.status), chat: task.assignedThreadId ?? null, activity: currentActivity(task) || undefined }])));
       setRun({ rootThreadId: record.rootThreadId, graphId: record.id, status: record.status, startedAt: record.startedAt ?? record.createdAt ?? Date.now(),
         ...(record.endedAt ? { endedAt: record.endedAt } : {}), ...(record.error ? { error: record.error } : {}), ...(record.next ? { father: { tasks: [], threadId: record.next.threadId, graphId: record.next.graphId, status: record.next.status, reported: record.next.reported } } : {}) });
-      setLog([...tasks.map(task => ({ agent: task.id, text: `${task.title || task.id} · ${task.status || "not recorded"}${task.failureReason ? ` · ${task.failureReason}` : ""}`, tone: task.status === "failed" || task.status === "blocked" ? "fail" : task.status === "succeeded" || task.status === "completed" ? "done" : "start" } as LogLine)), ...stoppedLine(record.status, record.error)]);
+      setLog([...tasks.map(task => ({ agent: task.id, text: `${task.title || task.id} · ${task.status || "not recorded"}${task.failureReason ? ` · ${task.failureReason}` : ""}`, tone: task.status === "failed" || task.status === "blocked" ? "fail" : task.status === "succeeded" || task.status === "completed" ? "done" : "start" } as LogLine)), ...motherDecisionLines(record), ...stoppedLine(record.status, record.error)]);
       setNotice(recordedRun ? "" : record.error || tasks.find(task => task.failureReason)?.failureReason || "");
     }).catch(cause => { if (live) setNotice(cause instanceof Error ? cause.message : String(cause)); });
     return () => { live = false; };
@@ -700,7 +701,9 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
         const lines = found.tasks.flatMap(task => {
           const previous = said.current[task.id];
           said.current[task.id] = task.status;
-          const check = task.id.endsWith("-check"), agent = check ? task.id.slice(0, -"-check".length) : task.id, who = titleOf(agent);
+          const check = task.id.endsWith("-check"), agent = check ? task.id.slice(0, -"-check".length) : task.id;
+          // An agent the Mother just added is not on the board yet in this look: its own title names it.
+          const who = agents.some(node => node.id === agent) ? titleOf(agent) : found.tasks.find(item => item.id === agent)?.title || titleOf(agent);
           const lines: LogLine[] = [];
           if (previous !== task.status) {
             // A successful task necessarily started, even when it finished between snapshots. Times are observations.
@@ -715,7 +718,13 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
           }
           return lines;
         });
-        if (lines.length || stopLines.length) setLog(current => [...current, ...lines, ...stopLines]);
+        // The Mother's re-plans (bridge/workflow-acp.mjs `decide`): each decision once in the history, and the agents she
+        // added on the board as they come; those she cancelled show as cancelled like any task.
+        const decided = motherDecisionLines(found), seen = decisionsSeen.current;
+        decisionsSeen.current = Math.max(seen, decided.length);
+        if (graphId === run.graphId && found.tasks.some(task => task.addedBy === "mother")) setGraph(current => withAddedAgents(current, found.tasks));
+        const motherLines = decided.slice(seen).map(line => ({ ...line, at: line.at ?? Date.now() }));
+        if (lines.length || stopLines.length || motherLines.length) setLog(current => [...current, ...lines, ...motherLines, ...stopLines]);
       }
       return found;
     };
@@ -1585,7 +1594,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
     const repository = Boolean(cwd) && !readyMade(graph.planningPattern) && wantsIsolation(tasks) && await api<{ repository?: boolean }>(`/repository?cwd=${encodeURIComponent(cwd!)}`).then(result => result.repository === true, () => false);
     if (!current()) throw Error(OFFLINE_WORKFLOW);
     const limit = await workflowLimit(); if (!current()) throw Error(OFFLINE_WORKFLOW);
-    return api<{ graphId: string }>("/workflows/run", { ...(graph.template === "recursive" ? { roundLimit: graph.roundLimit } : {}), ...runPayload(rootThreadId, name, tasks, limit, repository), runLimitSeconds: (graph.timeLimit ?? RUN_MINUTES) * 60, ...(mother.brief.trim() || requestText.trim() ? { goal: mother.brief.trim() || requestText.trim() } : {}), ...(next ? { next } : {}) });
+    return api<{ graphId: string }>("/workflows/run", { ...(graph.template === "recursive" ? { roundLimit: graph.roundLimit } : {}), ...runPayload(rootThreadId, name, tasks, limit, repository), runLimitSeconds: (graph.timeLimit ?? RUN_MINUTES) * 60, replan: graph.replan !== false, ...(mother.model ? { motherModel: { model: mother.model, ...(mother.provider ? { provider: mother.provider } : {}) } } : {}), ...(mother.brief.trim() || requestText.trim() ? { goal: mother.brief.trim() || requestText.trim() } : {}), ...(next ? { next } : {}) });
   }
 
   async function start(targets?: string[]) {
@@ -1603,7 +1612,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
       if (!planned || !current()) return;
       const ready = executionGraph(planned, targets), built = runParts(ready);
       if ("error" in built) { setNotice(built.error); return; }
-      setNotice(""); setUndoLoad(null); setStates({}); setClashes({}); setLog([]); said.current = {}; reports.current.clear(); followLog.current = true;
+      setNotice(""); setUndoLoad(null); setStates({}); setClashes({}); setLog([]); said.current = {}; decisionsSeen.current = 0; reports.current.clear(); followLog.current = true;
       const runIdentity = workflowCatalog.ensure(identity?.rootThreadId ? crypto.randomUUID() : graph.workflowId || crypto.randomUUID(), ready.name);
       // Mother runs on her model only while it is offered here: a saved claude/opus with Claude signed out made Run graph
       // fail with a bare ELPIS_REQUEST_REJECTED (28 Oct). Otherwise she takes the best one offered, and the notice says so.
@@ -1876,6 +1885,10 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
       <label>Goal (every agent gets it)<Textarea aria-label="Goal" rows={4} value={mother.brief} placeholder="What should this run achieve? Elpis can design the team from it." onChange={event => setMother({ brief: event.target.value })} /></label>
       <Button size="sm" onClick={() => void letElpis(mother.brief)} aria-describedby={!ready ? offlineReasonId : undefined} disabled={!ready || !mother.brief.trim() || Boolean(planning)} title="Elpis designs the team from the goal: how many agents, their prompts, folders and wiring; Ctrl+Z undoes it">{planning ? "Elpis is designing…" : "Let Elpis design the team"}</Button>
       <label>Her model<OptionSelect aria-label="Her model" value={mother.model ? `${mother.provider ?? ""}|${mother.model}` : ""} onChange={event => { const patch = modelPatch(event.target.value); setMother({ model: patch.model ?? null, provider: patch.provider ?? null }); }}>{modelOptions()}</OptionSelect></label>
+      {/* One switch for the whole run (1 Nov): when a child succeeds she may add, cancel or steer agents, at most 5 times. */}
+      <label className="canvas-mother-switch" title="When an agent finishes, the Mother may add agents, cancel waiting ones or steer a running one (at most 5 times a run). Each decision shows in the run history.">
+        Mother re-plans<Switch aria-label="Mother re-plans" checked={graph.replan !== false} disabled={Boolean(run && !over(run))} onCheckedChange={on => setGraph(current => ({ ...current, replan: on }))} />
+      </label>
       <div className="canvas-mother-counts">
         <CountField label="Time limit (min)" value={graph.timeLimit ?? RUN_MINUTES} min={1} max={1440} onChange={minutes => setGraph(current => ({ ...current, timeLimit: minutes }))}
           why={typed => typed < 1 ? "A run needs at least a minute." : "A run can last at most a day (1440 minutes)."} />
