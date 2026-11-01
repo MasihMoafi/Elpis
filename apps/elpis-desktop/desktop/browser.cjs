@@ -247,7 +247,10 @@ function createBrowser({host,origin,WebContentsView,session,ipcMain,openExternal
       case 'stop':tab?.view.webContents.stop();break;
       case 'external-url':{
         const url=browserUrl(input.url,origin),target=new URL(url);
-        if(target.protocol!=='https:'||!['claude.com','claude.ai','console.anthropic.com','platform.claude.com'].includes(target.hostname)||!target.pathname.includes('oauth/authorize')||!openExternal)throw Error('Choose a Claude sign-in page.');
+        // Sign-in pages only: Claude's, and CloudRoom's desktop sign-in (1 Nov, bridge/cloudroom-vm.mjs).
+        const claude=['claude.com','claude.ai','console.anthropic.com','platform.claude.com'].includes(target.hostname)&&target.pathname.includes('oauth/authorize');
+        const cloudroom=target.hostname==='www.cloudroom.dev'&&target.pathname==='/desktop';
+        if(target.protocol!=='https:'||!(claude||cloudroom)||!openExternal)throw Error('Choose a Claude or CloudRoom sign-in page.');
         await openExternal(url);break;
       }
       case 'external':if(tab&&/^https?:/.test(tab.url)&&openExternal)void openExternal(tab.url);break;
