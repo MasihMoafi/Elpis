@@ -111,6 +111,24 @@ test('all automatic workflow roles and Mother agent use Full access and log offe
   assert.equal(rejected.review, undefined, 'a verifier scope escape cannot reach review or merge');
 });
 
+// 1 Nov live run: Haiku saved answer-1.md at the project root and the whole Voting run failed. A misplaced file gets one
+// correction, as a failed check does; a second escape still fails.
+test('an agent that writes outside its folder is told once to move the file, and the run goes on', { timeout: 20000 }, async t => {
+  const NOTE = 'outside your allowed folders';
+  const writes = [{ file: 'answer.md', text: 'misplaced', unless: NOTE }, { file: 'answer.md', remove: true, when: NOTE }, { file: 'src/answer.md', text: 'moved', when: NOTE }];
+  const pass = { FAKE_ACP_ANSWER: JSON.stringify({ passed: true, summary: 'The answer is in src/answer.md' }) };
+  const team = () => [task('writer', { kind: 'implement', writeScopes: ['src'] }), task('check', { kind: 'verify', dependsOn: ['writer'] })];
+  const f = fixture(t, { env: { writer: { FAKE_ACP_WRITE: JSON.stringify(writes) }, check: pass } });
+  const done = await f.finished((await f.start(team(), { isolation: 'worktree' })).graphId);
+  assert.equal(done.status, 'succeeded', done.error ?? done.tasks[0].failureReason);
+  const prompts = f.log('writer').filter(row => row.method === 'session/prompt').map(row => JSON.stringify(row.params));
+  assert.equal(prompts.length, 2, 'one correction');
+  assert.match(prompts[1], /answer\.md/); assert.match(prompts[1], /src/);
+  const g = fixture(t, { env: { writer: { FAKE_ACP_WRITE: JSON.stringify({ file: 'answer.md', text: 'misplaced again' }) }, check: pass } });
+  const failed = await g.finished((await g.start(team(), { isolation: 'worktree' })).graphId);
+  assert.equal(failed.status, 'failed'); assert.match(failed.tasks.find(item => item.id === 'writer').failureReason, /outside its write scopes/);
+});
+
 test('Mother agent uses Claude Opus to approve the reviewed commit; a rejected review never merges', { timeout: 20000 }, async t => {
   for (const mode of ['approve', 'reject', 'next-stage']) {
     const approved = mode !== 'reject';

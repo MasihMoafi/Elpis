@@ -510,7 +510,14 @@ Prefer continue. Add only for a part the plan misses; cancel only work that is n
               task.failureReason = error.message;
               // A failed check goes back to its step first (below); Mother is asked only once that fix is spent.
               if (fixable(task, error)) throw error;
-              if (!await supervise(record, task, error, root, controller)) throw error;
+              if (!await supervise(record, task, error, root, controller)) {
+                // When the Mother cannot decide, a file saved outside the agent's folders still gets one plain correction
+                // (1 Nov live run: Haiku saved answer-1.md at the project root, she gave up, and the whole Voting run failed).
+                const misplaced = /changed files outside its write scopes: (.+?)\. Kept at /.exec(error.message)?.[1];
+                if (!misplaced || task.scopeFixed || controller.signal.aborted) throw error;
+                task.scopeFixed = true;
+                task.supervisorInstruction = `You saved ${misplaced} outside your allowed folders (${task.writeScopes.join(', ')}). Move ${misplaced.includes(',') ? 'them' : 'it'} into ${task.writeScopes[0]} with the same name, leave nothing outside your allowed folders, and change nothing else.`;
+              }
               completed = await attempt();
             }
             const { result, changes } = completed;

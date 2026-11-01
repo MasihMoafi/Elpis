@@ -147,8 +147,12 @@ const app = agent({ name: "fake-acp-agent" })
     if (text.includes("[hang]")) { await new Promise((resolve) => { s.cancelled = resolve; }); return { stopReason: "cancelled" }; }
     if (process.env.FAKE_ACP_WRITE) {
       // `when`: write only when the prompt says so (a step that fixes its work only once its check's findings reach it).
-      const { file, text: content, when } = JSON.parse(process.env.FAKE_ACP_WRITE);
-      if (!when || text.includes(when)) fs.writeFileSync(file, content);
+      // A list runs in order; `unless` skips a write when the prompt says so, and `remove` deletes instead of writing.
+      for (const { file, text: content, when, unless, remove } of [JSON.parse(process.env.FAKE_ACP_WRITE)].flat()) {
+        if ((when && !text.includes(when)) || (unless && text.includes(unless))) continue;
+        if (remove) fs.rmSync(file, { force: true });
+        else { fs.mkdirSync(path.dirname(path.resolve(file)), { recursive: true }); fs.writeFileSync(file, content); }
+      }
     }
     if (process.env.FAKE_ACP_PROMPT_ERROR_AFTER_WRITE) {
       s.running = false;
