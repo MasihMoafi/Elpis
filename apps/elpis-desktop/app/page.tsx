@@ -2061,8 +2061,14 @@ export default function Home() {
   const ownChat = (thread: Thread) => placedByHim(thread) || (!isAgentRun(thread) && !agentParentId(thread) && originOf(thread) !== "Workflows");
   const sortedChats = sortChats(sidebarThreads.filter(isTreeChat), chatGroups.sortBy, title, chatGroups.order);
   const chatListOrder = useChatListOrder(prioritizeChats(sortedChats, thread => sidebarState(thread) === "working" ? "working" : needsYou(thread) ? "waiting" : sidebarState(thread)));
-  // Hover holds ordinary rows still, but a newly working chat must still rise immediately.
-  const ordinaryThreads = prioritizeChats(chatListOrder.chats, thread => sidebarState(thread) === "working" ? "working" : "idle");
+  // Hover holds ordinary rows still, but a newly working chat must still rise immediately. Once it finishes with an unread
+  // reply (or needs him) it stays risen, right after the working chats, until the hold ends (1 Nov: "the unread chat that's
+  // just finished should show after the working chats; no idle chat should sit in between them").
+  const roseWhileHeld = useRef(new Set<string>());
+  if (!chatListOrder.holding) roseWhileHeld.current.clear();
+  else for (const thread of chatListOrder.chats) if (sidebarState(thread) === "working") roseWhileHeld.current.add(thread.id);
+  const ordinaryThreads = prioritizeChats(chatListOrder.chats, thread => sidebarState(thread) === "working" ? "working"
+    : roseWhileHeld.current.has(thread.id) && (needsYou(thread) || sidebarState(thread) === "unread") ? "waiting" : "idle");
   // Missing parents never hide chats (for example, when only part of history is loaded).
   const ordinaryIds = useMemo(() => new Set(sidebarThreads.map(thread => thread.id)), [sidebarThreads]);
   const displayParentIds = useMemo(() => new Set(Object.values(chatGroups.parents ?? {}).filter((id): id is string => !!id)), [chatGroups.parents]);

@@ -2,7 +2,7 @@
 
 import { cloneElement, useEffect, useRef, useState, type KeyboardEvent, type ReactElement, type ReactNode } from "react";
 import { AgentsIcon, ArchiveIcon, PinIcon, TerminalIcon } from "@/components/elpis-icons";
-import { Bookmark, BookmarkMinus, CircleCheck, Columns2, Eye, EyeOff, FolderInput, FolderPlus, Pencil, Plus, SquareArrowOutUpRight, Trash2 } from "lucide-react";
+import { Bookmark, BookmarkMinus, CircleCheck, Columns2, Eye, EyeOff, FolderInput, FolderPlus, Palette, Pencil, Plus, SquareArrowOutUpRight, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -116,7 +116,7 @@ export function ThreadActions({ thread, onDelete, onRequestDelete, onRename, ren
     onPin ? { id: "pin", label: pinned ? "Unpin" : "Pin", icon: <PinIcon size={14} />, hint: shortcutHint("pin"), run: () => onPin(thread) } : undefined,
     onBookmark ? { id: "bookmark", label: bookmarked ? "Remove bookmark" : "Bookmark", icon: bookmarked ? <BookmarkMinus size={14} /> : <Bookmark size={14} />, run: () => onBookmark(thread) } : undefined,
     // Colour marks a chat in the sidebar; an archived chat (no Archive action) is not there, so it is not offered.
-    onArchive ? { id: "colour", label: "Colour", run: () => {}, items: [
+    onArchive ? { id: "colour", label: "Colour", icon: <Palette size={14} />, run: () => {}, items: [
       ...WORKFLOW_COLOURS.map(value => ({ id: `colour:${value}`, label: value[0].toUpperCase() + value.slice(1), icon: <span className="conversation-colour-swatch" data-colour={value} aria-hidden="true" />, checked: conversationColour.colour === value, run: () => void conversationColour.choose(value) })),
       { id: "colour:reset", label: "Reset colour", separated: true, run: () => void conversationColour.choose(null) },
     ] } : undefined,

@@ -36,7 +36,7 @@ export function useChatListOrder<T extends { id: string }>(chats: T[]) {
     window.addEventListener("blur", blur);
     return () => { window.removeEventListener("pointerdown", start, true); window.removeEventListener("pointerup", end, true); window.removeEventListener("pointercancel", cancel); window.removeEventListener("dragstart", drag, true); window.removeEventListener("dragend", end); window.removeEventListener("blur", blur); };
   }, []);
-  return { chats: holdChatOrder(chats, held), release, pointer: {
+  return { chats: holdChatOrder(chats, held), holding: held !== null, release, pointer: {
     onPointerEnter: () => { inside.current = true; setHeld(previous => previous ?? chats.map(chat => chat.id)); },
     onPointerLeave: (event: PointerEvent) => { inside.current = false; if (!pressed.current && !event.buttons) release(); },
   } };

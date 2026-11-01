@@ -10,6 +10,8 @@ const row = (page, id) => page.locator(`aside.sidebar .thread-row[data-thread-id
 async function choose(page, id, colour, waitForSave = true) {
   await row(page, id).locator('.thread-link').click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Colour', exact: true }).hover();
+  // 1 Nov, Masih: "why color doesn't have a logo?" Like its neighbours, it carries an icon.
+  if (await page.getByRole('menuitem', { name: 'Colour', exact: true }).locator('svg').count() < 1) throw new Error('the Colour menu item has no icon');
   await page.getByRole(colour === 'Reset colour' ? 'menuitem' : 'menuitemradio', { name: colour, exact: true }).click();
   await page.getByRole('menuitem', { name: 'Colour', exact: true }).waitFor({ state: 'hidden' });
   if (waitForSave) await page.waitForFunction(({ id, colour }) => document.querySelector(`aside.sidebar .thread-row[data-thread-id="${id}"]`)?.getAttribute('data-conversation-colour') === colour, { id, colour: colour === 'Reset colour' ? null : colour.toLowerCase() });

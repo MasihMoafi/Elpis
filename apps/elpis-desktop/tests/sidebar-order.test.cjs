@@ -39,6 +39,29 @@ for (const sortBy of ['recency', 'manual']) test(`working ungrouped chats rise a
   } finally { await f.close(); }
 });
 
+// 1 Nov, Masih: "the unread chat that's just finished should show after the working chats; no idle chat should sit in
+// between them". It rose while working under the pointer; finishing must not drop it back among idle chats.
+test('a chat that finishes unread while the pointer is over the sidebar stays right after the working chats', async () => {
+  const chats = [chat('chat-a', 50, { type: 'active' }), chat('idle-a', 40), chat('idle-b', 30), chat('chat-d', 20), chat('chat-e', 15), chat('idle-c', 10)];
+  const f = await open(chats), { page } = f;
+  try {
+    const recents = section(page, 'Recents');
+    await eventually(async () => assert.deepEqual(await ids(recents), ['chat-a', 'idle-a', 'idle-b', 'chat-d', 'chat-e', 'idle-c']));
+    await row(page, 'idle-b').hover();
+    // The bridge's list follows the events, as it does in the app.
+    const status = (id, type) => { chats.find(item => item.id === id).status = { type }; f.emit('message', { method: 'thread/status/changed', params: { threadId: id, status: { type } } }); };
+    status('chat-d', 'active'); status('chat-e', 'active');
+    await eventually(async () => assert.deepEqual(await ids(recents), ['chat-a', 'chat-d', 'chat-e', 'idle-a', 'idle-b', 'idle-c']));
+    f.emit('message', { method: 'turn/completed', params: { threadId: 'chat-d', turn: { id: 'done', status: 'completed', items: [] } } });
+    status('chat-d', 'idle');
+    await eventually(async () => assert.equal(await row(page, 'chat-d').locator('.thread-dot').getAttribute('data-state'), 'unread'));
+    await eventually(async () => assert.deepEqual(await ids(recents), ['chat-a', 'chat-e', 'chat-d', 'idle-a', 'idle-b', 'idle-c']), 'working first, then the finished unread chat, then idle');
+    await page.mouse.move(700, 300);
+    await eventually(async () => assert.deepEqual((await ids(recents)).slice(0, 3), ['chat-a', 'chat-e', 'chat-d']), 'the same order once the pointer leaves');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
 test('a working child stays below its explicitly grouped parent', async () => {
   const chats = [chat('chat-a', 30, { type: 'active' }), chat('parent', 20), chat('child', 10, { type: 'active' })];
   const groups = { groups: [], members: {}, groupBy: 'none', sortBy: 'manual', collapsed: [], order: ['parent', 'child', 'chat-a'], parents: { child: 'parent' } };
