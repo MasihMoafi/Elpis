@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { History } from "lucide-react";
 import { SendIcon } from "@/components/elpis-icons";
 import { MarkdownText } from "@/components/markdown-text";
 import { api, unreadable, type Entry } from "@/lib/api";
@@ -16,8 +17,8 @@ import { MatildaFace } from "@/components/matilda-face";
 import { useMatildaSettings } from "@/lib/matilda-settings";
 import "@/components/matilda-mini-chat.css";
 
-/** Earlier messages shown when the chat opens, and how many more each scroll to the top reveals (Masih, 31 Oct: "show some by
- * default, and when I hover up load them"). */
+/** Earlier messages shown when the history icon opens them, and how many more each scroll to the top reveals (31 Oct: "when I
+ * hover up load them"; 1 Nov: none until the icon is pressed). */
 const EARLIER_STEP = 6;
 
 type Conversation = { entries: Entry[]; busy: boolean; error?: string };
@@ -36,6 +37,8 @@ export function useMatildaMiniChat(open: boolean) {
   // Turns already there when the chat opens are "earlier": the last few show at once, and more as he scrolls up. A reply still
   // on its way stays shown.
   const [earlier, setEarlier] = useState<Set<string> | null>(null), [shownEarlier, setShownEarlier] = useState(EARLIER_STEP);
+  // Like a pinned pet, the pop-up shows only what is said now; its history icon opens the earlier turns (Masih, 1 Nov).
+  const [history, setHistory] = useState(false);
   const openRef = useRef(open); openRef.current = open;
   const rememberEarlier = useCallback((result: Conversation, sentTurn?: string) => {
     const pending = sentTurn ?? (result.busy ? result.entries.at(-1)?.turnId : undefined);
@@ -71,7 +74,7 @@ export function useMatildaMiniChat(open: boolean) {
     }, () => { if (!sending.current) void read(controller.signal); });
     const changed = () => { if (!sending.current) void read(controller.signal); };
     window.addEventListener(MATILDA_CHANGED, changed);
-    return () => { stop(); controller.abort(); latestRead.current++; window.removeEventListener(MATILDA_CHANGED, changed); setEarlier(null); setShownEarlier(EARLIER_STEP); };
+    return () => { stop(); controller.abort(); latestRead.current++; window.removeEventListener(MATILDA_CHANGED, changed); setEarlier(null); setShownEarlier(EARLIER_STEP); setHistory(false); };
   }, [open, read, rememberEarlier]);
   // Ask again every second while she replies. A failed or superseded read must not end the asking (28 Oct: her reply had
   // arrived, and the small chat still said "Matilda is replying…" minutes later).
@@ -107,7 +110,7 @@ export function useMatildaMiniChat(open: boolean) {
     } catch (cause) { if (mounted.current) setError(cause instanceof Error ? cause.message : "Message not sent. Try again."); }
     finally { sending.current = false; if (mounted.current) setPosting(false); }
   }
-  return { draft, setDraft, conversation, error, posting, send, retry: read, earlier, shownEarlier, showMoreEarlier: () => setShownEarlier(count => count + EARLIER_STEP) };
+  return { draft, setDraft, conversation, error, posting, send, retry: read, earlier, shownEarlier, showMoreEarlier: () => setShownEarlier(count => count + EARLIER_STEP), history, setHistory };
 }
 
 function message(entry: Entry) {
@@ -128,13 +131,14 @@ export function MatildaMiniChat({ chat }: { chat: ReturnType<typeof useMatildaMi
   }, [chat.shownEarlier]);
   const said = chat.conversation.entries.filter(entry => message(entry).trim());
   const before = chat.earlier ? said.filter(entry => chat.earlier!.has(entry.turnId)) : said;
-  const entries = [...before.slice(-chat.shownEarlier), ...said.filter(entry => !before.includes(entry))];
-  const moreEarlier = before.length > chat.shownEarlier;
+  const entries = [...chat.history ? before.slice(-chat.shownEarlier) : [], ...said.filter(entry => !before.includes(entry))];
+  const moreEarlier = chat.history && before.length > chat.shownEarlier;
   // The newest message is in view whenever one arrives, grows or the earlier ones open (29 Oct: they opened at the oldest,
   // her answers below the fold); asking again while she replies changes nothing, so it never moves what he scrolled to.
   const last = entries.at(-1), newest = last ? `${last.turnId}:${last.item.id}:${message(last).length}` : "";
   useLayoutEffect(() => { if (log.current) log.current.scrollTop = log.current.scrollHeight; }, [newest]);
   return <div className="matilda-mini-chat" role="dialog" aria-label="Small chat with Matilda">
+    {!!before.length && <div className="matilda-mini-bar"><Button variant="ghost" size="icon-xs" aria-label={chat.history ? "Hide earlier messages" : "Show earlier messages"} title={chat.history ? "Hide earlier messages" : "Show earlier messages"} aria-pressed={chat.history} onClick={() => chat.setHistory(open => !open)}><History size={14} /></Button></div>}
     {!!entries.length && <div ref={log} className="matilda-mini-messages" role="log" aria-label="Matilda conversation" aria-live="polite" aria-relevant="additions text">
       {moreEarlier && <LoadOnScroll label="Loading earlier messages" onLoad={reveal} />}
       {entries.map(entry => <div key={`${entry.turnId}:${entry.item.id}`} className="matilda-mini-message flow-root" data-speaker={entry.item.type === "userMessage" ? "you" : "matilda"}>
@@ -145,6 +149,8 @@ export function MatildaMiniChat({ chat }: { chat: ReturnType<typeof useMatildaMi
     {(chat.posting || chat.conversation.busy) && <p className="matilda-mini-status" role="status">Matilda is replying…</p>}
     {chat.error && <div className="matilda-mini-error" role="alert"><span>{chat.error}</span><Button variant="ghost" size="xs" onClick={() => void chat.retry()}>Retry</Button></div>}
     <form aria-label="Message Matilda" className="matilda-mini-composer" onSubmit={event => { event.preventDefault(); void chat.send(); }}>
+      {/* Off is never a dead end here: one press turns her on everywhere (1 Nov: "Matilda is disabled from our pin"). */}
+      {off && <Button type="button" variant="ghost" size="xs" onClick={() => void shared.update({ replies: true })}>Turn Matilda on</Button>}
       <Textarea aria-label="Message Matilda" placeholder={off ? "Matilda is off" : "Message Matilda…"} disabled={off} rows={1} autoFocus value={chat.draft} onChange={event => chat.setDraft(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} />
       <Button type="submit" variant="ghost" size="icon-sm" aria-label="Send to Matilda" title="Send to Matilda" disabled={!chat.draft.trim() || chat.posting || chat.conversation.busy}><SendIcon size={18} /></Button>
     </form>

@@ -349,6 +349,7 @@
     "tests/message-edit.test.cjs",
     "tests/message-fold.test.cjs",
     "tests/brand-style-scope.test.cjs",
+    "tests/matilda-pin-pet.test.cjs",
     "tests/workflows-feedback.test.cjs",
     "tests/workflows-wf1.test.cjs",
     "tests/browser-sessions-electron.test.cjs",

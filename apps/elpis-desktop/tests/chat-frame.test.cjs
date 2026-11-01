@@ -77,6 +77,7 @@ for (const colorScheme of ['light', 'dark']) for (const width of [1440, 960]) {
 
     const avatar = page.getByRole('region', { name: 'Pinned Matilda' }).getByRole('button', { name: 'Chat with Matilda' });
     await avatar.click(); const mini = page.getByRole('dialog', { name: 'Small chat with Matilda' });
+    await mini.getByRole('button', { name: 'Show earlier messages', exact: true }).click(); // 1 Nov: earlier turns open from her history icon
     const miniCard = mini.locator('.matilda-mini-message[data-speaker="you"]'); await miniCard.waitFor();
     const miniMessage = await frames(miniCard), miniForm = mini.locator('.matilda-mini-composer');
     await mini.getByRole('textbox', { name: 'Message Matilda' }).focus();

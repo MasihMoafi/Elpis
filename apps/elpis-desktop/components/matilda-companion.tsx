@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { MATILDA_CHANGED, MATILDA_CHAT_SHOWN } from "@/lib/matilda";
 import { appStorage } from "@/lib/projects";
+import { useMatildaSettings } from "@/lib/matilda-settings";
 import { MATILDA_SHOTS, MATILDA_SHOTS_LIGHT } from "@/bridge/matilda-face.cjs";
 
 type Track = { title: string; artist: string; uri: string; status: string; canPlay: boolean; canPause: boolean; canNext: boolean; muted: boolean; canMute: boolean };
@@ -71,6 +72,9 @@ export function MatildaCompanion() {
     return () => { document.removeEventListener("keydown", key); document.removeEventListener("pointerdown", press, true); };
   }, [chatOpen]);
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
+  // Pinning her means wanting her: an off Matilda is turned on (1 Nov: "Matilda is disabled from our pin, it shouldn't be").
+  const matilda = useMatildaSettings();
+  const pin = () => { void act("pin"); if (matilda.settings?.replies === false) void matilda.update({ replies: true }).catch(cause => setError(cause instanceof Error ? cause.message : "Matilda could not be turned on.")); };
   const generation = useRef(0), working = useRef(false);
   const refresh = useCallback(async () => {
     if (working.current) return;
@@ -232,7 +236,7 @@ export function MatildaCompanion() {
   </section>;
   return <div className="flex min-w-0 shrink-0 items-center gap-1 pr-2">
     <MatildaHeartBurst />
-    {floating ? createPortal(floating, document.body) : <Button variant="ghost" size="icon-sm" aria-label="Pin Matilda" title="Pin Matilda" disabled={busy} onClick={() => void act("pin")}><><img className="matilda-pin-face matilda-avatar-light" src={MATILDA_SHOTS_LIGHT.softSmile} alt="" /><img className="matilda-pin-face matilda-avatar-dark" src={MATILDA_SHOTS.softSmile} alt="" /></></Button>}
+    {floating ? createPortal(floating, document.body) : <Button variant="ghost" size="icon-sm" aria-label="Pin Matilda" title="Pin Matilda" disabled={busy} onClick={pin}><><img className="matilda-pin-face matilda-avatar-light" src={MATILDA_SHOTS_LIGHT.softSmile} alt="" /><img className="matilda-pin-face matilda-avatar-dark" src={MATILDA_SHOTS.softSmile} alt="" /></></Button>}
     {error && <p role="alert" className="fixed bottom-4 right-4 z-50 max-w-sm border border-border bg-background p-2 text-xs text-destructive">{error}</p>}
   </div>;
 }

@@ -295,7 +295,7 @@ for (const colorScheme of ['light', 'dark']) test(`Matilda mini chat, mute and d
 
 // 28 Oct: "that small chatbox shouldn't show previous messages; it's for quick new chats", like Dot's "Start new chat".
 // And her reply had arrived while the small chat still said "Matilda is replying…": one failed read ended the asking.
-for (const colorScheme of ['light', 'dark']) test(`the small chat shows its last messages, loads older ones as he scrolls up, and asks until her reply arrives (${colorScheme})`, { timeout: 60000 }, async t => {
+for (const colorScheme of ['light', 'dark']) test(`the small chat shows its last messages from its history icon, loads older ones as he scrolls up, and asks until her reply arrives (${colorScheme})`, { timeout: 60000 }, async t => {
   const { fixture } = require('./parity-fixture.cjs');
   const { FACE_DATA_URL } = require('../bridge/matilda-face.cjs');
   const say = (turnId, type, text) => ({ turnId, item: type === 'agentMessage' ? { id: `${turnId}-a`, type, text } : { id: `${turnId}-u`, type, content: [{ type: 'text', text }] } });
@@ -328,9 +328,13 @@ for (const colorScheme of ['light', 'dark']) test(`the small chat shows its last
   };
   const mini = page.getByRole('dialog', { name: 'Small chat with Matilda', exact: true });
   await avatar.click(); await mini.waitFor();
-  // 31 Oct: "show some by default, and when I hover up load them; no need for that button".
+  // 1 Nov (replacing 31 Oct's "show some by default"): no earlier messages until the history icon; then the last few, and
+  // more as he scrolls up (31 Oct: "when I hover up load them").
+  const history = mini.getByRole('button', { name: 'Show earlier messages', exact: true });
+  await history.waitFor();
+  assert.equal(await mini.getByText('An old answer', { exact: true }).count(), 0, 'no earlier messages at first');
+  await history.click();
   await mini.getByText('An old answer', { exact: true }).waitFor();
-  assert.equal(await mini.getByRole('button', { name: /previous messages/i }).count(), 0, 'no button for earlier messages');
   assert.equal(await mini.getByText('The first answer', { exact: true }).count(), 0, 'only the last few earlier messages show at first');
   await mini.getByRole('textbox', { name: 'Message Matilda', exact: true }).fill('hey');
   await mini.getByRole('button', { name: 'Send to Matilda', exact: true }).click();
