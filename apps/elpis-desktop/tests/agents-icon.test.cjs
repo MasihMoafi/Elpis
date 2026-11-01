@@ -145,23 +145,25 @@ test('working-only Agents filter follows live status without closing the selecte
   } });
   try {
     const { page } = f;
+    // The fixture is the desktop app, whose header shows chat tabs, not a title: the selected chat is the selected tab.
+    const openTab = name => page.getByRole('tablist', { name: 'Chat tabs' }).getByRole('tab', { name, exact: true, selected: true });
     await f.open('chat-a');
     const filter = page.getByRole('button', { name: 'Working agents only', exact: true });
     assert.equal(await filter.getAttribute('aria-pressed'), 'true');
     await page.locator('.team-row[data-thread-id="agent-1"]').click();
-    await page.locator('.workspace-header h1').filter({ hasText: 'Agent 2' }).waitFor();
+    await openTab('Agent 2').waitFor();
     const colour = await page.locator('.team-row[data-thread-id="agent-1"] .agent-mark').evaluate(mark => getComputedStyle(mark).backgroundColor);
     f.emit('message', { method: 'thread/status/changed', params: { threadId: 'agent-1', status: { type: 'idle' } } });
     await page.locator('.team-row[data-thread-id="agent-1"]').waitFor({ state: 'hidden' });
     await page.getByText('No working agents', { exact: true }).waitFor();
     assert.equal(await page.locator('.team-row.root').count(), 1, 'the main chat stays in the panel');
-    await page.locator('.workspace-header h1').filter({ hasText: 'Agent 2' }).waitFor();
+    await openTab('Agent 2').waitFor();
     f.emit('message', { method: 'thread/status/changed', params: { threadId: 'agent-2', status: { type: 'active', activeFlags: [] } } });
     await page.locator('.team-row[data-thread-id="agent-2"]').waitFor();
     await filter.click();
     assert.equal(await page.locator('.team-row').count(), 17, 'show all restores every agent');
     assert.equal(await page.locator('.team-row[data-thread-id="agent-1"] .agent-mark').evaluate(mark => getComputedStyle(mark).backgroundColor), colour, 'status and filter changes do not recolor an agent');
-    await page.locator('.workspace-header h1').filter({ hasText: 'Agent 2' }).waitFor();
+    await openTab('Agent 2').waitFor();
     await filter.click();
     assert.equal(await page.locator('.team-row').count(), 2, 'working-only can be restored');
     assert.deepEqual(f.errors, []);
