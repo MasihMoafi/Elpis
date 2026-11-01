@@ -1,5 +1,5 @@
 // The agents canvas, run once for real: the installed engine on the ChatGPT subscription (every agent and the Mother
-// on gpt-6-luna), its provider bridge on a socket of this run's own, this app's bridge and the built renderer (out/),
+// on gpt-6-luna, or CANVAS_LIVE_MODEL), its provider bridge on a socket of this run's own, this app's bridge and the built renderer (out/),
 // driven by Playwright as a user drives the packaged app. The project is a throwaway git repository under /tmp; the
 // chats the run makes are archived at the end, by their ids. Nothing of an already running Elpis is touched.
 // Usage: [CANVAS_LIVE_PROJECT=/tmp/<new folder at a path config.toml already trusts>] ELPIS_PLAYWRIGHT_PACKAGE=...
@@ -21,6 +21,8 @@ const { uiFit } = require('./ui-fit.cjs');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 
 const [engine, plan = 'voting'] = process.argv.slice(2);
+// CANVAS_LIVE_MODEL picks every agent's model: a model id (gpt-6-luna) or "provider|model" as the model menu lists it.
+const MODEL = process.env.CANVAS_LIVE_MODEL || 'gpt-6-luna', MODEL_ID = MODEL.split('|').at(-1);
 assert(engine && path.isAbsolute(engine), 'Provide the absolute path of the installed Elpis engine');
 const PLANS = {
   tiny: { template: /^Sequential/, agents: 3, folders: ['page'],
@@ -36,13 +38,13 @@ const PLANS = {
 };
 const chosen = PLANS[plan]; assert(chosen, `Unknown plan: ${plan}`);
 const custom = plan === 'father' || plan === 'clash';
-const savedBoard = custom ? { name: `Live ${plan}`, maxAgents: 12, mother: { brief: chosen.goal, model: 'gpt-6-luna', provider: null }, edges: [],
+const savedBoard = custom ? { name: `Live ${plan}`, maxAgents: 12, mother: { brief: chosen.goal, model: MODEL_ID, provider: null }, edges: [],
   nodes: Array.from({ length: chosen.agents }, (_, i) => {
     const number = String(i + 1).padStart(2, '0'), folder = plan === 'clash' ? 'shared' : `writers/${number}`;
     const instruction = plan === 'clash' ? `Replace shared/result.txt with exactly writer-${number} followed by a newline. Leave every other file alone. Do not commit.`
       : `Write only ${folder}/result.txt, one line containing writer-${number} followed by the absolute working directory from pwd -P. Do not commit. Check its content with cat.`;
     return { id: `writer-${number}`, type: 'agent', position: { x: 260 + Math.floor(i / 6) * 270, y: (i % 6) * 130 },
-      data: { title: `Writer ${number}`, instruction, model: 'gpt-6-luna', writeScopes: [folder], acceptanceCriteria: [`${folder}/result.txt contains writer-${number}`] } };
+      data: { title: `Writer ${number}`, instruction, model: MODEL_ID, writeScopes: [folder], acceptanceCriteria: [`${folder}/result.txt contains writer-${number}`] } };
   }) } : null;
 const engineDirectory = path.dirname(realpathSync(engine));
 const bridgeScript = [
@@ -106,17 +108,19 @@ try {
     if (board) localStorage.setItem('elpis-workflow-draft-v1', JSON.stringify(board));
   }, { cwd: project, board: savedBoard });
   await page.goto(app.url);
+  // The profile is his real one, where Matilda may be pinned over the board's panel buttons; she is not under test here.
+  await page.addStyleTag({ content: '.matilda-float { display: none !important; }' });
   await page.getByRole('button', { name: 'Workflows', exact: true }).click();
   const canvas = page.getByRole('region', { name: 'Workflows', exact: true }); await canvas.waitFor();
   const api = (pathname, body) => page.evaluate(async ([pathname, body]) => {
     const response = await fetch(`/api${pathname}`, body === undefined ? {} : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
     const value = await response.json(); if (!response.ok) throw Error(value.error || response.status); return value;
   }, [pathname, body]);
-  /** Opens a model menu and picks gpt-6-luna on the ChatGPT subscription, as a user does. */
+  /** Opens a model menu and picks MODEL, as a user does. */
   const luna = async combobox => {
     await combobox.click();
-    const option = page.getByRole('option').and(page.locator('[data-value$="|gpt-6-luna"]')).first();
-    await option.waitFor().catch(async error => { throw Error(`No gpt-6-luna to pick; the menu offers ${(await page.getByRole('option').evaluateAll(items => items.map(item => item.dataset.value))).join(', ')}: ${error.message.split('\n')[0]}`); });
+    const option = page.getByRole('option').and(page.locator(MODEL.includes('|') ? `[data-value="${MODEL}"]` : `[data-value$="|${MODEL}"]`)).first();
+    await option.waitFor().catch(async error => { throw Error(`No ${MODEL} to pick; the menu offers ${(await page.getByRole('option').evaluateAll(items => items.map(item => item.dataset.value))).join(', ')}: ${error.message.split('\n')[0]}`); });
     const value = await option.getAttribute('data-value'); await option.click();
     assert.equal(await combobox.getAttribute('data-value'), value); return value;
   };
@@ -141,16 +145,24 @@ try {
   // The planner fills the empty folders first; then the run starts and the header follows it.
   let last = '', tabVerified = false;
   for (;;) {
-    const statusChip = canvas.locator('.canvas-header > .canvas-chip[role=status]');
+    const statusChip = canvas.locator('.canvas-chip[role=status]:has(.canvas-dot)'); // beside the request since 28 Oct
     const chip = await statusChip.count() ? (await statusChip.innerText()).trim() : '';
     // An alert is a refusal; the planner's "Elpis is on it" is a status.
     const alert = canvas.locator('.canvas-notice[role=alert]');
     const notice = await alert.count() ? (await alert.innerText()).trim() : '';
     const listed = runs.length ? (await api(`/workflows?threadId=${encodeURIComponent(runs.at(-1).threadId)}`)).data.find(item => item.id === runs.at(-1).graphId) : null;
     if (runs[0] && !tabVerified) {
-      await page.waitForFunction(threadId => JSON.parse(localStorage.getItem('elpis-chat-tabs-v1') || '{"tabs":[]}').tabs.some(tab => tab.threadId === threadId), runs[0].threadId);
+      // Chat tabs are saved only inside the desktop app (window.elpisDesktop.storage), not in this browser, so the run is
+      // checked through the board itself.
       assert.equal(await canvas.isVisible(), true, 'starting the run keeps the Workflows board open');
-      assert.equal(await canvas.getByRole('button', { name: 'New workflow', exact: true }).isEnabled(), true, 'New workflow stays usable during the run');
+      // During the run a new request can be typed and New workflow takes it (it waits only while the run is being started,
+      // agents-canvas.tsx `starting`, and while the box is empty). The text is cleared again; nothing is submitted.
+      const request = canvas.getByRole('textbox', { name: 'Workflow request', exact: true }), previous = await request.inputValue();
+      await request.fill('A second workflow while this one runs');
+      const newWorkflow = canvas.getByRole('button', { name: 'New workflow', exact: true });
+      for (const until = Date.now() + 30000; !await newWorkflow.isEnabled() && Date.now() < until;) await page.waitForTimeout(250);
+      assert.equal(await newWorkflow.isEnabled(), true, 'New workflow stays usable during the run');
+      await request.fill(previous);
       tabVerified = true;
     }
     for (const row of git('worktree', 'list', '--porcelain').split('\n')) if (row.startsWith('worktree ')) worktrees.add(row.slice(9));
@@ -162,7 +174,7 @@ try {
     await page.waitForTimeout(1000);
   }
   say(`Run took ${Math.round((Date.now() - started) / 1000)} s`);
-  assert.equal(tabVerified, true, 'the real run opened its Mother agent chat tab');
+  assert.equal(tabVerified, true, 'the board stayed open and usable while the real run started');
   const graphs = [];
   for (const run of runs) graphs.push((await api(`/workflows?threadId=${encodeURIComponent(run.threadId)}`)).data.find(item => item.id === run.graphId));
   const graph = graphs.at(-1);
@@ -191,10 +203,10 @@ try {
   // Read before the asserts, so that a failed run still leaves its evidence.
   for (const [name, issues] of Object.entries(fits)) assert.deepEqual(issues, [], `ui-fit ${name}`);
   if (custom) {
-    for (const item of graphs) for (const task of item.tasks) assert.equal(task.model, 'gpt-6-luna');
+    for (const item of graphs) for (const task of item.tasks) assert.equal(task.model, MODEL_ID);
     for (const part of submitted) {
       assert.equal(part.isolation, 'worktree');
-      for (const task of part.tasks) assert.equal(task.model, 'gpt-6-luna');
+      for (const task of part.tasks) assert.equal(task.model, MODEL_ID);
     }
     if (plan === 'clash') {
       assert.equal(graph.status, 'failed');
@@ -226,7 +238,7 @@ try {
         assert.ok(Date.now() < until, 'the Mother agent finished receiving the report'); await page.waitForTimeout(1000);
       }
       await fs.writeFile(path.join(evidence, `${plan}-mother-items.json`), JSON.stringify(items, null, 1));
-      assert.equal(items.thread.model, 'gpt-6-luna');
+      assert.equal(items.thread.model, MODEL_ID);
       const asked = items.data.filter(row => row.item?.type === 'userMessage').flatMap(row => row.item.content ?? []).map(item => item.text ?? '').join('\n');
       assert.ok(asked.includes(runs[1].threadId), 'the Father agent reports back to the Mother agent with his chat id');
       for (const task of graphs[1].tasks) assert.ok(asked.includes(JSON.stringify(task.result)), `${task.id} accepted result reached the Mother agent`);
@@ -236,7 +248,7 @@ try {
   assert.equal(graph.status, 'succeeded', `graph ${graph.status}: ${graph.error ?? ''}`);
   for (const task of graph.tasks) assert.equal(task.status, 'succeeded', `${task.title}: ${task.status} ${task.failureReason ?? ''}`);
   if (chosen.agents) assert.equal(graph.tasks.length, chosen.agents * 2);
-  assert.match(await canvas.locator('.canvas-header').innerText(), new RegExp(`Finished · ${graph.tasks.length / 2} of ${graph.tasks.length / 2} done`));
+  assert.match(await canvas.locator('.canvas-chip[role=status]:has(.canvas-dot)').innerText(), new RegExp(`Finished · ${graph.tasks.length / 2} of ${graph.tasks.length / 2} done`));
   // The last agent got every answer it waits for: each one's reported summary is in its first message.
   const last_ = graph.tasks.find(task => task.kind === 'implement' && task.dependsOn.length === Math.max(...graph.tasks.map(item => item.dependsOn.length)));
   const pages = [];
