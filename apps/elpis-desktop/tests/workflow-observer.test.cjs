@@ -1,6 +1,8 @@
 // The observer must read existing sessions without taking over or resuming them.
 const {test}=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs/promises');const path=require('node:path');const http=require('node:http');
 const {chromium}=require(process.env.ELPIS_PLAYWRIGHT_PACKAGE||'playwright');
+// Earlier history loads as the chat's top scrolls into view; the Load earlier button became one LoadOnScroll marker (ee719dbe8, 31 Oct).
+const {scrollToLoadEarlier}=require('./controls.cjs');
 test('a chat the app cannot follow live is refreshed by reading: messages, child status, history and scroll survive',async()=>{
  const calls=[],clients=new Set();let childReads=0,lineageReads=0;
  const root={id:'root',name:'Root conversation',desktopAccess:{writable:false,reason:'Terminal owned'},status:{type:'active'}};
@@ -16,11 +18,12 @@ test('a chat the app cannot follow live is refreshed by reading: messages, child
   try{const file=path.join(__dirname,'../out',url.pathname==='/'?'index.html':url.pathname);res.setHeader('content-type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html');res.end(await fs.readFile(file));}catch{res.statusCode=404;res.end();}});
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const browser=await chromium.launch({executablePath:process.env.ELPIS_CHROMIUM||undefined,headless:true});
  try{const page=await browser.newPage({viewport:{width:1440,height:800}});page.setDefaultTimeout(10000);await page.goto(`http://127.0.0.1:${server.address().port}`);
-  await page.getByRole('button',{name:'Root conversation',exact:true}).click();await page.getByRole('button',{name:'Expand agents in Root conversation',exact:true}).click();await page.locator('.thread-row[data-thread-id="child"] .thread-link').click();await page.getByRole('button',{name:'Load earlier messages',exact:true}).click();for(const s of await page.locator('.worked-for:not([open]) > summary').all())await s.click();for(const s of await page.locator('.activity-group:not([open]) > summary').all())await s.click();await page.getByText('Earlier retained history',{exact:true}).waitFor();
+  await page.getByRole('button',{name:'Root conversation',exact:true}).click();await page.getByRole('button',{name:'Expand agents in Root conversation',exact:true}).click();await page.locator('.thread-row[data-thread-id="child"] .thread-link').click();await scrollToLoadEarlier(page);for(const s of await page.locator('.worked-for:not([open]) > summary').all())await s.click();for(const s of await page.locator('.activity-group:not([open]) > summary').all())await s.click();await page.getByText('Earlier retained history',{exact:true}).waitFor();
   await page.locator('.chat-scroll').evaluate(element=>{element.scrollTop=100;element.dispatchEvent(new Event('scroll',{bubbles:true}));});const position=await page.locator('.chat-scroll').evaluate(element=>element.scrollTop);
   await page.getByText('A new observation arrived',{exact:true}).waitFor({state:'attached'});assert.equal(await page.getByText('Earlier retained history',{exact:true}).count(),1);assert.equal(await page.locator('.chat-scroll').evaluate(element=>element.scrollTop),position);
   await page.locator('.thread-row[data-thread-id="new-child"] .thread-title').filter({hasText:'Newly spawned reviewer'}).waitFor();assert.equal(await page.locator('.thread-row[data-thread-id="child"] .thread-dot').getAttribute('data-state'),'idle');
-  assert.deepEqual([...new Set(calls.filter(c=>c.method==='POST'&&!(c.path.endsWith('/rewind')&&c.body?.action==='status')&&c.path!=='/api/voice/read-aloud/warm').map(c=>c.path))].sort(),['/api/threads/child/resume','/api/threads/root/resume'],'opening only asks to follow live; nothing is written');
+  // Reads sent as POST are not writes: the rewind status, and the edited-message versions list (ca051082c, 29 Oct).
+  assert.deepEqual([...new Set(calls.filter(c=>c.method==='POST'&&!(c.path.endsWith('/rewind')&&c.body?.action==='status')&&!(c.path.endsWith('/versions')&&c.body?.action==='list')&&c.path!=='/api/voice/read-aloud/warm').map(c=>c.path))].sort(),['/api/threads/child/resume','/api/threads/root/resume'],'opening only asks to follow live; nothing is written');
   await page.screenshot({path:'/tmp/elpis-observer-sidebar.png'});
  }finally{await browser.close();for(const c of clients)c.end();await new Promise(resolve=>server.close(resolve));}
 });
