@@ -522,7 +522,7 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
   const tools = <div className="navbar love-spot-tools accent-scope">
       <div className="love-spot-pages">
         <DropdownMenu onOpenChange={open => { if (open) loadPages(); }}>
-          <DropdownMenuTrigger render={<Button variant="outline" size="sm" aria-label="Pages" className="w-44 min-w-28 shrink justify-between" disabled={!editor || pageBusy} />}>
+          <DropdownMenuTrigger render={<Button variant="outline" size="sm" aria-label="Pages" className="max-w-full min-w-28 shrink justify-between" disabled={!editor || pageBusy} />}>
             <span className="min-w-0 truncate">{page?.name ?? "Pages"}</span><ChevronDown aria-hidden="true" size={14} />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="max-h-96 max-w-80 overflow-y-auto">
@@ -531,7 +531,7 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
             {pages.some(item => item.name !== page?.name && !item.kept) && <DropdownMenuItem variant="destructive" onClick={() => setClearing(true)}><Trash2 aria-hidden="true" />Delete all pages</DropdownMenuItem>}
             {pages.map(item => <DropdownMenuItem key={item.name} onClick={() => void changePage("switch", item.name)}>
               <Check aria-hidden="true" className={item.name === page?.name ? "shrink-0" : "invisible shrink-0"} />
-              <span className="min-w-0"><span className="block truncate">{item.name}</span><time className="block text-xs text-muted-foreground" dateTime={new Date(item.modified).toISOString()}>{new Date(item.modified).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}{item.kept ? "" : item.expires && item.name !== page?.name ? ` · to trash in ${Math.max(1, Math.ceil((item.expires - Date.now()) / 86400000))} d` : ""}</time></span>
+              <span className="min-w-0"><span className="block whitespace-normal break-words">{item.name}</span><time className="block text-xs text-muted-foreground" dateTime={new Date(item.modified).toISOString()}>{new Date(item.modified).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}{item.kept ? "" : item.expires && item.name !== page?.name ? ` · to trash in ${Math.max(1, Math.ceil((item.expires - Date.now()) / 86400000))} d` : ""}</time></span>
               {item.kept && <Pin aria-label="Kept" className="ml-auto shrink-0" fill="currentColor" />}
             </DropdownMenuItem>)}
             {pagesError && <DropdownMenuItem disabled className="whitespace-normal text-muted-foreground">{pagesError}</DropdownMenuItem>}
