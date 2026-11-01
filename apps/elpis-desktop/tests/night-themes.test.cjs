@@ -206,15 +206,18 @@ test('light orange accents keep real chat and Settings text readable, with orang
     assert.deepEqual(await page.evaluate(contrastFailures), [], `${mode} ${accent} chat text contrast`);
     const marks = await page.evaluate(() => {
       const css = (element, pseudo) => getComputedStyle(element, pseudo);
+      const edge = element => css(element, '::before').backgroundImage.match(/(rgba?|oklch|oklab|color)\([^)]*\)/)?.[0] ?? 'none';
       const link = css(document.querySelector('.message.agent a'));
       const send = css(document.querySelector('.send-button'));
       const probe = document.createElement('span');
       probe.style.color = 'var(--primary)'; document.body.append(probe);
       const primary = css(probe).color; probe.remove();
       return { primary, link: link.color, underline: link.textDecorationColor, line: link.textDecorationLine,
-        tab: css(document.querySelector('.task-tab.active'), '::after').backgroundColor,
+        // The tab and sidebar marks are the one angular edge line since 31 Oct (Masih's drawing on the Love Spot board,
+        // commit c35a20a6c): a gradient painted on ::before, so its colour is read from that paint.
+        tab: edge(document.querySelector('.task-tab.active')),
         icon: css(document.querySelector('.task-tab.active > button svg')).color,
-        sidebar: css(document.querySelector('.thread-row.active'), '::before').backgroundColor,
+        sidebar: edge(document.querySelector('.thread-row.active')),
         fill: send.backgroundColor, label: send.color };
     });
     assert.equal(marks.line, 'underline');
