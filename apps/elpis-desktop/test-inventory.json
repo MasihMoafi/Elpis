@@ -401,7 +401,8 @@
     "tests/chat-frame.test.cjs",
     "tests/section-heading-gap.test.cjs",
     "tests/love-spot-page-names.test.cjs",
-    "tests/settings-nav-whole-rows.test.cjs"
+    "tests/settings-nav-whole-rows.test.cjs",
+    "tests/agent-inline.test.cjs"
   ],
   "opt-in": [
     "tests/screen-capture-electron.test.cjs",

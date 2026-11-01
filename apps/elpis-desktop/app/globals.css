@@ -421,6 +421,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .provider-advanced > * + * { margin-top:10px; }
 .activity-card { font-size:var(--text-sm); margin:2px 0; color:var(--muted-foreground); }
 .activity-card + :not(.activity-card) { margin-top:14px; }
+/* A subagent's conversation opened inside its parent chat (components/agent-inline.tsx): indented under the agent's row. */
+.agent-inline-body { margin:4px 0 8px 12px; padding-left:12px; border-left:1px solid var(--hairline); color:var(--foreground); }
 .activity-heading { display:flex; align-items:center; gap:8px; padding:4px 8px; cursor:pointer; min-width:0; }
 .activity-heading:hover { background:var(--hover); color:var(--foreground); }
 .activity-heading svg { flex-shrink:0; color:var(--muted-foreground); }
