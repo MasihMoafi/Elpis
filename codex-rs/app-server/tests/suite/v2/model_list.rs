@@ -547,30 +547,19 @@ async fn list_models_rejects_invalid_cursor() -> Result<()> {
     Ok(())
 }
 
-/// One catalog entry in the `/models` and `model_catalog_json` shape.
+/// One catalog entry in the `/models` and `model_catalog_json` shape: a bundled model renamed.
 fn catalog_entry(slug: &str) -> serde_json::Value {
-    json!({
-        "slug": slug,
-        "display_name": slug,
-        "description": "Live catalog coverage",
-        "default_reasoning_level": "low",
-        "supported_reasoning_levels": [{"effort": "low", "description": "Low"}],
-        "shell_type": "shell_command",
-        "visibility": "list",
-        "minimal_client_version": [0, 1, 0],
-        "supported_in_api": true,
-        "priority": 0,
-        "upgrade": null,
-        "support_verbosity": false,
-        "default_verbosity": null,
-        "apply_patch_tool_type": null,
-        "truncation_policy": {"mode": "bytes", "limit": 10_000},
-        "supports_image_detail_original": false,
-        "multi_agent_version": "v2",
-        "context_window": 272_000,
-        "max_context_window": 272_000,
-        "experimental_supported_tools": [],
-    })
+    let mut model = codex_models_manager::bundled_models_response()
+        .expect("bundled catalog")
+        .models
+        .remove(0);
+    model.slug = slug.to_string();
+    model.display_name = slug.to_string();
+    model.visibility = codex_protocol::openai_models::ModelVisibility::List;
+    model.supported_in_api = true;
+    model.priority = 0;
+    model.upgrade = None;
+    serde_json::to_value(model).expect("a catalog entry serializes")
 }
 
 fn live_params(refresh: Option<bool>, model_provider: Option<&str>) -> ModelListParams {

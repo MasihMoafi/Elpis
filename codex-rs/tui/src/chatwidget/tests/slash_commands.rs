@@ -575,7 +575,9 @@ async fn queued_settings_selection_applies_before_next_input() {
                     // Codex parity: picking a model opens its effort levels.
                     AppEvent::OpenReasoningPopup { model } => chat.open_reasoning_popup(model),
                     AppEvent::UpdateModel(model)
-                    | AppEvent::AstraSelectedFromModelPicker { model, .. } => chat.set_model(&model),
+                    | AppEvent::AstraSelectedFromModelPicker { model, .. } => {
+                        chat.set_model(&model)
+                    }
                     AppEvent::UpdateReasoningEffort(effort) => chat.set_reasoning_effort(effort),
                     AppEvent::SettingsSelectionClosed => {
                         chat.app_event_tx.send(AppEvent::SettingsSelectionSettled);
@@ -606,6 +608,13 @@ async fn queued_settings_selection_applies_before_next_input() {
     assert_matches!(op_rx.try_recv(), Err(TryRecvError::Empty));
     assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
 
+    // The current model, missing from this one-model list, stays listed and highlighted below
+    // Terra; move up to Terra.
+    assert!(
+        popup.contains("current model, not in the latest list"),
+        "{popup}"
+    );
+    chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
     chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
     assert_matches!(op_rx.try_recv(), Err(TryRecvError::Empty));
     apply_app_events(&mut chat, &mut rx);

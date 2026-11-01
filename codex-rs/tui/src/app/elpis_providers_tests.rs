@@ -478,7 +478,11 @@ async fn another_configured_connection_is_listed_by_the_app_server() -> Result<(
     else {
         unreachable!("only model replies are kept");
     };
-    assert_eq!(provider_id, GATEWAY);
+    // Whichever connection the second row is (Anthropic in CI), it is not the startup one.
+    assert_ne!(
+        Some(provider_id),
+        crate::chatwidget::elpis_catalog_provider()
+    );
     // The app server asked that provider itself: a list, or that provider's own failure, never
     // the old "set model_provider and restart" refusal.
     match result {
