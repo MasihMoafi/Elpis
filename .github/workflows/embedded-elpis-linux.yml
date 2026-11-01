@@ -21,7 +21,9 @@ permissions:
 
 concurrency:
   group: elpis-linux-${{ github.ref }}-${{ inputs.verification || 'full' }}
-  cancel-in-progress: false
+  # A newer run of the same branch replaces an older one instead of queuing behind it (1 Nov: runs waited 30+ min
+  # for superseded ones). Release tags still run to the end.
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
   schemas:
