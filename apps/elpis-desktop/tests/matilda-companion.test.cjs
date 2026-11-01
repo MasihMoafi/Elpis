@@ -261,6 +261,17 @@ for (const colorScheme of ['light', 'dark']) test(`Matilda mini chat, mute and d
   await page.mouse.move(browser.x + browser.width / 2, browser.y + browser.height / 2, { steps: 8 }); await page.mouse.up();
   const kept = await presence.boundingBox();
   assert.ok(kept.y + kept.height <= browser.y || kept.x + kept.width <= browser.x || kept.x >= browser.x + browser.width, JSON.stringify({ kept, browser }));
+  // A Workflows side panel over her half: she stays where she is, and the panel, not she, takes a click there (1 Nov).
+  const covered = await page.evaluate(() => {
+    const her = document.querySelector('.matilda-float').getBoundingClientRect(), side = document.createElement('aside');
+    side.className = 'canvas-side'; Object.assign(side.style, { position: 'fixed', top: '0px', left: `${Math.round(her.left + her.width / 2)}px`, right: '0px', height: '100vh' });
+    document.body.append(side); return { her: her.toJSON(), x: Math.round(her.left + her.width * 0.75), y: Math.round(her.top + her.height / 2) };
+  });
+  await page.waitForFunction(({ x, y }) => document.elementFromPoint(x, y)?.matches('aside.canvas-side'), covered);
+  assert.deepEqual(await presence.boundingBox(), { x: covered.her.x, y: covered.her.y, width: covered.her.width, height: covered.her.height }, 'she stays put');
+  assert.ok(await page.evaluate(({ x, y }) => !!document.elementFromPoint(x - Math.round(document.querySelector('.matilda-float').getBoundingClientRect().width / 2), y)?.closest('.matilda-float'), covered), 'her uncovered half is still hers');
+  await page.evaluate(() => document.querySelector('aside.canvas-side').remove());
+  await page.waitForFunction(({ x, y }) => !!document.elementFromPoint(x, y)?.closest('.matilda-float'), covered);
   assert.equal(await mini.count(), 0);
   await page.evaluate(() => window.__push({ fullView: 1 }));
   await page.getByRole('button', { name: 'Collapse floating chat', exact: true }).click();

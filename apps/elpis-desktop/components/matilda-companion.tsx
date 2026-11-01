@@ -49,6 +49,8 @@ function useMood(replying: boolean, replies: number) {
   const mood: Mood | null = replying ? "smile" : hovered ? "tiltSmile" : replied ? "softSmile" : winking ? "wink" : null;
   return { shown: stillness() ? null : mood, setHovered };
 }
+/** Panels that go over pinned Matilda rather than move her (right-hand side panels). */
+const BEHIND = ".canvas-side";
 export function MatildaCompanion() {
   const [state, setState] = useState<Companion | null>(null);
   const [chatOpen, setChatOpen] = useState(false), mini = useMatildaMiniChat(chatOpen);
@@ -100,6 +102,9 @@ export function MatildaCompanion() {
   const [place, setPlace] = useState(savedPlace), [shown, setShown] = useState({ left: 0, top: 0 });
   const placeRef = useRef(place); placeRef.current = place;
   const shownRef = useRef(shown);
+  // A Workflows side panel goes over her: she stays where she was put and is cut off at its edge, so its Done and Run
+  // buttons stay clickable (1 Nov: she covered them). Pages keep her place (the stays-put rule).
+  const [hidden, setHidden] = useState(0);
   const drag = useRef<{ x: number; y: number; left: number; top: number; size: number; resize: boolean; moved: boolean } | null>(null);
   // While she is held her chat keeps the side it opened on, so it moves with her instead of jumping across her.
   const [heldSide, setHeldSide] = useState<"top" | "bottom" | null>(null);
@@ -113,6 +118,13 @@ export function MatildaCompanion() {
       if (!pane.width || !pane.height || left >= pane.right || left + size <= pane.left || top >= pane.bottom || top + size <= pane.top) continue;
       if (pane.top - size - 4 >= chrome) top = Math.floor(pane.top - size - 4); else left = Math.max(0, Math.floor(pane.left - size - 4));
     }
+    let under = 0;
+    for (const element of document.querySelectorAll(BEHIND)) {
+      const pane = element.getBoundingClientRect();
+      if (!pane.width || !pane.height || left >= pane.right || left + size <= pane.left || top >= pane.bottom || top + size <= pane.top) continue;
+      under = Math.max(under, Math.ceil(left + size - pane.left));
+    }
+    setHidden(Math.min(under, size));
     if (left === shownRef.current.left && top === shownRef.current.top) return;
     shownRef.current = { left, top }; setShown(shownRef.current);
   };
@@ -169,7 +181,7 @@ export function MatildaCompanion() {
     let panes: Element[] = [];
     const resized = new ResizeObserver(() => fit());
     const discover = () => {
-      const next = [...document.querySelectorAll(".browser-viewport")];
+      const next = [...document.querySelectorAll(`.browser-viewport, ${BEHIND}`)];
       if (next.length === panes.length && next.every((pane, i) => pane === panes[i])) return;
       panes = next; resized.disconnect(); panes.forEach(pane => resized.observe(pane)); fit();
     };
@@ -192,7 +204,7 @@ export function MatildaCompanion() {
     const left = Math.min(Math.max(shown.left + size - width, edge), innerWidth - edge - width) - shown.left;
     return side === "top" ? { left, width, bottom: size + gap, maxHeight: shown.top - gap - chrome - edge } : { left, width, top: size + gap, maxHeight: innerHeight - shown.top - size - gap - edge };
   };
-  const floating = state?.pinned && <section ref={floatRef} aria-label="Pinned Matilda" className="matilda-float" data-controls={shown.top - chrome < 40 ? "below" : "above"} style={{ left: shown.left, top: shown.top, width: size, height: size }}>
+  const floating = state?.pinned && <section ref={floatRef} aria-label="Pinned Matilda" className="matilda-float" data-controls={shown.top - chrome < 40 ? "below" : "above"} style={{ left: shown.left, top: shown.top, width: size, height: size, ...hidden ? { clipPath: `polygon(-9999px -9999px, ${size - hidden}px -9999px, ${size - hidden}px 9999px, -9999px 9999px)` } : {} }}>
     <button ref={faceRef} type="button" className="matilda-face" aria-label="Chat with Matilda" aria-haspopup="dialog" aria-expanded={chatOpen} title="Chat with Matilda · drag to move" style={{ touchAction: "none" }}
       onPointerDown={grab(false)} onPointerMove={pull} onPointerUp={release} onLostPointerCapture={release}
       onClick={() => { if (!suppressClick.current) setChatOpen(open => !open); }}
