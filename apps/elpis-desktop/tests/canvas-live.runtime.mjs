@@ -33,6 +33,9 @@ const PLANS = {
     goal: 'Exercise a merge conflict: two independent writers replace the same line of shared/result.txt with different values. Do not resolve the conflict or commit.' },
   voting: { template: /^Voting/, agents: 4, folders: ['answer-1', 'answer-2', 'answer-3', 'tally'],
     goal: 'Question: which is larger, 2 to the power of 10 or 10 to the power of 3? Each answer is one short markdown file with the arithmetic as evidence. Keep every file under 15 lines.' },
+  // The real Logo team (lib/logo-team.ts): one agent draws three directions with image generation, traces and animates each.
+  logo: { template: /^Logo/, agents: 1, folders: ['logo'],
+    goal: 'Elpis' },
   split: { template: /^Split by parts/, agents: null, folders: ['src', 'tests'],
     goal: 'A two-file task: write src/greet.py with greet(name) returning "Hello, <name>!", and src/shout.py with shout(text) returning the text upper-cased with "!" appended. Each part adds its own test under tests/ (plain assert, run with python3). The join runs every test.' },
 };

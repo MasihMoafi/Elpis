@@ -426,6 +426,23 @@ test('isolation rejects staged changes outside scope even when the working file 
   assert.equal(fs.readFileSync(path.join(f.dir, 'outside'), 'utf8'), 'original');
 });
 
+// 1 Nov live run: a step that runs again in the same round (its check's findings, the Mother's retry, a misplaced file) failed
+// with "a branch named …/candidate-…-r1 already exists". The second completion replaces the first candidate.
+test('a step completed again in the same round replaces its candidate instead of failing', async t => {
+  const f = fixture(t);
+  const git = (cwd, ...args) => execFileSync('git', ['-c', 'core.hooksPath=/dev/null', '-c', 'user.name=Test', '-c', 'user.email=test@example.test', ...args], { cwd, encoding: 'utf8' }).trim();
+  git(f.dir, 'init', '-q'); fs.mkdirSync(path.join(f.dir, 'src')); fs.writeFileSync(path.join(f.dir, 'src/seed'), 'seed'); git(f.dir, 'add', 'src/seed'); git(f.dir, 'commit', '-qm', 'baseline');
+  const isolation = await workflowWorktrees(f.dir, 'second-completion');
+  const writer = { ...task('writer'), kind: 'implement', writeScopes: ['src'] };
+  const cwd = await isolation.prepare(writer, 1);
+  fs.writeFileSync(path.join(cwd, 'src/answer.md'), 'first');
+  await isolation.complete(writer, 1);
+  fs.writeFileSync(path.join(cwd, 'src/answer.md'), 'fixed after its check');
+  const second = await isolation.complete(writer, 1);
+  assert.match(second.stat ?? '', /answer\.md/);
+  assert.equal(git(f.dir, 'show', 'elpis/second-completion/candidate-writer-r1:src/answer.md'), 'fixed after its check');
+});
+
 // One bridge runs every workflow under one memory budget (bridge/memory-budget.mjs). Each node holds its turn until `release`.
 function budgetFixture(t, budget) {
   const tempRoot = createTestTempDir(path.join(os.homedir(), '.cache/elpis-tests/workflow-budget-'));

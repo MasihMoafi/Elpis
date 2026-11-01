@@ -136,7 +136,8 @@ export async function workflowWorktrees(project, id, saved) {
       await git(made.root, ['add', '--', ...changed]);
       const tree = await git(made.root, ['write-tree']);
       const sha = await git(made.root, ['commit-tree', tree, '-p', made.start, '-m', `Workflows: ${task.title} (round ${round})`]);
-      await git(made.root, ['branch', `elpis/${id}/candidate-${key}`, sha]);
+      // A step completed again in the same round (check findings, a retry) replaces its candidate (1 Nov live run).
+      await git(made.root, ['branch', '-f', `elpis/${id}/candidate-${key}`, sha]);
       commits.set(key, sha); made.inherited.add(key);
       const diff = await git(made.root, ['diff', '--no-ext-diff', '--no-textconv', made.start, sha, '--']);
       return { candidateCommit: sha, commits: [{ sha, subject: `Workflows: ${task.title} (round ${round})` }, ...original.split('\n').filter(Boolean).map(line => ({ sha: line.slice(0, 40), subject: line.slice(41) }))],
