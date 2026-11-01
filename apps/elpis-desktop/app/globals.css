@@ -57,7 +57,7 @@ html { font-size:var(--interface-size, 16px); }
 /* The rest of the app follows the same ChatGPT scale (specs/chatgpt-chat-style.md, "Shared scale"): three text sizes (12, 13,
  * 14; Tailwind's text-xs/sm/base read them too), one icon size per row, 28px composer controls, a 52px header, and pages
  * in Settings' rhythm (48px top, 20px under the header, 24px between sections, one 860px column). */
-:root { --text-xs:0.75rem; --text-sm:0.8125rem; --text-base:0.875rem; --text-title:1.75rem; --icon-size:16px; --control-h:28px; --row-h:34px; --header-h:52px;
+:root { --text-xs:0.75rem; --text-sm:0.8125rem; --text-base:0.875rem; --text-title:1.75rem; --icon-size:16px; --control-h:28px; --row-h:34px; --header-h:52px; --heading-row-gap:15px;
   --page-pad:48px 32px 64px; --page-content-width:860px; --page-head-gap:20px; --page-section-gap:24px;
   --reply-line-height:1.45; --reply-paragraph-gap:.725em;
   --composer-edge:color-mix(in oklab, var(--foreground) 8%, transparent); --elevation-composer:0 2px 8px #0000000a, 0 4px 40px 8px #00000006; }
@@ -384,8 +384,10 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .project-chip span { overflow:hidden; text-overflow:ellipsis; }
 /* More room above a section heading than below it: the heading belongs to the chats under it (Masih, 31 Oct: more space between Love Spot and Recents, less between Recents and its chats). The row keeps the shared 34 px height. */
 /* A section heading sits closer to its own chats than to the section above, with clear room under it (shadcn SidebarGroupLabel spacing). Masih, 31 Oct: the heading was crowding its first row. */
-.section-label-row { display:flex; align-items:center; gap:4px; height:auto; min-height:var(--row-h); padding:16px 8px 10px; }
-.section-label-row > .section-label { padding:0; margin-right:auto; }
+/* --heading-row-gap is the one distance from a heading's name to its first row, in the sidebar and the Settings navigation
+   (Masih, 31 Oct: "you don't see how these are too close?"). The name sits centred in a 24 px line, 5 px above its foot. */
+.section-label-row { display:flex; align-items:center; gap:4px; height:auto; min-height:var(--row-h); padding:16px 8px calc(var(--heading-row-gap) - 5px); }
+.section-label-row > .section-label { padding:0; margin-right:auto; min-height:24px; }
 /* Hide shows on the heading's hover or focus, like a row's actions. */
 .section-label-row > .section-hide { opacity:0; color:var(--muted-foreground); }
 .section-label-row:is(:hover, :focus-within) > .section-hide { opacity:1; }
@@ -529,6 +531,9 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
  .settings-mode .settings-nav .settings-title { margin:0 8px; line-height:1; }
  .settings-mode .settings-nav .settings-section-link { margin:1px 0 0; padding:0 8px; }
 }
+/* A group's name keeps the sidebar's heading-to-row distance at every height; only the room above it shrinks. */
+.settings-nav .settings-nav-group > .settings-section-link { height:24px; padding-block:0; margin-bottom:calc(var(--heading-row-gap) - 5px - var(--nav-row-gap, 2px)); }
+@media (max-height:800px) { .settings-mode .settings-nav .settings-nav-group { --nav-row-gap:0px; } }
 
 .settings-page { min-width:0; max-width:820px; }
 .provider-note { font-size:var(--text-sm); color:var(--muted-foreground); margin:0; }
