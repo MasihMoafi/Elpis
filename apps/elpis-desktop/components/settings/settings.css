@@ -10,6 +10,9 @@
 .settings-group-description { font-size:var(--text-sm); color:var(--muted-foreground); margin:-4px 0 10px; }
 /* Every row draws a top hairline; the first is clipped, so rows wrapped in forms still get dividers. */
 .settings-rows { border:1px solid var(--border); background:var(--card); min-width:0; overflow:hidden; }
+/* Anything in a card that is not a row (action buttons, an alert) keeps the rows' inset, never touching the card's edge
+   (1 Nov: Delete theme and Save theme sat on the card's corner). */
+.settings-rows > :not([data-slot="settings-row"]):not(:has([data-slot="settings-row"])) { padding:12px 16px; }
 .settings-row { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:12px 16px; min-height:66px; min-width:0; border-top:1px solid var(--hairline); margin-top:-1px; }
 .settings-row-text { min-width:0; flex:1 1 auto; }
 .settings-row-title { font-size:var(--text-sm); font-weight:500; line-height:1.4; overflow-wrap:anywhere; }
