@@ -15,7 +15,8 @@ test('the scroll-to-bottom button shows only away from the newest message and re
       assert.equal(await button.count(), 0, `${colorScheme}: hidden at the newest message`);
       await scroller.evaluate(node => { node.scrollTop = 0; });
       await button.waitFor();
-      const [box, composer] = await Promise.all([button.boundingBox(), f.composer.boundingBox()]);
+      // The message box is the composer form; its text field is inset unevenly (the gold right edge), so measure the box.
+      const [box, composer] = await Promise.all([button.boundingBox(), f.page.locator('form.composer').boundingBox()]);
       assert.ok(box.y + box.height <= composer.y, `${colorScheme}: sits above the composer`);
       assert.ok(Math.abs(box.x + box.width / 2 - (composer.x + composer.width / 2)) <= 2, `${colorScheme}: centred on the composer`);
       await button.click();
