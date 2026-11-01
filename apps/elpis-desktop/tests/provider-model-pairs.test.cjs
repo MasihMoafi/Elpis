@@ -15,7 +15,7 @@ test('a changed API default offers its own models and keeps the selected provide
   const calls = [], streams = new Set();
   const thread = { id: 'credits-chat', name: 'Credits fixture', model: catalog[0].model, modelProvider: 'anthropic-credits', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct', reason: null } };
   const bothProviders = [{ id: 'anthropic-credits', displayName: 'Anthropic credits' }, { id: 'openai', displayName: 'OpenAI' }];
-  let unavailable = false, main = { model: catalog[0].model, provider: 'anthropic-credits' }, activeThread = thread, configuredProviders = bothProviders;
+  let unavailable = false, main = { model: catalog[0].model, provider: 'anthropic-credits' }, activeThread = thread, configuredProviders = bothProviders, managedProvider = null;
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://local');
     let wire = ''; for await (const chunk of req) wire += chunk;
@@ -27,8 +27,11 @@ test('a changed API default offers its own models and keeps the selected provide
       streams.add(res); res.on('close', () => streams.delete(res)); return;
     }
     if (url.pathname === '/api/health') return json({ connected: true });
+    // The title bar's Matilda (27 Oct) reads her state at start, as the real bridge serves it; an unpinned Matilda.
+    if (url.pathname === '/api/love-spot/companion' && req.method === 'GET') return json({ pinned: false, favorite: null, music: null, reason: '' });
+    if (url.pathname === '/api/love-spot/matilda' && req.method === 'GET') return json({ replies: true, model: null, provider: null });
     if (url.pathname === '/api/settings') return json({ version: 'changed-default', background: {}, memory: {}, smartPrune: { explicitOverride: {} }, write: { available: false },
-      main, providers: configuredProviders, managed: { modelProvider: null } });
+      main, providers: configuredProviders, managed: { modelProvider: managedProvider } });
     if (url.pathname === '/api/models') {
       if (url.searchParams.get('provider') === 'anthropic-credits') {
         if (unavailable) { res.statusCode = 502; return json({ error: 'Fixture credits catalog unavailable' }); }
@@ -82,7 +85,9 @@ test('a changed API default offers its own models and keeps the selected provide
       await screenshot(page, 'pairs-retained-sol');
       assert.match(await page.getByLabel('Model', { exact: true }).getAttribute('title'), /GPT-6\.1 Sol · OpenAI/, 'a selected model keeps its provider across a default change');
       assert.equal(await page.getByLabel('Message Elpis', { exact: true }).inputValue(), 'KEEP_SOL_ROUTE_SENTINEL');
-      configuredProviders = bothProviders.filter(provider => provider.id !== 'openai');
+      // ChatGPT stays offered beside another default connection (lib/api.ts providerChoices; 1 Nov: Luna and Sol "missing with
+      // the Anthropic credits default"), so the connection goes away only when a managed setting allows the credits alone.
+      configuredProviders = bothProviders.filter(provider => provider.id !== 'openai'); managedProvider = 'anthropic-credits';
       await refreshSettings(page);
       await page.getByRole('alert').filter({ hasText: 'This connection is no longer available' }).waitFor();
       assert.equal(await page.getByRole('button', { name: 'Send message', exact: true }).isDisabled(), true);
@@ -90,7 +95,7 @@ test('a changed API default offers its own models and keeps the selected provide
       await page.getByLabel('Message Elpis', { exact: true }).press('Enter');
       assert.equal(calls.filter(call => call.method === 'POST' && call.path === '/api/threads').length, sent);
       assert.equal(await page.getByLabel('Message Elpis', { exact: true }).inputValue(), 'KEEP_SOL_ROUTE_SENTINEL');
-      configuredProviders = bothProviders;
+      configuredProviders = bothProviders; managedProvider = null;
       await refreshSettings(page);
       await page.getByLabel('Model', { exact: true }).filter({ hasText: 'OpenAI' }).waitFor();
       await page.getByRole('button', { name: 'Send message', exact: true }).click();
