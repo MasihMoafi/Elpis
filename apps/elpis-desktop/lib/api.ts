@@ -70,6 +70,16 @@ export function sessionReady(retry = false) {
   if (retry && mayRetrySession) { mayRetrySession = false; session = exchangeSession(); }
   return session;
 }
+/** Resolves true once this window has signed in, waiting through the exchanges initialization retries without sending
+ * anything itself; false once `live()` turns false. Views that load on their own wait for it, so nothing is read or
+ * subscribed before sign-in and a refused token is reported once, by the page's banner. */
+export async function signedIn(live: () => boolean) {
+  while (live()) {
+    try { await sessionReady(); return true; }
+    catch { await new Promise(resolve => setTimeout(resolve, 1000)); }
+  }
+  return false;
+}
 /** The bridge refuses a second action on one chat while another runs, and refuses it before doing anything, so asking again a
  * moment later is safe. A send that overlaps another action on the chat (22 Oct: annotating a page, then Enter) waits for it. */
 const BUSY = /Another operation on this conversation is pending/, BUSY_RETRIES = 5, BUSY_WAIT_MS = 150;

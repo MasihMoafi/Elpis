@@ -6,7 +6,7 @@ import { PinIcon, SoundIcon, SoundOffIcon } from "@/components/elpis-icons";
 import { MatildaMiniChat, useMatildaMiniChat } from "@/components/matilda-mini-chat";
 import { MatildaHeartBurst } from "@/components/matilda-heart-burst";
 import { Button } from "@/components/ui/button";
-import { api } from "@/lib/api";
+import { api, signedIn } from "@/lib/api";
 import { MATILDA_CHANGED, MATILDA_CHAT_SHOWN } from "@/lib/matilda";
 import { appStorage } from "@/lib/projects";
 import { MATILDA_SHOTS, MATILDA_SHOTS_LIGHT } from "@/bridge/matilda-face.cjs";
@@ -83,11 +83,13 @@ export function MatildaCompanion() {
     } catch (cause) { if (request === generation.current) setError(cause instanceof Error ? cause.message : "Matilda could not load."); }
   }, []);
   useEffect(() => {
-    void refresh();
-    const visible = () => { if (document.visibilityState === "visible") void refresh(); };
+    let live = true, ready = false;
+    // Loads after sign-in; a refused token is the page's one banner, not a second alert here.
+    void signedIn(() => live).then(ok => { if (ok && live) { ready = true; void refresh(); } });
+    const visible = () => { if (ready && document.visibilityState === "visible") void refresh(); };
     window.addEventListener("focus", visible);
     window.addEventListener(MATILDA_CHANGED, visible);
-    return () => { generation.current++; window.removeEventListener("focus", visible); window.removeEventListener(MATILDA_CHANGED, visible); };
+    return () => { live = false; generation.current++; window.removeEventListener("focus", visible); window.removeEventListener(MATILDA_CHANGED, visible); };
   }, [refresh]);
   async function act(action: string) {
     if (working.current && action !== "unpin") return;
