@@ -1,11 +1,10 @@
 // Masih, 31 Oct (arrow at the Love Spot heading): "you don't see how these are too close? how many times have I
 // emphasized a coherent structure in the UI?" One gap from a heading's name to its first row, on every sidebar section
-// (Projects, Pinned, Love Spot, Recents...) and every Settings navigation group. Heads with a button and heads without
-// one used to differ: Love Spot sat 10px above its row, Recents 15px.
+// (Projects, Pinned, Love Spot, Recents...). Heads with a button and heads without one used to differ: Love Spot sat 10px
+// above its row, Recents 15px. (The Settings navigation's group names stay tight so it fits 768px windows, 27 Oct.)
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture, THREADS } = require('./parity-fixture.cjs');
-const { openSettings } = require('./controls.cjs');
 
 /** For each heading in `scope`: the gap from its name's text to the first row under it. */
 const gaps = (page, scope, heads, row) => page.evaluate(([scope, heads, row]) => [...document.querySelectorAll(`${scope} ${heads}`)].flatMap(head => {
@@ -28,10 +27,7 @@ for (const colorScheme of ['light', 'dark']) test(`every heading sits the same d
     await page.locator('section[aria-label="Pinned"] .thread-row').waitFor();
     const sidebar = await gaps(page, 'aside.sidebar', 'section > .section-label-row', '.thread-row, .sidebar-group-row');
     assert.deepEqual(sidebar.map(item => item.name), ['Projects', 'Pinned', 'Love Spot', 'Recents']);
-    await openSettings(page);
-    const settings = await gaps(page, '.settings-nav', '.settings-nav-group > .section-label', '[role="tab"]');
-    assert.ok(settings.length >= 3, JSON.stringify(settings));
-    const all = [...sidebar, ...settings];
+    const all = sidebar;
     assert.equal(new Set(all.map(item => item.gap)).size, 1, `one heading-to-row gap: ${JSON.stringify(all)}`);
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
