@@ -157,6 +157,7 @@
     "desktop/browser-identity.test.cjs"
   ],
   "ui": [
+    "tests/cloudroom-settings.test.cjs",
     "tests/no-idle-scrollbars.test.cjs",
     "tests/ui-scale.test.cjs",
     "tests/memory-count.test.cjs",

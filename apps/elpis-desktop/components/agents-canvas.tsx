@@ -1599,7 +1599,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
     const repository = Boolean(cwd) && !readyMade(graph.planningPattern) && wantsIsolation(tasks) && await api<{ repository?: boolean }>(`/repository?cwd=${encodeURIComponent(cwd!)}`).then(result => result.repository === true, () => false);
     if (!current()) throw Error(OFFLINE_WORKFLOW);
     const limit = await workflowLimit(); if (!current()) throw Error(OFFLINE_WORKFLOW);
-    return api<{ graphId: string }>("/workflows/run", { ...(graph.template === "recursive" ? { roundLimit: graph.roundLimit } : {}), ...runPayload(rootThreadId, name, tasks, limit, repository), runLimitSeconds: (graph.timeLimit ?? RUN_MINUTES) * 60, replan: graph.replan !== false, ...(mother.model ? { motherModel: { model: mother.model, ...(mother.provider ? { provider: mother.provider } : {}) } } : {}), ...(mother.brief.trim() || requestText.trim() ? { goal: mother.brief.trim() || requestText.trim() } : {}), ...(next ? { next } : {}) });
+    return api<{ graphId: string }>("/workflows/run", { ...(graph.template === "recursive" ? { roundLimit: graph.roundLimit } : {}), ...runPayload(rootThreadId, name, tasks, limit, repository), runLimitSeconds: (graph.timeLimit ?? RUN_MINUTES) * 60, replan: graph.replan !== false, ...(graph.runsOn === "cloudroom" ? { runsOn: "cloudroom" } : {}), ...(mother.model ? { motherModel: { model: mother.model, ...(mother.provider ? { provider: mother.provider } : {}) } } : {}), ...(mother.brief.trim() || requestText.trim() ? { goal: mother.brief.trim() || requestText.trim() } : {}), ...(next ? { next } : {}) });
   }
 
   async function start(targets?: string[]) {
@@ -1894,6 +1894,8 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
       <label className="canvas-mother-switch" title="When an agent finishes, the Mother may add agents, cancel waiting ones or steer a running one (at most 5 times a run). Each decision shows in the run history.">
         Mother re-plans<Switch aria-label="Mother re-plans" checked={graph.replan !== false} disabled={Boolean(run && !over(run))} onCheckedChange={on => setGraph(current => ({ ...current, replan: on }))} />
       </label>
+      {/* Per run (1 Nov): each agent's task runs on his CloudRoom VM (sign in under Settings → Models & accounts); her review and merge stay here. */}
+      <label title="CloudRoom VM: each agent's worktree is copied to your CloudRoom VM, its Claude Code or Codex runs there, and the changes come back. The Mother's review and merge stay on this computer.">Runs on<OptionSelect aria-label="Runs on" value={graph.runsOn ?? "local"} disabled={Boolean(run && !over(run))} onChange={event => { const runsOn = event.target.value as "local" | "cloudroom"; setGraph(current => ({ ...current, runsOn })); }}><option value="local">This computer</option><option value="cloudroom">CloudRoom VM</option></OptionSelect></label>
       <div className="canvas-mother-counts">
         <CountField label="Time limit (min)" value={graph.timeLimit ?? RUN_MINUTES} min={1} max={1440} onChange={minutes => setGraph(current => ({ ...current, timeLimit: minutes }))}
           why={typed => typed < 1 ? "A run needs at least a minute." : "A run can last at most a day (1440 minutes)."} />
