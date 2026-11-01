@@ -40,6 +40,8 @@ async function fixture(t, { modelFailure = false, holdModels = false, descendant
     if (pathname === '/api/events') { res.writeHead(200, { 'Content-Type': 'text/event-stream' }); res.write(': connected\n\n'); clients.add(res); req.on('close', () => clients.delete(res)); return; }
     if (/^\/api\/love-spot\/(?:talk\/)?events$/.test(pathname)) { res.writeHead(200, { 'Content-Type': 'text/event-stream' }); res.write(': fixture\n\n'); loveClients.add(res); req.on('close', () => loveClients.delete(res)); return; }
     if (req.method === 'GET' && pathname === '/api/love-spot/companion') return json({ pinned: false, favorite: null, music: null, reason: '' });
+    // Every window reads Matilda's one setting at start (e83d4af2d, 31 Oct); the bridge's default.
+    if (req.method === 'GET' && pathname === '/api/love-spot/matilda') return json({ replies: true, model: null, provider: null });
     if (req.method === 'GET' && pathname === '/api/workflows/concurrency') return json({ value: 4, choices: [1, 2, 3, 4] });
     if (req.method === 'POST') {
       let raw = ''; for await (const chunk of req) raw += chunk;

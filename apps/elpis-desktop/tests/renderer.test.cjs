@@ -23,6 +23,9 @@ test('actual exported renderer: chat, steering, interrupt, existing writable his
     if(url.pathname==='/api/events'){res.writeHead(200,{'content-type':'text/event-stream'});res.write('event: connection\ndata: {"connected":true}\n\n');clients.add(res);req.on('close',()=>clients.delete(res));return;}
     if(url.pathname==='/api/session')return json({authenticated:true});
     if(url.pathname==='/api/health')return json({connected:true});
+    // The title bar's Matilda (27 Oct) reads her state at start, as the real bridge serves it; an unpinned Matilda.
+    if(url.pathname==='/api/love-spot/companion'&&req.method==='GET')return json({pinned:false,favorite:null,music:null,reason:''});
+    if(url.pathname==='/api/love-spot/matilda'&&req.method==='GET')return json({replies:true,model:null,provider:null});
     if(url.pathname==='/api/models')return json({data:[{id:'luna',model:'gpt-6-luna',displayName:'Luna 6'},{id:'sol',model:'gpt-6-sol',displayName:'Sol 6'}],nextCursor:null});
     if(url.pathname==='/api/threads'&&req.method==='GET')return json({data:url.searchParams.has('ancestorThreadId')?(url.searchParams.get('ancestorThreadId')==='existing'?[child]:[]):[thread,...(createdThread?[created]:[])],nextCursor:null});
     if(url.pathname==='/api/threads'&&req.method==='POST'){createdThread=true;return json({thread:created});}
