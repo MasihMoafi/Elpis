@@ -197,6 +197,25 @@ if (process.argv.includes("--elpis-local-bridge")) {
     await until(() => child.exitCode === 0, "thread/closed clears the otherwise stranded engineTurns entry", 1800);
   });
 
+  // 1 Nov, Masih, after "an Elpis bridge … is already running with a different configuration, so this terminal was not
+  // started": "I hate such errs. I don't like to get them any longer." Proxy settings alone never refuse a start.
+  test("a launch whose proxy settings differ joins a busy bridge, and replaces an idle one", async t => {
+    const f = await setup(t);
+    const statePid = () => {
+      const file = fs.readdirSync(path.join(f.root, "elpis-bridge"), { recursive: true }).find(name => name.endsWith("state.json"));
+      return JSON.parse(fs.readFileSync(path.join(f.root, "elpis-bridge", file))).pid;
+    };
+    assert.equal((await f.launch(f.first, { HTTP_PROXY: "http://127.0.0.1:1" })).exitCode, 0);
+    const before = statePid(), c = await f.connect();
+    const joined = await f.launch(f.first, { HTTP_PROXY: "http://127.0.0.1:2" });
+    assert.equal(joined.exitCode, 0, joined.errors);
+    assert.equal(statePid(), before, "a bridge in use is joined, not stopped");
+    c.ws.close(); await once(c.ws, "close"); await pause(300);
+    const replaced = await f.launch(f.first, { HTTP_PROXY: "http://127.0.0.1:3" });
+    assert.equal(replaced.exitCode, 0, replaced.errors);
+    assert.notEqual(statePid(), before, "an idle bridge restarts with this launch's proxy settings");
+  });
+
   test("two private bundles hand over gracefully and reopen saved chats", async t => {
     const f = await setup(t, {}, process.env.ELPIS_IDLE_OLD_BUNDLE ?? source);
     const second = f.bundle("b");
@@ -275,10 +294,11 @@ if (process.argv.includes("--elpis-local-bridge")) {
     assert.equal(engines.size, 2, "the next turn runs on the newer engine");
   });
 
+  // Proxy-only differences no longer refuse (1 Nov, test above); another setting, such as the Claude account, still does.
   test("configuration differences alone keep the existing refusal", async t => {
     const f = await setup(t);
     assert.equal((await f.launch(f.first)).exitCode, 0);
-    const result = await f.launch(f.first, { NO_PROXY: "different.example" });
+    const result = await f.launch(f.first, { CLAUDE_CONFIG_DIR: path.join(f.root, "other-account") });
     assert.equal(result.exitCode, 1); assert.match(result.errors, /different configuration/);
     assert.ok((await (await f.connect()).call("thread/list", {})).result.data.length);
   });

@@ -592,6 +592,13 @@ async function ensureBridge(rt, bridgeScript, identity) {
     if (reachable.ok) {
       const config = differingNames(state, process.env);
       if (state.identity === identity.hash && !config.length) return;
+      // Same installation, only proxy settings differ: never refuse (1 Nov, Masih: "I hate such errs"). An idle bridge
+      // restarts with this launch's settings; one in use is joined and keeps its own until its terminals close.
+      if (state.identity === identity.hash && config.every(name => PROXY_ENV_NAMES.includes(name))) {
+        if (await retireUnattachedBridge(rt, state)) return ensureBridge(rt, bridgeScript, identity);
+        note(`joining the running Elpis bridge (pid ${state.pid}); it keeps its proxy settings until its other terminals close`);
+        return;
+      }
       const directHandover = config.length > 0 && config.every(name => PROXY_ENV_NAMES.includes(name))
         && PROXY_ENV_NAMES.every(name => process.env[name] === undefined);
       if (state.identity !== identity.hash && directHandover && usable(state.engine) && await managedSuccessorPair(state, identity)) {
