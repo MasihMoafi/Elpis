@@ -7,7 +7,9 @@ test('browser accepts web addresses and local development URLs but not executabl
   assert.equal(browserUrl('localhost:3000/review'),'http://localhost:3000/review');
   assert.equal(browserUrl('127.0.0.1:43155/test'),'http://127.0.0.1:43155/test');
   assert.equal(browserUrl('about:blank'),'about:blank');
-  for(const value of ['javascript:alert(1)','file:///etc/passwd','data:text/html,hello','https://user:secret@example.com'])assert.throws(()=>browserUrl(value));
+  for(const value of ['javascript:alert(1)','file://fileserver/share/notes.pdf','data:text/html,hello','https://user:secret@example.com'])assert.throws(()=>browserUrl(value));
+  // A file on this computer opens (31 Oct: local files and PDFs in the browser); a file on another host does not.
+  assert.equal(browserUrl('file:///home/me/notes.pdf'),'file:///home/me/notes.pdf');
   assert.equal(browserUrl('not an address'),'https://www.google.com/search?q=not%20an%20address');
   assert.equal(browserUrl('rust'),'https://www.google.com/search?q=rust');
   assert.equal(browserUrl('192.168.1.10:8080/x'),'https://192.168.1.10:8080/x');
