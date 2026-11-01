@@ -229,7 +229,9 @@ test('Read aloud stays hidden in Love Spot and ordinary chats without warming or
   const f = await fixture({ threads, routes: { '/api/voice': () => ({ available: true }), '/api/threads/chat-b': () => ({ thread: threads[1], data: [{ turnId: 'other-turn', item: { id: 'other-answer', type: 'agentMessage', text: 'All green.' }, completedAtMs: Date.now() }], nextCursor: null }) } });
   try {
     await f.open('chat-a');
-    assert.equal(await f.page.getByRole('button', { name: /^(Voice unavailable|Start voice chat)$/ }).count(), 0, 'Love Spot hides unavailable audio controls');
+    // Live voice came back to Love Spot on 30 Oct (2529d1fc4, "restore voice"); reading replies aloud stays off there.
+    assert.equal(await f.page.getByRole('button', { name: 'Voice unavailable', exact: true }).count(), 0, 'Love Spot shows no dead audio control');
+    await f.page.getByRole('button', { name: 'Start voice chat', exact: true }).waitFor();
     const matilda = f.page.locator('.message.agent').last();
     await matilda.hover(); assert.equal(await matilda.getByRole('button', { name: 'Read aloud', exact: true }).count(), 0);
     assert.equal(f.posts.filter(row => /voice/.test(row.path)).length, 0, 'Love Spot does not warm or start a speaker');
@@ -254,7 +256,9 @@ test('Love Spot preserves typed messages and live replies without starting autom
     } });
     try {
       const { page } = f; await f.open('chat-a');
-      assert.equal(await page.getByRole('button', { name: /^(Voice unavailable|Start voice chat)$/ }).count(), 0, 'Love Spot hides unavailable audio controls');
+      // Live voice came back to Love Spot on 30 Oct (2529d1fc4, "restore voice"); offering it starts nothing by itself.
+      assert.equal(await page.getByRole('button', { name: 'Voice unavailable', exact: true }).count(), 0, 'Love Spot shows no dead audio control');
+      await page.getByRole('button', { name: 'Start voice chat', exact: true }).waitFor();
       await f.composer.fill('Please reply in text.'); await f.composer.press('Enter');
       await eventually(() => assert.ok(f.posts.some(row => row.path === '/api/threads/chat-a/turns' && row.body.text === 'Please reply in text.')));
       const requests = () => f.posts.filter(row => /voice/.test(row.path));
