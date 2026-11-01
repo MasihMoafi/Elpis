@@ -44,7 +44,8 @@ export async function interviewRuntime({ toolsDirectory = fileURLToPath(new URL(
     env: { ELPIS_HOME: path.join(root, 'elpis'), ELPIS_APP_BRIDGE_SOCKET: socketPath },
     instructions: node.prompt, meta: { elpis: { name: `Love Spot · ${node.name}` } }, elpis: true });
   const runner = createLoveAgents(store, { nodeSpec, timeoutMs: 5000 });
-  const agent = async () => (await store.read()).scene.elements[0].customData.loveAgent;
+  // By ID: a new board also holds Matilda's welcome painting (bridge/love-spot-store.cjs).
+  const agent = async () => (await store.read()).scene.elements.find(element => element.id === 'writer').customData.loveAgent;
   return { root, socketPath, engine, env, client, store, runner, nodeSpec, visible, agent,
     get requests() { return syncFs.existsSync(requestsFile) ? syncFs.readFileSync(requestsFile, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse) : []; },
     answer(value) { update({ answer: value, failure: null }); }, fail(value) { update({ failure: value }); },
