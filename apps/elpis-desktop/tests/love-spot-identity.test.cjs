@@ -4,7 +4,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const http = require('node:http');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { PORTRAIT_DATA_URL } = require('../bridge/matilda-face.cjs');
+const { MATILDA_SHOTS_LIGHT } = require('../bridge/matilda-face.cjs');
 
 test('Love Spot conversations show their agent names and use the blood-red app icon', async () => {
   const threads = [
@@ -60,13 +60,19 @@ test('Love Spot conversations show their agent names and use the blood-red app i
       let opaque = 0, same = 0;
       for (let i = 0; i < shown.length; i += 4) {
         const x = i / 4 % size, y = Math.floor(i / 4 / size);
-        if (wanted[i + 3] < 255 || (x - r) ** 2 + (y - r) ** 2 > (0.9 * r) ** 2) continue;
+        // Her clothed faces are lossy WebP: their solid parts reach alpha 250-254, never exactly 255.
+        if (wanted[i + 3] < 250 || (x - r) ** 2 + (y - r) ** 2 > (0.9 * r) ** 2) continue;
         opaque++; if (Math.abs(shown[i] - wanted[i]) + Math.abs(shown[i + 1] - wanted[i + 1]) + Math.abs(shown[i + 2] - wanted[i + 2]) < 24) same++;
       }
       return { portrait: same / opaque, rim: Array.from({ length: 16 }, (_, k) => alpha(0.95, k * Math.PI / 8)), beyond: [1, 3, 5, 7].map(k => alpha(1.05, k * Math.PI / 4)) };
-    }, PORTRAIT_DATA_URL);
+    // Her face in the light theme's clothes, not the bare portrait: Masih, 31 Oct, "white silk in light mode, black silk in
+    // dark mode" (bridge/matilda-face.cjs). The alt="Matilda" picture is the light-theme one (components/matilda-face.tsx).
+    }, MATILDA_SHOTS_LIGHT.listening);
     assert.ok(shape.portrait > 0.9, `the disc shows her portrait, not an empty or broken face (${shape.portrait})`);
-    assert.ok(shape.rim.every(a => a > 200) && shape.beyond.every(a => a === 0), `24 Oct, Masih: "this should be circular avatar profile looking": opaque just inside the circle at 16 angles, clear just outside it on the diagonals (${JSON.stringify(shape)})`);
+    // 24 Oct, Masih: "this should be circular avatar profile looking". Since 31 Oct her portraits keep a transparent backdrop on
+    // every surface (commit 92baf8675, "Use transparent approved portraits in every display mode"), so the circle shows where
+    // her dress meets it: opaque just inside the circle along its foot (angles 225-315 degrees), clear just outside it.
+    assert.ok(shape.rim.slice(10, 15).every(a => a > 200) && shape.beyond.every(a => a === 0), `the face is cut to a circle: her dress is opaque just inside its foot, nothing shows just outside it on the diagonals (${JSON.stringify(shape)})`);
     assert.equal(await page.locator('.message.agent .speaker').textContent(), 'Matilda');
     const rhythm = await page.locator('.message.agent.matilda-message').evaluate(element => {
       const style = getComputedStyle(element), paragraphs = element.querySelectorAll('.markdown > p');
