@@ -11,7 +11,7 @@ import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescripti
 import { SaveFeedback, SettingRow, SettingsActions, SettingsGroup, SettingsNotice } from "@/components/settings/rows";
 import { useSaver } from "@/components/settings/use-saver";
 import { editable, reloadSettings, saveSettings, type Background, type ElpisSettings, type Memory } from "@/lib/settings-store";
-import { refreshModelCatalog, useModelCatalog as useSharedModelCatalog } from "@/lib/model-catalog";
+import { modelCatalogSnapshot, refreshModelCatalog, subscribeModelCatalog } from "@/lib/model-catalog";
 
 // Background model, Smart Prune and memory settings (formerly the "Elpis" page), each saved
 // through the bridge's versioned config writer.
@@ -20,9 +20,9 @@ const reloaded = { ok: true, text: "Settings reloaded. Unsaved edits were discar
 
 /** Settings' model menus: the shared live list (lib/model-catalog.ts), refreshed as the page opens. */
 export function useModelCatalog() {
-  const { models, error } = useSharedModelCatalog();
-  useEffect(() => { void refreshModelCatalog(); }, []);
-  return { models, error };
+  const [catalog, setCatalog] = useState(modelCatalogSnapshot);
+  useEffect(() => { const stop = subscribeModelCatalog(() => setCatalog(modelCatalogSnapshot())); void refreshModelCatalog(); return stop; }, []);
+  return { models: catalog.models, error: catalog.error };
 }
 
 /** Model lists by configured connection; another connection's catalog is read from its own endpoint. */

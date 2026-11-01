@@ -39,3 +39,18 @@ test('an unreadable answer is an error, not an empty menu', async () => {
   forgetSubscriptionModels();
   await assert.rejects(subscriptionModels({ run: async () => '{"nothing":1}', now: 0 }), /could not be read/);
 });
+
+test('a model menu that opens (refresh) asks the engine again, per connection, and its answer is then reused', async () => {
+  forgetSubscriptionModels();
+  const calls = [];
+  let models = [{ slug: 'claude-haiku-5-5', display_name: 'Claude Haiku 5.5', visibility: 'list' }];
+  const run = async (command, args) => { calls.push(args[1]); return JSON.stringify({ models }); };
+  const provider = 'anthropic-credits';
+  await subscriptionModels({ run, now: 0, provider });
+  models = [...models, { slug: 'claude-opus-5-5', display_name: 'Claude Opus 5.5', visibility: 'list' }];
+  assert.equal((await subscriptionModels({ run, now: 1000, provider })).data.length, 1, 'no refresh: the last answer');
+  assert.deepEqual((await subscriptionModels({ run, now: 2000, provider, refresh: true })).data.map(model => model.model), ['claude-haiku-5-5', 'claude-opus-5-5']);
+  assert.equal((await subscriptionModels({ run, now: 3000, provider })).data.length, 2, 'the refreshed answer is reused');
+  await subscriptionModels({ run, now: 3000, provider: 'openai', refresh: true });
+  assert.deepEqual(calls, ['model_provider=anthropic-credits', 'model_provider=anthropic-credits', 'model_provider=openai']);
+});

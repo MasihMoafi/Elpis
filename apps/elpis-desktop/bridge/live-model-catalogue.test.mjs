@@ -5,10 +5,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { DesktopClient } from './client.mjs';
+import { forgetSubscriptionModels } from './subscription-models.mjs';
 
 // Every model menu lists the engine's catalog live (1 Nov, Masih: "Refresh it whenever the model picker opens"):
-// GET /api/models?refresh=true asks model/list to fetch now. ChatGPT, while another connection is the default, is
-// listed by the same engine (model/list with modelProvider), not by a separate cached command.
+// GET /api/models?refresh=true asks model/list to fetch now. A connection the engine signs in to that is not the
+// default (ChatGPT, the Anthropic credits) is asked of the engine again too (subscription-models.mjs).
 function fixture({ mainProvider = 'openai' } = {}) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-live-models-'));
   // A ChatGPT sign-in exists in this home; its content is never read.
@@ -59,14 +60,23 @@ test('a failed refresh is an error for the menu and the last good list stays', a
   } finally { f.client.close(); fs.rmSync(f.home, { recursive: true, force: true }); }
 });
 
-test('ChatGPT while another connection is the default is listed live by the engine', async () => {
+test('ChatGPT and the Anthropic credits, while not the default, are asked of the engine again when a menu opens', async () => {
   const f = fixture({ mainProvider: 'anthropic-credits' }); await f.client.initialize();
+  // A stand-in engine: `debug models` prints the catalogue file and records the provider it was asked for.
+  const engine = path.join(f.home, 'engine.cjs'), catalogue = path.join(f.home, 'catalogue.json'), calls = path.join(f.home, 'calls.txt');
+  fs.writeFileSync(engine, `#!/usr/bin/env node\nconst fs = require('node:fs');\nfs.appendFileSync(${JSON.stringify(calls)}, process.argv[3] + '\\n');\nprocess.stdout.write(fs.readFileSync(${JSON.stringify(catalogue)}, 'utf8'));\n`, { mode: 0o755 });
+  const write = slugs => fs.writeFileSync(catalogue, JSON.stringify({ models: slugs.map(slug => ({ slug, display_name: slug, visibility: 'list' })) }));
+  const previous = process.env.ELPIS_ENGINE_BIN; process.env.ELPIS_ENGINE_BIN = engine;
+  forgetSubscriptionModels();
   try {
+    write(['gpt-6.1-sol', 'gpt-6.1-terra']);
     assert.deepEqual(slugs(await f.client.models({ provider: 'openai', refresh: true })), ['gpt-6.1-sol', 'gpt-6.1-terra']);
-    assert.deepEqual(listRequests(f.socket).at(-1), { limit: 100, includeHidden: false, modelProvider: 'openai', refresh: true });
-    f.state.chatgpt.push('gpt-6.2-new');
+    write(['gpt-6.1-sol', 'gpt-6.1-terra', 'gpt-6.2-new']);
+    assert.equal((await f.client.models({ provider: 'openai' })).data.length, 2, 'no refresh: the last answer');
     assert.ok(slugs(await f.client.models({ provider: 'openai', refresh: true })).includes('gpt-6.2-new'));
-    f.state.fail = true;
-    await assert.rejects(f.client.models({ provider: 'openai', refresh: true }), /network down/);
-  } finally { f.client.close(); fs.rmSync(f.home, { recursive: true, force: true }); }
+    assert.deepEqual(fs.readFileSync(calls, 'utf8').trim().split('\n'), ['model_provider=openai', 'model_provider=openai']);
+  } finally {
+    if (previous === undefined) delete process.env.ELPIS_ENGINE_BIN; else process.env.ELPIS_ENGINE_BIN = previous;
+    forgetSubscriptionModels(); f.client.close(); fs.rmSync(f.home, { recursive: true, force: true });
+  }
 });

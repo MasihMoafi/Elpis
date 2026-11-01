@@ -353,7 +353,8 @@ test('a failed model list is retried and non-default pages are read separately',
     } else send(raw);
   };
   try {
-    await assert.rejects(client.models(), /rejected the operation/);
+    // The engine's reason reaches the model menu (1 Nov: a failed fetch must say why).
+    await assert.rejects(client.models(), /catalogue unavailable/);
     await client.models();
     await client.models({ cursor: 'next' });
     assert.equal(socket.sent.filter(request => request.method === 'model/list').length, 3);

@@ -217,7 +217,7 @@ export function providerChoices(models: Model[], settings: ProviderSettings | nu
     ...SUBSCRIPTIONS.map(item => ({ id: item.prefix, label: item.label, models: models.filter(model => model.model.startsWith(item.prefix)) })).filter(choice => choice.models.length),
     ...(settings?.providers ?? []).filter(item => item.id !== main && !UNLISTED.has(item.id) && !(settings?.managed?.modelProvider && settings.managed.modelProvider !== item.id))
       .map(item => connection(item.id)),
-    // ChatGPT when another connection is the default: its subscription models, listed live by the engine (model/list with modelProvider). Every
+    // ChatGPT when another connection is the default: its subscription models, listed by the engine (bridge/subscription-models.mjs). Every
     // model menu builds from here, so Luna and Sol show in all of them (1 Nov: missing with the Anthropic credits default).
     ...main && main !== "openai" && !(settings?.providers ?? []).some(item => item.id === "openai") && !(settings?.managed?.modelProvider && settings.managed.modelProvider !== "openai") ? [connection("openai")] : [],
   ];

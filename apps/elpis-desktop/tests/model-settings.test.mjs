@@ -229,7 +229,7 @@ test('configured external provider fetches its own catalog once and keeps its cu
       tree=view.render();view.effects();
       assert.deepEqual(values(control(tree,label)),['','gpt-oss']);
       assert.match(renderToStaticMarkup(tree),/GPT OSS local/);
-      assert.deepEqual(calls,['/api/models?provider=home']);
+      assert.deepEqual(calls,['/api/models?provider=home&refresh=true']);
       view.dispose();
     }
     calls.length=0;
@@ -253,7 +253,7 @@ test('failed external catalog keeps current model and does not retry on every re
     const tree=view.render();view.effects();
     assert.equal(control(tree,'Background model').props.value,'private-model');
     assert.match(renderToStaticMarkup(tree),/Could not reach Elpis/);
-    assert.deepEqual(calls,['/api/models?provider=lab']);
+    assert.deepEqual(calls,['/api/models?provider=lab&refresh=true']);
   } finally {view.dispose();globalThis.fetch=original;}
 });
 
@@ -281,8 +281,8 @@ test('malformed main model catalog gives a recoverable error instead of crashing
     await new Promise(setImmediate);
     const catalog=view.render();
     assert.deepEqual(catalog.models,[]);
-    assert.equal(catalog.error,'Model catalog response did not contain models.');
-    assert.match(render('CatalogNotice',{error:catalog.error}),/Model choices could not be loaded: Model catalog response did not contain models/);
+    assert.equal(catalog.error,'The model catalogue did not return a model list.');
+    assert.match(render('CatalogNotice',{error:catalog.error}),/Model choices could not be loaded: The model catalogue did not return a model list/);
   } finally {view.dispose();globalThis.fetch=original;}
 });
 
@@ -319,7 +319,7 @@ test('changed configuration version refreshes provider models without discarding
       assert.equal(control(tree,label).props.value,'selected-old');
       view.effects();await new Promise(setImmediate);
       tree=view.render(next);view.effects();
-      assert.deepEqual(calls,['/api/models?provider=home','/api/models?provider=home']);
+      assert.deepEqual(calls,['/api/models?provider=home&refresh=true','/api/models?provider=home&refresh=true']);
       assert.deepEqual(values(control(tree,label)),['','selected-old','new-model']);
       view.dispose();
     }

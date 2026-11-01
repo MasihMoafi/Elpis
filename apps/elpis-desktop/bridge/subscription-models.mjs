@@ -18,11 +18,12 @@ export const toModel = entry => ({
 });
 
 /** `run` is replaceable for tests; it resolves to the command's stdout. */
-/** `provider` is a connection the engine signs in to itself (ChatGPT `openai`, or one configured such as `anthropic-credits`). */
-export async function subscriptionModels({ env = process.env, now = Date.now(), run = defaultRun, provider = 'openai' } = {}) {
+/** `provider` is a connection the engine signs in to itself (ChatGPT `openai`, or one configured such as `anthropic-credits`).
+ * `refresh` (a model menu opening) asks the engine again; the answer then serves other readers for ten minutes. */
+export async function subscriptionModels({ env = process.env, now = Date.now(), run = defaultRun, provider = 'openai', refresh = false } = {}) {
   if (!/^[a-z][a-z0-9_-]*$/.test(provider)) throw new Error('Choose an existing configured connection.');
   const hit = cached.get(provider);
-  if (hit && now - hit.at < MINUTES * 60000) return hit.result;
+  if (hit && !refresh && now - hit.at < MINUTES * 60000) return hit.result;
   const engine = env.ELPIS_ENGINE_BIN || path.join(os.homedir(), '.local', 'bin', 'elpis-next');
   const parsed = JSON.parse(await run(engine, ['-c', `model_provider=${provider}`, 'debug', 'models'], env));
   if (!Array.isArray(parsed?.models)) throw new Error(`The ${provider} model list could not be read.`);

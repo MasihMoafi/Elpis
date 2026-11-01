@@ -38,11 +38,14 @@ const models = [{ id: 'sol', model: 'sol', displayName: 'Sol' }];
 const settings = { main: { model: 'sol', provider: 'openai' }, providers: [{ id: 'openai', displayName: 'OpenAI' }, { id: 'local', displayName: 'Local server' }] };
 const choice = { id: 'local', provider: 'local', label: 'Local server', models: [] };
 const pickerProps = { choices: [choice], models: [], model: 'saved', choiceId: 'local', disabled: false, onChange() { assert.fail('Configuration must not change the selected model'); } };
+// The engine's shared list (lib/model-catalog.ts), which every open also refreshes; these tests are about connections.
+const ENGINE = '/api/models?refresh=true';
+const connectionsOnly = handler => async url => url === ENGINE ? { ok: true, json: async () => ({ data: [] }) } : handler(url);
 async function open(view) { view.render().props.onOpenChange(true); view.render(); view.effects(); await new Promise(setImmediate); return view.render(); }
 
 test('catalog error offers connection setup and closes the popup before navigation', async () => {
   const previous = globalThis.fetch, calls = []; let configured = 0, view;
-  globalThis.fetch = async url => { calls.push(url); return { ok: false, json: async () => ({ error: 'Set up the connection address.' }) }; };
+  globalThis.fetch = connectionsOnly(async url => { calls.push(url); return { ok: false, json: async () => ({ error: 'Set up the connection address.' }) }; });
   view = fixture('components/model-picker.tsx', 'ModelPicker', { ...pickerProps, onConfigure() { assert.equal(view.render().props.open, false); configured++; } });
   try {
     const tree = await open(view);
@@ -51,13 +54,13 @@ test('catalog error offers connection setup and closes the popup before navigati
     const configure = button(tree, 'Manage connections'); assert.ok(configure, 'catalog error needs a path to connection setup');
     configure.props.onClick();
     assert.equal(configured, 1); assert.equal(view.render().props.open, false);
-    assert.deepEqual(calls, ['/api/models?provider=local']);
+    assert.deepEqual(calls, ['/api/models?provider=local&refresh=true']);
   } finally { view.dispose(); globalThis.fetch = previous; }
 });
 
 test('optional setup callback is absent safely; retry recovers without changing the selected model', async () => {
   const previous = globalThis.fetch; let calls = 0;
-  globalThis.fetch = async () => ++calls === 1 ? { ok: false, json: async () => ({ error: 'Unavailable' }) } : { ok: true, json: async () => ({ data: [{ id: 'saved', model: 'saved' }] }) };
+  globalThis.fetch = connectionsOnly(async () => ++calls === 1 ? { ok: false, json: async () => ({ error: 'Unavailable' }) } : { ok: true, json: async () => ({ data: [{ id: 'saved', model: 'saved' }] }) });
   const view = fixture('components/model-picker.tsx', 'ModelPicker', pickerProps);
   try {
     let tree = await open(view); assert.equal(button(tree, 'Manage connections'), undefined);
@@ -80,7 +83,7 @@ test('inherited subscription defaults retain their provider identity while exact
 
 test('a saved connection revision replaces its catalog without remounting or changing the selected model', async () => {
   const previous = globalThis.fetch; let calls = 0;
-  globalThis.fetch = async () => ({ ok: true, json: async () => ({ data: [{ id: 'model-' + ++calls, model: 'model-' + calls, displayName: 'Reported model ' + calls }] }) });
+  globalThis.fetch = connectionsOnly(async () => ({ ok: true, json: async () => ({ data: [{ id: 'model-' + ++calls, model: 'model-' + calls, displayName: 'Reported model ' + calls }] }) }));
   const props = { ...pickerProps, choices: [{ ...choice, catalogVersion: 'v1' }] };
   const view = fixture('components/model-picker.tsx', 'ModelPicker', props);
   try {
@@ -96,11 +99,11 @@ test('a saved connection revision replaces its catalog without remounting or cha
 
 test('a late catalog from the previous connection revision cannot replace the new one', async () => {
   const previous = globalThis.fetch; let calls = 0, release;
-  globalThis.fetch = async () => {
+  globalThis.fetch = connectionsOnly(async () => {
     const request = ++calls;
     if (request === 1) await new Promise(resolve => { release = resolve; });
     return { ok: true, json: async () => ({ data: [{ id: request === 1 ? 'old' : 'new', model: request === 1 ? 'old' : 'new' }] }) };
-  };
+  });
   const props = { ...pickerProps, choices: [{ ...choice, catalogVersion: 'v1' }] };
   const view = fixture('components/model-picker.tsx', 'ModelPicker', props);
   try {
@@ -112,4 +115,32 @@ test('a late catalog from the previous connection revision cannot replace the ne
     assert.deepEqual(view.render().props.items.map(item => item.model), ['new']);
     assert.equal(calls, 2);
   } finally { release?.(); view.dispose(); globalThis.fetch = previous; }
+});
+
+test('every open lists the engine and the connection again; a model added since appears and the selection stays', async () => {
+  const previous = globalThis.fetch, calls = []; let listed = ['model-a'];
+  globalThis.fetch = async url => { calls.push(url); return { ok: true, json: async () => ({ data: listed.map(model => ({ id: model, model })) }) }; };
+  const view = fixture('components/model-picker.tsx', 'ModelPicker', pickerProps);
+  try {
+    assert.deepEqual((await open(view)).props.items.map(item => item.model), ['model-a']);
+    view.render().props.onOpenChange(false);
+    listed = ['model-a', 'model-b'];
+    assert.deepEqual((await open(view)).props.items.map(item => item.model), ['model-a', 'model-b']);
+    assert.deepEqual(calls.filter(url => url === ENGINE).length, 2, 'the engine list is asked for on each open');
+    assert.deepEqual(calls.filter(url => url !== ENGINE), ['/api/models?provider=local&refresh=true', '/api/models?provider=local&refresh=true']);
+    assert.equal(elements(view.render()).find(element => element.props['aria-label'] === 'Model').props['data-value'], 'saved');
+  } finally { view.dispose(); globalThis.fetch = previous; }
+});
+
+test('a failed engine refresh is said in the picker with Try again, and the selection stays', async () => {
+  const previous = globalThis.fetch;
+  globalThis.fetch = async url => url === ENGINE ? { ok: false, json: async () => ({ error: 'network down' }) } : { ok: true, json: async () => ({ data: [{ id: 'saved', model: 'saved' }] }) };
+  const view = fixture('components/model-picker.tsx', 'ModelPicker', pickerProps);
+  try {
+    const tree = await open(view);
+    const alert = elements(tree).find(element => element.props.role === 'alert');
+    assert.deepEqual(alert.props.children, ['Could not refresh the model list: ', 'network down', '. Showing the last list.']);
+    assert.ok(button(tree, 'Try again'));
+    assert.equal(elements(tree).find(element => element.props['aria-label'] === 'Model').props['data-value'], 'saved');
+  } finally { view.dispose(); globalThis.fetch = previous; }
 });
