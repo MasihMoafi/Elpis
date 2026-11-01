@@ -51,13 +51,18 @@ const closeMenu = async page => { await page.keyboard.press('Escape'); await pag
 test('right-click on a message keeps the hover … actions and appends Change this…', () => using({}, async f => {
   const { page } = f;
   await f.open('chat-a');
-  const prompt = page.locator('.message.user', { hasText: 'Run them.' }), reply = page.locator('.message.agent', { hasText: 'two passes' });
+  // The newest prompt ("Run them.") has no Rewind (Masih, 29 Oct, of Rewind on the last message: "rewind what?"; 054e332a6),
+  // so the full prompt menu is read on an earlier prompt.
+  const prompt = page.locator('.message.user', { hasText: 'Add tests.' }), reply = page.locator('.message.agent', { hasText: 'two passes' });
   await prompt.click({ button: 'right' });
   assert.deepEqual(await menuItems(page), [...MENU.user, 'Change this…']);
   await closeMenu(page);
-  const turn = page.locator('.user-turn', { hasText: 'Run them.' });
+  const turn = page.locator('.user-turn', { hasText: 'Add tests.' });
   await turn.hover(); await turn.getByRole('button', { name: 'More message actions', exact: true }).click();
   assert.deepEqual(await menuItems(page), MENU.user, 'the … holds the message actions');
+  await closeMenu(page);
+  await page.locator('.message.user', { hasText: 'Run them.' }).click({ button: 'right' });
+  assert.deepEqual(await menuItems(page), [...MENU.user.filter(name => name !== 'Rewind to here'), 'Change this…'], 'the newest prompt has no Rewind');
   await closeMenu(page);
   await reply.click({ button: 'right' });
   assert.deepEqual(await menuItems(page), [...MENU.reply, 'Change this…']);
