@@ -892,8 +892,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .feature-chip { display:inline-flex; align-items:center; gap:6px; height:28px; padding:0 8px; border:1px solid transparent; background:transparent; color:var(--muted-foreground); font-size:var(--text-xs); white-space:nowrap; cursor:pointer; }
 .feature-chip:hover:not(:disabled) { background:var(--hover); color:var(--muted-foreground); }
 .feature-chip:focus-visible { outline:1.5px solid var(--ring); outline-offset:1px; }
-.feature-chip:disabled { cursor:default; opacity:.55; }
-.feature-chip[aria-pressed="true"] { color:var(--primary); }
+.feature-chip:disabled { cursor:default; }
+.feature-chip[aria-pressed="true"] { color:var(--accent-text); }
 .feature-dot { width:7px; height:7px; border-radius:50%; box-shadow:inset 0 0 0 1.5px var(--muted-foreground); }
 .feature-chip[aria-pressed="true"] .feature-dot { background:var(--primary); box-shadow:none; }
 .feature-chip .context-ring-icon .context-ring-track { stroke:currentColor; }
