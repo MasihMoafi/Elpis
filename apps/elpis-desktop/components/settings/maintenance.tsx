@@ -11,21 +11,17 @@ import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescripti
 import { SaveFeedback, SettingRow, SettingsActions, SettingsGroup, SettingsNotice } from "@/components/settings/rows";
 import { useSaver } from "@/components/settings/use-saver";
 import { editable, reloadSettings, saveSettings, type Background, type ElpisSettings, type Memory } from "@/lib/settings-store";
+import { refreshModelCatalog, useModelCatalog as useSharedModelCatalog } from "@/lib/model-catalog";
 
 // Background model, Smart Prune and memory settings (formerly the "Elpis" page), each saved
 // through the bridge's versioned config writer.
 const shown = (value: string | boolean | null | undefined) => typeof value === "boolean" ? (value ? "Enabled" : "Disabled") : value || "Not reported";
 const reloaded = { ok: true, text: "Settings reloaded. Unsaved edits were discarded." };
 
+/** Settings' model menus: the shared live list (lib/model-catalog.ts), refreshed as the page opens. */
 export function useModelCatalog() {
-  const [models, setModels] = useState<Model[]>([]);
-  const [error, setError] = useState("");
-  useEffect(() => {
-    let disposed = false;
-    api<{ data: Model[] }>("/models").then(value => { if (!Array.isArray(value?.data)) throw new Error("Model catalog response did not contain models."); if (!disposed) setModels(value.data); })
-      .catch(cause => { if (!disposed) setError(cause instanceof Error ? cause.message : String(cause)); });
-    return () => { disposed = true; };
-  }, []);
+  const { models, error } = useSharedModelCatalog();
+  useEffect(() => { void refreshModelCatalog(); }, []);
   return { models, error };
 }
 
@@ -42,7 +38,7 @@ function useProviderCatalogs(value: ElpisSettings, models: Model[], selected: (s
     for (const provider of new Set(wanted.split("\n"))) {
       if (!provider || provider === value.main.provider || catalogFor(provider) || !value.providers?.some(item => item.id === provider)) continue;
       setCatalogs(old => ({ ...old, [provider]: { version, models: [], loading: true } }));
-      api<{ data: Model[] }>("/models?provider=" + encodeURIComponent(provider)).then(result => {
+      api<{ data: Model[] }>("/models?provider=" + encodeURIComponent(provider) + "&refresh=true").then(result => {
         if (!Array.isArray(result?.data)) throw new Error("Model catalog response did not contain models.");
         if (active.current) setCatalogs(old => old[provider]?.version === version ? { ...old, [provider]: { version, models: result.data } } : old);
       }).catch(error => {

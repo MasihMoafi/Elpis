@@ -20,7 +20,8 @@ import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescripti
 import { Dictation } from "@/components/dictation";
 import { MatildaWho, useMatilda } from "@/components/love-spot-matilda";
 import { ModelPicker } from "@/components/model-picker";
-import { api, chatProvider, providerChoices, unreadable, type Model, type ProviderSettings } from "@/lib/api";
+import { api, chatProvider, providerChoices, unreadable, type ProviderSettings } from "@/lib/api";
+import { refreshModelCatalog, useModelCatalog } from "@/lib/model-catalog";
 import { keepModel, savedModel, MATILDA_CHANGED } from "@/lib/matilda";
 import { useMatildaSettings, type MatildaSettings } from "@/lib/matilda-settings";
 import { MatildaSwitch } from "@/components/matilda-switch";
@@ -96,7 +97,7 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
   const editorRef = useRef<ExcalidrawImperativeAPI | undefined>(undefined);
   const ready = useCallback((value: ExcalidrawImperativeAPI) => { editorRef.current = value; setEditor(value); }, []);
   const [settings, setSettings] = useState<ProviderSettings | null>(null), [whoOpen, setWhoOpen] = useState(false);
-  const [models, setModels] = useState<Model[]>([]), [pick, setPick] = useState(savedModel);
+  const { models } = useModelCatalog(), [pick, setPick] = useState(savedModel);
   const [screenshots, setScreenshots] = useState<Screenshot[]>([]), [choosing, setChoosing] = useState(false);
   const [page, setPage] = useState<BoardPage>(), [pages, setPages] = useState<PageList["pages"]>([]), [pagesError, setPagesError] = useState("");
   const [pageToDelete, setPageToDelete] = useState<string>(), [clearing, setClearing] = useState(false);
@@ -128,9 +129,10 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
 
   useEffect(() => {
     let active = true;
-    Promise.all([api<ProviderSettings>("/settings"), api<{ data: Model[] }>("/models")]).then(([config, catalog]) => {
-      if (!config.main || (config.providers !== undefined && !Array.isArray(config.providers)) || !Array.isArray(catalog.data)) throw unreadable("Love Spot settings");
-      if (active) { setSettings(config); setModels(catalog.data); }
+    void refreshModelCatalog();
+    api<ProviderSettings>("/settings").then(config => {
+      if (!config.main || (config.providers !== undefined && !Array.isArray(config.providers))) throw unreadable("Love Spot settings");
+      if (active) setSettings(config);
     }).catch(report);
     return () => { active = false; };
   }, [report]);

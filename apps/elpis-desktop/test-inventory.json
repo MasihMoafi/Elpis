@@ -15,6 +15,7 @@
     "tests/canvas-isolation.test.mjs",
     "tests/chat-groups.test.mjs",
     "tests/chat-tabs.test.mjs",
+    "tests/model-catalog.test.mjs",
     "tests/dictation.test.mjs",
     "tests/diff.test.mjs",
     "tests/drafts.test.mjs",
@@ -53,7 +54,7 @@
   ],
   "bridge": [
     "bridge/workflow-concurrency.test.mjs",
-    "bridge/subscription-models.test.mjs",
+    "bridge/live-model-catalogue.test.mjs",
     "bridge/memory-count.test.mjs",
     "tests/workflow-routing.mjs",
     "tests/workflow-titles.mjs",

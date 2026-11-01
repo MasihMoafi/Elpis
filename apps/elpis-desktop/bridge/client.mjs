@@ -1,4 +1,5 @@
 import { readClaudeMcp } from './claude-mcp-import.mjs';
+import { subscriptionModels } from "./subscription-models.mjs";
 import { workflowModelRoutes, workflowDefaults, workflowRoute } from "./workflow-models.mjs";
 import voiceHandoff from './voice-handoff.cjs';
 import { fastServiceTier } from '../lib/service-tier.mjs';
@@ -17,7 +18,6 @@ import { PERMISSION_PRESETS, PROFILES } from './permission-presets.mjs';
 import { settingsSnapshot, userConfigVersion, tokenUsageSnapshot, contextLedger, restoredTokenUsage, rolloutShares, rolloutTurnModels, contextSwitchesSnapshot, CONTEXT_SWITCH_KEYS, smartPruneSnapshot, providersSnapshot, mcpSnapshot, optionEdits, hooksSnapshot, defaultPermissionMode } from './elpis-features.mjs';
 import { replacementEligibility } from '../lib/turn-replacement.ts';
 import { providerModels } from './provider-models.mjs';
-import { subscriptionModels } from './subscription-models.mjs';
 import { attachmentInput, recordedMedia } from './attachments.mjs';
 import { SkillTrash } from './skill-trash.mjs';
 import { createGithubConnector } from './github-connector.mjs';
@@ -156,7 +156,7 @@ const DOWNLOADS = new Set(['marketplace/add', 'marketplace/upgrade', 'plugin/ins
 const ARCHIVED_SESSION = /^session \S+ is archived\./;
 const archivedSession = error => ARCHIVED_SESSION.test(error?.engineMessage ?? '');
 // thread/read opens a chat before any change since 31 Oct (it used to be thread/resume): a missing chat still says so.
-const EXPLAINED = new Set(['externalAgentConfig/import', 'thread/read', 'thread/settings/update', 'account/read', 'account/rateLimits/read', 'thread/delete', 'thread/fork', 'thread/start', 'thread/resume', 'thread/name/set', 'thread/archive', 'thread/unarchive', 'thread/revert', 'thread/compact/start', 'review/start', 'turn/start', 'turn/steer', 'turn/interrupt', 'config/batchWrite', 'account/login/start', 'account/logout', 'claudeSubscription/write', 'hooks/list', 'memory/reset', 'plugin/list', 'plugin/search', 'plugin/install', 'plugin/uninstall', 'marketplace/add', 'marketplace/remove']);
+const EXPLAINED = new Set(['externalAgentConfig/import', 'thread/read', 'thread/settings/update', 'model/list', 'account/read', 'account/rateLimits/read', 'thread/delete', 'thread/fork', 'thread/start', 'thread/resume', 'thread/name/set', 'thread/archive', 'thread/unarchive', 'thread/revert', 'thread/compact/start', 'review/start', 'turn/start', 'turn/steer', 'turn/interrupt', 'config/batchWrite', 'account/login/start', 'account/logout', 'claudeSubscription/write', 'hooks/list', 'memory/reset', 'plugin/list', 'plugin/search', 'plugin/install', 'plugin/uninstall', 'marketplace/add', 'marketplace/remove']);
 /** What a module with a conversation of its own (bridge/side-turn.mjs: the canvas planner and chat titles) may ask of the
  * engine; see `sideRpc`. config/read names the MCP servers a chat-title conversation switches off. */
 const SIDE_RPCS = new Set(['thread/start', 'turn/start', 'turn/interrupt', 'thread/unsubscribe', 'thread/delete', 'config/read']);
@@ -724,7 +724,9 @@ export class DesktopClient extends EventEmitter {
     throw new BridgeError('Recorded media was not found', 404);
   }
   async models(options = {}) {
-    object(options, ['cursor', 'limit', 'provider', 'inputModality', 'outputModality']);
+    object(options, ['cursor', 'limit', 'provider', 'inputModality', 'outputModality', 'refresh']);
+    if (options.refresh !== undefined && typeof options.refresh !== 'boolean') throw new BridgeError('refresh must be true or false');
+    const refresh = options.refresh === true;
     if (options.inputModality !== undefined && (options.inputModality !== 'audio' || options.provider !== 'openrouter')) throw new BridgeError('Choose OpenRouter audio models');
     if (options.outputModality !== undefined && (options.outputModality !== 'rerank' || options.provider !== 'openrouter' || options.inputModality !== undefined)) throw new BridgeError('Choose OpenRouter rerank models');
     if (options.provider !== undefined) {
@@ -741,6 +743,7 @@ export class DesktopClient extends EventEmitter {
       // catalog. An explicit API connection always lists its own endpoint.
       // A connection the engine signs in to itself (ChatGPT, the Anthropic credits) but that is not the default: the engine lists
       // its models (subscription-models.mjs). 1 Nov: with ChatGPT made the default, the Anthropic credits lost every model.
+      // A menu that opens (refresh) asks the engine again instead of reusing its last answer.
       if (options.provider !== read?.config?.model_provider && !options.inputModality && !options.outputModality && !savedProviderKey(configHome(read), options.provider)) {
         // account/read describes the default connection's account, so the engine is simply asked; when it cannot list them
         // the connection is treated as an API key, as before.
@@ -748,7 +751,7 @@ export class DesktopClient extends EventEmitter {
         const engineSignsIn = options.provider === 'openai' ? home && fs.existsSync(path.join(home, 'auth.json')) : Object.hasOwn(read?.config?.model_providers ?? {}, options.provider);
         if (home && engineSignsIn) {
           try {
-            const listed = await subscriptionModels({ env: { ...process.env, ELPIS_HOME: home }, provider: options.provider });
+            const listed = await subscriptionModels({ env: { ...process.env, ELPIS_HOME: home }, provider: options.provider, refresh });
             for (const model of listed.data) this.#models.add(model.model); // so a chat or workflow may start on them
             return listed;
           }
@@ -762,13 +765,20 @@ export class DesktopClient extends EventEmitter {
         catch (error) { throw new BridgeError(error.message || 'Could not load models from this connection.', 502); }
       }
     }
-    const { provider: _provider, ...page } = options;
-    const result = await this.#modelList({ ...page, limit: options.limit ?? 100, includeHidden: false });
+    const { provider: _provider, refresh: _refresh, ...page } = options;
+    const result = await this.#modelList({ ...page, limit: options.limit ?? 100, includeHidden: false }, refresh);
     for (const model of result.data) this.#models.add(model.model);
     return result;
   }
-  #modelList(params) {
-    if (params.cursor || params.limit !== 100 || params.includeHidden !== false) return this.#rpc('model/list', params);
+  /** The engine's list; `refresh` (a model menu opening) asks the engine to fetch it now and replaces the shared copy. */
+  #modelList(params, refresh = false) {
+    if (params.cursor || params.limit !== 100 || params.includeHidden !== false) return this.#rpc('model/list', refresh ? { ...params, refresh } : params);
+    if (refresh) {
+      const pending = this.#rpc('model/list', { ...params, refresh });
+      // A failed refresh is the menu's error; the last good list stays for the other readers.
+      pending.then(() => { this.#catalog = pending; }, () => {});
+      return pending;
+    }
     if (!this.#catalog) {
       const pending = this.#rpc('model/list', params);
       this.#catalog = pending;

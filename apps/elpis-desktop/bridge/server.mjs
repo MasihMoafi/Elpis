@@ -62,11 +62,11 @@ function cwdOf(url, ...others) {
 function pageQuery(url, ancestor = false, models = false) {
   const result = {};
   for (const [key, value] of url.searchParams) {
-    if (!['limit', 'cursor', ...(ancestor ? ['ancestorThreadId', 'archived', 'searchTerm', 'includeAgentRuns'] : []), ...(models ? ['provider', 'inputModality', 'outputModality'] : [])].includes(key) || result[key] !== undefined) throw new BridgeError('Unsupported query parameter');
+    if (!['limit', 'cursor', ...(ancestor ? ['ancestorThreadId', 'archived', 'searchTerm', 'includeAgentRuns'] : []), ...(models ? ['provider', 'inputModality', 'outputModality', 'refresh'] : [])].includes(key) || result[key] !== undefined) throw new BridgeError('Unsupported query parameter');
     if (key === 'searchTerm') {
       if (!value.trim() || value.length > 200) throw new BridgeError('Search must contain 1 through 200 characters');
       result.searchTerm = value.trim();
-    } else if (key === 'archived' || key === 'includeAgentRuns') {
+    } else if (key === 'archived' || key === 'includeAgentRuns' || key === 'refresh') {
       if (!['true', 'false'].includes(value)) throw new BridgeError(`${key} must be true or false`);
       result[key] = value === 'true';
     } else if (key === 'limit') {

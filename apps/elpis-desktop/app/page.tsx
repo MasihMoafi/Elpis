@@ -125,7 +125,8 @@ import { changesModelCatalog } from "@/lib/account-events";
 import { loadConversationPage } from "@/lib/conversation-page";
 import { LoadOnScroll } from "@/components/load-on-scroll";
 import { activityOf, api, unreadable, chatProvider, choiceById, choiceOf, effortsOf, isAgent, isAgentRun, AGENT_RUN_NOTICE, modelLabel, providerChoices, providerLabel, title, agentName,
-  mediaUrl, sessionReady, retryableSessionError, type Approval, type Entry, type Item, type Model, type ProviderSettings, type Thread } from "@/lib/api";
+  mediaUrl, sessionReady, retryableSessionError, type Approval, type Entry, type Item, type ProviderSettings, type Thread } from "@/lib/api";
+import { refreshModelCatalog, useModelCatalog } from "@/lib/model-catalog";
 
 const approvalDraftKey = (approval: Approval) => JSON.stringify([approval.ownerThreadId, approval.id]);
 
@@ -167,20 +168,9 @@ export default function Home() {
   const updateTabs = useCallback((next: ChatTabs) => { tabsRef.current = next; setTabs(next); }, []);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [submissions, setSubmissions] = useState<SubmittedMessage[]>([]);
-  const [models, setModels] = useState<Model[]>([]);
-  const [catalogError, setCatalogError] = useState("");
-  const [catalogLoading, setCatalogLoading] = useState(false);
-  const catalogRequest = useRef(0);
-  const refreshModels = useCallback(async () => {
-    const id = ++catalogRequest.current; setCatalogLoading(true);
-    try {
-      const result = await api<{ data: Model[] }>("/models");
-      if (!Array.isArray(result?.data)) throw new Error("The model catalogue did not return a model list.");
-      if (catalogRequest.current === id) { setModels(result.data); setCatalogError(""); }
-    } catch (cause) {
-      if (catalogRequest.current === id) setCatalogError(cause instanceof Error ? cause.message : String(cause));
-    } finally { if (catalogRequest.current === id) setCatalogLoading(false); }
-  }, []);
+  // The engine's live model list, shared by every model menu (lib/model-catalog.ts).
+  const { models, error: catalogError, loading: catalogLoading } = useModelCatalog();
+  const refreshModels = refreshModelCatalog;
   // One settings snapshot for the whole app, so a main model saved in Settings is what the next new chat starts with.
   const settingsSnapshot = useElpisSettings().data as unknown as ProviderSettings | null;
   const providerSettings = settingsSnapshot?.main && Array.isArray(settingsSnapshot.providers) ? settingsSnapshot : null;
@@ -987,7 +977,7 @@ export default function Home() {
         }
       }
     }
-    initialize(); return () => { disposed = true; clearTimeout(retryTimer); catalogRequest.current++; events?.close(); };
+    initialize(); return () => { disposed = true; clearTimeout(retryTimer); events?.close(); };
   }, [refreshThreads, patchThread, upsertThread, removeThreads, select, liveKeysAfter, clearApprovalDraft, refreshModels, reconcileLiveThread, rememberFollowing, noteHistoryGap]);
 
   const loadChildren = useCallback(async (id: string, cursor?: string, expand = false) => {

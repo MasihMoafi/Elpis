@@ -27,6 +27,7 @@ import { deleteKeepingFlow } from "@/lib/canvas-delete-flow";
 import { extractAgent, frameBounds, insidePolygon, insertAgent, segmentsCross } from "@/lib/canvas-editing";
 import { executionGraph, linkedIds } from "@/lib/canvas";
 import { api, providerChoices, subscriptionOf, type Entry, type Model, type ProviderSettings, type Thread } from "@/lib/api";
+import { modelCatalogSnapshot, refreshModelCatalog } from "@/lib/model-catalog";
 import { readWorkflowConcurrency } from "@/lib/workflow-concurrency";
 import { useElpisSettings } from "@/lib/settings-store";
 import { appStorage } from "@/lib/projects";
@@ -640,12 +641,14 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
   // Antigravity and Claude: the model carries the route (agy/, claude/), so an agent on one keeps no provider (lib/api.ts).
   const subscriptions = allChoices.filter(choice => choice.id.endsWith("/"));
   const version = settings?.version ?? "";
+  // Opening Workflows lists every model live again: the engine's list and each connection's own.
+  useEffect(() => { catalogs.clear(); void refreshModelCatalog(); }, []);
   useEffect(() => {
     for (const choice of choices) {
       if (!choice.provider || choice.needsKey || catalogs.get(choice.provider)?.version === version) continue;
       const provider = choice.provider;
       catalogs.set(provider, { version });
-      api<{ data: Model[] }>(`/models?provider=${encodeURIComponent(provider)}`)
+      api<{ data: Model[] }>(`/models?provider=${encodeURIComponent(provider)}&refresh=true`)
         .then(result => catalogs.set(provider, { version, models: result.data }))
         .catch(cause => catalogs.set(provider, { version, error: cause instanceof Error ? cause.message : String(cause) }))
         .finally(() => setFetched(count => count + 1));
@@ -1510,7 +1513,9 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
     // A job about a subject (Logo's brand): what the request box says, or else the folder's name; the brief names it.
     const subject = workflow.subject && requestText.trim() || where, brief = workflow.subject ? workflow.goal(subject, language) : goal;
     // The subscriptions (Antigravity's Gemini, Claude) are in the engine's own list; a run routes them by their prefix.
-    const listed = models.length ? models : (await api<{ data: Model[] }>("/models").catch(() => ({ data: [] as Model[] }))).data;
+    // The live list as the run starts, so a model added since the board opened can be chosen.
+    await refreshModelCatalog();
+    const listed = modelCatalogSnapshot().models.length ? modelCatalogSnapshot().models : models;
     const offered = [...listed.map(item => ({ model: item.model, provider: null as string | null })), ...catalog];
     const pick = (test: RegExp) => offered.find(item => test.test(item.model));
     const byLanguage = typeof workflow.worker === "function", worker = (byLanguage ? (workflow.worker as (language: Language) => RegExp[])(language) : workflow.worker as RegExp[]).map(pick).find(Boolean), boss = MOTHER_FIRST.map(pick).find(Boolean);
