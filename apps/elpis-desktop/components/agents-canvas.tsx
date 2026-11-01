@@ -1585,7 +1585,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
     const repository = Boolean(cwd) && !readyMade(graph.planningPattern) && wantsIsolation(tasks) && await api<{ repository?: boolean }>(`/repository?cwd=${encodeURIComponent(cwd!)}`).then(result => result.repository === true, () => false);
     if (!current()) throw Error(OFFLINE_WORKFLOW);
     const limit = await workflowLimit(); if (!current()) throw Error(OFFLINE_WORKFLOW);
-    return api<{ graphId: string }>("/workflows/run", { ...(graph.template === "recursive" ? { roundLimit: graph.roundLimit } : {}), ...runPayload(rootThreadId, name, tasks, limit, repository), runLimitSeconds: (graph.timeLimit ?? RUN_MINUTES) * 60, ...(next ? { next } : {}) });
+    return api<{ graphId: string }>("/workflows/run", { ...(graph.template === "recursive" ? { roundLimit: graph.roundLimit } : {}), ...runPayload(rootThreadId, name, tasks, limit, repository), runLimitSeconds: (graph.timeLimit ?? RUN_MINUTES) * 60, ...(mother.brief.trim() || requestText.trim() ? { goal: mother.brief.trim() || requestText.trim() } : {}), ...(next ? { next } : {}) });
   }
 
   async function start(targets?: string[]) {

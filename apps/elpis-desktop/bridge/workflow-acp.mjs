@@ -308,7 +308,12 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
     // The whole run's time limit (Masih, 29 Oct: "set a time limit for these workflows"): past it, every agent stops and the
     // run ends as stopped, saying why. Each agent also keeps its own maxRuntimeSeconds.
     let overTime = false;
-    const deadline = record.runLimitSeconds ? setTimeout(() => { overTime = true; controller.abort(); }, Math.max(0, (resuming ? Date.now() : record.startedAt) + record.runLimitSeconds * 1000 - Date.now())) : null;
+    const endsAt = record.runLimitSeconds ? (resuming ? Date.now() : record.startedAt) + record.runLimitSeconds * 1000 : null;
+    const deadline = endsAt ? setTimeout(() => { overTime = true; controller.abort(); }, Math.max(0, endsAt - Date.now())) : null;
+    // Agents are told the time left, so they finish inside the limit instead of being cut off by it (29 Oct: "agents are,
+    // should be, forced to finish in that designated time").
+    const minutesLeft = () => { const n = Math.max(1, Math.floor((endsAt - Date.now()) / 60000)); return `${n} minute${n === 1 ? '' : 's'}`; };
+    const timeLeft = () => endsAt ? `Time left for the whole run: about ${minutesLeft()}. Finish well inside it; if time is short, return your best complete result now rather than start long work.` : null;
     try {
       isolation = record.isolation ? await workflowWorktrees(root.cwd, record.id, resuming ? record : undefined) : null;
       if (isolation) record.worktreeBase = isolation.base;
@@ -336,6 +341,7 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
             const checked = task.kind === 'verify' ? [...new Set(task.dependsOn.flatMap(id => byId.get(id)?.writeScopes ?? []))] : [];
             const instructions = [`Acceptance criteria:\n${task.acceptanceCriteria.map(c => `- ${c}`).join('\n')}`,
               scopes.length ? `Write only in: ${scopes.join(', ')}.` : 'Read only. Do not change files.',
+              ...endsAt ? [timeLeft()] : [],
               ...checked.length ? [`The agents you check could write only in: ${checked.join(', ')}. Look for a file the criteria name there as well as at the path given.`] : [],
               task.kind === 'verify' ? 'Return only JSON: {"passed": true or false, "summary": "criteria and observed evidence"}. Set passed false if any criterion fails or cannot be checked.' : 'Return your final answer with observed evidence.'].join('\n\n');
             const inputs = [...task.dependsOn.map(id => ({ name: byId.get(id).title, answer: answers.get(id) })),

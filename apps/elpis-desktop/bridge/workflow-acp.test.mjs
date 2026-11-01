@@ -173,6 +173,15 @@ test('failure blocks dependent ACP nodes; an independent node can finish', { tim
   assert.equal(g.tasks.find(n => n.id === 'b').status, 'blocked'); assert.equal(f.log('b').length, 0);
   assert.equal(g.tasks.find(n => n.id === 'c').status, 'succeeded');
 });
+test('the run\'s goal reaches the Mother agent when she rescues a failed step; a run without one sends none', { timeout: 20000 }, async t => {
+  const f = fixture(t); await f.client.initialize();
+  const g = await f.finished((await f.run([task('a', [], '[crash]')], { goal: 'Translate the leaflet into Farsi' })).graphId);
+  assert.equal(g.goal, 'Translate the leaflet into Farsi');
+  const rescue = f.log('Mother agent').filter(row => row.method === 'session/prompt').map(row => row.params.prompt[0].text).join('\n');
+  assert.match(rescue, /Goal: Translate the leaflet into Farsi\./);
+  const blank = await f.finished((await f.run([task('b')], { goal: '   ' })).graphId);
+  assert.equal(blank.goal, undefined, 'a blank goal is not kept');
+});
 test('recursive feedback runs exactly the explicit number of rounds, with previous round answers', { timeout: 20000 }, async t => {
   const f = fixture(t); await f.client.initialize();
   const tasks = [{ ...task('a'), feedbackFrom: ['b'] }, task('b', ['a'], 'Continue')];
@@ -422,12 +431,13 @@ function budgetFixture(t, budget) {
   const dir = path.join(tempRoot, 'project'); fs.mkdirSync(dir);
   const release = path.join(tempRoot, 'release');
   const log = id => { const file = path.join(tempRoot, `${id}.jsonl`); return fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse) : []; };
-  const runs = createWorkflowRuns({ stateDir: path.join(tempRoot, 'state'), budget, nodeSpec: node => ({ name: node.name, command: process.execPath, args: [FAKE], model: node.model,
+  const instructions = new Map();
+  const runs = createWorkflowRuns({ stateDir: path.join(tempRoot, 'state'), budget, nodeSpec: node => (instructions.set(node.name, node.prompt), { name: node.name, command: process.execPath, args: [FAKE], model: node.model,
     env: { FAKE_ACP_NAME: node.name, FAKE_ACP_MODELS: 'm-fast', FAKE_ACP_LOG: path.join(tempRoot, `${node.name}.jsonl`), FAKE_ACP_HOLD_TURN: '1', FAKE_ACP_RELEASE: release } }) });
   const record = async id => (await runs.list()).find(record => record.id === id);
   const until = async (check, message) => { for (let n = 0; n < 500; n++) { if (await check()) return; await pause(20); } assert.fail(message); };
   t.after(async () => { runs.close(); await until(async () => (await runs.list()).every(record => record.status !== 'running'), 'runs stopped'); removeTestTempDir(tempRoot); });
-  return { log, record, until, release: () => fs.writeFileSync(release, ''), cancel: rootThreadId => runs.cancel(rootThreadId),
+  return { log, record, until, instructions, release: () => fs.writeFileSync(release, ''), cancel: rootThreadId => runs.cancel(rootThreadId),
     started: ids => ids.filter(id => log(id).some(row => row.method === 'session/prompt')),
     start: (rootThreadId, tasks, extra = {}) => runs.start({ rootThreadId, name: rootThreadId, tasks, ...extra }, { cwd: dir, model: 'm-fast', modelProvider: 'openai' }),
     finished: async id => { await until(async () => (await record(id)).status !== 'running', 'workflow did not finish'); return record(id); } };
@@ -480,7 +490,7 @@ test("a workflow's own maxConcurrency still bounds it when the global cap allows
   assert.deepEqual((await f.finished(run.graphId)).tasks.map(task => task.status), ['succeeded', 'succeeded', 'succeeded']);
 });
 
-test('a run stops at its time limit and says so; a run within its limit finishes', { timeout: 20000 }, async t => {
+test('a run stops at its time limit and says so; agents are told the time left; a run within its limit finishes', { timeout: 20000 }, async t => {
   const f = budgetFixture(t, createMemoryBudget({ env: {}, ...plenty }));
   const slow = await f.start('slow', [task('held')], { runLimitSeconds: 1 });
   const ended = await f.finished(slow.graphId);
@@ -489,4 +499,9 @@ test('a run stops at its time limit and says so; a run within its limit finishes
   f.release();
   const quick = await f.start('quick', [task('fine')], { runLimitSeconds: 60 });
   assert.equal((await f.finished(quick.graphId)).status, 'succeeded');
+  const prompt = id => f.instructions.get(id) ?? '';
+  assert.match(prompt('fine'), /Time left for the whole run: about 1 minute\./, 'agents are told the time left so they finish inside it');
+  const open = await f.start('open', [task('unlimited')]);
+  await f.finished(open.graphId);
+  assert.doesNotMatch(prompt('unlimited'), /Time left/, 'a run without a limit says nothing about time');
 });

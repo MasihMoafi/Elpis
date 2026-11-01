@@ -1461,16 +1461,18 @@ export class DesktopClient extends EventEmitter {
   /** `next`: the stage that runs after this one has succeeded (the Father's part), in its own chat (`thread`). The bridge
    * starts it and delivers its report here (#workflowEnded), so the run goes on with the Workflows screen closed. */
   async runWorkflow(body) {
-    object(body, ['rootThreadId','name','tasks','maxConcurrency','maxRuntimeSeconds','runLimitSeconds','isolation','roundLimit','next']);
+    object(body, ['rootThreadId','name','goal','tasks','maxConcurrency','maxRuntimeSeconds','runLimitSeconds','isolation','roundLimit','next']);
     const id=threadId(body.rootThreadId);
     const params=this.#workflowLimits(body,{rootThreadId:id,name:text(body.name,'workflow name',256),tasks:this.#workflowTasks(body.tasks)});
     if(body.roundLimit!==undefined)params.roundLimit=body.roundLimit;
+    // The run's goal reaches the Mother agent when she rescues a failed step or reviews the result (28 Oct: her prompts said "Goal: .").
+    if(body.goal!==undefined&&String(body.goal).trim())params.goal=text(body.goal,'workflow goal',32000);
     if(body.next!==undefined){
       object(body.next,['name','tasks','thread','maxConcurrency','isolation']);
       object(body.next.thread,['name','instructions','model','provider']);
       const thread={name:text(body.next.thread.name,'chat name',120),instructions:text(body.next.thread.instructions,'chat instructions',32000),
         ...(body.next.thread.model!==undefined?{model:text(body.next.thread.model,'model',200)}:{}),...(body.next.thread.provider!==undefined?{provider:text(body.next.thread.provider,'provider',200)}:{})};
-      params.next=this.#workflowLimits(body.next,{name:text(body.next.name,'workflow name',256),tasks:this.#workflowTasks(body.next.tasks),thread,status:'waiting'});
+      params.next=this.#workflowLimits(body.next,{name:text(body.next.name,'workflow name',256),...(params.goal?{goal:params.goal}:{}),tasks:this.#workflowTasks(body.next.tasks),thread,status:'waiting'});
     }
     return this.#mutate(id,async()=>{
       const current=await this.#current(id);
