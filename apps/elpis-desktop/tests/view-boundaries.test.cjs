@@ -77,10 +77,10 @@ test('the complete sidebar wordmark fits its SVG viewport and toggle at desktop 
       await page.waitForTimeout(1100); // The final letter arrives at 0.95 seconds.
       for (const width of [1280, 1440, 1600]) {
         await page.setViewportSize({ width, height: 800 });
-        const clipped = await page.locator('.brand img').evaluate(async image => {
-          const source = await (await fetch(image.src)).text();
+        // The wordmark is drawn inline in the theme's colours since 30 Oct (2529d1fc4, "theme the logo"); measure a still copy of it.
+        const clipped = await page.locator('.brand svg.size-wordmark').evaluate(async image => {
           const host = document.createElement('div');
-          host.innerHTML = source; document.body.append(host);
+          host.append(image.cloneNode(true)); document.body.append(host);
           const svg = host.querySelector('svg');
           for (const node of svg.querySelectorAll('*')) node.style.animation = 'none';
           const box = svg.querySelector('g[id$="shape"]').getBBox(), view = svg.viewBox.baseVal;
