@@ -283,10 +283,14 @@ test('Love Spot preserves typed messages and live replies without starting autom
   }
 });
 
-test('delayed Love Spot origin discovery blocks legacy chat audio and releases only ordinary chats after a valid scene', async () => {
+// Rewritten 1 Nov for current behaviour. Live voice came back to chats on 30 Oct (2529d1fc4, "restore voice"), so a
+// Love Spot origin no longer gates the chat composer; Love Spot itself lost its voice-call button on 1 Nov (1907e7a15,
+// Masih: "I don't want the voice button for matilda"). Read aloud still follows its own switch (READ_ALOUD_AUDIO, off).
+test('Love Spot origin discovery: chats offer voice without launching it, Love Spot has no voice-call button, read aloud follows its switch', async () => {
   const threads = [['chat-a', 'Review'], ['chat-b', 'Other chat'], ['chat-c', 'Love Spot']].map(([id, name]) => ({ id, name, model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } }));
   const f = await fixture({ threads, loveScene: null, routes: {
     '/api/voice': () => ({ available: true }),
+    '/api/love-spot/voice/settings': () => ({ enabled: true, available: true }),
     '/api/threads/chat-b': () => ({ thread: threads[1], data: [{ turnId: 'other-turn', item: { id: 'other-answer', type: 'agentMessage', text: 'Ordinary text to read.' }, completedAtMs: Date.now() }], nextCursor: null }),
   } });
   try {
@@ -297,41 +301,35 @@ test('delayed Love Spot origin discovery blocks legacy chat audio and releases o
       navigator.mediaDevices.getUserMedia = (...args) => { window.voiceLaunches.microphone++; return microphone(...args); };
       window.RTCPeerConnection = class extends Peer { constructor(...args) { super(...args); window.voiceLaunches.peers++; } };
     });
-    await eventually(() => assert.equal(f.loveListening(), 1));
-    for (const id of ['chat-a', 'chat-b', 'chat-c', 'chat-a']) {
-      await f.open(id);
-      assert.equal(await page.getByRole('button', { name: /^(Voice unavailable|Start voice chat)$/ }).count(), 0, 'unresolved origins and named Love Spot chats hide unavailable audio controls');
-      const reply = page.locator('.message.agent').last();
-      if (await reply.count()) { await reply.hover(); assert.equal(await reply.getByRole('button', { name: 'Read aloud', exact: true }).count(), 0); }
-    }
-    assert.deepEqual(await page.evaluate(() => window.voiceLaunches), { microphone: 0, peers: 0 });
-    assert.equal(f.posts.filter(row => /voice/.test(row.path)).length, 0, 'unknown origins cannot warm or launch audio');
-
-    await f.open('chat-b');
-    f.emitLove({ type: 'scene', scene: { elements: [{ id: 'review-card', customData: { loveAgent: { name: 'Review', threadId: 'chat-a' } } }] } });
     const start = page.getByRole('button', { name: 'Start voice chat', exact: true });
-    await start.waitFor();
-    await f.open('chat-a');
-    await start.waitFor({ state: 'hidden' });
-    assert.equal(await page.getByRole('button', { name: 'Voice unavailable', exact: true }).count(), 0, 'resolved legacy Love Spot hides its unavailable launch');
-    const legacyReply = page.locator('.message.agent').last();
-    await legacyReply.hover(); assert.equal(await legacyReply.getByRole('button', { name: 'Read aloud', exact: true }).count(), 0);
-    assert.equal(f.posts.filter(row => /voice/.test(row.path)).length, 0, 'the resolved legacy Love Spot chat stays gated');
+    const noReadAloud = async where => {
+      const reply = page.locator('.message.agent').last();
+      if (await reply.count()) { await reply.hover(); assert.equal(await reply.getByRole('button', { name: 'Read aloud', exact: true }).count(), 0, `read aloud stays off by its switch: ${where}`); }
+    };
+    await eventually(() => assert.equal(f.loveListening(), 1));
+    // Before, after and despite Love Spot's scene: every chat, its named Love Spot chat and a chat the scene claims
+    // offer the voice call, with no dead "Voice unavailable" control.
+    for (const scene of [null, { elements: [{ id: 'review-card', customData: { loveAgent: { name: 'Review', threadId: 'chat-a' } } }] }, 'error']) {
+      if (scene === 'error') f.emitLove({ type: 'error', message: 'The scene is unavailable.' }); else if (scene) f.emitLove({ type: 'scene', scene });
+      for (const id of ['chat-a', 'chat-b', 'chat-c']) {
+        await f.open(id);
+        await start.waitFor();
+        assert.equal(await page.getByRole('button', { name: 'Voice unavailable', exact: true }).count(), 0, `${id} shows no dead audio control`);
+        await noReadAloud(id);
+      }
+    }
+    // Offering the call starts nothing by itself.
+    assert.deepEqual(await page.evaluate(() => window.voiceLaunches), { microphone: 0, peers: 0 });
+    assert.equal(f.posts.filter(row => /voice/.test(row.path)).length, 0, 'opening chats never warms or launches audio');
 
-    await f.open('chat-b');
-    await page.getByRole('button', { name: 'Start voice chat', exact: true }).waitFor();
-    const reply = page.locator('.message.agent').last();
-    await reply.hover();
-    assert.equal(await reply.getByRole('button', { name: 'Read aloud', exact: true }).count(), 0, 'ordinary read aloud remains hidden after origins resolve');
-    assert.equal(f.posts.filter(row => row.path.startsWith('/api/voice/read-aloud')).length, 0);
-
-    f.emitLove({ type: 'error', message: 'The scene is unavailable.' });
-    await start.waitFor({ state: 'hidden' });
-    assert.equal(await page.getByRole('button', { name: 'Voice unavailable', exact: true }).count(), 0, 'an unavailable scene hides the ordinary chat launch until its origin resolves');
-    await reply.hover(); assert.equal(await reply.getByRole('button', { name: 'Read aloud', exact: true }).count(), 0);
-    f.emitLove({ type: 'scene', scene: { elements: [] } });
-    await page.getByRole('button', { name: 'Start voice chat', exact: true }).waitFor();
-    assert.equal(await page.evaluate(() => window.voiceLaunches.microphone), 0);
+    // Love Spot's own bar has no voice-call button; dictation for notes stays.
+    await page.locator('aside.sidebar nav[aria-label="Workspace"]').getByRole('button', { name: 'Love Spot', exact: true }).click();
+    await page.getByRole('group', { name: 'Voice note' }).waitFor();
+    assert.equal(await start.count(), 0, 'Love Spot has no voice-call button');
+    assert.equal(await page.getByRole('button', { name: 'Voice unavailable', exact: true }).count(), 0);
+    assert.equal(await page.getByRole('switch', { name: 'Read replies aloud', exact: true }).count(), 0, 'Love Spot read aloud follows its switch: off');
+    assert.deepEqual(await page.evaluate(() => window.voiceLaunches), { microphone: 0, peers: 0 });
+    assert.equal(f.posts.filter(row => /\/api\/voice/.test(row.path)).length, 0, 'Love Spot does not launch chat audio');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
