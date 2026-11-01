@@ -26,7 +26,9 @@ for (const colorScheme of ['light', 'dark']) test(`Love Spot identifies chats, l
   try {
     const { page } = f;
     await page.emulateMedia({ colorScheme, reducedMotion: "reduce" });
-    await page.locator(".brand img").evaluate(image => image.decode());
+    // The logo is drawn inline in the accent colour since 30 Oct (commit 2529d1fc4, "theme the logo"; components/brand-wordmark.tsx),
+    // so there is no picture file to decode: wait for the mark itself.
+    await page.locator(".brand svg.size-wordmark").waitFor();
     await page.waitForTimeout(1100);
     const group = page.getByRole('group', { name: 'Love Spot', exact: true });
     await group.getByText('Review', { exact: true }).waitFor();
