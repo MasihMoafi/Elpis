@@ -209,6 +209,35 @@ test('Love Spot cached bootstrap rejects invalid hints and always refreshes a re
   assert.ok(message.includes(initial.revision));
 });
 
+// 1 Nov resource audit: Love Spot checked the disk every 150 ms from app start, about 35 file operations a second,
+// even when nobody drew. Masih: "see if our Elpis is using resources efficiently". Changes now wake it instead.
+test('an idle Love Spot leaves the disk alone, yet sees a new screenshot and an inbox drawing at once', async t => {
+  const base = path.join(os.homedir(), '.cache/elpis-tests'); await fs.mkdir(base, { recursive: true });
+  const root = createTestTempDir(path.join(base, 'love-spot-idle-'));
+  const directory = path.join(root, 'drawing'), screenshots = path.join(root, 'Screenshots');
+  await fs.mkdir(directory); await fs.mkdir(screenshots);
+  const store = createLoveSpot({ directory, screenshots });
+  t.after(async () => { await store.close(); removeTestTempDir(root); });
+  await store.start();
+  const events = [];
+  t.after(await store.watch(event => events.push(event)));
+  await new Promise(resolve => setTimeout(resolve, 300));
+  const counted = ['stat', 'readdir', 'mkdir', 'readFile'], original = Object.fromEntries(counted.map(name => [name, fs[name]]));
+  let calls = 0;
+  for (const name of counted) fs[name] = (...args) => { calls++; return original[name](...args); };
+  try { await new Promise(resolve => setTimeout(resolve, 1500)); } finally { Object.assign(fs, original); }
+  assert.ok(calls <= 8, `an idle Love Spot made ${calls} file operations in 1.5 s`);
+  const soon = async (check, label) => {
+    for (let i = 0; i < 20; i++) { if (check()) return; await new Promise(resolve => setTimeout(resolve, 50)); }
+    assert.fail(label);
+  };
+  await fs.writeFile(path.join(screenshots, 'new.png'), PNG);
+  await soon(() => events.some(e => e.type === 'screenshots' && e.screenshots.some(s => s.name === 'new.png')), 'a new screenshot reaches the tray within 1 s');
+  await fs.mkdir(path.join(directory, 'inbox'), { recursive: true });
+  await fs.writeFile(path.join(directory, 'inbox', 'add.json'), JSON.stringify({ elements: [element('from-inbox')] }));
+  await soon(() => events.some(e => e.type === 'scene' && e.scene.elements.some(x => x.id === 'from-inbox')), 'an inbox drawing reaches the board within 1 s');
+});
+
 test('Love Spot inbox merges durably and retains partial JSON', async t => {
   const f = await fixture(t);
   await fs.writeFile(path.join(f.screenshots, 'old.png'), PNG);

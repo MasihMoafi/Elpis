@@ -1,6 +1,7 @@
 // Shared by the bridge and the standalone window. Every writer takes the same directory lock,
 // rereads the drawing, and atomically writes the union, including deletion tombstones.
 const fs = require('node:fs/promises');
+const { watch: watchFolder } = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const net = require('node:net');
@@ -60,6 +61,9 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
   const peerSocket = path.join(peerDirectory, `${randomUUID()}.sock`), sockets = new Set();
   const trayError = 'Love Spot could not sync its private screenshot trays between windows. It will retry.';
   let peerServer, peerError, nextPeerAttempt = 0;
+  // Folder watches wake tick(); a slow check covers a folder that cannot be watched yet (1 Nov: a 150 ms poll from app
+  // start cost about 35 file operations a second while nobody drew).
+  const watchers = new Map(); let wakeTimer, again = false;
   let timer, starting, closed = false, running = false, seen, previous, sceneStamp, lastError, syncError;
   const listeners = new Set();
   // Pending pixels stay in memory. Only explicit choices persist as opaque IDs,
@@ -524,11 +528,28 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
     publishScreenshots();
     return action === 'dismiss' ? { dismissed: true } : read();
   }
+  function wake() {
+    if (closed || wakeTimer) return;
+    wakeTimer = setTimeout(() => { wakeTimer = undefined; void tick(); }, 25);
+    wakeTimer.unref();
+  }
+  function watchFolders() {
+    for (const folder of [directory, inbox, screenshots, peerDirectory]) {
+      if (closed || watchers.has(folder)) continue;
+      try {
+        const watcher = watchFolder(folder, { persistent: false }, wake);
+        watcher.on('error', () => { watcher.close(); watchers.delete(folder); });
+        watchers.set(folder, watcher);
+      } catch { /* not there yet: the slow check retries */ }
+    }
+  }
   async function tick() {
-    if (running || closed) return;
+    if (closed) return;
+    if (running) { again = true; return; }
     running = true;
     try {
       await fs.mkdir(inbox, { recursive: true });
+      watchFolders();
       for (const name of (await names(inbox)).filter(n => n.endsWith('.json')).sort()) {
         const file = path.join(inbox, name);
         let data; try { data = validate(JSON.parse(await fs.readFile(file, 'utf8'))); } catch { continue; }
@@ -563,7 +584,7 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
     } catch (e) {
       syncError = e.loveSpot ? e.message : 'Love Spot could not sync the drawing.';
       if (lastError !== e.message) { lastError = e.message; for (const listen of listeners) listen({ type: 'error', message: syncError }); }
-    } finally { running = false; }
+    } finally { running = false; if (again) { again = false; wake(); } }
   }
   async function start() {
     if (!starting) starting = (async () => {
@@ -571,7 +592,8 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
       // A temporarily unavailable folder retries its baseline in tick().
       try { seen = new Set(await names(screenshots)); } catch {}
       await ensureSharing(); syncError = peerError;
-      if (!closed) { timer = setInterval(() => void tick(), 150); timer.unref(); }
+      // One check at once: a later process takes the pending screenshots other Elpis windows already hold.
+      if (!closed) { watchFolders(); wake(); timer = setInterval(() => void tick(), 2000); timer.unref(); }
     })();
     return starting;
   }
@@ -585,7 +607,9 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
     return () => { listeners.delete(listen); };
   }
   async function close() {
-    closed = true; clearInterval(timer); timer = undefined; listeners.clear();
+    closed = true; clearInterval(timer); timer = undefined; clearTimeout(wakeTimer); listeners.clear();
+    for (const watcher of watchers.values()) watcher.close();
+    watchers.clear();
     if (starting) await starting.catch(() => {});
     while (running) await pause(10);
     for (const socket of sockets) socket.destroy();
