@@ -361,7 +361,10 @@ test("a new Antigravity model survives the old model process exiting", { timeout
   assert.ok(answer.includes('switched model') && !answer.includes('stale model output'));
 });
 
-test("an existing chat changes models across providers after idle, stop and failure", { timeout: 30000 }, async t => {
+// OpenAI turns reach the local carrier only through the real engine; the stand-in app server cannot carry them. The Linux
+// verification runs this file on the real engine (A124 step), so the desktop gate's stand-in run skips this one case.
+const standInEngine = /fake-app-server\.mjs$/.test(process.env.A124_ENGINE ?? "");
+test("an existing chat changes models across providers after idle, stop and failure", { timeout: 30000, skip: standInEngine && "needs the real engine (runs in the Linux verification A124 step)" }, async t => {
   const f = await agyFixture(t, { FAKE_ACP_MODELS: 'sonnet,opus' }, { nativeCalls: true });
   const nativeReply = request => {
     f.carrier.actions.unshift(nativeReply);
