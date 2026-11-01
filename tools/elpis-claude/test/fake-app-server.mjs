@@ -8,6 +8,7 @@
 //   [fail]             the turn fails
 //   [crash]            the process exits with code 3 after accepting the turn
 import fs from "node:fs";
+import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer } from "ws";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -155,6 +156,23 @@ if (!mcp && socketPath) {
   server.listen(socketPath, () => fs.chmodSync(socketPath, 0o600));
 }
 
+// The settings the test wrote to the engine home's config.toml (top-level strings and [model_providers.*] tables), reported
+// as the engine does: the effective config and the user's layer, whose version makes it writable.
+function homeConfig() {
+  const config = { features: { multi_agent: false } }, file = path.join(process.env.ELPIS_HOME ?? "", "config.toml");
+  let toml;
+  try { toml = fs.readFileSync(file, "utf8"); } catch { return { config }; }
+  let table = config;
+  for (const line of toml.split("\n")) {
+    const header = line.match(/^\[model_providers\.([^\]\s]+)\]\s*$/);
+    if (header) { config.model_providers ??= {}; table = config.model_providers[header[1]] = {}; continue; }
+    if (/^\[/.test(line)) { table = null; continue; }
+    const entry = line.match(/^(\w+)\s*=\s*(".*"|true|false|\d+)\s*$/);
+    if (entry && table) table[entry[1]] = JSON.parse(entry[2]);
+  }
+  return { config, layers: [{ name: { type: "user", file }, version: "fake-user-1", config }] };
+}
+
 function handle(msg, socket) {
   log(msg);
   const reply = result => send({ id: msg.id, result }, socket);
@@ -171,8 +189,13 @@ function handle(msg, socket) {
   const p = msg.params ?? {};
   switch (msg.method) {
     case "initialize": log({ engineHome: process.env.ELPIS_HOME ?? null }); return reply({ userAgent: "fake-engine/0" });
-    case "model/list": return reply({ data: [{ id: "luna-test", model: "luna-test", displayName: "Test GPT", supportedReasoningEfforts: [] }], nextCursor: null });
-    case "config/read": return reply(process.env.FAKE_ENGINE_CONFIG ? JSON.parse(fs.readFileSync(process.env.FAKE_ENGINE_CONFIG, "utf8")) : { config: { features: { multi_agent: false } } });
+    case "model/list": {
+      // The catalogue the test's config names, as the engine lists it; otherwise one test model.
+      const catalog = homeConfig().config.model_catalog_json;
+      const listed = catalog ? JSON.parse(fs.readFileSync(catalog, "utf8")).models.map(model => ({ id: model.slug, model: model.slug, displayName: model.display_name ?? model.slug, supportedReasoningEfforts: [] })) : [];
+      return reply({ data: [{ id: "luna-test", model: "luna-test", displayName: "Test GPT", supportedReasoningEfforts: [] }, ...listed], nextCursor: null });
+    }
+    case "config/read": return reply(process.env.FAKE_ENGINE_CONFIG ? JSON.parse(fs.readFileSync(process.env.FAKE_ENGINE_CONFIG, "utf8")) : homeConfig());
     case 'configRequirements/read': return reply({ requirements: null });
     case 'thread/loaded/list': return reply({ data: [...threads].filter(([, thread]) => thread.status?.type !== 'notLoaded').map(([id]) => id) });
     case "config/batchWrite": {
@@ -189,16 +212,33 @@ function handle(msg, socket) {
     case "thread/inject_items": if (process.env.FAKE_ENGINE_HOLD_INJECT) return; return reply({});
     case "thread/start": {
       const id = randomUUID();
-      const thread = { id, cwd: p.cwd, source: "appServer", status: { type: "idle" }, model: p.model ?? "default-model", config: p.config, historyMode: "paginated", turns: [] };
+      const thread = { id, cwd: p.cwd, source: "appServer", status: { type: "idle" }, model: p.model ?? "default-model", modelProvider: p.modelProvider ?? homeConfig().config.model_provider ?? "openai", config: p.config, historyMode: "paginated", turns: [] };
       threads.set(id, thread);
       takeWriter(id);
       follow(id, socket);
       if (!process.env.FAKE_ENGINE_LAZY_PERSIST) persist();
-      reply({ thread, model: thread.model, modelProvider: p.modelProvider ?? "openai", approvalPolicy: "on-request", sandbox: { type: "workspaceWrite" } });
+      reply({ thread, model: thread.model, modelProvider: thread.modelProvider, approvalPolicy: "on-request", sandbox: { type: "workspaceWrite" } });
       return notify("thread/started", { thread });
     }
+    // A copy of the chat (up to `lastTurnId` when given), as the engine makes for a fork or a kept earlier version.
+    case "thread/fork": {
+      const source = threads.get(p.threadId);
+      if (!source) return send({ id: msg.id, error: { code: -32600, message: `thread not found: ${p.threadId}` } }, socket);
+      const cut = p.lastTurnId ? source.turns.findIndex(turn => turn.id === p.lastTurnId) : -1;
+      if (p.lastTurnId && cut < 0) return send({ id: msg.id, error: { code: -32600, message: `lastTurnId ${p.lastTurnId} was not found` } }, socket);
+      const id = randomUUID();
+      const thread = { ...structuredClone(source), id, name: undefined, status: { type: "idle" }, model: p.model ?? source.model, turns: structuredClone(cut < 0 ? source.turns : source.turns.slice(0, cut + 1)) };
+      threads.set(id, thread);
+      takeWriter(id);
+      follow(id, socket);
+      persist();
+      reply({ thread, model: thread.model, modelProvider: thread.modelProvider, approvalPolicy: "on-request", sandbox: { type: "workspaceWrite" } });
+      return notify("thread/started", { thread });
+    }
+    case "thread/archive": if (threads.has(p.threadId)) threads.get(p.threadId).archived = true; persist(); return reply({});
+    case "thread/delete": threads.delete(p.threadId); persist(); return reply({});
     case "thread/name/set": threads.get(p.threadId).name = p.name; return reply({});
-    case "thread/list": return reply({ data: [...threads.values()], nextCursor: null });
+    case "thread/list": return reply({ data: [...threads.values()].filter(thread => !thread.archived === !p.archived), nextCursor: null });
     case "thread/resume": {
       if (!threads.has(p.threadId)) return send({ id: msg.id, error: { code: -32600, message: `thread not loaded: ${p.threadId}` } }, socket);
       const conflict = takeWriter(p.threadId);
