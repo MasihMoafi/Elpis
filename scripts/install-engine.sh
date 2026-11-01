@@ -8,6 +8,7 @@ if [ "$#" -ne 1 ] || ! [[ "$1" =~ ^[[:alnum:]][[:alnum:]_.-]*$ ]]; then
     printf 'usage: %s [--with-frontend] <bundle-name> (letters, digits, dots, underscores and hyphens)\n' "$0" >&2
     exit 2
 fi
+HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 R=${ELPIS_SOURCE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)}
 V=$HOME/.local/lib/elpis-next/versions
 BIN=${CARGO_TARGET_DIR:-$R/codex-rs/target}/release/codex
@@ -140,4 +141,7 @@ activated=true
 cp "$NEW/elpis-wrapper" "$HOME/.local/bin/elpis.new"
 mv "$HOME/.local/bin/elpis.new" "$HOME/.local/bin/elpis"
 ln -sfn "$NEW/elpis-next" "$HOME/.local/bin/elpis-next"
+# Old bundles go to the trash: the newest five stay, with this one, its rollback and any the live launcher names.
+node "$HERE/prune-versions.mjs" "$V" --keep "$NEW" --keep "$OLD" --named-in "$HOME/.local/bin/elpis" ||
+    printf 'could not move old engine bundles to the trash\n' >&2
 printf 'installed %s (rollback: bash %s/rollback.sh)\n' "$NEW" "$NEW"

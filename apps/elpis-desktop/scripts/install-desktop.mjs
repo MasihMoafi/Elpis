@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { records, requirePass } from './gate-guards.mjs';
 import { assertSourceCommit, verifyPackagedSources, verifyRendererReceipt } from './renderer-artifact-gate.mjs';
 import { durableSourceCheckout } from '../bridge/improve-source.mjs';
+import { pruneVersions } from '../../../scripts/prune-versions.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const git = args => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
@@ -118,6 +119,11 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) try {
   assertSourceCommit(root, commit);
   fs.renameSync(staged, link);
   console.log(`Installed ${commit.slice(0, 9)} as ${destination}.\nRoll back: ln -sfn ${previous} ${link}`);
+  // Old versions go to the trash: the newest five stay, with this one and the rollback (1 Nov: 74 versions, 2.4 GB).
+  try {
+    const trashed = pruneVersions(path.dirname(destination), { keep: [destination, path.resolve(path.dirname(link), previous)] });
+    if (trashed.length) console.log(`Moved ${trashed.length} old version${trashed.length === 1 ? '' : 's'} to the trash.`);
+  } catch (error) { console.error(`install-desktop: could not move old versions to the trash: ${error.message}`); }
 } catch (error) {
   console.error(`install-desktop: ${error.message}`);
   process.exitCode = 1;

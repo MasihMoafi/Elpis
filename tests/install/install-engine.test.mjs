@@ -199,3 +199,18 @@ test('source and install paths can contain spaces', (t) => {
   assert.equal(result.status, 0, result.stderr);
   assert.equal(execFileSync(`${f.bin}/elpis`, ['--version'], { encoding: 'utf8' }).trim(), 'elpis 0.4.1');
 });
+
+// 1 Nov: six engine bundles of 459 MB were never removed. An install trashes all but the newest five, the rollback
+// bundle and any bundle the live launcher still names.
+test('an install moves old engine bundles to the trash', (t) => {
+  const f = fixture(t);
+  const versions = path.dirname(f.old);
+  const extra = Array.from({ length: 6 }, (_, i) => `extra-${i + 1}`);
+  // Folder birth times are kernel ticks (about 4 ms) apart at best; a pause keeps the creation order visible.
+  const pause = () => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+  for (const name of extra) { pause(); mkdirSync(path.join(versions, name)); }
+  pause();
+  const result = f.run('pruned');
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(readdirSync(versions).sort(), ['extra-3', 'extra-4', 'extra-5', 'extra-6', 'frontend', 'old', path.basename(f.bundle())].sort());
+});
