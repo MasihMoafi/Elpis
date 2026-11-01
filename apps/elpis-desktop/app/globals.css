@@ -1549,7 +1549,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .session-pane > .sidebar, .session-pane > .title-bar,
 .session-pane .workspace-header > .mobile-menu, .session-pane .mobile-brand { display:none; }
 .session-pane.has-title-bar { grid-template-rows:minmax(0,1fr); }
-.session-pane .workspace-header { min-height:48px; gap:12px; }
+.session-pane .workspace-header { min-height:var(--header-h); gap:12px; }
 .session-pane .workspace-header h1 { font-size:var(--text-sm); }
 .session-split .composer-wrap { padding-inline:12px; }
 .session-split .chat-scroll { padding-inline:20px; }
