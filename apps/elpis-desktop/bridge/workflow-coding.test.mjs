@@ -111,22 +111,25 @@ test('all automatic workflow roles and Mother agent use Full access and log offe
   assert.equal(rejected.review, undefined, 'a verifier scope escape cannot reach review or merge');
 });
 
-// 1 Nov live run: Haiku saved answer-1.md at the project root and the whole Voting run failed. A misplaced file gets one
-// correction, as a failed check does; a second escape still fails.
-test('an agent that writes outside its folder is told once to move the file, and the run goes on', { timeout: 20000 }, async t => {
-  const NOTE = 'outside your allowed folders';
-  const writes = [{ file: 'answer.md', text: 'misplaced', unless: NOTE }, { file: 'answer.md', remove: true, when: NOTE }, { file: 'src/answer.md', text: 'moved', when: NOTE }];
+// 1 Nov live runs: Haiku saved answer-1.md, then answer-3.md, at the project root instead of in its folder, even after a
+// correction, and the Voting run failed. A new file outside the agent's folders is moved into its first folder by Elpis
+// itself; changing a file that already exists outside them still fails the agent.
+test('a new file saved outside the agent\'s folder is moved into it; an existing file changed outside still fails', { timeout: 20000 }, async t => {
   const pass = { FAKE_ACP_ANSWER: JSON.stringify({ passed: true, summary: 'The answer is in src/answer.md' }) };
   const team = () => [task('writer', { kind: 'implement', writeScopes: ['src'] }), task('check', { kind: 'verify', dependsOn: ['writer'] })];
-  const f = fixture(t, { env: { writer: { FAKE_ACP_WRITE: JSON.stringify(writes) }, check: pass } });
-  const done = await f.finished((await f.start(team(), { isolation: 'worktree' })).graphId);
+  const f = fixture(t, { env: { writer: { FAKE_ACP_WRITE: JSON.stringify({ file: 'answer.md', text: 'misplaced' }) }, check: pass } });
+  const done = await f.finished((await f.start(team(), { isolation: 'worktree', autoMerge: true })).graphId);
   assert.equal(done.status, 'succeeded', done.error ?? done.tasks[0].failureReason);
-  const prompts = f.log('writer').filter(row => row.method === 'session/prompt').map(row => JSON.stringify(row.params));
-  assert.equal(prompts.length, 2, 'one correction');
-  assert.match(prompts[1], /answer\.md/); assert.match(prompts[1], /src/);
-  const g = fixture(t, { env: { writer: { FAKE_ACP_WRITE: JSON.stringify({ file: 'answer.md', text: 'misplaced again' }) }, check: pass } });
+  assert.equal(f.log('writer').filter(row => row.method === 'session/prompt').length, 1, 'no extra model turn');
+  const writer = done.tasks.find(item => item.id === 'writer');
+  assert.deepEqual(writer.result.relocated, [{ from: 'answer.md', to: 'src/answer.md' }]);
+  assert.equal(fs.readFileSync(path.join(f.cwd, 'src/answer.md'), 'utf8'), 'misplaced');
+  assert.equal(fs.existsSync(path.join(f.cwd, 'answer.md')), false, 'nothing lands outside the folder');
+  fs.writeFileSync(path.join(f.cwd, 'README.md'), 'base'); f.git('add', 'README.md'); f.git('commit', '-qm', 'readme');
+  const g = fixture(t, { env: { writer: { FAKE_ACP_WRITE: JSON.stringify({ file: 'src/../README.md', text: 'edited outside' }) }, check: pass } });
+  fs.writeFileSync(path.join(g.cwd, 'README.md'), 'base'); g.git('add', 'README.md'); g.git('commit', '-qm', 'readme');
   const failed = await g.finished((await g.start(team(), { isolation: 'worktree' })).graphId);
-  assert.equal(failed.status, 'failed'); assert.match(failed.tasks.find(item => item.id === 'writer').failureReason, /outside its write scopes/);
+  assert.equal(failed.status, 'failed'); assert.match(failed.tasks.find(item => item.id === 'writer').failureReason, /outside its write scopes: README\.md/);
 });
 
 test('Mother agent uses Claude Opus to approve the reviewed commit; a rejected review never merges', { timeout: 20000 }, async t => {
@@ -473,6 +476,8 @@ for (const failure of ['failed verification', 'invalid verification', 'corrected
     Object.defineProperty(env, 'evidence', { get: () => ({ FAKE_ACP_ANSWER: JSON.stringify({ passed: ++attempts > 1, summary: 'Observed the requested evidence after focused correction' }) }) });
   }
   env['Mother agent'] = { FAKE_ACP_ANSWER: JSON.stringify({ action: 'retry', taskId: 'evidence', instruction: 'Inspect the failed evidence and correct only the existing scope.', reason: 'The retained result needs one focused correction.' }) };
+  // Since 1 Nov a new file outside the folders is moved in by Elpis itself; changing an existing one still needs the Mother.
+  if (failure === 'out-of-scope candidate') { fs.writeFileSync(path.join(f.cwd, 'outside-report'), 'base'); f.git('add', 'outside-report'); f.git('commit', '-qm', 'existing outside file'); }
   const started = await f.start([task('evidence', { kind: failure === 'out-of-scope candidate' ? 'explore' : 'verify', writeScopes: failure === 'out-of-scope candidate' ? ['src'] : [] })], failure === 'out-of-scope candidate' ? { isolation: 'worktree' } : {});
   const completed = await f.finished(started.graphId);
   assert.equal(completed.status, failure === 'corrected verification' ? 'succeeded' : 'failed');
@@ -490,7 +495,7 @@ for (const failure of ['failed verification', 'invalid verification', 'corrected
   }
   if (failure === 'out-of-scope candidate') {
     assert.equal(fs.readFileSync(path.join(completed.tasks[0].cwd, 'outside-report'), 'utf8'), 'Preserve this rejected candidate');
-    assert.equal(fs.existsSync(path.join(f.cwd, 'outside-report')), false, 'rejected work never reaches the source checkout');
+    assert.equal(fs.readFileSync(path.join(f.cwd, 'outside-report'), 'utf8'), 'base', 'rejected work never reaches the source checkout');
   }
 });
 

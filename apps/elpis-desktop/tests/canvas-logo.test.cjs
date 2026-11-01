@@ -43,6 +43,8 @@ test('Logo is one Sol agent in Fast mode that draws three directions and traces 
     await f.canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
     const open = f.canvas.getByRole('button', { name: 'Open 1.svg', exact: true });
     await open.waitFor();
+    // 1 Nov live run: the finished Logo run said "Finished · 0 of 1 done"; an agent without a check is done when it is.
+    await f.canvas.locator('.canvas-chip[role=status]').filter({ hasText: '1 of 1 done' }).waitFor();
     const sent = f.runs[0].tasks;
     assert.deepEqual(sent.map(t => [t.id, t.kind, t.model, t.reasoningEffort, t.serviceTier]), [[logo.id, 'implement', 'gpt-6.1-sol', 'medium', 'priority']], 'one task on Sol, medium, Fast, and no check');
     assert.equal(f.plans.length, 0, 'nothing was planned');

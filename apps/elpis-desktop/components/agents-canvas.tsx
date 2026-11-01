@@ -718,6 +718,9 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
           if (task.result !== undefined && task.result !== null && !reports.current.has(task.id)) {
             reports.current.add(task.id);
             lines.push({ at: Date.now(), agent, text: `REPORT RECEIVED · DATASTORE CAPTURED · ${who}`, tone: "done" });
+            // Elpis moved a new file the agent saved outside its folder into it (1 Nov); the log says so, never silently.
+            const relocated = (task.result as { relocated?: { from: string; to: string }[] }).relocated ?? [];
+            for (const move of relocated) lines.push({ at: Date.now(), agent, text: `FILE MOVED INTO ITS FOLDER · ${move.from} → ${move.to} · ${who}`, tone: "start" });
           }
           return lines;
         });
@@ -772,7 +775,8 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
   const limit = maxAgents(graph), room = Math.max(0, limit - agents.length), order = useMemo(() => waves(graph), [graph]);
   // An agent is done once its check passes, unless its work clashed in the merge.
   // A join is done by Elpis and has no check: it is done when it is.
-  const done = agents.filter(node => states[node.data.join ? node.id : checkOf(node.id)]?.status === "succeeded" && !clashes[node.id]).length;
+  // An agent run without a check (Logo, 1 Nov: "Finished · 0 of 1 done") is done when it is.
+  const done = agents.filter(node => states[node.data.join || node.data.check === false ? node.id : checkOf(node.id)]?.status === "succeeded" && !clashes[node.id]).length;
   const runState: MotherData["run"] = recordedRun ? workflowThreadActive(liveTeam.mother) ? "running" : "idle" : run ? (ended(run.status)) : "idle";
   const fatherState: MotherData["run"] = run?.father?.threadId ? ended(run.father.status) : "idle";
   const modelLabel = (data: AgentData) => {

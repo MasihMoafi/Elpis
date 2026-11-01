@@ -124,14 +124,33 @@ export async function workflowWorktrees(project, id, saved) {
     },
     async complete(task, round) {
       const key = `${task.id}-r${round}`, made = places.get(key);
-      const changed = [...new Set([...files(await git(made.root, ['diff', '--name-only', '-z', made.start, '--'])),
+      const listChanged = async () => [...new Set([...files(await git(made.root, ['diff', '--name-only', '-z', made.start, '--'])),
         ...files(await git(made.root, ['diff', '--cached', '--name-only', '-z', made.start, '--'])),
         ...files(await git(made.root, ['ls-files', '--others', '--exclude-standard', '-z']))])];
-      const scopes = task.writeScopes.map(scope => path.posix.join(relative.split(path.sep).join('/'), scope));
+      let changed = await listChanged();
+      const prefix = relative.split(path.sep).join('/');
+      const scopes = task.writeScopes.map(scope => path.posix.join(prefix, scope));
+      // 1 Nov live runs: Haiku saved answer-3.md at the project root instead of in answer-3/, even after a correction. A file
+      // that is new and outside the agent's folders cannot touch anyone's work, so Elpis moves it into the agent's first folder;
+      // a change to a file that already exists outside them still fails below.
+      const relocated = [];
+      const untracked = new Set(files(await git(made.root, ['ls-files', '--others', '--exclude-standard', '-z'])));
+      const outside = changed.filter(name => !inScope(name, scopes));
+      if (outside.length && scopes.length && !scopes.includes('.') && outside.every(name => untracked.has(name))) {
+        for (const name of outside) {
+          let target = path.posix.join(scopes[0], path.posix.basename(name));
+          for (let n = 2; await fs.stat(path.join(made.root, target)).then(() => true, () => false); n++) target = path.posix.join(scopes[0], `${path.posix.basename(name, path.posix.extname(name))}-${n}${path.posix.extname(name)}`);
+          await fs.mkdir(path.dirname(path.join(made.root, target)), { recursive: true });
+          await fs.rename(path.join(made.root, name), path.join(made.root, target));
+          const local = file => prefix ? path.posix.relative(prefix, file) : file;
+          relocated.push({ from: local(name), to: local(target) });
+        }
+        changed = await listChanged();
+      }
       if (changed.some(name => !inScope(name, scopes))) throw new BridgeError(`“${task.title}” changed files outside its write scopes: ${changed.filter(name => !inScope(name, scopes)).join(', ')}. Kept at ${made.root}`, 409);
       // An agent may create a commit itself. Rebuild the candidate's own patch from its prerequisite HEAD, without
       // resetting any checkout or discarding files. This also prevents unrelated agent commits reaching the source.
-      if (!changed.length) return { commits: [], diff: '', stat: '' };
+      if (!changed.length) return { commits: [], diff: '', stat: '', ...(relocated.length ? { relocated } : {}) };
       const original = await git(made.root, ['log', '--format=%H %s', `${made.start}..HEAD`]);
       await git(made.root, ['add', '--', ...changed]);
       const tree = await git(made.root, ['write-tree']);
@@ -141,7 +160,7 @@ export async function workflowWorktrees(project, id, saved) {
       commits.set(key, sha); made.inherited.add(key);
       const diff = await git(made.root, ['diff', '--no-ext-diff', '--no-textconv', made.start, sha, '--']);
       return { candidateCommit: sha, commits: [{ sha, subject: `Workflows: ${task.title} (round ${round})` }, ...original.split('\n').filter(Boolean).map(line => ({ sha: line.slice(0, 40), subject: line.slice(41) }))],
-        diff: diff.slice(0, 64000), diffTruncated: diff.length > 64000, stat: await git(made.root, ['diff', '--stat', made.start, sha, '--']) };
+        diff: diff.slice(0, 64000), diffTruncated: diff.length > 64000, stat: await git(made.root, ['diff', '--stat', made.start, sha, '--']), ...(relocated.length ? { relocated } : {}) };
     },
     async review(signal) {
       if (!commits.size) return { status: 'empty', source, base };

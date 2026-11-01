@@ -263,8 +263,11 @@ try {
   } else {
   assert.equal(graph.status, 'succeeded', `graph ${graph.status}: ${graph.error ?? ''}`);
   for (const task of graph.tasks) assert.equal(task.status, 'succeeded', `${task.title}: ${task.status} ${task.failureReason ?? ''}`);
-  if (chosen.agents) assert.equal(graph.tasks.length, chosen.agents * 2);
-  assert.match(await canvas.locator('.canvas-chip[role=status]:has(.canvas-dot)').innerText(), new RegExp(`Finished · ${graph.tasks.length / 2} of ${graph.tasks.length / 2} done`));
+  // Each agent has a check, except a ready-made one run without (Logo).
+  const perAgent = chosen.ready ? 1 : 2;
+  if (chosen.agents) assert.equal(graph.tasks.length, chosen.agents * perAgent);
+  const agentCount = graph.tasks.length / perAgent;
+  assert.match(await canvas.locator('.canvas-chip[role=status]:has(.canvas-dot)').innerText(), new RegExp(`Finished · ${agentCount} of ${agentCount} done`));
   // The last agent got every answer it waits for: each one's reported summary is in its first message.
   const last_ = graph.tasks.find(task => task.kind === 'implement' && task.dependsOn.length === Math.max(...graph.tasks.map(item => item.dependsOn.length)));
   const pages = [];
