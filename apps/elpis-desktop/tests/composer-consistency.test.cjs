@@ -27,6 +27,8 @@ const probe = page => page.evaluate(() => {
     permission: q('.composer-pill .pill-long').offsetParent ? q('.composer-pill .pill-long').textContent : q('.composer-pill .pill-short').textContent,
     model: q('.model-picker-trigger').innerText, providerLabel: !!q('.composer .model-trigger-provider') && visible(q('.composer .model-trigger-provider')),
     leaks: controls.filter(rect => rect.left < composer.left - 0.5 || rect.right > composer.right + 0.5).length,
+    // A wrapped second row must still sit inside the box: nothing is cut off at the top or bottom.
+    cut: controls.filter(rect => rect.top < composer.top - 0.5 || rect.bottom > composer.bottom + 0.5).length,
     page: document.documentElement.scrollWidth > innerWidth,
     rowOffset: Math.abs((approval.top + approval.bottom - model.top - model.bottom) / 2),
     toolbarRows: new Set(controls.map(rect => Math.round((rect.top + rect.bottom) / 2))).size,
@@ -54,7 +56,9 @@ for (const colorScheme of ['light', 'dark']) {
         assert.equal(m.shown, true, where);
         assert.equal(m.leaks, 0, `${where}: ${JSON.stringify(m)}`);
         assert.equal(m.overlaps, 0, `${where}: ${JSON.stringify(m)}`);
-        assert.equal(m.toolbarRows, 1, where);
+        assert.equal(m.cut, 0, `${where}: ${JSON.stringify(m)}`);
+        // A narrow composer wraps its toolbar into a second row (b4b94bff2 and 8da71f29d, 31 Oct); a wider one keeps one row.
+        assert.ok(m.toolbarWidth <= 380 ? m.toolbarRows <= 2 : m.toolbarRows === 1, `${where}: ${m.toolbarRows} rows in ${m.toolbarWidth}px`);
         assert.equal(m.page, false, where);
         if (process.env.ELPIS_SHOTS && width === 1000) {
           await fs.mkdir(process.env.ELPIS_SHOTS, { recursive: true });
@@ -90,7 +94,9 @@ for (const model of ['sol', 'claude/claude-sonnet-5-5']) for (const running of [
       assert.equal(m.permission, m.workspace > 560 ? 'Approve for me' : 'Auto', `permission label by workspace width, ${where}`);
       assert.equal(m.leaks, 0, `every toolbar control stays inside the box, ${where}`);
       assert.equal(m.overlaps, 0, `toolbar controls do not overlap, ${where}`);
-      assert.ok(m.rowOffset <= 4, `approval and model share the bottom row (${m.rowOffset}px apart), ${where}`);
+      // A narrow composer wraps its toolbar (b4b94bff2 and 8da71f29d, 31 Oct): up to two rows, nothing overlapping or cut off.
+      assert.ok(m.rowOffset <= 4 || m.toolbarWidth <= 380 && m.toolbarRows <= 2, `approval and model share the bottom row or wrap in a narrow composer (${m.rowOffset}px apart, ${m.toolbarRows} rows in ${m.toolbarWidth}px), ${where}`);
+      assert.equal(m.cut, 0, `no toolbar control is cut off at the top or bottom, ${where}`);
       assert.equal(m.page, false, `no horizontal page overflow, ${where}`);
       assert.equal(m.inset, m.workspace > 640 ? '32px' : m.workspace > 520 ? '22px' : '12px', `box inset by workspace width, ${where}`);
     }
@@ -213,4 +219,25 @@ test('Fast stays on screen, switched off with its reason, when the chat model of
   const item = f.page.getByRole('menuitem', { name: /Fast mode/ });
   await item.waitFor();
   assert.match(await item.innerText(), /Not offered for this model/);
+});
+
+// Matilda's error stays in her own place (1 Nov): it sat fixed at the bottom right, over the Send button. Positive: the
+// alert shows; negative: it touches neither the composer nor Send, in both themes and a narrow window.
+for (const colorScheme of ['light', 'dark']) test(`Matilda's load error never covers the composer (${colorScheme})`, async t => {
+  const f = await fixture({ width: 1100, height: 700, colorScheme, routes: {
+    '/api/love-spot/companion': () => ({ __http: 500, error: 'Matilda could not load: the bridge did not answer before the request timed out, so her state, music and pinned place are unknown.' }),
+  } });
+  t.after(async () => { await f.close(); });
+  await f.open('chat-a');
+  const alert = f.page.getByRole('alert').filter({ hasText: 'Matilda could not load:' });
+  await alert.waitFor();
+  for (const width of [1100, 760, 500, 390]) {
+    await f.page.setViewportSize({ width, height: 700 }); await f.page.waitForTimeout(150);
+    const [a, composer, send] = [await alert.boundingBox(), await f.page.locator('.composer').boundingBox(), await f.page.getByRole('button', { name: 'Send message', exact: true }).boundingBox()];
+    const apart = (x, y) => x.x + x.width <= y.x || y.x + y.width <= x.x || x.y + x.height <= y.y || y.y + y.height <= x.y;
+    assert.ok(apart(a, composer), `${width}px: the alert is clear of the composer ${JSON.stringify([a, composer])}`);
+    assert.ok(apart(a, send), `${width}px: the alert is clear of Send`);
+    assert.ok(a.x >= 0 && a.x + a.width <= width && a.y >= 0, `${width}px: the alert stays in the window`);
+    if (process.env.ELPIS_PARITY_SHOTS) await f.page.screenshot({ path: `${process.env.ELPIS_PARITY_SHOTS}/matilda-error-${colorScheme}-${width}.png` });
+  }
 });

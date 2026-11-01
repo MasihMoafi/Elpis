@@ -208,6 +208,9 @@ export function MatildaCompanion() {
     const left = Math.min(Math.max(shown.left + size - width, edge), innerWidth - edge - width) - shown.left;
     return side === "top" ? { left, width, bottom: size + gap, maxHeight: shown.top - gap - chrome - edge } : { left, width, top: size + gap, maxHeight: innerHeight - shown.top - size - gap - edge };
   };
+  // Her errors stay in her own place, never over the composer and its Send button (1 Nov): beside her when pinned,
+  // under her title-bar button otherwise (where a failed load leaves her).
+  const alert = error ? <p role="alert" className="matilda-alert">{error}</p> : null;
   const floating = state?.pinned && <section ref={floatRef} aria-label="Pinned Matilda" className="matilda-float" data-controls={shown.top - chrome < 40 ? "below" : "above"} style={{ left: shown.left, top: shown.top, width: size, height: size, ...hidden ? { clipPath: `polygon(-9999px -9999px, ${size - hidden}px -9999px, ${size - hidden}px 9999px, -9999px 9999px)` } : {} }}>
     <button ref={faceRef} type="button" className="matilda-face" aria-label="Chat with Matilda" aria-haspopup="dialog" aria-expanded={chatOpen} title="Chat with Matilda · drag to move" style={{ touchAction: "none" }}
       onPointerDown={grab(false)} onPointerMove={pull} onPointerUp={release} onLostPointerCapture={release}
@@ -225,7 +228,8 @@ export function MatildaCompanion() {
         <img key={`${name}-dark`} src={MATILDA_SHOTS[name]} alt="" aria-hidden="true" width={size} height={size} draggable={false} className="matilda-avatar-dark matilda-mood select-none" data-mood={name} data-shown={mood.shown === name} />,
       ]))}
     </button>
-    {chatOpen && <div className="hud-popover matilda-mini-popup accent-scope" data-side={side} style={chatPlace()}><MatildaMiniChat chat={mini} /></div>}
+    {chatOpen ? <div className="hud-popover matilda-mini-popup accent-scope" data-side={side} style={chatPlace()}>{alert}<MatildaMiniChat chat={mini} /></div>
+      : alert && <div className="hud-popover matilda-alert-popup" data-side={side} style={chatPlace()}>{alert}</div>}
     <button type="button" className="matilda-resize" aria-label="Resize Matilda" title="Drag to resize · + and − keys" style={{ touchAction: "none" }}
       onPointerDown={grab(true)} onPointerMove={pull} onPointerUp={release} onLostPointerCapture={release} onKeyDown={keys(true)} />
     <div className="matilda-float-controls">
@@ -234,9 +238,9 @@ export function MatildaCompanion() {
       <Button variant="ghost" size="icon-xs" aria-label="Unpin Matilda" aria-pressed="true" onClick={() => void act("unpin")}><PinIcon size={16} /></Button>
     </div>
   </section>;
-  return <div className="flex min-w-0 shrink-0 items-center gap-1 pr-2">
+  return <div className="relative flex min-w-0 shrink-0 items-center gap-1 pr-2">
     <MatildaHeartBurst />
     {floating ? createPortal(floating, document.body) : <Button variant="ghost" size="icon-sm" aria-label="Pin Matilda" title="Pin Matilda" disabled={busy} onClick={pin}><><img className="matilda-pin-face matilda-avatar-light" src={MATILDA_SHOTS_LIGHT.softSmile} alt="" /><img className="matilda-pin-face matilda-avatar-dark" src={MATILDA_SHOTS.softSmile} alt="" /></></Button>}
-    {error && <p role="alert" className="fixed bottom-4 right-4 z-50 max-w-sm border border-border bg-background p-2 text-xs text-destructive">{error}</p>}
+    {!floating && alert && <div className="hud-popover matilda-alert-popup matilda-alert-anchor">{alert}</div>}
   </div>;
 }

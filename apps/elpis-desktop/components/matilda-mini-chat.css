@@ -59,3 +59,8 @@ html.matilda-dragging { user-select:none; -webkit-user-select:none; }
 .matilda-face img.matilda-mood[data-shown="true"] { opacity:1; }
 @keyframes matilda-breathe { from { transform:scale(1); } to { transform:scale(1.025); } }
 @media (prefers-reduced-motion: reduce) { .matilda-face img { animation:none; } .matilda-face img.matilda-mood { transition:none; } }
+/* Her error sits in her own place: beside her when pinned, under her title-bar button otherwise; never over the composer. */
+.matilda-alert { margin:0; font-size:var(--text-xs); color:var(--destructive); overflow-wrap:anywhere; }
+.matilda-mini-popup > .matilda-alert { margin-bottom:8px; }
+.hud-popover.matilda-alert-popup { position:absolute; z-index:1; height:auto; padding:8px; background:var(--matilda-panel); app-region:no-drag; -webkit-app-region:no-drag; }
+.hud-popover.matilda-alert-anchor { top:calc(100% + 4px); right:0; z-index:50; width:max-content; max-width:24rem; }
