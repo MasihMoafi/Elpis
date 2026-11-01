@@ -36,7 +36,7 @@ const measure = page => page.evaluate(({ LABELS, PANELS, FLOATING }) => {
   const corner = element => { const s = getComputedStyle(element); return { tl: s.borderTopLeftRadius, tr: s.borderTopRightRadius, br: s.borderBottomRightRadius, bl: s.borderBottomLeftRadius, shape: s.cornerTopLeftShape, shapeBr: s.cornerBottomRightShape, edge: srgb(s.borderTopColor), width: s.borderTopWidth }; };
   const all = selector => [...document.querySelectorAll(selector)].filter(shown);
   return {
-    tokens: { border: token('--border'), hudEdge: token('--hud-edge'), muted: token('--muted-foreground'), primary: token('--primary') },
+    tokens: { border: token('--border'), hudEdge: token('--hud-edge'), composerEdge: token('--composer-edge'), muted: token('--muted-foreground'), primary: token('--primary') },
     buttons: all('[data-slot="button"]').map(element => ({ name: name(element), send: element.classList.contains('send-button'), xs: /\b(?:h-6|size-6)\b/.test(element.className), ...corner(element) })),
     panels: all(PANELS).map(element => ({ name: name(element), ...corner(element) })),
     floating: all(FLOATING).map(element => ({ name: name(element), ...corner(element) })),
@@ -60,7 +60,9 @@ function corners(report, where, seen) {
   for (const panel of report.panels) {
     assert.deepEqual([panel.tl, panel.tr, panel.br, panel.bl], ['10px', '0px', '10px', '0px'], `${where}: ${panel.name} is a panel chamfered by 10px`);
     assert.match(panel.shape, BEVEL, `${where}: ${panel.name} is bevelled`);
-    assert.equal(panel.edge, panel.name.includes('composer') ? tokens.hudEdge : tokens.border, `${where}: ${panel.name} has its role's edge`);
+    // The composer at rest has its own edge, one step above the chat; gold only on focus (DESIGN.md §2, Masih 29 Oct:
+    // "map every style feature of chatgpt app into a clear spec that's reusable and make our design match it", fb3df2cd7).
+    assert.equal(panel.edge, panel.name.includes('composer') ? tokens.composerEdge : tokens.border, `${where}: ${panel.name} has its role's edge`);
     seen.panels.add(panel.name.split('[')[0]);
   }
   for (const surface of report.floating) {
