@@ -34,8 +34,7 @@ const PLANS = {
   voting: { template: /^Voting/, agents: 4, folders: ['answer-1', 'answer-2', 'answer-3', 'tally'],
     goal: 'Question: which is larger, 2 to the power of 10 or 10 to the power of 3? Each answer is one short markdown file with the arithmetic as evidence. Keep every file under 15 lines.' },
   // The real Logo team (lib/logo-team.ts): one agent draws three directions with image generation, traces and animates each.
-  logo: { template: /^Logo/, agents: 1, folders: ['logo'],
-    goal: 'Elpis' },
+  logo: { ready: 'logo', agents: 1, folders: ['logo'], goal: 'Elpis' },
   split: { template: /^Split by parts/, agents: null, folders: ['src', 'tests'],
     goal: 'A two-file task: write src/greet.py with greet(name) returning "Hello, <name>!", and src/shout.py with shout(text) returning the text upper-cased with "!" appended. Each part adds its own test under tests/ (plain assert, run with python3). The join runs every test.' },
 };
@@ -129,7 +128,15 @@ try {
   };
 
   say(`engine models: ${(await api('/models')).data.map(model => model.model).join(', ')}`);
-  if (!custom) { await canvas.getByText('More patterns', { exact: true }).click(); await canvas.getByRole('button', { name: chosen.template }).click(); }
+  if (chosen.ready) {
+    // A ready-made workflow (Logo) is picked from the workflow menu with the brand in the request box, as a user does; it
+    // keeps its own agent and model (Sol, Fast) and is not planned (tests/canvas-logo.test.cjs).
+    await canvas.getByRole('textbox', { name: 'Workflow request', exact: true }).fill(chosen.goal);
+    const pattern = canvas.getByRole('combobox', { name: 'Workflow pattern', exact: true }); await pattern.click();
+    await page.getByRole('option').and(page.locator(`[data-value="${chosen.ready}"]`)).first().click();
+    await page.waitForFunction(() => JSON.parse(localStorage.getItem('elpis-workflow-draft-v1'))?.result === 'logo/1.svg');
+  } else if (!custom) { await canvas.getByText('More patterns', { exact: true }).click(); await canvas.getByRole('button', { name: chosen.template }).click(); }
+  if (!chosen.ready) {
   await canvas.getByRole('button', { name: 'Mother agent', exact: true }).click();
   const mother = canvas.getByRole('complementary', { name: 'Mother agent', exact: true });
   await mother.getByRole('textbox', { name: 'Goal', exact: true }).fill(chosen.goal);
@@ -146,6 +153,7 @@ try {
     }
     say(`${title} on ${await luna(panel.getByRole('combobox', { name: 'Model', exact: true }))}`);
     await panel.getByRole('button', { name: 'Done', exact: true }).click();
+  }
   }
   await page.screenshot({ path: path.join(evidence, `${plan}-before.png`) });
   const started = Date.now();
