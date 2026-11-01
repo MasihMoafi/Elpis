@@ -136,6 +136,11 @@ try {
   for (const title of titles) {
     await canvas.locator('.react-flow__node-agent').filter({ has: page.locator('.agent-node-title', { hasText: new RegExp(`^${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`) }) }).click();
     const panel = canvas.getByRole('complementary', { name: 'Selected agent', exact: true });
+    // The panel lists one connection's models at a time: its Provider menu comes first.
+    if (MODEL.includes('|') && MODEL.split('|')[0]) {
+      const provider = panel.getByRole('combobox', { name: 'Provider', exact: true }); await provider.click();
+      await page.getByRole('option').and(page.locator(`[data-value="${MODEL.split('|')[0]}"]`)).first().click();
+    }
     say(`${title} on ${await luna(panel.getByRole('combobox', { name: 'Model', exact: true }))}`);
     await panel.getByRole('button', { name: 'Done', exact: true }).click();
   }

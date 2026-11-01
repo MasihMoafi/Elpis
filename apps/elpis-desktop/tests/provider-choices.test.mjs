@@ -94,3 +94,12 @@ test('a stored chat provider is not relabeled as the new default when its connec
   assert.equal(stored.provider ?? stored.id, 'openai');
   assert.equal(stored.label, 'OpenAI');
 });
+
+test('with another connection as the default, ChatGPT is still offered once; with ChatGPT the default, not twice (1 Nov)', () => {
+  const credits = providerChoices(models, { ...settings, main: { model: 'claude-haiku-5-5', provider: 'anthropic-credits' } });
+  assert.equal(credits.filter(choice => choice.provider === 'openai').length, 1, 'Luna and Sol stay reachable');
+  assert.equal(credits[0].provider, 'anthropic-credits');
+  assert.equal(providerChoices(models, settings).filter(choice => choice.id === 'openai' || choice.provider === 'openai').length, 1);
+  const managed = providerChoices(models, { ...settings, main: { model: 'x', provider: 'anthropic-credits' }, managed: { modelProvider: 'anthropic-credits' } });
+  assert(!managed.some(choice => choice.provider === 'openai'), 'an organization that fixes the provider keeps it');
+});

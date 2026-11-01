@@ -53,6 +53,7 @@
   ],
   "bridge": [
     "bridge/workflow-concurrency.test.mjs",
+    "bridge/subscription-models.test.mjs",
     "bridge/memory-count.test.mjs",
     "tests/workflow-routing.mjs",
     "tests/workflow-titles.mjs",

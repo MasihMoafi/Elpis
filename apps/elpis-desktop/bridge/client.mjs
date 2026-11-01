@@ -17,6 +17,7 @@ import { PERMISSION_PRESETS, PROFILES } from './permission-presets.mjs';
 import { settingsSnapshot, userConfigVersion, tokenUsageSnapshot, contextLedger, restoredTokenUsage, rolloutShares, rolloutTurnModels, contextSwitchesSnapshot, CONTEXT_SWITCH_KEYS, smartPruneSnapshot, providersSnapshot, mcpSnapshot, optionEdits, hooksSnapshot, defaultPermissionMode } from './elpis-features.mjs';
 import { replacementEligibility } from '../lib/turn-replacement.ts';
 import { providerModels } from './provider-models.mjs';
+import { subscriptionModels } from './subscription-models.mjs';
 import { attachmentInput, recordedMedia } from './attachments.mjs';
 import { SkillTrash } from './skill-trash.mjs';
 import { createGithubConnector } from './github-connector.mjs';
@@ -730,6 +731,20 @@ export class DesktopClient extends EventEmitter {
       if (managed?.modelProvider && managed.modelProvider !== options.provider) throw new BridgeError('This connection is restricted by your organization', 403);
       // config/read reflects current defaults; model/list retains the engine's startup
       // catalog. An explicit API connection always lists its own endpoint.
+      // ChatGPT signed in but not the default connection: its subscription models, read by the engine (subscription-models.mjs).
+      if (options.provider === 'openai' && read?.config?.model_provider !== 'openai' && !options.inputModality && !options.outputModality && !savedProviderKey(configHome(read), 'openai')) {
+        // account/read describes the default connection's account, so the engine is simply asked; without a ChatGPT sign-in
+        // it fails and the connection is treated as an API key, as before.
+        const home = configHome(read);
+        if (home && fs.existsSync(path.join(home, 'auth.json'))) {
+          try {
+            const listed = await subscriptionModels({ env: { ...process.env, ELPIS_HOME: home } });
+            for (const model of listed.data) this.#models.add(model.model); // so a chat or workflow may start on them
+            return listed;
+          }
+          catch { /* not signed in to ChatGPT: the API key route below */ }
+        }
+      }
       if (options.provider !== 'openai' || options.provider !== read?.config?.model_provider) {
         const definitions = { ...BUILT_IN_KEY_PROVIDERS, ...(read?.config?.model_providers ?? {}), ...(managed?.modelProviders ?? {}) };
         if (!Object.hasOwn(definitions, options.provider)) throw new BridgeError('This connection needs a saved API address before Elpis can list its models. Add a connection in Settings → Models & accounts.');
