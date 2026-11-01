@@ -61,16 +61,23 @@ impl App {
                 self.chat_widget
                     .finish_elpis_models_loading(request_id, provider_id, result);
             }
-            ElpisProviderEvent::PrefetchPresets { provider_id } => {
-                self.elpis_prefetch_presets(app_server, provider_id);
+            ElpisProviderEvent::PrefetchPresets { provider_id, offer } => {
+                self.elpis_prefetch_presets(app_server, provider_id, offer);
             }
             ElpisProviderEvent::PresetsLoaded {
                 provider_id,
                 result,
+                offer,
             } => match result {
-                Ok(presets) => self
-                    .chat_widget
-                    .remember_provider_presets(provider_id, presets),
+                Ok(presets) => {
+                    let current = provider_id == self.chat_widget.config_ref().model_provider_id;
+                    self.chat_widget
+                        .remember_provider_presets(provider_id, presets);
+                    // Only for the provider still in use, and only while nothing else is open.
+                    if offer && current && self.chat_widget.no_modal_or_popup_active() {
+                        self.chat_widget.offer_effort_levels();
+                    }
+                }
                 Err(error) => {
                     tracing::warn!(%provider_id, %error, "could not list provider models")
                 }
@@ -130,7 +137,12 @@ impl App {
     }
 
     /// Lists a provider's models for effort lookups only, the way `elpis_browse_provider` does.
-    fn elpis_prefetch_presets(&mut self, app_server: &AppServerSession, provider_id: String) {
+    fn elpis_prefetch_presets(
+        &mut self,
+        app_server: &AppServerSession,
+        provider_id: String,
+        offer: bool,
+    ) {
         let Some(provider) = self.config.model_providers.get(&provider_id).cloned() else {
             return;
         };
@@ -141,6 +153,7 @@ impl App {
                     ElpisProviderEvent::PresetsLoaded {
                         provider_id,
                         result,
+                        offer,
                     },
                 ),
             ));

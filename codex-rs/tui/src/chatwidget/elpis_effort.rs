@@ -20,11 +20,13 @@ impl ChatWidget {
     /// After a switch to another provider: the new model's effort levels, as Codex offers them
     /// after a model is picked. A model with one level or none offers nothing.
     pub(crate) fn offer_effort_levels(&mut self) {
-        if let Some(preset) = self
-            .current_preset()
-            .filter(|preset| preset.supported_reasoning_efforts.len() > 1)
-        {
-            self.open_reasoning_popup(preset);
+        match self.current_preset() {
+            Some(preset) if preset.supported_reasoning_efforts.len() > 1 => {
+                self.open_reasoning_popup(preset);
+            }
+            Some(_) => {}
+            // The new provider's list has not arrived yet: offer the levels when it does.
+            None => self.request_provider_presets(/*offer*/ true),
         }
     }
 
@@ -176,16 +178,24 @@ impl ChatWidget {
     /// A thread on a provider the app server does not list: fetch that provider's list once, so
     /// `/effort`, the reasoning shortcuts and the level picker know its models' levels.
     pub(super) fn prefetch_provider_presets(&mut self) {
+        if !self
+            .provider_presets
+            .contains_key(&self.config.model_provider_id)
+        {
+            self.request_provider_presets(/*offer*/ false);
+        }
+    }
+
+    fn request_provider_presets(&mut self, offer: bool) {
         let provider_id = self.config.model_provider_id.clone();
         if super::elpis_providers::elpis_catalog_provider()
             .is_none_or(|catalog| catalog == provider_id)
-            || self.provider_presets.contains_key(&provider_id)
         {
             return;
         }
         self.app_event_tx.send(crate::app_event::AppEvent::Elpis(
             crate::elpis_app_event::ElpisAppEvent::Provider(
-                super::elpis_providers::ElpisProviderEvent::PrefetchPresets { provider_id },
+                super::elpis_providers::ElpisProviderEvent::PrefetchPresets { provider_id, offer },
             ),
         ));
     }

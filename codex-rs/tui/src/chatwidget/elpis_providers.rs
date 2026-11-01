@@ -182,12 +182,14 @@ pub(crate) enum ElpisProviderEvent {
     OpenProviders,
     /// List a provider's models.
     Browse { provider_id: String },
-    /// Fetch a provider's list for effort lookups only; no picker opens.
-    PrefetchPresets { provider_id: String },
+    /// Fetch a provider's list for effort lookups; `offer` opens the current model's levels
+    /// when it arrives (after a switch to that provider).
+    PrefetchPresets { provider_id: String, offer: bool },
     /// The list `PrefetchPresets` asked for.
     PresetsLoaded {
         provider_id: String,
         result: Result<Vec<ModelPreset>, String>,
+        offer: bool,
     },
     /// A provider's models arrived.
     ModelsLoaded {
