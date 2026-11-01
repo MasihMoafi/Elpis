@@ -53,7 +53,7 @@ export function GroupAndSortMenu({ state, onChange }: { state: ChatGroups; onCha
   const current = `${GROUP_BY.find(([value]) => value === state.groupBy)?.[1]} · ${SORT_BY.find(([value]) => value === state.sortBy)?.[1]}`;
   // Match the drawing width of the sidebar's filled plus icons inside the same 16px icon box.
   return <DropdownMenu>
-    <DropdownMenuTrigger render={<Button variant="ghost" size="icon-xs" className="group-sort" aria-label={label} title={changed ? `${label}: ${current}` : label} data-active={changed ? "true" : undefined} />}><ListFilter size={13} viewBox="-2 -2 28 28" /></DropdownMenuTrigger>
+    <DropdownMenuTrigger render={<Button variant="ghost" size="icon-xs" className="group-sort" aria-label={label} title={changed ? `${label}: ${current}` : label} data-active={changed ? "true" : undefined} />}><ListFilter size={13} viewBox="-1 -1 26 26" /></DropdownMenuTrigger>
     <DropdownMenuContent align="end" className="w-52" aria-label={label}>
       <DropdownMenuGroup>
         <DropdownMenuLabel>Group by</DropdownMenuLabel>
