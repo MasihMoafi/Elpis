@@ -73,6 +73,13 @@ if (process.argv.includes("--elpis-local-bridge")) {
     while (!predicate()) { assert(Date.now() < deadline, label); await pause(20); }
   }
 
+  // The pids this run's processes recorded in `name` files (state.json for bridges, engine.json for engines) under root.
+  const recorded = (root, name, key = "pid", token = "token") => {
+    const dir = path.join(root, "elpis-bridge");
+    let files = [];
+    try { files = fs.readdirSync(dir, { recursive: true }).filter(file => path.basename(file) === name); } catch { return []; }
+    return files.flatMap(file => { try { const info = JSON.parse(fs.readFileSync(path.join(dir, file))); return [{ pid: info[key], token: info[token] }]; } catch { return []; } });
+  };
   async function setup(t, extra = {}, bundleSource = process.env.ELPIS_IDLE_TEST_BUNDLE ?? source) {
     const root = createTestTempDir(path.join(os.tmpdir(), "ebi-"));
     const env = { PATH: process.env.PATH, HOME: root, ELPIS_HOME: root, CODEX_HOME: root, CODEX_AUTH_HOME: root,
@@ -309,5 +316,16 @@ if (process.argv.includes("--elpis-local-bridge")) {
     const result = await f.launch(second, { PATH: f.root });
     assert.equal(result.exitCode, 0, result.errors); assert.match(result.errors, /using the Elpis already running/, "it joins instead of retiring");
     assert.ok((await (await f.connect()).call("thread/list", {})).result.data.length);
+  });
+  // 1 Nov, Masih: "make such leftovers don't appear again". The memory guard kills a bridge with SIGKILL; its engine
+  // must not live on, holding memory, until Elpis is next launched in the same home.
+  test("an engine exits within seconds when its bridge is killed with SIGKILL", async t => {
+    const f = await setup(t);
+    assert.equal((await f.launch(f.first)).exitCode, 0);
+    assert.ok((await (await f.connect()).call("thread/list", {})).result.data.length);
+    const [engine] = recorded(f.root, "engine.json"), [bridge] = recorded(f.root, "engine.json", "bridgePid", "bridgeToken");
+    assert.equal(startToken(engine.pid), engine.token, "the engine runs");
+    process.kill(bridge.pid, "SIGKILL");
+    await until(() => startToken(engine.pid) !== engine.token, "the engine is gone within 5 s of its bridge", 5000);
   });
 }

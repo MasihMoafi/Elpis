@@ -199,8 +199,15 @@ const privateEngines = new Set(); // ChildProcess spawned by this bridge
 const proxies = new Set();
 let sharedEngine = null; // { promise, child, dir, sock }
 
+// An engine never outlives its bridge. On Linux the kernel sends it SIGTERM when the bridge dies, even by SIGKILL
+// from the memory guard (setpriv --pdeathsig execs the engine in place, so its pid and command line stay the engine's).
+const setpriv = process.platform === "linux" ? ["/usr/bin/setpriv", "/bin/setpriv"].find(usable) : undefined;
+const spawnEngine = (args, options) => setpriv
+  ? spawn(setpriv, ["--pdeathsig", "TERM", "--", engineBin(), ...args], options)
+  : spawn(engineBin(), args, options);
+
 function spawnPrivate() {
-  const child = spawn(engineBin(), ["app-server"], { stdio: ["pipe", "pipe", "ignore"] });
+  const child = spawnEngine(["app-server"], { stdio: ["pipe", "pipe", "ignore"] });
   privateEngines.add(child);
   child.once("exit", () => privateEngines.delete(child));
   return child;
@@ -218,7 +225,7 @@ function startSharedEngine() {
     entry.dir = fs.mkdtempSync(path.join(parent, "engine-"));
     entry.sock = path.join(entry.dir, "e.sock");
     let tail = "";
-    const child = entry.child = spawn(engineBin(), ["app-server", "--listen", `unix://${entry.sock}`], { stdio: ["ignore", "ignore", "pipe"] });
+    const child = entry.child = spawnEngine(["app-server", "--listen", `unix://${entry.sock}`], { stdio: ["ignore", "ignore", "pipe"] });
     redactedLines(child.stderr, clean => { tail = (tail + clean + "\n").slice(-4000); note(`engine: ${clean}`); });
     const exited = new Promise((resolve) => child.once("exit", (code, signal) => resolve(`exited (${signal ?? code})`)));
     child.once("exit", () => {
