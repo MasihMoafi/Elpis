@@ -3,6 +3,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cjs');
+const { openSettings } = require('./controls.cjs');
 
 const idleScrollers = page => page.evaluate(() => [...document.querySelectorAll('*')].flatMap(el => {
   const style = getComputedStyle(el), box = el.getBoundingClientRect();
@@ -25,6 +26,13 @@ for (const [width, height] of [[1440, 900], [1000, 700]]) test(`no box scrolls f
       if (!await nav.count()) continue;
       await nav.click(); await page.waitForTimeout(600);
       found[name] = await idleScrollers(page);
+    }
+    // Settings too (Masih, 27 Oct: "the settings should be not scrollable."): every section, the navigation included.
+    await openSettings(page);
+    const tabs = page.getByRole('tablist', { name: 'Settings sections' });
+    for (const name of (await tabs.getByRole('tab').allInnerTexts()).map(text => text.trim())) {
+      await tabs.getByRole('tab', { name, exact: true }).click(); await page.waitForTimeout(300);
+      found[`Settings › ${name}`] = await idleScrollers(page);
     }
     for (const [where, list] of Object.entries(found)) assert.deepEqual(list, [], `${where} at ${width}x${height}`);
   } finally { await f.close(); }
