@@ -5,12 +5,21 @@ import { BridgeError, text } from './client.mjs';
 import { loveNodeSpec } from './love-agents.mjs';
 import { runAcpNode } from './acp-nodes.mjs';
 import { workflowRoute, quotaFailure } from './workflow-models.mjs';
+import { checkPlan } from './canvas-plan.mjs';
 import { agentParentId } from '../lib/agent-runs.mjs';
 import { workflowWorktrees, mergeWorkflowReview, checkWorkflowReview, workflowCandidateChanged, removeWorkflowWorkspace } from './workflow-worktrees.mjs';
 import { workerBudget } from './memory-budget.mjs';
 
 const ended = new Set(['succeeded', 'failed', 'cancelled', 'blocked']);
 const writer = task => ['implement', 'fix'].includes(task.kind);
+/** Done for the run: it succeeded, or the Mother cancelled it as no longer needed (its dependents go on without it). */
+const settled = task => task.status === 'succeeded' || task.status === 'cancelled' && task.cancelledBy === 'mother';
+/** The Mother re-plans at most this many times a run, and adds at most this many agents in one decision (1 Nov). */
+export const REPLAN_LIMIT = 5, ADD_LIMIT = 4;
+/** Inline and spill (1 Nov): a later agent and the Mother get a child's summary and the file with its whole answer. */
+const SUMMARY = 1500;
+export const summarize = answer => String(answer ?? '').length <= SUMMARY ? String(answer ?? '') : `${String(answer).slice(0, SUMMARY).replace(/\s+\S*$/, '')} … (the whole answer is in the file)`;
+const slug = text => String(text).normalize('NFKD').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60).replace(/-+$/, '');
 const alive = pid => { if (!Number.isSafeInteger(pid) || pid < 1) return false; try { process.kill(pid, 0); return true; } catch { return false; } };
 
 /** History visibility. Run files, chats and execution are never changed here; Undo survives an app restart. The client
@@ -107,7 +116,7 @@ export function validateWorkflow(tasks, roundLimit) {
 /** ACP owns node execution. This scheduler owns Kahn dependencies, bounded rounds, concurrency and failure state. */
 /** `onEnd(record)` hears each run's final record once it is saved: the bridge starts a run's next stage from it. */
 export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = process.env, timeoutMs,
-  onSession, onEnd, modelRoutes, observeThread, listThreadDescendants, budget = workerBudget } = {}) {
+  onSession, onEnd, modelRoutes, modelDefaults, observeThread, listThreadDescendants, budget = workerBudget } = {}) {
   const records = new Map(), active = new Map();
   const controls = new Map(), progressTimers = new Map(), supervision = new Map(), routeSnapshots = new Map(), exhaustedProviders = new Map();
   const mergingSources = new Set(), mergeControllers = new Map(), checkpoints = new Map();
@@ -229,6 +238,35 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
     }
     throw previousError ?? new BridgeError('No connected subscription has available quota. Choose another connected model and resume this workflow; completed work is preserved.', 409);
   }
+  /** The Mother's model: one he chose for her on the board, else the default (workflow-models.mjs MOTHER_ROUTE), else
+   * `fallback` (her chat's model, as before the defaults). */
+  const motherRoute = (record, fallback) => record.motherModel ?? record.defaults?.mother ?? fallback;
+  const motherOf = (record, route) => {
+    const mother = record.mother ??= { id: 'mother', title: 'Mother agent', progress: [], decisions: [] };
+    mother.decisions ??= []; mother.progress ??= [];
+    return Object.assign(mother, { model: route.model, provider: route.provider ?? '', reasoningEffort: route.reasoningEffort ?? 'low' });
+  };
+  /** One Mother turn. When her default model fails, she continues once on the default fallback (Opus at medium). */
+  async function askMother(record, route, instructions, input, options) {
+    const mother = motherOf(record, route);
+    try { return await runNode(record, mother, { model: route.model, provider: route.provider }, instructions, input, options); }
+    catch (error) {
+      const fallback = record.defaults?.motherFallback;
+      if (options.signal?.aborted || !fallback || record.motherModel || route.model !== record.defaults?.mother?.model || fallback.model === route.model) throw error;
+      motherOf(record, fallback);
+      progress(record, mother, { sessionUpdate: 'agent_message_chunk', messageId: `route-${randomUUID()}`, content: { type: 'text', text: `Continuing with ${fallback.model} (${fallback.provider}). ${error.message}` } });
+      return runNode(record, mother, { model: fallback.model, provider: fallback.provider }, instructions, input, options);
+    }
+  }
+  /** Writes a child's whole answer to the run's folder and returns what later agents get: its summary and that file. */
+  async function spill(record, task, round, answer) {
+    try {
+      const dir = path.join(stateDir, 'outputs', record.id), file = path.join(dir, `${task.id}${round > 1 ? `-round-${round}` : ''}.md`);
+      await fs.mkdir(dir, { recursive: true, mode: 0o700 }); await fs.writeFile(file, answer, { mode: 0o600 });
+      return { answer: summarize(answer), file };
+    } catch { return { answer }; }
+  }
+  const handed = task => ({ answer: summarize(task.result?.summary), ...(task.result?.file ? { file: task.result.file } : {}) });
   function queueSupervision(record, work) {
     const pending = (supervision.get(record.id) ?? Promise.resolve()).catch(() => {}).then(work);
     supervision.set(record.id, pending); return pending;
@@ -257,11 +295,11 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
     if (controller.signal.aborted || task.supervisedRound === record.round) return false;
     task.supervisedRound = record.round;
     // She runs on the model chosen for her chat (the run's root), not on a fixed Opus that spent his Claude subscription.
-    const mother = record.mother ??= { id: 'mother', title: 'Mother agent', model: root.model || 'claude/opus', provider: root.model ? root.modelProvider ?? '' : 'claude', reasoningEffort: 'low', progress: [], decisions: [] };
-    mother.decisions ??= []; mother.status = 'running'; await save(record);
+    const route = motherRoute(record, root.model ? { model: root.model, provider: root.modelProvider ?? '' } : { model: 'claude/opus', provider: 'claude' });
+    const mother = motherOf(record, route); mother.status = 'running'; await save(record);
     try {
       const instructions = 'You are the Mother agent, the active workflow supervisor. Inspect the failed node and current evidence. Read only; do not edit files, run agents, merge, install or change permissions. Return only JSON: {"action":"retry","taskId":"the failed node","instruction":"specific corrective guidance","reason":"evidence"}, {"action":"steer","taskId":"one currently running node","message":"specific guidance","reason":"evidence"}, or {"action":"stop","reason":"actionable recovery needed"}. Retry only when specific new guidance can address the failure. Never repeat an unchanged failing tool, alter scope, or claim success without checks.';
-      const result = await runNode(record, mother, { model: mother.model, provider: mother.provider }, instructions, { task: `Workflow: ${record.name}. Goal: ${record.goal ?? ''}. Failed node: ${task.id}. Failure: ${error.message}.\nCurrent nodes:\n${JSON.stringify(record.tasks.map(node => ({ id: node.id, status: node.status, instruction: node.instruction, evidence: node.result?.summary?.slice(0, 2000), failure: node.failureReason, recentProgress: node.progress?.slice(-3) }))).slice(0, 22000)}` }, {
+      const result = await askMother(record, route, instructions, { task: `Workflow: ${record.name}. Goal: ${record.goal ?? ''}. Failed node: ${task.id}. Failure: ${error.message}.\nCurrent nodes:\n${JSON.stringify(record.tasks.map(node => ({ id: node.id, status: node.status, instruction: node.instruction, evidence: node.result ? handed(node) : undefined, failure: node.failureReason, recentProgress: node.progress?.slice(-3) }))).slice(0, 22000)}` }, {
         cwd: root.cwd, signal: controller.signal, timeoutMs: Math.min(timeoutMs ?? Infinity, (record.maxRuntimeSeconds ?? 1800) * 1000),
         onUpdate: update => progress(record, mother, update), onControl: control => controls.set(`${record.id}:mother`, control), onPermission: request => permission(record, mother, request),
       });
@@ -284,13 +322,101 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
       mother.decisions.push({ at: Date.now(), taskId: task.id, decision: 'stop', reasons: failure.message }); await save(record); return false;
     } finally { controls.delete(`${record.id}:mother`); }
   }
+  /** The Mother's re-plan after children succeeded (`finished`: their ids). She answers with one decision: continue, add
+   * agents, cancel pending ones or steer a running one. Her answer passes the planner's checks (canvas-plan.mjs) and the
+   * graph's (validateWorkflow) before it changes anything; an invalid one is ignored and logged. */
+  async function decide(record, finished, root, controller, byId) {
+    if (!record.tasks.some(task => !ended.has(task.status))) return; // nothing left to run: plain code finishes the run
+    const route = motherRoute(record, root.model ? { model: root.model, provider: root.modelProvider ?? '' } : { model: 'claude/opus', provider: 'claude' });
+    const mother = motherOf(record, route);
+    if ((mother.replans ?? 0) >= REPLAN_LIMIT) {
+      if (!mother.replanLimitNoted) { mother.replanLimitNoted = true; logLine(record, `Mother agent reached her ${REPLAN_LIMIT} re-plans for this run; the plan stays as it is.`); }
+      return;
+    }
+    mother.replans = (mother.replans ?? 0) + 1; mother.status = 'running'; await save(record);
+    const title = id => byId.get(id)?.title ?? id;
+    const note = (decision, line, extra = {}) => {
+      mother.decisions.push({ at: Date.now(), kind: 'replan', decision, summary: line.slice(0, 300), ...extra });
+      logLine(record, `Mother agent · ${line}`.slice(0, 400));
+    };
+    try {
+      const done = record.tasks.filter(task => task.status === 'succeeded').map(task => ({ id: task.id, title: task.title, kind: task.kind, justFinished: finished.includes(task.id), ...handed(task) }));
+      const left = record.tasks.filter(task => task.status !== 'succeeded').map(task => ({ id: task.id, title: task.title, kind: task.kind, status: task.status, dependsOn: task.dependsOn, folders: task.writeScopes, instruction: task.instruction.slice(0, 600) }));
+      const folders = [...new Set(record.tasks.flatMap(task => task.writeScopes))];
+      const instructions = `You are the Mother agent, the workflow coordinator. A child agent has just finished. Decide whether the remaining plan still reaches the goal. Read only: you may read the files listed; do not edit files, run agents, merge or install. Return only JSON, one of:
+{"decision":"continue","why":"one short line"}
+{"decision":"add","why":"one short line","agents":[{"key":"short-lowercase-key","title":"plain name","prompt":"what to do and where","folders":[],"doneWhen":["a check anyone can verify"],"waitsFor":["ids it builds on"]}]} (1 to ${ADD_LIMIT} agents; folders copied from the project folder list, or empty; each also gets its own folder)
+{"decision":"cancel","why":"one short line","taskIds":["ids of pending agents"]}
+{"decision":"steer","why":"one short line","taskId":"one running agent","message":"specific guidance"}
+Prefer continue. Add only for a part the plan misses; cancel only work that is no longer needed; steer only with specific new guidance.`;
+      const result = await askMother(record, route, instructions, { task: `Workflow: ${record.name}. Goal: ${record.goal ?? ''}.\nJust finished: ${finished.map(title).join(', ')}.\nFinished agents (summary and the file with the whole answer):\n${JSON.stringify(done).slice(0, 14000)}\nRemaining plan:\n${JSON.stringify(left).slice(0, 8000)}\nProject folders: ${JSON.stringify(folders)}` }, {
+        cwd: root.cwd, signal: controller.signal, timeoutMs: Math.min(timeoutMs ?? Infinity, (record.maxRuntimeSeconds ?? 1800) * 1000),
+        onUpdate: update => progress(record, mother, update), onControl: control => controls.set(`${record.id}:mother`, control), onPermission: request => permission(record, mother, request),
+      }).finally(() => controls.delete(`${record.id}:mother`));
+      let answer; try { answer = JSON.parse(result.answer.trim().replace(/^```(?:json)?\s*|\s*```$/g, '')); } catch { throw new BridgeError('her answer was not JSON'); }
+      const why = typeof answer?.why === 'string' ? answer.why.trim().slice(0, 300) : '';
+      if (!why) throw new BridgeError('her answer gave no reason');
+      if (answer.decision === 'continue') note('continue', `Continued — ${why}`);
+      else if (answer.decision === 'add') {
+        if (!Array.isArray(answer.agents) || !answer.agents.length || answer.agents.length > ADD_LIMIT) throw new BridgeError(`add needs 1 to ${ADD_LIMIT} agents`);
+        // The run as a plan, with her agents added: the planner's own check of keys, folders, wiring and loops.
+        const board = record.tasks.map(task => ({ key: task.id, title: task.title, prompt: '', folders: task.writeScopes, doneWhen: [], waitsFor: task.dependsOn }));
+        let plan;
+        try { plan = checkPlan(JSON.stringify({ name: record.name, mode: 'team', why, agents: [...board.map(agent => ({ ...agent, title: '' })), ...answer.agents] }), { folders, agents: board, maxAgents: board.length + ADD_LIMIT }); }
+        catch (error) { throw new BridgeError(error.message.replace(/^Elpis returned a plan that cannot be used: /, '')); }
+        const known = new Set(record.tasks.map(task => task.id)), taken = new Set(record.tasks.flatMap(task => task.writeScopes));
+        const fresh = plan.agents.filter(agent => !known.has(agent.key)), checks = new Set([...known, ...fresh.map(agent => `${agent.key}-check`)]);
+        const added = fresh.flatMap(agent => {
+          let own = `agents/${slug(agent.title) || agent.key}`;
+          for (let n = 2; taken.has(own); n++) own = `agents/${slug(agent.title) || agent.key}-${n}`;
+          taken.add(own);
+          const criteria = agent.doneWhen.length ? agent.doneWhen : ['Its result is saved in its folder, with evidence'];
+          const base = { status: 'pending', assignedThreadId: null, result: null, failureReason: null, addedBy: 'mother' };
+          return [
+            { ...base, id: agent.key, kind: 'implement', title: agent.title,
+              instruction: [record.goal && `Goal of the whole run: ${record.goal}`, agent.prompt, `Save your result as files inside your allowed folders. Write your report to ${own}/report.md. Include the answer and file paths in your final answer so the next agent can use them.`].filter(Boolean).join('\n\n'),
+              dependsOn: agent.waitsFor.flatMap(id => checks.has(`${id}-check`) && !agent.waitsFor.includes(`${id}-check`) ? [id, `${id}-check`] : [id]),
+              writeScopes: [...agent.folders.filter(folder => folder !== own), own], acceptanceCriteria: criteria },
+            { ...base, id: `${agent.key}-check`, kind: 'verify', title: `Check: ${agent.title}`.slice(0, 256),
+              instruction: `Check the work of “${agent.title}”. Its prompt was:\n${agent.prompt}\n\nRead what it wrote and say plainly whether each of these holds: ${criteria.join('; ')}\n\nChange nothing of its work. Write your report to ${own}/check/report.md.`,
+              dependsOn: [agent.key], writeScopes: [`${own}/check`], acceptanceCriteria: [`Each of “${agent.title}”'s criteria is shown to hold or not, with evidence`] },
+          ];
+        });
+        if (!added.length) throw new BridgeError('add named no new agent');
+        try { validateWorkflow([...record.tasks, ...added], record.roundLimit); } catch (error) { throw new BridgeError(error.message); }
+        record.tasks.push(...added); for (const task of added) byId.set(task.id, task);
+        note('add', `Added: ${fresh.map(agent => agent.title).join(', ')} — ${why}`, { taskIds: fresh.map(agent => agent.key) });
+      } else if (answer.decision === 'cancel') {
+        const ids = Array.isArray(answer.taskIds) ? [...new Set(answer.taskIds)] : [];
+        const targets = ids.map(id => byId.get(id));
+        if (!ids.length || targets.some(task => task?.status !== 'pending')) throw new BridgeError('cancel names only pending agents');
+        // An agent's own check goes with it.
+        const cancelled = [...targets, ...record.tasks.filter(task => task.kind === 'verify' && task.status === 'pending' && task.dependsOn.length && task.dependsOn.every(id => ids.includes(id)))];
+        for (const task of new Set(cancelled)) Object.assign(task, { status: 'cancelled', cancelledBy: 'mother', failureReason: `Cancelled by Mother agent: ${why}` });
+        note('cancel', `Cancelled: ${targets.map(task => task.title).join(', ')} — ${why}`, { taskIds: ids });
+      } else if (answer.decision === 'steer') {
+        const target = byId.get(answer.taskId), control = target?.status === 'running' && controls.get(`${record.id}:${target.id}`);
+        const message = typeof answer.message === 'string' ? answer.message.trim() : '';
+        if (!control || !message || message.length > 4000) throw new BridgeError('steer needs a running agent and a message');
+        const delivered = await control.steer(message);
+        (target.messages ??= []).push({ id: randomUUID(), text: message, status: 'delivered', delivery: delivered.delivery, at: Date.now(), round: record.round, source: 'mother' });
+        note('steer', `Steered: ${target.title} — ${why}`, { taskId: target.id, delivery: delivered.delivery });
+      } else throw new BridgeError('her answer was not one of continue, add, cancel or steer');
+      mother.status = 'succeeded';
+    } catch (error) {
+      if (controller.signal.aborted) { mother.status = 'cancelled'; return; }
+      mother.status = 'succeeded';
+      note('invalid', `Ignored her answer — ${error.message}`.slice(0, 300));
+    } finally { await save(record); }
+  }
   async function reviewAndMerge(record, signal) {
     if (await checkWorkflowReview(record.review, signal)) { record.review = await mergeWorkflowReview(record.review, signal); return; }
-    const mother = record.mother = { ...record.mother, id: 'mother', title: 'Mother agent', model: 'claude/opus', provider: 'claude', reasoningEffort: 'low', status: 'running', progress: record.mother?.progress ?? [], decisions: record.mother?.decisions ?? [] };
+    const route = record.recovery?.model ? { model: record.recovery.model, provider: record.recovery.provider } : motherRoute(record, { model: 'claude/opus', provider: 'claude' });
+    const mother = motherOf(record, route); mother.status = 'running';
     record.review.status = 'reviewing'; await save(record);
     try {
       const instructions = 'You are the Mother agent, the workflow coordinator. Review the children’s candidate commits and focused test evidence. Read and run checks only; do not change files, commit, merge, delegate or push. Approve only if the requested task is complete and the checks pass. Return only JSON: {"passed":true or false,"summary":"observed evidence and any remaining failure"}.';
-      const result = await runNode(record, mother, record.recovery?.model ? record.recovery : { model: mother.model, provider: mother.provider }, instructions, { task: `Review candidate commit ${record.review.commit}. Workflow: ${record.name}.\n${record.goal ?? ''}\n\nChange summary:\n${record.review.stat}`, inputs: record.tasks.map(task => ({ name: task.title, answer: task.result?.summary ?? task.failureReason ?? task.status })) }, {
+      const result = await askMother(record, route, instructions, { task: `Review candidate commit ${record.review.commit}. Workflow: ${record.name}.\n${record.goal ?? ''}\n\nChange summary:\n${record.review.stat}`, inputs: record.tasks.map(task => ({ name: task.title, ...(task.result ? handed(task) : { answer: task.failureReason ?? task.status }) })) }, {
         cwd: record.review.path, signal, timeoutMs: Math.min(timeoutMs ?? Infinity, (record.maxRuntimeSeconds ?? 1800) * 1000),
         onUpdate: update => progress(record, mother, update), onControl: control => controls.set(`${record.id}:mother`, control), onPermission: request => permission(record, mother, request),
       });
@@ -322,7 +448,12 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
       for (let round = resuming ? record.round : 1; round <= (record.roundLimit ?? 1); round++) {
         record.round = round;
         const answers = new Map(), running = new Map();
-        record.tasks.forEach(task => { if (resuming && round === record.round && task.status === 'succeeded') { answers.set(task.id, task.result.summary); return; } task.status = 'pending'; task.failureReason = null; task.assignedThreadId = null; task.result = null; });
+        record.tasks.forEach(task => {
+          if (task.cancelledBy === 'mother') return;
+          if (resuming && round === record.round && task.status === 'succeeded') { answers.set(task.id, handed(task)); return; }
+          task.status = 'pending'; task.failureReason = null; task.assignedThreadId = null; task.result = null;
+        });
+        // Rebuilt for each round; the Mother's additions join it as they come (decide, below).
         const byId = new Map(record.tasks.map(t => [t.id, t]));
         /** The one finished step a failed check sends back, once per check. */
         const fixable = (task, error) => task.kind === 'verify' && !task.fixed && /^Check failed:/.test(error?.message ?? '')
@@ -345,9 +476,13 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
               ...endsAt ? [timeLeft()] : [],
               ...checked.length ? [`The agents you check could write only in: ${checked.join(', ')}. Look for a file the criteria name there as well as at the path given.`] : [],
               task.kind === 'verify' ? 'Return only JSON: {"passed": true or false, "summary": "criteria and observed evidence"}. Set passed false if any criterion fails or cannot be checked.' : 'Return your final answer with observed evidence.'].join('\n\n');
-            const inputs = [...task.dependsOn.map(id => ({ name: byId.get(id).title, answer: answers.get(id) })),
-              ...(round > 1 ? (task.feedbackFrom ?? []).map(id => ({ name: `${byId.get(id).title} · round ${round - 1}`, answer: previous.get(id) })) : [])];
-            const requested = record.recovery?.model ? { model: record.recovery.model, provider: record.recovery.provider ?? root.modelProvider ?? '' } : { model: task.model ?? root.model ?? '', provider: task.provider ?? root.modelProvider ?? '' };
+            // A dependency the Mother cancelled has no answer; the agent goes on without it.
+            const inputs = [...task.dependsOn.filter(id => answers.has(id)).map(id => ({ name: byId.get(id).title, ...answers.get(id) })),
+              ...(round > 1 ? (task.feedbackFrom ?? []).filter(id => previous.has(id)).map(id => ({ name: `${byId.get(id).title} · round ${round - 1}`, ...previous.get(id) })) : [])];
+            // A model he set on the agent wins; else the run's default for children (workflow-models.mjs), else the chat's.
+            const requested = record.recovery?.model ? { model: record.recovery.model, provider: record.recovery.provider ?? root.modelProvider ?? '' }
+              : task.model ? { model: task.model, provider: task.provider ?? root.modelProvider ?? '' }
+              : record.defaults?.child ? { ...record.defaults.child } : { model: root.model ?? '', provider: root.modelProvider ?? '' };
             const attempt = async () => {
               if (task.kind === 'join') {
                 const inside = rel => { const full = path.resolve(cwd, rel); if (full !== cwd && !full.startsWith(`${cwd}${path.sep}`)) throw new BridgeError(`${rel} is outside the project`, 409); return full; };
@@ -379,7 +514,9 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
               completed = await attempt();
             }
             const { result, changes } = completed;
-            answers.set(task.id, result.answer); task.result = { summary: result.answer, ...changes }; task.status = 'succeeded'; task.failureReason = null;
+            const passed = await spill(record, task, round, result.answer);
+            answers.set(task.id, passed); task.result = { summary: result.answer, ...(passed.file ? { file: passed.file } : {}), ...changes }; task.status = 'succeeded'; task.failureReason = null;
+            if (!['verify', 'join'].includes(task.kind)) afterSuccess(task);
           } catch (error) {
             const step = !controller.signal.aborted && fixable(task, error);
             if (step) {
@@ -393,27 +530,41 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
           controls.delete(`${record.id}:${task.id}`);
           await save(record);
         };
-        while (record.tasks.some(t => !ended.has(t.status))) {
+        // The Mother re-plans when a child succeeds (1 Nov, Masih approved "1) yes"): one call at a time, and children that
+        // finish meanwhile reach her together in the next. Plain code first: with nothing left to run she is not asked.
+        const replan = { waiting: [], pending: null };
+        const afterSuccess = task => {
+          if (!record.replan || controller.signal.aborted) return;
+          replan.waiting.push(task.id);
+          const kick = () => {
+            if (replan.pending || !replan.waiting.length) return;
+            replan.pending = queueSupervision(record, async () => {
+              while (replan.waiting.length && !controller.signal.aborted) await decide(record, replan.waiting.splice(0), root, controller, byId);
+            }).catch(error => logLine(record, `Mother agent could not re-plan: ${error.message}`)).finally(() => { replan.pending = null; kick(); });
+          };
+          kick();
+        };
+        while (record.tasks.some(t => !ended.has(t.status)) || replan.pending) {
           for (const task of record.tasks.filter(t => t.status === 'pending')) {
             if (controller.signal.aborted) { task.status = 'cancelled'; continue; }
-            if (task.dependsOn.some(id => ['failed', 'blocked', 'cancelled'].includes(byId.get(id).status))) { task.status = 'blocked'; continue; }
-            if (running.size >= (record.maxConcurrency ?? Infinity) || !task.dependsOn.every(id => byId.get(id).status === 'succeeded')) continue;
+            if (task.dependsOn.some(id => ['failed', 'blocked', 'cancelled'].includes(byId.get(id).status) && !settled(byId.get(id)))) { task.status = 'blocked'; continue; }
+            if (running.size >= (record.maxConcurrency ?? Infinity) || !task.dependsOn.every(id => settled(byId.get(id)))) continue;
             if (!isolation && record.tasks.some(other => running.has(other.id) && task.writeScopes.some(a => other.writeScopes.some(b => a === '.' || b === '.' || a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`))))) continue;
             // One budget for every workflow in this process: a node slot and enough memory (bridge/memory-budget.mjs).
             const release = await budget.acquire(controller.signal, text => logLine(record, text)).catch(error => { if (controller.signal.aborted) return null; throw error; });
             if (!release) continue;
             // A check that failed during the wait sent its step back; that step finishes again first.
-            if (!task.dependsOn.every(id => byId.get(id).status === 'succeeded')) { release(); continue; }
+            if (task.status !== 'pending' || !task.dependsOn.every(id => settled(byId.get(id)))) { release(); continue; }
             const promise = run(task).finally(() => { release(); running.delete(task.id); inflight.delete(promise); }); running.set(task.id, promise); inflight.add(promise);
           }
-          if (running.size) await Promise.race(running.values());
+          if (running.size || replan.pending) await Promise.race([...running.values(), ...(replan.pending ? [replan.pending] : [])]);
         }
         await Promise.all(running.values());
-        if (controller.signal.aborted || record.tasks.some(t => t.status !== 'succeeded')) break;
+        if (controller.signal.aborted || record.tasks.some(t => !settled(t))) break;
         previous = answers; resuming = false;
       }
       await finishCheckpoints(record, 'The children finished before guidance could be delivered.');
-      let status = controller.signal.aborted ? 'cancelled' : record.tasks.every(t => t.status === 'succeeded') ? 'succeeded' : 'failed';
+      let status = controller.signal.aborted ? 'cancelled' : record.tasks.every(settled) ? 'succeeded' : 'failed';
       if (status === 'failed') record.error = record.tasks.find(task => task.failureReason)?.failureReason;
       if (status === 'succeeded' && isolation) {
         record.review = await isolation.review(controller.signal);
@@ -461,7 +612,9 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
         if (alive(pid)) throw new BridgeError('A workflow is already running in this conversation', 409);
         await fs.unlink(lock); return this.start(params, root);
       }
-      const record = { ...structuredClone(params), projectCwd: root.cwd, id: randomUUID(), ownerPid: process.pid, status: 'running', startedAt: Date.now(), round: 1,
+      // The run's default models, read once from the real catalogues (workflow-models.mjs workflowDefaults).
+      const defaults = modelDefaults ? await Promise.resolve().then(modelDefaults).catch(() => null) : null;
+      const record = { ...structuredClone(params), ...(defaults ? { defaults } : {}), projectCwd: root.cwd, id: randomUUID(), ownerPid: process.pid, status: 'running', startedAt: Date.now(), round: 1,
         tasks: params.tasks.map(task => ({ ...structuredClone(task), status: 'pending', assignedThreadId: null, result: null, failureReason: null })) };
       const controller = new AbortController(); active.set(params.rootThreadId, controller); records.set(record.id, record);
       try { await save(record); } catch (error) { record.status = 'failed'; record.error = error.message; active.delete(params.rootThreadId); await fs.unlink(lock); throw error; }

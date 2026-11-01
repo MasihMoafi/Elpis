@@ -111,7 +111,8 @@ function textList(agent, field, label) {
   return agent[field];
 }
 
-function check(answer, { folders, agents: board, maxAgents }) {
+/** Also checks the Mother's mid-run additions (bridge/workflow-acp.mjs): the same rules for keys, folders and wiring. */
+export function checkPlan(answer, { folders, agents: board, maxAgents }) {
   const plan = shape(parse(answer), PLAN_FIELDS, 'The plan');
   if (typeof plan.name !== 'string' || !plan.name.trim() || plan.name.length > 200) throw refuse('the plan has no name');
   if (!MODES.includes(plan.mode)) throw refuse('the plan has no mode ("direct" or "team")');
@@ -158,5 +159,5 @@ export async function planCanvas(client, input, { timeoutMs = PLAN_TIMEOUT_MS } 
   const request = parseRequest(input);
   const answer = await askBackground(client, { prompt: promptFor(request), schema: PLAN_SCHEMA, cwd: request.cwd, permissions: ':danger-full-access', timeoutMs,
     failed: 'Elpis could not plan', late: `Elpis did not finish planning within ${timeoutMs / 1000} seconds. Try again, or add the agents yourself.` });
-  return check(answer, request);
+  return checkPlan(answer, request);
 }

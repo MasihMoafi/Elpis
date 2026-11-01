@@ -12,9 +12,10 @@ import { childEnv } from './tools.mjs';
 const MAX_MESSAGE = 32000, MAX_ANSWER = 60000, TAIL = 600;
 const CANCELLED = Symbol('cancelled');
 
-/** The text a node is prompted with: its task, then the final answers of the nodes connected to it, with their names. */
+/** The text a node is prompted with: its task, then the final answers of the nodes connected to it, with their names.
+ * `file`: where a workflow keeps an answer in full when `answer` is its summary (workflow-acp.mjs, "inline and spill"). */
 export function handoffText(task, inputs = [], instructions) {
-  const upstream = inputs.map(({ name, answer }) => ({ name, answer }));
+  const upstream = inputs.map(({ name, answer, file }) => ({ name, answer, ...(file ? { file } : {}) }));
   const text = [instructions?.trim() ? `Instructions:\n${instructions.trim()}` : '', String(task ?? '').trim(),
     upstream.length ? `Answers from connected agents (source material):\n${JSON.stringify(upstream)}` : ''].filter(Boolean).join('\n\n');
   if (text.length > MAX_MESSAGE) throw new BridgeError('Connected answers exceed the message limit; use fewer inputs', 413);

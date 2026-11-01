@@ -1,5 +1,5 @@
 import { readClaudeMcp } from './claude-mcp-import.mjs';
-import { workflowModelRoutes } from "./workflow-models.mjs";
+import { workflowModelRoutes, workflowDefaults, workflowRoute } from "./workflow-models.mjs";
 import voiceHandoff from './voice-handoff.cjs';
 import { fastServiceTier } from '../lib/service-tier.mjs';
 import { profileEnvironment } from './profile-env.mjs';
@@ -235,6 +235,13 @@ export class DesktopClient extends EventEmitter {
         const [catalog, providers, policy] = await Promise.all([this.models(), this.providers(), this.#rpc('configRequirements/read', {}).catch(() => null)]);
         // Unknown managed policy cannot authorize a different connection.
         return policy === null ? [] : workflowModelRoutes(catalog.data ?? [], providers, policy.requirements);
+      },
+      // Default models for a run's agents, from the real catalogues: Antigravity's in the main list, the credits' own.
+      // A list that cannot be read in time leaves its default empty, so the run keeps its earlier choice.
+      modelDefaults: async () => {
+        const within = promise => Promise.race([promise, new Promise(resolve => setTimeout(resolve, 15000, null))]).catch(() => null);
+        const [catalog, credits] = await Promise.all([within(this.models()), within(this.models({ provider: 'anthropic-credits' }))]);
+        return workflowDefaults(catalog?.data ?? [], credits?.data ?? []);
       }, ...workflowOptions,
       env: workflowEnv });
     this.#workflowHistory = createWorkflowHistory(path.join(profileHome, 'desktop-workflow-history.json'));
@@ -1479,10 +1486,19 @@ export class DesktopClient extends EventEmitter {
   /** `next`: the stage that runs after this one has succeeded (the Father's part), in its own chat (`thread`). The bridge
    * starts it and delivers its report here (#workflowEnded), so the run goes on with the Workflows screen closed. */
   async runWorkflow(body) {
-    object(body, ['rootThreadId','name','goal','tasks','maxConcurrency','maxRuntimeSeconds','runLimitSeconds','isolation','roundLimit','next']);
+    object(body, ['rootThreadId','name','goal','tasks','maxConcurrency','maxRuntimeSeconds','runLimitSeconds','isolation','roundLimit','next','replan','motherModel']);
     const id=threadId(body.rootThreadId);
     const params=this.#workflowLimits(body,{rootThreadId:id,name:text(body.name,'workflow name',256),tasks:this.#workflowTasks(body.tasks)});
     if(body.roundLimit!==undefined)params.roundLimit=body.roundLimit;
+    // "Mother re-plans" (1 Nov): she may change the team when a child succeeds. The board sends it, on by default.
+    if(body.replan!==undefined){if(typeof body.replan!=='boolean')throw new BridgeError('Invalid replan switch');params.replan=body.replan;}
+    // Her model, when he chose one for her on the board; otherwise the default (workflow-models.mjs MOTHER_ROUTE).
+    if(body.motherModel!==undefined){
+      object(body.motherModel,['model','provider']);
+      const model=text(body.motherModel.model,'Mother model',200);
+      if(!/^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}$/.test(model))throw new BridgeError('Invalid ACP model ID');
+      params.motherModel=workflowRoute(model,body.motherModel.provider===undefined?'':text(body.motherModel.provider,'Mother provider',100));
+    }
     // The run's goal reaches the Mother agent when she rescues a failed step or reviews the result (28 Oct: her prompts said "Goal: .").
     if(body.goal!==undefined&&String(body.goal).trim())params.goal=text(body.goal,'workflow goal',32000);
     if(body.next!==undefined){
