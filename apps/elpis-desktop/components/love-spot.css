@@ -18,13 +18,17 @@
 .love-spot-editor { position: relative; flex: 1; min-width: 0; height: 100%; min-height: 0; }
 /* Excalidraw's Library button is not part of Love Spot. */
 .love-spot-editor .sidebar-trigger__label-element { display: none; }
-.love-spot-tools { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; flex-shrink: 0; min-height: 44px; padding: 4px 16px; border-bottom: 1px solid var(--border); background: var(--background); color: var(--foreground); }
+/* One line, always: a wrapped bar made the board shorter than 500 px in a short window, and Excalidraw then switched to its
+   phone layout (toolbar at the bottom, no zoom bar). The page picker shrinks instead; its name truncates. */
+.love-spot-tools { display: flex; flex-wrap: nowrap; justify-content: flex-end; align-items: center; gap: 8px; flex-shrink: 0; min-height: 44px; padding: 4px 16px; border-bottom: 1px solid var(--border); background: var(--background); color: var(--foreground); }
 .workspace-header:has(> .love-spot-toolbar-host) { gap: 8px; padding-inline: 12px; }
 .workspace-header:has(> .love-spot-toolbar-host) > .header-titles { flex: 0 1 auto; }
 .love-spot-toolbar-host { flex: 1; min-width: 0; order: 2; }
 .love-spot-toolbar-host .love-spot-tools { padding-inline: 0; border: 0; }
 .love-spot-tools .dictation-control { margin: 0; }
-.love-spot-pages { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-right: auto; min-width: 0; }
+.love-spot-pages { display: flex; align-items: center; flex-wrap: nowrap; gap: 8px; margin-right: auto; min-width: 0; }
+/* Renaming is brief; its field may take a line of its own. */
+.love-spot-pages:has(> form) { flex-wrap: wrap; }
 .love-spot-screenshots { flex-shrink: 0; min-width: 0; padding: 8px 16px; border-bottom: 1px solid var(--border); background: var(--background); color: var(--foreground); }
 .love-spot-screenshots-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin-bottom: 6px; }
 .love-spot-screenshots-heading span { color: var(--muted-foreground); font-size: var(--text-small); }
