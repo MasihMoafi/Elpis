@@ -86,7 +86,8 @@ test('the microphone is one plain button that follows the chat provider and name
   await settled('ChatGPT sign-in');
   assert.match(await title(), /^Dictate with ChatGPT sign-in \(cloud\)\./);
   assert.deepEqual(calls.filter(call => call.path === '/api/tools/transcription').map(call => call.query), ['provider=openai', 'provider=claude', 'provider=openrouter', 'provider=google-gemini', 'provider=openai']);
-  assert.deepEqual(calls.filter(call => call.method === 'POST' && call.path !== '/api/session' && !call.path.endsWith('/resume') && !(call.path.endsWith('/rewind') && call.data?.action === 'status')), [], 'choosing a provider never records, saves or sends');
+  // Reading an edited message's versions is a read (ca051082c, 29 Oct: "edit any earlier message"); it never saves or sends.
+  assert.deepEqual(calls.filter(call => call.method === 'POST' && call.path !== '/api/session' && !call.path.endsWith('/resume') && !(call.path.endsWith('/rewind') && call.data?.action === 'status') && !(call.path.endsWith('/versions') && call.data?.action === 'list')), [], 'choosing a provider never records, saves or sends');
 }));
 
 test('an OpenRouter chat without a transcription model says where to set it; the button explains instead of recording', () => fixture(async ({ page }) => {
