@@ -95,8 +95,11 @@ test('every project header has a "+" that starts a new chat in that project', as
 
 test('sidebar rows share one height, one icon edge and an arrowless thin scrollbar', async () => {
   await fixture(async ({ page }) => {
-    const heights = await page.locator('.nav-list button, .section-label-row, .sidebar-group-row, .thread-row').evaluateAll(rows => [...new Set(rows.filter(row => row.getBoundingClientRect().height > 0).map(row => Math.round(row.getBoundingClientRect().height)))]);
+    const heights = await page.locator('.nav-list button, .sidebar-group-row, .thread-row').evaluateAll(rows => [...new Set(rows.filter(row => row.getBoundingClientRect().height > 0).map(row => Math.round(row.getBoundingClientRect().height)))]);
     assert.deepEqual(heights, [34]);
+    // Section headings got their own space above and below (bd1bbe4c0 and c35a20a6c, 31 Oct, "heading spacing"); the label itself keeps the row height.
+    const labels = await page.locator('.section-label-row > .section-label').evaluateAll(labels => [...new Set(labels.filter(label => label.getBoundingClientRect().height > 0).map(label => Math.round(label.getBoundingClientRect().height)))]);
+    assert.ok(labels.every(height => height <= 34), `section labels fit the row height: ${labels}`);
     const nav = await page.locator('.nav-list button svg').first().boundingBox();
     const dot = await page.locator('[data-thread-id="t-run"] .thread-dot').boundingBox();
     assert.ok(Math.abs((nav.x + nav.width / 2) - (dot.x + dot.width / 2)) <= 1, 'navigation icons and root chat marks share one left edge');
