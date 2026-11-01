@@ -3,7 +3,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { BridgeError, text } from './client.mjs';
 import { loveNodeSpec } from './love-agents.mjs';
-import { runAcpNode } from './acp-nodes.mjs';
+import { runAcpNode, handoffText } from './acp-nodes.mjs';
 import { workflowRoute, quotaFailure } from './workflow-models.mjs';
 import { checkPlan } from './canvas-plan.mjs';
 import { agentParentId } from '../lib/agent-runs.mjs';
@@ -116,7 +116,7 @@ export function validateWorkflow(tasks, roundLimit) {
 /** ACP owns node execution. This scheduler owns Kahn dependencies, bounded rounds, concurrency and failure state. */
 /** `onEnd(record)` hears each run's final record once it is saved: the bridge starts a run's next stage from it. */
 export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = process.env, timeoutMs,
-  onSession, onEnd, modelRoutes, modelDefaults, observeThread, listThreadDescendants, budget = workerBudget } = {}) {
+  onSession, onEnd, modelRoutes, modelDefaults, observeThread, listThreadDescendants, budget = workerBudget, cloudroom } = {}) {
   const records = new Map(), active = new Map();
   const controls = new Map(), progressTimers = new Map(), supervision = new Map(), routeSnapshots = new Map(), exhaustedProviders = new Map();
   const mergingSources = new Set(), mergeControllers = new Map(), checkpoints = new Map();
@@ -237,6 +237,24 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
       } finally { sessionEnded?.(); }
     }
     throw previousError ?? new BridgeError('No connected subscription has available quota. Choose another connected model and resume this workflow; completed work is preserved.', 409);
+  }
+  /** "Runs on: CloudRoom VM" (1 Nov, Masih: "I asked if we can use cloud room's vms for our agents"): the agent's worktree
+   * is copied to his CloudRoom VM, the CLI its provider needs (Claude Code or Codex) runs there, and its changes come back
+   * into the worktree. The Mother's review and merge stay on this computer. Answers the same shape as runAcpNode. */
+  async function runOnCloudroom(record, owner, requested, instructions, input, options) {
+    const route = workflowRoute(requested.model, requested.provider);
+    const attempt = { model: route.model, provider: route.provider, runsOn: 'cloudroom', status: 'running', startedAt: Date.now() };
+    const routing = owner.routing ??= { requested: route, actual: null, attempts: [] };
+    routing.actual = { model: route.model, provider: route.provider }; routing.attempts.push(attempt); await save(record);
+    const say = text => progress(record, owner, { sessionUpdate: 'agent_message_chunk', messageId: `cloudroom-${randomUUID()}`, content: { type: 'text', text } });
+    // A connected agent's whole answer is in a file on this computer, which the VM cannot read: it gets the summary.
+    const prompt = handoffText(input.task, (input.inputs ?? []).map(({ name, answer }) => ({ name, answer })), instructions);
+    try {
+      const result = await cloudroom.runAgent({ localDir: options.cwd, key: `${record.id}-${owner.id}-r${record.round}`, provider: route.provider, model: route.model,
+        effort: owner.reasoningEffort, prompt, signal: options.signal, timeoutMs: options.timeoutMs, onStatus: say });
+      say(`CloudRoom VM: ${result.changed} changed and ${result.deleted} deleted ${result.changed + result.deleted === 1 ? 'file' : 'files'} copied back.`);
+      attempt.status = 'succeeded'; attempt.endedAt = Date.now(); return { answer: result.answer };
+    } catch (error) { attempt.status = 'failed'; attempt.reason = error.message; attempt.endedAt = Date.now(); throw error; }
   }
   /** The Mother's model: one he chose for her on the board, else the default (workflow-models.mjs MOTHER_ROUTE), else
    * `fallback` (her chat's model, as before the defaults). */
@@ -490,7 +508,7 @@ Prefer continue. Add only for a part the plan misses; cancel only work that is n
                 const out = inside(task.output); await fs.mkdir(path.dirname(out), { recursive: true }); await fs.writeFile(out, `${texts.reduce((all, part) => !all ? part : `${all}${task.flow && !/[.!?:;"”’)\]]$/.test(all) ? ' ' : '\n\n'}${part}`, '')}\n`);
                 return { result: { answer: `Joined ${task.parts.length} parts into ${task.output}.` }, changes: {} };
               }
-              const result = await runNode(record, task, requested, instructions, { task: (record.roundLimit ? `Round ${round} of ${record.roundLimit}.\n` : '') + task.instruction + (task.supervisorInstruction ? `\n\nMother agent's corrective guidance:\n${task.supervisorInstruction}` : ''), inputs }, {
+              const result = await (record.runsOn === 'cloudroom' ? runOnCloudroom : runNode)(record, task, requested, instructions, { task: (record.roundLimit ? `Round ${round} of ${record.roundLimit}.\n` : '') + task.instruction + (task.supervisorInstruction ? `\n\nMother agent's corrective guidance:\n${task.supervisorInstruction}` : ''), inputs }, {
                 cwd, signal: controller.signal, timeoutMs: Math.min(timeoutMs ?? Infinity, (record.maxRuntimeSeconds ?? 1800) * 1000),
                 onPermission: request => permission(record, task, request), onUpdate: update => progress(record, task, update), onControl: control => { controls.set(`${record.id}:${task.id}`, control); },
               });
@@ -606,6 +624,10 @@ Prefer continue. Add only for a part the plan misses; cancel only work that is n
     async list(rootThreadId) { await load(); return structuredClone([...records.values()].filter(r => rootThreadId === undefined || r.rootThreadId === rootThreadId)); },
     async start(params, root) {
       validateWorkflow(params.tasks, params.roundLimit); await load();
+      if (params.runsOn === 'cloudroom') {
+        if (!cloudroom) throw new BridgeError('CloudRoom is not available in this Elpis.', 503);
+        cloudroom.ready();
+      }
       if (mergeControllers.has(params.rootThreadId)) throw new BridgeError('Mother agent is reviewing this workflow', 409);
       if (!path.isAbsolute(root.cwd ?? '')) throw new BridgeError('Choose a project folder before running a workflow');
       root = { ...root, cwd: await fs.realpath(root.cwd) };

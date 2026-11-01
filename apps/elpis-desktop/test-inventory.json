@@ -53,6 +53,7 @@
     "tests/ui-rules.test.mjs"
   ],
   "bridge": [
+    "bridge/cloudroom-vm.test.mjs",
     "bridge/workflow-concurrency.test.mjs",
     "bridge/live-model-catalogue.test.mjs",
     "bridge/subscription-models.test.mjs",

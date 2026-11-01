@@ -27,6 +27,7 @@ import { recordedChanges } from './recorded-changes.mjs';
 import { elicitationResponse, grantedPermissions, permissionsResponse } from '../lib/approvals.ts';
 import { RewindSnapshots } from './rewind-snapshots.mjs';
 import { createWorkflowHistory, createWorkflowRuns } from './workflow-acp.mjs';
+import { createCloudroomVm } from './cloudroom-vm.mjs';
 import { agentOutput } from './agent-output.mjs';
 import { MOTHER_MODEL, WORKFLOW_PRESETS, workflowPreset } from './workflow-presets.mjs';
 import { RewindHistory } from './rewind-history.mjs';
@@ -205,8 +206,8 @@ export class DesktopClient extends EventEmitter {
   #settingsConfirmMs;
   #browserConfig;
   #archiveHistory; #spawnLinks; #appHome;
-  #rewindSnapshots; #rewindHistory; #versions; #githubConnector; #customize;
-  constructor(socket, { home, timeoutMs = 30000, openSocket, reconnectDelayMs = 500, settingsConfirmMs = 3000, browserConfig, archiveDirectory, rewindHome, spawnLinksFile, appHome = os.homedir(), githubConnector, skillTrashOptions, workflowOptions, reportAttempts = 4, reportRetryMs = 2000 } = {}) {
+  #rewindSnapshots; #rewindHistory; #versions; #githubConnector; #customize; #cloudroom;
+  constructor(socket, { home, timeoutMs = 30000, openSocket, reconnectDelayMs = 500, settingsConfirmMs = 3000, browserConfig, archiveDirectory, rewindHome, spawnLinksFile, appHome = os.homedir(), githubConnector, skillTrashOptions, workflowOptions, cloudroom, reportAttempts = 4, reportRetryMs = 2000 } = {}) {
     super(); this.#socket = socket; this.timeoutMs = timeoutMs; this.#settingsConfirmMs = settingsConfirmMs;
     const workflowEnv = profileEnvironment(home, workflowOptions?.env);
     const profileHome = path.resolve(home ?? elpisHome(workflowEnv));
@@ -227,7 +228,9 @@ export class DesktopClient extends EventEmitter {
       return result;
     });
     this.#openSocket = openSocket; this.#retryDelay = reconnectDelayMs;
-    this.#workflowRuns = createWorkflowRuns({ stateDir: path.join(profileHome, 'desktop-workflows'),
+    // His CloudRoom VM (bridge/cloudroom-vm.mjs): its sign-in lives in this profile's home, beside the provider keys.
+    this.#cloudroom = cloudroom ?? createCloudroomVm({ home: profileHome });
+    this.#workflowRuns = createWorkflowRuns({ stateDir: path.join(profileHome, 'desktop-workflows'), cloudroom: this.#cloudroom,
       onSession: (_record, _task, id) => { this.#known.add(id); return () => void this.#releaseNode(id); }, onEnd: record => this.#workflowEnded(record),
       observeThread: id => this.readThreadMetadata(id),
       listThreadDescendants: options => this.listThreads(options),
@@ -296,7 +299,7 @@ export class DesktopClient extends EventEmitter {
     this.#closed = true; this.#ready = false;
     this.#socket.terminate?.();
     for (const pending of this.#pending.values()) { clearTimeout(pending.timer); pending.reject(new BridgeError(pending.reading ? 'Elpis connection closed while reading. Reload the view after reconnecting.' : 'Elpis connection closed; the request outcome is unknown. Check the conversation before retrying.', 503)); }
-    this.#workflowRuns.close();
+    this.#workflowRuns.close(); this.#cloudroom.close();
     this.#pending.clear(); this.#approvals.clear(); this.#checkingApprovals.clear();
     this.#owned.clear(); this.#historyOnly.clear(); this.#attaching.clear(); this.#context.clear(); this.#models.clear(); this.#turnRevisions.clear();
     this.#catalog = null;
@@ -1496,12 +1499,14 @@ export class DesktopClient extends EventEmitter {
   /** `next`: the stage that runs after this one has succeeded (the Father's part), in its own chat (`thread`). The bridge
    * starts it and delivers its report here (#workflowEnded), so the run goes on with the Workflows screen closed. */
   async runWorkflow(body) {
-    object(body, ['rootThreadId','name','goal','tasks','maxConcurrency','maxRuntimeSeconds','runLimitSeconds','isolation','roundLimit','next','replan','motherModel']);
+    object(body, ['rootThreadId','name','goal','tasks','maxConcurrency','maxRuntimeSeconds','runLimitSeconds','isolation','roundLimit','next','replan','motherModel','runsOn']);
     const id=threadId(body.rootThreadId);
     const params=this.#workflowLimits(body,{rootThreadId:id,name:text(body.name,'workflow name',256),tasks:this.#workflowTasks(body.tasks)});
     if(body.roundLimit!==undefined)params.roundLimit=body.roundLimit;
     // "Mother re-plans" (1 Nov): she may change the team when a child succeeds. The board sends it, on by default.
     if(body.replan!==undefined){if(typeof body.replan!=='boolean')throw new BridgeError('Invalid replan switch');params.replan=body.replan;}
+    // "Runs on" (1 Nov): this computer, or his CloudRoom VM for every agent's task (the Mother stays here).
+    if(body.runsOn!==undefined){if(!['local','cloudroom'].includes(body.runsOn))throw new BridgeError('Choose where the agents run: this computer or the CloudRoom VM');if(body.runsOn==='cloudroom')params.runsOn='cloudroom';}
     // Her model, when he chose one for her on the board; otherwise the default (workflow-models.mjs MOTHER_ROUTE).
     if(body.motherModel!==undefined){
       object(body.motherModel,['model','provider']);
@@ -1524,6 +1529,15 @@ export class DesktopClient extends EventEmitter {
       if(current.status?.type==='active')throw new BridgeError('Wait for the current turn to finish before running a workflow',409);
       return this.#workflowRuns.start(params,current);
     });
+  }
+  /** CloudRoom VM sign-in for Settings → Models & accounts. Answers never carry a token. */
+  async cloudroom(input) {
+    if(input===undefined)return this.#cloudroom.status();
+    object(input,['action']);
+    if(input.action==='signIn')return {...await this.#cloudroom.signIn(),...await this.#cloudroom.status()};
+    if(input.action==='status')return this.#cloudroom.status({check:true});
+    if(input.action==='signOut'){await this.#cloudroom.signOut();return this.#cloudroom.status();}
+    throw new BridgeError('Unsupported CloudRoom action');
   }
   /** A run has ended. A stage that succeeded starts its `next` in a new chat; one that failed or stopped never does. A
    * run started that way (`report`) sends its report to the chat it came from. */
