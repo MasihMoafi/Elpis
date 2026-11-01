@@ -557,6 +557,9 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .user-turn .message.user { margin-bottom:0; }
 .user-turn .message-actions { left:auto; right:0; }
 .message-actions .copy-status { font-size:var(--text-xs); }
+/* A long message of his folds to about twelve lines (chat-message.tsx LONG_MESSAGE_PX), fading out above its chevron. */
+.message.user .message-body[data-clamped] { max-height:288px; overflow:hidden; mask-image:linear-gradient(to bottom, #000 75%, transparent); }
+.message.user .message-fold { display:flex; margin:2px -8px -6px auto; }
 .message.user.editing { width:min(100%, 680px); max-width:100%; display:flex; flex-direction:column; gap:8px; white-space:normal; }
 .code-block { position:relative; margin:0 0 14px; }
 .code-block > pre { margin:0; padding-right:44px; }

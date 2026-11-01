@@ -27,7 +27,7 @@ test('Logo is one Sol agent in Fast mode that draws three directions and traces 
     assert.deepEqual([logo.data.model, logo.data.provider ?? null, logo.data.effort, logo.data.fast, logo.data.check], ['gpt-6.1-sol', null, 'medium', true, false]);
     assert.match(logo.data.instruction, /Rustidian/);
     assert.match(logo.data.instruction, /image generation tool/);
-    assert.ok(['logo/1.png', '2.png', '3.png', 'logo/prompts.md', 'logo/1.svg'].every(name => logo.data.instruction.includes(name)), 'three numbered directions, their prompts and their SVGs');
+    assert.ok(['logo/1.png', '2.png', '3.png', 'logo/prompts.md', 'logo/1.svg', 'logo/1-animated.svg'].every(name => logo.data.instruction.includes(name)), 'three numbered directions, their prompts, their SVGs and their animated SVGs');
     // 29 Oct (Masih: "What breaks it is bad image prompting"): prompts as in the approved collection ones, one concrete subject.
     assert.match(logo.data.instruction, /one concrete, recognizable subject/i);
     assert.match(logo.data.instruction, /part by part/i);

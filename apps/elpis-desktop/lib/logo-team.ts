@@ -28,8 +28,10 @@ export function logoTeam(folder: string, brand: string, worker: Partial<AgentDat
     PROMPTS,
     `Then trace each image into ${logo}/1.svg, 2.svg and 3.svg through SVG Studio's CLI wrapper (the MCP tool is off in this chat), from the project's folder, for example: ${traceCommand(`${logo}/1.png`, `${logo}/1.svg`)}`,
     MISSING,
-    `Answer with the three pairs of paths, one line on each direction, and leave the choice to the person.`].join("\n"),
+    // The skill's last step (p/skills/logo/SKILL.md: "then animate it"), 1 Nov: image → SVG → animate.
+    `Last, animate each traced mark as ${logo}/1-animated.svg, 2-animated.svg and 3-animated.svg: the same paths, unchanged, with a short CSS entrance in a <style> inside the SVG (a draw-on or a fade with a slight scale, under 1.2 s, played once, honouring prefers-reduced-motion). Add no shapes.`,
+    `Answer with the paths of each direction (image, SVG, animated SVG), one line on each, and leave the choice to the person.`].join("\n"),
     { ...worker, effort: "medium", fast: true, check: false, writeScopes: [logo],
-      acceptanceCriteria: [`${logo}/1.png, 2.png and 3.png are three distinct directions, each with its prompt in prompts.md`, "Each has its traced SVG beside it"] });
+      acceptanceCriteria: [`${logo}/1.png, 2.png and 3.png are three distinct directions, each with its prompt in prompts.md`, "Each has its traced SVG beside it", "Each traced SVG has an animated copy (N-animated.svg) with the same paths"] });
   return { ...graphOf("Logo", [designer], []), result: `${logo}/1.svg`, planningPattern: "logo" };
 }

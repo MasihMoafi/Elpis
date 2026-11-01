@@ -347,6 +347,7 @@
     "tests/night-workflows.test.cjs",
     "tests/love-spot-saving.test.cjs",
     "tests/message-edit.test.cjs",
+    "tests/message-fold.test.cjs",
     "tests/workflows-feedback.test.cjs",
     "tests/workflows-wf1.test.cjs",
     "tests/browser-sessions-electron.test.cjs",

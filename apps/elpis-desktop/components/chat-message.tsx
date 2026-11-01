@@ -2,11 +2,11 @@
 
 import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { SmartPruneLine } from "@/components/smart-prune";
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { BranchIcon, BrowserIcon, PlanIcon, StopIcon } from "@/components/elpis-icons";
 import { BrowserComments } from "@/components/browser-comments";
 import { BROWSER_COMMENTS, DRAWING_NOTE } from "@/lib/browser-notes";
-import { ChevronLeft, ChevronRight, CircleCheck, CircleX, Copy, Signpost, FileText, Pencil, RefreshCw, Reply, Terminal, Undo2, Volume2 } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleCheck, CircleX, Copy, Signpost, FileText, Pencil, RefreshCw, Reply, Terminal, Undo2, Volume2 } from "lucide-react";
 import { MoreMenu, RightClickMenu, type MenuAction } from "@/components/action-menu";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -124,6 +124,8 @@ function MessageVersions({version}:{version:VersionControl}) {
     <Button variant="ghost" size="icon-xs" aria-label="Next version" title="Next version" disabled={!version.onNext} onClick={version.onNext}><ChevronRight size={14}/></Button>
   </span>;
 }
+/** How tall a message of his may be before it folds: about twelve lines. Matches `.message-body[data-clamped]`. */
+const LONG_MESSAGE_PX=288;
 /** Sending an edit replaces this message and every later turn through Elpis (thread/revert), then starts the edited turn;
  * the message's attachments go with the edited text, and the chat as it was stays reachable as the previous version. */
 function UserMessage({body,bodyContent,attachments,attachmentContent,copyText,onEdit,onRewind,editBlockedReason,editDraft,onEditDraftChange,editPending,time,onReply,reference,replyContent,version}:{version?:VersionControl;onReply?:()=>void;reference?:string;replyContent?:React.ReactNode;body:string;bodyContent?:React.ReactNode;attachments:string[];attachmentContent?:React.ReactNode;copyText?:string;onEdit?:(text:string)=>Promise<void>;onRewind?:()=>void;editBlockedReason?:string;editDraft?:string;onEditDraftChange?:(value:string|null)=>void;editPending?:boolean;time?:number}) {
@@ -140,8 +142,12 @@ function UserMessage({body,bodyContent,attachments,attachmentContent,copyText,on
     <div className="flex justify-end gap-2"><Button type="button" variant="outline" size="sm" disabled={busy} onClick={cancel}>Cancel</Button><Button type="submit" size="sm" disabled={busy||!onEdit||!draft.trim()}>{busy?"Sending…":"Send"}</Button></div>
   </form>;
   const whole=()=>copyText ?? [body,...attachments].filter(Boolean).join("\n");
+  // A long message of his shows its first lines, with a chevron to open the rest, as ChatGPT does (27 Oct: "when a
+  // message is too long there should be an option to collapse it"); the chevron sits in the message, not elsewhere.
+  const bodyRef=useRef<HTMLDivElement>(null);const [long,setLong]=useState(false);const [open,setOpen]=useState(false);
+  useLayoutEffect(()=>{const element=bodyRef.current;if(!element)return;const check=()=>setLong(element.scrollHeight>LONG_MESSAGE_PX+8);check();const observer=new ResizeObserver(check);observer.observe(element);return()=>observer.disconnect();},[body]);
   const actions:MessageAction[]=[...replyAction(onReply),copyTextAction(whole,false),copyAction("Copy message",whole),...(onEdit?[{id:"edit",label:"Edit message",menuLabel:"Edit and retry",title:"Edit and resend",icon:<Pencil size={14}/>,run:()=>{setDraft(body);setError("");setEditing(true);}}]:[]),...rewindAction(onRewind)];
-  return <RightClickMenu actions={menuActions(actions)} area={<div className="user-turn" id={reference ? messageDomId(reference) : undefined} data-message-reference={onReply ? reference : undefined} tabIndex={reference ? -1 : undefined}/>}><div className="message user">{replyContent}<div className="message-body" dir="auto">{bodyContent ?? body}</div>{attachmentContent || (attachments.length>0&&<ul className="mt-2 space-y-1 text-sm" aria-label="Message attachments">{attachments.map((label,index)=><li key={index}>{label}</li>)}</ul>)}{!body&&!attachments.length&&<span>Message content unavailable.</span>}</div><InkRow className="message-actions">
+  return <RightClickMenu actions={menuActions(actions)} area={<div className="user-turn" id={reference ? messageDomId(reference) : undefined} data-message-reference={onReply ? reference : undefined} tabIndex={reference ? -1 : undefined}/>}><div className="message user">{replyContent}<div ref={bodyRef} className="message-body" dir="auto" data-clamped={long&&!open?"":undefined}>{bodyContent ?? body}</div>{long&&<Button type="button" variant="ghost" size="icon-xs" className="message-fold" aria-expanded={open} aria-label={open?"Collapse message":"Show the whole message"} title={open?"Collapse":"Show all"} onClick={()=>setOpen(value=>!value)}>{open?<ChevronUp size={14}/>:<ChevronDown size={14}/>}</Button>}{attachmentContent || (attachments.length>0&&<ul className="mt-2 space-y-1 text-sm" aria-label="Message attachments">{attachments.map((label,index)=><li key={index}>{label}</li>)}</ul>)}{!body&&!attachments.length&&<span>Message content unavailable.</span>}</div><InkRow className="message-actions">
     {time&&<time className="message-time" dateTime={new Date(time).toISOString()} title={new Date(time).toLocaleString()}>{new Date(time).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})}</time>}
     {version&&<MessageVersions version={version}/>}
     <MessageButtons actions={actions}/>
