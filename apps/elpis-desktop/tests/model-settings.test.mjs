@@ -72,6 +72,8 @@ function fixture(relative, exportName, props) {
   let cursor=0;
   const hooks={...React,
     useState(initial) { const key=cursor++; if(!(key in slots))slots[key]=typeof initial==='function'?initial():initial; return [slots[key],next=>{slots[key]=typeof next==='function'?next(slots[key]):next;}]; },
+    // MemorySettings memoizes its memory-count refresh (f243c5865, "show saved memory file count"); the fixture keeps it in a slot like React.
+    useCallback(callback,deps) { const key=cursor++,old=slots[key]; if(!old||!deps||deps.some((value,index)=>!Object.is(value,old.deps[index])))slots[key]={callback,deps}; return slots[key].callback; },
     useRef(initial) { const key=cursor++; if(!(key in slots))slots[key]={current:initial}; return slots[key]; },
     useEffect(effect,deps) { const key=cursor++,old=slots[key]; if(!old||!deps||deps.some((value,index)=>!Object.is(value,old.deps[index]))) { slots[key]={deps,cleanup:old?.cleanup}; pending.push(()=>{old?.cleanup?.();slots[key].cleanup=effect();}); } },
   };
@@ -234,7 +236,8 @@ test('configured external provider fetches its own catalog once and keeps its cu
     const memory=fixture(MAINTENANCE,'MemorySettings',{value,models});
     const tree=memory.render();memory.effects();await new Promise(setImmediate);
     assert.deepEqual(values(control(tree,'Memory extraction model')),['','gpt-6-sol']);
-    assert.deepEqual(calls,[],'memory models use the main catalog');
+    // The memory page reads its saved file count (f243c5865, "show saved memory file count"); it fetches no model catalog.
+    assert.deepEqual(calls,['/api/memories/count'],'memory models use the main catalog');
     memory.dispose();
   } finally {globalThis.fetch=original;}
 });
