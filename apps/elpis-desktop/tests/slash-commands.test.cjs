@@ -84,8 +84,9 @@ async function open({ colorScheme } = {}) {
   const composer = page.getByRole('textbox', { name: 'Message Elpis', exact: true });
   const menu = page.getByRole('listbox', { name: 'Slash commands', exact: true });
   return { page, context, errors, composer, menu,
-    /** Opens the chat from the sidebar, with its agents listed. */
-    async openChat() { await page.locator('.thread-row[data-thread-id="chat"] .thread-link').click(); await page.getByText('The cache is fixed.', { exact: true }).waitFor(); await page.locator('.team-row', { hasText: 'Helper' }).waitFor(); },
+    /** Opens the chat from the sidebar, with its agents counted. The Agents panel shows working agents only by default
+     * (Masih, 31 Oct: "Working chats/subagents first", the working-only filter, 423fac6fa), so the idle Helper is counted, not listed. */
+    async openChat() { await page.locator('.thread-row[data-thread-id="chat"] .thread-link').click(); await page.getByText('The cache is fixed.', { exact: true }).waitFor(); await page.locator('.team-heading', { hasText: '0 working · 1 total' }).waitFor(); },
     async openMatildaChat() { await page.locator('.thread-row[data-thread-id="matilda"] .thread-link').click(); await page.getByText('Matilda kept the old conversation.', { exact: true }).waitFor(); },
     /** Types a command as a person does: waits until the menu offers it, enters it whole, and checks what every command leaves behind (a clean composer, no menu). */
     async run(text) {
