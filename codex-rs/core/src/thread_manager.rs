@@ -907,6 +907,12 @@ impl ThreadManager {
         self.state.models_manager.clone()
     }
 
+    /// The model manager for `config`'s provider: the shared one for the startup provider, else
+    /// the one threads on that provider use, so a listing and a turn see the same catalog.
+    pub fn models_manager_for_config(&self, config: &Config) -> SharedModelsManager {
+        self.state.models_manager_for(config)
+    }
+
     pub async fn list_models(
         &self,
         refresh_strategy: RefreshStrategy,

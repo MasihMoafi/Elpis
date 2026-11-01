@@ -36,6 +36,8 @@ region = "us-west-2"
                 cursor: None,
                 limit: Some(100),
                 include_hidden: Some(true),
+                refresh: None,
+                model_provider: None,
             },
         })
         .await?;
@@ -118,6 +120,8 @@ region = "us-west-2"
                 cursor: None,
                 limit: Some(100),
                 include_hidden: Some(true),
+                refresh: None,
+                model_provider: None,
             },
         })
         .await?;

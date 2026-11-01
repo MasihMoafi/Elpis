@@ -14,4 +14,12 @@ limit?: number | null,
 /**
  * When true, include models that are hidden from the default picker list.
  */
-includeHidden?: boolean | null, };
+includeHidden?: boolean | null,
+/**
+ * When true, fetch the catalog from its source now; a failed fetch is an error, not the last list.
+ */
+refresh?: boolean | null,
+/**
+ * A configured provider to list instead of the one the server started with.
+ */
+modelProvider?: string | null, };

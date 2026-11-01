@@ -131,6 +131,8 @@ requires_openai_auth = true
                 limit: Some(100),
                 include_hidden: Some(true),
                 cursor: None,
+                refresh: None,
+                model_provider: None,
             },
         })
         .await?;
@@ -249,6 +251,8 @@ async fn list_models_returns_all_models_with_large_limit() -> Result<()> {
                 limit: Some(100),
                 cursor: None,
                 include_hidden: None,
+                refresh: None,
+                model_provider: None,
             },
         })
         .await?;
@@ -279,6 +283,8 @@ async fn list_models_includes_hidden_models() -> Result<()> {
                 limit: Some(100),
                 cursor: None,
                 include_hidden: Some(true),
+                refresh: None,
+                model_provider: None,
             },
         })
         .await?;
@@ -401,6 +407,8 @@ model_catalog_url = "{server_uri}/v1/models"
             limit: Some(100),
             cursor: None,
             include_hidden: None,
+            refresh: None,
+            model_provider: None,
         })
         .await?;
     let response = mcp
@@ -484,6 +492,8 @@ async fn list_models_pagination_works() -> Result<()> {
                     limit: Some(1),
                     cursor: cursor.clone(),
                     include_hidden: None,
+                    refresh: None,
+                    model_provider: None,
                 },
             })
             .await?;
@@ -520,6 +530,8 @@ async fn list_models_rejects_invalid_cursor() -> Result<()> {
             limit: None,
             cursor: Some("invalid".to_string()),
             include_hidden: None,
+            refresh: None,
+            model_provider: None,
         })
         .await?;
 
@@ -532,5 +544,217 @@ async fn list_models_rejects_invalid_cursor() -> Result<()> {
     assert_eq!(error.id, RequestId::Integer(request_id));
     assert_eq!(error.error.code, INVALID_REQUEST_ERROR_CODE);
     assert_eq!(error.error.message, "invalid cursor: invalid");
+    Ok(())
+}
+
+/// One catalog entry in the `/models` and `model_catalog_json` shape.
+fn catalog_entry(slug: &str) -> serde_json::Value {
+    json!({
+        "slug": slug,
+        "display_name": slug,
+        "description": "Live catalog coverage",
+        "default_reasoning_level": "low",
+        "supported_reasoning_levels": [{"effort": "low", "description": "Low"}],
+        "shell_type": "shell_command",
+        "visibility": "list",
+        "minimal_client_version": [0, 1, 0],
+        "supported_in_api": true,
+        "priority": 0,
+        "upgrade": null,
+        "support_verbosity": false,
+        "default_verbosity": null,
+        "apply_patch_tool_type": null,
+        "truncation_policy": {"mode": "bytes", "limit": 10_000},
+        "supports_image_detail_original": false,
+        "multi_agent_version": "v2",
+        "context_window": 272_000,
+        "max_context_window": 272_000,
+        "experimental_supported_tools": [],
+    })
+}
+
+fn live_params(refresh: Option<bool>, model_provider: Option<&str>) -> ModelListParams {
+    ModelListParams {
+        limit: Some(100),
+        cursor: None,
+        include_hidden: Some(true),
+        refresh,
+        model_provider: model_provider.map(str::to_string),
+    }
+}
+
+async fn listed_slugs(mcp: &mut TestAppServer, params: ModelListParams) -> Result<Vec<String>> {
+    let request_id = mcp.send_list_models_request(params).await?;
+    let response = timeout(
+        DEFAULT_TIMEOUT,
+        mcp.read_stream_until_response_message(RequestId::Integer(request_id)),
+    )
+    .await??;
+    let ModelListResponse { data, .. } = serde_json::from_value(response.result)?;
+    Ok(data.into_iter().map(|model| model.model).collect())
+}
+
+/// A model added to the catalog while Elpis runs is listed by the next picker that opens
+/// (`refresh`), without a restart; a plain listing keeps the startup catalog.
+#[tokio::test]
+async fn list_models_refresh_rereads_the_catalog_added_while_running() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let catalog = codex_home.path().join("models.json");
+    std::fs::write(
+        &catalog,
+        json!({ "models": [catalog_entry("live-first")] }).to_string(),
+    )?;
+    std::fs::write(
+        codex_home.path().join("config.toml"),
+        format!(
+            "model = \"live-first\"\nmodel_catalog_json = {:?}\napproval_policy = \"never\"\nsandbox_mode = \"read-only\"\n",
+            catalog.display().to_string()
+        ),
+    )?;
+    let mut mcp = TestAppServer::builder()
+        .with_codex_home(codex_home.path())
+        .without_auto_env()
+        .build_initialized()
+        .await?;
+    assert_eq!(
+        listed_slugs(&mut mcp, live_params(Some(true), None)).await?,
+        vec!["live-first"]
+    );
+
+    std::fs::write(
+        &catalog,
+        json!({ "models": [catalog_entry("live-first"), catalog_entry("live-added")] }).to_string(),
+    )?;
+    assert_eq!(
+        listed_slugs(&mut mcp, live_params(None, None)).await?,
+        vec!["live-first"],
+        "a plain listing keeps the startup catalog"
+    );
+    assert_eq!(
+        listed_slugs(&mut mcp, live_params(Some(true), None)).await?,
+        vec!["live-first", "live-added"]
+    );
+    Ok(())
+}
+
+fn remote_catalog_config(server_uri: &str) -> String {
+    format!(
+        r#"
+model = "mock-model"
+approval_policy = "never"
+sandbox_mode = "read-only"
+model_provider = "catalog-test"
+[model_providers.catalog-test]
+name = "OpenAI"
+base_url = "{server_uri}/v1"
+requires_openai_auth = true
+model_catalog_url = "{server_uri}/v1/models"
+[model_providers.second]
+name = "Second"
+base_url = "{server_uri}/second/v1"
+requires_openai_auth = true
+model_catalog_url = "{server_uri}/second/v1/models"
+"#
+    )
+}
+
+async fn remote_catalog_server(codex_home: &TempDir, server: &MockServer) -> Result<TestAppServer> {
+    std::fs::write(
+        codex_home.path().join("config.toml"),
+        remote_catalog_config(&server.uri()),
+    )?;
+    write_chatgpt_auth(
+        codex_home.path(),
+        ChatGptAuthFixture::new("chatgpt-access-token").plan_type("pro"),
+        AuthCredentialsStoreMode::File,
+    )?;
+    TestAppServer::builder()
+        .with_codex_home(codex_home.path())
+        .without_auto_env()
+        .with_env_overrides(&[("OPENAI_API_KEY", None), ("CODEX_API_KEY", None)])
+        .build_initialized()
+        .await
+}
+
+/// A picker refresh whose fetch fails says so, instead of returning the last or bundled list.
+#[tokio::test]
+async fn list_models_refresh_reports_a_failed_fetch() -> Result<()> {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(/*s*/ 500))
+        .mount(&server)
+        .await;
+    let codex_home = TempDir::new()?;
+    let mut mcp = remote_catalog_server(&codex_home, &server).await?;
+
+    let request_id = mcp
+        .send_list_models_request(live_params(Some(true), None))
+        .await?;
+    let error: JSONRPCError = timeout(
+        DEFAULT_TIMEOUT,
+        mcp.read_stream_until_error_message(RequestId::Integer(request_id)),
+    )
+    .await??;
+    assert!(
+        error
+            .error
+            .message
+            .starts_with("Could not fetch the model list from `catalog-test`"),
+        "{}",
+        error.error.message
+    );
+
+    // Without `refresh` the same failure stays hidden behind whatever list is at hand.
+    let request_id = mcp
+        .send_list_models_request(live_params(None, None))
+        .await?;
+    timeout(
+        DEFAULT_TIMEOUT,
+        mcp.read_stream_until_response_message(RequestId::Integer(request_id)),
+    )
+    .await??;
+    Ok(())
+}
+
+/// Another configured provider (ChatGPT while API credits are the default) is listed live by the
+/// same engine, not by a bundled list.
+#[tokio::test]
+async fn list_models_refresh_lists_another_configured_provider() -> Result<()> {
+    let server = MockServer::start().await;
+    for (route, slug) in [
+        ("/v1/models", "startup-model"),
+        ("/second/v1/models", "second-model"),
+    ] {
+        Mock::given(method("GET"))
+            .and(path(route))
+            .respond_with(
+                ResponseTemplate::new(/*s*/ 200)
+                    .set_body_json(json!({ "models": [catalog_entry(slug)] })),
+            )
+            .mount(&server)
+            .await;
+    }
+    let codex_home = TempDir::new()?;
+    let mut mcp = remote_catalog_server(&codex_home, &server).await?;
+
+    assert_eq!(
+        listed_slugs(&mut mcp, live_params(Some(true), Some("second"))).await?,
+        vec!["second-model"]
+    );
+    assert_eq!(
+        listed_slugs(&mut mcp, live_params(Some(true), None)).await?,
+        vec!["startup-model"]
+    );
+
+    let request_id = mcp
+        .send_list_models_request(live_params(Some(true), Some("missing")))
+        .await?;
+    let error: JSONRPCError = timeout(
+        DEFAULT_TIMEOUT,
+        mcp.read_stream_until_error_message(RequestId::Integer(request_id)),
+    )
+    .await??;
+    assert_eq!(error.error.code, INVALID_REQUEST_ERROR_CODE);
     Ok(())
 }

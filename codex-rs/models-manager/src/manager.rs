@@ -154,6 +154,16 @@ pub trait ModelsManager: fmt::Debug + Send + Sync {
         http_client_factory: HttpClientFactory,
     ) -> ModelsManagerFuture<'_, ModelsResponse>;
 
+    /// Fetch the catalog from its source now, for a picker that was just opened. Unlike
+    /// `list_models`, a failed fetch is returned instead of being hidden behind the last list.
+    /// Catalogs with nothing to fetch (static, or not listed for this sign-in) succeed.
+    fn refresh_now(
+        &self,
+        _http_client_factory: HttpClientFactory,
+    ) -> ModelsManagerFuture<'_, Result<(), String>> {
+        Box::pin(std::future::ready(Ok(())))
+    }
+
     /// Best-effort refresh when the in-memory catalog belongs to different credentials.
     /// Static catalogs need no refresh. Failures follow the catalog's fallback policy.
     fn refresh_after_auth_change(
@@ -407,6 +417,17 @@ impl ModelsManager for OpenAiModelsManager {
             refresh_strategy,
             http_client_factory,
         ))
+    }
+
+    fn refresh_now(
+        &self,
+        http_client_factory: HttpClientFactory,
+    ) -> ModelsManagerFuture<'_, Result<(), String>> {
+        Box::pin(async move {
+            self.refresh_available_models(RefreshStrategy::Online, &http_client_factory)
+                .await
+                .map_err(|err| err.to_string())
+        })
     }
 
     fn refresh_after_auth_change(

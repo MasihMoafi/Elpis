@@ -180,12 +180,18 @@ impl CatalogRequestProcessor {
     ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
         // Gate the same provider used by the catalog, including when its model cache is warm.
         // Resolving credentials may refresh them, but explicit host policy prevents browser login.
-        if let Some(gateway) = codex_model_provider::create_model_provider(
-            self.config.model_provider.clone(),
-            Some(self.thread_manager.auth_manager()),
-        )
-        .gateway_auth_manager()
-        .map_err(|error| internal_error(error.to_string()))?
+        // Another provider's listing is gated in `list_models_live`.
+        let lists_startup_provider = params
+            .model_provider
+            .as_deref()
+            .is_none_or(|provider_id| provider_id == self.config.model_provider_id);
+        if lists_startup_provider
+            && let Some(gateway) = codex_model_provider::create_model_provider(
+                self.config.model_provider.clone(),
+                Some(self.thread_manager.auth_manager()),
+            )
+            .gateway_auth_manager()
+            .map_err(|error| internal_error(error.to_string()))?
         {
             // Refreshing credentials can contact the gateway before the catalog's own check.
             self.config_manager
@@ -285,12 +291,19 @@ impl CatalogRequestProcessor {
             limit,
             cursor,
             include_hidden,
+            refresh,
+            model_provider,
         } = params;
-        let presets = self
-            .model_catalog
-            .list_models(codex_models_manager::manager::RefreshStrategy::OnlineIfUncached)
-            .await
-            .map_err(|err| config_load_error(&err))?;
+        let refresh = refresh.unwrap_or(false);
+        let other_provider = model_provider.filter(|id| *id != self.config.model_provider_id);
+        let presets = if refresh || other_provider.is_some() {
+            self.list_models_live(other_provider, refresh).await?
+        } else {
+            self.model_catalog
+                .list_models(codex_models_manager::manager::RefreshStrategy::OnlineIfUncached)
+                .await
+                .map_err(|err| config_load_error(&err))?
+        };
         let models = supported_models(presets, include_hidden.unwrap_or(false));
         let total = models.len();
 
@@ -327,6 +340,59 @@ impl CatalogRequestProcessor {
             data: items,
             next_cursor,
         })
+    }
+
+    /// Elpis: a model picker that just opened lists `provider_id` (default: the startup provider)
+    /// from its source. `refresh` fetches now and reports a failed fetch as an error, and rereads
+    /// `model_catalog_json`, so a model added while Elpis runs appears without a restart.
+    async fn list_models_live(
+        &self,
+        provider_id: Option<String>,
+        refresh: bool,
+    ) -> Result<Vec<codex_protocol::openai_models::ModelPreset>, JSONRPCErrorError> {
+        use codex_models_manager::manager::RefreshStrategy;
+        let latest = self.load_latest_config(/*fallback_cwd*/ None).await?;
+        // The startup provider keeps its startup settings, as the shared catalog does.
+        let mut target = (*self.config).clone();
+        if let Some(provider_id) = provider_id {
+            let Some(provider) = latest.model_providers.get(&provider_id) else {
+                return Err(invalid_request(format!(
+                    "Model provider `{provider_id}` is not configured"
+                )));
+            };
+            target.model_provider = provider.clone();
+            target.model_provider_id = provider_id;
+        }
+        if refresh {
+            target.model_catalog = latest.model_catalog.clone();
+        }
+        self.config_manager
+            .check_thread_model_provider(&target)
+            .await
+            .map_err(|err| config_load_error(&err))?;
+        let auth_manager = self.thread_manager.auth_manager();
+        // An explicit catalog file is authoritative and cheap: build it from the file just read.
+        let manager = if target.model_catalog.is_some() {
+            codex_core::build_models_manager(&target, auth_manager)
+        } else {
+            self.thread_manager.models_manager_for_config(&target)
+        };
+        let http_client_factory = target.http_client_factory();
+        let strategy = if refresh {
+            manager
+                .refresh_now(http_client_factory.clone())
+                .await
+                .map_err(|error| {
+                    internal_error(format!(
+                        "Could not fetch the model list from `{}`: {error}",
+                        target.model_provider_id
+                    ))
+                })?;
+            RefreshStrategy::Offline
+        } else {
+            RefreshStrategy::OnlineIfUncached
+        };
+        Ok(manager.list_models(strategy, http_client_factory).await)
     }
 
     async fn list_collaboration_modes(

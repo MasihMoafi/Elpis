@@ -16101,6 +16101,20 @@
               "integer",
               "null"
             ]
+          },
+          "modelProvider": {
+            "description": "A configured provider to list instead of the one the server started with.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "refresh": {
+            "description": "When true, fetch the catalog from its source now; a failed fetch is an error, not the last list.",
+            "type": [
+              "boolean",
+              "null"
+            ]
           }
         },
         "title": "ModelListParams",
