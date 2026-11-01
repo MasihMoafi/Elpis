@@ -86,7 +86,8 @@ for (const colorScheme of ['light', 'dark']) for (const [width, height] of [[128
         await page.keyboard.press('Escape');
       }
       await check('Rewind dialog', async () => {
-        await page.locator('.message.user').filter({ hasText: 'Run them.' }).click({ button: 'right' });
+        // The newest prompt ("Run them.") has no Rewind (Masih, 29 Oct, of Rewind on the last message: "rewind what?"; 054e332a6).
+        await page.locator('.message.user').filter({ hasText: 'Add tests.' }).click({ button: 'right' });
         await page.getByRole('menuitem', { name: 'Rewind to here', exact: true }).click();
         await page.getByRole('alertdialog').waitFor();
       });

@@ -77,13 +77,15 @@ test('an existing chat keeps repeated prompts and reconciles an echo after ackno
   f.turns.push(['new-turn', 'Show this immediately.', 'New answer']);
   await f.open('chat-b'); await f.open('chat-a');
   assert.equal(await user(f.page).count(), 2, 'a later authoritative history read still shows one copy per send');
-  await user(f.page).last().click({ button: 'right' });
+  // The newest prompt has no Rewind (Masih, 29 Oct, of Rewind on the last message: "rewind what?"; 054e332a6), so rewind
+  // the first prompt: both turns go, and the just-sent submission must not come back.
+  await user(f.page).first().click({ button: 'right' });
   await f.page.getByRole('menuitem', { name: 'Rewind to here', exact: true }).click();
   const dialog = f.page.getByRole('alertdialog');
   await dialog.getByText('No file checkpoint for this message.', { exact: true }).waitFor();
   await dialog.getByRole('button', { name: 'Rewind', exact: true }).click();
   await dialog.waitFor({ state: 'detached' });
-  assert.equal(await user(f.page).count(), 1, 'rewind does not revive the removed submission');
+  assert.equal(await user(f.page).count(), 0, 'rewind does not revive the removed submission');
 });
 
 test('failed thread creation removes the unsent transcript entry and preserves its draft', async t => {
