@@ -428,6 +428,20 @@ environment is rejected before dispatch.</li>
 only after an accepted result; a failed, cancelled, or blocked
 prerequisite blocks its descendants.</li>
 </ul>
+<h3 id="ownership-for-agents">Ownership, borrowed from Rust</h3>
+<p>Rust lets many readers or one writer hold a value, never both, and
+checks this before the program runs. The desktop app's Workflows apply
+the same idea to agents. Each agent owns its folder,
+<code>agents/&lt;its name&gt;</code>, plus the folders you give it; in a
+Git project it works in its own worktree, and a step that changed files
+outside its folders fails. Its check reads the work and writes only its
+own <code>check</code> folder. Two agents linked to work alongside may
+not share a folder, which is refused before the run. Finally the Mother
+agent reviews the combined commit and must pass it with evidence before
+Elpis fast-forwards your project. Two limits remain: side-by-side agents
+without an "alongside" link are not yet checked for a shared folder
+before the run, and outside a Git project the folders are instructions,
+not enforced.</p>
 <p>Elpis never creates, merges, rebases, deletes, or pushes branches or
 worktrees. Preparing and integrating them stays coordinator-owned,
 because those operations change durable user state and deserve
