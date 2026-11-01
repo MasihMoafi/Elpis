@@ -16,6 +16,9 @@ impl ChatWidget {
         self.model_popup_request_id == Some(request_id)
     }
 
+    /// A live model list arrived for the open picker. A failure, or an empty list, is shown in
+    /// the picker and keeps the last list; the current model stays selected either way.
+    /// Returns whether the catalog changed.
     pub(crate) fn on_models_loaded(
         &mut self,
         request_id: uuid::Uuid,
@@ -25,9 +28,31 @@ impl ChatWidget {
             return false;
         }
         self.model_popup_request_id = None;
-        let Ok(presets) = result else {
-            return false;
+        let presets = match result {
+            Ok(presets) if presets.is_empty() => Err("the engine listed no models".to_string()),
+            other => other,
         };
+        let changed = match presets {
+            Ok(presets) => {
+                self.model_catalog_error = None;
+                self.replace_model_catalog(presets)
+            }
+            Err(error) => {
+                self.model_catalog_error = Some(error);
+                false
+            }
+        };
+        if self.model_catalog_error.is_some() {
+            // Say why in a picker that is still open.
+            self.refresh_open_model_picker();
+        }
+        changed
+    }
+
+    /// Replaces the catalog with a live list; returns whether it changed. The current model is
+    /// never changed here, even when the new list no longer carries it.
+    pub(crate) fn replace_model_catalog(&mut self, presets: Vec<ModelPreset>) -> bool {
+        self.model_catalog_error = None;
         if presets.is_empty()
             || self.model_catalog.try_list_models().ok().as_ref() == Some(&presets)
         {
@@ -38,6 +63,15 @@ impl ChatWidget {
         self.refresh_effective_service_tier();
         self.refresh_model_dependent_surfaces();
         true
+    }
+
+    /// The pickers' line saying why the live list failed, while it has.
+    pub(super) fn model_catalog_status_line(&self) -> Option<Line<'static>> {
+        self.model_catalog_error.as_ref().map(|error| {
+            Line::from(
+                format!("Could not refresh the model list: {error}. Showing the last list.").red(),
+            )
+        })
     }
 
     /// Keep a present model picker aligned with the active task, including Reserve entry/exit.

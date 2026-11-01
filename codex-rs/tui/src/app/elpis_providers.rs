@@ -12,6 +12,13 @@ use super::*;
 use crate::app_server_session::ForkGoalContinuation;
 use crate::chatwidget::ElpisProviderEvent;
 
+/// Whether the app server's own list holds `provider_id`'s models: the provider it started with,
+/// or a bridged subscription whose models the bridge adds to that list.
+fn elpis_lists_app_server_catalog(provider_id: &str) -> bool {
+    crate::chatwidget::bridged_provider(provider_id).is_some()
+        || crate::chatwidget::elpis_catalog_provider().as_deref() == Some(provider_id)
+}
+
 /// The fork error a thread with no turns yet produces (its rollout does not exist).
 const NO_ROLLOUT: &str = "no rollout found";
 
@@ -24,14 +31,29 @@ impl App {
     ) {
         match event {
             ElpisProviderEvent::OpenProviders => self.chat_widget.open_elpis_provider_popup(),
-            ElpisProviderEvent::Browse { provider_id } => self.elpis_browse_provider(provider_id),
+            ElpisProviderEvent::Browse { provider_id } => {
+                self.elpis_browse_provider(app_server, provider_id);
+            }
             ElpisProviderEvent::ModelsLoaded {
                 provider_id,
                 request_id,
                 result,
-            } => self
-                .chat_widget
-                .finish_elpis_models_loading(request_id, provider_id, result),
+            } => {
+                // The app server's own list refreshes the shared catalog too, so a model added
+                // since startup can be picked and its effort levels are known.
+                if self.chat_widget.model_popup_request_is_current(request_id)
+                    && elpis_lists_app_server_catalog(&provider_id)
+                    && let Ok(presets) = &result
+                    && self.chat_widget.replace_model_catalog(presets.clone())
+                {
+                    self.model_catalog = self.chat_widget.model_catalog();
+                    if let Ok(models) = self.model_catalog.try_list_models() {
+                        app_server.set_available_models(models);
+                    }
+                }
+                self.chat_widget
+                    .finish_elpis_models_loading(request_id, provider_id, result);
+            }
             ElpisProviderEvent::OpenKeyPrompt { provider_id } => {
                 self.chat_widget.open_elpis_api_key_prompt(provider_id);
             }
@@ -46,31 +68,32 @@ impl App {
         tui.frame_requester().schedule_frame();
     }
 
-    /// Lists a provider's models, off the event loop. A gateway provider is always asked
-    /// directly, so a key saved a moment ago counts; another provider the app server started
-    /// with uses the app server's list.
-    fn elpis_browse_provider(&mut self, provider_id: String) {
-        // A bridged subscription's models are already in the app server's list.
-        if crate::chatwidget::bridged_provider(&provider_id).is_some() {
-            self.chat_widget
-                .open_elpis_provider_models(provider_id, Ok(Vec::new()));
-            return;
-        }
-        let Some(provider) = self.config.model_providers.get(&provider_id).cloned() else {
-            self.chat_widget
-                .add_error_message(format!("Model provider `{provider_id}` not found"));
+    /// Lists a provider's models live, off the event loop, behind a loading picker. A gateway
+    /// provider is asked directly, so a key saved a moment ago counts; every other provider,
+    /// including ChatGPT while another provider is the default, is listed by the app server.
+    fn elpis_browse_provider(&mut self, app_server: &AppServerSession, provider_id: String) {
+        let gateway = match crate::chatwidget::bridged_provider(&provider_id) {
+            Some(_) => None,
+            None => {
+                let Some(provider) = self.config.model_providers.get(&provider_id).cloned() else {
+                    self.chat_widget
+                        .add_error_message(format!("Model provider `{provider_id}` not found"));
+                    return;
+                };
+                codex_model_provider_info::gateway_route(&provider)
+                    .is_some()
+                    .then_some(provider)
+            }
+        };
+        let request_id = self.chat_widget.begin_elpis_models_loading(&provider_id);
+        let tx = self.app_event_tx.clone();
+        let Some(provider) = gateway else {
+            let model_provider =
+                (!elpis_lists_app_server_catalog(&provider_id)).then(|| provider_id.clone());
+            app_server.fetch_provider_models(provider_id, model_provider, request_id, tx);
             return;
         };
-        if crate::chatwidget::elpis_lists_from_app_server(&provider_id, &provider) {
-            let presets = self.model_catalog.try_list_models().unwrap_or_default();
-            self.chat_widget
-                .open_elpis_provider_models(provider_id, Ok(presets));
-            return;
-        }
-        // The catalog arrives later; until then a loading picker holds the queued input back.
-        let request_id = self.chat_widget.begin_elpis_models_loading(&provider_id);
         let home = self.config.codex_home.to_path_buf();
-        let tx = self.app_event_tx.clone();
         tokio::spawn(async move {
             let result =
                 crate::chatwidget::load_elpis_provider_models(home, provider_id.clone(), provider)
@@ -197,8 +220,7 @@ impl App {
                 /*initial_user_message*/ None, /*new_thread_name*/ None,
             )
             .await;
-            self.finish_provider_switch(/*source*/ None, input)
-                .await;
+            self.finish_provider_switch(/*source*/ None, input).await;
             return;
         };
         let mut fork_config = self.config.clone();
@@ -237,8 +259,7 @@ impl App {
                     .await
                 {
                     Ok(()) => {
-                        self.finish_provider_switch(Some(thread_id), input)
-                            .await;
+                        self.finish_provider_switch(Some(thread_id), input).await;
                         self.chat_widget.add_info_message(
                             format!("Now on {name} · {model}."),
                             Some(
@@ -265,8 +286,7 @@ impl App {
                     /*initial_user_message*/ None, /*new_thread_name*/ None,
                 )
                 .await;
-                self.finish_provider_switch(Some(thread_id), input)
-                    .await;
+                self.finish_provider_switch(Some(thread_id), input).await;
                 self.chat_widget
                     .add_info_message(format!("Now on {name} · {model}."), /*hint*/ None);
             }

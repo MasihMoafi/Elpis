@@ -345,7 +345,7 @@ pub(crate) use self::elpis_providers::CLAUDE_SUBSCRIPTION_PROVIDER_ID;
 pub(crate) use self::elpis_providers::ElpisProviderEvent;
 pub(crate) use self::elpis_providers::bridged_provider;
 pub(crate) use self::elpis_providers::bridged_provider_of_model;
-pub(crate) use self::elpis_providers::elpis_lists_from_app_server;
+pub(crate) use self::elpis_providers::elpis_catalog_provider;
 pub(crate) use self::elpis_providers::is_bridged_model;
 pub(crate) use self::elpis_providers::load_elpis_provider_models;
 pub(crate) use self::elpis_providers::set_elpis_catalog_provider;
@@ -566,6 +566,8 @@ pub(crate) struct ChatWidget {
     has_codex_backend_auth: bool,
     model_catalog: Arc<ModelCatalog>,
     model_popup_request_id: Option<uuid::Uuid>,
+    /// Why the last live model list failed; the pickers show it until a fetch succeeds.
+    model_catalog_error: Option<String>,
     claude_accounts: Option<codex_app_server_protocol::ClaudeAccountsReadResponse>,
     claude_accounts_request_id: Option<uuid::Uuid>,
     permission_popup_request_id: Option<uuid::Uuid>,

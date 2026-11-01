@@ -3339,10 +3339,12 @@ async fn model_picker_refresh_rejects_obsolete_and_unusable_replies() {
     assert!(!chat.on_models_loaded(current_request, Ok(refreshed.clone())));
     assert_eq!(chat.model_catalog.try_list_models().unwrap(), initial);
 
-    for result in [
-        Err("unavailable".to_string()),
-        Ok(Vec::new()),
-        Ok(initial.clone()),
+    // A failed or empty live list is said in the open picker; the last list and the current
+    // model stay. An unchanged list changes nothing.
+    for (result, error) in [
+        (Err("unavailable".to_string()), Some("unavailable")),
+        (Ok(Vec::new()), Some("the engine listed no models")),
+        (Ok(initial.clone()), None),
     ] {
         chat.handle_key_event(KeyEvent::from(KeyCode::Esc));
         chat.open_model_popup();
@@ -3351,7 +3353,15 @@ async fn model_picker_refresh_rejects_obsolete_and_unusable_replies() {
         assert!(!chat.on_models_loaded(request_id, result));
         assert!(!chat.model_popup_request_is_current(request_id));
         assert_eq!(chat.model_catalog.try_list_models().unwrap(), initial);
-        assert_eq!(render_bottom_popup(&chat, /*width*/ 80), before);
+        assert_eq!(chat.current_model(), "gpt-5.5");
+        let after = render_bottom_popup(&chat, /*width*/ 80);
+        match error {
+            Some(error) => assert!(
+                after.contains(&format!("Could not refresh the model list: {error}")),
+                "{after}"
+            ),
+            None => assert_eq!(after, before),
+        }
     }
     chat.handle_key_event(KeyEvent::from(KeyCode::Esc));
     chat.open_model_popup();

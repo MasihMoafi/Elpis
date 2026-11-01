@@ -130,6 +130,7 @@ impl ChatWidget {
             has_codex_backend_auth,
             model_catalog,
             model_popup_request_id: None,
+            model_catalog_error: None,
             claude_accounts: None,
             claude_accounts_request_id: None,
             permission_popup_request_id: None,

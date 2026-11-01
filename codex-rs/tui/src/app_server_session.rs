@@ -695,6 +695,8 @@ impl AppServerSession {
                             cursor: None,
                             limit: None,
                             include_hidden: Some(true),
+                            refresh: None,
+                            model_provider: None,
                         },
                     })
                     .await

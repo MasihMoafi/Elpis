@@ -3,7 +3,7 @@
 //! The catalog arrives through `ModelsLoaded` after the provider list has closed. The tests hold
 //! that reply back, run the App events the picker really sends, and release the reply when they
 //! choose, so the delay is deterministic. The lookup is a provider with no gateway route, which
-//! fails at once without a network call; the successful reply is the test's own.
+//! the embedded app server lists; the reply delivered is the test's own.
 
 use super::*;
 use crate::app::tests::make_test_app_with_channels;
@@ -40,7 +40,7 @@ impl Fixture {
     /// the provider list is open and the follow-up waits.
     async fn with_provider_list_open() -> Result<Self> {
         let (mut app, events, ops) = make_test_app_with_channels().await;
-        // A provider with no gateway route: listing it fails at once, without the network.
+        // A provider with no gateway route and no credentials: the app server lists it offline.
         app.config.model_providers.insert(
             GATEWAY.to_string(),
             ModelProviderInfo {
@@ -369,8 +369,16 @@ async fn switching_provider_sends_the_queued_follow_up_once_on_the_selected_mode
     fixture.key(KeyCode::Enter);
     fixture.pump().await?;
     // The new model's effort levels open, as in Codex, and the follow-up waits for them.
-    assert!(fixture.sent_turns().is_empty(), "{:?}", fixture.sent_turns());
-    assert!(!fixture.app.chat_widget.no_modal_or_popup_active(), "{}", fixture.popup());
+    assert!(
+        fixture.sent_turns().is_empty(),
+        "{:?}",
+        fixture.sent_turns()
+    );
+    assert!(
+        !fixture.app.chat_widget.no_modal_or_popup_active(),
+        "{}",
+        fixture.popup()
+    );
     fixture.key(KeyCode::Enter);
     fixture.pump().await?;
 

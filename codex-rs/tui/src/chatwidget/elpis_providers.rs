@@ -218,25 +218,19 @@ fn api_key_url(provider_id: &str) -> Option<&'static str> {
     }
 }
 
-/// Lists a provider's models for the picker: a gateway provider asks its vendor, OpenAI uses
-/// the bundled catalog, and any other provider is listed only by the app server it started.
+/// Lists a gateway provider's models for the picker by asking its vendor now. Every other
+/// provider is listed live by the app server (`model/list`), never from a bundled list.
 pub(crate) async fn load_elpis_provider_models(
     home: PathBuf,
     provider_id: String,
     provider: ModelProviderInfo,
 ) -> Result<Vec<ModelPreset>, String> {
-    let catalog = match codex_elpis_gateway::provider_models(&home, &provider).await {
-        Some(result) => result?,
-        None if provider.is_openai() => {
-            codex_models_manager::bundled_models_response().map_err(|error| error.to_string())?
-        }
-        None => {
-            return Err(format!(
-                "Elpis lists the models of `{provider_id}` when it starts with it: set \
-                 model_provider = \"{provider_id}\" in config.toml and restart"
-            ));
-        }
+    let Some(catalog) = codex_elpis_gateway::provider_models(&home, &provider).await else {
+        return Err(format!(
+            "`{provider_id}` is not served by the Elpis gateway; the engine lists its models"
+        ));
     };
+    let catalog = catalog?;
     let mut models = catalog.models;
     models.sort_by_key(|model| model.priority);
     let mut presets: Vec<ModelPreset> = models.into_iter().map(Into::into).collect();
@@ -301,13 +295,6 @@ fn elpis_chat_model_providers(
             }),
         })
         .collect()
-}
-
-/// Whether the app server's own list is the one to show for `provider_id`: it lists the
-/// provider the process started with, unless the gateway serves that provider.
-pub(crate) fn elpis_lists_from_app_server(provider_id: &str, provider: &ModelProviderInfo) -> bool {
-    codex_model_provider_info::gateway_route(provider).is_none()
-        && elpis_catalog_provider().as_deref() == Some(provider_id)
 }
 
 impl ChatWidget {
@@ -546,6 +533,7 @@ impl ChatWidget {
         // The same slot native model replies use: a newer model picker or an account change
         // invalidates this lookup.
         self.model_popup_request_id = Some(request_id);
+        self.model_catalog_error = None;
         self.bottom_pane.show_selection_view(SelectionViewParams {
             view_id: Some(ELPIS_PROVIDER_LOADING_VIEW_ID),
             title: Some("Choose a mind".to_string()),
@@ -603,6 +591,7 @@ impl ChatWidget {
             .map(|preset| self.catalog_model_item(preset))
             .collect();
         let mut items: Vec<SelectionItem> = Vec::new();
+        let failed = result.is_err();
         let (presets, subtitle) = match (result, bridged) {
             (Ok(_), Some(bridged)) => {
                 let subtitle = if bridged_rows.is_empty() {
@@ -630,6 +619,26 @@ impl ChatWidget {
             }
             (Err(error), _) => (Vec::new(), format!("Could not list its models: {error}")),
         };
+        // The current model stays selected even when the live list no longer carries it.
+        let owns_current_model = match bridged {
+            Some(bridged) => bridged_provider_of_model(&current_model)
+                .is_some_and(|owner| owner.id == bridged.id),
+            None => is_active && !is_bridged_model(&current_model),
+        };
+        let current_row = (owns_current_model
+            && !current_model.is_empty()
+            && !presets.iter().any(|preset| preset.model == current_model)
+            && !bridged_rows.iter().any(|row| row.is_current))
+        .then(|| SelectionItem {
+            name: self.model_display_name().to_string(),
+            description: Some(format!(
+                "{current_model} · current model, not in the latest list"
+            )),
+            search_value: Some(current_model.clone()),
+            is_current: true,
+            dismiss_on_select: true,
+            ..Default::default()
+        });
         for preset in presets {
             // Codex parity: on the conversation's own provider a row is Codex's model row, so
             // picking a model opens its effort levels, as `/model` does in Codex.
@@ -659,6 +668,7 @@ impl ChatWidget {
                 ..Default::default()
             });
         }
+        items.extend(current_row);
         let elpis_rows = self.elpis_picker_rows(&provider_id);
         // Without a current model, the first model starts highlighted.
         let first_model = elpis_rows.len();
@@ -666,7 +676,11 @@ impl ChatWidget {
         items.splice(0..0, elpis_rows.into_iter().map(|(_, item)| item));
         let mut header = vec![
             Line::from("Choose a mind".bold()),
-            Line::from(subtitle.dim()),
+            Line::from(if failed {
+                subtitle.red()
+            } else {
+                subtitle.dim()
+            }),
         ];
         header.extend(self.elpis_provider_header_lines(&provider_id));
         // Searchable, since a provider such as OpenRouter lists hundreds of models; the current

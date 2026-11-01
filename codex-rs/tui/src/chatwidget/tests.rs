@@ -278,6 +278,8 @@ mod mcp_startup;
 mod misalignment_policy;
 #[path = "tests/model_display_name_tests.rs"]
 mod model_display_name_tests;
+#[path = "tests/model_catalog_refresh_tests.rs"]
+mod model_catalog_refresh_tests;
 #[path = "tests/model_picker_tests.rs"]
 mod model_picker_tests;
 #[path = "tests/permission_picker_tests.rs"]

@@ -39,8 +39,10 @@ impl ChatWidget {
         };
         let request_id = uuid::Uuid::new_v4();
         self.model_popup_request_id = Some(request_id);
+        self.model_catalog_error = None;
         self.open_model_popup_with_presets(presets);
-        // Show cached choices immediately and update any still-present picker when the reply arrives.
+        // Show the last list at once; the live list, or why it failed, replaces it in the
+        // still-open picker.
         self.app_event_tx.send(AppEvent::FetchModels { request_id });
     }
 
@@ -66,6 +68,9 @@ impl ChatWidget {
         header.extend(self.elpis_provider_header_lines(&self.config.model_provider_id));
         if let Some(warning) = self.model_menu_warning_line() {
             header.push(warning);
+        }
+        if let Some(status) = self.model_catalog_status_line() {
+            header.push(status);
         }
         Box::new(Paragraph::new(header).wrap(Wrap { trim: false }))
     }

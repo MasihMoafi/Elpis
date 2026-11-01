@@ -319,29 +319,31 @@ async fn a_key_that_cannot_be_a_header_is_refused_and_nothing_is_listed() {
 }
 
 #[tokio::test]
-async fn openai_is_listed_from_the_bundled_catalog_and_other_direct_providers_explain() {
-    let openai = ModelProviderInfo::create_openai_provider(/*base_url*/ None);
-    let presets = crate::chatwidget::load_elpis_provider_models(
-        std::env::temp_dir(),
-        "openai".to_string(),
-        openai,
-    )
-    .await
-    .expect("bundled catalog");
-    assert!(!presets.is_empty());
-
-    let ollama = codex_model_provider_info::create_oss_provider_with_base_url(
-        "http://localhost:11434/v1",
-        codex_model_provider_info::WireApi::Responses,
-    );
-    let error = crate::chatwidget::load_elpis_provider_models(
-        std::env::temp_dir(),
-        "ollama".to_string(),
-        ollama,
-    )
-    .await
-    .expect_err("an app-server-only provider");
-    assert!(error.contains("model_provider = \"ollama\""), "{error}");
+async fn no_provider_is_listed_from_a_bundled_catalog() {
+    // OpenAI and other direct providers are listed live by the app server (`model/list` with
+    // `modelProvider`); the gateway loader refuses them rather than offering a bundled list.
+    for (provider_id, provider) in [
+        (
+            "openai",
+            ModelProviderInfo::create_openai_provider(/*base_url*/ None),
+        ),
+        (
+            "ollama",
+            codex_model_provider_info::create_oss_provider_with_base_url(
+                "http://localhost:11434/v1",
+                codex_model_provider_info::WireApi::Responses,
+            ),
+        ),
+    ] {
+        let error = crate::chatwidget::load_elpis_provider_models(
+            std::env::temp_dir(),
+            provider_id.to_string(),
+            provider,
+        )
+        .await
+        .expect_err("not a gateway provider");
+        assert!(error.contains("the engine lists its models"), "{error}");
+    }
 }
 
 const CLAUDE_MODEL: &str = "claude/opus";
@@ -627,7 +629,10 @@ async fn picking_an_antigravity_model_selects_it_with_provider_antigravity() {
 async fn picking_a_model_on_the_current_provider_opens_its_effort_levels() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     let current = get_available_model(&chat, chat.current_model());
-    assert!(current.supported_reasoning_efforts.len() > 1, "fixture needs effort levels");
+    assert!(
+        current.supported_reasoning_efforts.len() > 1,
+        "fixture needs effort levels"
+    );
     let listed = chat.model_catalog.try_list_models().expect("models");
     chat.open_elpis_provider_models("openai".to_string(), Ok(listed));
     while rx.try_recv().is_ok() {}
@@ -644,8 +649,10 @@ async fn picking_a_model_on_the_current_provider_opens_its_effort_levels() {
         "picking the model did not open its effort levels: {events:?}"
     );
     assert!(
-        !events.iter().any(|event| matches!(event,
-            AppEvent::Elpis(ElpisAppEvent::Provider(ElpisProviderEvent::Switch { .. })))),
+        !events.iter().any(|event| matches!(
+            event,
+            AppEvent::Elpis(ElpisAppEvent::Provider(ElpisProviderEvent::Switch { .. }))
+        )),
         "the model was switched at its default effort: {events:?}"
     );
 }
@@ -655,7 +662,10 @@ async fn picking_a_model_on_the_current_provider_opens_its_effort_levels() {
 async fn a_switched_model_with_effort_levels_offers_them() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     let current = get_available_model(&chat, chat.current_model());
-    assert!(current.supported_reasoning_efforts.len() > 1, "fixture needs effort levels");
+    assert!(
+        current.supported_reasoning_efforts.len() > 1,
+        "fixture needs effort levels"
+    );
 
     chat.offer_effort_levels();
 
