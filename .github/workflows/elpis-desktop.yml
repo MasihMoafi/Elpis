@@ -51,6 +51,10 @@ jobs:
         run: |
           baseline=$(node --input-type=module -e 'import { baselineCommit } from "./scripts/renderer-artifact-gate.mjs"; console.log(baselineCommit)')
           git cat-file -e "$baseline^{commit}" || git fetch --no-tags --depth=1 origin "$baseline"
+          # Each pinned replacement is read from its approval commit; a shallow checkout lacks them (1 Nov: every run since
+          # tests/controls.cjs next changed failed with "Changed pinned retained regression").
+          node --input-type=module -e 'import { retainedUpdates, baselineCommit } from "./scripts/renderer-artifact-gate.mjs"; for (const pin of Object.values(retainedUpdates[baselineCommit] ?? {})) console.log(pin.approval)' \
+            | sort -u | while read -r approval; do git cat-file -e "$approval^{commit}" 2>/dev/null || git fetch --no-tags --depth=1 origin "$approval"; done
       - name: Bind the renderer and complete regression plan to six shards
         id: plan
         run: |
