@@ -242,7 +242,9 @@ for (const colorScheme of ['light', 'dark']) {
     const f = await setup(colorScheme), { page, row, toggle } = f;
     try {
       const original = await coordinates(row(plain.id)), left = await row(plain.id).evaluate(element => element.getBoundingClientRect().x);
-      assert.deepEqual(original, { circle: left + 25.5, title: left + 50 }, 'the plain row reserves the same chevron column as project chats');
+      // The project chevron's centre sits 13px into the row since the status column moved (ced589afb, 31 Oct); the circle is 13px
+      // and the name 37.5px past it, as sidebar-chevron-column.test.cjs requires of every section.
+      assert.deepEqual(original, { circle: left + 26, title: left + 50.5 }, 'the plain row reserves the same chevron column as project chats');
       assert.equal(await row(plain.id).getByRole('button', { name: /agents in/ }).count(), 0, 'no chevron is added to plain chats');
       await row(plain.id).hover();
       assert.deepEqual(await coordinates(row(plain.id)), original, 'plain hover');

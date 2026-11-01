@@ -36,7 +36,9 @@ async function measureSidebar(page) {
     }));
     const rows = [...sidebar.querySelectorAll('.thread-list .thread-row')].filter(row => row.querySelector(':scope > .conversation-state-slot')).map(row => {
       const toggle = row.querySelector(':scope > button[aria-expanded]:first-child:not(.conversation-colour-trigger)');
-      const railStyle = getComputedStyle(row, '::before'), bounds = box(row), clips = [];
+      // The angular edge (Masih, 31 Oct) paints the bar with an inset:0 ::before masked to its left border; the ::after
+      // carries the straight bar's own box (left 0, the line's width), so it measures the painted bar.
+      const railStyle = getComputedStyle(row, '::after'), bounds = box(row), clips = [];
       for (let ancestor = row.parentElement; ancestor; ancestor = ancestor.parentElement) {
         if (getComputedStyle(ancestor).overflowX !== 'visible') clips.push(box(ancestor));
       }
