@@ -525,7 +525,10 @@ async function launcherGroup(runtime) {
   process.kill(bridgePid, 'SIGKILL');
   await until(() => !alive(bridgePid), 'bridge killed');
   held.terminate();
-  assert(alive(enginePid), 'the orphan engine outlives its bridge');
+  // 1 Nov (resources audit): the engine runs under setpriv --pdeathsig, so it stops with its bridge, even on SIGKILL.
+  // Where setpriv is missing, the launcher's left-behind cleanup below still stops it.
+  const withPdeathsig = require('node:child_process').spawnSync('setpriv', ['--help'], { stdio: 'ignore' }).status === 0;
+  if (withPdeathsig) await until(() => !alive(enginePid), 'the engine stops with its killed bridge');
   assert(fs.existsSync(sock), 'the dead bridge left its socket');
   const revived = await helper(bridgeA, s.env);
   assert.equal(endpointOf(revived), sock);
@@ -533,7 +536,7 @@ async function launcherGroup(runtime) {
   assert.notEqual(s.starts()[1], bridgePid);
   tracked.add(s.starts()[1]);
   await until(() => !alive(enginePid), 'orphan engine stopped');
-  assert.match(revived.stderr, /left behind/);
+  if (!withPdeathsig) assert.match(revived.stderr, /left behind/);
   assert.equal((await answers(sock)).mode, 'shared');
   pass('after a crash the launcher removes the stale socket and state, stops the orphaned engine, and starts one bridge');
   await stop(s.starts()[1]);
@@ -626,9 +629,17 @@ async function launcherGroup(runtime) {
   const configured = await attachedClient(sockE);
   const configuredThread = (await configured.request('thread/start')).thread.id;
   const configuredState = s.state(), configuredInode = fs.statSync(sockE).ino;
+  // 1 Nov, Masih: "I hate such errs". Proxy settings alone never refuse a start: a bridge in use is joined.
+  for (const [what, env] of [
+    ['another proxy', { ...first, HTTPS_PROXY: `http://user:${other}@elsewhere.invalid:1` }],
+    ['no proxy (nopr)', Object.fromEntries(Object.entries(first).filter(([k]) => k !== 'HTTPS_PROXY'))],
+  ]) {
+    const joinedProxy = await helper(bridgeA, env);
+    assert.equal(joinedProxy.code, 0, `${what}: ${joinedProxy.stderr}`); assert.equal(endpointOf(joinedProxy), sockE, what);
+    assert.equal(s.starts().length, 1, `${what}: no second bridge`);
+    for (const value of [secret, other]) assert(!joinedProxy.stderr.includes(value), `${what}: no secret on stderr`);
+  }
   for (const [what, env, name] of [
-    ['another proxy', { ...first, HTTPS_PROXY: `http://user:${other}@elsewhere.invalid:1` }, 'HTTPS_PROXY'],
-    ['no proxy (nopr)', Object.fromEntries(Object.entries(first).filter(([k]) => k !== 'HTTPS_PROXY')), 'HTTPS_PROXY'],
     ['a custom adapter', { ...first, ACP_ADAPTER: path.join(lroot, 'adapter.js') }, 'ACP_ADAPTER'],
     ['another Claude program', { ...first, CLAUDE_CODE_EXECUTABLE: path.join(lroot, 'claude') }, 'CLAUDE_CODE_EXECUTABLE'],
     ['another store', { ...first, ACP_BRIDGE_STORE: path.join(lroot, 'store.json') }, 'ACP_BRIDGE_STORE'],
