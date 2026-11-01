@@ -55,13 +55,14 @@ export function ModelPicker({ choices, models, model, choiceId, defaultModel, di
     let disposed = false;
     const { id, provider } = activeConnection;
     const version = activeConnection.catalogVersion ?? "";
-    setCatalogs(previous => ({ ...previous, [id]: { version, data: [], loaded: false, loading: true, error: "" } }));
+    // The last list stays shown while the fresh one loads, so the chosen model keeps its name and keys still work.
+    setCatalogs(previous => ({ ...previous, [id]: { version, data: previous[id]?.version === version ? previous[id].data : [], loaded: false, loading: true, error: "" } }));
     api<{ data: Model[] }>(`/models?provider=${encodeURIComponent(provider)}&refresh=true`)
       .then(result => {
         if (!Array.isArray(result.data)) throw new Error("This connection returned an invalid model list.");
         if (!disposed) setCatalogs(previous => ({ ...previous, [id]: { version, data: result.data, loaded: true, loading: false, error: "" } }));
       })
-      .catch(cause => { if (!disposed) setCatalogs(previous => ({ ...previous, [id]: { version, data: [], loaded: false, loading: false, error: cause instanceof Error ? cause.message : String(cause) } })); });
+      .catch(cause => { if (!disposed) setCatalogs(previous => ({ ...previous, [id]: { version, data: previous[id]?.data ?? [], loaded: false, loading: false, error: cause instanceof Error ? cause.message : String(cause) } })); });
     return () => { disposed = true; };
   }, [open, disabled, activeConnection?.id, activeConnection?.provider, activeConnection?.catalogVersion, retry]); // Reuse successful catalogs only for the same saved configuration.
   const available: Choice[] = [...new Map(choices.flatMap(choice => (catalogFor(choice)?.data ?? choice.models).map(item => ({ key: `${choice.id}:${item.model}`, model: item.model, choiceId: choice.id, label: modelName(item.displayName || item.model), providerLabel: choice.label, description: item.description }))).map(item => [item.key, item])).values()];
@@ -75,7 +76,7 @@ export function ModelPicker({ choices, models, model, choiceId, defaultModel, di
   const configured = choices.filter(choice => !!choice.provider);
   const choose = (choice: { model: string; choiceId: string }) => { onChange(choice); setOpen(false); setQuery(""); };
   return <Combobox items={rows} value={current} inputValue={query} onInputValueChange={setQuery} open={open}
-    onOpenChange={next => { setOpen(next); if (next) { setQuery(""); setTab(choices.length === 1 ? choices[0].id : "all"); setCatalogs({}); void refreshModelCatalog(); } }}
+    onOpenChange={next => { setOpen(next); if (next) { setQuery(""); setTab(choices.length === 1 ? choices[0].id : "all"); setCatalogs(previous => Object.fromEntries(Object.entries(previous).map(([key, value]) => [key, { ...value, loaded: false }]))); void refreshModelCatalog(); } }}
     itemToStringLabel={(item: Choice) => `${item.label} ${item.providerLabel} ${item.model}`} itemToStringValue={(item: Choice) => item.key}
     onValueChange={item => { if (item) choose(item); }}>
     <ComboboxTrigger role="combobox" aria-label="Model" disabled={disabled} data-value={model} title={[currentLabel, currentProvider].filter(Boolean).join(" · ")} className="model-picker-trigger model-select"><span className="model-trigger-label">{currentModel ? currentLabel : "Choose model"}</span>{currentProvider && <span className="model-trigger-provider">{currentProvider}</span>}<ChevronDown size={16} /></ComboboxTrigger>
