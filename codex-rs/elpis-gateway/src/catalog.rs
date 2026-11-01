@@ -15,12 +15,21 @@ use serde_json::json;
 /// Together use `context_length`, Groq `context_window`, Mistral `max_context_length`.
 const CONTEXT_WINDOW_KEYS: &[&str] = &["context_length", "context_window", "max_context_length"];
 
-/// Effort levels offered for a model whose listing says it accepts `reasoning`.
-const REASONING_LEVELS: [(&str, &str); 3] = [
-    ("low", "Answers soonest"),
-    ("medium", "Balanced"),
-    ("high", "Thinks longest before answering"),
-];
+/// Effort levels offered for an OpenAI-compatible model whose listing says it accepts
+/// `reasoning`. A Claude model offers its own levels (`anthropic::thinking_levels`).
+const REASONING_LEVELS: [&str; 3] = ["low", "medium", "high"];
+
+/// How the pickers describe each level.
+fn level_description(effort: &str) -> &'static str {
+    match effort {
+        "low" => "Answers soonest",
+        "medium" => "Balanced",
+        "high" => "Thinks longer before answering",
+        "xhigh" => "Thinks longer still; suits coding and agent work",
+        "max" => "Thinks longest, whatever it costs",
+        _ => "",
+    }
+}
 
 /// The vendor path that lists models, relative to the vendor base URL.
 pub(crate) fn models_path(wire: GatewayWire) -> &'static str {
@@ -53,21 +62,17 @@ fn model_row(
     display_name: &str,
     context_window: Option<u64>,
     priority: usize,
-    reasons: bool,
+    levels: &[&str],
     images: bool,
 ) -> Value {
     let description = match context_window {
         Some(window) => format!("≈{}k context", window / 1_000),
         None => "context window not reported".to_string(),
     };
-    let reasoning_levels: Vec<Value> = if reasons {
-        REASONING_LEVELS
-            .iter()
-            .map(|(effort, description)| json!({"effort": effort, "description": description}))
-            .collect()
-    } else {
-        Vec::new()
-    };
+    let reasoning_levels: Vec<Value> = levels
+        .iter()
+        .map(|effort| json!({"effort": effort, "description": level_description(effort)}))
+        .collect();
     let input_modalities: &[&str] = if images {
         &["text", "image"]
     } else {
@@ -97,7 +102,7 @@ fn model_row(
         "experimental_supported_tools": [],
         "input_modalities": input_modalities,
     });
-    if reasons {
+    if !levels.is_empty() {
         row["default_reasoning_level"] = json!("medium");
     }
     if let Some(window) = context_window {
@@ -125,14 +130,15 @@ fn anthropic_models(body: &Value) -> Vec<Value> {
                 .get("max_input_tokens")
                 .and_then(Value::as_u64)
                 .filter(|window| *window > 0 && i64::try_from(*window).is_ok());
-            // The listing does not say which models think, so the family and version decide.
-            // The Messages wire sends images as image blocks.
+            // The listing does not say which models think, so the family and version decide,
+            // and each model offers every level it accepts. The Messages wire sends images as
+            // image blocks.
             Some(model_row(
                 slug,
                 display_name,
                 context_window,
                 index,
-                crate::anthropic::supports_thinking(slug),
+                crate::anthropic::thinking_levels(slug),
                 /*images*/ true,
             ))
         })
@@ -175,7 +181,7 @@ fn gemini_models(body: &Value) -> Vec<Value> {
                 display_name,
                 context_window,
                 index,
-                /*reasons*/ false,
+                /*levels*/ &[],
                 /*images*/ false,
             ))
         })
@@ -229,7 +235,7 @@ fn openai_compatible_models(body: &Value) -> Vec<Value> {
                 display_name,
                 context_window,
                 index,
-                reasons,
+                if reasons { &REASONING_LEVELS[..] } else { &[] },
                 /*images*/ false,
             ))
         })

@@ -142,12 +142,52 @@ impl ChatWidget {
     }
 
     fn current_preset(&self) -> Option<ModelPreset> {
+        self.preset_for_current_model()
+    }
+
+    /// The current model's catalog entry: the app server's own list, else the live list of the
+    /// provider the thread runs on (Claude through the Anthropic credits, say).
+    pub(super) fn preset_for_current_model(&self) -> Option<ModelPreset> {
         let model = self.current_model();
+        let find = |presets: Vec<ModelPreset>| presets.into_iter().find(|p| p.model == model);
         self.model_catalog
             .try_list_models()
-            .ok()?
-            .into_iter()
-            .find(|preset| preset.model == model)
+            .ok()
+            .and_then(find)
+            .or_else(|| {
+                self.provider_presets
+                    .get(&self.config.model_provider_id)
+                    .cloned()
+                    .and_then(find)
+            })
+    }
+
+    /// Keeps a provider's live list for effort lookups. Selection and effort are untouched.
+    pub(crate) fn remember_provider_presets(
+        &mut self,
+        provider_id: String,
+        presets: Vec<ModelPreset>,
+    ) {
+        if !presets.is_empty() {
+            self.provider_presets.insert(provider_id, presets);
+        }
+    }
+
+    /// A thread on a provider the app server does not list: fetch that provider's list once, so
+    /// `/effort`, the reasoning shortcuts and the level picker know its models' levels.
+    pub(super) fn prefetch_provider_presets(&mut self) {
+        let provider_id = self.config.model_provider_id.clone();
+        if super::elpis_providers::elpis_catalog_provider()
+            .is_none_or(|catalog| catalog == provider_id)
+            || self.provider_presets.contains_key(&provider_id)
+        {
+            return;
+        }
+        self.app_event_tx.send(crate::app_event::AppEvent::Elpis(
+            crate::elpis_app_event::ElpisAppEvent::Provider(
+                super::elpis_providers::ElpisProviderEvent::PrefetchPresets { provider_id },
+            ),
+        ));
     }
 
     fn say_no_effort_levels(&mut self) {

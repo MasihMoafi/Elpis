@@ -454,3 +454,28 @@ fn thinking_blocks_are_kept_and_replayed_before_the_tool_call() {
         ])
     );
 }
+
+/// Each level a model offers reaches the request as `output_config.effort` unchanged, including
+/// `xhigh` and `max`; a level a model lacks becomes the deepest one below it.
+#[test]
+fn every_offered_thinking_level_reaches_the_request_body() {
+    for effort in ["low", "medium", "high", "xhigh", "max"] {
+        let body = request_with_effort("claude-sonnet-5-5", Some(effort), hello());
+        assert_eq!(body["thinking"], json!({"type": "adaptive"}), "{effort}");
+        assert_eq!(body["output_config"], json!({"effort": effort}), "{effort}");
+    }
+    let xhigh = request_with_effort("claude-opus-5-5", Some("xhigh"), hello());
+    assert_eq!(xhigh["max_tokens"], 32_000);
+    let max = request_with_effort("claude-fable-5-1", Some("max"), hello());
+    assert_eq!(max["output_config"], json!({"effort": "max"}));
+    assert_eq!(max["max_tokens"], 64_000);
+
+    // Claude 4.6 has no `xhigh`: it is sent as `high`; `max` goes through.
+    let sonnet_46 = request_with_effort("claude-sonnet-4-6", Some("xhigh"), hello());
+    assert_eq!(sonnet_46["output_config"], json!({"effort": "high"}));
+    let sonnet_46_max = request_with_effort("claude-sonnet-4-6", Some("max"), hello());
+    assert_eq!(sonnet_46_max["output_config"], json!({"effort": "max"}));
+    // Claude 4.5 thinks within a budget; its deepest budget answers `max`.
+    let haiku_45 = request_with_effort("claude-haiku-4-5-20251001", Some("max"), hello());
+    assert_eq!(haiku_45["thinking"]["budget_tokens"], 12288);
+}

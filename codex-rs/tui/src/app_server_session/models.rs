@@ -19,7 +19,7 @@ use codex_protocol::openai_models::ModelPreset;
 use uuid::Uuid;
 
 /// The live catalog of `model_provider` (default: the provider the app server started with).
-async fn list_live_models(
+pub(crate) async fn list_live_models(
     request_handle: AppServerRequestHandle,
     request_id: Uuid,
     model_provider: Option<String>,

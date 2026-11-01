@@ -129,3 +129,68 @@ async fn a_failed_fetch_is_said_in_the_picker_and_the_selection_stays() {
         "{popup}"
     );
 }
+
+/// A Claude model through the Anthropic credits, with every level the gateway lists for it.
+fn credits_sonnet(template: &ModelPreset) -> ModelPreset {
+    use codex_protocol::openai_models::ReasoningEffortPreset;
+    let mut preset = template.clone();
+    preset.id = "claude-sonnet-5-5".to_string();
+    preset.model = "claude-sonnet-5-5".to_string();
+    preset.display_name = "Claude Sonnet 5.5".to_string();
+    preset.default_reasoning_effort = ReasoningEffortConfig::Medium;
+    preset.supported_reasoning_efforts = [
+        ReasoningEffortConfig::Low,
+        ReasoningEffortConfig::Medium,
+        ReasoningEffortConfig::High,
+        ReasoningEffortConfig::XHigh,
+        ReasoningEffortConfig::Max,
+    ]
+    .into_iter()
+    .map(|effort| ReasoningEffortPreset {
+        effort,
+        description: "level".to_string(),
+    })
+    .collect();
+    preset
+}
+
+/// 1 Nov: "claude-sonnet-5-5 has no effort levels to choose from". A model on another provider
+/// takes its levels from that provider's live list, xhigh and max included, and a refreshed list
+/// keeps the chosen level.
+#[tokio::test]
+async fn a_model_on_another_provider_offers_its_levels_including_xhigh_and_max() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.5")).await;
+    chat.thread_id = Some(ThreadId::new());
+    let startup = chat.model_catalog.try_list_models().unwrap();
+    chat.config.model_provider_id = "anthropic-credits".to_string();
+    chat.set_model("claude-sonnet-5-5");
+    assert!(
+        chat.preset_for_current_model().is_none(),
+        "not in the startup catalog"
+    );
+
+    let sonnet = credits_sonnet(&startup[0]);
+    chat.remember_provider_presets("anthropic-credits".to_string(), vec![sonnet.clone()]);
+    let preset = chat
+        .preset_for_current_model()
+        .expect("the credits list has it");
+    assert_eq!(preset.supported_reasoning_efforts.len(), 5);
+
+    chat.open_effort_popup();
+    let popup = render_bottom_popup(&chat, /*width*/ 120);
+    assert!(popup.contains("Extra high"), "{popup}");
+    assert!(popup.contains("Max"), "{popup}");
+
+    // The chosen level survives a refresh of either list.
+    chat.handle_key_event(KeyEvent::from(KeyCode::Esc));
+    chat.set_reasoning_effort(Some(ReasoningEffortConfig::Max));
+    chat.remember_provider_presets("anthropic-credits".to_string(), vec![sonnet]);
+    let mut refreshed = startup.clone();
+    refreshed.push(added_model(&startup[0]));
+    assert!(chat.replace_model_catalog(refreshed));
+    assert_eq!(chat.current_model(), "claude-sonnet-5-5");
+    assert_eq!(
+        chat.current_reasoning_effort(),
+        Some(ReasoningEffortConfig::Max)
+    );
+}

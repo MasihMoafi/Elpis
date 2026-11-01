@@ -131,6 +131,7 @@ impl ChatWidget {
             model_catalog,
             model_popup_request_id: None,
             model_catalog_error: None,
+            provider_presets: HashMap::new(),
             claude_accounts: None,
             claude_accounts_request_id: None,
             permission_popup_request_id: None,

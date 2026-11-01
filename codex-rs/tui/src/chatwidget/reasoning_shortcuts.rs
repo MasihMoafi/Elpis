@@ -149,12 +149,7 @@ impl ChatWidget {
     }
 
     fn current_model_preset(&self) -> Option<ModelPreset> {
-        let current_model = self.current_model();
-        self.model_catalog
-            .try_list_models()
-            .ok()?
-            .into_iter()
-            .find(|preset| preset.model == current_model)
+        self.preset_for_current_model()
     }
 }
 

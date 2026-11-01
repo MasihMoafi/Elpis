@@ -8,6 +8,7 @@ mod external_agent_config;
 pub(crate) mod fs;
 mod history;
 mod models;
+pub(crate) use models::list_live_models;
 pub(crate) mod provider_selection;
 #[cfg(test)]
 #[path = "app_server_session/provider_selection_tests.rs"]

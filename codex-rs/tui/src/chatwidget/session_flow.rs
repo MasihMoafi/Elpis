@@ -246,6 +246,7 @@ impl ChatWidget {
         {
             self.emit_forked_thread_event(forked_from_id, fork_parent_title);
         }
+        self.prefetch_provider_presets();
         if !self.suppress_session_configured_redraw {
             self.request_redraw();
         }

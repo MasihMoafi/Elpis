@@ -23,6 +23,16 @@ use crate::emitter::Usage;
 /// `max_tokens` is fixed, as in v0.3.0.
 const ANTHROPIC_MAX_TOKENS: u64 = 8192;
 
+/// Larger outputs for the deeper `output_config.effort` levels: thinking counts toward
+/// `max_tokens`, so the default limit would cut an `xhigh` or `max` turn off mid-thought.
+fn adaptive_max_tokens(effort: &str) -> u64 {
+    match effort {
+        "xhigh" => 32_000,
+        "max" => 64_000,
+        _ => ANTHROPIC_MAX_TOKENS,
+    }
+}
+
 /// The thinking a request asks for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Thinking {
@@ -48,19 +58,39 @@ fn claude_version(model: &str) -> Option<(u32, u32)> {
     Some((major, minor))
 }
 
-/// Whether the model thinks: the Claude families from 4.5 on.
-pub(crate) fn supports_thinking(model: &str) -> bool {
-    claude_version(model).is_some_and(|version| version >= (4, 5))
+/// The thinking levels a Claude model accepts, lowest first (Anthropic's model table, 1 Nov
+/// 2026): `output_config.effort` takes `low` to `max` from 4.7 on (Opus 4.7/4.8/5/5.5, Sonnet
+/// 5/5.5, Haiku 5.5, Fable 5/5.1); 4.6 has no `xhigh`; 4.5 thinks within a token budget, offered
+/// as three levels. Older models do not think.
+pub(crate) fn thinking_levels(model: &str) -> &'static [&'static str] {
+    match claude_version(model) {
+        Some(version) if version >= (4, 7) => &["low", "medium", "high", "xhigh", "max"],
+        Some((4, 6)) => &["low", "medium", "high", "max"],
+        Some((4, 5)) => &["low", "medium", "high"],
+        _ => &[],
+    }
+}
+
+/// Every effort level, lowest first.
+const EFFORT_ORDER: [&str; 5] = ["low", "medium", "high", "xhigh", "max"];
+
+fn effort_rank(level: &str) -> Option<usize> {
+    EFFORT_ORDER.iter().position(|known| *known == level)
 }
 
 fn thinking_for(model: &str, effort: Option<&str>) -> Option<Thinking> {
-    let version = claude_version(model).filter(|version| *version >= (4, 5))?;
-    let level = match effort? {
-        "minimal" | "low" => "low",
-        "medium" => "medium",
-        "high" | "xhigh" => "high",
-        _ => return None,
+    let version = claude_version(model)?;
+    let requested = match effort? {
+        "minimal" => "low",
+        other => other,
     };
+    // A level the model accepts goes straight through; one it lacks (`xhigh` on 4.6) becomes
+    // the deepest level below it, so a request never carries a value the API rejects.
+    let rank = effort_rank(requested)?;
+    let level = *thinking_levels(model)
+        .iter()
+        .rev()
+        .find(|level| effort_rank(level).is_some_and(|level| level <= rank))?;
     Some(if version >= (4, 6) {
         Thinking::Adaptive(level)
     } else {
@@ -186,6 +216,7 @@ pub(crate) fn request(conversation: &Conversation) -> Result<Value, GatewayError
         Some(Thinking::Adaptive(effort)) => {
             body["thinking"] = json!({"type": "adaptive"});
             body["output_config"] = json!({"effort": effort});
+            body["max_tokens"] = json!(adaptive_max_tokens(effort));
         }
         Some(Thinking::Budget(budget)) => {
             body["thinking"] = json!({"type": "enabled", "budget_tokens": budget});

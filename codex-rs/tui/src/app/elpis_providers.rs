@@ -39,6 +39,13 @@ impl App {
                 request_id,
                 result,
             } => {
+                // Every provider's live list is kept for effort lookups once a model there runs.
+                if let Ok(presets) = &result
+                    && crate::chatwidget::bridged_provider(&provider_id).is_none()
+                {
+                    self.chat_widget
+                        .remember_provider_presets(provider_id.clone(), presets.clone());
+                }
                 // The app server's own list refreshes the shared catalog too, so a model added
                 // since startup can be picked and its effort levels are known.
                 if self.chat_widget.model_popup_request_is_current(request_id)
@@ -54,6 +61,20 @@ impl App {
                 self.chat_widget
                     .finish_elpis_models_loading(request_id, provider_id, result);
             }
+            ElpisProviderEvent::PrefetchPresets { provider_id } => {
+                self.elpis_prefetch_presets(app_server, provider_id);
+            }
+            ElpisProviderEvent::PresetsLoaded {
+                provider_id,
+                result,
+            } => match result {
+                Ok(presets) => self
+                    .chat_widget
+                    .remember_provider_presets(provider_id, presets),
+                Err(error) => {
+                    tracing::warn!(%provider_id, %error, "could not list provider models")
+                }
+            },
             ElpisProviderEvent::OpenKeyPrompt { provider_id } => {
                 self.chat_widget.open_elpis_api_key_prompt(provider_id);
             }
@@ -105,6 +126,47 @@ impl App {
                     result,
                 }),
             ));
+        });
+    }
+
+    /// Lists a provider's models for effort lookups only, the way `elpis_browse_provider` does.
+    fn elpis_prefetch_presets(&mut self, app_server: &AppServerSession, provider_id: String) {
+        let Some(provider) = self.config.model_providers.get(&provider_id).cloned() else {
+            return;
+        };
+        let tx = self.app_event_tx.clone();
+        let send = move |provider_id, result| {
+            tx.send(AppEvent::Elpis(
+                crate::elpis_app_event::ElpisAppEvent::Provider(
+                    ElpisProviderEvent::PresetsLoaded {
+                        provider_id,
+                        result,
+                    },
+                ),
+            ));
+        };
+        if codex_model_provider_info::gateway_route(&provider).is_some() {
+            let home = self.config.codex_home.to_path_buf();
+            tokio::spawn(async move {
+                let result = crate::chatwidget::load_elpis_provider_models(
+                    home,
+                    provider_id.clone(),
+                    provider,
+                )
+                .await;
+                send(provider_id, result);
+            });
+            return;
+        }
+        let request_handle = app_server.request_handle();
+        tokio::spawn(async move {
+            let result = crate::app_server_session::list_live_models(
+                request_handle,
+                uuid::Uuid::new_v4(),
+                Some(provider_id.clone()),
+            )
+            .await;
+            send(provider_id, result);
         });
     }
 

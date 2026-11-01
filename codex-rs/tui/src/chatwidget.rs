@@ -568,6 +568,9 @@ pub(crate) struct ChatWidget {
     model_popup_request_id: Option<uuid::Uuid>,
     /// Why the last live model list failed; the pickers show it until a fetch succeeds.
     model_catalog_error: Option<String>,
+    /// Elpis: the live model lists of providers other than the app server's own, by provider,
+    /// so a model there (Claude through the Anthropic credits) has its effort levels.
+    provider_presets: HashMap<String, Vec<ModelPreset>>,
     claude_accounts: Option<codex_app_server_protocol::ClaudeAccountsReadResponse>,
     claude_accounts_request_id: Option<uuid::Uuid>,
     permission_popup_request_id: Option<uuid::Uuid>,

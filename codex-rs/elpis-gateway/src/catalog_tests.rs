@@ -263,3 +263,55 @@ fn only_claude_models_that_think_offer_effort_levels() {
     );
     assert_eq!(models[3].default_reasoning_level, None);
 }
+
+/// Every thinking level each Claude model accepts is offered, and none it rejects (1 Nov,
+/// Masih: "every thinking level. xhigh, max").
+#[test]
+fn each_claude_model_offers_exactly_the_thinking_levels_it_accepts() {
+    let models = read(
+        GatewayWire::AnthropicMessages,
+        json!({"data": [
+            {"id": "claude-sonnet-5-5"},
+            {"id": "claude-opus-5-5"},
+            {"id": "claude-fable-5-1"},
+            {"id": "claude-haiku-5-5"},
+            {"id": "claude-opus-4-7"},
+            {"id": "claude-sonnet-4-6"},
+            {"id": "claude-opus-4-5"},
+            {"id": "claude-opus-4-1-20250805"},
+        ]}),
+    );
+    let levels: Vec<Vec<String>> = models
+        .iter()
+        .map(|model| {
+            model
+                .supported_reasoning_levels
+                .iter()
+                .map(|preset| preset.effort.to_string())
+                .collect()
+        })
+        .collect();
+    let all = vec!["low", "medium", "high", "xhigh", "max"];
+    assert_eq!(
+        levels,
+        vec![
+            all.clone(),
+            all.clone(),
+            all.clone(),
+            all.clone(),
+            all,
+            vec!["low", "medium", "high", "max"],
+            vec!["low", "medium", "high"],
+            vec![],
+        ]
+        .into_iter()
+        .map(|row| row.into_iter().map(str::to_string).collect::<Vec<_>>())
+        .collect::<Vec<_>>()
+    );
+    assert!(
+        models[0]
+            .supported_reasoning_levels
+            .iter()
+            .all(|preset| !preset.description.is_empty())
+    );
+}
