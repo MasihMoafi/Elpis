@@ -100,9 +100,12 @@ test('sidebar rows share one height, one icon edge and an arrowless thin scrollb
     // Section headings got their own space above and below (bd1bbe4c0 and c35a20a6c, 31 Oct, "heading spacing"); the label itself keeps the row height.
     const labels = await page.locator('.section-label-row > .section-label').evaluateAll(labels => [...new Set(labels.filter(label => label.getBoundingClientRect().height > 0).map(label => Math.round(label.getBoundingClientRect().height)))]);
     assert.ok(labels.every(height => height <= 34), `section labels fit the row height: ${labels}`);
-    const nav = await page.locator('.nav-list button svg').first().boundingBox();
-    const dot = await page.locator('[data-thread-id="t-run"] .thread-dot').boundingBox();
-    assert.ok(Math.abs((nav.x + nav.width / 2) - (dot.x + dot.width / 2)) <= 1, 'navigation icons and root chat marks share one left edge');
+    // The status circle's left edge sits 13px right of the project chevron's centre, in its own column (ced589afb,
+    // 31 Oct, "separate sidebar status"), as sidebar-chevron-column.test.cjs requires; this replaces the 30 Oct rule that
+    // put it under the navigation icons.
+    const chevron = await page.locator('.project-row .sidebar-group-chevron').first().boundingBox();
+    const dot = await page.locator('[data-thread-id="t-run"] .conversation-state-slot .thread-dot').boundingBox();
+    assert.ok(Math.abs(dot.x - (chevron.x + chevron.width / 2 + 13)) <= 1, `${JSON.stringify([dot, chevron])}: ` + 'root chat marks sit in the status column after the project chevron');
     assert.equal(await page.locator('.thread-list').evaluate(el => getComputedStyle(el, '::-webkit-scrollbar-button').display), 'none');
   });
 });
