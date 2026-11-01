@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { MATILDA_CHANGED, MATILDA_CHAT_SHOWN } from "@/lib/matilda";
 import { appStorage } from "@/lib/projects";
-import { useMatildaSettings } from "@/lib/matilda-settings";
 import { MATILDA_SHOTS, MATILDA_SHOTS_LIGHT } from "@/bridge/matilda-face.cjs";
 
 type Track = { title: string; artist: string; uri: string; status: string; canPlay: boolean; canPause: boolean; canNext: boolean; muted: boolean; canMute: boolean };
@@ -72,9 +71,8 @@ export function MatildaCompanion() {
     return () => { document.removeEventListener("keydown", key); document.removeEventListener("pointerdown", press, true); };
   }, [chatOpen]);
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
-  // Pinning her means wanting her: an off Matilda is turned on (1 Nov: "Matilda is disabled from our pin, it shouldn't be").
-  const matilda = useMatildaSettings();
-  const pin = () => { void act("pin"); if (matilda.settings?.replies === false) void matilda.update({ replies: true }).catch(cause => setError(cause instanceof Error ? cause.message : "Matilda could not be turned on.")); };
+  // Pinning leaves her board on/off alone; the pinned chat works either way (1 Nov).
+  const pin = () => void act("pin");
   const generation = useRef(0), working = useRef(false);
   const refresh = useCallback(async () => {
     if (working.current) return;

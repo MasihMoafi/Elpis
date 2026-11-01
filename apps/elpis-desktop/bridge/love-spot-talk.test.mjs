@@ -499,9 +499,14 @@ test('one Matilda setting: off refuses every message and stops her; her model is
   assert.deepEqual(interrupts, [{ id: 'chat', turnId: 'turn-2' }], 'turning her off stops the reply she is writing');
   await assert.rejects(f.talk.send({ text: 'Still there?' }), /Matilda is off/);
   assert.equal(f.sent.length, 2, 'nothing reaches her while she is off');
+  // 1 Nov: her pinned chat still works while she is off.
+  f.finish('turn-2');
+  await f.talk.send({ text: 'Pinned hello', pinned: true });
+  assert.equal(f.sent.length, 3, 'the pinned chat reaches her while she is off');
+  assert.equal(f.sent.at(-1).pinned, undefined, 'the pinned flag stays in the bridge');
+  f.finish('turn-3');
   assert.equal((await f.talk.read()).matilda.replies, false, 'every surface reads the same setting');
   await f.talk.setMatilda({ replies: true });
-  f.finish('turn-2');
   await f.talk.send({ text: 'Back again' });
-  assert.equal(f.sent.length, 3);
+  assert.equal(f.sent.length, 4);
 });

@@ -346,12 +346,16 @@ export function createLoveSpotTalk({ client, store, companion, audio = LOVE_SPOT
       };
     },
     async send(body) {
-      object(body, ['text', 'model', 'provider', 'revision', 'persona']); text(body.text, 'message');
+      object(body, ['text', 'model', 'provider', 'revision', 'persona', 'pinned']); text(body.text, 'message');
+      if (body.pinned !== undefined && typeof body.pinned !== 'boolean') throw new BridgeError('pinned must be true or false');
       if (body.persona !== undefined) text(body.persona, 'persona', 4000);
       if (body.model !== undefined) text(body.model, 'model', 200);
       if (body.provider !== undefined) text(body.provider, 'provider', 200);
       matilda = await store.matildaSettings();
-      if (!matilda.replies) throw new BridgeError('Matilda is off. Turn her on to talk to her.', 409);
+      // Off quiets her on the board; her pinned chat always works (Masih, 1 Nov: "disabling it shouldn't disrupt me from using
+      // the pinned version").
+      if (!matilda.replies && body.pinned !== true) throw new BridgeError('Matilda is off. Turn her on to talk to her.', 409);
+      const { pinned: _pinned, ...rest } = body; body = rest;
       body = { ...body, model: body.model ?? matilda.model ?? undefined, provider: body.provider ?? matilda.provider ?? undefined };
       if (sending) throw new BridgeError('Love Spot is already replying. Wait for this turn.', 409);
       sending = true; error = ''; publish();

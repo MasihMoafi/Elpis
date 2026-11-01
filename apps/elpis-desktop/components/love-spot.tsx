@@ -18,7 +18,6 @@ import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Dictation } from "@/components/dictation";
-import { Voice } from "@/components/voice";
 import { MatildaWho, useMatilda } from "@/components/love-spot-matilda";
 import { ModelPicker } from "@/components/model-picker";
 import { api, chatProvider, providerChoices, unreadable, type Model, type ProviderSettings } from "@/lib/api";
@@ -87,7 +86,7 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
   const [voice, setVoice] = useState<MatildaVoice | null>(null), [voiceSaving, setVoiceSaving] = useState(false), [voiceError, setVoiceError] = useState("");
   const voiceEnabled = useRef(false);
   const voiceVersion = useRef(0);
-  const [calling, setCalling] = useState(false);
+  const calling = false; // no voice call with her any more (1 Nov)
   const [initial, setInitial] = useState<ExcalidrawInitialDataState>();
   const [error, setError] = useState("");
   const [saveStatus, setSaveStatus] = useState("");
@@ -550,7 +549,7 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
       {replies && LOVE_SPOT_AUDIO.available && voice?.available && <div className="flex flex-wrap items-center gap-2 text-xs" role="group" aria-label="Matilda's voice">
         <label className="flex items-center gap-2" title={LOVE_SPOT_AUDIO.readAloudAvailable ? "Matilda reads each reply in your ChatGPT voice." : "Enable live voice conversation with Matilda."}><span aria-hidden="true">{LOVE_SPOT_AUDIO.available && voice?.enabled ? <Volume2 size={16} /> : <VolumeX size={16} />}</span>{LOVE_SPOT_AUDIO.readAloudAvailable ? "Read replies aloud" : "Voice"}<Switch aria-label={LOVE_SPOT_AUDIO.readAloudAvailable ? "Read replies aloud" : "Voice"} checked={LOVE_SPOT_AUDIO.available && !!voice?.enabled} disabled={!LOVE_SPOT_AUDIO.available || !voice?.available || voiceSaving} onCheckedChange={enabled => void changeVoice(enabled)} /></label>
         {(!LOVE_SPOT_AUDIO.available || voice && !voice.available) && <Tooltip content={LOVE_SPOT_AUDIO.available ? voice?.reason || "ChatGPT voice is unavailable." : LOVE_SPOT_AUDIO.reason}><Button variant="ghost" size="icon-xs" aria-label="Why read aloud is unavailable"><Info aria-hidden="true" size={16} /></Button></Tooltip>}
-        <Voice key={page?.session} threadId="love-spot" persona={matilda.persona} disabled={!editor || !voice?.enabled} unavailableReason={LOVE_SPOT_AUDIO.available ? undefined : LOVE_SPOT_AUDIO.reason} onBusy={busy => { setCalling(busy); if (busy) speech?.stop(); }} />
+        {/* No voice-call button for her (Masih, 1 Nov: "I don't want the voice button for matilda"). */}
         {voiceSaving && <span className="sr-only" role="status">Saving Voice…</span>}
         {voiceProblem && <span className="text-destructive" role="alert">{voiceProblem}</span>}
       </div>}

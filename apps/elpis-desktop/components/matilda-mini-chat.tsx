@@ -14,7 +14,6 @@ import { replyPortrait } from "@/bridge/matilda-face.cjs";
 import { attachedFile } from "@/lib/prompt-history";
 import { LoadOnScroll } from "@/components/load-on-scroll";
 import { MatildaFace } from "@/components/matilda-face";
-import { useMatildaSettings } from "@/lib/matilda-settings";
 import "@/components/matilda-mini-chat.css";
 
 /** Earlier messages shown when the history icon opens them, and how many more each scroll to the top reveals (31 Oct: "when I
@@ -88,7 +87,7 @@ export function useMatildaMiniChat(open: boolean) {
     if (!sent || sending.current || conversation.busy) return;
     sending.current = true; streamedWhileSending.current = null; setPosting(true); setError(""); latestRead.current++;
     try {
-      const response = received(await api<Conversation>("/love-spot/talk", { text: sent, persona: savedPersona() }));
+      const response = received(await api<Conversation>("/love-spot/talk", { text: sent, persona: savedPersona(), pinned: true }));
       if (!mounted.current) return;
       const responseTurn = response.entries.at(-1)?.turnId;
       const streamed = streamedWhileSending.current as Conversation | null;
@@ -120,8 +119,8 @@ function message(entry: Entry) {
 }
 
 export function MatildaMiniChat({ chat }: { chat: ReturnType<typeof useMatildaMiniChat> }) {
-  // Off shows in the message field; she is turned on and off on the Love Spot bar (Masih, 31 Oct: "no need for the off box here").
-  const shared = useMatildaSettings(), off = shared.settings?.replies === false;
+  // Her on/off is the board's; the pinned chat always works (Masih, 1 Nov: "disabling it shouldn't disrupt me from using the
+  // pinned version").
   const log = useRef<HTMLDivElement>(null), fromBottom = useRef<number | null>(null);
   // Revealing earlier messages keeps what he is reading where it is.
   const reveal = () => { if (log.current) fromBottom.current = log.current.scrollHeight - log.current.scrollTop; chat.showMoreEarlier(); };
@@ -149,9 +148,7 @@ export function MatildaMiniChat({ chat }: { chat: ReturnType<typeof useMatildaMi
     {(chat.posting || chat.conversation.busy) && <p className="matilda-mini-status" role="status">Matilda is replying…</p>}
     {chat.error && <div className="matilda-mini-error" role="alert"><span>{chat.error}</span><Button variant="ghost" size="xs" onClick={() => void chat.retry()}>Retry</Button></div>}
     <form aria-label="Message Matilda" className="matilda-mini-composer" onSubmit={event => { event.preventDefault(); void chat.send(); }}>
-      {/* Off is never a dead end here: one press turns her on everywhere (1 Nov: "Matilda is disabled from our pin"). */}
-      {off && <Button type="button" variant="ghost" size="xs" onClick={() => void shared.update({ replies: true })}>Turn Matilda on</Button>}
-      <Textarea aria-label="Message Matilda" placeholder={off ? "Matilda is off" : "Message Matilda…"} disabled={off} rows={1} autoFocus value={chat.draft} onChange={event => chat.setDraft(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} />
+      <Textarea aria-label="Message Matilda" placeholder="Message Matilda…" rows={1} autoFocus value={chat.draft} onChange={event => chat.setDraft(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} />
       <Button type="submit" variant="ghost" size="icon-sm" aria-label="Send to Matilda" title="Send to Matilda" disabled={!chat.draft.trim() || chat.posting || chat.conversation.busy}><SendIcon size={18} /></Button>
     </form>
   </div>;
