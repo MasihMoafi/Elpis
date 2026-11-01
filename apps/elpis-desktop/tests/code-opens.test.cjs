@@ -131,7 +131,11 @@ for (const colorScheme of ['light', 'dark']) for (const width of [1280, 900]) te
     assert.ok(await text.evaluate(el => el.scrollWidth > el.clientWidth + 300));
     await text.click(); await f.page.keyboard.press('Control+Home'); await f.page.keyboard.press('End');
     assert.ok(await text.evaluate(el => el.scrollLeft > 0), 'End reveals the long line');
-    assert.equal(await f.page.locator('.fe-gutter-line').nth(1).evaluate(el => el.getBoundingClientRect().height), 20);
+    // A number row is one source line tall. The line is the code size times 1.6; code text moved from 12.5px to the shared
+    // 13px step with the one scale (fb3df2cd7; Masih 29 Oct: "map every style feature of chatgpt app into a clear spec ... make our design match it").
+    // Layout rounds to 1/64 px, so 20.8 lays out as 20.796875.
+    const [row, sourceLine] = [await f.page.locator('.fe-gutter-line').nth(1).evaluate(el => el.getBoundingClientRect().height), await text.evaluate(el => parseFloat(getComputedStyle(el).lineHeight))];
+    assert.ok(Math.abs(row - sourceLine) < 1 / 32, `number row ${row}px is one ${sourceLine}px source line`);
     await f.page.keyboard.press('Control+Home');
     if (process.env.ELPIS_SHOTS) await f.page.screenshot({ path: path.join(process.env.ELPIS_SHOTS, `code-nowrap-${colorScheme}-${width}.png`) });
     await f.page.reload(); await f.page.locator('.thread-row[data-thread-id="chat-a"] .thread-link').click();
