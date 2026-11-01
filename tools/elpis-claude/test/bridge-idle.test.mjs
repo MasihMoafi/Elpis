@@ -73,6 +73,7 @@ if (process.argv.includes("--elpis-local-bridge")) {
     while (!predicate()) { assert(Date.now() < deadline, label); await pause(20); }
   }
 
+  const roots = []; // every temp home of this run; the last test checks nothing started in one outlives it
   // The pids this run's processes recorded in `name` files (state.json for bridges, engine.json for engines) under root.
   const recorded = (root, name, key = "pid", token = "token") => {
     const dir = path.join(root, "elpis-bridge");
@@ -82,6 +83,7 @@ if (process.argv.includes("--elpis-local-bridge")) {
   };
   async function setup(t, extra = {}, bundleSource = process.env.ELPIS_IDLE_TEST_BUNDLE ?? source) {
     const root = createTestTempDir(path.join(os.tmpdir(), "ebi-"));
+    roots.push(root);
     const env = { PATH: process.env.PATH, HOME: root, ELPIS_HOME: root, CODEX_HOME: root, CODEX_AUTH_HOME: root,
       XDG_RUNTIME_DIR: root, TMPDIR: root, ELPIS_NO_AGY: "1", ACP_BRIDGE_NO_AGENTS: "1",
       ACP_BRIDGE_STORE: path.join(root, "chats.json"), ACP_BRIDGE_LOG: path.join(root, "bridge.log"),
@@ -116,14 +118,12 @@ if (process.argv.includes("--elpis-local-bridge")) {
       for (const socket of sockets) socket.terminate();
       // Only children/state of this test's private home are ever signalled.
       for (const child of children) if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
-      const states = fs.readdirSync(path.join(root, "elpis-bridge"), { recursive: true });
-      for (const file of states.filter(file => file.endsWith("state.json"))) {
-        const stateFile = path.join(root, "elpis-bridge", file);
-        if (!fs.existsSync(stateFile)) continue;
-        const state = JSON.parse(fs.readFileSync(stateFile));
-        if (startToken(state.pid) === state.token) { try { process.kill(state.pid, "SIGTERM"); } catch {} }
-      }
-      await pause(250);
+      // Bridges and the engines they started (engine.json): an engine left running holds ~40 MB until reboot.
+      const owned = [...recorded(root, "state.json"), ...recorded(root, "engine.json")].filter(p => startToken(p.pid) === p.token);
+      for (const p of owned) { try { process.kill(p.pid, "SIGTERM"); } catch {} }
+      const deadline = Date.now() + 3000;
+      while (owned.some(p => startToken(p.pid) === p.token) && Date.now() < deadline) await pause(50);
+      for (const p of owned) if (startToken(p.pid) === p.token) { try { process.kill(p.pid, "SIGKILL"); } catch {} }
       removeTestTempDir(root);
     });
     const connect = async () => {
@@ -317,6 +317,7 @@ if (process.argv.includes("--elpis-local-bridge")) {
     assert.equal(result.exitCode, 0, result.errors); assert.match(result.errors, /using the Elpis already running/, "it joins instead of retiring");
     assert.ok((await (await f.connect()).call("thread/list", {})).result.data.length);
   });
+
   // 1 Nov, Masih: "make such leftovers don't appear again". The memory guard kills a bridge with SIGKILL; its engine
   // must not live on, holding memory, until Elpis is next launched in the same home.
   test("an engine exits within seconds when its bridge is killed with SIGKILL", async t => {
@@ -327,5 +328,15 @@ if (process.argv.includes("--elpis-local-bridge")) {
     assert.equal(startToken(engine.pid), engine.token, "the engine runs");
     process.kill(bridge.pid, "SIGKILL");
     await until(() => startToken(engine.pid) !== engine.token, "the engine is gone within 5 s of its bridge", 5000);
+  });
+
+  // Four engines from this file once outlived their deleted homes. Nothing a test here started may survive the run.
+  test("no process started in this run's temp homes survives", async () => {
+    const survivors = () => fs.readdirSync("/proc").filter(pid => /^\d+$/.test(pid) && Number(pid) !== process.pid).flatMap(pid => {
+      try { const args = fs.readFileSync(`/proc/${pid}/cmdline`, "utf8").replaceAll("\0", " "); return roots.some(root => args.includes(root)) ? [`${pid}: ${args}`] : []; } catch { return []; }
+    });
+    const deadline = Date.now() + 5000;
+    while (survivors().length && Date.now() < deadline) await pause(100);
+    assert.deepEqual(survivors(), []);
   });
 }
