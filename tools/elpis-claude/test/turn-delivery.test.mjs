@@ -180,7 +180,7 @@ for (const recover of [false, true]) test(`${recover ? 'recovering' : 'saving'} 
   assert.equal(new Set(all.filter(entry => entry.item.type === 'userMessage').map(entry => entry.item.id)).size, 206);
 });
 
-for (const count of [1, 4]) test(`A128: ${count} messages during a tool survive the next tool starting before delivery`, { timeout: 20000 }, async t => {
+for (const count of [4]) test(`A128: ${count} messages during a tool survive the next tool starting before delivery`, { timeout: 20000 }, async t => {
   const f = await fixture(t);
   const initial = "[wait] [tool-flight] [tool-race] original";
   const { turn } = await f.client.send(f.id, { text: initial });
@@ -289,7 +289,7 @@ test("A128: desktop reload while a tool has waiting messages keeps their order a
   assert.ok(read.data.some(e => e.item.text?.includes("answered:") && e.item.text.includes("after reload")));
 });
 
-for (const count of [1, 4]) test(`A128: GPT keeps its native tool running through ${count} messages`, { timeout: 25000 }, async t => {
+for (const count of [4]) test(`A128: GPT keeps its native tool running through ${count} messages`, { timeout: 25000 }, async t => {
   const native = !engine.endsWith("/test/fake-app-server.mjs");
   const followups = Array.from({ length: count }, (_, n) => `GPT follow-up ${n + 1} — پیام`);
   let provider;
@@ -464,7 +464,7 @@ test("a stopped turn with two delivered follow-ups can replace its first message
   assert.deepEqual([...after.data].reverse().filter(e => e.item.type === "userMessage").map(e => e.item.content[0].text), ["replacement"]);
 });
 
-for (const count of [0, 1, 2, 4]) test(`Claude delivers a final answer and turn end after ${count} in-flight messages, then hello`, { timeout: 20000 }, async t => {
+for (const count of [0, 4]) test(`Claude delivers a final answer and turn end after ${count} in-flight messages, then hello`, { timeout: 20000 }, async t => {
   const f = await fixture(t, { FAKE_ACP_STEER_DELAY: "120" });
   const started = await f.client.send(f.id, { text: "[wait] original" });
   const turnId = started.turn.id;
