@@ -812,7 +812,13 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
     // Under the Mother: like her, he starts his agents, so he sits in her column.
     position: (({ x, y }) => ({ x, y: y + 140 }))(graph.nodes.find(node => node.type === "mother")?.position ?? { x: 0, y: 0 }),
     ...(fatherSize ? { measured: fatherSize } : {}), data: { run: fatherState, children: split.father.length, limit } satisfies MotherData } : null;
-  const nodesWithFather = (list: Node[]) => fatherNode ? [...list, fatherNode] : list;
+  // A reloaded saved run replaces the agents without their measured sizes; React Flow hides an unmeasured agent and,
+  // its size unchanged, never measures it again (2 Nov: the steps vanished). Every agent keeps its last size.
+  const sizes = useRef(new Map<string, { width: number; height: number }>());
+  const nodesWithFather = (list: Node[]) => {
+    const sized = list.map(node => node.measured || !sizes.current.has(node.id) ? node : { ...node, measured: sizes.current.get(node.id) });
+    return fatherNode ? [...sized, fatherNode] : sized;
+  };
   const frames: Node[] = (graph.frames ?? []).flatMap(frame => {
     const members = graph.nodes.filter(node => frame.nodeIds.includes(node.id));
     if (!members.length) return [];
@@ -848,7 +854,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
   const onNodesChange = (changes: NodeChange[]) => {
     const removed = new Set(changes.flatMap(change => change.type === "remove" && change.id !== MOTHER ? [change.id] : []));
     if (removed.size) checkpoint();
-    for (const change of changes) if (change.type === "dimensions" && change.id === FATHER && change.dimensions) setFatherSize(change.dimensions);
+    for (const change of changes) if (change.type === "dimensions" && change.dimensions) { sizes.current.set(change.id, change.dimensions); if (change.id === FATHER) setFatherSize(change.dimensions); }
     const picks = changes.flatMap(change => change.type === "select" ? [change] : []);
     if (picks.length || removed.size) setSelection(current => {
       const next = new Set(current);

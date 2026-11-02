@@ -394,7 +394,7 @@ test('saved failed workflow opens its live team in chat and both canvas views wi
     await board.getByRole('region', { name: 'Run clock', exact: true }).getByText('Duration not recorded', { exact: true }).waitFor();
     assert.equal(await board.getByRole('log', { name: 'Run log', exact: true }).locator('time').count(), 0, 'a saved task state is not assigned an invented observation timestamp');
     await previousAttempt.locator('summary').click();
-    assert.match(await board.locator('.react-flow__node[data-id="evidence"]').innerText(), /Inspect Pointt evidence/);
+    await board.locator('.react-flow__node[data-id="evidence"]').waitFor({ state: 'visible' }); assert.match(await board.locator('.react-flow__node[data-id="evidence"]').innerText(), /Inspect Pointt evidence/);
     await shot(page, 'workflow-recorded-flat');
     await page.getByRole('radio', { name: 'Isometric', exact: true }).click();
     const iso = page.getByRole('region', { name: 'Isometric board', exact: true });
@@ -438,7 +438,7 @@ test('failed workflow follows a resumed agent and paginated descendants without 
     await progress.getByText('Source checker', { exact: true }).waitFor();
     await progress.getByText(/Mother agent: The evidence agent is checking/).waitFor();
     for (const colorScheme of ['light']) {
-      if (await sidebar(page).getByRole('button', { name: `Use ${colorScheme} theme`, exact: true }).count()) await chooseTheme(page, colorScheme);
+      void colorScheme;
       for (const width of [1440, 820]) {
         await page.setViewportSize({ width, height: 900 });
         const columns = await progress.locator('.workflow-progress-row').evaluateAll(rows => rows.map(row => {
@@ -457,7 +457,7 @@ test('failed workflow follows a resumed agent and paginated descendants without 
       await page.setViewportSize({ width: 1440, height: 900 });
       await shot(page, `resumed-team-chat-${colorScheme}`);
     }
-    await chooseTheme(page, 'light'); await page.setViewportSize({ width: 1440, height: 900 });
+    await page.setViewportSize({ width: 1440, height: 900 });
     await eventually(async () => assert.ok(f.posts.some(post => post.path === '/api/threads/chat-a/resume')));
     const beforeOpen = { history: rootHistoryReads, resumes: f.posts.filter(post => post.path === '/api/threads/chat-a/resume').length };
     await f.composer.fill('Keep this unsent draft');
