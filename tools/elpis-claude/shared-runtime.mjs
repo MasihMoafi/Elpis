@@ -345,15 +345,37 @@ class EngineProxy {
       child.once("close", (code, signal) => this.#end(`the helper's engine exited (${signal ?? code})`));
       return;
     }
-    (sharedEngine ?? startSharedEngine()).promise.then((engine) => {
+    this.#connect(false);
+  }
+  // A client can arrive between the shared engine's death and the bridge seeing it exit; its socket
+  // then never opens. It waits for that engine to exit and joins a fresh one, once (2 Nov: about one
+  // run in four of shared-provider-sessions refused a client right after the engine was killed).
+  #connect(retried) {
+    const entry = sharedEngine ?? startSharedEngine();
+    entry.promise.then((engine) => {
       if (this.gone) return;
       this.pid = engine.child.pid;
+      let opened = false;
       const socket = this.socket = new WebSocket(`ws+unix://${engine.sock}:/`);
-      socket.on("open", () => { for (const frame of this.pending.splice(0)) socket.send(frame); });
+      socket.on("open", () => { opened = true; for (const frame of this.pending.splice(0)) socket.send(frame); });
       socket.on("message", (data) => { const text = String(data); this.#answered(text); this.stdout.emit("data", `${text}\n`); });
       socket.on("error", (e) => note(`engine connection: ${e.message}`));
       // 'close' follows the last message, so nothing the engine answered is rejected.
-      socket.on("close", () => this.#end("the native engine connection closed"));
+      socket.on("close", () => {
+        if (opened || retried || this.gone || this.closing) return this.#end("the native engine connection closed");
+        const child = engine.child;
+        const ended = child.exitCode !== null || child.signalCode !== null
+          ? Promise.resolve(true)
+          : Promise.race([new Promise((r) => child.once("exit", () => r(true))), pause(2000).then(() => false)]);
+        ended.then((dead) => {
+          if (this.gone) return;
+          if (!dead) return this.#end("the native engine connection closed");
+          if (sharedEngine === entry) sharedEngine = null;
+          note("joining a fresh engine: the shared one exited before this client connected");
+          this.socket = null;
+          this.#connect(true);
+        });
+      });
     }, (e) => this.#end(e.message));
   }
   #send(frame) {
