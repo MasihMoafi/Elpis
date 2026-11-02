@@ -52,19 +52,19 @@ test('the gate records only the clean commit present before its tests run', asyn
     const root = path.join(dir, 'repo'), home = path.join(dir, 'home');
     const git = args => execFileSync('git', ['-c', 'core.hooksPath=/dev/null', ...args], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
     try {
-      for (const sub of ['scripts', 'tests', 'bridge', 'desktop', 'bin']) await fs.mkdir(path.join(root, sub), { recursive: true });
+      for (const sub of ['scripts', 'tests', 'bridge', 'desktop', 'ui', 'bin']) await fs.mkdir(path.join(root, sub), { recursive: true });
       await fs.mkdir(home);
       // This fixture builds no app; its lifecycle checks must not wait on workstation build locks.
       await fs.writeFile(path.join(root, 'bin/flock'), '#!/bin/sh\nshift\nexec "$@"\n', { mode: 0o755 });
       const scripts = new URL('../scripts/', import.meta.url);
       for (const file of ['test-gate.mjs', 'gate-guards.mjs']) await fs.copyFile(new URL(file, scripts), path.join(root, 'scripts', file));
-      await fs.writeFile(path.join(root, 'test-inventory.json'), JSON.stringify({ fast: ['tests/state.test.mjs'], bridge: ['bridge/idle.test.mjs'], desktop: ['desktop/idle.test.mjs'], ui: [], 'opt-in': [] }));
+      await fs.writeFile(path.join(root, 'test-inventory.json'), JSON.stringify({ fast: ['tests/state.test.mjs'], bridge: ['bridge/idle.test.mjs'], desktop: ['desktop/idle.test.mjs'], ui: ['ui/idle.test.mjs'], 'opt-in': [] }));
       await fs.writeFile(path.join(root, 'package.json'), JSON.stringify({ scripts: { build: 'node renderer.mjs' } }));
       await fs.writeFile(path.join(root, '.gitignore'), 'bridge/resources/\nout/\n');
       await fs.writeFile(path.join(root, 'renderer.mjs'), "import fs from 'node:fs'; if(process.env.GATE_SCENARIO === 'renderer-failure') process.exit(2); fs.mkdirSync('out', {recursive:true}); fs.writeFileSync('out/index.html', 'built renderer');");
       await fs.writeFile(path.join(root, 'bridge/build-resources.mjs'), "import fs from 'node:fs'; if(process.env.GATE_SCENARIO === 'resource-failure') process.exit(2); fs.mkdirSync('bridge/resources', {recursive:true}); fs.writeFileSync('bridge/resources/rag.md', 'built resource');");
-      for (const sub of ['bridge', 'desktop']) await fs.writeFile(path.join(root, sub, 'idle.test.mjs'), "import { test } from 'node:test'; test('idle', () => {});\n");
-      await fs.appendFile(path.join(root, 'desktop/idle.test.mjs'), "import assert from 'node:assert/strict'; import fs from 'node:fs'; test('renderer exists before desktop tests', () => assert.equal(fs.readFileSync('out/index.html','utf8'), 'built renderer'));\n");
+      for (const sub of ['bridge', 'desktop', 'ui']) await fs.writeFile(path.join(root, sub, 'idle.test.mjs'), "import { test } from 'node:test'; test('idle', () => {});\n");
+      await fs.appendFile(path.join(root, 'ui/idle.test.mjs'), "import assert from 'node:assert/strict'; import fs from 'node:fs'; test('renderer exists before UI tests', () => assert.equal(fs.readFileSync('out/index.html','utf8'), 'built renderer'));\n");
       await fs.writeFile(path.join(root, 'probe'), 'original');
       await fs.writeFile(path.join(root, 'tests/state.test.mjs'), `import { test } from 'node:test';
 import fs from 'node:fs';
@@ -78,7 +78,7 @@ test('mutate during the real gate', () => {
 });
 `);
       git(['init', '-q']); git(['config', 'user.name', 'Gate test']); git(['config', 'user.email', 'gate@example.invalid']);
-      git(['add', 'scripts/test-gate.mjs', 'scripts/gate-guards.mjs', 'test-inventory.json', 'package.json', '.gitignore', 'renderer.mjs', 'bridge/build-resources.mjs', 'bridge/idle.test.mjs', 'desktop/idle.test.mjs', 'bin/flock', 'probe', 'tests/state.test.mjs']);
+      git(['add', 'scripts/test-gate.mjs', 'scripts/gate-guards.mjs', 'test-inventory.json', 'package.json', '.gitignore', 'renderer.mjs', 'bridge/build-resources.mjs', 'bridge/idle.test.mjs', 'desktop/idle.test.mjs', 'ui/idle.test.mjs', 'bin/flock', 'probe', 'tests/state.test.mjs']);
       git(['commit', '-qm', 'fixture']);
       if (scenario === 'dirty-start') await fs.writeFile(path.join(root, 'probe'), 'changed');
       const env = { ...process.env, HOME: home, PATH: `${path.join(root, 'bin')}${path.delimiter}${process.env.PATH}`, GATE_SCENARIO: scenario, ELPIS_PLAYWRIGHT_PACKAGE: '/fixture/not-used' };
@@ -91,9 +91,9 @@ test('mutate during the real gate', () => {
         assert.equal(error.status, 1); output = error.stdout;
       }
       if (scenario === 'resource-failure') { assert.match(output, /FAIL bridge-resources/); assert.doesNotMatch(output, /RUN tests\/state\.test\.mjs|renderer-build/); }
-      if (scenario === 'renderer-failure') { assert.match(output, /FAIL renderer-build/); assert.doesNotMatch(output, /RUN desktop\/idle\.test\.mjs/); }
+      if (scenario === 'renderer-failure') { assert.match(output, /PASS desktop\/idle\.test\.mjs[\s\S]*FAIL renderer-build/); assert.doesNotMatch(output, /ui\/idle\.test\.mjs/); }
       if (scenario === 'fast-only') { assert.match(output, /PASS bridge-resources[\s\S]*PASS tests\/state\.test\.mjs/); assert.doesNotMatch(output, /renderer-build/); }
-      if (scenario === 'desktop-only') assert.match(output, /PASS renderer-build[\s\S]*PASS desktop\/idle\.test\.mjs/);
+      if (scenario === 'desktop-only') { assert.match(output, /PASS desktop\/idle\.test\.mjs/); assert.doesNotMatch(output, /renderer-build/); }
       const commit = git(['rev-parse', 'HEAD']);
       const record = path.join(home, '.local/state/elpis-gate', `${commit}.json`);
       if (scenario === 'clean') {
