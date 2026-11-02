@@ -128,7 +128,9 @@ const THREAD_HISTORY_DB: RuntimeDbSpec = RuntimeDbSpec {
     kind: DbKind::ThreadHistory,
     open_phase: "open_thread_history",
     migrate_phase: "migrate_thread_history",
-    background_reclamation: false,
+    // Elpis: every thread-history transaction opens with BEGIN IMMEDIATE (thread-store/src/local/thread_history.rs),
+    // so reclamation cannot invalidate a deferred read. Masih's copy held 226 MB of free pages (1 Nov).
+    background_reclamation: true,
     recovery: RecoveryMode::Unavailable,
 };
 
