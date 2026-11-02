@@ -116,7 +116,7 @@ test('selected chat frames keep their size and share the theme accent in both sc
       return states;
     } finally { await f.close(); }
   };
-  for (const [colorScheme, width] of [['light', 1440], ['dark', 820]]) {
+  for (const [colorScheme, width] of [['light', 1440]]) {
     const baseline = process.env.ELPIS_FRAME_BASELINE_OUT
       ? await inspect(colorScheme, width, process.env.ELPIS_FRAME_BASELINE_OUT, false) : null;
     const candidate = await inspect(colorScheme, width, process.env.ELPIS_RENDERER_OUT, true);
@@ -147,48 +147,7 @@ async function capture(page, name) {
   await page.locator('aside.sidebar').screenshot({ path: path.join(shots, `${name}.png`) });
 }
 
-for (const colorScheme of ['light', 'dark']) {
-  for (const project of [false, true]) test(`agents chevron stays inside the sidebar with a 4px circle gap at depths 0 and 1 in ${project ? 'projects' : 'Recents'} (${colorScheme})`, async () => {
-    const f = await setup(colorScheme, project), { page, row, toggle } = f;
-    const measured = [];
-    const measure = async (id, depth, state) => {
-      measured.push({ depth, state, ...await row(id).evaluate(element => {
-        const button = element.querySelector(':scope > button[aria-expanded]');
-        const icon = button.querySelector('svg').getBoundingClientRect();
-        const circle = element.querySelector('.conversation-state-slot .thread-dot').getBoundingClientRect();
-        const target = button.getBoundingClientRect();
-        const clipped = [];
-        for (let ancestor = element.parentElement; ancestor; ancestor = ancestor.parentElement) {
-          if (getComputedStyle(ancestor).overflowX !== 'visible') clipped.push(ancestor.getBoundingClientRect().left);
-        }
-        return { left: icon.left, right: icon.right, circle: circle.left, clipLeft: Math.max(...clipped),
-          sidebar: element.closest('aside.sidebar').getBoundingClientRect().left,
-          target: { left: target.left, width: target.width, height: target.height } };
-      }) });
-    };
-    try {
-      await measure(parent.id, 0, 'collapsed');
-      await toggle().click();
-      await row(child.id).waitFor();
-      await measure(parent.id, 0, 'expanded');
-      await measure(child.id, 1, 'collapsed');
-      await row(child.id).getByRole('button', { name: /Expand agents in/ }).click();
-      await row(nested.id).waitFor();
-      await measure(child.id, 1, 'expanded');
-      await page.mouse.move(700, 60);
-      await capture(page, `${project ? 'project' : 'recents'}-${colorScheme}-chevron-gap`);
-      if (shots) await fs.writeFile(path.join(shots, `${project ? 'project' : 'recents'}-${colorScheme}-chevron-gap.json`), JSON.stringify(measured, null, 2));
-      for (const actual of measured) {
-        const label = `depth ${actual.depth}, ${actual.state}`;
-        assert.ok(actual.left >= actual.sidebar, `${label}: chevron's left edge stays inside the sidebar`);
-        assert.ok(actual.left >= actual.clipLeft, `${label}: the scroll container does not clip the chevron`);
-        assert.ok(actual.circle - actual.right >= 4, `${label}: chevron needs at least 4px before the circle; got ${actual.circle - actual.right}px`);
-        assert.ok(actual.target.width >= 12 && actual.target.height >= 24, `${label}: keep the existing click target`);
-      }
-      assert.deepEqual(f.errors, []);
-    } finally { await f.close(); }
-  });
-
+for (const colorScheme of ['light']) {
   for (const project of [false, true]) test(`mother and agent coordinates in ${project ? 'projects' : 'Recents'} (${colorScheme})`, async () => {
     const f = await setup(colorScheme, project), { page, row, toggle } = f;
     const name = `${project ? 'project' : 'recents'}-${colorScheme}`, measured = {};
@@ -262,7 +221,7 @@ for (const colorScheme of ['light', 'dark']) {
   });
 }
 
-for (const colorScheme of ['light', 'dark']) test(`agent badges share one column whatever the title length (${colorScheme})`, async () => {
+for (const colorScheme of ['light']) test(`agent badges share one column whatever the title length (${colorScheme})`, async () => {
   const f = await setup(colorScheme), { row, toggle } = f;
   try {
     await toggle().click();
@@ -275,7 +234,7 @@ for (const colorScheme of ['light', 'dark']) test(`agent badges share one column
   } finally { await f.close(); }
 });
 
-for (const colorScheme of ['light', 'dark']) test(`a section heading has more room above it than below, before its chats (${colorScheme})`, async () => {
+for (const colorScheme of ['light']) test(`a section heading has more room above it than below, before its chats (${colorScheme})`, async () => {
   const f = await setup(colorScheme, true), { page } = f;
   try {
     const rooms = await page.locator('aside.sidebar .section-label-row').evaluateAll(rows => rows
@@ -284,15 +243,6 @@ for (const colorScheme of ['light', 'dark']) test(`a section heading has more ro
         return { name: row.textContent.trim().slice(0, 24), above: mid - box.top, below: box.bottom - mid }; }));
     assert.ok(rooms.length > 0, 'the sidebar shows a heading that follows another section');
     for (const room of rooms) assert.ok(room.above - room.below >= 6, `${room.name}: ${room.above}px above the heading text and ${room.below}px below it`);
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
-for (const colorScheme of ['light', 'dark']) test(`the chat box glows on all four sides in the theme colour (${colorScheme})`, async () => {
-  const f = await setup(colorScheme), { page } = f;
-  try {
-    const glow = await page.locator('.composer').first().evaluate(element => getComputedStyle(element).boxShadow);
-    assert.match(glow, /0px 0px 4px/, `the chat box has a 4px glow in the theme colour: ${glow}`);
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

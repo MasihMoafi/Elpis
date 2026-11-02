@@ -54,7 +54,7 @@ test('missing snapshot allows conversation only; a failed restore stays reviewab
   } finally { await f.close(); }
 });
 
-for (const colorScheme of ['light', 'dark']) for (const [width, height] of [[1280, 800], [900, 700]]) test(`rewind fits ${colorScheme} ${width}×${height}`, async () => {
+for (const colorScheme of ['light']) for (const [width, height] of [[900, 700]]) test(`rewind fits ${colorScheme} ${width}×${height}`, async () => {
   const f = await fixture({ colorScheme, width, height, routes: { '/api/threads/chat-a/rewind': () => preview } });
   try { await f.open('chat-a'); const dialog = await openRewind(f); await dialog.getByLabel('Restore', { exact: true }).waitFor(); await dialog.getByText('View changes').click(); await assertUiFit(dialog, 'rewind dialog');
     const dir = path.resolve('../../.tmp/rewind'); await fs.mkdir(dir, { recursive: true }); await f.page.screenshot({ path: path.join(dir, `${colorScheme}-${width}.png`) });

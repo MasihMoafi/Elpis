@@ -37,7 +37,7 @@ const probe = page => page.evaluate(() => {
   };
 });
 
-for (const colorScheme of ['light', 'dark']) {
+for (const colorScheme of ['light']) {
   test(`a wide side panel leaves room for the running chat controls (${colorScheme})`, async t => {
     const f = await fixture({ width: 1000, height: 800, colorScheme, running: true });
     t.after(async () => { await f.close(); assert.deepEqual(f.errors, []); });
@@ -103,7 +103,7 @@ for (const model of ['sol', 'claude/claude-sonnet-5-5']) for (const running of [
   });
 }
 
-for (const colorScheme of ['light', 'dark']) for (const running of [false, true]) test(`composer options and context icon fit at 600, 400 and 320px (${colorScheme}, ${running ? 'running' : 'idle'})`, async t => {
+for (const colorScheme of ['light']) for (const running of [false, true]) test(`composer options and context icon fit at 600, 400 and 320px (${colorScheme}, ${running ? 'running' : 'idle'})`, async t => {
   const f = await fixture({ width: 1100, height: 700, colorScheme, running, routes: {
     '/api/models': () => ({ data: [{ id: 'sol', model: 'sol', displayName: 'Sol', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }], serviceTiers: [{ id: 'priority', name: 'Fast' }] }] }),
     '/api/voice': () => ({ available: true }),
@@ -223,7 +223,7 @@ test('Fast stays on screen, switched off with its reason, when the chat model of
 
 // Matilda's error stays in her own place (1 Nov): it sat fixed at the bottom right, over the Send button. Positive: the
 // alert shows; negative: it touches neither the composer nor Send, in both themes and a narrow window.
-for (const colorScheme of ['light', 'dark']) test(`Matilda's load error never covers the composer (${colorScheme})`, async t => {
+for (const colorScheme of ['light']) test(`Matilda's load error never covers the composer (${colorScheme})`, async t => {
   const f = await fixture({ width: 1100, height: 700, colorScheme, routes: {
     '/api/love-spot/companion': () => ({ __http: 500, error: 'Matilda could not load: the bridge did not answer before the request timed out, so her state, music and pinned place are unknown.' }),
   } });

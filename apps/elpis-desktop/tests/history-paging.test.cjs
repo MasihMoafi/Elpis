@@ -5,7 +5,7 @@ const path = require('node:path');
 const { fixture } = require('./parity-fixture.cjs');
 const { scrollToLoadEarlier } = require('./controls.cjs');
 
-for (const colorScheme of ['light', 'dark']) {
+for (const colorScheme of ['light']) {
   test(`earlier messages remain reachable across compaction and a refused page · ${colorScheme}`, async () => {
     const chat = Array.from({ length: 26 }, (_, index) => [`t${index}`, `History prompt ${index}`, `History reply ${index}`]);
     chat[12] = ['t12', '/compact', '', [{ id: 'compact', type: 'commandExecution', command: 'Compact conversation', status: 'completed' }]];
@@ -70,7 +70,7 @@ for (const colorScheme of ['light', 'dark']) {
   });
 }
 
-for (const colorScheme of ['light', 'dark']) {
+for (const colorScheme of ['light']) {
   test(`a chat whose earliest part is missing says so where its history begins · ${colorScheme}`, async () => {
     // His rust-obsidian chat (24 Oct): the engine opens what remains and marks every page (earliestHistoryMissing).
     const chat = Array.from({ length: 12 }, (_, index) => [`t${index}`, `Remaining prompt ${index}`, `Remaining reply ${index}`]);

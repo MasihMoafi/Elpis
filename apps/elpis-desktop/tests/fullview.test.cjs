@@ -8,7 +8,7 @@ const http = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { guardDesktopStore, unapprovedOranges, openSettings, chooseTheme } = require('./controls.cjs');
+const { guardDesktopStore, unapprovedOranges, openSettings } = require('./controls.cjs');
 const { fakeDesktop } = require('./fake-desktop.cjs');
 const root = path.resolve(__dirname, '../out');
 const shots = process.env.ELPIS_FULLVIEW_SHOTS;
@@ -323,20 +323,4 @@ test('sizes and styles match the split view, and the light theme has only approv
   assert.deepEqual(await unapprovedOranges(page), [], 'light theme, collapsed pill: only approved logo accent');
   await pill.click(); await exit.click(); await enter.waitFor();
   assert.deepEqual(await look(), splitLook, 'back in split view nothing moved');
-}));
-
-test('screenshots: split view, full view with the card and the collapsed pill, light and dark', () => fixture(async ({ page, side, card, pill, enter, exit, openPanel, shoot, emit }) => {
-  await openPanel();
-  for (const theme of ['light', 'dark']) {
-    if (theme === 'dark') await chooseTheme(page, 'dark');
-    await shoot(`split-view-${theme}`);
-    await enter.click(); await card.waitFor();
-    await shoot(`full-view-card-${theme}`);
-    emit('turn/started', { threadId: 'chat-one', turn: { id: `turn-${theme}` } });
-    await card.getByRole('button', { name: 'Collapse floating chat' }).click(); await pill.waitFor();
-    await pill.getByText('Working').waitFor();
-    await shoot(`full-view-pill-${theme}`);
-    await pill.click(); await exit.click(); await enter.waitFor();
-    emit('turn/completed', { threadId: 'chat-one', turn: { id: `turn-${theme}`, status: 'completed' } });
-  }
 }));

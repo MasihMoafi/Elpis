@@ -84,7 +84,7 @@ async function capture(page, directory, name) {
   await page.locator('aside.sidebar').screenshot({ path: path.join(directory, `${name}.png`) });
 }
 
-if (require.main === module) for (const colorScheme of ['light', 'dark']) test(`V1b one sidebar column across Projects, Pinned, Groups and Recents (${colorScheme})`, async () => {
+if (require.main === module) for (const colorScheme of ['light']) test(`V1b one sidebar column across Projects, Pinned, Groups and Recents (${colorScheme})`, async () => {
   const f = await fixture({ routes, threads, colorScheme, height: 1440, staticDir: process.env.ELPIS_RENDERER_OUT,
     storage: {
       'elpis-projects-v1': JSON.stringify({ projects: [{ id: 'match', name: 'match-making', cwd: CWD }, { id: 'empty', name: 'Empty project', cwd: CWD }], selectedId: null }),

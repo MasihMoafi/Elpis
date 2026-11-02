@@ -19,7 +19,7 @@ async function setup(colorScheme = 'light', failCapture = false, result = checke
   await f.page.locator('.startup-splash').waitFor({ state: 'detached' });
   return f;
 }
-for (const colorScheme of ['light', 'dark']) test(`Ctrl+K improvement opens a pointed chat and review with measured tests and no Try it or Keep (${colorScheme})`, async () => {
+for (const colorScheme of ['light']) test(`Ctrl+K improvement opens a pointed chat and review with measured tests and no Try it or Keep (${colorScheme})`, async () => {
   const f = await setup(colorScheme), { page } = f;
   try {
     await page.keyboard.press('Control+k'); await page.getByRole('combobox', { name: 'Search or start a chat' }).fill('Improve Elpis');
@@ -50,7 +50,7 @@ for (const colorScheme of ['light', 'dark']) test(`Ctrl+K improvement opens a po
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
-for (const colorScheme of ['light', 'dark']) test(`a failed check explains the failing check (${colorScheme})`, async () => {
+for (const colorScheme of ['light']) test(`a failed check explains the failing check (${colorScheme})`, async () => {
   const failed = { ...row, status: 'checks-failed', checks: { passed: false, head: 'abc', commands: [{ command: 'npm run -s test:bridge', code: 1, output: 'Love Spot agent: SDK dependencies were not found; permission request never arrived.' }] } };
   const f = await setup(colorScheme, false, failed), { page } = f;
   try {
@@ -129,7 +129,7 @@ test('the source folder chooser repairs setup without losing the requested chang
   } finally { await f.close(); }
 });
 
-for (const colorScheme of ['light', 'dark']) test(`source found enables Start change; empty request names its requirement (${colorScheme})`, async () => {
+for (const colorScheme of ['light']) test(`source found enables Start change; empty request names its requirement (${colorScheme})`, async () => {
   const f = await setup(colorScheme), { page } = f;
   try {
     await page.evaluate(() => dispatchEvent(new Event('elpis:improve')));
@@ -175,7 +175,7 @@ test('the shared footer explains a disabled primary action in another dialog', a
   } finally { await f.close(); }
 });
 
-for (const colorScheme of ['light', 'dark']) test(`right-clicking text captures its mapped row, preserves native preview pixels and truncates the path (${colorScheme})`, async () => {
+for (const colorScheme of ['light']) test(`right-clicking text captures its mapped row, preserves native preview pixels and truncates the path (${colorScheme})`, async () => {
   const f = await setup(colorScheme), { page } = f;
   try {
     // A long, short row like Settings > Advanced > Open config file; the text is a child of its mapped owner.

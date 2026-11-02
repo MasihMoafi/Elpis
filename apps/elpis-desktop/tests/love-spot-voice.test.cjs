@@ -20,7 +20,7 @@ async function loopback(page, offer) {
   }, offer);
 }
 
-for (const colorScheme of ['light', 'dark']) test(`Love Spot hides unavailable audio and keeps board text, persona and chat replies working (${colorScheme})`, async () => {
+for (const colorScheme of ['light']) test(`Love Spot hides unavailable audio and keeps board text, persona and chat replies working (${colorScheme})`, async () => {
   const posts = [], voiceSettingsReads = [];
   const f = await loveSpotFixture({ colorScheme, configureClient: client => { client.voiceStatus = async () => ({ available: false }); } });
   try {

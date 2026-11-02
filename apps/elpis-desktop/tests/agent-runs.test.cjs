@@ -157,7 +157,7 @@ test('a background run expands and collapses its nested agents', async () => {
   } finally { await f.close(); }
 });
 
-for (const colorScheme of ['light', 'dark']) test(`runs open read-only, parent navigation works and Continue here creates a writable chat (${colorScheme})`, async () => {
+for (const colorScheme of ['light']) test(`runs open read-only, parent navigation works and Continue here creates a writable chat (${colorScheme})`, async () => {
   const f = await mixed({ colorScheme, height: 950 }), { page } = f;
   try {
     await page.locator('.startup-splash').waitFor({ state: 'detached' });

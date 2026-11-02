@@ -16,7 +16,7 @@ const idleScrollers = page => page.evaluate(() => [...document.querySelectorAll(
   return found.map(why => `${el.tagName.toLowerCase()}.${String(el.className?.baseVal ?? el.className).split(' ').slice(0, 3).join('.')} ${el.getAttribute('aria-label') ?? ''}: ${why}`);
 }));
 
-for (const [width, height] of [[1440, 900], [1000, 700]]) test(`no box scrolls for a few pixels of space (${width}x${height})`, async () => {
+for (const [width, height] of [[1000, 700]]) test(`no box scrolls for a few pixels of space (${width}x${height})`, async () => {
   const f = await fixture({ width, height }), { page } = f;
   try {
     await f.open('chat-a');

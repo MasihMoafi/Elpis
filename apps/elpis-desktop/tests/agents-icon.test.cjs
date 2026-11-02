@@ -52,7 +52,7 @@ test('Agents artwork matches Users in size and ink at 16, 20 and 24 px', async (
 const parent = { id: 'chat-a', name: 'Agents icon acceptance', cwd: CWD, status: { type: 'idle' } };
 const children = Array.from({ length: 16 }, (_, i) => ({ id: `agent-${i}`, name: i === 0 ? 'Agent 1 · inspect' : i === 8 ? 'An agent with a very long descriptive name '.repeat(8) : `Agent ${i + 1}`, ...(i === 0 ? { agentNickname: 'Agent 1' } : {}), cwd: CWD, model: 'gpt-6-luna', modelProvider: 'openai', reasoningEffort: 'max', parentThreadId: parent.id, source: { subAgent: { thread_spawn: { agent_path: `/root/agent-${i}` } } }, status: { type: i === 1 ? 'active' : ['idle', 'notLoaded', 'systemError'][i % 3] } }));
 
-for (const theme of ['light', 'dark']) test(`Agents shares the selected agents artwork in ${theme}, open, closed and after reload`, async () => {
+for (const theme of ['light']) test(`Agents shares the selected agents artwork in ${theme}, open, closed and after reload`, async () => {
   const f = await fixture({ staticDir: process.env.ELPIS_RENDERER_OUT, width: 1440, height: 1000, routes: {
     '/api/threads': (_, url) => ({ data: url.searchParams.has('ancestorThreadId') ? children : [parent, ...children], nextCursor: null }),
     ...Object.fromEntries(children.flatMap(thread => [

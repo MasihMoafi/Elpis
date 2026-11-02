@@ -38,7 +38,7 @@ test('Voting finishes every agent; Tally receives all answers after their checks
     const tallyStart = events.indexOf('start:Nuvani · Tally the answers');
     for (const name of names) { const checked = events.indexOf(`done:Check: ${name}`); assert.ok(checked >= 0 && checked < tallyStart); }
     assert.match(await canvas.locator('.canvas-header').innerText(), /Finished.*4 of 4 done/);
-    for (const theme of ['light', 'dark']) {
+    for (const theme of ['light']) {
       if (await page.locator('html').evaluate(el => el.classList.contains('dark')) !== (theme === 'dark')) await chooseTheme(page, theme); await fixture.fit();
       await fs.mkdir('/tmp/canvas-rebuild', { recursive: true });
       await page.screenshot({ path: `/tmp/canvas-rebuild/run-${theme}.png` });
@@ -67,7 +67,7 @@ test('a failed writer explains why its descendants did not start', async () => {
     await initialDetails.press('Backspace');
     assert.deepEqual(await fixture.agents.evaluateAll(nodes => nodes.map(node => node.dataset.id)), ids, 'reading an error cannot delete agents');
     await fixture.page.evaluate(() => window.getSelection()?.removeAllRanges());
-    for (const width of [960, 1440]) for (const theme of ['light', 'dark']) {
+    for (const width of [960]) for (const theme of ['light']) {
       await fixture.page.setViewportSize({ width, height: 900 });
       if (await fixture.page.locator('html').evaluate(el => el.classList.contains('dark')) !== (theme === 'dark')) await chooseTheme(fixture.page, theme);
       for (const iso of [false, true]) {

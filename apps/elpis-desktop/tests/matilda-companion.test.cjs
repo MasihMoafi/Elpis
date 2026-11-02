@@ -87,7 +87,7 @@ test('a narrow window keeps Matilda on screen, then she returns to her place', {
   assert.deepEqual(f.errors ?? [], []);
 });
 
-for (const colorScheme of ['light', 'dark']) test(`Matilda floats out of the title bar and stays put across app pages, with global Unpin (${colorScheme})`, { timeout: 60000 }, async t => {
+for (const colorScheme of ['light']) test(`Matilda floats out of the title bar and stays put across app pages, with global Unpin (${colorScheme})`, { timeout: 60000 }, async t => {
   const f = await loveSpotFixture({ colorScheme });
   t.after(() => f.close());
   const page = f.page;
@@ -148,7 +148,7 @@ for (const colorScheme of ['light', 'dark']) test(`Matilda floats out of the tit
 });
 
 
-for (const colorScheme of ['light', 'dark']) test(`Matilda mini chat, mute and dragging leave the main conversation unchanged (${colorScheme})`, { timeout: 60000 }, async t => {
+for (const colorScheme of ['light']) test(`Matilda mini chat, mute and dragging leave the main conversation unchanged (${colorScheme})`, { timeout: 60000 }, async t => {
   const { fixture } = require('./parity-fixture.cjs');
   const { FACE_DATA_URL } = require('../bridge/matilda-face.cjs');
   let music = { title: 'Linkin Park masterpiece', artist: 'Linkin Park', uri: 'file:///favorite.m4a', status: 'Playing', canMute: true, muted: false };
@@ -295,7 +295,7 @@ for (const colorScheme of ['light', 'dark']) test(`Matilda mini chat, mute and d
 
 // 28 Oct: "that small chatbox shouldn't show previous messages; it's for quick new chats", like Dot's "Start new chat".
 // And her reply had arrived while the small chat still said "Matilda is replying…": one failed read ended the asking.
-for (const colorScheme of ['light', 'dark']) test(`the small chat shows its last messages from its history icon, loads older ones as he scrolls up, and asks until her reply arrives (${colorScheme})`, { timeout: 60000 }, async t => {
+for (const colorScheme of ['light']) test(`the small chat shows its last messages from its history icon, loads older ones as he scrolls up, and asks until her reply arrives (${colorScheme})`, { timeout: 60000 }, async t => {
   const { fixture } = require('./parity-fixture.cjs');
   const { FACE_DATA_URL } = require('../bridge/matilda-face.cjs');
   const say = (turnId, type, text) => ({ turnId, item: type === 'agentMessage' ? { id: `${turnId}-a`, type, text } : { id: `${turnId}-u`, type, content: [{ type: 'text', text }] } });

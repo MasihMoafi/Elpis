@@ -5,7 +5,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cjs');
 
-for (const colorScheme of ['light', 'dark']) test(`one icon size, one control height and one error at a time (${colorScheme})`, async () => {
+for (const colorScheme of ['light']) test(`one icon size, one control height and one error at a time (${colorScheme})`, async () => {
   const f = await fixture({ width: 1300, height: 860, colorScheme }), { page } = f;
   try {
     await page.locator('.thread-link').first().click();

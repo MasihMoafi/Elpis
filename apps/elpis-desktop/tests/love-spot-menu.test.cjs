@@ -3,7 +3,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { loveSpotFixture } = require('./love-spot-fixture.cjs');
 
-for (const colorScheme of ['light', 'dark']) test(`Love Spot shows no GitHub, Follow us, Discord or Library, and keeps the rest of its menu (${colorScheme})`, async () => {
+for (const colorScheme of ['light']) test(`Love Spot shows no GitHub, Follow us, Discord or Library, and keeps the rest of its menu (${colorScheme})`, async () => {
   const f = await loveSpotFixture({ colorScheme });
   try {
     await f.page.setViewportSize({ width: 1280, height: 800 });

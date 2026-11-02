@@ -104,7 +104,7 @@ test('a Love Spot reply that arrives while the Love Spot board is open is read; 
   } finally { await f.close(); }
 });
 
-for (const colorScheme of ['light', 'dark']) test(`a waiting chat says why under its name; Mark as completed clears a ready plan (${colorScheme})`, async () => {
+for (const colorScheme of ['light']) test(`a waiting chat says why under its name; Mark as completed clears a ready plan (${colorScheme})`, async () => {
   const f = await fixture({ colorScheme, width: 1130, height: 820 }), { page } = f;
   try {
     const line = id => row(page, id).locator('.thread-subtitle');

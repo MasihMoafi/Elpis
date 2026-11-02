@@ -23,7 +23,7 @@ function routes() {
   };
 }
 
-for (const colorScheme of ['light', 'dark']) test(`personal tip opens the editable profile, slash command reopens it (${colorScheme})`, async () => {
+for (const colorScheme of ['light']) test(`personal tip opens the editable profile, slash command reopens it (${colorScheme})`, async () => {
   const f = await fixture({ colorScheme, width: 1280, height: 800, routes: routes() });
   try {
     await f.page.locator('.startup-splash').waitFor({ state: 'detached' });

@@ -49,7 +49,7 @@ async function expectFocus(page, target) {
   await page.waitForFunction(element => element === document.activeElement, await target.elementHandle());
 }
 
-for (const colorScheme of ['light', 'dark']) for (const [width, height] of [[1280, 800], [900, 700]]) {
+for (const colorScheme of ['light']) for (const [width, height] of [[1280, 800], [900, 700]]) {
   test(`desktop sweep: ${colorScheme} ${width}×${height}`, { timeout: 180000 }, async t => {
     const f = await fixture({ width, height, colorScheme, routes: routes() }), { page } = f;
     const directory = process.env.ELPIS_SWEEP_SHOTS || '/tmp/elpis-desktop-sweep';

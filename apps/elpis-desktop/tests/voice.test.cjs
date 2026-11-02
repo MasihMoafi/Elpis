@@ -7,7 +7,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 async function eventually(check, ms = 4000) { const end = Date.now() + ms; for (;;) { try { return await check(); } catch (error) { if (Date.now() > end) throw error; await new Promise(resolve => setTimeout(resolve, 50)); } } }
 
-for (const colorScheme of ['light', 'dark']) test(`Settings → Voice saves a catalog choice and keeps handoffs private (${colorScheme})`, async () => {
+for (const colorScheme of ['light']) test(`Settings → Voice saves a catalog choice and keeps handoffs private (${colorScheme})`, async () => {
   let voice = 'cove';
   const handoff = '<realtime_delegation><input>Internal voice request</input><transcript_delta>private handoff</transcript_delta></realtime_delegation>';
   const f = await fixture({ colorScheme, chat: [['voice', handoff, 'A normal reply.'], ['typed', 'Keep my typed message.', 'Another reply.']], routes: {

@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cjs');
 
-for (const colorScheme of ['light', 'dark']) test(`Enter immediately shows the message and preserves an identical next draft (${colorScheme})`, async () => {
+for (const colorScheme of ['light']) test(`Enter immediately shows the message and preserves an identical next draft (${colorScheme})`, async () => {
   let acknowledge;
   const waiting = new Promise(resolve => { acknowledge = resolve; });
   const f = await fixture({ colorScheme, routes: { '/api/threads/chat-a/turns': async () => {

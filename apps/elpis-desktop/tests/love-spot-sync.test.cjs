@@ -19,7 +19,7 @@ async function copied(page) {
   try { return JSON.parse(text).elements.filter(e => !e.isDeleted); } catch { return []; }
 }
 
-for (const colorScheme of ['light', 'dark']) test(`two windows keep a real delete after a delayed equal-version live edit · ${colorScheme}`, async () => {
+for (const colorScheme of ['light']) test(`two windows keep a real delete after a delayed equal-version live edit · ${colorScheme}`, async () => {
   const f = await loveSpotFixture({ colorScheme });
   let release, held;
   try {

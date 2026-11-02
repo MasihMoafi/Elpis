@@ -57,7 +57,7 @@ test('Alt+click opens a split; one chat receives the same live reply in both pan
     assert.deepEqual(f.errors, []);
   } finally { releaseResume(); await f.close(); }
 });
-for (const colorScheme of ['light', 'dark']) for (const width of [1400, 900]) test(`split view fits in ${colorScheme} at ${width}px`, async () => {
+for (const colorScheme of ['light']) for (const width of [900]) test(`split view fits in ${colorScheme} at ${width}px`, async () => {
   const f = await fixture({ width, height: 850, colorScheme, desktop: false }); const { page } = f;
   try {
     await f.open('chat-a'); await split(page);

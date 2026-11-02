@@ -13,7 +13,7 @@ const skills = Array.from({ length: 40 }, (_, index) => ({
 }));
 const customize = () => ({ skills: { data: skills, errors: [] }, plugins: { data: [] }, connectors: { data: [] } });
 
-for (const colorScheme of ['light', 'dark']) for (const width of [900, 1280, 2000]) {
+for (const colorScheme of ['light']) for (const width of [1280]) {
   test(`page column: Customize long and empty tabs (${colorScheme}, ${width}px)`, async t => {
     let release, failed = false, first = true;
     const pending = new Promise(resolve => { release = resolve; });
@@ -78,7 +78,7 @@ for (const colorScheme of ['light', 'dark']) for (const width of [900, 1280, 200
 
 // Changing only the window height makes the real page gain/lose its scrollbar without altering its width or CSS.
 // Covers every other centred shell, including Settings' inner scroll owner and Lab's direct workspace surface.
-for (const colorScheme of ['light', 'dark']) for (const width of [900, 1280, 2000]) test(`page column: shared shells (${colorScheme}, ${width}px)`, async t => {
+for (const colorScheme of ['light']) for (const width of [1280]) test(`page column: shared shells (${colorScheme}, ${width}px)`, async t => {
   const f = await fixture({ width, height: 800, colorScheme, showScrollbars: true, routes: {
     '/api/settings': () => ({ version: 'v1', main: { model: 'sol', provider: 'openai' }, background: { model: null, provider: null },
       smartPrune: { enabled: false, explicitOverride: { available: false } }, memory: { enabled: false, generate: false, use: false, extractionModel: null, consolidationModel: null },

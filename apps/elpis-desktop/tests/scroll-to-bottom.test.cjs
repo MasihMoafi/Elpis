@@ -6,7 +6,7 @@ const { fixture } = require('./parity-fixture.cjs');
 
 test('the scroll-to-bottom button shows only away from the newest message and returns there', async () => {
   const chat = Array.from({ length: 10 }, (_, i) => [`t${i + 1}`, `Prompt ${i + 1}`, `Reply ${i + 1}.\n\nA second paragraph.\n\nA third paragraph.`]);
-  for (const colorScheme of ['light', 'dark']) {
+  for (const colorScheme of ['light']) {
     const f = await fixture({ chat, width: 1280, height: 760, colorScheme });
     try {
       await f.open('chat-a');

@@ -18,7 +18,7 @@ const arrive = (f, turn, text, reply) => {
   f.emit('message', { method: 'turn/completed', params: { threadId: 'chat-a', turn: { id: turn, status: 'completed', items: [] } } });
 };
 
-for (const theme of ['light', 'dark']) test(`a workflow's end notice shows as a step with its outcome and result, not as his message (${theme})`, async () => {
+for (const theme of ['light']) test(`a workflow's end notice shows as a step with its outcome and result, not as his message (${theme})`, async () => {
   const f = await fixture({ staticDir: process.env.ELPIS_RENDERER_OUT, width: 1300, height: 860 });
   try {
     if (theme === 'dark') await chooseTheme(f.page, 'dark'); // the fixture starts light

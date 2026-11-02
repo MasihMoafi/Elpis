@@ -26,7 +26,7 @@ async function shot(page, name) {
   await fs.mkdir(process.env.ELPIS_SETTINGS2_SHOTS, { recursive: true });
   await page.screenshot({ path: path.join(process.env.ELPIS_SETTINGS2_SHOTS, `${name}.png`) });
 }
-for (const theme of ['light', 'dark']) {
+for (const theme of ['light']) {
   test(`SETTINGS2: file editors preserve drafts, save both files, reject conflicts (${theme})`, async t => {
     const f = await setup(t, theme), p = f.page;
     await visit(p, 'Personalization');

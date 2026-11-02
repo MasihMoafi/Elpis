@@ -31,7 +31,7 @@ function near(actual, expected, label) {
 }
 async function unfocus(f) { await f.composer.focus(); await f.page.mouse.move(700, 70); }
 
-for (const colorScheme of ['light', 'dark']) for (const sidebarWidth of [256, 200]) test(`right-click colours tint and persist across conversation rows without moving their actions (${colorScheme}, ${sidebarWidth}px)`, async () => {
+for (const colorScheme of ['light']) for (const sidebarWidth of [200]) test(`right-click colours tint and persist across conversation rows without moving their actions (${colorScheme}, ${sidebarWidth}px)`, async () => {
   const f = await open(colorScheme, sidebarWidth), { page } = f;
   const choices = [['chat-a', 'Fix the parser', 'Blue'], ['workflow-root', 'Legal review', 'Rose'], ['workflow-agent', 'Evidence', 'Green'], ['love-chat', 'Love Spot', 'Violet']];
   try {

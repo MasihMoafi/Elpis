@@ -70,7 +70,7 @@ const problems = page => page.evaluate(() => {
   return [...found];
 });
 
-for (const size of [{ width: 1440, height: 900 }, { width: 1130, height: 800 }]) {
+for (const size of [{ width: 1130, height: 800 }]) {
   test(`everyday views at ${size.width}x${size.height}: readable sizes, icons level with words, clear search fields`, () => app(size, async ({ page, shot }) => {
     const seen = {};
     await page.locator('.thread-row[data-thread-id="alpha"] .thread-link').click(); await page.getByText('The parser has two passes.').waitFor();

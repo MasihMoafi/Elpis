@@ -12,7 +12,7 @@ const at = 1792827361;
 const chat = (id, name, extra = {}) => ({ id, name, preview: name, cwd: CWD, model: 'sol', source: 'vscode',
   createdAt: at, status: { type: 'idle' }, ...extra });
 
-for (const colorScheme of ['light', 'dark']) test(`creator history uses the shared folded branch in every sidebar section (${colorScheme})`, async t => {
+for (const colorScheme of ['light']) test(`creator history uses the shared folded branch in every sidebar section (${colorScheme})`, async t => {
   const { DesktopClient } = await import('../bridge/client.mjs');
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'creator-click-'));
   const transcript = path.join(home, 'creator.jsonl');

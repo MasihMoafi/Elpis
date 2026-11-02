@@ -106,7 +106,7 @@ test('agents that finish between polls retain their start, task, check and repor
   } finally { await f.close(); }
 });
 
-for (const [width, height] of [[1280, 800], [900, 700]]) for (const theme of ['light', 'dark']) test(`run instruments fit before, during and after the run: ${width}×${height} ${theme}`, async () => {
+for (const [width, height] of [[900, 700]]) for (const theme of ['light']) test(`run instruments fit before, during and after the run: ${width}×${height} ${theme}`, async () => {
   const f = await staged({ width, height }); const { canvas, page } = f;
   try {
     if (await page.locator('html').evaluate(el => el.classList.contains('dark')) !== (theme === 'dark')) await chooseTheme(page, theme);

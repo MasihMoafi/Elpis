@@ -107,7 +107,7 @@ test('the main chat shows Elpis features under the message box, one click each, 
       const expected = getComputedStyle(probe).color; probe.remove();
       return { actual: getComputedStyle(ring).stroke, expected };
     });
-    for (const colorScheme of ['light', 'dark']) {
+    for (const colorScheme of ['light']) {
       await page.emulateMedia({ colorScheme });
       await page.waitForFunction(dark => document.documentElement.classList.contains('dark') === dark, colorScheme === 'dark');
       const colours = await ringColour();

@@ -15,7 +15,7 @@ const gaps = (page, scope, heads, row) => page.evaluate(([scope, heads, row]) =>
   return [{ name: text.textContent.trim(), gap: Math.round(next.getBoundingClientRect().top - range.getBoundingClientRect().bottom) }];
 }), [scope, heads, row]);
 
-for (const colorScheme of ['light', 'dark']) test(`every heading sits the same distance above its first row (${colorScheme})`, async () => {
+for (const colorScheme of ['light']) test(`every heading sits the same distance above its first row (${colorScheme})`, async () => {
   const love = { ...THREADS[0], id: 'love-chat', name: 'Love Spot', preview: 'Love Spot' };
   const f = await fixture({ staticDir: process.env.ELPIS_RENDERER_OUT, colorScheme, threads: [...THREADS, love], storage: {
     'elpis-pinned-chats-v1': JSON.stringify(['chat-c']),

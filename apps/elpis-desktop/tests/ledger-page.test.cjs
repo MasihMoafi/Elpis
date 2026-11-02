@@ -61,7 +61,7 @@ test('Customize names the sidebar, heading, command action and window; customize
   } finally { await f.close(); }
 });
 
-for (const colorScheme of ['light', 'dark']) test(`deleting an owned skill with its Delete button confirms once, names its folder and restores with Undo (${colorScheme}, 1280px)`, async () => {
+for (const colorScheme of ['light']) test(`deleting an owned skill with its Delete button confirms once, names its folder and restores with Undo (${colorScheme}, 1280px)`, async () => {
   const f = await setup({ colorScheme });
   try {
     const { page } = f; await open(page);

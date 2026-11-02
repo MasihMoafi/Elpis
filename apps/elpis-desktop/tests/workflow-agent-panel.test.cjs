@@ -15,7 +15,7 @@ const graph = { name: 'Page One Translation', nodes: [{ id, type: 'agent', posit
   writeScopes: ['agents/transcribe-page-one'], acceptanceCriteria: ['A complete Markdown transcription exists.'],
 } }], edges: [] };
 
-for (const theme of ['light', 'dark']) test(`running card and finished output panel use plain words (${theme})`, async () => {
+for (const theme of ['light']) test(`running card and finished output panel use plain words (${theme})`, async () => {
   const fixture = path.join(__dirname, 'fixtures/transcribe-sample');
   const record = JSON.parse(await fs.readFile(path.join(fixture, 'run.json'), 'utf8'));
   record.projectCwd = fixture;

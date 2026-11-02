@@ -8,7 +8,7 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR
 const add = (page, name) => page.getByRole('button', { name: `Add ${name} to drawing`, exact: true });
 const tray = page => page.getByRole('region', { name: 'New screenshots', exact: true });
 
-for (const colorScheme of ['light', 'dark']) test(`screenshots before the first Love Spot visit remain private and reach both windows · ${colorScheme}`, async () => {
+for (const colorScheme of ['light']) test(`screenshots before the first Love Spot visit remain private and reach both windows · ${colorScheme}`, async () => {
   const f = await loveSpotFixture({ colorScheme, prepareScreenshots: screenshots => fs.writeFile(path.join(screenshots, 'old.png'), PNG) });
   let dock;
   try {

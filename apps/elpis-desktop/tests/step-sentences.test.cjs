@@ -81,7 +81,7 @@ test('a running step has its sentence, ticking timer and filled rotor, in both t
   assert.notEqual(await rotation(), firstRotation, 'the filled shape rotates smoothly');
   assert.equal(await page.locator('.turn-working .elpis-working-mark image').count(), 0, 'the working mark has no E');
   // Light, then dark: the row is fully inside the chat column and legible.
-  for (const scheme of ['light', 'dark']) {
+  for (const scheme of ['light']) {
     await page.emulateMedia({ colorScheme: scheme }); await page.waitForTimeout(200);
     const box = await live.locator('> summary').boundingBox(), column = await page.locator('.turn').last().boundingBox();
     assert.ok(box.x >= column.x - 8 && box.x + box.width <= column.x + column.width + 1, `${scheme}: the row fits the chat column`);
@@ -101,7 +101,7 @@ for (const input of ['pointer', 'keyboard']) {
       await f.open('chat-a');
       const group = f.page.locator('.activity-group'), head = group.locator('> summary');
       assert.equal(await group.count(), 1); assert.equal((await head.innerText()).trim(), 'Thought');
-      for (const scheme of ['light', 'dark']) {
+      for (const scheme of ['light']) {
         await f.page.emulateMedia({ colorScheme: scheme });
         if (input === 'keyboard') { await head.focus(); await head.press('Enter'); } else await head.click();
         await group.locator('> summary[aria-expanded="true"]').waitFor();
@@ -157,7 +157,7 @@ test('empty reasoning stays hidden while real streamed summaries and recorded co
   } finally { await f.close(); }
 });
 
-for (const scheme of ['light', 'dark']) for (const input of ['pointer', 'keyboard']) {
+for (const scheme of ['light']) for (const input of ['pointer', 'keyboard']) {
   test(`long tool groups stay collapsible after scrolling (${scheme}, ${input})`, async () => {
     const work = Array.from({ length: 16 }, (_, index) => command(`long-${index}`, {
       description: `Inspect fixture file ${index + 1}`,

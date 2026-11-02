@@ -9,7 +9,7 @@ const { captureReview, chooseOption, chooseTheme, openPatterns } = require('./co
 const { fixture, THREADS } = require('./parity-fixture.cjs');
 const reportPlan = body => ({ name: 'Pointt review', agents: [{ key: 'evidence', title: 'Review evidence', prompt: body.goal, folders: [], doneWhen: ['Return the observed findings'], waitsFor: [] }] });
 
-for (const colorScheme of ['light', 'dark']) test(`workflows start in their sandbox without a project and keep reports scoped (${colorScheme})`, async () => {
+for (const colorScheme of ['light']) test(`workflows start in their sandbox without a project and keep reports scoped (${colorScheme})`, async () => {
   const sandbox = '/tmp/elpis-workflow-sandbox';
   const root = { id: 'sandbox-root', name: 'Pointt review', cwd: sandbox, status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } };
   const f = await fixture({ colorScheme, cwd: '', storage: {
@@ -261,7 +261,7 @@ test('New workflow stays available with a closed panel, starts from empty contex
     await f.saved();
     await f.page.reload(); await f.page.getByRole('button', { name: 'Workflows', exact: true }).click(); await request().waitFor();
     assert.equal(await f.canvas.locator('.canvas-side').count(), 0, 'the closed panel preference survives');
-    for (const theme of ['light', 'dark']) for (const width of [1440, 960]) {
+    for (const theme of ['light']) for (const width of [1440, 960]) {
       await f.page.setViewportSize({ width, height: 900 });
       if (await f.page.locator('html').evaluate(el => el.classList.contains('dark')) !== (theme === 'dark')) await chooseTheme(f.page, theme);
       await f.page.evaluate(() => document.fonts.ready);
@@ -602,7 +602,7 @@ test('canvas basics: undo and redo, copy and paste, duplicate, delete keeping th
   } finally { await close(); }
 });
 
-for (const colorScheme of ['light', 'dark']) test(`workflow pattern explicitly chooses Auto or preserves the selected manual pattern (${colorScheme})`, async () => {
+for (const colorScheme of ['light']) test(`workflow pattern explicitly chooses Auto or preserves the selected manual pattern (${colorScheme})`, async () => {
   const f = await openCanvas({ desktop: true });
   const selector = () => f.canvas.getByRole('combobox', { name: 'Workflow pattern', exact: true });
   const pick = async label => { await selector().click(); await f.page.getByRole('option', { name: label, exact: true }).click(); };

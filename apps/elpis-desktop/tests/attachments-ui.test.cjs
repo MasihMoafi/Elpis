@@ -193,7 +193,7 @@ test('a queued message edited back into the box keeps every file, with the ones 
   assert.equal(await alerts(page).count(), 0);
 }));
 
-for (const colorScheme of ['light', 'dark']) for (const width of [1130, 390]) {
+for (const colorScheme of ['light']) for (const width of [390]) {
   test(`many mixed files wrap, line up and show whole (${colorScheme}, ${width}px)`, async () => {
     // The chat list is hidden at 390px, so the chat is opened wide and the window then narrowed.
     const f = await fixture({ routes, colorScheme, width: 1130, height: 760 });

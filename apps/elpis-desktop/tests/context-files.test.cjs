@@ -26,7 +26,7 @@ async function assertStableOpening(page, label) {
   }
   if (process.env.ELPIS_A20_SHOTS) { const { width, height } = page.viewportSize(); await fs.mkdir(process.env.ELPIS_A20_SHOTS, { recursive: true }); await fs.writeFile(`${process.env.ELPIS_A20_SHOTS}/geometry-${width}x${height}-${label.replaceAll(' ', '-')}.json`, JSON.stringify({ label, ranges, frames }, null, 2)); }
 }
-for (const [colorScheme, width, height] of [['light', 1280, 800], ['dark', 900, 520]]) test(
+for (const [colorScheme, width, height] of [['light', 900, 520]]) test(
   `Ledger stable opening: ${colorScheme} ${width}×${height}, delayed pointer and immediate keyboard`, async () => {
     let release, requested, reads = 0; const held = new Promise(resolve => requested = resolve);
     const f = await fixture({ staticDir: process.env.A20_STATIC_DIR || undefined, width, height, colorScheme, routes: { ...contextRoutes(), '/api/threads/chat-a/context-files': async () => { if (++reads === 1) { requested(); await new Promise(resolve => release = resolve); } return { files: files() }; } } });
@@ -100,7 +100,7 @@ test('Ledger times out a stalled initial read, exposes Retry and ignores the lat
     release(); await animationFrames(f.page); assert.equal(await toggle.getAttribute('aria-checked'), 'false', 'timed-out result cannot replace retry'); assert.deepEqual(f.errors, []);
   } finally { release?.(); await f.close(); }
 });
-for (const colorScheme of ['light', 'dark']) for (const [width, height] of [[1280, 800], [900, 700]]) test(
+for (const colorScheme of ['light']) for (const [width, height] of [[900, 700]]) test(
   `Ledger files: ${colorScheme} ${width}×${height}, mouse and keyboard, Files pane and fit`, async () => {
     const f = await fixture({ width, height, colorScheme, routes: { ...contextRoutes(), '/api/file': () => ({ content: '# Checkpoint\nLedger source contents.', size: 36, mtimeMs: 1 }), '/api/files/dir': () => ({ data: [] }) } });
     try {

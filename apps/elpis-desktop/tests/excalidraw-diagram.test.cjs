@@ -9,7 +9,7 @@ const source = JSON.stringify(shapes);
 const reply = 'The diagram is below.\n\n```excalidraw\n' + source + '\n```';
 const evidence = process.env.ELPIS_DIAGRAM_EVIDENCE;
 
-for (const colorScheme of ['light', 'dark']) {
+for (const colorScheme of ['light']) {
   test(`chat embeds the reported diagram, keeps copying and ordinary code, and handles broken drawings (${colorScheme})`, { timeout: 45000 }, async t => {
     const f = await fixture({ colorScheme, width: 1200, height: 1000, chat: [['drawing', 'Draw the flow', reply + '\n\n```js\nconst ok = true;\n```\n\n```excalidraw\n[broken]\n```']] });
     t.after(() => f.close());
@@ -64,7 +64,7 @@ for (const colorScheme of ['light', 'dark']) {
   });
 }
 
-for (const colorScheme of ['light', 'dark']) test(`a new Love Spot board opens with a handwritten welcome and heart (${colorScheme})`, { timeout: 30000 }, async t => {
+for (const colorScheme of ['light']) test(`a new Love Spot board opens with a handwritten welcome and heart (${colorScheme})`, { timeout: 30000 }, async t => {
   const f = await loveSpotFixture({ colorScheme, newBoard: true });
   t.after(() => f.close());
   await f.page.setViewportSize({ width: 1400, height: 1200 });
@@ -86,7 +86,7 @@ for (const colorScheme of ['light', 'dark']) test(`a new Love Spot board opens w
   assert.deepEqual(f.errors, []);
 });
 
-for (const colorScheme of ['light', 'dark']) test(`the reported saved drawing repairs on opening without another model turn (${colorScheme})`, { timeout: 30000 }, async t => {
+for (const colorScheme of ['light']) test(`the reported saved drawing repairs on opening without another model turn (${colorScheme})`, { timeout: 30000 }, async t => {
   const legacy = require('./fixtures/legacy-matilda-diagram.json');
   const f = await loveSpotFixture({ colorScheme,
     prepareDirectory: async directory => {

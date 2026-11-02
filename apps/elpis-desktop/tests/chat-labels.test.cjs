@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture, THREADS } = require('./parity-fixture.cjs');
 
-for (const colorScheme of ['light', 'dark']) test(`a pinned Love Spot chat shows its name once (${colorScheme})`, async t => {
+for (const colorScheme of ['light']) test(`a pinned Love Spot chat shows its name once (${colorScheme})`, async t => {
   const threads = THREADS.map(thread => thread.id === 'chat-a' ? { ...thread, name: 'Love Spot' } : thread);
   const f = await fixture({ colorScheme, threads, storage: { 'elpis-pinned-chats-v1': '["chat-a"]' } });
   t.after(() => f.close());

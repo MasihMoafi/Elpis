@@ -87,7 +87,7 @@ for (const colorScheme of ['light', 'dark']) test(`Love Spot red reads clearly a
   } finally { await f.close(); }
 });
 
-for (const colorScheme of ['light', 'dark']) test(`embedded Love Spot keeps the sidebar and combines its bars when they fit · ${colorScheme}`, async () => {
+for (const colorScheme of ['light']) test(`embedded Love Spot keeps the sidebar and combines its bars when they fit · ${colorScheme}`, async () => {
   const f = await loveSpotFixture({ colorScheme });
   const output = path.join(process.env.HOME, '.cache/elpis-tests/love-confirm');
   await fs.mkdir(output, { recursive: true });

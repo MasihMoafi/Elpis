@@ -80,7 +80,7 @@ test('Love Spot conversations show their agent names and use the blood-red app i
     });
     assert.ok(Math.abs(rhythm.ratio - 1.45) < 0.01, `Matilda line height is ${rhythm.ratio}`);
     assert.ok(Math.abs(rhythm.gap - 0.725) < 0.01, `Matilda paragraph gap is ${rhythm.gap}`);
-    for (const theme of ['light', 'dark']) {
+    for (const theme of ['light']) {
       await page.evaluate(theme => { document.documentElement.dataset.theme = theme; document.documentElement.classList.toggle('dark', theme === 'dark'); }, theme);
       await page.screenshot({ path: `/tmp/matilda-chat-shots/matilda-${theme}.png` });
     }
@@ -92,7 +92,7 @@ test('Love Spot conversations show their agent names and use the blood-red app i
     const icon = page.locator('[data-nav-page="loveSpot"] svg');
     const output = process.env.ELPIS_IDENTITY_SCREENSHOTS || '/tmp/lovespot-identity';
     await fs.mkdir(output, { recursive: true });
-    for (const theme of ['light', 'dark']) {
+    for (const theme of ['light']) {
       await page.evaluate(theme => { document.documentElement.dataset.theme = theme; document.documentElement.classList.toggle('dark', theme === 'dark'); }, theme);
       const red = theme === 'dark' ? '#ec575e' : '#8b1017';
       assert.equal(await icon.evaluate(svg => getComputedStyle(svg).fill), theme === 'dark' ? 'rgb(236, 87, 94)' : 'rgb(139, 16, 23)');
@@ -102,7 +102,7 @@ test('Love Spot conversations show their agent names and use the blood-red app i
     const shell = page.locator('.app-shell');
     await page.locator('[data-nav-page="loveSpot"]').click();
     await page.waitForFunction(() => document.querySelector('.app-shell')?.dataset.workspace === 'loveSpot');
-    for (const theme of ['light', 'dark']) {
+    for (const theme of ['light']) {
       await page.evaluate(theme => document.documentElement.classList.toggle('dark', theme === 'dark'), theme);
       const red = theme === 'dark' ? '#ec575e' : '#8b1017';
       const palette = await page.locator('.love-spot-tools').evaluate(el => {

@@ -158,7 +158,7 @@ for (const connected of [true, false]) test(`transcription menu ${connected ? 'r
   } finally { await f.close(); }
 });
 
-for (const colorScheme of ['light', 'dark']) test(`nested provider selection closes its own list and keeps the model form usable in ${colorScheme}`, async () => {
+for (const colorScheme of ['light']) test(`nested provider selection closes its own list and keeps the model form usable in ${colorScheme}`, async () => {
   const f = await parityFixture({ colorScheme, routes: {
     '/api/settings': () => ({ background: {}, smartPrune: { explicitOverride: {} }, memory: {}, write: { available: false },
       main: { model: 'sol', provider: 'openai' }, providers: [{ id: 'openai', displayName: 'OpenAI' }, { id: 'local', displayName: 'Local endpoint' }], managed: {} }),

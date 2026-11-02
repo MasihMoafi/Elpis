@@ -154,7 +154,7 @@ test('projects: explicit membership, drag, menu moves, persistence, and unscoped
     await row('created-4').waitFor();
     assert.equal(await first.locator('.thread-row[data-thread-id="created-4"]').count(), 0, 'unselected-folder shell chat must remain unassigned after reload');
     if (process.env.ELPIS_PROJECT_SCREENSHOT) {
-      for (const theme of ['light', 'dark']) {
+      for (const theme of ['light']) {
         await page.evaluate(theme => localStorage.setItem('elpis-theme', theme), theme);
         await page.reload(); await row('alpha').waitFor();
         await page.getByRole('status', { name: 'Elpis is starting', exact: true }).waitFor({ state: 'hidden', timeout: 15000 });

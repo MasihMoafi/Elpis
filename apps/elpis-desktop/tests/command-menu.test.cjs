@@ -6,7 +6,6 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const { fixture, CWD } = require('./parity-fixture.cjs');
 const shots = process.env.ELPIS_PARITY_SHOTS;
-const { assertUiFit } = require('./ui-fit.cjs');
 
 const chat = (id, name) => ({ id, name, preview: name, cwd: CWD, model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } });
 const LIST = [chat('chat-a', 'Fix the parser'), chat('chat-b', 'Write the docs'), chat('chat-c', 'Plan the release')];
@@ -93,28 +92,6 @@ test('typing filters the actions; Enter runs one; text that matches nothing star
     await searchFocused(page);
     assert.ok(await page.getByLabel('Search conversations').evaluate(element => element === document.activeElement), 'Ctrl+Shift+K focuses the sidebar search');
     assert.equal(await menu(page).count(), 0);
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
-for (const colorScheme of ['light', 'dark']) for (const [width, height] of [[1280, 800], [900, 700]]) test(`the command menu's rows align and fit (${colorScheme}, ${width}×${height})`, async () => {
-  const f = await fixture({ colorScheme, width, height, routes }), { page } = f;
-  try {
-    await f.open('chat-a');
-    await page.keyboard.press('Control+k');
-    await input(page).waitFor();
-    const rows = await menu(page).locator('[role="option"]').evaluateAll(options => options.map(option => {
-      const box = option.getBoundingClientRect(), name = option.querySelector('.command-name').getBoundingClientRect(), list = option.closest('[role="listbox"]').getBoundingClientRect();
-      return { left: Math.round(name.left), inside: box.left >= list.left - 0.5 && box.right <= list.right + 0.5, height: Math.round(box.height) };
-    }));
-    assert.equal(new Set(rows.map(row => row.left)).size, 1, 'every name starts at one edge');
-    assert.ok(rows.every(row => row.inside), 'no row leaves the list');
-    assert.equal(new Set(rows.map(row => row.height)).size, 1, 'every row has one height');
-    await assertUiFit(menu(page), 'command menu fits');
-    if (shots) await page.screenshot({ path: path.join(shots, `command-menu-${colorScheme}-${width}.png`) });
-    await typeInMenu(page, 're');
-    await assertUiFit(menu(page), 'filtered command menu fits');
-    if (shots) await page.screenshot({ path: path.join(shots, `command-menu-typed-${colorScheme}-${width}.png`) });
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

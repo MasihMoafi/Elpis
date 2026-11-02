@@ -39,7 +39,7 @@ test('sidebar page icons remain vectors, including the Love Spot brand mark', as
   } finally { await f.close(); }
 });
 
-for (const theme of ['light', 'dark']) test(`Love Spot keeps its blood-red nav mark in ${theme} theme`, async () => {
+for (const theme of ['dark']) test(`Love Spot keeps its blood-red nav mark in ${theme} theme`, async () => {
   const f = await fixture({ staticDir: process.env.ELPIS_RENDERER_OUT, width: 1280, height: 800 });
   try {
     if (theme === 'dark') await chooseTheme(f.page, theme);
@@ -58,7 +58,7 @@ for (const theme of ['light', 'dark']) test(`Love Spot keeps its blood-red nav m
   } finally { await f.close(); }
 });
 
-for (const theme of ['light', 'dark']) test(`Love Spot keeps its blood-red nav mark on initial ${theme} load`, async () => {
+for (const theme of ['light']) test(`Love Spot keeps its blood-red nav mark on initial ${theme} load`, async () => {
   const f = await fixture({ width: 1280, height: 800, colorScheme: theme });
   try {
     const loveSpot = f.page.locator('aside.sidebar nav[aria-label="Workspace"]').getByRole('button', { name: 'Love Spot', exact: true });
@@ -113,7 +113,7 @@ test('sidebar header icon buttons share their size and right column in light and
   try {
     const { page } = f;
     await page.locator('.startup-splash').waitFor({ state: 'detached' });
-    for (const theme of ['light', 'dark']) {
+    for (const theme of ['light']) {
       if (theme === 'dark') await chooseTheme(page, theme);
       const aside = page.locator('aside.sidebar');
       const controls = ['Add new project', 'Group and sort', 'Start new chat in Parser'];

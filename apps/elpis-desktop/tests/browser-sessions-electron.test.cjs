@@ -117,7 +117,7 @@ test('session browsers switch, start empty, restore history, isolate concurrent 
     await select('chat-a'); assert.equal(await address().inputValue(), `${base}/a-next`, 'B tools did not select or navigate A');
     if (shots) {
       await fs.mkdir(shots, { recursive: true });
-      for (const colorScheme of ['light', 'dark']) {
+      for (const colorScheme of ['light']) {
         await page.emulateMedia({ colorScheme });
         await page.waitForFunction(dark => document.querySelector('.app-shell').classList.contains('dark') === dark, colorScheme === 'dark');
         await new Promise(resolve => setTimeout(resolve, 300));

@@ -7,7 +7,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { fixture, THREADS, CWD } = require('./parity-fixture.cjs');
 
-for (const colorScheme of ['light', 'dark']) test(`Working stays with the composer through resize, restore and both right panels (${colorScheme})`, async t => {
+for (const colorScheme of ['light']) test(`Working stays with the composer through resize, restore and both right panels (${colorScheme})`, async t => {
   const child = { id: 'anchor-agent', name: 'Anchor helper', cwd: CWD, parentThreadId: 'chat-a', source: { subAgent: { thread_spawn: { agent_path: '/root/anchor' } } }, status: { type: 'idle' } };
   const f = await fixture({ colorScheme, running: true, width: 1600, height: 900, threads: [...THREADS, child] });
   t.after(() => f.close());

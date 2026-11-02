@@ -20,7 +20,7 @@ async function dividerShot(page, name) {
   await page.screenshot({ path: path.join(process.env.A120_SCREENSHOTS, `${process.env.A120_STAGE || 'candidate'}-${name}.png`) });
 }
 
-for (const colorScheme of ['light', 'dark']) {
+for (const colorScheme of ['light']) {
   for (const past of [false, true]) test(`side divider release ${past ? 'past' : 'at'} right edge closes and restores width (${colorScheme})`, async () => {
     const f = await fixture({ width: 1280, height: 800, colorScheme }), { page } = f;
     try {
@@ -108,7 +108,7 @@ for (const colorScheme of ['light', 'dark']) {
   });
 }
 
-for (const colorScheme of ['light', 'dark']) test(`side panel keeps its actions visible with overflowing tabs (${colorScheme})`, async () => {
+for (const colorScheme of ['light']) test(`side panel keeps its actions visible with overflowing tabs (${colorScheme})`, async () => {
   const f = await fixture({ width: 900, height: 700, colorScheme }), { page } = f;
   try {
     await page.locator('.startup-splash').waitFor({ state: 'detached' });

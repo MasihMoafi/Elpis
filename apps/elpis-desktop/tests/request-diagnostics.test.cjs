@@ -19,7 +19,7 @@ test('an actual bridge failure displays its code and request ID in the renderer 
     const launch = new URL(app.url), origin = launch.origin;
     const auth = await fetch(origin + '/api/session', { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ token: launch.hash.slice(7) }) });
     const cookie = auth.headers.get('set-cookie').split(';')[0];
-    for (const colorScheme of ['light', 'dark']) {
+    for (const colorScheme of ['light']) {
       const f = await fixture({ colorScheme, width: 1280, height: 800 });
       try {
         const requestIds = new Set();

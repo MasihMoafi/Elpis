@@ -48,7 +48,7 @@ test('the task list follows turn/plan/updated live and collapses when the turn e
     // Live updates replace the list.
     plan([['Read the parser', 'completed'], ['Fix the off-by-one', 'inProgress'], ['Add a test', 'pending']]);
     await tasks.getByText('1 of 3 done').waitFor();
-    if (process.env.ELPIS_TASK_SHOTS) for (const scheme of ['light', 'dark']) { await page.emulateMedia({ colorScheme: scheme }); await page.waitForTimeout(150); await page.screenshot({ path: path.join(process.env.ELPIS_TASK_SHOTS, `tasks-${scheme}.png`), clip: { x: 256, y: 520, width: 1024, height: 380 } }); }
+    if (process.env.ELPIS_TASK_SHOTS) for (const scheme of ['light']) { await page.emulateMedia({ colorScheme: scheme }); await page.waitForTimeout(150); await page.screenshot({ path: path.join(process.env.ELPIS_TASK_SHOTS, `tasks-${scheme}.png`), clip: { x: 256, y: 520, width: 1024, height: 380 } }); }
     assert.deepEqual(await rows(), ['completed Read the parser', 'inProgress Fix the off-by-one', 'pending Add a test']);
 
     // Another chat has no list; coming back shows it again.

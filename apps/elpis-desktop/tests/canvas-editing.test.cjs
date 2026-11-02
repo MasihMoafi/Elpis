@@ -22,7 +22,7 @@ async function wireClick(f, selector) {
 async function captures(f, stage, iso = true) {
   if (process.env.ELPIS_SHOTS) await fs.mkdir(process.env.ELPIS_SHOTS, { recursive: true });
   await mode(f, iso);
-  for (const width of [1280, 1440]) for (const theme of ['light', 'dark']) {
+  for (const width of [1280]) for (const theme of ['light']) {
     await f.page.setViewportSize({ width, height: 900 });
     if (await f.page.locator('html').evaluate(el => el.classList.contains('dark')) !== (theme === 'dark')) await chooseTheme(f.page, theme);
     await f.fit(); await assertUiFit(f.canvas, `${stage} ${width} ${theme}`);
@@ -52,7 +52,7 @@ test('inline rename: Enter/blur save, Escape cancels, Mother agent is fixed, bot
   } finally { await f.close(); }
 });
 
-for (const iso of [true, false]) test(`delete with four-second toast, Undo button, Ctrl+Z and wires: ${iso ? '3D' : 'flat'}`, async () => {
+for (const iso of [true]) test(`delete with four-second toast, Undo button, Ctrl+Z and wires: ${iso ? '3D' : 'flat'}`, async () => {
   const f = await openCanvas({ graph: { ...graph, maxAgents: 3 } });
   try {
     await mode(f, iso);
@@ -222,7 +222,7 @@ for (const iso of [false, true]) {
       const first = await added(f, iso, 2, 'a');
       await select(f, iso, first.id); await f.page.keyboard.press('a');
       await added(f, iso, 3, first.id);
-      for (const theme of ['light', 'dark']) {
+      for (const theme of ['light']) {
         if ((await f.page.locator('html').evaluate(el => el.classList.contains('dark'))) !== (theme === 'dark')) await chooseTheme(f.page, theme);
         await f.fit(); await assertUiFit(f.canvas, `Workflows ${iso ? '3D' : '2D'} ${theme}`);
         if (process.env.ELPIS_SHOTS) { await fs.mkdir(process.env.ELPIS_SHOTS, { recursive: true }); await f.page.screenshot({ path: `${process.env.ELPIS_SHOTS}/workflows-${iso ? '3d' : '2d'}-${theme}.png` }); }

@@ -204,7 +204,7 @@ test('Changes tab: Show in folder opens the changed file\'s folder; a folder tha
   });
 });
 
-for (const colorScheme of ['light', 'dark']) test(`Changes tab outside Git: plain recorded lines, selection and reload (${colorScheme})`, async () => {
+for (const colorScheme of ['light']) test(`Changes tab outside Git: plain recorded lines, selection and reload (${colorScheme})`, async () => {
   await fixture(async ({ page, side, state, shoot }) => {
     state.recorded = true; state.root = '/work/notes';
     state.files = [{ path: 'notes.md', status: 'added', added: 3, removed: 1, binary: false },
@@ -244,7 +244,7 @@ for (const colorScheme of ['light', 'dark']) test(`Changes tab outside Git: plai
   }, { colorScheme });
 });
 
-for (const colorScheme of ['light', 'dark']) test(`Changes tab outside Git: long and binary recorded edits stay inside the panel (${colorScheme})`, async () => {
+for (const colorScheme of ['light']) test(`Changes tab outside Git: long and binary recorded edits stay inside the panel (${colorScheme})`, async () => {
   await fixture(async ({ page, side, state, shoot }) => {
     state.recorded = true;
     const longPath = 'docs/reviews/a-very-long-directory-name/' + 'review-and-next-actions-'.repeat(5) + '.md';

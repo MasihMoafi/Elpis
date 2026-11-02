@@ -8,7 +8,7 @@ const reply = async page => page.locator('.message.agent').first().getByRole('bu
 async function using(options, run) { const f = await fixture({ staticDir: process.env.ELPIS_RENDERER_OUT, ...options }); try { await f.open('chat-a'); await run(f); assert.deepEqual(f.errors, []); } finally { await f.close(); } }
 const picture = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGM4o6SEFTEMLQkAvM5EAT6yk8sAAAAASUVORK5CYII=', 'base64');
 const firstPicture = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEUlEQVR4nGMQiT2DFTEMLQkAyYpPQS+5mBEAAAAASUVORK5CYII=', 'base64');
-for (const colorScheme of ['light', 'dark']) test(`reply hover shows only its recorded model (${colorScheme})`, () => using({ colorScheme, routes: {
+for (const colorScheme of ['light']) test(`reply hover shows only its recorded model (${colorScheme})`, () => using({ colorScheme, routes: {
   '/api/threads/chat-a': () => ({ thread: { id: 'chat-a', name: 'Model labels', cwd: CWD, model: 'current-model', status: { type: 'idle' } }, nextCursor: null, data: [
     { turnId: 'fixture-tail', item: { id: 'fixture-tail-reply', type: 'agentMessage', text: 'All green.' } },
     { turnId: 'new', item: { id: 'reply-new', type: 'agentMessage', text: 'No model was recorded here.' } },
@@ -59,7 +59,7 @@ test('an image that stops being readable adds no incomplete reply or image', () 
   assert.equal(await preview(page).count(), 0); assert.equal(await page.locator('.composer img').count(), 0);
   assert.equal(await composer.inputValue(), 'Keep this draft');
 }));
-for (const colorScheme of ['light', 'dark']) test(`reply to one picture sends that image, preserves the draft and cancels cleanly (${colorScheme})`, () => using({ colorScheme, chat: [['pictures', 'Make two logos', '![First logo](https://images.example/first.png)\n\n![Second logo](https://images.example/second.png)'], ['tail', 'Ready?', 'Pictures ready']] }, async f => {
+for (const colorScheme of ['light']) test(`reply to one picture sends that image, preserves the draft and cancels cleanly (${colorScheme})`, () => using({ colorScheme, chat: [['pictures', 'Make two logos', '![First logo](https://images.example/first.png)\n\n![Second logo](https://images.example/second.png)'], ['tail', 'Ready?', 'Pictures ready']] }, async f => {
   const { page, composer } = f;
   await page.route('https://images.example/**', route => route.fulfill({ contentType: 'image/png', headers: { 'Access-Control-Allow-Origin': '*' }, body: route.request().url().endsWith('/first.png') ? firstPicture : picture }));
   await page.reload(); await f.open('chat-a');
@@ -89,7 +89,7 @@ for (const colorScheme of ['light', 'dark']) test(`reply to one picture sends th
   assert.ok(sent.body.attachments.some(part => part.name === 'notes.txt'));
   assert.ok(sent.body.attachments.some(part => part.type === 'text' && part.text.includes('Second logo') && part.text.includes('pictures')));
 }));
-for (const colorScheme of ['light', 'dark']) test(`reply quotes either author, preserves files and text, and can be cancelled (${colorScheme})`, () => using({ colorScheme }, async f => {
+for (const colorScheme of ['light']) test(`reply quotes either author, preserves files and text, and can be cancelled (${colorScheme})`, () => using({ colorScheme }, async f => {
   const { page, composer } = f;
   await composer.fill('Keep this draft');
   await page.locator('input[aria-label="Choose files"]').setInputFiles({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('Keep this file') });

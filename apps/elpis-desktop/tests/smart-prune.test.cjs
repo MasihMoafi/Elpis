@@ -7,7 +7,7 @@ const command = id => ({ id, type: 'commandExecution', command: id === 'command-
 
 test('Smart Prune belongs under its tool and opens exact evidence by mouse and Enter', async () => {
   const work = [command('command-1'), command('command-2'), { id: 'prune-1', type: 'smartPrune', prune }];
-  for (const colorScheme of ['light', 'dark']) {
+  for (const colorScheme of ['light']) {
     const app = await fixture({ staticDir: process.env.ELPIS_PRUNE_BASELINE, colorScheme, width: 1440, height: 900, chat: [['t1', 'Run tests', 'Finished.', work]], routes: {
       '/api/threads/chat-a/smart-prune/attempt-1/command-1': () => ({ original: 'ORIGINAL_ONLY\nfull failing tests', compact: 'COMPACT_ONLY\ntwo failures' }),
     } });

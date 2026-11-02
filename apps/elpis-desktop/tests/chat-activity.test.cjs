@@ -88,7 +88,7 @@ const contrast = (a, b) => { const [x, y] = [luminance(a), luminance(b)].sort((p
 const isRed = value => { const [r, g, b] = rgb(value); return (hue(value) < 12 || hue(value) > 345) && r > g + 60 && r > b + 60; };
 const seconds = text => { const m = text.match(/^(?:(\d+)m )?(\d+)s$/); assert.ok(m, `a timer reads "39s" or "1m 2s", not "${text}"`); return Number(m[1] ?? 0) * 60 + Number(m[2]); };
 
-for (const colorScheme of ['light', 'dark']) test(`scrollTop 0 keeps the first work row below the tab bar (${colorScheme})`, async () => {
+for (const colorScheme of ['light']) test(`scrollTop 0 keeps the first work row below the tab bar (${colorScheme})`, async () => {
   const app = await fixture();
   try {
     const { page, errors } = await app.open({ colorScheme });

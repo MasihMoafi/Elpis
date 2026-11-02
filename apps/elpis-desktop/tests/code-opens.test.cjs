@@ -111,7 +111,7 @@ test('Changes file paths open Files; the separate diff control retains diff brow
 });
 
 // Long lines wrap inside the pane by default (aeb47ccc6); turning wrap off scrolls them sideways, and the choice survives reload.
-for (const colorScheme of ['light', 'dark']) for (const width of [1280, 900]) test(`code wraps by default with aligned numbers; without wrap it scrolls horizontally, and that survives reload (${colorScheme}, ${width})`, async () => {
+for (const colorScheme of ['light']) for (const width of [900]) test(`code wraps by default with aligned numbers; without wrap it scrolls horizontally, and that survives reload (${colorScheme}, ${width})`, async () => {
   const f = await open({ colorScheme, width });
   try {
     await f.page.getByRole('button', { name: 'app', exact: true }).click();

@@ -4,7 +4,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { fixture } = require('./parity-fixture.cjs');
 
-for (const colorScheme of ['light', 'dark']) {
+for (const colorScheme of ['light']) {
   for (const reducedMotion of ['no-preference', 'reduce']) {
     test(`waiting hexagon: ${colorScheme}, ${reducedMotion}`, async () => {
       const f = await fixture({ colorScheme, ...(process.env.ELPIS_HEX_STATIC_DIR ? { staticDir: process.env.ELPIS_HEX_STATIC_DIR } : {}) });

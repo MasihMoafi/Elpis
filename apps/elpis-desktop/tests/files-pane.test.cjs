@@ -182,7 +182,7 @@ test('a failed file refresh preserves text typed while the read was pending', as
 });
 
 test('Markdown opens as a document; source editing and relative links/images keep their file context', async () => {
-  for (const colorScheme of ['light', 'dark']) {
+  for (const colorScheme of ['light']) {
     const f = await open({ colorScheme });
     try {
       const document = '# Project tasks\n\n| Task | Status |\n| --- | --- |\n| File previews | Working |\n\n[Open the guide](guide.md)\n\n![Preview diagram](picture.png)\n\n![Remote](https://example.invalid/spy.png)\n\n![Outside](../../outside.png)\n\n<script>window.markdownExecuted=true</script>\n';
@@ -688,7 +688,7 @@ test('Ctrl+Shift+E shows the Files tab and, pressed again on it, closes the pane
 });
 
 test('light and dark: the pane has only approved amber/orange accents in light, and nothing is cut off in either theme', async () => {
-  for (const colorScheme of ['light', 'dark']) {
+  for (const colorScheme of ['light']) {
     const f = await open({ colorScheme });
     try {
       await f.ref('src/lib/parser.ts:2-3').click();

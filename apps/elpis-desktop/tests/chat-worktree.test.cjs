@@ -74,7 +74,7 @@ const shoot = async (page, name) => {
 const where = page => page.getByRole('button', { name: 'Where this chat works' });
 const branchChip = page => page.getByRole('button', { name: `Branch ${BRANCH}` });
 
-for (const colorScheme of ['light', 'dark']) test(`a new chat can start in its own worktree: Worktree in the Local menu, then the first message (${colorScheme})`, () => using({ colorScheme }, async f => {
+for (const colorScheme of ['light']) test(`a new chat can start in its own worktree: Worktree in the Local menu, then the first message (${colorScheme})`, () => using({ colorScheme }, async f => {
   const { page, composer } = f;
   await page.getByRole('button', { name: 'New chat', exact: true }).first().click();
   // New chats start in no project (TASKS.md:111), so choose the repository's project first.
@@ -140,7 +140,7 @@ test('opening a chat with an active turn still loads its branch', () => using({ 
   assert.equal(await branchChip(f.page).innerText(), BRANCH);
 }));
 
-for (const colorScheme of ['light', 'dark']) test(`archiving or deleting a chat whose worktree has uncommitted work says where the worktree is kept (${colorScheme})`, () => using({ colorScheme, routes: {
+for (const colorScheme of ['light']) test(`archiving or deleting a chat whose worktree has uncommitted work says where the worktree is kept (${colorScheme})`, () => using({ colorScheme, routes: {
   '/api/threads/chat-a/archive': () => ({ archived: true, worktree: { kept: true, path: KEPT, branch: BRANCH, changes: 2 } }),
   '/api/trash': () => ({ trashed: ['chat-b'], worktrees: [{ threadId: 'chat-b', worktree: { kept: true, path: `${KEPT}0`, branch: `${BRANCH}0`, changes: 1 } }] }),
   '/api/threads/chat-c/archive': () => ({ archived: true, worktree: { removed: true, path: KEPT, branch: BRANCH } }),

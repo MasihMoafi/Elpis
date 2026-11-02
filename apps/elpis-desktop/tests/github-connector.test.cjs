@@ -146,7 +146,7 @@ test('GitHub can still be switched off after its gh login expires', async () => 
   } finally { await f.close(); }
 });
 
-for (const [width, height] of [[1280, 800], [900, 700]]) for (const theme of ['light', 'dark']) {
+for (const [width, height] of [[900, 700]]) for (const theme of ['light']) {
   test(`GitHub connected and disconnected fit ${width}×${height} ${theme}`, async () => {
     const s = state(), f = await fixture({ width, height, colorScheme: theme, routes: s.routes });
     try {

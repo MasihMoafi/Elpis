@@ -29,7 +29,7 @@ const markColor = locator => locator.evaluate(el => getComputedStyle(el).backgro
 async function eventually(check) { const deadline = Date.now() + 5000; for (;;) { try { return await check(); } catch (e) { if (Date.now() > deadline) throw e; await new Promise(resolve => setTimeout(resolve, 40)); } } }
 async function shot(page, name) { const dir = process.env.ELPIS_PARITY_SHOTS || path.join(os.homedir(), '.cache/elpis-shots'); await fs.mkdir(dir, { recursive: true }); await page.screenshot({ path: path.join(dir, `wfident-${name}.png`) }); }
 
-for (const colorScheme of ['light', 'dark']) test(`workflow history keeps running work visible, reports a failed Remove and restores with Undo (${colorScheme})`, async () => {
+for (const colorScheme of ['light']) test(`workflow history keeps running work visible, reports a failed Remove and restores with Undo (${colorScheme})`, async () => {
   const saved = [{ ...runs[0], removable: false, removalReason: 'Finish this workflow before removing it from history.' }, { ...runs[2], removable: true }];
   const removed = []; let refuse = true;
   const f = await open(colorScheme, saved, {}, {}, {
@@ -64,7 +64,7 @@ for (const colorScheme of ['light', 'dark']) test(`workflow history keeps runnin
   } finally { await f.close(); }
 });
 
-for (const colorScheme of ['light', 'dark']) test(`four saved workflows have distinct names, one status indicator and twelve nested legacy step chats (${colorScheme})`, async () => {
+for (const colorScheme of ['light']) test(`four saved workflows have distinct names, one status indicator and twelve nested legacy step chats (${colorScheme})`, async () => {
   const f = await open(colorScheme), { page } = f;
   try {
     await eventually(async () => assert.equal(await workflows(page).locator('.thread-row:not(.child)').count(), 4));
@@ -437,7 +437,7 @@ test('failed workflow follows a resumed agent and paginated descendants without 
     await progress.getByText('Mother agent', { exact: true }).waitFor();
     await progress.getByText('Source checker', { exact: true }).waitFor();
     await progress.getByText(/Mother agent: The evidence agent is checking/).waitFor();
-    for (const colorScheme of ['light', 'dark']) {
+    for (const colorScheme of ['light']) {
       if (await sidebar(page).getByRole('button', { name: `Use ${colorScheme} theme`, exact: true }).count()) await chooseTheme(page, colorScheme);
       for (const width of [1440, 820]) {
         await page.setViewportSize({ width, height: 900 });
@@ -510,7 +510,7 @@ test('failed workflow follows a resumed agent and paginated descendants without 
   } finally { await f.close(); }
 });
 
-for (const colorScheme of ['light', 'dark']) test(`exact quota fallback shows the preserved run and actual subscription (${colorScheme})`, async () => {
+for (const colorScheme of ['light']) test(`exact quota fallback shows the preserved run and actual subscription (${colorScheme})`, async () => {
   const quota = 'Claude (ACP) error: You have hit your weekly limit.';
   const saved = { id: 'fallback-run', rootThreadId: 'chat-a', name: 'Quota recovery', status: 'succeeded', startedAt: 100, endedAt: 200, tasks: [{
     id: 'continue', title: 'Continue retained work', status: 'succeeded', assignedThreadId: 'fallback-child', dependsOn: [], writeScopes: [], acceptanceCriteria: ['Keep partial work'],

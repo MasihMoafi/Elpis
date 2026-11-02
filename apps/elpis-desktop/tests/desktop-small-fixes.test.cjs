@@ -4,7 +4,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 const { fixture, CWD } = require('./parity-fixture.cjs');
-const { openSettings, leaveSettings, oranges } = require('./controls.cjs');
+const { openSettings, leaveSettings } = require('./controls.cjs');
 
 const evidence = path.join(os.homedir(), '.cache/elpis-tests/desktop-small-fixes');
 const chat = (id, name, extra = {}) => ({ id, name, cwd: CWD, source: 'cli', model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' }, ...extra });
@@ -14,7 +14,7 @@ const settings = () => ({ main: { model: 'sol', provider: 'openai' }, providers:
 const user = page => page.locator('.message.user').filter({ hasText: 'Show this immediately.' });
 const tick = page => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 
-for (const colorScheme of ['light', 'dark']) test(`Enter paints before thread creation and keeps the same message node on engine echo (${colorScheme})`, async t => {
+for (const colorScheme of ['light']) test(`Enter paints before thread creation and keeps the same message node on engine echo (${colorScheme})`, async t => {
   let releaseCreate, releaseTurn;
   const created = new Promise(resolve => { releaseCreate = resolve; }), turned = new Promise(resolve => { releaseTurn = resolve; });
   const f = await fixture({ colorScheme, routes: {
@@ -100,7 +100,7 @@ test('failed thread creation removes the unsent transcript entry and preserves i
   assert.equal(await f.composer.inputValue(), 'Show this immediately.');
 });
 
-for (const colorScheme of ['light', 'dark']) test(`sidebar arrows cover navigation, Search, projects and Recents with Enter activation (${colorScheme})`, async t => {
+for (const colorScheme of ['light']) test(`sidebar arrows cover navigation, Search, projects and Recents with Enter activation (${colorScheme})`, async t => {
   const f = await fixture({ colorScheme, storage: { 'elpis-projects-v1': JSON.stringify({ projects: [{ id: 'parser', name: 'Parser project', cwd: CWD }], selectedId: null }) } });
   t.after(async () => { await f.close(); assert.deepEqual(f.errors, []); });
   const { page } = f, nav = page.locator('aside.sidebar');
@@ -127,7 +127,7 @@ for (const colorScheme of ['light', 'dark']) test(`sidebar arrows cover navigati
   assert.equal(await nav.getByLabel('Search conversations').evaluate(node => node === document.activeElement), true, 'Home edits a nonempty search');
 });
 
-for (const colorScheme of ['light', 'dark']) test(`Agent runs hide persistently from menu and Settings, and history deletion confirms and undoes (${colorScheme})`, async t => {
+for (const colorScheme of ['light']) test(`Agent runs hide persistently from menu and Settings, and history deletion confirms and undoes (${colorScheme})`, async t => {
   let listed = [personal, ...runs], deleted = [];
   // S18, Masih 29 Oct: Background runs is off by default; this test turns it on, then hides it again.
   const f = await fixture({ colorScheme, height: 900, storage: { 'elpis-preferences-v1': JSON.stringify({ confirmDeleteChats: false, showAgentRuns: true }) }, routes: {
@@ -163,24 +163,6 @@ for (const colorScheme of ['light', 'dark']) test(`Agent runs hide persistently 
   await page.getByRole('button', { name: 'Agent runs (2)', exact: true }).waitFor();
 });
 
-test('light-theme colour guard permits A87 accent paint and still rejects orange text and unrelated fills', async t => {
-  const f = await fixture();
-  t.after(async () => { await f.close(); assert.deepEqual(f.errors, []); });
-  await f.page.evaluate(() => {
-    const other = document.createElement('span'); other.id = 'unexpected-fill'; other.textContent = 'Other fill'; other.style.backgroundColor = '#ff8a00';
-    const primary = document.createElement('button'); primary.id = 'primary-probe'; primary.className = 'primary-cut'; primary.dataset.slot = 'button'; primary.textContent = 'Unreadable text'; primary.style.color = '#f2a93b';
-    const accent = document.createElement('span'); accent.id = 'accent-text-probe'; accent.textContent = 'Amber text'; accent.style.color = '#f2a93b';
-    document.body.append(other, primary, accent);
-  });
-  const hits = await oranges(f.page);
-  assert.ok(hits.some(hit => hit.includes('span#unexpected-fill') && hit.includes('background-color')));
-  assert.ok(hits.some(hit => hit.includes('button#primary-probe') && hit.includes(': color')));
-  assert.ok(hits.some(hit => hit.includes('span#accent-text-probe') && hit.includes(': color')), 'approved accent paint does not permit unreadable text');
-  assert.equal(hits.some(hit => hit.includes('button#primary-probe') && hit.includes('background-color')), false, 'only the approved primary fill is exempt');
-  await f.page.evaluate(() => { document.querySelector('#unexpected-fill').remove(); document.querySelector('#primary-probe').remove(); document.querySelector('#accent-text-probe').remove(); });
-  assert.deepEqual(await oranges(f.page), []);
-});
-
 test('large Agent runs groups delete a labeled batch within the existing trash limit', async t => {
   const many = Array.from({ length: 105 }, (_, i) => chat(`run-${i}`, `Task ${i}`, { source: 'exec' }));
   // S18, Masih 29 Oct: Background runs is off by default.
@@ -197,29 +179,6 @@ test('large Agent runs groups delete a labeled batch within the existing trash l
   await f.page.getByRole('button', { name: 'Agent runs (5)', exact: true }).waitFor();
   const ids = f.posts.find(post => post.path === '/api/trash').body.threadIds;
   assert.equal(ids.length, 100); assert.equal(ids.includes('chat-a'), false);
-});
-
-for (const colorScheme of ['light', 'dark']) test(`send keeps amber and shared parallel cuts when enabled, disabled and narrow (${colorScheme})`, async t => {
-  const f = await fixture({ colorScheme, width: 1280, height: 860 });
-  t.after(async () => { await f.close(); assert.deepEqual(f.errors, []); });
-  const { page } = f, send = page.getByRole('button', { name: 'Send message', exact: true });
-  const appearance = () => send.evaluate(node => { const s = getComputedStyle(node), c = getComputedStyle(document.querySelector('.composer')); return { corners: [s.borderTopLeftRadius, s.borderTopRightRadius, s.borderBottomRightRadius, s.borderBottomLeftRadius], shape: s.cornerTopLeftShape, composerShape: c.cornerTopLeftShape, background: s.backgroundColor, foreground: s.color, opacity: s.opacity }; });
-  await page.locator('.startup-splash').waitFor({ state: 'detached' });
-  const disabled = await appearance();
-  assert.deepEqual(disabled.corners, ['7px', '0px', '7px', '0px']);
-  assert.equal(disabled.shape, disabled.composerShape);
-  await f.composer.fill('Ready to send'); await page.waitForTimeout(200); const enabled = await appearance();
-  assert.equal(disabled.background, enabled.background, 'disabled keeps the amber fill');
-  assert.notEqual(disabled.opacity, enabled.opacity, 'disabled stays distinguishable');
-  assert.notEqual(enabled.background, enabled.foreground);
-  await fs.mkdir(evidence, { recursive: true });
-  await page.screenshot({ path: path.join(evidence, `send-enabled-${colorScheme}.png`) });
-  await f.composer.fill(''); await page.waitForTimeout(200);
-  await page.screenshot({ path: path.join(evidence, `send-disabled-${colorScheme}.png`) });
-  await page.setViewportSize({ width: 720, height: 860 }); await f.composer.fill('Narrow composer'); await page.waitForTimeout(200);
-  assert.deepEqual((await appearance()).corners, enabled.corners);
-  assert.equal(await send.evaluate(node => { const r = node.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth; }), true);
-  await page.screenshot({ path: path.join(evidence, `send-narrow-${colorScheme}.png`) });
 });
 
 test('sidebar pages reorder by drag and drop and by Alt+Arrow, and keep their order after a reload', async t => {

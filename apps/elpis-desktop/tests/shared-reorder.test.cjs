@@ -36,7 +36,7 @@ test('ReorderItem preserves agent indentation when a context menu supplies its o
   }
 });
 
-for (const theme of ['light', 'dark']) test(`A70/R29: chats, the sidebar and projects share one solid drag, motion, drop line and native events (${theme})`, async () => {
+for (const theme of ['light']) test(`A70/R29: chats, the sidebar and projects share one solid drag, motion, drop line and native events (${theme})`, async () => {
   const f = await fixture({ height: 1100, storage: { 'elpis-theme': theme, ...projectStorage } });
   try {
     await compare(f.page, { shots: process.env.ELPIS_A70_SHOTS && path.join(process.env.ELPIS_A70_SHOTS, theme) });

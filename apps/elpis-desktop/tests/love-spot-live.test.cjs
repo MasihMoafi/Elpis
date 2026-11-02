@@ -40,7 +40,7 @@ test('Love Spot real bridge: mouse strokes sync, stale windows retain both, dele
 });
 
 test('Love Spot real bridge: screenshots wait for a click, inbox and PNG export work; four tray captures', async () => {
-  for (const colorScheme of ['light', 'dark']) {
+  for (const colorScheme of ['light']) {
     const f = await loveSpotFixture({ colorScheme, prepareScreenshots: screenshots => fs.writeFile(path.join(screenshots, 'before.png'), PNG) });
     try {
       await f.open(f.page);

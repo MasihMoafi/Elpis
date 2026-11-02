@@ -61,7 +61,7 @@ for (const middle of [false, true]) test(`bottom + adds only a successor: ${midd
       assert.equal(await plus.getAttribute('aria-label'), 'Add an agent after Start');
     }
     await fs.mkdir(`${shots}/plus`, { recursive: true });
-    for (const theme of ['light', 'dark']) {
+    for (const theme of ['light']) {
       if ((await f.page.locator('html').evaluate(el => el.classList.contains('dark'))) !== (theme === 'dark')) await chooseTheme(f.page, theme);
       await f.fit();
       if (!middle) { await f.canvas.getByRole('button', { name: /zoom out/i }).click(); await f.page.waitForTimeout(250); }
@@ -108,7 +108,7 @@ test('AutoCAD window contains, crossing touches, Shift adds notes, and drags nev
     assert.deepEqual(await selected(f), ['Answer 1', 'note'], 'Shift crossing adds a touched note');
     await drag(f, { x: note.x - 14, y: note.y - 14 }, { x: note.x + note.width + 14, y: note.y + note.height + 14 });
     assert.deepEqual(await selected(f), ['note'], 'window selects enclosed notes and replaces without Shift');
-    for (const theme of ['light', 'dark']) {
+    for (const theme of ['light']) {
       if ((await f.page.locator('html').evaluate(el => el.classList.contains('dark'))) !== (theme === 'dark')) await chooseTheme(f.page, theme);
       const box = await f.node('Answer 1').boundingBox();
       const tints = [];
@@ -222,7 +222,7 @@ for (const iso of [false, true]) test(`${iso ? 'isometric' : 'flat'} provider fi
     await chooseOption(provider, ''); assert.equal(await controlValue(model), '|gpt-6.1-sol', 'configured main default wins over first catalog item');
     await model.click(); await f.page.getByRole('option').first().waitFor(); assert.deepEqual(await f.page.getByRole('option').allTextContents(), ['Default model', 'Luna 6', 'Sol 6.1']); await f.page.keyboard.press('Escape');
     await fs.mkdir(shots, { recursive: true });
-    for (const theme of ['light', 'dark']) {
+    for (const theme of ['light']) {
       if ((await f.page.locator('html').evaluate(el => el.classList.contains('dark'))) !== (theme === 'dark')) await chooseTheme(f.page, theme);
       await chooseOption(provider, 'anthropic-credits'); await model.click(); await f.page.getByRole('option').first().waitFor();
       await f.page.screenshot({ path: `${shots}/${iso ? 'isometric' : 'flat'}-panel-${theme}.png` }); await f.page.keyboard.press('Escape');

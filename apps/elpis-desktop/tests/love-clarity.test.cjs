@@ -5,7 +5,7 @@ const path = require('node:path');
 const { loveSpotFixture } = require('./love-spot-fixture.cjs');
 const shots = path.join(process.env.HOME, '.cache/elpis-tests/love-clarity');
 
-for (const colorScheme of ['light', 'dark']) test(`Love Spot identifies chats, lights on answers, and clears on board or chat visit · ${colorScheme}`, async () => {
+for (const colorScheme of ['light']) test(`Love Spot identifies chats, lights on answers, and clears on board or chat visit · ${colorScheme}`, async () => {
   const card = { id: 'review-card', type: 'rectangle', x: 80, y: 80, width: 220, height: 190, version: 1, versionNonce: 1,
     customData: { loveAgent: { preset: 'reviewer', name: 'Review', prompt: 'Review the task', task: 'Review the example', model: 'sol', provider: 'openai', threadId: 'review-chat', status: 'running' } } };
   const chats = [

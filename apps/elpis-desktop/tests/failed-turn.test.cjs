@@ -65,7 +65,7 @@ test('rate limits have no overload switch; unsafe input explains why retry is un
   await card(page).waitFor();
 }));
 
-for (const colorScheme of ['light', 'dark']) test(`${colorScheme} quota reset time is readable and changing the composer model clears the stale card`, () => using(async ({ page, fail }) => {
+for (const colorScheme of ['light']) test(`${colorScheme} quota reset time is readable and changing the composer model clears the stale card`, () => using(async ({ page, fail }) => {
   await fs.mkdir(shots, { recursive: true });
   await fail({ message: 'Gemini (ACP) error: Individual quota reached. Resets in 17h3m6s.', codexErrorInfo: 'usageLimitExceeded' });
   const notice = card(page);

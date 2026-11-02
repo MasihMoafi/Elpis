@@ -122,7 +122,7 @@ test('Add files or photos opens one chooser for pictures and documents alike; a 
   await page.getByRole('list', { name: 'Message attachments' }).getByText('pic.png').waitFor();
 }));
 
-for (const colorScheme of ['light', 'dark']) for (const running of [false, true]) {
+for (const colorScheme of ['light']) for (const running of [false, true]) {
   test(`the send button is a cut-corner button inside the box (${colorScheme}, ${running ? 'a turn running' : 'idle'})`, () => using({ colorScheme, running }, async f => {
     const { page, composer } = f;
     await f.open('chat-a'); await composer.fill('a message');

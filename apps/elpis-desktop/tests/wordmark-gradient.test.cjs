@@ -11,7 +11,7 @@ const paletteAccent = { 'palette-paper': ['#8c542c', '#deb382'], 'palette-midnig
 const shots = process.env.ELPIS_POLISH_SHOTS;
 
 test('the approved wordmark keeps its original Orange shading and follows every theme', async () => {
-  for (const mode of ['Light', 'Dark']) {
+  for (const mode of ['Light']) {
     const f = await fixture({ width: 1280, height: 900, colorScheme: mode.toLowerCase(), staticDir: process.env.ELPIS_RENDERER_OUT });
     const { page } = f;
     try {

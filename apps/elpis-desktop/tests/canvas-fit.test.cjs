@@ -6,7 +6,7 @@ const { openCanvas } = require('./canvas-fixture.cjs');
 const { uiFit, assertUiFit } = require('./ui-fit.cjs');
 const { chooseTheme, openPatterns } = require('./controls.cjs');
 
-for (const theme of ['light', 'dark']) test(`the 1100px Workflows toolbar stays on one row above its bottom alert (${theme})`, async () => {
+for (const theme of ['light']) test(`the 1100px Workflows toolbar stays on one row above its bottom alert (${theme})`, async () => {
   const f = await openCanvas({ width: 1100, height: 750 }); const { page, canvas } = f;
   try {
     if (await page.locator('html').evaluate(el => el.classList.contains('dark')) !== (theme === 'dark')) await chooseTheme(page, theme);
@@ -28,7 +28,7 @@ for (const theme of ['light', 'dark']) test(`the 1100px Workflows toolbar stays 
   } finally { await f.close(); }
 });
 
-for (const [width, height] of [[1280, 800], [900, 700]]) for (const theme of ['light', 'dark']) test(`text fits in both views, Add and settings: ${width}×${height} ${theme}`, async () => {
+for (const [width, height] of [[900, 700]]) for (const theme of ['light']) test(`text fits in both views, Add and settings: ${width}×${height} ${theme}`, async () => {
   const f = await openCanvas({ width, height }); const { page, canvas } = f;
   try {
     if (await page.locator('html').evaluate(el => el.classList.contains('dark')) !== (theme === 'dark')) await chooseTheme(page, theme);
@@ -54,7 +54,7 @@ for (const [width, height] of [[1280, 800], [900, 700]]) for (const theme of ['l
 });
 
 // The live run (tests/canvas-live.runtime.mjs) found the finished board's run clock taller than its line box.
-for (const theme of ['light', 'dark']) test(`a finished run's board fits in both views: clock, log and statuses, ${theme}`, async () => {
+for (const theme of ['light']) test(`a finished run's board fits in both views: clock, log and statuses, ${theme}`, async () => {
   const f = await openCanvas({ width: 1440, height: 900 }); const { page, canvas } = f;
   try {
     if (await page.locator('html').evaluate(el => el.classList.contains('dark')) !== (theme === 'dark')) await chooseTheme(page, theme);

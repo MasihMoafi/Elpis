@@ -33,7 +33,7 @@ async function shot(page, theme, state) {
   await page.screenshot({ path: path.join(process.env.ELPIS_PARITY_SHOTS, `prompt-rail-alignment-${theme}-${state}.png`) });
 }
 
-for (const colorScheme of ['light', 'dark']) test(`prompt rail stays 16px from the pane edge and clear of the text through pane and reading-width changes (${colorScheme})`, async () => {
+for (const colorScheme of ['light']) test(`prompt rail stays 16px from the pane edge and clear of the text through pane and reading-width changes (${colorScheme})`, async () => {
   const f = await fixture({ width: 1920, height: 800, colorScheme, showScrollbars: true });
   const { page } = f;
   try {

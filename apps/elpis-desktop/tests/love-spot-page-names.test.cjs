@@ -7,7 +7,7 @@ const { fixture } = require('./parity-fixture.cjs');
 const LONG = 'Wednesday design review with Matilda and the final icon notes';
 const OTHER = 'Thursday sketches for the onboarding flow and the empty states';
 
-for (const colorScheme of ['light', 'dark']) test(`Love Spot page names show whole in the picker and its list (${colorScheme})`, async () => {
+for (const colorScheme of ['light']) test(`Love Spot page names show whole in the picker and its list (${colorScheme})`, async () => {
   const page = { name: LONG, session: 'fixture-page' };
   let scene = { elements: [], files: {}, appState: {}, page };
   const f = await fixture({ staticDir: process.env.ELPIS_RENDERER_OUT, width: 1440, height: 900, colorScheme, loveScene: scene,

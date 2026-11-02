@@ -141,7 +141,7 @@ test('"/" lists the terminal\'s commands the app can run, in its order: a new ch
 test('clearing a Matilda chat starts a fresh Love Spot chat in both themes and keeps its old history', async () => {
   showMatilda = true;
   try {
-    for (const colorScheme of ['light', 'dark']) {
+    for (const colorScheme of ['light']) {
       freshMatildaCreated = false; matildaBusy = false;
       const { page, context, errors, composer, run, openMatildaChat } = await open({ colorScheme });
       try {

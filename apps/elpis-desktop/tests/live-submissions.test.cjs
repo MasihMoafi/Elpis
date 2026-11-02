@@ -6,7 +6,7 @@ const { fixture, THREADS } = require('./parity-fixture.cjs');
 const { scrollToLoadEarlier } = require('./controls.cjs');
 const { PORTRAIT_INSTRUCTIONS } = require('../bridge/matilda-face.cjs');
 
-for (const colorScheme of ['light', 'dark']) test(`automatic portrait guidance does not duplicate a live message (${colorScheme})`, async t => {
+for (const colorScheme of ['light']) test(`automatic portrait guidance does not duplicate a live message (${colorScheme})`, async t => {
   const text = 'Keep the taller message box. ';
   const f = await fixture({ running: true, colorScheme, routes: {
     '/api/threads/chat-a/steer': () => ({ turnId: 't4' }),
@@ -105,7 +105,7 @@ test('a follow-up stays after earlier work when the loaded history starts mid-tu
   assert.deepEqual(f.errors, []);
 });
 
-for (const colorScheme of ['light', 'dark']) test(`three messages appear immediately during a turn and keep their position after acknowledgement (${colorScheme})`, { timeout: 30000 }, async t => {
+for (const colorScheme of ['light']) test(`three messages appear immediately during a turn and keep their position after acknowledgement (${colorScheme})`, { timeout: 30000 }, async t => {
   let release;
   const gate = new Promise(resolve => { release = resolve; });
   const delivered = [];

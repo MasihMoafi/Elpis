@@ -93,7 +93,7 @@ const COPY_PROMPTS = [
   `Long message: ${'متن بلند با فارسی و English. '.repeat(50)}\nLast line.`,
   '',
 ];
-for (const colorScheme of ['light', 'dark']) {
+for (const colorScheme of ['light']) {
   const copyOptions = {
     nativeClipboard: true, colorScheme, width: 1280, height: 1000,
     chat: COPY_PROMPTS.map((prompt, index) => [`copy-${index}`, prompt, `Copy control reply ${index}.`]),
@@ -223,7 +223,7 @@ test('a newer scroll to the end wins over a prompt jump still settling', () => u
   await atEnd();
 }));
 
-for (const colorScheme of ['light', 'dark']) {
+for (const colorScheme of ['light']) {
   test(`with the side panel open the panel header lines up with the chat tabs and the message box keeps one row at 1130 px (${colorScheme})`, () => using({ colorScheme }, async f => {
     const { page } = f;
     await f.open('chat-a');
@@ -284,7 +284,7 @@ test('the new surfaces paint no orange in the light theme: the @ picker, the + m
 
 // Long messages always render in full: no Collapse/Expand control (Masih, 29 Oct: "This collapse message is actually
 // implemented in the wrong place. remove it. it's nonsensical!").
-for (const colorScheme of ['light', 'dark']) test(`long messages render in full with no fold control · ${colorScheme}`, () => using({
+for (const colorScheme of ['light']) test(`long messages render in full with no fold control · ${colorScheme}`, () => using({
   colorScheme, width: 1100, height: 900,
   chat: [
     ['long', Array.from({ length: 45 }, (_, i) => `بند ${i + 1}: این متن فارسی برای بررسی کامل پیام است.`).join('\n\n'), Array.from({ length: 35 }, (_, i) => `**Section ${i + 1}**\n\nThe complete explanation stays available, including [this reference](https://example.invalid).`).join('\n\n')],

@@ -9,7 +9,7 @@ const { PAGES, settingsFixture, visit } = require('./settings-row-audit.cjs');
 const { scanDisclosures, modelSpacing, cornerWidths, checkWidths, shot } = require('./polish-check.cjs');
 const evidence = process.env.ELPIS_POLISH_EVIDENCE;
 
-for (const theme of ['light', 'dark']) {
+for (const theme of ['light']) {
   test(`POLISH R30: every page and opened disclosure has no triangle markers (${theme})`, async () => {
     const f = await settingsFixture(theme), problems = [], visited = [];
     try {

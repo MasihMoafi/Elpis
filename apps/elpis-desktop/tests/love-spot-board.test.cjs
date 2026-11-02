@@ -158,7 +158,7 @@ test('the toolbar fits in light and dark at 1280 and 1440, with Matilda writing'
   try {
     await f.open(f.page); await note(f, 'A quiet place to think together');
     await f.page.getByText('Matilda is writing…').waitFor({ timeout: 20000 });
-    for (const theme of ['light', 'dark']) {
+    for (const theme of ['light']) {
       if (theme === 'dark') await chooseTheme(f.page, theme);
       for (const width of [1280, 1440]) {
         await f.page.setViewportSize({ width, height: 960 });

@@ -67,7 +67,7 @@ test('3D middle and scroll pan; Space opens patterns; Home fits; F frames', asyn
     await canvas.locator('.iso-node[aria-label^="Quillon · Part 1:"]').click();
     await page.keyboard.press('f'); assert.notEqual(await world.getAttribute('transform'), fitted, 'F frames selected pedestal');
     await page.keyboard.press('Home'); await page.keyboard.press('Control+a');
-    for (const theme of ['light', 'dark']) {
+    for (const theme of ['light']) {
       if (await page.locator('html').evaluate(el => el.classList.contains('dark')) !== (theme === 'dark')) await chooseTheme(page, theme);
       await fs.mkdir('/tmp/canvas-rebuild', { recursive: true }); await page.waitForTimeout(200); await page.screenshot({ path: `/tmp/canvas-rebuild/3d-${theme}.png` });
     }

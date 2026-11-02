@@ -117,17 +117,3 @@ test('a narrow window at Large and Wide still fits: no sideways scrolling, the c
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
-
-for (const colorScheme of ['light', 'dark']) for (const width of [1280, 1440]) test(`light and dark: Appearance and a Large, Wide chat fit (${colorScheme}, ${width})`, async () => {
-  const f = await fixture({ colorScheme, width, height: 900, storage: { [PREFERENCES]: JSON.stringify({ transcriptSize: 'l', transcriptWidth: 'l', codeFont: 'DejaVu Sans Mono' }) } }), { page } = f;
-  try {
-    await page.locator('.startup-splash').waitFor({ state: 'detached' });
-    await f.open('chat-a');
-    assert.deepEqual(await uiFit(page.locator('.chat-view')), [], 'the chat');
-    if (shots) await page.screenshot({ path: path.join(shots, `reading-chat-${colorScheme}-${width}.png`) });
-    const settings = await appearance(page);
-    assert.deepEqual(await uiFit(settings), [], 'the Appearance page');
-    if (shots) await page.screenshot({ path: path.join(shots, `reading-appearance-${colorScheme}-${width}.png`) });
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});

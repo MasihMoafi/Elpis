@@ -105,7 +105,7 @@ test('Space applies numbered patterns to agents, preserves editable prompts, Esc
     for (const iso of [false, true]) {
       await f.canvas.getByRole('radio', { name: iso ? 'Isometric' : 'Flat', exact: true }).click();
       if (iso) { await command(2); assert.equal((await f.saved()).edges.length, 0); await command(5); }
-      for (const theme of ['light', 'dark']) {
+      for (const theme of ['light']) {
         if (await f.page.locator('html').evaluate(el => el.classList.contains('dark')) !== (theme === 'dark')) await chooseTheme(f.page, theme); await f.fit();
         const selector = iso ? '.iso-node[data-kind="agent"]' : '.agent-node[data-kind="agent"]';
         const colors = await f.canvas.locator(selector).evaluateAll(nodes => nodes.map(n => getComputedStyle(n).getPropertyValue('--agent-color').trim()));

@@ -6,7 +6,7 @@ const fs = require('node:fs/promises');
 const { fixture } = require('./parity-fixture.cjs');
 const { openAccounts } = require('./providers-order.cjs');
 
-for (const colorScheme of ['light', 'dark']) test(`the CloudRoom VM row signs in, checks the VM and signs out (${colorScheme})`, async () => {
+for (const colorScheme of ['light']) test(`the CloudRoom VM row signs in, checks the VM and signs out (${colorScheme})`, async () => {
   let state = { signedIn: false, signingIn: false };
   const actions = [];
   const off = { state: 'notConnected', models: [], usage: [] };

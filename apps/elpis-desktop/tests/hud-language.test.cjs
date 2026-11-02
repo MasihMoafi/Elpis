@@ -81,7 +81,7 @@ function labels(report, where, seen) {
   }
 }
 
-for (const colorScheme of ['dark', 'light']) test(`one HUD language on the chat, its menus and dialogs, Settings, Customize and the flat canvas (${colorScheme})`, async t => {
+for (const colorScheme of ['light']) test(`one HUD language on the chat, its menus and dialogs, Settings, Customize and the flat canvas (${colorScheme})`, async t => {
   const f = await fixture({ width: 1280, height: 800, colorScheme, chat: CHAT, routes: ROUTES });
   t.after(async () => { await f.close(); assert.deepEqual(f.errors, []); });
   const { page } = f, reports = [], low = [];

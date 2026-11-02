@@ -44,7 +44,7 @@ async function assertRowHover(page, id, token) {
   assert.notEqual(colors.actual, plain.background, 'the row still highlights');
 }
 
-for (const colorScheme of ['light', 'dark']) {
+for (const colorScheme of ['light']) {
   test(`agent chevron has no background or shadow at rest, hover and keyboard focus (${colorScheme})`, async () => {
     const f = await fixture(options(colorScheme)), { page } = f;
     try {

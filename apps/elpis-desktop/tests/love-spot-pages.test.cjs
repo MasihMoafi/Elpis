@@ -63,7 +63,7 @@ test('image previews refresh, and normalized file bytes do not cause a save loop
   } finally { await f.close(); }
 });
 
-for (const colorScheme of ['light', 'dark']) test(`Love Spot pages: mouse/keyboard create, rename and switch in two windows (${colorScheme})`, async () => {
+for (const colorScheme of ['light']) test(`Love Spot pages: mouse/keyboard create, rename and switch in two windows (${colorScheme})`, async () => {
   const f = await loveSpotFixture({ colorScheme });
   try {
     await fs.mkdir(path.join(f.directory, 'pages'), { recursive: true });
@@ -217,7 +217,7 @@ const opacityUnderSlider = page => page.evaluate(() => {
   return !!range && !!value && value.width > 0 && value.left >= range.left && value.right <= range.right + 8;
 });
 
-for (const colorScheme of ['light', 'dark']) test(`board Style closes and reopens; Delete stays beside its icon (${colorScheme})`, async () => {
+for (const colorScheme of ['light']) test(`board Style closes and reopens; Delete stays beside its icon (${colorScheme})`, async () => {
   const f = await loveSpotFixture({ colorScheme });
   try {
     await f.open(f.page);

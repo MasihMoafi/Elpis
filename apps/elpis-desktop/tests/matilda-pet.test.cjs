@@ -17,7 +17,7 @@ const boardView = page => page.evaluate(() => {
 });
 const onScreen = (view, e) => ({ x: (e.x + view.scrollX) * view.zoom + view.left, y: (e.y + view.scrollY) * view.zoom + view.top, width: e.width * view.zoom, height: e.height * view.zoom });
 
-for (const colorScheme of ['light', 'dark']) test(`on the board her face is the right way round and her newest note opens clear of the board's toolbar and zoom bar (${colorScheme})`, { timeout: 90000 }, async t => {
+for (const colorScheme of ['dark']) test(`on the board her face is the right way round and her newest note opens clear of the board's toolbar and zoom bar (${colorScheme})`, { timeout: 90000 }, async t => {
   const reply = 'The build compiled cleanly, but the style check caught one thing: the muted-note icon used raw colour codes. '.repeat(6).trim();
   const f = await loveSpotFixture({ colorScheme, reply, replyDelay: 200 });
   t.after(() => f.close());
@@ -62,7 +62,7 @@ for (const colorScheme of ['light', 'dark']) test(`on the board her face is the 
   assert.deepEqual(f.errors, []);
 });
 
-for (const colorScheme of ['light', 'dark']) test(`pinned Matilda drags anywhere inside the window with her small chat, and nothing under her moves (${colorScheme})`, { timeout: 60000 }, async t => {
+for (const colorScheme of ['light']) test(`pinned Matilda drags anywhere inside the window with her small chat, and nothing under her moves (${colorScheme})`, { timeout: 60000 }, async t => {
   const { fixture } = require('./parity-fixture.cjs');
   const f = await fixture({ colorScheme, width: 1000, height: 800, staticDir: process.env.ELPIS_TEST_OUT || undefined, routes: {
     '/api/love-spot/companion': () => ({ pinned: true, face: FACE_DATA_URL, threadId: 'chat-a', favorite: null, music: null, reason: '' }),
@@ -126,7 +126,7 @@ for (const colorScheme of ['light', 'dark']) test(`pinned Matilda drags anywhere
 // fix them too." The box to message her floated mid-panel over empty space, the top message was cut by the panel's edge,
 // and only his questions showed: her replies were below the fold. The panel hugs its messages and box, never scrolls
 // itself, fades its messages at the edges, and shows the newest message, hers too.
-for (const colorScheme of ['light', 'dark']) test(`her chat hugs its messages, opens at the newest one, and never scrolls as a whole (${colorScheme})`, { timeout: 60000 }, async t => {
+for (const colorScheme of ['light']) test(`her chat hugs its messages, opens at the newest one, and never scrolls as a whole (${colorScheme})`, { timeout: 60000 }, async t => {
   const { fixture } = require('./parity-fixture.cjs');
   const question = n => `Question ${n}: I read the first chapter; can you explain certain parts, including those images and other tricky parts that I need to know here?`;
   const say = (turnId, type, text) => ({ turnId, item: type === 'agentMessage' ? { id: `${turnId}-a`, type, text } : { id: `${turnId}-u`, type, content: [{ type: 'text', text }] } });

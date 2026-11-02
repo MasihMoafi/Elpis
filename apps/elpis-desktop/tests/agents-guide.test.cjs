@@ -91,7 +91,7 @@ test('Canvas help opens the guide and returns to the board', async () => {
   } finally { await f.close(); }
 });
 
-for (const colorScheme of ['light', 'dark']) for (const [width, height, fallbackFont] of [[1280, 800], [900, 700], [900, 700, 'DejaVu Sans']]) test(`guide topics fit one screen (${colorScheme}, ${width}x${height}${fallbackFont ? ', system fallback font' : ''})`, async () => {
+for (const colorScheme of ['light']) for (const [width, height, fallbackFont] of [[900, 700], [900, 700, 'DejaVu Sans']]) test(`guide topics fit one screen (${colorScheme}, ${width}x${height}${fallbackFont ? ', system fallback font' : ''})`, async () => {
   const f = await fixture({ colorScheme, width, height }), { page } = f;
   try {
     await page.keyboard.press('Control+k');

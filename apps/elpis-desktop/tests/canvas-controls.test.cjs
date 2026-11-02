@@ -59,7 +59,7 @@ test('modifier wheel zoom, middle/scroll pan, box select, delete, undo/redo, dup
     assert.equal(await canvas.locator('.react-flow__node-agent.selected').count(), 4, 'left drag box selects');
     assert.equal(f.posts.filter(post => post.path === '/api/trash/undo').length, 0, 'canvas undo never restores chats');
     await page.keyboard.press('Backspace'); await f.agentCount(0, 'Backspace removes selection'); await page.keyboard.press('Control+z'); await f.agentCount(4, 'undo deletion');
-    for (const theme of ['light', 'dark']) {
+    for (const theme of ['light']) {
       if (await page.locator('html').evaluate(el => el.classList.contains('dark')) !== (theme === 'dark')) await chooseTheme(page, theme);
       await f.fit(); await fs.mkdir('/tmp/canvas-rebuild', { recursive: true }); await page.screenshot({ path: `/tmp/canvas-rebuild/controls-${theme}.png` });
     }

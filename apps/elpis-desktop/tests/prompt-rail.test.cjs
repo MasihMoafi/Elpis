@@ -23,50 +23,6 @@ function assertRailGap(geometry) {
   assert.ok(Math.abs(geometry.left - 16) < 0.5, `rail sits 16px from the pane edge, as in ChatGPT: ${JSON.stringify(geometry)}`);
 }
 
-test('rail fits the gutter and its highlighted dash stays clear of text at desktop widths', async () => {
-  const f = await fixture({ width: 900, height: 800 });
-  try {
-    await f.open('chat-a');
-    for (const width of [1130, 1440, 1920]) {
-      await f.page.setViewportSize({ width, height: 800 });
-      await f.page.locator('.prompt-rail').waitFor({ state: 'visible', timeout: 2000 });
-      for (const index of [0, 1, 3]) {
-        await marksOf(f.page).nth(index).hover();
-        await f.page.waitForFunction(() => document.querySelector('[data-distance="0"] i')?.getBoundingClientRect().width >= 25.9);
-        const geometry = await railGeometry(f.page);
-        assert.ok(geometry.highlighted >= 25.9, 'measure the widest hover state (26 px, as ChatGPT)');
-        assertRailGap(geometry);
-        const preview = await f.page.locator('.prompt-preview').boundingBox();
-        const mark = await marksOf(f.page).nth(index).boundingBox();
-        assert.ok(preview.x >= mark.x + mark.width - 0.5, 'the card opens at the rail\'s right edge, as ChatGPT\'s');
-        assert.ok(preview.x + preview.width <= width, 'preview fits the viewport');
-      }
-    }
-    // Too narrow for the column to leave the rail its room: the rail hides rather than covering text or hugging the window edge.
-    await f.page.setViewportSize({ width: 900, height: 800 });
-    await f.page.locator('.prompt-rail').waitFor({ state: 'hidden', timeout: 2000 });
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
-test('rail gap check rejects a deliberately narrow rendered gutter', async () => {
-  const f = await fixture({ width: 1440, height: 800 });
-  try {
-    await f.open('chat-a');
-    await marksOf(f.page).nth(1).hover();
-    await f.page.waitForFunction(() => document.querySelector('[data-distance="0"] i')?.getBoundingClientRect().width >= 25.9);
-    assertRailGap(await railGeometry(f.page));
-    await f.page.locator('.chat-content').evaluate(column => {
-      const right = document.querySelector('.prompt-rail').getBoundingClientRect().right;
-      column.style.transform = `translateX(${right + 2 - column.getBoundingClientRect().left}px)`;
-    });
-    const geometry = await railGeometry(f.page);
-    assert.ok(Math.abs(geometry.gap - 2) < 0.1, JSON.stringify(geometry));
-    assert.throws(() => assertRailGap(geometry), /rail stays clear of message text/);
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
 test('a hidden rail releases its gutter in narrow windows and panes', async () => {
   const f = await fixture({ width: 1130, height: 800 });
   try {

@@ -11,7 +11,7 @@ const { assertUiFit } = require('./ui-fit.cjs');
 const projectChat = cwd => ({ id: 'chat-a', name: 'Project preview', cwd, model: 'sol', modelProvider: 'openai', desktopAccess: { writable: true, mode: 'direct' }, status: { type: 'idle' } });
 const projectRoutes = cwd => ({ '/api/threads/chat-a/resume': () => ({ thread: projectChat(cwd) }) });
 
-for (const colorScheme of ['light', 'dark']) for (const [width, height] of [[1280, 800], [900, 700]]) test(`project preview starts, shows logs and stops (${colorScheme}, ${width}×${height})`, async () => {
+for (const colorScheme of ['light']) for (const [width, height] of [[1280, 800]]) test(`project preview starts, shows logs and stops (${colorScheme}, ${width}×${height})`, async () => {
   const root = await fs.mkdtemp('/tmp/elpis-preview-ui-');
   await fs.writeFile(path.join(root, 'package.json'), JSON.stringify({ scripts: { dev: 'node server.cjs' } }));
   await fs.writeFile(path.join(root, 'server.cjs'), "require('node:http').createServer((q,s)=>s.end('preview proof')).listen(process.env.PORT,'127.0.0.1',()=>console.log('preview ready'))");
@@ -71,7 +71,7 @@ test('detection with no command and a failed start explain the result and allow 
   } finally { await f.close(); }
 });
 
-for (const scheme of ['light', 'dark']) test(`real Electron opens the started project in the native browser and stops it with a click (${scheme})`, async () => {
+for (const scheme of ['light']) test(`real Electron opens the started project in the native browser and stops it with a click (${scheme})`, async () => {
   const root = await fs.mkdtemp('/tmp/elpis-preview-native-');
   await fs.writeFile(path.join(root, 'package.json'), JSON.stringify({ scripts: { dev: 'node server.cjs' } }));
   const html = `<!doctype html><title>Project preview proof</title><style>body{font:16px system-ui;padding:24px;color:#222;background:#fafafa}button{font:inherit;padding:8px 12px}</style><h1>Project preview proof</h1><button onclick="this.textContent='Clicked in preview'">Test this page</button>`;

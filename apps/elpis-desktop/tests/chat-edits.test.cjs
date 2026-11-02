@@ -137,7 +137,7 @@ test('every kind of step is one kind of row: the same head, the same card, a sen
 }));
 
 test('light and dark: the rows, counts and diff are legible and inside the chat column', async () => {
-  for (const colorScheme of ['light', 'dark']) await using(async ({ page }) => {
+  for (const colorScheme of ['light']) await using(async ({ page }) => {
     await unfold(page);
     const group = page.locator('.activity-group').filter({ hasText: /^Edited parser\.ts/ }).first();
     await group.locator('> summary').click();

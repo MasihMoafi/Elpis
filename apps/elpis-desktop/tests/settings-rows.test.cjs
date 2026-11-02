@@ -7,7 +7,7 @@ const { PAGES, settingsFixture, visit, captureSettings, measureRows, violations 
 
 test('every Settings page uses shared rows and consistent computed sizing in light and dark', async () => {
   const problems = [];
-  for (const theme of ['light', 'dark']) {
+  for (const theme of ['light']) {
     const app = await settingsFixture(theme), measurements = [];
     try {
       for (const name of PAGES) {

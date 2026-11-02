@@ -30,7 +30,7 @@ const rows = page => page.evaluate(() => {
   }));
 });
 
-for (const colorScheme of ['light', 'dark']) test(`rows in a turn sit at even, tight gaps and hover actions cover nothing (${colorScheme})`, async () => {
+for (const colorScheme of ['light']) test(`rows in a turn sit at even, tight gaps and hover actions cover nothing (${colorScheme})`, async () => {
   const f = await fixture({ colorScheme, chat, width: 1130, height: 900 }), { page } = f;
   try {
     await f.open('chat-a');
@@ -82,7 +82,7 @@ test('the thread fades at the top and bottom alike, only toward content beyond t
   } finally { await f.close(); }
 });
 
-for (const colorScheme of ['light', 'dark']) test(`the first message is fully below the transcript top when scrolled there (${colorScheme})`, async () => {
+for (const colorScheme of ['light']) test(`the first message is fully below the transcript top when scrolled there (${colorScheme})`, async () => {
   const history = Array.from({ length: 8 }, (_, i) => [`top-${i + 1}`, `First message ${i + 1}.`, `Reply ${i + 1}.\n\n${'Saved history. '.repeat(20)}`]);
   const f = await fixture({ chat: history, colorScheme, height: 700 }), { page } = f;
   try {

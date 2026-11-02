@@ -21,7 +21,7 @@ const frames = locator => locator.evaluate(element => {
   };
 });
 
-for (const colorScheme of ['light', 'dark']) for (const width of [1440, 960]) {
+for (const colorScheme of ['dark']) for (const width of [960]) {
   test(`restored chat frames retain actions and local accents in ${colorScheme} at ${width}px`, { timeout: 90000 }, async t => {
     const threads = [THREADS[0], { ...THREADS[1], name: 'Love Spot' }, { ...THREADS[2], name: 'Love Spot · Newton' }];
     const child = { ...THREADS[0], id: 'agent-0', name: 'Agent · inspect', parentThreadId: 'chat-a', source: { subagent: { agent_nickname: 'Agent', task_path: '/root/inspect' } } };

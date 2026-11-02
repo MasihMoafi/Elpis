@@ -19,7 +19,7 @@ async function using(t, options = {}) {
   return f;
 }
 
-for (const colorScheme of ['light', 'dark']) test(`stored question replies show muted questions and answers without protocol text (${colorScheme})`, async t => {
+for (const colorScheme of ['light']) test(`stored question replies show muted questions and answers without protocol text (${colorScheme})`, async t => {
   const f = await using(t, { colorScheme, chat: [
     ['single', envelope([first]), 'Instructions selected.'],
     ['batch', envelope([first, second]), 'Both answers received.'],

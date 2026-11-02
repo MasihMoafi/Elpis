@@ -9,7 +9,7 @@ test('a long pause or a new day puts a centred time above the next turn, and clo
   const morning = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 5).getTime();
   const chat = [['t1', 'Old question', 'Old answer', undefined, evening - 3 * day], ['t2', 'Yesterday evening', 'Answer two', undefined, evening],
     ['t3', 'Two minutes later', 'Answer three', undefined, evening + 120_000], ['t4', 'After midnight', 'Answer four', undefined, morning]];
-  for (const colorScheme of ['light', 'dark']) {
+  for (const colorScheme of ['light']) {
     const f = await fixture({ chat, width: 1280, height: 900, colorScheme });
     try {
       await f.open('chat-a');

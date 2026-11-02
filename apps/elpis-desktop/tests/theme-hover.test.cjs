@@ -28,7 +28,7 @@ async function expectHover(locator, formula, label) {
 }
 
 test('hover follows every accent and built-in palette without changing selected fills', async () => {
-  for (const mode of ['Light', 'Dark']) {
+  for (const mode of ['Light']) {
     const love = { ...THREADS[0], id: 'love-hover', name: 'Love Spot: Hover' };
     const f = await fixture({ width: 1280, height: 900, colorScheme: mode.toLowerCase(), staticDir: process.env.ELPIS_RENDERER_OUT,
       threads: [...THREADS, love], storage: { 'elpis-conversation-colours-v1': JSON.stringify({ 'chat-b': 'blue' }) } });

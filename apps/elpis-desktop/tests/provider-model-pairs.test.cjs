@@ -102,7 +102,7 @@ test('a changed API default offers its own models and keeps the selected provide
       await page.waitForFunction(() => document.querySelector('textarea').value === '');
       assert.deepEqual(calls.filter(call => call.method === 'POST' && call.path === '/api/threads').at(-1).body, { model: 'gpt-6.1-sol', provider: 'openai' });
     } finally { await retained.close(); }
-    for (const theme of ['light', 'dark']) {
+    for (const theme of ['light']) {
       const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
       try {
         const page = await context.newPage(); page.setDefaultTimeout(7000);

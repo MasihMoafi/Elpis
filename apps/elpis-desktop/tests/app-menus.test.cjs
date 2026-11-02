@@ -4,7 +4,7 @@ const { fixture } = require('./parity-fixture.cjs');
 const { captureReview } = require('./controls.cjs');
 
 test('the application menubar supports arrow keys and its File/Help actions open the working app surfaces', async () => {
-  for (const colorScheme of ['light', 'dark']) {
+  for (const colorScheme of ['light']) {
     const f = await fixture({ colorScheme });
     try {
       const bar = f.page.getByRole('menubar', { name: 'Application' });

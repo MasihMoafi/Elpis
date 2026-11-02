@@ -7,7 +7,7 @@ const { fixture } = require('./parity-fixture.cjs');
 const SOURCE = 'const answer: number = 42; // the answer\nfunction parse(text: string) { return text.split(" "); }';
 const REPLY = `Here it is:\n\n\`\`\`ts\n${SOURCE}\n\`\`\`\n\nPlain:\n\n\`\`\`\njust words\n\`\`\``;
 
-for (const colorScheme of ['light', 'dark']) {
+for (const colorScheme of ['light']) {
   test(`code in a reply is coloured by its language and named, and copies as plain text (${colorScheme})`, async () => {
     const f = await fixture({ colorScheme, chat: [['t1', 'Show the parser.', REPLY]] });
     try {

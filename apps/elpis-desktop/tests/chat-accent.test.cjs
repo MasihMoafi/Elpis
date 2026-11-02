@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { fixture, THREADS } = require('./parity-fixture.cjs');
 const { openSettings, leaveSettings, chooseOption } = require('./controls.cjs');
 
-for (const colorScheme of ['light', 'dark']) test(`chat indicators follow their owner at every context level (${colorScheme})`, async t => {
+for (const colorScheme of ['light']) test(`chat indicators follow their owner at every context level (${colorScheme})`, async t => {
   const threads = [{ ...THREADS[0], name: 'Love Spot' }, { ...THREADS[1], name: 'Love Spot · Newton' }, THREADS[2]];
   let used = 100;
   const routes = {

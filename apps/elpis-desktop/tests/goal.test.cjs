@@ -5,7 +5,7 @@ const { fixture } = require('./parity-fixture.cjs');
 const { files, contextRoutes } = require('./context-files-fixture.cjs');
 const { assertUiFit } = require('./ui-fit.cjs');
 
-for (const colorScheme of ['light', 'dark']) test(`goal slash and right Context tab: set, read, clear, errors, file editing and missing intent (${colorScheme})`, async () => {
+for (const colorScheme of ['light']) test(`goal slash and right Context tab: set, read, clear, errors, file editing and missing intent (${colorScheme})`, async () => {
   let goal = null, reject = false, content = '# Session intent\n\nKeep this project focused.', mtimeMs = 1;
   const rows = files(); rows[0] = { ...rows[0], exists: false, included: false, selectable: false, reason: 'Project session intent' };
   rows.push({ name: 'Selected skill', path: '/tmp/parity-fixture/skills/selected/SKILL.md', group: 'skills', estimatedTokens: 120, included: true, selectable: false, reason: 'Loaded in this chat' });

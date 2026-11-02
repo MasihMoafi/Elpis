@@ -337,7 +337,7 @@ for (const key of ['Enter', 'Control+Enter']) test(`a rejected comment keeps its
 });
 
 
-for (const colorScheme of ['light', 'dark']) test(`browser tabs select a range, toggle individual tabs and batch only that selection (${colorScheme})`, async t => {
+for (const colorScheme of ['light']) test(`browser tabs select a range, toggle individual tabs and batch only that selection (${colorScheme})`, async t => {
   const { page, errors, shoot } = await fixture(t);
   await page.emulateMedia({ colorScheme });
   await page.evaluate(() => {

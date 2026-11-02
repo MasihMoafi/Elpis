@@ -45,7 +45,7 @@ const around = (rects, pad = 24) => {
   return { x: Math.max(0, left - pad), y: Math.max(0, top - pad), width: right - left + 2 * pad, height: bottom - top + 2 * pad };
 };
 
-for (const colorScheme of ['light', 'dark']) {
+for (const colorScheme of ['light']) {
   test(`composer actions share one 16px stroke, one centre line without an extra send menu (${colorScheme})`, async () => {
     const f = await fixture(options(colorScheme, { running: true })), { page } = f;
     try {
@@ -148,7 +148,7 @@ const inkRow = row => {
       cy: +((box.top + box.bottom) / 2).toFixed(2), glyphCy: +((glyph.top + glyph.bottom) / 2).toFixed(2), inkLeft: i.left, inkRight: i.right };
   });
 };
-for (const colorScheme of ['light', 'dark']) test(`message actions share one box, one centre line and even ink gaps, with and without versions (${colorScheme})`, async () => {
+for (const colorScheme of ['light']) test(`message actions share one box, one centre line and even ink gaps, with and without versions (${colorScheme})`, async () => {
   const f = await fixture(options(colorScheme, { routes: { ...routes, '/api/threads/chat-a/versions': () => ({ versions: [{ turnId: 't1', index: 2, count: 2, previous: 'chat-b' }] }) } })), { page } = f;
   try {
     await f.open('chat-a');
@@ -216,7 +216,7 @@ test('approved collection paths cover all shared icon consumers in the composer 
   } finally { await f.close(); }
 });
 
-for (const colorScheme of ['light', 'dark']) test(`approved music icons keep exact paths, contrast and aligned geometry (${colorScheme})`, { timeout: 60000 }, async () => {
+for (const colorScheme of ['light']) test(`approved music icons keep exact paths, contrast and aligned geometry (${colorScheme})`, { timeout: 60000 }, async () => {
   let muted = false;
   const actions = [];
   const music = { title: 'Masterpiece', artist: 'Linkin Park', uri: 'file:///music/masterpiece.m4a', status: 'Playing', canMute: true, muted };

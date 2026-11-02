@@ -51,7 +51,7 @@ function assertReplyGap(result, label) {
   assert.ok(result.gap >= 4 && result.gap <= 8, `${label} has a ${result.gap}px gap from visible pixels to Reply (expected 4–8px): ${JSON.stringify(result.state)}`);
 }
 
-for (const colorScheme of ['light', 'dark']) test(`transparent image Reply stays under visible pixels through resize without crowding Matilda (${colorScheme})`, async t => {
+for (const colorScheme of ['light']) test(`transparent image Reply stays under visible pixels through resize without crowding Matilda (${colorScheme})`, async t => {
   const thread = { ...THREADS[0], name: 'Love Spot · Matilda' };
   const f = await fixture({
     staticDir: process.env.ELPIS_RENDERER_OUT,

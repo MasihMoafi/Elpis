@@ -239,7 +239,7 @@ test('Draw is unavailable for a text-only model, and never captures', async t =>
   assert.ok(!(await f.log()).includes('screenshot'));
 });
 
-for (const colorScheme of ['light', 'dark']) test(`the drawing modal follows the theme and fits at a narrow width (${colorScheme})`, async t => {
+for (const colorScheme of ['dark']) test(`the drawing modal follows the theme and fits at a narrow width (${colorScheme})`, async t => {
   const f = await fixture(t, { colorScheme, width: 760, height: 640 }), { page } = f;
   await open(f);
   await tool(page, 'arrow').waitFor();

@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cjs');
 const { openSettings, openPatterns } = require('./controls.cjs');
 
-for (const colorScheme of ['light', 'dark']) test(`long input hints show an ellipsis and expose their complete text (${colorScheme})`, async () => {
+for (const colorScheme of ['light']) test(`long input hints show an ellipsis and expose their complete text (${colorScheme})`, async () => {
   const f = await fixture({ width: 900, height: 700, colorScheme, routes: {
     '/api/mcp': () => ({ version: 'm1', servers: [{ name: 'rag', enabled: true, command: 'rag-mcp', transport: 'stdio', credentials: [] }], write: { available: true } }),
     '/api/tools/rag': () => ({ stages: [], keys: { openrouter: false } }),

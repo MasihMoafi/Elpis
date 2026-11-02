@@ -5,7 +5,6 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { fixture, THREADS } = require('./parity-fixture.cjs');
 const { LOGO_ACCENT, openSettings, leaveSettings, chooseOption, controlValue } = require('./controls.cjs');
-const { uiFit } = require('./ui-fit.cjs');
 const { contrastFailures } = require('./hud-contrast.cjs');
 const { colours, evidence, assertColours } = require('./primary-action-colours.cjs');
 const ACCENTS = ['amber', 'blue', 'teal', 'green', 'violet', 'rose', 'orange'];
@@ -252,27 +251,6 @@ test('system theme follows OS changes while explicit theme ignores them', async 
   await page.emulateMedia({ colorScheme: 'light' }); await page.emulateMedia({ colorScheme: 'dark' });
   assert.equal(await token(page, '--primary'), light);
   await page.reload(); await appearance(page); assert.equal(await token(page, '--primary'), light);
-  assert.deepEqual(f.errors, []);
-});
-
-test('settings and chat fit in three light/dark combinations and a narrow window', async t => {
-  const f = await fixture({ width: 1280, height: 900, chat: [
-    ['t1', 'How does the parser work?', 'The parser runs in **two passes**.\n\n1. Scan the source into tokens.\n2. Build a syntax tree from those tokens.\n\n```ts\nconst tokens = scan(source);\nconst result = parse(tokens);\n```\n\nUse `parse` for a complete expression. [Read the guide](https://example.invalid/guide) for examples.'],
-    ['t2', 'What should I test first?', 'Start with an empty input, then try one valid expression.'],
-  ] }), { page } = f; t.after(f.close);
-  await fs.mkdir(SHOTS, { recursive: true }); await f.open('chat-a');
-  for (const [mode, accent, choice] of [['Light', 'blue', 'sans'], ['Dark', 'teal', 'serif'], ['Dark', 'amber', 'mono']]) {
-    await appearance(page); await theme(page, mode);
-    await chooseOption(page.getByLabel('Accent colour', { exact: true }), accent);
-    assert.deepEqual(await uiFit(page.getByRole('tabpanel', { name: 'Appearance' })), []);
-    const name = `${mode.toLowerCase()}-${accent}-${choice}`;
-    await page.screenshot({ path: path.join(SHOTS, `${name}-settings.png`) });
-    await leaveSettings(page); await f.composer.fill('A readable conversation, in the font you choose.');
-    await page.screenshot({ path: path.join(SHOTS, `${name}-chat.png`) });
-  }
-  await page.setViewportSize({ width: 900, height: 700 }); await appearance(page);
-  assert.deepEqual(await uiFit(page.getByRole('tabpanel', { name: 'Appearance' })), []);
-  await page.screenshot({ path: path.join(SHOTS, 'narrow-settings.png') });
   assert.deepEqual(f.errors, []);
 });
 

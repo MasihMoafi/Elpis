@@ -28,7 +28,7 @@ async function fixture(t,theme){
   const answered=async count=>{await page.waitForFunction(()=>!document.querySelector('.approval'));assert.equal(posts.length,count);};
   return {page,posts,emit,shot,answered,fail:value=>{fail=value;}};
 }
-for(const theme of ['light','dark']){
+for(const theme of ['light']){
   test(`MCP tool card offers exact session choices and sends action metadata (${theme})`,async t=>{
     const f=await fixture(t,theme),{page}=f;
     const params={serverName:'elpis_browser',mode:'form',message:'Open the fixture site',requestedSchema:{type:'object',properties:{}},_meta:{codex_approval_kind:'mcp_tool_call',tool_name:'browser_open',tool_params:{url:'https://example.test'},persist:['session']}};

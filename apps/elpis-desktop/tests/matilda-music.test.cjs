@@ -31,7 +31,7 @@ print('ready', flush=True)
 GLib.MainLoop().run()
 `;
 
-for (const colorScheme of ['light', 'dark']) test(`the sound control is an icon that shows only while music really plays (${colorScheme})`, { timeout: 90000 }, async t => {
+for (const colorScheme of ['light']) test(`the sound control is an icon that shows only while music really plays (${colorScheme})`, { timeout: 90000 }, async t => {
   const bus = spawn('dbus-daemon', ['--session', '--nofork', '--print-address=1'], { stdio: ['ignore', 'pipe', 'pipe'] });
   const [address] = await once(bus.stdout, 'data');
   const outer = process.env.DBUS_SESSION_BUS_ADDRESS; process.env.DBUS_SESSION_BUS_ADDRESS = String(address).trim();

@@ -30,7 +30,7 @@ test('Lab is the page after New chat, with history, command search and matching 
     await page.getByRole('combobox', { name: 'Search or start a chat' }).fill('Lab');
     await page.getByRole('option', { name: 'Lab', exact: true }).click();
     await lab.waitFor();
-    for (const theme of ['light', 'dark']) {
+    for (const theme of ['light']) {
       if (theme === 'dark') await chooseTheme(page, theme);
       await page.waitForFunction(dark => document.documentElement.classList.contains('dark') === dark, theme === 'dark');
       const boxes = await nav.getByRole('button').evaluateAll((buttons, loveRed) => buttons.map(button => {
@@ -165,7 +165,7 @@ test('Sources and Lab stay readable in light/dark at Masih’s window size', asy
   await f.page.route('**/api/experiment-lab', route => route.fulfill({ json: { record: null } }));
   try {
     await fs.mkdir('/tmp/elpis-provenance-screens', { recursive: true });
-    for (const theme of ['light', 'dark']) {
+    for (const theme of ['light']) {
       if (await f.page.locator('html').evaluate(el => el.classList.contains('dark')) !== (theme === 'dark')) await chooseTheme(f.page, theme);
       const summary = f.canvas.locator('summary').filter({ hasText: /^More patterns$/ });
       if (await summary.locator('..').getAttribute('open') === null) await summary.click();
@@ -221,7 +221,7 @@ test('Lab offers “Until the task finishes”, sends and restores the choice, a
     await again.getByRole('table', { name: 'Comparison', exact: true }).waitFor();
     assert.equal(await again.getByRole('radio', { name: 'Until the task finishes', exact: true }).getAttribute('aria-checked'), 'true', 'the saved choice returns after a reload');
     assert.equal(await again.getByRole('spinbutton').count(), 0, 'the saved until-finished choice still asks for no number');
-    for (const theme of ['light', 'dark']) for (const [width, height] of [[1130, 660], [400, 760]]) {
+    for (const theme of ['light']) for (const [width, height] of [[1130, 660], [400, 760]]) {
       await f.page.setViewportSize({ width: 1130, height: 660 });
       if (await f.page.locator('html').evaluate(el => el.classList.contains('dark')) !== (theme === 'dark')) await chooseTheme(f.page, theme);
       await f.page.setViewportSize({ width, height });

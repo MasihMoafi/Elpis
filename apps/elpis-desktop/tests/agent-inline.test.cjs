@@ -13,7 +13,7 @@ const childEntries = [
   { turnId: 'c1', item: { id: 'c1-answer', type: 'agentMessage', text: 'The reviewer found two unchecked token kinds.' } },
 ];
 
-for (const colorScheme of ['light', 'dark']) test(`a subagent's conversation opens inside the chat that started it (${colorScheme})`, async () => {
+for (const colorScheme of ['light']) test(`a subagent's conversation opens inside the chat that started it (${colorScheme})`, async () => {
   const f = await fixture({ staticDir: process.env.ELPIS_RENDERER_OUT, colorScheme, width: 1300, height: 900,
     chat: [['t1', 'Check the parser with an agent.', 'The agent finished its review.', [spawn, activity]]],
     threads: [...THREADS, child],

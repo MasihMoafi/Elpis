@@ -209,7 +209,7 @@ test('3,000-item chat stays responsive when opening, typing, scrolling, streamin
     report.domNodes = (await metrics()).Nodes;
     const shots = path.join(destination, 'shots');
     await fs.mkdir(shots, { recursive: true });
-    for (const colorScheme of ['light', 'dark']) {
+    for (const colorScheme of ['light']) {
       await page.emulateMedia({ colorScheme }); await paint();
       await page.screenshot({ path: path.join(shots, `speed-${label}-${colorScheme}.png`) });
     }

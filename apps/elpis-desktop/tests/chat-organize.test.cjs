@@ -73,7 +73,7 @@ const shot = async (page, name) => {
   await page.screenshot({ path: path.join(dir, `organize-${name}.png`) });
 };
 
-for (const colorScheme of ['light', 'dark']) test(`native agent generations keep placement and drafts but start collapsed after reload (${colorScheme})`, async () => {
+for (const colorScheme of ['light']) test(`native agent generations keep placement and drafts but start collapsed after reload (${colorScheme})`, async () => {
   const make = (id, name, parentThreadId) => ({ id, name, ...(parentThreadId ? { parentThreadId } : {}), source: 'cli', cwd: CWD, model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true } });
   const tree = [make('tree-root', 'Tree root'), make('tree-worker', 'Tree worker', 'tree-root'), make('tree-grandchild', 'Tree grandchild', 'tree-worker'),
     { ...make('tree-leaf', 'Tree leaf', 'tree-grandchild'), source: { subAgent: { thread_spawn: { parent_thread_id: 'tree-grandchild' } } } },
@@ -383,7 +383,7 @@ test('a refused final order save leaves the subtree, projects, order and selecti
   } finally { await f.close(); }
 });
 
-for (const colorScheme of ['light', 'dark']) test(`six chats nest, fold, persist, take out, then form a new project (${colorScheme})`, async () => {
+for (const colorScheme of ['light']) test(`six chats nest, fold, persist, take out, then form a new project (${colorScheme})`, async () => {
   const f = await open({ colorScheme }), { page } = f;
   try {
     await mark(page);

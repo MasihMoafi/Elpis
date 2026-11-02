@@ -52,7 +52,7 @@ for (const iso of [false, true]) test(`${iso ? '3D' : '2D'} settings load every 
     assert.equal(agent.data.model, 'claude-opus-5-5'); assert.equal(agent.data.provider, 'anthropic-credits'); assert.equal(agent.data.effort, 'xhigh');
     await canvas.getByRole('radio', { name: 'Flat', exact: true }).click();
     await fixture.node('Configured answer').getByText('Opus 5.5', { exact: false }).waitFor();
-    for (const theme of ['light', 'dark']) {
+    for (const theme of ['light']) {
       if (await page.locator('html').evaluate(el => el.classList.contains('dark')) !== (theme === 'dark')) await chooseTheme(page, theme);
       if (iso) await canvas.getByRole('radio', { name: 'Isometric', exact: true }).click();
       await fs.mkdir('/tmp/canvas-rebuild', { recursive: true });

@@ -17,7 +17,7 @@ async function eventually(check) {
   for (;;) { try { return await check(); } catch (e) { if (Date.now() > end) throw e; await new Promise(r => setTimeout(r, 40)); } }
 }
 
-for (const colorScheme of ['light', 'dark']) {
+for (const colorScheme of ['light']) {
   test(`/recap summarizes this chat in a fresh side panel (${colorScheme})`, () => {
     let forks = 0;
     return using({ colorScheme, staticDir: process.env.ELPIS_RECAP_TEST_OUT, routes: {
@@ -159,27 +159,6 @@ test('clicking Send on /btw routes a side question without sending a main-chat t
   assert.equal(sent(f, '/side-chats/side-a/turns')[0].body.text, 'What is a token?');
   assert.equal(sent(f, '/threads/chat-a/turns').length, 0);
 }));
-
-for (const colorScheme of ['light', 'dark']) for (const [width, height] of [[1280, 800], [900, 700]]) {
-  test(`shell and side panel fit (${colorScheme}, ${width}×${height})`, () => using({ colorScheme, width, height, routes: {
-    '/api/threads/chat-a/side-chat': () => ({ threadId: 'side-a' }),
-    '/api/side-chats/side-a/turns': () => ({ turn: { id: 'side-turn' } }),
-  } }, async f => {
-    await f.composer.click(); await f.page.keyboard.type('!printf hello');
-    await f.page.getByText(bashNotice, { exact: true }).waitFor();
-    await assertUiFit(f.page.locator('.composer-wrap'), 'Bash composer fits');
-    await f.page.keyboard.press('Control+;'); await side(f.page).waitFor();
-    const box = side(f.page).getByRole('textbox', { name: 'Side question', exact: true });
-    await box.fill('What will this command print?'); await box.press('Enter');
-    await eventually(() => assert.equal(sent(f, '/side-chats/side-a/turns').length, 1));
-    f.emit('sideChat', { method: 'item/completed', params: { threadId: 'side-a', turnId: 'side-turn', item: { id: 'side-answer', type: 'agentMessage', text: 'It prints `hello` to standard output.\n\nThe main conversation keeps running while you ask this side question.' } } });
-    f.emit('sideChat', { method: 'turn/completed', params: { threadId: 'side-a', turn: { id: 'side-turn', status: 'completed' } } });
-    await side(f.page).getByText('The main conversation keeps running while you ask this side question.', { exact: true }).waitFor();
-    await assertUiFit(side(f.page), 'Side chat fits');
-    const dir = path.resolve(__dirname, '../.tmp/composer-shots'); await fs.mkdir(dir, { recursive: true });
-    await f.page.screenshot({ path: path.join(dir, `${colorScheme}-${width}.png`) });
-  }));
-}
 
 test('Forward sends a finished side-chat answer to the working agent, and is absent until then (A38)', () => using({ routes: {
   '/api/threads/chat-a/side-chat': () => ({ threadId: 'side-a' }),

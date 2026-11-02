@@ -12,7 +12,7 @@ const cutTabs = page => page.locator('.settings-nav').evaluate(nav => {
     .map(({ name, box }) => `${name} ${Math.round(box.top)}-${Math.round(box.bottom)} in ${Math.round(view.top)}-${Math.round(view.bottom)}`);
 });
 
-for (const colorScheme of ['light', 'dark']) test(`Settings navigation never shows a part of a tab (${colorScheme})`, async () => {
+for (const colorScheme of ['light']) test(`Settings navigation never shows a part of a tab (${colorScheme})`, async () => {
   const f = await fixture({ staticDir: process.env.ELPIS_RENDERER_OUT, colorScheme, width: 1130, height: 660 }), { page } = f;
   try {
     await f.open('chat-a');

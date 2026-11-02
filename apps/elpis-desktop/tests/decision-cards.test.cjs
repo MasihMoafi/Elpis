@@ -22,7 +22,7 @@ const narrowShot = async (page, card, name) => {
 };
 const choiceNames = card => card.locator('.choice').evaluateAll(rows => rows.map(row => [row.querySelector('kbd')?.textContent ?? '', row.getAttribute('aria-label')]));
 
-for (const colorScheme of ['light', 'dark']) {
+for (const colorScheme of ['light']) {
   test(`command approval: number keys, Enter and Esc answer it from the empty message box (${colorScheme})`, async () => {
     const f = await fixture({ colorScheme, height: 900 }), { page, composer, posts, emit } = f;
     try {
@@ -140,7 +140,7 @@ const planFixture = colorScheme => fixture({ colorScheme, height: 900,
   } });
 const planPosts = posts => posts.filter(post => /\/(turns|permissions)$/.test(post.path));
 
-for (const colorScheme of ['light', 'dark']) {
+for (const colorScheme of ['light']) {
   test(`plan card: Keep planning sends what should change, in Plan mode (${colorScheme})`, async () => {
     const f = await planFixture(colorScheme), { page, composer, posts } = f;
     try {
@@ -192,7 +192,7 @@ test('plan card: Enter accepts in the chat\'s own permission mode', async () => 
   } finally { await f.close(); }
 });
 
-for (const colorScheme of ['light', 'dark']) {
+for (const colorScheme of ['light']) {
   test(`decision cards fit at 390px without legacy approval padding (${colorScheme})`, async () => {
     const f = await fixture({ colorScheme, height: 844 }), { page, posts, emit } = f;
     try {

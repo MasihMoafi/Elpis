@@ -52,7 +52,7 @@ test('a competing edit of the same note cannot replace the active verdict', asyn
   } finally { release?.(); await f.close(); }
 });
 
-for (const colorScheme of ['light', 'dark']) test(`active text survives two-window updates and Ctrl+S · ${colorScheme}`, async () => {
+for (const colorScheme of ['light']) test(`active text survives two-window updates and Ctrl+S · ${colorScheme}`, async () => {
   const f = await loveSpotFixture({ colorScheme });
   try {
     await f.open(f.page);

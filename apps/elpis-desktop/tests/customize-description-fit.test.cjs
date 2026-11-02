@@ -4,7 +4,7 @@ const { fixture } = require('./parity-fixture.cjs');
 const { assertUiFit } = require('./ui-fit.cjs');
 
 const description = 'Check every shared component, compare the rendered layout with the design, and explain which parts need attention before changing the interface. '.repeat(3);
-for (const colorScheme of ['light', 'dark']) for (const width of [1280, 900]) test(`Customize keeps the full description available (${colorScheme}, ${width}px)`, async () => {
+for (const colorScheme of ['light']) for (const width of [900]) test(`Customize keeps the full description available (${colorScheme}, ${width}px)`, async () => {
   const f = await fixture({ width, height: width === 900 ? 700 : 800, colorScheme, routes: {
     '/api/customize': () => ({ skills: { data: [{ name: 'web-dev', path: '/tmp/fixture/web-dev/SKILL.md', scope: 'user', enabled: true, description }], errors: [] },
       plugins: { data: [{ id: 'design', name: 'Design', marketplace: 'Local', enabled: true, description }] }, connectors: { data: [] } }),

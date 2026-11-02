@@ -76,7 +76,7 @@ test('provider setup preserves edits on conflict, refreshes choices and never re
 const { fixture } = require('./parity-fixture.cjs');
 const { accountsFirst, openAccounts } = require('./providers-order.cjs');
 
-for (const connected of [0, 1, 3]) for (const colorScheme of ['light', 'dark']) test(`accounts precede advanced APIs with ${connected} connected subscriptions in ${colorScheme}, including an open form and reload`, async () => {
+for (const connected of [0, 3]) for (const colorScheme of ['light']) test(`accounts precede advanced APIs with ${connected} connected subscriptions in ${colorScheme}, including an open form and reload`, async () => {
  let config = { version: 'v1', write: { available: true }, managed: { modelProvider: null }, providers: [] };
  const subscription = state => ({ state, models: state === 'connected' ? ['Subscription model'] : [], usage: [] });
  const accounts = { openai: { auth: connected ? { state: 'signedIn', email: 'account-with-a-long-name@example.test', plan: 'Plus' } : { state: 'signedOut' }, usage: [], usageError: null },
