@@ -61,7 +61,8 @@ test('a follow-up stays after earlier work when the loaded history starts mid-tu
   } });
   t.after(() => f.close());
   await f.open('chat-a');
-  await f.page.locator('.load-earlier-messages').waitFor({ state: 'attached' });
+  // The earlier page may load at once when the history is short; either way the loaded turn is shown.
+  await f.page.getByText('All green.', { exact: true }).waitFor();
   const order = () => f.page.locator('.activity-group, .message.user, .message.agent, .context-event').allTextContents();
   const checkOrder = async expected => {
     const rows = await order();

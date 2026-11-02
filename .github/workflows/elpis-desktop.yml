@@ -110,6 +110,8 @@ jobs:
           bash scripts/fetch-retained.sh
           npm install --prefix "$RUNNER_TEMP/elpis-ui" --no-save --ignore-scripts --no-audit --no-fund playwright-core@1.62.1
           test -x /usr/bin/google-chrome
+          # The browser-tab test types and clicks as the person, through X input.
+          sudo apt-get install -y --no-install-recommends xdotool || { sudo apt-get update && sudo apt-get install -y --no-install-recommends xdotool; }
       - name: Verify the exact renderer against retained and current UI regressions
         env:
           ELPIS_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/elpis-ui/node_modules/playwright-core
