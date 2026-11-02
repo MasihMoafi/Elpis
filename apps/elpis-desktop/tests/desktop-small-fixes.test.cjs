@@ -255,7 +255,7 @@ test('a background model refresh leaves the chat still: no Loading models line o
   });
   const message = page.locator('.message').first(), before = await message.boundingBox();
   for (let n = 0; n < 3; n++) {
-    const reloaded = page.waitForResponse(response => response.url().endsWith('/api/models'));
+    const reloaded = page.waitForResponse(response => new URL(response.url()).pathname === '/api/models');
     f.emit('account', {}); await reloaded; await page.waitForTimeout(100);
   }
   assert.equal(await page.evaluate(() => window.__loadingLines), 0, 'a refresh with models already shown inserts no line above the chat');

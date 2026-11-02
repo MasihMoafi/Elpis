@@ -148,6 +148,7 @@ test('Full access and healthy context ring use the readable theme accent', async
       await chooseOption(page.getByLabel('Accent colour', { exact: true }), accent);
       await page.waitForFunction(value => document.documentElement.dataset.accent === value, accent);
       await leaveSettings(page);
+      await page.locator('.context-ring .context-ring-fill').waitFor();
       const actual = await page.evaluate(() => {
         const primary = document.createElement('span');
         primary.style.color = 'var(--primary)'; document.body.append(primary);

@@ -523,7 +523,7 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
       <div className="love-spot-pages">
         <DropdownMenu onOpenChange={open => { if (open) loadPages(); }}>
           <DropdownMenuTrigger render={<Button variant="outline" size="sm" aria-label="Pages" className="max-w-full min-w-28 shrink justify-between" disabled={!editor || pageBusy} />}>
-            <span className="min-w-0 truncate">{page?.name ?? "Pages"}</span><ChevronDown aria-hidden="true" size={14} />
+            <span className="min-w-0 truncate" title={page?.name ?? "Pages"}>{page?.name ?? "Pages"}</span><ChevronDown aria-hidden="true" size={14} />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="max-h-96 max-w-80 overflow-y-auto">
             <DropdownMenuItem onClick={() => { setPageName(page?.name ?? ""); setRenaming(true); }}>Rename page</DropdownMenuItem>
@@ -537,7 +537,7 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
             {pagesError && <DropdownMenuItem disabled className="whitespace-normal text-muted-foreground">{pagesError}</DropdownMenuItem>}
           </DropdownMenuContent>
         </DropdownMenu>
-        <Button variant="outline" size="sm" disabled={!editor || pageBusy} onClick={() => void changePage("new")}><PlusIcon aria-hidden="true" />New page</Button>
+        <Button variant="outline" size="sm" disabled={!editor || pageBusy} aria-label="New page" title="New page" onClick={() => void changePage("new")}><PlusIcon aria-hidden="true" /><span className="love-spot-label">New page</span></Button>
         <Button variant="ghost" size="sm" aria-label="Delete current page" title="Delete current page" disabled={!editor || pageBusy || !page} onClick={() => setPageToDelete(page?.name)}><span className="inline-flex flex-row items-center gap-1"><Trash2 aria-hidden="true" />Delete</span></Button>
         {renaming && <form className="flex items-center gap-1" onSubmit={event => { event.preventDefault(); void changePage("rename", pageName.trim()); }}>
           <Input autoFocus aria-label="Page name" value={pageName} maxLength={100} className="max-w-48" onChange={event => setPageName(event.target.value)} onKeyDown={event => { if (event.key === "Escape") setRenaming(false); }} />

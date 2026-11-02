@@ -36,7 +36,7 @@ test('selected chat frames keep their size and share the theme accent in both sc
     frameRoutes[`/api/threads/${thread.id}/resume`] = () => ({ thread, activeTurnId: null });
   }
   const inspect = async (colorScheme, width, staticDir, proposed) => {
-    const f = await fixture({ routes: frameRoutes, colorScheme, width, height: 760, staticDir });
+    const f = await fixture({ routes: frameRoutes, colorScheme, width, height: 900, staticDir });
     const { page } = f, states = {};
     try {
       await page.locator(`.thread-row[data-thread-id="${parent.id}"] > button[aria-expanded]:first-child`).click();
