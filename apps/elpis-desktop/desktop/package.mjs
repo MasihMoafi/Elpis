@@ -43,12 +43,12 @@ export PATH="$(dirname -- "$NODE_BIN"):\${PATH:-/usr/local/bin:/usr/bin:/bin}"
 # "none" while its proxy runs, so a listening proxy counts too (2 Nov: OpenRouter refused the direct route, so the RAG
 # model menus were empty).
 if [[ -z "\${HTTPS_PROXY:-}\${HTTP_PROXY:-}\${ALL_PROXY:-}\${https_proxy:-}\${http_proxy:-}\${all_proxy:-}" ]] && command -v gsettings >/dev/null; then
-  manual=0; [[ "$(gsettings get org.gnome.system.proxy mode 2>/dev/null)" == "'manual'" ]] && manual=1
+  manual=0; if [[ "$(gsettings get org.gnome.system.proxy mode 2>/dev/null)" == "'manual'" ]]; then manual=1; fi
   gnome_proxy() { local host port; host="$(gsettings get "org.gnome.system.proxy.$1" host 2>/dev/null | tr -d "'")"; port="$(gsettings get "org.gnome.system.proxy.$1" port 2>/dev/null)"; [[ -n "$host" && "\${port:-0}" != 0 ]] || return 1; (( manual )) || timeout 1 bash -c "exec 3<>/dev/tcp/$host/$port" 2>/dev/null || return 1; printf '%s://%s:%s/' "$2" "$host" "$port"; }
   web="$(gnome_proxy https http || gnome_proxy http http || true)"; socks="$(gnome_proxy socks socks || true)"
   [[ -n "$web" ]] && export HTTP_PROXY="$web" HTTPS_PROXY="$web" http_proxy="$web" https_proxy="$web"
   [[ -n "$socks" ]] && export ALL_PROXY="$socks" all_proxy="$socks"
-  ignore="$(gsettings get org.gnome.system.proxy ignore-hosts 2>/dev/null | tr -d "[]' ")"
+  ignore="$(gsettings get org.gnome.system.proxy ignore-hosts 2>/dev/null | tr -d "[]' " || true)"
   [[ -n "$web$socks" && -n "$ignore" ]] && export NO_PROXY="$ignore" no_proxy="$ignore"
 fi
 if [[ -n "\${HTTPS_PROXY:-}\${HTTP_PROXY:-}\${ALL_PROXY:-}\${https_proxy:-}\${http_proxy:-}\${all_proxy:-}" ]]; then
