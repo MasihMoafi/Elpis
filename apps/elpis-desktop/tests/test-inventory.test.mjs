@@ -64,7 +64,7 @@ async function fakeApp(t, files, inventory, build = 'node -e 0') {
   return { dir, locks, gate };
 }
 
-test('a failing fast file does not stop the desktop and UI tiers; a failing renderer build does', async t => {
+test('a failing fast file does not stop the desktop and UI tiers; a failing renderer build stops only the UI tier', async t => {
   const files = { 'fast.test.mjs': "import test from 'node:test'; test('fails', () => { throw new Error('boom'); });", 'desktop.test.mjs': passing, 'ui.test.mjs': passing };
   const inventory = { fast: ['tests/fast.test.mjs'], desktop: ['tests/desktop.test.mjs'], ui: ['tests/ui.test.mjs'] };
   const { code, out } = await (await fakeApp(t, files, inventory)).gate(['fast', 'desktop', 'ui']);
@@ -74,8 +74,9 @@ test('a failing fast file does not stop the desktop and UI tiers; a failing rend
   assert.match(out, /^PASS tests\/ui.test.mjs/m);
   const broken = await (await fakeApp(t, files, inventory, 'node -e "process.exit(3)"')).gate(['desktop', 'ui']);
   assert.equal(broken.code, 1);
+  assert.match(broken.out, /^PASS tests\/desktop.test.mjs/m, 'desktop files do not need the renderer');
   assert.match(broken.out, /^FAIL renderer-build/m);
-  assert.doesNotMatch(broken.out, /^RUN tests\//m);
+  assert.doesNotMatch(broken.out, /tests\/ui.test.mjs/);
 });
 
 test('the per-file limit excludes the shared-lock wait, and a timed-out file leaves no process behind', async t => {

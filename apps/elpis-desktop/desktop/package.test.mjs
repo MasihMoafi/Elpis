@@ -30,7 +30,8 @@ test('the package holds every file the desktop code loads by path', async () => 
     const text = await fs.readFile(path.join(root, name), 'utf8');
     for (const [, target] of text.matchAll(/path\.join\(__dirname, '([^']+)'\)/g)) {
       const file = path.posix.normalize(path.posix.join('desktop', target));
-      if ((await fs.stat(path.join(root, file))).isDirectory()) continue; // The renderer (out/) is packaged whole.
+      // The renderer (out/) is packaged whole, and need not be built for this check.
+      if (file === 'out' || file.startsWith('out/') || (await fs.stat(path.join(root, file))).isDirectory()) continue;
       assert(production.includes(file), `${name} loads ${file}, which is not packaged`);
     }
   }

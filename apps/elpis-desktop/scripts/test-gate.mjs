@@ -91,12 +91,12 @@ export async function main(args, { dir = root, locks = { build: '/tmp/elpis-desk
     if (code !== 0) { console.error(text.slice(-6000)); process.exitCode = 1; }
     return code;
   }
-  // Fast tests import bundled prompts too; desktop/package tests consume out/.
+  // Fast tests import bundled prompts too. Only browser (UI) files need the built renderer.
   if (await run('bridge-resources', process.execPath, ['bridge/build-resources.mjs'], 'bridge', { seconds: 120 }) !== 0) return;
   let rendererBuilt = false;
   for (const tier of selected) {
-    if (!rendererBuilt && (tier === 'desktop' || tier === 'ui')) {
-      // Desktop and UI files need the renderer; an earlier tier's failure does not stop them.
+    if (!rendererBuilt && tier === 'ui') {
+      // An earlier tier's failure does not stop the UI files.
       if (await run('renderer-build', 'npm', ['run', '-s', 'build'], tier, { seconds: 1200, lock: locks.build }) !== 0) return;
       rendererBuilt = true;
     }

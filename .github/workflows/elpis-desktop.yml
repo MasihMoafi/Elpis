@@ -45,8 +45,6 @@ jobs:
           node bridge/build-resources.mjs
           npm run -s build
           printf '%s\n' "$GITHUB_SHA" > out/.commit
-      - name: Verify the artifact gate and inventory guards
-        run: node --test --test-reporter=tap tests/renderer-artifact-gate.test.mjs tests/test-inventory.test.mjs
       - name: Prepare the retained UI checkpoint
         run: |
           bash scripts/fetch-retained.sh
@@ -169,7 +167,8 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  # The non-UI tiers run here; the shards above run every UI test against the exact built renderer (A46b, 20 October).
+  # The non-UI tiers run here (they include the artifact gate and inventory tests, so the build job does not repeat them);
+  # the shards above run every UI test against the exact built renderer (A46b, 20 October). No browser is needed here.
   tests:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
@@ -195,11 +194,6 @@ jobs:
         run: npm ci --prefix ../../tools/elpis-claude --ignore-scripts --no-audit --no-fund
       - name: Install the Electron test binary
         run: npm rebuild electron --no-audit --no-fund
-      - name: Install Playwright and its Chromium (the version the local tests use)
-        run: |
-          npm install --prefix "$RUNNER_TEMP/pw" --no-audit --no-fund playwright@1.62.1
-          "$RUNNER_TEMP/pw/node_modules/.bin/playwright" install --with-deps chromium
-          echo "ELPIS_PLAYWRIGHT_PACKAGE=$RUNNER_TEMP/pw/node_modules/playwright" >> "$GITHUB_ENV"
       - name: Install PDF text and audio tools the attachment and transcription tests use
         run: |
           sudo apt-get update
