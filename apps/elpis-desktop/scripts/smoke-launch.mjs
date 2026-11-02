@@ -40,7 +40,9 @@ async function pageState(port) {
 export async function smokeLaunch(packageDir, { timeoutMs = 90_000 } = {}) {
   const launcher = path.join(packageDir, 'launch');
   if (!fs.existsSync(launcher)) throw new Error(`${launcher} does not exist.`);
-  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-smoke-'));
+  // In the home cache, not /tmp: gio trash refuses folders on /tmp here (2 Nov).
+  const cache = path.join(os.homedir(), '.cache', 'elpis-smoke'); fs.mkdirSync(cache, { recursive: true });
+  const scratch = fs.mkdtempSync(path.join(cache, 'run-'));
   const screen = spawn('Xvfb', ['-displayfd', '3', '-screen', '0', '1280x800x24', '-nolisten', 'tcp'], { stdio: ['ignore', 'ignore', 'ignore', 'pipe'] });
   let app, output = '';
   try {
