@@ -513,6 +513,14 @@ jobs:
           CACHE_KEY: ${{ steps.cargo_cache.outputs.cache-matched-key }}
         run: |
           bash scripts/restore-cargo-cache-source-times.sh "$CACHE_KEY"
+      - name: Build the pinned sandbox the integration tests run under
+        working-directory: codex-rs
+        run: |
+          # The split-off test job has no release build; without this bwrap the sandbox helper aborts (1 Nov trial run).
+          env -u CODEX_SKIP_BWRAP_BUILD cargo build --release --locked -p codex-bwrap --bin bwrap
+          mkdir -p target/release/codex-resources
+          install -m 0755 target/release/bwrap target/release/codex-resources/bwrap
+          echo "$PWD/target/release/codex-resources" >> "$GITHUB_PATH"
       - name: Prove status regression detects the original missing instructions
         if: ${{ !cancelled() && inputs.verification != 'build' }}
         working-directory: codex-rs

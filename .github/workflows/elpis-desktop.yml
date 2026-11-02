@@ -49,12 +49,7 @@ jobs:
         run: node --test --test-reporter=tap tests/renderer-artifact-gate.test.mjs tests/test-inventory.test.mjs
       - name: Prepare the retained UI checkpoint
         run: |
-          baseline=$(node --input-type=module -e 'import { baselineCommit } from "./scripts/renderer-artifact-gate.mjs"; console.log(baselineCommit)')
-          git cat-file -e "$baseline^{commit}" || git fetch --no-tags --depth=1 origin "$baseline"
-          # Each pinned replacement is read from its approval commit; a shallow checkout lacks them (1 Nov: every run since
-          # tests/controls.cjs next changed failed with "Changed pinned retained regression").
-          node --input-type=module -e 'import { retainedUpdates, baselineCommit } from "./scripts/renderer-artifact-gate.mjs"; for (const pin of Object.values(retainedUpdates[baselineCommit] ?? {})) console.log(pin.approval)' \
-            | sort -u | while read -r approval; do git cat-file -e "$approval^{commit}" 2>/dev/null || git fetch --no-tags --depth=1 origin "$approval"; done
+          bash scripts/fetch-retained.sh
       - name: Bind the renderer and complete regression plan to six shards
         id: plan
         run: |
@@ -114,8 +109,7 @@ jobs:
           path: ${{ runner.temp }}/elpis-ui-plan
       - name: Prepare the retained UI checkpoint and browser prerequisite
         run: |
-          baseline=$(node --input-type=module -e 'import { baselineCommit } from "./scripts/renderer-artifact-gate.mjs"; console.log(baselineCommit)')
-          git cat-file -e "$baseline^{commit}" || git fetch --no-tags --depth=1 origin "$baseline"
+          bash scripts/fetch-retained.sh
           npm install --prefix "$RUNNER_TEMP/elpis-ui" --no-save --ignore-scripts --no-audit --no-fund playwright-core@1.62.1
           test -x /usr/bin/google-chrome
       - name: Verify the exact renderer against retained and current UI regressions
@@ -164,8 +158,7 @@ jobs:
           path: ${{ runner.temp }}/elpis-ui-evidence
       - name: Prepare the retained UI checkpoint
         run: |
-          baseline=$(node --input-type=module -e 'import { baselineCommit } from "./scripts/renderer-artifact-gate.mjs"; console.log(baselineCommit)')
-          git cat-file -e "$baseline^{commit}" || git fetch --no-tags --depth=1 origin "$baseline"
+          bash scripts/fetch-retained.sh
       - name: Merge every shard and write the installer receipt
         run: node scripts/renderer-artifact-gate.mjs --merge "$RUNNER_TEMP/elpis-ui-plan/plan.json" "$RUNNER_TEMP/elpis-ui-evidence"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
