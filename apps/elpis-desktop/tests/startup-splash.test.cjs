@@ -30,7 +30,7 @@ const frame = (page, ms) => page.evaluate(ms => {
   return { logo: getComputedStyle(logo).transform, centre: [Math.round(box.x + box.width / 2), Math.round(box.y + box.height / 2)] };
 }, ms);
 
-for (const colorScheme of ['light']) test(`startup: the third E gyroscope turns without surrounding rings (${colorScheme})`, async t => {
+for (const colorScheme of ['light', 'dark']) test(`startup: the third E gyroscope turns without surrounding rings (${colorScheme})`, async t => {
   const { page } = await starting(t, { colorScheme });
   const splash = page.locator('.startup-splash');
   const logo = page.locator('.splash-logo');
