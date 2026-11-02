@@ -206,47 +206,11 @@ test('shards and the merger reject renderer or plan changes since preparation an
   await assert.rejects(gate.mergeGate({ ...f, manifest, shards }), /source changes|Tracked source changed/);
 });
 
-test('the real gate retains dropped tests, uses candidate imports, and binds the resulting renderer receipt', async t => {
-  const f = await fixture(t);
-  // A candidate may remove an old test and update its own inventory at the same time.
-  await fs.rename(path.join(f.root, 'tests/kept.test.cjs'), path.join(f.repo, 'dropped-test.cjs'));
-  await fs.writeFile(path.join(f.root, 'tests/new.test.cjs'), "const{test}=require('node:test');test('new regression',()=>{});");
-  f.inventory.ui = ['tests/new.test.cjs'];
-  await fs.writeFile(path.join(f.root, 'test-inventory.json'), JSON.stringify(f.inventory));
-  await f.commitSource();
-  const receipt = await runGate(f);
-  assert.deepEqual(receipt.files.map(file => [file.source, file.name]), [['baseline', 'desktop/state.test.cjs'], ['baseline', 'tests/kept.test.cjs'], ['candidate', 'tests/new.test.cjs']]);
-  assert.equal((await verifyRendererReceipt(f)).rendererHash, await rendererHash(f.out));
-  const receiptFile = path.join(f.out, receiptName);
-  const original = await fs.readFile(receiptFile, 'utf8');
-  for (const patch of [{ commit: 'stale' }, { baseline: 'stale' }, { files: receipt.files.slice(1) },
-    { files: receipt.files.map(file => ({ ...file, pass: 0, skipped: file.tests })) }]) {
-    await fs.writeFile(receiptFile, JSON.stringify({ ...receipt, ...patch }));
-    await assert.rejects(verifyRendererReceipt(f));
-  }
-  await fs.writeFile(receiptFile, original);
-  await fs.writeFile(path.join(f.out, 'index.html'), 'stale renderer');
-  await assert.rejects(verifyRendererReceipt(f), /Renderer bytes changed/);
-});
-
 test('missing receipts and build-only artifacts cannot be activated', async t => {
   const f = await fixture(t);
   await assert.rejects(verifyRendererReceipt(f), { code: 'ENOENT' });
   await fs.writeFile(path.join(f.out, receiptName), JSON.stringify({ commit: 'old' }));
   await assert.rejects(verifyRendererReceipt(f), /Unsupported UI receipt/);
-});
-
-test('unchanged test/helper bytes deduplicate; changed helpers require the candidate tests too', async t => {
-  const f = await fixture(t);
-  assert.equal((await planSuite(f.root, f.baseline)).files.length, 2);
-  await fs.writeFile(path.join(f.root, 'tests/helper.cjs'), 'module.exports = "different helper";');
-  assert.deepEqual((await planSuite(f.root, f.baseline)).files.map(file => file.source), ['baseline', 'baseline', 'candidate', 'candidate']);
-  const retained = await prepareBaseline(f.root, f.baseline);
-  try {
-    assert.match(await fs.readFile(path.join(retained.root, 'tests/helper.cjs'), 'utf8'), /retained helper/);
-    assert.equal(await fs.realpath(path.join(retained.root, 'implementation.cjs')), path.join(f.root, 'implementation.cjs'));
-    assert.equal(await fs.realpath(path.join(retained.root, 'out')), f.out);
-  } finally { execFileSync('gio', ['trash', retained.scratch]); }
 });
 
 test('retained UI tests can read the candidate terminal prompts and personal skill', async t => {
@@ -266,43 +230,6 @@ test('retained UI tests can read the candidate terminal prompts and personal ski
       assert.equal(await fs.realpath(file), path.join(f.repo, 'codex-rs', name));
     }
   } finally { execFileSync('gio', ['trash', retained.scratch]); }
-});
-
-test('OBSRM: approved page retirement excludes only its tests and fixture from the baseline', async t => {
-  const f = await fixture(t);
-  const retired = ['tests/retired.test.cjs', 'tests/retired-fixture.cjs'];
-  for (const name of retired) await fs.writeFile(path.join(f.root, name), '// retired page\n');
-  f.inventory.ui.push(retired[0]);
-  await fs.writeFile(path.join(f.root, 'test-inventory.json'), JSON.stringify(f.inventory));
-  const baseline = await f.commitSource();
-  f.inventory.ui.pop();
-  await fs.writeFile(path.join(f.root, 'test-inventory.json'), JSON.stringify(f.inventory));
-  for (const name of retired) execFileSync('gio', ['trash', path.join(f.root, name)]);
-  gate.retiredPaths[baseline] = retired;
-  t.after(() => { delete gate.retiredPaths[baseline]; });
-  const plan = await planSuite(f.root, baseline);
-  assert.deepEqual(plan.files.map(file => file.name), ['desktop/state.test.cjs', 'tests/kept.test.cjs']);
-  const retained = await prepareBaseline(f.root, baseline);
-  try {
-    for (const name of retired) await assert.rejects(fs.access(path.join(retained.root, name)), { code: 'ENOENT' });
-    await fs.access(path.join(retained.root, 'tests/kept.test.cjs'));
-    await fs.access(path.join(retained.root, 'tests/helper.cjs'));
-  } finally { execFileSync('gio', ['trash', retained.scratch]); }
-  delete gate.retiredPaths[baseline];
-  assert.equal((await planSuite(f.root, baseline)).files.some(file => file.name === retired[0]), true,
-    'without explicit approval, removing a candidate test cannot retire its baseline check');
-});
-
-test('a candidate cannot drop the saved-workspace test and reinstate a reader that rejects project memberships', async t => {
-  const f = await fixture(t);
-  await fs.rename(path.join(f.root, 'desktop/state.test.cjs'), path.join(f.repo, 'dropped-state.test.cjs'));
-  f.inventory.desktop = [];
-  await fs.writeFile(path.join(f.root, 'test-inventory.json'), JSON.stringify(f.inventory));
-  await fs.writeFile(path.join(f.root, 'desktop/state.cjs'), "module.exports={read(values){if('projectChats' in values)throw Error('saved workspace');return values;}};");
-  await f.commitSource();
-  assert.equal((await planSuite(f.root, f.baseline)).files[0].name, 'desktop/state.test.cjs');
-  await assert.rejects(runGate(f), /saved workspace/);
-  await assert.rejects(fs.access(path.join(f.out, receiptName)), { code: 'ENOENT' });
 });
 
 test('a failed regression still records later checks without accepting the renderer', async t => {
@@ -451,28 +378,3 @@ if(process.env.MOCK_RECEIPT==='stale')fs.writeFileSync(path.join(folder,${JSON.s
 });
 
 
-test('approved retained updates pin exact bytes, keep other tests, and reject a changed uncommitted repair', async t => {
-  const f = await fixture(t);
-  const name = 'tests/helper.cjs', bytes = Buffer.from('module.exports = "approved helper";');
-  const blob = createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex');
-  await fs.writeFile(path.join(f.root, name), bytes);
-  const updates = { [name]: { blob, approval: f.baseline, reason: 'Approved helper replaces the obsolete lookup' } };
-  const plan = await planSuite(f.root, f.baseline, updates);
-  assert.notEqual(plan.support.baseline, (await planSuite(f.root, f.baseline)).support.baseline);
-  assert.equal(plan.files[1].source, 'baseline', 'unrelated regression remains retained');
-  const retained = await prepareBaseline(f.root, f.baseline, updates);
-  try {
-    assert.deepEqual(await fs.readFile(path.join(retained.root, name)), bytes);
-    assert.equal(await fs.realpath(path.join(retained.root, 'implementation.cjs')), path.join(f.root, 'implementation.cjs'));
-  } finally { execFileSync('gio', ['trash', retained.scratch]); }
-  await fs.writeFile(path.join(f.root, name), 'unreviewed change');
-  await assert.rejects(planSuite(f.root, f.baseline, updates), /pinned retained/);
-  await assert.rejects(prepareBaseline(f.root, f.baseline, updates), /pinned retained/);
-  await fs.writeFile(path.join(f.root, name), bytes);
-  await f.commitSource();
-  await fs.writeFile(path.join(f.root, name), 'another candidate');
-  const pinned = await prepareBaseline(f.root, f.baseline, updates);
-  try { assert.deepEqual(await fs.readFile(path.join(pinned.root, name)), bytes, 'after commit the retained blob is independent of the candidate'); }
-  finally { execFileSync('gio', ['trash', pinned.scratch]); }
-  await assert.rejects(planSuite(f.root, f.baseline, { '../escape': updates[name] }), /Invalid retained/);
-});

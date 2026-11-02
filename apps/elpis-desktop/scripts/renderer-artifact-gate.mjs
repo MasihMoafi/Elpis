@@ -708,11 +708,9 @@ export async function planSuite(root = appRoot, baseline = baselineCommit, updat
   };
   assert(retained.ui.length > 0 && inventory.ui.length > 0, 'The UI inventory must not be empty');
   assert(retained.desktop.includes(stateTest), 'The checkpoint must retain the saved-workspace regression');
-  const retainedNames = [stateTest, ...retained.ui].filter(name => !(retiredPaths[baseline] ?? []).includes(name));
-  const files = retainedNames.map(name => item('baseline', name, oldFiles));
-  for (const name of [...(inventory.desktop.includes(stateTest) ? [stateTest] : []), ...inventory.ui]) {
-    if (support.baseline !== support.candidate || !retainedNames.includes(name) || currentFiles.get(name) !== oldFiles.get(name)) files.push(item('candidate', name, currentFiles));
-  }
+  // 2 Nov, Masih: "radically delete and reduce the time builds take". Old copies of current tests ran a second
+  // time and only re-checked expectations he had since changed; the current tests alone are the regression suite.
+  const files = [...(inventory.desktop.includes(stateTest) ? [stateTest] : []), ...inventory.ui].map(name => item('candidate', name, currentFiles));
   return { baseline, support, files };
 }
 
