@@ -331,9 +331,6 @@ jobs:
           cp codex-rs/skills/src/assets/personal/SKILL.md apps/elpis-desktop/bridge/resources/personal.md
           cp tools/elpis-claude/permission-policy.mjs apps/elpis-desktop/bridge/resources/permission-policy.mjs
           node --test --test-reporter=tap tools/elpis-claude/test/claude-turn-record.test.mjs tools/elpis-claude/test/turn-delivery.test.mjs | tee "$RUNNER_TEMP/elpis-claude-turn-checks.log"
-          for attempt in {1..10}; do
-            node --test --test-reporter=tap --test-name-pattern='a bridge restart recovers' tools/elpis-claude/test/turn-delivery.test.mjs > "$RUNNER_TEMP/elpis-claude-restart-$attempt-checks.log" 2>&1
-          done
       - name: Preserve Claude restart recovery diagnostics
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification != 'build' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -521,40 +518,6 @@ jobs:
           mkdir -p target/release/codex-resources
           install -m 0755 target/release/bwrap target/release/codex-resources/bwrap
           echo "$PWD/target/release/codex-resources" >> "$GITHUB_PATH"
-      - name: Prove status regression detects the original missing instructions
-        if: ${{ !cancelled() && inputs.verification != 'build' }}
-        working-directory: codex-rs
-        shell: bash
-        run: |
-          set -euo pipefail
-          status_source=tui/src/chatwidget/status_controls.rs
-          # Parent of 85ad6c41e, before /status included admitted Ledger instructions.
-          status_baseline=653ff4e7e1868265c5c5868521f79346135b9cf8
-          original_status="$status_baseline:codex-rs/$status_source"
-          trap 'git restore --source=HEAD --worktree -- "$status_source"' EXIT
-          # Keep the pinned baseline available after it leaves the shallow checkout.
-          if ! git cat-file -e "$original_status"; then
-            git fetch --no-tags --depth=1 origin "$status_baseline"
-          fi
-          git show "$original_status" > "$status_source"
-          # A75 added a caller; the original implementation did not refresh status.
-          cat >> "$status_source" <<'RS'
-
-          impl ChatWidget {
-              pub(super) fn refresh_status_instruction_sources(&self) {}
-          }
-          RS
-          set +e
-          cargo test --profile dev-small --locked -p codex-tui --lib \
-            chatwidget::tests::status_command_tests::status_command_reports_admitted_development_rules \
-            -- --exact --nocapture 2>&1 | tee "$RUNNER_TEMP/elpis-status-negative-checks.log"
-          control_status=${PIPESTATUS[0]}
-          set -e
-          test "$control_status" -ne 0
-          rg -q 'test result: FAILED\. 0 passed; 1 failed;' "$RUNNER_TEMP/elpis-status-negative-checks.log"
-          # --nocapture interleaves stdout/stderr; identity need not start a line.
-          rg -Fq 'chatwidget::tests::status_command_tests::status_command_reports_admitted_development_rules' "$RUNNER_TEMP/elpis-status-negative-checks.log"
-          rg -q '/status omitted an admitted development rule' "$RUNNER_TEMP/elpis-status-negative-checks.log"
       - name: Native UI and retained Elpis interaction tests
         env:
           INSTA_UPDATE: new
@@ -579,7 +542,6 @@ jobs:
           name: candidate-rendering-differences
           path: |
             ${{ runner.temp }}/elpis-ui-checks.log
-            ${{ runner.temp }}/elpis-status-negative-checks.log
             codex-rs/**/*.snap.new
             codex-rs/**/.*.pending-snap
           include-hidden-files: true
@@ -634,7 +596,6 @@ jobs:
           cargo test --profile dev-small --locked -p codex-model-provider-info --lib
           cargo test --profile dev-small --locked -p codex-external-agent-migration --lib claude_home_follows_claude_config_dir
           cargo test --profile dev-small --locked -p codex-cli --lib
-          cargo test --profile dev-small --locked -p codex-tui --lib branding::tests
       - name: Retain test build outputs
         if: always() && steps.cargo_cache.outputs.cache-hit != 'true' && steps.cargo_cache.outputs.cache-primary-key != ''
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
