@@ -41,8 +41,13 @@ if action == 'volume':
     target = float(volume)
     if target < 0: raise Exception('This player volume is invalid.')
     dbus.Interface(obj, 'org.freedesktop.DBus.Properties').Set('org.mpris.MediaPlayer2.Player', 'Volume', dbus.Double(target), timeout=2)
-    props = dbus.Interface(obj, 'org.freedesktop.DBus.Properties').GetAll('org.mpris.MediaPlayer2.Player', timeout=2)
-    if abs(float(props.get('Volume', -1)) - target) > 0.000001: raise Exception('The player has not confirmed this volume change.')
+    # Players apply volume a moment later and round it to their own steps (VLC: 1/256), so wait up to 1 s and accept 1% (2 Nov).
+    deadline = time.monotonic() + 1
+    while True:
+        props = dbus.Interface(obj, 'org.freedesktop.DBus.Properties').GetAll('org.mpris.MediaPlayer2.Player', timeout=2)
+        if abs(float(props.get('Volume', -1)) - target) <= 0.01: break
+        if time.monotonic() > deadline: raise Exception('The player has not confirmed this volume change.')
+        time.sleep(0.1)
 elif action != 'read':
     if not props.get('CanControl', False): raise Exception('This player does not support music controls.')
     capability = {'play': 'CanPlay', 'pause': 'CanPause', 'next': 'CanGoNext', 'open': 'CanPlay', 'open-file': 'CanPlay'}[action]
