@@ -26,7 +26,9 @@ const cancelled = () => new BridgeError('Dictation cancelled', 499);
  * `env` is what only the bridge may know: `chatgpt` (Elpis is signed in to ChatGPT) and `geminiKey`. It is never returned. */
 export function transcriptionStatus(config, provider, env = {}) {
   if (provider === 'google-gemini' && env.geminiKey) return { available: true, backend: 'gemini', label: `${GEMINI.label} · ${GEMINI.model}`, source: 'provider' };
-  if (!config || config.enabled === false || typeof config.command !== 'string' || !config.command || config.url) {
+  // The MCP switch only decides whether agents get WhisperType as a tool; dictation starts its own process (2 Nov: the switch
+  // was off, so dictation said unavailable although WhisperType worked).
+  if (!config || typeof config.command !== 'string' || !config.command || config.url) {
     return { available: false, reason: 'Enable a supported WhisperType stdio server in Settings → MCP.' };
   }
   // WHISPERTYPE_EVERY_CHAT=1: the Settings → Voice engine for every chat, so voice is the same model everywhere.

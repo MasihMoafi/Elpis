@@ -61,10 +61,11 @@ test('Google Gemini chats use the Gemini API with the key Elpis holds, even with
   assert.equal(transcriptionStatus(server({ WHISPERTYPE_BACKEND: 'local' }), 'gemini', { geminiKey: key }).backend, 'local');
 });
 
-test('a missing, disabled or remote WhisperType server is unavailable for every provider', () => {
+test('a missing or remote WhisperType server is unavailable; one switched off for agents still dictates', () => {
   const config = server({ WHISPERTYPE_BACKEND: 'codex', WHISPERTYPE_CLOUD_MODEL: MODEL });
   for (const provider of ['openai', 'openrouter', 'anthropic', undefined]) {
-    for (const def of [null, { ...config, enabled: false }, { url: 'https://mcp.example' }]) assert.equal(transcriptionStatus(def, provider).available, false);
+    for (const def of [null, { url: 'https://mcp.example' }]) assert.equal(transcriptionStatus(def, provider).available, false);
+    assert.equal(transcriptionStatus({ ...config, enabled: false }, provider).available, true);
   }
 });
 
