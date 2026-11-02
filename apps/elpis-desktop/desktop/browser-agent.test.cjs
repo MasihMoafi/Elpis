@@ -12,7 +12,7 @@ function fixture() {
     const wc = Object.assign(new EventEmitter(), { getURL: () => url, isDestroyed: () => false, isLoading: () => false,
       navigationHistory: { canGoBack: () => true, canGoForward: () => true, goBack: () => inputs.push('back'), goForward: () => inputs.push('forward') },
       loadURL: async value => { url = value; }, reload: () => inputs.push('reload'), stop() {}, focus() {},
-      getZoomFactor: () => 1, sendInputEvent: event => inputs.push(event), insertText: async text => inputs.push(text),
+      getZoomFactor: () => 1, sendInputEvent: event => inputs.push(event), insertText: async text => inputs.push(text), selectAll: () => inputs.push('selectAll'),
       executeJavaScriptInIsolatedWorld: async (world, source) => { scripts.push({world, source}); return { x: 10, y: 20 }; },
       capturePage: async () => ({ isEmpty: () => false, toJPEG: () => Buffer.from('jpeg') }) });
     tabs.set(id, { id, url, title: 'Fixture', agent: owned, view: { webContents: wc } }); return id;
@@ -59,7 +59,7 @@ test('click/type/press dispatch native input; scroll and target lookup use the i
   await f.agent.call('browser_press', {tabId:'tab-1',key:'Control+A'});
   await f.agent.call('browser_scroll', {tabId:'tab-1',x:50,y:50,deltaY:120});
   assert.equal(f.inputs.filter(item => item.type === 'mouseDown').length, 1);
-  assert(f.inputs.includes('agent@example.com'));
+  assert.deepEqual(f.inputs.filter(item => typeof item === 'string'), ['selectAll', 'agent@example.com'], 'typing replaces the field');
   assert(f.inputs.some(item => item.type === 'keyDown' && item.modifiers.includes('control')));
   assert(f.scripts.some(item => item.source[0].code.includes(')("scroll",')));
   assert(f.scripts.every(item => item.world === 999));

@@ -64,3 +64,5 @@ html.matilda-dragging { user-select:none; -webkit-user-select:none; }
 .matilda-mini-popup > .matilda-alert { margin-bottom:8px; }
 .hud-popover.matilda-alert-popup { position:absolute; z-index:1; height:auto; padding:8px; background:var(--matilda-panel); app-region:no-drag; -webkit-app-region:no-drag; }
 .hud-popover.matilda-alert-anchor { top:calc(100% + 4px); right:0; z-index:50; width:max-content; max-width:24rem; }
+/* Her notice is text only: it never takes a click meant for the controls under it (2 Nov). */
+.hud-popover.matilda-alert-popup { pointer-events:none; }

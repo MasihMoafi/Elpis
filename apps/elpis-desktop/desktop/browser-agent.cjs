@@ -163,7 +163,7 @@ function createBrowserAgent({tabs,open,origin,emit,prepare}) {
       }
       case 'browser_type':
         if(args.selector||args.nodeId)await dom('focus');
-        guard(generation);if(args.clear!==false)press(process.platform==='darwin'?'Meta+A':'Control+A');
+        guard(generation);if(args.clear!==false)wc.selectAll(); // An edit command: a select-all key chord is lost when the window lacks OS focus (CI, 2 Nov).
         await wc.insertText(args.text);break;
       case 'browser_press':if(args.selector||args.nodeId)await dom('focus');guard(generation);press(args.key);break;
       case 'browser_scroll':return dom('scroll');
