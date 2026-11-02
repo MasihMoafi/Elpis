@@ -52,7 +52,7 @@ test('subscription identity comes from the actual route and does not borrow the 
 test('a provider without a catalog never receives another provider’s models or bypasses managed policy', () => {
   const choices = providerChoices(models, settings);
   assert.deepEqual(choices.find(choice => choice.provider === 'openrouter').models, []);
-  assert.deepEqual(choices[0].models.map(model => model.model), ['gpt-6.1-sol']);
+  assert.deepEqual(choices[0].models, [], 'the default lists its own models live, never the engine startup catalog');
   const managed = providerChoices(models, { ...settings, managed: { modelProvider: 'openai' } });
   assert(!managed.some(choice => choice.provider === 'openrouter'));
 });
@@ -75,14 +75,15 @@ test('a configured API default never borrows the engine startup catalog after th
     assert.equal(choiceOf({ id: 'existing', model: 'vendor-model', modelProvider: provider }, choices), primary);
     assert.deepEqual(choices.find(choice => choice.id === 'claude/').models.map(model => model.model), ['claude/opus']);
   }
+  // 2 Nov: an engine started on the Anthropic credits put Claude models under the OpenAI default.
   const openai = providerChoices(models, settings)[0];
-  assert.equal(openai.provider, undefined, 'OpenAI retains its authenticated engine catalog');
-  assert.deepEqual(openai.models.map(model => model.model), ['gpt-6.1-sol']);
+  assert.equal(openai.provider, 'openai', 'ChatGPT as the default loads its own list too');
+  assert.deepEqual(openai.models, []);
 });
 
 test('an explicit provider choice keeps its identity when another provider becomes the default', () => {
   const before = providerChoices(models, settings);
-  const solChoice = before.find(choice => choice.models.some(model => model.model === 'gpt-6.1-sol'));
+  const solChoice = before.find(choice => choice.id === 'openai');
   const after = providerChoices(models, { ...settings, main: { model: 'claude-opus-5-5', provider: 'anthropic-credits' } });
   const retained = after.find(choice => choice.id === solChoice.id);
   assert.equal(retained?.provider, 'openai', 'the chosen Sol route must not become Anthropic credits');

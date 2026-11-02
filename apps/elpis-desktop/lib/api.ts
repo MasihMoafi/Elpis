@@ -224,7 +224,9 @@ export function providerChoices(models: Model[], settings: ProviderSettings | nu
   return [
     // Defaults can change while model/list still belongs to the engine's startup provider.
     // API connections, including the default, get their own catalog and explicit route.
-    main && main !== "openai" && !UNLISTED.has(main) ? connection(main)
+    // ChatGPT as the default too: its own live list, never the engine's startup catalog (2 Nov: started on the Anthropic
+    // credits, the OpenAI tab listed Claude models).
+    main && !UNLISTED.has(main) ? connection(main)
       : { id: main ?? "", label: providerLabel(null, main, settings?.providers) || "Configured provider", models: models.filter(model => !subscriptionOf(model.model)) },
     ...connectionOrder(others),
   ];

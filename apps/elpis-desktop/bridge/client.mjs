@@ -748,7 +748,7 @@ export class DesktopClient extends EventEmitter {
       // A connection the engine signs in to itself (ChatGPT, the Anthropic credits) but that is not the default: the engine lists
       // its models (subscription-models.mjs). 1 Nov: with ChatGPT made the default, the Anthropic credits lost every model.
       // A menu that opens (refresh) asks the engine again instead of reusing its last answer.
-      if (options.provider !== read?.config?.model_provider && !options.inputModality && !options.outputModality && !savedProviderKey(configHome(read), options.provider)) {
+      if ((options.provider !== read?.config?.model_provider || options.provider === 'openai') && !options.inputModality && !options.outputModality && !savedProviderKey(configHome(read), options.provider)) {
         // account/read describes the default connection's account, so the engine is simply asked; when it cannot list them
         // the connection is treated as an API key, as before.
         const home = configHome(read);
