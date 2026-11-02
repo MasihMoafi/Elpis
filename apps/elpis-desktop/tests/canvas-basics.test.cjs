@@ -20,7 +20,6 @@ for (const colorScheme of ['light']) test(`workflows start in their sandbox with
     '/api/canvas/plan': reportPlan,
     '/api/threads': body => body ? { thread: root } : { data: THREADS.map(thread => ({ ...thread, cwd: '' })), nextCursor: null },
     '/api/repository': () => ({ repository: false }),
-    '/api/workflows/concurrency': () => ({ value: 1, choices: [1, 2, 3, 4] }),
     '/api/workflows/run': () => ({ graphId: '00000000-0000-0000-0000-000000000011' }),
     '/api/workflows': () => ({ data: [] }),
   } });

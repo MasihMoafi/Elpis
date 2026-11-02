@@ -91,9 +91,6 @@ export function ConfigurationSettings() {
       <ModelSettings value={settings} models={models} />
       <PrunerSettings value={settings} models={models} />
       <FeatureDefaults settings={settings} />
-      {settings.sources && <SettingsGroup title="Sources" description="Effective sources reported by Elpis. Project, session and managed values can override saved defaults.">
-        {Object.entries(settings.sources).map(([key, source]) => <SettingRow key={key} title={key} scope="new chats"><span>{source}</span></SettingRow>)}
-      </SettingsGroup>}
     </>}</SettingsLoader>
   </div>;
 }

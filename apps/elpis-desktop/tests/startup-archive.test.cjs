@@ -42,7 +42,6 @@ async function fixture(t, { modelFailure = false, holdModels = false, descendant
     if (req.method === 'GET' && pathname === '/api/love-spot/companion') return json({ pinned: false, favorite: null, music: null, reason: '' });
     // Every window reads Matilda's one setting at start (e83d4af2d, 31 Oct); the bridge's default.
     if (req.method === 'GET' && pathname === '/api/love-spot/matilda') return json({ replies: true, model: null, provider: null });
-    if (req.method === 'GET' && pathname === '/api/workflows/concurrency') return json({ value: 4, choices: [1, 2, 3, 4] });
     if (req.method === 'POST') {
       let raw = ''; for await (const chunk of req) raw += chunk;
       const body = raw ? JSON.parse(raw) : {}; if (!(pathname.endsWith('/rewind') && body.action === 'status')) posts.push({ path: pathname, body });

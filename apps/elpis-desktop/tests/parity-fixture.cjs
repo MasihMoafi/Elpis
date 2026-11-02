@@ -72,7 +72,6 @@ async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660,
     // The bridge always answers the composer's feature switches (bridge/elpis-features.mjs contextSwitchesSnapshot); here as
     // with no writable config.toml. Without them the composer's Elpis features row is missing, as it never is in the app.
     if (url.pathname === '/api/context/switches' && req.method === 'GET') return json({ version: null, write: { available: false, reason: 'Elpis reported no writable config.toml, so these switches cannot be saved here.' }, smartPrune: false, subagents: true, rag: null });
-    if (url.pathname === '/api/workflows/concurrency') return json({ value: 4, choices: [1, 2, 3, 4] });
     if (url.pathname === '/api/models') return json({ data: [{ id: 'sol', model: 'sol', displayName: 'GPT-6.1-Sol', inputModalities: ['text', 'image'], supportedReasoningEfforts: ['low', 'medium', 'high'].map(reasoningEffort => ({ reasoningEffort })) }], nextCursor: null });
     if (url.pathname === '/api/providers/claude-accounts') return json({ activeId: '', accounts: [] });
     if (url.pathname === '/api/files') return json({ data: FILES });

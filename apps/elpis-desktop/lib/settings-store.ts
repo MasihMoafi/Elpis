@@ -23,7 +23,6 @@ export type ElpisSettings = {
   options?: ConfigOptions;
   /** How many agents a work graph may use: in all, and at once (bridge/elpis-features.mjs `agentLimits`). */
   agents?: { graph: number; atOnce: number; source: string };
-  sources?: Record<string, string>;
   features?: { available: boolean; reason?: string; data: { key: string; title: string; description: string; enabled: boolean; reason?: string | null }[] };
   managed?: PermissionRequirements & { modelProvider?: string | null; allowedWebSearchModes?: string[] | null };
   write: { available?: boolean; reason: string };

@@ -2,8 +2,7 @@ import fs from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import path from 'node:path';
-import { DEFAULT_WORKFLOW_CONCURRENCY, safeWorkflowConcurrency } from './resources/workflow-concurrency.mjs';
+import { autoConcurrency } from './resources/workflow-concurrency.mjs';
 
 const run = promisify(execFile);
 const KB_PER_GB = 1024 * 1024; // as `free -h` and scripts/mem-meter.py count
@@ -33,8 +32,7 @@ export function createMemoryBudget({ env = process.env, cap, available = async (
   app = ownTreeGb, pollMs = 5000 } = {}) {
   const setting = (name, fallback) => Number(env[name]) > 0 ? Number(env[name]) : fallback;
   // 8, not 6: the app idles near 6.4 GB because every loaded thread starts its own set of the user's MCP servers; lower to 6 once fixed.
-  const home = env.ELPIS_HOME || (env.HOME && path.join(env.HOME, '.elpis-next'));
-  const limit = () => Math.min(cap === undefined ? (home ? safeWorkflowConcurrency(home) : DEFAULT_WORKFLOW_CONCURRENCY) : typeof cap === 'function' ? cap() : cap, setting('ELPIS_WORKER_CAP', Infinity));
+  const limit = () => Math.min(cap === undefined ? autoConcurrency() : typeof cap === 'function' ? cap() : cap, setting('ELPIS_WORKER_CAP', Infinity));
   const floor = setting('ELPIS_WORKER_MEMORY_FLOOR_GB', 4), budget = setting('ELPIS_APP_MEMORY_BUDGET_GB', 8);
   const gb = value => `${value.toFixed(1)} GB`, waiters = new Set();
   let running = 0;

@@ -14,7 +14,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { Worker } from "node:worker_threads";
 import { parseScript, checkSchema, validate, strictSchema, fromStrict, jsonAnswer } from "./workflow-script.mjs";
-import { safeWorkflowConcurrency } from "./workflow-concurrency.mjs";
+import { autoConcurrency } from "./workflow-concurrency.mjs";
 
 export const LIMITS = Object.freeze({ agents: 1000, items: 4096 });
 const EFFORTS = ["low", "medium", "high", "xhigh", "max"];
@@ -79,7 +79,7 @@ export class WorkflowRunner extends EventEmitter {
     super();
     this.#home = path.join(home, "workflows");
     this.#executor = executor;
-    this.#slots = { running: 0, queue: [], limit: () => concurrency === undefined ? safeWorkflowConcurrency(home) : Math.max(1, concurrency) };
+    this.#slots = { running: 0, queue: [], limit: () => concurrency === undefined ? autoConcurrency() : Math.max(1, concurrency) };
     this.#retry = { attempts: retry.attempts ?? 4, delays: retry.delays ?? [2000, 8000, 30000] };
     this.#schemaTries = schemaTries;
     this.#maxAgents = maxAgents;

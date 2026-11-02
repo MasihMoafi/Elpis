@@ -28,7 +28,6 @@ import { extractAgent, frameBounds, insidePolygon, insertAgent, segmentsCross } 
 import { executionGraph, linkedIds } from "@/lib/canvas";
 import { api, providerChoices, subscriptionOf, type Entry, type Model, type ProviderSettings, type Thread } from "@/lib/api";
 import { modelCatalogSnapshot, refreshModelCatalog } from "@/lib/model-catalog";
-import { readWorkflowConcurrency } from "@/lib/workflow-concurrency";
 import { useElpisSettings } from "@/lib/settings-store";
 import { appStorage } from "@/lib/projects";
 import { filesText, mergeStops, runPayload, stopText, wantsIsolation } from "@/lib/canvas-isolation";
@@ -1589,7 +1588,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
    * and his tasks, in worktrees when he has several writers in a git repository. */
   async function workflowLimit() {
     if (allowed.atOnce < 1) throw Error("No workflow agents are available for this session.");
-    return Math.min((await readWorkflowConcurrency()).value, allowed.atOnce);
+    return allowed.atOnce;
   }
   async function fatherPart(tasks: RunTask[], current: () => boolean) {
     if (!current()) throw Error(OFFLINE_WORKFLOW);
