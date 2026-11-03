@@ -8,10 +8,10 @@ A coding agent should only see what you chose to show it, and a team of agents s
 
 ## Install
 
-Both apps are for Linux x86_64 and share one engine and one state folder, `~/.elpis-next`. The terminal app is [v0.4.1](https://github.com/MasihMoafi/Elpis/releases/tag/v0.4.1); read the installer before you run it:
+Both apps are for Linux x86_64 and share one engine and one state folder, `~/.elpis-next`. The terminal app is [v0.5.0](https://github.com/MasihMoafi/Elpis/releases/tag/v0.5.0); read the installer before you run it:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/v0.4.1/scripts/install-elpis.sh | bash
+curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/v0.5.0/scripts/install-elpis.sh | bash
 ~/.local/bin/elpis
 ```
 

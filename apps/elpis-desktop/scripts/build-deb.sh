@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # build-deb.sh [VERSION]: a small Debian package of the desktop app, built from this commit's out/ (npm run build first).
 # The app and a copy of Electron go to /opt/elpis-desktop; only the English locale is kept and the package is xz -9.
-# The engine is the `elpis` package. Without Node.js 22 or newer, Electron itself runs the bridge (ELECTRON_RUN_AS_NODE).
+# The engine is the `elpis` package; this package carries its Claude bridge (tools/elpis-claude), found beside the
+# engine launcher /opt/elpis-desktop/engine/elpis-next. Without Node.js 22 or newer, Electron itself runs the bridges.
 set -euo pipefail
 VERSION=${1:-0.5.0}
 APP="$(cd "$(dirname "$0")/.." && pwd)"
@@ -22,6 +23,11 @@ cp -r "$APP/out" "$STAGE/out"
 rg -l -F "$APP" "$STAGE/out" | xargs -r sed -i "s|$APP|/opt/elpis-desktop/app|g"
 node "$APP/desktop/package.mjs" --source "$APP" --destination "$OPT" --electron-dist "$electron" --out-directory "$STAGE/out" > "$STAGE/manifest.json"
 find "$OPT/runtime/electron/locales" -name '*.pak' ! -name 'en-US.pak' -delete
+bridge="$APP/../../tools/elpis-claude"
+[[ -d "$bridge/node_modules/@agentclientprotocol/claude-agent-acp" ]] || { echo "run npm ci --omit=dev in tools/elpis-claude" >&2; exit 1; }
+# A script, not a link: the app resolves links, and the bridge must sit beside the path it finds.
+mkdir -p "$OPT/engine/tools"; printf '#!/bin/sh\nexec /usr/bin/elpis "$@"\n' > "$OPT/engine/elpis-next"; chmod 0755 "$OPT/engine/elpis-next"
+rsync -a --exclude test --exclude spike --exclude '*.orig' --exclude '*.test.*' "$bridge/" "$OPT/engine/tools/elpis-claude/"
 
 mkdir -p "$OPT/bin" "$ROOT/usr/bin" "$ROOT/usr/share/applications" "$ROOT/usr/share/icons/hicolor/256x256/apps" "$ROOT/DEBIAN"
 cat > "$OPT/bin/node" <<'NODE'
@@ -30,7 +36,8 @@ ELECTRON_RUN_AS_NODE=1 exec /opt/elpis-desktop/runtime/electron/electron "$@"
 NODE
 cat > "$ROOT/usr/bin/elpis-app" <<'LAUNCH'
 #!/usr/bin/env bash
-# The system's Node.js when it is 22 or newer, else Electron's own.
+# The engine from the elpis package, with the Claude bridge beside its launcher; Node.js 22 or newer, else Electron's own.
+export ELPIS_ENGINE_BIN=${ELPIS_ENGINE_BIN:-/opt/elpis-desktop/engine/elpis-next}
 if [[ -z "${ELPIS_NODE_BIN:-}" ]]; then
   node=$(command -v node || true)
   if [[ -z "$node" ]] || (( $("$node" -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0) < 22 )); then
