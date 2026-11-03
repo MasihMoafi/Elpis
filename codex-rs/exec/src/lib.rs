@@ -1071,9 +1071,11 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
     };
 
     // When --yolo (dangerously_bypass_approvals_and_sandbox) is set, also skip the git repo check
-    // since the user is explicitly running in an externally sandboxed environment.
+    // since the user is explicitly running in an externally sandboxed environment. A directory the
+    // user marked trusted in config.toml passes too, as the message below promises.
     if !skip_git_repo_check
         && !dangerously_bypass_approvals_and_sandbox
+        && !config.active_project.is_trusted()
         && get_git_repo_root(&default_cwd).is_none()
     {
         eprintln!("Not inside a trusted directory and --skip-git-repo-check was not specified.");
