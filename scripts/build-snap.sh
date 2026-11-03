@@ -39,22 +39,24 @@ rsync -aL --exclude 'claude-agent-sdk-linux-*' --exclude test --exclude spike --
 
 # Launchers. Node is Electron's own (ELECTRON_RUN_AS_NODE), so the host needs no Node.js.
 mkdir -p "$S/bin" "$S/meta/gui"
+# The same launchers serve the snap ($SNAP) and the AppImage ($APPDIR; scripts/build-appimage.sh).
 cat > "$S/bin/node" <<'NODE'
 #!/bin/sh
-ELECTRON_RUN_AS_NODE=1 exec "$SNAP/desktop/runtime/electron/electron" "$@"
+ELECTRON_RUN_AS_NODE=1 exec "${SNAP:-$APPDIR}/desktop/runtime/electron/electron" "$@"
 NODE
 cat > "$S/bin/elpis-app" <<'APPL'
 #!/bin/sh
-export ELPIS_ENGINE_BIN="$SNAP/engine/elpis-next" ELPIS_NODE_BIN="$SNAP/bin/node" PATH="$SNAP/bin:$PATH"
-# A snap cannot ship Chromium's setuid sandbox helper, and Ubuntu 24.04 blocks the user-namespace sandbox for apps
+R=${SNAP:-$APPDIR}
+export ELPIS_ENGINE_BIN="$R/engine/elpis-next" ELPIS_NODE_BIN="$R/bin/node" PATH="$R/bin:$PATH"
+# A snap or AppImage cannot ship Chromium's setuid sandbox helper, and Ubuntu 24.04 blocks the user-namespace sandbox for apps
 # without an AppArmor profile; only there does the window run without Chromium's sandbox (it would abort otherwise).
 [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null)" = 1 ] && set -- --no-sandbox "$@"
-exec "$SNAP/desktop/launch" "$@"
+exec "$R/desktop/launch" "$@"
 APPL
 cat > "$S/bin/elpis" <<'TUI'
 #!/usr/bin/env bash
 # The terminal app: the provider bridge first (shared with the desktop app), then the TUI on it.
-REAL=$SNAP/engine/elpis-next; BRIDGE_DIR=$SNAP/engine/tools/elpis-claude; NODE=$SNAP/bin/node
+R=${SNAP:-$APPDIR}; REAL=$R/engine/elpis-next; BRIDGE_DIR=$R/engine/tools/elpis-claude; NODE=$R/bin/node
 for a in "$@"; do case "$a" in -h|--help|-V|--version) exec "$REAL" "$@" ;; esac; done
 case "${1:-}" in ""|-*|resume|fork) ;; *) exec "$REAL" "$@" ;; esac
 out="$(ELPIS_ENGINE_BIN="$REAL" NODE_USE_ENV_PROXY=1 "$NODE" "$BRIDGE_DIR/shared-runtime.mjs" "$BRIDGE_DIR/acp-bridge.mjs")" || exit $?

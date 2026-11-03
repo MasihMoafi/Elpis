@@ -1,0 +1,22 @@
+name: AUR elpis-bin
+on: workflow_dispatch
+jobs:
+  arch:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build, install and run the package as Omarchy would
+        run: |
+          pacman -Syu --noconfirm --needed base-devel namcap xorg-server-xvfb
+          useradd -m builder && cp -r packaging/aur/elpis-bin /home/builder/pkg && chown -R builder /home/builder/pkg
+          cd /home/builder/pkg
+          su builder -c 'makepkg --printsrcinfo > .SRCINFO && makepkg -f'
+          pacman -U --noconfirm elpis-bin-*.pkg.tar.zst
+          namcap PKGBUILD elpis-bin-*.pkg.tar.zst || true
+          elpis --version
+          test -u /opt/elpis-desktop/runtime/electron/chrome-sandbox
+          test -x /usr/bin/elpis-app && test -f /usr/share/applications/elpis-desktop.desktop
+          su builder -c 'cd && HOME=/home/builder timeout 40 xvfb-run -a elpis-app --no-sandbox --remote-debugging-port=9333 > app.log 2>&1 &'
+          sleep 30; curl -s http://127.0.0.1:9333/json/list | tee pages.json; grep -q '"title": "Elpis"' pages.json
+          cat .SRCINFO
