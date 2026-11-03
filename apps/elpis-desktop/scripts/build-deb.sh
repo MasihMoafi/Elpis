@@ -23,11 +23,14 @@ cp -r "$APP/out" "$STAGE/out"
 rg -l -F "$APP" "$STAGE/out" | xargs -r sed -i "s|$APP|/opt/elpis-desktop/app|g"
 node "$APP/desktop/package.mjs" --source "$APP" --destination "$OPT" --electron-dist "$electron" --out-directory "$STAGE/out" > "$STAGE/manifest.json"
 find "$OPT/runtime/electron/locales" -name '*.pak' ! -name 'en-US.pak' -delete
+# Chromium's setuid sandbox helper: Ubuntu 24.04 blocks the user-namespace sandbox for apps without an AppArmor profile,
+# and Electron then aborts unless this helper is root-owned and 4755 (as the VS Code and Slack packages ship it).
+chmod 4755 "$OPT/runtime/electron/chrome-sandbox"
 bridge="$APP/../../tools/elpis-claude"
 [[ -d "$bridge/node_modules/@agentclientprotocol/claude-agent-acp" ]] || { echo "run npm ci --omit=dev in tools/elpis-claude" >&2; exit 1; }
 # A script, not a link: the app resolves links, and the bridge must sit beside the path it finds.
 mkdir -p "$OPT/engine/tools"; printf '#!/bin/sh\nexec /usr/bin/elpis "$@"\n' > "$OPT/engine/elpis-next"; chmod 0755 "$OPT/engine/elpis-next"
-rsync -a --exclude test --exclude spike --exclude '*.orig' --exclude '*.test.*' "$bridge/" "$OPT/engine/tools/elpis-claude/"
+rsync -aL --exclude 'claude-agent-sdk-linux-*' --exclude test --exclude spike --exclude '*.orig' --exclude '*.test.*' "$bridge/" "$OPT/engine/tools/elpis-claude/"
 
 mkdir -p "$OPT/bin" "$ROOT/usr/bin" "$ROOT/usr/share/applications" "$ROOT/usr/share/icons/hicolor/256x256/apps" "$ROOT/DEBIAN"
 cat > "$OPT/bin/node" <<'NODE'
@@ -74,7 +77,7 @@ CONTROL
 # No personal data: nothing in the package may name the builder's home folder or git email. (The bare user name can
 # be an ordinary word in a bundled translation, so it is not searched.)
 email=$(git -C "$APP" config user.email || true)
-if rg -l -F -e "$HOME/" ${email:+-e "$email"} "$ROOT"; then echo "The package names the builder's home or email; not built." >&2; gio trash "$STAGE"; exit 1; fi
+if rg -l -F -e "$HOME/" ${email:+-e "$email"} "$ROOT" || find "$ROOT" -type l -lname "$HOME/*" | rg .; then echo "The package names the builder's home or email; not built." >&2; gio trash "$STAGE"; exit 1; fi
 deb="$OUT/elpis-desktop_${VERSION}_amd64.deb"
 dpkg-deb --root-owner-group -Zxz -z9 --build "$ROOT" "$deb" >/dev/null
 (cd "$OUT" && sha256sum "$(basename "$deb")" > "$(basename "$deb").sha256")

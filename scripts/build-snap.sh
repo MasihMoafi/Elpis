@@ -35,7 +35,7 @@ install -m 0755 "$codex" "$S/engine/package/bin/codex"
 install -m 0755 "$host" "$S/engine/package/bin/codex-code-mode-host"
 install -m 0755 "$bwrap" "$S/engine/package/codex-resources/bwrap"
 ln -s package/bin/codex "$S/engine/elpis-next"
-rsync -a --exclude test --exclude spike --exclude '*.orig' --exclude '*.test.*' "$bridge/" "$S/engine/tools/elpis-claude/"
+rsync -aL --exclude 'claude-agent-sdk-linux-*' --exclude test --exclude spike --exclude '*.orig' --exclude '*.test.*' "$bridge/" "$S/engine/tools/elpis-claude/"
 
 # Launchers. Node is Electron's own (ELECTRON_RUN_AS_NODE), so the host needs no Node.js.
 mkdir -p "$S/bin" "$S/meta/gui"
@@ -46,6 +46,9 @@ NODE
 cat > "$S/bin/elpis-app" <<'APPL'
 #!/bin/sh
 export ELPIS_ENGINE_BIN="$SNAP/engine/elpis-next" ELPIS_NODE_BIN="$SNAP/bin/node" PATH="$SNAP/bin:$PATH"
+# A snap cannot ship Chromium's setuid sandbox helper, and Ubuntu 24.04 blocks the user-namespace sandbox for apps
+# without an AppArmor profile; only there does the window run without Chromium's sandbox (it would abort otherwise).
+[ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null)" = 1 ] && set -- --no-sandbox "$@"
 exec "$SNAP/desktop/launch" "$@"
 APPL
 cat > "$S/bin/elpis" <<'TUI'
@@ -98,7 +101,7 @@ YAML
 
 # No personal data: nothing may name the builder's home folder or git email.
 email=$(git -C "$R" config user.email || true)
-if rg -l -F -e "$HOME/" ${email:+-e "$email"} "$S"; then echo "The snap names the builder's home or email; not built." >&2; exit 1; fi
+if rg -l -F -e "$HOME/" ${email:+-e "$email"} "$S" || find "$S" -type l -lname "$HOME/*" | rg .; then echo "The snap names the builder's home or email; not built." >&2; exit 1; fi
 snap pack --compression=xz "$S" "$OUT" >/dev/null
 f="$OUT/elpis-agent_${VERSION}_amd64.snap"
 (cd "$OUT" && sha256sum "$(basename "$f")" > "$(basename "$f").sha256")
