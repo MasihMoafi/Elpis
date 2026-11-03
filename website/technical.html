@@ -1,4 +1,4 @@
-<!-- README/template SHA256: 43f9a6ae591b4d69ae74e04dc02b4d48d92b3a2545b209b62cf2d4226d9b924c -->
+<!-- README/template SHA256: 3c186c0dc5be4fb3fe8db869f9d8d6960a463f5eb966f7fd13f15d1d5e1ee015 -->
 <!doctype html>
 <html lang="en" data-theme="elpis">
 <head>
@@ -39,16 +39,17 @@
 <ul>
 <li><a href="#install" id="toc-install">Install</a></li>
 <li><a href="#why-elpis" id="toc-why-elpis">Why Elpis?</a></li>
-<li><a href="#core-features" id="toc-core-features">Core features</a>
+<li><a href="#the-desktop-app" id="toc-the-desktop-app">The desktop
+app</a>
 <ul>
 <li><a href="#workflows" id="toc-workflows">Workflows</a></li>
 <li><a href="#love-spot" id="toc-love-spot">Love Spot</a></li>
-<li><a href="#chats-and-the-context-ledger"
-id="toc-chats-and-the-context-ledger">Chats and the Context
-Ledger</a></li>
+<li><a href="#chats-themes-and-the-context-ledger"
+id="toc-chats-themes-and-the-context-ledger">Chats, themes and the
+Context Ledger</a></li>
+</ul></li>
 <li><a href="#the-terminal-app" id="toc-the-terminal-app">The terminal
 app</a></li>
-</ul></li>
 <li><a href="#how-it-works" id="toc-how-it-works">How it works</a></li>
 <li><a href="#current-state" id="toc-current-state">Current
 state</a></li>
@@ -57,12 +58,18 @@ state</a></li>
 </ul></aside>
     <article class="technical-prose">
 <h1 id="elpis">Elpis</h1>
+<p><strong>The ultimate harness: the perfect home for your
+agents.</strong></p>
+<blockquote>
+<p><em>You put an agent into an Elpis, and it becomes Elpis. Be Elpis,
+my friend.</em></p>
+</blockquote>
 <p>A coding agent should only see what you chose to show it, and a team
 of agents should only touch what each was given. Elpis is an engineered
 agent harness for Linux, built on OpenAI's Codex CLI: a home where your
 agents keep their context, and a board where you design how several of
 them work together.</p>
-<img src="docs/launch/img/workflows-voting-dark.png" alt="A finished Voting workflow in the Elpis desktop app: the Mother agent starts three answering agents, each checked, and a tally agent joins their answers">
+<p><img src="./assets/technical/workflows.gif" width="82%" alt="Workflows: the Mother agent designs a team, runs it and checks each agent's work"> <img src="./assets/technical/matilda-wink.webp" width="15%" alt="Matilda, the app's companion, winks"></p>
 
 <p><a href="https://github.com/MasihMoafi/Elpis/releases">Releases</a> ·
 <a href="https://elpis.masihmoafi.com">Website</a> · <a
@@ -70,24 +77,26 @@ href="https://github.com/MasihMoafi/Elpis/blob/main/docs/GUIDE.md">Technical
 guide</a> · <a href="CONTRIBUTING.md">Contributing</a> · <a
 href="https://github.com/MasihMoafi/Elpis/blob/main/LICENSE">License</a></p>
 <h2 id="install">Install</h2>
-<p>Both apps are for Linux x86_64 and share one engine and one state
-folder, <code>~/.elpis-next</code>. The terminal app is <a
-href="https://github.com/MasihMoafi/Elpis/releases/tag/v0.5.0">v0.5.0</a>;
-read the installer before you run it:</p>
-<div class="sourceCode" id="cb1"><div class="technical-code"><pre
-class="sourceCode bash"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">curl</span> <span class="at">-fsSL</span> https://raw.githubusercontent.com/MasihMoafi/Elpis/v0.5.0/scripts/install-elpis.sh <span class="kw">|</span> <span class="fu">bash</span></span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="ex">~/.local/bin/elpis</span></span></code></pre></div></div>
-<p>The installer checks SHA-256 checksums and installs the terminal app,
-its Code Mode host and the bundled Linux sandbox.</p>
-<p>The desktop app is a Debian package on the same release. Download
-both packages, then install them together:</p>
-<div class="sourceCode" id="cb2"><div class="technical-code"><pre
-class="sourceCode bash"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">sudo</span> apt install ./elpis_0.5.0_amd64.deb ./elpis-desktop_0.5.0_amd64.deb</span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="ex">elpis-app</span></span></code></pre></div></div>
-<p>Sign in with your ChatGPT or Claude subscription, or set up a
-provider, then choose a model. Claude models run through your own <a
-href="https://code.claude.com">Claude Code</a> install
-(<code>~/.local/bin/claude</code>).</p>
+<p>Linux x86_64. Download from the <a
+href="https://github.com/MasihMoafi/Elpis/releases/tag/v0.5.1">v0.5.1
+release</a>:</p>
+<ul>
+<li><strong>Ubuntu, Debian:</strong>
+<code>sudo apt install ./elpis_0.5.1_amd64.deb ./elpis-desktop_0.5.1_amd64.deb</code>,
+then <code>elpis-app</code>.</li>
+<li><strong>Fedora, Arch, Omarchy, any Linux:</strong>
+<code>chmod +x Elpis-0.5.1-x86_64.AppImage</code>, then run it; add
+<code>elpis</code> to run the terminal app.</li>
+<li><strong>Arch, Omarchy (native package):</strong>
+<code>git clone https://github.com/MasihMoafi/Elpis &amp;&amp; cd Elpis/packaging/aur/elpis-bin &amp;&amp; makepkg -si</code>.</li>
+<li><strong>Terminal app only:</strong>
+<code>curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/v0.5.1/scripts/install-elpis.sh | bash</code>
+(read it first).</li>
+</ul>
+<p>Both apps share one engine and one state folder,
+<code>~/.elpis-next</code>. Sign in with ChatGPT or Claude, or set up a
+provider. Claude models run through your own <a
+href="https://code.claude.com">Claude Code</a> install.</p>
 <h2 id="why-elpis">Why Elpis?</h2>
 <p>Today's coding agents load every instruction file they find and keep
 the whole conversation until the window fills; you cannot see what they
@@ -105,10 +114,8 @@ every agent has its own folder, a second agent checks its work, and the
 Mother agent reviews the combined result before anything reaches your
 project.</li>
 </ul>
-<h2 id="core-features">Core features</h2>
+<h2 id="the-desktop-app">The desktop app</h2>
 <h3 id="workflows">Workflows</h3>
-<p><img src="./assets/technical/workflows.gif"
-alt="Workflows: the Mother agent designs a team, runs it and checks each agent&#39;s work" /></p>
 <p>Describe a job. The Mother agent, the planning agent, either does it
 herself or designs a team of agents you can see and edit on a board.
 Ready-made patterns: Sequential, Parallel, Kahn graph waves, Recursive
@@ -183,19 +190,24 @@ on GPT-6 Luna through a ChatGPT subscription and on Claude Haiku 5.5
 through a Claude subscription, in 74 to 100 seconds; the tally agent
 used the other three agents' answers. The test is <a
 href="apps/elpis-desktop/tests/canvas-live.runtime.mjs"><code>tests/canvas-live.runtime.mjs</code></a>.</p>
+<img src="docs/launch/img/workflows-voting-dark.png" alt="A finished Voting workflow in the Elpis desktop app: the Mother agent starts three answering agents, each checked, and a tally agent joins their answers">
+
 <h3 id="love-spot">Love Spot</h3>
 <p>A drawing board where Matilda, the app's companion, answers and draws
 with you. Paste screenshots onto the board and draw on them.</p>
 <p><img src="./assets/technical/lovespot.gif"
 alt="Love Spot: Matilda answers on the drawing board" /></p>
-<h3 id="chats-and-the-context-ledger">Chats and the Context Ledger</h3>
+<h3 id="chats-themes-and-the-context-ledger">Chats, themes and the
+Context Ledger</h3>
 <p>Chat with GPT, Claude and Gemini models; use your ChatGPT or Claude
 subscription or an API key, and switch models without losing the thread.
 Under the composer you choose the Ledger, Smart Prune and subagents.
 Import chats from Claude Code and Codex.</p>
-<img src="./assets/technical/desktop-chat-light.png" alt="An Elpis desktop chat with the model, permission and context controls under the composer">
-
-<h3 id="the-terminal-app">The terminal app</h3>
+<p>Pick a theme (Elpis, Paper, Midnight or Plum), each in light and
+dark, or build your own in Settings → Appearance.</p>
+<p><img src="./assets/technical/themes.gif"
+alt="One Elpis desktop chat in six themes: Elpis dark and light, Midnight dark, Paper light, Plum dark and Midnight light" /></p>
+<h2 id="the-terminal-app">The terminal app</h2>
 <p>The same engine in your terminal. <code>/add</code> and
 <code>/context</code> show the working set; the agent saves lasting
 memory through a guarded local tool, and saving something is a separate

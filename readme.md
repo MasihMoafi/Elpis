@@ -1,40 +1,25 @@
 # Elpis
 
+**The ultimate harness: the perfect home for your agents.**
+
+> *You put an agent into an Elpis, and it becomes Elpis. Be Elpis, my friend.*
+
 A coding agent should only see what you chose to show it, and a team of agents should only touch what each was given. Elpis is an engineered agent harness for Linux, built on OpenAI's Codex CLI: a home where your agents keep their context, and a board where you design how several of them work together.
 
-<img src="docs/launch/img/workflows-voting-dark.png" alt="A finished Voting workflow in the Elpis desktop app: the Mother agent starts three answering agents, each checked, and a tally agent joins their answers">
+<p><img src="docs/assets/workflows.gif" width="82%" alt="Workflows: the Mother agent designs a team, runs it and checks each agent's work"> <img src="docs/assets/matilda-wink.webp" width="15%" alt="Matilda, the app's companion, winks"></p>
 
 [Releases](https://github.com/MasihMoafi/Elpis/releases) · [Website](https://elpis.masihmoafi.com) · [Technical guide](docs/GUIDE.md) · [Contributing](CONTRIBUTING.md) · [License](LICENSE)
 
 ## Install
 
-Both apps are for Linux x86_64 and share one engine and one state folder, `~/.elpis-next`. The terminal app is [v0.5.1](https://github.com/MasihMoafi/Elpis/releases/tag/v0.5.1); read the installer before you run it:
+Linux x86_64. Download from the [v0.5.1 release](https://github.com/MasihMoafi/Elpis/releases/tag/v0.5.1):
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/v0.5.1/scripts/install-elpis.sh | bash
-~/.local/bin/elpis
-```
+- **Ubuntu, Debian:** `sudo apt install ./elpis_0.5.1_amd64.deb ./elpis-desktop_0.5.1_amd64.deb`, then `elpis-app`.
+- **Fedora, Arch, Omarchy, any Linux:** `chmod +x Elpis-0.5.1-x86_64.AppImage`, then run it; add `elpis` to run the terminal app.
+- **Arch, Omarchy (native package):** `git clone https://github.com/MasihMoafi/Elpis && cd Elpis/packaging/aur/elpis-bin && makepkg -si`.
+- **Terminal app only:** `curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/v0.5.1/scripts/install-elpis.sh | bash` (read it first).
 
-The installer checks SHA-256 checksums and installs the terminal app, its Code Mode host and the bundled Linux sandbox.
-
-The desktop app is a Debian package on the same release. Download both packages, then install them together:
-
-```bash
-sudo apt install ./elpis_0.5.1_amd64.deb ./elpis-desktop_0.5.1_amd64.deb
-elpis-app
-```
-
-On any other Linux, including Fedora, Arch and Omarchy, download `Elpis-0.5.1-x86_64.AppImage` from the release; it holds both apps:
-
-```bash
-chmod +x Elpis-0.5.1-x86_64.AppImage
-./Elpis-0.5.1-x86_64.AppImage          # desktop app
-./Elpis-0.5.1-x86_64.AppImage elpis    # terminal app
-```
-
-On Arch and Omarchy you can also build the native package: `git clone https://github.com/MasihMoafi/Elpis && cd Elpis/packaging/aur/elpis-bin && makepkg -si`.
-
-Sign in with your ChatGPT or Claude subscription, or set up a provider, then choose a model. Claude models run through your own [Claude Code](https://code.claude.com) install (`~/.local/bin/claude`).
+Both apps share one engine and one state folder, `~/.elpis-next`. Sign in with ChatGPT or Claude, or set up a provider. Claude models run through your own [Claude Code](https://code.claude.com) install.
 
 ## Why Elpis?
 
@@ -45,11 +30,9 @@ Elpis treats both as one problem, **context management**, and answers it with tw
 - **You choose what each agent sees.** The Context Ledger lists every instruction file, chosen file and memory with its token cost, and you include or exclude each one.
 - **Each agent owns what it writes.** In a workflow, every agent has its own folder, a second agent checks its work, and the Mother agent reviews the combined result before anything reaches your project.
 
-## Core features
+## The desktop app
 
 ### Workflows
-
-![Workflows: the Mother agent designs a team, runs it and checks each agent's work](docs/assets/workflows.gif)
 
 Describe a job. The Mother agent, the planning agent, either does it herself or designs a team of agents you can see and edit on a board. Ready-made patterns: Sequential, Parallel, Kahn graph waves, Recursive (with a round limit) and Voting; ready-made teams: Transcribe images, Translate and Logo. Past ten agents, a Father agent runs the rest in his own chat and reports to her. Each agent may use a different model, and each is told how much time is left.
 
@@ -79,19 +62,23 @@ Two limits remain: two side-by-side agents without an "alongside" link are not y
 
 **Tested on real models.** A Voting team (three answering agents and one tally agent, each with its own check) finished on GPT-6 Luna through a ChatGPT subscription and on Claude Haiku 5.5 through a Claude subscription, in 74 to 100 seconds; the tally agent used the other three agents' answers. The test is [`tests/canvas-live.runtime.mjs`](apps/elpis-desktop/tests/canvas-live.runtime.mjs).
 
+<img src="docs/launch/img/workflows-voting-dark.png" alt="A finished Voting workflow in the Elpis desktop app: the Mother agent starts three answering agents, each checked, and a tally agent joins their answers">
+
 ### Love Spot
 
 A drawing board where Matilda, the app's companion, answers and draws with you. Paste screenshots onto the board and draw on them.
 
 ![Love Spot: Matilda answers on the drawing board](docs/assets/lovespot.gif)
 
-### Chats and the Context Ledger
+### Chats, themes and the Context Ledger
 
 Chat with GPT, Claude and Gemini models; use your ChatGPT or Claude subscription or an API key, and switch models without losing the thread. Under the composer you choose the Ledger, Smart Prune and subagents. Import chats from Claude Code and Codex.
 
-<img src="docs/assets/desktop-chat-light.png" alt="An Elpis desktop chat with the model, permission and context controls under the composer">
+Pick a theme (Elpis, Paper, Midnight or Plum), each in light and dark, or build your own in Settings → Appearance.
 
-### The terminal app
+![One Elpis desktop chat in six themes: Elpis dark and light, Midnight dark, Paper light, Plum dark and Midnight light](docs/assets/themes.gif)
+
+## The terminal app
 
 The same engine in your terminal. `/add` and `/context` show the working set; the agent saves lasting memory through a guarded local tool, and saving something is a separate choice from sending it. `/compact` takes a pressure threshold or your own instructions. `/model` and `--provider` reach Anthropic, Gemini and OpenRouter beside OpenAI.
 
