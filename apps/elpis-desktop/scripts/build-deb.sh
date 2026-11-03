@@ -8,7 +8,7 @@ APP="$(cd "$(dirname "$0")/.." && pwd)"
 commit=$(git -C "$APP" rev-parse HEAD)
 [[ "$(cat "$APP/out/.commit" 2>/dev/null)" == "$commit" ]] || { echo "out/ is not built from $commit: run npm run build" >&2; exit 1; }
 mkdir -p "$HOME/.cache/elpis-tests"; STAGE=$(mktemp -d "$HOME/.cache/elpis-tests/elpis-deb.XXXXXX"); ROOT="$STAGE/root"; OPT="$ROOT/opt/elpis-desktop"
-OUT="$APP/dist"; mkdir -p "$OUT"
+OUT="${ELPIS_DEB_DIR:-$HOME/.cache/elpis-tests/deb}"; mkdir -p "$OUT"
 
 node "$APP/desktop/package.mjs" --source "$APP" --destination "$OPT" > "$STAGE/manifest.json"
 find "$OPT/runtime/electron/locales" -name '*.pak' ! -name 'en-US.pak' -delete
