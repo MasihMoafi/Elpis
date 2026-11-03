@@ -177,6 +177,13 @@ export function speechChunks(value) {
   if (chunk) chunks.push(chunk);
   return chunks;
 }
+/** A thread's status, corrected by its newest turn: "active" whose newest turn has ended is idle. No turn yet (a
+ * bridged chat's first turn is listed only once it ends) or an unreadable list keeps the status as listed. */
+export function settledStatus(status, newestTurns) {
+  const newest = Array.isArray(newestTurns) ? newestTurns[0] : undefined;
+  if (status?.type !== 'active' || !newest?.status || newest.status === 'inProgress') return status;
+  return { type: 'idle' };
+}
 const SUBAGENT_POLICY = {
   enabled: 'Subagents are enabled and optional. Any earlier instructions requiring delegation or restricting delegation to explicit requests no longer apply. Use your judgment to work directly or delegate when useful; enabling this option never requires spawning an agent. Honor explicit user requests and applicable instructions about whether to delegate.',
   disabled: 'Subagents are disabled. Any earlier instructions enabling delegation no longer apply. Do all work in this thread. Do not start, resume, or delegate to other agents, even when a user request, AGENTS.md, or skill asks for delegation. This includes shell-launched agents (claude, codex, agy, elpis, gemini), scripts, wrappers, background processes, agent tools, and MCP delegate tools such as elpis-agents. Do not bypass this switch through another tool or executable path. The user must enable Subagents before delegation can resume.',
@@ -587,11 +594,20 @@ export class DesktopClient extends EventEmitter {
       if (thread?.id === id && !thread.path?.includes('/archived_sessions/')) result.data.push(thread);
     }
     await this.#loadWorkflowTitles(result.data);
+    await this.#settleWorking(result.data);
     // Auto-review's reviewer works in threads of its own; they are not the user's chats.
     const data = result.data.filter(thread => thread.source?.subAgent?.other !== 'guardian' && (includeAgentRuns || !isAgentRun(thread))).map(thread => this.#decorate(thread));
     // Follow working agents live: only subscribers receive their items, approvals and deltas.
     if (!options.archived) for (const thread of data) if (thread.status?.type === 'active' && !this.#owned.has(thread.id) && !this.#endedNodes.has(thread.id)) void this.#attach(thread.id, thread).catch(() => {});
     return { ...result, data };
+  }
+  /** 3 Nov: after an engine hand-over a chat stayed listed as working with no turn in progress, which hid Edit and
+   * Rewind until it was stopped by hand. A chat listed as working counts as working only while a turn is in progress. */
+  async #settleWorking(threads) {
+    await Promise.all(threads.filter(thread => thread.status?.type === 'active').map(async thread => {
+      const page = await this.#rpc('thread/turns/list', { threadId: thread.id, limit: 1, sortDirection: 'desc', itemsView: 'notLoaded' }).catch(() => null);
+      thread.status = settledStatus(thread.status, page?.data);
+    }));
   }
   async listArchivedThreads(options = {}) {
     return this.#archiveHistory.page(options, page => this.listThreads(page));
@@ -641,6 +657,7 @@ export class DesktopClient extends EventEmitter {
     const { thread } = await this.#rpc('thread/read', { threadId: id, includeTurns: false });
     if (thread?.id !== id) throw new BridgeError('Elpis returned another thread', 502);
     await this.#loadWorkflowTitles([thread]);
+    await this.#settleWorking([thread]);
     return this.#decorate(thread);
   }
   async readThread(id, options = {}) {
