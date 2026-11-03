@@ -51,6 +51,8 @@ Describe a job. The Mother agent, the planning agent, either does it herself or 
 **How steps are ordered.** Elpis sorts the board with Kahn's algorithm: an agent starts once everything it waits for, and that work's check, has passed. Agents in one wave run side by side. A loop is refused before any agent starts, unless you choose the Recursive pattern and a round limit. The Voting team below runs in four waves:
 
 ```mermaid
+%% id: voting-waves
+%% alt: The Voting team in four waves: the Mother agent starts three answering agents, each answer has its own check, a tally agent joins the checked answers, a check reviews the tally, and the Mother agent reviews and merges.
 flowchart LR
   M([Mother agent]) --> A1[Answer 1] & A2[Answer 2] & A3[Answer 3]
   A1 --> C1{{Check 1}}
