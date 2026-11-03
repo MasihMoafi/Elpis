@@ -1,8 +1,12 @@
-# Elpis
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="apps/elpis-desktop/public/branding/elpis-wordmark-amber-loop.svg">
+    <img src="apps/elpis-desktop/public/branding/elpis-wordmark-amber-light-loop.svg" alt="Elpis" width="300">
+  </picture>
+</h1>
 
-**The ultimate harness: the perfect home for your agents.**
-
-> *You put an agent into an Elpis, and it becomes Elpis. Be Elpis, my friend.*
+<p align="center"><b>The ultimate harness: the perfect home for your agents.</b></p>
+<p align="center"><i>You put an agent into an Elpis, and it becomes Elpis. Be Elpis, my friend.</i></p>
 
 A coding agent should only see what you chose to show it, and a team of agents should only touch what each was given. Elpis is an engineered agent harness for Linux, built on OpenAI's Codex CLI: a home where your agents keep their context, and a board where you design how several of them work together.
 
