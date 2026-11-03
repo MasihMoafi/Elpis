@@ -7,13 +7,16 @@ import { Input } from "@/components/ui/input";
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { MoreMenu, RightClickMenu, type MenuAction } from "@/components/action-menu";
-import { groupNameProblem, holdChatOrder, isDefaultView, type ChatGroup, type ChatGroups, type GroupBy, type SortBy } from "@/lib/chat-groups";
+import { groupNameProblem, holdChatOrder, staysWithChatList, isDefaultView, type ChatGroup, type ChatGroups, type GroupBy, type SortBy } from "@/lib/chat-groups";
 
 /** Hold positions from pointer entry through exit, or release outside after a held click. Statuses still render
  * immediately. Explicit group/sort/drag commands may release the order. No timers or polling. */
 export function useChatListOrder<T extends { id: string }>(chats: T[]) {
   const [held, setHeld] = useState<string[] | null>(null), inside = useRef(false), pressed = useRef(false), dragging = useRef(false);
-  const release = () => setHeld(null);
+  const list = useRef<Element | null>(null), timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const release = () => { clearTimeout(timer.current); setHeld(null); };
+  // A real exit releases after a moment, so crossing an edge never re-sorts the rows twice in a row.
+  const leave = () => { inside.current = false; clearTimeout(timer.current); timer.current = setTimeout(() => { if (!inside.current && !pressed.current) setHeld(null); }, 300); };
   useEffect(() => {
     if (!inside.current && !pressed.current) return;
     setHeld(previous => {
@@ -28,17 +31,23 @@ export function useChatListOrder<T extends { id: string }>(chats: T[]) {
     const drag = () => { dragging.current = true; };
     const cancel = () => { if (!dragging.current) end(); };
     const blur = () => { inside.current = false; end(); };
+    // Leaving through a row's tooltip or menu sends no pointerleave later: the first move onto anything else ends the hold.
+    const over = (event: Event) => {
+      const target = event.target as Element | null;
+      if (inside.current && !list.current?.contains(target) && !staysWithChatList(target)) leave();
+    };
+    window.addEventListener("pointerover", over, true);
     window.addEventListener("pointerdown", start, true);
     window.addEventListener("pointerup", end, true);
     window.addEventListener("pointercancel", cancel);
     window.addEventListener("dragstart", drag, true);
     window.addEventListener("dragend", end);
     window.addEventListener("blur", blur);
-    return () => { window.removeEventListener("pointerdown", start, true); window.removeEventListener("pointerup", end, true); window.removeEventListener("pointercancel", cancel); window.removeEventListener("dragstart", drag, true); window.removeEventListener("dragend", end); window.removeEventListener("blur", blur); };
+    return () => { window.removeEventListener("pointerdown", start, true); window.removeEventListener("pointerup", end, true); window.removeEventListener("pointercancel", cancel); window.removeEventListener("dragstart", drag, true); window.removeEventListener("dragend", end); window.removeEventListener("blur", blur); window.removeEventListener("pointerover", over, true); clearTimeout(timer.current); };
   }, []);
   return { chats: holdChatOrder(chats, held), holding: held !== null, release, pointer: {
-    onPointerEnter: () => { inside.current = true; setHeld(previous => previous ?? chats.map(chat => chat.id)); },
-    onPointerLeave: (event: PointerEvent) => { inside.current = false; if (!pressed.current && !event.buttons) release(); },
+    onPointerEnter: (event: PointerEvent) => { list.current = event.currentTarget as Element; clearTimeout(timer.current); inside.current = true; setHeld(previous => previous ?? chats.map(chat => chat.id)); },
+    onPointerLeave: (event: PointerEvent) => { if (staysWithChatList(event.relatedTarget as Element | null)) return; if (!pressed.current && !event.buttons) leave(); else inside.current = false; },
   } };
 }
 

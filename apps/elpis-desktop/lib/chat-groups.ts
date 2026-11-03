@@ -172,6 +172,13 @@ export function prioritizeChats<T>(threads: T[], stateOf: (thread: T) => string)
 
 /** Updated objects still supply current statuses while the pointer holds row positions. Removed rows disappear;
  * newly loaded rows append until the pointer leaves. */
+/** Whether the pointer, now over `target`, is still with the chat list: on a tooltip, menu or dialog that a list row
+ * opened. Those render outside the list, so the list's pointerleave fired when the pointer reached a row's tooltip, the
+ * held order was released and re-taken, and the rows jumped back and forth (3 Nov recording). */
+export function staysWithChatList(target: { closest?: (selector: string) => unknown } | null | undefined): boolean {
+  return !!target?.closest?.('[role="tooltip"], [role="menu"], [role="dialog"], [role="alertdialog"]');
+}
+
 export function holdChatOrder<T extends { id: string }>(threads: T[], held: readonly string[] | null): T[] {
   if (!held) return threads;
   const current = new Map(threads.map(thread => [thread.id, thread]));

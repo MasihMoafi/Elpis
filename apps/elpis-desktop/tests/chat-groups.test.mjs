@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GROUPS_KEY, addGroup, chatSelectionRoots, chatSubtree, deleteGroup, emptyGroups, groupNameProblem, groupSections, holdChatOrder, isDefaultView, moveChats, placeChat, prioritizeChats, putChatsUnder, readGroups, renameGroup, sidebarParents, sortChats, toggleCollapsed, writeGroups } from '../lib/chat-groups.ts';
+import { GROUPS_KEY, addGroup, chatSelectionRoots, chatSubtree, deleteGroup, emptyGroups, groupNameProblem, groupSections, holdChatOrder, isDefaultView, staysWithChatList, moveChats, placeChat, prioritizeChats, putChatsUnder, readGroups, renameGroup, sidebarParents, sortChats, toggleCollapsed, writeGroups } from '../lib/chat-groups.ts';
 
 const storage = (initial = {}) => { const values = new Map(Object.entries(initial)); return { values, getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) }; };
 const chat = (id, name, createdAt) => ({ id, name, ...(createdAt === undefined ? {} : { createdAt }) });
@@ -161,3 +161,10 @@ test('placing a chat saves the order, makes the list manual, keeps unlisted plac
   assert.deepEqual(readGroups(store).order, ['b', 'a', 'c', 'old'], 'the order survives a reload');
   assert.equal(readGroups(store).sortBy, 'manual');
 });
+
+test('the held chat order survives the pointer reaching a row tooltip or menu, and only those', () => {
+  const at = role => ({ closest: selector => selector.includes(`[role="${role}"]`) ? {} : null });
+  for (const role of ['tooltip', 'menu', 'dialog', 'alertdialog']) assert.equal(staysWithChatList(at(role)), true, role);
+  for (const target of [at('main'), { closest: () => null }, null, undefined, {}]) assert.equal(staysWithChatList(target), false);
+});
+
