@@ -1,0 +1,65 @@
+/* Night uses the E ribbon's four stops; day uses the desktop Send amber (#f2a93b)
+   for fills and the logo, and a deeper amber of the same hue for readable text. */
+[data-theme="elpis"] {
+  --logo-gradient: linear-gradient(144deg, #fff4d6 0%, #eca342 34%, #edc367 65%, #d2ab58 100%);
+  --logo-bottom: #d2ab58;
+  --logo-button-text: #282318;
+}
+[data-theme="elpis-light"] {
+  --logo-gradient: linear-gradient(180deg, #f2a93b, #db8f22);
+  --logo-bottom: #db8f22;
+  --logo-button-text: #252524;
+  color-scheme: light;
+  --color-base-100: #faf7f0; --color-base-200: #f0ebdf; --color-base-300: #dcd2bd; --color-base-content: #282318;
+  --color-primary: #f2a93b; --color-primary-content: #252524; --color-secondary: #71561d; --color-secondary-content: #ffffff;
+  --color-accent: #8f5b00; --color-accent-content: #ffffff; --color-neutral: #e9e1d0; --color-neutral-content: #332a1c;
+  --color-info: #315d7d; --color-info-content: #ffffff; --color-success: #27643b; --color-success-content: #ffffff;
+  --color-warning: #8f5b00; --color-warning-content: #ffffff; --color-error: #964e48; --color-error-content: #ffffff;
+  --radius-selector: .25rem; --radius-field: .25rem; --radius-box: .25rem; --size-selector: .25rem; --size-field: .25rem;
+  --border: 1px; --depth: 0; --noise: 0;
+}
+
+/* The night default is set by the synchronous head script before either image
+   can paint. Initialization never replaces a logo URL or restarts its SVG. */
+[data-theme="elpis"] [data-theme-image="light"],
+[data-theme="elpis-light"] [data-theme-image="dark"] { display: none; }
+
+[data-brand-logo], [data-hero-brand], a[aria-label="Elpis home"] {
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+[data-theme="elpis-light"] :is(.current-media figcaption, .current-gallery figcaption, .motion-preview p, .evidence-note) {
+  color: var(--color-base-content);
+}
+[data-theme="elpis-light"] :is(.motion-preview summary) {
+  color: var(--color-warning);
+}
+
+
+.hero-principle { margin-top: 2rem; font-size: clamp(1.35rem,2vw,1.75rem); line-height: 1.5; color: var(--color-base-content); }
+.ledger-layout { display: grid; grid-template-columns: minmax(0,.8fr) minmax(0,1.2fr); align-items: start; gap: clamp(2rem,5vw,5rem); }
+.ledger-copy { padding-top: 1.5rem; }
+.ledger-title { line-height: 1.15; font-weight: 400; letter-spacing: -.035em; }
+.ledger-copy strong { font-weight: 650; }
+.ledger-title strong { font-weight: 800; }
+.ledger-demo { min-width: 0; width: 100%; margin: 0; }
+.ledger-visual { width: 100%; padding: 20px; border: 1px solid var(--color-base-300); border-radius: .25rem; background: var(--color-base-200); }
+@media (max-width: 720px) {
+  .ledger-layout { grid-template-columns: minmax(0,1fr); gap: 1.5rem; }
+  .ledger-copy { padding-top: 0; }
+  .ledger-demo { max-width: 100%; margin-inline: auto; }
+  .ledger-visual { padding: 14px; }
+}
+
+[data-brand-theme] { padding-inline: 0; background: transparent; border-color: transparent; box-shadow: none; }
+[data-brand-theme] svg { flex: none; width: 20px; height: 20px; }
+
+.hero-heading { color: #f2e7da; }
+.hero-heading em { color: color-mix(in oklab, var(--color-base-content) 55%, transparent); }
+.hero-wordmark { position: relative; display: inline-block; width: 2.36em; height: 1.16em; vertical-align: -.23em; }
+.hero-wordmark img { position: absolute; inset: 0; width: 100%; height: 100%; max-width: none; }
+[data-theme="elpis-light"] .hero-heading { color: #1e1814; }
+[data-theme="elpis-light"] .hero-flow circle { fill: var(--color-primary); filter: drop-shadow(0 0 9px var(--color-primary)); }
+[data-theme="elpis-light"] .technical-prose blockquote { border-left-color: var(--color-primary); }
+[data-theme="elpis-light"] :is(.technical-prose a, .technical-prose code:not(pre code)) { color: var(--color-warning); }

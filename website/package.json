@@ -5,7 +5,7 @@
   "scripts": {
     "build": "python3 ../scripts/build-public-content.py && npm run build:css",
     "build:css": "tailwindcss -i ./source.css -o ./styles.css --minify",
-    "test": "node --test tests/site.test.mjs"
+    "test": "node --test --test-isolation=none tests/*.test.mjs"
   },
   "devDependencies": {
     "@tailwindcss/cli": "^4.3.3",

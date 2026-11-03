@@ -3,30 +3,42 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Elpis keeps your coding-agent goal, admitted context, permissions, and evidence legible when you change AI runtimes." />
+    <meta name="description" content="Run an agent inside Elpis, and it becomes Elpis." />
     <meta name="theme-color" content="#0b0e0c" />
-    <title>Elpis — Change the runtime. Keep the thread.</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22><rect width=%2264%22 height=%2264%22 rx=%2210%22 fill=%22%230b0e0c%22/><path d=%22M15 17h34v8H23v7h20v8H23v7h26v8H15z%22 fill=%22%23e4a047%22/></svg>" />
-    <link rel="stylesheet" href="./styles.css?v=7" />
-    <script src="./app.js" defer></script>
+    <title>Elpis — Be Elpis my friend.</title>
+    <link rel="canonical" href="https://elpis.masihmoafi.com/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Elpis" />
+    <meta property="og:url" content="https://elpis.masihmoafi.com/" />
+    <meta property="og:title" content="Elpis — Be Elpis my friend." />
+    <meta property="og:description" content="Run an agent inside Elpis, and it becomes Elpis." />
+    <meta property="og:image" content="https://elpis.masihmoafi.com/assets/technical/elpis-context-ledger-20261013.png" />
+    <meta property="og:image:alt" content="Elpis Context Ledger showing admitted memory, instructions and context categories." />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Elpis — Be Elpis my friend." />
+    <meta name="twitter:description" content="Run an agent inside Elpis, and it becomes Elpis." />
+    <meta name="twitter:image" content="https://elpis.masihmoafi.com/assets/technical/elpis-context-ledger-20261013.png" />
+    <meta name="twitter:image:alt" content="Elpis Context Ledger showing admitted memory, instructions and context categories." />
+    <link rel="icon" href="./assets/branding/favicon-amber.svg" />
+    <link rel="stylesheet" href="./styles.css?v=amber-20261020" />
+    <script src="./app.js?v=amber-20261020" type="module"></script>
+    <link rel="stylesheet" href="./assets/branding/brand.css?v=amber-20261020" />
+    <script src="./assets/branding/brand.js?v=amber-20261020"></script>
   </head>
   <body id="top">
     <a class="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[100] focus:bg-base-content focus:px-4 focus:py-2 focus:text-base-100" href="#main">Skip to content</a>
 
     <header class="navbar sticky top-0 z-50 border-b border-base-300 bg-base-100/90 px-5 backdrop-blur-xl lg:px-12">
       <div class="navbar-start">
-        <a class="text-xl font-black tracking-tight" href="#top" aria-label="Elpis home">Elpis<span class="text-warning">.</span></a>
+        <a class="text-xl font-black tracking-tight" href="#top" aria-label="Elpis home" draggable="false"><img data-brand-logo draggable="false" data-theme-image="dark" src="./assets/branding/elpis-wordmark-amber-loop.svg?v=amber-20261020" alt="Elpis" width="90" height="44" /><img data-brand-logo draggable="false" data-theme-image="light" src="./assets/branding/elpis-wordmark-amber-light-loop.svg?v=amber-20261020" alt="Elpis" width="90" height="44" /></a>
       </div>
       <nav class="navbar-center hidden gap-7 text-sm text-base-content/65 lg:flex" aria-label="Primary navigation">
-        <a class="hover:text-base-content" href="#demo">Live turn</a>
-        <a class="hover:text-base-content" href="#context">/context</a>
-        <a class="hover:text-base-content" href="#pruning">ACE</a>
-        <a class="hover:text-base-content" href="#continuity">Continuity</a>
-        <a class="hover:text-base-content" href="#current-interface">Interface</a>
-        <a class="hover:text-base-content" href="#current-evidence">Evidence</a>
-        <a class="hover:text-base-content" href="#install">Install</a>
+        <a class="hover:text-base-content" href="#demo">Demo</a>
+        <a class="hover:text-base-content" href="#desktop-app">Desktop app</a>
+          <a class="hover:text-base-content" href="#install">Install</a>
       </nav>
       <div class="navbar-end">
+        <button class="btn btn-ghost btn-sm btn-square" type="button" data-brand-theme aria-label="Use day theme" aria-pressed="false"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/></svg></button>
         <a class="btn btn-ghost btn-sm" href="https://github.com/MasihMoafi/Elpis">View source <span aria-hidden="true">↗</span></a>
       </div>
     </header>
@@ -35,21 +47,17 @@
       <section class="hero hero-grid min-h-[calc(100svh-65px)] overflow-hidden border-b border-base-300">
         <svg class="hero-flow" viewBox="0 0 1440 820" preserveAspectRatio="none" aria-hidden="true">
           <path d="M-80 660 C220 660 260 530 560 530 S890 290 1520 290" />
-          <path d="M-60 730 C280 730 350 610 650 610 S980 460 1500 460" />
-          <circle r="4"><animateMotion dur="8s" repeatCount="indefinite" path="M-80 660 C220 660 260 530 560 530 S890 290 1520 290" /></circle>
+          <path id="hero-flow-lower" d="M-60 730 C280 730 350 610 650 610 S980 460 1500 460" />
+          <circle r="4"><animateMotion dur="8s" repeatCount="indefinite"><mpath href="#hero-flow-lower" /></animateMotion></circle>
         </svg>
         <div class="hero-content relative z-10 w-full max-w-7xl items-start px-6 py-28 lg:px-12">
           <div class="max-w-4xl">
-            <p class="mb-7 font-mono text-xs font-bold uppercase tracking-[0.24em] text-base-content/55"><span class="status status-warning mr-2"></span>Linux-first early access</p>
-            <h1 id="hero-title" class="max-w-5xl text-6xl font-semibold leading-[0.9] tracking-[-0.065em] sm:text-7xl lg:text-9xl">Change the runtime.<br /><em class="font-normal text-base-content/55">Keep the thread.</em></h1>
-            <p class="mt-9 max-w-2xl text-lg leading-8 text-base-content/68 sm:text-xl">Elpis is a continuity layer around terminal coding agents. It keeps the goal, admitted context, control, and evidence visible while the inference runtime changes underneath.</p>
+            <p class="mb-7 font-mono text-xs font-bold uppercase tracking-[0.24em] text-base-content/55"><span class="status status-warning mr-2"></span>Vision</p>
+            <h1 id="hero-title" aria-label="Be Elpis my friend." class="hero-heading max-w-5xl text-6xl font-semibold leading-[0.9] tracking-[-0.065em] sm:text-7xl lg:text-9xl">Be <span class="hero-wordmark" aria-hidden="true"><img data-hero-brand draggable="false" data-theme-image="dark" src="./assets/branding/elpis-wordmark-amber-loop.svg?v=amber-20261020" alt="" width="224" height="110" /><img data-hero-brand draggable="false" data-theme-image="light" src="./assets/branding/elpis-wordmark-amber-light-loop.svg?v=amber-20261020" alt="" width="224" height="110" /></span><br /><em class="font-normal">my friend.</em></h1>
+            <p class="hero-principle">You run an agent inside Elpis,<br />and it <strong>becomes</strong> Elpis.</p>
             <div class="mt-10 flex flex-wrap gap-3">
-              <a class="btn btn-primary" href="#demo">Watch one turn <span aria-hidden="true">↓</span></a>
-              <a class="btn" href="#install">Install the preview</a>
-              <a class="btn btn-ghost" href="#current-interface">See the current interface</a>
-            </div>
-            <div class="mt-14 flex max-w-3xl flex-wrap gap-x-7 gap-y-3 border-t border-base-300 pt-5 font-mono text-xs text-base-content/55">
-              <span>Local, inspectable state</span><span>User-chosen context</span><span>Provider-native exact resume</span><span>Evidence attached</span>
+              <a class="btn btn-primary" href="#demo">Demo</a>
+              <a class="btn" href="#install">Install</a>
             </div>
           </div>
         </div>
@@ -57,10 +65,9 @@
 
       <section class="mx-auto grid max-w-7xl gap-8 px-6 py-24 lg:grid-cols-[1.15fr_.85fr] lg:items-end lg:px-12" id="demo" aria-labelledby="demo-title">
         <div>
-          <p class="section-kicker">Illustrated admission walkthrough</p>
-          <h2 id="demo-title" class="section-title">See context change<br /><em>before the model does.</em></h2>
+          <h2 id="demo-title" class="section-title">See context change<br /><em><strong class="font-semibold">before</strong> the model does.</em></h2>
         </div>
-        <p class="section-copy">Scroll to launch Elpis, send a realistic project-orientation prompt, and watch a completed tool result cross the ACE admission boundary. Smart Prune is experimental and user-enabled in this illustrated run.</p>
+
       </section>
 
       <section class="ace-demo" data-ace-demo aria-label="Scroll-driven Elpis terminal demonstration">
@@ -74,7 +81,7 @@
 
               <section class="ace-boot">
                 <div>
-                  <pre class="ace-logo" data-ace-logo>██████╗ ██╗     ██████╗ ██╗███████╗
+                  <pre class="ace-logo" role="img" aria-label="Elpis" data-ace-logo>██████╗ ██╗     ██████╗ ██╗███████╗
 ██╔════╝ ██║     ██╔══██╗██║██╔════╝
 █████╗   ██║     ██████╔╝██║███████╗
 ██╔══╝   ██║     ██╔═══╝ ██║╚════██║
@@ -86,7 +93,7 @@
               </section>
 
               <section class="ace-app">
-                <header class="ace-app-head"><span class="ace-diamond">◆</span><strong>ELPIS</strong><span>~/Desktop/p/Elpis</span><span class="ace-spacer"></span><span>gpt-5.6</span><span>·</span><span>local</span></header>
+                <header class="ace-app-head"><span class="ace-diamond">◆</span><strong>ELPIS</strong><span>~/Desktop/p/Elpis</span><span class="ace-spacer"></span><span>Illustrative run</span></header>
                 <div class="ace-workspace">
                   <section class="ace-chat">
                     <div class="ace-transcript">
@@ -95,17 +102,17 @@
                       <div class="ace-row ace-tools">
                         <div class="ace-mark">└</div>
                         <div class="ace-tool-box">
-                          <div class="ace-tool-call"><div class="ace-tool-head"><span>›</span><span>read docs/GUIDE.md docs/USER_REQUESTS.md TASKS.md</span><b>✓</b></div></div>
+                          <div class="ace-tool-call"><div class="ace-tool-head"><span>›</span><span>read docs/GUIDE.md docs/USER_REQUESTS.md TASKS.md</span><b>2,064 admitted tokens</b></div></div>
                           <div class="ace-tool-call">
-                            <div class="ace-tool-head"><span>›</span><span>rg -n "context|session|prun|ledger" docs codex-rs</span><b>18,432 tok</b></div>
+                            <div class="ace-tool-head"><span>›</span><span>rg -n "context|session|prun|ledger" docs codex-rs</span><span class="ace-tool-status"><b data-tool-status>18,432 raw tokens</b><span class="ace-scan-label">Optimizing tool output…</span></span></div>
                             <div class="ace-tool-output" data-tool-output>
-                              <i class="ace-scan-cell"></i><span class="ace-scan-label">◆ ACE · pre-admission</span>
-                              <div class="ace-raw-line"><span>docs/context.md:18</span> Context sources are admitted in deterministic order…</div>
-                              <div class="ace-raw-line"><span>docs/context.md:41</span> The Context Ledger accounts for every admitted source…</div>
-                              <div class="ace-raw-line"><span>docs/context.md:72</span> Provider history remains authoritative for exact resume…</div>
-                              <div class="ace-raw-line"><span>docs/sessions.md:24</span> A lean continuation records goal, result, evidence…</div>
-                              <div class="ace-raw-line"><span>context_ledger.rs:48</span> Context Ledger opens beside the chat…</div>
-                              <div class="ace-compact-result"><strong>[ACE · same result · 486 tokens]</strong><br />Deterministic admission; Ledger owns portable sources; exact resume remains provider-native.<br /><span>Evidence: context.md:18,41,72 · sessions.md:24 · context_ledger.rs:48</span></div>
+                              <i class="ace-scan-cell"></i>
+                              <div class="ace-raw-line"><span>docs/context.md</span> Context sources are admitted in deterministic order…</div>
+                              <div class="ace-raw-line"><span>docs/context.md</span> The Context Ledger accounts for every admitted source…</div>
+                              <div class="ace-raw-line"><span>docs/context.md</span> Provider history remains authoritative for exact resume…</div>
+                              <div class="ace-raw-line"><span>docs/sessions.md</span> A lean continuation records goal, result, evidence…</div>
+                              <div class="ace-raw-line"><span>context_ledger.rs</span> Context Ledger opens beside the chat…</div>
+                              <div class="ace-compact-result"><strong>18,432 raw → 486 admitted tokens</strong><br /><span>Only the shorter result enters the model’s context.</span><br />Deterministic admission; Ledger owns portable sources; exact resume remains provider-native.<br /><span>Sources: docs/context.md · docs/sessions.md · context_ledger.rs</span></div>
                             </div>
                           </div>
                         </div>
@@ -114,220 +121,59 @@
                     </div>
                   </section>
 
-                  <aside class="ace-ledger" aria-label="Context Ledger">
-                    <div class="ace-ledger-headline"><strong>CONTEXT LEDGER</strong><span data-ledger-total>Total ≈5.6k tokens admitted</span></div>
-                    <div class="ace-ledger-controls">p Smart Prune · Up/Down move · Space/Enter toggle ·<br />i all · w why · Esc exit</div>
-                    <div class="ace-ledger-section">
-                      <div class="ace-smart-head"><strong>SMART PRUNE</strong><span>[━━●] ON</span></div>
-                      <div class="ace-smart-copy">Before first main-model send · sent history stays stable<br /><span>p toggle · /smart-prune on|off</span></div>
-                    </div>
-                    <div class="ace-ledger-section">
-                      <div class="ace-window-head"><strong>CONTEXT WINDOW</strong><span data-window-figure>≈33.3k of 258.4k used (13%)</span></div>
-                      <div class="ace-context-meter" data-context-meter><i></i></div>
-                      <div class="ace-context-summary"><b>■</b><span>Conversation + built-in context</span><span data-conversation-count>≈27.7k tokens</span></div>
-                    </div>
-                    <div class="ace-ledger-section">
-                      <div class="ace-category-head ace-memory"><b>■</b><strong>DURABLE MEMORY</strong><span>≈0 tokens admitted</span></div>
-                      <div class="ace-ledger-item"><i></i><span>[ ]</span><u>MEMORY.md</u><span>≈0 est. tokens</span><b>EXCLUDED</b></div>
-                    </div>
-                    <div class="ace-ledger-section">
-                      <div class="ace-category-head ace-instructions"><b>■</b><strong>INSTRUCTIONS</strong><span>≈5.4k tokens admitted</span></div>
-                      <div class="ace-ledger-item"><i>›</i><span>[x]</span><u>Project AGENTS.md</u><span>≈1.9k</span><b>INCLUDED</b></div>
-                      <div class="ace-ledger-item"><i></i><span>[x]</span><u>dev/AGENTS.md</u><span>≈1.5k</span><b>INCLUDED</b></div>
-                      <div class="ace-ledger-item"><i></i><span>[x]</span><u>dev/CODING_GUIDELINES.md</u><span>≈976</span><b>INCLUDED</b></div>
-                      <div class="ace-ledger-item"><i></i><span>[x]</span><u>dev/SKILL.md</u><span>≈437</span><b>INCLUDED</b></div>
-                      <div class="ace-ledger-item"><i></i><span>[x]</span><u>dev/TERMINAL_AND_GIT_RULES.md</u><span>≈618</span><b>INCLUDED</b></div>
-                    </div>
-                    <div class="ace-ledger-section ace-tool-evidence">
-                      <div class="ace-category-head ace-evidence"><b>■</b><strong>TOOL EVIDENCE</strong><span data-evidence-total>≈156 tokens admitted</span></div>
-                      <div class="ace-ledger-item"><i></i><span>[x]</span><u>ES.md</u><span data-evidence-row>≈156</span><b>INCLUDED</b></div>
-                    </div>
-                  </aside>
                 </div>
+                <aside class="ace-ledger" aria-label="Context Ledger" data-native-ledger="demo"></aside>
                 <div class="ace-composer-row">
-                  <div class="ace-composer-pane"><div class="ace-composer"><div><span data-composer-text></span><span class="ace-cursor" data-composer-cursor>█</span></div><small><span>Enter send · Shift+Enter newline</span><b>↵</b></small></div></div>
-                  <div class="ace-ledger-foot">↑↓ select · Space toggle · w why included</div>
+                  <div class="ace-composer-pane"><div class="ace-prune-flash" data-prune-flash></div><div class="ace-composer"><div><span data-composer-text></span><span class="ace-cursor" data-composer-cursor>█</span></div><small><span>Enter send · Shift+Enter newline</span><b>↵</b></small></div></div>
                 </div>
-                <footer class="ace-footer"><span>Esc interrupt · Tab focus Ledger · /context full view</span><span class="ace-spacer"></span><span data-footer-context>87% context left</span></footer>
+                <footer class="ace-footer"><span>/context</span><span class="ace-spacer"></span><span data-footer-context>87% context left</span></footer>
               </section>
             </div>
           </div>
         </div>
       </section>
 
-      <section class="site-section border-b border-base-300" id="context" aria-labelledby="context-title">
-        <div class="section-heading">
-          <div><p class="section-kicker">/context</p><h2 id="context-title" class="section-title">See what occupies<br /><em>the window.</em></h2></div>
-          <p class="section-copy">The measured headline and its categories describe the same request snapshot. The original visual showed 9%; 33.3k of 258.4k is 13%.</p>
-        </div>
-        <div class="card card-border overflow-hidden bg-neutral text-neutral-content context-dashboard" data-context-visual>
-          <header class="context-command">
-            <span><b>›</b> /context</span>
-            <small>Illustrative request snapshot · measured total</small>
-          </header>
-
-          <div class="stats context-stats" aria-label="Current context summary">
-            <div class="stat"><div class="stat-title">Current request</div><div class="stat-value">33.3k</div><div class="stat-desc">measured tokens in context</div></div>
-            <div class="stat"><div class="stat-title">Context window</div><div class="stat-value">258.4k</div><div class="stat-desc">model limit</div></div>
-            <div class="stat"><div class="stat-title">Remaining</div><div class="stat-value">225.1k</div><div class="stat-desc">87% of the window</div></div>
-            <div class="stat"><div class="stat-title">Checkpoints</div><div class="stat-value">04</div><div class="stat-desc">available for backtrack</div></div>
-          </div>
-
-          <div class="context-primary-grid">
-            <section class="context-panel context-capacity" aria-labelledby="context-capacity-title">
-              <div class="context-panel-heading"><div><span>01 · measured</span><h3 id="context-capacity-title">Window occupancy</h3></div><small>current request</small></div>
-              <div class="context-capacity-body">
-                <div class="radial-progress context-capacity-ring text-warning" style="--value:13; --size:10.5rem; --thickness:.65rem" role="progressbar" aria-valuenow="13">
-                  <strong>13%</strong><span>used</span>
-                </div>
-                <dl class="context-capacity-figures">
-                  <div><dt>Used</dt><dd>33.3k</dd></div>
-                  <div><dt>Free</dt><dd>225.1k</dd></div>
-                  <div><dt>Limit</dt><dd>258.4k</dd></div>
-                </dl>
-              </div>
-              <div class="context-window-track" role="img" aria-label="33.3 thousand of 258.4 thousand tokens used"><i></i><span>0</span><b>33.3k</b><span>258.4k</span></div>
-            </section>
-
-            <section class="context-panel context-composition" aria-labelledby="context-composition-title">
-              <div class="context-panel-heading"><div><span>02 · estimated</span><h3 id="context-composition-title">What occupies the request</h3></div><small>attribution of 33.3k used</small></div>
-              <div class="context-attribution-stack" role="img" aria-label="Estimated attribution: 8.4 percent user messages, 75.4 percent agent responses, 0 percent tool calls, 5.7 percent system prompt, and 10.5 percent development rules">
-                <i class="context-color-user" style="--share:8.4%"></i><i class="context-color-agent" style="--share:75.4%"></i><i class="context-color-system" style="--share:5.7%"></i><i class="context-color-rules" style="--share:10.5%"></i>
-              </div>
-              <div class="context-composition-legend">
-                <div><i class="context-color-user"></i><span>User messages</span><strong>2.8k</strong><small>8.4%</small></div>
-                <div><i class="context-color-agent"></i><span>Agent responses</span><strong>25.1k</strong><small>75.4%</small></div>
-                <div><i class="context-color-tools"></i><span>Tool calls</span><strong>0</strong><small>0%</small></div>
-                <div><i class="context-color-system"></i><span>System prompt</span><strong>1.9k</strong><small>5.7%</small></div>
-                <div><i class="context-color-rules"></i><span>Development rules</span><strong>3.5k</strong><small>10.5%</small></div>
-              </div>
-              <p class="context-truth-note">Category values are estimated attribution anchored to the measured request total.</p>
-            </section>
-          </div>
-
-          <div class="context-secondary-grid">
-            <section class="context-panel" aria-labelledby="context-bars-title">
-              <div class="context-panel-heading"><div><span>03 · distribution</span><h3 id="context-bars-title">Attributed usage</h3></div><small>share of used context</small></div>
-              <div class="context-category-bars">
-                <div class="context-bar-row"><span>User</span><div><i class="context-color-user" style="--share:8.4%"></i></div><b>2.8k</b></div>
-                <div class="context-bar-row"><span>Agent</span><div><i class="context-color-agent" style="--share:75.4%"></i></div><b>25.1k</b></div>
-                <div class="context-bar-row"><span>Tools</span><div><i class="context-color-tools" style="--share:0%"></i></div><b>0</b></div>
-                <div class="context-bar-row"><span>System</span><div><i class="context-color-system" style="--share:5.7%"></i></div><b>1.9k</b></div>
-                <div class="context-bar-row"><span>Dev rules</span><div><i class="context-color-rules" style="--share:10.5%"></i></div><b>3.5k</b></div>
-              </div>
-            </section>
-
-            <section class="context-panel" aria-labelledby="context-sources-title">
-              <div class="context-panel-heading"><div><span>04 · ledger</span><h3 id="context-sources-title">Admitted sources</h3></div><small>≈ estimated tokens</small></div>
-              <div class="overflow-x-auto">
-                <table class="table table-sm context-source-table">
-                  <thead><tr><th>Source</th><th>Group</th><th>Estimate</th><th>Status</th></tr></thead>
-                  <tbody>
-                    <tr><td>Project AGENTS.md</td><td>Instructions</td><td>≈1.9k</td><td><span>admitted</span></td></tr>
-                    <tr><td>dev/AGENTS.md</td><td>Instructions</td><td>≈1.5k</td><td><span>admitted</span></td></tr>
-                    <tr><td>dev/CODING_GUIDELINES.md</td><td>Instructions</td><td>≈976</td><td><span>admitted</span></td></tr>
-                    <tr><td>dev/TERMINAL_AND_GIT_RULES.md</td><td>Instructions</td><td>≈618</td><td><span>admitted</span></td></tr>
-                    <tr><td>dev/SKILL.md</td><td>Instructions</td><td>≈437</td><td><span>admitted</span></td></tr>
-                    <tr><td>ES.md</td><td>Session continuity</td><td>≈156</td><td><span>admitted</span></td></tr>
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          </div>
-
-          <footer class="context-checkpoints">
-            <div><strong>Backtrack map</strong><span>Esc Esc jumps to a prior message and forks from it.</span></div>
-            <ol class="context-checkpoint-line" aria-label="Four available backtrack points">
-              <li><i></i><span>01</span></li><li><i></i><span>02</span></li><li><i></i><span>03</span></li><li class="is-current"><i></i><span>04</span></li>
-            </ol>
-          </footer>
-        </div>
-      </section>
-
-      <section class="site-section border-b border-base-300" id="pruning" aria-labelledby="pruning-title">
-        <div class="section-heading">
-          <div><p class="section-kicker">ACE · controlled context</p><h2 id="pruning-title" class="section-title">Compress the noise.<br /><em>Keep the evidence.</em></h2></div>
-          <p class="section-copy">When experimental Smart Prune is explicitly enabled, ACE can rewrite completed tool output before its first main-model admission. The tool-call envelope stays intact and already-sent history does not change.</p>
-        </div>
-        <figure class="card card-border overflow-hidden bg-base-200">
-          <div class="lifecycle-viewport" tabindex="0" role="region" aria-label="ACE lifecycle diagram; scroll horizontally on narrow screens">
-            <img class="lifecycle-diagram" src="assets/diagram_ace_lifecycle.svg?v=2" alt="ACE pruning and context monitoring lifecycle sequence diagram" loading="lazy" />
-          </div>
-          <div class="card-body"><figcaption class="font-mono text-xs text-base-content/55">A retired automatic threshold-triggered configuration from historical evaluation runs, not current default behavior. Current Smart Prune optimizes a fresh tool result once, before its first admission, and never revisits already-sent history the way this sequence shows.</figcaption></div>
-        </figure>
-      </section>
-
-
-      <section class="site-section border-b border-base-300" id="continuity" aria-labelledby="continuity-title">
-        <div class="section-heading">
-          <div><p class="section-kicker">Continuity contract</p><h2 id="continuity-title" class="section-title">The runtime infers.<br /><em>Elpis carries the work.</em></h2></div>
-          <p class="section-copy">A lean checkpoint is not a provider’s native conversation history. Elpis keeps the durable working agreement inspectable while exact resume remains provider-native.</p>
-        </div>
-        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <article class="card card-border bg-base-200"><div class="card-body"><span class="font-mono text-xs text-base-content/45">01</span><h3 class="card-title">Goal</h3><p class="text-base-content/65">Current objective and status.</p></div></article>
-          <article class="card card-border bg-base-200"><div class="card-body"><span class="font-mono text-xs text-base-content/45">02</span><h3 class="card-title">Context</h3><p class="text-base-content/65">Explicitly admitted project rules and user-maintained memory.</p></div></article>
-          <article class="card card-border bg-base-200"><div class="card-body"><span class="font-mono text-xs text-base-content/45">03</span><h3 class="card-title">Control</h3><p class="text-base-content/65">Visible tool and workspace boundaries.</p></div></article>
-          <article class="card card-border bg-base-200"><div class="card-body"><span class="font-mono text-xs text-base-content/45">04</span><h3 class="card-title">Evidence</h3><p class="text-base-content/65">Files, commands, checks, and transcript evidence.</p></div></article>
+      <section class="site-section border-b border-base-300" id="context" aria-label="Context Ledger">
+        <div class="ledger-layout">
+          <div class="ledger-copy"><p class="section-kicker">Context Ledger</p><h3 class="ledger-title section-title"><strong>Curate</strong> what<br />the agent receives.</h3><p class="section-copy mt-6"><strong>Inspect</strong> admitted instructions, files and memory. <strong>Curate</strong> what stays in working context.</p></div>
+          <figure id="context-ledger-snapshot" class="ledger-demo"><div class="ledger-visual" data-native-ledger="example" aria-label="Context Ledger"></div></figure>
         </div>
       </section>
 
       <section class="site-section border-b border-base-300" id="desktop-app" aria-labelledby="desktop-app-title">
         <div class="section-heading">
-          <div><p class="section-kicker">The desktop app</p><h2 id="desktop-app-title" class="section-title">A team of agents.<br /><em>Each one checked.</em></h2></div>
-          <p class="section-copy">The desktop app runs the same engine as the terminal app and shares its state folder. In Workflows, the Mother agent designs a team, runs it and checks each agent's work. In Love Spot, Matilda answers and draws with you on a drawing board.</p>
+          <div><p class="section-kicker">The desktop app</p><h2 id="desktop-app-title" class="section-title">A home for your agents,<br /><em>in your theme.</em></h2></div>
+          <p class="section-copy">The desktop app runs the same engine as the terminal app and shares its state folder. Chat with GPT, Claude and Gemini models on your ChatGPT or Claude subscription or an API key. Pick Elpis, Paper, Midnight or Plum, each in light and dark, or build your own in Settings.</p>
         </div>
+        <figure class="motion-preview"><video src="./assets/films/themes.mp4" autoplay loop muted playsinline controls preload="metadata" aria-label="One Elpis desktop chat in six themes: Elpis dark and light, Midnight dark, Paper light, Plum dark and Midnight light"></video><figcaption>Themes · one chat in Elpis, Midnight, Paper and Plum, light and dark</figcaption></figure>
         <figure class="motion-preview"><video src="./assets/films/workflows.mp4" autoplay loop muted playsinline controls preload="metadata" aria-label="Workflows: the Mother agent designs a team, runs it and checks each agent's work"></video><figcaption>Workflows · the Mother agent designs the team, and a second agent checks each agent's work</figcaption></figure>
         <figure class="motion-preview"><video src="./assets/films/lovespot.mp4" autoplay loop muted playsinline controls preload="metadata" aria-label="Love Spot: Matilda answers on the drawing board"></video><figcaption>Love Spot · Matilda answers on the drawing board</figcaption></figure>
-        <figure class="current-media"><img src="./assets/technical/tui-agent-command-center.webp" alt="The Agent command center in the Elpis terminal app: GPT and Claude helpers under their parent chat, each model in its own colour" loading="lazy" /><figcaption>Terminal app · the Agent command center: helpers on GPT and Claude under their parent chat</figcaption></figure>
-      </section>
-
-      <section class="site-section border-b border-base-300" id="current-interface" aria-labelledby="current-interface-title">
-        <div class="section-heading">
-          <div><p class="section-kicker">Terminal app</p><h2 id="current-interface-title" class="section-title">See the current<br /><em>Elpis interface.</em></h2></div>
-          <p class="section-copy">The native dark interface, amber ledger, startup dissolve, and coalescing responses. These captures use illustrative session data.</p>
-        </div>
-        <figure class="current-media"><img src="./assets/technical/elpis-ui-20260909.png" alt="Current Elpis native interface with contrasting amber ledger rows and Quiet Rail composer" loading="lazy" /><figcaption>Native Rust widget capture · September 9, 2026. This is separate from the concept illustration above.</figcaption></figure>
-        <div class="section-heading dashboard-heading"><div><p class="section-kicker">Local observability</p><h3 class="section-title">Four views.<br /><em>One session.</em></h3></div><p class="section-copy">Current dashboard assets with the checked-in illustrative fixture. These counters are demonstration data, not research results. Preview settings are disabled; an authorized live dashboard can edit pruner settings.</p></div>
-        <div class="dashboard-showcase">
-          <div class="dashboard-switcher" role="group" aria-label="Dashboard view">
-            <button type="button" aria-pressed="true" aria-controls="dashboard-activity" data-dashboard-view="activity">Activity</button>
-            <button type="button" aria-pressed="false" aria-controls="dashboard-context" data-dashboard-view="context">Context</button>
-            <button type="button" aria-pressed="false" aria-controls="dashboard-tokens" data-dashboard-view="tokens">Tokens</button>
-            <button type="button" aria-pressed="false" aria-controls="dashboard-prune" data-dashboard-view="prune">Smart Prune</button>
-          </div>
-          <figure id="dashboard-activity" data-dashboard-panel="activity"><a href="./assets/technical/dashboard-activity-20260909.png"><img src="./assets/technical/dashboard-activity-20260909.png" alt="Dashboard Activity: current turn and history" loading="lazy" /></a><figcaption>Activity · turn progress and history</figcaption></figure>
-          <figure id="dashboard-context" data-dashboard-panel="context" hidden><a href="./assets/technical/dashboard-context-20260909.png"><img src="./assets/technical/dashboard-context-20260909.png" alt="Dashboard Context: window composition and admitted sources" loading="lazy" /></a><figcaption>Context · composition and admitted sources</figcaption></figure>
-          <figure id="dashboard-tokens" data-dashboard-panel="tokens" hidden><a href="./assets/technical/dashboard-tokens-20260909.png"><img src="./assets/technical/dashboard-tokens-20260909.png" alt="Dashboard Tokens: recorded usage breakdown" loading="lazy" /></a><figcaption>Tokens · recorded usage breakdown</figcaption></figure>
-          <figure id="dashboard-prune" data-dashboard-panel="prune" hidden><a href="./assets/technical/dashboard-smart-prune-20260909.png"><img src="./assets/technical/dashboard-smart-prune-20260909.png" alt="Dashboard Smart Prune: settings, admission accounting, and incomplete usage evidence" loading="lazy" /></a><figcaption>Smart Prune · settings, accounting, and failure evidence</figcaption></figure>
-        </div>
-      </section>
-
-      <section class="site-section border-b border-base-300" id="current-evidence" aria-labelledby="current-evidence-title">
-        <div class="section-heading"><div><p class="section-kicker">Research in progress</p><h2 id="current-evidence-title" class="section-title">Still being<br /><em>evaluated.</em></h2></div><p class="section-copy">Smart Prune is experimental. Early synthetic studies explore its costs and tradeoffs; they do not establish reliable savings or improved coding quality in real projects.</p></div>
-        <p class="evidence-note">The research notes include measured results, failed probes, limitations, and the distinction between reported tests and independently repeated checks.</p>
-        <a class="btn btn-soft" href="./technical.html#evaluation-status">Read the research notes</a>
       </section>
 
       <section class="site-section grid gap-12 lg:grid-cols-[.8fr_1.2fr] lg:items-center" id="install" aria-labelledby="install-title">
         <div>
           <p class="section-kicker">v0.5.1 · Linux x86_64</p>
-          <h2 id="install-title" class="section-title">Put continuity<br />in the loop.</h2>
-          <p class="section-copy mt-7">The script installs the terminal app. For the desktop app on Ubuntu or Debian, download both Debian packages from the release and install them together; on Fedora, Arch, Omarchy or any other Linux, run the AppImage. Inspect the source before running the script.</p>
+          <h2 id="install-title" class="section-title">Install Elpis.</h2>
+          <p class="section-copy mt-7">The script installs the terminal app. For the desktop app on Ubuntu or Debian, install both Debian packages from the release together; on Fedora, Arch, Omarchy or any other Linux, run the AppImage. Inspect the source before running the script.</p>
           <a class="btn btn-ghost mt-5" href="https://github.com/MasihMoafi/Elpis/releases/tag/v0.5.1">Download v0.5.1 <span aria-hidden="true">↗</span></a>
         </div>
         <div class="mockup-code install-terminal relative bg-neutral text-neutral-content">
-          <pre data-prefix="$"><code data-command>curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/main/scripts/install-elpis.sh | bash &amp;&amp; ~/.local/bin/elpis</code></pre>
+          <pre data-prefix="$"><code data-command>curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/v0.5.1/scripts/install-elpis.sh | bash &amp;&amp; ~/.local/bin/elpis</code></pre>
           <button type="button" class="btn btn-sm absolute top-4 right-4" data-copy-button aria-describedby="copy-status">Copy</button>
           <span class="sr-only" id="copy-status" data-copy-status role="status" aria-live="polite"></span>
           <pre data-prefix="$"><code>sudo apt install ./elpis_0.5.1_amd64.deb ./elpis-desktop_0.5.1_amd64.deb &amp;&amp; elpis-app</code></pre>
           <pre data-prefix="$"><code>chmod +x Elpis-0.5.1-x86_64.AppImage &amp;&amp; ./Elpis-0.5.1-x86_64.AppImage</code></pre>
+          <pre data-prefix=""><code class="text-neutral-content/70">Published v0.5.1 · Linux x86_64</code></pre>
         </div>
       </section>
     </main>
 
-    <footer class="footer sm:footer-horizontal border-t border-base-300 bg-base-200 px-6 py-10 text-base-content/55 lg:px-12">
-      <aside><strong class="text-base-content">Elpis.</strong><p>Change the runtime. Keep the thread.</p></aside>
-      <nav><h2 class="footer-title">Project</h2><a href="https://github.com/MasihMoafi/Elpis">Source</a><a href="#top">Back to top</a></nav>
+    <footer class="footer border-t border-base-300 bg-base-200 px-6 py-4 text-base-content/70 lg:px-12">
+      <nav class="flex w-full flex-wrap items-center gap-x-5 gap-y-1" aria-label="Footer">
+        <a class="py-0.5" href="https://github.com/MasihMoafi/Elpis">Source</a>
+        <a class="py-0.5" href="#top">Back to top</a>
+        <a class="py-0.5" href="mailto:hi@masihmoafi.com">hi@masihmoafi.com</a>
+      </nav>
     </footer>
   </body>
 </html>
