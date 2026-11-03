@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/elpis-header-dark.svg">
-    <img src="docs/assets/elpis-header-light.svg" alt="Elpis, with Matilda, the app's companion, winking" width="440">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/elpis-wordmark-burning-dark.svg">
+    <img src="docs/assets/elpis-wordmark-burning-light.svg" alt="Elpis" width="300">
   </picture>
 </p>
 
