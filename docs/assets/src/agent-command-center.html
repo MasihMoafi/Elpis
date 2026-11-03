@@ -1,0 +1,62 @@
+<!doctype html>
+<!-- Recreation of the Elpis terminal app's Agent command center, drawn to match a real capture
+     (light terminal, 1400x870) with example tasks. Render: node docs/assets/src/render.mjs; the image is cropped to the page height. -->
+<meta charset="utf-8">
+<style>
+  :root { --ink:#121212; --gpt:#1f7a62; --claude:#a3542f; --working:#8a6a12; --done:#2f7a62; --ready:#6a6a72; --row:27.4px; }
+  html, body { margin:0; background:#fff; }
+  body { width:1400px; overflow:hidden; font:19px/var(--row) "DejaVu Sans Mono", monospace; color:var(--ink); padding:0 10px; box-sizing:border-box; }
+  .line { height:var(--row); white-space:pre; display:flex; align-items:center; width:1362px; }
+  .title { color:#ad4f4f; }
+  .filter-on { background:#dcdcdc; padding:0 10px; font-weight:bold; }
+  .rule { height:2px; background:#111; margin:13px 0 12px; }
+  .scroll { position:absolute; right:12px; top:85px; bottom:0; width:2px; background:#111; }
+  .c-task { width:725px; overflow:hidden; } .c-model { width:350px; } .c-status { width:180px; } .c-up { width:110px; text-align:right; }
+  .sel { background:#a4cdfa; font-weight:bold; }
+  .tree { display:inline-block; width:26px; height:var(--row); margin-left:30px; box-sizing:border-box; border-left:2px solid #222; background:linear-gradient(#222,#222) 0 50% / 100% 2px no-repeat; }
+  .tree.end { border-left:0; background:linear-gradient(#222,#222) 0 0 / 2px 50% no-repeat, linear-gradient(#222,#222) 0 50% / 100% 2px no-repeat; }
+  .lead { display:inline-block; width:28px; }
+  .c-task { display:flex; align-items:center; }
+  .dot { font-size:22px; } .g { color:var(--gpt); } .a { color:var(--claude); }
+  .t1 { color:#b0407a; } .t2 { color:#2aa89e; } .t3 { color:#b04848; } .t4 { color:#a8862e; } .t5 { color:#3a7aae; }
+  .w { color:var(--working); } .d { color:var(--done); } .r { color:var(--ready); }
+  .sel .t1, .sel .w, .sel .c-up { color:#111; }
+</style>
+<div class="line"><span class="title">Agent command center</span>  Group: Project  g  View: list</div>
+<div class="line"> <span class="filter-on">All 13</span>  Needs you 0   Working 5   Ready 1   Done 7   Inactive 0</div>
+<div class="rule"></div><div class="scroll"></div>
+<div class="line"><span class="c-task">  Tasks</span><span class="c-model">Model</span><span class="c-status">Status</span><span class="c-up">Updated</span></div>
+<div id="rows"></div>
+<script>
+  const G = 'g', A = 'a';
+  const rows = [
+    ['path', '~/Projects/elpis  11'],
+    ['root', 1, A, 'Review the payments module before release', 'claude-opus-5-5 · high', 'w', '5s ago', true],
+    ['child', 2, G, 'Map the payments code and its tests', 'GPT-5.6-Sol · medium', 'd', '12m ago'],
+    ['child', 3, A, 'Review error handling', 'claude-sonnet-5-5 · none', 'd', '9m ago'],
+    ['child', 4, G, 'Review input validation', 'GPT-5.6-Sol · high', 'd', '9m ago'],
+    ['child', 5, A, 'Review the database queries', 'claude-sonnet-5-5 · none', 'd', '8m ago'],
+    ['child', 2, G, 'Check the error-handling review', 'GPT-5.6-Sol · medium', 'd', '6m ago'],
+    ['child', 1, A, 'Check the validation review', 'claude-sonnet-5-5 · none', 'd', '6m ago'],
+    ['child', 4, G, 'Fix the retry on network errors', 'GPT-5.6-Sol · high', 'w', '40s ago'],
+    ['child', 3, A, 'Fix the unchecked refund amount', 'claude-opus-5-5 · medium', 'w', '22s ago'],
+    ['last', 5, G, 'Write the release notes', 'GPT-5.6-Sol · low', 'r', '1m ago'],
+    ['root', 2, G, 'Translate the guide into Persian', 'GPT-6.1-Sol · medium', 'w', '15s ago'],
+    ['gap'],
+    ['path', '~/Projects/site  2'],
+    ['root', 4, G, 'Fix the broken links on the blog', 'GPT-6.1-Sol · low', 'd', '1h ago'],
+    ['root', 1, A, 'Draw a logo for the release post', 'claude-sonnet-5-5 · none', 'w', '2m ago'],
+    ['gap'],
+    ['more'],
+  ];
+  const status = { w: '◐ Working', d: '✓ Done', r: '◇ Ready' };
+  const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  document.getElementById('rows').innerHTML = rows.map(([kind, tone, provider, name, model, state, up, selected]) => {
+    if (kind === 'gap') return '<div class="line"> </div>';
+    if (kind === 'path') return `<div class="line">${esc(tone)}</div>`;
+    if (kind === 'more') return '<div class="line">  Show more</div>';
+    const lead = kind === 'root' ? `<span class="lead">${selected ? '›' : ''}</span>` : `<span class="tree${kind === 'last' ? ' end' : ''}"></span>`;
+    return `<div class="line${selected ? ' sel' : ''}"><span class="c-task">${lead}<span class="dot ${provider}">●</span>&nbsp;<span class="t${tone}">${esc(name)}</span></span>`
+      + `<span class="c-model ${provider}">${esc(model)}</span><span class="c-status ${state}">${status[state]}</span><span class="c-up">${up}</span></div>`;
+  }).join('');
+</script>
