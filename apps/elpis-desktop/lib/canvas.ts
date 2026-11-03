@@ -396,17 +396,18 @@ export function executionGraph(graph: CanvasGraph, targets?: string[]): CanvasGr
 /** What Elpis designs from a goal (POST /api/canvas/plan, bridge/canvas-plan.mjs): the whole team, each agent keyed
  * (an existing agent keeps its id as its key) and wired by `waitsFor`. */
 /** `mode` and `why`: the planner's own decision, one agent doing the whole goal ("direct") or a team, and its reason. */
-export type Plan = { name: string; mode?: "direct" | "team"; why?: string; agents: { key: string; title: string; prompt: string; folders: string[]; doneWhen: string[]; waitsFor: string[] }[] };
+export type Plan = { name: string; mode?: "direct" | "team"; why?: string; agents: { key: string; title: string; prompt: string; folders: string[]; doneWhen: string[]; waitsFor: string[]; model?: string; provider?: string; effort?: string }[] };
 /** The board as the planner reads it. */
 export const boardForPlan = (graph: CanvasGraph) => agentsOf(graph).map(node => ({ key: node.id, title: node.data.title, prompt: node.data.instruction, folders: node.data.writeScopes, doneWhen: node.data.acceptanceCriteria,
   waitsFor: graph.edges.filter(edge => waits(edge) && edge.target === node.id).map(edge => edge.source) }));
 /** The board after a plan: agents the plan keeps are updated in place, new ones are added, ones it leaves out are
- * removed, and the wires are the plan's. Models and thinking levels stay; notes stay. New agents are laid out in run
+ * removed, and the wires are the plan's. An existing agent keeps its model and thinking level; a new one takes the
+ * planner's (chosen by complexity, cost and the user's preferences), if any. Notes stay. New agents are laid out in run
  * order. */
 export function applyPlan(graph: CanvasGraph, plan: Plan): CanvasGraph {
   const kept = new Map(agentsOf(graph).map(node => [node.id, node])), ids = new Map<string, string>();
   const agents = plan.agents.map(item => {
-    const old = kept.get(item.key), made = old ?? agent(item.title, item.prompt);
+    const old = kept.get(item.key), made = old ?? agent(item.title, item.prompt, item.model ? { model: item.model, provider: item.provider ?? null, effort: item.effort ?? null } : undefined);
     ids.set(item.key, made.id);
     // What the plan leaves empty keeps what the agent had.
     const data = made.data as AgentData;

@@ -27,8 +27,9 @@ export function workflowModelRoutes(models, providers, requirements) {
 /** The Mother's model: one setting (1 Nov, Masih: "sonnet 5.5 via promo credits or opus 5.5 medium or low via promo
  * credits"; for presentations she will run on Opus, so that switch is a change here). Ids from the credits catalogue
  * (`elpis-next -c model_provider=anthropic-credits debug models`, 1 Nov). */
-export const MOTHER_ROUTE = { model: 'claude-sonnet-5-5', provider: 'anthropic-credits', reasoningEffort: 'low' };
-export const MOTHER_FALLBACK = { model: 'claude-opus-5-5', provider: 'anthropic-credits', reasoningEffort: 'medium' };
+// 3 Nov, Masih: the Mother runs on Opus 5.5 medium; Sonnet 5.5 low is the fallback.
+export const MOTHER_ROUTE = { model: 'claude-opus-5-5', provider: 'anthropic-credits', reasoningEffort: 'medium' };
+export const MOTHER_FALLBACK = { model: 'claude-sonnet-5-5', provider: 'anthropic-credits', reasoningEffort: 'low' };
 
 /** Default models for a run's agents, read from the real catalogues. A model he set on an agent always wins; these fill
  * only what he left empty. Children: the smallest non-Argon Gemini Antigravity lists (1 Nov, Masih: "use gemini-3.8 or a

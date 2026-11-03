@@ -62,7 +62,7 @@ test('plans in one ephemeral, read-only, no-approval conversation on the backgro
   assert.deepEqual(outputSchema.properties.mode, { type: 'string', enum: ['direct', 'team'] });
   const agent = outputSchema.properties.agents.items;
   assert.equal(agent.additionalProperties, false);
-  assert.deepEqual([...agent.required].sort(), ['doneWhen', 'folders', 'key', 'prompt', 'title', 'waitsFor']);
+  assert.deepEqual([...agent.required].sort(), ['doneWhen', 'effort', 'folders', 'key', 'model', 'prompt', 'title', 'waitsFor']);
   assert.deepEqual(Object.keys(agent.properties).sort(), [...agent.required].sort());
 });
 
@@ -98,6 +98,27 @@ test('the prompt carries the goal, the folder list, the limit and the planning r
 test('returns the validated plan as { name, mode, why, agents }', async () => {
   const { result } = await plan();
   assert.deepEqual(result, PLAN);
+});
+
+// 3 Nov, Masih: each agent's model and level weigh only its job's complexity, cost and his preferences.
+test('the planner chooses each agent a listed model and level, from his subscriptions and preferences', async () => {
+  const efforts = levels => levels.map(reasoningEffort => ({ reasoningEffort }));
+  const catalog = [{ model: 'gpt-6.1-terra', supportedReasoningEfforts: efforts(['high', 'xhigh', 'max']) }, { model: 'gpt-6.1-luna', supportedReasoningEfforts: efforts(['low', 'max']) }];
+  const answer = { ...PLAN, agents: [{ ...PLAN.agents[0], model: 'gpt-6.1-terra', effort: 'max' }, { ...PLAN.agents[1], model: 'gpt-6.1-terra', effort: 'ultra' }] };
+  const client = Object.assign(fakeClient({ answer }), {
+    models: async () => ({ data: catalog }),
+    providers: async () => ({ openai: { auth: { state: 'signedIn', method: 'ChatGPT' } } }),
+  });
+  const settings = client.settings;
+  client.settings = async () => ({ ...(await settings()), managed: { available: true, modelProvider: null }, options: { developerInstructions: 'Workflow agents: GPT Terra.' } });
+  const result = await planCanvas(client, BODY);
+  const prompt = client.sent.find(row => row.method === 'turn/start').params.input[0].text;
+  assert.match(prompt, /gpt-6\.1-terra: high, xhigh, max/);
+  assert.match(prompt, /Workflow agents: GPT Terra\./);
+  assert.match(prompt, /how hard its job is, what it costs .* and the user's preferences/);
+  assert.deepEqual(result.agents.map(agent => [agent.model, agent.provider, agent.effort]), [['gpt-6.1-terra', 'openai', 'max'], ['gpt-6.1-terra', 'openai', undefined]], 'a level the model does not list is dropped');
+  const unlisted = Object.assign(fakeClient({ answer: { ...PLAN, agents: [{ ...PLAN.agents[0], model: 'gpt-7' }, PLAN.agents[1]] } }), { models: client.models, providers: client.providers, settings: client.settings });
+  assert.equal((await planCanvas(unlisted, BODY)).agents[0].model, undefined, 'a model outside his subscriptions is dropped');
 });
 
 // 28 Oct: Mother decides first. A simple task she does herself, as the one agent whose prompt is the task; a complex one becomes a team.

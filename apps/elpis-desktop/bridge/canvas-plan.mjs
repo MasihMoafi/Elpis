@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { BridgeError, object, text } from './client.mjs';
 import { askBackground } from './side-turn.mjs';
+import { workflowModelRoutes } from './workflow-models.mjs';
 
 /** "Elpis handle it" on the agents canvas (POST /api/canvas/plan): a fast model first decides whether the goal is one
  * agent's job ("direct": one agent whose prompt is the goal) or a team's ("team"), and plans it, in one call.
@@ -9,7 +10,10 @@ import { askBackground } from './side-turn.mjs';
 export const PLAN_TIMEOUT_MS = 90000;
 const LIMIT = 128;
 const KEY = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$/;
-const AGENT_FIELDS = ['key', 'title', 'prompt', 'folders', 'doneWhen', 'waitsFor'];
+const AGENT_FIELDS = ['key', 'title', 'prompt', 'folders', 'doneWhen', 'waitsFor', 'model', 'effort'];
+/** Model and thinking level: the planner's choice per agent; an empty one leaves the run's default. The board and the
+ * Mother's mid-run additions may leave them out. */
+const CHOSEN = ['model', 'effort'];
 const PLAN_FIELDS = ['name', 'mode', 'why', 'agents'];
 const MODES = ['direct', 'team'];
 
@@ -23,7 +27,7 @@ export const PLAN_SCHEMA = {
     mode: { type: 'string', enum: MODES },
     why: string,
     agents: { type: 'array', items: { type: 'object', additionalProperties: false, required: AGENT_FIELDS,
-      properties: { key: string, title: string, prompt: string, folders: strings, doneWhen: strings, waitsFor: strings } } },
+      properties: { key: string, title: string, prompt: string, folders: strings, doneWhen: strings, waitsFor: strings, model: string, effort: string } } },
   },
 };
 
@@ -71,7 +75,7 @@ function parseRequest(input) {
 
 // ---- The prompt ----------------------------------------------------------------------------------------------
 
-function promptFor({ goal, folders, agents, maxAgents }) {
+function promptFor({ goal, folders, agents, maxAgents }, { models = [], preferences = '' } = {}) {
   const rules = [
     `mode: first decide. "direct" when one agent can finish the goal in one sitting (one file, one small change, one answer): then agents holds exactly one agent, whose prompt is the goal, word for word. "team" when the goal has independent parts, or the board already has agents. why: one line that says which and why.`,
     `Use at most ${maxAgents} agents.`,
@@ -80,6 +84,9 @@ function promptFor({ goal, folders, agents, maxAgents }) {
     'folders: copy them from the folder list, the narrowest ones the agent writes; never the whole project, except "." for an agent that must write a file directly in the project root (such as a file the goal names there), which then runs alone. Two agents that run at the same time must not share a folder. Every agent also gets its own folder for its report, so an agent that changes no project files needs none.',
     'waitsFor: the keys of the agents this one builds on (a DAG, no loops). Agents that build on nothing wait for nothing, so they run in parallel.',
     'prompt: short and concrete (what to build, where, what to leave alone). title: plain language, 6 words at most. doneWhen: one to three checks anyone can verify. key: a short lowercase word with dashes. name: two to five plain words for the team.',
+    models.length
+      ? 'model and effort: choose them for each agent from the model list, weighing only three things: how hard its job is, what it costs (a subscription model with quota left costs nothing extra; never choose one whose limit is reached), and the user\'s preferences. Harder work gets a stronger model and a higher thinking level. effort must be one the model lists.'
+      : 'model and effort: leave both empty.',
     ...agents.length ? ["Keep every existing agent's key. For an existing agent, fill only what is empty (prompt, folders, doneWhen) unless the goal asks to change it. Return a field you leave alone as it is, or empty: the canvas keeps what it has. Add agents for parts the board lacks; leave an agent out only if the goal asks."] : [],
   ];
   return [
@@ -88,8 +95,10 @@ function promptFor({ goal, folders, agents, maxAgents }) {
     folders.length ? `Project folders (repository-relative). An agent's folders must be copied from this list, exactly:\n${folders.map(folder => `- ${folder}`).join('\n')}`
       : 'No folder list was given, so every agent\'s folders must be an empty list, or "." for an agent that writes a file directly in the project root.',
     agents.length ? `Current board (the agents the user already has; waitsFor lists the keys each builds on):\n${JSON.stringify(agents, null, 2)}` : 'The board is empty: every agent is new.',
+    models.length ? `Model list (id, thinking levels, whether its limit is reached):\n${models.map(route => `- ${route.model}: ${route.efforts?.join(', ') || 'default only'}${route.exhausted ? ' (limit reached)' : ''}`).join('\n')}` : '',
+    preferences.trim() ? `The user's preferences (their custom instructions):\n${preferences.trim().slice(0, 4000)}` : '',
     `Rules:\n${rules.map((rule, index) => `${index + 1}. ${rule}`).join('\n')}`,
-  ].join('\n\n');
+  ].filter(Boolean).join('\n\n');
 }
 
 // ---- The answer ----------------------------------------------------------------------------------------------
@@ -112,7 +121,7 @@ function textList(agent, field, label) {
 }
 
 /** Also checks the Mother's mid-run additions (bridge/workflow-acp.mjs): the same rules for keys, folders and wiring. */
-export function checkPlan(answer, { folders, agents: board, maxAgents }) {
+export function checkPlan(answer, { folders, agents: board, maxAgents, models = [] }) {
   const plan = shape(parse(answer), PLAN_FIELDS, 'The plan');
   if (typeof plan.name !== 'string' || !plan.name.trim() || plan.name.length > 200) throw refuse('the plan has no name');
   if (!MODES.includes(plan.mode)) throw refuse('the plan has no mode ("direct" or "team")');
@@ -124,7 +133,7 @@ export function checkPlan(answer, { folders, agents: board, maxAgents }) {
   const agents = plan.agents.map((raw, index) => {
     const label = `Agent ${typeof raw?.key === 'string' && raw.key ? `"${raw.key}"` : `#${index + 1}`}`;
     const agent = shape(raw, AGENT_FIELDS, label);
-    for (const field of AGENT_FIELDS) if (!(field in agent)) throw refuse(`${label} is missing ${field}`);
+    for (const field of AGENT_FIELDS) if (!(field in agent) && !CHOSEN.includes(field)) throw refuse(`${label} is missing ${field}`);
     if (typeof agent.key !== 'string' || !KEY.test(agent.key)) throw refuse(`${label} needs a key of letters, digits, dashes and underscores`);
     if (seen.has(agent.key)) throw refuse(`Two agents share the key "${agent.key}"`);
     seen.add(agent.key);
@@ -138,7 +147,7 @@ export function checkPlan(answer, { folders, agents: board, maxAgents }) {
     const chosen = [...new Set(textList(agent, 'folders', label))];
     // "." is the whole project: the only way to write a file in its root (28 Oct: "create hello.txt in the sandbox" could never pass).
     for (const folder of chosen) if (folder !== '.' && !listed.has(folder) && !own.has(folder)) throw refuse(`${label} uses the folder "${folder}", which is not in the project's folder list`);
-    return { key: agent.key, title: agent.title.trim(), prompt: agent.prompt.trim(), folders: chosen, doneWhen: textList(agent, 'doneWhen', label), waitsFor: [...new Set(textList(agent, 'waitsFor', label))] };
+    return { key: agent.key, title: agent.title.trim(), prompt: agent.prompt.trim(), folders: chosen, doneWhen: textList(agent, 'doneWhen', label), waitsFor: [...new Set(textList(agent, 'waitsFor', label))], ...route(agent, models) };
   });
   for (const agent of agents) for (const key of agent.waitsFor) if (!seen.has(key)) throw refuse(`Agent "${agent.key}" waits for "${key}", which is not in the plan`);
   const waits = new Map(agents.map(agent => [agent.key, agent.waitsFor])), done = new Set();
@@ -152,12 +161,32 @@ export function checkPlan(answer, { folders, agents: board, maxAgents }) {
   return { name: plan.name.trim(), mode: plan.mode, why: plan.why.trim(), agents };
 }
 
+/** The planner's model and thinking level, kept only when the model is a listed route with quota left and the level is
+ * one it lists; otherwise nothing, so the run's default applies. */
+function route(agent, models) {
+  const listed = models.find(item => item.model === agent.model && !item.exhausted);
+  if (!listed) return {};
+  return { model: listed.model, provider: listed.provider, ...(listed.efforts?.includes(agent.effort) ? { effort: agent.effort } : {}) };
+}
+
+/** The subscription routes the planner may choose from, and the user's custom instructions as their preferences. */
+async function choices(client) {
+  try {
+    const [catalog, providers, settings] = await Promise.all([client.models(), client.providers(), client.settings()]);
+    // An unknown managed policy cannot authorize a connection (as the run's own routes, client.mjs modelRoutes).
+    const managed = settings?.managed;
+    const models = managed?.available ? workflowModelRoutes(catalog?.data ?? [], providers ?? {}, { modelProvider: managed.modelProvider }) : [];
+    return { models, preferences: settings?.options?.developerInstructions ?? '' };
+  } catch { return { models: [], preferences: '' }; }
+}
+
 // ---- The route's operation -----------------------------------------------------------------------------------
 
 /** Decides and plans for `input.goal`: `{ name, mode, why, agents }`, one agent when mode is "direct". `client` is the bridge's DesktopClient. */
 export async function planCanvas(client, input, { timeoutMs = PLAN_TIMEOUT_MS } = {}) {
   const request = parseRequest(input);
-  const answer = await askBackground(client, { prompt: promptFor(request), schema: PLAN_SCHEMA, cwd: request.cwd, permissions: ':danger-full-access', timeoutMs,
+  const options = typeof client.models === 'function' ? await choices(client) : { models: [], preferences: '' };
+  const answer = await askBackground(client, { prompt: promptFor(request, options), schema: PLAN_SCHEMA, cwd: request.cwd, permissions: ':danger-full-access', timeoutMs,
     failed: 'Elpis could not plan', late: `Elpis did not finish planning within ${timeoutMs / 1000} seconds. Try again, or add the agents yourself.` });
-  return checkPlan(answer, request);
+  return checkPlan(answer, { ...request, models: options.models });
 }
