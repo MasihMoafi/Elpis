@@ -65,10 +65,25 @@ pub(crate) fn ordinal_state_for_rollout(
     }
 
     let mut scanner = ReverseJsonlScanner::new(file)?;
-    let record = loop {
+    // Elpis (3 Nov): a record appended without an ordinal (as three thread settings events were to a
+    // paginated chat) made the whole chat refuse to open. Unnumbered trailing records are skipped;
+    // numbering continues after the last numbered one.
+    let mut parsed_any = false;
+    let ordinal = loop {
         match scanner.scan_next_rollout_line()? {
-            Some(ScanOutcome::Parsed(record)) => break record,
+            Some(ScanOutcome::Parsed(record)) => {
+                parsed_any = true;
+                if let Some(ordinal) = record.ordinal {
+                    break ordinal;
+                }
+            }
             Some(ScanOutcome::Rejected(_)) => continue,
+            None if parsed_any => {
+                return Err(io::Error::other(format!(
+                    "final paginated rollout record at {} is missing an ordinal",
+                    path.display()
+                )));
+            }
             None => {
                 return Err(io::Error::other(format!(
                     "rollout at {} contains no valid records",
@@ -77,12 +92,6 @@ pub(crate) fn ordinal_state_for_rollout(
             }
         }
     };
-    let ordinal = record.ordinal.ok_or_else(|| {
-        io::Error::other(format!(
-            "final paginated rollout record at {} is missing an ordinal",
-            path.display()
-        ))
-    })?;
     // Child records must start at `subagent_history_start_ordinal`. If initialization died while
     // copying the inherited parent records, resuming would append child records before that
     // boundary.
