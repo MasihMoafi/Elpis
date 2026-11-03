@@ -113,6 +113,9 @@ apps:
     command: bin/elpis
 YAML
 
+# Licence notices for everything the snap carries or bundles.
+node "$APP/scripts/third-party-notices.mjs" "$S" "$S/THIRD-PARTY-NOTICES.txt"; cp "$R/LICENSE" "$S/LICENSE"
+
 # No personal data: nothing may name the builder's home folder or git email.
 email=$(git -C "$R" config user.email || true)
 if rg -l -F -e "$HOME/" ${email:+-e "$email"} "$S" || find "$S" -type l -lname "$HOME/*" | rg .; then echo "The snap names the builder's home or email; not built." >&2; exit 1; fi

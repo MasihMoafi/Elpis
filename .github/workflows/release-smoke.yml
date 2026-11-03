@@ -7,7 +7,7 @@ on:
       tag:
         description: Release tag to test
         required: true
-        default: v0.5.0
+        default: v0.5.1
 jobs:
   smoke:
     runs-on: ubuntu-latest
@@ -50,6 +50,12 @@ jobs:
               ./"$f" --appimage-extract >/dev/null
               echo "TUI=/dl/squashfs-root/AppRun elpis" >> "$GITHUB_ENV"; echo "APP=/dl/squashfs-root/AppRun" >> "$GITHUB_ENV"; echo "NODE=env APPDIR=/dl/squashfs-root /dl/squashfs-root/bin/node" >> "$GITHUB_ENV" ;;
           esac
+      - name: Licence notices ship with the desktop app
+        if: matrix.way != 'script'
+        run: |
+          set -eux
+          case "${{ matrix.way }}" in deb) d=/usr/share/doc/elpis-desktop ;; appimage) d=/dl/squashfs-root ;; esac
+          test -s "$d/LICENSE"; grep -q '^== npm packages' "$d/THIRD-PARTY-NOTICES.txt"; grep -q 'SIL Open Font License' "$d/THIRD-PARTY-NOTICES.txt"
       - name: Terminal app runs
         run: |
           set -eux
