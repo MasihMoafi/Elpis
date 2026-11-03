@@ -1591,15 +1591,17 @@ test('a rejected native rewind never claims success and never starts its replace
   } finally { client.close(); }
 });
 
-test('deleting a chat also deletes chats continued from its agents, then forgets it', async () => {
+// 3 Nov, Masih: deleting a chat silently deleted the chat continued from it (his working Hermes chat).
+test('deleting a chat that a continued chat was forked from archives it and never deletes the fork', async () => {
   const { client, socket, threads } = fixture(); await client.initialize(); await client.listThreads();
   threads.get(CHILD).status = { type: 'idle' };
   await client.send(CHILD, { text: 'Follow up', continueAs: 'Failure reporting (continued)' });
   const events = []; client.on('event', event => events.push(event));
   const result = await client.deleteThread(ROOT, {});
-  assert.deepEqual(result, { deleted: true, alsoDeleted: [FORK] });
-  assert.deepEqual(socket.sent.filter(row => row.method === 'thread/delete').map(row => row.params.threadId), [ROOT, FORK, ROOT]);
-  assert.equal(threads.has(ROOT) || threads.has(FORK) || threads.has(CHILD), false);
+  assert.deepEqual(result, { deleted: true, archived: true, alsoDeleted: [] });
+  assert.deepEqual(socket.sent.filter(row => row.method === 'thread/delete').map(row => row.params.threadId), [ROOT], 'no fork is ever deleted');
+  assert.ok(threads.has(FORK), 'the continued chat stays');
+  assert.equal(threads.get(ROOT).archived, true, 'the deleted chat is archived, keeping the history its fork uses');
   socket.emit('message', JSON.stringify({ method: 'thread/deleted', params: { threadId: ROOT } }));
   assert.equal(events.filter(event => event.data?.method === 'thread/deleted').length, 0, 'forgotten chats emit nothing more');
   client.close();
@@ -1609,8 +1611,8 @@ test('delete locks release across sequential, descendant and bulk deletes, but s
   const f = fixture(); t.after(() => f.client.close()); await f.client.initialize(); await f.client.listThreads();
   f.threads.get(CHILD).status = { type: 'idle' };
   await f.client.send(CHILD, { text: 'Follow up', continueAs: 'Failure reporting (continued)' });
-  assert.deepEqual(await f.client.deleteThread(ROOT, {}), { deleted: true, alsoDeleted: [FORK] });
-  assert.ok(!f.threads.has(ROOT) && !f.threads.has(CHILD) && !f.threads.has(FORK), 'the root, child and continued fork are gone');
+  assert.deepEqual(await f.client.deleteThread(ROOT, {}), { deleted: true, archived: true, alsoDeleted: [] });
+  assert.ok(f.threads.has(FORK) && f.threads.get(ROOT).archived, 'the continued fork stays and the root is archived');
 
   const ids = [8, 9, 10, 11, 12].map(value => `00000000-0000-0000-0000-${String(value).padStart(12, '0')}`);
   for (const id of ids) f.threads.set(id, { id, cwd: os.tmpdir(), source: 'cli', status: { type: 'idle' } });
@@ -1693,76 +1695,6 @@ test('an annotation waits for a pending chat operation and is sent once', async 
   assert.equal(f.socket.sent.filter(row => row.method === 'turn/start').length, 1);
 });
 
-function pagedDeletionFixture(control = {}) {
-  const f = fixture(), key = value => `00000000-0000-0000-0000-${String(value).padStart(12, '0')}`;
-  const childIds = Array.from({ length: 125 }, (_, index) => key(1000 + index)), forkIds = [FORK, key(8), ...childIds.map((_, index) => key(2000 + index))];
-  const unrelatedIds = [key(5000), key(5001)]; f.threads.get(CHILD).status = { type: 'idle' };
-  const add = (id, fields) => f.threads.set(id, { id, source: 'appServer', status: { type: 'idle' }, ...fields });
-  add(FORK, { forkedFromId: CHILD }); add(key(8), { forkedFromId: CHILD });
-  for (const id of childIds) add(id, { parentThreadId: ROOT });
-  for (let index = 0; index < childIds.length; index++) add(forkIds[index + 2], { forkedFromId: childIds[index] });
-  add(unrelatedIds[0], {}); add(unrelatedIds[1], { forkedFromId: unrelatedIds[0] });
-  const send = f.socket.send;
-  const reply = (request, result, error) => queueMicrotask(() => f.socket.emit('message', JSON.stringify({ id: request.id, ...(error ? { error: { code: -32600, message: error } } : { result }) })));
-  f.socket.send = raw => {
-    const request = JSON.parse(raw), params = request.params;
-    if (request.method === 'thread/list') {
-      f.socket.sent.push(request); const stage = params.ancestorThreadId ? 'descendants' : 'all';
-      if (control.failStage === stage && params.cursor) return reply(request, null, `Fixture later ${stage} page failed`);
-      const rows = [...f.threads.values()].filter(thread => !!thread.archived === !!params.archived).filter(thread => !params.ancestorThreadId || thread.parentThreadId === params.ancestorThreadId), start = Number(params.cursor || 0), next = start + params.limit;
-      const nextCursor = control.badStage === stage ? control.badCursor === 'cycle' ? '100' : 7 : next < rows.length ? String(next) : null;
-      return reply(request, { data: rows.slice(start, next).map(thread => ({ ...thread, forkedFromId: null })), nextCursor });
-    }
-    if (request.method === 'thread/read' && control.failStage === 'metadata' && params.threadId === key(8)) { f.socket.sent.push(request); return reply(request, null, 'Fixture fork metadata failed'); }
-    if (request.method === 'thread/delete') {
-      f.socket.sent.push(request);
-      if (params.threadId === ROOT && forkIds.some(id => f.threads.has(id))) return reply(request, null, 'cannot delete thread: forked history still references it');
-      if (params.threadId === ROOT) for (const id of [CHILD, ...childIds]) f.threads.delete(id);
-      f.threads.delete(params.threadId); return reply(request, {});
-    }
-    send(raw);
-  };
-  return { ...f, childIds, forkIds, unrelatedIds, control };
-}
-
-test('deletion fallback paginates over 100 descendants and fork references without deleting unrelated chats', async t => {
-  const f = pagedDeletionFixture(); t.after(() => f.client.close()); await f.client.initialize();
-  const result = await f.client.deleteThread(ROOT, {});
-  assert.deepEqual(result, { deleted: true, alsoDeleted: f.forkIds });
-  const lists = f.socket.sent.filter(row => row.method === 'thread/list');
-  assert.deepEqual(lists.filter(row => row.params.ancestorThreadId && !row.params.archived).map(row => row.params.cursor ?? null), [null, '100']);
-  assert.deepEqual(lists.filter(row => !row.params.ancestorThreadId && !row.params.archived).map(row => row.params.cursor ?? null), [null, '100', '200']);
-  assert.deepEqual(f.socket.sent.filter(row => row.method === 'thread/delete').map(row => row.params.threadId), [ROOT, ...f.forkIds, ROOT]);
-  assert.deepEqual([...f.threads.keys()], f.unrelatedIds);
-});
-
-test('deletion fallback includes archived descendants and their archived referencing forks', async t => {
-  const f = pagedDeletionFixture(); t.after(() => f.client.close()); await f.client.initialize();
-  f.threads.get(f.childIds.at(-1)).archived = true;
-  f.threads.get(f.forkIds.at(-1)).archived = true;
-  const result = await f.client.deleteThread(ROOT, {});
-  assert.deepEqual(new Set(result.alsoDeleted), new Set(f.forkIds));
-  assert.deepEqual([...f.threads.keys()], f.unrelatedIds);
-  assert(f.socket.sent.some(row => row.method === 'thread/list' && row.params.archived && row.params.ancestorThreadId === ROOT));
-});
-
-for (const [name, control] of [
-  ['a later descendant page fails', { failStage: 'descendants' }], ['a later reference page fails', { failStage: 'all' }],
-  ['a descendant cursor repeats', { badStage: 'descendants', badCursor: 'cycle' }], ['a reference cursor repeats', { badStage: 'all', badCursor: 'cycle' }],
-  ['a descendant cursor is malformed', { badStage: 'descendants', badCursor: 'malformed' }], ['a reference cursor is malformed', { badStage: 'all', badCursor: 'malformed' }],
-  ['fork metadata cannot be read', { failStage: 'metadata' }],
-]) test(`deletion fallback preserves every chat when ${name}`, async t => {
-  const f = pagedDeletionFixture(control); t.after(() => f.client.close()); await f.client.initialize();
-  let failure; try { await f.client.deleteThread(ROOT, {}); } catch (error) { failure = error; }
-  assert.deepEqual(f.socket.sent.filter(row => row.method === 'thread/delete').map(row => row.params.threadId), [ROOT], 'Only the rejected initial root deletion is allowed before complete discovery');
-  assert.ok(failure, 'Incomplete reference discovery must be reported');
-  assert.ok([ROOT, CHILD, ...f.childIds, ...f.forkIds, ...f.unrelatedIds].every(id => f.threads.has(id)), 'No chat may disappear after an incomplete fallback preflight');
-  if (control.failStage) assert.match(failure.message, /rejected|failed|could not/i);
-  else assert.match(failure.message, /complete|cursor|list/i);
-  control.failStage = null; control.badStage = null;
-  assert.deepEqual(await f.client.deleteThread(ROOT, {}), { deleted: true, alsoDeleted: f.forkIds }, 'Correcting the failed read permits a fresh deletion');
-  assert.deepEqual([...f.threads.keys()], f.unrelatedIds);
-});
 
 test('Claude MCP import previews safely, rejects stale and duplicate entries, and writes without reload', async () => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-claude-mcp-'));

@@ -21,7 +21,6 @@ import { providerModels } from './provider-models.mjs';
 import { attachmentInput, recordedMedia } from './attachments.mjs';
 import { SkillTrash } from './skill-trash.mjs';
 import { createGithubConnector } from './github-connector.mjs';
-import { scanDeletionThreads } from '../lib/thread-deletion.ts';
 import { changedFiles, createChatWorktree, currentBranch, discardFile, fileDiff, isChatWorktreePath, releaseChatWorktree, restoreChatWorktree, reviewChoices, undoChatWorktree, workingDiff, NOT_A_REPOSITORY } from './git.mjs';
 import { recordedChanges } from './recorded-changes.mjs';
 import { elicitationResponse, grantedPermissions, permissionsResponse } from '../lib/approvals.ts';
@@ -1643,37 +1642,23 @@ export class DesktopClient extends EventEmitter {
     const inUse = await this.#rpc('thread/list', { cwd, limit: 1, modelProviders: [], sourceKinds: SOURCE_KINDS }).then(result => result.data?.length > 0, () => true);
     return inUse ? null : releaseChatWorktree(cwd);
   }
-  /** Deletes a chat and its agents; chats forked from that subtree (continued agents) go first, since Elpis keeps history a fork uses. */
+  /** Deletes a chat and its agents. A chat that other chats were forked from cannot be deleted without them (Elpis
+   * keeps the history a fork uses), so it is archived instead: it leaves the list and every fork keeps working.
+   * 3 Nov, Masih: deleting a chat silently deleted its forks, among them the working Hermes chat. Never again. */
   async deleteThread(id, body) {
     object(body, []);
     return this.#mutate(id, async () => {
-      const removed = [], cwd = await this.#folderOf(id).catch(() => null);
+      const cwd = await this.#folderOf(id).catch(() => null);
       try { await this.#rpc('thread/delete', { threadId: id }); }
       catch (error) {
         if (!/forked history still references it/.test(error.message)) throw error;
-        const listAll = options => scanDeletionThreads(page => this.listThreads({ ...options, ...page, includeAgentRuns: true })).catch(() => {
-          throw new BridgeError('Elpis could not read the complete conversation list. No related chats were deleted.', 502);
-        });
-        const subtree = new Set([id, ...(await listAll({ ancestorThreadId: id })).map(thread => thread.id)]), forks = [];
-        // thread/list leaves forkedFromId unset for stored rows; thread/read reports it.
-        for (const thread of await listAll({})) {
-          if (subtree.has(thread.id)) continue;
-          let source = thread.forkedFromId;
-          if (source == null) {
-            const read = await this.#rpc('thread/read', { threadId: thread.id, includeTurns: false });
-            if (read?.thread?.id !== thread.id) throw new BridgeError('Elpis could not verify a conversation reference. No related chats were deleted.', 502);
-            source = read.thread.forkedFromId;
-          }
-          if (source != null) threadId(source);
-          if (source && subtree.has(source)) forks.push(thread.id);
-        }
-        if (!forks.length) throw error;
-        for (const fork of forks) { await this.#rpc('thread/delete', { threadId: fork }); removed.push(fork); this.#forget(fork); }
-        await this.#rpc('thread/delete', { threadId: id });
+        await this.#rpc('thread/archive', { threadId: id });
+        this.#forget(id);
+        return { deleted: true, archived: true, alsoDeleted: [] };
       }
       this.#forget(id);
       const worktree = await this.#releaseWorktree(cwd);
-      return { deleted: true, alsoDeleted: removed, ...(worktree ? { worktree } : {}) };
+      return { deleted: true, alsoDeleted: [], ...(worktree ? { worktree } : {}) };
     }, true);
   }
   /** The composer's `!` deliberately uses the engine's user shell command, not a model turn. */
