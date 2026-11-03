@@ -1,4 +1,4 @@
-# Elpis go-to-market (draft, 1 Nov 2026)
+# Elpis go-to-market (draft, 1 Nov 2026; revised 3 Nov)
 
 **One line (GitHub description):** An agent harness for Linux, built on Codex: you choose what each agent sees, and in a team each agent owns its folder, is checked, and merges only after review.
 
@@ -21,16 +21,34 @@ The problem: several agents on one task overwrite each other, nobody checks the 
 
 Lead with one idea: **Rust's ownership rule, applied to agents.** Never say "best", "first" or "fastest".
 
+## What a top launch professional adds (3 Nov, "Deeper Work" prompt and Lee Robinson's "On Developer Marketing")
+
+- **One demo, one claim.** The Workflows film shows the claim (each agent owns its folder, a checker reviews, only checked work merges). Every channel leads with it.
+- **Raw material first.** Before writing, collect 10 real posts (HN, Reddit, X) where people complain that parallel agents overwrite each other or that context is invisible; quote their words, not ours.
+- **Teach how it's built.** The launch post explains Kahn waves and Rust-style ownership with the code paths; marketing is the engineering write-up.
+- **Outside judge.** A friend installs from the public links on a clean machine before launch day; strangers' issues in week 1 are the real result.
+- **Trust.** Every link and command works; limits are stated in the first comment; no "best", "first" or "fastest".
+
+## Packages
+
+| Where | What | State (3 Nov) |
+| --- | --- | --- |
+| GitHub Releases | `elpis` .deb (engine) and `elpis-desktop` .deb (101 MB, built by `apps/elpis-desktop/scripts/build-deb.sh`), checksums | Desktop .deb built locally; the engine .deb must also carry the provider bridge (`tools/elpis-claude`) |
+| Snap Store | One snap with the engine and the desktop app | Not started. An agent harness runs shell commands anywhere, so it needs **classic confinement**, which the Snap Store grants only after a manual review (days to weeks): apply early |
+| Install script | `install-elpis.sh` for the terminal app | Works (v0.4.1) |
+
 ## Channels
 
 | Channel | Post | Proof attached |
 | --- | --- | --- |
-| masihmoafi.com | Launch post: the problem, the Voting run, the ownership table, install | Workflows film |
-| GitHub | README, release notes, description and topics | README images, CI badge |
+| masihmoafi.com | Live since 3 Nov: the desktop section with both films. Launch post: the problem, the Voting run, the ownership table, install | Workflows film |
+| GitHub | README (ready; its push to `main` waits for Masih), release notes, description and topics, Discussions on for questions | README GIFs, CI badge |
+| elpis.masihmoafi.com | The desktop section with both films and the command center (on the work branch, not deployed) | Films |
+| DEV / Lobsters / r/rust | The engineering write-up (ownership as in Rust), not an ad | Code paths |
 | X | Thread: 1 failure (two agents overwrite each other) → 2 film → 3 ownership table → 4 Kahn diagram → 5 link | 30 s Workflows clip |
 | Hacker News | "Show HN: Elpis – Rust-style ownership for teams of coding agents (Linux, open source)"; first comment: what is enforced, what is not yet | Link to README, not the website |
 | Reddit | r/LocalLLaMA, r/ClaudeAI, r/ChatGPTCoding, r/rust (ownership angle only). Ask one question: how do you stop parallel agents overwriting each other? | Film or diagram |
-| YouTube | Workflows film (full run), Logo film, Love Spot film | Real run times on screen |
+| YouTube | Workflows film, Love Spot film (the Logo film is deleted) | Real run times on screen |
 
 ## Launch day (all steps need Masih)
 
