@@ -212,7 +212,7 @@ skills expose compact metadata and keep their bodies lazy; `/skills` shows avail
 but mentions and the model-visible list contain enabled skills only. The Ledger has no skills-catalog token row;
 its per-source estimates are not tokenizer measurements.
 
-[<img src="docs/assets/elpis-context-ledger-20261013.png" alt="Elpis Context Ledger showing admitted memory and instructions, context categories, Smart Prune and subagent controls" width="492" height="750">](docs/assets/elpis-context-ledger-20261013.png)
+[<img src="docs/assets/elpis-context-ledger-20261013.png" alt="Elpis Context Ledger showing admitted memory and instructions, context categories, Smart Prune and subagent controls" width="480" height="600">](docs/assets/elpis-context-ledger-20261013.png)
 
 Context Ledger in the terminal app · 3 November 2026 · after one turn. Subagent
 delegation is on; Smart Prune is experimental and off by default. Category shares and source sizes are estimates; the measured request

@@ -4,7 +4,8 @@
 
 .current-media { margin: 1.5rem 0; }
 .current-media img, .motion-preview video { display:block; width:100%; max-width:1052px; margin:auto; border:1px solid #3b3528; border-radius:12px; background:#111214; }
-.current-media figcaption, .current-gallery figcaption, .motion-preview p { margin-top:.8rem; color:#c8c0ae; font-size:.9rem; line-height:1.6; }
+.current-media figcaption, .current-gallery figcaption, .motion-preview p, .motion-preview figcaption { margin-top:.8rem; color:#c8c0ae; font-size:.9rem; line-height:1.6; }
+.motion-preview figcaption, .motion-preview p { text-align:center; }
 .motion-preview { margin:1.5rem 0 3rem; }
 .motion-preview summary { cursor:pointer; color:#efc16b; padding:1rem 0; }
 .evidence-note { max-width:80ch; margin:1.5rem 0; line-height:1.8; color:#c8c0ae; }
