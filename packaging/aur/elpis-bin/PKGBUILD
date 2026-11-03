@@ -1,6 +1,6 @@
 # Maintainer: Masih Moafi <MasihMoafi at users dot noreply dot github dot com>
 pkgname=elpis-bin
-pkgver=0.5.0
+pkgver=0.5.1
 pkgrel=1
 pkgdesc='Coding agents you can see, check and combine: terminal and desktop app'
 arch=('x86_64')
@@ -17,8 +17,8 @@ source=("${_rel}/elpis_${pkgver}_amd64.deb"
         "${_rel}/elpis-desktop_${pkgver}_amd64.deb"
         "LICENSE-${pkgver}::https://raw.githubusercontent.com/MasihMoafi/Elpis/v${pkgver}/LICENSE")
 noextract=("elpis_${pkgver}_amd64.deb" "elpis-desktop_${pkgver}_amd64.deb")
-sha256sums=('aaf630f85397119b7632f1201a228ed1f43fb49344dedb0a11efbb34c980d5d7'
-            '9aee50c454c68374f198da396e2108dd39fcb2975a1f8086cea66ac22834fe5f'
+sha256sums=('60894b900644e42c2f7f1fa453aeab02def75cedd5d10d7afc4adc325bfba877'
+            '5e8d25c6483de59de521c34e3db5572b1cac58a6bc1cdee08a727c5e94815c9e'
             'SKIP')
 
 package() {
