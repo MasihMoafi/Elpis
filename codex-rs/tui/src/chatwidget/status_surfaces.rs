@@ -1061,7 +1061,12 @@ impl ChatWidget {
             return false;
         }
 
-        self.mcp_startup_status.is_some() || self.bottom_pane.is_task_running()
+        // MCP startup alone is not activity: the footer hides it when no turn runs, and a server that never reports
+        // its startup kept the title spinning after every chat had finished (3 Nov). The title follows the footer.
+        let mcp_startup_only = self.mcp_startup_status.is_some()
+            && !self.turn_lifecycle.agent_turn_running
+            && !self.review.is_review_mode;
+        self.bottom_pane.is_task_running() && !mcp_startup_only
     }
 
     pub(super) fn should_animate_terminal_title_spinner(&self) -> bool {

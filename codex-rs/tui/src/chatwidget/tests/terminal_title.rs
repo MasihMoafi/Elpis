@@ -401,3 +401,22 @@ async fn thread_title_progress_preserves_suffix_after_truncation_and_in_default_
         assert_eq!(title.chars().count(), 50);
     }
 }
+
+#[tokio::test]
+async fn terminal_title_stops_spinning_when_only_mcp_startup_is_pending() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.local_settings.tui.animations = true;
+    chat.mcp_startup_status = Some(HashMap::from([(
+        "slow-server".to_string(),
+        crate::chatwidget::mcp_startup::McpStartupStatus::Starting,
+    )]));
+    chat.update_task_running_state();
+    chat.refresh_terminal_title();
+    assert_eq!(chat.last_terminal_title, Some("project".to_string()));
+    assert!(!chat.should_animate_terminal_title_spinner());
+
+    chat.turn_lifecycle.agent_turn_running = true;
+    chat.update_task_running_state();
+    assert!(chat.should_animate_terminal_title_spinner());
+}
+
