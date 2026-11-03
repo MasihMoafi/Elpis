@@ -10,6 +10,8 @@
 
 <p align="center">A coding agent should only see what you chose to show it, and a team of agents should only touch what each was given. Elpis is an engineered agent harness for Linux, built on OpenAI’s Codex CLI: a home where your agents keep their context, and a board where you design how several of them work together.</p>
 
+<p align="center"><img src="docs/assets/elpis-demo.gif" alt="Elpis in the terminal: the agent reads the project, a long search result is shortened before the model sees it, and the reply arrives with 87% of the context left"></p>
+
 <p align="center"><img src="docs/assets/workflows-team.gif" alt="Workflows: the Mother agent designs a code-review team of eight agents in four waves, shown flat and in isometric, runs it and checks each agent's work"></p>
 
 <p align="center"><a href="https://github.com/MasihMoafi/Elpis/releases">Releases</a> · <a href="https://elpis.masihmoafi.com">Website</a> · <a href="docs/GUIDE.md">Technical guide</a> · <a href="CONTRIBUTING.md">Contributing</a> · <a href="LICENSE">License</a></p>
