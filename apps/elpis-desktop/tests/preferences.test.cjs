@@ -232,6 +232,24 @@ test('notifications follow the turn and input choices, skip agents and stopped t
   assert.equal(env.shown.length, 3, 'nothing is shown without permission');
 });
 
+test('a chat that answers on its own after its background jobs end notifies once, for the turn the person started', () => {
+  const env = browser({ focused: false }), use = loader();
+  const { notifyRuntimeEvent } = use('lib/notifications.ts');
+  const threads = [{ id: 'hermes', name: 'Hermes' }];
+  const event = (method, params) => notifyRuntimeEvent(method, { threadId: 'hermes', ...params }, threads);
+  event('turn/started', { turn: { id: 'asked', status: 'inProgress' } });
+  event('item/started', { turnId: 'asked', item: { type: 'userMessage' } });
+  event('turn/completed', { turn: { id: 'asked', status: 'completed' } });
+  for (const id of ['job-1', 'job-2', 'job-3']) {
+    event('turn/started', { turn: { id, status: 'inProgress' } });
+    event('item/started', { turnId: id, item: { type: 'agentMessage' } });
+    event('turn/completed', { turn: { id, status: 'completed' } });
+  }
+  assert.deepEqual(env.shown.map(item => item.title), ['Elpis finished'], 'Claude\'s own follow-up turns stay silent');
+  event('turn/completed', { turn: { id: 'running-before-the-window-opened', status: 'completed' } });
+  assert.equal(env.shown.length, 2, 'a turn whose start this window did not see still notifies');
+});
+
 test('queued follow-ups survive a reload or restart and still wait for a completed turn (R4)', async () => {
   const env = browser();
   const before = loader();
