@@ -36,6 +36,7 @@ for (const reduce of [true,false]) {
       querySelector:selector => selector === 'header.navbar' ? {offsetHeight:65}
         : selector === '[data-ace-demo]' ? demo
         : selector === '[data-ace-terminal]' ? terminal : null,
+      querySelectorAll:() => [],
       createElement:() => element('help'),
       addEventListener() {},
     };

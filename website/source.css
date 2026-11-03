@@ -306,3 +306,49 @@ figure img { display: block; width: 100%; height: auto; }
 .hero-content .btn:not(.btn-primary) { box-shadow: none; }
 [data-theme="elpis"] :is(.install-terminal, .hero-content .btn:not(.btn-primary)) { border-color: #47544b; color: #f1ede5; }
 .footer-title { opacity: 1; color: var(--color-base-content); }
+/* The desktop app's themes, driven by scroll: the section takes each theme's colours while the
+   next screenshot wipes in from the left behind a line in that theme's accent. app.js sets the
+   --tour-* colours and each shot's --reveal. */
+.theme-tour { --tour-bg:#0a0b0d; --tour-ink:#e6e0d3; --tour-muted:#9c9587; --tour-accent:#f2a93b; position:relative; height:420vh; overflow-anchor:none; background:var(--tour-bg); color:var(--tour-ink); border-bottom:1px solid var(--color-base-300); }
+.theme-tour-stage { position:sticky; top:65px; display:grid; grid-template-columns:minmax(0,.78fr) minmax(0,1.5fr); align-items:center; gap:clamp(1.5rem,4vw,4rem); height:calc(100svh - 65px); max-width:1500px; margin-inline:auto; padding:2rem clamp(1rem,4vw,3rem); box-sizing:border-box; }
+.theme-tour .section-title { color:var(--tour-ink); }
+.theme-tour .section-title em { color:var(--tour-muted); }
+.theme-tour .section-copy { color:var(--tour-muted); }
+.theme-tour .section-kicker { color:var(--tour-accent); }
+.theme-tour-list { display:grid; gap:.15rem; margin:1.75rem 0 0; padding:0; list-style:none; font:600 .8rem/1 "SFMono-Regular","Cascadia Mono","Liberation Mono",monospace; letter-spacing:.06em; text-transform:uppercase; }
+.theme-tour-list li { display:flex; align-items:center; gap:.7rem; padding:.55rem .2rem; color:var(--tour-muted); opacity:.55; transition:opacity .3s, color .3s, transform .3s; }
+.theme-tour-list small { font-size:.68rem; font-weight:500; opacity:.8; }
+.theme-tour-list li[data-active] { color:var(--tour-ink); opacity:1; transform:translateX(.4rem); }
+.theme-tour-swatch { width:.7rem; height:.7rem; border-radius:50%; border:1.5px solid currentColor; }
+.theme-tour-list li[data-active] .theme-tour-swatch { background:var(--tour-accent); border-color:var(--tour-accent); box-shadow:0 0 12px var(--tour-accent); }
+.theme-tour-window { position:relative; margin:0; aspect-ratio:960/655; border-radius:14px; overflow:hidden; border:1px solid color-mix(in oklab,var(--tour-ink) 18%,transparent); box-shadow:0 40px 90px -40px #000d, 0 0 0 1px color-mix(in oklab,var(--tour-accent) 16%,transparent); }
+.theme-tour-window img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; clip-path:inset(0 calc((1 - var(--reveal,0)) * 100%) 0 0); user-select:none; }
+.theme-tour-window img[data-theme-shot="0"] { clip-path:none; }
+.theme-tour-edge { position:absolute; top:0; bottom:0; left:calc(var(--edge,0) * 100%); width:2px; background:var(--edge-colour,var(--tour-accent)); box-shadow:0 0 18px 2px var(--edge-colour,var(--tour-accent)); opacity:var(--edge-on,0); pointer-events:none; }
+@media (max-width: 900px) {
+  .theme-tour { height:340svh; }
+  .theme-tour-stage { grid-template-columns:1fr; align-content:center; gap:1.25rem; padding-block:1rem; }
+  .theme-tour .section-copy { display:none; }
+  .theme-tour-list { display:flex; flex-wrap:wrap; gap:.25rem .9rem; margin-top:1rem; }
+  .theme-tour-list li { padding:.3rem 0; }
+  .theme-tour-list li[data-active] { transform:none; }
+}
+/* A film in the site's player frame: a title bar, the film, and its own controls with sound. */
+.film { max-width:1052px; margin:0 auto 3.5rem; }
+.film-window { --film-edge:color-mix(in oklab,var(--color-base-content) 14%,transparent); border:1px solid var(--film-edge); border-radius:14px; overflow:hidden; background:color-mix(in oklab,var(--color-base-100) 94%,#000); box-shadow:0 34px 80px -36px #000c; }
+.film-bar { display:flex; align-items:center; gap:.55rem; padding:.6rem .95rem; border-bottom:1px solid var(--film-edge); font:600 .72rem/1 "SFMono-Regular","Cascadia Mono","Liberation Mono",monospace; letter-spacing:.14em; text-transform:uppercase; color:color-mix(in oklab,var(--color-base-content) 62%,transparent); }
+.film-bar strong { color:var(--color-base-content); }
+.film-mark { color:var(--color-warning); }
+.film-meta { margin-left:auto; letter-spacing:.04em; }
+.film video { display:block; width:100%; aspect-ratio:16/9; background:#000; cursor:pointer; }
+.film-controls { display:flex; align-items:center; gap:.5rem; padding:.5rem .75rem; border-top:1px solid var(--film-edge); font:500 .72rem/1 "SFMono-Regular","Cascadia Mono","Liberation Mono",monospace; color:color-mix(in oklab,var(--color-base-content) 62%,transparent); }
+.film-btn { min-height:26px; padding:0 .65rem; border:1px solid var(--film-edge); background:transparent; color:var(--color-base-content); font:600 .7rem/1 "SFMono-Regular","Cascadia Mono","Liberation Mono",monospace; letter-spacing:.04em; cursor:pointer; clip-path:polygon(0 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%); }
+.film-btn:hover, .film-btn[aria-pressed="true"] { border-color:var(--color-warning); color:var(--color-warning); }
+.film-btn:focus-visible, .film-seek:focus-visible { outline:2px solid var(--color-warning); outline-offset:2px; }
+.film-seek { flex:1; min-width:3rem; height:3px; accent-color:var(--color-warning); cursor:pointer; }
+.film-time { min-width:7.5em; text-align:right; font-variant-numeric:tabular-nums; }
+.film figcaption { margin-top:.8rem; text-align:center; color:color-mix(in oklab,var(--color-base-content) 70%,transparent); font-size:.9rem; line-height:1.6; }
+@media (max-width: 560px) { .film-time { display:none; } .film-controls { gap:.35rem; padding-inline:.5rem; } }
+.theme-tour { transition:background-color .6s ease, color .6s ease; }
+.theme-tour :is(.section-title, .section-title em, .section-copy, .section-kicker) { transition:color .6s ease; }
+.theme-tour .section-copy { margin-top:1.6rem; }
