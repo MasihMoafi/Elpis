@@ -10,7 +10,7 @@ pub(crate) const WORKING_LABEL: &str = "Elpising";
 
 /// The Elpis release, as `elpis --version` prints it. The vendored crates keep Codex's
 /// version (0.158.0) because the model catalog keys on it.
-pub(crate) const ELPIS_VERSION: &str = "0.5.0";
+pub(crate) const ELPIS_VERSION: &str = "0.5.1";
 
 /// The version a title shows: the Elpis release in place of the vendored Codex version.
 pub(crate) fn title_version(version: &'static str) -> &'static str {

@@ -5,7 +5,7 @@
 #   Elpis-VERSION-x86_64.AppImage elpis …  runs the terminal app
 #   APPIMAGETOOL  appimagetool executable; default ~/.cache/elpis-tests/tools/appimagetool
 set -euo pipefail
-VERSION=${1:-0.5.0}
+VERSION=${1:-0.5.1}
 snap=${ELPIS_SNAP_DIR:-$HOME/.cache/elpis-tests/snap}/elpis-agent_${VERSION}_amd64.snap
 tool=${APPIMAGETOOL:-$HOME/.cache/elpis-tests/tools/appimagetool}
 [[ -f "$snap" ]] || { echo "build the snap first: scripts/build-snap.sh $VERSION" >&2; exit 1; }

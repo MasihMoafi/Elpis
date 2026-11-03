@@ -8,10 +8,10 @@ A coding agent should only see what you chose to show it, and a team of agents s
 
 ## Install
 
-Both apps are for Linux x86_64 and share one engine and one state folder, `~/.elpis-next`. The terminal app is [v0.5.0](https://github.com/MasihMoafi/Elpis/releases/tag/v0.5.0); read the installer before you run it:
+Both apps are for Linux x86_64 and share one engine and one state folder, `~/.elpis-next`. The terminal app is [v0.5.1](https://github.com/MasihMoafi/Elpis/releases/tag/v0.5.1); read the installer before you run it:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/v0.5.0/scripts/install-elpis.sh | bash
+curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/v0.5.1/scripts/install-elpis.sh | bash
 ~/.local/bin/elpis
 ```
 
@@ -20,16 +20,16 @@ The installer checks SHA-256 checksums and installs the terminal app, its Code M
 The desktop app is a Debian package on the same release. Download both packages, then install them together:
 
 ```bash
-sudo apt install ./elpis_0.5.0_amd64.deb ./elpis-desktop_0.5.0_amd64.deb
+sudo apt install ./elpis_0.5.1_amd64.deb ./elpis-desktop_0.5.1_amd64.deb
 elpis-app
 ```
 
-On any other Linux, including Fedora, Arch and Omarchy, download `Elpis-0.5.0-x86_64.AppImage` from the release; it holds both apps:
+On any other Linux, including Fedora, Arch and Omarchy, download `Elpis-0.5.1-x86_64.AppImage` from the release; it holds both apps:
 
 ```bash
-chmod +x Elpis-0.5.0-x86_64.AppImage
-./Elpis-0.5.0-x86_64.AppImage          # desktop app
-./Elpis-0.5.0-x86_64.AppImage elpis    # terminal app
+chmod +x Elpis-0.5.1-x86_64.AppImage
+./Elpis-0.5.1-x86_64.AppImage          # desktop app
+./Elpis-0.5.1-x86_64.AppImage elpis    # terminal app
 ```
 
 On Arch and Omarchy you can also build the native package: `git clone https://github.com/MasihMoafi/Elpis && cd Elpis/packaging/aur/elpis-bin && makepkg -si`.

@@ -5,7 +5,7 @@
 #   ENGINE_DIR  a folder with codex, codex-code-mode-host and bwrap (a CI build); default: the installed engine.
 #   ELECTRON_DIST  an Electron folder; default: the checkout's, else the installed app's (no download).
 set -euo pipefail
-VERSION=${1:-0.5.0}
+VERSION=${1:-0.5.1}
 R=$(cd "$(dirname "$0")/.." && pwd -P); APP=$R/apps/elpis-desktop
 commit=$(git -C "$R" rev-parse HEAD)
 built=$(cat "$APP/out/.commit" 2>/dev/null || true)

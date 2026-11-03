@@ -4,7 +4,7 @@ assertion_line: 716
 expression: "normalize_voice_snapshot_directory(&rendered, &app.config.cwd)"
 ---
 
-  >_ Elpis (v0.5.0)
+  >_ Elpis (v0.5.1)
      /tmp/project
 
   To get started, describe a task or try one of these commands:

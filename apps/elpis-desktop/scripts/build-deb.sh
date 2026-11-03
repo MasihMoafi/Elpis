@@ -4,7 +4,7 @@
 # The engine is the `elpis` package; this package carries its Claude bridge (tools/elpis-claude), found beside the
 # engine launcher /opt/elpis-desktop/engine/elpis-next. Without Node.js 22 or newer, Electron itself runs the bridges.
 set -euo pipefail
-VERSION=${1:-0.5.0}
+VERSION=${1:-0.5.1}
 APP="$(cd "$(dirname "$0")/.." && pwd)"
 commit=$(git -C "$APP" rev-parse HEAD)
 # out/ must be built from this commit, or from one whose app differs only in scripts/ (such as this script).
