@@ -44,7 +44,7 @@ test('hover follows every accent and built-in palette without changing selected 
       await expectHover(page.locator('.thread-row[data-thread-id="love-hover"]'), formula, `${mode}: Love Spot chat`);
       const coloured = page.locator('.thread-row[data-thread-id="chat-b"][data-conversation-colour="blue"]');
       await coloured.waitFor();
-      await expectHover(coloured, 'color-mix(in oklch,var(--primary) 6%,color-mix(in oklch,var(--workflow-colour) 12%,var(--sidebar)))', `${mode}: manually colored chat`);
+      await expectHover(coloured, formula, `${mode}: a coloured chat hovers like any row (its colour is only in its circle)`);
       const plus = page.getByRole('button', { name: 'Add files and more', exact: true });
       await expectHover(plus, formula, `${mode}: shared ghost button`);
       await plus.click();
