@@ -20,8 +20,8 @@
     <meta name="twitter:image" content="https://elpis.masihmoafi.com/assets/technical/elpis-context-ledger-20261013.png" />
     <meta name="twitter:image:alt" content="Elpis Context Ledger showing admitted memory, instructions and context categories." />
     <link rel="icon" href="./assets/branding/favicon-amber.svg" />
-    <link rel="stylesheet" href="./styles.css?v=desktop-20261103" />
-    <script src="./app.js?v=amber-20261020" type="module"></script>
+    <link rel="stylesheet" href="./styles.css?v=themes-20261103" />
+    <script src="./app.js?v=themes-20261103" type="module"></script>
     <link rel="stylesheet" href="./assets/branding/brand.css?v=amber-20261020" />
     <script src="./assets/branding/brand.js?v=amber-20261020"></script>
   </head>
@@ -140,14 +140,46 @@
         </div>
       </section>
 
-      <section class="site-section border-b border-base-300" id="desktop-app" aria-labelledby="desktop-app-title">
-        <div class="section-heading">
-          <div><p class="section-kicker">The desktop app</p><h2 id="desktop-app-title" class="section-title">One chat.<br /><em>Your theme.</em></h2></div>
-          <p class="section-copy">The desktop app runs the same engine as the terminal app and shares its state folder. Chat with GPT, Claude and Gemini models on your ChatGPT or Claude subscription or an API key. Pick Elpis, Paper, Midnight or Plum, each in light and dark, or build your own in Settings.</p>
+      <section class="theme-tour" id="desktop-app" data-theme-tour aria-labelledby="desktop-app-title">
+        <div class="theme-tour-stage">
+          <div class="theme-tour-copy">
+            <p class="section-kicker">The desktop app</p>
+            <h2 id="desktop-app-title" class="section-title">One chat.<br /><em>Your theme.</em></h2>
+            <p class="section-copy">The desktop app runs the same engine as the terminal app and shares its state folder. Chat with GPT, Claude and Gemini models on your ChatGPT or Claude subscription or an API key. Pick Elpis, Paper, Midnight or Plum, each in light and dark, or build your own in Settings.</p>
+            <ol class="theme-tour-list" aria-label="Themes"><li data-theme-step="0"><span class="theme-tour-swatch" aria-hidden="true"></span>Elpis <small>dark</small></li><li data-theme-step="1"><span class="theme-tour-swatch" aria-hidden="true"></span>Elpis <small>light</small></li><li data-theme-step="2"><span class="theme-tour-swatch" aria-hidden="true"></span>Midnight <small>dark</small></li><li data-theme-step="3"><span class="theme-tour-swatch" aria-hidden="true"></span>Paper <small>light</small></li><li data-theme-step="4"><span class="theme-tour-swatch" aria-hidden="true"></span>Plum <small>dark</small></li><li data-theme-step="5"><span class="theme-tour-swatch" aria-hidden="true"></span>Midnight <small>light</small></li></ol>
+          </div>
+          <figure class="theme-tour-window" aria-label="The same chat in six themes; scroll to change the theme"><img data-theme-shot="0" src="./assets/themes/elpis-dark.webp" alt="One Elpis desktop chat in the Elpis theme, dark" width="960" height="655" draggable="false" /><img data-theme-shot="1" src="./assets/themes/elpis-light.webp" alt="" width="960" height="655" draggable="false" loading="lazy" /><img data-theme-shot="2" src="./assets/themes/midnight-dark.webp" alt="" width="960" height="655" draggable="false" loading="lazy" /><img data-theme-shot="3" src="./assets/themes/paper-light.webp" alt="" width="960" height="655" draggable="false" loading="lazy" /><img data-theme-shot="4" src="./assets/themes/plum-dark.webp" alt="" width="960" height="655" draggable="false" loading="lazy" /><img data-theme-shot="5" src="./assets/themes/midnight-light.webp" alt="" width="960" height="655" draggable="false" loading="lazy" /><span class="theme-tour-edge" aria-hidden="true"></span></figure>
         </div>
-        <figure class="motion-preview"><video src="./assets/films/themes.mp4" autoplay loop muted playsinline controls preload="metadata" aria-label="One Elpis desktop chat in six themes: Elpis dark and light, Midnight dark, Paper light, Plum dark and Midnight light"></video><figcaption>Themes · one chat in Elpis, Midnight, Paper and Plum, light and dark</figcaption></figure>
-        <figure class="motion-preview"><video src="./assets/films/workflows.mp4" autoplay loop muted playsinline controls preload="metadata" aria-label="Workflows: the Mother agent designs a team, runs it and checks each agent's work"></video><figcaption>Workflows · the Mother agent designs the team, and a second agent checks each agent's work</figcaption></figure>
-        <figure class="motion-preview"><video src="./assets/films/lovespot.mp4" autoplay loop muted playsinline controls preload="metadata" aria-label="Love Spot: Matilda answers on the drawing board"></video><figcaption>Love Spot · Matilda answers on the drawing board</figcaption></figure>
+      </section>
+      <section class="site-section border-b border-base-300" id="desktop-films" aria-label="Workflows and Love Spot">
+        <figure class="film" data-film>
+          <div class="film-window">
+            <div class="film-bar"><span class="film-mark" aria-hidden="true">◆</span><strong>Elpis</strong><span>Workflows</span><span class="film-meta">0:58</span></div>
+            <video src="./assets/films/workflows.mp4" muted playsinline preload="metadata" aria-label="Workflows: the Mother agent designs a team, runs it and checks each agent's work"></video>
+            <div class="film-controls">
+              <button type="button" class="film-btn" data-film-play>Play</button>
+              <button type="button" class="film-btn" data-film-replay>Replay</button>
+              <input type="range" class="film-seek" data-film-seek min="0" max="1000" value="0" aria-label="Seek Workflows" />
+              <span class="film-time" data-film-time>0:00 / 0:58</span>
+              <button type="button" class="film-btn" data-film-sound aria-pressed="false">Sound on</button>
+            </div>
+          </div>
+          <figcaption>Workflows · the Mother agent designs the team, and a second agent checks each agent's work</figcaption>
+        </figure>
+        <figure class="film" data-film>
+          <div class="film-window">
+            <div class="film-bar"><span class="film-mark" aria-hidden="true">◆</span><strong>Elpis</strong><span>Love Spot</span><span class="film-meta">0:47</span></div>
+            <video src="./assets/films/lovespot.mp4" muted playsinline preload="metadata" aria-label="Love Spot: Matilda answers on the drawing board"></video>
+            <div class="film-controls">
+              <button type="button" class="film-btn" data-film-play>Play</button>
+              <button type="button" class="film-btn" data-film-replay>Replay</button>
+              <input type="range" class="film-seek" data-film-seek min="0" max="1000" value="0" aria-label="Seek Love Spot" />
+              <span class="film-time" data-film-time>0:00 / 0:47</span>
+              <button type="button" class="film-btn" data-film-sound aria-pressed="false">Sound on</button>
+            </div>
+          </div>
+          <figcaption>Love Spot · Matilda answers on the drawing board</figcaption>
+        </figure>
       </section>
 
       <section class="site-section grid gap-12 lg:grid-cols-[.8fr_1.2fr] lg:items-center" id="install" aria-labelledby="install-title">

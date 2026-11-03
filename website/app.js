@@ -238,3 +238,81 @@ document.addEventListener('click', event => {
 });
 addEventListener('scroll', closeExplanations, { capture: true, passive: true });
 addEventListener('resize', closeExplanations);
+
+// The desktop app's themes, driven by scroll (index.html #desktop-app). Each step holds one theme,
+// then the next wipes in from the left; the section takes the theme's background, ink and accent.
+const themeTour = document.querySelector("[data-theme-tour]");
+if (themeTour) {
+  const TOUR = [
+    { bg: "#0a0b0d", ink: "#e6e0d3", muted: "#9c9587", accent: "#f2a93b" },
+    { bg: "#fbfbfa", ink: "#252524", muted: "#636361", accent: "#c27a12" },
+    { bg: "#101521", ink: "#e4e9f5", muted: "#93a0ba", accent: "#9cb9f5" },
+    { bg: "#faf7f0", ink: "#2b2620", muted: "#6c6358", accent: "#8c542c" },
+    { bg: "#161018", ink: "#efe3f0", muted: "#a693a8", accent: "#d9a2e0" },
+    { bg: "#f6f8fc", ink: "#1f2533", muted: "#5d6678", accent: "#3158a6" },
+  ];
+  const shots = [...themeTour.querySelectorAll("[data-theme-shot]")];
+  const steps = [...themeTour.querySelectorAll("[data-theme-step]")];
+  const edge = themeTour.querySelector(".theme-tour-edge");
+  const stage = themeTour.querySelector(".theme-tour-stage");
+  const header = document.querySelector("header");
+  const clamp = (n) => Math.min(1, Math.max(0, n));
+  const ease = (t) => t * t * (3 - 2 * t);
+  let frame;
+  function renderTour() {
+    frame = undefined;
+    const travel = themeTour.offsetHeight - stage.offsetHeight;
+    const progress = clamp(((header?.offsetHeight || 0) - themeTour.getBoundingClientRect().top) / Math.max(1, travel));
+    const position = progress * (TOUR.length - 1);
+    const from = Math.min(TOUR.length - 2, Math.floor(position));
+    const wipe = ease(clamp((position - from - 0.3) / 0.55));
+    shots.forEach((shot, index) => shot.style.setProperty("--reveal", index <= from ? 1 : index === from + 1 ? wipe : 0));
+    const active = wipe < 0.5 ? from : from + 1;
+    // The section switches at the wipe's midpoint and fades (CSS transition), never through a muddy mix.
+    for (const key of ["bg", "ink", "muted", "accent"]) themeTour.style.setProperty(`--tour-${key}`, TOUR[active][key]);
+    edge.style.setProperty("--edge", wipe);
+    edge.style.setProperty("--edge-on", wipe > 0 && wipe < 1 ? 1 : 0);
+    edge.style.setProperty("--edge-colour", TOUR[from + 1].accent);
+    steps.forEach((step, index) => step.toggleAttribute("data-active", index === active));
+  }
+  const requestTour = () => { if (frame === undefined) frame = requestAnimationFrame(renderTour); };
+  addEventListener("scroll", requestTour, { passive: true });
+  addEventListener("resize", requestTour);
+  renderTour();
+}
+
+// Films in the player frame: they play muted while on screen and pause when scrolled away;
+// Play/Pause, Replay, seek and Sound are their own controls.
+const clock = (seconds) => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
+document.querySelectorAll("[data-film]").forEach((film) => {
+  const video = film.querySelector("video");
+  const play = film.querySelector("[data-film-play]");
+  const replay = film.querySelector("[data-film-replay]");
+  const seek = film.querySelector("[data-film-seek]");
+  const time = film.querySelector("[data-film-time]");
+  const sound = film.querySelector("[data-film-sound]");
+  let userPaused = false;
+  const paint = () => {
+    play.textContent = video.paused ? "Play" : "Pause";
+    play.setAttribute("aria-label", `${video.paused ? "Play" : "Pause"} the film`);
+    sound.textContent = video.muted ? "Sound on" : "Sound off";
+    sound.setAttribute("aria-pressed", String(!video.muted));
+    if (video.duration) {
+      seek.value = String(Math.round((video.currentTime / video.duration) * 1000));
+      time.textContent = `${clock(video.currentTime)} / ${clock(video.duration)}`;
+    }
+  };
+  const start = () => video.play().catch(() => undefined);
+  play.addEventListener("click", () => { userPaused = !video.paused; if (video.paused) start(); else video.pause(); });
+  video.addEventListener("click", () => play.click());
+  replay.addEventListener("click", () => { video.currentTime = 0; userPaused = false; start(); });
+  seek.addEventListener("input", () => { if (video.duration) video.currentTime = (Number(seek.value) / 1000) * video.duration; });
+  sound.addEventListener("click", () => { video.muted = !video.muted; if (!video.muted && video.paused) { userPaused = false; start(); } paint(); });
+  video.addEventListener("ended", () => { video.currentTime = 0; start(); });
+  for (const event of ["play", "pause", "timeupdate", "loadedmetadata", "volumechange"]) video.addEventListener(event, paint);
+  new IntersectionObserver(([entry]) => {
+    if (entry.isIntersecting && !userPaused) start();
+    else if (!entry.isIntersecting) video.pause();
+  }, { threshold: 0.45 }).observe(video);
+  paint();
+});
