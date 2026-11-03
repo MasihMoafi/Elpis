@@ -1,7 +1,8 @@
 <h1 align="center">
+  <img src="docs/assets/matilda-wink.webp" alt="Matilda, the app's companion, winks" width="92" align="middle">&nbsp;&nbsp;
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="apps/elpis-desktop/public/branding/elpis-wordmark-amber-loop.svg">
-    <img src="apps/elpis-desktop/public/branding/elpis-wordmark-amber-light-loop.svg" alt="Elpis" width="300">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/elpis-wordmark-burning-dark.svg">
+    <img src="docs/assets/elpis-wordmark-burning-light.svg" alt="Elpis" width="300">
   </picture>
 </h1>
 
@@ -10,7 +11,7 @@
 
 A coding agent should only see what you chose to show it, and a team of agents should only touch what each was given. Elpis is an engineered agent harness for Linux, built on OpenAI's Codex CLI: a home where your agents keep their context, and a board where you design how several of them work together.
 
-<p><img src="docs/assets/workflows.gif" width="82%" alt="Workflows: the Mother agent designs a team, runs it and checks each agent's work"> <img src="docs/assets/matilda-wink.webp" width="15%" alt="Matilda, the app's companion, winks"></p>
+![Workflows: the Mother agent designs a team, runs it and checks each agent's work](docs/assets/workflows.gif)
 
 [Releases](https://github.com/MasihMoafi/Elpis/releases) · [Website](https://elpis.masihmoafi.com) · [Technical guide](docs/GUIDE.md) · [Contributing](CONTRIBUTING.md) · [License](LICENSE)
 
