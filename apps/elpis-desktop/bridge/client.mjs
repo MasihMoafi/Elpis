@@ -239,13 +239,12 @@ export class DesktopClient extends EventEmitter {
         // Unknown managed policy cannot authorize a different connection.
         return policy === null ? [] : workflowModelRoutes(catalog.data ?? [], providers, policy.requirements);
       },
-      // Default models for a run's agents, from the real catalogues: Antigravity's in the main list, the credits' own.
+      // Default models for a run's agents, from the real catalogue: Antigravity's and Claude's in the main list.
       // A list that cannot be read in time leaves its default empty, so the run keeps its earlier choice.
       modelDefaults: async () => {
         // The fallback timer is cleared once the list arrives, so a closed client never waits 15 s to exit.
         const within = promise => { let timer; return Promise.race([promise, new Promise(resolve => { timer = setTimeout(resolve, 15000, null); })]).catch(() => null).finally(() => clearTimeout(timer)); };
-        const [catalog, credits] = await Promise.all([within(this.models()), within(this.models({ provider: 'anthropic-credits' }))]);
-        return workflowDefaults(catalog?.data ?? [], credits?.data ?? []);
+        return workflowDefaults((await within(this.models()))?.data ?? []);
       }, ...workflowOptions,
       env: workflowEnv });
     this.#workflowHistory = createWorkflowHistory(path.join(profileHome, 'desktop-workflow-history.json'));

@@ -206,8 +206,13 @@ async function choices(client) {
 export async function planCanvas(client, input, { timeoutMs = PLAN_TIMEOUT_MS } = {}) {
   const request = parseRequest(input);
   const options = typeof client.models === 'function' ? await choices(client) : { models: [], preferences: '' };
-  const ask = route => askBackground(client, { prompt: promptFor(request, options), schema: PLAN_SCHEMA, cwd: request.cwd, permissions: ':danger-full-access', timeoutMs,
-    ...(route ? { model: { model: route.model, provider: route.provider }, effort: route.reasoningEffort } : {}),
+  // A Claude-subscription model runs through the elpis-claude bridge: no provider, its level in the thread's config,
+  // and no schema parameter, so the schema goes in the prompt (as tools/elpis-claude/workflow-agents.mjs does).
+  const ask = route => askBackground(client, { cwd: request.cwd, permissions: ':danger-full-access', timeoutMs,
+    ...(route?.provider === 'claude'
+      ? { prompt: `${promptFor(request, options)}\n\nAnswer with JSON only, matching this JSON Schema:\n${JSON.stringify(PLAN_SCHEMA)}`,
+        model: { model: route.model }, config: { model_reasoning_effort: route.reasoningEffort } }
+      : { prompt: promptFor(request, options), schema: PLAN_SCHEMA, ...(route ? { model: { model: route.model, provider: route.provider }, effort: route.reasoningEffort } : {}) }),
     failed: 'Elpis could not plan', late: `Elpis did not finish planning within ${timeoutMs / 1000} seconds. Try again, or add the agents yourself.` });
   // The Mother's model, then her fallback; a test client without a model list plans on the background model.
   const routes = typeof client.models === 'function' ? [MOTHER_ROUTE, MOTHER_FALLBACK] : [null];

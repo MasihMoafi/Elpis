@@ -114,7 +114,9 @@ test('the planner chooses each agent a listed model and level, from his subscrip
   const result = await planCanvas(client, BODY);
   const prompt = client.sent.find(row => row.method === 'turn/start').params.input[0].text;
   const started = client.sent.find(row => row.method === 'thread/start').params;
-  assert.deepEqual([started.model, started.modelProvider, client.sent.find(row => row.method === 'turn/start').params.effort], ['claude-opus-5-5', 'anthropic-credits', 'medium'], 'the Mother designs the team on Opus 5.5 medium');
+  const turn = client.sent.find(row => row.method === 'turn/start').params;
+  assert.deepEqual([started.model, started.modelProvider, started.config, turn.outputSchema], ['claude/opus', undefined, { model_reasoning_effort: 'medium' }, undefined], 'the Mother designs the team on Opus 5.5 medium, on the Claude subscription');
+  assert.match(prompt, /matching this JSON Schema:\n\{"type":"object"/, 'the schema is in the prompt, since the Claude bridge takes no schema parameter');
   assert.match(prompt, /Worked examples/);
   assert.match(prompt, /gpt-6\.1-terra: high, xhigh, max/);
   assert.match(prompt, /Workflow agents: GPT Terra\./);

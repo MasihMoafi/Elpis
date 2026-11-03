@@ -169,18 +169,18 @@ test('with the switch off, or absent on an older run, she is never asked', { tim
 
 // Catalogues as the engine listed them on 1 Nov (`agy models`; `elpis-next -c model_provider=anthropic-credits debug models`).
 const AGY = ['gemini-4-argon-medium', 'gemini-4-argon-high', 'gemini-4-argon-low', 'gemini-3.8-flash-high', 'gemini-3.8-flash-medium', 'gemini-3.8-flash-low', 'claude-opus-5-5-medium'].map(id => ({ model: `agy/${id}` }));
-const CREDITS = ['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-opus-5-5'].map(model => ({ model }));
+const CLAUDE = ['claude/haiku', 'claude/sonnet', 'claude/opus'].map(model => ({ model }));
 
-test('defaults: Gemini Flash for children (a smaller one if listed, never Argon), Opus 5.5 on credits for the Mother', () => {
-  assert.deepEqual(workflowDefaults([{ model: 'gpt-6.1-sol' }, ...AGY], CREDITS), { child: { model: 'agy/gemini-3.8-flash-medium', provider: 'agy' }, mother: MOTHER_ROUTE, motherFallback: MOTHER_FALLBACK });
-  assert.equal(workflowDefaults([...AGY, { model: 'agy/gemini-3.9-flash-lite-medium' }], []).child.model, 'agy/gemini-3.9-flash-lite-medium', 'a smaller Gemini wins');
-  assert.deepEqual(workflowDefaults(AGY.filter(item => /argon/.test(item.model)), [{ model: 'claude-sonnet-5-5' }]), { child: null, mother: MOTHER_FALLBACK, motherFallback: null }, 'Argon is never a default');
+test('defaults: Gemini Flash for children (a smaller one if listed, never Argon), Opus on the Claude subscription for the Mother', () => {
+  assert.deepEqual(workflowDefaults([{ model: 'gpt-6.1-sol' }, ...AGY, ...CLAUDE]), { child: { model: 'agy/gemini-3.8-flash-medium', provider: 'agy' }, mother: MOTHER_ROUTE, motherFallback: MOTHER_FALLBACK });
+  assert.equal(workflowDefaults([...AGY, { model: 'agy/gemini-3.9-flash-lite-medium' }]).child.model, 'agy/gemini-3.9-flash-lite-medium', 'a smaller Gemini wins');
+  assert.deepEqual(workflowDefaults([...AGY.filter(item => /argon/.test(item.model)), { model: 'claude/sonnet' }]), { child: null, mother: MOTHER_FALLBACK, motherFallback: null }, 'Argon is never a default');
 });
 
 test('a run uses the defaults, an agent he set keeps its model, and the Mother falls back to Sonnet low', { timeout: 30000 }, async t => {
-  const f = fixture(t, { held: ['b'], runner: { modelDefaults: async () => workflowDefaults(AGY, CREDITS) },
+  const f = fixture(t, { held: ['b'], runner: { modelDefaults: async () => workflowDefaults([...AGY, ...CLAUDE]) },
     // Opus fails (not a quota error): she continues once on Sonnet at low.
-    motherEnv: node => node.model === 'claude-opus-5-5' ? { FAKE_ACP_PROMPT_ERROR: 'Overloaded', FAKE_ACP_ERROR_KIND: 'server_error' } : {} });
+    motherEnv: node => node.model === 'claude/opus' ? { FAKE_ACP_PROMPT_ERROR: 'Overloaded', FAKE_ACP_ERROR_KIND: 'server_error' } : {} });
   const { graphId } = await f.start([task('a'), task('b', { model: 'm-slow' })]);
   await f.decisions(graphId, 1);
   f.release('b');
@@ -189,7 +189,7 @@ test('a run uses the defaults, an agent he set keeps its model, and the Mother f
   const ran = name => f.specs.filter(item => item.name === name).map(item => [item.model, item.provider]);
   assert.deepEqual(ran('a'), [['agy/gemini-3.8-flash-medium', 'agy']], 'an agent without a model runs on Gemini Flash');
   assert.deepEqual(ran('b'), [['m-slow', 'openai']], 'the model he set wins');
-  assert.deepEqual(ran(MOTHER), [['claude-opus-5-5', 'anthropic-credits'], ['claude-sonnet-5-5', 'anthropic-credits']]);
+  assert.deepEqual(ran(MOTHER), [['claude/opus', 'claude'], ['claude/sonnet', 'claude']]);
   assert.deepEqual(f.specs.filter(item => item.name === MOTHER).map(item => item.spec.reasoningEffort), ['medium', 'low']);
   assert.equal(done.mother.decisions[0].decision, 'continue');
 });
