@@ -126,6 +126,7 @@ impl AgentsOverviewView {
         }
         let mut first_input = true;
         let mut agent_heading = false;
+        let mut tools = ToolTally::default();
         for turn in &row.thread.turns {
             for item in &turn.items {
                 let shows_agent = match item {
@@ -142,6 +143,16 @@ impl AgentsOverviewView {
                         own_style,
                     ))));
                     agent_heading = true;
+                }
+                let is_tool = matches!(
+                    item,
+                    ThreadItem::CommandExecution { .. }
+                        | ThreadItem::McpToolCall { .. }
+                        | ThreadItem::DynamicToolCall { .. }
+                        | ThreadItem::FileChange { .. }
+                );
+                if !is_tool {
+                    tools.flush(&mut conversation);
                 }
                 match item {
                     ThreadItem::UserMessage {
@@ -198,29 +209,15 @@ impl AgentsOverviewView {
                             ),
                         );
                     }
-                    ThreadItem::CommandExecution {
-                        command,
-                        aggregated_output,
-                        status,
-                        ..
-                    } => {
-                        let verb = match status {
-                            codex_app_server_protocol::CommandExecutionStatus::InProgress => {
-                                "Running"
-                            }
-                            codex_app_server_protocol::CommandExecutionStatus::Declined => {
-                                "Did not run"
-                            }
-                            _ => "Ran",
-                        };
-                        conversation.push(HyperlinkLine::new(format!("• {verb} {command}").into()));
-                        if let Some(output) = aggregated_output {
-                            for line in output.lines().take(2) {
-                                conversation
-                                    .push(HyperlinkLine::new(format!("  └ {line}").dim().into()));
-                            }
+                    ThreadItem::CommandExecution { status, .. } => match status {
+                        codex_app_server_protocol::CommandExecutionStatus::InProgress => {
+                            tools.running += 1
                         }
-                    }
+                        codex_app_server_protocol::CommandExecutionStatus::Declined => {
+                            tools.declined += 1
+                        }
+                        _ => tools.commands += 1,
+                    },
                     ThreadItem::Reasoning { summary, .. } if !activity_preview => {
                         for text in summary {
                             conversation.extend(
@@ -232,35 +229,31 @@ impl AgentsOverviewView {
                             );
                         }
                     }
-                    ThreadItem::McpToolCall { server, tool, .. } => conversation.push(
-                        HyperlinkLine::new(format!("• Called {server}.{tool}").into()),
-                    ),
-                    ThreadItem::DynamicToolCall { tool, .. } => {
-                        conversation.push(HyperlinkLine::new(format!("• Called {tool}").into()))
+                    ThreadItem::McpToolCall { .. } | ThreadItem::DynamicToolCall { .. } => {
+                        tools.calls += 1
                     }
                     ThreadItem::FileChange {
                         changes, status, ..
                     } => {
-                        let verb = if *status
-                            == codex_app_server_protocol::PatchApplyStatus::Completed
+                        if *status == codex_app_server_protocol::PatchApplyStatus::Completed
+                            || *status == codex_app_server_protocol::PatchApplyStatus::InProgress
                         {
-                            "Edited"
-                        } else if *status == codex_app_server_protocol::PatchApplyStatus::InProgress
-                        {
-                            "Editing"
-                        } else {
-                            "Did not edit"
-                        };
-                        for change in changes {
-                            conversation.push(HyperlinkLine::new(
-                                format!("• {verb} {}", change.path).into(),
-                            ));
+                            for change in changes {
+                                let name = std::path::Path::new(&change.path)
+                                    .file_name()
+                                    .map(|name| name.to_string_lossy().into_owned())
+                                    .unwrap_or_else(|| change.path.clone());
+                                if !tools.files.contains(&name) {
+                                    tools.files.push(name);
+                                }
+                            }
                         }
                     }
                     _ => {}
                 }
             }
         }
+        tools.flush(&mut conversation);
         if !has_agent_message {
             if let Some((text, cwd)) = &row.details.last_message {
                 conversation.extend(plain_hyperlink_lines(vec![
@@ -350,5 +343,53 @@ impl AgentsOverviewView {
         rendered.extend(body);
         Paragraph::new(visible_lines(rendered.clone())).render(area, buf);
         mark_buffer_hyperlinks(buf, area, &rendered, 0);
+    }
+}
+
+/// The tool work between two messages, shown as one plain line instead of raw commands
+/// (3 Nov, Masih: "not detailed tool calls but formatted, proper view of what happened").
+#[derive(Default)]
+struct ToolTally {
+    commands: usize,
+    running: usize,
+    declined: usize,
+    calls: usize,
+    files: Vec<String>,
+}
+
+impl ToolTally {
+    fn summary(&self) -> Option<String> {
+        let plural = |count: usize, one: &str, many: &str| {
+            format!("{count} {}", if count == 1 { one } else { many })
+        };
+        let mut parts = Vec::new();
+        if self.commands > 0 {
+            parts.push(format!("Ran {}", plural(self.commands, "command", "commands")));
+        }
+        if self.running > 0 {
+            parts.push(format!("running {}", plural(self.running, "command", "commands")));
+        }
+        if self.calls > 0 {
+            parts.push(format!("used {}", plural(self.calls, "tool", "tools")));
+        }
+        match self.files.len() {
+            0 => {}
+            1..=3 => parts.push(format!("edited {}", self.files.join(", "))),
+            count => parts.push(format!("edited {count} files")),
+        }
+        if self.declined > 0 {
+            parts.push(format!("{} not run", plural(self.declined, "command", "commands")));
+        }
+        let mut line = parts.join(" · ");
+        let first = line.chars().next()?;
+        line.replace_range(..first.len_utf8(), &first.to_uppercase().to_string());
+        Some(line)
+    }
+
+    fn flush(&mut self, conversation: &mut Vec<HyperlinkLine>) {
+        if let Some(summary) = self.summary() {
+            conversation.push(HyperlinkLine::new(format!("• {summary}").dim().into()));
+        }
+        *self = Self::default();
     }
 }

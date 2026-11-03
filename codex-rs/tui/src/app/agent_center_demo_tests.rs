@@ -232,12 +232,12 @@ async fn demo_list_selected_conversation_shows_delegate_tools_reply_steer_and_li
     );
     insta::assert_snapshot!(evidence(&view, &[
         "asked by Claude Opus 5.5", "Claude Opus 5.5 → GPT-6.1 Sol delegate", "Find the usage emitter.",
-        "• Ran rg -n", "Only run_turn calls it.", "steer", "Also check thread/inject_items.", "◐ working",
+        "• Ran 1 command", "Only run_turn calls it.", "steer", "Also check thread/inject_items.", "◐ working",
     ]), @r###"
     asked by Claude Opus 5.5
     Claude Opus 5.5 → GPT-6.1 Sol delegate
     Find the usage emitter.
-    • Ran rg -n
+    • Ran 1 command
     Only run_turn calls it.
     steer
     Also check thread/inject_items.
@@ -251,8 +251,10 @@ async fn demo_list_selected_conversation_shows_delegate_tools_reply_steer_and_li
         Some(ThreadId::from_u128(43)),
     );
     let rendered = screen(&declined, 160, 40);
-    assert!(rendered.contains("• Did not run rg"));
-    assert!(!rendered.contains("• Ran rg"));
+    assert!(rendered.contains("• 1 command not run"));
+    assert!(!rendered.contains("• Ran"));
+    // The pane says what happened, never the raw command line.
+    assert!(!rendered.contains("tokenUsage/updated"));
     // Selecting the parent must not display a child's conversation as its own.
     let view = app.agents_overview_view(vec![parent, child], Some(ThreadId::from_u128(42)));
     assert!(!screen(&view, 160, 40).contains("Only run_turn calls it."));
