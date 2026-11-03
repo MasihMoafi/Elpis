@@ -8,11 +8,11 @@
 <p align="center"><b>The ultimate harness: the perfect home for your agents.</b></p>
 <p align="center"><i>You put an agent into an Elpis, and it becomes Elpis. Be Elpis, my friend.</i></p>
 
-A coding agent should only see what you chose to show it, and a team of agents should only touch what each was given. Elpis is an engineered agent harness for Linux, built on OpenAI's Codex CLI: a home where your agents keep their context, and a board where you design how several of them work together.
+<p align="center">A coding agent should only see what you chose to show it, and a team of agents should only touch what each was given. Elpis is an engineered agent harness for Linux, built on OpenAI’s Codex CLI: a home where your agents keep their context, and a board where you design how several of them work together.</p>
 
-![Workflows: the Mother agent designs a team of eight agents in three waves, shown flat and in isometric, runs it and checks each agent's work](docs/assets/workflows-team.gif)
+<p align="center"><img src="docs/assets/workflows-team.gif" alt="Workflows: the Mother agent designs a code-review team of eight agents in four waves, shown flat and in isometric, runs it and checks each agent's work"></p>
 
-[Releases](https://github.com/MasihMoafi/Elpis/releases) · [Website](https://elpis.masihmoafi.com) · [Technical guide](docs/GUIDE.md) · [Contributing](CONTRIBUTING.md) · [License](LICENSE)
+<p align="center"><a href="https://github.com/MasihMoafi/Elpis/releases">Releases</a> · <a href="https://elpis.masihmoafi.com">Website</a> · <a href="docs/GUIDE.md">Technical guide</a> · <a href="CONTRIBUTING.md">Contributing</a> · <a href="LICENSE">License</a></p>
 
 ## Install
 
