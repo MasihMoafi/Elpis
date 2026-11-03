@@ -13,11 +13,10 @@ test("current public media and evidence links resolve locally", async () => {
       const path = match[1].split("?")[0];
       assert.ok(existsSync(new URL(path, root)), `${page}: missing ${path}`);
     }
-    assert.match(html, /40838f83/);
-    assert.match(html, /illustrative/i);
-    assert.match(html, /historical/i);
   }
   const html = await read("index.html");
+  assert.match(html, /illustrative/i, "the front page marks its demonstration data");
+  assert.match(html, /historical/i);
   assert.equal([...html.matchAll(/data-dashboard-panel="/g)].length, 4);
   assert.equal([...html.matchAll(/data-dashboard-panel="[^"]+" hidden/g)].length, 3);
 });

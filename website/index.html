@@ -283,8 +283,8 @@
 
       <section class="site-section border-b border-base-300" id="current-interface" aria-labelledby="current-interface-title">
         <div class="section-heading">
-          <div><p class="section-kicker">September 9 · Development preview</p><h2 id="current-interface-title" class="section-title">See the current<br /><em>Elpis interface.</em></h2></div>
-          <p class="section-copy">The native dark interface, amber ledger, startup dissolve, and coalescing responses. UI commit <code>40838f83</code> is newer than the September 5 v0.2.0 release. These captures use illustrative session data.</p>
+          <div><p class="section-kicker">Terminal app</p><h2 id="current-interface-title" class="section-title">See the current<br /><em>Elpis interface.</em></h2></div>
+          <p class="section-copy">The native dark interface, amber ledger, startup dissolve, and coalescing responses. These captures use illustrative session data.</p>
         </div>
         <figure class="current-media"><img src="./assets/technical/elpis-ui-20260909.png" alt="Current Elpis native interface with contrasting amber ledger rows and Quiet Rail composer" loading="lazy" /><figcaption>Native Rust widget capture · September 9, 2026. This is separate from the concept illustration above.</figcaption></figure>
         <div class="section-heading dashboard-heading"><div><p class="section-kicker">Local observability</p><h3 class="section-title">Four views.<br /><em>One session.</em></h3></div><p class="section-copy">Current dashboard assets with the checked-in illustrative fixture. These counters are demonstration data, not research results. Preview settings are disabled; an authorized live dashboard can edit pruner settings.</p></div>
@@ -310,16 +310,16 @@
 
       <section class="site-section grid gap-12 lg:grid-cols-[.8fr_1.2fr] lg:items-center" id="install" aria-labelledby="install-title">
         <div>
-          <p class="section-kicker">Early access</p>
+          <p class="section-kicker">v0.5.0 · Linux x86_64</p>
           <h2 id="install-title" class="section-title">Put continuity<br />in the loop.</h2>
-          <p class="section-copy mt-7">Install the Linux-first preview, then launch Elpis from your terminal. Inspect the source before running the script.</p>
-          <a class="btn btn-ghost mt-5" href="https://github.com/MasihMoafi/Elpis">Read installation and source <span aria-hidden="true">↗</span></a>
+          <p class="section-copy mt-7">The script installs the terminal app. For the desktop app, download both Debian packages from the release and install them together. Inspect the source before running the script.</p>
+          <a class="btn btn-ghost mt-5" href="https://github.com/MasihMoafi/Elpis/releases/tag/v0.5.0">Download v0.5.0 <span aria-hidden="true">↗</span></a>
         </div>
         <div class="mockup-code install-terminal relative bg-neutral text-neutral-content">
           <pre data-prefix="$"><code data-command>curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/main/scripts/install-elpis.sh | bash &amp;&amp; ~/.local/bin/elpis</code></pre>
           <button type="button" class="btn btn-sm absolute top-4 right-4" data-copy-button aria-describedby="copy-status">Copy</button>
           <span class="sr-only" id="copy-status" data-copy-status role="status" aria-live="polite"></span>
-          <pre data-prefix=""><code class="text-neutral-content/45">Current candidate · early access · review before running</code></pre>
+          <pre data-prefix="$"><code>sudo apt install ./elpis_0.5.0_amd64.deb ./elpis-desktop_0.5.0_amd64.deb &amp;&amp; elpis-app</code></pre>
         </div>
       </section>
     </main>
