@@ -2,10 +2,7 @@
 
 A coding agent should only see what you chose to show it, and a team of agents should only touch what each was given. Elpis is an engineered agent harness for Linux, built on OpenAI's Codex CLI: a home where your agents keep their context, and a board where you design how several of them work together.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/launch/img/workflows-voting-dark.png">
-  <img src="docs/launch/img/todo-workflows-light.svg" alt="A finished Voting workflow in the Elpis desktop app: the Mother agent starts three answering agents, each checked, and a tally agent joins their answers">
-</picture>
+<img src="docs/launch/img/workflows-voting-dark.png" alt="A finished Voting workflow in the Elpis desktop app: the Mother agent starts three answering agents, each checked, and a tally agent joins their answers">
 
 [Releases](https://github.com/MasihMoafi/Elpis/releases) · [Website](https://elpis.masihmoafi.com) · [Technical guide](docs/GUIDE.md) · [Contributing](CONTRIBUTING.md) · [License](LICENSE)
 
@@ -32,6 +29,8 @@ Elpis treats both as one problem, **context management**, and answers it with tw
 ## Core features
 
 ### Workflows
+
+![Workflows: the Mother agent designs a team, runs it and checks each agent's work](docs/assets/workflows.gif)
 
 Describe a job. The Mother agent, the planning agent, either does it herself or designs a team of agents you can see and edit on a board. Ready-made patterns: Sequential, Parallel, Kahn graph waves, Recursive (with a round limit) and Voting; ready-made teams: Transcribe images, Translate and Logo. Past ten agents, a Father agent runs the rest in his own chat and reports to her. Each agent may use a different model, and each is told how much time is left.
 
@@ -65,19 +64,13 @@ Two limits remain: two side-by-side agents without an "alongside" link are not y
 
 A drawing board where Matilda, the app's companion, answers and draws with you. Paste screenshots onto the board and draw on them.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/launch/img/todo-lovespot-dark.svg">
-  <img src="docs/launch/img/todo-lovespot-light.svg" alt="Love Spot: Matilda answering on the drawing board">
-</picture>
+![Love Spot: Matilda answers on the drawing board](docs/assets/lovespot.gif)
 
 ### Chats and the Context Ledger
 
 Chat with GPT, Claude and Gemini models; use your ChatGPT or Claude subscription or an API key, and switch models without losing the thread. Under the composer you choose the Ledger, Smart Prune and subagents. Import chats from Claude Code and Codex.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/launch/img/todo-chat-dark.svg">
-  <img src="docs/assets/desktop-chat-light.png" alt="An Elpis desktop chat with the model, permission and context controls under the composer">
-</picture>
+<img src="docs/assets/desktop-chat-light.png" alt="An Elpis desktop chat with the model, permission and context controls under the composer">
 
 ### The terminal app
 
