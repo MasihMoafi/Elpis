@@ -1,0 +1,55 @@
+name: Lint
+# Fast checks on every push and pull request, so a broken workflow, script, format or a known-vulnerable crate fails
+# in a minute or two instead of after the 45-minute engine build.
+on:
+  push:
+  pull_request:
+concurrency:
+  group: lint-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  workflows:
+    name: workflows (actionlint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: actionlint
+        env:
+          SHELLCHECK_OPTS: -S warning
+        run: |
+          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
+          ./actionlint -color
+  scripts:
+    name: scripts and website
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Shell scripts (shellcheck, errors)
+        run: shellcheck -S error scripts/*.sh apps/elpis-desktop/scripts/*.sh
+      - name: Node scripts parse
+        run: for f in scripts/*.mjs apps/elpis-desktop/scripts/*.mjs apps/elpis-desktop/scripts/*.cjs; do [ -f "$f" ] && node --check "$f"; done
+      - name: Website and README page
+        run: node --test website/tests/site.test.mjs
+  rust-format:
+    name: rust format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: cargo fmt --check
+        working-directory: codex-rs
+        run: cargo fmt --check
+  audit:
+    name: cargo audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - name: Audit dependencies
+        working-directory: codex-rs
+        # codex-rs/.cargo/audit.toml lists the accepted advisories, each with its reason.
+        run: cargo audit
