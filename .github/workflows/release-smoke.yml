@@ -8,8 +8,34 @@ on:
         description: Release tag to test
         required: true
         default: v0.5.1
+permissions:
+  contents: write   # reading a draft release's files needs write access
 jobs:
+  # The release's own files, fetched once with the repository token, so a draft is tested before it is published.
+  fetch:
+    runs-on: ubuntu-latest
+    outputs:
+      draft: ${{ steps.files.outputs.draft }}
+    steps:
+      - id: files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eux
+          V=${TAG#v}
+          gh release download "$TAG" -R "$GITHUB_REPOSITORY" -D dl -p "elpis_${V}_amd64.deb*" -p "elpis-desktop_${V}_amd64.deb*" -p "Elpis-${V}-x86_64.AppImage*"
+          ls -la dl
+          echo "draft=$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json isDraft -q .isDraft)" >> "$GITHUB_OUTPUT"
+        shell: bash
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-files
+          path: dl/
+          retention-days: 1
+    env:
+      TAG: ${{ inputs.tag }}
   smoke:
+    needs: fetch
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -32,21 +58,28 @@ jobs:
           if command -v apt-get; then apt-get update -qq; DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl ca-certificates xvfb xauth; fi
           if command -v dnf; then dnf install -y -q curl xorg-x11-server-Xvfb xorg-x11-xauth gtk3 nss alsa-lib libXScrnSaver libXtst mesa-libgbm libsecret which; fi
           if command -v pacman; then pacman -Syu --noconfirm --needed curl xorg-server-xvfb xorg-xauth gtk3 nss alsa-lib libxss libxtst mesa libsecret which; fi
+      - name: The release's files
+        if: matrix.way != 'script'
+        uses: actions/download-artifact@v4
+        with:
+          name: release-files
+          path: /dl
       - name: Install as the README says
+        if: matrix.way != 'script' || needs.fetch.outputs.draft != 'true'
         run: |
           set -eux
           mkdir -p /dl && cd /dl
           V=${TAG#v}
           case "${{ matrix.way }}" in
             deb)
-              for f in elpis_${V}_amd64.deb elpis-desktop_${V}_amd64.deb; do curl -fsSLO "$REL/$f"; curl -fsSLO "$REL/$f.sha256"; sha256sum -c "$f.sha256"; done
+              for f in elpis_${V}_amd64.deb elpis-desktop_${V}_amd64.deb; do sha256sum -c "$f.sha256"; done
               DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ./elpis_${V}_amd64.deb ./elpis-desktop_${V}_amd64.deb
               echo "TUI=elpis" >> "$GITHUB_ENV"; echo "APP=elpis-app" >> "$GITHUB_ENV"; echo "NODE=/opt/elpis-desktop/bin/node" >> "$GITHUB_ENV" ;;
             script)
               curl -fsSL "https://raw.githubusercontent.com/MasihMoafi/Elpis/$TAG/scripts/install-elpis.sh" | bash
               echo "TUI=$HOME/.local/bin/elpis" >> "$GITHUB_ENV" ;;
             appimage)
-              f=Elpis-${V}-x86_64.AppImage; curl -fsSLO "$REL/$f"; curl -fsSLO "$REL/$f.sha256"; sha256sum -c "$f.sha256"; chmod +x "$f"
+              f=Elpis-${V}-x86_64.AppImage; sha256sum -c "$f.sha256"; chmod +x "$f"
               ./"$f" --appimage-extract >/dev/null
               echo "TUI=/dl/squashfs-root/AppRun elpis" >> "$GITHUB_ENV"; echo "APP=/dl/squashfs-root/AppRun" >> "$GITHUB_ENV"; echo "NODE=env APPDIR=/dl/squashfs-root /dl/squashfs-root/bin/node" >> "$GITHUB_ENV" ;;
           esac
@@ -57,6 +90,7 @@ jobs:
           case "${{ matrix.way }}" in deb) d=/usr/share/doc/elpis-desktop ;; appimage) d=/dl/squashfs-root ;; esac
           test -s "$d/LICENSE"; grep -q '^== npm packages' "$d/THIRD-PARTY-NOTICES.txt"; grep -q 'SIL Open Font License' "$d/THIRD-PARTY-NOTICES.txt"
       - name: Terminal app runs
+        if: matrix.way != 'script' || needs.fetch.outputs.draft != 'true'
         run: |
           set -eux
           out=$($TUI --version); echo "$out"; test "$out" = "elpis ${TAG#v}"
