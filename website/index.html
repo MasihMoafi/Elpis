@@ -20,8 +20,8 @@
     <meta name="twitter:image" content="https://elpis.masihmoafi.com/assets/technical/elpis-context-ledger-20261013.png" />
     <meta name="twitter:image:alt" content="Elpis Context Ledger showing admitted memory, instructions and context categories." />
     <link rel="icon" href="./assets/branding/favicon-amber.svg" />
-    <link rel="stylesheet" href="./styles.css?v=themes-20261103" />
-    <script src="./app.js?v=themes-20261103" type="module"></script>
+    <link rel="stylesheet" href="./styles.css?v=scenes-20261103" />
+    <script src="./app.js?v=scenes-20261103" type="module"></script>
     <link rel="stylesheet" href="./assets/branding/brand.css?v=amber-20261020" />
     <script src="./assets/branding/brand.js?v=amber-20261020"></script>
   </head>
@@ -34,7 +34,7 @@
       </div>
       <nav class="navbar-center hidden gap-7 text-sm text-base-content/65 lg:flex" aria-label="Primary navigation">
         <a class="hover:text-base-content" href="#demo">Demo</a>
-        <a class="hover:text-base-content" href="#desktop-app">Desktop app</a>
+        <a class="hover:text-base-content" href="#desktop-app">Desktop app</a><a class="hover:text-base-content" href="#workflows">Workflows</a>
           <a class="hover:text-base-content" href="#install">Install</a>
       </nav>
       <div class="navbar-end">
@@ -151,35 +151,47 @@
           <figure class="theme-tour-window" aria-label="The same chat in six themes; scroll to change the theme"><img data-theme-shot="0" src="./assets/themes/elpis-dark.webp" alt="One Elpis desktop chat in the Elpis theme, dark" width="960" height="655" draggable="false" /><img data-theme-shot="1" src="./assets/themes/elpis-light.webp" alt="" width="960" height="655" draggable="false" loading="lazy" /><img data-theme-shot="2" src="./assets/themes/midnight-dark.webp" alt="" width="960" height="655" draggable="false" loading="lazy" /><img data-theme-shot="3" src="./assets/themes/paper-light.webp" alt="" width="960" height="655" draggable="false" loading="lazy" /><img data-theme-shot="4" src="./assets/themes/plum-dark.webp" alt="" width="960" height="655" draggable="false" loading="lazy" /><img data-theme-shot="5" src="./assets/themes/midnight-light.webp" alt="" width="960" height="655" draggable="false" loading="lazy" /><span class="theme-tour-edge" aria-hidden="true"></span></figure>
         </div>
       </section>
-      <section class="site-section border-b border-base-300" id="desktop-films" aria-label="Workflows and Love Spot">
-        <figure class="film" data-film>
-          <div class="film-window">
-            <div class="film-bar"><span class="film-mark" aria-hidden="true">◆</span><strong>Elpis</strong><span>Workflows</span><span class="film-meta">0:58</span></div>
-            <video src="./assets/films/workflows.mp4" muted playsinline preload="metadata" aria-label="Workflows: the Mother agent designs a team, runs it and checks each agent's work"></video>
-            <div class="film-controls">
-              <button type="button" class="film-btn" data-film-play>Play</button>
-              <button type="button" class="film-btn" data-film-replay>Replay</button>
-              <input type="range" class="film-seek" data-film-seek min="0" max="1000" value="0" aria-label="Seek Workflows" />
-              <span class="film-time" data-film-time>0:00 / 0:58</span>
-              <button type="button" class="film-btn" data-film-sound aria-pressed="false">Sound on</button>
+      <section class="scene" id="workflows" data-scene aria-labelledby="workflows-title">
+        <div class="scene-stage">
+          <div class="scene-copy">
+            <p class="section-kicker">Workflows</p>
+            <h2 id="workflows-title" class="section-title">A team,<br /><em>checked.</em></h2>
+            <p class="section-copy">Describe a job. The Mother agent designs a team you can see and edit on a board. Each agent owns its own folder, a second agent checks its work, and the Mother agent reviews the combined result before anything reaches your project.</p>
+          </div>
+          <div class="scene-window" role="img" aria-label="A Voting workflow: the Mother agent starts three answering agents on GPT and Claude, a check passes each answer, a tally agent joins them, and the Mother agent merges the result">
+            <div class="scene-bar"><span class="film-mark">◆</span><strong>Elpis</strong><span>Workflows</span><span class="scene-meta" data-on="0.14">Voting · 9 agents</span></div>
+            <div class="wf-prompt"><span class="wf-label">What should the workflow do?</span><span class="wf-input"><span data-type="0.02,0.12">Answer the question three ways, check each answer, and tally the vote.</span><i class="wf-caret"></i></span><span class="wf-run" data-states="0:idle,0.13:pressed,0.15:running,0.9:finished" data-label-idle="Run graph" data-label-pressed="Run graph" data-label-running="Running…" data-label-finished="Finished ✓"></span></div>
+            <div class="wf-board"><svg class="wf-edges" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path d="M21 50 C24.0 50 24.0 18 27 18" data-draw="0.24,0.29" data-lit="0.32"/><path d="M21 50 C24.0 50 24.0 50 27 50" data-draw="0.27,0.32" data-lit="0.32"/><path d="M21 50 C24.0 50 24.0 82 27 82" data-draw="0.3,0.35" data-lit="0.32"/><path d="M44 18 C47.0 18 47.0 18 50 18" data-draw="0.33,0.38" data-lit="0.47"/><path d="M44 50 C47.0 50 47.0 50 50 50" data-draw="0.35,0.39999999999999997" data-lit="0.51"/><path d="M44 82 C47.0 82 47.0 82 50 82" data-draw="0.37,0.42" data-lit="0.49"/><path d="M67 18 C70.0 18 70.0 50 73 50" data-draw="0.4,0.45" data-lit="0.61"/><path d="M67 50 C70.0 50 70.0 50 73 50" data-draw="0.4,0.45" data-lit="0.61"/><path d="M67 82 C70.0 82 70.0 50 73 50" data-draw="0.4,0.45" data-lit="0.61"/><path d="M81 58 C81.0 58 81.0 78 81 78" data-draw="0.42,0.47" data-lit="0.73"/></svg><div class="wf-node wf-mother" style="--x:4;--y:44" data-on="0.14" data-states="0.14:running,0.9:done"><span class="wf-kind">Mother agent</span><strong>This run's chat</strong><span class="wf-model">GPT-6.1-Sol · high</span><span class="wf-state" data-label-waiting="waiting" data-label-running="running" data-label-done="done ✓" data-label-passed="passed ✓"></span></div><div class="wf-node " style="--x:27;--y:12" data-on="0.24" data-states="0.24:waiting,0.32:running,0.46:done"><span class="wf-kind">Agent</span><strong>Answer 1</strong><span class="wf-model">GPT-5.6-Sol · medium</span><span class="wf-state" data-label-waiting="waiting" data-label-running="running" data-label-done="done ✓" data-label-passed="passed ✓"></span></div><div class="wf-node " style="--x:27;--y:44" data-on="0.27" data-states="0.27:waiting,0.32:running,0.5:done"><span class="wf-kind">Agent</span><strong>Answer 2</strong><span class="wf-model">claude-sonnet-5-5</span><span class="wf-state" data-label-waiting="waiting" data-label-running="running" data-label-done="done ✓" data-label-passed="passed ✓"></span></div><div class="wf-node " style="--x:27;--y:76" data-on="0.3" data-states="0.3:waiting,0.32:running,0.48:done"><span class="wf-kind">Agent</span><strong>Answer 3</strong><span class="wf-model">GPT-5.6-Sol · medium</span><span class="wf-state" data-label-waiting="waiting" data-label-running="running" data-label-done="done ✓" data-label-passed="passed ✓"></span></div><div class="wf-node wf-check" style="--x:50;--y:12" data-on="0.33" data-states="0.33:waiting,0.47:running,0.56:passed"><span class="wf-kind">Check</span><strong>Check 1</strong><span class="wf-model">claude-haiku-5-5</span><span class="wf-state" data-label-waiting="waiting" data-label-running="running" data-label-done="done ✓" data-label-passed="passed ✓"></span></div><div class="wf-node wf-check" style="--x:50;--y:44" data-on="0.35" data-states="0.35:waiting,0.51:running,0.6:passed"><span class="wf-kind">Check</span><strong>Check 2</strong><span class="wf-model">GPT-5.6-Sol · low</span><span class="wf-state" data-label-waiting="waiting" data-label-running="running" data-label-done="done ✓" data-label-passed="passed ✓"></span></div><div class="wf-node wf-check" style="--x:50;--y:76" data-on="0.37" data-states="0.37:waiting,0.49:running,0.58:passed"><span class="wf-kind">Check</span><strong>Check 3</strong><span class="wf-model">claude-haiku-5-5</span><span class="wf-state" data-label-waiting="waiting" data-label-running="running" data-label-done="done ✓" data-label-passed="passed ✓"></span></div><div class="wf-node " style="--x:73;--y:44" data-on="0.4" data-states="0.4:waiting,0.61:running,0.72:done"><span class="wf-kind">Agent</span><strong>Tally</strong><span class="wf-model">claude-opus-5-5</span><span class="wf-state" data-label-waiting="waiting" data-label-running="running" data-label-done="done ✓" data-label-passed="passed ✓"></span></div><div class="wf-node wf-check" style="--x:73;--y:78" data-on="0.42" data-states="0.42:waiting,0.73:running,0.8:passed"><span class="wf-kind">Check</span><strong>Check tally</strong><span class="wf-model">GPT-5.6-Sol · low</span><span class="wf-state" data-label-waiting="waiting" data-label-running="running" data-label-done="done ✓" data-label-passed="passed ✓"></span></div></div>
+            <ol class="wf-log"><li data-on="0.47">CHECK PASSED · Answer 1</li><li data-on="0.56">CHECK PASSED · Answer 3</li><li data-on="0.6">CHECK PASSED · Answer 2</li><li data-on="0.72">REPORT · Tally: 2 of 3 answers agree</li><li data-on="0.8">CHECK PASSED · Tally</li><li data-on="0.9">MERGED · the Mother agent reviewed the combined commit</li></ol>
+          </div>
+        </div>
+      </section>
+      <section class="scene" id="love-spot" data-scene aria-labelledby="love-spot-title">
+        <div class="scene-stage">
+          <div class="scene-copy">
+            <p class="section-kicker">Love Spot</p>
+            <h2 id="love-spot-title" class="section-title">Draw it.<br /><em>Ask her.</em></h2>
+            <p class="section-copy">A drawing board where Matilda, the app's companion, answers and draws with you. Paste screenshots onto the board and draw on them.</p>
+          </div>
+          <div class="scene-window ls-window" role="img" aria-label="Love Spot: a pasted screenshot on the board, a circle drawn around a button, a question to Matilda, and her answer drawn as an arrow to a better place">
+            <div class="scene-bar"><span class="film-mark">◆</span><strong>Elpis</strong><span>Love Spot</span><span class="scene-meta">Current page</span></div>
+            <div class="ls-board">
+              <div class="ls-shot" data-on="0.06"><div class="ls-shot-bar"></div><div class="ls-shot-line w70"></div><div class="ls-shot-line w50"></div><div class="ls-shot-field"></div><div class="ls-shot-button">Send</div></div>
+              <svg class="ls-ink" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                <path class="ls-you" d="M86.5 80 C87.5 86 79 88.8 74.8 86.6 C70.8 84.5 71.6 77 77.8 75.8 C82 75 86.2 77 86.8 80.6" data-draw="0.14,0.3"/>
+                <path class="ls-her" d="M74.5 78 C70 75 69.5 70 72.6 65.6" data-draw="0.8,0.88"/>
+                <path class="ls-her" d="M69.8 68.4 L72.8 65 L75.6 68.2" data-draw="0.88,0.91"/>
+                <path class="ls-her" d="M69.6 59.4 L77.2 59.4 L77.2 65.2 L69.6 65.2 Z" data-draw="0.91,0.97"/>
+              </svg>
+              <img class="ls-matilda" src="./assets/matilda.webp" alt="" width="120" height="120" data-states="0:idle,0.52:thinking,0.62:idle" />
+              <div class="ls-chat">
+                <p class="ls-you-msg" data-on="0.5">Is the Send button in the right place?</p>
+                <p class="ls-her-msg" data-on="0.62"><span data-type="0.62,0.78">Put it at the end of the field, on the same line: one look, one click. I drew where.</span></p>
+                <div class="ls-input"><span class="ls-placeholder" data-off="0.34">Message Matilda…</span><span data-type="0.34,0.48" data-off="0.5">Is the Send button in the right place?</span><span class="ls-send">↑</span></div>
+              </div>
             </div>
           </div>
-          <figcaption>Workflows · the Mother agent designs the team, and a second agent checks each agent's work</figcaption>
-        </figure>
-        <figure class="film" data-film>
-          <div class="film-window">
-            <div class="film-bar"><span class="film-mark" aria-hidden="true">◆</span><strong>Elpis</strong><span>Love Spot</span><span class="film-meta">0:47</span></div>
-            <video src="./assets/films/lovespot.mp4" muted playsinline preload="metadata" aria-label="Love Spot: Matilda answers on the drawing board"></video>
-            <div class="film-controls">
-              <button type="button" class="film-btn" data-film-play>Play</button>
-              <button type="button" class="film-btn" data-film-replay>Replay</button>
-              <input type="range" class="film-seek" data-film-seek min="0" max="1000" value="0" aria-label="Seek Love Spot" />
-              <span class="film-time" data-film-time>0:00 / 0:47</span>
-              <button type="button" class="film-btn" data-film-sound aria-pressed="false">Sound on</button>
-            </div>
-          </div>
-          <figcaption>Love Spot · Matilda answers on the drawing board</figcaption>
-        </figure>
+        </div>
       </section>
 
       <section class="site-section grid gap-12 lg:grid-cols-[.8fr_1.2fr] lg:items-center" id="install" aria-labelledby="install-title">

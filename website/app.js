@@ -281,38 +281,50 @@ if (themeTour) {
   renderTour();
 }
 
-// Films in the player frame: they play muted while on screen and pause when scrolled away;
-// Play/Pause, Replay, seek and Sound are their own controls.
-const clock = (seconds) => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
-document.querySelectorAll("[data-film]").forEach((film) => {
-  const video = film.querySelector("video");
-  const play = film.querySelector("[data-film-play]");
-  const replay = film.querySelector("[data-film-replay]");
-  const seek = film.querySelector("[data-film-seek]");
-  const time = film.querySelector("[data-film-time]");
-  const sound = film.querySelector("[data-film-sound]");
-  let userPaused = false;
-  const paint = () => {
-    play.textContent = video.paused ? "Play" : "Pause";
-    play.setAttribute("aria-label", `${video.paused ? "Play" : "Pause"} the film`);
-    sound.textContent = video.muted ? "Sound on" : "Sound off";
-    sound.setAttribute("aria-pressed", String(!video.muted));
-    if (video.duration) {
-      seek.value = String(Math.round((video.currentTime / video.duration) * 1000));
-      time.textContent = `${clock(video.currentTime)} / ${clock(video.duration)}`;
+// Scroll-driven scenes (Workflows, Love Spot): the section's scroll position is the timeline.
+// data-on / data-off show an element from / until a point, data-type types its text over a range,
+// data-draw draws an SVG path over a range, data-states sets data-state (and a label) at each point.
+document.querySelectorAll("[data-scene]").forEach((scene) => {
+  const stage = scene.querySelector(".scene-stage");
+  const header = document.querySelector("header");
+  const clamp = (n) => Math.min(1, Math.max(0, n));
+  const range = (value) => value.split(",").map(Number);
+  const typed = [...scene.querySelectorAll("[data-type]")].map((element) => ({ element, text: element.textContent, span: range(element.dataset.type) }));
+  // The strokes do not scale with the stretched SVG, so dashes are measured on screen, not in SVG units.
+  const screenLength = (path) => {
+    const matrix = path.getScreenCTM(), total = path.getTotalLength();
+    let length = 0, previous;
+    for (let i = 0; i <= 48; i += 1) {
+      const point = path.getPointAtLength((total * i) / 48).matrixTransform(matrix);
+      if (previous) length += Math.hypot(point.x - previous.x, point.y - previous.y);
+      previous = point;
     }
+    return Math.ceil(length) + 2;
   };
-  const start = () => video.play().catch(() => undefined);
-  play.addEventListener("click", () => { userPaused = !video.paused; if (video.paused) start(); else video.pause(); });
-  video.addEventListener("click", () => play.click());
-  replay.addEventListener("click", () => { video.currentTime = 0; userPaused = false; start(); });
-  seek.addEventListener("input", () => { if (video.duration) video.currentTime = (Number(seek.value) / 1000) * video.duration; });
-  sound.addEventListener("click", () => { video.muted = !video.muted; if (!video.muted && video.paused) { userPaused = false; start(); } paint(); });
-  video.addEventListener("ended", () => { video.currentTime = 0; start(); });
-  for (const event of ["play", "pause", "timeupdate", "loadedmetadata", "volumechange"]) video.addEventListener(event, paint);
-  new IntersectionObserver(([entry]) => {
-    if (entry.isIntersecting && !userPaused) start();
-    else if (!entry.isIntersecting) video.pause();
-  }, { threshold: 0.45 }).observe(video);
-  paint();
+  const drawn = [...scene.querySelectorAll("[data-draw]")].map((path) => ({ path, length: 0, span: range(path.dataset.draw) }));
+  const measure = () => drawn.forEach((stroke) => { stroke.length = screenLength(stroke.path); stroke.path.style.strokeDasharray = `${stroke.length} ${stroke.length}`; });
+  const stated = [...scene.querySelectorAll("[data-states]")].map((element) => ({ element, steps: element.dataset.states.split(",").map((step) => step.split(":")).map(([at, name]) => [Number(at), name]) }));
+  const shown = [...scene.querySelectorAll("[data-on], [data-off]")];
+  let frame;
+  function render() {
+    frame = undefined;
+    const travel = scene.offsetHeight - stage.offsetHeight;
+    const p = clamp(((header?.offsetHeight || 0) - scene.getBoundingClientRect().top) / Math.max(1, travel));
+    for (const element of shown) element.toggleAttribute("data-shown", p >= Number(element.dataset.on || 0) && p < Number(element.dataset.off || 2));
+    for (const { element, text, span: [from, to] } of typed) element.textContent = text.slice(0, Math.round(text.length * clamp((p - from) / (to - from))));
+    for (const { path, length, span: [from, to] } of drawn) path.style.strokeDashoffset = `${length * (1 - clamp((p - from) / (to - from)))}`;
+    for (const { element, steps } of stated) {
+      const state = steps.filter(([at]) => p >= at).pop()?.[1] ?? "hidden";
+      element.dataset.state = state;
+      const label = element.dataset[`label${state[0].toUpperCase()}${state.slice(1)}`];
+      const target = element.querySelector(".wf-state") || (element.classList.contains("wf-run") ? element : null);
+      if (target) target.textContent = target === element ? (label ?? "") : (target.dataset[`label${state[0].toUpperCase()}${state.slice(1)}`] ?? "");
+    }
+    for (const lit of scene.querySelectorAll("[data-lit]")) lit.toggleAttribute("data-active", p >= Number(lit.dataset.lit));
+  }
+  const request = () => { if (frame === undefined) frame = requestAnimationFrame(render); };
+  addEventListener("scroll", request, { passive: true });
+  addEventListener("resize", () => { measure(); request(); });
+  measure();
+  render();
 });
