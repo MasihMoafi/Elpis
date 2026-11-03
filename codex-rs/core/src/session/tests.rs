@@ -3241,7 +3241,23 @@ fn resolve_multi_agent_version_handles_unset_and_legacy_history() {
             }),
             Some(MultiAgentVersion::V2),
         ),
-        Some(MultiAgentVersion::Disabled)
+        Some(MultiAgentVersion::V2),
+        "a chat recorded with the SUBAGENTS switch off follows the switch once it is on"
+    );
+    assert_eq!(
+        resolve_multi_agent_version(
+            &InitialHistory::Resumed(ResumedHistory {
+                history_revision: None,
+                conversation_id: thread_id,
+                history: Arc::new(vec![session_meta_item(
+                    thread_id,
+                    Some(MultiAgentVersion::Disabled)
+                )]),
+                rollout_path: None,
+            }),
+            /*inherited_multi_agent_version*/ None,
+        ),
+        Some(MultiAgentVersion::V1)
     );
     assert_eq!(
         resolve_multi_agent_version(

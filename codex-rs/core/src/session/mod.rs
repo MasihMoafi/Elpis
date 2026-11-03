@@ -510,8 +510,12 @@ pub(crate) fn resolve_multi_agent_version(
         return Some(MultiAgentVersion::Disabled);
     }
 
+    // Elpis: a recorded `Disabled` only means the SUBAGENTS switch was off then. While it is off,
+    // `multi_agent_version_override` still disables subagents; once it is on, the chat follows it
+    // (3 Nov, Masih: "I enabled them" yet the chat kept reporting subagents disabled).
     conversation_history
         .get_multi_agent_version()
+        .filter(|version| *version != MultiAgentVersion::Disabled)
         .or(inherited_multi_agent_version)
         .or(match conversation_history {
             InitialHistory::New | InitialHistory::Cleared => None,

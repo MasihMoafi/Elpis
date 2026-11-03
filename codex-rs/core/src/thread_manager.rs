@@ -1226,8 +1226,10 @@ impl ThreadManager {
                 ))
             })?;
         let history = stored_thread_to_initial_history(stored_thread, fork_source.rollout_path())?;
+        // Elpis: a source chat started with the SUBAGENTS switch off does not keep its fork off.
         let inherited_multi_agent_version = fork_source
             .multi_agent_version()
+            .filter(|version| *version != MultiAgentVersion::Disabled)
             .unwrap_or(MultiAgentVersion::V1);
         options.initial_history = fork_history_from_snapshot(
             ForkSnapshot::Interrupted,
@@ -1851,12 +1853,15 @@ impl ThreadManagerState {
                 InitialHistory::New | InitialHistory::Cleared => parent_thread_id,
             },
         };
+        // Elpis: a parent or source chat started with the SUBAGENTS switch off passes on no `Disabled`;
+        // the current switch decides (`multi_agent_version_override`).
         let inherited_multi_agent_version = match inherited_thread_id {
             Some(thread_id) => self
                 .get_thread(thread_id)
                 .await
                 .ok()
-                .and_then(|thread| thread.multi_agent_version()),
+                .and_then(|thread| thread.multi_agent_version())
+                .filter(|version| *version != MultiAgentVersion::Disabled),
             None => None,
         };
         resolve_multi_agent_version(initial_history, inherited_multi_agent_version)
