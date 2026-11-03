@@ -976,10 +976,9 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 :is(.workflow-mark, .conversation-colour-swatch)[data-colour="rose"], .thread-row[data-conversation-colour="rose"] { --workflow-colour:light-dark(#a73459,#f39cbb); }
 :is(.workflow-mark, .conversation-colour-swatch)[data-colour="green"], .thread-row[data-conversation-colour="green"] { --workflow-colour:light-dark(#29683f,#8bd49f); }
 :is(.workflow-mark, .conversation-colour-swatch)[data-colour="amber"], .thread-row[data-conversation-colour="amber"] { --workflow-colour:var(--brand-accent); }
-.thread-row[data-conversation-colour] { background:color-mix(in oklch, var(--workflow-colour) 12%, var(--sidebar)); }
-.thread-row[data-conversation-colour]:is([data-popup-open], :focus-within) { background:color-mix(in oklch, var(--workflow-colour) 18%, var(--sidebar)); }
-.thread-row[data-conversation-colour]:hover { background:color-mix(in oklch, var(--primary) 6%, color-mix(in oklch, var(--workflow-colour) 12%, var(--sidebar))); }
-.thread-row[data-conversation-colour].active { background:color-mix(in oklch, var(--workflow-colour) 22%, var(--selected)); }
+/* A chat's colour fills its circle only; the row keeps the plain sidebar look. A live status (working, unread,
+ * waiting, error) shows in the circle instead, so the colour never hides it. */
+.thread-row[data-conversation-colour] .conversation-state-slot .thread-dot[data-state="idle"] { border-color:var(--workflow-colour); background:var(--workflow-colour); }
 @keyframes spin { to { transform:rotate(360deg); } }
 /* A collapsible group of chats (components/sidebar-group.tsx): a project, or a group the person made. */
 .sidebar-group { margin-bottom:2px; }

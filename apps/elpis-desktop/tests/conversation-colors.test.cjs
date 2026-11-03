@@ -51,7 +51,7 @@ for (const colorScheme of ['light']) for (const sidebarWidth of [200]) test(`rig
       assert.equal(await target.getByRole('button', { name: /^(?:Pin |Bookmark |Archive )/ }).count(), 0, 'organization actions stay in the shared menu');
       await choose(page, id, colour); await unfocus(f);
       assert.equal(await target.getAttribute('data-conversation-colour'), colour.toLowerCase());
-      assert.notEqual(await target.evaluate(element => getComputedStyle(element).backgroundColor), before.background, 'the chosen colour tints the actual row');
+      assert.equal(await target.evaluate(element => getComputedStyle(element).backgroundColor), before.background, 'the colour leaves the row itself untinted');
       near(await target.locator('.conversation-state-slot').boundingBox(), before.status, `${name}: unchanged automatic status`);
       assert.equal(await f.shown(), 'chat-a', 'assigning colour must not select the target conversation');
     }
@@ -87,6 +87,28 @@ test('a failed right-click colour save reports the error and preserves the prior
     await page.getByRole('alert').filter({ hasText: 'Could not save conversation colour' }).first().waitFor();
     assert.equal(await row(page, 'chat-a').getAttribute('data-conversation-colour'), null);
     assert.equal(await f.shown(), 'chat-a');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+// 3 Nov: an Amber chat came out purple, because the colour tinted the whole row. A chat's colour fills only its circle,
+// in exactly the menu's swatch colour, in both themes.
+for (const colorScheme of ['light', 'dark']) test(`each chat colour fills the chat's circle with the menu's swatch colour, and only the circle (${colorScheme})`, async () => {
+  const f = await fixture({ staticDir: process.env.ELPIS_GEOMETRY_STATIC_DIR, width: 1280, height: 900, colorScheme, threads,
+    storage: { 'elpis-preferences-v1': JSON.stringify({ accent: 'blue' }) } }), { page } = f;
+  try {
+    await f.open('chat-a'); await unfocus(f);
+    const target = row(page, 'chat-a'), plain = await target.evaluate(element => getComputedStyle(element).backgroundColor);
+    for (const colour of ['Blue', 'Teal', 'Violet', 'Rose', 'Green', 'Amber']) {
+      await row(page, 'chat-a').locator('.thread-link').click({ button: 'right' });
+      await page.getByRole('menuitem', { name: 'Colour', exact: true }).hover();
+      const swatch = await page.getByRole('menuitemradio', { name: colour, exact: true }).locator('.conversation-colour-swatch').evaluate(element => getComputedStyle(element).backgroundColor);
+      await page.keyboard.press('Escape'); await page.keyboard.press('Escape');
+      await choose(page, 'chat-a', colour); await unfocus(f);
+      const circle = await target.locator('.conversation-state-slot .thread-dot').evaluate(element => getComputedStyle(element).backgroundColor);
+      assert.equal(circle, swatch, `${colour}: the circle shows the swatch colour`);
+      assert.equal(await target.evaluate(element => getComputedStyle(element).backgroundColor), plain, `${colour}: the row is not tinted`);
+    }
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
