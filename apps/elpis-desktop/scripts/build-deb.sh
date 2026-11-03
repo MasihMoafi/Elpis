@@ -10,7 +10,10 @@ commit=$(git -C "$APP" rev-parse HEAD)
 mkdir -p "$HOME/.cache/elpis-tests"; STAGE=$(mktemp -d "$HOME/.cache/elpis-tests/elpis-deb.XXXXXX"); ROOT="$STAGE/root"; OPT="$ROOT/opt/elpis-desktop"
 OUT="${ELPIS_DEB_DIR:-$HOME/.cache/elpis-tests/deb}"; mkdir -p "$OUT"
 
-node "$APP/desktop/package.mjs" --source "$APP" --destination "$OPT" > "$STAGE/manifest.json"
+# Electron: this checkout's download, else the one the installed app already uses (no download).
+electron=${ELECTRON_DIST:-$APP/node_modules/electron/dist}
+[[ -x "$electron/electron" ]] || electron=$(dirname "$(readlink -f "$(dirname "$(readlink -f ~/.local/bin/elpis-app)")/runtime/electron/electron")")
+node "$APP/desktop/package.mjs" --source "$APP" --destination "$OPT" --electron-dist "$electron" > "$STAGE/manifest.json"
 find "$OPT/runtime/electron/locales" -name '*.pak' ! -name 'en-US.pak' -delete
 
 mkdir -p "$OPT/bin" "$ROOT/usr/bin" "$ROOT/usr/share/applications" "$ROOT/usr/share/icons/hicolor/256x256/apps" "$ROOT/DEBIAN"
