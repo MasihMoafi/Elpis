@@ -11,7 +11,7 @@ jobs:
           pacman -Syu --noconfirm --needed base-devel namcap xorg-server-xvfb
           useradd -m builder && cp -r packaging/aur/elpis-bin /home/builder/pkg && chown -R builder /home/builder/pkg
           cd /home/builder/pkg
-          su builder -c 'makepkg --printsrcinfo > .SRCINFO && makepkg -f'
+          su builder -c 'makepkg --printsrcinfo > .SRCINFO && makepkg -fd'
           pacman -U --noconfirm elpis-bin-*.pkg.tar.zst
           namcap PKGBUILD elpis-bin-*.pkg.tar.zst || true
           elpis --version
