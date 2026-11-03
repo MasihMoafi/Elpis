@@ -1,8 +1,8 @@
 pub mod cache;
 pub mod collaboration_mode_presets;
 // Elpis: the model is told it is Elpis.
-mod elpis_identity;
 pub(crate) mod config;
+mod elpis_identity;
 pub mod manager;
 pub mod model_info;
 pub mod model_presets;

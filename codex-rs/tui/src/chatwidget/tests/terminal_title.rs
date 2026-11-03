@@ -419,4 +419,3 @@ async fn terminal_title_stops_spinning_when_only_mcp_startup_is_pending() {
     chat.update_task_running_state();
     assert!(chat.should_animate_terminal_title_spinner());
 }
-

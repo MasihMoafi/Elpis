@@ -84,7 +84,11 @@ fn claude_home_follows_claude_config_dir() {
     let account = std::ffi::OsString::from("/accounts/one");
     let home = Some(std::ffi::OsString::from("/home/user"));
     assert_eq!(
-        external_agent_home(ExternalAgentSource::Cla, Some(account.clone()), home.clone()),
+        external_agent_home(
+            ExternalAgentSource::Cla,
+            Some(account.clone()),
+            home.clone()
+        ),
         PathBuf::from("/accounts/one")
     );
     assert_eq!(
@@ -92,7 +96,11 @@ fn claude_home_follows_claude_config_dir() {
         PathBuf::from("/home/user/.claude")
     );
     assert_eq!(
-        external_agent_home(ExternalAgentSource::Cla, Some(std::ffi::OsString::new()), home.clone()),
+        external_agent_home(
+            ExternalAgentSource::Cla,
+            Some(std::ffi::OsString::new()),
+            home.clone()
+        ),
         PathBuf::from("/home/user/.claude"),
         "an empty CLAUDE_CONFIG_DIR is unset"
     );

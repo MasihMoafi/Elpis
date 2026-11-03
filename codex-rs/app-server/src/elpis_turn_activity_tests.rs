@@ -90,6 +90,9 @@ fn unknown_timing_stays_unknown() -> anyhow::Result<()> {
     let value = serde_json::to_value(&activity)?;
     assert_eq!(value["params"]["status"], "interrupted");
     assert_eq!(value["params"]["durationMs"], serde_json::Value::Null);
-    assert_eq!(value["params"]["timeToFirstTokenMs"], serde_json::Value::Null);
+    assert_eq!(
+        value["params"]["timeToFirstTokenMs"],
+        serde_json::Value::Null
+    );
     Ok(())
 }

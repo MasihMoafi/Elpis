@@ -63,7 +63,10 @@ fn a_key_that_cannot_be_a_header_is_refused_and_not_stored() {
     let home = tempfile::tempdir().expect("tempdir");
     let too_long = "k".repeat(MAX_KEY_BYTES + 1);
     for key in ["", "has space", "line\nbreak", too_long.as_str()] {
-        assert!(save_provider_key(home.path(), "fixture", key).is_err(), "{key:?}");
+        assert!(
+            save_provider_key(home.path(), "fixture", key).is_err(),
+            "{key:?}"
+        );
     }
     assert!(!provider_keys_path(home.path()).exists());
 }
@@ -77,7 +80,10 @@ fn saved_keys_are_readable_only_by_the_owner_in_v030_format() {
     save_provider_key(home.path(), "anthropic", "sk-ant-fixture").expect("save");
     let path = provider_keys_path(home.path());
 
-    let mode = std::fs::metadata(&path).expect("metadata").permissions().mode();
+    let mode = std::fs::metadata(&path)
+        .expect("metadata")
+        .permissions()
+        .mode();
     assert_eq!(mode & 0o777, 0o600);
     let stored: BTreeMap<String, String> =
         serde_json::from_str(&std::fs::read_to_string(&path).expect("read")).expect("json");
@@ -92,9 +98,15 @@ fn key_source_names_where_a_key_would_come_from() {
     let home = tempfile::tempdir().expect("tempdir");
     let unset = "ELPIS_GATEWAY_TEST_VARIABLE_THAT_IS_NEVER_SET";
 
-    assert_eq!(key_source(home.path(), "fixture", Some(unset)), KeySource::Missing);
+    assert_eq!(
+        key_source(home.path(), "fixture", Some(unset)),
+        KeySource::Missing
+    );
     save_provider_key(home.path(), "fixture", "saved-key").expect("save");
-    assert_eq!(key_source(home.path(), "fixture", Some(unset)), KeySource::Saved);
+    assert_eq!(
+        key_source(home.path(), "fixture", Some(unset)),
+        KeySource::Saved
+    );
 }
 
 fn routed(provider_id: &str, wire: GatewayWire, env_key: Option<&str>) -> ModelProviderInfo {
@@ -115,16 +127,28 @@ fn provider_key_source_covers_every_way_a_gateway_provider_gets_a_key() {
     let unset = "ELPIS_GATEWAY_TEST_VARIABLE_THAT_IS_NEVER_SET";
     let anthropic = routed("fixture", GatewayWire::AnthropicMessages, Some(unset));
 
-    assert_eq!(provider_key_source(home.path(), &anthropic), Some(KeySource::Missing));
+    assert_eq!(
+        provider_key_source(home.path(), &anthropic),
+        Some(KeySource::Missing)
+    );
     save_provider_key(home.path(), "fixture", "saved-key").expect("save");
-    assert_eq!(provider_key_source(home.path(), &anthropic), Some(KeySource::Saved));
+    assert_eq!(
+        provider_key_source(home.path(), &anthropic),
+        Some(KeySource::Saved)
+    );
 
     let local_chat = routed("local", GatewayWire::Chat, /*env_key*/ None);
-    assert_eq!(provider_key_source(home.path(), &local_chat), Some(KeySource::NotRequired));
+    assert_eq!(
+        provider_key_source(home.path(), &local_chat),
+        Some(KeySource::NotRequired)
+    );
 
     let mut configured = routed("configured", GatewayWire::Chat, Some(unset));
     configured.experimental_bearer_token = Some("token".into());
-    assert_eq!(provider_key_source(home.path(), &configured), Some(KeySource::Configured));
+    assert_eq!(
+        provider_key_source(home.path(), &configured),
+        Some(KeySource::Configured)
+    );
 
     let openai = ModelProviderInfo::create_openai_provider(/*base_url*/ None);
     assert_eq!(provider_key_source(home.path(), &openai), None);

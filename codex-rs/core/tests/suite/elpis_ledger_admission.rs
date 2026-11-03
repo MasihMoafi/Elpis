@@ -181,7 +181,11 @@ async fn continuity_sources_reach_the_request_only_while_the_ledger_admits_them(
 
     set_row(&test.config, MEMORY_ROW, /*admitted*/ false)?;
     set_row(&test.config, DEV_RULE_ROW, /*admitted*/ true)?;
-    set_row(&test.config, &added.to_string_lossy(), /*admitted*/ false)?;
+    set_row(
+        &test.config,
+        &added.to_string_lossy(),
+        /*admitted*/ false,
+    )?;
     test.submit_turn("withdrawn turn").await?;
 
     let admission = workspace_context_dir(Some(memories_root.as_path()), cwd)

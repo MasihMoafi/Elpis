@@ -106,13 +106,17 @@ async fn an_own_catalog_is_fetched_without_login_and_is_the_whole_list() {
 #[tokio::test]
 async fn without_an_own_catalog_nothing_is_fetched_and_the_bundled_list_stays() {
     let endpoint = VendorEndpoint::new(/*serves_own_catalog*/ false);
-    let manager = OpenAiModelsManager::new_without_cache(endpoint.clone(), /*auth_manager*/ None);
+    let manager =
+        OpenAiModelsManager::new_without_cache(endpoint.clone(), /*auth_manager*/ None);
 
     let catalog = manager
         .raw_model_catalog(RefreshStrategy::OnlineIfUncached, FACTORY)
         .await;
 
-    assert_eq!(catalog.models, load_remote_models_from_file().expect("bundled"));
+    assert_eq!(
+        catalog.models,
+        load_remote_models_from_file().expect("bundled")
+    );
     assert_eq!(endpoint.fetch_count.load(Ordering::SeqCst), 0);
 }
 
@@ -122,7 +126,8 @@ async fn an_unreachable_own_catalog_lists_nothing_rather_than_openai_models() {
         reachable: false,
         ..Arc::into_inner(VendorEndpoint::new(/*serves_own_catalog*/ true)).expect("sole owner")
     });
-    let manager = OpenAiModelsManager::new_without_cache(endpoint.clone(), /*auth_manager*/ None);
+    let manager =
+        OpenAiModelsManager::new_without_cache(endpoint.clone(), /*auth_manager*/ None);
 
     let catalog = manager
         .raw_model_catalog(RefreshStrategy::OnlineIfUncached, FACTORY)

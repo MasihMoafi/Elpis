@@ -2452,7 +2452,11 @@ pub(crate) mod tests {
                 auth_token: None,
             },
         };
-        for url in ["ws://127.0.0.1:38539", "ws://localhost:4000", "ws://[::1]:4000"] {
+        for url in [
+            "ws://127.0.0.1:38539",
+            "ws://localhost:4000",
+            "ws://[::1]:4000",
+        ] {
             assert!(ws(url).serves_local_agents(), "{url}");
         }
         assert!(!ws("wss://elpis.example.com:443").serves_local_agents());

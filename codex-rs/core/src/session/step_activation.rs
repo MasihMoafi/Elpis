@@ -244,7 +244,10 @@ impl Session {
             && update.approvals_reviewer.is_none()
             && update.environments.is_none()
             && update.service_tier.as_ref().is_some_and(|tier| {
-                matches!(tier.as_deref(), None | Some("default" | "priority" | "fast"))
+                matches!(
+                    tier.as_deref(),
+                    None | Some("default" | "priority" | "fast")
+                )
             });
         if fast_tier_only && !self.features.enabled(Feature::FastMode) {
             return TurnSettingsUpdateOutcome::Rejected {

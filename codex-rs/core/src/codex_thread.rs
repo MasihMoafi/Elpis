@@ -992,7 +992,8 @@ impl CodexThread {
         cwd: AbsolutePathBuf,
         reason: String,
     ) -> anyhow::Result<(bool, String)> {
-        crate::guardian::review_bridged_command(Arc::clone(&self.session), command, cwd, reason).await
+        crate::guardian::review_bridged_command(Arc::clone(&self.session), command, cwd, reason)
+            .await
     }
 
     pub async fn config_snapshot(&self) -> ThreadConfigSnapshot {

@@ -245,7 +245,7 @@ async fn new_config(
         daybreak_enabled: false,
         service_tier: None,
         review_model: None,
-        background_model: None, // Elpis
+        background_model: None,    // Elpis
         background_provider: None, // Elpis
         model_context_window: None,
         model_auto_compact_token_limit: None,

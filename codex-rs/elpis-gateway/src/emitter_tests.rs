@@ -143,8 +143,14 @@ fn usage_and_end_turn_reach_the_completed_event() {
     let response = completed(&out.drain()).expect("completed");
 
     assert_eq!(response["usage"]["total_tokens"], 17);
-    assert_eq!(response["usage"]["input_tokens_details"]["cached_tokens"], 4);
-    assert_eq!(response["usage"]["output_tokens_details"]["reasoning_tokens"], 3);
+    assert_eq!(
+        response["usage"]["input_tokens_details"]["cached_tokens"],
+        4
+    );
+    assert_eq!(
+        response["usage"]["output_tokens_details"]["reasoning_tokens"],
+        3
+    );
     assert_eq!(response["end_turn"], false);
 }
 
@@ -156,7 +162,10 @@ fn a_failure_carries_its_code_and_ends_the_response() {
 
     assert!(out.is_finished());
     assert_eq!(failure(&events).as_deref(), Some("busy"));
-    assert_eq!(events[0]["response"]["error"]["code"], "server_is_overloaded");
+    assert_eq!(
+        events[0]["response"]["error"]["code"],
+        "server_is_overloaded"
+    );
     assert_eq!(completed(&events), None);
 }
 
@@ -171,7 +180,10 @@ fn a_vendor_stream_that_just_stops_fails() {
         let mut events = translation.start();
         events.extend(translation.end());
 
-        assert!(failure(&events).is_some(), "{wire:?} completed an empty stream");
+        assert!(
+            failure(&events).is_some(),
+            "{wire:?} completed an empty stream"
+        );
         assert_eq!(completed(&events), None);
         assert!(translation.is_finished());
     }

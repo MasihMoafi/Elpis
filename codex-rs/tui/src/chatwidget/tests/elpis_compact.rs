@@ -9,10 +9,8 @@ use super::*;
 use crate::legacy_core::pressure_compaction::PressureCompaction;
 use pretty_assertions::assert_eq;
 
-const SAVED_30: &str =
-    "• Pressure compaction saved: 30% remaining. Checked before each turn. /compact alone compacts now.\n";
-const NOT_CHANGED: &str =
-    "■ Compaction setting was not changed: Use /compact N with 0 < N < 70.\n";
+const SAVED_30: &str = "• Pressure compaction saved: 30% remaining. Checked before each turn. /compact alone compacts now.\n";
+const NOT_CHANGED: &str = "■ Compaction setting was not changed: Use /compact N with 0 < N < 70.\n";
 const GUIDANCE: &str = "keep the Cedar blockers";
 
 type Events = tokio::sync::mpsc::UnboundedReceiver<AppEvent>;

@@ -840,7 +840,8 @@ impl ChatWidget {
         let trimmed = args.trim();
         match cmd {
             SlashCommand::Config => {
-                self.app_event_tx.send(AppEvent::OpenConfigPanel(Some(trimmed.to_string())));
+                self.app_event_tx
+                    .send(AppEvent::OpenConfigPanel(Some(trimmed.to_string())));
             }
             SlashCommand::Personal => {
                 if trimmed == "dismiss" {

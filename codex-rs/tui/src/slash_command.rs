@@ -76,7 +76,7 @@ pub enum SlashCommand {
     #[strum(to_string = "pwd", serialize = "cwd")]
     Pwd,
     Usage,
-    Context,   // Elpis: Context Ledger
+    Context, // Elpis: Context Ledger
     Config,
     DebugConfig,
     Title,
@@ -386,7 +386,10 @@ mod tests {
     #[test]
     fn config_is_distinct_from_settings() {
         assert_eq!(SlashCommand::from_str("config"), Ok(SlashCommand::Config));
-        assert_eq!(SlashCommand::from_str("settings"), Ok(SlashCommand::Experimental));
+        assert_eq!(
+            SlashCommand::from_str("settings"),
+            Ok(SlashCommand::Experimental)
+        );
         assert!(SlashCommand::Config.supports_inline_args());
     }
 

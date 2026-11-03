@@ -119,7 +119,9 @@ impl ToolCallRuntime {
                     // Elpis: runtime-generated failures carry hook and policy feedback; keep
                     // that model-visible control text exact instead of treating it as tool data.
                     if let Some(session) = &smart_prune {
-                        session.mark_smart_prune_ineligible(&error_call.call_id).await;
+                        session
+                            .mark_smart_prune_ineligible(&error_call.call_id)
+                            .await;
                     }
                     ResponseItemEnvelope::new(Self::failure_response(error_call, other).into())
                 }

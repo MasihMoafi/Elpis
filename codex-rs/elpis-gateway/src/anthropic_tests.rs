@@ -49,7 +49,10 @@ fn the_request_hoists_system_text_and_pairs_tool_use_with_results() {
     assert_eq!(body["tools"][0]["name"], "exec_command");
     assert_eq!(body["tools"][0]["input_schema"]["required"], json!(["cmd"]));
     assert_eq!(body["tools"][1]["name"], "apply_patch");
-    assert_eq!(body["tools"][1]["input_schema"]["required"], json!(["input"]));
+    assert_eq!(
+        body["tools"][1]["input_schema"]["required"],
+        json!(["input"])
+    );
 }
 
 #[test]
@@ -66,9 +69,15 @@ fn a_request_never_ends_with_an_assistant_message() {
     let messages = body["messages"].as_array().expect("messages");
     assert_eq!(
         messages.last(),
-        Some(&json!({"role": "user", "content": [{"type": "text", "text": "Admitted context changed."}]}))
+        Some(
+            &json!({"role": "user", "content": [{"type": "text", "text": "Admitted context changed."}]})
+        )
     );
-    assert!(!body["system"].to_string().contains("Admitted context changed."));
+    assert!(
+        !body["system"]
+            .to_string()
+            .contains("Admitted context changed.")
+    );
 
     let history = json!([
         {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "Go on."}]},
@@ -77,7 +86,9 @@ fn a_request_never_ends_with_an_assistant_message() {
     let body = request(&conversation(&responses_request(history, core_tools())))
         .expect("the request translates");
     assert_eq!(
-        body["messages"].as_array().and_then(|messages| messages.last()),
+        body["messages"]
+            .as_array()
+            .and_then(|messages| messages.last()),
         Some(&json!({"role": "user", "content": [{"type": "text", "text": "Continue."}]}))
     );
 }
@@ -230,7 +241,10 @@ fn a_tool_use_turn_reaches_core_as_text_then_a_function_call() {
     assert_eq!(response["end_turn"], false);
     // Anthropic reports cached and uncached input apart; core counts them together.
     assert_eq!(response["usage"]["input_tokens"], 16);
-    assert_eq!(response["usage"]["input_tokens_details"]["cached_tokens"], 5);
+    assert_eq!(
+        response["usage"]["input_tokens_details"]["cached_tokens"],
+        5
+    );
     assert_eq!(response["usage"]["output_tokens"], 12);
 }
 
@@ -440,12 +454,19 @@ fn thinking_state_for(request: &Value) -> String {
         .iter()
         .map(|(kind, data)| (*kind, data.as_str()))
         .collect();
-    translate(GatewayWire::AnthropicMessages, request, &events, /*close*/ true)
-        .iter()
-        .find(|event| event["item"]["type"] == "reasoning" && event["type"] == "response.output_item.done")
-        .and_then(|event| event["item"]["encrypted_content"].as_str())
-        .expect("a reasoning item carries the thinking block")
-        .to_string()
+    translate(
+        GatewayWire::AnthropicMessages,
+        request,
+        &events,
+        /*close*/ true,
+    )
+    .iter()
+    .find(|event| {
+        event["item"]["type"] == "reasoning" && event["type"] == "response.output_item.done"
+    })
+    .and_then(|event| event["item"]["encrypted_content"].as_str())
+    .expect("a reasoning item carries the thinking block")
+    .to_string()
 }
 
 fn opus_request(input: Value) -> Value {
@@ -495,7 +516,10 @@ fn a_thinking_block_from_another_conversation_is_not_replayed() {
     };
     // Another conversation: a different opening message before the same assistant turn.
     let other = replay(tool_turn("A child agent's task"));
-    assert!(!other["messages"].to_string().contains("\"thinking\""), "{other}");
+    assert!(
+        !other["messages"].to_string().contains("\"thinking\""),
+        "{other}"
+    );
     assert_eq!(
         other["messages"][1]["content"],
         json!([{"type": "tool_use", "id": "c1", "name": "exec_command", "input": {}}])
@@ -530,8 +554,17 @@ fn dropping_a_lone_thinking_block_leaves_no_empty_assistant_message() {
         {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "Again"}]},
     ]));
     let messages = body["messages"].as_array().expect("messages");
-    assert!(messages.iter().all(|message| message["content"].as_array().is_some_and(|c| !c.is_empty())));
-    assert!(messages.windows(2).all(|pair| pair[0]["role"] != pair[1]["role"]), "{body}");
+    assert!(
+        messages
+            .iter()
+            .all(|message| message["content"].as_array().is_some_and(|c| !c.is_empty()))
+    );
+    assert!(
+        messages
+            .windows(2)
+            .all(|pair| pair[0]["role"] != pair[1]["role"]),
+        "{body}"
+    );
 }
 
 /// Each level a model offers reaches the request as `output_config.effort` unchanged, including

@@ -179,8 +179,11 @@ impl TranscriptView {
     }
 
     pub(crate) fn has_visible_animation(&self, cells: &[Arc<dyn HistoryCell>]) -> bool {
-        self.visible.iter().any(|row| cells.get(row.index)
-            .is_some_and(|cell| cell.transcript_animation_tick().is_some()))
+        self.visible.iter().any(|row| {
+            cells
+                .get(row.index)
+                .is_some_and(|cell| cell.transcript_animation_tick().is_some())
+        })
     }
 
     pub(crate) fn render(&mut self, area: Rect, buf: &mut Buffer, cells: &[Arc<dyn HistoryCell>]) {

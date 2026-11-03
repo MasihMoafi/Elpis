@@ -124,11 +124,17 @@ fn route_headers(
     provider: &str,
 ) -> Vec<(String, String)> {
     vec![
-        (GATEWAY_TOKEN_HEADER.to_string(), gateway.token().to_string()),
+        (
+            GATEWAY_TOKEN_HEADER.to_string(),
+            gateway.token().to_string(),
+        ),
         (GATEWAY_WIRE_HEADER.to_string(), wire.to_string()),
         (GATEWAY_UPSTREAM_HEADER.to_string(), upstream.to_string()),
         (GATEWAY_PROVIDER_HEADER.to_string(), provider.to_string()),
-        (GATEWAY_ENV_KEY_HEADER.to_string(), UNSET_VARIABLE.to_string()),
+        (
+            GATEWAY_ENV_KEY_HEADER.to_string(),
+            UNSET_VARIABLE.to_string(),
+        ),
     ]
 }
 
@@ -227,12 +233,14 @@ async fn an_anthropic_tool_turn_round_trips_with_a_saved_key() {
     assert_eq!(status, StatusCode::OK, "{text}");
     let events = parse_sse(&text);
     match done_items(&events).as_slice() {
-        [ResponseItem::FunctionCall {
-            name,
-            arguments,
-            call_id,
-            ..
-        }] => {
+        [
+            ResponseItem::FunctionCall {
+                name,
+                arguments,
+                call_id,
+                ..
+            },
+        ] => {
             assert_eq!(
                 (name.as_str(), arguments.as_str(), call_id.as_str()),
                 ("exec_command", r#"{"cmd":"ls"}"#, "toolu_1")
@@ -253,7 +261,11 @@ async fn an_anthropic_tool_turn_round_trips_with_a_saved_key() {
     assert_eq!(body["tools"][1]["name"], "apply_patch");
     // Nothing core addressed to the gateway reaches the vendor.
     assert_eq!(body.get("input"), None);
-    for name in [GATEWAY_TOKEN_HEADER, GATEWAY_UPSTREAM_HEADER, GATEWAY_ENV_KEY_HEADER] {
+    for name in [
+        GATEWAY_TOKEN_HEADER,
+        GATEWAY_UPSTREAM_HEADER,
+        GATEWAY_ENV_KEY_HEADER,
+    ] {
         assert!(received[0].headers.get(name).is_none(), "{name} leaked");
     }
 }
@@ -281,7 +293,13 @@ async fn a_request_without_the_process_token_never_reaches_the_vendor() {
     .await;
 
     assert_eq!(status, StatusCode::FORBIDDEN);
-    assert_eq!(vendor.received_requests().await.map(|requests| requests.len()), Some(0));
+    assert_eq!(
+        vendor
+            .received_requests()
+            .await
+            .map(|requests| requests.len()),
+        Some(0)
+    );
 }
 
 #[tokio::test]
@@ -308,7 +326,13 @@ async fn a_missing_key_and_a_rejected_key_are_errors_core_does_not_retry_as_logi
     let (status, text) = send(reqwest::Method::POST, url.clone(), &headers, Some(&request)).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
     assert!(text.contains(UNSET_VARIABLE), "{text}");
-    assert_eq!(vendor.received_requests().await.map(|requests| requests.len()), Some(0));
+    assert_eq!(
+        vendor
+            .received_requests()
+            .await
+            .map(|requests| requests.len()),
+        Some(0)
+    );
 
     save_provider_key(home.path(), "fixture-anthropic", "wrong-key").expect("save");
     let (status, text) = send(reqwest::Method::POST, url, &headers, Some(&request)).await;
@@ -362,7 +386,10 @@ async fn models_are_served_as_a_catalog_core_reads() {
 async fn a_provider_routed_by_model_provider_info_reaches_its_vendor() {
     let vendor = MockServer::start().await;
     let stream = vendor_sse(&[
-        ("", json!({"choices": [{"index": 0, "delta": {"content": "DONE"}}]})),
+        (
+            "",
+            json!({"choices": [{"index": 0, "delta": {"content": "DONE"}}]}),
+        ),
         (
             "",
             json!({"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 7, "completion_tokens": 4}}),
@@ -387,8 +414,12 @@ async fn a_provider_routed_by_model_provider_info_reaches_its_vendor() {
         http_headers: Some(HashMap::from([("X-Title".to_string(), "Elpis".into())])),
         ..ModelProviderInfo::default()
     };
-    codex_model_provider_info::route_through_gateway("fixture-chat", GatewayWire::Chat, &mut provider)
-        .expect("routed");
+    codex_model_provider_info::route_through_gateway(
+        "fixture-chat",
+        GatewayWire::Chat,
+        &mut provider,
+    )
+    .expect("routed");
 
     let base_url = provider.base_url.clone().expect("base url");
     assert_eq!(base_url, format!("{}/v1", gateway.origin()));
@@ -434,8 +465,12 @@ async fn a_provider_is_browsed_straight_from_its_vendor() {
         base_url: Some(format!("{}/v1", vendor.uri())),
         ..ModelProviderInfo::default()
     };
-    codex_model_provider_info::route_through_gateway("browse-chat", GatewayWire::Chat, &mut provider)
-        .expect("routed");
+    codex_model_provider_info::route_through_gateway(
+        "browse-chat",
+        GatewayWire::Chat,
+        &mut provider,
+    )
+    .expect("routed");
 
     let catalog = provider_models(home.path(), &provider)
         .await

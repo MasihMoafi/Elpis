@@ -156,8 +156,7 @@ pub(super) async fn ensure_conversation_listener(
     };
     // Elpis: the attaching client learns the thread's Smart Prune switch before any turn.
     let smart_prune_update =
-        crate::elpis_smart_prune::thread_smart_prune_updated(conversation_id, &conversation)
-            .await;
+        crate::elpis_smart_prune::thread_smart_prune_updated(conversation_id, &conversation).await;
     let (thread_state, result) = {
         let pending_thread_unloads = listener_task_context.pending_thread_unloads.lock().await;
         if pending_thread_unloads.contains(&conversation_id) {

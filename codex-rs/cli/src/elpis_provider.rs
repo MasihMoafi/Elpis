@@ -30,7 +30,10 @@ impl ProviderSelection {
             .iter()
             .find(|(alias, _)| *alias == provider)
             .map_or((provider, None), |(_, model)| {
-                (codex_model_provider_info::OPENROUTER_PROVIDER_ID, Some(*model))
+                (
+                    codex_model_provider_info::OPENROUTER_PROVIDER_ID,
+                    Some(*model),
+                )
             });
         let mut overrides = vec![format!("model_provider={}", toml_string(provider))];
         if let Some(model) = model {

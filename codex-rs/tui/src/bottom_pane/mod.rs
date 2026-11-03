@@ -141,8 +141,8 @@ pub(crate) struct MentionBinding {
 }
 mod chat_composer;
 mod chat_composer_history;
-mod config_panel;
 mod command_popup;
+mod config_panel;
 pub(crate) mod custom_prompt_view;
 mod effort_status_line;
 mod experimental_features_view;
@@ -254,11 +254,11 @@ use crate::bottom_pane::prompt_args::parse_slash_name;
 pub(crate) use chat_composer::ChatComposer;
 pub(crate) use chat_composer::ChatComposerConfig;
 pub(crate) use chat_composer::ComposerDraftSnapshot;
-pub(crate) use config_panel::ConfigPanelView;
 pub(crate) use chat_composer::InputResult;
 pub(crate) use chat_composer::QueuedInputAction;
 pub(crate) use chat_composer::RestrictedInputMode;
 pub(crate) use chat_composer_history::HistoryEntry;
+pub(crate) use config_panel::ConfigPanelView;
 pub(crate) use textarea::KillBufferSnapshot;
 
 use crate::status_indicator_widget::StatusDetailsCapitalization;

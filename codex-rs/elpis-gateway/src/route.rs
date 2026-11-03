@@ -122,7 +122,10 @@ impl Route {
             ),
         };
         let mut url = format!("{}/{path}", self.upstream);
-        let mut params: Vec<&str> = query.into_iter().filter(|query| !query.is_empty()).collect();
+        let mut params: Vec<&str> = query
+            .into_iter()
+            .filter(|query| !query.is_empty())
+            .collect();
         if self.wire == GatewayWire::GeminiGenerateContent {
             params.push("alt=sse");
         }

@@ -905,11 +905,7 @@ fn continuity_sources_with_state(
 /// `project_doc_fallback_filenames`; giving each filename its own row would mean rows that
 /// `set_continuity_source_admitted` cannot switch, so an override file could be listed and
 /// never admitted.
-fn instruction_source_row(
-    path: &Path,
-    cwd: &Path,
-    memories_root: &Path,
-) -> (String, &'static str) {
+fn instruction_source_row(path: &Path, cwd: &Path, memories_root: &Path) -> (String, &'static str) {
     // The home instruction is global even when the workspace is inside that home.
     if path.parent() == memories_root.parent() {
         return (GLOBAL_RULES.to_string(), "applicable global rules");
@@ -1803,7 +1799,8 @@ mod tests {
         assert!(unspecified.project_rules);
         assert!(unspecified.goal);
 
-        let excluded = parse_admission("global_rules = false\nproject_rules = false\ngoal = true\n")?;
+        let excluded =
+            parse_admission("global_rules = false\nproject_rules = false\ngoal = true\n")?;
         assert!(!excluded.global_rules);
         assert!(!excluded.project_rules);
         assert!(excluded.goal);
@@ -2624,8 +2621,8 @@ mod tests {
     /// Context Ledger admits them, while development rules start admitted on a fresh
     /// workspace and remain switchable.
     #[tokio::test]
-    async fn instructions_start_admitted_while_optional_sources_start_excluded() -> anyhow::Result<()>
-    {
+    async fn instructions_start_admitted_while_optional_sources_start_excluded()
+    -> anyhow::Result<()> {
         let home = tempdir()?;
         let memories = home.path().join(".elpis/memories");
         let cwd = home.path().join("projects/Elpis");
@@ -2703,11 +2700,7 @@ mod tests {
         std::fs::write(cwd.join("AGENTS.md"), "Project rule")?;
         let project = cwd.join("AGENTS.md");
 
-        assert!(instruction_source_admitted(
-            Some(&memories),
-            &cwd,
-            &global
-        )?);
+        assert!(instruction_source_admitted(Some(&memories), &cwd, &global)?);
         assert!(instruction_source_admitted(
             Some(&memories),
             &cwd,
@@ -3032,11 +3025,17 @@ mod tests {
         let paths = vec![global.clone(), root.clone(), local.clone(), nested.clone()];
         let sources = continuity_sources(Some(&memories), &cwd, &paths)?;
         assert_eq!(
-            sources.iter().filter(|source| source.name == GLOBAL_RULES).count(),
+            sources
+                .iter()
+                .filter(|source| source.name == GLOBAL_RULES)
+                .count(),
             1
         );
         assert_eq!(
-            sources.iter().filter(|source| source.name == PROJECT_RULES).count(),
+            sources
+                .iter()
+                .filter(|source| source.name == PROJECT_RULES)
+                .count(),
             1
         );
         assert!(instruction_source_admitted(Some(&memories), &cwd, &global)?);
@@ -3046,7 +3045,11 @@ mod tests {
 
         set_continuity_source_admitted(Some(&memories), &cwd, GLOBAL_RULES, false)?;
         set_continuity_source_admitted(Some(&memories), &cwd, PROJECT_RULES, true)?;
-        assert!(!instruction_source_admitted(Some(&memories), &cwd, &global)?);
+        assert!(!instruction_source_admitted(
+            Some(&memories),
+            &cwd,
+            &global
+        )?);
         for path in [&root, &local, &nested] {
             assert!(instruction_source_admitted(Some(&memories), &cwd, path)?);
         }

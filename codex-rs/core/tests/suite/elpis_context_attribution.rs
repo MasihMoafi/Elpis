@@ -40,7 +40,10 @@ async fn attribution_around_one_turn(
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn completed_assistant_response_updates_context_categories() -> Result<()> {
     let (before, after) = attribution_around_one_turn(Some(PLANTED_ANSWER)).await?;
-    assert_eq!(before, None, "no request was built yet, so nothing is reported");
+    assert_eq!(
+        before, None,
+        "no request was built yet, so nothing is reported"
+    );
     let after = after.expect("the sampled turn records its request composition");
     assert!(
         after.agent_messages > 0,

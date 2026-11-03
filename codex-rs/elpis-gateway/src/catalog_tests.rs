@@ -7,7 +7,8 @@ use pretty_assertions::assert_eq;
 
 /// Rows as core reads them: through the gateway's own check and core's `ModelsResponse`.
 fn read(wire: GatewayWire, body: Value) -> Vec<ModelInfo> {
-    let catalog = catalog_response(models_from_listing(wire, &body)).expect("core reads the catalog");
+    let catalog =
+        catalog_response(models_from_listing(wire, &body)).expect("core reads the catalog");
     serde_json::from_value::<ModelsResponse>(catalog)
         .expect("core reads the catalog")
         .models
@@ -112,7 +113,10 @@ fn gemini_lists_models_that_answer_turns_with_their_reported_window() {
     );
 
     assert_eq!(
-        models.iter().map(|model| model.slug.as_str()).collect::<Vec<_>>(),
+        models
+            .iter()
+            .map(|model| model.slug.as_str())
+            .collect::<Vec<_>>(),
         vec!["gemini-3.5-flash", "gemini-experimental"]
     );
     assert_eq!(models[0].context_window, Some(1_048_576));
@@ -127,7 +131,9 @@ fn a_listing_that_cannot_be_read_lists_nothing() {
         GatewayWire::AnthropicMessages,
         GatewayWire::GeminiGenerateContent,
     ] {
-        assert!(models_from_listing(wire, &json!({"error": {"message": "Invalid API key"}})).is_empty());
+        assert!(
+            models_from_listing(wire, &json!({"error": {"message": "Invalid API key"}})).is_empty()
+        );
     }
     assert!(models_from_listing(GatewayWire::Chat, &json!({"data": "nope"})).is_empty());
     assert!(models_from_listing(GatewayWire::Chat, &json!([{"object": "model"}])).is_empty());
@@ -173,7 +179,10 @@ fn reasoning_levels_and_tool_support_follow_the_listed_parameters() {
     );
 
     assert_eq!(
-        models.iter().map(|model| model.slug.as_str()).collect::<Vec<_>>(),
+        models
+            .iter()
+            .map(|model| model.slug.as_str())
+            .collect::<Vec<_>>(),
         vec![
             "deepseek/deepseek-v4.1-flash",
             "meta-llama/llama-3.3-70b-instruct",

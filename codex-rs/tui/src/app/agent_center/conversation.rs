@@ -364,10 +364,16 @@ impl ToolTally {
         };
         let mut parts = Vec::new();
         if self.commands > 0 {
-            parts.push(format!("Ran {}", plural(self.commands, "command", "commands")));
+            parts.push(format!(
+                "Ran {}",
+                plural(self.commands, "command", "commands")
+            ));
         }
         if self.running > 0 {
-            parts.push(format!("running {}", plural(self.running, "command", "commands")));
+            parts.push(format!(
+                "running {}",
+                plural(self.running, "command", "commands")
+            ));
         }
         if self.calls > 0 {
             parts.push(format!("used {}", plural(self.calls, "tool", "tools")));
@@ -378,7 +384,10 @@ impl ToolTally {
             count => parts.push(format!("edited {count} files")),
         }
         if self.declined > 0 {
-            parts.push(format!("{} not run", plural(self.declined, "command", "commands")));
+            parts.push(format!(
+                "{} not run",
+                plural(self.declined, "command", "commands")
+            ));
         }
         let mut line = parts.join(" · ");
         let first = line.chars().next()?;

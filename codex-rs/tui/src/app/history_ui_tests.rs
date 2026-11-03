@@ -95,10 +95,13 @@ fn linux_app_handoff_starts_the_app_without_waiting_for_it() {
     let path = record.display();
     std::fs::write(
         &app,
-        format!("#!/bin/sh\nprintf '%s ' \"$@\" > '{path}.part' && mv '{path}.part' '{path}'\nsleep 3\n"),
+        format!(
+            "#!/bin/sh\nprintf '%s ' \"$@\" > '{path}.part' && mv '{path}.part' '{path}'\nsleep 3\n"
+        ),
     )
     .expect("write the fake app");
-    std::fs::set_permissions(&app, std::fs::Permissions::from_mode(0o755)).expect("make it runnable");
+    std::fs::set_permissions(&app, std::fs::Permissions::from_mode(0o755))
+        .expect("make it runnable");
     let started = std::time::Instant::now();
     launch_elpis_desktop(
         app.as_os_str(),
@@ -114,7 +117,9 @@ fn linux_app_handoff_starts_the_app_without_waiting_for_it() {
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
     assert_eq!(
-        std::fs::read_to_string(&record).expect("the app ran").trim(),
+        std::fs::read_to_string(&record)
+            .expect("the app ran")
+            .trim(),
         "--open-thread chat-1"
     );
     assert!(

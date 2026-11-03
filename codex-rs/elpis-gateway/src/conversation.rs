@@ -162,7 +162,11 @@ impl Conversation {
     /// Declares function, custom (freeform) and namespaced tools as plain functions. Tools only
     /// OpenAI runs (web search, image generation, tool search, local shell) are dropped: the
     /// vendor cannot run them, and refusing the whole request would end the session.
-    fn declare_tools(&mut self, tools: &[Value], namespace: Option<&str>) -> Result<(), GatewayError> {
+    fn declare_tools(
+        &mut self,
+        tools: &[Value],
+        namespace: Option<&str>,
+    ) -> Result<(), GatewayError> {
         for tool in tools {
             let kind = tool.get("type").and_then(Value::as_str).unwrap_or_default();
             let name = tool
@@ -310,7 +314,10 @@ impl Conversation {
                 self.declare_tools(tools, /*namespace*/ None)?;
             }
             "agent_message" => {
-                let author = item.get("author").and_then(Value::as_str).unwrap_or("agent");
+                let author = item
+                    .get("author")
+                    .and_then(Value::as_str)
+                    .unwrap_or("agent");
                 let recipient = item
                     .get("recipient")
                     .and_then(Value::as_str)
@@ -493,9 +500,9 @@ pub(crate) fn vendor_tool_name(name: &str, namespace: Option<&str>) -> String {
 fn is_vendor_safe(name: &str) -> bool {
     name.len() <= MAX_TOOL_NAME_LEN
         && name.starts_with(|character: char| character.is_ascii_alphabetic() || character == '_')
-        && name
-            .chars()
-            .all(|character| character.is_ascii_alphanumeric() || character == '_' || character == '-')
+        && name.chars().all(|character| {
+            character.is_ascii_alphanumeric() || character == '_' || character == '-'
+        })
 }
 
 #[cfg(test)]

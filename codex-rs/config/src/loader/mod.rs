@@ -193,7 +193,9 @@ pub async fn load_config_layers_state(
         let config = toml::from_str(raw_toml).map_err(|error| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("invalid embedded packaged defaults; this is an Elpis build error: {error}"),
+                format!(
+                    "invalid embedded packaged defaults; this is an Elpis build error: {error}"
+                ),
             )
         })?;
         ConfigLayerEntry::new_with_raw_toml(
@@ -1470,7 +1472,9 @@ pub fn resolve_relative_paths_in_config_toml(
 /// `wire_api = "responses"` survive, the gateway headers do not, and `env_key` comes back. Keep
 /// such providers' original tables so the merged config routes them whole.
 fn keep_gateway_provider_tables(original: &TomlValue, resolved: &mut TomlValue) {
-    let Some(original_providers) = original.get("model_providers").and_then(TomlValue::as_table)
+    let Some(original_providers) = original
+        .get("model_providers")
+        .and_then(TomlValue::as_table)
     else {
         return;
     };

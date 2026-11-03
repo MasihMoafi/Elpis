@@ -88,19 +88,23 @@ fn run(chunks: &[String], close: bool) -> Vec<Value> {
 }
 
 fn call_chunk() -> String {
-    chunk(json!({"candidates": [{"content": {"role": "model", "parts": [{
-        "functionCall": {"id": "g7", "name": "exec_command", "args": {"cmd": "ls"}},
-        "thoughtSignature": "sig-7",
-    }]}}]}))
+    chunk(
+        json!({"candidates": [{"content": {"role": "model", "parts": [{
+            "functionCall": {"id": "g7", "name": "exec_command", "args": {"cmd": "ls"}},
+            "thoughtSignature": "sig-7",
+        }]}}]}),
+    )
 }
 
 #[test]
 fn a_function_call_keeps_its_signature_for_the_next_request() {
     let chunks = vec![
-        chunk(json!({"candidates": [{"content": {"role": "model", "parts": [
-            {"text": "thinking", "thought": true},
-            {"text": "Running ls."},
-        ]}}]})),
+        chunk(
+            json!({"candidates": [{"content": {"role": "model", "parts": [
+                {"text": "thinking", "thought": true},
+                {"text": "Running ls."},
+            ]}}]}),
+        ),
         call_chunk(),
         // Gemini may repeat a complete call.
         call_chunk(),
@@ -132,7 +136,10 @@ fn a_function_call_keeps_its_signature_for_the_next_request() {
     let response = completed(&out).expect("completed");
     assert_eq!(response["end_turn"], false);
     assert_eq!(response["usage"]["output_tokens"], 6);
-    assert_eq!(response["usage"]["output_tokens_details"]["reasoning_tokens"], 2);
+    assert_eq!(
+        response["usage"]["output_tokens_details"]["reasoning_tokens"],
+        2
+    );
 
     // Core replays the reasoning item; the signature returns on its own call.
     let history = json!([

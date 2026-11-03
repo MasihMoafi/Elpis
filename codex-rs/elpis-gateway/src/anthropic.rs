@@ -306,9 +306,10 @@ fn keep_only_bound_thinking(body: &mut Value) {
         }
         match joined.last_mut() {
             Some(last) if last["role"] == message["role"] => {
-                if let (Some(into), Some(from)) =
-                    (last["content"].as_array_mut(), message["content"].as_array())
-                {
+                if let (Some(into), Some(from)) = (
+                    last["content"].as_array_mut(),
+                    message["content"].as_array(),
+                ) {
                     into.extend(from.iter().cloned());
                 }
             }
@@ -369,7 +370,9 @@ fn anthropic_input_schema(description: &str, parameters: &Value) -> (String, Val
                     .as_object_mut()
             {
                 for (name, property) in properties {
-                    merged.entry(name.clone()).or_insert_with(|| property.clone());
+                    merged
+                        .entry(name.clone())
+                        .or_insert_with(|| property.clone());
                 }
             }
             if keyword == "allOf"
@@ -394,8 +397,9 @@ fn anthropic_input_schema(description: &str, parameters: &Value) -> (String, Val
 }
 
 pub(crate) fn parse_object(text: &str, label: &str) -> Result<Value, GatewayError> {
-    let value: Value = serde_json::from_str(text)
-        .map_err(|error| GatewayError::bad_request(format!("{label} is not valid JSON: {error}")))?;
+    let value: Value = serde_json::from_str(text).map_err(|error| {
+        GatewayError::bad_request(format!("{label} is not valid JSON: {error}"))
+    })?;
     if value.is_object() {
         Ok(value)
     } else {
@@ -472,7 +476,9 @@ impl AnthropicStream {
                         out.close_message();
                         let arguments = value
                             .pointer("/content_block/input")
-                            .filter(|input| input.as_object().is_some_and(|input| !input.is_empty()))
+                            .filter(|input| {
+                                input.as_object().is_some_and(|input| !input.is_empty())
+                            })
                             .map(Value::to_string)
                             .unwrap_or_default();
                         self.tools.insert(
@@ -506,44 +512,42 @@ impl AnthropicStream {
                     _ => {}
                 }
             }
-            "content_block_delta" => {
-                match value.pointer("/delta/type").and_then(Value::as_str) {
-                    Some("text_delta") => {
-                        out.text(
+            "content_block_delta" => match value.pointer("/delta/type").and_then(Value::as_str) {
+                Some("text_delta") => {
+                    out.text(
+                        value
+                            .pointer("/delta/text")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default(),
+                    );
+                }
+                Some("input_json_delta") => {
+                    if let Some(tool) = self.tools.get_mut(&index) {
+                        tool.arguments.push_str(
                             value
-                                .pointer("/delta/text")
+                                .pointer("/delta/partial_json")
                                 .and_then(Value::as_str)
                                 .unwrap_or_default(),
                         );
                     }
-                    Some("input_json_delta") => {
-                        if let Some(tool) = self.tools.get_mut(&index) {
-                            tool.arguments.push_str(
-                                value
-                                    .pointer("/delta/partial_json")
-                                    .and_then(Value::as_str)
-                                    .unwrap_or_default(),
-                            );
-                        }
-                    }
-                    Some(delta @ ("thinking_delta" | "signature_delta")) => {
-                        if let Some(block) = self.thinking.get_mut(&index) {
-                            let (field, pointer) = if delta == "thinking_delta" {
-                                ("thinking", "/delta/thinking")
-                            } else {
-                                ("signature", "/delta/signature")
-                            };
-                            let joined = format!(
-                                "{}{}",
-                                text_at(block, &format!("/{field}")),
-                                text_at(&value, pointer)
-                            );
-                            block[field] = json!(joined);
-                        }
-                    }
-                    _ => {}
                 }
-            }
+                Some(delta @ ("thinking_delta" | "signature_delta")) => {
+                    if let Some(block) = self.thinking.get_mut(&index) {
+                        let (field, pointer) = if delta == "thinking_delta" {
+                            ("thinking", "/delta/thinking")
+                        } else {
+                            ("signature", "/delta/signature")
+                        };
+                        let joined = format!(
+                            "{}{}",
+                            text_at(block, &format!("/{field}")),
+                            text_at(&value, pointer)
+                        );
+                        block[field] = json!(joined);
+                    }
+                }
+                _ => {}
+            },
             "content_block_stop" => {
                 if let Some(mut block) = self.thinking.remove(&index) {
                     if let Some(binding) = &self.binding {

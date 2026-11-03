@@ -251,9 +251,7 @@ async fn overview_reopen_discovers_delegated_helper_after_missed_notification() 
                 "thread/read" if params["threadId"].as_str() == Some(server_root.id.as_str()) => {
                     json!({"thread": server_root.clone()})
                 }
-                "thread/read"
-                    if params["threadId"].as_str() == Some(server_helper.id.as_str()) =>
-                {
+                "thread/read" if params["threadId"].as_str() == Some(server_helper.id.as_str()) => {
                     json!({"thread": server_helper.clone()})
                 }
                 "thread/turns/list" => json!({"data": [], "nextCursor": null}),

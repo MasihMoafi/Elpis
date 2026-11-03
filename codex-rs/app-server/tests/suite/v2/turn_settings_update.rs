@@ -421,7 +421,9 @@ async fn disabled_turn_settings_update_reports_rejection_without_changing_future
         let mut params = patch;
         params["threadId"] = json!(thread.id);
         params["turnId"] = json!("idle");
-        let id = app.send_request("turn/settings/update", Some(params)).await?;
+        let id = app
+            .send_request("turn/settings/update", Some(params))
+            .await?;
         let error = timeout(
             DEFAULT_TIMEOUT,
             app.read_stream_until_error_message(RequestId::Integer(id)),
@@ -431,7 +433,8 @@ async fn disabled_turn_settings_update_reports_rejection_without_changing_future
             error.error,
             JSONRPCErrorError {
                 code: -32600,
-                message: "turn settings updates require the step_model_switching feature".to_string(),
+                message: "turn settings updates require the step_model_switching feature"
+                    .to_string(),
                 data: None,
             }
         );

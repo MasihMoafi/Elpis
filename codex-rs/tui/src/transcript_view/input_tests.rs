@@ -454,7 +454,11 @@ fn continuous_wheel_runs_accelerate_and_reset_on_pause_or_reversal() {
     let rapid: Vec<f64> = (0..12)
         .map(|event| view.wheel_multiplier(-1.0, at(event)))
         .collect();
-    assert!(rapid.windows(2).all(|pair| pair[1] > pair[0] || pair[1] == 10.0));
+    assert!(
+        rapid
+            .windows(2)
+            .all(|pair| pair[1] > pair[0] || pair[1] == 10.0)
+    );
     assert!(rapid[1] > 1.9 && rapid[1] <= 2.0, "{rapid:?}");
     assert_eq!(rapid[11], 10.0);
     // A three-second pause leaves almost no momentum; reversing drops it entirely.

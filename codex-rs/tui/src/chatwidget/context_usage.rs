@@ -517,9 +517,18 @@ const LEFT_EIGHTHS: [&str; 8] = ["", "▏", "▎", "▍", "▌", "▋", "▊", "
 /// gives each segment whole cells and keeps neighbours apart with a sliver of background, as Masih
 /// asked on 11 October and again on 18 October. A cramped bar cannot spare the gaps: there one-eighth
 /// cell resolution keeps a 27k category wider than a 1k one, which whole cells could not.
-pub(super) fn category_bar_spans(segments: &[(u64, Color)], used_cells: usize) -> Vec<Span<'static>> {
-    let tokens = segments.iter().map(|(tokens, _)| *tokens).collect::<Vec<_>>();
-    let big = weighted_cell_counts(&tokens, used_cells).into_iter().filter(|cells| *cells > 0).count();
+pub(super) fn category_bar_spans(
+    segments: &[(u64, Color)],
+    used_cells: usize,
+) -> Vec<Span<'static>> {
+    let tokens = segments
+        .iter()
+        .map(|(tokens, _)| *tokens)
+        .collect::<Vec<_>>();
+    let big = weighted_cell_counts(&tokens, used_cells)
+        .into_iter()
+        .filter(|cells| *cells > 0)
+        .count();
     if big > 1 && used_cells >= 2 * big {
         gapped_spans(segments, &tokens, used_cells)
     } else {
@@ -528,7 +537,11 @@ pub(super) fn category_bar_spans(segments: &[(u64, Color)], used_cells: usize) -
 }
 
 /// Whole cells per segment; every segment but the last ends in ▉, whose unpainted eighth is the gap.
-fn gapped_spans(segments: &[(u64, Color)], tokens: &[u64], used_cells: usize) -> Vec<Span<'static>> {
+fn gapped_spans(
+    segments: &[(u64, Color)],
+    tokens: &[u64],
+    used_cells: usize,
+) -> Vec<Span<'static>> {
     let visible = segments
         .iter()
         .zip(weighted_cell_counts(tokens, used_cells))
@@ -538,13 +551,22 @@ fn gapped_spans(segments: &[(u64, Color)], tokens: &[u64], used_cells: usize) ->
     let mut spans = Vec::new();
     for (index, (cells, color)) in visible.iter().enumerate() {
         if index + 1 == visible.len() {
-            spans.push(Span::styled("█".repeat(*cells), Style::default().fg(*color)));
+            spans.push(Span::styled(
+                "█".repeat(*cells),
+                Style::default().fg(*color),
+            ));
             continue;
         }
         if *cells > 1 {
-            spans.push(Span::styled("█".repeat(cells - 1), Style::default().fg(*color)));
+            spans.push(Span::styled(
+                "█".repeat(cells - 1),
+                Style::default().fg(*color),
+            ));
         }
-        spans.push(Span::styled("▉", Style::default().fg(*color).bg(Color::Reset)));
+        spans.push(Span::styled(
+            "▉",
+            Style::default().fg(*color).bg(Color::Reset),
+        ));
     }
     spans
 }
@@ -553,7 +575,10 @@ fn gapped_spans(segments: &[(u64, Color)], tokens: &[u64], used_cells: usize) ->
 /// front and the one that continues behind it, so the boundary sits where the next segment starts.
 /// A segment under an eighth of a cell is not drawn; the legend still lists it.
 fn blended_spans(segments: &[(u64, Color)], used_cells: usize) -> Vec<Span<'static>> {
-    let tokens = segments.iter().map(|(tokens, _)| *tokens).collect::<Vec<_>>();
+    let tokens = segments
+        .iter()
+        .map(|(tokens, _)| *tokens)
+        .collect::<Vec<_>>();
     let eighths = weighted_cell_counts(&tokens, used_cells * 8);
     let colors = segments
         .iter()
@@ -564,7 +589,11 @@ fn blended_spans(segments: &[(u64, Color)], used_cells: usize) -> Vec<Span<'stat
         .chunks(8)
         .map(|cell| {
             let back = cell[cell.len() - 1];
-            let back_eighths = cell.iter().rev().take_while(|color| **color == back).count();
+            let back_eighths = cell
+                .iter()
+                .rev()
+                .take_while(|color| **color == back)
+                .count();
             if back_eighths == cell.len() {
                 return Span::styled("█", Style::default().fg(back));
             }
@@ -850,7 +879,9 @@ mod tests {
         assert!(text.contains("110k · 55.0% of context window"), "{text}");
         // The bar is capped at the window's 80 cells. Without a known terminal background
         // both categories share one display colour, so cells are counted, not boundaries.
-        let cells = text.matches(['█', '▏', '▎', '▍', '▌', '▋', '▊', '▉']).count();
+        let cells = text
+            .matches(['█', '▏', '▎', '▍', '▌', '▋', '▊', '▉'])
+            .count();
         assert_eq!(cells, 80, "{text}");
         assert_eq!(text.matches('░').count(), 0);
     }
@@ -865,7 +896,9 @@ mod tests {
                     .iter()
                     .position(|block| block.chars().eq([cell]))
                     .unwrap_or(8);
-                *painted.entry(span.style.fg.expect("front color")).or_default() += front;
+                *painted
+                    .entry(span.style.fg.expect("front color"))
+                    .or_default() += front;
                 if let Some(back) = span.style.bg.filter(|back| *back != Color::Reset) {
                     *painted.entry(back).or_default() += 8 - front;
                 }
@@ -881,7 +914,10 @@ mod tests {
             .flat_map(|span| {
                 let color = span.style.fg.expect("front color");
                 span.content.chars().map(move |cell| {
-                    let eighths = LEFT_EIGHTHS.iter().position(|block| block.chars().eq([cell])).unwrap_or(8);
+                    let eighths = LEFT_EIGHTHS
+                        .iter()
+                        .position(|block| block.chars().eq([cell]))
+                        .unwrap_or(8);
                     (color, eighths)
                 })
             })
@@ -891,22 +927,80 @@ mod tests {
     #[test]
     fn neighbouring_segments_are_separated_by_a_gap() {
         // As on 11 October: on a bar with room, a gap of an eighth between segments, none after the last.
-        let spans = category_bar_spans(&[(2, Color::Blue), (0, Color::Green), (6, Color::Red), (2, Color::Yellow)], 10);
-        assert_eq!(spans.iter().map(|span| span.content.as_ref()).collect::<String>(), "█▉█████▉██");
+        let spans = category_bar_spans(
+            &[
+                (2, Color::Blue),
+                (0, Color::Green),
+                (6, Color::Red),
+                (2, Color::Yellow),
+            ],
+            10,
+        );
+        assert_eq!(
+            spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect::<String>(),
+            "█▉█████▉██"
+        );
         for (cells, segments) in [
             // Masih's nine-cell Ledger: tiny categories must not prevent gaps between whole-cell segments.
-            (9, vec![(6_000, Color::Blue), (30_000, Color::Green), (4_000, Color::Red), (3_000, Color::Yellow), (600, Color::Cyan), (500, Color::Magenta)]),
-            (24, vec![(4_000, Color::Magenta), (2_500, Color::Green), (900, Color::DarkGray), (1_400, Color::Gray)]),
-            (40, vec![(9_000, Color::Magenta), (6_000, Color::Green), (900, Color::DarkGray), (3_000, Color::Gray)]),
+            (
+                9,
+                vec![
+                    (6_000, Color::Blue),
+                    (30_000, Color::Green),
+                    (4_000, Color::Red),
+                    (3_000, Color::Yellow),
+                    (600, Color::Cyan),
+                    (500, Color::Magenta),
+                ],
+            ),
+            (
+                24,
+                vec![
+                    (4_000, Color::Magenta),
+                    (2_500, Color::Green),
+                    (900, Color::DarkGray),
+                    (1_400, Color::Gray),
+                ],
+            ),
+            (
+                40,
+                vec![
+                    (9_000, Color::Magenta),
+                    (6_000, Color::Green),
+                    (900, Color::DarkGray),
+                    (3_000, Color::Gray),
+                ],
+            ),
         ] {
             let spans = category_bar_spans(&segments, cells);
             let bar = bar_cells(&spans);
-            assert_eq!(Line::from(spans.clone()).width(), cells, "the bar keeps its width");
-            assert!(spans.iter().all(|span| span.style.bg.is_none_or(|back| back == Color::Reset)), "no cell mixes two segments");
+            assert_eq!(
+                Line::from(spans.clone()).width(),
+                cells,
+                "the bar keeps its width"
+            );
+            assert!(
+                spans
+                    .iter()
+                    .all(|span| span.style.bg.is_none_or(|back| back == Color::Reset)),
+                "no cell mixes two segments"
+            );
             for pair in bar.windows(2).filter(|pair| pair[0].0 != pair[1].0) {
-                assert!(pair[0].1 < 8, "{:?} runs into {:?} with no gap: {bar:?}", pair[0].0, pair[1].0);
+                assert!(
+                    pair[0].1 < 8,
+                    "{:?} runs into {:?} with no gap: {bar:?}",
+                    pair[0].0,
+                    pair[1].0
+                );
             }
-            assert_eq!(bar.last().map(|cell| cell.1), Some(8), "the used edge is not cut short: {bar:?}");
+            assert_eq!(
+                bar.last().map(|cell| cell.1),
+                Some(8),
+                "the used edge is not cut short: {bar:?}"
+            );
         }
     }
 
@@ -967,8 +1061,14 @@ mod tests {
         ];
         let painted = painted_eighths(&category_bar_spans(&segments, 4));
         assert_eq!(painted.values().sum::<usize>(), 32);
-        assert!(painted[&Color::Red] < painted[&Color::LightRed], "{painted:?}");
-        assert!(painted[&Color::LightRed] < painted[&Color::Gray], "{painted:?}");
+        assert!(
+            painted[&Color::Red] < painted[&Color::LightRed],
+            "{painted:?}"
+        );
+        assert!(
+            painted[&Color::LightRed] < painted[&Color::Gray],
+            "{painted:?}"
+        );
         assert!(painted[&Color::Red] <= 8, "{painted:?}");
 
         // Three cells: 435 tokens of reasoning opened the first cell and painted all of 4.0k
@@ -984,8 +1084,14 @@ mod tests {
             (6_800, Color::Gray),
         ];
         let painted = painted_eighths(&category_bar_spans(&segments, 3));
-        assert!(painted.get(&Color::Red).copied().unwrap_or(0) >= 5, "{painted:?}");
-        assert!(painted.get(&Color::Magenta).copied().unwrap_or(0) <= 1, "{painted:?}");
+        assert!(
+            painted.get(&Color::Red).copied().unwrap_or(0) >= 5,
+            "{painted:?}"
+        );
+        assert!(
+            painted.get(&Color::Magenta).copied().unwrap_or(0) <= 1,
+            "{painted:?}"
+        );
     }
 
     #[tokio::test]

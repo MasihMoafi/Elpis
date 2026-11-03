@@ -103,7 +103,9 @@ fn reasoning(encrypted_len: usize) -> ResponseItem {
 
 /// Seeded lengths: the edges, then many spread across real reasoning sizes (1.5k to 60k).
 fn sampled_lengths() -> Vec<usize> {
-    let mut lengths = vec![0, 1, 866, 867, 1_286, 1_287, 1_288, 1_592, 2_701, 2_702, 68_620];
+    let mut lengths = vec![
+        0, 1, 866, 867, 1_286, 1_287, 1_288, 1_592, 2_701, 2_702, 68_620,
+    ];
     let mut state: u64 = 0x5eed_2026_1024;
     for _ in 0..500 {
         state = state
@@ -211,7 +213,10 @@ fn reasoning_estimate_rules_hold_for_any_length() {
         let tokens = encrypted_reasoning_tokens(&"g".repeat(len));
         let exact = len.saturating_sub(1_287) as f64 / 14.14;
         // Rounded up, never by a whole token.
-        assert!(tokens as f64 >= exact - 1e-9 && (tokens as f64) < exact + 1.0, "{len}");
+        assert!(
+            tokens as f64 >= exact - 1e-9 && (tokens as f64) < exact + 1.0,
+            "{len}"
+        );
         // Never above the shared estimate; below it wherever there is anything to count.
         let old = history_estimate(&reasoning(len));
         assert!(tokens <= old, "{len}: {tokens} > {old}");

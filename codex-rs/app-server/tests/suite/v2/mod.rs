@@ -47,8 +47,8 @@ mod daemon_update_recovery;
 mod daybreak_access;
 mod dynamic_tools;
 // Elpis: the instruction text a thread's model receives.
-mod elpis_instructions_read;
 mod elpis_context_files;
+mod elpis_instructions_read;
 // Elpis: per-turn timing, cost state and category shares.
 mod elpis_turn_activity;
 mod elpis_work_graphs;
@@ -69,7 +69,6 @@ mod fs;
 mod gateway_oauth;
 mod git_attribution;
 mod guardian_v2;
-mod thread_approval_review;
 mod history_notes_extension;
 mod hooks_list;
 mod host_skills;
@@ -137,6 +136,7 @@ mod session_end;
 mod skills_list;
 mod sleep;
 mod sqlite_recovery;
+mod thread_approval_review;
 mod thread_archive;
 mod thread_attachments;
 mod thread_delete;

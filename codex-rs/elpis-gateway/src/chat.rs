@@ -48,10 +48,7 @@ pub(crate) fn request(conversation: &Conversation) -> Value {
                 });
                 match messages.last_mut() {
                     Some(previous) if previous["role"] == "assistant" => {
-                        match previous
-                            .get_mut("tool_calls")
-                            .and_then(Value::as_array_mut)
-                        {
+                        match previous.get_mut("tool_calls").and_then(Value::as_array_mut) {
                             Some(calls) => calls.push(call),
                             None => previous["tool_calls"] = json!([call]),
                         }

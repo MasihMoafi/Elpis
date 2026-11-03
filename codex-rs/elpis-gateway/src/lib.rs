@@ -210,7 +210,9 @@ pub fn no_proxy_with_loopback(env: impl Fn(&str) -> Option<String>) -> Option<St
     if !proxied {
         return None;
     }
-    let current = env("NO_PROXY").or_else(|| env("no_proxy")).unwrap_or_default();
+    let current = env("NO_PROXY")
+        .or_else(|| env("no_proxy"))
+        .unwrap_or_default();
     let entries: Vec<&str> = current
         .split(',')
         .map(str::trim)
@@ -227,7 +229,13 @@ pub fn no_proxy_with_loopback(env: impl Fn(&str) -> Option<String>) -> Option<St
     if missing.is_empty() {
         return None;
     }
-    Some(entries.into_iter().chain(missing).collect::<Vec<_>>().join(","))
+    Some(
+        entries
+            .into_iter()
+            .chain(missing)
+            .collect::<Vec<_>>()
+            .join(","),
+    )
 }
 
 /// A request the gateway refuses or a vendor rejected, answered as a JSON error.
@@ -400,10 +408,7 @@ fn stream_response(response: reqwest::Response, mut translation: Translation) ->
         .into_response()
 }
 
-async fn send_events(
-    tx: &mpsc::Sender<Result<Bytes, std::io::Error>>,
-    events: Vec<Value>,
-) -> bool {
+async fn send_events(tx: &mpsc::Sender<Result<Bytes, std::io::Error>>, events: Vec<Value>) -> bool {
     for event in events {
         let frame = sse_frame(&event);
         if tx.send(Ok(Bytes::from(frame))).await.is_err() {
@@ -491,7 +496,8 @@ pub async fn provider_models(
         let listing = fetch_listing(client, &route, key.as_deref())
             .await
             .map_err(|error| error.message)?;
-        let catalog = catalog::catalog_response(catalog::models_from_listing(route.wire, &listing))?;
+        let catalog =
+            catalog::catalog_response(catalog::models_from_listing(route.wire, &listing))?;
         serde_json::from_value::<ModelsResponse>(catalog).map_err(|error| error.to_string())
     }
     .await;

@@ -507,7 +507,11 @@ async fn start_signed_in(home: &TempDir) -> Result<TestAppServer> {
         AuthCredentialsStoreMode::File,
     )?;
     let mut env_overrides = vec![("OPENAI_API_KEY", None), ("CODEX_API_KEY", None)];
-    env_overrides.extend(codex_network_proxy::PROXY_ENV_KEYS.iter().map(|key| (*key, None)));
+    env_overrides.extend(
+        codex_network_proxy::PROXY_ENV_KEYS
+            .iter()
+            .map(|key| (*key, None)),
+    );
     TestAppServer::builder()
         .with_codex_home(home.path())
         .with_env_overrides(&env_overrides)
@@ -525,9 +529,11 @@ fn selected_workspace_found() -> ResponseTemplate {
 #[tokio::test]
 async fn account_read_can_skip_slow_discovery_and_routing_lands_in_the_background() -> Result<()> {
     let backend = MockServer::start().await;
-    Mock::given(method("GET")).and(path("/backend-api/wham/accounts/check"))
+    Mock::given(method("GET"))
+        .and(path("/backend-api/wham/accounts/check"))
         .respond_with(selected_workspace_found().set_delay(Duration::from_secs(/*secs*/ 6)))
-        .mount(&backend).await;
+        .mount(&backend)
+        .await;
     let home = TempDir::new()?;
     config(&home, &backend).await?;
     let mut server = start_signed_in(&home).await?;
@@ -538,7 +544,11 @@ async fn account_read_can_skip_slow_discovery_and_routing_lands_in_the_backgroun
         .await?;
     let response: Value = timeout(READ_TIMEOUT, server.read_response(request)).await??;
 
-    assert!(started.elapsed() < Duration::from_secs(/*secs*/ 3), "waited {:?}", started.elapsed());
+    assert!(
+        started.elapsed() < Duration::from_secs(/*secs*/ 3),
+        "waited {:?}",
+        started.elapsed()
+    );
     assert_eq!(
         response,
         json!({"account": {"type": "chatgpt", "email": "user@example.com", "planType": "pro"},
@@ -564,16 +574,20 @@ async fn account_read_can_skip_slow_discovery_and_routing_lands_in_the_backgroun
 #[tokio::test]
 async fn failed_startup_discovery_is_retried_in_the_background() -> Result<()> {
     let backend = MockServer::start().await;
-    Mock::given(method("GET")).and(path("/backend-api/wham/accounts/check"))
+    Mock::given(method("GET"))
+        .and(path("/backend-api/wham/accounts/check"))
         .respond_with(ResponseTemplate::new(503))
         // The server prefetches at startup and again when the client connects; both fail.
         .up_to_n_times(2)
         .with_priority(1)
-        .mount(&backend).await;
-    Mock::given(method("GET")).and(path("/backend-api/wham/accounts/check"))
+        .mount(&backend)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/backend-api/wham/accounts/check"))
         .respond_with(selected_workspace_found())
         .with_priority(2)
-        .mount(&backend).await;
+        .mount(&backend)
+        .await;
     let home = TempDir::new()?;
     config(&home, &backend).await?;
     let mut server = start_signed_in(&home).await?;

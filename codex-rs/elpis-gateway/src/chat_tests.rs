@@ -78,15 +78,21 @@ fn fragmented_parallel_tool_calls_round_trip_to_core() {
     let request = responses_request(json!([]), core_tools());
     let events = [
         chunk(json!({"id": "x", "choices": [{"index": 0, "delta": {"content": "Checking."}}]})),
-        chunk(json!({"id": "x", "choices": [{"index": 0, "delta": {"tool_calls": [
-            {"index": 0, "id": "call-a", "type": "function", "function": {"name": "exec_command", "arguments": "{\"cmd\""}},
-            {"index": 1, "id": "call-b", "type": "function", "function": {"name": "apply_patch", "arguments": ""}},
-        ]}}]})),
-        chunk(json!({"id": "x", "choices": [{"index": 0, "delta": {"tool_calls": [
+        chunk(
+            json!({"id": "x", "choices": [{"index": 0, "delta": {"tool_calls": [
+                {"index": 0, "id": "call-a", "type": "function", "function": {"name": "exec_command", "arguments": "{\"cmd\""}},
+                {"index": 1, "id": "call-b", "type": "function", "function": {"name": "apply_patch", "arguments": ""}},
+            ]}}]}),
+        ),
+        chunk(
+            json!({"id": "x", "choices": [{"index": 0, "delta": {"tool_calls": [
             {"index": 0, "function": {"arguments": ":\"ls\"}"}},
             {"index": 1, "function": {"arguments": "{\"input\":\"*** Begin Patch\"}"}},
-        ]}, "finish_reason": "tool_calls"}]})),
-        chunk(json!({"id": "x", "choices": [], "usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5}})),
+        ]}, "finish_reason": "tool_calls"}]}),
+        ),
+        chunk(
+            json!({"id": "x", "choices": [], "usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5}}),
+        ),
         "[DONE]".to_string(),
     ];
     let events: Vec<(&str, &str)> = events.iter().map(|data| ("", data.as_str())).collect();
@@ -166,7 +172,10 @@ fn truncated_or_length_limited_tool_calls_are_never_emitted() {
             {"index": 0, "id": "call-a", "function": {"name": "exec_command", "arguments": arguments}},
         ]}, "finish_reason": finish}]}))
     };
-    for data in [call("{\"cmd\":", "tool_calls"), call("{\"cmd\":\"ls\"}", "length")] {
+    for data in [
+        call("{\"cmd\":", "tool_calls"),
+        call("{\"cmd\":\"ls\"}", "length"),
+    ] {
         let out = translate(
             GatewayWire::Chat,
             &request,
@@ -206,8 +215,15 @@ fn a_complete_tool_call_reported_as_stop_still_runs() {
 #[test]
 fn a_provider_error_in_the_stream_fails_with_its_message() {
     let request = responses_request(json!([]), json!([]));
-    let data = chunk(json!({"error": {"message": "Rate limit exceeded: free-models-per-day", "code": 429}}));
-    let out = translate(GatewayWire::Chat, &request, &[("", data.as_str())], /*close*/ false);
+    let data = chunk(
+        json!({"error": {"message": "Rate limit exceeded: free-models-per-day", "code": 429}}),
+    );
+    let out = translate(
+        GatewayWire::Chat,
+        &request,
+        &[("", data.as_str())],
+        /*close*/ false,
+    );
 
     assert_eq!(
         failure(&out).as_deref(),

@@ -71,7 +71,11 @@ mod tests {
     #[test]
     fn another_turn_expires_nothing() {
         let items = [reasoning("turn-2"), output("keep")];
-        assert!(!items.iter().any(|item| is_reasoning_of_turn(item, "turn-1")));
+        assert!(
+            !items
+                .iter()
+                .any(|item| is_reasoning_of_turn(item, "turn-1"))
+        );
     }
 
     #[test]

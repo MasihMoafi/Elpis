@@ -47,7 +47,13 @@ async fn personal_command_shows_the_user_file_and_never_overwrites_it() {
     );
     assert_eq!(std::fs::read_to_string(path).unwrap(), content);
     while let Ok(op) = ops.try_recv() {
-        assert_matches!(op, Op::ListSkills { force_reload: true, .. });
+        assert_matches!(
+            op,
+            Op::ListSkills {
+                force_reload: true,
+                ..
+            }
+        );
     }
 }
 
@@ -150,18 +156,56 @@ fn elpis_commands_are_listed_in_their_v030_order_with_v030_descriptions() {
 #[test]
 fn hand_selected_slash_command_set_adds_approved_review_and_worktree() {
     let mut expected = vec![
-        "model", "effort", "pruner-model", "memory-model", "ide", "permissions", "yolo",
-        "hotkeys", "settings", "add", "skills", "personal", "hooks", "review", "rename", "new", "resume", "fork", "worktree",
+        "model",
+        "effort",
+        "pruner-model",
+        "memory-model",
+        "ide",
+        "permissions",
+        "yolo",
+        "hotkeys",
+        "settings",
+        "add",
+        "skills",
+        "personal",
+        "hooks",
+        "review",
+        "rename",
+        "new",
+        "resume",
+        "fork",
+        "worktree",
         // Masih, 16 Oct 2026: open the TUI's chat in the desktop app.
-        "app", "init", "compact", "prune", "smart-prune", "force-prune", "plan", "voice", "goal",
-        "agent", "copy", "diff", "usage", "context", "config", "theme", "mcp", "rag", "quit",
-        "clear", "subagents",
+        "app",
+        "init",
+        "compact",
+        "prune",
+        "smart-prune",
+        "force-prune",
+        "plan",
+        "voice",
+        "goal",
+        "agent",
+        "copy",
+        "diff",
+        "usage",
+        "context",
+        "config",
+        "theme",
+        "mcp",
+        "rag",
+        "quit",
+        "clear",
+        "subagents",
     ];
     if cfg!(target_os = "android") {
         expected.retain(|name| *name != "copy");
     }
     assert_eq!(
-        built_in_slash_commands().into_iter().map(|(name, _)| name).collect::<Vec<_>>(),
+        built_in_slash_commands()
+            .into_iter()
+            .map(|(name, _)| name)
+            .collect::<Vec<_>>(),
         expected,
         "Changing Masih's selected command set requires his explicit agreement",
     );
@@ -174,7 +218,10 @@ fn app_command_opens_this_chat_in_the_elpis_desktop_app() {
         .find(|(name, _)| *name == "app")
         .expect("/app is listed");
     assert_eq!(name, "app");
-    assert_eq!(command.description(), "open this chat in the Elpis desktop app");
+    assert_eq!(
+        command.description(),
+        "open this chat in the Elpis desktop app"
+    );
     assert!(command.available_during_task());
 }
 
@@ -378,10 +425,15 @@ async fn rag_dispatches_the_real_tool_instructions_for_any_provider() {
         chat.config.model_provider_id = provider.to_string();
         chat.thread_id = Some(ThreadId::new());
         chat.dispatch_command_with_args(SlashCommand::Rag, "show".to_string(), Vec::new());
-        let Op::UserTurn { items, .. } = ops.try_recv().expect("/rag must submit a provider-neutral turn") else {
+        let Op::UserTurn { items, .. } = ops
+            .try_recv()
+            .expect("/rag must submit a provider-neutral turn")
+        else {
             panic!("/rag did not reach the provider turn");
         };
-        let UserInput::Text { text, .. } = &items[0] else { panic!("missing RAG instructions") };
+        let UserInput::Text { text, .. } = &items[0] else {
+            panic!("missing RAG instructions")
+        };
         assert!(text.contains("rag config show"));
         assert!(text.ends_with("RAG request: show"));
         assert!(text.contains("Never request, paste, or print API keys"));
@@ -393,13 +445,19 @@ async fn bare_rag_and_plain_rag_text_take_distinct_paths() {
     let (mut chat, _app_events, mut ops) = make_chatwidget_manual(None).await;
     chat.thread_id = Some(ThreadId::new());
     chat.dispatch_command(SlashCommand::Rag);
-    let Op::UserTurn { items, .. } = ops.try_recv().unwrap() else { panic!("bare /rag was dropped") };
-    assert!(matches!(&items[0], UserInput::Text { text, .. } if text.contains("An empty request means show current RAG settings")));
+    let Op::UserTurn { items, .. } = ops.try_recv().unwrap() else {
+        panic!("bare /rag was dropped")
+    };
+    assert!(
+        matches!(&items[0], UserInput::Text { text, .. } if text.contains("An empty request means show current RAG settings"))
+    );
     // A plain message stays literal; only the selected slash command adds instructions.
     let (mut chat, _app_events, mut ops) = make_chatwidget_manual(None).await;
     chat.thread_id = Some(ThreadId::new());
     chat.submit_user_message("rag show".into());
-    let Op::UserTurn { items, .. } = ops.try_recv().unwrap() else { panic!("literal message was dropped") };
+    let Op::UserTurn { items, .. } = ops.try_recv().unwrap() else {
+        panic!("literal message was dropped")
+    };
     assert!(matches!(&items[0], UserInput::Text { text, .. } if text == "rag show"));
 }
 
@@ -418,7 +476,11 @@ async fn during_a_turn_yolo_runs_and_pruning_waits() {
 
     // Native Codex rejects commands that cannot run during a turn.
     chat.dispatch_command(SlashCommand::Prune);
-    assert!(history_text(&mut rx).join("\n").contains("disabled while a task is in progress"));
+    assert!(
+        history_text(&mut rx)
+            .join("\n")
+            .contains("disabled while a task is in progress")
+    );
     assert!(chat.queued_user_message_texts().is_empty());
 }
 
@@ -522,7 +584,10 @@ fn selected_chat_commands_stay_listed_and_removed_commands_stay_unlisted() {
         ("archive", SlashCommand::Archive),
         ("del", SlashCommand::Delete),
     ] {
-        assert!(!listed.contains(&(name, command)), "/{name} was restored to the popup");
+        assert!(
+            !listed.contains(&(name, command)),
+            "/{name} was restored to the popup"
+        );
         assert_eq!(find_builtin_command(name, flags), Some(command));
     }
     assert_eq!(find_builtin_command("daybreak", flags), None);

@@ -899,7 +899,9 @@ async fn delete_current_thread_reports_forked_history_reference() -> Result<()> 
     let mut messages = String::new();
     while let Ok(event) = app_event_rx.try_recv() {
         if let AppEvent::InsertHistoryCell(cell) = event {
-            messages.push_str(&lines_to_single_string(&cell.transcript_lines(/*width*/ 160)));
+            messages.push_str(&lines_to_single_string(
+                &cell.transcript_lines(/*width*/ 160),
+            ));
         }
     }
     assert!(
@@ -3297,7 +3299,9 @@ async fn agents_overview_seeds_loaded_threads_when_recent_listing_is_unavailable
         let started = app_server.start_thread(&app.config).await?;
         let started_id = started.session.thread_id;
         // A140: a session with no history is listed only as this client's own blank draft.
-        app.agents_overview.blank_sessions.insert(started_id, started);
+        app.agents_overview
+            .blank_sessions
+            .insert(started_id, started);
         app.app_server_target = AppServerTarget::LocalDaemon {
             allow_embedded_fallback: true,
             endpoint: crate::RemoteAppServerEndpoint::UnixSocket {

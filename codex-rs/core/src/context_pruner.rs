@@ -152,7 +152,13 @@ mod tests {
     #[test]
     fn background_model_replaces_the_default_only_when_set() {
         assert_eq!(background_model_slug(None, "gpt-5.6-luna"), "gpt-5.6-luna");
-        assert_eq!(background_model_slug(Some("  "), "gpt-5.6-luna"), "gpt-5.6-luna");
-        assert_eq!(background_model_slug(Some("cheap"), "gpt-5.6-luna"), "cheap");
+        assert_eq!(
+            background_model_slug(Some("  "), "gpt-5.6-luna"),
+            "gpt-5.6-luna"
+        );
+        assert_eq!(
+            background_model_slug(Some("cheap"), "gpt-5.6-luna"),
+            "cheap"
+        );
     }
 }

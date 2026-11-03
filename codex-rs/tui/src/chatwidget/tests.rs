@@ -260,6 +260,9 @@ mod elpis_provider_picker;
 // Elpis: evals for the Elpis slash commands.
 mod elpis_slash_commands;
 // Elpis: evals for Smart Prune's commands, switch and saved-tokens line.
+#[path = "tests/claude_accounts_tests.rs"]
+mod claude_accounts_tests;
+mod config_panel;
 mod elpis_smart_prune;
 mod exec_flow;
 mod goal_menu;
@@ -276,10 +279,10 @@ mod luna_reserve_usage_tests;
 mod mcp_startup;
 #[path = "tests/misalignment_policy_tests.rs"]
 mod misalignment_policy;
-#[path = "tests/model_display_name_tests.rs"]
-mod model_display_name_tests;
 #[path = "tests/model_catalog_refresh_tests.rs"]
 mod model_catalog_refresh_tests;
+#[path = "tests/model_display_name_tests.rs"]
+mod model_display_name_tests;
 #[path = "tests/model_picker_tests.rs"]
 mod model_picker_tests;
 #[path = "tests/permission_picker_tests.rs"]
@@ -302,11 +305,8 @@ mod review_mode;
 mod review_picker_tests;
 #[path = "tests/session_model_selection_tests.rs"]
 mod session_model_selection_tests;
-#[path = "tests/claude_accounts_tests.rs"]
-mod claude_accounts_tests;
 mod side;
 mod slash_commands;
-mod config_panel;
 mod smart_prune_log;
 #[path = "tests/sparkle_submission_tests.rs"]
 mod sparkle_submission_tests;

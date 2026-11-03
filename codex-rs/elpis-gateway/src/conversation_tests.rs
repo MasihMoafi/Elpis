@@ -40,7 +40,11 @@ fn a_freeform_tool_becomes_a_function_taking_its_raw_input() {
     assert_eq!(patch.parameters["required"], json!(["input"]));
     assert!(patch.description.starts_with("Edits files."));
     // The grammar the Responses API would enforce is shown to the model instead.
-    assert!(patch.description.contains("lark grammar:\nstart: begin_patch"));
+    assert!(
+        patch
+            .description
+            .contains("lark grammar:\nstart: begin_patch")
+    );
     assert_eq!(
         conversation.tool_map.restore("apply_patch"),
         Some(&ToolIdentity {
@@ -50,7 +54,10 @@ fn a_freeform_tool_becomes_a_function_taking_its_raw_input() {
         })
     );
     assert_eq!(
-        conversation.tool_map.restore("exec_command").map(|tool| tool.custom),
+        conversation
+            .tool_map
+            .restore("exec_command")
+            .map(|tool| tool.custom),
         Some(false)
     );
 }
@@ -168,10 +175,7 @@ fn an_image_stays_a_part_and_text_only_routes_see_the_omitted_note() {
             Part::Image("data:image/png;base64,PIXELS".to_string()),
         ]
     );
-    assert_eq!(
-        parts_text(parts),
-        format!("What is this?\n{IMAGE_OMITTED}")
-    );
+    assert_eq!(parts_text(parts), format!("What is this?\n{IMAGE_OMITTED}"));
     assert_eq!(
         turns[2],
         Turn::ToolResultParts {
@@ -227,6 +231,9 @@ fn vendor_tool_names_are_safe_stable_and_distinct() {
     assert_eq!(dotted, vendor_tool_name("files.read", Some("my server")));
     assert_ne!(dotted, vendor_tool_name("files_read", Some("my server")));
     let long = vendor_tool_name(&"x".repeat(200), None);
-    assert!(long.len() <= MAX_TOOL_NAME_LEN && is_vendor_safe(&long), "{long}");
+    assert!(
+        long.len() <= MAX_TOOL_NAME_LEN && is_vendor_safe(&long),
+        "{long}"
+    );
     assert!(is_vendor_safe(&vendor_tool_name("9lives", None)));
 }

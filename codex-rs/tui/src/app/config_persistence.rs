@@ -282,7 +282,9 @@ impl App {
             return false;
         };
         // A new choice supersedes an unconfirmed `/yolo` save.
-        self.agents_overview.pending_yolo_defaults.remove(&thread_id);
+        self.agents_overview
+            .pending_yolo_defaults
+            .remove(&thread_id);
         let config = self.chat_widget.config_ref();
         if !self
             .agents_overview
