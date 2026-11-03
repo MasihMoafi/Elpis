@@ -276,7 +276,8 @@ async fn wheel_over_selected_conversation_reads_everything_the_agent_did() {
     let mut items = vec![
         serde_json::json!({"type":"userMessage", "id":"ask", "content":[{"type":"text", "text":"Find the usage emitter.", "text_elements":[]}]}),
     ];
-    items.extend((1..=30).map(|step| serde_json::json!({"type":"commandExecution", "id":format!("step-{step}"), "command":format!("rg step-{step:02}"), "cwd":"/tmp/project", "status":"completed", "commandActions":[]})));
+    // One message per step: tool calls fold into a summary line, so messages make the long conversation.
+    items.extend((1..=30).map(|step| serde_json::json!({"type":"agentMessage", "id":format!("step-{step}"), "text":format!("rg step-{step:02} checked")})));
     child
         .turns
         .push(demo_turn("completed", serde_json::Value::Array(items)));
