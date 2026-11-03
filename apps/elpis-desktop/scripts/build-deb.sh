@@ -6,14 +6,21 @@ set -euo pipefail
 VERSION=${1:-0.5.0}
 APP="$(cd "$(dirname "$0")/.." && pwd)"
 commit=$(git -C "$APP" rev-parse HEAD)
-[[ "$(cat "$APP/out/.commit" 2>/dev/null)" == "$commit" ]] || { echo "out/ is not built from $commit: run npm run build" >&2; exit 1; }
+# out/ must be built from this commit, or from one whose app differs only in scripts/ (such as this script).
+built=$(cat "$APP/out/.commit" 2>/dev/null || true)
+[[ "$built" == "$commit" ]] || { [[ -n "$built" ]] && git -C "$APP" diff --quiet "$built" "$commit" -- . ':!scripts'; } \
+  || { echo "out/ is not built from $commit: run npm run build" >&2; exit 1; }
 mkdir -p "$HOME/.cache/elpis-tests"; STAGE=$(mktemp -d "$HOME/.cache/elpis-tests/elpis-deb.XXXXXX"); ROOT="$STAGE/root"; OPT="$ROOT/opt/elpis-desktop"
 OUT="${ELPIS_DEB_DIR:-$HOME/.cache/elpis-tests/deb}"; mkdir -p "$OUT"
 
 # Electron: this checkout's download, else the one the installed app already uses (no download).
 electron=${ELECTRON_DIST:-$APP/node_modules/electron/dist}
 [[ -x "$electron/electron" ]] || electron=$(dirname "$(readlink -f "$(dirname "$(readlink -f ~/.local/bin/elpis-app)")/runtime/electron/electron")")
-node "$APP/desktop/package.mjs" --source "$APP" --destination "$OPT" --electron-dist "$electron" > "$STAGE/manifest.json"
+# The renderer keeps this checkout's absolute path (and so the builder's home) in a few bundled URLs; the package
+# carries a copy with that path replaced by where the app is installed.
+cp -r "$APP/out" "$STAGE/out"
+rg -l -F "$APP" "$STAGE/out" | xargs -r sed -i "s|$APP|/opt/elpis-desktop/app|g"
+node "$APP/desktop/package.mjs" --source "$APP" --destination "$OPT" --electron-dist "$electron" --out-directory "$STAGE/out" > "$STAGE/manifest.json"
 find "$OPT/runtime/electron/locales" -name '*.pak' ! -name 'en-US.pak' -delete
 
 mkdir -p "$OPT/bin" "$ROOT/usr/bin" "$ROOT/usr/share/applications" "$ROOT/usr/share/icons/hicolor/256x256/apps" "$ROOT/DEBIAN"
@@ -57,6 +64,8 @@ Homepage: https://github.com/MasihMoafi/Elpis
 Description: Elpis desktop app: chats, Workflows and Love Spot on the Elpis engine
 CONTROL
 
+# No personal data: nothing in the package may name the builder's home folder or user.
+if rg -l -F -e "$HOME" -e "$(id -un)" "$ROOT"; then echo "The package names $HOME or $(id -un); not built." >&2; exit 1; fi
 deb="$OUT/elpis-desktop_${VERSION}_amd64.deb"
 dpkg-deb --root-owner-group -Zxz -z9 --build "$ROOT" "$deb" >/dev/null
 (cd "$OUT" && sha256sum "$(basename "$deb")" > "$(basename "$deb").sha256")
