@@ -310,16 +310,17 @@
 
       <section class="site-section grid gap-12 lg:grid-cols-[.8fr_1.2fr] lg:items-center" id="install" aria-labelledby="install-title">
         <div>
-          <p class="section-kicker">v0.5.0 · Linux x86_64</p>
+          <p class="section-kicker">v0.5.1 · Linux x86_64</p>
           <h2 id="install-title" class="section-title">Put continuity<br />in the loop.</h2>
-          <p class="section-copy mt-7">The script installs the terminal app. For the desktop app, download both Debian packages from the release and install them together. Inspect the source before running the script.</p>
-          <a class="btn btn-ghost mt-5" href="https://github.com/MasihMoafi/Elpis/releases/tag/v0.5.0">Download v0.5.0 <span aria-hidden="true">↗</span></a>
+          <p class="section-copy mt-7">The script installs the terminal app. For the desktop app on Ubuntu or Debian, download both Debian packages from the release and install them together; on Fedora, Arch, Omarchy or any other Linux, run the AppImage. Inspect the source before running the script.</p>
+          <a class="btn btn-ghost mt-5" href="https://github.com/MasihMoafi/Elpis/releases/tag/v0.5.1">Download v0.5.1 <span aria-hidden="true">↗</span></a>
         </div>
         <div class="mockup-code install-terminal relative bg-neutral text-neutral-content">
           <pre data-prefix="$"><code data-command>curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/main/scripts/install-elpis.sh | bash &amp;&amp; ~/.local/bin/elpis</code></pre>
           <button type="button" class="btn btn-sm absolute top-4 right-4" data-copy-button aria-describedby="copy-status">Copy</button>
           <span class="sr-only" id="copy-status" data-copy-status role="status" aria-live="polite"></span>
-          <pre data-prefix="$"><code>sudo apt install ./elpis_0.5.0_amd64.deb ./elpis-desktop_0.5.0_amd64.deb &amp;&amp; elpis-app</code></pre>
+          <pre data-prefix="$"><code>sudo apt install ./elpis_0.5.1_amd64.deb ./elpis-desktop_0.5.1_amd64.deb &amp;&amp; elpis-app</code></pre>
+          <pre data-prefix="$"><code>chmod +x Elpis-0.5.1-x86_64.AppImage &amp;&amp; ./Elpis-0.5.1-x86_64.AppImage</code></pre>
         </div>
       </section>
     </main>
