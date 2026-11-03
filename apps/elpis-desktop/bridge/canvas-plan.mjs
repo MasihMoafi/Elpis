@@ -1,13 +1,14 @@
 import path from 'node:path';
 import { BridgeError, object, text } from './client.mjs';
 import { askBackground } from './side-turn.mjs';
-import { workflowModelRoutes } from './workflow-models.mjs';
+import { workflowModelRoutes, MOTHER_ROUTE, MOTHER_FALLBACK } from './workflow-models.mjs';
 
-/** "Elpis handle it" on the agents canvas (POST /api/canvas/plan): a fast model first decides whether the goal is one
- * agent's job ("direct": one agent whose prompt is the goal) or a team's ("team"), and plans it, in one call.
- * One turn in an ephemeral conversation on the background model, answered as JSON the schema fixes, then
- * checked strictly: the canvas gets a plan it can draw and run, or a clear refusal. */
-export const PLAN_TIMEOUT_MS = 90000;
+/** "Elpis handle it" on the agents canvas (POST /api/canvas/plan): the Mother agent first decides whether the goal is
+ * one agent's job ("direct": one agent whose prompt is the goal) or a team's ("team"), and plans it, in one call.
+ * One turn in an ephemeral conversation on the Mother's model (3 Nov, Masih: the team is designed by a powerful model,
+ * Opus 5.5 medium, shown worked examples), answered as JSON the schema fixes, then checked strictly: the canvas gets a
+ * plan it can draw and run, or a clear refusal. */
+export const PLAN_TIMEOUT_MS = 240000;
 const LIMIT = 128;
 const KEY = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$/;
 const AGENT_FIELDS = ['key', 'title', 'prompt', 'folders', 'doneWhen', 'waitsFor', 'model', 'effort'];
@@ -75,7 +76,7 @@ function parseRequest(input) {
 
 // ---- The prompt ----------------------------------------------------------------------------------------------
 
-function promptFor({ goal, folders, agents, maxAgents }, { models = [], preferences = '' } = {}) {
+export function promptFor({ goal, folders, agents, maxAgents }, { models = [], preferences = '' } = {}) {
   const rules = [
     `mode: first decide. "direct" when one agent can finish the goal in one sitting (one file, one small change, one answer): then agents holds exactly one agent, whose prompt is the goal, word for word. "team" when the goal has independent parts, or the board already has agents. why: one line that says which and why.`,
     `Use at most ${maxAgents} agents.`,
@@ -90,7 +91,7 @@ function promptFor({ goal, folders, agents, maxAgents }, { models = [], preferen
     ...agents.length ? ["Keep every existing agent's key. For an existing agent, fill only what is empty (prompt, folders, doneWhen) unless the goal asks to change it. Return a field you leave alone as it is, or empty: the canvas keeps what it has. Add agents for parts the board lacks; leave an agent out only if the goal asks."] : [],
   ];
   return [
-    'You are the agent given this goal on a canvas. First decide whether to do it yourself or to split it into a team of coding agents; then give the smallest plan that achieves it. Answer only with the JSON the schema asks for. Use no tools: work from what is below.',
+    'You are the Mother agent, given this goal on a canvas. First decide whether to do it yourself or to split it into a team of coding agents; then give the smallest plan that achieves it. Answer only with the JSON the schema asks for. Use no tools: work from what is below.',
     `Goal:\n${goal}`,
     folders.length ? `Project folders (repository-relative). An agent's folders must be copied from this list, exactly:\n${folders.map(folder => `- ${folder}`).join('\n')}`
       : 'No folder list was given, so every agent\'s folders must be an empty list, or "." for an agent that writes a file directly in the project root.',
@@ -98,8 +99,25 @@ function promptFor({ goal, folders, agents, maxAgents }, { models = [], preferen
     models.length ? `Model list (id, thinking levels, whether its limit is reached):\n${models.map(route => `- ${route.model}: ${route.efforts?.join(', ') || 'default only'}${route.exhausted ? ' (limit reached)' : ''}`).join('\n')}` : '',
     preferences.trim() ? `The user's preferences (their custom instructions):\n${preferences.trim().slice(0, 4000)}` : '',
     `Rules:\n${rules.map((rule, index) => `${index + 1}. ${rule}`).join('\n')}`,
+    PRIORITIES,
+    EXAMPLES,
   ].filter(Boolean).join('\n\n');
 }
+
+const PRIORITIES = `Priorities, in this order:
+1. A result anyone can check: every agent's doneWhen can be verified from what it wrote.
+2. Independent parts run side by side: an agent waits only for work it really builds on.
+3. The fewest agents: one per independent part, never one per role or step. One sitting of work is "direct".
+4. Each agent the model and level its own job needs: weigh only its complexity, the cost and the user's preferences.`;
+
+/** Worked examples (few-shot). Model names here are placeholders: a real plan uses ids from the model list. */
+const EXAMPLES = `Worked examples (shapes only; "strong-model" and "light-model" stand for ids from the model list):
+Goal: "Rename the helper formatDate to formatDay everywhere." -> one sitting of work:
+{"name":"Rename formatDate","mode":"direct","why":"One mechanical change across files; one agent finishes it.","agents":[{"key":"rename","title":"Rename formatDate","prompt":"Rename the helper formatDate to formatDay everywhere.","folders":["src"],"doneWhen":["no formatDate remains","the tests pass"],"waitsFor":[],"model":"light-model","effort":"low"}]}
+Goal: "Translate docs/ into French and German." -> two independent parts, equal and easy:
+{"name":"Docs in two languages","mode":"team","why":"Each language is independent, so two agents run side by side.","agents":[{"key":"french","title":"Translate the docs to French","prompt":"Translate every file in docs/ into French under docs/fr/.","folders":["docs/fr"],"doneWhen":["every docs/ file has a French copy"],"waitsFor":[],"model":"light-model","effort":"medium"},{"key":"german","title":"Translate the docs to German","prompt":"Translate every file in docs/ into German under docs/de/.","folders":["docs/de"],"doneWhen":["every docs/ file has a German copy"],"waitsFor":[],"model":"light-model","effort":"medium"}]}
+Goal: "Find why sign-in fails on Safari, fix it, and update the sign-in guide." -> a hard part, then an easy part that builds on it:
+{"name":"Safari sign-in fix","mode":"team","why":"The fix needs deep debugging; the guide depends on the fix but is easy.","agents":[{"key":"fix","title":"Fix Safari sign-in","prompt":"Find why sign-in fails on Safari in src/auth, fix it and add a test that fails without the fix.","folders":["src/auth"],"doneWhen":["the new test fails before the fix and passes after"],"waitsFor":[],"model":"strong-model","effort":"high"},{"key":"guide","title":"Update the sign-in guide","prompt":"Update docs/sign-in.md to match the fix.","folders":["docs"],"doneWhen":["the guide describes the fixed behaviour"],"waitsFor":["fix"],"model":"light-model","effort":"low"}]}`;
 
 // ---- The answer ----------------------------------------------------------------------------------------------
 
@@ -186,7 +204,15 @@ async function choices(client) {
 export async function planCanvas(client, input, { timeoutMs = PLAN_TIMEOUT_MS } = {}) {
   const request = parseRequest(input);
   const options = typeof client.models === 'function' ? await choices(client) : { models: [], preferences: '' };
-  const answer = await askBackground(client, { prompt: promptFor(request, options), schema: PLAN_SCHEMA, cwd: request.cwd, permissions: ':danger-full-access', timeoutMs,
+  const ask = route => askBackground(client, { prompt: promptFor(request, options), schema: PLAN_SCHEMA, cwd: request.cwd, permissions: ':danger-full-access', timeoutMs,
+    ...(route ? { model: { model: route.model, provider: route.provider }, effort: route.reasoningEffort } : {}),
     failed: 'Elpis could not plan', late: `Elpis did not finish planning within ${timeoutMs / 1000} seconds. Try again, or add the agents yourself.` });
+  // The Mother's model, then her fallback; a test client without a model list plans on the background model.
+  const routes = typeof client.models === 'function' ? [MOTHER_ROUTE, MOTHER_FALLBACK] : [null];
+  let answer, failure;
+  for (const route of routes) {
+    try { answer = await ask(route); break; } catch (error) { failure = error; }
+  }
+  if (answer === undefined) throw failure;
   return checkPlan(answer, { ...request, models: options.models });
 }

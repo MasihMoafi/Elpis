@@ -113,6 +113,9 @@ test('the planner chooses each agent a listed model and level, from his subscrip
   client.settings = async () => ({ ...(await settings()), managed: { available: true, modelProvider: null }, options: { developerInstructions: 'Workflow agents: GPT Terra.' } });
   const result = await planCanvas(client, BODY);
   const prompt = client.sent.find(row => row.method === 'turn/start').params.input[0].text;
+  const started = client.sent.find(row => row.method === 'thread/start').params;
+  assert.deepEqual([started.model, started.modelProvider, client.sent.find(row => row.method === 'turn/start').params.effort], ['claude-opus-5-5', 'anthropic-credits', 'medium'], 'the Mother designs the team on Opus 5.5 medium');
+  assert.match(prompt, /Worked examples/);
   assert.match(prompt, /gpt-6\.1-terra: high, xhigh, max/);
   assert.match(prompt, /Workflow agents: GPT Terra\./);
   assert.match(prompt, /how hard its job is, what it costs .* and the user's preferences/);
