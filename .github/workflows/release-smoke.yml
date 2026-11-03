@@ -87,7 +87,10 @@ jobs:
         if: matrix.way != 'script'
         run: |
           set -eux
-          case "${{ matrix.way }}" in deb) d=/usr/share/doc/elpis-desktop ;; appimage) d=/dl/squashfs-root ;; esac
+          # Minimal container images skip /usr/share/doc on install, so a .deb's notices are read from the package itself.
+          if [ "${{ matrix.way }}" = deb ]; then
+            mkdir -p /tmp/doc; dpkg-deb --fsys-tarfile /dl/elpis-desktop_${TAG#v}_amd64.deb | tar -xf - -C /tmp/doc ./usr/share/doc/elpis-desktop; d=/tmp/doc/usr/share/doc/elpis-desktop
+          else d=/dl/squashfs-root; fi
           test -s "$d/LICENSE"; grep -q '^== npm packages' "$d/THIRD-PARTY-NOTICES.txt"; grep -q 'SIL Open Font License' "$d/THIRD-PARTY-NOTICES.txt"
       - name: Terminal app runs
         if: matrix.way != 'script' || needs.fetch.outputs.draft != 'true'
