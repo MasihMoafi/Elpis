@@ -78,14 +78,25 @@ StartupWMClass=elpis-desktop
 ENTRY
 cat > "$S/meta/snap.yaml" <<YAML
 name: elpis-agent
+title: Elpis
 version: '$VERSION'
 summary: Coding agents you can see, check and combine
 description: |
-  Elpis is an open-source agent harness built on OpenAI's Codex CLI.
-  You choose what each agent sees: the Context Ledger lists every instruction file and memory with its token cost.
-  In Workflows, a Mother agent designs a team; each agent owns its folder, a second agent checks its work,
-  and only checked work is merged. Teams can mix GPT, Claude and Gemini agents on your own subscriptions.
-  Commands: elpis-agent (desktop app), elpis-agent.elpis (terminal app).
+  Elpis is an open-source coding agent harness for Linux, built on OpenAI's Codex CLI. A desktop app and a terminal app share one engine.
+
+  **You choose what each agent sees.** The Context Ledger lists every instruction file, chosen file and memory with its token cost, and you include or exclude each one.
+
+  **Each agent owns what it writes.** In Workflows, the Mother agent designs a team on a board and picks each agent's model. Each agent owns its folder in its own Git worktree, a second agent checks its work, and only checked work reaches your project.
+
+  * Teams can mix GPT, Claude and Gemini agents on your own subscriptions.
+  * Claude models run through your own Claude Code install.
+  * Love Spot: a drawing board where Matilda, the app's companion, answers and draws with you.
+
+  Commands: \`elpis-agent\` opens the desktop app; \`elpis-agent.elpis\` opens the terminal app.
+links:
+  website: [https://elpis.masihmoafi.com]
+  source-code: [https://github.com/MasihMoafi/Elpis]
+  issues: [https://github.com/MasihMoafi/Elpis/issues]
 base: core24
 grade: stable
 confinement: classic
