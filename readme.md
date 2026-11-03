@@ -1,10 +1,9 @@
-<h1 align="center">
-  <img src="docs/assets/matilda-wink.webp" alt="Matilda, the app's companion, winks" width="92" align="middle">&nbsp;&nbsp;
+<p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/elpis-wordmark-burning-dark.svg">
-    <img src="docs/assets/elpis-wordmark-burning-light.svg" alt="Elpis" width="300">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/elpis-header-dark.svg">
+    <img src="docs/assets/elpis-header-light.svg" alt="Elpis, with Matilda, the app's companion, winking" width="440">
   </picture>
-</h1>
+</p>
 
 <p align="center"><b>The ultimate harness: the perfect home for your agents.</b></p>
 <p align="center"><i>You put an agent into an Elpis, and it becomes Elpis. Be Elpis, my friend.</i></p>
