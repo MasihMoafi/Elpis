@@ -24,6 +24,16 @@ sudo apt install ./elpis_0.5.0_amd64.deb ./elpis-desktop_0.5.0_amd64.deb
 elpis-app
 ```
 
+On any other Linux, including Fedora, Arch and Omarchy, download `Elpis-0.5.0-x86_64.AppImage` from the release; it holds both apps:
+
+```bash
+chmod +x Elpis-0.5.0-x86_64.AppImage
+./Elpis-0.5.0-x86_64.AppImage          # desktop app
+./Elpis-0.5.0-x86_64.AppImage elpis    # terminal app
+```
+
+On Arch and Omarchy you can also build the native package: `git clone https://github.com/MasihMoafi/Elpis && cd Elpis/packaging/aur/elpis-bin && makepkg -si`.
+
 Sign in with your ChatGPT or Claude subscription, or set up a provider, then choose a model. Claude models run through your own [Claude Code](https://code.claude.com) install (`~/.local/bin/claude`).
 
 ## Why Elpis?
