@@ -11,7 +11,7 @@
 
 A coding agent should only see what you chose to show it, and a team of agents should only touch what each was given. Elpis is an engineered agent harness for Linux, built on OpenAI's Codex CLI: a home where your agents keep their context, and a board where you design how several of them work together.
 
-![Workflows: the Mother agent designs a team, runs it and checks each agent's work](docs/assets/workflows.gif)
+![Workflows: the Mother agent designs a team of eight agents in three waves, shown flat and in isometric, runs it and checks each agent's work](docs/assets/workflows-team.gif)
 
 [Releases](https://github.com/MasihMoafi/Elpis/releases) · [Website](https://elpis.masihmoafi.com) · [Technical guide](docs/GUIDE.md) · [Contributing](CONTRIBUTING.md) · [License](LICENSE)
 
@@ -38,6 +38,8 @@ Elpis treats both as one problem, **context management**, and answers it with tw
 ## The desktop app
 
 ### Workflows
+
+![Workflows: the Mother agent designs a team, runs it and checks each agent's work](docs/assets/workflows.gif)
 
 Describe a job. The Mother agent, the planning agent, either does it herself or designs a team of agents you can see and edit on a board. Ready-made patterns: Sequential, Parallel, Kahn graph waves, Recursive (with a round limit) and Voting; ready-made teams: Transcribe images, Translate and Logo. Past ten agents, a Father agent runs the rest in his own chat and reports to her. Each agent may use a different model, and each is told how much time is left.
 
