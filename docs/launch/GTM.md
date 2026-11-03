@@ -34,7 +34,7 @@ Lead with one idea: **Rust's ownership rule, applied to agents.** Never say "bes
 | Where | What | State (3 Nov) |
 | --- | --- | --- |
 | GitHub Releases | `elpis` .deb (engine) and `elpis-desktop` .deb (101 MB, built by `apps/elpis-desktop/scripts/build-deb.sh`), checksums | Desktop .deb built locally; the engine .deb must also carry the provider bridge (`tools/elpis-claude`) |
-| Snap Store | One snap with the engine and the desktop app | Not started. An agent harness runs shell commands anywhere, so it needs **classic confinement**, which the Snap Store grants only after a manual review (days to weeks): apply early |
+| Snap Store | One snap with the engine and the desktop app | 3 Nov: `elpis-agent` registered (account masihmoafi, Clocki's publisher; name review up to 30 days); a claim for `elpis` filed (another publisher holds it unpublished). No snap built yet. An agent harness runs shell commands anywhere, so it needs **classic confinement**, which the Snap Store grants only after a manual review (days to weeks): apply early |
 | Install script | `install-elpis.sh` for the terminal app | Works (v0.4.1) |
 
 ## Channels
