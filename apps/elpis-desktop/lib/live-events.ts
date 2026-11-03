@@ -84,8 +84,15 @@ export function mergeLiveItem(entries: Entry[], method: string, params: Record<s
   return entries.map((entry, i) => i === index ? { ...entry, item, ...(event.model ? { model: event.model } : {}) } : entry);
 }
 
+export const RETRYING = " — retrying…";
+
 export function runtimeErrorNotice(params: Record<string, unknown>): string | null {
   const message = record(params.error).message;
   if (typeof message !== "string" || !message.trim()) return null;
-  return params.willRetry === true ? `${message} — retrying…` : message;
+  return params.willRetry === true ? `${message}${RETRYING}` : message;
+}
+
+/** New output in a turn: an item started, streamed or finished. After a retry notice it means the retry worked. */
+export function retryRecovered(method: string): boolean {
+  return method === "item/started" || method === "item/completed" || /^item\/[A-Za-z]+\/(?:delta|[A-Za-z]*Delta)$/.test(method);
 }

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { liveEventItemKey, mergeHistoryWithLive, mergeLiveItem, runtimeErrorNotice } from '../lib/live-events.ts';
+import { liveEventItemKey, mergeHistoryWithLive, mergeLiveItem, retryRecovered, runtimeErrorNotice } from '../lib/live-events.ts';
 import { createHeartDeduper, nativeHeartReaction, talkHeartReaction } from '../lib/heart-reactions.ts';
 
 test('fresh affectionate commentary reacts once per assistant item, never from history or emoji in code', () => {
@@ -186,4 +186,9 @@ test('event item keys match supported item updates and reject malformed or unrel
     ['item/reasoning/summaryTextDelta', params({ delta: 'Invalid', summaryIndex: 1.5 })],
     ['item/reasoning/summaryTextDelta', params({ delta: 'Invalid', summaryIndex: 1025 })],
   ]) assert.equal(liveEventItemKey(method, value), null);
+});
+
+test('new output after a retry notice means the retry worked; other events do not', () => {
+  for (const method of ['item/started', 'item/completed', 'item/agentMessage/delta', 'item/reasoning/summaryTextDelta', 'item/commandExecution/outputDelta']) assert.equal(retryRecovered(method), true, method);
+  for (const method of ['error', 'thread/status/changed', 'turn/started', 'thread/tokenUsage/updated']) assert.equal(retryRecovered(method), false, method);
 });

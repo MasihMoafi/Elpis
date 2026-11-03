@@ -43,7 +43,7 @@ import { AppMenus } from "@/components/app-menus";
 import { permissionLabel, PermissionsMenu, PlanPill, PlusMenu, type PermissionMode } from "@/components/composer-controls";
 import { CopyButton } from "@/components/markdown-text";
 import { useWholeRows } from "@/lib/whole-rows";
-import { liveEventItemKey, mergeHistoryWithLive, mergeLiveItem, runtimeErrorNotice } from "@/lib/live-events";
+import { liveEventItemKey, mergeHistoryWithLive, mergeLiveItem, RETRYING, retryRecovered, runtimeErrorNotice } from "@/lib/live-events";
 import { HEART_REACTION, nativeHeartReaction } from "@/lib/heart-reactions";
 import { entryKey, rememberSubmittedMessages, submittedContent, withSubmittedMessages, type SubmittedMessage } from "@/lib/submitted-messages";
 import { replacementEligibility, editableMessage, editBlocked, versionControl, type MessageVersion } from "@/lib/turn-replacement";
@@ -827,6 +827,9 @@ export default function Home() {
             const notice = runtimeErrorNotice(params);
             if (notice) setRuntimeNotices(prev => ({ ...prev, [threadId]: notice }));
           }
+          // A retry that worked: the reply goes on, so "retrying…" is no longer true (3 Nov, Masih: "this says retrying
+          // even when the model no longer retries!"). The first new output after it clears the notice.
+          if (threadId && retryRecovered(method)) setRuntimeNotices(prev => prev[threadId]?.endsWith(RETRYING) ? without(prev, threadId) : prev);
           if (method === "thread/status/changed" && params.status) patchThread(params.threadId, { status: params.status });
           if ((method === "thread/started" || method === "thread/status/changed") && (params.thread?.name?.startsWith("Workflows · ") || threadsRef.current.some(thread => thread.id === params.threadId && thread.name?.startsWith("Workflows · ")))) window.dispatchEvent(new Event("elpis:workflow-history"));
           // The engine's word that a chat is no longer running ends its turn here too, even if that turn's own end was
