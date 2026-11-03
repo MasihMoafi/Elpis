@@ -37,10 +37,25 @@ cat > "$OPT/bin/node" <<'NODE'
 #!/bin/sh
 ELECTRON_RUN_AS_NODE=1 exec /opt/elpis-desktop/runtime/electron/electron "$@"
 NODE
+cat > "$OPT/bin/elpis" <<'TUI'
+#!/usr/bin/env bash
+# The terminal app on the desktop app's provider bridge (shared with the window), so Claude models work in both.
+REAL=/opt/elpis-desktop/engine/elpis-next; BRIDGE_DIR=/opt/elpis-desktop/engine/tools/elpis-claude
+NODE=$(command -v node || true)
+if [[ -z "$NODE" ]] || (( $("$NODE" -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0) < 22 )); then NODE=/opt/elpis-desktop/bin/node; fi
+export ELPIS_DESKTOP_APP="${ELPIS_DESKTOP_APP:-/usr/bin/elpis-app}"
+for a in "$@"; do case "$a" in -h|--help|-V|--version) exec "$REAL" "$@" ;; esac; done
+case "${1:-}" in ""|-*|resume|fork) ;; *) exec "$REAL" "$@" ;; esac
+out="$(ELPIS_ENGINE_BIN="$REAL" NODE_USE_ENV_PROXY=1 "$NODE" "$BRIDGE_DIR/shared-runtime.mjs" "$BRIDGE_DIR/acp-bridge.mjs")" || exit $?
+engine="$REAL"
+case "$out" in *$'\n'"engine "*) engine="${out#*$'\n'engine }"; out="${out%%$'\n'*}" ;; *$'\n'*) echo 'elpis: unexpected bridge reply' >&2; exit 1 ;; esac
+case "$out" in unix:///*) ;; *) echo 'elpis: unexpected bridge endpoint' >&2; exit 1 ;; esac
+ELPIS_ENGINE_BIN="$engine" exec "$REAL" --elpis-local-bridge --remote "$out" "$@"
+TUI
 cat > "$ROOT/usr/bin/elpis-app" <<'LAUNCH'
 #!/usr/bin/env bash
 # The engine from the elpis package, with the Claude bridge beside its launcher; Node.js 22 or newer, else Electron's own.
-export ELPIS_ENGINE_BIN=${ELPIS_ENGINE_BIN:-/opt/elpis-desktop/engine/elpis-next}
+export ELPIS_ENGINE_BIN=${ELPIS_ENGINE_BIN:-/opt/elpis-desktop/engine/elpis-next} ELPIS_TUI_BIN=${ELPIS_TUI_BIN:-/opt/elpis-desktop/bin/elpis}
 if [[ -z "${ELPIS_NODE_BIN:-}" ]]; then
   node=$(command -v node || true)
   if [[ -z "$node" ]] || (( $("$node" -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0) < 22 )); then
@@ -49,7 +64,7 @@ if [[ -z "${ELPIS_NODE_BIN:-}" ]]; then
 fi
 exec /opt/elpis-desktop/launch "$@"
 LAUNCH
-chmod 0755 "$OPT/bin/node" "$ROOT/usr/bin/elpis-app"
+chmod 0755 "$OPT/bin/node" "$OPT/bin/elpis" "$ROOT/usr/bin/elpis-app"
 cp "$APP/desktop/elpis-icon.png" "$ROOT/usr/share/icons/hicolor/256x256/apps/elpis-desktop.png"
 cat > "$ROOT/usr/share/applications/elpis-desktop.desktop" <<'ENTRY'
 [Desktop Entry]

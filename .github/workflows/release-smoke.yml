@@ -1,0 +1,82 @@
+name: Release smoke test
+# Installs a published release on fresh machines exactly as the README says, then runs both apps headless and reads
+# the version from the real window. Nothing here builds Elpis; it only downloads the release's own files.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to test
+        required: true
+        default: v0.5.0
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: ubuntu-24.04-deb, image: 'ubuntu:24.04', way: deb }
+          - { name: debian-13-deb, image: 'debian:trixie', way: deb }
+          - { name: ubuntu-24.04-script, image: 'ubuntu:24.04', way: script }
+          - { name: fedora-appimage, image: 'fedora:42', way: appimage }
+          - { name: arch-appimage, image: 'archlinux:latest', way: appimage }
+    name: ${{ matrix.name }}
+    container: ${{ matrix.image }}
+    env:
+      TAG: ${{ inputs.tag }}
+      REL: https://github.com/MasihMoafi/Elpis/releases/download/${{ inputs.tag }}
+    steps:
+      - name: Base tools
+        run: |
+          set -eux
+          if command -v apt-get; then apt-get update -qq; DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl ca-certificates xvfb xauth; fi
+          if command -v dnf; then dnf install -y -q curl xorg-x11-server-Xvfb xorg-x11-xauth gtk3 nss alsa-lib libXScrnSaver libXtst mesa-libgbm libsecret which; fi
+          if command -v pacman; then pacman -Syu --noconfirm --needed curl xorg-server-xvfb xorg-xauth gtk3 nss alsa-lib libxss libxtst mesa libsecret which; fi
+      - name: Install as the README says
+        run: |
+          set -eux
+          mkdir -p /dl && cd /dl
+          V=${TAG#v}
+          case "${{ matrix.way }}" in
+            deb)
+              for f in elpis_${V}_amd64.deb elpis-desktop_${V}_amd64.deb; do curl -fsSLO "$REL/$f"; curl -fsSLO "$REL/$f.sha256"; sha256sum -c "$f.sha256"; done
+              DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ./elpis_${V}_amd64.deb ./elpis-desktop_${V}_amd64.deb
+              echo "TUI=elpis" >> "$GITHUB_ENV"; echo "APP=elpis-app" >> "$GITHUB_ENV"; echo "NODE=/opt/elpis-desktop/bin/node" >> "$GITHUB_ENV" ;;
+            script)
+              curl -fsSL "https://raw.githubusercontent.com/MasihMoafi/Elpis/$TAG/scripts/install-elpis.sh" | bash
+              echo "TUI=$HOME/.local/bin/elpis" >> "$GITHUB_ENV" ;;
+            appimage)
+              f=Elpis-${V}-x86_64.AppImage; curl -fsSLO "$REL/$f"; curl -fsSLO "$REL/$f.sha256"; sha256sum -c "$f.sha256"; chmod +x "$f"
+              ./"$f" --appimage-extract >/dev/null
+              echo "TUI=/dl/squashfs-root/AppRun elpis" >> "$GITHUB_ENV"; echo "APP=/dl/squashfs-root/AppRun" >> "$GITHUB_ENV"; echo "NODE=env APPDIR=/dl/squashfs-root /dl/squashfs-root/bin/node" >> "$GITHUB_ENV" ;;
+          esac
+      - name: Terminal app runs
+        run: |
+          set -eux
+          out=$($TUI --version); echo "$out"; test "$out" = "elpis ${TAG#v}"
+      - name: Desktop app opens and reports the release version
+        if: matrix.way != 'script'
+        run: |
+          set -eux
+          export HOME=/tmp/home; mkdir -p $HOME
+          (timeout 90 xvfb-run -a $APP --no-sandbox --remote-debugging-port=9333 > /tmp/app.log 2>&1 &)
+          cat > /tmp/check.mjs <<'EOF'
+          const want = process.argv[2];
+          for (let i = 0; i < 60; i++) {
+            try {
+              const page = (await (await fetch('http://127.0.0.1:9333/json/list')).json()).find(t => t.type === 'page' && t.title === 'Elpis');
+              if (page) {
+                const ws = new WebSocket(page.webSocketDebuggerUrl); await new Promise(r => ws.onopen = r);
+                ws.send(JSON.stringify({ id: 1, method: 'Runtime.evaluate', params: { awaitPromise: true, returnByValue: true, expression:
+                  "(async()=>{const h={Authorization:'Bearer '+location.hash.split('=')[1]};const a=await (await fetch('/api/about',{headers:h})).json();const m=await (await fetch('/api/models',{headers:h})).json();return {version:a.version, models:(m.data||[]).length, text:document.body.innerText.slice(0,40)}})()" } }));
+                const r = await new Promise(res => ws.onmessage = m => { const d = JSON.parse(m.data); if (d.id === 1) res(d.result.result.value); });
+                console.log(JSON.stringify(r));
+                if (r.version !== want || !/New chat/.test(r.text)) process.exit(1);
+                process.exit(0);
+              }
+            } catch {}
+            await new Promise(r => setTimeout(r, 1500));
+          }
+          console.log('the window never opened'); process.exit(1);
+          EOF
+          ELECTRON_RUN_AS_NODE=1 $NODE /tmp/check.mjs "${TAG#v}" || { tail -40 /tmp/app.log; exit 1; }

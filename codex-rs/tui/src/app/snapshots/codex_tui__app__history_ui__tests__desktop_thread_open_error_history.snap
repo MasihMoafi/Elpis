@@ -2,4 +2,4 @@
 source: tui/src/app/history_ui_tests.rs
 expression: render_cell(&cell)
 ---
-■ Failed to open this session in the Desktop app: launch failed. Install or launch the Desktop app and try again.
+■ Failed to open this session in the Desktop app: launch failed. Install the Elpis desktop app from https://github.com/MasihMoafi/Elpis/releases/latest and try again.

@@ -95,7 +95,7 @@ function registerTerminal({ host, origin, ipcMain, clipboard, env = process.env,
     const id = threadId(request.threadId);
     if (!id) return { error: 'This is not a chat id Elpis can resume.' };
     const command = tuiCommand(await environment());
-    if (!command) return { error: 'The Elpis TUI (elpis) was not found. Install Elpis, or set ELPIS_TUI_BIN to its path.' };
+    if (!command) return { error: 'The Elpis terminal app (elpis) was not found. Install it from https://github.com/MasihMoafi/Elpis/releases/latest, or set ELPIS_TUI_BIN to its path.' };
     let session = sessions.get(request.key);
     if (!session || session.exited !== null) session = await start(request.key, request);
     if (path.basename(session.pty.process || session.shell) !== path.basename(session.shell)) {

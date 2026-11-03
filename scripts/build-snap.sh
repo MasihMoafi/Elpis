@@ -47,7 +47,8 @@ NODE
 cat > "$S/bin/elpis-app" <<'APPL'
 #!/bin/sh
 R=${SNAP:-$APPDIR}
-export ELPIS_ENGINE_BIN="$R/engine/elpis-next" ELPIS_NODE_BIN="$R/bin/node" PATH="$R/bin:$PATH"
+# ELPIS_TUI_BIN: the chat menu's Open in > Elpis TUI runs this package's terminal app.
+export ELPIS_ENGINE_BIN="$R/engine/elpis-next" ELPIS_NODE_BIN="$R/bin/node" ELPIS_TUI_BIN="$R/bin/elpis" PATH="$R/bin:$PATH"
 # A snap or AppImage cannot ship Chromium's setuid sandbox helper, and Ubuntu 24.04 blocks the user-namespace sandbox for apps
 # without an AppArmor profile; only there does the window run without Chromium's sandbox (it would abort otherwise).
 [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null)" = 1 ] && set -- --no-sandbox "$@"
@@ -57,6 +58,7 @@ cat > "$S/bin/elpis" <<'TUI'
 #!/usr/bin/env bash
 # The terminal app: the provider bridge first (shared with the desktop app), then the TUI on it.
 R=${SNAP:-$APPDIR}; REAL=$R/engine/elpis-next; BRIDGE_DIR=$R/engine/tools/elpis-claude; NODE=$R/bin/node
+export ELPIS_DESKTOP_APP="${ELPIS_DESKTOP_APP:-$R/bin/elpis-app}"   # /app opens this package's desktop app
 for a in "$@"; do case "$a" in -h|--help|-V|--version) exec "$REAL" "$@" ;; esac; done
 case "${1:-}" in ""|-*|resume|fork) ;; *) exec "$REAL" "$@" ;; esac
 out="$(ELPIS_ENGINE_BIN="$REAL" NODE_USE_ENV_PROXY=1 "$NODE" "$BRIDGE_DIR/shared-runtime.mjs" "$BRIDGE_DIR/acp-bridge.mjs")" || exit $?

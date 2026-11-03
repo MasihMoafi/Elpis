@@ -459,7 +459,7 @@ impl App {
 
 fn desktop_thread_open_error_message(err: &str) -> String {
     format!(
-        "Failed to open this session in the Desktop app: {err}. Install or launch the Desktop app and try again."
+        "Failed to open this session in the Desktop app: {err}. Install the Elpis desktop app from https://github.com/MasihMoafi/Elpis/releases/latest and try again."
     )
 }
 
