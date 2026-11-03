@@ -64,8 +64,10 @@ Homepage: https://github.com/MasihMoafi/Elpis
 Description: Elpis desktop app: chats, Workflows and Love Spot on the Elpis engine
 CONTROL
 
-# No personal data: nothing in the package may name the builder's home folder or user.
-if rg -l -F -e "$HOME" -e "$(id -un)" "$ROOT"; then echo "The package names $HOME or $(id -un); not built." >&2; exit 1; fi
+# No personal data: nothing in the package may name the builder's home folder or git email. (The bare user name can
+# be an ordinary word in a bundled translation, so it is not searched.)
+email=$(git -C "$APP" config user.email || true)
+if rg -l -F -e "$HOME/" ${email:+-e "$email"} "$ROOT"; then echo "The package names the builder's home or email; not built." >&2; gio trash "$STAGE"; exit 1; fi
 deb="$OUT/elpis-desktop_${VERSION}_amd64.deb"
 dpkg-deb --root-owner-group -Zxz -z9 --build "$ROOT" "$deb" >/dev/null
 (cd "$OUT" && sha256sum "$(basename "$deb")" > "$(basename "$deb").sha256")
