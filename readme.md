@@ -76,6 +76,8 @@ Chat with GPT, Claude and Gemini models; use your ChatGPT or Claude subscription
 
 The same engine in your terminal. `/add` and `/context` show the working set; the agent saves lasting memory through a guarded local tool, and saving something is a separate choice from sending it. `/compact` takes a pressure threshold or your own instructions. `/model` and `--provider` reach Anthropic, Gemini and OpenRouter beside OpenAI.
 
+![The Agent command center in the Elpis terminal app: GPT and Claude helpers under their parent chat, each model in its own colour](docs/assets/tui-agent-command-center.webp)
+
 <img src="docs/assets/context-ledger.webp" alt="The Context Ledger in the Elpis terminal app: each instruction file with its token cost and an INCLUDED mark" width="420">
 
 ## How it works
