@@ -15,7 +15,7 @@ curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/v0.4.1/scripts/ins
 ~/.local/bin/elpis
 ```
 
-The installer checks SHA-256 checksums and installs the terminal app, its Code Mode host and the bundled Linux sandbox; the release also has a Debian package. The desktop app is on the [Releases](https://github.com/MasihMoafi/Elpis/releases) page. Sign in with your ChatGPT or Claude subscription, or set up a provider, then choose a model.
+The installer checks SHA-256 checksums and installs the terminal app, its Code Mode host and the bundled Linux sandbox; the release also has a Debian package. The desktop app has no package yet; it is built from source in [`apps/elpis-desktop`](apps/elpis-desktop). Sign in with your ChatGPT or Claude subscription, or set up a provider, then choose a model.
 
 ## Why Elpis?
 
