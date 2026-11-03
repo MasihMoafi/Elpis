@@ -94,7 +94,6 @@ license: Apache-2.0
 apps:
   elpis-agent:
     command: bin/elpis-app
-    desktop: meta/gui/elpis-agent.desktop
   elpis:
     command: bin/elpis
 YAML
