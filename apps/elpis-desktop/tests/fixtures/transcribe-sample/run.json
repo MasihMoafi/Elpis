@@ -102,7 +102,7 @@
    "assignedThreadId": "01a1829a-d824-7452-9841-bba8e0f8a440",
    "cwd": "__RUN__",
    "result": {
-    "summary": "# Yes: Page One Is Translated into Farsi\n\nThe translation follows the source order and ends with Octavius setting a condition.\n\nEvidence: `wc` showed 57 lines in both files; `rg` showed sections VIII and IX and clauses (1)–(5); `file` confirmed UTF-8 text.\n\nTranslation: [page-1-fa.md](/home/masih/De"
+    "summary": "# Yes: Page One Is Translated into Farsi\n\nThe translation follows the source order and ends with Octavius setting a condition.\n\nEvidence: `wc` showed 57 lines in both files; `rg` showed sections VIII and IX and clauses (1)–(5); `file` confirmed UTF-8 text.\n\nTranslation: [page-1-fa.md](/home/user/De"
    },
    "progress": [
     {

@@ -5,8 +5,8 @@
 - **Its wording matches the page images word for word**: passed
 
 ## Evidence
-- Inspected `/home/masih/Desktop/p/book-readings/book/transcribe-sample/page-1.png` visually using vision tool.
-- Inspected `/home/masih/Desktop/p/book-readings/book/transcribe-sample/agents/quillon-page-1/pages.md`.
+- Inspected `/home/user/transcribe-sample/page-1.png` visually using vision tool.
+- Inspected `/home/user/transcribe-sample/agents/quillon-page-1/pages.md`.
 - Passage-by-passage visual comparison confirmed:
   - Left column paragraphs and section `VIII. Military Order (September, 36 B.C.)` match word for word.
   - Numbered items (1) through (5) match word for word.
@@ -15,7 +15,7 @@
   - No discrepancies or differing passages found.
 
 ## Files
-- `/home/masih/Desktop/p/book-readings/book/transcribe-sample/agents/quillon-page-1/check/report.md`
+- `/home/user/transcribe-sample/agents/quillon-page-1/check/report.md`
 
 ## Open
 - None.

@@ -14,7 +14,7 @@ async fn elpis_delete_shortcut_opens_confirmation_without_deleting() {
         path: None,
         preview: "Saved answer".into(),
         thread_id: Some(ThreadId::new()),
-        thread_name: Some("Lawera retrieval".into()),
+        thread_name: Some("Harbor retrieval".into()),
         created_at: None,
         updated_at: None,
         cwd: None,
@@ -64,7 +64,7 @@ fn delete_picker() -> (PickerState, Arc<Mutex<Vec<ThreadId>>>, ThreadId) {
     );
     let thread_id = ThreadId::new();
     state.ingest_page(PickerPage {
-        rows: vec![delete_row(thread_id, "Lawera retrieval")],
+        rows: vec![delete_row(thread_id, "Harbor retrieval")],
         history_modes: HashMap::new(),
         next_cursor: None,
         num_scanned_files: 1,
@@ -300,7 +300,7 @@ async fn elpis_delete_success_preserves_other_selection_and_rejects_stale_page()
     assert!(!state.thread_history_modes.contains_key(&thread_id));
     assert!(state.expanded_thread_id.is_none());
     state.ingest_page(PickerPage {
-        rows: vec![delete_row(thread_id, "Lawera retrieval")],
+        rows: vec![delete_row(thread_id, "Harbor retrieval")],
         history_modes: HashMap::new(),
         next_cursor: None,
         num_scanned_files: 1,
@@ -327,7 +327,7 @@ fn elpis_delete_prompt_renders_target_warning_and_cancel_keys() {
         terminal.flush().unwrap();
         let screen = terminal.backend().vt100().screen().contents();
         println!("Delete prompt at {width} columns:\n{screen}\n");
-        assert!(screen.contains("Lawera retrieval"), "{screen}");
+        assert!(screen.contains("Harbor retrieval"), "{screen}");
         assert!(screen.contains("subagent"), "{screen}");
         assert!(screen.contains("cannot undo"), "{screen}");
         assert!(screen.contains("y delete"), "{screen}");
@@ -497,7 +497,7 @@ async fn elpis_delete_confirmation_keeps_original_target_when_page_changes() {
 #[tokio::test]
 async fn elpis_backspace_edits_nonempty_search_before_offering_delete() {
     let (mut state, requests, thread_id) = delete_picker();
-    state.set_query("Lawera".into());
+    state.set_query("Harbor".into());
     assert!(!footer(&state, 220).contains("backspace delete"));
     state
         .handle_key(KeyEvent::from(KeyCode::Backspace))

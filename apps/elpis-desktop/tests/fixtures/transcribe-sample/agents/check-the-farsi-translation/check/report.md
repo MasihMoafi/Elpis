@@ -7,7 +7,7 @@
 
 ## Evidence
 
-All commands ran from `/home/masih/Desktop/p/book-readings/book/transcribe-sample`.
+All commands ran from `/home/user/transcribe-sample`.
 
 - Ran `rg --files --hidden agents/veyra-join-the-pages agents/check-the-farsi-translation`. Located and read both submitted files and the English producer’s report. That report names root `transcription.md`; neither permitted agent folder contains another `transcription.md` or `joined-english.md`.
 - Read the checked agent’s named English source, `agents/join-and-translate-pages/joined-english.md`, in full. Ran `diff -u transcription.md agents/join-and-translate-pages/joined-english.md`: exit 1 showed only the VIII and IX headings changing from `##` headings to italic markup. A Python comparison removing that heading markup passed: wording and order are identical.

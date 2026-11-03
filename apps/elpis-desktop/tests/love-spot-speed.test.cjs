@@ -27,7 +27,7 @@ async function note(f, text, at = { x: 450, y: 300 }) {
   await f.page.mouse.click(bounds.x + at.x, bounds.y + at.y); await f.page.keyboard.press('t');
   await f.page.mouse.click(bounds.x + at.x, bounds.y + at.y); await f.page.keyboard.type(text); await f.page.keyboard.press('Escape');
   return f.waitFor(s => s.elements.some(e => e.text === text), 'typed note was not saved')
-    .catch(async e => { await f.page.screenshot({ path: '/home/masih/.cache/elpis-tests/lovespot-speed/note-failure.png' }); throw e; });
+    .catch(async e => { await f.page.screenshot({ path: require('node:path').join(require('node:os').tmpdir(), 'lovespot-note-failure.png') }); throw e; });
 }
 
 test('the small chat: her reply starts as soon at the fourth message as at the first while the drawing is unchanged', { timeout: 240000 }, async t => {

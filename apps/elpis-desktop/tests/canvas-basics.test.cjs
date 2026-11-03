@@ -7,11 +7,11 @@ const { openCanvas, planFor } = require('./canvas-fixture.cjs');
 const { assertUiFit } = require('./ui-fit.cjs');
 const { captureReview, chooseOption, chooseTheme, openPatterns } = require('./controls.cjs');
 const { fixture, THREADS } = require('./parity-fixture.cjs');
-const reportPlan = body => ({ name: 'Pointt review', agents: [{ key: 'evidence', title: 'Review evidence', prompt: body.goal, folders: [], doneWhen: ['Return the observed findings'], waitsFor: [] }] });
+const reportPlan = body => ({ name: 'Harbor review', agents: [{ key: 'evidence', title: 'Review evidence', prompt: body.goal, folders: [], doneWhen: ['Return the observed findings'], waitsFor: [] }] });
 
 for (const colorScheme of ['light']) test(`workflows start in their sandbox without a project and keep reports scoped (${colorScheme})`, async () => {
   const sandbox = '/tmp/elpis-workflow-sandbox';
-  const root = { id: 'sandbox-root', name: 'Pointt review', cwd: sandbox, status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } };
+  const root = { id: 'sandbox-root', name: 'Harbor review', cwd: sandbox, status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } };
   const f = await fixture({ colorScheme, cwd: '', storage: {
     'elpis-projects-v1': JSON.stringify({ projects: [], selectedId: null }),
   }, routes: {
@@ -29,7 +29,7 @@ for (const colorScheme of ['light']) test(`workflows start in their sandbox with
     const canvas = page.getByRole('region', { name: 'Workflows', exact: true });
     await canvas.getByRole('button', { name: 'Choose project', exact: true }).filter({ hasText: 'Sandbox' }).waitFor();
     const request = canvas.getByRole('textbox', { name: 'Workflow request', exact: true });
-    const goal = 'Review Pointt and tell me the next three steps.';
+    const goal = 'Review Harbor and tell me the next three steps.';
     await request.fill(goal);
     await canvas.getByRole('button', { name: 'New workflow', exact: true }).click();
     await page.waitForFunction(() => document.querySelectorAll('.react-flow__node-agent').length === 1);
@@ -49,7 +49,7 @@ for (const colorScheme of ['light']) test(`workflows start in their sandbox with
 });
 
 test('choosing a workflow project stays on the board, preserves its request and can return to the sandbox', async () => {
-  const sandbox = '/tmp/elpis-workflow-sandbox', project = { id: 'pointt', name: 'Pointt', cwd: '/tmp/pointt' };
+  const sandbox = '/tmp/elpis-workflow-sandbox', project = { id: 'harbor', name: 'Harbor', cwd: '/tmp/harbor' };
   const f = await fixture({ cwd: '', storage: {
     'elpis-projects-v1': JSON.stringify({ projects: [project], selectedId: null }),
   }, routes: { '/api/workflows/workspace': () => ({ cwd: sandbox }), '/api/folders': () => ({ data: [] }), '/api/canvas/plan': reportPlan } });
@@ -59,7 +59,7 @@ test('choosing a workflow project stays on the board, preserves its request and 
     const request = canvas.getByRole('textbox', { name: 'Workflow request', exact: true });
     await request.fill('Keep this exact review request.');
     await canvas.getByRole('button', { name: 'Choose project', exact: true }).click();
-    await page.getByRole('menuitem', { name: /Pointt/ }).click();
+    await page.getByRole('menuitem', { name: /Harbor/ }).click();
     await canvas.waitFor(); assert.equal(await request.inputValue(), 'Keep this exact review request.');
     await canvas.getByRole('button', { name: 'New workflow', exact: true }).click();
     await page.waitForFunction(() => document.querySelectorAll('.react-flow__node-agent').length === 1);

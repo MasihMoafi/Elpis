@@ -347,20 +347,20 @@ test('saved failed workflow opens its live team in chat and both canvas views wi
   const supervisionReport = 'Mother agent observed the source check and steered the current report toward verified evidence.';
   const saved = { id: 'legal-run', rootThreadId: 'chat-a', name: 'Legal current state', status: 'failed', startedAt: 100,
     mother: { decisions: [{ kind: 'checkpoint', taskId: 'evidence', decision: 'steer', status: 'delivered', summary: supervisionReport, reasons: 'The completed read lacked a source citation.' }] },
-    tasks: [{ id: 'evidence', kind: 'research', title: 'Inspect Pointt evidence', instruction: 'Review the saved project evidence.', dependsOn: [], writeScopes: [], acceptanceCriteria: ['Return evidence'], assignedThreadId: 'legal-step', status: 'failed', failureReason: 'Weekly usage limit reached.', routing: { actual: { model: 'gpt-6-luna', provider: 'openai' } } },
+    tasks: [{ id: 'evidence', kind: 'research', title: 'Inspect Harbor evidence', instruction: 'Review the saved project evidence.', dependsOn: [], writeScopes: [], acceptanceCriteria: ['Return evidence'], assignedThreadId: 'legal-step', status: 'failed', failureReason: 'Weekly usage limit reached.', routing: { actual: { model: 'gpt-6-luna', provider: 'openai' } } },
       { id: 'synthesis', kind: 'research', title: 'Write next steps', instruction: 'Summarize the evidence.', dependsOn: ['evidence'], writeScopes: [], acceptanceCriteria: ['Return next steps'], assignedThreadId: 'legal-synthesis', status: 'failed', failureReason: 'Claude (ACP) error: You have hit your weekly limit.', model: 'requested-only-model' }] };
   const draft = { ...graph, name: 'Unfinished personal draft', workflowId: 'draft-kept' };
   const f = await open('light', [saved], { 'elpis-workflow-draft-v1': JSON.stringify(draft) }, {}, { '/api/workflows': () => ({ data: [saved] }), '/api/threads/chat-a': () => ({ thread: base('chat-a', saved.name), data: [], nextCursor: null }),
-    '/api/threads/legal-step': () => ({ thread: { ...base('legal-step', 'Inspect Pointt evidence'), model: 'gpt-6-luna', parentThreadId: 'chat-a' }, data: [
+    '/api/threads/legal-step': () => ({ thread: { ...base('legal-step', 'Inspect Harbor evidence'), model: 'gpt-6-luna', parentThreadId: 'chat-a' }, data: [
       { turnId: 'evidence-turn', item: { id: 'evidence-command', type: 'commandExecution', command: 'rg --files lat.md', status: 'completed', aggregatedOutput: 'lat.md/tasks.md', exitCode: 0 } },
-      { turnId: 'evidence-turn', item: { id: 'evidence-answer', type: 'agentMessage', text: 'Inspected the saved Pointt evidence.' } },
+      { turnId: 'evidence-turn', item: { id: 'evidence-answer', type: 'agentMessage', text: 'Inspected the saved Harbor evidence.' } },
     ], nextCursor: null }) });
   try {
     const { page } = f;
     await row(page, 'chat-a').locator('.thread-link').click();
     await page.locator('.thread-row.active[data-thread-id="chat-a"]').waitFor();
     const summary = page.getByRole('region', { name: 'Workflow run', exact: true });
-    await summary.getByText('Inspect Pointt evidence', { exact: true }).waitFor();
+    await summary.getByText('Inspect Harbor evidence', { exact: true }).waitFor();
     await summary.getByRole('status', { name: 'Mother agent supervision', exact: true }).getByText(supervisionReport, { exact: true }).waitFor();
     await summary.getByText('Weekly usage limit reached.', { exact: true }).waitFor();
     assert.equal(await page.getByText('This conversation has no messages yet.', { exact: true }).count(), 0);
@@ -372,15 +372,15 @@ test('saved failed workflow opens its live team in chat and both canvas views wi
     await legacy.getByText('Claude (ACP) error: You have hit your weekly limit.', { exact: true }).waitFor();
     assert.equal(await legacy.locator('.agent-model').count(), 0, 'a historical failure without recorded routing never borrows the assigned chat’s current OpenAI model');
     assert.equal(await summary.getByText('requested-only-model', { exact: false }).count(), 0, 'a configured model is not presented as an observed actual model');
-    await summary.getByRole('button', { name: 'Open Inspect Pointt evidence chat', exact: true }).click();
-    await page.getByText('Inspected the saved Pointt evidence.', { exact: true }).waitFor();
+    await summary.getByRole('button', { name: 'Open Inspect Harbor evidence chat', exact: true }).click();
+    await page.getByText('Inspected the saved Harbor evidence.', { exact: true }).waitFor();
     await page.locator('.activity-group > summary').click();
     await page.getByText('rg --files lat.md', { exact: true }).waitFor();
     const output = page.getByText('lat.md/tasks.md', { exact: true }); await output.waitFor();
     await page.locator('.activity-group .step > summary').click(); await output.waitFor({ state: 'hidden' });
     await page.locator('.activity-group .step > summary').click(); await output.waitFor();
     await row(page, 'chat-a').locator('.thread-link').click();
-    await summary.getByText('Inspect Pointt evidence', { exact: true }).waitFor();
+    await summary.getByText('Inspect Harbor evidence', { exact: true }).waitFor();
     assert.deepEqual(await savedTasks.getByRole('img', { name: /^Agent mark / }).evaluateAll(items => items.map(item => item.getAttribute('aria-label'))), marks, 'opening an agent chat does not change its identity');
 
     await shot(page, 'workflow-live-team');
@@ -394,13 +394,13 @@ test('saved failed workflow opens its live team in chat and both canvas views wi
     await board.getByRole('region', { name: 'Run clock', exact: true }).getByText('Duration not recorded', { exact: true }).waitFor();
     assert.equal(await board.getByRole('log', { name: 'Run log', exact: true }).locator('time').count(), 0, 'a saved task state is not assigned an invented observation timestamp');
     await previousAttempt.locator('summary').click();
-    await board.locator('.react-flow__node[data-id="evidence"]').waitFor({ state: 'visible' }); assert.match(await board.locator('.react-flow__node[data-id="evidence"]').innerText(), /Inspect Pointt evidence/);
+    await board.locator('.react-flow__node[data-id="evidence"]').waitFor({ state: 'visible' }); assert.match(await board.locator('.react-flow__node[data-id="evidence"]').innerText(), /Inspect Harbor evidence/);
     await shot(page, 'workflow-recorded-flat');
     await page.getByRole('radio', { name: 'Isometric', exact: true }).click();
     const iso = page.getByRole('region', { name: 'Isometric board', exact: true });
     await board.getByRole('status', { name: 'Mother agent supervision', exact: true }).getByText(supervisionReport, { exact: true }).waitFor();
-    await iso.getByRole('button', { name: /^Inspect Pointt evidence:/ }).hover();
-    await iso.locator('.iso-label[data-for="evidence"]').getByText('Inspect Pointt evidence', { exact: true }).waitFor();
+    await iso.getByRole('button', { name: /^Inspect Harbor evidence:/ }).hover();
+    await iso.locator('.iso-label[data-for="evidence"]').getByText('Inspect Harbor evidence', { exact: true }).waitFor();
     await shot(page, 'workflow-recorded-isometric');
     assert.equal(await page.evaluate(() => localStorage.getItem('elpis-workflow-draft-v1')), before, 'viewing the actual saved run never overwrites an unfinished draft');
     await page.getByRole('button', { name: 'New workflow', exact: true }).click();

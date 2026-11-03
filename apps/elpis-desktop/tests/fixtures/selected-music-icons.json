@@ -6,20 +6,20 @@
       "music note",
       "crossed-out muted state"
     ],
-    "approvalFile": "/home/masih/.cache/elpis-briefs/20261030/takeover/music-icons/selected-3/approval.json",
+    "approvalFile": "/home/user/icons/music-icons/selected-3/approval.json",
     "approvalSha256": "4f2ca6024a1090ef38ad18bbb2f63b50c84548e94153d1cb48822e49ecab0fec",
-    "traceManifestFile": "/home/masih/.cache/elpis-briefs/20261030/takeover/music-icons/selected-3/trace-manifest.json",
+    "traceManifestFile": "/home/user/icons/music-icons/selected-3/trace-manifest.json",
     "traceManifestSha256": "ce12df23d3601a64068971eef7346c08536234f04d29211645d32eaab02da2c5"
   },
   "icons": {
     "music-note": {
-      "sourceSvg": "/home/masih/.cache/elpis-briefs/20261030/takeover/music-icons/selected-3/music-note.svg",
+      "sourceSvg": "/home/user/icons/music-icons/selected-3/music-note.svg",
       "sourceSvgSha256": "528c4c4c58adbfdf83ed216ba985e4fd462b0a18c4accfe8b2a297c0f39e92f6",
-      "sourceImage": "/home/masih/.cache/elpis-briefs/20261030/takeover/music-icons/candidate-3.png",
+      "sourceImage": "/home/user/icons/music-icons/candidate-3.png",
       "sourceImageSha256": "0eedf516e68c8cb7dff48c399e5963dd831018cfa9808782d68e814520f77cde",
       "trace": {
         "name": "music-note",
-        "source": "/home/masih/.cache/elpis-briefs/20261030/takeover/music-icons/candidate-3.png",
+        "source": "/home/user/icons/music-icons/candidate-3.png",
         "module": "SVG Studio vectorizeImage",
         "thresholdPercent": 60,
         "sourceSize": [
@@ -47,13 +47,13 @@
       ]
     },
     "music-muted": {
-      "sourceSvg": "/home/masih/.cache/elpis-briefs/20261030/takeover/music-icons/selected-3/music-muted.svg",
+      "sourceSvg": "/home/user/icons/music-icons/selected-3/music-muted.svg",
       "sourceSvgSha256": "284efa3e96abd9a864a34df4871f5ada1236bc56aea5144a1614148ef75e5916",
-      "sourceImage": "/home/masih/.cache/elpis-briefs/20261030/takeover/music-icons/selected-3/muted-source.png",
+      "sourceImage": "/home/user/icons/music-icons/selected-3/muted-source.png",
       "sourceImageSha256": "eaa249c49a1602b8c0dff7a1a5c62c1251d91d7be89e0b8d05222397d5ca1085",
       "trace": {
         "name": "music-muted",
-        "source": "/home/masih/.cache/elpis-briefs/20261030/takeover/music-icons/selected-3/muted-source.png",
+        "source": "/home/user/icons/music-icons/selected-3/muted-source.png",
         "module": "SVG Studio vectorizeImage",
         "thresholdPercent": 60,
         "sourceSize": [

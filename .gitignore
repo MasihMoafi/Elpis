@@ -148,3 +148,7 @@ ES.md
 # Agent handoff notes: local only, superseded by ES.md (27 Oct 2026)
 docs/HANDOFF.md
 docs/HANDOFF-WORKTREES.json
+
+# Masih's request ledger: local only (main stopped publishing it, 11 Oct)
+docs/USER_REQUESTS.md
+docs/launch/*.md

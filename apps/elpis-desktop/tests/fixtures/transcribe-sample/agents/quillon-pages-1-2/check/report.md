@@ -5,7 +5,7 @@
 - Its wording matches the page images word for word: Passed.
 
 ## Evidence
-- Read [page-1.png](file:///home/masih/Desktop/p/book-readings/book/transcribe-sample/page-1.png) and [page-2.png](file:///home/masih/Desktop/p/book-readings/book/transcribe-sample/page-2.png) directly using vision and compared passage by passage against [pages.md](file:///home/masih/Desktop/p/book-readings/book/transcribe-sample/agents/quillon-pages-1-2/pages.md).
+- Read [page-1.png](file:///home/user/transcribe-sample/page-1.png) and [page-2.png](file:///home/user/transcribe-sample/page-2.png) directly using vision and compared passage by passage against [pages.md](file:///home/user/transcribe-sample/agents/quillon-pages-1-2/pages.md).
 - Ran no scripts or OCR tools.
 - Comparison results:
   - Sequence: Section VIII and IX on page 1 flow directly into Section IX continuation and Section X on page 2. Pages 1–2 are preserved in exact order.
@@ -14,7 +14,7 @@
   - Page numbers and running headers/footers were correctly excluded.
 
 ## Files
-- [report.md](file:///home/masih/Desktop/p/book-readings/book/transcribe-sample/agents/quillon-pages-1-2/check/report.md)
+- [report.md](file:///home/user/transcribe-sample/agents/quillon-pages-1-2/check/report.md)
 
 ## Open
 None.
