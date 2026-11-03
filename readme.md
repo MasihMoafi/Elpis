@@ -36,6 +36,12 @@ Elpis treats both as one problem, **context management**, and answers it with tw
 
 ## The desktop app
 
+Chat with GPT, Claude and Gemini models; use your ChatGPT or Claude subscription or an API key, and switch models without losing the thread. Under the composer you choose the Ledger, Smart Prune and subagents. Import chats from Claude Code and Codex.
+
+Pick a theme (Elpis, Paper, Midnight or Plum), each in light and dark, or build your own in Settings → Appearance.
+
+![One Elpis desktop chat in six themes: Elpis dark and light, Midnight dark, Paper light, Plum dark and Midnight light](docs/assets/themes.gif)
+
 ### Workflows
 
 ![Workflows: the Mother agent designs a team, runs it and checks each agent's work](docs/assets/workflows.gif)
@@ -75,14 +81,6 @@ Two limits remain: two side-by-side agents without an "alongside" link are not y
 A drawing board where Matilda, the app's companion, answers and draws with you. Paste screenshots onto the board and draw on them.
 
 ![Love Spot: Matilda answers on the drawing board](docs/assets/lovespot.gif)
-
-### Chats, themes and the Context Ledger
-
-Chat with GPT, Claude and Gemini models; use your ChatGPT or Claude subscription or an API key, and switch models without losing the thread. Under the composer you choose the Ledger, Smart Prune and subagents. Import chats from Claude Code and Codex.
-
-Pick a theme (Elpis, Paper, Midnight or Plum), each in light and dark, or build your own in Settings → Appearance.
-
-![One Elpis desktop chat in six themes: Elpis dark and light, Midnight dark, Paper light, Plum dark and Midnight light](docs/assets/themes.gif)
 
 ## The terminal app
 
