@@ -1513,6 +1513,12 @@ export default function Home() {
     if (mode !== "code" && prompt?.allowed && !textRef.current.trim()) editDraft(prompt.prompt);
     if (mode !== "code") focusComposer();
   }
+  // 3 Nov, Masih: "delete should be available too - to delete messages". The conversation goes back to before this
+  // message (the engine can only cut a conversation at a point); files stay; Undo brings it back until the next send.
+  async function deleteFrom(turnId: string) {
+    await switchRewind({ action: "restore", beforeTurnId: turnId, mode: "conversation" });
+    focusComposer();
+  }
   async function switchRewind(body: { action: string; beforeTurnId?: string; mode?: RestoreMode; version?: string }, filesOnly = false) {
     const thread = selectedRef.current; if (!thread) return;
     const draft = textRef.current; rewindSwitch.current = thread.id; setRewindBusy(true);
@@ -1648,8 +1654,8 @@ export default function Home() {
 
   // The transcript is redrawn only when what it shows changes, not on every keystroke in the message box; its
   // handlers call the current render's functions through a ref, so a reused row never calls a stale one.
-  const live = useRef({ openById, focusComposer, replaceFrom, forkFrom, showVersion, setRewindTurn, setMessageEdits, setError, beginReply, beginImageReply });
-  live.current = { openById, focusComposer, replaceFrom, forkFrom, showVersion, setRewindTurn, setMessageEdits, setError, beginReply, beginImageReply };
+  const live = useRef({ openById, focusComposer, replaceFrom, forkFrom, showVersion, setRewindTurn, deleteFrom, setMessageEdits, setError, beginReply, beginImageReply });
+  live.current = { openById, focusComposer, replaceFrom, forkFrom, showVersion, setRewindTurn, deleteFrom, setMessageEdits, setError, beginReply, beginImageReply };
   const versionsShown = selected ? messageVersions[selected.id] : undefined;
   const conversation = useMemo(() => <ViewBoundary label="The conversation" resetKey={selected?.id}>{selected && !readOnlyRun && <SelectionReply key={selected.id} onQuote={(reference, text) => { const entry = shownEntries.find(entry => entryKey(entry) === reference); if (entry) live.current.beginReply(entry, text); }} />}<Transcript entries={shownEntries} activeTurnId={activeTurn ?? null} wrapItem={(entry, node) => <ImageReplyProvider reference={entryKey(entry)} onReply={selected && !readOnlyRun && !entry.clientPending ? image => { void live.current.beginImageReply(entry, image); } : undefined}>{node}</ImageReplyProvider>} onViewChanges={desktop && selected ? side.openChanges : undefined} mediaOf={e => selected ? mediaUrl(selected.id, e) : undefined} renderItem={e => { const editKey = JSON.stringify([selected?.id, e.turnId, e.item.id]); return <ChatMessage key={e.clientKey ?? editKey} item={e.item} model={e.item.type === "agentMessage" ? e.model : undefined} readAloud={!e.clientPending && (e.turnId !== activeTurn || e.completedAtMs !== undefined) && e.item.status !== "inProgress"} reference={entryKey(e)} onReply={selected && !readOnlyRun && !e.clientPending && (e.item.type === "userMessage" || e.item.type === "agentMessage") ? () => live.current.beginReply(e) : undefined} mediaBase={selected ? mediaUrl(selected.id, e) : undefined} threads={threads} speaker={agentName(selected) || "Elpis"} onOpenThread={id => live.current.openById(id)}
             editDraft={messageEdits[editKey]} editPending={!!pendingDrafts[editKey]} onEditDraftChange={value => { live.current.setMessageEdits(previous => value === null ? without(previous, editKey) : { ...previous, [editKey]: value }); if (value === null) live.current.focusComposer(); }}
@@ -1658,6 +1664,7 @@ export default function Home() {
             version={e.item.type === "userMessage" ? versionControl(versionsShown, e.turnId, replacementOptions.get(e.turnId), e.item.id, replaceable, target => { live.current.showVersion(target).catch(error => live.current.setError(String(error instanceof Error ? error.message : error))); }) : undefined}
             time={e.item.type === "userMessage" ? e.startedAtMs : undefined}
             onFork={selected && !readOnlyRun && e.item.type === "agentMessage" && e.turnId !== activeTurn ? () => void live.current.forkFrom(selected, e.turnId, e.item.id) : undefined} onRewind={!e.clientPending && replaceable && e.item.type === "userMessage" && e.item.id !== newestPrompt ? () => live.current.setRewindTurn(e.turnId) : undefined}
+            onDelete={!e.clientPending && replaceable && e.item.type === "userMessage" ? { label: e.item.id === newestPrompt ? "Delete message" : "Delete from here", run: () => { live.current.deleteFrom(e.turnId).catch(error => live.current.setError(String(error instanceof Error ? error.message : error))); } } : undefined}
             onRegenerate={regenerate && e.item.id === regenerate.replyId ? () => { live.current.replaceFrom(regenerate.turnId, regenerate.prompt).catch(error => live.current.setError(String(error instanceof Error ? error.message : error))); } : undefined} />; }} /></ViewBoundary>, [shownEntries, activeTurn, desktop, selected, side.openChanges, threads, messageEdits, pendingDrafts, replaceable, replacementOptionsKey, readOnlyRun, versionsShown, regenerate?.turnId, regenerate?.replyId, regenerate?.prompt]); // eslint-disable-line react-hooks/exhaustive-deps
   // Keep the conversation's context providers outside composer-only renders.
   const chatConversation = useMemo(() => <ReadAloud threadId={selected?.id} enabled={connected && !!selected} available={selected && agentName(selected) === "Matilda" ? LOVE_SPOT_AUDIO.readAloudAvailable : undefined} unavailableReason={loveSpotAudioReason}>{selected && !loveSpotAudioReason && agentName(selected) === "Matilda" && <MatildaAutoVoice key={selected.id} threadId={selected.id} activeTurnId={activeTurn ?? null} entries={shownEntries} disabled={!connected || voiceBusy} />}{conversation}</ReadAloud>, [selected, connected, activeTurn, shownEntries, voiceBusy, conversation, loveSpotAudioReason]);

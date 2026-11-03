@@ -93,3 +93,26 @@ test('a stopped turn still edits its first visible message when recorded items a
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
+
+// 3 Nov, Masih: "delete should be available too - to delete messages".
+test('Delete message removes the newest exchange (conversation only), leaves the composer empty and can be undone; older messages offer Delete from here', async () => {
+  let f, action; f = await fixture({ routes: {
+    '/api/threads/chat-a/rewind': (body) => {
+      if (body.action === 'status') return { action };
+      if (body.action === 'restore') { f.turns.length = 3; action = 'undo'; return { rewound: true, mode: body.mode, undo: action }; }
+      if (body.action === 'undo') { f.turns.push(['t4', 'Run them.', 'All green.']); action = 'redo'; return { undo: action }; }
+    },
+  } });
+  try {
+    await f.open('chat-a');
+    await f.page.locator('.message.user', { hasText: 'Add tests.' }).click({ button: 'right' });
+    await f.page.getByRole('menuitem', { name: 'Delete from here', exact: true }).waitFor();
+    await f.page.keyboard.press('Escape');
+    await f.page.locator('.message.user', { hasText: 'Run them.' }).click({ button: 'right' });
+    await f.page.getByRole('menuitem', { name: 'Delete message', exact: true }).click();
+    await f.page.getByText('All green.', { exact: true }).waitFor({ state: 'hidden' });
+    assert.deepEqual(f.posts.find(p => p.body.action === 'restore').body, { action: 'restore', beforeTurnId: 't4', mode: 'conversation' });
+    assert.equal(await f.composer.inputValue(), '', 'a deleted message does not come back as a draft');
+    await f.page.getByRole('button', { name: 'Undo rewind', exact: true }).click(); await f.page.getByText('All green.', { exact: true }).waitFor();
+  } finally { await f?.close(); }
+});

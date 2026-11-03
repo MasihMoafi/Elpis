@@ -6,7 +6,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { BranchIcon, BrowserIcon, PlanIcon, StopIcon } from "@/components/elpis-icons";
 import { BrowserComments } from "@/components/browser-comments";
 import { BROWSER_COMMENTS, DRAWING_NOTE } from "@/lib/browser-notes";
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleCheck, CircleX, Copy, Signpost, FileText, Pencil, RefreshCw, Reply, Terminal, Undo2, Volume2 } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleCheck, CircleX, Copy, Signpost, FileText, Pencil, RefreshCw, Reply, Terminal, Trash2, Undo2, Volume2 } from "lucide-react";
 import { MoreMenu, RightClickMenu, type MenuAction } from "@/components/action-menu";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -111,6 +111,9 @@ const copyAction = (label: string, text: () => string): MessageAction => ({ id: 
 const copyTextAction = (markdown: () => string, markup = true): MessageAction => ({ id: "copy-text", label: "Copy text", icon: <FileText size={14}/>, menuOnly: true, run: () => write(markup ? plainText(markdown()) : markdown()) });
 const replyAction = (reply?: () => void): MessageAction[] => reply ? [{ id: "reply", label: "Reply", icon: <Reply size={14}/>, run: reply }] : [];
 const rewindAction = (rewind?: () => void): MessageAction[] => rewind ? [{ id: "rewind", label: "Rewind to here", icon: <Undo2 size={14}/>, menuOnly: true, run: rewind }] : [];
+/** Delete: this exchange (the newest) or this exchange and those after it; Undo brings them back until the next send. */
+export type DeleteControl = { label: string; run: () => void };
+const deleteAction = (remove?: DeleteControl): MessageAction[] => remove ? [{ id: "delete", label: remove.label, icon: <Trash2 size={14}/>, menuOnly: true, run: remove.run }] : [];
 const menuActions = (actions: MessageAction[]): MenuAction[] => actions.filter(action => action.id !== "model").map(action => ({ ...action, label: action.menuLabel ?? action.label }));
 function MessageButtons({actions}:{actions:MessageAction[]}) {
   return <>{actions.filter(action=>!action.menuOnly).map(action=>action.id==="model"?<span key={action.id} className="message-model" title={`Model: ${action.label}`}>{action.label}</span>:action.copy?<CopyButton key={action.id} label={action.label} text={action.copy}/>:<Button key={action.id} variant="ghost" size="icon-xs" aria-label={action.label} title={action.title??action.label} onClick={action.run}>{action.icon}</Button>)}
@@ -129,7 +132,7 @@ function MessageVersions({version}:{version:VersionControl}) {
 const LONG_MESSAGE_PX=288;
 /** Sending an edit replaces this message and every later turn through Elpis (thread/revert), then starts the edited turn;
  * the message's attachments go with the edited text, and the chat as it was stays reachable as the previous version. */
-function UserMessage({body,bodyContent,attachments,attachmentContent,copyText,onEdit,onRewind,editBlockedReason,editDraft,onEditDraftChange,editPending,time,onReply,reference,replyContent,version}:{version?:VersionControl;onReply?:()=>void;reference?:string;replyContent?:React.ReactNode;body:string;bodyContent?:React.ReactNode;attachments:string[];attachmentContent?:React.ReactNode;copyText?:string;onEdit?:(text:string)=>Promise<void>;onRewind?:()=>void;editBlockedReason?:string;editDraft?:string;onEditDraftChange?:(value:string|null)=>void;editPending?:boolean;time?:number}) {
+function UserMessage({body,bodyContent,attachments,attachmentContent,copyText,onEdit,onRewind,onDelete,editBlockedReason,editDraft,onEditDraftChange,editPending,time,onReply,reference,replyContent,version}:{version?:VersionControl;onDelete?:DeleteControl;onReply?:()=>void;reference?:string;replyContent?:React.ReactNode;body:string;bodyContent?:React.ReactNode;attachments:string[];attachmentContent?:React.ReactNode;copyText?:string;onEdit?:(text:string)=>Promise<void>;onRewind?:()=>void;editBlockedReason?:string;editDraft?:string;onEditDraftChange?:(value:string|null)=>void;editPending?:boolean;time?:number}) {
   const [localEditing,setEditing]=useState(false);const [localDraft,setLocalDraft]=useState(body);const [localBusy,setBusy]=useState(false);const [error,setError]=useState("");
   const busy=localBusy||!!editPending;
   const editing=onEditDraftChange?editDraft!==undefined:localEditing,draft=onEditDraftChange?editDraft??body:localDraft;
@@ -148,7 +151,7 @@ function UserMessage({body,bodyContent,attachments,attachmentContent,copyText,on
     <div className="flex justify-end gap-2"><Button type="button" variant="outline" size="sm" disabled={busy} onClick={cancel}>Cancel</Button><Button type="submit" size="sm" disabled={busy||!onEdit||!draft.trim()}>{busy?"Sending…":"Send"}</Button></div>
   </form>;
   const whole=()=>copyText ?? [body,...attachments].filter(Boolean).join("\n");
-  const actions:MessageAction[]=[...replyAction(onReply),copyTextAction(whole,false),copyAction("Copy message",whole),...(onEdit?[{id:"edit",label:"Edit message",menuLabel:"Edit and retry",title:"Edit and resend",icon:<Pencil size={14}/>,run:()=>{setDraft(body);setError("");setEditing(true);}}]:[]),...rewindAction(onRewind)];
+  const actions:MessageAction[]=[...replyAction(onReply),copyTextAction(whole,false),copyAction("Copy message",whole),...(onEdit?[{id:"edit",label:"Edit message",menuLabel:"Edit and retry",title:"Edit and resend",icon:<Pencil size={14}/>,run:()=>{setDraft(body);setError("");setEditing(true);}}]:[]),...rewindAction(onRewind),...deleteAction(onDelete)];
   return <RightClickMenu actions={menuActions(actions)} area={<div className="user-turn" id={reference ? messageDomId(reference) : undefined} data-message-reference={onReply ? reference : undefined} tabIndex={reference ? -1 : undefined}/>}><div className="message user">{replyContent}<div ref={bodyRef} className="message-body" dir="auto" data-clamped={long&&!open?"":undefined}>{bodyContent ?? body}</div>{long&&<Button type="button" variant="ghost" size="icon-xs" className="message-fold" aria-expanded={open} aria-label={open?"Collapse message":"Show the whole message"} title={open?"Collapse":"Show all"} onClick={()=>setOpen(value=>!value)}>{open?<ChevronUp size={14}/>:<ChevronDown size={14}/>}</Button>}{attachmentContent || (attachments.length>0&&<ul className="mt-2 space-y-1 text-sm" aria-label="Message attachments">{attachments.map((label,index)=><li key={index}>{label}</li>)}</ul>)}{!body&&!attachments.length&&<span>Message content unavailable.</span>}</div><InkRow className="message-actions">
     {time&&<time className="message-time" dateTime={new Date(time).toISOString()} title={new Date(time).toLocaleString()}>{new Date(time).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})}</time>}
     {version&&<MessageVersions version={version}/>}
@@ -156,7 +159,7 @@ function UserMessage({body,bodyContent,attachments,attachmentContent,copyText,on
     {!onEdit&&editBlockedReason&&<Button variant="ghost" size="icon-xs" aria-label="Why editing is unavailable" title={editBlockedReason} onClick={()=>setError(previous=>previous?"":editBlockedReason)}><Pencil size={14}/></Button>}
   </InkRow>{error&&<p role="status" className="mb-3 text-xs text-muted-foreground">{error}</p>}</RightClickMenu>;
 }
-export function ChatMessage({item,model,speaker="Elpis",threads=[],onOpenThread,onEdit,onRegenerate,onFork,onRewind,time,editBlockedReason,editDraft,onEditDraftChange,editPending,mediaBase,activityLabel,onReply,reference,readAloud=false,version}:{version?:VersionControl;readAloud?:boolean;onReply?:()=>void;reference?:string;item:Item;model?:string;speaker?:string;threads?:Thread[];onOpenThread?:(id:string)=>void;onEdit?:(text:string)=>Promise<void>;onRegenerate?:()=>void;onFork?:()=>void;onRewind?:()=>void;time?:number;editBlockedReason?:string;editDraft?:string;onEditDraftChange?:(value:string|null)=>void;editPending?:boolean;mediaBase?:string;activityLabel?:string}) {
+export function ChatMessage({item,model,speaker="Elpis",threads=[],onOpenThread,onEdit,onRegenerate,onFork,onRewind,onDelete,time,editBlockedReason,editDraft,onEditDraftChange,editPending,mediaBase,activityLabel,onReply,reference,readAloud=false,version}:{version?:VersionControl;onDelete?:DeleteControl;readAloud?:boolean;onReply?:()=>void;reference?:string;item:Item;model?:string;speaker?:string;threads?:Thread[];onOpenThread?:(id:string)=>void;onEdit?:(text:string)=>Promise<void>;onRegenerate?:()=>void;onFork?:()=>void;onRewind?:()=>void;time?:number;editBlockedReason?:string;editDraft?:string;onEditDraftChange?:(value:string|null)=>void;editPending?:boolean;mediaBase?:string;activityLabel?:string}) {
   const speech = useReadAloud();
   const notice=noticeOf(item);
   if(notice)return <WorkflowNoticeStep notice={notice}/>;
@@ -171,7 +174,7 @@ export function ChatMessage({item,model,speaker="Elpis",threads=[],onOpenThread,
     const bodyContent=evidence?<div className="space-y-2"><p className="whitespace-pre-wrap" dir="auto">{evidence.text}</p><details><DisclosureSummary>{evidence.label}</DisclosureSummary><pre className="step-output"><code>{evidence.json}</code></pre></details></div>:answers?<div className="space-y-3">{answers.map((reply,index)=><div key={index} className="space-y-1"><p className="text-sm text-muted-foreground" dir="auto">{reply.question}</p><p dir="auto">{reply.answer}</p></div>)}</div>:undefined;
     const copyText=answers?[body,...content.filter(part=>part.type!=="text"||fileAttachment(part)).map(part=>part.type==="text"?text(part.text):attachmentLabel(part))].join("\n"):content.map(part=>part.type==="text"?text(part.text):attachmentLabel(part)).join("\n");
     const edit=reason||!onEdit?undefined:answers?(value:string)=>onEdit(value===body?originalBody:value):onEdit;
-    return <UserMessage onReply={onReply} reference={reference} replyContent={replies.map(reply=><ReplyPreview key={reply.reference} reply={reply}/>)} body={body} bodyContent={bodyContent} copyText={copyText} attachments={attachments} attachmentContent={attachmentContent} onEdit={edit} onRewind={onRewind} editBlockedReason={reason} editDraft={editDraft} onEditDraftChange={onEditDraftChange} editPending={editPending} time={time} version={version}/>;
+    return <UserMessage onReply={onReply} reference={reference} replyContent={replies.map(reply=><ReplyPreview key={reply.reference} reply={reply}/>)} body={body} bodyContent={bodyContent} copyText={copyText} attachments={attachments} attachmentContent={attachmentContent} onEdit={edit} onRewind={onRewind} onDelete={onDelete} editBlockedReason={reason} editDraft={editDraft} onEditDraftChange={onEditDraftChange} editPending={editPending} time={time} version={version}/>;
   }
   if(item.type==="agentMessage"){
     if(item.text!==undefined&&typeof item.text!=="string")throw unreadable("message");
