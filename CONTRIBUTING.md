@@ -1,6 +1,6 @@
 # Contributing to Elpis
 
-Elpis is a Linux coding-agent environment: a terminal app derived from OpenAI's Codex CLI and a desktop app that share one engine and one state folder, `$ELPIS_HOME` (default `~/.elpis-next`). [The guide](docs/GUIDE.md) is the product and architecture reference. Rust and TypeScript contributors, Linux testers and careful bug reports are welcome.
+The [README](readme.md) introduces Elpis; the [guide](docs/GUIDE.md) covers its architecture. Rust and TypeScript contributors, Linux testers and careful bug reports are welcome.
 
 ## Reporting a bug
 
@@ -22,7 +22,7 @@ CODEX_SKIP_BWRAP_BUILD=1 cargo build --release --locked -p codex-cli --bin codex
 CODEX_SKIP_BWRAP_BUILD=1 cargo test --profile dev-small --locked -p codex-tui --lib
 ```
 
-`CODEX_SKIP_BWRAP_BUILD=1` skips the bundled sandbox, which needs libcap. Test one crate per command and cap the jobs (`CARGO_BUILD_JOBS=2`); [local build rules](docs/LOCAL_BUILD_RULES.md) explain why. The [Linux verification workflow](.github/workflows/embedded-elpis-linux.yml) holds the exact commands: it runs on pull requests that touch `codex-rs/`, `tools/elpis-claude/`, `scripts/` or `tests/install/`, and builds the binaries, the Debian package and checksums. The whole inherited Codex test suite is not claimed green; keep the focused Elpis checks passing.
+`CODEX_SKIP_BWRAP_BUILD=1` skips the bundled sandbox, which needs libcap. The [Linux verification workflow](.github/workflows/embedded-elpis-linux.yml) holds the exact commands: it runs on pull requests that touch `codex-rs/`, `tools/elpis-claude/`, `scripts/` or `tests/install/`, and builds the binaries, the Debian package and checksums. The whole inherited Codex test suite is not claimed green; keep the focused Elpis checks passing.
 
 ## Building the desktop app
 
@@ -36,12 +36,12 @@ npm run build
 npm test
 ```
 
-`npm test` runs `scripts/test-gate.mjs`: it checks that `test-inventory.json` assigns every test file to one tier, then runs the fast, bridge, desktop and UI tiers one file at a time, each under a time limit that starts once the file holds its shared lock, with a throwaway `ELPIS_HOME`. A failing file does not stop the later tiers; the run reports every failure and exits non-zero. `npm run test:fast` (or `test:bridge`, `test:desktop`, `test:ui`) runs one tier. The UI tier needs Playwright with Chromium; set `ELPIS_PLAYWRIGHT_PACKAGE` to its package folder. The attachment and transcription tests need `poppler-utils` and `ffmpeg`. Each run writes its logs and `summary.json` under `/tmp/elpis-test-gate-*`. [TESTING.md](apps/elpis-desktop/TESTING.md) covers the opt-in tests and what done means.
+Desktop test tiers, opt-in checks and prerequisites are in [TESTING.md](apps/elpis-desktop/TESTING.md).
 
-`npm run desktop` opens the window. It needs an installed Elpis engine at `~/.local/bin/elpis-next`, or one named by `ELPIS_ENGINE_BIN`, with its provider bridge; the desktop app has no installer for other machines yet. [The desktop README](apps/elpis-desktop/README.md) explains the bridge and the runtime socket.
+`npm run desktop` opens the window. It needs an installed Elpis engine at `~/.local/bin/elpis-next`, or one named by `ELPIS_ENGINE_BIN`, with its provider bridge; packaging and installation are described in the [README](readme.md#quickstart). [The desktop README](apps/elpis-desktop/README.md) explains the bridge and the runtime socket.
 
 ## Changes
 
-Reproduce the failure on the current app first, write the test that catches it, then fix and re-run the surrounding flow. Behavior that can silently do nothing needs a positive and a negative case. Do not commit `target/`, `node_modules`, state folders, transcripts or credentials. Read the [shipping rules](docs/SHIPPING_RULES.md) before a release-related change.
+Do not commit `target/`, `node_modules`, state folders, transcripts or credentials. Read the [shipping rules](docs/SHIPPING_RULES.md) before a release-related change.
 
 Elpis is [Apache-2.0](LICENSE). Upstream Codex keeps its attribution and [NOTICE](NOTICE); the bundled sandbox is bubblewrap under its own licence.

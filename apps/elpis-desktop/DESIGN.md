@@ -1,8 +1,6 @@
 # Elpis desktop: the design system
 
-One page. Every UI change starts here; the rules come from Masih's logged rules (`skills/dev/MASIH-RULES.md`) and the `web-dev` and `designer` skills.
-
-**Operating principle:** radically prioritize. Fix what is broken before anything new; delete before adding; one source per concept. If two places show the same thing, one shared component, variant or token owns it.
+Desktop-specific tokens, components and layout. Project rules are in [MASIH-RULES.md](../../docs/MASIH-RULES.md); general UI rules are in `~/Desktop/p/skills/web-dev/UI-RULES.md`.
 
 ## 1. Stack
 Next 16 static export (`app/page.tsx` is the one page shell), React 19, Tailwind 4 in `app/globals.css`, shadcn/ui "base-nova" on Base UI (`components/ui`, `components.json`), lucide icons, Electron 44 around it. The look is "HUD": bevelled corners, accent ticks, 12 px mono labels. No daisyUI; do not add it.
@@ -40,11 +38,10 @@ The accepted live Working status belongs to the composer layout: `WorkingPlaceme
 `title-bar` → `aside.sidebar` (brand, nav, search, chat list, footer) + `main.workspace` (header, one page column, composer) + optional side panel (browser, files, terminal). Settings replaces the sidebar and has its own page column. Sidebar footer, left to right: the user's name (shown, never clickable), a status line, the Theme button, the Settings gear.
 
 ## 6. Rules that apply to every screen
-- A menu with one choice is a button. Keys sit beside names. A shown name or label is not a control.
-- No triangle markers anywhere; even strokes; card decorations at border width; roomy stacked text.
-- A page the user cannot act on is removed or made to work. A hidden page leaves the sidebar and the command menu. A section lists only what its name says (Recents: chats outside any project).
-- Lists have a planned order; choices are menus, never typed names; one setting, one control, one truth.
-- Check light and dark, 820 to 1600 px, before showing anything. Visual claims need a screenshot first.
+- Follow [the Elpis interaction rules](../../docs/MASIH-RULES.md) and the general UI rules named above.
+- A shown name or label is not a control.
+- A page the user cannot act on is removed or made to work. A hidden page leaves the sidebar and the command menu.
+- Lists have a planned order; one setting has one control.
 
 ## 7. Adding or changing UI, in order
 1. Search for the concept (`rg`) and read its owner; check the tokens and the shared patterns above.
@@ -52,4 +49,4 @@ The accepted live Working status belongs to the composer layout: `WorkingPlaceme
 3. Fix the shared source, delete the local overrides it makes obsolete, then check every page that uses it.
 4. Test: a UI test through `tests/parity-fixture.cjs` (light and dark); anything the real server must serve or the real engine must do needs a test at that boundary (the fixture's own server hid a missing `.webp` type once).
 5. Retained tests change only through `scripts/renderer-artifact-gate.mjs` (pin with Masih's words as approval); new tests go in `test-inventory.json`.
-6. Run `npm run check:install`, build, install with `scripts/install-desktop.mjs`, then ask Masih to test what only eyes can judge.
+6. Follow [desktop verification](TESTING.md) before installation.

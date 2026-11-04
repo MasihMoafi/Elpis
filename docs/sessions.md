@@ -3,6 +3,8 @@
 Elpis keeps work, goals, decisions, and evidence alive across restarts, model switches, and thread compaction without forcing the model to re-read an ever-growing transcript.
 ---
 
+Hidden reasoning is not a transcript to carry forward. Preserve decisions and evidence, not streamed tool events and large outputs indefinitely.
+
 ## 1. Two Continuation Modes
 
 Elpis separates the model provider's native thread from its own provider-neutral session state, which gives two ways to continue work:

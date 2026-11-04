@@ -113,7 +113,7 @@ State lives in `~/.elpis-next`, or in the folder `ELPIS_HOME` names; an inherite
 ## Current state
 
 - **Checked by CI:** [release CI](https://github.com/MasihMoafi/Elpis/actions/workflows/embedded-elpis-linux.yml) gates each terminal release on Elpis Rust checks, runtime evals with failing controls, installer checks and clean offline installs. These checks do not prove that Elpis writes better code.
-- **Not claimed:** the whole inherited Codex test suite; `/force-prune`, Auto routing and `tui.appearance` are not ported. No macOS or Windows builds.
+- **Not claimed:** the whole inherited Codex test suite; Auto routing and `tui.appearance` are not ported. See [context controls](docs/context.md#2-context-control-mechanisms-and-native-compaction) for `/force-prune`. No macOS or Windows builds.
 - **Experimental:** Smart Prune and reasoning expiry. The Mother agent steps in on a failed step (retry, steer or stop) but does not yet steer a healthy run.
 
 ## Contribute

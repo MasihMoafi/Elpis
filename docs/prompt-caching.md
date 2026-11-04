@@ -139,22 +139,13 @@ does, the running total is a number and later silent requests add nothing.
 input.
 
 The field flows to the rollout `token_count` records, the pruning audit archive
-(`~/.elpis/logs/pruning/`), and the `rollout-trace` inference records. It is **not** carried
+(`$ELPIS_HOME/logs/pruning/`), and the `rollout-trace` inference records. It is **not** carried
 by the app-server `TokenUsageBreakdown` wire type, so the TUI status card does not show it;
 extending that type means regenerating its TypeScript and JSON schema artifacts.
 
 ## How pruning interacts with cached prefixes
 
-Smart Prune operates on a fresh tool result before that result's first admission to
-model-visible history. The main model therefore sees only one version of the item, and later
-requests retain that exact prefix. `/prune` merely enables this admission-time behavior for
-subsequent turns; it does not rewrite prior messages.
-
-The legacy `/force-prune <1-100>` command and app-server `thread/prune/start` operation are
-different. They replace eligible output that is already in history, so every cached prefix
-past the first changed item diverges. No breakpoint can prevent that invalidation. The legacy
-implementation inserts an epoch marker and may place a cache breakpoint at that boundary to
-raise the surviving cache floor, but it still rewrites an already-seen suffix.
+The [context reference](context.md#2-context-control-mechanisms-and-native-compaction) describes Smart Prune and the availability of `/force-prune`. A retrospective rewrite of already-admitted output invalidates cached prefixes after the first changed item; a breakpoint cannot prevent that invalidation.
 
 ### Historical measurement behind the legacy epoch boundary
 

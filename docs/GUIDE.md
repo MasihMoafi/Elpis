@@ -1,85 +1,14 @@
 # Elpis Technical Guide
 
-## Product Thesis
-
-> You put an agent into an Elpis, and it becomes Elpis. Be Elpis, my friend.
-
-Elpis is the environment an agent enters and assimilates into. The selected model or agent runtime may change, but the user's goals, working style, durable knowledge, context policy, evidence, and behavioral boundaries continue coherently. Elpis is both a state and a direction: it is never fully complete, and each verified change should make the environment clearer, more capable, and easier for its creator to control.
-
-## Purpose
-
-Elpis is a provider-neutral coding-agent TUI. It does not try to make a new foundation model. It gives agents backed by OpenAI/Codex, Gemini, Claude, or another model one coherent local interface by managing:
-
-- instructions and project knowledge admitted into working context;
-- the boundary between transient context and durable memory;
-- tools, edits, commands, permissions, and their evidence;
-- continuity across turns, compaction, and sessions;
-- a model-independent TUI where consequential actions remain inspectable.
-
-The intended result is assimilation: whichever model provider is selected, the agent adopts the user's harness, workspace, memory, and control policy without being buried under them.
-
-## Product Value
-
-Elpis should create value in five ways:
-
-1. **Assimilation:** a selected runtime adopts the creator's applicable instructions, goals, context, memory, and behavioral rules, rather than the user adapting to it.
-2. **Context sovereignty:** the user can see and control what enters the agent's working set. Selecting a file is an intentional context operation, not decoration.
-3. **Reliable continuity:** sessions preserve goals, decisions, changes, and evidence across model changes, compaction, and restarts, while disposable logs and stale file bodies fall away instead of replaying an ever-growing transcript.
-4. **Safe, transparent agency:** edits and commands use explicit sandbox and approval contracts. The UI shows what is proposed and records what happened; Elpis does not claim success when it has only hidden or documented a gap.
-5. **Runtime choice and user ownership:** Elpis keeps one surrounding control environment while allowing the model provider and low-level agent runtime to change explicitly. Durable state is inspectable, editable, exportable, and not tied to one provider or runtime.
-
-Elpis is not primarily a provider switcher, transcript viewer, or collection of slash commands. It is not distinguished by having another terminal chat interface. Existing projects already provide strong model access, tools, permissions, terminal rendering, and agent loops; Elpis reuses those implementations and is distinguished by the five values above.
-
-## Desired Output
-
-Ship an installable terminal product, not a repository demo, in which a user can:
-
-1. authenticate and deliberately select a supported model and runtime;
-2. see which runtime owns the turn and which capabilities Elpis retains;
-3. give the agent a task under Read Only, Default, or Full Access permissions;
-4. watch readable commands, output, file changes, diffs, failures, and verification;
-5. inspect and control the exact working context admitted by Elpis;
-6. resume later from the same goal, decisions, changes, and relevant memory without replaying irrelevant history;
-7. switch to at least one non-Codex runtime while retaining Elpis-owned continuity;
-8. install and complete a real coding task from a clean environment.
-
-The product succeeds only when these behaviors pass their acceptance checks and the distinctive context/continuity behavior is demonstrably useful compared with the selected runtime alone.
+The [README](../readme.md) introduces the product. This guide describes its architecture and contracts.
 
 ## Proof Standard
 
-The accepted October 9 recovery contract is Codex parity. Its file left the tree on 22 October (`77aa3bc42`); `git show ab1bb00e5:docs/specs/codex-parity.md` prints its last text.
-Use the installed Codex 0.162.0 foundation for shared terminal behavior and layout.
-Earlier Elpis-specific colors, animations and shortcut assignments yield to that
-contract. Keep the selected slash commands, per-agent model labels, and retained
-Elpis features. Candidate code and automated checks remain subject to Masih's
-acceptance; they do not establish that the installed experience is fixed.
-
-A feature is real only when its user-visible acceptance check passes and the evidence is recorded. Documentation, hidden code, or a plausible architecture is not proof. `TASKS.md` is the current-state record against this standard.
-
-The defining evaluation is whether a fresh supported runtime can enter Elpis, receive the right current goal and relevant history, obey creator rules, perform visible work under the chosen permission mode, and resume later without irrelevant context.
+Behavior is accepted through the user-visible checks described by the relevant feature. Current state and open requests are in [ES.md](../ES.md) and [REQUESTS.md](../REQUESTS.md).
 
 ## Requirements
 
-This section preserves confirmed product requirements. Current implementation state belongs in `TASKS.md`, not here.
-
-### Working Agreement
-
-- Keep required work ahead of speculative features.
-- Challenge unnecessary complexity and solution-first requests.
-- Record evidence rather than confidence.
-- Prefer small, reversible changes and the smallest useful verification.
-
-### Task Importance and Task Difficulty
-
-Elpis product tasks use three importance levels:
-
-- **Foundational:** Elpis loses its purpose, reliability, or basic usability without it.
-- **Important:** a material improvement after the foundation is solid.
-- **Nice-to-have:** optional work that cannot delay foundational polish.
-
-These levels are not release numbers and do not describe implementation complexity.
-
-Easy, Medium, and Hard are separate difficulty labels. They describe how much reasoning, coordination, and architectural judgment a task requires and may be used by future automatic model routing such as `/auto`.
+This section preserves confirmed product requirements. Current implementation state belongs in [ES.md](../ES.md), not here.
 
 ### Confirmed Requirements
 
@@ -87,41 +16,31 @@ Easy, Medium, and Hard are separate difficulty labels. They describe how much re
 
 **R2. Visible and controlled agency** — Commands and file changes follow explicit permission and sandbox policies. The interface must preserve changed paths, diffs, command status, failures, and verification evidence.
 
-**R3. Deliberate context lifecycle** — Elpis must know what the model receives. Rules, goal, selected files, conversation, tool output, and memory have visible sources, sizes, reasons, and lifetimes. Stale exploration leaves the next request only after its useful conclusion and exact evidence pointer are retained. A length threshold alone is not a complete context policy.
+**R3. Context lifecycle** — [Context reference](context.md).
 
-**R4. Exact and lean continuity** — The active goal, decisions, constraints, changed files, verification, blockers, and next action survive restarts. Elpis supports exact native-thread resume and lean continuation from a compact portable checkpoint.
+**R4. Continuity** — [Session reference](sessions.md).
 
-**R5. Curated memory** — Memory stores reusable facts and proven procedures, not transcripts. Promotion requires repeated useful recall across distinct contexts. Memory remains searchable, attributable, reviewable, deletable, and bounded. Deleted or faded facts enter a searchable archive before baseline reset; archive failure must stop the reset.
+**R5. Memory** — [Memory and checkpoints](context.md#3-memory-and-checkpoints).
 
-**R6. Enforceable creator and project rules** — Applicable `AGENTS.md`, project requirements, and behavioral rules reach the model and action layer. Configured development-rule Markdown is a visible, switchable Context Ledger source, not a skill. Elpis ordinary and bundled skills start off and become model-visible only after deliberate enablement. Hard safety rules are enforced by code where prompts are insufficient.
+**R6. Creator and project rules** — [Context reference](context.md#3-memory-and-checkpoints).
 
-**R7. Claims require proof** — Documentation separates implemented behavior, remote tests, and outstanding user acceptance. Design documents and hidden code are not proof.
+**R8. Expensive capabilities are plugged in, not built in** — Workspace semantic search is provided by an MCP server the user registers. Voice capture/transcription belongs to an external program such as [WhisperType](https://github.com/MasihMoafi/Voice-commander), which may expose a transcription tool through MCP. Never add a machine-learning dependency to this repository for those capabilities.
 
-**R8. Expensive capabilities are plugged in, not built in** — Elpis ships no retrieval or speech engine and no model weights. Workspace semantic search is provided by an MCP server the user registers. Voice capture/transcription belongs to an external program such as [WhisperType](https://github.com/MasihMoafi/Voice-commander), which may expose a transcription tool through MCP. Never add a machine-learning dependency to this repository for those capabilities.
+**R11. Explicit Claude provider and subscription paths** — Preserve the native Anthropic API path and the later user-selected Claude subscription ACP bridge, [`tools/elpis-claude/acp-bridge.mjs`](../tools/elpis-claude/acp-bridge.mjs). Authentication and provider selection remain explicit. `elpis claude` separately starts Claude Code through a loopback Smart Prune proxy.
 
-**R9. Proportionate, measured development cycle** — Ordinary changes receive focused checks. Exhaustive inherited TUI/app-server regression runs belong to nightly/manual/release verification unless a change directly touches that surface. CI must not edit source or create status-only commits. Dependency deletion follows measured cost and product optionality, not crate names.
+Account switching uses [`claude-accounts.mjs`](../tools/elpis-claude/claude-accounts.mjs).
 
-**R10. Codex shared interface with Elpis controls** — Follow the accepted Codex parity contract ([Proof Standard](#proof-standard)). Elpis makes runtime, model, context, memory, permissions, and evidence visible through its retained controls. Earlier custom styling must not override the shared Codex interface.
-
-**R11. Explicit Claude provider and subscription paths** — Preserve the native Anthropic API path and the later user-selected Claude subscription ACP bridge, [`tools/elpis-claude/acp-bridge.mjs`](../tools/elpis-claude/acp-bridge.mjs). Authentication and provider selection remain explicit. `elpis claude` (accepted 2026-10-03) separately starts Claude Code through a loopback Smart Prune proxy.
-
-Masih's October 20 request adds two isolated Claude subscription logins and explicit account switching; see [`claude-accounts.mjs`](../tools/elpis-claude/claude-accounts.mjs) and [its tests](../tools/elpis-claude/test/claude-accounts.test.mjs). Installation and real sign-in acceptance remain open.
-
-**R12. Deterministic multi-agent orchestration** — Elpis owns a persisted task DAG above the agent lineage graph. It validates dependencies and bounded task roles, controls concurrency and write authority, measures file changes, requires evidence, and requires a directly dependent read-only verifier for writable work. Branch/worktree creation and integration remain deliberate coordinator actions. The exact contract and verification state live in [WORK_GRAPHS.md](WORK_GRAPHS.md).
+**R12. Deterministic multi-agent orchestration** — [Work-graph contract](WORK_GRAPHS.md).
 
 ### State Layout
 
-- `~/.elpis/context/workspaces/<workspace>/GOAL.md` — active goal.
-- `~/.elpis/context/workspaces/<workspace>/ES.md` — compact latest checkpoint.
-- `~/.elpis/memories/MEMORY.md` — user-maintained memory admitted into context.
-- `~/.elpis/state/state_5.sqlite` — threads, agent jobs, persisted work graphs, task claims, evidence, and transition events.
-- Provider transcripts and workspace artifacts remain exact evidence sources.
+The default runtime home and its override are in the [README](../readme.md#how-it-works). The [session reference](sessions.md#3-portable-checkpoint-layout) owns the checkpoint layout; provider transcripts and workspace artifacts remain evidence sources.
 
 ### Product Scope Decisions
 
 - The active terminal interface is the contained Codex Rust TUI and already uses Ratatui; Elpis does not need a UI-framework rewrite.
 - UI changes must preserve Codex-quality content, rendering, and interactions unless a separate behavior change is explicitly approved.
-- Dictation remains a future feature. It must insert editable text and must not auto-submit it.
+- Dictation: [desktop README](../apps/elpis-desktop/README.md).
 - Do not add slash commands unless Masih explicitly selects them.
 
 ### Deferred Decisions
@@ -146,7 +65,7 @@ Important areas:
 
 Codex is the contained implementation foundation for thread/turn semantics, streaming, file changes, commands, approvals, sandboxing, sessions, and TUI ergonomics. Elpis does not load code from or require the separate donor clone at runtime.
 
-The foundation strategy, adopted September 29, 2026, is **vendor and carry**: pin an unmodified upstream Codex release; carry Elpis as copied Elpis-owned modules and crates plus a few small, marked seams in upstream files; switch unwanted upstream surfaces off by configuration, proven by a network-capture eval, rather than deleting them; and absorb a new release by rebasing the Elpis commits onto a new vendor commit. Non-Responses providers reach Codex through an Elpis-owned local Responses gateway. The installed v0.3.0 build still uses the earlier fork-and-subtract import until Masih accepts the new one.
+The foundation strategy is **vendor and carry**: pin an unmodified upstream Codex release; carry Elpis as copied Elpis-owned modules and crates plus a few small, marked seams in upstream files; switch unwanted upstream surfaces off by configuration, proven by a network-capture eval, rather than deleting them; and absorb a new release by rebasing the Elpis commits onto a new vendor commit. Non-Responses providers reach Codex through an Elpis-owned local Responses gateway.
 
 ### OpenClaw: Context and Continuity Reference
 
@@ -168,7 +87,7 @@ No capability becomes an Elpis feature merely because an upstream project has it
 
 ### Codex Import Provenance
 
-The contained Codex workspace was imported from `openai/codex` revision `2e1607ee2fa8099a233df7437adee5f16a741905` under Apache-2.0, with notices retained under `codex-rs/`. `codex-rs/ELPIS_UPSTREAM.md` records provenance. The move to the latest release records its pin there as well. Only committed donor content was imported; the donor working tree's unrelated local edits were not.
+The contained Codex workspace was imported from `openai/codex` revision `2e1607ee2fa8099a233df7437adee5f16a741905` under Apache-2.0, with notices retained under `codex-rs/`. Only committed donor content was imported; the donor working tree's unrelated local edits were not.
 
 ### Preserve-First Behaviors
 
@@ -224,7 +143,7 @@ User
             -> Elpis provider-neutral direct model path
             -> other explicitly supported runtimes
        -> Elpis retrieval services
-  -> Workspace + durable Elpis state (~/.elpis)
+  -> Workspace + durable Elpis state ($ELPIS_HOME)
 ```
 
 The `elpis` executable is built from the contained `codex-rs/` foundation. Runtime ownership is explicit. When Codex is selected, Codex may own the low-level model loop, native tools, native thread, and native compaction. Elpis still owns the surrounding product: runtime/provider selection, context projection, durable memory, provider-neutral continuity, behavioral policy, approvals bridge, and visible TUI.
@@ -251,29 +170,7 @@ Routes, credentials, BYOK setup, wire-protocol translation, compatibility aliase
 
 ## Context Contract
 
-Context is a budgeted working set, not the session archive. The detailed implementation, pruning triggers, audit records, context lifetimes, Context Ledger behavior, and accounting contract live in [context.md](context.md).
-
-September 22 memory decision: the responding root agent owns explicit guarded local
-memory/checkpoint updates in opted-in workspaces. Do not restore a second-model
-consolidation call after responses or before compaction. Global preferences belong
-in MEMORY, project progress in ES; saving and Ledger admission remain independent.
-The replacement passed focused automated checks and was installed locally on
-September 22; running sessions need restart. It is not yet user-accepted.
-
-At the product-contract level:
-
-- load the smallest stable routing layer and only the detailed rules required by the task;
-- send the new user message plus explicitly requested/admitted context;
-- keep configured development rules visible by source and provenance, admit new rule rows by default, and preserve an explicit exclusion;
-- keep ordinary skill metadata out of the model-visible catalog until the user enables that skill, while leaving full skill bodies lazy;
-- treat `@file` as an explicit refresh and do not repeatedly append unchanged file bodies;
-- let searches, listings, file reads, probes, dead ends, and bulky tool outputs expire from the model-visible working set after their useful conclusion and evidence pointer are retained;
-- keep exact full events in durable on-disk evidence;
-- preserve changed paths, semantic changes, verification, blockers, and the next action rather than entire stale file bodies;
-- keep memory curated and attributable rather than mirroring transcripts;
-- prefer authoritative runtime/provider token usage and context-window sizes; estimates are fallback only.
-
-Do not turn `GUIDE.md` into an exploration log. Promote only durable rules or facts that change how future agents should work; replace stale guidance instead of accumulating discoveries.
+See the [context reference](context.md).
 
 ## Session Semantics
 
@@ -281,13 +178,9 @@ Elpis keeps its own provider-neutral continuity state even when a provider also 
 
 Exact resume and lean continuation, including `GOAL.md` and `ES.md`, are specified in [sessions.md](sessions.md).
 
-Reasoning tokens count toward usage, but hidden reasoning is not a useful transcript to carry forward verbatim. Preserve decisions and evidence; do not retain streamed tool events and large outputs indefinitely in the model-visible working set.
-
 ## UI Identity
 
-Follow [R10](#confirmed-requirements) and the accepted parity contract for shared
-surfaces. Elpis-specific controls must keep context, memory, provider and permission
-state legible. Context-specific mechanics belong in [context.md](context.md).
+Elpis-specific controls keep context, memory, provider and permission state legible. Context-specific mechanics belong in [context.md](context.md).
 The dashboard remains a dashboard, with its existing scope preserved.
 
 ### Acceptance
@@ -315,4 +208,4 @@ Verification is proportional to the change and must establish behavior, not mere
 - Use `LOCAL_BUILD_RULES.md` for local Rust build and test commands.
 - Use `SHIPPING_RULES.md` for release verification and clean-machine checks.
 - Use `.github/workflows/embedded-elpis-linux.yml` for CI Rust formatting, focused tests, release build, executable identity, and artifact verification.
-- Record current acceptance state and evidence in `TASKS.md`.
+- Record current acceptance state in [ES.md](../ES.md).

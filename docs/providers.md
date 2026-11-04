@@ -71,7 +71,7 @@ You can verify model switching, UI model banner rendering, and TUI state changes
 
 ## 3. Provider Wire Protocol Translation
 
-Elpis translates canonical turn objects into vendor-native HTTP payloads and translates vendor stream chunks back into unified `ResponseEvent` streams (`codex-rs/core/src/chat_completions.rs`):
+The [Elpis gateway](../codex-rs/elpis-gateway/src/lib.rs) translates Responses requests into vendor-native payloads and returns Responses events. The adapters are [Chat Completions](../codex-rs/elpis-gateway/src/chat.rs), [Anthropic](../codex-rs/elpis-gateway/src/anthropic.rs), and [Gemini](../codex-rs/elpis-gateway/src/gemini.rs):
 
 | Canonical Elpis Event | OpenAI Responses | Anthropic Messages | Gemini GenerateContent |
 | :--- | :--- | :--- | :--- |

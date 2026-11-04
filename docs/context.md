@@ -32,7 +32,7 @@ flowchart TD
     Runtime --> History[Conversation history]
     History --> Compact[Native compaction]
     Compact --> Runtime
-    History -. explicit legacy force-prune .-> Rewrite[Retrospective history rewrite]
+    History -. legacy force-prune unavailable .-> Rewrite[Retrospective history rewrite]
     Rewrite -.-> Runtime
     Runtime -. optional experimental dispatch .-> Graph[Persisted work graph]
     Graph --> Workers[Scoped workers and dependent verification]
@@ -42,8 +42,7 @@ flowchart TD
 The model proposes actions; the runtime executes allowed tools and feeds their
 results back. More results improve observability but consume context and time.
 Smart Prune can reduce selected tool output before its first admission, while
-native compaction summarizes existing history. The legacy force-prune path can
-rewrite already-admitted tool output. Any reduction can lose useful detail. The
+native compaction summarizes existing history. Any reduction can lose useful detail. The
 transcript and artifacts remain the place to verify a shortened claim. A checkpoint
 carries continuity into later turns, but can also carry stale assumptions. Admission
 is a user control, not a truth check.
@@ -64,20 +63,22 @@ restrict writes; it cannot prove that a permitted edit is correct.
 
 ---
 
+### Admission requirements
+
+The new user message and explicitly admitted context reach the model. Treat `@file` as an explicit refresh; do not repeatedly append unchanged file bodies. After retaining their useful conclusion and evidence pointer, let searches, listings, file reads, probes, dead ends and bulky tool outputs leave the working set. Preserve full events in durable evidence and retain changed paths, verification, blockers and the next action. Prefer authoritative runtime or provider token usage and window sizes; use estimates only as a fallback.
+
 ## 2. Context-control mechanisms and native compaction
 
 Long agent sessions accumulate dead ends, voluminous search results, and repetitive file reads. Elpis separates **working context** from **durable evidence**.
 
-Elpis has three normal context-control mechanisms. Smart Prune is optional; native Codex
-compaction is independent of it rather than a pruning fallback. A separate legacy forced
-rewrite remains exposed for emergency recovery and compatibility, but is not Smart Prune.
+Smart Prune is optional; native Codex compaction is independent of it rather than a pruning fallback. The legacy `/force-prune` command is listed but unavailable in this build.
 
 | Mechanism | Trigger | Scope | Behavior | Failure Recovery |
 | :--- | :--- | :--- | :--- | :--- |
 | **RTK filter** | Tool execution | Shell output (`rg`, `git status`, `find`) | Compacts raw command output using pattern filters before the agent sees it. | Fallback to unfiltered output on tool error. |
 | **Safety cap** | Tool execution | All raw tool outputs | Hard-truncates exceptionally large output blobs to protect context limits. Inherited from Codex, unchanged. | Preserves header and footer with a truncation notice. |
 | **Smart Prune — Experimental** | Enabled with `/prune`, `/smart-prune on`, the Context Ledger, or settings | Eligible fresh tool results | Optimizes a completed tool result before that result's first admission to model-visible history. It never revisits already-admitted history. | Fails open: the original tool result is admitted unchanged. |
-| **Legacy forced rewrite** | Explicit `/force-prune <1-100>` or app-server `thread/prune/start` | Eligible tool output already in history | Replaces selected old output and therefore changes the reusable prompt prefix. This is a separate retrospective mechanism, not Smart Prune. | A failed pass leaves history unchanged. |
+
 
 RTK is a separate binary that you install yourself; `scripts/install-elpis.sh` only reports whether `rtk` is on `PATH`. On a launch that finds `rtk` on `PATH` with no `$ELPIS_HOME/hooks.json` of your own (`$ELPIS_HOME` defaults to `~/.elpis-next`), Elpis writes the `PreToolUse` hook that calls `rtk hook claude`. It then passes the normal startup hook review before it can run. An existing `hooks.json` is never modified, so `{"hooks":{}}` opts out permanently, and Elpis's hook runtime (`codex-rs/hooks/src/events/pre_tool_use.rs`) is what accepts RTK's rewrite response.
 
@@ -86,9 +87,7 @@ Smart Prune is **off by default**. `/prune` is a one-way convenience command tha
 subsequent turns, not a turn already in flight. Smart Prune sees fresh eligible output before
 `record_conversation_items`, so it does not rewrite a prefix the main model has already seen.
 
-`/force-prune <pct>` is different: it immediately starts the legacy retrospective operation
-and may reduce prompt-cache reuse. The app-server's `thread/prune/start` method reaches that
-same legacy operation; clients must not treat it as the admission-time Smart Prune switch.
+`/force-prune <pct>` is listed for compatibility but does not start a prune in this build. It is separate from the admission-time Smart Prune switch.
 
 `/compact N` saves a pressure threshold checked before user turns and between
 model/tool iterations during ongoing work. When remaining usable context is at
@@ -98,7 +97,6 @@ custom target, that ongoing turn suppresses repeated pressure compactions until
 context falls below the target; native context-limit protection remains active.
 N may be any finite positive number below 70, including decimals. Settings live
 in `compaction.json` in the runtime home; absence preserves the native policy.
-The local runtime threshold was changed from 25 to 30 at Masih's request.
 This does not enable Smart Prune or automatic memory.
 
 `/compact` immediately runs Codex's native compaction/summarization lifecycle when invoked; it
@@ -124,6 +122,10 @@ so they stay readable.
 ---
 
 ## 3. Memory and checkpoints
+
+Memory stores reusable facts and proven procedures, not transcripts. Promotion requires repeated useful recall across distinct contexts. Memory must remain searchable, attributable, reviewable, deletable and bounded. Deleted or faded facts enter a searchable archive before baseline reset; archive failure must stop the reset.
+
+Applicable project instructions and behavioral rules must reach the model and action layer. Enforce hard safety rules in code where prompts are insufficient.
 
 The memory loop has three human-readable files and one admission control. It does
 not require an embedding service, vector database, or autonomous memory agent.
@@ -252,48 +254,6 @@ implementation of Jcode's retrieval architecture. Sources:
 [OpenClaw memory](https://docs.openclaw.ai/concepts/memory),
 [Jcode memory description](https://jcode.sh/#a-good-built-in-memory-system).
 
-### Historical Luna behavior, verified September 13 and no longer current
-
-The retired Luna implementation's local fake-provider runtime test passed response-completion saving,
-pre-compaction saving, receipt evidence, restart admission, malformed-output
-preservation, concurrent manual-edit protection, and disabled behavior.
-The previous installed runtime failed the new response-completion assertion,
-demonstrating that the check detects the missing trigger.
-
-A separate Luna-only live test saved a fictional project's port as 44713,
-corrected it to 44719, restarted the app-server, and obtained 44719 from admitted
-memory. With both Memory and ES admission disabled in another fresh thread, the
-same query returned UNKNOWN. Saving turns took 8.47 and 7.83 seconds including
-the main acknowledgement and memory call; recall/control turns took 3.31 and
-3.62 seconds. This is a small factual-recall control, not a general benchmark.
-Evidence: `.tmp/final-candidate/memory-live-runtime-result.json` and
-`.tmp/final-candidate/memory-completion-runtime.log`.
-
-At that time, Elpis workspace saving and Memory admission were enabled locally. Six explicit
-user preferences were consolidated by Luna in an isolated bootstrap, reviewed,
-and copied into the actual MEMORY file; synthetic test facts were not promoted.
-The saved notes cover Luna-only memory, simplicity, literal checklists, user-led
-launching, queue editing, and usage-window dismissal. Bootstrap source and recovery
-records are under `~/.elpis/memory-bootstrap/1789282684322/`.
-
-Installed CLI SHA256:
-`6d47e53a1012c26cdff54438d369be7f2f8f3dfe0d1fb556287248f9f749ebd7`.
-The running process must restart to acquire the response-completion trigger.
-Other workspaces remain opt-in. The installed IDE extension 0.1.20's bundled
-app-server was updated locally; stripped runtime SHA256:
-`e3d9f9e86298b10ca17e765f696d47f4174f73588e411685ecaaf22320d78a85`.
-The runtime memory fixture passed on that artifact. Recovery binaries are in
-`~/.local/share/elpis/release-recovery/scroll-memory-20260913/`.
-The final TUI suite passed 3,195 tests with five ignored, including root checkpoint
-ownership and Usage dismissal; `.tmp/final-candidate/wheel-memory-tui-tests.log`.
-General memory benefit and final user acceptance remain open.
-
-The resumed primary conversation subsequently produced a committed Luna save
-receipt on September 13. This establishes that the installed response-completion
-trigger runs in the actual workspace, beyond the isolated tests. It does not mean
-every response should add a new memory: unchanged durable notes are an explicit
-valid result, while temporary work belongs in ES.
-
 ### Memory search and agent-owned saving are separate
 
 Saved memories are activated by the user clicking or toggling
@@ -307,15 +267,6 @@ still owns explicit saves, and admitting Memory still supplies the file rather
 than automatically selecting passages with RAG. Retrieved passages become context when the agent
 calls the search tool. Vectors help locate text; they do not expand the context
 window or establish that a saved claim is true.
-
-A September 13 local comparison used the same two queries over the memory file
-and 32 RAG Python source files (389 source passages), excluding generated book
-indexes. API `qwen/qwen3-embedding-4b` and local MiniLM both retrieved relevant
-index-lifecycle safeguards, with unrelated passages also returned. No clear API
-quality improvement was demonstrated. Both returned almost the entire small
-memory file, so this case showed no memory-context saving. Raw inputs, source
-hashes and results are in `.tmp/rag-api-eval/`; this is a small diagnostic, not a
-general RAG benchmark.
 
 ### Testing useful lessons
 
@@ -336,55 +287,9 @@ A useful evaluation tests behavior, not just file population:
   conflicting obsolete rule. Check an unrelated task for inappropriate application.
 - Verify transient progress, guesses and untrusted instructions are not promoted.
 
-The September 13 execution of the
-[lesson acceptance draft](evals/memory-lessons-review.md) saved a project lesson,
-kept temporary progress in ES, changed the recommended action with admission
-enabled, and followed a corrected recommendation. However, it also applied Copper
-Orchard's project-specific lesson to unrelated Silver Meadow. That scope control
-failed: populated memory and successful recall do not establish reliable judgment.
-Raw results are in `.tmp/final-candidate/memory-lessons-live-result.json`.
-The candidate adds explicit scope guidance and an admission regression test.
-The one-request replay still failed: Luna recommended Copper Orchard's command
-for Silver Meadow, despite receiving the guidance in the actual developer context.
-Saving is verified; reliable semantic project scoping is not. The isolated probe
-asks about another project within the same working directory, so separating files
-by workspace alone would not establish that this particular error is fixed.
+The [memory lesson acceptance record](evals/memory-lessons-review.md) contains the scoping evidence and its limits.
 
-### Memory and compaction timing, September 13
-
-Three actual workspace responses took another 24.276, 26.092 and 25.924 seconds
-after their final text before the turn completed. Their committed memory receipts
-were written 3–4 milliseconds before completion. This measures the combined
-post-answer saving delay; it does not isolate Luna inference from local work.
-The older receipts have no duration fields, and the last recorded compaction
-predates those saves, so these observations cannot explain earlier multi-minute
-compactions.
-
-The candidate adds preparation, request and commit milliseconds to future memory
-receipts. Commit timing ends before the final receipt write. Existing logs also
-record remote compaction's pre-hooks, preparation, request, history application
-and post-hooks as scalar durations. Request timing includes the client/network
-lifecycle, not just provider inference. This instrumentation supplies evidence
-for diagnosis; it is not a speed fix. The saved pressure threshold remains
-30% context remaining.
-
-### Observed checkpoint pressure, September 12
-
-A read-only inspection at source commit `391ec269` found the generated checkpoint
-had 9,604 characters and 41 shell-command entries. Its `Exact Evidence` section
-fell outside the first 8,000 characters. This confirms a concrete ordering problem:
-old command entries can occupy the admitted space before the evidence pointer.
-The separate repository `ES.md` had 52,698 characters; that is manually accumulated
-project state, not proof that 52,698 characters were automatically admitted.
-These are one-session observations, not a memory-quality score.
-
-The root project checkpoint was subsequently consolidated manually from 58,967 to
-4,436 characters, replacing accumulated contradictory status blocks with current
-state, constraints, evidence links and remaining work. Earlier notes are retained
-outside the active file in `.tmp/final-candidate/root-es-before-consolidation.md`.
-The active task checklist was consolidated similarly. This is maintenance of
-agent-written project notes, not an automatic semantic-memory capability or a
-measured improvement in model decisions.
+### Checkpoint fidelity
 
 Semantic checkpoint saving still requires evidence of fidelity. Its acceptance criteria are to
 retain the current goal, constraints, unresolved work and evidence locations within
@@ -397,35 +302,9 @@ defaults.
 
 ---
 
-### Research boundary: historical real-task evidence
+### Research boundary
 
-The recovered `terminal-bench-eval` branch contains historical pilot results that
-must not be confused with memory evaluation. A September 12 read-only check of the
-September 10 CompCert pair found the same binary hash, Terra model, medium effort
-and 60,000-token compaction setting in both saved launch records. The raw rollouts
-contain one native compaction each. The saved results report both tasks passing:
-
-| Recorded measure | Pruning off | Pruning on |
-| --- | ---: | ---: |
-| Model requests | 164 | 190 |
-| Main-model tokens | 6,091,091 | 6,793,934 |
-| Native compactions, recounted from raw rollouts | 1 | 1 |
-
-This single pair does not establish general causality or current-build performance.
-The task verdicts and token totals were read from saved results, not independently
-rerun; optimizer cost is not included in the main-token row. It does show why gross
-pruned tokens cannot be presented as total savings, and why fewer compactions must
-be measured rather than assumed. It says nothing about the usefulness of admitted
-GOAL, ES or MEMORY. The historical six-pair report also describes mixed results;
-its broader statistics have not been independently reproduced here.
-
-Evidence remains under `~/elpis-tb-scratch/compact/compile-compcert-{off,on}/`;
-the metadata-only recount is `.tmp/final-candidate/historical-compcert-audit.json`.
-The source report is `docs/evals/terminal-bench/PLAN.md` on
-`recovery/committed-20260910/terminal-bench-eval`. A paper should separate delivery
-correctness, recall quality, task completion, total usage and latency, retaining
-negative results and excluding invalid runs. There is no defensible current claim
-that Elpis has proven superior memory or uniformly cheaper agent execution.
+The [evaluation evidence](evals/RESULTS.md) records task outcomes and their limits. Do not treat pruned tokens as total cost savings.
 
 ## 4. Context Ledger (`Alt+C` / `Ctrl+X`) & `admission.toml`
 
@@ -452,7 +331,7 @@ and leaves Full Access active only for the current chat.
 
 ### Terminal appearance
 
-Shared terminal styling and animations follow the Codex parity contract ([Proof Standard](GUIDE.md#proof-standard)).
+Shared terminal behavior follows the project’s agent rules.
 `/theme` opens the Codex syntax-theme picker with live preview and cancel/restore.
 It changes code highlighting, not the terminal's base colors. The retained Ledger
 uses its existing context colors; it does not impose a separate chatbox theme.

@@ -69,22 +69,13 @@ grep -rn 'Desktop/\|/home/[a-z]' codex-rs --include='*.rs' | grep -v MasihMoafi
   pin with no wheel for a newer Python breaks installs on newer distros.
 - Optional features must degrade to a clear message, never a crash or a stall.
 
-## 5. Do not commit build or test artifacts
-
-`cargo test` writes `*.snap.new` and `.*.pending-snap` next to the sources when
-snapshot tests fail. A blind `git add -A` sweeps in a hundred of them. Check
-`git status --short` before staging.
-
 ## 6. Claims must match reality
 
-Per `AGENTS.md`, Masih is the sole arbiter of done. In addition, for anything
-user-facing:
+For anything user-facing:
 
 - The README's stated version must be the version `releases/latest` actually serves.
 - Do not describe a feature as available if the shipped install path cannot reach it.
-- Never add a machine-learning dependency to this repository. Retrieval is an MCP server
-  the user registers; the engine, its models, and their download size stay outside Elpis
-  and outside the release artifact.
+- Retrieval and speech dependency boundaries are in the [technical guide](GUIDE.md#confirmed-requirements).
 
 ## 7. Selector evidence is not shipping evidence
 
@@ -96,9 +87,8 @@ evidence. Even a passing `--surface full` run does not replace:
 - the tag-only workflow and confirmation that the release was published;
 - verification on a clean machine or clean container;
 - an authorized remote-CI run;
-- Masih's manual acceptance.
 
 The selector does not build or prove a shippable release artifact; it does not install,
-package, launch, tag, publish, or grant acceptance. Its Cargo check and test rows may
+package, launch, tag, or publish. Its Cargo check and test rows may
 still compile code and consume CPU and disk. Keep the release mechanics and
 clean-machine checks above.
