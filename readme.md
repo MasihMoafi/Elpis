@@ -14,22 +14,28 @@
 
 <p align="center"><a href="https://github.com/MasihMoafi/Elpis/releases">Releases</a> · <a href="https://elpis.masihmoafi.com">Website</a> · <a href="docs/GUIDE.md">Technical guide</a> · <a href="CONTRIBUTING.md">Contributing</a> · <a href="LICENSE">License</a></p>
 
-## Install
+## Quickstart
 
-One command installs both apps, the desktop app and the terminal app, on any Linux x86_64:
+Install both apps, the desktop app and the terminal app, on Linux x86_64:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/main/scripts/install.sh | bash
 ```
 
-On Ubuntu and Debian it installs the two packages with apt; on other systems, the AppImage. Every file's checksum is checked. Or pick a file yourself from the [v0.5.1 release](https://github.com/MasihMoafi/Elpis/releases/tag/v0.5.1):
+Then run `elpis-app` for the desktop app or `elpis` for the terminal app, and sign in with ChatGPT or Claude, or set up a provider. Claude models run through your own [Claude Code](https://code.claude.com) install.
 
-- **Ubuntu, Debian:** `sudo apt install ./elpis_0.5.1_amd64.deb ./elpis-desktop_0.5.1_amd64.deb`, then `elpis-app`.
+<details>
+<summary>Other ways to install</summary>
+
+From the [v0.5.1 release](https://github.com/MasihMoafi/Elpis/releases/tag/v0.5.1); every file has a SHA-256 checksum:
+
+- **Ubuntu, Debian:** `sudo apt install ./elpis_0.5.1_amd64.deb ./elpis-desktop_0.5.1_amd64.deb`
 - **Fedora, Arch, Omarchy, any Linux:** `chmod +x Elpis-0.5.1-x86_64.AppImage`, then run it; add `elpis` to run the terminal app.
-- **Arch, Omarchy (native package):** `git clone https://github.com/MasihMoafi/Elpis && cd Elpis/packaging/aur/elpis-bin && makepkg -si`.
-- **Terminal app only:** `curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/v0.5.1/scripts/install-elpis.sh | bash` (read it first).
+- **Arch, Omarchy (native package):** `git clone https://github.com/MasihMoafi/Elpis && cd Elpis/packaging/aur/elpis-bin && makepkg -si`
+- **Terminal app only:** `curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/v0.5.1/scripts/install-elpis.sh | bash`
 
-Both apps share one engine and one state folder, `~/.elpis-next`. Sign in with ChatGPT or Claude, or set up a provider. Claude models run through your own [Claude Code](https://code.claude.com) install.
+Both apps share one engine and one state folder, `~/.elpis-next`.
+</details>
 
 ## Why Elpis?
 
