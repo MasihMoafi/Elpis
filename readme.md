@@ -18,7 +18,13 @@
 
 ## Install
 
-Linux x86_64. Download from the [v0.5.1 release](https://github.com/MasihMoafi/Elpis/releases/tag/v0.5.1):
+One command installs both apps, the desktop app and the terminal app, on any Linux x86_64:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/main/scripts/install.sh | bash
+```
+
+On Ubuntu and Debian it installs the two packages with apt; on other systems, the AppImage. Every file's checksum is checked. Or pick a file yourself from the [v0.5.1 release](https://github.com/MasihMoafi/Elpis/releases/tag/v0.5.1):
 
 - **Ubuntu, Debian:** `sudo apt install ./elpis_0.5.1_amd64.deb ./elpis-desktop_0.5.1_amd64.deb`, then `elpis-app`.
 - **Fedora, Arch, Omarchy, any Linux:** `chmod +x Elpis-0.5.1-x86_64.AppImage`, then run it; add `elpis` to run the terminal app.
