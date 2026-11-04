@@ -46,11 +46,15 @@ jobs:
           - { name: ubuntu-24.04-script, image: 'ubuntu:24.04', way: script }
           - { name: fedora-appimage, image: 'fedora:42', way: appimage }
           - { name: arch-appimage, image: 'archlinux:latest', way: appimage }
+          - { name: ubuntu-24.04-quick, image: 'ubuntu:24.04', way: quick }
+          - { name: fedora-quick, image: 'fedora:42', way: quick }
     name: ${{ matrix.name }}
     container: ${{ matrix.image }}
     env:
       TAG: ${{ inputs.tag }}
       REL: https://github.com/MasihMoafi/Elpis/releases/download/${{ inputs.tag }}
+      # No FUSE in containers: an AppImage runs by extracting itself.
+      APPIMAGE_EXTRACT_AND_RUN: 1
     steps:
       - name: Base tools
         run: |
@@ -59,13 +63,13 @@ jobs:
           if command -v dnf; then dnf install -y -q curl xorg-x11-server-Xvfb xorg-x11-xauth gtk3 nss alsa-lib libXScrnSaver libXtst mesa-libgbm libsecret which; fi
           if command -v pacman; then pacman -Syu --noconfirm --needed curl xorg-server-xvfb xorg-xauth gtk3 nss alsa-lib libxss libxtst mesa libsecret which; fi
       - name: The release's files
-        if: matrix.way != 'script'
+        if: matrix.way == 'deb' || matrix.way == 'appimage'
         uses: actions/download-artifact@v4
         with:
           name: release-files
           path: /dl
       - name: Install as the README says
-        if: matrix.way != 'script' || needs.fetch.outputs.draft != 'true'
+        if: (matrix.way != 'script' && matrix.way != 'quick') || needs.fetch.outputs.draft != 'true'
         run: |
           set -eux
           mkdir -p /dl && cd /dl
@@ -75,6 +79,11 @@ jobs:
               for f in elpis_${V}_amd64.deb elpis-desktop_${V}_amd64.deb; do sha256sum -c "$f.sha256"; done
               DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ./elpis_${V}_amd64.deb ./elpis-desktop_${V}_amd64.deb
               echo "TUI=elpis" >> "$GITHUB_ENV"; echo "APP=elpis-app" >> "$GITHUB_ENV"; echo "NODE=/opt/elpis-desktop/bin/node" >> "$GITHUB_ENV" ;;
+            quick)
+              # The README's one command, run from this checkout's scripts/install.sh against the release under test.
+              curl -fsSL "https://raw.githubusercontent.com/MasihMoafi/Elpis/$GITHUB_SHA/scripts/install.sh" | ELPIS_RELEASE_VERSION=$TAG bash
+              if command -v apt-get >/dev/null; then echo "TUI=elpis" >> "$GITHUB_ENV"; echo "APP=elpis-app" >> "$GITHUB_ENV"; echo "NODE=/opt/elpis-desktop/bin/node" >> "$GITHUB_ENV"
+              else echo "TUI=$HOME/.local/bin/elpis" >> "$GITHUB_ENV"; echo "APP=$HOME/.local/bin/elpis-app" >> "$GITHUB_ENV"; mkdir -p /dl && cd /dl && "$HOME/.local/lib/elpis/Elpis.AppImage" --appimage-extract >/dev/null && echo "NODE=env APPDIR=/dl/squashfs-root /dl/squashfs-root/bin/node" >> "$GITHUB_ENV"; fi ;;
             script)
               curl -fsSL "https://raw.githubusercontent.com/MasihMoafi/Elpis/$TAG/scripts/install-elpis.sh" | bash
               echo "TUI=$HOME/.local/bin/elpis" >> "$GITHUB_ENV" ;;
@@ -84,7 +93,7 @@ jobs:
               echo "TUI=/dl/squashfs-root/AppRun elpis" >> "$GITHUB_ENV"; echo "APP=/dl/squashfs-root/AppRun" >> "$GITHUB_ENV"; echo "NODE=env APPDIR=/dl/squashfs-root /dl/squashfs-root/bin/node" >> "$GITHUB_ENV" ;;
           esac
       - name: Licence notices ship with the desktop app
-        if: matrix.way != 'script'
+        if: matrix.way == 'deb' || matrix.way == 'appimage'
         run: |
           set -eux
           # Minimal container images skip /usr/share/doc on install, so a .deb's notices are read from the package itself.
@@ -93,12 +102,12 @@ jobs:
           else d=/dl/squashfs-root; fi
           test -s "$d/LICENSE"; grep -q '^== npm packages' "$d/THIRD-PARTY-NOTICES.txt"; grep -q 'SIL Open Font License' "$d/THIRD-PARTY-NOTICES.txt"
       - name: Terminal app runs
-        if: matrix.way != 'script' || needs.fetch.outputs.draft != 'true'
+        if: (matrix.way != 'script' && matrix.way != 'quick') || needs.fetch.outputs.draft != 'true'
         run: |
           set -eux
           out=$($TUI --version); echo "$out"; test "$out" = "elpis ${TAG#v}"
       - name: Desktop app opens and reports the release version
-        if: matrix.way != 'script'
+        if: matrix.way == 'deb' || matrix.way == 'appimage' || (matrix.way == 'quick' && needs.fetch.outputs.draft != 'true')
         run: |
           set -eux
           export HOME=/tmp/home; mkdir -p $HOME
