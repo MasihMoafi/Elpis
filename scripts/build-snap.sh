@@ -135,9 +135,12 @@ description: |
 
   Commands: \`elpis-agent\` opens the desktop app; \`elpis-agent.love-spot\` opens Love Spot; \`elpis-agent.workflows\` opens Workflows; \`elpis-agent.elpis\` opens the terminal app.
 links:
-  website: [https://elpis.masihmoafi.com]
-  source-code: [https://github.com/MasihMoafi/Elpis]
-  issues: [https://github.com/MasihMoafi/Elpis/issues]
+  website:
+    - https://elpis.masihmoafi.com
+  source-code:
+    - https://github.com/MasihMoafi/Elpis
+  issues:
+    - https://github.com/MasihMoafi/Elpis/issues
 base: core24
 grade: stable
 confinement: classic
@@ -153,6 +156,9 @@ apps:
   elpis:
     command: bin/elpis
 YAML
+
+# The Store rejects a snap.yaml that does not parse (3 Nov: revision 3, an unquoted URL in a flow list).
+python3 -c 'import sys, yaml; yaml.safe_load(open(sys.argv[1]))' "$S/meta/snap.yaml" || { echo "meta/snap.yaml does not parse" >&2; exit 1; }
 
 # Licence notices for everything the snap carries or bundles.
 node "$APP/scripts/third-party-notices.mjs" "$S" "$S/THIRD-PARTY-NOTICES.txt"; cp "$R/LICENSE" "$S/LICENSE"
