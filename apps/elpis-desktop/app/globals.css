@@ -982,7 +982,9 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 :is(.workflow-mark, .conversation-colour-swatch)[data-colour="amber"], .thread-row[data-conversation-colour="amber"] { --workflow-colour:var(--brand-accent); }
 /* A chat's colour fills its circle only; the row keeps the plain sidebar look. A live status (working, unread,
  * waiting, error) shows in the circle instead, so the colour never hides it. */
-.thread-row[data-conversation-colour] .conversation-state-slot .thread-dot[data-state="idle"] { border-color:var(--workflow-colour); background:var(--workflow-colour); }
+/* 4 Nov: an unread chat kept its amber circle, so choosing a colour seemed to do nothing. A coloured chat shows its colour
+   read or unread (unread stays bold); working, waiting and error keep their status colours. */
+.thread-row[data-conversation-colour] .conversation-state-slot .thread-dot:is([data-state="idle"], [data-state="unread"]) { border-color:var(--workflow-colour); background:var(--workflow-colour); }
 @keyframes spin { to { transform:rotate(360deg); } }
 /* A collapsible group of chats (components/sidebar-group.tsx): a project, or a group the person made. */
 .sidebar-group { margin-bottom:2px; }

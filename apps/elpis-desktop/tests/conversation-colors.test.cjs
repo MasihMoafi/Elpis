@@ -112,3 +112,23 @@ for (const colorScheme of ['light', 'dark']) test(`each chat colour fills the ch
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
+
+// 4 Nov, Masih: "the colour in chat when you right click and change it, nothing happens." His chats were unread, and an
+// unread circle stayed amber. A coloured chat shows its colour unread too; its title stays bold.
+test('an unread chat shows its chosen colour in its circle and keeps its bold title', async () => {
+  const f = await fixture({ staticDir: process.env.ELPIS_GEOMETRY_STATIC_DIR, width: 1280, height: 900, colorScheme: 'light', threads }), { page } = f;
+  try {
+    await f.open('long-chat'); await unfocus(f);
+    const target = row(page, 'chat-a');
+    await target.locator('.thread-link').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: /^Mark as unread/ }).click();
+    await target.locator('.thread-dot[data-state="unread"]').waitFor();
+    const amber = await target.locator('.thread-dot').evaluate(element => getComputedStyle(element).backgroundColor);
+    await choose(page, 'chat-a', 'Blue'); await unfocus(f);
+    const dot = target.locator('.conversation-state-slot .thread-dot');
+    assert.equal(await dot.getAttribute('data-state'), 'unread', 'the chat is still unread');
+    assert.notEqual(await dot.evaluate(element => getComputedStyle(element).backgroundColor), amber, 'the unread circle changed from amber to the chosen colour');
+    assert.equal(await target.locator('.thread-title').evaluate(element => getComputedStyle(element).fontWeight), '600', 'unread stays bold');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
