@@ -172,11 +172,15 @@ button:disabled { cursor:not-allowed; }
 .kbd { display:inline-flex; align-items:center; height:22px; padding:0 7px; border:1px solid var(--border); border-bottom-width:2px; background:var(--background); font:500 var(--text-small)/1 var(--ui-font, Inter, system-ui, sans-serif); color:var(--foreground); white-space:nowrap; }
 .kbd-hint, [data-shortcut]::after { flex-shrink:0; margin-left:auto; padding-left:12px; font:500 var(--text-small)/1 var(--ui-font, Inter, system-ui, sans-serif); color:var(--subtle-foreground); white-space:nowrap; }
 [data-shortcut]::after { content:attr(data-shortcut); }
-.thread-list { overflow-x:hidden; overflow-y:auto; flex:1; min-height:0; margin:0 -4px 0 -8px; padding:0 4px 10px 8px; scroll-snap-type:y mandatory; }
+.thread-list { overflow-x:hidden; overflow-y:auto; flex:1; min-height:0; margin:0 -4px 0 -8px; padding:0 4px 0 8px; scroll-snap-type:y mandatory; }  /* its bottom gap is the end spacer below */
 /* Rows, the "More …" buttons and every section heading (Agent runs too) are snap points, so scrolling to the end can
    always reach the last of them, even when its section is folded. */
 .thread-list :is(.thread-row, .thread-more, .section-label-row, section > :first-child) { scroll-snap-align:start; scroll-snap-stop:always; }
 .thread-list > section:first-child > .section-label-row { padding-top:0; }
+/* A spacer as tall as needed (under one row) so the list's end is itself a row position: without it, at most window
+   heights the end was not a snap point and the last chat was snapped out of view (4 Nov recording). Set by
+   fitChatListEnd in app/page.tsx. */
+.thread-list::after { content:""; display:block; height:var(--list-end-space, 10px); }
 .thread-link { min-width:0; flex:1; text-align:left; background:none; border:0; padding:7px 4px 7px 8px; border-radius:7px; display:block; color:inherit; font-size:var(--text-sm); line-height:20px; }
 .thread-link span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:block; }
 /* In the sidebar tree the agent mark follows the name, so names step by the same indent as their status dots. */

@@ -155,6 +155,21 @@ const NAV_PAGES = [
   { id: "customize", name: "Customize", Icon: Blocks },
 ] as const;
 
+/** Sizes the chat list's end spacer (globals.css .thread-list::after) so that the end of the list is a whole-row snap
+ * position at every list height: the end then shows the last chat whole instead of snapping back over it. */
+const fittedLists = new WeakSet<HTMLElement>();
+function fitChatListEnd(list: HTMLElement) {
+  const space = parseFloat(list.style.getPropertyValue("--list-end-space")) || 0;
+  const contentEnd = list.scrollHeight - space, view = list.clientHeight;
+  const origin = list.getBoundingClientRect().top - list.scrollTop;
+  const stops = [...list.querySelectorAll<HTMLElement>(".thread-row, .thread-more, .section-label-row, section > :first-child")]
+    .map(element => element.getBoundingClientRect().top - origin).sort((a, b) => a - b);
+  // A 10px gap under the last chat when a row position allows it, else the end of the last chat.
+  const stop = contentEnd + 10 <= view ? undefined : stops.find(top => top + view >= contentEnd + 10) ?? stops.find(top => top + view >= contentEnd - 0.5);
+  const next = `${stop === undefined ? 10 : Math.max(0, Math.round(stop + view - contentEnd))}px`;
+  if (list.style.getPropertyValue("--list-end-space") !== next) list.style.setProperty("--list-end-space", next);
+}
+
 export default function Home() {
   const preferences = useAppPreferences();
   const hiddenPages = preferences.hiddenPages.split(",");
@@ -229,6 +244,14 @@ export default function Home() {
   const [marked, setMarked] = useState<string[]>([]);
   const markAnchor = useRef<string | null>(null);
   const threadList = useRef<HTMLDivElement>(null);
+  useEffect(() => {   // keep the chat list's end on a whole row as the window, the rows or their labels change
+    const list = threadList.current; if (!list || fittedLists.has(list)) return;   // the list mounts after the splash
+    fittedLists.add(list);
+    let frame = 0; const fit = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(() => fitChatListEnd(list)); };
+    new ResizeObserver(fit).observe(list);
+    new MutationObserver(fit).observe(list, { childList: true, subtree: true, characterData: true });
+    fit();
+  });
   // Async rows and viewport changes can leave the last chat painted only part way (lib/whole-rows.ts).
   useWholeRows(threadList, ".thread-row", ".thread-row, .section-label-row, .sidebar-group-row, .thread-more");
   // Folded sections and projects stay as the person leaves them, across restarts (lib/sidebar-folds.ts).
