@@ -28,9 +28,11 @@ ENTRY
 gio trash "$A/meta"
 cat > "$A/AppRun" <<'RUN'
 #!/bin/sh
-# The desktop app, or the terminal app when the first argument is "elpis".
+# The desktop app, or the terminal/Love Spot/Workflows app when the first argument selects it.
 export APPDIR="${APPDIR:-$(dirname "$(readlink -f "$0")")}"
 if [ "${1:-}" = elpis ]; then shift; exec "$APPDIR/bin/elpis" "$@"; fi
+if [ "${1:-}" = love-spot ]; then shift; exec "$APPDIR/bin/love-spot" "$@"; fi
+if [ "${1:-}" = workflows ]; then shift; exec "$APPDIR/bin/elpis-workflows" "$@"; fi
 exec "$APPDIR/bin/elpis-app" "$@"
 RUN
 chmod 0755 "$A/AppRun"

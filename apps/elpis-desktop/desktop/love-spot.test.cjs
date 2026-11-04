@@ -18,7 +18,7 @@ async function launch(args, flushText, flushBrowsers, canRestart = async () => t
   const calls = [], host = { isDestroyed: () => false, isMinimized: () => false, isVisible: () => true, focus: () => calls.push('focus-chat') };
   const openers = { threads: { queue: id => calls.push(['thread', id]) }, newChats: { queue() {} } };
   const sessions = { windows: new Set(), flushText, flushBrowsers: async () => { calls.push('browser-flush'); await flushBrowsers?.(); }, openersFor: () => openers,
-    open: async () => { calls.push('chat'); return host; }, openLoveSpot: async () => { calls.push('love'); } };
+    open: async () => { calls.push('chat'); return host; }, openLoveSpot: async () => { calls.push('love'); }, openWorkflows: async () => { calls.push('workflows'); } };
   const electron = { app, ipcMain: { handle() {}, removeHandler() {} }, dialog: { showErrorBox() {} }, Menu: { buildFromTemplate: x => x, setApplicationMenu() {} } };
   const context = vm.createContext({ __dirname, console, process: { argv: ['electron', 'app', ...args], env: {}, platform: 'linux' },
     sessions, openers, testStore: { get: () => null, flush: async () => calls.push('workspace-flush') }, testServer: { canRestart, close: async () => calls.push('board-close') },
@@ -184,6 +184,16 @@ test('--love-spot-app is its own app under the Love Spot dock icon', async () =>
   f.app.emit('second-instance', {}, ['electron', '--love-spot-app'], '', {}); await f.settle();
   f.app.emit('activate'); await f.settle();
   assert.deepEqual(f.calls, ['love', 'love', 'love'], 'every way back into it opens Love Spot');
+});
+
+test('--workflows-app is its own app under the Workflows dock icon', async () => {
+  const f = await launch(['--workflows-app']);
+  assert.equal(f.identity.desktop, 'elpis-workflows.desktop');
+  assert.match(f.identity.userData, /Elpis Workflows$/);
+  assert.deepEqual(f.calls, ['workflows']);
+  f.app.emit('second-instance', {}, ['electron', '--workflows-app'], '', {}); await f.settle();
+  f.app.emit('activate'); await f.settle();
+  assert.deepEqual(f.calls, ['workflows', 'workflows', 'workflows'], 'every way back into it opens Workflows');
 });
 
 test('a running Elpis routes second-instance Love Spot launches separately from chat and openThread', async () => {

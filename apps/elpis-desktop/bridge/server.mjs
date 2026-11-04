@@ -169,10 +169,10 @@ export async function startDesktopServer(options = {}) {
       const requestedArea = url.pathname.split('/')[2];
       if (ERROR_AREAS.has(requestedArea)) area = requestedArea;
       if (url.origin !== origin) throw new BridgeError('Local application origin required', 403);
-      // Only the split document permits embedding by the app itself.
-      if (url.pathname === '/' && url.searchParams.get('pane') === '1') {
-        response.setHeader('X-Frame-Options', 'SAMEORIGIN');
-        response.setHeader('Content-Security-Policy', response.getHeader('Content-Security-Policy').replace("frame-ancestors 'none'", "frame-ancestors 'self'"));
+      // The split document and Obsidian plugin panes permit embedding by the local application or Obsidian.
+      if ((url.pathname === '/' || url.pathname === '/love-spot.html') && url.searchParams.get('pane') === '1') {
+        response.removeHeader('X-Frame-Options');
+        response.setHeader('Content-Security-Policy', response.getHeader('Content-Security-Policy').replace("frame-ancestors 'none'", "frame-ancestors 'self' app://obsidian.md"));
       }
       if (request.method === 'POST' && request.headers.origin !== origin) throw new BridgeError('Same-origin request required', 403);
       if (url.pathname === '/api/session' && request.method === 'POST') {

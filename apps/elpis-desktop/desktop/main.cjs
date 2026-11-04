@@ -47,10 +47,11 @@ function mayClose(host = window) {
   return choice === 0;
 }
 
-async function openWindow(loveSpot = false) {
+async function openWindow(loveSpot = false, workflows = false) {
   if (!opening) opening = prepareWindows().finally(() => { opening = null; });
   await opening;
   if (loveSpot) return sessionWindows.openLoveSpot();
+  if (workflows) return sessionWindows.openWorkflows();
   if (window && !window.isDestroyed()) {
     if (window.isMinimized()) window.restore();
     if (!window.isVisible()) window.show();
@@ -89,8 +90,8 @@ async function prepareWindows() {
   }
   if (!sessionWindows) {
     sessionWindows = createSessionWindows({ electron: require('electron'), url: server.url, store, browserAgentSocket, quickEntry, screenshotPopup, closeToTray, updates,
-      mayClose, quitting: () => closing, onDark: dark => { darkTheme = dark; }, onClosed: host => { if (window === host) { window = [...sessionWindows.windows].find(host => !sessionWindows.openersFor(host)?.loveSpot); primaryOpeners = sessionWindows.openersFor(window); } },
-      onFocused: (host, openers) => { if (!openers?.loveSpot) { window = host; primaryOpeners = openers; } } });
+      mayClose, quitting: () => closing, onDark: dark => { darkTheme = dark; }, onClosed: host => { if (window === host) { window = [...sessionWindows.windows].find(host => !sessionWindows.openersFor(host)?.loveSpot && !sessionWindows.openersFor(host)?.workflows); primaryOpeners = sessionWindows.openersFor(window); } },
+      onFocused: (host, openers) => { if (!openers?.loveSpot && !openers?.workflows) { window = host; primaryOpeners = openers; } } });
   }
 }
 
@@ -99,9 +100,11 @@ async function prepareWindows() {
 // --love-spot-app (the Love Spot dock icon): Love Spot as its own app, so its window groups under that icon. Wayland
 // takes the app id from the desktop name; its own profile gives it its own single-instance lock.
 const loveSpotApp = process.argv.includes('--love-spot-app');
-app.setName(loveSpotApp ? 'Love Spot' : 'Elpis');
+const workflowsApp = process.argv.includes('--workflows-app');
+app.setName(loveSpotApp ? 'Love Spot' : workflowsApp ? 'Elpis Workflows' : 'Elpis');
 if (loveSpotApp) app.setDesktopName('excalidraw.desktop');
-app.setPath('userData', process.env.ELPIS_DESKTOP_PROFILE || path.join(app.getPath('appData'), loveSpotApp ? 'Elpis Love Spot' : 'Elpis'));
+else if (workflowsApp) app.setDesktopName('elpis-workflows.desktop');
+app.setPath('userData', process.env.ELPIS_DESKTOP_PROFILE || path.join(app.getPath('appData'), loveSpotApp ? 'Elpis Love Spot' : workflowsApp ? 'Elpis Workflows' : 'Elpis'));
 const updates = createAppUpdates({ app, runningApp: path.resolve(__dirname, '..'), restart: async target => {
   if (!await quitApp(target)) throw Error('Restart cancelled. Your windows and drafts are kept open.');
 } });
@@ -135,7 +138,7 @@ async function quitApp(restartTarget) {
       quickEntry?.dispose?.(); screenshotPopup?.dispose?.(); tray?.destroy();
       // All editable text is saved. A page's beforeunload must not veto explicit Quit afterward.
       for (const host of hosts) if (!host.isDestroyed()) host.webContents.on('will-prevent-unload', event => event.preventDefault());
-      if (pendingRestartTarget) app.relaunch({ execPath: pendingRestartTarget, args: loveSpotApp ? ['--love-spot-app'] : [] });
+      if (pendingRestartTarget) app.relaunch({ execPath: pendingRestartTarget, args: loveSpotApp ? ['--love-spot-app'] : workflowsApp ? ['--workflows-app'] : [] });
       app.quit();
       return true;
     } catch (error) {
@@ -152,12 +155,13 @@ async function quitApp(restartTarget) {
 enableWaylandIme(app.commandLine, process.env);
 // Wayland gives apps global shortcuts only through the desktop portal; Claude's app turns on Chromium's portal support the same way.
 app.commandLine.appendSwitch('enable-features', [app.commandLine.getSwitchValue('enable-features'), 'GlobalShortcutsPortal'].filter(Boolean).join(','));
-if (!app.requestSingleInstanceLock({ openThread: openThreadArgument(process.argv), loveSpot: process.argv.includes('--love-spot') })) {
+if (!app.requestSingleInstanceLock({ openThread: openThreadArgument(process.argv), loveSpot: process.argv.includes('--love-spot'), ...(process.argv.includes('--workflows') ? { workflows: true } : {}) })) {
   app.quit();
 } else {
   app.on('second-instance', (_event, argv, _cwd, data) => {
     const loveSpot = loveSpotApp || data?.loveSpot === true || argv.includes('--love-spot');
-    void openWindow(loveSpot).then(() => { if (!loveSpot) primaryOpeners.threads.queue(data?.openThread ?? openThreadArgument(argv)); }).catch(showStartupError);
+    const workflows = workflowsApp || data?.workflows === true || argv.includes('--workflows');
+    void openWindow(loveSpot, workflows).then(() => { if (!loveSpot && !workflows) primaryOpeners.threads.queue(data?.openThread ?? openThreadArgument(argv)); }).catch(showStartupError);
   });
   app.whenReady().then(async () => {
     // Built once: rebuilding an unchanged menu redraws the Linux menu row (Cloudroom's flicker).
@@ -168,18 +172,19 @@ if (!app.requestSingleInstanceLock({ openThread: openThreadArgument(process.argv
       ...appMenu.template(),
     ]));
     if (loveSpotApp) return void await openWindow(true);
+    if (workflowsApp) return void await openWindow(false, true);
     const showWindow = () => void openWindow().catch(showStartupError);
     screenshotPopup = createScreenshotPopup({ BrowserWindow, screen, ipcMain, dark: () => darkTheme });
     quickEntry = startQuickEntry({ app, globalShortcut, BrowserWindow, screen, ipcMain, dark: () => darkTheme,
       drafts: { read: () => store?.read()['elpis-draft-v1:quick-entry'] ?? '', save: text => store.set('elpis-draft-v1:quick-entry', text) },
       onSubmit: text => { void openWindow().then(() => primaryOpeners.newChats.queue(text)).catch(showStartupError); } });
-    await openWindow(process.argv.includes('--love-spot'));
+    await openWindow(process.argv.includes('--love-spot'), process.argv.includes('--workflows'));
     await quickEntry.start(quickEntryShortcut(store));
     tray = createTray({ Tray, Menu, nativeImage, icon: ICON, actions: {
       open: showWindow, newChat: () => { void openWindow().then(() => primaryOpeners.newChats.queue('')).catch(showStartupError); }, quickEntry: () => void quickEntry.toggle(), quit: () => app.quit(),
     } });
   }).catch(showStartupError);
-  app.on('activate', () => { void openWindow(loveSpotApp).catch(showStartupError); });
+  app.on('activate', () => { void openWindow(loveSpotApp, workflowsApp).catch(showStartupError); });
   app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
   app.on('before-quit', event => {
     if (!server || closing) return;

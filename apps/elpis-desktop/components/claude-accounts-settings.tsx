@@ -15,7 +15,10 @@ export function ClaudeAccountsSettings({ refreshKey, onChanged }: { refreshKey: 
   const [error, setError] = useState("");
   const [code, setCode] = useState("");
   const [loginId, setLoginId] = useState<string | null>(null);
-  const load = useCallback(async () => { setData(await api<Accounts>("/providers/claude-accounts")); }, []);
+  const load = useCallback(async () => {
+    const res = await api<Accounts>("/providers/claude-accounts");
+    setData(res && Array.isArray(res.accounts) ? res : null);
+  }, []);
   useEffect(() => { void load().catch(e => setError(e instanceof Error ? e.message : String(e))); }, [load, refreshKey]);
   const signingIn = data?.accounts.some(account => account.signingIn) ?? false;
   useEffect(() => {

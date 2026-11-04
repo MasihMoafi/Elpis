@@ -1,0 +1,10 @@
+{
+  "id": "love-spot",
+  "name": "Love Spot",
+  "version": "0.5.1",
+  "minAppVersion": "1.5.0",
+  "description": "Shared Excalidraw drawing board with Matilda AI companion and multi-provider subscriptions (ChatGPT, Claude, Antigravity, OpenRouter).",
+  "author": "Masih Moafi",
+  "authorUrl": "https://masihmoafi.com",
+  "isDesktopOnly": true
+}

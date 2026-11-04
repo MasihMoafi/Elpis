@@ -1,0 +1,32 @@
+# Maintainer: Masih Moafi <MasihMoafi at users dot noreply dot github dot com>
+pkgname=love-spot-bin
+pkgver=0.5.1
+pkgrel=1
+pkgdesc='Love Spot drawing board (Excalidraw + Matilda companion + multi-provider AI logins) and Elpis'
+arch=('x86_64')
+url='https://github.com/MasihMoafi/Elpis'
+license=('Apache-2.0' 'MIT')
+depends=('glibc' 'gcc-libs' 'openssl' 'gtk3' 'nss' 'alsa-lib' 'libxss' 'libxtst' 'libsecret' 'mesa' 'xdg-utils')
+optdepends=('nodejs: run the provider bridge on the system Node.js 22+ instead of Electron'
+            'claude-code: Claude models through your own Claude Code install')
+provides=('love-spot' 'elpis' 'elpis-workflows')
+conflicts=('elpis' 'elpis-bin')
+options=('!strip' '!debug')
+_rel="https://github.com/MasihMoafi/Elpis/releases/download/v${pkgver}"
+source=("${_rel}/elpis_${pkgver}_amd64.deb"
+        "${_rel}/elpis-desktop_${pkgver}_amd64.deb"
+        "LICENSE-${pkgver}::https://raw.githubusercontent.com/MasihMoafi/Elpis/v${pkgver}/LICENSE")
+noextract=("elpis_${pkgver}_amd64.deb" "elpis-desktop_${pkgver}_amd64.deb")
+sha256sums=('60894b900644e42c2f7f1fa453aeab02def75cedd5d10d7afc4adc325bfba877'
+            '5e8d25c6483de59de521c34e3db5572b1cac58a6bc1cdee08a727c5e94815c9e'
+            'SKIP')
+
+package() {
+  local deb
+  for deb in "elpis_${pkgver}_amd64.deb" "elpis-desktop_${pkgver}_amd64.deb"; do
+    bsdtar -xOf "$deb" 'data.tar.*' | bsdtar -xf - -C "$pkgdir"
+  done
+  chmod 4755 "$pkgdir/opt/elpis-desktop/runtime/electron/chrome-sandbox"
+  install -Dm644 "LICENSE-${pkgver}" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 "$pkgdir/usr/share/doc/elpis-desktop/THIRD-PARTY-NOTICES.txt" "$pkgdir/usr/share/licenses/$pkgname/THIRD-PARTY-NOTICES.txt"
+}

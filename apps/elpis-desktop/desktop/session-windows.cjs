@@ -15,6 +15,7 @@ const { createWindowIpc } = require('./window-ipc.cjs');
 const { registerImprove } = require('./improve.cjs');
 const { createScreenCapture } = require('./screen-capture.cjs');
 const ICON = path.join(__dirname, 'elpis-icon.png');
+const LOVE_SPOT_ICON = path.join(__dirname, 'love-spot-icon.png');
 const ZOOM = 1.1;
 const TITLE_BAR = { dark: { color: '#0d0e11', symbolColor: '#e6e0d3' }, light: { color: '#f2f2f1', symbolColor: '#252524' } };
 
@@ -30,7 +31,7 @@ function createSessionWindows({ electron, url, store, browserAgentSocket, quickE
   browserAgentSocket?.setDocuments((id, name, args) => documents.call(id, name, args));
   const screenCapture = createScreenCapture({ desktopCapturer: electron.desktopCapturer, Menu });
   browserAgentSocket?.setScreenCapture((id, name, args) => screenCapture.call(id, name, args));
-  let loveSpotWindow, openingLoveSpot;
+  let loveSpotWindow, openingLoveSpot, workflowsWindow, openingWorkflows;
   async function openLoveSpot() {
     if (loveSpotWindow && !loveSpotWindow.isDestroyed()) {
       if (loveSpotWindow.isMinimized()) loveSpotWindow.restore();
@@ -41,12 +42,22 @@ function createSessionWindows({ electron, url, store, browserAgentSocket, quickE
     if (!openingLoveSpot) openingLoveSpot = open({ loveSpot: true }).then(host => { loveSpotWindow = host; return host; }).finally(() => { openingLoveSpot = null; });
     return openingLoveSpot;
   }
-  async function open({ threadId, newSession = false, onPrimary, loveSpot = false } = {}) {
+  async function openWorkflows() {
+    if (workflowsWindow && !workflowsWindow.isDestroyed()) {
+      if (workflowsWindow.isMinimized()) workflowsWindow.restore();
+      if (!workflowsWindow.isVisible()) workflowsWindow.show();
+      workflowsWindow.focus();
+      return workflowsWindow;
+    }
+    if (!openingWorkflows) openingWorkflows = open({ workflows: true }).then(host => { workflowsWindow = host; return host; }).finally(() => { openingWorkflows = null; });
+    return openingWorkflows;
+  }
+  async function open({ threadId, newSession = false, onPrimary, loveSpot = false, workflows = false } = {}) {
     const origin = new URL(url).origin;
     const window = new BrowserWindow({
-      title: loveSpot ? 'Love Spot · Elpis' : 'Elpis', width: 1320, height: 900, minWidth: 600, minHeight: 480,
+      title: loveSpot ? 'Love Spot · Elpis' : workflows ? 'Workflows · Elpis' : 'Elpis', width: 1320, height: 900, minWidth: 600, minHeight: 480,
       autoHideMenuBar: true,
-      icon: ICON,
+      icon: loveSpot ? LOVE_SPOT_ICON : ICON,
       backgroundColor: '#151515', show: false,
       titleBarStyle: 'hidden', titleBarOverlay: { ...TITLE_BAR.dark, height: Math.round(36 * ZOOM) },
       webPreferences: {
@@ -62,7 +73,7 @@ function createSessionWindows({ electron, url, store, browserAgentSocket, quickE
     window.on('focus', () => { onFocused?.(window, openers.get(window)); });
     const threads = createThreadOpener(threadId);
     const newChats = createNewChatOpener();
-    openers.set(window, { threads, newChats, loveSpot });
+    openers.set(window, { threads, newChats, loveSpot, workflows });
     if (newSession) newChats.queue('');
     if (onPrimary) onPrimary({ threads, newChats });
     const disposeState = registerState({ host: window, origin, ipcMain, dialog, store });
@@ -140,6 +151,7 @@ function createSessionWindows({ electron, url, store, browserAgentSocket, quickE
     window.on('closed', () => { dispose(); windows.delete(window); openers.delete(window); onClosed?.(window); if (!windows.size) closeToTray.closed(); });
     const target = new URL(url);
     if (loveSpot) target.pathname = '/love-spot.html';
+    if (workflows) target.searchParams.set('workspace', 'canvas');
     if (threadId || newSession) target.searchParams.set('session', threadId || '');
     await window.loadURL(target.href);
     return window;
@@ -154,7 +166,7 @@ function createSessionWindows({ electron, url, store, browserAgentSocket, quickE
     if (saved) for (const host of hosts) savedText.add(host);
     return saved;
   };
-  return { open, openLoveSpot, windows, flushText, cancelQuit: () => { for (const host of windows) savedText.delete(host); },
+  return { open, openLoveSpot, openWorkflows, windows, flushText, cancelQuit: () => { for (const host of windows) savedText.delete(host); },
     openersFor: host => openers.get(host), closeBrowser: browsers.drop, flushBrowsers: browsers.flush };
 }
 const sessionWindowMenu = open => ({ label: 'New Session in New Window', accelerator: 'CommandOrControl+Shift+N', click: () => { void open(); } });

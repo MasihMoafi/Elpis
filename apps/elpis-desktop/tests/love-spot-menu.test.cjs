@@ -13,8 +13,13 @@ for (const colorScheme of ['light']) test(`Love Spot shows no GitHub, Follow us,
     const menu = f.page.locator('.dropdown-menu').first();
     await menu.waitFor();
     for (const name of [/GitHub/i, /Follow us/i, /Discord/i]) assert.equal(await menu.getByText(name).count(), 0, `${name} is not in the menu`);
-    assert.ok(await menu.getByText(/Help/).count() > 0 && await menu.getByText(/Reset the canvas/i).count() > 0, 'the rest of the menu stays');
+    assert.ok(await menu.getByText(/Help/).count() > 0 && await menu.getByText(/Reset the canvas/i).count() > 0 && await menu.getByText(/Models & accounts/i).count() > 0, 'the rest of the menu stays');
     await f.page.keyboard.press('Escape');
+    const accountsBtn = f.page.getByRole('button', { name: 'Models & accounts' });
+    await accountsBtn.click();
+    const dialog = f.page.getByRole('dialog');
+    await dialog.getByRole('heading', { name: 'Models & accounts' }).waitFor();
+    await dialog.getByRole('button', { name: 'Done' }).click();
     assert.equal(await board.locator('.sidebar-trigger__label-element').evaluateAll(nodes => nodes.filter(node => node.getClientRects().length > 0).length), 0, 'no Library button is shown');
     await f.page.setViewportSize({ width: 860, height: 760 });
     await board.locator('.mobile-misc-tools-container').waitFor();

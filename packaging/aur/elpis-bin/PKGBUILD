@@ -9,8 +9,8 @@ license=('Apache-2.0')
 depends=('glibc' 'gcc-libs' 'openssl' 'gtk3' 'nss' 'alsa-lib' 'libxss' 'libxtst' 'libsecret' 'mesa' 'xdg-utils')
 optdepends=('nodejs: run the provider bridge on the system Node.js 22+ instead of Electron'
             'claude-code: Claude models through your own Claude Code install')
-provides=('elpis')
-conflicts=('elpis')
+provides=('elpis' 'love-spot' 'elpis-workflows')
+conflicts=('elpis' 'love-spot-bin')
 options=('!strip' '!debug')
 _rel="https://github.com/MasihMoafi/Elpis/releases/download/v${pkgver}"
 source=("${_rel}/elpis_${pkgver}_amd64.deb"

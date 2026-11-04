@@ -1,0 +1,10 @@
+{
+  "id": "elpis-workflows",
+  "name": "Elpis Multiagent Control Center",
+  "version": "0.5.1",
+  "minAppVersion": "1.5.0",
+  "description": "Design and run multi-agent teams (Mother & Father agents, worktree isolation, flat + isometric boards) across GPT, Claude and Gemini.",
+  "author": "Masih Moafi",
+  "authorUrl": "https://masihmoafi.com",
+  "isDesktopOnly": true
+}

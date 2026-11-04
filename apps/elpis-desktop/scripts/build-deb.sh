@@ -20,7 +20,8 @@ electron=${ELECTRON_DIST:-$APP/node_modules/electron/dist}
 # The renderer keeps this checkout's absolute path (and so the builder's home) in a few bundled URLs; the package
 # carries a copy with that path replaced by where the app is installed.
 cp -r "$APP/out" "$STAGE/out"
-rg -l -F "$APP" "$STAGE/out" | xargs -r sed -i "s|$APP|/opt/elpis-desktop/app|g"
+real_app=$(dirname "$(readlink -f "$APP/node_modules")")
+(rg -l -F -e "$APP" -e "$real_app" "$STAGE/out" || true) | xargs -r sed -i -e "s|$APP|/opt/elpis-desktop/app|g" -e "s|$real_app|/opt/elpis-desktop/app|g"
 node "$APP/desktop/package.mjs" --source "$APP" --destination "$OPT" --electron-dist "$electron" --out-directory "$STAGE/out" > "$STAGE/manifest.json"
 find "$OPT/runtime/electron/locales" -name '*.pak' ! -name 'en-US.pak' -delete
 # Chromium's setuid sandbox helper: Ubuntu 24.04 blocks the user-namespace sandbox for apps without an AppArmor profile,
@@ -32,7 +33,7 @@ bridge="$APP/../../tools/elpis-claude"
 mkdir -p "$OPT/engine/tools"; printf '#!/bin/sh\nexec /usr/bin/elpis "$@"\n' > "$OPT/engine/elpis-next"; chmod 0755 "$OPT/engine/elpis-next"
 rsync -aL --exclude 'claude-agent-sdk-linux-*' --exclude test --exclude spike --exclude '*.orig' --exclude '*.test.*' "$bridge/" "$OPT/engine/tools/elpis-claude/"
 
-mkdir -p "$OPT/bin" "$ROOT/usr/bin" "$ROOT/usr/share/applications" "$ROOT/usr/share/icons/hicolor/256x256/apps" "$ROOT/DEBIAN"
+mkdir -p "$OPT/bin" "$ROOT/usr/bin" "$ROOT/usr/share/applications" "$ROOT/usr/share/icons/hicolor/256x256/apps" "$ROOT/usr/share/icons/hicolor/scalable/apps" "$ROOT/DEBIAN"
 cat > "$OPT/bin/node" <<'NODE'
 #!/bin/sh
 ELECTRON_RUN_AS_NODE=1 exec /opt/elpis-desktop/runtime/electron/electron "$@"
@@ -64,8 +65,18 @@ if [[ -z "${ELPIS_NODE_BIN:-}" ]]; then
 fi
 exec /opt/elpis-desktop/launch "$@"
 LAUNCH
-chmod 0755 "$OPT/bin/node" "$OPT/bin/elpis" "$ROOT/usr/bin/elpis-app"
+cat > "$ROOT/usr/bin/love-spot" <<'LOVELAUNCH'
+#!/usr/bin/env bash
+exec /usr/bin/elpis-app --love-spot-app "$@"
+LOVELAUNCH
+cat > "$ROOT/usr/bin/elpis-workflows" <<'WFLAUNCH'
+#!/usr/bin/env bash
+exec /usr/bin/elpis-app --workflows-app "$@"
+WFLAUNCH
+chmod 0755 "$OPT/bin/node" "$OPT/bin/elpis" "$ROOT/usr/bin/elpis-app" "$ROOT/usr/bin/love-spot" "$ROOT/usr/bin/elpis-workflows"
 cp "$APP/desktop/elpis-icon.png" "$ROOT/usr/share/icons/hicolor/256x256/apps/elpis-desktop.png"
+cp "$APP/desktop/love-spot-icon.png" "$ROOT/usr/share/icons/hicolor/256x256/apps/love-spot.png"
+cp "$APP/desktop/love-spot-icon.svg" "$ROOT/usr/share/icons/hicolor/scalable/apps/love-spot.svg"
 cat > "$ROOT/usr/share/applications/elpis-desktop.desktop" <<'ENTRY'
 [Desktop Entry]
 Type=Application
@@ -78,6 +89,37 @@ Categories=Development;
 StartupNotify=true
 StartupWMClass=elpis-desktop
 ENTRY
+cat > "$ROOT/usr/share/applications/excalidraw.desktop" <<'LOVEENTRY'
+[Desktop Entry]
+Actions=new-page;
+Type=Application
+Name=Love Spot
+GenericName=Excalidraw
+Comment=Shared drawing board with Matilda and multi-provider AI accounts
+Exec=love-spot %U
+Icon=love-spot
+Terminal=false
+Categories=Graphics;Development;
+StartupNotify=true
+StartupWMClass=excalidraw
+
+[Desktop Action new-page]
+Name=New page
+Exec=love-spot
+LOVEENTRY
+cat > "$ROOT/usr/share/applications/elpis-workflows.desktop" <<'WFENTRY'
+[Desktop Entry]
+Type=Application
+Name=Elpis Workflows
+GenericName=Multiagent Control Center
+Comment=Design and run multi-agent teams across GPT, Claude and Gemini
+Exec=elpis-workflows %U
+Icon=elpis-desktop
+Terminal=false
+Categories=Development;
+StartupNotify=true
+StartupWMClass=elpis-workflows
+WFENTRY
 # Licence notices for everything this package carries or bundles (the Electron runtime keeps its own LICENSE files).
 mkdir -p "$ROOT/usr/share/doc/elpis-desktop"
 node "$APP/scripts/third-party-notices.mjs" "$OPT" "$ROOT/usr/share/doc/elpis-desktop/THIRD-PARTY-NOTICES.txt"
@@ -87,6 +129,7 @@ Package: elpis-desktop
 Version: $VERSION
 Architecture: amd64
 Maintainer: Elpis <MasihMoafi@users.noreply.github.com>
+Provides: love-spot, elpis-workflows
 Depends: elpis (>= $VERSION), libgtk-3-0t64 | libgtk-3-0, libnss3, libgbm1, libasound2t64 | libasound2, libxss1, libxtst6, libsecret-1-0, xdg-utils
 Installed-Size: $(du -sk "$ROOT" | cut -f1)
 Homepage: https://github.com/MasihMoafi/Elpis

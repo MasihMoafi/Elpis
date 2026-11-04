@@ -427,7 +427,7 @@ export default function Home() {
   const [stoppedTurns, setStoppedTurns] = useState<Record<string, string>>({});
   const [related, setRelated] = useState<Record<string, Thread>>({});
   const [accountRefresh, setAccountRefresh] = useState(0);
-  const [view, setView] = useState<View>("chat");
+  const [view, setView] = useState<View>(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("workspace") === "canvas" ? "canvas" : "chat");
   // The input fits its text at every width, and scrolls only past its 240 px ceiling (29 Oct, Masih: "the scroll bar here is
   // unnecessary": a narrower window wrapped the draft onto more lines, and a fraction of a pixel showed a scrollbar).
   useLayoutEffect(() => {

@@ -25,7 +25,8 @@ OUT=${ELPIS_SNAP_DIR:-$HOME/.cache/elpis-tests/snap}; mkdir -p "$OUT"
 electron=${ELECTRON_DIST:-$APP/node_modules/electron/dist}
 [[ -x "$electron/electron" ]] || electron=$(dirname "$(readlink -f "$(dirname "$(readlink -f ~/.local/bin/elpis-app)")/runtime/electron/electron")")
 cp -r "$APP/out" "$STAGE/out"
-rg -l -F "$APP" "$STAGE/out" | xargs -r sed -i "s|$APP|/snap/elpis-agent/current/desktop/app|g"
+real_app=$(dirname "$(readlink -f "$APP/node_modules")")
+(rg -l -F -e "$APP" -e "$real_app" "$STAGE/out" || true) | xargs -r sed -i -e "s|$APP|/snap/elpis-agent/current/desktop/app|g" -e "s|$real_app|/snap/elpis-agent/current/desktop/app|g"
 node "$APP/desktop/package.mjs" --source "$APP" --destination "$S/desktop" --electron-dist "$electron" --out-directory "$STAGE/out" > "$STAGE/manifest.json"
 find "$S/desktop/runtime/electron/locales" -name '*.pak' ! -name 'en-US.pak' -delete
 
@@ -67,8 +68,20 @@ case "$out" in *$'\n'"engine "*) engine="${out#*$'\n'engine }"; out="${out%%$'\n
 case "$out" in unix:///*) ;; *) echo 'elpis: unexpected bridge endpoint' >&2; exit 1 ;; esac
 ELPIS_ENGINE_BIN="$engine" exec "$REAL" --elpis-local-bridge --remote "$out" "$@"
 TUI
+cat > "$S/bin/love-spot" <<'LOVEAPPL'
+#!/bin/sh
+R=${SNAP:-$APPDIR}
+exec "$R/bin/elpis-app" --love-spot-app "$@"
+LOVEAPPL
+cat > "$S/bin/elpis-workflows" <<'WFAPPL'
+#!/bin/sh
+R=${SNAP:-$APPDIR}
+exec "$R/bin/elpis-app" --workflows-app "$@"
+WFAPPL
 chmod 0755 "$S/bin/"*
 cp "$APP/desktop/elpis-icon.png" "$S/meta/gui/icon.png"
+cp "$APP/desktop/love-spot-icon.png" "$S/meta/gui/love-spot.png"
+cp "$APP/desktop/love-spot-icon.svg" "$S/meta/gui/love-spot.svg"
 cat > "$S/meta/gui/elpis-agent.desktop" <<'ENTRY'
 [Desktop Entry]
 Type=Application
@@ -80,6 +93,30 @@ Terminal=false
 Categories=Development;
 StartupWMClass=elpis-desktop
 ENTRY
+cat > "$S/meta/gui/love-spot.desktop" <<'LOVEENTRY'
+[Desktop Entry]
+Type=Application
+Name=Love Spot
+GenericName=Excalidraw
+Comment=Shared drawing board with Matilda and multi-provider AI accounts
+Exec=elpis-agent.love-spot %U
+Icon=${SNAP}/meta/gui/love-spot.svg
+Terminal=false
+Categories=Graphics;Development;
+StartupWMClass=excalidraw
+LOVEENTRY
+cat > "$S/meta/gui/workflows.desktop" <<'WFENTRY'
+[Desktop Entry]
+Type=Application
+Name=Elpis Workflows
+GenericName=Multiagent Control Center
+Comment=Design and run multi-agent teams across GPT, Claude and Gemini
+Exec=elpis-agent.workflows %U
+Icon=${SNAP}/meta/gui/icon.png
+Terminal=false
+Categories=Development;
+StartupWMClass=elpis-workflows
+WFENTRY
 cat > "$S/meta/snap.yaml" <<YAML
 name: elpis-agent
 title: Elpis
@@ -96,7 +133,7 @@ description: |
   * Claude models run through your own Claude Code install.
   * Love Spot: a drawing board where Matilda, the app's companion, answers and draws with you.
 
-  Commands: \`elpis-agent\` opens the desktop app; \`elpis-agent.elpis\` opens the terminal app.
+  Commands: \`elpis-agent\` opens the desktop app; \`elpis-agent.love-spot\` opens Love Spot; \`elpis-agent.workflows\` opens Workflows; \`elpis-agent.elpis\` opens the terminal app.
 links:
   website: [https://elpis.masihmoafi.com]
   source-code: [https://github.com/MasihMoafi/Elpis]
@@ -109,6 +146,10 @@ license: Apache-2.0
 apps:
   elpis-agent:
     command: bin/elpis-app
+  love-spot:
+    command: bin/love-spot
+  workflows:
+    command: bin/elpis-workflows
   elpis:
     command: bin/elpis
 YAML

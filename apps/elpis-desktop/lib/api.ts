@@ -212,7 +212,7 @@ export const isListedProvider = (id: string) => !UNLISTED.has(id);
 export function providerChoices(models: Model[], settings: ProviderSettings | null): ProviderChoice[] {
   const main = settings?.main.provider ?? null;
   const connection = (provider: string, id = provider): ProviderChoice => ({ id, label: providerLabel(null, provider, settings?.providers), provider,
-    models: [], catalogVersion: settings?.version, ...(settings?.providers.find(item => item.id === provider)?.needsKey ? { needsKey: true } : {}) });
+    models: [], catalogVersion: settings?.version, ...(settings?.providers?.find(item => item.id === provider)?.needsKey ? { needsKey: true } : {}) });
   const others: ProviderChoice[] = [
     ...SUBSCRIPTIONS.map(item => ({ id: item.prefix, label: item.label, models: models.filter(model => model.model.startsWith(item.prefix)) })).filter(choice => choice.models.length),
     ...(settings?.providers ?? []).filter(item => item.id !== main && !UNLISTED.has(item.id) && !(settings?.managed?.modelProvider && settings.managed.modelProvider !== item.id))

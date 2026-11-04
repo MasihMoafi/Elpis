@@ -4,7 +4,8 @@ import "@/lib/love-spot-assets";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, ChevronDown, Heart, ImagePlus, Pin, Trash2, X, ZoomIn } from "lucide-react";
-import { PlusIcon } from "@/components/elpis-icons";
+import { PlusIcon, ModelsIcon } from "@/components/elpis-icons";
+import { ProvidersSettings } from "@/components/providers-settings";
 import { CaptureUpdateAction, Excalidraw, MainMenu, newElementWith, convertToExcalidrawElements, exportToBlob, serializeAsJSON, viewportCoordsToSceneCoords } from "@excalidraw/excalidraw";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { AppState, BinaryFiles, ExcalidrawImperativeAPI, ExcalidrawInitialDataState, PointerDownState } from "@excalidraw/excalidraw/types";
@@ -102,6 +103,7 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
   const editorRef = useRef<ExcalidrawImperativeAPI | undefined>(undefined);
   const ready = useCallback((value: ExcalidrawImperativeAPI) => { editorRef.current = value; setEditor(value); }, []);
   const [settings, setSettings] = useState<ProviderSettings | null>(null), [whoOpen, setWhoOpen] = useState(false);
+  const [accountsOpen, setAccountsOpen] = useState(false), [accountRefresh, setAccountRefresh] = useState(0);
   const { models } = useModelCatalog(), [pick, setPick] = useState(savedModel);
   const [screenshots, setScreenshots] = useState<Screenshot[]>([]), [choosing, setChoosing] = useState(false);
   const [page, setPage] = useState<BoardPage>(), [pages, setPages] = useState<PageList["pages"]>([]), [pagesError, setPagesError] = useState("");
@@ -131,6 +133,16 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
     if (!Array.isArray(data?.pages)) throw unreadable("Love Spot pages");
     if (mounted.current) { setPages(data.pages); setPagesError(""); }
   }).catch(e => { if (mounted.current) setPagesError(e instanceof Error ? e.message : String(e)); }); }, []);
+
+  const reloadAccounts = useCallback(async () => {
+    setAccountRefresh(value => value + 1);
+    void refreshModelCatalog();
+    try {
+      const config = await api<ProviderSettings>("/settings");
+      if (!config.main || (config.providers !== undefined && !Array.isArray(config.providers))) throw unreadable("Love Spot settings");
+      if (mounted.current) setSettings(config);
+    } catch (e) { report(e); }
+  }, [report]);
 
   useEffect(() => {
     let active = true;
@@ -539,6 +551,7 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
       {/* Masih, 23 Oct: "I can't change her model!" It sat inside the ☰ menu's dialog; it belongs on the bar, beside the page. */}
       <div role="group" aria-label="Matilda's model"><ModelPicker choices={choices} models={models} model={shared.settings?.model || pick.model || settings?.main.model || ""} choiceId={pick.choiceId} disabled={!choices.length} allowCustom={false} onChange={value => { setPick(value); keepModel(value); void shared.update({ model: value.model, provider: choices.find(choice => choice.id === value.choiceId)?.provider ?? null }).catch(report); }} /></div>
       <label className="flex items-center gap-1" title="Zoom to her replies: when Matilda answers, the board zooms to her reply. Off keeps your view where it is."><span aria-hidden="true"><ZoomIn size={16} /></span><Switch aria-label="Zoom to her replies" checked={zoomToReplies} onCheckedChange={on => { zoomToRepliesRef.current = on; setZoomToReplies(on); keepZoomToReplies(on); }} /></label>
+      <Button variant="ghost" size="sm" aria-label="Models & accounts" title="Models & accounts" onClick={() => setAccountsOpen(true)}><ModelsIcon size={15} aria-hidden="true" /><span className="love-spot-label">Accounts</span></Button>
       <div role="group" aria-label="Voice note"><Dictation provider={provider} disabled={!editor || !settings} onBusy={() => {}} selection={insertion} onTranscript={addVoiceNote} purpose="Adds a note to the board." /></div>
       <MatildaSwitch settings={shared.settings} onChange={chooseReplies} />
       {matilda.replying && <span className="badge badge-sm badge-ghost shrink-0" role="status" aria-label="Matilda status">Matilda is writing…</span>}
@@ -576,6 +589,16 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
       </li>)}</ul>
     </section>}
     <MatildaWho open={whoOpen} onOpenChange={setWhoOpen} persona={matilda.persona} onSave={persona => matilda.keep(persona)} />
+    {accountsOpen && <AlertDialog open={accountsOpen} onOpenChange={setAccountsOpen}>
+      <AlertDialogContent role="dialog" aria-label="Models & accounts" className="flex max-h-[85vh] max-w-2xl flex-col overflow-hidden">
+        <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+          <ProvidersSettings refreshKey={accountRefresh} onChanged={reloadAccounts} />
+        </div>
+        <AlertDialogFooter>
+          <AlertDialogClose render={<Button type="button" variant="outline" />}>Done</AlertDialogClose>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>}
     {error && <div className="love-spot-status" role="alert">{error}<Button variant="ghost" size="sm" onClick={() => { if (editor) save(); else setAttempt(a => a + 1); }}>Retry</Button></div>}
     <div className="love-spot-content"><div className={`love-spot-editor ${styleClassName}`} ref={boardArea} onDragOverCapture={event => {
       if (event.dataTransfer.types.includes(screenshotDrag)) { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "copy"; }
@@ -597,6 +620,7 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
           <MainMenu.DefaultItems.ClearCanvas />
           <MainMenu.Separator />
           <MainMenu.Item icon={<Heart size={16} aria-hidden="true" />} onSelect={() => setWhoOpen(true)}>Who Matilda is…</MainMenu.Item>
+          <MainMenu.Item icon={<ModelsIcon size={16} aria-hidden="true" />} onSelect={() => setAccountsOpen(true)}>Models &amp; accounts…</MainMenu.Item>
           <MainMenu.DefaultItems.ToggleTheme />
           <MainMenu.DefaultItems.ChangeCanvasBackground />
         </MainMenu>

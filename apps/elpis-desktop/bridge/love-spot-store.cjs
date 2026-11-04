@@ -22,7 +22,16 @@ const fail = (message, status = 400) => Object.assign(new Error(message), { stat
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const hash = value => createHash('sha256').update(value).digest('hex');
 async function trashFile(file) {
-  await exec('gio', ['trash', file]).catch(async e => { try { await fs.access(file); throw e; } catch (missing) { if (missing.code !== 'ENOENT') throw missing; } });
+  await exec('gio', ['trash', file]).catch(async e => {
+    try { await fs.access(file); } catch (missing) { if (missing.code === 'ENOENT') return; throw missing; }
+    if (e.code === 'ENOENT') {
+      const trash = path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local/share'), 'Trash/files');
+      await fs.mkdir(trash, { recursive: true });
+      await fs.rename(file, path.join(trash, `${Date.now()}-${path.basename(file)}`));
+      return;
+    }
+    throw e;
+  });
 }
 const PNG = Buffer.from('89504e470d0a1a0a', 'hex');
 const screenshotId = (name, bytes) => `shot-${hash(Buffer.concat([Buffer.from(name), bytes])).slice(0, 32)}`;
