@@ -31,6 +31,13 @@ function ProviderKeyForm({ provider, label, onSaved }: { provider: string; label
   </form>;
 }
 
+/** A connection's model-list failure in plain words: no error codes or request ids, and a network
+ *  failure is just "could not reach" (4 Nov). An actionable message such as a missing address stays. */
+export function plainCatalogError(error: string, label = "this connection") {
+  const message = error.replace(/\s*\((?:ELPIS_[A-Z_]+|request)\b[^)]*\)\s*$/, "").trim();
+  return /timed out|timeout|network|fetch|ECONN|ENOTFOUND|socket|unavailable/i.test(message) || !message ? `Could not reach ${label}. Try again in a moment.` : message;
+}
+
 /** Cloudroom's searchable model/provider pattern, backed by Elpis's own catalog. */
 export function ModelPicker({ choices, models, model, choiceId, defaultModel, disabled, allowCustom = true, onChange, onConfigure, onKeySaved }: {
   choices: ProviderChoice[]; models: Model[]; model: string; choiceId: string; defaultModel?: string | null; disabled: boolean; allowCustom?: boolean;
@@ -85,9 +92,10 @@ export function ModelPicker({ choices, models, model, choiceId, defaultModel, di
       <Tabs.Root value={tab} onValueChange={setTab}>
         <Tabs.List className="model-provider-tabs" aria-label="Model providers"><Tabs.Tab value="all">All</Tabs.Tab>{groups.length > 1 && groups.map(group => <Tabs.Tab key={group.id} value={group.id}>{group.label}</Tabs.Tab>)}</Tabs.List>
         <Tabs.Panel value={tab}>
-          {engine.error ? <div className="p-3 text-sm"><p role="alert" className="text-destructive">Could not refresh the model list: {engine.error}. Showing the last list.</p><Button className="mt-2" type="button" variant="outline" size="sm" disabled={engine.loading} onClick={() => void refreshModelCatalog()}>Try again</Button></div>
-            : engine.loading && <p role="status" className="px-4 pt-2 text-sm text-muted-foreground">Refreshing models…</p>}
-          {needsKey && activeConnection?.provider ? <ProviderKeyForm provider={activeConnection.provider} label={activeConnection.label} onSaved={() => { setKeysSaved(saved => [...saved, activeConnection.id]); setRetry(value => value + 1); onKeySaved?.(); }} /> : catalog?.loading ? <p role="status" className="p-4 text-sm text-muted-foreground">Loading models from {activeConnection?.label}…</p> : catalog?.error ? <div className="p-3 text-sm"><p role="alert" className="text-destructive">{catalog.error}</p><div className="mt-2 flex gap-2"><Button type="button" variant="outline" size="sm" onClick={() => setRetry(value => value + 1)}>Try again</Button>{onConfigure && <Button type="button" variant="outline" size="sm" onClick={() => { setOpen(false); onConfigure(); }}>Manage connections</Button>}</div></div> : <ComboboxEmpty>{tab !== "all" && !rows.length ? "This connection has not reported a model list." : "No matching models."}</ComboboxEmpty>}
+          {/* A failed refresh keeps the last list without a word; only an empty menu says it is still trying (4 Nov). */}
+          {engine.error && !engine.models.length ? <div className="p-3 text-sm text-muted-foreground"><p role="status" title={engine.error}>Models are not available yet. Elpis keeps trying.</p><Button className="mt-2" type="button" variant="outline" size="sm" disabled={engine.loading} onClick={() => void refreshModelCatalog()}>Try again</Button></div>
+            : engine.loading && !engine.error && <p role="status" className="px-4 pt-2 text-sm text-muted-foreground">Refreshing models…</p>}
+          {needsKey && activeConnection?.provider ? <ProviderKeyForm provider={activeConnection.provider} label={activeConnection.label} onSaved={() => { setKeysSaved(saved => [...saved, activeConnection.id]); setRetry(value => value + 1); onKeySaved?.(); }} /> : catalog?.loading ? <p role="status" className="p-4 text-sm text-muted-foreground">Loading models from {activeConnection?.label}…</p> : catalog?.error ? <div className="p-3 text-sm text-muted-foreground"><p role="status" title={catalog.error}>{plainCatalogError(catalog.error, activeConnection?.label)}</p><div className="mt-2 flex gap-2"><Button type="button" variant="outline" size="sm" onClick={() => setRetry(value => value + 1)}>Try again</Button>{onConfigure && <Button type="button" variant="outline" size="sm" onClick={() => { setOpen(false); onConfigure(); }}>Manage connections</Button>}</div></div> : <ComboboxEmpty>{tab !== "all" && !rows.length ? "This connection has not reported a model list." : "No matching models."}</ComboboxEmpty>}
           <ComboboxList>{(item: Choice) => <ComboboxItem key={item.key} value={item} data-value={item.model}><span className="model-option-name">{item.label}{item.description && <small title={item.description}>{item.description}</small>}</span><span className="model-option-provider">{item.providerLabel}</span></ComboboxItem>}</ComboboxList>
         </Tabs.Panel>
       </Tabs.Root>

@@ -181,7 +181,10 @@ for (const [name, options, reads] of [['a later descendant page fails', { descen
 test('catalogue sign-in failure leaves healthy history and live feed usable; retry recovers without sending or switching', async t => {
   const f = await fixture(t, { modelFailure: true }); await f.ready(); await eventually(() => assert.equal(f.clients.size, 1)); await f.open('a');
   const model = f.page.getByRole('combobox', { name: 'Model', exact: true }); const previous = await model.getAttribute('data-value');
-  await eventually(async () => assert.ok((await f.page.getByRole('alert').allTextContents()).join('\n').includes('Fixture sign-in required for models')));
+  // 4 Nov: a failed model list shows no banner; an empty model menu says quietly that Elpis keeps trying.
+  const noCatalogueAlert = async () => { const shown = (await f.page.getByRole('alert').allTextContents()).join('\n'); assert.ok(!/Models unavailable|catalogue failure|sign-in required for models/i.test(shown), `no model-list error is shown: ${shown}`); };
+  await eventually(() => assert.ok(f.control.modelReads >= 1)); await noCatalogueAlert();
+  await model.click(); await eventually(async () => assert.ok(await f.page.getByRole('status').filter({ hasText: 'Models are not available yet' }).count())); await noCatalogueAlert(); await f.page.keyboard.press('Escape');
   f.emit('message', { method: 'item/completed', params: { threadId: 'a', turnId: 'live-a', item: { id: 'live-reply-a', type: 'agentMessage', text: 'Live feed still works' } } }); await eventually(async () => assert.ok((await f.page.locator('.chat-view').innerText()).includes('Live feed still works')));
   if (process.env.ELPIS_AVAILABILITY_SHOTS) {
     const inspectControls = () => f.page.evaluate(() => {
@@ -202,8 +205,8 @@ test('catalogue sign-in failure leaves healthy history and live feed usable; ret
         if (rule.cssRules) visit(rule.cssRules, [...groups, rule.name || rule.conditionText || rule.constructor.name]);
       } };
       for (const sheet of document.styleSheets) visit(sheet.cssRules);
-      const retry = [...document.querySelectorAll('button')].find(button => button.textContent.trim() === 'Retry models');
-      return { htmlClass: document.documentElement.className, bodyClass: document.body.className, buttons: [context, document.querySelector('.workspace-header .mobile-menu'), retry].map(inspect), contextMatchingRules: matching };
+      const retry = null;
+      return { htmlClass: document.documentElement.className, bodyClass: document.body.className, buttons: [context, document.querySelector('.workspace-header .mobile-menu'), retry].filter(Boolean).map(inspect), contextMatchingRules: matching };
     });
     const light = await inspectControls(); t.diagnostic(`Light control trace ${JSON.stringify(light)}`);
     const folder = process.env.ELPIS_AVAILABILITY_SHOTS; fs.mkdirSync(folder, { recursive: true }); await f.page.screenshot({ path: path.join(folder, 'catalogue-error-desktop-light.png') });
@@ -218,8 +221,8 @@ test('catalogue sign-in failure leaves healthy history and live feed usable; ret
       assert.equal(button.disabled, false); assert.equal(button.opacity, '1'); assert.ok(contrast >= 4.5, `${theme} enabled ${button.name} must remain readable (contrast ${contrast.toFixed(2)})`);
     }
   }
-  f.control.modelFailure = false; await f.page.getByRole('button', { name: 'Retry models', exact: true }).click();
-  await eventually(async () => assert.equal((await f.page.getByRole('alert').allTextContents()).join('\n').includes('Fixture sign-in required for models'), false)); assert.equal(await model.getAttribute('data-value'), previous); assert.equal(f.clients.size, 1); assert.equal(mutatingPosts(f).filter(post => !post.path.endsWith('/resume')).length, 0);
+  f.control.modelFailure = false; await model.click(); await eventually(async () => assert.equal(await f.page.getByRole('option').filter({ hasText: 'Latest model' }).count(), 1)); await f.page.keyboard.press('Escape');
+  await noCatalogueAlert(); assert.equal(await model.getAttribute('data-value'), previous); assert.equal(f.clients.size, 1); assert.equal(mutatingPosts(f).filter(post => !post.path.endsWith('/resume')).length, 0);
 });
 
 test('slow catalogues never gate startup; old success cannot overwrite newer models/errors or an explicit choice', async t => {
@@ -228,9 +231,11 @@ test('slow catalogues never gate startup; old success cannot overwrite newer mod
   await f.page.getByRole('button', { name: 'New chat', exact: true }).click();
   const model = f.page.getByRole('combobox', { name: 'Model', exact: true }); await model.click(); await f.page.getByRole('tab', { name: 'Alternate local', exact: true }).click(); await f.page.getByRole('option').filter({ hasText: 'Local choice' }).click(); assert.equal(await model.getAttribute('data-value'), 'local-choice'); const provider = await model.locator('.model-trigger-provider').innerText(); assert.equal(provider, 'Alternate local');
   // Opening the menu refreshes the list too (1 Nov), so the account update is the fourth read.
-  await eventually(() => assert.equal(f.held.length, 3)); f.emit('account', { method: 'account/updated' }); await eventually(() => assert.equal(f.held.length, 4)); f.held[3]({ error: 'Newer catalogue failure' }, 503); await eventually(async () => assert.ok((await f.page.getByRole('alert').allTextContents()).join('\n').includes('Newer catalogue failure')));
+  await eventually(() => assert.equal(f.held.length, 3)); f.emit('account', { method: 'account/updated' }); await eventually(() => assert.equal(f.held.length, 4)); f.held[3]({ error: 'Newer catalogue failure' }, 503); await f.page.waitForTimeout(150);
+  const noCatalogueAlert = async () => { const shown = (await f.page.getByRole('alert').allTextContents()).join('\n'); assert.ok(!/Models unavailable|catalogue failure|sign-in required for models/i.test(shown), `no model-list error is shown: ${shown}`); }; await noCatalogueAlert();
   const oldResponse = f.page.waitForResponse(response => response.headers()['x-fixture-model-read'] === '1'); f.held[0]({ data: [{ id: 'old-model', model: 'old-model', displayName: 'Old model' }], nextCursor: null }); await (await oldResponse).finished(); await f.page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-  assert.ok((await f.page.getByRole('alert').allTextContents()).join('\n').includes('Newer catalogue failure')); assert.equal(await model.getAttribute('data-value'), 'local-choice'); assert.equal(await model.locator('.model-trigger-provider').innerText(), provider);
-  await model.click(); await f.page.getByRole('tab', { name: 'All', exact: true }).click(); await eventually(async () => assert.equal(await f.page.getByRole('option').filter({ hasText: 'Latest model' }).count(), 1)); await eventually(() => assert.equal(f.held.length, 5)); f.held[4]({ error: 'Newer catalogue failure' }, 503); await f.page.keyboard.press('Escape');
-  await f.page.getByRole('button', { name: 'Retry models', exact: true }).click(); await eventually(() => assert.equal(f.held.length, 6)); f.held[5]({ data: [sol, latest], nextCursor: null }); await eventually(async () => assert.equal((await f.page.getByRole('alert').allTextContents()).join('\n').includes('Newer catalogue failure'), false)); assert.equal(await model.getAttribute('data-value'), 'local-choice'); assert.equal(await model.locator('.model-trigger-provider').innerText(), provider); assert.equal(mutatingPosts(f).filter(post => !post.path.endsWith('/resume')).length, 0);
+  await noCatalogueAlert(); assert.equal(await model.getAttribute('data-value'), 'local-choice'); assert.equal(await model.locator('.model-trigger-provider').innerText(), provider);
+  await model.click(); await f.page.getByRole('tab', { name: 'All', exact: true }).click(); await eventually(async () => assert.equal(await f.page.getByRole('option').filter({ hasText: 'Latest model' }).count(), 1)); assert.equal(await f.page.getByRole('option').filter({ hasText: 'Old model' }).count(), 0, 'the older read did not replace the list'); await eventually(() => assert.equal(f.held.length, 5)); f.held[4]({ error: 'Newer catalogue failure' }, 503); await f.page.keyboard.press('Escape');
+  // Opening the menu again asks again; there is no Retry button to press (4 Nov).
+  await model.click(); await eventually(() => assert.equal(f.held.length, 6)); f.held[5]({ data: [sol, latest], nextCursor: null }); await f.page.keyboard.press('Escape'); await noCatalogueAlert(); assert.equal(await model.getAttribute('data-value'), 'local-choice'); assert.equal(await model.locator('.model-trigger-provider').innerText(), provider); assert.equal(mutatingPosts(f).filter(post => !post.path.endsWith('/resume')).length, 0);
 });

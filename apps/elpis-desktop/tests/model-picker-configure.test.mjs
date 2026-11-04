@@ -49,7 +49,8 @@ test('catalog error offers connection setup and closes the popup before navigati
   view = fixture('components/model-picker.tsx', 'ModelPicker', { ...pickerProps, onConfigure() { assert.equal(view.render().props.open, false); configured++; } });
   try {
     const tree = await open(view);
-    assert.equal(elements(tree).find(element => element.props.role === 'alert').props.children, 'Set up the connection address.');
+    assert.equal(elements(tree).find(element => element.props.role === 'status' && element.props.title).props.children, 'Set up the connection address.', 'an actionable message stays, quietly');
+    assert.equal(elements(tree).filter(element => element.props.role === 'alert').length, 0);
     assert.ok(button(tree, 'Try again'));
     const configure = button(tree, 'Manage connections'); assert.ok(configure, 'catalog error needs a path to connection setup');
     configure.props.onClick();
@@ -132,15 +133,28 @@ test('every open lists the engine and the connection again; a model added since 
   } finally { view.dispose(); globalThis.fetch = previous; }
 });
 
-test('a failed engine refresh is said in the picker with Try again, and the selection stays', async () => {
+test('a failed engine refresh with a last list says nothing; the list and the selection stay (4 Nov)', async () => {
   const previous = globalThis.fetch;
-  globalThis.fetch = async url => url === ENGINE ? { ok: false, json: async () => ({ error: 'network down' }) } : { ok: true, json: async () => ({ data: [{ id: 'saved', model: 'saved' }] }) };
+  let down = false;
+  globalThis.fetch = async url => url === ENGINE
+    ? (down ? { ok: false, json: async () => ({ error: 'Could not fetch the model list from `openai`: request timed out (ELPIS_RUNTIME_ERROR; request 9515c544)' }) } : { ok: true, json: async () => ({ data: [{ id: 'engine-a', model: 'engine-a' }] }) })
+    : { ok: true, json: async () => ({ data: [{ id: 'saved', model: 'saved' }] }) };
   const view = fixture('components/model-picker.tsx', 'ModelPicker', pickerProps);
   try {
+    await open(view); view.render().props.onOpenChange(false);
+    down = true;
     const tree = await open(view);
-    const alert = elements(tree).find(element => element.props.role === 'alert');
-    assert.deepEqual(alert.props.children, ['Could not refresh the model list: ', 'network down', '. Showing the last list.']);
-    assert.ok(button(tree, 'Try again'));
+    const words = elements(tree).flatMap(element => [element.props.children].flat()).filter(child => typeof child === 'string').join(' ');
+    assert.equal(elements(tree).filter(element => element.props.role === 'alert').length, 0, 'no error is shown');
+    assert.ok(!/ELPIS_RUNTIME_ERROR|request timed out|Could not/.test(words), `no error text, code or request id: ${words}`);
+    assert.equal(button(tree, 'Try again'), undefined, 'the last list is there, so there is nothing to retry by hand');
+    assert.ok(tree.props.items.length > 0, 'the last list stays');
     assert.equal(elements(tree).find(element => element.props['aria-label'] === 'Model').props['data-value'], 'saved');
   } finally { view.dispose(); globalThis.fetch = previous; }
+});
+
+test('a connection failure is said in plain words, without codes or request ids', () => {
+  const plain = error => fixture('components/model-picker.tsx', 'plainCatalogError', error).render();
+  assert.equal(plain('Could not fetch the model list from `openai`: request timed out (ELPIS_RUNTIME_ERROR; request 9515c544-1fff)'), 'Could not reach this connection. Try again in a moment.');
+  assert.equal(plain('Set up the connection address.'), 'Set up the connection address.', 'an actionable message stays');
 });
