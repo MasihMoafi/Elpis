@@ -14,7 +14,8 @@ test('at every window height the end of the chat list is a whole-row position th
   const { page } = f, list = page.locator('.thread-list');
   try {
     await page.locator('.startup-splash').waitFor({ state: 'detached' });
-    for (let height = 520; height <= 1000; height += 7) {
+    // From 554: the list heights the sweep began with at 520 before Observability's sidebar row (5 Nov) took 34 px.
+    for (let height = 554; height <= 1000; height += 7) {
       await page.setViewportSize({ width: 1100, height });
       await page.waitForTimeout(120);
       const state = await list.evaluate(async (element, stops) => {

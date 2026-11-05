@@ -14,13 +14,14 @@ test('in the sidebar an arrow opens the page it reaches, but never New chat, the
     await nav(page).getByRole('button', { name: 'Customize', exact: true }).click();
     await page.waitForFunction(() => document.querySelector('.workspace-header h1')?.textContent === 'Customize');
     await page.keyboard.press('ArrowUp');
-    await page.waitForFunction(() => document.querySelector('.workspace-header h1')?.textContent === 'Love Spot');
-    assert.equal(await page.evaluate(() => document.activeElement.textContent.trim()), 'Love Spot', 'focus is on the page it opened');
+    // Observability sits between Love Spot and Customize since 5 Nov.
+    await page.waitForFunction(() => document.querySelector('.workspace-header h1')?.textContent === 'Observability');
+    assert.equal(await page.evaluate(() => document.activeElement.textContent.trim()), 'Observability', 'focus is on the page it opened');
     assert.equal(await page.evaluate(() => getComputedStyle(document.activeElement).outlineOffset), '-2px', 'the focus ring is drawn inside the row, where the column does not clip it');
-    await page.keyboard.press('ArrowUp'); await page.keyboard.press('ArrowUp'); await page.keyboard.press('ArrowUp');
-    assert.equal(await page.evaluate(() => document.activeElement.textContent.trim().replace(/Ctrl\+N$/, '')), 'New chat', 'three more arrows reach New chat');
+    for (let stroke = 0; stroke < 4; stroke++) await page.keyboard.press('ArrowUp');
+    assert.equal(await page.evaluate(() => document.activeElement.textContent.trim().replace(/Ctrl\+N$/, '')), 'New chat', 'four more arrows reach New chat');
     await page.waitForTimeout(400);
-    assert.equal(await title(page).innerText(), 'Love Spot', 'pages passed in quick strokes do not open, and New chat is not activated');
+    assert.equal(await title(page).innerText(), 'Observability', 'pages passed in quick strokes do not open, and New chat is not activated');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

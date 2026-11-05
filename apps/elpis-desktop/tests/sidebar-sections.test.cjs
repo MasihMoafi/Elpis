@@ -44,7 +44,8 @@ test('Projects, Pinned and Recents each fold their list and open it again', asyn
 });
 
 for (const colorScheme of ['light']) test(`every sidebar section scrolls by whole chat rows (${colorScheme})`, async () => {
-  const f = await fixture({ colorScheme, height: 500, routes, staticDir: process.env.ELPIS_RENDERER_OUT, storage: {
+  // 534 and 674: 500 and 640 before Observability's sidebar row (5 Nov) took 34 px, so the lists keep their heights.
+  const f = await fixture({ colorScheme, height: 534, routes, staticDir: process.env.ELPIS_RENDERER_OUT, storage: {
     'elpis-projects-v1': JSON.stringify({ projects: [{ id: 'one', name: 'First project', cwd: CWD }], selectedId: null }),
     'elpis-project-chats-v1': JSON.stringify({ 'chat-a': 'one' }),
     'elpis-pinned-chats-v1': JSON.stringify(['chat-p']) } });
@@ -120,10 +121,10 @@ test('long sidebar lists keep every visible chat row whole at rest, through resi
     await page.locator(`.thread-row[data-thread-id="${parent.id}"]`).getByRole('button', { name: /^Expand agents in/ }).click();
     await page.locator(`.thread-row[data-thread-id="${child.id}"]`).getByRole('button', { name: /^Expand agents in/ }).click();
     await page.locator(`.thread-row[data-thread-id="${grandchild.id}"]`).waitFor();
-    for (const height of [640, 500]) {
+    for (const height of [674, 534]) {
       await page.setViewportSize({ width: 820, height });
       await page.waitForTimeout(350);
-      if (height === 640 && process.env.SIDEBAR_FIT_SHOT) await page.screenshot({ path: process.env.SIDEBAR_FIT_SHOT });
+      if (height === 674 && process.env.SIDEBAR_FIT_SHOT) await page.screenshot({ path: process.env.SIDEBAR_FIT_SHOT });
       await checkRows(`expanded at ${height}px`);
       const maxScroll = await list.evaluate(element => Math.max(0, element.scrollHeight - element.clientHeight));
       for (const [position, scrollTop] of [['middle', Math.round(maxScroll / 2)], ['end', maxScroll]]) {
@@ -131,7 +132,7 @@ test('long sidebar lists keep every visible chat row whole at rest, through resi
         await page.waitForTimeout(400);
         await checkRows(`${position} at ${height}px`);
       }
-      if (height === 500) {
+      if (height === 534) {
         await page.evaluate(() => {
           window.__keyboardChildGeometry = new Promise(resolve => {
             const timeout = setTimeout(() => resolve(null), 1000);
@@ -155,7 +156,7 @@ test('long sidebar lists keep every visible chat row whole at rest, through resi
         assert.ok(keyboardRow.active, 'the child chat link receives focus');
         assert.ok(keyboardRow.top >= keyboardRow.viewTop - .5 && keyboardRow.bottom <= keyboardRow.viewBottom + .5, `keyboard focus reveals the complete child row: ${JSON.stringify(keyboardRow)}`);
       }
-      if (height === 640) {
+      if (height === 674) {
         await openSettings(page);
         await leaveSettings(page);
         await page.waitForTimeout(350);
