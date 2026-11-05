@@ -361,16 +361,14 @@ figure img { display: block; width: 100%; height: auto; }
 .wf-run[data-state="pressed"] { transform:scale(.94); }
 .wf-run[data-state="running"] { filter:saturate(.6); }
 .wf-run[data-state="finished"] { background:var(--color-success); }
-.wf-board { --tilt:0; --iso-scale:.16; position:relative; flex:1; transform-style:preserve-3d; transform:perspective(1100px) rotateX(calc(48deg * var(--tilt))) rotateZ(calc(-22deg * var(--tilt))) scale(calc(1 - var(--iso-scale) * var(--tilt))); transition:background-image .3s; background-image:radial-gradient(circle,color-mix(in oklab,var(--color-base-content) 13%,transparent) 1px,transparent 1.2px); background-size:18px 18px; }
+.wf-board { --tilt:0; --cube:0; --iso-scale:.3; position:relative; flex:1; transform-style:preserve-3d; transform:rotateX(calc(54.7356deg * var(--tilt))) rotateZ(calc(45deg * var(--tilt))) scale(calc(1 - var(--iso-scale) * var(--tilt))); transition:background-image .3s; background-image:radial-gradient(circle,color-mix(in oklab,var(--color-base-content) 13%,transparent) 1px,transparent 1.2px); background-size:18px 18px; }
 .wf-edges { position:absolute; inset:0; width:100%; height:100%; overflow:visible; }
 .wf-edges path { fill:none; stroke:color-mix(in oklab,var(--color-base-content) 30%,transparent); stroke-width:1.6; vector-effect:non-scaling-stroke; transition:stroke .3s; }
 .wf-edges path[data-active] { stroke:var(--color-warning); }
 .wf-edges marker path { fill:context-stroke; stroke:none; }
 .wf-board[data-view="isometric"] { background-image:linear-gradient(var(--edge) 1px,transparent 1px),linear-gradient(90deg,var(--edge) 1px,transparent 1px); background-size:32px 32px; }
-.wf-board[data-view="isometric"] .wf-edges > path { marker-end:url(#wf-arrow); }
-.wf-board[data-view="isometric"] .wf-node { box-shadow:0 14px 0 -2px color-mix(in oklab,var(--kind,var(--color-info)) 45%,var(--color-base-300)), 0 24px 25px -16px #0009; }
-.wf-node { position:absolute; left:calc(var(--x) * 1%); top:calc(var(--y) * 1%); transform:translateY(-50%) translateZ(calc(14px * var(--tilt))); display:grid; gap:2px; width:17%; padding:.5rem .6rem .5rem .7rem; border:1px solid var(--edge); border-left:3px solid var(--kind,var(--color-info)); background:var(--surface); box-shadow:0 8px 22px -14px #000a; font-size:11.5px; transition:opacity .35s, transform .35s, border-color .3s, box-shadow .3s; }
-.wf-node:not([data-shown]) { transform:translateY(-50%) translateZ(calc(14px * var(--tilt))) scale(.92); }
+.wf-node { position:absolute; left:calc(var(--x) * 1%); top:calc(var(--y) * 1%); transform:translateY(-50%); display:grid; gap:2px; width:17%; padding:.5rem .6rem .5rem .7rem; border:1px solid var(--edge); border-left:3px solid var(--kind,var(--color-info)); background:var(--surface); box-shadow:0 8px 22px -14px #000a; font-size:11.5px; transition:opacity .35s, transform .35s, border-color .3s, box-shadow .3s; }
+.wf-node:not([data-shown]) { transform:translateY(-50%) scale(.92); }
 .wf-node strong { font-size:12.5px; }
 .wf-kind { font:700 9px/1 "SFMono-Regular","Cascadia Mono",monospace; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); }
 .wf-model { color:var(--muted); font-size:10.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -423,7 +421,7 @@ figure img { display: block; width: 100%; height: auto; }
 
 @media (max-width: 900px) {
   #workflows .scene-meta { display:none; }
-  .wf-board { --iso-scale:.22; }
+  .wf-board { --iso-scale:.38; }
 }
 @media (prefers-reduced-motion: reduce) {
   #workflows .wf-board, #workflows [data-on], #workflows [data-off], #workflows .wf-node, #workflows .wf-edges path { transition:none; }
@@ -432,3 +430,22 @@ figure img { display: block; width: 100%; height: auto; }
 
 #workflows.scene { height:520vh; }
 @media (max-width: 900px) { #workflows.scene { height:470svh; } }
+
+/* Isometric view, as the desktop app's Workflows "Isometric" (components/agents-iso.tsx): each agent a cube with an
+   upright label, wires on the ground. --cube (0..1) fades the cards into the cubes once the board is tilted. */
+.wf-board .wf-node[data-shown] { opacity:calc(1 - var(--cube)); }
+.wf-board .wf-edges { opacity:calc(1 - var(--cube)); }
+.wf-iso-edges { position:absolute; inset:0; width:100%; height:100%; overflow:visible; opacity:var(--cube); pointer-events:none; }
+.wf-iso-edges path { fill:none; stroke:color-mix(in oklab,var(--color-warning) 75%,transparent); stroke-width:1.6; stroke-dasharray:6 5; vector-effect:non-scaling-stroke; marker-end:url(#wf-arrow); }
+.wf-cube { --s:46px; --h:34px; position:absolute; left:calc(var(--cx) * 1%); top:calc(var(--cy) * 1%); width:var(--s); height:var(--s); margin:calc(var(--s) / -2) 0 0 calc(var(--s) / -2); transform-style:preserve-3d; transform:translateZ(calc(var(--h) * var(--cube))); opacity:var(--cube); pointer-events:none; }
+.wf-cube i { position:absolute; display:block; }
+.wf-cube .top { inset:0; background:var(--c); box-shadow:inset 0 0 0 1px #ffffff40; }
+.wf-cube .south { left:0; top:100%; width:100%; height:var(--h); transform-origin:top; transform:rotateX(-90deg); background:color-mix(in oklab,var(--c) 62%,#000); }
+.wf-cube .east { left:100%; top:0; width:var(--h); height:100%; transform-origin:left; transform:rotateY(90deg); background:color-mix(in oklab,var(--c) 45%,#000); }
+.wf-cube b { position:absolute; left:50%; top:50%; display:flex; align-items:center; gap:.35rem; white-space:nowrap; padding:.2rem .45rem .2rem .25rem; border:1px solid var(--edge); background:var(--surface); color:var(--ink); font:600 11.5px/1.2 Inter,ui-sans-serif,system-ui,sans-serif; transform:translate(-50%,-50%) rotateZ(-45deg) rotateX(-54.7356deg) translateY(-36px); }
+.wf-cube b span { display:grid; place-items:center; min-width:1.15rem; height:1.15rem; background:var(--color-warning); color:var(--color-warning-content); font-size:10px; }
+@media (max-width: 900px) {
+  .wf-cube { --s:22px; --h:16px; }
+  .wf-cube b { gap:.2rem; padding:.1rem .3rem .1rem .15rem; font-size:8.5px; transform:translate(-50%,-50%) rotateZ(-45deg) rotateX(-54.7356deg) translateY(-22px); }
+  .wf-cube b span { min-width:.85rem; height:.85rem; font-size:8px; }
+}
