@@ -3229,6 +3229,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "codex-elpis-trajectory"
+version = "0.162.0"
+dependencies = [
+ "axum",
+ "include_dir",
+ "mime_guess",
+ "pretty_assertions",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "codex-exec"
 version = "0.162.0"
 dependencies = [
@@ -4889,6 +4903,7 @@ dependencies = [
  "codex-context-fragments",
  "codex-core-plugins",
  "codex-elpis-gateway",
+ "codex-elpis-trajectory",
  "codex-exec-server",
  "codex-features",
  "codex-feedback",

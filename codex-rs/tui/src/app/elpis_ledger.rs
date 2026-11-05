@@ -705,6 +705,7 @@ impl App {
             | ElpisAppEvent::LoadSmartPruneLog(_, _)
             | ElpisAppEvent::SmartPruneLogLoaded(_, _, _)
             | ElpisAppEvent::OpenSmartPruneRecord(_)
+            | ElpisAppEvent::OpenTrajectory
             | ElpisAppEvent::OpenUsage(_) => {
                 unreachable!("handled in app/elpis_events.rs")
             }

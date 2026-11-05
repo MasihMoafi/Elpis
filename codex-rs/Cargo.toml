@@ -89,6 +89,7 @@ members = [
     "mermaid",
     "elpis-claude-proxy",
     "elpis-gateway",
+    "elpis-trajectory",
     "model-provider-info",
     "mxc-sandbox",
     "models-manager",
@@ -258,6 +259,7 @@ codex-mcp = { path = "codex-mcp" }
 codex-mcp-extension = { path = "ext/mcp" }
 codex-elpis-claude-proxy = { path = "elpis-claude-proxy" }
 codex-elpis-gateway = { path = "elpis-gateway" }
+codex-elpis-trajectory = { path = "elpis-trajectory" }
 codex-model-provider-info = { path = "model-provider-info" }
 codex-models-manager = { path = "models-manager" }
 codex-mxc-sandbox = { path = "mxc-sandbox" }

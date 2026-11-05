@@ -52,6 +52,7 @@ macro_rules! elpis_slash_commands {
             | $crate::slash_command::SlashCommand::Agent
             | $crate::slash_command::SlashCommand::Add
             | $crate::slash_command::SlashCommand::Context
+            | $crate::slash_command::SlashCommand::Dashboard
             | $crate::slash_command::SlashCommand::Rag
             | $crate::slash_command::SlashCommand::Personal
     };
@@ -83,6 +84,9 @@ pub(crate) fn description(cmd: SlashCommand) -> &'static str {
             "show context usage as a grid, by category, with checkpoints and system files"
         }
         SlashCommand::Rag => "use the configured RAG MCP server or manage it with /rag <request>",
+        SlashCommand::Dashboard => {
+            "open this chat's dashboard in the browser: every request, tool call, timing and cache hit"
+        }
         _ => unreachable!("not an Elpis slash command: /{}", cmd.command()),
     }
 }
@@ -195,6 +199,7 @@ pub(crate) fn available_during_task(cmd: SlashCommand) -> bool {
             | SlashCommand::Yolo
             | SlashCommand::Agent
             | SlashCommand::Context
+            | SlashCommand::Dashboard
             | SlashCommand::Personal
     )
 }
@@ -286,6 +291,10 @@ impl ChatWidget {
             }
             SlashCommand::Effort => self.open_effort_popup(),
             SlashCommand::Context => self.request_fresh_context_usage_report(),
+            SlashCommand::Dashboard => {
+                self.app_event_tx
+                    .send(AppEvent::Elpis(ElpisAppEvent::OpenTrajectory));
+            }
             SlashCommand::MemoryModel => self.open_background_model_popup(),
             _ => {
                 self.add_info_message(

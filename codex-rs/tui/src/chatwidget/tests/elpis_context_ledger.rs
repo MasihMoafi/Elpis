@@ -256,6 +256,17 @@ async fn a107_details_follow_the_width_and_wrapped_height_budget() -> anyhow::Re
     assert!(!short.contains("Estimated segments") && !short.contains("User messages"));
     let tall = rows(&ledger_screen(&chat, 200, 60), 0..200).join("\n");
     assert!(tall.contains("Estimated segments") && tall.contains("User messages"));
+    // The PROMPT CACHE row shows when it fits and is the first row dropped when it does not:
+    // at 120x40 the details still fit without it.
+    assert!(
+        tall.contains("PROMPT CACHE  0% last request · 0% this chat"),
+        "{tall}"
+    );
+    let medium = rows(&ledger_screen(&chat, 120, 40), 0..120).join("\n");
+    assert!(
+        medium.contains("Estimated segments") && !medium.contains("PROMPT CACHE"),
+        "{medium}"
+    );
     Ok(())
 }
 

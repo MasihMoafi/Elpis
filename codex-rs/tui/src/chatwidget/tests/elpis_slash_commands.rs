@@ -190,6 +190,8 @@ fn hand_selected_slash_command_set_adds_approved_review_and_worktree() {
         "diff",
         "usage",
         "context",
+        // Masih, 5 Nov 2026: /dashboard opens the Trajectory observability page on 127.0.0.1.
+        "dashboard",
         "config",
         "theme",
         "mcp",

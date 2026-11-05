@@ -486,7 +486,8 @@ impl ChatWidget {
         let ledger_lines = self.ledger_lines(
             usize::from(ledger_content_width(ledger_width, owned_column)),
             owned_column,
-            false,
+            /*compact*/ false,
+            /*cache_row*/ true,
         );
         let height = u16::try_from(ledger_lines.rows.len()).unwrap_or(u16::MAX);
         Some((height, ledger_lines))
@@ -790,7 +791,15 @@ impl ChatWidget {
     ///
     /// `content_width` is the width inside the left border. The owned column preserves full
     /// source names and places metadata below them when both cannot fit on one row.
-    fn ledger_lines(&self, content_width: usize, owned_column: bool, compact: bool) -> LedgerLines {
+    /// `cache_row` adds the PROMPT CACHE row to the details; the owned column drops it first
+    /// when the details would not fit.
+    fn ledger_lines(
+        &self,
+        content_width: usize,
+        owned_column: bool,
+        compact: bool,
+        cache_row: bool,
+    ) -> LedgerLines {
         let mut source_links: Vec<(usize, String)> = Vec::new();
         let sources = self.continuity_sources();
         let source_lock_reasons = sources
@@ -1192,6 +1201,20 @@ impl ChatWidget {
             if let (true, Some(window)) = (has_request_snapshot, context_window) {
                 lines.push(usage_bar_line(content_width, window, &attribution_segments));
             }
+            // Elpis (5 Nov): the prompt cache's share, as the desktop Ledger's Prompt cache row.
+            if cache_row
+                && let Some(info) = self.token_info.as_ref()
+                && let Some(last) = prompt_cache_percent(&info.last_token_usage)
+            {
+                let chat = prompt_cache_percent(&info.total_token_usage)
+                    .map(|chat| format!(" · {chat}% this chat"))
+                    .unwrap_or_default();
+                lines.push(Line::from(vec![
+                    Span::styled("PROMPT CACHE", context.bold()),
+                    Span::raw("  "),
+                    Span::styled(format!("{last}% last request{chat}"), context),
+                ]));
+            }
             if attributed_tokens.is_some() {
                 lines.push(Line::from(Span::styled(
                     if context_window.is_some() {
@@ -1490,7 +1513,8 @@ impl ChatWidget {
         let ledger_lines = self.ledger_lines(
             usize::from(ledger_content_width(area.width, owned_column)),
             owned_column,
-            false,
+            /*compact*/ false,
+            /*cache_row*/ true,
         );
         self.render_context_ledger_lines(area, buf, ledger_lines, /*box_rules*/ &[]);
     }
@@ -1662,9 +1686,10 @@ impl ChatWidget {
             return None;
         }
         let width = usize::from(ledger_content_width(area.width, true));
-        let full = self.ledger_lines(width, true, false);
         // Use the full wrapped height, not a fixed row-count estimate. This also restores
         // details automatically after a resize, without a second user preference.
+        let fits =
+            |lines: &LedgerLines| lines.rows.len().saturating_add(1) <= usize::from(area.height);
         let main_width = if area.x > 0 {
             area.x
         } else {
@@ -1673,12 +1698,18 @@ impl ChatWidget {
                 .map(|width| width.saturating_sub(area.width))
                 .unwrap_or(LEDGER_DETAIL_MAIN_WIDTH)
         };
-        if main_width < LEDGER_DETAIL_MAIN_WIDTH
-            || full.rows.len().saturating_add(1) > usize::from(area.height)
-        {
-            Some(self.ledger_lines(width, true, true))
+        if main_width < LEDGER_DETAIL_MAIN_WIDTH {
+            return Some(self.ledger_lines(width, true, true, false));
+        }
+        let full = self.ledger_lines(width, true, false, true);
+        if fits(&full) {
+            return Some(full);
+        }
+        let without_cache = self.ledger_lines(width, true, false, false);
+        if fits(&without_cache) {
+            Some(without_cache)
         } else {
-            Some(full)
+            Some(self.ledger_lines(width, true, true, false))
         }
     }
 
@@ -2581,6 +2612,15 @@ fn format_source_count(value: u64) -> String {
 
 fn source_heading_style() -> Style {
     crate::style::section_style()
+}
+
+/// Cached input as a whole percentage of the prompt. The engine's `input_tokens` include the
+/// cached and cache-written input, so the prompt is `input_tokens` alone.
+fn prompt_cache_percent(usage: &crate::token_usage::TokenUsage) -> Option<i64> {
+    (usage.input_tokens > 0).then(|| {
+        ((usage.cached_input_tokens.max(0) as f64) * 100.0 / (usage.input_tokens as f64)).round()
+            as i64
+    })
 }
 
 /// The Ledger's left rule. The top and bottom rules of each box beside it end on it, so it

@@ -1,0 +1,32 @@
+# Elpis: the Trajectory page. Projects a rollout into the page's JSON
+# (docs/specs/trajectory-contract.ts) and serves the page on 127.0.0.1.
+[package]
+edition.workspace = true
+license.workspace = true
+name = "codex-elpis-trajectory"
+version.workspace = true
+
+[lib]
+doctest = false
+name = "codex_elpis_trajectory"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+axum = { workspace = true, default-features = false, features = [
+    "http1",
+    "json",
+    "tokio",
+] }
+include_dir = { workspace = true }
+mime_guess = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["net", "rt", "macros"] }
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["net", "rt", "rt-multi-thread", "macros"] }

@@ -32,6 +32,9 @@ pub(crate) enum ElpisAppEvent {
     /// The root thread's latest work graph, fetched in the background when `/agent` opened.
     WorkGraphLoaded(Result<Option<codex_app_server_protocol::WorkGraphSummary>, String>),
 
+    /// `/dashboard`: serve this chat's Trajectory page on 127.0.0.1 and open it.
+    OpenTrajectory,
+
     /// Bare `/usage`: show the session card as an overlay Escape closes.
     OpenUsage(Box<dyn crate::history_cell::HistoryCell>),
 

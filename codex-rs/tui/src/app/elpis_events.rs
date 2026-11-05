@@ -72,6 +72,7 @@ impl App {
                 tui.frame_requester().schedule_frame();
             }
             ElpisAppEvent::WorkGraphLoaded(result) => self.add_loaded_work_graph(result),
+            ElpisAppEvent::OpenTrajectory => self.open_trajectory().await,
             ElpisAppEvent::OpenUsage(card) => {
                 self.open_escape_closable_pager(tui, card, "Usage")?
             }
@@ -235,3 +236,54 @@ impl App {
 #[cfg(test)]
 #[path = "elpis_events_tests.rs"]
 mod tests;
+
+/// The Trajectory server for the chat whose page was last opened. It lives until another chat's
+/// page is opened or the TUI exits.
+static TRAJECTORY: std::sync::Mutex<
+    Option<(std::path::PathBuf, codex_elpis_trajectory::TrajectoryServer)>,
+> = std::sync::Mutex::new(None);
+
+impl App {
+    /// `/dashboard`: serves this chat's page on 127.0.0.1 and opens it in the browser.
+    async fn open_trajectory(&mut self) {
+        let Some(rollout) = self
+            .chat_widget
+            .rollout_path()
+            .filter(|path| path.is_file())
+        else {
+            self.chat_widget.add_info_message(
+                "This chat has no record yet. Send a message, then run /dashboard.".to_string(),
+                /*hint*/ None,
+            );
+            return;
+        };
+        let running = TRAJECTORY.lock().ok().and_then(|server| {
+            server
+                .as_ref()
+                .filter(|(path, _)| *path == rollout)
+                .map(|(_, server)| server.url())
+        });
+        let url = match running {
+            Some(url) => url,
+            None => match codex_elpis_trajectory::serve(rollout.clone()).await {
+                Ok(server) => {
+                    let url = server.url();
+                    if let Ok(mut slot) = TRAJECTORY.lock() {
+                        *slot = Some((rollout, server));
+                    }
+                    url
+                }
+                Err(error) => {
+                    self.chat_widget
+                        .add_error_message(format!("Could not start the dashboard: {error}"));
+                    return;
+                }
+            },
+        };
+        let opened = webbrowser::open(&url).is_ok();
+        self.chat_widget.add_info_message(
+            format!("Dashboard: {url}"),
+            (!opened).then(|| "Open this address in a browser.".to_string()),
+        );
+    }
+}
