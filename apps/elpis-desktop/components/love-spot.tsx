@@ -79,6 +79,9 @@ async function savePicture(data: Saved) {
 type LoveSpotProps = { dark: boolean; cwd?: string; onOpenChat?: (id: string) => void; toolbarHost?: HTMLElement | null };
 type MatildaVoice = { enabled: boolean; available: boolean; reason: string; error: string };
 export default function LoveSpot(props: LoveSpotProps) {
+  // Inside Elpis the app provides her voice, so it outlives the board; the standalone Love Spot brings its own.
+  const app = useReadAloud();
+  if (app) return <LoveSpotBoard {...props} />;
   return <ReadAloud threadId="love-spot" enabled available={LOVE_SPOT_AUDIO.readAloudAvailable} unavailableReason={LOVE_SPOT_AUDIO.available ? undefined : LOVE_SPOT_AUDIO.reason}><LoveSpotBoard {...props} /></ReadAloud>;
 }
 function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
