@@ -158,7 +158,10 @@ test('Love Spot can delete a page, and cancelling leaves its drawing intact', as
 
 test('page-row delete confirms, keeps the current page, and shares the skip preference', async () => {
   const oldXdgDataHome = process.env.XDG_DATA_HOME;
-  const trashRoot = createTestTempDir(path.join(os.tmpdir(), 'love-spot-row-trash-'));
+  // gio trash refuses a Trash in /tmp for a page under home; keep the Trash beside the test's files, as the test above does.
+  const tempBase = path.join(os.homedir(), '.cache/elpis-tests');
+  await fs.mkdir(tempBase, { recursive: true });
+  const trashRoot = createTestTempDir(path.join(tempBase, 'love-spot-row-trash-'));
   process.env.XDG_DATA_HOME = path.join(trashRoot, 'data');
   let f;
   try {
@@ -177,7 +180,7 @@ test('page-row delete confirms, keeps the current page, and shares the skip pref
     await f.page.getByRole('button', { name: 'Pages', exact: true }).click();
     const row = f.page.getByRole('menuitem', { name: /^Page 2\b/ });
     const remove = row.getByRole('button', { name: 'Delete page', exact: true });
-    assert.equal(await remove.locator('svg.lucide-trash-2').count(), 1);
+    await remove.waitFor(); assert.equal(await remove.locator('svg.lucide-trash-2').count(), 1, 'the row shows the trash icon chat rows use');
     await remove.click();
     const dialog = f.page.getByRole('alertdialog');
     await dialog.getByText('Delete “Page 2”?', { exact: true }).waitFor();

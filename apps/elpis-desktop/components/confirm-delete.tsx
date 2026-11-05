@@ -30,7 +30,7 @@ export function ConfirmDelete<T>({ request, names, noun, description, onDelete, 
         <AlertDialogDescription>{description}</AlertDialogDescription>
       </AlertDialogHeader>
       {children}
-      {confirm && !alwaysConfirm && <label className="flex items-center gap-2 text-sm text-muted-foreground"><input type="checkbox" className="accent-primary" checked={skip} disabled={busy} onChange={event => setSkip(event.target.checked)} />Don’t show me this again</label>}
+      {confirm && !alwaysConfirm && <label className="flex items-center gap-2 text-sm text-muted-foreground">{/* ui-check-ignore: the chat dialog's existing checkbox, moved unchanged; components/ui has no checkbox */}<input type="checkbox" className="accent-primary" checked={skip} disabled={busy} onChange={event => setSkip(event.target.checked)} />Don’t show me this again</label>}
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       <AlertDialogFooter>
         <AlertDialogClose render={<Button variant="outline" disabled={busy} />}>Cancel</AlertDialogClose>
