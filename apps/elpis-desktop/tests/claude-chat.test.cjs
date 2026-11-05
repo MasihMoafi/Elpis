@@ -44,7 +44,8 @@ test('Back and Forward walk the chats and pages visited: the buttons, Alt+Left a
   await back.click(); await eventually(async () => assert.equal(await f.shown(), 'chat-b'));
 }));
 
-const MENU = { user: ['Reply', 'Copy text', 'Copy as Markdown', 'Edit and retry', 'Rewind to here'], reply: ['Reply', 'Copy text', 'Copy as Markdown', 'Fork chat from here'] };
+// Delete from here (an older prompt) and Delete message (the newest): b30ebb5c7, 3 Nov.
+const MENU = { user: ['Reply', 'Copy text', 'Copy as Markdown', 'Edit and retry', 'Rewind to here', 'Delete from here'], reply: ['Reply', 'Copy text', 'Copy as Markdown', 'Fork chat from here'] };
 const menuItems = async page => { const menu = page.getByRole('menu'); await menu.getByRole('menuitem').first().waitFor(); return (await menu.getByRole('menuitem').allInnerTexts()).map(text => text.split('\n')[0].trim()); };
 const closeMenu = async page => { await page.keyboard.press('Escape'); await page.getByRole('menu').waitFor({ state: 'hidden' }); };
 
@@ -62,7 +63,7 @@ test('right-click on a message keeps the hover … actions and appends Change th
   assert.deepEqual(await menuItems(page), MENU.user, 'the … holds the message actions');
   await closeMenu(page);
   await page.locator('.message.user', { hasText: 'Run them.' }).click({ button: 'right' });
-  assert.deepEqual(await menuItems(page), [...MENU.user.filter(name => name !== 'Rewind to here'), 'Change this…'], 'the newest prompt has no Rewind');
+  assert.deepEqual(await menuItems(page), [...MENU.user.filter(name => name !== 'Rewind to here' && name !== 'Delete from here'), 'Delete message', 'Change this…'], 'the newest prompt has no Rewind and deletes only itself');
   await closeMenu(page);
   await reply.click({ button: 'right' });
   assert.deepEqual(await menuItems(page), [...MENU.reply, 'Change this…']);

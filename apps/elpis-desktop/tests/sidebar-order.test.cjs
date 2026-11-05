@@ -134,7 +134,8 @@ test('A102: working chats come first, then waiting and unseen replies; errors an
     await row(f.page, 'done').locator('.thread-link').click();
     await f.page.mouse.move(700, 300);
     await eventually(async () => assert.equal(await row(f.page, 'done').locator('.conversation-status').count(), 0));
-    assert.deepEqual(await ids(recents), ['working', 'question', 'approval', 'chat-a', 'error', 'done']);
+    // The pointer's exit releases the held order after 300 ms (9b04ee7d4, 3 Nov).
+    await eventually(async () => assert.deepEqual(await ids(recents), ['working', 'question', 'approval', 'chat-a', 'error', 'done']));
     await f.page.reload();
     await row(f.page, 'chat-a').waitFor();
     assert.equal(await row(f.page, 'done').locator('.conversation-status').count(), 0);
