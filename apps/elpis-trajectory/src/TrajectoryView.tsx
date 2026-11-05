@@ -1,5 +1,5 @@
 /* Adapted from packages/client/ui-trajectory/src/client/TrajectoryView.tsx · Copyright (c) 2026 DeepSeek, MIT License */
-import { useCallback, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { TrajectoryDocument } from '../../../docs/specs/trajectory-contract'
 import { TrajectoryToolbar } from './TrajectoryToolbar'
 import { TrajectoryTimeline } from './TrajectoryTimeline'
@@ -27,18 +27,60 @@ function compactTokens(value: number): string {
   return `${scale === 1 ? value : scaled >= 100 ? Math.round(scaled) : Math.round(scaled * 10) / 10}${scale === 1_000_000 ? 'M' : scale === 1_000 ? 'K' : ''}`
 }
 
+const exact = (value: number) => `${value.toLocaleString('en-US')} tok`
+function seconds(ms: number): string {
+  const s = ms / 1000
+  if (s < 60) return `${Math.round(s * 10) / 10}s`
+  const whole = Math.round(s)
+  return `${Math.floor(whole / 60)}m${whole % 60}s`
+}
+
+/** One figure in the footer. Like DeepSeek Harness's StatsPills, a figure with details is a button opening a small
+ * panel above it; Escape or a click outside closes it, and one panel is open at a time (5 Nov, Masih: "cache and buttons
+ * down aren't clickable"). */
+function StatButton({ id, open, onOpen, label, title, titleValue, children }: { id: string; open: string | null; onOpen: (id: string | null) => void; label: ReactNode; title: string; titleValue: string; children: ReactNode }) {
+  const expanded = open === id
+  return <span className={css.anchor} data-stat={id}>
+    <button type="button" className={css.stat} aria-haspopup="dialog" aria-expanded={expanded} onClick={() => onOpen(expanded ? null : id)}>{label}</button>
+    {expanded && <div className={css.panel} role="dialog" aria-label={title}>
+      <div className={css.panelTitle}><span>{title}</span><span>{titleValue}</span></div>
+      <dl className={css.details}>{children}</dl>
+    </div>}
+  </span>
+}
+
 function TrajectoryStats({ document }: { document: TrajectoryDocument }) {
+  const [open, setOpen] = useState<string | null>(null)
+  const root = useRef<HTMLElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const close = (event: Event) => { if (event instanceof KeyboardEvent ? event.key === 'Escape' : !root.current?.contains(event.target as Node)) setOpen(null) }
+    window.addEventListener('keydown', close); window.addEventListener('pointerdown', close)
+    return () => { window.removeEventListener('keydown', close); window.removeEventListener('pointerdown', close) }
+  }, [open])
   const requests = document.requestNumbers
   const allUsage = requests.length > 0 && requests.every(({ usage }) =>
     usage?.input !== undefined && usage.cacheRead !== undefined && usage.cacheWrite !== undefined && usage.output !== undefined)
   const totals = requests.reduce((sum, request) => {
     const usage = request.usage
-    return { prompt: sum.prompt + (usage?.input ?? 0) + (usage?.cacheRead ?? 0) + (usage?.cacheWrite ?? 0),
-      cache: sum.cache + (usage?.cacheRead ?? 0), output: sum.output + (usage?.output ?? 0) + (usage?.reasoning ?? 0) }
-  }, { prompt: 0, cache: 0, output: 0 })
+    return { input: sum.input + (usage?.input ?? 0), cache: sum.cache + (usage?.cacheRead ?? 0), write: sum.write + (usage?.cacheWrite ?? 0),
+      output: sum.output + (usage?.output ?? 0) + (usage?.reasoning ?? 0) }
+  }, { input: 0, cache: 0, write: 0, output: 0 })
+  const prompt = totals.input + totals.cache + totals.write
   let generation = 0
   let generatedTokens = 0
+  let modelMs = 0
+  let toolMs = 0
+  let firstTokenMs = 0
+  let firstTokenSteps = 0
   for (const turn of document.turns) for (const group of turn.groups) {
+    for (const cell of group.cells) {
+      if (cell.kind === 'tool' && cell.timeSeconds) toolMs += cell.timeSeconds * 1000
+      const metrics = cell.kind === 'message' ? cell.assistantMetrics : undefined
+      if (!metrics?.timingRecorded || metrics.stepStartTime == null) continue
+      if (metrics.completedTime != null && metrics.completedTime > metrics.stepStartTime) modelMs += metrics.completedTime - metrics.stepStartTime
+      if (metrics.firstTokenTime != null && metrics.firstTokenTime >= metrics.stepStartTime) { firstTokenMs += metrics.firstTokenTime - metrics.stepStartTime; firstTokenSteps += 1 }
+    }
     const matching = requests.filter(request => request.turn === turn.turn && request.group === group.title)
     const messages = group.cells.filter(cell => cell.kind === 'message')
     if (matching.length !== 1 || messages.length !== 1) continue
@@ -52,10 +94,34 @@ function TrajectoryStats({ document }: { document: TrajectoryDocument }) {
   const lastPrompt = last?.input !== undefined && last.cacheRead !== undefined && last.cacheWrite !== undefined ? last.input + last.cacheRead + last.cacheWrite : undefined
   const context = lastPrompt !== undefined && document.contextWindow && document.contextWindow > 0 ? Math.round(lastPrompt / document.contextWindow * 100) : undefined
   const turns = document.turns.filter(turn => turn.turn !== null).length
-  return <footer className={css.stats} aria-label="Conversation statistics">
-    <span className={css.stat}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 11a6 6 0 1 1 12 0M8 9l2-3M4 12h0m8 0h0" /></svg>{turns} turns {requests.length} steps{generation > 0 && <> <span className={css.dot}>·</span> {Math.round(generatedTokens / generation)} tok/s</>}</span>
-    {allUsage && <span className={css.stat}><svg viewBox="0 0 16 16" aria-hidden="true"><ellipse cx="8" cy="3.5" rx="5.5" ry="2.5"/><path d="M2.5 3.5v8c0 1.4 2.5 2.5 5.5 2.5s5.5-1.1 5.5-2.5v-8M2.5 7.5C2.5 8.9 5 10 8 10s5.5-1.1 5.5-2.5"/></svg>{compactTokens(totals.prompt + totals.output)} tok{totals.prompt > 0 && <> <span className={css.dot}>·</span> Cache hit {Math.round(totals.cache / totals.prompt * 100)}%</>}</span>}
-    {context !== undefined && <span className={css.stat}><span className={css.ring} style={{ background: `conic-gradient(currentColor ${Math.min(context, 100)}%, var(--dsw-alias-border-l2) 0)` }} />{context}%</span>}
+  const counts = `${turns} turns ${requests.length} steps`
+  const speed = generation > 0 ? `${Math.round(generatedTokens / generation)} tok/s` : null
+  const hit = prompt > 0 ? Math.round(totals.cache / prompt * 100) : null
+  const breaks = requests.filter(request => request.cache?.cause)
+  return <footer ref={root} className={css.stats} aria-label="Conversation statistics">
+    <StatButton id="activity" open={open} onOpen={setOpen} title="Time and speed" titleValue={counts}
+      label={<><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 11a6 6 0 1 1 12 0M8 9l2-3M4 12h0m8 0h0" /></svg>{counts}{speed && <> <span className={css.dot}>·</span> {speed}</>}</>}>
+      {modelMs > 0 && <><dt>Model time</dt><dd>{seconds(modelMs)}</dd></>}
+      {toolMs > 0 && <><dt>Tool time</dt><dd>{seconds(toolMs)}</dd></>}
+      {firstTokenSteps > 0 && <><dt>First token, average</dt><dd>{seconds(firstTokenMs / firstTokenSteps)}</dd></>}
+      {speed && <><dt>Speed</dt><dd>{speed}</dd></>}
+      {!modelMs && !toolMs && !firstTokenSteps && !speed && <><dt>Timing</dt><dd>not recorded</dd></>}
+    </StatButton>
+    {allUsage && <StatButton id="usage" open={open} onOpen={setOpen} title="Tokens" titleValue={exact(prompt + totals.output)}
+      label={<><svg viewBox="0 0 16 16" aria-hidden="true"><ellipse cx="8" cy="3.5" rx="5.5" ry="2.5"/><path d="M2.5 3.5v8c0 1.4 2.5 2.5 5.5 2.5s5.5-1.1 5.5-2.5v-8M2.5 7.5C2.5 8.9 5 10 8 10s5.5-1.1 5.5-2.5"/></svg>{compactTokens(prompt + totals.output)} tok{hit !== null && <> <span className={css.dot}>·</span> Cache hit {hit}%</>}</>}>
+      {hit !== null && <><dt>Cache hit</dt><dd>{hit}%</dd></>}
+      <dt>Input</dt><dd>{exact(totals.input)}</dd>
+      <dt>Cache read</dt><dd>{exact(totals.cache)}</dd>
+      {totals.write > 0 && <><dt>Cache write</dt><dd>{exact(totals.write)}</dd></>}
+      <dt>Output</dt><dd>{exact(totals.output)}</dd>
+      {breaks.map(request => <Fragment key={request.number}><dt>Cache miss, request #{request.number}</dt><dd>{request.cache?.cause}</dd></Fragment>)}
+    </StatButton>}
+    {context !== undefined && lastPrompt !== undefined && <StatButton id="context" open={open} onOpen={setOpen} title="Context" titleValue={`${context}%`}
+      label={<><span className={css.ring} style={{ background: `conic-gradient(currentColor ${Math.min(context, 100)}%, var(--dsw-alias-border-l2) 0)` }} />{context}%</>}>
+      <dt>Used</dt><dd>{exact(lastPrompt)}</dd>
+      <dt>Window</dt><dd>{exact(document.contextWindow!)}</dd>
+      <dt>Free</dt><dd>{exact(Math.max(0, document.contextWindow! - lastPrompt))}</dd>
+    </StatButton>}
   </footer>
 }
 

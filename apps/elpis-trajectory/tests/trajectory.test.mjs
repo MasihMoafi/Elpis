@@ -323,3 +323,30 @@ test('footer shows aggregated sample usage and omits unavailable metrics', async
     assert.doesNotMatch(text, /tok\/s|Cache hit|%/)
   } finally { await empty.close() }
 })
+
+// 5 Nov, Masih: "cache and buttons down aren't clickable". Each footer figure opens its details; Escape or a click
+// outside closes it, and only one is open at a time.
+test('the footer figures open their details', async () => {
+  const page = await pageWith()
+  try {
+    const usage = page.locator('[data-stat="usage"] button')
+    assert.equal(await page.getByRole('dialog').count(), 0, 'nothing is open before a click')
+    await usage.click()
+    const tokens = page.getByRole('dialog', { name: 'Tokens' })
+    const text = await tokens.innerText()
+    for (const shown of ['Cache hit', 'Input', 'Cache read', 'Output', 'Context Ledger update', 'compaction']) assert.ok(text.includes(shown), `Tokens shows "${shown}":\n${text}`)
+    assert.equal(await usage.getAttribute('aria-expanded'), 'true')
+    await page.locator('[data-stat="activity"] button').click()
+    assert.equal(await tokens.count(), 0, 'opening another figure closes the first')
+    assert.match(await page.getByRole('dialog', { name: 'Time and speed' }).innerText(), /turns .* steps/)
+    await page.keyboard.press('Escape')
+    assert.equal(await page.getByRole('dialog').count(), 0, 'Escape closes it')
+    const context = page.locator('[data-stat="context"] button')
+    if (await context.count()) {
+      await context.click()
+      assert.match(await page.getByRole('dialog', { name: 'Context' }).innerText(), /Used[\s\S]*Window[\s\S]*Free/)
+      await page.locator('tr[data-record-index]').first().click()
+      assert.equal(await page.getByRole('dialog', { name: 'Context' }).count(), 0, 'a click outside closes it')
+    }
+  } finally { await page.close() }
+})
