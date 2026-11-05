@@ -1,6 +1,6 @@
 # Providers
 
-Elpis owns context admission, durable memory, session continuity, permissions, tool execution and the TUI. The selected provider owns inference. Switching provider with `/model` keeps workspace context, `GOAL.md`, `ES.md` checkpoints and memory ([sessions](sessions.md)).
+Who owns what is [TUI item 2](TUI_SPEC.md#foundation); switching provider keeps context, checkpoints and memory ([sessions](sessions.md)).
 
 ![Elpis provider-neutral architecture](assets/elpis-provider-architecture.svg)
 
@@ -39,23 +39,11 @@ elpis --provider openrouter --model tencent/hy3:free
 
 A gateway key comes from, in order: a bearer token core attached (`experimental_bearer_token` or command auth), a key saved from the terminal (owner-only `provider-keys.json` in the Elpis home), then the provider's environment variable. Keys never appear in logs or error messages (`codex-rs/elpis-gateway/src/keys.rs`), and native keys are never forwarded to OpenRouter.
 
-Inside Elpis, `/model` opens the model and reasoning picker; the header shows the new model at once.
-
-## 3. Wire Translation
+## 3. Wire translation
 
 The [Elpis gateway](../codex-rs/elpis-gateway/src/lib.rs) is a loopback server that translates Responses requests into vendor payloads and vendor streams back into Responses events. Adapters: [Chat Completions](../codex-rs/elpis-gateway/src/chat.rs), [Anthropic](../codex-rs/elpis-gateway/src/anthropic.rs), [Gemini](../codex-rs/elpis-gateway/src/gemini.rs).
 
-| Elpis event | OpenAI Responses | Anthropic Messages | Gemini GenerateContent |
-| :--- | :--- | :--- | :--- |
-| **System prompt** | `instructions` / `system` | `system` array | `systemInstruction` object |
-| **User message** | `user` role item | `user` role content block | `user` role `parts` |
-| **Assistant message** | `assistant` role item | `assistant` role content block | `model` role `parts` |
-| **Tool declaration** | `tools` JSON schema | `tools` JSON schema | `tools.functionDeclarations` |
-| **Tool call** | `function_call` item | `tool_use` block | `functionCall` part |
-| **Tool result** | `function_call_output` | `tool_result` block | `functionResponse` part |
-| **Auth header** | `Authorization: Bearer <key>` | `x-api-key: <key>` plus `anthropic-version: 2023-06-01` | `x-goog-api-key: <key>` |
-
-The adapters also translate streamed text, tool calls, vendor errors, token usage, model identifiers and completion state. Dropping the response stream stops the parser and releases the upstream body. A vendor silent past the stream-idle timeout fails the stream.
+They translate messages, tool declarations, calls and results, auth headers, streamed text, vendor errors, token usage, model identifiers and completion state. Dropping the response stream stops the parser and releases the upstream body. A vendor silent past the stream-idle timeout fails the stream.
 
 ## 4. Limits
 
@@ -67,20 +55,6 @@ The adapters also translate streamed text, tool calls, vendor errors, token usag
 - Vendor error statuses pass through to core's retry and rate-limit handling, except 401 and Anthropic's 529 overload (`lib.rs`).
 - No real vendor has accepted the adapters yet: [`scripts/provider-gateway-runtime.test.cjs`](../scripts/provider-gateway-runtime.test.cjs) runs a read-and-patch turn against a loopback fake Anthropic and Chat vendor.
 
-## 5. Manual Smoke Tests
+## 5. Manual smoke test
 
-Run these on the remote Rust workflow, not the maintainer's workstation.
-
-```sh
-export ANTHROPIC_API_KEY='...'
-cargo run -p codex-tui --bin elpis -- --provider anthropic
-# /model lists Claude models; ask for a plain answer, then a task that calls a local function tool.
-
-export GEMINI_API_KEY='...'
-cargo run -p codex-tui --bin elpis -- --provider google-gemini
-# /model lists Gemini models; run a text turn and a function-tool turn.
-
-export OPENROUTER_API_KEY='...'
-cargo run -p codex-tui --bin elpis -- --provider claude
-# Logs/config show model_provider=openrouter and the alias model.
-```
+On the remote Rust workflow, not the workstation: set the vendor key, run `cargo run -p codex-tui --bin elpis -- --provider <anthropic|google-gemini|claude>`, check that `/model` lists the vendor's models, then run a text turn and a function-tool turn.
