@@ -6,7 +6,7 @@ import { BrandWordmark } from "@/components/brand-wordmark";
 import { flushSync } from "react-dom";
 import { cloneElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { AgentsIcon, BrowserIcon, ChatIcon, ExperimentLabIcon, FolderIcon, LoveSpotIcon, NewChatIcon, PinIcon, PlusIcon, SendIcon, SettingsIcon, ThemeIcon, WorkflowsIcon, StopIcon } from "@/components/elpis-icons";
-import { ListFilter, Archive, ArrowDown, Blocks, Bookmark, ChevronRight, EyeOff, Layers, PanelLeft, PanelRightClose, PanelRightOpen, Pin, RefreshCw, Search, X, Zap } from "lucide-react";
+import { Activity, ListFilter, Archive, ArrowDown, Blocks, Bookmark, ChevronRight, EyeOff, Layers, PanelLeft, PanelRightClose, PanelRightOpen, Pin, RefreshCw, Search, X, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ReorderItem, useReorder } from "@/components/reorder";
 import { OptionSelect } from "@/components/ui/option-select";
@@ -83,6 +83,7 @@ import { ReadAloud } from "@/components/read-aloud";
 import { MatildaAutoVoice } from "@/components/matilda-auto-voice";
 import { MatildaCompanion } from "@/components/matilda-companion";
 import { LiveVoiceProvider } from "@/components/live-voice";
+import { ObservabilityView } from "@/components/observability-view";
 import { chooseProject, projectAt, EnvironmentMenu, MoveChatDialog, ProjectActions, ProjectDialog, ProjectMenu } from "@/components/project-picker";
 import { PutUnderDialog } from "@/components/put-under-dialog";
 import { WorkflowMark } from "@/components/workflow-identity";
@@ -134,7 +135,7 @@ const approvalDraftKey = (approval: Approval) => JSON.stringify([approval.ownerT
 
 const LoveSpot = dynamic(() => import("@/components/love-spot"), { ssr: false, loading: () => <p role="status">Opening Love Spot…</p> });
 
-type View = "chat" | "agentsGuide" | "canvas" | "experimentLab" | "loveSpot" | "customize" | "settings";
+type View = "chat" | "agentsGuide" | "canvas" | "experimentLab" | "loveSpot" | "customize" | "observability" | "settings";
 type NextTurn = { model?: string; plan?: boolean };
 type Live = { thread: Thread; activeTurnId?: string | null; permissions?: PermissionMode | null; planMode?: boolean; followingLive?: boolean };
 /** A page of a chat's history; `earliestHistoryMissing` when the record it continued was deleted. */
@@ -153,6 +154,8 @@ const NAV_PAGES = [
   { id: "experimentLab", name: "Lab", Icon: ExperimentLabIcon },
   { id: "canvas", name: "Workflows", Icon: WorkflowsIcon },
   { id: "loveSpot", name: "Love Spot", Icon: LoveSpotIcon },
+  // 5 Nov: back, as the TUI's /dashboard page (DeepSeek's Trajectory), with the pulse icon he approved.
+  { id: "observability", name: "Observability", Icon: Activity },
   { id: "customize", name: "Customize", Icon: Blocks },
 ] as const;
 
@@ -2406,7 +2409,7 @@ export default function Home() {
         onRename={name => updateGroups(state => renameGroup(state, group.id, name))} onDelete={() => updateGroups(state => deleteGroup(state, group.id))}>{content}</GroupActions>}
       empty={!chats.length}>{chats.map(chatRows)}</SidebarGroup>;
   }
-  const heading = view === "chat" ? (selected ? title(selected) : "") : { agentsGuide: "Guide to managing agents", canvas: "Workflows", experimentLab: "Lab", loveSpot: "Love Spot", customize: "Customize", settings: "Settings" }[view];
+  const heading = view === "chat" ? (selected ? title(selected) : "") : { agentsGuide: "Guide to managing agents", canvas: "Workflows", experimentLab: "Lab", loveSpot: "Love Spot", customize: "Customize", observability: "Observability", settings: "Settings" }[view];
   const chatName = selected ? title(selected) : "New chat";
   const chatState = selected ? agentState(selected, waitingIds) : "idle", floatState = activeTurn && chatState === "idle" ? "working" : chatState;
   const meta = selected ? [agentName(selected), selected.agentRole && selected.agentRole !== "default" ? selected.agentRole : null].filter(Boolean).join(" · ") : "";
@@ -2428,7 +2431,7 @@ export default function Home() {
       const next = arrange(projects, move(projects.map(project => project.id), id, place));
       return saveProjects(next, projectId).then(() => setProjects(next)).catch(cause => setError(String(cause)));
     } });
-  for (const [target, name] of [["agentsGuide", "Guide to managing agents"], ["experimentLab", "Lab"], ["canvas", "Workflows"], ["loveSpot", "Love Spot"], ["customize", "Customize"]] as const) if (!hiddenPages.includes(target) && !(target === "agentsGuide" && hiddenPages.includes("canvas"))) commandActions.push({ id: target, name, run: () => show(target) });
+  for (const [target, name] of [["agentsGuide", "Guide to managing agents"], ["experimentLab", "Lab"], ["canvas", "Workflows"], ["loveSpot", "Love Spot"], ["observability", "Observability"], ["customize", "Customize"]] as const) if (!hiddenPages.includes(target) && !(target === "agentsGuide" && hiddenPages.includes("canvas"))) commandActions.push({ id: target, name, run: () => show(target) });
 
   // One Matilda voice and one live call for the whole app: both go on when he leaves the board or Love Spot's chat; her face shows and controls them.
   return <DocumentReviewProvider onAttach={parts => attachFromBrowser(parts, false)}><LiveVoiceProvider><ReadAloud threadId="love-spot" enabled available={LOVE_SPOT_AUDIO.readAloudAvailable} unavailableReason={LOVE_SPOT_AUDIO.available ? undefined : LOVE_SPOT_AUDIO.reason}><div data-workspace={view} data-desktop={desktop || undefined} className={`app-shell${split.pane ? " session-pane" : ""}${split.thread && view === "chat" ? " session-split" : ""}${dark ? " dark" : ""} has-title-bar${sidebarCollapsed ? " sidebar-collapsed" : ""}${view === "settings" ? " settings-mode" : ""}${panelShown ? " panel-active" : ""}`} style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>
@@ -2550,6 +2553,7 @@ export default function Home() {
       {view === "canvas" && <ViewBoundary label="Workflows"><CanvasGuideHelp onOpen={() => show("agentsGuide")}><AgentsCanvas threads={threads} key={recordedWorkflow?.id ?? "draft"} recordedRun={recordedWorkflow} onLeaveRecordedRun={() => setRecordedWorkflow(undefined)} onOpenRecordedRun={run => setRecordedWorkflow(run)} ready={ready && connected} workflowCatalog={workflowCatalog} models={models} cwd={workflowFolder} dark={dark} onOpenChat={id => { show("chat"); void openById(id); }} onRunStarted={keepWorkflowTab}
         projectMenu={<ProjectMenu variant="chip" projects={projects} selected={workflowProject ?? { id: "workflow-sandbox", name: "Sandbox", cwd: workflowSandbox ?? "" }} allowNone={!!workflowProject} noneLabel="Use sandbox" disabled={!ready || projectChanging} onSelect={selectProject} onAdd={() => void addProject()} />} onUseFolder={workIn} /></CanvasGuideHelp></ViewBoundary>}
       {view === "loveSpot" && <ViewBoundary label="Love Spot"><LoveSpot dark={dark} toolbarHost={loveToolbarHost} cwd={newChatFolder(cwd || workflowProject?.cwd || "") || undefined} onOpenChat={id => { show("chat"); void openById(id); }} /></ViewBoundary>}
+      {view === "observability" && <ViewBoundary label="Observability"><ObservabilityView threadId={selected?.id} /></ViewBoundary>}
       {view === "customize" && <div className="page-scroll"><ViewBoundary label="Customize"><CustomizeView cwd={cwd} onOpenSettings={() => openSettings("mcp")}
         onConnectGithub={hasTerminal ? () => { show("chat"); setTuiLaunch({ key: side.openTerminal(cwd), command: "github-login", token: Date.now() }); } : undefined}
         onCreateSkill={() => { newChat(); requestAnimationFrame(() => editDraft("Use $skill-creator to create a new skill that ")); }} /></ViewBoundary></div>}

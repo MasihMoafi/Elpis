@@ -9,7 +9,8 @@ import './app.css'
 
 async function loadTrajectory(): Promise<TrajectoryDocument> {
   try {
-    const response = await fetch('/api/trajectory', { headers: { Accept: 'application/json' }, cache: 'no-store' })
+    const response = await fetch(`/api/trajectory${location.search}`, {  // the desktop passes ?thread=<id>; the TUI's server ignores it
+      headers: { Accept: 'application/json' }, cache: 'no-store' })
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     const document: unknown = await response.json()
     if (typeof document !== 'object' || document === null || !('version' in document) || document.version !== 1 || !('turns' in document) || !Array.isArray(document.turns) || !('requestNumbers' in document) || !Array.isArray(document.requestNumbers)) throw new Error('Invalid trajectory document')

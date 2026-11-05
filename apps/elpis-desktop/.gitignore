@@ -3,5 +3,6 @@ node_modules/
 out/
 *.tsbuildinfo
 public/love-spot-assets/
+public/trajectory/
 public/elpis-source-map.json
 .ui-check/

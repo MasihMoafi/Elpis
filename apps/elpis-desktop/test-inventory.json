@@ -123,7 +123,8 @@
     "bridge/workflow-runs.test.mjs",
     "bridge/matilda-companion.test.mjs",
     "bridge/love-spot-painting.test.cjs",
-    "bridge/agent-output.test.mjs"
+    "bridge/agent-output.test.mjs",
+    "bridge/trajectory-projection.test.mjs"
   ],
   "desktop": [
     "desktop/app-menu.test.cjs",
@@ -400,7 +401,9 @@
     "tests/section-heading-gap.test.cjs",
     "tests/love-spot-page-names.test.cjs",
     "tests/settings-nav-whole-rows.test.cjs",
-    "tests/agent-inline.test.cjs"
+    "tests/agent-inline.test.cjs",
+    "tests/matilda-live-voice.test.cjs",
+    "tests/observability.test.cjs"
   ],
   "opt-in": [
     "tests/screen-capture-electron.test.cjs",

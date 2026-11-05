@@ -19,6 +19,9 @@ await fs.copyFile(new URL('../../../tools/elpis-claude/permission-policy.mjs', i
 await fs.copyFile(new URL('../../../tools/elpis-claude/workflow-concurrency.mjs', import.meta.url), new URL('./workflow-concurrency.mjs', resources));
 await fs.copyFile(new URL('../../../codex-rs/core/src/prompts/rag.md', import.meta.url), new URL('./rag.md', resources));
 await fs.copyFile(new URL('../../../codex-rs/skills/src/assets/personal/SKILL.md', import.meta.url), new URL('./personal.md', resources));
+// Observability serves the Trajectory page (apps/elpis-trajectory, built and committed there) from the renderer's own files.
+if (!bridgeOnly) await fs.rm(new URL('../public/trajectory/', import.meta.url), { recursive: true, force: true });
+if (!bridgeOnly) await fs.cp(new URL('../../elpis-trajectory/dist/', import.meta.url), new URL('../public/trajectory/', import.meta.url), { recursive: true });
 // Excalidraw's bundled fonts stay local, including during whole-drawing PNG export.
 if (!bridgeOnly) await fs.cp(new URL('../node_modules/@excalidraw/excalidraw/dist/prod/fonts/', import.meta.url), new URL('../public/love-spot-assets/fonts/', import.meta.url), { recursive: true });
 

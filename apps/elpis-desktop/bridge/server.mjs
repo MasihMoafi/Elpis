@@ -174,6 +174,11 @@ export async function startDesktopServer(options = {}) {
         response.removeHeader('X-Frame-Options');
         response.setHeader('Content-Security-Policy', response.getHeader('Content-Security-Policy').replace("frame-ancestors 'none'", "frame-ancestors 'self' app://obsidian.md"));
       }
+      // Observability frames the Trajectory page; only the application itself may embed it.
+      if (url.pathname.startsWith('/trajectory/')) {
+        response.setHeader('X-Frame-Options', 'SAMEORIGIN');
+        response.setHeader('Content-Security-Policy', response.getHeader('Content-Security-Policy').replace("frame-ancestors 'none'", "frame-ancestors 'self'"));
+      }
       if (request.method === 'POST' && request.headers.origin !== origin) throw new BridgeError('Same-origin request required', 403);
       if (url.pathname === '/api/session' && request.method === 'POST') {
         const submitted = object(await body(request), ['token']);
@@ -256,6 +261,14 @@ export async function startDesktopServer(options = {}) {
         }
         if (url.pathname === '/api/import-chats' && method === 'GET') return json(response, 200, await importChats.list());
         if (url.pathname === '/api/import-chats' && method === 'POST') return json(response, 200, await importChats.run(await body(request)));
+        // Observability (5 Nov): the selected chat's rollout projected as the TUI's /dashboard does (bridge/trajectory-projection.mjs).
+        if (url.pathname === '/api/trajectory' && method === 'GET') {
+          if ([...url.searchParams.keys()].some(key => key !== 'thread') || url.searchParams.getAll('thread').length !== 1) throw new BridgeError('Open a chat to see its trajectory.', 400);
+          const thread = await client.readThreadMetadata(url.searchParams.get('thread'));
+          if (typeof thread.path !== 'string' || !thread.path) throw new BridgeError('This chat has no recorded history yet.', 404);
+          const { project } = await import('./trajectory-projection.mjs');
+          return json(response, 200, project(await fs.readFile(thread.path, 'utf8')));
+        }
         if (url.pathname === '/api/voice/report' && method === 'POST') return json(response, 200, await recordVoiceCall(options.elpisHome ?? elpisHome(), await body(request)));
         if (url.pathname === '/api/voice' && method === 'GET') return json(response, 200, await client.voiceStatus());
         if (url.pathname === '/api/voice' && method === 'POST') return await voice.start(await body(request), response);

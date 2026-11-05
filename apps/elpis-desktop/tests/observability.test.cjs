@@ -1,0 +1,60 @@
+// 5 Nov, Masih: "I don't see an observability in Elpis gui ... it already was there with a logo I had approved." The
+// sidebar's Observability (pulse icon) shows the TUI's /dashboard page, DeepSeek's Trajectory, for the selected chat: its
+// turns, tool calls, cache share and cache-break cause come from the chat's own rollout, read by the bridge.
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const { loveSpotFixture } = require('./love-spot-fixture.cjs');
+
+const line = (timestamp, type, payload) => JSON.stringify({ timestamp, type, payload });
+const usage = (input, cached, output) => ({ usage: { input_tokens: input, cached_input_tokens: cached, cache_write_input_tokens: 0, output_tokens: output, reasoning_output_tokens: 5, total_tokens: input + output } });
+/** The same rollout as codex-rs/elpis-trajectory/src/projection_tests.rs: a tool call, a cache hit, a Ledger change that
+ * breaks the cache, and a second turn. */
+const ROLLOUT = [
+  line('2026-11-05T10:00:00.000Z', 'session_meta', { id: 'thread-1', cwd: '/w', model_provider: 'openai', base_instructions: { text: 'You are Elpis.' } }),
+  line('2026-11-05T10:00:00.000Z', 'turn_context', { model: 'gpt-6.1-terra' }),
+  line('2026-11-05T10:00:00.000Z', 'world_state', { full: true, state: { agents_md: {} } }),
+  line('2026-11-05T10:00:00.000Z', 'event_msg', { type: 'task_started', started_at: 1793872800, model_context_window: 400000 }),
+  line('2026-11-05T10:00:00.200Z', 'response_item', { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'List the files' }] }),
+  line('2026-11-05T10:00:01.000Z', 'response_item', { type: 'function_call', name: 'exec_command', arguments: '{"cmd":"ls"}', call_id: 'call-1' }),
+  line('2026-11-05T10:00:02.000Z', 'token_usage_record', usage(10000, 0, 50)),
+  line('2026-11-05T10:00:02.500Z', 'response_item', { type: 'function_call_output', call_id: 'call-1', output: 'Exit code: 2\nls: no such file' }),
+  line('2026-11-05T10:00:04.000Z', 'response_item', { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'The folder is empty.' }] }),
+  line('2026-11-05T10:00:04.000Z', 'token_usage_record', usage(10200, 9000, 20)),
+  line('2026-11-05T10:00:05.000Z', 'event_msg', { type: 'task_complete', time_to_first_token_ms: 700 }),
+  line('2026-11-05T10:01:00.000Z', 'world_state', { full: false, state: { agents_md: {} } }),
+  line('2026-11-05T10:01:00.000Z', 'event_msg', { type: 'task_started', started_at: 1793872860 }),
+  line('2026-11-05T10:01:00.100Z', 'response_item', { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Again' }] }),
+  line('2026-11-05T10:01:02.000Z', 'response_item', { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Done.' }] }),
+  line('2026-11-05T10:01:02.000Z', 'token_usage_record', usage(10400, 1000, 10)),
+].join('\n');
+
+test('Observability shows the selected chat as the Trajectory page; with no chat it asks for one', async () => {
+  const id = '00000000-0000-4000-8000-0000000000a1';
+  let rollout;
+  const f = await loveSpotFixture({ configureClient: client => {
+    client.readThreadMetadata = async threadId => ({ id: threadId, path: rollout });
+  } });
+  try {
+    rollout = path.join(f.root, 'rollout.jsonl'); await fs.writeFile(rollout, ROLLOUT);
+    const { page } = f;
+    const nav = page.locator('.nav-list').getByRole('button', { name: 'Observability', exact: true });
+    // Negative: no chat selected, so the page asks for one instead of showing another chat's history.
+    await nav.click();
+    await page.getByText('Open a chat to see its trajectory.').waitFor();
+    assert.equal(await page.locator('.observability iframe').count(), 0);
+
+    f.chats.push({ id, name: 'List the files', preview: 'List the files', cwd: f.directory, modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct', reason: null } });
+    await page.reload(); await page.locator('.startup-splash').waitFor({ state: 'detached' });
+    await page.locator(`aside [data-thread-id="${id}"] .thread-link`).click();
+    await page.locator('.nav-list').getByRole('button', { name: 'Observability', exact: true }).click();
+    const frame = page.frameLocator('.observability iframe');
+    await frame.getByText('List the files').first().waitFor({ timeout: 20000 });
+    const text = await frame.locator('body').innerText();
+    for (const shown of ['exec_command', 'Again', 'Done.']) assert.ok(text.includes(shown), `the page shows "${shown}":\n${text.slice(0, 2000)}`);
+    assert.match(text, /2 turns/, 'the footer counts the two turns');
+    assert.match(text, /Cache hit \d+%/, 'the footer shows the cache share');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
