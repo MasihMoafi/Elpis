@@ -5,6 +5,9 @@
   "main": "desktop/main.cjs",
   "version": "0.5.1",
   "private": true,
+  "engines": {
+    "node": "26.1.0"
+  },
   "scripts": {
     "prebuild": "node bridge/build-resources.mjs",
     "predev": "node bridge/build-resources.mjs",
