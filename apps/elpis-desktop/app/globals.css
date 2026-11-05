@@ -843,6 +843,9 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 /* Claude's tooltip on its icon buttons: the text, and a quieter line under it. */
 .hud-tooltip { display:grid; gap:2px; max-width:260px; padding:6px 10px; border:1px solid var(--hud-edge); background:var(--card); color:var(--foreground); font-size:var(--text-small); line-height:1.35; box-shadow:var(--shadow); pointer-events:none; }
 .hud-tooltip small { color:var(--muted-foreground); font-size:var(--text-small); }
+/* Liquid glass: the page shows through, blurred and brightened, under a light rim (Matilda's face label, 5 Nov). */
+.hud-tooltip.hud-tooltip-glass { border:1px solid color-mix(in oklab, white 45%, transparent); background:color-mix(in oklab, var(--card) 38%, transparent); -webkit-backdrop-filter:blur(18px) saturate(1.8); backdrop-filter:blur(18px) saturate(1.8); box-shadow:inset 0 1px 0 color-mix(in oklab, white 55%, transparent), 0 8px 24px rgb(0 0 0 / 0.18); border-radius:12px; corner-shape:round; }
+.dark .hud-tooltip.hud-tooltip-glass { border-color:color-mix(in oklab, white 18%, transparent); box-shadow:inset 0 1px 0 color-mix(in oklab, white 22%, transparent), 0 8px 24px rgb(0 0 0 / 0.4); }
 /* The ring's popover, laid out as Claude's: a 360px card; rows inset 16px; the context section is a muted header row, a thin
  * bar and the categories below it. It shows the TUI Context Ledger's CONTEXT WINDOW section on one full-window scale. */
 .context-ledger { display:flex; flex-direction:column; gap:4px; width:360px; max-width:calc(100vw - 2rem); max-height:min(var(--available-height, 640px), 640px); overflow-y:auto; padding:8px 0; font-size:var(--text-small); line-height:1.4; }

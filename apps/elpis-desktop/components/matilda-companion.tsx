@@ -12,6 +12,7 @@ import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { MatildaMiniChat, useMatildaMiniChat } from "@/components/matilda-mini-chat";
 import { MatildaHeartBurst } from "@/components/matilda-heart-burst";
 import { Button } from "@/components/ui/button";
+import { Tooltip } from "@/components/ui/tooltip";
 import { api, signedIn } from "@/lib/api";
 import { MATILDA_CHANGED, MATILDA_CHAT_SHOWN } from "@/lib/matilda";
 import { appStorage } from "@/lib/projects";
@@ -39,7 +40,26 @@ const stillness = () => typeof matchMedia === "function" && matchMedia("(prefers
 /** Her resting face is "listening"; the others fade in when they fit (28 Oct, Masih chose them): her smile while she
  * replies, a warm tilted smile while hovered, a soft smile for 3 s after her reply, and now and then a wink. Never with
  * reduced motion. */
-function useMood(replying: boolean, replies: number) {
+/** Her face from what she is saying in a call (5 Nov, Masih: "I like its face to change you know? Based on the
+ * conversation, and when she is thinking"). */
+export function moodFromWords(words: string): Mood {
+  const text = words.toLowerCase();
+  // Her kiss portraits join MATILDA_SHOTS after its literal (bridge/matilda-face.cjs), so its type does not list them.
+  if (/\b(kiss|kisses|love you|my love|darling|sweetheart|xoxo)\b|😘|💋/.test(text)) return "kissSoft" in MATILDA_SHOTS ? "kissSoft" as Mood : "softSmile";
+  if (/\b(haha|ha ha|lol|funny|joke|kidding|tease|teasing|naughty|cheeky)\b|😉|😜/.test(text)) return "wink";
+  if (/\?\s*$/.test(text.trim())) return "tiltSmile";
+  if (/\b(sorry|miss you|it's okay|i'm here|gently|soft)\b/.test(text)) return "softSmile";
+  return "smile";
+}
+/** During a call: listening while he talks, a thoughtful tilt while she works on a reply (there is no thinking portrait
+ * yet), and while she speaks the face her words call for. */
+function callMood(call: { activity: string; said: string; paused: boolean } | null): Mood | null | undefined {
+  if (!call || call.paused) return undefined;
+  if (call.activity === "working") return "tiltSmile";
+  if (call.activity === "speaking") return moodFromWords(call.said);
+  return null;
+}
+function useMood(replying: boolean, replies: number, call: { activity: string; said: string; paused: boolean } | null = null) {
   const [replied, setReplied] = useState(false), [hovered, setHovered] = useState(false), [winking, setWinking] = useState(false), seen = useRef(replies);
   useEffect(() => {
     if (replies <= seen.current) { seen.current = replies; return; }
@@ -52,7 +72,8 @@ function useMood(replying: boolean, replies: number) {
     const next = () => { timer = window.setTimeout(() => { setWinking(true); timer = window.setTimeout(() => { setWinking(false); next(); }, 1400); }, 25000 + Math.random() * 20000); };
     next(); return () => window.clearTimeout(timer);
   }, []);
-  const mood: Mood | null = replying ? "smile" : hovered ? "tiltSmile" : replied ? "softSmile" : winking ? "wink" : null;
+  const during = callMood(call);
+  const mood: Mood | null = during !== undefined ? during : replying ? "smile" : hovered ? "tiltSmile" : replied ? "softSmile" : winking ? "wink" : null;
   return { shown: stillness() ? null : mood, setHovered };
 }
 /** Her live call (Love Spot's chat) and her read-aloud voice, wherever he is in the app (5 Nov): her face shows she is
@@ -99,7 +120,7 @@ export function MatildaCompanion() {
   const [state, setState] = useState<Companion | null>(null);
   const [chatOpen, setChatOpen] = useState(false), mini = useMatildaMiniChat(chatOpen);
   const voice = useHerVoice();
-  const mood = useMood(mini.posting || mini.conversation.busy, mini.conversation.entries.filter(entry => entry.item.type === "agentMessage").length);
+  const mood = useMood(mini.posting || mini.conversation.busy, mini.conversation.entries.filter(entry => entry.item.type === "agentMessage").length, voice.call);
   const suppressClick = useRef(false), faceRef = useRef<HTMLButtonElement>(null), floatRef = useRef<HTMLElement>(null);
   useEffect(() => { if (!state?.pinned) setChatOpen(false); }, [state?.pinned]);
   useEffect(() => {
@@ -259,7 +280,9 @@ export function MatildaCompanion() {
   const floating = state?.pinned && <section ref={floatRef} aria-label="Pinned Matilda" className="matilda-float" data-call={voice.shown || undefined} data-controls={shown.top - chrome < 40 ? "below" : "above"} style={{ left: shown.left, top: shown.top, width: size, height: size, ...hidden ? { clipPath: `polygon(-9999px -9999px, ${size - hidden}px -9999px, ${size - hidden}px 9999px, -9999px 9999px)` } : {} }}>
     {/* Right-click: Hide, the same as Unpin (5 Nov). Her face is images, so the trigger keeps Electron's image menu out. */}
     <ContextMenu><ContextMenuPrimitive.Trigger className="contents">
-    <button ref={faceRef} type="button" className="matilda-face" data-speaking={voice.speaking || undefined} aria-label="Chat with Matilda" aria-haspopup="dialog" aria-expanded={chatOpen} title="Chat with Matilda · drag to move" style={{ touchAction: "none" }}
+    {/* A glass label rather than the system's dark tooltip (5 Nov, Masih: "this should be liquid blur glass"). */}
+    <Tooltip content="Chat with Matilda" detail="Drag to move" suppressed={chatOpen} glass>
+    <button ref={faceRef} type="button" className="matilda-face" data-speaking={voice.speaking || undefined} aria-label="Chat with Matilda" aria-haspopup="dialog" aria-expanded={chatOpen} style={{ touchAction: "none" }}
       onPointerDown={grab(false)} onPointerMove={pull} onPointerUp={release} onLostPointerCapture={release}
       onClick={() => { if (!suppressClick.current) setChatOpen(open => !open); }}
       onPointerCancel={() => { const start = drag.current; if (start) put(start.left, start.top, start.size); release(); }}
@@ -276,6 +299,7 @@ export function MatildaCompanion() {
       ]))}
       {voice.speaking && <span className="matilda-speaking-ring" aria-hidden="true" />}
     </button>
+    </Tooltip>
     </ContextMenuPrimitive.Trigger>
     <ContextMenuContent><DropdownMenuItem onClick={() => void act("unpin")}>Hide</DropdownMenuItem></ContextMenuContent></ContextMenu>
     {chatOpen ? <div className="hud-popover matilda-mini-popup accent-scope" data-side={side} style={chatPlace()}>{alert}<MatildaMiniChat chat={mini} /></div>

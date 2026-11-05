@@ -8,7 +8,7 @@ type Call = { threadId: string; controller: AbortController; peer: RTCPeerConnec
 type VoiceEvent = { type: string; sdp?: string; message?: string; role?: string; text?: string; delta?: string };
 export type LiveActivity = "" | "hearing" | "working" | "speaking";
 /** What the app shows of the call. `persistent` calls (Love Spot's chat, Matilda's) outlive the page they started on. */
-export type LiveCallState = { threadId: string; persistent: boolean; phase: "connecting" | "listening"; activity: LiveActivity; micMuted: boolean; herMuted: boolean; paused: boolean };
+export type LiveCallState = { threadId: string; persistent: boolean; phase: "connecting" | "listening"; activity: LiveActivity; said: string; micMuted: boolean; herMuted: boolean; paused: boolean };
 type LiveVoice = {
   call: LiveCallState | null;
   error: { threadId: string; message: string } | null;
@@ -60,7 +60,7 @@ export function LiveVoiceProvider({ children }: { children: ReactNode }) {
     if (call.current) end();
     const current: Call = { threadId, controller: new AbortController(), peer: null, stream: null, audio: null, timer: null, sampler: null, heard: { events: {}, bytes: 0, packets: 0, energy: 0, mic: 0, listened: false, began: Date.now() } };
     call.current = current; setError(null);
-    stateRef.current = { threadId, persistent, phase: "connecting", activity: "", micMuted: false, herMuted: false, paused: false }; setState(stateRef.current);
+    stateRef.current = { threadId, persistent, phase: "connecting", activity: "", said: "", micMuted: false, herMuted: false, paused: false }; setState(stateRef.current);
     current.timer = setTimeout(() => { if (call.current === current) end("Voice connection timed out. Try again."); }, 35000);
     try {
       if (!navigator.mediaDevices?.getUserMedia || typeof RTCPeerConnection === "undefined") throw new Error("Voice is unavailable in this window.");
@@ -74,12 +74,14 @@ export function LiveVoiceProvider({ children }: { children: ReactNode }) {
       const events = peer.createDataChannel("oai-events");
       if (events) events.onmessage = message => {
         try {
-          const body = JSON.parse(String(message.data)) as { type?: string; message?: string; error?: { message?: string } };
+          const body = JSON.parse(String(message.data)) as { type?: string; message?: string; error?: { message?: string }; item?: { text?: unknown } };
           const type = body.type;
           if (call.current !== current || !type) return;
           current.heard.events[type] = (current.heard.events[type] ?? 0) + 1;
           if (/error/i.test(type)) setError({ threadId, message: String(body.error?.message ?? body.message ?? "The voice session reported an error.").slice(0, 200) });
-          else if (type === "input_transcript.added") note("hearing"); else if (type === "delegation.created") note("working"); else if (type === "output_transcript.added") note("speaking");
+          else if (type === "input_transcript.added") { update({ said: "" }); note("hearing"); } else if (type === "delegation.created") note("working");
+          // Her words arrive in pieces (`item.text`, codex-api protocol_frameless_bidi.rs); her face reads them (matilda-companion).
+          else if (type === "output_transcript.added") { update({ said: `${stateRef.current?.said ?? ""}${typeof body.item?.text === "string" ? body.item.text : ""}`.slice(-400) }); note("speaking"); }
         } catch { /* An event that is not JSON changes nothing. */ }
       };
       const audio = new Audio(); current.audio = audio; audio.autoplay = true;
@@ -129,7 +131,7 @@ export function LiveVoiceProvider({ children }: { children: ReactNode }) {
             if (event.type === "error") throw new Error(event.message || "Voice disconnected.");
             if (event.type === "transcript") {
               if (event.role === "user") {
-                note("hearing");
+                update({ said: "" }); note("hearing");
                 if (current.timer) clearTimeout(current.timer); current.timer = null;
                 // V3 interleaves late user transcripts with the reply. The realtime peer owns barge-in cancellation.
                 // A reply he silenced himself (Mute or Pause) is not a missing reply.
@@ -137,7 +139,7 @@ export function LiveVoiceProvider({ children }: { children: ReactNode }) {
                   const energy = current.heard.energy;
                   current.timer = setTimeout(() => { const shown = stateRef.current; if (call.current === current && !shown?.herMuted && !shown?.paused && (audio.paused || current.heard.energy <= energy)) end("Matilda returned no audible reply. End voice and try again."); }, 15000);
                 }
-              } else if (event.role === "assistant") note("speaking");
+              } else if (event.role === "assistant") { const said = event.text ?? `${stateRef.current?.said ?? ""}${event.delta ?? ""}`; update({ said: said.slice(-400) }); note("speaking"); }
             }
             if (event.type === "ended") { if (call.current === current) end(); return; }
           }

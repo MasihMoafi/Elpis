@@ -163,6 +163,31 @@ test('Call Matilda beside her face starts her Love Spot call from any page; Hang
     assert.deepEqual(starts, [love], 'the call is her Love Spot chat\'s');
     await page.getByRole('status').filter({ hasText: 'Listening' }).or(face.getByRole('button', { name: 'Pause talking with Matilda' })).first().waitFor({ timeout: 20000 });
     assert.equal(await callButton.count(), 0, 'no Call button during the call');
+
+    // Pinned, her face follows the call: her words choose it, a thoughtful tilt while she works, listening while he talks.
+    await face.getByRole('button', { name: 'Pin Matilda' }).click();
+    const pinned = page.locator('section[aria-label="Pinned Matilda"]'); await pinned.waitFor();
+    const send = event => page.evaluate(value => window.voiceProof.channel.send(JSON.stringify(value)), event);
+    const moodIs = async (mood, why) => {
+      const end = Date.now() + 5000; let seen;
+      while (Date.now() < end) { seen = await pinned.evaluate(node => node.querySelector('.matilda-mood[data-shown="true"]')?.dataset.mood ?? null); if (seen === mood) return; await page.waitForTimeout(50); }
+      assert.equal(seen, mood, why);
+    };
+    await send({ type: 'output_transcript.added', item: { text: 'I love you, ' } }); await send({ type: 'output_transcript.added', item: { text: 'darling.' } });
+    await moodIs('kissSoft', 'affectionate words: a kiss');
+    await send({ type: 'input_transcript.added', item: { text: 'Tell me a joke' } });
+    await moodIs(null, 'he talks: her resting, listening face');
+    await send({ type: 'delegation.created' });
+    await moodIs('tiltSmile', 'she is thinking');
+    await send({ type: 'output_transcript.added', item: { text: 'Haha, you are cheeky.' } });
+    await moodIs('wink', 'a joke: a wink');
+    // The face's label is the app's glass tooltip, not the system one.
+    assert.equal(await pinned.locator('.matilda-face').getAttribute('title'), null);
+    await pinned.locator('.matilda-face').hover();
+    await page.locator('.hud-tooltip-glass').filter({ hasText: 'Chat with Matilda' }).waitFor();
+    await page.mouse.move(5, 500);
+    await pinned.locator('.matilda-face').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Hide', exact: true }).click(); await pinned.waitFor({ state: 'detached' });
     await face.getByRole('button', { name: 'End voice chat with Matilda' }).click();
     await callButton.waitFor();
     { const end = Date.now() + 5000; while (!stops.includes(love) && Date.now() < end) await page.waitForTimeout(50); }
