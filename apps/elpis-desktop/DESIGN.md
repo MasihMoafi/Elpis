@@ -1,26 +1,28 @@
 # Elpis desktop: the design system
 
-Desktop-specific tokens, components and layout. Project rules are in [MASIH-RULES.md](../../docs/MASIH-RULES.md); general UI rules are in `~/Desktop/p/skills/web-dev/UI-RULES.md`.
+Desktop tokens, components and layout. Requirements are in [SPEC.md](SPEC.md), project rules in [MASIH-RULES.md](../../docs/MASIH-RULES.md), general UI rules in `~/Desktop/p/skills/web-dev/UI-RULES.md`.
 
 ## 1. Stack
-Next 16 static export (`app/page.tsx` is the one page shell), React 19, Tailwind 4 in `app/globals.css`, shadcn/ui "base-nova" on Base UI (`components/ui`, `components.json`), lucide icons, Electron 44 around it. The look is "HUD": bevelled corners, accent ticks, 12 px mono labels. No daisyUI; do not add it.
+Next 16 static export (`app/page.tsx` is the one page shell), React 19, Tailwind 4 in `app/globals.css`, shadcn/ui "base-nova" on Base UI (`components/ui`, `components.json`), lucide icons, Electron 44. The look is "HUD": bevelled corners, accent ticks, 12 px mono labels. No daisyUI; do not add it.
 
-## 2. Tokens (`app/globals.css`, `:root` and `.dark`). Never use a literal where a token exists
+## 2. Tokens
+In `app/globals.css` (`:root` and `.dark`). Never use a literal where a token exists.
+
 | Concept | Tokens |
 | --- | --- |
 | Colour | `--canvas` `--ink` `--background` `--foreground` `--card` `--border` `--hairline` `--hover` `--selected` `--muted-foreground` `--subtle-foreground` `--destructive` |
 | Accent | `--primary` (set by `data-accent`: amber default, blue, teal, green, violet, rose, orange), `--accent-text` |
-| Type | three sizes, as ChatGPT: `--text-xs` 12 (`--text-small`, the floor), `--text-sm` 13, `--text-base` 14 (Tailwind `text-xs/sm/base` read them); one family `--ui-font` (`--serif` is the same face); `--mono` for code and `.hud-label` only; replies that need the tighter reading rhythm use `--reply-line-height` 1.45 and `--reply-paragraph-gap` .725em |
-| Size | `--icon-size` 16 (one per row and in every `Button`; the one smaller glyph is a 14px disclosure chevron); gaps 2/4/6/8/12/16 only; `--text-title` 28 for page titles; `--control-h` 28 (composer row), `--row-h` 34 (every sidebar row and Settings tab, all window heights), `--header-h` 52; pages `--page-pad`, `--page-content-width` 860, `--page-head-gap` 20, `--page-section-gap` 24 |
+| Type | three sizes, as ChatGPT: `--text-xs` 12 (`--text-small`, the floor), `--text-sm` 13, `--text-base` 14 (Tailwind `text-xs/sm/base` read them); every CSS `font-size` uses one of them, except titles; one family `--ui-font` (`--serif` is the same face); `--mono` for code and `.hud-label` only; thread text `--transcript-size` (Medium 14, Small 13, Large 16; `lib/reading.ts`); replies that need the tighter reading rhythm use `--reply-line-height` 1.45 and `--reply-paragraph-gap` .725em |
+| Size | `--icon-size` 16 (one per row and in every `Button`; the one smaller glyph is a 14 px disclosure chevron); gaps 2/4/6/8/12/16 only; `--text-title` 28 for page titles; `--control-h` 28 (the `.composer-controls` row: plus, pills, model, effort, mic, send, stop); `--row-h` 34 (every sidebar row and Settings tab, all window heights); `--header-h` 52 (`.workspace-header`, 14 px title); pages (`.page-scroll`: Settings, Customize, the Guide) `--page-pad` 48 32 64, `--page-content-width` 860, `--page-head-gap` 20, `--page-section-gap` 24 |
+| Composer | `.composer`: border 1, padding 11/8/8/13, textarea 66 (22 px lines), 6 gap, 28 row: 121 tall, enlarged at Masih's request (31 Oct). Surface one step above the chat: `--composer`, `--composer-edge`, `--elevation-composer`; light `#fff` with an 8% ink ring, dark `#17191d` (chat `#0a0b0d`) with a 14% ink ring. It keeps the Elpis bevel; the gold edge shows only on focus |
 | Shape | `--cut-sm` 4 px, `--cut` 7 px, `--cut-lg` 10 px; `.hud-cut` on controls, `.hud-cut-sm` on controls 24 px or less, `--cut-lg` on panels. Round only dots, rings, switches |
 | Motion | `--motion-fast` .12 s, `--motion` .2 s, `--ease` |
 
 ### The chat thread follows the ChatGPT app
-`specs/chatgpt-chat-style.md` holds every measured value of ChatGPT's thread (column, insets, edge fades, bubble, reply type, fold row, actions, prompt rail, composer, scroll button). The thread's tokens (`--thread-tertiary`, `--thread-hairline`, `--thread-inset`, `--thread-edge-fade`, `--shadow-xl`) carry them; change a value there and in the spec together. The Elpis marks stay: your messages are bevelled cards with the gold right edge (Masih, 29 Oct: "That needs to come back.") (29 Oct, Masih: "map every style feature of chatgpt app into a clear spec that's reusable and make our design match it").
-Its "Shared scale" section carries the same scale to every page (the Size and Type rows above): a new text size, icon size, control height or page gap uses a token, never a literal. The composer keeps the Elpis bevel and the gold focus edge; its surface sits one step above the chat (`--composer`, `--composer-edge`, `--elevation-composer`).
+Masih, 29 Oct: "map every style feature of chatgpt app into a clear spec that's reusable and make our design match it". [specs/chatgpt-chat-style.md](specs/chatgpt-chat-style.md) holds ChatGPT's measured thread values and maps its scale to the tokens above ("Shared scale"). The thread tokens `--thread-tertiary`, `--thread-hairline`, `--thread-inset`, `--thread-edge-fade` and `--shadow-xl` carry them; change a value there and in the spec together. The Elpis marks stay: your messages are bevelled cards with the gold right edge (Masih, 29 Oct: "That needs to come back.").
 
 ## 3. Primitives (`components/ui`): use, do not re-make
-`button` (variants: default, outline, secondary, ghost, destructive, link; sizes: xs, sm, default, lg, icon, icon-xs, icon-sm, icon-lg), `input`, `textarea`, `search-field`, `switch`, `alert-dialog`, `dropdown-menu`, `context-menu`, `popover`, `tooltip`, `select`, `combobox`, `option-select`, `disclosure-summary`, `menu-row` (a row of a menu whose owner drives its own keys: the look of a dropdown item).
+`button` (variants: default, outline, secondary, ghost, destructive, link; sizes: xs, sm, default, lg, icon, icon-xs, icon-sm, icon-lg), `input`, `textarea`, `search-field`, `switch`, `alert-dialog`, `dropdown-menu`, `context-menu`, `popover`, `tooltip`, `select`, `combobox`, `option-select`, `disclosure-summary`, `menu-row` (a menu row whose owner drives its own keys, styled as a dropdown item).
 
 ## 4. Shared patterns: reuse before writing
 | Need | Use | Where |
@@ -34,19 +36,21 @@ Its "Shared scale" section carries the same scale to every page (the Size and Ty
 | Chat rows, agents, projects | `thread-row`, `ReorderItem`, `chat-groups` | `app/page.tsx`, `components/reorder.tsx` |
 
 ## 5. Layout
-The accepted live Working status belongs to the composer layout: `WorkingPlacement` portals `WorkingStatus` into `.composer-working`, directly above the composer, with the same left edge and an 18 px gap (raised about 1 mm after the 31 October preview). Preserve it through window resize, full-size restore and opening either side panel. Never position it with viewport or panel offset calculations; the rotor, dot and six independently phased edge opacities animate. Regression: `tests/approved-working-mark.test.cjs` checks these transitions in both themes and reduced motion.
 `title-bar` → `aside.sidebar` (brand, nav, search, chat list, footer) + `main.workspace` (header, one page column, composer) + optional side panel (browser, files, terminal). Settings replaces the sidebar and has its own page column. Sidebar footer, left to right: the user's name (shown, never clickable), a status line, the Theme button, the Settings gear.
 
-## 6. Rules that apply to every screen
-- Follow [the Elpis interaction rules](../../docs/MASIH-RULES.md) and the general UI rules named above.
+The accepted Working status: `WorkingPlacement` portals `WorkingStatus` into `.composer-working`, directly above the composer, on its left edge, with an 18 px gap. Keep it there through window resize, full-size restore and opening either side panel. Never position it with viewport or panel offsets. The rotor, dot and six independently phased edge opacities animate. `tests/approved-working-mark.test.cjs` checks these transitions in both themes and reduced motion.
+
+The prompt rail keeps a 28 px target inside the existing 32 px gutter, so showing it does not resize the transcript.
+
+## 6. Rules for every screen
 - A shown name or label is not a control.
 - A page the user cannot act on is removed or made to work. A hidden page leaves the sidebar and the command menu.
 - Lists have a planned order; one setting has one control.
 
 ## 7. Adding or changing UI, in order
-1. Search for the concept (`rg`) and read its owner; check the tokens and the shared patterns above.
-2. Extend the owner (a prop or variant) before adding a new component; a page-local style is the last resort.
+1. Search for the concept (`rg`) and read its owner; check the tokens and shared patterns above.
+2. Extend the owner (a prop or variant) before adding a component; a page-local style is the last resort.
 3. Fix the shared source, delete the local overrides it makes obsolete, then check every page that uses it.
-4. Test: a UI test through `tests/parity-fixture.cjs` (light and dark); anything the real server must serve or the real engine must do needs a test at that boundary (the fixture's own server hid a missing `.webp` type once).
-5. Retained tests change only through `scripts/renderer-artifact-gate.mjs` (pin with Masih's words as approval); new tests go in `test-inventory.json`.
+4. Test: a UI test through `tests/parity-fixture.cjs` (light and dark); anything the real server must serve or the real engine must do needs a test at that boundary.
+5. Retained tests change only through `scripts/renderer-artifact-gate.mjs` (pin with Masih's words as approval).
 6. Follow [desktop verification](TESTING.md) before installation.

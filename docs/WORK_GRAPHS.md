@@ -7,9 +7,9 @@ agent-verified on Linux; awaiting Masih's functional acceptance.
 
 ## Objective
 
-A work graph puts agents in a position where they only need to do bounded judgment:
-Elpis validates the plan, persists it, selects dependency-ready work, enforces
-concurrency and write boundaries, and accepts evidence before releasing dependent work.
+A work graph leaves agents only bounded judgment. Elpis validates the plan, persists
+it, selects dependency-ready work, enforces concurrency and write boundaries, and
+accepts evidence before releasing dependent work.
 
 ## Lifecycle
 
@@ -37,32 +37,29 @@ flowchart TD
     style I fill:#d1e7dd,stroke:#0f5132,color:#0f5132
 ```
 
-Two graphs are kept, and they are not the same thing:
+Elpis keeps two separate graphs:
 
 - the **lineage graph** records which agent spawned which subagent;
 - the **work graph** records tasks, dependencies, scopes, assignments, and outcomes.
 
-The work graph is a directed acyclic graph (DAG). A cycle cannot be scheduled because
-each task would wait for another task in the same cycle, so Elpis rejects cycles before
-creating workers.
+The work graph must be a directed acyclic graph (DAG): a task in a cycle would wait on
+itself.
 
 ## Graph theory boundary
 
-Elpis uses the smallest graph algorithms that match the control problem:
+Elpis uses the smallest algorithms that fit the control problem:
 
 - Kahn's topological algorithm validates that the task graph is acyclic.
 - A stable dependency-ready scan chooses runnable tasks in declared order.
 - Path-prefix intersection detects concurrent write conflicts.
 
-DFS and BFS are alternative ways to traverse a graph, but do not improve this
-scheduler's decision. Dijkstra's algorithm solves weighted shortest-path problems; a
-work graph has prerequisites rather than a destination and weighted routes, so Dijkstra
-does not apply unless a future product requirement introduces meaningful task costs and
-alternative paths.
+DFS or BFS would not improve the scheduling decision. Dijkstra's algorithm solves
+weighted shortest paths; a work graph has prerequisites, not a destination and weighted
+routes, so it applies only if a future requirement adds task costs and alternative paths.
 
 ## Enable and use
 
-The feature is intentionally off by default:
+The feature is off by default:
 
 ```toml
 [features]
@@ -70,7 +67,7 @@ enable_fanout = true
 ```
 
 There is no slash command. When enabled, the coordinator model receives the
-`run_agent_work_graph` function tool. It supplies the complete graph:
+`run_agent_work_graph` function tool and supplies the complete graph:
 
 ```json
 {
@@ -102,45 +99,45 @@ There is no slash command. When enabled, the coordinator model receives the
 }
 ```
 
-Write scopes are existing repository-relative directories; a task can create, modify,
-or delete files beneath them. Exact-file mount roots are rejected because the inherited
+Write scopes are existing repository-relative directories; a task may create, modify,
+or delete files beneath them. Exact-file mount roots are rejected, because the inherited
 Linux sandbox applies directory metadata protections to writable roots.
 `environment_id` must name an environment already selected for the turn. Without worktree
-isolation, Elpis does not create, merge, or delete branches or worktrees. With it (below),
-Elpis creates, commits, merges, and removes only its own `elpis/<graph>/<task>` branches
-and worktrees. It never rebases or pushes.
+isolation, Elpis creates, merges, and deletes no branches or worktrees. With it, Elpis
+creates, commits, merges, and removes only its own `elpis/<graph>/<task>` branches and
+worktrees. It never rebases or pushes.
 
 ## Worktree isolation
 
 `workGraph/run` and `workGraph/runWithProviders` accept `isolation: "worktree"` (the
-desktop bridge forwards it from `runWorkflow`). Absent or null keeps the behaviour above.
+desktop bridge forwards it from `runWorkflow`); absent or null keeps the behaviour above.
 Masih approved this design on 17 October 2026.
 
 - Each `implement` or `fix` task gets its own git worktree when it becomes ready, at
-  `<parent of the repository>/<repository name>-elpis/<graph id>/<task id>`, or at the same
-  path under the desktop's `desktop.git-worktree-root` when that is set. It is checked out
-  on the branch `elpis/<graph id>/<task id>`.
-- A writer with no writer prerequisites starts from the root's HEAD when the run started.
+  `<parent of the repository>/<repository name>-elpis/<graph id>/<task id>` (or that path
+  under the desktop's `desktop.git-worktree-root` when set), on the branch
+  `elpis/<graph id>/<task id>`.
+- A writer with no writer prerequisites starts from the root's HEAD at run start.
   A writer that builds on writers (directly or through read-only tasks) starts from the
-  first one's result and merges the others with `git merge --no-ff`. A clash there fails
-  that task, lists the clashing files, and keeps the conflicted worktree.
-- The writer's `verify` task checks the same worktree. With isolation, each `verify` task
-  must depend directly on exactly one writer. Writers in different worktrees run in
-  parallel; write scopes stay relative to the worktree and are enforced as before.
-  `explore` tasks run in the selected environment itself.
+  first one's result and merges the others with `git merge --no-ff`. A clash fails that
+  task, lists the clashing files, and keeps the conflicted worktree.
+- The writer's `verify` task checks the same worktree; each `verify` task must depend
+  directly on exactly one writer. Writers in different worktrees run in parallel; write
+  scopes stay relative to the worktree and are enforced as before. `explore` tasks run in
+  the selected environment itself.
 - When all of a writer's `verify` tasks succeed, Elpis commits everything changed in its
   worktree as `Elpis agent`, with the task title as the message. An unchanged worktree
   adds no commit.
-- When the whole graph succeeds, the results of the writers no other writer builds on are
-  merged with `git merge --no-ff`, one by one, first in a scratch worktree and then into
-  the branch checked out at the root by fast-forward, so the branch gets the same merge
-  commits. The branch is not moved when a result clashes or when the root has uncommitted
-  changes in a file the merge would change; the graph fails, lists those files, and keeps
-  the branches and worktrees. After a merge the worktrees and `elpis/<graph id>/*`
-  branches are removed.
-- A failed or cancelled run removes the worktrees that hold no work and keeps, and names,
-  the ones that do.
-- The report (worktree paths, branches, merge outcome) is the `worktreeReport` of the graph
+- When the whole graph succeeds, Elpis merges the results of writers no other writer
+  builds on with `git merge --no-ff`, one by one, first in a scratch worktree, then into
+  the root's checked-out branch by fast-forward, so the branch gets the same merge
+  commits. If a result clashes, or the root has uncommitted changes in a file the merge
+  would change, the branch does not move; the graph fails, lists those files, and keeps
+  the branches and worktrees. After a merge Elpis removes the worktrees and
+  `elpis/<graph id>/*` branches.
+- A failed or cancelled run removes worktrees that hold no work and keeps and names
+  those that do.
+- The report (worktree paths, branches, merge outcome) is the graph's `worktreeReport`
   in `workGraph/list`, and is added to the graph's `error` when the run fails.
 
 Commits and merges skip the repository's commit hooks (`--no-verify`) and signing.
@@ -164,19 +161,19 @@ At runtime:
 1. Tasks are persisted in declared order.
 2. Only pending tasks whose dependencies all succeeded are eligible.
 3. Eligible tasks are selected in declared order, then task-ID order.
-4. All writable tasks in one workspace are serialized, even when their declared path
-   prefixes do not overlap.
-5. Writable tasks may run concurrently only in different selected environments or, with
+4. All writable tasks in one workspace are serialized, even when their path prefixes do
+   not overlap.
+5. Writable tasks run concurrently only in different selected environments or, with
    worktree isolation, in their own worktrees.
 6. Concurrency is bounded by the requested limit and the session agent limit.
 7. A failed, cancelled, or blocked prerequisite blocks its pending descendants.
 8. Each task has a runtime deadline; a worker that exits without an accepted report
    fails the task.
-9. Cancellation shuts down active workers and terminally records the graph.
+9. Cancellation shuts down active workers and records the graph as terminal.
 
-These rules make dispatch repeatable for the same persisted state. Model completion
-time is not deterministic, but it cannot make an ineligible task runnable or bypass a
-scope conflict.
+Dispatch is therefore repeatable for the same persisted state. Model completion time is
+not deterministic, but it cannot make an ineligible task runnable or bypass a scope
+conflict.
 
 ## Worker authority and evidence
 
@@ -184,9 +181,9 @@ Each worker receives:
 
 - one role, one task, one selected environment, exact write scopes, and acceptance
   criteria;
-- accepted prerequisite result and evidence;
-- only the worker report tool from the work-graph tool pair;
-- no collaboration tools with which to create subagents.
+- accepted prerequisite results and evidence;
+- only the worker report tool of the work-graph tool pair;
+- no collaboration tools for creating subagents.
 
 The engine derives a managed permission profile for every worker:
 
@@ -195,32 +192,32 @@ The engine derives a managed permission profile for every worker:
 - an empty scope list is read-only;
 - network access is restricted.
 
-The child profile cannot broaden the parent profile: parent read denials survive and a
-declared write scope must already be writable by the coordinator's active profile.
+The child profile cannot broaden the parent's: parent read denials survive, and a
+declared write scope must already be writable under the coordinator's active profile.
 Windows-style absolute paths, Git metadata paths, and scopes whose existing prefix
 resolves through a symlink outside the selected workspace are rejected.
 
-This is enforced by the sandbox, not only by the prompt. Before dispatching a writable
-task, Elpis records SHA-256 digests for files and symlinks in its workspace, excluding
-Git metadata and ignored paths. When the assigned thread reports, Elpis measures the
-workspace again. Every declared file must be among the measured created, modified,
-and deleted files, and every measured change must be within the task's write scopes.
-Additional changes within those scopes, such as generated caches, are accepted and
-recorded as `undeclared_changed_files` in the task result and terminal event in the run log.
+The sandbox enforces this, not only the prompt. Before dispatching a writable task,
+Elpis records SHA-256 digests of files and symlinks in its workspace, excluding Git
+metadata and ignored paths, and measures again when the assigned thread reports. Every
+declared file must be among the measured created, modified, and deleted files, and every
+measured change must lie within the task's write scopes. Other changes within those
+scopes, such as generated caches, are accepted and recorded as `undeclared_changed_files`
+in the task result and in the run log's terminal event.
 
 `report_agent_work_task` is accepted only from the assigned thread. Success requires
-concrete checks and evidence. Writable success requires a measured changed file.
-Every report records summary, changed files, checks, risks, edge cases considered, open
+concrete checks and evidence; writable success requires a measured changed file. Every
+report records summary, changed files, checks, risks, edge cases considered, open
 questions, evidence, what was not checked, and failure reason. Declared paths outside
 the task's scopes are rejected.
 
 Elpis validates authority, structure, and file attribution. It cannot prove that prose,
-checks, or acceptance criteria are good. The directly dependent `verify` task,
+checks, or acceptance criteria are good: the directly dependent `verify` task,
 coordinator review, and Masih's acceptance remain required.
 
 ## Visibility
 
-The app server exposes persisted graphs for a root thread through `workGraph/list`.
+The app server exposes a root thread's persisted graphs through `workGraph/list`.
 Opening `/agent` fetches the newest graph and renders:
 
 - graph and task state, role, dependencies, and assigned thread;
@@ -228,8 +225,8 @@ Opening `/agent` fetches the newest graph and renders:
 - checks, evidence, risks, edge cases, and open questions;
 - unchecked work and terminal failure reasons.
 
-This is a snapshot when `/agent` opens, not a live dashboard. The existing `/subagents`
-alias reaches the same view; no new slash command was added.
+The view is a snapshot taken when `/agent` opens, not a live dashboard. The existing
+`/subagents` alias reaches the same view.
 
 ## Persistence and interruption
 
@@ -241,10 +238,10 @@ SQLite stores:
 - an append-only transition event trail.
 
 If a coordinator is interrupted and the same root thread starts another work graph,
-Elpis first fails that root's unfinished graph and all unfinished tasks. It never
-silently requeues an old active claim, so two workers are not deliberately assigned the
-same persisted task. It does not resume partially completed work automatically: the
-coordinator must inspect accepted evidence and deliberately construct the next graph.
+Elpis first fails that root's unfinished graph and tasks. It never requeues an old
+active claim, so it never deliberately assigns two workers the same persisted task, and it never
+resumes partial work automatically: the coordinator must inspect accepted evidence and
+build the next graph.
 
 ## Verification
 
@@ -265,6 +262,5 @@ Automated coverage proves:
   writers starts from their merge, and a clash there lists the files; a stopped run keeps
   only worktrees with work.
 
-The before/after negative-check data and reproduction commands are in
-[evals/accountable-work-graphs](evals/accountable-work-graphs/README.md). These checks
-are agent verification. Functional acceptance remains with Masih.
+Before/after negative-check data and reproduction commands:
+[evals/accountable-work-graphs](evals/accountable-work-graphs/README.md).

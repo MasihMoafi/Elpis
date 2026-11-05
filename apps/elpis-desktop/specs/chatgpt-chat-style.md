@@ -24,7 +24,7 @@ Sources: `/tmp/cgpt/webview/assets/*.css` (`app-shared-3424…`, `app-initial-e5
 | **Top edge** | `_MainContentTopFade` (abs, top 0, z-20) + `_background_18gud_1`: **16 px** `linear-gradient(to bottom, surface, transparent)`; hidden in browser windows. Page-surface variant: 40 px, stops surface → 82% @4 → 48% @12 → 12% @24 → 0 | `app-initial`, `app-shared`; S1 shows a wash over about 16 px |
 | Bottom of transcript | `pb-8` (32) + sticky spacer `h = --thread-scroll-padding-bottom − 16` | `thread-scroll-layout` JS |
 | **Bottom edge** | spacer holds a fade: `absolute -top-8 h-8 bg-gradient-to-t from-surface` (**32 px**, surface → transparent upward) ending at the composer top; below it the footer has a solid `bg-surface` | `thread-scroll-layout` + `PSr`; meas. a black bubble washes to 24% at 8 px above the composer, so the fade covers exactly the 32 px above it |
-| Make top = bottom | Use a 32 px surface→transparent gradient under the header, the same as above the composer | recommendation |
+| Make top = bottom | Use the 32 px surface→transparent gradient under the header too | recommendation |
 | Generic mask | `.vertical-scroll-fade-mask`: oklch gradient; `--top/--bottom-fade` driven by `animation-timeline: scroll(self y)`, so each fade shows only when there is content beyond that edge (`--edge-fade-distance`, default 1rem) | `app-shared` |
 
 ## User bubble (`user-message` JS + `user-message-f152….css`)
@@ -63,11 +63,9 @@ Sources: `/tmp/cgpt/webview/assets/*.css` (`app-shared-3424…`, `app-initial-e5
 | Button | Button `size=icon`: electron `p-1` + svg `icon-sm` 18 → **26** square, `rounded-md`, ghost, `text-tertiary`, hover `bg-primary-ghost-hover` + `text-default` |
 | Row | `turn-action-controls flex items-center gap-0.5` (2); meas. pitch 27, glyph ≈ 13, colour `#8e8e8e`, first glyph 3 px right of the text edge |
 | Offset (meas.) | last line-box bottom → icon centre 20; icon row bottom → composer top ≈ 44 at max scroll |
-| Turn to turn (meas.) | last reply line box → next user bubble 44 (inferred: a 26–28 px action row plus about 16) ; items inside a turn use `flex flex-col gap-3` (12). Source of the gap between turns: unknown |
+| Turn to turn (meas.) | last reply line box → next user bubble 44 (inferred: a 26–28 px action row plus about 16); items inside a turn use `flex flex-col gap-3` (12). Source of the gap between turns: unknown |
 
 ## Prompt rail (`thread-user-message-navigation-rail-app`, `floating-navigation-rail-layout` CSS)
-
-Elpis keeps the rail in a 28px target within the existing 32px gutter, so showing it does not resize the transcript.
 | Item | Value |
 |---|---|
 | Shown | only with **≥ 4** user messages |
@@ -98,22 +96,5 @@ Elpis keeps the rail in a 28px target within the existing 32px gutter, so showin
 | Header/tab bar | **52** (`--sidebar-navigation-header-height: spacing*13`; meas. 51.3); bottom hairline 0.5 px border (meas. `#f0f0f0`); pane has a hairline `#eaeaea` left edge on the `#f6f6f6` window |
 | Scroll-to-bottom | `h-8 w-8` **32** circle, `border border-default bg-surface`, arrow `text-default`, centred on the column (`end-1/2 translate-x-1/2`), bottom = 24 above the footer (`bottom-[calc(100%+6*spacing)]`; meas. 24); fades with `opacity`/`duration-basic` |
 
-## Mapping notes (worth reusable variables)
-- `--thread-content-max-width: 768px`, `--padding-toolbar: 16px` → column 736; `--thread-content-top-inset: 32px`.
-- `--edge-fade-top` / `--edge-fade-bottom`: set both to 32 px (ChatGPT uses 16 under the header and 32 above the composer); fade colour = `--color-surface`.
-- `--codex-chat-font-size: 14px`, `--leading-relaxed: 1.625`, `--markdown-space: fs/4`.
-- `--message-bubble-radius: 22px` = `--composer-radius`; `--user-chat-width: 70%`; bubble padding 10/16.
-- Text ramp from one ink: secondary 69.5%, tertiary 49.5% (= codex-description), border 7.8%, strong 11.7%.
-- Rail: `--rail-left: 16px`, `--rail-pitch: 10px`, `--rail-dash: 6px→26px × 2px`, opacities .4/.6/1, card 320/12/8 + `--shadow-xl`.
-- `--elevation-composer`, `--shadow-xl`, scroll button 32/24.
-
-## Shared scale (the whole app, 30 Oct; tokens in `app/globals.css`, listed in `DESIGN.md` §2)
-| ChatGPT | Elpis token | Value | Where |
-|---|---|---|---|
-| `text-xs` / `text-sm` / `text-base` (4 sizes with the page title; 1 family) | `--text-xs` / `--text-sm` / `--text-base` | 12 / 13 / 14 | every CSS `font-size` maps to one of the three; titles keep their own size; `--serif` = `--ui-font` |
-| thread text 14 (`--codex-chat-font-size`) | `--transcript-size` (Medium) | 14 (Small 13, Large 16) | `lib/reading.ts` |
-| composer controls in one row, send 28 | `--control-h`, `--icon-size` | 28, 16 glyph | `.composer-controls` (plus, pills, model, effort, mic, send, stop) |
-| composer: send 9 from right and bottom; Elpis default enlarged at Masih’s request on 31 Oct | `.composer` border 1 + padding 11/8/8/13; textarea 66 (22 px lines); 6 gap; 28 row | 121 | `.composer` |
-| composer surface `surface-elevated-secondary` + `--elevation-composer`, ring 4% ink | `--composer`, `--composer-edge`, `--elevation-composer` | light `#fff`, ring 8% ink; dark `#17191d` (one step above the `#0a0b0d` chat), ring 14% ink | the gold focus edge stays (Elpis) |
-| header / tab bar 52 | `--header-h` | 52, 14 px title | `.workspace-header` |
-| Settings page: 48 top, header → 20 → sections 24 apart | `--page-pad`, `--page-head-gap`, `--page-section-gap`, `--page-content-width` | 48 32 64 / 20 / 24 / 860 | Settings, Customize, the Guide (`.page-scroll`) |
+## Shared scale
+Elpis carries ChatGPT's scale to every page; the Elpis values are in [DESIGN.md §2](../DESIGN.md#2-tokens). ChatGPT `text-xs` / `text-sm` / `text-base` (four sizes with the page title, one family) → `--text-xs` / `--text-sm` / `--text-base`; thread text 14 → `--transcript-size` Medium; one composer control row with a 28 send → `--control-h`, `--icon-size`; send 9 from the right and bottom → `.composer`; composer surface (ring 4% ink) → `--composer`, `--composer-edge`, `--elevation-composer`; header 52 → `--header-h`; Settings page (48 top, header → 20 → sections 24 apart) → `--page-pad`, `--page-head-gap`, `--page-section-gap`, `--page-content-width`.

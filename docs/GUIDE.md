@@ -1,47 +1,39 @@
 # Elpis Technical Guide
 
-The [README](../readme.md) introduces the product. This guide describes its architecture and contracts.
-
-## Proof Standard
-
-Behavior is accepted through the user-visible checks described by the relevant feature. Current state and open requests are in [ES.md](../ES.md) and [REQUESTS.md](../REQUESTS.md).
+Architecture and contracts. The [README](../readme.md) introduces the product; [ES.md](../ES.md) holds current state and acceptance, [REQUESTS.md](../REQUESTS.md) open requests. A behaviour is accepted through its feature's user-visible checks.
 
 ## Requirements
 
-This section preserves confirmed product requirements. Current implementation state belongs in [ES.md](../ES.md), not here.
+Confirmed product requirements. Implementation state belongs in [ES.md](../ES.md).
 
 ### Confirmed Requirements
 
 **R1. Provider-neutral Elpis environment** — Elpis owns the TUI, provider/runtime selection, context projection, durable memory, provider-neutral continuity, behavioral policy, permissions bridge, and evidence. A selected runtime may own its low-level model loop and native tools, but authentication must never silently transfer Elpis-owned state or product identity to that runtime.
 
-**R2. Visible and controlled agency** — Commands and file changes follow explicit permission and sandbox policies. The interface must preserve changed paths, diffs, command status, failures, and verification evidence.
+**R2. Visible and controlled agency** — Commands and file changes follow explicit permission and sandbox policies. The interface preserves changed paths, diffs, command status, failures, and verification evidence.
 
 **R3. Context lifecycle** — [Context reference](context.md).
 
 **R4. Continuity** — [Session reference](sessions.md).
 
-**R5. Memory** — [Memory and checkpoints](context.md#3-memory-and-checkpoints).
+**R5. Memory** and **R6. Creator and project rules** — [Memory and checkpoints](context.md#3-memory-and-checkpoints).
 
-**R6. Creator and project rules** — [Context reference](context.md#3-memory-and-checkpoints).
+**R8. Expensive capabilities are plugged in, not built in** — Workspace semantic search comes from an MCP server the user registers. Voice capture and transcription belong to an external program such as [WhisperType](https://github.com/MasihMoafi/Voice-commander), which may expose a transcription tool through MCP. Never add a machine-learning dependency to this repository for those capabilities.
 
-**R8. Expensive capabilities are plugged in, not built in** — Workspace semantic search is provided by an MCP server the user registers. Voice capture/transcription belongs to an external program such as [WhisperType](https://github.com/MasihMoafi/Voice-commander), which may expose a transcription tool through MCP. Never add a machine-learning dependency to this repository for those capabilities.
-
-**R11. Explicit Claude provider and subscription paths** — Preserve the native Anthropic API path and the later user-selected Claude subscription ACP bridge, [`tools/elpis-claude/acp-bridge.mjs`](../tools/elpis-claude/acp-bridge.mjs). Authentication and provider selection remain explicit. `elpis claude` separately starts Claude Code through a loopback Smart Prune proxy.
-
-Account switching uses [`claude-accounts.mjs`](../tools/elpis-claude/claude-accounts.mjs).
+**R11. Explicit Claude provider and subscription paths** — Preserve the native Anthropic API path and the user-selected Claude subscription ACP bridge, [`tools/elpis-claude/acp-bridge.mjs`](../tools/elpis-claude/acp-bridge.mjs). Authentication and provider selection stay explicit. `elpis claude` separately starts Claude Code through a loopback Smart Prune proxy. [`claude-accounts.mjs`](../tools/elpis-claude/claude-accounts.mjs) switches accounts.
 
 **R12. Deterministic multi-agent orchestration** — [Work-graph contract](WORK_GRAPHS.md).
 
 ### State Layout
 
-The default runtime home and its override are in the [README](../readme.md#how-it-works). The [session reference](sessions.md#3-portable-checkpoint-layout) owns the checkpoint layout; provider transcripts and workspace artifacts remain evidence sources.
+The runtime home and its override: [README](../readme.md#how-it-works). Checkpoint layout: [session reference](sessions.md#3-portable-checkpoint-layout). Provider transcripts and workspace artifacts remain evidence sources.
 
 ### Product Scope Decisions
 
-- The active terminal interface is the contained Codex Rust TUI and already uses Ratatui; Elpis does not need a UI-framework rewrite.
-- UI changes must preserve Codex-quality content, rendering, and interactions unless a separate behavior change is explicitly approved.
+- The terminal interface is the contained Codex Rust TUI, already on Ratatui; it needs no UI-framework rewrite.
+- UI changes preserve Codex-quality content, rendering, and interactions unless a behaviour change is explicitly approved.
 - Dictation: [desktop README](../apps/elpis-desktop/README.md).
-- Do not add slash commands unless Masih explicitly selects them.
+- Add no slash command unless Masih explicitly selects it.
 
 ### Deferred Decisions
 
@@ -51,47 +43,35 @@ The default runtime home and its override are in the [README](../readme.md#how-i
 
 ## Source Map
 
-Treat upstream behavior as evidence, not inspiration copied from memory.
+Treat upstream behaviour as evidence: read its committed source, not memory. An upstream capability becomes an Elpis feature only when it fits Elpis's contracts and passes its Elpis acceptance check.
 
 ### Codex: Execution and Interface Reference
 
-Primary source is [openai/codex](https://github.com/openai/codex). Clone it beside this repository and read the committed source when it can answer the question.
+Source: [openai/codex](https://github.com/openai/codex), cloned beside this repository. Key areas: app-server and protocol (`codex-rs/app-server`, `codex-rs/app-server-protocol`), Rust TUI (`codex-rs/tui`), core runtime (`codex-rs/core`).
 
-Important areas:
+Codex is the contained foundation for thread/turn semantics, streaming, file changes, commands, approvals, sandboxing, sessions, and TUI ergonomics. Elpis never loads code from or requires the donor clone at runtime.
 
-- app-server and protocol: `codex-rs/app-server`, `codex-rs/app-server-protocol`;
-- Rust TUI: `codex-rs/tui`;
-- core runtime: `codex-rs/core`.
-
-Codex is the contained implementation foundation for thread/turn semantics, streaming, file changes, commands, approvals, sandboxing, sessions, and TUI ergonomics. Elpis does not load code from or require the separate donor clone at runtime.
-
-The foundation strategy is **vendor and carry**: pin an unmodified upstream Codex release; carry Elpis as copied Elpis-owned modules and crates plus a few small, marked seams in upstream files; switch unwanted upstream surfaces off by configuration, proven by a network-capture eval, rather than deleting them; and absorb a new release by rebasing the Elpis commits onto a new vendor commit. Non-Responses providers reach Codex through an Elpis-owned local Responses gateway.
+The foundation strategy is **vendor and carry**: pin an unmodified upstream Codex release; carry Elpis as copied Elpis-owned modules and crates plus a few small, marked seams in upstream files; switch unwanted upstream surfaces off by configuration, proven by a network-capture eval, rather than deleting them; absorb a new release by rebasing the Elpis commits onto a new vendor commit. Non-Responses providers reach Codex through an Elpis-owned local Responses gateway.
 
 ### OpenClaw: Context and Continuity Reference
 
-Primary source is [openclaw/openclaw](https://github.com/openclaw/openclaw). Clone it beside this repository and read implementation and tests rather than relying on explanatory prose.
-
-Useful areas include live context pruning, guarded compaction, pre-compaction memory flush, search/retrieval, memory budgets, promotion, and dreaming. Elpis adopts ideas only when they fit its own contracts and pass Elpis acceptance.
-
-Elpis's concrete context and session contracts live in [context.md](context.md) and [sessions.md](sessions.md).
+Source: [openclaw/openclaw](https://github.com/openclaw/openclaw), cloned beside this repository; read implementation and tests, not explanatory prose. Useful areas: live context pruning, guarded compaction, pre-compaction memory flush, search/retrieval, memory budgets, promotion, and dreaming.
 
 ### Other Reference Sources
 
 | Source | Proven capability to reuse or study | Elpis boundary |
 | --- | --- | --- |
-| Pi | Composable multi-provider APIs, agent state, TUI, coding CLI | Study provider-neutral interfaces and extension simplicity; it does not supply Codex-level built-in permissions |
-| Hermes Agent | Provider choice, TUI, cross-session search, user modeling, skill learning, scheduled work, multiple execution backends | Study the learning loop and memory controls; verify implementation before adopting claims |
+| Pi | Composable multi-provider APIs, agent state, TUI, coding CLI | Study provider-neutral interfaces and extension simplicity; it lacks Codex-level built-in permissions |
+| Hermes Agent | Provider choice, TUI, cross-session search, user modeling, skill learning, scheduled work, multiple execution backends | Study the learning loop and memory controls |
 | OpenCode | Multi-provider coding product, read-only/build agents, subagents, installation and TUI delivery | Study routing, packaging, agent modes, and release experience |
-
-No capability becomes an Elpis feature merely because an upstream project has it. It becomes real only after its Elpis acceptance check passes.
 
 ### Codex Import Provenance
 
-The contained Codex workspace was imported from `openai/codex` revision `2e1607ee2fa8099a233df7437adee5f16a741905` under Apache-2.0, with notices retained under `codex-rs/`. Only committed donor content was imported; the donor working tree's unrelated local edits were not.
+See [codex-rs/ELPIS_UPSTREAM.md](../codex-rs/ELPIS_UPSTREAM.md).
 
 ### Preserve-First Behaviors
 
-Preserve these proven seams and their tests when changing the contained foundation:
+Preserve these seams and their tests when changing the foundation. Paths are relative to `codex-rs/`.
 
 | Behavior | Principal Codex source |
 | --- | --- |
@@ -107,17 +87,15 @@ Preserve these proven seams and their tests when changing the contained foundati
 | OpenAI login and refresh | `login/` and its narrow auth dependencies |
 | Provider definitions | `model-provider/`, `model-provider-info/`, `core/src/client.rs` |
 
-All paths above are relative to `codex-rs/`.
-
 ### Stable Task Boundaries
 
-Keep ownership seams intact when changing shared rendering or permission code:
+Keep these ownership seams intact when changing shared rendering or permission code:
 
 | Task | Primary files | Contract |
 | --- | --- | --- |
 | Action rendering | `tui/src/chatwidget/command_lifecycle.rs`, `tool_lifecycle.rs`, `exec_state.rs`, `exec_cell/`, `history_cell/patches.rs`, `diff_render.rs` | Own command/file lifecycle projection and rendered cells; preserve colocated tests and snapshots. |
 | Permissions | protocol, approval presets, `core/src/safety.rs`, sandboxing, permission UI | Own permission types, preset selection, enforcement, and approval UI; preserve policy tests and approval snapshots. |
-| Mouse selection and copy | TUI event/input paths, raw-output methods, history raw lines | Preserve terminal-native selection and copy-faithful raw scrollback behavior. |
+| Mouse selection and copy | TUI event/input paths, raw-output methods, history raw lines | Preserve terminal-native selection and copy-faithful raw scrollback. |
 
 `chatwidget.rs` and `chatwidget/protocol.rs` are shared seams, not general cleanup areas.
 
@@ -127,10 +105,7 @@ Keep ownership seams intact when changing shared rendering or permission code:
 - **Default:** may read/edit within the workspace and run commands; internet or work outside the workspace requires approval.
 - **Full Access:** no approval prompts; filesystem and internet restrictions are off.
 
-Confirmed permission changes govern subsequent tool dispatches in an active turn.
-Switching Claude or Gemini out of Full Access stops the active turn so its provider
-process cannot retain bypass permissions; the next message uses the selected mode.
-Environment-owner restrictions remain authoritative for attached environments.
+A confirmed permission change governs later tool dispatches in the active turn. Switching Claude or Gemini out of Full Access stops the active turn, so its provider process cannot keep bypass permissions; the next message uses the selected mode. Environment-owner restrictions remain authoritative for attached environments.
 
 ## Runtime Architecture
 
@@ -146,42 +121,28 @@ User
   -> Workspace + durable Elpis state ($ELPIS_HOME)
 ```
 
-The `elpis` executable is built from the contained `codex-rs/` foundation. Runtime ownership is explicit. When Codex is selected, Codex may own the low-level model loop, native tools, native thread, and native compaction. Elpis still owns the surrounding product: runtime/provider selection, context projection, durable memory, provider-neutral continuity, behavioral policy, approvals bridge, and visible TUI.
-
-Authentication alone must never silently select a runtime. The active model/provider/runtime owner must be visible.
+The `elpis` executable is built from the contained `codex-rs/` foundation. When Codex is selected, it may own the low-level model loop, native tools, native thread, and native compaction; Elpis keeps everything R1 lists. The active model, provider, and runtime owner must be visible.
 
 ## Authentication Boundary
 
-Authentication and runtime selection are separate decisions.
+Authentication alone must never select a runtime.
 
-- Status-only Codex authentication uses the app-server account RPCs and must not start threads, turns, commands, approvals, or tools.
-- An Elpis-owned direct OpenAI path may reuse the contained Codex login component for compatible credentials and refresh, but bearer tokens must never be rendered, logged, returned to the TUI, or persisted in a second Elpis credential store.
-- When Codex is deliberately selected as runtime, Codex may own its low-level model loop and native thread while Elpis retains its surrounding state and policy.
+- Status-only Codex authentication uses the app-server account RPCs and must not start threads, turns, commands, approvals, or tools. `scripts/codex-auth-status-smoke.sh` checks this without starting a model turn or printing account or token data.
+- An Elpis-owned direct OpenAI path may reuse the contained Codex login component for compatible credentials and refresh. Bearer tokens must never be rendered, logged, returned to the TUI, or persisted in a second Elpis credential store.
 - Selecting Anthropic, Gemini, or another native provider must never silently route its inference through Codex or another provider.
-- A path dependency on the separate donor clone is never a finished runtime boundary.
-
-The status smoke check is `scripts/codex-auth-status-smoke.sh`; it must perform authentication status inspection without starting a model turn or printing sensitive account/token data.
+- A path dependency on the donor clone is never a finished runtime boundary.
 
 ## Providers
 
-Elpis owns context admission, durable memory, continuity, permissions, evidence, and the terminal interface; the selected provider owns inference. Provider changes must not discard Elpis-owned state, and a native provider selection must never be silently redirected through another provider.
-
-Routes, credentials, BYOK setup, wire-protocol translation, compatibility aliases, limitations, and smoke tests live in [providers.md](providers.md).
-
-## Context Contract
-
-See the [context reference](context.md).
+Provider changes must not discard Elpis-owned state. Routes, credentials, BYOK setup, wire-protocol translation, compatibility aliases, limitations, and smoke tests: [providers.md](providers.md).
 
 ## Session Semantics
 
-Elpis keeps its own provider-neutral continuity state even when a provider also offers thread IDs. Resume, fork, rollback, compaction, and provider changes therefore have Elpis semantics; provider thread IDs are adapter-specific state rather than project truth.
-
-Exact resume and lean continuation, including `GOAL.md` and `ES.md`, are specified in [sessions.md](sessions.md).
+Elpis keeps its own provider-neutral continuity state even when a provider offers thread IDs. Resume, fork, rollback, compaction, and provider changes therefore have Elpis semantics; provider thread IDs are adapter state, not project truth. Exact resume and lean continuation, including `GOAL.md` and `ES.md`: [sessions.md](sessions.md).
 
 ## UI Identity
 
-Elpis-specific controls keep context, memory, provider and permission state legible. Context-specific mechanics belong in [context.md](context.md).
-The dashboard remains a dashboard, with its existing scope preserved.
+Elpis-specific controls keep context, memory, provider, and permission state legible. The dashboard stays a dashboard, with its existing scope.
 
 ### Acceptance
 
@@ -189,23 +150,19 @@ A user watches one task cross compaction or provider change and can explain whic
 
 ## Engineering Rules
 
-- Read this guide before architectural work; load only sections relevant to the task.
+- Load only the sections of this guide a task needs.
 - Keep upstream protocol handling version-aware; derive exact schemas from the contained/upstream version when message shapes matter.
 - Do not call a temporary directory a sandbox; state the actual isolation boundary.
-- Preserve user-visible behavior with focused tests for protocol and context changes.
-- Record implemented behavior separately from intended behavior.
-- Treat `main` as canonical; consult archives only when historical prototype behavior is specifically needed.
-- Agent workflow and delegation rules live in `AGENTS.md`.
-- Local build constraints live in `LOCAL_BUILD_RULES.md`.
-- Release, machine-boundary, and clean-install rules live in `SHIPPING_RULES.md`.
-- Security policy lives in `SECURITY.md`.
+- Cover protocol and context changes with focused tests of user-visible behaviour.
+- Record implemented behaviour separately from intended behaviour.
+- Treat `main` as canonical; consult archives only for specific historical prototype behaviour.
 
 ## Verification
 
-Verification is proportional to the change and must establish behavior, not merely compilation.
+Verify in proportion to the change, and establish behaviour, not just compilation.
 
-- Use `AGENTS.md` for acceptance/worker discipline.
-- Use `LOCAL_BUILD_RULES.md` for local Rust build and test commands.
-- Use `SHIPPING_RULES.md` for release verification and clean-machine checks.
-- Use `.github/workflows/embedded-elpis-linux.yml` for CI Rust formatting, focused tests, release build, executable identity, and artifact verification.
-- Record current acceptance state in [ES.md](../ES.md).
+- Agent workflow, delegation, acceptance and worker discipline: the local `AGENTS.md`.
+- Terminal build and test commands: [CONTRIBUTING.md](../CONTRIBUTING.md#building-the-terminal-app); local build limits, formatting and the `verify-elpis` selector: [LOCAL_BUILD_RULES.md](LOCAL_BUILD_RULES.md).
+- Release, machine-boundary, clean-install and release verification: [SHIPPING_RULES.md](SHIPPING_RULES.md).
+- Security policy: [SECURITY.md](SECURITY.md).
+- CI Rust formatting, focused tests, release build, executable identity, and artifact verification: [`.github/workflows/embedded-elpis-linux.yml`](../.github/workflows/embedded-elpis-linux.yml).
