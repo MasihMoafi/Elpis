@@ -110,7 +110,8 @@ test('every session start loads only the MCP servers it is given', { timeout: 60
     for (const argv of runs) {
       assert.equal(argv.split(' ').includes('--strict-mcp-config'), strict, `${label}: strict MCP config ${strict ? 'on' : 'off'}`);
       assert.match(argv, /--mcp-config \S*"elpis-agents"/, `${label}: the servers Elpis passes still arrive`);
-      assert.match(argv, /--disallowedTools \S*Task/, `${label}: the caller's own options still arrive`);
+      // The Claude Agent SDK writes it as `--disallowedTools Task` or, since the ACP adapter update (31424f98f), `--disallowedTools=Task,…`.
+      assert.match(argv, /--disallowedTools[ =]\S*Task/, `${label}: the caller's own options still arrive`);
     }
   }
 });

@@ -173,11 +173,12 @@ test('failure blocks dependent ACP nodes; an independent node can finish', { tim
   assert.equal(g.tasks.find(n => n.id === 'b').status, 'blocked'); assert.equal(f.log('b').length, 0);
   assert.equal(g.tasks.find(n => n.id === 'c').status, 'succeeded');
 });
-test('the Mother agent rescues a failed step on her chat\'s model and knows the run\'s goal; a blank goal is not kept', { timeout: 20000 }, async t => {
+test('the Mother agent rescues a failed step on Claude Opus and knows the run\'s goal; a blank goal is not kept', { timeout: 20000 }, async t => {
   const f = fixture(t); await f.client.initialize();
   const g = await f.finished((await f.run([task('a', [], '[crash]')], { goal: 'Translate the leaflet into Farsi' })).graphId);
   assert.equal(g.goal, 'Translate the leaflet into Farsi');
-  assert.deepEqual([g.mother.model, g.mother.provider], ['m-fast', 'openai'], 'she rescues on her chat\'s model, not a fixed Claude Opus');
+  // Since 3 Nov (caeea5006) the Mother runs on the Claude subscription, Opus first (bridge/workflow-models.mjs).
+  assert.deepEqual([g.mother.model, g.mother.provider], ['claude/opus', 'claude'], 'she rescues on Claude Opus');
   const rescue = f.log('Mother agent').filter(row => row.method === 'session/prompt').map(row => row.params.prompt[0].text).join('\n');
   assert.match(rescue, /Goal: Translate the leaflet into Farsi\./);
   const blank = await f.finished((await f.run([task('b')], { goal: '   ' })).graphId);
@@ -463,7 +464,8 @@ function budgetFixture(t, budget) {
 const plenty = { available: async () => 64, app: async () => 0, pollMs: 20 };
 
 test('two workflows of three nodes share the global cap of 4 and all six finish', { timeout: 20000 }, async t => {
-  const f = budgetFixture(t, createMemoryBudget({ env: {}, ...plenty }));
+  // The cap is set here: since 2 Nov (661f980b9, Masih: "no cap of 4") Elpis picks it from CPUs and free memory.
+  const f = budgetFixture(t, createMemoryBudget({ env: {}, cap: 4, ...plenty }));
   const ids = ['a1', 'a2', 'a3', 'b1', 'b2', 'b3'];
   const one = await f.start('one', ids.slice(0, 3).map(id => task(id)), { maxConcurrency: 3 });
   const two = await f.start('two', ids.slice(3).map(id => task(id)), { maxConcurrency: 3 });
