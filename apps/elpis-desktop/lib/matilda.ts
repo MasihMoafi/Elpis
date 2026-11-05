@@ -29,11 +29,6 @@ export const savedModel = (): ModelPick => {
 };
 export const keepModel = (value: ModelPick) => { try { appStorage().setItem(MODEL_KEY, JSON.stringify(value)); } catch { /* The model is a convenience. */ } };
 
-const ZOOM_KEY = "elpis-matilda-zoom-to-replies";
-/** Whether the board zooms to her reply when she answers. Off unless he turns it on (5 Nov: her answer zoomed the board out). */
-export const savedZoomToReplies = (): boolean => { try { return appStorage().getItem(ZOOM_KEY) === "1"; } catch { return false; } };
-export const keepZoomToReplies = (value: boolean) => { try { appStorage().setItem(ZOOM_KEY, value ? "1" : "0"); } catch { /* A convenience. */ } };
-
 /** What she answers: her own notes, paintings and face never count, a new shape does, a note does when its words change, and moving a shape does not. */
 const hers = (e: ExcalidrawElement) => e.id.startsWith("love-") || (e.type === "text" && agentColor(e.strokeColor));
 export function noticed(before: readonly ExcalidrawElement[], after: readonly ExcalidrawElement[]) {

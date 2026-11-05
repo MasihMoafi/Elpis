@@ -11,7 +11,8 @@ const { guardDesktopStore } = require('./controls.cjs');
 // Retained tests live in a scratch checkout whose bridge links to the candidate.
 const FAKE_ACP_AGENT = path.resolve(path.dirname(require.resolve('../bridge/server.mjs')), '../../../tools/elpis-claude/test/fake-acp-agent.mjs');
 
-async function loveSpotFixture({ colorScheme = 'light', reply = 'I am here with you.', replyDelay = 80, configureClient, prepareDirectory, agentEnv, prepareScreenshots, newBoard = false } = {}) {
+// `threadId(n)` names the n-th chat it makes; live voice needs real (UUID) chat IDs.
+async function loveSpotFixture({ threadId, colorScheme = 'light', reply = 'I am here with you.', replyDelay = 80, configureClient, prepareDirectory, agentEnv, prepareScreenshots, newBoard = false } = {}) {
   const base = path.join(os.homedir(), '.cache/elpis-tests'); await fs.mkdir(base, { recursive: true });
   const root = createTestTempDir(path.join(base, 'love-spot-ui-'));
   // The renderer gate installs only desktop dependencies. Run the shared SDK
@@ -37,7 +38,7 @@ async function loveSpotFixture({ colorScheme = 'light', reply = 'I am here with 
     providerSettings: async () => ({ providers: [], version: null, write: { available: false } }),
     listThreads: async () => ({ data: chats, nextCursor: null }), models: async () => ({ data: models, nextCursor: null }),
     createThread: async body => {
-      const thread = { id: chats.length ? `love-chat-${chats.length + 1}` : 'love-chat', ...body, modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct', reason: null } }; chats.push(thread);
+      const thread = { id: threadId ? threadId(chats.length) : chats.length ? `love-chat-${chats.length + 1}` : 'love-chat', ...body, modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct', reason: null } }; chats.push(thread);
       emitter.emit('event', { type: 'message', data: { method: 'thread/started', params: { thread } } });
       return { thread };
     },

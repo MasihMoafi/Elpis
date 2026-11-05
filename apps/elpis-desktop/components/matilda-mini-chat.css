@@ -66,3 +66,9 @@ html.matilda-dragging { user-select:none; -webkit-user-select:none; }
 .hud-popover.matilda-alert-anchor { top:calc(100% + 4px); right:0; z-index:50; width:max-content; max-width:24rem; }
 /* Her notice is text only: it never takes a click meant for the controls under it (2 Nov). */
 .hud-popover.matilda-alert-popup { pointer-events:none; }
+/* 5 Nov: while her call or her voice is on, her controls stay shown, and rings pulse out from her face as she speaks. */
+.matilda-float[data-call] .matilda-float-controls { opacity:1; }
+.matilda-pin { position:relative; overflow:visible; }
+.matilda-speaking-ring { position:absolute; inset:0; border-radius:9999px; pointer-events:none; box-shadow:0 0 0 0 color-mix(in oklab, var(--love-red, var(--primary)) 70%, transparent); animation:matilda-speaking 1.1s ease-out infinite; }
+@keyframes matilda-speaking { from { box-shadow:0 0 0 0 color-mix(in oklab, var(--love-red, var(--primary)) 70%, transparent); } to { box-shadow:0 0 0 10px transparent; } }
+@media (prefers-reduced-motion: reduce) { .matilda-speaking-ring { animation:none; box-shadow:0 0 0 3px var(--love-red, var(--primary)); } }

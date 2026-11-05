@@ -2,7 +2,13 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { createPortal } from "react-dom";
+import { Pause, PhoneOff, Play } from "lucide-react";
+import { ContextMenu as ContextMenuPrimitive } from "@base-ui/react/context-menu";
 import { PinIcon, SoundIcon, SoundOffIcon } from "@/components/elpis-icons";
+import { useLiveVoice } from "@/components/live-voice";
+import { useReadAloud } from "@/components/read-aloud";
+import { ContextMenu, ContextMenuContent } from "@/components/ui/context-menu";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { MatildaMiniChat, useMatildaMiniChat } from "@/components/matilda-mini-chat";
 import { MatildaHeartBurst } from "@/components/matilda-heart-burst";
 import { Button } from "@/components/ui/button";
@@ -49,11 +55,32 @@ function useMood(replying: boolean, replies: number) {
   const mood: Mood | null = replying ? "smile" : hovered ? "tiltSmile" : replied ? "softSmile" : winking ? "wink" : null;
   return { shown: stillness() ? null : mood, setHovered };
 }
+/** Her live call (Love Spot's chat) and her read-aloud voice, wherever he is in the app (5 Nov): her face shows she is
+ * speaking, Mute silences her, Pause holds the call (his microphone and her voice), and the phone hangs up. */
+function useHerVoice() {
+  const live = useLiveVoice(), speech = useReadAloud();
+  const call = live?.call?.persistent ? live.call : null;
+  const speaking = !!call && call.activity === "speaking" && !call.herMuted && !call.paused || !!speech?.active;
+  return { live, call, speech, speaking, shown: !!call || !!speech?.active };
+}
+function HerVoiceControls({ voice }: { voice: ReturnType<typeof useHerVoice> }) {
+  const { live, call, speech } = voice;
+  if (!voice.shown) return null;
+  const muted = !!call?.herMuted;
+  return <>
+    <Button variant="ghost" size="icon-xs" aria-label={muted ? "Unmute Matilda" : "Mute Matilda"} title={muted ? "Unmute Matilda" : "Mute Matilda"} aria-pressed={muted}
+      onClick={() => { if (call) live?.setHerMuted(!muted); else speech?.stop(); }}>{muted ? <SoundOffIcon size={16} /> : <SoundIcon size={16} />}</Button>
+    {call && <Button variant="ghost" size="icon-xs" aria-label={call.paused ? "Resume talking with Matilda" : "Pause talking with Matilda"} title={call.paused ? "Resume" : "Pause: your microphone and her voice wait"} aria-pressed={call.paused}
+      onClick={() => live?.setPaused(!call.paused)}>{call.paused ? <Play size={14} /> : <Pause size={14} />}</Button>}
+    {call && <Button variant="ghost" size="icon-xs" aria-label="End voice chat with Matilda" title="Hang up" onClick={() => live?.end()}><PhoneOff size={14} /></Button>}
+  </>;
+}
 /** Panels that go over pinned Matilda rather than move her (right-hand side panels). */
 const BEHIND = ".canvas-side";
 export function MatildaCompanion() {
   const [state, setState] = useState<Companion | null>(null);
   const [chatOpen, setChatOpen] = useState(false), mini = useMatildaMiniChat(chatOpen);
+  const voice = useHerVoice();
   const mood = useMood(mini.posting || mini.conversation.busy, mini.conversation.entries.filter(entry => entry.item.type === "agentMessage").length);
   const suppressClick = useRef(false), faceRef = useRef<HTMLButtonElement>(null), floatRef = useRef<HTMLElement>(null);
   useEffect(() => { if (!state?.pinned) setChatOpen(false); }, [state?.pinned]);
@@ -211,8 +238,10 @@ export function MatildaCompanion() {
   // Her errors stay in her own place, never over the composer and its Send button (1 Nov): beside her when pinned,
   // under her title-bar button otherwise (where a failed load leaves her).
   const alert = error ? <p role="alert" className="matilda-alert">{error}</p> : null;
-  const floating = state?.pinned && <section ref={floatRef} aria-label="Pinned Matilda" className="matilda-float" data-controls={shown.top - chrome < 40 ? "below" : "above"} style={{ left: shown.left, top: shown.top, width: size, height: size, ...hidden ? { clipPath: `polygon(-9999px -9999px, ${size - hidden}px -9999px, ${size - hidden}px 9999px, -9999px 9999px)` } : {} }}>
-    <button ref={faceRef} type="button" className="matilda-face" aria-label="Chat with Matilda" aria-haspopup="dialog" aria-expanded={chatOpen} title="Chat with Matilda · drag to move" style={{ touchAction: "none" }}
+  const floating = state?.pinned && <section ref={floatRef} aria-label="Pinned Matilda" className="matilda-float" data-call={voice.shown || undefined} data-controls={shown.top - chrome < 40 ? "below" : "above"} style={{ left: shown.left, top: shown.top, width: size, height: size, ...hidden ? { clipPath: `polygon(-9999px -9999px, ${size - hidden}px -9999px, ${size - hidden}px 9999px, -9999px 9999px)` } : {} }}>
+    {/* Right-click: Hide, the same as Unpin (5 Nov). Her face is images, so the trigger keeps Electron's image menu out. */}
+    <ContextMenu><ContextMenuPrimitive.Trigger className="contents">
+    <button ref={faceRef} type="button" className="matilda-face" data-speaking={voice.speaking || undefined} aria-label="Chat with Matilda" aria-haspopup="dialog" aria-expanded={chatOpen} title="Chat with Matilda · drag to move" style={{ touchAction: "none" }}
       onPointerDown={grab(false)} onPointerMove={pull} onPointerUp={release} onLostPointerCapture={release}
       onClick={() => { if (!suppressClick.current) setChatOpen(open => !open); }}
       onPointerCancel={() => { const start = drag.current; if (start) put(start.left, start.top, start.size); release(); }}
@@ -227,7 +256,10 @@ export function MatildaCompanion() {
         // eslint-disable-next-line @next/next/no-img-element
         <img key={`${name}-dark`} src={MATILDA_SHOTS[name]} alt="" aria-hidden="true" width={size} height={size} draggable={false} className="matilda-avatar-dark matilda-mood select-none" data-mood={name} data-shown={mood.shown === name} />,
       ]))}
+      {voice.speaking && <span className="matilda-speaking-ring" aria-hidden="true" />}
     </button>
+    </ContextMenuPrimitive.Trigger>
+    <ContextMenuContent><DropdownMenuItem onClick={() => void act("unpin")}>Hide</DropdownMenuItem></ContextMenuContent></ContextMenu>
     {chatOpen ? <div className="hud-popover matilda-mini-popup accent-scope" data-side={side} style={chatPlace()}>{alert}<MatildaMiniChat chat={mini} /></div>
       : alert && <div className="hud-popover matilda-alert-popup" data-side={side} style={chatPlace()}>{alert}</div>}
     <button type="button" className="matilda-resize" aria-label="Resize Matilda" title="Drag to resize · + and − keys" style={{ touchAction: "none" }}
@@ -235,12 +267,14 @@ export function MatildaCompanion() {
     <div className="matilda-float-controls">
       {/* Only while music plays (or she muted it), as an icon (29 Oct, Masih: "no music is playing!", "I don't want texts; I want visuals"). */}
       {track?.canMute && (track.status === "Playing" || track.muted) && <Button variant="ghost" size="icon-xs" aria-label={track.muted ? "Unmute music" : "Mute music"} aria-pressed={track.muted} disabled={busy} onClick={() => void act("toggle-mute")}>{track.muted ? <SoundOffIcon size={16} /> : <SoundIcon size={16} />}</Button>}
+      <HerVoiceControls voice={voice} />
       <Button variant="ghost" size="icon-xs" aria-label="Unpin Matilda" aria-pressed="true" onClick={() => void act("unpin")}><PinIcon size={16} /></Button>
     </div>
   </section>;
   return <div className="relative flex min-w-0 shrink-0 items-center gap-1 pr-2">
     <MatildaHeartBurst />
-    {floating ? createPortal(floating, document.body) : <Button variant="ghost" size="icon-sm" aria-label="Pin Matilda" title="Pin Matilda" disabled={busy} onClick={pin}><><img className="matilda-pin-face matilda-avatar-light" src={MATILDA_SHOTS_LIGHT.softSmile} alt="" /><img className="matilda-pin-face matilda-avatar-dark" src={MATILDA_SHOTS.softSmile} alt="" /></></Button>}
+    {floating ? createPortal(floating, document.body) : <Button variant="ghost" size="icon-sm" className="matilda-pin" data-speaking={voice.speaking || undefined} aria-label="Pin Matilda" title="Pin Matilda" disabled={busy} onClick={pin}><><img className="matilda-pin-face matilda-avatar-light" src={MATILDA_SHOTS_LIGHT.softSmile} alt="" /><img className="matilda-pin-face matilda-avatar-dark" src={MATILDA_SHOTS.softSmile} alt="" />{voice.speaking && <span className="matilda-speaking-ring" aria-hidden="true" />}</></Button>}
+    {!floating && <HerVoiceControls voice={voice} />}
     {!floating && alert && <div className="hud-popover matilda-alert-popup matilda-alert-anchor">{alert}</div>}
   </div>;
 }

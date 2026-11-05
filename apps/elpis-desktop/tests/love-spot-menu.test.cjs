@@ -14,9 +14,9 @@ for (const colorScheme of ['light']) test(`Love Spot shows no GitHub, Follow us,
     await menu.waitFor();
     for (const name of [/GitHub/i, /Follow us/i, /Discord/i]) assert.equal(await menu.getByText(name).count(), 0, `${name} is not in the menu`);
     assert.ok(await menu.getByText(/Help/).count() > 0 && await menu.getByText(/Reset the canvas/i).count() > 0 && await menu.getByText(/Models & accounts/i).count() > 0, 'the rest of the menu stays');
-    await f.page.keyboard.press('Escape');
-    const accountsBtn = f.page.getByRole('button', { name: 'Models & accounts' });
-    await accountsBtn.click();
+    // Models & accounts opens from this menu; the bar has no Accounts icon (5 Nov, Masih: a "weird button").
+    assert.equal(await f.page.locator('.love-spot-tools').getByRole('button', { name: 'Models & accounts' }).count(), 0);
+    await menu.getByText(/Models & accounts/i).click();
     const dialog = f.page.getByRole('dialog');
     await dialog.getByRole('heading', { name: 'Models & accounts' }).waitFor();
     await dialog.getByRole('button', { name: 'Done' }).click();
