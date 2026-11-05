@@ -1,4 +1,4 @@
-<!-- README/template SHA256: 461a52aabf9489ca0af14414ffe8f006128b55c84f996a2782d88a74ab035377 -->
+<!-- README/template SHA256: 478811f2c001f192ddf064ec5c4f376d2ebeec73ca97605519d269cea202a6ae -->
 <!doctype html>
 <html lang="en" data-theme="elpis">
 <head>
@@ -247,8 +247,10 @@ CI</a> gates each terminal release on Elpis Rust checks, runtime evals
 with failing controls, installer checks and clean offline installs.
 These checks do not prove that Elpis writes better code.</li>
 <li><strong>Not claimed:</strong> the whole inherited Codex test suite;
-<code>/force-prune</code>, Auto routing and <code>tui.appearance</code>
-are not ported. No macOS or Windows builds.</li>
+Auto routing and <code>tui.appearance</code> are not ported. See <a
+href="https://github.com/MasihMoafi/Elpis/blob/main/docs/context.md#2-context-control-mechanisms-and-native-compaction">context
+controls</a> for <code>/force-prune</code>. No macOS or Windows
+builds.</li>
 <li><strong>Experimental:</strong> Smart Prune and reasoning expiry. The
 Mother agent steps in on a failed step (retry, steer or stop) but does
 not yet steer a healthy run.</li>
