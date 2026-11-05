@@ -114,7 +114,7 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     assert.equal(await mother.count(), 1, 'the Mother agent survives Delete');
     const motherPanel = canvas.getByRole('complementary', { name: 'Mother agent', exact: true });
     await motherPanel.getByRole('textbox', { name: 'Goal', exact: true }).fill('Keep the public API unchanged.');
-    await chooseOption(motherPanel.getByRole('combobox', { name: 'Her model', exact: true }), '|gpt-6-luna');
+    await chooseOption(motherPanel.getByRole('combobox', { name: 'Her model', exact: true }), 'openai|gpt-6-luna');
     assert.equal(await motherPanel.getByRole('textbox', { name: 'Max agents', exact: true }).inputValue(), '10');
     await motherPanel.getByText('Not started. Every agent\'s report arrives here once the graph runs.').waitFor();
     await motherPanel.getByRole('button', { name: 'Done', exact: true }).click();
@@ -178,7 +178,7 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     await group.getByRole('button', { name: 'Done', exact: true }).click();
     // The joiner thinks harder: Sol at high thinking.
     await node('Nuvani · Join the parts').click();
-    await chooseOption(inspector.getByRole('combobox', { name: 'Model', exact: true }), '|gpt-6.1-sol');
+    await chooseOption(inspector.getByRole('combobox', { name: 'Model', exact: true }), 'openai|gpt-6.1-sol');
     await chooseOption(inspector.getByRole('combobox', { name: 'Thinking', exact: true }), 'high');
 
     // Run: a new chat holds the run. Elpis gets each agent as a writer followed by its own check, each with a folder of its own, and an agent
@@ -280,7 +280,7 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     await page.keyboard.press('ArrowDown'); await page.keyboard.press('ArrowDown'); await page.keyboard.press('ArrowRight');
     assert.deepEqual(await adder.getByRole('listbox', { name: 'Thinking levels' }).getByRole('option').allInnerTexts().then(list => list.map(item => item.split('\n')[0])), ['Low thinking', 'Medium thinking', 'High thinking']);
     await page.keyboard.press('ArrowDown'); await page.keyboard.press('ArrowDown'); await page.keyboard.press('Enter');
-    assert.equal(await command.inputValue(), '2 gpt-6.1-sol high ');
+    assert.equal(await command.inputValue(), '2 @openai gpt-6.1-sol high ', 'the chosen model carries its connection (ChatGPT models have their own since 2 Nov)');
     await page.keyboard.press('Enter');
     await adder.getByRole('textbox', { name: 'Prompts, one per line' }).waitFor();
     await page.keyboard.press('Enter');
@@ -352,7 +352,7 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     // Shift+click adds to the selection, and the selected agents are edited together.
     await node('Tidy the lexer').click(); await node('Tidy the parser').click({ modifiers: ['Shift'] });
     await group.getByText(/^2 agents selected$/i).waitFor();
-    await chooseOption(group.getByRole('combobox', { name: 'Model', exact: true }), '|gpt-6.1-sol');
+    await chooseOption(group.getByRole('combobox', { name: 'Model', exact: true }), 'openai|gpt-6.1-sol');
     await chooseOption(group.getByRole('combobox', { name: 'Add a folder', exact: true }), 'docs');
     await page.waitForTimeout(400);
     const tidy = async () => (await saved()).nodes.filter(item => item.data?.title?.includes(' · Tidy'));

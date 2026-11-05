@@ -147,7 +147,8 @@ test('a changed API default offers its own models and keeps the selected provide
     const page = await browser.newPage(); page.setDefaultTimeout(7000);
     await page.goto(origin); await page.getByLabel('Model', { exact: true }).click();
     await page.getByRole('tab', { name: 'Anthropic credits', exact: true }).click();
-    await page.getByRole('alert').filter({ hasText: 'Fixture credits catalog unavailable' }).waitFor();
+    // Since 4 Nov a failed list is a quiet status in plain words; the raw error is its tooltip (216fc9270).
+    await page.locator('[role="status"][title*="Fixture credits catalog unavailable"]').waitFor();
     assert.equal(await page.getByRole('option').count(), 0);
     await screenshot(page, 'pairs-unavailable');
     await page.close();

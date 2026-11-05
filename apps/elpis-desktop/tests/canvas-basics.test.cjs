@@ -678,7 +678,7 @@ test('Ctrl+click picks several agents, and their shared Model menu puts the team
     assert.equal(await selected.count(), 2, 'a second Ctrl+click takes one out');
     const group = f.canvas.getByRole('complementary', { name: 'Selected agents', exact: true });
     await group.getByText(/^2 agents selected$/i).waitFor();
-    await chooseOption(group.getByRole('combobox', { name: 'Model', exact: true }), '|gpt-6.1-sol');
+    await chooseOption(group.getByRole('combobox', { name: 'Model', exact: true }), 'openai|gpt-6.1-sol');
     await f.page.waitForTimeout(400);
     const models = (await f.saved()).nodes.filter(n => n.type === 'agent' && /Part [12]/.test(n.data.title)).map(n => n.data.model);
     assert.deepEqual(models, ['gpt-6.1-sol', 'gpt-6.1-sol']);

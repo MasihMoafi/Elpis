@@ -61,6 +61,8 @@ async function fixture(t, { modelFailure = false, holdModels = false, descendant
     if (pathname === '/api/improvements') return json({ data: [] });
     if (pathname === '/api/models') {
       if (url.searchParams.get('provider') === 'alternate-local') return json({ data: [{ id: 'local-choice', model: 'local-choice', displayName: 'Local choice' }], nextCursor: null });
+      // A connection's own list (the menu's All tab reads each one since 5 Nov) is not the engine catalogue counted below.
+      if (url.searchParams.get('provider')) return json({ data: [sol, latest], nextCursor: null });
       control.modelReads++;
       res.setHeader('X-Fixture-Model-Read', String(control.modelReads));
       if (control.holdModels) { let done = false; held.push((data, status = 200) => { if (!done) { done = true; json(data, status); } }); return; }
