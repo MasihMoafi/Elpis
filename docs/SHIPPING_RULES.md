@@ -9,11 +9,9 @@ The governing question: **what does this do on a machine that is not Masih's?**
 ## 1. Nothing personal in the binary
 
 - **No absolute paths from a developer's home layout** (`~/Desktop/p/...`,
-  `/home/<name>/...`, or any directory that exists on one machine only). Such a path
-  scans a real directory on every user's system and silently admits what it finds into
-  their context. It also breaks the release-gating tests, which build a clean tempdir
-  and get the developer's real files back. `v0.1.0` shipped one (`elpis_context.rs`,
-  fixed 2026-07-25).
+  `/home/<name>/...`). Such a path scans a real directory on every user's system and
+  silently admits what it finds into their context; `v0.1.0` shipped one
+  (`elpis_context.rs`, fixed 2026-07-25).
 - **Machine-specific locations are opt-in configuration**, never a default: an env var,
   `config.toml`, or a CLI flag. External skill libraries use `skills.extra_roots` in the
   user's Elpis configuration.
@@ -68,7 +66,7 @@ A local `cargo build`, or a working local terminal, proves nothing about a fresh
   pin with no wheel for a newer Python breaks installs on newer distros.
 - Optional features degrade to a clear message, never a crash or a stall.
 
-## 6. Claims must match reality
+## 5. Claims must match reality
 
 For anything user-facing:
 
@@ -76,10 +74,10 @@ For anything user-facing:
 - Do not describe a feature as available if the shipped install path cannot reach it.
 - Retrieval and speech dependency boundaries: [technical guide](GUIDE.md#confirmed-requirements).
 
-## 7. Selector evidence is not shipping evidence
+## 6. Selector evidence is not shipping evidence
 
-`scripts/verify-elpis` is proportional local/Linux verification evidence, not shipping
-evidence. Even a passing `--surface full` run does not replace:
+`scripts/verify-elpis` is local verification, not shipping evidence; even a passing
+`--surface full` run does not replace:
 
 - a release artifact build;
 - installing or packaging that artifact, or launching the installed result;
@@ -88,6 +86,4 @@ evidence. Even a passing `--surface full` run does not replace:
 - an authorized remote-CI run;
 - Masih's manual acceptance.
 
-The selector does not build or prove a shippable release artifact; it does not install,
-package, launch, tag, publish, or grant acceptance. Its Cargo check and test rows may still compile code
-and consume CPU and disk.
+Its Cargo rows still compile code and use CPU and disk.
