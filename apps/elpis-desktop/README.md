@@ -18,11 +18,7 @@ Provider history is paged within the desktop connection's size limit. A history 
 
 ## Chats, projects and agents
 
-Conversations and agents are named by their task: the recorded title, else the first request, else the task a parent gave a spawned agent; nicknames are secondary. Your chats rejoin natively: they stream, can be stopped, and show their approvals here.
-
-Headless (`exec`) and subagent runs stay out of ordinary chat lists, search and unread counts. The folded “Agent runs (n)” group shows the loaded runs and their parent titles, and holds child pagination; “Show agents” opens it. Opening a run shows its history read-only. Once it finishes, “Continue here” forks its saved history into a normal chat with the same model; the original run and its parent ownership stay. Conversations and agents can be deleted after confirmation; chats continued from a deleted agent are deleted with it.
-
-The Agents page shows each agent's state and current action live, and keeps discovering descendants while visible, even under collapsed sidebar parents. Native waiting-on-approval or input flags show as Needs input. Filters keep parent context; opening the page starts no task. New agent starts a named root chat with its own model, folder and instructions. Load more exposes older conversations and child pages, which stay loaded through refresh.
+Chat names, sidebar sections, search and deletion are requirements: [SPEC](SPEC.md#sidebar-and-chat-list) items 1–11. Headless (`exec`) runs and chats with no listed maker sit in Background runs, Workflow runs in Workflows; both sections are off by default. Deleting a chat deletes its agents; a chat with forks is archived instead, so the forks keep working (`bridge/client.mjs`).
 
 Projects use existing folders, chosen natively or by absolute path. Switching projects sets the folder for new work and filters chats by their recorded folder; existing chats keep their own folder. Unavailable or duplicate folders and storage failures are reported.
 
