@@ -154,7 +154,7 @@ for (const preserves of [false, true]) test(`delayed provider catalog ${preserve
     await f.node('Answer 1').click();
     const panel = f.canvas.getByRole('complementary', { name: 'Selected agent', exact: true });
     const provider = panel.getByRole('combobox', { name: 'Provider', exact: true }), model = panel.getByRole('combobox', { name: 'Model', exact: true });
-    assert.equal(await controlValue(provider), '', 'explicit main provider aliases the configured provider');
+    assert.equal(await controlValue(provider), 'openai', 'explicit main provider aliases the configured provider (listed by its own id since fc2cd0fa6, 2 Nov)');
     await chooseOption(provider, 'shared'); assert.equal(await controlValue(model), 'shared|gpt-6.1-sol', 'an offered model survives a provider change');
     await chooseOption(provider, 'delayed');
     await model.click(); await f.page.getByRole('option').first().waitFor(); assert.deepEqual(await f.page.getByRole('option').allTextContents(), ['Default model']); await f.page.keyboard.press('Escape');
@@ -219,7 +219,7 @@ for (const iso of [false, true]) test(`${iso ? 'isometric' : 'flat'} provider fi
     const dashboard = f.canvas.getByRole('dialog', { name: 'Answer 1 info', exact: true });
     await dashboard.getByText('Sonnet 5', { exact: true }).waitFor();
     await dashboard.getByRole('button', { name: 'Settings', exact: true }).click();
-    await chooseOption(provider, ''); assert.equal(await controlValue(model), '|gpt-6.1-sol', 'configured main default wins over first catalog item');
+    await chooseOption(provider, 'openai'); assert.equal(await controlValue(model), 'openai|gpt-6.1-sol', 'configured main default wins over first catalog item');
     await model.click(); await f.page.getByRole('option').first().waitFor(); assert.deepEqual(await f.page.getByRole('option').allTextContents(), ['Default model', 'Luna 6', 'Sol 6.1']); await f.page.keyboard.press('Escape');
     await fs.mkdir(shots, { recursive: true });
     for (const theme of ['light']) {
