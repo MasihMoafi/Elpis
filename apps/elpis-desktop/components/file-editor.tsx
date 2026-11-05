@@ -11,7 +11,7 @@ import { SearchField } from "@/components/ui/search-field";
 /** The line height in pixels: the same number in components/files-pane.css (--fe-line), which every layer shares. */
 const LINE = 20;
 type Found = { line: number; start: number; end: number };
-export type Marks = { line?: number; endLine?: number; /** Counts the times the lines were asked for, so a second click on the same lines scrolls there again. */ focus: number };
+export type Marks = { line?: number; endLine?: number; /** The lines were added by a diff: marked green. */ added?: boolean; /** Counts the times the lines were asked for, so a second click on the same lines scrolls there again. */ focus: number };
 
 /** Every place `query` occurs (ignoring case), line by line. */
 function search(lines: string[], query: string): Found[] {
@@ -47,8 +47,8 @@ function colourLines(value: string, language: string | undefined): Piece[][] | n
 
 /** One line of the layer behind the text: it marks the lines a reply pointed at and the places the find matched. The
  * letters are transparent (the textarea above draws them); only the marks show. */
-const Line = memo(function Line({ text, hit, pieces, current, colours }: { text: string; hit: boolean; pieces: (Found & { index: number })[]; current: number; colours?: Piece[] }) {
-  if (colours && !pieces.length) return <div className={`fe-line${hit ? " hit" : ""}`}>{colours.length ? colours.map((piece, index) => <span key={index} className={piece.className}>{piece.text}</span>) : " "}</div>;
+const Line = memo(function Line({ text, hit, pieces, current, colours }: { text: string; hit: boolean | "added"; pieces: (Found & { index: number })[]; current: number; colours?: Piece[] }) {
+  if (colours && !pieces.length) return <div className={`fe-line${hit ? " hit" : ""}${hit === "added" ? " added" : ""}`}>{colours.length ? colours.map((piece, index) => <span key={index} className={piece.className}>{piece.text}</span>) : " "}</div>;
   const parts: React.ReactNode[] = [];
   let at = 0;
   for (const piece of pieces) {
@@ -56,7 +56,7 @@ const Line = memo(function Line({ text, hit, pieces, current, colours }: { text:
     at = piece.end;
   }
   parts.push(text.slice(at) || (pieces.length ? "" : " "));
-  return <div className={`fe-line${hit ? " hit" : ""}`}>{parts}</div>;
+  return <div className={`fe-line${hit ? " hit" : ""}${hit === "added" ? " added" : ""}`}>{parts}</div>;
 });
 const NO_PIECES: (Found & { index: number })[] = [];
 
@@ -145,7 +145,7 @@ export function FileEditor({ label, value, marks, softWrap = false, onChange, on
       <div className="fe-stage">
         <div className="fe-layer" aria-hidden="true"><div ref={layer}>{lines.map((text, index) => {
           const pieces = byLine.get(index) ?? NO_PIECES;
-          return <Line key={index} text={text} hit={first > 0 && index + 1 >= first && index + 1 <= last} pieces={pieces} current={pieces === NO_PIECES ? -1 : current} colours={coloured?.[index]} />;
+          return <Line key={index} text={text} hit={first > 0 && index + 1 >= first && index + 1 <= last ? marks?.added ? "added" : true : false} pieces={pieces} current={pieces === NO_PIECES ? -1 : current} colours={coloured?.[index]} />;
         })}</div></div>
         <textarea ref={area} className="fe-text" data-pane-content aria-label={label} value={value} wrap={softWrap ? "soft" : "off"} dir="ltr" spellCheck={false} autoCapitalize="off" autoComplete="off" autoCorrect="off"
           onChange={event => onChange(event.target.value)} onScroll={sync} />

@@ -159,3 +159,22 @@ test('a tool argument explicitly naming a bare filename opens that file in Files
     assert.deepEqual(await f.page.evaluate(() => window.__externalFiles), []);
   } finally { await f.close(); }
 });
+
+// 5 Nov, Masih: "when I clicked on the +1 diff it showed one line being removed nothing being added". A one-line
+// addition opened on the context line above it, marked in the accent red. It opens on the added line, marked green.
+test('an edited file opens at the lines it added, marked as added, not at the context line above them', async () => {
+  const added = '@@ -1,2 +1,3 @@\n const long = 1;\n+const added = true;\n const next = 2;\n';
+  const work = [{ id: 'edit', type: 'fileChange', status: 'completed', changes: [{ path: `${CWD}/src/app.ts`, kind: { type: 'update' }, diff: added }] }];
+  const f = await open({ chat: [['t1', 'Add a line', 'Added it.', work]] });
+  await f.page.route('**/api/file?**', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ content: 'const long = 1;\nconst added = true;\nconst next = 2;\n', size: 50, mtimeMs: 2 }) }));
+  try {
+    await f.page.locator('.worked-for > summary').click();
+    await f.page.locator('.activity-group > summary').first().click();
+    await f.page.locator('.step-file').first().click();
+    await editor(f.page, 'src/app.ts').waitFor();
+    const marked = f.page.locator('.fe-line.hit');
+    await marked.first().waitFor();
+    assert.deepEqual(await marked.allInnerTexts(), ['const added = true;'], 'only the added line is marked');
+    assert.equal(await marked.first().getAttribute('class'), 'fe-line hit added', 'marked as added (green), not in the accent');
+  } finally { await f.close(); }
+});

@@ -15,7 +15,7 @@ export type Doc =
   | { status: "preview"; text: string; size: number }
   | { status: "ready"; text: string; saved: string; mtimeMs: number; eol: "\n" | "\r\n"; saving: boolean; saveError: string };
 /** A file in the tab strip. A preview is replaced by the next file previewed; `focus` counts the times the lines were asked for. */
-export type OpenFile = { path: string; preview: boolean; line?: number; endLine?: number; focus: number; view?: "source" | "preview" };
+export type OpenFile = { path: string; preview: boolean; line?: number; endLine?: number; added?: boolean; focus: number; view?: "source" | "preview" };
 export type Pane = { open: OpenFile[]; active: string | null; showTree: boolean; expanded: string[]; selected: string | null; reveal: number; hidden: boolean; treeWidth: number };
 export type Names = "loading" | "error" | string[];
 export type FilesState = { host: { attached: boolean; cwd: string }; panes: Record<string, Pane>; docs: Record<string, Doc>; dirs: Record<string, Listing>; names: Record<string, Names> };
@@ -134,9 +134,9 @@ export async function loadDoc(cwd: string, path: string) {
   } catch (cause) { if (!hasDraft(state.docs[key])) set({ docs: { ...state.docs, [key]: { status: "error", message: message(cause) } } }); }
 }
 /** Shows `path` in a tab (a preview, unless asked to keep it) and reads it; `lines` marks and scrolls to them. */
-export function openFile(cwd: string, path: string, { preview = false, line, endLine, show = false, present = false }: { preview?: boolean; line?: number; endLine?: number; show?: boolean; present?: boolean } = {}) {
+export function openFile(cwd: string, path: string, { preview = false, line, endLine, added, show = false, present = false }: { preview?: boolean; line?: number; endLine?: number; added?: boolean; show?: boolean; present?: boolean } = {}) {
   const pane = paneOf(cwd), at = pane.open.findIndex(file => file.path === path), old = pane.open[at];
-  const file: OpenFile = { path, preview: old ? old.preview && preview : preview, line, endLine, focus: (old?.focus ?? 0) + 1, view: line ? "source" : old?.view };
+  const file: OpenFile = { path, preview: old ? old.preview && preview : preview, line, endLine, ...(added ? { added } : {}), focus: (old?.focus ?? 0) + 1, view: line ? "source" : old?.view };
   let open: OpenFile[];
   if (old) open = pane.open.map(item => item === old ? file : item);
   else if (preview && pane.open.some(item => item.preview)) open = pane.open.map(item => item.preview ? file : item);
@@ -164,7 +164,7 @@ export function openRef(ref: FileRef, { asText = false, onError }: { asText?: bo
     return true;
   }
   if (!asText && pageOpener && /\.html?$/i.test(found.abs) && found.line === undefined) { pageOpener(found.abs); for (const request of requests) request(); return true; }
-  openFile(cwd, found.rel, { line: found.line, endLine: found.endLine, show: true });
+  openFile(cwd, found.rel, { line: found.line, endLine: found.endLine, added: found.added, show: true });
   for (const request of requests) request();
   return true;
 }

@@ -72,6 +72,8 @@
 .fe-layer > div { width:max-content; min-width:100%; }
 .fe-line { height:var(--fe-line); padding-inline:12px; white-space:pre; }
 .fe-line.hit { background:color-mix(in oklab, var(--primary) 13%, transparent); box-shadow:inset 2px 0 0 var(--primary); }
+/* Lines a diff added, opened from its row: the diff's own green, so they never read as removed (5 Nov). */
+.fe-line.hit.added { background:color-mix(in oklch, var(--success) 13%, transparent); box-shadow:inset 2px 0 0 var(--success); }
 .fe-find-hit { color:transparent; background:color-mix(in oklab, var(--context) 38%, transparent); border-radius:2px; }
 .fe-find-hit.current { background:color-mix(in oklab, var(--context) 70%, transparent); outline:1px solid var(--context); }
 .fe-text { position:absolute; inset:0; width:100%; height:100%; margin:0; padding:var(--fe-pad) 12px; resize:none; border:0; border-radius:0; outline:none; background:transparent; color:var(--foreground); caret-color:var(--foreground); font:var(--code-size, 13px)/var(--fe-line) var(--mono); tab-size:4; white-space:pre; overflow:auto; }

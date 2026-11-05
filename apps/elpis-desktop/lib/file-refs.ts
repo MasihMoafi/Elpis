@@ -4,7 +4,8 @@
 // carry :line, :line-endLine or :line:column (the column is dropped). Pure: components/markdown-text.tsx draws them.
 
 /** A file a reply names: its path as written (relative to the chat's folder, or absolute) and the lines it points at. */
-export type FileRef = { path: string; line?: number; endLine?: number };
+/** `added`: the lines are ones a diff added, so the editor marks them in the diff's green rather than the accent. */
+export type FileRef = { path: string; line?: number; endLine?: number; added?: boolean };
 
 const LETTERS = String.raw`\p{L}\p{N}\p{M}_`;
 /** Inline code that is a path: folders joined by "/", then a file name with an extension, then maybe :line, :line-end or :line:column. */
@@ -73,8 +74,8 @@ export function findPaths(text: string): (string | { text: string; ref: FileRef 
 
 /** A ref against the chat's folder: where the file is and whether it lies inside the folder (the Files pane reads only
  * inside it). Outside, or with no folder to resolve against, `rel` is the path itself. */
-export function resolveRef(ref: FileRef, cwd: string): { abs: string; rel: string; inside: boolean; line?: number; endLine?: number } {
-  const lineOf = { ...(ref.line ? { line: ref.line } : {}), ...(ref.endLine ? { endLine: ref.endLine } : {}) };
+export function resolveRef(ref: FileRef, cwd: string): { abs: string; rel: string; inside: boolean; line?: number; endLine?: number; added?: boolean } {
+  const lineOf = { ...(ref.line ? { line: ref.line } : {}), ...(ref.endLine ? { endLine: ref.endLine } : {}), ...(ref.added ? { added: true } : {}) };
   const root = cwd.replace(/\/+$/, "");
   if (!ref.path.startsWith("/") && !root) return { abs: ref.path, rel: ref.path, inside: false, ...lineOf };
   const parts: string[] = [];

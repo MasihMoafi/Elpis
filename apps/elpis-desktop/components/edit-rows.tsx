@@ -6,6 +6,7 @@ import { Counts, DiffLines } from "@/components/diff-view";
 import { FileRefLink, FilePathText } from "@/components/file-ref";
 import { Step } from "@/components/step";
 import type { Item } from "@/lib/api";
+import type { FileRef } from "@/lib/file-refs";
 import { fileEdits, shortPath, turnEdits, type FileEdit, type FileKind } from "@/lib/diff";
 import { stepLabel } from "@/lib/steps";
 
@@ -14,11 +15,19 @@ const PROBLEMS: Record<string, string> = { failed: "Failed", declined: "Declined
 
 /** One edited file as a row: the verb, the file's name and the folders above it as a hint, "+N −M"; it opens to the lines
  * it changed, drawn as the Changes tab draws them. Without a verb (the turn's footer) it is the file alone. */
+/** Where a changed file opens: at the first run of lines it added, marked as added (5 Nov, Masih: the +1 row opened on the
+ * line above the change, marked in the accent red, so it read as a removed line). Without added lines, the first changed line. */
+export function addedLines(edit: FileEdit): FileRef {
+  const at = edit.lines.findIndex(line => line.kind === "add" && line.newNo);
+  if (at < 0) return { path: edit.path, line: edit.lines.find(line => line.kind !== "ctx" && line.newNo)?.newNo ?? edit.lines.find(line => line.newNo)?.newNo ?? undefined };
+  let end = at; while (edit.lines[end + 1]?.kind === "add") end++;
+  return { path: edit.path, line: edit.lines[at].newNo!, endLine: edit.lines[end].newNo!, added: true };
+}
 export function EditRow({ edit, verb }: { edit: FileEdit; verb?: string }) {
   const { name, hint } = shortPath(edit.path), problem = PROBLEMS[edit.status];
   const title = <>
     {verb && <><span className="step-verb">{verb}</span>{" "}</>}
-    <span className="step-file" title={edit.path}><FileRefLink target={{ path: edit.path, line: edit.lines.find(line => line.newNo)?.newNo ?? undefined }}>{name}</FileRefLink></span>
+    <span className="step-file" title={edit.path}><FileRefLink target={addedLines(edit)}>{name}</FileRefLink></span>
     {hint && <>{" "}<span className="step-hint">{hint}</span></>}
   </>;
   const body = edit.lines.length
