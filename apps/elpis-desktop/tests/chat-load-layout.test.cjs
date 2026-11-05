@@ -204,7 +204,11 @@ test('a refused team read leaves the draft usable and requires a deliberate pane
       : fallback['/api/threads'](_, url),
   } });
   try {
-    await f.page.getByText(/Agent list unavailable/).waitFor();
+    // 5 Nov, Masih: a background read's failure is "non-existent and meaningless"; it shows no error bar.
+    const end = Date.now() + 6000; while (attempts === 0 && Date.now() < end) await f.page.waitForTimeout(100);
+    assert.ok(attempts > 0, 'the agent list was read and refused');
+    await f.page.waitForTimeout(500);
+    assert.equal(await f.page.getByText(/Agent list unavailable/).count(), 0);
     await f.composer.fill('A draft after the agent list failed');
     assert.equal(await f.composer.inputValue(), 'A draft after the agent list failed');
     assert.equal(await f.page.locator('.team-panel').count(), 0);

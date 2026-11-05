@@ -12,10 +12,14 @@ test('a chat on screen gets no error bar when the engine refuses a background re
   const { BridgeError } = await import('../bridge/validate.mjs');
   const refusal = () => Object.assign(new BridgeError('Elpis rejected the operation (-32600). No automatic retry was made.', 502), { code: -32600 });
   const reads = { [shown]: 0, [broken]: 0 };
-  const f = await loveSpotFixture({ configureClient: client => {
-    const read = client.readThread;
+  let f;
+  f = await loveSpotFixture({ configureClient: client => {
     // The first read of the shown chat succeeds; every later one, and every read of the broken chat, is refused.
-    client.readThread = async (id, options) => { reads[id] = (reads[id] ?? 0) + 1; if (id === broken || reads[id] > 1) throw refusal(); return read(id, options); };
+    const hello = { threadId: shown, turnId: 't1', item: { id: 'u1', type: 'userMessage', content: [{ type: 'text', text: 'Hello there' }] } };
+    client.readThread = async id => {
+      reads[id] = (reads[id] ?? 0) + 1; if (id === broken || reads[id] > 1) throw refusal();
+      return { thread: f.chats.find(chat => chat.id === id), data: [hello], nextCursor: null };
+    };
     client.resume = async () => { throw refusal(); }; // The chat cannot be followed live, so the app re-reads it every 3 s.
     const list = client.listThreads;
     client.listThreads = async (options = {}) => { if (options.ancestorThreadId) throw refusal(); return list(options); };
@@ -24,7 +28,6 @@ test('a chat on screen gets no error bar when the engine refuses a background re
     const { page } = f;
     const chat = (id, name) => ({ id, name, preview: name, cwd: f.directory, modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct', reason: null } });
     f.chats.push(chat(shown, 'Loaded chat'), chat(broken, 'Unreadable chat'));
-    f.entries.push({ threadId: shown, turnId: 't1', item: { id: 'u1', type: 'userMessage', content: [{ type: 'text', text: 'Hello there' }] } });
     await page.reload(); await page.locator('.startup-splash').waitFor({ state: 'detached' });
     const bar = page.locator('.error-banner[role="alert"]');
 
