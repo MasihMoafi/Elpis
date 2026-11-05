@@ -2,7 +2,7 @@
 
 ## Definition of done
 
-Masih, 24 Oct: "make sure all the issues are fixed not just addressed and also end-2-end tested, unit-tested, all sort of tests … especially all features". The rules come from *AI-Native Software Engineering* ch. 8 and *Clean Code* ch. 9 (his books, ~/Desktop/books). An item is done only when all hold:
+Masih, 24 Oct: "make sure all the issues are fixed not just addressed and also end-2-end tested, unit-tested, all sort of tests … especially all features". The rules come from *AI-Native Software Engineering* ch. 8 and *Clean Code* ch. 9. An item is done only when all hold:
 
 1. **The end-to-end test bites.** A test drives the real packaged app and the real engine as he would (clicks, keys, restarts) and checks what he sees. It fails on the build before the fix and passes after; both runs are recorded. A test written with the fix and never seen failing proves nothing ("tests are theater" when one agent writes code and tests).
 2. **Unit tests for the logic, property tests for its rules.** Every changed function has unit tests that assert behaviour, not lines walked or source text. Logic with a rule that must hold for any input (paging and ordering, list and tree building, journal and resume, archive then unarchive) gets property-based tests over many inputs and the edges: empty, one, boundary, Unicode.
@@ -16,9 +16,9 @@ Masih, 24 Oct: "make sure all the issues are fixed not just addressed and also e
 
 **`npm test`** runs the complete ordinary gate serially: build bridge resources → fast → bridge → desktop → locked renderer build → every UI file, with a 180 s limit per file. Resources are prepared before any selected tier; only UI runs build the renderer, once, before their first file. It needs no prebuilt resources or `out/`. Set `ELPIS_PLAYWRIGHT_PACKAGE` when Playwright is outside local dependencies and `ELPIS_CHROMIUM` for a system browser. Tier runs use a throwaway `ELPIS_HOME`. Dependencies must already exist; the gate never installs anything. `npm run test:inventory` checks ownership; `npm run test:fast`, `test:bridge`, `test:desktop` and `test:ui` select a tier from the same inventory.
 
-Each run prints `/tmp/elpis-test-gate-*/summary.json` and keeps per-file TAP and build logs there. `wallMs` includes shared-lock waits and build time; `testMs` sums Node test durations without them. Compare like scopes: the architecture review measured bridge 4.77 s (328), desktop plus selected helpers 3.06 s (155), renderer 3.84 s (1) and live-events 0.18 s (13), **without a full UI gate measurement**. A focused browser test: `flock /tmp/elpis-desktop-ui.lock node --test --test-timeout=180000 --test-reporter=tap tests/<file>`, output redirected to a TAP file.
+Each run prints `/tmp/elpis-test-gate-*/summary.json` and keeps per-file TAP and build logs there. `wallMs` includes shared-lock waits and build time; `testMs` sums Node test durations without them. A focused browser test: `flock /tmp/elpis-desktop-ui.lock node --test --test-timeout=180000 --test-reporter=tap tests/<file>`, output redirected to a TAP file.
 
-Focused checks: `npm run test:drafts` (drafts); `npm run test:desktop` (includes browser and dictation checks); `tests/project-journey.runtime.mjs` checks the actual desktop and installed runtime with isolated local inference.
+Focused checks: `npm run test:drafts` (drafts); `tests/project-journey.runtime.mjs` checks the actual desktop and installed runtime with isolated local inference.
 
 Opt-ins stay explicit; never run the whole tier blindly. `ELPIS_TEST_ENGINE=/absolute/elpis-next node --test tests/composer-engine.test.mjs` uses an isolated engine without inference. Native window tests (`code-opens-electron`, `session-windows-electron`) need a private display: `ELPIS_PRIVATE_DISPLAY=1 xvfb-run -a flock /tmp/elpis-desktop-ui.lock node --test tests/<file>.test.cjs`. Other runtime scripts document their arguments and profile isolation in their headers; some make subscription turns. Keep `ELPIS_HOME` isolated and read the script before running it.
 
