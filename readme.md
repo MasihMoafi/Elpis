@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/elpis-wordmark-burning-dark.svg">
-    <img src="docs/assets/elpis-wordmark-burning-light.svg" alt="Elpis" width="300">
+    <source media="(prefers-color-scheme: dark)" srcset="website/assets/technical/elpis-wordmark-burning-dark.svg">
+    <img src="website/assets/technical/elpis-wordmark-burning-light.svg" alt="Elpis" width="300">
   </picture>
 </p>
 
@@ -10,7 +10,7 @@
 
 <p align="center">A coding agent should only see what you chose to show it, and a team of agents should only touch what each was given. Elpis is an engineered agent harness for Linux, built on OpenAI’s Codex CLI: a home where your agents keep their context, and a board where you design how several of them work together.</p>
 
-<p align="center"><img src="docs/assets/workflows-team.gif" alt="Workflows: the Mother agent designs a code-review team of eight agents in four waves, shown flat and in isometric, runs it and checks each agent's work"></p>
+<p align="center"><img src="website/assets/technical/workflows-team.gif" alt="Workflows: the Mother agent designs a code-review team of eight agents in four waves, shown flat and in isometric, runs it and checks each agent's work"></p>
 
 <p align="center"><a href="https://github.com/MasihMoafi/Elpis/releases">Releases</a> · <a href="https://elpis.masihmoafi.com">Website</a> · <a href="docs/GUIDE.md">Technical guide</a> · <a href="CONTRIBUTING.md">Contributing</a> · <a href="LICENSE">License</a></p>
 
@@ -50,7 +50,7 @@ Elpis treats both as one problem, **context management**, and answers it with tw
 
 ### Workflows
 
-![Workflows: the Mother agent designs a team, runs it and checks each agent's work](docs/assets/workflows.gif)
+![Workflows: the Mother agent designs a team, runs it and checks each agent's work](website/assets/technical/workflows.gif)
 
 Describe a job. The Mother agent, the planning agent, either does it herself or designs a team of agents you can see and edit on a board. Ready-made patterns: Sequential, Parallel, Kahn graph waves, Recursive (with a round limit) and Voting; ready-made teams: Transcribe images, Translate and Logo. Past ten agents, a Father agent runs the rest in his own chat and reports to her. Each agent may use a different model, and each is told how much time is left.
 
@@ -86,7 +86,7 @@ Two limits remain: two side-by-side agents without an "alongside" link are not y
 
 A drawing board where Matilda, the app's companion, answers and draws with you. Paste screenshots onto the board and draw on them.
 
-![Love Spot: Matilda answers on the drawing board](docs/assets/lovespot.gif)
+![Love Spot: Matilda answers on the drawing board](website/assets/technical/lovespot.gif)
 
 ### Chats, themes and the Context Ledger
 
@@ -94,15 +94,15 @@ Chat with GPT, Claude and Gemini models; use your ChatGPT or Claude subscription
 
 Pick a theme (Elpis, Paper, Midnight or Plum), each in light and dark, or build your own in Settings → Appearance.
 
-![One Elpis desktop chat in six themes: Elpis dark and light, Midnight dark, Paper light, Plum dark and Midnight light](docs/assets/themes.gif)
+![One Elpis desktop chat in six themes: Elpis dark and light, Midnight dark, Paper light, Plum dark and Midnight light](website/assets/technical/themes.gif)
 
 ## The terminal app
 
 The same engine in your terminal. `/add` and `/context` show the working set; the agent saves lasting memory through a guarded local tool, and saving something is a separate choice from sending it. `/compact` takes a pressure threshold or your own instructions. `/model` and `--provider` reach Anthropic, Gemini and OpenRouter beside OpenAI.
 
-![The Agent command center in the Elpis terminal app: GPT and Claude helpers under their parent chat, each model in its own colour](docs/assets/tui-agent-command-center.webp)
+![The Agent command center in the Elpis terminal app: GPT and Claude helpers under their parent chat, each model in its own colour](website/assets/technical/tui-agent-command-center.webp)
 
-<img src="docs/assets/context-ledger.webp" alt="The Context Ledger in the Elpis terminal app: each instruction file with its token cost and an INCLUDED mark" width="420">
+<img src="website/assets/technical/context-ledger.webp" alt="The Context Ledger in the Elpis terminal app: each instruction file with its token cost and an INCLUDED mark" width="420">
 
 ## How it works
 

@@ -3,7 +3,7 @@
 Status: implemented behind the under-development `enable_fanout` feature;
 agent-verified on Linux; awaiting Masih's functional acceptance.
 
-![Elpis deterministic work graph](assets/elpis-work-graph.svg)
+![Elpis deterministic work graph](../website/assets/technical/elpis-work-graph.svg)
 
 ## Objective
 

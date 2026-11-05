@@ -240,7 +240,7 @@ At these rates the latest four-case aggregate costs **122.19% more** with prunin
 and to a task with only two requests after the output. On the same fixtures with
 the same binary, Low and None effort retain the same facts at a fraction of the
 cost, and pruning becomes cheaper than no pruning at longer horizons; see
-[COST_EFFICIENCY_RESULTS.md](COST_EFFICIENCY_RESULTS.md).)
+[COST_EFFICIENCY_RESULTS.md](../../../website/evidence/COST_EFFICIENCY_RESULTS.md).)
 Although two cases save total tokens, none saves estimated money: input savings
 do not offset the optimizer's output-token cost at the published prices.
 
@@ -264,7 +264,7 @@ accepts archive paths and optional `--rates PRICES_JSON`. A rates file must iden
 its currency and provenance and provide separate `main` and `optimizer` rate
 objects with `input`, `cached`, `write`, and `output` prices per million tokens.
 Rates produce estimates, not invoice verification. The dated rate inputs and
-sources are in [LUNA_PUBLISHED_RATES_2026-09-08.json](LUNA_PUBLISHED_RATES_2026-09-08.json).
+sources are in [LUNA_PUBLISHED_RATES_2026-09-08.json](../../../website/evidence/LUNA_PUBLISHED_RATES_2026-09-08.json).
 Cache-write pricing is left unspecified because every recorded count is zero;
 the calculator rejects nonzero cache-write usage without an applicable rate.
 

@@ -5,7 +5,7 @@ tool output, and compacting conversation history. The Context Ledger shows these
 sources and their budgets; it is not a complete inspector of every provider-request byte.
 ---
 
-![Elpis context control pipeline](assets/elpis-context-control.svg)
+![Elpis context control pipeline](../website/assets/technical/elpis-context-control.svg)
 
 ## 1. Systemic Role in Elpis
 
@@ -396,7 +396,7 @@ only when a selected skill is used. The `/skills` management surface shows enabl
 available candidates and labels their origins. Mentions and the model-visible skills list include
 enabled skills only. The skills catalog itself is not a Context Ledger token row.
 
-![The Context Ledger listing admitted instruction files with their token counts and included state](assets/context-ledger.webp)
+![The Context Ledger listing admitted instruction files with their token counts and included state](../website/assets/technical/context-ledger.webp)
 
 ### `/context` — where the window went
 
@@ -405,7 +405,7 @@ usage as a grid broken down by category — user messages, agent responses, tool
 system prompt, Development rules, and free space — alongside the backtrack checkpoints available via
 `Esc Esc`. The two are separate surfaces and neither replaces the other.
 
-![/context showing token usage as a grid, broken down by category, with available backtrack checkpoints](assets/elpis-context-slash.webp)
+![/context showing token usage as a grid, broken down by category, with available backtrack checkpoints](../website/assets/technical/elpis-context-slash.webp)
 
 ### Context Accounting Contract
 

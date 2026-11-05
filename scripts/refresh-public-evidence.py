@@ -10,8 +10,8 @@ import math
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = ROOT / "docs/evals/rq3/COST_EFFICIENCY_METRICS.json"
-OUT = ROOT / "docs/assets"
+SOURCE = ROOT / "website/evidence/COST_EFFICIENCY_METRICS.json"
+OUT = ROOT / "website/assets/technical"
 
 
 def equal(actual, expected, label):
@@ -109,7 +109,7 @@ def main():
     horizon = [aggregate(data, ids, label) for ids, label in [
         (["e1-low"], "Low · 3 requests"), (["e2-8b-low"], "Low · 11 requests"),
         (["e2-32b-low", "e2-32c-low"], "Low · 35 requests"), (["e2-32-none"], "None · 35 requests")]]
-    document = {"as_of": "2026-09-09", "source": "docs/evals/rq3/COST_EFFICIENCY_METRICS.json",
+    document = {"as_of": "2026-09-09", "source": "website/evidence/COST_EFFICIENCY_METRICS.json",
                 "source_sha256": hashlib.sha256(SOURCE.read_bytes()).hexdigest(),
                 "calculator_sha256": data["calculatorSha256"], "verified_batches": len(data["batches"]),
                 "verified_pairs": sum(len(b["pairs"]) for b in data["batches"]),

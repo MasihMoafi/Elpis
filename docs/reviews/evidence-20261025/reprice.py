@@ -15,7 +15,7 @@ REPO = pathlib.Path(__file__).resolve().parents[3]
 MAIN = pathlib.Path(subprocess.run(['git', '-C', str(REPO), 'rev-parse', '--path-format=absolute', '--git-common-dir'],
                                    capture_output=True, text=True, check=True).stdout.strip()).parent
 ARCHIVES = pathlib.Path(os.environ.get('ELPIS_FINAL_DATA') or MAIN / 'docs/evals/final-data')
-RATE_FILE = REPO / 'docs/evals/rq3/LUNA_PUBLISHED_RATES_2026-09-08.json'
+RATE_FILE = REPO / 'website/evidence/LUNA_PUBLISHED_RATES_2026-09-08.json'
 COHORTS = ['COST-E1-NONE-B-LUNA-20260908-01', 'COST-E2-32-NONE-LUNA-20260908-01']
 FIELDS = ['input_tokens', 'cached_input_tokens', 'cache_write_tokens', 'output_tokens', 'reasoning_output_tokens', 'total_tokens']
 rates = json.loads(RATE_FILE.read_text())

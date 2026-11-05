@@ -1,6 +1,6 @@
 {
   "as_of": "2026-09-09",
-  "source": "docs/evals/rq3/COST_EFFICIENCY_METRICS.json",
+  "source": "website/evidence/COST_EFFICIENCY_METRICS.json",
   "source_sha256": "d9bee2f8d0d1080d28bfc336a7bcd10867b0ddf67964e828f99e79b807cca2fd",
   "calculator_sha256": "bf5e5db26524e66acc2cefa2b646d114d542cc92d78f98ef0191d82f10146b75",
   "verified_batches": 20,

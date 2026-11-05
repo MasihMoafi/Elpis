@@ -3,7 +3,7 @@
 Started 8 September 2026, updated as batches seal. Protocol:
 [COST_EFFICIENCY_PROTOCOL.md](COST_EFFICIENCY_PROTOCOL.md). Machine-readable
 metrics: [COST_EFFICIENCY_METRICS.json](COST_EFFICIENCY_METRICS.json) (Luna) and
-[COST_EFFICIENCY_METRICS_TERRA.json](COST_EFFICIENCY_METRICS_TERRA.json) (Terra main), produced by
+[COST_EFFICIENCY_METRICS_TERRA.json](../../docs/evals/rq3/COST_EFFICIENCY_METRICS_TERRA.json) (Terra main), produced by
 `cost-metrics.mjs` from sealed batches. Every figure below is a published-rate
 estimate (Luna, 8 September 2026: $0.20 input, $0.02 cached input, $1.20 output
 per million tokens), not an invoice.

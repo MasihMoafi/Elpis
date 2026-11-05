@@ -2,8 +2,8 @@
 
 **Historical Run 1 comparison, reviewed September 9, 2026.** This dashboard uses
 the superseded pruning configuration. It is separate from the current product's
-live dashboard and from the [newer cost study](../rq3/COST_EFFICIENCY_RESULTS.md).
-See the [public-content audit](../public-content-audit-20260909.md) for build and
+live dashboard and from the [newer cost study](../../../website/evidence/COST_EFFICIENCY_RESULTS.md).
+See the [public-content audit](../../../website/evidence/public-content-audit-20260909.md) for build and
 test provenance. The current cost charts come from `scripts/refresh-public-evidence.py`.
 
 The measuring instruments. `dashboard.html` is generated — never edit it by hand, edit the

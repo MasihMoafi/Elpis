@@ -194,8 +194,8 @@ def render() -> str:
 
 def main() -> None:
     target = (
-        Path(__file__).resolve().parents[2]
-        / "assets"
+        Path(__file__).resolve().parents[3]
+        / "website/assets/technical"
         / "elpis_empirical_evaluation_bars.svg"
     )
     target.write_text(render(), encoding="utf-8")

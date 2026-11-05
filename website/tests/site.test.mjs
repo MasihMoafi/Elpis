@@ -21,16 +21,13 @@ test("current public media and evidence links resolve locally", async () => {
   assert.equal([...html.matchAll(/data-dashboard-panel="[^"]+" hidden/g)].length, 3);
 });
 
-test("public chart provenance matches the frozen source and copied evidence", async () => {
+test("public chart provenance matches the frozen source", async () => {
   const manifest = JSON.parse(await read("assets/technical/current-evidence-20260909.json"));
   const data = await read("evidence/COST_EFFICIENCY_METRICS.json");
   assert.equal(createHash("sha256").update(data).digest("hex"), manifest.source_sha256);
   const source = JSON.parse(data);
   assert.equal(source.batches.length, manifest.verified_batches);
   assert.equal(source.batches.reduce((n, b) => n + b.pairs.length, 0), manifest.verified_pairs);
-  for (const chart of ["elpis-current-effort-20260909.svg", "elpis-current-horizon-20260909.svg"]) {
-    assert.equal(await read(`assets/technical/${chart}`), await read(`../docs/assets/${chart}`));
-  }
 });
 
 test("technical page was generated from the current README and template", async () => {

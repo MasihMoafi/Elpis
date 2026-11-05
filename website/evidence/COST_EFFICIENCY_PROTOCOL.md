@@ -173,7 +173,7 @@ copies, and binary provenance before the first call.
 ```sh
 node staged-study.mjs BATCH_DIR FROZEN_BINARY AUTH_JSON effort-ablation:low
 node staged-study.mjs --audit BATCH_DIR
-node cost-metrics.mjs --rates ../../../../docs/evals/rq3/LUNA_PUBLISHED_RATES_2026-09-08.json BATCH_DIR...
+node cost-metrics.mjs --rates ../../../../website/evidence/LUNA_PUBLISHED_RATES_2026-09-08.json BATCH_DIR...
 ```
 
 Real-repository coding fixtures (B1 to D5 in `PRUNING_ABLATION_DRAFT.md`) remain
