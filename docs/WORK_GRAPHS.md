@@ -1,7 +1,7 @@
 # Deterministic Work Graphs
 
-Status: implemented behind the under-development `enable_fanout` feature;
-agent-verified on Linux; awaiting Masih's functional acceptance.
+Status: on by default (`enable_fanout`, [features](../codex-rs/features/src/lib.rs)); the
+desktop app's Workflows run on it. Awaiting Masih's functional acceptance.
 
 ![Elpis deterministic work graph](../website/assets/technical/elpis-work-graph.svg)
 
@@ -11,31 +11,7 @@ A work graph leaves agents only bounded judgment. Elpis validates the plan, pers
 it, selects dependency-ready work, enforces concurrency and write boundaries, and
 accepts evidence before releasing dependent work.
 
-## Lifecycle
-
-```mermaid
-flowchart TD
-    A["Coordinator submits complete graph<br/>tasks · depends_on · write_scopes<br/>acceptance_criteria · environment_id"] --> B{"Kahn's topological<br/>validation"}
-    B -->|"cycle or bad dependency"| R["Reject before any<br/>worker is created"]
-    B -->|acyclic| C{"Scope and role<br/>validation"}
-    C -->|"invalid scope or role"| R
-    C -->|valid| D["Persist tasks<br/>in declared order"]
-    D --> E{"Dependency-ready scan<br/>all prerequisites succeeded?"}
-    E -->|no| W["Pending"]
-    W --> E
-    E -->|yes| F{"Write-boundary check<br/>path-prefix intersection"}
-    F -->|"writable task already running<br/>in this environment"| S["Serialize:<br/>wait for the environment"]
-    S --> F
-    F -->|clear| G["Dispatch worker<br/>bounded by max_concurrency<br/>and the session agent limit"]
-    G --> H{"Evidence accepted<br/>against acceptance_criteria?"}
-    H -->|"no · failed · cancelled"| J["Blocked:<br/>pending descendants blocked"]
-    H -->|yes| I["Succeeded:<br/>release dependents"]
-    I --> E
-
-    style R fill:#f8d7da,stroke:#842029,color:#842029
-    style J fill:#f8d7da,stroke:#842029,color:#842029
-    style I fill:#d1e7dd,stroke:#0f5132,color:#0f5132
-```
+## Graphs
 
 Elpis keeps two separate graphs:
 
@@ -45,28 +21,9 @@ Elpis keeps two separate graphs:
 The work graph must be a directed acyclic graph (DAG): a task in a cycle would wait on
 itself.
 
-## Graph theory boundary
-
-Elpis uses the smallest algorithms that fit the control problem:
-
-- Kahn's topological algorithm validates that the task graph is acyclic.
-- A stable dependency-ready scan chooses runnable tasks in declared order.
-- Path-prefix intersection detects concurrent write conflicts.
-
-DFS or BFS would not improve the scheduling decision. Dijkstra's algorithm solves
-weighted shortest paths; a work graph has prerequisites, not a destination and weighted
-routes, so it applies only if a future requirement adds task costs and alternative paths.
-
 ## Enable and use
 
-The feature is off by default:
-
-```toml
-[features]
-enable_fanout = true
-```
-
-There is no slash command. When enabled, the coordinator model receives the
+`enable_fanout = false` under `[features]` turns it off. There is no slash command. The coordinator model receives the
 `run_agent_work_graph` function tool and supplies the complete graph:
 
 ```json
@@ -156,7 +113,8 @@ Before dispatch, Elpis rejects:
 - a writable task without a directly dependent `verify` task in the same environment;
 - zero concurrency or runtime limits.
 
-At runtime:
+Kahn's topological algorithm checks that the graph is acyclic, and path-prefix intersection
+detects write conflicts. At runtime:
 
 1. Tasks are persisted in declared order.
 2. Only pending tasks whose dependencies all succeeded are eligible.
@@ -245,22 +203,10 @@ build the next graph.
 
 ## Verification
 
-Automated coverage proves:
-
-- acyclic persistence and cycle/unknown-dependency/path-escape rejection;
-- stable dependency-ready selection and serialization of all writers in one environment;
-- authenticated reports and evidence persistence;
-- rejection of a real file change omitted from a worker report;
-- rejection of writable tasks without a direct same-environment verifier;
-- interrupted-graph failure without requeue;
-- successful dependency handoff;
-- prerequisite failure blocks a descendant without spawning it;
-- on Linux, a real worker command cannot write outside its declared scope;
-- with worktree isolation: two parallel writers merge into the root branch; two writers
-  editing the same line fail the graph, list the file, and leave the branch untouched; an
-  uncommitted root change in a merged file stops the merge; a writer that builds on two
-  writers starts from their merge, and a clash there lists the files; a stopped run keeps
-  only worktrees with work.
-
-Before/after negative-check data and reproduction commands:
+Tests: [handler](../codex-rs/core/src/tools/handlers/work_graphs_tests.rs),
+[spec](../codex-rs/core/src/tools/handlers/work_graphs_spec_tests.rs),
+[worktrees](../codex-rs/core/src/tools/handlers/work_graph_worktrees_tests.rs),
+[core suite](../codex-rs/core/tests/suite/work_graphs.rs) and
+[app server](../codex-rs/app-server/tests/suite/v2/elpis_work_graphs.rs). Before/after
+negative-check data and reproduction commands:
 [evals/accountable-work-graphs](evals/accountable-work-graphs/README.md).
