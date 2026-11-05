@@ -103,7 +103,7 @@ for (const model of ['sol', 'claude/claude-sonnet-5-5']) for (const running of [
   });
 }
 
-for (const colorScheme of ['light']) for (const running of [false, true]) test(`composer options and context icon fit at 600, 400 and 320px (${colorScheme}, ${running ? 'running' : 'idle'})`, async t => {
+for (const colorScheme of ['light']) for (const running of [false, true]) test(`composer options and context icon fit at 600, 430, 400 and 320px (${colorScheme}, ${running ? 'running' : 'idle'})`, async t => {
   const f = await fixture({ width: 1100, height: 700, colorScheme, running, routes: {
     '/api/models': () => ({ data: [{ id: 'sol', model: 'sol', displayName: 'Sol', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }], serviceTiers: [{ id: 'priority', name: 'Fast' }] }] }),
     '/api/voice': () => ({ available: true }),
@@ -127,7 +127,8 @@ for (const colorScheme of ['light']) for (const running of [false, true]) test(`
     assert.equal(m.overlaps, 0, `controls do not overlap at ${width}px`);
   }
   await f.page.setViewportSize({ width: 1100, height: 700 });
-  for (const width of [600, 400, 320]) {
+  // 430: the mid-turn width where the end-aligned right group once spilled under the permissions pill (5 Nov).
+  for (const width of [600, 430, 400, 320]) {
     await f.page.locator('.composer').evaluate((element, width) => { element.style.width = `${width}px`; }, width);
     await waitForDraftFit(f.page);
     const floating = await probe(f.page);
