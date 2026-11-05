@@ -281,6 +281,60 @@ if (themeTour) {
   renderTour();
 }
 
+// The Workflows board's isometric view: a cube per agent card at the card's centre, with an upright numbered label,
+// and the flat wires redrawn between cube centres on the ground. Returns a function that re-trims the wires on resize.
+function buildIsometric(board) {
+  const COLORS = ["#6fbf73", "#6c8fd8", "#d9905b", "#9c7bd8", "#d66d9e", "#5fb4b4", "#c9b458", "#7aa5c9"];
+  const cards = [...board.querySelectorAll(".wf-node")].map((card) => ({
+    card, x: parseFloat(card.style.getPropertyValue("--x")), y: parseFloat(card.style.getPropertyValue("--y")),
+    check: card.classList.contains("wf-check"), mother: card.classList.contains("wf-mother"),
+  }));
+  const columns = [...new Set(cards.map(({ x }) => x))].sort((a, b) => a - b);
+  cards.forEach((node, index) => {
+    node.cx = node.x + 8.5;
+    node.wave = columns.indexOf(node.x) + (node.check && cards.some((other) => other.x === node.x && !other.check) ? 1 : 0);
+    const cube = document.createElement("div");
+    cube.className = "wf-cube";
+    cube.setAttribute("aria-hidden", "true");
+    cube.style.cssText = `--cx:${node.cx};--cy:${node.y};--c:${node.mother ? "#1b1b1b" : COLORS[(index - 1) % COLORS.length]}`;
+    const label = document.createElement("b");
+    if (!node.mother) label.append(Object.assign(document.createElement("span"), { textContent: node.wave }));
+    label.append(node.card.querySelector("strong")?.textContent || "");
+    cube.append(...["top", "south", "east"].map((face) => Object.assign(document.createElement("i"), { className: face })), label);
+    board.append(cube);
+  });
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "wf-iso-edges");
+  svg.setAttribute("viewBox", "0 0 100 100");
+  svg.setAttribute("preserveAspectRatio", "none");
+  svg.setAttribute("aria-hidden", "true");
+  board.prepend(svg);
+  // Each flat wire runs from a card's right edge (or, for a wire straight down, its centre) to the next card's left edge.
+  const nearest = (px, py, edge) => cards.reduce((best, node) => {
+    const d = Math.abs(node.x + edge - px) + Math.abs(node.y + 6 - py) * 0.3;
+    return d < best.d ? { node, d } : best;
+  }, { d: Infinity }).node;
+  const links = [...board.querySelectorAll(".wf-edges > path[data-draw]")].map((path) => {
+    const n = path.getAttribute("d").match(/-?[\d.]+/g).map(Number);
+    const [sx, sy, ex, ey] = [n[0], n[1], n[n.length - 2], n[n.length - 1]];
+    const down = Math.abs(sx - ex) < 1;
+    return { from: nearest(sx, sy, down ? 8.5 : 17), to: nearest(ex, ey, down ? 8.5 : 0) };
+  });
+  const draw = () => {
+    const across = (26 / Math.max(1, board.offsetWidth)) * 100, down = (26 / Math.max(1, board.offsetHeight)) * 100;
+    svg.replaceChildren(...links.map(({ from, to }) => {
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      const vertical = Math.abs(from.cx - to.cx) < 1, mid = (from.cx + to.cx) / 2;
+      path.setAttribute("d", vertical
+        ? `M${from.cx} ${from.y} V${to.y - Math.sign(to.y - from.y) * down}`
+        : `M${from.cx} ${from.y} H${mid} V${to.y} H${to.cx - across}`);
+      return path;
+    }));
+  };
+  draw();
+  return draw;
+}
+
 // Scroll-driven scenes (Workflows, Love Spot): the section's scroll position is the timeline.
 // data-on / data-off show an element from / until a point, data-type types its text over a range,
 // data-draw draws an SVG path over a range, data-states sets data-state (and a label) at each point.
@@ -310,7 +364,8 @@ document.querySelectorAll("[data-scene]").forEach((scene) => {
   const reduced = matchMedia("(prefers-reduced-motion: reduce)");
   // Workflows: the 2D run plays over the first part of the scroll, then the board tilts into the isometric
   // view as the visitor keeps scrolling, and stays there; scrolling back flattens it.
-  const FLAT_END = 0.62, TILT_FROM = 0.66, TILT_TO = 0.9;
+  const FLAT_END = 0.62, TILT_FROM = 0.66, TILT_TO = 0.84, CUBE_FROM = 0.82, CUBE_TO = 0.92;
+  const cubes = board ? buildIsometric(board) : null;
   const progress = () => clamp(((header?.offsetHeight || 0) - scene.getBoundingClientRect().top) / Math.max(1, scene.offsetHeight - stage.offsetHeight));
   const scrollToProgress = (target) => {
     const travel = scene.offsetHeight - stage.offsetHeight;
@@ -323,8 +378,10 @@ document.querySelectorAll("[data-scene]").forEach((scene) => {
     const raw = reduced.matches && board ? 1 : progress();
     const p = board ? clamp(raw / FLAT_END) : raw;
     if (board) {
-      const t = clamp((raw - TILT_FROM) / (TILT_TO - TILT_FROM)), tilt = t * t * (3 - 2 * t);
+      const ease = (from, to) => { const t = clamp((raw - from) / (to - from)); return t * t * (3 - 2 * t); };
+      const tilt = ease(TILT_FROM, TILT_TO);
       board.style.setProperty("--tilt", tilt.toFixed(4));
+      board.style.setProperty("--cube", ease(CUBE_FROM, CUBE_TO).toFixed(4));
       const view = tilt > 0.5 ? "isometric" : "flat";
       board.dataset.view = view;
       viewButtons.forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.wfView === view)));
@@ -347,7 +404,7 @@ document.querySelectorAll("[data-scene]").forEach((scene) => {
   }
   const request = () => { if (frame === undefined) frame = requestAnimationFrame(render); };
   addEventListener("scroll", request, { passive: true });
-  addEventListener("resize", () => { measure(); request(); });
+  addEventListener("resize", () => { measure(); cubes?.(); request(); });
   reduced.addEventListener("change", request);
   measure();
   render();
