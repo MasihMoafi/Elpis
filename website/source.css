@@ -428,8 +428,8 @@ figure img { display: block; width: 100%; height: auto; }
   #workflows .wf-caret { animation:none; }
 }
 
-#workflows.scene { height:520vh; }
-@media (max-width: 900px) { #workflows.scene { height:470svh; } }
+#workflows.scene { height:780vh; }
+@media (max-width: 900px) { #workflows.scene { height:680svh; } }
 
 /* Isometric view, as the desktop app's Workflows "Isometric" (components/agents-iso.tsx): each agent a cube with an
    upright label, wires on the ground. --cube (0..1) fades the cards into the cubes once the board is tilted. */
@@ -437,7 +437,9 @@ figure img { display: block; width: 100%; height: auto; }
 .wf-board .wf-edges { opacity:calc(1 - var(--cube)); }
 .wf-iso-edges { position:absolute; inset:0; width:100%; height:100%; overflow:visible; opacity:var(--cube); pointer-events:none; }
 .wf-iso-edges path { fill:none; stroke:color-mix(in oklab,var(--color-warning) 75%,transparent); stroke-width:1.6; stroke-dasharray:6 5; vector-effect:non-scaling-stroke; marker-end:url(#wf-arrow); }
-.wf-cube { --s:46px; --h:34px; position:absolute; left:calc(var(--cx) * 1%); top:calc(var(--cy) * 1%); width:var(--s); height:var(--s); margin:calc(var(--s) / -2) 0 0 calc(var(--s) / -2); transform-style:preserve-3d; transform:translateZ(calc(var(--h) * var(--cube))); opacity:var(--cube); pointer-events:none; }
+.wf-cube { --s:46px; --h:34px; position:absolute; left:calc(var(--cx) * 1%); top:calc(var(--cy) * 1%); width:var(--s); height:var(--s); margin:calc(var(--s) / -2) 0 0 calc(var(--s) / -2); transform-style:preserve-3d; transform:translateZ(calc(var(--h) * var(--cube))); pointer-events:none; }
+/* Opacity or a filter on the cube itself would flatten its 3D faces, so they go on each face and the label. */
+.wf-cube > * { opacity:var(--cube); transition:opacity .35s, filter .35s; }
 .wf-cube i { position:absolute; display:block; }
 .wf-cube .top { inset:0; background:var(--c); box-shadow:inset 0 0 0 1px #ffffff40; }
 .wf-cube .south { left:0; top:100%; width:100%; height:var(--h); transform-origin:top; transform:rotateX(-90deg); background:color-mix(in oklab,var(--c) 62%,#000); }
@@ -449,3 +451,17 @@ figure img { display: block; width: 100%; height: auto; }
   .wf-cube b { gap:.2rem; padding:.1rem .3rem .1rem .15rem; font-size:8.5px; transform:translate(-50%,-50%) rotateZ(-45deg) rotateX(-54.7356deg) translateY(-22px); }
   .wf-cube b span { min-width:.85rem; height:.85rem; font-size:8px; }
 }
+/* The run on the cubes: a waiting agent is dim, a running one glows and works, a finished one turns green; a wire
+   that carries work flows. These play with reduced motion too: the page owner asked to see the team at work. */
+.wf-cube[data-state="waiting"] i { filter:saturate(.3) brightness(.6); }
+.wf-cube[data-state="running"] { animation:wf-work .9s ease-in-out infinite; }
+@keyframes wf-work { 50% { transform:translateZ(calc(var(--h) * var(--cube) + var(--h) * .35)); } }
+.wf-cube[data-state="running"] .top { box-shadow:inset 0 0 0 1px #fff8, 0 0 28px 8px color-mix(in oklab,var(--color-warning) 65%,transparent); }
+.wf-cube b span { transition:background .3s; }
+.wf-cube[data-state="running"] b { border-color:var(--color-warning); }
+.wf-cube:is([data-state="done"],[data-state="passed"]) b span { background:var(--color-success); color:var(--color-success-content); }
+.wf-iso-edges path[data-active] { stroke:var(--color-warning); stroke-width:2.2; animation:wf-flow .7s linear infinite; }
+@keyframes wf-flow { to { stroke-dashoffset:-22; } }
+.wf-cube[data-state="hidden"] > * { opacity:0; }
+.wf-iso-edges path { transition:opacity .35s; }
+.wf-iso-edges path[data-hidden] { opacity:0; }
