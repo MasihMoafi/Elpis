@@ -24,8 +24,8 @@ The required behaviors of the terminal app (`elpis`), numbered 1–43 without ga
 
 ## Instructions and workspace context
 
-15. Global and project AGENTS.md files are Ledger rows and reach the model only while admitted; both start admitted until the person excludes them, and one switch covers every row of the same name. (R6; agents-listed, agents-admit, agents-withdraw; [context.md §4](context.md#4-context-ledger-and-admission))
-16. An admission survives a restart in the same folder; another folder starts with its own rows excluded. (agents-admit-kept, agents-per-folder)
+15. Global and project AGENTS.md files are Ledger rows and reach the model only while admitted; both start admitted until the person excludes them, and one switch covers every row of the same name. (R6; agents-listed, agents-included-default, agents-exclude, agents-withdraw; [context.md §4](context.md#4-context-ledger-and-admission))
+16. A choice survives a restart in the same folder; another folder starts with both rows admitted, whatever the first one excluded. (agents-choice-kept, agents-per-folder)
 17. Admitted sources reach the model as one `Elpis Admitted Context` section, and the section is absent when nothing is admitted. (ctx-empty; [context.md §1](context.md#1-admission-requirements))
 18. `/add <path>` adds an admitted user-file row; deleting the row removes its admission, never the file. (ctx-add)
 19. Development rules start admitted; Space excludes one from the next request. (ctx-dev-default)
