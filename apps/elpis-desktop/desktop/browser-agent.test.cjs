@@ -62,6 +62,7 @@ test('click/type/press dispatch native input; scroll and target lookup use the i
   assert.deepEqual(f.inputs.filter(item => typeof item === 'string'), ['selectAll', 'agent@example.com'], 'typing replaces the field');
   assert(f.inputs.some(item => item.type === 'keyDown' && item.modifiers.includes('control')));
   assert(f.scripts.some(item => item.source[0].code.includes(')("scroll",')));
+  assert(f.scripts.some(item => item.source[0].code.includes(')("focus-select",')), 'typing selects the field in the page too');
   assert(f.scripts.every(item => item.world === 999));
 });
 

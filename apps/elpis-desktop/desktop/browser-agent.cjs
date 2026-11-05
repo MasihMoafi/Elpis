@@ -67,7 +67,9 @@ function pageOperation(action,args) {
   const element=resolve();
   element.scrollIntoView({block:'center',inline:'nearest',behavior:'instant'});
   if(!visible(element)||element.disabled)throw Error('The target is hidden or disabled.');
-  if(action==='focus')element.focus();
+  if(action==='focus'||action==='focus-select')element.focus();
+  // browser_type's clear, done in the page: an edit command can miss a background tab while he types in his own (CI, 5 Nov).
+  if(action==='focus-select'){if(typeof element.select==='function')element.select();else{const range=document.createRange();range.selectNodeContents(element);const selection=getSelection();selection.removeAllRanges();selection.addRange(range);}}
   const rect=element.getBoundingClientRect();
   const x=Math.max(0,Math.min(innerWidth-1,rect.x+rect.width/2)),y=Math.max(0,Math.min(innerHeight-1,rect.y+rect.height/2));
   if(action==='point'){
@@ -162,7 +164,7 @@ function createBrowserAgent({tabs,open,origin,emit,prepare}) {
         wc.sendInputEvent({type:'mouseUp',...position,button:'left',clickCount:1});break;
       }
       case 'browser_type':
-        if(args.selector||args.nodeId)await dom('focus');
+        if(args.selector||args.nodeId)await dom(args.clear===false?'focus':'focus-select');
         guard(generation);if(args.clear!==false)wc.selectAll(); // An edit command: a select-all key chord is lost when the window lacks OS focus (CI, 2 Nov).
         await wc.insertText(args.text);break;
       case 'browser_press':if(args.selector||args.nodeId)await dom('focus');guard(generation);press(args.key);break;
