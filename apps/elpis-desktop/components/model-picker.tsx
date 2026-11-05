@@ -43,13 +43,16 @@ export function ModelPicker({ choices, models, model, choiceId, defaultModel, di
   choices: ProviderChoice[]; models: Model[]; model: string; choiceId: string; defaultModel?: string | null; disabled: boolean; allowCustom?: boolean;
   onChange: (choice: { model: string; choiceId: string }) => void; onConfigure?: () => void; onKeySaved?: () => void;
 }) {
-  const [open, setOpen] = useState(false), [query, setQuery] = useState(""), [tab, setTab] = useState("all");
+  const [open, setOpen] = useState(false), [query, setQuery] = useState(""), [chosenTab, setTab] = useState("all");
   const [customProvider, setCustomProvider] = useState(""), [customModel, setCustomModel] = useState("");
   const [catalogs, setCatalogs] = useState<Record<string, { version: string; data: Model[]; loaded: boolean; loading: boolean; error: string }>>({});
   const [retry, setRetry] = useState(0);
   const [keysSaved, setKeysSaved] = useState<string[]>([]);
   // Every open lists the models live: the engine's list (shared) and each connection's own.
   const engine = useModelCatalog();
+  // A tab chosen before the connections arrived (the engine's lone unnamed one) is gone once they do: it reads as All
+  // (5 Nov: opened early, the menu showed no models and loaded none).
+  const tab = chosenTab === "all" || choices.some(choice => choice.id === chosenTab) ? chosenTab : "all";
   const activeConnection = choices.find(choice => choice.id === tab);
   const catalogFor = (choice?: ProviderChoice) => {
     const cached = choice ? catalogs[choice.id] : undefined;

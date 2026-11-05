@@ -39,7 +39,8 @@ for (const colorScheme of ['light']) test(`workflows start in their sandbox with
     await canvas.getByRole('button', { name: 'Run graph', exact: true }).click(); await sent;
     assert.equal(f.posts.find(post => post.path === '/api/threads').body.cwd, sandbox);
     const run = f.posts.find(post => post.path === '/api/workflows/run').body;
-    assert.equal(run.maxConcurrency, 1); assert.equal(run.isolation, undefined);
+    // The session's agents-at-once limit: Elpis's default 6 when settings name none (components/agents-canvas.tsx `allowed`).
+    assert.equal(run.maxConcurrency, 6); assert.equal(run.isolation, undefined);
     assert.ok(run.tasks.every(task => task.writeScopes.length === 1 && task.writeScopes[0].startsWith('agents/')), 'review tasks write only their own report/check folders');
     assert.equal(await request.inputValue(), goal);
     assert.equal(f.posts.filter(post => post.path === '/api/workflows/workspace').length, 1);
