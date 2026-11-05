@@ -32,7 +32,8 @@ test('a chat on screen gets no error bar when the engine refuses a background re
     const bar = page.locator('.error-banner[role="alert"]');
 
     await page.locator(`aside [data-thread-id="${shown}"] .thread-link`).click();
-    await page.locator('.message').filter({ hasText: 'Hello there' }).first().waitFor();
+    await page.locator('.message').filter({ hasText: 'Hello there' }).first().waitFor()
+      .catch(async e => { throw new Error(`${e.message}\nreads ${JSON.stringify(reads)}; api: ${f.responses.filter(r => r.url.includes('/api/') && !r.url.includes('love-spot')).map(r => `${r.status} ${new URL(r.url).pathname}${new URL(r.url).search}`).join(' | ')}; main: ${(await page.locator('main').innerText()).slice(0, 600)}`); });
     // Two background re-reads (every 3 s), each refused by the engine.
     const end = Date.now() + 15000; while (reads[shown] < 3 && Date.now() < end) await page.waitForTimeout(250);
     assert.ok(reads[shown] >= 3, `the app re-read the open chat in the background (${reads[shown]} reads)`);

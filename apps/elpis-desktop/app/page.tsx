@@ -625,14 +625,13 @@ export default function Home() {
 
   // A chat's recent history is read while the pointer rests on its row, so the click shows it at once and its own
   // fresh read only refreshes it (Masih, 23 Oct: "When I click on them it takes a second to load them").
-  const prefetching = useRef(new Set<string>());
+  const prefetching = useRef(new Map<string, Promise<void>>());
   const prefetchThread = useCallback((thread: Thread) => {
     if (transcripts.current.has(thread.id) || prefetching.current.has(thread.id)) return;
-    prefetching.current.add(thread.id);
-    api<{ data: Entry[]; nextCursor: string | null }>(`/threads/${encodeURIComponent(thread.id)}?limit=100`)
+    prefetching.current.set(thread.id, api<{ data: Entry[]; nextCursor: string | null }>(`/threads/${encodeURIComponent(thread.id)}?limit=100`)
       .then(result => { if (Array.isArray(result.data) && !transcripts.current.has(thread.id)) transcripts.current.set(thread.id, { entries: [...result.data].reverse(), cursor: result.nextCursor }); })
       .catch(() => {}) // The click reads it again and reports a failure.
-      .finally(() => prefetching.current.delete(thread.id));
+      .finally(() => prefetching.current.delete(thread.id)));
   }, []);
   const loadThread = useCallback(async (thread: Thread) => {
     markRead(thread.id);
@@ -655,7 +654,13 @@ export default function Home() {
     } catch (e) {
       // 5 Nov, Masih: "this error doesn't even need to show ... the chat was loaded when this error showed." A chat already
       // on screen from its saved copy stays as it is; only a chat with nothing to show reports the failure.
-      if (request.current === id && !retryableSessionError(e) && !shown) setError(String(e)); return;
+      // The hover's early read may have landed while this one failed: show its copy instead of an error.
+      await prefetching.current.get(thread.id);
+      const landed = !shown && request.current === id ? transcripts.current.get(thread.id) : undefined;
+      if (landed) { setEntries(previous => mergeHistoryWithLive(previous, landed.entries, liveKeysAfter(historyRevision))); setItemCursor(landed.cursor); }
+      if (request.current !== id) return;
+      if (!shown && !landed) { if (!retryableSessionError(e)) setError(String(e)); return; }
+      // Something is on screen: still follow the chat live below, which re-reads it if that fails.
     }
     finally { if (request.current === id) setLoading(false); }
     // Follow it live in this app: subscribe, and learn the turn it is running now.
