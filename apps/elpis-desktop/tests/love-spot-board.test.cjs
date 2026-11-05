@@ -22,10 +22,11 @@ async function microphone(page) {
   return (value, code = 200) => { result = value; status = code; };
 }
 async function record(control) { await control.getByRole('button', { name: 'Dictate message', exact: true }).click(); await control.getByRole('button', { name: 'Stop recording and transcribe' }).click(); }
-async function note(f, text) {
+// Her reply no longer zooms the board (5 Nov), so a second note goes to its own empty spot, not onto the first.
+async function note(f, text, { x = 450, y = 300 } = {}) {
   const bounds = await f.page.locator('.excalidraw').boundingBox();
-  await f.page.mouse.click(bounds.x + 450, bounds.y + 300); await f.page.keyboard.press('t');
-  await f.page.mouse.click(bounds.x + 450, bounds.y + 300); await f.page.keyboard.type(text); await f.page.keyboard.press('Escape');
+  await f.page.mouse.click(bounds.x + x, bounds.y + y); await f.page.keyboard.press('t');
+  await f.page.mouse.click(bounds.x + x, bounds.y + y); await f.page.keyboard.type(text); await f.page.keyboard.press('Escape');
   return f.waitFor(s => s.elements.some(e => e.text === text), 'typed note was not saved');
 }
 
@@ -112,7 +113,7 @@ test('Matilda recovers from a failed busy poll and answers later board notes', a
     await f.waitFor(() => refused, 'the busy poll was not interrupted', 20000);
     await f.waitFor(s => s.elements.some(e => e.id === 'love-reply-turn-1'), 'the first reply was not saved');
     await f.page.getByText('Matilda is writing…', { exact: true }).waitFor({ state: 'hidden', timeout: 8000 });
-    await note(f, 'A later thought after reconnecting');
+    await note(f, 'A later thought after reconnecting', { x: 700, y: 560 });
     await f.waitFor(() => f.turns.length === 2, 'a failed poll left later notes blocked', 20000);
     assert.match(f.turns[1].attachments.find(a => a.type === 'text').text, /A later thought after reconnecting/);
     assert.deepEqual(f.errors, []);

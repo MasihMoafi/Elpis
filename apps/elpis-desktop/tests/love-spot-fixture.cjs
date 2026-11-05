@@ -33,7 +33,7 @@ async function loveSpotFixture({ colorScheme = 'light', reply = 'I am here with 
     { id: 'text-only', model: 'text-only', displayName: 'Text only', inputModalities: ['text'] },
   ];
   Object.assign(emitter, { connected: true, pendingApprovals: [], close() {},
-    settings: async () => ({ main: { model: 'sol', provider: 'openai' }, background: {}, smartPrune: { enabled: false, explicitOverride: {} }, memory: {}, write: { available: false, reason: '' }, agents: { graph: 256, atOnce: 4, source: 'agents.max_threads' } }),
+    settings: async () => ({ main: { model: 'sol', provider: 'openai' }, background: {}, smartPrune: { enabled: false, explicitOverride: {} }, memory: {}, write: { available: false, reason: '' }, agents: { graph: 256, atOnce: 4, source: 'agents.max_threads' }, providers: [{ id: 'openai', displayName: 'OpenAI' }] }),
     providerSettings: async () => ({ providers: [], version: null, write: { available: false } }),
     listThreads: async () => ({ data: chats, nextCursor: null }), models: async () => ({ data: models, nextCursor: null }),
     createThread: async body => {
