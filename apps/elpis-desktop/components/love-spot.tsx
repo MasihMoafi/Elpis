@@ -3,7 +3,7 @@
 import "@/lib/love-spot-assets";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronDown, Heart, ImagePlus, Pin, Trash2, X } from "lucide-react";
+import { Check, ChevronDown, Heart, ImagePlus, Pin, Trash2, X, ZoomIn } from "lucide-react";
 import { PlusIcon } from "@/components/elpis-icons";
 import { CaptureUpdateAction, Excalidraw, MainMenu, newElementWith, convertToExcalidrawElements, exportToBlob, serializeAsJSON, viewportCoordsToSceneCoords } from "@excalidraw/excalidraw";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
@@ -20,7 +20,8 @@ import { MatildaWho, useMatilda } from "@/components/love-spot-matilda";
 import { ModelPicker } from "@/components/model-picker";
 import { api, chatProvider, providerChoices, unreadable, type ProviderSettings } from "@/lib/api";
 import { refreshModelCatalog, useModelCatalog } from "@/lib/model-catalog";
-import { keepModel, savedModel, MATILDA_CHANGED } from "@/lib/matilda";
+import { keepModel, keepZoomToReplies, savedModel, savedZoomToReplies, MATILDA_CHANGED } from "@/lib/matilda";
+import { Switch } from "@/components/ui/switch";
 import { useMatildaSettings, type MatildaSettings } from "@/lib/matilda-settings";
 import { MatildaSwitch } from "@/components/matilda-switch";
 import { applyRemoteScene, mergeRemoteElements, restoreRemoteElements } from "@/lib/love-spot-history";
@@ -82,6 +83,9 @@ export default function LoveSpot(props: LoveSpotProps) {
 }
 function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
   const speech = useReadAloud();
+  // Her reply must not move his view unless he asks (5 Nov: it zoomed the board out). The ref is what `receive` reads.
+  const [zoomToReplies, setZoomToReplies] = useState(false), zoomToRepliesRef = useRef(false);
+  useEffect(() => { const on = savedZoomToReplies(); zoomToRepliesRef.current = on; setZoomToReplies(on); }, []);
   const voiceEnabled = useRef(false);
   const voiceVersion = useRef(0);
   const calling = false; // no voice call with her any more (1 Nov)
@@ -237,7 +241,8 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
     const shown = new Map(editor.getSceneElementsIncludingDeleted().map(e => [e.id, e]));
     const placed = data.scene.elements.find(e => e.id === placingScreenshot.current && !e.isDeleted && !shown.has(e.id));
     const screenshot = placed ?? data.scene.elements.find(e => e.type === "image" && !e.isDeleted && e.id.startsWith("shot-") && !shown.has(e.id));
-    const reply = data.scene.elements.some(e => !e.isDeleted && e.id.startsWith("love-reply-") && !shown.has(e.id));
+    const replyIds = new Set(data.scene.elements.filter(e => !e.isDeleted && e.id.startsWith("love-reply-") && !shown.has(e.id)).map(e => e.id));
+    const reply = replyIds.size > 0;
     const changed = mergeRemoteElements(shown, data.scene.elements, newer);
     // File IDs are immutable in Excalidraw: addFiles only accepts missing IDs.
     // Keep originals for undo instead of repeatedly resaving a normalized copy.
@@ -257,7 +262,11 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
       if (screenshot) {
         editor.updateScene({ appState: { selectedElementIds: { [screenshot.id]: true } } });
         editor.scrollToContent(screenshot, { fitToViewport: true, viewportZoomFactor: 0.9, canvasOffsets: clearOfTools(boardArea.current) });
-      } else if (reply) editor.scrollToContent(editor.getSceneElements(), { fitToViewport: true, viewportZoomFactor: 0.7, maxZoom: 1, canvasOffsets: clearOfTools(boardArea.current) });
+      } else if (reply && zoomToRepliesRef.current) {
+        // Only when he asked: zoom to her new reply, not out to the whole board.
+        const target = editor.getSceneElements().filter(e => replyIds.has(e.id));
+        editor.scrollToContent(target.length ? target : editor.getSceneElements(), { fitToViewport: true, viewportZoomFactor: 0.7, maxZoom: 1, canvasOffsets: clearOfTools(boardArea.current) });
+      }
       // Inbox images and older pages also pass through the same pixel limit once they arrive.
       if (hasRecovery || art || files.length) queueMicrotask(() => void saveLatest.current?.());
       // Excalidraw may notify after the merged snapshot is already current.
@@ -524,6 +533,7 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
       </div>
       {/* Masih, 23 Oct: "I can't change her model!" It sat inside the ☰ menu's dialog; it belongs on the bar, beside the page. */}
       <div role="group" aria-label="Matilda's model"><ModelPicker choices={choices} models={models} model={shared.settings?.model || pick.model || settings?.main.model || ""} choiceId={pick.choiceId} disabled={!choices.length} allowCustom={false} onChange={value => { setPick(value); keepModel(value); void shared.update({ model: value.model, provider: choices.find(choice => choice.id === value.choiceId)?.provider ?? null }).catch(report); }} /></div>
+      <label className="flex items-center gap-1" title="Zoom to her replies: when Matilda answers, the board zooms to her reply. Off keeps your view where it is."><span aria-hidden="true"><ZoomIn size={16} /></span><Switch aria-label="Zoom to her replies" checked={zoomToReplies} onCheckedChange={on => { zoomToRepliesRef.current = on; setZoomToReplies(on); keepZoomToReplies(on); }} /></label>
       <div role="group" aria-label="Voice note"><Dictation provider={provider} disabled={!editor || !settings} onBusy={() => {}} selection={insertion} onTranscript={addVoiceNote} purpose="Adds a note to the board." /></div>
       <MatildaSwitch settings={shared.settings} onChange={chooseReplies} />
       {matilda.replying && <span className="badge badge-sm badge-ghost shrink-0" role="status" aria-label="Matilda status">Matilda is writing…</span>}

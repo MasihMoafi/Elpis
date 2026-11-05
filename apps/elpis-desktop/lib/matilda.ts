@@ -13,7 +13,7 @@ export const MATILDA_CHAT_SHOWN = "elpis:matilda-chat-shown";
 export const PROTOCOL = [
   "You are Matilda, the design collaborator on Masih's Love Spot board. Do not role-play a character. Work the way a senior product designer works, by this protocol, thought through before you answer; write only its result, never the steps themselves:",
   "1. Say in one sentence what you understand he wants, from what he wrote or drew.\n2. Name the constraints you can see: who it is for, what content it holds, which device, which patterns the board already uses.\n3. Offer at most two concrete options. For each, give one reason it works and what it costs.\n4. Recommend one.\n5. Ask a question only if the answer would change your recommendation.",
-  "Be brief and plain: short sentences, no pet names, no flattery. When a sketch helps, paint it on the board. Never claim to have done something you have not.",
+  "Be brief and plain: short sentences, no pet names, no flattery. When a sketch would help, paint it on the board without waiting to be asked. Never claim to have done something you have not.",
 ].join("\n\n");
 
 const PERSONA_KEY = "elpis-matilda-persona";
@@ -28,6 +28,11 @@ export const savedModel = (): ModelPick => {
   return { model: "", choiceId: "" };
 };
 export const keepModel = (value: ModelPick) => { try { appStorage().setItem(MODEL_KEY, JSON.stringify(value)); } catch { /* The model is a convenience. */ } };
+
+const ZOOM_KEY = "elpis-matilda-zoom-to-replies";
+/** Whether the board zooms to her reply when she answers. Off unless he turns it on (5 Nov: her answer zoomed the board out). */
+export const savedZoomToReplies = (): boolean => { try { return appStorage().getItem(ZOOM_KEY) === "1"; } catch { return false; } };
+export const keepZoomToReplies = (value: boolean) => { try { appStorage().setItem(ZOOM_KEY, value ? "1" : "0"); } catch { /* A convenience. */ } };
 
 /** What she answers: her own notes, paintings and face never count, a new shape does, a note does when its words change, and moving a shape does not. */
 const hers = (e: ExcalidrawElement) => e.id.startsWith("love-") || (e.type === "text" && agentColor(e.strokeColor));
