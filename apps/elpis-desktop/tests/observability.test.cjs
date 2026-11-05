@@ -70,6 +70,7 @@ test('Observability shows the selected chat as the Trajectory page, names it, an
     assert.equal((await menu.innerText()).trim(), 'List the files');
     await menu.click();
     const options = page.getByRole('option');
+    await options.nth(1).waitFor(); // a slower machine draws the list a moment after the click (CI run 42088645101)
     assert.deepEqual((await options.allInnerTexts()).map(s => s.trim()), ['Plan the garden', 'List the files']);
     await options.filter({ hasText: 'Plan the garden' }).click();
     await page.frameLocator('.observability iframe').getByText('Plan the garden').first().waitFor({ timeout: 20000 });

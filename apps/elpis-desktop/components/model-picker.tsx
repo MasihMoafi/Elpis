@@ -79,10 +79,10 @@ export function ModelPicker({ choices, models, model, choiceId, defaultModel, di
     }
     return () => { disposed = true; };
   }, [open, disabled, targetKey, retry]); // eslint-disable-line react-hooks/exhaustive-deps -- targets are keyed by targetKey; reuse successful catalogs only for the same saved configuration.
-  // A subscription's models (claude/…, agy/…) belong to its own connection, never to another's list (5 Nov: OpenAI's live
-  // list, now loaded in All, carried the engine's Claude subscription models).
+  // A subscription's models (claude/…, agy/…) belong to its own connection, never to another's live list (5 Nov: OpenAI's
+  // live list, now loaded in All, carried the engine's Claude subscription models). A connection's own saved models stay.
   const own = (choice: ProviderChoice, item: Model) => { const subscription = subscriptionOf(item.model); return !subscription || subscription.prefix === choice.id; };
-  const available: Choice[] = [...new Map(choices.flatMap(choice => (catalogFor(choice)?.data ?? choice.models).filter(item => own(choice, item)).map(item => ({ key: `${choice.id}:${item.model}`, model: item.model, choiceId: choice.id, label: modelName(item.displayName || item.model), providerLabel: choice.label, description: item.description }))).map(item => [item.key, item])).values()];
+  const available: Choice[] = [...new Map(choices.flatMap(choice => (catalogFor(choice)?.data.filter(item => own(choice, item)) ?? choice.models).map(item => ({ key: `${choice.id}:${item.model}`, model: item.model, choiceId: choice.id, label: modelName(item.displayName || item.model), providerLabel: choice.label, description: item.description }))).map(item => [item.key, item])).values()];
   const currentModel = model || defaultModel || "";
   const connection = choiceById(choices, choiceId);
   const current = available.find(item => item.model === currentModel && item.choiceId === connection?.id) ?? null;
