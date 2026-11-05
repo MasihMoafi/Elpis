@@ -308,22 +308,27 @@ document.querySelectorAll("[data-scene]").forEach((scene) => {
   const board = scene.querySelector("[data-wf-board]");
   const viewButtons = [...scene.querySelectorAll("[data-wf-view]")];
   const reduced = matchMedia("(prefers-reduced-motion: reduce)");
-  let manualView = null;
-  const setView = (view) => {
-    if (!board) return;
-    board.dataset.view = view;
-    viewButtons.forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.wfView === view)));
+  // Workflows: the 2D run plays over the first part of the scroll, then the board tilts into the isometric
+  // view as the visitor keeps scrolling, and stays there; scrolling back flattens it.
+  const FLAT_END = 0.62, TILT_FROM = 0.66, TILT_TO = 0.9;
+  const progress = () => clamp(((header?.offsetHeight || 0) - scene.getBoundingClientRect().top) / Math.max(1, scene.offsetHeight - stage.offsetHeight));
+  const scrollToProgress = (target) => {
+    const travel = scene.offsetHeight - stage.offsetHeight;
+    scrollTo({ top: scene.getBoundingClientRect().top + scrollY - (header?.offsetHeight || 0) + travel * target, behavior: reduced.matches ? "auto" : "smooth" });
   };
-  viewButtons.forEach((button) => button.addEventListener("click", () => {
-    manualView = button.dataset.wfView;
-    request();
-  }));
+  viewButtons.forEach((button) => button.addEventListener("click", () => scrollToProgress(button.dataset.wfView === "isometric" ? 0.96 : FLAT_END)));
   let frame;
   function render() {
     frame = undefined;
-    const travel = scene.offsetHeight - stage.offsetHeight;
-    const p = board && reduced.matches ? 1 : clamp(((header?.offsetHeight || 0) - scene.getBoundingClientRect().top) / Math.max(1, travel));
-    setView(manualView ?? (p >= 0.9 ? "isometric" : "flat"));
+    const raw = reduced.matches && board ? 1 : progress();
+    const p = board ? clamp(raw / FLAT_END) : raw;
+    if (board) {
+      const t = clamp((raw - TILT_FROM) / (TILT_TO - TILT_FROM)), tilt = t * t * (3 - 2 * t);
+      board.style.setProperty("--tilt", tilt.toFixed(4));
+      const view = tilt > 0.5 ? "isometric" : "flat";
+      board.dataset.view = view;
+      viewButtons.forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.wfView === view)));
+    }
     for (const element of shown) element.toggleAttribute("data-shown", p >= Number(element.dataset.on || 0) && p < Number(element.dataset.off || 2));
     for (const { element, text, span: [from, to] } of typed) element.textContent = text.slice(0, Math.round(text.length * clamp((p - from) / (to - from))));
     for (const { path, length, span: [from, to] } of drawn) {
@@ -341,7 +346,7 @@ document.querySelectorAll("[data-scene]").forEach((scene) => {
     for (const lit of scene.querySelectorAll("[data-lit]")) lit.toggleAttribute("data-active", p >= Number(lit.dataset.lit));
   }
   const request = () => { if (frame === undefined) frame = requestAnimationFrame(render); };
-  addEventListener("scroll", () => { manualView = null; request(); }, { passive: true });
+  addEventListener("scroll", request, { passive: true });
   addEventListener("resize", () => { measure(); request(); });
   reduced.addEventListener("change", request);
   measure();

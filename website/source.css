@@ -361,17 +361,16 @@ figure img { display: block; width: 100%; height: auto; }
 .wf-run[data-state="pressed"] { transform:scale(.94); }
 .wf-run[data-state="running"] { filter:saturate(.6); }
 .wf-run[data-state="finished"] { background:var(--color-success); }
-.wf-board { position:relative; flex:1; transform-style:preserve-3d; transition:transform .75s ease, background-image .3s; background-image:radial-gradient(circle,color-mix(in oklab,var(--color-base-content) 13%,transparent) 1px,transparent 1.2px); background-size:18px 18px; }
+.wf-board { --tilt:0; --iso-scale:.16; position:relative; flex:1; transform-style:preserve-3d; transform:perspective(1100px) rotateX(calc(48deg * var(--tilt))) rotateZ(calc(-22deg * var(--tilt))) scale(calc(1 - var(--iso-scale) * var(--tilt))); transition:background-image .3s; background-image:radial-gradient(circle,color-mix(in oklab,var(--color-base-content) 13%,transparent) 1px,transparent 1.2px); background-size:18px 18px; }
 .wf-edges { position:absolute; inset:0; width:100%; height:100%; overflow:visible; }
 .wf-edges path { fill:none; stroke:color-mix(in oklab,var(--color-base-content) 30%,transparent); stroke-width:1.6; vector-effect:non-scaling-stroke; transition:stroke .3s; }
 .wf-edges path[data-active] { stroke:var(--color-warning); }
 .wf-edges marker path { fill:context-stroke; stroke:none; }
-.wf-board[data-view="isometric"] { transform:perspective(1100px) rotateX(48deg) rotateZ(-22deg) scale(.72); background-image:linear-gradient(var(--edge) 1px,transparent 1px),linear-gradient(90deg,var(--edge) 1px,transparent 1px); background-size:32px 32px; }
+.wf-board[data-view="isometric"] { background-image:linear-gradient(var(--edge) 1px,transparent 1px),linear-gradient(90deg,var(--edge) 1px,transparent 1px); background-size:32px 32px; }
 .wf-board[data-view="isometric"] .wf-edges > path { marker-end:url(#wf-arrow); }
-.wf-board[data-view="isometric"] .wf-node { transform:translateY(-50%) translateZ(14px); box-shadow:0 14px 0 -2px color-mix(in oklab,var(--kind,var(--color-info)) 45%,var(--color-base-300)), 0 24px 25px -16px #0009; }
-.wf-board[data-view="isometric"] .wf-node:not([data-shown]) { transform:translateY(-50%) translateZ(14px) scale(.92); }
-.wf-node { position:absolute; left:calc(var(--x) * 1%); top:calc(var(--y) * 1%); transform:translateY(-50%); display:grid; gap:2px; width:17%; padding:.5rem .6rem .5rem .7rem; border:1px solid var(--edge); border-left:3px solid var(--kind,var(--color-info)); background:var(--surface); box-shadow:0 8px 22px -14px #000a; font-size:11.5px; transition:opacity .35s, transform .35s, border-color .3s, box-shadow .3s; }
-.wf-node:not([data-shown]) { transform:translateY(-50%) scale(.92); }
+.wf-board[data-view="isometric"] .wf-node { box-shadow:0 14px 0 -2px color-mix(in oklab,var(--kind,var(--color-info)) 45%,var(--color-base-300)), 0 24px 25px -16px #0009; }
+.wf-node { position:absolute; left:calc(var(--x) * 1%); top:calc(var(--y) * 1%); transform:translateY(-50%) translateZ(calc(14px * var(--tilt))); display:grid; gap:2px; width:17%; padding:.5rem .6rem .5rem .7rem; border:1px solid var(--edge); border-left:3px solid var(--kind,var(--color-info)); background:var(--surface); box-shadow:0 8px 22px -14px #000a; font-size:11.5px; transition:opacity .35s, transform .35s, border-color .3s, box-shadow .3s; }
+.wf-node:not([data-shown]) { transform:translateY(-50%) translateZ(calc(14px * var(--tilt))) scale(.92); }
 .wf-node strong { font-size:12.5px; }
 .wf-kind { font:700 9px/1 "SFMono-Regular","Cascadia Mono",monospace; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); }
 .wf-model { color:var(--muted); font-size:10.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -424,9 +423,12 @@ figure img { display: block; width: 100%; height: auto; }
 
 @media (max-width: 900px) {
   #workflows .scene-meta { display:none; }
-  .wf-board[data-view="isometric"] { transform:perspective(900px) rotateX(48deg) rotateZ(-22deg) scale(.66); }
+  .wf-board { --iso-scale:.22; }
 }
 @media (prefers-reduced-motion: reduce) {
   #workflows .wf-board, #workflows [data-on], #workflows [data-off], #workflows .wf-node, #workflows .wf-edges path { transition:none; }
   #workflows .wf-caret { animation:none; }
 }
+
+#workflows.scene { height:520vh; }
+@media (max-width: 900px) { #workflows.scene { height:470svh; } }
