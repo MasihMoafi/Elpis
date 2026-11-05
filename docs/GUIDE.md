@@ -8,7 +8,7 @@ Confirmed product requirements. Implementation state belongs in [ES.md](../ES.md
 
 ### Confirmed Requirements
 
-**R1. Provider-neutral Elpis environment** — Elpis owns the TUI, provider/runtime selection, context projection, durable memory, provider-neutral continuity, behavioral policy, permissions bridge, and evidence. A selected runtime may own its low-level model loop and native tools, but authentication must never silently transfer Elpis-owned state or product identity to that runtime.
+**R1. Provider-neutral Elpis environment** — Elpis owns the interface (terminal and desktop), provider/runtime selection, context projection, durable memory, provider-neutral continuity, behavioral policy, permissions bridge, and evidence. A selected runtime may own its low-level model loop and native tools, but authentication must never silently transfer Elpis-owned state or product identity to that runtime.
 
 **R2. Visible and controlled agency** — Commands and file changes follow explicit permission and sandbox policies. The interface preserves changed paths, diffs, command status, failures, and verification evidence.
 
@@ -30,16 +30,9 @@ The runtime home and its override: [README](../readme.md#how-it-works). Checkpoi
 
 ### Product Scope Decisions
 
-- The terminal interface is the contained Codex Rust TUI, already on Ratatui; it needs no UI-framework rewrite.
 - UI changes preserve Codex-quality content, rendering, and interactions unless a behaviour change is explicitly approved.
 - Dictation: [desktop README](../apps/elpis-desktop/README.md).
 - Add no slash command unless Masih explicitly selects it.
-
-### Deferred Decisions
-
-- Whether goal changes require explicit confirmation.
-- Default threshold for switching from exact to lean continuation.
-- `/auto`, dreaming reports, richer animation, voice integration details, and scheduled work.
 
 ## Source Map
 
@@ -47,19 +40,11 @@ Treat upstream behaviour as evidence: read its committed source, not memory. An 
 
 ### Codex: Execution and Interface Reference
 
-Source: [openai/codex](https://github.com/openai/codex), cloned beside this repository. Key areas: app-server and protocol (`codex-rs/app-server`, `codex-rs/app-server-protocol`), Rust TUI (`codex-rs/tui`), core runtime (`codex-rs/core`).
+Source: [openai/codex](https://github.com/openai/codex). Key areas: app-server and protocol (`codex-rs/app-server`, `codex-rs/app-server-protocol`), Rust TUI (`codex-rs/tui`), core runtime (`codex-rs/core`).
 
 Codex is the contained foundation for thread/turn semantics, streaming, file changes, commands, approvals, sandboxing, sessions, and TUI ergonomics. Elpis never loads code from or requires the donor clone at runtime.
 
 The foundation strategy is **vendor and carry**: pin an unmodified upstream Codex release; carry Elpis as copied Elpis-owned modules and crates plus a few small, marked seams in upstream files; switch unwanted upstream surfaces off by configuration, proven by a network-capture eval, rather than deleting them; absorb a new release by rebasing the Elpis commits onto a new vendor commit. Non-Responses providers reach Codex through an Elpis-owned local Responses gateway.
-
-### OpenClaw: Context and Continuity Reference
-
-Source: [openclaw/openclaw](https://github.com/openclaw/openclaw), cloned beside this repository; read implementation and tests, not explanatory prose. Useful areas: live context pruning, guarded compaction, pre-compaction memory flush, search/retrieval, memory budgets, promotion, and dreaming.
-
-### Other Reference Sources
-
-Pi (provider-neutral interfaces, extension simplicity), Hermes Agent (learning loop, memory controls) and OpenCode (routing, packaging, agent modes, releases) are studied, not imported.
 
 ### Codex Import Provenance
 
@@ -93,7 +78,7 @@ Action rendering, permissions, and mouse selection and copy (terminal-native sel
 - **Default:** may read/edit within the workspace and run commands; internet or work outside the workspace requires approval.
 - **Full Access:** no approval prompts; filesystem and internet restrictions are off.
 
-A confirmed permission change governs later tool dispatches in the active turn. Switching Claude or Gemini out of Full Access stops the active turn, so its provider process cannot keep bypass permissions; the next message uses the selected mode. Environment-owner restrictions remain authoritative for attached environments.
+A confirmed permission change governs later tool dispatches in the active turn. Switching Claude or Gemini (Antigravity) out of Full Access stops the active turn, so its provider process cannot keep bypass permissions; the next message uses the selected mode. Environment-owner restrictions remain authoritative for attached environments.
 
 ## Runtime Architecture
 
@@ -105,7 +90,6 @@ User
             -> Codex app-server/native runtime
             -> Elpis provider-neutral direct model path
             -> other explicitly supported runtimes
-       -> Elpis retrieval services
   -> Workspace + durable Elpis state ($ELPIS_HOME)
 ```
 
@@ -129,7 +113,7 @@ Elpis keeps its own provider-neutral continuity state even when a provider offer
 
 ## UI Identity
 
-Elpis-specific controls keep context, memory, provider, and permission state legible. The dashboard stays a dashboard, with its existing scope.
+Elpis-specific controls keep context, memory, provider, and permission state legible.
 
 ### Acceptance
 
@@ -141,7 +125,6 @@ A user watches one task cross compaction or provider change and can explain whic
 - Do not call a temporary directory a sandbox; state the actual isolation boundary.
 - Cover protocol and context changes with focused tests of user-visible behaviour.
 - Record implemented behaviour separately from intended behaviour.
-- Treat `main` as canonical; consult archives only for specific historical prototype behaviour.
 
 ## Verification
 
