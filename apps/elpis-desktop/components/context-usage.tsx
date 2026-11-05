@@ -213,11 +213,11 @@ export function CacheRow({ cache }: { cache: CacheUse }) {
     <span className="context-ledger-row-share">{share.hitPercent}%</span>
   </li>;
   return <>
-    <button data-slot="ledger-cache" type="button" className="context-ledger-head" aria-expanded={open} onClick={() => setOpen(value => !value)}
+    <Button data-slot="ledger-cache" type="button" variant="ghost" className="context-ledger-head" aria-expanded={open} onClick={() => setOpen(value => !value)}
       title="Prompt tokens the provider served from its cache. Reused input is billed at a fraction of new input.">
       <span>Prompt cache</span><span className="context-ledger-summary">{headline.hitPercent}% {cache.last ? "last request" : "this chat"}</span>
       <ChevronRight size={12} aria-hidden="true" className="context-ledger-caret" data-expanded={open || undefined} />
-    </button>
+    </Button>
     {open && <ul className="context-ledger-rows" aria-label="Prompt cache">
       {cache.last && detail("Last request", cache.last)}
       {cache.total && detail("This chat", cache.total)}
