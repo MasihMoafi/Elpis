@@ -375,7 +375,7 @@ document.querySelectorAll("[data-scene]").forEach((scene) => {
   let frame;
   function render() {
     frame = undefined;
-    const raw = reduced.matches && board ? 1 : progress();
+    const raw = progress(); // the visitor drives this by scrolling, so it plays with reduced motion too
     const p = board ? clamp(raw / FLAT_END) : raw;
     if (board) {
       const ease = (from, to) => { const t = clamp((raw - from) / (to - from)); return t * t * (3 - 2 * t); };
