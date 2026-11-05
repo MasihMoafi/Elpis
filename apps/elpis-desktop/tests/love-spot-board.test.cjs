@@ -134,6 +134,25 @@ test('a note written just before leaving Love Spot still reaches Matilda once', 
   } finally { await f.close(); }
 });
 
+// 5 Nov (CI): leaving while the board was still handing her the note (saving its picture) lost it: the hand-over gave up
+// once the board unmounted, and the leave step left the note to that hand-over.
+test('a note left while the board is still handing it over reaches Matilda once', async () => {
+  const f = await loveSpotFixture();
+  try {
+    let slow = false, held = 0;
+    await f.page.route('**/api/love-spot/picture', async route => { if (slow) { held++; await new Promise(resolve => setTimeout(resolve, 2500)); } await route.continue().catch(() => {}); });
+    await f.open(f.page);
+    slow = true;
+    await note(f, 'Said on the way out');
+    await f.waitFor(() => held > 0, 'the hand-over never started', 10000);
+    await f.page.locator('.nav-list').getByRole('button', { name: 'Workflows', exact: true }).click();
+    await f.waitFor(() => f.turns.length === 1, 'the note left mid hand-over never reached her', 20000);
+    assert.match(f.turns[0].attachments.find(a => a.type === 'text').text, /Said on the way out/);
+    slow = false; await f.open(f.page); await f.page.waitForTimeout(6000);
+    assert.equal(f.turns.length, 1, 'returning to the board does not send it again');
+  } finally { await f.close(); }
+});
+
 test('a long non-Latin reply avoids obstacles after the editor restores its actual font dimensions', async () => {
   const f = await loveSpotFixture({ reply: '天地玄黄宇宙洪荒'.repeat(32) });
   try {

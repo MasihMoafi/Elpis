@@ -62,6 +62,9 @@ export function useMatilda({ ready, enabled, context, told, send, onError }: {
     working.current = true; said.current = "";
     try {
       if (await now.send(text, now.persona.trim() || PROTOCOL, isCurrent)) ask();
+      // Left while she was being told (the board's send gives up once it unmounts): send it as leaving does, or it is lost
+      // (5 Nov: on a slower machine a note written just before leaving never reached her).
+      else if (!mounted.current && now.enabled()) await api("/love-spot/talk", { text, persona: now.persona.trim() || PROTOCOL }).catch(() => { for (const id of batch) ids.current.add(id); });
       else if (mounted.current && now.context === latest.current.context) for (const id of batch) ids.current.add(id);
     }
     catch (cause) { if (mounted.current) now.onError(cause instanceof Error ? cause.message : "Matilda could not answer."); }
