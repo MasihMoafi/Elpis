@@ -4,7 +4,7 @@ Architecture and contracts. The [README](../readme.md) introduces the product; [
 
 ## Requirements
 
-Confirmed product requirements. Implementation state belongs in [ES.md](../ES.md).
+Confirmed product requirements. Implementation state belongs in [ES.md](../ES.md). Feature-level requirements: [terminal](TUI_SPEC.md) and [desktop](../apps/elpis-desktop/SPEC.md).
 
 ### Confirmed Requirements
 
