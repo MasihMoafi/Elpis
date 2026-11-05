@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { MoreMenu, RightClickMenu, type MenuAction } from "@/components/action-menu";
-import { readPreferences, savePreferences } from "@/lib/preferences";
+import { ConfirmDelete } from "@/components/confirm-delete";
 import { shortcutHint } from "@/lib/shortcuts";
 import { isAgent, title, type Thread } from "@/lib/api";
 import { useConversationColour } from "@/components/conversation-colour";
@@ -156,48 +156,22 @@ export function ThreadActions({ thread, onDelete, onRequestDelete, onRename, ren
  * ("Don’t show me this again", Settings → General) it deletes at once and opens only to show a failure.
  * `onDelete` deletes each chat for good; `trash` instead deletes them all as one step Ctrl+Z undoes (the sidebar's). */
 export function DeleteChatsDialog({ threads, onDelete, trash, onClose, alwaysConfirm }: { threads: Thread[] | null; onDelete?: (thread: Thread) => Promise<void>; trash?: (threads: Thread[]) => Promise<void>; onClose: () => void; /** Bulk deletes ask even when confirmation is off. */ alwaysConfirm?: boolean }) {
-  const [opened, setOpened] = useState<Thread[] | null>(null), [confirm, setConfirm] = useState(true), [skip, setSkip] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState("");
   const deleted = useRef(new Set<string>());
-  const removing = useRef(false);
-  // A new request is decided before it renders, so a turned-off confirmation never flashes open.
-  if (opened !== threads) { setOpened(threads); setConfirm(threads ? alwaysConfirm || readPreferences().confirmDeleteChats : true); setSkip(false); setError(""); }
-  useEffect(() => { deleted.current.clear(); if (threads && !confirm) void remove(); }, [threads]); // eslint-disable-line react-hooks/exhaustive-deps
-  async function remove() {
-    if (!threads || removing.current) return;
-    removing.current = true;
-    setBusy(true); setError("");
-    try {
-      if (skip) savePreferences({ confirmDeleteChats: false });
-      if (trash) { await trash(threads); onClose(); return; }
-      // Four at a time, so Select all in Archived chats finishes in seconds; the first failure stops the rest.
-      const queue = threads.filter(thread => !deleted.current.has(thread.id));
+  const previous = useRef<Thread[] | null>(null);
+  if (previous.current !== threads) { previous.current = threads; deleted.current.clear(); }
+  const only = threads?.length === 1 ? threads[0] : null;
+  return <ConfirmDelete request={threads} names={threads?.map(title) ?? []} noun="chat" alwaysConfirm={alwaysConfirm} onClose={onClose}
+    description={trash
+      ? <>{only ? isAgent(only) ? "This deletes this agent's chat from Elpis." : "This deletes the conversation and all of its agents from Elpis." : "This deletes these conversations and all of their agents from Elpis."} Chats continued from these agents are deleted too. Ctrl+Z brings {only ? "it" : "them"} back until you quit Elpis.</>
+      : <>{only ? isAgent(only) ? "This permanently deletes this agent's chat from Elpis." : "This permanently deletes the conversation and all of its agents from Elpis." : "This permanently deletes these conversations and all of their agents from Elpis."} Chats continued from these agents are deleted too. This cannot be undone.</>}
+    onDelete={async items => {
+      if (trash) { await trash(items); return; }
+      const queue = items.filter(thread => !deleted.current.has(thread.id));
       await Promise.all(Array.from({ length: Math.min(4, queue.length) }, async () => {
         for (let thread = queue.shift(); thread; thread = queue.shift()) {
-          try { await onDelete!(thread); } catch (e) { queue.length = 0; throw Error(threads.length > 1 ? `Could not delete “${title(thread)}”: ${message(e)}` : message(e)); }
+          try { await onDelete!(thread); } catch (e) { queue.length = 0; throw Error(items.length > 1 ? `Could not delete “${title(thread)}”: ${message(e)}` : message(e)); }
           deleted.current.add(thread.id);
         }
       }));
-      onClose();
-    } catch (e) { setError(message(e)); }
-    finally { removing.current = false; setBusy(false); }
-  }
-  const only = threads?.length === 1 ? threads[0] : null;
-  return <AlertDialog open={!!threads && (confirm || !!error)} onOpenChange={value => { if (!busy && !value) onClose(); }}>
-    <AlertDialogContent>
-      <AlertDialogHeader>
-      <AlertDialogTitle>{only ? `Delete “${title(only)}”?` : `Delete ${threads?.length ?? 0} chats?`}</AlertDialogTitle>
-      <AlertDialogDescription>
-        {trash
-          ? <>{only ? isAgent(only) ? "This deletes this agent's chat from Elpis." : "This deletes the conversation and all of its agents from Elpis." : "This deletes these conversations and all of their agents from Elpis."} Chats continued from these agents are deleted too. Ctrl+Z brings {only ? "it" : "them"} back until you quit Elpis.</>
-          : <>{only ? isAgent(only) ? "This permanently deletes this agent's chat from Elpis." : "This permanently deletes the conversation and all of its agents from Elpis." : "This permanently deletes these conversations and all of their agents from Elpis."} Chats continued from these agents are deleted too. This cannot be undone.</>}
-      </AlertDialogDescription>
-      </AlertDialogHeader>
-      {confirm && !alwaysConfirm && <label className="flex items-center gap-2 text-sm text-muted-foreground"><input type="checkbox" className="accent-primary" checked={skip} disabled={busy} onChange={event => setSkip(event.target.checked)} />Don’t show me this again</label>}
-      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
-      <AlertDialogFooter>
-        <AlertDialogClose render={<Button variant="outline" disabled={busy} />}>Cancel</AlertDialogClose>
-        <Button variant="destructive" disabled={busy} onClick={() => void remove()}>{busy ? "Deleting…" : "Delete"}</Button>
-      </AlertDialogFooter>
-    </AlertDialogContent>
-  </AlertDialog>;
+    }} />;
 }

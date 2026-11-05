@@ -275,9 +275,9 @@ test('a group is renamed and deleted from its menu; deleting puts its chats back
     await group(page, 'Errands').locator('.sidebar-group-row').hover();
     await page.getByRole('button', { name: 'Group actions for Errands' }).click();
     await page.getByRole('menuitem', { name: 'Delete group' }).click();
-    const confirm = page.getByRole('alertdialog', { name: 'Delete group?' });
-    await confirm.getByText('“Errands” will be removed. The 2 chats in it will no longer be grouped.').waitFor();
-    await confirm.getByRole('button', { name: 'Delete group' }).click();
+    const confirm = page.getByRole('alertdialog', { name: 'Delete “Errands”?' });
+    await confirm.getByText('The 2 chats in it will no longer be grouped. No chat is archived or deleted.').waitFor();
+    await confirm.getByRole('button', { name: 'Delete', exact: true }).click();
     await confirm.waitFor({ state: 'detached' });
     assert.deepEqual(await groupNames(page), []);
     assert.deepEqual(await idsIn(recents(page)), ['chat-a', 'chat-b', 'chat-c']);

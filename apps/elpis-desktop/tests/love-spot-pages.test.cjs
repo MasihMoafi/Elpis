@@ -136,7 +136,7 @@ test('Love Spot can delete a page, and cancelling leaves its drawing intact', as
     await f.page.getByRole('button', { name: 'Delete current page', exact: true }).click();
     dialog = f.page.getByRole('alertdialog');
     await dialog.getByText('Delete “Page 2”?', { exact: true }).waitFor();
-    await dialog.getByRole('button', { name: 'Delete page', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Delete', exact: true }).click();
     await f.waitFor(s => s.page?.name === 'Page 3', 'deleting the current page must open a fresh page');
     await f.page.getByRole('button', { name: 'Pages', exact: true }).click();
     await f.page.getByRole('menuitem', { name: /^Current page\b/ }).waitFor();
@@ -145,6 +145,56 @@ test('Love Spot can delete a page, and cancelling leaves its drawing intact', as
     assert.equal(await f.page.getByRole('menuitem', { name: /^Current page\b/ }).count(), 1, 'other pages must remain available');
     const trashed = JSON.parse(await fs.readFile(path.join(trashRoot, 'data', 'Trash', 'files', 'Page 2.excalidraw'), 'utf8'));
     assert.ok(trashed.elements.some(e => !e.isDeleted), 'the recoverable page must keep its drawing');
+    assert.deepEqual(f.errors, []);
+  } finally {
+    try { if (f) await f.close(); }
+    finally {
+      if (oldXdgDataHome === undefined) delete process.env.XDG_DATA_HOME;
+      else process.env.XDG_DATA_HOME = oldXdgDataHome;
+      removeTestTempDir(trashRoot);
+    }
+  }
+});
+
+test('page-row delete confirms, keeps the current page, and shares the skip preference', async () => {
+  const oldXdgDataHome = process.env.XDG_DATA_HOME;
+  const trashRoot = createTestTempDir(path.join(os.tmpdir(), 'love-spot-row-trash-'));
+  process.env.XDG_DATA_HOME = path.join(trashRoot, 'data');
+  let f;
+  try {
+    f = await loveSpotFixture();
+    await f.open(f.page);
+    for (const name of ['Page 2', 'Page 3']) {
+      await f.page.getByRole('button', { name: 'New page', exact: true }).click();
+      await f.waitFor(s => s.page?.name === name, `${name} was not created`);
+    }
+    const deletes = [];
+    f.page.on('request', request => {
+      if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/love-spot/pages') {
+        const body = request.postDataJSON(); if (body.action === 'delete') deletes.push(body.name);
+      }
+    });
+    await f.page.getByRole('button', { name: 'Pages', exact: true }).click();
+    const row = f.page.getByRole('menuitem', { name: /^Page 2\b/ });
+    const remove = row.getByRole('button', { name: 'Delete page', exact: true });
+    assert.equal(await remove.locator('svg.lucide-trash-2').count(), 1);
+    await remove.click();
+    const dialog = f.page.getByRole('alertdialog');
+    await dialog.getByText('Delete “Page 2”?', { exact: true }).waitFor();
+    assert.equal((await f.scene()).page.name, 'Page 3', 'the delete icon must not select its row');
+    await dialog.getByLabel('Don’t show me this again').check();
+    await dialog.getByRole('button', { name: 'Delete', exact: true }).click();
+    await dialog.waitFor({ state: 'hidden' });
+    assert.deepEqual(deletes, ['Page 2']);
+    assert.equal((await f.scene()).page.name, 'Page 3');
+    await f.page.getByRole('button', { name: 'Pages', exact: true }).click();
+    await f.page.getByRole('menuitem', { name: /^Current page\b/ }).getByRole('button', { name: 'Delete page', exact: true }).click();
+    await f.page.waitForFunction(() => !document.querySelector('[role="alertdialog"]'));
+    await f.waitFor(async () => deletes.includes('Current page'), 'the next page was not deleted');
+    await f.waitFor(async () => fs.access(path.join(trashRoot, 'data', 'Trash', 'files', 'Current page.excalidraw')).then(() => true, () => false), 'the second page did not reach Trash');
+    assert.deepEqual(deletes, ['Page 2', 'Current page']);
+    assert.equal((await f.scene()).page.name, 'Page 3');
+    assert.equal(JSON.parse(await f.page.evaluate(() => localStorage.getItem('elpis-preferences-v1'))).confirmDeleteChats, false);
     assert.deepEqual(f.errors, []);
   } finally {
     try { if (f) await f.close(); }

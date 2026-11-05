@@ -83,7 +83,7 @@ export function GeneralSettings() {
       <SettingRow title="Show workflows in the sidebar" description="List each workflow's chats in the sidebar, folded under the workflow. Off hides the section; the Workflows page keeps every run.">
         <Switch aria-label="Show workflows in the sidebar" checked={preferences.sidebarWorkflows} onCheckedChange={sidebarWorkflows => save({ sidebarWorkflows })} />
       </SettingRow>
-      <SettingRow title="Confirm before deleting chats" description="Ask before Delete or D removes chats. “Don’t show me this again” turns this off.">
+      <SettingRow title="Confirm before deleting chats" description="Ask before deleting chats, pages, groups, skills or themes. “Don’t show me this again” turns this off.">
         <Switch aria-label="Confirm before deleting chats" checked={preferences.confirmDeleteChats} onCheckedChange={confirmDeleteChats => save({ confirmDeleteChats })} />
       </SettingRow>
       <Speed />

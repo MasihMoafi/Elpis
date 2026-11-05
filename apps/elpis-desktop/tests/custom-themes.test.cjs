@@ -122,8 +122,8 @@ test('custom palettes can author light and dark colours, switch, and persist', a
   await waitToken(page, '--canvas', '#0a0b0d');
   assert.equal(await token(page, '--canvas'), '#0a0b0d');
   await chooseOption(page.getByLabel('Theme palette', { exact: true }), customId);
-  page.once('dialog', dialog => dialog.accept());
   await page.getByRole('button', { name: 'Delete theme', exact: true }).click();
+  await page.getByRole('alertdialog', { name: 'Delete “Crimson Lab”?' }).getByRole('button', { name: 'Delete', exact: true }).click();
   assert.equal(await page.getByLabel('Theme palette', { exact: true }).getAttribute('data-value'), 'elpis');
   assert.equal(await token(page, '--canvas'), '#0a0b0d');
   assert.deepEqual(f.errors, []);

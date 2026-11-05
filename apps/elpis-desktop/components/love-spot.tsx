@@ -15,6 +15,7 @@ import { useDrawingStyle } from "@/components/drawing-style";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { ConfirmDelete } from "@/components/confirm-delete";
 import { Dictation } from "@/components/dictation";
 import { MatildaWho, useMatilda } from "@/components/love-spot-matilda";
 import { ModelPicker } from "@/components/model-picker";
@@ -104,7 +105,7 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
   const { models } = useModelCatalog(), [pick, setPick] = useState(savedModel);
   const [screenshots, setScreenshots] = useState<Screenshot[]>([]), [choosing, setChoosing] = useState(false);
   const [page, setPage] = useState<BoardPage>(), [pages, setPages] = useState<PageList["pages"]>([]), [pagesError, setPagesError] = useState("");
-  const [pageToDelete, setPageToDelete] = useState<string>(), [clearing, setClearing] = useState(false);
+  const [pageToDelete, setPageToDelete] = useState<string>(), [clearing, setClearing] = useState(false), [pagesOpen, setPagesOpen] = useState(false);
   const [pageBusy, setPageBusy] = useState(false), [renaming, setRenaming] = useState(false), [pageName, setPageName] = useState("");
   const currentPage = useRef<BoardPage>(undefined);
   const lastPoint = useRef<{ x: number; y: number }>(undefined);
@@ -477,14 +478,14 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
   }
 
   async function changePage(action: "new" | "switch" | "rename" | "delete" | "keep" | "release" | "clear", name?: string) {
-    if (pageBusy || !editor) return;
+    if (pageBusy || !editor) { if (action === "delete") throw new Error("The page is not ready to delete."); return; }
     setPageBusy(true);
     try {
       clearTimeout(saveTimer.current); clearTimeout(viewTimer.current);
-      if (!await save()) return;
+      if (!await save()) { if (action === "delete") throw new Error("Could not save the current page before deleting."); return; }
       receive(await api<Saved>("/love-spot/pages", { action, ...(name === undefined ? {} : { name }), page: currentPage.current }));
       setRenaming(false); setError(""); loadPages();
-    } catch (e) { report(e); }
+    } catch (e) { if (action === "delete") throw e; report(e); }
     finally { setPageBusy(false); }
   }
 
@@ -510,7 +511,7 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
   const currentKept = !!pages.find(item => item.name === page?.name)?.kept;
   const tools = <div className="navbar love-spot-tools accent-scope">
       <div className="love-spot-pages">
-        <DropdownMenu onOpenChange={open => { if (open) loadPages(); }}>
+        <DropdownMenu open={pagesOpen} onOpenChange={open => { setPagesOpen(open); if (open) loadPages(); }}>
           <DropdownMenuTrigger render={<Button variant="outline" size="sm" aria-label="Pages" className="max-w-full min-w-28 shrink justify-between" disabled={!editor || pageBusy} />}>
             <span className="min-w-0 truncate" title={page?.name ?? "Pages"}>{page?.name ?? "Pages"}</span><ChevronDown aria-hidden="true" size={14} />
           </DropdownMenuTrigger>
@@ -520,8 +521,9 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
             {pages.some(item => item.name !== page?.name && !item.kept) && <DropdownMenuItem variant="destructive" onClick={() => setClearing(true)}><Trash2 aria-hidden="true" />Delete all pages</DropdownMenuItem>}
             {pages.map(item => <DropdownMenuItem key={item.name} onClick={() => void changePage("switch", item.name)}>
               <Check aria-hidden="true" className={item.name === page?.name ? "shrink-0" : "invisible shrink-0"} />
-              <span className="min-w-0"><span className="block whitespace-normal break-words">{item.name}</span><time className="block text-xs text-muted-foreground" dateTime={new Date(item.modified).toISOString()}>{new Date(item.modified).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}{item.kept ? "" : item.expires && item.name !== page?.name ? ` · to trash in ${Math.max(1, Math.ceil((item.expires - Date.now()) / 86400000))} d` : ""}</time></span>
-              {item.kept && <Pin aria-label="Kept" className="ml-auto shrink-0" fill="currentColor" />}
+              <span className="min-w-0 flex-1"><span className="block whitespace-normal break-words">{item.name}</span><time className="block text-xs text-muted-foreground" dateTime={new Date(item.modified).toISOString()}>{new Date(item.modified).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}{item.kept ? "" : item.expires && item.name !== page?.name ? ` · to trash in ${Math.max(1, Math.ceil((item.expires - Date.now()) / 86400000))} d` : ""}</time></span>
+              {item.kept && <Pin aria-label="Kept" className="shrink-0" fill="currentColor" />}
+              <Button variant="ghost" size="icon-xs" aria-label="Delete page" title={`Delete ${item.name}`} onClick={event => { event.stopPropagation(); setPagesOpen(false); setPageToDelete(item.name); }} onKeyDown={event => event.stopPropagation()}><Trash2 size={14} /></Button>
             </DropdownMenuItem>)}
             {pagesError && <DropdownMenuItem disabled className="whitespace-normal text-muted-foreground">{pagesError}</DropdownMenuItem>}
           </DropdownMenuContent>
@@ -544,18 +546,9 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
     </div>;
   return <section className="love-spot accent-scope" aria-label="Love Spot">
     {toolbarHost ? createPortal(tools, toolbarHost) : tools}
-    <AlertDialog open={!!pageToDelete} onOpenChange={open => { if (!open) setPageToDelete(undefined); }}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Delete “{pageToDelete}”?</AlertDialogTitle>
-          <AlertDialogDescription>This page moves to Trash. A blank page opens so you can keep drawing.</AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogClose render={<Button type="button" variant="outline" />}>Cancel</AlertDialogClose>
-          <Button type="button" variant="destructive" disabled={pageBusy} onClick={() => { const name = pageToDelete; setPageToDelete(undefined); if (name) void changePage("delete", name); }}>Delete page</Button>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <ConfirmDelete request={pageToDelete ?? null} names={pageToDelete ? [pageToDelete] : []} noun="page"
+      description="This page moves to Trash. Deleting the current page opens a blank page so you can keep drawing."
+      onDelete={name => changePage("delete", name)} onClose={() => setPageToDelete(undefined)} />
     <AlertDialog open={clearing} onOpenChange={setClearing}>
       <AlertDialogContent>
         <AlertDialogHeader>

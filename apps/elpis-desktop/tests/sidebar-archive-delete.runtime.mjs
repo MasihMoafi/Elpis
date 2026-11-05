@@ -57,7 +57,7 @@ test('sidebar archive and delete: one chat, a selection, by key and menu, with a
     // keeps it from staying open over every later click when the machine is busy.
     const notNow = page.getByRole('button', { name: 'Not now', exact: true });
     await notNow.waitFor({ timeout: 4000 }).then(() => notNow.click(), () => {});
-    await page.locator(`.thread-row[data-thread-id="${ids.Mother agent}"]`).waitFor();
+    await page.locator(`.thread-row[data-thread-id="${ids['Mother agent']}"]`).waitFor();
   };
   const stop = async () => { await browser?.close().catch(() => {}); if (home) await run(helper, ['stop', home]).catch(() => {}); };
   t.after(stop);
@@ -123,7 +123,7 @@ test('sidebar archive and delete: one chat, a selection, by key and menu, with a
     assert.deepEqual(await agentsOf('Mother agent'), [], 'no agent of the archived chat stays listed');
     await page.keyboard.press('Control+,'); await page.getByText('Archived chats', { exact: true }).first().click();
     await page.getByRole('button', { name: 'Unarchive Mother agent', exact: true }).click();
-    await page.locator(`.archived-row[data-thread-id="${ids.Mother agent}"]`).waitFor({ state: 'detached' });
+    await page.locator(`.archived-row[data-thread-id="${ids['Mother agent']}"]`).waitFor({ state: 'detached' });
     await page.getByRole('button', { name: 'Back to app', exact: true }).click(); await row('Mother agent').waitFor();
     assert.deepEqual((await agentsOf('Mother agent')).sort(), ['Worker one', 'Worker one child', 'Worker two']);
     await row('Worker one').waitFor(); await row('Worker two').waitFor();

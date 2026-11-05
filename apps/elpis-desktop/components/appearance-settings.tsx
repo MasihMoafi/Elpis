@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Monitor, Moon, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ConfirmDelete } from "@/components/confirm-delete";
 import { Input } from "@/components/ui/input";
 import { Choice, Segmented, SettingRow, SettingsGroup, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
 import { savePreferences, usePreferences, type Accent, type Preferences } from "@/lib/preferences";
@@ -28,6 +29,7 @@ const ACCENTS: { value: Accent; label: string }[] = [
 export function AppearanceSettings({ theme, onTheme }: { theme: ThemeChoice; onTheme: (theme: ThemeChoice) => void }) {
   const preferences = usePreferences();
   const [notice, setNotice] = useState("");
+  const [deleting, setDeleting] = useState<CustomTheme | null>(null);
   const save = (patch: Partial<Preferences>) => { setNotice(""); try { savePreferences(patch); } catch (cause) { setNotice(`Could not save this preference: ${cause instanceof Error ? cause.message : String(cause)}`); } };
   const savedThemes = parseCustomThemes(preferences.customThemes);
   const themes = [...BUILT_IN_THEMES, ...savedThemes];
@@ -40,10 +42,6 @@ export function AppearanceSettings({ theme, onTheme }: { theme: ThemeChoice; onT
     save({ customThemes: JSON.stringify([...savedThemes, created]), selectedPalette: id });
   };
   const saveTheme = (updated: CustomTheme) => save({ customThemes: JSON.stringify(savedThemes.map(item => item.id === updated.id ? updated : item)) });
-  const deleteTheme = (removed: CustomTheme) => {
-    if (!window.confirm(`Delete the “${removed.name}” theme?`)) return;
-    save({ customThemes: JSON.stringify(savedThemes.filter(item => item.id !== removed.id)), selectedPalette: "elpis" });
-  };
   return <div aria-label="Appearance">
     <SettingsHeader title="Appearance" description="Saved on this device." />
     <SettingsGroup>
@@ -76,7 +74,11 @@ export function AppearanceSettings({ theme, onTheme }: { theme: ThemeChoice; onT
       </SettingRow>
       <CodeFont font={preferences.codeFont} onSave={codeFont => save({ codeFont })} />
     </SettingsGroup>
-    {selectedTheme && <ThemeEditor theme={selectedTheme} onSave={saveTheme} onDelete={() => deleteTheme(selectedTheme)} />}
+    {selectedTheme && <ThemeEditor theme={selectedTheme} onSave={saveTheme} onDelete={() => setDeleting(selectedTheme)} />}
+    <ConfirmDelete request={deleting} names={deleting ? [deleting.name] : []} noun="theme"
+      description="This removes the saved theme and returns to the Elpis palette."
+      onDelete={async removed => { savePreferences({ customThemes: JSON.stringify(savedThemes.filter(item => item.id !== removed.id)), selectedPalette: "elpis" }); }}
+      onClose={() => setDeleting(null)} />
     {notice && <SettingsNotice tone="alert">{notice}</SettingsNotice>}
   </div>;
 }

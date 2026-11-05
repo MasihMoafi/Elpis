@@ -10,7 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tooltip } from "@/components/ui/tooltip";
 import { Description, CustomizeRow } from "@/components/customize-row";
 import { CustomizePlugins, type ConfigWrite, type Plugin, type PluginChange } from "@/components/customize-plugins";
-import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { ConfirmDelete } from "@/components/confirm-delete";
 import { Segmented, SettingsEmpty, SettingsNotice } from "@/components/settings/rows";
 import { api, unreadable } from "@/lib/api";
 
@@ -43,7 +43,7 @@ export function CustomizeView({ cwd, onCreateSkill, onOpenSettings, onConnectGit
   const [savingGithub, setSavingGithub] = useState(false);
   const [savingMcp, setSavingMcp] = useState<string | null>(null), [connectorErrors, setConnectorErrors] = useState<Record<string, string>>({});
   const mcpLock = useRef(false);
-  const [deleting, setDeleting] = useState<Skill | null>(null), [deletingError, setDeletingError] = useState("");
+  const [deleting, setDeleting] = useState<Skill | null>(null);
   const [deleted, setDeleted] = useState<{ name: string; token: string } | null>(null), [savingSkill, setSavingSkill] = useState(false);
   const skillList = useRef<HTMLUListElement>(null), returnFocus = useRef<HTMLElement | null>(null);
   useEffect(() => {
@@ -96,16 +96,14 @@ export function CustomizeView({ cwd, onCreateSkill, onOpenSettings, onConnectGit
   const requestDelete = (skill: Skill) => {
     if (!skill.deletable) return;
     returnFocus.current = skillList.current?.querySelector<HTMLElement>(`[data-skill-path="${CSS.escape(skill.path)}"]`) ?? null;
-    setDeletingError(""); setDeleting(skill);
+    setDeleting(skill);
   };
-  const deleteSkill = async () => {
-    if (!deleting || savingSkill) return;
-    setSavingSkill(true); setDeletingError("");
+  const deleteSkill = async (skill: Skill) => {
+    setSavingSkill(true);
     try {
-      const result = await api<Customize & { deleted: { name: string; token: string } }>("/customize/skill/delete", { path: deleting.path, ...(cwd ? { cwd } : {}) });
-      setData(readCustomize(result)); setDeleted(result.deleted); setDeleting(null);
-    } catch (cause) { setDeletingError(message(cause)); }
-    finally { setSavingSkill(false); }
+      const result = await api<Customize & { deleted: { name: string; token: string } }>("/customize/skill/delete", { path: skill.path, ...(cwd ? { cwd } : {}) });
+      setData(readCustomize(result)); setDeleted(result.deleted);
+    } finally { setSavingSkill(false); }
   };
   const undoDelete = async () => {
     if (!deleted || savingSkill) return;
@@ -168,19 +166,11 @@ export function CustomizeView({ cwd, onCreateSkill, onOpenSettings, onConnectGit
         </> : <Switch aria-label={`Use ${connector.name}`} checked={connector.enabled} disabled={savingMcp !== null || !data.connectors.version || !data.connectors.write?.available} onCheckedChange={enabled => void setMcp(connector, enabled)} />}
       </CustomizeRow>)}</ul>
     </section>}
-    <AlertDialog open={!!deleting} onOpenChange={value => { if (!value && !savingSkill) setDeleting(null); }}>
-      <AlertDialogContent finalFocus={() => returnFocus.current?.isConnected ? returnFocus.current : skillList.current?.querySelector<HTMLElement>(".customize-item")}>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Delete {deleting?.name}?</AlertDialogTitle>
-          <AlertDialogDescription>Move this skill’s folder to Trash? You can undo for 4 seconds.</AlertDialogDescription>
-        </AlertDialogHeader>
-        <p className="text-sm break-all">{deleting && folderOf(deleting.path)}</p>
-        {deletingError && <p role="alert" className="text-sm text-destructive">{deletingError}</p>}
-        <AlertDialogFooter>
-          <AlertDialogClose render={<Button variant="outline" disabled={savingSkill} />}>Cancel</AlertDialogClose>
-          <Button variant="destructive" disabled={savingSkill} onClick={() => void deleteSkill()}>{savingSkill ? "Deleting…" : "Delete"}</Button>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <ConfirmDelete request={deleting} names={deleting ? [deleting.name] : []} noun="skill"
+      description="Move this skill’s folder to Trash? You can undo for 4 seconds."
+      finalFocus={() => returnFocus.current?.isConnected ? returnFocus.current : skillList.current?.querySelector<HTMLElement>(".customize-item")}
+      onDelete={deleteSkill} onClose={() => setDeleting(null)}>
+      <p className="text-sm break-all">{deleting && folderOf(deleting.path)}</p>
+    </ConfirmDelete>
   </div>;
 }

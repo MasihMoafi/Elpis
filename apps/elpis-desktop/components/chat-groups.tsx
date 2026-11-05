@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactElement, type ReactNode, type PointerEvent } from "react";
 import { ListFilter, Pencil, Trash2 } from "lucide-react";
+import { ConfirmDelete } from "@/components/confirm-delete";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -123,17 +124,7 @@ export function GroupActions({ group, state, count, area, children, onRename, on
       {children(<MoreMenu actions={actions} label={`Group actions for ${group.name}`} title="Rename or delete this group" size={13} align="start" menuClassName="w-48" />)}
     </RightClickMenu>
     <GroupNameDialog open={renaming} state={state} group={group} onSave={name => { onRename(name); setRenaming(false); }} onClose={() => setRenaming(false)} />
-    <AlertDialog open={deleting} onOpenChange={value => { if (!value) setDeleting(false); }}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Delete group?</AlertDialogTitle>
-          <AlertDialogDescription>“{group.name}” will be removed. {contents}</AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
-          <Button variant="destructive" onClick={() => { setDeleting(false); onDelete(); }}>Delete group</Button>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <ConfirmDelete request={deleting ? group : null} names={[group.name]} noun="group" description={`${contents} No chat is archived or deleted.`}
+      onDelete={async () => { onDelete(); }} onClose={() => setDeleting(false)} />
   </>;
 }
