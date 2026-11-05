@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Elpis pre-push (run by the shared hook in ~/Desktop/p/skills/dev/secret-guard/hooks/pre-push): before commits leave
+# this computer, every desktop test file they change runs here (apps/elpis-desktop/scripts/changed-tests.mjs).
+# 5 Nov, Masih: "add lints to help you catch issues before CI failures". Skip once with ELPIS_SKIP_CHANGED_TESTS=1.
+set -euo pipefail
+[ "${ELPIS_SKIP_CHANGED_TESTS:-}" = 1 ] && exit 0
+repo="$(git rev-parse --show-toplevel)"; zero=0000000000000000000000000000000000000000
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+  [ "$local_sha" = "$zero" ] && continue
+  base="$remote_sha"; [ "$base" = "$zero" ] && base="$(git merge-base "$local_sha" origin/main 2>/dev/null || git rev-parse "$local_sha~1")"
+  git cat-file -e "$base^{commit}" 2>/dev/null || continue
+  PATH="/usr/local/node/bin:$PATH" nice -n 19 node "$repo/apps/elpis-desktop/scripts/changed-tests.mjs" "$base"
+done
