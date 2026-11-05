@@ -178,7 +178,11 @@ jobs:
             codex-rs/target
           # Build-only runs keep a small release-only cache of their own, so the next one compiles only what changed.
           key: elpis-040-${{ inputs.verification == 'build' && 'build-' || '' }}${{ runner.os }}-${{ hashFiles('codex-rs/Cargo.lock') }}-${{ github.sha }}
-          restore-keys: elpis-040-${{ inputs.verification == 'build' && 'build-' || '' }}${{ runner.os }}-${{ hashFiles('codex-rs/Cargo.lock') }}-
+          # A Cargo.lock change (a new crate) must not mean a cold build: fall back to the newest cache of any lock
+          # (5 Nov: a cold build took ~100 min against ~20 min warm).
+          restore-keys: |
+            elpis-040-${{ inputs.verification == 'build' && 'build-' || '' }}${{ runner.os }}-${{ hashFiles('codex-rs/Cargo.lock') }}-
+            elpis-040-${{ inputs.verification == 'build' && 'build-' || '' }}${{ runner.os }}-
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '24'
@@ -471,6 +475,7 @@ jobs:
           restore-keys: |
             elpis-040-tests-${{ runner.os }}-${{ hashFiles('codex-rs/Cargo.lock') }}-
             elpis-040-${{ runner.os }}-${{ hashFiles('codex-rs/Cargo.lock') }}-
+            elpis-040-tests-${{ runner.os }}-
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '24'
