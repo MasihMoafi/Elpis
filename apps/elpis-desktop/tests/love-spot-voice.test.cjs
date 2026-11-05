@@ -67,9 +67,9 @@ for (const colorScheme of ['light']) test(`Love Spot hides unavailable audio and
   } finally { await f.close(); }
 });
 
-for (const sound of [true, false]) test(`Read aloud verifies actual sound before completion (sound=${sound})`, async t => {
+// Defined only while subscription speech is reliable: a skipped test fails the renderer gate (scripts/renderer-artifact-gate.mjs).
+if (require('../lib/love-spot-audio.mjs').READ_ALOUD_AUDIO.available) for (const sound of [true, false]) test(`Read aloud verifies actual sound before completion (sound=${sound})`, async t => {
   const { READ_ALOUD_AUDIO } = await import('../lib/love-spot-audio.mjs');
-  if (!READ_ALOUD_AUDIO.available) return t.skip('Read aloud is unavailable until subscription speech is reliable.');
   let f; const streams = new Set();
   f = await fixture({ routes: {
     '/api/voice/read-aloud': async (body, _url, response) => {
