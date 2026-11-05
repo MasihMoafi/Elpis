@@ -764,7 +764,7 @@ def squash(text: str) -> str:
 
 local = Path(sys.argv[1]).read_text()
 shipping = Path(sys.argv[2]).read_text()
-local_selector = section(local, "## 7. Checked verification selector")
+local_selector = section(local, "## Checked verification selector")
 shipping_boundary = section(shipping, "## 7. Selector evidence is not shipping evidence")
 
 expected_examples = [
@@ -787,7 +787,7 @@ for clause in (
     "Without an override, it runs `git rev-parse --path-format=absolute --git-common-dir`, takes the common directory's parent, and uses `<parent>/codex-rs/target`.",
     "`ELPIS_CARGO_TARGET_DIR` is accepted only when the value is absolute and the target is writable.",
     "It may create the target directory, but it never deletes targets or caches and never runs `cargo clean`.",
-    "`cargo fmt --all --check` is the one narrow check-only exception to section 6: it checks the whole workspace without rewriting source.",
+    "`cargo fmt --all --check` is the one narrow check-only exception to the rule above: it checks the whole workspace without rewriting source.",
     "Plain `cargo fmt --all` remains prohibited.",
 ):
     require(clause in local_contract, f"local selector contract missing: {clause}")
