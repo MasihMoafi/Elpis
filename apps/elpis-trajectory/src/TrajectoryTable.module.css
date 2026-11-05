@@ -2086,10 +2086,6 @@
   overflow-x: auto;
 }
 
-/* Elpis exposes the contract's group and record identities. */
-.recordIndex { float: right; margin-left: 8px; color: var(--dsw-alias-label-caption); font: 10px/30px var(--ds-font-family-code); }
-.groupLabel { display: inline-block; margin-right: 8px; color: var(--dsw-alias-label-tertiary); font: 10px/1 var(--dsw-font-family); }
-
 .stickyTurn { position: sticky; top: 0; height: 0; z-index: 7; pointer-events: none; }
 .stickyTurn span { position: absolute; left: 0; top: 0; padding: 1px 5px; border-radius: 0 0 2px; color: var(--dsw-alias-label-tertiary); background: var(--dsw-alias-bg-module-platform); font: 8px/10px var(--ds-font-family-code); white-space: nowrap; }
 

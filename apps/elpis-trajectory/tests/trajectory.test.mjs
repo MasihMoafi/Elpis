@@ -205,8 +205,7 @@ test('unrecorded values do not imply a running call or a complete token total', 
   const page = await pageWith(custom)
   try {
     await page.locator('tr[data-record-index="2"]').click()
-    assert.match(await page.locator('aside').innerText(), /Output\s+50 tok/)
-    assert.doesNotMatch(await page.locator('aside').innerText(), /Tokens\s+50 tok/)
+    assert.match(await page.locator('aside').innerText(), /Tokens\s+50 tok/)
     assert.equal(await page.getByText(/Cache hit/).count(), 0)
     await page.locator('tr[data-record-index="3"]').click()
     assert.match(await page.locator('aside').innerText(), /Status\s+Not recorded/)
@@ -273,4 +272,54 @@ test('every request remains inspectable when requests share a group or have no r
     }
     assert.ok(await page.getByText('Cache miss after: model change', { exact: true }).isVisible())
   } finally { await page.close() }
+})
+
+test('ledger content excludes record numbers and group titles', async () => {
+  const page = await pageWith()
+  try {
+    assert.equal((await page.locator('tr[data-record-index="1"] td').last().innerText()).trim(), 'Inspect the project and run its checks.')
+    assert.equal((await page.locator('tr[data-record-index="2"] td').last().innerText()).trim(), "I'll inspect the project first.")
+    assert.equal(await page.locator('tr[data-record-index="1"]').evaluate(el => el.getBoundingClientRect().height), 30)
+  } finally { await page.close() }
+})
+
+test('record inspector tabs follow the reference by kind and payload', async () => {
+  const page = await pageWith()
+  try {
+    for (const [index, tabs] of [[1, ['Summary', 'Preview', 'Raw']], [2, ['Summary', 'Preview', 'Raw']], [3, ['Summary', 'Payload', 'Result', 'Schema', 'Timing']], [11, ['Summary', 'Raw Output']]]) {
+      await page.locator(`tr[data-record-index="${index}"]`).click()
+      assert.deepEqual(await page.locator('aside [role="tab"]').allTextContents(), tabs)
+    }
+  } finally { await page.close() }
+})
+
+test('assistant summary orders the reference fields and preserves unknown timing', async () => {
+  const page = await pageWith()
+  try {
+    await page.locator('tr[data-record-index="2"]').click()
+    const panel = page.getByRole('tabpanel', { name: 'Summary' })
+    assert.deepEqual(await panel.locator('dt, h3').allTextContents(), ['Source', 'Status', 'Tokens', 'Cache', 'Preview', 'Request Timing', 'Started', 'Total duration', 'TTFT', 'Generation', 'Throughput'])
+    assert.match(await panel.innerText(), /Cache hit 87%/)
+    await page.locator('tr[data-record-index="10"]').click()
+    const text = await panel.innerText()
+    assert.match(text, /TTFT\s+Not recorded/)
+    assert.match(text, /Throughput\s+Not recorded/)
+  } finally { await page.close() }
+})
+
+test('footer shows aggregated sample usage and omits unavailable metrics', async () => {
+  const page = await pageWith()
+  try {
+    const footer = page.locator('footer')
+    assert.match(await footer.innerText(), /3 turns 6 steps[\s\S]*54 tok\/s/)
+    assert.match(await footer.innerText(), /43.9K tok[\s\S]*Cache hit 79%/)
+    assert.match(await footer.innerText(), /2%/)
+  } finally { await page.close() }
+  const custom = { version: 1, threadId: 'empty', turns: [{ turn: 1, groups: [{ title: 'Message', cells: [{ index: 1, kind: 'user', text: 'Hello', timeSeconds: null }] }] }], requestNumbers: [] }
+  const empty = await pageWith(custom)
+  try {
+    const text = await empty.locator('footer').innerText()
+    assert.match(text, /1 turns 0 steps/)
+    assert.doesNotMatch(text, /tok\/s|Cache hit|%/)
+  } finally { await empty.close() }
 })

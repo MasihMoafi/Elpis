@@ -362,15 +362,17 @@ function ttft(metrics: AssistantMetricDetail, t: TrajectoryTranslate): string {
 }
 
 function generationTime(metrics: AssistantMetricDetail, t: TrajectoryTranslate): string {
-  if (!metrics.timingRecorded || metrics.firstTokenTime === null) return t('timing.firstTokenUnavailable')
+  if (!metrics.timingRecorded) return t('timing.notRecorded')
+  if (metrics.firstTokenTime === null) return t('timing.firstTokenUnavailable')
   if (metrics.completedTime === null) return t('status.pending')
   return formatDurationMs(Math.max(0, metrics.completedTime - metrics.firstTokenTime), t)
 }
 
 function throughput(metrics: AssistantMetricDetail, t: TrajectoryTranslate): string {
+  if (!metrics.timingRecorded) return t('timing.notRecorded')
   if (!metrics.usageProvided) return t('timing.usageUnavailable')
   if (metrics.outputTokens === null) return t('timing.outputTokensUnavailable')
-  if (!metrics.timingRecorded || metrics.firstTokenTime === null) return t('timing.firstTokenUnavailable')
+  if (metrics.firstTokenTime === null) return t('timing.firstTokenUnavailable')
   if (metrics.completedTime === null) return t('status.pending')
   const generationSeconds = (metrics.completedTime - metrics.firstTokenTime) / 1_000
   if (generationSeconds <= 0) return t('timing.durationTooShort')
@@ -758,33 +760,8 @@ function CacheRow({ cache }: { cache: TrajectoryRequestNumber['cache'] }) {
 }
 
 function TokenRows({ cell, t }: { cell: TrajectoryCellProps; t: TrajectoryTranslate }) {
-  const content = cell.output !== undefined && cell.think !== undefined ? cell.output : undefined
-  const totalOutput = cell.output === undefined ? undefined : cell.output + (cell.think ?? 0)
-  const totalInput = inputTotal({ input: cell.input, cacheRead: cell.cacheRead, cacheWrite: cell.cacheWrite })
-  return (
-    <>
-      {totalInput !== undefined && <div><dt>{t('usage.input')}</dt><dd>{t('unit.tokens', { value: totalInput })}</dd></div>}
-      {cell.input !== undefined && <div className={css.requestTokenDetail}><dt>{t('usage.uncached')}</dt><dd>{t('unit.tokens', { value: cell.input })}</dd></div>}
-      {cell.cacheRead !== undefined && <div className={css.requestTokenDetail}><dt>{t('usage.cached')}</dt><dd>{t('unit.tokens', { value: cell.cacheRead })}</dd></div>}
-      {cell.cacheWrite !== undefined && <div className={css.requestTokenDetail}><dt>{t('usage.cacheCreated')}</dt><dd>{t('unit.tokens', { value: cell.cacheWrite })}</dd></div>}
-      <div>
-        <dt>{t(cell.output !== undefined && cell.think !== undefined ? 'usage.tokens' : 'usage.output')}</dt>
-        <dd>{totalOutput === undefined ? '—' : t('unit.tokens', { value: totalOutput })}</dd>
-      </div>
-      {cell.think !== undefined && (
-        <div className={css.requestTokenDetail}>
-          <dt>{t('usage.reasoning')}</dt>
-          <dd>{t('unit.tokens', { value: cell.think })}</dd>
-        </div>
-      )}
-      {content !== undefined && (
-        <div className={css.requestTokenDetail}>
-          <dt>{t('usage.content')}</dt>
-          <dd>{t('unit.tokens', { value: content })}</dd>
-        </div>
-      )}
-    </>
-  )
+  const total = cell.output === undefined ? undefined : cell.output + (cell.think ?? 0)
+  return <div><dt>{t('usage.tokens')}</dt><dd>{total === undefined ? '—' : t('unit.tokens', { value: total })}</dd></div>
 }
 
 function inputTotal(usage: TrajectoryUsage): number | undefined {
@@ -999,9 +976,6 @@ function detailTabs(record: TableRecord): readonly DetailTabItem[] {
       { id: 'overview', labelKey: 'tab.summary' },
       { id: 'rendered', labelKey: 'tab.preview' },
       { id: 'raw', labelKey: 'tab.raw' },
-      ...(record.cell.inputDetail === undefined ? [] : [{ id: 'input', labelKey: 'tab.input' } as const]),
-      ...(record.cell.outputDetail === undefined ? [] : [{ id: 'output', labelKey: 'tab.output' } as const]),
-      ...(record.cell.kind !== 'message' ? [] : [{ id: 'timing', labelKey: 'tab.timing' } as const]),
       ...(record.cell.messageSource === undefined
         ? []
         : [{ id: 'source', labelKey: 'tab.source' } as const]),
@@ -1644,8 +1618,11 @@ function RecordTiming({
   preview = false,
   t,
 }: { record: TableRecord; preview?: boolean; t: TrajectoryTranslate }) {
-  return record.cell.kind === 'message' && record.cell.assistantMetrics !== undefined
-    ? <AssistantTimingPanel metrics={record.cell.assistantMetrics} t={t} />
+  return record.cell.kind === 'message'
+    ? <AssistantTimingPanel metrics={record.cell.assistantMetrics ?? {
+      timingRecorded: false, stepStartTime: record.cell.startedAt ?? null,
+      firstTokenTime: null, completedTime: null, usageProvided: false, outputTokens: null,
+    }} t={t} />
     : (
       <dl className={css.overview}>
         <div><dt>{t('timing.started')}</dt><StartedAtValue timestamp={record.cell.startedAt ?? null} t={t} /></div>
@@ -2926,7 +2903,6 @@ export function TrajectoryTable({
                         </div>
                       </td>
                       <td className={css.content}>
-                        {!isCollapsedSummary && !isRequestOnly && <span className={css.recordIndex}>#{record.cell.index}</span>}
                         {isRequestOnly
                           ? null
                           : record.collapsedSummary !== undefined
@@ -2944,7 +2920,6 @@ export function TrajectoryTable({
                                   : `${listDisplayText} → ${resultText}`}
                               >
                                 <span className={resultText === undefined ? undefined : css.resultRequest}>
-                                  {record.groupStart && <span className={css.groupLabel}>{record.group}</span>}
                                   <RecordListText
                                     displayText={displayText}
                                     toolCallOnly={toolCallOnly}

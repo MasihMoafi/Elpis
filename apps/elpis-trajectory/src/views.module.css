@@ -31,3 +31,30 @@
   /* ConversationRoot publishes the floating composer's live height. */
   --dsh-trajectory-bottom-clearance: 0px;
 }
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex: none;
+  height: 56px;
+  padding: 0 24px;
+  font-size: 16px;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l1);
+}
+.model { color: var(--dsw-alias-label-tertiary); font-size: 14px; }
+.stats {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 36px;
+  height: 38px;
+  color: var(--dsw-alias-label-tertiary);
+  font: 14px/20px var(--dsw-font-family);
+}
+.stat { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+.stat svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
+.dot { margin: 0 1px; }
+.ring { display: inline-block; width: 16px; height: 16px; border-radius: 50%; position: relative; }
+.ring::after { content: ''; position: absolute; inset: 3px; border-radius: 50%; background: var(--dsw-alias-bg-layer-1); }

@@ -21,6 +21,44 @@ function toggleAll<T>(current: ReadonlySet<T>, ids: readonly T[]): Set<T> {
   return next
 }
 
+function compactTokens(value: number): string {
+  const scale = value >= 1_000_000 ? 1_000_000 : value >= 1_000 ? 1_000 : 1
+  const scaled = value / scale
+  return `${scale === 1 ? value : scaled >= 100 ? Math.round(scaled) : Math.round(scaled * 10) / 10}${scale === 1_000_000 ? 'M' : scale === 1_000 ? 'K' : ''}`
+}
+
+function TrajectoryStats({ document }: { document: TrajectoryDocument }) {
+  const requests = document.requestNumbers
+  const allUsage = requests.length > 0 && requests.every(({ usage }) =>
+    usage?.input !== undefined && usage.cacheRead !== undefined && usage.cacheWrite !== undefined && usage.output !== undefined)
+  const totals = requests.reduce((sum, request) => {
+    const usage = request.usage
+    return { prompt: sum.prompt + (usage?.input ?? 0) + (usage?.cacheRead ?? 0) + (usage?.cacheWrite ?? 0),
+      cache: sum.cache + (usage?.cacheRead ?? 0), output: sum.output + (usage?.output ?? 0) + (usage?.reasoning ?? 0) }
+  }, { prompt: 0, cache: 0, output: 0 })
+  let generation = 0
+  let generatedTokens = 0
+  for (const turn of document.turns) for (const group of turn.groups) {
+    const matching = requests.filter(request => request.turn === turn.turn && request.group === group.title)
+    const messages = group.cells.filter(cell => cell.kind === 'message')
+    if (matching.length !== 1 || messages.length !== 1) continue
+    const metrics = messages[0].assistantMetrics
+    const usage = matching[0].usage
+    if (!metrics?.timingRecorded || metrics.firstTokenTime == null || metrics.completedTime == null || metrics.completedTime <= metrics.firstTokenTime || usage?.output === undefined) continue
+    generation += (metrics.completedTime - metrics.firstTokenTime) / 1000
+    generatedTokens += usage.output
+  }
+  const last = requests.at(-1)?.usage
+  const lastPrompt = last?.input !== undefined && last.cacheRead !== undefined && last.cacheWrite !== undefined ? last.input + last.cacheRead + last.cacheWrite : undefined
+  const context = lastPrompt !== undefined && document.contextWindow && document.contextWindow > 0 ? Math.round(lastPrompt / document.contextWindow * 100) : undefined
+  const turns = document.turns.filter(turn => turn.turn !== null).length
+  return <footer className={css.stats} aria-label="Conversation statistics">
+    <span className={css.stat}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 11a6 6 0 1 1 12 0M8 9l2-3M4 12h0m8 0h0" /></svg>{turns} turns {requests.length} steps{generation > 0 && <> <span className={css.dot}>·</span> {Math.round(generatedTokens / generation)} tok/s</>}</span>
+    {allUsage && <span className={css.stat}><svg viewBox="0 0 16 16" aria-hidden="true"><ellipse cx="8" cy="3.5" rx="5.5" ry="2.5"/><path d="M2.5 3.5v8c0 1.4 2.5 2.5 5.5 2.5s5.5-1.1 5.5-2.5v-8M2.5 7.5C2.5 8.9 5 10 8 10s5.5-1.1 5.5-2.5"/></svg>{compactTokens(totals.prompt + totals.output)} tok{totals.prompt > 0 && <> <span className={css.dot}>·</span> Cache hit {Math.round(totals.cache / totals.prompt * 100)}%</>}</span>}
+    {context !== undefined && <span className={css.stat}><span className={css.ring} style={{ background: `conic-gradient(currentColor ${Math.min(context, 100)}%, var(--dsw-alias-border-l2) 0)` }} />{context}%</span>}
+  </footer>
+}
+
 export function TrajectoryView({ document }: { document: TrajectoryDocument }) {
   const turns = document.turns
   const [collapsedTurns, setCollapsedTurns] = useState<ReadonlySet<number>>(new Set())
@@ -82,11 +120,13 @@ export function TrajectoryView({ document }: { document: TrajectoryDocument }) {
   }, [searchMatches, timelineMatches])
   const selectFromTimeline = useCallback((index: number) => { setRange(null); setRecordSelection({ index }); setSelectedIndex(index) }, [])
   return <div className={css.root}>
+    <header className={css.header}><span>{document.title || 'Trajectory'}</span>{document.model && <span className={css.model}>{document.model}</span>}</header>
     <TrajectoryToolbar t={t} actualDuration={actualDuration} onActualDurationChange={value => { setActualDuration(value); setRange(null) }} actualTime={actualTime} onActualTimeChange={value => { setActualTime(value); setRange(null) }} allTurnsCollapsed={allTurnsCollapsed} onToggleAllTurns={() => setCollapsedTurns(current => toggleAll(current, turnIds))} allAssistantsCollapsed={allAssistantsCollapsed} onToggleAllAssistants={() => setCollapsedAssistants(current => toggleAll(current, assistantIds))} allSubCallsCollapsed={allToolsCollapsed} onToggleAllSubCalls={() => setCollapsedTools(current => toggleAll(current, toolIds))} searchQuery={query} onSearchQueryChange={setQuery} />
     <TrajectoryTimeline t={t} turns={turns} mode={mode} range={range} selectedIndex={selectedIndex} searchMatchIndexes={searchMatches} onRangeChange={setRange} onRecordSelect={selectFromTimeline} onRecordFocus={index => setRecordFocus({ index })} />
     {document.truncated && <div className="notice" role="status">The trajectory ended before the rollout was fully read.</div>}
     <div className={css.ledger}>
       <TrajectoryTable t={t} turns={tableTurns} requestNumbers={document.requestNumbers} renderSlot={() => null} loadImage={() => undefined} searchMatchIndexes={visibleMatches} timelineFocusIndexes={timelineMatches} onSelectedIndexChange={setSelectedIndex} onRecordSelect={index => { if (timelineMatches && !timelineMatches.has(index)) setRange(null) }} recordSelection={recordSelection} recordFocus={recordFocus} onClearSelection={() => setRange(null)} collapsedTurns={collapsedTurns} onToggleTurn={id => setCollapsedTurns(current => toggled(current, id))} collapsedAssistants={collapsedAssistants} onToggleAssistant={id => setCollapsedAssistants(current => toggled(current, id))} collapsedTools={collapsedTools} onToggleTool={id => setCollapsedTools(current => toggled(current, id))} />
     </div>
+    <TrajectoryStats document={document} />
   </div>
 }
