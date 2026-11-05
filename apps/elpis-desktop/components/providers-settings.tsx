@@ -116,7 +116,7 @@ export function ProvidersSettings({ refreshKey, onChanged }: { refreshKey: numbe
   }
   const custom = config && data ? config.providers.filter(provider => provider.id !== "openai" && provider.auth.source !== "subscription" && !provider.gateway && !data.openrouter.some(item => item.id === provider.id)) : [];
   const sub = (value: Subscription) => value.state === "connected" ? <State tone="ok">Connected</State> : value.state === "available" ? <State tone="warn">Models available</State> : value.state === "unknown" ? <State tone="off">Not reported</State> : <State tone="off">Not connected</State>;
-  return <div aria-label="Providers" className="settings-page">
+  return <div aria-label="Providers">
     <SettingsHeader title="Models & accounts" description="Account connections and keys are on this device. Default models apply to new chats under Configuration." action={<RefreshButton onClick={() => void load()} />} />
     <div className="settings-stack">
     {(error || accountsError) && <SettingsNotice tone="alert">{error || accountsError}</SettingsNotice>}

@@ -344,7 +344,8 @@ test('several roots from malformed native lineage can be put under one chat and 
 test('a refused final order save leaves the subtree, projects, order and selection unchanged', async () => {
   const tree = [{ id: 'save-parent', name: 'Project parent' }, { id: 'save-child', name: 'Moving child', parentThreadId: 'save-parent' }, { id: 'save-grandchild', name: 'Moving grandchild', parentThreadId: 'save-child' }, { id: 'save-target', name: 'Recent target' }]
     .map(thread => ({ ...thread, source: 'cli', model: 'sol', modelProvider: 'openai', status: { type: 'idle' } }));
-  const f = await fixture({ desktop: true, threads: tree, readyThreadId: 'save-parent', storage: { ...storage,
+  // 694: the default 660 plus Observability's sidebar row (5 Nov), so the drop target stays in view.
+  const f = await fixture({ desktop: true, height: 694, threads: tree, readyThreadId: 'save-parent', storage: { ...storage,
     'elpis-project-chats-v1': JSON.stringify({ 'save-parent': 'existing', 'save-child': 'existing', 'save-grandchild': 'existing' }),
     'elpis-chat-groups-v1': JSON.stringify({ groups: [], members: {}, groupBy: 'none', sortBy: 'recency', collapsed: [], order: ['save-target', 'save-parent', 'save-child', 'save-grandchild'] }) } });
   const { page } = f;

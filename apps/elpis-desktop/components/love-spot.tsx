@@ -628,7 +628,8 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
     {accountsOpen && <AlertDialog open={accountsOpen} onOpenChange={setAccountsOpen}>
       <AlertDialogContent role="dialog" aria-label="Models & accounts" className="flex max-h-[85vh] max-w-2xl flex-col overflow-hidden">
         <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-          <ProvidersSettings refreshKey={accountRefresh} onChanged={reloadAccounts} />
+          {/* Settings already frames it as a page; here the dialog does (5 Nov: the class on the component nested two pages in Settings). */}
+          <div className="settings-page"><ProvidersSettings refreshKey={accountRefresh} onChanged={reloadAccounts} /></div>
         </div>
         <AlertDialogFooter>
           <AlertDialogClose render={<Button type="button" variant="outline" />}>Done</AlertDialogClose>
