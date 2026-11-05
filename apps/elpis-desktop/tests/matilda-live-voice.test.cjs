@@ -65,7 +65,8 @@ test('a Love Spot voice call outlives the board, her face controls it, and other
       .catch(async e => { throw new Error(`${e.message}; starts ${JSON.stringify(starts)}; voice row: ${await page.locator('.dictation-control').allInnerTexts()}; errors ${JSON.stringify(f.errors)}`); });
     assert.deepEqual(starts, [love]);
     const face = page.locator('.title-bar');
-    for (const name of ['Mute Matilda', 'Pause talking with Matilda', 'End voice chat with Matilda']) await face.getByRole('button', { name }).waitFor();
+    for (const name of ['Pause talking with Matilda', 'End voice chat with Matilda']) await face.getByRole('button', { name }).waitFor();
+    assert.equal(await face.getByRole('button', { name: 'Mute Matilda' }).count(), 0, 'one mute: Pause silences her during a call');
 
     // She speaks: rings around her face.
     await page.evaluate(() => window.voiceProof.channel.send(JSON.stringify({ type: 'output_transcript.added' })));
@@ -80,11 +81,7 @@ test('a Love Spot voice call outlives the board, her face controls it, and other
     assert.equal(await page.evaluate(() => window.voiceProof.remotes[0].connectionState), 'connected');
     await face.getByRole('button', { name: 'Pause talking with Matilda' }).waitFor();
 
-    // Mute silences her only; Pause holds his microphone and her voice; Resume gives both back.
-    await face.getByRole('button', { name: 'Mute Matilda' }).click();
-    assert.equal(await page.evaluate(() => window.speakers.at(-1).muted), true);
-    assert.equal(await page.evaluate(() => window.microphone.getAudioTracks()[0].enabled), true);
-    await face.getByRole('button', { name: 'Unmute Matilda' }).click();
+    // Pause holds his microphone and her voice; Resume gives both back.
     await face.getByRole('button', { name: 'Pause talking with Matilda' }).click();
     assert.deepEqual(await page.evaluate(() => [window.speakers.at(-1).muted, window.microphone.getAudioTracks()[0].enabled]), [true, false]);
     await face.getByRole('button', { name: 'Resume talking with Matilda' }).click();
@@ -92,7 +89,7 @@ test('a Love Spot voice call outlives the board, her face controls it, and other
 
     // Hang up from her face, on the board.
     await face.getByRole('button', { name: 'End voice chat with Matilda' }).click();
-    await face.getByRole('button', { name: 'Mute Matilda' }).waitFor({ state: 'detached' });
+    await face.getByRole('button', { name: 'Pause talking with Matilda' }).waitFor({ state: 'detached' });
     await assert.doesNotReject(async () => { const end = Date.now() + 5000; while (!stops.includes(love)) { if (Date.now() > end) throw new Error('no stop'); await page.waitForTimeout(50); } });
 
     // Negative: an ordinary chat's call ends when he leaves it, and her face shows no controls for it.

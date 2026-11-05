@@ -84,8 +84,10 @@ function HerVoiceControls({ voice, threadId }: { voice: ReturnType<typeof useHer
     : null;
   const muted = !!call?.herMuted;
   return <>
-    <Button variant="ghost" size="icon-xs" aria-label={muted ? "Unmute Matilda" : "Mute Matilda"} title={muted ? "Unmute Matilda" : "Mute Matilda"} aria-pressed={muted}
-      onClick={() => { if (call) live?.setHerMuted(!muted); else speech?.stop(); }}>{muted ? <SoundOffIcon size={16} /> : <SoundIcon size={16} />}</Button>
+    {/* During a call Pause already silences her; one mute is enough (5 Nov, Masih: "it has two mute buttons, one is enough!").
+        Her read-aloud voice keeps this button to stop it. */}
+    {!call && <Button variant="ghost" size="icon-xs" aria-label={muted ? "Unmute Matilda" : "Mute Matilda"} title={muted ? "Unmute Matilda" : "Mute Matilda"} aria-pressed={muted}
+      onClick={() => { if (call) live?.setHerMuted(!muted); else speech?.stop(); }}>{muted ? <SoundOffIcon size={16} /> : <SoundIcon size={16} />}</Button>}
     {call && <Button variant="ghost" size="icon-xs" aria-label={call.paused ? "Resume talking with Matilda" : "Pause talking with Matilda"} title={call.paused ? "Resume" : "Pause: your microphone and her voice wait"} aria-pressed={call.paused}
       onClick={() => live?.setPaused(!call.paused)}>{call.paused ? <Play size={14} /> : <Pause size={14} />}</Button>}
     {call && <Button variant="ghost" size="icon-xs" aria-label="End voice chat with Matilda" title="Hang up" onClick={() => live?.end()}><PhoneOff size={14} /></Button>}
@@ -282,7 +284,8 @@ export function MatildaCompanion() {
       onPointerDown={grab(true)} onPointerMove={pull} onPointerUp={release} onLostPointerCapture={release} onKeyDown={keys(true)} />
     <div className="matilda-float-controls">
       {/* Only while music plays (or she muted it), as an icon (29 Oct, Masih: "no music is playing!", "I don't want texts; I want visuals"). */}
-      {track?.canMute && (track.status === "Playing" || track.muted) && <Button variant="ghost" size="icon-xs" aria-label={track.muted ? "Unmute music" : "Mute music"} aria-pressed={track.muted} disabled={busy} onClick={() => void act("toggle-mute")}>{track.muted ? <SoundOffIcon size={16} /> : <SoundIcon size={16} />}</Button>}
+      {/* Not during her call: no music plays then (5 Nov, Masih: "while call happens no music is playing"). */}
+      {!voice.call && track?.canMute && (track.status === "Playing" || track.muted) && <Button variant="ghost" size="icon-xs" aria-label={track.muted ? "Unmute music" : "Mute music"} aria-pressed={track.muted} disabled={busy} onClick={() => void act("toggle-mute")}>{track.muted ? <SoundOffIcon size={16} /> : <SoundIcon size={16} />}</Button>}
       <HerVoiceControls voice={voice} threadId={state?.threadId} />
       <Button variant="ghost" size="icon-xs" aria-label="Unpin Matilda" aria-pressed="true" onClick={() => void act("unpin")}><PinIcon size={16} /></Button>
     </div>
