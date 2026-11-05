@@ -29,7 +29,7 @@ function fixture(t, options = {}) {
   const log = id => { const file = path.join(home, `${id}.jsonl`); return fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse) : []; };
   const runnerOptions = { stateDir: path.join(home, 'state'), timeoutMs: 10000,
     nodeSpec: node => { const spec = { name: node.name, command: process.execPath, args: [FAKE], model: node.model?.replace(/^(claude|agy)\//, ''),
-      env: { FAKE_ACP_NAME: `${node.provider ?? 'default'}-${node.name}`, FAKE_ACP_MODELS: 'm-fast,m-slow,opus,gpt-6.1-sol,gemini-4-argon-high', FAKE_ACP_EFFORTS: 'low,high', FAKE_ACP_LOG: path.join(home, `${node.name}.jsonl`),
+      env: { FAKE_ACP_NAME: `${node.provider ?? 'default'}-${node.name}`, FAKE_ACP_MODELS: 'm-fast,m-slow,opus,gpt-6.1-sol,gemini-4-argon-high', FAKE_ACP_EFFORTS: 'low,medium,high', FAKE_ACP_LOG: path.join(home, `${node.name}.jsonl`),
         ...(node.name === 'Mother agent' ? { FAKE_ACP_ANSWER: JSON.stringify({ passed: true, summary: 'Reviewed the candidate diff and tests' }) } : {}),
         ...(options.env?.[node.name] ?? {}) } }; return options.nodeSpec?.(node, spec) ?? spec; }, ...options.runner };
   const runs = createWorkflowRuns(runnerOptions);

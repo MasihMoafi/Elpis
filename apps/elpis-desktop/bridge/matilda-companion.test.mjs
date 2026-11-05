@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn, execFileSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { once } from 'node:events';
 import { createLoveSpot } from './love-spot-store.cjs';
@@ -16,7 +16,7 @@ async function fixture(t) {
   const env = { ...process.env, DBUS_SESSION_BUS_ADDRESS: String(address).trim() };
   const store = createLoveSpot({ directory, screenshots: path.join(directory, 'shots') });
   const companion = createMatildaCompanion({ store, env });
-  t.after(async () => { bus.kill(); await store.close(); execFileSync('gio', ['trash', directory]); });
+  t.after(async () => { bus.kill(); await store.close(); await fs.rm(directory, { recursive: true, force: true }); }); // its own temporary folder; /tmp has no trash on some systems
   return { directory, store, env, companion };
 }
 
