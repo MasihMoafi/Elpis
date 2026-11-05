@@ -59,11 +59,7 @@ Source: [openclaw/openclaw](https://github.com/openclaw/openclaw), cloned beside
 
 ### Other Reference Sources
 
-| Source | Proven capability to reuse or study | Elpis boundary |
-| --- | --- | --- |
-| Pi | Composable multi-provider APIs, agent state, TUI, coding CLI | Study provider-neutral interfaces and extension simplicity; it lacks Codex-level built-in permissions |
-| Hermes Agent | Provider choice, TUI, cross-session search, user modeling, skill learning, scheduled work, multiple execution backends | Study the learning loop and memory controls |
-| OpenCode | Multi-provider coding product, read-only/build agents, subagents, installation and TUI delivery | Study routing, packaging, agent modes, and release experience |
+Pi (provider-neutral interfaces, extension simplicity), Hermes Agent (learning loop, memory controls) and OpenCode (routing, packaging, agent modes, releases) are studied, not imported.
 
 ### Codex Import Provenance
 
@@ -89,15 +85,7 @@ Preserve these seams and their tests when changing the foundation. Paths are rel
 
 ### Stable Task Boundaries
 
-Keep these ownership seams intact when changing shared rendering or permission code:
-
-| Task | Primary files | Contract |
-| --- | --- | --- |
-| Action rendering | `tui/src/chatwidget/command_lifecycle.rs`, `tool_lifecycle.rs`, `exec_state.rs`, `exec_cell/`, `history_cell/patches.rs`, `diff_render.rs` | Own command/file lifecycle projection and rendered cells; preserve colocated tests and snapshots. |
-| Permissions | protocol, approval presets, `core/src/safety.rs`, sandboxing, permission UI | Own permission types, preset selection, enforcement, and approval UI; preserve policy tests and approval snapshots. |
-| Mouse selection and copy | TUI event/input paths, raw-output methods, history raw lines | Preserve terminal-native selection and copy-faithful raw scrollback. |
-
-`chatwidget.rs` and `chatwidget/protocol.rs` are shared seams, not general cleanup areas.
+Action rendering, permissions, and mouse selection and copy (terminal-native selection, copy-faithful raw scrollback) each own their files in the table above; keep their colocated tests and snapshots. `chatwidget.rs` and `chatwidget/protocol.rs` are shared seams, not general cleanup areas.
 
 ### Permission Baseline
 
@@ -129,7 +117,6 @@ Authentication alone must never select a runtime.
 
 - Status-only Codex authentication uses the app-server account RPCs and must not start threads, turns, commands, approvals, or tools. `scripts/codex-auth-status-smoke.sh` checks this without starting a model turn or printing account or token data.
 - An Elpis-owned direct OpenAI path may reuse the contained Codex login component for compatible credentials and refresh. Bearer tokens must never be rendered, logged, returned to the TUI, or persisted in a second Elpis credential store.
-- Selecting Anthropic, Gemini, or another native provider must never silently route its inference through Codex or another provider.
 - A path dependency on the donor clone is never a finished runtime boundary.
 
 ## Providers
@@ -150,7 +137,6 @@ A user watches one task cross compaction or provider change and can explain whic
 
 ## Engineering Rules
 
-- Load only the sections of this guide a task needs.
 - Keep upstream protocol handling version-aware; derive exact schemas from the contained/upstream version when message shapes matter.
 - Do not call a temporary directory a sandbox; state the actual isolation boundary.
 - Cover protocol and context changes with focused tests of user-visible behaviour.
