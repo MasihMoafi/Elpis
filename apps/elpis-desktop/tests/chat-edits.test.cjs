@@ -57,6 +57,8 @@ test('a finished group says what it did with +N −M, and its edit row names the
   // A created and a deleted file read as their own verbs, with their own counts.
   const second = page.locator('.turn').nth(1);
   await second.locator('.activity-group > summary').first().click();
+  // The group draws its steps when its toggle event arrives, a moment after the click (components/transcript.tsx).
+  await second.locator('.step').first().waitFor();
   const verbs = await second.locator('.step').evaluateAll(steps => steps.map(step => [step.querySelector('.step-verb')?.textContent, step.querySelector('.step-file')?.textContent, step.querySelector('.change-counts')?.textContent.replace(/\s+/g, ' ').trim()]));
   assert.deepEqual(verbs, [['Edited', 'parser.ts', '+1 −1'], ['Created', 'new.md', '+2 −0'], ['Deleted', 'old.md', '+0 −1']]);
 }));
