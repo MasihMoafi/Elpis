@@ -182,6 +182,20 @@ function reconciledCategories(attribution, used) {
   for (const row of [...scaled].sort((a, b) => b.remainder - a.remainder || a.index - b.index)) if (remaining-- > 0) row.tokens++;
   return scaled.filter(row => row.tokens > 0).map(({ id, label, tokens }) => ({ id, label, tokens }));
 }
+/** The prompt cache's share of one usage record: the engine's `inputTokens` include cached and cache-written input, so
+ * the parts are disjoint here and `hitPercent` is cached input over the whole prompt. Null when no prompt was measured. */
+function cacheShare(usage) {
+  const prompt = number(usage?.inputTokens);
+  if (prompt === null || prompt <= 0) return null;
+  const cacheRead = Math.max(0, number(usage?.cachedInputTokens) ?? 0), cacheWrite = Math.max(0, number(usage?.cacheWriteInputTokens) ?? 0);
+  return { prompt, cacheRead, cacheWrite, uncached: Math.max(0, prompt - cacheRead - cacheWrite), hitPercent: Math.round(cacheRead * 100 / prompt) };
+}
+/** The Ledger's Prompt cache row (4 Nov, Masih: "add that cache button which shows that important info"): the latest
+ * request's share and the whole chat's. Null before the first measured request. */
+export function cacheUse(tokenUsage) {
+  const last = cacheShare(tokenUsage?.last), total = cacheShare(tokenUsage?.total);
+  return last || total ? { last, total } : null;
+}
 // A saved transcript is an estimate of the next request, never exactly it; this much over the measured total still counts.
 const TRANSCRIPT_SLACK = 1.15;
 /** What the TUI's Context Ledger shows for a chat. `used` is measured: the latest request's total tokens, as the

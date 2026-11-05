@@ -15,7 +15,7 @@ import { ragMessage } from './rag-command.mjs';
 import { acceptsPastedKey, BUILT_IN_KEY_PROVIDERS, configHome, providerDefinition, providerSettingsSnapshot, providerEdits, privateConfigFile } from './provider-settings.mjs';
 import { saveProviderKey, savedProviderKey, savedProviderKeyIds } from './provider-keys.mjs';
 import { PERMISSION_PRESETS, PROFILES } from './permission-presets.mjs';
-import { settingsSnapshot, userConfigVersion, tokenUsageSnapshot, contextLedger, restoredTokenUsage, rolloutShares, rolloutTurnModels, contextSwitchesSnapshot, CONTEXT_SWITCH_KEYS, smartPruneSnapshot, providersSnapshot, mcpSnapshot, optionEdits, hooksSnapshot, defaultPermissionMode } from './elpis-features.mjs';
+import { settingsSnapshot, userConfigVersion, tokenUsageSnapshot, contextLedger, cacheUse, restoredTokenUsage, rolloutShares, rolloutTurnModels, contextSwitchesSnapshot, CONTEXT_SWITCH_KEYS, smartPruneSnapshot, providersSnapshot, mcpSnapshot, optionEdits, hooksSnapshot, defaultPermissionMode } from './elpis-features.mjs';
 import { replacementEligibility } from '../lib/turn-replacement.ts';
 import { providerModels } from './provider-models.mjs';
 import { attachmentInput, recordedMedia } from './attachments.mjs';
@@ -1287,7 +1287,7 @@ export class DesktopClient extends EventEmitter {
     // The TUI has the shares only once its own process has seen a request; for a chat this app has not seen run, the saved transcript stands in.
     const saved = tokenUsage && !tokenUsage.contextAttribution ? await this.#savedShares(thread.path) : null;
     return {
-      threadId: id, tokenUsage, smartPrune: snapshot.smartPrune ?? null, ledger: contextLedger(tokenUsage, saved),
+      threadId: id, tokenUsage, smartPrune: snapshot.smartPrune ?? null, ledger: contextLedger(tokenUsage, saved), cache: cacheUse(tokenUsage),
       // The ledger's Compact session, as the terminal's /compact: only a chat that is idle and takes turns here.
       compact: thread.status?.type === 'active' ? { available: false, reason: 'Available when Elpis finishes this turn' }
         : desktopAccess.mode === 'continue' ? { available: false, reason: 'Only this agent\'s parent can compact it' } : { available: true },

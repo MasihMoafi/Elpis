@@ -2745,3 +2745,16 @@ test('malformed definitions and unsupported fields cannot be silently imported',
   assert.deepEqual(Object.keys(parsed.definitions), []);
   assert.throws(() => parseClaudeMcp('{', []), /Could not read/);
 });
+
+test('the Ledger prompt cache share counts cached input once, for OpenAI and Claude usage alike (5 Nov)', async () => {
+  const { cacheUse } = await import('./elpis-features.mjs');
+  // The engine's inputTokens include cached and cache-written input (elpis-gateway adds Claude's back in).
+  const openai = cacheUse({ last: { inputTokens: 10_200, cachedInputTokens: 9_000, cacheWriteInputTokens: 0 }, total: { inputTokens: 20_400, cachedInputTokens: 9_000 } });
+  assert.deepEqual(openai.last, { prompt: 10_200, cacheRead: 9_000, cacheWrite: 0, uncached: 1_200, hitPercent: 88 });
+  assert.equal(openai.total.hitPercent, 44);
+  const claude = cacheUse({ last: { inputTokens: 12_000, cachedInputTokens: 8_000, cacheWriteInputTokens: 3_000 } });
+  assert.deepEqual(claude.last, { prompt: 12_000, cacheRead: 8_000, cacheWrite: 3_000, uncached: 1_000, hitPercent: 67 });
+  assert.equal(claude.total, null);
+  assert.equal(cacheUse(null), null, 'nothing measured yet');
+  assert.equal(cacheUse({ last: { inputTokens: 0 } }), null, 'an empty prompt has no share');
+});
