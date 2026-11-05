@@ -1,0 +1,5 @@
+html, body, #root { width: 100%; height: 100%; margin: 0; }
+body { font-family: var(--dsw-font-family); color: var(--dsw-alias-label-primary); }
+button, input { font: inherit; }
+button { color: inherit; }
+.notice, .message { padding: 8px 12px; font: var(--dsw-font-xxs-12); color: var(--dsw-alias-label-secondary); }

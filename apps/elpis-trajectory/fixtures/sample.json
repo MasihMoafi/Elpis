@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "threadId": "sample-trajectory",
+  "title": "Inspect the workspace",
+  "cwd": "/work/example",
+  "provider": "OpenAI",
+  "model": "example-model",
+  "contextWindow": 128000,
+  "turns": [
+    {
+      "turn": 1,
+      "groups": [
+        { "title": "Message", "cells": [
+          { "index": 1, "kind": "user", "text": "Inspect the project and run its checks.", "opensTurn": true, "inputDetail": "Inspect the project and run its checks.", "startedAt": 1760000000000, "timeSeconds": 0 }
+        ] },
+        { "title": "Step 1", "description": "3,100 ms", "cells": [
+          { "index": 2, "kind": "message", "text": "I'll inspect the project first.", "outputDetail": "I'll inspect the project first.", "inputDetail": "Inspect the project and run its checks.", "startedAt": 1760000001000, "timeSeconds": 2, "input": 800, "cacheRead": 8700, "cacheWrite": 500, "output": 90, "think": 12, "assistantMetrics": { "timingRecorded": true, "stepStartTime": 1760000001000, "firstTokenTime": 1760000001400, "completedTime": 1760000003000, "usageProvided": true, "outputTokens": 90 } },
+          { "index": 3, "kind": "tool", "toolName": "shell", "callId": "call-list", "text": "shell · list files", "inputDetail": "{\"command\":\"ls\"}", "outputDetail": "README.md\nsrc", "result": "README.md, src", "startedAt": 1760000003100, "timeSeconds": 1.1 },
+          { "index": 4, "kind": "subtool", "toolName": "read", "callId": "call-read", "text": "read · README.md", "inputDetail": "{\"path\":\"README.md\"}", "outputDetail": "Project overview", "result": "Project overview", "startedAt": 1760000003300, "timeSeconds": 0.4 }
+        ] },
+        { "title": "Step 2", "description": "2,900 ms", "cells": [
+          { "index": 5, "kind": "message", "text": "Now I will run the checks.", "outputDetail": "Now I will run the checks.", "startedAt": 1760000004500, "timeSeconds": 1.2, "input": 1400, "cacheRead": 6000, "cacheWrite": 600, "output": 50, "assistantMetrics": { "timingRecorded": true, "stepStartTime": 1760000004500, "firstTokenTime": 1760000004800, "completedTime": 1760000005700, "usageProvided": true, "outputTokens": 50 } },
+          { "index": 6, "kind": "tool", "toolName": "shell", "callId": "call-test", "text": "shell · run tests", "inputDetail": "{\"command\":\"npm test\"}", "outputDetail": "Test failed: missing fixture", "result": "Test failed: missing fixture", "isError": true, "startedAt": 1760000005800, "timeSeconds": 1.7 }
+        ] },
+        { "title": "Step 3", "description": "2,000 ms", "cells": [
+          { "index": 7, "kind": "message", "text": "I found the missing fixture.", "outputDetail": "I found the missing fixture.", "startedAt": 1760000008000, "timeSeconds": 1.2, "input": 500, "cacheRead": 7600, "cacheWrite": 900, "output": 44, "assistantMetrics": { "timingRecorded": true, "stepStartTime": 1760000008000, "firstTokenTime": 1760000008300, "completedTime": 1760000009200, "usageProvided": true, "outputTokens": 44 } },
+          { "index": 8, "kind": "tool", "toolName": "shell", "callId": "call-fix", "text": "shell · verify fixture", "inputDetail": "{\"command\":\"cat fixtures/example.json\"}", "outputDetail": "Fixture present", "result": "Fixture present", "startedAt": 1760000009300, "timeSeconds": 0.8 }
+        ] }
+      ]
+    },
+    {
+      "turn": 2,
+      "groups": [
+        { "title": "Message", "cells": [
+          { "index": 9, "kind": "user", "text": "Summarize the result.", "opensTurn": true, "inputDetail": "Summarize the result.", "startedAt": 1760000012000, "timeSeconds": 0 }
+        ] },
+        { "title": "Step 1", "cells": [
+          { "index": 10, "kind": "message", "text": "The test found a missing fixture.", "outputDetail": "The test found a missing fixture.", "startedAt": 1760000013000, "timeSeconds": 1.4, "input": 800, "cacheRead": 8000, "cacheWrite": 200, "output": 70 }
+        ] }
+      ]
+    },
+    { "turn": null, "groups": [
+      { "title": "Compaction 24", "cells": [
+        { "index": 11, "kind": "compacted", "text": "Earlier history compacted", "outputDetail": "The project was inspected and a missing fixture was found.", "startedAt": 1760000016000, "timeSeconds": 1.5 }
+      ] }
+    ] },
+    {
+      "turn": 3,
+      "groups": [
+        { "title": "Message", "cells": [
+          { "index": 12, "kind": "user", "text": "What should I do next?", "opensTurn": true, "inputDetail": "What should I do next?", "startedAt": 1760000019000, "timeSeconds": 0 }
+        ] },
+        { "title": "Step 1", "cells": [
+          { "index": 13, "kind": "message", "text": "Restore the fixture and rerun the tests.", "outputDetail": "Restore the fixture and rerun the tests.", "startedAt": 1760000020000, "timeSeconds": 1.4, "input": 1300, "cacheRead": 0, "cacheWrite": 700, "output": 30 }
+        ] }
+      ]
+    }
+  ],
+  "requestNumbers": [
+    { "number": 1, "turn": 1, "step": 1, "group": "Step 1", "status": "complete", "startedAt": 1760000001000, "completedAt": 1760000003000, "provider": "OpenAI", "model": "example-model", "usage": { "input": 800, "cacheRead": 8700, "cacheWrite": 500, "output": 90, "reasoning": 12 }, "cache": { "hitPercent": 87 } },
+    { "number": 2, "turn": 1, "step": 2, "group": "Step 2", "status": "complete", "startedAt": 1760000004500, "completedAt": 1760000005700, "usage": { "input": 1400, "cacheRead": 6000, "cacheWrite": 600, "output": 50 }, "cache": { "hitPercent": 75, "cause": "Context Ledger update" } },
+    { "number": 3, "turn": 1, "step": 3, "group": "Step 3", "status": "complete", "usage": { "input": 500, "cacheRead": 7600, "cacheWrite": 900, "output": 44 }, "cache": { "hitPercent": 84 } },
+    { "number": 4, "turn": 2, "step": 1, "group": "Step 1", "status": "complete", "usage": { "input": 800, "cacheRead": 8000, "cacheWrite": 200, "output": 70 }, "cache": { "hitPercent": 89 } },
+    { "number": 5, "turn": null, "step": 0, "group": "Compaction 24", "purpose": "compaction", "seq": 24, "status": "complete", "usage": { "input": 1200, "cacheRead": 4000, "cacheWrite": 300, "output": 120 }, "cache": { "hitPercent": 73 } },
+    { "number": 6, "turn": 3, "step": 1, "group": "Step 1", "status": "complete", "usage": { "input": 1300, "cacheRead": 0, "cacheWrite": 700, "output": 30 }, "cache": { "hitPercent": 0, "cause": "compaction" } }
+  ]
+}
