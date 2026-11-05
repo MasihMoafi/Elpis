@@ -30,11 +30,12 @@ const ROLLOUT = [
   line('2026-11-05T10:01:02.000Z', 'token_usage_record', usage(10400, 1000, 10)),
 ].join('\n');
 
-test('Observability shows the selected chat as the Trajectory page; with no chat it asks for one', async () => {
-  const id = '00000000-0000-4000-8000-0000000000a1';
+test('Observability shows the selected chat as the Trajectory page, names it, and its Chat menu picks another; with no chat it asks for one', async () => {
+  const id = '00000000-0000-4000-8000-0000000000a1', other = '00000000-0000-4000-8000-0000000000a2';
+  const rollouts = {};
   let rollout;
   const f = await loveSpotFixture({ configureClient: client => {
-    client.readThreadMetadata = async threadId => ({ id: threadId, path: rollout });
+    client.readThreadMetadata = async threadId => ({ id: threadId, path: rollouts[threadId] ?? rollout });
   } });
   try {
     rollout = path.join(f.root, 'rollout.jsonl'); await fs.writeFile(rollout, ROLLOUT);
@@ -42,10 +43,14 @@ test('Observability shows the selected chat as the Trajectory page; with no chat
     const nav = page.locator('.nav-list').getByRole('button', { name: 'Observability', exact: true });
     // Negative: no chat selected, so the page asks for one instead of showing another chat's history.
     await nav.click();
-    await page.getByText('Open a chat to see its trajectory.').waitFor();
+    await page.getByText('Choose a chat to see its trajectory.').waitFor();
     assert.equal(await page.locator('.observability iframe').count(), 0);
 
-    f.chats.push({ id, name: 'List the files', preview: 'List the files', cwd: f.directory, modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct', reason: null } });
+    // A second, newer chat with its own rollout, for the Chat menu.
+    rollouts[other] = path.join(f.root, 'other.jsonl');
+    await fs.writeFile(rollouts[other], ROLLOUT.replace(/List the files/g, 'Plan the garden').replace('thread-1', 'thread-2'));
+    f.chats.push({ id: other, name: 'Plan the garden', preview: 'Plan the garden', updatedAt: 2000000000, cwd: f.directory, modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct', reason: null } });
+    f.chats.push({ id, updatedAt: 1000000000, name: 'List the files', preview: 'List the files', cwd: f.directory, modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct', reason: null } });
     await page.reload(); await page.locator('.startup-splash').waitFor({ state: 'detached' });
     await page.locator(`aside [data-thread-id="${id}"] .thread-link`).click();
     await page.locator('.nav-list').getByRole('button', { name: 'Observability', exact: true }).click();
@@ -55,6 +60,17 @@ test('Observability shows the selected chat as the Trajectory page; with no chat
     for (const shown of ['exec_command', 'Again', 'Done.']) assert.ok(text.includes(shown), `the page shows "${shown}":\n${text.slice(0, 2000)}`);
     assert.match(text, /2 turns/, 'the footer counts the two turns');
     assert.match(text, /Cache hit \d+%/, 'the footer shows the cache share');
+
+    // The Chat menu names the chat shown; picking another shows that chat's trajectory, newest first in the list.
+    const menu = page.getByRole('combobox', { name: 'Chat' });
+    assert.equal((await menu.innerText()).trim(), 'List the files');
+    await menu.click();
+    const options = page.getByRole('option');
+    assert.deepEqual((await options.allInnerTexts()).map(s => s.trim()), ['Plan the garden', 'List the files']);
+    await options.filter({ hasText: 'Plan the garden' }).click();
+    await page.frameLocator('.observability iframe').getByText('Plan the garden').first().waitFor({ timeout: 20000 });
+    assert.equal((await menu.innerText()).trim(), 'Plan the garden');
+    assert.equal(await page.frameLocator('.observability iframe').getByText('List the files').count(), 0, 'the other chat is gone from the page');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
