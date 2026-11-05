@@ -1019,6 +1019,9 @@ test('live voice delivers SDP privately and ends the native call when its window
   assert.equal(startRequest.params.transport.type, 'webrtc');
   assert.equal(startRequest.params.voice, 'juniper', 'the call speaks in the saved voice');
   assert.equal(startRequest.params.initialItems[0].role, 'developer', 'voice receives the current Elpis execution context');
+  // 5 Nov: the voice told Masih a finished edit "hit a snag" while it waited. It waits silently and reports only the agent's outcome.
+  assert.equal(startRequest.params.delegationAckFiller, false, 'no filler speech of its own while the agent works');
+  assert.match(startRequest.params.initialItems[0].text, /never say a task failed, hit a snag or could not be done unless its reply says so/);
   assert.equal((await post({ threadId: ROOT, sdp: 'v=0\r\noffer' })).status, 409);
   abort.abort(); await reader.cancel().catch(() => {});
   const deadline = Date.now() + 2000;

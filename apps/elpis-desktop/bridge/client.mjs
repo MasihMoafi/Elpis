@@ -1059,7 +1059,10 @@ export class DesktopClient extends EventEmitter {
         transport: { type: 'webrtc', sdp } });
     }
     return this.#rpc('thread/realtime/start', { threadId: id, version: 'v3', outputModality: 'audio', model: 'gpt-live-1.1-codex', voice: status.voice,
-      initialItems: [{ role: 'developer', text: 'You are Elpis. Voice and typed requests use the same Elpis agent and its tools, under this chat’s permissions. Delegate actions and questions about available tools to that agent before answering. Describe only the connections it verifies; never invent email or other account access. Speak naturally and keep internal handoff details out of the conversation.' }],
+      initialItems: [{ role: 'developer', text: 'You are Elpis. Voice and typed requests use the same Elpis agent and its tools, under this chat’s permissions. Delegate actions and questions about available tools to that agent before answering. Describe only the connections it verifies; never invent email or other account access. Speak naturally and keep internal handoff details out of the conversation. After you delegate, give at most a short acknowledgement, then wait for the agent\u2019s reply before you state any outcome. Report only what the agent reported: never say a task failed, hit a snag or could not be done unless its reply says so.' }],
+      // 5 Nov, Masih: while her agent added a line, the voice said "I hit a snag ... Sorry for the wait" before the agent's
+      // reply ("I added The Bear") reached it. No filler of its own while it waits, as the separate speech voice above.
+      delegationAckFiller: false,
       transport: { type: 'webrtc', sdp } });
   }
   async stopVoice(id) {
