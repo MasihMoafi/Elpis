@@ -16,13 +16,13 @@
 
 ## Quickstart
 
-Install both apps, the desktop app and the terminal app, on Linux x86_64:
+Install the desktop and terminal apps on Linux x86_64:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/main/scripts/install.sh | bash
 ```
 
-Then run `elpis-app` for the desktop app or `elpis` for the terminal app, and sign in with ChatGPT or Claude, or set up a provider. Claude models run through your own [Claude Code](https://code.claude.com) install.
+Run `elpis-app` (desktop) or `elpis` (terminal), then sign in with ChatGPT or Claude or set up a [provider](docs/providers.md). Claude models run through your own [Claude Code](https://code.claude.com) install.
 
 <details>
 <summary>Other ways to install</summary>
@@ -34,12 +34,12 @@ From the [v0.5.1 release](https://github.com/MasihMoafi/Elpis/releases/tag/v0.5.
 - **Arch, Omarchy (native package):** `git clone https://github.com/MasihMoafi/Elpis && cd Elpis/packaging/aur/elpis-bin && makepkg -si`
 - **Terminal app only:** `curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/v0.5.1/scripts/install-elpis.sh | bash`
 
-Both apps share one engine and one state folder, `~/.elpis-next`.
+Both apps share one engine and one [state folder](#how-it-works).
 </details>
 
 ## Why Elpis?
 
-Today's coding agents load every instruction file they find and keep the whole conversation until the window fills; you cannot see what they were told or take it back. Put several of them on one task and it gets worse: they write over each other's files, nobody checks the work, and you merge the result by hand.
+Coding agents load every instruction file they find and keep the whole conversation until the window fills; you cannot see what they were told or take it back. Several agents on one task write over each other's files, nobody checks the work, and you merge the result by hand.
 
 Elpis treats both as one problem, **context management**, and answers it with two rules:
 
@@ -52,7 +52,7 @@ Elpis treats both as one problem, **context management**, and answers it with tw
 
 ![Workflows: the Mother agent designs a team, runs it and checks each agent's work](website/assets/technical/workflows.gif)
 
-Describe a job. The Mother agent, the planning agent, either does it herself or designs a team of agents you can see and edit on a board. Ready-made patterns: Sequential, Parallel, Kahn graph waves, Recursive (with a round limit) and Voting; ready-made teams: Transcribe images, Translate and Logo. Past ten agents, a Father agent runs the rest in his own chat and reports to her. Each agent may use a different model, and each is told how much time is left.
+Describe a job. The Mother agent plans it: she does it herself or designs a team of agents you can see and edit on a board. Ready-made patterns: Sequential, Parallel, Kahn graph waves, Recursive (with a round limit) and Voting; ready-made teams: Transcribe images, Translate and Logo. Past ten agents, a Father agent runs the rest in his own chat and reports to her. Each agent may use a different model, and each is told how much time is left.
 
 **How steps are ordered.** Elpis sorts the board with Kahn's algorithm: an agent starts once everything it waits for, and that work's check, has passed. Agents in one wave run side by side. A loop is refused before any agent starts, unless you choose the Recursive pattern and a round limit. The Voting team below runs in four waves:
 
@@ -67,7 +67,7 @@ flowchart LR
   CT --> R([Mother agent reviews and merges])
 ```
 
-**Who may write what: ownership, as in Rust.** Rust lets many readers or one writer hold a value, never both, and checks this before the program runs. Elpis applies the same idea to agents, each a small unit that owns one job:
+**Who may write what: ownership, as in Rust.** Rust lets many readers or one writer hold a value, never both, and checks this before the program runs. Elpis applies the rule to agents:
 
 | Rust | Elpis workflow | Where |
 | --- | --- | --- |
@@ -80,17 +80,17 @@ Two limits remain: two side-by-side agents without an "alongside" link are not y
 
 **Tested on real models.** A Voting team (three answering agents and one tally agent, each with its own check) finished on GPT-6 Luna through a ChatGPT subscription and on Claude Haiku 5.5 through a Claude subscription, in 74 to 100 seconds; the tally agent used the other three agents' answers. The test is [`tests/canvas-live.runtime.mjs`](apps/elpis-desktop/tests/canvas-live.runtime.mjs).
 
-<img src="docs/launch/img/workflows-voting-dark.png" alt="A finished Voting workflow in the Elpis desktop app: the Mother agent starts three answering agents, each checked, and a tally agent joins their answers">
+<img src="website/assets/technical/workflows-voting-dark.png" alt="A finished Voting workflow in the Elpis desktop app: the Mother agent starts three answering agents, each checked, and a tally agent joins their answers">
 
 ### Love Spot
 
-A drawing board where Matilda, the app's companion, answers and draws with you. Paste screenshots onto the board and draw on them.
+A drawing board where Matilda, the app's companion, answers and draws with you. Paste screenshots onto it and draw on them.
 
 ![Love Spot: Matilda answers on the drawing board](website/assets/technical/lovespot.gif)
 
 ### Chats, themes and the Context Ledger
 
-Chat with GPT, Claude and Gemini models; use your ChatGPT or Claude subscription or an API key, and switch models without losing the thread. Under the composer you choose the Ledger, Smart Prune and subagents. Import chats from Claude Code and Codex.
+Chat with GPT, Claude and Gemini models through your ChatGPT or Claude subscription or an API key, and switch models without losing the thread. Under the composer you choose the Ledger, Smart Prune and subagents. Import chats from Claude Code and Codex.
 
 Pick a theme (Elpis, Paper, Midnight or Plum), each in light and dark, or build your own in Settings → Appearance.
 
@@ -98,7 +98,7 @@ Pick a theme (Elpis, Paper, Midnight or Plum), each in light and dark, or build 
 
 ## The terminal app
 
-The same engine in your terminal. `/add` and `/context` show the working set; the agent saves lasting memory through a guarded local tool, and saving something is a separate choice from sending it. `/compact` takes a pressure threshold or your own instructions. `/model` and `--provider` reach Anthropic, Gemini and OpenRouter beside OpenAI.
+The same engine. `/add` and `/context` show the working set; the agent saves lasting memory through a guarded local tool, and saving something is a separate choice from sending it. `/compact` takes a pressure threshold or your own instructions. `/model` and `--provider` reach Anthropic, Gemini and OpenRouter beside OpenAI.
 
 ![The Agent command center in the Elpis terminal app: GPT and Claude helpers under their parent chat, each model in its own colour](website/assets/technical/tui-agent-command-center.webp)
 

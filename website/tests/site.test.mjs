@@ -13,6 +13,10 @@ test("current public media and evidence links resolve locally", async () => {
       const path = match[1].split("?")[0];
       assert.ok(existsSync(new URL(path, root)), `${page}: missing ${path}`);
     }
+    // Every relative image, video or script must exist in the deployed folder, whatever its prefix.
+    for (const match of html.matchAll(/\b(?:src|srcset)="(?![a-z]+:)([^"#?]+)/g)) {
+      assert.ok(existsSync(new URL(match[1], root)), `${page}: missing ${match[1]}`);
+    }
   }
   const html = await read("index.html");
   assert.match(html, /illustrative/i, "the front page marks its demonstration data");

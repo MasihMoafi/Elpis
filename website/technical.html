@@ -1,4 +1,4 @@
-<!-- README/template SHA256: 478811f2c001f192ddf064ec5c4f376d2ebeec73ca97605519d269cea202a6ae -->
+<!-- README/template SHA256: 7375702b906fce0cf67b117cf74b9a43fa331ba501ed4a149e87d07c86e98318 -->
 <!doctype html>
 <html lang="en" data-theme="elpis">
 <head>
@@ -71,13 +71,13 @@ state</a></li>
 <p align="center"><a href="https://github.com/MasihMoafi/Elpis/releases">Releases</a> · <a href="https://elpis.masihmoafi.com">Website</a> · <a href="docs/GUIDE.md">Technical guide</a> · <a href="CONTRIBUTING.md">Contributing</a> · <a href="LICENSE">License</a></p>
 
 <h2 id="quickstart">Quickstart</h2>
-<p>Install both apps, the desktop app and the terminal app, on Linux
-x86_64:</p>
+<p>Install the desktop and terminal apps on Linux x86_64:</p>
 <div class="sourceCode" id="cb1"><div class="technical-code"><pre
 class="sourceCode bash"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">curl</span> <span class="at">-fsSL</span> https://raw.githubusercontent.com/MasihMoafi/Elpis/main/scripts/install.sh <span class="kw">|</span> <span class="fu">bash</span></span></code></pre></div></div>
-<p>Then run <code>elpis-app</code> for the desktop app or
-<code>elpis</code> for the terminal app, and sign in with ChatGPT or
-Claude, or set up a provider. Claude models run through your own <a
+<p>Run <code>elpis-app</code> (desktop) or <code>elpis</code>
+(terminal), then sign in with ChatGPT or Claude or set up a <a
+href="https://github.com/MasihMoafi/Elpis/blob/main/docs/providers.md">provider</a>.
+Claude models run through your own <a
 href="https://code.claude.com">Claude Code</a> install.</p>
 <details>
 <summary>Other ways to install</summary>
@@ -96,16 +96,15 @@ release</a>; every file has a SHA-256 checksum:</p>
 <li><strong>Terminal app only:</strong>
 <code>curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/v0.5.1/scripts/install-elpis.sh | bash</code></li>
 </ul>
-<p>Both apps share one engine and one state folder,
-<code>~/.elpis-next</code>.</p>
+<p>Both apps share one engine and one <a href="#how-it-works">state
+folder</a>.</p>
 </details>
 
 <h2 id="why-elpis">Why Elpis?</h2>
-<p>Today's coding agents load every instruction file they find and keep
-the whole conversation until the window fills; you cannot see what they
-were told or take it back. Put several of them on one task and it gets
-worse: they write over each other's files, nobody checks the work, and
-you merge the result by hand.</p>
+<p>Coding agents load every instruction file they find and keep the
+whole conversation until the window fills; you cannot see what they were
+told or take it back. Several agents on one task write over each other's
+files, nobody checks the work, and you merge the result by hand.</p>
 <p>Elpis treats both as one problem, <strong>context
 management</strong>, and answers it with two rules:</p>
 <ul>
@@ -121,13 +120,13 @@ project.</li>
 <h3 id="workflows">Workflows</h3>
 <p><img src="./assets/technical/workflows.gif"
 alt="Workflows: the Mother agent designs a team, runs it and checks each agent&#39;s work" /></p>
-<p>Describe a job. The Mother agent, the planning agent, either does it
-herself or designs a team of agents you can see and edit on a board.
-Ready-made patterns: Sequential, Parallel, Kahn graph waves, Recursive
-(with a round limit) and Voting; ready-made teams: Transcribe images,
-Translate and Logo. Past ten agents, a Father agent runs the rest in his
-own chat and reports to her. Each agent may use a different model, and
-each is told how much time is left.</p>
+<p>Describe a job. The Mother agent plans it: she does it herself or
+designs a team of agents you can see and edit on a board. Ready-made
+patterns: Sequential, Parallel, Kahn graph waves, Recursive (with a
+round limit) and Voting; ready-made teams: Transcribe images, Translate
+and Logo. Past ten agents, a Father agent runs the rest in his own chat
+and reports to her. Each agent may use a different model, and each is
+told how much time is left.</p>
 <p><strong>How steps are ordered.</strong> Elpis sorts the board with
 Kahn's algorithm: an agent starts once everything it waits for, and that
 work's check, has passed. Agents in one wave run side by side. A loop is
@@ -143,8 +142,7 @@ and a round limit. The Voting team below runs in four waves:</p>
   CT --&gt; R([Mother agent reviews and merges])</code></pre></div>
 <p><strong>Who may write what: ownership, as in Rust.</strong> Rust lets
 many readers or one writer hold a value, never both, and checks this
-before the program runs. Elpis applies the same idea to agents, each a
-small unit that owns one job:</p>
+before the program runs. Elpis applies the rule to agents:</p>
 <div class="technical-table"><table>
 <thead>
 <tr>
@@ -195,31 +193,30 @@ on GPT-6 Luna through a ChatGPT subscription and on Claude Haiku 5.5
 through a Claude subscription, in 74 to 100 seconds; the tally agent
 used the other three agents' answers. The test is <a
 href="apps/elpis-desktop/tests/canvas-live.runtime.mjs"><code>tests/canvas-live.runtime.mjs</code></a>.</p>
-<img src="docs/launch/img/workflows-voting-dark.png" alt="A finished Voting workflow in the Elpis desktop app: the Mother agent starts three answering agents, each checked, and a tally agent joins their answers">
+<img src="./assets/technical/workflows-voting-dark.png" alt="A finished Voting workflow in the Elpis desktop app: the Mother agent starts three answering agents, each checked, and a tally agent joins their answers">
 
 <h3 id="love-spot">Love Spot</h3>
 <p>A drawing board where Matilda, the app's companion, answers and draws
-with you. Paste screenshots onto the board and draw on them.</p>
+with you. Paste screenshots onto it and draw on them.</p>
 <p><img src="./assets/technical/lovespot.gif"
 alt="Love Spot: Matilda answers on the drawing board" /></p>
 <h3 id="chats-themes-and-the-context-ledger">Chats, themes and the
 Context Ledger</h3>
-<p>Chat with GPT, Claude and Gemini models; use your ChatGPT or Claude
-subscription or an API key, and switch models without losing the thread.
-Under the composer you choose the Ledger, Smart Prune and subagents.
-Import chats from Claude Code and Codex.</p>
+<p>Chat with GPT, Claude and Gemini models through your ChatGPT or
+Claude subscription or an API key, and switch models without losing the
+thread. Under the composer you choose the Ledger, Smart Prune and
+subagents. Import chats from Claude Code and Codex.</p>
 <p>Pick a theme (Elpis, Paper, Midnight or Plum), each in light and
 dark, or build your own in Settings → Appearance.</p>
 <p><img src="./assets/technical/themes.gif"
 alt="One Elpis desktop chat in six themes: Elpis dark and light, Midnight dark, Paper light, Plum dark and Midnight light" /></p>
 <h2 id="the-terminal-app">The terminal app</h2>
-<p>The same engine in your terminal. <code>/add</code> and
-<code>/context</code> show the working set; the agent saves lasting
-memory through a guarded local tool, and saving something is a separate
-choice from sending it. <code>/compact</code> takes a pressure threshold
-or your own instructions. <code>/model</code> and
-<code>--provider</code> reach Anthropic, Gemini and OpenRouter beside
-OpenAI.</p>
+<p>The same engine. <code>/add</code> and <code>/context</code> show the
+working set; the agent saves lasting memory through a guarded local
+tool, and saving something is a separate choice from sending it.
+<code>/compact</code> takes a pressure threshold or your own
+instructions. <code>/model</code> and <code>--provider</code> reach
+Anthropic, Gemini and OpenRouter beside OpenAI.</p>
 <p><img src="./assets/technical/tui-agent-command-center.webp"
 alt="The Agent command center in the Elpis terminal app: GPT and Claude helpers under their parent chat, each model in its own colour" /></p>
 <img src="./assets/technical/context-ledger.webp" alt="The Context Ledger in the Elpis terminal app: each instruction file with its token cost and an INCLUDED mark" width="420">
