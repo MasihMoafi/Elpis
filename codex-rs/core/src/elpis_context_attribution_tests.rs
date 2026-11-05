@@ -189,7 +189,10 @@ fn reasoning_cost_holds_on_responses_after_the_fit_window() {
     assert_eq!(responses.len(), 846);
     assert_eq!(reported, 564_199);
     let ratio = estimated as f64 / reported as f64;
-    assert!((0.97..1.03).contains(&ratio), "held-out responses at {ratio:.3}");
+    assert!(
+        (0.97..1.03).contains(&ratio),
+        "held-out responses at {ratio:.3}"
+    );
 }
 
 #[test]

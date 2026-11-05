@@ -76,7 +76,7 @@ pub enum SlashCommand {
     #[strum(to_string = "pwd", serialize = "cwd")]
     Pwd,
     Usage,
-    Context,    // Elpis: Context Ledger
+    Context,   // Elpis: Context Ledger
     Dashboard, // Elpis: the observability page (Trajectory) on 127.0.0.1
     Config,
     DebugConfig,

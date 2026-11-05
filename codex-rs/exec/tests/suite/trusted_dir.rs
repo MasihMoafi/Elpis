@@ -20,7 +20,10 @@ async fn exec_runs_in_a_trusted_directory_that_is_not_a_git_repository() -> anyh
     let cwd = test.cwd_path().canonicalize()?;
     std::fs::write(
         test.home_path().join("config.toml"),
-        format!("[projects.{:?}]\ntrust_level = \"trusted\"\n", cwd.to_string_lossy()),
+        format!(
+            "[projects.{:?}]\ntrust_level = \"trusted\"\n",
+            cwd.to_string_lossy()
+        ),
     )?;
     let server = responses::start_mock_server().await;
     responses::mount_sse_once(

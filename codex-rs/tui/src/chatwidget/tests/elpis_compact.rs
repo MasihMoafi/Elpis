@@ -418,7 +418,11 @@ async fn forced_compact_survives_switching_chats_only_with_the_in_flight_turn() 
         );
         assert_eq!(
             restored.bottom_pane.composer_text(),
-            if preserve_in_flight_turn { "" } else { "/compact" }
+            if preserve_in_flight_turn {
+                ""
+            } else {
+                "/compact"
+            }
         );
         assert!(!restored.input_queue.compact_after_interrupt);
     }
