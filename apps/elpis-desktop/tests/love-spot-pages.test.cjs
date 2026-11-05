@@ -7,6 +7,46 @@ const { createHash } = require('node:crypto');
 const { loveSpotFixture } = require('./love-spot-fixture.cjs');
 const { createTestTempDir, removeTestTempDir } = require('./temp-root.cjs');
 
+test('page picker keeps its place while opening, navigating and deleting pages', async () => {
+  const f = await loveSpotFixture({ prepareDirectory: async directory => {
+    await fs.mkdir(path.join(directory, 'pages'), { recursive: true });
+    // Each page holds a shape: a page left empty is not kept, so arrowing through empty pages would remove them.
+    for (let n = 1; n <= 25; n++) await fs.writeFile(path.join(directory, 'pages', `Page ${n}.excalidraw`), JSON.stringify({ elements: [{ id: `shape-${n}`, type: 'rectangle', x: 0, y: 0, width: 120, height: 80, version: 1, versionNonce: 1 }], files: {}, appState: {} }));
+  } });
+  try {
+    await f.open(f.page);
+    await f.page.getByRole('button', { name: 'Pages', exact: true }).click();
+    const menu = f.page.getByRole('menu');
+    const row = menu.getByRole('menuitem', { name: /^Page 12\b/ });
+    await row.scrollIntoViewIfNeeded();
+    const before = await menu.evaluate(node => node.scrollTop);
+    assert.ok(before > 0, 'the test must start partway down the list');
+    await row.click();
+    await f.waitFor(s => s.page?.name === 'Page 12', 'the selected page did not open');
+    assert.equal(await menu.isVisible(), true, 'opening a page keeps the list open');
+    assert.ok(Math.abs(await menu.evaluate(node => node.scrollTop) - before) < 20, 'opening keeps the list position');
+    await row.focus(); await f.page.keyboard.press('ArrowDown');
+    await f.waitFor(s => s.page?.name === 'Page 11', 'down arrow opens the next page');
+    await f.page.keyboard.press('ArrowUp');
+    await f.waitFor(s => s.page?.name === 'Page 12', 'up arrow returns to the previous page');
+    const remove = menu.getByRole('menuitem', { name: /^Page 10\b/ }).getByRole('button', { name: 'Delete page', exact: true });
+    await remove.click();
+    await f.page.getByRole('alertdialog').getByRole('button', { name: 'Delete', exact: true }).click();
+    await f.page.getByRole('menu').waitFor();
+    assert.equal(await f.page.getByRole('menuitem', { name: /^Page 10\b/ }).count(), 0);
+    assert.ok(Math.abs(await f.page.getByRole('menu').evaluate(node => node.scrollTop) - before) < 90, 'deleting keeps the list near its previous position');
+    const kept = await f.page.getByRole('menu').evaluate(node => node.scrollTop);
+    await f.page.keyboard.press('Escape'); await f.page.getByRole('menu').waitFor({ state: 'hidden' });
+    await f.page.getByRole('button', { name: 'Pages', exact: true }).click();
+    const reopened = f.page.getByRole('menu');
+    await f.page.waitForTimeout(100);
+    assert.ok(Math.abs(await reopened.evaluate(node => node.scrollTop) - kept) < 20, 'reopening the list returns to where it was');
+    assert.ok(await reopened.evaluate(menu => { const row = menu.querySelector('[data-page-name="Page 12"]').getBoundingClientRect(), box = menu.getBoundingClientRect(); return row.top >= box.top && row.bottom <= box.bottom; }), 'the page shown is in view');
+    await f.page.keyboard.press('ArrowDown');
+    await f.waitFor(s => s.page?.name === 'Page 11', 'Down works straight after opening the list');
+  } finally { await f.close(); }
+});
+
 test('opening a saved page does not rewrite it; the first real edit still saves', async () => {
   const shape = { type: 'rectangle', x: 0, y: 0, width: 120, height: 80, version: 1, versionNonce: 1 };
   const original = JSON.stringify({ elements: [{ ...shape, id: 'saved-rectangle' }, { ...shape, id: 'deleted-rectangle', isDeleted: true }], files: {}, appState: { viewBackgroundColor: '#ffffff' } });
@@ -90,7 +130,6 @@ for (const colorScheme of ['light']) test(`Love Spot pages: mouse/keyboard creat
     await archived.click();
     await other.getByText('2026-10-18-morning', { exact: true }).waitFor();
     await f.waitFor(s => s.page?.name === '2026-10-18-morning' && !s.elements.length, 'archive did not load');
-    await f.page.getByRole('button', { name: 'Pages', exact: true }).click();
     await f.page.getByRole('menuitem', { name: /Current page/ }).click();
     await f.waitFor(s => s.page?.name === 'Current page' && s.elements.filter(e => !e.isDeleted && !e.id.startsWith('love-')).length === 1, 'original drawing was lost');
     await f.page.waitForTimeout(500);
@@ -120,6 +159,8 @@ test('Love Spot can delete a page, and cancelling leaves its drawing intact', as
   try {
     f = await loveSpotFixture();
     await f.open(f.page);
+    await f.draw(f.page); // an empty page is not kept once left
+    await f.waitFor(s => s.elements.some(e => !e.isDeleted), 'the first page drawing was not saved');
     await f.page.getByRole('button', { name: 'New page', exact: true }).click();
     await f.waitFor(s => s.page?.name === 'Page 2', 'the page to delete was not created');
     await f.draw(f.page);
@@ -168,6 +209,8 @@ test('page-row delete confirms, keeps the current page, and shares the skip pref
     f = await loveSpotFixture();
     await f.open(f.page);
     for (const name of ['Page 2', 'Page 3']) {
+      await f.draw(f.page); // an empty page is not kept once left
+      await f.waitFor(s => s.elements.some(e => !e.isDeleted), 'the drawing was not saved');
       await f.page.getByRole('button', { name: 'New page', exact: true }).click();
       await f.waitFor(s => s.page?.name === name, `${name} was not created`);
     }
@@ -190,7 +233,6 @@ test('page-row delete confirms, keeps the current page, and shares the skip pref
     await dialog.waitFor({ state: 'hidden' });
     assert.deepEqual(deletes, ['Page 2']);
     assert.equal((await f.scene()).page.name, 'Page 3');
-    await f.page.getByRole('button', { name: 'Pages', exact: true }).click();
     await f.page.getByRole('menuitem', { name: /^Current page\b/ }).getByRole('button', { name: 'Delete page', exact: true }).click();
     await f.page.waitForFunction(() => !document.querySelector('[role="alertdialog"]'));
     await f.waitFor(async () => deletes.includes('Current page'), 'the next page was not deleted');

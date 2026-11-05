@@ -4,8 +4,9 @@ const { trustedBrowserSender } = require('./browser-policy.cjs');
 
 // The macOS screenshot thumbnail (A239, 24 Oct: "whenever I take a screenshot … pops up and if I press it it does it"):
 // while Elpis runs, each new screenshot shows a small thumbnail in the bottom-right corner, above every window and without
-// taking focus, for about six seconds (longer while the pointer is on it). Clicking it opens the screenshot as a new
-// Love Spot page in the window that reported it; ignoring it does nothing (it stays in Love Spot's screenshot tray).
+// taking focus, for about six seconds (longer while the pointer is on it). Clicking it adds the screenshot to the open
+// Love Spot page in the window that reported it (5 Nov: "it shouldn't open a new page"); ignoring it does nothing (it stays
+// in Love Spot's screenshot tray).
 const SIZE = { width: 292, height: 224 }, MARGIN = 6; // The page draws a 10px shadow margin inside the window.
 
 function createScreenshotPopup({ BrowserWindow, screen, ipcMain, dark }) {

@@ -1,7 +1,7 @@
 // Real packaged app and engine (tests/real-app.cjs): a screenshot taken while Elpis runs shows a thumbnail in the screen's
-// corner, as macOS does; clicking it opens that screenshot alone on a new Love Spot page to draw on, and ignoring it does
-// nothing (A239, 24 Oct: "whenever I take a screenshot it should open a new page in the love spot for that screenshot so I
-// can draw on it … or at least pops up and if I press it it does it"). GNOME saves screenshots to ~/Pictures/Screenshots;
+// corner, as macOS does; clicking it adds that screenshot to the open Love Spot page, and ignoring it does nothing (A239,
+// 24 Oct: "or at least pops up and if I press it it does it"; 5 Nov: "when I want to post a screenshot, it shouldn't open
+// a new page"). GNOME saves screenshots to ~/Pictures/Screenshots;
 // the copy's throwaway HOME has its own.
 // ELPIS_TEST_APP=/packaged/app ELPIS_TEST_ENGINE=$HOME/.local/bin/elpis-next ELPIS_PLAYWRIGHT_PACKAGE=... [ELPIS_TEST_PORT=9463]
 // [ELPIS_TEST_SHOTS=/dir] node --test tests/love-spot-screenshot-popup.runtime.cjs
@@ -37,7 +37,7 @@ const board = page => page.evaluate(async () => {
   return { page: scene.scene.page.name, images: scene.scene.elements.filter(e => e.type === 'image' && !e.isDeleted).length, pages: pages.pages.map(p => p.name ?? p), tray: tray.screenshots.map(s => s.name) };
 });
 
-test('a new screenshot pops up a thumbnail; ignoring it does nothing and clicking it opens a new Love Spot page with it', {
+test('a new screenshot pops up a thumbnail; ignoring it does nothing and clicking it adds it to the open Love Spot page', {
   skip: !process.env.ELPIS_TEST_APP || !process.env.ELPIS_TEST_ENGINE, timeout: 180000,
 }, async () => {
   const port = Number(process.env.ELPIS_TEST_PORT || 9463), shots = process.env.ELPIS_TEST_SHOTS;
@@ -61,7 +61,7 @@ test('a new screenshot pops up a thumbnail; ignoring it does nothing and clickin
     assert.ok(after.tray.includes('Screenshot From 2026-10-24 21-00-01.png'), 'the ignored screenshot stays in the Love Spot tray');
     assert.equal(await page.locator('.love-spot-editor').count(), 0, 'ignoring the thumbnail must not open Love Spot');
 
-    // Clicked: Elpis shows Love Spot with a new page named after the screenshot, holding only that screenshot.
+    // Clicked: Elpis shows Love Spot on the same page, with the screenshot added to it.
     if (shots) await chooseTheme(page, 'dark');
     await takeScreenshot(page, home, 'Screenshot From 2026-10-24 21-00-09.png', '#a53a6e');
     const popup = await waitForPopup(browser);
@@ -70,12 +70,11 @@ test('a new screenshot pops up a thumbnail; ignoring it does nothing and clickin
     await page.locator('.love-spot-editor canvas.excalidraw__canvas.static').waitFor({ timeout: 20000 });
     await page.waitForTimeout(1500);
     const opened = await board(page);
-    assert.equal(opened.page, 'Screenshot From 2026-10-24 21-00-09', 'the screenshot opens on a new page named after it');
-    assert.equal(opened.images, 1, 'the new page holds the screenshot');
-    assert.ok(opened.pages.includes(start.page), 'the previous page is kept');
+    assert.equal(opened.page, start.page, 'the screenshot goes onto the open page');
+    assert.deepEqual(opened.pages, start.pages, 'no page is added');
+    assert.equal(opened.images, start.images + 1, 'the open page holds the screenshot');
     assert.ok(!opened.tray.includes('Screenshot From 2026-10-24 21-00-09.png'), 'the opened screenshot leaves the tray');
     assert.equal(popupPage(browser), undefined, 'the thumbnail closes once clicked');
-    await assert.doesNotReject(page.getByRole('button', { name: 'Pages', exact: true }).filter({ hasText: 'Screenshot From 2026-10-24 21-00-09' }).waitFor({ timeout: 5000 }), 'the page menu names the new page');
     if (shots) {
       await page.screenshot({ path: path.join(shots, 'opened-dark.png') });
       await chooseTheme(page, 'light'); await page.locator('aside.sidebar [data-nav-page="loveSpot"]').click(); await page.waitForTimeout(1500);

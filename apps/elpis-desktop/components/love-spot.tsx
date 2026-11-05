@@ -1,7 +1,7 @@
 "use client";
 
 import "@/lib/love-spot-assets";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { Check, ChevronDown, Heart, ImagePlus, Pin, Trash2, X } from "lucide-react";
 import { PlusIcon, ModelsIcon } from "@/components/elpis-icons";
@@ -107,6 +107,31 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
   const [pageToDelete, setPageToDelete] = useState<string>(), [clearing, setClearing] = useState(false), [pagesOpen, setPagesOpen] = useState(false);
   const [pageBusy, setPageBusy] = useState(false), [renaming, setRenaming] = useState(false), [pageName, setPageName] = useState("");
   const currentPage = useRef<BoardPage>(undefined);
+  const pagesScroll = useRef(0), reopenPages = useRef(false), queuedPage = useRef<string>(undefined);
+  const pagesMenu = useRef<HTMLDivElement>(null);
+  // The page list opens where it was left, with the page shown in view (Masih, 5 Nov: "it should remember my position w.r.t. the
+  // scroll (so if I'm in the middle, I wouldn't have to scroll again only to find the next note)").
+  // Each time the list opens it has no height for a frame or two, and restoring then would land at the top; the scrolling
+  // done by the restore itself is not recorded. The shown page's row takes focus, so Up and Down step from it.
+  const restoringPages = useRef(false);
+  useEffect(() => {
+    if (!pagesOpen) return;
+    restoringPages.current = true;
+    let frames = 0, frame = 0;
+    const restore = () => {
+      const node = pagesMenu.current;
+      if ((!node || node.scrollHeight <= node.clientHeight) && frames++ < 30) { frame = requestAnimationFrame(restore); return; }
+      if (node) {
+        node.scrollTop = pagesScroll.current;
+        const row = [...node.querySelectorAll<HTMLElement>("[data-page-name]")].find(item => item.dataset.pageName === currentPage.current?.name);
+        row?.scrollIntoView({ block: "nearest" }); row?.focus({ preventScroll: true });
+        pagesScroll.current = node.scrollTop;
+      }
+      restoringPages.current = false;
+    };
+    frame = requestAnimationFrame(restore);
+    return () => { cancelAnimationFrame(frame); restoringPages.current = false; };
+  }, [pagesOpen]);
   const lastPoint = useRef<{ x: number; y: number }>(undefined);
   const boardArea = useRef<HTMLDivElement>(null);
   const latest = useRef<Drawing | undefined>(undefined);
@@ -511,6 +536,27 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
     save(true);
   }
 
+  /** Up and Down open the page above or below the one shown, and the list stays open on it (Masih, 5 Nov: "make the pages
+   * changeable via the arrow keys"). Past either end, and on the Rename and Keep rows, the menu's own keys apply. */
+  function stepPage(event: ReactKeyboardEvent<HTMLDivElement> & { preventBaseUIHandler?: () => void }) {
+    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+    const target = event.target as HTMLElement;
+    if (target !== event.currentTarget && !target.dataset.pageName) return;
+    const at = pages.findIndex(item => item.name === (target.dataset.pageName ?? page?.name));
+    const next = pages[at + (event.key === "ArrowDown" ? 1 : -1)];
+    if (!next) return;
+    event.preventDefault(); event.preventBaseUIHandler?.();
+    const row = [...event.currentTarget.querySelectorAll<HTMLElement>("[data-page-name]")].find(element => element.dataset.pageName === next.name);
+    row?.focus({ preventScroll: true }); row?.scrollIntoView({ block: "nearest" });
+    // A key pressed while a page is still opening is not lost: the page it reached opens next.
+    if (pageBusy) queuedPage.current = next.name; else void changePage("switch", next.name);
+  }
+  useEffect(() => {
+    const name = queuedPage.current;
+    if (pageBusy || !name) return;
+    queuedPage.current = undefined;
+    if (name !== page?.name) void changePage("switch", name);
+  });
   // Pages not kept go to the system trash after a week untouched (bridge/love-spot-store.cjs, "Page lifecycle").
   const currentKept = !!pages.find(item => item.name === page?.name)?.kept;
   const tools = <div className="navbar love-spot-tools accent-scope">
@@ -519,15 +565,15 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
           <DropdownMenuTrigger render={<Button variant="outline" size="sm" aria-label="Pages" className="max-w-full min-w-28 shrink justify-between" disabled={!editor || pageBusy} />}>
             <span className="min-w-0 truncate" title={page?.name ?? "Pages"}>{page?.name ?? "Pages"}</span><ChevronDown aria-hidden="true" size={14} />
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="max-h-96 max-w-80 overflow-y-auto">
+          <DropdownMenuContent ref={pagesMenu} onScroll={event => { if (pagesOpen && !restoringPages.current) pagesScroll.current = event.currentTarget.scrollTop; }} onKeyDown={stepPage} align="start" className="max-h-96 max-w-80 overflow-y-auto">
             <DropdownMenuItem onClick={() => { setPageName(page?.name ?? ""); setRenaming(true); }}>Rename page</DropdownMenuItem>
             {page && <DropdownMenuItem onClick={() => void changePage(currentKept ? "release" : "keep", page.name)}><Pin aria-hidden="true" fill={currentKept ? "currentColor" : "none"} />{currentKept ? "Kept" : "Keep this page"}</DropdownMenuItem>}
             {pages.some(item => item.name !== page?.name && !item.kept) && <DropdownMenuItem variant="destructive" onClick={() => setClearing(true)}><Trash2 aria-hidden="true" />Delete all pages</DropdownMenuItem>}
-            {pages.map(item => <DropdownMenuItem key={item.name} onClick={() => void changePage("switch", item.name)}>
+            {pages.map(item => <DropdownMenuItem key={item.name} data-page-name={item.name} closeOnClick={false} onClick={() => void changePage("switch", item.name)}>
               <Check aria-hidden="true" className={item.name === page?.name ? "shrink-0" : "invisible shrink-0"} />
               <span className="min-w-0 flex-1"><span className="block whitespace-normal break-words">{item.name}</span><time className="block text-xs text-muted-foreground" dateTime={new Date(item.modified).toISOString()}>{new Date(item.modified).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}{item.kept ? "" : item.expires && item.name !== page?.name ? ` · to trash in ${Math.max(1, Math.ceil((item.expires - Date.now()) / 86400000))} d` : ""}</time></span>
               {item.kept && <Pin aria-label="Kept" className="shrink-0" fill="currentColor" />}
-              <Button variant="ghost" size="icon-xs" aria-label="Delete page" title={`Delete ${item.name}`} onClick={event => { event.stopPropagation(); setPagesOpen(false); setPageToDelete(item.name); }} onKeyDown={event => event.stopPropagation()}><Trash2 size={14} /></Button>
+              <Button variant="ghost" size="icon-xs" aria-label="Delete page" title={`Delete ${item.name}`} onClick={event => { event.stopPropagation(); reopenPages.current = true; setPagesOpen(false); setPageToDelete(item.name); }} onKeyDown={event => event.stopPropagation()}><Trash2 size={14} /></Button>
             </DropdownMenuItem>)}
             {pagesError && <DropdownMenuItem disabled className="whitespace-normal text-muted-foreground">{pagesError}</DropdownMenuItem>}
           </DropdownMenuContent>
@@ -551,7 +597,7 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
     {toolbarHost ? createPortal(tools, toolbarHost) : tools}
     <ConfirmDelete request={pageToDelete ?? null} names={pageToDelete ? [pageToDelete] : []} noun="page"
       description="This page moves to Trash. Deleting the current page opens a blank page so you can keep drawing."
-      onDelete={name => changePage("delete", name)} onClose={() => setPageToDelete(undefined)} />
+      onDelete={name => changePage("delete", name)} onClose={() => { setPageToDelete(undefined); if (reopenPages.current) { reopenPages.current = false; setPagesOpen(true); } }} />
     <AlertDialog open={clearing} onOpenChange={setClearing}>
       <AlertDialogContent>
         <AlertDialogHeader>

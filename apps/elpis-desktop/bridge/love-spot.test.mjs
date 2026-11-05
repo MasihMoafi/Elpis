@@ -123,15 +123,38 @@ test('Love Spot load/save unions stale windows, keeps newest versions and deleti
 
 test('text flush reaches its archived page without changing the page another window selected', async t => {
   const f = await fixture(t), original = (await f.load()).scene.page;
+  await f.save({ elements: [element('kept-shape')], files: {}, appState: {}, page: original }); // an empty page is not kept once left
   const next = await (await f.request('/pages', { action: 'new', page: original })).json();
   const text = element('verdict', 3, { type: 'text', text: 'My final verdict', originalText: 'My final verdict' });
   const saved = await f.request('/text', { page: original, elements: [text] });
   assert.equal(saved.status, 200);
-  assert.equal((await saved.json()).scene.elements[0].text, text.text);
+  assert.equal((await saved.json()).scene.elements.find(e => e.id === 'verdict').text, text.text);
   assert.equal((await f.load()).scene.page.session, next.scene.page.session);
   assert.equal((await f.load()).scene.elements.length, 0, 'old text must not enter the new page');
   assert.equal((await f.request('/text', { page: original, elements: [element('shape')] })).status, 400);
   assert.equal((await f.request('/text', { page: { ...original, session: 'unrelated' }, elements: [text] })).status, 409);
+});
+
+test('a page left empty is not kept; a page with something on it, or marked Keep, is', async t => {
+  const f = await fixture(t), pages = path.join(f.directory, 'pages');
+  const listed = async () => (await (await f.request('/pages')).json()).pages.map(p => p.name);
+  const empty = (await f.load()).scene.page;
+  const drawn = (await (await f.request('/pages', { action: 'new', page: empty })).json()).scene.page;
+  assert.ok(!(await listed()).includes(empty.name), 'the empty page left behind must not stay in the list');
+  await assert.rejects(fs.access(path.join(pages, `${empty.name}.excalidraw`)));
+  assert.equal((await f.request('', { elements: [element('kept-shape')], files: {}, appState: {}, page: drawn })).status, 200);
+  const blank = (await (await f.request('/pages', { action: 'new', page: drawn })).json()).scene.page;
+  assert.ok((await listed()).includes(drawn.name), 'a page with a shape stays');
+  await f.request('/pages', { action: 'keep', name: blank.name, page: blank });
+  await f.request('/pages', { action: 'switch', name: drawn.name, page: blank });
+  assert.ok((await listed()).includes(blank.name), 'an empty page marked Keep stays');
+  // Words still being typed on the dropped page in another window bring it back; words for a deleted page do not.
+  const words = element('late-words', 1, { type: 'text', text: 'still mine', originalText: 'still mine' });
+  assert.equal((await f.request('/text', { page: empty, elements: [words] })).status, 200);
+  assert.ok((await listed()).includes(empty.name), 'the words recreate their page');
+  await f.request('/pages', { action: 'delete', name: empty.name, page: (await f.load()).scene.page });
+  assert.equal((await f.request('/text', { page: empty, elements: [words] })).status, 409);
+  assert.ok(!(await listed()).includes(empty.name), 'a deleted page stays deleted');
 });
 
 test('two Love Spot stores converge on equal-version deletes in either order, but allow newer undo and redo', async t => {

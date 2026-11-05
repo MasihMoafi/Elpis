@@ -242,6 +242,7 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
     try { await fs.writeFile(temp, data); await fs.rename(temp, file); }
     finally { await fs.unlink(temp).catch(e => { if (e.code !== 'ENOENT') throw e; }); }
   }
+  const droppedEmpty = new Map(); // page name → session of each page left empty and so not kept (changePage, saveText)
   async function persist(scene) {
     const text = JSON.stringify(scene);
     await fs.mkdir(pages, { recursive: true });
@@ -270,9 +271,16 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
       if (incoming.page.session === current.scene.page.session) return persist(merge(current.scene, incoming));
       let scene;
       try { scene = validate(JSON.parse(await fs.readFile(pageFile(incoming.page.name), 'utf8'))); }
-      catch { throw fail('The original text page could not be read. Your draft is still local.', 409); }
+      catch (e) {
+        // A page left empty is not kept (changePage), yet words being typed on it in another window still belong there:
+        // they bring it back. Only such a page: one deleted on purpose stays deleted, whatever arrives for it later.
+        if (e.code !== 'ENOENT' || droppedEmpty.get(incoming.page.name) !== incoming.page.session) throw fail('The original text page could not be read. Your draft is still local.', 409);
+        droppedEmpty.delete(incoming.page.name);
+        scene = { type: 'excalidraw', version: 2, source: 'Love Spot', elements: [], files: {}, appState: {}, page: incoming.page };
+      }
       samePage(incoming.page, scene.page);
       const merged = merge(scene, incoming), text = JSON.stringify(merged);
+      await fs.mkdir(pages, { recursive: true });
       await atomic(pageFile(scene.page.name), text);
       return { scene: merged, revision: hash(text) };
     });
@@ -388,7 +396,11 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
         catch (e) { if (e.code === 'ENOENT') throw fail('That page could not be found.', 404); throw fail('That page could not be read. It has been left untouched.', 409); }
       } else scene = input.action === 'new' ? { type: 'excalidraw', version: 2, elements: [], files: {}, appState: {} } : current.scene;
       await fs.mkdir(pages, { recursive: true });
-      await atomic(pageFile(current.scene.page.name), JSON.stringify(merge(current.scene, { elements: [] })));
+      // A page left with nothing on it is not kept (Masih, 5 Nov: "the pages are too many and piled up … delete the empty pages").
+      const leaving = pageFile(current.scene.page.name);
+      if (input.action !== 'rename' && !current.scene.elements.some(e => !e.isDeleted) && !(await lifecycle()).kept.includes(current.scene.page.name)) {
+        await fs.rm(leaving, { force: true }); droppedEmpty.set(current.scene.page.name, current.scene.page.session);
+      } else await atomic(leaving, JSON.stringify(merge(current.scene, { elements: [] })));
       if (input.action === 'rename') await fs.rename(pageFile(current.scene.page.name), pageFile(name));
       return persist(merge({ ...scene, page: { name, session: input.action === 'rename' ? current.scene.page.session : randomUUID() } }, { elements: [] }));
     });
@@ -516,16 +528,9 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
   async function chooseScreenshot(choice) {
     if (!record(choice)) throw fail('Invalid screenshot choice');
     const { id, action } = choice;
-    if (typeof id !== 'string' || !['place', 'page', 'dismiss'].includes(action)) throw fail('Invalid screenshot choice');
+    if (typeof id !== 'string' || !['place', 'dismiss'].includes(action)) throw fail('Invalid screenshot choice');
     const shot = pending.get(id);
     if (!shot) throw fail('This screenshot has already left the tray.', 404);
-    // The screenshot thumbnail's click (desktop/screenshot-popup.cjs): the screenshot alone on a new page, named after its file, to draw on.
-    if (action === 'page') {
-      const base = shot.name.replace(/\.png$/i, '').replace(/[/\\\x00-\x1f]/g, ' ').trim().slice(0, 90) || 'Screenshot', listed = await names(pages);
-      let name = base, suffix = 2;
-      while (listed.includes(`${name}.excalidraw`) || (await read()).scene.page.name === name) name = `${base} ${suffix++}`;
-      await changePage({ action: 'new', name });
-    }
     await locked(async () => {
       const choices = await screenshotChoices();
       if (choices.has(id)) { pending.delete(id); publishScreenshots(); throw fail('This screenshot has already left the tray.', 404); }

@@ -1258,11 +1258,11 @@ export default function Home() {
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }
   const show = (next: View) => { if (next !== "chat") side.toggleFull(false); if (next === "settings") { setSettingsVisited(true); setSettingsNavigation(value => value + 1); } setView(next); setSidebar(false); };
-  // A click on the screenshot thumbnail puts that screenshot alone on a new Love Spot page, then shows it (A239).
-  // The first opens as a new Love Spot page; the rest follow on it, one below the other, in the order they were taken.
+  // A click on the screenshot thumbnail puts the screenshots on the Love Spot page already open, below what is there, in the
+  // order they were taken, then shows them (A239; Masih, 5 Nov: "when I want to post a screenshot, it shouldn't open a new page").
   useScreenshotPopup(ready, ids => {
     void (async () => {
-      for (const [index, id] of ids.entries()) await api("/love-spot/screenshots", { id, action: index ? "place" : "page" });
+      for (const id of ids) await api("/love-spot/screenshots", { id, action: "place" });
       show("loveSpot");
     })().catch(cause => setError(cause instanceof Error ? cause.message : "The screenshots could not open in Love Spot."));
   });
