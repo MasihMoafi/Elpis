@@ -122,3 +122,54 @@ test('a Love Spot voice call outlives the board, her face controls it, and other
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
+
+// 5 Nov, Masih: "add that call button, the same call button that we use for hang up, this is just for calling her up."
+test('Call Matilda beside her face starts her Love Spot call from any page; Hang up brings the Call button back', async () => {
+  const starts = [], stops = [];
+  let page;
+  const chatId = n => `00000000-0000-4000-8000-${String(n + 101).padStart(12, '0')}`, love = chatId(0);
+  const f = await loveSpotFixture({ threadId: chatId, configureClient: client => {
+    client.voiceStatus = async () => ({ available: true });
+    client.startVoice = async (id, sdp) => {
+      starts.push(id);
+      const sdpAnswer = await answer(page, sdp);
+      setTimeout(() => client.emit('event', { type: 'message', data: { method: 'thread/realtime/sdp', params: { threadId: id, sdp: sdpAnswer } } }), 0);
+    };
+    client.stopVoice = async id => { stops.push(id); };
+  } });
+  try {
+    page = f.page;
+    await page.addInitScript(() => {
+      window.voiceProof = { NativePeer: RTCPeerConnection, remotes: [] };
+      Object.defineProperty(navigator, 'mediaDevices', { value: { getUserMedia: async () => {
+        const context = new AudioContext(), sink = context.createMediaStreamDestination(); context.createOscillator().connect(sink); return sink.stream;
+      } } });
+    });
+    await page.reload(); await page.locator('.startup-splash').waitFor({ state: 'detached' });
+    const face = page.locator('.title-bar'), callButton = face.getByRole('button', { name: 'Call Matilda' });
+    // Negative: before she has a Love Spot chat there is nothing to call.
+    await page.waitForTimeout(1000);
+    assert.equal(await callButton.count(), 0, 'no Call button before her chat exists');
+
+    await f.open(page);
+    const bounds = await page.locator('.excalidraw').boundingBox();
+    await page.mouse.click(bounds.x + 450, bounds.y + 300); await page.keyboard.press('t');
+    await page.mouse.click(bounds.x + 450, bounds.y + 300); await page.keyboard.type('Talk to me.'); await page.keyboard.press('Escape');
+    await f.waitFor(scene => scene.elements.some(element => element.id === 'love-reply-turn-1' && !element.isDeleted), 'Matilda did not reply', 20000);
+
+    // From another page (a new chat), the phone beside her face calls her.
+    await page.getByRole('button', { name: 'New chat' }).first().click();
+    await callButton.waitFor({ timeout: 20000 });
+    await callButton.click();
+    await face.getByRole('button', { name: 'End voice chat with Matilda' }).waitFor({ timeout: 20000 });
+    { const end = Date.now() + 10000; while (!starts.length && Date.now() < end) await page.waitForTimeout(100); }
+    assert.deepEqual(starts, [love], 'the call is her Love Spot chat\'s');
+    await page.getByRole('status').filter({ hasText: 'Listening' }).or(face.getByRole('button', { name: 'Pause talking with Matilda' })).first().waitFor({ timeout: 20000 });
+    assert.equal(await callButton.count(), 0, 'no Call button during the call');
+    await face.getByRole('button', { name: 'End voice chat with Matilda' }).click();
+    await callButton.waitFor();
+    { const end = Date.now() + 5000; while (!stops.includes(love) && Date.now() < end) await page.waitForTimeout(50); }
+    assert.ok(stops.includes(love), 'Hang up ends her call');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});

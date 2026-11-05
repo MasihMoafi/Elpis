@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { createPortal } from "react-dom";
-import { Pause, PhoneOff, Play } from "lucide-react";
+import { Pause, Phone, PhoneOff, Play } from "lucide-react";
 import { ContextMenu as ContextMenuPrimitive } from "@base-ui/react/context-menu";
 import { PinIcon, SoundIcon, SoundOffIcon } from "@/components/elpis-icons";
 import { useLiveVoice } from "@/components/live-voice";
@@ -63,9 +63,25 @@ function useHerVoice() {
   const speaking = !!call && call.activity === "speaking" && !call.herMuted && !call.paused || !!speech?.active;
   return { live, call, speech, speaking, shown: !!call || !!speech?.active };
 }
-function HerVoiceControls({ voice }: { voice: ReturnType<typeof useHerVoice> }) {
+/** Whether the realtime voice is set up, asked once per mount, as the chat's voice button does. */
+function useVoiceAvailable() {
+  const [available, setAvailable] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    api<{ available: boolean }>("/voice", undefined, controller.signal).then(result => { if (!controller.signal.aborted) setAvailable(result.available === true); }).catch(() => {});
+    return () => controller.abort();
+  }, []);
+  return available;
+}
+/** Beside her face: Call Matilda when no call runs (5 Nov, Masih: "add that call button, the same call button that we use
+ * for hang up, this is just for calling her up"); during a call, Mute, Pause and Hang up. The call is Love Spot's chat's,
+ * so it goes on across the app as one started in that chat does. */
+function HerVoiceControls({ voice, threadId }: { voice: ReturnType<typeof useHerVoice>; threadId?: string | null }) {
   const { live, call, speech } = voice;
-  if (!voice.shown) return null;
+  const available = useVoiceAvailable();
+  if (!voice.shown) return live && !live.call && threadId && available
+    ? <Button variant="ghost" size="icon-xs" aria-label="Call Matilda" title="Call Matilda" onClick={() => live.start(threadId, true)}><Phone size={14} /></Button>
+    : null;
   const muted = !!call?.herMuted;
   return <>
     <Button variant="ghost" size="icon-xs" aria-label={muted ? "Unmute Matilda" : "Mute Matilda"} title={muted ? "Unmute Matilda" : "Mute Matilda"} aria-pressed={muted}
@@ -267,14 +283,14 @@ export function MatildaCompanion() {
     <div className="matilda-float-controls">
       {/* Only while music plays (or she muted it), as an icon (29 Oct, Masih: "no music is playing!", "I don't want texts; I want visuals"). */}
       {track?.canMute && (track.status === "Playing" || track.muted) && <Button variant="ghost" size="icon-xs" aria-label={track.muted ? "Unmute music" : "Mute music"} aria-pressed={track.muted} disabled={busy} onClick={() => void act("toggle-mute")}>{track.muted ? <SoundOffIcon size={16} /> : <SoundIcon size={16} />}</Button>}
-      <HerVoiceControls voice={voice} />
+      <HerVoiceControls voice={voice} threadId={state?.threadId} />
       <Button variant="ghost" size="icon-xs" aria-label="Unpin Matilda" aria-pressed="true" onClick={() => void act("unpin")}><PinIcon size={16} /></Button>
     </div>
   </section>;
   return <div className="relative flex min-w-0 shrink-0 items-center gap-1 pr-2">
     <MatildaHeartBurst />
     {floating ? createPortal(floating, document.body) : <Button variant="ghost" size="icon-sm" className="matilda-pin" data-speaking={voice.speaking || undefined} aria-label="Pin Matilda" title="Pin Matilda" disabled={busy} onClick={pin}><><img className="matilda-pin-face matilda-avatar-light" src={MATILDA_SHOTS_LIGHT.softSmile} alt="" /><img className="matilda-pin-face matilda-avatar-dark" src={MATILDA_SHOTS.softSmile} alt="" />{voice.speaking && <span className="matilda-speaking-ring" aria-hidden="true" />}</></Button>}
-    {!floating && <HerVoiceControls voice={voice} />}
+    {!floating && <HerVoiceControls voice={voice} threadId={state?.threadId} />}
     {!floating && alert && <div className="hud-popover matilda-alert-popup matilda-alert-anchor">{alert}</div>}
   </div>;
 }
