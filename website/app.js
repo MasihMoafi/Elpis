@@ -300,7 +300,7 @@ function buildIsometric(board) {
     const label = document.createElement("b");
     if (!node.mother) label.append(Object.assign(document.createElement("span"), { textContent: node.wave }));
     label.append(node.card.querySelector("strong")?.textContent || "");
-    cube.append(...["top", "south", "east"].map((face) => Object.assign(document.createElement("i"), { className: face })), label);
+    cube.append(...["glow", "ring", "top", "south", "east"].map((face) => Object.assign(document.createElement("i"), { className: face })), label);
     node.cube = cube;
     board.append(cube);
   });
@@ -312,7 +312,7 @@ function buildIsometric(board) {
   board.prepend(svg);
   // Each flat wire runs from a card's right edge (or, for a wire straight down, its centre) to the next card's left edge.
   const nearest = (px, py, edge) => cards.reduce((best, node) => {
-    const d = Math.abs(node.x + edge - px) + Math.abs(node.y + 6 - py) * 0.3;
+    const d = Math.abs(node.x + edge - px) + Math.abs(node.y - py) * 0.3;
     return d < best.d ? { node, d } : best;
   }, { d: Infinity }).node;
   const links = [...board.querySelectorAll(".wf-edges > path[data-draw]")].map((path) => {
@@ -325,11 +325,21 @@ function buildIsometric(board) {
     const across = (26 / Math.max(1, board.offsetWidth)) * 100, down = (26 / Math.max(1, board.offsetHeight)) * 100;
     svg.replaceChildren(...links.map((link) => {
       const { from, to } = link;
-      const path = link.path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      const path = link.path = document.createElementNS("http://www.w3.org/2000/svg", "g");
+      const wire = document.createElementNS("http://www.w3.org/2000/svg", "path"), stream = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      wire.setAttribute("class", "wire");
+      stream.setAttribute("class", "stream");
+      path.append(wire, stream);
       const vertical = Math.abs(from.cx - to.cx) < 1, mid = (from.cx + to.cx) / 2;
-      path.setAttribute("d", vertical
+      const d = (vertical
         ? `M${from.cx} ${from.y} V${to.y - Math.sign(to.y - from.y) * down}`
         : `M${from.cx} ${from.y} H${mid} V${to.y} H${to.cx - across}`);
+      wire.setAttribute("d", d);
+      stream.setAttribute("d", d);
+      // The routes are straight runs, so their on-screen length (before the tilt) is simple to add up.
+      const w = board.offsetWidth / 100, h = board.offsetHeight / 100;
+      const length = vertical ? Math.abs(to.y - from.y) * h : (Math.abs(mid - from.cx) + Math.abs(to.cx - across - mid)) * w + Math.abs(to.y - from.y) * h;
+      stream.style.setProperty("--len", Math.round(length));
       return path;
     }));
   };
@@ -338,7 +348,9 @@ function buildIsometric(board) {
     for (const { card, cube } of cards) cube.dataset.state = card.hasAttribute("data-shown") ? card.dataset.state || "waiting" : "hidden";
     for (const { flat, path, from, to } of links) {
       path?.toggleAttribute("data-hidden", !from.card.hasAttribute("data-shown") || !to.card.hasAttribute("data-shown"));
-      path?.toggleAttribute("data-active", flat.hasAttribute("data-active") && !/done|passed/.test(to.card.dataset.state || ""));
+      const finished = /done|passed/.test(to.card.dataset.state || "");
+      path?.toggleAttribute("data-active", flat.hasAttribute("data-active") && !finished);
+      path?.toggleAttribute("data-done", flat.hasAttribute("data-active") && finished);
     }
   };
   draw();
