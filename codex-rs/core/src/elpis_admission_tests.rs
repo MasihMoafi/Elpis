@@ -249,3 +249,59 @@ async fn native_and_bridge_admission_follow_the_same_thread_and_explicit_handoff
     assert!(explicit.contains("FIRST_LEGACY_CHECKPOINT"));
     Ok(())
 }
+
+/// A Ledger change is appended as an update naming only what changed (Masih, 5 Nov 2026).
+#[test]
+fn a_continuity_change_appends_only_the_changed_sources_and_names_withdrawals() {
+    let memory = "### Source: /w/MEMORY.md (4 characters)\n\nfact";
+    let rule = "### Source: /w/rules.md (4 characters)\n\nrule";
+    let notes = "### Source: /w/NOTES.md (5 characters)\n\nnotes";
+    let earlier = format!("{ELPIS_CONTINUITY_PROMPT_PREFIX}{memory}\n\n{rule}");
+    let current = format!("{ELPIS_CONTINUITY_PROMPT_PREFIX}{rule}\n\n{notes}");
+
+    let section = continuity_section(Some(current.clone()));
+    let snapshot = json!({ "body": earlier });
+    let previous = &snapshot;
+    let (_, fragment) = section.render_diff(PreviousWorldStateSection::Known(previous));
+    let text = fragment
+        .expect("a change renders an update")
+        .body()
+        .to_string();
+    assert!(text.starts_with(ELPIS_CONTINUITY_UPDATE_PREFIX), "{text}");
+    assert!(
+        text.contains("- /w/MEMORY.md"),
+        "the withdrawn source is named: {text}"
+    );
+    assert!(
+        !text.contains("fact"),
+        "a withdrawn source's text is not resent"
+    );
+    assert!(
+        text.contains("notes"),
+        "the newly admitted source is sent: {text}"
+    );
+    assert!(
+        !text.contains("rule\n") && !text.ends_with("rule"),
+        "an unchanged source is not resent: {text}"
+    );
+    assert!(
+        is_elpis_continuity_fragment("developer", &text),
+        "compaction must recognise the update"
+    );
+
+    // Withdrawing everything names every source and sends no text.
+    let emptied = continuity_section(/*body*/ None);
+    let (_, fragment) = emptied.render_diff(PreviousWorldStateSection::Known(previous));
+    let text = fragment
+        .expect("a withdrawal renders a note")
+        .body()
+        .to_string();
+    assert!(
+        text.contains("- /w/MEMORY.md") && text.contains("- /w/rules.md"),
+        "{text}"
+    );
+    assert!(
+        !text.contains("fact") && !text.contains("\n\nrule"),
+        "{text}"
+    );
+}

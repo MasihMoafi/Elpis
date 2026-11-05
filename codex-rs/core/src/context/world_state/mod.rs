@@ -41,6 +41,8 @@ use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::fmt;
 
+#[cfg(test)]
+pub(crate) use agents_md::AGENTS_MD_WITHDRAWN_NOTE;
 pub(crate) use agents_md::AgentsMdState;
 pub(crate) use apps_instructions::AppsInstructionsState;
 pub(crate) use base_instructions::BaseInstructionsState;

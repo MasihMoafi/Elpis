@@ -165,19 +165,25 @@ impl ContextContributor for ElpisContinuityExtension {
 fn continuity_section(body: Option<String>) -> WorldStateSectionContribution {
     let has_model_visible_content = body.is_some();
     WorldStateSectionContribution::new(ELPIS_CONTINUITY_WORLD_STATE_ID, move |previous| {
-        // A withdrawn body persists as an empty section; the slot reconciliation removes
-        // the earlier copy.
         let snapshot = Some(json!({ "body": body }));
-        if matches!(
-            previous,
-            PreviousWorldStateSection::Known(previous)
-                if previous.get("body").and_then(serde_json::Value::as_str) == body.as_deref()
-        ) {
-            return (snapshot, None);
-        }
-        let fragment = body
-            .as_ref()
-            .map(|body| RenderedWorldStateFragment::new("developer", ("", ""), body.clone()));
+        let earlier = match previous {
+            PreviousWorldStateSection::Known(previous) => {
+                let earlier = previous.get("body").and_then(serde_json::Value::as_str);
+                if earlier == body.as_deref() {
+                    return (snapshot, None);
+                }
+                earlier
+            }
+            _ => None,
+        };
+        // A change is appended as an update naming only what changed, so the prompt cache
+        // keeps the history; earlier copies leave at the next compaction (Masih, 5 Nov).
+        let text = match earlier {
+            Some(earlier) => continuity_update(earlier, body.as_deref()),
+            None => body.clone(),
+        };
+        let fragment =
+            text.map(|text| RenderedWorldStateFragment::new("developer", ("", ""), text));
         (snapshot, fragment)
     })
     .with_retained_fragment_matcher(is_elpis_continuity_fragment)
@@ -224,7 +230,64 @@ fn elpis_continuity_is_eligible(session_source: &SessionSource) -> bool {
 }
 
 fn is_elpis_continuity_fragment(role: &str, text: &str) -> bool {
-    role == "developer" && text.starts_with(elpis_context::ELPIS_CONTINUITY_PROMPT_PREFIX)
+    role == "developer"
+        && (text.starts_with(elpis_context::ELPIS_CONTINUITY_PROMPT_PREFIX)
+            || text.starts_with(ELPIS_CONTINUITY_UPDATE_PREFIX))
+}
+
+/// Opens a Context Ledger update appended after the history.
+const ELPIS_CONTINUITY_UPDATE_PREFIX: &str = "## Elpis Admitted Context: update\n\n\
+    The Context Ledger changed. Where this update names a source, it replaces that source's \
+    earlier text in this conversation.\n\n";
+const SOURCE_HEADING: &str = "### Source: ";
+
+/// The admitted sources of a continuity body, by path, each with its full block.
+fn continuity_sources(body: &str) -> Vec<(&str, &str)> {
+    let mut sources = Vec::new();
+    let mut starts = body
+        .match_indices(SOURCE_HEADING)
+        .map(|(index, _)| index)
+        .peekable();
+    while let Some(start) = starts.next() {
+        let end = starts.peek().copied().unwrap_or(body.len());
+        let block = body[start..end].trim_end();
+        let heading = block[SOURCE_HEADING.len()..]
+            .lines()
+            .next()
+            .unwrap_or_default();
+        // "path (N characters)"
+        let path = heading.rsplit_once(" (").map_or(heading, |(path, _)| path);
+        sources.push((path, block));
+    }
+    sources
+}
+
+/// The update between two continuity bodies: changed or newly admitted sources in full, and
+/// the withdrawn ones by path. `None` when nothing model-visible changed.
+fn continuity_update(earlier: &str, current: Option<&str>) -> Option<String> {
+    let before = continuity_sources(earlier);
+    let after = current.map(continuity_sources).unwrap_or_default();
+    let withdrawn = before
+        .iter()
+        .filter(|(path, _)| !after.iter().any(|(current, _)| current == path))
+        .map(|(path, _)| format!("- {path}"))
+        .collect::<Vec<_>>();
+    let changed = after
+        .iter()
+        .filter(|source| !before.contains(source))
+        .map(|(_, block)| *block)
+        .collect::<Vec<_>>();
+    if withdrawn.is_empty() && changed.is_empty() {
+        return None;
+    }
+    let mut text = ELPIS_CONTINUITY_UPDATE_PREFIX.to_string();
+    if !withdrawn.is_empty() {
+        text.push_str("Withdrawn by the user (no longer admitted; ignore their earlier text):\n");
+        text.push_str(&withdrawn.join("\n"));
+        text.push_str("\n\n");
+    }
+    text.push_str(&changed.join("\n\n"));
+    Some(text.trim_end().to_string())
 }
 
 #[cfg(test)]

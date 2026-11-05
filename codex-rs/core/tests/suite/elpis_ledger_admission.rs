@@ -87,8 +87,9 @@ fn plant_continuity_sources(home: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Rules start admitted; withdrawing them removes the previous copy, and re-admitting
-/// restores exactly one.
+/// Rules start admitted. A Ledger change is appended after the history (Masih, 5 Nov 2026):
+/// the earlier copies stay until compaction so the prompt cache keeps them, each change adds
+/// the newly admitted text, and withdrawing everything adds a note.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn agents_md_reaches_the_request_only_while_the_ledger_admits_it() -> Result<()> {
     let server = start_mock_server().await;
@@ -136,16 +137,19 @@ async fn agents_md_reaches_the_request_only_while_the_ledger_admits_it() -> Resu
         .collect::<Vec<_>>();
     assert_eq!(
         counts,
-        vec![(1, 1), (0, 1), (1, 0), (0, 0), (1, 1)],
+        vec![(1, 1), (1, 2), (2, 2), (2, 2), (3, 3)],
         "(global, project) AGENTS.md copies: default, global off, project off, both off, both on"
     );
-    for (index, request) in requests.iter().enumerate() {
-        assert!(
-            !request.body_contains_text("no longer apply")
-                && !request.body_contains_text("replace all previously provided"),
-            "request {index} carried an AGENTS.md lifecycle notice"
-        );
-    }
+    let withdrawn_note = "The user withdrew these AGENTS.md instructions";
+    let notes = requests
+        .iter()
+        .map(|request| request.body_contains_text(withdrawn_note))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        notes,
+        vec![false, false, false, true, true],
+        "withdrawing every instruction file appends one note"
+    );
     assert_eq!(
         test.codex.instruction_sources().await.len(),
         2,
@@ -201,11 +205,18 @@ async fn continuity_sources_reach_the_request_only_while_the_ledger_admits_them(
             [MEMORY, DEV_RULE, ADDED_FILE].map(|sentinel| occurrences(request, sentinel))
         })
         .collect::<Vec<_>>();
+    // Changes are appended as updates (Masih, 5 Nov 2026): earlier copies stay until
+    // compaction, an update carries only the changed sources, and withdrawals are named.
     assert_eq!(
         counts,
-        vec![[0, 1, 0], [1, 0, 1], [0, 1, 0], [0, 0, 0]],
+        vec![[0, 1, 0], [1, 1, 1], [1, 2, 1], [1, 2, 1]],
         "[MEMORY, dev rule, added file] copies per request: default, admitted, withdrawn, malformed"
     );
+    let updates = requests
+        .iter()
+        .map(|request| request.body_contains_text("## Elpis Admitted Context: update"))
+        .collect::<Vec<_>>();
+    assert_eq!(updates, vec![false, true, true, true]);
     let last = requests.last().expect("malformed turn request");
     assert!(
         last.body_contains_text("default turn"),

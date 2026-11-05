@@ -25,8 +25,12 @@ None
 new instructions
 </INSTRUCTIONS>
 
-{"text":"new instructions"} -> {}
-None
+{"text":"new instructions"} -> {} (role - user)
+# AGENTS.md instructions
+
+<INSTRUCTIONS>
+The user withdrew these AGENTS.md instructions from your context. Do not follow the AGENTS.md instructions given earlier in this conversation; they no longer apply.
+</INSTRUCTIONS>
 
 Unknown -> {"text":"new instructions"} (role - user)
 # AGENTS.md instructions

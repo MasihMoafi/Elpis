@@ -1,9 +1,10 @@
 //! Elpis: single-slot World State sections.
 //!
-//! A single-slot section keeps at most one copy of its fragment in model-visible history.
-//! A refill or a withdrawal removes every earlier copy, and an unchanged slot keeps only its
-//! newest copy. This is what makes a Context Ledger exclusion real: the excluded text leaves
-//! the next request instead of staying in it behind a note asking the model to ignore it.
+//! A single-slot section's copies leave model-visible history only where the history is
+//! rewritten anyway: at compaction ([`WorldState::vacate_all_single_slot_fragments`]) and right
+//! after a rewrite or restore, which leaves no World State baseline. Between those, a Context
+//! Ledger change is appended (a new copy, or a note for a withdrawal) so the provider's prompt
+//! cache keeps the earlier history (Masih, 5 Nov 2026: "note now, remove at compaction").
 //! Ported from Elpis v0.3.0 (`WorldState::vacate_single_slot_fragments`).
 
 use std::collections::BTreeSet;
@@ -17,6 +18,21 @@ use super::ErasedWorldStateSection;
 use super::WorldState;
 
 impl WorldState {
+    /// Removes every copy and note of every single-slot section from `items`, for a compaction
+    /// that re-supplies each section's current content after it. Returns whether any went.
+    pub(crate) fn vacate_all_single_slot_fragments(
+        &self,
+        items: &mut Arc<Vec<ResponseItemEnvelope>>,
+    ) -> bool {
+        let all = self
+            .sections
+            .iter()
+            .filter(|(_, section)| section.owns_single_history_slot())
+            .map(|(id, _)| *id)
+            .collect::<BTreeSet<&str>>();
+        !all.is_empty() && self.vacate_single_slot_fragments(items, &all)
+    }
+
     /// Reconciles every single-slot section against retained history. `refilled` names the
     /// sections that rendered a new fragment in this update; their older copies all go. An
     /// empty slot loses every copy; an unchanged visible slot keeps only its newest copy.

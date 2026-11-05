@@ -491,9 +491,12 @@ impl ContextManager {
         )
     }
 
-    /// Elpis: renders `world_state` against `previous`, then reconciles single-slot sections
-    /// with history. A refill or an empty slot removes every earlier copy; an unchanged slot
-    /// keeps only its newest copy. Any removal is a history rewrite.
+    /// Elpis: renders `world_state` against `previous`. A Context Ledger change is appended
+    /// after the history (a new copy, or a note for a withdrawal) and never deletes an earlier
+    /// copy, so the provider's prompt cache keeps the whole earlier history (Masih, 5 Nov).
+    /// Earlier copies leave at the next compaction (`compact::build_compaction_replacement_history`).
+    /// Only when there is no baseline, because the history was just rewritten or restored and
+    /// its cached prefix is already gone, are duplicate single-slot copies reconciled here.
     fn render_world_state_reconciling(
         items: &mut Arc<Vec<ResponseItemEnvelope>>,
         history_version: &mut u64,
@@ -502,7 +505,7 @@ impl ContextManager {
     ) -> (WorldStateSnapshot, Vec<WorldStateUpdate>) {
         let (snapshot, updates, refilled) = world_state
             .render_history_diff_with_ids(previous, items.iter().map(|envelope| &envelope.item));
-        if world_state.vacate_single_slot_fragments(items, &refilled) {
+        if previous.is_none() && world_state.vacate_single_slot_fragments(items, &refilled) {
             *history_version = history_version.saturating_add(1);
         }
         (snapshot, updates)

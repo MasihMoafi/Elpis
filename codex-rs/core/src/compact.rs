@@ -88,6 +88,11 @@ pub(crate) async fn build_compaction_replacement_history(
         .await;
     let (prefix, context) = split_prefix_updates(updates);
     let context = merge_world_state_updates(context);
+    // Elpis: Context Ledger changes were appended between compactions; the compaction is
+    // where their earlier copies and withdrawal notes leave, before the current content returns.
+    let mut compacted_history = Arc::new(compacted_history);
+    world_state.vacate_all_single_slot_fragments(&mut compacted_history);
+    let compacted_history = Arc::unwrap_or_clone(compacted_history);
     (
         assemble_compaction_history(compacted_history, prefix, context),
         snapshot,

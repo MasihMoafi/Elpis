@@ -1,7 +1,7 @@
-//! Elpis: single-slot history reconciliation, ported from v0.3.0's history tests.
+//! Elpis: single-slot history reconciliation.
 //!
-//! Each test reads model-visible history after the update, so "off" has to mean the text is
-//! gone and "on" has to mean exactly one copy.
+//! Each test reads model-visible history after the update. Between compactions a change is
+//! appended and the earlier history stays byte-identical, so the prompt cache keeps it.
 
 use super::*;
 use crate::agents_md::LoadedAgentsMd;
@@ -73,71 +73,83 @@ fn instruction_lifecycle_notices(history: &ContextManager) -> usize {
         .count()
 }
 
-/// Off means absent: the copy an earlier turn appended must leave the request, and
-/// switching the row back on restores exactly one copy.
+/// Earlier history, as the provider's prompt cache sees it.
+fn raw_history(history: &ContextManager) -> Vec<ResponseItem> {
+    history.raw_items().cloned().collect()
+}
+
+/// A withdrawal is appended as a note: the earlier history stays byte-identical, so the prompt
+/// cache keeps it (Masih, 5 Nov). The copy and the note leave at the next compaction.
 #[test]
-fn withdrawing_instructions_removes_the_earlier_copy_from_history() {
+fn withdrawing_instructions_appends_a_note_and_keeps_the_earlier_history() {
     let mut history = ContextManager::new();
     apply_world_state(&mut history, &agents_md_world_state(Some("project rule")));
-    assert_eq!(instruction_copies(&history), 1);
-
+    let before = raw_history(&history);
     let version_before_withdrawal = history.history_version();
+
     assert_eq!(
         apply_world_state(&mut history, &agents_md_world_state(/*instructions*/ None)),
-        0
+        1,
+        "a withdrawal renders one note"
     );
+    let after = raw_history(&history);
     assert_eq!(
-        instruction_copies(&history),
-        0,
-        "a withdrawn instruction source must not remain in model-visible history"
+        &after[..before.len()],
+        &before[..],
+        "a withdrawal must not change the earlier history"
     );
+    assert_eq!(history.history_version(), version_before_withdrawal);
+    let texts = history_texts(&history);
     assert!(
-        !history_texts(&history)
-            .iter()
-            .any(|text| text.contains("project rule")),
-        "withdrawn instruction text must be gone, not merely superseded"
-    );
-    assert!(
-        history.history_version() > version_before_withdrawal,
-        "removing a copy is a history rewrite"
+        texts.last().is_some_and(
+            |text| text.contains(crate::context::world_state::AGENTS_MD_WITHDRAWN_NOTE)
+        ),
+        "the last message says the instructions were withdrawn: {texts:?}"
     );
 
     assert_eq!(
         apply_world_state(&mut history, &agents_md_world_state(Some("project rule"))),
-        1
+        1,
+        "re-admitting appends the instructions again"
     );
-    assert_eq!(instruction_copies(&history), 1);
-    assert_eq!(instruction_lifecycle_notices(&history), 0);
+    assert!(
+        history_texts(&history)
+            .last()
+            .is_some_and(|text| text.contains("project rule"))
+    );
 }
 
-/// A change supplies the new text once and removes the old copy, without a notice.
+/// A change appends the new text after the history; the old copy stays until compaction.
 #[test]
-fn changed_instructions_replace_the_earlier_copy() {
+fn changed_instructions_are_appended_after_the_earlier_history() {
     let mut history = ContextManager::new();
     apply_world_state(&mut history, &agents_md_world_state(Some("old rule")));
+    let before = raw_history(&history);
     assert_eq!(
         apply_world_state(&mut history, &agents_md_world_state(Some("new rule"))),
         1
     );
-
-    let texts = history_texts(&history);
-    assert_eq!(instruction_copies(&history), 1);
-    assert!(texts.iter().any(|text| text.contains("new rule")));
-    assert!(!texts.iter().any(|text| text.contains("old rule")));
-    assert_eq!(instruction_lifecycle_notices(&history), 0);
+    let after = raw_history(&history);
+    assert_eq!(&after[..before.len()], &before[..]);
+    assert!(
+        history_texts(&history)
+            .last()
+            .is_some_and(|text| text.contains("new rule"))
+    );
 }
 
-/// A withdrawal between sampling steps of one turn removes the copy before the next request,
-/// and persists the change only once the session commits the step's baseline.
+/// A withdrawal between sampling steps of one turn renders the note for the next request
+/// without touching the history, and persists the change only once the step's baseline commits.
 #[test]
-fn step_withdrawal_removes_the_earlier_copy_before_the_next_request() {
+fn step_withdrawal_renders_a_note_without_rewriting_history() {
     let mut history = ContextManager::new();
     apply_world_state(&mut history, &agents_md_world_state(Some("project rule")));
+    let before = raw_history(&history);
 
     let (snapshot, updates, rollout_item) =
         history.render_step_world_state(&agents_md_world_state(/*instructions*/ None));
-    assert!(updates.is_empty());
-    assert_eq!(instruction_copies(&history), 0);
+    assert_eq!(updates.len(), 1, "the note");
+    assert_eq!(raw_history(&history), before);
     assert!(
         rollout_item.is_some(),
         "the withdrawal changes the snapshot"
@@ -151,6 +163,36 @@ fn step_withdrawal_removes_the_earlier_copy_before_the_next_request() {
         rollout_item.is_none(),
         "an unchanged withdrawal is not persisted again"
     );
+}
+
+/// Compaction is where earlier copies and notes go: every single-slot copy leaves the
+/// compacted history, and neighbouring content stays.
+#[test]
+fn compaction_removes_every_single_slot_copy() {
+    let mut history = ContextManager::new();
+    apply_world_state(&mut history, &agents_md_world_state(Some("old rule")));
+    apply_world_state(&mut history, &agents_md_world_state(/*instructions*/ None));
+    apply_world_state(&mut history, &agents_md_world_state(Some("new rule")));
+    assert_eq!(instruction_copies(&history), 3);
+    let mut items = Arc::new(
+        std::iter::once(ResponseItemEnvelope::new(developer_msg(&["kept"])))
+            .chain(history.raw_items().cloned().map(ResponseItemEnvelope::new))
+            .collect::<Vec<_>>(),
+    );
+    assert!(agents_md_world_state(Some("new rule")).vacate_all_single_slot_fragments(&mut items));
+    let texts = items
+        .iter()
+        .filter_map(|envelope| match &envelope.item {
+            ResponseItem::Message { content, .. } => Some(content.clone()),
+            _ => None,
+        })
+        .flatten()
+        .filter_map(|content| match content {
+            ContentItem::InputText { text } => Some(text),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(texts, vec!["kept".to_string()]);
 }
 
 /// History rewrites drop the World State baseline while the rendered copy survives. The
@@ -264,35 +306,56 @@ fn extension_single_slot_replaces_then_removes_only_its_own_content() {
     );
     assert_eq!(
         history_texts(&history),
-        vec!["neighboring developer content", "extension after"]
-    );
-    assert_eq!(
-        first_message_kinds(&history),
-        Some(vec![ContentItemKind("neighbor.instructions".to_string())]),
-        "removing the slot's content must remove its content kind too"
+        vec![
+            "neighboring developer content",
+            "extension before",
+            "extension after"
+        ],
+        "a refill is appended; the earlier copy stays until compaction"
     );
 
-    // Restored history can hold several copies; an unchanged slot keeps only the newest.
-    history.replace(vec![
-        developer_msg(&["neighboring developer content"]),
-        developer_msg(&["extension before"]),
-        developer_msg(&["extension after"]),
-    ]);
+    // After a rewrite there is no baseline and no cached prefix to keep: restored copies are
+    // reconciled to the newest, removing only the slot's own content and its content kind.
+    let (updates, _) =
+        ContextManager::new().update_world_state(&extension_single_slot(Some("extension before")));
+    let mut restored = crate::context_manager::updates::merge_world_state_updates(updates);
+    let ResponseItem::Message {
+        content,
+        internal_chat_message_metadata_passthrough,
+        ..
+    } = &mut restored[0]
+    else {
+        panic!("the extension fragment must be a developer message");
+    };
+    content.insert(
+        0,
+        ContentItem::InputText {
+            text: "neighboring developer content".to_string(),
+        },
+    );
+    internal_chat_message_metadata_passthrough
+        .as_mut()
+        .and_then(|metadata| metadata.content_item_kinds.as_mut())
+        .expect("merged fragments carry content kinds")
+        .insert(0, ContentItemKind("neighbor.instructions".to_string()));
+    restored.push(developer_msg(&["extension after"]));
+    history.replace(restored);
     let latest = extension_single_slot(Some("extension after"));
-    history.set_world_state_baseline(latest.render_full().0);
     let version_before_deduplication = history.history_version();
-    let (fragments, rollout_item) = history.update_world_state(&latest);
-    assert!(fragments.is_empty(), "an unchanged slot must not re-render");
-    assert_eq!(rollout_item, None);
-    assert_eq!(
-        history.history_version(),
-        version_before_deduplication.saturating_add(1),
-        "deduplicating restored content must invalidate history exactly once"
+    apply_world_state(&mut history, &latest);
+    assert!(
+        history.history_version() > version_before_deduplication,
+        "deduplicating restored content is a history rewrite"
     );
     assert_eq!(
         history_texts(&history),
         vec!["neighboring developer content", "extension after"],
         "only the newest slot copy may remain"
+    );
+    assert_eq!(
+        first_message_kinds(&history),
+        Some(vec![ContentItemKind("neighbor.instructions".to_string())]),
+        "removing the slot's content must remove its content kind too"
     );
 
     let version_before_unchanged_update = history.history_version();
@@ -305,13 +368,15 @@ fn extension_single_slot_replaces_then_removes_only_its_own_content() {
         "an unchanged reconciled slot must not rewrite history"
     );
 
+    let before = raw_history(&history);
     assert_eq!(
         apply_world_state(&mut history, &extension_single_slot(/*body*/ None)),
         0
     );
     assert_eq!(
-        history_texts(&history),
-        vec!["neighboring developer content"]
+        raw_history(&history),
+        before,
+        "an emptied slot leaves the history alone until compaction"
     );
 }
 

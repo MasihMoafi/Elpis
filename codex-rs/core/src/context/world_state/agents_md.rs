@@ -69,17 +69,35 @@ impl WorldStateSection for AgentsMdState {
         if matches!(previous, PreviousSectionState::Known(previous) if previous == &current) {
             return (None, Vec::new());
         }
+        // Elpis: a withdrawal appends a note instead of deleting the earlier copy, so the
+        // prompt cache keeps the history; the copy and the note leave at the next compaction.
+        let withdrawn = match (&self.instructions, &previous) {
+            (None, PreviousSectionState::Known(previous)) if previous.text.is_some() => {
+                Some(UserInstructions {
+                    directory: previous.directory.clone(),
+                    text: AGENTS_MD_WITHDRAWN_NOTE.to_string(),
+                })
+            }
+            _ => None,
+        };
 
         (
             Some(current),
             self.instructions
                 .clone()
+                .or(withdrawn)
                 .into_iter()
                 .map(WorldStateUpdate::fragment)
                 .collect(),
         )
     }
 }
+
+/// The note a Context Ledger withdrawal of AGENTS.md appends. It uses the instruction markers,
+/// so compaction removes it together with the copy it withdraws.
+pub(crate) const AGENTS_MD_WITHDRAWN_NOTE: &str = "The user withdrew these AGENTS.md instructions \
+from your context. Do not follow the AGENTS.md instructions given earlier in this conversation; \
+they no longer apply.";
 
 #[cfg(test)]
 #[path = "agents_md_tests.rs"]
