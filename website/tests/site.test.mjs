@@ -253,3 +253,11 @@ test("theme selection is present before logo paint and never swaps its source", 
   assert.match(html, /Illustrative run/);
   assert.match(html, /data-prune-flash/);
 });
+
+test("Workflows exposes flat and isometric controls for its 3D board", async () => {
+  const html = await read("index.html");
+  const scene = html.slice(html.indexOf('id="workflows"'), html.indexOf('id="love-spot"'));
+  assert.match(scene, /data-wf-view="flat"[^>]*aria-pressed="true"[^>]*>Flat<\/button>/);
+  assert.match(scene, /data-wf-view="isometric"[^>]*aria-pressed="false"[^>]*>Isometric<\/button>/);
+  assert.match(scene, /class="wf-board"[^>]*data-wf-board[^>]*data-view="flat"/);
+});
