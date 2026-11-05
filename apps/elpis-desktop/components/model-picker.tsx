@@ -1,6 +1,6 @@
 "use client";
 import { DisclosureSummary } from "@/components/ui/disclosure-summary";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Tabs } from "@base-ui/react/tabs";
 import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -57,22 +57,32 @@ export function ModelPicker({ choices, models, model, choiceId, defaultModel, di
   };
   const catalog = catalogFor(activeConnection);
   const needsKey = !!activeConnection?.needsKey && !keysSaved.includes(activeConnection.id);
+  // The open tab's connection lists live; the All tab lists every connection that needs no key (5 Nov: since the ChatGPT
+  // default took its own list on 2 Nov, All showed only the Claude models until its OpenAI tab had been opened once).
+  const targets = activeConnection ? [activeConnection] : tab === "all" ? choices.filter(choice => !!choice.provider && !choice.needsKey) : [];
+  const targetKey = targets.map(choice => `${choice.id}\u0000${choice.provider}\u0000${choice.catalogVersion ?? ""}`).join("\u0001");
+  const catalogsRef = useRef(catalogs); catalogsRef.current = catalogs;
   useEffect(() => {
-    if (!open || disabled || !activeConnection?.provider || catalog?.loaded) return;
+    if (!open || disabled) return;
     let disposed = false;
-    const { id, provider } = activeConnection;
-    const version = activeConnection.catalogVersion ?? "";
-    // The last list stays shown while the fresh one loads, so the chosen model keeps its name and keys still work.
-    setCatalogs(previous => ({ ...previous, [id]: { version, data: previous[id]?.version === version ? previous[id].data : [], loaded: false, loading: true, error: "" } }));
-    api<{ data: Model[] }>(`/models?provider=${encodeURIComponent(provider)}&refresh=true`)
-      .then(result => {
-        if (!Array.isArray(result.data)) throw new Error("This connection returned an invalid model list.");
-        if (!disposed) setCatalogs(previous => ({ ...previous, [id]: { version, data: result.data, loaded: true, loading: false, error: "" } }));
-      })
-      .catch(cause => { if (!disposed) setCatalogs(previous => ({ ...previous, [id]: { version, data: previous[id]?.data ?? [], loaded: false, loading: false, error: cause instanceof Error ? cause.message : String(cause) } })); });
+    for (const choice of targets) {
+      const { id, provider } = choice, version = choice.catalogVersion ?? "", known = catalogsRef.current[id];
+      if (!provider || (known?.version === version && known.loaded)) continue;
+      // The last list stays shown while the fresh one loads, so the chosen model keeps its name and keys still work.
+      setCatalogs(previous => ({ ...previous, [id]: { version, data: previous[id]?.version === version ? previous[id].data : [], loaded: false, loading: true, error: "" } }));
+      api<{ data: Model[] }>(`/models?provider=${encodeURIComponent(provider)}&refresh=true`)
+        .then(result => {
+          if (!Array.isArray(result.data)) throw new Error("This connection returned an invalid model list.");
+          if (!disposed) setCatalogs(previous => ({ ...previous, [id]: { version, data: result.data, loaded: true, loading: false, error: "" } }));
+        })
+        .catch(cause => { if (!disposed) setCatalogs(previous => ({ ...previous, [id]: { version, data: previous[id]?.data ?? [], loaded: false, loading: false, error: cause instanceof Error ? cause.message : String(cause) } })); });
+    }
     return () => { disposed = true; };
-  }, [open, disabled, activeConnection?.id, activeConnection?.provider, activeConnection?.catalogVersion, retry]); // Reuse successful catalogs only for the same saved configuration.
-  const available: Choice[] = [...new Map(choices.flatMap(choice => (catalogFor(choice)?.data ?? choice.models).map(item => ({ key: `${choice.id}:${item.model}`, model: item.model, choiceId: choice.id, label: modelName(item.displayName || item.model), providerLabel: choice.label, description: item.description }))).map(item => [item.key, item])).values()];
+  }, [open, disabled, targetKey, retry]); // eslint-disable-line react-hooks/exhaustive-deps -- targets are keyed by targetKey; reuse successful catalogs only for the same saved configuration.
+  // A subscription's models (claude/…, agy/…) belong to its own connection, never to another's list (5 Nov: OpenAI's live
+  // list, now loaded in All, carried the engine's Claude subscription models).
+  const own = (choice: ProviderChoice, item: Model) => { const subscription = subscriptionOf(item.model); return !subscription || subscription.prefix === choice.id; };
+  const available: Choice[] = [...new Map(choices.flatMap(choice => (catalogFor(choice)?.data ?? choice.models).filter(item => own(choice, item)).map(item => ({ key: `${choice.id}:${item.model}`, model: item.model, choiceId: choice.id, label: modelName(item.displayName || item.model), providerLabel: choice.label, description: item.description }))).map(item => [item.key, item])).values()];
   const currentModel = model || defaultModel || "";
   const connection = choiceById(choices, choiceId);
   const current = available.find(item => item.model === currentModel && item.choiceId === connection?.id) ?? null;

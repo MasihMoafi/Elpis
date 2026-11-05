@@ -117,7 +117,9 @@ test('a changed API default offers its own models and keeps the selected provide
         await page.getByLabel('Search models', { exact: true }).waitFor();
         await screenshot(page, `pairs-${theme}-all`);
         const all = await page.getByRole('option').allInnerTexts();
-        assert(!all.some(row => row.includes('Sol')), `Anthropic credits must not borrow Sol from the startup catalog: ${all.join(' | ')}`);
+        // All lists every connection's own models (5 Nov): Sol under OpenAI, never under Anthropic credits.
+        assert(!all.some(row => row.includes('Sol') && row.includes('Anthropic credits')), `Anthropic credits must not borrow Sol from the startup catalog: ${all.join(' | ')}`);
+        assert(!all.some(row => /Opus/.test(row) && /OpenAI/.test(row)), `a subscription model is never listed under OpenAI: ${all.join(' | ')}`);
         assert(all.some(row => row.includes('Opus') && row.includes('Anthropic')), 'the separate subscription route remains available');
         await page.getByRole('tab', { name: 'Anthropic credits', exact: true }).click();
         const opus = page.getByRole('option', { name: /Claude Opus 5\.5/ }); await opus.waitFor();
