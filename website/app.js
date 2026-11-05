@@ -305,14 +305,32 @@ document.querySelectorAll("[data-scene]").forEach((scene) => {
   const measure = () => drawn.forEach((stroke) => { stroke.length = screenLength(stroke.path); stroke.path.style.strokeDasharray = `${stroke.length} ${stroke.length}`; });
   const stated = [...scene.querySelectorAll("[data-states]")].map((element) => ({ element, steps: element.dataset.states.split(",").map((step) => step.split(":")).map(([at, name]) => [Number(at), name]) }));
   const shown = [...scene.querySelectorAll("[data-on], [data-off]")];
+  const board = scene.querySelector("[data-wf-board]");
+  const viewButtons = [...scene.querySelectorAll("[data-wf-view]")];
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)");
+  let manualView = null;
+  const setView = (view) => {
+    if (!board) return;
+    board.dataset.view = view;
+    viewButtons.forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.wfView === view)));
+  };
+  viewButtons.forEach((button) => button.addEventListener("click", () => {
+    manualView = button.dataset.wfView;
+    request();
+  }));
   let frame;
   function render() {
     frame = undefined;
     const travel = scene.offsetHeight - stage.offsetHeight;
-    const p = clamp(((header?.offsetHeight || 0) - scene.getBoundingClientRect().top) / Math.max(1, travel));
+    const p = board && reduced.matches ? 1 : clamp(((header?.offsetHeight || 0) - scene.getBoundingClientRect().top) / Math.max(1, travel));
+    setView(manualView ?? (p >= 0.9 ? "isometric" : "flat"));
     for (const element of shown) element.toggleAttribute("data-shown", p >= Number(element.dataset.on || 0) && p < Number(element.dataset.off || 2));
     for (const { element, text, span: [from, to] } of typed) element.textContent = text.slice(0, Math.round(text.length * clamp((p - from) / (to - from))));
-    for (const { path, length, span: [from, to] } of drawn) path.style.strokeDashoffset = `${length * (1 - clamp((p - from) / (to - from)))}`;
+    for (const { path, length, span: [from, to] } of drawn) {
+      const isometric = board?.dataset.view === "isometric" && p >= to;
+      path.style.strokeDasharray = isometric ? "5 4" : `${length} ${length}`;
+      path.style.strokeDashoffset = isometric ? "0" : `${length * (1 - clamp((p - from) / (to - from)))}`;
+    }
     for (const { element, steps } of stated) {
       const state = steps.filter(([at]) => p >= at).pop()?.[1] ?? "hidden";
       element.dataset.state = state;
@@ -323,8 +341,9 @@ document.querySelectorAll("[data-scene]").forEach((scene) => {
     for (const lit of scene.querySelectorAll("[data-lit]")) lit.toggleAttribute("data-active", p >= Number(lit.dataset.lit));
   }
   const request = () => { if (frame === undefined) frame = requestAnimationFrame(render); };
-  addEventListener("scroll", request, { passive: true });
+  addEventListener("scroll", () => { manualView = null; request(); }, { passive: true });
   addEventListener("resize", () => { measure(); request(); });
+  reduced.addEventListener("change", request);
   measure();
   render();
 });
