@@ -36,6 +36,8 @@ test('Observability shows the selected chat as the Trajectory page, names it, an
   let rollout;
   const f = await loveSpotFixture({ configureClient: client => {
     client.readThreadMetadata = async threadId => ({ id: threadId, path: rollouts[threadId] ?? rollout });
+    // The project's loose ends (5 Nov): the first chat's folder is a repository, the other's is not.
+    client.git = async (threadId, view) => { if (view !== 'health') return {}; if (threadId !== id) throw Object.assign(new Error('not a Git repository'), { status: 409 }); return { branch: 'main', uncommitted: 3, worktrees: 2, unmerged: { local: 1, remote: 4 }, stashes: 1 }; };
   } });
   try {
     rollout = path.join(f.root, 'rollout.jsonl'); await fs.writeFile(rollout, ROLLOUT);
@@ -60,6 +62,8 @@ test('Observability shows the selected chat as the Trajectory page, names it, an
     for (const shown of ['exec_command', 'Again', 'Done.']) assert.ok(text.includes(shown), `the page shows "${shown}":\n${text.slice(0, 2000)}`);
     assert.match(text, /2 turns/, 'the footer counts the two turns');
     assert.match(text, /Cache hit \d+%/, 'the footer shows the cache share');
+    await page.locator('.observability-health').waitFor();
+    assert.equal((await page.locator('.observability-health').innerText()).replace(/\s+/g, ' ').trim(), 'Branch main Uncommitted 3 files Worktrees 2 Unmerged branches 1 here · 4 on GitHub Stashes 1');
 
     // The Chat menu names the chat shown; picking another shows that chat's trajectory, newest first in the list.
     const menu = page.getByRole('combobox', { name: 'Chat' });
@@ -70,6 +74,8 @@ test('Observability shows the selected chat as the Trajectory page, names it, an
     await options.filter({ hasText: 'Plan the garden' }).click();
     await page.frameLocator('.observability iframe').getByText('Plan the garden').first().waitFor({ timeout: 20000 });
     assert.equal((await menu.innerText()).trim(), 'Plan the garden');
+    await page.waitForTimeout(500);
+    assert.equal(await page.locator('.observability-health').count(), 0, 'a folder outside Git shows no project numbers');
     assert.equal(await page.frameLocator('.observability iframe').getByText('List the files').count(), 0, 'the other chat is gone from the page');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }

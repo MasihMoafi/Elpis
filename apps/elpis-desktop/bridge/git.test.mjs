@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { changedFiles, discardFile, fileDiff, isRepository } from './git.mjs';
+import { changedFiles, discardFile, fileDiff, isRepository, repositoryHealth } from './git.mjs';
 import { startDesktopServer } from './server.mjs';
 
 const git = (cwd, ...args) => execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', '-c', 'commit.gpgsign=false', ...args], { cwd, encoding: 'utf8', env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' } });
@@ -150,4 +150,20 @@ test('GET /api/repository answers { repository } for a project folder, and a 400
   const cookie = auth.headers.get('set-cookie').split(';')[0], get = pathname => fetch(origin + pathname, { headers: { Cookie: cookie } });
   for (const [folder, repository] of [[dir, true], [plain, false]]) { const answer = await get(query(folder)); assert.equal(answer.status, 200); assert.deepEqual(await answer.json(), { repository }); }
   for (const pathname of ['/api/repository', '/api/repository?cwd=', query('relative'), query(path.join(plain, 'nope')), `${query(dir)}&cwd=${encodeURIComponent(dir)}`, `${query(dir)}&extra=1`]) assert.equal((await get(pathname)).status, 400, pathname);
+});
+
+// 5 Nov, Masih: the dashboard shows a project's loose ends, as the project board counts them.
+test('repository health counts uncommitted files, worktrees, unmerged branches and stashes', async t => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-git-health-'));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  git(dir, 'init', '-q', '-b', 'main');
+  await write(dir, 'a.txt', 'one\n'); git(dir, 'add', 'a.txt'); git(dir, 'commit', '-q', '-m', 'one');
+  const clean = await repositoryHealth(dir);
+  assert.deepEqual(clean, { branch: 'main', uncommitted: 0, worktrees: 1, unmerged: { local: 0, remote: 0 }, stashes: 0 }, 'a clean repository has nothing loose');
+  git(dir, 'switch', '-q', '-c', 'side'); await write(dir, 'b.txt', 'two\n'); git(dir, 'add', 'b.txt'); git(dir, 'commit', '-q', '-m', 'two'); git(dir, 'switch', '-q', 'main');
+  git(dir, 'worktree', 'add', '-q', path.join(dir, '..', path.basename(dir) + '-wt'), '-b', 'wt');
+  t.after(() => fs.rm(path.join(dir, '..', path.basename(dir) + '-wt'), { recursive: true, force: true }));
+  await write(dir, 'a.txt', 'changed\n'); git(dir, 'stash', '-q'); await write(dir, 'a.txt', 'changed again\n'); await write(dir, 'new.txt', 'x\n');
+  assert.deepEqual(await repositoryHealth(dir), { branch: 'main', uncommitted: 2, worktrees: 2, unmerged: { local: 1, remote: 0 }, stashes: 1 });
+  await assert.rejects(repositoryHealth(os.tmpdir()), /not a Git repository|Git could not read/i, 'outside Git it says so instead of counting');
 });

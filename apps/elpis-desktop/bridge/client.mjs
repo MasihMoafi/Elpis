@@ -21,7 +21,7 @@ import { providerModels } from './provider-models.mjs';
 import { attachmentInput, recordedMedia } from './attachments.mjs';
 import { SkillTrash } from './skill-trash.mjs';
 import { createGithubConnector } from './github-connector.mjs';
-import { changedFiles, createChatWorktree, currentBranch, discardFile, fileDiff, isChatWorktreePath, releaseChatWorktree, restoreChatWorktree, reviewChoices, undoChatWorktree, workingDiff, NOT_A_REPOSITORY } from './git.mjs';
+import { changedFiles, createChatWorktree, currentBranch, repositoryHealth, discardFile, fileDiff, isChatWorktreePath, releaseChatWorktree, restoreChatWorktree, reviewChoices, undoChatWorktree, workingDiff, NOT_A_REPOSITORY } from './git.mjs';
 import { recordedChanges } from './recorded-changes.mjs';
 import { elicitationResponse, grantedPermissions, permissionsResponse } from '../lib/approvals.ts';
 import { RewindSnapshots } from './rewind-snapshots.mjs';
@@ -2258,9 +2258,9 @@ export class DesktopClient extends EventEmitter {
    * checked out, for the chat's branch chip. */
   async git(id, view, file) {
     threadId(id);
-    if (!['review', 'diff', 'changes', 'file', 'branch'].includes(view)) throw new BridgeError('Choose a Git view: review, diff, changes, file or branch');
+    if (!['review', 'diff', 'changes', 'file', 'branch', 'health'].includes(view)) throw new BridgeError('Choose a Git view: review, diff, changes, file, branch or health');
     const cwd = await this.#folderOf(id);
-    try { return await (view === 'review' ? reviewChoices(cwd) : view === 'changes' ? changedFiles(cwd) : view === 'file' ? fileDiff(cwd, file) : view === 'branch' ? currentBranch(cwd) : workingDiff(cwd)); }
+    try { return await (view === 'review' ? reviewChoices(cwd) : view === 'changes' ? changedFiles(cwd) : view === 'file' ? fileDiff(cwd, file) : view === 'branch' ? currentBranch(cwd) : view === 'health' ? repositoryHealth(cwd) : workingDiff(cwd)); }
     catch (error) {
       // Outside Git, the changes are the edits this chat recorded (bridge/recorded-changes.mjs); /review needs Git.
       if (error.message !== NOT_A_REPOSITORY || !['changes', 'file', 'diff'].includes(view)) throw error;

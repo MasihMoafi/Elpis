@@ -158,6 +158,18 @@ export async function discardFile(chatFolder, file) {
 
 /** The branch checked out in a folder, for the chat's branch chip; null outside a repository, on a detached HEAD, or
  * when the folder is gone. */
+/** The repository's loose ends, as the project board counts them (5 Nov, Masih: "in our dashboard ... give us those
+ * numbers too"): uncommitted files, worktrees, branches not merged into HEAD (local and on the remote) and stashes. */
+export async function repositoryHealth(cwd) {
+  folder(cwd);
+  const lines = text => text.split('\n').filter(line => line.trim()).length;
+  const count = args => run(cwd, args).then(lines);
+  const [uncommitted, worktrees, localUnmerged, remoteUnmerged, stashes, branch] = await Promise.all([
+    count(['status', '--porcelain']), count(['worktree', 'list']), count(['branch', '--no-merged', 'HEAD']),
+    count(['branch', '-r', '--no-merged', 'HEAD']), count(['stash', 'list']), run(cwd, ['branch', '--show-current']).then(text => text.trim() || null)]);
+  return { branch, uncommitted, worktrees, unmerged: { local: localUnmerged, remote: remoteUnmerged }, stashes };
+}
+
 export async function currentBranch(cwd) {
   folder(cwd);
   return { branch: await run(cwd, ['branch', '--show-current']).then(text => text.trim() || null, () => null) };

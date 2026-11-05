@@ -1663,3 +1663,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .observability-chat { display:inline-flex; align-items:center; gap:6px; max-width:min(520px, 100%); height:32px; padding:0 10px; border-radius:var(--radius-md, 6px); font-size:14px; }
 .observability-chat:hover { background:var(--accent); }
 .observability-chat-menu { width:min(480px, 90vw); }
+.observability-health { display:flex; flex-wrap:wrap; gap:4px 18px; margin:0 0 0 auto; font-size:var(--text-small); color:var(--muted-foreground); }
+.observability-health > div { display:flex; gap:6px; }
+.observability-health dt::after { content:":"; }
+.observability-health dd { margin:0; color:var(--foreground); font-variant-numeric:tabular-nums; }
