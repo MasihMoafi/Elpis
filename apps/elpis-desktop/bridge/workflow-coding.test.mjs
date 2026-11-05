@@ -221,7 +221,8 @@ test('live ACP progress survives reload; steering waits for tools and records de
   Object.assign(env.live, { FAKE_ACP_TOOL_RELEASE: release, FAKE_ACP_RELEASE: finish });
   const run = await g.start([task('live', { instruction: '[tool-flight] [wait]' })]);
   await until(() => g.log('live'), log => log.some(row => row.toolStarted));
-  const running = await g.record(run.graphId);
+  // The fake agent logs the tool before the bridge has recorded its update, so wait for the run record itself.
+  const running = await until(() => g.record(run.graphId), record => record.tasks[0].progress?.some(row => row.title === 'Read notes' && row.status === 'in_progress'));
   assert.ok(running.tasks[0].progress?.some(row => row.text?.includes('Thinking about it.')), 'live text is available before completion');
   assert.ok(running.tasks[0].progress.some(row => row.title === 'Read notes' && row.status === 'in_progress'));
   const accepted = await g.runs.steer(run.graphId, 'live', { id: 'message-1', text: 'Include planted steering evidence.' });
