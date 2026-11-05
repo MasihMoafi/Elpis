@@ -652,7 +652,11 @@ export default function Home() {
       // The engine lists a chat's items only once it has loaded the chat; until then a saved chat reads as empty. Like
       // the Codex TUI, which resumes before it reads history, read it again once the resume below has loaded it.
       unread = !result.data.length && !result.nextCursor;
-    } catch (e) { if (request.current === id && !retryableSessionError(e)) setError(String(e)); return; }
+    } catch (e) {
+      // 5 Nov, Masih: "this error doesn't even need to show ... the chat was loaded when this error showed." A chat already
+      // on screen from its saved copy stays as it is; only a chat with nothing to show reports the failure.
+      if (request.current === id && !retryableSessionError(e) && !shown) setError(String(e)); return;
+    }
     finally { if (request.current === id) setLoading(false); }
     // Follow it live in this app: subscribe, and learn the turn it is running now.
     try {
@@ -922,7 +926,7 @@ export default function Home() {
     } catch (e) {
       const current = selectedRef.current;
       if (current && (current.parentThreadId ?? current.id) === id) holdAgentPanel(current);
-      setError(String(e));
+      if (cursor) setError(String(e)); // A background read retries on its own; only his "Load more" click hears of a failure.
     } finally { checkedChildren.current.add(id); childPaging.current.delete(id); setLoadingChildren(prev => ({ ...prev, [id]: false })); }
   }, [holdAgentPanel]);
   const selectedTeamId = selected?.parentThreadId ?? selected?.id;
@@ -948,7 +952,7 @@ export default function Home() {
           const preserved = mergeHistoryWithLive(prev, merged, liveKeysAfter(historyRevision));
           return JSON.stringify(preserved) === JSON.stringify(prev) ? prev : preserved;
         });
-      } catch (e) { if (!disposed) setError(String(e)); } finally { inFlight = false; }
+      } catch { /* Read again in 3 s; the chat stays on screen meanwhile. */ } finally { inFlight = false; }
     }, 3000);
     return () => { disposed = true; clearInterval(timer); };
   }, [selected?.id, selectedLiveError, view, loading, select, liveKeysAfter]);
@@ -1967,7 +1971,7 @@ export default function Home() {
       try {
         const ids = JSON.parse(observedIds) as string[];
         for (let start = 0; start < ids.length && !disposed; start += 3) await Promise.all(ids.slice(start, start + 3).map(id => loadChildren(id, undefined, false)));
-      } catch (cause) { if (!disposed) setError(String(cause)); }
+      } catch { /* The next refresh tries again. */ }
       finally { inFlight = false; }
     };
     void refresh(); const timer = setInterval(() => void refresh(), 5000);

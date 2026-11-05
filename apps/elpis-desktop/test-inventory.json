@@ -403,7 +403,8 @@
     "tests/settings-nav-whole-rows.test.cjs",
     "tests/agent-inline.test.cjs",
     "tests/matilda-live-voice.test.cjs",
-    "tests/observability.test.cjs"
+    "tests/observability.test.cjs",
+    "tests/background-refusal.test.cjs"
   ],
   "opt-in": [
     "tests/screen-capture-electron.test.cjs",
