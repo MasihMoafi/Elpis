@@ -31,7 +31,6 @@ the unmatched controls limit causal attribution of differences between arms.
 
 - [Cache-preservation argument](rq3/BOUNDED_SYNTHETIC_EVALUATION.md#cache-preservation-argument).
 - [Cost protocol](../../website/evidence/COST_EFFICIENCY_PROTOCOL.md) and [cost results](../../website/evidence/COST_EFFICIENCY_RESULTS.md).
-- [Prompt-cache mechanics](../prompt-caching.md).
 
 ## RQ5 — Auditability
 
