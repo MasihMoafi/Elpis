@@ -301,6 +301,7 @@ function buildIsometric(board) {
     if (!node.mother) label.append(Object.assign(document.createElement("span"), { textContent: node.wave }));
     label.append(node.card.querySelector("strong")?.textContent || "");
     cube.append(...["top", "south", "east"].map((face) => Object.assign(document.createElement("i"), { className: face })), label);
+    node.cube = cube;
     board.append(cube);
   });
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -318,12 +319,13 @@ function buildIsometric(board) {
     const n = path.getAttribute("d").match(/-?[\d.]+/g).map(Number);
     const [sx, sy, ex, ey] = [n[0], n[1], n[n.length - 2], n[n.length - 1]];
     const down = Math.abs(sx - ex) < 1;
-    return { from: nearest(sx, sy, down ? 8.5 : 17), to: nearest(ex, ey, down ? 8.5 : 0) };
+    return { flat: path, from: nearest(sx, sy, down ? 8.5 : 17), to: nearest(ex, ey, down ? 8.5 : 0) };
   });
   const draw = () => {
     const across = (26 / Math.max(1, board.offsetWidth)) * 100, down = (26 / Math.max(1, board.offsetHeight)) * 100;
-    svg.replaceChildren(...links.map(({ from, to }) => {
-      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    svg.replaceChildren(...links.map((link) => {
+      const { from, to } = link;
+      const path = link.path = document.createElementNS("http://www.w3.org/2000/svg", "path");
       const vertical = Math.abs(from.cx - to.cx) < 1, mid = (from.cx + to.cx) / 2;
       path.setAttribute("d", vertical
         ? `M${from.cx} ${from.y} V${to.y - Math.sign(to.y - from.y) * down}`
@@ -331,8 +333,16 @@ function buildIsometric(board) {
       return path;
     }));
   };
+  // A wire carries work while its agent runs: lit from the flat wire's data-lit, until the agent it feeds is done.
+  const sync = () => {
+    for (const { card, cube } of cards) cube.dataset.state = card.hasAttribute("data-shown") ? card.dataset.state || "waiting" : "hidden";
+    for (const { flat, path, from, to } of links) {
+      path?.toggleAttribute("data-hidden", !from.card.hasAttribute("data-shown") || !to.card.hasAttribute("data-shown"));
+      path?.toggleAttribute("data-active", flat.hasAttribute("data-active") && !/done|passed/.test(to.card.dataset.state || ""));
+    }
+  };
   draw();
-  return draw;
+  return { draw, sync };
 }
 
 // Scroll-driven scenes (Workflows, Love Spot): the section's scroll position is the timeline.
@@ -364,19 +374,22 @@ document.querySelectorAll("[data-scene]").forEach((scene) => {
   const reduced = matchMedia("(prefers-reduced-motion: reduce)");
   // Workflows: the 2D run plays over the first part of the scroll, then the board tilts into the isometric
   // view as the visitor keeps scrolling, and stays there; scrolling back flattens it.
-  const FLAT_END = 0.62, TILT_FROM = 0.66, TILT_TO = 0.84, CUBE_FROM = 0.82, CUBE_TO = 0.92;
-  const cubes = board ? buildIsometric(board) : null;
+  // The flat board shows the team being designed (timeline 0 to RUN), then turns isometric, and the run itself plays
+  // on the cubes over most of the scroll, as in the Workflows films.
+  const RUN = 0.32, DESIGN_END = 0.26, TILT_FROM = 0.27, TILT_TO = 0.37, CUBE_FROM = 0.35, CUBE_TO = 0.42, RUN_FROM = 0.44, RUN_TO = 0.94;
+  const timeline = (raw) => raw <= DESIGN_END ? (raw / DESIGN_END) * RUN : raw < RUN_FROM ? RUN : RUN + (1 - RUN) * clamp((raw - RUN_FROM) / (RUN_TO - RUN_FROM));
+  const iso = board ? buildIsometric(board) : null;
   const progress = () => clamp(((header?.offsetHeight || 0) - scene.getBoundingClientRect().top) / Math.max(1, scene.offsetHeight - stage.offsetHeight));
   const scrollToProgress = (target) => {
     const travel = scene.offsetHeight - stage.offsetHeight;
     scrollTo({ top: scene.getBoundingClientRect().top + scrollY - (header?.offsetHeight || 0) + travel * target, behavior: reduced.matches ? "auto" : "smooth" });
   };
-  viewButtons.forEach((button) => button.addEventListener("click", () => scrollToProgress(button.dataset.wfView === "isometric" ? 0.96 : FLAT_END)));
+  viewButtons.forEach((button) => button.addEventListener("click", () => scrollToProgress(button.dataset.wfView === "isometric" ? 0.6 : DESIGN_END)));
   let frame;
   function render() {
     frame = undefined;
     const raw = progress(); // the visitor drives this by scrolling, so it plays with reduced motion too
-    const p = board ? clamp(raw / FLAT_END) : raw;
+    const p = board ? timeline(raw) : raw;
     if (board) {
       const ease = (from, to) => { const t = clamp((raw - from) / (to - from)); return t * t * (3 - 2 * t); };
       const tilt = ease(TILT_FROM, TILT_TO);
@@ -401,10 +414,11 @@ document.querySelectorAll("[data-scene]").forEach((scene) => {
       if (target) target.textContent = target === element ? (label ?? "") : (target.dataset[`label${state[0].toUpperCase()}${state.slice(1)}`] ?? "");
     }
     for (const lit of scene.querySelectorAll("[data-lit]")) lit.toggleAttribute("data-active", p >= Number(lit.dataset.lit));
+    iso?.sync();
   }
   const request = () => { if (frame === undefined) frame = requestAnimationFrame(render); };
   addEventListener("scroll", request, { passive: true });
-  addEventListener("resize", () => { measure(); cubes?.(); request(); });
+  addEventListener("resize", () => { measure(); iso?.draw(); request(); });
   reduced.addEventListener("change", request);
   measure();
   render();
