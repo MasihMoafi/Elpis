@@ -38,6 +38,8 @@ html.matilda-dragging { user-select:none; -webkit-user-select:none; }
 .dark .matilda-face .matilda-avatar-light { display:none; }
 .dark .matilda-face .matilda-avatar-dark { display:block; }
 .matilda-pin-face { display:block; width:20px; height:20px; border-radius:50%; object-fit:cover; }
+/* A palette's own character (lib/theme-characters.ts): one transparent picture on the palette's card colour, in light and dark. */
+.matilda-theme-face { border-radius:9999px; object-fit:cover; background:color-mix(in oklab, var(--primary) 16%, var(--card)); }
 .matilda-pin-face.matilda-avatar-dark { display:none; }
 .dark .matilda-pin-face.matilda-avatar-light { display:none; }
 .dark .matilda-pin-face.matilda-avatar-dark { display:block; }

@@ -404,7 +404,8 @@
     "tests/agent-inline.test.cjs",
     "tests/matilda-live-voice.test.cjs",
     "tests/observability.test.cjs",
-    "tests/background-refusal.test.cjs"
+    "tests/background-refusal.test.cjs",
+    "tests/theme-characters.test.cjs"
   ],
   "opt-in": [
     "tests/screen-capture-electron.test.cjs",

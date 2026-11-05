@@ -13,6 +13,7 @@ import { MatildaMiniChat, useMatildaMiniChat } from "@/components/matilda-mini-c
 import { MatildaHeartBurst } from "@/components/matilda-heart-burst";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
+import { useThemeCharacter } from "@/lib/theme-characters";
 import { api, signedIn } from "@/lib/api";
 import { MATILDA_CHANGED, MATILDA_CHAT_SHOWN } from "@/lib/matilda";
 import { appStorage } from "@/lib/projects";
@@ -120,6 +121,7 @@ export function MatildaCompanion() {
   const [state, setState] = useState<Companion | null>(null);
   const [chatOpen, setChatOpen] = useState(false), mini = useMatildaMiniChat(chatOpen);
   const voice = useHerVoice();
+  const character = useThemeCharacter();
   const mood = useMood(mini.posting || mini.conversation.busy, mini.conversation.entries.filter(entry => entry.item.type === "agentMessage").length, voice.call);
   const suppressClick = useRef(false), faceRef = useRef<HTMLButtonElement>(null), floatRef = useRef<HTMLElement>(null);
   useEffect(() => { if (!state?.pinned) setChatOpen(false); }, [state?.pinned]);
@@ -287,6 +289,10 @@ export function MatildaCompanion() {
       onClick={() => { if (!suppressClick.current) setChatOpen(open => !open); }}
       onPointerCancel={() => { const start = drag.current; if (start) put(start.left, start.top, start.size); release(); }}
       onKeyDown={keys(false)} onPointerEnter={() => mood.setHovered(true)} onPointerLeave={() => mood.setHovered(false)}>
+      {/* A palette with its own character shows her, one picture for every mood (lib/theme-characters.ts). */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      {character && <img src={character.image} alt="Matilda" data-character={character.name} width={size} height={size} draggable={false} className="matilda-theme-face select-none" />}
+      {!character && <>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={MATILDA_SHOTS_LIGHT.listening} alt="Matilda" width={size} height={size} draggable={false} className="matilda-avatar-light select-none" />
       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -297,6 +303,7 @@ export function MatildaCompanion() {
         // eslint-disable-next-line @next/next/no-img-element
         <img key={`${name}-dark`} src={MATILDA_SHOTS[name]} alt="" aria-hidden="true" width={size} height={size} draggable={false} className="matilda-avatar-dark matilda-mood select-none" data-mood={name} data-shown={mood.shown === name} />,
       ]))}
+      </>}
       {voice.speaking && <span className="matilda-speaking-ring" aria-hidden="true" />}
     </button>
     </Tooltip>
@@ -316,7 +323,7 @@ export function MatildaCompanion() {
   </section>;
   return <div className="relative flex min-w-0 shrink-0 items-center gap-1 pr-2">
     <MatildaHeartBurst />
-    {floating ? createPortal(floating, document.body) : <Button variant="ghost" size="icon-sm" className="matilda-pin" data-speaking={voice.speaking || undefined} aria-label="Pin Matilda" title="Pin Matilda" disabled={busy} onClick={pin}><><img className="matilda-pin-face matilda-avatar-light" src={MATILDA_SHOTS_LIGHT.softSmile} alt="" /><img className="matilda-pin-face matilda-avatar-dark" src={MATILDA_SHOTS.softSmile} alt="" />{voice.speaking && <span className="matilda-speaking-ring" aria-hidden="true" />}</></Button>}
+    {floating ? createPortal(floating, document.body) : <Button variant="ghost" size="icon-sm" className="matilda-pin" data-speaking={voice.speaking || undefined} aria-label="Pin Matilda" title="Pin Matilda" disabled={busy} onClick={pin}><>{character ? <img className="matilda-pin-face matilda-theme-face" src={character.image} alt="" data-character={character.name} /> : <><img className="matilda-pin-face matilda-avatar-light" src={MATILDA_SHOTS_LIGHT.softSmile} alt="" /><img className="matilda-pin-face matilda-avatar-dark" src={MATILDA_SHOTS.softSmile} alt="" /></>}{voice.speaking && <span className="matilda-speaking-ring" aria-hidden="true" />}</></Button>}
     {!floating && <HerVoiceControls voice={voice} threadId={state?.threadId} />}
     {!floating && alert && <div className="hud-popover matilda-alert-popup matilda-alert-anchor">{alert}</div>}
   </div>;
