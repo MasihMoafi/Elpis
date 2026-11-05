@@ -55,8 +55,8 @@ These are the required behaviors, numbered 1–85 without gaps; refer to one as 
 37. Opening the board or its chat clears the Love Spot unread notice. A later reply can notify again. The board retains pages and artwork; its Style control can close and reopen without changing marks. Delete and its trash icon share a baseline in both themes and the standalone board. (H2, H3, C7, R70)
 38. Respect Masih's preference against cats on his board; removing a rejected painting preserves the surrounding conversation. (H1)
 39. Board bars have no move handles; Excalidraw's GitHub, Follow, Discord and Library controls are absent. (S25)
-40. The pinned companion floats over each app page, can be moved, pinned and unpinned, and keeps its position. Its mini chat preserves drafts and never changes the main composer. It shows no earlier messages by default; one designated action reveals them. When Matilda is off, the pinned chat remains usable. (C7)
-41. The companion's music control only mutes or unmutes the existing player and restores the prior volume. A drag does not activate the chat or move the content underneath it. (C7)
+40. The pinned companion floats over each app page, can be moved, pinned and unpinned, and keeps its position. Its mini chat preserves drafts and never changes the main composer. Clicking her opens a slim message field below her, as in ChatGPT Pets; it sends only on Enter or Send, and Esc, an outside click or another click on her closes it. It shows no earlier messages by default; one designated action reveals them. When Matilda is off, the pinned chat remains usable. (C7)
+41. The companion's music control only mutes or unmutes the existing player and restores the prior volume. A drag does not activate the chat or move the content underneath it. A screenshot is taken once, only on request, through the system picker; cancelling returns no image. (C7)
 42. Love Spot keeps text working and hides unavailable audio controls, including for legacy Love Spot chats. Unavailable controls never start speech or capture the microphone. Do not show a Matilda voice-call button. (C14, R71)
 
 ## Voice and read aloud
@@ -96,7 +96,7 @@ These are the required behaviors, numbered 1–85 without gaps; refer to one as 
 
 70. Full access is the initial default in desktop and TUI for every provider and means no ordinary approval with full filesystem access; Bypass is a separate explicit choice. The saved default applies to chats without an explicit choice; a chat's selection survives reload. Retain identifiable older explicit choices; legacy fallbacks follow the default. Managed restrictions disable forbidden choices and reject them at the runtime boundary. (P1–P4, A233, A251)
 71. Automatically started helpers operate within their declared scope and managed restrictions without asking the person for ordinary tool approval. A helper cannot grant itself a higher permission ceiling. (P3, R59, R60)
-72. Changing a loaded helper's permissions or opening its live history uses its owning runtime. Unknown helpers and grants above the ceiling are refused. See [A166](specs/a166-helper-chat.md).
+72. Changing a loaded helper's permissions or opening its live history uses its owning runtime. Unknown helpers and grants above the ceiling are refused. (`bridge/helper-desktop.test.mjs`)
 
 ## Settings, models and accounts
 
