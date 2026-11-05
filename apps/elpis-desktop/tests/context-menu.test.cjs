@@ -162,7 +162,8 @@ test('right-click on a chat inside a Ctrl/Shift selection acts on the whole sele
   await page.getByRole('menuitem', { name: 'Organize', exact: true }).hover();
   const organization = page.getByRole('menu', { name: 'Organize', exact: true }); await organization.waitFor();
   assert.deepEqual(await organization.getByRole('menuitem').allTextContents(), ['Move 3 chats to group', 'Put under…', 'Move to project…', 'New project from 3 chats…']);
-  await page.keyboard.press('Escape');
+  // Escape closes only the submenu; it is still in the page during its exit animation (two menus match under load).
+  await page.keyboard.press('Escape'); await organization.waitFor({ state: 'detached' });
   const fromRightClick = await popup();
   await shot('chat-selection-right-click');
   await closeMenu();

@@ -124,7 +124,7 @@ for (const colorScheme of ['light']) for (const running of [false, true]) test(`
     assert.equal(await f.page.locator('.composer .context-ring').isVisible(), true, 'the context icon stays visible');
     assert.equal(await f.page.locator('.composer .fast-toggle').isVisible(), m.toolbarWidth > 380, 'Fast stays visible except in a genuinely tight composer');
     assert.equal(m.leaks, 0, `controls stay inside the composer at ${width}px`);
-    assert.equal(m.overlaps, 0, `controls do not overlap at ${width}px`);
+    assert.equal(m.overlaps, 0, `controls do not overlap at ${width}px: ${JSON.stringify(m.overlapPairs)}`);
   }
   await f.page.setViewportSize({ width: 1100, height: 700 });
   // 430: the mid-turn width where the end-aligned right group once spilled under the permissions pill (5 Nov).
