@@ -32,7 +32,6 @@ import { useMentionMenu } from "@/components/mention-menu";
 import { RewindDialog } from "@/components/rewind-dialog";
 import { useNavHistory } from "@/lib/nav-history";
 import { openControl } from "@/lib/slash-focus";
-import { useElpisSettings } from "@/lib/settings-store";
 import { ReadAloud } from "@/components/read-aloud";
 import { LiveVoiceProvider } from "@/components/live-voice";
 import { ProfileDialog } from "@/components/profile-dialog";
@@ -48,7 +47,7 @@ import { SidePanel, sideMinWidth } from "@/components/side-panel";
 import { FloatChatBar, FloatChatPill } from "@/components/float-chat";
 import { useSessionSplit } from "@/components/session-split";
 import { title, agentName,
-  type ProviderSettings, type Thread } from "@/lib/api";
+  type Thread } from "@/lib/api";
 import { useComposerHeight } from "@/lib/use-composer-height";
 import { useTranscriptHistory } from "@/lib/use-transcript-history";
 import { useConversationList } from "@/lib/use-conversation-list";
@@ -116,7 +115,7 @@ import { useSidebarSearch } from "@/lib/use-sidebar-search";
 import { createWorkspaceChatTabs } from "@/components/workspace-chat-tabs";
 import { WorkspaceOrganizationDialogs } from "@/components/workspace-organization-dialogs";
 import { errorText } from "@/lib/error-text.mjs";
-import { refreshModelCatalog, useModelCatalog } from "@/lib/model-catalog";
+import { useWorkspaceModels } from "@/lib/use-workspace-models";
 
 
 
@@ -128,12 +127,7 @@ export default function Home() {
   // Chat tabs (lib/chat-tabs.ts): the shown tab follows the chat on screen, so every way of opening a chat lands in it.
   const chatTabs = useChatTabs(message => setError(message));
   const { tabs, tabsRef, updateTabs, restoreTabs, restored: restoredTabs } = chatTabs;
-  // The engine's live model list, shared by every model menu (lib/model-catalog.ts).
-  const catalog = useModelCatalog(), { models } = catalog;
-  const refreshModels = refreshModelCatalog;
-  // One settings snapshot for the whole app, so a main model saved in Settings is what the next new chat starts with.
-  const settingsSnapshot = useElpisSettings().data as unknown as ProviderSettings | null;
-  const providerSettings = settingsSnapshot?.main && Array.isArray(settingsSnapshot.providers) ? settingsSnapshot : null;
+  const { catalog, models, settingsSnapshot, providerSettings, refreshModels } = useWorkspaceModels();
   const options = useConversationOptions();
   const { choiceId, model, effort, setEffort, nextTurn, setNextTurn, threadModes, setThreadModes, planAnswered } = options;
   const projectState = useProjectState();
