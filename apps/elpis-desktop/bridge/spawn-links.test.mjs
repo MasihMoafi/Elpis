@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import fsSync from 'node:fs';
-import { DesktopClient } from './client.mjs';
+import { DesktopClient } from './client.mts';
 import { SpawnLinks } from './spawn-links.mjs';
 
 const MAKER = '00000000-0000-0000-0000-0000000000a1';
@@ -87,6 +87,9 @@ test('unarchiving a chat brings back the agents archived with it, and not one ar
   assert.equal(f.threads.get(OTHER).archived, true, 'an agent archived before its chat stays archived');
 });
 
+/** @template {{ id: string }} T @param {T[]} rows @param {string} id */
+function rowFor(rows, id) { const row = rows.find(value => value.id === id); assert.ok(row); return row; }
+
 test('cold history recovers only creation-time references, keeps explicit and user parents, and caches unchanged bytes', async t => {
   const f = fixture(t), at = 1792827361, second = '00000000-0000-0000-0000-0000000000a4';
   const wrongTime = '00000000-0000-0000-0000-0000000000a5';
@@ -100,9 +103,9 @@ test('cold history recovers only creation-time references, keeps explicit and us
   Object.assign(f.threads.get(OTHER), { threadSource: 'user', createdAt: at });
   const before = await fs.stat(transcript);
   const page = await f.client.listThreads();
-  for (const id of [CHILD, second]) assert.equal(page.data.find(row => row.id === id).parentThreadId, MAKER);
-  assert.equal(page.data.find(row => row.id === OTHER).parentThreadId, undefined, 'a user-created chat is never inferred as a child');
-  assert.equal(page.data.find(row => row.id === wrongTime).parentThreadId, undefined, 'a later mention is not creation evidence');
+  for (const id of [CHILD, second]) assert.equal(rowFor(page.data, id).parentThreadId, MAKER);
+  assert.equal(rowFor(page.data, OTHER).parentThreadId, undefined, 'a user-created chat is never inferred as a child');
+  assert.equal(rowFor(page.data, wrongTime).parentThreadId, undefined, 'a later mention is not creation evidence');
   assert.equal(await fs.readFile(transcript, 'utf8'), contents);
   assert.equal((await fs.stat(transcript)).mtimeMs, before.mtimeMs, 'transcripts remain read-only');
   // A cached result survives restart without opening its transcript again.
@@ -145,9 +148,9 @@ test('a creator on an older history page is included beside its recovered childr
     queueMicrotask(() => f.socket.emit('message', JSON.stringify({ id: request.id, result: { data: structuredClone(data), nextCursor: request.params.cursor ? null : 'older' } })));
   };
   const page = await f.client.listThreads();
-  assert.equal(page.data.find(row => row.id === CHILD).parentThreadId, MAKER);
+  assert.equal(rowFor(page.data, CHILD).parentThreadId, MAKER);
   assert.equal(page.data.filter(row => row.id === MAKER).length, 1, 'an unloaded parent never leaves its child loose');
-  assert.equal(page.data.find(row => row.id === OTHER).parentThreadId, undefined);
+  assert.equal(rowFor(page.data, OTHER).parentThreadId, undefined);
 });
 
 test('new references scan only appended bytes and unchanged negative lookups survive restart', async t => {

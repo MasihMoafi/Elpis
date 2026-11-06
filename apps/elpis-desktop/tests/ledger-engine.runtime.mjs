@@ -79,7 +79,7 @@ try {
   const session = await fetch(`${url.origin}/api/session`, { method: 'POST', headers: { Origin: url.origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ token: new URLSearchParams(url.hash.slice(1)).get('token') }) });
   assert.equal(session.status, 200);
   const cookie = session.headers.get('set-cookie').split(';')[0];
-  const { DesktopClient } = await import('../bridge/client.mjs');
+  const { DesktopClient } = await import('../bridge/client.mts');
   const freshState = async () => {
     const client = await DesktopClient.connect({ socketPath: bridge.socketPath });
     try { return await client.customize(); } finally { client.close(); }

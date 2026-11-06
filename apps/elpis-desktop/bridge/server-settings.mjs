@@ -1,4 +1,4 @@
-import { BridgeError, MAX_BRIDGE_MESSAGE_BYTES } from './client.mjs';
+import { BridgeError, MAX_BRIDGE_MESSAGE_BYTES } from './client.mts';
 import { appIdentity } from './app-identity.mts';
 import { body, json, pageQuery } from './server-http.mjs';
 

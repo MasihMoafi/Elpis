@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { BridgeError, text } from './client.mjs';
+import { BridgeError, text } from './client.mts';
 import { loveNodeSpec } from './love-agents.mjs';
 import { runAcpNode, handoffText } from './acp-nodes.mjs';
 import { workflowRoute, quotaFailure } from './workflow-models.mts';

@@ -6,7 +6,7 @@ import net from 'node:net';
 import { promisify } from 'node:util';
 import { childEnv } from '../bridge/tools.mjs';
 import { runtimeTools } from '../bridge/runtime-paths.mts';
-import { existingSocket } from '../bridge/client.mjs';
+import { existingSocket } from '../bridge/client.mts';
 
 const run = promisify(execFile);
 

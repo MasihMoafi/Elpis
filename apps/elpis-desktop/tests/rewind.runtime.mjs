@@ -5,7 +5,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { spawn, execFileSync } from 'node:child_process';
 import { once } from 'node:events';
-import { DesktopClient } from '../bridge/client.mjs';
+import { DesktopClient } from '../bridge/client.mts';
 import { startDesktopServer } from '../bridge/server.mjs';
 import { chooseOption } from './controls.cjs';
 const require = createRequire(import.meta.url);

@@ -1,14 +1,7 @@
 import { BridgeError, threadId } from './validate.mts';
+import type { ClientState } from './client-state.mts';
 
-/**
- * @template T
- * @param {import('./client-state.mjs').ClientState} clientState
- * @param {unknown} id
- * @param {() => T | Promise<T>} run
- * @param {boolean} [wait]
- * @returns {Promise<Awaited<T>>}
- */
-export async function internal_mutate(clientState, id, run, wait = false) {
+export async function internal_mutate<T>(clientState: ClientState, id: unknown, run: () => T | Promise<T>, wait = false): Promise<Awaited<T>> {
     threadId(id);
     if (clientState.mutating.has(id)) {
       if (!wait) throw new BridgeError('Another operation on this conversation is pending', 409);

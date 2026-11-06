@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { DesktopClient } from './client.mjs';
+import { DesktopClient } from './client.mts';
 import { startDesktopServer } from './server.mjs';
 
 const CHAT = '00000000-0000-0000-0000-0000000000a1';

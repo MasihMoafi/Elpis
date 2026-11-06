@@ -3,42 +3,37 @@ import { randomUUID } from 'node:crypto';
 import { smartPruneSnapshot, tokenUsageSnapshot } from './elpis-features.mjs';
 import { ACCOUNT_NOTIFICATIONS, APPROVALS, ARCHIVED_SESSION, DOWNLOADS, EXPLAINED, LISTED, NOTIFICATIONS, SIDE_RPCS, readRpc } from './client-protocol.mts';
 import { modeOf } from './client-permissions.mts';
-import { internal_decorate, internal_forget, internal_learnSpawn } from './client-thread-list.mjs';
+import { internal_decorate, internal_forget, internal_learnSpawn } from './client-thread-list.mts';
+import type { DesktopClient } from './client.mts';
+import type { ClientSocket, ClientState } from './client-state.mts';
+import type { DecoratedInput, EngineItem } from './client-thread-list.mts';
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {import('./client-state.mjs').ClientSocket} socket */
-export function internal_bind(clientState, socket) {
+export function internal_bind(this: DesktopClient, clientState: ClientState, socket: ClientSocket) {
     socket.on('message', data => { if (socket === clientState.socket) internal_receive.call(this, clientState, data); });
-    socket.on('close', (code, reason) => { if (socket === clientState.socket) { if (!clientState.closed && typeof code === 'number' && code !== 1000) console.warn('Elpis runtime socket closed', code, String(/** @type {string | Buffer} */ (reason) || '').slice(0, 200)); internal_disconnect.call(this, clientState); } });
-    socket.on('error', error => { if (socket === clientState.socket) { const detail = /** @type {{ code?: unknown, message?: string } | null | undefined} */ (error); if (!clientState.closed) console.warn('Elpis runtime socket error', detail?.code || '', String(detail?.message || '').slice(0, 200)); internal_disconnect.call(this, clientState); } });
+    socket.on('close', (code, reason) => { if (socket === clientState.socket) { if (!clientState.closed && typeof code === 'number' && code !== 1000) console.warn('Elpis runtime socket closed', code, String((reason as string | Buffer) || '').slice(0, 200)); internal_disconnect.call(this, clientState); } });
+    socket.on('error', error => { if (socket === clientState.socket) { const detail = error as { code?: unknown; message?: string } | null | undefined; if (!clientState.closed) console.warn('Elpis runtime socket error', detail?.code || '', String(detail?.message || '').slice(0, 200)); internal_disconnect.call(this, clientState); } });
   }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
-export async function impl_initialize(clientState) {
-    await internal_rpc.call(this, clientState, 'initialize', { clientInfo: { name: 'elpis-desktop', title: 'Elpis', version: '0.1.0' }, capabilities: { experimentalApi: true } });
+export async function impl_initialize(this: DesktopClient, clientState: ClientState) {
+    await internal_rpc(this, clientState, 'initialize', { clientInfo: { name: 'elpis-desktop', title: 'Elpis', version: '0.1.0' }, capabilities: { experimentalApi: true } });
     clientState.socket.send(JSON.stringify({ method: 'initialized', params: {} })); clientState.ready = true;
   }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
-export function impl_connected(clientState) { return clientState.ready && !clientState.closed; }
+export function impl_connected(this: DesktopClient, clientState: ClientState) { return clientState.ready && !clientState.closed; }
 
 /** Why the last connection attempt failed, while it is not connected. */
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
-export function impl_connectionError(clientState) { return this.connected ? null : clientState.connectionError; }
+export function impl_connectionError(this: DesktopClient, clientState: ClientState) { return this.connected ? null : clientState.connectionError; }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
-export function impl_hasLocalActivity(clientState) { return clientState.mutating.size > 0 || clientState.workflowRuns.busy(); }
+export function impl_hasLocalActivity(this: DesktopClient, clientState: ClientState) { return clientState.mutating.size > 0 || clientState.workflowRuns.busy(); }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {string} id */
-export function internal_browserOptions(clientState, id) {
+export function internal_browserOptions(this: DesktopClient, clientState: ClientState, id: string) {
     const config = clientState.browserConfig ? (clientState.browserConfig.forSession ? clientState.browserConfig.forSession(id) : clientState.browserConfig) : {};
     return Object.keys(config).length ? { config } : {};
   }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
-export function impl_pendingApprovals(clientState) { return [...clientState.approvals.values()].map(({ wireId: _wireId, ...visible }) => visible); }
+export function impl_pendingApprovals(this: DesktopClient, clientState: ClientState) { return [...clientState.approvals.values()].map(({ wireId: _wireId, ...visible }) => visible); }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
-function internal_disconnect(clientState) {
+function internal_disconnect(this: DesktopClient, clientState: ClientState) {
     if (clientState.closed) return;
     clientState.closed = true; clientState.ready = false;
     clientState.socket.terminate?.();
@@ -53,20 +48,18 @@ function internal_disconnect(clientState) {
     internal_scheduleReconnect.call(this, clientState);
   }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
-function internal_scheduleReconnect(clientState) {
+function internal_scheduleReconnect(this: DesktopClient, clientState: ClientState) {
     if (clientState.disposed || !clientState.openSocket || clientState.retryTimer || clientState.reconnecting) return;
     clientState.retryTimer = setTimeout(() => { clientState.retryTimer = undefined; void internal_reconnect.call(this, clientState); }, Math.min(5000, clientState.retryDelay * 2 ** Math.min(clientState.retryAttempt++, 4)));
     clientState.retryTimer.unref?.();
   }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
-export async function internal_reconnect(clientState) {
+export async function internal_reconnect(this: DesktopClient, clientState: ClientState) {
     if (clientState.disposed) return;
     clientState.reconnecting = true;
     try {
       // Both callers configure openSocket before scheduling a reconnect.
-      const openSocket = /** @type {NonNullable<import('./client-state.mjs').ClientState['openSocket']>} */ (clientState.openSocket);
+      const openSocket = clientState.openSocket!;
       const socket = await openSocket();
       if (clientState.disposed) { socket.close(); return; }
       clientState.socket = socket; clientState.closed = false; internal_bind.call(this, clientState, socket);
@@ -75,7 +68,7 @@ export async function internal_reconnect(clientState) {
       clientState.retryAttempt = 0; clientState.connectionError = null;
       this.emit('event', { type: 'connection', data: { connected: true } });
     } catch (error) {
-      const detail = /** @type {{ message?: unknown } | null | undefined} */ (error);
+      const detail = error as { message?: unknown } | null | undefined;
       const reason = String(detail?.message || error);
       if (reason !== clientState.connectionError) console.warn('Elpis runtime connection failed:', reason.slice(0, 300));
       clientState.connectionError = reason;
@@ -86,38 +79,76 @@ export async function internal_reconnect(clientState) {
     }
   }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
-export function impl_close(clientState) { clientState.disposed = true; clearTimeout(clientState.retryTimer); internal_disconnect.call(this, clientState); clientState.socket.close(); }
+export function impl_close(this: DesktopClient, clientState: ClientState) { clientState.disposed = true; clearTimeout(clientState.retryTimer); internal_disconnect.call(this, clientState); clientState.socket.close(); }
 
 /** For a module that runs a short conversation of its own: only the requests in SIDE_RPCS, only on conversations it started
    * here, which are always ephemeral. Their notifications go to 'side' listeners and never to the app, so no chat appears;
    * the conversation is forgotten once the engine closes it. */
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {unknown} method @param {unknown} [input] */
-export async function impl_sideRpc(clientState, method, input = {}) {
+export async function impl_sideRpc(this: DesktopClient, clientState: ClientState, method?: unknown, input: unknown = {}) {
     if (typeof method !== 'string' || !SIDE_RPCS.has(method)) throw new BridgeError('Unsupported request');
-    const params = /** @type {{ threadId?: unknown, [key: string]: unknown }} */ (input);
+    const params = input as { threadId?: unknown; [key: string]: unknown };
     if (!['thread/start', 'config/read'].includes(method) && !clientState.side.has(params.threadId)) throw new BridgeError('Not a conversation of this module');
-    const result = await internal_rpc.call(this, clientState, method, method === 'thread/start' ? { ...params, ephemeral: true } : params);
-    if (method === 'thread/start' && typeof result?.thread?.id === 'string') clientState.side.add(result.thread.id);
+    const result = await internal_rpc(this, clientState, method, method === 'thread/start' ? { ...params, ephemeral: true } : params);
+    const started = result as { thread?: { id?: unknown } } | null;
+    if (method === 'thread/start' && typeof started?.thread?.id === 'string') clientState.side.add(started.thread.id);
     return result;
   }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {string} method @param {unknown} [params] */
-export function internal_rpc(clientState, method, params) {
+type ConfigRead = { config?: { model_provider?: string; model_providers?: Record<string, Record<string, unknown>>; realtime?: { voice?: string }; features?: { multi_agent?: boolean }; mcp_servers?: Record<string, { env?: Record<string, unknown> }>; [key: string]: unknown } };
+type ConfigRequirements = { requirements?: { modelProvider?: string | null; modelProviders?: Record<string, Record<string, unknown>>; featureRequirements?: Record<string, unknown> } | null };
+type ThreadResponse = { thread: DecoratedInput; followingLive?: boolean };
+type ResumedThread = ThreadResponse & { model: string; modelProvider: string; serviceTier: string | null };
+type ContextFiles = { files: { name: string; path: string; group: string; estimatedTokens: number; included: boolean; reason: string; selectable: boolean }[]; note?: string };
+type ThreadPage = { data: DecoratedInput[]; nextCursor?: string | null };
+type TurnPage = { data: { id: string; status?: string }[]; nextCursor?: string | null };
+type ItemPage = { data: { turnId: string; item: EngineItem }[]; nextCursor: string | null; backwardsCursor?: string | null };
+type RpcResponses = {
+  'config/read': ConfigRead;
+  'configRequirements/read': ConfigRequirements;
+  'thread/read': ThreadResponse;
+  'thread/start': ThreadResponse;
+  'thread/resume': ResumedThread;
+  'thread/subscribe': ThreadResponse;
+  'thread/fork': ThreadResponse;
+  'thread/unarchive': ThreadResponse;
+  'thread/list': ThreadPage;
+  'thread/turns/list': TurnPage;
+  'thread/items/list': ItemPage;
+  'turn/start': { turn: { id: string } };
+  'review/start': { turn: { id: string }; reviewThreadId: string };
+  'turn/settings/update': { status: string };
+  'thread/goal/get': { goal: unknown };
+  'thread/contextFiles/list': ContextFiles;
+  'thread/contextFiles/set': ContextFiles;
+  'thread/register': ThreadResponse;
+  'externalAgentConfig/detect': { items: { itemType?: string; details?: { sessions?: { path?: unknown; cwd?: unknown; title?: unknown }[] } }[] };
+  'externalAgentConfig/import': { importId: string };
+  'externalAgentConfig/import/readHistories': { data: { importId: string; successes: unknown[]; failures: { message?: unknown }[] }[] };
+  'experimentalFeature/list': { data: { stage: string; name: string; displayName?: string; description?: string; enabled: boolean }[]; nextCursor?: string | null };
+  'account/login/start': { authUrl?: string; loginId?: string };
+  'workGraph/list': { data: { id: string; startedAt?: number; createdAt?: number }[] };
+  'account/read': { account?: { type?: string } | null };
+  'thread/realtime/listVoices': { voices: { v1: string[]; defaultV1: string } };
+  'claudeAccounts/read': { activeId: string; accounts: { id?: unknown; authenticated?: unknown; duplicate?: unknown }[] };
+  'claudeAccounts/write': { activeId: string; accounts: { id?: unknown; authenticated?: unknown; duplicate?: unknown }[] };
+  'claudeSubscription/write': { signedOut?: boolean };
+};
+type RpcResponse<M extends string> = M extends keyof RpcResponses ? RpcResponses[M] : unknown;
+
+export function internal_rpc<M extends string>(client: DesktopClient, clientState: ClientState, method: M, params?: unknown): Promise<RpcResponse<M>> {
     if (clientState.closed) return Promise.reject(new BridgeError('Elpis is disconnected', 503));
     const id = `desktop-${randomUUID()}`, reading = readRpc(method, params);
-    return new Promise((resolve, reject) => {
+    return new Promise<RpcResponse<M>>((resolve, reject) => {
       const timer = setTimeout(() => {
         clientState.pending.delete(id); reject(new BridgeError(reading ? 'Elpis timed out while reading. Reload the view to try again.' : 'Elpis request timed out; its outcome is unknown. Refresh before retrying.', 504));
-      }, DOWNLOADS.has(method) ? Math.max(this.timeoutMs, 600000) : this.timeoutMs);
+      }, DOWNLOADS.has(method) ? Math.max(client.timeoutMs, 600000) : client.timeoutMs);
       clientState.pending.set(id, { resolve, reject, timer, method, reading });
       try { clientState.socket.send(JSON.stringify({ id, method, params })); }
       catch { clearTimeout(timer); clientState.pending.delete(id); reject(new BridgeError('Could not send request to Elpis', 503)); }
     });
   }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {unknown} raw */
-function internal_receive(clientState, raw) {
+function internal_receive(this: DesktopClient, clientState: ClientState, raw: unknown) {
     let message;
     try { message = JSON.parse(String(raw)); } catch { return; }
     if (message.id !== undefined && !message.method) {
@@ -131,7 +162,7 @@ function internal_receive(clientState, raw) {
         const unsupported = (workflow || contextFiles) && /unknown (method|variant)/i.test(message.error.message ?? '');
         // An operation Elpis does not support (-32601) says which one; the bare code would not.
         const detail = ARCHIVED_SESSION.test(message.error.message ?? '') ? 'This chat is archived. Unarchive it, or send a message in it, to continue.' : (workflow || pending.method.startsWith('thread/goal/') || EXPLAINED.has(pending.method) || message.error.code === -32601) && typeof message.error.message === 'string' ? message.error.message.slice(0,1000) : `Elpis rejected the operation (${message.error.code ?? 'unknown'}). No automatic retry was made.`;
-        const error = /** @type {BridgeError & { code?: unknown, engineMessage?: string }} */ (new BridgeError(conflict ? 'Settings changed in another client. Reload settings before saving again.' : unsupported ? contextFiles ? 'Update and restart Elpis to view and change context files.' : 'Update and restart Elpis to run workflows from this app.' : detail, conflict || message.error.data?.reason === 'threadBusy' ? 409 : unsupported ? 503 : workflow ? 400 : 502));
+        const error = new BridgeError(conflict ? 'Settings changed in another client. Reload settings before saving again.' : unsupported ? contextFiles ? 'Update and restart Elpis to view and change context files.' : 'Update and restart Elpis to run workflows from this app.' : detail, conflict || message.error.data?.reason === 'threadBusy' ? 409 : unsupported ? 503 : workflow ? 400 : 502) as BridgeError & { code?: unknown; engineMessage?: string };
         error.code = message.error.code; error.engineMessage = typeof message.error.message === 'string' ? message.error.message : '';
         pending.reject(error);
       }
@@ -206,7 +237,7 @@ function internal_receive(clientState, raw) {
         const value = key === 'tokenUsage' ? tokenUsageSnapshot(message.params?.[key]) : smartPruneSnapshot(message.params?.[key]);
         // As in the TUI, an update without category shares (a replay after resume) keeps the last known ones.
         const shares = clientState.context.get(id)?.tokenUsage?.contextAttribution;
-        const usage = /** @type {ReturnType<typeof tokenUsageSnapshot>} */ (value);
+        const usage = value as ReturnType<typeof tokenUsageSnapshot>;
         if (key === 'tokenUsage' && usage && !usage.contextAttribution && shares) usage.contextAttribution = shares;
         clientState.context.set(id, { ...clientState.context.get(id), [key]: value });
         this.emit('event', { type: 'message', data: { method: message.method, params: { threadId: id, [key]: value } } });
@@ -217,15 +248,14 @@ function internal_receive(clientState, raw) {
     if (message.method === 'turn/completed' && id && turnId) clientState.liveTurnModels.delete(`${id}:${turnId}`);
   }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {unknown} id */
-async function internal_approvalOwner(clientState, id) {
+async function internal_approvalOwner(this: DesktopClient, clientState: ClientState, id: unknown) {
     const seen = new Set();
     let current = id, requester;
     while (current && !seen.has(current) && seen.size < 256) {
       threadId(current);
       if (clientState.owned.has(current)) return {ownerThreadId:current,...(requester ? {thread:requester} : {})};
       seen.add(current);
-      const {thread} = await internal_rpc.call(this, clientState, 'thread/read', {threadId:current,includeTurns:false});
+      const {thread} = await internal_rpc(this, clientState, 'thread/read', {threadId:current,includeTurns:false});
       if (thread?.id !== current) return null;
       const decorated = internal_decorate.call(this, clientState, thread);
       if (current === id) requester = decorated;
@@ -234,8 +264,7 @@ async function internal_approvalOwner(clientState, id) {
     return null;
   }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {{ id: unknown, method: string, params?: { threadId?: unknown } }} message @param {{ ownerThreadId: unknown, thread?: unknown }} owner */
-function internal_admitApproval(clientState, message, owner) {
+function internal_admitApproval(this: DesktopClient, clientState: ClientState, message: { id: unknown; method: string; params?: { threadId?: unknown } }, owner: { ownerThreadId: unknown; thread?: unknown }) {
     if ([...clientState.approvals.values()].some(pending => pending.wireId === message.id)) return;
     if (!APPROVALS.has(message.method)) {
       clientState.socket.send(JSON.stringify({id:message.id,error:{code:-32601,message:'This desktop client does not support this approval type'}}));

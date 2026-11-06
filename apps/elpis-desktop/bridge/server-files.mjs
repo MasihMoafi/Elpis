@@ -1,5 +1,5 @@
 import fs from 'node:fs/promises';
-import { BridgeError, object } from './client.mjs';
+import { BridgeError, object } from './client.mts';
 import { ATTACHMENT_BODY_LIMIT, PDF_BODY_LIMIT, extractPdf } from './attachments.mts';
 import { devServerRequest } from './dev-servers.mjs';
 import { listDirectory, listFiles, readFile, readFileAsset, searchFiles, writeFile } from './files.mjs';

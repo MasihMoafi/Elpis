@@ -10,7 +10,7 @@ import http from 'node:http';
 import net from 'node:net';
 import { PassThrough, Readable } from 'node:stream';
 import { parseClaudeMcp } from './claude-mcp-import.mts';
-import { DesktopClient, existingSocket } from './client.mjs';
+import { DesktopClient, existingSocket } from './client.mts';
 import { startDesktopServer } from './server.mjs';
 import { isAgentRun } from '../lib/agent-runs.mts';
 import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cjs';
@@ -62,7 +62,9 @@ async function useForSpeechFixture(t, { status = 200, contentType = 'audio/mpeg'
     }
     const session = await dispatch('/session', { token: new URLSearchParams(url.hash.slice(1)).get('token') });
     assert.equal(session.status, 200);
-    const cookie = session.headers.get('set-cookie').split(';')[0];
+    const setCookie = session.headers.get('set-cookie');
+    assert.ok(setCookie);
+    const cookie = setCookie.split(';')[0];
     return (route, value) => dispatch(route, value, cookie);
   }
   t.after(async () => { if (app) await app.close(); await fs.rm(home, { recursive: true, force: true }); });
@@ -287,11 +289,13 @@ function fixture({ prunerSupported = false, omitWorkflowParentInList = false, re
     { key: 'user:/private/hooks.json:pre_tool_use:0:0', eventName: 'preToolUse', handlerType: 'command', command: 'rtk hook claude', async: false, matcher: '^Bash$', timeoutSec: 5, statusMessage: 'compressing shell output', sourcePath: '/home/person/.elpis-next/hooks.json', source: 'user', pluginId: null, displayOrder: 0, enabled: true, isManaged: false, currentHash: 'sha256:current', trustStatus: 'untrusted' },
     { key: 'managed:/etc/requirements.toml:stop:0:0', eventName: 'stop', handlerType: 'command', command: 'audit', matcher: null, timeoutSec: 30, statusMessage: null, sourcePath: '/etc/requirements.toml', source: 'system', pluginId: null, displayOrder: 1, enabled: true, isManaged: true, currentHash: 'sha256:managed', trustStatus: 'managed' },
   ] }] };
+  /** @type {Map<string, any>} */
   const threads = new Map([
     [ROOT, { id: ROOT, name: 'Existing root', source: 'cli', cwd: os.tmpdir(), model: MODEL, modelProvider: 'openai', status: { type: 'idle' } }],
     [CHILD, { id: CHILD, name: null, preview: '', agentNickname: 'Sagan', model: MODEL, modelProvider: 'openai', parentThreadId: ROOT, canAcceptDirectInput: false, source: { subAgent: { thread_spawn: { parent_thread_id: ROOT, agent_path: '/root/failure_reporting' } } }, status: { type: 'active' } }],
   ]);
-  const socket = new EventEmitter(); socket.sent = []; socket.closed = false;
+  /** @type {EventEmitter & {sent: any[], closed: boolean, send: (raw: string) => void, close: () => void}} */
+  const socket = /** @type {any} */ (new EventEmitter()); socket.sent = []; socket.closed = false;
   // A thread's applied permissions, as the engine reports them in thread/settings/updated and thread/resume.
   const engineSettings = new Map();
   socket.send = raw => {
@@ -462,7 +466,9 @@ test('conversation pages keep a full page of chats when recent agent runs outnum
     const token = new URLSearchParams(url.hash.slice(1)).get('token');
     const session = await fetch(`${origin}/api/session`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin }, body: JSON.stringify({ token }) });
     assert.equal(session.status, 200);
-    const cookie = session.headers.get('set-cookie').split(';')[0];
+    const setCookie = session.headers.get('set-cookie');
+    assert.ok(setCookie);
+    const cookie = setCookie.split(';')[0];
     const request = async route => {
       const response = await fetch(`${origin}/api${route}`, { headers: { Cookie: cookie } });
       assert.equal(response.status, 200); return response.json();
@@ -723,6 +729,7 @@ test('listed spawned agents recover their parent from recorded source without gr
   try {
     const listed = (await client.listThreads({ includeAgentRuns: true })).data;
     const agent = listed.find(thread => thread.id === CHILD);
+    assert.ok(agent);
     assert.equal(agent.parentThreadId, ROOT, 'the source records subAgent.thread_spawn.parent_thread_id');
     assert.equal(agent.desktopAccess.writable, false);
     assert.equal(listed.find(thread => thread.id === FORK).parentThreadId, undefined, 'a name is not evidence of parentage');
@@ -970,11 +977,11 @@ test('new roots send, steer and interrupt through typed protocol without overrid
   assert.equal(created.thread.desktopAccess.writable, true);
   const first = client.send(CREATED, { text: 'Do the task', model: MODEL });
   const duplicate = assert.rejects(client.send(CREATED, { text: 'Race' }), /Use Steer/);
-  assert.equal((await first).turn.id, 'new-turn');
+  assert.equal(/** @type {{id: string}} */ ((await first).turn).id, 'new-turn');
   await duplicate;
   assert.equal(socket.sent.filter(row => row.method === 'turn/start').length, 1, 'a queued duplicate never starts another turn or silently steers');
   await assert.rejects(client.send(CREATED, { text: 'Do not silently steer' }), /Use Steer/);
-  assert.equal((await client.steer(CREATED, { text: 'Clarify', expectedTurnId: 'new-turn' })).turnId, 'new-turn');
+  assert.equal(/** @type {{turnId: string}} */ (await client.steer(CREATED, { text: 'Clarify', expectedTurnId: 'new-turn' })).turnId, 'new-turn');
   await client.interrupt(CREATED, { turnId: 'new-turn' });
   const request = socket.sent.find(row => row.method === 'turn/start');
   const { additionalContext, ...params } = request.params;
@@ -1012,11 +1019,11 @@ test('a message to a chat the app wrongly thinks busy is delivered, not refused 
     socket.sent.push(request); queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, error: { code: -32600, message: refusal } })));
   };
   // The turn the app saw has finished: the message starts a new turn.
-  assert.equal((await client.steer(CREATED, { text: 'Are you there?', expectedTurnId: 'finished-turn' })).turn?.id, 'new-turn');
+  assert.equal(/** @type {{turn?: {id: string}}} */ (await client.steer(CREATED, { text: 'Are you there?', expectedTurnId: 'finished-turn' })).turn?.id, 'new-turn');
   assert.equal(socket.sent.findLast(row => row.method === 'turn/start').params.input[0].text, 'Are you there?');
   // Another turn replaced it: the message joins the running turn instead.
   running = 'running-turn';
-  assert.equal((await client.steer(CREATED, { text: 'Also this', expectedTurnId: 'new-turn' })).turnId, 'running-turn');
+  assert.equal(/** @type {{turnId: string}} */ (await client.steer(CREATED, { text: 'Also this', expectedTurnId: 'new-turn' })).turnId, 'running-turn');
   assert.equal(socket.sent.filter(row => row.method === 'turn/start').length, 1);
   // Any other refusal keeps the engine's reason instead of a bare code.
   await assert.rejects(client.steer(CREATED, { text: 'Review this', expectedTurnId: 'running-turn' }), /different output schema/);
@@ -1296,14 +1303,17 @@ test('workflow workers keep recorded task names and lineage when native list omi
   threads.set(CHILD,{id:CHILD,name:null,parentThreadId:ROOT,status:{type:'idle'},source:{subAgent:{other:`work_graph:${graphId}:inspect`}}});
   workflowRecords.push({id:graphId,rootThreadId:ROOT,tasks:[{id:'inspect',title:'Inspect actual project',assignedThreadId:CHILD}]});
   const worker=(await client.listThreads({includeAgentRuns:true})).data.find(thread=>thread.id===CHILD);
+  assert.ok(worker);
   assert.equal(worker.workflowTaskTitle,'Inspect actual project');
   assert.equal(worker.parentThreadId,ROOT,'list must preserve the native read and recorded graph lineage');
   assert.deepEqual(socket.sent.filter(row=>row.method==='thread/read').map(row=>row.params.threadId),[CHILD]);
   const again=(await client.listThreads({includeAgentRuns:true})).data.find(thread=>thread.id===CHILD);
+  assert.ok(again);
   assert.equal(again.parentThreadId,ROOT);
   assert.equal(socket.sent.filter(row=>row.method==='thread/read').length,1,'verified workflow metadata is reused');
   threads.get(CHILD).source={subAgent:{other:`work_graph:${graphId}:different-task`}};
   const unrelated=(await client.listThreads({includeAgentRuns:true})).data.find(thread=>thread.id===CHILD);
+  assert.ok(unrelated);
   assert.equal(unrelated.workflowTaskTitle,undefined);
   assert.equal(unrelated.parentThreadId,null,'unrecorded task cannot inherit cached lineage');
   client.close();
@@ -1699,6 +1709,7 @@ test('replacement checks every native page of the selected turn before reverting
   try {
     await client.initialize();
     const result = await client.revert(ROOT, { beforeTurnId: 'turn-1', text: 'Edited prompt' });
+    assert.ok(result);
     assert.equal(result.turn.id, 'new-turn');
     const reads = socket.sent.filter(row => row.method === 'thread/items/list');
     assert.equal(reads.length, 2);
@@ -1740,6 +1751,7 @@ test('replacement resends the edited text with the message\'s attachments and ke
     try {
       await client.initialize();
       const result = await client.revert(ROOT, { beforeTurnId: 'turn-1', text: 'Edited prompt' });
+      assert.ok(result);
       assert.equal(result.turn.id, 'new-turn');
       assert.deepEqual(socket.sent.find(row => row.method === 'turn/start').params.input, [{ type: 'text', text: 'Edited prompt', text_elements: [] }, ...kept]);
       const order = ['thread/fork', 'thread/archive', 'thread/revert', 'turn/start'].map(method => socket.sent.findIndex(row => row.method === method));
@@ -1765,6 +1777,7 @@ test('replacement reports an acknowledged rewind when its new turn is rejected o
         } else send(raw);
       };
       const result = await client.revert(ROOT, { beforeTurnId: 'turn-1', text: 'Edited prompt' });
+      assert.ok(result);
       assert.equal(result.rewound, true); assert.equal(result.beforeTurnId, 'turn-1'); assert.equal(result.turn, undefined);
       assert.match(result.sendError, timeout ? /outcome is unknown/ : /Fixture replacement rejected/);
       assert.equal(socket.sent.filter(row => row.method === 'thread/revert').length, 1);

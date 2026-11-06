@@ -8,7 +8,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { DesktopClient } from '../bridge/client.mjs';
+import { DesktopClient } from '../bridge/client.mts';
 import { startDesktopServer } from '../bridge/server.mjs';
 import { createLoveSpot } from '../bridge/love-spot-store.cjs';
 const require = createRequire(import.meta.url), { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');

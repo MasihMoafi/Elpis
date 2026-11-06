@@ -8,7 +8,7 @@ import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
-import { existingSocket } from '../bridge/client.mjs';
+import { existingSocket } from '../bridge/client.mts';
 const require = createRequire(import.meta.url);
 const { chooseOption, chooseTheme, openSettings } = require('./controls.cjs');
 const { _electron } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');

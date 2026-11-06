@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {EventEmitter} from 'node:events';
-import {DesktopClient} from '../bridge/client.mjs';
+import {DesktopClient} from '../bridge/client.mts';
 const uuid = n => `00000000-0000-0000-0000-${String(n).padStart(12,'0')}`;
 const ROOT=uuid(1), GRAPH=uuid(20);
 function fixture({unsupported=false}={}) {

@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { speechChunks } from './client.mjs';
+import { speechChunks } from './client.mts';
 import { BridgeError, object, text, threadId } from './validate.mts';
 
 /** One line per call in logs/voice-calls.jsonl, sent by the window when a call ends: how long, whether it connected, how many events of each kind the call

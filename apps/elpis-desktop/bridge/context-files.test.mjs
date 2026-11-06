@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { DesktopClient } from './client.mjs';
+import { DesktopClient } from './client.mts';
 import { startDesktopServer } from './server.mjs';
 const ID = '00000000-0000-0000-0000-000000000001';
 function fixture({ unsupported = false } = {}) {
@@ -28,11 +28,11 @@ test('context files use the engine discovery and admission RPCs, returning its r
   const { client, sent, files } = fixture(); t.after(() => client.close()); await client.initialize();
   assert.deepEqual(await client.contextFiles(ID), { files });
   for (const included of [false, true, false, true]) {
-    assert.equal((await client.setContextFile(ID, { path: files[0].path, included })).files[0].included, included);
+    assert.equal((await client.setContextFile(ID, { path: files[0].path, included })).files[0]?.included, included);
     assert.deepEqual(sent.at(-1).params, { threadId: ID, path: files[0].path, included });
     assert.equal(sent.at(-1).method, 'thread/contextFiles/set');
   }
-  files[0].included = false; assert.equal((await client.contextFiles(ID)).files[0].included, false);
+  files[0].included = false; assert.equal((await client.contextFiles(ID)).files[0]?.included, false);
   assert.equal(sent[1].method, 'thread/contextFiles/list');
   await assert.rejects(client.setContextFile(ID, { path: '/unknown', included: true }), error => error.code === -32600);
 });
@@ -52,7 +52,7 @@ test('context files HTTP routes require authentication and preserve the engine r
   const headers = { 'Content-Type': 'application/json', Origin: origin, Cookie: auth.headers.get('set-cookie').split(';')[0] };
   assert.deepEqual(await (await fetch(endpoint, { headers })).json(), { files });
   const saved = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify({ path: files[0].path, included: false }) });
-  assert.equal(saved.status, 200); assert.equal((await saved.json()).files[0].included, false);
+  assert.equal(saved.status, 200); assert.equal((await saved.json()).files[0]?.included, false);
   assert.equal((await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify({ path: '/x', included: 'yes' }) })).status, 400);
 });
 

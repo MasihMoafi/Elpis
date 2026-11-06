@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import { constants } from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
-import { BridgeError, object } from './client.mjs';
+import { BridgeError, object } from './client.mts';
 
 const names = { instructions: 'AGENTS.md', memory: 'memories/MEMORY.md' };
 const version = (file, content) => createHash('sha256').update(file).update('\0').update(content).digest('hex');

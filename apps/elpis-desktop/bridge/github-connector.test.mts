@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { createGithubConnector } from './github-connector.mts';
-import { DesktopClient } from './client.mjs';
+import { DesktopClient } from './client.mts';
 import { startDesktopServer } from './server.mjs';
 
 type Message = { method: string; id: number; params: { cwds?: string[]; developerInstructions?: string; config?: unknown } };

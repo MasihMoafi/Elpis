@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
 import { Readable } from 'node:stream';
-import * as native from './client.mjs';
+import * as native from './client.mts';
 import { startDesktopServer } from './server.mjs';
 
 const CHAT = '00000000-0000-0000-0000-000000000001';

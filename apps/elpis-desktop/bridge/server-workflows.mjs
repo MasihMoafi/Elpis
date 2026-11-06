@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { BridgeError, elpisHome, object, text } from './client.mjs';
+import { BridgeError, elpisHome, object, text } from './client.mts';
 import { planCanvas } from './canvas-plan.mjs';
 import { workflowWorkspace } from './folders.mjs';
 import { body, json } from './server-http.mjs';

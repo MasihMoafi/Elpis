@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { BridgeError } from './client.mjs';
+import { BridgeError } from './client.mts';
 
 /** Chats deleted from the sidebar. Deleting archives a chat at once (the engine can reverse that); Ctrl+Z unarchives
  * the newest deletion of this session; quitting the app deletes them for good. The list is kept in `file`, so after a

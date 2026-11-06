@@ -9,7 +9,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { DesktopClient } from './client.mjs';
+import { DesktopClient } from './client.mts';
 import { currentBranch, createChatWorktree, releaseChatWorktree, restoreChatWorktree } from './git.mjs';
 import { startDesktopServer } from './server.mjs';
 
@@ -157,6 +157,7 @@ test('when the engine refuses the chat, the worktree and branch just made are ta
 test('archiving a worktree chat removes a clean worktree, keeps one with uncommitted work, and unarchiving puts it back', async t => {
   const { repo } = await project(t), { client, threads } = engine(); t.after(() => client.close()); await client.initialize();
   const { worktree } = await client.createThread({ cwd: repo, worktree: true });
+  assert.ok(worktree);
   await write(worktree.path, 'draft.txt', 'unsaved\n');
   assert.deepEqual(await client.archiveThread(CHAT, {}), { archived: true, worktree: { kept: true, path: worktree.path, branch: worktree.branch, changes: 1 } });
   assert.equal(await exists(path.join(worktree.path, 'draft.txt')), true);
@@ -176,6 +177,7 @@ test('archiving a worktree chat removes a clean worktree, keeps one with uncommi
 test('deleting a worktree chat never removes uncommitted work, and an ordinary chat\'s folder is never touched', async t => {
   const { repo } = await project(t), { client } = engine(); t.after(() => client.close()); await client.initialize();
   const { worktree } = await client.createThread({ cwd: repo, worktree: true });
+  assert.ok(worktree);
   await write(worktree.path, 'keep.txt', 'changed in the chat\n');
   const deleted = await client.deleteThread(CHAT, {});
   assert.deepEqual(deleted.worktree, { kept: true, path: worktree.path, branch: worktree.branch, changes: 1 });

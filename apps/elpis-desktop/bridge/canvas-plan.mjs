@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { BridgeError, object, text } from './client.mjs';
+import { BridgeError, object, text } from './client.mts';
 import { askBackground } from './side-turn.mjs';
 import { workflowModelRoutes, MOTHER_ROUTE, MOTHER_FALLBACK } from './workflow-models.mts';
 

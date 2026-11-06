@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { randomUUID } from 'node:crypto';
-import { BridgeError, object, text, threadId } from './client.mjs';
+import { BridgeError, object, text, threadId } from './client.mts';
 
 export const LAB_MODEL = 'gpt-6-luna';
 export const SOLVED_LIMIT = 10;

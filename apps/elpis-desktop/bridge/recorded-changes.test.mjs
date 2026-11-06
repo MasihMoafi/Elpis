@@ -6,7 +6,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { EventEmitter, once } from 'node:events';
 import { createInterface } from 'node:readline';
-import { DesktopClient } from './client.mjs';
+import { DesktopClient } from './client.mts';
 import { startDesktopServer } from './server.mjs';
 import { recordedChanges } from './recorded-changes.mjs';
 

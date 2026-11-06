@@ -1,7 +1,7 @@
 // The inline chat entry names an attempt and call; exact texts stay in the core's audit.
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { BridgeError, elpisHome } from './client.mjs';
+import { BridgeError, elpisHome } from './client.mts';
 
 const id = value => typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,159}$/.test(value);
 async function confined(root, relative) {

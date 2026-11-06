@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { execFile } from 'node:child_process';
-import { BridgeError } from './client.mjs';
+import { BridgeError } from './client.mts';
 import { listDirectory, readFile, writeFile, searchFiles } from './files.mjs';
 import { startDesktopServer } from './server.mjs';
 

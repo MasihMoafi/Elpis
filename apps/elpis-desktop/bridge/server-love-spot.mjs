@@ -1,4 +1,4 @@
-import { BridgeError, object, text } from './client.mjs';
+import { BridgeError, object, text } from './client.mts';
 import { PORTRAIT_ATTACHMENT_NAME, PORTRAIT_INSTRUCTIONS } from './matilda-face.cjs';
 import { body, json } from './server-http.mjs';
 

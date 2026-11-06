@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { BridgeError } from './client.mjs';
+import { BridgeError } from './client.mts';
 
 const MAX_DEPTH = 2;
 const MAX_ENTRIES = 400;

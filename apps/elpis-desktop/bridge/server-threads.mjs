@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { BridgeError, object } from './client.mjs';
+import { BridgeError, object } from './client.mts';
 import { ATTACHMENT_BODY_LIMIT } from './attachments.mts';
 import { smartPruneDetail } from './smart-prune.mjs';
 import { body, json, pageQuery } from './server-http.mjs';

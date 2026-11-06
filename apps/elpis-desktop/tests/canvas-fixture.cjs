@@ -59,7 +59,7 @@ async function openCanvas({ width = 1440, height = 900, repository = false, grap
       return json({ data: mine.map(item => {
         const looks = item.looks++, status = looks ? 'succeeded' : 'running';
         const graph = listed?.(item, looks) ?? { id: item.graphId, name: item.name, status, tasks: item.tasks.map(task => ({ id: task.id, status, assignedThreadId: null })) };
-        // As the bridge does with a run's next stage (bridge/client.mjs #workflowEnded): once her part has succeeded his
+        // As the bridge does with a run's next stage (bridge/client.mts #workflowEnded): once her part has succeeded his
         // starts in his own chat (`chat-father`), and when his ends his report counts as delivered (`refuseReport` says why not).
         if (item.next) {
           if (!item.stage && ENDED.has(graph.status)) {

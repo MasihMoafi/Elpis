@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { BridgeError, object, text } from './client.mjs';
+import { BridgeError, object, text } from './client.mts';
 
 // Settings → Import chats (Masih, 23 Oct: "we should add the import chats options like cloudroom does"). Cloudroom imports a person's Claude Code and
 // Codex chats as threads of its own, the agent keeping its memory and the originals untouched. Claude Code comes in through the engine's own session

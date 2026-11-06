@@ -8,7 +8,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createWorkflowRuns } from './workflow-acp.mjs';
 import { workflowModelRoutes } from './workflow-models.mts';
-import { DesktopClient } from './client.mjs';
+import { DesktopClient } from './client.mts';
 import { startDesktopServer } from './server.mjs';
 import { EventEmitter } from 'node:events';
 // gio trash refuses /tmp, so test roots live where the trash works.

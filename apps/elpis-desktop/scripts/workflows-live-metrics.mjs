@@ -10,7 +10,7 @@ import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
-import { DesktopClient } from '../bridge/client.mjs';
+import { DesktopClient } from '../bridge/client.mts';
 import { startDesktopServer } from '../bridge/server.mjs';
 
 const require = createRequire(import.meta.url);

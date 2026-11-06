@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { BridgeError, object, text } from './client.mjs';
+import { BridgeError, object, text } from './client.mts';
 import { gatewayRouted } from './provider-models.mts';
 const reserved = new Set(['openai', 'claude', 'agy', 'antigravity']);
 

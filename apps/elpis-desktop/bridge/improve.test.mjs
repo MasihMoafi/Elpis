@@ -9,7 +9,7 @@ import { promisify } from 'node:util';
 import { EventEmitter } from 'node:events';
 import { createImprovements } from './improve.mjs';
 import { verifyImprovement } from './improve-check.mts';
-import { DesktopClient } from './client.mjs';
+import { DesktopClient } from './client.mts';
 import { startDesktopServer } from './server.mjs';
 const execFile = promisify(exec);
 const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGM4o6SEFTEMLQkAvM5EAT6yk8sAAAAASUVORK5CYII=';

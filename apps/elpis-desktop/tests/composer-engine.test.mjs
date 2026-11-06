@@ -5,7 +5,7 @@ import { EventEmitter, once } from 'node:events';
 import { createInterface } from 'node:readline';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { DesktopClient } from '../bridge/client.mjs';
+import { DesktopClient } from '../bridge/client.mts';
 
 // Explicit opt-in: an isolated real engine, no installed app, auth, model turn, or user's profile.
 test('real engine records a shell command and keeps an ephemeral side fork out of the saved session list', { skip: !process.env.ELPIS_TEST_ENGINE, timeout: 45000 }, async t => {

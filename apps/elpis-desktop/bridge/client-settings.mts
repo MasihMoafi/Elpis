@@ -3,19 +3,20 @@ import { acceptsPastedKey, configHome, privateConfigFile, providerDefinition, pr
 import { hooksSnapshot, mcpSnapshot, optionEdits, providersSnapshot, settingsSnapshot } from './elpis-features.mjs';
 import { saveProviderKey, savedProviderKey, savedProviderKeyIds } from './provider-keys.mjs';
 
-import { internal_effort } from './client-rewind.mjs';
-import { internal_modelList } from './client-models.mjs';
-import { internal_rpc } from './client-connection.mjs';
+import { internal_effort } from './client-rewind.mts';
+import { internal_modelList } from './client-models.mts';
+import { internal_rpc } from './client-connection.mts';
+import type { DesktopClient } from './client.mts';
+import type { ClientState } from './client-state.mts';
+import type { CustomizePage } from './customize-page.mjs';
 
-/** @param {unknown} value */
-const string = value => typeof value === 'string' ? value : null;
+const string = (value: unknown) => typeof value === 'string' ? value : null;
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
-export async function impl_settings(clientState) {
+export async function impl_settings(this: DesktopClient, clientState: ClientState) {
     const [read, requirements, pruner, featureList] = await Promise.all([
-      internal_rpc.call(this, clientState, 'config/read', { includeLayers: true }),
-      internal_rpc.call(this, clientState, 'configRequirements/read', {}).catch(() => null),
-      internal_rpc.call(this, clientState, 'pruner/read', {}).catch(error => { if ([-32601, -32600].includes(error.code)) return null; throw error; }),
+      internal_rpc(this, clientState, 'config/read', { includeLayers: true }),
+      internal_rpc(this, clientState, 'configRequirements/read', {}).catch(() => null),
+      internal_rpc(this, clientState, 'pruner/read', {}).catch(error => { if ([-32601, -32600].includes(error.code)) return null; throw error; }),
       internal_configFeatures.call(this, clientState).catch(() => null),
     ]);
     const features = featureList === null ? { available: false, reason: 'The running engine could not list features. Reopen Settings or update Elpis.', data: [] }
@@ -23,15 +24,15 @@ export async function impl_settings(clientState) {
         key: feature.name, title: feature.displayName ?? feature.name, description: feature.description ?? 'Native feature default for new chats.', enabled: feature.enabled,
         reason: Object.hasOwn(requirements?.requirements?.featureRequirements ?? {}, feature.name) ? 'Managed policy controls this feature.' : null,
       })) };
-    return { ...settingsSnapshot(read, requirements, pruner, savedProviderKeyIds(configHome(read))), features };
+    const snapshot = settingsSnapshot as (read: unknown, requirements: unknown, pruner: unknown, saved: Set<string>) => ReturnType<typeof settingsSnapshot>;
+    return { ...snapshot(read, requirements, pruner, savedProviderKeyIds(configHome(read))), features };
   }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
-async function internal_configFeatures(clientState) {
+async function internal_configFeatures(this: DesktopClient, clientState: ClientState) {
     const data = [], cursors = new Set();
-    /** @type {string | null | undefined} */ let cursor;
+    let cursor: string | null | undefined;
     for (let page = 0; page < 10; page++) {
-      const result = await internal_rpc.call(this, clientState, 'experimentalFeature/list', { limit: 100, ...(cursor ? { cursor } : {}) });
+      const result = await internal_rpc(this, clientState, 'experimentalFeature/list', { limit: 100, ...(cursor ? { cursor } : {}) });
       if (!Array.isArray(result?.data)) return null;
       data.push(...result.data);
       cursor = result.nextCursor;
@@ -42,22 +43,19 @@ async function internal_configFeatures(clientState) {
     throw new BridgeError('Feature list is too long');
   }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {unknown} raw */
-export async function impl_saveSettings(clientState, raw) {
-    const input = /** @type {Record<string, unknown>} */ (object(raw, ['version', 'main', 'background', 'memory', 'options', 'features']));
+export async function impl_saveSettings(this: DesktopClient, clientState: ClientState, raw?: unknown) {
+    const input = object(raw, ['version', 'main', 'background', 'memory', 'options', 'features']) as Record<string, unknown>;
     text(input.version, 'settings version', 200);
     const current = await this.settings();
     if (!current.write.available) throw new BridgeError(current.write.reason, 403);
     if (current.version !== input.version) throw new BridgeError('Settings changed in another client. Reload settings before saving again.', 409);
     if (!current.managed.available) throw new BridgeError('Managed requirements could not be loaded. Reload settings before saving.', 409);
-    const edits = [];
-    /** @param {unknown} value */
-    const nullableModel = value => value === null ? null : text(value, 'model ID', 200).trim();
+    const edits: { keyPath: string; value: unknown; mergeStrategy: string }[] = [];
+    const nullableModel = (value: unknown) => value === null ? null : text(value, 'model ID', 200).trim();
     // The main model (what new chats start with, in this app and the TUI) and the background model, each a model and
     // the provider it runs on; the main model can't be cleared, and a provider pinned by requirements can't change.
-    /** @param {unknown} rawChoice @param {string} modelKey @param {string} providerKey @param {boolean} main */
-    const modelChoice = (rawChoice, modelKey, providerKey, main) => {
-      const choice = /** @type {Record<string, unknown>} */ (object(rawChoice, ['model', 'provider']));
+    const modelChoice = (rawChoice: unknown, modelKey: string, providerKey: string, main: boolean) => {
+      const choice = object(rawChoice, ['model', 'provider']) as Record<string, unknown>;
       if ('model' in choice) {
         if (main && choice.model === null) throw new BridgeError('Choose a main model');
         edits.push({ keyPath: modelKey, value: nullableModel(choice.model), mergeStrategy: 'replace' });
@@ -72,7 +70,7 @@ export async function impl_saveSettings(clientState, raw) {
     if (input.main !== undefined) modelChoice(input.main, 'model', 'model_provider', true);
     if (input.background !== undefined) modelChoice(input.background, 'background_model', 'background_provider', false);
     if (input.memory !== undefined) {
-      const memory = /** @type {Record<string, unknown>} */ (object(input.memory, ['enabled', 'generate', 'use', 'skipExternalContext', 'extractionModel', 'consolidationModel']));
+      const memory = object(input.memory, ['enabled', 'generate', 'use', 'skipExternalContext', 'extractionModel', 'consolidationModel']) as Record<string, unknown>;
       const switches = ['enabled', 'generate', 'use', 'skipExternalContext'];
       for (const [field, key] of Object.entries({ enabled: 'features.memories', generate: 'memories.generate_memories', use: 'memories.use_memories', skipExternalContext: 'memories.disable_on_external_context', extractionModel: 'memories.extract_model', consolidationModel: 'memories.consolidation_model' })) {
         if (!(field in memory)) continue;
@@ -83,10 +81,10 @@ export async function impl_saveSettings(clientState, raw) {
     }
     if (input.options !== undefined) {
       try { edits.push(...optionEdits(input.options, current.managed, current.permissionProfiles)); }
-      catch (error) { const failure = /** @type {Error} */ (error); throw new BridgeError(failure.message, /managed/.test(failure.message) ? 403 : 400); }
+      catch (error) { const failure = error as Error; throw new BridgeError(failure.message, /managed/.test(failure.message) ? 403 : 400); }
     }
     if (input.features !== undefined) {
-      const features = /** @type {Record<string, unknown>} */ (object(input.features, current.features.data.map(feature => feature.key)));
+      const features = object(input.features, current.features.data.map(feature => feature.key)) as Record<string, unknown>;
       for (const [key, value] of Object.entries(features)) {
         const feature = current.features.data.find(feature => feature.key === key);
         if (!current.features.available || !feature) throw new BridgeError('The engine did not advertise this feature');
@@ -96,14 +94,13 @@ export async function impl_saveSettings(clientState, raw) {
       }
     }
     if (!edits.length) throw new BridgeError('No settings were changed');
-    await internal_rpc.call(this, clientState, 'config/batchWrite', { edits, expectedVersion: input.version, reloadUserConfig: false });
+    await internal_rpc(this, clientState, 'config/batchWrite', { edits, expectedVersion: input.version, reloadUserConfig: false });
     clientState.catalog = null;
     return this.settings();
   }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {unknown} raw */
-export async function impl_savePruner(clientState, raw) {
-    const input = /** @type {Record<string, unknown>} */ (object(raw, ['version', 'model', 'provider', 'reasoningEffort']));
+export async function impl_savePruner(this: DesktopClient, clientState: ClientState, raw?: unknown) {
+    const input = object(raw, ['version', 'model', 'provider', 'reasoningEffort']) as Record<string, unknown>;
     text(input.version, 'pruning settings version', 200);
     const reasoningEffort = input.reasoningEffort === null ? null : internal_effort.call(this, clientState, input.reasoningEffort);
     const current = await this.settings();
@@ -114,37 +111,34 @@ export async function impl_savePruner(clientState, raw) {
       text(input.model, 'pruning model ID', 200); text(input.provider, 'pruning provider ID', 200);
       if (!current.providers.some(item => item.id === input.provider)) throw new BridgeError('Choose a configured provider');
     }
-    await internal_rpc.call(this, clientState, 'pruner/write', { expectedVersion: input.version, model: input.model, provider: input.provider, ...(reasoningEffort !== undefined ? { reasoningEffort } : {}) });
+    await internal_rpc(this, clientState, 'pruner/write', { expectedVersion: input.version, model: input.model, provider: input.provider, ...(reasoningEffort !== undefined ? { reasoningEffort } : {}) });
     return this.settings();
   }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
-export async function impl_providers(clientState) {
+export async function impl_providers(this: DesktopClient, clientState: ClientState) {
     const [account, limits, read, models, anthropic] = await Promise.all([
-      internal_rpc.call(this, clientState, 'account/read', { refreshToken: false }).catch(error => ({ error: error.message })),
-      internal_rpc.call(this, clientState, 'account/rateLimits/read', {}).catch(error => ({ error: error.message })),
-      internal_rpc.call(this, clientState, 'config/read', { includeLayers: false }),
+      internal_rpc(this, clientState, 'account/read', { refreshToken: false }).catch(error => ({ error: error.message })),
+      internal_rpc(this, clientState, 'account/rateLimits/read', {}).catch(error => ({ error: error.message })),
+      internal_rpc(this, clientState, 'config/read', { includeLayers: false }),
       internal_modelList.call(this, clientState, { limit: 100, includeHidden: false }).catch(() => null),
       // Elpis's own Anthropic sign-out; a bridge that predates it has none.
-      internal_rpc.call(this, clientState, 'claudeSubscription/read', {}).catch(() => null),
+      internal_rpc(this, clientState, 'claudeSubscription/read', {}).catch(() => null),
     ]);
     return providersSnapshot({ account, limits, config: read?.config, models: Array.isArray(models?.data) ? models.data : null, anthropic });
   }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
-export async function impl_providerSettings(clientState) {
+export async function impl_providerSettings(this: DesktopClient, clientState: ClientState) {
     const [read, requirements] = await Promise.all([
-      internal_rpc.call(this, clientState, 'config/read', { includeLayers: true }),
-      internal_rpc.call(this, clientState, 'configRequirements/read', {}).catch(() => null),
+      internal_rpc(this, clientState, 'config/read', { includeLayers: true }),
+      internal_rpc(this, clientState, 'configRequirements/read', {}).catch(() => null),
     ]);
     return providerSettingsSnapshot(read, requirements, process.env, savedProviderKeyIds(configHome(read)));
   }
 
 /** The selected OpenRouter credential stays in the bridge and goes only to OpenRouter itself. */
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {unknown} id */
-export async function impl_readAloudProvider(clientState, id) {
+export async function impl_readAloudProvider(this: DesktopClient, clientState: ClientState, id?: unknown) {
     if (typeof id !== 'string' || !/^[a-z][a-z0-9_-]{0,63}$/.test(id)) throw new BridgeError('Choose a configured speech provider.');
-    const [read, policy] = await Promise.all([internal_rpc.call(this, clientState, 'config/read', { includeLayers: true }), internal_rpc.call(this, clientState, 'configRequirements/read', {}).catch(() => null)]);
+    const [read, policy] = await Promise.all([internal_rpc(this, clientState, 'config/read', { includeLayers: true }), internal_rpc(this, clientState, 'configRequirements/read', {}).catch(() => null)]);
     if (policy === null) throw new BridgeError('Provider policy is unavailable.', 503);
     if (policy.requirements?.modelProvider && policy.requirements.modelProvider !== id) throw new BridgeError('This provider is restricted by your organization.', 403);
     const definition = providerDefinition(read, id);
@@ -157,56 +151,52 @@ export async function impl_readAloudProvider(clientState, id) {
   }
 
 /** Saves a pasted API key to the Elpis home's private key file; the key is never sent back. */
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {unknown} raw */
-export async function impl_saveProviderKey(clientState, raw) {
-    const input = /** @type {Record<string, unknown>} */ (object(raw, ['provider', 'key']));
-    const [read, requirements] = await Promise.all([internal_rpc.call(this, clientState, 'config/read', { includeLayers: true }), internal_rpc.call(this, clientState, 'configRequirements/read', {}).catch(() => null)]);
+export async function impl_saveProviderKey(this: DesktopClient, clientState: ClientState, raw?: unknown) {
+    const input = object(raw, ['provider', 'key']) as Record<string, unknown>;
+    const [read, requirements] = await Promise.all([internal_rpc(this, clientState, 'config/read', { includeLayers: true }), internal_rpc(this, clientState, 'configRequirements/read', {}).catch(() => null)]);
     const id = typeof input.provider === 'string' ? input.provider : '';
     if (requirements === null || requirements?.requirements?.modelProviders?.[id] || !acceptsPastedKey(id, providerDefinition(read, id))) throw new BridgeError('This connection does not take an API key here.', 403);
     saveProviderKey(configHome(read), id, input.key);
     return this.providerSettings();
   }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {unknown} raw */
-export async function impl_saveProvider(clientState, raw) {
+export async function impl_saveProvider(this: DesktopClient, clientState: ClientState, raw?: unknown) {
     const current = await this.providerSettings();
     const edits = providerEdits(raw, current);
-    const input = /** @type {{ version?: unknown }} */ (raw);
+    const input = raw as { version?: unknown };
     privateConfigFile(current.configPath);
-    try { await internal_rpc.call(this, clientState, 'config/batchWrite', { edits, expectedVersion: input.version, reloadUserConfig: true }); clientState.catalog = null; }
+    try { await internal_rpc(this, clientState, 'config/batchWrite', { edits, expectedVersion: input.version, reloadUserConfig: true }); clientState.catalog = null; }
     catch (error) {
-      const failure = /** @type {{ status?: number }} */ (error);
+      const failure = error as { status?: number };
       if (failure.status === 409) throw new BridgeError('Settings changed in another client. Reload settings before saving again.', 409);
       throw new BridgeError('Provider settings could not be saved. Refresh settings before retrying.', failure.status ?? 502);
     }
     return this.providerSettings();
   }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {unknown} raw */
-export async function impl_signIn(clientState, raw) {
-    const body = /** @type {{ action?: unknown }} */ (object(raw, ['action']));
-    if (body.action === 'signOut') { await internal_rpc.call(this, clientState, 'account/logout', {}); clientState.catalog = null; return { signedOut: true }; }
+export async function impl_signIn(this: DesktopClient, clientState: ClientState, raw?: unknown) {
+    const body = object(raw, ['action']) as { action?: unknown };
+    if (body.action === 'signOut') { await internal_rpc(this, clientState, 'account/logout', {}); clientState.catalog = null; return { signedOut: true }; }
     if (body.action === 'anthropicSignOut' || body.action === 'anthropicSignIn') return internal_anthropicSignedOut.call(this, clientState, body.action === 'anthropicSignOut');
     if (body.action !== 'chatgpt') throw new BridgeError('Choose a ChatGPT or Anthropic sign-in or sign-out');
-    const result = await internal_rpc.call(this, clientState, 'account/login/start', { type: 'chatgpt' });
+    const result = await internal_rpc(this, clientState, 'account/login/start', { type: 'chatgpt' });
     if (typeof result?.authUrl !== 'string' || !/^https:\/\//.test(result.authUrl)) throw new BridgeError('Elpis did not return a sign-in page', 502);
     return { authUrl: result.authUrl, loginId: string(result.loginId) };
   }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {unknown} raw */
-export async function impl_claudeAccounts(clientState, raw) {
-    const input = /** @type {{ action?: string, id?: string, code?: unknown } | undefined} */ (raw);
+export async function impl_claudeAccounts(this: DesktopClient, clientState: ClientState, raw?: unknown) {
+    const input = raw as { action?: string; id?: string; code?: unknown } | undefined;
     if (input !== undefined) {
       object(input, ['action', 'id', 'code']);
-      if (!['login', 'select', 'code'].includes(/** @type {string} */ (input.action))) throw new BridgeError('Choose a Claude account action');
+      if (!['login', 'select', 'code'].includes(input.action as string)) throw new BridgeError('Choose a Claude account action');
       if (input.id !== undefined && input.id !== 'default' && !/^[a-f0-9-]{36}$/.test(input.id)) throw new BridgeError('Invalid Claude account');
       if (input.action === 'select' && typeof input.id !== 'string') throw new BridgeError('Choose a Claude account');
       if (input.action === 'code') text(input.code, 'Claude sign-in code', 4096);
     }
     let result;
-    try { result = await internal_rpc.call(this, clientState, input === undefined ? 'claudeAccounts/read' : 'claudeAccounts/write', input ?? {}); }
+    try { result = await internal_rpc(this, clientState, input === undefined ? 'claudeAccounts/read' : 'claudeAccounts/write', input ?? {}); }
     catch (error) {
-      const failure = /** @type {{ code: number, engineMessage?: string, message: string }} */ (error);
+      const failure = error as { code: number; engineMessage?: string; message: string };
       if ([-32601, -32600].includes(failure.code) && /unknown|not found/i.test(failure.engineMessage ?? failure.message)) throw new BridgeError('Restart Elpis to enable Claude account switching.', 503);
       if (typeof failure.engineMessage === 'string' && failure.engineMessage) throw new BridgeError(failure.engineMessage, failure.code === -32600 ? 409 : 400);
       throw error;
@@ -215,7 +205,7 @@ export async function impl_claudeAccounts(clientState, raw) {
     // A Claude sign-in, code or switch changes which models answer, so the shared model list cannot outlive it (Masih,
     // 21 October: "the anthropic's double-login which was fixed is now broken"). A login that finishes in the
     // background is seen on the next read.
-    const key = JSON.stringify([result.activeId, result.accounts.map(/** @param {{ id?: unknown, authenticated?: unknown, duplicate?: unknown } | null} account */ account => [account?.id, !!account?.authenticated, !!account?.duplicate])]);
+    const key = JSON.stringify([result.activeId, result.accounts.map((account: { id?: unknown; authenticated?: unknown; duplicate?: unknown } | null) => [account?.id, !!account?.authenticated, !!account?.duplicate])]);
     const changed = clientState.claudeAccountsKey !== undefined && key !== clientState.claudeAccountsKey;
     clientState.claudeAccountsKey = key;
     if (input !== undefined || changed) clientState.catalog = null;
@@ -226,12 +216,11 @@ export async function impl_claudeAccounts(clientState, raw) {
 /** Elpis's own Anthropic sign-out, kept by the Elpis bridge for the terminal and every window: only Elpis stops using
    * the Claude subscription. Claude Code's login and the ChatGPT account are not touched. Every window reloads its
    * models and usage as it does when the ChatGPT account changes. */
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {boolean} signedOut */
-async function internal_anthropicSignedOut(clientState, signedOut) {
+async function internal_anthropicSignedOut(this: DesktopClient, clientState: ClientState, signedOut: boolean) {
     let answer;
-    try { answer = await internal_rpc.call(this, clientState, 'claudeSubscription/write', { signedOut }); }
+    try { answer = await internal_rpc(this, clientState, 'claudeSubscription/write', { signedOut }); }
     catch (error) {
-      if (/unknown (method|variant)|method not found/i.test(/** @type {Error} */ (error).message)) throw new BridgeError('Update and restart Elpis to sign out of Anthropic from this app.', 503);
+      if (/unknown (method|variant)|method not found/i.test((error as Error).message)) throw new BridgeError('Update and restart Elpis to sign out of Anthropic from this app.', 503);
       throw error;
     }
     clientState.catalog = null;
@@ -239,44 +228,33 @@ async function internal_anthropicSignedOut(clientState, signedOut) {
     return { anthropicSignedOut: answer?.signedOut === true };
   }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
-export async function impl_mcp(clientState) { return mcpSnapshot(await internal_rpc.call(this, clientState, 'config/read', { includeLayers: true })); }
+export async function impl_mcp(this: DesktopClient, clientState: ClientState) { return mcpSnapshot(await internal_rpc(this, clientState, 'config/read', { includeLayers: true })); }
 
 // The Customize page (skills, plugins, connectors): bridge/customize-page.mjs.
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {Parameters<import('./customize-page.mjs').CustomizePage['customize']>[0]} cwd @returns {ReturnType<import('./customize-page.mjs').CustomizePage['customize']>} */
-export function impl_customize(clientState, cwd) { return clientState.customize.customize(cwd); }
+export function impl_customize(this: DesktopClient, clientState: ClientState, cwd?: Parameters<CustomizePage['customize']>[0]): ReturnType<CustomizePage['customize']> { return clientState.customize.customize(cwd); }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {Parameters<import('./customize-page.mjs').CustomizePage['pluginCatalog']>[0]} input @returns {ReturnType<import('./customize-page.mjs').CustomizePage['pluginCatalog']>} */
-export function impl_pluginCatalog(clientState, input) { return clientState.customize.pluginCatalog(input); }
+export function impl_pluginCatalog(this: DesktopClient, clientState: ClientState, input?: Parameters<CustomizePage['pluginCatalog']>[0]): ReturnType<CustomizePage['pluginCatalog']> { return clientState.customize.pluginCatalog(input); }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {Parameters<import('./customize-page.mjs').CustomizePage['changePlugin']>[0]} input */
-export function impl_changePlugin(clientState, input) { return clientState.customize.changePlugin(input); }
+export function impl_changePlugin(this: DesktopClient, clientState: ClientState, input?: Parameters<CustomizePage['changePlugin']>[0]) { return clientState.customize.changePlugin(input); }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {Parameters<import('./customize-page.mjs').CustomizePage['changeMarketplace']>[0]} input */
-export function impl_changeMarketplace(clientState, input) { return clientState.customize.changeMarketplace(input); }
+export function impl_changeMarketplace(this: DesktopClient, clientState: ClientState, input?: Parameters<CustomizePage['changeMarketplace']>[0]) { return clientState.customize.changeMarketplace(input); }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {Parameters<import('./customize-page.mjs').CustomizePage['setGithubConnector']>[0]} input */
-export function impl_setGithubConnector(clientState, input) { return clientState.customize.setGithubConnector(input); }
+export function impl_setGithubConnector(this: DesktopClient, clientState: ClientState, input?: Parameters<CustomizePage['setGithubConnector']>[0]) { return clientState.customize.setGithubConnector(input); }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {Parameters<import('./customize-page.mjs').CustomizePage['setSkill']>[0]} input */
-export function impl_setSkill(clientState, input) { return clientState.customize.setSkill(input); }
+export function impl_setSkill(this: DesktopClient, clientState: ClientState, input?: Parameters<CustomizePage['setSkill']>[0]) { return clientState.customize.setSkill(input); }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {Parameters<import('./customize-page.mjs').CustomizePage['deleteSkill']>[0]} input */
-export function impl_deleteSkill(clientState, input) { return clientState.customize.deleteSkill(input); }
+export function impl_deleteSkill(this: DesktopClient, clientState: ClientState, input?: Parameters<CustomizePage['deleteSkill']>[0]) { return clientState.customize.deleteSkill(input); }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {Parameters<import('./customize-page.mjs').CustomizePage['undoSkillDelete']>[0]} input */
-export function impl_undoSkillDelete(clientState, input) { return clientState.customize.undoSkillDelete(input); }
+export function impl_undoSkillDelete(this: DesktopClient, clientState: ClientState, input?: Parameters<CustomizePage['undoSkillDelete']>[0]) { return clientState.customize.undoSkillDelete(input); }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
-export async function impl_hooks(clientState) {
-    const [list, read] = await Promise.all([internal_rpc.call(this, clientState, 'hooks/list', {}), internal_rpc.call(this, clientState, 'config/read', { includeLayers: true })]);
+export async function impl_hooks(this: DesktopClient, clientState: ClientState) {
+    const [list, read] = await Promise.all([internal_rpc(this, clientState, 'hooks/list', {}), internal_rpc(this, clientState, 'config/read', { includeLayers: true })]);
     return hooksSnapshot(list, read);
   }
 
 /** Enables, disables or trusts one discovered hook through native `hooks.state`, as the Elpis terminal does. */
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {unknown} raw */
-export async function impl_saveHook(clientState, raw) {
-    const input = /** @type {Record<string, unknown>} */ (object(raw, ['version', 'key', 'enabled', 'trust']));
+export async function impl_saveHook(this: DesktopClient, clientState: ClientState, raw?: unknown) {
+    const input = object(raw, ['version', 'key', 'enabled', 'trust']) as Record<string, unknown>;
     text(input.version, 'hooks version', 200); text(input.key, 'hook', 1000);
     if ((input.enabled === undefined) === (input.trust === undefined)) throw new BridgeError('Choose enable, disable or trust');
     if (input.enabled !== undefined && typeof input.enabled !== 'boolean') throw new BridgeError('Choose enabled or disabled');
@@ -288,13 +266,12 @@ export async function impl_saveHook(clientState, raw) {
     if (hook.managed) throw new BridgeError('Managed hooks cannot be changed here', 403);
     if (input.trust && !hook.currentHash) throw new BridgeError('Elpis did not report this hook’s current version', 502);
     const state = input.trust ? { trusted_hash: hook.currentHash } : { enabled: input.enabled };
-    await internal_rpc.call(this, clientState, 'config/batchWrite', { edits: [{ keyPath: 'hooks.state', value: { [hook.key]: state }, mergeStrategy: 'upsert' }], expectedVersion: input.version, reloadUserConfig: true });
+    await internal_rpc(this, clientState, 'config/batchWrite', { edits: [{ keyPath: 'hooks.state', value: { [hook.key]: state }, mergeStrategy: 'upsert' }], expectedVersion: input.version, reloadUserConfig: true });
     return this.hooks();
   }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {unknown} body */
-export async function impl_resetMemories(clientState, body) {
+export async function impl_resetMemories(this: DesktopClient, clientState: ClientState, body?: unknown) {
     object(body, []);
-    await internal_rpc.call(this, clientState, 'memory/reset', undefined);
+    await internal_rpc(this, clientState, 'memory/reset', undefined);
     return { reset: true };
   }

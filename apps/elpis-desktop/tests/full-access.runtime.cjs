@@ -111,7 +111,7 @@ test('inherited permissions follow Settings across restart; explicit Ask stays; 
   await select(normal); await command('reload-explicit-ask', true);
   await select(id); await command('reload-inherited-full');
   const { connectAppServer } = await import(path.join(repo, 'tools/elpis-claude/app-server-connection.mjs'));
-  const { existingSocket } = await import(path.join(repo, 'apps/elpis-desktop/bridge/client.mjs'));
+  const { existingSocket } = await import(path.join(repo, 'apps/elpis-desktop/bridge/client.mts'));
   const socket = existingSocket(undefined, { ELPIS_HOME: path.join(app.home, 'elpis'), XDG_RUNTIME_DIR: path.join(app.home, 'run') });
   const helper = connectAppServer({ url: `ws+unix://${socket}:/`, name: 'elpis-agents' });
   t.after(() => helper.close()); await helper.ready;

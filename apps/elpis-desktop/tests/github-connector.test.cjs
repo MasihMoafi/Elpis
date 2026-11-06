@@ -22,7 +22,7 @@ async function connectors(page) {
 }
 
 test('mouse and keyboard toggle control the instructions sent by the real bridge for new chats', async () => {
-  const { DesktopClient } = await import('../bridge/client.mjs');
+  const { DesktopClient } = await import('../bridge/client.mts');
   const { createGithubConnector } = await import('../bridge/github-connector.mts');
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-github-ui-'));
   const socket = new EventEmitter(), starts = [], gh = [], threads = [{ id: 'chat-a', name: 'Fixture chat', cwd: '/tmp', status: { type: 'idle' } }];

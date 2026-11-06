@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { BridgeError, DesktopClient } from './client.mjs';
+import { BridgeError, DesktopClient } from './client.mts';
 import { planCanvas } from './canvas-plan.mjs';
 import { startDesktopServer } from './server.mjs';
 

@@ -12,7 +12,7 @@ import { createRequire } from 'node:module';
 import test from 'node:test';
 import { setTimeout as pause } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
-import { DesktopClient } from '../bridge/client.mjs';
+import { DesktopClient } from '../bridge/client.mts';
 
 const engine = process.env.ELPIS_LATENCY_ENGINE;
 const repo = fileURLToPath(new URL('../../../', import.meta.url));

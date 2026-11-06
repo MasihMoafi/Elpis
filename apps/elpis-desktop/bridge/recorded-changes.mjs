@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { BridgeError } from './client.mjs';
+import { BridgeError } from './client.mts';
 
 const DIFF_LIMIT = 400_000, MAX_FILES = 200;
 const STATUS = { add: 'added', delete: 'deleted', update: 'modified' };

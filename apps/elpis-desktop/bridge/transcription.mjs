@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { BridgeError } from './client.mjs';
+import { BridgeError } from './client.mts';
 import { childEnv } from './tools.mjs';
 
 const MAX_AUDIO = 8 * 1024 * 1024;

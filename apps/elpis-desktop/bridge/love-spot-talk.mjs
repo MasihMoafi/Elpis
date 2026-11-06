@@ -1,4 +1,4 @@
-import { BridgeError, object, text } from './client.mjs';
+import { BridgeError, object, text } from './client.mts';
 import { agentColor } from '../lib/love-spot.ts';
 import { splitPainting, withoutPainting } from './love-spot-painting.cjs';
 import { createSentenceBuffer } from './speech-buffer.mjs';

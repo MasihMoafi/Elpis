@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
-import { BridgeError } from './client.mjs';
+import { BridgeError } from './client.mts';
 
 // Agents use RAG through its MCP server; the app only shows and changes its provider, models and key
 // presence through the `rag` CLI, which owns that configuration. WhisperType's settings live in the

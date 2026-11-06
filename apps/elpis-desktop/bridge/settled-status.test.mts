@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { settledStatus } from './client.mjs';
+import { settledStatus } from './client.mts';
 
 // 3 Nov: after an engine hand-over a chat stayed "Working" with no turn running, hiding Edit and Rewind.
 test('a chat listed as working is idle once its newest turn has ended, and stays working while a turn runs', () => {

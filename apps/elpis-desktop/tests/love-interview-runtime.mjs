@@ -6,7 +6,7 @@ import syncFs from 'node:fs';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
-import { DesktopClient } from '../bridge/client.mjs';
+import { DesktopClient } from '../bridge/client.mts';
 import { createLoveAgents } from '../bridge/love-agents.mjs';
 import { createLoveSpot } from '../bridge/love-spot-store.cjs';
 

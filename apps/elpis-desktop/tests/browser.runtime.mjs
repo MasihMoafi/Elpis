@@ -10,7 +10,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { execFileSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { existingSocket } from '../bridge/client.mjs';
+import { existingSocket } from '../bridge/client.mts';
 const require = createRequire(import.meta.url);
 const { Provider, message: modelMessage, call: modelCall } = require('../../../scripts/lib/mock-provider.js');
 const { _electron } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');

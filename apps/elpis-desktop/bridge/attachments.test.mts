@@ -10,7 +10,7 @@ type WirePart = { type: string; text: string };
 type WireRow = { id: number; method: string; params: { input: WirePart[] } };
 type Socket = EventEmitter & { sent: WireRow[]; close: () => boolean; send: (raw: string) => void };
 const root = process.env.ELPIS_MEDIA_BASELINE;
-const { DesktopClient } = await import(root ? pathToFileURL(path.join(root, 'bridge/client.mjs')).href : './client.mjs');
+const { DesktopClient } = await import(root ? pathToFileURL(path.join(root, 'bridge/client.mts')).href : './client.mts');
 const { startDesktopServer } = await import(root ? pathToFileURL(path.join(root, 'bridge/server.mjs')).href : './server.mjs');
 const ID = '00000000-0000-0000-0000-000000000001';
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64');

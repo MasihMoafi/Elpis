@@ -11,7 +11,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as pause } from 'node:timers/promises';
 import provider from '../../../scripts/lib/mock-provider.js';
-import { DesktopClient } from '../bridge/client.mjs';
+import { DesktopClient } from '../bridge/client.mts';
 import { startDesktopServer } from '../bridge/server.mjs';
 
 const repo = fileURLToPath(new URL('../../../', import.meta.url));

@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { DesktopClient } from './client.mjs';
+import { DesktopClient } from './client.mts';
 
 type Request = { id?: number; method: string; params: { source?: string } };
 type Socket = EventEmitter & { sent: Request[]; close: () => void; send: (raw: string) => void };

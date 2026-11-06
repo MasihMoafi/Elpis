@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { BridgeError } from './client.mjs';
+import { BridgeError } from './client.mts';
 import { projectDirectory, skipped } from './folders.mjs';
 import { ATTACHMENT_LIMITS, imageMime } from './attachments.mts';
 

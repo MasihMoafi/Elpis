@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { DesktopClient } from './client.mjs';
+import { DesktopClient } from './client.mts';
 
 const binary = process.argv[2];
 assert(binary && path.isAbsolute(binary), 'Provide an absolute native binary');

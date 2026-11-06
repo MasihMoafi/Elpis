@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { BridgeError } from './client.mjs';
+import { BridgeError } from './client.mts';
 import { CHAT_WORKTREE } from '../lib/chat-worktree.ts';
 
 const DIFF_LIMIT = 400_000;

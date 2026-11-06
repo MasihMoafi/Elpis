@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { BridgeError } from './client.mjs';
+import { BridgeError } from './client.mts';
 import { listFolders } from './folders.mjs';
 import { startDesktopServer } from './server.mjs';
 import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cjs';

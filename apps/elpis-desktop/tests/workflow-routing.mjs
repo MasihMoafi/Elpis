@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {EventEmitter} from 'node:events';
-import {DesktopClient} from '../bridge/client.mjs';
+import {DesktopClient} from '../bridge/client.mts';
 
 const rootId='00000000-0000-0000-0000-000000000001';
 const fake=fileURLToPath(new URL('../../../tools/elpis-claude/test/fake-acp-agent.mjs',import.meta.url));

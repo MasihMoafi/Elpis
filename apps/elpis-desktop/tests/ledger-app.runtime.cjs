@@ -29,7 +29,7 @@ async function main() {
     env.ELPIS_APP_BRIDGE_SOCKET = bridge.socketPath;
     if (baseline) {
       process.env = { ...env };
-      const { DesktopClient } = await import('../bridge/client.mjs');
+      const { DesktopClient } = await import('../bridge/client.mts');
       const client = await DesktopClient.connect({ socketPath: bridge.socketPath });
       try {
         await client.changeMarketplace({ action: 'add', source: fixtures[0].market });

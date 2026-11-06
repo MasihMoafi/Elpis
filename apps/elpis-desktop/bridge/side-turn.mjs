@@ -1,4 +1,4 @@
-import { BridgeError, threadId } from './client.mjs';
+import { BridgeError, threadId } from './client.mts';
 
 /** One turn in an ephemeral side conversation with no approvals and no chat in the app: the canvas planner and chat
  * titles. It runs on `model` ({ model, provider }) when given, else the background model (the main model when none is

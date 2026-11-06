@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { timingSafeEqual } from 'node:crypto';
-import { BridgeError, MAX_BRIDGE_MESSAGE_BYTES } from './client.mjs';
+import { BridgeError, MAX_BRIDGE_MESSAGE_BYTES } from './client.mts';
 import { AttachmentError } from './attachments.mts';
 
 /**
@@ -13,7 +13,7 @@ import { AttachmentError } from './attachments.mts';
  */
 /**
  * @typedef {{
- *   client: import('./client.mjs').DesktopClient,
+ *   client: import('./client.mts').DesktopClient,
  *   options: { elpisHome?: string, [key: string]: unknown },
  *   trash: Awaited<ReturnType<typeof import('./trash.mjs').createTrash>>,
  *   loveSpot: ReturnType<typeof import('./love-spot-store.cjs').createLoveSpot>,

@@ -2,7 +2,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { BridgeError, DesktopClient, elpisHome, object } from './client.mjs';
+import { BridgeError, DesktopClient, elpisHome, object } from './client.mts';
 import { profileEnvironment } from './profile-env.mts';
 import { LOVE_SPOT_AUDIO } from '../lib/love-spot-audio.mts';
 import { createExperimentLab } from './experiment-lab.mjs';
@@ -32,7 +32,7 @@ import { createHistoryCursors, handleThreadRoutes } from './server-threads.mjs';
 
 /**
  * @typedef {{
- *   client?: import('./client.mjs').DesktopClient,
+ *   client?: import('./client.mts').DesktopClient,
  *   socketPath?: string,
  *   elpisHome?: string,
  *   trashFile?: string,
