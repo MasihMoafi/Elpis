@@ -1,7 +1,7 @@
 "use client";
 
 import { flushSync } from "react-dom";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { Button } from "@/components/ui/button";
 import { ViewBoundary } from "@/components/view-boundary";
 import { useBookmarks, useChatAttention, usePins, useSidebarFolds, useChatGroups } from "@/lib/use-sidebar-state";
@@ -56,7 +56,7 @@ import { SidePanel, sideMinWidth, useSidePanel } from "@/components/side-panel";
 import { type SideRequest } from "@/components/side-chat";
 import { FloatChatBar, FloatChatPill } from "@/components/float-chat";
 import { useSessionSplit } from "@/components/session-split";
-import { followChat, forgetChats, renameTabs } from "@/lib/chat-tabs";
+import { followChat, renameTabs } from "@/lib/chat-tabs";
 import { fitAttachments, type Attachment } from "@/lib/attachments";
 import { api, isAgentRun, modelLabel, providerLabel, title, agentName,
   type ProviderSettings, type Thread } from "@/lib/api";
@@ -105,6 +105,7 @@ import { createWorkspaceVisibility } from "@/lib/workspace-visibility";
 import { createSidebarChatSelection } from "@/lib/sidebar-chat-selection";
 import { useWorkspaceOrder } from "@/lib/use-workspace-order";
 import { useRewindState, useRewindStatus } from "@/lib/use-rewind-state";
+import { useRemoveThreads } from "@/lib/use-remove-threads";
 import { NAV_PAGES, PAGE_NAMES } from "@/lib/workspace-navigation-pages";
 import { refusedOffline } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
@@ -131,7 +132,8 @@ export default function Home() {
   const session = useConversationSession();
   const { threads, setThreads, selected, setSelected, selectedRef, entries, setEntries, submissions, setSubmissions, busy, setBusy, loading, setLoading, scroll, stickToBottom, restoreScroll, request, initialRestoration } = session;
   // Chat tabs (lib/chat-tabs.ts): the shown tab follows the chat on screen, so every way of opening a chat lands in it.
-  const { tabs, tabsRef, updateTabs, restoreTabs, restored: restoredTabs } = useChatTabs(message => setError(message));
+  const chatTabs = useChatTabs(message => setError(message));
+  const { tabs, tabsRef, updateTabs, restoreTabs, restored: restoredTabs } = chatTabs;
   // The engine's live model list, shared by every model menu (lib/model-catalog.ts).
   const { models, error: catalogError, loading: catalogLoading } = useModelCatalog();
   const refreshModels = refreshModelCatalog;
@@ -178,18 +180,18 @@ export default function Home() {
   const [messageEdits, setMessageEdits] = useState<Record<string, string>>({});
   const approvalSubmissions = useSubmitOnce(), { pending: pendingDrafts, submit: submitDraft } = approvalSubmissions;
   const approvalDrafts = useApprovalDrafts(), { clearApprovalDraft } = approvalDrafts;
-  const draftStore = useDraftStore(setError), { savedDraft, saveDraft, savedAttachments, saveAttachments } = draftStore;
+  const draftStore = useDraftStore(setError), { saveDraft, savedAttachments, saveAttachments } = draftStore;
   const newDraftKey = useRef("new");
   const runtime = useRuntimeState();
   const { connected, connectionStatus, ready, runtimeNotices, setRuntimeNotices,
-    activeTurns, approvals, setApprovals,
+    activeTurns, approvals,
     activity, liveError } = runtime;
   useEffect(() => {
     if (ready && connected && document.activeElement === document.body) composerRef.current?.focus();
   }, [ready, connected]);
   const editDraft = (value: string) => { setText(value); saveDraft(selectedRef.current?.id || newDraftKey.current, value); };
   const attachmentState = useComposerAttachments({ selectedRef, newDraftKey, shellMode, savedAttachments, saveAttachments, setError, setRuntimeNotices });
-  const { attachments, attaching, setFileNotice, setAttachments, restoreAttachments } = attachmentState;
+  const { attachments, attaching, setFileNotice, setAttachments } = attachmentState;
   /** The browser's annotations and screenshots join the composer's files; its Send also sends the message. */
   async function attachFromBrowser(parts: Attachment[], submit: boolean) {
     const owner = selectedRef.current?.id || newDraftKey.current;
@@ -246,26 +248,14 @@ export default function Home() {
   // The website's animated wordmark, its dark or light version (website/assets/branding).
   const searchInput = useRef<HTMLInputElement>(null);
   const history = useTranscriptHistory(selected, loading, entries, setEntries);
-  const { itemCursor, setItemCursor, transcripts, prefetchThread } = history;
+  const { itemCursor, prefetchThread } = history;
   const conversations = useConversationList(threads, setThreads, selectedRef, setSelected, setError);
-  const { select, threadsRef, hidden } = conversations;
+  const { threadsRef, hidden } = conversations;
   const children = useChildConversations({ conversations, selectedRef, setThreads, setError, setAgentsPanelState });
   const { loadingChildren, checkedChildren, childCursors, expanded, setExpanded, holdAgentPanel, loadChildren } = children;
   const search = useSidebarSearch(ready, hidden), searchTerm = search.searchTerm;
 
-  const removeThreads = useCallback((ids: Set<string>, permanent: boolean) => {
-    for (let grew = true; grew;) { grew = false; for (const thread of threadsRef.current) if (thread.parentThreadId && ids.has(thread.parentThreadId) && !ids.has(thread.id)) { ids.add(thread.id); grew = true; } }
-    for (const id of ids) { hidden.current.add(id); transcripts.current.delete(id); browser.closeSession(id); }
-    if (permanent) {
-      draftStore.forget(ids);
-      setMessageEdits(previous => Object.fromEntries(Object.entries(previous).filter(([key]) => !ids.has((JSON.parse(key) as [string, string, string])[0]))));
-    }
-    updateTabs(forgetChats(tabsRef.current, ids));
-    setThreads(prev => prev.filter(thread => !ids.has(thread.id)));
-    setMarked(prev => prev.some(id => ids.has(id)) ? prev.filter(id => !ids.has(id)) : prev);
-    setApprovals(prev => prev.filter(approval => !ids.has(approval.params.threadId ?? "")));
-    if (selectedRef.current && ids.has(selectedRef.current.id)) { request.current++; select(null); setText(savedDraft(newDraftKey.current)); restoreAttachments(newDraftKey.current); setEntries([]); setItemCursor(null); }
-  }, [select, setText, savedDraft, restoreAttachments, updateTabs, browser.closeSession]);
+  const removeThreads = useRemoveThreads({ session, conversations, history, composer, attachments: attachmentState, drafts: draftStore, selection, runtime, tabs: chatTabs, browser, newDraftKey, setMessageEdits });
   const { rememberFollowing, reconcileLiveThread, loadThread, openThread } = useOpenConversation({ composer, runtime, conversations, history, drafts: draftStore, attachments: attachmentState, tabsRef, updateTabs, session, newDraftKey, markRead, setView, setSidebar, setError, rememberModes: (id, live) => rememberModes(id, live) });
 
   useWorkspaceRestoration({ projects: projectState, composer, attachments: attachmentState, drafts: draftStore, newDraftKey, restoreTabs, setError });
