@@ -2,14 +2,14 @@
 
 import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { flushSync } from "react-dom";
-import { cloneElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { cloneElement, useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { ChatIcon } from "@/components/elpis-icons";
 import { Button } from "@/components/ui/button";
 import { useReorder } from "@/components/reorder";
 import { ViewBoundary } from "@/components/view-boundary";
 import { useBookmarks, useChatAttention, usePins, useSidebarFolds, useChatGroups } from "@/lib/use-sidebar-state";
 import { useAppearance } from "@/lib/use-appearance";
-import { addGroup, chatSubtree, moveChats, prioritizeChats } from "@/lib/chat-groups";
+import { addGroup, chatSubtree, moveChats } from "@/lib/chat-groups";
 import { configuredShortcuts } from "@/lib/shortcuts";
 import { CommandMenu, type CommandAction } from "@/components/command-menu";
 import { arrange, move } from "@/lib/nav-order";
@@ -58,7 +58,6 @@ import { LOVE_SPOT_AUDIO } from "@/lib/love-spot-audio";
 import { useScreenshotPopup } from "@/lib/use-screenshot-popup";
 import { DocumentReviewProvider } from "@/components/document-review";
 import { ChatTeamPanel } from "@/components/chat-team-panel";
-import { agentColourSlots } from "@/components/agent-identity";
 import { ResumeConversation } from "@/components/resume-conversation";
 import { sidebarListKeys, useSidebarKeys, useWorkspaceNavigation } from "@/lib/use-workspace-navigation";
 import { agentState } from "@/lib/agents";
@@ -112,6 +111,7 @@ import { useConversationSession } from "@/lib/use-conversation-session";
 import { createPromptEditing } from "@/lib/prompt-editing";
 import { createSideChatActions } from "@/lib/side-chat-actions";
 import { useWorkspaceRestoration } from "@/lib/use-workspace-restoration";
+import { useChatTeam } from "@/lib/use-chat-team";
 import { NAV_PAGES, PAGE_NAMES } from "@/lib/workspace-navigation-pages";
 import { refusedOffline, type View, type WorkflowReplay } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
@@ -355,22 +355,7 @@ export default function Home() {
   const { writePrompt, editLastMessage } = createPromptEditing({ composer, session, replacement, editDraft, setMessageEdits, setSlashNotice });
   // The message box's history keys (lib/prompt-history.ts): ↑/↓ and Ctrl+R through what you sent, Esc Esc to edit the last.
   const promptKeys = usePromptKeys(selected?.id ?? newDraftKey.current, { entries, box: () => composerRef.current, read: () => textRef.current, write: writePrompt, editLast: editLastMessage });
-  const waitingIds = new Set(approvals.map(approval => approval.params.threadId ?? approval.ownerThreadId));
-  // The chat's team: a root shows its agents; an agent shows its siblings and the way back to the root.
-  const teamRoot = selected ? (selected.parentThreadId ? find(selected.parentThreadId) ?? { id: selected.parentThreadId } as Thread : selected) : null;
-  const team = teamRoot ? prioritizeChats(threads.filter(thread => thread.parentThreadId === teamRoot.id), thread => agentState(thread, waitingIds)) : [];
-  const workingTeam = team.filter(thread => agentState(thread, waitingIds) === "working");
-  const shownTeam = workingAgentsOnly ? workingTeam : team;
-  const agentColours = useMemo(() => agentColourSlots(threads), [threads]);
-  const agentsPanel = agentsPanelState.open && !(selected && teamRoot && (agentsPanelState.held.has(selected.id) || agentsPanelState.held.has(teamRoot.id)));
-  const awaitingTeam = !!(selected && teamRoot && agentsPanel && !panelShown && ready && connected &&
-    ((!checkedChildren.current.has(teamRoot.id) && !team.length) || (loading && !find(selected.id))));
-  const openAgentsPanel = () => setAgentsPanelState(previous => {
-    const held = new Set(previous.held);
-    if (selected) held.delete(selected.id);
-    if (teamRoot) held.delete(teamRoot.id);
-    return { open: true, held };
-  });
+  const { waitingIds, teamRoot, team, workingTeam, shownTeam, agentColours, agentsPanel, awaitingTeam, openAgentsPanel } = useChatTeam({ session, runtime, find, checkedChildren, workingAgentsOnly, agentsPanelState, setAgentsPanelState, panelShown });
 
   const { openNewChat, newChat, showTab, newChatTab, closeChatTab, cycleTabs, goHistory, openInNewTab, keepWorkflowTab } = createChatNavigation({ projectState, composer, conversations, history, drafts: draftStore, attachments: attachmentState, tabsRef, updateTabs, session, newDraftKey, setError, setView, setSidebar, find, openThread, loadThread, showChat, browser, navHistory, show: next => show(next) });
   const clearChat = createClearConversation({ composer, conversations, projectState, runtime, loveActivity, selectedRef, request, setError, threadModes, permissionMode, openNewChat, loadThread, noteStartedMode: (id, mode) => noteStartedMode(id, mode) });
