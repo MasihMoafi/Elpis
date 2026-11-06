@@ -27,7 +27,6 @@ import { ShortcutsDialog } from "@/components/shortcuts-dialog";
 import { StartupSplash } from "@/components/startup-splash";
 import { permissionLabel, type PermissionMode } from "@/components/composer-controls";
 import { CopyButton } from "@/components/markdown-text";
-import { mergeHistoryWithLive } from "@/lib/live-events";
 import { type SubmittedMessage } from "@/lib/submitted-messages";
 import { type MessageVersion } from "@/lib/turn-replacement";
 import type { TerminalLaunch } from "@/components/terminal-view";
@@ -88,9 +87,8 @@ import { Tab } from "@/components/tab-strip";
 import { activeTab, followChat, forgetChats, renameTabs, type ChatTab } from "@/lib/chat-tabs";
 import { TEXT_ONLY_NOTICE, fitAttachments, type Attachment } from "@/lib/attachments";
 import { LoadOnScroll } from "@/components/load-on-scroll";
-import { api, unreadable, isAgentRun, AGENT_RUN_NOTICE, modelLabel, providerLabel, title, agentName,
+import { api, isAgentRun, AGENT_RUN_NOTICE, modelLabel, providerLabel, title, agentName,
   type Entry, type ProviderSettings, type Thread } from "@/lib/api";
-import { historyPath, inReadingOrder } from "@/lib/chat-history";
 import { useComposerHeight } from "@/lib/use-composer-height";
 import { useTranscriptHistory } from "@/lib/use-transcript-history";
 import { useConversationList } from "@/lib/use-conversation-list";
@@ -123,6 +121,7 @@ import { useTurnReplacementView } from "@/lib/use-turn-replacement-view";
 import { useWorkspacePagesState } from "@/lib/use-workspace-pages-state";
 import { useConversationOptions } from "@/lib/use-conversation-options";
 import { useSidebarSelection } from "@/lib/use-sidebar-selection";
+import { useHistoryFallback } from "@/lib/use-history-fallback";
 import { NAV_PAGES, PAGE_NAMES } from "@/lib/workspace-navigation-pages";
 import { refusedOffline, type View, type WorkflowReplay } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
@@ -291,7 +290,7 @@ export default function Home() {
   const searchInput = useRef<HTMLInputElement>(null);
   const shortcutsReturnFocus = useRef<HTMLElement | null>(null);
   const history = useTranscriptHistory(selected, loading, entries, setEntries);
-  const { itemCursor, setItemCursor, historyGaps, heldCount, transcripts, prefetchThread, liveRevision, liveKeysAfter } = history;
+  const { itemCursor, setItemCursor, historyGaps, heldCount, transcripts, prefetchThread } = history;
   const scroll = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
   const followingBottom = useRef(false);
@@ -337,29 +336,7 @@ export default function Home() {
   useEffect(() => { if (ready && selectedTeamId) loadChildren(selectedTeamId); }, [ready, selectedTeamId, loadChildren]);
   // Chats this app could not subscribe to are refreshed by reading them instead.
   const selectedLiveError = selected ? liveError[selected.id] : undefined;
-  useEffect(() => {
-    if (!selected || !selectedLiveError || view !== "chat" || loading) return;
-    const id = selected.id; let disposed = false, inFlight = false;
-    const timer = setInterval(async () => {
-      if (disposed || inFlight || document.visibilityState !== "visible") return;
-      inFlight = true;
-      const historyRevision = liveRevision.current;
-      try {
-        const result = await api<{ thread: Thread; data: Entry[] }>(historyPath(id)); if (!Array.isArray(result.data)) throw unreadable("conversations"); if (!result.thread || typeof result.thread.id !== "string") throw unreadable("conversation");
-        if (disposed || selectedRef.current?.id !== id) return;
-        select(result.thread);
-        setEntries(prev => {
-          const fresh = inReadingOrder(result); const byId = new Map(fresh.map(entry => [`${entry.turnId}:${entry.item.id}`, entry]));
-          const merged = prev.map(entry => byId.get(`${entry.turnId}:${entry.item.id}`) || entry);
-          const previousIds = new Set(prev.map(entry => `${entry.turnId}:${entry.item.id}`));
-          merged.push(...fresh.filter(entry => !previousIds.has(`${entry.turnId}:${entry.item.id}`)));
-          const preserved = mergeHistoryWithLive(prev, merged, liveKeysAfter(historyRevision));
-          return JSON.stringify(preserved) === JSON.stringify(prev) ? prev : preserved;
-        });
-      } catch { /* Read again in 3 s; the chat stays on screen meanwhile. */ } finally { inFlight = false; }
-    }, 3000);
-    return () => { disposed = true; clearInterval(timer); };
-  }, [selected?.id, selectedLiveError, view, loading, select, liveKeysAfter]);
+  useHistoryFallback({ selected, selectedLiveError, view, loading, selectedRef, history, conversations, setEntries });
   const related = useRelatedConversations(selected, threads, preferences.showAgentRuns, agentRunsOpen);
   const { shownEntries, newestPrompt } = useTranscriptPresentation({ selected, entries, submissions, setSubmissions, newDraftKey, scroll, restoreScroll, stickToBottom, view });
 
