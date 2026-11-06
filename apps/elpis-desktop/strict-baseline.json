@@ -1263,7 +1263,7 @@
   "app/page.tsx:TS2345": 7,
   "app/page.tsx:TS2375": 30,
   "app/page.tsx:TS2379": 1,
-  "app/page.tsx:TS2532": 6,
+  "app/page.tsx:TS2532": 5,
   "app/page.tsx:TS2538": 1,
   "components/account-row.tsx:TS2532": 1,
   "components/action-menu.tsx:TS18048": 9,
