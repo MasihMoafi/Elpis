@@ -50,7 +50,6 @@ import { LiveVoiceProvider } from "@/components/live-voice";
 import { MoveChatDialog, ProjectDialog } from "@/components/project-picker";
 import { PutUnderDialog } from "@/components/put-under-dialog";
 import { WorkflowMark } from "@/components/workflow-identity";
-import { useWorkflowSandbox } from "@/lib/workflow-identity";
 import { ProfileDialog } from "@/components/profile-dialog";
 import { saveProjects } from "@/lib/projects";
 import { useLoveActivity } from "@/lib/use-love-activity";
@@ -113,8 +112,9 @@ import { createSideChatActions } from "@/lib/side-chat-actions";
 import { useWorkspaceRestoration } from "@/lib/use-workspace-restoration";
 import { useChatTeam } from "@/lib/use-chat-team";
 import { useWorkspaceShortcuts } from "@/lib/use-workspace-shortcuts";
+import { useWorkflowWorkspace } from "@/lib/use-workflow-workspace";
 import { NAV_PAGES, PAGE_NAMES } from "@/lib/workspace-navigation-pages";
-import { refusedOffline, type View, type WorkflowReplay } from "@/lib/workspace-types";
+import { refusedOffline, type View } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
 import { useComposerState } from "@/lib/use-composer-state";
 import { useProjectState } from "@/lib/use-project-state";
@@ -148,7 +148,7 @@ export default function Home() {
   const projectState = useProjectState();
   const { cwd, projects, setProjects, projectId, projectChats,
     projectMove, setProjectMove, newProjectFor, setNewProjectFor, nestTargets, setNestTargets,
-    projectChanging, workflowProject, projectEdit, setProjectEdit } = projectState;
+    projectChanging, projectEdit, setProjectEdit } = projectState;
   const pages = useWorkspacePagesState();
   const { recordedWorkflow, setSettingsVisited, setSettingsNavigation, view, setView, viewRef, setSettingsSection } = pages;
   const { pins, togglePinned } = usePins();
@@ -203,8 +203,7 @@ export default function Home() {
   const runtime = useRuntimeState();
   const { connected, connectionStatus, ready, runtimeNotices, setRuntimeNotices,
     activeTurns, approvals, setApprovals,
-    activity, liveError,
-    setReplays } = runtime;
+    activity, liveError } = runtime;
   useEffect(() => {
     if (ready && connected && document.activeElement === document.body) composerRef.current?.focus();
   }, [ready, connected]);
@@ -232,13 +231,7 @@ export default function Home() {
   const loveSpotAudioReason = selected && !LOVE_SPOT_AUDIO.available
     ? selectedLoveChat ? LOVE_SPOT_AUDIO.reason : !loveActivity.originsResolved ? LOVE_SPOT_AUDIO.pendingReason : undefined
     : undefined;
-  /** Scheduled workflows this window claimed (bridge/server.mjs dispatchWorkflow): each replays its saved board out of
-   * sight and reports the run's chat. */
-  const finishReplay = useCallback((replay: WorkflowReplay, result: { threadId?: string; error?: string }) => {
-    setReplays(previous => previous.filter(item => item.token !== replay.token));
-    void api(`/automations/${replay.taskId}`, { action: "result", token: replay.token, ...result }).catch(() => {});
-  }, []);
-  const workflowSandbox = useWorkflowSandbox(view === "canvas" && ready && connected && !workflowProject, setError), workflowFolder = workflowProject?.cwd || workflowSandbox;
+  const { finishReplay, workflowSandbox, workflowFolder } = useWorkflowWorkspace(view, projectState, runtime, setError);
   // Matilda's chat on screen reads every Love Spot reply.
   useEffect(() => { if (loveActivity.chatShown) setAttention(previous => ({ ...previous, unread: previous.unread.filter(id => !isLoveChatId(id)) })); }, [loveActivity.chatShown, setAttention]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (view === "chat" && selected) markRead(selected.id); }, [view, selected?.id, markRead]);
