@@ -6,7 +6,7 @@ const commands = APP_MENUS.flatMap(group => group.items as readonly unknown[]).f
 const nativeCommands = new Set(commands.filter(item => item.target === 'native').map(item => item.id));
 
 /** A fixed native command surface; no role, script, path or clipboard data comes from the renderer. */
-function createAppMenuImpl({ ipcMain, windows, origin, newWindow, quit }: { ipcMain: IpcMain; windows: () => BrowserWindow[]; origin: () => string; newWindow: () => unknown; quit: () => unknown }) {
+function createAppMenuImpl({ ipcMain, windows, origin, newWindow, quit }: { ipcMain: IpcMain; windows: () => Iterable<BrowserWindow>; origin: () => string | undefined; newWindow: () => unknown; quit: () => unknown }) {
   async function execute(command: string, host: BrowserWindow) {
     if (['undo', 'redo', 'cut', 'copy', 'paste', 'selectAll'].includes(command)) { host.webContents.focus(); host.webContents[command as 'undo' | 'redo' | 'cut' | 'copy' | 'paste' | 'selectAll'](); }
     else if (command === 'new-window') await newWindow();

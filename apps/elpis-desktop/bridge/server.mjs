@@ -45,7 +45,7 @@ import { createHistoryCursors, handleThreadRoutes } from './server-threads.mjs';
  *   automations?: boolean,
  *   improvements?: Record<string, unknown>,
  *   tools?: ReturnType<typeof createTools>,
- *   kokoro?: { voices?: () => Promise<unknown[]> | unknown[], defaultVoice?: string, close: () => void, [key: string]: unknown },
+ *   kokoro?: Parameters<typeof createReadAloudProvider>[0]['kokoro'] & { defaultVoice?: string, close: () => void },
  *   readAloudFetch?: typeof fetch,
  *   codexHome?: string,
  *   port?: number

@@ -4,9 +4,9 @@ type ReadStore = { read: () => Record<string, unknown> };
 type SeedStore = ReadStore & { snapshot: () => { revision?: number }; patch: (input: { key: string; changes: Record<string, unknown>; baseRevision: number }, writer: null) => Promise<unknown> };
 const { DEFAULT_SHORTCUT }: typeof import('./quick-entry.cts') = require('./quick-entry.cts');
 const PREFERENCES_KEY_VALUE = 'elpis-preferences-v1';
-function saved(store: ReadStore): Record<string, unknown> {
+function saved(store: ReadStore | undefined): Record<string, unknown> {
   try {
-    const value = store.read()[PREFERENCES_KEY_VALUE];
+    const value = store?.read()[PREFERENCES_KEY_VALUE];
     const parsed = typeof value === 'string' ? JSON.parse(value) as unknown : null;
     return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : {};
   } catch { return {}; }
@@ -28,7 +28,7 @@ async function seedShippedDefaultsImpl(store: SeedStore) {
   if (Object.keys(changes).length) await store.patch({ key: PREFERENCES_KEY_VALUE, changes, baseRevision: store.snapshot().revision as number }, null);
 }
 /** Settings → General → Quick Entry keyboard shortcut; empty when turned off. */
-function quickEntryShortcutImpl(store: ReadStore) {
+function quickEntryShortcutImpl(store: ReadStore | undefined) {
   const value = saved(store).quickEntryShortcut;
   return typeof value === 'string' ? value : DEFAULT_SHORTCUT;
 }

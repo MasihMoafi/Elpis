@@ -20,7 +20,7 @@ function browserUrlImpl(input: unknown, appOrigin?: string) {
   return url.href;
 }
 
-function trustedBrowserSenderImpl(event: { sender: unknown; senderFrame: { url: string } | null }, owner: { mainFrame: { url: string } }, origin: string) {
+function trustedBrowserSenderImpl(event: { sender: unknown; senderFrame: { url: string } | null }, owner: { mainFrame: { url: string } }, origin: string | undefined) {
   if(event.sender!==owner||event.senderFrame!==owner.mainFrame)return false;
   try{return new URL(event.senderFrame.url).origin===origin;}catch{return false;}
 }

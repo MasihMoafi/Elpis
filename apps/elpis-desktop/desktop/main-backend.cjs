@@ -115,8 +115,8 @@ function createMainBackend({ electron, appDir, state, createStateStore, closeToT
 
   async function prepareWindows() {
     if (!state.getServer()) {
-      if (!state.getStore()) state.setStore(createStateStore(path.join(app.getPath('userData'), 'workspace.json')));
-      const store = state.getStore();
+      let store = state.getStore();
+      if (!store) { store = createStateStore(path.join(app.getPath('userData'), 'workspace.json')); state.setStore(store); }
       await seedShippedDefaults(store);
       const { startDesktopServer } = await import(pathToFileURL(path.join(appDir, '../bridge/server.mjs')).href);
       const { DesktopClient, existingSocket } = await import(pathToFileURL(path.join(appDir, '../bridge/client.mjs')).href);

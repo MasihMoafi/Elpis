@@ -66,7 +66,7 @@ function createShortcutImpl({ app, globalShortcut, onPress }: { app: Pick<App, '
 }
 
 /** The Quick Entry window. `onSubmit` gets the text to open as a new chat. */
-type Drafts = { read: () => unknown; save: (text: unknown) => Promise<unknown> };
+type Drafts = { read: () => unknown; save: (text: string) => Promise<unknown> | undefined };
 type QuickOptions = { BrowserWindow: typeof Window; screen: Screen; ipcMain: IpcMain; dark: () => boolean; onSubmit: (text: string) => void; drafts?: Drafts | undefined };
 function createQuickEntryImpl({ BrowserWindow, screen, ipcMain, dark, onSubmit, drafts }: QuickOptions) {
   let window: Window | null = null, ready: Promise<void> | null = null, position: [number, number] | null = null, restoreDraft = false;
