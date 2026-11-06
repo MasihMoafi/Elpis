@@ -27,6 +27,13 @@ test('accent applies instantly and persists while every interface surface stays 
   await chooseOption(page.getByLabel('Accent colour', { exact: true }), 'teal');
   assert.notEqual(await token(page, '--primary'), amber);
   await leaveSettings(page);
+  // Love Spot's local accent also supplies its derived ring; the rest of the app keeps the selected accent.
+  const loveAccent = await page.locator('button[data-nav-page="loveSpot"]').evaluate(element => {
+    const style = getComputedStyle(element), root = getComputedStyle(document.documentElement);
+    return { local: style.getPropertyValue('--primary').trim(), ring: style.getPropertyValue('--ring').trim(), global: root.getPropertyValue('--primary').trim() };
+  });
+  assert.notEqual(loveAccent.local, loveAccent.global);
+  assert.equal(loveAccent.ring, loveAccent.local);
   assert.match(await font(page.locator('.message.agent .markdown').first()), /Inter/);
   assert.match(await font(f.composer), /Inter/);
   assert.match(await font(page.locator('.markdown code').first()), /Mono|monospace/);
