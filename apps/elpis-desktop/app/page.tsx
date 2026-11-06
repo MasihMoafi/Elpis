@@ -3,7 +3,6 @@
 import { flushSync } from "react-dom";
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { ViewBoundary } from "@/components/view-boundary";
-import { useBookmarks, useChatAttention, usePins, useSidebarFolds, useChatGroups } from "@/lib/use-sidebar-state";
 import { useAppearance } from "@/lib/use-appearance";
 import { CommandMenu } from "@/components/command-menu";
 import { newChatFolder } from "@/lib/preferences";
@@ -12,7 +11,6 @@ import { ShortcutsDialog } from "@/components/shortcuts-dialog";
 import { StartupSplash } from "@/components/startup-splash";
 import { type SettingsDestination } from "@/components/settings-view";
 import { DeleteChatsDialog } from "@/components/thread-actions";
-import { SectionToggle } from "@/components/sidebar-group";
 import { SidebarChatList } from "@/components/sidebar-chat-list";
 import { createSidebarThreadRow } from "@/components/sidebar-thread-row";
 import { createSidebarBranches } from "@/components/sidebar-branches";
@@ -74,7 +72,6 @@ import { createApprovalActions } from "@/lib/approval-actions";
 import { createShellSend } from "@/lib/shell-send";
 import { createClearConversation } from "@/lib/clear-conversation";
 import { useTurnReplacementView } from "@/lib/use-turn-replacement-view";
-import { useSidebarSelection } from "@/lib/use-sidebar-selection";
 import { useDesktopEntryPoints } from "@/lib/use-desktop-entry-points";
 import { createPromptEditing } from "@/lib/prompt-editing";
 import { createSideChatActions } from "@/lib/side-chat-actions";
@@ -82,7 +79,6 @@ import { useWorkspaceRestoration } from "@/lib/use-workspace-restoration";
 import { useChatTeam } from "@/lib/use-chat-team";
 import { useWorkspaceShortcuts } from "@/lib/use-workspace-shortcuts";
 import { useWorkflowWorkspace } from "@/lib/use-workflow-workspace";
-import { useWorkspaceDialogState } from "@/lib/use-workspace-dialog-state";
 import { createSidebarChatSelection } from "@/lib/sidebar-chat-selection";
 import { useWorkspaceOrder } from "@/lib/use-workspace-order";
 import { useRewindState, useRewindStatus } from "@/lib/use-rewind-state";
@@ -105,12 +101,12 @@ import { useComposerAttachments } from "@/lib/use-composer-attachments";
 import { useComposerState } from "@/lib/use-composer-state";
 import { useApprovalDrafts, useDraftStore, useSubmitOnce } from "@/lib/use-drafts";
 import { sessionWindowApi, useDesktopCapabilities } from "@/lib/use-desktop-capabilities";
-import { useWorkspaceNotices } from "@/lib/use-workspace-notices";
 import { useSidebarSearch } from "@/lib/use-sidebar-search";
 import { createWorkspaceChatTabs } from "@/components/workspace-chat-tabs";
 import { WorkspaceOrganizationDialogs } from "@/components/workspace-organization-dialogs";
 import { errorText } from "@/lib/error-text.mjs";
 import { useWorkspaceStores } from "@/lib/use-workspace-stores";
+import { useWorkspaceSidebarState } from "@/lib/use-workspace-sidebar-state";
 
 
 
@@ -120,26 +116,17 @@ export default function Home() {
   const { threads, setThreads, selected, setSelected, selectedRef, entries, setEntries, busy, setBusy, loading, setLoading, scroll, stickToBottom, restoreScroll, request, initialRestoration } = session;
   const { tabs, tabsRef, updateTabs, restoreTabs, restored: restoredTabs } = chatTabs;
   const { catalog, models, settingsSnapshot, providerSettings, refreshModels } = workspaceModels;
-  const { choiceId, model, effort, setEffort, nextTurn, setNextTurn, threadModes, setThreadModes, planAnswered } = options;
+  const { choiceId, model, effort, setEffort, nextTurn, setNextTurn, threadModes, setThreadModes } = options;
   const { cwd, projects, projectChats, projectChanging } = projectState;
   const { recordedWorkflow, view, setView, viewRef, setSettingsSection } = pages;
-  const { pins, togglePinned } = usePins();
-  const { bookmarks, toggleBookmarked } = useBookmarks();
-  // The sidebar's order is declared further down; groups release it through this ref.
-  const releaseChatOrder = useRef(() => {});
-  const groups = useChatGroups(message => setError(message), () => releaseChatOrder.current());
+  const sidebarStateStores = useWorkspaceSidebarState(session, options, thread => openSplit(thread), thread => openThread(thread));
+  const { pins, togglePinned, bookmarks, toggleBookmarked, releaseChatOrder, groups, dialogs, notices, attentionState, selection, foldsState, collapsedProjects, collapsedSections, foldable } = sidebarStateStores;
   const { chatGroups, chatGroupsRef, updateGroups, commitGroups } = groups;
-  const dialogs = useWorkspaceDialogState();
   const { setNewGroupFor, deleteTargets, setDeleteTargets, deleteRunHistory, setDeleteRunHistory, shownWhenDeleted, shortcutsOpen, setShortcutsOpen, commandMenuOpen, setCommandMenuOpen, commandReturnFocus, shortcutsReturnFocus, renameRequest, setRenameRequest, resumeOpen, setResumeOpen } = dialogs;
-  const notices = useWorkspaceNotices(), { error, setError, setDeletedNotice, noteKept } = notices;
-  const attentionState = useChatAttention(planAnswered, setError);
+  const { error, setError, setDeletedNotice, noteKept } = notices;
   const { attention, setAttention, planTurns, markRead } = attentionState;
-  const selection = useSidebarSelection({ selected, openSplit: thread => openSplit(thread), openThread: thread => openThread(thread) });
   const { marked, setMarked, threadList, rowLinks, clickRow } = selection;
-  const { folds, foldsRef, changeFolds, setCollapsedProjects } = useSidebarFolds();
-  const collapsedProjects = folds.projects, collapsedSections = folds.sections;
-  /** The heading of a sidebar section: every one of them folds its list the same way. */
-  const foldable = (key: string, name: string) => <SectionToggle name={name} open={!collapsedSections[key]} onToggle={() => changeFolds(value => ({ ...value, sections: { ...value.sections, [key]: !value.sections[key] } }))} />;
+  const { foldsRef, changeFolds, setCollapsedProjects } = foldsState;
   const rewindState = useRewindState(), { rewindTurn, setRewindTurn, setRewindActions, messageVersions, setMessageVersions, setRewindBusy, rewindSwitch } = rewindState;
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const panels = useComposerPanels();
