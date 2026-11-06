@@ -1544,7 +1544,7 @@ impl LocalAgentControl {
                 resumed_thread.thread_id,
                 Some(notification_source.clone()),
                 child_reference,
-                agent_metadata.agent_path.clone(),
+                agent_metadata.agent_path,
             );
         }
         Ok((resumed_thread.thread_id, multi_agent_version))

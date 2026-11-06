@@ -202,7 +202,7 @@ impl Emitter {
             "encrypted_content": encrypted_content,
         });
         self.events
-            .push(json!({"type": "response.output_item.added", "item": item.clone()}));
+            .push(json!({"type": "response.output_item.added", "item": &item}));
         self.events
             .push(json!({"type": "response.output_item.done", "item": item}));
     }

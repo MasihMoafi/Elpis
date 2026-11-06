@@ -647,6 +647,10 @@ async fn steer(
 }
 
 impl Session {
+    #[expect(
+        clippy::await_holding_invalid_type,
+        reason = "the busy check and the turn reservation must happen under one active-turn lock"
+    )]
     pub(crate) async fn start_manual_work_graph(
         self: &Arc<Self>,
         turn_id: String,

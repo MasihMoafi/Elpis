@@ -296,6 +296,10 @@ impl Session {
             .await;
     }
 
+    #[expect(
+        clippy::await_holding_invalid_type,
+        reason = "the reservation check and the turn start are recorded under one active-turn lock"
+    )]
     pub(crate) async fn start_task_with_reservation<T: SessionTask>(
         self: &Arc<Self>,
         turn_context: Arc<TurnContext>,
