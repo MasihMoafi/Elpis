@@ -1,12 +1,14 @@
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import type { PermissionMode } from "@/components/composer-controls";
-import { api, title, type Entry, type ProviderChoice, type Thread } from "@/lib/api";
+import { api, title, type ProviderChoice, type Thread } from "@/lib/api";
 import type { ChatTabs } from "@/lib/chat-tabs";
 import { errorText } from "@/lib/error-text.mjs";
 import { queueFollowUp, type FollowUpOptions } from "@/lib/follow-ups";
 import { usedMentions } from "@/lib/mentions";
 import { newChatFolder, type Preferences } from "@/lib/preferences";
 import { entryKey, submittedContent, type SubmittedMessage } from "@/lib/submitted-messages";
+import type { useConversationSession } from "@/lib/use-conversation-session";
+import type { useConversationOptions } from "@/lib/use-conversation-options";
 import type { useConversationList } from "@/lib/use-conversation-list";
 import type { useComposerState } from "@/lib/use-composer-state";
 import type { useComposerAttachments } from "@/lib/use-composer-attachments";
@@ -20,24 +22,18 @@ type Setter<T> = Dispatch<SetStateAction<T>>;
 type Ref<T> = RefObject<T>;
 type SendInputs = {
   projectState: ReturnType<typeof useProjectState>; composer: ReturnType<typeof useComposerState>; conversations: ReturnType<typeof useConversationList>; runtime: ReturnType<typeof useRuntimeState>; attachments: ReturnType<typeof useComposerAttachments>; drafts: ReturnType<typeof useDraftStore>;
-  readOnlyRun: boolean; sendShell: () => Promise<void>;
-  selected: Thread | null; editDraft: (value: string) => void; askSideQuestion: (question?: string) => void;
-  busy: boolean; canSendFollowUp: boolean; imageBlocked: boolean;
-  missingChoiceNotice: string; needsModelId: boolean; model: string; setError: Setter<string>; sending: Ref<number>; setBusy: Setter<boolean>;
-  newDraftKey: Ref<string>; request: Ref<number>; tabsRef: Ref<ChatTabs>;
-  activeTurn: string | undefined; continues: boolean; preferences: Preferences;
-  stickToBottom: Ref<boolean>; setSubmissions: Setter<SubmittedMessage[]>; entries: Entry[];
-  newMode: PermissionMode | null; newChoice: ProviderChoice | undefined; newWorktree: boolean;
-  noteStartedMode: (id: string, mode: PermissionMode | null | undefined) => void;
-  browser: { adoptSession: (from: string, to: string) => Promise<void> };
-  setThreads: Setter<Thread[]>; assignProject: (ids: string | string[], destination: string | null | undefined) => Promise<void>;
-  pending: NextTurn | undefined; effort: string; newPlan: boolean;
-  selectedRef: Ref<Thread | null>; loadThread: (thread: Thread) => Promise<void>; setThreadPlans: Setter<Record<string, boolean>>;
-  setNewPlan: Setter<boolean>; setNextTurn: Setter<Record<string, NextTurn>>;
-  restoreComposerFocus: (origin: Element | null) => number;
+  session: ReturnType<typeof useConversationSession>; options: ReturnType<typeof useConversationOptions>;
+  readOnlyRun: boolean; sendShell: () => Promise<void>; editDraft: (value: string) => void; askSideQuestion: (question?: string) => void;
+  canSendFollowUp: boolean; imageBlocked: boolean; missingChoiceNotice: string; needsModelId: boolean; setError: Setter<string>;
+  newDraftKey: Ref<string>; tabsRef: Ref<ChatTabs>; activeTurn: string | undefined; continues: boolean; preferences: Preferences;
+  newChoice: ProviderChoice | undefined; newWorktree: boolean; noteStartedMode: (id: string, mode: PermissionMode | null | undefined) => void;
+  browser: { adoptSession: (from: string, to: string) => Promise<void> }; assignProject: (ids: string | string[], destination: string | null | undefined) => Promise<void>;
+  pending: NextTurn | undefined; loadThread: (thread: Thread) => Promise<void>; restoreComposerFocus: (origin: Element | null) => number;
 };
 
-export function createChatSend({ projectState, composer, conversations, runtime, attachments, drafts, sendShell, askSideQuestion, restoreComposerFocus, readOnlyRun, selected, editDraft, busy, canSendFollowUp, imageBlocked, missingChoiceNotice, needsModelId, model, setError, sending, setBusy, newDraftKey, request, tabsRef, activeTurn, continues, preferences, stickToBottom, setSubmissions, entries, newMode, newChoice, newWorktree, noteStartedMode, browser, setThreads, assignProject, pending, effort, newPlan, selectedRef, loadThread, setThreadPlans, setNewPlan, setNextTurn }: SendInputs) {
+export function createChatSend({ projectState, composer, conversations, runtime, attachments, drafts, session, options, sendShell, askSideQuestion, restoreComposerFocus, readOnlyRun, editDraft, canSendFollowUp, imageBlocked, missingChoiceNotice, needsModelId, setError, newDraftKey, tabsRef, activeTurn, continues, preferences, newChoice, newWorktree, noteStartedMode, browser, assignProject, pending, loadThread }: SendInputs) {
+  const { selected, busy, sending, setBusy, request, stickToBottom, setSubmissions, entries, setThreads, selectedRef } = session;
+  const { model, newMode, effort, newPlan, setThreadPlans, setNewPlan, setNextTurn } = options;
   const { projectChanging, cwd, projectId } = projectState;
   const { shellMode, textRef, setText, pickedMentions, dictating } = composer;
   const { select, settingsOf, patchThread, upsertThread } = conversations;

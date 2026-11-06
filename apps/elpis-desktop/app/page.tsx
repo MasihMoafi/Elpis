@@ -136,7 +136,7 @@ export default function Home() {
   const preferences = useAppPreferences();
   const hiddenPages = preferences.hiddenPages.split(",");
   const session = useConversationSession();
-  const { threads, setThreads, selected, setSelected, selectedRef, entries, setEntries, submissions, setSubmissions, busy, setBusy, sending, loading, setLoading, scroll, stickToBottom, restoreScroll, request, initialRestoration } = session;
+  const { threads, setThreads, selected, setSelected, selectedRef, entries, setEntries, submissions, setSubmissions, busy, setBusy, loading, setLoading, scroll, stickToBottom, restoreScroll, request, initialRestoration } = session;
   // Chat tabs (lib/chat-tabs.ts): the shown tab follows the chat on screen, so every way of opening a chat lands in it.
   const { tabs, tabsRef, updateTabs, restoreTabs, restored: restoredTabs } = useChatTabs(message => setError(message));
   // The engine's live model list, shared by every model menu (lib/model-catalog.ts).
@@ -146,7 +146,7 @@ export default function Home() {
   const settingsSnapshot = useElpisSettings().data as unknown as ProviderSettings | null;
   const providerSettings = settingsSnapshot?.main && Array.isArray(settingsSnapshot.providers) ? settingsSnapshot : null;
   const options = useConversationOptions();
-  const { choiceId, setChoiceId, model, setModel, effort, setEffort, nextTurn, setNextTurn, threadModes, setThreadModes, threadPlans, setThreadPlans, newPlan, setNewPlan, planAnswered, setPlanAnswered, newMode } = options;
+  const { choiceId, setChoiceId, model, setModel, effort, setEffort, nextTurn, setNextTurn, threadModes, setThreadModes, threadPlans, newPlan, planAnswered, setPlanAnswered, newMode } = options;
   const projectState = useProjectState();
   const { cwd, projects, setProjects, projectId, setWorkflowProjectId, projectChats, setProjectChats,
     projectChatsRef, projectMove, setProjectMove, newProjectFor, setNewProjectFor, nestTargets, setNestTargets,
@@ -416,8 +416,8 @@ export default function Home() {
   const { rememberModes, setPlan, answerPlan, cycleMode, noteStartedMode, saveEffort } = conversationSettings;
   /** Sends the composer's message, or `own`: a command's message (such as /init's prompt), sent without the composer's files.
    * While a turn runs, `followUp` steers or queues this one message instead of following Settings (Ctrl+Enter). */
-  const send = createChatSend({ projectState, composer, conversations, runtime, attachments: attachmentState, drafts: draftStore, sendShell: () => sendShell(), askSideQuestion: question => askSideQuestion(question), restoreComposerFocus: origin => restoreComposerFocus(origin), readOnlyRun, selected, editDraft, busy, canSendFollowUp, imageBlocked, missingChoiceNotice, needsModelId, model, setError, sending, setBusy, newDraftKey, request, tabsRef, activeTurn, continues, preferences, stickToBottom, setSubmissions, entries, newMode, newChoice, newWorktree, noteStartedMode, browser, setThreads, assignProject, pending, effort, newPlan, selectedRef, loadThread, setThreadPlans, setNewPlan, setNextTurn });
-  const sendShell = createShellSend({ composer, attachments: attachmentState, conversations, drafts: draftStore, projectState, runtime, selectedRef, request, newDraftKey, tabsRef, busy, setBusy, setError, newMode, model, newChoice, noteStartedMode, assignProject, browser, focusComposer: () => focusComposer() });
+  const send = createChatSend({ projectState, composer, conversations, runtime, attachments: attachmentState, drafts: draftStore, session, options, sendShell: () => sendShell(), askSideQuestion: question => askSideQuestion(question), restoreComposerFocus: origin => restoreComposerFocus(origin), readOnlyRun, editDraft, canSendFollowUp, imageBlocked, missingChoiceNotice, needsModelId, setError, newDraftKey, tabsRef, activeTurn, continues, preferences, newChoice, newWorktree, noteStartedMode, browser, assignProject, pending, loadThread });
+  const sendShell = createShellSend({ composer, attachments: attachmentState, conversations, drafts: draftStore, projectState, runtime, session, options, newDraftKey, tabsRef, setError, newChoice, noteStartedMode, assignProject, browser, focusComposer: () => focusComposer() });
   const { replaceFrom, rewindFrom, deleteFrom, switchRewind, loadVersions, showVersion } = createMessageActions({ composer, conversations, drafts: draftStore, history, runtime, selectedRef, request, stickToBottom, rewindSwitch, replacementOptions, entries, nextTurn, submitDraft, setRuntimeNotices, setMessageEdits, setNextTurn, setEntries, setThreads, setRewindBusy, setRewindActions, setMessageVersions, loadThread, editDraft, focusComposer: () => focusComposer(), restoreComposerFocus: origin => restoreComposerFocus(origin) });
   const { approvalCardProps } = createApprovalActions({ approvals: approvalDrafts, submissions: approvalSubmissions, runtime, request, restoreComposerFocus: origin => restoreComposerFocus(origin) });
   const earlier = createEarlierMessages({ history, selected, selectedRef, request, setLoading, setError, setEntries, stickToBottom, scroll, restoreScroll });
