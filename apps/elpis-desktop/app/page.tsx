@@ -6,7 +6,7 @@ import { BrandWordmark } from "@/components/brand-wordmark";
 import { flushSync } from "react-dom";
 import { cloneElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { AgentsIcon, ChatIcon, ExperimentLabIcon, LoveSpotIcon, NewChatIcon, PlusIcon, SendIcon, SettingsIcon, ThemeIcon, WorkflowsIcon, StopIcon } from "@/components/elpis-icons";
-import { Activity, ArrowDown, Blocks, Layers, PanelLeft, PanelRightClose, PanelRightOpen, RefreshCw, X, Zap } from "lucide-react";
+import { Activity, ArrowDown, Blocks, PanelLeft, PanelRightClose, PanelRightOpen, RefreshCw, X, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ReorderItem, useReorder } from "@/components/reorder";
 import { OptionSelect } from "@/components/ui/option-select";
@@ -20,7 +20,7 @@ import { ViewBoundary } from "@/components/view-boundary";
 import { Transcript, WorkingPlacement } from "@/components/transcript";
 import { useBookmarks, useChatAttention, usePins, useSidebarFolds, useChatGroups } from "@/lib/use-sidebar-state";
 import { SIDEBAR, useAppearance } from "@/lib/use-appearance";
-import { addGroup, chatSelectionRoots, chatSubtree, deleteGroup, moveChats, prioritizeChats, renameGroup, sidebarParents, toggleCollapsed, type ChatGroup, type ChatGroups } from "@/lib/chat-groups";
+import { addGroup, chatSelectionRoots, chatSubtree, moveChats, prioritizeChats, sidebarParents, type ChatGroups } from "@/lib/chat-groups";
 import { agentParentId } from "@/lib/agent-runs.mjs";
 import { configuredShortcuts, shortcutHint, shortcutTitle } from "@/lib/shortcuts";
 import { CommandMenu, type CommandAction } from "@/components/command-menu";
@@ -50,10 +50,11 @@ import { CustomizeView } from "@/components/customize-view";
 import type { TerminalLaunch } from "@/components/terminal-view";
 import { SettingsView, type SettingsDestination } from "@/components/settings-view";
 import { DeleteChatsDialog, ThreadActions } from "@/components/thread-actions";
-import { GroupActions, GroupNameDialog } from "@/components/chat-groups";
-import { SectionToggle, SidebarGroup } from "@/components/sidebar-group";
+import { GroupNameDialog } from "@/components/chat-groups";
+import { SectionToggle } from "@/components/sidebar-group";
 import { SidebarChatList } from "@/components/sidebar-chat-list";
 import { createSidebarThreadRow } from "@/components/sidebar-thread-row";
+import { createSidebarBranches } from "@/components/sidebar-branches";
 import { fastServiceTier } from "@/lib/service-tier.mjs";
 import { SlashMenu, useSlashMenu } from "@/components/slash-menu";
 import { MentionMenu, useMentionMenu } from "@/components/mention-menu";
@@ -82,7 +83,7 @@ import { Segmented } from "@/components/settings/rows";
 import { EnvironmentMenu, MoveChatDialog, ProjectDialog, ProjectMenu } from "@/components/project-picker";
 import { PutUnderDialog } from "@/components/put-under-dialog";
 import { WorkflowMark } from "@/components/workflow-identity";
-import { useWorkflowSandbox, workflowMembers, type WorkflowRun } from "@/lib/workflow-identity";
+import { useWorkflowSandbox, type WorkflowRun } from "@/lib/workflow-identity";
 import { BranchChip } from "@/components/branch-chip";
 import { keptNotice, type WorktreeOutcome } from "@/lib/chat-worktree";
 import { AccountRow } from "@/components/account-row";
@@ -1036,7 +1037,7 @@ export default function Home() {
   useEffect(() => { if (text) setSlashNotice(""); }, [text]);
 
   const sidebarModel = useSidebarThreads({ ready, connected, threads, hidden, selected, chatGroups, loveActivity, expanded, setExpanded, recordedWorkflow, loadChildren, search, attention, waitingIds, pins, projectChats, releaseChatOrder, searchInput, setError, setDeleteRunHistory, setDeleteTargets, hiddenPages, preferences, collapsedSections, collapsedProjects, checkedChildren, agentRunsOpen });
-  const { workflowCatalog, workflowRuns, workflowRoots, workflowSteps, sidebarTitle, selectedWorkflow, sidebarThreads, nativeParents, treeParents, sidebarParent, originOf, branchOpen, workflowOpen, workflowChild, searchedThreads, sidebarState, needsYou, ordinaryThreads, ordinaryIds, pinnedChats, grouped, recentChats, ordered } = sidebarModel;
+  const { workflowCatalog, workflowRoots, workflowSteps, sidebarTitle, selectedWorkflow, sidebarThreads, nativeParents, treeParents, sidebarParent, originOf, searchedThreads, sidebarState, needsYou, ordinaryThreads, ordinaryIds, pinnedChats, grouped, recentChats, ordered } = sidebarModel;
   // Esc stops the running reply, as in Claude, wherever in the chat the focus is, unless a menu, dialog or field owns the key.
   const escapeStops = useRef<(event: KeyboardEvent) => void>(() => {});
   escapeStops.current = event => { if (selected && !readOnlyRun && activeTurn && view === "chat" && stopsOnEscape(event)) { event.preventDefault(); void stop(selected); } };
@@ -1180,47 +1181,7 @@ export default function Home() {
     return <Tab key={tab.id} chat icon={identity ? <WorkflowMark identity={identity} neutral /> : <ChatIcon size={14} />} label={label} active={shown} closeLabel={`Close ${label} tab`} trailing={shown}
       wrap={thread ? (area, content) => threadMenu(thread, area, content, shown) : undefined} onSelect={() => showTab(tab)} onClose={() => closeChatTab(tab.id)} />;
   }
-  function descendants(parentId: string, depth: number, seen = new Set<string>()): React.ReactNode {
-    if (seen.has(parentId)) return null; const next = new Set(seen).add(parentId);
-    const children = ordinaryThreads.filter(c => sidebarParent(c) === parentId);
-    return <>{children.map(child => threadBranch(child, depth, next))}{moreChildren(parentId, depth)}</>;
-  }
-  function moreChildren(parentId: string, depth: number) {
-    const cursor = childCursors[parentId];
-    return !searchTerm && cursor && !hidden.current.has(parentId) ? <Button variant="ghost" size="xs" className="thread-more w-full justify-start" style={{ paddingLeft: `${depth * 14}px` }} disabled={loadingChildren[parentId]} onClick={() => void loadChildren(parentId, cursor, false)}><span className="truncate">More agents from {find(parentId) ? sidebarTitle(find(parentId)!) : "parent conversation"}</span></Button> : null;
-  }
-  /** `inOrigin`: drawn inside its origin's section (Workflows), which already names the origin (28 Oct: every row there
-   * read "… / Workflows"). */
-  function threadBranch(thread: Thread, depth = 0, seen = new Set<string>(), inOrigin = false) {
-    if (seen.has(thread.id)) return null;
-    if (workflowRoots.has(thread.id)) return workflowBranches(thread, depth, seen);
-    return <div key={thread.id}>{threadRow(thread, depth, inOrigin)}{!searchTerm && branchOpen(thread.id) && descendants(thread.id, depth + 1, seen)}</div>;
-  }
-  function runDescendants(parentId: string, depth: number, seen = new Set<string>()): React.ReactNode {
-    if (seen.has(parentId)) return null; const next = new Set(seen).add(parentId);
-    return <>{searchedThreads.filter(child => sidebarParent(child) === parentId).map(child => <div key={child.id}>{threadRow(child, depth)}{expanded[child.id] && runDescendants(child.id, depth + 1, next)}</div>)}{moreChildren(parentId, depth)}</>;
-  }
-  /** A listed chat and, when shown, its agents under it. */
-  const chatRows = (thread: Thread) => threadBranch(thread);
-  function workflowBranches(thread: Thread, depth: number, seen: Set<string>): React.ReactNode {
-    if (seen.has(thread.id)) return null;
-    const next = new Set(seen).add(thread.id);
-    return workflowRuns.filter(run => run.rootThreadId === thread.id).map(run => {
-      const order = workflowMembers(run).map(member => member.threadId), at = (id: string) => order.includes(id) ? order.indexOf(id) : order.length;
-      const children = ordinaryThreads.filter(child => workflowChild(child, run)).sort((a, b) => at(a.id) - at(b.id));
-      return <div key={run.id}>{threadRow(thread, depth, true, run)}{!searchTerm && workflowOpen(run) && <>{children.map(child => threadBranch(child, depth + 1, next, true))}{workflowRoots.get(thread.id)?.id === run.id && moreChildren(thread.id, depth + 1)}</>}</div>;
-    });
-  }
-  /** A group the person made, drawn as a project is: open or closed, its menu (Rename group, Delete group), its chats. A
-   * closed group holding a chat that needs you says so, as Claude's does. */
-  function chatGroupSection({ group, chats }: { group: ChatGroup; chats: Thread[] }) {
-    const open = !chatGroups.collapsed.includes(group.id), waiting = !open && chats.some(needsYou), note = "A chat in this group is waiting on you";
-    return <SidebarGroup key={group.id} kind="chat" name={group.name} icon={<Layers size={14} aria-hidden="true" />} open={open} onToggle={() => updateGroups(state => toggleCollapsed(state, group.id))}
-      note={waiting ? <span className="thread-dot" data-state="waiting" role="img" aria-label={note} title={note} /> : undefined}
-      wrap={(area, content) => <GroupActions group={group} state={chatGroups} area={cloneElement(area, chatReorder.targetProps(`group:${group.id}`, true) as object)} count={ordinaryThreads.filter(thread => chatGroups.members[thread.id] === group.id).length}
-        onRename={name => updateGroups(state => renameGroup(state, group.id, name))} onDelete={() => updateGroups(state => deleteGroup(state, group.id))}>{content}</GroupActions>}
-      empty={!chats.length}>{chats.map(chatRows)}</SidebarGroup>;
-  }
+  const { descendants, threadBranch, runDescendants, chatRows, chatGroupSection } = createSidebarBranches({ model: sidebarModel, threadRow, chatReorder, chatGroups, updateGroups, hidden, expanded, childCursors, loadingChildren, searchTerm, loadChildren, find });
   const heading = view === "chat" ? (selected ? title(selected) : "") : PAGE_NAMES[view];
   const chatName = selected ? title(selected) : "New chat";
   const chatState = selected ? agentState(selected, waitingIds) : "idle", floatState = activeTurn && chatState === "idle" ? "working" : chatState;
