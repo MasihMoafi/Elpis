@@ -60,7 +60,6 @@ import { MentionMenu, useMentionMenu } from "@/components/mention-menu";
 import { NavButtons } from "@/components/nav-buttons";
 import { PromptRail } from "@/components/prompt-rail";
 import { RewindDialog, type RestoreMode } from "@/components/rewind-dialog";
-import type { Mention } from "@/lib/mentions";
 import { useNavHistory } from "@/lib/nav-history";
 import { DiffPanel, ReviewPanel, SessionPanel, type ReviewTarget } from "@/components/slash-panels";
 import { conversationMarkdown, exportFileName } from "@/lib/slash";
@@ -135,6 +134,7 @@ import { createSlashCommands } from "@/lib/slash-commands";
 import { createChatSend } from "@/lib/chat-send";
 import { refusedOffline, type Live, type View, type WorkflowReplay, type NextTurn } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
+import { useComposerState } from "@/lib/use-composer-state";
 import { useChatTabs } from "@/lib/use-chat-tabs";
 import { approvalDraftKey, useApprovalDrafts, useDraftStore, useSubmitOnce } from "@/lib/use-drafts";
 import { sessionWindowApi, useDesktopCapabilities } from "@/lib/use-desktop-capabilities";
@@ -262,20 +262,10 @@ export default function Home() {
   const [newWorktree, setNewWorktree] = useState(false);
   const shortcutAction = useRef<(id: string, index?: number) => void>(() => {});
   const [newMode, setNewMode] = useState<PermissionMode | null>(null);
-  const [text, setTextState] = useState("");
-  const [shellMode, setShellMode] = useState(false);
-  const shellCreated = useRef<string | null>(null);
+  const composer = useComposerState();
+  const { text, setText, shellMode, setShellMode, shellCreated, textRef, composerRef, caret, setCaret, pickedMentions, filePickerRef, dictating, setDictating, voiceBusy, setVoiceBusy } = composer;
   const [sideChat, setSideChat] = useState<{ parentId: string; open: boolean; question?: SideRequest } | null>(null);
   const sideRequests = useRef(0);
-  const textRef = useRef("");
-  const composerRef = useRef<HTMLTextAreaElement>(null);
-  const [caret, setCaret] = useState(0);
-  /** The mentions picked in the message box; a message carries those whose @name is still in its text. */
-  const pickedMentions = useRef(new Map<string, Mention>());
-  const filePickerRef = useRef<HTMLInputElement>(null);
-  const [dictating, setDictating] = useState(false);
-  const [voiceBusy, setVoiceBusy] = useState(false);
-  const setText = useCallback((value: string) => { textRef.current = value; setTextState(value); }, []);
   const [resumeOpen, setResumeOpen] = useState(false);
   const [agentRunsOpen, setAgentRunsOpen] = useState(false);
   const [messageEdits, setMessageEdits] = useState<Record<string, string>>({});
@@ -407,7 +397,7 @@ export default function Home() {
     setApprovals(prev => prev.filter(approval => !ids.has(approval.params.threadId ?? "")));
     if (selectedRef.current && ids.has(selectedRef.current.id)) { request.current++; select(null); setText(savedDraft(newDraftKey.current)); restoreAttachments(newDraftKey.current); setEntries([]); setItemCursor(null); }
   }, [select, setText, savedDraft, restoreAttachments, updateTabs, browser.closeSession]);
-  const { rememberFollowing, reconcileLiveThread, loadThread, openThread } = useOpenConversation({ runtime, conversations, history, drafts: draftStore, attachments: attachmentState, tabsRef, updateTabs, selectedRef, newDraftKey, textRef, setText, markRead, request, stickToBottom, followingBottom, restoreScroll, setView, setSidebar, setLoading, setError, setEntries, rememberModes });
+  const { rememberFollowing, reconcileLiveThread, loadThread, openThread } = useOpenConversation({ composer, runtime, conversations, history, drafts: draftStore, attachments: attachmentState, tabsRef, updateTabs, selectedRef, newDraftKey, markRead, request, stickToBottom, followingBottom, restoreScroll, setView, setSidebar, setLoading, setError, setEntries, rememberModes });
 
   useEffect(() => { setText(savedDraft(newDraftKey.current)); }, [savedDraft]);
 
@@ -859,7 +849,7 @@ export default function Home() {
   }
   /** Sends the composer's message, or `own`: a command's message (such as /init's prompt), sent without the composer's files.
    * While a turn runs, `followUp` steers or queues this one message instead of following Settings (Ctrl+Enter). */
-  const send = createChatSend({ conversations, runtime, attachments: attachmentState, drafts: draftStore, sendShell: () => sendShell(), askSideQuestion: question => askSideQuestion(question), restoreComposerFocus: origin => restoreComposerFocus(origin), readOnlyRun, shellMode, textRef, selected, editDraft, busy, canSendFollowUp, dictating, projectChanging, imageBlocked, missingChoiceNotice, needsModelId, model, setError, sending, setBusy, pickedMentions, newDraftKey, request, tabsRef, setText, activeTurn, continues, preferences, stickToBottom, setSubmissions, entries, newMode, newChoice, cwd, newWorktree, noteStartedMode, browser, setThreads, projectId, assignProject, pending, effort, newPlan, selectedRef, loadThread, setThreadPlans, setNewPlan, setNextTurn });
+  const send = createChatSend({ composer, conversations, runtime, attachments: attachmentState, drafts: draftStore, sendShell: () => sendShell(), askSideQuestion: question => askSideQuestion(question), restoreComposerFocus: origin => restoreComposerFocus(origin), readOnlyRun, selected, editDraft, busy, canSendFollowUp, projectChanging, imageBlocked, missingChoiceNotice, needsModelId, model, setError, sending, setBusy, newDraftKey, request, tabsRef, activeTurn, continues, preferences, stickToBottom, setSubmissions, entries, newMode, newChoice, cwd, newWorktree, noteStartedMode, browser, setThreads, projectId, assignProject, pending, effort, newPlan, selectedRef, loadThread, setThreadPlans, setNewPlan, setNextTurn });
   async function sendShell() {
     const command = textRef.current, originalRequest = request.current;
     if (!command.trim() || busy || !ready || !connected || projectChanging) return;
