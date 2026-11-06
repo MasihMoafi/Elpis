@@ -108,6 +108,7 @@ import { useWorkspaceRestoration } from "@/lib/use-workspace-restoration";
 import { useChatTeam } from "@/lib/use-chat-team";
 import { useWorkspaceShortcuts } from "@/lib/use-workspace-shortcuts";
 import { useWorkflowWorkspace } from "@/lib/use-workflow-workspace";
+import { useWorkspaceDialogState } from "@/lib/use-workspace-dialog-state";
 import { NAV_PAGES, PAGE_NAMES } from "@/lib/workspace-navigation-pages";
 import { refusedOffline, type View } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
@@ -153,22 +154,15 @@ export default function Home() {
   // The sidebar's order is declared further down; groups release it through this ref.
   const releaseChatOrder = useRef(() => {});
   const { chatGroups, chatGroupsRef, updateGroups, commitGroups } = useChatGroups(message => setError(message), () => releaseChatOrder.current());
-  const [newGroupFor, setNewGroupFor] = useState<string[] | null>(null);
+  const dialogs = useWorkspaceDialogState();
+  const { newGroupFor, setNewGroupFor, deleteTargets, setDeleteTargets, deleteRunHistory, setDeleteRunHistory, shownWhenDeleted, shortcutsOpen, setShortcutsOpen, commandMenuOpen, setCommandMenuOpen, commandReturnFocus, shortcutsReturnFocus, renameRequest, setRenameRequest, resumeOpen, setResumeOpen } = dialogs;
   const { error, setError, deletedNotice, setDeletedNotice, worktreeNotice, setWorktreeNotice, noteKept } = useWorkspaceNotices();
   const { attention, setAttention, planTurns, markRead } = useChatAttention(planAnswered, setError);
-  /** Chats awaiting the shared delete confirmation (a row's menu, D, or the header's Chat actions). */
-  const [deleteTargets, setDeleteTargets] = useState<Thread[] | null>(null);
-  const [deleteRunHistory, setDeleteRunHistory] = useState(false);
-  /** After the sidebar deletes chats, Undo (or Ctrl+Z) reopens the chat that was open. */
-  const shownWhenDeleted = useRef(new Set<string>());
   const { marked, setMarked, threadList, rowLinks, clickRow } = useSidebarSelection({ selected, openSplit: thread => openSplit(thread), openThread: thread => openThread(thread) });
   const { folds, foldsRef, changeFolds, setCollapsedProjects } = useSidebarFolds();
   const collapsedProjects = folds.projects, collapsedSections = folds.sections;
   /** The heading of a sidebar section: every one of them folds its list the same way. */
   const foldable = (key: string, name: string) => <SectionToggle name={name} open={!collapsedSections[key]} onToggle={() => changeFolds(value => ({ ...value, sections: { ...value.sections, [key]: !value.sections[key] } }))} />;
-  const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const [commandMenuOpen, setCommandMenuOpen] = useState(false);
-  const commandReturnFocus = useRef<HTMLElement | null>(null);
   /** The message whose "Rewind to here" is awaiting confirmation (its turn). */
   const [rewindTurn, setRewindTurn] = useState<string | null>(null);
   const [rewindActions, setRewindActions] = useState<Record<string, "undo" | "redo" | undefined>>({});
@@ -177,7 +171,6 @@ export default function Home() {
   const [rewindBusy, setRewindBusy] = useState(false);
   const rewindSwitch = useRef<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [renameRequest, setRenameRequest] = useState(false);
   /** What a slash command has open above the composer, and the one-line answer of a command that only reports. */
   const [panel, setPanel] = useState<"status" | "review" | "diff" | null>(null);
   const [slashNotice, setSlashNotice] = useState("");
@@ -190,7 +183,6 @@ export default function Home() {
   const { text, setText, shellMode, setShellMode, shellCreated, textRef, composerRef, caret, setCaret, pickedMentions, dictating, voiceBusy } = composer;
   const [sideChat, setSideChat] = useState<{ parentId: string; open: boolean; question?: SideRequest } | null>(null);
   const sideRequests = useRef(0);
-  const [resumeOpen, setResumeOpen] = useState(false);
   const [agentRunsOpen, setAgentRunsOpen] = useState(false);
   const [messageEdits, setMessageEdits] = useState<Record<string, string>>({});
   const approvalSubmissions = useSubmitOnce(), { pending: pendingDrafts, submit: submitDraft } = approvalSubmissions;
@@ -263,7 +255,6 @@ export default function Home() {
   const { dark, sidebarWidth } = appearance;
   // The website's animated wordmark, its dark or light version (website/assets/branding).
   const searchInput = useRef<HTMLInputElement>(null);
-  const shortcutsReturnFocus = useRef<HTMLElement | null>(null);
   const history = useTranscriptHistory(selected, loading, entries, setEntries);
   const { itemCursor, setItemCursor, transcripts, prefetchThread } = history;
   const conversations = useConversationList(threads, setThreads, selectedRef, setSelected, setError);
