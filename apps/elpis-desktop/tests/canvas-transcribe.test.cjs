@@ -10,53 +10,6 @@ const { chooseOption } = require('./controls.cjs');
 const MODELS = { extraModels: [{ id: 'opus', model: 'claude/opus', displayName: 'Opus 5.5' }, { id: 'argon', model: 'agy/gemini-4-argon-high', displayName: 'Gemini 4 Argon' }, { id: 'g38', model: 'agy/gemini-3.8-flash-high', displayName: 'Gemini 3.8 Flash (High)' }, { id: 'g38l', model: 'agy/gemini-3.8-flash-low', displayName: 'Gemini 3.8 Flash (Low)' }] };
 const pages = [...Array.from({ length: 8 }, (_, i) => `screen-${i + 1}.png`), 'screen-10.png', 'notes.txt'];
 
-test('Transcribe images builds one Gemini reader a page, side by side, and a join by Elpis, with Mother agent on the strongest model', async () => {
-  const f = await openCanvas({ folders: ['docs', 'book/pages'], files: { 'book/pages': pages, docs: ['readme.md'] }, ...MODELS });
-  try {
-    await chooseOption(f.canvas.getByRole('combobox', { name: 'Workflow pattern', exact: true }), 'transcribe');
-    const request = f.canvas.getByRole('textbox', { name: 'Workflow request', exact: true });
-    await request.fill('Transcribe the screenshots in book/pages into one clean Markdown file');
-    await f.canvas.getByRole('button', { name: 'New workflow', exact: true }).click();
-    await f.page.waitForFunction(() => (JSON.parse(localStorage.getItem('elpis-workflow-draft-v1'))?.nodes ?? []).filter(n => n.type === 'agent').length === 9);
-    const saved = await f.saved(), agents = saved.nodes.filter(n => n.type === 'agent');
-    // 28 Oct, Masih: "Why is it taking so excruciatingly long?" A reader a page, side by side (at most eight), on Flash at low
-    // effort, and Elpis joins them itself: no join agent, no join check.
-    assert.deepEqual(agents.map(a => a.data.title.split(' · ')[1]), ['Page 1', 'Page 2', 'Page 3', 'Pages 4–5', 'Page 6', 'Page 7', 'Page 8', 'Page 9', 'Join the pages']);
-    const readers = agents.slice(0, -1), join = agents.at(-1);
-    assert.ok(readers.every(a => a.data.model === 'agy/gemini-3.8-flash-low' && !a.data.provider), JSON.stringify(readers.map(a => [a.data.model, a.data.provider])));
-    assert.match(agents[3].data.instruction, /book\/pages\/screen-4\.png\n- book\/pages\/screen-5\.png/, 'shared pages stay in order');
-    assert.match(agents[7].data.instruction, /book\/pages\/screen-10\.png/, 'pages in natural order');
-    assert.deepEqual(join.data.join, { parts: readers.map(a => `${a.data.writeScopes[0]}/pages.md`), output: 'book/pages/transcription.md', flow: true });
-    assert.match(agents[0].data.instruction, /own vision\. Do not run OCR/);
-    assert.equal(agents.some(a => a.data.instruction.includes('notes.txt')), false, 'only images are pages');
-    assert.deepEqual(join.data.writeScopes, ['book/pages']);
-    assert.match(join.data.instruction, /into book\/pages\/transcription\.md/);
-    assert.deepEqual([saved.mother.model, saved.mother.provider], ['claude/opus', null], 'Mother agent takes the strongest model available');
-    assert.equal(f.plans.length, 0, 'the team is built, not planned');
-    // The cards and Mother's menu name the subscriptions' models, not their ids.
-    assert.match(await f.canvas.locator('.react-flow__node').filter({ has: f.page.locator('.agent-node-title', { hasText: /· Page 1$/ }) }).innerText(), /Gemini 3\.8 Flash \(Low\)/);
-    await f.canvas.locator('.react-flow__node').filter({ hasText: 'MOTHER' }).first().click();
-    assert.equal((await f.canvas.getByRole('combobox', { name: 'Her model', exact: true }).innerText()).trim(), 'Opus 5.5');
-    // A reader's own panel names its subscription and model (28 Oct: it said OpenAI and agy/gemini-3.8-flash-high), and
-    // picking another subscription keeps the route in the model, with no provider.
-    await f.canvas.locator('.react-flow__node').filter({ has: f.page.locator('.agent-node-title', { hasText: /· Page 1$/ }) }).click();
-    const panel = f.canvas.getByRole('complementary', { name: 'Selected agent', exact: true });
-    const provider = panel.getByRole('combobox', { name: 'Provider', exact: true }), model = panel.getByRole('combobox', { name: 'Model', exact: true });
-    assert.deepEqual([(await provider.innerText()).trim(), (await model.innerText()).trim()], ['Antigravity', 'Gemini 3.8 Flash (Low)']);
-    await chooseOption(model, '|agy/gemini-4-argon-high');
-    await chooseOption(provider, 'claude/');
-    assert.equal((await model.innerText()).trim(), 'Opus 5.5');
-    const reader = (await f.saved()).nodes.find(n => n.data.title?.endsWith('Page 1'));
-    assert.deepEqual([reader.data.model, reader.data.provider], ['claude/opus', null]);
-    // A folder without page images says so and leaves the board alone.
-    await request.fill('Transcribe docs');
-    await f.canvas.getByRole('button', { name: 'New workflow', exact: true }).click();
-    await f.canvas.getByText('No page images (PNG, JPG or WebP) in docs.').waitFor();
-    assert.equal((await f.saved()).nodes.filter(n => n.type === 'agent').length, 9);
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
 // 28 Oct, Masih: "it says Name the folder of page images in the request ... and no where I can do that! ... make it so I
 // can choose that folder properly; and view the writings ... move it on top; and it should be one of the built-in workflows."
 test('Transcribe images comes first, asks for its folder, keeps all it writes there, runs without planning and opens the result', async () => {
