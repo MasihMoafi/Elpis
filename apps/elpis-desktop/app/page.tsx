@@ -106,8 +106,9 @@ import { useChatTeam } from "@/lib/use-chat-team";
 import { useWorkspaceShortcuts } from "@/lib/use-workspace-shortcuts";
 import { useWorkflowWorkspace } from "@/lib/use-workflow-workspace";
 import { useWorkspaceDialogState } from "@/lib/use-workspace-dialog-state";
+import { createWorkspaceVisibility } from "@/lib/workspace-visibility";
 import { NAV_PAGES, PAGE_NAMES } from "@/lib/workspace-navigation-pages";
-import { refusedOffline, type View } from "@/lib/workspace-types";
+import { refusedOffline } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
 import { useComposerState } from "@/lib/use-composer-state";
 import { useProjectState } from "@/lib/use-project-state";
@@ -145,7 +146,7 @@ export default function Home() {
   const { cwd, projects, setProjects, projectId, projectChats,
     projectChanging } = projectState;
   const pages = useWorkspacePagesState();
-  const { recordedWorkflow, setSettingsVisited, setSettingsNavigation, view, setView, viewRef, setSettingsSection } = pages;
+  const { recordedWorkflow, view, setView, viewRef, setSettingsSection } = pages;
   const { pins, togglePinned } = usePins();
   const { bookmarks, toggleBookmarked } = useBookmarks();
   // The sidebar's order is declared further down; groups release it through this ref.
@@ -233,13 +234,12 @@ export default function Home() {
   const panelShown = desktop && side.open && view === "chat";
   /** Full view (the side panel's): the panel fills the work area and the chat floats over it, as a card or folded to a pill. */
   const fullView = panelShown && side.full;
-  /** A window too narrow for chat and panel side by side shows the panel alone; the chat comes back when it is needed. */
-  const showChat = () => { if (side.full) side.setChatCollapsed(false); else if (matchMedia("(max-width: 760px)").matches) side.closePanel(); };
-  useEffect(() => { if (selected?.id) showChat(); }, [selected?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [pendingInputOpen, setPendingInputOpen] = useState(false);
   const pendingInputButton = useRef<HTMLButtonElement>(null);
   const [sidebar, setSidebar] = useState(false);
   const [panelDrawer, setPanelDrawer] = useState(false);
+  const { showChat, show, narrow, showSidebar, focusSearch } = createWorkspaceVisibility({ side, pages, panelShown, panelDrawer, setSidebar, setSidebarCollapsed, searchInput: () => searchInput.current });
+  useEffect(() => { if (selected?.id) showChat(); }, [selected?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const media = matchMedia("(max-width: 1000px)");
     const update = () => setPanelDrawer(media.matches);
@@ -354,7 +354,6 @@ export default function Home() {
 
   const projectActions = createProjectActions({ projectState, conversations, runtime, chatGroupsRef, commitGroups, placementReveal: (...args) => placementReveal(...args), revealPlacement: (...args) => revealPlacement(...args), setMarked, viewRef, selected, openNewChat, setError, getNativeParents: () => nativeParents });
   const { assignProject, selectProject, newProjectFrom, workIn, addProject, moveChat, moveChatToFolder, removeProject } = projectActions;
-  const show = (next: View) => { if (next !== "chat") side.toggleFull(false); if (next === "settings") { setSettingsVisited(true); setSettingsNavigation(value => value + 1); } setView(next); setSidebar(false); };
   // A click on the screenshot thumbnail puts the screenshots on the Love Spot page already open, below what is there, in the
   // order they were taken, then shows them (A239; Masih, 5 Nov: "when I want to post a screenshot, it shouldn't open a new page").
   useScreenshotPopup(ready, ids => {
@@ -397,7 +396,6 @@ export default function Home() {
     const active = document.activeElement;
     if (!active || active === document.body || active === origin) focusComposer();
   });
-  const focusSearch = () => { if (view === "settings") show("chat"); setSidebar(true); setSidebarCollapsed(false); requestAnimationFrame(() => { searchInput.current?.focus(); searchInput.current?.select(); }); };
   /** A composer control opened for a command takes the focus; the composer gets it back when the control closes. */
   const openComposerControl = (label: string) => { const trigger = composerRef.current?.form?.querySelector<HTMLElement>(`[aria-label="${label}"]`); if (trigger) openControl(trigger, () => composerRef.current); };
   const closePanel = () => { setPanel(null); focusComposer(); };
@@ -437,9 +435,6 @@ export default function Home() {
   useWorkspaceShortcuts({ shortcutAction, selected, ordered, readOnlyRun, activeTurn, view, cwd, desktop, hasTerminal, side, sideChat, setSideChat, sidebar, sidebarCollapsed, activeTabId: tabs.activeId, commandReturnFocus, shortcutsReturnFocus, setCommandMenuOpen, setShortcutsOpen, setRenameRequest, setSettingsSection, newChat, stop, focusComposer, focusSearch, undoDelete: () => undoDelete(), showSidebar: open => showSidebar(open), narrow: () => narrow(), show, goHistory, loadThread, archiveChats: chats => archiveChats(chats), chosenChats: () => chosenChats(), togglePin: thread => togglePin(thread), moveToEdge: (id, top) => moveToEdge(id, top), newChatTab, closeChatTab, cycleTabs });
   const togglePin = (thread: Thread) => togglePinned(thread.id);
   const toggleBookmark = (thread: Thread) => toggleBookmarked(thread.id);
-  /** A narrow window slides the sidebar over the page; a wide one collapses it (the sidebar button and Ctrl+B), as in ChatGPT and Claude. */
-  function narrow() { return matchMedia("(max-width: 760px)").matches || (panelShown && panelDrawer); }
-  function showSidebar(open: boolean) { if (!narrow()) { setSidebarCollapsed(!open); return; } setSidebar(open); if (open) setSidebarCollapsed(false); }
   /** Opens the shared delete confirmation for these chats. */
   const chatsOf = (ids: string[]) => ids.map(id => searchedThreads.find(thread => thread.id === id) ?? find(id)).filter((thread): thread is Thread => !!thread);
   /** What Ctrl+Shift+A and the command menu act on: the chats selected in the sidebar, or else the open chat. */
