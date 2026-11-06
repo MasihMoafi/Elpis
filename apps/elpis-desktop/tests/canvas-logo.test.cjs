@@ -17,6 +17,7 @@ test('Logo is one Sol agent in Fast mode that draws three directions and traces 
     await f.canvas.getByRole('textbox', { name: 'Workflow request', exact: true }).fill('Rustidian');
     const pattern = f.canvas.getByRole('combobox', { name: 'Workflow pattern', exact: true });
     await pattern.click();
+    await f.page.getByRole('option', { name: 'Transcribe images', exact: true }).waitFor();
     assert.deepEqual((await f.page.getByRole('option').allInnerTexts()).slice(0, 3).map(text => text.trim()), ['Transcribe images', 'Translate', 'Logo'], 'the ready-made workflows are on top');
     await f.page.keyboard.press('Escape');
     await chooseOption(pattern, 'logo');
