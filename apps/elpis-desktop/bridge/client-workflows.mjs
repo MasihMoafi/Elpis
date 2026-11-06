@@ -1,5 +1,5 @@
 import { BridgeError, object, text, threadId } from './validate.mts';
-import { MOTHER_MODEL, WORKFLOW_PRESETS, workflowPreset } from './workflow-presets.mjs';
+import { MOTHER_MODEL, WORKFLOW_PRESETS, workflowPreset } from './workflow-presets.mts';
 import { agentOutput } from './agent-output.mjs';
 import path from 'node:path';
 import { workflowRoute } from "./workflow-models.mts";

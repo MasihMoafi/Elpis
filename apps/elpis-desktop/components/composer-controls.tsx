@@ -7,7 +7,7 @@ import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescripti
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { PermissionRequirements } from "@/lib/api";
-import { permissionAllowed } from "../bridge/permission-presets.mjs";
+import { permissionAllowed } from "../bridge/permission-presets.mts";
 
 export type PermissionMode = "ask" | "auto" | "full" | "bypass";
 

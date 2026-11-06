@@ -1,5 +1,5 @@
 import { acceptsPastedKey, BUILT_IN_KEY_PROVIDERS } from './provider-settings.mjs';
-import { PERMISSION_PRESETS, PROFILES, permissionAllowed } from './permission-presets.mjs';
+import { PERMISSION_PRESETS, PROFILES, permissionAllowed } from './permission-presets.mts';
 import { defaultPermissionMode } from './resources/permission-policy.mjs';
 export { defaultPermissionMode } from './resources/permission-policy.mjs';
 import fs from 'node:fs';

@@ -7,7 +7,7 @@ import { RewindSnapshots } from './rewind-snapshots.mts';
 import { SkillTrash } from './skill-trash.mts';
 import { SpawnLinks } from './spawn-links.mjs';
 import { createCloudroomVm } from './cloudroom-vm.mjs';
-import { createGithubConnector } from './github-connector.mjs';
+import { createGithubConnector } from './github-connector.mts';
 import { createWorkflowHistory, createWorkflowRuns } from './workflow-acp.mjs';
 import os from 'node:os';
 import path from 'node:path';

@@ -11,7 +11,7 @@ import { createTools } from './tools.mjs';
 import { createTranscription } from './transcription.mjs';
 import { createVoice } from './voice.mjs';
 import { createKokoro } from './kokoro.mjs';
-import { createReadAloudProvider } from './read-aloud-provider.mjs';
+import { createReadAloudProvider } from './read-aloud-provider.mts';
 import { createImportChats } from './import-chats.mjs';
 import { createTrash } from './trash.mjs';
 import { createLoveSpot } from './love-spot-store.cjs';

@@ -7,9 +7,9 @@ import { speechModelUnavailable, speechPcmRate } from '../lib/speech-model.mts';
 const DEFAULT = Object.freeze({ source: 'local', model: null, voice: null });
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}$/;
 const MAX_AUDIO = 16 * 1024 * 1024;
-const revision = choice => createHash('sha256').update(JSON.stringify(choice)).digest('hex').slice(0, 24);
+const revision = (choice: unknown) => createHash('sha256').update(JSON.stringify(choice)).digest('hex').slice(0, 24);
 
-async function audioBytes(response) {
+async function audioBytes(response: Response) {
   const declared = Number(response.headers.get('content-length'));
   if (declared > MAX_AUDIO || !response.body) throw new BridgeError('Read aloud audio is too large or empty.', 502);
   const reader = response.body.getReader(), chunks = []; let length = 0;
@@ -25,7 +25,7 @@ async function audioBytes(response) {
   return Buffer.concat(chunks, length);
 }
 
-function pcmWav(audio, rate) {
+function pcmWav(audio: Buffer, rate: number) {
   if (audio.length % 2) throw new BridgeError('Read aloud API returned invalid PCM audio.', 502);
   const header = Buffer.alloc(44);
   header.write('RIFF'); header.writeUInt32LE(36 + audio.length, 4); header.write('WAVEfmt ', 8); header.writeUInt32LE(16, 16);
@@ -35,11 +35,11 @@ function pcmWav(audio, rate) {
 }
 
 /** The bridge owns this preference; keys remain in the existing provider credential store. */
-export function createReadAloudProvider({ home, kokoro, provider, fetchImpl = fetch }) {
+export function createReadAloudProvider({ home, kokoro, provider, fetchImpl = fetch }: { home: string; kokoro: { voices?: () => Promise<string[]>; warm?: () => void; available: () => boolean; speak: (text: string, voice: string | null) => Promise<Buffer> }; provider: (source: string) => Promise<{ baseUrl: string; key: string }>; fetchImpl?: typeof fetch }) {
   const file = path.join(home, 'read-aloud.json');
-  let writing = Promise.resolve();
-  function validate(value) {
-    object(value, ['source', 'model', 'voice']);
+  let writing: Promise<unknown> = Promise.resolve();
+  function validate(input: unknown) {
+    const value = object(input, ['source', 'model', 'voice']) as Record<string, unknown>;
     if (typeof value.source !== 'string' || !/^[a-z][a-z0-9_-]{0,63}$/.test(value.source)) throw new BridgeError('Choose a read aloud source.');
     if (value.source === 'local') {
       if (value.model !== null || (value.voice !== null && (typeof value.voice !== 'string' || !ID.test(value.voice)))) throw new BridgeError('Choose a Kokoro voice.');
@@ -49,16 +49,16 @@ export function createReadAloudProvider({ home, kokoro, provider, fetchImpl = fe
       if (reason) throw new BridgeError(reason);
       if (value.voice !== null && (typeof value.voice !== 'string' || !ID.test(value.voice))) throw new BridgeError('Choose a supported voice.');
     }
-    return { source: value.source, model: value.model, voice: value.voice };
+    return { source: value.source, model: value.model, voice: value.voice } as { source: string; model: string | null; voice: string | null };
   }
   async function read() {
     let stat;
-    try { stat = await fs.lstat(file); } catch (error) { if (error.code === 'ENOENT') return { ...DEFAULT }; throw error; }
+    try { stat = await fs.lstat(file); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { ...DEFAULT }; throw error; }
     if (!stat.isFile() || stat.isSymbolicLink() || stat.uid !== process.getuid?.() || stat.size > 4096) throw new BridgeError('Read aloud settings are not a private, owned file.', 403);
     try { return validate(JSON.parse(await fs.readFile(file, 'utf8'))); }
     catch { throw new BridgeError('Read aloud settings could not be read. Choose a source again.', 500); }
   }
-  async function save(input) {
+  async function save(input: unknown) {
     const choice = validate(input);
     if (choice.source !== 'local') await provider(choice.source);
     else if (choice.voice && !(await kokoro.voices?.())?.includes(choice.voice)) throw new BridgeError('Choose an installed Kokoro voice.');
@@ -79,17 +79,17 @@ export function createReadAloudProvider({ home, kokoro, provider, fetchImpl = fe
       return { ...choice, revision: revision(choice), available: kokoro.available(), ...(!kokoro.available() ? { reason: 'Kokoro is unavailable on this computer.' } : {}) };
     }
     try { await provider(choice.source); return { ...choice, revision: revision(choice), available: true }; }
-    catch (error) { return { ...choice, revision: revision(choice), available: false, reason: error.message }; }
+    catch (error) { return { ...choice, revision: revision(choice), available: false, reason: (error as Error).message }; }
   }
-  async function speak(input, signal) {
-    object(input, ['text', 'revision']);
+  async function speak(raw: unknown, signal?: AbortSignal) {
+    const input = object(raw, ['text', 'revision']) as Record<string, unknown>;
     const value = text(input.text, 'read aloud text', 4000);
     if (!value.trim()) throw new BridgeError('Read aloud needs text.');
     const choice = await read();
     if (input.revision !== undefined && input.revision !== revision(choice)) throw new BridgeError('Read aloud source changed. Try again with the selected source.', 409);
     if (choice.source === 'local') return { audio: await kokoro.speak(value, choice.voice), type: 'audio/wav' };
     const connection = await provider(choice.source);
-    const rate = speechPcmRate(choice.model);
+    const rate = speechPcmRate(choice.model as string);
     let response;
     try {
       response = await fetchImpl(`${connection.baseUrl}/audio/speech`, {
@@ -102,7 +102,7 @@ export function createReadAloudProvider({ home, kokoro, provider, fetchImpl = fe
     const type = response.headers.get('content-type') ?? '';
     if (!(rate ? /^audio\/pcm(?:;|$)/i : /^audio\/(mpeg|mp3)(?:;|$)/i).test(type)) throw new BridgeError('Read aloud API returned an unsupported audio format.', 502);
     if (rate) {
-      const params = Object.fromEntries(type.split(';').slice(1).map(part => part.trim().split('=').map(value => value.trim().replace(/^"|"$/g, ''))).filter(pair => pair.length === 2).map(([key, value]) => [key.toLowerCase(), value]));
+      const params = Object.fromEntries(type.split(';').slice(1).map(part => part.trim().split('=').map(value => value.trim().replace(/^"|"$/g, ''))).filter(pair => pair.length === 2).map(([key, value]) => [key!.toLowerCase(), value]));
       if ((params.rate !== undefined && Number(params.rate) !== rate) || (params.channels !== undefined && Number(params.channels) !== 1)) {
         await response.body?.cancel().catch(() => {});
         throw new BridgeError('Read aloud API returned an unsupported PCM format or sample rate.', 502);

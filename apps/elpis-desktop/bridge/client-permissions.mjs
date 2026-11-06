@@ -1,5 +1,5 @@
 import { BridgeError, object, text } from './validate.mts';
-import { PERMISSION_PRESETS, PROFILES } from './permission-presets.mjs';
+import { PERMISSION_PRESETS, PROFILES } from './permission-presets.mts';
 
 /** The ChatGPT app's three permission modes, plus Elpis's Bypass permissions, as Elpis approval settings and
  * the engine's built-in permission profiles. Bypass is `:bypass-permissions`: Full access plus no refusals

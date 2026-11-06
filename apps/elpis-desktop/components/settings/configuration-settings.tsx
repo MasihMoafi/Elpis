@@ -10,7 +10,7 @@ import { Choice, SaveFeedback, SettingRow, SettingsActions, SettingsGroup, Setti
 import { useSaver } from "@/components/settings/use-saver";
 import { ConfigChoice, SettingsLoader } from "@/components/settings/config-choice";
 import { PERMISSION_MODES } from "@/components/composer-controls";
-import { permissionAllowed } from "../../bridge/permission-presets.mjs";
+import { permissionAllowed } from "../../bridge/permission-presets.mts";
 import { ModelSettings, CatalogNotice, PrunerSettings, useModelCatalog } from "@/components/settings/maintenance";
 
 const OPTIONS: { name: keyof ConfigOptions; title: string; description: string; values: { value: string; label: string }[] }[] = [

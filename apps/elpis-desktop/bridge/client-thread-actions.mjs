@@ -1,5 +1,5 @@
 import { BridgeError, object, text, threadId } from './validate.mts';
-import { MOTHER_MODEL } from './workflow-presets.mjs';
+import { MOTHER_MODEL } from './workflow-presets.mts';
 import { createChatWorktree, isChatWorktreePath, releaseChatWorktree, restoreChatWorktree, undoChatWorktree } from './git.mjs';
 import { defaultPermissionMode } from './elpis-features.mjs';
 import { isAgentRun } from '../lib/agent-runs.mts';

@@ -9,19 +9,19 @@ const KB_PER_GB = 1024 * 1024; // as `free -h` and scripts/mem-meter.py count
 const METER = fileURLToPath(new URL('../scripts/mem-meter.py', import.meta.url));
 
 /** MemAvailable of a /proc/meminfo text, in GB. */
-export const memAvailableGb = meminfo => Number(/^MemAvailable:\s+(\d+) kB$/m.exec(meminfo)[1]) / KB_PER_GB;
+export const memAvailableGb = (meminfo: string) => Number(/^MemAvailable:\s+(\d+) kB$/m.exec(meminfo)![1]) / KB_PER_GB;
 
 /** The app's process tree in GB, as scripts/mem-meter.py measures it: that script is the one owner of the measure. */
 export async function appTreeGb() {
   const { stdout } = await run('python3', ['-I', METER, '--json'], { timeout: 10000 });
-  return JSON.parse(stdout).total.kb / KB_PER_GB;
+  return (JSON.parse(stdout) as { total: { kb: number } }).total.kb / KB_PER_GB;
 }
 
 let meterFailed = false;
 // Outside Electron (tests, `node bridge/server.mjs`) the meter finds the installed app, not this process, so nothing of
 // ours counts. A meter that cannot run counts nothing, said once: it must not stop every workflow; the cap and floor hold.
 const ownTreeGb = async () => !process.versions.electron ? 0 : appTreeGb().catch(error => {
-  if (!meterFailed) console.error('Memory meter unavailable; the app memory budget is not enforced:', error.message);
+  if (!meterFailed) console.error('Memory meter unavailable; the app memory budget is not enforced:', (error as Error).message);
   meterFailed = true; return 0;
 });
 
@@ -29,15 +29,15 @@ const ownTreeGb = async () => !process.versions.electron ? 0 : appTreeGb().catch
  * systemd-oomd killed it): at most ELPIS_WORKER_CAP nodes at once, each started only while the machine has
  * ELPIS_WORKER_MEMORY_FLOOR_GB available and the app's tree is under ELPIS_APP_MEMORY_BUDGET_GB. */
 export function createMemoryBudget({ env = process.env, cap, available = async () => memAvailableGb(await fs.readFile('/proc/meminfo', 'utf8')),
-  app = ownTreeGb, pollMs = 5000 } = {}) {
-  const setting = (name, fallback) => Number(env[name]) > 0 ? Number(env[name]) : fallback;
+  app = ownTreeGb, pollMs = 5000 }: { env?: NodeJS.ProcessEnv; cap?: number | (() => number); available?: () => Promise<number>; app?: () => Promise<number>; pollMs?: number } = {}) {
+  const setting = (name: string, fallback: number) => Number(env[name]) > 0 ? Number(env[name]) : fallback;
   // 8, not 6: the app idles near 6.4 GB because every loaded thread starts its own set of the user's MCP servers; lower to 6 once fixed.
   const limit = () => Math.min(cap === undefined ? autoConcurrency() : typeof cap === 'function' ? cap() : cap, setting('ELPIS_WORKER_CAP', Infinity));
   const floor = setting('ELPIS_WORKER_MEMORY_FLOOR_GB', 4), budget = setting('ELPIS_APP_MEMORY_BUDGET_GB', 8);
-  const gb = value => `${value.toFixed(1)} GB`, waiters = new Set();
+  const gb = (value: number) => `${value.toFixed(1)} GB`, waiters = new Set<() => void>();
   let running = 0;
   // Ends when a slot is released, after pollMs (memory changes on its own) or on abort.
-  const pause = signal => new Promise(resolve => {
+  const pause = (signal: AbortSignal | undefined) => new Promise<void>(resolve => {
     const done = () => { clearTimeout(timer); waiters.delete(done); signal?.removeEventListener('abort', done); resolve(); };
     const timer = setTimeout(done, pollMs); waiters.add(done); signal?.addEventListener('abort', done);
   });
@@ -51,7 +51,7 @@ export function createMemoryBudget({ env = process.env, cap, available = async (
   return {
     /** Waits for a slot and enough memory and returns the slot's release. `log` hears one line when a memory wait starts
      * and one when it ends. Rejects when `signal` aborts. */
-    async acquire(signal, log) {
+    async acquire(signal: AbortSignal | undefined, log: (line: string) => void) {
       let waiting = false;
       for (;;) {
         signal?.throwIfAborted();

@@ -1,5 +1,5 @@
 'use strict';
-const { PREFERENCES_KEY } = require('./preferences.cjs');
+const { PREFERENCES_KEY } = require('./preferences.cts');
 
 /** One blocker for all running chats, including agent and side-chat turns. No idle timer. */
 function createSleepBlocker({ powerSaveBlocker, client, store, onError = console.warn }) {

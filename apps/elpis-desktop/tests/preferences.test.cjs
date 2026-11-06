@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { createRequire } = require('node:module');
 const ts = require('typescript');
-const { closeNeedsConfirmation } = require('../desktop/preferences.cjs');
+const { closeNeedsConfirmation } = require('../desktop/preferences.cts');
 
 const root = path.resolve(__dirname, '..');
 function loader() {

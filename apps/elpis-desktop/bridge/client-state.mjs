@@ -9,7 +9,7 @@
  *   rewindSnapshots: import('./rewind-snapshots.mts').RewindSnapshots,
  *   rewindHistory: import('./rewind-history.mts').RewindHistory,
  *   versions: import('./message-versions.mts').MessageVersions,
- *   githubConnector: ReturnType<typeof import('./github-connector.mjs').createGithubConnector>,
+ *   githubConnector: ReturnType<typeof import('./github-connector.mts').createGithubConnector>,
  *   customize: import('./customize-page.mjs').CustomizePage,
  *   cloudroom: ReturnType<typeof import('./cloudroom-vm.mjs').createCloudroomVm>,
  *   workflowRuns: ReturnType<typeof import('./workflow-acp.mjs').createWorkflowRuns>,

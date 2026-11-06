@@ -12,7 +12,7 @@ import { startDesktopServer } from './server.mjs';
 import { workflowWorktrees } from './workflow-worktrees.mjs';
 import { loveNodeSpec } from './love-agents.mjs';
 import { createWorkflowHistory, createWorkflowRuns } from './workflow-acp.mjs';
-import { createMemoryBudget } from './memory-budget.mjs';
+import { createMemoryBudget } from './memory-budget.mts';
 
 const ROOT = '00000000-0000-0000-0000-000000000001';
 const FATHER = '00000000-0000-0000-0000-00000000000f';
