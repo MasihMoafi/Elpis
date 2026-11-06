@@ -1,8 +1,7 @@
 "use client";
 
 import { flushSync } from "react-dom";
-import { cloneElement, useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
-import { ChatIcon } from "@/components/elpis-icons";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { Button } from "@/components/ui/button";
 import { useReorder } from "@/components/reorder";
 import { ViewBoundary } from "@/components/view-boundary";
@@ -20,7 +19,7 @@ import { permissionLabel, type PermissionMode } from "@/components/composer-cont
 import { type MessageVersion } from "@/lib/turn-replacement";
 import type { TerminalLaunch } from "@/components/terminal-view";
 import { type SettingsDestination } from "@/components/settings-view";
-import { DeleteChatsDialog, ThreadActions } from "@/components/thread-actions";
+import { DeleteChatsDialog } from "@/components/thread-actions";
 import { GroupNameDialog } from "@/components/chat-groups";
 import { SectionToggle } from "@/components/sidebar-group";
 import { SidebarChatList } from "@/components/sidebar-chat-list";
@@ -47,7 +46,6 @@ import { ReadAloud } from "@/components/read-aloud";
 import { LiveVoiceProvider } from "@/components/live-voice";
 import { MoveChatDialog, ProjectDialog } from "@/components/project-picker";
 import { PutUnderDialog } from "@/components/put-under-dialog";
-import { WorkflowMark } from "@/components/workflow-identity";
 import { ProfileDialog } from "@/components/profile-dialog";
 import { saveProjects } from "@/lib/projects";
 import { useLoveActivity } from "@/lib/use-love-activity";
@@ -66,8 +64,7 @@ import { SidePanel, sideMinWidth, useSidePanel } from "@/components/side-panel";
 import { type SideRequest } from "@/components/side-chat";
 import { FloatChatBar, FloatChatPill } from "@/components/float-chat";
 import { useSessionSplit } from "@/components/session-split";
-import { Tab } from "@/components/tab-strip";
-import { followChat, forgetChats, renameTabs, type ChatTab } from "@/lib/chat-tabs";
+import { followChat, forgetChats, renameTabs } from "@/lib/chat-tabs";
 import { fitAttachments, type Attachment } from "@/lib/attachments";
 import { api, isAgentRun, modelLabel, providerLabel, title, agentName,
   type ProviderSettings, type Thread } from "@/lib/api";
@@ -123,6 +120,7 @@ import { useWorkspaceNotices } from "@/lib/use-workspace-notices";
 import { useSidebarSearch } from "@/lib/use-sidebar-search";
 import { WorkspaceNotices } from "@/components/workspace-notices";
 import { WorkspaceRecovery } from "@/components/workspace-recovery";
+import { createWorkspaceChatTabs } from "@/components/workspace-chat-tabs";
 import { without } from "@/lib/utils";
 import { errorText } from "@/lib/error-text.mjs";
 import { refreshModelCatalog, useModelCatalog } from "@/lib/model-catalog";
@@ -444,7 +442,7 @@ export default function Home() {
   useEffect(() => { if (text) setSlashNotice(""); }, [text]);
 
   const sidebarModel = useSidebarThreads({ ready, connected, threads, hidden, selected, chatGroups, loveActivity, expanded, setExpanded, recordedWorkflow, loadChildren, search, attention, waitingIds, pins, projectChats, releaseChatOrder, searchInput, setError, setDeleteRunHistory, setDeleteTargets, hiddenPages, preferences, collapsedSections, collapsedProjects, checkedChildren, agentRunsOpen });
-  const { workflowCatalog, workflowRoots, workflowSteps, sidebarTitle, sidebarThreads, nativeParents, treeParents, searchedThreads, sidebarState, needsYou, ordinaryThreads, ordinaryIds, pinnedChats, grouped, recentChats, ordered } = sidebarModel;
+  const { workflowCatalog, workflowRoots, sidebarThreads, nativeParents, treeParents, searchedThreads, sidebarState, needsYou, ordinaryThreads, ordinaryIds, pinnedChats, grouped, recentChats, ordered } = sidebarModel;
   useWorkspaceShortcuts({ shortcutAction, selected, ordered, readOnlyRun, activeTurn, view, cwd, desktop, hasTerminal, side, sideChat, setSideChat, sidebar, sidebarCollapsed, activeTabId: tabs.activeId, commandReturnFocus, shortcutsReturnFocus, setCommandMenuOpen, setShortcutsOpen, setRenameRequest, setSettingsSection, newChat, stop, focusComposer, focusSearch, undoDelete: () => undoDelete(), showSidebar: open => showSidebar(open), narrow: () => narrow(), show, goHistory, loadThread, archiveChats: chats => archiveChats(chats), chosenChats: () => chosenChats(), togglePin: thread => togglePin(thread), moveToEdge: (id, top) => moveToEdge(id, top), newChatTab, closeChatTab, cycleTabs });
   const togglePin = (thread: Thread) => togglePinned(thread.id);
   const toggleBookmark = (thread: Thread) => toggleBookmarked(thread.id);
@@ -469,7 +467,8 @@ export default function Home() {
       },
     };
   }
-  const { groupMenu, movingIds, canNest, placementReveal, revealPlacement, nestChats, organizationActions } = createSidebarPlacement({ model: sidebarModel, projectState, children, chatGroups, updateGroups, foldsRef, changeFolds, pins, marked, setMarked, setNewGroupFor, setError, assignProject, newProjectFrom });
+  const placement = createSidebarPlacement({ model: sidebarModel, projectState, children, chatGroups, updateGroups, foldsRef, changeFolds, pins, marked, setMarked, setNewGroupFor, setError, assignProject, newProjectFrom });
+  const { groupMenu, movingIds, canNest, placementReveal, revealPlacement, nestChats, organizationActions } = placement;
   async function renameDisplayedThread(thread: Thread, name: string, runId = workflowRoots.get(thread.id)?.id) {
     if (!runId) { await renameThread(thread, name); return; }
     const problem = workflowCatalog.rename(runId, name);
@@ -477,20 +476,7 @@ export default function Home() {
   }
   const { chatReorder, moveToEdge } = useChatReorder({ projectState, chatGroups, updateGroups, treeParents, pins, ordinaryThreads, ordinaryIds, pinnedChats, recentChats, grouped, movingIds, canNest, assignProject, nestChats, searchTerm, needsYou, sidebarState, setError });
   const threadRow = createSidebarThreadRow({ model: sidebarModel, runtime, loveActivity, attention, threads, selected, view, waitingIds, pins, bookmarks, marked, childCursors, searchTerm, agentColours, preferences, agentRunsOpen, setAgentRunsOpen, setExpanded, checkedChildren, setError, loadChildren, chatReorder, desktop, hasTerminal, pane: split.pane, windowAvailable, find, deleteChats, renameDisplayedThread, archiveChats, togglePin, toggleBookmark, openInTui, openSplit, openSessionWindow, organizationActions, attentionFor, chatsOf, groupMenu, movingIds, markRead, prefetchThread, openInNewTab, clickRow });
-  /** A chat's menu around its tab or title: the "…" button and right-click on `area` share one list. The shown chat's is "Chat actions". */
-  const threadMenu = (thread: Thread, area: React.ReactElement, content: (menu: React.ReactNode) => React.ReactNode, shown: boolean) =>
-    <ThreadActions label={shown ? "Chat actions" : undefined} thread={{ ...thread, name: sidebarTitle(thread) }} attention={attentionFor(thread.id)} group={groupMenu(thread, movingIds(thread.id))} selection={marked.includes(thread.id) ? chatsOf(marked) : undefined} onRequestDelete={() => deleteChats(movingIds(thread.id))} onRename={renameDisplayedThread} renameDescription={workflowRoots.has(thread.id) ? "The workflow name is saved on this device." : undefined} onArchive={archiveChats} pinned={pins.includes(thread.id)} onPin={togglePin} bookmarked={bookmarks.includes(thread.id)} onBookmark={toggleBookmark} onOpenInTui={hasTerminal ? openInTui : undefined} onOpenSplit={!split.pane ? openSplit : undefined} onOpenWindow={windowAvailable ? openSessionWindow : undefined} renameRequested={shown && renameRequest} onRenameRequestHandled={() => setRenameRequest(false)} {...organizationActions(thread)} area={area}>{content}</ThreadActions>;
-  const chatActions = (area: React.ReactElement, content: React.ReactNode) => view === "chat" && selected
-    ? threadMenu(selected, area, menu => <>{content}{menu}</>, true)
-    : cloneElement(area, undefined, content);
-  /** One chat tab: its title and close button, the "…" on the shown one, and the chat's menu on right-click. */
-  function chatTab(tab: ChatTab) {
-    const shown = tab.id === tabs.activeId, thread = tab.threadId ? (shown && selected?.id === tab.threadId ? selected : find(tab.threadId)) : undefined;
-    const label = thread ? sidebarTitle(thread) : tab.threadId ? tab.title || "Chat" : "New chat";
-    const identity = thread ? workflowCatalog.identities[workflowSteps.get(thread.id)?.runId ?? workflowRoots.get(thread.id)?.id ?? ""] : undefined;
-    return <Tab key={tab.id} chat icon={identity ? <WorkflowMark identity={identity} neutral /> : <ChatIcon size={14} />} label={label} active={shown} closeLabel={`Close ${label} tab`} trailing={shown}
-      wrap={thread ? (area, content) => threadMenu(thread, area, content, shown) : undefined} onSelect={() => showTab(tab)} onClose={() => closeChatTab(tab.id)} />;
-  }
+  const { chatActions, chatTab } = createWorkspaceChatTabs({ model: sidebarModel, placement, selected, view, tabs, marked, pins, bookmarks, renameRequest, pane: split.pane, hasTerminal, windowAvailable, find, chatsOf, attentionFor, deleteChats, renameDisplayedThread, archiveChats, togglePin, toggleBookmark, openInTui, openSplit, openSessionWindow, setRenameRequest, showTab, closeChatTab });
   const { descendants, threadBranch, runDescendants, chatRows, chatGroupSection } = createSidebarBranches({ model: sidebarModel, threadRow, chatReorder, chatGroups, updateGroups, hidden, expanded, childCursors, loadingChildren, searchTerm, loadChildren, find });
   const heading = view === "chat" ? (selected ? title(selected) : "") : PAGE_NAMES[view];
   const chatName = selected ? title(selected) : "New chat";
