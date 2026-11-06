@@ -1,164 +1,55 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, Menu, Tray, nativeImage, globalShortcut, screen, dialog, powerSaveBlocker } = require('electron');
+const electron = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, Tray, nativeImage, globalShortcut, screen, dialog } = electron;
 const path = require('node:path');
-const { pathToFileURL } = require('node:url');
-const { startBrowserAgentSocket } = require('./browser-agent.cjs');
-const { closeNeedsConfirmation, closesToTray, quickEntryShortcut, seedShippedDefaults } = require('./preferences.cjs');
+const { closesToTray, quickEntryShortcut } = require('./preferences.cjs');
 const { createStateStore } = require('./state.cts');
 const { openThreadArgument } = require('./open-thread.cjs');
 const { createTray, createCloseToTray } = require('./tray.cts');
 const { startQuickEntry } = require('./quick-entry.cjs');
 const { createScreenshotPopup } = require('./screenshot-popup.cjs');
-const { createSessionWindows } = require('./session-windows.cjs');
 const { createAppMenu } = require('./app-menu.cjs');
-const { enableWaylandIme } = require('./wayland-ime.cts');
 const { createAppUpdates, executableLauncher } = require('./app-updates.cjs');
-const fs = require('node:fs');
-const { createSleepBlocker } = require('./sleep-blocker.cjs');
-let sleepBlocker;
+const { configureMainProfile } = require('./main-profile.cjs');
+const { createMainBackend } = require('./main-backend.cjs');
+const { createMainQuit } = require('./main-quit.cjs');
 
 // The renderer gets only the loopback app, never Node or filesystem access.
 let server;
 let browserAgentSocket;
-let window;
 let closing = false;
-let opening;
-let openingChat;
 let store;
-let quitAttempt;
-let pendingRestartTarget;
-const confirmedClose = new WeakSet();
-// The chat the Elpis TUI's /app asked for (`--open-thread <id>`), at start-up or from a second launch.
-let initialThread = openThreadArgument(process.argv);
 let primaryOpeners;
 let sessionWindows;
-let tray, quickEntry, screenshotPopup, darkTheme = true; // `tray` stays referenced so it is not collected.
+let tray, quickEntry, screenshotPopup, darkTheme = true, sleepBlocker; // `tray` stays referenced so it is not collected.
 // The Elpis website's mark: the window, the .desktop launcher and the tray.
 const ICON = path.join(__dirname, 'elpis-icon.png');
+const profile = configureMainProfile({ app, argv: process.argv, env: process.env });
+const { loveSpotApp, workflowsApp } = profile;
+// The chat the Elpis TUI's /app asked for (`--open-thread <id>`), at start-up or from a second launch.
+let initialThread = profile.initialThread;
 // Settings → General → Close to tray, off by default: closing the window quits. On, it hides and the tray keeps Elpis.
 const closeToTray = createCloseToTray({ app, enabled: () => !!store && closesToTray(store), quitting: () => closing });
-// Settings → General → Confirm before closing. Returns false when the person keeps the window.
-function mayClose(host = window) {
-  if (!host || confirmedClose.has(host) || host.isDestroyed() || !store || !closeNeedsConfirmation(store)) return true;
-  if (!host.isVisible()) host.show(); // Quit from the tray asks over the window, not a hidden one.
-  const choice = dialog.showMessageBoxSync(host, { type: 'question', buttons: ['Close', 'Cancel'], defaultId: 0, cancelId: 1, title: 'Close Elpis?', message: 'Close Elpis?', detail: 'Running conversations continue in Elpis and stay available when you reopen it.' });
-  if (choice === 0) confirmedClose.add(host);
-  return choice === 0;
-}
-
-async function openWindow(loveSpot = false, workflows = false) {
-  if (!opening) opening = prepareWindows().finally(() => { opening = null; });
-  await opening;
-  if (loveSpot) return sessionWindows.openLoveSpot();
-  if (workflows) return sessionWindows.openWorkflows();
-  if (window && !window.isDestroyed()) {
-    if (window.isMinimized()) window.restore();
-    if (!window.isVisible()) window.show();
-    window.focus();
-  } else {
-    if (!openingChat) openingChat = sessionWindows.open({ onPrimary: openers => { primaryOpeners = openers; } }).finally(() => { openingChat = null; });
-    window = await openingChat;
-  }
-  if (initialThread) { primaryOpeners.threads.queue(initialThread); initialThread = null; }
-}
-
-async function prepareWindows() {
-  if (!server) {
-    store ??= createStateStore(path.join(app.getPath('userData'), 'workspace.json'));
-    await seedShippedDefaults(store);
-    const { startDesktopServer } = await import(pathToFileURL(path.join(__dirname, '../bridge/server.mjs')).href);
-    const { DesktopClient, existingSocket } = await import(pathToFileURL(path.join(__dirname, '../bridge/client.mjs')).href);
-    const { ensureInstalledRuntime } = await import(pathToFileURL(path.join(__dirname, 'runtime.mjs')).href);
-    const { browserMcpConfig } = await import(pathToFileURL(path.join(__dirname, '../bridge/browser-mcp.mjs')).href);
-    const { scheduleMcpConfig } = await import(pathToFileURL(path.join(__dirname, '../bridge/schedule-mcp.mts')).href);
-    browserAgentSocket = await startBrowserAgentSocket({ connectionFile: path.join(app.getPath('userData'), 'browser-connection.json') });
-    try {
-      // The window opens without waiting for the runtime (24 Oct: a runtime still starting kept the app closed for 20 s).
-      const client = await DesktopClient.connect({ background: true, beforeConnect: ensureInstalledRuntime, browserConfig: {
-        // Every chat gets the browser tools and, once the app's server is up, the Automations tools (bridge/schedule-mcp.mts).
-        forSession: id => ({ ...browserMcpConfig(browserAgentSocket.path, undefined, browserAgentSocket.scope(id), browserAgentSocket.connectionFile),
-          ...(server?.automationAccess ? scheduleMcpConfig(server.automationAccess) : {}) }),
-        bind: (from, to) => browserAgentSocket.rebind(from, to),
-        close: id => { browserAgentSocket.revoke(id); sessionWindows?.closeBrowser(id); },
-      } });
-      sleepBlocker = createSleepBlocker({ powerSaveBlocker, client, store });
-      // A connected terminal may keep the previous bridge and engine alive after an install.
-      const noteEngine = () => { try { updates.setRunningEngine(JSON.parse(fs.readFileSync(path.join(path.dirname(existingSocket()), 'state.json'), 'utf8')).engine); } catch {} };
-      client.on('event', event => { if (event.type === 'connection' && event.data.connected) noteEngine(); });
-      // Chats deleted from the sidebar wait in this file until the app quits (Ctrl+Z brings them back until then).
-      try { server = await startDesktopServer({ client, staticDir: path.join(__dirname, '../out'), trashFile: path.join(app.getPath('userData'), 'deleted-chats.json'), automations: true }); }
-      catch (error) { client.close(); throw error; }
-    } catch (error) { sleepBlocker?.dispose(); sleepBlocker = undefined; await browserAgentSocket.close(); browserAgentSocket = undefined; throw error; }
-  }
-  if (!sessionWindows) {
-    sessionWindows = createSessionWindows({ electron: require('electron'), url: server.url, store, browserAgentSocket, quickEntry, screenshotPopup, closeToTray, updates,
-      mayClose, quitting: () => closing, onDark: dark => { darkTheme = dark; }, onClosed: host => { if (window === host) { window = [...sessionWindows.windows].find(host => !sessionWindows.openersFor(host)?.loveSpot && !sessionWindows.openersFor(host)?.workflows); primaryOpeners = sessionWindows.openersFor(window); } },
-      onFocused: (host, openers) => { if (!openers?.loveSpot && !openers?.workflows) { window = host; primaryOpeners = openers; } } });
-  }
-}
-
-// WM_CLASS comes from package.json "name" (elpis-desktop) when launched as the app directory;
-// elpis-desktop.desktop.in sets StartupWMClass=elpis-desktop to match, so docks show the Elpis icon.
-// --love-spot-app (the Love Spot dock icon): Love Spot as its own app, so its window groups under that icon. Wayland
-// takes the app id from the desktop name; its own profile gives it its own single-instance lock.
-const loveSpotApp = process.argv.includes('--love-spot-app');
-const workflowsApp = process.argv.includes('--workflows-app');
-app.setName(loveSpotApp ? 'Love Spot' : workflowsApp ? 'Elpis Workflows' : 'Elpis');
-if (loveSpotApp) app.setDesktopName('excalidraw.desktop');
-else if (workflowsApp) app.setDesktopName('elpis-workflows.desktop');
-app.setPath('userData', process.env.ELPIS_DESKTOP_PROFILE || path.join(app.getPath('appData'), loveSpotApp ? 'Elpis Love Spot' : workflowsApp ? 'Elpis Workflows' : 'Elpis'));
 const updates = createAppUpdates({ app, runningApp: path.resolve(__dirname, '..'), restart: async target => {
   if (!await quitApp(target)) throw Error('Restart cancelled. Your windows and drafts are kept open.');
 } });
+const state = {
+  getServer: () => server, setServer: value => { server = value; },
+  getBrowserAgentSocket: () => browserAgentSocket, setBrowserAgentSocket: value => { browserAgentSocket = value; },
+  isClosing: () => closing, setClosing: value => { closing = value; },
+  getStore: () => store, setStore: value => { store = value; },
+  getPrimaryOpeners: () => primaryOpeners, setPrimaryOpeners: value => { primaryOpeners = value; },
+  getSessionWindows: () => sessionWindows, setSessionWindows: value => { sessionWindows = value; },
+  getTray: () => tray, getQuickEntry: () => quickEntry, getScreenshotPopup: () => screenshotPopup,
+  getSleepBlocker: () => sleepBlocker, setSleepBlocker: value => { sleepBlocker = value; },
+  setDarkTheme: value => { darkTheme = value; },
+  takeInitialThread: () => { const value = initialThread; initialThread = null; return value; },
+};
+const { mayClose, prepareWindows, openWindow } = createMainBackend({ electron, appDir: __dirname, state, createStateStore, closeToTray, updates });
+const { quitApp, isQuitting } = createMainQuit({ app, loveSpotApp, workflowsApp, executableLauncher, mayClose, state });
 
-async function quitApp(restartTarget) {
-  if (restartTarget) pendingRestartTarget = restartTarget;
-  if (quitAttempt) return quitAttempt;
-  quitAttempt = (async () => {
-    const hosts = [...(sessionWindows?.windows ?? [])].filter(host => !host.isDestroyed());
-    if (!hosts.every(host => mayClose(host))) return false;
-    try {
-      if (pendingRestartTarget && server?.canRestart && !await server.canRestart()) throw Error('Wait for the voice call, Love Spot, Lab or workflow run in this window to finish, then restart.');
-      // Freeze input until every final draft is acknowledged. Failed saves restore editing below.
-      await Promise.all(hosts.map(host => host.webContents.executeJavaScript?.('document.documentElement.inert = true; true')));
-      const dirtyFiles = await Promise.all(hosts.map(host => host.webContents.executeJavaScript?.('("__elpisHasUnsavedFiles" in window) ? window.__elpisHasUnsavedFiles : false')));
-      if (dirtyFiles.some(dirty => dirty !== false)) throw Error('Save or revert file edits in every window before quitting or restarting.');
-      const settingsSaved = await Promise.all(hosts.map(host => host.webContents.executeJavaScript?.('window.__elpisFlushSettings?.() ?? true')));
-      if (settingsSaved.some(saved => saved !== true)) throw Error('Personalization drafts could not be saved. Keep this window open and copy your edits before quitting.');
-      const workflowsSaved = await Promise.all(hosts.map(host => host.webContents.executeJavaScript?.('("__elpisFlushWorkflow" in window) ? window.__elpisFlushWorkflow() : true')));
-      if (workflowsSaved.some(saved => saved !== true)) throw Error('Workflow could not be saved. Keep this window open and retry.');
-      await quickEntry?.flush?.();
-      if (await sessionWindows?.flushText() === false) throw Error('Text could not be saved. Keep this window open and press Ctrl+S before retrying.');
-      await Promise.all(hosts.map(host => host.webContents.executeJavaScript?.('window.elpisDesktop?.storage?.flush?.() ?? true')));
-      await sessionWindows?.flushBrowsers();
-      await store?.flush();
-      if (pendingRestartTarget && server?.canRestart && !await server.canRestart()) throw Error('A voice call, Love Spot, Lab or workflow run started while preparing the update. Restart when it finishes.');
-      if (pendingRestartTarget) executableLauncher(pendingRestartTarget);
-      closing = true;
-      sleepBlocker?.dispose(); sleepBlocker = undefined;
-      await Promise.all([server?.close(), browserAgentSocket?.close()]);
-      quickEntry?.dispose?.(); screenshotPopup?.dispose?.(); tray?.destroy();
-      // All editable text is saved. A page's beforeunload must not veto explicit Quit afterward.
-      for (const host of hosts) if (!host.isDestroyed()) host.webContents.on('will-prevent-unload', event => event.preventDefault());
-      if (pendingRestartTarget) app.relaunch({ execPath: pendingRestartTarget, args: loveSpotApp ? ['--love-spot-app'] : workflowsApp ? ['--workflows-app'] : [] });
-      app.quit();
-      return true;
-    } catch (error) {
-      closing = false;
-      sessionWindows?.cancelQuit?.();
-      await Promise.allSettled([Promise.resolve().then(() => quickEntry?.cancelQuit?.()),
-        ...hosts.filter(host => !host.isDestroyed()).map(host => host.webContents.executeJavaScript?.('document.documentElement.inert = false; true'))]);
-      throw error;
-    }
-  })();
-  try { return await quitAttempt; }
-  finally { quitAttempt = null; if (!closing) pendingRestartTarget = null; }
-}
-enableWaylandIme(app.commandLine, process.env);
-// Wayland gives apps global shortcuts only through the desktop portal; Claude's app turns on Chromium's portal support the same way.
-app.commandLine.appendSwitch('enable-features', [app.commandLine.getSwitchValue('enable-features'), 'GlobalShortcutsPortal'].filter(Boolean).join(','));
-if (!app.requestSingleInstanceLock({ openThread: openThreadArgument(process.argv), loveSpot: process.argv.includes('--love-spot'), ...(process.argv.includes('--workflows') ? { workflows: true } : {}) })) {
+if (!app.requestSingleInstanceLock(profile.lockData)) {
   app.quit();
 } else {
   app.on('second-instance', (_event, argv, _cwd, data) => {
@@ -192,7 +83,7 @@ if (!app.requestSingleInstanceLock({ openThread: openThreadArgument(process.argv
   app.on('before-quit', event => {
     if (!server || closing) return;
     event.preventDefault();
-    if (quitAttempt) return;
+    if (isQuitting()) return;
     void quitApp().catch(error => { console.error('Could not save before quitting:', error); dialog.showErrorBox('Elpis is still open', error.message); });
   });
 }
