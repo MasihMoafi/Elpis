@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { BridgeError, elpisHome, object, text } from './client.mts';
 import { planCanvas } from './canvas-plan.mjs';
-import { workflowWorkspace } from './folders.mjs';
+import { workflowWorkspace } from './folders.mts';
 import { body, json } from './server-http.mjs';
 
 const START_WAIT = 15 * 60_000;

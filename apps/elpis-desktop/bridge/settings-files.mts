@@ -4,32 +4,32 @@ import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { BridgeError, object } from './client.mts';
 
-const names = { instructions: 'AGENTS.md', memory: 'memories/MEMORY.md' };
-const version = (file, content) => createHash('sha256').update(file).update('\0').update(content).digest('hex');
+const names: Record<string, string> = { instructions: 'AGENTS.md', memory: 'memories/MEMORY.md' };
+const version = (file: string, content: string) => createHash('sha256').update(file).update('\0').update(content).digest('hex');
 
 /** Only the engine's two global text files; never a renderer-supplied path. */
-export function createSettingsFiles(home, io = fs) {
-  let queue = Promise.resolve();
-  const fileFor = kind => {
-    if (!Object.hasOwn(names, kind)) throw new BridgeError('Unknown personalization file');
-    return path.join(home, names[kind]);
+export function createSettingsFiles(home: string, io: typeof fs = fs) {
+  let queue: Promise<void> = Promise.resolve();
+  const fileFor = (kind: string | undefined) => {
+    if (kind === undefined || !Object.hasOwn(names, kind)) throw new BridgeError('Unknown personalization file');
+    return path.join(home, names[kind]!);
   };
-  async function checkDirectory(file) {
+  async function checkDirectory(file: string) {
     const directory = path.dirname(file);
     if (directory !== home) {
       try { if (!(await io.lstat(directory)).isDirectory()) throw new BridgeError('The memories folder must be a local directory.'); }
-      catch (error) { if (error.code !== 'ENOENT') throw error; }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
     }
   }
-  async function read(kind) {
+  async function read(kind: string | undefined) {
     const configured = fileFor(kind);
     await checkDirectory(configured);
     let file;
     try { file = await io.realpath(configured); }
     catch (error) {
-      if (error.code === 'ELOOP') throw new BridgeError('The personalization file link cannot be resolved. Repair the link before editing.', 409);
-      if (error.code !== 'ENOENT') throw error;
-      const entry = await io.lstat(configured).catch(error => { if (error.code === 'ENOENT') return null; throw error; });
+      if ((error as NodeJS.ErrnoException).code === 'ELOOP') throw new BridgeError('The personalization file link cannot be resolved. Repair the link before editing.', 409);
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      const entry = await io.lstat(configured).catch(error => { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error; });
       if (entry?.isSymbolicLink()) throw new BridgeError('The linked personalization file does not exist. Repair the link before editing.', 409);
       file = configured;
     }
@@ -40,8 +40,8 @@ export function createSettingsFiles(home, io = fs) {
       const content = await handle.readFile('utf8');
       return { path: file, content, version: version(file, content) };
     } catch (error) {
-      if (error.code === 'ENOENT') return { path: file, content: '', version: 'missing' };
-      if (error.code === 'ELOOP') throw new BridgeError('The personalization file link changed. Reload before editing.', 409);
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { path: file, content: '', version: 'missing' };
+      if ((error as NodeJS.ErrnoException).code === 'ELOOP') throw new BridgeError('The personalization file link changed. Reload before editing.', 409);
       throw error;
     } finally { await handle?.close(); }
   }
@@ -50,7 +50,7 @@ export function createSettingsFiles(home, io = fs) {
     let metadata;
     try { metadata = await io.lstat(root); }
     catch (error) {
-      if (error.code === 'ENOENT') return 0;
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 0;
       throw new BridgeError('Saved memory file count is unavailable.', 503);
     }
     // Reset refuses a linked memory root; a count must not follow one either.
@@ -58,15 +58,15 @@ export function createSettingsFiles(home, io = fs) {
     let count = 0; const directories = [root];
     try {
       while (directories.length) {
-        const directory = directories.pop();
+        const directory = directories.pop()!;
         for (const entry of await io.readdir(directory, { withFileTypes: true })) {
           const file = path.join(directory, entry.name), markdown = /\.(?:md|markdown)$/i.test(entry.name);
-          let type = entry;
+          let type: { isDirectory(): boolean; isFile(): boolean; isSymbolicLink(): boolean } = entry;
           if (!entry.isDirectory() && !entry.isFile() && !entry.isSymbolicLink()) type = await io.lstat(file);
           if (type.isDirectory()) directories.push(file);
           else if (markdown && type.isFile()) count++;
           else if (markdown && type.isSymbolicLink()) {
-            const target = await io.stat(file).catch(error => { if (error.code === 'ENOENT') return null; throw error; });
+            const target = await io.stat(file).catch(error => { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error; });
             if (target?.isFile()) count++;
           }
         }
@@ -74,9 +74,9 @@ export function createSettingsFiles(home, io = fs) {
     } catch { throw new BridgeError('Saved memory file count is unavailable.', 503); }
     return count;
   }
-  function save(kind, input) {
+  function save(kind: string | undefined, input: unknown) {
     const run = async () => {
-      const data = object(input, ['version', 'content']);
+      const data = object(input, ['version', 'content']) as Record<string, unknown>;
       if (typeof data.content !== 'string' || typeof data.version !== 'string') throw new BridgeError('File content and version are required.');
       const before = await read(kind);
       if (data.version !== before.version) throw new BridgeError('File changed elsewhere. Reload before saving. Your draft is preserved.', 409);
@@ -96,7 +96,7 @@ export function createSettingsFiles(home, io = fs) {
         await io.unlink(temporary).catch(() => {});
       }
     };
-    const next = queue.then(run); queue = next.catch(() => {}); return next;
+    const next = queue.then(run); queue = next.then(() => {}, () => {}); return next;
   }
   return { read, save, countMemoryFiles };
 }

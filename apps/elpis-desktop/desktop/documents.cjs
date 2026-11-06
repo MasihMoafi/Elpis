@@ -32,7 +32,7 @@ async function savedDocument(target) {
     real = await fs.realpath(target);
     if (!(await fs.stat(real)).isFile()) throw Error('Not a regular file.');
   } catch { throw Error('This document must be an existing regular file.'); }
-  const { readFile } = await import('../bridge/files.mjs');
+  const { readFile } = await import('../bridge/files.mts');
   const saved = await readFile(path.dirname(real), path.basename(real));
   if (saved.tooLarge || saved.preview === 'text') throw Error('This document exceeds the text editor size limit.');
   if (typeof saved.content !== 'string' || typeof saved.mtimeMs !== 'number') throw Error('This document is not a supported UTF-8 text file.');

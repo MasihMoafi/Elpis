@@ -2,7 +2,7 @@
 // file in the side panel's Files tab at its lines and shows it in the project tree; the tab is a real tree (folders open
 // and close, a filter finds by name, "?" searches the contents), open files are tabs, and a file can be edited in place and
 // saved. "Open in" starts an editor (never VS Code) or the system's default app. The exported UI against the real bridge
-// file functions (bridge/files.mjs) on a temporary project at /tmp/parity-fixture, in a fake desktop (tests/parity-fixture.cjs).
+// file functions (bridge/files.mts) on a temporary project at /tmp/parity-fixture, in a fake desktop (tests/parity-fixture.cjs).
 // Screenshots go to $ELPIS_SHOTS when it is set.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -36,7 +36,7 @@ async function writeProject() {
 }
 /** The bridge's own file functions answering the fixture's routes; a refusal is its 4xx status and message. */
 async function routes() {
-  const files = await import('../bridge/files.mjs');
+  const files = await import('../bridge/files.mts');
   const answer = async run => { try { return await run(); } catch (error) { return { __http: error.status ?? 500, error: error.message }; } };
   let backend;
   const assetServer = () => backend ??= (async () => {

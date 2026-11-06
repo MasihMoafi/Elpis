@@ -2,10 +2,10 @@ import fs from 'node:fs/promises';
 import { BridgeError, object } from './client.mts';
 import { ATTACHMENT_BODY_LIMIT, PDF_BODY_LIMIT, extractPdf } from './attachments.mts';
 import { devServerRequest } from './dev-servers.mjs';
-import { listDirectory, listFiles, readFile, readFileAsset, searchFiles, writeFile } from './files.mjs';
-import { listFolders, projectDirectory } from './folders.mjs';
+import { listDirectory, listFiles, readFile, readFileAsset, searchFiles, writeFile } from './files.mts';
+import { listFolders, projectDirectory } from './folders.mts';
 import { isRepository } from './git.mjs';
-import { dismissPersonalTip, openPersonal, personalStatus } from './personal.mjs';
+import { dismissPersonalTip, openPersonal, personalStatus } from './personal.mts';
 import { body, cwdOf, json } from './server-http.mjs';
 
 /** @param {import('./server-http.mjs').ServerState} state @param {import('node:http').IncomingMessage} request @param {import('node:http').ServerResponse} response @param {URL} url @param {string} method */

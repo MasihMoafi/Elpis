@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { createRequire } from 'node:module';
-import { createSettingsFiles } from './settings-files.mjs';
+import { createSettingsFiles } from './settings-files.mts';
 import { startDesktopServer } from './server.mjs';
 
 const { createTestTempDir, removeTestTempDir } = createRequire(import.meta.url)('../tests/temp-root.cjs');

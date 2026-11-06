@@ -3,7 +3,7 @@ import { BridgeError, object, text } from './validate.mts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { providerModels } from './provider-models.mts';
-import { savedProviderKey } from './provider-keys.mjs';
+import { savedProviderKey } from './provider-keys.mts';
 import { subscriptionModels } from "./subscription-models.mts";
 import { internal_rpc } from './client-connection.mts';
 import type { DesktopClient } from './client.mts';

@@ -4,8 +4,8 @@ import { fileURLToPath } from 'node:url';
 import { elpisHome } from './client.mts';
 
 const template = fileURLToPath(new URL('./resources/personal.md', import.meta.url));
-const exists = file => fs.access(file).then(() => true, error => { if (error.code === 'ENOENT') return false; throw error; });
-const marker = home => path.join(home, 'personal-tip-dismissed');
+const exists = (file: string) => fs.access(file).then(() => true, error => { if (error.code === 'ENOENT') return false; throw error; });
+const marker = (home: string) => path.join(home, 'personal-tip-dismissed');
 
 export async function personalStatus(home = elpisHome()) {
   const file = path.join(home, 'skills/personal/SKILL.md');
@@ -23,7 +23,7 @@ export async function openPersonal(home = elpisHome()) {
   const content = await fs.readFile(template);
   await fs.mkdir(path.dirname(file), { recursive: true });
   try { await fs.writeFile(file, content, { flag: 'wx' }); }
-  catch (error) { if (error.code !== 'EEXIST') throw error; }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
   await fs.access(file);
   return dismissPersonalTip(home);
 }

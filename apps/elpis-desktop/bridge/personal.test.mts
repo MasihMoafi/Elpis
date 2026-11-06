@@ -1,14 +1,14 @@
 import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cjs';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
-import { dismissPersonalTip, openPersonal, personalStatus } from './personal.mjs';
+import { dismissPersonalTip, openPersonal, personalStatus } from './personal.mts';
 import { startDesktopServer } from './server.mjs';
 
-async function home(t) {
+async function home(t: TestContext) {
   const root = path.join(os.homedir(), '.cache/elpis-tests');
   await fs.mkdir(root, { recursive: true });
   const dir = createTestTempDir(path.join(root, 'personal-'));
@@ -39,14 +39,14 @@ test('dismissal is remembered on disk and never creates the profile', async t =>
 });
 
 test('personal HTTP actions are authenticated, validated and scoped to the runtime home', async t => {
-  const dir = await home(t), client = new EventEmitter();
-  client.close = () => {}; client.pendingApprovals = [];
+  const dir = await home(t), client = Object.assign(new EventEmitter(), { close() {}, pendingApprovals: [] });
   const app = await startDesktopServer({ client, elpisHome: dir });
   t.after(() => app.close());
   const url = new URL(app.url), origin = url.origin, token = new URLSearchParams(url.hash.slice(1)).get('token');
-  const post = (route, data, cookie) => fetch(origin + route, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin, ...(cookie ? { Cookie: cookie } : {}) }, body: JSON.stringify(data) });
+  const post = (route: string, data: unknown, cookie?: string) => fetch(origin + route, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin, ...(cookie ? { Cookie: cookie } : {}) }, body: JSON.stringify(data) });
   assert.equal((await post('/api/personal', { action: 'open' })).status, 401);
-  const cookie = (await post('/api/session', { token })).headers.get('set-cookie').split(';')[0];
+  const setCookie = (await post('/api/session', { token })).headers.get('set-cookie'); assert.ok(setCookie);
+  const cookie = setCookie.split(';')[0]!;
   const initial = await fetch(origin + '/api/personal', { headers: { Cookie: cookie } });
   assert.equal(initial.status, 200);
   assert.equal((await initial.json()).showTip, true);

@@ -6,7 +6,7 @@ import { randomBytes } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { BridgeError, object } from './client.mts';
-import { projectDirectory } from './folders.mjs';
+import { projectDirectory } from './folders.mts';
 import { childEnv } from './tools.mjs';
 
 const quote = value => /^[\w./:@=-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`;

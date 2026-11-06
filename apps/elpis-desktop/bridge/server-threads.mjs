@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { BridgeError, object } from './client.mts';
 import { ATTACHMENT_BODY_LIMIT } from './attachments.mts';
-import { smartPruneDetail } from './smart-prune.mjs';
+import { smartPruneDetail } from './smart-prune.mts';
 import { body, json, pageQuery } from './server-http.mjs';
 import { prepareLoveSpotTurn } from './server-love-spot.mjs';
 

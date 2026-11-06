@@ -1,10 +1,10 @@
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { BridgeError } from './client.mts';
-import { listFolders } from './folders.mjs';
+import { listFolders } from './folders.mts';
 import { startDesktopServer } from './server.mjs';
 import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cjs';
 
@@ -22,9 +22,9 @@ async function tree() {
   await fs.symlink(path.join(root, 'docs'), path.join(root, 'src/linked-inner'));
   return root;
 }
-async function snapshot(root) {
-  const rows = [];
-  const walk = async (dir) => {
+async function snapshot(root: string) {
+  const rows: [string, number, number][] = [];
+  const walk = async (dir: string): Promise<void> => {
     for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name); const info = await fs.lstat(full);
       rows.push([path.relative(root, full), info.mtimeMs, info.size]);
@@ -64,7 +64,7 @@ test('accepts a project path that is itself a symlink to a directory without fol
 
 test('refuses a missing, relative or non-directory cwd with a 400 BridgeError', async t => {
   const root = await tree(); t.after(() => fs.rm(root, { recursive: true, force: true }));
-  const refused = async (cwd, message) => assert.rejects(listFolders(cwd), error => error instanceof BridgeError && error.status === 400 && message.test(error.message));
+  const refused = async (cwd: unknown, message: RegExp) => assert.rejects(listFolders(cwd), error => error instanceof BridgeError && error.status === 400 && message.test(error.message));
   await refused(undefined, /cwd/i); await refused('', /cwd/i); await refused(42, /cwd/i);
   await refused('relative/path', /absolute/i); await refused('.', /absolute/i);
   await refused(path.join(root, 'nope'), /existing directory/i);
@@ -77,14 +77,15 @@ test('GET /api/folders requires the session and answers { data } or a 400 messag
   const client = { on() {}, off() {}, close() {}, connected: true, pendingApprovals: [], ragEnvironment: async () => ({}) };
   const app = await startDesktopServer({ client, staticDir: root }); t.after(() => app.close());
   const url = new URL(app.url); const origin = url.origin; const token = new URLSearchParams(url.hash.slice(1)).get('token');
-  const query = cwd => `/api/folders?cwd=${encodeURIComponent(cwd)}`;
+  const query = (cwd: string) => `/api/folders?cwd=${encodeURIComponent(cwd)}`;
   assert.equal((await fetch(origin + query(root))).status, 401);
   const auth = await fetch(origin + '/api/session', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin }, body: JSON.stringify({ token }) });
-  const cookie = auth.headers.get('set-cookie').split(';')[0];
-  const get = pathname => fetch(origin + pathname, { headers: { Cookie: cookie } });
+  const setCookie = auth.headers.get('set-cookie'); assert.ok(setCookie);
+  const cookie = setCookie.split(';')[0]!;
+  const get = (pathname: string) => fetch(origin + pathname, { headers: { Cookie: cookie } });
   const ok = await get(query(root));
   assert.equal(ok.status, 200); assert.deepEqual(await ok.json(), { data: EXPECTED });
-  const bad = async (pathname, message) => { const response = await get(pathname); assert.equal(response.status, 400, pathname); assert.match((await response.json()).error, message); };
+  const bad = async (pathname: string, message: RegExp) => { const response = await get(pathname); assert.equal(response.status, 400, pathname); assert.match((await response.json()).error, message); };
   await bad('/api/folders', /cwd/i);
   await bad('/api/folders?cwd=', /cwd/i);
   await bad(query('relative'), /absolute/i);
@@ -96,14 +97,15 @@ test('GET /api/folders requires the session and answers { data } or a 400 messag
   assert.notEqual(post.status, 200);
 });
 
-async function workspaceServer(t, root, profile, methods = {}) {
+async function workspaceServer(t: TestContext, root: string, profile: string | undefined, methods = {}) {
   const client = { on() {}, off() {}, close() {}, connected: true, pendingApprovals: [], ragEnvironment: async () => ({}), ...methods };
   const app = await startDesktopServer({ client, staticDir: root, ...(profile ? { elpisHome: profile } : {}),
     trashFile: path.join(root, 'trash.json'), loveSpot: { directory: path.join(root, 'drawing'), screenshots: path.join(root, 'screenshots') } });
   t.after(async () => { await app.close(); removeTestTempDir(root); });
   const launch = new URL(app.url), origin = launch.origin;
   const auth = await fetch(origin + '/api/session', { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ token: launch.hash.slice(7) }) });
-  const cookie = auth.headers.get('set-cookie').split(';')[0];
+  const setCookie = auth.headers.get('set-cookie'); assert.ok(setCookie);
+  const cookie = setCookie.split(';')[0]!;
   return { origin, cookie,
     request: (headers = {}) => fetch(origin + '/api/workflows/workspace', { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json', Cookie: cookie, ...headers }, body: '{}' }),
   };
@@ -160,11 +162,11 @@ test('POST /api/workflows/workspace reports a blocked path without replacing the
 
 
 test('POST /api/workflows/:UUID/resume authenticates and forwards the ACP run identity and model choice', async t => {
-  const root = createTestTempDir(path.join(os.tmpdir(), 'elpis-workflow-resume-')), calls = [];
+  const root = createTestTempDir(path.join(os.tmpdir(), 'elpis-workflow-resume-')), calls: unknown[][] = [];
   const id = '12345678-1234-4234-8234-123456789abc', threadId = 'abcdef01-1234-4234-8234-123456789abc';
   const result = { graphId: id, threadId, turnId: id };
   const app = await workspaceServer(t, root, path.join(root, 'profile'), {
-    async resumeWorkflow(...args) { calls.push(args); return result; },
+    async resumeWorkflow(...args: unknown[]) { calls.push(args); return result; },
   });
   const route = `/api/workflows/${id}/resume`, body = { model: 'fixture-model', provider: 'fixture' };
   const post = (headers = {}, target = route) => fetch(app.origin + target, { method: 'POST', headers: { Origin: app.origin, 'Content-Type': 'application/json', Cookie: app.cookie, ...headers }, body: JSON.stringify(body) });

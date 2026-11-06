@@ -10,7 +10,7 @@ test('real Electron clicks and Enter open inside Files; default native openFile 
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'code-open-electron-'));
   const outside = path.join(root, 'گزارش with spaces.py');
   await fs.writeFile(outside, 'first\nSECOND_LINE\nlast\n');
-  const files = await import('../bridge/files.mjs');
+  const files = await import('../bridge/files.mts');
   const f = await fixture({ desktop: false, chat: [['t1', 'Show files', `[outside](${encodeURI(outside)}#L2) and [missing](${root}/missing.py).`]], routes: {
     '/api/file': async (body, url) => { try { return await files.readFile(url.searchParams.get('cwd'), url.searchParams.get('path')); } catch (error) { return { __http: 404, error: error.message }; } },
     '/api/files/dir': () => ({ data: [] }),

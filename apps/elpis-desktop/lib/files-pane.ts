@@ -1,7 +1,7 @@
 // What the Files tab keeps (components/files-pane.tsx draws it): per project folder the open files, the folders opened in
 // the tree and what is selected; per file its text and its unsaved edits; per folder its listing. One store for the page, so
 // a path clicked in a reply (components/file-ref.tsx) can open a file here, and so open files and edits survive another tab
-// being shown. The bridge reads one folder at a time and one file at a time (bridge/files.mjs).
+// being shown. The bridge reads one folder at a time and one file at a time (bridge/files.mts).
 import { useSyncExternalStore } from "react";
 import { api } from "@/lib/api";
 import { resolveRef, type FileRef } from "@/lib/file-refs";

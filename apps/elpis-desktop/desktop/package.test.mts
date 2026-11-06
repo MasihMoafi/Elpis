@@ -12,7 +12,7 @@ import { productionFiles, stageDesktop } from './package.mts';
 const run = promisify(execFile);
 const production = productionFiles;
 
-// A file the app imports but the package leaves out stops the installed app at start (16 Oct: preferences.cjs, provider-keys.mjs).
+// A file the app imports but the package leaves out stops the installed app at start (16 Oct: preferences.cjs, provider-keys.mts).
 test('the package holds every local file its entry points import', async () => {
   const root = fileURLToPath(new URL('../', import.meta.url)), seen = new Set<string>(), pending = ['desktop/main.cjs', 'desktop/preload.cjs', 'desktop/runtime.mjs', 'bridge/server.mjs', 'bridge/client.mts'];
   while (pending.length) {

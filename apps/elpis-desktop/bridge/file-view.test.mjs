@@ -8,7 +8,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { execFile } from 'node:child_process';
 import { BridgeError } from './client.mts';
-import { listDirectory, readFile, writeFile, searchFiles } from './files.mjs';
+import { listDirectory, readFile, writeFile, searchFiles } from './files.mts';
 import { startDesktopServer } from './server.mjs';
 
 const tempRoot = await fs.mkdtemp(path.join(os.homedir(), '.cache/elpis-file-view-'));

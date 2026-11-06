@@ -2,7 +2,7 @@ import { BUILT_IN_KEY_PROVIDERS, configHome, providerDefinition } from './provid
 import { BridgeError, object, text, threadId } from './validate.mts';
 import fs from 'node:fs';
 import path from 'node:path';
-import { savedProviderKey } from './provider-keys.mjs';
+import { savedProviderKey } from './provider-keys.mts';
 import { internal_attach } from './client-thread-list.mts';
 import { internal_modelList } from './client-models.mts';
 import { internal_rpc } from './client-connection.mts';

@@ -7,7 +7,7 @@
 // Sign-in: the browser opens `${website}/desktop?callback&state&challenge`, CloudRoom sends it back to a one-use loopback
 // page here with `state` and `code`, and `{ code, verifier }` is redeemed at `${website}/api/desktop/redeem` for the
 // account and its connection: a VM's core URL and token, or a token for per-thread sandboxes, or both.
-// The connection is kept as provider keys are (provider-keys.mjs): one owner-only file in the Elpis home, written to a
+// The connection is kept as provider keys are (provider-keys.mts): one owner-only file in the Elpis home, written to a
 // private temporary file and renamed. Tokens are never returned, logged or put in an error message.
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';

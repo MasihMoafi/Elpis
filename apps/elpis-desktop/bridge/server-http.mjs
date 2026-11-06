@@ -27,7 +27,7 @@ import { AttachmentError } from './attachments.mts';
  *   workflowDispatcher: ReturnType<typeof import('./server-workflows.mjs').createWorkflowDispatcher>,
  *   improvements: () => Promise<Awaited<ReturnType<typeof import('./improve.mjs').createImprovements>>>,
  *   tools: ReturnType<typeof import('./tools.mjs').createTools>,
- *   settingsFiles: ReturnType<typeof import('./settings-files.mjs').createSettingsFiles>,
+ *   settingsFiles: ReturnType<typeof import('./settings-files.mts').createSettingsFiles>,
  *   historyCursors: ReturnType<typeof import('./server-threads.mjs').createHistoryCursors>,
  *   transcription: ReturnType<typeof import('./transcription.mjs').createTranscription>,
  *   voice: ReturnType<typeof import('./voice.mjs').createVoice>,

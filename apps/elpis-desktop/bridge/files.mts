@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { BridgeError } from './client.mts';
-import { projectDirectory, skipped } from './folders.mjs';
+import { projectDirectory, skipped } from './folders.mts';
 import { ATTACHMENT_LIMITS, imageMime } from './attachments.mts';
 
 const MAX_DEPTH = 4;
@@ -9,7 +9,7 @@ const MAX_ENTRIES = 2000;
 
 /** Breadth-first: the project's files (never directories, dot entries or symlinks) as repository-relative paths, each
  * level in name order, so the shallow files survive the cap. */
-async function walkFiles(cwd, maxDepth, maxEntries) {
+async function walkFiles(cwd: string, maxDepth: number, maxEntries: number) {
   const found = [];
   let level = [''];
   for (let depth = 0; depth <= maxDepth && level.length && found.length < maxEntries; depth++) {
@@ -32,9 +32,9 @@ async function walkFiles(cwd, maxDepth, maxEntries) {
 }
 
 /** Read-only: the project's files as repository-relative paths, the @-mention picker's list and the Files pane's find. */
-export async function listFiles(cwd) {
-  await projectDirectory(cwd);
-  return { data: await walkFiles(cwd, MAX_DEPTH, MAX_ENTRIES) };
+export async function listFiles(cwd: unknown) {
+  const root = await projectDirectory(cwd);
+  return { data: await walkFiles(root, MAX_DEPTH, MAX_ENTRIES) };
 }
 
 // The Files pane (components/files-pane.tsx): a tree of one folder at a time, a viewer and editor of one file, a
@@ -46,14 +46,14 @@ const MAX_SEARCHED = 256 * 1024;
 const SEARCH_DEPTH = 8;
 const SEARCH_FILES = 5000;
 const SEARCH_ROWS = 200;
-const within = (child, parent) => child === parent || child.startsWith(parent + path.sep);
-const outside = kind => new BridgeError(`That ${kind} is outside the project.`);
+const within = (child: string, parent: string) => child === parent || child.startsWith(parent + path.sep);
+const outside = (kind: string) => new BridgeError(`That ${kind} is outside the project.`);
 
 /** Where `target` (relative to the project, or absolute) really is, if it is an existing file or folder inside the project. */
-async function inside(cwd, target, kind, root = false) {
-  await projectDirectory(cwd);
+async function inside(cwd: unknown, target: unknown, kind: string, root = false) {
+  const folder = await projectDirectory(cwd);
   if (typeof target !== 'string' || target.length > 4096 || target.includes('\0') || (!target && !root)) throw new BridgeError('path must name a path inside the project');
-  const base = path.resolve(cwd), top = await fs.realpath(cwd), abs = path.resolve(base, target);
+  const base = path.resolve(folder), top = await fs.realpath(folder), abs = path.resolve(base, target);
   const rel = within(abs, base) ? path.relative(base, abs) : within(abs, top) ? path.relative(top, abs) : null;
   if (rel === null) throw outside(kind);
   let real, info;
@@ -70,29 +70,29 @@ async function inside(cwd, target, kind, root = false) {
   return { real, rel: rel.split(path.sep).join('/'), info };
 }
 /** The most recently changed `<folder>/<rel>` file among the project's direct subfolders, still inside the project. */
-async function oneFolderDown(base, top, rel) {
+async function oneFolderDown(base: string, top: string, rel: string) {
   const entries = await fs.readdir(base, { withFileTypes: true }).catch(() => []);
   let best = null;
   for (const entry of entries) {
     if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === 'node_modules') continue;
     const candidate = path.join(base, entry.name, rel);
-    const real = await fs.realpath(candidate).catch(() => null), info = real && await fs.stat(real).catch(() => null);
-    if (!info?.isFile() || !within(real, top)) continue;
+    const real = await fs.realpath(candidate).catch(() => null), info = real ? await fs.stat(real).catch(() => null) : null;
+    if (!real || !info?.isFile() || !within(real, top)) continue;
     if (!best || info.mtimeMs > best.info.mtimeMs) best = { real, rel: path.relative(base, candidate).split(path.sep).join('/'), info };
   }
   return best;
 }
-const byName = (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true }) || (a.name < b.name ? -1 : 1);
+const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true }) || (a.name < b.name ? -1 : 1);
 
 /** Read-only: the entries of one folder (`dir`, relative to the project; '' is the project itself), folders first, each
  * kind in name order. Links are listed and marked. `hidden` adds the dot entries (never .git). */
-export async function listDirectory(cwd, dir = '', hidden = false) {
+export async function listDirectory(cwd: unknown, dir: unknown = '', hidden = false) {
   const { real } = await inside(cwd, dir, 'folder', true);
   const entries = await fs.readdir(real, { withFileTypes: true }).catch(() => { throw new BridgeError('This folder cannot be read.'); });
   const found = [];
   for (const entry of entries) {
     if (skipped(entry.name, hidden)) continue;
-    let kind = entry;
+    let kind: { isDirectory(): boolean; isFile(): boolean } | null = entry;
     if (entry.isSymbolicLink()) { kind = await fs.stat(path.join(real, entry.name)).catch(() => null); if (!kind) continue; }
     if (!kind.isDirectory() && !kind.isFile()) continue;
     found.push({ name: entry.name, dir: kind.isDirectory(), ...(entry.isSymbolicLink() ? { link: true } : {}) });
@@ -102,14 +102,14 @@ export async function listDirectory(cwd, dir = '', hidden = false) {
 }
 
 /** Only passive raster images and PDFs are served as assets. SVG stays source code. */
-const IMAGE_TYPES = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' };
-const previewType = real => path.extname(real).toLowerCase() === '.pdf' ? 'pdf' : IMAGE_TYPES[path.extname(real).toLowerCase()] ? 'image' : null;
-const assetMime = (real, bytes) => previewType(real) === 'pdf'
+const IMAGE_TYPES: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' };
+const previewType = (real: string) => path.extname(real).toLowerCase() === '.pdf' ? 'pdf' : IMAGE_TYPES[path.extname(real).toLowerCase()] ? 'image' : null;
+const assetMime = (real: string, bytes: Buffer) => previewType(real) === 'pdf'
   ? /^%PDF-\d\.\d\b/.test(bytes.subarray(0, 12).toString('ascii')) ? 'application/pdf' : null
   : imageMime(bytes) === IMAGE_TYPES[path.extname(real).toLowerCase()] ? imageMime(bytes) : null;
 
 /** Read-only metadata for documents/pictures, or text for the source editor. The asset route rechecks path and type. */
-export async function readFile(cwd, target) {
+export async function readFile(cwd: unknown, target: unknown) {
   const { real, rel, info } = await inside(cwd, target, 'file');
   const preview = previewType(real), limit = MAX_PREVIEW;
   if (info.size > limit) return { path: rel, tooLarge: true, size: info.size, limit };
@@ -122,7 +122,7 @@ export async function readFile(cwd, target) {
 }
 
 /** An authenticated preview response can contain no active HTML, SVG, script or arbitrary file bytes. */
-export async function readFileAsset(cwd, target) {
+export async function readFileAsset(cwd: unknown, target: unknown) {
   const { real, info } = await inside(cwd, target, 'file');
   if (!previewType(real)) throw new BridgeError('This file has no document or image preview.');
   if (info.size > MAX_PREVIEW) throw new BridgeError('This preview is larger than 30 MB.', 413);
@@ -135,7 +135,7 @@ export async function readFileAsset(cwd, target) {
 
 /** Saves `content` over an existing file, unless the file changed on disk since it was read (`mtimeMs`). It never creates a
  * file, follows no link out of the project and leaves .git alone. */
-export async function writeFile(cwd, target, content, mtimeMs) {
+export async function writeFile(cwd: unknown, target: unknown, content: unknown, mtimeMs: unknown) {
   if (typeof content !== 'string') throw new BridgeError('content must be text');
   if (typeof mtimeMs !== 'number' || !Number.isFinite(mtimeMs)) throw new BridgeError('mtimeMs must be the time the file was read');
   const { real, rel, info } = await inside(cwd, target, 'file');
@@ -147,15 +147,15 @@ export async function writeFile(cwd, target, content, mtimeMs) {
 }
 
 /** Read-only: the lines of the project's text files that hold `query` (ignoring case), by path then line, at most 200. */
-export async function searchFiles(cwd, query) {
-  await projectDirectory(cwd);
+export async function searchFiles(cwd: unknown, query: unknown) {
+  const root = await projectDirectory(cwd);
   if (typeof query !== 'string' || !query || query.length > 200) throw new BridgeError('Search must contain 1 through 200 characters');
   const needle = query.toLowerCase(), rows = [];
-  const files = (await walkFiles(cwd, SEARCH_DEPTH, SEARCH_FILES)).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const files = (await walkFiles(root, SEARCH_DEPTH, SEARCH_FILES)).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   let truncated = false;
   for (let at = 0; at < files.length && !truncated; at += 16) {
     const texts = await Promise.all(files.slice(at, at + 16).map(async file => {
-      const full = path.join(cwd, file), info = await fs.stat(full).catch(() => null);
+      const full = path.join(root, file), info = await fs.stat(full).catch(() => null);
       if (!info || info.size > MAX_SEARCHED) return null;
       const bytes = await fs.readFile(full).catch(() => null);
       return !bytes || bytes.subarray(0, 8000).includes(0) ? null : bytes.toString('utf8');

@@ -1,9 +1,10 @@
 import { speechChunks } from './client.mts';
 
 /** Incremental prose only. Ambiguous fence prefixes stay private, even across a timer flush. */
-export function createSentenceBuffer(emit) {
-  let raw = '', prose = '', pending = '', fence = '', depth = 0, quoted = false, escaped = false, ended = false, timer;
-  const deliver = text => { for (const chunk of speechChunks(text)) if (chunk.trim()) emit(chunk); };
+export function createSentenceBuffer(emit: (text: string) => void) {
+  let raw = '', prose = '', pending = '', fence = '', depth = 0, quoted = false, escaped = false, ended = false;
+  let timer: NodeJS.Timeout | undefined;
+  const deliver = (text: string) => { for (const chunk of speechChunks(text)) if (chunk.trim()) emit(chunk); };
   function flush(tail = false) {
     clearTimeout(timer); timer = undefined;
     let end = tail || /[.!?؟。！]["'”’)]*$/.test(pending) ? pending.length : pending.search(/\s+\S*$/u);
@@ -12,7 +13,7 @@ export function createSentenceBuffer(emit) {
       deliver(pending.slice(0, end)); pending = pending.slice(end);
     }
   }
-  function add(char) { prose += char; pending += char; }
+  function add(char: string) { prose += char; pending += char; }
   function drain() {
     while (raw) {
       if (fence) {
@@ -20,7 +21,7 @@ export function createSentenceBuffer(emit) {
         if (end < 0) { raw = raw.match(fence[0] === '`' ? /`{1,2}$/ : /~{1,2}$/)?.[0] ?? ''; break; }
         raw = raw.slice(end + fence.length); fence = ''; continue;
       }
-      const char = raw[0];
+      const char = raw[0]!;
       if (depth) {
         raw = raw.slice(1);
         if (escaped) { escaped = false; continue; }
@@ -30,7 +31,7 @@ export function createSentenceBuffer(emit) {
         continue;
       }
       if (char === '`' || char === '~') {
-        const count = raw.match(char === '`' ? /^`+/ : /^~+/)[0].length;
+        const count = raw.match(char === '`' ? /^`+/ : /^~+/)![0].length;
         if (count < 3 && count === raw.length) break;
         raw = raw.slice(count);
         if (count >= 3) fence = char.repeat(3);
@@ -49,11 +50,11 @@ export function createSentenceBuffer(emit) {
       deliver(sentence[0]); pending = pending.slice(sentence[0].length);
     }
     const chunks = speechChunks(pending);
-    if (chunks.length > 1) { for (const chunk of chunks.slice(0, -1)) deliver(chunk); pending = chunks.at(-1); }
+    if (chunks.length > 1) { for (const chunk of chunks.slice(0, -1)) deliver(chunk); pending = chunks.at(-1)!; }
     if (pending && !timer) { timer = setTimeout(() => flush(), 300); timer.unref?.(); }
   }
   return {
-    push(delta) { if (!ended) { raw += delta; drain(); } },
+    push(delta: string) { if (!ended) { raw += delta; drain(); } },
     text: () => prose,
     discard() { clearTimeout(timer); timer = undefined; pending = ''; },
     finish() { if (!ended) { ended = true; flush(true); raw = ''; } },

@@ -15,7 +15,7 @@ test('chat displays local images inside and outside its folder and explains unre
   await fs.writeFile(path.join(cwd, 'relative.png'), PNG);
   await fs.writeFile(path.join(outside, 'face with space.png'), PNG);
   await fs.writeFile(path.join(outside, 'invalid.png'), 'not an image');
-  const { readFileAsset } = await import('../bridge/files.mjs');
+  const { readFileAsset } = await import('../bridge/files.mts');
   const reply = [
     `![Absolute](<${outside}/face with space.png>)`,
     `![File URI](file://${outside}/face%20with%20space.png)`,

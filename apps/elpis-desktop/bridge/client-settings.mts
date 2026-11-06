@@ -1,7 +1,7 @@
 import { BridgeError, object, text } from './validate.mts';
 import { acceptsPastedKey, configHome, privateConfigFile, providerDefinition, providerEdits, providerSettingsSnapshot } from './provider-settings.mjs';
 import { hooksSnapshot, mcpSnapshot, optionEdits, providersSnapshot, settingsSnapshot } from './elpis-features.mjs';
-import { saveProviderKey, savedProviderKey, savedProviderKeyIds } from './provider-keys.mjs';
+import { saveProviderKey, savedProviderKey, savedProviderKeyIds } from './provider-keys.mts';
 
 import { internal_effort } from './client-rewind.mts';
 import { internal_modelList } from './client-models.mts';

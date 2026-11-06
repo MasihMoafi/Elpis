@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { BridgeError } from './client.mts';
-import { listFiles } from './files.mjs';
+import { listFiles } from './files.mts';
 import { startDesktopServer } from './server.mjs';
 
 const files = [
@@ -21,9 +21,9 @@ async function tree() {
   await fs.symlink(path.join(root, 'docs'), path.join(root, 'src/linked-inner'));
   return root;
 }
-async function snapshot(root) {
-  const rows = [];
-  const walk = async dir => {
+async function snapshot(root: string) {
+  const rows: [string, number, number][] = [];
+  const walk = async (dir: string): Promise<void> => {
     for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name), info = await fs.lstat(full);
       rows.push([path.relative(root, full), info.mtimeMs, info.size]);
@@ -66,7 +66,7 @@ test('accepts a project path that is itself a symlink without following links in
 
 test('refuses a missing, relative or non-directory cwd with a 400 BridgeError', async t => {
   const root = await tree(); t.after(() => fs.rm(root, { recursive: true, force: true }));
-  const refused = async (cwd, message) => assert.rejects(listFiles(cwd), error => error instanceof BridgeError && error.status === 400 && message.test(error.message));
+  const refused = async (cwd: unknown, message: RegExp) => assert.rejects(listFiles(cwd), error => error instanceof BridgeError && error.status === 400 && message.test(error.message));
   await refused(undefined, /cwd/i); await refused('', /cwd/i); await refused(42, /cwd/i);
   await refused('relative/path', /absolute/i);
   await refused(path.join(root, 'nope'), /existing directory/i);
@@ -78,14 +78,15 @@ test('GET /api/files requires the session and answers { data } or a 400 message'
   const client = { on() {}, off() {}, close() {}, connected: true, pendingApprovals: [], ragEnvironment: async () => ({}) };
   const app = await startDesktopServer({ client, staticDir: root }); t.after(() => app.close());
   const url = new URL(app.url), origin = url.origin, token = new URLSearchParams(url.hash.slice(1)).get('token');
-  const query = cwd => `/api/files?cwd=${encodeURIComponent(cwd)}`;
+  const query = (cwd: string) => `/api/files?cwd=${encodeURIComponent(cwd)}`;
   assert.equal((await fetch(origin + query(root))).status, 401);
   const auth = await fetch(origin + '/api/session', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin }, body: JSON.stringify({ token }) });
-  const cookie = auth.headers.get('set-cookie').split(';')[0];
-  const get = pathname => fetch(origin + pathname, { headers: { Cookie: cookie } });
+  const setCookie = auth.headers.get('set-cookie'); assert.ok(setCookie);
+  const cookie = setCookie.split(';')[0]!;
+  const get = (pathname: string) => fetch(origin + pathname, { headers: { Cookie: cookie } });
   const ok = await get(query(root));
   assert.equal(ok.status, 200); assert.deepEqual(await ok.json(), { data: EXPECTED });
-  const bad = async (pathname, message) => { const response = await get(pathname); assert.equal(response.status, 400, pathname); assert.match((await response.json()).error, message); };
+  const bad = async (pathname: string, message: RegExp) => { const response = await get(pathname); assert.equal(response.status, 400, pathname); assert.match((await response.json()).error, message); };
   await bad('/api/files', /cwd/i);
   await bad(query('relative'), /absolute/i);
   await bad(query(path.join(root, 'README.md')), /existing directory/i);

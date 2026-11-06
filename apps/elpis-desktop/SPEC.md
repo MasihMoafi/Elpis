@@ -69,7 +69,7 @@ These are the required behaviors, numbered 1–85 without gaps; refer to one as 
 48. Internal voice-handoff envelopes never appear as chat messages, recalled prompts or exports; ordinary messages that mention them stay visible. (V1)
 49. The realtime speaker delegates questions, tool requests and capability checks to the same agent as typed chat, speaks its answer once and claims only verified account access. (V5, RA12–RA13)
 50. When Matilda speech is available and unmuted, her board and chat replies appear as she writes and speech starts before completion, whichever text provider she uses. Old replies and commentary are not replayed and live-call audio is not duplicated. Board presses and new turns do not cut off her current speech. (RA14)
-51. Streaming speech buffering and queueing are owned by [speech-buffer.mjs](bridge/speech-buffer.mjs) and [voice.mjs](bridge/voice.mjs). (RA15)
+51. Streaming speech buffering and queueing are owned by [speech-buffer.mts](bridge/speech-buffer.mts) and [voice.mjs](bridge/voice.mjs). (RA15)
 52. Speech excludes painting data, hidden reasoning and tools; streaming holds incomplete painting fences. One board note is updated and finalized once; cancelled text is not spoken. (RA16)
 53. When available, one saved Mute control immediately stops Matilda's speech while writing continues. Unmuting speaks new text only; it does not replay old replies. (RA17)
 54. Record time to first audible output, speech characters, session duration and available quota changes for cold and warm read aloud and Matilda speech, without storing words or credentials. (RA20)
