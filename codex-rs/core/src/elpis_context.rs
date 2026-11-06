@@ -718,7 +718,7 @@ fn continuity_sources_with_state(
     for dev_dir in &dev_dirs {
         if let Ok(entries) = std::fs::read_dir(dev_dir) {
             let mut root_files: Vec<(PathBuf, PathBuf)> = entries
-                .filter_map(|entry| entry.ok())
+                .filter_map(Result::ok)
                 .map(|entry| entry.path())
                 .filter(|path| path.extension().is_some_and(|ext| ext == "md"))
                 .filter(|path| {

@@ -364,6 +364,7 @@ fn tool_description(invocation: Option<&Value>) -> String {
                 .map(|code| {
                     // Code Mode wraps shell/file calls in JavaScript. Show their literal
                     // arguments without interpreting or executing the wrapper.
+                    #[expect(clippy::expect_used, reason = "a literal pattern the tests compile")]
                     static ARGUMENTS: std::sync::LazyLock<regex_lite::Regex> = std::sync::LazyLock::new(|| {
                         regex_lite::Regex::new(r#"\b(?:cmd|command|path|file_path)["']?\s*:\s*("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')"#).expect("literal argument pattern")
                     });

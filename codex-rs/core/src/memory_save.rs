@@ -420,7 +420,7 @@ impl MemorySnapshot {
                 .checkpoint
                 .as_deref()
                 .into_iter()
-                .flat_map(|text| evidence_citations(text)),
+                .flat_map(evidence_citations),
         ) {
             anyhow::ensure!(
                 evidence_ids.contains(citation)

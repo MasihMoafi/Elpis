@@ -317,8 +317,8 @@ pub(crate) async fn prepare_work_graph(
 ) -> Result<PreparedWorkGraph, FunctionCallError> {
     let args: RunAgentWorkGraphArgs = parse_arguments(arguments)?;
     validate_runner_args(&args)?;
-    let db = required_state_db(&session)?;
-    let mut options = build_runner_options(&session, &step_context, &args).await?;
+    let db = required_state_db(session)?;
+    let mut options = build_runner_options(session, step_context, &args).await?;
     let selections = options.environments.clone();
     let default_environment = selections.first().ok_or_else(|| {
         FunctionCallError::RespondToModel(
@@ -1121,7 +1121,7 @@ async fn cancel_running_graph(
     active: &mut HashMap<ThreadId, ActiveTask>,
     isolation: Option<&WorktreeIsolation>,
 ) -> anyhow::Result<()> {
-    for thread_id in active.keys().copied().collect::<Vec<_>>() {
+    for thread_id in active.keys().copied() {
         let _ = local_control(&session).shutdown_live_agent(thread_id).await;
     }
     active.clear();

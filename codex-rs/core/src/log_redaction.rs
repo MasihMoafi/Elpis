@@ -1,4 +1,8 @@
 //! Redact disposable logs and audits, never the model's working input.
+#![expect(
+    clippy::expect_used,
+    reason = "the patterns are literals the tests compile, capture 0 always exists and a String always serializes"
+)]
 
 use std::sync::LazyLock;
 

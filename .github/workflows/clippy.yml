@@ -63,7 +63,7 @@ jobs:
         run: bash scripts/restore-cargo-cache-source-times.sh "$CACHE_KEY"
       - name: cargo clippy (core, UI, CLI, app server and their tests)
         working-directory: codex-rs
-        run: cargo clippy --locked --tests -p codex-core -p codex-tui -p codex-cli -p codex-app-server
+        run: cargo clippy --locked --keep-going --tests -p codex-core -p codex-tui -p codex-cli -p codex-app-server
       - name: Retain compiler outputs
         if: always() && steps.cargo_cache.outputs.cache-hit != 'true' && steps.cargo_cache.outputs.cache-primary-key != ''
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
