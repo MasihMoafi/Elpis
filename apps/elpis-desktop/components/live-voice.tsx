@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { api, sessionReady } from "@/lib/api";
+import { errorText } from "@/lib/error-text.mjs";
 
 type Heard = { events: Record<string, number>; bytes: number; packets: number; energy: number; mic: number; listened: boolean; began: number };
 type Call = { threadId: string; controller: AbortController; peer: RTCPeerConnection | null; stream: MediaStream | null; audio: HTMLAudioElement | null; timer: ReturnType<typeof setTimeout> | null; sampler: ReturnType<typeof setInterval> | null; heard: Heard };
@@ -148,7 +149,7 @@ export function LiveVoiceProvider({ children }: { children: ReactNode }) {
       if (call.current === current) end("The voice call ended.");
     } catch (cause) {
       if (call.current !== current) return;
-      end(cause instanceof DOMException && cause.name === "NotAllowedError" ? "Microphone access was denied. Allow it and try again." : cause instanceof Error ? cause.message : "Voice could not start.");
+      end(cause instanceof DOMException && cause.name === "NotAllowedError" ? "Microphone access was denied. Allow it and try again." : errorText(cause, "Voice could not start."));
     }
   }
   const value: LiveVoice = {

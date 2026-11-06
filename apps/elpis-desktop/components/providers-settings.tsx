@@ -12,6 +12,7 @@ import { RefreshButton, SettingsHeader, SettingsNotice } from "@/components/sett
 import { ClaudeAccountsSettings } from "@/components/claude-accounts-settings";
 
 import { useProviderUsage, type ConfiguredProvider as Configured, type Subscription } from "@/components/provider-usage";
+import { errorText } from "@/lib/error-text.mjs";
 // `gateway`: a route the engine serves through its own gateway (such as the Anthropic credits), not a server the user added.
 type ProviderConfig = { id: string; name: string; baseUrl: string | null; wireApi: string; editable: boolean; gateway?: boolean; auth: { source: string; keySet: boolean; envKey: string | null } };
 type ProviderConfigs = { application?: { scope: string; message: string; credentialClearMessage: string }; version: string | null; configPath: string | null; write: { available: boolean; reason?: string | null }; managed: { modelProvider: string | null }; providers: ProviderConfig[] };
@@ -44,7 +45,7 @@ function CloudroomCard() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const load = useCallback(async () => { setData(await api<Cloudroom>("/providers/cloudroom")); }, []);
-  useEffect(() => { void load().catch(e => setError(e instanceof Error ? e.message : String(e))); }, [load]);
+  useEffect(() => { void load().catch(e => setError(errorText(e))); }, [load]);
   useEffect(() => {
     if (!data?.signingIn) return;
     const timer = setInterval(() => { void load().catch(() => {}); }, 1500);
@@ -59,7 +60,7 @@ function CloudroomCard() {
         if (window.elpisDesktop?.browser) await window.elpisDesktop.browser.command("external-url", { url: next.url });
         else window.open(next.url, "_blank", "noopener");
       }
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    } catch (e) { setError(errorText(e)); }
     finally { setBusy(false); }
   }
   const vm = data?.vm;
@@ -100,7 +101,7 @@ export function ProvidersSettings({ refreshKey, onChanged }: { refreshKey: numbe
       const id = providerFormId({ type: editing.type, name: editing.name, ...(editing.existing ? { existingId: editing.id } : {}) }, config.providers.map(provider => provider.id));
       const saved = await api<ProviderConfigs>("/providers/settings", { version: config.version, id, name: editing.name.trim(), baseUrl: editing.baseUrl.trim(), credential: { action: editing.credential, ...(editing.credential === "replace" ? { value: editing.secret } : {}) } });
       setEditing(null); await load(); await onChanged?.(); setNotice(saved.application?.message ?? "Saved for new conversations and agents. Existing conversations keep their current provider settings.");
-    } catch (e) { const fresh = await api<ProviderConfigs>("/providers/settings").catch(() => null); if (fresh && Array.isArray(fresh.providers)) setConfig(fresh); setError(e instanceof Error ? e.message : String(e)); }
+    } catch (e) { const fresh = await api<ProviderConfigs>("/providers/settings").catch(() => null); if (fresh && Array.isArray(fresh.providers)) setConfig(fresh); setError(errorText(e)); }
     finally { setSaving(false); }
   }
   useEffect(() => { void loadConfig(); setWaiting(false); }, [loadConfig, refreshKey]);
@@ -111,7 +112,7 @@ export function ProvidersSettings({ refreshKey, onChanged }: { refreshKey: numbe
       if (result.authUrl) { window.open(result.authUrl, "_blank", "noopener"); setWaiting(true); } else await load();
       // Elpis's own Anthropic sign-out: the model picker follows at once, as the usage store did in load().
       if (action.startsWith("anthropic")) await onChanged?.();
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    } catch (e) { setError(errorText(e)); }
     finally { setBusy(false); }
   }
   const custom = config && data ? config.providers.filter(provider => provider.id !== "openai" && provider.auth.source !== "subscription" && !provider.gateway && !data.openrouter.some(item => item.id === provider.id)) : [];

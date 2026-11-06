@@ -5,6 +5,7 @@ import { AlertDialog, AlertDialogContent, AlertDialogTitle, AlertDialogDescripti
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import type { Attachment } from "@/lib/attachments";
+import { errorText } from "@/lib/error-text.mjs";
 
 type Review = { path: string; quote: string; instruction: string };
 export type ReviewAction = "mark" | "edit" | "remove";
@@ -23,7 +24,7 @@ export function DocumentReviewProvider({ onAttach, children }: { onAttach: (part
     try {
       const ok = await onAttach([{ id: crypto.randomUUID(), name: `Feedback on ${draft.path.split("/").pop()}`, type: "text", mimeType: "text/plain", text: `Document feedback\nFile: ${draft.path}\n\n${draft.quote ? `Selected passage:\n${draft.quote}\n\n` : ""}Instructions:\n${draft.instruction}` }]);
       if (ok) setDraft(null); else setError("The feedback could not be added. Your notes are kept here.");
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not add feedback."); }
+    } catch (cause) { setError(errorText(cause, "Could not add feedback.")); }
     finally { setPending(false); }
   }
   return <ReviewContext.Provider value={open}>{children}<AlertDialog open={!!draft} onOpenChange={value => { if (!value && !pending) setDraft(null); }}>

@@ -13,6 +13,7 @@ import { CustomizePlugins, type ConfigWrite, type Plugin, type PluginChange } fr
 import { ConfirmDelete } from "@/components/confirm-delete";
 import { Segmented, SettingsEmpty, SettingsNotice } from "@/components/settings/rows";
 import { api, unreadable } from "@/lib/api";
+import { errorText } from "@/lib/error-text.mjs";
 
 /** Claude's Customize page (its /customize: Skills, Plugins and Connectors, each with "Your …" and Add) over what
  * Elpis has: the skills it finds for the project, the plugins installed, and gh and MCP servers as connectors
@@ -32,7 +33,7 @@ function readCustomize(data: Customize): Customize {
 }
 
 const SCOPE: Record<Skill["scope"], string> = { user: "Yours", repo: "This project", system: "Built in", admin: "Admin" };
-const message = (error: unknown) => error instanceof Error ? error.message : String(error);
+const message = (error: unknown) => errorText(error);
 const folderOf = (path: string) => path.split("/").slice(0, -1).join("/") || "/";
 const skillOrigin = (skill: Skill) => skill.plugin ? `From plugin ${skill.plugin.split("@")[0]}` : skill.scope === "system" ? "Built in with Elpis" : skill.scope === "admin" ? "Managed by your system administrator" : "Protected skill";
 const skillProtection = (skill: Skill) => `${folderOf(skill.path)}. This skill can be turned off instead.`;

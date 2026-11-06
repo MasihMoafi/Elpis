@@ -6,6 +6,7 @@ import { Switch } from "@/components/ui/switch";
 import { notificationPermission, playChime, requestNotificationPermission, sendTestNotification, type NotificationPermissionState } from "@/lib/notifications";
 import { savePreferences, usePreferences, type Preferences } from "@/lib/preferences";
 import { Choice, Segmented, SettingRow, SettingsGroup, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
+import { errorText } from "@/lib/error-text.mjs";
 
 const PERMISSION: Record<NotificationPermissionState, { label: string; tone: string; description: string }> = {
   granted: { label: "Allowed", tone: "ok", description: "Elpis can show system notifications." },
@@ -19,7 +20,7 @@ export function NotificationSettings() {
   const [permission, setPermission] = useState<NotificationPermissionState>("unsupported");
   const [notice, setNotice] = useState("");
   useEffect(() => { setPermission(notificationPermission()); }, []);
-  const save = (patch: Partial<Preferences>) => { setNotice(""); try { savePreferences(patch); } catch (cause) { setNotice(`Could not save this preference: ${cause instanceof Error ? cause.message : String(cause)}`); } };
+  const save = (patch: Partial<Preferences>) => { setNotice(""); try { savePreferences(patch); } catch (cause) { setNotice(`Could not save this preference: ${errorText(cause)}`); } };
   const state = PERMISSION[permission];
   return <div aria-label="Notifications">
     <SettingsHeader title="Notifications" description="Alerts for chats in this app. Saved on this device." />

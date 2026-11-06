@@ -12,6 +12,7 @@ import { DevServerPreview } from "@/components/dev-server-preview";
 import { heldDrawing, holdDrawing, type DrawingDraft } from "@/lib/browser-drawing-store";
 import type { MenuAction } from "@/components/action-menu";
 import type { BrowserCommand, BrowserState, BrowserTab, DesktopBrowser } from "@/lib/desktop";
+import { errorText } from "@/lib/error-text.mjs";
 
 /** The desktop's built-in browser: tabs and pages live in the Electron main process. */
 export function useBrowser(sessionId: string) {
@@ -37,7 +38,7 @@ export function useBrowser(sessionId: string) {
   }), [desktopApi, sessionId]);
   const command = useCallback(async (action: string, data?: BrowserCommand) => {
     if (!api) return undefined; setError("");
-    try { return await api.command(action, data); } catch (e) { if (current.current === sessionId) setError(e instanceof Error ? e.message : String(e)); return undefined; }
+    try { return await api.command(action, data); } catch (e) { if (current.current === sessionId) setError(errorText(e)); return undefined; }
   }, [api, sessionId]);
   const closeSession = useCallback((id: string) => { if (desktopApi?.sessionScoped) void desktopApi.command("sessionClose", { sessionId: id }).catch(e => setError(e.message)); }, [desktopApi]);
   const adoptSession = useCallback(async (from: string, to: string) => { if (desktopApi?.sessionScoped) await desktopApi.command("sessionAdopt", { fromSessionId: from, sessionId: to }); }, [desktopApi]);
@@ -117,7 +118,7 @@ export function BrowserPanel({ browser, covered, onAttach, imagesAllowed = true,
       const image = (await api.command("screenshot", { value: "attach" })).result?.image;
       if (!image) throw Error("The page could not be captured.");
       setDrawing({ shot: image, url: active.url, title: active.title, ...await measure(image) });
-    } catch (e) { setDrawFailure(e instanceof Error ? e.message : String(e)); }
+    } catch (e) { setDrawFailure(errorText(e)); }
     finally { setCapturing(false); }
   }
   const drawingBlocked = !onAttach ? "Drawing needs a chat to add to" : !imagesAllowed ? "This model does not accept images" : "";

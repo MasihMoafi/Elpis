@@ -7,6 +7,7 @@ import { OptionSelect } from "@/components/ui/option-select";
 import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { api, unreadable, type Model } from "@/lib/api";
 import { SettingRow, SettingsActions, SettingsGroup, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
+import { errorText } from "@/lib/error-text.mjs";
 
 type Backend = "openrouter" | "codex" | "local";
 /** "auto" saves no explicit engine: the bridge then uses the ChatGPT sign-in while Elpis is signed in to ChatGPT, else Local. */
@@ -18,7 +19,7 @@ function readVoice(data: VoiceConfig): VoiceConfig {
   if (!Array.isArray(data.servers)) throw unreadable("voice settings");
   return data;
 }
-const message = (e: unknown) => e instanceof Error ? e.message : String(e);
+const message = (e: unknown) => errorText(e);
 const FALLBACK_NOTE: Record<Fallback, string> = {
   auto: "Uses the ChatGPT sign-in while Elpis is signed in to ChatGPT, otherwise Local WhisperType.",
   local: "Audio stays on this computer. Uses your installed WhisperType model.",

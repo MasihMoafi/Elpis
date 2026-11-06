@@ -136,6 +136,7 @@ import { useWorkspaceNotices } from "@/lib/use-workspace-notices";
 import { useSidebarSearch } from "@/lib/use-sidebar-search";
 import { WorkspaceNotices } from "@/components/workspace-notices";
 import { without } from "@/lib/utils";
+import { errorText } from "@/lib/error-text.mjs";
 import { refreshModelCatalog, useModelCatalog } from "@/lib/model-catalog";
 
 
@@ -312,7 +313,7 @@ export default function Home() {
       if (read.added.length) { saveAttachments(owner, fit.kept); if ((selectedRef.current?.id || newDraftKey.current) === owner) setAttachments(fit.kept); }
       if (read.problems.length || fit.problems.length) throw Error([...read.problems, ...fit.problems].join("\n"));
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
+      const message = errorText(cause);
       if ((selectedRef.current?.id || newDraftKey.current) === owner) setFileNotice(message);
       else setRuntimeNotices(previous => ({ ...previous, [owner]: message }));
     } finally { readingFiles.current = false; setAttaching(false); }
@@ -324,7 +325,7 @@ export default function Home() {
       const fit = fitAttachments(savedAttachments(owner), parts);
       if (fit.problems.length) throw Error(fit.problems.join("\n"));
       saveAttachments(owner, fit.kept); setAttachments(fit.kept); setFileNotice("");
-    } catch (cause) { setFileNotice(cause instanceof Error ? cause.message : String(cause)); showChat(); return false; }
+    } catch (cause) { setFileNotice(errorText(cause)); showChat(); return false; }
     showChat();
     if (submit) await send(); else requestAnimationFrame(() => composerRef.current?.focus());
     return true;
@@ -341,6 +342,8 @@ export default function Home() {
   const [plans, setPlans] = useState<Record<string, TaskPlan>>({});
   // A fast turn can finish over SSE before its HTTP start response arrives.
   const completedTurns = useRef(new Set<string>());
+  /** A turn this app started or steered is running, unless its end already arrived. */
+  const markTurnStarted = (threadId: string, turnId: string) => { if (!completedTurns.current.has(turnId)) setActiveTurns(prev => ({ ...prev, [threadId]: turnId })); };
   // A resume snapshot must not overwrite a turn event that arrived while it was being read.
   const turnRevisions = useRef<Record<string, number>>({});
   /** Bumped by each engine settings announcement, so an older resume answer never replaces a newer mode. */
@@ -427,6 +430,11 @@ export default function Home() {
   const initialRestoration = useRef<{ threadId: string; promise: Promise<void> } | null>(null);
   const liveRevision = useRef(0), liveVersions = useRef(new Map<string, number>());
   const liveKeysAfter = useCallback((revision: number) => new Set([...liveVersions.current].filter(([, version]) => version > revision).map(([key]) => key)), []);
+  /** A page of a chat's history on screen: merged with live items newer than `revision`, its cursor and gap noted. */
+  const applyHistoryPage = useCallback((id: string, page: HistoryPage, revision: number) => {
+    setEntries(previous => mergeHistoryWithLive(previous, inReadingOrder(page), liveKeysAfter(revision))); setItemCursor(page.nextCursor);
+    noteHistoryGap(id, page); heldEarlier.current.delete(id);
+  }, [liveKeysAfter, noteHistoryGap]);
 
   const select = useCallback((thread: Thread | null) => {
     const launch = new URL(window.location.href);
@@ -532,7 +540,7 @@ export default function Home() {
     try {
       const result = await api<HistoryPage & { thread: Thread }>(historyPath(thread.id)); if (!Array.isArray(result.data)) throw unreadable("conversations"); if (!result.thread || typeof result.thread.id !== "string") throw unreadable("conversation");
       if (request.current !== id) return;
-      select(remember(result.thread)); setEntries(previous => mergeHistoryWithLive(previous, inReadingOrder(result), liveKeysAfter(historyRevision))); setItemCursor(result.nextCursor); noteHistoryGap(thread.id, result); heldEarlier.current.delete(thread.id);
+      select(remember(result.thread)); applyHistoryPage(thread.id, result, historyRevision);
       // The engine lists a chat's items only once it has loaded the chat; until then a saved chat reads as empty. Like
       // the Codex TUI, which resumes before it reads history, read it again once the resume below has loaded it.
       unread = !result.data.length && !result.nextCursor;
@@ -558,10 +566,10 @@ export default function Home() {
       if (turnRevisions.current[thread.id] === turnRevision) reconcileLiveThread(thread.id, live);
       if (unread || live.thread?.canAcceptDirectInput === false) {
         const again = await api<HistoryPage>(historyPath(thread.id));
-        if (request.current === id && Array.isArray(again.data)) { setEntries(previous => mergeHistoryWithLive(previous, inReadingOrder(again), liveKeysAfter(historyRevision))); setItemCursor(again.nextCursor); noteHistoryGap(thread.id, again); heldEarlier.current.delete(thread.id); }
+        if (request.current === id && Array.isArray(again.data)) { applyHistoryPage(thread.id, again, historyRevision); }
       }
-    } catch (e) { if (request.current === id) setLiveError(prev => ({ ...prev, [thread.id]: e instanceof Error ? e.message : String(e) })); }
-  }, [select, setText, reconcileLiveThread, rememberFollowing, saveDraft, savedDraft, liveKeysAfter, restoreAttachments, updateTabs, markRead, noteHistoryGap]);
+    } catch (e) { if (request.current === id) setLiveError(prev => ({ ...prev, [thread.id]: errorText(e) })); }
+  }, [select, setText, reconcileLiveThread, rememberFollowing, saveDraft, savedDraft, liveKeysAfter, applyHistoryPage, restoreAttachments, updateTabs, markRead, noteHistoryGap]);
 
   // Navigation to the visible chat preserves its live transcript, draft and scroll. Explicit reloads still use loadThread.
   const openThread = useCallback(async (thread: Thread) => {
@@ -573,7 +581,7 @@ export default function Home() {
 
   useEffect(() => {
     try { const stored = readProjects(); newDraftKey.current = "new"; setText(savedDraft(newDraftKey.current)); restoreAttachments(newDraftKey.current); setProjects(stored.projects); setWorkflowProjectId(stored.selectedId); const memberships = readProjectChats(); projectChatsRef.current = memberships; setProjectChats(memberships); }
-    catch (e) { setError(e instanceof Error ? e.message : "Could not restore workspace preferences."); }
+    catch (e) { setError(errorText(e, "Could not restore workspace preferences.")); }
     const restored = restoreTabs(), shown = restored && activeTab(restored);
     if (shown && !shown.threadId && shown.draftKey) { newDraftKey.current = shown.draftKey; setText(savedDraft(shown.draftKey)); restoreAttachments(shown.draftKey); }
   }, []);
@@ -635,7 +643,7 @@ export default function Home() {
         // History and resume are independent: a refused history read must not leave a finished turn running.
         const history = thread?.id === id ? (async () => {
           const result = await api<HistoryPage & { thread: Thread }>(historyPath(id));
-          if (shown()) { setEntries(previous => mergeHistoryWithLive(previous, inReadingOrder(result), liveKeysAfter(historyRevision))); setItemCursor(result.nextCursor); noteHistoryGap(id, result); heldEarlier.current.delete(id); }
+          if (shown()) { applyHistoryPage(id, result, historyRevision); }
           return !result.data.length && !result.nextCursor;
         })() : Promise.resolve(false);
         const resume = (async () => {
@@ -650,7 +658,7 @@ export default function Home() {
         // A saved chat reads as empty until the resume has loaded it (see loadThread): read it again.
         if (results[0].status === "fulfilled" && results[0].value && results[1].status === "fulfilled" && shown()) {
           const again = await api<HistoryPage>(historyPath(id)).catch(() => null);
-          if (again && Array.isArray(again.data) && shown()) { setEntries(previous => mergeHistoryWithLive(previous, inReadingOrder(again), liveKeysAfter(historyRevision))); setItemCursor(again.nextCursor); noteHistoryGap(id, again); heldEarlier.current.delete(id); }
+          if (again && Array.isArray(again.data) && shown()) { applyHistoryPage(id, again, historyRevision); }
         }
         const failed = results.find(result => result.status === "rejected");
         if (failed?.status === "rejected") setLiveError(previous => ({ ...previous, [id]: failed.reason instanceof Error ? failed.reason.message : String(failed.reason) }));
@@ -790,12 +798,12 @@ export default function Home() {
           retryDelay = Math.min(retryDelay * 2, 10000);
         } else {
           setConnectionStatus("Elpis could not connect. Your draft is saved.");
-          setError(e instanceof Error ? e.message : String(e));
+          setError(errorText(e));
         }
       }
     }
     initialize(); return () => { disposed = true; clearTimeout(retryTimer); events?.close(); };
-  }, [refreshThreads, patchThread, upsertThread, removeThreads, select, liveKeysAfter, clearApprovalDraft, refreshModels, reconcileLiveThread, rememberFollowing, noteHistoryGap]);
+  }, [refreshThreads, patchThread, upsertThread, removeThreads, select, liveKeysAfter, applyHistoryPage, clearApprovalDraft, refreshModels, reconcileLiveThread, rememberFollowing, noteHistoryGap]);
 
   const loadChildren = useCallback(async (id: string, cursor?: string, expand = false) => {
     if (childPaging.current.has(id)) return;
@@ -988,7 +996,7 @@ export default function Home() {
           await loadThread(result.thread);
           requestAnimationFrame(() => composerRef.current?.focus());
         }
-      } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+      } catch (cause) { setError(errorText(cause)); }
       return;
     }
     if (previous) { setCwd(previous.cwd || cwd); setProjectId(projectChatsRef.current[previous.id] ?? projectId); }
@@ -1111,7 +1119,7 @@ export default function Home() {
       const chosen = await chooseProject(projects);
       if (chosen === undefined) setProjectEdit(null);
       else if (chosen) await (projects.some(item => item.id === chosen.id) ? selectProject(chosen) : saveProject(chosen));
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    } catch (e) { setError(errorText(e)); }
   }
   /** Moves the open chat to a project's folder (A26): its next turns run there; earlier turns keep theirs. */
   async function moveChat(target: Project | null) {
@@ -1122,13 +1130,13 @@ export default function Home() {
   /** The chip's "Choose folder…": the native chooser, then the move; cancelling moves nothing. */
   async function moveChatToFolder() {
     try { const chosen = await chooseProject(projects); if (chosen) await moveChat(chosen); }
-    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    catch (e) { setError(errorText(e)); }
   }
   /** Forgets the project; its folder and chats stay as they are. */
   async function removeProject(item: Project) {
     const updated = projects.filter(other => other.id !== item.id), current = projectId === item.id ? null : projectId;
     try { await saveProjects(updated, current); setProjects(updated); if (!current) { setProjectId(null); setCwd(""); } }
-    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    catch (e) { setError(errorText(e)); }
   }
   const show = (next: View) => { if (next !== "chat") side.toggleFull(false); if (next === "settings") { setSettingsVisited(true); setSettingsNavigation(value => value + 1); } setView(next); setSidebar(false); };
   // A click on the screenshot thumbnail puts the screenshots on the Love Spot page already open, below what is there, in the
@@ -1137,7 +1145,7 @@ export default function Home() {
     void (async () => {
       for (const id of ids) await api("/love-spot/screenshots", { id, action: "place" });
       show("loveSpot");
-    })().catch(cause => setError(cause instanceof Error ? cause.message : "The screenshots could not open in Love Spot."));
+    })().catch(cause => setError(errorText(cause, "The screenshots could not open in Love Spot.")));
   });
   const manageConnections = () => { setSettingsSection("providers"); show("settings"); };
   /** ChatGPT's "Fork chat from here": a new chat with the history through that turn, opened at once. */
@@ -1149,7 +1157,7 @@ export default function Home() {
       await loadThread(result.thread);
       if (selectedRef.current?.id === result.thread.id) restoreComposerFocus(originalFocus);
     }
-    catch (error) { setError(error instanceof Error ? error.message : String(error)); }
+    catch (error) { setError(errorText(error)); }
   }
   async function continueHere(thread: Thread) {
     const originalRequest = request.current;
@@ -1159,7 +1167,7 @@ export default function Home() {
       if (!result.thread?.id) throw unreadable("continued chat");
       upsertThread(result.thread);
       if (request.current === originalRequest && selectedRef.current?.id === thread.id) await loadThread(result.thread);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    } catch (cause) { setError(errorText(cause)); }
     finally { setBusy(false); }
   }
   /** What a reopened chat reports about its approval mode and Plan mode. It is applied even when the chat's status
@@ -1186,8 +1194,8 @@ export default function Home() {
       const result = await api<{ turn?: { id: string } }>(`/threads/${encodeURIComponent(thread.id)}/turns`, implement ? { text: IMPLEMENT_PLAN, mode: "default" } : { text: feedback });
       if (!result.turn?.id) throw new Error("Elpis did not acknowledge the new turn. Check the conversation before retrying.");
       if (implement) { setThreadPlans(prev => ({ ...prev, [thread.id]: false })); setNextTurn(prev => { const { plan: _, ...rest } = prev[thread.id] ?? {}; return Object.keys(rest).length ? { ...prev, [thread.id]: rest } : without(prev, thread.id); }); }
-      if (!completedTurns.current.has(result.turn.id)) setActiveTurns(prev => ({ ...prev, [thread.id]: result.turn!.id }));
-    } catch (e) { setPlanAnswered(prev => without(prev, thread.id)); setError(e instanceof Error ? e.message : String(e)); }
+      markTurnStarted(thread.id, result.turn!.id);
+    } catch (e) { setPlanAnswered(prev => without(prev, thread.id)); setError(errorText(e)); }
     finally { if (request.current === originalRequest && selectedRef.current?.id === thread.id) restoreComposerFocus(originalFocus); }
   }
   /** A chat's permission mode changes now, as the terminal's /permissions does: the engine applies it to the
@@ -1210,7 +1218,7 @@ export default function Home() {
     try {
       const result = await api<{ permissions: PermissionMode }>(`/threads/${encodeURIComponent(id)}/permissions`, { permissions: mode });
       modeRevisions.current[id] = (modeRevisions.current[id] ?? 0) + 1; setThreadModes(prev => ({ ...prev, [id]: result.permissions }));
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    } catch (e) { setError(errorText(e)); }
     finally { setChangingPermissions(false); }
   }
   /** A chat's effort is saved the moment it is picked (menu, /effort, Shift+Up/Down): later turns, a restart and a
@@ -1222,7 +1230,7 @@ export default function Home() {
     const apply = (reasoningEffort: string | null) => { settingsOf.current[id] = { ...settingsOf.current[id], reasoningEffort }; patchThread(id, { reasoningEffort }); };
     apply(value); setError("");
     try { await api(`/threads/${encodeURIComponent(id)}/effort`, { effort: value }); }
-    catch (e) { apply(before); setError(e instanceof Error ? e.message : String(e)); }
+    catch (e) { apply(before); setError(errorText(e)); }
   }
   function setOverride(id: string, patch: NextTurn) {
     const thread = selectedRef.current; if (!thread) return;
@@ -1287,7 +1295,7 @@ export default function Home() {
         // The turn shown as running had ended, so the message started a new one.
         } else if (steered.turn?.id) {
           updateSubmission({ turnId: steered.turn.id, newTurn: true });
-          if (!completedTurns.current.has(steered.turn.id)) setActiveTurns(prev => ({ ...prev, [thread!.id]: steered.turn!.id }));
+          markTurnStarted(thread!.id, steered.turn!.id);
         } else if (steered.turnId && steered.turnId !== activeTurn) {
           updateSubmission({ turnId: steered.turnId });
         }
@@ -1305,7 +1313,7 @@ export default function Home() {
         }
         if (!result.turn?.id) throw new Error("Elpis did not acknowledge the new turn. Check the conversation before retrying.");
         updateSubmission({ turnId: result.turn.id, ...(result.thread ? { scope: result.thread.id } : {}) });
-        if (!completedTurns.current.has(result.turn.id)) setActiveTurns(prev => ({ ...prev, [result.thread?.id || thread!.id]: result.turn!.id }));
+        markTurnStarted(result.thread?.id || thread!.id, result.turn!.id);
         if (used?.plan !== undefined) { setThreadPlans(prev => ({ ...prev, [result.thread?.id || thread!.id]: used.plan! })); if (!selected) setNewPlan(false); }
         if (selected && used) {
           setNextTurn(prev => without(prev, selected.id));
@@ -1327,8 +1335,8 @@ export default function Home() {
         const target = !savedDraft(key).trim() && !savedAttachments(key).length ? key : `recovery-${key}`;
         saveDraft(target, sentText); saveAttachments(target, sentAttachments);
       }
-      if (errorThreadId) setRuntimeNotices(previous => ({ ...previous, [errorThreadId!]: e instanceof Error ? e.message : String(e) }));
-      else if (originalRequest === request.current) setError(String(e instanceof Error ? e.message : e));
+      if (errorThreadId) setRuntimeNotices(previous => ({ ...previous, [errorThreadId!]: errorText(e) }));
+      else if (originalRequest === request.current) setError(String(errorText(e)));
     } finally {
       sending.current--; setBusy(sending.current > 0);
       if (request.current === originalRequest && (errorThreadId ? selectedRef.current?.id === errorThreadId : !selectedRef.current)) restoreComposerFocus(originalFocus);
@@ -1352,14 +1360,14 @@ export default function Home() {
       await api(`/threads/${encodeURIComponent(thread.id)}/shell`, { command });
       if (savedDraft(thread.id) === command) saveDraft(thread.id, "");
       if (selectedRef.current?.id === thread.id && textRef.current === command && request.current === originalRequest) setText("");
-    } catch (e) { if (request.current === originalRequest) setError(e instanceof Error ? e.message : String(e)); }
+    } catch (e) { if (request.current === originalRequest) setError(errorText(e)); }
     finally { setBusy(false); if (request.current === originalRequest) focusComposer(); }
   }
   async function stop(thread: Thread) {
     if (!ready || !connected) return;
     const originalFocus = document.activeElement, originalRequest = request.current;
     try { await api(`/threads/${encodeURIComponent(thread.id)}/interrupt`, activeTurns[thread.id] ? { turnId: activeTurns[thread.id] } : {}); }
-    catch (e) { setError(String(e instanceof Error ? e.message : e)); }
+    catch (e) { setError(String(errorText(e))); }
     finally { if (request.current === originalRequest && selectedRef.current?.id === thread.id) restoreComposerFocus(originalFocus); }
   }
   async function deleteThread(thread: Thread) {
@@ -1377,7 +1385,7 @@ export default function Home() {
   // Elpis archives the chat with the agents it spawned; hide every loaded one.
   async function archiveThread(thread: Thread) {
     try { const result = await api<{ worktree?: WorktreeOutcome }>(`/threads/${encodeURIComponent(thread.id)}/archive`, {}); removeThreads(new Set([thread.id]), false); noteKept(keptNotice(title(thread), "archived", result.worktree)); }
-    catch (e) { setError(`Could not archive “${title(thread)}”: ${e instanceof Error ? e.message : String(e)}`); }
+    catch (e) { setError(`Could not archive “${title(thread)}”: ${errorText(e)}`); }
   }
   /** A chat back from Archived chats, with the agents archived with it (`restored`), which show under it again. */
   function unarchived(thread: Thread, restored: string[] = []) {
@@ -1409,7 +1417,7 @@ export default function Home() {
     const startedTurn = result.turn;
     if (overrides) setNextTurn(prev => without(prev, thread.id));
     if (selectedRef.current?.id === thread.id) { stickToBottom.current = true; setEntries(prev => prev.filter(entry => !stale.has(entry.turnId))); }
-    if (!completedTurns.current.has(startedTurn.id)) setActiveTurns(prev => ({ ...prev, [thread.id]: startedTurn.id }));
+    markTurnStarted(thread.id, startedTurn.id);
     loadVersions(thread.id);
     if (request.current === originalRequest && selectedRef.current?.id === thread.id) restoreComposerFocus(originalFocus);
   }
@@ -1561,7 +1569,7 @@ export default function Home() {
       saveAttachments(owner, fit.kept);
       if (selectedRef.current?.id === owner) { setShellMode(false); setAttachments(fit.kept); focusComposer(); }
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
+      const message = errorText(cause);
       if (selectedRef.current?.id === owner) setFileNotice(message);
       else setRuntimeNotices(previous => ({ ...previous, [owner]: message }));
     } finally { readingFiles.current = false; setAttaching(false); }
@@ -1576,11 +1584,11 @@ export default function Home() {
             editDraft={messageEdits[editKey]} editPending={!!pendingDrafts[editKey]} onEditDraftChange={value => { live.current.setMessageEdits(previous => value === null ? without(previous, editKey) : { ...previous, [editKey]: value }); if (value === null) live.current.focusComposer(); }}
             onEdit={!e.clientPending && replaceable && e.item.type === "userMessage" && editableMessage(replacementOptions.get(e.turnId), e.item.id) ? text => live.current.replaceFrom(e.turnId, text, editKey) : undefined}
             editBlockedReason={replaceable && e.item.type === "userMessage" ? editBlocked(replacementOptions.get(e.turnId), e.item.id) : undefined}
-            version={e.item.type === "userMessage" ? versionControl(versionsShown, e.turnId, replacementOptions.get(e.turnId), e.item.id, replaceable, target => { live.current.showVersion(target).catch(error => live.current.setError(String(error instanceof Error ? error.message : error))); }) : undefined}
+            version={e.item.type === "userMessage" ? versionControl(versionsShown, e.turnId, replacementOptions.get(e.turnId), e.item.id, replaceable, target => { live.current.showVersion(target).catch(error => live.current.setError(String(errorText(error)))); }) : undefined}
             time={e.item.type === "userMessage" ? e.startedAtMs : undefined}
             onFork={selected && !readOnlyRun && e.item.type === "agentMessage" && e.turnId !== activeTurn ? () => void live.current.forkFrom(selected, e.turnId, e.item.id) : undefined} onRewind={!e.clientPending && replaceable && e.item.type === "userMessage" && e.item.id !== newestPrompt ? () => live.current.setRewindTurn(e.turnId) : undefined}
-            onDelete={!e.clientPending && replaceable && e.item.type === "userMessage" ? { label: e.item.id === newestPrompt ? "Delete message" : "Delete from here", run: () => { live.current.deleteFrom(e.turnId).catch(error => live.current.setError(String(error instanceof Error ? error.message : error))); } } : undefined}
-            onRegenerate={regenerate && e.item.id === regenerate.replyId ? () => { live.current.replaceFrom(regenerate.turnId, regenerate.prompt).catch(error => live.current.setError(String(error instanceof Error ? error.message : error))); } : undefined} />; }} /></ViewBoundary>, [shownEntries, activeTurn, desktop, selected, side.openChanges, threads, messageEdits, pendingDrafts, replaceable, replacementOptionsKey, readOnlyRun, versionsShown, regenerate?.turnId, regenerate?.replyId, regenerate?.prompt]); // eslint-disable-line react-hooks/exhaustive-deps
+            onDelete={!e.clientPending && replaceable && e.item.type === "userMessage" ? { label: e.item.id === newestPrompt ? "Delete message" : "Delete from here", run: () => { live.current.deleteFrom(e.turnId).catch(error => live.current.setError(String(errorText(error)))); } } : undefined}
+            onRegenerate={regenerate && e.item.id === regenerate.replyId ? () => { live.current.replaceFrom(regenerate.turnId, regenerate.prompt).catch(error => live.current.setError(String(errorText(error)))); } : undefined} />; }} /></ViewBoundary>, [shownEntries, activeTurn, desktop, selected, side.openChanges, threads, messageEdits, pendingDrafts, replaceable, replacementOptionsKey, readOnlyRun, versionsShown, regenerate?.turnId, regenerate?.replyId, regenerate?.prompt]); // eslint-disable-line react-hooks/exhaustive-deps
   // Keep the conversation's context providers outside composer-only renders.
   const chatConversation = useMemo(() => <ReadAloud threadId={selected?.id} enabled={connected && !!selected} available={selected && agentName(selected) === "Matilda" ? LOVE_SPOT_AUDIO.readAloudAvailable : undefined} unavailableReason={loveSpotAudioReason}>{selected && !loveSpotAudioReason && agentName(selected) === "Matilda" && <MatildaAutoVoice key={selected.id} threadId={selected.id} activeTurnId={activeTurn ?? null} entries={shownEntries} disabled={!connected || voiceBusy} />}{conversation}</ReadAloud>, [selected, connected, activeTurn, shownEntries, voiceBusy, conversation, loveSpotAudioReason]);
   /** A queued message's Edit in composer, as in Claude: it returns to the box above whatever is typed, with its files and @-mentions. */
@@ -1661,14 +1669,14 @@ export default function Home() {
     try {
       const result = await api<{ turn?: { id: string } }>(`/threads/${encodeURIComponent(thread.id)}/review`, { target });
       if (!result.turn?.id) throw new Error("Elpis did not acknowledge the review. Check the conversation before retrying.");
-      if (!completedTurns.current.has(result.turn.id)) setActiveTurns(prev => ({ ...prev, [thread.id]: result.turn!.id }));
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+      markTurnStarted(thread.id, result.turn!.id);
+    } catch (e) { setError(errorText(e)); }
     focusComposer();
   }
   function compactChat(thread: Thread, guidance?: string) {
     // The terminal reads a lone number as its pressure setting; this app has no such setting to save.
     if (guidance && /^\d+(\.\d+)?%?$/.test(guidance)) { setSlashNotice("A number sets the terminal's pressure compaction, which this app does not save. Compact now, or add words to guide the summary."); return; }
-    api(`/threads/${encodeURIComponent(thread.id)}/compact`, guidance ? { instructions: guidance } : {}).catch(e => setError(e instanceof Error ? e.message : String(e)));
+    api(`/threads/${encodeURIComponent(thread.id)}/compact`, guidance ? { instructions: guidance } : {}).catch(e => setError(errorText(e)));
   }
   useEffect(() => {
     if (!queuedCompact) return;
@@ -1687,7 +1695,7 @@ export default function Home() {
       link.href = URL.createObjectURL(new Blob([conversationMarkdown(title(thread), all)], { type: "text/markdown" })); link.download = file;
       document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(link.href), 10000);
       setSlashNotice(`Exported the conversation as ${file}.`);
-    } catch (e) { setError(`Could not export: ${e instanceof Error ? e.message : String(e)}`); }
+    } catch (e) { setError(`Could not export: ${errorText(e)}`); }
   }
   async function turnSmartPruneOn() {
     try {
@@ -1695,7 +1703,7 @@ export default function Home() {
       if (current.smartPrune?.enabled) { setSlashNotice("Smart Prune is already on."); return; }
       await saveSettings("/settings", { version: current.version, options: { automaticPruning: true } });
       setSlashNotice("Smart Prune is on. It applies to new chats.");
-    } catch (e) { setError(`Could not turn Smart Prune on: ${e instanceof Error ? e.message : String(e)}`); }
+    } catch (e) { setError(`Could not turn Smart Prune on: ${errorText(e)}`); }
   }
   const sessionRows: [string, string][] = [
     ["Model", modelLabel(turnModel || providerSettings?.main.model, models)],
@@ -1732,7 +1740,7 @@ export default function Home() {
       }
       const notice = ['fast', 'priority'].includes(serviceTier) ? 'Fast is on. It uses plan limits faster.' : 'Fast is off. Standard speed is selected.';
       notify(warning || notice + (activeTurnApplied ? ' Applies from the next request in this turn.' : ''));
-    } catch (error) { notify(error instanceof Error ? error.message : String(error)); }
+    } catch (error) { notify(errorText(error)); }
     finally { setBusy(false); }
   }
   async function chooseGoal(args?: string) {
@@ -1749,7 +1757,7 @@ export default function Home() {
     } catch (cause) {
       if (selectedRef.current?.id !== thread.id) return;
       if (condition && !textRef.current) editDraft(`/goal ${condition}`);
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(errorText(cause));
     }
   }
   const slashCommands: SlashCommand[] = [
@@ -1768,7 +1776,7 @@ export default function Home() {
     { name: "personal", description: "edit your priorities, working habits and preferences", run: personal.open },
     { name: "hooks", description: "view and manage lifecycle hooks", run: () => openSettings("hooks") },
     { name: "review", description: "review my current changes and find issues", available: writable && idle, args: true, run: text => { if (!selected) return; if (text) void startReview(selected, { type: "custom", instructions: text }); else setPanel("review"); } },
-    { name: "rename", description: "rename the current thread", available: !!selected, args: true, run: text => { if (text && selected) renameThread(selected, text).catch(e => setError(e instanceof Error ? e.message : String(e))); else setRenameRequest(true); } },
+    { name: "rename", description: "rename the current thread", available: !!selected, args: true, run: text => { if (text && selected) renameThread(selected, text).catch(e => setError(errorText(e))); else setRenameRequest(true); } },
     { name: "new", description: "start a new chat during a conversation", run: newChat },
     { name: "clear", description: "start a fresh chat in the current project", run: clearChat },
     { name: "archive", description: "archive this session", available: !!selected, run: () => { if (selected) archiveChats([selected]); } },
@@ -1869,7 +1877,7 @@ export default function Home() {
   const runActions: MenuAction[] = [
     { id: "hide", label: "Hide Agent runs", run: () => {
       try { savePreferences({ showAgentRuns: false }); requestAnimationFrame(() => searchInput.current?.focus()); }
-      catch (cause) { setError(`Could not save this preference: ${cause instanceof Error ? cause.message : String(cause)}`); }
+      catch (cause) { setError(`Could not save this preference: ${errorText(cause)}`); }
     } },
     { id: "delete", label: agentRuns.length > 100 ? "Delete 100 Agent runs…" : "Delete Agent run history…", destructive: true, run: () => { setDeleteRunHistory(true); setDeleteTargets(agentRuns.slice(0, 100)); } },
   ];
@@ -1972,7 +1980,7 @@ export default function Home() {
     const targets = chatsOf(withNested(ids));
     if (!targets.length) return;
     if (preferences.confirmDeleteChats) { setDeleteTargets(targets); return; }
-    void trashChats(targets).then(() => { if (focusAt !== undefined) requestAnimationFrame(() => { const links = rowLinks(); (links[focusAt] ?? links.at(-1))?.focus(); }); }, e => setError(String(e instanceof Error ? e.message : e)));
+    void trashChats(targets).then(() => { if (focusAt !== undefined) requestAnimationFrame(() => { const links = rowLinks(); (links[focusAt] ?? links.at(-1))?.focus(); }); }, e => setError(String(errorText(e))));
   }
   /** The bridge archives them now and deletes them for good when Elpis quits (bridge/trash.mjs). */
   async function trashChats(targets: Thread[]) {
@@ -1996,7 +2004,7 @@ export default function Home() {
       const reopen = back.find(thread => shownWhenDeleted.current.has(thread.id));
       for (const thread of back) shownWhenDeleted.current.delete(thread.id);
       if (reopen) await loadThread(reopen);
-    } catch (e) { setError(`Could not bring back the deleted chat: ${e instanceof Error ? e.message : String(e)}`); }
+    } catch (e) { setError(`Could not bring back the deleted chat: ${errorText(e)}`); }
   }
   /** A click opens the chat; Ctrl+click marks or unmarks it; Shift+click marks the range from the last click, as in a file manager. */
   function clickRow(thread: Thread, event: React.MouseEvent<HTMLButtonElement>) {
@@ -2193,7 +2201,7 @@ export default function Home() {
       group={depth ? undefined : groupMenu(thread, movingIds(thread.id))}
       agents={!depth && !isAgent(thread) && hasAgents && !searchTerm ? { shown: preferences.showAgentRuns && agentRunsOpen, onToggle: () => {
         try { if (!preferences.showAgentRuns) savePreferences({ showAgentRuns: true }); }
-        catch (cause) { setError(String(cause instanceof Error ? cause.message : cause)); return; }
+        catch (cause) { setError(String(errorText(cause))); return; }
         setAgentRunsOpen(!preferences.showAgentRuns || !agentRunsOpen); if (!preferences.showAgentRuns || !agentRunsOpen) void loadChildren(thread.id, undefined, false);
       } } : undefined}
       area={<ReorderItem reorder={chatReorder} itemId={thread.id} enabled={!searchTerm}
@@ -2284,7 +2292,7 @@ export default function Home() {
   commandActions.push({ id: "improve-elpis", name: "Improve Elpis…", run: () => window.dispatchEvent(new CustomEvent("elpis:improve")) });
   // The sidebar's pages in the person's order (drag and drop, or Alt+Up/Down), saved with the preferences.
   const arrangedPages = arrange(NAV_PAGES.filter(page => !hiddenPages.includes(page.id)), preferences.navOrder.split(",").filter(Boolean));
-  const reorderPages = (ids: string[]) => { try { savePreferences({ navOrder: ids.join(",") }); } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } };
+  const reorderPages = (ids: string[]) => { try { savePreferences({ navOrder: ids.join(",") }); } catch (cause) { setError(errorText(cause)); } };
   const pageReorder = useReorder({ dragType: "text/x-elpis-page", order: () => arrangedPages.map(page => page.id),
     canDrop: (id, target) => arrangedPages.some(page => page.id === id) && arrangedPages.some(page => page.id === target),
     onMove: (id, place) => reorderPages(move(arrangedPages.map(page => page.id), id, place)) });
@@ -2297,13 +2305,36 @@ export default function Home() {
   for (const [target, name] of [["agentsGuide", "Guide to managing agents"], ["experimentLab", "Lab"], ["canvas", "Workflows"], ["loveSpot", "Love Spot"], ["observability", "Observability"], ["customize", "Customize"]] as const) if (!hiddenPages.includes(target) && !(target === "agentsGuide" && hiddenPages.includes("canvas"))) commandActions.push({ id: target, name, run: () => show(target) });
 
   // One Matilda voice and one live call for the whole app: both go on when he leaves the board or Love Spot's chat; her face shows and controls them.
+  // The message box: its hint, what typing, pasting and keys do.
+  const composerPlaceholder = shellMode ? "Run a shell command…" : continues ? `Message ${title(selected!)}…` : selected && activeTurn ? followUpHint(preferences) : selected ? "Ask for a follow-up" : "Ask Elpis to build, fix or explain something";
+  const onComposerChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value;
+    // "!" at the start of an empty box switches to Bash mode, as in the TUI.
+    if (!shellMode && !textRef.current && value.startsWith("!") && !attachmentsRef.current.length) { setShellMode(true); promptKeys.cancel(); editDraft(value.slice(1)); setCaret(value.length - 1); }
+    else { editDraft(value); setCaret(e.target.selectionStart); }
+  };
+  const onComposerPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => { const files = transferFiles(e.clipboardData); if (files.length) { if (!e.clipboardData.getData("text/plain")) e.preventDefault(); void addFiles(files); } };
+  const onComposerKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    const plain = !e.ctrlKey && !e.altKey && !e.metaKey;
+    // Esc, or Backspace in an empty box, leaves Bash mode.
+    if (shellMode && (e.key === "Escape" || (e.key === "Backspace" && !textRef.current))) { e.preventDefault(); e.stopPropagation(); setShellMode(false); promptKeys.cancel(); return; }
+    if (!ready || !connected) { if (isSendKey(e, preferences)) e.preventDefault(); return; }
+    if (shellMode) { if (isSendKey(e, preferences)) { e.preventDefault(); void sendShell(); } return; }
+    // Shift+↑/↓ steps the reasoning effort.
+    if (e.shiftKey && plain && turnEfforts.length && (e.key === "ArrowUp" || e.key === "ArrowDown")) { e.preventDefault(); e.stopPropagation(); stepEffort(e.key === "ArrowUp" ? 1 : -1); return; }
+    if (mention.onKeyDown(e) || slash.onKeyDown(e) || promptKeys.onKeyDown(e)) return;
+    // Shift+Tab cycles the permission mode.
+    if (e.key === "Tab" && e.shiftKey && plain) { e.preventDefault(); cycleMode(); return; }
+    if (activeTurn && !continues) { const followUp = followUpKey(e, preferences); if (followUp) { e.preventDefault(); send(undefined, followUp); } }
+    else if (isSendKey(e, preferences)) { e.preventDefault(); send(); }
+  };
   return <DocumentReviewProvider onAttach={parts => attachFromBrowser(parts, false)}><LiveVoiceProvider><ReadAloud threadId="love-spot" enabled available={LOVE_SPOT_AUDIO.readAloudAvailable} unavailableReason={LOVE_SPOT_AUDIO.available ? undefined : LOVE_SPOT_AUDIO.reason}><div data-workspace={view} data-desktop={desktop || undefined} className={`app-shell${split.pane ? " session-pane" : ""}${split.thread && view === "chat" ? " session-split" : ""}${dark ? " dark" : ""} has-title-bar${sidebarCollapsed ? " sidebar-collapsed" : ""}${view === "settings" ? " settings-mode" : ""}${panelShown ? " panel-active" : ""}`} style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>
     <title>{view === "canvas" ? "Workflows · Elpis" : view === "experimentLab" ? "Lab · Elpis" : view === "customize" ? "Customize — Elpis" : "Elpis"}</title>
     {desktop && <div className="title-bar"><NavButtons preferences={preferences} canBack={navHistory.canBack} canForward={navHistory.canForward} onBack={() => goHistory(-1)} onForward={() => goHistory(1)} />{(sidebarCollapsed || !sidebar) && <Button className={sidebarCollapsed || panelShown && panelDrawer ? undefined : "sidebar-open-narrow"} variant="ghost" size="icon-sm" aria-label="Open sidebar" title={shortcutTitle("Open sidebar", "sidebar", preferences)} onClick={() => showSidebar(true)}><PanelLeft size={16} /></Button>}<AppMenus preferences={preferences} onError={setError} onNewChat={newChat} onOpenFolder={() => void addProject()} onSettings={() => show("settings")} onToggleSidebar={() => showSidebar(narrow() ? !sidebar : sidebarCollapsed)} onBack={() => goHistory(-1)} onForward={() => goHistory(1)} canGoBack={navHistory.canBack} canGoForward={navHistory.canForward} onShortcuts={() => shortcutAction.current("shortcuts")} /><div className="title-bar-actions"><MatildaCompanion /><AppUpdate inTitleBar /></div></div>}
     {!desktop && <div className="title-bar"><div className="title-bar-actions"><MatildaCompanion /></div></div>}
     <ProfileDialog ready={ready && connected} />
     <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} returnFocus={shortcutsReturnFocus} />
-    {commandMenuOpen && <CommandMenu threads={ordinaryThreads} projects={busy || projectChanging ? [] : projects} actions={commandActions} returnFocus={commandReturnFocus} onClose={() => setCommandMenuOpen(false)} onThread={thread => { void openThread(thread); }} onProject={item => { void selectProject(item).catch(cause => setError(cause instanceof Error ? cause.message : String(cause))); }} onNewChat={prompt => { newChat(); setDesktopPrompt(prompt); }} />}
+    {commandMenuOpen && <CommandMenu threads={ordinaryThreads} projects={busy || projectChanging ? [] : projects} actions={commandActions} returnFocus={commandReturnFocus} onClose={() => setCommandMenuOpen(false)} onThread={thread => { void openThread(thread); }} onProject={item => { void selectProject(item).catch(cause => setError(errorText(cause))); }} onNewChat={prompt => { newChat(); setDesktopPrompt(prompt); }} />}
     {desktop && <StartupSplash onLeaving={() => {
       if (view === "chat" && selected && (!ready || !connected) && !panelShown && !split.thread && window.matchMedia("(min-width: 1101px)").matches) holdAgentPanel(selected);
     }} />}
@@ -2459,7 +2490,7 @@ export default function Home() {
             {attaching && <p role="status" className="px-3 py-2 text-sm text-muted-foreground">Reading files…</p>}
             {shellMode && <p role="status" className="bash-mode-notice"><span className="composer-pill">bash</span><span>Bash mode. Press Escape to return to chat.</span></p>}
             {!shellMode && promptKeys.status && <PromptStatusLine status={promptKeys.status} />}
-            <Textarea ref={composerRef} aria-label="Message Elpis" {...(mention.open ? mention.inputProps : slash.inputProps)} onBlur={() => { slash.close(); mention.close(); promptKeys.cancel(); }} onSelect={e => setCaret(e.currentTarget.selectionStart)} placeholder={shellMode ? "Run a shell command…" : continues ? `Message ${title(selected!)}…` : selected && activeTurn ? followUpHint(preferences) : selected ? "Ask for a follow-up" : "Ask Elpis to build, fix or explain something"} value={text} onChange={e => { const value = e.target.value; if (!shellMode && !textRef.current && value.startsWith("!") && !attachmentsRef.current.length) { setShellMode(true); promptKeys.cancel(); editDraft(value.slice(1)); setCaret(value.length - 1); } else { editDraft(value); setCaret(e.target.selectionStart); } }} onPaste={e => { const files = transferFiles(e.clipboardData); if (files.length) { if (!e.clipboardData.getData("text/plain")) e.preventDefault(); void addFiles(files); } }} disabled={projectChanging} onKeyDown={e => { if (shellMode && (e.key === "Escape" || (e.key === "Backspace" && !textRef.current))) { e.preventDefault(); e.stopPropagation(); setShellMode(false); promptKeys.cancel(); return; } if (!ready || !connected) { if (isSendKey(e, preferences)) e.preventDefault(); return; } if (shellMode) { if (isSendKey(e, preferences)) { e.preventDefault(); void sendShell(); } return; } if (e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && turnEfforts.length && (e.key === "ArrowUp" || e.key === "ArrowDown")) { e.preventDefault(); e.stopPropagation(); stepEffort(e.key === "ArrowUp" ? 1 : -1); return; } if (mention.onKeyDown(e) || slash.onKeyDown(e) || promptKeys.onKeyDown(e)) return; if (e.key === "Tab" && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) { e.preventDefault(); cycleMode(); return; } if (activeTurn && !continues) { const followUp = followUpKey(e, preferences); if (followUp) { e.preventDefault(); send(undefined, followUp); } } else if (isSendKey(e, preferences)) { e.preventDefault(); send(); } }} />
+            <Textarea ref={composerRef} aria-label="Message Elpis" {...(mention.open ? mention.inputProps : slash.inputProps)} onBlur={() => { slash.close(); mention.close(); promptKeys.cancel(); }} onSelect={e => setCaret(e.currentTarget.selectionStart)} placeholder={composerPlaceholder} value={text} onChange={onComposerChange} onPaste={onComposerPaste} disabled={projectChanging} onKeyDown={onComposerKeyDown} />
             {composerNotice && <div className="flex items-center gap-2 px-3 text-sm text-destructive" role="alert"><span className="whitespace-pre-line">{composerNotice}</span>{fileNotice && <Button type="button" variant="ghost" size="icon-xs" aria-label="Dismiss file notice" onClick={() => setFileNotice("")}><X size={14} /></Button>}</div>}
             <div className="composer-controls"><div className="model-controls"><PlusMenu disabled={!ready || !connected || busy || projectChanging} attachDisabled={shellMode || attaching || attachments.length >= ATTACHMENT_LIMITS.count} slashDisabled={!!text} plan={planMode} returnFocus={composerRef}
                 fast={{ unavailable: fastAvailable ? undefined : "Not offered for this model", on: fastAvailable && fastOn, disabled: !fastAvailable || !ready || !connected || busy || projectChanging || readOnlyRun, onChange: () => void chooseFast(fastOn ? "off" : "on") }}

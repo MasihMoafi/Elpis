@@ -1,11 +1,12 @@
 import { useEffect, useState, type RefObject } from "react";
 import { api, unreadable, type Thread } from "./api";
 import { mergeListedThreads } from "./agents";
+import { errorText } from "./error-text.mjs";
 
 type SearchPage = { query: string; data: Thread[]; nextCursor: string | null; loading: boolean; error: string };
 const EMPTY: SearchPage = { query: "", data: [], nextCursor: null, loading: false, error: "" };
 const searchPath = (query: string, cursor?: string | null) => `/threads?limit=100&searchTerm=${encodeURIComponent(query)}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`;
-const message = (cause: unknown) => cause instanceof Error ? cause.message : String(cause);
+const message = (cause: unknown) => errorText(cause);
 
 /** The sidebar's search: what he typed, and the saved conversations the bridge found for it (asked 250 ms after typing stops,
  * then page by page). `results` is null until they belong to the current text. */

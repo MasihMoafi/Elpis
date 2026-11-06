@@ -6,6 +6,7 @@
 // with a request id "doesn't even need to be shown to the user"); nothing here changes a chosen model.
 import { useEffect, useState } from "react";
 import type { Model } from "./api";
+import { errorText } from "./error-text.mjs";
 
 type ListReader = (path: string) => Promise<{ data?: unknown }>;
 // Loaded lazily, so this store has no runtime imports and its test can read it directly.
@@ -33,7 +34,7 @@ export async function refreshModelCatalog(fetchList: ListReader = readList, dela
     if (id === latest) { failures = 0; publish({ models: result.data as Model[], loading: false, error: "" }); }
   } catch (cause) {
     if (id !== latest) return;
-    publish({ loading: false, error: cause instanceof Error ? cause.message : String(cause) });
+    publish({ loading: false, error: errorText(cause) });
     const delay = delays[Math.min(failures++, delays.length - 1)];
     if (delay !== undefined) {
       retry = setTimeout(() => { retry = undefined; void refreshModelCatalog(fetchList, delays); }, delay);

@@ -2,6 +2,7 @@ import { newElementWith } from "@excalidraw/excalidraw";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import type {} from "./desktop";
+import { errorText } from "./error-text.mjs";
 
 export type DraftPage = { name: string; session: string };
 type TextElement = Extract<ExcalidrawElement, { type: "text" }>;
@@ -39,7 +40,7 @@ export function createTextJournal(report: (error: unknown) => void) {
       const storage = window.elpisDesktop?.storage;
       if (storage?.patchItem) storage.patchItem(key, changes);
       else storage?.setItem(key, value);
-    } catch (error) { report(new Error(`Text draft could not be journaled: ${error instanceof Error ? error.message : error}`)); }
+    } catch (error) { report(new Error(`Text draft could not be journaled: ${errorText(error)}`)); }
   };
   const entries = (): [string, Entry][] => {
     try {

@@ -2,6 +2,7 @@
 
 import { useEffect, useSyncExternalStore } from "react";
 import { api, unreadable, type PermissionRequirements } from "@/lib/api";
+import { errorText } from "./error-text.mjs";
 
 /** The bridge's /settings snapshot. Every config-backed Settings page shares this one copy,
  * so a save on one page gives the others the new config version. */
@@ -33,7 +34,7 @@ let state: State = { data: null, error: "", loading: false };
 let request = 0;
 const listeners = new Set<() => void>();
 const update = (next: Partial<State>) => { state = { ...state, ...next }; for (const listener of listeners) listener(); };
-const message = (error: unknown) => error instanceof Error ? error.message : String(error);
+const message = (error: unknown) => errorText(error);
 
 function readSettings(data: ElpisSettings): ElpisSettings {
   if (![data.main, data.background, data.smartPrune, data.memory, data.write].every(part => part && typeof part === "object" && !Array.isArray(part))) throw unreadable("settings");

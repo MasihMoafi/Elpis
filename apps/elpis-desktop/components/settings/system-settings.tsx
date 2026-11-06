@@ -8,8 +8,9 @@ import type { DesktopQuickEntry, QuickEntryStatus } from "@/lib/desktop";
 import type { Preferences } from "@/lib/preferences";
 import { keyCombination } from "@/lib/shortcuts";
 import { SettingRow, SettingsGroup } from "@/components/settings/rows";
+import { errorText } from "@/lib/error-text.mjs";
 
-const message = (error: unknown) => error instanceof Error ? error.message : String(error);
+const message = (error: unknown) => errorText(error);
 // Claude's reserved combinations (its Linux and Windows part).
 const RESERVED = ["Ctrl+W", "Ctrl+N", "Ctrl+O", "Ctrl+T", "Ctrl+S", "Ctrl+C", "Ctrl+V"];
 const RESERVED_TEXT = "This shortcut is reserved for common actions. Try a different combination.";

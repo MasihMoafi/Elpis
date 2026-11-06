@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { readPreferences, savePreferences } from "@/lib/preferences";
+import { errorText } from "@/lib/error-text.mjs";
 
 /** One confirmation and preference for named deletions. A failed automatic delete opens the dialog for retry. */
 export function ConfirmDelete<T>({ request, names, noun, description, onDelete, onClose, alwaysConfirm, finalFocus, children }: {
@@ -20,7 +21,7 @@ export function ConfirmDelete<T>({ request, names, noun, description, onDelete, 
     try {
       if (skip) savePreferences({ confirmDeleteChats: false });
       await onDelete(request); onClose();
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    } catch (e) { setError(errorText(e)); }
     finally { removing.current = false; setBusy(false); }
   }
   return <AlertDialog open={request !== null && (confirm || !!error)} onOpenChange={value => { if (!busy && !value) onClose(); }}>

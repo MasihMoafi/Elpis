@@ -12,6 +12,7 @@ import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescripti
 import type { AttachToChat } from "@/components/browser-annotations";
 import { holdDrawing, type DrawingDraft } from "@/lib/browser-drawing-store";
 import "@excalidraw/excalidraw/index.css";
+import { errorText } from "@/lib/error-text.mjs";
 
 const BACKGROUND = "page-shot";
 const IMAGE_LIMIT = 3.8 * 1024 * 1024;
@@ -91,7 +92,7 @@ export default function BrowserDrawing({ draft: given, dark, onAttach, onClose, 
       const note = `The attached image "Page drawing.jpg" is a screenshot of the browser page ${draft.url}${draft.title ? ` (“${draft.title}”)` : ""}, ${draft.width}×${draft.height} px, with the user's own marks drawn on top: arrows, pen strokes, shapes and text. Read the marks as the changes or questions the user wants about that page.`;
       const added = await onAttach([{ id: crypto.randomUUID(), name: DRAWING_NOTE, type: "text", mimeType: "text/plain", text: note }, { id: crypto.randomUUID(), name: "Page drawing.jpg", type: "image", mimeType: "image/jpeg", dataUrl: url }], false);
       if (added) { holdDrawing(null); onAdded(); } else setError("The drawing could not be added to your message. It is still here: try again.");
-    } catch (e) { setError(`${e instanceof Error ? e.message : String(e)} Your drawing is still here: try again.`); }
+    } catch (e) { setError(`${errorText(e)} Your drawing is still here: try again.`); }
     finally { setBusy(false); }
   }
 

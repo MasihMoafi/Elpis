@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { api, unreadable } from '@/lib/api';
 import { openPrune, pruneOf, pruneSummary, type PruneTarget } from '@/lib/smart-prune';
 import { Button } from '@/components/ui/button';
+import { errorText } from "@/lib/error-text.mjs";
 
 export function SmartPruneLine({ value, mediaBase }: { value: unknown; mediaBase?: string }) {
   const prune = pruneOf(value), thread = mediaBase?.match(/^\/api\/threads\/([^/]+)\//)?.[1];
@@ -22,7 +23,7 @@ export function SmartPruneDetail({ target }: { target: PruneTarget }) {
     void api<{ original: unknown; compact: unknown }>(`/threads/${encodeURIComponent(threadId)}/smart-prune/${encodeURIComponent(prune.attemptId)}/${encodeURIComponent(prune.callId)}`).then(value => {
       if (typeof value.original !== 'string' || (value.compact !== null && typeof value.compact !== 'string')) throw unreadable('Smart Prune evidence');
       if (current) setDetail({ original: value.original, compact: value.compact });
-    }).catch(cause => { if (current) setError(cause instanceof Error ? cause.message : String(cause)); });
+    }).catch(cause => { if (current) setError(errorText(cause)); });
     return () => { current = false; };
   }, [target]);
   return <section aria-label="Smart Prune comparison" className="h-full overflow-auto p-4 text-sm">

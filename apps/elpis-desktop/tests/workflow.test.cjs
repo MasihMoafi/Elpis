@@ -52,7 +52,9 @@ test('connection recovery preserves draft and delivery error, clears stale appro
   const errorAtBottom=async()=>{
    const notice=await page.getByRole('alert').filter({hasText:'Delivery is unknown'}).boundingBox();
    const workspace=await page.locator('main.workspace').boundingBox();
-   assert.ok(notice&&workspace&&Math.abs(notice.y+notice.height-workspace.y-workspace.height)<3,'an app error stays at the bottom, never above the page');
+   // The error is a quiet line floating 8px above the bottom edge (globals.css .error-banner.quiet, 6 Nov).
+   const gap=notice&&workspace?workspace.y+workspace.height-notice.y-notice.height:-1;
+   assert.ok(gap>=0&&gap<12,`an app error stays at the bottom, never above the page (${gap}px from it)`);
   };
   await errorAtBottom();
   await page.getByRole('button',{name:'Settings',exact:true}).click();

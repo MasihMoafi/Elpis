@@ -11,12 +11,13 @@ import { api } from "@/lib/api";
 import { loadDir, loadNames, openFile, openRef, paneIn, refresh, select as selectPath, toggleDir, treeRows, useFiles, type Row } from "@/lib/files-pane";
 import { isAudioPath } from "@/lib/audio-path.mjs";
 import { rankFiles } from "@/lib/mentions";
+import { errorText } from "@/lib/error-text.mjs";
 
 const SHOWN = 200;
 type Match = { path: string; line: number; text: string };
 const pad = (depth: number) => 10 + depth * 14;
 const folderOf = (path: string) => path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
-const message = (cause: unknown) => cause instanceof Error ? cause.message : "Could not search.";
+const message = (cause: unknown) => errorText(cause, "Could not search.");
 
 /** One line of the tree or of a list of finds: a folder (with its chevron), a file, or a file found by name (its folder beside
  * it). A click opens a folder or previews a file; a double click or Enter keeps it; the right-click menu is `fileActions`. */

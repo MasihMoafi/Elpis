@@ -13,8 +13,9 @@ import { isAgent, title, type Thread } from "@/lib/api";
 import { useConversationColour } from "@/components/conversation-colour";
 import { WORKFLOW_COLOURS, type WorkflowColour } from "@/lib/workflow-identity";
 import type { ChatGroup } from "@/lib/chat-groups";
+import { errorText } from "@/lib/error-text.mjs";
 
-const message = (e: unknown) => e instanceof Error ? e.message : String(e);
+const message = (e: unknown) => errorText(e);
 
 type Props = {
   onMoveToProject?: (threads: Thread[]) => void;

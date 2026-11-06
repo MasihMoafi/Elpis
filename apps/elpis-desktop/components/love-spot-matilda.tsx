@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
 import { PROTOCOL, keepPersona, savedPersona } from "@/lib/matilda";
 import { appStorage } from "@/lib/projects";
+import { errorText } from "@/lib/error-text.mjs";
 
 /** How long the board stays quiet before she looks at what was written or drawn (ms). */
 const QUIET = 300;
@@ -67,7 +68,7 @@ export function useMatilda({ ready, enabled, context, told, send, onError }: {
       else if (!mounted.current && now.enabled()) await api("/love-spot/talk", { text, persona: now.persona.trim() || PROTOCOL }).catch(() => { for (const id of batch) ids.current.add(id); });
       else if (mounted.current && now.context === latest.current.context) for (const id of batch) ids.current.add(id);
     }
-    catch (cause) { if (mounted.current) now.onError(cause instanceof Error ? cause.message : "Matilda could not answer."); }
+    catch (cause) { if (mounted.current) now.onError(errorText(cause, "Matilda could not answer.")); }
     finally {
       working.current = false;
       if (now.context === latest.current.context) keepPending(now.context, ids.current);
@@ -106,7 +107,7 @@ export function useMatilda({ ready, enabled, context, told, send, onError }: {
   const quiet = useCallback(async () => {
     generation.current++; ids.current.clear(); waiting.current = ""; clearTimeout(timer.current);
     keepPending(latest.current.context, new Set());
-    try { await api("/love-spot/talk/stop", {}); } catch (cause) { latest.current.onError(cause instanceof Error ? cause.message : "Matilda could not be stopped."); }
+    try { await api("/love-spot/talk/stop", {}); } catch (cause) { latest.current.onError(errorText(cause, "Matilda could not be stopped.")); }
   }, []);
   return { persona, keep: (value: string) => { setPersona(value); keepPersona(value); }, replying, notice, quiet };
 }

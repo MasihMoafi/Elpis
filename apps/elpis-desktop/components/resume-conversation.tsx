@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api, title, type Thread } from "@/lib/api";
 import { LoadOnScroll } from "@/components/load-on-scroll";
+import { errorText } from "@/lib/error-text.mjs";
 
 type Page = { data: Thread[]; nextCursor?: string | null };
 /** Resume is an explicit saved-chat choice, independent of sidebar visibility or folds. */
@@ -23,7 +24,7 @@ export function ResumeConversation({ open, chats, onClose, onChoose, returnFocus
     const timer = setTimeout(() => {
       api<Page>(`/threads?limit=50${query.trim() ? `&searchTerm=${encodeURIComponent(query.trim())}` : ""}`)
         .then(result => { if (!Array.isArray(result.data)) throw Error("Saved conversations could not be read."); if (alive) { setRows(result.data); setLoadedQuery(query); setCursor(result.nextCursor ?? null); } })
-        .catch(cause => { if (alive) setError(cause instanceof Error ? cause.message : String(cause)); })
+        .catch(cause => { if (alive) setError(errorText(cause)); })
         .finally(() => { if (alive) setLoading(false); });
     }, query ? 200 : 0);
     return () => { alive = false; ++version.current; clearTimeout(timer); };
@@ -37,7 +38,7 @@ export function ResumeConversation({ open, chats, onClose, onChoose, returnFocus
       if (ticket !== version.current) return;
       if (!Array.isArray(result.data)) throw Error("Saved conversations could not be read.");
       setRows(previous => [...new Map([...previous, ...result.data].map(chat => [chat.id, chat])).values()]); setCursor(result.nextCursor ?? null);
-    } catch (cause) { if (ticket === version.current) setError(cause instanceof Error ? cause.message : String(cause)); }
+    } catch (cause) { if (ticket === version.current) setError(errorText(cause)); }
     finally { if (ticket === version.current) setLoading(false); }
   }
   const term = query.trim().toLocaleLowerCase();

@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, unreadable } from "./api";
 import { appStorage } from "./projects";
+import { errorText } from "./error-text.mjs";
 
 export const WORKFLOW_COLOURS = ["blue", "teal", "violet", "rose", "green", "amber"] as const;
 export type WorkflowColour = typeof WORKFLOW_COLOURS[number];
@@ -83,7 +84,7 @@ export function useWorkflowCatalog(enabled: boolean) {
         }
         if (next !== current.current) commit(next);
         setRuns(listed);
-      } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+      } catch (cause) { setError(errorText(cause)); }
     })().finally(() => { pending.current = null; });
     pending.current = task; return task;
   }, [commit]);
@@ -103,7 +104,7 @@ export function useWorkflowCatalog(enabled: boolean) {
     const problem = workflowNameProblem(current.current, id, name);
     if (problem) return problem;
     try { commit({ ...current.current, [id]: { ...current.current[id], name: name.trim() } }); return null; }
-    catch (cause) { return cause instanceof Error ? cause.message : String(cause); }
+    catch (cause) { return errorText(cause); }
   }, [commit]);
   const recolour = useCallback((id: string, colour: WorkflowColour) => { commit({ ...current.current, [id]: { ...current.current[id], colour } }); }, [commit]);
   const attach = useCallback((from: string, id: string, rootThreadId: string) => {
@@ -124,7 +125,7 @@ export function useWorkflowSandbox(wanted: boolean, onError: (message: string) =
     void api<{ cwd: string }>("/workflows/workspace", {}).then(result => {
       if (!result.cwd?.startsWith("/")) throw unreadable("workflow sandbox");
       if (current) setSandbox(result.cwd);
-    }).catch(cause => { if (current) onError(cause instanceof Error ? cause.message : "Could not open the workflow sandbox. Choose a project or reopen Workflows to retry."); });
+    }).catch(cause => { if (current) onError(errorText(cause, "Could not open the workflow sandbox. Choose a project or reopen Workflows to retry.")); });
     return () => { current = false; };
   }, [wanted, sandbox]); // eslint-disable-line react-hooks/exhaustive-deps
   return sandbox;

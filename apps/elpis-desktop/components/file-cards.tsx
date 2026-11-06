@@ -11,6 +11,7 @@ import { isAudioPath } from "@/lib/audio-path.mjs";
 import { resolveRef } from "@/lib/file-refs";
 import { Button } from "@/components/ui/button";
 import { ReplyableImage } from "@/components/image-reply";
+import { errorText } from "@/lib/error-text.mjs";
 
 /** What the agent looked at and made, as Claude's desktop app shows it (its "wiggle" file card and screenshot
  * thumbnail): a card per created file, its kind and extension under its name, with Open and Show in folder; an image
@@ -35,7 +36,7 @@ export function fileKind(path: string) {
 
 async function run(action: ((target: string) => Promise<void>) | undefined, target: string, fail: (message: string) => void) {
   if (!action) { fail("Files open in the Elpis desktop app."); return; }
-  try { await action(target); } catch (cause) { fail(cause instanceof Error ? cause.message : "Could not open it."); }
+  try { await action(target); } catch (cause) { fail(errorText(cause, "Could not open it.")); }
 }
 
 /** The files a finished turn created, one card each, after its reply. */

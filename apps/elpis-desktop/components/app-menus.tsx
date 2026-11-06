@@ -8,6 +8,7 @@ import type { Preferences } from "@/lib/preferences";
 import type { AppMenuCommand, NativeMenuCommand } from "@/lib/desktop";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { errorText } from "@/lib/error-text.mjs";
 
 type Action = () => void;
 export type AppMenusProps = {
@@ -34,7 +35,7 @@ export function AppMenus(props: AppMenusProps) {
       else if (selection.current?.startContainer.isConnected) { const current = window.getSelection(); current?.removeAllRanges(); current?.addRange(selection.current); }
     }
     if (actions[command]) { actions[command]!(); return; }
-    void window.elpisDesktop?.menu?.command(command as NativeMenuCommand).catch(cause => callbacks.current.onError(cause instanceof Error ? cause.message : String(cause)));
+    void window.elpisDesktop?.menu?.command(command as NativeMenuCommand).catch(cause => callbacks.current.onError(errorText(cause)));
   };
   useEffect(() => {
     setNative(!!window.elpisDesktop?.menu);

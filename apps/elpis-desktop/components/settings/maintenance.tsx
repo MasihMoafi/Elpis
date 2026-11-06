@@ -12,6 +12,7 @@ import { SaveFeedback, SettingRow, SettingsActions, SettingsGroup, SettingsNotic
 import { useSaver } from "@/components/settings/use-saver";
 import { editable, reloadSettings, saveSettings, type Background, type ElpisSettings, type Memory } from "@/lib/settings-store";
 import { modelCatalogSnapshot, refreshModelCatalog, subscribeModelCatalog } from "@/lib/model-catalog";
+import { errorText } from "@/lib/error-text.mjs";
 
 // Background model, Smart Prune and memory settings (formerly the "Elpis" page), each saved
 // through the bridge's versioned config writer.
@@ -42,7 +43,7 @@ function useProviderCatalogs(value: ElpisSettings, models: Model[], selected: (s
         if (!Array.isArray(result?.data)) throw new Error("Model catalog response did not contain models.");
         if (active.current) setCatalogs(old => old[provider]?.version === version ? { ...old, [provider]: { version, models: result.data } } : old);
       }).catch(error => {
-        if (active.current) setCatalogs(old => old[provider]?.version === version ? { ...old, [provider]: { version, models: [], error: error instanceof Error ? error.message : String(error) } } : old);
+        if (active.current) setCatalogs(old => old[provider]?.version === version ? { ...old, [provider]: { version, models: [], error: errorText(error) } } : old);
       });
     }
   }, [wanted, value.main.provider, value.providers, value.version, catalogs]); // eslint-disable-line react-hooks/exhaustive-deps

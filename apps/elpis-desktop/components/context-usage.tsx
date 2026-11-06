@@ -8,6 +8,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { ContextFiles, readContext } from "@/components/context-files";
 import { api } from "@/lib/api";
 import { usePreferences } from "@/lib/preferences";
+import { errorText } from "@/lib/error-text.mjs";
 
 /** The bridge's Context Ledger for a chat (bridge/elpis-features.mjs `contextLedger`): `used` and `window` are
  * measured, `categories` are estimated shares that sum to `used`; empty when attribution is unavailable. `basis` says whose
@@ -236,7 +237,7 @@ type SwitchField = "smartPrune" | "subagents" | "rag";
 let switchesNow: { state: Switches | null; saving: SwitchField | null; error: string } = { state: null, saving: null, error: "" };
 const switchListeners = new Set<() => void>();
 const publishSwitches = (next: Partial<typeof switchesNow>) => { switchesNow = { ...switchesNow, ...next }; for (const listener of switchListeners) listener(); };
-const reason = (value: unknown) => value instanceof Error ? value.message : String(value);
+const reason = (value: unknown) => errorText(value);
 const refreshSwitches = () => api<unknown>("/context/switches").then(value => publishSwitches({ state: switchesOf(value), error: "" }), value => publishSwitches({ error: reason(value) }));
 async function saveSwitch(field: SwitchField, value: boolean) {
   const { state } = switchesNow; if (!state || switchesNow.saving) return;

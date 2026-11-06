@@ -10,6 +10,7 @@ import { OptionSelect } from "@/components/ui/option-select";
 import { Combobox, ComboboxContent, ComboboxEmpty, ComboboxInput, ComboboxItem, ComboboxList, ComboboxTrigger } from "@/components/ui/combobox";
 import { api, choiceById, modelLabel, modelName, subscriptionOf, type ProviderChoice, type Model } from "@/lib/api";
 import { refreshModelCatalog, useModelCatalog } from "@/lib/model-catalog";
+import { errorText } from "@/lib/error-text.mjs";
 type Choice = { key: string; model: string; choiceId: string; label: string; providerLabel: string; description?: string };
 /** Where each built-in API provider issues keys, as the terminal's /provider names them. */
 const KEY_PAGES: Record<string, string> = { openrouter: "openrouter.ai/keys", anthropic: "console.anthropic.com/settings/keys", "google-gemini": "aistudio.google.com/apikey" };
@@ -20,7 +21,7 @@ function ProviderKeyForm({ provider, label, onSaved }: { provider: string; label
   async function save(event: React.FormEvent) {
     event.preventDefault(); event.stopPropagation(); setBusy(true); setError("");
     try { await api("/providers/key", { provider, key }); setKey(""); onSaved(); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    catch (cause) { setError(errorText(cause)); }
     finally { setBusy(false); }
   }
   return <form className="provider-key-form" aria-label={`${label} API key`} onSubmit={save} onKeyDown={event => event.stopPropagation()}>
@@ -78,7 +79,7 @@ export function ModelPicker({ choices, models, model, choiceId, defaultModel, di
           if (!Array.isArray(result.data)) throw new Error("This connection returned an invalid model list.");
           if (!disposed) setCatalogs(previous => ({ ...previous, [id]: { version, data: result.data, loaded: true, loading: false, error: "" } }));
         })
-        .catch(cause => { if (!disposed) setCatalogs(previous => ({ ...previous, [id]: { version, data: previous[id]?.data ?? [], loaded: false, loading: false, error: cause instanceof Error ? cause.message : String(cause) } })); });
+        .catch(cause => { if (!disposed) setCatalogs(previous => ({ ...previous, [id]: { version, data: previous[id]?.data ?? [], loaded: false, loading: false, error: errorText(cause) } })); });
     }
     return () => { disposed = true; };
   }, [open, disabled, targetKey, retry]); // eslint-disable-line react-hooks/exhaustive-deps -- targets are keyed by targetKey; reuse successful catalogs only for the same saved configuration.

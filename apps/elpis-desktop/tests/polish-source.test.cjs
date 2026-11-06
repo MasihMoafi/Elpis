@@ -17,7 +17,7 @@ function source(relative) {
   const imports = id => {
     if (!id.startsWith('@/')) return require(id);
     const base = path.join(root, id.slice(2));
-    return source(['.tsx', '.ts'].map(ext => base + ext).find(file => fs.existsSync(file)));
+    return source(['.tsx', '.ts', ''].map(ext => base + ext).find(file => fs.existsSync(file)));
   };
   new Function('require', 'module', 'exports', code)(imports, module, module.exports);
   return module.exports;

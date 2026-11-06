@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api } from "@/lib/api";
 import { ChangeCounts } from "@/components/change-counts";
+import { errorText } from "@/lib/error-text.mjs";
 
 export type RestoreMode = "both" | "conversation" | "code";
 type Preview = { available: boolean; reason?: string; version?: string; files?: string[]; added?: number; removed?: number; diff?: string; truncated?: boolean };
@@ -21,13 +22,13 @@ export function RewindDialog({ threadId, turnId, prompt, turns, onConfirm, onClo
     api<Preview>(`/threads/${encodeURIComponent(threadId)}/rewind`, { action: "preview", beforeTurnId: turnId }).then(value => {
       if (disposed) return;
       setPreview(value); if (!value.available) setMode("conversation");
-    }).catch(cause => { if (!disposed) { setPreview({ available: false, reason: cause instanceof Error ? cause.message : String(cause) }); setMode("conversation"); } });
+    }).catch(cause => { if (!disposed) { setPreview({ available: false, reason: errorText(cause) }); setMode("conversation"); } });
     return () => { disposed = true; };
   }, [threadId, turnId]);
   async function rewind() {
     setBusy(true); setError("");
     try { await onConfirm(mode, mode === "conversation" ? undefined : preview?.version); onClose(); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    catch (cause) { setError(errorText(cause)); }
     finally { setBusy(false); }
   }
   return <AlertDialog open={turns !== null} onOpenChange={value => { if (!busy && !value) { setError(""); onClose(); } }}>

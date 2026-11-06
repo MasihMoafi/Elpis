@@ -6,6 +6,7 @@ import type { Attachment } from "@/lib/attachments";
 import type { Mention } from "@/lib/mentions";
 import { readPreferences } from "@/lib/preferences";
 import { appStorage } from "@/lib/projects";
+import { errorText } from "./error-text.mjs";
 
 /** Settings → General → Follow-up behavior: Queue holds messages sent during a running turn
  * and sends them, one turn each, after it completes. Steer (the default) adds them to the running turn. */
@@ -35,7 +36,7 @@ const sendTurn = async (threadId: string, item: FollowUp) => {
   // The runtime can report the thread busy for a moment after the completion event.
   for (let attempt = 0; ; attempt++) {
     try { return await api(`/threads/${encodeURIComponent(threadId)}/turns`, body); }
-    catch (error) { if (attempt >= 3 || !/is running/i.test(error instanceof Error ? error.message : "")) throw error; await new Promise(resolve => setTimeout(resolve, 400)); }
+    catch (error) { if (attempt >= 3 || !/is running/i.test(errorText(error, ""))) throw error; await new Promise(resolve => setTimeout(resolve, 400)); }
   }
 };
 

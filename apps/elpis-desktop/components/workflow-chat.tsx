@@ -13,6 +13,7 @@ import { api, providerChoices, type Model, type ProviderSettings, type Thread } 
 import { useElpisSettings } from "@/lib/settings-store";
 import { arrange, withMother, type CanvasGraph, type CanvasNode, type TaskStatus } from "@/lib/canvas";
 import type { WorkflowIdentity, WorkflowRun } from "@/lib/workflow-identity";
+import { errorText } from "@/lib/error-text.mjs";
 
 export type RecordedTask = {
   id: string; title?: string; status?: string; kind?: string; instruction?: string; dependsOn?: string[]; feedbackFrom?: string[];
@@ -108,7 +109,7 @@ export function WorkflowChat({ run, identity, ready, models = [], threads = [], 
         if (!live) return;
         setRecord(next); setError("");
         timer = setTimeout(read, ACTIVE.has(next.status) || next.next && !next.next.reported && ACTIVE.has(next.next.status) ? 1500 : 5000);
-      } catch (cause) { if (live) setError(cause instanceof Error ? cause.message : String(cause)); }
+      } catch (cause) { if (live) setError(errorText(cause)); }
     };
     void read();
     return () => { live = false; clearTimeout(timer); };
@@ -121,7 +122,7 @@ export function WorkflowChat({ run, identity, ready, models = [], threads = [], 
       const provider = choices.find(choice => choice.id === pick.choiceId)?.provider;
       await api(`/workflows/${encodeURIComponent(owner)}/resume`, pick.model ? { model: pick.model, ...(provider ? { provider } : {}) } : {});
       setRevision(value => value + 1);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    } catch (cause) { setError(errorText(cause)); }
     finally { setPending(false); }
   }
   const tasks = record.tasks ?? [], complete = tasks.filter(task => ["succeeded", "completed"].includes(task.status ?? "")).length;

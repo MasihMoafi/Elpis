@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { AppUpdate } from "@/components/app-update";
 import { Button } from "@/components/ui/button";
 import { SettingRow, SettingsGroup, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
+import { errorText } from "@/lib/error-text.mjs";
 
 type Identity = { version: string; commit: string | null; releaseNotes: string };
 export function AboutSettings() {
@@ -12,7 +13,7 @@ export function AboutSettings() {
   async function load() {
     setError("");
     try { setIdentity(await api<Identity>("/about")); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    catch (cause) { setError(errorText(cause)); }
   }
   useEffect(() => { void load(); }, []);
   return <div aria-label="About">

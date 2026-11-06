@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import type { Attachment } from "@/lib/attachments";
 import type { Browser } from "@/components/browser-panel";
+import { errorText } from "@/lib/error-text.mjs";
 
 /** Gives comments to the chat: adds them to the composer and, for Send, sends the message. False when they could not be added. */
 export type AttachToChat = (parts: Attachment[], submit: boolean) => Promise<boolean>;
@@ -73,7 +74,7 @@ export function AnnotationDock({ browser, onAttach, imagesAllowed }: { browser: 
       const parts: Attachment[] = [{ id: crypto.randomUUID(), name: BROWSER_COMMENTS, type: "text", mimeType: "text/plain", text: result.text }];
       if (result.images?.length) parts.push({ id: crypto.randomUUID(), name: "Browser comments.jpg", type: "image", mimeType: "image/jpeg", dataUrl: await screenshotSheet(result.images) });
       if (await onAttach(parts, submit)) await command("annotationsSent");
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    } catch (e) { setError(errorText(e)); }
     finally { setBusy(false); }
   }
   const count = comments.length;

@@ -9,6 +9,7 @@ import { ChoiceRow, DecisionCard, type Choice } from "@/components/decision-card
 import type { Approval } from "@/lib/api";
 import { elicitationChoices, elicitationFormContent, fieldOptions, grantedPermissions } from "@/lib/approvals";
 import { OTHER_ANSWER, questionAnswer, questionState, type Question } from "@/lib/questions";
+import { errorText } from "@/lib/error-text.mjs";
 
 type Decision = unknown;
 /** A shell word as typed: plain words stay bare, anything else is quoted. */
@@ -42,7 +43,7 @@ export function ApprovalCard({ approval, answer, deny, answers, onAnswerChange, 
 }) {
   const [error, setError] = useState("");
   function changeAnswer(id: string, value: string[]) { setError(""); onAnswerChange(id, value); }
-  async function submit(run: () => Promise<void>) { if (busy) return; setError(""); try { await run(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } }
+  async function submit(run: () => Promise<void>) { if (busy) return; setError(""); try { await run(); } catch (e) { setError(errorText(e)); } }
   const send = (body: unknown | (() => unknown)) => submit(() => answer(approval.id, typeof body === "function" ? body() : body));
   const params = approval.params;
   const elicitation = approval.method === "mcpServer/elicitation/request";

@@ -7,6 +7,7 @@ import { SHORTCUTS, configuredShortcuts, canCustomizeShortcut, keyCombination, s
 import { savePreferences, usePreferences } from "@/lib/preferences";
 import { ShortcutRecorder } from "@/components/settings/system-settings";
 import { SettingRow, SettingsEmpty, SettingsGroup, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
+import { errorText } from "@/lib/error-text.mjs";
 
 const matches = (shortcut: Shortcut, query: string) => {
   const text = [shortcut.group, shortcut.label, shortcut.keys.join("+"), ...shortcut.keys].join(" ").toLowerCase();
@@ -28,7 +29,7 @@ export function ShortcutSettings() {
     const next = { ...bindings };
     if (binding === null) delete next[id]; else next[id] = binding;
     try { savePreferences({ shortcutBindings: JSON.stringify(next) }); }
-    catch (cause) { setError(`Could not save shortcut: ${cause instanceof Error ? cause.message : String(cause)}`); }
+    catch (cause) { setError(`Could not save shortcut: ${errorText(cause)}`); }
   };
   const groups = [...new Set(found.map(item => item.group))];
   return <div aria-label="Keyboard shortcuts">

@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { useDocumentReview } from "@/components/document-review";
 import type { MenuAction } from "@/components/action-menu";
 import { chooseEditor, useEditors, type EditorInfo } from "@/lib/editors";
+import { errorText } from "@/lib/error-text.mjs";
 
 /** A file or folder the menus act on: where it is, how it is called inside the chat's folder, and the line a reply named. */
 export type FileTarget = { abs: string; rel: string; inside: boolean; dir?: boolean; line?: number };
@@ -16,7 +17,7 @@ const folderOf = (path: string) => path.slice(0, path.lastIndexOf("/")) || "/";
  * forgets it. A failure is passed to `onError`. */
 export function fileActions(target: FileTarget, editors: EditorInfo[], onError: (message: string) => void, onFiles?: () => void): MenuAction[] {
   const desktop = typeof window === "undefined" ? undefined : window.elpisDesktop;
-  const attempt = (run: Promise<unknown> | undefined) => { run?.then(() => onError(""), cause => onError(cause instanceof Error ? cause.message : "Could not do that.")); };
+  const attempt = (run: Promise<unknown> | undefined) => { run?.then(() => onError(""), cause => onError(errorText(cause, "Could not do that."))); };
   const copy = (text: string) => () => { navigator.clipboard.writeText(text).then(() => onError(""), () => onError("Could not copy. Select the text to copy it.")); };
   const line = target.dir ? undefined : target.line;
   return [

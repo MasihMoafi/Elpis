@@ -11,6 +11,7 @@ import { api } from "@/lib/api";
 import { initialGraph, TEMPLATES, type CanvasGraph } from "@/lib/canvas";
 import { labProgress, labStages, labSummary, type LabRecord, type LabStop } from "@/lib/experiment-lab";
 import styles from "./experiment-lab.module.css";
+import { errorText } from "@/lib/error-text.mjs";
 type LabEntry = { id: string; startedAt: string; status: LabRecord["status"]; task: string };
 type LabResponse = { record: LabRecord | null; entries?: LabEntry[] };
 
@@ -53,7 +54,7 @@ function Lab({ graph }: { graph: CanvasGraph }) {
     try {
       const { record: value, entries: saved } = await api<LabResponse>("/experiment-lab", stop ? { action: "stop" } : { pattern, task, expected, repetitions: n, stopWhen, stages });
       if (mounted.current) { setRecord(value); setEntries(saved ?? []); }
-    } catch (cause) { if (mounted.current) setError(cause instanceof Error ? cause.message : String(cause)); }
+    } catch (cause) { if (mounted.current) setError(errorText(cause)); }
     finally { if (mounted.current) setBusy(false); }
   };
   const fresh = () => {
@@ -64,7 +65,7 @@ function Lab({ graph }: { graph: CanvasGraph }) {
     try {
       const { record: value, entries: saved } = await api<LabResponse>(`/experiment-lab?id=${encodeURIComponent(id)}`);
       if (mounted.current) { showRecord(value); setEntries(saved ?? []); }
-    } catch (cause) { if (mounted.current) setError(cause instanceof Error ? cause.message : String(cause)); }
+    } catch (cause) { if (mounted.current) setError(errorText(cause)); }
     finally { if (mounted.current) setBusy(false); }
   };
   const download = () => {

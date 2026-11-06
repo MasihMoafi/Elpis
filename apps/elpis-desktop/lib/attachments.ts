@@ -1,3 +1,4 @@
+import { errorText } from "./error-text.mjs";
 export type Attachment = { id: string; name: string; type: "image"; mimeType: string; dataUrl: string } | { id: string; name: string; type: "text"; mimeType: "text/plain"; text: string };
 type DraftStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 /** What the one "Add files or photos" chooser shows: pictures, PDFs and text. */
@@ -138,7 +139,7 @@ export async function attachFiles(current: Attachment[], files: File[], extract?
   for (const file of files) {
     if (kept.length >= ATTACHMENT_LIMITS.count) { left.push(file.name); continue; }
     try { const fit = fitAttachments(kept, [await attachmentFromFile(file, extract)]); added.push(...fit.kept.slice(kept.length)); kept = fit.kept; problems.push(...fit.problems); }
-    catch (cause) { problems.push(cause instanceof Error ? cause.message : String(cause)); }
+    catch (cause) { problems.push(errorText(cause)); }
   }
   if (left.length) problems.unshift(`${tooMany()} Not added: ${left.join(", ")}.`);
   return { added, problems };

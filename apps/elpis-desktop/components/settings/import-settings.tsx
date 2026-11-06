@@ -4,10 +4,11 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { api, unreadable } from "@/lib/api";
 import { SettingRow, SettingsGroup, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
+import { errorText } from "@/lib/error-text.mjs";
 
 type Listing = { days: number; atATime: number; sources: { id: string; name: string; chats: number }[] };
 type Outcome = { source: string; imported: number; skipped: string[] };
-const message = (cause: unknown) => cause instanceof Error ? cause.message : String(cause);
+const message = (cause: unknown) => errorText(cause);
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
 /** Settings → Import chats, as in Cloudroom: Claude Code and Codex chats become chats of Elpis, with their history; the originals stay untouched. */

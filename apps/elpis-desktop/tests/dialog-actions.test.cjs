@@ -17,7 +17,7 @@ function components() {
     const local = id => {
       if (!id.startsWith('@/')) return createRequire(file)(id);
       const base = path.join(root, id.slice(2));
-      return load(['.ts', '.tsx'].map(extension => base + extension).find(fs.existsSync));
+      return load(['.ts', '.tsx', ''].map(extension => base + extension).find(fs.existsSync));
     };
     new Function('require', 'exports', 'module', code)(local, module.exports, module);
     return module.exports;

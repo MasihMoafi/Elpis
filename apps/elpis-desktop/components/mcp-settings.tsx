@@ -12,6 +12,7 @@ import { SettingsEmpty, SettingsHeader, SettingsNotice } from "@/components/sett
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { api, type Model } from "@/lib/api";
 import { ModelChoice } from "@/components/settings/maintenance";
+import { errorText } from "@/lib/error-text.mjs";
 
 type Credential = { name: string; source: "config" | "environment"; set: boolean };
 type Server = { name: string; enabled: boolean; transport: "stdio" | "http"; command: string | null; url: string | null; credentials: Credential[]; whispertype?: { backend: "openrouter" | "codex" | "local"; model: string | null } };
@@ -20,7 +21,7 @@ type ClaudePreview = { revision: string; version: string; servers: { name: strin
 type Stage = { stage: "embedding" | "reranking" | "generation"; provider: string | null; model: string | null; location: "local" | "api" | null };
 type Rag = { stages: Stage[]; keys: { openrouter: boolean } };
 
-const message = (e: unknown) => e instanceof Error ? e.message : String(e);
+const message = (e: unknown) => errorText(e);
 /** A reply without its server list (an older or failing bridge) reads as no servers, never as a broken page. */
 const readMcp = (value: Mcp): Mcp => ({ ...value, servers: Array.isArray(value?.servers) ? value.servers : [], write: value?.write ?? { available: false } });
 /** What the rag tool accepts for its reranker (bridge/tools.mjs): off, the local engine, or an OpenRouter reranker ID. */

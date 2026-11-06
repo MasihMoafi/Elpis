@@ -18,6 +18,7 @@ import { api, signedIn } from "@/lib/api";
 import { MATILDA_CHANGED, MATILDA_CHAT_SHOWN } from "@/lib/matilda";
 import { appStorage } from "@/lib/projects";
 import { MATILDA_SHOTS, MATILDA_SHOTS_LIGHT } from "@/bridge/matilda-face.cjs";
+import { errorText } from "@/lib/error-text.mjs";
 
 type Track = { title: string; artist: string; uri: string; status: string; canPlay: boolean; canPause: boolean; canNext: boolean; muted: boolean; canMute: boolean };
 type Companion = { pinned: boolean; face?: string; favorite: { title: string; uri: string; artist?: string } | null; threadId?: string | null; music: Track | null; reason: string };
@@ -148,7 +149,7 @@ export function MatildaCompanion() {
     try {
       const value = await api<Companion>("/love-spot/companion?page=global");
       if (request === generation.current) { setState(value); setError(""); }
-    } catch (cause) { if (request === generation.current) setError(cause instanceof Error ? cause.message : "Matilda could not load."); }
+    } catch (cause) { if (request === generation.current) setError(errorText(cause, "Matilda could not load.")); }
   }, []);
   useEffect(() => {
     let live = true, ready = false;
@@ -166,7 +167,7 @@ export function MatildaCompanion() {
     try {
       const value = await api<Companion>("/love-spot/companion", { action, page: "global" });
       if (request === generation.current) setState(value);
-    } catch (cause) { if (request === generation.current) setError(cause instanceof Error ? cause.message : "The action could not finish."); }
+    } catch (cause) { if (request === generation.current) setError(errorText(cause, "The action could not finish.")); }
     finally { if (request === generation.current) { working.current = false; setBusy(false); } }
   }
   // `place` is where she was put, and is what is saved. `shown` fits it to the window and keeps her off native browser
@@ -263,7 +264,7 @@ export function MatildaCompanion() {
   useEffect(() => {
     const capture = window.elpisDesktop?.screenCapture;
     if (!capture) return;
-    void capture.setSession(state?.pinned ? state.threadId ?? null : null).catch(cause => setError(cause instanceof Error ? cause.message : "Page capture could not connect."));
+    void capture.setSession(state?.pinned ? state.threadId ?? null : null).catch(cause => setError(errorText(cause, "Page capture could not connect.")));
     return () => { void capture.setSession(null).catch(() => {}); };
   }, [state?.pinned, state?.threadId]);
   useEffect(() => () => document.documentElement.classList.remove("matilda-dragging"), []);

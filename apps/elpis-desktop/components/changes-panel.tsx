@@ -10,6 +10,7 @@ import { parseDiff } from "@/lib/diff";
 import { FileRefLink } from "@/components/file-ref";
 import { Counts, DIFF_LINE_LIMIT, DiffLines } from "@/components/diff-view";
 import "@/components/changes-panel.css";
+import { errorText } from "@/lib/error-text.mjs";
 
 type Status = "modified" | "added" | "deleted" | "untracked" | "conflicted";
 type Change = { path: string; status: Status; added: number; removed: number; binary: boolean };
@@ -28,7 +29,7 @@ const WARNING: Record<Status, string> = {
   deleted: "The file comes back as it was in the last commit.",
   conflicted: "The file goes back to its last committed version and the merge result is lost.",
 };
-const message = (cause: unknown) => cause instanceof Error ? cause.message : String(cause);
+const message = (cause: unknown) => errorText(cause);
 const pathOf = (root: string, file: string) => file.startsWith("/") ? file : `${root.replace(/\/+$/, "")}/${file}`;
 const folderOf = (root: string, file: string) => { const full = pathOf(root, file); return full.slice(0, full.lastIndexOf("/")) || "/"; };
 

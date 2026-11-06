@@ -5,6 +5,7 @@ import { LoaderCircle, X } from "lucide-react";
 import { MicIcon, StopIcon } from "@/components/elpis-icons";
 import { Button } from "@/components/ui/button";
 import type { DictationSelection } from "@/lib/dictation";
+import { errorText } from "@/lib/error-text.mjs";
 
 type Route = { available: boolean; backend?: string; label?: string; reason?: string };
 /** `provider` is the chat's provider (see chatProvider): the bridge picks the transcriber that provider uses, or the Settings → Voice fallback. */
@@ -78,7 +79,7 @@ export function Dictation({ disabled, provider, selection, onTranscript, onBusy,
           if (typeof result.text !== "string" || !result.text.trim()) throw new Error("No speech was recognized. Your draft is unchanged.");
           callbacks.current.onTranscript(insertion, result.text);
         } catch (cause) {
-          if (token === generation.current) setError(cause instanceof Error ? cause.message : "Transcription failed. Your draft is unchanged.");
+          if (token === generation.current) setError(errorText(cause, "Transcription failed. Your draft is unchanged."));
         } finally { if (token === generation.current) { request.current = null; recorder.current = null; setPhase("idle"); } }
       };
       recording.start(250); setPhase("recording"); const started = Date.now();
@@ -87,7 +88,7 @@ export function Dictation({ disabled, provider, selection, onTranscript, onBusy,
     } catch (cause) {
       if (token !== generation.current) return;
       release(); setPhase("idle");
-      setError(cause instanceof DOMException && cause.name === "NotAllowedError" ? "Microphone access was denied. Allow it in your system settings and try again." : cause instanceof Error ? cause.message : "The microphone could not start.");
+      setError(cause instanceof DOMException && cause.name === "NotAllowedError" ? "Microphone access was denied. Allow it in your system settings and try again." : errorText(cause, "The microphone could not start."));
     }
   }
 

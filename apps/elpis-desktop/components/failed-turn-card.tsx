@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { Model } from "@/lib/api";
+import { errorText } from "@/lib/error-text.mjs";
 
 export type FailedTurn = { turnId: string; error: { message: string; codexErrorInfo?: string | Record<string, unknown>; additionalDetails?: string | null } };
 
@@ -34,7 +35,7 @@ export function FailedTurnCard({ failure, models, currentModel, disabled, blocke
     if (!onRetry || sending.current || sent || disabled) return;
     sending.current = true; setPending(true); setError("");
     try { await onRetry(model); setSent(true); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    catch (cause) { setError(errorText(cause)); }
     finally { sending.current = false; setPending(false); }
   }
   return <div role="alert" className="failed-turn-card rounded-lg border">

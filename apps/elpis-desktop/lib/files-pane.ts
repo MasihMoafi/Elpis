@@ -7,6 +7,7 @@ import { api } from "@/lib/api";
 import { resolveRef, type FileRef } from "@/lib/file-refs";
 import { isAudioPath } from "@/lib/audio-path.mjs";
 import { MATILDA_CHANGED } from "@/lib/matilda";
+import { errorText } from "./error-text.mjs";
 
 export type Entry = { name: string; dir: boolean; link?: boolean };
 export type Listing = { status: "loading" } | { status: "error"; message: string } | { status: "ready"; entries: Entry[] };
@@ -25,7 +26,7 @@ const blank = (): Pane => ({ open: [], active: null, showTree: true, expanded: [
 let state: State = { host: { attached: false, cwd: "" }, panes: {}, docs: {}, dirs: {}, names: {} };
 const listeners = new Set<() => void>(), requests = new Set<() => void>();
 const set = (next: Partial<State>) => { state = { ...state, ...next }; for (const listener of listeners) listener(); };
-const message = (cause: unknown) => cause instanceof Error ? cause.message : String(cause);
+const message = (cause: unknown) => errorText(cause);
 const enc = encodeURIComponent;
 
 export const docKey = (cwd: string, path: string) => resolveRef({ path }, cwd).abs;

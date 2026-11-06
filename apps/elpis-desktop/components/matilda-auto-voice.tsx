@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useReadAloud } from "@/components/read-aloud";
 import { api, type Entry } from "@/lib/api";
 import { entryKey } from "@/lib/submitted-messages";
+import { errorText } from "@/lib/error-text.mjs";
 
 /** Subscribe before the next turn, then speak its live prose through the board's existing sentence queue. */
 export function MatildaAutoVoice({ threadId, activeTurnId, entries, disabled }: { threadId: string; activeTurnId: string | null; entries: Entry[]; disabled: boolean }) {
@@ -15,7 +16,7 @@ export function MatildaAutoVoice({ threadId, activeTurnId, entries, disabled }: 
     alive.current = true;
     void api<{ thread: { id: string } | null }>("/love-spot/talk").then(value => {
       if (alive.current) setReady(value.thread?.id === threadId);
-    }).catch(cause => { if (alive.current) setError(cause instanceof Error ? cause.message : "Automatic voice could not connect."); });
+    }).catch(cause => { if (alive.current) setError(errorText(cause, "Automatic voice could not connect.")); });
     return () => { alive.current = false; };
   }, [threadId]);
   useEffect(() => {
@@ -25,7 +26,7 @@ export function MatildaAutoVoice({ threadId, activeTurnId, entries, disabled }: 
     spoken.current.add(activeTurnId); setError("");
     void api<{ enabled: boolean }>("/love-spot/voice/settings").then(voice => {
       if (alive.current && latest.current.threadId === threadId && !latest.current.disabled && voice.enabled) latest.current.speech?.stream(entryKey(entry));
-    }).catch(cause => { if (alive.current) setError(cause instanceof Error ? cause.message : "Automatic voice could not start."); });
+    }).catch(cause => { if (alive.current) setError(errorText(cause, "Automatic voice could not start.")); });
   }, [ready, disabled, activeTurnId, entries, threadId]);
   return error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null;
 }

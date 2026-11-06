@@ -2,6 +2,7 @@
 
 import { Component, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { errorText } from "@/lib/error-text.mjs";
 
 type Props = {
   children: ReactNode;
@@ -17,7 +18,7 @@ type State = { error: string | null; resetKey: unknown };
  * replies defensively too (lib/api.ts `unreadable`); this catches whatever they did not foresee. */
 export class ViewBoundary extends Component<Props, State> {
   state: State = { error: null, resetKey: this.props.resetKey };
-  static getDerivedStateFromError(error: unknown) { return { error: error instanceof Error ? error.message : String(error) }; }
+  static getDerivedStateFromError(error: unknown) { return { error: errorText(error) }; }
   static getDerivedStateFromProps(props: Props, state: State) { return props.resetKey === state.resetKey ? null : { error: null, resetKey: props.resetKey }; }
   render() {
     if (this.state.error === null) return this.props.children;

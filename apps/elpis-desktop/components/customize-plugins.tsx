@@ -11,13 +11,14 @@ import { SettingsEmpty, SettingsNotice } from "@/components/settings/rows";
 import { CustomizeRow } from "@/components/customize-row";
 import { api, unreadable } from "@/lib/api";
 import { LoadOnScroll } from "@/components/load-on-scroll";
+import { errorText } from "@/lib/error-text.mjs";
 
 export type Plugin = { id: string; name: string; description: string; marketplace: string; enabled: boolean };
 export type ConfigWrite = { version?: string | null; write?: { available: boolean } };
 export type PluginChange = { action: "enable" | "uninstall" | "install"; id: string; enabled?: boolean; version?: string | null };
 type CatalogPlugin = Plugin & { pluginName: string; marketplaceName: string; marketplacePath: string | null; installed: boolean; installable: boolean; reason: string | null };
 type Catalog = { marketplaces: { name: string; displayName: string; path: string | null }[]; appCatalogs?: { app: string; label: string; added: boolean }[]; plugins: CatalogPlugin[]; errors: string[]; nextCursor: string | null };
-const message = (error: unknown) => error instanceof Error ? error.message : String(error);
+const message = (error: unknown) => errorText(error);
 
 export function CustomizePlugins({ cwd, plugins, loaded, config, onChange, onReload }: { cwd: string | null; plugins: Plugin[]; loaded: boolean; config: ConfigWrite; onChange: (change: PluginChange) => Promise<string[]>; onReload: () => Promise<void> }) {
   const [browse, setBrowse] = useState(false), [pending, setPending] = useState<string | null>(null);

@@ -9,6 +9,7 @@ import { Choice, Segmented, SettingRow, SettingsGroup, SettingsHeader, SettingsN
 import { savePreferences, usePreferences, type Accent, type Preferences } from "@/lib/preferences";
 import { BUILT_IN_THEMES, parseCustomThemes, STARTER_THEME, THEME_COLORS, validTheme, type CustomTheme, type ThemeColor } from "@/lib/theme-palettes";
 import { codeFontProblem, type ReadingStep } from "@/lib/reading";
+import { errorText } from "@/lib/error-text.mjs";
 
 export type ThemeChoice = "system" | "light" | "dark";
 const OPTIONS: { value: ThemeChoice; label: string; icon: React.ReactNode }[] = [
@@ -30,7 +31,7 @@ export function AppearanceSettings({ theme, onTheme }: { theme: ThemeChoice; onT
   const preferences = usePreferences();
   const [notice, setNotice] = useState("");
   const [deleting, setDeleting] = useState<CustomTheme | null>(null);
-  const save = (patch: Partial<Preferences>) => { setNotice(""); try { savePreferences(patch); } catch (cause) { setNotice(`Could not save this preference: ${cause instanceof Error ? cause.message : String(cause)}`); } };
+  const save = (patch: Partial<Preferences>) => { setNotice(""); try { savePreferences(patch); } catch (cause) { setNotice(`Could not save this preference: ${errorText(cause)}`); } };
   const savedThemes = parseCustomThemes(preferences.customThemes);
   const themes = [...BUILT_IN_THEMES, ...savedThemes];
   const selectedId = themes.some(item => item.id === preferences.selectedPalette) ? preferences.selectedPalette : "elpis";

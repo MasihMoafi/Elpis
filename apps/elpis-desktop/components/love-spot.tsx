@@ -36,6 +36,7 @@ import { BOARD_THEMED } from "@/bridge/matilda-face.cjs";
 import { upgradeAgentArt } from "@/lib/love-agents";
 import "@excalidraw/excalidraw/index.css";
 import "./love-spot.css";
+import { errorText } from "@/lib/error-text.mjs";
 const REPLIES_KEY = "elpis-matilda-replies";
 
 type BoardPage = { name: string; session: string };
@@ -147,13 +148,13 @@ function LoveSpotBoard({ dark, toolbarHost }: LoveSpotProps) {
   const remote = useRef(false);
   const placingScreenshot = useRef<string>(undefined), placingAll = useRef(false);
   const opening = useRef<string[]>([]);
-  const report = useCallback((e: unknown) => { if (mounted.current) setError(e instanceof Error ? e.message : "Love Spot could not save the drawing."); }, []);
+  const report = useCallback((e: unknown) => { if (mounted.current) setError(errorText(e, "Love Spot could not save the drawing.")); }, []);
   if (!journal.current && typeof window !== "undefined") journal.current = createTextJournal(report);
   // A page list that fails is shown in the Pages menu it belongs to; the shared message line is cleared by every save.
   const loadPages = useCallback(() => { void api<PageList>("/love-spot/pages").then(data => {
     if (!Array.isArray(data?.pages)) throw unreadable("Love Spot pages");
     if (mounted.current) { setPages(data.pages); setPagesError(""); }
-  }).catch(e => { if (mounted.current) setPagesError(e instanceof Error ? e.message : String(e)); }); }, []);
+  }).catch(e => { if (mounted.current) setPagesError(errorText(e)); }); }, []);
 
   const reloadAccounts = useCallback(async () => {
     setAccountRefresh(value => value + 1);

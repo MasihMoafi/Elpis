@@ -22,7 +22,7 @@ function fixture(relative, name, props, seed = {}) {
       if (id === 'react') return hooks;
       if (!id.startsWith('@/')) return local(id);
       const target = path.join(root, id.slice(2));
-      return load(['.tsx', '.ts'].map(extension => target + extension).find(existsSync));
+      return load(['.tsx', '.ts', ''].map(extension => target + extension).find(existsSync));
     };
     const { outputText } = transpileModule(readFileSync(file, 'utf8'), { compilerOptions: { module: ModuleKind.CommonJS, jsx: JsxEmit.ReactJSX, target: ScriptTarget.ES2022 } });
     new Function('require', 'module', 'exports', outputText)(imports, module, module.exports);

@@ -7,6 +7,7 @@ import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover
 import { api, unreadable } from "@/lib/api";
 import { WorkflowMark } from "@/components/workflow-identity";
 import type { WorkflowCatalog, WorkflowRun as CatalogRun } from "@/lib/workflow-identity";
+import { errorText } from "@/lib/error-text.mjs";
 
 type WorkflowRun = { id: string; rootThreadId: string; name?: string; status: string; tasks?: { status: string }[]; removable?: boolean; removalReason?: string };
 export function WorkflowHistory({ revision, onOpenChat, catalog, onOpenCanvas }: { revision?: string; onOpenChat: (id: string) => void; catalog?: WorkflowCatalog; onOpenCanvas?: (run: Pick<CatalogRun, "id" | "rootThreadId">) => void }) {
@@ -18,7 +19,7 @@ export function WorkflowHistory({ revision, onOpenChat, catalog, onOpenCanvas }:
       const result = await api<{ data: WorkflowRun[]; canUndo?: boolean }>("/workflows/history");
       if (!Array.isArray(result.data)) throw unreadable("saved workflows");
       setRuns(result.data); setCanUndo(result.canUndo === true);
-    } catch (e) { setError(e instanceof Error ? e.message : "Could not load workflows"); }
+    } catch (e) { setError(errorText(e, "Could not load workflows")); }
     finally { setLoading(false); }
   }, []);
   const change = async (id?: string) => {
@@ -28,7 +29,7 @@ export function WorkflowHistory({ revision, onOpenChat, catalog, onOpenCanvas }:
       setCanUndo(result.canUndo);
       await refresh();
       window.dispatchEvent(new Event("elpis:workflow-history"));
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not change workflow history"); }
+    } catch (cause) { setError(errorText(cause, "Could not change workflow history")); }
     finally { setPending(null); }
   };
   useEffect(() => { if (open) void refresh(); }, [open, revision, refresh]);

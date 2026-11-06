@@ -15,6 +15,7 @@ import { attachedFile } from "@/lib/prompt-history";
 import { LoadOnScroll } from "@/components/load-on-scroll";
 import { MatildaFace } from "@/components/matilda-face";
 import "@/components/matilda-mini-chat.css";
+import { errorText } from "@/lib/error-text.mjs";
 
 /** Earlier messages shown when the history icon opens them, and how many more each scroll to the top reveals (31 Oct: "when I
  * hover up load them"; 1 Nov: none until the icon is pressed). */
@@ -53,7 +54,7 @@ export function useMatildaMiniChat(open: boolean) {
         setConversation(result); setError(result.error || ""); return result;
       }
     } catch (cause) {
-      if (!signal?.aborted && mounted.current && request === latestRead.current) setError(cause instanceof Error ? cause.message : "Matilda could not load. Try again.");
+      if (!signal?.aborted && mounted.current && request === latestRead.current) setError(errorText(cause, "Matilda could not load. Try again."));
     }
   }, [rememberEarlier]);
   useEffect(() => {
@@ -106,7 +107,7 @@ export function useMatildaMiniChat(open: boolean) {
           if (current?.entries.some(entry => entry.turnId === turnId && entry.item.type === "agentMessage")) return;
         }
       })();
-    } catch (cause) { if (mounted.current) setError(cause instanceof Error ? cause.message : "Message not sent. Try again."); }
+    } catch (cause) { if (mounted.current) setError(errorText(cause, "Message not sent. Try again.")); }
     finally { sending.current = false; if (mounted.current) setPosting(false); }
   }
   return { draft, setDraft, conversation, error, posting, send, retry: read, earlier, shownEarlier, showMoreEarlier: () => setShownEarlier(count => count + EARLIER_STEP), history, setHistory };

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { appStorage } from "@/lib/projects";
+import { errorText } from "./error-text.mjs";
 
 export type BrowserPin = { url: string; title: string };
 const KEY = "elpis-browser-pins-v1", CHANGE = "elpis:browser-pins";
@@ -15,7 +16,7 @@ function readPins(): BrowserPin[] {
 export function useBrowserPins(onError: (message: string) => void) {
   const [pins, setPins] = useState<BrowserPin[]>([]), report = useRef(onError); report.current = onError;
   useEffect(() => {
-    const refresh = () => { try { setPins(readPins()); } catch (error) { report.current(error instanceof Error ? error.message : String(error)); } };
+    const refresh = () => { try { setPins(readPins()); } catch (error) { report.current(errorText(error)); } };
     refresh(); window.addEventListener(CHANGE, refresh);
     const unsubscribe = window.elpisDesktop?.storage?.onChange?.(key => { if (key === KEY) refresh(); });
     return () => { window.removeEventListener(CHANGE, refresh); unsubscribe?.(); };
@@ -27,7 +28,7 @@ export function useBrowserPins(onError: (message: string) => void) {
       const value = JSON.stringify(next), desktop = window.elpisDesktop?.storage;
       if (desktop?.saveItem) await desktop.saveItem(KEY, value); else appStorage().setItem(KEY, value);
       setPins(next); window.dispatchEvent(new Event(CHANGE));
-    } catch (error) { report.current(error instanceof Error ? error.message : String(error)); }
+    } catch (error) { report.current(errorText(error)); }
   }
   return { pins, toggle };
 }

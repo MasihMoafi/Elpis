@@ -2,6 +2,7 @@
 
 import { useEffect, useSyncExternalStore } from "react";
 import { api, unreadable } from "@/lib/api";
+import { errorText } from "@/lib/error-text.mjs";
 
 // Usage as Elpis reports it from account/rateLimits/read, one provider at a time (Cloudroom's usage card).
 export type UsageWindow = { usedPercent: number | null; windowDurationMins: number | null; resetsAt: number | null };
@@ -89,7 +90,7 @@ function reload(): Promise<void> {
   clearTimeout(retryTimer); update({ loading: true });
   running = (async () => {
     try { update({ data: keepReportedUsage(usage.data, readProviders(await api<Providers>("/providers"))), error: "" }); }
-    catch (e) { update({ error: e instanceof Error ? e.message : String(e) }); }
+    catch (e) { update({ error: errorText(e) }); }
     finally {
       running = null; update({ loading: false });
       if (queued) { queued = false; void reload(); }

@@ -11,10 +11,11 @@ import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogFoo
 import { DiffLines } from "@/components/diff-view";
 import { parseDiff } from "@/lib/diff";
 import "./improve-elpis.css";
+import { errorText } from "@/lib/error-text.mjs";
 
 type Target = { id: string; label: string; image: string; component: string; file: string };
 type Change = { id: string; branch: string; cwd: string; status: string; head?: string; dirty?: boolean; diff?: string; truncated?: boolean; error?: string; note?: string; thread: Thread; checks: { passed: boolean; head: string; commands: { command: string; code: number; output: string }[] } | null };
-const message = (error: unknown) => error instanceof Error ? error.message : String(error);
+const message = (error: unknown) => errorText(error);
 const paint = () => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
 
 /** Pointing and review live alongside the ordinary chat; the engine and chat store stay the existing ones. */

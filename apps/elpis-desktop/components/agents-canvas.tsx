@@ -33,6 +33,7 @@ import { useElpisSettings } from "@/lib/settings-store";
 import { appStorage } from "@/lib/projects";
 import { filesText, mergeStops, runPayload, stopText, wantsIsolation } from "@/lib/canvas-isolation";
 import { PATTERNS, PATTERN_TEAMS, WORKFLOWS, LANGUAGES, languageOf, type Language, type ReadyMade, agentCount, WHOLE_PROJECT, applyPattern, ownFolders, agentColor, CHECK_LABEL, COLUMN, DONE, FATHER, MOTHER, STATUS_LABEL, TASKS_PER_AGENT, waits, TEMPLATES, agentName, promptName, applyPlan, arrange, boardForPlan, checkOf, commandParts, shapeOf, makesLoop, maxAgents, newAgents, newId, parseCommand, parents, initialGraph, runParts, saveGraph, waves, withMother, type AgentData, type CanvasEdge, type CanvasGraph, type CanvasNode, type CatalogModel, type Command, type MotherSettings, type NoteData, type Plan, type RunTask, type TaskStatus } from "@/lib/canvas";
+import { errorText } from "@/lib/error-text.mjs";
 
 
 /** A run: the Mother's part, and the Father agent's when the graph has more agents than she runs (lib/canvas.ts `parents`):
@@ -371,7 +372,7 @@ function LiveFeed({ chat, working, idle, ready }: { chat: string | null; working
   useEffect(() => {
     if (!ready || !chat) return;
     let live = true;
-    const read = () => api<{ data: Entry[] }>(`/threads/${encodeURIComponent(chat)}?limit=100`).then(result => { if (live) { setEntries(result.data); setError(""); } }).catch(cause => { if (live) setError(cause instanceof Error ? cause.message : String(cause)); });
+    const read = () => api<{ data: Entry[] }>(`/threads/${encodeURIComponent(chat)}?limit=100`).then(result => { if (live) { setEntries(result.data); setError(""); } }).catch(cause => { if (live) setError(errorText(cause)); });
     void read();
     const timer = working ? setInterval(() => void read(), 2000) : undefined;
     return () => { live = false; if (timer) clearInterval(timer); };
@@ -399,7 +400,7 @@ function AgentRunOutput({ runId, taskId, working, ready }: { runId: string; task
     let live = true;
     const read = () => api<AgentOutput>(`/workflows/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(taskId)}/output`)
       .then(result => { if (live) { setOutput(result); setError(""); } })
-      .catch(cause => { if (live) setError(cause instanceof Error ? cause.message : String(cause)); });
+      .catch(cause => { if (live) setError(errorText(cause)); });
     void read();
     const timer = working ? setInterval(() => void read(), 2000) : undefined;
     return () => { live = false; if (timer) clearInterval(timer); };
@@ -430,7 +431,7 @@ function useProjectFolders(cwd?: string) {
   useEffect(() => {
     if (!cwd) return;
     let live = true;
-    api<{ data: string[] }>(`/folders?cwd=${encodeURIComponent(cwd)}`).then(result => { if (live) { setFolders(result.data); setError(""); } }).catch(cause => { if (live) setError(cause instanceof Error ? cause.message : String(cause)); });
+    api<{ data: string[] }>(`/folders?cwd=${encodeURIComponent(cwd)}`).then(result => { if (live) { setFolders(result.data); setError(""); } }).catch(cause => { if (live) setError(errorText(cause)); });
     return () => { live = false; };
   }, [cwd]);
   return { folders, error };
@@ -535,7 +536,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
     try {
       const item = workflowCatalog.ensure(graph.workflowId || crypto.randomUUID(), graph.name);
       if (graph.workflowId !== item.id || !identity) setGraph(current => ({ ...current, workflowId: item.id, name: item.name }));
-    } catch (cause) { setNotice(cause instanceof Error ? cause.message : String(cause)); }
+    } catch (cause) { setNotice(errorText(cause)); }
   }, [workflowCatalog.hydrated, workflowCatalog.ensure, graph.workflowId]); // eslint-disable-line react-hooks/exhaustive-deps
   const [sourceId, setSourceId] = useState<string | null>(null);
   // What is selected is kept apart from the saved graph: a click picks one, Shift+click or Shift+drag several.
@@ -621,7 +622,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
         ...(record.endedAt ? { endedAt: record.endedAt } : {}), ...(record.error ? { error: record.error } : {}), ...(record.next ? { father: { tasks: [], threadId: record.next.threadId, graphId: record.next.graphId, status: record.next.status, reported: record.next.reported } } : {}) });
       setLog([...tasks.map(task => ({ agent: task.id, text: `${task.title || task.id} · ${task.status || "not recorded"}${task.failureReason ? ` · ${task.failureReason}` : ""}`, tone: task.status === "failed" || task.status === "blocked" ? "fail" : task.status === "succeeded" || task.status === "completed" ? "done" : "start" } as LogLine)), ...motherDecisionLines(record), ...stoppedLine(record.status, record.error)]);
       setNotice(recordedRun ? "" : record.error || tasks.find(task => task.failureReason)?.failureReason || "");
-    }).catch(cause => { if (live) setNotice(cause instanceof Error ? cause.message : String(cause)); });
+    }).catch(cause => { if (live) setNotice(errorText(cause)); });
     return () => { live = false; };
   }, [retainedRun?.id, retainedRun?.rootThreadId, ready]);
   const [, setFetched] = useState(0);
@@ -648,7 +649,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
       catalogs.set(provider, { version });
       api<{ data: Model[] }>(`/models?provider=${encodeURIComponent(provider)}&refresh=true`)
         .then(result => catalogs.set(provider, { version, models: result.data }))
-        .catch(cause => catalogs.set(provider, { version, error: cause instanceof Error ? cause.message : String(cause) }))
+        .catch(cause => catalogs.set(provider, { version, error: errorText(cause) }))
         .finally(() => setFetched(count => count + 1));
     }
   }, [choices, version]);
@@ -753,7 +754,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
         // His own run is read in a poll that did not just change him: the change restarts this effect, which reads at once.
         if (next.father === father && father?.threadId && father.graphId && !father.reported) await read(father.threadId, father.graphId);
         if (live) setRun(current => { const value = over(next) ? { ...next, endedAt: Date.now() } : next; return sameData(current, value) ? current : value; });
-      } catch (error) { if (live) setNotice(runFailure(error instanceof Error ? error.message : String(error))); }
+      } catch (error) { if (live) setNotice(runFailure(errorText(error))); }
       finally { polling = false; }
     };
     void poll();
@@ -1489,7 +1490,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
     const choose = window.elpisDesktop?.chooseFolder;
     if (!choose) { setNotice(`Choose the folder of ${workflow.what} in the desktop app.`); return null; }
     let picked: string | null = null;
-    try { picked = (await choose())?.replace(/\/+$/, "") || null; } catch (cause) { setNotice(cause instanceof Error ? cause.message : String(cause)); return null; }
+    try { picked = (await choose())?.replace(/\/+$/, "") || null; } catch (cause) { setNotice(errorText(cause)); return null; }
     if (!picked) return null;
     if (picked !== cwd?.replace(/\/+$/, "")) await onUseFolder?.(picked);
     return readyMadeAt(workflow, picked, ".", goal || workflow.goal(picked.split("/").at(-1) ?? picked, language), language);
@@ -1515,7 +1516,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
         if (typeof file.content !== "string") throw new Error(file.tooLarge ? `${name} is too large to read here.` : `${name} is not text.`);
         return { name, text: file.content };
       }));
-    } catch (cause) { setNotice(cause instanceof Error ? cause.message : String(cause)); return null; }
+    } catch (cause) { setNotice(errorText(cause)); return null; }
     const where = folder === "." ? base.split("/").at(-1) ?? base : folder;
     if (!workflow.subject && !sources.some(source => !workflow.reads || source.text.trim())) { setNotice(`No ${workflow.what} in ${where}.`); return null; }
     // A job about a subject (Logo's brand): what the request box says, or else the folder's name; the brief names it.
@@ -1540,7 +1541,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
     return team;
   }
   /** The document a ready-made workflow writes, opened in the system's own app for it. */
-  const openResult = () => { if (cwd && graph.result) window.elpisDesktop?.openFile?.(`${cwd.replace(/\/+$/, "")}/${graph.result}`).catch((cause: unknown) => setNotice(cause instanceof Error ? cause.message : String(cause))); };
+  const openResult = () => { if (cwd && graph.result) window.elpisDesktop?.openFile?.(`${cwd.replace(/\/+$/, "")}/${graph.result}`).catch((cause: unknown) => setNotice(errorText(cause))); };
   async function letElpis(goal: string, scope?: CanvasGraph, newWorkflow = false, forRun = false): Promise<CanvasGraph | null> {
     const current = runtimeAttempt();
     if (!current()) return null;
@@ -1578,7 +1579,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
       if (newWorkflow && plan.why?.trim()) setNotice(`${plan.mode === "direct" ? "One agent does it" : `A team of ${plan.agents.length}`}: ${plan.why.trim()}`);
       setTimeout(() => void flow.fitView({ ...FIT, duration: 250 }), 60);
       return next;
-    } catch (error) { if (current()) setNotice(`Elpis could not fill in the team: ${error instanceof Error ? error.message : String(error)}`); return null; }
+    } catch (error) { if (current()) setNotice(`Elpis could not fill in the team: ${errorText(error)}`); return null; }
     finally { setPlanning(""); }
   }
 
@@ -1645,7 +1646,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
       setIdentity({ workflowId: result.graphId, name: runIdentity.name });
       setRun({ rootThreadId: created.thread.id, graphId: result.graphId, status: "running", startedAt: Date.now(), ...(built.father.length ? { father: { tasks: built.father, status: "pending" } } : {}) });
       onRunStarted?.(created.thread);
-    } catch (error) { if (current()) setNotice(runFailure(error instanceof Error ? error.message : String(error))); }
+    } catch (error) { if (current()) setNotice(runFailure(errorText(error))); }
     finally { startingRun.current = false; setStarting(false); }
   }
 
@@ -1692,7 +1693,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
         {run && runClock}
         {/* Stop cancels the whole run: the engine treats an interrupt of the run's own chat as cancelling it (28 Oct:
             "a running workflow has no cancel control anywhere"). */}
-        {run && !over(run) && <Button type="button" variant="outline" size="sm" aria-label="Stop run" title="Stop this run: every agent stops, finished work is kept" onClick={() => void api(`/threads/${encodeURIComponent(run.rootThreadId)}/interrupt`, {}).catch((cause: unknown) => setNotice(cause instanceof Error ? cause.message : String(cause)))}><StopIcon size={14} />Stop</Button>}
+        {run && !over(run) && <Button type="button" variant="outline" size="sm" aria-label="Stop run" title="Stop this run: every agent stops, finished work is kept" onClick={() => void api(`/threads/${encodeURIComponent(run.rootThreadId)}/interrupt`, {}).catch((cause: unknown) => setNotice(errorText(cause)))}><StopIcon size={14} />Stop</Button>}
         {run && over(run) && graph.result && <Button type="button" variant="outline" size="sm" onClick={openResult}><FileText size={14} />Open {graph.result.split("/").at(-1)}</Button>}
         {!ready && <p id={offlineReasonId} role="status" className="w-full text-xs text-muted-foreground">{OFFLINE_WORKFLOW}</p>}
       </form>}

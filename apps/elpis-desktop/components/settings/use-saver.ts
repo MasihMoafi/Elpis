@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { errorText } from "@/lib/error-text.mjs";
 
 /** Runs one save at a time for a group and keeps its outcome for SaveFeedback. */
 export function useSaver() {
@@ -12,7 +13,7 @@ export function useSaver() {
     if (busy.current) return false;
     busy.current = true; setPending(key); setOutcome(null);
     try { await action(); if (mounted.current) setOutcome({ ok: true, text: success }); return true; }
-    catch (error) { if (mounted.current) setOutcome({ ok: false, text: error instanceof Error ? error.message : String(error) }); return false; }
+    catch (error) { if (mounted.current) setOutcome({ ok: false, text: errorText(error) }); return false; }
     finally { busy.current = false; if (mounted.current) setPending(null); }
   }
   return { pending, outcome, run, clear: () => setOutcome(null) };

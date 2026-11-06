@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
+import { errorText } from "@/lib/error-text.mjs";
 
 type PersonalStatus = { path: string; showTip: boolean };
 
@@ -22,7 +23,7 @@ export function usePersonal(ready: boolean, onOpen: (path: string) => void, onEr
       const status = await api<PersonalStatus>("/personal", { action });
       setShowTip(status.showTip);
       if (action === "open") onOpen(status.path);
-    } catch (error) { onError(error instanceof Error ? error.message : String(error)); }
+    } catch (error) { onError(errorText(error)); }
   }
   return { showTip, open: () => void act("open"), dismiss: () => void act("dismiss") };
 }

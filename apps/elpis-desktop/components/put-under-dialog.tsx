@@ -4,6 +4,7 @@ import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogFoo
 import { Button } from "@/components/ui/button";
 import { OptionSelect } from "@/components/ui/option-select";
 import { title, type Thread } from "@/lib/api";
+import { errorText } from "@/lib/error-text.mjs";
 
 export function PutUnderDialog({ chats, candidates, onPutUnder, onClose }: {
   chats: Thread[] | null; candidates: Thread[]; onPutUnder: (parent: string) => Promise<void>; onClose: () => void;
@@ -14,7 +15,7 @@ export function PutUnderDialog({ chats, candidates, onPutUnder, onClose }: {
   async function save() {
     setBusy(true); setError("");
     try { await onPutUnder(parent); onClose(); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    catch (cause) { setError(errorText(cause)); }
     finally { setBusy(false); }
   }
   return <AlertDialog open={!!chats} onOpenChange={open => { if (!open && !busy) onClose(); }}><AlertDialogContent>

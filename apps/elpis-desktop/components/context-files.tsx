@@ -6,6 +6,7 @@ import { Switch } from "@/components/ui/switch";
 import { api } from "@/lib/api";
 import { openRef } from "@/lib/files-pane";
 import { isAudioPath } from "@/lib/audio-path.mjs";
+import { errorText } from "@/lib/error-text.mjs";
 
 // thread/contextFiles/list and /set return the refreshed sources, including rows sharing one admission setting.
 type ContextFile = {
@@ -19,7 +20,7 @@ const groups = [
   ["skills", "SKILLS"],
 ] as const;
 const tokens = (count: number) => count >= 1000 ? `${(count / 1000).toFixed(1).replace(/\.0$/, "")}k` : String(count);
-const message = (cause: unknown) => cause instanceof Error ? cause.message : String(cause);
+const message = (cause: unknown) => errorText(cause);
 /** An opening must reach either readable content or Retry even if its local bridge stops replying. */
 export async function readContext<T>(endpoint: string, signal?: AbortSignal): Promise<T> {
   const controller = new AbortController(), cancel = () => controller.abort();

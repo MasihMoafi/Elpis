@@ -8,6 +8,7 @@ import { SettingRow, SettingsEmpty, SettingsHeader, SettingsNotice } from "@/com
 import { DeleteChatsDialog, ThreadActions } from "@/components/thread-actions";
 import { api, unreadable, title, type Thread } from "@/lib/api";
 import { LoadOnScroll } from "@/components/load-on-scroll";
+import { errorText } from "@/lib/error-text.mjs";
 
 type Props = { onUnarchived: (thread: Thread, restored: string[]) => void; onDelete: (thread: Thread) => Promise<void> };
 
@@ -33,7 +34,7 @@ export function ArchivedView({ onUnarchived, onDelete }: Props) {
       if (request !== latest.current) return;
       setThreads(prev => after && prev ? [...prev, ...result.data.filter(item => !prev.some(p => p.id === item.id))] : result.data);
       setCursor(result.nextCursor); setError("");
-    } catch (e) { if (request === latest.current) setError(e instanceof Error ? e.message : String(e)); }
+    } catch (e) { if (request === latest.current) setError(errorText(e)); }
   }, [page]);
   useEffect(() => { const timer = setTimeout(() => void load(), term ? 250 : 0); return () => clearTimeout(timer); }, [load, term]);
   async function unarchive(thread: Thread) {
@@ -42,7 +43,7 @@ export function ArchivedView({ onUnarchived, onDelete }: Props) {
       const result = await api<{ thread: Thread; restored?: string[] }>(`/threads/${encodeURIComponent(thread.id)}/unarchive`, {});
       setThreads(prev => prev?.filter(item => item.id !== thread.id) ?? prev);
       onUnarchived(result.thread, result.restored ?? []);
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    } catch (e) { setError(errorText(e)); }
     finally { setBusy(null); }
   }
   async function remove(thread: Thread) {
@@ -60,7 +61,7 @@ export function ArchivedView({ onUnarchived, onDelete }: Props) {
       while (next) { const result = await page(next); all = [...all, ...result.data.filter(item => !all.some(p => p.id === item.id))]; next = result.nextCursor; }
       if (request !== latest.current) return;
       setThreads(all); setCursor(null); setPicked(all.map(item => item.id));
-    } catch (e) { if (request === latest.current) setError(e instanceof Error ? e.message : String(e)); }
+    } catch (e) { if (request === latest.current) setError(errorText(e)); }
     finally { setSelectingAll(false); }
   }
   const pickedThreads = (threads ?? []).filter(item => picked.includes(item.id));

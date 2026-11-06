@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { api, sessionReady } from "@/lib/api";
 import { READ_ALOUD_AUDIO } from "@/lib/love-spot-audio";
+import { errorText } from "@/lib/error-text.mjs";
 
 type Playback = { controller: AbortController; peer: RTCPeerConnection | null; audio: HTMLAudioElement | null; silence: AudioContext | null; timer: ReturnType<typeof setTimeout> | null; monitor: ReturnType<typeof setInterval> | null; soundTimeout: ReturnType<typeof setTimeout> | null; audible: boolean; draining: boolean; energy: number; session?: string; ready: boolean; complete: boolean; idle?: boolean; reply: string };
 type Speech = { active: string | null; error: { id: string; message: string } | null; play: (id: string, text: string) => void; stream: (id: string) => void; stop: () => void; warm: () => void };
@@ -59,7 +60,7 @@ export function ReadAloud({ threadId, enabled, available = READ_ALOUD_AUDIO.avai
         });
         URL.revokeObjectURL(url);
       }
-    } catch (cause) { if (local.current === mine && !controller.signal.aborted) setError({ id, message: cause instanceof Error ? cause.message : "Read aloud could not voice this reply." }); }
+    } catch (cause) { if (local.current === mine && !controller.signal.aborted) setError({ id, message: errorText(cause, "Read aloud could not voice this reply.") }); }
     finally { if (local.current === mine) { local.current = null; setActive(null); } }
   }
   /** Once a chat's reply actions show, its speech thread is made ahead (bridge: warmSpeechThread). */
@@ -140,7 +141,7 @@ export function ReadAloud({ threadId, enabled, available = READ_ALOUD_AUDIO.avai
     const ready = () => {
       if (call.current !== current || current.ready || !current.session || current.peer?.connectionState !== "connected") return;
       current.ready = true;
-      void api("/voice/read-aloud/ready", { id: current.session }, current.controller.signal).catch(cause => fail(cause instanceof Error ? cause.message : "Read aloud could not start."));
+      void api("/voice/read-aloud/ready", { id: current.session }, current.controller.signal).catch(cause => fail(errorText(cause, "Read aloud could not start.")));
     };
     current.timer = setTimeout(() => fail("Read aloud connection timed out. Try again."), 35000);
     try {
@@ -162,7 +163,7 @@ export function ReadAloud({ threadId, enabled, available = READ_ALOUD_AUDIO.avai
         if (call.current !== current) return;
         const trigger = silence.createBufferSource(); trigger.buffer = buffer;
         trigger.connect(sink); trigger.start();
-      }).catch(cause => fail(cause instanceof Error ? cause.message : "The voice playback cue could not load."));
+      }).catch(cause => fail(errorText(cause, "The voice playback cue could not load.")));
       peer.addTransceiver(sink.stream.getAudioTracks()[0], { direction: "sendrecv" });
       const events = peer.createDataChannel("oai-events");
       events.onmessage = message => {
@@ -224,7 +225,7 @@ export function ReadAloud({ threadId, enabled, available = READ_ALOUD_AUDIO.avai
         }
       } finally { await reader.cancel().catch(() => {}); }
       if (call.current === current) fail("Read aloud disconnected.");
-    } catch (cause) { fail(cause instanceof Error ? cause.message : "Read aloud could not start."); }
+    } catch (cause) { fail(errorText(cause, "Read aloud could not start.")); }
   }
   return <SpeechContext.Provider value={unavailableReason || !(available || kokoro) ? null : { active, error, play: (id, text) => void play(id, text), stream: id => void play(id), stop, warm }}>{children}</SpeechContext.Provider>;
 }

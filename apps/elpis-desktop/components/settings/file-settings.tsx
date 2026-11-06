@@ -8,9 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { MarkdownText } from "@/components/markdown-text";
 import { Segmented, SettingRow, SettingsActions, SettingsGroup, SettingsNotice } from "@/components/settings/rows";
+import { errorText } from "@/lib/error-text.mjs";
 
 type FileSnapshot = { path: string; content: string; version: string };
-const message = (error: unknown) => error instanceof Error ? error.message : String(error);
+const message = (error: unknown) => errorText(error);
 
 /** Drafts use the existing native workspace journal, independently of the engine files. */
 export function FileSettings({ kind, label }: { kind: "instructions" | "memory"; label: string }) {

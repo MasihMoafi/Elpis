@@ -9,6 +9,7 @@ import { SearchField } from "@/components/ui/search-field";
 import { api, isAgentRun, title, unreadable, type Thread } from "@/lib/api";
 import type { Project } from "@/lib/projects";
 import { rankBySearch } from "@/lib/search-rank";
+import { errorText } from "@/lib/error-text.mjs";
 
 export type CommandAction = { id: string; name: string; keys?: string[]; run: () => void };
 type Command = CommandAction & { detail?: string };
@@ -36,7 +37,7 @@ export function CommandMenu({ threads, projects, actions, onThread, onProject, o
           if (!Array.isArray(result.data)) throw unreadable("search");
           if (!disposed) setSaved({ query: term, data: result.data, loading: false, error: "" });
         })
-        .catch(cause => { if (!disposed) setSaved({ query: term, data: [], loading: false, error: cause instanceof Error ? cause.message : String(cause) }); });
+        .catch(cause => { if (!disposed) setSaved({ query: term, data: [], loading: false, error: errorText(cause) }); });
     }, 200);
     return () => { disposed = true; clearTimeout(timer); };
   }, [term]);

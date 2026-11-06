@@ -7,6 +7,7 @@ import { Switch } from "@/components/ui/switch";
 import { api, unreadable } from "@/lib/api";
 import { RefreshButton, SaveFeedback, SettingRow, SettingsEmpty, SettingsGroup, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
 import { useSaver } from "@/components/settings/use-saver";
+import { errorText } from "@/lib/error-text.mjs";
 
 type Hook = { key: string; event: string | null; handler: string | null; command: string | null; server: string | null; tool: string | null; matcher: string | null; timeoutSec: number | null; statusMessage: string | null; source: string | null; sourcePath: string | null; pluginId: string | null; enabled: boolean; managed: boolean; trust: string | null };
 type Hooks = { version: string | null; write: { available: boolean }; hooks: Hook[]; warnings: string[]; errors: { path: string | null; message: string }[] };
@@ -30,7 +31,7 @@ export function HooksSettings() {
   const [data, setData] = useState<Hooks | null>(null);
   const [error, setError] = useState("");
   const saver = useSaver();
-  const load = useCallback(async () => { try { setData(readHooks(await api<Hooks>("/hooks"))); setError(""); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } }, []);
+  const load = useCallback(async () => { try { setData(readHooks(await api<Hooks>("/hooks"))); setError(""); } catch (e) { setError(errorText(e)); } }, []);
   useEffect(() => { void load(); }, [load]);
   const change = (hook: Hook, body: { enabled: boolean } | { trust: true }, done: string) => void saver.run(hook.key, async () => {
     try { setData(readHooks(await api<Hooks>("/hooks", { version: data?.version, key: hook.key, ...body }))); } catch (e) { await load(); throw e; }

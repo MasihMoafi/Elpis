@@ -11,8 +11,9 @@ import { useSaver } from "@/components/settings/use-saver";
 import { ConfigChoice, SettingsLoader } from "@/components/settings/config-choice";
 import { SystemSettings } from "@/components/settings/system-settings";
 import { ProfileFields } from "@/components/profile-fields";
+import { errorText } from "@/lib/error-text.mjs";
 
-const message = (error: unknown) => error instanceof Error ? error.message : String(error);
+const message = (error: unknown) => errorText(error);
 
 /** Where chats started outside a project run. The desktop app picks and checks the folder natively. */
 function DefaultFolder({ folder, onSave }: { folder: string; onSave: (folder: string) => void }) {

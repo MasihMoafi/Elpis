@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ChatMessage } from "@/components/chat-message";
 import { api, type Entry } from "@/lib/api";
 import { mergeLiveItem, runtimeErrorNotice } from "@/lib/live-events";
+import { errorText } from "@/lib/error-text.mjs";
 
 export type SideRequest = { id: number; text: string; kind?: "recap" };
 
@@ -68,7 +69,7 @@ export function SideChat({ parentId, open, question, onClose, onForward }: { par
       if (latestDraft.current === text) setDraft("");
       if (completed.current.has(result.turn.id)) { setBusy(false); sending.current = false; }
     } catch (e) {
-      if (!disposed.current) { setError(e instanceof Error ? e.message : String(e)); setBusy(false); sending.current = false; }
+      if (!disposed.current) { setError(errorText(e)); setBusy(false); sending.current = false; }
     }
   }
   useEffect(() => {

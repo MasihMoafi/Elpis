@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { OptionSelect } from "@/components/ui/option-select";
 import { api } from "@/lib/api";
+import { errorText } from "@/lib/error-text.mjs";
 
 type Account = { id: string; label: string; email: string | null; plan: string | null; authenticated: boolean; duplicate: boolean; signingIn: boolean; error: string | null };
 type Accounts = { activeId: string; accounts: Account[]; authUrl?: string };
@@ -19,7 +20,7 @@ export function ClaudeAccountsSettings({ refreshKey, onChanged }: { refreshKey: 
     const res = await api<Accounts>("/providers/claude-accounts");
     setData(res && Array.isArray(res.accounts) ? res : null);
   }, []);
-  useEffect(() => { void load().catch(e => setError(e instanceof Error ? e.message : String(e))); }, [load, refreshKey]);
+  useEffect(() => { void load().catch(e => setError(errorText(e))); }, [load, refreshKey]);
   const signingIn = data?.accounts.some(account => account.signingIn) ?? false;
   useEffect(() => {
     if (!signingIn) return;
@@ -38,7 +39,7 @@ export function ClaudeAccountsSettings({ refreshKey, onChanged }: { refreshKey: 
       }
       if (action === "select") await onChanged?.();
       if (action === "code") setCode("");
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    } catch (e) { setError(errorText(e)); }
     finally { setBusy(false); }
   }
   const pending = data?.accounts.find(account => !account.authenticated || account.duplicate);

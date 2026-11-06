@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import type { Browser } from "@/components/browser-panel";
+import { errorText } from "@/lib/error-text.mjs";
 
 type Candidate = { name: string; command: string };
 type Server = Candidate & { status: "starting" | "running" | "stopped" | "failed"; url: string; logs: string; error: string | null };
@@ -18,7 +19,7 @@ export function DevServerPreview({ cwd, browser }: { cwd: string; browser: Brows
     setCandidates(null); setServers([]); setError(""); setLogs(null);
     const poll = async () => {
       try { const reply = await api<Status>(`/dev-servers?cwd=${encodeURIComponent(cwd)}`); if (!disposed) setServers(reply.servers ?? []); }
-      catch (e) { if (!disposed) setError(e instanceof Error ? e.message : String(e)); }
+      catch (e) { if (!disposed) setError(errorText(e)); }
       if (!disposed) timer = setTimeout(poll, 1000);
     };
     if (cwd) void poll();
@@ -27,7 +28,7 @@ export function DevServerPreview({ cwd, browser }: { cwd: string; browser: Brows
   async function detect() {
     setBusy(true); setError("");
     try { setCandidates((await api<{ candidates: Candidate[] }>("/dev-servers/detect", { cwd })).candidates); }
-    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    catch (e) { setError(errorText(e)); }
     finally { setBusy(false); }
   }
   async function act(action: "start" | "stop", name: string) {
@@ -36,7 +37,7 @@ export function DevServerPreview({ cwd, browser }: { cwd: string; browser: Brows
       const reply = await api<Status>(`/dev-servers/${action}`, { cwd, name }); setServers(reply.servers);
       const ready = reply.servers.find(server => server.name === name && server.status === "running");
       if (action === "start" && ready) await browser.command("navigate", { id: browser.state?.activeId ?? undefined, url: ready.url });
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    } catch (e) { setError(errorText(e)); }
     finally { setBusy(false); }
   }
   if (!cwd) return null;

@@ -1,4 +1,5 @@
 import { agentParentId } from "./agent-runs.mjs";
+import { errorText } from "./error-text.mjs";
 export { isAgentRun, AGENT_RUN_NOTICE } from "./agent-runs.mjs";
 export type Thread = {
   id: string; cwd?: string; name?: string | null; workflowTaskTitle?: string; preview?: string; model?: string | null; modelProvider?: string;
@@ -62,7 +63,7 @@ function exchangeSession(): Promise<void> {
     mayRetrySession = status === 0 || status === 408 || status === 429 || status !== undefined && status >= 500;
     throw new SessionError(status === 401 || status === 403
       ? "Could not sign in to Elpis. Reopen this window to refresh its connection token."
-      : error instanceof Error ? error.message : String(error), mayRetrySession);
+      : errorText(error), mayRetrySession);
   }) : Promise.resolve();
   pending.catch(() => {}); // Initialization owns reporting; do not create an unhandled rejection before it mounts.
   return pending;

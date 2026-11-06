@@ -5,6 +5,7 @@ import { ChevronDown, ChevronUp, CornerDownLeft, Pencil, X } from "lucide-react"
 import { MoreMenu } from "@/components/action-menu";
 import { Button } from "@/components/ui/button";
 import { clearFollowUps, removeFollowUp, sendFollowUpNow, takeFollowUp, useFollowUps, type FollowUp } from "@/lib/follow-ups";
+import { errorText } from "@/lib/error-text.mjs";
 
 /** What Claude's desktop app does with a queued message, in its words. `run` gets the element that had the focus, so the
  * composer can take it back when that element goes away with the message. */
@@ -30,7 +31,7 @@ function Tray({ threadId, items, activeTurnId, onError, onComplete, onEdit }: { 
   const [open, setOpen] = useState(false);
   const acts = (item: FollowUp): Act[] => [
     ...onEdit ? [{ id: "edit", label: "Edit in composer", icon: <Pencil />, run: () => { if (takeFollowUp(threadId, item.id)) onEdit(item); } }] : [],
-    { id: "send", label: "Send now", icon: <CornerDownLeft />, run: origin => void sendFollowUpNow(threadId, item.id, activeTurnId).then(() => onComplete?.(origin)).catch(error => onError?.(error instanceof Error ? error.message : String(error))) },
+    { id: "send", label: "Send now", icon: <CornerDownLeft />, run: origin => void sendFollowUpNow(threadId, item.id, activeTurnId).then(() => onComplete?.(origin)).catch(error => onError?.(errorText(error))) },
     { id: "remove", label: "Remove from queue", icon: <X />, destructive: true, run: origin => { removeFollowUp(threadId, item.id); onComplete?.(origin); } },
   ];
   const [first] = items;

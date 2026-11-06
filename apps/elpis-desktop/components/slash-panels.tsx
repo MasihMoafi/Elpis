@@ -6,8 +6,9 @@ import { Button } from "@/components/ui/button";
 import { SearchField } from "@/components/ui/search-field";
 import { Textarea } from "@/components/ui/textarea";
 import { api, unreadable } from "@/lib/api";
+import { errorText } from "@/lib/error-text.mjs";
 
-const message = (cause: unknown) => cause instanceof Error ? cause.message : String(cause);
+const message = (cause: unknown) => errorText(cause);
 
 /** What a slash command opens above the composer: it takes the focus, Escape closes it, and the page then gives the focus back to the composer. */
 export function CommandPanel({ title, onClose, onBack, children }: { title: string; onClose: () => void; onBack?: () => void; children: ReactNode }) {

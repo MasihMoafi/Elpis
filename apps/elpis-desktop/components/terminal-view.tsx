@@ -10,6 +10,7 @@ import { TerminalIcon } from "@/components/elpis-icons";
 import { Button } from "@/components/ui/button";
 import type { DesktopTerminal, TerminalSession } from "@/lib/desktop";
 import { usePreferences } from "@/lib/preferences";
+import { errorText } from "@/lib/error-text.mjs";
 
 const folderName = (cwd: string) => cwd.split("/").filter(Boolean).at(-1) || cwd || "~";
 
@@ -108,7 +109,7 @@ export function TerminalView({ termKey, cwd, dark, launch }: Props) {
         term.onResize(({ cols, rows }) => api.resize(termKey, cols, rows));
         target.replaceChildren(element); term.open(element); fit.fit();
         views.set(termKey, view = created);
-        void api.open(termKey, cwd, term.cols, term.rows).then(session => attach(created, session)).catch(cause => { views.delete(termKey); setError(cause instanceof Error ? cause.message : String(cause)); });
+        void api.open(termKey, cwd, term.cols, term.rows).then(session => attach(created, session)).catch(cause => { views.delete(termKey); setError(errorText(cause)); });
       } else { target.replaceChildren(view.element); view.fit.fit(); }
       const shown = view;
       current.current = shown;
@@ -146,7 +147,7 @@ export function TerminalView({ termKey, cwd, dark, launch }: Props) {
       if (!view || view.session === null) { requestAnimationFrame(run); return; }
       if ("command" in launch) { api.input(termKey, "\x05\x15gh auth login --web\r"); view.term.focus(); return; }
       void api.tui(termKey, cwd, launch.threadId, view.term.cols, view.term.rows).then(() => { setError(""); view.term.focus(); })
-        .catch(cause => setError(cause instanceof Error ? cause.message : String(cause)));
+        .catch(cause => setError(errorText(cause)));
     };
     run();
   }, [api, launch, termKey, cwd]);
@@ -155,7 +156,7 @@ export function TerminalView({ termKey, cwd, dark, launch }: Props) {
     const view = views.get(termKey); if (!api || !view) return;
     view.session = null; view.pending = []; view.term.reset(); setError("");
     try { attach(view, await api.restart(termKey, cwd, view.term.cols, view.term.rows)); view.term.focus(); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    catch (cause) { setError(errorText(cause)); }
   }
   const status = error || (state.exited !== null ? `Shell exited with code ${state.exited}. Restart the terminal to open a new shell.` : "");
   return <section ref={panel} className="terminal-body" aria-label="Terminal">

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { WORKFLOW_COLOURS, workflowNameProblem, type WorkflowCatalog, type WorkflowIdentity } from "@/lib/workflow-identity";
+import { errorText } from "@/lib/error-text.mjs";
 
 export function WorkflowMark({ identity, decorative = false, neutral = false }: { identity: WorkflowIdentity; decorative?: boolean; neutral?: boolean }) {
   if (neutral) return <WorkflowsIcon className="shrink-0 text-muted-foreground" size={14} role={decorative ? undefined : "img"} aria-hidden={decorative || undefined} aria-label={decorative ? undefined : "Workflow"} />;
@@ -12,7 +13,7 @@ export function WorkflowMark({ identity, decorative = false, neutral = false }: 
 }
 export function WorkflowColourMenu({ identity, catalog, label = "Workflow colour", onError }: { identity: WorkflowIdentity; catalog: WorkflowCatalog; label?: string; onError: (error: string) => void }) {
   return <DropdownMenu><DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label={label} title="Workflow colour" />}><WorkflowMark identity={identity} /></DropdownMenuTrigger>
-    <DropdownMenuContent align="start"><DropdownMenuRadioGroup value={identity.colour} onValueChange={value => { try { catalog.recolour(identity.id, value as WorkflowIdentity["colour"]); } catch (cause) { onError(cause instanceof Error ? cause.message : String(cause)); } }}>{WORKFLOW_COLOURS.map(colour => <DropdownMenuRadioItem key={colour} value={colour}><WorkflowMark decorative identity={{ ...identity, colour }} />{colour[0].toUpperCase() + colour.slice(1)}</DropdownMenuRadioItem>)}</DropdownMenuRadioGroup></DropdownMenuContent>
+    <DropdownMenuContent align="start"><DropdownMenuRadioGroup value={identity.colour} onValueChange={value => { try { catalog.recolour(identity.id, value as WorkflowIdentity["colour"]); } catch (cause) { onError(errorText(cause)); } }}>{WORKFLOW_COLOURS.map(colour => <DropdownMenuRadioItem key={colour} value={colour}><WorkflowMark decorative identity={{ ...identity, colour }} />{colour[0].toUpperCase() + colour.slice(1)}</DropdownMenuRadioItem>)}</DropdownMenuRadioGroup></DropdownMenuContent>
   </DropdownMenu>;
 }
 export function WorkflowIdentityEditor({ identity, catalog, name, onName }: { identity: WorkflowIdentity; catalog: WorkflowCatalog; name: string; onName: (name: string) => void }) {

@@ -10,6 +10,7 @@ import { agentParentId } from "@/lib/agent-runs.mjs";
 import { prioritizeChats } from "@/lib/chat-groups";
 import type { RecordedWorkflow } from "./workflow-chat";
 import "./workflow-progress.css";
+import { errorText } from "@/lib/error-text.mjs";
 
 const EMPTY_THREADS: readonly Thread[] = [];
 
@@ -111,7 +112,7 @@ export function useWorkflowTeam(run: RecordedWorkflow | undefined, ready: boolea
           setError(failures.length ? failures[0] : "");
         }
       } catch (cause) {
-        if (!disposed) setError(cause instanceof Error ? cause.message : String(cause));
+        if (!disposed) setError(errorText(cause));
       } finally { pending = false; if (!disposed) setLoading(false); }
     };
     void read();
