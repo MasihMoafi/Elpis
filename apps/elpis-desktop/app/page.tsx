@@ -81,7 +81,6 @@ import { PutUnderDialog } from "@/components/put-under-dialog";
 import { WorkflowMark } from "@/components/workflow-identity";
 import { useWorkflowSandbox, type WorkflowRun } from "@/lib/workflow-identity";
 import { BranchChip } from "@/components/branch-chip";
-import { keptNotice, type WorktreeOutcome } from "@/lib/chat-worktree";
 import { AccountRow } from "@/components/account-row";
 import { ProfileDialog } from "@/components/profile-dialog";
 import { DRAWING_NOTE } from "@/lib/browser-notes";
@@ -113,7 +112,6 @@ import { Tab, TabStrip } from "@/components/tab-strip";
 import { activeTab, followChat, forgetChats, renameTabs, type ChatTab } from "@/lib/chat-tabs";
 import { AttachmentChips } from "@/components/attachment-chips";
 import { ATTACHMENT_ACCEPT, ATTACHMENT_LIMITS, TEXT_ONLY_NOTICE, attachmentFromFile, fitAttachments, transferFiles, type Attachment } from "@/lib/attachments";
-import { scanDeletionThreads } from "@/lib/thread-deletion";
 import { LoadOnScroll } from "@/components/load-on-scroll";
 import { api, unreadable, isAgentRun, AGENT_RUN_NOTICE, modelLabel, providerLabel, title, agentName,
   mediaUrl, type Approval, type Entry, type ProviderSettings, type Thread } from "@/lib/api";
@@ -137,6 +135,7 @@ import { useChildConversations } from "@/lib/use-child-conversations";
 import { modelSelection } from "@/lib/model-selection";
 import { createCommandActions } from "@/lib/command-actions";
 import { createConversationSettings } from "@/lib/conversation-settings";
+import { createConversationActions } from "@/lib/conversation-actions";
 import { refusedOffline, type View, type WorkflowReplay, type NextTurn } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
 import { useComposerState } from "@/lib/use-composer-state";
@@ -359,7 +358,7 @@ export default function Home() {
   const request = useRef(0);
   const initialRestoration = useRef<{ threadId: string; promise: Promise<void> } | null>(null);
   const conversations = useConversationList(threads, setThreads, selectedRef, setSelected, setError);
-  const { select, settingsOf, threadsRef, patchThread, hidden, upsertThread, refreshThreads } = conversations;
+  const { select, settingsOf, threadsRef, hidden, upsertThread, refreshThreads } = conversations;
   const { loadingChildren, checkedChildren, childCursors, expanded, setExpanded, holdAgentPanel, loadChildren } = useChildConversations({ conversations, selectedRef, setThreads, setError, setAgentsPanelState });
   const search = useSidebarSearch(ready, hidden), searchTerm = search.searchTerm;
 
@@ -579,28 +578,7 @@ export default function Home() {
     })().catch(cause => setError(errorText(cause, "The screenshots could not open in Love Spot.")));
   });
   const manageConnections = () => { setSettingsSection("providers"); show("settings"); };
-  /** ChatGPT's "Fork chat from here": a new chat with the history through that turn, opened at once. */
-  async function forkFrom(thread: Thread, lastTurnId: string, lastItemId?: string) {
-    const originalFocus = document.activeElement, originalRequest = request.current;
-    try {
-      const result = await api<{ thread: Thread }>(`/threads/${encodeURIComponent(thread.id)}/fork`, { lastTurnId, ...(lastItemId ? { lastItemId } : {}) }); if (!result.thread || typeof result.thread.id !== "string") throw unreadable("fork"); upsertThread(result.thread);
-      if (request.current !== originalRequest || selectedRef.current?.id !== thread.id) return;
-      await loadThread(result.thread);
-      if (selectedRef.current?.id === result.thread.id) restoreComposerFocus(originalFocus);
-    }
-    catch (error) { setError(errorText(error)); }
-  }
-  async function continueHere(thread: Thread) {
-    const originalRequest = request.current;
-    setBusy(true); setError("");
-    try {
-      const result = await api<{ thread: Thread }>(`/threads/${encodeURIComponent(thread.id)}/continue`, {});
-      if (!result.thread?.id) throw unreadable("continued chat");
-      upsertThread(result.thread);
-      if (request.current === originalRequest && selectedRef.current?.id === thread.id) await loadThread(result.thread);
-    } catch (cause) { setError(errorText(cause)); }
-    finally { setBusy(false); }
-  }
+  const { forkFrom, continueHere, stop, deleteThread, renameThread, archiveThread, unarchived } = createConversationActions({ conversations, runtime, selectedRef, request, setBusy, setError, loadThread, loadChildren, restoreComposerFocus: origin => restoreComposerFocus(origin), removeThreads, noteKept });
   const conversationSettings = createConversationSettings({ selected, selectedRef, request, runtime, conversations, ready, connected, busy, projectChanging, changingPermissions, planMode, permissionMode, threadPlans, setThreadModes, setThreadPlans, setPlanAnswered, setNextTurn, setNewPlan, setNewMode, setChangingPermissions, setError, focusComposer: () => focusComposer(), restoreComposerFocus: origin => restoreComposerFocus(origin) });
   const { rememberModes, setPlan, answerPlan, cycleMode, noteStartedMode, saveEffort } = conversationSettings;
   /** Sends the composer's message, or `own`: a command's message (such as /init's prompt), sent without the composer's files.
@@ -626,36 +604,6 @@ export default function Home() {
       if (selectedRef.current?.id === thread.id && textRef.current === command && request.current === originalRequest) setText("");
     } catch (e) { if (request.current === originalRequest) setError(errorText(e)); }
     finally { setBusy(false); if (request.current === originalRequest) focusComposer(); }
-  }
-  async function stop(thread: Thread) {
-    if (!ready || !connected) return;
-    const originalFocus = document.activeElement, originalRequest = request.current;
-    try { await api(`/threads/${encodeURIComponent(thread.id)}/interrupt`, activeTurns[thread.id] ? { turnId: activeTurns[thread.id] } : {}); }
-    catch (e) { setError(String(errorText(e))); }
-    finally { if (request.current === originalRequest && selectedRef.current?.id === thread.id) restoreComposerFocus(originalFocus); }
-  }
-  async function deleteThread(thread: Thread) {
-    const ids = new Set([thread.id]);
-    const descendants = await scanDeletionThreads<Thread>(({ archived, limit, cursor }) => api(`/threads?ancestorThreadId=${encodeURIComponent(thread.id)}&archived=${archived}&limit=${limit}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`));
-    for (const child of descendants) ids.add(child.id);
-    const result = await api<{ alsoDeleted: string[]; worktree?: WorktreeOutcome }>(`/threads/${encodeURIComponent(thread.id)}/delete`, {});
-    for (const id of result.alsoDeleted) ids.add(id);
-    removeThreads(ids, true); noteKept(keptNotice(title(thread), "deleted", result.worktree));
-  }
-  async function renameThread(thread: Thread, name: string) {
-    const result = await api<{ thread: Thread }>(`/threads/${encodeURIComponent(thread.id)}/rename`, { name });
-    patchThread(thread.id, { name: result.thread.name ?? name });
-  }
-  // Elpis archives the chat with the agents it spawned; hide every loaded one.
-  async function archiveThread(thread: Thread) {
-    try { const result = await api<{ worktree?: WorktreeOutcome }>(`/threads/${encodeURIComponent(thread.id)}/archive`, {}); removeThreads(new Set([thread.id]), false); noteKept(keptNotice(title(thread), "archived", result.worktree)); }
-    catch (e) { setError(`Could not archive “${title(thread)}”: ${errorText(e)}`); }
-  }
-  /** A chat back from Archived chats, with the agents archived with it (`restored`), which show under it again. */
-  function unarchived(thread: Thread, restored: string[] = []) {
-    for (const id of [thread.id, ...restored]) hidden.current.delete(id);
-    upsertThread(thread); refreshThreads().catch(e => setError(String(e)));
-    if (restored.length) void loadChildren(thread.id, undefined, false);
   }
   const { replaceFrom, rewindFrom, deleteFrom, switchRewind, loadVersions, showVersion } = createMessageActions({ composer, conversations, drafts: draftStore, history, runtime, selectedRef, request, stickToBottom, rewindSwitch, replacementOptions, entries, nextTurn, submitDraft, setRuntimeNotices, setMessageEdits, setNextTurn, setEntries, setThreads, setRewindBusy, setRewindActions, setMessageVersions, loadThread, editDraft, focusComposer: () => focusComposer(), restoreComposerFocus: origin => restoreComposerFocus(origin) });
   /** Answers a request; `instead` is "Deny, and tell Elpis what to do instead" (body: { text }). */
