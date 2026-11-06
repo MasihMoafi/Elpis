@@ -54,7 +54,7 @@ export function ApprovalCard({ approval, answer, deny, answers, onAnswerChange, 
   const form = !!schema && Object.keys(schema.properties).length > 0;
   const toolName = typeof params._meta?.tool_title === "string" ? params._meta.tool_title : params._meta?.tool_name;
   const toolParams = params._meta?.tool_params_display ?? params._meta?.tool_params;
-  const card = { busy, error, globalKeys, className: "approval" };
+  const card = { busy, error, ...(globalKeys === undefined ? {} : { globalKeys }), className: "approval" };
 
   if (questions) return <QuestionCard {...card} questions={questions} answers={answers} onChange={changeAnswer} onSubmit={() => send({ answers: Object.fromEntries(questions.map(question => [question.id, questionAnswer(question, answers[question.id])])) })} />;
 
@@ -75,7 +75,8 @@ export function ApprovalCard({ approval, answer, deny, answers, onAnswerChange, 
     const offered = (params.availableDecisions ?? DEFAULT_DECISIONS).flatMap(decision => { const choice = decisionChoice(decision, edit); return choice ? [{ ...choice, choose: () => send({ decision }) }] : []; });
     // The engine has no "deny with a message": the instruction joins the waiting turn, then the request is declined.
     const at = offered.findIndex(choice => choice.escape);
-    choices = at < 0 || !params.turnId ? offered : [...offered.slice(0, at + 1), { label: "Deny, and tell Elpis what to do instead", ask: { label: "What should Elpis do instead?", placeholder: "Tell Elpis what to do instead", submit: "Deny and send", send: (text: string) => text ? submit(() => deny(approval.id, text)) : offered[at].choose!() } }, ...offered.slice(at + 1)];
+    const decline = offered[at];
+    choices = at < 0 || !params.turnId || !decline ? offered : [...offered.slice(0, at + 1), { label: "Deny, and tell Elpis what to do instead", ask: { label: "What should Elpis do instead?", placeholder: "Tell Elpis what to do instead", submit: "Deny and send", send: (text: string) => text ? submit(() => deny(approval.id, text)) : decline.choose() } }, ...offered.slice(at + 1)];
   }
   const title = form ? "Elpis needs your input" : elicitation ? `Allow Elpis to use ${typeof toolName === "string" ? toolName : params.serverName || "this tool"}?` : permissions ? "Grant additional permissions?"
     : approval.method === "item/commandExecution/requestApproval" ? "Allow Elpis to run this command?" : edit ? "Allow Elpis to edit files?" : "Approval requested";
@@ -111,29 +112,32 @@ export function ApprovalCard({ approval, answer, deny, answers, onAnswerChange, 
  * AskUserQuestion card has them. The number keys answer the first unanswered question, then move to the next. */
 function QuestionCard({ questions, answers, onChange, onSubmit, ...card }: { questions: Question[]; answers: QuestionAnswers; onChange: (id: string, value: string[]) => void; onSubmit: () => void; busy: boolean; error: string; globalKeys?: boolean; className: string }) {
   const states = questions.map(question => questionState(question, answers[question.id]));
-  const firstOpen = (from: number) => { for (let step = 1; step <= questions.length; step++) { const at = (from + step) % questions.length; if (!states[at].answered) return at; } return from; };
+  const firstOpen = (from: number) => { for (let step = 1; step <= questions.length; step++) { const at = (from + step) % questions.length, state = states[at]; if (state && !state.answered) return at; } return from; };
   const [active, setActive] = useState(() => Math.max(0, states.findIndex(state => !state.answered)));
   const complete = states.every(state => state.answered);
   const others = useRef<Record<string, HTMLInputElement | null>>({});
   function pick(at: number, option: number) {
-    const question = questions[at], options = question.options ?? [];
-    if (option < options.length) { onChange(question.id, [options[option].label]); states[at] = { ...states[at], answered: true }; setActive(firstOpen(at)); }
-    else { onChange(question.id, [OTHER_ANSWER, `user_note: ${states[at].other}`]); setActive(at); requestAnimationFrame(() => others.current[question.id]?.focus()); }
+    const question = questions[at], state = states[at];
+    if (!question || !state) return;
+    const options = question.options ?? [], selected = options[option];
+    if (selected) { onChange(question.id, [selected.label]); states[at] = { ...state, answered: true }; setActive(firstOpen(at)); }
+    else { onChange(question.id, [OTHER_ANSWER, `user_note: ${state.other}`]); setActive(at); requestAnimationFrame(() => others.current[question.id]?.focus()); }
   }
-  const current = questions[active], count = current ? (current.options?.length ?? 0) + (states[active].otherOffered ? 1 : 0) : 0;
+  const current = questions[active], count = current ? (current.options?.length ?? 0) + (states[active]?.otherOffered ? 1 : 0) : 0;
   return <DecisionCard {...card} title={questions.length === 1 ? "Elpis has a question" : `Elpis has ${questions.length} questions`}
     keys={{ count, pick: option => pick(active, option), enter: () => { if (complete) onSubmit(); } }}
     actions={<Button size="sm" disabled={card.busy || !complete} onClick={onSubmit}>Submit</Button>}>
     {questions.map((question, at) => {
       const state = states[at], numbered = at === active;
+      if (!state) return null;
       if (!question.options?.length) return <div key={question.id} className="decision-question"><label className="decision-free">{question.question}
         <Input aria-label={`Answer: ${question.header || question.id}`} placeholder="Your answer" type={question.isSecret ? "password" : "text"} disabled={card.busy} value={answers[question.id]?.[0] || ""} onChange={event => onChange(question.id, [event.target.value])} />
       </label></div>;
       return <div key={question.id} className="decision-question">
         <p className="decision-question-text" id={`${question.id}-question`}>{question.question}</p>
         <div className="decision-choices" role="radiogroup" aria-labelledby={`${question.id}-question`}>
-          {question.options.map((option, index) => <ChoiceRow key={option.label} index={numbered ? index : undefined} label={option.label} description={option.description} checked={state.choice === index} disabled={card.busy} onClick={() => pick(at, index)} />)}
-          {state.otherOffered && <ChoiceRow index={numbered ? question.options.length : undefined} label="Other" checked={state.choice === "other"} disabled={card.busy} onClick={() => pick(at, question.options!.length)} />}
+          {question.options.map((option, index) => <ChoiceRow key={option.label} {...(numbered ? { index } : {})} label={option.label} description={option.description} checked={state.choice === index} disabled={card.busy} onClick={() => pick(at, index)} />)}
+          {state.otherOffered && <ChoiceRow {...(numbered ? { index: question.options.length } : {})} label="Other" checked={state.choice === "other"} disabled={card.busy} onClick={() => pick(at, question.options!.length)} />}
         </div>
         {state.choice === "other" && <div className="decision-other"><Input ref={element => { others.current[question.id] = element; }} aria-label={`Other answer: ${question.question}`} placeholder="Type your own answer here" type={question.isSecret ? "password" : "text"} disabled={card.busy} value={state.other}
           onChange={event => onChange(question.id, [OTHER_ANSWER, `user_note: ${event.target.value}`])}
