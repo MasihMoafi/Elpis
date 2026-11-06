@@ -7,7 +7,7 @@ const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright
 
 async function fixture(run, env = { WHISPERTYPE_BACKEND: 'local', WHISPERTYPE_CLOUD_MODEL: 'user/saved-audio-model' }) {
   const calls = [], clients = new Set();
-  const { transcriptionStatus } = await import('../bridge/transcription.mjs'); // the real route rules answer the page, so the provider it sends is checked end to end
+  const { transcriptionStatus } = await import('../bridge/transcription.mts'); // the real route rules answer the page, so the provider it sends is checked end to end
   const whispertype = { command: 'fixture-mcp', env };
   const routed = { id: 'routed', name: 'OpenRouter chat', model: 'openai/gpt-5', modelProvider: 'openrouter', reasoningEffort: null, status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } };
   const google = { ...routed, id: 'google', name: 'Gemini chat', model: 'gemini-pro-latest', modelProvider: 'google-gemini' };

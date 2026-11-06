@@ -133,7 +133,7 @@
     "bridge/static-assets.test.mjs",
     "bridge/thread-deletion.test.mjs",
     "bridge/tools.test.mts",
-    "bridge/transcription.test.mjs",
+    "bridge/transcription.test.mts",
     "bridge/trash.test.mts",
     "bridge/personal.test.mts",
     "bridge/smart-prune.test.mts",

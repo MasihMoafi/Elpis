@@ -61,7 +61,7 @@ export async function impl_saveMcp(this: DesktopClient, clientState: ClientState
         edits.push({ keyPath: `${key}.env.${name}`, value, mergeStrategy: 'replace' });
       }
     } else if (input.action === 'whispertype' && input.name === 'whispertype') {
-      // null is Automatic: no explicit backend, so the bridge picks the ChatGPT sign-in or Local (see bridge/transcription.mjs).
+      // null is Automatic: no explicit backend, so the bridge picks the ChatGPT sign-in or Local (see bridge/transcription.mts).
       if (input.backend !== null && !['openrouter', 'codex', 'local'].includes(input.backend as string)) throw new BridgeError('Choose OpenRouter, Codex sign-in or local transcription');
       edits = [{ keyPath: `${key}.env.WHISPERTYPE_BACKEND`, value: input.backend, mergeStrategy: 'replace' }];
       if (input.model !== undefined) {

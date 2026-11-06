@@ -1,10 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PassThrough, Readable } from 'node:stream';
-import http from 'node:http';
-import { transcriptionStatus, createTranscription, normalizeAudio, transcribeMcp, transcribeGemini } from './transcription.mjs';
+import http, { type IncomingMessage, type ServerResponse } from 'node:http';
+import type { AddressInfo } from 'node:net';
+type Handler = ReturnType<typeof createTranscription>;
+type MockRequest = Readable & Pick<IncomingMessage, 'method' | 'url' | 'headers'>;
+type Result = { status: number; value: { text?: string; available?: boolean; backend?: string; label?: string; source?: string; reason?: string } };
+type MockReply = { status?: number; headers?: Record<string, string>; body: unknown };
+type RecordedRequest = { method: string | undefined; url: string | undefined; headers: IncomingMessage['headers']; body: { contents: { role: string; parts: { text: string; inline_data: { mime_type: string; data: string } }[] }[]; generationConfig: object } };
+import { transcriptionStatus, createTranscription, normalizeAudio, transcribeMcp, transcribeGemini } from './transcription.mts';
 
-const server = env => ({ command: 'private-command', env: { SECRET_KEY: 'private-key', ...env } });
+const server = (env: Record<string, string>) => ({ command: 'private-command', env: { SECRET_KEY: 'private-key', ...env } });
 const MODEL = 'openai/gpt-4o-mini-transcribe';
 
 test('the chat provider picks the transcriber: ChatGPT sign-in for ChatGPT, the Voice model for OpenRouter', () => {
@@ -34,7 +40,7 @@ test('explicit OpenRouter dictation needs the configured provider key and passes
   const config = server({ WHISPERTYPE_BACKEND: 'openrouter', WHISPERTYPE_EVERY_CHAT: '1', ELPIS_DICTATION_EXPLICIT: '1', WHISPERTYPE_CLOUD_MODEL: MODEL });
   assert.equal(transcriptionStatus(config, 'openai', {}).available, false);
   assert.equal(transcriptionStatus(config, 'openai', { openrouterKey: 'fixture-provider-key' }).available, true);
-  const received = [];
+  const received: unknown[] = [];
   const handle = createTranscription({ definition: async () => config, environment: async () => ({ openrouterKey: 'fixture-provider-key' }), normalize: async value => value,
     transcribe: async (_config, _audio, _signal, backend, _home, key) => { received.push({ backend, key }); return 'from selected provider'; } });
   const result = await call(handle, 'audio/wav', Buffer.from('clip'), { provider: 'openai', backend: 'openrouter' });
@@ -46,7 +52,7 @@ test('explicit OpenRouter dictation needs the configured provider key and passes
 test('legacy every-chat OpenRouter dictation keeps its WhisperType credential until Use for is saved', async () => {
   const config = server({ WHISPERTYPE_BACKEND: 'openrouter', WHISPERTYPE_EVERY_CHAT: '1', WHISPERTYPE_CLOUD_MODEL: MODEL });
   assert.equal(transcriptionStatus(config, 'openai', {}).available, true);
-  const received = [];
+  const received: unknown[] = [];
   const handle = createTranscription({ definition: async () => config, environment: async () => ({ openrouterKey: 'another-provider-key' }), normalize: async value => value,
     transcribe: async (_config, _audio, _signal, _backend, _home, key) => { received.push(key); return 'legacy'; } });
   assert.deepEqual((await call(handle, 'audio/wav', Buffer.from('clip'), { provider: 'openai', backend: 'openrouter' })).value, { text: 'legacy' });
@@ -63,9 +69,9 @@ test('providers without a transcription Elpis can reach use the Settings fallbac
 test('OpenRouter needs its model from Settings → Voice, whether the chat or the fallback asks for it', () => {
   const reason = /Settings → Voice/;
   const bare = server({ WHISPERTYPE_BACKEND: 'local' });
-  assert.match(transcriptionStatus(bare, 'openrouter').reason, reason);
+  assert.match(transcriptionStatus(bare, 'openrouter').reason!, reason);
   assert.equal(transcriptionStatus(bare, 'openrouter').available, false);
-  assert.match(transcriptionStatus(server({ WHISPERTYPE_BACKEND: 'openrouter' }), 'anthropic').reason, reason);
+  assert.match(transcriptionStatus(server({ WHISPERTYPE_BACKEND: 'openrouter' }), 'anthropic').reason!, reason);
   assert.equal(transcriptionStatus(server({ WHISPERTYPE_BACKEND: 'openrouter', WHISPERTYPE_CLOUD_MODEL: MODEL }), 'anthropic').available, true);
   assert.equal(transcriptionStatus(bare, 'openai').available, true);
 });
@@ -109,25 +115,25 @@ test('an unsupported fallback engine stops only the providers that need the fall
   assert.equal(transcriptionStatus(config, 'openai').available, true);
 });
 
-async function call(handle, mime, audio = Buffer.from('clip'), { provider, backend = 'local' } = {}) {
-  const request = Readable.from([audio]); request.method = 'POST'; request.url = `/api/tools/transcription${provider === undefined ? '' : `?provider=${encodeURIComponent(provider)}`}`;
+async function call(handle: Handler, mime: string, audio = Buffer.from('clip'), { provider, backend = 'local' }: { provider?: string; backend?: string } = {}) {
+  const request = Readable.from([audio]) as MockRequest; request.method = 'POST'; request.url = `/api/tools/transcription${provider === undefined ? '' : `?provider=${encodeURIComponent(provider)}`}`;
   request.headers = { 'content-type': mime, 'x-elpis-transcription-backend': backend };
   const response = new PassThrough();
-  let result;
-  await handle(request, response, (_res, status, value) => { result = { status, value }; });
-  return result;
+  let result: Result | undefined;
+  await handle(request as IncomingMessage, response as unknown as ServerResponse, (_res, status, value) => { result = { status, value }; });
+  assert.ok(result); return result;
 }
 
-async function status(handle, provider) {
-  const request = new Readable({ read() { this.push(null); } }); request.method = 'GET'; request.headers = {};
+async function status(handle: Handler, provider?: string) {
+  const request = new Readable({ read() { this.push(null); } }) as MockRequest; request.method = 'GET'; request.headers = {};
   request.url = `/api/tools/transcription${provider === undefined ? '' : `?provider=${encodeURIComponent(provider)}`}`;
-  let result;
-  await handle(request, new PassThrough(), (_res, code, value) => { result = { code, value }; });
-  return result;
+  let result: { code: number; value: Result['value'] } | undefined;
+  await handle(request as IncomingMessage, new PassThrough() as unknown as ServerResponse, (_res, code, value) => { result = { code, value }; });
+  assert.ok(result); return result;
 }
 
 test('audio route enforces type/size, never accepts command overrides, and returns transcript only', async () => {
-  const seen = [];
+  const seen: unknown[] = [];
   const handle = createTranscription({ definition: async () => ({ command: 'configured-server', env: { WHISPERTYPE_BACKEND: 'local' } }), normalize: async audio => audio,
     transcribe: async (config, audio) => { seen.push([config.command, audio.toString()]); return 'متن گفتار'; } });
   assert.deepEqual(await call(handle, 'audio/webm;codecs=opus'), { status: 200, value: { text: 'متن گفتار' } });
@@ -141,7 +147,7 @@ test('audio route enforces type/size, never accepts command overrides, and retur
 });
 
 test('the route answers for the chat provider and records with exactly that transcriber', async () => {
-  const backends = [];
+  const backends: unknown[] = [];
   const handle = createTranscription({ definition: async () => ({ command: 'server', env: { WHISPERTYPE_BACKEND: 'local', WHISPERTYPE_CLOUD_MODEL: MODEL } }), normalize: async audio => audio,
     transcribe: async (_config, _audio, _signal, backend) => { backends.push(backend); return 'text'; } });
   assert.deepEqual((await status(handle, 'openai')).value, { available: true, backend: 'codex', label: 'ChatGPT sign-in (cloud)', source: 'provider' });
@@ -159,7 +165,7 @@ test('the route answers for the chat provider and records with exactly that tran
 });
 
 test('the route reads the private environment: the Gemini key reaches only the Gemini call and the Elpis home only the codex call', async () => {
-  const seen = []; const key = 'AIza-private-key', home = '/home/person/.elpis-test';
+  const seen: unknown[] = []; const key = 'AIza-private-key', home = '/home/person/.elpis-test';
   const handle = createTranscription({ definition: async () => server({ WHISPERTYPE_BACKEND: 'local' }), environment: async () => ({ chatgpt: true, home, geminiKey: key }), normalize: async audio => audio,
     transcribe: async (_config, _audio, _signal, backend, elpisHome) => { seen.push(['mcp', backend, elpisHome]); return 'from mcp'; },
     gemini: async (geminiKey, audio) => { seen.push(['gemini', geminiKey === key, audio.toString()]); return 'from gemini'; } });
@@ -173,13 +179,13 @@ test('the route reads the private environment: the Gemini key reaches only the G
 });
 
 test('dictation serializes work and cancellation reaches the owned request', async () => {
-  let finish, started;
-  const ready = new Promise(resolve => { started = resolve; });
+  let finish!: (value: string) => void; let started!: (signal: AbortSignal) => void;
+  const ready = new Promise<AbortSignal>(resolve => { started = resolve; });
   const handle = createTranscription({ definition: async () => ({ command: 'server', env: { WHISPERTYPE_BACKEND: 'local' } }), normalize: async audio => audio,
     transcribe: async (_def, _audio, signal) => { started(signal); return await new Promise(resolve => { finish = resolve; }); } });
-  const request = Readable.from([Buffer.from('clip')]); request.method = 'POST'; request.headers = { 'content-type': 'audio/ogg', 'x-elpis-transcription-backend': 'local' };
+  const request = Readable.from([Buffer.from('clip')]) as MockRequest; request.method = 'POST'; request.headers = { 'content-type': 'audio/ogg', 'x-elpis-transcription-backend': 'local' };
   const response = new PassThrough();
-  const pending = handle(request, response, () => {});
+  const pending = handle(request as IncomingMessage, response as unknown as ServerResponse, () => {});
   const signal = await ready;
   await assert.rejects(call(handle, 'audio/ogg'), /already/i);
   response.emit('close'); assert.equal(signal.aborted, true);
@@ -215,7 +221,7 @@ test('MCP transcription asks WhisperType for the route chosen for this chat, not
 // The fake WhisperType returns the CODEX_HOME it was started with, so the test sees which ChatGPT sign-in it would read.
 const fakeHome = `let t='';process.stdin.on('data',c=>{t+=c;let n;while((n=t.indexOf('\\n'))>=0){const m=JSON.parse(t.slice(0,n));t=t.slice(n+1);if(m.id===1)console.log(JSON.stringify({jsonrpc:'2.0',id:1,result:{protocolVersion:'2024-11-05',capabilities:{},serverInfo:{name:'s',version:'1'}}}));if(m.id===2)console.log(JSON.stringify({jsonrpc:'2.0',id:2,result:{content:[{type:'text',text:JSON.stringify({success:true,text:String(process.env.CODEX_HOME)})}]}}));}});`;
 test('the codex route reads the Elpis home ChatGPT sign-in; an explicit CODEX_HOME in the server env still wins', async () => {
-  const run = (env, route, home) => transcribeMcp({ command: process.execPath, args: ['-e', fakeHome], env }, Buffer.from('clip'), new AbortController().signal, route, home);
+  const run = (env: Record<string, string>, route: string, home: string | null) => transcribeMcp({ command: process.execPath, args: ['-e', fakeHome], env }, Buffer.from('clip'), new AbortController().signal, route, home);
   assert.equal(await run({ WHISPERTYPE_BACKEND: 'local' }, 'codex', '/elpis/home'), '/elpis/home');
   assert.equal(await run({ WHISPERTYPE_BACKEND: 'local', CODEX_HOME: '/chosen/home' }, 'codex', '/elpis/home'), '/chosen/home');
   assert.notEqual(await run({ WHISPERTYPE_BACKEND: 'local' }, 'local', '/elpis/home'), '/elpis/home', 'other routes never get the Elpis home');
@@ -223,18 +229,18 @@ test('the codex route reads the Elpis home ChatGPT sign-in; an explicit CODEX_HO
 });
 
 // A local HTTP server stands in for Google: no call ever leaves this machine.
-async function googleMock(reply) {
-  const requests = [];
-  const server = http.createServer(async (req, res) => {
+async function googleMock(reply: (count: number) => MockReply) {
+  const requests: RecordedRequest[] = [];
+  const server = http.createServer((req, res) => { void (async () => {
     let raw = ''; for await (const chunk of req) raw += chunk;
     requests.push({ method: req.method, url: req.url, headers: req.headers, body: raw ? JSON.parse(raw) : null });
     const out = reply(requests.length);
     res.writeHead(out.status ?? 200, { 'content-type': 'application/json', ...(out.headers ?? {}) }); res.end(typeof out.body === 'string' ? out.body : JSON.stringify(out.body));
-  });
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  return { requests, api: `http://127.0.0.1:${server.address().port}/v1beta`, close: () => new Promise(resolve => { server.closeAllConnections(); server.close(resolve); }) };
+  })(); });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  return { requests, api: `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1beta`, close: () => new Promise(resolve => { server.closeAllConnections(); server.close(resolve); }) };
 }
-const spoken = text => ({ body: { candidates: [{ content: { role: 'model', parts: [{ text }] }, finishReason: 'STOP' }] } });
+const spoken = (text: string) => ({ body: { candidates: [{ content: { role: 'model', parts: [{ text }] }, finishReason: 'STOP' }] } });
 
 test('Gemini transcription sends the documented generateContent request with the key in the header only', async () => {
   const google = await googleMock(() => spoken('  Hello from the recording.\n'));
@@ -242,17 +248,17 @@ test('Gemini transcription sends the documented generateContent request with the
     const wav = Buffer.from('RIFF....WAVEfmt fake-wav-bytes');
     const text = await transcribeGemini('AIza-private-key', wav, new AbortController().signal, { api: google.api });
     assert.equal(text, 'Hello from the recording.');
-    const [request] = google.requests;
+    const [request] = google.requests; assert.ok(request);
     assert.equal(request.method, 'POST');
     assert.equal(request.url, '/v1beta/models/gemini-flash-latest:generateContent');
     assert.equal(request.headers['x-goog-api-key'], 'AIza-private-key');
     assert.equal(request.headers['content-type'], 'application/json');
     assert.equal(request.url.includes('AIza'), false, 'the key never goes in the URL');
     assert.deepEqual(Object.keys(request.body).sort(), ['contents', 'generationConfig']);
-    const [turn] = request.body.contents;
+    const [turn] = request.body.contents; assert.ok(turn);
     assert.equal(turn.role, 'user');
-    assert.deepEqual(turn.parts[1], { inline_data: { mime_type: 'audio/wav', data: wav.toString('base64') } });
-    assert.match(turn.parts[0].text, /Transcribe .*verbatim.*transcript only/i);
+    assert.deepEqual(turn.parts[1]!, { inline_data: { mime_type: 'audio/wav', data: wav.toString('base64') } });
+    assert.match(turn.parts[0]!.text, /Transcribe .*verbatim.*transcript only/i);
     assert.deepEqual(request.body.generationConfig, { temperature: 0 });
   } finally { await google.close(); }
 });
@@ -271,21 +277,21 @@ test('Gemini transcription joins text parts, skips reasoning, and reports every 
     [{ status: 500, body: 'oops' }, /HTTP 500/],
     [{ body: '{not json' }, /unreadable/i],
     [{ status: 302, headers: { location: 'http://127.0.0.1:1/elsewhere' }, body: '' }, /could not be reached|redirect/i],
-  ];
+  ] satisfies [MockReply, RegExp | undefined, string?][];
   for (const [reply, failure, expected] of cases) {
     const google = await googleMock(() => reply);
     try {
       if (expected) assert.equal(await transcribeGemini(key, Buffer.from('x'), signal(), { api: google.api }), expected);
-      else await assert.rejects(transcribeGemini(key, Buffer.from('x'), signal(), { api: google.api }), error => { assert.match(error.message, failure); assert.equal(error.message.includes(key), false); return true; });
+      else await assert.rejects(transcribeGemini(key, Buffer.from('x'), signal(), { api: google.api }), error => { assert.ok(error instanceof Error); assert.ok(failure); assert.match(error.message, failure); assert.equal(error.message.includes(key), false); return true; });
     } finally { await google.close(); }
   }
   const aborted = new AbortController(); aborted.abort();
   await assert.rejects(transcribeGemini(key, Buffer.from('x'), aborted.signal, { api: 'http://127.0.0.1:1/v1beta' }), /cancel/i);
-  await assert.rejects(transcribeGemini(key, Buffer.from('x'), signal(), { api: 'http://127.0.0.1:1/v1beta' }), error => /could not be reached/i.test(error.message) && !error.message.includes(key));
+  await assert.rejects(transcribeGemini(key, Buffer.from('x'), signal(), { api: 'http://127.0.0.1:1/v1beta' }), error => error instanceof Error && /could not be reached/i.test(error.message) && !error.message.includes(key));
 });
 
 test('cancelling mid-request stops the Gemini call', async () => {
-  let release; const held = new Promise(resolve => { release = resolve; });
+  let release!: () => void; const held = new Promise<void>(resolve => { release = resolve; });
   const google = await googleMock(() => { release(); return spoken('late'); });
   const controller = new AbortController();
   const pending = transcribeGemini('k', Buffer.from('x'), controller.signal, { api: google.api, fetchImpl: (url, init) => { controller.abort(); return fetch(url, init); } });
@@ -300,8 +306,8 @@ test('a Google Gemini chat is transcribed end to end against a local Google stan
       transcribe: async () => { throw Error('WhisperType must not run for a Gemini chat'); }, gemini: (key, audio, signal) => transcribeGemini(key, audio, signal, { api: google.api }) });
     assert.deepEqual(await call(handle, 'audio/ogg', Buffer.from('spoken clip'), { provider: 'google-gemini', backend: 'gemini' }), { status: 200, value: { text: 'Dictated through Gemini.' } });
     assert.equal(google.requests.length, 1);
-    assert.equal(google.requests[0].body.contents[0].parts[1].inline_data.data, Buffer.from('spoken clip').toString('base64'));
-    assert.equal(google.requests[0].headers['x-goog-api-key'], 'AIza-private-key');
+    assert.equal(google.requests[0]!.body.contents[0]!.parts[1]!.inline_data.data, Buffer.from('spoken clip').toString('base64'));
+    assert.equal(google.requests[0]!.headers['x-goog-api-key'], 'AIza-private-key');
     await assert.rejects(call(handle, 'audio/ogg', Buffer.from('spoken clip'), { provider: 'google-gemini', backend: 'codex' }), /provider changed/i);
     assert.equal(google.requests.length, 1, 'a stale route reaches no provider');
   } finally { await google.close(); }

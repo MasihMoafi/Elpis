@@ -8,7 +8,7 @@ import { LOVE_SPOT_AUDIO } from '../lib/love-spot-audio.mts';
 import { createExperimentLab } from './experiment-lab.mts';
 import { createSchedule } from './schedule.mts';
 import { createTools } from './tools.mts';
-import { createTranscription } from './transcription.mjs';
+import { createTranscription } from './transcription.mts';
 import { createVoice } from './voice.mjs';
 import { createKokoro } from './kokoro.mts';
 import { createReadAloudProvider } from './read-aloud-provider.mts';
