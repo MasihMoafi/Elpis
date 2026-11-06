@@ -17,8 +17,7 @@ import { ViewBoundary } from "@/components/view-boundary";
 import { WorkingPlacement } from "@/components/transcript";
 import { useBookmarks, useChatAttention, usePins, useSidebarFolds, useChatGroups } from "@/lib/use-sidebar-state";
 import { SIDEBAR, useAppearance } from "@/lib/use-appearance";
-import { addGroup, chatSelectionRoots, chatSubtree, moveChats, prioritizeChats, sidebarParents, type ChatGroups } from "@/lib/chat-groups";
-import { agentParentId } from "@/lib/agent-runs.mjs";
+import { addGroup, chatSubtree, moveChats, prioritizeChats } from "@/lib/chat-groups";
 import { configuredShortcuts, shortcutHint, shortcutTitle } from "@/lib/shortcuts";
 import { CommandMenu, type CommandAction } from "@/components/command-menu";
 import { ImproveElpis } from "@/components/improve-elpis";
@@ -130,6 +129,7 @@ import { createReplyActions } from "@/lib/reply-actions";
 import { createComposerHandlers } from "@/lib/composer-handlers";
 import { useRelatedConversations } from "@/lib/use-related-conversations";
 import { useTranscriptPresentation } from "@/lib/use-transcript-presentation";
+import { createSidebarPlacement } from "@/lib/sidebar-placement";
 import { refusedOffline, type View, type WorkflowReplay, type NextTurn } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
 import { useComposerState } from "@/lib/use-composer-state";
@@ -352,7 +352,8 @@ export default function Home() {
   const initialRestoration = useRef<{ threadId: string; promise: Promise<void> } | null>(null);
   const conversations = useConversationList(threads, setThreads, selectedRef, setSelected, setError);
   const { select, settingsOf, threadsRef, hidden, upsertThread, refreshThreads } = conversations;
-  const { loadingChildren, checkedChildren, childCursors, expanded, setExpanded, holdAgentPanel, loadChildren } = useChildConversations({ conversations, selectedRef, setThreads, setError, setAgentsPanelState });
+  const children = useChildConversations({ conversations, selectedRef, setThreads, setError, setAgentsPanelState });
+  const { loadingChildren, checkedChildren, childCursors, expanded, setExpanded, holdAgentPanel, loadChildren } = children;
   const search = useSidebarSearch(ready, hidden), searchTerm = search.searchTerm;
 
   const removeThreads = useCallback((ids: Set<string>, permanent: boolean) => {
@@ -544,7 +545,7 @@ export default function Home() {
   const openSplit = (thread: Thread) => { side.closePanel(); setAgentsPanelState(previous => ({ ...previous, open: false })); setView("chat"); split.open(thread); };
   const openSessionWindow = (thread?: Thread) => { void sessionWindowApi()?.(thread?.id).catch(cause => setError(String(cause))); };
 
-  const { assignProject, selectProject, saveProject, newProjectFrom, saveProjectFromChats, workIn, addProject, moveChat, moveChatToFolder, removeProject } = createProjectActions({ projectState, conversations, runtime, chatGroupsRef, commitGroups, placementReveal, revealPlacement, setMarked, viewRef, selected, openNewChat, setError, getNativeParents: () => nativeParents });
+  const { assignProject, selectProject, saveProject, newProjectFrom, saveProjectFromChats, workIn, addProject, moveChat, moveChatToFolder, removeProject } = createProjectActions({ projectState, conversations, runtime, chatGroupsRef, commitGroups, placementReveal: (...args) => placementReveal(...args), revealPlacement: (...args) => revealPlacement(...args), setMarked, viewRef, selected, openNewChat, setError, getNativeParents: () => nativeParents });
   const show = (next: View) => { if (next !== "chat") side.toggleFull(false); if (next === "settings") { setSettingsVisited(true); setSettingsNavigation(value => value + 1); } setView(next); setSidebar(false); };
   // A click on the screenshot thumbnail puts the screenshots on the Love Spot page already open, below what is there, in the
   // order they were taken, then shows them (A239; Masih, 5 Nov: "when I want to post a screenshot, it shouldn't open a new page").
@@ -701,7 +702,7 @@ export default function Home() {
   useEffect(() => { if (text) setSlashNotice(""); }, [text]);
 
   const sidebarModel = useSidebarThreads({ ready, connected, threads, hidden, selected, chatGroups, loveActivity, expanded, setExpanded, recordedWorkflow, loadChildren, search, attention, waitingIds, pins, projectChats, releaseChatOrder, searchInput, setError, setDeleteRunHistory, setDeleteTargets, hiddenPages, preferences, collapsedSections, collapsedProjects, checkedChildren, agentRunsOpen });
-  const { workflowCatalog, workflowRoots, workflowSteps, sidebarTitle, selectedWorkflow, sidebarThreads, nativeParents, treeParents, sidebarParent, originOf, searchedThreads, sidebarState, needsYou, ordinaryThreads, ordinaryIds, pinnedChats, grouped, recentChats, ordered } = sidebarModel;
+  const { workflowCatalog, workflowRoots, workflowSteps, sidebarTitle, selectedWorkflow, sidebarThreads, nativeParents, treeParents, searchedThreads, sidebarState, needsYou, ordinaryThreads, ordinaryIds, pinnedChats, grouped, recentChats, ordered } = sidebarModel;
   // Esc stops the running reply, as in Claude, wherever in the chat the focus is, unless a menu, dialog or field owns the key.
   const escapeStops = useRef<(event: KeyboardEvent) => void>(() => {});
   escapeStops.current = event => { if (selected && !readOnlyRun && activeTurn && view === "chat" && stopsOnEscape(event)) { event.preventDefault(); void stop(selected); } };
@@ -770,60 +771,7 @@ export default function Home() {
       },
     };
   }
-  /** "Move to group" for these chats (the row's chat, or the selection it belongs to), as Claude's session menu has it.
-   * Only top-level chats are grouped; an agent's chat stays under its parent. */
-  function groupMenu(thread: Thread, ids: string[]) {
-    if (sidebarParent(thread)) return undefined;
-    const known = (id: string) => chatGroups.groups.some(group => group.id === chatGroups.members[id]) ? chatGroups.members[id] : null;
-    const currents = new Set(ids.map(known));
-    return { groups: chatGroups.groups, current: currents.size === 1 ? [...currents][0] : undefined,
-      onMove: (groupId: string | null) => { updateGroups(state => moveChats(state, ids, groupId)); setMarked([]); },
-      onNew: () => setNewGroupFor(ids) };
-  }
-  const movingIds = (id: string) => chatSelectionRoots(marked.includes(id) ? marked : [id], treeParents);
-  function canNest(ids: string[], parent: string) {
-    return ordinaryIds.has(parent) && ids.length > 0 && ids.every(id => ordinaryIds.has(id)) && !chatSubtree(ids, treeParents).includes(parent);
-  }
-  function placementReveal(target: string, state: ChatGroups, memberships: Record<string, string>, moved: string[]) {
-    const parents = sidebarParents(Object.keys(nativeParents), state, nativeParents), opened: Record<string, boolean> = {};
-    let root = target;
-    for (let child of moved.length ? moved : [undefined]) {
-      const seen = new Set<string>();
-      for (let id: string | undefined = target; id && !seen.has(id); id = parents[id]) {
-        seen.add(id); root = id;
-        const owner = child ? workflowSteps.get(child) : undefined;
-        const runId = owner?.parent === id ? owner.runId : workflowRoots.get(id)?.id;
-        if (moved.length) opened[runId ? `workflow:${runId}` : id] = true;
-        child = id;
-      }
-    }
-    const thread = sidebarThreads.find(thread => thread.id === root), project = pins.includes(root) ? undefined : memberships[root];
-    const orphan = thread && !Object.hasOwn(state.parents ?? {}, root) && agentParentId(thread) && !ordinaryIds.has(agentParentId(thread)!);
-    const group = !pins.includes(root) && !project && !orphan && state.groupBy === "custom" ? state.groups.find(group => group.id === state.members[root])?.id : undefined;
-    const origin = thread && originOf(thread);
-    const section = pins.includes(root) ? "pinned" : project ? "projects" : orphan ? "unlinked" : group ? "groups" : origin === "Workflows" ? "workflows" : origin === "Love Spot" ? "love" : "recents";
-    return { opened, section, project, group };
-  }
-  function revealPlacement(paths: ReturnType<typeof placementReveal>[]) {
-    const opened = Object.fromEntries(paths.flatMap(path => Object.entries(path.opened)));
-    if (Object.keys(opened).length) setExpanded(previous => ({ ...previous, ...opened }));
-    if (paths.some(({ section, project }) => foldsRef.current.sections[section] || project && foldsRef.current.projects[project])) changeFolds(previous => {
-      const next = { sections: { ...previous.sections }, projects: { ...previous.projects } };
-      for (const { section, project } of paths) { next.sections[section] = false; if (project) next.projects[project] = false; }
-      return next;
-    });
-  }
-  async function nestChats(ids: string[], parent: string) {
-    await assignProject(ids, projectChatsRef.current[parent] ?? null, parent);
-    if (!checkedChildren.current.has(parent)) void loadChildren(parent, undefined, false);
-  }
-  function organizationActions(thread: Thread) {
-    if (!ordinaryIds.has(thread.id)) return {};
-    return { onMoveToProject: setProjectMove, onNewProject: newProjectFrom, onPutUnder: setNestTargets,
-      ...(movingIds(thread.id).some(id => treeParents[id]) ? { onTakeOut: (chats: Thread[]) => {
-        void assignProject(chats.map(chat => chat.id), undefined).catch(cause => setError(String(cause)));
-      } } : {}) };
-  }
+  const { groupMenu, movingIds, canNest, placementReveal, revealPlacement, nestChats, organizationActions } = createSidebarPlacement({ model: sidebarModel, projectState, children, chatGroups, updateGroups, foldsRef, changeFolds, pins, marked, setMarked, setNewGroupFor, setError, assignProject, newProjectFrom });
   async function renameDisplayedThread(thread: Thread, name: string, runId = workflowRoots.get(thread.id)?.id) {
     if (!runId) { await renameThread(thread, name); return; }
     const problem = workflowCatalog.rename(runId, name);
