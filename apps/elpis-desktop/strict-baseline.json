@@ -1462,7 +1462,7 @@
   "tests/test-inventory.test.mjs:eslint(no-unused-vars)": 1,
   "tests/turn-replacement.test.mjs:typescript(no-implied-eval)": 1,
   "tests/usability.test.cjs:typescript(no-misused-promises)": 1,
-  "tests/use-for-settings.test.cjs:typescript(no-implied-eval)": 2,
+  "tests/use-for-settings.test.cjs:typescript(no-implied-eval)": 1,
   "tests/ux-everyday.test.cjs:typescript(no-misused-promises)": 1,
   "tests/windows-split.test.cjs:eslint(no-unused-vars)": 1,
   "tests/workflow-approvals.test.cjs:typescript(no-misused-promises)": 1,
