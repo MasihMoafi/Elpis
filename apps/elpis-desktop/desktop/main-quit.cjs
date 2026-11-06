@@ -1,9 +1,22 @@
 'use strict';
 
+/**
+ * @param {{
+ *   app: import('electron').App,
+ *   loveSpotApp: boolean,
+ *   workflowsApp: boolean,
+ *   executableLauncher: (file: string) => string,
+ *   mayClose: (host?: import('electron').BrowserWindow) => boolean,
+ *   state: import('./main-backend.cjs').MainState
+ * }} options
+ */
 function createMainQuit({ app, loveSpotApp, workflowsApp, executableLauncher, mayClose, state }) {
+  /** @type {Promise<boolean> | null | undefined} */
   let quitAttempt;
+  /** @type {string | null | undefined} */
   let pendingRestartTarget;
 
+  /** @param {string} [restartTarget] */
   async function quitApp(restartTarget) {
     if (restartTarget) pendingRestartTarget = restartTarget;
     if (quitAttempt) return quitAttempt;

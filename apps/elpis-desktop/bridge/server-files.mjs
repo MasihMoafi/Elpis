@@ -8,6 +8,7 @@ import { isRepository } from './git.mjs';
 import { dismissPersonalTip, openPersonal, personalStatus } from './personal.mjs';
 import { body, cwdOf, json } from './server-http.mjs';
 
+/** @param {import('./server-http.mjs').ServerState} state @param {import('node:http').IncomingMessage} request @param {import('node:http').ServerResponse} response @param {URL} url @param {string} method */
 export async function handleFileRoutes(state, request, response, url, method) {
   const { client, options, devServers, importChats, improvements } = state;
   if (url.pathname === '/api/dev-servers' || url.pathname.startsWith('/api/dev-servers/')) {
@@ -38,13 +39,13 @@ export async function handleFileRoutes(state, request, response, url, method) {
   if (improvement) {
     const store = await improvements();
     if (method === 'GET' && !improvement[2]) { json(response, 200, await store.get(improvement[1])); return true; }
-    if (method === 'POST' && improvement[2]) { object(await body(request), []); json(response, 200, await store[improvement[2]](improvement[1])); return true; }
+    if (method === 'POST' && improvement[2] === 'check') { object(await body(request), []); json(response, 200, await store.check(improvement[1])); return true; }
     throw new BridgeError('Method is not allowed', 405);
   }
   if (url.pathname === '/api/personal' && method === 'GET') { json(response, 200, await personalStatus(options.elpisHome)); return true; }
   if (url.pathname === '/api/personal' && method === 'POST') {
-    const input = object(await body(request), ['action']);
-    if (!['open', 'dismiss'].includes(input.action)) throw new BridgeError('Choose open or dismiss');
+    const input = /** @type {{ action?: string }} */ (object(await body(request), ['action']));
+    if (!input.action || !['open', 'dismiss'].includes(input.action)) throw new BridgeError('Choose open or dismiss');
     json(response, 200, await (input.action === 'open' ? openPersonal : dismissPersonalTip)(options.elpisHome)); return true;
   }
   if (url.pathname === '/api/attachments/extract' && method === 'POST') { json(response, 200, await extractPdf(await body(request, PDF_BODY_LIMIT))); return true; }
@@ -64,7 +65,7 @@ export async function handleFileRoutes(state, request, response, url, method) {
   }
   if (url.pathname === '/api/file' && method === 'GET') { json(response, 200, await readFile(cwdOf(url, 'path'), url.searchParams.get('path') ?? '')); return true; }
   if (url.pathname === '/api/file' && method === 'POST') {
-    const edit = object(await body(request, 3 * 1024 * 1024), ['cwd', 'path', 'content', 'mtimeMs']);
+    const edit = /** @type {{ cwd?: unknown, path?: unknown, content?: unknown, mtimeMs?: unknown }} */ (object(await body(request, 3 * 1024 * 1024), ['cwd', 'path', 'content', 'mtimeMs']));
     json(response, 200, await writeFile(edit.cwd, edit.path, edit.content, edit.mtimeMs)); return true;
   }
   // Whether the project is a Git repository with a commit: the canvas asks for worktree isolation only then.

@@ -2,6 +2,7 @@ import { BridgeError, MAX_BRIDGE_MESSAGE_BYTES } from './client.mjs';
 import { appIdentity } from './app-identity.mts';
 import { body, json, pageQuery } from './server-http.mjs';
 
+/** @param {import('./server-http.mjs').ServerState} state @param {import('node:http').IncomingMessage} request @param {import('node:http').ServerResponse} response @param {URL} url @param {string} method */
 export async function handleSettingsRoutes(state, request, response, url, method) {
   const { client, settingsFiles } = state;
   if (url.pathname === '/api/models' && method === 'GET') { json(response, 200, await client.models(pageQuery(url, false, true))); return true; }

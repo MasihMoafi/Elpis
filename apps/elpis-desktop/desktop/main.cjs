@@ -16,13 +16,26 @@ const { createMainBackend } = require('./main-backend.cjs');
 const { createMainQuit } = require('./main-quit.cjs');
 
 // The renderer gets only the loopback app, never Node or filesystem access.
+/** @type {import('./main-backend.cjs').MainServer | undefined} */
 let server;
+/** @type {import('./main-backend.cjs').BrowserAgentSocket | undefined} */
 let browserAgentSocket;
 let closing = false;
+/** @type {import('./main-backend.cjs').StateStore | undefined} */
 let store;
+/** @type {import('./main-backend.cjs').WindowOpeners | undefined} */
 let primaryOpeners;
+/** @type {import('./main-backend.cjs').SessionWindows | undefined} */
 let sessionWindows;
-let tray, quickEntry, screenshotPopup, darkTheme = true, sleepBlocker; // `tray` stays referenced so it is not collected.
+/** @type {import('electron').Tray | undefined} */
+let tray;
+/** @type {import('./main-backend.cjs').QuickEntry | undefined} */
+let quickEntry;
+/** @type {import('./main-backend.cjs').ScreenshotPopup | undefined} */
+let screenshotPopup;
+let darkTheme = true;
+/** @type {{ dispose: () => void } | undefined} */
+let sleepBlocker; // `tray` stays referenced so it is not collected.
 // The Elpis website's mark: the window, the .desktop launcher and the tray.
 const ICON = path.join(__dirname, 'elpis-icon.png');
 const profile = configureMainProfile({ app, argv: process.argv, env: process.env });
@@ -31,9 +44,10 @@ const { loveSpotApp, workflowsApp } = profile;
 let initialThread = profile.initialThread;
 // Settings → General → Close to tray, off by default: closing the window quits. On, it hides and the tray keeps Elpis.
 const closeToTray = createCloseToTray({ app, enabled: () => !!store && closesToTray(store), quitting: () => closing });
-const updates = createAppUpdates({ app, runningApp: path.resolve(__dirname, '..'), restart: async target => {
+const updates = createAppUpdates({ app, runningApp: path.resolve(__dirname, '..'), restart: async (/** @type {string} */ target) => {
   if (!await quitApp(target)) throw Error('Restart cancelled. Your windows and drafts are kept open.');
 } });
+/** @type {import('./main-backend.cjs').MainState} */
 const state = {
   getServer: () => server, setServer: value => { server = value; },
   getBrowserAgentSocket: () => browserAgentSocket, setBrowserAgentSocket: value => { browserAgentSocket = value; },
@@ -52,30 +66,32 @@ const { quitApp, isQuitting } = createMainQuit({ app, loveSpotApp, workflowsApp,
 if (!app.requestSingleInstanceLock(profile.lockData)) {
   app.quit();
 } else {
-  app.on('second-instance', (_event, argv, _cwd, data) => {
+  app.on('second-instance', (_event, argv, _cwd, rawData) => {
+    const data = /** @type {{ loveSpot?: boolean, workflows?: boolean, openThread?: string | null } | undefined} */ (rawData);
     const loveSpot = loveSpotApp || data?.loveSpot === true || argv.includes('--love-spot');
     const workflows = workflowsApp || data?.workflows === true || argv.includes('--workflows');
-    void openWindow(loveSpot, workflows).then(() => { if (!loveSpot && !workflows) primaryOpeners.threads.queue(data?.openThread ?? openThreadArgument(argv)); }).catch(showStartupError);
+    void openWindow(loveSpot, workflows).then(() => { if (!loveSpot && !workflows) primaryOpeners?.threads.queue(data?.openThread ?? openThreadArgument(argv)); }).catch(showStartupError);
   });
   app.whenReady().then(async () => {
     // Built once: rebuilding an unchanged menu redraws the Linux menu row (Cloudroom's flicker).
     const appMenu = createAppMenu({ ipcMain, windows: () => sessionWindows?.windows ?? [], origin: () => server && new URL(server.url).origin,
-      newWindow: async () => { await prepareWindows(); await sessionWindows.open({ newSession: true }); }, quit: () => quitApp() });
-    Menu.setApplicationMenu(Menu.buildFromTemplate([
+      newWindow: async () => { await prepareWindows(); await sessionWindows?.open({ newSession: true }); }, quit: () => quitApp() });
+    Menu.setApplicationMenu(Menu.buildFromTemplate(/** @type {import('electron').MenuItemConstructorOptions[]} */ ([
       ...(process.platform === 'darwin' ? [{ role: 'appMenu' }] : []),
       ...appMenu.template(),
-    ]));
+    ])));
     if (loveSpotApp) return void await openWindow(true);
     if (workflowsApp) return void await openWindow(false, true);
     const showWindow = () => void openWindow().catch(showStartupError);
     screenshotPopup = createScreenshotPopup({ BrowserWindow, screen, ipcMain, dark: () => darkTheme });
-    quickEntry = startQuickEntry({ app, globalShortcut, BrowserWindow, screen, ipcMain, dark: () => darkTheme,
-      drafts: { read: () => store?.read()['elpis-draft-v1:quick-entry'] ?? '', save: text => store.set('elpis-draft-v1:quick-entry', text) },
-      onSubmit: text => { void openWindow().then(() => primaryOpeners.newChats.queue(text)).catch(showStartupError); } });
+    const activeQuickEntry = startQuickEntry({ app, globalShortcut, BrowserWindow, screen, ipcMain, dark: () => darkTheme,
+      drafts: { read: () => /** @type {Record<string, string | undefined> | undefined} */ (store?.read())?.['elpis-draft-v1:quick-entry'] ?? '', save: (/** @type {string} */ text) => store?.set('elpis-draft-v1:quick-entry', text) },
+      onSubmit: (/** @type {string} */ text) => { void openWindow().then(() => primaryOpeners?.newChats.queue(text)).catch(showStartupError); } });
+    quickEntry = activeQuickEntry;
     await openWindow(process.argv.includes('--love-spot'), process.argv.includes('--workflows'));
-    await quickEntry.start(quickEntryShortcut(store));
+    await activeQuickEntry.start(quickEntryShortcut(store));
     tray = createTray({ Tray, Menu, nativeImage, icon: ICON, actions: {
-      open: showWindow, newChat: () => { void openWindow().then(() => primaryOpeners.newChats.queue('')).catch(showStartupError); }, quickEntry: () => void quickEntry.toggle(), quit: () => app.quit(),
+      open: showWindow, newChat: () => { void openWindow().then(() => primaryOpeners?.newChats.queue('')).catch(showStartupError); }, quickEntry: () => void activeQuickEntry.toggle(), quit: () => app.quit(),
     } });
   }).catch(showStartupError);
   app.on('activate', () => { void openWindow(loveSpotApp, workflowsApp).catch(showStartupError); });
@@ -84,12 +100,17 @@ if (!app.requestSingleInstanceLock(profile.lockData)) {
     if (!server || closing) return;
     event.preventDefault();
     if (isQuitting()) return;
-    void quitApp().catch(error => { console.error('Could not save before quitting:', error); dialog.showErrorBox('Elpis is still open', error.message); });
+    void quitApp().catch((/** @type {unknown} */ error) => {
+      console.error('Could not save before quitting:', error);
+      dialog.showErrorBox('Elpis is still open', error instanceof Error ? error.message : String(error));
+    });
   });
 }
 
+/** @param {unknown} error */
 function showStartupError(error) {
-  console.error('Elpis startup failed:', error?.stack || String(error));
-  dialog.showErrorBox('Elpis could not open', String(error?.message || error));
+  const err = /** @type {{ stack?: string, message?: string } | null | undefined} */ (error);
+  console.error('Elpis startup failed:', err?.stack || String(error));
+  dialog.showErrorBox('Elpis could not open', String(err?.message || error));
   app.quit();
 }

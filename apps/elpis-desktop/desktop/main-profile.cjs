@@ -4,6 +4,13 @@ const path = require('node:path');
 const { openThreadArgument } = require('./open-thread.cjs');
 const { enableWaylandIme } = require('./wayland-ime.cts');
 
+/**
+ * @param {{
+ *   app: import('electron').App,
+ *   argv?: string[],
+ *   env?: NodeJS.ProcessEnv
+ * }} options
+ */
 function configureMainProfile({ app, argv = process.argv, env = process.env }) {
   // WM_CLASS comes from package.json "name" (elpis-desktop) when launched as the app directory;
   // elpis-desktop.desktop.in sets StartupWMClass=elpis-desktop to match, so docks show the Elpis icon.
@@ -18,11 +25,13 @@ function configureMainProfile({ app, argv = process.argv, env = process.env }) {
   enableWaylandIme(app.commandLine, env);
   // Wayland gives apps global shortcuts only through the desktop portal; Claude's app turns on Chromium's portal support the same way.
   app.commandLine.appendSwitch('enable-features', [app.commandLine.getSwitchValue('enable-features'), 'GlobalShortcutsPortal'].filter(Boolean).join(','));
+  /** @type {{ openThread: string | null, loveSpot: boolean, workflows?: boolean }} */
+  const lockData = { openThread: openThreadArgument(argv), loveSpot: argv.includes('--love-spot'), ...(argv.includes('--workflows') ? { workflows: true } : {}) };
   return {
     loveSpotApp,
     workflowsApp,
-    initialThread: openThreadArgument(argv),
-    lockData: { openThread: openThreadArgument(argv), loveSpot: argv.includes('--love-spot'), ...(argv.includes('--workflows') ? { workflows: true } : {}) },
+    initialThread: /** @type {string | null} */ (openThreadArgument(argv)),
+    lockData,
   };
 }
 

@@ -30,21 +30,47 @@ import { handleSettingsRoutes } from './server-settings.mjs';
 import { createWorkflowDispatcher, handleWorkflowRoutes } from './server-workflows.mjs';
 import { createHistoryCursors, handleThreadRoutes } from './server-threads.mjs';
 
+/**
+ * @typedef {{
+ *   client?: import('./client.mjs').DesktopClient,
+ *   socketPath?: string,
+ *   elpisHome?: string,
+ *   trashFile?: string,
+ *   staticDir?: string,
+ *   loveSpot?: Parameters<typeof createLoveSpot>[0],
+ *   loveSpotAudio?: Parameters<typeof createLoveSpotTalk>[0]['audio'],
+ *   loveAgents?: { env?: NodeJS.ProcessEnv } & Record<string, unknown>,
+ *   workflowClaimWait?: number,
+ *   automationsFile?: string,
+ *   automations?: boolean,
+ *   improvements?: Record<string, unknown>,
+ *   tools?: ReturnType<typeof createTools>,
+ *   kokoro?: { voices?: () => Promise<unknown[]> | unknown[], defaultVoice?: string, close: () => void, [key: string]: unknown },
+ *   readAloudFetch?: typeof fetch,
+ *   codexHome?: string,
+ *   port?: number
+ * }} DesktopServerOptions
+ */
+
 /** Starts only this UI server; connects to an existing Elpis runtime and never starts/stops it. `trashFile` keeps the
- * chats deleted from the sidebar until they are deleted for good (bridge/trash.mjs): what a crash left is deleted now. */
-export async function startDesktopServer(options = {}) {
-  const client = options.client ?? await DesktopClient.connect({ socketPath: options.socketPath, home: options.elpisHome });
+ * chats deleted from the sidebar until they are deleted for good (bridge/trash.mjs): what a crash left is deleted now.
+ * @param {Record<string, unknown>} [rawOptions] */
+export async function startDesktopServer(rawOptions = {}) {
+  const options = /** @type {DesktopServerOptions} */ (rawOptions);
+  const client = options.client ?? await DesktopClient.connect({ ...(options.socketPath ? { socketPath: options.socketPath } : {}), ...(options.elpisHome ? { home: options.elpisHome } : {}) });
   const trash = await createTrash({ client, file: options.trashFile });
   // The last session's deleted chats go for good once the runtime is reachable, which may be after the window opened.
   const purge = () => trash.purge().catch(() => {});
-  if (client.connected === false) client.on('event', function connected(value) { if (value.type === 'connection' && value.data.connected) { client.off('event', connected); void purge(); } });
+  if (client.connected === false) client.on('event', function connected(/** @type {{ type?: string, data?: { connected?: boolean } }} */ value) { if (value.type === 'connection' && value.data?.connected) { client.off('event', connected); void purge(); } });
   else await purge();
   const staticDir = path.resolve(options.staticDir ?? fileURLToPath(new URL('../out', import.meta.url)));
   const capability = randomBytes(32).toString('hex');
   const session = randomBytes(32).toString('hex');
   // Chats reach Automations alone through bridge/schedule-mcp.mts with this key; it opens no other route.
   const automationKey = randomBytes(32).toString('hex');
-  const listeners = new Set(); let origin; let closed = false;
+  /** @type {Set<import('node:http').ServerResponse>} */
+  const listeners = new Set();
+  let closed = false;
   const loveSpot = createLoveSpot(options.loveSpot);
   await loveSpot.start();
   const companion = createMatildaCompanion({ store: loveSpot });
@@ -52,7 +78,8 @@ export async function startDesktopServer(options = {}) {
   // Love Spot's agents run as ACP agent processes (bridge/acp-nodes.mjs), not through this Elpis connection.
   const loveAgents = createLoveAgents(loveSpot, { ...options.loveAgents, env: profileEnvironment(options.elpisHome, options.loveAgents?.env) });
   const devServers = createDevServers();
-  const experimentLab = createExperimentLab({ client, ...(options.elpisHome ? { file: path.join(options.elpisHome, 'experiment-lab', 'latest.json') } : {}) });
+  const experimentLab = createExperimentLab(/** @type {Parameters<typeof createExperimentLab>[0]} */ ({ client, ...(options.elpisHome ? { file: path.join(options.elpisHome, 'experiment-lab', 'latest.json') } : {}) }));
+  /** @param {{ type: string, data: unknown }} value */
   const event = value => {
     const bytes = `event: ${value.type}\ndata: ${JSON.stringify(value.data)}\n\n`;
     for (const response of listeners) {
@@ -64,10 +91,12 @@ export async function startDesktopServer(options = {}) {
   // Automations (bridge/schedule.mjs) run only where the caller asks for them: the app passes `automations: true`, a test
   // its own `automationsFile`; otherwise the routes say they are off, so no test touches his tasks.
   const automationsFile = options.automationsFile ?? (options.automations ? path.join(options.elpisHome ?? elpisHome(), 'automations', 'tasks.json') : null);
-  const automations = automationsFile ? createSchedule({ client, file: automationsFile, dispatchWorkflow: job => workflowDispatcher.dispatch(job) }) : null;
+  const automations = automationsFile ? createSchedule({ client, file: automationsFile, dispatchWorkflow: (/** @type {object} */ job) => workflowDispatcher.dispatch(/** @type {import('./server-workflows.mjs').ScheduledWorkflowJob} */ (job)) }) : null;
+  /** @type {Set<import('node:http').ServerResponse>} */
   const loveStreams = new Set();
+  /** @type {Promise<Awaited<ReturnType<typeof createImprovements>>> | undefined} */
   let improvementStore;
-  const improvements = () => improvementStore ??= createImprovements({ client, ...options.improvements });
+  const improvements = () => improvementStore ??= createImprovements(/** @type {Parameters<typeof createImprovements>[0]} */ ({ client, ...options.improvements }));
   const tools = options.tools ?? createTools({ environment: () => client.ragEnvironment() });
   const diagnose = requestDiagnostics(options.elpisHome ?? elpisHome());
   const settingsFiles = createSettingsFiles(options.elpisHome ?? elpisHome());
@@ -75,27 +104,30 @@ export async function startDesktopServer(options = {}) {
   const transcription = createTranscription({ definition: () => client.transcriptionDefinition(), environment: () => client.transcriptionEnvironment() });
   const voice = createVoice(client);
   const kokoro = options.kokoro ?? createKokoro();
-  const readAloud = createReadAloudProvider({ home: options.elpisHome ?? elpisHome(), kokoro, provider: id => client.readAloudProvider(id), ...(options.readAloudFetch ? { fetchImpl: options.readAloudFetch } : {}) });
+  const readAloud = createReadAloudProvider({ home: options.elpisHome ?? elpisHome(), kokoro, provider: (/** @type {unknown} */ id) => client.readAloudProvider(id), ...(options.readAloudFetch ? { fetchImpl: options.readAloudFetch } : {}) });
   const importChats = createImportChats({ client, elpisHome: options.elpisHome ?? elpisHome(), ...(options.codexHome ? { codexHome: options.codexHome } : {}) });
   client.on('event', event);
   // A chat Masih starts is named from its first message, as the TUI names it.
   const titles = createThreadTitles(client);
-  client.on('event', value => { if (value.type === 'message') void titles.event(value.data); });
+  client.on('event', (/** @type {{ type?: string, data?: unknown }} */ value) => { if (value.type === 'message') void titles.event(/** @type {Parameters<typeof titles.event>[0]} */ (value.data)); });
+  /** @type {import('./server-http.mjs').ServerState} */
   const state = {
     client, options, trash, loveSpot, companion, loveTalk, loveAgents, loveStreams,
     devServers, experimentLab, automations, workflowDispatcher, improvements, tools,
     settingsFiles, historyCursors, transcription, voice, kokoro, readAloud, importChats,
   };
-  const server = http.createServer(async (request, response) => {
+  let origin = '';
+  /** @param {import('node:http').IncomingMessage} request @param {import('node:http').ServerResponse} response */
+  const handleRequest = async (request, response) => {
     const requestId = randomUUID();
     let area = 'other';
     applySecurityHeaders(response, requestId);
     try {
       if (request.headers.host !== new URL(origin).host || (request.headers.origin && request.headers.origin !== origin)
         || request.headers['sec-fetch-site'] === 'cross-site') throw new BridgeError('Local application origin required', 403);
-      if (!['GET', 'POST'].includes(request.method)) throw new BridgeError('Method is not allowed', 405);
-      const url = new URL(request.url, origin);
-      const requestedArea = url.pathname.split('/')[2];
+      if (!request.method || !['GET', 'POST'].includes(request.method)) throw new BridgeError('Method is not allowed', 405);
+      const url = new URL(request.url ?? '/', origin);
+      const requestedArea = url.pathname.split('/')[2] ?? '';
       if (ERROR_AREAS.has(requestedArea)) area = requestedArea;
       if (url.origin !== origin) throw new BridgeError('Local application origin required', 403);
       applyFrameHeaders(url, response);
@@ -103,7 +135,7 @@ export async function startDesktopServer(options = {}) {
       const automationTool = typeof key === 'string' && same(key, automationKey) && /^\/api\/automations(?:\/|$)/.test(url.pathname);
       if (request.method === 'POST' && !automationTool && request.headers.origin !== origin) throw new BridgeError('Same-origin request required', 403);
       if (url.pathname === '/api/session' && request.method === 'POST') {
-        const submitted = object(await body(request), ['token']);
+        const submitted = /** @type {{ token?: unknown }} */ (object(await body(request), ['token']));
         if (!same(submitted.token, capability)) throw new BridgeError('Invalid application capability', 403);
         response.setHeader('Set-Cookie', `${COOKIE}=${session}; HttpOnly; SameSite=Strict; Path=/api`);
         return json(response, 200, { authenticated: true });
@@ -131,12 +163,15 @@ export async function startDesktopServer(options = {}) {
     } catch (error) {
       await sendRequestError(error, request, response, requestId, area, diagnose);
     }
-  });
+  };
+  const server = http.createServer((request, response) => { void handleRequest(request, response); });
   server.requestTimeout = 35000; server.headersTimeout = 10000;
   try {
-    await new Promise((resolve, reject) => { server.once('error', reject); server.listen(options.port ?? 0, '127.0.0.1', resolve); });
+    await /** @type {Promise<void>} */ (new Promise((resolve, reject) => { server.once('error', reject); server.listen(options.port ?? 0, '127.0.0.1', () => resolve()); }));
   } catch (error) { await loveSpot.close(); client.off('event', event); client.close(); throw error; }
-  origin = `http://127.0.0.1:${server.address().port}`;
+  const address = server.address();
+  const port = typeof address === 'object' && address ? address.port : 0;
+  origin = `http://127.0.0.1:${port}`;
   const heartbeat = setInterval(() => { for (const response of listeners) response.write(': heartbeat\n\n'); }, 15000);
   heartbeat.unref();
   return {
@@ -145,8 +180,8 @@ export async function startDesktopServer(options = {}) {
     get automationAccess() { return automations ? { url: origin, key: automationKey } : null; },
     /** Chats and their agents run in the background service, which outlives this window, so they keep running across
      * an update restart; only work this process runs itself (voice, Love Spot, Lab, local workflow runs) waits. */
-    async canRestart() {
-      return !(voice.busy() || loveTalk.busy() || loveAgents.busy() || experimentLab.busy() || automations?.busy() || client.hasLocalActivity?.());
+    canRestart() {
+      return Promise.resolve(!(voice.busy() || loveTalk.busy() || loveAgents.busy() || experimentLab.busy() || automations?.busy() || client.hasLocalActivity?.()));
     },
     async close() {
       if (closed) return; closed = true; clearInterval(heartbeat);
@@ -160,7 +195,7 @@ export async function startDesktopServer(options = {}) {
       // Quitting deletes the sidebar's deleted chats for good; what does not finish in time goes at the next start.
       await Promise.race([trash.purge().catch(() => {}), new Promise(resolve => setTimeout(resolve, 5000).unref())]);
       client.off('event', event); client.close();
-      await new Promise(resolve => { server.close(resolve); server.closeAllConnections(); });
+      await /** @type {Promise<void>} */ (new Promise(resolve => { server.close(() => resolve()); server.closeAllConnections(); }));
     },
   };
 }

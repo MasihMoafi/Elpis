@@ -8,14 +8,102 @@ const { closeNeedsConfirmation, seedShippedDefaults } = require('./preferences.c
 const { createSessionWindows } = require('./session-windows.cjs');
 const { createSleepBlocker } = require('./sleep-blocker.cjs');
 
+/**
+ * @typedef {{
+ *   url: string,
+ *   automationAccess?: unknown,
+ *   canRestart?: () => Promise<boolean> | boolean,
+ *   close: () => Promise<void> | void
+ * }} MainServer
+ */
+/**
+ * @typedef {{
+ *   path: string,
+ *   connectionFile: string,
+ *   scope: (id: string) => unknown,
+ *   rebind: (from: string, to: string) => void,
+ *   revoke: (id: string) => void,
+ *   close: () => Promise<void> | void
+ * }} BrowserAgentSocket
+ */
+/** @typedef {ReturnType<typeof import('./state.cts').createStateStore>} StateStore */
+/**
+ * @typedef {{
+ *   loveSpot?: boolean,
+ *   workflows?: boolean,
+ *   threads: { queue: (id: string | null) => void },
+ *   newChats: { queue: (text: string) => void }
+ * }} WindowOpeners
+ */
+/**
+ * @typedef {{
+ *   windows: Set<import('electron').BrowserWindow>,
+ *   openersFor: (host: import('electron').BrowserWindow | undefined) => WindowOpeners | undefined,
+ *   open: (options?: { newSession?: boolean, loveSpot?: boolean, workflows?: boolean, onPrimary?: (openers: WindowOpeners) => void }) => Promise<import('electron').BrowserWindow>,
+ *   openLoveSpot: () => Promise<import('electron').BrowserWindow>,
+ *   openWorkflows: () => Promise<import('electron').BrowserWindow>,
+ *   closeBrowser: (id: string) => void,
+ *   flushText: () => Promise<boolean> | boolean,
+ *   flushBrowsers: () => Promise<void> | void,
+ *   cancelQuit?: () => void
+ * }} SessionWindows
+ */
+/**
+ * @typedef {{
+ *   start: (shortcut: string) => Promise<unknown>,
+ *   toggle: () => Promise<unknown> | void,
+ *   flush?: () => Promise<unknown> | void,
+ *   cancelQuit?: () => void,
+ *   dispose?: () => void
+ * }} QuickEntry
+ */
+/** @typedef {{ dispose?: () => void }} ScreenshotPopup */
+/**
+ * @typedef {{
+ *   getServer: () => MainServer | undefined,
+ *   setServer: (value: MainServer | undefined) => void,
+ *   getBrowserAgentSocket: () => BrowserAgentSocket | undefined,
+ *   setBrowserAgentSocket: (value: BrowserAgentSocket | undefined) => void,
+ *   isClosing: () => boolean,
+ *   setClosing: (value: boolean) => void,
+ *   getStore: () => StateStore | undefined,
+ *   setStore: (value: StateStore | undefined) => void,
+ *   getPrimaryOpeners: () => WindowOpeners | undefined,
+ *   setPrimaryOpeners: (value: WindowOpeners | undefined) => void,
+ *   getSessionWindows: () => SessionWindows | undefined,
+ *   setSessionWindows: (value: SessionWindows | undefined) => void,
+ *   getTray: () => import('electron').Tray | undefined,
+ *   getQuickEntry: () => QuickEntry | undefined,
+ *   getScreenshotPopup: () => ScreenshotPopup | undefined,
+ *   getSleepBlocker: () => { dispose: () => void } | undefined,
+ *   setSleepBlocker: (value: { dispose: () => void } | undefined) => void,
+ *   setDarkTheme: (value: boolean) => void,
+ *   takeInitialThread: () => string | null
+ * }} MainState
+ */
+
+/**
+ * @param {{
+ *   electron: typeof import('electron'),
+ *   appDir: string,
+ *   state: MainState,
+ *   createStateStore: typeof import('./state.cts').createStateStore,
+ *   closeToTray: ReturnType<typeof import('./tray.cts').createCloseToTray>,
+ *   updates: { setRunningEngine: (engine: string) => void } & Record<string, unknown>
+ * }} options
+ */
 function createMainBackend({ electron, appDir, state, createStateStore, closeToTray, updates }) {
   const { app, dialog, powerSaveBlocker } = electron;
   const confirmedClose = new WeakSet();
+  /** @type {import('electron').BrowserWindow | undefined} */
   let window;
+  /** @type {Promise<void> | null | undefined} */
   let opening;
+  /** @type {Promise<import('electron').BrowserWindow> | null | undefined} */
   let openingChat;
 
   // Settings → General → Confirm before closing. Returns false when the person keeps the window.
+  /** @param {import('electron').BrowserWindow | undefined} [host] */
   function mayClose(host = window) {
     const store = state.getStore();
     if (!host || confirmedClose.has(host) || host.isDestroyed() || !store || !closeNeedsConfirmation(store)) return true;
@@ -35,21 +123,21 @@ function createMainBackend({ electron, appDir, state, createStateStore, closeToT
       const { ensureInstalledRuntime } = await import(pathToFileURL(path.join(appDir, 'runtime.mjs')).href);
       const { browserMcpConfig } = await import(pathToFileURL(path.join(appDir, '../bridge/browser-mcp.mjs')).href);
       const { scheduleMcpConfig } = await import(pathToFileURL(path.join(appDir, '../bridge/schedule-mcp.mts')).href);
-      const browserAgentSocket = await startBrowserAgentSocket({ connectionFile: path.join(app.getPath('userData'), 'browser-connection.json') });
+      const browserAgentSocket = /** @type {BrowserAgentSocket} */ (await startBrowserAgentSocket({ connectionFile: path.join(app.getPath('userData'), 'browser-connection.json') }));
       state.setBrowserAgentSocket(browserAgentSocket);
       try {
         // The window opens without waiting for the runtime (24 Oct: a runtime still starting kept the app closed for 20 s).
         const client = await DesktopClient.connect({ background: true, beforeConnect: ensureInstalledRuntime, browserConfig: {
           // Every chat gets the browser tools and, once the app's server is up, the Automations tools (bridge/schedule-mcp.mts).
-          forSession: id => ({ ...browserMcpConfig(browserAgentSocket.path, undefined, browserAgentSocket.scope(id), browserAgentSocket.connectionFile),
-            ...(state.getServer()?.automationAccess ? scheduleMcpConfig(state.getServer().automationAccess) : {}) }),
-          bind: (from, to) => browserAgentSocket.rebind(from, to),
-          close: id => { browserAgentSocket.revoke(id); state.getSessionWindows()?.closeBrowser(id); },
+          forSession: (/** @type {string} */ id) => ({ ...browserMcpConfig(browserAgentSocket.path, undefined, browserAgentSocket.scope(id), browserAgentSocket.connectionFile),
+            ...(state.getServer()?.automationAccess ? scheduleMcpConfig(state.getServer()?.automationAccess) : {}) }),
+          bind: (/** @type {string} */ from, /** @type {string} */ to) => browserAgentSocket.rebind(from, to),
+          close: (/** @type {string} */ id) => { browserAgentSocket.revoke(id); state.getSessionWindows()?.closeBrowser(id); },
         } });
         state.setSleepBlocker(createSleepBlocker({ powerSaveBlocker, client, store }));
         // A connected terminal may keep the previous bridge and engine alive after an install.
         const noteEngine = () => { try { updates.setRunningEngine(JSON.parse(fs.readFileSync(path.join(path.dirname(existingSocket()), 'state.json'), 'utf8')).engine); } catch {} };
-        client.on('event', event => { if (event.type === 'connection' && event.data.connected) noteEngine(); });
+        client.on('event', (/** @type {{ type?: string, data?: { connected?: boolean } }} */ event) => { if (event.type === 'connection' && event.data?.connected) noteEngine(); });
         // Chats deleted from the sidebar wait in this file until the app quits (Ctrl+Z brings them back until then).
         try { state.setServer(await startDesktopServer({ client, staticDir: path.join(appDir, '../out'), trashFile: path.join(app.getPath('userData'), 'deleted-chats.json'), automations: true })); }
         catch (error) { client.close(); throw error; }
@@ -60,18 +148,21 @@ function createMainBackend({ electron, appDir, state, createStateStore, closeToT
       }
     }
     if (!state.getSessionWindows()) {
-      const sessionWindows = createSessionWindows({ electron, url: state.getServer().url, store: state.getStore(), browserAgentSocket: state.getBrowserAgentSocket(), quickEntry: state.getQuickEntry(), screenshotPopup: state.getScreenshotPopup(), closeToTray, updates,
-        mayClose, quitting: () => state.isClosing(), onDark: dark => state.setDarkTheme(dark),
-        onClosed: host => { if (window === host) { window = [...sessionWindows.windows].find(item => !sessionWindows.openersFor(item)?.loveSpot && !sessionWindows.openersFor(item)?.workflows); state.setPrimaryOpeners(sessionWindows.openersFor(window)); } },
-        onFocused: (host, openers) => { if (!openers?.loveSpot && !openers?.workflows) { window = host; state.setPrimaryOpeners(openers); } } });
+      const server = /** @type {MainServer} */ (state.getServer());
+      /** @type {SessionWindows} */
+      const sessionWindows = createSessionWindows({ electron, url: server.url, store: state.getStore(), browserAgentSocket: state.getBrowserAgentSocket(), quickEntry: state.getQuickEntry(), screenshotPopup: state.getScreenshotPopup(), closeToTray, updates,
+        mayClose, quitting: () => state.isClosing(), onDark: (/** @type {boolean} */ dark) => state.setDarkTheme(dark),
+        onClosed: (/** @type {import('electron').BrowserWindow} */ host) => { if (window === host) { window = [...sessionWindows.windows].find(item => !sessionWindows.openersFor(item)?.loveSpot && !sessionWindows.openersFor(item)?.workflows); state.setPrimaryOpeners(sessionWindows.openersFor(window)); } },
+        onFocused: (/** @type {import('electron').BrowserWindow} */ host, /** @type {WindowOpeners | undefined} */ openers) => { if (!openers?.loveSpot && !openers?.workflows) { window = host; state.setPrimaryOpeners(openers); } } });
       state.setSessionWindows(sessionWindows);
     }
   }
 
+  /** @param {boolean} [loveSpot] @param {boolean} [workflows] */
   async function openWindow(loveSpot = false, workflows = false) {
     if (!opening) opening = prepareWindows().finally(() => { opening = null; });
     await opening;
-    const sessionWindows = state.getSessionWindows();
+    const sessionWindows = /** @type {SessionWindows} */ (state.getSessionWindows());
     if (loveSpot) return sessionWindows.openLoveSpot();
     if (workflows) return sessionWindows.openWorkflows();
     if (window && !window.isDestroyed()) {
@@ -79,11 +170,11 @@ function createMainBackend({ electron, appDir, state, createStateStore, closeToT
       if (!window.isVisible()) window.show();
       window.focus();
     } else {
-      if (!openingChat) openingChat = sessionWindows.open({ onPrimary: openers => state.setPrimaryOpeners(openers) }).finally(() => { openingChat = null; });
+      if (!openingChat) openingChat = sessionWindows.open({ onPrimary: (/** @type {WindowOpeners} */ openers) => state.setPrimaryOpeners(openers) }).finally(() => { openingChat = null; });
       window = await openingChat;
     }
     const initialThread = state.takeInitialThread();
-    if (initialThread) state.getPrimaryOpeners().threads.queue(initialThread);
+    if (initialThread) state.getPrimaryOpeners()?.threads.queue(initialThread);
   }
 
   return { mayClose, prepareWindows, openWindow };

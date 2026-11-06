@@ -9,16 +9,20 @@ import { prepareLoveSpotTurn } from './server-love-spot.mjs';
  * query limit. Keep that engine state here; the renderer gets a short, chat-bound
  * continuation. The prompt index uses the engine directly and cannot evict these. */
 export function createHistoryCursors() {
+  /** @type {Map<string, { id: string, cursor: string }>} */
   const historyCursors = new Map();
   return {
+    /** @param {string} id @param {unknown} cursor */
     expose(id, cursor) {
       if (typeof cursor !== 'string' || cursor.length <= 4096) return cursor;
       const token = 'desktop-page:' + createHash('sha256').update(id).update('\0').update(cursor).digest('base64url');
       historyCursors.delete(token);
       historyCursors.set(token, { id, cursor });
-      if (historyCursors.size > 256) historyCursors.delete(historyCursors.keys().next().value);
+      const oldest = historyCursors.keys().next().value;
+      if (historyCursors.size > 256 && oldest !== undefined) historyCursors.delete(oldest);
       return token;
     },
+    /** @param {string} id @param {string | undefined} cursor */
     resolve(id, cursor) {
       if (!cursor?.startsWith('desktop-page:')) return cursor;
       const saved = historyCursors.get(cursor);
@@ -29,6 +33,7 @@ export function createHistoryCursors() {
   };
 }
 
+/** @type {Record<string, 'send' | 'steer' | 'interrupt' | 'resume' | 'continueThread' | 'deleteThread' | 'renameThread' | 'archiveThread' | 'unarchiveThread' | 'revert' | 'rewind' | 'versions' | 'forkThread' | 'compact' | 'review' | 'setPermissions' | 'setEffort' | 'setServiceTier' | 'setFolder'>} */
 const THREAD_POST_OPS = {
   turns: 'send', steer: 'steer', interrupt: 'interrupt', resume: 'resume', continue: 'continueThread',
   delete: 'deleteThread', rename: 'renameThread', archive: 'archiveThread', unarchive: 'unarchiveThread',
@@ -36,42 +41,51 @@ const THREAD_POST_OPS = {
   review: 'review', permissions: 'setPermissions', effort: 'setEffort', 'service-tier': 'setServiceTier', folder: 'setFolder',
 };
 
+/** @param {import('./server-http.mjs').ServerState} state @param {import('node:http').IncomingMessage} request @param {import('node:http').ServerResponse} response @param {URL} url @param {string} method */
 export async function handleThreadRoutes(state, request, response, url, method) {
   const { client, options, trash, loveSpot, historyCursors } = state;
   const media = url.pathname.match(/^\/api\/threads\/([^/]+)\/turns\/([^/]+)\/items\/([^/]+)\/media\/(\d{1,3})$/);
   if (media && method === 'GET') {
-    const asset = await client.media(...media.slice(1, 4).map(decodeURIComponent), Number(media[4]));
+    const [threadId, turnId, itemId] = media.slice(1, 4).map(decodeURIComponent);
+    const asset = await client.media(threadId, turnId, itemId, Number(media[4]));
     response.writeHead(200, { 'Content-Type': asset.mimeType, 'Content-Length': asset.bytes.length, 'Cache-Control': 'no-store' });
     response.end(asset.bytes); return true;
   }
   const inlinePrune = url.pathname.match(/^\/api\/threads\/([^/]+)\/smart-prune\/([^/]+)\/([^/]+)$/);
-  if (inlinePrune && method === 'GET') { json(response, 200, await smartPruneDetail(options.elpisHome, ...inlinePrune.slice(1).map(decodeURIComponent))); return true; }
+  if (inlinePrune && method === 'GET') {
+    const [threadId, turnId, itemId] = inlinePrune.slice(1).map(decodeURIComponent);
+    json(response, 200, await smartPruneDetail(options.elpisHome, threadId, turnId, itemId)); return true;
+  }
   // Sidebar deletion: archived now, Ctrl+Z brings back the newest, quitting deletes for good.
-  if (url.pathname === '/api/trash' && method === 'POST') { json(response, 200, await trash.trash(object(await body(request), ['threadIds']).threadIds)); return true; }
+  if (url.pathname === '/api/trash' && method === 'POST') {
+    const input = /** @type {{ threadIds?: unknown }} */ (object(await body(request), ['threadIds']));
+    json(response, 200, await trash.trash(input.threadIds)); return true;
+  }
   if (url.pathname === '/api/trash/undo' && method === 'POST') { object(await body(request), []); json(response, 200, await trash.undo()); return true; }
   if (url.pathname === '/api/threads') {
     if (method === 'GET') {
       const query = pageQuery(url, true), listed = await (query.archived && client.listArchivedThreads ? client.listArchivedThreads(query) : client.listThreads(query));
       // A chat waiting to be deleted is archived, but it is not an archived chat.
-      json(response, 200, query.archived ? { ...listed, data: listed.data.filter(thread => !trash.has(thread.id)) } : listed);
+      json(response, 200, query.archived ? { ...listed, data: listed.data.filter((/** @type {{ id: string }} */ item) => !trash.has(item.id)) } : listed);
       return true;
     }
     json(response, 201, await client.createThread(await body(request))); return true;
   }
   const sideChat = url.pathname.match(/^\/api\/side-chats\/([^/]+)\/(turns|close)$/);
   if (sideChat && method === 'POST') {
-    json(response, 200, await client[sideChat[2] === 'turns' ? 'sendSideChat' : 'closeSideChat'](decodeURIComponent(sideChat[1]), await body(request)));
+    const sideId = decodeURIComponent(sideChat[1] ?? '');
+    json(response, 200, await (sideChat[2] === 'turns' ? client.sendSideChat(sideId, await body(request)) : client.closeSideChat(sideId, await body(request))));
     return true;
   }
   const contextFiles = url.pathname.match(/^\/api\/threads\/([^/]+)\/context-files$/);
   if (contextFiles) {
-    const id = decodeURIComponent(contextFiles[1]);
+    const id = decodeURIComponent(contextFiles[1] ?? '');
     if (method === 'GET') { json(response, 200, await client.contextFiles(id)); return true; }
     if (method === 'POST') { json(response, 200, await client.setContextFile(id, await body(request))); return true; }
   }
   const sessionContext = url.pathname.match(/^\/api\/threads\/([^/]+)\/(goal|session-context|session-intent)$/);
   if (sessionContext) {
-    const id = decodeURIComponent(sessionContext[1]), action = sessionContext[2];
+    const id = decodeURIComponent(sessionContext[1] ?? ''), action = sessionContext[2];
     if (action === 'goal' && method === 'GET') { json(response, 200, await client.goal(id)); return true; }
     if (action === 'goal' && method === 'POST') { json(response, 200, await client.setGoal(id, await body(request))); return true; }
     if (action === 'session-context' && method === 'GET') { json(response, 200, await client.sessionContext(id)); return true; }
@@ -80,7 +94,7 @@ export async function handleThreadRoutes(state, request, response, url, method) 
   }
   const thread = url.pathname.match(/^\/api\/threads\/([^/]+)(?:\/(turns|steer|interrupt|resume|continue|context|prompts|delete|rename|archive|unarchive|revert|rewind|versions|fork|compact|review|git|permissions|effort|service-tier|folder|shell|side-chat))?$/);
   if (thread) {
-    const id = decodeURIComponent(thread[1]);
+    const id = decodeURIComponent(thread[1] ?? '');
     if (thread[2] === 'shell' && method === 'POST') { json(response, 200, await client.shellCommand(id, await body(request))); return true; }
     if (thread[2] === 'side-chat' && method === 'POST') { json(response, 200, await client.createSideChat(id, await body(request))); return true; }
     if (!thread[2] && method === 'GET') {
@@ -96,8 +110,8 @@ export async function handleThreadRoutes(state, request, response, url, method) 
       json(response, 200, await client.git(id, url.searchParams.get('view'), url.searchParams.get('path') ?? undefined)); return true;
     }
     if (thread[2] === 'git' && method === 'POST') { json(response, 200, await client.discardChange(id, await body(request, 65536))); return true; }
-    if (thread[2] && !['context', 'prompts', 'git'].includes(thread[2]) && method === 'POST') {
-      const operation = THREAD_POST_OPS[thread[2]];
+    const operation = thread[2] ? THREAD_POST_OPS[thread[2]] : undefined;
+    if (operation && method === 'POST') {
       const input = await body(request, ['send', 'steer'].includes(operation) ? ATTACHMENT_BODY_LIMIT : 65536);
       await prepareLoveSpotTurn(loveSpot, id, operation, input);
       json(response, 200, await client[operation](id, input)); return true;
