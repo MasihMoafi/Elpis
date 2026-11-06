@@ -19,6 +19,7 @@ test('Translate to Farsi asks for its folder, writes a glossary first, translate
       window.elpisDesktop.openFile = async target => { window.__opened.push(target); }; });
     const pattern = f.canvas.getByRole('combobox', { name: 'Workflow pattern', exact: true });
     await pattern.click();
+    await f.page.getByRole('option').nth(1).waitFor();
     assert.deepEqual((await f.page.getByRole('option').allInnerTexts()).slice(0, 2).map(text => text.trim()), ['Transcribe images', 'Translate'], 'the ready-made workflows are on top');
     await f.page.keyboard.press('Escape');
     await chooseOption(pattern, 'translate');
