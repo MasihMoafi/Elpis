@@ -77,12 +77,14 @@ impl Fixture {
 
     async fn request(&mut self, method: &str, extra: Value) -> Result<Value> {
         let mut params = json!({ "threadId": self.thread_id });
-        params
-            .as_object_mut()
-            .unwrap()
-            .extend(extra.as_object().unwrap().clone());
+        params.as_object_mut().expect("params is an object").extend(
+            extra
+                .as_object()
+                .expect("extra params are an object")
+                .clone(),
+        );
         let id = self.mcp.send_request(method, Some(params)).await?;
-        Ok(timeout(WAIT, self.mcp.read_response(id)).await??)
+        timeout(WAIT, self.mcp.read_response(id)).await?
     }
 
     async fn list(&mut self) -> Result<Value> {
