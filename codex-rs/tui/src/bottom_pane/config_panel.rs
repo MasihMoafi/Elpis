@@ -1560,7 +1560,7 @@ mod tests {
             let screen = buffer
                 .content
                 .iter()
-                .map(|cell| cell.symbol())
+                .map(ratatui::buffer::Cell::symbol)
                 .collect::<String>();
             assert!(
                 screen.contains(&format!("› {name}")),
@@ -1819,7 +1819,7 @@ mod tests {
         let screen = buffer
             .content
             .iter()
-            .map(|cell| cell.symbol())
+            .map(ratatui::buffer::Cell::symbol)
             .collect::<String>();
         assert!(!screen.contains("sk-DO-NOT-RENDER"));
         assert!(screen.contains('•'));

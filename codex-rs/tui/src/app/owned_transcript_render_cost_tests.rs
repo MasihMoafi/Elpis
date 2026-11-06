@@ -398,7 +398,7 @@ async fn frame_cost_after_a_key_does_not_grow_with_the_chat() -> Result<()> {
     }
     short.close().await?;
     long.close().await?;
-    eprintln!(
+    tracing::info!(
         "fastest frame after a key: {short_best:?} with 15 turns, {long_best:?} with 300 turns"
     );
     assert!(
