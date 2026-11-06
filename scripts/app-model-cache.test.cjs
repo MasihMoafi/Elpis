@@ -64,7 +64,7 @@ async function main() {
     const playwright = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
     const staticArg = process.argv.indexOf('--static-dir');
     const staticDir = staticArg >= 0 ? process.argv[staticArg + 1] : path.join(repo, '.tmp/dashboard-repair/app-final-20261014/out');
-    const { DesktopClient } = await import(pathToFileURL(path.join(repo, 'apps/elpis-desktop/bridge/client.mjs')).href);
+    const { DesktopClient } = await import(pathToFileURL(path.join(repo, 'apps/elpis-desktop/bridge/client.mts')).href);
     desktopClient = await DesktopClient.connect({ socketPath: fs.realpathSync(sock) });
     desktop = await startDesktopServer({ client: desktopClient, staticDir });
     browser = await playwright.chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM, headless: true, args: ['--no-sandbox', '--disable-gpu'] });

@@ -16,7 +16,7 @@ import { startToken } from "../shared-runtime.mjs";
 import mockProvider from "../../../scripts/lib/mock-provider.js";
 import WebSocket from "ws";
 
-const { DesktopClient } = await import(new URL("../../../apps/elpis-desktop/bridge/client.mjs", import.meta.url));
+const { DesktopClient } = await import(new URL("../../../apps/elpis-desktop/bridge/client.mts", import.meta.url));
 const source = fileURLToPath(new URL("..", import.meta.url));
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const lines = (file) => fs.existsSync(file) ? fs.readFileSync(file, "utf8").split("\n").filter(Boolean).map(JSON.parse) : [];

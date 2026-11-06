@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 import { client, ndJsonStream } from "@agentclientprotocol/sdk";
 import http from "node:http";
 import { randomUUID } from "node:crypto";
-import { DesktopClient } from "../../../apps/elpis-desktop/bridge/client.mjs";
+import { DesktopClient } from "../../../apps/elpis-desktop/bridge/client.mts";
 import { runtimeDir } from "../shared-runtime.mjs";
 
 const AGENT = fileURLToPath(new URL("../elpis-acp-agent.mjs", import.meta.url));

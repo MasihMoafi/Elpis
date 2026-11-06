@@ -11,7 +11,7 @@ import { test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { setTimeout as pause } from "node:timers/promises";
 import mockProvider from "../../../scripts/lib/mock-provider.js";
-const { DesktopClient } = await import(process.env.A124_CLIENT ? pathToFileURL(process.env.A124_CLIENT) : new URL("../../../apps/elpis-desktop/bridge/client.mjs", import.meta.url));
+const { DesktopClient } = await import(process.env.A124_CLIENT ? pathToFileURL(process.env.A124_CLIENT) : new URL("../../../apps/elpis-desktop/bridge/client.mts", import.meta.url));
 
 const source = fileURLToPath(new URL("../", import.meta.url));
 const engine = process.env.A124_ENGINE ?? path.join(source, "test/fake-app-server.mjs");
