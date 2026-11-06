@@ -2,7 +2,7 @@
   "name": "elpis-desktop",
   "productName": "Elpis",
   "desktopName": "elpis-desktop.desktop",
-  "main": "desktop/main.cjs",
+  "main": "desktop/main.cts",
   "version": "0.5.1",
   "private": true,
   "engines": {

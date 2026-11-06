@@ -1,4 +1,4 @@
-// Actual main.cjs quit/relaunch, native input and production preload/state store.
+// Actual main.cts quit/relaunch, native input and production preload/state store.
 // The only boundaries replaced are the local backend, private installed selection,
 // deterministic workspace failure and error-dialog reporting. No engine or inference.
 const { test } = require('node:test');
@@ -16,7 +16,7 @@ const helper = path.join(__dirname, 'app-update-electron.cjs');
 const COMPOSER = 'A12 private composer verdict 821 — متن فارسی';
 const NOTE = 'A12 private Love Spot verdict 822';
 const QUICK = 'A12 private hidden Quick Entry verdict 823';
-const sources = ['desktop/main.cjs', 'desktop/preload.cjs', 'desktop/session-windows.cjs', 'desktop/app-updates.cts', 'desktop/state.cts', 'desktop/tray.cts', 'desktop/quick-entry.cts', 'desktop/quick-entry-preload.cjs', 'desktop/quick-entry.html', 'components/app-update.tsx', 'lib/files-pane.ts', 'lib/desktop.ts', 'components/agents-canvas.tsx'];
+const sources = ['desktop/main.cts', 'desktop/preload.cjs', 'desktop/session-windows.cjs', 'desktop/app-updates.cts', 'desktop/state.cts', 'desktop/tray.cts', 'desktop/quick-entry.cts', 'desktop/quick-entry-preload.cjs', 'desktop/quick-entry.html', 'components/app-update.tsx', 'lib/files-pane.ts', 'lib/desktop.ts', 'components/agents-canvas.tsx'];
 const hashes = async () => Object.fromEntries(await Promise.all(sources.map(async file => [file, crypto.createHash('sha256').update(await fs.readFile(path.join(appDirectory, file))).digest('hex')])));
 async function until(check, message, timeout = 15000) {
   const end = Date.now() + timeout;

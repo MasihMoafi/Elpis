@@ -636,7 +636,7 @@ export async function verifyPackagedSources({ root = appRoot, destination, commi
   const sourceIdentity = JSON.parse(git(root, ['show', `${commit}:${appPrefix}package.json`]));
   const identity = JSON.parse(await fs.readFile(path.join(destination, 'app/package.json'), 'utf8'));
   const expectedIdentity = { name: sourceIdentity.name, productName: sourceIdentity.productName || 'Elpis',
-    desktopName: sourceIdentity.desktopName, version: sourceIdentity.version, main: 'desktop/main.cjs', private: true, type: 'module' };
+    desktopName: sourceIdentity.desktopName, version: sourceIdentity.version, main: 'desktop/main.cts', private: true, type: 'module' };
   for (const [key, value] of Object.entries(expectedIdentity)) {
     assert.deepEqual(identity[key], value, `Packaged desktop identity differs from source commit: ${key}`);
   }
@@ -652,7 +652,7 @@ export async function verifyPackagedSources({ root = appRoot, destination, commi
     assert.equal(blob(await fs.readFile(packaged)), tracked.get(source), `Packaged production bytes differ from source commit: ${source}`);
     checked.add(source);
   }
-  assert(checked.has('desktop/main.cjs'), 'Desktop package manifest omits its tracked entry point');
+  assert(checked.has('desktop/main.cts'), 'Desktop package manifest omits its tracked entry point');
   assert(checked.has('desktop/state.cts'), 'Desktop package manifest omits tracked desktop/state.cts');
 }
 

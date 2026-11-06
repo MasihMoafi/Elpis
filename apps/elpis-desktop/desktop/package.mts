@@ -31,7 +31,7 @@ export const productionFiles = [
   'bridge/server-http.mts', 'bridge/server-love-spot.mts', 'bridge/server-voice.mts', 'bridge/server-files.mts', 'bridge/server-settings.mts', 'bridge/server-workflows.mts', 'bridge/server-threads.mts',
   'bridge/trajectory-projection.mts', 'bridge/dev-servers.mts', 'bridge/tools.mts', 'bridge/runtime-paths.mts', 'bridge/transcription.mts', 'bridge/attachments.mts', 'bridge/trash.mts',
   'bridge/workflow-presets.mts', 'bridge/resources/rag.md', 'bridge/resources/personal.md', 'bridge/personal.mts', 'desktop/browser-policy.cts', 'desktop/browser.cts', 'desktop/browser-sessions.cjs', 'desktop/browser-annotations.cts', 'desktop/browser-page-preload.cjs', 'desktop/context-menu.cts',
-  'desktop/main.cjs', 'desktop/main-profile.cts', 'desktop/main-backend.cts', 'desktop/main-quit.cts', 'desktop/app-updates.cts', 'desktop/wayland-ime.cts', 'desktop/session-windows.cjs', 'desktop/window-ipc.cts', 'desktop/media-policy.cts', 'desktop/preferences.cts', 'desktop/preload.cjs', 'desktop/files.cts', 'desktop/editors.cts',
+  'desktop/main.cts', 'desktop/main-profile.cts', 'desktop/main-backend.cts', 'desktop/main-quit.cts', 'desktop/app-updates.cts', 'desktop/wayland-ime.cts', 'desktop/session-windows.cjs', 'desktop/window-ipc.cts', 'desktop/media-policy.cts', 'desktop/preferences.cts', 'desktop/preload.cjs', 'desktop/files.cts', 'desktop/editors.cts',
   'desktop/terminal.cts', 'desktop/open-thread.cts', 'desktop/tray.cts', 'desktop/quick-entry.cts', 'desktop/theme.cts', 'desktop/copy-keys.cts', 'desktop/quick-entry-preload.cjs', 'desktop/quick-entry.html', 'desktop/screenshot-popup.cts', 'desktop/screenshot-popup-preload.cjs', 'desktop/screenshot-popup.html',
   'desktop/runtime.mts', 'desktop/state.cts', 'desktop/elpis-icon.png', 'desktop/love-spot-icon.png', 'desktop/love-spot-icon.svg', 'lib/agent-runs.mts', 'lib/service-tier.mts', 'lib/chat-worktree.ts', 'lib/turn-replacement.ts', 'lib/thread-deletion.ts', 'lib/approvals.ts', 'bridge/love-spot-store.cjs', 'bridge/love-spot-order.cts', 'bridge/love-spot-painting.cjs', 'bridge/matilda-face.cjs', 'bridge/matilda-clothes.cts', 'bridge/matilda-board-faces.cts', 'bridge/love-spot-talk.mjs', 'bridge/speech-buffer.mts', 'bridge/love-agents.mjs', 'bridge/acp-nodes.mts', 'bridge/workflow-acp.mjs', 'bridge/workflow-models.mts', 'bridge/workflow-worktrees.mjs', 'lib/love-spot.ts',
   'bridge/memory-budget.mts', 'scripts/mem-meter.py',
@@ -176,7 +176,7 @@ export function stageDesktop({ source = fileURLToPath(new URL('../', import.meta
   let commit = identity.commit || null;
   try { commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: source, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { /* Repackaging preserves the installed identity. */ }
   const packageIdentity = { name: identity.name, productName: identity.productName || 'Elpis', desktopName: identity.desktopName, version: identity.version, commit,
-    private: true, type: 'module', main: 'desktop/main.cjs', dependencies: { ws: wsIdentity.version, 'node-pty': ptyIdentity.version, rrule: rruleIdentity.version } };
+    private: true, type: 'module', main: 'desktop/main.cts', dependencies: { ws: wsIdentity.version, 'node-pty': ptyIdentity.version, rrule: rruleIdentity.version } };
   const generated = [
     { path: 'app/package.json', data: `${JSON.stringify(packageIdentity, null, 2)}\n`, mode: 0o644 },
     { path: 'launch', data: launcher, mode: 0o755 },

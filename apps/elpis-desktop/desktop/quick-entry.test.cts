@@ -110,7 +110,7 @@ test("Quick Entry is Claude's floating prompt: 606 by 470, frameless, on top, ce
 
 test('Enter in Quick Entry opens a new chat in the main window with the text; Esc, short text and other pages send nothing', async () => {
   const electron = fakeElectron(), opened: string[] = [];
-  // As desktop/main.cjs: the text waits for the main window, which takes it from elpis:new-chat:take and sends it.
+  // As desktop/main.cts: the text waits for the main window, which takes it from elpis:new-chat:take and sends it.
   const newChats = createNewChatOpener();
   const main = { webContents: { sent: [] as unknown[][], mainFrame: { url: 'http://127.0.0.1:45001/' }, send: (...args: unknown[]) => main.webContents.sent.push(args) }, isDestroyed: () => false };
   const handlers = new Map<string, (event: unknown) => unknown>();

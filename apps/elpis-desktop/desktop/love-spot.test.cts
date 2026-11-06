@@ -2,6 +2,7 @@ const { createTestTempDir, removeTestTempDir } = require('../tests/temp-root.cjs
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
+const { stripTypeScriptTypes } = require('node:module');
 const fs = require('node:fs');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
@@ -29,7 +30,7 @@ async function launch(args: string[], flushText?: () => Promise<boolean>, flushB
     require: (name: string) => name === './app-updates.cts' ? { executableLauncher: (file: string) => file, createAppUpdates: () => ({ setRunningEngine() {} }) } : name === 'electron' ? electron : name === './quick-entry.cts' ? { startQuickEntry: () => { calls.push('quick-entry'); return { start: async () => {} }; } }
       : name === './tray.cts' ? { createCloseToTray: () => ({}), createTray: () => { calls.push('tray'); return { destroy() {} }; } }
       : name === './screenshot-popup.cts' ? { createScreenshotPopup: () => ({ attach: () => () => {}, dispose() {} }), drawsOnWayland: () => false } : require(name) });
-  vm.runInContext(fs.readFileSync(path.join(__dirname, 'main.cjs'), 'utf8'), context);
+  vm.runInContext(stripTypeScriptTypes(fs.readFileSync(path.join(__dirname, 'main.cts'), 'utf8')), context);
   vm.runInContext('server = testServer; store = testStore; sessionWindows = sessions; primaryOpeners = openers;', context);
   ready();
   const settle = () => new Promise(resolve => setImmediate(resolve)); await settle();

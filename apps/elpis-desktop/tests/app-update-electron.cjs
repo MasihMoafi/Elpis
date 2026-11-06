@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const vm = require('node:vm');
-const { createRequire } = require('node:module');
+const { createRequire, stripTypeScriptTypes } = require('node:module');
 
 const root = process.env.APP_UPDATE_TEST_ROOT;
 if (!root || !process.env.DBUS_SESSION_BUS_ADDRESS || !process.env.DISPLAY || process.env.WAYLAND_DISPLAY) throw Error('Private root, D-Bus and X11 are required');
@@ -14,7 +14,7 @@ const stage = reopened ? 'reopened' : 'initial';
 const log = value => fs.appendFileSync(path.join(root, 'events.jsonl'), JSON.stringify({ stage, pid: process.pid, ...value }) + '\n');
 const control = { failWrites: false, failWorkflowWrites: false, canRestart: true, errors: [], trayMenu: null };
 const appDirectory = path.resolve(__dirname, '..');
-const mainFile = path.join(appDirectory, 'desktop/main.cjs');
+const mainFile = path.join(appDirectory, 'desktop/main.cts');
 const localRequire = createRequire(mainFile);
 const fakeDirectory = path.join(root, 'versions', reopened ? 'two' : 'one', 'app/desktop');
 fs.mkdirSync(fakeDirectory, { recursive: true });
@@ -51,8 +51,8 @@ const context = vm.createContext({ __dirname: fakeDirectory, console, process, r
   testServer: { url: process.env.SESSION_WINDOW_URL, canRestart: async () => control.canRestart,
     close: async () => log({ type: 'server-close', values: control.store.read() }) },
 });
-vm.runInContext(fs.readFileSync(mainFile, 'utf8'), context, { filename: mainFile });
-vm.runInContext('server = testServer;', context);
+vm.runInContext(stripTypeScriptTypes(fs.readFileSync(mainFile, 'utf8')), context, { filename: mainFile });
+vm.runInContext("store = createStateStore(path.join(app.getPath('userData'), 'workspace.json')); server = testServer;", context);
 global.updateTest = {
   control,
   openLoveSpot: () => vm.runInContext('sessionWindows.openLoveSpot()', context),

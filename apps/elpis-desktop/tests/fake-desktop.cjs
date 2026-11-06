@@ -2,7 +2,7 @@
 // reload keeps what the desktop store would), the browser (what Electron's main process does with new, select, hide and
 // close; every layout message the page sends for the native view lands in window.__layouts) and a shell per terminal tab.
 // Use it as `page.addInitScript(fakeDesktop, { tabs })`; `tabs` are pages the browser already holds (hidden until selected).
-// Quick Entry and the tray (desktop/main.cjs): window.__newChat(text) hands the page a new chat as the main process does;
+// Quick Entry and the tray (desktop/main.cts): window.__newChat(text) hands the page a new chat as the main process does;
 // the shortcut starts as `quickEntry` says, records each change in window.__shortcuts and refuses `quickEntry.refuse`.
 function fakeDesktop({ tabs: initial = [], quickEntry: quick = {} } = {}) {
   const calls = window.__terminal = { open: [], closed: [], tui: [], input: [], resize: [] }, commands = window.__commands = [];

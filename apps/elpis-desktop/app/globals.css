@@ -989,7 +989,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .brand .sidebar-toggle { margin-inline-start:auto; }
 .brand .sidebar-toggle, .workspace-header > .sidebar-open { color:var(--muted-foreground); flex-shrink:0; }
 .app-shell.sidebar-collapsed .workspace-header > .sidebar-open { display:inline-flex; }
-/* Desktop: the app's own title bar (desktop/main.cjs), as in the ChatGPT app. It holds the sidebar button, is the
+/* Desktop: the app's own title bar (desktop/main.cts), as in the ChatGPT app. It holds the sidebar button, is the
    window's drag handle, and leaves room on the right for the system's window buttons. */
 .app-shell.has-title-bar { grid-template-rows:36px minmax(0,1fr); }
 /* A bad browser-reported inset must not reserve half the title bar from app controls. */

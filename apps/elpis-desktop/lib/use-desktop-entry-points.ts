@@ -24,7 +24,7 @@ export function useDesktopEntryPoints({ pages, composer, attachments, projectSta
   // The TUI's /app (`elpis-app --open-thread <id>`): the running window opens that chat.
   const openFromTui = useRef(openById); openFromTui.current = openById;
   useEffect(() => window.elpisDesktop?.onOpenThread?.(id => void openFromTui.current(id)), []);
-  // Quick Entry's text opens a new chat and is sent, as in Claude; the tray's New chat opens one empty (desktop/main.cjs).
+  // Quick Entry's text opens a new chat and is sent, as in Claude; the tray's New chat opens one empty (desktop/main.cts).
   // The text waits until the new chat is on screen and Elpis can send.
   const [desktopPrompt, setDesktopPrompt] = useState<string | null>(null);
   const openFromDesktop = useRef(newChat); openFromDesktop.current = newChat;

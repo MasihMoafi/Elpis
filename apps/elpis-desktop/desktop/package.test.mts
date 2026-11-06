@@ -14,7 +14,7 @@ const production = productionFiles;
 
 // A file the app imports but the package leaves out stops the installed app at start (16 Oct: preferences.cjs, provider-keys.mts).
 test('the package holds every local file its entry points import', async () => {
-  const root = fileURLToPath(new URL('../', import.meta.url)), seen = new Set<string>(), pending = ['desktop/main.cjs', 'desktop/preload.cjs', 'desktop/runtime.mts', 'bridge/server.mts', 'bridge/client.mts'];
+  const root = fileURLToPath(new URL('../', import.meta.url)), seen = new Set<string>(), pending = ['desktop/main.cts', 'desktop/preload.cjs', 'desktop/runtime.mts', 'bridge/server.mts', 'bridge/client.mts'];
   while (pending.length) {
     const name = pending.pop()!; if (seen.has(name)) continue; seen.add(name);
     const text = (await fs.readFile(path.join(root, name), 'utf8')).replace(/^import type .*;$/gm, '');
@@ -72,7 +72,7 @@ async function fixture() {
   await put(path.join(source, 'out', 'index.html'), '<p>Built renderer</p>');
   await put(path.join(source, 'out', '_next', 'static', 'app.js'), 'renderer();');
   await put(path.join(source, 'package.json'), JSON.stringify({ name: 'elpis-desktop', desktopName: 'elpis-desktop.desktop',
-    productName: 'Elpis', version: '0.1.0', main: 'desktop/main.cjs',
+    productName: 'Elpis', version: '0.1.0', main: 'desktop/main.cts',
     scripts: { build: 'next build' }, dependencies: { next: '16.2.6', ws: '8.18.3' } }));
   await put(path.join(source, '.next', 'cache', 'junk'), 'not runtime');
   await put(path.join(source, 'app', 'page.tsx'), 'not runtime');
@@ -87,7 +87,7 @@ if [[ "\${ELECTRON_RUN_AS_NODE:-}" == 1 ]]; then
   exit 0
 fi
 test -f "$1/out/index.html"
-test -f "$1/desktop/main.cjs"
+test -f "$1/desktop/main.cts"
 printf 'https-proxy=%s\\nhttp-proxy-lower=%s\\nall-proxy=%s\\n' "\${HTTPS_PROXY:-}" "\${http_proxy:-}" "\${ALL_PROXY:-}"
 printf 'app=%s\\nargument=%s\\nnode-bin=%s\\nnode-mode=%s\\npath-first=%s\\nno-proxy=%s\\nno-proxy-lower=%s\\nproxy-mode=%s\\n' "$1" "\${2:-}" "$ELPIS_NODE_BIN" "\${ELECTRON_RUN_AS_NODE:-}" "\${PATH%%:*}" "\${NO_PROXY:-}" "\${no_proxy:-}" "\${NODE_USE_ENV_PROXY:-}"
 `, 0o755);
@@ -138,7 +138,7 @@ test('production package runs after its source and dependency installations move
   const identity = JSON.parse(await fs.readFile(path.join(options.destination, 'app/package.json'), 'utf8'));
   assert.equal(identity.name, 'elpis-desktop');
   assert.equal(identity.desktopName, 'elpis-desktop.desktop', 'the window is matched to its launcher entry and icon');
-  assert.equal(identity.main, 'desktop/main.cjs');
+  assert.equal(identity.main, 'desktop/main.cts');
   assert.equal(identity.type, 'module');
   assert.deepEqual(identity.dependencies, { ws: '8.22.0', 'node-pty': '1.1.0', rrule: '2.8.1' });
   assert.deepEqual(all.filter(name => name.startsWith('app/node_modules/rrule/')), ['app/node_modules/rrule/LICENCE', 'app/node_modules/rrule/dist/es5/rrule.js', 'app/node_modules/rrule/package.json'], 'rrule ships its build alone');
@@ -216,7 +216,7 @@ test('an installation can ship a renderer built elsewhere and share Electron wit
   const [from, to] = await Promise.all([fs.stat(path.join(options.electronDist, 'electron')), fs.stat(path.join(options.destination, 'runtime/electron/electron'))]);
   assert.equal(to.ino, from.ino, 'Electron is linked, not copied');
   assert.equal(to.mode & 0o777, 0o755);
-  const app = await fs.stat(path.join(options.destination, 'app/desktop/main.cjs'));
+  const app = await fs.stat(path.join(options.destination, 'app/desktop/main.cts'));
   assert.equal(app.nlink, 1, 'the app itself is still copied');
 });
 

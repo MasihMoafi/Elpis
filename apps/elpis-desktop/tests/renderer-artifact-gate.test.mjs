@@ -26,12 +26,12 @@ async function fixture(t, code) {
   const repo = await fs.mkdtemp(path.join(base, 'renderer-gate-test-'));
   t.after(() => execFileSync('gio', ['trash', repo]));
   const root = path.join(repo, 'apps/elpis-desktop');
-  const identity = { name: 'elpis-desktop', productName: 'Fixture Elpis', desktopName: 'fixture.desktop', version: '0.1.0', main: 'desktop/main.cjs', private: true };
+  const identity = { name: 'elpis-desktop', productName: 'Fixture Elpis', desktopName: 'fixture.desktop', version: '0.1.0', main: 'desktop/main.cts', private: true };
   const git = args => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim();
   const inventory = { fast: [], bridge: [], desktop: ['desktop/state.test.cjs'], ui: ['tests/kept.test.cjs'], 'opt-in': [] };
   await fs.mkdir(path.join(root, 'tests'), { recursive: true });
   await fs.mkdir(path.join(root, 'desktop'));
-  await fs.writeFile(path.join(root, 'desktop/main.cjs'), 'module.exports = "original app";');
+  await fs.writeFile(path.join(root, 'desktop/main.cts'), 'module.exports = "original app";');
   await fs.writeFile(path.join(root, 'desktop/state.cts'), "module.exports={read(values){if(Object.keys(values).some(key=>!['theme','projectChats'].includes(key)))throw Error('saved workspace');return values;}};");
   await fs.writeFile(path.join(root, 'desktop/state.test.cjs'), "const{test}=require('node:test');const assert=require('node:assert/strict');const{read}=require('./state.cts');test('saved project membership survives',()=>assert.deepEqual(read({theme:'dark',projectChats:['chat']}),{theme:'dark',projectChats:['chat']}));");
   await fs.mkdir(path.join(root, 'out'));
@@ -264,9 +264,9 @@ assert.equal(process.env[key],path.join(process.env.HOME,dir));fs.mkdirSync(proc
 test('a package cannot omit the saved-workspace reader after its source tests pass', async t => {
   const f = await fixture(t), destination = path.join(f.repo, 'package');
   await fs.mkdir(path.join(destination, 'app/desktop'), { recursive: true });
-  await fs.copyFile(path.join(f.root, 'desktop/main.cjs'), path.join(destination, 'app/desktop/main.cjs'));
+  await fs.copyFile(path.join(f.root, 'desktop/main.cts'), path.join(destination, 'app/desktop/main.cts'));
   await fs.writeFile(path.join(destination, 'app/package.json'), JSON.stringify({ ...f.identity, type: 'module', dependencies: { ws: 'fixture' } }));
-  await fs.writeFile(path.join(destination, 'manifest.json'), JSON.stringify({ schemaVersion: 1, files: [{ path: 'app/desktop/main.cjs' }] }));
+  await fs.writeFile(path.join(destination, 'manifest.json'), JSON.stringify({ schemaVersion: 1, files: [{ path: 'app/desktop/main.cts' }] }));
   const commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: f.root, encoding: 'utf8' }).trim();
   await assert.rejects(verifyPackagedSources({ root: f.root, destination, commit }), /omits.*desktop\/state.cts/);
 });
@@ -274,7 +274,7 @@ test('a package cannot omit the saved-workspace reader after its source tests pa
 test('generated identity and tracked source bytes follow the initial commit', async t => {
   const f = await fixture(t), destination = path.join(f.repo, 'package');
   await fs.mkdir(path.join(destination, 'app/desktop'), { recursive: true });
-  const files = ['desktop/main.cjs', 'desktop/state.cts', 'implementation.cjs'];
+  const files = ['desktop/main.cts', 'desktop/state.cts', 'implementation.cjs'];
   for (const file of files) await fs.copyFile(path.join(f.root, file), path.join(destination, 'app', file));
   const identity = { ...f.identity, type: 'module', dependencies: { ws: 'generated bundle dependency' } };
   const identityFile = path.join(destination, 'app/package.json');
@@ -322,17 +322,17 @@ for (const mode of ['missing', 'stale', 'mutated', 'download-source', 'download-
   await fs.writeFile(path.join(f.root, 'desktop/package.mts'), `import fs from "node:fs";import path from "node:path";
 fs.writeFileSync(process.env.PACKAGING_MARKER,"called");
 const destination=process.argv[process.argv.indexOf('--destination')+1];
-const main=path.join('desktop','main.cjs'), original=fs.readFileSync(main);
+const main=path.join('desktop','main.cts'), original=fs.readFileSync(main);
 if(['package-source','transient-source'].includes(process.env.MOCK_RECEIPT))fs.writeFileSync(main,'mutated while packaging');
 fs.cpSync(process.env.SOURCE_OUT,path.join(destination,'app/out'),{recursive:true});
-fs.mkdirSync(path.join(destination,'app/desktop'),{recursive:true});fs.copyFileSync(main,path.join(destination,'app/desktop/main.cjs'));
+fs.mkdirSync(path.join(destination,'app/desktop'),{recursive:true});fs.copyFileSync(main,path.join(destination,'app/desktop/main.cts'));
 fs.copyFileSync('desktop/state.cts',path.join(destination,'app/desktop/state.cts'));
 const identityOriginal=fs.readFileSync('package.json');
 if(process.env.MOCK_RECEIPT==='transient-identity'){const identity=JSON.parse(identityOriginal);identity.name='wrong-user-data';identity.version='9.9.9';fs.writeFileSync('package.json',JSON.stringify(identity));}
 const identity=JSON.parse(fs.readFileSync('package.json','utf8'));
-fs.writeFileSync(path.join(destination,'app/package.json'),JSON.stringify({name:identity.name,productName:identity.productName||'Elpis',desktopName:identity.desktopName,version:identity.version,main:'desktop/main.cjs',private:true,type:'module',dependencies:{ws:'fixture'}}));
+fs.writeFileSync(path.join(destination,'app/package.json'),JSON.stringify({name:identity.name,productName:identity.productName||'Elpis',desktopName:identity.desktopName,version:identity.version,main:'desktop/main.cts',private:true,type:'module',dependencies:{ws:'fixture'}}));
 if(process.env.MOCK_RECEIPT==='transient-identity')fs.writeFileSync('package.json',identityOriginal);
-fs.writeFileSync(path.join(destination,'manifest.json'),JSON.stringify({schemaVersion:1,files:[{path:'app/desktop/main.cjs'},{path:'app/desktop/state.cts'},{path:'app/package.json',generated:true}]}));
+fs.writeFileSync(path.join(destination,'manifest.json'),JSON.stringify({schemaVersion:1,files:[{path:'app/desktop/main.cts'},{path:'app/desktop/state.cts'},{path:'app/package.json',generated:true}]}));
 if(process.env.MOCK_RECEIPT==='transient-source')fs.writeFileSync(main,original);
 if(process.env.MOCK_RECEIPT==='mutated')fs.writeFileSync(path.join(destination,'app/out/index.html'),'changed while packaging');`);
   const commit = await f.commitSource();
@@ -354,7 +354,7 @@ if(process.argv[3]==='list')console.log(JSON.stringify([{databaseId:1}]));
 else {const folder=process.argv[process.argv.indexOf('--dir')+1];
 fs.writeFileSync(path.join(folder,'.commit'),process.env.MOCK_COMMIT);
 if(!['missing','stale'].includes(process.env.MOCK_RECEIPT))fs.cpSync(process.env.SOURCE_OUT,folder,{recursive:true});
-if(process.env.MOCK_RECEIPT==='download-source')fs.writeFileSync('desktop/main.cjs','mutated during download');
+if(process.env.MOCK_RECEIPT==='download-source')fs.writeFileSync('desktop/main.cts','mutated during download');
 if(process.env.MOCK_RECEIPT==='download-head')require('node:child_process').execFileSync('git',['-c','core.hooksPath=/dev/null','commit','--allow-empty','-m','during download']);
 if(process.env.MOCK_RECEIPT==='stale')fs.writeFileSync(path.join(folder,${JSON.stringify(receiptName)}),JSON.stringify({schemaVersion:1,commit:'stale'}));}
 `, { mode: 0o755 });

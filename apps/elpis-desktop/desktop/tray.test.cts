@@ -41,7 +41,7 @@ function closingWith({ enabled, quitting = false }: { enabled: boolean; quitting
   const window = new EventEmitter(); window.hidden = 0; window.hide = () => { window.hidden++; };
   const state = { enabled, quitting };
   const closing = createCloseToTray({ app, enabled: () => state.enabled, quitting: () => state.quitting, platform: 'linux' });
-  // What desktop/main.cjs does on the window's close: hidden to the tray, or closed for good. Quick Entry's own window
+  // What desktop/main.cts does on the window's close: hidden to the tray, or closed for good. Quick Entry's own window
   // may still exist (hidden), so quitting must not wait for every window to close.
   const close = () => {
     const event = { prevented: false, preventDefault() { this.prevented = true; } };
