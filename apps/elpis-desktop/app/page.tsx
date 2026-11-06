@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import { BrandWordmark } from "@/components/brand-wordmark";
 import { flushSync } from "react-dom";
 import { cloneElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { AgentsIcon, BrowserIcon, ChatIcon, ExperimentLabIcon, FolderIcon, LoveSpotIcon, NewChatIcon, PinIcon, PlusIcon, SendIcon, SettingsIcon, ThemeIcon, WorkflowsIcon, StopIcon } from "@/components/elpis-icons";
+import { AgentsIcon, BrowserIcon, ChatIcon, ExperimentLabIcon, LoveSpotIcon, NewChatIcon, PinIcon, PlusIcon, SendIcon, SettingsIcon, ThemeIcon, WorkflowsIcon, StopIcon } from "@/components/elpis-icons";
 import { Activity, ArrowDown, Blocks, Bookmark, ChevronRight, EyeOff, Layers, PanelLeft, PanelRightClose, PanelRightOpen, RefreshCw, X, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ReorderItem, useReorder } from "@/components/reorder";
@@ -52,6 +52,7 @@ import { SettingsView, type SettingsDestination } from "@/components/settings-vi
 import { DeleteChatsDialog, ThreadActions } from "@/components/thread-actions";
 import { GroupActions, GroupAndSortMenu, GroupNameDialog } from "@/components/chat-groups";
 import { SectionToggle, SidebarGroup } from "@/components/sidebar-group";
+import { SidebarProjects } from "@/components/sidebar-projects";
 import { MoreMenu, RightClickMenu } from "@/components/action-menu";
 import { fastServiceTier } from "@/lib/service-tier.mjs";
 import { SlashMenu, useSlashMenu } from "@/components/slash-menu";
@@ -78,7 +79,7 @@ import { LiveVoiceProvider } from "@/components/live-voice";
 import { ObservabilityView } from "@/components/observability-view";
 import { AutomationsView, type WorkflowPrefill } from "@/components/automations-view";
 import { Segmented } from "@/components/settings/rows";
-import { EnvironmentMenu, MoveChatDialog, ProjectActions, ProjectDialog, ProjectMenu } from "@/components/project-picker";
+import { EnvironmentMenu, MoveChatDialog, ProjectDialog, ProjectMenu } from "@/components/project-picker";
 import { PutUnderDialog } from "@/components/put-under-dialog";
 import { WorkflowMark } from "@/components/workflow-identity";
 import { runSummary, useWorkflowSandbox, workflowMembers, type WorkflowRun } from "@/lib/workflow-identity";
@@ -1338,13 +1339,7 @@ export default function Home() {
       <SearchField ref={searchInput} hint="Ctrl Shift K" aria-label="Search conversations" placeholder="Search chats" maxLength={200} value={search.search} onChange={e => search.setSearch(e.target.value)} onKeyDown={e => { if (e.key === "Escape") { e.preventDefault(); search.setSearch(""); focusComposer(); } }} />
       <div className="thread-list" ref={threadList} onKeyDown={listKeys} {...chatListOrder.pointer}>
         {workflowCatalog.error && <p role="alert" className="px-2 text-xs text-destructive">{workflowCatalog.error}</p>}
-        {!searchTerm && <section aria-label="Projects"><div className="section-label-row">{foldable("projects", "Projects")}<Button variant="ghost" size="icon-xs" aria-label="Add new project" title="Add new project: choose a folder" onClick={() => void addProject()}><PlusIcon size={13} /></Button></div>
-          {!collapsedSections.projects && projects.map(item => { const open = !collapsedProjects[item.id], chats = ordinaryThreads.filter(t => !sidebarParent(t) && projectChats[t.id] === item.id && !pins.includes(t.id) && ownChat(t));
-            return <SidebarGroup key={item.id} kind="project" dropProps={chatReorder.targetProps(`project:${item.id}`, true)} name={item.name} title={item.cwd} icon={<FolderIcon size={14} />} open={open} active={project?.id === item.id} onToggle={() => setCollapsedProjects(prev => ({ ...prev, [item.id]: open }))}
-              wrap={(area, content) => <ProjectActions project={item} onEdit={setProjectEdit} onRemove={removeProject} area={<ReorderItem reorder={projectReorder} itemId={item.id} render={area as React.ReactElement<React.HTMLAttributes<HTMLElement>>} />}>{content}</ProjectActions>}
-              trailing={<Button className="project-new-chat" variant="ghost" size="icon-xs" aria-label={`Start new chat in ${item.name}`} title="New chat in this project" disabled={!ready || busy} onClick={() => void selectProject(item)}><PlusIcon size={13} /></Button>}
-              empty={!chats.length}>{chats.map(chatRows)}</SidebarGroup>; })}
-        </section>}
+        {!searchTerm && <SidebarProjects projectState={projectState} collapsedSections={collapsedSections} collapsedProjects={collapsedProjects} ordinaryThreads={ordinaryThreads} sidebarParent={sidebarParent} pins={pins} ownChat={ownChat} chatReorder={chatReorder} projectReorder={projectReorder} setCollapsedProjects={setCollapsedProjects} foldable={foldable} addProject={addProject} removeProject={removeProject} selectProject={selectProject} ready={ready} busy={busy} chatRows={chatRows} />}
         {!searchTerm && browserPins.pins.length > 0 && <section aria-label="Pinned browser pages"><div className="section-label-row">{foldable("browser", "Browser")}</div>
           {!collapsedSections.browser && browserPins.pins.map(pin => <div key={pin.url} className="thread-row">
             <Button variant="ghost" className="thread-name w-full justify-start" title={`${pin.title}\n${pin.url}\nOpen in this chat’s browser`} onClick={() => { show("chat"); void browser.command("new", { url: pin.url }); }}><BrowserIcon size={14} /><span className="truncate">{pin.title}</span></Button>
