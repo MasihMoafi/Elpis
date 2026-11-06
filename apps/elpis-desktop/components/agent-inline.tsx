@@ -36,7 +36,7 @@ export function AgentInline({ id, threads }: { id: string; threads: Thread[] }) 
       {error ? <p className="text-xs text-destructive">{error}</p>
         : !entries ? <p className="text-xs text-muted-foreground">Reading…</p>
         : !entries.length ? <p className="text-xs text-muted-foreground">No messages yet.</p>
-        : <Transcript entries={entries} activeTurnId={null} renderItem={entry => <ChatMessage item={entry.item} model={entry.model} threads={threads} />} />}
+        : <Transcript entries={entries} activeTurnId={null} renderItem={entry => <ChatMessage item={entry.item} {...(entry.model === undefined ? {} : { model: entry.model })} threads={threads} />} />}
     </div>}
   </div>;
 }

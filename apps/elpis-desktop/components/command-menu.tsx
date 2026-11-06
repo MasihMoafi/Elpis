@@ -12,7 +12,7 @@ import { rankBySearch } from "@/lib/search-rank";
 import { errorText } from "@/lib/error-text.mts";
 
 export type CommandAction = { id: string; name: string; keys?: string[]; run: () => void };
-type Command = CommandAction & { detail?: string };
+type Command = CommandAction & { detail?: string | undefined };
 type Props = {
   threads: Thread[]; projects: Project[]; actions: CommandAction[];
   onThread: (thread: Thread) => void; onProject: (project: Project) => void;

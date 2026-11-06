@@ -115,7 +115,7 @@ export function ChangesPanel({ threadId, running }: { threadId: string | undefin
               : !lines ? <p role="status" className="changes-note">Reading the diff…</p>
               : current?.value?.binary ? <p className="changes-note">{list.recorded ? "A binary file; no text lines were recorded." : "A binary file; Git shows no lines."}</p>
               : !lines.length ? <p className="changes-note">No lines to show.</p>
-              : <><DiffLines lines={lines} path={pathOf(list.root, shown.path)} plain={list.recorded} />
+              : <><DiffLines lines={lines} path={pathOf(list.root, shown.path)} plain={Boolean(list.recorded)} />
                 {(lines.length > DIFF_LINE_LIMIT || current?.value?.truncated) && <p className="changes-note">Showing the first part only; the diff is larger than this view keeps.</p>}</>}
           </div>
         </section>}

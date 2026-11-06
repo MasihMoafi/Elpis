@@ -58,7 +58,7 @@ export function ImproveElpis({ threadId, onChat }: { threadId?: string; onChat: 
       while (owner?.parentElement && owner.parentElement.getAttribute("data-elpis-source") === id) owner = owner.parentElement;
       const region = owner ?? pointed;
       const map: Record<string, { component: string; file: string }> = await fetch("/elpis-source-map.json").then(response => { if (!response.ok) throw Error("This build has no Elpis source map. Rebuild the desktop app."); return response.json(); });
-      if (!region || !id || !Object.hasOwn(map, id)) throw Error("This region has no source entry in this build. Rebuild the desktop app.");
+      if (!region || !id || !Object.hasOwn(map, id) || !map[id]) throw Error("This region has no source entry in this build. Rebuild the desktop app.");
       await paint();
       const box = region.getBoundingClientRect();
       const { image } = await window.elpisDesktop.improve.capture({ x: box.x, y: box.y, width: box.width, height: box.height });

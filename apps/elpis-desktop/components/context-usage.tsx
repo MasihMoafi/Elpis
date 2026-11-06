@@ -178,7 +178,7 @@ export function LedgerRows({ ledger }: { ledger: Ledger | null }) {
 /** Claude's context section (its popover's "Context window" block) over the TUI ledger's CONTEXT WINDOW section
  * (codex-rs/tui/src/chatwidget/context_ledger.rs): the measured total, the bar on a full-window scale, and the categories
  * below it. The title and the switches the TUI's ledger also has are in the chat below this popover, so they are not repeated. */
-function LedgerView({ ledger, cache, loading, unavailable, expanded, onToggle, compact }: { ledger: Ledger | null; cache: CacheUse | null; loading: boolean; unavailable?: boolean; expanded: boolean; onToggle: () => void; compact: (Compact & { run: () => void }) | null }) {
+function LedgerView({ ledger, cache, loading, unavailable, expanded, onToggle, compact }: { ledger: Ledger | null; cache: CacheUse | null; loading: boolean; unavailable?: boolean | undefined; expanded: boolean; onToggle: () => void; compact: (Compact & { run: () => void }) | null }) {
   const { used, window: capacity, categories, basis } = ledger ?? UNMEASURED;
   const { summary } = describe(ledger);
   const note = used === null ? null

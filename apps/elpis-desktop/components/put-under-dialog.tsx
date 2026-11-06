@@ -19,7 +19,7 @@ export function PutUnderDialog({ chats, candidates, onPutUnder, onClose }: {
     finally { setBusy(false); }
   }
   return <AlertDialog open={!!chats} onOpenChange={open => { if (!open && !busy) onClose(); }}><AlertDialogContent>
-    <AlertDialogHeader><AlertDialogTitle>Put chats under a chat</AlertDialogTitle><AlertDialogDescription>{chats?.length === 1 ? title(chats[0]) : `${chats?.length ?? 0} chats`} will appear under the chosen chat. Take out returns them to the list.</AlertDialogDescription></AlertDialogHeader>
+    <AlertDialogHeader><AlertDialogTitle>Put chats under a chat</AlertDialogTitle><AlertDialogDescription>{chats?.length === 1 && chats[0] ? title(chats[0]) : `${chats?.length ?? 0} chats`} will appear under the chosen chat. Take out returns them to the list.</AlertDialogDescription></AlertDialogHeader>
     <label className="field">Parent chat<OptionSelect aria-label="Parent chat" value={parent} onChange={event => setParent(event.target.value)} disabled={busy}>
       <option value="" disabled>Choose a chat</option>{candidates.map(chat => <option key={chat.id} value={chat.id}>{title(chat)}</option>)}
     </OptionSelect></label>

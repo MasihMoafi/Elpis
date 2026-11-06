@@ -10,7 +10,7 @@ function whoIs(data: ReturnType<typeof useProviderUsage>["data"], error: string)
   if (!data) return { name: error ? "Account" : "…", plan: null, label: "Account" };
   const { auth } = data.openai ?? {};
   if (auth?.state === "signedIn") {
-    const plan = auth.plan ? auth.plan[0].toUpperCase() + auth.plan.slice(1) : null, who = auth.email || "ChatGPT account";
+    const plan = auth.plan ? auth.plan.charAt(0).toUpperCase() + auth.plan.slice(1) : null, who = auth.email || "ChatGPT account";
     return { name: auth.email?.split("@")[0] || "Signed in", plan, label: `Account: ${who}${plan ? `, ${plan} plan` : ""}` };
   }
   if (data.claude?.state === "connected" && !data.claude.signedOut) return { name: "Anthropic", plan: null, label: "Account: Claude subscription" };

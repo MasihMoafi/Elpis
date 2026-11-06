@@ -36,7 +36,7 @@ export function DevServerPreview({ cwd, browser }: { cwd: string; browser: Brows
     try {
       const reply = await api<Status>(`/dev-servers/${action}`, { cwd, name }); setServers(reply.servers);
       const ready = reply.servers.find(server => server.name === name && server.status === "running");
-      if (action === "start" && ready) await browser.command("navigate", { id: browser.state?.activeId ?? undefined, url: ready.url });
+      if (action === "start" && ready) await browser.command("navigate", { ...(browser.state?.activeId ? { id: browser.state.activeId } : {}), url: ready.url });
     } catch (e) { setError(errorText(e)); }
     finally { setBusy(false); }
   }

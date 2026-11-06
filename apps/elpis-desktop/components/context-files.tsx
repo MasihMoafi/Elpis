@@ -14,7 +14,7 @@ type ContextFile = {
   estimatedTokens: number; included: boolean; reason: string; selectable: boolean;
   exists?: boolean; projectIntent?: boolean;
 };
-type Sources = { files: ContextFile[]; goal?: { objective: string; status: string } | null; writable?: boolean; note?: string };
+type Sources = { files: ContextFile[]; goal?: { objective: string; status: string } | null | undefined; writable?: boolean | undefined; note?: string | undefined };
 const groups = [
   ["sessionContinuity", "SESSION CONTINUITY"], ["durableMemory", "DURABLE MEMORY"], ["instructions", "INSTRUCTIONS"],
   ["skills", "SKILLS"],

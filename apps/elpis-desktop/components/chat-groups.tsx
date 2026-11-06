@@ -101,7 +101,7 @@ export function GroupNameDialog({ open, state, group, switches, onSave, onClose 
         <Input aria-label="Group name" placeholder="Group name" maxLength={80} value={name} onChange={event => setName(event.target.value)} autoFocus aria-invalid={shown ? true : undefined} aria-description={shown || undefined} />
         <AlertDialogFooter>
           <AlertDialogClose render={<Button type="button" variant="outline" />}>Cancel</AlertDialogClose>
-          <Button type="submit" disabled={!!problem} disabledReason={problem || undefined}>{group ? "Save" : "Create group"}</Button>
+          <Button type="submit" disabled={!!problem} {...(problem ? { disabledReason: problem } : {})}>{group ? "Save" : "Create group"}</Button>
         </AlertDialogFooter>
       </form>
     </AlertDialogContent>

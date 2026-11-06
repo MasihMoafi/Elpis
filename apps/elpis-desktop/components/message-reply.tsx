@@ -5,7 +5,7 @@ import { Reply, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { messageDomId, type MessageReply } from "@/lib/message-reply";
 
-export function ReplyPreview({ reply, image, onRemove, disabled }: { reply: MessageReply; image?: string; onRemove?: () => void; disabled?: boolean }) {
+export function ReplyPreview({ reply, image, onRemove, disabled }: { reply: MessageReply; image?: string | undefined; onRemove?: () => void; disabled?: boolean | undefined }) {
   const [missing, setMissing] = useState(false);
   function jump() {
     const target = document.getElementById(messageDomId(reply.reference)) ?? document.querySelector<HTMLElement>(`[data-image-reference="${CSS.escape(reply.reference)}"]`);

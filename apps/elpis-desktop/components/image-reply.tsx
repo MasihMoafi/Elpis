@@ -5,7 +5,7 @@ import { Reply } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export type ReplyImage = { src: string; name: string };
-const ImageReply = createContext<{ onReply?: (image: ReplyImage) => void; reference?: string }>({});
+const ImageReply = createContext<{ onReply?: ((image: ReplyImage) => void) | undefined; reference?: string | undefined }>({});
 export function ImageReplyProvider({ onReply, reference, children }: { onReply?: (image: ReplyImage) => void; reference?: string; children: ReactNode }) {
   return <ImageReply.Provider value={{ onReply, reference }}>{children}</ImageReply.Provider>;
 }
