@@ -8,11 +8,206 @@ import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
 import net from 'node:net';
+import { PassThrough, Readable } from 'node:stream';
 import { parseClaudeMcp } from './claude-mcp-import.mjs';
 import { DesktopClient, existingSocket } from './client.mjs';
 import { startDesktopServer } from './server.mjs';
 import { isAgentRun } from '../lib/agent-runs.mjs';
 import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cjs';
+
+// These requests exercise the same bridge routes as the renderer. The API key and audio are fixtures.
+async function useForSpeechFixture(t, { status = 200, contentType = 'audio/mpeg', bytes = Buffer.from('ID3-test-mp3') } = {}) {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-use-for-'));
+  const fetches = [], local = [];
+  const kokoro = { available: () => true, warm() {}, close() {}, async speak(value) { local.push(value); return Buffer.from('local-wav'); } };
+  const readAloudFetch = async (url, options) => {
+    fetches.push({ url: String(url), options });
+    return status === 200 ? new Response(bytes, { headers: { 'content-type': contentType } }) : new Response('rejected', { status });
+  };
+  let app;
+  async function start() {
+    const f = fixture(); await f.client.initialize();
+    f.configRead.layers[0].name.file = path.join(home, 'config.toml');
+    f.configRead.config.model_providers.openrouter = { name: 'OpenRouter', base_url: 'https://openrouter.ai/api/v1', wire_api: 'chat', experimental_bearer_token: 'fixture-key' };
+    f.configRead.config.model_providers['api-other'] = { name: 'Other API', base_url: 'https://example.test/v1', wire_api: 'responses', experimental_bearer_token: 'other-fixture-key' };
+    // Exercise the real HTTP handler without a listening socket (the sandbox can forbid loopback).
+    const original = http.createServer; let handler;
+    http.createServer = callback => {
+      handler = callback;
+      const server = new EventEmitter();
+      server.listen = (_port, _host, ready) => queueMicrotask(ready);
+      server.address = () => ({ port: 43123 });
+      server.close = done => done(); server.closeAllConnections = () => {};
+      return server;
+    };
+    try {
+      app = await startDesktopServer({ client: f.client, elpisHome: home, kokoro, readAloudFetch,
+        loveSpot: { directory: path.join(home, 'drawing'), screenshots: path.join(home, 'screenshots') } });
+    } finally { http.createServer = original; }
+    const url = new URL(app.url), origin = url.origin;
+    async function dispatch(route, value, cookie) {
+      const req = Readable.from(value === undefined ? [] : [Buffer.from(JSON.stringify(value))]);
+      req.method = value === undefined ? 'GET' : 'POST'; req.url = `/api${route}`;
+      req.headers = { host: url.host, origin, 'content-type': 'application/json', ...(cookie ? { cookie } : {}) };
+      const res = new PassThrough(), headers = new Headers(); let status = 200;
+      res.setHeader = (name, value) => headers.set(name, value);
+      res.removeHeader = name => headers.delete(name);
+      res.getHeader = name => headers.get(name);
+      res.writeHead = (code, fields = {}) => { status = code; for (const [key, value] of Object.entries(fields)) headers.set(key, value); return res; };
+      const bytes = []; res.on('data', chunk => bytes.push(chunk));
+      const finished = new Promise((resolve, reject) => { res.on('end', resolve); res.on('error', reject); });
+      void handler(req, res); await finished;
+      const buffer = Buffer.concat(bytes);
+      return { status, headers, json: async () => JSON.parse(buffer.toString()), arrayBuffer: async () => buffer };
+    }
+    const session = await dispatch('/session', { token: new URLSearchParams(url.hash.slice(1)).get('token') });
+    assert.equal(session.status, 200);
+    const cookie = session.headers.get('set-cookie').split(';')[0];
+    return (route, value) => dispatch(route, value, cookie);
+  }
+  t.after(async () => { if (app) await app.close(); await fs.rm(home, { recursive: true, force: true }); });
+  return { start, stop: async () => { await app.close(); app = null; }, fetches, local };
+}
+
+test('Use for read aloud sends the selected OpenRouter model and saved key and returns MP3', async t => {
+  const f = await useForSpeechFixture(t), request = await f.start();
+  const saved = await request('/read-aloud/settings', { source: 'openrouter', model: 'fish-audio/drama-3', voice: null });
+  assert.equal(saved.status, 200, 'the selected source can be saved');
+  const response = await request('/read-aloud', { text: 'A short reply.' });
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('content-type'), /audio\/mpeg/);
+  assert.equal(Buffer.from(await response.arrayBuffer()).toString(), 'ID3-test-mp3');
+  assert.equal(f.local.length, 0);
+  assert.equal(f.fetches.length, 1);
+  assert.equal(f.fetches[0].url, 'https://openrouter.ai/api/v1/audio/speech');
+  assert.equal(new Headers(f.fetches[0].options.headers).get('authorization'), 'Bearer fixture-key');
+  assert.deepEqual(JSON.parse(f.fetches[0].options.body), { model: 'fish-audio/drama-3', input: 'A short reply.', response_format: 'mp3' });
+});
+
+test('Use for converts documented Gemini PCM into a playable WAV without changing models', async t => {
+  const f = await useForSpeechFixture(t, { contentType: 'audio/pcm;rate=24000;channels=1', bytes: Buffer.from([0, 0, 255, 127]) }), request = await f.start();
+  assert.equal((await request('/read-aloud/settings', { source: 'openrouter', model: 'google/gemini-3.8-flash-tts', voice: 'Kore' })).status, 200);
+  const response = await request('/read-aloud', { text: 'Hello.' });
+  assert.equal(response.status, 200); assert.match(response.headers.get('content-type'), /audio\/wav/);
+  const wav = Buffer.from(await response.arrayBuffer());
+  assert.equal(wav.subarray(0, 4).toString(), 'RIFF'); assert.equal(wav.readUInt32LE(24), 24000);
+  assert.deepEqual(wav.subarray(44), Buffer.from([0, 0, 255, 127]));
+  assert.deepEqual(JSON.parse(f.fetches[0].options.body), { model: 'google/gemini-3.8-flash-tts', input: 'Hello.', voice: 'Kore', response_format: 'pcm' });
+  assert.deepEqual(f.local, []);
+});
+
+test('Use for rejects PCM with an unexpected sample rate instead of playing it at the wrong speed', async t => {
+  const f = await useForSpeechFixture(t, { contentType: 'audio/pcm;rate=44100;channels=1', bytes: Buffer.from([0, 0, 255, 127]) }), request = await f.start();
+  assert.equal((await request('/read-aloud/settings', { source: 'openrouter', model: 'google/gemini-3.8-flash-tts', voice: 'Kore' })).status, 200);
+  const response = await request('/read-aloud', { text: 'Hello.' });
+  assert.equal(response.status, 502);
+  assert.match((await response.json()).error, /format|rate/i);
+  assert.deepEqual(f.local, []);
+});
+
+test('Use for local read aloud survives a bridge restart and never calls the API', async t => {
+  const f = await useForSpeechFixture(t); let request = await f.start();
+  assert.equal((await request('/read-aloud/settings', { source: 'openrouter', model: 'fish-audio/drama-3', voice: null })).status, 200);
+  assert.equal((await request('/read-aloud', { text: 'API before switching.' })).status, 200);
+  assert.equal(f.fetches.length, 1, 'the API source was active before the switch');
+  f.fetches.length = 0;
+  assert.equal((await request('/read-aloud/settings', { source: 'local', model: null, voice: null })).status, 200);
+  await f.stop(); request = await f.start();
+  assert.equal((await (await request('/read-aloud/settings')).json()).source, 'local');
+  const response = await request('/read-aloud', { text: 'Local reply.' });
+  assert.equal(response.status, 200);
+  assert.equal(Buffer.from(await response.arrayBuffer()).toString(), 'local-wav');
+  assert.deepEqual(f.local, ['Local reply.']);
+  assert.equal(f.fetches.length, 0);
+});
+
+test('Use for retains the chosen OpenRouter model across a bridge restart', async t => {
+  const f = await useForSpeechFixture(t); let request = await f.start();
+  assert.equal((await request('/read-aloud/settings', { source: 'openrouter', model: 'fish-audio/drama-3', voice: null })).status, 200);
+  await f.stop(); request = await f.start();
+  assert.deepEqual(await (await request('/read-aloud/settings')).json(), { source: 'openrouter', model: 'fish-audio/drama-3', voice: null });
+  assert.equal((await request('/read-aloud', { text: 'After restart.' })).status, 200);
+  assert.equal(f.fetches.length, 1);
+  assert.deepEqual(f.local, []);
+});
+
+test('Use for refuses a stale read aloud request instead of switching source mid-reply', async t => {
+  const f = await useForSpeechFixture(t), request = await f.start();
+  const before = await (await request('/read-aloud')).json();
+  assert.equal(typeof before.revision, 'string');
+  assert.equal((await request('/read-aloud/settings', { source: 'openrouter', model: 'fish-audio/drama-3', voice: null })).status, 200);
+  const response = await request('/read-aloud', { text: 'A short reply.', revision: before.revision });
+  assert.equal(response.status, 409);
+  assert.equal(f.fetches.length, 0);
+  assert.equal(f.local.length, 0);
+});
+
+test('Use for limits speech to 4000 characters and refuses PCM-only models', async t => {
+  const f = await useForSpeechFixture(t), request = await f.start();
+  const unsupported = await request('/read-aloud/settings', { source: 'openrouter', model: 'heygen/heygen-voice-1-turbo:free', voice: 'some-voice' });
+  assert.equal(unsupported.status, 400);
+  assert.match((await unsupported.json()).error, /PCM/i);
+  assert.equal((await request('/read-aloud', { text: 'a'.repeat(4000) })).status, 200);
+  assert.equal((await request('/read-aloud', { text: 'a'.repeat(4001) })).status, 400);
+  assert.equal(f.local.length, 1);
+  assert.equal(f.fetches.length, 0);
+});
+
+test('Use for refuses an unproven custom speech source without changing the current choice', async t => {
+  const f = await useForSpeechFixture(t), request = await f.start();
+  const result = await request('/read-aloud/settings', { source: 'api-other', model: 'other/model', voice: null });
+  assert.equal(result.status, 400);
+  assert.match((await result.json()).error, /does not support read aloud/i);
+  assert.equal((await (await request('/read-aloud/settings')).json()).source, 'local');
+  assert.equal(f.fetches.length, 0);
+});
+
+for (const status of [401, 500]) test(`Use for read aloud reports API HTTP ${status} without a local fallback`, async t => {
+  const f = await useForSpeechFixture(t, { status }), request = await f.start();
+  assert.equal((await request('/read-aloud/settings', { source: 'openrouter', model: 'fish-audio/drama-3', voice: null })).status, 200);
+  const response = await request('/read-aloud', { text: 'A short reply.' });
+  assert.ok(response.status >= 400);
+  assert.match((await response.json()).error, /read aloud|api|key/i);
+  assert.equal(f.fetches.length, 1);
+  assert.deepEqual(f.local, []);
+});
+
+test('Use for dictation saves the same WhisperType settings and applies them to every chat', async () => {
+  const { client, socket, configRead } = fixture(); await client.initialize();
+  try {
+    await client.saveMcp({ version: 'user-version', action: 'whispertype', name: 'whispertype', backend: 'openrouter', model: 'openai/whisper-1', everyChat: true });
+    assert.deepEqual(socket.sent.findLast(row => row.method === 'config/batchWrite').params.edits, [
+      { keyPath: 'mcp_servers.whispertype.env.WHISPERTYPE_BACKEND', value: 'openrouter', mergeStrategy: 'replace' },
+      { keyPath: 'mcp_servers.whispertype.env.WHISPERTYPE_CLOUD_MODEL', value: 'openai/whisper-1', mergeStrategy: 'replace' },
+      { keyPath: 'mcp_servers.whispertype.env.WHISPERTYPE_EVERY_CHAT', value: '1', mergeStrategy: 'replace' },
+      { keyPath: 'mcp_servers.whispertype.env.ELPIS_DICTATION_EXPLICIT', value: '1', mergeStrategy: 'replace' },
+    ]);
+    Object.assign(configRead.config.mcp_servers.whispertype.env, { WHISPERTYPE_BACKEND: 'openrouter', WHISPERTYPE_CLOUD_MODEL: 'openai/whisper-1', WHISPERTYPE_EVERY_CHAT: '1', ELPIS_DICTATION_EXPLICIT: '1' });
+    assert.deepEqual((await client.mcp()).servers.find(server => server.name === 'whispertype').whispertype,
+      { backend: 'openrouter', model: 'openai/whisper-1', everyChat: true, explicit: true });
+  } finally { client.close(); }
+});
+
+test('Use for dictation privately resolves the configured OpenRouter provider key', async t => {
+  const { client, configRead } = fixture(); await client.initialize();
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-dictation-key-'));
+  t.after(async () => { client.close(); await fs.rm(home, { recursive: true, force: true }); });
+  configRead.layers[0].name.file = path.join(home, 'config.toml');
+  configRead.config.model_providers.openrouter = { base_url: 'https://openrouter.ai/api/v1', experimental_bearer_token: 'fixture-provider-key' };
+  const environment = await client.transcriptionEnvironment();
+  assert.equal(environment.openrouterKey, 'fixture-provider-key');
+  assert.doesNotMatch(JSON.stringify(await client.mcp()), /fixture-provider-key/);
+});
+
+test('Use for chat can return the shared default to ChatGPT from another provider', async () => {
+  const { client, configRead, socket } = fixture(); await client.initialize();
+  try {
+    configRead.config.model_provider = 'local';
+    await client.saveSettings({ version: 'user-version', main: { provider: 'openai', model: 'test-model' } });
+    const edits = socket.sent.findLast(item => item.method === 'config/batchWrite').params.edits;
+    assert.deepEqual(edits.map(item => [item.keyPath, item.value]), [['model', 'test-model'], ['model_provider', 'openai']]);
+  } finally { client.close(); }
+});
 
 const ROOT = '00000000-0000-0000-0000-000000000001';
 const CHILD = '00000000-0000-0000-0000-000000000002';

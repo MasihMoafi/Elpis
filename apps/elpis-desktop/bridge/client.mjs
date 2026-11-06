@@ -746,8 +746,8 @@ export class DesktopClient extends EventEmitter {
     object(options, ['cursor', 'limit', 'provider', 'inputModality', 'outputModality', 'refresh']);
     if (options.refresh !== undefined && typeof options.refresh !== 'boolean') throw new BridgeError('refresh must be true or false');
     const refresh = options.refresh === true;
-    if (options.inputModality !== undefined && (options.inputModality !== 'audio' || options.provider !== 'openrouter')) throw new BridgeError('Choose OpenRouter audio models');
-    if (options.outputModality !== undefined && (options.outputModality !== 'rerank' || options.provider !== 'openrouter' || options.inputModality !== undefined)) throw new BridgeError('Choose OpenRouter rerank models');
+    if (options.inputModality !== undefined && (options.inputModality !== 'audio' || !options.provider)) throw new BridgeError('Choose OpenRouter audio models');
+    if (options.outputModality !== undefined && (!['rerank', 'speech', 'transcription'].includes(options.outputModality) || !options.provider || options.inputModality !== undefined)) throw new BridgeError('Choose OpenRouter output models');
     if (options.provider !== undefined) {
       text(options.provider, 'configured connection', 64);
       if (!/^[a-z][a-z0-9_-]*$/.test(options.provider)) throw new BridgeError('Choose an existing configured connection');
@@ -758,6 +758,10 @@ export class DesktopClient extends EventEmitter {
       if (policy === null) throw new BridgeError('Connection policy could not be read. Try again after reconnecting.', 503);
       const managed = policy.requirements;
       if (managed?.modelProvider && managed.modelProvider !== options.provider) throw new BridgeError('This connection is restricted by your organization', 403);
+      if (options.inputModality || options.outputModality) {
+        let host; try { const url = new URL(providerDefinition(read, options.provider)?.base_url); host = url.protocol === 'https:' && url.hostname === 'openrouter.ai'; } catch { host = false; }
+        if (!host) throw new BridgeError('This connection does not provide OpenRouter audio models.');
+      }
       // config/read reflects current defaults; model/list retains the engine's startup
       // catalog. An explicit API connection always lists its own endpoint.
       // A connection the engine signs in to itself (ChatGPT, the Anthropic credits) but that is not the default: the engine lists
@@ -851,7 +855,7 @@ export class DesktopClient extends EventEmitter {
       }
       if ('provider' in choice) {
         const provider = choice.provider;
-        if (provider !== null && !current.providers.some(item => item.id === provider)) throw new BridgeError('Choose a configured provider');
+        if (provider !== null && provider !== 'openai' && !current.providers.some(item => item.id === provider)) throw new BridgeError('Choose a configured provider');
         if (main && current.managed.modelProvider && provider !== current.managed.modelProvider) throw new BridgeError('Your requirements pin the main provider', 403);
         edits.push({ keyPath: providerKey, value: provider, mergeStrategy: 'replace' });
       }
@@ -919,6 +923,20 @@ export class DesktopClient extends EventEmitter {
       this.#rpc('configRequirements/read', {}).catch(() => null),
     ]);
     return providerSettingsSnapshot(read, requirements, process.env, savedProviderKeyIds(configHome(read)));
+  }
+  /** The selected OpenRouter credential stays in the bridge and goes only to OpenRouter itself. */
+  async readAloudProvider(id) {
+    if (typeof id !== 'string' || !/^[a-z][a-z0-9_-]{0,63}$/.test(id)) throw new BridgeError('Choose a configured speech provider.');
+    const [read, policy] = await Promise.all([this.#rpc('config/read', { includeLayers: true }), this.#rpc('configRequirements/read', {}).catch(() => null)]);
+    if (policy === null) throw new BridgeError('Provider policy is unavailable.', 503);
+    if (policy.requirements?.modelProvider && policy.requirements.modelProvider !== id) throw new BridgeError('This provider is restricted by your organization.', 403);
+    const definition = providerDefinition(read, id);
+    let url;
+    try { url = new URL(definition?.base_url); } catch { throw new BridgeError('This provider does not support read aloud.', 400); }
+    if (url.protocol !== 'https:' || url.hostname !== 'openrouter.ai' || url.username || url.password || url.search || url.hash || url.pathname.replace(/\/+$/, '') !== '/api/v1') throw new BridgeError('This provider does not support read aloud.', 400);
+    const key = savedProviderKey(configHome(read), id) || (typeof definition.env_key === 'string' ? process.env[definition.env_key] : definition.experimental_bearer_token);
+    if (typeof key !== 'string' || !key.trim() || /[\r\n\0]/.test(key)) throw new BridgeError('Add an OpenRouter API key under Models & accounts.', 403);
+    return { baseUrl: `${url.origin}/api/v1`, key: key.trim() };
   }
   /** Saves a pasted API key to the Elpis home's private key file; the key is never sent back. */
   async saveProviderKey(input) {
@@ -1144,7 +1162,15 @@ export class DesktopClient extends EventEmitter {
     const home = configHome(read), gemini = providerDefinition(read, 'google-gemini');
     const official = gemini?.base_url === BUILT_IN_KEY_PROVIDERS['google-gemini'].base_url;
     const key = official ? savedProviderKey(home, 'google-gemini') || (typeof gemini.env_key === 'string' ? process.env[gemini.env_key] : '') || '' : '';
-    return { chatgpt: account?.account?.type === 'chatgpt' && !!home && fs.existsSync(path.join(home, 'auth.json')), home, geminiKey: key.trim() || null };
+    const configured = Object.entries(read?.config?.model_providers ?? {}).filter(([, definition]) => {
+      try { const url = new URL(definition?.base_url); return url.protocol === 'https:' && url.hostname === 'openrouter.ai' && url.pathname.replace(/\/+$/, '') === '/api/v1' && !url.username && !url.password && !url.search && !url.hash; }
+      catch { return false; }
+    });
+    const candidates = configured.length ? configured : [['openrouter', BUILT_IN_KEY_PROVIDERS.openrouter]];
+    const [id, definition] = candidates.length === 1 ? candidates[0] : [];
+    const openrouterKey = definition && (savedProviderKey(home, id) || (typeof definition.env_key === 'string' ? process.env[definition.env_key] : definition.experimental_bearer_token));
+    return { chatgpt: account?.account?.type === 'chatgpt' && !!home && fs.existsSync(path.join(home, 'auth.json')), home, geminiKey: key.trim() || null,
+      ...(typeof openrouterKey === 'string' && openrouterKey.trim() ? { openrouterKey: openrouterKey.trim() } : {}) };
   }
   // Internal CLI environment only; credentials never travel to the renderer.
   async ragEnvironment() {
@@ -1175,7 +1201,7 @@ export class DesktopClient extends EventEmitter {
   }
   /** Adds, removes, enables or configures one MCP server through the native versioned config writer. */
   async saveMcp(input) {
-    object(input, ['version', 'action', 'name', 'command', 'args', 'enabled', 'backend', 'model', 'env']);
+    object(input, ['version', 'action', 'name', 'command', 'args', 'enabled', 'backend', 'model', 'env', 'everyChat']);
     text(input.version, 'MCP settings version', 200);
     if (typeof input.name !== 'string' || !MCP_NAME.test(input.name)) throw new BridgeError('Use letters, numbers, - or _ for the server name');
     const current = await this.mcp();
@@ -1209,6 +1235,12 @@ export class DesktopClient extends EventEmitter {
       if (input.model !== undefined) {
         if (input.model !== null && !/^[a-z0-9._-]+\/[a-z0-9._:-]+$/i.test(input.model)) throw new BridgeError('Choose an OpenRouter model.');
         edits.push({ keyPath: `${key}.env.WHISPERTYPE_CLOUD_MODEL`, value: input.model, mergeStrategy: 'replace' });
+      }
+      if (input.everyChat !== undefined) {
+        if (typeof input.everyChat !== 'boolean') throw new BridgeError('Choose whether dictation applies to every chat.');
+        edits.push({ keyPath: `${key}.env.WHISPERTYPE_EVERY_CHAT`, value: input.everyChat ? '1' : null, mergeStrategy: 'replace' });
+        // Distinguish an explicit new choice from older WhisperType settings that use their own API key.
+        edits.push({ keyPath: `${key}.env.ELPIS_DICTATION_EXPLICIT`, value: input.everyChat ? '1' : null, mergeStrategy: 'replace' });
       }
     } else throw new BridgeError('Unsupported MCP change');
     if (!edits.length) return current;

@@ -20,6 +20,39 @@ test('WHISPERTYPE_EVERY_CHAT makes the Settings → Voice engine stand for every
     assert.deepEqual(transcriptionStatus(server({ WHISPERTYPE_BACKEND: 'local', WHISPERTYPE_EVERY_CHAT: '1', WHISPERTYPE_CLOUD_MODEL: MODEL }), provider), { available: true, backend: 'local', label: 'Local WhisperType', source: 'fallback' }, provider);
 });
 
+test('an explicitly chosen dictation engine also applies to Gemini chats', () => {
+  const config = server({ WHISPERTYPE_BACKEND: 'local', WHISPERTYPE_EVERY_CHAT: '1', ELPIS_DICTATION_EXPLICIT: '1' });
+  assert.equal(transcriptionStatus(config, 'google-gemini', { geminiKey: 'fixture-key' }).backend, 'local');
+});
+
+test('legacy Gemini routing remains unchanged until a Use for choice is saved', () => {
+  const config = server({ WHISPERTYPE_BACKEND: 'local', WHISPERTYPE_EVERY_CHAT: '1' });
+  assert.equal(transcriptionStatus(config, 'google-gemini', { geminiKey: 'fixture-key' }).backend, 'gemini');
+});
+
+test('explicit OpenRouter dictation needs the configured provider key and passes it only to the transcriber', async () => {
+  const config = server({ WHISPERTYPE_BACKEND: 'openrouter', WHISPERTYPE_EVERY_CHAT: '1', ELPIS_DICTATION_EXPLICIT: '1', WHISPERTYPE_CLOUD_MODEL: MODEL });
+  assert.equal(transcriptionStatus(config, 'openai', {}).available, false);
+  assert.equal(transcriptionStatus(config, 'openai', { openrouterKey: 'fixture-provider-key' }).available, true);
+  const received = [];
+  const handle = createTranscription({ definition: async () => config, environment: async () => ({ openrouterKey: 'fixture-provider-key' }), normalize: async value => value,
+    transcribe: async (_config, _audio, _signal, backend, _home, key) => { received.push({ backend, key }); return 'from selected provider'; } });
+  const result = await call(handle, 'audio/wav', Buffer.from('clip'), { provider: 'openai', backend: 'openrouter' });
+  assert.deepEqual(result.value, { text: 'from selected provider' });
+  assert.deepEqual(received, [{ backend: 'openrouter', key: 'fixture-provider-key' }]);
+  assert.doesNotMatch(JSON.stringify(result), /fixture-provider-key/);
+});
+
+test('legacy every-chat OpenRouter dictation keeps its WhisperType credential until Use for is saved', async () => {
+  const config = server({ WHISPERTYPE_BACKEND: 'openrouter', WHISPERTYPE_EVERY_CHAT: '1', WHISPERTYPE_CLOUD_MODEL: MODEL });
+  assert.equal(transcriptionStatus(config, 'openai', {}).available, true);
+  const received = [];
+  const handle = createTranscription({ definition: async () => config, environment: async () => ({ openrouterKey: 'another-provider-key' }), normalize: async value => value,
+    transcribe: async (_config, _audio, _signal, _backend, _home, key) => { received.push(key); return 'legacy'; } });
+  assert.deepEqual((await call(handle, 'audio/wav', Buffer.from('clip'), { provider: 'openai', backend: 'openrouter' })).value, { text: 'legacy' });
+  assert.deepEqual(received, [null]);
+});
+
 test('providers without a transcription Elpis can reach use the Settings fallback', () => {
   for (const provider of ['anthropic', 'anthropic-credits', 'claude', 'gemini', 'google-gemini', 'lmstudio', 'custom-gateway', undefined, '']) {
     assert.deepEqual(transcriptionStatus(server({ WHISPERTYPE_BACKEND: 'local' }), provider), { available: true, backend: 'local', label: 'Local WhisperType', source: 'fallback' }, String(provider));

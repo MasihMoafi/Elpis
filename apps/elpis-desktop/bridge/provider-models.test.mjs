@@ -2,6 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { providerModels } from './provider-models.mjs';
 
+test('speech model listings retain model-specific voices', async () => {
+  let requested;
+  const result = await providerModels({ base_url: 'https://openrouter.ai/api/v1', wire_api: 'chat' }, { outputModality: 'speech', fetchImpl: async url => {
+    requested = url;
+    return new Response(JSON.stringify({ data: [{ id: 'fish/test', name: 'Fish', supported_voices: ['warm', 'clear'] }] }), { headers: { 'content-type': 'application/json' } });
+  } });
+  assert.equal(new URL(requested).searchParams.get('output_modalities'), 'speech');
+  assert.deepEqual(result.data[0].voices, ['warm', 'clear']);
+});
+
 const json = (value, init = {}) => new Response(JSON.stringify(value), { ...init, headers: { 'content-type': 'application/json', ...init.headers } });
 const listed = () => json({ data: [{ id: 'gpt-oss:20b', name: 'GPT OSS 20B' }] });
 const local = { base_url: 'http://127.0.0.1:1234/v1', wire_api: 'responses' };

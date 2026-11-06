@@ -167,7 +167,8 @@ function choices(catalogue, wire = 'responses', inputModality, outputModality) {
     const displayName = [row.name, row.display_name, row.displayName].map(value => label(value, 200)).find(Boolean) || row.id;
     const context = [row.context_length, row.context_window, row.max_context_length, row.max_input_tokens].find(value => Number.isSafeInteger(value) && value > 0);
     const description = context ? `≈${Math.round(context / 1000)}k context` : label(row.description, 1000);
-    data.push({ id: row.id, model: row.id, displayName, ...(description ? { description } : {}), ...(inputModalities ? { architecture: { input_modalities: inputModalities } } : {}) });
+    const voices = Array.isArray(row.supported_voices) ? row.supported_voices.map(value => typeof value === 'string' ? value : value?.id).filter(value => typeof value === 'string' && MODEL_ID.test(value)).slice(0, 500) : null;
+    data.push({ id: row.id, model: row.id, displayName, ...(description ? { description } : {}), ...(inputModalities ? { architecture: { input_modalities: inputModalities } } : {}), ...(voices ? { voices } : {}) });
   }
   if (!inputModality && catalogue.data.length && !data.length) throw unavailable('This connection did not return any supported model IDs.');
   return { data, nextCursor: null };

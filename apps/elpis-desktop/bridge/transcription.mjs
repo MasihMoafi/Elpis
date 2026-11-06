@@ -25,7 +25,8 @@ const cancelled = () => new BridgeError('Dictation cancelled', 499);
 /** The transcriber for a chat on `provider`: its own where it has one, else the fallback chosen in Settings → Voice.
  * `env` is what only the bridge may know: `chatgpt` (Elpis is signed in to ChatGPT) and `geminiKey`. It is never returned. */
 export function transcriptionStatus(config, provider, env = {}) {
-  if (provider === 'google-gemini' && env.geminiKey) return { available: true, backend: 'gemini', label: `${GEMINI.label} · ${GEMINI.model}`, source: 'provider' };
+  const explicit = config?.env?.WHISPERTYPE_EVERY_CHAT === '1' && config?.env?.ELPIS_DICTATION_EXPLICIT === '1';
+  if (!explicit && provider === 'google-gemini' && env.geminiKey) return { available: true, backend: 'gemini', label: `${GEMINI.label} · ${GEMINI.model}`, source: 'provider' };
   // The MCP switch only decides whether agents get WhisperType as a tool; dictation starts its own process (2 Nov: the switch
   // was off, so dictation said unavailable although WhisperType worked).
   if (!config || typeof config.command !== 'string' || !config.command || config.url) {
@@ -37,6 +38,7 @@ export function transcriptionStatus(config, provider, env = {}) {
   if (!LABELS[route]) return { available: false, reason: 'Choose a transcription engine in Settings → Voice.' };
   const source = own ? 'provider' : 'fallback';
   if (route !== 'openrouter') return { available: true, backend: route, label: LABELS[route], source };
+  if (explicit && !env.openrouterKey) return { available: false, reason: 'Add one OpenRouter API key under Models & accounts.' };
   const model = cloudModel(config);
   return model ? { available: true, backend: route, label: `${LABELS[route]} · ${model}`, source } : { available: false, reason: 'Set the OpenRouter transcription model in Settings → Voice.' };
 }
@@ -81,11 +83,11 @@ export function normalizeAudio(audio, mime, signal) {
 
 /** Reuse the configured MCP command without creating/resuming a conversation or running its hotkey engine. The codex route
  * reads the ChatGPT sign-in in `home`, the Elpis home (same auth.json as Codex's), unless the server's own env sets CODEX_HOME. */
-export function transcribeMcp(config, audio, signal, route = fallback(config), home = null) {
+export function transcribeMcp(config, audio, signal, route = fallback(config), home = null, openrouterKey = null) {
   return new Promise((resolve, reject) => {
     if (signal.aborted) return reject(cancelled());
     const child = spawn(config.command, config.args ?? [], { cwd: config.cwd || undefined,
-      env: childEnv({ ...process.env, ...(route === 'codex' && home ? { CODEX_HOME: home } : {}), ...config.env }), stdio: ['pipe', 'pipe', 'ignore'], detached: process.platform !== 'win32' });
+      env: childEnv({ ...process.env, ...(route === 'codex' && home ? { CODEX_HOME: home } : {}), ...config.env, ...(route === 'openrouter' && openrouterKey ? { OPENROUTER_API_KEY_COMPANY: openrouterKey } : {}) }), stdio: ['pipe', 'pipe', 'ignore'], detached: process.platform !== 'win32' });
     child.stdout.setEncoding('utf8');
     let pending = ''; let size = 0; let done = false;
     const finish = (error, value) => {
@@ -173,7 +175,8 @@ export function createTranscription({ definition, environment = async () => ({})
       }
       if (!size) throw new BridgeError('The recording is empty', 422);
       const audio = await normalize(Buffer.concat(chunks), mime, controller.signal);
-      const text = status.backend === 'gemini' ? await gemini(env.geminiKey, audio, controller.signal) : await transcribe(config, audio, controller.signal, status.backend, env.home);
+      const explicit = config?.env?.WHISPERTYPE_EVERY_CHAT === '1' && config?.env?.ELPIS_DICTATION_EXPLICIT === '1';
+      const text = status.backend === 'gemini' ? await gemini(env.geminiKey, audio, controller.signal) : await transcribe(config, audio, controller.signal, status.backend, env.home, explicit ? env.openrouterKey : null);
       if (!controller.signal.aborted) json(response, 200, { text });
     } finally {
       active = false; request.removeListener('aborted', abort); response.removeListener('close', abort);

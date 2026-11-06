@@ -5,11 +5,11 @@ import kokoro_onnx, soundfile
 
 model = kokoro_onnx.Kokoro(sys.argv[1], sys.argv[2])
 voice, speed = os.environ.get("ELPIS_KOKORO_VOICE", "af_heart"), float(os.environ.get("ELPIS_KOKORO_SPEED", "1.0"))
-print(json.dumps({"ready": True}), flush=True)
+print(json.dumps({"ready": True, "voices": model.get_voices()}), flush=True)
 for line in sys.stdin:
     request = json.loads(line)
     try:
-        samples, rate = model.create(request["text"], voice=voice, speed=speed, lang="en-us")
+        samples, rate = model.create(request["text"], voice=request.get("voice") or voice, speed=speed, lang="en-us")
         soundfile.write(request["out"], samples, rate)
         print(json.dumps({"id": request["id"], "ok": True}), flush=True)
     except Exception as error:  # one bad piece of text must not end the worker

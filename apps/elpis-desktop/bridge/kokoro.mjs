@@ -22,7 +22,7 @@ export function kokoroPaths(env = process.env) {
 
 export function createKokoro({ env = process.env, spawnWorker = spawn } = {}) {
   const paths = kokoroPaths(env);
-  let worker = null, ready = null, buffer = '';
+  let worker = null, ready = null, buffer = '', voiceNames = [];
   const pending = new Map();
   const available = () => [paths.python, paths.model, paths.voices].every(file => existsSync(file));
   function start() {
@@ -35,7 +35,7 @@ export function createKokoro({ env = process.env, spawnWorker = spawn } = {}) {
         for (let end = buffer.indexOf('\n'); end >= 0; end = buffer.indexOf('\n')) {
           const line = buffer.slice(0, end); buffer = buffer.slice(end + 1);
           let message; try { message = JSON.parse(line); } catch { continue; }
-          if (message.ready) { resolve(); continue; }
+          if (message.ready) { voiceNames = Array.isArray(message.voices) ? message.voices.filter(name => typeof name === 'string') : []; resolve(); continue; }
           const waiting = pending.get(message.id); pending.delete(message.id);
           if (waiting) message.ok ? waiting.resolve() : waiting.reject(new BridgeError('Read aloud could not voice this text.', 500));
         }
@@ -43,22 +43,24 @@ export function createKokoro({ env = process.env, spawnWorker = spawn } = {}) {
     });
     worker.once('exit', () => {
       for (const waiting of pending.values()) waiting.reject(new BridgeError('Read aloud stopped. Try again.', 503));
-      pending.clear(); worker = null; ready = null; buffer = '';
+      pending.clear(); worker = null; ready = null; buffer = ''; voiceNames = [];
     });
     return ready;
   }
   /** WAV bytes for `text`. */
-  async function speak(text) {
+  async function speak(text, voice = null) {
     if (typeof text !== 'string' || !text.trim() || text.length > 4000) throw new BridgeError('Read aloud takes up to 4000 characters at a time.', 400);
     if (!available()) throw new BridgeError('Read aloud needs Kokoro on this computer.', 503);
     await start();
+    if (voice && !voiceNames.includes(voice)) throw new BridgeError('Choose an installed Kokoro voice.', 400);
     const id = randomUUID(), out = path.join(os.tmpdir(), `elpis-read-aloud-${id}.wav`);
     const done = new Promise((resolve, reject) => pending.set(id, { resolve, reject }));
-    worker.stdin.write(JSON.stringify({ id, text, out }) + '\n');
+    worker.stdin.write(JSON.stringify({ id, text, out, ...(voice ? { voice } : {}) }) + '\n');
     await done;
     try { return await fs.readFile(out); } finally { await fs.rm(out, { force: true }); }
   }
   /** Loads the voice ahead of the first read, when the app asks whether it is there. */
   const warm = () => { if (available()) start().catch(() => {}); };
-  return { available, warm, speak, close: () => { worker?.kill(); } };
+  const voices = async () => { if (!available()) return []; await start(); return voiceNames; };
+  return { available, warm, voices, speak, defaultVoice: env.ELPIS_KOKORO_VOICE ?? 'af_heart', close: () => { worker?.kill(); } };
 }

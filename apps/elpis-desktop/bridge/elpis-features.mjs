@@ -444,7 +444,7 @@ export function mcpSnapshot(read, env = process.env) {
         ...(Array.isArray(def.env_vars) ? def.env_vars : []).filter(key => typeof key === 'string' && CREDENTIAL.test(key)).map(key => ({ name: key, source: 'environment', set: Boolean(env[key]) })),
         ...(typeof def.bearer_token_env_var === 'string' ? [{ name: def.bearer_token_env_var, source: 'environment', set: Boolean(env[def.bearer_token_env_var]) }] : []),
       ],
-      ...(name === 'whispertype' ? { whispertype: { backend: def.env?.WHISPERTYPE_BACKEND ?? null, model: string(def.env?.WHISPERTYPE_CLOUD_MODEL) } } : {}),
+      ...(name === 'whispertype' ? { whispertype: { backend: def.env?.WHISPERTYPE_BACKEND ?? null, model: string(def.env?.WHISPERTYPE_CLOUD_MODEL), ...(def.env?.WHISPERTYPE_EVERY_CHAT === '1' ? { everyChat: true } : {}), ...(def.env?.ELPIS_DICTATION_EXPLICIT === '1' ? { explicit: true } : {}) } } : {}),
     })),
   };
 }

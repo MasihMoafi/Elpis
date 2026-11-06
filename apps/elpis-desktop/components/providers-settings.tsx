@@ -10,6 +10,7 @@ import { api } from "@/lib/api";
 import { providerFormId, type ProviderType } from "@/lib/provider-form";
 import { RefreshButton, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
 import { ClaudeAccountsSettings } from "@/components/claude-accounts-settings";
+import { UseForSettings } from "@/components/settings/use-for-settings";
 
 import { useProviderUsage, type ConfiguredProvider as Configured, type Subscription } from "@/components/provider-usage";
 import { errorText } from "@/lib/error-text.mjs";
@@ -78,7 +79,7 @@ function CloudroomCard() {
   </Card>;
 }
 
-export function ProvidersSettings({ refreshKey, onChanged }: { refreshKey: number; onChanged?: () => Promise<void> | void }) {
+export function ProvidersSettings({ refreshKey, onChanged, active = true }: { refreshKey: number; onChanged?: () => Promise<void> | void; active?: boolean }) {
   const { data, error: accountsError, load: loadAccounts } = useProviderUsage(refreshKey);
   const [config, setConfig] = useState<ProviderConfigs | null>(null);
   const [editing, setEditing] = useState<ProviderEdit | null>(null);
@@ -104,7 +105,7 @@ export function ProvidersSettings({ refreshKey, onChanged }: { refreshKey: numbe
     } catch (e) { const fresh = await api<ProviderConfigs>("/providers/settings").catch(() => null); if (fresh && Array.isArray(fresh.providers)) setConfig(fresh); setError(errorText(e)); }
     finally { setSaving(false); }
   }
-  useEffect(() => { void loadConfig(); setWaiting(false); }, [loadConfig, refreshKey]);
+  useEffect(() => { if (active) { void loadConfig(); setWaiting(false); } }, [active, loadConfig, refreshKey]);
   async function account(action: "chatgpt" | "signOut" | "anthropicSignOut" | "anthropicSignIn") {
     setBusy(true); setError("");
     try {
@@ -122,6 +123,7 @@ export function ProvidersSettings({ refreshKey, onChanged }: { refreshKey: numbe
     <div className="settings-stack">
     {(error || accountsError) && <SettingsNotice tone="alert">{error || accountsError}</SettingsNotice>}
     {notice && <SettingsNotice>{notice}</SettingsNotice>}
+    <UseForSettings providers={config?.providers ?? []} refreshKey={refreshKey} active={active} chatgptAvailable={data?.openai.auth.state === "signedIn" && data.openai.auth.method === "ChatGPT"} />
     {config?.write?.reason && !config.write?.available && <p className="settings-notice">{config.write?.reason}</p>}
     {!data && !accountsError && <SettingsNotice>Reading providers…</SettingsNotice>}
     {data && <>
