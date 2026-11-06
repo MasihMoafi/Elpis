@@ -121,7 +121,7 @@ import { AttachmentChips } from "@/components/attachment-chips";
 import { ATTACHMENT_ACCEPT, ATTACHMENT_LIMITS, TEXT_ONLY_NOTICE, attachmentFromFile, fitAttachments, transferFiles, type Attachment } from "@/lib/attachments";
 import { scanDeletionThreads } from "@/lib/thread-deletion";
 import { LoadOnScroll } from "@/components/load-on-scroll";
-import { api, unreadable, chatProvider, choiceById, choiceOf, effortsOf, isAgentRun, AGENT_RUN_NOTICE, modelLabel, providerChoices, providerLabel, title, agentName,
+import { api, unreadable, chatProvider, isAgentRun, AGENT_RUN_NOTICE, modelLabel, providerLabel, title, agentName,
   mediaUrl, type Approval, type Entry, type ProviderSettings, type Thread } from "@/lib/api";
 import { historyPath, inReadingOrder } from "@/lib/chat-history";
 import { useComposerHeight } from "@/lib/use-composer-height";
@@ -140,6 +140,7 @@ import { createChatDeletion } from "@/lib/chat-deletion";
 import { useChatReorder } from "@/lib/use-chat-reorder";
 import { useSidebarThreads } from "@/lib/use-sidebar-threads";
 import { useChildConversations } from "@/lib/use-child-conversations";
+import { modelSelection } from "@/lib/model-selection";
 import { refusedOffline, type Live, type View, type WorkflowReplay, type NextTurn } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
 import { useComposerState } from "@/lib/use-composer-state";
@@ -463,25 +464,7 @@ export default function Home() {
   const outsideChatApprovals = approvals.filter(approval => view !== "chat" || approval.params.threadId !== selected?.id);
   const readOnlyRun = !!selected && (isAgentRun(selected) || selected.desktopAccess?.writable === false);
   const continues = readOnlyRun || selected?.desktopAccess?.mode === "continue";
-  const choices = providerChoices(models, providerSettings);
-  const newChoice = choiceById(choices, choiceId);
-  const missingChoiceNotice = !selected && choiceId && !newChoice ? "This connection is no longer available. Choose another model." : "";
-  const needsModelId = !selected && !!newChoice?.provider && newChoice.provider !== providerSettings?.main.provider;
-  const pending = selected ? nextTurn[selected.id] : undefined;
-  const turnModel = selected ? pending?.model ?? selected.model ?? "" : model;
-  const selectedChoice = selected ? choiceOf({ ...selected, model: turnModel }, choices) : null;
-  const chatChoices = selected ? choices.filter(choice => !choice.provider || choice.provider === selected.modelProvider) : choices;
-  const modelChoices = selectedChoice?.provider && !chatChoices.some(choice => choice.id === selectedChoice.id) ? [selectedChoice, ...chatChoices] : chatChoices;
-  const dictationProvider = chatProvider(turnModel, selected ? selected.modelProvider : newChoice?.provider, providerSettings?.main.provider);
-  const turnEfforts = effortsOf(turnModel || providerSettings?.main.model, models);
-  const turnEffort = selected ? selected.reasoningEffort ?? "" : effort;
-  // The connection's own list, else the engine's: a ChatGPT default carries no list of its own since 2 Nov (fc2cd0fa6), and
-  // without one a text-only model was not known as such (5 Nov: an image went to it with no notice).
-  const knownModel = (selected ? selectedChoice?.models : newChoice?.models)?.find(item => item.model === (turnModel || providerSettings?.main.model))
-    ?? models.find(item => item.model === (turnModel || providerSettings?.main.model));
-  // Fast is always on screen; it is only switched off for a chat whose model offers no Fast tier (Claude's Fast bills extra usage, not the plan), so it never vanishes without a reason.
-  const fastAvailable = dictationProvider === "openai" && !!fastServiceTier(knownModel ?? models.find(item => item.model === (turnModel || providerSettings?.main.model)));
-  const fastOn = ["fast", "priority"].includes((selected ? selected.serviceTier : providerSettings?.options?.serviceTier) ?? "");
+  const { newChoice, missingChoiceNotice, needsModelId, pending, turnModel, selectedChoice, modelChoices, dictationProvider, turnEfforts, turnEffort, knownModel, fastAvailable, fastOn } = modelSelection({ models, providerSettings, selected, choiceId, model, effort, nextTurn });
   const commandNoticeScope = JSON.stringify([view, tabs.activeId, selected?.id ?? newDraftKey.current]);
   const commandNoticeOwner = useRef(commandNoticeScope), fastNoticeOwner = useRef<string | null>(null);
   commandNoticeOwner.current = commandNoticeScope;
