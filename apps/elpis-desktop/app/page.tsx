@@ -5,11 +5,10 @@ import dynamic from "next/dynamic";
 import { BrandWordmark } from "@/components/brand-wordmark";
 import { flushSync } from "react-dom";
 import { cloneElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { AgentsIcon, ChatIcon, ExperimentLabIcon, LoveSpotIcon, NewChatIcon, PlusIcon, SendIcon, SettingsIcon, ThemeIcon, WorkflowsIcon, StopIcon } from "@/components/elpis-icons";
-import { Activity, ArrowDown, Blocks, PanelLeft, PanelRightClose, PanelRightOpen, RefreshCw, X, Zap } from "lucide-react";
+import { AgentsIcon, ChatIcon, ExperimentLabIcon, LoveSpotIcon, NewChatIcon, PlusIcon, SettingsIcon, ThemeIcon, WorkflowsIcon } from "@/components/elpis-icons";
+import { Activity, ArrowDown, Blocks, PanelLeft, PanelRightClose, PanelRightOpen, RefreshCw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ReorderItem, useReorder } from "@/components/reorder";
-import { OptionSelect } from "@/components/ui/option-select";
 import { ApprovalCard } from "@/components/approval-card";
 import { PlanCard } from "@/components/plan-card";
 import { SearchField } from "@/components/ui/search-field";
@@ -26,18 +25,18 @@ import { configuredShortcuts, shortcutHint, shortcutTitle } from "@/lib/shortcut
 import { CommandMenu, type CommandAction } from "@/components/command-menu";
 import { ImproveElpis } from "@/components/improve-elpis";
 import { arrange, move } from "@/lib/nav-order";
-import { followUpHint, followUpKey, followUpTooltip, isSendKey, newChatFolder, savePreferences, useAppPreferences } from "@/lib/preferences";
+import { followUpHint, followUpKey, isSendKey, newChatFolder, savePreferences, useAppPreferences } from "@/lib/preferences";
 import type { FollowUp } from "@/lib/follow-ups";
 import { QueuedFollowUps } from "@/components/queued-follow-ups";
 import { stopsOnEscape, usePromptKeys } from "@/lib/prompt-history";
 import { PromptStatusLine } from "@/components/prompt-status";
-import { ContextUsage, OPEN_CONTEXT_EVENT } from "@/components/context-usage";
+import { OPEN_CONTEXT_EVENT } from "@/components/context-usage";
 import { ElpisFeatures } from "@/components/elpis-features";
 import { ShortcutsDialog } from "@/components/shortcuts-dialog";
 import { StartupSplash } from "@/components/startup-splash";
 import { AppUpdate } from "@/components/app-update";
 import { AppMenus } from "@/components/app-menus";
-import { permissionLabel, PermissionsMenu, PlanPill, PlusMenu, type PermissionMode } from "@/components/composer-controls";
+import { permissionLabel, type PermissionMode } from "@/components/composer-controls";
 import { CopyButton } from "@/components/markdown-text";
 import { fitChatListEnd, useWholeRows } from "@/lib/whole-rows";
 import { mergeHistoryWithLive } from "@/lib/live-events";
@@ -55,6 +54,7 @@ import { SectionToggle } from "@/components/sidebar-group";
 import { SidebarChatList } from "@/components/sidebar-chat-list";
 import { createSidebarThreadRow } from "@/components/sidebar-thread-row";
 import { createSidebarBranches } from "@/components/sidebar-branches";
+import { ComposerControls } from "@/components/composer-controls-panel";
 import { SlashMenu, useSlashMenu } from "@/components/slash-menu";
 import { MentionMenu, useMentionMenu } from "@/components/mention-menu";
 import { NavButtons } from "@/components/nav-buttons";
@@ -68,9 +68,7 @@ import { ImageReplyProvider, type ReplyImage } from "@/components/image-reply";
 import { openControl } from "@/lib/slash-focus";
 import { reloadSettings, useElpisSettings } from "@/lib/settings-store";
 import { UsagePanel } from "@/components/provider-usage";
-import { Dictation } from "@/components/dictation";
 import { isVoiceHandoff } from "@/bridge/voice-handoff.cjs";
-import { Voice } from "@/components/voice";
 import { ReadAloud } from "@/components/read-aloud";
 import { MatildaAutoVoice } from "@/components/matilda-auto-voice";
 import { MatildaCompanion } from "@/components/matilda-companion";
@@ -87,7 +85,6 @@ import { keptNotice, type WorktreeOutcome } from "@/lib/chat-worktree";
 import { AccountRow } from "@/components/account-row";
 import { ProfileDialog } from "@/components/profile-dialog";
 import { DRAWING_NOTE } from "@/lib/browser-notes";
-import { ModelPicker } from "@/components/model-picker";
 import { readProjectChats, readProjects, saveProjects } from "@/lib/projects";
 import { ResizeEdge } from "@/components/resize-edge";
 import { TaskList } from "@/components/task-list";
@@ -104,7 +101,6 @@ import { agentColourSlots } from "@/components/agent-identity";
 import { ResumeConversation } from "@/components/resume-conversation";
 import { sidebarListKeys, useSidebarKeys, useWorkspaceNavigation } from "@/lib/use-workspace-navigation";
 import { agentState } from "@/lib/agents";
-import { insertTranscript } from "@/lib/dictation";
 import { useBrowserPins } from "@/lib/browser-pins";
 import { useBrowser } from "@/components/browser-panel";
 import { onRequest as onFileRequest, openFile, setFileView } from "@/lib/files-pane";
@@ -257,7 +253,7 @@ export default function Home() {
   const shortcutAction = useRef<(id: string, index?: number) => void>(() => {});
   const [newMode, setNewMode] = useState<PermissionMode | null>(null);
   const composer = useComposerState();
-  const { text, setText, shellMode, setShellMode, shellCreated, textRef, composerRef, caret, setCaret, pickedMentions, filePickerRef, dictating, setDictating, voiceBusy, setVoiceBusy } = composer;
+  const { text, setText, shellMode, setShellMode, shellCreated, textRef, composerRef, caret, setCaret, pickedMentions, filePickerRef, dictating, voiceBusy } = composer;
   const [sideChat, setSideChat] = useState<{ parentId: string; open: boolean; question?: SideRequest } | null>(null);
   const sideRequests = useRef(0);
   const [resumeOpen, setResumeOpen] = useState(false);
@@ -270,7 +266,7 @@ export default function Home() {
   const runtime = useRuntimeState();
   const { connected, connectionStatus, ready, runtimeNotices, setRuntimeNotices,
     activeTurns, plans, approvals, setApprovals,
-    activity, liveError, historyOnly, failedTurns, setFailedTurns, stoppedTurns,
+    activity, liveError, historyOnly, failedTurns, stoppedTurns,
     accountRefresh, replays, setReplays } = runtime;
   useEffect(() => {
     if (ready && connected && document.activeElement === document.body) composerRef.current?.focus();
@@ -462,7 +458,8 @@ export default function Home() {
   const outsideChatApprovals = approvals.filter(approval => view !== "chat" || approval.params.threadId !== selected?.id);
   const readOnlyRun = !!selected && (isAgentRun(selected) || selected.desktopAccess?.writable === false);
   const continues = readOnlyRun || selected?.desktopAccess?.mode === "continue";
-  const { newChoice, missingChoiceNotice, needsModelId, pending, turnModel, selectedChoice, modelChoices, dictationProvider, turnEfforts, turnEffort, knownModel, fastAvailable, fastOn } = modelSelection({ models, providerSettings, selected, choiceId, model, effort, nextTurn });
+  const selectedModel = modelSelection({ models, providerSettings, selected, choiceId, model, effort, nextTurn });
+  const { newChoice, missingChoiceNotice, needsModelId, pending, turnModel, selectedChoice, turnEfforts, turnEffort, knownModel, fastOn } = selectedModel;
   const commandNoticeScope = JSON.stringify([view, tabs.activeId, selected?.id ?? newDraftKey.current]);
   const commandNoticeOwner = useRef(commandNoticeScope), fastNoticeOwner = useRef<string | null>(null);
   commandNoticeOwner.current = commandNoticeScope;
@@ -604,7 +601,8 @@ export default function Home() {
     } catch (cause) { setError(errorText(cause)); }
     finally { setBusy(false); }
   }
-  const { rememberModes, setPlan, answerPlan, permissionsLocked, choosePermissions, cycleMode, noteStartedMode, saveEffort, setOverride } = createConversationSettings({ selected, selectedRef, request, runtime, conversations, ready, connected, busy, projectChanging, changingPermissions, planMode, permissionMode, threadPlans, setThreadModes, setThreadPlans, setPlanAnswered, setNextTurn, setNewPlan, setNewMode, setChangingPermissions, setError, focusComposer: () => focusComposer(), restoreComposerFocus: origin => restoreComposerFocus(origin) });
+  const conversationSettings = createConversationSettings({ selected, selectedRef, request, runtime, conversations, ready, connected, busy, projectChanging, changingPermissions, planMode, permissionMode, threadPlans, setThreadModes, setThreadPlans, setPlanAnswered, setNextTurn, setNewPlan, setNewMode, setChangingPermissions, setError, focusComposer: () => focusComposer(), restoreComposerFocus: origin => restoreComposerFocus(origin) });
+  const { rememberModes, setPlan, answerPlan, cycleMode, noteStartedMode, saveEffort } = conversationSettings;
   /** Sends the composer's message, or `own`: a command's message (such as /init's prompt), sent without the composer's files.
    * While a turn runs, `followUp` steers or queues this one message instead of following Settings (Ctrl+Enter). */
   const send = createChatSend({ projectState, composer, conversations, runtime, attachments: attachmentState, drafts: draftStore, sendShell: () => sendShell(), askSideQuestion: question => askSideQuestion(question), restoreComposerFocus: origin => restoreComposerFocus(origin), readOnlyRun, selected, editDraft, busy, canSendFollowUp, imageBlocked, missingChoiceNotice, needsModelId, model, setError, sending, setBusy, newDraftKey, request, tabsRef, activeTurn, continues, preferences, stickToBottom, setSubmissions, entries, newMode, newChoice, newWorktree, noteStartedMode, browser, setThreads, assignProject, pending, effort, newPlan, selectedRef, loadThread, setThreadPlans, setNewPlan, setNextTurn });
@@ -804,7 +802,8 @@ export default function Home() {
   const chatFolder = selected ? selected.cwd : newChatFolder(cwd);
   // The profile opens as source: /personal is for editing it.
   const personal = usePersonal(ready && !selected, path => { const at = selected?.cwd || cwd; openFile(at, path); setFileView(at, path, "source"); side.openFiles(); }, setError);
-  const { chooseEffort, stepEffort, startReview, compactChat, exportChat, turnSmartPruneOn, chooseFast, chooseGoal } = createCommandActions({ selected, selectedRef, textRef, turnEfforts, turnEffort, turnModel, models, providerSettings, newChoice, commandNoticeOwner, fastNoticeOwner, side, runtime, conversations, ready, connected, desktop, setSlashNotice, setEffort, setPanel, setError, setBusy, openComposerControl, saveEffort, focusComposer, editDraft });
+  const conversationCommands = createCommandActions({ selected, selectedRef, textRef, turnEfforts, turnEffort, turnModel, models, providerSettings, newChoice, commandNoticeOwner, fastNoticeOwner, side, runtime, conversations, ready, connected, desktop, setSlashNotice, setEffort, setPanel, setError, setBusy, openComposerControl, saveEffort, focusComposer, editDraft });
+  const { chooseEffort, stepEffort, startReview, compactChat, exportChat, turnSmartPruneOn, chooseFast, chooseGoal } = conversationCommands;
   useEffect(() => {
     if (!queuedCompact) return;
     if (selected?.id !== queuedCompact.threadId) { setQueuedCompact(null); return; }
@@ -1156,31 +1155,7 @@ export default function Home() {
             {!shellMode && promptKeys.status && <PromptStatusLine status={promptKeys.status} />}
             <Textarea ref={composerRef} aria-label="Message Elpis" {...(mention.open ? mention.inputProps : slash.inputProps)} onBlur={() => { slash.close(); mention.close(); promptKeys.cancel(); }} onSelect={e => setCaret(e.currentTarget.selectionStart)} placeholder={composerPlaceholder} value={text} onChange={onComposerChange} onPaste={onComposerPaste} disabled={projectChanging} onKeyDown={onComposerKeyDown} />
             {composerNotice && <div className="flex items-center gap-2 px-3 text-sm text-destructive" role="alert"><span className="whitespace-pre-line">{composerNotice}</span>{fileNotice && <Button type="button" variant="ghost" size="icon-xs" aria-label="Dismiss file notice" onClick={() => setFileNotice("")}><X size={14} /></Button>}</div>}
-            <div className="composer-controls"><div className="model-controls"><PlusMenu disabled={!ready || !connected || busy || projectChanging} attachDisabled={shellMode || attaching || attachments.length >= ATTACHMENT_LIMITS.count} slashDisabled={!!text} plan={planMode} returnFocus={composerRef}
-                fast={{ unavailable: fastAvailable ? undefined : "Not offered for this model", on: fastAvailable && fastOn, disabled: !fastAvailable || !ready || !connected || busy || projectChanging || readOnlyRun, onChange: () => void chooseFast(fastOn ? "off" : "on") }}
-                onAttach={pickFiles} onMention={() => { setShellMode(false); startMention(); }} onSlash={() => { setShellMode(false); startSlash(); }} onPlan={setPlan} onShell={() => { setShellMode(true); slash.close(); mention.close(); promptKeys.cancel(); focusComposer(); }} />
-              {planMode && <PlanPill disabled={!ready || busy} onOff={() => setPlan(false)} />}
-              <PermissionsMenu mode={permissionMode} disabled={permissionsLocked} managed={settingsSnapshot?.managed} onChange={choosePermissions} />
-            </div><div className="composer-right">
-              <ContextUsage threadId={selected?.id} />
-              <ModelPicker choices={modelChoices} models={models}
-                model={selected ? turnModel : model} choiceId={selected ? selectedChoice?.id || "" : choiceId} defaultModel={selected ? null : providerSettings?.main.model}
-                disabled={!ready || busy || projectChanging} onConfigure={manageConnections} onKeySaved={() => void reloadSettings().catch(() => {})} onChange={choice => { if (selected) { setOverride(selected.id, { model: choice.model }); setFailedTurns(previous => without(previous, selected.id)); } else { setChoiceId(choice.choiceId); setModel(choice.model); setEffort(""); } }} />
-              {turnEfforts.length > 0 && <OptionSelect aria-label="Reasoning effort" size="sm" className="model-select" value={turnEffort} onChange={e => selected ? void saveEffort(selected.id, e.target.value) : setEffort(e.target.value)} disabled={!ready || !connected || busy}>
-                <option value=""><span className="effort-long">Default effort</span><span className="effort-short">Default</span></option>
-                {turnEffort && !turnEfforts.includes(turnEffort) && <option value={turnEffort}>{turnEffort}</option>}
-                {turnEfforts.map(value => <option key={value} value={value}>{value}</option>)}
-              </OptionSelect>}
-              <Button type="button" variant="ghost" size="icon-sm" className="fast-toggle" data-unavailable={fastAvailable ? undefined : ""} aria-label="Fast mode" aria-pressed={fastAvailable && fastOn} title={!fastAvailable ? "Fast is not offered for this model. GPT models have it; Claude's Fast bills extra usage, so it stays off." : fastOn ? "Fast is on. Turn off Fast." : "Turn on Fast. Applies from the next model request, including during this turn."} disabled={!fastAvailable || !ready || !connected || busy || projectChanging || readOnlyRun} onClick={() => void chooseFast(fastOn ? "off" : "on")}><Zap size={16} fill={fastAvailable && fastOn ? "currentColor" : "none"} aria-hidden="true" /></Button>
-              <div className="composer-actions">
-              {ready && selected && <Voice key={`voice:${selected.id}`} threadId={selected.id} disabled={!connected || projectChanging || dictating} persistent={selectedLoveChat} unavailableReason={loveSpotAudioReason} onBusy={setVoiceBusy} />}
-              {ready && <Dictation key={selected?.id || newDraftKey.current} provider={dictationProvider} disabled={!ready || !connected || busy || projectChanging || voiceBusy} onBusy={setDictating}
-                selection={() => ({ text: textRef.current, start: composerRef.current?.selectionStart ?? textRef.current.length, end: composerRef.current?.selectionEnd ?? textRef.current.length })}
-                onTranscript={(selection, transcript) => {
-                  const result = insertTranscript(textRef.current, selection, transcript); editDraft(result.text);
-                  requestAnimationFrame(() => { composerRef.current?.focus(); composerRef.current?.setSelectionRange(result.caret, result.caret); });
-                }} />}
-              {activeTurn && <Button type="button" size="sm" variant="secondary" className="stop-button shrink-0 gap-1.5" aria-label="Stop response" title="Stop response: stops the agent’s current turn." disabled={!ready || !connected} onClick={() => selected && stop(selected)}><StopIcon size={16} aria-hidden="true" /><span className="composer-action-label">Stop response</span></Button>}<Button type="submit" variant="cutPrimary" className="send-button" size={activeTurn && !continues ? "sm" : "icon"} aria-label={shellMode ? "Run shell command" : activeTurn && !continues ? "Send follow-up" : "Send message"} title={activeTurn && !continues ? followUpTooltip(preferences) : undefined} disabled={sendBlocked}>{activeTurn && !continues && !shellMode ? <><span className="composer-action-label">Send follow-up</span><SendIcon size={18} className="followup-send-icon" aria-hidden="true" /></> : <SendIcon size={18} />}</Button></div></div></div>
+            <ComposerControls selected={selected} selectedModel={selectedModel} settings={conversationSettings} commands={conversationCommands} runtime={runtime} composer={composer} attachmentsState={attachmentState} projectState={projectState} slash={slash} mention={mention} promptKeys={promptKeys} models={models} settingsSnapshot={settingsSnapshot} providerSettings={providerSettings} preferences={preferences} model={model} choiceId={choiceId} setModel={setModel} setChoiceId={setChoiceId} setEffort={setEffort} newDraftKey={newDraftKey} permissionMode={permissionMode} planMode={planMode} busy={busy} activeTurn={activeTurn} readOnlyRun={readOnlyRun} continues={continues} sendBlocked={sendBlocked} selectedLoveChat={selectedLoveChat} loveSpotAudioReason={loveSpotAudioReason} manageConnections={manageConnections} pickFiles={pickFiles} startMention={startMention} startSlash={startSlash} focusComposer={focusComposer} editDraft={editDraft} stop={stop} />
           </form>}
           <div className="composer-meta">
             {selected && <ProjectMenu variant="chip" label="Change folder" addLabel="Choose folder…" allowNone={false} projects={projects} disabled={!ready || !connected || readOnlyRun}
