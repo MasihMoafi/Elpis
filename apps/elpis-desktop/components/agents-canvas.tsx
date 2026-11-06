@@ -34,6 +34,7 @@ import { appStorage } from "@/lib/projects";
 import { filesText, mergeStops, runPayload, stopText, wantsIsolation } from "@/lib/canvas-isolation";
 import { PATTERNS, PATTERN_TEAMS, WORKFLOWS, LANGUAGES, languageOf, type Language, type ReadyMade, agentCount, WHOLE_PROJECT, applyPattern, ownFolders, agentColor, CHECK_LABEL, COLUMN, DONE, FATHER, MOTHER, STATUS_LABEL, TASKS_PER_AGENT, waits, TEMPLATES, agentName, promptName, applyPlan, arrange, boardForPlan, checkOf, commandParts, shapeOf, makesLoop, maxAgents, newAgents, newId, parseCommand, parents, initialGraph, runParts, saveGraph, waves, withMother, type AgentData, type CanvasEdge, type CanvasGraph, type CanvasNode, type CatalogModel, type Command, type MotherSettings, type NoteData, type Plan, type RunTask, type TaskStatus } from "@/lib/canvas";
 import { errorText } from "@/lib/error-text.mjs";
+import { taskLogLines, type LogLine } from "@/lib/run-log";
 
 
 /** A run: the Mother's part, and the Father agent's when the graph has more agents than she runs (lib/canvas.ts `parents`):
@@ -601,7 +602,6 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
   // Where the engine's merge clash stopped the run: the clashing files, by the agent whose work clashed.
   const [clashes, setClashes] = useState<Record<string, string[]>>({});
   // The run log, as Deus Ex's event cards: what started, finished, passed its check or failed, newest last.
-  type LogLine = { at?: number; agent?: string; text: string; tone: "start" | "done" | "fail" };
   const [log, setLog] = useState<LogLine[]>([]);
   const said = useRef<Record<string, TaskStatus>>({}), decisionsSeen = useRef(0);
   const reports = useRef(new Set<string>()), logList = useRef<HTMLOListElement>(null);
@@ -700,29 +700,8 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
         if (!fresh.length && !failed && found.error) setNotice(runFailure(found.error));
         if (!fresh.length && failed) setNotice(runFailure(`${titleOf(failed.id.replace(/-check$/, ""))}: ${failed.failureReason}`));
         const stopLines = fresh.map(stop => ({ at: Date.now(), agent: stop.agent ?? undefined, text: stop.agent ? `${titleOf(stop.agent)}: merge clash in ${filesText(stop.files, 3)}` : `Merge blocked: uncommitted changes in ${filesText(stop.files, 3)}`, tone: "fail" as const }));
-        const lines = found.tasks.flatMap(task => {
-          const previous = said.current[task.id];
-          said.current[task.id] = task.status;
-          const check = task.id.endsWith("-check"), agent = check ? task.id.slice(0, -"-check".length) : task.id;
-          // An agent the Mother just added is not on the board yet in this look: its own title names it.
-          const who = agents.some(node => node.id === agent) ? titleOf(agent) : found.tasks.find(item => item.id === agent)?.title || titleOf(agent);
-          const lines: LogLine[] = [];
-          if (previous !== task.status) {
-            // A successful task necessarily started, even when it finished between snapshots. Times are observations.
-            if (task.status === "succeeded" && previous !== "running") lines.push({ at: Date.now(), agent, text: `${check ? "CHECK STARTED" : "AGENT STARTED"} · ${who}`, tone: "start" });
-            const label = task.status === "running" ? (check ? "CHECK STARTED" : "AGENT STARTED") : task.status === "succeeded" ? (check ? "CHECK PASSED" : "TASK DONE") : task.status === "blocked" ? "INPUT BLOCKED" : task.status === "failed" ? (check ? "CHECK FAILED" : "TASK FAILED") : task.status === "cancelled" ? "TASK CANCELLED" : "";
-            if (label) lines.push({ at: Date.now(), agent, text: `${label} · ${who}${task.failureReason ? ` · ${task.failureReason}` : ""}`, tone: task.status === "running" ? "start" : task.status === "succeeded" ? "done" : "fail" });
-          }
-          // The engine's accepted result is the evidence of a report, independent of the task's status transition.
-          if (task.result !== undefined && task.result !== null && !reports.current.has(task.id)) {
-            reports.current.add(task.id);
-            lines.push({ at: Date.now(), agent, text: `REPORT RECEIVED · DATASTORE CAPTURED · ${who}`, tone: "done" });
-            // Elpis moved a new file the agent saved outside its folder into it (1 Nov); the log says so, never silently.
-            const relocated = (task.result as { relocated?: { from: string; to: string }[] }).relocated ?? [];
-            for (const move of relocated) lines.push({ at: Date.now(), agent, text: `FILE MOVED INTO ITS FOLDER · ${move.from} → ${move.to} · ${who}`, tone: "start" });
-          }
-          return lines;
-        });
+        // An agent the Mother just added is not on the board yet in this look: its own title names it.
+        const lines = taskLogLines(found.tasks, said.current, reports.current, agent => agents.some(node => node.id === agent) ? titleOf(agent) : found.tasks.find(item => item.id === agent)?.title || titleOf(agent));
         // The Mother's re-plans (bridge/workflow-acp.mjs `decide`): each decision once in the history, and the agents she
         // added on the board as they come; those she cancelled show as cancelled like any task.
         const decided = motherDecisionLines(found), seen = decisionsSeen.current;

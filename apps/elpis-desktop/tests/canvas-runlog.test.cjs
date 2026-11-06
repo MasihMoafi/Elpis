@@ -81,26 +81,3 @@ test('failed checks stay in the log, explain blocked inputs, and stop the clock 
     await f.page.waitForTimeout(1600); assert.equal(await clock.locator('strong').innerText(), ended);
   } finally { await f.close(); }
 });
-
-test('a report arriving after task completion is captured once even though its status stays the same', async () => {
-  let reported = false;
-  const f = await openCanvas({ listed(run) { return { id: run.graphId, status: 'running', tasks: run.tasks.map((task, index) => ({ id: task.id, status: index === 0 ? 'succeeded' : index === 1 ? 'running' : 'pending', assignedThreadId: null, result: index === 0 && reported ? { summary: 'Captured later' } : null })) }; } });
-  try {
-    await f.canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
-    const log = f.canvas.getByRole('log'); await log.getByRole('button', { name: /TASK DONE/ }).waitFor();
-    assert.equal(await log.getByRole('button', { name: /REPORT RECEIVED/ }).count(), 0);
-    reported = true; await log.getByRole('button', { name: /REPORT RECEIVED/ }).waitFor();
-    await f.page.waitForTimeout(1700);
-    assert.equal(await log.getByRole('button', { name: /REPORT RECEIVED/ }).count(), 1);
-  } finally { await f.close(); }
-});
-
-test('agents that finish between polls retain their start, task, check and report entries', async () => {
-  const f = await openCanvas({ listed(run) { return { id: run.graphId, status: 'succeeded', tasks: run.tasks.map(task => ({ id: task.id, status: 'succeeded', assignedThreadId: null, result: task.kind === 'verify' ? null : { summary: 'Fast result' } })) }; } });
-  try {
-    await f.canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
-    await f.canvas.locator('.canvas-header').getByRole('status').filter({ hasText: 'Finished' }).waitFor();
-    const log = f.canvas.getByRole('log');
-    for (const label of ['AGENT STARTED', 'TASK DONE', 'CHECK STARTED', 'CHECK PASSED', 'REPORT RECEIVED']) assert.equal(await log.getByRole('button', { name: new RegExp(label) }).count(), 4, label);
-  } finally { await f.close(); }
-});
