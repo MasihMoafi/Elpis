@@ -72,6 +72,7 @@
   ],
   "bridge": [
     "bridge/cloudroom-vm.test.mjs",
+    "bridge/schedule.test.mjs",
     "bridge/live-model-catalogue.test.mjs",
     "bridge/subscription-models.test.mjs",
     "bridge/memory-count.test.mjs",
@@ -176,6 +177,7 @@
   ],
   "ui": [
     "tests/cloudroom-settings.test.cjs",
+    "tests/automations.test.cjs",
     "tests/memory-count.test.cjs",
     "tests/audio-file-links.test.cjs",
     "tests/app-menus.test.cjs",

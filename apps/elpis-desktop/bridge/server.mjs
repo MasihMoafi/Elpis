@@ -9,6 +9,7 @@ import { LOVE_SPOT_AUDIO } from '../lib/love-spot-audio.mjs';
 import { PORTRAIT_ATTACHMENT_NAME, PORTRAIT_INSTRUCTIONS } from './matilda-face.cjs';
 import { planCanvas } from './canvas-plan.mjs';
 import { createExperimentLab } from './experiment-lab.mjs';
+import { createSchedule } from './schedule.mjs';
 import { listDirectory, listFiles, readFile, readFileAsset, searchFiles, writeFile } from './files.mjs';
 import { listFolders, projectDirectory, workflowWorkspace } from './folders.mjs';
 import { isRepository } from './git.mjs';
@@ -106,6 +107,8 @@ export async function startDesktopServer(options = {}) {
   const staticDir = path.resolve(options.staticDir ?? fileURLToPath(new URL('../out', import.meta.url)));
   const capability = randomBytes(32).toString('hex');
   const session = randomBytes(32).toString('hex');
+  // Chats reach Automations alone through bridge/schedule-mcp.mjs with this key; it opens no other route.
+  const automationKey = randomBytes(32).toString('hex');
   const listeners = new Set(); let origin; let closed = false;
   const loveSpot = createLoveSpot(options.loveSpot);
   await loveSpot.start();
@@ -115,6 +118,10 @@ export async function startDesktopServer(options = {}) {
   const loveAgents = createLoveAgents(loveSpot, { ...options.loveAgents, env: profileEnvironment(options.elpisHome, options.loveAgents?.env) });
   const devServers = createDevServers();
   const experimentLab = createExperimentLab({ client, ...(options.elpisHome ? { file: path.join(options.elpisHome, 'experiment-lab', 'latest.json') } : {}) });
+  // Automations (bridge/schedule.mjs) run only where the caller asks for them: the app passes `automations: true`, a test
+  // its own `automationsFile`; otherwise the routes say they are off, so no test touches his tasks.
+  const automationsFile = options.automationsFile ?? (options.automations ? path.join(options.elpisHome ?? elpisHome(), 'automations', 'tasks.json') : null);
+  const automations = automationsFile ? createSchedule({ client, file: automationsFile }) : null;
   const loveStreams = new Set();
   let improvementStore;
   const improvements = () => improvementStore ??= createImprovements({ client, ...options.improvements });
@@ -181,7 +188,9 @@ export async function startDesktopServer(options = {}) {
         response.setHeader('X-Frame-Options', 'SAMEORIGIN');
         response.setHeader('Content-Security-Policy', response.getHeader('Content-Security-Policy').replace("frame-ancestors 'none'", "frame-ancestors 'self'"));
       }
-      if (request.method === 'POST' && request.headers.origin !== origin) throw new BridgeError('Same-origin request required', 403);
+      const key = request.headers['x-elpis-automations'];
+      const automationTool = typeof key === 'string' && same(key, automationKey) && /^\/api\/automations(?:\/|$)/.test(url.pathname);
+      if (request.method === 'POST' && !automationTool && request.headers.origin !== origin) throw new BridgeError('Same-origin request required', 403);
       if (url.pathname === '/api/session' && request.method === 'POST') {
         const submitted = object(await body(request), ['token']);
         if (!same(submitted.token, capability)) throw new BridgeError('Invalid application capability', 403);
@@ -190,7 +199,7 @@ export async function startDesktopServer(options = {}) {
       }
       if (url.pathname.startsWith('/api/')) {
         const cookies = (request.headers.cookie ?? '').split(';').map(value => value.trim());
-        if (!cookies.some(value => same(value, `${COOKIE}=${session}`))) throw new BridgeError('Open the application using its private launch URL', 401);
+        if (!automationTool && !cookies.some(value => same(value, `${COOKIE}=${session}`))) throw new BridgeError('Open the application using its private launch URL', 401);
         const method = request.method;
         if (url.pathname === '/api/dev-servers' || url.pathname.startsWith('/api/dev-servers/')) return json(response, 200, await devServerRequest(devServers, method, url, method === 'POST' ? await body(request) : undefined));
         if (url.pathname === '/api/love-spot') {
@@ -351,6 +360,20 @@ export async function startDesktopServer(options = {}) {
           const input = await body(request);
           if (input?.action === 'stop') { object(input, ['action']); return json(response, 200, { record: await experimentLab.stop(), entries: await experimentLab.list() }); }
           return json(response, 200, { record: await experimentLab.start(input), entries: await experimentLab.list() });
+        }
+        // GET lists them, POST creates one; POST to one task { action: 'update' | 'delete' | 'run', ...fields }.
+        const automation = url.pathname.match(/^\/api\/automations(?:\/([a-f0-9-]{36}))?$/);
+        if (automation) {
+          if (!automations) throw new BridgeError('Automations are off in this window', 503);
+          const id = automation[1];
+          if (!id) return method === 'GET' ? json(response, 200, { data: await automations.list() }) : json(response, 201, await automations.create(await body(request)));
+          if (method === 'POST') {
+            const { action, ...fields } = await body(request) ?? {};
+            if (action === 'run') { object(fields, []); return json(response, 200, await automations.runNow(id)); }
+            if (action === 'delete') { object(fields, []); return json(response, 200, await automations.remove(id)); }
+            if (action === 'update') return json(response, 200, await automations.update(id, fields));
+            throw new BridgeError('Action must be update, delete or run');
+          }
         }
         if (url.pathname === '/api/about' && method === 'GET') return json(response, 200, await appIdentity());
         const settingsFile = url.pathname.match(/^\/api\/settings\/files\/(instructions|memory)$/);
@@ -516,15 +539,17 @@ export async function startDesktopServer(options = {}) {
   heartbeat.unref();
   return {
     url: `${origin}/#token=${capability}`,
+    /** What bridge/schedule-mcp.mjs needs to reach Automations, or null when they are off. */
+    get automationAccess() { return automations ? { url: origin, key: automationKey } : null; },
     /** Chats and their agents run in the background service, which outlives this window, so they keep running across
      * an update restart; only work this process runs itself (voice, Love Spot, Lab, local workflow runs) waits. */
     async canRestart() {
-      return !(voice.busy() || loveTalk.busy() || loveAgents.busy() || experimentLab.busy() || client.hasLocalActivity?.());
+      return !(voice.busy() || loveTalk.busy() || loveAgents.busy() || experimentLab.busy() || automations?.busy() || client.hasLocalActivity?.());
     },
     async close() {
       if (closed) return; closed = true; clearInterval(heartbeat);
       await voice.close(); kokoro.close();
-      await experimentLab.close();
+      await experimentLab.close(); await automations?.close();
       if (improvementStore) (await improvementStore).close();
       await devServers.close();
       loveTalk.close(); await loveTalk.idle(); await loveAgents.close(); await loveSpot.close(); for (const response of loveStreams) response.end(); loveStreams.clear();

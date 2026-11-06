@@ -12,7 +12,7 @@ const { guardDesktopStore } = require('./controls.cjs');
 const FAKE_ACP_AGENT = path.resolve(path.dirname(require.resolve('../bridge/server.mjs')), '../../../tools/elpis-claude/test/fake-acp-agent.mjs');
 
 // `threadId(n)` names the n-th chat it makes; live voice needs real (UUID) chat IDs.
-async function loveSpotFixture({ threadId, colorScheme = 'light', reply = 'I am here with you.', replyDelay = 80, configureClient, prepareDirectory, agentEnv, prepareScreenshots, newBoard = false } = {}) {
+async function loveSpotFixture({ threadId, colorScheme = 'light', reply = 'I am here with you.', replyDelay = 80, configureClient, prepareDirectory, agentEnv, prepareScreenshots, newBoard = false, automations = false } = {}) {
   const base = path.join(os.homedir(), '.cache/elpis-tests'); await fs.mkdir(base, { recursive: true });
   const root = createTestTempDir(path.join(base, 'love-spot-ui-'));
   // The renderer gate installs only desktop dependencies. Run the shared SDK
@@ -64,7 +64,9 @@ async function loveSpotFixture({ threadId, colorScheme = 'light', reply = 'I am 
   const acp = async () => { try { return (await fs.readFile(acpLog, 'utf8')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line)); } catch (e) { if (e.code === 'ENOENT') return []; throw e; } };
   // Kokoro (read aloud) depends on this computer's files; tests run without it unless they say otherwise.
   const kokoro = { available: () => false, warm() {}, speak: async () => { throw new Error('Read aloud is off in tests.'); }, close() {} };
-  const server = await startDesktopServer({ kokoro, client, staticDir: process.env.LOVE_SPOT_TEST_STATIC_DIR, loveSpot: { directory, screenshots }, trashFile: path.join(root, 'trash.json'), loveAgents: { nodeSpec } });
+  const server = await startDesktopServer({ kokoro, client, staticDir: process.env.LOVE_SPOT_TEST_STATIC_DIR, loveSpot: { directory, screenshots }, trashFile: path.join(root, 'trash.json'), loveAgents: { nodeSpec },
+    // Automations only where a test asks for them, in its own folder.
+    ...(automations ? { automationsFile: path.join(root, 'automations.json') } : {}) });
   const browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM || undefined, headless: process.env.ELPIS_UI_HEADFUL !== '1' });
   const context = await browser.newContext({ viewport: { width: 1440, height: 960 }, colorScheme });
   const errors = [], requests = [], responses = [];

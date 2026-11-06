@@ -1,0 +1,24 @@
+/* Automations (components/automations-view.tsx): a settings-style page, centred, with one row per task. */
+.automations { height:100%; max-width:none; overflow:auto; padding:48px 32px 64px; }
+.automations > * { max-width:860px; margin-inline:auto; }
+.automation-filter { margin-bottom:12px; }
+.automation-list { display:flex; flex-direction:column; }
+.automation + .automation { border-top:1px solid var(--hairline); }
+.automation-summary { display:flex; justify-content:flex-start; align-items:center; gap:10px; width:100%; height:auto; min-width:0; padding:12px 16px; color:var(--foreground); text-align:start; }
+.automation-summary:hover { background:var(--selected); }
+.automation-summary:focus-visible { outline:2px solid var(--ring); outline-offset:-2px; }
+.automation-summary > svg { flex-shrink:0; color:var(--muted-foreground); }
+.automation-title { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.automation-when { margin-inline-start:auto; flex-shrink:0; font-size:var(--text-xs); color:var(--muted-foreground); }
+.automation[data-status="ended"] .automation-title { color:var(--muted-foreground); }
+.automation-detail { display:grid; gap:10px; padding:0 16px 14px 42px; }
+.automation-prompt { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; font-size:var(--text-sm); }
+.automation-meta { margin:0; font-size:var(--text-xs); color:var(--muted-foreground); }
+.automation-actions { display:flex; flex-wrap:wrap; gap:4px; }
+.automation-runs-title { margin:4px 0 0; font-size:var(--text-xs); font-weight:600; color:var(--muted-foreground); }
+.automation-runs { display:grid; gap:2px; margin:0; padding:0; list-style:none; font-size:var(--text-xs); }
+.automation-runs li { display:flex; align-items:center; gap:8px; min-height:26px; }
+.automation-run-error { color:var(--destructive); overflow-wrap:anywhere; }
+.automation-days { display:flex; flex-wrap:wrap; gap:2px; }
+.automation-form-actions { display:flex; align-items:center; justify-content:flex-end; gap:8px; padding:12px 16px; }
+.automation-form-actions > .settings-notice { margin-inline-end:auto; }

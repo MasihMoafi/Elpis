@@ -71,11 +71,14 @@ async function prepareWindows() {
     const { DesktopClient, existingSocket } = await import(pathToFileURL(path.join(__dirname, '../bridge/client.mjs')).href);
     const { ensureInstalledRuntime } = await import(pathToFileURL(path.join(__dirname, 'runtime.mjs')).href);
     const { browserMcpConfig } = await import(pathToFileURL(path.join(__dirname, '../bridge/browser-mcp.mjs')).href);
+    const { scheduleMcpConfig } = await import(pathToFileURL(path.join(__dirname, '../bridge/schedule-mcp.mjs')).href);
     browserAgentSocket = await startBrowserAgentSocket({ connectionFile: path.join(app.getPath('userData'), 'browser-connection.json') });
     try {
       // The window opens without waiting for the runtime (24 Oct: a runtime still starting kept the app closed for 20 s).
       const client = await DesktopClient.connect({ background: true, beforeConnect: ensureInstalledRuntime, browserConfig: {
-        forSession: id => browserMcpConfig(browserAgentSocket.path, undefined, browserAgentSocket.scope(id), browserAgentSocket.connectionFile),
+        // Every chat gets the browser tools and, once the app's server is up, the Automations tools (bridge/schedule-mcp.mjs).
+        forSession: id => ({ ...browserMcpConfig(browserAgentSocket.path, undefined, browserAgentSocket.scope(id), browserAgentSocket.connectionFile),
+          ...(server?.automationAccess ? scheduleMcpConfig(server.automationAccess) : {}) }),
         bind: (from, to) => browserAgentSocket.rebind(from, to),
         close: id => { browserAgentSocket.revoke(id); sessionWindows?.closeBrowser(id); },
       } });
@@ -84,7 +87,7 @@ async function prepareWindows() {
       const noteEngine = () => { try { updates.setRunningEngine(JSON.parse(fs.readFileSync(path.join(path.dirname(existingSocket()), 'state.json'), 'utf8')).engine); } catch {} };
       client.on('event', event => { if (event.type === 'connection' && event.data.connected) noteEngine(); });
       // Chats deleted from the sidebar wait in this file until the app quits (Ctrl+Z brings them back until then).
-      try { server = await startDesktopServer({ client, staticDir: path.join(__dirname, '../out'), trashFile: path.join(app.getPath('userData'), 'deleted-chats.json') }); }
+      try { server = await startDesktopServer({ client, staticDir: path.join(__dirname, '../out'), trashFile: path.join(app.getPath('userData'), 'deleted-chats.json'), automations: true }); }
       catch (error) { client.close(); throw error; }
     } catch (error) { sleepBlocker?.dispose(); sleepBlocker = undefined; await browserAgentSocket.close(); browserAgentSocket = undefined; throw error; }
   }

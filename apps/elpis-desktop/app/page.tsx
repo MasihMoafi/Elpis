@@ -6,7 +6,7 @@ import { BrandWordmark } from "@/components/brand-wordmark";
 import { flushSync } from "react-dom";
 import { cloneElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { AgentsIcon, BrowserIcon, ChatIcon, ExperimentLabIcon, FolderIcon, LoveSpotIcon, NewChatIcon, PinIcon, PlusIcon, SendIcon, SettingsIcon, ThemeIcon, WorkflowsIcon, StopIcon } from "@/components/elpis-icons";
-import { Activity, ListFilter, ArrowDown, Blocks, Bookmark, ChevronRight, EyeOff, Layers, PanelLeft, PanelRightClose, PanelRightOpen, RefreshCw, X, Zap } from "lucide-react";
+import { Activity, CalendarClock, ListFilter, ArrowDown, Blocks, Bookmark, ChevronRight, EyeOff, Layers, PanelLeft, PanelRightClose, PanelRightOpen, RefreshCw, X, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ReorderItem, useReorder } from "@/components/reorder";
 import { OptionSelect } from "@/components/ui/option-select";
@@ -82,6 +82,7 @@ import { MatildaAutoVoice } from "@/components/matilda-auto-voice";
 import { MatildaCompanion } from "@/components/matilda-companion";
 import { LiveVoiceProvider } from "@/components/live-voice";
 import { ObservabilityView } from "@/components/observability-view";
+import { AutomationsView } from "@/components/automations-view";
 import { chooseProject, projectAt, EnvironmentMenu, MoveChatDialog, ProjectActions, ProjectDialog, ProjectMenu } from "@/components/project-picker";
 import { PutUnderDialog } from "@/components/put-under-dialog";
 import { WorkflowMark } from "@/components/workflow-identity";
@@ -142,7 +143,7 @@ import { refreshModelCatalog, useModelCatalog } from "@/lib/model-catalog";
 
 const LoveSpot = dynamic(() => import("@/components/love-spot"), { ssr: false, loading: () => <p role="status">Opening Love Spot…</p> });
 
-type View = "chat" | "agentsGuide" | "canvas" | "experimentLab" | "loveSpot" | "customize" | "observability" | "settings";
+type View = "chat" | "agentsGuide" | "canvas" | "experimentLab" | "loveSpot" | "customize" | "observability" | "automations" | "settings";
 type NextTurn = { model?: string; plan?: boolean };
 type Live = { thread: Thread; activeTurnId?: string | null; permissions?: PermissionMode | null; planMode?: boolean; followingLive?: boolean };
 /** The terminal's answer to a finished plan: Plan mode off, then this message. */
@@ -160,8 +161,12 @@ const NAV_PAGES = [
   { id: "loveSpot", name: "Love Spot", Icon: LoveSpotIcon },
   // 5 Nov: back, as the TUI's /dashboard page (DeepSeek's Trajectory), with the pulse icon he approved.
   { id: "observability", name: "Observability", Icon: Activity },
+  // 7 Nov: DeepSeek Harness's "Automation tasks": prompts Elpis sends on a schedule (components/automations-view.tsx).
+  { id: "automations", name: "Automations", Icon: CalendarClock },
   { id: "customize", name: "Customize", Icon: Blocks },
 ] as const;
+/** Every page's name, for its heading and the command menu: the sidebar pages, the guide and Settings. */
+const PAGE_NAMES: Record<Exclude<View, "chat">, string> = { ...Object.fromEntries(NAV_PAGES.map(page => [page.id, page.name])) as Record<typeof NAV_PAGES[number]["id"], string>, agentsGuide: "Guide to managing agents", settings: "Settings" };
 
 const fittedLists = new WeakSet<HTMLElement>();
 
@@ -2282,7 +2287,7 @@ export default function Home() {
         onRename={name => updateGroups(state => renameGroup(state, group.id, name))} onDelete={() => updateGroups(state => deleteGroup(state, group.id))}>{content}</GroupActions>}
       empty={!chats.length}>{chats.map(chatRows)}</SidebarGroup>;
   }
-  const heading = view === "chat" ? (selected ? title(selected) : "") : { agentsGuide: "Guide to managing agents", canvas: "Workflows", experimentLab: "Lab", loveSpot: "Love Spot", customize: "Customize", observability: "Observability", settings: "Settings" }[view];
+  const heading = view === "chat" ? (selected ? title(selected) : "") : PAGE_NAMES[view];
   const chatName = selected ? title(selected) : "New chat";
   const chatState = selected ? agentState(selected, waitingIds) : "idle", floatState = activeTurn && chatState === "idle" ? "working" : chatState;
   const meta = selected ? [agentName(selected), selected.agentRole && selected.agentRole !== "default" ? selected.agentRole : null].filter(Boolean).join(" · ") : "";
@@ -2304,7 +2309,7 @@ export default function Home() {
       const next = arrange(projects, move(projects.map(project => project.id), id, place));
       return saveProjects(next, projectId).then(() => setProjects(next)).catch(cause => setError(String(cause)));
     } });
-  for (const [target, name] of [["agentsGuide", "Guide to managing agents"], ["experimentLab", "Lab"], ["canvas", "Workflows"], ["loveSpot", "Love Spot"], ["observability", "Observability"], ["customize", "Customize"]] as const) if (!hiddenPages.includes(target) && !(target === "agentsGuide" && hiddenPages.includes("canvas"))) commandActions.push({ id: target, name, run: () => show(target) });
+  for (const target of ["agentsGuide", ...NAV_PAGES.map(page => page.id)] as const) { const name = PAGE_NAMES[target]; if (!hiddenPages.includes(target) && !(target === "agentsGuide" && hiddenPages.includes("canvas"))) commandActions.push({ id: target, name, run: () => show(target) }); }
 
   // One Matilda voice and one live call for the whole app: both go on when he leaves the board or Love Spot's chat; her face shows and controls them.
   // The message box: its hint, what typing, pasting and keys do.
@@ -2450,6 +2455,7 @@ export default function Home() {
         projectMenu={<ProjectMenu variant="chip" projects={projects} selected={workflowProject ?? { id: "workflow-sandbox", name: "Sandbox", cwd: workflowSandbox ?? "" }} allowNone={!!workflowProject} noneLabel="Use sandbox" disabled={!ready || projectChanging} onSelect={selectProject} onAdd={() => void addProject()} />} onUseFolder={workIn} /></CanvasGuideHelp></ViewBoundary>}
       {view === "loveSpot" && <ViewBoundary label="Love Spot"><LoveSpot dark={dark} toolbarHost={loveToolbarHost} /></ViewBoundary>}
       {view === "observability" && <ViewBoundary label="Observability"><ObservabilityView threadId={selected?.id} chats={threads} /></ViewBoundary>}
+      {view === "automations" && <ViewBoundary label="Automations"><AutomationsView projects={projects} onOpenChat={id => { show("chat"); void openById(id); }} /></ViewBoundary>}
       {view === "customize" && <div className="page-scroll"><ViewBoundary label="Customize"><CustomizeView cwd={cwd} onOpenSettings={() => openSettings("mcp")}
         onConnectGithub={hasTerminal ? () => { show("chat"); setTuiLaunch({ key: side.openTerminal(cwd), command: "github-login", token: Date.now() }); } : undefined}
         onCreateSkill={() => { newChat(); requestAnimationFrame(() => editDraft("Use $skill-creator to create a new skill that ")); }} /></ViewBoundary></div>}

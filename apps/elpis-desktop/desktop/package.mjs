@@ -9,7 +9,7 @@ import { execFileSync } from 'node:child_process';
 export const productionFiles = [
   'bridge/matilda-companion.mjs',
   'desktop/app-menu.cjs', 'lib/app-menu-commands.cjs',
-  'bridge/voice.mjs', 'bridge/voice-handoff.cjs', 'bridge/kokoro.mjs', 'bridge/kokoro-worker.py',
+  'bridge/voice.mjs', 'bridge/voice-handoff.cjs', 'bridge/kokoro.mjs', 'bridge/schedule.mjs', 'bridge/schedule-rules.mjs', 'bridge/schedule-mcp.mjs', 'bridge/kokoro-worker.py',
   'bridge/resources/permission-policy.mjs', 'bridge/resources/workflow-concurrency.mjs',
   'bridge/import-chats.mjs',
   'bridge/settings-files.mjs', 'bridge/app-identity.mjs', 'desktop/sleep-blocker.cjs',
