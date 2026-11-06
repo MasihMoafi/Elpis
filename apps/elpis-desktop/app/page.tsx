@@ -121,13 +121,13 @@ import { activate, activeTab, addBackgroundTab, addTab, closeTab, cycle, followC
 import { AttachmentChips } from "@/components/attachment-chips";
 import { ATTACHMENT_ACCEPT, ATTACHMENT_LIMITS, TEXT_ONLY_NOTICE, attachmentFromFile, fitAttachments, transferFiles, type Attachment } from "@/lib/attachments";
 import { scanDeletionThreads } from "@/lib/thread-deletion";
-import { loadConversationPage } from "@/lib/conversation-page";
 import { LoadOnScroll } from "@/components/load-on-scroll";
 import { api, unreadable, chatProvider, choiceById, choiceOf, effortsOf, isAgent, isAgentRun, AGENT_RUN_NOTICE, modelLabel, providerChoices, providerLabel, title, agentName,
   mediaUrl, retryableSessionError, type Approval, type Entry, type ProviderSettings, type Thread } from "@/lib/api";
 import { historyPath, inReadingOrder, type HistoryPage } from "@/lib/chat-history";
 import { useComposerHeight } from "@/lib/use-composer-height";
 import { useTranscriptHistory } from "@/lib/use-transcript-history";
+import { useConversationList } from "@/lib/use-conversation-list";
 import { useRuntimeEvents } from "@/lib/use-runtime-events";
 import { useRuntimeState } from "@/lib/use-runtime-state";
 import { createSlashCommands } from "@/lib/slash-commands";
@@ -308,9 +308,7 @@ export default function Home() {
     if (submit) await send(); else requestAnimationFrame(() => composerRef.current?.focus());
     return true;
   }
-  const [moreLoading, setMoreLoading] = useState(false);
   const [loadingChildren, setLoadingChildren] = useState<Record<string, boolean>>({});
-  const rootPaging = useRef(false), loadedRootPages = useRef(false);
   const childPaging = useRef(new Set<string>()), loadedChildPages = useRef(new Set<string>());
   const checkedChildren = useRef(new Set<string>());
   const [settingsVisited, setSettingsVisited] = useState(false);
@@ -372,7 +370,6 @@ export default function Home() {
   // The website's animated wordmark, its dark or light version (website/assets/branding).
   const searchInput = useRef<HTMLInputElement>(null);
   const shortcutsReturnFocus = useRef<HTMLElement | null>(null);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [childCursors, setChildCursors] = useState<Record<string, string | null>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const { itemCursor, setItemCursor, historyGaps, noteHistoryGap, heldEarlier, heldCount, setHeldCount, transcripts, prefetching, prefetchThread, liveRevision, liveVersions, liveKeysAfter, applyHistoryPage } = useTranscriptHistory(selected, loading, entries, setEntries);
@@ -384,17 +381,7 @@ export default function Home() {
   const restoreScroll = useRef<{ height: number; top: number } | null>(null);
   const request = useRef(0);
   const initialRestoration = useRef<{ threadId: string; promise: Promise<void> } | null>(null);
-  const select = useCallback((thread: Thread | null) => {
-    const launch = new URL(window.location.href);
-    if (launch.searchParams.has("session") && launch.searchParams.get("session") !== (thread?.id || "")) {
-      launch.searchParams.set("session", thread?.id || ""); window.history.replaceState(null, "", launch.pathname + launch.search);
-    }
-    selectedRef.current = thread; setSelected(thread); try { window.elpisDesktop?.storage?.setItem("elpis-last-chat", thread?.id || ""); } catch { /* The in-memory selection remains usable. */ } }, []);
-  // Reported routes are authoritative; remembered settings fill list rows that omit model metadata.
-  const settingsOf = useRef<Record<string, Pick<Thread, "model" | "modelProvider" | "reasoningEffort">>>({});
-  const remember = (thread: Thread) => { if (thread.model) settingsOf.current[thread.id] = { model: thread.model, modelProvider: thread.modelProvider, reasoningEffort: thread.reasoningEffort ?? null }; return thread; };
-  const threadsRef = useRef<Thread[]>([]);
-  useEffect(() => { threadsRef.current = threads; }, [threads]);
+  const { select, settingsOf, remember, threadsRef, statusRevisions, patchThread, hidden, upsertThread, refreshThreads, loadMoreConversations, nextCursor, moreLoading } = useConversationList(threads, setThreads, selectedRef, setSelected, setError);
   // Once an unavailable team read lets a draft appear, a later reply must not move it.
   const holdAgentPanel = useCallback((thread: Thread) => {
     const root = thread.parentThreadId ?? thread.id;
@@ -402,16 +389,8 @@ export default function Home() {
     setAgentsPanelState(previous => previous.open && !previous.held.has(root)
       ? { ...previous, held: new Set([...previous.held, root]) } : previous);
   }, []);
-  const statusRevisions = useRef<Record<string, number>>({});
-  const patchThread = useCallback((id: string, patch: Partial<Thread>) => {
-    if (patch.status) statusRevisions.current[id] = (statusRevisions.current[id] ?? 0) + 1;
-    setThreads(prev => prev.map(thread => thread.id === id ? { ...thread, ...patch } : thread));
-    if (selectedRef.current?.id === id) select({ ...selectedRef.current, ...patch });
-  }, [select]);
-  // Deleted and archived chats never reappear from a list read that raced with their removal.
-  const hidden = useRef(new Set<string>());
   const search = useSidebarSearch(ready, hidden), searchTerm = search.searchTerm;
-  const upsertThread = useCallback((thread: Thread) => setThreads(prev => hidden.current.has(thread.id) ? prev : prev.some(item => item.id === thread.id) ? prev.map(item => item.id === thread.id ? { ...item, ...thread } : item) : [thread, ...prev]), []);
+
   const removeThreads = useCallback((ids: Set<string>, permanent: boolean) => {
     for (let grew = true; grew;) { grew = false; for (const thread of threadsRef.current) if (thread.parentThreadId && ids.has(thread.parentThreadId) && !ids.has(thread.id)) { ids.add(thread.id); grew = true; } }
     for (const id of ids) { hidden.current.add(id); transcripts.current.delete(id); browser.closeSession(id); }
@@ -425,33 +404,6 @@ export default function Home() {
     setApprovals(prev => prev.filter(approval => !ids.has(approval.params.threadId ?? "")));
     if (selectedRef.current && ids.has(selectedRef.current.id)) { request.current++; select(null); setText(savedDraft(newDraftKey.current)); restoreAttachments(newDraftKey.current); setEntries([]); setItemCursor(null); }
   }, [select, setText, savedDraft, restoreAttachments, updateTabs, browser.closeSession]);
-  const refreshThreads = useCallback(async () => {
-    const routesAtRequest = { ...settingsOf.current };
-    const statusesAtRequest = { ...statusRevisions.current };
-    const result = await loadConversationPage(api);
-    result.data = result.data.filter(thread => !hidden.current.has(thread.id));
-    // Preserve an event or local acknowledgment that arrived after this list request began.
-    for (const thread of result.data) if (thread.model && settingsOf.current[thread.id] === routesAtRequest[thread.id]) remember({ ...settingsOf.current[thread.id], ...thread });
-    // Listed rows omit forkedFromId (native stored rows); keep what thread/read or a fork already reported.
-    const status = (t: Thread, current: Thread | undefined) => statusRevisions.current[t.id] !== statusesAtRequest[t.id] ? current?.status ?? t.status : t.status;
-    const known = (t: Thread, prev: Thread[]) => ({ ...t, status: status(t, prev.find(p => p.id === t.id)), ...settingsOf.current[t.id], forkedFromId: t.forkedFromId ?? prev.find(p => p.id === t.id)?.forkedFromId ?? null });
-    setThreads(prev => mergeListedThreads(prev, result.data.map(t => known(t, prev)), hidden.current, true));
-    if (!loadedRootPages.current) setNextCursor(result.nextCursor);
-    const updated = result.data.find(t => t.id === selectedRef.current?.id);
-    if (updated) select({ ...selectedRef.current, ...updated, status: status(updated, selectedRef.current ?? undefined), ...settingsOf.current[updated.id], forkedFromId: updated.forkedFromId ?? selectedRef.current?.forkedFromId ?? null });
-  }, [select]);
-
-  const loadMoreConversations = useCallback(async () => {
-    if (!nextCursor || rootPaging.current) return;
-    rootPaging.current = true; setMoreLoading(true);
-    try {
-      const result = await loadConversationPage(api, nextCursor);
-      loadedRootPages.current = true;
-      setThreads(prev => mergeListedThreads(prev, result.data, hidden.current)); setNextCursor(result.nextCursor);
-    } catch (cause) { setError(String(cause)); }
-    finally { rootPaging.current = false; setMoreLoading(false); }
-  }, [nextCursor]);
-
   const rememberFollowing = useCallback((id: string, live: Live) => {
     setHistoryOnly(previous => live.followingLive === false ? { ...previous, [id]: true } : without(previous, id));
   }, []);

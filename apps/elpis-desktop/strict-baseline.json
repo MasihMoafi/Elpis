@@ -830,9 +830,9 @@
  },
  "tsx": {
   "app/page.tsx:TS2322": 1,
-  "app/page.tsx:TS2345": 10,
-  "app/page.tsx:TS2375": 31,
-  "app/page.tsx:TS2379": 2,
+  "app/page.tsx:TS2345": 9,
+  "app/page.tsx:TS2375": 30,
+  "app/page.tsx:TS2379": 1,
   "app/page.tsx:TS2532": 7,
   "app/page.tsx:TS2538": 1,
   "lib/api.ts:TS2345": 1,
