@@ -393,7 +393,7 @@ export function executionGraph(graph: CanvasGraph, targets?: string[]): CanvasGr
   return { ...enabled, nodes: enabled.nodes.filter(node => node.type === "mother" || ids.has(node.id)), edges: enabled.edges.filter(edge => ids.has(edge.source) && ids.has(edge.target)) };
 }
 
-/** What Elpis designs from a goal (POST /api/canvas/plan, bridge/canvas-plan.mjs): the whole team, each agent keyed
+/** What Elpis designs from a goal (POST /api/canvas/plan, bridge/canvas-plan.mts): the whole team, each agent keyed
  * (an existing agent keeps its id as its key) and wired by `waitsFor`. */
 /** `mode` and `why`: the planner's own decision, one agent doing the whole goal ("direct") or a team, and its reason. */
 export type Plan = { name: string; mode?: "direct" | "team"; why?: string; agents: { key: string; title: string; prompt: string; folders: string[]; doneWhen: string[]; waitsFor: string[]; model?: string; provider?: string; effort?: string }[] };

@@ -1462,7 +1462,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
   const selectedModel = selected ? catalog.find(item => item.model === selected.data.model && item.provider === canonicalProvider(selected.data.provider)) : undefined;
 
   // "Let Elpis handle it": a fast model designs the team from a goal, or does what was typed (POST /api/canvas/plan,
-  // bridge/canvas-plan.mjs). The board it returns replaces this one in one step, so Ctrl+Z undoes it.
+  // bridge/canvas-plan.mts). The board it returns replaces this one in one step, so Ctrl+Z undoes it.
   const [planning, setPlanning] = useState("");
   // `forRun`: Run graph's own fill of what agents lack, made while that run is starting.
   /** A ready-made workflow (Transcribe images, Translate to Farsi) works on a folder named in the request (one of the

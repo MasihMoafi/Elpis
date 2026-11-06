@@ -40,7 +40,7 @@ test('session browsers switch, start empty, restore history, isolate concurrent 
     await page.getByRole('button', { name: 'New side panel tab', exact: true }).click();
     await page.getByRole('menuitem', { name: 'Browser tab', exact: true }).click(); await visit(url);
   };
-  const { callBrowser } = await import('../bridge/browser-mcp.mjs');
+  const { callBrowser } = await import('../bridge/browser-mcp.mts');
   try {
     await launch();
     const initial = await state();

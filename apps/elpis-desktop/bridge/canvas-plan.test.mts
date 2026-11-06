@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { BridgeError, DesktopClient } from './client.mts';
-import { planCanvas } from './canvas-plan.mjs';
+import { planCanvas, PLAN_SCHEMA } from './canvas-plan.mts';
+import type { TestContext } from 'node:test';
 import { startDesktopServer } from './server.mts';
 
 const THREAD = '00000000-0000-0000-0000-0000000000a1';
@@ -13,19 +14,23 @@ const PLAN = { name: 'Notes app', mode: 'team', why: WHY, agents: [
   { key: 'web', title: 'Build the notes screen', prompt: 'Add the notes screen in web/ with its tests.', folders: ['web'], doneWhen: ['the screen lists notes'], waitsFor: ['api'] },
 ] };
 const BODY = { goal: 'Build a small notes app', cwd: '/work/project', folders: FOLDERS, agents: [], maxAgents: 4 };
-const clone = value => structuredClone(value);
+type WireParams = { threadId: string; input: { type: string; text: string }[]; outputSchema: typeof PLAN_SCHEMA; ephemeral: boolean; [key: string]: unknown };
+type WireMessage = { method: string; params: WireParams; id?: number };
+type InvalidPlan = { name?: unknown; mode?: unknown; why?: unknown; agents: Record<string, unknown>[]; [key: string]: unknown };
+type FakeOptions = { background?: { model: string | null; provider: string | null }; main?: { model: string | null; provider: string | null }; answer?: unknown; status?: string; error?: string; ephemeral?: boolean; silent?: boolean; extra?: unknown[] };
+const clone = <T,>(value: T): T => structuredClone(value);
 
 /** A client with a fake engine: the settings, `sideRpc` and the 'side' notifications the planner uses. */
 function fakeClient({ background = { model: 'fast-model', provider: 'local' }, main = { model: 'big-model', provider: 'openai' }, answer = PLAN, status = 'completed',
-  error, ephemeral = true, silent = false, extra = [] } = {}) {
-  const bus = new EventEmitter(), sent = [];
+  error, ephemeral = true, silent = false, extra = [] }: FakeOptions = {}) {
+  const bus = new EventEmitter(), sent: WireMessage[] = [];
   const text = typeof answer === 'string' ? answer : JSON.stringify(answer);
-  const side = (method, params) => bus.emit('side', { method, params });
-  return { sent, bus, connected: true, pendingApprovals: [], close() {}, ragEnvironment: async () => ({}),
-    on: (name, listener) => bus.on(name, listener), off: (name, listener) => bus.off(name, listener),
+  const side = (method: string, params: unknown) => bus.emit('side', { method, params });
+  const fake = { sent, bus, connected: true, pendingApprovals: [], close() {}, ragEnvironment: async () => ({}),
+    on: (name: string, listener: (...args: unknown[]) => void) => bus.on(name, listener), off: (name: string, listener: (...args: unknown[]) => void) => bus.off(name, listener),
     settings: async () => ({ main, background }),
-    async sideRpc(method, params) {
-      sent.push({ method, params });
+    async sideRpc(method: string, params: unknown) {
+      sent.push({ method, params: params as WireParams });
       if (method === 'thread/start') return { thread: { id: THREAD, ephemeral }, model: 'm', modelProvider: 'p' };
       if (method === 'turn/start') {
         // The engine may answer before the turn/start response is read.
@@ -39,23 +44,24 @@ function fakeClient({ background = { model: 'fast-model', provider: 'local' }, m
       return {};
     },
     methods: () => sent.map(row => row.method) };
+  return fake as unknown as typeof fake & Parameters<typeof planCanvas>[0];
 }
-const plan = async (overrides = {}, options = {}, body = BODY) => {
+const plan = async (overrides: FakeOptions = {}, options = {}, body: unknown = BODY) => {
   const client = fakeClient(overrides);
   return { client, result: await planCanvas(client, body, options) };
 };
-const refused = (promise, status, pattern) => assert.rejects(promise, error => error instanceof BridgeError && error.status === status && pattern.test(error.message), String(pattern));
+const refused = (promise: Promise<unknown>, status: number, pattern: RegExp) => assert.rejects(promise, error => error instanceof BridgeError && error.status === status && pattern.test(error.message), String(pattern));
 
 test('plans in one ephemeral, read-only, no-approval conversation on the background model, with a schema for the answer', async () => {
   const { client } = await plan();
-  const start = client.sent.find(row => row.method === 'thread/start').params;
+  const start = client.sent.find(row => row.method === 'thread/start')!.params;
   assert.deepEqual(start, { ephemeral: true, model: 'fast-model', modelProvider: 'local', cwd: '/work/project', approvalPolicy: 'never', permissions: ':danger-full-access' });
   const turns = client.sent.filter(row => row.method === 'turn/start');
   assert.equal(turns.length, 1, 'one turn');
-  const params = turns[0].params;
+  const params = turns[0]!.params;
   assert.deepEqual(Object.keys(params).sort(), ['input', 'outputSchema', 'threadId']);
   assert.equal(params.threadId, THREAD);
-  assert.equal(params.input.length, 1); assert.equal(params.input[0].type, 'text');
+  assert.equal(params.input.length, 1); assert.equal(params.input[0]!.type, 'text');
   const { outputSchema } = params;
   assert.equal(outputSchema.type, 'object'); assert.equal(outputSchema.additionalProperties, false);
   assert.deepEqual(outputSchema.required, ['name', 'mode', 'why', 'agents']);
@@ -68,18 +74,18 @@ test('plans in one ephemeral, read-only, no-approval conversation on the backgro
 
 test('uses the main model when no background model is set, and the engine default when neither is', async () => {
   const fallback = await plan({ background: { model: null, provider: null } });
-  const start = fallback.client.sent.find(row => row.method === 'thread/start').params;
+  const start = fallback.client.sent.find(row => row.method === 'thread/start')!.params;
   assert.equal(start.model, 'big-model'); assert.equal(start.modelProvider, 'openai');
   const none = await plan({ background: { model: null, provider: null }, main: { model: null, provider: null } });
-  const bare = none.client.sent.find(row => row.method === 'thread/start').params;
+  const bare = none.client.sent.find(row => row.method === 'thread/start')!.params;
   assert.equal('model' in bare, false); assert.equal('modelProvider' in bare, false);
   const sameProvider = await plan({ background: { model: 'fast-model', provider: null } });
-  assert.equal('modelProvider' in sameProvider.client.sent.find(row => row.method === 'thread/start').params, false, 'a background model without a provider runs on the default provider');
+  assert.equal('modelProvider' in sameProvider.client.sent.find(row => row.method === 'thread/start')!.params, false, 'a background model without a provider runs on the default provider');
 });
 
 test('the prompt carries the goal, the folder list, the limit and the planning rules', async () => {
   const { client } = await plan();
-  const prompt = client.sent.find(row => row.method === 'turn/start').params.input[0].text;
+  const prompt = client.sent.find(row => row.method === 'turn/start')!.params.input[0]!.text;
   assert.match(prompt, /Build a small notes app/);
   for (const folder of FOLDERS) assert.match(prompt, new RegExp(`^- ${folder}$`, 'm'));
   assert.match(prompt, /at most 4 agents/i);
@@ -102,19 +108,19 @@ test('returns the validated plan as { name, mode, why, agents }', async () => {
 
 // 3 Nov, Masih: each agent's model and level weigh only its job's complexity, cost and his preferences.
 test('the planner chooses each agent a listed model and level, from his subscriptions and preferences', async () => {
-  const efforts = levels => levels.map(reasoningEffort => ({ reasoningEffort }));
+  const efforts = (levels: string[]) => levels.map(reasoningEffort => ({ reasoningEffort }));
   const catalog = [{ model: 'gpt-6.1-terra', supportedReasoningEfforts: efforts(['high', 'xhigh', 'max']) }, { model: 'gpt-6.1-luna', supportedReasoningEfforts: efforts(['low', 'max']) }];
-  const answer = { ...PLAN, agents: [{ ...PLAN.agents[0], model: 'gpt-6.1-terra', effort: 'max' }, { ...PLAN.agents[1], model: 'gpt-6.1-terra', effort: 'ultra' }] };
+  const answer = { ...PLAN, agents: [{ ...PLAN.agents[0]!, model: 'gpt-6.1-terra', effort: 'max' }, { ...PLAN.agents[1]!, model: 'gpt-6.1-terra', effort: 'ultra' }] };
   const client = Object.assign(fakeClient({ answer }), {
     models: async () => ({ data: catalog }),
     providers: async () => ({ openai: { auth: { state: 'signedIn', method: 'ChatGPT' } } }),
   });
   const settings = client.settings;
-  client.settings = async () => ({ ...(await settings()), managed: { available: true, modelProvider: null }, options: { developerInstructions: 'Workflow agents: GPT Terra.' } });
+  Object.assign(client, { settings: async () => ({ ...(await settings()), managed: { available: true, modelProvider: null }, options: { developerInstructions: 'Workflow agents: GPT Terra.' } }) });
   const result = await planCanvas(client, BODY);
-  const prompt = client.sent.find(row => row.method === 'turn/start').params.input[0].text;
-  const started = client.sent.find(row => row.method === 'thread/start').params;
-  const turn = client.sent.find(row => row.method === 'turn/start').params;
+  const prompt = client.sent.find(row => row.method === 'turn/start')!.params.input[0]!.text;
+  const started = client.sent.find(row => row.method === 'thread/start')!.params;
+  const turn = client.sent.find(row => row.method === 'turn/start')!.params;
   assert.deepEqual([started.model, started.modelProvider, started.config, turn.outputSchema], ['claude/opus', undefined, { model_reasoning_effort: 'medium' }, undefined], 'the Mother designs the team on Opus 5.5 medium, on the Claude subscription');
   assert.match(prompt, /matching this JSON Schema:\n\{"type":"object"/, 'the schema is in the prompt, since the Claude bridge takes no schema parameter');
   assert.match(prompt, /Worked examples/);
@@ -122,8 +128,8 @@ test('the planner chooses each agent a listed model and level, from his subscrip
   assert.match(prompt, /Workflow agents: GPT Terra\./);
   assert.match(prompt, /how hard its job is, what it costs .* and the user's preferences/);
   assert.deepEqual(result.agents.map(agent => [agent.model, agent.provider, agent.effort]), [['gpt-6.1-terra', 'openai', 'max'], ['gpt-6.1-terra', 'openai', undefined]], 'a level the model does not list is dropped');
-  const unlisted = Object.assign(fakeClient({ answer: { ...PLAN, agents: [{ ...PLAN.agents[0], model: 'gpt-7' }, PLAN.agents[1]] } }), { models: client.models, providers: client.providers, settings: client.settings });
-  assert.equal((await planCanvas(unlisted, BODY)).agents[0].model, undefined, 'a model outside his subscriptions is dropped');
+  const unlisted = Object.assign(fakeClient({ answer: { ...PLAN, agents: [{ ...PLAN.agents[0]!, model: 'gpt-7' }, PLAN.agents[1]!] } }), { models: client.models, providers: client.providers, settings: client.settings });
+  assert.equal((await planCanvas(unlisted, BODY)).agents[0]!.model, undefined, 'a model outside his subscriptions is dropped');
 });
 
 // 28 Oct: Mother decides first. A simple task she does herself, as the one agent whose prompt is the task; a complex one becomes a team.
@@ -132,7 +138,7 @@ const DIRECT = { name: 'Hello file', mode: 'direct', why: 'One file, one line: n
 ] };
 test('the prompt asks the planner to decide, in the same call, between doing it directly and a team, and to say why', async () => {
   const { client } = await plan();
-  const prompt = client.sent.find(row => row.method === 'turn/start').params.input[0].text;
+  const prompt = client.sent.find(row => row.method === 'turn/start')!.params.input[0]!.text;
   assert.match(prompt, /mode/); assert.match(prompt, /"direct"/); assert.match(prompt, /"team"/);
   assert.match(prompt, /why/);
   assert.match(prompt, /exactly one agent/i);
@@ -143,7 +149,7 @@ test('mode "direct" with one agent comes back as { mode: "direct", agents: [the 
   const { result } = await plan({ answer: DIRECT }, {}, { ...BODY, goal: 'Create hello.txt in the project root.' });
   assert.deepEqual(result, DIRECT);
   assert.equal(result.agents.length, 1);
-  assert.equal(result.agents[0].prompt, 'Create hello.txt in the project root.');
+  assert.equal(result.agents[0]!.prompt, 'Create hello.txt in the project root.');
 });
 
 test('mode "direct" with two agents is refused with a clear message', async () => {
@@ -190,15 +196,15 @@ test('with a board, sends it and the keep-and-fill rule; the plan keeps the keys
     { key: 'docs', title: 'Write the notes guide', prompt: 'Write docs/guide.md for the notes app.', folders: ['docs'], doneWhen: ['docs/guide.md exists'], waitsFor: ['agent-2'] },
   ] };
   const { client, result } = await plan({ answer: filled }, {}, { ...BODY, agents: board });
-  const prompt = client.sent.find(row => row.method === 'turn/start').params.input[0].text;
+  const prompt = client.sent.find(row => row.method === 'turn/start')!.params.input[0]!.text;
   assert.match(prompt, /Keep every existing agent's key/);
   assert.match(prompt, /fill only what is empty \(prompt, folders, doneWhen\)[^.]*unless the goal asks/i);
   for (const row of board) { assert.ok(prompt.includes(`"key": "${row.key}"`)); assert.ok(prompt.includes(`"title": "${row.title}"`)); }
   assert.ok(prompt.includes('Keep the API small.')); assert.ok(prompt.includes('Smoke test passes'), 'its criteria too');
   assert.doesNotMatch(prompt, /board is empty/i);
   assert.deepEqual(result.agents.map(row => row.key), ['agent-1', 'agent-2', 'docs']);
-  assert.equal(result.agents[0].prompt, 'Keep the API small.');
-  assert.deepEqual(result.agents[1].folders, ['web']);
+  assert.equal(result.agents[0]!.prompt, 'Keep the API small.');
+  assert.deepEqual(result.agents[1]!.folders, ['web']);
 });
 
 test('an existing agent may keep a folder the user chose that is no longer listed; other agents may not use it', async () => {
@@ -222,31 +228,31 @@ test('with no folder list every agent must come back with no folders', async () 
   const { folders: _folders, ...body } = BODY;
   const { client, result } = await plan({ answer: bare }, {}, body);
   assert.deepEqual(result, bare);
-  assert.match(client.sent.find(row => row.method === 'turn/start').params.input[0].text, /no folder list/i);
+  assert.match(client.sent.find(row => row.method === 'turn/start')!.params.input[0]!.text, /no folder list/i);
   await refused(plan({ answer: { ...bare, agents: [{ ...bare.agents[0], folders: ['api'] }] } }, {}, body), 502, /not in the project's folder list/);
 });
 
-const mutate = change => { const copy = clone(PLAN); change(copy); return copy; };
-const REFUSALS = [
+const mutate = (change: (plan: InvalidPlan) => void) => { const copy = clone(PLAN) as InvalidPlan; change(copy); return copy; };
+const REFUSALS: [string, unknown, RegExp][] = [
   ['an answer that is not JSON', 'sorry, I cannot', /not valid JSON/],
   ['an answer that is not an object', [PLAN], /not valid JSON|must be an object/],
   ['an unknown field on the plan', mutate(plan => { plan.extra = 1; }), /unknown field "extra"/],
-  ['an unknown field on an agent', mutate(plan => { plan.agents[0].role = 'tester'; }), /Agent "api".*unknown field "role"/],
-  ['a missing field on an agent', mutate(plan => { delete plan.agents[1].doneWhen; }), /Agent "web".*doneWhen/],
+  ['an unknown field on an agent', mutate(plan => { plan.agents[0]!.role = 'tester'; }), /Agent "api".*unknown field "role"/],
+  ['a missing field on an agent', mutate(plan => { delete plan.agents[1]!.doneWhen; }), /Agent "web".*doneWhen/],
   ['a missing name', mutate(plan => { plan.name = ' '; }), /name/],
   ['a missing mode', mutate(plan => { delete plan.mode; }), /mode/],
   ['a mode that is neither direct nor team', mutate(plan => { plan.mode = 'solo'; }), /mode/],
   ['a missing why', mutate(plan => { plan.why = ''; }), /why/],
   ['no agents', mutate(plan => { plan.agents = []; }), /no agents/],
   ['more agents than maxAgents', { name: 'Big', mode: 'team', why: WHY, agents: ['a', 'b', 'c', 'd'].map(key => ({ key, title: key, prompt: 'Work.', folders: ['api'], doneWhen: [], waitsFor: [] })) }, /4 agents.*limit is 3/],
-  ['a folder that is not in the list', mutate(plan => { plan.agents[0].folders = ['api', 'secrets']; }), /"api".*"secrets".*not in the project's folder list/],
-  ['an agent without a prompt', mutate(plan => { plan.agents[0].prompt = ''; }), /Agent "api".*prompt/],
-  ['an agent without a title', mutate(plan => { plan.agents[0].title = ' '; }), /Agent "api".*title/],
-  ['a wrong type', mutate(plan => { plan.agents[0].waitsFor = 'web'; }), /Agent "api".*waitsFor/],
-  ['two agents with one key', mutate(plan => { plan.agents[1].key = 'api'; }), /same key "api"|share the key "api"/],
-  ['a wait for a key that is not in the plan', mutate(plan => { plan.agents[1].waitsFor = ['nope']; }), /"web" waits for "nope"/],
-  ['an agent that waits for itself', mutate(plan => { plan.agents[0].waitsFor = ['api']; }), /loop.*api -> api/],
-  ['a loop between two agents', mutate(plan => { plan.agents[0].waitsFor = ['web']; }), /loop.*(api -> web -> api|web -> api -> web)/],
+  ['a folder that is not in the list', mutate(plan => { plan.agents[0]!.folders = ['api', 'secrets']; }), /"api".*"secrets".*not in the project's folder list/],
+  ['an agent without a prompt', mutate(plan => { plan.agents[0]!.prompt = ''; }), /Agent "api".*prompt/],
+  ['an agent without a title', mutate(plan => { plan.agents[0]!.title = ' '; }), /Agent "api".*title/],
+  ['a wrong type', mutate(plan => { plan.agents[0]!.waitsFor = 'web'; }), /Agent "api".*waitsFor/],
+  ['two agents with one key', mutate(plan => { plan.agents[1]!.key = 'api'; }), /same key "api"|share the key "api"/],
+  ['a wait for a key that is not in the plan', mutate(plan => { plan.agents[1]!.waitsFor = ['nope']; }), /"web" waits for "nope"/],
+  ['an agent that waits for itself', mutate(plan => { plan.agents[0]!.waitsFor = ['api']; }), /loop.*api -> api/],
+  ['a loop between two agents', mutate(plan => { plan.agents[0]!.waitsFor = ['web']; }), /loop.*(api -> web -> api|web -> api -> web)/],
   ['a loop through three agents', { name: 'Ring', mode: 'team', why: WHY, agents: [['a', 'c'], ['b', 'a'], ['c', 'b']].map(([key, waits]) => ({ key, title: key, prompt: 'Work.', folders: ['api'], doneWhen: [], waitsFor: [waits] })) }, /loop/],
 ];
 for (const [label, answer, pattern] of REFUSALS) {
@@ -281,18 +287,18 @@ test('releases the ephemeral conversation after a plan, and deletes it if Elpis 
   const stored = fakeClient({ ephemeral: false });
   await planCanvas(stored, BODY);
   assert.deepEqual(stored.methods().slice(-2), ['thread/unsubscribe', 'thread/delete']);
-  assert.deepEqual(stored.sent.at(-1).params, { threadId: THREAD });
+  assert.deepEqual(stored.sent.at(-1)!.params, { threadId: THREAD });
 });
 
 test('a failing release does not hide the plan', async () => {
   const client = fakeClient();
   const rpc = client.sideRpc;
-  client.sideRpc = async (method, params) => { if (method === 'thread/unsubscribe') throw new BridgeError('gone', 502); return rpc(method, params); };
+  Object.assign(client, { sideRpc: async (method: string, params: unknown) => { if (method === 'thread/unsubscribe') throw new BridgeError('gone', 502); return rpc(method, params); } });
   assert.deepEqual(await planCanvas(client, BODY), PLAN);
 });
 
 test('refuses a request it cannot plan from before starting anything', async () => {
-  const cases = [
+  const cases: [unknown, RegExp][] = [
     [{ ...BODY, goal: '' }, /goal/i], [{ ...BODY, goal: 5 }, /goal/i], [{ ...BODY, goal: 'x'.repeat(8001) }, /goal/i],
     [{ ...BODY, maxAgents: 0 }, /maxAgents/], [{ ...BODY, maxAgents: 2.5 }, /maxAgents/], [{ ...BODY, maxAgents: '4' }, /maxAgents/], [{ ...BODY, maxAgents: 129 }, /maxAgents/],
     [{ goal: 'x' }, /maxAgents/],
@@ -314,30 +320,30 @@ test('refuses a request it cannot plan from before starting anything', async () 
 test('a client that lists folders but no agents and no cwd still plans', async () => {
   const { client, result } = await plan({}, {}, { goal: 'Build a small notes app', folders: FOLDERS, maxAgents: 3 });
   assert.deepEqual(result, PLAN);
-  assert.equal('cwd' in client.sent.find(row => row.method === 'thread/start').params, false);
+  assert.equal('cwd' in client.sent.find(row => row.method === 'thread/start')!.params, false);
 });
 
 /** The real client with a fake engine socket: side conversations stay out of the app's events. */
 function engine() {
-  const socket = new EventEmitter(); socket.sent = [];
-  const reply = (id, result) => queueMicrotask(() => socket.emit('message', JSON.stringify({ id, result })));
-  socket.send = raw => {
+  const socket = Object.assign(new EventEmitter(), { sent: [] as WireMessage[], send: (_raw: string) => {}, close: () => {} });
+  const reply = (id: unknown, result: unknown) => queueMicrotask(() => socket.emit('message', JSON.stringify({ id, result })));
+  socket.send = (raw: string) => {
     const request = JSON.parse(raw); socket.sent.push(request);
     if (request.id === undefined) return;
     reply(request.id, request.method === 'thread/start' ? { thread: { id: THREAD, ephemeral: request.params.ephemeral === true } } : {});
   };
   socket.close = () => socket.emit('close');
   const client = new DesktopClient(socket);
-  const events = [], side = [];
-  client.on('event', value => events.push(value)); client.on('side', value => side.push(value));
-  const notify = (method, params) => socket.emit('message', JSON.stringify({ method, params }));
+  const events: { type: string; data: { method: string } }[] = [], side: { method: string }[] = [];
+  client.on('event', value => events.push(value as { type: string; data: { method: string } })); client.on('side', value => side.push(value as { method: string }));
+  const notify = (method: string, params: unknown) => socket.emit('message', JSON.stringify({ method, params }));
   return { client, socket, events, side, notify };
 }
 
 test('sideRpc starts only ephemeral conversations and keeps them out of the app\'s events', async t => {
   const { client, socket, events, side, notify } = engine(); t.after(() => client.close());
   await client.sideRpc('thread/start', { cwd: '/work' });
-  assert.equal(socket.sent.at(-1).params.ephemeral, true, 'always ephemeral');
+  assert.equal(socket.sent.at(-1)!.params.ephemeral, true, 'always ephemeral');
   notify('thread/started', { thread: { id: THREAD } });
   notify('thread/status/changed', { threadId: THREAD, status: { type: 'active' } });
   notify('turn/completed', { threadId: THREAD, turn: { id: 't1', status: 'completed' } });
@@ -371,12 +377,12 @@ test('a closed side conversation is forgotten', async t => {
   assert.equal(events.filter(row => row.type === 'message').length, 1, 'later news about it is the app\'s again');
 });
 
-async function session(t, client) {
+async function session(t: TestContext, client: ReturnType<typeof fakeClient>) {
   const app = await startDesktopServer({ client, staticDir: '/tmp' }); t.after(() => app.close());
   const url = new URL(app.url), token = new URLSearchParams(url.hash.slice(1)).get('token');
   const auth = await fetch(url.origin + '/api/session', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: url.origin }, body: JSON.stringify({ token }) });
-  const cookie = auth.headers.get('set-cookie').split(';')[0];
-  return { origin: url.origin, cookie, post: (body, headers = {}) => fetch(`${url.origin}/api/canvas/plan`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: url.origin, ...headers }, body: JSON.stringify(body) }) };
+  const cookie = auth.headers.get('set-cookie')!.split(';')[0]!;
+  return { origin: url.origin, cookie, post: (body: unknown, headers = {}) => fetch(`${url.origin}/api/canvas/plan`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: url.origin, ...headers }, body: JSON.stringify(body) }) };
 }
 
 test('POST /api/canvas/plan needs the session, answers the plan, and explains a refusal', async t => {
@@ -388,7 +394,7 @@ test('POST /api/canvas/plan needs the session, answers the plan, and explains a 
   assert.equal(ok.status, 200); assert.deepEqual(await ok.json(), PLAN);
   const bad = await post({ ...BODY, maxAgents: 0 }, { Cookie: cookie });
   assert.equal(bad.status, 400); assert.match((await bad.json()).error, /maxAgents/);
-  const sizes = fakeClient({ answer: mutate(plan => { plan.agents[0].folders = ['secrets']; }) });
+  const sizes = fakeClient({ answer: mutate(plan => { plan.agents[0]!.folders = ['secrets']; }) });
   const second = await session(t, sizes);
   const refusedPlan = await second.post(BODY, { Cookie: second.cookie });
   assert.equal(refusedPlan.status, 502); assert.match((await refusedPlan.json()).error, /not in the project's folder list/);

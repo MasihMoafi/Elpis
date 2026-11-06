@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { DesktopClient } from './client.mts';
-import { browserMcpConfig } from './browser-mcp.mjs';
+import { browserMcpConfig } from './browser-mcp.mts';
 
 const threadId = '00000000-0000-0000-0000-000000000001';
 const schema = {type:'object',properties:{count:{type:'integer',minimum:1,maximum:4},email:{type:'string',format:'email'},enabled:{type:'boolean'},tags:{type:'array',items:{type:'string',enum:['a','b']},minItems:1,maxItems:2}},required:['count','email','enabled']};

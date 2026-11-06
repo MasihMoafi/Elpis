@@ -132,7 +132,7 @@ try {
     const profile=await desktop.evaluate(({app})=>app.getPath('userData'));
     const connectionFile=path.join(profile,'browser-connection.json'), connection=JSON.parse(await fs.readFile(connectionFile,'utf8'));
     const capability=Object.keys(connection.scopes).find(token=>connection.scopes[token]===browserFixtureThread.id);
-    const { browserMcpConfig }=await import('../bridge/browser-mcp.mjs');
+    const { browserMcpConfig }=await import('../bridge/browser-mcp.mts');
     const child=(await rpc('thread/start',{cwd:root,config:browserMcpConfig(connection.socketPath,process.execPath,capability,connectionFile)})).thread;
     const inherited=async(name,args={})=>{const value=await rpc('mcpServer/tool/call',{threadId:child.id,server:'elpis_browser',tool:name,arguments:args});if(value.isError)throw Error(value.content[0].text);return JSON.parse(value.content[0].text);};
     assert.deepEqual((await inherited('browser_tabs')).tabs,[]);

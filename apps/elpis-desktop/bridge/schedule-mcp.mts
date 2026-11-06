@@ -1,6 +1,6 @@
 // The Automations tools a chat gets (6 Nov, Masih: "they should be able to write a single prompt and we should implement
 // it for them"): one sentence such as "every weekday at 9, check the CI" becomes a task on the Automations page. A stdio
-// MCP server, attached per chat like bridge/browser-mcp.mjs; it reaches only /api/automations, with the key the app gives
+// MCP server, attached per chat like bridge/browser-mcp.mts; it reaches only /api/automations, with the key the app gives
 // it (bridge/server.mts automationAccess).
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

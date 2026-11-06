@@ -5,7 +5,7 @@ import { BridgeError, text } from './client.mts';
 import { loveNodeSpec } from './love-agents.mjs';
 import { runAcpNode, handoffText } from './acp-nodes.mts';
 import { workflowRoute, quotaFailure } from './workflow-models.mts';
-import { checkPlan } from './canvas-plan.mjs';
+import { checkPlan } from './canvas-plan.mts';
 import { agentParentId } from '../lib/agent-runs.mts';
 import { workflowWorktrees, mergeWorkflowReview, checkWorkflowReview, workflowCandidateChanged, removeWorkflowWorkspace } from './workflow-worktrees.mjs';
 import { workerBudget } from './memory-budget.mts';
@@ -341,7 +341,7 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
     } finally { controls.delete(`${record.id}:mother`); }
   }
   /** The Mother's re-plan after children succeeded (`finished`: their ids). She answers with one decision: continue, add
-   * agents, cancel pending ones or steer a running one. Her answer passes the planner's checks (canvas-plan.mjs) and the
+   * agents, cancel pending ones or steer a running one. Her answer passes the planner's checks (canvas-plan.mts) and the
    * graph's (validateWorkflow) before it changes anything; an invalid one is ignored and logged. */
   async function decide(record, finished, root, controller, byId) {
     if (!record.tasks.some(task => !ended.has(task.status))) return; // nothing left to run: plain code finishes the run

@@ -9,7 +9,7 @@ import { createRequire } from 'node:module';
 import { execFileSync, spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { DesktopClient } from '../bridge/client.mts';
-import { callBrowser } from '../bridge/browser-mcp.mjs';
+import { callBrowser } from '../bridge/browser-mcp.mts';
 
 const require = createRequire(import.meta.url);
 const { _electron } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');

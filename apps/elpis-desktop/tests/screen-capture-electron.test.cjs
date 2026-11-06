@@ -34,7 +34,7 @@ test('a scoped companion request captures a chosen external app on a private dis
     const externalId = execFileSync('xdotool', ['search', '--name', '^External capture proof$'], { env: environment, encoding: 'utf8' }).trim().split('\n')[0];
     // Xvfb has no window manager to mark top-level application windows for Chromium's native capturer.
     execFileSync('xprop', ['-id', externalId, '-f', 'WM_STATE', '32c', '-set', 'WM_STATE', '1, 0'], { env: environment });
-    const { callBrowser } = await import('../bridge/browser-mcp.mjs');
+    const { callBrowser } = await import('../bridge/browser-mcp.mts');
     await assert.rejects(callBrowser(credentials.socketPath, 'screen_screenshot', {}, credentials.capability, 'other-chat'), /Open this chat/);
     const capture = callBrowser(credentials.socketPath, 'screen_screenshot', {}, credentials.capability, 'matilda-board');
     capture.catch(() => {});
