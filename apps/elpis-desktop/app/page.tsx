@@ -60,12 +60,11 @@ import { useElpisSettings } from "@/lib/settings-store";
 import { UsagePanel } from "@/components/provider-usage";
 import { ReadAloud } from "@/components/read-aloud";
 import { LiveVoiceProvider } from "@/components/live-voice";
-import type { WorkflowPrefill } from "@/components/automations-view";
 import { Segmented } from "@/components/settings/rows";
 import { EnvironmentMenu, MoveChatDialog, ProjectDialog, ProjectMenu } from "@/components/project-picker";
 import { PutUnderDialog } from "@/components/put-under-dialog";
 import { WorkflowMark } from "@/components/workflow-identity";
-import { useWorkflowSandbox, type WorkflowRun } from "@/lib/workflow-identity";
+import { useWorkflowSandbox } from "@/lib/workflow-identity";
 import { BranchChip } from "@/components/branch-chip";
 import { AccountRow } from "@/components/account-row";
 import { ProfileDialog } from "@/components/profile-dialog";
@@ -127,6 +126,7 @@ import { createApprovalActions } from "@/lib/approval-actions";
 import { createShellSend } from "@/lib/shell-send";
 import { createClearConversation } from "@/lib/clear-conversation";
 import { useTurnReplacementView } from "@/lib/use-turn-replacement-view";
+import { useWorkspacePagesState } from "@/lib/use-workspace-pages-state";
 import { refusedOffline, type View, type WorkflowReplay, type NextTurn } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
 import { useComposerState } from "@/lib/use-composer-state";
@@ -181,7 +181,8 @@ export default function Home() {
   const { cwd, projects, setProjects, projectId, setWorkflowProjectId, projectChats, setProjectChats,
     projectChatsRef, projectMove, setProjectMove, newProjectFor, setNewProjectFor, nestTargets, setNestTargets,
     projectChanging, project, workflowProject, projectEdit, setProjectEdit } = projectState;
-  const [recordedWorkflow, setRecordedWorkflow] = useState<Pick<WorkflowRun, "id" | "rootThreadId">>();
+  const pages = useWorkspacePagesState();
+  const { recordedWorkflow, setRecordedWorkflow, setSettingsVisited, setSettingsNavigation, view, setView, viewRef, workflowTab, setWorkflowTab, setSettingsSection } = pages;
   // Existing conversations: overrides for their next turn only.
   const [nextTurn, setNextTurn] = useState<Record<string, NextTurn>>({});
   const [threadModes, setThreadModes] = useState<Record<string, PermissionMode>>({});
@@ -278,9 +279,6 @@ export default function Home() {
     if (submit) await send(); else requestAnimationFrame(() => composerRef.current?.focus());
     return true;
   }
-  const [settingsVisited, setSettingsVisited] = useState(false);
-  const [settingsNavigation, setSettingsNavigation] = useState(0);
-  const [view, setView] = useState<View>(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("workspace") === "canvas" ? "canvas" : "chat");
   useComposerHeight(composerRef, [text, selected?.id, view]);
   const loveActivity = useLoveActivity(view === "loveSpot", ready, view === "chat" ? selected : null);
   const loveRef = useRef(loveActivity); loveRef.current = loveActivity;
@@ -290,10 +288,6 @@ export default function Home() {
   const loveSpotAudioReason = selected && !LOVE_SPOT_AUDIO.available
     ? selectedLoveChat ? LOVE_SPOT_AUDIO.reason : !loveActivity.originsResolved ? LOVE_SPOT_AUDIO.pendingReason : undefined
     : undefined;
-  const viewRef = useRef(view); viewRef.current = view;
-  const [workflowTab, setWorkflowTab] = useState<"board" | "scheduled">("board");
-  /** A workflow the board handed to Scheduled (its Schedule button), until the form takes it. */
-  const [workflowPrefill, setWorkflowPrefill] = useState<WorkflowPrefill | null>(null);
   /** Scheduled workflows this window claimed (bridge/server.mjs dispatchWorkflow): each replays its saved board out of
    * sight and reports the run's chat. */
   const finishReplay = useCallback((replay: WorkflowReplay, result: { threadId?: string; error?: string }) => {
@@ -304,7 +298,6 @@ export default function Home() {
   // Matilda's chat on screen reads every Love Spot reply.
   useEffect(() => { if (loveActivity.chatShown) setAttention(previous => ({ ...previous, unread: previous.unread.filter(id => !isLoveChatId(id)) })); }, [loveActivity.chatShown, setAttention]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (view === "chat" && selected) markRead(selected.id); }, [view, selected?.id, markRead]);
-  const [settingsSection, setSettingsSection] = useState<SettingsDestination>("general");
   const { desktop, windowAvailable, hasTerminal } = useDesktopCapabilities();
   const browser = useBrowser(selected?.id ?? `draft:${tabs.activeId}`);
   const side = useSidePanel(browser, selected?.cwd || cwd);
@@ -807,9 +800,9 @@ export default function Home() {
       {outsideChatApprovals.length > 0 && pendingInputOpen && <PendingInputPanel approvals={outsideChatApprovals} threads={threads} button={pendingInputButton} setOpen={setPendingInputOpen} openById={id => { void openById(id); }} approvalCardProps={approvalCardProps} />}
       <div className={`workspace-body${panelShown ? " panel-open" : ""}${fullView ? ` full-view${side.chatCollapsed ? " chat-collapsed" : ""}` : ""}${view !== "chat" ? " no-browser" : ""}`}><div className="workspace-content" {...(fullView ? { role: "region", "aria-label": "Floating chat" } : {})}>
       {fullView && <FloatChatBar title={chatName} onCollapse={() => side.setChatCollapsed(true)} />}
-      <WorkspaceSettings visited={settingsVisited} navigation={settingsNavigation} section={settingsSection} view={view} selected={selected} permissionMode={permissionMode} appearance={appearance} conversations={conversations} runtime={runtime} unarchived={unarchived} deleteThread={deleteThread} browser={browser} busy={busy} show={show} focusComposer={focusComposer} openComposerControl={openComposerControl} refreshModels={refreshModels} />
+      <WorkspaceSettings pages={pages} selected={selected} permissionMode={permissionMode} appearance={appearance} conversations={conversations} runtime={runtime} unarchived={unarchived} deleteThread={deleteThread} browser={browser} busy={busy} show={show} focusComposer={focusComposer} openComposerControl={openComposerControl} refreshModels={refreshModels} />
       <WorkspaceGuideAndLab view={view} show={show} />
-      <WorkflowPages view={view} workflowTab={workflowTab} setWorkflowTab={setWorkflowTab} recordedWorkflow={recordedWorkflow} setRecordedWorkflow={setRecordedWorkflow} workflowPrefill={workflowPrefill} setWorkflowPrefill={setWorkflowPrefill} sidebarModel={sidebarModel} projectState={projectState} runtime={runtime} threads={threads} models={models} workflowFolder={workflowFolder} workflowSandbox={workflowSandbox} dark={dark} show={show} openById={id => { void openById(id); }} keepWorkflowTab={keepWorkflowTab} selectProject={selectProject} addProject={addProject} workIn={workIn} finishReplay={finishReplay} />
+      <WorkflowPages pages={pages} sidebarModel={sidebarModel} projectState={projectState} runtime={runtime} threads={threads} models={models} workflowFolder={workflowFolder} workflowSandbox={workflowSandbox} dark={dark} show={show} openById={id => { void openById(id); }} keepWorkflowTab={keepWorkflowTab} selectProject={selectProject} addProject={addProject} workIn={workIn} finishReplay={finishReplay} />
       <OtherWorkspacePages view={view} selected={selected} threads={threads} cwd={cwd} dark={dark} loveToolbarHost={loveToolbarHost} side={side} hasTerminal={hasTerminal} setTuiLaunch={setTuiLaunch} show={show} openSettings={openSettings} newChat={newChat} editDraft={editDraft} />
       {view === "chat" && <ViewBoundary label="Chat" resetKey={selected?.id}><div className="chat-split"><div className={`chat-view${!selected && !shownEntries.length ? " empty-chat" : ""}`} data-team-loading={awaitingTeam || undefined}>
         <div className="chat-scroll-wrap"><div className="chat-scroll" aria-busy={awaitingTeam || undefined} ref={scroll} onClickCapture={event => { if (event.target instanceof Element && event.target.closest("[data-preserve-scroll]")) { followingBottom.current = false; stickToBottom.current = false; } }} onWheel={() => { followingBottom.current = false; }} onPointerDown={() => { followingBottom.current = false; }} onKeyDown={event => { if (["PageUp", "PageDown", "Home", "End", "ArrowUp", "ArrowDown"].includes(event.key)) followingBottom.current = false; }} onScrollEnd={event => { if (followingBottom.current) { followingBottom.current = false; event.currentTarget.scrollTo({ top: event.currentTarget.scrollHeight }); } }} onScroll={event => { const element = event.currentTarget; const atBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 80; stickToBottom.current = followingBottom.current || atBottom; setAwayFromBottom(!atBottom); }}><div className="chat-content">
