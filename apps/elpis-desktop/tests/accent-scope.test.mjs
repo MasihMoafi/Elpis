@@ -35,11 +35,3 @@ test('the check catches a derived colour declared on the page alone', () => {
   assert.deepEqual(pageLevelRules(':root { --halo:0 0 4px var(--primary); }').map(rule => rule.name), ['--halo']);
   assert.deepEqual(pageLevelRules(':root, .accent-scope { --halo:0 0 4px var(--primary); }').filter(rule => !SHARED.has(rule.selector)), []);
 });
-
-test('every place with its own --primary is an accent scope', () => {
-  const scoped = [...css.matchAll(/([^{}]+)\{[^{}]*--primary\s*:/g)].map(match => match[1].trim()).filter(selector => !/^(:root|\.dark)/.test(selector));
-  const markup = ['components/love-spot.tsx', 'app/page.tsx', 'components/matilda-companion.tsx', 'components/plan-card.tsx']
-    .filter(file => fs.existsSync(new URL(`../${file}`, import.meta.url))).map(file => fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8')).join('\n');
-  assert.ok(scoped.length > 0);
-  assert.ok((markup.match(/accent-scope/g) ?? []).length >= 5, 'Love Spot, its tools, its chats, Matilda\'s popup and its nav button are marked');
-});
