@@ -55,6 +55,8 @@ export function createSchedule({ client, file, now = Date.now, timers = { set: s
     const work = (async () => {
       const record = { at: now(), scheduledFor, threadId: null, error: null };
       try {
+        // How a scheduled workflow runs waits for Masih's choice: the window replays the board, or a chat builds its own team.
+        if (task.workflow) throw new Error('Scheduled workflows do not run yet: choose how they run first');
         let threadId = task.target === 'reuse' ? task.threadId : null;
         if (!threadId) {
           const made = await client.createThread({ ...(task.cwd ? { cwd: task.cwd } : {}), name: task.title, automatic: true });
@@ -84,7 +86,7 @@ export function createSchedule({ client, file, now = Date.now, timers = { set: s
   }
 
   function fields(input, partial) {
-    object(input, partial ? ['title', 'prompt', 'cwd', 'rule', 'target', 'status'] : ['title', 'prompt', 'cwd', 'rule', 'target', 'status', 'threadId']);
+    object(input, partial ? ['title', 'prompt', 'cwd', 'rule', 'target', 'status', 'workflow'] : ['title', 'prompt', 'cwd', 'rule', 'target', 'status', 'threadId', 'workflow']);
     const value = {};
     if (!partial || input.title !== undefined) value.title = text(input.title, 'name', 120).trim();
     if (!partial || input.prompt !== undefined) value.prompt = text(input.prompt, 'instruction', 32000);
@@ -94,6 +96,14 @@ export function createSchedule({ client, file, now = Date.now, timers = { set: s
       const target = input.target ?? 'reuse';
       if (!TARGETS.includes(target)) throw new BridgeError('Run in must be "reuse" (one chat) or "new" (a new chat each run)');
       value.target = target;
+    }
+    // A workflow scheduled from the Workflows board (6 Nov): which one, by its id and name; its request is the prompt.
+    if (input.workflow !== undefined) {
+      if (input.workflow === null) value.workflow = null;
+      else {
+        object(input.workflow, ['id', 'name']);
+        value.workflow = { id: text(input.workflow.id, 'workflow id', 200), name: text(input.workflow.name, 'workflow name', 120) };
+      }
     }
     // Create only: the chat to keep using from the first run (an agent's "remind me here").
     if (input.threadId !== undefined) { value.threadId = chatId(input.threadId); value.target = 'reuse'; }

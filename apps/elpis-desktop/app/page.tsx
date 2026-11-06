@@ -82,7 +82,7 @@ import { MatildaAutoVoice } from "@/components/matilda-auto-voice";
 import { MatildaCompanion } from "@/components/matilda-companion";
 import { LiveVoiceProvider } from "@/components/live-voice";
 import { ObservabilityView } from "@/components/observability-view";
-import { AutomationsView } from "@/components/automations-view";
+import { AutomationsView, type WorkflowPrefill } from "@/components/automations-view";
 import { Segmented } from "@/components/settings/rows";
 import { chooseProject, projectAt, EnvironmentMenu, MoveChatDialog, ProjectActions, ProjectDialog, ProjectMenu } from "@/components/project-picker";
 import { PutUnderDialog } from "@/components/put-under-dialog";
@@ -374,6 +374,8 @@ export default function Home() {
     : undefined;
   const viewRef = useRef(view); viewRef.current = view;
   const [workflowTab, setWorkflowTab] = useState<"board" | "scheduled">("board");
+  /** A workflow the board handed to Scheduled (its Schedule button), until the form takes it. */
+  const [workflowPrefill, setWorkflowPrefill] = useState<WorkflowPrefill | null>(null);
   const workflowSandbox = useWorkflowSandbox(view === "canvas" && ready && connected && !workflowProject, setError), workflowFolder = workflowProject?.cwd || workflowSandbox;
   // Matilda's chat on screen reads every Love Spot reply.
   useEffect(() => { if (loveActivity.chatShown) setAttention(previous => ({ ...previous, unread: previous.unread.filter(id => !isLoveChatId(id)) })); }, [loveActivity.chatShown, setAttention]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -2455,9 +2457,9 @@ export default function Home() {
       {/* 6 Nov, Masih: "automation is kind of a workflow, isn't it? couldn't we have merged those?" Workflows has two views:
           the board and its Scheduled automations (components/automations-view.tsx). The board stays mounted, so its draft
           survives a look at the schedule. */}
-      {view === "canvas" && <ViewBoundary label="Workflows"><div className="contents" hidden={workflowTab !== "board"}><CanvasGuideHelp onOpen={() => show("agentsGuide")}><AgentsCanvas threads={threads} key={recordedWorkflow?.id ?? "draft"} recordedRun={recordedWorkflow} onLeaveRecordedRun={() => setRecordedWorkflow(undefined)} onOpenRecordedRun={run => setRecordedWorkflow(run)} ready={ready && connected} workflowCatalog={workflowCatalog} models={models} cwd={workflowFolder} dark={dark} onOpenChat={id => { show("chat"); void openById(id); }} onRunStarted={keepWorkflowTab}
+      {view === "canvas" && <ViewBoundary label="Workflows"><div className="contents" hidden={workflowTab !== "board"}><CanvasGuideHelp onOpen={() => show("agentsGuide")}><AgentsCanvas threads={threads} key={recordedWorkflow?.id ?? "draft"} recordedRun={recordedWorkflow} onLeaveRecordedRun={() => setRecordedWorkflow(undefined)} onOpenRecordedRun={run => setRecordedWorkflow(run)} ready={ready && connected} workflowCatalog={workflowCatalog} models={models} cwd={workflowFolder} dark={dark} onOpenChat={id => { show("chat"); void openById(id); }} onRunStarted={keepWorkflowTab} onSchedule={workflow => { setWorkflowPrefill(workflow); setWorkflowTab("scheduled"); }}
         projectMenu={<ProjectMenu variant="chip" projects={projects} selected={workflowProject ?? { id: "workflow-sandbox", name: "Sandbox", cwd: workflowSandbox ?? "" }} allowNone={!!workflowProject} noneLabel="Use sandbox" disabled={!ready || projectChanging} onSelect={selectProject} onAdd={() => void addProject()} />} onUseFolder={workIn} /></CanvasGuideHelp></div>
-        {workflowTab === "scheduled" && <AutomationsView projects={projects} onOpenChat={id => { show("chat"); void openById(id); }} />}</ViewBoundary>}
+        {workflowTab === "scheduled" && <AutomationsView projects={projects} prefill={workflowPrefill} onPrefillUsed={() => setWorkflowPrefill(null)} onOpenChat={id => { show("chat"); void openById(id); }} />}</ViewBoundary>}
       {view === "loveSpot" && <ViewBoundary label="Love Spot"><LoveSpot dark={dark} toolbarHost={loveToolbarHost} /></ViewBoundary>}
       {view === "observability" && <ViewBoundary label="Observability"><ObservabilityView threadId={selected?.id} chats={threads} /></ViewBoundary>}
       {view === "customize" && <div className="page-scroll"><ViewBoundary label="Customize"><CustomizeView cwd={cwd} onOpenSettings={() => openSettings("mcp")}

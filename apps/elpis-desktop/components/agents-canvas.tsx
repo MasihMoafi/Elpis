@@ -5,7 +5,7 @@ import "@/components/agents-canvas.css";
 import "@xyflow/react/dist/style.css";
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { Background, BackgroundVariant, BaseEdge, Controls, Handle, MarkerType, MiniMap, Position, ReactFlow, ReactFlowProvider, applyEdgeChanges, applyNodeChanges, getBezierPath, useReactFlow, useStoreApi, type Edge, type EdgeProps, type EdgeChange, type FinalConnectionState, type Node, type NodeChange, type NodeProps, type XYPosition } from "@xyflow/react";
-import { Check, ChevronRight, Copy, ExternalLink, FileText, ListOrdered, Pencil, Play, StickyNote, Trash2, X } from "lucide-react";
+import { CalendarClock, Check, ChevronRight, Copy, ExternalLink, FileText, ListOrdered, Pencil, Play, StickyNote, Trash2, X } from "lucide-react";
 import { AgentsIcon, FolderIcon, PlusIcon, StopIcon } from "@/components/elpis-icons";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -499,7 +499,9 @@ function AgentDashboard({ node, own, status, check, clash, chat, waitsFor, feeds
 /** `projectMenu` is the app's project chooser (components/project-picker.tsx), shown in the header: agents write inside the project. */
 type Props = { threads?: readonly Thread[]; workflowCatalog: WorkflowCatalog; models: Model[]; cwd?: string; dark: boolean; ready: boolean; onOpenChat: (id: string) => void; onRunStarted?: (thread: Thread) => void; projectMenu?: React.ReactNode; recordedRun?: WorkflowRunRef; onLeaveRecordedRun?: () => void; onOpenRecordedRun?: (run: WorkflowRunRef) => void;
   /** Makes `folder` the workflows' project (an existing project with it, or a new one named after it). */
-  onUseFolder?: (folder: string) => Promise<void> };
+  onUseFolder?: (folder: string) => Promise<void>;
+  /** Schedule: hands this workflow (its id, name, request and project) to Workflows' Scheduled view. */
+  onSchedule?: (workflow: { id: string; name: string; request: string; cwd?: string }) => void };
 export function AgentsCanvas(props: Props) {
   return <ReactFlowProvider><Canvas key={props.recordedRun?.id ?? "draft"} {...props} /></ReactFlowProvider>;
 }
@@ -513,7 +515,7 @@ function runFailure(detail: string) {
   return `${detail} Review this message and the agents' Info, then try Run graph again.`;
 }
 
-function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStarted, projectMenu, workflowCatalog, recordedRun, onLeaveRecordedRun, onOpenRecordedRun, onUseFolder }: Props) {
+function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStarted, projectMenu, workflowCatalog, recordedRun, onLeaveRecordedRun, onOpenRecordedRun, onUseFolder, onSchedule }: Props) {
   const isoController = useRef<IsoController>(null);
   const flow = useReactFlow(), flowStore = useStoreApi(), board = useRef<HTMLDivElement>(null), pointer = useRef<XYPosition | null>(null), connectFrom = useRef<XYPosition | null>(null);
   const [graph, setGraph] = useState<CanvasGraph>(() => recordedRun ? { name: "Workflow", workflowId: recordedRun.id, nodes: [], edges: [] } : initialGraph());
@@ -1693,6 +1695,8 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
       <Button variant="ghost" size="sm" aria-label="Side panel" aria-pressed={panelOpen} title={panelOpen ? "Hide the side panel: the board takes the whole width" : "Show the side panel: patterns and the selected agent"} onClick={() => showPanel(!panelOpen)}><AgentsIcon size={16} /></Button>
       {!recordedRun && <div className="canvas-run-control">
         <Button variant="outline" size="sm" onClick={() => void start()} aria-describedby={!ready ? offlineReasonId : notice || starting || run && !over(run) ? runReasonId : undefined} disabled={!ready || starting || Boolean(planning || run && !over(run))}><Play size={14} />{starting ? "Starting…" : "Run graph"}</Button>
+        {onSchedule && <Button variant="ghost" size="sm" title={requestText.trim() ? "Run this workflow on a schedule" : "Write what the workflow should do first"} disabled={!requestText.trim()}
+          onClick={() => onSchedule({ id: graph.workflowId || graph.name || "workflow", name: identity?.name || graph.name || "Workflow", request: requestText.trim(), ...(cwd ? { cwd } : {}) })}><CalendarClock size={14} />Schedule</Button>}
         {!notice && (starting || run && !over(run)) && <span id={runReasonId} className="sr-only" role="status">{starting ? "Starting the team. Wait for the run to start." : "Wait for this run to finish before starting another."}</span>}
       </div>}
     </header>

@@ -39,3 +39,23 @@ test('a new automation is listed with its schedule; Run now sends it and its run
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
+
+test('Schedule on the Workflows board opens the form with that workflow, and the list marks it', async () => {
+  const f = await loveSpotFixture({ automations: true });
+  try {
+    const { page } = f;
+    await page.locator('.nav-list').getByRole('button', { name: 'Workflows', exact: true }).click();
+    const schedule = page.getByRole('button', { name: 'Schedule', exact: true });
+    assert.equal(await schedule.isDisabled(), true, 'nothing to schedule before the workflow says what to do');
+    await page.getByLabel('Workflow request', { exact: true }).fill('Review yesterday\'s pull requests');
+    await schedule.click();
+    const form = page.getByRole('region', { name: /^Schedule the workflow/ });
+    await form.waitFor();
+    assert.equal(await page.getByLabel('Automation instruction', { exact: true }).inputValue(), 'Review yesterday\'s pull requests');
+    await page.getByRole('button', { name: 'Create', exact: true }).click();
+    const row = page.locator('.automation').first();
+    await row.getByText('Workflow', { exact: true }).waitFor();
+    assert.equal(await page.getByRole('radio', { name: 'Scheduled', exact: true }).getAttribute('aria-checked'), 'true');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
