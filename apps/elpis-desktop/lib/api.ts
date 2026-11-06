@@ -2,13 +2,13 @@ import { agentParentId } from "./agent-runs.mjs";
 import { errorText } from "./error-text.mjs";
 export { isAgentRun, AGENT_RUN_NOTICE } from "./agent-runs.mjs";
 export type Thread = {
-  id: string; cwd?: string; name?: string | null; workflowTaskTitle?: string; preview?: string; model?: string | null; modelProvider?: string;
+  id: string; cwd?: string; name?: string | null; workflowTaskTitle?: string; preview?: string; model?: string | null; modelProvider?: string | undefined;
   reasoningEffort?: string | null; serviceTier?: string | null; parentThreadId?: string | null; forkedFromId?: string | null;
   updatedAt?: number; recencyAt?: number; createdAt?: number;
   archivedAt?: number | null; archiveReason?: string;
   agentNickname?: string | null; agentRole?: string | null; canAcceptDirectInput?: boolean | null;
   source?: string | {subAgent?:unknown;custom?:string};
-  status?: { type: string; activeFlags?: string[] };
+  status?: { type: string; activeFlags?: string[] } | undefined;
   desktopAccess?: { writable: boolean; mode?: "direct" | "continue"; canContinue?: boolean; reason: string | null };
 };
 export type Item = { id: string; type: string; text?: string; content?: {type: string; text?: string}[]; command?: string; aggregatedOutput?: string; [key: string]: unknown };
