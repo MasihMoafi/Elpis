@@ -6,7 +6,7 @@ import { BrandWordmark } from "@/components/brand-wordmark";
 import { flushSync } from "react-dom";
 import { cloneElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { AgentsIcon, ChatIcon, ExperimentLabIcon, LoveSpotIcon, NewChatIcon, PlusIcon, SendIcon, SettingsIcon, ThemeIcon, WorkflowsIcon, StopIcon } from "@/components/elpis-icons";
-import { Activity, ArrowDown, Blocks, Bookmark, ChevronRight, Layers, PanelLeft, PanelRightClose, PanelRightOpen, RefreshCw, X, Zap } from "lucide-react";
+import { Activity, ArrowDown, Blocks, Layers, PanelLeft, PanelRightClose, PanelRightOpen, RefreshCw, X, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ReorderItem, useReorder } from "@/components/reorder";
 import { OptionSelect } from "@/components/ui/option-select";
@@ -53,6 +53,7 @@ import { DeleteChatsDialog, ThreadActions } from "@/components/thread-actions";
 import { GroupActions, GroupNameDialog } from "@/components/chat-groups";
 import { SectionToggle, SidebarGroup } from "@/components/sidebar-group";
 import { SidebarChatList } from "@/components/sidebar-chat-list";
+import { createSidebarThreadRow } from "@/components/sidebar-thread-row";
 import { fastServiceTier } from "@/lib/service-tier.mjs";
 import { SlashMenu, useSlashMenu } from "@/components/slash-menu";
 import { MentionMenu, useMentionMenu } from "@/components/mention-menu";
@@ -81,7 +82,7 @@ import { Segmented } from "@/components/settings/rows";
 import { EnvironmentMenu, MoveChatDialog, ProjectDialog, ProjectMenu } from "@/components/project-picker";
 import { PutUnderDialog } from "@/components/put-under-dialog";
 import { WorkflowMark } from "@/components/workflow-identity";
-import { runSummary, useWorkflowSandbox, workflowMembers, type WorkflowRun } from "@/lib/workflow-identity";
+import { useWorkflowSandbox, workflowMembers, type WorkflowRun } from "@/lib/workflow-identity";
 import { BranchChip } from "@/components/branch-chip";
 import { keptNotice, type WorktreeOutcome } from "@/lib/chat-worktree";
 import { AccountRow } from "@/components/account-row";
@@ -100,10 +101,10 @@ import { AgentsCanvas } from "@/components/agents-canvas";
 import { WorkflowChat } from "@/components/workflow-chat";
 import { DocumentReviewProvider } from "@/components/document-review";
 import { ChatTeamPanel } from "@/components/chat-team-panel";
-import { AgentIdentity, agentColourSlots } from "@/components/agent-identity";
+import { agentColourSlots } from "@/components/agent-identity";
 import { ResumeConversation } from "@/components/resume-conversation";
 import { sidebarListKeys, useSidebarKeys, useWorkspaceNavigation } from "@/lib/use-workspace-navigation";
-import { agentState, attentionLine, mergeListedThreads, stateLabels } from "@/lib/agents";
+import { agentState, mergeListedThreads } from "@/lib/agents";
 import { insertTranscript } from "@/lib/dictation";
 import { useBrowserPins } from "@/lib/browser-pins";
 import { useBrowser } from "@/components/browser-panel";
@@ -119,7 +120,7 @@ import { AttachmentChips } from "@/components/attachment-chips";
 import { ATTACHMENT_ACCEPT, ATTACHMENT_LIMITS, TEXT_ONLY_NOTICE, attachmentFromFile, fitAttachments, transferFiles, type Attachment } from "@/lib/attachments";
 import { scanDeletionThreads } from "@/lib/thread-deletion";
 import { LoadOnScroll } from "@/components/load-on-scroll";
-import { api, unreadable, chatProvider, choiceById, choiceOf, effortsOf, isAgent, isAgentRun, AGENT_RUN_NOTICE, modelLabel, providerChoices, providerLabel, title, agentName,
+import { api, unreadable, chatProvider, choiceById, choiceOf, effortsOf, isAgentRun, AGENT_RUN_NOTICE, modelLabel, providerChoices, providerLabel, title, agentName,
   mediaUrl, type Approval, type Entry, type ProviderSettings, type Thread } from "@/lib/api";
 import { historyPath, inReadingOrder } from "@/lib/chat-history";
 import { useComposerHeight } from "@/lib/use-composer-height";
@@ -1035,7 +1036,7 @@ export default function Home() {
   useEffect(() => { if (text) setSlashNotice(""); }, [text]);
 
   const sidebarModel = useSidebarThreads({ ready, connected, threads, hidden, selected, chatGroups, loveActivity, expanded, setExpanded, recordedWorkflow, loadChildren, search, attention, waitingIds, pins, projectChats, releaseChatOrder, searchInput, setError, setDeleteRunHistory, setDeleteTargets, hiddenPages, preferences, collapsedSections, collapsedProjects, checkedChildren, agentRunsOpen });
-  const { workflowCatalog, workflowRuns, workflowRoots, workflowSteps, sidebarTitle, selectedWorkflow, sidebarThreads, nativeParents, treeParents, sidebarParent, originOf, branchOpen, workflowOpen, workflowChild, searchedThreads, unreadIds, sidebarState, needsYou, ordinaryThreads, ordinaryIds, displayParentIds, agentParents, pinnedChats, grouped, recentChats, ordered } = sidebarModel;
+  const { workflowCatalog, workflowRuns, workflowRoots, workflowSteps, sidebarTitle, selectedWorkflow, sidebarThreads, nativeParents, treeParents, sidebarParent, originOf, branchOpen, workflowOpen, workflowChild, searchedThreads, sidebarState, needsYou, ordinaryThreads, ordinaryIds, pinnedChats, grouped, recentChats, ordered } = sidebarModel;
   // Esc stops the running reply, as in Claude, wherever in the chat the focus is, unless a menu, dialog or field owns the key.
   const escapeStops = useRef<(event: KeyboardEvent) => void>(() => {});
   escapeStops.current = event => { if (selected && !readOnlyRun && activeTurn && view === "chat" && stopsOnEscape(event)) { event.preventDefault(); void stop(selected); } };
@@ -1154,9 +1155,9 @@ export default function Home() {
   function organizationActions(thread: Thread) {
     if (!ordinaryIds.has(thread.id)) return {};
     return { onMoveToProject: setProjectMove, onNewProject: newProjectFrom, onPutUnder: setNestTargets,
-      onTakeOut: movingIds(thread.id).some(id => treeParents[id]) ? (chats: Thread[]) => {
+      ...(movingIds(thread.id).some(id => treeParents[id]) ? { onTakeOut: (chats: Thread[]) => {
         void assignProject(chats.map(chat => chat.id), undefined).catch(cause => setError(String(cause)));
-      } : undefined };
+      } } : {}) };
   }
   async function renameDisplayedThread(thread: Thread, name: string, runId = workflowRoots.get(thread.id)?.id) {
     if (!runId) { await renameThread(thread, name); return; }
@@ -1164,50 +1165,7 @@ export default function Home() {
     if (problem) throw Error(problem);
   }
   const { chatReorder, moveToEdge } = useChatReorder({ projectState, chatGroups, updateGroups, treeParents, pins, ordinaryThreads, ordinaryIds, pinnedChats, recentChats, grouped, movingIds, canNest, assignProject, nestChats, searchTerm, needsYou, sidebarState, setError });
-  /** `inOrigin`: the row sits in the group named for its origin, so the origin is not written again beside its title. */
-  function threadRow(thread: Thread, depth = 0, inOrigin = false, recordedRun?: WorkflowRun) {
-    const run = recordedRun ?? workflowRoots.get(thread.id), identity = run ? workflowCatalog.identities[run.id] : undefined, name = identity?.name ?? sidebarTitle(thread);
-    const expandId = run ? `workflow:${run.id}` : thread.id, open = run ? workflowOpen(run) : branchOpen(thread.id);
-    const state = run ? run.status === "running" || threads.some(child => workflowChild(child, run) && child.status?.type === "active") ? "working" : run.status === "failed" ? "error" : workflowRoots.get(thread.id)?.id === run.id && unreadIds.has(thread.id) ? "unread" : "idle" : agentState(thread, waitingIds, isAgentRun(thread) ? new Set() : new Set(attention.unread)), pinned = pins.includes(thread.id), bookmarked = bookmarks.includes(thread.id);
-    const origin = workflowSteps.has(thread.id) ? null : chatOrigin(thread, loveActivity.threads);
-    const runParent = find(thread.parentThreadId);
-    const parentLabel = isAgentRun(thread) && thread.parentThreadId && !workflowSteps.has(thread.id) ? `from ${runParent ? title(runParent) : "parent conversation"}` : null;
-    const subtitle = attentionLine(approvals.find(approval => (approval.params.threadId ?? approval.ownerThreadId) === thread.id), !!attention.plans[thread.id]);
-    const hasAgents = (run ? ordinaryThreads.some(child => workflowChild(child, run)) : agentParents.has(thread.id)) || !!childCursors[thread.id];
-    const canExpandAgents = !searchTerm && hasAgents, branchName = displayParentIds.has(thread.id) ? "chats" : "agents";
-    return <ThreadActions key={thread.id} thread={{ ...thread, name }} onRequestDelete={() => deleteChats(marked.includes(thread.id) ? marked : [thread.id])} onRename={(thread, name) => renameDisplayedThread(thread, name, identity?.id)} onArchive={archiveChats} pinned={pinned} onPin={togglePin} onOpenInTui={hasTerminal ? openInTui : undefined} onOpenSplit={!split.pane ? openSplit : undefined} onOpenWindow={windowAvailable ? openSessionWindow : undefined}
-      bookmarked={bookmarked} onBookmark={toggleBookmark}
-      renameDescription={identity ? "The workflow name is saved on this device." : undefined}
-      {...organizationActions(thread)}
-      attention={attentionFor(thread.id)}
-      selection={marked.length > 1 && marked.includes(thread.id) ? chatsOf(marked) : undefined}
-      group={depth ? undefined : groupMenu(thread, movingIds(thread.id))}
-      agents={!depth && !isAgent(thread) && hasAgents && !searchTerm ? { shown: preferences.showAgentRuns && agentRunsOpen, onToggle: () => {
-        try { if (!preferences.showAgentRuns) savePreferences({ showAgentRuns: true }); }
-        catch (cause) { setError(String(errorText(cause))); return; }
-        setAgentRunsOpen(!preferences.showAgentRuns || !agentRunsOpen); if (!preferences.showAgentRuns || !agentRunsOpen) void loadChildren(thread.id, undefined, false);
-      } } : undefined}
-      area={<ReorderItem reorder={chatReorder} itemId={thread.id} enabled={!searchTerm}
-        render={<div className={`thread-row${origin === "Love Spot" ? " love-chat accent-scope" : ""}${depth ? " child" : ""}${selected?.id === thread.id && view === "chat" ? " active" : ""}${marked.includes(thread.id) ? " selected" : ""}`} data-thread-id={thread.id} data-workflow-run={run?.id} data-depth={depth} style={{ "--thread-depth": depth, ...(depth ? { paddingLeft: `${depth * 14}px` } : {}) } as React.CSSProperties} />} />}>
-      {menu => <>
-      {canExpandAgents && <Button variant="ghost" size="icon-xs" aria-label={`${open ? "Collapse" : "Expand"} ${branchName} in ${name}`} aria-expanded={!!open} title={`${open ? "Collapse" : "Expand"} ${branchName} in ${name}`} onClick={() => {
-        if (open) setExpanded(previous => ({ ...previous, [expandId]: false }));
-        else { setExpanded(previous => ({ ...previous, [expandId]: true })); if (!checkedChildren.current.has(thread.id)) void loadChildren(thread.id, undefined, false); }
-      }}><ChevronRight size={14} className={open ? "rotate-90" : undefined} /></Button>}
-      {!canExpandAgents && depth > 0 && <span aria-hidden="true" className="size-6 shrink-0" />}
-      <span className="conversation-state-slot">{state === "unread" ? <button data-slot="thread-dot" className="thread-dot conversation-status" data-state={state} aria-label="Unread response. Mark as read" title="Unread response. Mark as read" onClick={() => markRead(thread.id)} /> : state === "idle" ? <span className="thread-dot" data-state={state} aria-hidden="true" /> : <span className="thread-dot conversation-status" role="img" data-state={state} aria-label={stateLabels[state]} title={stateLabels[state]} />}</span>
-      <button data-slot="chat-row" className="thread-link" onPointerEnter={() => prefetchThread(thread)} onFocus={() => prefetchThread(thread)} onMouseDown={event => { if (event.shiftKey || event.button === 1) event.preventDefault(); }} onAuxClick={event => { if (event.button === 1 && desktop) { event.preventDefault(); openInNewTab(thread); } }} onClick={event => clickRow(thread, event)} title={name}>
-        <>{isAgent(thread) || workflowSteps.has(thread.id) || run ? <AgentIdentity compact id={thread.id} colourSlot={agentColours.get(thread.id)} name={name} nameClassName="thread-title" model={run ? null : thread.model} provider={run ? null : thread.modelProvider} role={run ? runSummary(run) : undefined} /> : <span className="thread-title" title={name}>{name}</span>}</>
-        {parentLabel && <span className="text-xs text-muted-foreground" title={parentLabel}>{parentLabel}</span>}
-        {subtitle && <span className="thread-subtitle" title={subtitle}>{subtitle}</span>}
-        {originLabel(origin, name) && !inOrigin && <span className="thread-nickname thread-origin" data-origin={origin}>{origin}</span>}
-        {thread.forkedFromId && <span className="thread-nickname">Continued agent chat</span>}
-      </button>
-      {bookmarked && <span className="thread-bookmark" role="img" aria-label="Bookmarked" title="Bookmarked"><Bookmark size={13} fill="currentColor" aria-hidden="true" /></span>}
-      {menu}
-      </>}
-    </ThreadActions>;
-  }
+  const threadRow = createSidebarThreadRow({ model: sidebarModel, runtime, loveActivity, attention, threads, selected, view, waitingIds, pins, bookmarks, marked, childCursors, searchTerm, agentColours, preferences, agentRunsOpen, setAgentRunsOpen, setExpanded, checkedChildren, setError, loadChildren, chatReorder, desktop, hasTerminal, pane: split.pane, windowAvailable, find, deleteChats, renameDisplayedThread, archiveChats, togglePin, toggleBookmark, openInTui, openSplit, openSessionWindow, organizationActions, attentionFor, chatsOf, groupMenu, movingIds, markRead, prefetchThread, openInNewTab, clickRow });
   /** A chat's menu around its tab or title: the "…" button and right-click on `area` share one list. The shown chat's is "Chat actions". */
   const threadMenu = (thread: Thread, area: React.ReactElement, content: (menu: React.ReactNode) => React.ReactNode, shown: boolean) =>
     <ThreadActions label={shown ? "Chat actions" : undefined} thread={{ ...thread, name: sidebarTitle(thread) }} attention={attentionFor(thread.id)} group={groupMenu(thread, movingIds(thread.id))} selection={marked.includes(thread.id) ? chatsOf(marked) : undefined} onRequestDelete={() => deleteChats(movingIds(thread.id))} onRename={renameDisplayedThread} renameDescription={workflowRoots.has(thread.id) ? "The workflow name is saved on this device." : undefined} onArchive={archiveChats} pinned={pins.includes(thread.id)} onPin={togglePin} bookmarked={bookmarks.includes(thread.id)} onBookmark={toggleBookmark} onOpenInTui={hasTerminal ? openInTui : undefined} onOpenSplit={!split.pane ? openSplit : undefined} onOpenWindow={windowAvailable ? openSessionWindow : undefined} renameRequested={shown && renameRequest} onRenameRequestHandled={() => setRenameRequest(false)} {...organizationActions(thread)} area={area}>{content}</ThreadActions>;
