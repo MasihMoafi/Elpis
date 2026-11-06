@@ -6,8 +6,7 @@ import { Button } from "@/components/ui/button";
 import { ViewBoundary } from "@/components/view-boundary";
 import { useBookmarks, useChatAttention, usePins, useSidebarFolds, useChatGroups } from "@/lib/use-sidebar-state";
 import { useAppearance } from "@/lib/use-appearance";
-import { configuredShortcuts } from "@/lib/shortcuts";
-import { CommandMenu, type CommandAction } from "@/components/command-menu";
+import { CommandMenu } from "@/components/command-menu";
 import { newChatFolder, useAppPreferences } from "@/lib/preferences";
 import { usePromptKeys } from "@/lib/prompt-history";
 import { ShortcutsDialog } from "@/components/shortcuts-dialog";
@@ -106,7 +105,8 @@ import { createSidebarChatSelection } from "@/lib/sidebar-chat-selection";
 import { useWorkspaceOrder } from "@/lib/use-workspace-order";
 import { useRewindState, useRewindStatus } from "@/lib/use-rewind-state";
 import { useRemoveThreads } from "@/lib/use-remove-threads";
-import { NAV_PAGES, PAGE_NAMES } from "@/lib/workspace-navigation-pages";
+import { createWorkspaceCommandMenu } from "@/lib/workspace-command-menu";
+import { PAGE_NAMES } from "@/lib/workspace-navigation-pages";
 import { refusedOffline } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
 import { useComposerState } from "@/lib/use-composer-state";
@@ -436,14 +436,8 @@ export default function Home() {
   const chatName = selected ? title(selected) : "New chat";
   const chatState = selected ? agentState(selected, waitingIds) : "idle", floatState = activeTurn && chatState === "idle" ? "working" : chatState;
   const meta = selected ? [agentName(selected), selected.agentRole && selected.agentRole !== "default" ? selected.agentRole : null].filter(Boolean).join(" · ") : "";
-  const shortcuts = configuredShortcuts(preferences);
-  const commandActions: CommandAction[] = ["new-chat", "search", "settings", "shortcuts", "sidebar", ...(desktop ? ["files", "full-view"] : []), ...(hasTerminal ? ["terminal"] : []), ...(selected ? ["rename", "pin"] : []), ...(selected || marked.length ? ["archive"] : [])].filter(id => id !== "new-chat" || !projectChanging).map(id => {
-    const shortcut = shortcuts.find(item => item.id === id)!;
-    return { id, name: id === "pin" ? `${pins.includes(selected!.id) ? "Unpin" : "Pin"} chat` : id === "archive" && marked.length > 1 ? `Archive ${marked.length} chats` : id === "shortcuts" ? "Keyboard shortcuts" : shortcut.label, keys: shortcut.keys, run: () => { if (id === "shortcuts") { shortcutsReturnFocus.current = commandReturnFocus.current; setShortcutsOpen(true); } else shortcutAction.current(id); } };
-  });
-  commandActions.push({ id: "improve-elpis", name: "Improve Elpis…", run: () => window.dispatchEvent(new CustomEvent("elpis:improve")) });
   const { arrangedPages, pageReorder, projectReorder } = useWorkspaceOrder(preferences, hiddenPages, projectState, setError);
-  for (const target of ["agentsGuide", ...NAV_PAGES.map(page => page.id)] as const) { const name = PAGE_NAMES[target]; if (!hiddenPages.includes(target) && !(target === "agentsGuide" && hiddenPages.includes("canvas"))) commandActions.push({ id: target, name, run: () => show(target) }); }
+  const commandActions = createWorkspaceCommandMenu({ preferences, session, selection, dialogs, shortcutAction, pins, hiddenPages, desktop, hasTerminal, projectChanging, show });
 
   // One Matilda voice and one live call for the whole app: both go on when he leaves the board or Love Spot's chat; her face shows and controls them.
   return <DocumentReviewProvider onAttach={parts => attachFromBrowser(parts, false)}><LiveVoiceProvider><ReadAloud threadId="love-spot" enabled available={LOVE_SPOT_AUDIO.readAloudAvailable} unavailableReason={LOVE_SPOT_AUDIO.available ? undefined : LOVE_SPOT_AUDIO.reason}><div data-workspace={view} data-desktop={desktop || undefined} className={`app-shell${split.pane ? " session-pane" : ""}${split.thread && view === "chat" ? " session-split" : ""}${dark ? " dark" : ""} has-title-bar${sidebarCollapsed ? " sidebar-collapsed" : ""}${view === "settings" ? " settings-mode" : ""}${panelShown ? " panel-active" : ""}`} style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>
