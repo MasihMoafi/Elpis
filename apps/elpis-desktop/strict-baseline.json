@@ -1259,7 +1259,6 @@
   "tests/temp-root.cjs:TS7006": 3
  },
  "tsx": {
-  "app/page.tsx:TS2345": 1,
   "app/page.tsx:TS2375": 4,
   "app/page.tsx:TS2379": 1,
   "components/account-row.tsx:TS2532": 1,
