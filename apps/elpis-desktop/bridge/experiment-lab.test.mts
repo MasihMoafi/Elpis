@@ -5,21 +5,24 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { execFileSync } from 'node:child_process';
-import { createExperimentLab } from './experiment-lab.mjs';
+import { createExperimentLab } from './experiment-lab.mts';
 import { startDesktopServer } from './server.mjs';
 
 const stage = { id: 'answer', title: 'Answer', instruction: 'Answer independently.', kind: 'implement', dependsOn: [] };
 const input = () => ({ pattern: 'voting', task: 'What is 19 + 23?', expected: '42', repetitions: 2, stages: [stage] });
+type RpcParams = { model: string; modelProvider: string; input: { text: string }[]; threadId: string; permissions: string; config: { forced_login_method: string } };
 class Client extends EventEmitter {
-  calls = []; count = 0; prompts = []; auth = 'ChatGPT'; fail = false; hang = false; missingUsage = false;
+  close = () => {};
+  listThreads: () => Promise<{ data: { id: string; status: { type: string } }[]; nextCursor: null }> = async () => ({ data: [], nextCursor: null });
+  calls: { method: string; params: RpcParams }[] = []; count = 0; prompts: string[] = []; auth = 'ChatGPT'; fail = false; hang = false; missingUsage = false;
   // Answer for the nth pattern-arm turn (1-based); the single-agent arm always answers 42.
-  patternAnswer = () => '42'; patternTurns = 0;
+  patternAnswer = (_n: number) => '42'; patternTurns = 0;
   async providers() { return { openai: { auth: { state: 'signedIn', method: this.auth } } }; }
-  async sideRpc(method, params) {
+  async sideRpc(method: string, params: RpcParams): Promise<{ model?: string; modelProvider?: string; thread?: { id: string; ephemeral: boolean }; turn?: { id: string } }> {
     this.calls.push({ method, params });
     if (method === 'thread/start') return { model: params.model, modelProvider: params.modelProvider, thread: { id: `00000000-0000-0000-0000-${String(++this.count).padStart(12, '0')}`, ephemeral: true } };
     if (method === 'turn/start') {
-      const prompt = params.input[0].text;
+      const prompt = params.input[0]!.text;
       this.prompts.push(prompt);
       const answer = prompt.includes('Your role: Answer') ? this.patternAnswer(++this.patternTurns) : '42';
       if (!this.hang) setTimeout(() => {
@@ -35,10 +38,10 @@ class Client extends EventEmitter {
 async function fixture(options = {}) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-lab-test-'));
   const client = new Client(), file = path.join(dir, 'latest.json');
-  const lab = createExperimentLab({ client, file, ...options });
+  const lab = createExperimentLab({ client: client as unknown as Parameters<typeof createExperimentLab>[0]['client'], file, ...options });
   return { client, lab, file };
 }
-async function finish(lab) {
+async function finish(lab: ReturnType<typeof createExperimentLab>) {
   for (let i = 0; i < 100; i++) {
     const value = await lab.read();
     if (value && value.status !== 'running') return value;
@@ -52,8 +55,8 @@ test('Restart blocks Lab admission and execution even when the engine reports no
   const dir = await fs.mkdtemp(path.join(base, 'lab-restart-'));
   const client = new Client(); client.hang = true; client.close = () => {};
   client.listThreads = async () => ({ data: [], nextCursor: null });
-  let release, admitted;
-  const admission = new Promise(resolve => { release = resolve; }), admitting = new Promise(resolve => { admitted = resolve; });
+  let release!: () => void, admitted!: () => void;
+  const admission = new Promise<void>(resolve => { release = resolve; }), admitting = new Promise<void>(resolve => { admitted = resolve; });
   const providers = client.providers.bind(client);
   client.providers = async () => { admitted(); await admission; return providers(); };
   const app = await startDesktopServer({ client, elpisHome: dir, trashFile: path.join(dir, 'trash.json'),
@@ -62,8 +65,8 @@ test('Restart blocks Lab admission and execution even when the engine reports no
   try {
     const url = new URL(app.url), token = new URLSearchParams(url.hash.slice(1)).get('token');
     const session = await fetch(`${url.origin}/api/session`, { method: 'POST', headers: { Origin: url.origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) });
-    const cookie = session.headers.get('set-cookie').split(';')[0];
-    const post = body => fetch(`${url.origin}/api/experiment-lab`, { method: 'POST', headers: { Origin: url.origin, 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify(body) });
+    const cookie = session.headers.get('set-cookie')!.split(';')[0]!;
+    const post = (body: unknown) => fetch(`${url.origin}/api/experiment-lab`, { method: 'POST', headers: { Origin: url.origin, 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify(body) });
     assert.equal(await app.canRestart(), true);
     // 24 Oct: chats run in the background service, which outlives the window; a running chat no longer blocks the update.
     client.listThreads = async () => ({ data: [{ id: 'busy-chat', status: { type: 'active' } }], nextCursor: null });
@@ -93,11 +96,11 @@ test('paired repetitions fix subscription/model/check, alternate order, preserve
   assert.deepEqual(result.trials.map(t => t.arm), ['baseline', 'pattern', 'pattern', 'baseline']);
   assert.equal(result.trials.length, 4);
   assert.ok(result.trials.every(t => t.passed === true && t.tokens === 15 && t.elapsedMs >= 0));
-  assert.ok(result.trials.every(t => t.steps[0].prompt.includes(input().task) && t.steps[0].output.answer === '42'));
+  assert.ok(result.trials.every(t => t.steps[0]!.prompt.includes(input().task) && t.steps[0]!.output!.answer === '42'));
   assert.ok(client.calls.filter(c => c.method === 'thread/start').every(c => c.params.model === 'gpt-6-luna' && c.params.modelProvider === 'openai' && c.params.permissions === ':danger-full-access' && c.params.config.forced_login_method === 'chatgpt'));
   assert.ok(client.prompts.every(p => !p.includes('Expected answer') && !p.includes('"42"')));
   assert.equal(client.listenerCount('side'), 0);
-  assert.deepEqual(await createExperimentLab({ client, file }).read(), result);
+  assert.deepEqual(await createExperimentLab({ client: client as unknown as Parameters<typeof createExperimentLab>[0]['client'], file }).read(), result);
 });
 
 test('invalid repetitions, loops, missing dependencies, empty board and API-key accounts make no model calls', async () => {
@@ -120,12 +123,12 @@ test('DAG branches see only ancestors; join waits for both and the expected answ
     { ...stage, id: 'left', title: 'Left' }, { ...stage, id: 'right', title: 'Right' },
     { ...stage, id: 'join', title: 'Join', dependsOn: ['left', 'right'] },
   ] });
-  const record = await finish(lab), steps = record.trials.find(t => t.arm === 'pattern').steps;
+  const record = await finish(lab), steps = record.trials.find(t => t.arm === 'pattern')!.steps;
   assert.equal(steps.length, 3);
-  assert.match(steps[2].prompt, /Left/); assert.match(steps[2].prompt, /Right/);
-  assert.doesNotMatch(steps[0].prompt, /Computed the sum/);
-  assert.doesNotMatch(steps[1].prompt, /Computed the sum/);
-  assert.equal(record.trials.find(t => t.arm === 'pattern').tokens, 45);
+  assert.match(steps[2]!.prompt, /Left/); assert.match(steps[2]!.prompt, /Right/);
+  assert.doesNotMatch(steps[0]!.prompt, /Computed the sum/);
+  assert.doesNotMatch(steps[1]!.prompt, /Computed the sum/);
+  assert.equal(record.trials.find(t => t.arm === 'pattern')!.tokens, 45);
   assert.equal(client.listenerCount('side'), 0);
 });
 
@@ -134,7 +137,7 @@ test('model failures remain failed observations; absent token usage stays unknow
   await lab.start({ ...input(), repetitions: 1 });
   const result = await finish(lab);
   assert.equal(result.trials.length, 2);
-  assert.ok(result.trials.every(t => !t.passed && t.tokens === null && /rate limited/.test(t.error)));
+  assert.ok(result.trials.every(t => !t.passed && t.tokens === null && /rate limited/.test(t.error!)));
   assert.equal(client.listenerCount('side'), 0);
 });
 
@@ -156,8 +159,8 @@ test('a failed branch blocks its descendants without dropping a successful sibli
     { ...stage, id: 'left', title: 'Left' }, { ...stage, id: 'right', title: 'Right' },
     { ...stage, id: 'join', title: 'Join', dependsOn: ['left', 'right'] },
   ] });
-  const result = await finish(lab), trial = result.trials.find(t => t.arm === 'pattern');
-  assert.equal(trial.passed, false); assert.match(trial.error, /Branch unavailable/);
+  const result = await finish(lab), trial = result.trials.find(t => t.arm === 'pattern')!;
+  assert.equal(trial.passed, false); assert.match(trial.error!, /Branch unavailable/);
   assert.equal(trial.steps.length, 2); assert.equal(trial.steps.filter(s => s.output).length, 1);
   assert.equal(client.listenerCount('side'), 0);
 });
@@ -170,7 +173,7 @@ test('model fallback is refused before a turn starts and the unexpected thread i
   };
   await lab.start({ ...input(), repetitions: 1 });
   const result = await finish(lab);
-  assert.ok(result.trials.every(t => !t.passed && /changed/.test(t.error)));
+  assert.ok(result.trials.every(t => !t.passed && /changed/.test(t.error!)));
   assert.equal(client.prompts.length, 0);
   assert.equal(client.calls.filter(c => c.method === 'thread/unsubscribe').length, 2);
   assert.equal(client.listenerCount('side'), 0);
@@ -194,8 +197,8 @@ test('timeout and Stop interrupt turns, retain partial evidence, reject overlap 
 test('an unclean bridge restart marks an unfinished record interrupted instead of running forever', async () => {
   const { file, client } = await fixture();
   await fs.writeFile(file, JSON.stringify({ status: 'running', trials: [], id: 'interrupted' }));
-  const record = await createExperimentLab({ client, file }).read();
-  assert.equal(record.status, 'interrupted');
+  const record = await createExperimentLab({ client: client as unknown as Parameters<typeof createExperimentLab>[0]['client'], file }).read();
+  assert.equal(record!.status, 'interrupted');
 });
 
 test('the HTTP route requires a private session, returns the record envelope and validates before calling the model', async t => {
@@ -205,8 +208,8 @@ test('the HTTP route requires a private session, returns the record envelope and
   t.after(() => app.close());
   const url = new URL(app.url), token = new URLSearchParams(url.hash.slice(1)).get('token');
   const session = await fetch(`${url.origin}/api/session`, { method: 'POST', headers: { Origin: url.origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) });
-  const cookie = session.headers.get('set-cookie').split(';')[0];
-  const post = (data, authenticated = true) => fetch(`${url.origin}/api/experiment-lab`, { method: 'POST', headers: { Origin: url.origin, 'Content-Type': 'application/json', ...(authenticated ? { Cookie: cookie } : {}) }, body: JSON.stringify(data) });
+  const cookie = session.headers.get('set-cookie')!.split(';')[0]!;
+  const post = (data: unknown, authenticated = true) => fetch(`${url.origin}/api/experiment-lab`, { method: 'POST', headers: { Origin: url.origin, 'Content-Type': 'application/json', ...(authenticated ? { Cookie: cookie } : {}) }, body: JSON.stringify(data) });
   assert.equal((await post(input(), false)).status, 401);
   assert.equal((await post({ ...input(), repetitions: 0 })).status, 400);
   assert.equal(client.calls.length, 0);
@@ -214,7 +217,7 @@ test('the HTTP route requires a private session, returns the record envelope and
   assert.deepEqual(await initial.json(), { record: null, entries: [] });
   const response = await post({ ...input(), repetitions: 1 });
   assert.equal(response.status, 200); const started = await response.json(); assert.equal(started.record.status, 'running');
-  assert.deepEqual(started.entries.map(entry => entry.id), [started.record.id]);
+  assert.deepEqual(started.entries.map((entry: { id: string }) => entry.id), [started.record.id]);
   const deadline = Date.now() + 10000;
   let record;
   do {
@@ -242,7 +245,7 @@ test('until-solved keeps repeating past one turn and stops only when the pattern
   assert.deepEqual(result.trials.filter(t => t.arm === 'pattern').map(t => t.passed), [false, false, true]);
   assert.ok(result.trials.every(t => t.error === null && t.endedAt));
   assert.equal(client.listenerCount('side'), 0);
-  assert.deepEqual(await createExperimentLab({ client, file }).read(), result, 'the chosen mode and outcome survive reopening');
+  assert.deepEqual(await createExperimentLab({ client: client as unknown as Parameters<typeof createExperimentLab>[0]['client'], file }).read(), result, 'the chosen mode and outcome survive reopening');
 });
 
 test('until-solved never treats a finished turn as a finished task: an unsolved task ends at the cap, saying so', async () => {
@@ -259,7 +262,7 @@ test('until-solved stops at the first failed trial instead of retrying forever',
   await lab.start(until({ repetitions: 10 }));
   const result = await finish(lab);
   assert.equal(result.status, 'failed'); assert.equal(result.stopReason, 'error');
-  assert.match(result.error, /rate limited/);
+  assert.match(result.error!, /rate limited/);
   assert.equal(result.trials.length, 1); assert.equal(client.prompts.length, 1);
 });
 
@@ -303,9 +306,9 @@ test('a new run keeps older results in newest-first history and reopens each by 
   const first = await finish(lab);
   await lab.start({ ...input(), task: 'Another question?', expected: '43', repetitions: 1 });
   const second = await finish(lab);
-  assert.deepEqual((await lab.list()).map(entry => entry.id), [second.id, first.id]);
+  assert.deepEqual((await lab.list()).map((entry: { id: string }) => entry.id), [second.id, first.id]);
   assert.deepEqual(await lab.read(first.id), first);
-  const reopened = createExperimentLab({ client, file });
+  const reopened = createExperimentLab({ client: client as unknown as Parameters<typeof createExperimentLab>[0]['client'], file });
   assert.deepEqual(await reopened.read(first.id), first);
   assert.deepEqual(await reopened.read(), second);
 });
@@ -315,8 +318,8 @@ test('an old single latest record becomes the first saved history entry without 
   await lab.start({ ...input(), repetitions: 1 });
   const legacy = await finish(lab);
   await fs.writeFile(file, JSON.stringify(legacy));
-  const migrated = createExperimentLab({ client, file });
+  const migrated = createExperimentLab({ client: client as unknown as Parameters<typeof createExperimentLab>[0]['client'], file });
   assert.deepEqual(await migrated.read(), legacy);
-  assert.deepEqual((await migrated.list()).map(entry => entry.id), [legacy.id]);
+  assert.deepEqual((await migrated.list()).map((entry: { id: string }) => entry.id), [legacy.id]);
   assert.deepEqual(JSON.parse(await fs.readFile(file, 'utf8')), { version: 2, records: [legacy] });
 });

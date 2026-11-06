@@ -21,7 +21,7 @@ export const productionFiles = [
   'bridge/love-interview.mts', 'bridge/agent-output.mts',
   'bridge/improve.mjs', 'bridge/improve-source.mts', 'bridge/improve-check.mts', 'desktop/improve.cts',
   'bridge/browser-mcp.mjs', 'bridge/claude-mcp-import.mts', 'desktop/browser-agent.cjs', 'desktop/browser-identity.cts', 'desktop/documents.cjs', 'desktop/screen-capture.cts',
-  'bridge/canvas-plan.mjs', 'bridge/experiment-lab.mjs', 'bridge/client.mts', 'bridge/subscription-models.mts', 'bridge/cloudroom-vm.mjs', 'bridge/permission-presets.mts', 'bridge/customize.mts', 'bridge/skill-trash.mts', 'bridge/github-connector.mts', 'bridge/elpis-features.mjs', 'bridge/smart-prune.mts', 'bridge/files.mts', 'bridge/folders.mts', 'bridge/git.mjs', 'bridge/recorded-changes.mts', 'bridge/provider-keys.mts', 'bridge/provider-settings.mjs', 'bridge/provider-models.mts',
+  'bridge/canvas-plan.mjs', 'bridge/experiment-lab.mts', 'bridge/client.mts', 'bridge/subscription-models.mts', 'bridge/cloudroom-vm.mjs', 'bridge/permission-presets.mts', 'bridge/customize.mts', 'bridge/skill-trash.mts', 'bridge/github-connector.mts', 'bridge/elpis-features.mjs', 'bridge/smart-prune.mts', 'bridge/files.mts', 'bridge/folders.mts', 'bridge/git.mjs', 'bridge/recorded-changes.mts', 'bridge/provider-keys.mts', 'bridge/provider-settings.mjs', 'bridge/provider-models.mts',
   'bridge/client-state.mts', 'bridge/client-paths.mts', 'bridge/client-permissions.mts', 'bridge/client-protocol.mts', 'bridge/client-archive-history.mts',
   'bridge/client-connection.mts', 'bridge/client-thread-list.mts', 'bridge/client-thread-actions.mts',
   'bridge/client-models.mts', 'bridge/client-settings.mts', 'bridge/client-voice.mts', 'bridge/client-mcp.mts',

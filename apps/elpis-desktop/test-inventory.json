@@ -102,7 +102,7 @@
     "bridge/goal.test.mjs",
     "bridge/customize.test.mts",
     "bridge/dev-servers.test.mjs",
-    "bridge/experiment-lab.test.mjs",
+    "bridge/experiment-lab.test.mts",
     "bridge/file-view.test.mjs",
     "bridge/files.test.mts",
     "bridge/folders.test.mts",

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { BridgeError, DesktopClient, elpisHome, object } from './client.mts';
 import { profileEnvironment } from './profile-env.mts';
 import { LOVE_SPOT_AUDIO } from '../lib/love-spot-audio.mts';
-import { createExperimentLab } from './experiment-lab.mjs';
+import { createExperimentLab } from './experiment-lab.mts';
 import { createSchedule } from './schedule.mts';
 import { createTools } from './tools.mts';
 import { createTranscription } from './transcription.mjs';
