@@ -8,7 +8,10 @@ test('a new automation is listed with its schedule; Run now sends it and its run
   const f = await loveSpotFixture({ automations: true, reply: 'All builds are green.' });
   try {
     const { page } = f;
-    await page.locator('.nav-list').getByRole('button', { name: 'Automations', exact: true }).click();
+    // Automations live in Workflows, as its Scheduled view (6 Nov).
+    await page.locator('.nav-list').getByRole('button', { name: 'Workflows', exact: true }).click();
+    await page.getByRole('radio', { name: 'Scheduled', exact: true }).click();
+    assert.equal(await page.locator('.nav-list').getByRole('button', { name: 'Automations', exact: true }).count(), 0, 'no separate Automations page');
     await page.getByText('No automations yet').waitFor();
     await page.getByRole('button', { name: 'New automation', exact: true }).click();
     await page.getByLabel('Automation name', { exact: true }).fill('Morning check');

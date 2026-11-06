@@ -77,8 +77,8 @@ export function AutomationsView({ projects, onOpenChat }: { projects: Project[];
     if (filter !== "all" && saved.status !== filter) setFilter("all");
   }
   const shown = (tasks ?? []).filter(task => filter === "all" || task.status === filter);
-  return <div className="automations settings-page" aria-label="Automations">
-    <SettingsHeader title="Automations" description="Prompts Elpis sends on a schedule. They run while Elpis is open or in the tray; runs missed while it was closed happen once when it starts."
+  return <div className="automations settings-page" aria-label="Scheduled">
+    <SettingsHeader title="Scheduled" description="Prompts Elpis sends on a schedule. They run while Elpis is open or in the tray; runs missed while it was closed happen once when it starts."
       action={editing ? undefined : <Button onClick={() => setEditing("new")}><Plus />New automation</Button>} />
     {error && <SettingsNotice tone="alert">{error}</SettingsNotice>}
     {editing && <AutomationForm initial={editing === "new" ? blank() : draftOf(editing)} editing={editing !== "new"} projects={projects} onSave={save} onCancel={() => setEditing(null)} />}
