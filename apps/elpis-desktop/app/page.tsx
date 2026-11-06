@@ -55,7 +55,6 @@ import { SidePanel, sideMinWidth, useSidePanel } from "@/components/side-panel";
 import { type SideRequest } from "@/components/side-chat";
 import { FloatChatBar, FloatChatPill } from "@/components/float-chat";
 import { useSessionSplit } from "@/components/session-split";
-import { fitAttachments, type Attachment } from "@/lib/attachments";
 import { api, modelLabel, providerLabel, title, agentName,
   type ProviderSettings, type Thread } from "@/lib/api";
 import { useComposerHeight } from "@/lib/use-composer-height";
@@ -107,6 +106,7 @@ import { useRemoveThreads } from "@/lib/use-remove-threads";
 import { createWorkspaceCommandMenu } from "@/lib/workspace-command-menu";
 import { conversationStatus } from "@/lib/conversation-status";
 import { useChatTabTitles } from "@/lib/use-chat-tab-titles";
+import { createBrowserAttachment } from "@/lib/browser-attachments";
 import { PAGE_NAMES } from "@/lib/workspace-navigation-pages";
 import { refusedOffline } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
@@ -191,19 +191,8 @@ export default function Home() {
   }, [ready, connected]);
   const editDraft = (value: string) => { setText(value); saveDraft(selectedRef.current?.id || newDraftKey.current, value); };
   const attachmentState = useComposerAttachments({ selectedRef, newDraftKey, shellMode, savedAttachments, saveAttachments, setError, setRuntimeNotices });
-  const { attachments, attaching, setFileNotice, setAttachments } = attachmentState;
-  /** The browser's annotations and screenshots join the composer's files; its Send also sends the message. */
-  async function attachFromBrowser(parts: Attachment[], submit: boolean) {
-    const owner = selectedRef.current?.id || newDraftKey.current;
-    try {
-      const fit = fitAttachments(savedAttachments(owner), parts);
-      if (fit.problems.length) throw Error(fit.problems.join("\n"));
-      saveAttachments(owner, fit.kept); setAttachments(fit.kept); setFileNotice("");
-    } catch (cause) { setFileNotice(errorText(cause)); showChat(); return false; }
-    showChat();
-    if (submit) await send(); else requestAnimationFrame(() => composerRef.current?.focus());
-    return true;
-  }
+  const { attachments, attaching, setAttachments } = attachmentState;
+  const attachFromBrowser = createBrowserAttachment({ session, composer, attachments: attachmentState, drafts: draftStore, newDraftKey, showChat: () => showChat(), send: () => send() });
   useComposerHeight(composerRef, [text, selected?.id, view]);
   const loveActivity = useLoveActivity(view === "loveSpot", ready, view === "chat" ? selected : null);
   const loveRef = useRef(loveActivity); loveRef.current = loveActivity;
