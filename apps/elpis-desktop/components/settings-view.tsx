@@ -97,17 +97,17 @@ export function SettingsView({ initialTab = "providers", navigationKey = 0, acti
       case "notifications": return <NotificationSettings />;
       case "appearance": return <AppearanceSettings theme={theme} onTheme={onTheme} />;
       case "shortcuts": return <ShortcutSettings />;
-      case "browser": return <BrowserSettings onOpen={onBrowser} />;
+      case "browser": return <BrowserSettings {...(onBrowser ? { onOpen: onBrowser } : {})} />;
       case "voice": return <VoiceSettings active={active && tab === "voice"} refreshKey={accountRefresh} onOpenMcp={() => selectTab("mcp")} />;
       case "personalization": return <><PersonalizationSettings active={active && tab === "personalization"} />{threadId && onChatContext && <SettingsGroup title="Current chat"><SettingRow title="Context Ledger" description="Choose what this chat admits into context." scope="this chat"><Button variant="outline" onClick={onChatContext}>Open Context Ledger</Button></SettingRow></SettingsGroup>}</>;
-      case "providers": return <><ProvidersSettings refreshKey={accountRefresh} active={active && tab === "providers"} onChanged={onProvidersChanged} />{threadId && onChatModel && <SettingsGroup title="Current chat"><SettingRow title="Current chat model" description={modelChangeReason ?? currentModel ?? "Not reported"} scope="this chat"><Button variant="outline" disabled={!!modelChangeReason} onClick={onChatModel}>Change this chat model</Button></SettingRow></SettingsGroup>}</>;
+      case "providers": return <><ProvidersSettings refreshKey={accountRefresh} active={active && tab === "providers"} {...(onProvidersChanged ? { onChanged: onProvidersChanged } : {})} />{threadId && onChatModel && <SettingsGroup title="Current chat"><SettingRow title="Current chat model" description={modelChangeReason ?? currentModel ?? "Not reported"} scope="this chat"><Button variant="outline" disabled={!!modelChangeReason} onClick={onChatModel}>Change this chat model</Button></SettingRow></SettingsGroup>}</>;
       case "mcp": return <><McpSettings onOpenVoice={() => selectTab("voice")} />{onCustomize && <SettingsGroup title="Plugins & skills"><SettingRow title="Plugins & skills" description="Manage plugins and skills in Customize." scope="this device"><Button variant="outline" onClick={onCustomize}>Open Customize</Button></SettingRow></SettingsGroup>}</>;
       case "usage": return <UsageSettings refreshKey={accountRefresh} />;
       case "git": return <GitSettings />;
       case "worktrees": return <WorktreeSettings />;
       case "hooks": return <HooksSettings />;
       case "configuration": return <><ConfigurationSettings />{threadId && onChatPermissions && <SettingsGroup title="Current chat"><SettingRow title="Current permissions" description={currentPermission ?? "Not reported"} scope="this chat"><Button variant="outline" onClick={onChatPermissions}>Change this chat permissions</Button></SettingRow></SettingsGroup>}</>;
-      case "import": return <ImportSettings active={active && tab === "import"} onImported={onImported} />;
+      case "import": return <ImportSettings active={active && tab === "import"} {...(onImported ? { onImported } : {})} />;
       case "archived": return <ArchivedView onUnarchived={onUnarchived} onDelete={onDeleteThread} />;
     }
   };

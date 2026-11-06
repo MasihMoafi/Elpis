@@ -29,7 +29,7 @@ function FileViewer({ cwd, file, doc }: { cwd: string; file: OpenFile; doc: Doc 
   const { softWrap } = usePreferences();
   const abs = file.path.startsWith("/") ? file.path : `${cwd.replace(/\/+$/, "")}/${file.path}`, dirty = isDirty(doc), ready = doc?.status === "ready" ? doc : null;
   const markdown = /\.(md|markdown)$/i.test(file.path), html = /\.html?$/i.test(file.path), source = file.view === "source", editLabel = markdown && ready ? "Edit" : "Source";
-  const actions: MenuAction[] = useFileActions({ abs, rel: file.path, inside: !file.path.startsWith("/"), line: file.line }, setNote, undefined, () => selectedPassage.current);
+  const actions: MenuAction[] = useFileActions({ abs, rel: file.path, inside: !file.path.startsWith("/"), ...(file.line === undefined ? {} : { line: file.line }) }, setNote, undefined, () => selectedPassage.current);
   const rememberSelection = (event: React.SyntheticEvent<HTMLDivElement>) => {
     const field = event.target instanceof HTMLTextAreaElement ? event.target : null;
     if (field) selectedPassage.current = field.value.slice(field.selectionStart, field.selectionEnd);

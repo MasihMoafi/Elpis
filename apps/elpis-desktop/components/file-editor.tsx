@@ -11,7 +11,7 @@ import { SearchField } from "@/components/ui/search-field";
 /** The line height in pixels: the same number in components/files-pane.css (--fe-line), which every layer shares. */
 const LINE = 20;
 type Found = { line: number; start: number; end: number };
-export type Marks = { line?: number; endLine?: number; /** The lines were added by a diff: marked green. */ added?: boolean; /** Counts the times the lines were asked for, so a second click on the same lines scrolls there again. */ focus: number };
+export type Marks = { line?: number | undefined; endLine?: number | undefined; /** The lines were added by a diff: marked green. */ added?: boolean; /** Counts the times the lines were asked for, so a second click on the same lines scrolls there again. */ focus: number };
 
 /** Every place `query` occurs (ignoring case), line by line. */
 function search(lines: string[], query: string): Found[] {

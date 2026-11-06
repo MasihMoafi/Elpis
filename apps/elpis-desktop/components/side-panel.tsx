@@ -266,7 +266,7 @@ export function SidePanel({ panel, browser, hasTerminal, dark, cwd, threadId, ru
           const others = pageKeys.filter(key => !targets.includes(key)), right = pageKeys.slice(Math.max(...targets.map(key => pageKeys.indexOf(key))) + 1);
           return <Tab key={item.key} icon={page.muted ? <VolumeX size={16} /> : <BrowserIcon size={16} />} label={page.title} title={page.url === "about:blank" ? page.title : `${page.title}\n${page.url}`} active={active} selected={selected.includes(item.key)}
             closeLabel={`Close ${page.title} tab`} actions={browserTabActions(browser, page, { selected: selectedPages, close: () => closePages(targets),
-              closeOthers: others.length ? () => closePages(others) : undefined, closeRight: right.length ? () => closePages(right) : undefined,
+              ...(others.length ? { closeOthers: () => closePages(others) } : {}), ...(right.length ? { closeRight: () => closePages(right) } : {}),
               pin: () => { setPinError(""); void browserPins.toggle({ url: page.url, title: page.title }); }, pinned: browserPins.pins.some(pin => pin.url === page.url),
               rename: () => { setName(page.title); setRenameError(""); setRenaming(page); } })}
             onContextMenu={() => { if (!selected.includes(item.key)) { setSelection([item.key]); anchor.current = item.key; } }} onSelect={event => selectPage(item.key, event)} onClose={() => closePages(targets)} />;
@@ -280,8 +280,8 @@ export function SidePanel({ panel, browser, hasTerminal, dark, cwd, threadId, ru
       {shown?.kind === "terminal" && <TerminalView termKey={shown.terminal.key} cwd={shown.terminal.cwd} dark={dark} launch={launch} />}
       {shown?.kind === "changes" && <ChangesPanel threadId={threadId} running={running} />}
       {shown?.kind === "files" && <FilesPane cwd={cwd} />}
-      {shown?.kind === "context" && <ContextPanel threadId={threadId} />}
-      {shown?.kind === "browser" && <BrowserPanel onReturnToChat={panel.closePanel} browser={browser} cwd={cwd} covered={covered || resizing} onAttach={onAttach} imagesAllowed={imagesAllowed} />}
+      {shown?.kind === "context" && <ContextPanel {...(threadId === undefined ? {} : { threadId })} />}
+      {shown?.kind === "browser" && <BrowserPanel onReturnToChat={panel.closePanel} browser={browser} cwd={cwd} covered={covered || resizing} {...(onAttach ? { onAttach } : {})} imagesAllowed={imagesAllowed} />}
       {!shown && <Empty>{kinds.map(kind => <Button key={kind.id} type="button" variant="outline" size="sm" onClick={kind.run}>{kind.icon}{kind.label}</Button>)}</Empty>}
     </ViewBoundary>{pinError && <p role="alert" className="browser-error">{pinError}</p>}</div>
     <AlertDialog open={!!renaming} onOpenChange={value => { if (!value && !savingName) setRenaming(null); }}>
