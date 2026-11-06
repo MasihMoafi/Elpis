@@ -1,6 +1,5 @@
 "use client";
 
-import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { flushSync } from "react-dom";
 import { cloneElement, useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { ChatIcon } from "@/components/elpis-icons";
@@ -18,7 +17,6 @@ import { usePromptKeys } from "@/lib/prompt-history";
 import { ShortcutsDialog } from "@/components/shortcuts-dialog";
 import { StartupSplash } from "@/components/startup-splash";
 import { permissionLabel, type PermissionMode } from "@/components/composer-controls";
-import { CopyButton } from "@/components/markdown-text";
 import { type MessageVersion } from "@/lib/turn-replacement";
 import type { TerminalLaunch } from "@/components/terminal-view";
 import { type SettingsDestination } from "@/components/settings-view";
@@ -124,6 +122,7 @@ import { sessionWindowApi, useDesktopCapabilities } from "@/lib/use-desktop-capa
 import { useWorkspaceNotices } from "@/lib/use-workspace-notices";
 import { useSidebarSearch } from "@/lib/use-sidebar-search";
 import { WorkspaceNotices } from "@/components/workspace-notices";
+import { WorkspaceRecovery } from "@/components/workspace-recovery";
 import { without } from "@/lib/utils";
 import { errorText } from "@/lib/error-text.mjs";
 import { refreshModelCatalog, useModelCatalog } from "@/lib/model-catalog";
@@ -335,7 +334,6 @@ export default function Home() {
   const imageBlocked = attachments.some(part => part.type === "image") && !!knownModel?.inputModalities && !knownModel.inputModalities.includes("image");
   const canSendFollowUp = !!selected && !!activeTurn && !continues;
   const sendBlocked = readOnlyRun || (!text.trim() && !attachments.length) || (busy && (!canSendFollowUp || shellMode)) || dictating || attaching || imageBlocked || !ready || !connected || (!shellMode && (!!missingChoiceNotice || needsModelId && !model.trim()));
-  const recoveryAttachments = selected ? draftStore.heldAttachments(`recovery-${selected.id}`) ?? [] : [];
 
   const find = (id?: string | null) => id ? threads.find(thread => thread.id === id) ?? related[id] : undefined;
   const selectedTitle = selected ? title(selected) : "";
@@ -345,7 +343,6 @@ export default function Home() {
   const navHistory = useNavHistory(ready, { view, threadId: view === "chat" ? selected?.id ?? null : null });
   const replacement = useTurnReplacementView({ selected, entries, shownEntries, continues, activeTurn, connected, busy, loading, itemCursor });
   const { replaceable, turnEntries, replacementOptions, replacementOptionsKey, regenerate } = replacement;
-  const recoveredEdit = selected ? savedDraft(`recovery-${selected.id}`) : "";
   const { writePrompt, editLastMessage } = createPromptEditing({ composer, session, replacement, editDraft, setMessageEdits, setSlashNotice });
   // The message box's history keys (lib/prompt-history.ts): ↑/↓ and Ctrl+R through what you sent, Esc Esc to edit the last.
   const promptKeys = usePromptKeys(selected?.id ?? newDraftKey.current, { entries, box: () => composerRef.current, read: () => textRef.current, write: writePrompt, editLast: editLastMessage });
@@ -563,7 +560,7 @@ export default function Home() {
         error={error && !(refusedOffline(error) && !connected) ? error : undefined} onDismissError={() => setError("")}
         worktree={worktreeNotice} onDismissWorktree={() => setWorktreeNotice("")} loadingModels={catalogLoading && !catalogError && !models.length}
         conversationError={selected ? runtimeNotices[selected.id] : undefined} onDismissConversationError={() => selected && setRuntimeNotices(prev => without(prev, selected.id))}
-        recovery={selected && (recoveredEdit || recoveryAttachments.length > 0) && <div className="error-banner"><details className="min-w-0 w-full"><DisclosureSummary>Recover unsent message</DisclosureSummary><pre className="whitespace-pre-wrap break-words py-2" dir="auto">{recoveredEdit}</pre>{recoveryAttachments.length > 0 && <p>Files: {recoveryAttachments.map(part => part.name).join(", ")}</p>}<div className="flex flex-wrap items-center gap-2">{recoveredEdit && <CopyButton label="Copy unsent message" text={() => recoveredEdit} />}<Button variant="outline" size="sm" disabled={!!text.trim() || attachments.length > 0} title={text.trim() || attachments.length ? "Keep or clear your current draft before restoring this message." : undefined} onClick={() => { saveDraft(`recovery-${selected.id}`, ""); saveAttachments(`recovery-${selected.id}`, []); editDraft(recoveredEdit); setAttachments(recoveryAttachments); saveAttachments(selected.id, recoveryAttachments); }}>Use in composer</Button>{(!!text.trim() || attachments.length > 0) && <span>Your current draft is kept. Save it, or clear it to restore the unsent message.</span>}</div></details></div>} />
+        recovery={<WorkspaceRecovery session={session} composer={composer} attachmentsState={attachmentState} drafts={draftStore} editDraft={editDraft} />} />
       {split.thread && view === "chat" && <iframe key={split.thread.id} ref={split.frame} className="split-session" title="Split session" src={`/?pane=1&session=${encodeURIComponent(split.thread.id)}`} />}
     </main>
   </div></ReadAloud></LiveVoiceProvider></DocumentReviewProvider>;
