@@ -13,7 +13,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { profileEnvironment } from './profile-env.mts';
 import { workflowDefaults, workflowModelRoutes } from "./workflow-models.mts";
-import { MAX_BRIDGE_MESSAGE_BYTES, elpisHome, existingSocket } from './client-paths.mjs';
+import { MAX_BRIDGE_MESSAGE_BYTES, elpisHome, existingSocket } from './client-paths.mts';
 import { ClientState } from './client-state.mjs';
 import { ArchiveHistory } from './client-archive-history.mjs';
 import { internal_bind, internal_reconnect, internal_rpc } from './client-connection.mjs';
@@ -34,7 +34,7 @@ import * as clientTurns from './client-turns.mjs';
 import * as clientChanges from './client-changes.mjs';
 import * as clientApprovals from './client-approvals.mjs';
 
-export { MAX_BRIDGE_MESSAGE_BYTES, elpisHome, existingSocket } from './client-paths.mjs';
+export { MAX_BRIDGE_MESSAGE_BYTES, elpisHome, existingSocket } from './client-paths.mts';
 export { speechChunks } from './client-voice.mjs';
 export { settledStatus } from './client-thread-list.mjs';
 export { BridgeError, object, text, threadId } from './validate.mts';

@@ -6,7 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { trustedBrowserSender } = require('./browser-policy.cts');
-const { threadId } = require('./open-thread.cjs');
+const { threadId } = require('./open-thread.cts');
 
 /** What a reloaded window replays of a shell's output. */
 const KEEP = 512 * 1024;

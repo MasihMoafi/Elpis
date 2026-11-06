@@ -146,10 +146,10 @@
     "bridge/love-spot-painting.test.cjs",
     "bridge/agent-output.test.mjs",
     "bridge/trajectory-projection.test.mts",
-    "bridge/kokoro.test.mjs"
+    "bridge/kokoro.test.mts"
   ],
   "desktop": [
-    "desktop/app-menu.test.cjs",
+    "desktop/app-menu.test.cts",
     "desktop/app-updates.test.cjs",
     "desktop/browser-agent.test.cjs",
     "desktop/browser-annotations.test.cts",
@@ -164,7 +164,7 @@
     "desktop/screen-capture.test.cjs",
     "desktop/launch.test.mjs",
     "desktop/media-policy.test.cts",
-    "desktop/open-thread.test.cjs",
+    "desktop/open-thread.test.cts",
     "desktop/package.test.mts",
     "desktop/preferences.test.cts",
     "desktop/quick-entry.test.cjs",

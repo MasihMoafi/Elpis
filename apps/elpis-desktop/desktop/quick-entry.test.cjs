@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const { DEFAULT_SHORTCUT, validAccelerator, shortcutSupport, createShortcut, createQuickEntry, startQuickEntry } = require('./quick-entry.cjs');
-const { createNewChatOpener } = require('./open-thread.cjs');
+const { createNewChatOpener } = require('./open-thread.cts');
 
 function fakeShortcuts({ refuse = [] } = {}) {
   const registered = new Map(), log = [];

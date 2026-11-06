@@ -7,7 +7,7 @@ import { grantedPermissions } from './client-approvals.mjs';
 import path from 'node:path';
 import { ragMessage } from './rag-command.mts';
 import { randomUUID } from 'node:crypto';
-import { archivedSession } from './client-protocol.mjs';
+import { archivedSession } from './client-protocol.mts';
 import { collaborationMode, modeOf, permissionMode, permissionSetting, reviewTarget } from './client-permissions.mjs';
 import { internal_attach, internal_decorate } from './client-thread-list.mjs';
 import { internal_browserOptions, internal_rpc } from './client-connection.mjs';

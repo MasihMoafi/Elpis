@@ -24,7 +24,7 @@ async function launch(args, flushText, flushBrowsers, canRestart = async () => t
     sessions, openers, testStore: { get: () => null, flush: async () => calls.push('workspace-flush') }, testServer: { canRestart, close: async () => calls.push('board-close') },
     require: name => name === './app-updates.cjs' ? { executableLauncher: file => file, createAppUpdates: () => ({ setRunningEngine() {} }) } : name === 'electron' ? electron : name === './quick-entry.cjs' ? { startQuickEntry: () => { calls.push('quick-entry'); return { start: async () => {} }; } }
       : name === './tray.cts' ? { createCloseToTray: () => ({}), createTray: () => { calls.push('tray'); return { destroy() {} }; } }
-      : name === './screenshot-popup.cjs' ? { createScreenshotPopup: () => ({ attach: () => () => {}, dispose() {} }), drawsOnWayland: () => false } : require(name) });
+      : name === './screenshot-popup.cts' ? { createScreenshotPopup: () => ({ attach: () => () => {}, dispose() {} }), drawsOnWayland: () => false } : require(name) });
   vm.runInContext(fs.readFileSync(path.join(__dirname, 'main.cjs'), 'utf8'), context);
   vm.runInContext('server = testServer; store = testStore; sessionWindows = sessions; primaryOpeners = openers;', context);
   ready();
@@ -130,7 +130,7 @@ function sessionFixture() {
     './state.cts': { registerState: () => noop }, './files.cjs': { registerFiles: () => noop },
     './terminal.cjs': { registerTerminal: () => noop }, './context-menu.cts': { attachContextMenu: () => noop },
     './theme.cts': { registerTheme: () => noop }, './improve.cts': { registerImprove: () => noop },
-    './open-thread.cjs': { createThreadOpener: () => ({ attach: () => noop }), createNewChatOpener: () => ({ attach: () => noop }) },
+    './open-thread.cts': { createThreadOpener: () => ({ attach: () => noop }), createNewChatOpener: () => ({ attach: () => noop }) },
     './window-ipc.cts': { createWindowIpc: () => () => ({ handle: noop, removeHandler: noop }) },
     // Shared documents (84f35b9d4) attach to each window; these checks are about saving and closing.
     './documents.cjs': { createDocuments: () => ({ attach: () => noop, call: async () => null }) },

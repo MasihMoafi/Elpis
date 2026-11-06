@@ -1,7 +1,7 @@
 import { BridgeError, threadId } from './validate.mts';
 import { randomUUID } from 'node:crypto';
 import { smartPruneSnapshot, tokenUsageSnapshot } from './elpis-features.mjs';
-import { ACCOUNT_NOTIFICATIONS, APPROVALS, ARCHIVED_SESSION, DOWNLOADS, EXPLAINED, LISTED, NOTIFICATIONS, SIDE_RPCS, readRpc } from './client-protocol.mjs';
+import { ACCOUNT_NOTIFICATIONS, APPROVALS, ARCHIVED_SESSION, DOWNLOADS, EXPLAINED, LISTED, NOTIFICATIONS, SIDE_RPCS, readRpc } from './client-protocol.mts';
 import { modeOf } from './client-permissions.mjs';
 import { internal_decorate, internal_forget, internal_learnSpawn } from './client-thread-list.mjs';
 

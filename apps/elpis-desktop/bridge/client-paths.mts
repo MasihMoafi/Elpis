@@ -11,8 +11,7 @@ export const MAX_BRIDGE_MESSAGE_BYTES = 100 * 1024 * 1024;
 export const elpisHome = (env = process.env) => path.resolve(env.ELPIS_HOME || path.join(os.homedir(), '.elpis-next'));
 
 // Mirrors shared-runtime.mjs's path derivation, but never creates directories or starts a runtime.
-/** @param {string | undefined} [explicit] */
-export function existingSocket(explicit, env = process.env) {
+export function existingSocket(explicit?: string, env: NodeJS.ProcessEnv = process.env) {
   const provided = explicit || env.ELPIS_APP_BRIDGE_SOCKET || env.ELPIS_BRIDGE_SOCKET;
   let candidates;
   if (provided) candidates = [provided.replace(/^unix:\/\//, '')];
@@ -20,8 +19,8 @@ export function existingSocket(explicit, env = process.env) {
     let home = elpisHome(env);
     try { home = fs.realpathSync(home); } catch {}
     const key = createHash('sha256').update(home).digest('hex').slice(0, 16);
-    candidates = /** @type {string[]} */ ([env.XDG_RUNTIME_DIR && path.join(env.XDG_RUNTIME_DIR, 'elpis-bridge', key, 'bridge.sock'),
-      path.join(os.tmpdir(), `elpis-bridge-${process.getuid?.()}`, key, 'bridge.sock')].filter(Boolean));
+    candidates = ([env.XDG_RUNTIME_DIR && path.join(env.XDG_RUNTIME_DIR, 'elpis-bridge', key, 'bridge.sock'),
+      path.join(os.tmpdir(), `elpis-bridge-${process.getuid?.()}`, key, 'bridge.sock')].filter(Boolean)) as string[];
   }
   for (const candidate of candidates) {
     if (!path.isAbsolute(candidate)) throw new BridgeError('Bridge socket must be an absolute Unix socket path');
