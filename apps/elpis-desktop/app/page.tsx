@@ -116,7 +116,7 @@ import { SideChat, type SideRequest } from "@/components/side-chat";
 import { FloatChatBar, FloatChatPill } from "@/components/float-chat";
 import { useSessionSplit } from "@/components/session-split";
 import { Tab, TabStrip } from "@/components/tab-strip";
-import { activate, activeTab, addBackgroundTab, addTab, closeTab, cycle, followChat, forgetChats, makeTab, renameTabs, tabFor, type ChatTab } from "@/lib/chat-tabs";
+import { activeTab, followChat, forgetChats, renameTabs, type ChatTab } from "@/lib/chat-tabs";
 import { AttachmentChips } from "@/components/attachment-chips";
 import { ATTACHMENT_ACCEPT, ATTACHMENT_LIMITS, TEXT_ONLY_NOTICE, attachmentFromFile, fitAttachments, transferFiles, type Attachment } from "@/lib/attachments";
 import { scanDeletionThreads } from "@/lib/thread-deletion";
@@ -132,6 +132,7 @@ import { useRuntimeEvents } from "@/lib/use-runtime-events";
 import { useRuntimeState } from "@/lib/use-runtime-state";
 import { createSlashCommands } from "@/lib/slash-commands";
 import { createChatSend } from "@/lib/chat-send";
+import { createChatNavigation } from "@/lib/chat-navigation";
 import { refusedOffline, type Live, type View, type WorkflowReplay, type NextTurn } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
 import { useComposerState } from "@/lib/use-composer-state";
@@ -576,8 +577,7 @@ export default function Home() {
   });
   const folder = (path?: string | null) => path ? path.split("/").filter(Boolean).at(-1) || path : "";
 
-  function openNewChat(draftKey = newDraftKey.current) { saveDraft(selectedRef.current?.id || newDraftKey.current, textRef.current); newDraftKey.current = draftKey; request.current++; stickToBottom.current = true; followingBottom.current = false; restoreScroll.current = null; select(null); setEntries([]); setItemCursor(null); setText(savedDraft(draftKey)); setError(""); restoreAttachments(draftKey); setLoading(false); setView("chat"); setSidebar(false); requestAnimationFrame(() => composerRef.current?.focus()); }
-  const newChat = () => { setProjectId(null); setCwd(""); openNewChat(activeTab(tabsRef.current).draftKey ?? "new"); };
+  const { openNewChat, newChat, showTab, newChatTab, closeChatTab, cycleTabs, goHistory, openInNewTab, keepWorkflowTab } = createChatNavigation({ composer, conversations, history, drafts: draftStore, attachments: attachmentState, tabsRef, updateTabs, selectedRef, newDraftKey, request, stickToBottom, followingBottom, restoreScroll, setEntries, setError, setLoading, setView, setSidebar, setProjectId, setCwd, find, openThread, loadThread, showChat, browser, navHistory, show: next => show(next) });
   const clearChat = async () => {
     const previous = selectedRef.current;
     if (previous && loveActivity.isLoveChat(previous) && agentName(previous) === "Matilda") {
@@ -622,49 +622,6 @@ export default function Home() {
   const openSplit = (thread: Thread) => { side.closePanel(); setAgentsPanelState(previous => ({ ...previous, open: false })); setView("chat"); split.open(thread); };
   const openSessionWindow = (thread?: Thread) => { void sessionWindowApi()?.(thread?.id).catch(cause => setError(String(cause))); };
 
-  /** An empty tab keeps its unsent text under its own key; the first one uses the project's new-chat draft. */
-  const tabDraftKey = (tab: ChatTab) => tab.draftKey ?? "new";
-  /** Puts the tab's chat (or empty chat) on screen. */
-  function openTab(tab: ChatTab) {
-    if (tab.threadId) void openThread(find(tab.threadId) ?? { id: tab.threadId, ...(tab.title ? { name: tab.title } : {}) } as Thread);
-    else { setProjectId(null); setCwd(""); openNewChat(tabDraftKey(tab)); }
-  }
-  function showTab(tab: ChatTab) {
-    if (tab.id === tabsRef.current.activeId) { showChat(); return; }
-    updateTabs(activate(tabsRef.current, tab.id)); openTab(tab);
-  }
-  /** The "+" and Ctrl+T: a new empty chat beside the others (a sibling chat, never an agent or a fork). */
-  function newChatTab() { const tab = makeTab(); updateTabs(addTab(tabsRef.current, tab)); setProjectId(null); setCwd(""); openNewChat(tabDraftKey(tab)); }
-  function closeChatTab(id: string) {
-    const before = tabsRef.current, next = closeTab(before, id);
-    if (next === before) return;
-    const closed = before.tabs.find(tab => tab.id === id);
-    if (closed) browser.closeSession(closed.threadId ?? `draft:${closed.id}`);
-    updateTabs(next);
-    if (id === before.activeId) openTab(activeTab(next));
-  }
-  function cycleTabs(delta: number) { const next = cycle(tabsRef.current, delta); if (next !== tabsRef.current) { updateTabs(next); openTab(activeTab(next)); } }
-  /** Back (-1) or Forward (1): to the previous or next place visited, skipping chats that are gone. */
-  function goHistory(delta: -1 | 1) {
-    const place = navHistory.go(delta, place => !place.threadId || !hidden.current.has(place.threadId));
-    if (!place) return;
-    const { view: target, threadId } = place;
-    if (target !== "chat") show(target as View);
-    else if (threadId === (selectedRef.current?.id ?? null)) show("chat");
-    else if (threadId) void loadThread(find(threadId) ?? { id: threadId } as Thread);
-    else openNewChat();
-  }
-  /** Middle-click on a chat in the sidebar: its own tab (or the one it already has). */
-  function openInNewTab(thread: Thread) {
-    const owner = tabFor(tabsRef.current, thread.id);
-    if (owner) { showTab(owner); return; }
-    updateTabs(addTab(tabsRef.current, makeTab(thread.id, title(thread)))); void loadThread(thread);
-  }
-  /** A workflow owns a chat tab as soon as it starts, while its board stays on screen. */
-  function keepWorkflowTab(thread: Thread) {
-    upsertThread(thread);
-    if (!tabFor(tabsRef.current, thread.id)) updateTabs(addBackgroundTab(tabsRef.current, makeTab(thread.id, title(thread))));
-  }
   function assignProject(threadIds: string | string[], destination: string | null | undefined, parentId?: string, arrangeGroups?: (state: ChatGroups, roots: string[]) => ChatGroups): Promise<void> {
     const saved = projectChatSave.current.catch(() => {}).then(async () => {
       const requested = typeof threadIds === "string" ? [threadIds] : threadIds;
