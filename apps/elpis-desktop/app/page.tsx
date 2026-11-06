@@ -133,6 +133,7 @@ import { activityOf, api, unreadable, chatProvider, choiceById, choiceOf, effort
   mediaUrl, sessionReady, retryableSessionError, type Approval, type Entry, type Item, type ProviderSettings, type Thread } from "@/lib/api";
 import { historyPath, inReadingOrder, type HistoryPage } from "@/lib/chat-history";
 import { useComposerHeight } from "@/lib/use-composer-height";
+import { useTranscriptHistory } from "@/lib/use-transcript-history";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
 import { useChatTabs } from "@/lib/use-chat-tabs";
 import { approvalDraftKey, useApprovalDrafts, useDraftStore, useSubmitOnce } from "@/lib/use-drafts";
@@ -400,18 +401,7 @@ export default function Home() {
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [childCursors, setChildCursors] = useState<Record<string, string | null>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const [itemCursor, setItemCursor] = useState<string | null>(null);
-  // Chats whose earliest part is gone (the record it continued was deleted): they open with what remains and say so.
-  const [historyGaps, setHistoryGaps] = useState<ReadonlySet<string>>(() => new Set());
-  const noteHistoryGap = useCallback((id: string, page: { earliestHistoryMissing?: boolean }) => setHistoryGaps(gaps => gaps.has(id) === !!page.earliestHistoryMissing ? gaps
-    : new Set(page.earliestHistoryMissing ? [...gaps, id] : [...gaps].filter(gap => gap !== id))), []);
-  // Earlier entries already read but not shown yet: a page can hold more than ten messages, and a press shows ten.
-  // A fresh read of the newest page drops them with the old cursor.
-  const heldEarlier = useRef(new Map<string, Entry[]>());
-  const [heldCount, setHeldCount] = useState(0);
-  /** Each chat's last read transcript: reopening a chat draws it at once while it rereads, as in the ChatGPT app. */
-  const transcripts = useRef(new Map<string, { entries: Entry[]; cursor: string | null }>());
-  useEffect(() => { if (selected && !loading) transcripts.current.set(selected.id, { entries, cursor: itemCursor }); }, [selected, loading, entries, itemCursor]);
+  const { itemCursor, setItemCursor, historyGaps, noteHistoryGap, heldEarlier, heldCount, setHeldCount, transcripts, liveRevision, liveVersions, liveKeysAfter, applyHistoryPage } = useTranscriptHistory(selected, loading, entries, setEntries);
   const scroll = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
   const followingBottom = useRef(false);
@@ -420,14 +410,6 @@ export default function Home() {
   const restoreScroll = useRef<{ height: number; top: number } | null>(null);
   const request = useRef(0);
   const initialRestoration = useRef<{ threadId: string; promise: Promise<void> } | null>(null);
-  const liveRevision = useRef(0), liveVersions = useRef(new Map<string, number>());
-  const liveKeysAfter = useCallback((revision: number) => new Set([...liveVersions.current].filter(([, version]) => version > revision).map(([key]) => key)), []);
-  /** A page of a chat's history on screen: merged with live items newer than `revision`, its cursor and gap noted. */
-  const applyHistoryPage = useCallback((id: string, page: HistoryPage, revision: number) => {
-    setEntries(previous => mergeHistoryWithLive(previous, inReadingOrder(page), liveKeysAfter(revision))); setItemCursor(page.nextCursor);
-    noteHistoryGap(id, page); heldEarlier.current.delete(id);
-  }, [liveKeysAfter, noteHistoryGap]);
-
   const select = useCallback((thread: Thread | null) => {
     const launch = new URL(window.location.href);
     if (launch.searchParams.has("session") && launch.searchParams.get("session") !== (thread?.id || "")) {
