@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { BridgeError, elpisHome, object, text } from './client.mts';
 import { planCanvas } from './canvas-plan.mjs';
 import { workflowWorkspace } from './folders.mts';
-import { body, json } from './server-http.mjs';
+import { body, json } from './server-http.mts';
 
 const START_WAIT = 15 * 60_000;
 
@@ -57,7 +57,7 @@ export function createWorkflowDispatcher({ event, claimWait = 60_000 }) {
   };
 }
 
-/** @param {import('./server-http.mjs').ServerState} state @param {import('node:http').IncomingMessage} request @param {import('node:http').ServerResponse} response @param {URL} url @param {string} method */
+/** @param {import('./server-http.mts').ServerState} state @param {import('node:http').IncomingMessage} request @param {import('node:http').ServerResponse} response @param {URL} url @param {string} method */
 export async function handleWorkflowRoutes(state, request, response, url, method) {
   const { client, options, experimentLab, automations, workflowDispatcher } = state;
   if (url.pathname === '/api/canvas/plan' && method === 'POST') { json(response, 200, await planCanvas(client, await body(request))); return true; }

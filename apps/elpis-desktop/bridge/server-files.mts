@@ -6,10 +6,9 @@ import { listDirectory, listFiles, readFile, readFileAsset, searchFiles, writeFi
 import { listFolders, projectDirectory } from './folders.mts';
 import { isRepository } from './git.mjs';
 import { dismissPersonalTip, openPersonal, personalStatus } from './personal.mts';
-import { body, cwdOf, json } from './server-http.mjs';
+import { body, cwdOf, json } from './server-http.mts';
 
-/** @param {import('./server-http.mjs').ServerState} state @param {import('node:http').IncomingMessage} request @param {import('node:http').ServerResponse} response @param {URL} url @param {string} method */
-export async function handleFileRoutes(state, request, response, url, method) {
+export async function handleFileRoutes(state: import('./server-http.mts').ServerState, request: import('node:http').IncomingMessage, response: import('node:http').ServerResponse, url: URL, method: string) {
   const { client, options, devServers, importChats, improvements } = state;
   if (url.pathname === '/api/dev-servers' || url.pathname.startsWith('/api/dev-servers/')) {
     json(response, 200, await devServerRequest(devServers, method, url, method === 'POST' ? await body(request) : undefined));
@@ -44,7 +43,7 @@ export async function handleFileRoutes(state, request, response, url, method) {
   }
   if (url.pathname === '/api/personal' && method === 'GET') { json(response, 200, await personalStatus(options.elpisHome)); return true; }
   if (url.pathname === '/api/personal' && method === 'POST') {
-    const input = /** @type {{ action?: string }} */ (object(await body(request), ['action']));
+    const input = object(await body(request), ['action']) as { action?: string };
     if (!input.action || !['open', 'dismiss'].includes(input.action)) throw new BridgeError('Choose open or dismiss');
     json(response, 200, await (input.action === 'open' ? openPersonal : dismissPersonalTip)(options.elpisHome)); return true;
   }

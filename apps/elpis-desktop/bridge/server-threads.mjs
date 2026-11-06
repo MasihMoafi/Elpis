@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { BridgeError, object } from './client.mts';
 import { ATTACHMENT_BODY_LIMIT } from './attachments.mts';
 import { smartPruneDetail } from './smart-prune.mts';
-import { body, json, pageQuery } from './server-http.mjs';
+import { body, json, pageQuery } from './server-http.mts';
 import { prepareLoveSpotTurn } from './server-love-spot.mjs';
 
 /** Provider continuations include consumed native item IDs and can exceed the HTTP
@@ -41,7 +41,7 @@ const THREAD_POST_OPS = {
   review: 'review', permissions: 'setPermissions', effort: 'setEffort', 'service-tier': 'setServiceTier', folder: 'setFolder',
 };
 
-/** @param {import('./server-http.mjs').ServerState} state @param {import('node:http').IncomingMessage} request @param {import('node:http').ServerResponse} response @param {URL} url @param {string} method */
+/** @param {import('./server-http.mts').ServerState} state @param {import('node:http').IncomingMessage} request @param {import('node:http').ServerResponse} response @param {URL} url @param {string} method */
 export async function handleThreadRoutes(state, request, response, url, method) {
   const { client, options, trash, loveSpot, historyCursors } = state;
   const media = url.pathname.match(/^\/api\/threads\/([^/]+)\/turns\/([^/]+)\/items\/([^/]+)\/media\/(\d{1,3})$/);

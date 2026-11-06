@@ -4,54 +4,46 @@ import { timingSafeEqual } from 'node:crypto';
 import { BridgeError, MAX_BRIDGE_MESSAGE_BYTES } from './client.mts';
 import { AttachmentError } from './attachments.mts';
 
-/**
- * @typedef {{
- *   limit?: number, cursor?: string | undefined, ancestorThreadId?: string, archived?: boolean,
- *   searchTerm?: string, includeAgentRuns?: boolean, provider?: string,
- *   inputModality?: string, outputModality?: string, refresh?: boolean
- * }} PageQuery
- */
-/**
- * @typedef {{
- *   client: import('./client.mts').DesktopClient,
- *   options: { elpisHome?: string, [key: string]: unknown },
- *   trash: Awaited<ReturnType<typeof import('./trash.mts').createTrash>>,
- *   loveSpot: ReturnType<typeof import('./love-spot-store.cjs').createLoveSpot>,
- *   companion: ReturnType<typeof import('./matilda-companion.mjs').createMatildaCompanion>,
- *   loveTalk: ReturnType<typeof import('./love-spot-talk.mjs').createLoveSpotTalk>,
- *   loveAgents: ReturnType<typeof import('./love-agents.mjs').createLoveAgents>,
- *   loveStreams: Set<import('node:http').ServerResponse>,
- *   devServers: ReturnType<typeof import('./dev-servers.mts').createDevServers>,
- *   experimentLab: ReturnType<typeof import('./experiment-lab.mts').createExperimentLab>,
- *   automations: ReturnType<typeof import('./schedule.mts').createSchedule> | null,
- *   workflowDispatcher: ReturnType<typeof import('./server-workflows.mjs').createWorkflowDispatcher>,
- *   improvements: () => Promise<Awaited<ReturnType<typeof import('./improve.mts').createImprovements>>>,
- *   tools: ReturnType<typeof import('./tools.mts').createTools>,
- *   settingsFiles: ReturnType<typeof import('./settings-files.mts').createSettingsFiles>,
- *   historyCursors: ReturnType<typeof import('./server-threads.mjs').createHistoryCursors>,
- *   transcription: ReturnType<typeof import('./transcription.mts').createTranscription>,
- *   voice: ReturnType<typeof import('./voice.mts').createVoice>,
- *   kokoro: { voices?: () => Promise<unknown[]> | unknown[], defaultVoice?: string, close: () => void, [key: string]: unknown },
- *   readAloud: ReturnType<typeof import('./read-aloud-provider.mts').createReadAloudProvider>,
- *   importChats: ReturnType<typeof import('./import-chats.mts').createImportChats>
- * }} ServerState
- */
+export type PageQuery = {
+  limit?: number, cursor?: string | undefined, ancestorThreadId?: string, archived?: boolean,
+  searchTerm?: string, includeAgentRuns?: boolean, provider?: string,
+  inputModality?: string, outputModality?: string, refresh?: boolean
+};
+export type ServerState = {
+  client: import('./client.mts').DesktopClient,
+  options: { elpisHome?: string, [key: string]: unknown },
+  trash: Awaited<ReturnType<typeof import('./trash.mts').createTrash>>,
+  loveSpot: ReturnType<typeof import('./love-spot-store.cjs').createLoveSpot>,
+  companion: ReturnType<typeof import('./matilda-companion.mjs').createMatildaCompanion>,
+  loveTalk: ReturnType<typeof import('./love-spot-talk.mjs').createLoveSpotTalk>,
+  loveAgents: ReturnType<typeof import('./love-agents.mjs').createLoveAgents>,
+  loveStreams: Set<import('node:http').ServerResponse>,
+  devServers: ReturnType<typeof import('./dev-servers.mts').createDevServers>,
+  experimentLab: ReturnType<typeof import('./experiment-lab.mts').createExperimentLab>,
+  automations: ReturnType<typeof import('./schedule.mts').createSchedule> | null,
+  workflowDispatcher: ReturnType<typeof import('./server-workflows.mjs').createWorkflowDispatcher>,
+  improvements: () => Promise<Awaited<ReturnType<typeof import('./improve.mts').createImprovements>>>,
+  tools: ReturnType<typeof import('./tools.mts').createTools>,
+  settingsFiles: ReturnType<typeof import('./settings-files.mts').createSettingsFiles>,
+  historyCursors: ReturnType<typeof import('./server-threads.mjs').createHistoryCursors>,
+  transcription: ReturnType<typeof import('./transcription.mts').createTranscription>,
+  voice: ReturnType<typeof import('./voice.mts').createVoice>,
+  kokoro: { voices?: () => Promise<unknown[]> | unknown[], defaultVoice?: string, close: () => void, [key: string]: unknown },
+  readAloud: ReturnType<typeof import('./read-aloud-provider.mts').createReadAloudProvider>,
+  importChats: ReturnType<typeof import('./import-chats.mts').createImportChats>
+};
 
 export const COOKIE = 'elpis_desktop';
-/** @type {Record<string, string>} */
-const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.txt': 'text/plain', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.ogg': 'audio/ogg', '.ico': 'image/x-icon', '.woff': 'font/woff', '.woff2': 'font/woff2' };
-/** @param {unknown} a @param {string} b */
-export const same = (a, b) => typeof a === 'string' && Buffer.byteLength(a) === Buffer.byteLength(b) && timingSafeEqual(Buffer.from(a), Buffer.from(b));
+const MIME: Record<string, string> = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.txt': 'text/plain', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.ogg': 'audio/ogg', '.ico': 'image/x-icon', '.woff': 'font/woff', '.woff2': 'font/woff2' };
+export const same = (a: unknown, b: string) => typeof a === 'string' && Buffer.byteLength(a) === Buffer.byteLength(b) && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 const ERROR_CAUSES = new Set(['Error', 'TypeError', 'RangeError', 'SyntaxError', 'ReferenceError']);
 export const ERROR_AREAS = new Set(['session', 'health', 'models', 'threads', 'settings', 'providers', 'approvals', 'workflows', 'files', 'file', 'folders', 'repository', 'tools', 'context', 'customize', 'mcp', 'hooks', 'events', 'dev-servers', 'love-spot', 'import-chats']);
 
-/** Only fixed categories and numeric runtime codes enter this bounded log. Never serialize an error or request.
- * @param {string} home */
-export function requestDiagnostics(home) {
+/** Only fixed categories and numeric runtime codes enter this bounded log. Never serialize an error or request. */
+export function requestDiagnostics(home: string) {
   const directory = path.join(home, 'logs'), file = path.join(directory, 'desktop-requests.jsonl');
   let writing = Promise.resolve();
-  /** @param {Record<string, unknown>} record */
-  return record => {
+    return (record: Record<string, unknown>) => {
     writing = writing.catch(() => {}).then(async () => {
       await fs.mkdir(directory, { recursive: true, mode: 0o700 });
       const handle = await fs.open(file, 'a', 0o600);
@@ -66,17 +58,14 @@ export function requestDiagnostics(home) {
   };
 }
 
-/** The one `cwd` a project-folder request names (and, for the Files pane, the other fields it may carry).
- * @param {URL} url @param {string[]} others @returns {string} */
-export function cwdOf(url, ...others) {
+/** The one `cwd` a project-folder request names (and, for the Files pane, the other fields it may carry). */
+export function cwdOf(url: URL, ...others: string[]) {
   if ([...url.searchParams.keys()].some(key => key !== 'cwd' && !others.includes(key)) || url.searchParams.getAll('cwd').length !== 1 || others.some(key => url.searchParams.getAll(key).length > 1)) throw new BridgeError('Provide exactly one cwd');
-  return /** @type {string} */ (url.searchParams.get('cwd'));
+  return url.searchParams.get('cwd') as string;
 }
 
-/** @param {URL} url @param {boolean} [ancestor] @param {boolean} [models] @returns {PageQuery} */
-export function pageQuery(url, ancestor = false, models = false) {
-  /** @type {Record<string, unknown>} */
-  const result = {};
+export function pageQuery(url: URL, ancestor = false, models = false): PageQuery {
+  const result: Record<string, unknown> = {};
   for (const [key, value] of url.searchParams) {
     if (!['limit', 'cursor', ...(ancestor ? ['ancestorThreadId', 'archived', 'searchTerm', 'includeAgentRuns'] : []), ...(models ? ['provider', 'inputModality', 'outputModality', 'refresh'] : [])].includes(key) || result[key] !== undefined) throw new BridgeError('Unsupported query parameter');
     if (key === 'searchTerm') {
@@ -93,11 +82,10 @@ export function pageQuery(url, ancestor = false, models = false) {
       result[key] = value;
     }
   }
-  return /** @type {PageQuery} */ (result);
+  return result as PageQuery;
 }
 
-/** @param {import('node:http').IncomingMessage} request @param {number} [limit] @returns {Promise<Record<string, unknown>>} */
-export async function body(request, limit = 65536) {
+export async function body(request: import('node:http').IncomingMessage, limit = 65536): Promise<Record<string, unknown>> {
   if (!/^application\/json(?:;|$)/i.test(request.headers['content-type'] ?? '')) throw new BridgeError('JSON content type required', 415);
   let size = 0; const chunks = [];
   for await (const chunk of request) {
@@ -107,15 +95,13 @@ export async function body(request, limit = 65536) {
   try { return JSON.parse(Buffer.concat(chunks).toString()); } catch { throw new BridgeError('Invalid JSON'); }
 }
 
-/** @param {import('node:http').ServerResponse} response @param {number} status @param {unknown} value */
-export function json(response, status, value) {
+export function json(response: import('node:http').ServerResponse, status: number, value: unknown): void {
   const bytes = Buffer.from(JSON.stringify(value));
   if (bytes.length > MAX_BRIDGE_MESSAGE_BYTES) return json(response, 413, { error: 'Response is too large; request a smaller page' });
   response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Length': bytes.length }); response.end(bytes);
 }
 
-/** @param {import('node:http').ServerResponse} response @param {string} requestId */
-export function applySecurityHeaders(response, requestId) {
+export function applySecurityHeaders(response: import('node:http').ServerResponse, requestId: string) {
   response.setHeader('X-Request-Id', requestId);
   response.setHeader('X-Content-Type-Options', 'nosniff');
   response.setHeader('Referrer-Policy', 'no-referrer');
@@ -123,8 +109,7 @@ export function applySecurityHeaders(response, requestId) {
   response.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; media-src 'self' data: blob:; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
 }
 
-/** @param {URL} url @param {import('node:http').ServerResponse} response */
-export function applyFrameHeaders(url, response) {
+export function applyFrameHeaders(url: URL, response: import('node:http').ServerResponse) {
   // The split document and Obsidian plugin panes permit embedding by the local application or Obsidian.
   if ((url.pathname === '/' || url.pathname === '/love-spot.html') && url.searchParams.get('pane') === '1') {
     response.removeHeader('X-Frame-Options');
@@ -137,8 +122,7 @@ export function applyFrameHeaders(url, response) {
   }
 }
 
-/** @param {string} staticDir @param {URL} url @param {import('node:http').IncomingMessage} request @param {import('node:http').ServerResponse} response */
-export async function serveStaticAsset(staticDir, url, request, response) {
+export async function serveStaticAsset(staticDir: string, url: URL, request: import('node:http').IncomingMessage, response: import('node:http').ServerResponse) {
   if (request.method !== 'GET') throw new BridgeError('Method is not allowed', 405);
   let relative = decodeURIComponent(url.pathname);
   if (relative.includes('\\') || relative.includes('\0') || relative.split('/').includes('..')) throw new BridgeError('Invalid asset path', 400);
@@ -151,9 +135,8 @@ export async function serveStaticAsset(staticDir, url, request, response) {
   response.writeHead(200, { 'Content-Type': `${type}; charset=utf-8`, 'Cache-Control': 'no-store' }); response.end(file);
 }
 
-/** @param {unknown} rawError @param {import('node:http').IncomingMessage} request @param {import('node:http').ServerResponse} response @param {string} requestId @param {string} area @param {(record: Record<string, unknown>) => Promise<void>} diagnose */
-export async function sendRequestError(rawError, request, response, requestId, area, diagnose) {
-  const error = /** @type {{ loveSpot?: boolean, status?: number, code?: string | number, name?: string, message?: string } | null | undefined} */ (rawError);
+export async function sendRequestError(rawError: unknown, request: import('node:http').IncomingMessage, response: import('node:http').ServerResponse, requestId: string, area: string, diagnose: (record: Record<string, unknown>) => Promise<void>) {
+  const error = rawError as { loveSpot?: boolean, status?: number, code?: string | number, name?: string, message?: string } | null | undefined;
   const known = rawError instanceof BridgeError || rawError instanceof AttachmentError || error?.loveSpot === true;
   const status = known && typeof error?.status === 'number' && Number.isInteger(error.status) && error.status >= 400 && error.status <= 599 ? error.status : error?.code === 'ENOENT' ? 404 : 500;
   const runtimeCode = rawError instanceof BridgeError && typeof error?.code === 'number' && Number.isSafeInteger(error.code) ? error.code : undefined;

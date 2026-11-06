@@ -1,8 +1,8 @@
 import { BridgeError, object, text } from './client.mts';
 import { PORTRAIT_ATTACHMENT_NAME, PORTRAIT_INSTRUCTIONS } from './matilda-face.cjs';
-import { body, json } from './server-http.mjs';
+import { body, json } from './server-http.mts';
 
-/** @param {import('./server-http.mjs').ServerState} state @param {import('node:http').IncomingMessage} request @param {import('node:http').ServerResponse} response @param {URL} url @param {string} method */
+/** @param {import('./server-http.mts').ServerState} state @param {import('node:http').IncomingMessage} request @param {import('node:http').ServerResponse} response @param {URL} url @param {string} method */
 export async function handleLoveSpotRoutes(state, request, response, url, method) {
   const { loveSpot, companion, loveTalk, voice, loveAgents, loveStreams } = state;
   if (url.pathname === '/api/love-spot') {
@@ -77,7 +77,7 @@ export async function handleLoveSpotRoutes(state, request, response, url, method
   return false;
 }
 
-/** @param {import('./server-http.mjs').ServerState['loveSpot']} loveSpot @param {string} id @param {string} operation @param {Record<string, unknown>} input */
+/** @param {import('./server-http.mts').ServerState['loveSpot']} loveSpot @param {string} id @param {string} operation @param {Record<string, unknown>} input */
 export async function prepareLoveSpotTurn(loveSpot, id, operation, input) {
   // A normal chat tab uses the same portrait choices as the board, including existing conversations.
   // Writing to her in her own chat turns her on (6 Nov, Masih: "when I directly go to her and message, it should

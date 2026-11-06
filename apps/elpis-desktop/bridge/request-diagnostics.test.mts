@@ -8,18 +8,18 @@ import path from 'node:path';
 import { BridgeError } from './client.mts';
 import { startDesktopServer } from './server.mjs';
 
-async function fixture(t) {
+async function fixture(t: import('node:test').TestContext) {
   const cache = path.join(os.homedir(), '.cache', 'elpis-tests');
   await fs.mkdir(cache, { recursive: true });
   const home = createTestTempDir(path.join(cache, 'request-diagnostics-'));
-  let failure;
+  let failure: unknown;
   const client = Object.assign(new EventEmitter(), { close() {}, async models() { throw failure; }, async saveSettings() { throw failure; } });
   const app = await startDesktopServer({ client, elpisHome: home, trashFile: path.join(home, 'trash.json') });
   t.after(async () => { await app.close(); removeTestTempDir(home); });
   const launch = new URL(app.url), origin = launch.origin;
   const session = await fetch(origin + '/api/session', { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ token: launch.hash.slice(7) }) });
-  const cookie = session.headers.get('set-cookie').split(';')[0];
-  return { home, async fail(error, write = false) {
+  const cookie = session.headers.get('set-cookie')!.split(';')[0]!;
+  return { home, async fail(error: unknown, write = false) {
     failure = error;
     return fetch(origin + (write ? '/api/settings' : '/api/models?cursor=PRIVATE_QUERY'), {
       method: write ? 'POST' : 'GET', headers: { Origin: origin, 'Content-Type': 'application/json', Cookie: cookie, 'X-Request-Id': 'PRIVATE_HEADER' },
@@ -38,7 +38,7 @@ test('unexpected failures correlate a sanitized local record with the HTTP code 
   assert.match(body.requestId, /^[a-f0-9-]{36}$/);
   assert.equal(response.headers.get('x-request-id'), body.requestId);
   const file = path.join(f.home, 'logs', 'desktop-requests.jsonl');
-  const records = (await fs.readFile(file, 'utf8')).trim().split('\n').map(JSON.parse);
+  const records = (await fs.readFile(file, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
   assert.equal(records.length, 1);
   assert.deepEqual(records[0], { at: records[0].at, requestId: body.requestId, method: 'GET', area: 'models', status: 500, code: body.code, cause: 'TypeError' });
   assert.ok(Number.isFinite(Date.parse(records[0].at)));

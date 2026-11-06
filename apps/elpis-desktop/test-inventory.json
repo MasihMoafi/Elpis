@@ -118,7 +118,7 @@
     "bridge/love-spot.test.mjs",
     "bridge/provider-models.test.mts",
     "bridge/read-aloud.test.mjs",
-    "bridge/request-diagnostics.test.mjs",
+    "bridge/request-diagnostics.test.mts",
     "bridge/rewind-history.test.mts",
     "bridge/rewind-snapshots.test.mts",
     "bridge/rewind.test.mts",

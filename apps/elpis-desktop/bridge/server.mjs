@@ -22,11 +22,11 @@ import { createDevServers } from './dev-servers.mts';
 import { createImprovements } from './improve.mts';
 import { createSettingsFiles } from './settings-files.mts';
 import { createThreadTitles } from './thread-titles.mjs';
-import { COOKIE, ERROR_AREAS, applyFrameHeaders, applySecurityHeaders, body, json, requestDiagnostics, same, sendRequestError, serveStaticAsset } from './server-http.mjs';
+import { COOKIE, ERROR_AREAS, applyFrameHeaders, applySecurityHeaders, body, json, requestDiagnostics, same, sendRequestError, serveStaticAsset } from './server-http.mts';
 import { handleLoveSpotRoutes } from './server-love-spot.mjs';
 import { handleVoiceRoutes } from './server-voice.mjs';
-import { handleFileRoutes } from './server-files.mjs';
-import { handleSettingsRoutes } from './server-settings.mjs';
+import { handleFileRoutes } from './server-files.mts';
+import { handleSettingsRoutes } from './server-settings.mts';
 import { createWorkflowDispatcher, handleWorkflowRoutes } from './server-workflows.mjs';
 import { createHistoryCursors, handleThreadRoutes } from './server-threads.mjs';
 
@@ -110,7 +110,7 @@ export async function startDesktopServer(rawOptions = {}) {
   // A chat Masih starts is named from its first message, as the TUI names it.
   const titles = createThreadTitles(client);
   client.on('event', (/** @type {{ type?: string, data?: unknown }} */ value) => { if (value.type === 'message') void titles.event(/** @type {Parameters<typeof titles.event>[0]} */ (value.data)); });
-  /** @type {import('./server-http.mjs').ServerState} */
+  /** @type {import('./server-http.mts').ServerState} */
   const state = {
     client, options, trash, loveSpot, companion, loveTalk, loveAgents, loveStreams,
     devServers, experimentLab, automations, workflowDispatcher, improvements, tools,

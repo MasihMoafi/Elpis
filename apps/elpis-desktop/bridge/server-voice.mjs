@@ -1,8 +1,8 @@
 import { elpisHome, object } from './client.mts';
 import { recordVoiceCall } from './voice.mts';
-import { body, json } from './server-http.mjs';
+import { body, json } from './server-http.mts';
 
-/** @param {import('./server-http.mjs').ServerState} state @param {import('node:http').IncomingMessage} request @param {import('node:http').ServerResponse} response @param {URL} url @param {string} method */
+/** @param {import('./server-http.mts').ServerState} state @param {import('node:http').IncomingMessage} request @param {import('node:http').ServerResponse} response @param {URL} url @param {string} method */
 export async function handleVoiceRoutes(state, request, response, url, method) {
   const { client, options, readAloud, kokoro, voice, transcription, tools } = state;
   if (url.pathname === '/api/voice/report' && method === 'POST') { json(response, 200, await recordVoiceCall(options.elpisHome ?? elpisHome(), await body(request))); return true; }
