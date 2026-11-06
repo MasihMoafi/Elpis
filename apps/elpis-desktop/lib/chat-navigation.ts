@@ -1,10 +1,11 @@
 import type { Dispatch, RefObject, SetStateAction } from "react";
-import { title, type Entry, type Thread } from "@/lib/api";
+import { title, type Thread } from "@/lib/api";
 import { activate, activeTab, addBackgroundTab, addTab, closeTab, cycle, makeTab, tabFor, type ChatTab } from "@/lib/chat-tabs";
 import type { useNavHistory } from "@/lib/nav-history";
 import type { useChatTabs } from "@/lib/use-chat-tabs";
 import type { useComposerAttachments } from "@/lib/use-composer-attachments";
 import type { useComposerState } from "@/lib/use-composer-state";
+import type { useConversationSession } from "@/lib/use-conversation-session";
 import type { useConversationList } from "@/lib/use-conversation-list";
 import type { useDraftStore } from "@/lib/use-drafts";
 import type { useProjectState } from "@/lib/use-project-state";
@@ -17,15 +18,15 @@ type NavigationInputs = {
   projectState: ReturnType<typeof useProjectState>; composer: ReturnType<typeof useComposerState>; conversations: ReturnType<typeof useConversationList>;
   history: ReturnType<typeof useTranscriptHistory>; drafts: ReturnType<typeof useDraftStore>; attachments: ReturnType<typeof useComposerAttachments>;
   tabsRef: ReturnType<typeof useChatTabs>["tabsRef"]; updateTabs: ReturnType<typeof useChatTabs>["updateTabs"];
-  selectedRef: Ref<Thread | null>; newDraftKey: Ref<string>; request: Ref<number>;
-  stickToBottom: Ref<boolean>; followingBottom: Ref<boolean>; restoreScroll: Ref<{ height: number; top: number } | null>;
-  setEntries: Setter<Entry[]>; setError: Setter<string>; setLoading: Setter<boolean>; setView: Setter<View>; setSidebar: Setter<boolean>;
+  session: ReturnType<typeof useConversationSession>; newDraftKey: Ref<string>;
+  setError: Setter<string>; setView: Setter<View>; setSidebar: Setter<boolean>;
   find: (id?: string | null) => Thread | undefined;
   openThread: (thread: Thread) => Promise<void>; loadThread: (thread: Thread) => Promise<void>; showChat: () => void;
   browser: { closeSession: (id: string) => void }; navHistory: ReturnType<typeof useNavHistory>; show: (view: View) => void;
 };
 
-export function createChatNavigation({ projectState, composer, conversations, history, drafts, attachments, tabsRef, updateTabs, selectedRef, newDraftKey, request, stickToBottom, followingBottom, restoreScroll, setEntries, setError, setLoading, setView, setSidebar, find, openThread, loadThread, showChat, browser, navHistory, show }: NavigationInputs) {
+export function createChatNavigation({ projectState, composer, conversations, history, drafts, attachments, tabsRef, updateTabs, session, newDraftKey, setError, setView, setSidebar, find, openThread, loadThread, showChat, browser, navHistory, show }: NavigationInputs) {
+  const { selectedRef, request, stickToBottom, followingBottom, restoreScroll, setEntries, setLoading } = session;
   const { setProjectId, setCwd } = projectState;
   const { textRef, setText, composerRef } = composer;
   const { select, upsertThread, hidden } = conversations;

@@ -1,5 +1,5 @@
 import { useCallback, type Dispatch, type RefObject, type SetStateAction } from "react";
-import { api, retryableSessionError, unreadable, type Entry, type Thread } from "@/lib/api";
+import { api, retryableSessionError, unreadable, type Thread } from "@/lib/api";
 import { activate, tabFor } from "@/lib/chat-tabs";
 import { historyPath, type HistoryPage } from "@/lib/chat-history";
 import { errorText } from "@/lib/error-text.mjs";
@@ -7,6 +7,7 @@ import { mergeHistoryWithLive } from "@/lib/live-events";
 import type { useChatTabs } from "@/lib/use-chat-tabs";
 import type { useComposerState } from "@/lib/use-composer-state";
 import type { useComposerAttachments } from "@/lib/use-composer-attachments";
+import type { useConversationSession } from "@/lib/use-conversation-session";
 import type { useConversationList } from "@/lib/use-conversation-list";
 import type { useDraftStore } from "@/lib/use-drafts";
 import type { useRuntimeState } from "@/lib/use-runtime-state";
@@ -20,14 +21,13 @@ type OpenInputs = {
   composer: ReturnType<typeof useComposerState>; runtime: ReturnType<typeof useRuntimeState>; conversations: ReturnType<typeof useConversationList>;
   history: ReturnType<typeof useTranscriptHistory>; drafts: ReturnType<typeof useDraftStore>; attachments: ReturnType<typeof useComposerAttachments>;
   tabsRef: ReturnType<typeof useChatTabs>["tabsRef"]; updateTabs: ReturnType<typeof useChatTabs>["updateTabs"];
-  selectedRef: Ref<Thread | null>; newDraftKey: Ref<string>;
-  markRead: (id: string) => void; request: Ref<number>; stickToBottom: Ref<boolean>; followingBottom: Ref<boolean>;
-  restoreScroll: Ref<{ height: number; top: number } | null>; setView: Setter<View>; setSidebar: Setter<boolean>;
-  setLoading: Setter<boolean>; setError: Setter<string>; setEntries: Setter<Entry[]>;
+  session: ReturnType<typeof useConversationSession>; newDraftKey: Ref<string>;
+  markRead: (id: string) => void; setView: Setter<View>; setSidebar: Setter<boolean>; setError: Setter<string>;
   rememberModes: (id: string, live: Live) => void;
 };
 
-export function useOpenConversation({ composer, runtime, conversations, history, drafts, attachments, tabsRef, updateTabs, selectedRef, newDraftKey, markRead, request, stickToBottom, followingBottom, restoreScroll, setView, setSidebar, setLoading, setError, setEntries, rememberModes }: OpenInputs) {
+export function useOpenConversation({ composer, runtime, conversations, history, drafts, attachments, tabsRef, updateTabs, session, newDraftKey, markRead, setView, setSidebar, setError, rememberModes }: OpenInputs) {
+  const { selectedRef, request, stickToBottom, followingBottom, restoreScroll, setLoading, setEntries } = session;
   const { textRef, setText } = composer;
   const { setHistoryOnly, turnRevisions, modeRevisions, setActiveTurns, completedTurns, setLiveError } = runtime;
   const { select, remember, upsertThread, statusRevisions } = conversations;

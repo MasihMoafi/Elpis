@@ -305,7 +305,7 @@ export default function Home() {
     setApprovals(prev => prev.filter(approval => !ids.has(approval.params.threadId ?? "")));
     if (selectedRef.current && ids.has(selectedRef.current.id)) { request.current++; select(null); setText(savedDraft(newDraftKey.current)); restoreAttachments(newDraftKey.current); setEntries([]); setItemCursor(null); }
   }, [select, setText, savedDraft, restoreAttachments, updateTabs, browser.closeSession]);
-  const { rememberFollowing, reconcileLiveThread, loadThread, openThread } = useOpenConversation({ composer, runtime, conversations, history, drafts: draftStore, attachments: attachmentState, tabsRef, updateTabs, selectedRef, newDraftKey, markRead, request, stickToBottom, followingBottom, restoreScroll, setView, setSidebar, setLoading, setError, setEntries, rememberModes: (id, live) => rememberModes(id, live) });
+  const { rememberFollowing, reconcileLiveThread, loadThread, openThread } = useOpenConversation({ composer, runtime, conversations, history, drafts: draftStore, attachments: attachmentState, tabsRef, updateTabs, session, newDraftKey, markRead, setView, setSidebar, setError, rememberModes: (id, live) => rememberModes(id, live) });
 
   useEffect(() => { setText(savedDraft(newDraftKey.current)); }, [savedDraft]);
 
@@ -323,7 +323,7 @@ export default function Home() {
   useEffect(() => { if (ready && selectedTeamId) loadChildren(selectedTeamId); }, [ready, selectedTeamId, loadChildren]);
   // Chats this app could not subscribe to are refreshed by reading them instead.
   const selectedLiveError = selected ? liveError[selected.id] : undefined;
-  useHistoryFallback({ selected, selectedLiveError, view, loading, selectedRef, history, conversations, setEntries });
+  useHistoryFallback({ session, selectedLiveError, view, history, conversations });
   const related = useRelatedConversations(selected, threads, preferences.showAgentRuns, agentRunsOpen);
   const { shownEntries, newestPrompt } = useTranscriptPresentation({ selected, entries, submissions, setSubmissions, newDraftKey, scroll, restoreScroll, stickToBottom, view });
 
@@ -393,7 +393,7 @@ export default function Home() {
   });
   const folder = (path?: string | null) => path ? path.split("/").filter(Boolean).at(-1) || path : "";
 
-  const { openNewChat, newChat, showTab, newChatTab, closeChatTab, cycleTabs, goHistory, openInNewTab, keepWorkflowTab } = createChatNavigation({ projectState, composer, conversations, history, drafts: draftStore, attachments: attachmentState, tabsRef, updateTabs, selectedRef, newDraftKey, request, stickToBottom, followingBottom, restoreScroll, setEntries, setError, setLoading, setView, setSidebar, find, openThread, loadThread, showChat, browser, navHistory, show: next => show(next) });
+  const { openNewChat, newChat, showTab, newChatTab, closeChatTab, cycleTabs, goHistory, openInNewTab, keepWorkflowTab } = createChatNavigation({ projectState, composer, conversations, history, drafts: draftStore, attachments: attachmentState, tabsRef, updateTabs, session, newDraftKey, setError, setView, setSidebar, find, openThread, loadThread, showChat, browser, navHistory, show: next => show(next) });
   const clearChat = createClearConversation({ composer, conversations, projectState, runtime, loveActivity, selectedRef, request, setError, threadModes, permissionMode, openNewChat, loadThread, noteStartedMode: (id, mode) => noteStartedMode(id, mode) });
   const split = useSessionSplit({ thread: selected, text, attachments }, () => composerRef.current?.focus(), remaining => {
     const restore = () => { editDraft(remaining.text); setAttachments(remaining.attachments); saveAttachments(remaining.thread?.id || newDraftKey.current, remaining.attachments); };

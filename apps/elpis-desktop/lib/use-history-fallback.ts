@@ -1,18 +1,20 @@
-import { useEffect, type Dispatch, type RefObject, type SetStateAction } from "react";
+import { useEffect } from "react";
 import { api, unreadable, type Entry, type Thread } from "@/lib/api";
 import { historyPath, inReadingOrder } from "@/lib/chat-history";
 import { mergeHistoryWithLive } from "@/lib/live-events";
+import type { useConversationSession } from "@/lib/use-conversation-session";
 import type { useConversationList } from "@/lib/use-conversation-list";
 import type { useTranscriptHistory } from "@/lib/use-transcript-history";
 import type { View } from "@/lib/workspace-types";
 
 type Inputs = {
-  selected: Thread | null; selectedLiveError: string | undefined; view: View; loading: boolean; selectedRef: RefObject<Thread | null>;
-  history: ReturnType<typeof useTranscriptHistory>; conversations: ReturnType<typeof useConversationList>; setEntries: Dispatch<SetStateAction<Entry[]>>;
+  session: ReturnType<typeof useConversationSession>; selectedLiveError: string | undefined; view: View;
+  history: ReturnType<typeof useTranscriptHistory>; conversations: ReturnType<typeof useConversationList>;
 };
 
 /** Refresh a conversation by reading it when its live subscription failed. */
-export function useHistoryFallback({ selected, selectedLiveError, view, loading, selectedRef, history, conversations, setEntries }: Inputs) {
+export function useHistoryFallback({ session, selectedLiveError, view, history, conversations }: Inputs) {
+  const { selected, loading, selectedRef, setEntries } = session;
   const { liveRevision, liveKeysAfter } = history;
   const { select } = conversations;
   useEffect(() => {
