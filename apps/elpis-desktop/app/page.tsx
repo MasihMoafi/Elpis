@@ -1,7 +1,6 @@
 "use client";
 
 import { DisclosureSummary } from "@/components/ui/disclosure-summary";
-import dynamic from "next/dynamic";
 import { BrandWordmark } from "@/components/brand-wordmark";
 import { flushSync } from "react-dom";
 import { cloneElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
@@ -25,23 +24,17 @@ import { arrange, move } from "@/lib/nav-order";
 import { followUpHint, newChatFolder, savePreferences, useAppPreferences } from "@/lib/preferences";
 import { QueuedFollowUps } from "@/components/queued-follow-ups";
 import { stopsOnEscape, usePromptKeys } from "@/lib/prompt-history";
-import { OPEN_CONTEXT_EVENT } from "@/components/context-usage";
 import { ElpisFeatures } from "@/components/elpis-features";
 import { ShortcutsDialog } from "@/components/shortcuts-dialog";
 import { StartupSplash } from "@/components/startup-splash";
-import { AppUpdate } from "@/components/app-update";
-import { AppMenus } from "@/components/app-menus";
 import { permissionLabel, type PermissionMode } from "@/components/composer-controls";
 import { CopyButton } from "@/components/markdown-text";
 import { fitChatListEnd, useWholeRows } from "@/lib/whole-rows";
 import { mergeHistoryWithLive } from "@/lib/live-events";
 import { type SubmittedMessage } from "@/lib/submitted-messages";
 import { replacementEligibility, type MessageVersion } from "@/lib/turn-replacement";
-import { AgentsGuide } from "@/components/agents-guide";
-import { ExperimentLab } from "@/components/experiment-lab";
-import { CustomizeView } from "@/components/customize-view";
 import type { TerminalLaunch } from "@/components/terminal-view";
-import { SettingsView, type SettingsDestination } from "@/components/settings-view";
+import { type SettingsDestination } from "@/components/settings-view";
 import { DeleteChatsDialog, ThreadActions } from "@/components/thread-actions";
 import { GroupNameDialog } from "@/components/chat-groups";
 import { SectionToggle } from "@/components/sidebar-group";
@@ -52,21 +45,21 @@ import { ComposerControls } from "@/components/composer-controls-panel";
 import { ComposerForm } from "@/components/composer-form";
 import { WorkflowPages } from "@/components/workflow-pages";
 import { PendingInputPanel, PendingInputTrigger } from "@/components/pending-input";
+import { WorkspaceSettings } from "@/components/workspace-settings";
+import { WorkspaceGuideAndLab, OtherWorkspacePages } from "@/components/other-workspace-pages";
+import { WorkspaceTitleBar } from "@/components/workspace-title-bar";
 import { useConversationTranscript } from "@/components/use-conversation-transcript";
 import { useSlashMenu } from "@/components/slash-menu";
 import { useMentionMenu } from "@/components/mention-menu";
-import { NavButtons } from "@/components/nav-buttons";
 import { PromptRail } from "@/components/prompt-rail";
 import { RewindDialog } from "@/components/rewind-dialog";
 import { useNavHistory } from "@/lib/nav-history";
 import { DiffPanel, ReviewPanel, SessionPanel } from "@/components/slash-panels";
 import { openControl } from "@/lib/slash-focus";
-import { reloadSettings, useElpisSettings } from "@/lib/settings-store";
+import { useElpisSettings } from "@/lib/settings-store";
 import { UsagePanel } from "@/components/provider-usage";
 import { ReadAloud } from "@/components/read-aloud";
-import { MatildaCompanion } from "@/components/matilda-companion";
 import { LiveVoiceProvider } from "@/components/live-voice";
-import { ObservabilityView } from "@/components/observability-view";
 import type { WorkflowPrefill } from "@/components/automations-view";
 import { Segmented } from "@/components/settings/rows";
 import { EnvironmentMenu, MoveChatDialog, ProjectDialog, ProjectMenu } from "@/components/project-picker";
@@ -147,7 +140,6 @@ import { errorText } from "@/lib/error-text.mjs";
 import { refreshModelCatalog, useModelCatalog } from "@/lib/model-catalog";
 
 
-const LoveSpot = dynamic(() => import("@/components/love-spot"), { ssr: false, loading: () => <p role="status">Opening Love Spot…</p> });
 
 /** The sidebar's pages after New chat, in their default order; the person may rearrange them. */
 const NAV_PAGES = [
@@ -338,7 +330,8 @@ export default function Home() {
   const [workingAgentsOnly, setWorkingAgentsOnly] = useState(true);
   const [loveToolbarHost, setLoveToolbarHost] = useState<HTMLDivElement | null>(null);
   const [workingHost, setWorkingHost] = useState<HTMLDivElement | null>(null);
-  const { theme, dark, setTheme, sidebarWidth, resizeSidebar } = useAppearance(setError);
+  const appearance = useAppearance(setError);
+  const { dark, setTheme, sidebarWidth, resizeSidebar } = appearance;
   // The website's animated wordmark, its dark or light version (website/assets/branding).
   const searchInput = useRef<HTMLInputElement>(null);
   const shortcutsReturnFocus = useRef<HTMLElement | null>(null);
@@ -353,7 +346,7 @@ export default function Home() {
   const request = useRef(0);
   const initialRestoration = useRef<{ threadId: string; promise: Promise<void> } | null>(null);
   const conversations = useConversationList(threads, setThreads, selectedRef, setSelected, setError);
-  const { select, settingsOf, threadsRef, hidden, upsertThread, refreshThreads } = conversations;
+  const { select, settingsOf, threadsRef, hidden, upsertThread } = conversations;
   const children = useChildConversations({ conversations, selectedRef, setThreads, setError, setAgentsPanelState });
   const { loadingChildren, checkedChildren, childCursors, expanded, setExpanded, holdAgentPanel, loadChildren } = children;
   const search = useSidebarSearch(ready, hidden), searchTerm = search.searchTerm;
@@ -814,8 +807,7 @@ export default function Home() {
   const { onComposerChange, onComposerPaste, onComposerKeyDown } = createComposerHandlers({ composer, attachmentsState: attachmentState, runtime, preferences, promptKeys, mention, slash, turnEfforts, activeTurn, continues, editDraft, stepEffort, cycleMode, sendShell, send });
   return <DocumentReviewProvider onAttach={parts => attachFromBrowser(parts, false)}><LiveVoiceProvider><ReadAloud threadId="love-spot" enabled available={LOVE_SPOT_AUDIO.readAloudAvailable} unavailableReason={LOVE_SPOT_AUDIO.available ? undefined : LOVE_SPOT_AUDIO.reason}><div data-workspace={view} data-desktop={desktop || undefined} className={`app-shell${split.pane ? " session-pane" : ""}${split.thread && view === "chat" ? " session-split" : ""}${dark ? " dark" : ""} has-title-bar${sidebarCollapsed ? " sidebar-collapsed" : ""}${view === "settings" ? " settings-mode" : ""}${panelShown ? " panel-active" : ""}`} style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>
     <title>{view === "canvas" ? "Workflows · Elpis" : view === "experimentLab" ? "Lab · Elpis" : view === "customize" ? "Customize — Elpis" : "Elpis"}</title>
-    {desktop && <div className="title-bar"><NavButtons preferences={preferences} canBack={navHistory.canBack} canForward={navHistory.canForward} onBack={() => goHistory(-1)} onForward={() => goHistory(1)} />{(sidebarCollapsed || !sidebar) && <Button className={sidebarCollapsed || panelShown && panelDrawer ? undefined : "sidebar-open-narrow"} variant="ghost" size="icon-sm" aria-label="Open sidebar" title={shortcutTitle("Open sidebar", "sidebar", preferences)} onClick={() => showSidebar(true)}><PanelLeft size={16} /></Button>}<AppMenus preferences={preferences} onError={setError} onNewChat={newChat} onOpenFolder={() => void addProject()} onSettings={() => show("settings")} onToggleSidebar={() => showSidebar(narrow() ? !sidebar : sidebarCollapsed)} onBack={() => goHistory(-1)} onForward={() => goHistory(1)} canGoBack={navHistory.canBack} canGoForward={navHistory.canForward} onShortcuts={() => shortcutAction.current("shortcuts")} /><div className="title-bar-actions"><MatildaCompanion /><AppUpdate inTitleBar /></div></div>}
-    {!desktop && <div className="title-bar"><div className="title-bar-actions"><MatildaCompanion /></div></div>}
+    <WorkspaceTitleBar desktop={desktop} preferences={preferences} navHistory={navHistory} sidebar={sidebar} sidebarCollapsed={sidebarCollapsed} panelShown={panelShown} panelDrawer={panelDrawer} setError={setError} newChat={newChat} goHistory={goHistory} addProject={addProject} show={show} showSidebar={showSidebar} narrow={narrow} shortcutAction={shortcutAction} />
     <ProfileDialog ready={ready && connected} />
     <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} returnFocus={shortcutsReturnFocus} />
     {commandMenuOpen && <CommandMenu threads={ordinaryThreads} projects={busy || projectChanging ? [] : projects} actions={commandActions} returnFocus={commandReturnFocus} onClose={() => setCommandMenuOpen(false)} onThread={thread => { void openThread(thread); }} onProject={item => { void selectProject(item).catch(cause => setError(errorText(cause))); }} onNewChat={prompt => { newChat(); setDesktopPrompt(prompt); }} />}
@@ -882,15 +874,10 @@ export default function Home() {
       {outsideChatApprovals.length > 0 && pendingInputOpen && <PendingInputPanel approvals={outsideChatApprovals} threads={threads} button={pendingInputButton} setOpen={setPendingInputOpen} openById={id => { void openById(id); }} approvalCardProps={approvalCardProps} />}
       <div className={`workspace-body${panelShown ? " panel-open" : ""}${fullView ? ` full-view${side.chatCollapsed ? " chat-collapsed" : ""}` : ""}${view !== "chat" ? " no-browser" : ""}`}><div className="workspace-content" {...(fullView ? { role: "region", "aria-label": "Floating chat" } : {})}>
       {fullView && <FloatChatBar title={chatName} onCollapse={() => side.setChatCollapsed(true)} />}
-      {settingsVisited && <div className="page-scroll" hidden={view !== "settings"}><ViewBoundary label="Settings" resetKey={settingsNavigation}><SettingsView initialTab={settingsSection} navigationKey={settingsNavigation} active={view === "settings"} threadId={selected?.id} currentModel={selected?.model} currentPermission={selected ? permissionLabel(permissionMode) : null} accountRefresh={accountRefresh} theme={theme} onTheme={setTheme} onUnarchived={unarchived} onImported={() => void refreshThreads()} onDeleteThread={deleteThread} onBack={() => { show("chat"); requestAnimationFrame(focusComposer); }} onChatPermissions={() => { show("chat"); requestAnimationFrame(() => openComposerControl("Change permissions")); }} onChatModel={() => { show("chat"); requestAnimationFrame(() => openComposerControl("Model")); }} modelChangeReason={!ready ? "Wait for Elpis to connect." : busy ? "Wait for this turn to finish before changing the model." : undefined} onBrowser={url => { show("chat"); void browser.command("new", url ? { url } : undefined); }} onCustomize={() => show("customize")} onChatContext={() => { show("chat"); requestAnimationFrame(() => window.dispatchEvent(new CustomEvent(OPEN_CONTEXT_EVENT))); }} onProvidersChanged={async () => { await reloadSettings(); void refreshModels(); }} /></ViewBoundary></div>}
-      {view === "agentsGuide" && <div className="page-scroll"><ViewBoundary label="Guide to managing agents"><AgentsGuide onBack={() => show("canvas")} /></ViewBoundary></div>}
-      {view === "experimentLab" && <ViewBoundary label="Lab"><ExperimentLab /></ViewBoundary>}
+      <WorkspaceSettings visited={settingsVisited} navigation={settingsNavigation} section={settingsSection} view={view} selected={selected} permissionMode={permissionMode} appearance={appearance} conversations={conversations} runtime={runtime} unarchived={unarchived} deleteThread={deleteThread} browser={browser} busy={busy} show={show} focusComposer={focusComposer} openComposerControl={openComposerControl} refreshModels={refreshModels} />
+      <WorkspaceGuideAndLab view={view} show={show} />
       <WorkflowPages view={view} workflowTab={workflowTab} setWorkflowTab={setWorkflowTab} recordedWorkflow={recordedWorkflow} setRecordedWorkflow={setRecordedWorkflow} workflowPrefill={workflowPrefill} setWorkflowPrefill={setWorkflowPrefill} sidebarModel={sidebarModel} projectState={projectState} runtime={runtime} threads={threads} models={models} workflowFolder={workflowFolder} workflowSandbox={workflowSandbox} dark={dark} show={show} openById={id => { void openById(id); }} keepWorkflowTab={keepWorkflowTab} selectProject={selectProject} addProject={addProject} workIn={workIn} finishReplay={finishReplay} />
-      {view === "loveSpot" && <ViewBoundary label="Love Spot"><LoveSpot dark={dark} toolbarHost={loveToolbarHost} /></ViewBoundary>}
-      {view === "observability" && <ViewBoundary label="Observability"><ObservabilityView threadId={selected?.id} chats={threads} /></ViewBoundary>}
-      {view === "customize" && <div className="page-scroll"><ViewBoundary label="Customize"><CustomizeView cwd={cwd} onOpenSettings={() => openSettings("mcp")}
-        onConnectGithub={hasTerminal ? () => { show("chat"); setTuiLaunch({ key: side.openTerminal(cwd), command: "github-login", token: Date.now() }); } : undefined}
-        onCreateSkill={() => { newChat(); requestAnimationFrame(() => editDraft("Use $skill-creator to create a new skill that ")); }} /></ViewBoundary></div>}
+      <OtherWorkspacePages view={view} selected={selected} threads={threads} cwd={cwd} dark={dark} loveToolbarHost={loveToolbarHost} side={side} hasTerminal={hasTerminal} setTuiLaunch={setTuiLaunch} show={show} openSettings={openSettings} newChat={newChat} editDraft={editDraft} />
       {view === "chat" && <ViewBoundary label="Chat" resetKey={selected?.id}><div className="chat-split"><div className={`chat-view${!selected && !shownEntries.length ? " empty-chat" : ""}`} data-team-loading={awaitingTeam || undefined}>
         <div className="chat-scroll-wrap"><div className="chat-scroll" aria-busy={awaitingTeam || undefined} ref={scroll} onClickCapture={event => { if (event.target instanceof Element && event.target.closest("[data-preserve-scroll]")) { followingBottom.current = false; stickToBottom.current = false; } }} onWheel={() => { followingBottom.current = false; }} onPointerDown={() => { followingBottom.current = false; }} onKeyDown={event => { if (["PageUp", "PageDown", "Home", "End", "ArrowUp", "ArrowDown"].includes(event.key)) followingBottom.current = false; }} onScrollEnd={event => { if (followingBottom.current) { followingBottom.current = false; event.currentTarget.scrollTo({ top: event.currentTarget.scrollHeight }); } }} onScroll={event => { const element = event.currentTarget; const atBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 80; stickToBottom.current = followingBottom.current || atBottom; setAwayFromBottom(!atBottom); }}><div className="chat-content">
           {(itemCursor || heldCount >= 0 && earlierHeld(selected?.id)) ? <LoadOnScroll className="load-earlier-messages" loading={loading} paused={!!error} label="Loading earlier messages" onLoad={() => void older()} />
