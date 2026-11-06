@@ -38,7 +38,6 @@ import { useElpisSettings } from "@/lib/settings-store";
 import { ReadAloud } from "@/components/read-aloud";
 import { LiveVoiceProvider } from "@/components/live-voice";
 import { ProfileDialog } from "@/components/profile-dialog";
-import { useLoveActivity } from "@/lib/use-love-activity";
 import { LOVE_SPOT_AUDIO } from "@/lib/love-spot-audio";
 import { useScreenshotPopup } from "@/lib/use-screenshot-popup";
 import { DocumentReviewProvider } from "@/components/document-review";
@@ -106,6 +105,7 @@ import { sessionRows as makeSessionRows } from "@/lib/session-rows";
 import { useCommandNotices } from "@/lib/use-command-notices";
 import { useConversationView } from "@/lib/use-conversation-view";
 import { useComposerPanels, useComposerPanelScope } from "@/lib/use-composer-panels";
+import { useLoveWorkspace, useReadLoveNotifications } from "@/lib/use-love-workspace";
 import { PAGE_NAMES } from "@/lib/workspace-navigation-pages";
 import { refusedOffline } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
@@ -186,17 +186,9 @@ export default function Home() {
   const { attachments, attaching, setAttachments } = attachmentState;
   const attachFromBrowser = createBrowserAttachment({ session, composer, attachments: attachmentState, drafts: draftStore, newDraftKey, showChat: () => showChat(), send: () => send() });
   useComposerHeight(composerRef, [text, selected?.id, view]);
-  const loveActivity = useLoveActivity(view === "loveSpot", ready, view === "chat" ? selected : null);
-  const loveRef = useRef(loveActivity); loveRef.current = loveActivity;
-  /** A Love Spot chat by id, read at event time. */
-  const isLoveChatId = (id: string) => loveRef.current.isLoveChat(threadsRef.current.find(thread => thread.id === id) ?? { id });
-  const selectedLoveChat = !!selected && loveActivity.isLoveChat(selected);
-  const loveSpotAudioReason = selected && !LOVE_SPOT_AUDIO.available
-    ? selectedLoveChat ? LOVE_SPOT_AUDIO.reason : !loveActivity.originsResolved ? LOVE_SPOT_AUDIO.pendingReason : undefined
-    : undefined;
+  const { loveActivity, loveRef, isLoveChatId, selectedLoveChat, loveSpotAudioReason } = useLoveWorkspace(view, ready, selected, () => threadsRef.current);
   const { finishReplay, workflowSandbox, workflowFolder } = useWorkflowWorkspace(view, projectState, runtime, setError);
-  // Matilda's chat on screen reads every Love Spot reply.
-  useEffect(() => { if (loveActivity.chatShown) setAttention(previous => ({ ...previous, unread: previous.unread.filter(id => !isLoveChatId(id)) })); }, [loveActivity.chatShown, setAttention]); // eslint-disable-line react-hooks/exhaustive-deps
+  useReadLoveNotifications(loveActivity.chatShown, setAttention, isLoveChatId);
   useEffect(() => { if (view === "chat" && selected) markRead(selected.id); }, [view, selected?.id, markRead]);
   const { desktop, windowAvailable, hasTerminal } = useDesktopCapabilities();
   const browser = useBrowser(selected?.id ?? `draft:${tabs.activeId}`);
