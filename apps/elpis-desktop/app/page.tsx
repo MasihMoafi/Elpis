@@ -24,7 +24,6 @@ import { CommandMenu, type CommandAction } from "@/components/command-menu";
 import { ImproveElpis } from "@/components/improve-elpis";
 import { arrange, move } from "@/lib/nav-order";
 import { followUpHint, followUpKey, isSendKey, newChatFolder, savePreferences, useAppPreferences } from "@/lib/preferences";
-import type { FollowUp } from "@/lib/follow-ups";
 import { QueuedFollowUps } from "@/components/queued-follow-ups";
 import { stopsOnEscape, usePromptKeys } from "@/lib/prompt-history";
 import { OPEN_CONTEXT_EVENT } from "@/components/context-usage";
@@ -61,8 +60,6 @@ import { PromptRail } from "@/components/prompt-rail";
 import { RewindDialog } from "@/components/rewind-dialog";
 import { useNavHistory } from "@/lib/nav-history";
 import { DiffPanel, ReviewPanel, SessionPanel } from "@/components/slash-panels";
-import { replyAttachment, withoutReplyAttachments } from "@/lib/message-reply";
-import type { ReplyImage } from "@/components/image-reply";
 import { openControl } from "@/lib/slash-focus";
 import { reloadSettings, useElpisSettings } from "@/lib/settings-store";
 import { UsagePanel } from "@/components/provider-usage";
@@ -106,7 +103,7 @@ import { FloatChatBar, FloatChatPill } from "@/components/float-chat";
 import { useSessionSplit } from "@/components/session-split";
 import { Tab, TabStrip } from "@/components/tab-strip";
 import { activeTab, followChat, forgetChats, renameTabs, type ChatTab } from "@/lib/chat-tabs";
-import { ATTACHMENT_LIMITS, TEXT_ONLY_NOTICE, attachmentFromFile, fitAttachments, transferFiles, type Attachment } from "@/lib/attachments";
+import { TEXT_ONLY_NOTICE, fitAttachments, transferFiles, type Attachment } from "@/lib/attachments";
 import { LoadOnScroll } from "@/components/load-on-scroll";
 import { api, unreadable, isAgentRun, AGENT_RUN_NOTICE, modelLabel, providerLabel, title, agentName,
   type Approval, type Entry, type ProviderSettings, type Thread } from "@/lib/api";
@@ -131,6 +128,7 @@ import { modelSelection } from "@/lib/model-selection";
 import { createCommandActions } from "@/lib/command-actions";
 import { createConversationSettings } from "@/lib/conversation-settings";
 import { createConversationActions } from "@/lib/conversation-actions";
+import { createReplyActions } from "@/lib/reply-actions";
 import { refusedOffline, type View, type WorkflowReplay, type NextTurn } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
 import { useComposerState } from "@/lib/use-composer-state";
@@ -270,7 +268,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const editDraft = (value: string) => { setText(value); saveDraft(selectedRef.current?.id || newDraftKey.current, value); };
   const attachmentState = useComposerAttachments({ selectedRef, newDraftKey, shellMode, savedAttachments, saveAttachments, setError, setRuntimeNotices });
-  const { attachments, attachmentsRef, attaching, setAttaching, readingFiles, fileNotice, setFileNotice, setAttachments, restoreAttachments, addFiles } = attachmentState;
+  const { attachments, attachmentsRef, attaching, fileNotice, setFileNotice, setAttachments, restoreAttachments, addFiles } = attachmentState;
   /** The browser's annotations and screenshots join the composer's files; its Send also sends the message. */
   async function attachFromBrowser(parts: Attachment[], submit: boolean) {
     const owner = selectedRef.current?.id || newDraftKey.current;
@@ -637,55 +635,13 @@ export default function Home() {
    * Commands that run the model or rewrite the chat wait for an idle chat; controls and views are always there. */
   const openSettings = (tab: SettingsDestination) => { setSettingsSection(tab); show("settings"); };
   const focusComposer = () => composerRef.current?.focus();
-  function beginReply(entry: Entry, quote?: string) {
-    if (!selectedRef.current || readOnlyRun || readingFiles.current) return;
-    const attachment = replyAttachment(entry, entry.item.type === "userMessage" ? "You" : agentName(selectedRef.current) || "Elpis", quote);
-    const fit = fitAttachments(withoutReplyAttachments(attachmentsRef.current), [attachment]);
-    if (fit.problems.length) { setFileNotice(fit.problems.join("\n")); return; }
-    setShellMode(false); setAttachments(fit.kept); saveAttachments(selectedRef.current.id, fit.kept); setFileNotice(""); focusComposer();
-  }
-
-  async function beginImageReply(entry: Entry, image: ReplyImage) {
-    const owner = selectedRef.current?.id;
-    if (!owner || readOnlyRun || readingFiles.current) return;
-    const speaker = entry.item.type === "userMessage" ? "You" : agentName(selectedRef.current) || "Elpis";
-    readingFiles.current = true; setAttaching(true); setFileNotice("");
-    try {
-      const response = await fetch(image.src, { credentials: "same-origin", referrerPolicy: "no-referrer", signal: AbortSignal.timeout(15000) });
-      if (!response.ok) throw Error("This image could not be attached. Try again after it loads.");
-      const blob = await response.blob();
-      const file = await attachmentFromFile(new File([blob], image.name, { type: blob.type }));
-      if (file.type !== "image") throw Error("This picture could not be read as an image.");
-      const attachment = replyAttachment(entry, speaker, undefined, image.name.slice(0, 500));
-      file.id = `reply-image-${attachment.id}`;
-      const fit = fitAttachments(withoutReplyAttachments(savedAttachments(owner)), [attachment, file]);
-      if (fit.problems.length) throw Error(fit.problems.join("\n"));
-      saveAttachments(owner, fit.kept);
-      if (selectedRef.current?.id === owner) { setShellMode(false); setAttachments(fit.kept); focusComposer(); }
-    } catch (cause) {
-      const message = errorText(cause);
-      if (selectedRef.current?.id === owner) setFileNotice(message);
-      else setRuntimeNotices(previous => ({ ...previous, [owner]: message }));
-    } finally { readingFiles.current = false; setAttaching(false); }
-  }
-
+  const { beginReply, beginImageReply, editQueued } = createReplyActions({ composer, attachmentsState: attachmentState, drafts: draftStore, runtime, selectedRef, newDraftKey, readOnlyRun, focusComposer, editDraft });
   // The transcript is redrawn only when what it shows changes, not on every keystroke in the message box; its
   // handlers call the current render's functions through a ref, so a reused row never calls a stale one.
   const live = useRef({ openById, focusComposer, replaceFrom, forkFrom, showVersion, setRewindTurn, deleteFrom, setMessageEdits, setError, beginReply, beginImageReply });
   live.current = { openById, focusComposer, replaceFrom, forkFrom, showVersion, setRewindTurn, deleteFrom, setMessageEdits, setError, beginReply, beginImageReply };
   const versionsShown = selected ? messageVersions[selected.id] : undefined;
   const chatConversation = useConversationTranscript({ live, selected, shownEntries, activeTurn, desktop, openChanges: side.openChanges, threads, messageEdits, pendingDrafts, replaceable, replacementOptions, replacementOptionsKey, readOnlyRun, versionsShown, newestPrompt, regenerate, connected, voiceBusy, loveSpotAudioReason });
-  /** A queued message's Edit in composer, as in Claude: it returns to the box above whatever is typed, with its files and @-mentions. */
-  function editQueued(item: FollowUp) {
-    editDraft([item.text, textRef.current].filter(part => part.trim()).join("\n\n"));
-    for (const mention of item.mentions ?? []) pickedMentions.current.set(mention.path, mention);
-    if (item.attachments.length) {
-      const all = [...attachmentsRef.current, ...item.attachments], kept = all.slice(0, ATTACHMENT_LIMITS.count);
-      setAttachments(kept); saveAttachments(selectedRef.current?.id || newDraftKey.current, kept);
-      if (kept.length < all.length) setFileNotice(`A message holds up to ${ATTACHMENT_LIMITS.count} files; the extra files of the queued message were left out.`);
-    }
-    focusComposer();
-  }
   /** Puts an earlier message (or the draft) in the box with the caret at its start or end, as the history keys do. */
   function writePrompt(value: string, caret: "start" | "end") {
     flushSync(() => editDraft(value));
