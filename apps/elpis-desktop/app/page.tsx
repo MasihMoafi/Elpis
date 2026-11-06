@@ -52,7 +52,7 @@ import { PutUnderDialog } from "@/components/put-under-dialog";
 import { WorkflowMark } from "@/components/workflow-identity";
 import { useWorkflowSandbox } from "@/lib/workflow-identity";
 import { ProfileDialog } from "@/components/profile-dialog";
-import { readProjectChats, readProjects, saveProjects } from "@/lib/projects";
+import { saveProjects } from "@/lib/projects";
 import { useLoveActivity } from "@/lib/use-love-activity";
 import { LOVE_SPOT_AUDIO } from "@/lib/love-spot-audio";
 import { useScreenshotPopup } from "@/lib/use-screenshot-popup";
@@ -71,7 +71,7 @@ import { type SideRequest } from "@/components/side-chat";
 import { FloatChatBar, FloatChatPill } from "@/components/float-chat";
 import { useSessionSplit } from "@/components/session-split";
 import { Tab } from "@/components/tab-strip";
-import { activeTab, followChat, forgetChats, renameTabs, type ChatTab } from "@/lib/chat-tabs";
+import { followChat, forgetChats, renameTabs, type ChatTab } from "@/lib/chat-tabs";
 import { fitAttachments, type Attachment } from "@/lib/attachments";
 import { api, isAgentRun, modelLabel, providerLabel, title, agentName,
   type ProviderSettings, type Thread } from "@/lib/api";
@@ -111,6 +111,7 @@ import { useDesktopEntryPoints } from "@/lib/use-desktop-entry-points";
 import { useConversationSession } from "@/lib/use-conversation-session";
 import { createPromptEditing } from "@/lib/prompt-editing";
 import { createSideChatActions } from "@/lib/side-chat-actions";
+import { useWorkspaceRestoration } from "@/lib/use-workspace-restoration";
 import { NAV_PAGES, PAGE_NAMES } from "@/lib/workspace-navigation-pages";
 import { refusedOffline, type View, type WorkflowReplay } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
@@ -144,8 +145,8 @@ export default function Home() {
   const options = useConversationOptions();
   const { choiceId, model, effort, setEffort, nextTurn, setNextTurn, threadModes, setThreadModes, threadPlans, newPlan, planAnswered, setPlanAnswered, newMode } = options;
   const projectState = useProjectState();
-  const { cwd, projects, setProjects, projectId, setWorkflowProjectId, projectChats, setProjectChats,
-    projectChatsRef, projectMove, setProjectMove, newProjectFor, setNewProjectFor, nestTargets, setNestTargets,
+  const { cwd, projects, setProjects, projectId, projectChats,
+    projectMove, setProjectMove, newProjectFor, setNewProjectFor, nestTargets, setNestTargets,
     projectChanging, workflowProject, projectEdit, setProjectEdit } = projectState;
   const pages = useWorkspacePagesState();
   const { recordedWorkflow, setSettingsVisited, setSettingsNavigation, view, setView, viewRef, setSettingsSection } = pages;
@@ -295,15 +296,7 @@ export default function Home() {
   }, [select, setText, savedDraft, restoreAttachments, updateTabs, browser.closeSession]);
   const { rememberFollowing, reconcileLiveThread, loadThread, openThread } = useOpenConversation({ composer, runtime, conversations, history, drafts: draftStore, attachments: attachmentState, tabsRef, updateTabs, session, newDraftKey, markRead, setView, setSidebar, setError, rememberModes: (id, live) => rememberModes(id, live) });
 
-  useEffect(() => { setText(savedDraft(newDraftKey.current)); }, [savedDraft]);
-
-  useEffect(() => {
-    try { const stored = readProjects(); newDraftKey.current = "new"; setText(savedDraft(newDraftKey.current)); restoreAttachments(newDraftKey.current); setProjects(stored.projects); setWorkflowProjectId(stored.selectedId); const memberships = readProjectChats(); projectChatsRef.current = memberships; setProjectChats(memberships); }
-    catch (e) { setError(errorText(e, "Could not restore workspace preferences.")); }
-    const restored = restoreTabs(), shown = restored && activeTab(restored);
-    if (shown && !shown.threadId && shown.draftKey) { newDraftKey.current = shown.draftKey; setText(savedDraft(shown.draftKey)); restoreAttachments(shown.draftKey); }
-  }, []);
-  useEffect(() => window.elpisDesktop?.storage?.onError(setError), []);
+  useWorkspaceRestoration({ projects: projectState, composer, attachments: attachmentState, drafts: draftStore, newDraftKey, restoreTabs, setError });
   useWorkspaceNavigation(shortcutAction);
   useRuntimeEvents({ history, conversations, runtime, selectedRef, request, tabsRef, refreshModels, setError, initialRestoration, rememberFollowing, rememberModes: (id, live) => rememberModes(id, live), reconcileLiveThread, restoredTabs, loadThread, openThread, viewRef, planTurns, setAttention, loveRef, isLoveChatId, setRewindActions, setThreadModes, rewindSwitch, removeThreads, setEntries, clearApprovalDraft });
 
