@@ -1,0 +1,319 @@
+import { AGENT_RUN_NOTICE, agentParentId, isAgentRun } from '../lib/agent-runs.mts';
+import { BridgeError, object, text, threadId } from './validate.mts';
+import { createdThread } from './spawn-links.mjs';
+import { interviewTurns, legacyInterview } from './love-interview.mts';
+import { recordedMedia } from './attachments.mts';
+
+import { internal_browserOptions, internal_rpc } from './client-connection.mjs';
+import { internal_withTurnModels } from './client-context.mjs';
+import voiceHandoff from './voice-handoff.cts';
+
+export const { isVoiceHandoff } = voiceHandoff;
+
+/** Every kind of conversation the window lists, agents included. */
+export const SOURCE_KINDS = ['cli', 'vscode', 'exec', 'appServer', 'subAgent', 'subAgentReview', 'subAgentCompact', 'subAgentThreadSpawn', 'subAgentOther', 'unknown'];
+
+const CHAT_SOURCE_KINDS = ['cli', 'vscode', 'appServer', 'unknown'];
+
+/** Search reads at most this many pages of 100 chats for names (2,000 chats). */
+const SEARCH_SCAN_PAGES = 20;
+
+/** The cursor of a page cut from whole turns (see #itemsPage); the engine's own cursors never start with it. */
+const WHOLE_TURNS = 'whole-turns:';
+
+/** The engine's Claude Code import ends the last turn with this agent message, after the chat's real last reply
+ * (codex-rs/external-agent-migration, EXTERNAL_SESSION_IMPORTED_MARKER). It is a note for the engine, not a reply. */
+const IMPORT_MARKER = '<EXTERNAL SESSION IMPORTED>';
+
+const notImportMarker = entry => !(entry?.item?.type === 'agentMessage' && entry.item.text === IMPORT_MARKER);
+
+/** A thread's status, corrected by its newest turn: "active" whose newest turn has ended is idle. No turn yet (a
+ * bridged chat's first turn is listed only once it ends) or an unreadable list keeps the status as listed. */
+export function settledStatus(status, newestTurns) {
+  const newest = Array.isArray(newestTurns) ? newestTurns[0] : undefined;
+  if (status?.type !== 'active' || !newest?.status || newest.status === 'inProgress') return status;
+  return { type: 'idle' };
+}
+
+/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
+async function internal_loadWorkflowTitles(clientState, threads) {
+    const candidates = threads.flatMap(thread => {
+      const source = thread.source?.subAgent?.other;
+      const match = typeof source === 'string' && /^work_graph:([0-9a-f-]{36}):(.+)$/.exec(source);
+      if (!match || clientState.workflowTitles.has(thread.id)) return [];
+      return [{thread,source,graphId:match[1],taskId:match[2],rootThreadId:thread.parentThreadId}];
+    });
+    // Native thread/list can omit the parent of Other(work_graph) workers even
+    // while thread/read reports it. Recover only recognised workers, then verify
+    // the graph's assigned thread before projecting a title or parent.
+    const validParent = row => { try { return threadId(row.rootThreadId) !== row.thread.id; } catch { return false; } };
+    const missing = candidates.filter(row => !validParent(row)).slice(0,16);
+    await Promise.all(missing.map(async row => {
+      const read = await internal_rpc.call(this, clientState, 'thread/read',{threadId:row.thread.id,includeTurns:false}).catch(()=>null);
+      if (read?.thread?.id === row.thread.id && read.thread.source?.subAgent?.other === row.source) row.rootThreadId=read.thread.parentThreadId;
+    }));
+    const linked = candidates.filter(validParent);
+    // Cap distinct parents for a large list page; verified metadata is reused.
+    await Promise.all([...new Set(linked.map(row=>row.rootThreadId))].slice(0,16).map(async rootThreadId => {
+      let lookup = clientState.workflowLookups.get(rootThreadId);
+      if (!lookup) {
+        lookup = internal_rpc.call(this, clientState, 'workGraph/list',{rootThreadId}).catch(()=>null).finally(()=>clientState.workflowLookups.delete(rootThreadId));
+        clientState.workflowLookups.set(rootThreadId,lookup);
+      }
+      const result = await lookup;
+      for (const row of linked.filter(row=>row.rootThreadId===rootThreadId)) {
+        const graph = result?.data?.find(graph=>graph.id===row.graphId);
+        const task = graph?.tasks?.find(task=>task.id===row.taskId && task.assignedThreadId===row.thread.id);
+        if (typeof task?.title==='string' && task.title.trim()) clientState.workflowTitles.set(row.thread.id,{source:row.source,title:task.title.trim(),rootThreadId});
+      }
+    }));
+  }
+
+/** A chat made by another chat's create_thread call belongs under it; the window already lists it on its own, so tell it. */
+/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
+export async function internal_learnSpawn(clientState, maker, item) {
+    const child = createdThread(item);
+    if (!child || !await clientState.spawnLinks.record(child, maker).catch(() => false)) return;
+    const { thread } = await internal_rpc.call(this, clientState, 'thread/read', { threadId: child, includeTurns: false }).catch(() => ({}));
+    if (thread?.id === child) this.emit('event', { type: 'message', data: { method: 'thread/started', params: { thread: internal_decorate.call(this, clientState, thread) } } });
+  }
+
+/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
+export function internal_decorate(clientState, thread) {
+    if (!thread || typeof thread.id !== 'string') throw new BridgeError('Elpis returned an invalid thread', 502);
+    if (legacyInterview(thread)) clientState.interviewThreads.add(thread.id);
+    if (clientState.interviewThreads.has(thread.id)) thread = { ...thread, preview: '', ...(Array.isArray(thread.turns) ? { turns: interviewTurns(thread.turns) } : {}) };
+    const parentThreadId = agentParentId(thread) ?? clientState.spawnLinks.makerOf(thread.id);
+    if (parentThreadId) thread = { ...thread, parentThreadId };
+    clientState.known.add(thread.id);
+    const recorded = clientState.workflowTitles.get(thread.id);
+    if (recorded?.source===thread.source?.subAgent?.other && recorded && (!thread.parentThreadId || thread.parentThreadId===recorded.rootThreadId)) {
+      thread.workflowTaskTitle=recorded.title; thread.parentThreadId ??= recorded.rootThreadId;
+    }
+    const background = isAgentRun(thread);
+    const parentOwned = background || thread.canAcceptDirectInput === false
+      || (thread.canAcceptDirectInput == null && typeof thread.source?.subAgent?.thread_spawn?.agent_path === 'string');
+    return { ...thread, desktopAccess: { writable: !parentOwned, mode: parentOwned ? 'continue' : 'direct',
+      canContinue: parentOwned && ['idle', 'notLoaded'].includes(thread.status?.type), reason: parentOwned ? AGENT_RUN_NOTICE : null } };
+  }
+
+/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
+export function internal_forget(clientState, id) { clientState.browserConfig?.close?.(id); internal_forgetSubscription.call(this, clientState, id); clientState.known.delete(id); clientState.context.delete(id); clientState.attaching.delete(id); clientState.workflowTitles.delete(id); clientState.turnRevisions.delete(id); }
+
+/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
+export async function impl_listThreads(clientState, options = {}) {
+    object(options, ['cursor', 'limit', 'ancestorThreadId', 'archived', 'searchTerm', 'includeAgentRuns']);
+    if (options.includeAgentRuns !== undefined && typeof options.includeAgentRuns !== 'boolean') throw new BridgeError('includeAgentRuns must be true or false');
+    const includeAgentRuns = options.includeAgentRuns === true || !!options.ancestorThreadId;
+    if (options.searchTerm !== undefined) text(options.searchTerm, 'conversation search', 200);
+    const result = await internal_rpc.call(this, clientState, 'thread/list', { limit: options.limit ?? 50, cursor: options.cursor, modelProviders: [],
+      ...(options.archived === true ? { archived: true } : {}),
+      ...(options.searchTerm ? { searchTerm: options.searchTerm.trim() } : {}),
+      sourceKinds: includeAgentRuns ? SOURCE_KINDS : CHAT_SOURCE_KINDS,
+      ...(options.ancestorThreadId ? { ancestorThreadId: threadId(options.ancestorThreadId) } : {}) });
+    // The engine's search matches a chat's first message in exact letter case and misses a name given later, so "main" did
+    // not find the chat named main once it was past the loaded page. Match names and first messages in any case over the
+    // whole list, as the Codex resume picker matches its rows (tui/src/resume_picker.rs, matches_query).
+    if (options.searchTerm && !options.cursor && !options.archived && !options.ancestorThreadId) {
+      const term = options.searchTerm.trim().toLowerCase(), seen = new Set(result.data.map(thread => thread.id));
+      /** @type {string | null | undefined} */ let cursor;
+      for (let page = 0; page < SEARCH_SCAN_PAGES; page++) {
+        const listed = await internal_rpc.call(this, clientState, 'thread/list', { limit: 100, ...(cursor ? { cursor } : {}), modelProviders: [], sourceKinds: includeAgentRuns ? SOURCE_KINDS : CHAT_SOURCE_KINDS });
+        for (const thread of listed.data ?? []) if (!seen.has(thread.id) && `${thread.name ?? ''} ${thread.preview ?? ''} ${thread.agentNickname ?? ''}`.toLowerCase().includes(term)) { seen.add(thread.id); result.data.push(thread); }
+        if (!(cursor = listed.nextCursor)) break;
+      }
+    }
+    // A native fork has no first_user_message of its own until another turn. Keep the current rewind checkpoint
+    // discoverable across desktop restarts without inventing a user message just to make the engine list it.
+    if (!options.cursor && !options.ancestorThreadId && !options.archived) {
+      for (const id of new Set([...await clientState.rewindHistory.currentIds(), ...await clientState.versions.listed()])) {
+        if (result.data.some(thread => thread.id === id)) continue;
+        const { thread } = await internal_rpc.call(this, clientState, 'thread/read', { threadId: id, includeTurns: false }).catch(() => ({}));
+        if (!thread || thread.path?.includes('/archived_sessions/')) continue;
+        if (options.searchTerm && !`${thread.name ?? ''} ${thread.preview ?? ''}`.toLowerCase().includes(options.searchTerm.trim().toLowerCase())) continue;
+        result.data.unshift(thread);
+      }
+    }
+    // The engine relates a chat only to the agents it spawned itself; add the chats made by create_thread.
+    if (!options.archived && !options.ancestorThreadId && !options.searchTerm) {
+      await clientState.spawnLinks.recover(result.data, cursor => internal_rpc.call(this, clientState, 'thread/list', { limit: 100, cursor, modelProviders: [], sourceKinds: SOURCE_KINDS })).catch(() => {});
+      // The creator may be on an older history page. Its children still need their real row here.
+      for (const child of [...result.data]) {
+        const maker = clientState.spawnLinks.thread(clientState.spawnLinks.makerOf(child.id));
+        if (maker && !result.data.some(thread => thread.id === maker.id)) result.data.push(maker);
+      }
+    }
+    if (options.ancestorThreadId && !options.cursor && !options.archived) for (const id of clientState.spawnLinks.madeBy(options.ancestorThreadId)) {
+      if (result.data.some(thread => thread.id === id)) continue;
+      const { thread } = await internal_rpc.call(this, clientState, 'thread/read', { threadId: id, includeTurns: false }).catch(() => ({}));
+      if (thread?.id === id && !thread.path?.includes('/archived_sessions/')) result.data.push(thread);
+    }
+    await internal_loadWorkflowTitles.call(this, clientState, result.data);
+    await internal_settleWorking.call(this, clientState, result.data);
+    // Auto-review's reviewer works in threads of its own; they are not the user's chats.
+    const data = result.data.filter(thread => thread.source?.subAgent?.other !== 'guardian' && (includeAgentRuns || !isAgentRun(thread))).map(thread => internal_decorate.call(this, clientState, thread));
+    // Follow working agents live: only subscribers receive their items, approvals and deltas.
+    if (!options.archived) for (const thread of data) if (thread.status?.type === 'active' && !clientState.owned.has(thread.id) && !clientState.endedNodes.has(thread.id)) void internal_attach.call(this, clientState, thread.id, thread).catch(() => {});
+    return { ...result, data };
+  }
+
+/** 3 Nov: after an engine hand-over a chat stayed listed as working with no turn in progress, which hid Edit and
+   * Rewind until it was stopped by hand. A chat listed as working counts as working only while a turn is in progress. */
+/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
+async function internal_settleWorking(clientState, threads) {
+    await Promise.all(threads.filter(thread => thread.status?.type === 'active').map(async thread => {
+      const page = await internal_rpc.call(this, clientState, 'thread/turns/list', { threadId: thread.id, limit: 1, sortDirection: 'desc', itemsView: 'notLoaded' }).catch(() => null);
+      thread.status = settledStatus(thread.status, page?.data);
+    }));
+  }
+
+/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
+export async function impl_listArchivedThreads(clientState, options = {}) {
+    return clientState.archiveHistory.page(options, page => this.listThreads(page));
+  }
+
+/** Rejoins without model, policy, history or workspace changes. Desktop MCP follows cold resumes;
+   * the engine preserves the configuration of threads still loaded by another client. */
+/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
+export function internal_attach(clientState, id, knownThread = null) {
+    threadId(id);
+    if (clientState.owned.has(id) && !clientState.attaching.has(id)) return Promise.resolve(null);
+    if (clientState.attaching.has(id)) return clientState.attaching.get(id);
+    clientState.owned.add(id);
+    const attempt = (async () => {
+      const thread = knownThread ?? (await internal_rpc.call(this, clientState, 'thread/read', { threadId: id, includeTurns: false })).thread;
+      if (!thread || thread.id !== id) throw new BridgeError('Elpis returned another thread', 502);
+      if (thread.canAcceptDirectInput === false || (thread.status?.type !== 'active' && !internal_decorate.call(this, clientState, thread).desktopAccess.writable)) {
+        if (thread.status?.type !== 'active') { clientState.owned.delete(id); return { thread }; }
+        try { return await internal_rpc.call(this, clientState, 'thread/subscribe', { threadId: id, includeTurns: false }); }
+        catch (error) {
+          const current = await internal_rpc.call(this, clientState, 'thread/read', { threadId: id, includeTurns: false }).catch(() => null);
+          if (current?.thread?.id === id && current.thread.status?.type !== 'active') { clientState.owned.delete(id); return current; }
+          throw error;
+        }
+      }
+      return internal_rpc.call(this, clientState, 'thread/resume', { threadId: id, excludeTurns: true, initialTurnsPage: { limit: 1, sortDirection: 'desc', itemsView: 'summary' }, ...internal_browserOptions.call(this, clientState, id) });
+    })()
+      .then(result => {
+        if (result.thread?.id !== id) throw new BridgeError('Elpis resumed another conversation', 502);
+        if (result.followingLive === false) clientState.historyOnly.add(id); else clientState.historyOnly.delete(id);
+        return result;
+      })
+      .catch(error => { internal_forgetSubscription.call(this, clientState, id); throw error; })
+      .finally(() => { if (clientState.attaching.get(id) === attempt) clientState.attaching.delete(id); });
+    clientState.attaching.set(id, attempt);
+    return attempt;
+  }
+
+/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
+export function internal_forgetSubscription(clientState, id) {
+    clientState.owned.delete(id);
+    clientState.historyOnly.delete(id);
+    for (const [key, approval] of clientState.approvals) if (approval.ownerThreadId === id || approval.params.threadId === id) {
+      clientState.approvals.delete(key);
+      this.emit('event', { type: 'approvalResolved', data: { id: key } });
+    }
+  }
+
+/** Read current native metadata without resuming a chat or loading its conversation. */
+/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
+export async function impl_readThreadMetadata(clientState, id) {
+    threadId(id);
+    const { thread } = await internal_rpc.call(this, clientState, 'thread/read', { threadId: id, includeTurns: false });
+    if (thread?.id !== id) throw new BridgeError('Elpis returned another thread', 502);
+    await internal_loadWorkflowTitles.call(this, clientState, [thread]);
+    await internal_settleWorking.call(this, clientState, [thread]);
+    return internal_decorate.call(this, clientState, thread);
+  }
+
+/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
+export async function impl_readThread(clientState, id, options = {}) {
+    object(options, ['cursor', 'limit']);
+    const revision = clientState.turnRevisions.get(id);
+    const thread = await this.readThreadMetadata(id);
+    if (clientState.interviewThreads.has(id)) {
+      const start = options.cursor ? Number(options.cursor.startsWith(WHOLE_TURNS) ? options.cursor.slice(WHOLE_TURNS.length) : NaN) : 0;
+      if (!Number.isSafeInteger(start) || start < 0) throw new BridgeError('Invalid cursor');
+      const saved = await internal_rpc.call(this, clientState, 'thread/read', { threadId: id, includeTurns: true });
+      const turns = interviewTurns(saved.thread?.turns ?? []);
+      const entries = turns.flatMap(turn => turn.items.map(item => ({ turnId: turn.id, item }))).reverse();
+      const end = start + (options.limit ?? 30);
+      return { thread, data: await internal_withTurnModels.call(this, clientState, thread.path, entries.slice(start, end)), nextCursor: end < entries.length ? `${WHOLE_TURNS}${end}` : null };
+    }
+    const items = await internal_itemsPage.call(this, clientState, { threadId: id, cursor: options.cursor, limit: options.limit ?? 30, sortDirection: 'desc' });
+    // A missed renderer event must not leave its Stop/Working state behind the saved
+    // conversation. A newer live turn always takes precedence over this read.
+    if (thread.model?.startsWith('claude/') && thread.status?.type === 'idle' && clientState.turnRevisions.get(id) === revision) {
+      this.emit('event', { type: 'message', data: { method: 'thread/status/changed', params: { threadId: id, status: thread.status } } });
+    }
+    return { thread, ...items, data: await internal_withTurnModels.call(this, clientState, thread.path, items.data) };
+  }
+
+/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} _clientState */
+export async function impl_readPrompts(_clientState, id) {
+    threadId(id);
+    const prompts = new Map(), replies = new Map(), cursors = new Set();
+    let cursor;
+    do {
+      const page = await this.readThread(id, cursor ? { cursor, limit: 100 } : { limit: 100 });
+      for (const { turnId, item } of page.data) {
+        if (typeof turnId !== 'string') continue;
+        if (item?.type === 'userMessage' && !isVoiceHandoff(item)) {
+          const text = Array.isArray(item.content) ? item.content.filter(part => part?.type === 'text' && typeof part.text === 'string').map(part => part.text).join('\n') : '';
+          prompts.set(turnId, { itemId: item.id, text: Array.from(text.trim()).slice(0, 200).join('') });
+        } else if (item?.type === 'agentMessage') {
+          const text = typeof item.text === 'string' ? item.text : Array.isArray(item.content) ? item.content.filter(part => part?.type === 'text' && typeof part.text === 'string').map(part => part.text).join('\n') : '';
+          if (text.trim()) replies.set(turnId, Array.from(text.trim()).slice(0, 600).join(''));
+        }
+      }
+      cursor = page.nextCursor;
+      if (cursor && cursors.has(cursor)) throw new BridgeError('Repeated history cursor', 502);
+      if (cursor) cursors.add(cursor);
+    } while (cursor);
+    return { data: [...prompts].reverse().map(([turnId, prompt]) => ({ turnId, ...prompt, reply: replies.get(turnId) ?? '' })) };
+  }
+
+/** One page of a chat's items. A chat Elpis keeps only as whole turns (older history, or a new chat before its
+   * first message is recorded) has no item pages: the engine answers -32601, and the TUI then reads whole turns
+   * (its LegacyOnly history). So does this: the page is cut from thread/read's turns, behind a cursor of its own. */
+/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
+export async function internal_itemsPage(clientState, params) {
+    const own = typeof params.cursor === 'string' && params.cursor.startsWith(WHOLE_TURNS);
+    if (!own) {
+      try { const page = await internal_rpc.call(this, clientState, 'thread/items/list', params); return Array.isArray(page?.data) ? { ...page, data: page.data.filter(notImportMarker) } : page; }
+      catch (error) { if (error.code !== -32601) throw error; }
+    }
+    const start = own ? Number(params.cursor.slice(WHOLE_TURNS.length)) : 0;
+    if (!Number.isSafeInteger(start) || start < 0) throw new BridgeError('Invalid cursor');
+    let turns;
+    try { turns = (await internal_rpc.call(this, clientState, 'thread/read', { threadId: params.threadId, includeTurns: true })).thread?.turns ?? []; }
+    catch (error) { if (/is not materialized yet/.test(error.engineMessage ?? '')) turns = []; else throw error; }
+    const entries = turns.filter(turn => !params.turnId || turn.id === params.turnId)
+      .flatMap(turn => (Array.isArray(turn.items) ? turn.items : []).map(item => ({ turnId: turn.id, item }))).filter(notImportMarker);
+    if (params.sortDirection === 'desc') entries.reverse();
+    const end = start + (params.limit ?? 30);
+    return { data: entries.slice(start, end), nextCursor: end < entries.length ? `${WHOLE_TURNS}${end}` : null, backwardsCursor: null };
+  }
+
+/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
+export async function impl_media(clientState, id, turn, itemId, inputIndex) {
+    threadId(id); text(turn, 'turn ID', 200); text(itemId, 'item ID', 200);
+    if (!Number.isInteger(inputIndex) || inputIndex < 0 || inputIndex > 100) throw new BridgeError('Invalid media index');
+    const cursors = new Set();
+    /** @type {string | null | undefined} */ let cursor;
+    for (let pageIndex = 0; pageIndex < 20; pageIndex++) {
+      const page = await internal_itemsPage.call(this, clientState, { threadId: id, turnId: turn, limit: 100, sortDirection: 'asc', ...(cursor ? { cursor } : {}) });
+      if (!Array.isArray(page?.data) || page.data.some(entry => entry?.turnId !== turn)) throw new BridgeError('Could not verify recorded media', 502);
+      const entry = page.data.find(entry => entry.item?.id === itemId);
+      if (entry) {
+        // An image the agent viewed is its one picture.
+        if (entry.item.type === 'imageView' && inputIndex === 0 && typeof entry.item.path === 'string') return recordedMedia({ type: 'localImage', path: entry.item.path });
+        if (entry.item.type !== 'userMessage' || !Array.isArray(entry.item.content)) throw new BridgeError('No recorded media here', 404);
+        return recordedMedia(entry.item.content[inputIndex]);
+      }
+      if (page.nextCursor === null) break;
+      if (typeof page.nextCursor !== 'string' || !page.nextCursor || cursors.has(page.nextCursor)) throw new BridgeError('Could not verify recorded media', 502);
+      cursor = page.nextCursor; cursors.add(cursor);
+    }
+    throw new BridgeError('Recorded media was not found', 404);
+  }
