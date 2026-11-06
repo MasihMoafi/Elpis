@@ -105,7 +105,7 @@ import { ChatTeamPanel } from "@/components/chat-team-panel";
 import { agentColourSlots } from "@/components/agent-identity";
 import { ResumeConversation } from "@/components/resume-conversation";
 import { sidebarListKeys, useSidebarKeys, useWorkspaceNavigation } from "@/lib/use-workspace-navigation";
-import { agentState, mergeListedThreads } from "@/lib/agents";
+import { agentState } from "@/lib/agents";
 import { insertTranscript } from "@/lib/dictation";
 import { useBrowserPins } from "@/lib/browser-pins";
 import { useBrowser } from "@/components/browser-panel";
@@ -139,6 +139,7 @@ import { createMessageActions } from "@/lib/message-actions";
 import { createChatDeletion } from "@/lib/chat-deletion";
 import { useChatReorder } from "@/lib/use-chat-reorder";
 import { useSidebarThreads } from "@/lib/use-sidebar-threads";
+import { useChildConversations } from "@/lib/use-child-conversations";
 import { refusedOffline, type Live, type View, type WorkflowReplay, type NextTurn } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
 import { useComposerState } from "@/lib/use-composer-state";
@@ -293,9 +294,6 @@ export default function Home() {
     if (submit) await send(); else requestAnimationFrame(() => composerRef.current?.focus());
     return true;
   }
-  const [loadingChildren, setLoadingChildren] = useState<Record<string, boolean>>({});
-  const childPaging = useRef(new Set<string>()), loadedChildPages = useRef(new Set<string>());
-  const checkedChildren = useRef(new Set<string>());
   const [settingsVisited, setSettingsVisited] = useState(false);
   const [settingsNavigation, setSettingsNavigation] = useState(0);
   const [related, setRelated] = useState<Record<string, Thread>>({});
@@ -355,8 +353,6 @@ export default function Home() {
   // The website's animated wordmark, its dark or light version (website/assets/branding).
   const searchInput = useRef<HTMLInputElement>(null);
   const shortcutsReturnFocus = useRef<HTMLElement | null>(null);
-  const [childCursors, setChildCursors] = useState<Record<string, string | null>>({});
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const history = useTranscriptHistory(selected, loading, entries, setEntries);
   const { itemCursor, setItemCursor, historyGaps, heldCount, transcripts, prefetchThread, liveRevision, liveKeysAfter } = history;
   const scroll = useRef<HTMLDivElement>(null);
@@ -369,13 +365,7 @@ export default function Home() {
   const initialRestoration = useRef<{ threadId: string; promise: Promise<void> } | null>(null);
   const conversations = useConversationList(threads, setThreads, selectedRef, setSelected, setError);
   const { select, settingsOf, threadsRef, patchThread, hidden, upsertThread, refreshThreads } = conversations;
-  // Once an unavailable team read lets a draft appear, a later reply must not move it.
-  const holdAgentPanel = useCallback((thread: Thread) => {
-    const root = thread.parentThreadId ?? thread.id;
-    if (checkedChildren.current.has(root) || threadsRef.current.some(item => item.parentThreadId === root)) return;
-    setAgentsPanelState(previous => previous.open && !previous.held.has(root)
-      ? { ...previous, held: new Set([...previous.held, root]) } : previous);
-  }, []);
+  const { loadingChildren, checkedChildren, childCursors, expanded, setExpanded, holdAgentPanel, loadChildren } = useChildConversations({ conversations, selectedRef, setThreads, setError, setAgentsPanelState });
   const search = useSidebarSearch(ready, hidden), searchTerm = search.searchTerm;
 
   const removeThreads = useCallback((ids: Set<string>, permanent: boolean) => {
@@ -405,21 +395,6 @@ export default function Home() {
   useWorkspaceNavigation(shortcutAction);
   useRuntimeEvents({ history, conversations, runtime, selectedRef, request, tabsRef, refreshModels, setError, initialRestoration, rememberFollowing, rememberModes, reconcileLiveThread, restoredTabs, loadThread, openThread, viewRef, planTurns, setAttention, loveRef, isLoveChatId, setRewindActions, setThreadModes, rewindSwitch, removeThreads, setEntries, clearApprovalDraft });
 
-  const loadChildren = useCallback(async (id: string, cursor?: string, expand = false) => {
-    if (childPaging.current.has(id)) return;
-    childPaging.current.add(id); setLoadingChildren(prev => ({ ...prev, [id]: true }));
-    try {
-      const result = await api<{ data: Thread[]; nextCursor: string | null }>(`/threads?ancestorThreadId=${encodeURIComponent(id)}&limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`); if (!Array.isArray(result.data)) throw unreadable("conversations");
-      setThreads(prev => mergeListedThreads(prev, result.data, hidden.current));
-      if (cursor) loadedChildPages.current.add(id);
-      if (cursor || !loadedChildPages.current.has(id)) setChildCursors(prev => ({ ...prev, [id]: result.nextCursor }));
-      if (expand) setExpanded(prev => ({ ...prev, [id]: true }));
-    } catch (e) {
-      const current = selectedRef.current;
-      if (current && (current.parentThreadId ?? current.id) === id) holdAgentPanel(current);
-      if (cursor) setError(String(e)); // A background read retries on its own; only his "Load more" click hears of a failure.
-    } finally { checkedChildren.current.add(id); childPaging.current.delete(id); setLoadingChildren(prev => ({ ...prev, [id]: false })); }
-  }, [holdAgentPanel]);
   const selectedTeamId = selected?.parentThreadId ?? selected?.id;
   useEffect(() => { if (ready && selectedTeamId) loadChildren(selectedTeamId); }, [ready, selectedTeamId, loadChildren]);
   // Chats this app could not subscribe to are refreshed by reading them instead.
