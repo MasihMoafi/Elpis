@@ -36,7 +36,7 @@ import { permissionLabel, type PermissionMode } from "@/components/composer-cont
 import { CopyButton } from "@/components/markdown-text";
 import { fitChatListEnd, useWholeRows } from "@/lib/whole-rows";
 import { mergeHistoryWithLive } from "@/lib/live-events";
-import { rememberSubmittedMessages, withSubmittedMessages, type SubmittedMessage } from "@/lib/submitted-messages";
+import { type SubmittedMessage } from "@/lib/submitted-messages";
 import { replacementEligibility, type MessageVersion } from "@/lib/turn-replacement";
 import { AgentsGuide } from "@/components/agents-guide";
 import { ExperimentLab } from "@/components/experiment-lab";
@@ -63,7 +63,6 @@ import { DiffPanel, ReviewPanel, SessionPanel } from "@/components/slash-panels"
 import { openControl } from "@/lib/slash-focus";
 import { reloadSettings, useElpisSettings } from "@/lib/settings-store";
 import { UsagePanel } from "@/components/provider-usage";
-import { isVoiceHandoff } from "@/bridge/voice-handoff.cjs";
 import { ReadAloud } from "@/components/read-aloud";
 import { MatildaCompanion } from "@/components/matilda-companion";
 import { LiveVoiceProvider } from "@/components/live-voice";
@@ -129,6 +128,8 @@ import { createConversationSettings } from "@/lib/conversation-settings";
 import { createConversationActions } from "@/lib/conversation-actions";
 import { createReplyActions } from "@/lib/reply-actions";
 import { createComposerHandlers } from "@/lib/composer-handlers";
+import { useRelatedConversations } from "@/lib/use-related-conversations";
+import { useTranscriptPresentation } from "@/lib/use-transcript-presentation";
 import { refusedOffline, type View, type WorkflowReplay, type NextTurn } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
 import { useComposerState } from "@/lib/use-composer-state";
@@ -283,7 +284,6 @@ export default function Home() {
   }
   const [settingsVisited, setSettingsVisited] = useState(false);
   const [settingsNavigation, setSettingsNavigation] = useState(0);
-  const [related, setRelated] = useState<Record<string, Thread>>({});
   const [view, setView] = useState<View>(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("workspace") === "canvas" ? "canvas" : "chat");
   useComposerHeight(composerRef, [text, selected?.id, view]);
   const loveActivity = useLoveActivity(view === "loveSpot", ready, view === "chat" ? selected : null);
@@ -409,24 +409,8 @@ export default function Home() {
     }, 3000);
     return () => { disposed = true; clearInterval(timer); };
   }, [selected?.id, selectedLiveError, view, loading, select, liveKeysAfter]);
-  // Name the parent and the agent a continued chat came from, even when they are not on the loaded page.
-  const relatedIds = [...new Set([selected?.parentThreadId, selected?.forkedFromId, ...(preferences.showAgentRuns && agentRunsOpen ? threads.filter(isAgentRun).map(thread => thread.parentThreadId) : [])])].filter((id): id is string => !!id && !threads.some(thread => thread.id === id) && !related[id]);
-  useEffect(() => {
-    for (const id of relatedIds) api<{ thread: Thread }>(`/threads/${encodeURIComponent(id)}?limit=1`).then(result => setRelated(prev => ({ ...prev, [id]: result.thread }))).catch(() => {});
-  }, [relatedIds.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
-  const shownScope = selected?.id ?? newDraftKey.current;
-  const shownEntries = useMemo(() => withSubmittedMessages(entries, submissions, shownScope).filter(entry => !isVoiceHandoff(entry.item)), [entries, submissions, shownScope]);
-  // Rewinding to the newest prompt would undo nothing he can see, so it has no Rewind (Masih, 29 Oct: "rewind what?").
-  const newestPrompt = useMemo(() => shownEntries.findLast(entry => entry.item.type === "userMessage")?.item.id, [shownEntries]);
-  useEffect(() => { setSubmissions(previous => rememberSubmittedMessages(entries, previous, selected?.id ?? newDraftKey.current)); }, [entries, selected?.id, submissions]);
-  useEffect(() => { const element = scroll.current; if (!element) return; if (restoreScroll.current) { const previous = restoreScroll.current; restoreScroll.current = null; element.scrollTop = previous.top + element.scrollHeight - previous.height; } else if (stickToBottom.current) element.scrollTo({ top: element.scrollHeight }); }, [entries, submissions, selected?.id]);
-
-  // A chat that was at its end stays there when its box changes size (full view turns the column into a card).
-  useEffect(() => {
-    const element = scroll.current, content = element?.firstElementChild; if (!element || !content) return;
-    const observer = new ResizeObserver(() => { if (stickToBottom.current) element.scrollTo({ top: element.scrollHeight }); });
-    observer.observe(element); observer.observe(content); return () => observer.disconnect();
-  }, [view]);
+  const related = useRelatedConversations(selected, threads, preferences.showAgentRuns, agentRunsOpen);
+  const { shownEntries, newestPrompt } = useTranscriptPresentation({ selected, entries, submissions, setSubmissions, newDraftKey, scroll, restoreScroll, stickToBottom, view });
 
   const activeTurn = selected ? activeTurns[selected.id] : undefined;
   useEffect(() => {
