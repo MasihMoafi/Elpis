@@ -404,7 +404,8 @@
     "tests/observability.test.cjs",
     "tests/background-refusal.test.cjs",
     "tests/theme-characters.test.cjs",
-    "tests/matilda-chat-unlock.test.cjs"
+    "tests/matilda-chat-unlock.test.cjs",
+    "tests/read-aloud-kokoro.test.cjs"
   ],
   "opt-in": [
     "tests/screen-capture-electron.test.cjs",

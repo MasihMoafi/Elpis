@@ -9,6 +9,26 @@ type Speech = { active: string | null; error: { id: string; message: string } | 
 /** After a read the call stays open this long, so the next Read aloud only sends its text. */
 const KEEP_OPEN_MS = 60_000;
 const SpeechContext = createContext<Speech | null>(null);
+
+/** Text as it should sound: no Markdown marks, code or addresses (Matilda's portrait markers included), in sentence groups
+ * short enough that the first one plays almost at once. */
+export function spokenPieces(text: string): string[] {
+  const plain = text.replace(/<!--[\s\S]*?-->/g, " ").replace(/```[\s\S]*?```/g, " ").replace(/`([^`]*)`/g, "$1")
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/https?:\/\/\S+/g, "a link").replace(/^\s{0,3}(#{1,6}|[-*+]|\d+[.)]|>)\s+/gm, "")
+    .replace(/[*_~|]+/g, "").replace(/\s+/g, " ").trim();
+  const pieces: string[] = [];
+  for (const sentence of plain.match(/[^.!?]+[.!?]+["')\]]*\s*|[^.!?]+$/g) ?? []) {
+    const last = pieces.at(-1);
+    if (last && last.length + sentence.length <= 280) pieces[pieces.length - 1] = last + sentence; else pieces.push(sentence);
+  }
+  return pieces.map(piece => piece.trim()).filter(Boolean).flatMap(piece => piece.length <= 3800 ? [piece] : piece.match(/.{1,3800}(\s|$)/g) ?? []);
+}
+/** Whether local Kokoro is set up (GET /api/read-aloud); asking also loads the voice ahead of the first read. */
+function useKokoro() {
+  const [on, setOn] = useState(false);
+  useEffect(() => { void sessionReady().then(() => api<{ available: boolean }>("/read-aloud")).then(result => setOn(result.available === true), () => {}); }, []);
+  return on;
+}
 export const useReadAloud = () => useContext(SpeechContext);
 
 /** One player with generated silence as input. Closing its request also retires its native session. */
@@ -16,6 +36,32 @@ export function ReadAloud({ threadId, enabled, available = READ_ALOUD_AUDIO.avai
   const [active, setActive] = useState<string | null>(null);
   const [error, setError] = useState<Speech["error"]>(null);
   const call = useRef<Playback | null>(null), warmed = useRef("");
+  const kokoro = useKokoro(), local = useRef<{ controller: AbortController; audio: HTMLAudioElement } | null>(null);
+  /** Read aloud with local Kokoro (6 Nov, Masih: his chosen voice, af_heart): each piece is voiced while the one before plays. */
+  async function speakLocally(id: string, text: string) {
+    stop(); setError(null);
+    const controller = new AbortController(), audio = new Audio(), mine = { controller, audio };
+    local.current = mine; setActive(id);
+    const voice = (piece: string) => fetch("/api/read-aloud", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: piece }), signal: controller.signal })
+      .then(async response => { if (!response.ok) throw new Error("Read aloud could not voice this reply."); return URL.createObjectURL(await response.blob()); });
+    try {
+      const pieces = spokenPieces(text);
+      let next = pieces.length ? voice(pieces[0]) : null;
+      for (let index = 0; next && local.current === mine; index++) {
+        const url = await next;
+        next = index + 1 < pieces.length ? voice(pieces[index + 1]) : null;
+        next?.catch(() => {});
+        audio.src = url;
+        await new Promise<void>((resolve, reject) => {
+          audio.onended = () => resolve(); audio.onerror = () => reject(new Error("This reply could not be played."));
+          controller.signal.addEventListener("abort", () => resolve(), { once: true });
+          void audio.play().catch(reject);
+        });
+        URL.revokeObjectURL(url);
+      }
+    } catch (cause) { if (local.current === mine && !controller.signal.aborted) setError({ id, message: cause instanceof Error ? cause.message : "Read aloud could not voice this reply." }); }
+    finally { if (local.current === mine) { local.current = null; setActive(null); } }
+  }
   /** Once a chat's reply actions show, its speech thread is made ahead (bridge: warmSpeechThread). */
   function warm() {
     if (!enabled || unavailableReason || !threadId || warmed.current === threadId) return;
@@ -23,6 +69,8 @@ export function ReadAloud({ threadId, enabled, available = READ_ALOUD_AUDIO.avai
     void api("/voice/read-aloud/warm", { threadId }).catch(() => { if (warmed.current === threadId) warmed.current = ""; });
   }
   function stop() {
+    const spoken = local.current; local.current = null;
+    if (spoken) { spoken.controller.abort(); spoken.audio.pause(); spoken.audio.removeAttribute("src"); }
     const current = call.current; call.current = null;
     if (current) {
       if (current.audio) { current.audio.muted = true; current.audio.pause(); current.audio.srcObject = null; }
@@ -43,6 +91,9 @@ export function ReadAloud({ threadId, enabled, available = READ_ALOUD_AUDIO.avai
 
   async function play(id: string, text?: string) {
     if (unavailableReason) return;
+    // A reply's text is read with local Kokoro; only Matilda's live board voice (no text) uses the call below.
+    if (text !== undefined && kokoro) return speakLocally(id, text);
+    if (!available) return;
     const open = call.current;
     // A call kept open after a read takes this reply's text; it reads it as soon as it arrives.
     if (open?.idle && open.session && text !== undefined && enabled && threadId) {
@@ -175,5 +226,5 @@ export function ReadAloud({ threadId, enabled, available = READ_ALOUD_AUDIO.avai
       if (call.current === current) fail("Read aloud disconnected.");
     } catch (cause) { fail(cause instanceof Error ? cause.message : "Read aloud could not start."); }
   }
-  return <SpeechContext.Provider value={unavailableReason || !available ? null : { active, error, play: (id, text) => void play(id, text), stream: id => void play(id), stop, warm }}>{children}</SpeechContext.Provider>;
+  return <SpeechContext.Provider value={unavailableReason || !(available || kokoro) ? null : { active, error, play: (id, text) => void play(id, text), stream: id => void play(id), stop, warm }}>{children}</SpeechContext.Provider>;
 }

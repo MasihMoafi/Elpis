@@ -15,6 +15,7 @@ import { isRepository } from './git.mjs';
 import { createTools } from './tools.mjs';
 import { createTranscription } from './transcription.mjs';
 import { createVoice, recordVoiceCall } from './voice.mjs';
+import { createKokoro } from './kokoro.mjs';
 import { createImportChats } from './import-chats.mjs';
 import { ATTACHMENT_BODY_LIMIT, AttachmentError, PDF_BODY_LIMIT, extractPdf } from './attachments.mjs';
 import { createTrash } from './trash.mjs';
@@ -141,6 +142,7 @@ export async function startDesktopServer(options = {}) {
   };
   const transcription = createTranscription({ definition: () => client.transcriptionDefinition(), environment: () => client.transcriptionEnvironment() });
   const voice = createVoice(client);
+  const kokoro = options.kokoro ?? createKokoro();
   const importChats = createImportChats({ client, elpisHome: options.elpisHome ?? elpisHome(), ...(options.codexHome ? { codexHome: options.codexHome } : {}) });
   const event = value => {
     const bytes = `event: ${value.type}\ndata: ${JSON.stringify(value.data)}\n\n`;
@@ -270,6 +272,12 @@ export async function startDesktopServer(options = {}) {
           return json(response, 200, project(await fs.readFile(thread.path, 'utf8')));
         }
         if (url.pathname === '/api/voice/report' && method === 'POST') return json(response, 200, await recordVoiceCall(options.elpisHome ?? elpisHome(), await body(request)));
+        // Read aloud: local Kokoro (bridge/kokoro.mjs). GET says whether it is set up; POST returns one piece as WAV.
+        if (url.pathname === '/api/read-aloud' && method === 'GET') { kokoro.warm?.(); return json(response, 200, { available: kokoro.available() }); }
+        if (url.pathname === '/api/read-aloud' && method === 'POST') {
+          const wav = await kokoro.speak(object(await body(request), ['text']).text);
+          response.writeHead(200, { 'Content-Type': 'audio/wav', 'Cache-Control': 'no-store' }); return response.end(wav);
+        }
         if (url.pathname === '/api/voice' && method === 'GET') return json(response, 200, await client.voiceStatus());
         if (url.pathname === '/api/voice' && method === 'POST') return await voice.start(await body(request), response);
         if (url.pathname === '/api/voice/read-aloud' && method === 'POST') return await voice.start(await body(request, 8 * 1024 * 1024), response, { readAloud: true });
@@ -515,7 +523,7 @@ export async function startDesktopServer(options = {}) {
     },
     async close() {
       if (closed) return; closed = true; clearInterval(heartbeat);
-      await voice.close();
+      await voice.close(); kokoro.close();
       await experimentLab.close();
       if (improvementStore) (await improvementStore).close();
       await devServers.close();
