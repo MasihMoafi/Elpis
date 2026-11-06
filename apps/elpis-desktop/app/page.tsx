@@ -127,7 +127,8 @@ import { createShellSend } from "@/lib/shell-send";
 import { createClearConversation } from "@/lib/clear-conversation";
 import { useTurnReplacementView } from "@/lib/use-turn-replacement-view";
 import { useWorkspacePagesState } from "@/lib/use-workspace-pages-state";
-import { refusedOffline, type View, type WorkflowReplay, type NextTurn } from "@/lib/workspace-types";
+import { useConversationOptions } from "@/lib/use-conversation-options";
+import { refusedOffline, type View, type WorkflowReplay } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
 import { useComposerState } from "@/lib/use-composer-state";
 import { useProjectState } from "@/lib/use-project-state";
@@ -173,23 +174,14 @@ export default function Home() {
   // One settings snapshot for the whole app, so a main model saved in Settings is what the next new chat starts with.
   const settingsSnapshot = useElpisSettings().data as unknown as ProviderSettings | null;
   const providerSettings = settingsSnapshot?.main && Array.isArray(settingsSnapshot.providers) ? settingsSnapshot : null;
-  // New conversations: where to run and with what.
-  const [choiceId, setChoiceId] = useState("");
-  const [model, setModel] = useState("");
-  const [effort, setEffort] = useState("");
+  const options = useConversationOptions();
+  const { choiceId, setChoiceId, model, setModel, effort, setEffort, nextTurn, setNextTurn, threadModes, setThreadModes, threadPlans, setThreadPlans, newPlan, setNewPlan, planAnswered, setPlanAnswered, newMode } = options;
   const projectState = useProjectState();
   const { cwd, projects, setProjects, projectId, setWorkflowProjectId, projectChats, setProjectChats,
     projectChatsRef, projectMove, setProjectMove, newProjectFor, setNewProjectFor, nestTargets, setNestTargets,
     projectChanging, project, workflowProject, projectEdit, setProjectEdit } = projectState;
   const pages = useWorkspacePagesState();
   const { recordedWorkflow, setRecordedWorkflow, setSettingsVisited, setSettingsNavigation, view, setView, viewRef, workflowTab, setWorkflowTab, setSettingsSection } = pages;
-  // Existing conversations: overrides for their next turn only.
-  const [nextTurn, setNextTurn] = useState<Record<string, NextTurn>>({});
-  const [threadModes, setThreadModes] = useState<Record<string, PermissionMode>>({});
-  const [changingPermissions, setChangingPermissions] = useState(false);
-  const [threadPlans, setThreadPlans] = useState<Record<string, boolean>>({});
-  const [newPlan, setNewPlan] = useState(false);
-  const [planAnswered, setPlanAnswered] = useState<Record<string, string>>({});
   const { pins, togglePinned } = usePins();
   const { bookmarks, toggleBookmarked } = useBookmarks();
   // The sidebar's order is declared further down; groups release it through this ref.
@@ -241,7 +233,6 @@ export default function Home() {
   // A new chat in its own worktree (the Local/Worktree menu), and where an archived or deleted chat's worktree was kept.
   const [newWorktree, setNewWorktree] = useState(false);
   const shortcutAction = useRef<(id: string, index?: number) => void>(() => {});
-  const [newMode, setNewMode] = useState<PermissionMode | null>(null);
   const composer = useComposerState();
   const { text, setText, shellMode, setShellMode, shellCreated, textRef, composerRef, caret, setCaret, pickedMentions, filePickerRef, dictating, voiceBusy } = composer;
   const [sideChat, setSideChat] = useState<{ parentId: string; open: boolean; question?: SideRequest } | null>(null);
@@ -498,7 +489,7 @@ export default function Home() {
   });
   const manageConnections = () => { setSettingsSection("providers"); show("settings"); };
   const { forkFrom, continueHere, stop, deleteThread, renameThread, archiveThread, unarchived } = createConversationActions({ conversations, runtime, selectedRef, request, setBusy, setError, loadThread, loadChildren, restoreComposerFocus: origin => restoreComposerFocus(origin), removeThreads, noteKept });
-  const conversationSettings = createConversationSettings({ selected, selectedRef, request, runtime, conversations, ready, connected, busy, projectChanging, changingPermissions, planMode, permissionMode, threadPlans, setThreadModes, setThreadPlans, setPlanAnswered, setNextTurn, setNewPlan, setNewMode, setChangingPermissions, setError, focusComposer: () => focusComposer(), restoreComposerFocus: origin => restoreComposerFocus(origin) });
+  const conversationSettings = createConversationSettings({ selected, selectedRef, request, runtime, conversations, options, ready, connected, busy, projectChanging, planMode, permissionMode, setError, focusComposer: () => focusComposer(), restoreComposerFocus: origin => restoreComposerFocus(origin) });
   const { rememberModes, setPlan, answerPlan, cycleMode, noteStartedMode, saveEffort } = conversationSettings;
   /** Sends the composer's message, or `own`: a command's message (such as /init's prompt), sent without the composer's files.
    * While a turn runs, `followUp` steers or queues this one message instead of following Settings (Ctrl+Enter). */

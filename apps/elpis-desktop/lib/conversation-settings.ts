@@ -2,6 +2,7 @@ import type { Dispatch, RefObject, SetStateAction } from "react";
 import type { PermissionMode } from "@/components/composer-controls";
 import { api, type Thread } from "@/lib/api";
 import { errorText } from "@/lib/error-text.mjs";
+import type { useConversationOptions } from "@/lib/use-conversation-options";
 import type { useConversationList } from "@/lib/use-conversation-list";
 import type { useRuntimeState } from "@/lib/use-runtime-state";
 import { without } from "@/lib/utils";
@@ -13,13 +14,12 @@ type Setter<T> = Dispatch<SetStateAction<T>>;
 type Inputs = {
   selected: Thread | null; selectedRef: RefObject<Thread | null>; request: RefObject<number>; runtime: ReturnType<typeof useRuntimeState>;
   conversations: ReturnType<typeof useConversationList>; ready: boolean; connected: boolean; busy: boolean; projectChanging: boolean;
-  changingPermissions: boolean; planMode: boolean; permissionMode: PermissionMode; threadPlans: Record<string, boolean>;
-  setThreadModes: Setter<Record<string, PermissionMode>>; setThreadPlans: Setter<Record<string, boolean>>; setPlanAnswered: Setter<Record<string, string>>;
-  setNextTurn: Setter<Record<string, NextTurn>>; setNewPlan: Setter<boolean>; setNewMode: Setter<PermissionMode | null>; setChangingPermissions: Setter<boolean>; setError: Setter<string>;
+  options: ReturnType<typeof useConversationOptions>; planMode: boolean; permissionMode: PermissionMode; setError: Setter<string>;
   focusComposer: () => void; restoreComposerFocus: (origin: Element | null) => void;
 };
 
-export function createConversationSettings({ selected, selectedRef, request, runtime, conversations, ready, connected, busy, projectChanging, changingPermissions, planMode, permissionMode, threadPlans, setThreadModes, setThreadPlans, setPlanAnswered, setNextTurn, setNewPlan, setNewMode, setChangingPermissions, setError, focusComposer, restoreComposerFocus }: Inputs) {
+export function createConversationSettings({ selected, selectedRef, request, runtime, conversations, options, ready, connected, busy, projectChanging, planMode, permissionMode, setError, focusComposer, restoreComposerFocus }: Inputs) {
+  const { changingPermissions, threadPlans, setThreadModes, setThreadPlans, setPlanAnswered, setNextTurn, setNewPlan, setNewMode, setChangingPermissions } = options;
   const { modeRevisions, markTurnStarted } = runtime;
   const { settingsOf, patchThread } = conversations;
   /** What a reopened chat reports about its approval mode and Plan mode. It is applied even when the chat's status
