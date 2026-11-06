@@ -5,7 +5,7 @@ import { isPortraitInstruction } from "../bridge/matilda-face.cjs";
 /** Renderer-only identity, kept across the bridge's acknowledgement and recorded user item. */
 export type SubmittedMessage = {
   key: string; scope: string; content: NonNullable<Item["content"]>; previousKeys: string[];
-  turnId?: string; newTurn: boolean; failed?: boolean; recorded?: string;
+  turnId?: string; newTurn: boolean; failed?: boolean; recorded?: string | undefined;
 };
 export const entryKey = (entry: Entry) => JSON.stringify([entry.turnId, entry.item.id]);
 export function submittedContent(text: string, files: Attachment[]): NonNullable<Item["content"]> {

@@ -26,8 +26,8 @@ import { configuredShortcuts, shortcutHint, shortcutTitle } from "@/lib/shortcut
 import { CommandMenu, type CommandAction } from "@/components/command-menu";
 import { ImproveElpis } from "@/components/improve-elpis";
 import { arrange, move } from "@/lib/nav-order";
-import { followUpHint, followUpKey, followUpTooltip, isSendKey, newChatFolder, savePreferences, useAppPreferences, type Preferences } from "@/lib/preferences";
-import { queueFollowUp, type FollowUp, type FollowUpOptions } from "@/lib/follow-ups";
+import { followUpHint, followUpKey, followUpTooltip, isSendKey, newChatFolder, savePreferences, useAppPreferences } from "@/lib/preferences";
+import type { FollowUp } from "@/lib/follow-ups";
 import { QueuedFollowUps } from "@/components/queued-follow-ups";
 import { stopsOnEscape, usePromptKeys } from "@/lib/prompt-history";
 import { PromptStatusLine } from "@/components/prompt-status";
@@ -42,7 +42,7 @@ import { permissionLabel, PermissionsMenu, PlanPill, PlusMenu, type PermissionMo
 import { CopyButton } from "@/components/markdown-text";
 import { fitChatListEnd, useWholeRows } from "@/lib/whole-rows";
 import { mergeHistoryWithLive } from "@/lib/live-events";
-import { entryKey, rememberSubmittedMessages, submittedContent, withSubmittedMessages, type SubmittedMessage } from "@/lib/submitted-messages";
+import { entryKey, rememberSubmittedMessages, withSubmittedMessages, type SubmittedMessage } from "@/lib/submitted-messages";
 import { replacementEligibility, editableMessage, editBlocked, versionControl, type MessageVersion } from "@/lib/turn-replacement";
 import { AgentsGuide } from "@/components/agents-guide";
 import { CanvasGuideHelp } from "@/components/canvas-guide-help";
@@ -60,7 +60,7 @@ import { MentionMenu, useMentionMenu } from "@/components/mention-menu";
 import { NavButtons } from "@/components/nav-buttons";
 import { PromptRail } from "@/components/prompt-rail";
 import { RewindDialog, type RestoreMode } from "@/components/rewind-dialog";
-import { usedMentions, type Mention } from "@/lib/mentions";
+import type { Mention } from "@/lib/mentions";
 import { useNavHistory } from "@/lib/nav-history";
 import { DiffPanel, ReviewPanel, SessionPanel, type ReviewTarget } from "@/components/slash-panels";
 import { conversationMarkdown, exportFileName } from "@/lib/slash";
@@ -131,7 +131,8 @@ import { useTranscriptHistory } from "@/lib/use-transcript-history";
 import { useRuntimeEvents } from "@/lib/use-runtime-events";
 import { useRuntimeState } from "@/lib/use-runtime-state";
 import { createSlashCommands } from "@/lib/slash-commands";
-import { refusedOffline, type Live, type View, type WorkflowReplay } from "@/lib/workspace-types";
+import { createChatSend } from "@/lib/chat-send";
+import { refusedOffline, type Live, type View, type WorkflowReplay, type NextTurn } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
 import { useChatTabs } from "@/lib/use-chat-tabs";
 import { approvalDraftKey, useApprovalDrafts, useDraftStore, useSubmitOnce } from "@/lib/use-drafts";
@@ -146,7 +147,6 @@ import { refreshModelCatalog, useModelCatalog } from "@/lib/model-catalog";
 
 const LoveSpot = dynamic(() => import("@/components/love-spot"), { ssr: false, loading: () => <p role="status">Opening Love Spot…</p> });
 
-type NextTurn = { model?: string; plan?: boolean };
 /** The terminal's answer to a finished plan: Plan mode off, then this message. */
 const IMPLEMENT_PLAN = "Implement the plan.";
 /** The sidebar's width in pixels: the default, and how far its edge can be dragged. */
@@ -294,7 +294,8 @@ export default function Home() {
   const sending = useRef(0);
   const [loading, setLoading] = useState(false);
   const editDraft = (value: string) => { setText(value); saveDraft(selectedRef.current?.id || newDraftKey.current, value); };
-  const { attachments, attachmentsRef, attaching, setAttaching, readingFiles, fileNotice, setFileNotice, setAttachments, restoreAttachments, addFiles } = useComposerAttachments({ selectedRef, newDraftKey, shellMode, savedAttachments, saveAttachments, setError, setRuntimeNotices });
+  const attachmentState = useComposerAttachments({ selectedRef, newDraftKey, shellMode, savedAttachments, saveAttachments, setError, setRuntimeNotices });
+  const { attachments, attachmentsRef, attaching, setAttaching, readingFiles, fileNotice, setFileNotice, setAttachments, restoreAttachments, addFiles } = attachmentState;
   /** The browser's annotations and screenshots join the composer's files; its Send also sends the message. */
   async function attachFromBrowser(parts: Attachment[], submit: boolean) {
     const owner = selectedRef.current?.id || newDraftKey.current;
@@ -964,105 +965,7 @@ export default function Home() {
   }
   /** Sends the composer's message, or `own`: a command's message (such as /init's prompt), sent without the composer's files.
    * While a turn runs, `followUp` steers or queues this one message instead of following Settings (Ctrl+Enter). */
-  async function send(own?: string, followUp?: Preferences["followUp"]) {
-    if (!ready || !connected || readOnlyRun) return;
-    if (own === undefined && shellMode) { await sendShell(); return; }
-    const sideQuestion = own === undefined ? /^\/btw(?:[\s:,.]\s*([\s\S]*))?$/i.exec(textRef.current.trim()) : null;
-    if (sideQuestion) { if (selected) editDraft(""); askSideQuestion(sideQuestion[1]); return; }
-    const outgoing = own ?? textRef.current, files = own === undefined ? attachmentsRef.current : [];
-    if ((!outgoing.trim() && !files.length) || (busy && !canSendFollowUp) || dictating || attaching || projectChanging) return;
-    if (imageBlocked && own === undefined) return; // the box already says why
-    if (missingChoiceNotice) return;
-    if (needsModelId && !model.trim()) { setError("Enter a model ID for the selected provider."); return; }
-    sending.current++; setBusy(true); setError("");
-    const sentText = outgoing, sentAttachments = [...files];
-    const sentMentions = own === undefined ? usedMentions(outgoing, [...pickedMentions.current.values()]) : [];
-    pickedMentions.current = new Map();
-    const originalId = selected?.id || newDraftKey.current, originalRequest = request.current, browserDraft = `draft:${tabsRef.current.activeId}`;
-    const submissionKey = crypto.randomUUID();
-    const clearsComposer = own === undefined;
-    if (clearsComposer) { setText(""); saveDraft(originalId, ""); setAttachments([]); saveAttachments(originalId, []); }
-    const queued = activeTurn && !continues && (followUp ?? preferences.followUp) === "queue";
-    if (!queued) {
-      stickToBottom.current = true;
-      setSubmissions(previous => [...previous.filter(sent => sent.scope === originalId), { key: submissionKey, scope: originalId, content: submittedContent(sentText, sentAttachments), previousKeys: entries.map(entryKey), newTurn: !activeTurn || continues, ...(activeTurn && !continues ? { turnId: activeTurn } : {}) }]);
-    }
-    const updateSubmission = (patch: Partial<SubmittedMessage>) => setSubmissions(previous => previous.map(sent => sent.key === submissionKey
-      ? { ...sent, ...(patch.turnId && sent.turnId && patch.turnId !== sent.turnId ? { recorded: undefined } : {}), ...patch } : sent));
-    const originalFocus = document.activeElement;
-    const attached = { ...(sentAttachments.length ? { attachments: sentAttachments } : {}), ...(sentMentions.length ? { mentions: sentMentions } : {}) };
-    let errorThreadId = selected?.id;
-    try {
-      let thread = selected;
-      if (!thread) {
-        const result = await api<{ thread: Thread; permissions?: PermissionMode | null }>("/threads", { ...(newMode ? { permissions: newMode } : {}), ...(model.trim() ? { model: model.trim() } : {}), ...(newChoice?.provider ? { provider: newChoice.provider } : {}), ...(newChatFolder(cwd) ? { cwd: newChatFolder(cwd) } : {}), ...(newWorktree ? { worktree: true } : {}) });
-        thread = result.thread; errorThreadId = thread.id; noteStartedMode(result.thread.id, result.permissions ?? newMode);
-        updateSubmission({ scope: thread.id });
-        await browser.adoptSession(browserDraft, thread.id);
-        saveDraft(thread.id, originalRequest === request.current ? textRef.current : sentText);
-        saveAttachments(thread.id, originalRequest === request.current ? attachmentsRef.current : sentAttachments);
-        if (originalRequest === request.current) { saveDraft(originalId, ""); saveAttachments(originalId, []); select(thread); }
-        setThreads(prev => [thread!, ...prev]);
-        if (projectId) await assignProject(thread.id, projectId);
-      }
-      const used: (NextTurn & { effort?: string }) | undefined = selected ? pending : effort || newPlan ? { ...(effort ? { effort } : {}), ...(newPlan ? { plan: true } : {}) } : undefined;
-      const turnOptions: FollowUpOptions = { ...(used?.model ? { model: used.model } : {}), ...(used?.effort ? { effort: used.effort } : {}), ...(used?.plan !== undefined ? { mode: used.plan ? "plan" : "default" } : {}) };
-      if (activeTurn && !continues && queueFollowUp(thread.id, sentText, sentAttachments, { ...turnOptions, ...(sentMentions.length ? { mentions: sentMentions } : {}) }, followUp)) { /* queued until the running turn completes */ } else if (activeTurn && !continues) {
-        const steered = await api<{ turn?: { id: string }; turnId?: string; compacting?: boolean }>(`/threads/${encodeURIComponent(thread.id)}/steer`, { text: sentText, expectedTurnId: activeTurn, ...attached });
-        // The running turn compacts the history and takes no message: it waits in the queue for the compaction's end.
-        if (steered.compacting) {
-          queueFollowUp(thread.id, sentText, sentAttachments, { ...turnOptions, ...(sentMentions.length ? { mentions: sentMentions } : {}) }, "queue");
-          setSubmissions(previous => previous.filter(sent => sent.key !== submissionKey));
-        // The turn shown as running had ended, so the message started a new one.
-        } else if (steered.turn?.id) {
-          updateSubmission({ turnId: steered.turn.id, newTurn: true });
-          markTurnStarted(thread!.id, steered.turn!.id);
-        } else if (steered.turnId && steered.turnId !== activeTurn) {
-          updateSubmission({ turnId: steered.turnId });
-        }
-      } else {
-        const result = await api<{ turn?: { id: string }; thread?: Thread; continuedFrom?: string; sendError?: string }>(`/threads/${encodeURIComponent(thread.id)}/turns`, { text: sentText, ...attached, ...turnOptions, ...(continues ? { continueAs: `${title(thread)} (continued)` } : {}) });
-        if (result.thread && result.sendError) {
-          updateSubmission({ failed: true });
-          const forkDraft = savedDraft(result.thread.id);
-          const hasNewerForkDraft = !!forkDraft.trim() && forkDraft !== sentText || savedAttachments(result.thread.id).length > 0;
-          const targetKey = hasNewerForkDraft ? `recovery-${result.thread.id}` : result.thread.id;
-          saveDraft(targetKey, sentText); saveAttachments(targetKey, sentAttachments); upsertThread(result.thread);
-          setRuntimeNotices(previous => ({ ...previous, [result.thread!.id]: result.sendError + (hasNewerForkDraft ? " Your current draft is kept; recover the unsent message below." : "") }));
-          if (selectedRef.current?.id === thread.id && request.current === originalRequest) await loadThread(result.thread);
-          return;
-        }
-        if (!result.turn?.id) throw new Error("Elpis did not acknowledge the new turn. Check the conversation before retrying.");
-        updateSubmission({ turnId: result.turn.id, ...(result.thread ? { scope: result.thread.id } : {}) });
-        markTurnStarted(result.thread?.id || thread!.id, result.turn!.id);
-        if (used?.plan !== undefined) { setThreadPlans(prev => ({ ...prev, [result.thread?.id || thread!.id]: used.plan! })); if (!selected) setNewPlan(false); }
-        if (selected && used) {
-          setNextTurn(prev => without(prev, selected.id));
-          const effective = { ...settingsOf.current[thread.id], ...(used.model ? { model: used.model } : {}) };
-          settingsOf.current[thread.id] = effective; patchThread(thread.id, effective);
-        }
-        if (result.thread) {
-          upsertThread(result.thread);
-          if (selectedRef.current?.id === thread.id && request.current === originalRequest) await loadThread(result.thread);
-          return;
-        }
-      }
-    } catch (e) {
-      updateSubmission({ failed: true });
-      for (const mention of sentMentions) pickedMentions.current.set(mention.path, mention);
-      if (clearsComposer) {
-        const key = errorThreadId || originalId, shown = (selectedRef.current?.id || newDraftKey.current) === key;
-        if (shown && !textRef.current.trim() && !attachmentsRef.current.length) { setText(sentText); setAttachments(sentAttachments); }
-        const target = !savedDraft(key).trim() && !savedAttachments(key).length ? key : `recovery-${key}`;
-        saveDraft(target, sentText); saveAttachments(target, sentAttachments);
-      }
-      if (errorThreadId) setRuntimeNotices(previous => ({ ...previous, [errorThreadId!]: errorText(e) }));
-      else if (originalRequest === request.current) setError(String(errorText(e)));
-    } finally {
-      sending.current--; setBusy(sending.current > 0);
-      if (request.current === originalRequest && (errorThreadId ? selectedRef.current?.id === errorThreadId : !selectedRef.current)) restoreComposerFocus(originalFocus);
-    }
-  }
+  const send = createChatSend({ runtime, attachments: attachmentState, drafts: draftStore, sendShell: () => sendShell(), askSideQuestion: question => askSideQuestion(question), restoreComposerFocus: origin => restoreComposerFocus(origin), readOnlyRun, shellMode, textRef, selected, editDraft, busy, canSendFollowUp, dictating, projectChanging, imageBlocked, missingChoiceNotice, needsModelId, model, setError, sending, setBusy, pickedMentions, newDraftKey, request, tabsRef, setText, activeTurn, continues, preferences, stickToBottom, setSubmissions, entries, newMode, newChoice, cwd, newWorktree, noteStartedMode, browser, select, setThreads, projectId, assignProject, pending, effort, newPlan, upsertThread, selectedRef, loadThread, setThreadPlans, setNewPlan, setNextTurn, settingsOf, patchThread });
   async function sendShell() {
     const command = textRef.current, originalRequest = request.current;
     if (!command.trim() || busy || !ready || !connected || projectChanging) return;
