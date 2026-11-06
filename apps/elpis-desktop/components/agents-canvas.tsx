@@ -501,7 +501,10 @@ type Props = { threads?: readonly Thread[]; workflowCatalog: WorkflowCatalog; mo
   /** Makes `folder` the workflows' project (an existing project with it, or a new one named after it). */
   onUseFolder?: (folder: string) => Promise<void>;
   /** Schedule: hands this workflow (its id, name, request and project) to Workflows' Scheduled view. */
-  onSchedule?: (workflow: { id: string; name: string; request: string; cwd?: string }) => void };
+  onSchedule?: (workflow: { id: string; name: string; request: string; cwd?: string; board: CanvasGraph }) => void;
+  /** A scheduled replay (6 Nov): this board, as saved with its automation, starts itself once and reports the run's chat
+   * or why it did not start. It never saves over the draft on the Workflows page. */
+  scheduled?: { board: CanvasGraph; onDone: (result: { threadId?: string; error?: string }) => void } };
 export function AgentsCanvas(props: Props) {
   return <ReactFlowProvider><Canvas key={props.recordedRun?.id ?? "draft"} {...props} /></ReactFlowProvider>;
 }
@@ -515,10 +518,10 @@ function runFailure(detail: string) {
   return `${detail} Review this message and the agents' Info, then try Run graph again.`;
 }
 
-function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStarted, projectMenu, workflowCatalog, recordedRun, onLeaveRecordedRun, onOpenRecordedRun, onUseFolder, onSchedule }: Props) {
+function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStarted, projectMenu, workflowCatalog, recordedRun, onLeaveRecordedRun, onOpenRecordedRun, onUseFolder, onSchedule, scheduled }: Props) {
   const isoController = useRef<IsoController>(null);
   const flow = useReactFlow(), flowStore = useStoreApi(), board = useRef<HTMLDivElement>(null), pointer = useRef<XYPosition | null>(null), connectFrom = useRef<XYPosition | null>(null);
-  const [graph, setGraph] = useState<CanvasGraph>(() => recordedRun ? { name: "Workflow", workflowId: recordedRun.id, nodes: [], edges: [] } : initialGraph());
+  const [graph, setGraph] = useState<CanvasGraph>(() => recordedRun ? { name: "Workflow", workflowId: recordedRun.id, nodes: [], edges: [] } : scheduled ? scheduled.board : initialGraph());
   const connection = useRef({ ready, generation: 0 });
   if (connection.current.ready !== ready) connection.current = { ready, generation: connection.current.generation + 1 };
   const runtimeAttempt = () => {
@@ -567,6 +570,9 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
   const project = useProjectFolders(cwd);
   const own = useMemo(() => ownFolders(graph), [graph]);
   const [notice, setNotice] = useState("");
+  const noticeRef = useRef(notice); noticeRef.current = notice;
+  /** The root chat of the run this board started, for a scheduled replay's report. */
+  const startedThread = useRef<string | null>(null), replayed = useRef(false);
   const runReasonId = useId(), offlineReasonId = useId();
   const [deleted, setDeleted] = useState<string | null>(null);
   useEffect(() => { if (!deleted) return; const timer = setTimeout(() => setDeleted(null), 4000); return () => clearTimeout(timer); }, [deleted]);
@@ -631,10 +637,10 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
   const settings = useElpisSettings().data;
   // What Elpis allows: agents in one graph, and at once (bridge/elpis-features.mjs `agentLimits`).
   const allowed = settings?.agents ?? { graph: 256, atOnce: 6, source: "Elpis default" };
-  useEffect(() => { if (recordedRun) return; const timer = setTimeout(() => { if (!saveGraph(graph)) setNotice("Could not keep the graph on this device."); }, 300); return () => clearTimeout(timer); }, [graph, recordedRun]);
+  useEffect(() => { if (recordedRun || scheduled) return; const timer = setTimeout(() => { if (!saveGraph(graph)) setNotice("Could not keep the graph on this device."); }, 300); return () => clearTimeout(timer); }, [graph, recordedRun]);
   // A change made just before the window closes or reloads is kept too: the page saves the latest board on its way out.
   const latest = useRef(graph); latest.current = graph;
-  useEffect(() => { if (recordedRun) return; const flush = () => saveGraph(latest.current); window.__elpisFlushWorkflow = flush; window.addEventListener("pagehide", flush); window.addEventListener("beforeunload", flush); return () => { flush(); if (window.__elpisFlushWorkflow === flush) delete window.__elpisFlushWorkflow; window.removeEventListener("pagehide", flush); window.removeEventListener("beforeunload", flush); }; }, [recordedRun]);
+  useEffect(() => { if (recordedRun || scheduled) return; const flush = () => saveGraph(latest.current); window.__elpisFlushWorkflow = flush; window.addEventListener("pagehide", flush); window.addEventListener("beforeunload", flush); return () => { flush(); if (window.__elpisFlushWorkflow === flush) delete window.__elpisFlushWorkflow; window.removeEventListener("pagehide", flush); window.removeEventListener("beforeunload", flush); }; }, [recordedRun]);
 
   // The existing provider catalog, shared by Add and the inspector; execution uses ACP.
   const allChoices = useMemo(() => providerChoices(models, (settings ?? null) as ProviderSettings | null), [models, settings]);
@@ -1626,11 +1632,20 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
       workflowCatalog.attach(runIdentity.id, result.graphId, created.thread.id);
       setIdentity({ workflowId: result.graphId, name: runIdentity.name });
       setRun({ rootThreadId: created.thread.id, graphId: result.graphId, status: "running", startedAt: Date.now(), ...(built.father.length ? { father: { tasks: built.father, status: "pending" } } : {}) });
+      startedThread.current = created.thread.id;
       onRunStarted?.(created.thread);
     } catch (error) { if (current()) setNotice(runFailure(errorText(error))); }
     finally { startingRun.current = false; setStarting(false); }
   }
 
+  // A scheduled replay starts once the connection and the workflow names are ready, then reports and is done.
+  useEffect(() => {
+    if (!scheduled || replayed.current || !ready || !workflowCatalog.hydrated) return;
+    replayed.current = true;
+    // The notice a failed start sets renders a moment later; read it after that render.
+    void start().then(() => new Promise(resolve => setTimeout(resolve, 50)))
+      .then(() => scheduled.onDone(startedThread.current ? { threadId: startedThread.current } : { error: noticeRef.current || "The workflow did not start" }));
+  }, [scheduled, ready, workflowCatalog.hydrated]); // eslint-disable-line react-hooks/exhaustive-deps
   const chat = selected ? states[selected.id]?.chat : null;
   const outputRunId = selected && savedRecord && [...(savedRecord.tasks ?? []), ...(savedRecord.next?.tasks ?? [])].some(task => task.id === selected.id) ? savedRecord.id : null;
   // Both views share the graph, selection, settings and connection callbacks.
@@ -1696,7 +1711,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
       {!recordedRun && <div className="canvas-run-control">
         <Button variant="outline" size="sm" onClick={() => void start()} aria-describedby={!ready ? offlineReasonId : notice || starting || run && !over(run) ? runReasonId : undefined} disabled={!ready || starting || Boolean(planning || run && !over(run))}><Play size={14} />{starting ? "Starting…" : "Run graph"}</Button>
         {onSchedule && <Button variant="ghost" size="sm" title={requestText.trim() ? "Run this workflow on a schedule" : "Write what the workflow should do first"} disabled={!requestText.trim()}
-          onClick={() => onSchedule({ id: graph.workflowId || graph.name || "workflow", name: identity?.name || graph.name || "Workflow", request: requestText.trim(), ...(cwd ? { cwd } : {}) })}><CalendarClock size={14} />Schedule</Button>}
+          onClick={() => onSchedule({ id: graph.workflowId || graph.name || "workflow", name: identity?.name || graph.name || "Workflow", request: requestText.trim(), ...(cwd ? { cwd } : {}), board: graph })}><CalendarClock size={14} />Schedule</Button>}
         {!notice && (starting || run && !over(run)) && <span id={runReasonId} className="sr-only" role="status">{starting ? "Starting the team. Wait for the run to start." : "Wait for this run to finish before starting another."}</span>}
       </div>}
     </header>

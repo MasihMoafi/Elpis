@@ -59,3 +59,29 @@ test('Schedule on the Workflows board opens the form with that workflow, and the
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
+
+test('Run now on a scheduled workflow replays its saved board in the window, out of sight, and leaves the draft alone', async () => {
+  const f = await loveSpotFixture({ automations: true });
+  try {
+    const { page } = f;
+    await page.locator('.nav-list').getByRole('button', { name: 'Workflows', exact: true }).click();
+    await page.getByLabel('Workflow request', { exact: true }).fill('Summarise the open issues');
+    await page.getByRole('button', { name: 'Schedule', exact: true }).click();
+    await page.getByRole('button', { name: 'Create', exact: true }).click();
+    // The draft changes after scheduling; the replay must use the saved board, and must not touch the draft.
+    await page.getByRole('radio', { name: 'Board', exact: true }).click();
+    await page.getByLabel('Workflow request', { exact: true }).fill('A different draft');
+    await page.getByRole('radio', { name: 'Scheduled', exact: true }).click();
+    const row = page.locator('.automation').first();
+    await row.locator('.automation-summary').click();
+    await row.getByRole('button', { name: 'Run now', exact: true }).click();
+    const run = row.locator('.automation-runs li').first();
+    await run.waitFor({ timeout: 30000 });
+    const text = await run.innerText();
+    assert.match(text, /Open chat/, `the window claimed the run and reported its chat: ${text}`);
+    assert.equal(f.chats.length, 1, 'one run, one chat');
+    assert.notEqual(f.chats[0].name, 'A different draft', "the run is the saved board's, not the draft's");
+    await page.getByRole('radio', { name: 'Board', exact: true }).click();
+    assert.equal(await page.getByLabel('Workflow request', { exact: true }).inputValue(), 'A different draft', 'the draft is untouched');
+  } finally { await f.close(); }
+});

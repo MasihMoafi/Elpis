@@ -83,6 +83,7 @@ import { MatildaCompanion } from "@/components/matilda-companion";
 import { LiveVoiceProvider } from "@/components/live-voice";
 import { ObservabilityView } from "@/components/observability-view";
 import { AutomationsView, type WorkflowPrefill } from "@/components/automations-view";
+import type { CanvasGraph } from "@/lib/canvas";
 import { Segmented } from "@/components/settings/rows";
 import { chooseProject, projectAt, EnvironmentMenu, MoveChatDialog, ProjectActions, ProjectDialog, ProjectMenu } from "@/components/project-picker";
 import { PutUnderDialog } from "@/components/put-under-dialog";
@@ -144,6 +145,8 @@ import { refreshModelCatalog, useModelCatalog } from "@/lib/model-catalog";
 
 const LoveSpot = dynamic(() => import("@/components/love-spot"), { ssr: false, loading: () => <p role="status">Opening Love Spot…</p> });
 
+/** A scheduled workflow run the service announced (bridge/server.mjs dispatchWorkflow). */
+type WorkflowReplay = { token: string; taskId: string; title: string; request: string; cwd: string | null; workflow: { id: string; name: string }; board: CanvasGraph };
 type View = "chat" | "agentsGuide" | "canvas" | "experimentLab" | "loveSpot" | "customize" | "observability" | "settings";
 type NextTurn = { model?: string; plan?: boolean };
 type Live = { thread: Thread; activeTurnId?: string | null; permissions?: PermissionMode | null; planMode?: boolean; followingLive?: boolean };
@@ -376,6 +379,13 @@ export default function Home() {
   const [workflowTab, setWorkflowTab] = useState<"board" | "scheduled">("board");
   /** A workflow the board handed to Scheduled (its Schedule button), until the form takes it. */
   const [workflowPrefill, setWorkflowPrefill] = useState<WorkflowPrefill | null>(null);
+  /** Scheduled workflows this window claimed (bridge/server.mjs dispatchWorkflow): each replays its saved board out of
+   * sight and reports the run's chat. */
+  const [replays, setReplays] = useState<WorkflowReplay[]>([]);
+  const finishReplay = useCallback((replay: WorkflowReplay, result: { threadId?: string; error?: string }) => {
+    setReplays(previous => previous.filter(item => item.token !== replay.token));
+    void api(`/automations/${replay.taskId}`, { action: "result", token: replay.token, ...result }).catch(() => {});
+  }, []);
   const workflowSandbox = useWorkflowSandbox(view === "canvas" && ready && connected && !workflowProject, setError), workflowFolder = workflowProject?.cwd || workflowSandbox;
   // Matilda's chat on screen reads every Love Spot reply.
   useEffect(() => { if (loveActivity.chatShown) setAttention(previous => ({ ...previous, unread: previous.unread.filter(id => !isLoveChatId(id)) })); }, [loveActivity.chatShown, setAttention]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -695,6 +705,12 @@ export default function Home() {
         void refreshThreads().catch(error => { if (!disposed) setError(String(error)); });
         void reloadSettings().catch(() => null);
         events = new EventSource("/api/events");
+        // A scheduled workflow is due: the first window to claim it replays its board (Workflows' Scheduled view).
+        events.addEventListener("automationWorkflow", event => {
+          const replay = JSON.parse(event.data) as WorkflowReplay;
+          void api<{ granted: boolean }>(`/automations/${replay.taskId}`, { action: "claim", token: replay.token })
+            .then(result => { if (result.granted) setReplays(previous => [...previous, replay]); }).catch(() => {});
+        });
         events.addEventListener("sideChat", event => window.dispatchEvent(new CustomEvent("elpis:side-chat", { detail: JSON.parse(event.data) })));
         events.addEventListener("connection", event => {
           if (disposed) return;
@@ -2460,6 +2476,8 @@ export default function Home() {
       {view === "canvas" && <ViewBoundary label="Workflows"><div className="contents" hidden={workflowTab !== "board"}><CanvasGuideHelp onOpen={() => show("agentsGuide")}><AgentsCanvas threads={threads} key={recordedWorkflow?.id ?? "draft"} recordedRun={recordedWorkflow} onLeaveRecordedRun={() => setRecordedWorkflow(undefined)} onOpenRecordedRun={run => setRecordedWorkflow(run)} ready={ready && connected} workflowCatalog={workflowCatalog} models={models} cwd={workflowFolder} dark={dark} onOpenChat={id => { show("chat"); void openById(id); }} onRunStarted={keepWorkflowTab} onSchedule={workflow => { setWorkflowPrefill(workflow); setWorkflowTab("scheduled"); }}
         projectMenu={<ProjectMenu variant="chip" projects={projects} selected={workflowProject ?? { id: "workflow-sandbox", name: "Sandbox", cwd: workflowSandbox ?? "" }} allowNone={!!workflowProject} noneLabel="Use sandbox" disabled={!ready || projectChanging} onSelect={selectProject} onAdd={() => void addProject()} />} onUseFolder={workIn} /></CanvasGuideHelp></div>
         {workflowTab === "scheduled" && <AutomationsView projects={projects} prefill={workflowPrefill} onPrefillUsed={() => setWorkflowPrefill(null)} onOpenChat={id => { show("chat"); void openById(id); }} />}</ViewBoundary>}
+      {replays.map(replay => <div key={replay.token} hidden aria-hidden="true"><AgentsCanvas threads={threads} workflowCatalog={workflowCatalog} models={models} cwd={replay.cwd ?? undefined} dark={dark} ready={ready && connected}
+        onOpenChat={id => { show("chat"); void openById(id); }} scheduled={{ board: replay.board, onDone: result => finishReplay(replay, result) }} /></div>)}
       {view === "loveSpot" && <ViewBoundary label="Love Spot"><LoveSpot dark={dark} toolbarHost={loveToolbarHost} /></ViewBoundary>}
       {view === "observability" && <ViewBoundary label="Observability"><ObservabilityView threadId={selected?.id} chats={threads} /></ViewBoundary>}
       {view === "customize" && <div className="page-scroll"><ViewBoundary label="Customize"><CustomizeView cwd={cwd} onOpenSettings={() => openSettings("mcp")}

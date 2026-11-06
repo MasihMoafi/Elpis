@@ -138,3 +138,47 @@ test('the Automations key opens /api/automations and no other route', async t =>
   const off = await startDesktopServer({ client, staticDir: '/tmp' }); t.after(() => off.close());
   assert.equal(off.automationAccess, null, 'without a file, a test or window has no automations');
 });
+
+test('a scheduled workflow is offered to the open windows: one claims it and reports its chat; unclaimed, it is missed', async t => {
+  const { startDesktopServer } = await import('./server.mjs');
+  const { EventEmitter } = await import('node:events');
+  const bus = new EventEmitter();
+  const client = { connected: true, pendingApprovals: [], close() {}, on: (n, l) => bus.on(n, l), off: (n, l) => bus.off(n, l), ragEnvironment: async () => ({}), async listThreads() { return { data: [], nextCursor: null }; } };
+  const automationsFile = path.join(await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-schedule-')), 'tasks.json');
+  const app = await startDesktopServer({ client, staticDir: '/tmp', automationsFile, workflowClaimWait: 300 }); t.after(() => app.close());
+  const { url, key } = app.automationAccess;
+  const post = (route, body) => fetch(`${url}${route}`, { method: 'POST', headers: { 'x-elpis-automations': key, 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(response => response.json());
+  // A window's event stream, as the page opens it.
+  const token = new URLSearchParams(new URL(app.url).hash.slice(1)).get('token');
+  const session = await fetch(`${url}/api/session`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: url }, body: JSON.stringify({ token }) });
+  const cookie = session.headers.get('set-cookie').split(';')[0];
+  const stream = await fetch(`${url}/api/events`, { headers: { Cookie: cookie } });
+  const reader = stream.body.getReader(), decoder = new TextDecoder();
+  let buffered = '';
+  const nextOffer = async () => {
+    for (;;) {
+      const match = /event: automationWorkflow\ndata: (.*)\n\n/.exec(buffered);
+      if (match) { buffered = buffered.slice(match.index + match[0].length); return JSON.parse(match[1]); }
+      const { value } = await reader.read(); buffered += decoder.decode(value);
+    }
+  };
+  t.after(() => reader.cancel());
+  const board = { name: 'Review', nodes: [{ id: 'm', type: 'mother' }], edges: [] };
+  const task = await post('/api/automations', { title: 'Review', prompt: 'Review the PRs', rule: rule('20261101T090000', 'FREQ=DAILY'), workflow: { id: 'wf-1', name: 'Review', board } });
+  assert.deepEqual(task.workflow, { id: 'wf-1', name: 'Review' }, 'the list never carries the board');
+
+  // Claimed by one window, which reports the run's chat; a second claim is refused.
+  const ran = post(`/api/automations/${task.id}`, { action: 'run' });
+  const offer = await nextOffer();
+  assert.deepEqual(offer.board, board, 'the window receives the saved board');
+  assert.equal(offer.request, 'Review the PRs');
+  assert.deepEqual(await post(`/api/automations/${task.id}`, { action: 'claim', token: offer.token }), { granted: true });
+  assert.deepEqual(await post(`/api/automations/${task.id}`, { action: 'claim', token: offer.token }), { granted: false }, 'one window runs it');
+  await post(`/api/automations/${task.id}`, { action: 'result', token: offer.token, threadId: 'root-chat-1' });
+  assert.equal((await ran).runs[0].threadId, 'root-chat-1');
+
+  // Nobody claims it: the run is recorded as missed.
+  const missed = post(`/api/automations/${task.id}`, { action: 'run' });
+  await nextOffer();
+  assert.match((await missed).runs[0].error, /No Elpis window was open/);
+});

@@ -122,7 +122,19 @@ export async function startDesktopServer(options = {}) {
   // Automations (bridge/schedule.mjs) run only where the caller asks for them: the app passes `automations: true`, a test
   // its own `automationsFile`; otherwise the routes say they are off, so no test touches his tasks.
   const automationsFile = options.automationsFile ?? (options.automations ? path.join(options.elpisHome ?? elpisHome(), 'automations', 'tasks.json') : null);
-  const automations = automationsFile ? createSchedule({ client, file: automationsFile }) : null;
+  const automations = automationsFile ? createSchedule({ client, file: automationsFile, dispatchWorkflow: job => dispatchWorkflow(job) }) : null;
+  // A scheduled workflow runs in an open window (6 Nov, Masih chose the board replay): the service announces it, the
+  // first window to claim it starts the saved board out of sight and reports the run's chat.
+  const workflowJobs = new Map(); // token -> { taskId, claimed, settle, timer }
+  const CLAIM_WAIT = options.workflowClaimWait ?? 60_000, START_WAIT = 15 * 60_000;
+  function dispatchWorkflow(job) {
+    return new Promise((resolve, reject) => {
+      const token = randomUUID();
+      const settle = (error, threadId) => { const pending = workflowJobs.get(token); if (!pending) return; clearTimeout(pending.timer); workflowJobs.delete(token); if (error) reject(new Error(error)); else resolve({ threadId }); };
+      workflowJobs.set(token, { taskId: job.taskId, claimed: false, settle, timer: setTimeout(() => settle('No Elpis window was open to run it'), CLAIM_WAIT) });
+      event({ type: 'automationWorkflow', data: { token, taskId: job.taskId, title: job.title, request: job.request, cwd: job.cwd, workflow: { id: job.workflow.id, name: job.workflow.name }, board: job.workflow.board } });
+    });
+  }
   const loveStreams = new Set();
   let improvementStore;
   const improvements = () => improvementStore ??= createImprovements({ client, ...options.improvements });
@@ -382,7 +394,21 @@ export async function startDesktopServer(options = {}) {
             if (action === 'run') { object(fields, []); return json(response, 200, await automations.runNow(id)); }
             if (action === 'delete') { object(fields, []); return json(response, 200, await automations.remove(id)); }
             if (action === 'update') return json(response, 200, await automations.update(id, fields));
-            throw new BridgeError('Action must be update, delete or run');
+            // The window's half of a scheduled workflow run: claim it (one window only), then report its chat or error.
+            if (action === 'claim' || action === 'result') {
+              const job = workflowJobs.get(fields.token);
+              if (!job || job.taskId !== id) return json(response, 200, { granted: false });
+              if (action === 'claim') {
+                object(fields, ['token']);
+                if (job.claimed) return json(response, 200, { granted: false });
+                job.claimed = true; clearTimeout(job.timer); job.timer = setTimeout(() => job.settle('The window did not report whether the workflow started'), START_WAIT);
+                return json(response, 200, { granted: true });
+              }
+              object(fields, ['token', 'threadId', 'error']);
+              if (typeof fields.threadId === 'string') job.settle(null, text(fields.threadId, 'chat', 200)); else job.settle(text(fields.error ?? 'The workflow did not start', 'error', 2000));
+              return json(response, 200, { recorded: true });
+            }
+            throw new BridgeError('Action must be update, delete, run, claim or result');
           }
         }
         if (url.pathname === '/api/about' && method === 'GET') return json(response, 200, await appIdentity());
@@ -559,6 +585,7 @@ export async function startDesktopServer(options = {}) {
     async close() {
       if (closed) return; closed = true; clearInterval(heartbeat);
       await voice.close(); kokoro.close();
+      for (const job of workflowJobs.values()) job.settle('Elpis closed before the workflow started');
       await experimentLab.close(); await automations?.close();
       if (improvementStore) (await improvementStore).close();
       await devServers.close();

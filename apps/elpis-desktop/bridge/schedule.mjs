@@ -11,10 +11,13 @@ import { describeRule, legacyRule, nextRun, parseRule } from './schedule-rules.m
 const TARGETS = ['reuse', 'new'], RUN_LIMIT = 50, LONGEST_WAIT = 2 ** 31 - 1;
 
 /** The task as the page and agents see it. */
-const shown = task => ({ ...task, description: describeRule(task.rule) });
+const shown = task => ({ ...task, ...(task.workflow ? { workflow: { id: task.workflow.id, name: task.workflow.name } } : {}), description: describeRule(task.rule) });
+/** A task's saved board, for the window that replays it. */
+export const boardOf = task => task.workflow?.board ?? null;
 
-/** @param {{ client: { createThread: Function, send: Function }, file: string, now?: () => number, timers?: { set: Function, clear: Function } }} options */
-export function createSchedule({ client, file, now = Date.now, timers = { set: setTimeout, clear: clearTimeout } }) {
+/** `dispatchWorkflow(job)` runs a scheduled workflow in an open window (bridge/server.mjs) and resolves to its chat.
+ * @param {{ client: { createThread: Function, send: Function }, file: string, now?: () => number, timers?: { set: Function, clear: Function }, dispatchWorkflow?: (job: object) => Promise<{ threadId: string }> }} options */
+export function createSchedule({ client, file, now = Date.now, timers = { set: setTimeout, clear: clearTimeout }, dispatchWorkflow }) {
   let tasks = /** @type {any[]} */ ([]), timer, closed = false, writing = Promise.resolve();
   const running = new Map(); // task id -> its run in flight
   const loaded = (async () => {
@@ -50,23 +53,30 @@ export function createSchedule({ client, file, now = Date.now, timers = { set: s
     arm();
   }
 
-  /** Sends the task's prompt; records the run, and its error if it failed. Runs that came due meanwhile are one run. */
+  /** One delivery: a scheduled workflow replays its saved board in an open window (6 Nov, Masih's choice), which
+   * starts the run and reports its chat; any other task sends its prompt into its chat. Resolves to the chat's id. */
+  async function deliver(task) {
+    if (task.workflow) {
+      if (!dispatchWorkflow) throw new Error('Workflows run in the Elpis window, and none is connected');
+      return (await dispatchWorkflow({ taskId: task.id, title: task.title, request: task.prompt, cwd: task.cwd, workflow: task.workflow })).threadId;
+    }
+    let threadId = task.target === 'reuse' ? task.threadId : null;
+    if (!threadId) {
+      const made = await client.createThread({ ...(task.cwd ? { cwd: task.cwd } : {}), name: task.title, automatic: true });
+      threadId = made?.thread?.id;
+      if (typeof threadId !== 'string') throw new Error('Elpis did not start a chat for it');
+      if (task.target === 'reuse') task.threadId = threadId;
+    }
+    await client.send(threadId, { text: task.prompt, automatic: true });
+    return threadId;
+  }
+
+  /** Runs a task once and records it, with its error if it failed; runs that came due meanwhile are one run. */
   function run(task, scheduledFor) {
     const work = (async () => {
       const record = { at: now(), scheduledFor, threadId: null, error: null };
-      try {
-        // How a scheduled workflow runs waits for Masih's choice: the window replays the board, or a chat builds its own team.
-        if (task.workflow) throw new Error('Scheduled workflows do not run yet: choose how they run first');
-        let threadId = task.target === 'reuse' ? task.threadId : null;
-        if (!threadId) {
-          const made = await client.createThread({ ...(task.cwd ? { cwd: task.cwd } : {}), name: task.title, automatic: true });
-          threadId = made?.thread?.id;
-          if (typeof threadId !== 'string') throw new Error('Elpis did not start a chat for it');
-          if (task.target === 'reuse') task.threadId = threadId;
-        }
-        record.threadId = threadId;
-        await client.send(threadId, { text: task.prompt, automatic: true });
-      } catch (error) {
+      try { record.threadId = await deliver(task); }
+      catch (error) {
         record.error = error instanceof Error ? error.message : String(error);
         // The kept chat was deleted: the next run starts a new one.
         if (task.target === 'reuse' && /not found|no longer exists|unknown thread/i.test(record.error)) task.threadId = null;
@@ -101,8 +111,12 @@ export function createSchedule({ client, file, now = Date.now, timers = { set: s
     if (input.workflow !== undefined) {
       if (input.workflow === null) value.workflow = null;
       else {
-        object(input.workflow, ['id', 'name']);
-        value.workflow = { id: text(input.workflow.id, 'workflow id', 200), name: text(input.workflow.name, 'workflow name', 120) };
+        object(input.workflow, ['id', 'name', 'board']);
+        const board = input.workflow.board;
+        // The board as it was when he pressed Schedule; the window replays exactly this one. An edit may leave it out.
+        if (board === undefined && !partial) throw new BridgeError('A scheduled workflow needs its board');
+        if (board !== undefined && (!board || typeof board !== 'object' || Array.isArray(board) || !Array.isArray(board.nodes) || JSON.stringify(board).length > 2_000_000)) throw new BridgeError('The workflow board could not be saved with the automation');
+        value.workflow = { id: text(input.workflow.id, 'workflow id', 200), name: text(input.workflow.name, 'workflow name', 120), ...(board ? { board } : {}) };
       }
     }
     // Create only: the chat to keep using from the first run (an agent's "remind me here").
@@ -129,6 +143,7 @@ export function createSchedule({ client, file, now = Date.now, timers = { set: s
       await loaded;
       const task = find(id), value = fields(input, true);
       if (value.target && value.target !== task.target) task.threadId = null;
+      if (value.workflow && !value.workflow.board) value.workflow.board = task.workflow?.board;
       Object.assign(task, value, { updatedAt: now() });
       // An ended task given a new rule runs again; the next run counts from now.
       if (value.rule && task.status === 'ended') task.status = 'active';

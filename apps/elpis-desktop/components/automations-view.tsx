@@ -14,22 +14,23 @@ import { defaultTiming, rruleFromDraft, ScheduleFields, timingFromRule, timingVa
 import { api } from "@/lib/api";
 import { errorText } from "@/lib/error-text.mjs";
 import type { Project } from "@/lib/projects";
+import type { CanvasGraph } from "@/lib/canvas";
 
 type Run = { at: number; scheduledFor: number | null; threadId: string | null; error: string | null };
 /** `rule` is RFC 5545 text, one DTSTART and one RRULE (bridge/schedule-rules.mjs). */
-/** A workflow scheduled from the Workflows board: its id and name. */
-export type ScheduledWorkflow = { id: string; name: string };
+/** A workflow scheduled from the Workflows board: its id and name, and on creation the board it replays. */
+export type ScheduledWorkflow = { id: string; name: string; board?: CanvasGraph };
 export type Automation = { id: string; title: string; prompt: string; cwd: string | null; rule: string; target: "reuse" | "new"; status: "active" | "paused" | "ended"; workflow?: ScheduledWorkflow | null;
   nextRunAt: number | null; lastRunAt: number | null; runs: Run[]; description: string };
 
 type Draft = TimingDraft & { title: string; prompt: string; cwd: string; target: "reuse" | "new"; workflow: ScheduledWorkflow | null };
 /** What the board hands over when he presses Schedule: the workflow, its request and its project. */
-export type WorkflowPrefill = ScheduledWorkflow & { request: string; cwd?: string };
+export type WorkflowPrefill = { id: string; name: string; board: CanvasGraph; request: string; cwd?: string };
 const FILTERS = [{ value: "active", label: "Active" }, { value: "paused", label: "Paused" }, { value: "ended", label: "Ended" }, { value: "all", label: "All" }] as const;
 type Filter = typeof FILTERS[number]["value"];
 const TARGETS = [{ value: "reuse", label: "One chat, reused every run" }, { value: "new", label: "A new chat every run" }] as const;
 
-const blank = (from?: WorkflowPrefill | null): Draft => ({ ...defaultTiming(), title: from?.name ?? "", prompt: from?.request ?? "", cwd: from?.cwd ?? "", target: "reuse", workflow: from ? { id: from.id, name: from.name } : null });
+const blank = (from?: WorkflowPrefill | null): Draft => ({ ...defaultTiming(), title: from?.name ?? "", prompt: from?.request ?? "", cwd: from?.cwd ?? "", target: "reuse", workflow: from ? { id: from.id, name: from.name, board: from.board } : null });
 const draftOf = (task: Automation): Draft => ({ ...timingFromRule(task.rule), title: task.title, prompt: task.prompt, cwd: task.cwd ?? "", target: task.target, workflow: task.workflow ?? null });
 const when = (ms: number) => new Date(ms).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
