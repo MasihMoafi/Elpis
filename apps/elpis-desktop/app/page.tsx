@@ -32,7 +32,7 @@ import { CopyButton } from "@/components/markdown-text";
 import { fitChatListEnd, useWholeRows } from "@/lib/whole-rows";
 import { mergeHistoryWithLive } from "@/lib/live-events";
 import { type SubmittedMessage } from "@/lib/submitted-messages";
-import { replacementEligibility, type MessageVersion } from "@/lib/turn-replacement";
+import { type MessageVersion } from "@/lib/turn-replacement";
 import type { TerminalLaunch } from "@/components/terminal-view";
 import { type SettingsDestination } from "@/components/settings-view";
 import { DeleteChatsDialog, ThreadActions } from "@/components/thread-actions";
@@ -126,6 +126,7 @@ import { createSidebarPlacement } from "@/lib/sidebar-placement";
 import { createApprovalActions } from "@/lib/approval-actions";
 import { createShellSend } from "@/lib/shell-send";
 import { createClearConversation } from "@/lib/clear-conversation";
+import { useTurnReplacementView } from "@/lib/use-turn-replacement-view";
 import { refusedOffline, type View, type WorkflowReplay, type NextTurn } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
 import { useComposerState } from "@/lib/use-composer-state";
@@ -451,32 +452,12 @@ export default function Home() {
   useEffect(() => { updateTabs(renameTabs(tabsRef.current, id => { const thread = find(id); return thread ? title(thread) : undefined; })); }, [threads, related]); // eslint-disable-line react-hooks/exhaustive-deps
   // Back and forward: each place reached (a chat, a new chat, a page) joins the stack.
   const navHistory = useNavHistory(ready, { view, threadId: view === "chat" ? selected?.id ?? null : null });
-  // Elpis can replace turns only in chats it lets this app write directly, and not while one is running.
-  const replaceable = !!selected && !continues && !activeTurn && selected.status?.type !== "active" && connected && !busy;
-  const { turnEntries, replacementOptions, replacementOptionsKey } = useMemo(() => {
-    const turnEntries = new Map<string, Entry[]>();
-    // Live items may arrive out of order; target the first message the transcript actually shows.
-    for (const entry of shownEntries) { const group = turnEntries.get(entry.turnId) ?? []; group.push(entry); turnEntries.set(entry.turnId, group); }
-    // Only the oldest turn can be cut by a descending history page.
-    const replacementOptions = new Map([...turnEntries].map(([id, group]) => [id, group.some(entry => entry.clientPending && entry.item.type === "userMessage")
-      ? { allowed: false as const, reason: "Wait for this turn's messages to be recorded before editing." }
-      : replacementEligibility(group, id, { historyComplete: !loading && (itemCursor === null || id !== entries[0]?.turnId) })]));
-    return { turnEntries, replacementOptions, replacementOptionsKey: JSON.stringify([...replacementOptions]) };
-  }, [shownEntries, entries, loading, itemCursor]);
+  const { replaceable, turnEntries, replacementOptions, replacementOptionsKey, regenerate } = useTurnReplacementView({ selected, entries, shownEntries, continues, activeTurn, connected, busy, loading, itemCursor });
   const failedTurn = selected ? failedTurns[selected.id] : undefined;
   const failedInput = failedTurn ? replacementOptions.get(failedTurn.turnId) : undefined;
   const recoveredEdit = selected ? savedDraft(`recovery-${selected.id}`) : "";
   // The message box's history keys (lib/prompt-history.ts): ↑/↓ and Ctrl+R through what you sent, Esc Esc to edit the last.
   const promptKeys = usePromptKeys(selected?.id ?? newDraftKey.current, { entries, box: () => composerRef.current, read: () => textRef.current, write: writePrompt, editLast: editLastMessage });
-  const regenerate = (() => {
-    if (!replaceable) return null;
-    const last = entries.at(-1); if (!last) return null;
-    const turn = entries.filter(entry => entry.turnId === last.turnId);
-    const eligibility = replacementOptions.get(last.turnId);
-    const prompt = eligibility?.allowed ? eligibility.prompt : null;
-    const reply = turn.filter(entry => entry.item.type === "agentMessage").at(-1);
-    return prompt && reply ? { turnId: last.turnId, prompt, replyId: reply.item.id } : null;
-  })();
   const parent = find(selected?.parentThreadId), source = find(selected?.forkedFromId);
   const waitingIds = new Set(approvals.map(approval => approval.params.threadId ?? approval.ownerThreadId));
   // The chat's team: a root shows its agents; an agent shows its siblings and the way back to the root.
