@@ -157,7 +157,7 @@ export type FollowUpChoice = { follow: Preferences["followUp"]; /** Claude's wor
  * thing for that one message. The send button's tooltip and menu, the composer's hint and Settings all read this. */
 export function followUpChoices(preferences = readPreferences()): [FollowUpChoice, FollowUpChoice] {
   const [key, otherKey] = preferences.sendShortcut === "enter" ? ["Enter", "Ctrl+Enter"] : ["Ctrl+Enter", "Ctrl+Shift+Enter"];
-  const [first, second]: Preferences["followUp"][] = preferences.followUp === "queue" ? ["queue", "steer"] : ["steer", "queue"];
+  const [first, second]: [Preferences["followUp"], Preferences["followUp"]] = preferences.followUp === "queue" ? ["queue", "steer"] : ["steer", "queue"];
   const label = (follow: Preferences["followUp"], sendKey: boolean) => follow === "queue" ? "Queue for later" : sendKey ? "Send" : "Send now";
   return [{ follow: first, label: label(first, true), keys: key }, { follow: second, label: label(second, false), keys: otherKey }];
 }

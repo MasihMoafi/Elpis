@@ -28,7 +28,7 @@ function lines(first?: string, last?: string): Pick<FileRef, "line" | "endLine">
 /** The file an inline code span names, or null when the span is not a path. */
 export function parseCodeRef(text: string): FileRef | null {
   const match = CODE.exec(text);
-  return match ? { path: match[1], ...lines(match[2], match[3]) } : null;
+  return match?.[1] ? { path: match[1], ...lines(match[2], match[3]) } : null;
 }
 
 /** The file a Markdown link's target names, or null for a web address, a mail address, an anchor or anything else. */
@@ -50,7 +50,7 @@ export function parseHref(href: string): FileRef | null {
 /** A sentence's last mark and any closing bracket it opened nothing for are not part of the path before them. */
 export function withoutTail(text: string) {
   if (/[.,;:!?]$/.test(text)) text = text.slice(0, -1);
-  for (const [open, close] of ["()", "[]"]) {
+  for (const [open, close] of [["(", ")"], ["[", "]"]] as const) {
     let opened = text.split(open).length - 1, closed = text.split(close).length - 1;
     while (closed > opened && text.endsWith(close)) { text = text.slice(0, -1); closed--; }
   }

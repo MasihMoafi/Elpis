@@ -35,9 +35,9 @@ export function mergeStops(graph: ListedGraph): MergeStop[] {
   }
   // The branch is elpis/<graph id>/<task id>; the checked-out branch is named after "clashes with".
   const merged = error.match(/Not merged: elpis\/[^/\s]+\/(\S+) clashes with (\S+) in (.+?); \2 is untouched\./);
-  if (merged) stops.push({ kind: "clash", agent: merged[1], files: names(merged[3]), into: merged[2], kept });
+  if (merged?.[1] && merged[2] && merged[3]) stops.push({ kind: "clash", agent: merged[1], files: names(merged[3]), into: merged[2], kept });
   const blocked = error.match(/Not merged: .+? has uncommitted changes in files the merge would change: (.+?); nothing was merged\./);
-  if (blocked) stops.push({ kind: "blocked", agent: null, files: names(blocked[1]), into: null, kept });
+  if (blocked?.[1]) stops.push({ kind: "blocked", agent: null, files: names(blocked[1]), into: null, kept });
   return stops;
 }
 

@@ -96,8 +96,9 @@ export function usePromptKeys(resetKey: string, wiring: Wiring) {
     if (!query) { search.index = -1; write(search.draft, "start"); showSearch({ query, failed: false, matchIndex: 0, total }); return; }
     const needle = query.toLowerCase();
     for (let i = from; i >= 0 && i < total; i += step) {
-      if (!search.list[i].toLowerCase().includes(needle)) continue;
-      search.index = i; write(search.list[i], "start"); showSearch({ query, failed: false, matchIndex: i + 1, total }); return;
+      const candidate = search.list[i];
+      if (candidate === undefined || !candidate.toLowerCase().includes(needle)) continue;
+      search.index = i; write(candidate, "start"); showSearch({ query, failed: false, matchIndex: i + 1, total }); return;
     }
     showSearch({ query, failed: true, matchIndex: 0, total });
   };
@@ -155,8 +156,9 @@ export function usePromptKeys(resetKey: string, wiring: Wiring) {
     event.preventDefault();
     if (index === here.index) return true;
     if (index >= prompts.length) { latest.current.write(here.draft, "end"); stepping.current = null; setStatus(null); return true; }
-    here.index = index; here.shown = prompts[index];
-    latest.current.write(prompts[index], "end"); setStatus({ kind: "history", index: index + 1, total: prompts.length });
+    const prompt = prompts[index]; if (prompt === undefined) return true;
+    here.index = index; here.shown = prompt;
+    latest.current.write(prompt, "end"); setStatus({ kind: "history", index: index + 1, total: prompts.length });
     return true;
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
