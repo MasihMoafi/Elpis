@@ -1,0 +1,12 @@
+{
+  // The renderer (TS/TSX) under DSH's extra strict flags. `npm run typecheck` (tsconfig.json) stays clean and is what
+  // the Next build uses; the errors these flags add are a ratcheting baseline (scripts/strict-baseline.mjs).
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true
+  }
+}

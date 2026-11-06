@@ -15,6 +15,10 @@
     "build": "next build --webpack",
     "postbuild": "git rev-parse HEAD > out/.commit && test ! -f $HOME/Desktop/p/skills/web-dev/ui-check/ui-check.mjs || node $HOME/Desktop/p/skills/web-dev/ui-check/ui-check.mjs .",
     "typecheck": "tsc --noEmit",
+    "typecheck:strict": "node scripts/strict-baseline.mjs types tsx",
+    "lint": "node scripts/strict-baseline.mjs lint",
+    "duplication": "node scripts/strict-baseline.mjs dup",
+    "strict": "node scripts/strict-baseline.mjs",
     "start": "node bridge/server.mjs",
     "web": "node bridge/server.mjs",
     "desktop": "desktop/launch.sh",
@@ -59,6 +63,9 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "electron": "44.7.0",
+    "jscpd": "5.1.2",
+    "oxlint": "1.81.0",
+    "oxlint-tsgolint": "7.0.2001",
     "tailwindcss": "4.3.0",
     "typescript": "^5"
   }

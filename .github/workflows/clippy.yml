@@ -1,0 +1,75 @@
+name: Rust clippy
+# cargo clippy on the engine crates the Linux check job compiles, so the deny lints in codex-rs/Cargo.toml
+# ([workspace.lints.clippy]) fail CI instead of waiting for someone to run clippy locally (6 Nov).
+on:
+  push:
+    branches: [main, 'integrate/**']
+    paths: ['codex-rs/**', '.github/workflows/clippy.yml']
+  pull_request:
+    paths: ['codex-rs/**', '.github/workflows/clippy.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: clippy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  clippy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      CODEX_SKIP_BWRAP_BUILD: '1'
+      CARGO_BUILD_JOBS: '2'
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - name: Install build dependencies and Rust
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libcap-dev libssl-dev pkg-config
+          rustup toolchain install 1.95.0 --profile minimal --component clippy --no-self-update
+      - name: Download and verify the pinned sandbox V8
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=https://github.com/openai/codex/releases/download/rusty-v8-v150.4.0
+          directory="$RUNNER_TEMP/elpis-v8"
+          mkdir -p "$directory"
+          archive=librusty_v8_ptrcomp_sandbox_release_x86_64-unknown-linux-gnu.a.gz
+          binding=src_binding_ptrcomp_sandbox_release_x86_64-unknown-linux-gnu.rs
+          curl -fL "$base/$archive" -o "$directory/$archive"
+          curl -fL "$base/$binding" -o "$directory/$binding"
+          printf '%s  %s\n' a35c75d1f26e6a983885a45b33490a4ebe54f05050568b32b89cfb421b30b583 "$archive" \
+            7727826ae479bdb645e807239fb12d1f8e2e23de7a6cf16f5ee592690d1d8506 "$binding" > "$directory/SHA256SUMS"
+          (cd "$directory" && sha256sum -c SHA256SUMS)
+          echo "RUSTY_V8_ARCHIVE=$directory/$archive" >> "$GITHUB_ENV"
+          echo "RUSTY_V8_SRC_BINDING_PATH=$directory/$binding" >> "$GITHUB_ENV"
+      - uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7
+        id: cargo_cache
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            codex-rs/target
+          key: elpis-clippy-${{ runner.os }}-${{ hashFiles('codex-rs/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: elpis-clippy-${{ runner.os }}-${{ hashFiles('codex-rs/Cargo.lock') }}-
+      - name: Reuse only unchanged cached Rust sources
+        env:
+          CACHE_KEY: ${{ steps.cargo_cache.outputs.cache-matched-key }}
+        run: bash scripts/restore-cargo-cache-source-times.sh "$CACHE_KEY"
+      - name: cargo clippy (core, UI, CLI, app server and their tests)
+        working-directory: codex-rs
+        run: cargo clippy --locked --tests -p codex-core -p codex-tui -p codex-cli -p codex-app-server
+      - name: Retain compiler outputs
+        if: always() && steps.cargo_cache.outputs.cache-hit != 'true' && steps.cargo_cache.outputs.cache-primary-key != ''
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            codex-rs/target
+          key: ${{ steps.cargo_cache.outputs.cache-primary-key }}

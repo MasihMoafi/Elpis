@@ -1,6 +1,7 @@
 {
   "fast": [
     "tests/bookmarks.test.cjs",
+    "tests/strict-baseline.test.mjs",
     "bridge/settled-status.test.mjs",
     "tests/accent-scope.test.mjs",
     "tests/polish-source.test.cjs",
