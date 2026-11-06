@@ -94,6 +94,7 @@ export function useWorkflowTeam(run: RecordedWorkflow | undefined, ready: boolea
           const details = await Promise.allSettled(ids.slice(offset, offset + 3).map(async id => ({ id, result: await api<{ thread: Thread; data?: Entry[] }>(`/threads/${encodeURIComponent(id)}?limit=20`, undefined, controller.signal) })));
           for (let index = 0; index < details.length; index++) {
             const detail = details[index], id = ids[offset + index];
+            if (!detail || id === undefined) continue;
             if (detail.status === "rejected") { failures.push(`Could not read ${id === motherId ? "Mother agent" : "an agent"}: ${detail.reason instanceof Error ? detail.reason.message : String(detail.reason)}`); continue; }
             const { result } = detail.value;
             if (result.thread?.id !== id) { failures.push(`Could not read ${id === motherId ? "Mother agent’s" : "an agent’s"} current status.`); continue; }
@@ -109,7 +110,7 @@ export function useWorkflowTeam(run: RecordedWorkflow | undefined, ready: boolea
         }
         if (!disposed) {
           setObserved([...merged.values()]); if (motherReport || latest) setLastUpdate(motherReport || latest);
-          setError(failures.length ? failures[0] : "");
+          setError(failures[0] ?? "");
         }
       } catch (cause) {
         if (!disposed) setError(errorText(cause));
@@ -149,7 +150,7 @@ export function WorkflowProgress({ run, team, onOpenChat, onRefresh, compact = f
       <Button variant="ghost" size="sm" disabled={team.loading} onClick={onRefresh ?? team.refresh} aria-label="Refresh live progress">Refresh progress</Button>
     </div>
     <div className="workflow-progress-row">
-      <AgentIdentity id={team.motherId || run.rootThreadId} colourSlot={agentColours.get(team.motherId || run.rootThreadId)} name="Mother agent" model={team.mother?.model} provider={team.mother?.modelProvider} />
+      <AgentIdentity id={team.motherId || run.rootThreadId} {...(agentColours.has(team.motherId || run.rootThreadId) ? { colourSlot: agentColours.get(team.motherId || run.rootThreadId)! } : {})} name="Mother agent" {...(team.mother?.model === undefined ? {} : { model: team.mother.model })} {...(team.mother?.modelProvider === undefined ? {} : { provider: team.mother.modelProvider })} />
       <span className="workflow-progress-status" role="status">{status(team.mother)}</span>
       {team.motherId && <Button variant="ghost" size="sm" onClick={() => onOpenChat(team.motherId!)}>Open Mother agent chat</Button>}
     </div>
@@ -163,7 +164,7 @@ export function WorkflowProgress({ run, team, onOpenChat, onRefresh, compact = f
     {!team.lastUpdate && <p className="text-muted-foreground">{team.loading ? "Reading live progress…" : "No agent report observed yet."}</p>}
     {team.error && <div className="flex flex-wrap items-center gap-2"><p role="alert" className="text-destructive">{team.error}</p></div>}
     {!!team.agents.length && <details open={!compact && active > 0}><DisclosureSummary>Live team · {team.agents.length}</DisclosureSummary><ol className="space-y-2 pt-2">{prioritizeChats(team.agents, thread => workflowThreadActive(thread) ? "working" : "idle").map(thread => <li key={thread.id} className="workflow-progress-row workflow-progress-agent" style={{ paddingInlineStart: `${depth(thread) * 16}px` }}>
-      <AgentIdentity compact id={thread.id} colourSlot={agentColours.get(thread.id)} name={title(thread)} model={thread.model} provider={thread.modelProvider} />
+      <AgentIdentity compact id={thread.id} {...(agentColours.has(thread.id) ? { colourSlot: agentColours.get(thread.id)! } : {})} name={title(thread)} {...(thread.model === undefined ? {} : { model: thread.model })} {...(thread.modelProvider === undefined ? {} : { provider: thread.modelProvider })} />
       <span className="workflow-progress-status">{status(thread)}</span><Button variant="ghost" size="sm" onClick={() => onOpenChat(thread.id)}>Open chat</Button>
     </li>)}</ol></details>}
   </section>;
