@@ -109,6 +109,8 @@ import { useSidebarSelection } from "@/lib/use-sidebar-selection";
 import { useHistoryFallback } from "@/lib/use-history-fallback";
 import { useDesktopEntryPoints } from "@/lib/use-desktop-entry-points";
 import { useConversationSession } from "@/lib/use-conversation-session";
+import { createPromptEditing } from "@/lib/prompt-editing";
+import { createSideChatActions } from "@/lib/side-chat-actions";
 import { NAV_PAGES, PAGE_NAMES } from "@/lib/workspace-navigation-pages";
 import { refusedOffline, type View, type WorkflowReplay } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
@@ -357,6 +359,7 @@ export default function Home() {
   const replacement = useTurnReplacementView({ selected, entries, shownEntries, continues, activeTurn, connected, busy, loading, itemCursor });
   const { replaceable, turnEntries, replacementOptions, replacementOptionsKey, regenerate } = replacement;
   const recoveredEdit = selected ? savedDraft(`recovery-${selected.id}`) : "";
+  const { writePrompt, editLastMessage } = createPromptEditing({ composer, session, replacement, editDraft, setMessageEdits, setSlashNotice });
   // The message box's history keys (lib/prompt-history.ts): ↑/↓ and Ctrl+R through what you sent, Esc Esc to edit the last.
   const promptKeys = usePromptKeys(selected?.id ?? newDraftKey.current, { entries, box: () => composerRef.current, read: () => textRef.current, write: writePrompt, editLast: editLastMessage });
   const waitingIds = new Set(approvals.map(approval => approval.params.threadId ?? approval.ownerThreadId));
@@ -430,30 +433,7 @@ export default function Home() {
   live.current = { openById, focusComposer, replaceFrom, forkFrom, showVersion, setRewindTurn, deleteFrom, setMessageEdits, setError, beginReply, beginImageReply };
   const versionsShown = selected ? messageVersions[selected.id] : undefined;
   const chatConversation = useConversationTranscript({ live, selected, shownEntries, activeTurn, desktop, openChanges: side.openChanges, threads, messageEdits, pendingDrafts, replaceable, replacementOptions, replacementOptionsKey, readOnlyRun, versionsShown, newestPrompt, regenerate, connected, voiceBusy, loveSpotAudioReason });
-  /** Puts an earlier message (or the draft) in the box with the caret at its start or end, as the history keys do. */
-  function writePrompt(value: string, caret: "start" | "end") {
-    flushSync(() => editDraft(value));
-    const at = caret === "end" ? value.length : 0;
-    composerRef.current?.setSelectionRange(at, at);
-  }
-  /** Esc Esc in an empty box opens the newest message you sent for editing, as in Claude; one that cannot be replaced says why. */
-  function editLastMessage() {
-    if (!replaceable || !selected) return;
-    const last = entries.filter(entry => entry.item.type === "userMessage").at(-1); if (!last) return;
-    const option = replacementOptions.get(last.turnId);
-    if (!option?.allowed) { if (option) setSlashNotice(option.reason); return; }
-    setMessageEdits(previous => ({ ...previous, [JSON.stringify([selected.id, last.turnId, option.messageId])]: option.prompt }));
-  }
-  function askSideQuestion(question?: string) {
-    if (readOnlyRun) return;
-    if (!selected) { setError("Start a conversation before asking a side question."); return; }
-    setSideChat({ parentId: selected.id, open: true, question: { id: ++sideRequests.current, text: question ?? "" } });
-  }
-  function recapConversation() {
-    if (!selected || readOnlyRun) return;
-    if (!entries.length) { setError("There is no conversation history to recap."); return; }
-    setSideChat({ parentId: selected.id, open: true, question: { id: ++sideRequests.current, kind: "recap", text: "Recap the conversation so far for the person returning to it. Briefly state the goal, key decisions, completed work, what is still open, and the next useful step. Use only the existing conversation. Do not use tools or perform the work." } });
-  }
+  const { askSideQuestion, recapConversation } = createSideChatActions({ session, readOnlyRun, sideRequests, setSideChat, setError });
   // Returning from a disappearing action must not override a field the person chose while it was pending.
   const restoreComposerFocus = (origin: Element | null) => requestAnimationFrame(() => {
     const active = document.activeElement;
