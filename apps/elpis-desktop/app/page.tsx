@@ -13,7 +13,6 @@ import { usePromptKeys } from "@/lib/prompt-history";
 import { ShortcutsDialog } from "@/components/shortcuts-dialog";
 import { StartupSplash } from "@/components/startup-splash";
 import { permissionLabel, type PermissionMode } from "@/components/composer-controls";
-import { type MessageVersion } from "@/lib/turn-replacement";
 import type { TerminalLaunch } from "@/components/terminal-view";
 import { type SettingsDestination } from "@/components/settings-view";
 import { DeleteChatsDialog } from "@/components/thread-actions";
@@ -105,6 +104,7 @@ import { useWorkspaceDialogState } from "@/lib/use-workspace-dialog-state";
 import { createWorkspaceVisibility } from "@/lib/workspace-visibility";
 import { createSidebarChatSelection } from "@/lib/sidebar-chat-selection";
 import { useWorkspaceOrder } from "@/lib/use-workspace-order";
+import { useRewindState, useRewindStatus } from "@/lib/use-rewind-state";
 import { NAV_PAGES, PAGE_NAMES } from "@/lib/workspace-navigation-pages";
 import { refusedOffline } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
@@ -160,13 +160,7 @@ export default function Home() {
   const collapsedProjects = folds.projects, collapsedSections = folds.sections;
   /** The heading of a sidebar section: every one of them folds its list the same way. */
   const foldable = (key: string, name: string) => <SectionToggle name={name} open={!collapsedSections[key]} onToggle={() => changeFolds(value => ({ ...value, sections: { ...value.sections, [key]: !value.sections[key] } }))} />;
-  /** The message whose "Rewind to here" is awaiting confirmation (its turn). */
-  const [rewindTurn, setRewindTurn] = useState<string | null>(null);
-  const [rewindActions, setRewindActions] = useState<Record<string, "undo" | "redo" | undefined>>({});
-  /** ChatGPT's ‹ 1/2 › under an edited message, per chat: its versions by turn (bridge/message-versions.mjs). */
-  const [messageVersions, setMessageVersions] = useState<Record<string, MessageVersion[]>>({});
-  const [rewindBusy, setRewindBusy] = useState(false);
-  const rewindSwitch = useRef<string | null>(null);
+  const { rewindTurn, setRewindTurn, rewindActions, setRewindActions, messageVersions, setMessageVersions, rewindBusy, setRewindBusy, rewindSwitch } = useRewindState();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   /** What a slash command has open above the composer, and the one-line answer of a command that only reports. */
   const [panel, setPanel] = useState<"status" | "review" | "diff" | null>(null);
@@ -287,15 +281,7 @@ export default function Home() {
   const { shownEntries, newestPrompt } = useTranscriptPresentation({ selected, entries, submissions, setSubmissions, newDraftKey, scroll, restoreScroll, stickToBottom, view });
 
   const activeTurn = selected ? activeTurns[selected.id] : undefined;
-  useEffect(() => {
-    const id = selected?.id; if (!ready || !connected || !id || activeTurn) return;
-    let disposed = false;
-    api<{ action?: "undo" | "redo" } | null>(`/threads/${encodeURIComponent(id)}/rewind`, { action: "status" }).then(result => {
-      if (!disposed) setRewindActions(prev => ({ ...prev, [id]: result?.action }));
-    }).catch(() => {});
-    loadVersions(id, () => disposed);
-    return () => { disposed = true; };
-  }, [ready, connected, selected?.id, activeTurn]);
+  useRewindStatus(ready, connected, selected?.id, activeTurn, setRewindActions, (id, disposed) => loadVersions(id, disposed));
   // A new chat starts in Settings' default permissions (Full access unless the config names an approval policy) until a
   // mode is chosen, so the button shows that; a config that matches no preset shows Ask.
   const defaultMode = providerSettings?.options?.defaultPermissions;
