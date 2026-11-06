@@ -5,8 +5,8 @@ import dynamic from "next/dynamic";
 import { BrandWordmark } from "@/components/brand-wordmark";
 import { flushSync } from "react-dom";
 import { cloneElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { AgentsIcon, BrowserIcon, ChatIcon, ExperimentLabIcon, LoveSpotIcon, NewChatIcon, PinIcon, PlusIcon, SendIcon, SettingsIcon, ThemeIcon, WorkflowsIcon, StopIcon } from "@/components/elpis-icons";
-import { Activity, ArrowDown, Blocks, Bookmark, ChevronRight, EyeOff, Layers, PanelLeft, PanelRightClose, PanelRightOpen, RefreshCw, X, Zap } from "lucide-react";
+import { AgentsIcon, ChatIcon, ExperimentLabIcon, LoveSpotIcon, NewChatIcon, PlusIcon, SendIcon, SettingsIcon, ThemeIcon, WorkflowsIcon, StopIcon } from "@/components/elpis-icons";
+import { Activity, ArrowDown, Blocks, Bookmark, ChevronRight, Layers, PanelLeft, PanelRightClose, PanelRightOpen, RefreshCw, X, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ReorderItem, useReorder } from "@/components/reorder";
 import { OptionSelect } from "@/components/ui/option-select";
@@ -50,10 +50,9 @@ import { CustomizeView } from "@/components/customize-view";
 import type { TerminalLaunch } from "@/components/terminal-view";
 import { SettingsView, type SettingsDestination } from "@/components/settings-view";
 import { DeleteChatsDialog, ThreadActions } from "@/components/thread-actions";
-import { GroupActions, GroupAndSortMenu, GroupNameDialog } from "@/components/chat-groups";
+import { GroupActions, GroupNameDialog } from "@/components/chat-groups";
 import { SectionToggle, SidebarGroup } from "@/components/sidebar-group";
-import { SidebarProjects } from "@/components/sidebar-projects";
-import { MoreMenu, RightClickMenu } from "@/components/action-menu";
+import { SidebarChatList } from "@/components/sidebar-chat-list";
 import { fastServiceTier } from "@/lib/service-tier.mjs";
 import { SlashMenu, useSlashMenu } from "@/components/slash-menu";
 import { MentionMenu, useMentionMenu } from "@/components/mention-menu";
@@ -367,7 +366,7 @@ export default function Home() {
   const request = useRef(0);
   const initialRestoration = useRef<{ threadId: string; promise: Promise<void> } | null>(null);
   const conversations = useConversationList(threads, setThreads, selectedRef, setSelected, setError);
-  const { select, settingsOf, threadsRef, patchThread, hidden, upsertThread, refreshThreads, loadMoreConversations, nextCursor, moreLoading } = conversations;
+  const { select, settingsOf, threadsRef, patchThread, hidden, upsertThread, refreshThreads } = conversations;
   // Once an unavailable team read lets a draft appear, a later reply must not move it.
   const holdAgentPanel = useCallback((thread: Thread) => {
     const root = thread.parentThreadId ?? thread.id;
@@ -1035,7 +1034,8 @@ export default function Home() {
   useEffect(() => { if (shellCreated.current !== selected?.id || view !== "chat") setShellMode(false); shellCreated.current = null; setSideChat(null); }, [selected?.id, view]);
   useEffect(() => { if (text) setSlashNotice(""); }, [text]);
 
-  const { workflowCatalog, workflowRuns, workflowRoots, workflowSteps, sidebarTitle, selectedWorkflow, sidebarThreads, nativeParents, treeParents, sidebarParent, originOf, branchOpen, workflowOpen, workflowChild, searchedThreads, unreadIds, sidebarState, needsYou, ownChat, chatListOrder, ordinaryThreads, ordinaryIds, displayParentIds, agentRuns, agentParents, runActions, filtered, roots, unlinked, pinnedChats, grouped, loveChats, workflowChats, recentChats, ordered, ordinaryUnread, topLevelAgentRuns } = useSidebarThreads({ ready, connected, threads, hidden, selected, chatGroups, loveActivity, expanded, setExpanded, recordedWorkflow, loadChildren, search, attention, waitingIds, pins, projectChats, releaseChatOrder, searchInput, setError, setDeleteRunHistory, setDeleteTargets, hiddenPages, preferences, collapsedSections, collapsedProjects, checkedChildren, agentRunsOpen });
+  const sidebarModel = useSidebarThreads({ ready, connected, threads, hidden, selected, chatGroups, loveActivity, expanded, setExpanded, recordedWorkflow, loadChildren, search, attention, waitingIds, pins, projectChats, releaseChatOrder, searchInput, setError, setDeleteRunHistory, setDeleteTargets, hiddenPages, preferences, collapsedSections, collapsedProjects, checkedChildren, agentRunsOpen });
+  const { workflowCatalog, workflowRuns, workflowRoots, workflowSteps, sidebarTitle, selectedWorkflow, sidebarThreads, nativeParents, treeParents, sidebarParent, originOf, branchOpen, workflowOpen, workflowChild, searchedThreads, unreadIds, sidebarState, needsYou, ordinaryThreads, ordinaryIds, displayParentIds, agentParents, pinnedChats, grouped, recentChats, ordered } = sidebarModel;
   // Esc stops the running reply, as in Claude, wherever in the chat the focus is, unless a menu, dialog or field owns the key.
   const escapeStops = useRef<(event: KeyboardEvent) => void>(() => {});
   escapeStops.current = event => { if (selected && !readOnlyRun && activeTurn && view === "chat" && stopsOnEscape(event)) { event.preventDefault(); void stop(selected); } };
@@ -1337,38 +1337,7 @@ export default function Home() {
           <page.Icon size={16} />{page.name}{page.id === "loveSpot" && loveActivity.unread > 0 && <span className="love-unread badge badge-sm" role="status" aria-label={`${loveActivity.unread} Love Spot agents replied`}>{loveActivity.unread}</span>}</Button>} />)}
       </nav>
       <SearchField ref={searchInput} hint="Ctrl Shift K" aria-label="Search conversations" placeholder="Search chats" maxLength={200} value={search.search} onChange={e => search.setSearch(e.target.value)} onKeyDown={e => { if (e.key === "Escape") { e.preventDefault(); search.setSearch(""); focusComposer(); } }} />
-      <div className="thread-list" ref={threadList} onKeyDown={listKeys} {...chatListOrder.pointer}>
-        {workflowCatalog.error && <p role="alert" className="px-2 text-xs text-destructive">{workflowCatalog.error}</p>}
-        {!searchTerm && <SidebarProjects projectState={projectState} collapsedSections={collapsedSections} collapsedProjects={collapsedProjects} ordinaryThreads={ordinaryThreads} sidebarParent={sidebarParent} pins={pins} ownChat={ownChat} chatReorder={chatReorder} projectReorder={projectReorder} setCollapsedProjects={setCollapsedProjects} foldable={foldable} addProject={addProject} removeProject={removeProject} selectProject={selectProject} ready={ready} busy={busy} chatRows={chatRows} />}
-        {!searchTerm && browserPins.pins.length > 0 && <section aria-label="Pinned browser pages"><div className="section-label-row">{foldable("browser", "Browser")}</div>
-          {!collapsedSections.browser && browserPins.pins.map(pin => <div key={pin.url} className="thread-row">
-            <Button variant="ghost" className="thread-name w-full justify-start" title={`${pin.title}\n${pin.url}\nOpen in this chat’s browser`} onClick={() => { show("chat"); void browser.command("new", { url: pin.url }); }}><BrowserIcon size={14} /><span className="truncate">{pin.title}</span></Button>
-            <Button variant="ghost" size="icon-xs" aria-label={`Unpin ${pin.title} from sidebar`} title="Unpin from sidebar" onClick={() => void browserPins.toggle(pin)}><PinIcon size={14} /></Button>
-          </div>)}
-        </section>}
-        {pinnedChats.length > 0 && <section aria-label="Pinned"><div className="section-label-row">{foldable("pinned", "Pinned")}</div>{(searchTerm || !collapsedSections.pinned) && pinnedChats.map(chatRows)}</section>}
-        {grouped && grouped.groups.length > 0 && <section aria-label="Groups"><div className="section-label-row">{foldable("groups", "Groups")}</div>{!collapsedSections.groups && grouped.groups.map(chatGroupSection)}</section>}
-        {loveChats.length > 0 && <section role="group" aria-label="Love Spot"><div className="section-label-row">{foldable("love", "Love Spot")}</div>{!collapsedSections.love && loveChats.map(thread => <div key={thread.id}>{threadRow(thread, 0, true)}{expanded[thread.id] && descendants(thread.id, 1)}</div>)}</section>}
-        {workflowChats.length > 0 && <section role="group" aria-label="Workflows"><div className="section-label-row">{foldable("workflows", "Workflows")}<Button variant="ghost" size="icon-xs" className="section-hide" aria-label="Hide Workflows from the sidebar" title="Hide Workflows from the sidebar · Settings → General shows them again" onClick={() => { try { savePreferences({ sidebarWorkflows: false }); } catch { /* the section stays */ } }}><EyeOff size={14} /></Button></div>{!collapsedSections.workflows && workflowChats.map(thread => threadBranch(thread, 0, new Set(), true))}</section>}
-        {(searchTerm ? recentChats.length > 0 : roots.length > 0 || ordinaryThreads.length > 0) && <section aria-label={searchTerm ? "Results" : "Recents"} {...(!searchTerm ? chatReorder.targetProps("recents", true) : {})}><div className="section-label-row" {...(grouped ? chatReorder.targetProps("recents", true) : {})}>{searchTerm ? <div className="section-label">Results</div> : foldable("recents", "Recents")}
-          {!searchTerm && ordinaryUnread.length > 0 && <Button variant="ghost" size="xs" onClick={() => setAttention(previous => ({ ...previous, unread: [] }))}>Mark all as read</Button>}
-          {!searchTerm && <GroupAndSortMenu state={chatGroups} onChange={change => updateGroups(state => ({ ...state, ...change }))} />}</div>
-          {(searchTerm || !collapsedSections.recents) && recentChats.map(chatRows)}
-        </section>}
-        {ready && !threads.length && <p className="px-2 text-xs text-muted-foreground">Your conversations will appear here.</p>}
-        {search.results?.loading && <p role="status" className="px-2 py-3 text-xs text-muted-foreground">Searching saved conversations…</p>}
-        {search.results?.error && <p role="alert" className="px-2 py-3 text-xs text-destructive">Could not search saved conversations: {search.results?.error}</p>}
-        {search.results && !search.results.loading && !search.results.error && !filtered.length && <p className="px-2 py-3 text-xs text-muted-foreground">No matching conversations.</p>}
-        {searchTerm ? search.results?.nextCursor && <LoadOnScroll className="thread-more" loading={search.results.loading} label="Loading more search results" onLoad={() => void search.loadMore()} /> : nextCursor && <LoadOnScroll className="thread-more" loading={moreLoading} label="Loading more chats" onLoad={() => void loadMoreConversations()} />}
-        {!searchTerm && preferences.showAgentRuns && agentRuns.length + unlinked.length > 0 && <section className="mt-4" aria-label="Background runs">
-          <RightClickMenu actions={runActions} area={<div className="flex items-center" />}>
-            <Button data-sidebar-stop variant="ghost" size="sm" className="min-w-0 flex-1 justify-start text-muted-foreground" aria-expanded={agentRunsOpen} aria-controls="agent-runs" onClick={() => setAgentRunsOpen(open => !open)}><ChevronRight size={13} className={agentRunsOpen ? "rotate-90" : undefined} /><AgentsIcon size={14} />Agent runs ({agentRuns.length + unlinked.length})</Button>
-            <MoreMenu actions={runActions} label="Agent runs actions" title="Hide Agent runs or delete their history" />
-          </RightClickMenu>
-          {agentRunsOpen && <div id="agent-runs" role="region" aria-label="Agent runs">{topLevelAgentRuns.map(thread => <div key={thread.id}>{threadRow(thread, 1)}{expanded[thread.id] && runDescendants(thread.id, 2)}</div>)}{unlinked.map(thread => threadBranch(thread, 1))}
-          </div>}
-        </section>}
-      </div>
+      <SidebarChatList model={sidebarModel} projectState={projectState} search={search} browser={browser} browserPins={browserPins} preferences={preferences} chatGroups={chatGroups} updateGroups={updateGroups} setAttention={setAttention} conversations={conversations} threadList={threadList} listKeys={listKeys} collapsedSections={collapsedSections} collapsedProjects={collapsedProjects} expanded={expanded} pins={pins} setCollapsedProjects={setCollapsedProjects} chatReorder={chatReorder} projectReorder={projectReorder} foldable={foldable} addProject={addProject} removeProject={removeProject} selectProject={selectProject} chatRows={chatRows} chatGroupSection={chatGroupSection} threadRow={threadRow} descendants={descendants} threadBranch={threadBranch} runDescendants={runDescendants} show={show} ready={ready} busy={busy} threads={threads} agentRunsOpen={agentRunsOpen} setAgentRunsOpen={setAgentRunsOpen} />
       <UsagePanel refreshKey={accountRefresh} onOpen={() => { setSettingsSection("usage"); show("settings"); }} />
       <div className="sidebar-footer"><AccountRow refreshKey={accountRefresh} /></div>
       <div className="sidebar-status">
