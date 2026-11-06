@@ -1,5 +1,5 @@
 // Which sidebar sections (Projects, Pinned, Groups, Love Spot, Workflows, Recents, Other agents) and which projects are
-// folded, as the person left them; kept in the desktop store (desktop/state.cjs) so a restart keeps them. No value imports,
+// folded, as the person left them; kept in the desktop store (desktop/state.cts) so a restart keeps them. No value imports,
 // so the node tests load this file as it is.
 
 export type SidebarFolds = { sections: Record<string, boolean>; projects: Record<string, boolean> };

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { SessionCreators } from './session-creators.mjs';
-import { agentParentId } from '../lib/agent-runs.mjs';
+import { agentParentId } from '../lib/agent-runs.mts';
 
 const ID = /^[a-f0-9-]{36}$/i;
 

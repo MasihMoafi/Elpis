@@ -8,7 +8,7 @@ import type { Preferences } from "@/lib/preferences";
 import type { AppMenuCommand, NativeMenuCommand } from "@/lib/desktop";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 type Action = () => void;
 export type AppMenusProps = {

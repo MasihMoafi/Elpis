@@ -8,7 +8,7 @@ import { EventEmitter } from 'node:events';
 import { createLoveSpot } from './love-spot-store.cjs';
 import { createLoveSpotTalk } from './love-spot-talk.mjs';
 import { createMatildaCompanion } from './matilda-companion.mjs';
-import { LOVE_SPOT_AUDIO, READ_ALOUD_AUDIO } from '../lib/love-spot-audio.mjs';
+import { LOVE_SPOT_AUDIO, READ_ALOUD_AUDIO } from '../lib/love-spot-audio.mts';
 import { splitPainting } from './love-spot-painting.cjs';
 
 const enabledAudio = { available: true };

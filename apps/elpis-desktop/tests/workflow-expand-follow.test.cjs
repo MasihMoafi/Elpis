@@ -1,7 +1,7 @@
 // A223 (Masih, 24 Oct): "Error: Invalid thread ID (ELPIS_REQUEST_REJECTED; …)". Expanding a workflow in the sidebar
 // stored `workflow:<run id>` in the map of expanded chats, and the agent follower polled every key of that map as a
 // chat id, so the bridge refused it every five seconds. The mock refuses an ancestor id exactly as the bridge does
-// (bridge/validate.mjs threadId), so a non-chat id cannot slip through as it did when the mock answered [] for any id.
+// (bridge/validate.mts threadId), so a non-chat id cannot slip through as it did when the mock answered [] for any id.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
@@ -22,7 +22,7 @@ async function openWorkflows(page) {
 }
 
 test('expanding a finished workflow follows its chat without a rejected request or an error banner', async () => {
-  const { threadId } = await import(path.join(__dirname, '../bridge/validate.mjs'));
+  const { threadId } = await import(path.join(__dirname, '../bridge/validate.mts'));
   const asked = [], rejected = [];
   const listed = [thread('chat-a', 'Fix the parser'), thread(ROOT, 'Sea poem'), ...STEPS.map((id, i) => thread(id, `Workflows · ${['Write', 'Critique'][i]}`))];
   // S18, Masih 29 Oct: Background runs and the sidebar's Workflows section are off by default; this test turns them on.

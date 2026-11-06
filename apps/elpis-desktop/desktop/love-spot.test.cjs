@@ -127,8 +127,8 @@ function sessionFixture() {
   const noop = () => {};
   const stubs = {
     './browser-sessions.cjs': { createBrowserSessions: () => ({ attach: () => ({ open: noop, setBackground: noop, dispose: noop }), drop: noop, flush: async () => {} }) },
-    './state.cjs': { registerState: () => noop }, './files.cjs': { registerFiles: () => noop },
-    './terminal.cjs': { registerTerminal: () => noop }, './context-menu.cjs': { attachContextMenu: () => noop },
+    './state.cts': { registerState: () => noop }, './files.cjs': { registerFiles: () => noop },
+    './terminal.cjs': { registerTerminal: () => noop }, './context-menu.cts': { attachContextMenu: () => noop },
     './theme.cts': { registerTheme: () => noop }, './improve.cjs': { registerImprove: () => noop },
     './open-thread.cjs': { createThreadOpener: () => ({ attach: () => noop }), createNewChatOpener: () => ({ attach: () => noop }) },
     './window-ipc.cts': { createWindowIpc: () => () => ({ handle: noop, removeHandler: noop }) },

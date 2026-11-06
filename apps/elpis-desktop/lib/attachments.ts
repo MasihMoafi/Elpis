@@ -1,11 +1,11 @@
-import { errorText } from "./error-text.mjs";
+import { errorText } from "./error-text.mts";
 export type Attachment = { id: string; name: string; type: "image"; mimeType: string; dataUrl: string } | { id: string; name: string; type: "text"; mimeType: "text/plain"; text: string };
 type DraftStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 /** What the one "Add files or photos" chooser shows: pictures, PDFs and text. */
 export const ATTACHMENT_ACCEPT = "image/png,image/jpeg,image/webp,image/gif,application/pdf,text/*,.txt,.md,.csv,.json,.yaml,.yml,.toml,.log,.xml,.html,.css,.js,.jsx,.ts,.tsx,.py,.rs,.sh,.sql";
 const PREFIX = "elpis-attachments-v1:";
 const MiB = 1024 * 1024;
-/** What one message carries, the same numbers as bridge/attachments.mjs (a test compares them).
+/** What one message carries, the same numbers as bridge/attachments.mts (a test compares them).
  * count: Claude's own cap of files in a message (its chat takes 20 and its local sessions 20 pictures).
  * fileBytes: Claude's file limit, 30 MB: the largest file read, a picture before it is shrunk or a PDF before its text is taken.
  * imageBytes: all the pictures of a message; the chat's history carries them back inline through an 8 MiB socket.

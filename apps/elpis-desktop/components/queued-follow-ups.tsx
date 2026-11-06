@@ -5,7 +5,7 @@ import { ChevronDown, ChevronUp, CornerDownLeft, Pencil, X } from "lucide-react"
 import { MoreMenu } from "@/components/action-menu";
 import { Button } from "@/components/ui/button";
 import { clearFollowUps, removeFollowUp, sendFollowUpNow, takeFollowUp, useFollowUps, type FollowUp } from "@/lib/follow-ups";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 /** What Claude's desktop app does with a queued message, in its words. `run` gets the element that had the focus, so the
  * composer can take it back when that element goes away with the message. */

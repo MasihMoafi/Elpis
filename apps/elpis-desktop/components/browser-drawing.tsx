@@ -12,7 +12,7 @@ import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescripti
 import type { AttachToChat } from "@/components/browser-annotations";
 import { holdDrawing, type DrawingDraft } from "@/lib/browser-drawing-store";
 import "@excalidraw/excalidraw/index.css";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 const BACKGROUND = "page-shot";
 const IMAGE_LIMIT = 3.8 * 1024 * 1024;

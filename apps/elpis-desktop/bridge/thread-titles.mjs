@@ -1,4 +1,4 @@
-import { isAgentRun, agentParentId } from '../lib/agent-runs.mjs';
+import { isAgentRun, agentParentId } from '../lib/agent-runs.mts';
 import { askBackground } from './side-turn.mjs';
 
 // A chat is named when it starts, as the Elpis TUI names it (codex-rs/tui/src/app/thread_title.rs and the trigger in

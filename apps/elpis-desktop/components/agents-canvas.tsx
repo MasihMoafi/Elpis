@@ -14,7 +14,7 @@ import { OptionSelect } from "@/components/ui/option-select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { WorkflowProgress, useWorkflowTeam, workflowThreadActive } from "@/components/workflow-progress";
-import { agentParentId } from "@/lib/agent-runs.mjs";
+import { agentParentId } from "@/lib/agent-runs.mts";
 import { WorkflowHistory } from "@/components/workflow-history";
 import { graphForWorkflow, motherDecisionLines, readWorkflowRun, taskState, withAddedAgents, type WorkflowRunRef, type RecordedWorkflow } from "@/components/workflow-chat";
 import { WorkflowColourMenu, WorkflowIdentityEditor, WorkflowMark } from "@/components/workflow-identity";
@@ -33,7 +33,7 @@ import { useElpisSettings } from "@/lib/settings-store";
 import { appStorage } from "@/lib/projects";
 import { filesText, mergeStops, runPayload, stopText, wantsIsolation } from "@/lib/canvas-isolation";
 import { PATTERNS, PATTERN_TEAMS, WORKFLOWS, LANGUAGES, languageOf, type Language, type ReadyMade, agentCount, WHOLE_PROJECT, applyPattern, ownFolders, agentColor, CHECK_LABEL, COLUMN, DONE, FATHER, MOTHER, STATUS_LABEL, TASKS_PER_AGENT, waits, TEMPLATES, agentName, promptName, applyPlan, arrange, boardForPlan, checkOf, commandParts, shapeOf, makesLoop, maxAgents, newAgents, newId, parseCommand, parents, initialGraph, runParts, saveGraph, waves, withMother, type AgentData, type CanvasEdge, type CanvasGraph, type CanvasNode, type CatalogModel, type Command, type MotherSettings, type NoteData, type Plan, type RunTask, type TaskStatus } from "@/lib/canvas";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 import { taskLogLines, type LogLine } from "@/lib/run-log";
 
 

@@ -5,7 +5,7 @@
 // packages/util/time/src/rrule.ts: rrule enumerates wall-clock times in the rule's zone, and each is resolved to its
 // instant here. A local time a daylight-saving change skips is skipped; one it repeats runs once, at the earlier instant.
 import rrulePackage from 'rrule';
-import { BridgeError } from './validate.mjs';
+import { BridgeError } from './validate.mts';
 
 const { rrulestr } = rrulePackage;
 const START = /^DTSTART(?:;TZID=([A-Za-z_]+(?:\/[A-Za-z0-9_+-]+)*|UTC))?:(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z?$/;

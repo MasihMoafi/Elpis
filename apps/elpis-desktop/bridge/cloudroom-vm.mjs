@@ -16,7 +16,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn, execFile } from 'node:child_process';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
-import { BridgeError } from './validate.mjs';
+import { BridgeError } from './validate.mts';
 
 export const CLOUDROOM_WEBSITE = 'https://www.cloudroom.dev';
 const FILE_NAME = 'cloudroom.json';

@@ -12,7 +12,7 @@ import { ConfirmDelete } from "@/components/confirm-delete";
 import { Choice, Segmented, SettingsEmpty, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
 import { defaultTiming, rruleFromDraft, ScheduleFields, timingFromRule, timingValid, type TimingDraft } from "@/components/schedule-editor";
 import { api } from "@/lib/api";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 import type { Project } from "@/lib/projects";
 import type { CanvasGraph } from "@/lib/canvas";
 

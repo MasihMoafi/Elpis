@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { speechChunks } from './client.mjs';
-import { BridgeError, object, text, threadId } from './validate.mjs';
+import { BridgeError, object, text, threadId } from './validate.mts';
 
 /** One line per call in logs/voice-calls.jsonl, sent by the window when a call ends: how long, whether it connected, how many events of each kind the call
  * sent, and how much sound came in and went out. No words, no names: it exists so that "it says Listening and never answers" can be read from the machine. */

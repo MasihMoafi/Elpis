@@ -5,11 +5,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { DesktopClient } from './client.mjs';
-import { forgetSubscriptionModels } from './subscription-models.mjs';
+import { forgetSubscriptionModels } from './subscription-models.mts';
 
 // Every model menu lists the engine's catalog live (1 Nov, Masih: "Refresh it whenever the model picker opens"):
 // GET /api/models?refresh=true asks model/list to fetch now. A connection the engine signs in to that is not the
-// default (ChatGPT, the Anthropic credits) is asked of the engine again too (subscription-models.mjs).
+// default (ChatGPT, the Anthropic credits) is asked of the engine again too (subscription-models.mts).
 function fixture({ mainProvider = 'openai' } = {}) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-live-models-'));
   // A ChatGPT sign-in exists in this home; its content is never read.

@@ -9,7 +9,7 @@ const { loveSpotFixture } = require('./love-spot-fixture.cjs');
 const shown = '00000000-0000-4000-8000-0000000000b1', broken = '00000000-0000-4000-8000-0000000000b2';
 
 test('a chat on screen gets no error bar when the engine refuses a background read; a chat that cannot load still reports it', async () => {
-  const { BridgeError } = await import('../bridge/validate.mjs');
+  const { BridgeError } = await import('../bridge/validate.mts');
   const refusal = () => Object.assign(new BridgeError('Elpis rejected the operation (-32600). No automatic retry was made.', 502), { code: -32600 });
   const reads = { [shown]: 0, [broken]: 0 };
   let f;

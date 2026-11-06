@@ -36,7 +36,7 @@ import { BOARD_THEMED } from "@/bridge/matilda-face.cjs";
 import { upgradeAgentArt } from "@/lib/love-agents";
 import "@excalidraw/excalidraw/index.css";
 import "./love-spot.css";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 const REPLIES_KEY = "elpis-matilda-replies";
 
 type BoardPage = { name: string; session: string };

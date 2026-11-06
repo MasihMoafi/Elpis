@@ -9,7 +9,7 @@ import { ChoiceRow, DecisionCard, type Choice } from "@/components/decision-card
 import type { Approval } from "@/lib/api";
 import { elicitationChoices, elicitationFormContent, fieldOptions, grantedPermissions } from "@/lib/approvals";
 import { OTHER_ANSWER, questionAnswer, questionState, type Question } from "@/lib/questions";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 type Decision = unknown;
 /** A shell word as typed: plain words stay bare, anything else is quoted. */

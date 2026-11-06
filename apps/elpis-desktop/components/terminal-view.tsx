@@ -10,7 +10,7 @@ import { TerminalIcon } from "@/components/elpis-icons";
 import { Button } from "@/components/ui/button";
 import type { DesktopTerminal, TerminalSession } from "@/lib/desktop";
 import { usePreferences } from "@/lib/preferences";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 const folderName = (cwd: string) => cwd.split("/").filter(Boolean).at(-1) || cwd || "~";
 

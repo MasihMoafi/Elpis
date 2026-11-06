@@ -7,7 +7,7 @@ import { api } from "@/lib/api";
 import { resolveRef, type FileRef } from "@/lib/file-refs";
 import { isAudioPath } from "@/lib/audio-path.mts";
 import { MATILDA_CHANGED } from "@/lib/matilda";
-import { errorText } from "./error-text.mjs";
+import { errorText } from "./error-text.mts";
 
 export type Entry = { name: string; dir: boolean; link?: boolean };
 export type Listing = { status: "loading" } | { status: "error"; message: string } | { status: "ready"; entries: Entry[] };

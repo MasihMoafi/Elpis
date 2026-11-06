@@ -69,10 +69,10 @@ async function widenSidePanel(page, width) {
   await page.waitForFunction(width => document.querySelector('section[aria-label="Side panel"]').getBoundingClientRect().width >= width - 1, width);
 }
 /** Makes the page's stub of the desktop store (window.elpisDesktop.storage) refuse what the real one refuses
- * (STORE_KEYS in desktop/state.cjs): a refused key throws, uncaught, as "Unsupported workspace value", so the test's
+ * (STORE_KEYS in desktop/state.cts): a refused key throws, uncaught, as "Unsupported workspace value", so the test's
  * pageerror check fails. Add it before the stub's own init script. */
 async function guardDesktopStore(target) {
-  const { STORE_KEYS } = require('../desktop/state.cjs');
+  const { STORE_KEYS } = require('../desktop/state.cts');
   await target.addInitScript(source => {
     const allowed = new RegExp(source); let current;
     const guard = (inner, key, rest) => { if (allowed.test(key)) return inner(key, ...rest); setTimeout(() => { throw Error(`Unsupported workspace value: ${key}`); }); };

@@ -22,7 +22,7 @@ function component(records, overrides = {}) {
     '@/components/ui/button': { Button: passthrough('button') },
     '@/components/settings/rows': { SettingsGroup: passthrough('section'), SettingRow: props => React.createElement('section', { 'aria-label': props.title }, props.description, props.children), SettingsNotice: passthrough('p'), SettingsActions: passthrough('div') },
     '@/lib/api': { api: overrides.api ?? (async () => ({})), connectionOrder: rows => rows, subscriptionOf: model => model?.startsWith('claude/') ? { prefix: 'claude/', label: 'Claude subscription' } : null },
-    '@/lib/error-text.mjs': { errorText: error => String(error) },
+    '@/lib/error-text.mts': { errorText: error => String(error) },
     '@/lib/speech-model.mts': require('../lib/speech-model.mts'),
     '@/lib/settings-store': { useElpisSettings: () => ({ data: { version: 'v1', main: { provider: 'openai', model: 'model' }, providers: [{ id: 'openai', displayName: 'ChatGPT' }], write: { available: true } } }), editable: () => true, saveSettings: overrides.saveSettings ?? (async () => {}) },
     '@/components/settings/maintenance': { useModelCatalog: () => ({ models: [{ id: 'claude/opus', model: 'claude/opus', displayName: 'Claude Opus' }] }) },
@@ -49,7 +49,7 @@ function providersPage(UseForSettings) {
     '@/components/claude-accounts-settings': { ClaudeAccountsSettings: () => null },
     '@/components/settings/use-for-settings': { UseForSettings },
     '@/components/provider-usage': { useProviderUsage: () => ({ data: { openai: { auth: { state: 'signedOut' } }, claude: subscription, gemini: subscription, openrouter: [] }, error: '', load: async () => {} }) },
-    '@/lib/error-text.mjs': { errorText: error => String(error) },
+    '@/lib/error-text.mts': { errorText: error => String(error) },
   };
   new Function('require', 'module', 'exports', code)(id => mocks[id] || require(id), module, module.exports);
   return module.exports.ProvidersSettings;

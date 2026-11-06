@@ -7,13 +7,13 @@ import { AgentIdentity, agentColourSlots } from "@/components/agent-identity";
 import { ModelPicker } from "@/components/model-picker";
 import { MarkdownText } from "@/components/markdown-text";
 import { WorkflowProgress, useWorkflowTeam, workflowThreadActive } from "@/components/workflow-progress";
-import { agentParentId } from "@/lib/agent-runs.mjs";
+import { agentParentId } from "@/lib/agent-runs.mts";
 import { WorkflowMark } from "@/components/workflow-identity";
 import { api, providerChoices, type Model, type ProviderSettings, type Thread } from "@/lib/api";
 import { useElpisSettings } from "@/lib/settings-store";
 import { arrange, withMother, type CanvasGraph, type CanvasNode, type TaskStatus } from "@/lib/canvas";
 import type { WorkflowIdentity, WorkflowRun } from "@/lib/workflow-identity";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 export type RecordedTask = {
   id: string; title?: string; status?: string; kind?: string; instruction?: string; dependsOn?: string[]; feedbackFrom?: string[];

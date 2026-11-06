@@ -10,7 +10,7 @@ import { OptionSelect } from "@/components/ui/option-select";
 import { Combobox, ComboboxContent, ComboboxEmpty, ComboboxInput, ComboboxItem, ComboboxList, ComboboxTrigger } from "@/components/ui/combobox";
 import { api, choiceById, modelLabel, modelName, subscriptionOf, type ProviderChoice, type Model } from "@/lib/api";
 import { refreshModelCatalog, useModelCatalog } from "@/lib/model-catalog";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 type Choice = { key: string; model: string; choiceId: string; label: string; providerLabel: string; description?: string };
 /** Where each built-in API provider issues keys, as the terminal's /provider names them. */
 const KEY_PAGES: Record<string, string> = { openrouter: "openrouter.ai/keys", anthropic: "console.anthropic.com/settings/keys", "google-gemini": "aistudio.google.com/apikey" };

@@ -2,7 +2,7 @@
 const { app, BrowserWindow, WebContentsView, session, ipcMain, Menu, clipboard } = require('electron');
 const path = require('node:path');
 const { createBrowserSessions } = require('../desktop/browser-sessions.cjs');
-const { createStateStore } = require('../desktop/state.cjs');
+const { createStateStore } = require('../desktop/state.cts');
 app.setPath('userData', process.env.PREVIEW_TEST_PROFILE);
 app.commandLine.appendSwitch('disable-gpu');
 app.whenReady().then(async () => {

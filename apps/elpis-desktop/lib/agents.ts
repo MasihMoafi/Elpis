@@ -1,5 +1,5 @@
 import type { Approval, Thread } from './api';
-import { agentParentId } from './agent-runs.mjs';
+import { agentParentId } from './agent-runs.mts';
 
 /** What each state is called wherever a chat's state is shown. */
 export const stateLabels = { working: 'Working', idle: 'Idle', error: 'Error', waiting: 'Needs input', unread: 'Unread response', unknown: 'Status unavailable' } as const;

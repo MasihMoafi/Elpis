@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import type { Attachment } from "@/lib/attachments";
 import type { Browser } from "@/components/browser-panel";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 /** Gives comments to the chat: adds them to the composer and, for Send, sends the message. False when they could not be added. */
 export type AttachToChat = (parts: Attachment[], submit: boolean) => Promise<boolean>;

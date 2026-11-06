@@ -1,5 +1,5 @@
 /** The text the browser panel attaches for the model. The drawing note is only an instruction, so it is never shown; the
- * comments note is shown as the user's own comments, without the scaffolding the model reads (desktop/browser-annotations.cjs). */
+ * comments note is shown as the user's own comments, without the scaffolding the model reads (desktop/browser-annotations.cts). */
 export const DRAWING_NOTE = "Page drawing context";
 export const BROWSER_COMMENTS = "Browser comments";
 

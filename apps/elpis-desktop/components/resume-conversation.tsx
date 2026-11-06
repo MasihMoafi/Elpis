@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api, title, type Thread } from "@/lib/api";
 import { LoadOnScroll } from "@/components/load-on-scroll";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 type Page = { data: Thread[]; nextCursor?: string | null };
 /** Resume is an explicit saved-chat choice, independent of sidebar visibility or folds. */

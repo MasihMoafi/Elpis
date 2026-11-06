@@ -5,7 +5,7 @@ import { AlertDialog, AlertDialogContent, AlertDialogTitle, AlertDialogDescripti
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import type { Attachment } from "@/lib/attachments";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 type Review = { path: string; quote: string; instruction: string };
 export type ReviewAction = "mark" | "edit" | "remove";

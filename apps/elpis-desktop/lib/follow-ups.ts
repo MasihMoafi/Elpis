@@ -6,7 +6,7 @@ import type { Attachment } from "@/lib/attachments";
 import type { Mention } from "@/lib/mentions";
 import { readPreferences } from "@/lib/preferences";
 import { appStorage } from "@/lib/projects";
-import { errorText } from "./error-text.mjs";
+import { errorText } from "./error-text.mts";
 
 /** Settings → General → Follow-up behavior: Queue holds messages sent during a running turn
  * and sends them, one turn each, after it completes. Steer (the default) adds them to the running turn. */

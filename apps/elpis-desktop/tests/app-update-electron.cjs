@@ -33,10 +33,10 @@ function Tray(...args) {
 const facade = { ...electron, app, Tray, dialog: { ...electron.dialog,
   showErrorBox: (title, message) => { control.errors.push({ title, message }); log({ type: 'error', title, message }); },
 } };
-const state = localRequire('./state.cjs');
+const state = localRequire('./state.cts');
 const load = name => {
   if (name === 'electron') return facade;
-  if (name === './state.cjs') return { ...state, createStateStore(file) {
+  if (name === './state.cts') return { ...state, createStateStore(file) {
     const store = state.createStateStore(file), patch = store.patch;
     store.patch = async (...args) => {
       if (control.failWrites && args[0]?.key?.startsWith('elpis-draft-v1:')) throw Error('Private workspace save refused');

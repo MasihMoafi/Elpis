@@ -9,7 +9,7 @@ import { SearchField } from "@/components/ui/search-field";
 import { api, isAgentRun, title, unreadable, type Thread } from "@/lib/api";
 import type { Project } from "@/lib/projects";
 import { rankBySearch } from "@/lib/search-rank";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 export type CommandAction = { id: string; name: string; keys?: string[]; run: () => void };
 type Command = CommandAction & { detail?: string };

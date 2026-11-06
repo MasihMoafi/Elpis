@@ -8,7 +8,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { ContextFiles, readContext } from "@/components/context-files";
 import { api } from "@/lib/api";
 import { usePreferences } from "@/lib/preferences";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 /** The bridge's Context Ledger for a chat (bridge/elpis-features.mjs `contextLedger`): `used` and `window` are
  * measured, `categories` are estimated shares that sum to `used`; empty when attribution is unavailable. `basis` says whose

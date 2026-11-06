@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { BridgeError, object, text } from './client.mjs';
-import { gatewayRouted } from './provider-models.mjs';
+import { gatewayRouted } from './provider-models.mts';
 const reserved = new Set(['openai', 'claude', 'agy', 'antigravity']);
 
 /** The engine's built-in key providers, served through its gateway (codex-rs/model-provider-info/src/elpis_gateway.rs,

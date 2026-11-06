@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import { useDocumentReview } from "@/components/document-review";
 import type { MenuAction } from "@/components/action-menu";
 import { chooseEditor, useEditors, type EditorInfo } from "@/lib/editors";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 /** A file or folder the menus act on: where it is, how it is called inside the chat's folder, and the line a reply named. */
 export type FileTarget = { abs: string; rel: string; inside: boolean; dir?: boolean; line?: number };

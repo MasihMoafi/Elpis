@@ -12,7 +12,7 @@ import { SettingsEmpty, SettingsHeader, SettingsNotice } from "@/components/sett
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { api, type Model } from "@/lib/api";
 import { ModelChoice } from "@/components/settings/maintenance";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 type Credential = { name: string; source: "config" | "environment"; set: boolean };
 type Server = { name: string; enabled: boolean; transport: "stdio" | "http"; command: string | null; url: string | null; credentials: Credential[]; whispertype?: { backend: "openrouter" | "codex" | "local"; model: string | null } };

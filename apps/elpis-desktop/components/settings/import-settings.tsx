@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { api, unreadable } from "@/lib/api";
 import { SettingRow, SettingsGroup, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 type Listing = { days: number; atATime: number; sources: { id: string; name: string; chats: number }[] };
 type Outcome = { source: string; imported: number; skipped: string[] };

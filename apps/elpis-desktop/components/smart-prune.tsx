@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { api, unreadable } from '@/lib/api';
 import { openPrune, pruneOf, pruneSummary, type PruneTarget } from '@/lib/smart-prune';
 import { Button } from '@/components/ui/button';
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 export function SmartPruneLine({ value, mediaBase }: { value: unknown; mediaBase?: string }) {
   const prune = pruneOf(value), thread = mediaBase?.match(/^\/api\/threads\/([^/]+)\//)?.[1];

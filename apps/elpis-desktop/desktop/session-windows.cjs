@@ -1,11 +1,11 @@
 'use strict';
 const path = require('node:path');
 const { createBrowserSessions } = require('./browser-sessions.cjs');
-const { registerState } = require('./state.cjs');
+const { registerState } = require('./state.cts');
 const { registerFiles } = require('./files.cjs');
 const { createDocuments } = require('./documents.cjs');
 const { registerTerminal } = require('./terminal.cjs');
-const { attachContextMenu } = require('./context-menu.cjs');
+const { attachContextMenu } = require('./context-menu.cts');
 const { registerTheme } = require('./theme.cts');
 const { registerCopyKeys } = require('./copy-keys.cts');
 const { appPermission } = require('./media-policy.cts');

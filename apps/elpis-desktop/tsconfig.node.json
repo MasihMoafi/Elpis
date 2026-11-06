@@ -22,6 +22,6 @@
     "noFallthroughCasesInSwitch": true,
     "types": ["node"]
   },
-  "include": ["bridge/**/*.mjs", "bridge/**/*.cjs", "bridge/**/*.mts", "bridge/**/*.cts", "desktop/**/*.mjs", "desktop/**/*.cjs", "desktop/**/*.mts", "desktop/**/*.cts", "lib/**/*.mjs", "lib/**/*.cjs", "lib/**/*.mts", "lib/**/*.cts", "scripts/**/*.mjs", "scripts/**/*.cjs"],
+  "include": ["bridge/**/*.mjs", "bridge/**/*.cjs", "bridge/**/*.mts", "bridge/**/*.cts", "desktop/**/*.mjs", "desktop/**/*.cjs", "desktop/**/*.mts", "desktop/**/*.cts", "lib/**/*.mjs", "lib/**/*.cjs", "lib/**/*.mts", "lib/**/*.cts", "scripts/**/*.mjs", "scripts/**/*.cjs", "tests/**/*.mts", "tests/**/*.cts"],
   "exclude": ["node_modules", "bridge/resources"]
 }

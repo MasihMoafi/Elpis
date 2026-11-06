@@ -4,8 +4,8 @@ import path from 'node:path';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { BridgeError, DesktopClient, elpisHome, MAX_BRIDGE_MESSAGE_BYTES, object, text } from './client.mjs';
-import { profileEnvironment } from './profile-env.mjs';
-import { LOVE_SPOT_AUDIO } from '../lib/love-spot-audio.mjs';
+import { profileEnvironment } from './profile-env.mts';
+import { LOVE_SPOT_AUDIO } from '../lib/love-spot-audio.mts';
 import { PORTRAIT_ATTACHMENT_NAME, PORTRAIT_INSTRUCTIONS } from './matilda-face.cjs';
 import { planCanvas } from './canvas-plan.mjs';
 import { createExperimentLab } from './experiment-lab.mjs';
@@ -19,7 +19,7 @@ import { createVoice, recordVoiceCall } from './voice.mjs';
 import { createKokoro } from './kokoro.mjs';
 import { createReadAloudProvider } from './read-aloud-provider.mjs';
 import { createImportChats } from './import-chats.mjs';
-import { ATTACHMENT_BODY_LIMIT, AttachmentError, PDF_BODY_LIMIT, extractPdf } from './attachments.mjs';
+import { ATTACHMENT_BODY_LIMIT, AttachmentError, PDF_BODY_LIMIT, extractPdf } from './attachments.mts';
 import { createTrash } from './trash.mjs';
 import { smartPruneDetail } from './smart-prune.mjs';
 import { createLoveSpot } from './love-spot-store.cjs';
@@ -108,7 +108,7 @@ export async function startDesktopServer(options = {}) {
   const staticDir = path.resolve(options.staticDir ?? fileURLToPath(new URL('../out', import.meta.url)));
   const capability = randomBytes(32).toString('hex');
   const session = randomBytes(32).toString('hex');
-  // Chats reach Automations alone through bridge/schedule-mcp.mjs with this key; it opens no other route.
+  // Chats reach Automations alone through bridge/schedule-mcp.mts with this key; it opens no other route.
   const automationKey = randomBytes(32).toString('hex');
   const listeners = new Set(); let origin; let closed = false;
   const loveSpot = createLoveSpot(options.loveSpot);
@@ -286,12 +286,12 @@ export async function startDesktopServer(options = {}) {
         }
         if (url.pathname === '/api/import-chats' && method === 'GET') return json(response, 200, await importChats.list());
         if (url.pathname === '/api/import-chats' && method === 'POST') return json(response, 200, await importChats.run(await body(request)));
-        // Observability (5 Nov): the selected chat's rollout projected as the TUI's /dashboard does (bridge/trajectory-projection.mjs).
+        // Observability (5 Nov): the selected chat's rollout projected as the TUI's /dashboard does (bridge/trajectory-projection.mts).
         if (url.pathname === '/api/trajectory' && method === 'GET') {
           if ([...url.searchParams.keys()].some(key => key !== 'thread') || url.searchParams.getAll('thread').length !== 1) throw new BridgeError('Open a chat to see its trajectory.', 400);
           const thread = await client.readThreadMetadata(url.searchParams.get('thread'));
           if (typeof thread.path !== 'string' || !thread.path) throw new BridgeError('This chat has no recorded history yet.', 404);
-          const { project } = await import('./trajectory-projection.mjs');
+          const { project } = await import('./trajectory-projection.mts');
           return json(response, 200, project(await fs.readFile(thread.path, 'utf8')));
         }
         if (url.pathname === '/api/voice/report' && method === 'POST') return json(response, 200, await recordVoiceCall(options.elpisHome ?? elpisHome(), await body(request)));
@@ -575,7 +575,7 @@ export async function startDesktopServer(options = {}) {
   heartbeat.unref();
   return {
     url: `${origin}/#token=${capability}`,
-    /** What bridge/schedule-mcp.mjs needs to reach Automations, or null when they are off. */
+    /** What bridge/schedule-mcp.mts needs to reach Automations, or null when they are off. */
     get automationAccess() { return automations ? { url: origin, key: automationKey } : null; },
     /** Chats and their agents run in the background service, which outlives this window, so they keep running across
      * an update restart; only work this process runs itself (voice, Love Spot, Lab, local workflow runs) waits. */

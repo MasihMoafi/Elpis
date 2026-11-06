@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
-import { BridgeError } from './validate.mjs';
+import { BridgeError } from './validate.mts';
 
 const home = os.homedir();
 const WORKER = fileURLToPath(new URL('./kokoro-worker.py', import.meta.url));

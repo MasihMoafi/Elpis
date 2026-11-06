@@ -5,7 +5,7 @@ import { LoaderCircle, X } from "lucide-react";
 import { MicIcon, StopIcon } from "@/components/elpis-icons";
 import { Button } from "@/components/ui/button";
 import type { DictationSelection } from "@/lib/dictation";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 type Route = { available: boolean; backend?: string; label?: string; reason?: string };
 /** `provider` is the chat's provider (see chatProvider): the bridge picks the transcriber that provider uses, or the Settings → Voice fallback. */

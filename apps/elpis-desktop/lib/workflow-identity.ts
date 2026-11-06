@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, unreadable } from "./api";
 import { appStorage } from "./projects";
-import { errorText } from "./error-text.mjs";
+import { errorText } from "./error-text.mts";
 
 export const WORKFLOW_COLOURS = ["blue", "teal", "violet", "rose", "green", "amber"] as const;
 export type WorkflowColour = typeof WORKFLOW_COLOURS[number];

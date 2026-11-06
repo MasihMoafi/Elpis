@@ -10,7 +10,7 @@ test('closing asks only when the saved preference says so', () => {
 
 test('the real store accepts the seed, keeps other preferences and seeds only once', async () => {
   const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
-  const { createStateStore } = require('./state.cjs');
+  const { createStateStore } = require('./state.cts');
   const { seedShippedDefaults, PREFERENCES_KEY } = require('./preferences.cjs');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-seed-'));
   const store = createStateStore(path.join(dir, 'workspace.json'));

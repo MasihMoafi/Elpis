@@ -6,11 +6,11 @@ import { AgentIdentity, agentColourSlots } from "@/components/agent-identity";
 import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { Button } from "@/components/ui/button";
 import { api, title, type Entry, type Thread } from "@/lib/api";
-import { agentParentId } from "@/lib/agent-runs.mjs";
+import { agentParentId } from "@/lib/agent-runs.mts";
 import { prioritizeChats } from "@/lib/chat-groups";
 import type { RecordedWorkflow } from "./workflow-chat";
 import "./workflow-progress.css";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 const EMPTY_THREADS: readonly Thread[] = [];
 

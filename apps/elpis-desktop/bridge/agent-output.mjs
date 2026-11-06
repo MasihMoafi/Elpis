@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { BridgeError } from './validate.mjs';
+import { BridgeError } from './validate.mts';
 
 // What one agent of a board run left for the person to verify (components/agents-canvas.tsx, the agent's panel), read
 // from its run's working folder: the first sentence of `## Result` in `agents/<name>/report.md`, a preview of each file

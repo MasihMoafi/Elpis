@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { BridgeError } from './client.mjs';
 import { projectDirectory, skipped } from './folders.mjs';
-import { ATTACHMENT_LIMITS, imageMime } from './attachments.mjs';
+import { ATTACHMENT_LIMITS, imageMime } from './attachments.mts';
 
 const MAX_DEPTH = 4;
 const MAX_ENTRIES = 2000;

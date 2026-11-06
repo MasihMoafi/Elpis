@@ -6,7 +6,7 @@ import { Switch } from "@/components/ui/switch";
 import { notificationPermission, playChime, requestNotificationPermission, sendTestNotification, type NotificationPermissionState } from "@/lib/notifications";
 import { savePreferences, usePreferences, type Preferences } from "@/lib/preferences";
 import { Choice, Segmented, SettingRow, SettingsGroup, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 const PERMISSION: Record<NotificationPermissionState, { label: string; tone: string; description: string }> = {
   granted: { label: "Allowed", tone: "ok", description: "Elpis can show system notifications." },

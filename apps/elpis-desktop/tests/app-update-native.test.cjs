@@ -16,7 +16,7 @@ const helper = path.join(__dirname, 'app-update-electron.cjs');
 const COMPOSER = 'A12 private composer verdict 821 — متن فارسی';
 const NOTE = 'A12 private Love Spot verdict 822';
 const QUICK = 'A12 private hidden Quick Entry verdict 823';
-const sources = ['desktop/main.cjs', 'desktop/preload.cjs', 'desktop/session-windows.cjs', 'desktop/app-updates.cjs', 'desktop/state.cjs', 'desktop/tray.cjs', 'desktop/quick-entry.cjs', 'desktop/quick-entry-preload.cjs', 'desktop/quick-entry.html', 'components/app-update.tsx', 'lib/files-pane.ts', 'lib/desktop.ts', 'components/agents-canvas.tsx'];
+const sources = ['desktop/main.cjs', 'desktop/preload.cjs', 'desktop/session-windows.cjs', 'desktop/app-updates.cjs', 'desktop/state.cts', 'desktop/tray.cjs', 'desktop/quick-entry.cjs', 'desktop/quick-entry-preload.cjs', 'desktop/quick-entry.html', 'components/app-update.tsx', 'lib/files-pane.ts', 'lib/desktop.ts', 'components/agents-canvas.tsx'];
 const hashes = async () => Object.fromEntries(await Promise.all(sources.map(async file => [file, crypto.createHash('sha256').update(await fs.readFile(path.join(appDirectory, file))).digest('hex')])));
 async function until(check, message, timeout = 15000) {
   const end = Date.now() + timeout;

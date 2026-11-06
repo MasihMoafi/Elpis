@@ -12,7 +12,7 @@ import { SaveFeedback, SettingRow, SettingsActions, SettingsGroup, SettingsNotic
 import { useSaver } from "@/components/settings/use-saver";
 import { editable, reloadSettings, saveSettings, type Background, type ElpisSettings, type Memory } from "@/lib/settings-store";
 import { modelCatalogSnapshot, refreshModelCatalog, subscribeModelCatalog } from "@/lib/model-catalog";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 // Background model, Smart Prune and memory settings (formerly the "Elpis" page), each saved
 // through the bridge's versioned config writer.

@@ -35,7 +35,7 @@ export function editBlocked(option: ReplacementEligibility | undefined, messageI
   return option.messageId === messageId ? undefined : "This follow-up went into the turn above it. Edit that turn's first message to replace both.";
 }
 
-/** One edited message's place among its versions (bridge/message-versions.mjs); `previous`/`next` are their chats. */
+/** One edited message's place among its versions (bridge/message-versions.mts); `previous`/`next` are their chats. */
 export type MessageVersion = { turnId: string; index: number; count: number; previous?: string; next?: string };
 export type VersionControl = { index: number; count: number; onPrevious?: () => void; onNext?: () => void };
 export function versionControl(versions: readonly MessageVersion[] | undefined, turnId: string, option: ReplacementEligibility | undefined, messageId: unknown, enabled: boolean, show: (threadId: string) => void): VersionControl | undefined {

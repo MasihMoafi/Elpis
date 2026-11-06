@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useReadAloud } from "@/components/read-aloud";
 import { api, type Entry } from "@/lib/api";
 import { entryKey } from "@/lib/submitted-messages";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 /** Subscribe before the next turn, then speak its live prose through the board's existing sentence queue. */
 export function MatildaAutoVoice({ threadId, activeTurnId, entries, disabled }: { threadId: string; activeTurnId: string | null; entries: Entry[]; disabled: boolean }) {

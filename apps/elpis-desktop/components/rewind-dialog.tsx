@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api } from "@/lib/api";
 import { ChangeCounts } from "@/components/change-counts";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 export type RestoreMode = "both" | "conversation" | "code";
 type Preview = { available: boolean; reason?: string; version?: string; files?: string[]; added?: number; removed?: number; diff?: string; truncated?: boolean };

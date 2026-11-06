@@ -13,7 +13,7 @@ import { CustomizePlugins, type ConfigWrite, type Plugin, type PluginChange } fr
 import { ConfirmDelete } from "@/components/confirm-delete";
 import { Segmented, SettingsEmpty, SettingsNotice } from "@/components/settings/rows";
 import { api, unreadable } from "@/lib/api";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 /** Claude's Customize page (its /customize: Skills, Plugins and Connectors, each with "Your …" and Add) over what
  * Elpis has: the skills it finds for the project, the plugins installed, and gh and MCP servers as connectors

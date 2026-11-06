@@ -5,7 +5,7 @@ import { api } from "@/lib/api";
 import { AppUpdate } from "@/components/app-update";
 import { Button } from "@/components/ui/button";
 import { SettingRow, SettingsGroup, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 type Identity = { version: string; commit: string | null; releaseNotes: string };
 export function AboutSettings() {

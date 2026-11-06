@@ -11,7 +11,7 @@ import { api } from "@/lib/api";
 import { loadDir, loadNames, openFile, openRef, paneIn, refresh, select as selectPath, toggleDir, treeRows, useFiles, type Row } from "@/lib/files-pane";
 import { isAudioPath } from "@/lib/audio-path.mts";
 import { rankFiles } from "@/lib/mentions";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 const SHOWN = 200;
 type Match = { path: string; line: number; text: string };

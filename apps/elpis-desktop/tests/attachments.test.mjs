@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as lib from '../lib/attachments.ts';
-import * as bridge from '../bridge/attachments.mjs';
+import * as bridge from '../bridge/attachments.mts';
 const { validateAttachments, readAttachmentDraft, writeAttachmentDraft, attachmentFromFile, inlineMediaUrl } = lib;
 
 const png = 'data:image/png;base64,iVBORw0KGgo=';

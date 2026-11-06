@@ -8,7 +8,7 @@ import type { DesktopQuickEntry, QuickEntryStatus } from "@/lib/desktop";
 import type { Preferences } from "@/lib/preferences";
 import { keyCombination } from "@/lib/shortcuts";
 import { SettingRow, SettingsGroup } from "@/components/settings/rows";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 const message = (error: unknown) => errorText(error);
 // Claude's reserved combinations (its Linux and Windows part).
