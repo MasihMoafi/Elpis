@@ -77,7 +77,7 @@ export function chatSubtree(ids: readonly string[], parents: Readonly<Record<str
   const included = new Set(ids), children = new Map<string, string[]>();
   for (const [child, parent] of Object.entries(parents)) if (parent) children.set(parent, [...(children.get(parent) ?? []), child]);
   const pending = [...included];
-  for (let index = 0; index < pending.length; index++) for (const child of children.get(pending[index]) ?? []) if (!included.has(child)) { included.add(child); pending.push(child); }
+  for (let index = 0; index < pending.length; index++) { const id = pending[index]; if (id !== undefined) for (const child of children.get(id) ?? []) if (!included.has(child)) { included.add(child); pending.push(child); } }
   return [...included];
 }
 
@@ -162,7 +162,7 @@ export function sortChats<T extends { id: string; createdAt?: number; updatedAt?
 /** Use the row's state: running first, then waiting chats, then unseen finished replies. Failed and
  * idle chats retain their ordinary place. Within each tier keep the selected sort, including the person's manual order. */
 export function prioritizeChats<T>(threads: T[], stateOf: (thread: T) => string): T[] {
-  const tiers: T[][] = [[], [], [], []];
+  const tiers: [T[], T[], T[], T[]] = [[], [], [], []];
   for (const thread of threads) {
     const state = stateOf(thread);
     tiers[state === "working" ? 0 : state === "waiting" ? 1 : state === "unread" ? 2 : 3].push(thread);
@@ -192,7 +192,7 @@ export function groupSections<T extends { id: string }>(threads: T[], state: Cha
   const known = new Set(state.groups.map(group => group.id));
   return {
     groups: state.groups.map(group => ({ group, chats: threads.filter(thread => state.members[thread.id] === group.id) })),
-    ungrouped: threads.filter(thread => !known.has(state.members[thread.id])),
+    ungrouped: threads.filter(thread => { const group = state.members[thread.id]; return group === undefined || !known.has(group); }),
   };
 }
 

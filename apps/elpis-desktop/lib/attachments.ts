@@ -108,6 +108,11 @@ async function shrunk(file: File, mimeType: string): Promise<{ blob: Blob; mimeT
     return blob && (scale < 1 || blob.size < file.size) ? { blob, mimeType: "image/jpeg" } : as;
   } finally { bitmap.close(); }
 }
+function validatedAttachment(value: unknown): Attachment {
+  const item = validateAttachments([value])[0];
+  if (!item) throw Error("The attachment could not be read.");
+  return item;
+}
 export async function attachmentFromFile(file: File, extract?: (body: { name: string; mimeType: "application/pdf"; dataUrl: string }) => Promise<{ attachment: Attachment }>): Promise<Attachment> {
   if (file.size > ATTACHMENT_LIMITS.fileBytes) throw Error(`${quoted(file.name)} is too large: it is ${megabytes(file.size)} MB and a file can be up to ${megabytes(ATTACHMENT_LIMITS.fileBytes)} MB.`);
   const base = { id: crypto.randomUUID(), name: file.name };
@@ -116,12 +121,12 @@ export async function attachmentFromFile(file: File, extract?: (body: { name: st
   if (imageTypes.has(mimeType)) {
     const picture = await shrunk(file, mimeType);
     if (picture.blob.size > IMAGE_LIMIT) throw Error(`${quoted(file.name)} is too large to send: ${megabytes(picture.blob.size)} MB, and the pictures of a message can total ${imagesPast()}.`);
-    return validateAttachments([{ ...base, type: "image", mimeType: picture.mimeType, dataUrl: await fileDataUrl(picture.blob, picture.mimeType) }])[0];
+    return validatedAttachment({ ...base, type: "image", mimeType: picture.mimeType, dataUrl: await fileDataUrl(picture.blob, picture.mimeType) });
   }
   if (mimeType === "application/pdf") {
     if (!extract) throw Error("PDF text extraction is unavailable.");
     const result = await extract({ name: file.name, mimeType: "application/pdf", dataUrl: await fileDataUrl(file, mimeType) });
-    return validateAttachments([result.attachment])[0];
+    return validatedAttachment(result.attachment);
   }
   if (!file.type.startsWith("text/") && !/\.(txt|md|markdown|csv|json|ya?ml|toml|log|xml|html?|css|[cm]?jsx?|tsx?|py|rs|sh|sql)$/i.test(file.name)) throw Error(`${quoted(file.name)} can\u2019t be attached. Choose a PNG, JPEG, WebP, GIF, PDF, or text file.`);
   const wordy = () => Error(`${quoted(file.name)} has more text than a message takes: up to ${ATTACHMENT_LIMITS.textChars.toLocaleString("en-US")} characters, with its own words.`);
@@ -130,7 +135,7 @@ export async function attachmentFromFile(file: File, extract?: (body: { name: st
   try { contents = new TextDecoder("utf-8", { fatal: true }).decode(await file.arrayBuffer()); }
   catch { throw Error(`${quoted(file.name)}: this file is not readable UTF-8 text.`); }
   if (characters(contents) > ATTACHMENT_LIMITS.textChars) throw wordy();
-  return validateAttachments([{ ...base, type: "text", mimeType: "text/plain", text: contents }])[0];
+  return validatedAttachment({ ...base, type: "text", mimeType: "text/plain", text: contents });
 }
 /** Files from a chooser, a paste or a drop, read one by one for adding to a message's list: those that fit come back in
  * `added`; each that does not fit or cannot be read is left out and named in `problems`. */

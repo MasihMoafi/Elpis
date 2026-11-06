@@ -4,7 +4,7 @@ import type { Entry, Item } from "./api";
 /** "/name some arguments" as typed in the composer; null for a bare name, a leading space, or text that is not a command. */
 export function splitCommand(text: string): { name: string; args: string } | null {
   const match = /^\/(\S+)\s+([\s\S]*\S)\s*$/.exec(text);
-  return match ? { name: match[1].toLowerCase(), args: match[2] } : null;
+  return match?.[1] !== undefined && match[2] !== undefined ? { name: match[1].toLowerCase(), args: match[2] } : null;
 }
 
 const messageText = (item: Item) => isVoiceHandoff(item) ? "" : item.type === "userMessage"
@@ -14,7 +14,8 @@ const messageText = (item: Item) => isVoiceHandoff(item) ? "" : item.type === "u
 /** The text of Elpis's newest non-empty reply, which /copy puts on the clipboard. */
 export function lastReply(entries: Entry[]): string | null {
   for (let index = entries.length - 1; index >= 0; index--) {
-    const item = entries[index].item;
+    const item = entries[index]?.item;
+    if (!item) continue;
     if (item.type === "agentMessage" && typeof item.text === "string" && item.text.trim()) return item.text;
   }
   return null;
