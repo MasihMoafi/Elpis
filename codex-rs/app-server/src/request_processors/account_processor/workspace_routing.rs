@@ -282,10 +282,8 @@ impl AccountRequestProcessor {
             Ok(Ok(config)) => config,
             Ok(Err(_)) | Err(_) => self.config.as_ref().clone(),
         };
-        let provider = create_model_provider(
-            config.model_provider,
-            Some(self.auth_manager.clone()),
-        );
+        let provider =
+            create_model_provider(config.model_provider, Some(self.auth_manager.clone()));
         let account_state = provider
             .account_state()
             .map_err(AccountReadError::InvalidAccount)?;
