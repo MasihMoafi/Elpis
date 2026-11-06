@@ -4,8 +4,8 @@ import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { BrandWordmark } from "@/components/brand-wordmark";
 import { flushSync } from "react-dom";
 import { cloneElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { AgentsIcon, ChatIcon, LoveSpotIcon, PlusIcon } from "@/components/elpis-icons";
-import { ArrowDown, PanelLeft, PanelRightClose, PanelRightOpen, RefreshCw, X } from "lucide-react";
+import { ChatIcon } from "@/components/elpis-icons";
+import { ArrowDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useReorder } from "@/components/reorder";
 import { ApprovalCard } from "@/components/approval-card";
@@ -16,9 +16,8 @@ import { WorkingPlacement } from "@/components/transcript";
 import { useBookmarks, useChatAttention, usePins, useSidebarFolds, useChatGroups } from "@/lib/use-sidebar-state";
 import { useAppearance } from "@/lib/use-appearance";
 import { addGroup, chatSubtree, moveChats, prioritizeChats } from "@/lib/chat-groups";
-import { configuredShortcuts, shortcutTitle } from "@/lib/shortcuts";
+import { configuredShortcuts } from "@/lib/shortcuts";
 import { CommandMenu, type CommandAction } from "@/components/command-menu";
-import { ImproveElpis } from "@/components/improve-elpis";
 import { arrange, move } from "@/lib/nav-order";
 import { followUpHint, newChatFolder, savePreferences, useAppPreferences } from "@/lib/preferences";
 import { QueuedFollowUps } from "@/components/queued-follow-ups";
@@ -43,11 +42,12 @@ import { createSidebarBranches } from "@/components/sidebar-branches";
 import { ComposerControls } from "@/components/composer-controls-panel";
 import { ComposerForm } from "@/components/composer-form";
 import { WorkflowPages } from "@/components/workflow-pages";
-import { PendingInputPanel, PendingInputTrigger } from "@/components/pending-input";
+import { PendingInputPanel } from "@/components/pending-input";
 import { WorkspaceSettings } from "@/components/workspace-settings";
 import { WorkspaceGuideAndLab, OtherWorkspacePages } from "@/components/other-workspace-pages";
 import { WorkspaceTitleBar } from "@/components/workspace-title-bar";
 import { WorkspaceSidebar } from "@/components/workspace-sidebar";
+import { WorkspaceHeader } from "@/components/workspace-header";
 import { useConversationTranscript } from "@/components/use-conversation-transcript";
 import { useSlashMenu } from "@/components/slash-menu";
 import { useMentionMenu } from "@/components/mention-menu";
@@ -59,7 +59,6 @@ import { openControl } from "@/lib/slash-focus";
 import { useElpisSettings } from "@/lib/settings-store";
 import { ReadAloud } from "@/components/read-aloud";
 import { LiveVoiceProvider } from "@/components/live-voice";
-import { Segmented } from "@/components/settings/rows";
 import { EnvironmentMenu, MoveChatDialog, ProjectDialog, ProjectMenu } from "@/components/project-picker";
 import { PutUnderDialog } from "@/components/put-under-dialog";
 import { WorkflowMark } from "@/components/workflow-identity";
@@ -68,7 +67,6 @@ import { BranchChip } from "@/components/branch-chip";
 import { ProfileDialog } from "@/components/profile-dialog";
 import { readProjectChats, readProjects, saveProjects } from "@/lib/projects";
 import { TaskList } from "@/components/task-list";
-import { chatOrigin, originLabel } from "@/lib/love-activity";
 import { useLoveActivity } from "@/lib/use-love-activity";
 import { LOVE_SPOT_AUDIO } from "@/lib/love-spot-audio";
 import { useScreenshotPopup } from "@/lib/use-screenshot-popup";
@@ -87,7 +85,7 @@ import { SidePanel, sideMinWidth, useSidePanel } from "@/components/side-panel";
 import { SideChat, type SideRequest } from "@/components/side-chat";
 import { FloatChatBar, FloatChatPill } from "@/components/float-chat";
 import { useSessionSplit } from "@/components/session-split";
-import { Tab, TabStrip } from "@/components/tab-strip";
+import { Tab } from "@/components/tab-strip";
 import { activeTab, followChat, forgetChats, renameTabs, type ChatTab } from "@/lib/chat-tabs";
 import { TEXT_ONLY_NOTICE, fitAttachments, type Attachment } from "@/lib/attachments";
 import { LoadOnScroll } from "@/components/load-on-scroll";
@@ -167,7 +165,7 @@ export default function Home() {
     projectChatsRef, projectMove, setProjectMove, newProjectFor, setNewProjectFor, nestTargets, setNestTargets,
     projectChanging, project, workflowProject, projectEdit, setProjectEdit } = projectState;
   const pages = useWorkspacePagesState();
-  const { recordedWorkflow, setRecordedWorkflow, setSettingsVisited, setSettingsNavigation, view, setView, viewRef, workflowTab, setWorkflowTab, setSettingsSection } = pages;
+  const { recordedWorkflow, setRecordedWorkflow, setSettingsVisited, setSettingsNavigation, view, setView, viewRef, setSettingsSection } = pages;
   const { pins, togglePinned } = usePins();
   const { bookmarks, toggleBookmarked } = useBookmarks();
   // The sidebar's order is declared further down; groups release it through this ref.
@@ -428,7 +426,6 @@ export default function Home() {
   const recoveredEdit = selected ? savedDraft(`recovery-${selected.id}`) : "";
   // The message box's history keys (lib/prompt-history.ts): ↑/↓ and Ctrl+R through what you sent, Esc Esc to edit the last.
   const promptKeys = usePromptKeys(selected?.id ?? newDraftKey.current, { entries, box: () => composerRef.current, read: () => textRef.current, write: writePrompt, editLast: editLastMessage });
-  const parent = find(selected?.parentThreadId), source = find(selected?.forkedFromId);
   const waitingIds = new Set(approvals.map(approval => approval.params.threadId ?? approval.ownerThreadId));
   // The chat's team: a root shows its agents; an agent shows its siblings and the way back to the root.
   const teamRoot = selected ? (selected.parentThreadId ? find(selected.parentThreadId) ?? { id: selected.parentThreadId } as Thread : selected) : null;
@@ -729,34 +726,7 @@ export default function Home() {
       <SidebarChatList model={sidebarModel} projectState={projectState} search={search} browser={browser} browserPins={browserPins} preferences={preferences} chatGroups={chatGroups} updateGroups={updateGroups} setAttention={setAttention} conversations={conversations} threadList={threadList} listKeys={listKeys} collapsedSections={collapsedSections} collapsedProjects={collapsedProjects} expanded={expanded} pins={pins} setCollapsedProjects={setCollapsedProjects} chatReorder={chatReorder} projectReorder={projectReorder} foldable={foldable} addProject={addProject} removeProject={removeProject} selectProject={selectProject} chatRows={chatRows} chatGroupSection={chatGroupSection} threadRow={threadRow} descendants={descendants} threadBranch={threadBranch} runDescendants={runDescendants} show={show} ready={ready} busy={busy} threads={threads} agentRunsOpen={agentRunsOpen} setAgentRunsOpen={setAgentRunsOpen} />
     </WorkspaceSidebar>
     <main className={`workspace${view === "chat" && selectedLoveChat ? " love-chat accent-scope" : ""}`} style={panelShown && !fullView ? { "--side-min": `${sideMinWidth(side.shown)}px`, ...(side.width ? { "--side-w": `clamp(${sideMinWidth(side.shown)}px, ${side.width}px, 70%)` } : {}) } as CSSProperties : undefined}>
-      <header className={`workspace-header${heading ? "" : " untitled"}`}>
-        <ImproveElpis threadId={view === "chat" ? selected?.id : undefined} onChat={loadThread} />
-        {outsideChatApprovals.length > 0 && <PendingInputTrigger approvals={outsideChatApprovals} threads={threads} button={pendingInputButton} setOpen={setPendingInputOpen} open={pendingInputOpen} />}
-        <Button className="mobile-menu sidebar-open" variant="ghost" size="icon-sm" aria-label="Open sidebar" title={shortcutTitle("Open sidebar", "sidebar", preferences)} onClick={() => showSidebar(true)}><PanelLeft size={16} /></Button>
-        <BrandWordmark className="mobile-brand" dark={dark} width={49} height={24} />
-        <div className="header-titles min-w-0 flex-1">
-          {view === "chat" && desktop && !split.pane
-            ? <TabStrip label="Chat tabs" activeKey={tabs.activeId} add={<Button type="button" variant="ghost" size="icon-sm" className="task-tab-new" aria-label="New chat tab" title="New chat tab (Ctrl+T)" onClick={newChatTab}><PlusIcon size={16} /></Button>}>
-                {tabs.tabs.map(chatTab)}
-              </TabStrip>
-            : chatActions(<div className="header-title-row" />, <h1>{heading}</h1>)}
-          {view === "canvas" && <Segmented label="Workflows view" className="workflow-view-switch" value={workflowTab} onChange={setWorkflowTab} options={[{ value: "board", label: "Board" }, { value: "scheduled", label: "Scheduled" }]} />}
-          {view === "chat" && selected && originLabel(chatOrigin(selected, loveActivity.threads), title(selected)) === "Love Spot" && <Button variant="ghost" size="xs" className="thread-origin" data-origin="Love Spot" onClick={() => show("loveSpot")}><LoveSpotIcon size={13} />Love Spot</Button>}
-          {view === "chat" && selected && meta && <p className="thread-meta">{meta}</p>}
-          {view === "chat" && selected && (selected.parentThreadId || selected.forkedFromId) && <p className="thread-links">
-            {selected.parentThreadId && <Button variant="link" size="xs" aria-label={`Open parent: ${parent ? title(parent) : "parent conversation"}`} onClick={() => openById(selected.parentThreadId!)}>Agent of {parent ? title(parent) : "its parent conversation"}</Button>}
-            {selected.forkedFromId && <Button variant="link" size="xs" aria-label={`Open original: ${source ? title(source) : "original chat"}`} onClick={() => openById(selected.forkedFromId!)}>Continued from {source ? title(source) : "the original chat"}</Button>}
-          </p>}
-        </div>
-        {view === "loveSpot" && <div ref={setLoveToolbarHost} className="love-spot-toolbar-host" />}
-        {view === "chat" && desktop && <Button className="header-action" variant="ghost" size="icon-sm" aria-pressed={side.open} aria-label={side.open ? "Hide side panel" : "Show side panel"} title={side.open ? "Hide side panel" : "Side panel: terminals and browser tabs"} onClick={() => side.open ? side.closePanel() : side.openPanel()}>{side.open ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}</Button>}
-        {selected && view === "chat" && (team.length > 0 || awaitingTeam) && !panelShown && <Button className={`header-action${team.length ? "" : " team-pending-toggle"}`} variant="ghost" size="icon-sm" aria-label={agentsPanel ? "Hide agents panel" : "Show agents panel"} aria-pressed={agentsPanel} title={awaitingTeam && !team.length ? "Hide agents panel and open the chat" : agentsPanel ? "Hide agents panel" : "Show agents panel"} onClick={() => {
-          if (agentsPanel) { setAgentsPanelState(previous => ({ ...previous, open: false })); if (awaitingTeam) requestAnimationFrame(() => composerRef.current?.focus()); }
-          else openAgentsPanel();
-        }}><AgentsIcon size={16} /></Button>}
-        {(split.pane || (split.thread && view === "chat")) && <Button className="header-action" variant="ghost" size="icon-sm" aria-label="Close split view" title="Close split view" onClick={split.close}><X size={16} /></Button>}
-        {selected && view === "chat" && <Button className="header-action" variant="ghost" size="icon-sm" aria-label="Refresh conversation" disabled={loading} onClick={() => loadThread(selected)}><RefreshCw size={16} /></Button>}
-      </header>
+      <WorkspaceHeader pages={pages} preferences={preferences} composer={composer} loveActivity={loveActivity} side={side} split={split} tabs={tabs} selected={selected} threads={threads} outsideChatApprovals={outsideChatApprovals} pendingInputButton={pendingInputButton} pendingInputOpen={pendingInputOpen} setPendingInputOpen={setPendingInputOpen} heading={heading} meta={meta} dark={dark} desktop={desktop} loading={loading} panelShown={panelShown} team={team} awaitingTeam={awaitingTeam} agentsPanel={agentsPanel} setAgentsPanelState={setAgentsPanelState} setLoveToolbarHost={setLoveToolbarHost} find={find} show={show} showSidebar={showSidebar} openById={openById} loadThread={loadThread} newChatTab={newChatTab} openAgentsPanel={openAgentsPanel} chatTab={chatTab} chatActions={chatActions} />
       {outsideChatApprovals.length > 0 && pendingInputOpen && <PendingInputPanel approvals={outsideChatApprovals} threads={threads} button={pendingInputButton} setOpen={setPendingInputOpen} openById={id => { void openById(id); }} approvalCardProps={approvalCardProps} />}
       <div className={`workspace-body${panelShown ? " panel-open" : ""}${fullView ? ` full-view${side.chatCollapsed ? " chat-collapsed" : ""}` : ""}${view !== "chat" ? " no-browser" : ""}`}><div className="workspace-content" {...(fullView ? { role: "region", "aria-label": "Floating chat" } : {})}>
       {fullView && <FloatChatBar title={chatName} onCollapse={() => side.setChatCollapsed(true)} />}
