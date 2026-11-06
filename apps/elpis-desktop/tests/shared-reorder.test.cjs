@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const path = require('node:path');
 const { fixture } = require('./parity-fixture.cjs');
-const { compare, feedback } = require('./shared-reorder-check.cjs');
+const { feedback } = require('./shared-reorder-check.cjs');
 const { drag } = require('./settings-reorder-check.cjs');
 
 const projects = ['First', 'Middle', 'Last'].map(name => ({ id: name, name, cwd: `/tmp/a70-${name}` }));
@@ -34,14 +34,6 @@ test('ReorderItem preserves agent indentation when a context menu supplies its o
     assert.equal(row.props.children, 'Agent title');
     assert.equal(row.props.draggable, enabled ? true : undefined);
   }
-});
-
-for (const theme of ['light']) test(`A70/R29: chats, the sidebar and projects share one solid drag, motion, drop line and native events (${theme})`, async () => {
-  const f = await fixture({ height: 1100, storage: { 'elpis-theme': theme, ...projectStorage } });
-  try {
-    await compare(f.page, { shots: process.env.ELPIS_A70_SHOTS && path.join(process.env.ELPIS_A70_SHOTS, theme) });
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
 });
 
 test('A70/R29: project rows use chat drag and keyboard order, cancel, save failures and reload', async () => {

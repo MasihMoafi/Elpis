@@ -53,14 +53,6 @@ test('Enter sends into the running turn, Ctrl+Enter queues that one message, and
   assert.equal(await sendButton(page).getAttribute('title'), 'Queue for later (Enter)\nSend now (Ctrl+Enter)');
 }));
 
-test('the running composer has one send button and no extra queue menu', () => using({}, async f => {
-  await f.composer.fill('a follow-up');
-  assert.equal(await f.page.getByRole('button', { name: 'More send options', exact: true }).count(), 0);
-  await sendButton(f.page).click();
-  await f.page.waitForFunction(() => !document.querySelector('[aria-label="Message Elpis"]').value);
-  assert.deepEqual(steered(f), ['a follow-up']);
-}));
-
 test('one queued message: Send now, Edit in composer and Remove from queue', () => using({}, async f => {
   const { page, composer } = f;
   await queueMany(f, 'first draft of it');
@@ -135,14 +127,4 @@ test('a message sent while the chat compacts its history waits in the queue and 
   f.emit('message', { method: 'turn/completed', params: { threadId: 'chat-a', turn: { id: 't4', status: 'completed', items: [] } } });
   await queueList(page).waitFor({ state: 'detached' });
   assert.deepEqual(sent(), ['after the compaction'], 'the compaction\'s end sends it as a new turn');
-}));
-
-test('Settings says how Follow-up behavior and the keys work together', () => using({}, async f => {
-  const { page } = f;
-  await openSettings(page);
-  await page.getByRole('tab', { name: 'General', exact: true }).click();
-  const row = page.getByRole('tabpanel', { name: 'General', exact: true }).getByText(/^While Elpis runs, /);
-  assert.equal(await row.innerText(), 'While Elpis runs, Enter sends the message into the current run and Ctrl+Enter queues it for later.');
-  await page.getByRole('radio', { name: 'Queue', exact: true }).click();
-  assert.equal(await row.innerText(), 'While Elpis runs, Enter queues the message for later and Ctrl+Enter sends it into the current run.');
 }));

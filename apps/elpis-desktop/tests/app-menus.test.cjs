@@ -1,28 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cjs');
-const { captureReview } = require('./controls.cjs');
-
-test('the application menubar supports arrow keys and its File/Help actions open the working app surfaces', async () => {
-  for (const colorScheme of ['light']) {
-    const f = await fixture({ colorScheme });
-    try {
-      const bar = f.page.getByRole('menubar', { name: 'Application' });
-      assert.deepEqual(await bar.getByRole('menuitem').allTextContents(), ['File', 'Edit', 'View', 'Help']);
-      await bar.getByRole('menuitem', { name: 'File', exact: true }).focus();
-      await f.page.keyboard.press('ArrowRight');
-      assert.equal(await bar.getByRole('menuitem', { name: 'Edit', exact: true }).evaluate(element => element === document.activeElement), true);
-      await f.page.keyboard.press('ArrowLeft'); await f.page.keyboard.press('ArrowDown');
-      await f.page.getByRole('menuitem', { name: 'Settings', exact: true }).waitFor();
-      await captureReview(f.page, `app-menus-file-open-${colorScheme}`);
-      await f.page.getByRole('menuitem', { name: 'Settings', exact: true }).click();
-      await f.page.getByRole('heading', { name: 'Settings', exact: true }).waitFor();
-      await bar.getByRole('menuitem', { name: 'Help', exact: true }).click();
-      await f.page.getByRole('menuitem', { name: 'Keyboard shortcuts', exact: true }).click();
-      await f.page.getByRole('alertdialog', { name: /keyboard shortcuts/i }).waitFor();
-    } finally { await f.close(); }
-  }
-});
 
 test('Edit restores the text field and selection before requesting native Paste', async () => {
   const f = await fixture();

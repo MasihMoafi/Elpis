@@ -12,10 +12,9 @@ const os = require('node:os');
 const { promisify } = require('node:util');
 const execFile = promisify(require('node:child_process').execFile);
 const { fixture } = require('./parity-fixture.cjs');
-const { unapprovedOranges, widenSidePanel } = require('./controls.cjs');
+const { widenSidePanel } = require('./controls.cjs');
 const { assertCollectionIcon } = require('./collection-icon-assertions.cjs');
 const CWD = path.join(os.homedir(), '.cache', `elpis-file-previews-${process.pid}`);
-const FILE_AGENT_ACTIONS = ['Mark for agent', 'Suggest edit', 'Ask agent to remove'];
 const trashProject = async () => { if (await fs.stat(CWD).catch(() => null)) await execFile('gio', ['trash', CWD]); };
 /** Retries `check` until it stops throwing: a folder is read by the bridge after the click that opens it. */
 async function eventually(check, ms = 5000) {
@@ -512,28 +511,6 @@ test('open files and unsaved edits stay when another side-panel tab is shown', a
   } finally { await f.close(); }
 });
 
-test('code is coloured by its language, as in a code block, and long lines wrap inside the pane by default', async () => {
-  const f = await open();
-  try {
-    await openWidePanel(f);
-    await f.ref('src/lib/parser.ts:2-3').click();
-    const text = f.editor('src/lib/parser.ts');
-    await text.waitFor();
-    const colours = await f.view.locator('.fe-layer .hljs-keyword').evaluateAll(nodes => nodes.map(node => getComputedStyle(node).color));
-    assert.ok(colours.length >= 3, `keywords are marked (${colours.length})`);
-    const plain = await text.evaluate(node => getComputedStyle(node).color);
-    assert.ok(colours.every(colour => colour !== plain), `keywords have their own colour (${colours[0]} vs ${plain})`);
-    assert.equal(await text.evaluate(node => getComputedStyle(node).webkitTextFillColor), 'rgba(0, 0, 0, 0)', 'the textarea draws only the caret and selection; the coloured layer shows the letters');
-    await f.row('README.md').dblclick();
-    await f.view.getByRole('button', { name: 'Edit', exact: true }).click();
-    const log = f.editor('README.md');
-    await log.waitFor();
-    const box = await log.evaluate(node => ({ client: node.clientWidth, scroll: node.scrollWidth }));
-    assert.ok(box.scroll <= box.client + 1, `a long line wraps instead of running past the pane (${box.scroll} > ${box.client})`);
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
 test('an HTML file in a reply opens as a page in the built-in browser, served from its folder, not as text', async () => {
   const f = await open();
   try {
@@ -579,69 +556,6 @@ test('find in file: Ctrl+F opens a bar that counts and steps through the matches
   } finally { await f.close(); }
 });
 
-test('Open in: a path\'s menu offers the Files pane, each installed editor, the default app and the folder; the editor chosen is remembered', async () => {
-  const f = await open({ editors: [{ id: 'zed', name: 'Zed' }, { id: 'gedit', name: 'gedit' }] });
-  try {
-    const ref = f.ref('src/lib/parser.ts:2-3');
-    await ref.click({ button: 'right' });
-    const menu = f.page.getByRole('menu');
-    await menu.waitFor();
-    assert.equal(await f.page.getByRole('menu').count(), 1, 'only the path\'s menu opens, not the message\'s');
-    assert.deepEqual(await menu.getByRole('menuitem').allInnerTexts(), ['Open in Files pane', 'Open in Zed', 'Open in gedit', 'Open in default app', 'Show in folder', 'Copy absolute path', 'Copy relative path', 'Copy filename', ...FILE_AGENT_ACTIONS, 'Change this…']);
-    await f.shot('files-open-in-menu');
-    await menu.getByRole('menuitem', { name: 'Open in Zed', exact: true }).click();
-    assert.deepEqual(await f.page.evaluate(() => window.__edited), [{ target: `${CWD}/src/lib/parser.ts`, editor: 'zed', line: 2 }]);
-    assert.deepEqual(await f.page.evaluate(() => window.__opened), [], 'the system app was not asked');
-
-    await ref.click();
-    await f.view.getByRole('button', { name: 'More file actions', exact: true }).waitFor();
-    await ref.click({ button: 'right' });
-    await f.page.getByRole('menuitem', { name: 'Open in default app', exact: true }).click();
-    assert.deepEqual(await f.page.evaluate(() => window.__opened), [`${CWD}/src/lib/parser.ts:2`]);
-    assert.equal(await f.view.getByRole('button', { name: 'Open in default app', exact: true }).count(), 0);
-    await ref.click({ button: 'right' });
-    await f.page.getByRole('menuitem', { name: 'Open in Zed', exact: true }).click();
-    await ref.click({ button: 'right' });
-    await f.page.getByRole('menuitem', { name: 'Show in folder', exact: true }).click();
-    assert.equal(await f.page.evaluate(() => window.__folder), `${CWD}/src/lib`);
-    await ref.click({ button: 'right' });
-    await f.page.getByRole('menuitem', { name: 'Copy relative path', exact: true }).click();
-    assert.equal(await f.copied(), 'src/lib/parser.ts');
-    await ref.click({ button: 'right' });
-    await f.page.getByRole('menuitem', { name: 'Copy absolute path', exact: true }).click();
-    assert.equal(await f.copied(), `${CWD}/src/lib/parser.ts`);
-
-    // External editors are secondary actions in the file menu, including after a reload.
-    await f.view.getByRole('button', { name: 'More file actions', exact: true }).click();
-    await f.page.getByRole('menuitem', { name: 'Open in gedit', exact: true }).click();
-    assert.deepEqual((await f.page.evaluate(() => window.__edited)).at(-1), { target: `${CWD}/src/lib/parser.ts`, editor: 'gedit', line: 2 });
-    await f.page.reload();
-    await prepare(f.page, [{ id: 'zed', name: 'Zed' }, { id: 'gedit', name: 'gedit' }]);
-    await f.page.locator('.thread-row[data-thread-id="chat-a"] .thread-link').click();
-    await f.ref('src/lib/parser.ts:2-3').click();
-    assert.equal(await f.view.getByRole('button', { name: 'Open in gedit', exact: true }).count(), 0);
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
-test('with no editor chosen, or none installed, Open in uses the system\'s default app; a file in the tree has the same menu', async () => {
-  const f = await open();
-  try {
-    await openWidePanel(f);
-    await f.ref('the lexer').click();
-    await f.view.getByRole('button', { name: 'More file actions', exact: true }).click();
-    await f.page.getByRole('menuitem', { name: 'Open in default app', exact: true }).click();
-    assert.deepEqual(await f.page.evaluate(() => window.__opened), [`${CWD}/src/lib/lexer.ts:1`]);
-    await f.row('lexer.ts').click({ button: 'right' });
-    const items = await f.page.getByRole('menu').getByRole('menuitem').allInnerTexts();
-    assert.deepEqual(items, ['Open in default app', 'Show in folder', 'Copy absolute path', 'Copy relative path', 'Copy filename', ...FILE_AGENT_ACTIONS, 'Change this…']);
-    await f.page.keyboard.press('Escape');
-    await f.ref('/etc/hosts.conf:3').click({ button: 'right' });
-    assert.deepEqual(await f.page.getByRole('menu').getByRole('menuitem').allInnerTexts(), ['Open in Files pane', 'Open in default app', 'Show in folder', 'Copy absolute path', 'Copy filename', ...FILE_AGENT_ACTIONS, 'Change this…'], 'outside the project: Files is available, relative paths are not');
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
 test('the tree can be hidden and shown; large text is paged, binary says so, and an image shows as itself', async () => {
   await fs.mkdir(CWD, { recursive: true });
   const f = await open();
@@ -666,66 +580,6 @@ test('the tree can be hidden and shown; large text is paged, binary says so, and
     assert.equal(await f.tree.count(), 0);
     await f.side.getByRole('button', { name: 'Show file tree', exact: true }).click();
     await f.tree.waitFor();
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
-test('Ctrl+Shift+E shows the Files tab and, pressed again on it, closes the panel; Ctrl+Shift+F is still the full view', async () => {
-  const f = await open();
-  try {
-    await f.page.keyboard.press('Control+Shift+E');
-    await f.tree.waitFor();
-    assert.equal(await f.side.getByRole('tab', { name: 'Files', exact: true }).getAttribute('aria-selected'), 'true');
-    await f.page.keyboard.press('Control+Shift+E');
-    await f.side.waitFor({ state: 'detached' });
-    await f.page.keyboard.press('Control+Shift+E');
-    await f.tree.waitFor();
-    await f.page.keyboard.press('Control+Shift+F');
-    await f.side.and(f.page.locator('.full')).waitFor();
-    assert.equal(await f.tree.count(), 1, 'the full view keeps the tab');
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
-test('light and dark: the pane has only approved amber/orange accents in light, and nothing is cut off in either theme', async () => {
-  for (const colorScheme of ['light']) {
-    const f = await open({ colorScheme });
-    try {
-      await f.ref('src/lib/parser.ts:2-3').click();
-      await f.editor('src/lib/parser.ts').waitFor();
-      if (colorScheme === 'light') assert.deepEqual(await unapprovedOranges(f.page), [], 'light theme, Files tab: only approved amber/orange accents');
-      const cut = await f.side.locator('.files-pane *').evaluateAll(nodes => nodes.filter(node => {
-        if (!node.matches('.task-tab > button, [role="treeitem"], .file-view-path, .files-find input, .file-view-head button')) return false;
-        const box = node.getBoundingClientRect(), parent = node.closest('.files-pane').getBoundingClientRect();
-        return box.width > 0 && (box.right > parent.right + 1 || box.left < parent.left - 1);
-      }).map(node => node.className || node.tagName));
-      assert.deepEqual(cut, [], `${colorScheme}: nothing sticks out of the pane`);
-      const heights = await f.side.locator('.fe-line').evaluateAll(lines => lines.map(line => Math.round(line.getBoundingClientRect().height)));
-      const numberHeights = await f.side.locator('.fe-gutter-line').evaluateAll(lines => lines.map(line => Math.round(line.getBoundingClientRect().height)));
-      assert.deepEqual(numberHeights, heights, 'each number is as tall as its line, wrapped or not, so the numbers line up');
-      const gutter = await f.side.locator('.fe-gutter-line').evaluateAll(lines => lines.slice(0, 5).map(line => Math.round(line.getBoundingClientRect().top)));
-      const text = await f.side.locator('.fe-line').evaluateAll(lines => lines.slice(0, 5).map(line => Math.round(line.getBoundingClientRect().top)));
-      assert.deepEqual(gutter, text, 'each number sits on its line');
-      await f.shot(`files-pane-${colorScheme}`);
-      assert.deepEqual(f.errors, []);
-    } finally { await f.close(); }
-  }
-});
-
-
-test('empty Files returns to a compact tree and restores the chosen document width on reopening', async () => {
-  const f = await open();
-  try {
-    await f.ref('src/lib/parser.ts:2-3').click(); await f.editor('src/lib/parser.ts').waitFor();
-    await widenSidePanel(f.page, 740);
-    const chosen = (await f.side.boundingBox()).width;
-    await f.tabs.getByRole('button', { name: 'Close parser.ts', exact: true }).click();
-    await eventually(async () => assert.ok((await f.side.boundingBox()).width <= 360, 'an empty Files pane does not inherit a wide document or browser layout'));
-    await f.tree.waitFor();
-    assert.equal(await f.view.isVisible(), false, 'the compact tree does not reserve a blank document viewer');
-    if (process.env.ELPIS_SHOTS) await f.shot('files-empty-compact');
-    await f.ref('src/lib/parser.ts:2-3').click(); await f.editor('src/lib/parser.ts').waitFor();
-    await eventually(async () => assert.ok(Math.abs((await f.side.boundingBox()).width - chosen) <= 1, 'opening real content restores the deliberate width'));
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

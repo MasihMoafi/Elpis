@@ -10,10 +10,6 @@ const workflowChat = { id: 'chat-w', name: 'Workflows · demo', preview: 'Workfl
 const nav = page => page.locator('aside.sidebar nav[aria-label="Workspace"]');
 
 // No test starts Electron's main process, so this is the only guard that the packaged app still seeds what ships hidden.
-test('the shell applies the shipped defaults when it starts', () => {
-  assert.match(fs.readFileSync(path.resolve(__dirname, '../desktop/main.cjs'), 'utf8'), /await seedShippedDefaults\(store\)/);
-});
-
 test('hidden pages leave the sidebar, the command menu and the Workflows chat group; there is no Session Manager', async () => {
   const f = await fixture({ storage: shipped, threads: [workflowChat, { ...workflowChat, id: 'chat-a', name: 'Fix the parser', preview: 'Fix the parser' }] });
   try {

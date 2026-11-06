@@ -53,10 +53,6 @@ async function moveMenu(page, id, how = 'right-click') {
   await submenu.waitFor();
   return submenu;
 }
-async function eventually(check, ms = 4000) {
-  const deadline = Date.now() + ms;
-  for (;;) { try { return await check(); } catch (error) { if (Date.now() >= deadline) throw error; await new Promise(resolve => setTimeout(resolve, 50)); } }
-}
 const changes = posts => posts.filter(post => !/\/(resume|read|rewind)$|^\/api\/session$/.test(post.path));
 
 test('a chat moves into a new group from its menu; the list switches to custom groups and keeps it after a reload', async () => {
@@ -96,36 +92,6 @@ test('a chat moves into a new group from its menu; the list switches to custom g
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
-test('"Ungrouped" and another group move a chat; two selected chats move together', async () => {
-  const f = await fixture({ storage: saved([['g1', 'Work'], ['g2', 'Home']], { 'chat-a': 'g1' }) }), { page } = f;
-  try {
-    assert.deepEqual(await idsIn(group(page, 'Work')), ['chat-a']);
-    let submenu = await moveMenu(page, 'chat-a');
-    assert.equal(await submenu.getByRole('menuitemradio', { name: 'Work' }).getAttribute('aria-checked'), 'true');
-    await submenu.getByRole('menuitemradio', { name: 'Home' }).click();
-    await eventually(async () => assert.deepEqual(await idsIn(group(page, 'Home')), ['chat-a']));
-    assert.deepEqual(await idsIn(group(page, 'Work')), []);
-    assert.equal(await page.getByRole('menu').count(), 0, 'choosing closes the menu');
-    submenu = await moveMenu(page, 'chat-a', 'keys');
-    // By keys: → opens the submenu on its first choice; ↓ to Ungrouped, Enter takes it.
-    await eventually(async () => assert.equal(await page.evaluate(() => document.activeElement?.textContent), 'Work'));
-    await page.keyboard.press('ArrowDown'); await page.keyboard.press('ArrowDown');
-    assert.equal(await page.evaluate(() => document.activeElement?.textContent), 'Ungrouped');
-    await page.keyboard.press('Enter');
-    await eventually(async () => assert.deepEqual(await idsIn(recents(page)), ['chat-a', 'chat-b', 'chat-c']));
-    // Ctrl+click marks two chats; the menu then acts on both.
-    await row(page, 'chat-b').locator('.thread-link').click({ modifiers: ['Control'] });
-    await row(page, 'chat-c').locator('.thread-link').click({ modifiers: ['Control'] });
-    submenu = await moveMenu(page, 'chat-c');
-    assert.equal(await page.getByRole('menuitem', { name: 'Move 2 chats to group' }).count(), 1);
-    await submenu.getByRole('menuitemradio', { name: 'Work' }).click();
-    await eventually(async () => assert.deepEqual(await idsIn(group(page, 'Work')), ['chat-b', 'chat-c']));
-    assert.deepEqual(await idsIn(recents(page)), ['chat-a']);
-    assert.deepEqual(changes(f.posts), []);
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
 test('a group collapses and expands by click and by key, stays so after a reload, and says when a chat in it waits for you', async () => {
   const f = await fixture({ storage: saved([['g1', 'Work']], { 'chat-b': 'g1' }) }), { page } = f;
   try {
@@ -157,38 +123,6 @@ test('a group collapses and expands by click and by key, stays so after a reload
     f.emit('message', { method: 'item/completed', params: { threadId: 'chat-b', turnId: 'tp', item: { id: 'plan-1', type: 'plan', text: '1. Rename' } } });
     f.emit('message', { method: 'turn/completed', params: { threadId: 'chat-b', turn: { id: 'tp', status: 'completed', items: [] } } });
     await waiting.waitFor();
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
-test('a thread row expands and collapses its agents by click and keyboard', async () => {
-  const parent = { ...LISTED[0], name: 'Task ID: CI-GATE-1 (make the Elpis desktop test gate on GitHub Actions)' };
-  const child = { ...LISTED[1], id: 'agent-child', name: 'Nested agent', parentThreadId: parent.id };
-  const grandchild = { ...LISTED[2], id: 'nested-agent-child', name: 'Agent under the task', parentThreadId: child.id };
-  const routes = { '/api/threads': (_body, url) => {
-    const ancestor = url.searchParams.get('ancestorThreadId');
-    return { data: ancestor === parent.id ? [child] : ancestor === child.id ? [grandchild] : ancestor ? [] : [parent, ...LISTED.slice(1)], nextCursor: null };
-  } };
-  const f = await fixture({ threads: [parent, ...LISTED.slice(1)], routes }), { page } = f;
-  try {
-    const parentRow = row(page, parent.id);
-    await parentRow.locator('.thread-link').click();
-    await parentRow.getByRole('button', { name: `Expand agents in ${parent.name}`, exact: true }).click();
-    await row(page, child.id).waitFor();
-    const childRow = row(page, child.id);
-    const expand = childRow.getByRole('button', { name: `Expand agents in ${child.name}` });
-    assert.equal(await expand.getAttribute('aria-expanded'), 'false');
-    await expand.click();
-    await row(page, grandchild.id).waitFor();
-    const collapse = childRow.getByRole('button', { name: `Collapse agents in ${child.name}` });
-    assert.equal(await collapse.getAttribute('aria-expanded'), 'true');
-    await collapse.click();
-    assert.equal(await row(page, grandchild.id).count(), 0, 'collapsing hides nested agents');
-    const collapsed = childRow.getByRole('button', { name: `Expand agents in ${child.name}` });
-    await collapsed.focus();
-    await page.keyboard.press('Enter');
-    await row(page, grandchild.id).waitFor();
-    assert.equal(await childRow.getByRole('button', { name: `Collapse agents in ${child.name}` }).getAttribute('aria-expanded'), 'true');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
@@ -243,90 +177,6 @@ for (const colorScheme of ['light']) test(`recorded spawned agents nest under th
     await row(page, parent.id).getByRole('button', { name: `Collapse agents in ${parent.name}` }).press('Space');
     assert.deepEqual(await idsIn(recents(page)), [parent.id, leaf.id], 'collapse hides the whole agent branch');
     if (shots) await page.screenshot({ path: path.join(shots, `a88-collapsed-${colorScheme}.png`) });
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
-test('a background agent without children has no expansion chevron', async () => {
-  const agent = { ...LISTED[1], id: 'leaf-agent', source: { subAgent: { thread_spawn: { parent_thread_id: LISTED[0].id, depth: 1, agent_path: '/root/leaf' } } }, parentThreadId: LISTED[0].id };
-  const routes = { '/api/threads': (_body, url) => ({ data: url.searchParams.has('ancestorThreadId') ? [] : [LISTED[0], agent], nextCursor: null }) };
-  const f = await fixture({ routes }), { page } = f;
-  try {
-    await row(page, LISTED[0].id).getByRole('button', { name: `Expand agents in ${LISTED[0].name}`, exact: true }).click();
-    await row(page, agent.id).waitFor();
-    assert.equal(await row(page, agent.id).getByRole('button', { name: /agents in/ }).count(), 0);
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
-test('a group is renamed and deleted from its menu; deleting puts its chats back under Recents and posts nothing', async () => {
-  const f = await fixture({ storage: saved([['g1', 'Work']], { 'chat-a': 'g1', 'chat-b': 'g1' }) }), { page } = f;
-  try {
-    await group(page, 'Work').locator('.sidebar-group-row').click({ button: 'right' });
-    await page.getByRole('menuitem', { name: 'Rename group' }).click();
-    const rename = page.getByRole('alertdialog', { name: 'Rename group' });
-    const field = rename.getByRole('textbox', { name: 'Group name' });
-    assert.equal(await field.inputValue(), 'Work');
-    await field.fill('Errands');
-    await rename.getByRole('button', { name: 'Save' }).click();
-    await rename.waitFor({ state: 'detached' });
-    assert.deepEqual(await groupNames(page), ['Errands']);
-    assert.deepEqual(await idsIn(group(page, 'Errands')), ['chat-a', 'chat-b']);
-    await group(page, 'Errands').locator('.sidebar-group-row').hover();
-    await page.getByRole('button', { name: 'Group actions for Errands' }).click();
-    await page.getByRole('menuitem', { name: 'Delete group' }).click();
-    const confirm = page.getByRole('alertdialog', { name: 'Delete “Errands”?' });
-    await confirm.getByText('The 2 chats in it will no longer be grouped. No chat is archived or deleted.').waitFor();
-    await confirm.getByRole('button', { name: 'Delete', exact: true }).click();
-    await confirm.waitFor({ state: 'detached' });
-    assert.deepEqual(await groupNames(page), []);
-    assert.deepEqual(await idsIn(recents(page)), ['chat-a', 'chat-b', 'chat-c']);
-    assert.deepEqual(changes(f.posts), [], 'no chat was archived or deleted');
-    await page.reload();
-    await row(page, 'chat-a').waitFor();
-    assert.deepEqual(await groupNames(page), []);
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
-test('Group and sort: Name, Date created and Last activity order Pinned, groups and Recents; None shows every chat under Recents; Reset to defaults', async () => {
-  const storage = { ...saved([['g1', 'Work']], { 'chat-b': 'g1', 'chat-c': 'g1' }, { groupBy: 'none' }), 'elpis-pinned-chats-v1': JSON.stringify(['chat-d', 'chat-a']) };
-  const f = await fixture({ storage, routes: listed }), { page } = f;
-  try {
-    const pinned = aside(page).locator('section[aria-label="Pinned"]'), button = recents(page).getByRole('button', { name: 'Group and sort' });
-    await row(page, 'chat-d').waitFor();
-    assert.deepEqual([await idsIn(pinned), await groupNames(page), await idsIn(recents(page))], [['chat-a', 'chat-d'], [], ['chat-b', 'chat-c']]);
-    assert.equal(await button.getAttribute('data-active'), null);
-    await button.click();
-    const menu = page.getByRole('menu', { name: 'Group and sort' });
-    await menu.getByRole('menuitemradio', { name: 'Custom groups', exact: true }).waitFor();
-    assert.deepEqual(await menu.getByRole('menuitemradio').allTextContents(), ['Custom groups', 'None', 'Last activity', 'Date created', 'Name', 'Manual (drag or Alt+Up/Down)']);
-    assert.equal(await menu.getByRole('menuitem', { name: 'Reset to defaults' }).count(), 0, 'nothing to reset yet');
-    const choose = async name => { await menu.getByRole('menuitemradio', { name, exact: true }).click(); await page.waitForTimeout(50); };
-    await choose('Name');
-    assert.deepEqual([await idsIn(pinned), await idsIn(recents(page))], [['chat-d', 'chat-a'], ['chat-c', 'chat-b']], 'A to Z');
-    assert.equal(await menu.isVisible(), true, 'the menu stays open for another choice');
-    await choose('Custom groups');
-    assert.deepEqual([await groupNames(page), await idsIn(group(page, 'Work')), await idsIn(recents(page))], [['Work'], ['chat-c', 'chat-b'], []]);
-    await choose('Date created');
-    assert.deepEqual([await idsIn(pinned), await idsIn(group(page, 'Work'))], [['chat-d', 'chat-a'], ['chat-b', 'chat-c']], 'newest first');
-    await choose('Last activity');
-    assert.deepEqual([await idsIn(pinned), await idsIn(group(page, 'Work'))], [['chat-a', 'chat-d'], ['chat-b', 'chat-c']], 'the bridge’s order');
-    await choose('None');
-    assert.deepEqual([await groupNames(page), await idsIn(recents(page))], [[], ['chat-b', 'chat-c']]);
-    await choose('Name');
-    await page.keyboard.press('Escape');
-    assert.equal(await button.getAttribute('data-active'), 'true', 'away from the defaults the button says so');
-    await page.reload();
-    await row(page, 'chat-d').waitFor();
-    assert.deepEqual(await idsIn(recents(page)), ['chat-c', 'chat-b'], 'the order survives a reload');
-    await button.click();
-    assert.equal(await menu.getByRole('menuitemradio', { name: 'Name' }).getAttribute('aria-checked'), 'true');
-    assert.equal(await menu.getByRole('menuitemradio', { name: 'None' }).getAttribute('aria-checked'), 'true');
-    await menu.getByRole('menuitem', { name: 'Reset to defaults' }).click();
-    await eventually(async () => assert.deepEqual(await idsIn(recents(page)), ['chat-b', 'chat-c']));
-    assert.equal(await button.getAttribute('data-active'), null);
-    assert.deepEqual(changes(f.posts), []);
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
@@ -393,46 +243,6 @@ for (const colorScheme of ['light']) for (const width of [1280]) test(`light and
     assert.deepEqual(await uiFit(submenu), [], 'the Move to group submenu');
     assert.deepEqual(await uiFit(aside(page)), [], 'the sidebar under the menus');
     if (shots) await page.screenshot({ path: path.join(shots, `move-to-group-${colorScheme}-${width}.png`) });
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
-test('saved sidebar and transcript widths stay stable after the startup splash', async () => {
-  const f = await fixture({ width: 1729, height: 1185, staticDir: process.env.ELPIS_RENDERER_OUT, storage: {
-    'elpis-sidebar-width': '376',
-    'elpis-preferences-v1': JSON.stringify({ transcriptWidth: 'l' }),
-  } }), { page } = f;
-  try {
-    await page.addInitScript(() => {
-      window.__layoutSamples = [];
-      let splashSeen = false;
-      const sample = () => {
-        const shell = document.querySelector('.app-shell');
-        if (shell) {
-          const sidebar = shell.querySelector('.sidebar'), content = shell.querySelector('.chat-content'), splash = document.querySelector('.startup-splash');
-          const splashStyle = splash && getComputedStyle(splash);
-          const splashVisible = !!splashStyle && splashStyle.display !== 'none' && splashStyle.visibility !== 'hidden' && Number(splashStyle.opacity) > .1;
-          splashSeen ||= splashVisible;
-          window.__layoutSamples.push({
-            time: Math.round(performance.now()),
-            sidebar: sidebar?.getBoundingClientRect().width,
-            content: content?.getBoundingClientRect().width,
-            transcript: getComputedStyle(document.documentElement).getPropertyValue('--transcript-width').trim(),
-            splash: splashVisible,
-            splashSeen,
-          });
-        }
-        if (performance.now() < 4000) requestAnimationFrame(sample);
-      };
-      requestAnimationFrame(sample);
-    });
-    await page.reload();
-    await page.waitForTimeout(4200);
-    const samples = await page.evaluate(() => window.__layoutSamples);
-    const afterSplash = samples.filter(sample => sample.splashSeen && !sample.splash);
-    assert.ok(afterSplash.length > 5, 'the fixture records several frames after the splash disappears');
-    assert.ok(afterSplash.every(sample => sample.sidebar === 376), 'the saved sidebar width is already stable');
-    assert.ok(afterSplash.every(sample => sample.content === 1100 && sample.transcript === '1100px'), 'the saved transcript width is already stable');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

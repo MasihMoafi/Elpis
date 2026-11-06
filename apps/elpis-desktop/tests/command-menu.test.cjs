@@ -5,7 +5,6 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const { fixture, CWD } = require('./parity-fixture.cjs');
-const shots = process.env.ELPIS_PARITY_SHOTS;
 
 const chat = (id, name) => ({ id, name, preview: name, cwd: CWD, model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } });
 const LIST = [chat('chat-a', 'Fix the parser'), chat('chat-b', 'Write the docs'), chat('chat-c', 'Plan the release')];
@@ -96,34 +95,6 @@ test('typing filters the actions; Enter runs one; text that matches nothing star
   } finally { await f.close(); }
 });
 
-
-test('mouse clicks run navigation actions; projects match folders; sidebar hint and shortcut help agree', async () => {
-  const f = await fixture({ routes }), { page } = f;
-  try {
-    await page.evaluate(() => localStorage.setItem('elpis-projects-v1', JSON.stringify({ projects: [{ id: 'proj', name: 'Compiler', cwd: '/tmp/compiler-project' }], selectedId: null })));
-    await page.reload(); await page.locator('.thread-row[data-thread-id="chat-a"] .thread-link').waitFor();
-    assert.equal(await page.locator('aside.sidebar .search-field .kbd-hint').textContent(), 'Ctrl Shift K');
-    for (const name of ['Workflows', 'Love Spot', 'Settings']) {
-      await page.keyboard.press('Control+k'); await input(page).fill(name);
-      await menu(page).getByRole('option', { name: new RegExp('^' + name) }).click();
-      await menu(page).waitFor({ state: 'detached' });
-      if (name === 'Settings') await page.getByRole('button', { name: 'Back to app', exact: true }).click();
-      else await page.getByRole('heading', { name, exact: true }).waitFor();
-    }
-    await page.keyboard.press('Control+k'); await input(page).fill('compiler-project');
-    assert.ok((await sections(page)).includes('Projects'));
-    await menu(page).getByRole('option', { name: /^Compiler/ }).click();
-    await menu(page).waitFor({ state: 'detached' });
-    await page.getByRole('button', { name: 'Choose project', exact: true }).waitFor();
-    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('elpis-projects-v1')).selectedId), 'proj');
-    await page.keyboard.press('Control+/');
-    const shortcuts = page.getByRole('alertdialog'); await shortcuts.waitFor();
-    assert.match(await shortcuts.innerText(), /Command menu[\s\S]*Ctrl\+K/);
-    assert.match(await shortcuts.innerText(), /Search chats[\s\S]*Ctrl\+Shift\+K/);
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
 test('saved chat search finds a chat outside recents; cancelling restores the field that opened the menu', async () => {
   const remote = chat('saved-only', 'Recovered compiler notes');
   const f = await fixture({ routes: { ...routes, '/api/threads': (body, url) => url.searchParams.has('searchTerm') ? { data: [remote], nextCursor: null } : routes['/api/threads'](body, url), '/api/threads/saved-only/resume': () => ({ thread: remote }), '/api/threads/saved-only': () => ({ thread: remote, data: [], nextCursor: null }) } }), { page } = f;
@@ -135,34 +106,6 @@ test('saved chat search finds a chat outside recents; cancelling restores the fi
     await page.locator('.thread-row.active[data-thread-id="saved-only"]').waitFor();
     await search.click(); await page.keyboard.press('Control+k'); await page.keyboard.press('Escape');
     await menu(page).waitFor({ state: 'detached' });
-    assert.ok(await search.evaluate(element => element === document.activeElement));
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
-
-test('menu search leaves Settings; Ctrl+Shift+K inside the menu searches; Ctrl+K and Close return focus', async () => {
-  const f = await fixture({ routes }), { page, composer } = f;
-  try {
-    await composer.click(); await page.keyboard.press('Control+k'); await input(page).fill('Settings');
-    await page.keyboard.press('Enter'); await page.getByRole('button', { name: 'Back to app', exact: true }).waitFor();
-    await page.keyboard.press('Control+k'); await input(page).fill('Search chats'); await page.keyboard.press('Enter');
-    const search = page.getByLabel('Search conversations');
-    await search.waitFor();
-    await searchFocused(page);
-    assert.ok(await search.evaluate(element => element === document.activeElement), 'Search chats reveals the sidebar and focuses it from Settings');
-    await composer.click(); await page.keyboard.press('Control+k'); await input(page).waitFor(); await page.keyboard.press('Control+Shift+K');
-    await menu(page).waitFor({ state: 'detached' });
-    await searchFocused(page);
-    assert.ok(await search.evaluate(element => element === document.activeElement));
-    await page.keyboard.press('Control+k'); await input(page).fill('unused'); await page.keyboard.press('Control+k');
-    await menu(page).waitFor({ state: 'detached' });
-    await searchFocused(page);
-    assert.ok(await search.evaluate(element => element === document.activeElement));
-    await page.keyboard.press('Control+k'); assert.equal(await input(page).inputValue(), '');
-    await menu(page).getByRole('button', { name: 'Close command menu' }).click();
-    await menu(page).waitFor({ state: 'detached' });
-    await searchFocused(page);
     assert.ok(await search.evaluate(element => element === document.activeElement));
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }

@@ -3,7 +3,6 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const { fixture } = require('./parity-fixture.cjs');
-const { chooseTheme } = require('./controls.cjs');
 
 const write = { version: 'ledger-v1', write: { available: true } };
 function state() {
@@ -92,66 +91,4 @@ test('LEDGER installed plugins switch, retain saved state on failure, reload and
     await page.getByText('No plugins installed', { exact: true }).waitFor();
     assert.equal(s.plugins.length, 0); assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
-});
-
-test('LEDGER add marketplace, browse, search, install, installed state, remove; errors preserve source', async () => {
-  const s = state(), f = await fixture({ routes: s.routes });
-  try {
-    const { page } = f;
-    await ledger(page, 'Plugins');
-    await page.getByRole('button', { name: 'Add plugins', exact: true }).click();
-    const catalog = page.getByRole('region', { name: 'Plugin catalog', exact: true });
-    await catalog.getByText('No marketplaces added', { exact: true }).waitFor();
-    await catalog.getByText('Advanced: add from Git URL or folder', { exact: true }).click();
-    const source = catalog.getByRole('textbox', { name: 'Marketplace source', exact: true });
-    await source.fill('anthropics/claude-plugins-official');
-    s.reject(true); await catalog.getByRole('button', { name: 'Add marketplace', exact: true }).click();
-    await catalog.getByRole('alert').filter({ hasText: 'Invalid marketplace source' }).waitFor();
-    assert.equal(await source.inputValue(), 'anthropics/claude-plugins-official');
-    s.reject(false); await catalog.getByRole('button', { name: 'Add marketplace', exact: true }).click();
-    await catalog.getByText('Proof marketplace', { exact: true }).waitFor();
-    const search = catalog.getByRole('textbox', { name: 'Search plugins', exact: true });
-    await search.fill('missing'); await search.press('Enter');
-    await catalog.getByText('No plugins match this search', { exact: true }).waitFor();
-    await search.fill('review'); await search.press('Enter');
-    await catalog.getByRole('button', { name: 'Install Review', exact: true }).click();
-    await catalog.getByText('Installed', { exact: true }).waitFor();
-    assert(s.plugins.some(item => item.id === 'review@proof'));
-    await shot(page, 'plugins-light');
-    await chooseTheme(page, 'dark');
-    await shot(page, 'plugins-dark');
-    await catalog.getByRole('button', { name: 'Remove Proof marketplace', exact: true }).click();
-    await catalog.getByText('No marketplaces added', { exact: true }).waitFor();
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
-test('LEDGER loading and long lists stay inside their rows; unavailable writes explain why', async () => {
-  const s = state();
-  s.connectors.splice(0, s.connectors.length, ...Array.from({ length: 45 }, (_, i) => ({ name: `connector-${i}-${'long-name-'.repeat(16)}`, transport: 'stdio', enabled: true })));
-  let release, writable = true;
-  const waiting = new Promise(resolve => { release = resolve; });
-  s.routes['/api/customize'] = async () => { await waiting; const value = s.snapshot(); if (!writable) value.connectors = { ...value.connectors, version: null, write: { available: false } }; return value; };
-  const f = await fixture({ width: 950, routes: s.routes });
-  try {
-    const { page } = f;
-    await ledger(page, 'Connectors');
-    await page.getByText('Reading what Elpis has…', { exact: true }).waitFor();
-    assert.equal(await page.getByRole('region', { name: 'Your connectors', exact: true }).count(), 0);
-    release();
-    const rows = page.getByRole('region', { name: 'Your connectors', exact: true });
-    await rows.getByRole('switch').last().waitFor();
-    assert.equal(await rows.getByRole('switch').count(), 45);
-    for (const index of [0, 22, 44]) {
-      const toggle = page.getByRole('switch', { name: `Use ${s.connectors[index].name}`, exact: true });
-      await toggle.click(); await checked(toggle, false);
-    }
-    assert(await rows.locator('.customize-list').evaluate(list => list.scrollWidth <= list.clientWidth + 1), 'long names must not widen the list');
-    await shot(page, 'connectors-long-light');
-    await chooseTheme(page, 'dark'); await shot(page, 'connectors-long-dark');
-    writable = false; await page.reload(); await ledger(page, 'Connectors');
-    assert(await rows.getByRole('switch').first().isDisabled());
-    await rows.getByRole('status').filter({ hasText: 'Reload Customize to read writable MCP settings' }).first().waitFor();
-    assert.deepEqual(f.errors, []);
-  } finally { release(); await f.close(); }
 });

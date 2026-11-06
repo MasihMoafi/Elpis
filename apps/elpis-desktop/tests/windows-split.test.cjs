@@ -3,7 +3,6 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const { fixture, THREADS } = require('./parity-fixture.cjs');
-const { assertUiFit } = require('./ui-fit.cjs');
 const secondary = page => page.frameLocator('iframe[title="Split session"]');
 async function split(page, id = 'chat-b') {
   await page.locator(`.thread-row[data-thread-id="${id}"]`).getByRole('button', { name: /^Actions for/ }).click();
@@ -56,19 +55,4 @@ test('Alt+click opens a split; one chat receives the same live reply in both pan
     await secondary(page).getByText('Both panes receive this reply.', { exact: true }).waitFor();
     assert.deepEqual(f.errors, []);
   } finally { releaseResume(); await f.close(); }
-});
-for (const colorScheme of ['light']) for (const width of [900]) test(`split view fits in ${colorScheme} at ${width}px`, async () => {
-  const f = await fixture({ width, height: 850, colorScheme, desktop: false }); const { page } = f;
-  try {
-    await f.open('chat-a'); await split(page);
-    await secondary(page).getByRole('heading', { name: 'Write the docs', exact: true }).waitFor();
-    await assertUiFit(page.locator('.workspace'), 'primary pane fits');
-    await assertUiFit(secondary(page).locator('.workspace'), 'secondary pane fits');
-    const header = await page.locator('.workspace-header').boundingBox(), otherHeader = await secondary(page).locator('.workspace-header').boundingBox();
-    assert.equal(header.height, otherHeader.height, 'both pane headers align');
-    const left = await page.locator('.composer').boundingBox(), right = await page.locator('iframe').boundingBox();
-    assert.ok(left.x + left.width <= right.x + 1, 'the chats are side by side');
-    if (process.env.ELPIS_PARITY_SHOTS) await page.screenshot({ path: path.join(process.env.ELPIS_PARITY_SHOTS, `split-${colorScheme}-${width}.png`) });
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
 });

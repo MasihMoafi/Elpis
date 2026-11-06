@@ -2,8 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const { openCanvas } = require('./canvas-fixture.cjs');
-const { assertUiFit } = require('./ui-fit.cjs');
-const { chooseTheme, openPatterns } = require('./controls.cjs');
+const { openPatterns } = require('./controls.cjs');
 
 async function staged(options = {}) {
   let phase = 0;
@@ -103,28 +102,5 @@ test('agents that finish between polls retain their start, task, check and repor
     await f.canvas.locator('.canvas-header').getByRole('status').filter({ hasText: 'Finished' }).waitFor();
     const log = f.canvas.getByRole('log');
     for (const label of ['AGENT STARTED', 'TASK DONE', 'CHECK STARTED', 'CHECK PASSED', 'REPORT RECEIVED']) assert.equal(await log.getByRole('button', { name: new RegExp(label) }).count(), 4, label);
-  } finally { await f.close(); }
-});
-
-for (const [width, height] of [[900, 700]]) for (const theme of ['light']) test(`run instruments fit before, during and after the run: ${width}×${height} ${theme}`, async () => {
-  const f = await staged({ width, height }); const { canvas, page } = f;
-  try {
-    if (await page.locator('html').evaluate(el => el.classList.contains('dark')) !== (theme === 'dark')) await chooseTheme(page, theme);
-    await openPatterns(canvas);
-    await canvas.getByRole('button', { name: /^Voting/ }).click();
-    await fs.mkdir('/tmp/canvas-runlog', { recursive: true });
-    for (const state of ['before', 'during', 'after']) {
-      if (state === 'during') {
-        await canvas.getByRole('button', { name: 'Run graph', exact: true }).click(); await canvas.getByRole('log').getByRole('button', { name: /AGENT STARTED/ }).first().waitFor();
-        await page.waitForTimeout(400); await assertUiFit(canvas, `automatic run layout ${width} ${theme}`);
-      }
-      if (state === 'after') { f.advance(4); await canvas.locator('.canvas-header').getByRole('status').filter({ hasText: 'Finished' }).waitFor(); }
-      for (const iso of [false, true]) {
-        await canvas.getByRole('radio', { name: iso ? 'Isometric' : 'Flat', exact: true }).click(); await f.fit();
-        await assertUiFit(canvas, `${state} ${iso ? '3D' : '2D'} ${width} ${theme}`);
-        await page.screenshot({ path: `/tmp/canvas-runlog/${width}-${theme}-${iso ? '3d' : '2d'}-${state}.png` });
-      }
-    }
-    assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

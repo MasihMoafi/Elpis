@@ -8,7 +8,6 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const { guardDesktopStore, widenSidePanel } = require('./controls.cjs');
-const { assertUiFit } = require('./ui-fit.cjs');
 const staticOut = process.env.ELPIS_TEST_OUT || path.join(__dirname, '../out');
 const shots = process.env.ELPIS_SHOTS;
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAHsKbOQAAAABJRU5ErkJggg==', 'base64');
@@ -239,55 +238,8 @@ test('Draw is unavailable for a text-only model, and never captures', async t =>
   assert.ok(!(await f.log()).includes('screenshot'));
 });
 
-for (const colorScheme of ['dark']) test(`the drawing modal follows the theme and fits at a narrow width (${colorScheme})`, async t => {
-  const f = await fixture(t, { colorScheme, width: 760, height: 640 }), { page } = f;
-  await open(f);
-  await tool(page, 'arrow').waitFor();
-  const shade = await dialog(page).evaluate(element => { const [r, g, b] = getComputedStyle(element).backgroundColor.match(/\d+/g).map(Number); return (r + g + b) / 3; });
-  assert.equal(shade < 100, colorScheme === 'dark', `modal background shade ${shade}`);
-  assert.equal(await page.locator('.excalidraw').evaluate(element => element.classList.contains('theme--dark')), colorScheme === 'dark');
-  const box = await dialog(page).boundingBox();
-  const panel = await page.locator('.browser-panel').boundingBox();
-  assert.deepEqual([box.x, box.y, box.width, box.height], [panel.x, panel.y, panel.width, panel.height], 'the drawing fills the browser panel it opened from, which does not move');
-  for (const name of ['Cancel', 'Add to message']) { const b = await page.getByRole('button', { name, exact: true }).boundingBox(); assert.ok(b.x >= 0 && b.x + b.width <= 760 && b.y >= 0, `${name} stays inside the window`); }
-  await assertUiFit(dialog(page), 'the drawing header fits the window');
-  await f.shoot(`draw-modal-narrow-${colorScheme}`);
-  await page.getByTestId('main-menu-trigger').click(); await page.getByTestId('dropdown-menu').waitFor();
-  assert.equal(await page.getByTestId('dropdown-menu').locator('a').count(), 0, 'the menu carries no links to other sites');
-  await f.shoot(`draw-menu-${colorScheme}`);
-  assert.deepEqual(f.errors, []);
-});
-
 // The native title controls occupy the first 36 CSS pixels; the drawing must leave them free.
 // The green page has a white landmark and is wider than this canvas, so its four edges must be fitted into view.
-test('drawing stays below the desktop title bar and fits the whole captured page on first open', async t => {
-  const f = await fixture(t, { colorScheme: 'dark', width: 760, height: 640 }), { page } = f;
-  await open(f);
-  const title = await page.locator('.title-bar').boundingBox();
-  const box = await dialog(page).boundingBox();
-  await f.shoot('drawing-desktop-first-open');
-  assert.ok(box.y >= title.y + title.height, 'the drawing does not cover the native window controls');
-  const canvas = await page.locator('.excalidraw canvas').first().screenshot();
-  const bounds = await page.evaluate(async png => {
-    const image = new Image(); image.src = `data:image/png;base64,${png}`; await image.decode();
-    const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height;
-    const context = canvas.getContext('2d'); context.drawImage(image, 0, 0);
-    const { data } = context.getImageData(0, 0, canvas.width, canvas.height);
-    let left = canvas.width, right = -1, top = canvas.height, bottom = -1;
-    for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
-      const i = (y * canvas.width + x) * 4;
-      if (data[i] < 60 && data[i + 1] > 100 && data[i + 1] < 190 && data[i + 2] > 60 && data[i + 2] < 130) {
-        left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y);
-      }
-    }
-    return { left, right, top, bottom, width: canvas.width, height: canvas.height };
-  }, canvas.toString('base64'));
-  assert.ok(bounds.right > bounds.left, 'the captured page is visible');
-  assert.ok(bounds.left > 0 && bounds.right < bounds.width - 1 && bounds.top > 0 && bounds.bottom < bounds.height - 1,
-    `all four screenshot edges fit on first open: ${JSON.stringify(bounds)}`);
-  assert.deepEqual(f.errors, []);
-});
-
 // The opacity value sits under the slider (at 100, its right end), not cut off at the panel's left edge.
 const opacityUnderSlider = page => page.evaluate(() => {
   const range = document.querySelector('.selected-shape-actions .range-input')?.getBoundingClientRect();

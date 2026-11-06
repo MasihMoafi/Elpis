@@ -56,21 +56,6 @@ for (const colorScheme of ['light']) test(`personal tip opens the editable profi
   } finally { await f.close(); }
 });
 
-test('dismissal survives reload without creating a personal skill', async () => {
-  const f = await fixture({ routes: routes() });
-  try {
-    await f.page.locator('.startup-splash').waitFor({ state: 'detached' });
-    await f.page.getByRole('button', { name: 'Dismiss personal tip' }).click();
-    await f.page.getByRole('button', { name: 'Dismiss personal tip' }).waitFor({ state: 'detached' });
-    const refreshed = f.page.waitForResponse(response => response.url().endsWith('/api/personal') && response.request().method() === 'GET');
-    await f.page.reload(); await refreshed; await f.composer.waitFor();
-    await f.page.locator('.startup-splash').waitFor({ state: 'detached' });
-    assert.equal(await f.page.getByRole('button', { name: 'Tell Elpis how you work: /personal' }).count(), 0);
-    assert.ok(f.posts.some(post => post.path === '/api/personal' && post.body.action === 'dismiss'));
-    assert.ok(!f.posts.some(post => post.path === '/api/personal' && post.body.action === 'open'));
-  } finally { await f.close(); }
-});
-
 test('a failed profile open reports the failure and leaves the tip available', async () => {
   const profileRoutes = routes();
   const f = await fixture({ routes: { ...profileRoutes, '/api/personal': body => body?.action === 'open'

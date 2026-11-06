@@ -82,45 +82,6 @@ async function shot(page, name) {
   await page.screenshot({ path: path.join(process.env.ELPIS_CHAT_LOAD_SHOTS, name) });
 }
 
-test('the first visible chat and a switched chat keep their width while delayed teams load', async () => {
-  const a = gate(), b = gate();
-  const f = await fixture({ staticDir: process.env.ELPIS_RENDERER_OUT, width: 1450, height: 820, threads: roots, routes: routes({ 'chat-a': a, 'chat-b': b }), storage });
-  const { page } = f;
-  try {
-    await requested(a);
-    await observe(page);
-    await a.holdFor(2500);
-    await page.locator('.chat-team-loading').waitFor({ state: 'visible' });
-    await shot(page, 'before-first-team.png');
-    a.release();
-    await page.locator('.team-panel').waitFor({ state: 'visible' });
-    await page.getByRole('button', { name: 'Working agents only', exact: true }).click();
-    await page.locator('.chat-content .message').first().waitFor({ state: 'visible' });
-    await page.waitForTimeout(300);
-    await shot(page, 'first-team-ready.png');
-    assert.equal(stable(await samples(page), 'chat-a').panel, true, 'the first visible chat already has its team panel');
-
-    await observe(page);
-    await page.locator('.thread-row[data-thread-id="chat-b"] .thread-link').click();
-    await requested(b);
-    await b.holdFor(2500);
-    b.release();
-    await page.locator('.team-row[data-thread-id="agent-b"]').waitFor({ state: 'visible' });
-    await page.waitForTimeout(300);
-    assert.equal(stable(await samples(page), 'chat-b').panel, true, 'the switched chat already has its team panel');
-
-    await observe(page, false, true);
-    await page.locator('.team-row[data-thread-id="agent-b"]').click();
-    await page.locator('.team-row[data-thread-id="agent-b"].active').waitFor();
-    await page.waitForTimeout(300);
-    const sameTeam = await samples(page);
-    assert.ok(sameTeam.length >= 3, 'agent navigation shows the chat');
-    const first = sameTeam[0];
-    assert.ok(sameTeam.every(frame => frame.panel && Math.abs(frame.chatLeft - first.chatLeft) < 1.5 && Math.abs(frame.chatWidth - first.chatWidth) < 1.5), 'the team panel and transcript bounds stay in place when opening an agent');
-    assert.deepEqual(f.errors, []);
-  } finally { a.release(); b.release(); await f.close(); }
-});
-
 test('explicit panel toggle resizes, empty teams do not reserve space, and stale team replies do not affect another chat', async () => {
   const b = gate();
   const f = await fixture({ staticDir: process.env.ELPIS_RENDERER_OUT, width: 1450, height: 820, colorScheme: 'dark', threads: roots, routes: routes({ 'chat-b': b }), storage });

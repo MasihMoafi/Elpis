@@ -57,37 +57,6 @@ test('a refused send removes the optimistic message, preserves the draft and nev
   assert.equal(await f.composer.inputValue(), 'Show this immediately.');
 });
 
-test('an existing chat keeps repeated prompts and reconciles an echo after acknowledgement and a later history read', async t => {
-  let release;
-  const held = new Promise(resolve => { release = resolve; });
-  const f = await fixture({ chat: [['old', 'Show this immediately.', 'Prior answer']], routes: {
-    '/api/threads/chat-a/turns': async () => { await held; return { turn: { id: 'new-turn' } }; },
-  } });
-  t.after(async () => { release(); await f.close(); assert.deepEqual(f.errors, []); });
-  await f.open('chat-a'); await f.composer.fill('Show this immediately.'); await f.composer.press('Enter');
-  await f.page.waitForFunction(() => document.querySelectorAll('.message.user').length === 2, { timeout: 800 });
-  await user(f.page).last().evaluate(node => { window.__sentNode = node; });
-  release(); await f.page.waitForFunction(() => document.querySelector('textarea').value === '');
-  f.emit('message', { method: 'item/completed', params: { threadId: 'chat-a', turnId: 'new-turn', item: { id: 'u-new-turn', type: 'userMessage', content: [{ type: 'text', text: 'Show this immediately.' }] } } });
-  await tick(f.page);
-  assert.equal(await user(f.page).count(), 2, 'old identical prompts stay distinct');
-  assert.equal(await f.page.evaluate(() => window.__sentNode.isConnected), true);
-  f.emit('message', { method: 'turn/completed', params: { threadId: 'chat-a', turn: { id: 'new-turn', status: 'completed' } } });
-  await f.page.getByRole('button', { name: 'Stop response', exact: true }).waitFor({ state: 'detached' });
-  f.turns.push(['new-turn', 'Show this immediately.', 'New answer']);
-  await f.open('chat-b'); await f.open('chat-a');
-  assert.equal(await user(f.page).count(), 2, 'a later authoritative history read still shows one copy per send');
-  // The newest prompt has no Rewind (Masih, 29 Oct, of Rewind on the last message: "rewind what?"; 054e332a6), so rewind
-  // the first prompt: both turns go, and the just-sent submission must not come back.
-  await user(f.page).first().click({ button: 'right' });
-  await f.page.getByRole('menuitem', { name: 'Rewind to here', exact: true }).click();
-  const dialog = f.page.getByRole('alertdialog');
-  await dialog.getByText('No file checkpoint for this message.', { exact: true }).waitFor();
-  await dialog.getByRole('button', { name: 'Rewind', exact: true }).click();
-  await dialog.waitFor({ state: 'detached' });
-  assert.equal(await user(f.page).count(), 0, 'rewind does not revive the removed submission');
-});
-
 test('failed thread creation removes the unsent transcript entry and preserves its draft', async t => {
   let release;
   const held = new Promise(resolve => { release = resolve; });

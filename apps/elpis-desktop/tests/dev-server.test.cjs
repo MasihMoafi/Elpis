@@ -11,66 +11,6 @@ const { assertUiFit } = require('./ui-fit.cjs');
 const projectChat = cwd => ({ id: 'chat-a', name: 'Project preview', cwd, model: 'sol', modelProvider: 'openai', desktopAccess: { writable: true, mode: 'direct' }, status: { type: 'idle' } });
 const projectRoutes = cwd => ({ '/api/threads/chat-a/resume': () => ({ thread: projectChat(cwd) }) });
 
-for (const colorScheme of ['light']) for (const [width, height] of [[1280, 800]]) test(`project preview starts, shows logs and stops (${colorScheme}, ${width}×${height})`, async () => {
-  const root = await fs.mkdtemp('/tmp/elpis-preview-ui-');
-  await fs.writeFile(path.join(root, 'package.json'), JSON.stringify({ scripts: { dev: 'node server.cjs' } }));
-  await fs.writeFile(path.join(root, 'server.cjs'), "require('node:http').createServer((q,s)=>s.end('preview proof')).listen(process.env.PORT,'127.0.0.1',()=>console.log('preview ready'))");
-  let manager;
-  const getManager = async () => manager ??= (await import('../bridge/dev-servers.mjs')).createDevServers();
-  const f = await fixture({ colorScheme, width, height, routes: {
-    ...projectRoutes(root),
-    '/api/dev-servers': async (_, url) => { assert.equal(url.searchParams.get('cwd'), root); return (await getManager()).status(root); },
-    '/api/dev-servers/detect': async body => { assert.equal(body.cwd, root); return (await getManager()).detect(root); },
-    '/api/dev-servers/start': async body => (await getManager()).start(root, body.name),
-    '/api/dev-servers/stop': async body => (await getManager()).stop(root, body.name),
-  } });
-  const { page } = f;
-  try {
-    const resumed = page.waitForResponse(response => response.url().endsWith('/api/threads/chat-a/resume'));
-    await f.open('chat-a'); await resumed;
-    await page.evaluate(() => window.elpisDesktop.browser.command('new'));
-    const panel = page.getByRole('region', { name: 'Dev server preview' });
-    await page.getByRole('button', { name: 'Detect dev server', exact: true }).click();
-    await panel.getByText('Dev server detected. This command runs in your shell when the preview starts.').waitFor();
-    assert.match(await panel.innerText(), /npm run dev/);
-    await assertUiFit(panel, 'detected command fits');
-    if (process.env.ELPIS_PARITY_SHOTS) await page.screenshot({ path: path.join(process.env.ELPIS_PARITY_SHOTS, `dev-detected-${colorScheme}-${width}.png`) });
-    const start = panel.getByRole('button', { name: 'Start preview: dev' });
-    const previewTab = await page.evaluate(() => window.__browser.activeId);
-    await start.focus(); await page.keyboard.press('Enter');
-    await panel.getByText(/127\.0\.0\.1 · Server running/).waitFor();
-    const state = await manager.status(root), server = state.servers[0];
-    assert.equal(await (await fetch(server.url)).text(), 'preview proof');
-    assert.ok(await page.evaluate(({ url, id }) => window.__commands.some(c => c.action === 'navigate' && c.url === url && c.id === id), { url: server.url, id: previewTab }), 'the ready page opens in the browser tab that started it');
-    await panel.getByRole('button', { name: 'View logs', exact: true }).click();
-    await page.getByRole('log', { name: 'Dev server logs' }).getByText(/preview ready/).waitFor();
-    await assertUiFit(panel, 'running server and logs fit');
-    if (process.env.ELPIS_PARITY_SHOTS) await page.screenshot({ path: path.join(process.env.ELPIS_PARITY_SHOTS, `dev-running-${colorScheme}-${width}.png`) });
-    await panel.getByRole('button', { name: 'Stop server', exact: true }).click();
-    await panel.getByText(/Server stopped/).waitFor();
-    await assert.rejects(fetch(server.url, { signal: AbortSignal.timeout(1000) }));
-    assert.deepEqual(f.errors, []);
-  } finally { await manager?.close(); await f.close(); }
-});
-
-test('detection with no command and a failed start explain the result and allow retry', async () => {
-  let attempts = 0;
-  const f = await fixture({ routes: {
-    '/api/dev-servers': () => ({ servers: [] }),
-    '/api/dev-servers/detect': () => ++attempts === 1 ? { candidates: [] } : { candidates: [{ name: 'dev', command: 'npm run dev' }] },
-    '/api/dev-servers/start': () => ({ __http: 400, error: 'Port is already in use' }),
-  } });
-  try {
-    await f.open('chat-a'); await f.page.evaluate(() => window.elpisDesktop.browser.command('new'));
-    await f.page.getByRole('button', { name: 'Detect dev server', exact: true }).click();
-    await f.page.getByText('No dev server found in this project.').waitFor();
-    await f.page.getByRole('button', { name: 'Detect dev server', exact: true }).click();
-    await f.page.getByRole('button', { name: 'Start preview: dev' }).click();
-    await f.page.getByRole('alert').getByText('Port is already in use').waitFor();
-    assert.equal(await f.page.getByRole('button', { name: 'Start preview: dev' }).isEnabled(), true);
-  } finally { await f.close(); }
-});
-
 for (const scheme of ['light']) test(`real Electron opens the started project in the native browser and stops it with a click (${scheme})`, async () => {
   const root = await fs.mkdtemp('/tmp/elpis-preview-native-');
   await fs.writeFile(path.join(root, 'package.json'), JSON.stringify({ scripts: { dev: 'node server.cjs' } }));

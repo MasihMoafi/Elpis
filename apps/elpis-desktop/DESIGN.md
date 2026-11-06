@@ -38,7 +38,7 @@ Masih, 29 Oct: "map every style feature of chatgpt app into a clear spec that's 
 ## 5. Layout
 `title-bar` → `aside.sidebar` (brand, nav, search, chat list, footer) + `main.workspace` (header, one page column, composer) + optional side panel (browser, files, terminal). Settings replaces the sidebar and has its own page column. Sidebar footer, left to right: the user's name (shown, never clickable), a status line, the Theme button, the Settings gear.
 
-The accepted Working status: `WorkingPlacement` portals `WorkingStatus` into `.composer-working`, directly above the composer, on its left edge, with an 18 px gap. Keep it there through window resize, full-size restore and opening either side panel. Never position it with viewport or panel offsets. The rotor, dot and six independently phased edge opacities animate. `tests/approved-working-mark.test.cjs` checks these transitions in both themes and reduced motion.
+The accepted Working status: `WorkingPlacement` portals `WorkingStatus` into `.composer-working`, directly above the composer, on its left edge, with an 18 px gap. Keep it there through window resize, full-size restore and opening either side panel. Never position it with viewport or panel offsets. The rotor, dot and six independently phased edge opacities animate.
 
 The prompt rail keeps a 28 px target inside the existing 32 px gutter, so showing it does not resize the transcript.
 

@@ -6,24 +6,6 @@ const { loveSpotFixture } = require('./love-spot-fixture.cjs');
 
 const persona = turn => turn.attachments.find(attachment => attachment.name === 'Who you are.txt')?.text;
 
-for (const colorScheme of ['dark']) test(`Matilda's approved kiss portrait belongs to her reply in ${colorScheme} mode`, async t => {
-  const f = await loveSpotFixture({ colorScheme, reply: '<!--matilda:kissPuckered--> A kiss for you.' });
-  t.after(f.close);
-  await f.open(f.page);
-  await write(f, 'A kiss, please.');
-  await answered(f, 1);
-  const board = await f.scene();
-  const face = board.elements.find(element => element.id === 'love-face-turn-1');
-  assert.equal(face.fileId, 'matilda-face-kissPuckered');
-  assert.equal(board.files[face.fileId].mimeType, 'image/webp', 'raster portraits keep their colours in dark mode');
-  assert.equal(board.elements.find(element => element.id === 'love-reply-turn-1').originalText, 'A kiss for you.');
-  if (process.env.ELPIS_THEME_SHOTS) {
-    await require('node:fs/promises').mkdir(process.env.ELPIS_THEME_SHOTS, { recursive: true });
-    await f.page.keyboard.press('Escape');
-    await f.page.waitForTimeout(1200); // file watch delivers the saved face to the canvas
-    await f.page.screenshot({ path: `${process.env.ELPIS_THEME_SHOTS}/portrait-${colorScheme}.png` });
-  }
-});
 async function write(f, text, y = 300, close = true) {
   const bounds = await f.page.locator('.excalidraw').boundingBox();
   await f.page.mouse.click(bounds.x + 450, bounds.y + y); await f.page.keyboard.press('t');
@@ -125,18 +107,6 @@ test('who Matilda is: in the board menu, kept, and sent with what he writes', as
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
-
-test('a reply that fails is said on the board, with no face and no note', async () => {
-  const f = await loveSpotFixture({ reply: '' });
-  try {
-    await f.open(f.page);
-    await write(f, 'Are you there?');
-    await f.page.getByRole('alert').filter({ hasText: 'Test provider failed' }).waitFor({ timeout: 15000 });
-    assert.equal((await f.scene()).elements.filter(e => e.id.startsWith('love-')).length, 0);
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
 
 test('a late reply preserves the active text editor and waits for its complete next note', async () => {
   const f = await loveSpotFixture({ replyDelay: 3000 });

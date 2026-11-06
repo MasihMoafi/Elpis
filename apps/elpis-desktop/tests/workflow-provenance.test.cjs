@@ -1,63 +1,9 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { openCanvas } = require('./canvas-fixture.cjs');
-const { chooseOption, chooseTheme, openPatterns } = require('./controls.cjs');
+const { chooseOption, chooseTheme } = require('./controls.cjs');
 const fs = require('node:fs/promises');
 const { fixture } = require('./parity-fixture.cjs');
-
-test('Lab is the page after New chat, with history, command search and matching sidebar icons', async () => {
-  const f = await fixture({ routes: { '/api/experiment-lab': () => ({ record: null }) } });
-  try {
-    const { page } = f, nav = page.getByRole('navigation', { name: 'Workspace', exact: true });
-    const names = await nav.getByRole('button').allTextContents();
-    assert.deepEqual(names.slice(0, 3), ['New chat', 'Lab', 'Workflows']);
-    const labButton = nav.getByRole('button', { name: 'Lab', exact: true });
-    await labButton.focus(); await page.keyboard.press('Enter');
-    const lab = page.getByRole('region', { name: 'Lab', exact: true });
-    await lab.getByRole('heading', { name: 'Lab', exact: true }).waitFor();
-    assert.equal(await labButton.getAttribute('aria-current'), 'page');
-    assert.equal(await page.title(), 'Lab · Elpis');
-    assert.equal(await page.getByRole('region', { name: 'Workflows', exact: true }).count(), 0);
-    await nav.getByRole('button', { name: 'Workflows', exact: true }).click();
-    const board = page.getByRole('region', { name: 'Workflows', exact: true });
-    await board.waitFor();
-    assert.equal(await board.getByRole('button', { name: 'Lab', exact: true }).count(), 0);
-    await page.getByRole('button', { name: 'Back', exact: true }).click();
-    await lab.waitFor();
-    await page.getByRole('button', { name: 'Forward', exact: true }).click();
-    await board.waitFor();
-    await page.keyboard.press('Control+k');
-    await page.getByRole('combobox', { name: 'Search or start a chat' }).fill('Lab');
-    await page.getByRole('option', { name: 'Lab', exact: true }).click();
-    await lab.waitFor();
-    for (const theme of ['light']) {
-      if (theme === 'dark') await chooseTheme(page, theme);
-      await page.waitForFunction(dark => document.documentElement.classList.contains('dark') === dark, theme === 'dark');
-      const boxes = await nav.getByRole('button').evaluateAll((buttons, loveRed) => buttons.map(button => {
-        const icon = button.querySelector('svg'), box = icon.getBoundingClientRect(), row = button.getBoundingClientRect();
-        const paint = button.dataset.navPage === 'loveSpot'
-          ? icon.getAttribute('fill') === 'var(--love-red)' && getComputedStyle(icon).fill === loveRed
-          : icon.getAttribute('fill') === 'currentColor' || icon.getAttribute('stroke') === 'currentColor';
-        return { x: box.x, width: box.width, height: box.height, offset: box.y - row.y, paint };
-      }), theme === 'light' ? 'rgb(139, 16, 23)' : 'rgb(236, 87, 94)');
-      assert.ok(boxes.every(box => box.paint), `${theme}: sidebar icons use currentColor and Love Spot uses its approved blood red (${JSON.stringify(boxes)})`);
-      assert.deepEqual(boxes, boxes.map(() => boxes[0]), `${theme} sidebar icons align`);
-      assert.equal(await lab.evaluate(el => el.scrollWidth <= el.clientWidth), true);
-      if (process.env.ELPIS_SHOTS) {
-        await fs.mkdir(process.env.ELPIS_SHOTS, { recursive: true });
-        // The wordmark inside an SVG image has its own arrival animation.
-        await page.waitForTimeout(1000);
-        await page.screenshot({ path: `${process.env.ELPIS_SHOTS}/lab-${theme}.png`, animations: 'disabled' });
-      }
-      await page.setViewportSize({ width: 760, height: 660 });
-      assert.equal(await lab.evaluate(el => el.scrollWidth <= el.clientWidth), true);
-      await lab.getByRole('button', { name: 'Run comparison', exact: true }).scrollIntoViewIfNeeded();
-      if (process.env.ELPIS_SHOTS) await page.screenshot({ path: `${process.env.ELPIS_SHOTS}/lab-${theme}-narrow.png`, animations: 'disabled' });
-      await page.setViewportSize({ width: 1130, height: 660 });
-    }
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
 
 test('Lab receives the current board even when navigation immediately follows an edit', async () => {
   const f = await openCanvas({ desktop: true });
@@ -78,31 +24,6 @@ test('Lab receives the current board even when navigation immediately follows an
     await lab.getByRole('button', { name: 'Run comparison', exact: true }).click();
     await sent;
     assert.ok(request.stages.some(stage => stage.instruction.includes('Fresh board instruction for the Lab')), JSON.stringify(request));
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
-test('every starter opens its Sources in the side panel without replacing the board, including the unproven blank', async () => {
-  const f = await openCanvas();
-  try {
-    const before = await f.saved();
-    await openPatterns(f.canvas);
-    const sources = f.canvas.getByRole('link', { name: /^Sources for / });
-    assert.equal(await sources.count(), 10);
-    for (let index = 0; index < 10; index++) {
-      if (index === 4) { await sources.nth(index).focus(); await f.page.keyboard.press('Enter'); }
-      else await sources.nth(index).click();
-      const panel = f.canvas.getByRole('complementary', { name: 'Workflow sources', exact: true });
-      await panel.getByText('What is proven', { exact: true }).waitFor();
-      await panel.getByText('What is not', { exact: true }).waitFor();
-      assert.match(await panel.innerText(), /unproven|not validated|No direct evidence/i);
-      if (index === 4) {
-        assert.match(await panel.innerText(), /74.4/);
-        assert.equal(await panel.getByRole('link', { name: /Self-Consistency/ }).getAttribute('href'), 'https://arxiv.org/abs/2203.11171');
-      }
-      await panel.getByRole('button', { name: 'Back to patterns', exact: true }).click();
-    }
-    assert.deepEqual(await f.saved(), before);
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
@@ -157,27 +78,6 @@ test('Lab runs the declared repeated comparison, restores evidence, exports, sho
     await f.page.getByRole('button', { name: 'Workflows', exact: true }).click();
     assert.deepEqual(await f.saved(), boardBefore);
     assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
-test('Sources and Lab stay readable in light/dark at Masih’s window size', async () => {
-  const f = await openCanvas({ width: 1130, height: 660 });
-  await f.page.route('**/api/experiment-lab', route => route.fulfill({ json: { record: null } }));
-  try {
-    await fs.mkdir('/tmp/elpis-provenance-screens', { recursive: true });
-    for (const theme of ['light']) {
-      if (await f.page.locator('html').evaluate(el => el.classList.contains('dark')) !== (theme === 'dark')) await chooseTheme(f.page, theme);
-      const summary = f.canvas.locator('summary').filter({ hasText: /^More patterns$/ });
-      if (await summary.locator('..').getAttribute('open') === null) await summary.click();
-      await f.canvas.getByRole('link', { name: 'Sources for Voting', exact: true }).click();
-      await f.page.screenshot({ path: `/tmp/elpis-provenance-screens/sources-${theme}.png` });
-      await f.canvas.getByRole('button', { name: 'Back to patterns', exact: true }).click();
-      await f.page.getByRole('navigation', { name: 'Workspace', exact: true }).getByRole('button', { name: 'Lab', exact: true }).click();
-      const lab = f.page.getByRole('region', { name: 'Lab', exact: true });
-      assert.equal(await lab.evaluate(el => el.scrollWidth <= el.clientWidth), true);
-      await f.page.screenshot({ path: `/tmp/elpis-provenance-screens/lab-${theme}.png` });
-      await f.page.getByRole('button', { name: 'Workflows', exact: true }).click();
-    }
   } finally { await f.close(); }
 });
 

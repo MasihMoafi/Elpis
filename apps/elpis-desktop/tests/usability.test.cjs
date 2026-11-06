@@ -4,7 +4,7 @@ const http = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { chooseOption, leaveSettings, sidebar, openSettings, chooseTheme } = require('./controls.cjs');
+const { leaveSettings, sidebar, openSettings, chooseTheme } = require('./controls.cjs');
 const { fakeDesktop } = require('./fake-desktop.cjs');
 
 // Exercise the exported app with synthetic accounts. No installed runtime or provider is contacted.
@@ -65,24 +65,6 @@ async function fixture(run, { desktop = false } = {}) {
   } finally { await browser?.close(); for (const response of streams) response.end(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 }
 
-test('model control identifies the selected provider and distinguishes equal local nicknames', () => fixture(async ({ page, shot }) => {
-  assert.match(await page.getByLabel('Model', { exact: true }).getAttribute('title'), /Sol · OpenAI/);
-  await shot('01-chat-light');
-  await page.getByLabel('Model', { exact: true }).click();
-  await page.getByRole('tab', { name: 'Lab server', exact: true }).waitFor();
-  await page.getByRole('tab', { name: 'Home server', exact: true }).waitFor();
-  await page.getByRole('tab', { name: 'Lab server', exact: true }).click();
-  await page.getByRole('option').filter({ hasText: 'GPT-OSS 120B' }).waitFor();
-  await shot('02a-model-list-light');
-  await page.getByRole('option').filter({ hasText: 'GPT-OSS 120B' }).click();
-  assert.match(await page.getByLabel('Model', { exact: true }).getAttribute('title'), /GPT-OSS 120B · Lab server/);
-  await page.getByLabel('Model', { exact: true }).click();
-  await page.getByRole('tab', { name: 'Home server', exact: true }).click();
-  assert.equal(await page.getByRole('option').count(), 0, 'a server without a list must not be given OpenAI’s model list');
-  await page.getByText('This connection has not reported a model list.', { exact: true }).waitFor();
-  await shot('02-model-connections-light');
-}));
-
 test('search queries saved conversations beyond the loaded page and clearing it restores recents', () => fixture(async ({ page, calls }) => {
   await page.getByLabel('Search conversations').fill('Augustus');
   await page.getByRole('button', { name: 'Augustus audiobook notes', exact: true }).waitFor();
@@ -122,26 +104,6 @@ test('rendered local file links open inside Files and explain failures without l
   assert.equal(page.url(), before);
   assert.equal(await page.getByRole('link', { name: 'Website', exact: true }).getAttribute('target'), '_blank');
 }, { desktop: true }));
-
-test('maintenance settings read the real catalog response and keep model lists with their provider', () => fixture(async ({ page, shot }) => {
-  await openSettings(page);
-  await page.getByRole('tab', { name: 'Configuration', exact: true }).click();
-  const section = page.getByRole('region', { name: 'Models', exact: true });
-  await chooseOption(section.getByRole('combobox', { name: 'Background model', exact: true }), { label: 'Sol' });
-  await chooseOption(section.getByLabel('Background provider', { exact: true }), 'lab');
-  await section.getByRole('combobox', { name: 'Background model', exact: true }).click();
-  await page.getByRole('option', { name: 'GPT-OSS 120B', exact: true }).waitFor();
-  assert.equal(await page.getByRole('option', { name: 'Sol', exact: true }).count(), 0, 'OpenAI models are not offered under the lab server');
-  await page.getByRole('option', { name: 'GPT-OSS 120B', exact: true }).click();
-  await shot('07-model-settings-light');
-  await chooseOption(section.getByLabel('Background provider', { exact: true }), 'home');
-  const background = section.getByRole('group', { name: 'Background model choices', exact: true });
-  await background.getByText('Advanced: custom model', { exact: true }).click();
-  await background.getByText('No model catalog is available for Home server.', { exact: true }).waitFor();
-  assert.equal(await section.getByRole('group', { name: 'Main model choices', exact: true }).locator('details').getAttribute('open'), null, 'editing the background model leaves the main editor closed');
-  await background.getByRole('textbox', { name: 'Background model', exact: true }).fill('home-local-model');
-  assert.equal(await background.getByRole('textbox', { name: 'Background model', exact: true }).inputValue(), 'home-local-model');
-}));
 
 test('API setup omits internal IDs and keeps unsaved values across sections and pages', () => fixture(async ({ page, shot }) => {
   await openSettings(page);

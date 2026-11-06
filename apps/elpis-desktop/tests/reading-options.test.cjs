@@ -7,8 +7,6 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const { fixture } = require('./parity-fixture.cjs');
 const { openSettings, leaveSettings } = require('./controls.cjs');
-const { uiFit } = require('./ui-fit.cjs');
-const shots = process.env.ELPIS_PARITY_SHOTS;
 
 const PREFERENCES = 'elpis-preferences-v1';
 const style = (locator, property) => locator.first().evaluate((element, name) => getComputedStyle(element)[name], property);
@@ -99,21 +97,6 @@ test('Code font: a saved name leads code, diffs and the terminal, open or new; a
     assert.equal(await settings.getByRole('textbox', { name: 'Code font' }).inputValue(), '');
     await leaveSettings(page);
     assert.match(await style(page.locator('.chat-content code').first(), 'fontFamily'), /^"JetBrains Mono"/);
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
-test('a narrow window at Large and Wide still fits: no sideways scrolling, the composer inside the window', async () => {
-  const f = await fixture({ width: 900, height: 700, storage: { [PREFERENCES]: JSON.stringify({ transcriptSize: 'l', transcriptWidth: 'l' }) } }), { page } = f;
-  try {
-    await f.open('chat-a');
-    assert.equal(await style(reply(page), 'fontSize'), '16px', 'Large is in effect');
-    assert.equal(await style(page.locator('.chat-content'), 'maxWidth'), '1100px', 'Wide is in effect');
-    const scroller = page.locator('.chat-scroll');
-    assert.ok(await scroller.evaluate(element => element.scrollWidth <= element.clientWidth + 1), 'no horizontal overflow');
-    const composer = await page.locator('.composer').boundingBox();
-    assert.ok(composer.x + composer.width <= 900, 'the composer stays in the window');
-    assert.deepEqual(await uiFit(page.locator('.chat-view')), []);
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

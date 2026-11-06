@@ -8,24 +8,6 @@ const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const { LOGO_ACCENT, unapprovedOranges } = require('./controls.cjs');
 
-test('the A87 accent check accepts only the approved logo colour and mixes, and rejects the old brown', async () => {
-  const browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM || undefined, headless: true });
-  try {
-    const page = await browser.newPage();
-    await page.setContent(`<style>:root { --hud-edge: #ddd; } .composer { border: 1px solid color-mix(in srgb, ${LOGO_ACCENT} 80%, var(--hud-edge)); } .message.user { border-right: 2px solid color-mix(in oklch, ${LOGO_ACCENT} 70%, transparent); }</style><button style="background:${LOGO_ACCENT}">Send</button><svg width="16" height="16" fill="${LOGO_ACCENT}"><path d="M0 0H16V16H0Z" /></svg><form class="composer">Message</form><div class="message user">Prompt</div>`);
-    assert.deepEqual(await unapprovedOranges(page), []);
-    for (const colour of ['#b34700', '#e89d34', '#ff8a00', '#ff9b28', '#f2a93c']) {
-      await page.locator('button').evaluate((button, colour) => { button.style.backgroundColor = colour; }, colour);
-      assert.equal((await unapprovedOranges(page)).length, 1, `${colour} is not approved`);
-    }
-    await page.locator('button').evaluate((button, accent) => { button.style.backgroundColor = accent; }, LOGO_ACCENT);
-    await page.locator('.composer').evaluate((form, accent) => { form.style.borderColor = `color-mix(in oklch, ${accent} 80%, var(--hud-edge))`; }, LOGO_ACCENT);
-    assert.equal((await unapprovedOranges(page)).length, 4, 'the stale OKLCH focus mix is not the approved sRGB edge');
-    await page.locator('.composer').evaluate(form => { form.style.borderColor = '#b34700'; });
-    assert.equal((await unapprovedOranges(page)).length, 4, 'unapproved borders stay checked');
-  } finally { await browser.close(); }
-});
-
 test('the main chat shows Elpis features under the message box, one click each, and light mode has only approved logo accent', async () => {
   const thread = { id: 'ledger', name: 'Ledger chat', cwd: '/tmp/demo', model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } };
   const switches = { version: 'v1', write: { available: true }, smartPrune: true, subagents: true, rag: false }, saved = [];

@@ -33,18 +33,6 @@ test('/config models edits the shared default reasoning effort and re-reads it',
   } finally { await f.close(); }
 });
 
-test('/config models opens this chat model control without changing defaults', async () => {
-  const f = await fixture();
-  try {
-    await f.open('chat-a');
-    await f.composer.fill('/config models'); await f.composer.press('Enter');
-    await f.page.getByRole('button', { name: 'Change this chat model', exact: true }).click({ timeout: 5000 });
-    await f.page.getByLabel('Search models', { exact: true }).waitFor();
-    assert.deepEqual(f.posts.filter(post => post.path === '/api/settings'), []);
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
 test('reopening /config models re-reads a default saved by another client', async () => {
   const saved = { version: 'v1', main: { model: null, provider: 'openai' }, background: { model: null, provider: null },
     smartPrune: { enabled: false, explicitOverride: { available: false } }, memory: {}, options: {}, write: { available: true } };

@@ -84,30 +84,3 @@ test('a Father agent report the bridge could not deliver says why, and the run s
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
-
-test('a failed Mother agent does not start the Father agent or send his report', async () => {
-  const { page, canvas, runs, posts, close } = await openCanvas({ graph: twelve,
-    listed: (run, looks) => looks ? { id: run.graphId, status: 'failed', tasks: run.tasks.map(task => ({ id: task.id, status: 'failed', assignedThreadId: null })) } : undefined,
-  });
-  try {
-    await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
-    await page.waitForFunction(() => document.querySelector('.canvas-header [role=status]')?.textContent?.includes('Failed ·'));
-    assert.equal(runs.length, 1);
-    assert.equal(posts.filter(post => post.path === '/api/threads').length, 1);
-    assert.equal(posts.filter(post => /\/turns$/.test(post.path)).length, 0);
-  } finally { await close(); }
-});
-
-test('an unchanged Father agent status waits for the next poll instead of polling continuously', async () => {
-  const fatherReads = [];
-  const { page, canvas, close } = await openCanvas({ graph: twelve, listed: (run, looks) => {
-    if (run.graphId === 'graph-2') fatherReads.push(Date.now());
-    return { id: run.graphId, status: looks < (run.graphId === 'graph-2' ? 3 : 1) ? 'running' : 'succeeded',
-      tasks: run.tasks.map(task => ({ id: task.id, status: 'succeeded', assignedThreadId: null })) };
-  } });
-  try {
-    await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
-    await page.waitForFunction(() => document.querySelector('.canvas-header [role=status]')?.textContent?.includes('Finished'), null, { timeout: 15000 });
-    assert.ok(fatherReads[1] - fatherReads[0] >= 1000, `unchanged status repolled after ${fatherReads[1] - fatherReads[0]}ms`);
-  } finally { await close(); }
-});

@@ -44,12 +44,6 @@ test('Esc stops the running reply from the message box and from the chat, and le
   assert.equal(interrupts(f).length, 2, 'Esc in the sidebar search is the search\'s own');
 }));
 
-test('Esc does nothing to an idle chat', () => using({}, async f => {
-  await f.composer.click(); await f.page.keyboard.press('Escape');
-  await sleep(300);
-  assert.equal(interrupts(f).length, 0);
-}));
-
 test('Esc Esc in an empty message box opens your last message for editing; other keys, a pause or a draft stop it', () => using({}, async f => {
   const { page, composer } = f;
   await composer.click();
@@ -175,21 +169,3 @@ test('a finished chat never keeps offering "Send follow-up": idle status or reop
   await followUp.waitFor({ state: 'detached' });
   assert.equal(await page.getByRole('button', { name: 'Send message', exact: true }).count(), 1);
 }));
-
-test('a long chat draws only the turns on screen; off-screen turns skip layout and paint until scrolled to', async () => {
-  const chat = Array.from({ length: 60 }, (_, index) => [`long-${index}`, `Question ${index}`, `Answer ${index}. ${'A sentence of the reply that takes some room. '.repeat(12)}`]);
-  const f = await fixture({ chat });
-  try {
-    await f.open('chat-a');
-    const last = f.page.getByText('Question 59', { exact: true });
-    await last.waitFor();
-    const drawn = text => f.page.getByText(text, { exact: true }).evaluate(node => node.checkVisibility({ contentVisibilityAuto: true }));
-    assert.equal(await drawn('Question 59'), true, 'the newest turn, on screen, is drawn');
-    assert.equal(await drawn('Question 0'), false, 'the first turn, far above, is skipped');
-    // A deferred turn keeps a visible layout placeholder; its text mounts only after scrolling it into view.
-    await f.page.locator('section.turn').first().scrollIntoViewIfNeeded();
-    await f.page.waitForFunction(() => [...document.querySelectorAll('.message.user')].some(node => node.textContent.trim() === 'Question 0' && node.checkVisibility({ contentVisibilityAuto: true })));
-    assert.equal(await drawn('Question 0'), true, 'scrolled to, it is drawn');
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});

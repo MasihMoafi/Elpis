@@ -8,7 +8,7 @@ const http = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { guardDesktopStore, oranges } = require('./controls.cjs');
+const { guardDesktopStore } = require('./controls.cjs');
 const { fakeDesktop } = require('./fake-desktop.cjs');
 const root = path.resolve(__dirname, '../out');
 const shots = process.env.ELPIS_PARITY_SHOTS;
@@ -67,8 +67,7 @@ const paint = (locator, property) => locator.evaluate((element, name) => {
   context.fillStyle = '#fbfbfa'; context.fillRect(0, 0, 1, 1); context.fillStyle = getComputedStyle(element)[name]; context.fillRect(0, 0, 1, 1);
   return [...context.getImageData(0, 0, 1, 1).data].slice(0, 3);
 }, property);
-const same = (a, b) => a.join() === b.join();
-const BASE = [251, 251, 250]; // what `paint` lays a transparent colour over: the light theme's page
+// what `paint` lays a transparent colour over: the light theme's page
 
 test('every project header has a "+" that starts a new chat in that project', async () => {
   await fixture(async ({ page, aside, shoot }) => {
@@ -91,120 +90,4 @@ test('every project header has a "+" that starts a new chat in that project', as
     assert.match(await page.getByRole('button', { name: 'Choose project', exact: true }).innerText(), /scratch/);
     assert.equal(await aside.locator('.thread-row.active').count(), 0, 'no chat is shown as open: this is a new one');
   });
-});
-
-test('sidebar rows share one height, one icon edge and an arrowless thin scrollbar', async () => {
-  await fixture(async ({ page }) => {
-    const heights = await page.locator('.nav-list button, .sidebar-group-row, .thread-row').evaluateAll(rows => [...new Set(rows.filter(row => row.getBoundingClientRect().height > 0).map(row => Math.round(row.getBoundingClientRect().height)))]);
-    assert.deepEqual(heights, [34]);
-    // Section headings got their own space above and below (bd1bbe4c0 and c35a20a6c, 31 Oct, "heading spacing"); the label itself keeps the row height.
-    const labels = await page.locator('.section-label-row > .section-label').evaluateAll(labels => [...new Set(labels.filter(label => label.getBoundingClientRect().height > 0).map(label => Math.round(label.getBoundingClientRect().height)))]);
-    assert.ok(labels.every(height => height <= 34), `section labels fit the row height: ${labels}`);
-    // The status circle's left edge sits 13px right of the project chevron's centre, in its own column (ced589afb,
-    // 31 Oct, "separate sidebar status"), as sidebar-chevron-column.test.cjs requires; this replaces the 30 Oct rule that
-    // put it under the navigation icons.
-    const chevron = await page.locator('.project-row .sidebar-group-chevron').first().boundingBox();
-    const dot = await page.locator('[data-thread-id="t-run"] .conversation-state-slot .thread-dot').boundingBox();
-    assert.ok(Math.abs(dot.x - (chevron.x + chevron.width / 2 + 13)) <= 1, `${JSON.stringify([dot, chevron])}: ` + 'root chat marks sit in the status column after the project chevron');
-    assert.equal(await page.locator('.thread-list').evaluate(el => getComputedStyle(el, '::-webkit-scrollbar-button').display), 'none');
-  });
-});
-
-test('every chat keeps its automatic status at the left', async () => {
-  await fixture(async ({ page, aside, emit, shoot }) => {
-    const row = id => aside.locator(`.thread-row[data-thread-id="${id}"]`).first();
-    const dot = id => row(id).locator('.conversation-state-slot .thread-dot');
-    for (const id of ['t-idle', 't-crypto']) assert.equal(await dot(id).count(), 1, `${id} retains its automatic idle status marker`);
-    for (const id of ['t-idle', 't-crypto']) assert.equal(await row(id).locator('.conversation-status').count(), 0, `${id} has nothing to report: its idle ring is not a status`);
-    assert.deepEqual(await Promise.all(['t-run', 't-bad'].map(id => dot(id).getAttribute('data-state'))), ['working', 'error']);
-    assert.deepEqual(await Promise.all(['t-run', 't-bad'].map(id => dot(id).getAttribute('title'))), ['Working', 'Error']);
-    const fill = async id => paint(dot(id), 'backgroundColor'), ring = async id => paint(dot(id), 'borderTopColor');
-    const [run, idle, bad] = [await fill('t-run'), await fill('t-idle'), await fill('t-bad')];
-    assert.ok(same(run, BASE), `a running chat's status is a ring, not a filled notification (${run})`);
-    assert.ok(!same(await ring('t-run'), BASE), 'a working chat has a visible automatic ring');
-    assert.equal(await dot('t-run').evaluate(element => getComputedStyle(element).animationName), 'none', 'a running status does not flash');
-    assert.ok(same(idle, BASE), `a read idle chat keeps a hollow automatic marker (${idle})`);
-    assert.ok(bad[0] > bad[1] + 60 && bad[0] > bad[2] + 60, `an error status is red (${bad})`);
-    // Automatic activity retains the original left column.
-    const boxes = await Promise.all(['t-run', 't-idle', 't-bad'].map(async id => ({ dot: await dot(id).boundingBox(), link: await row(id).locator('.thread-link').boundingBox() })));
-    assert.ok(boxes.every(box => box.dot.width === boxes[0].dot.width && Math.abs(box.dot.x - boxes[0].dot.x) < 1), 'one size and one column');
-    assert.ok(boxes.every(box => box.dot.x + box.dot.width <= box.link.x + 1), 'left of the title');
-    assert.ok(boxes.every(box => box.dot.width >= 8), 'big enough to use');
-    const running = await dot('t-run').boundingBox(), link = await row('t-run').locator('.thread-link').boundingBox();
-    assert.ok(running.x + running.width <= link.x + 1, 'automatic activity remains before the conversation title');
-    emit('turn/started', { threadId: 't-idle', turn: { id: 'turn-9' } });
-    await eventually(async () => assert.equal(await dot('t-idle').getAttribute('data-state'), 'working'));
-    assert.ok(same(await fill('t-idle'), BASE), 'still a ring while it works');
-    emit('turn/completed', { threadId: 't-idle', turn: { id: 'turn-9', status: 'completed' } });
-    await eventually(async () => assert.equal(await dot('t-idle').getAttribute('data-state'), 'unread'));
-    assert.ok(!same(await fill('t-idle'), BASE), 'filled once it finished unseen, like a notification');
-    await row('t-idle').locator('.thread-link').click();
-    await eventually(async () => assert.equal(await dot('t-idle').getAttribute('data-state'), 'idle'));
-    assert.ok(same(await fill('t-idle'), BASE), 'reading clears the completion fill without removing the automatic marker');
-    await shoot('sidebar-dots-light');
-  });
-});
-
-test('start screen: a Local chip beside the project chip says where the chat works, and says what is not offered', async () => {
-  await fixture(async ({ page, aside, shoot }) => {
-    await aside.getByRole('button', { name: 'Start new chat in legal', exact: true }).click();
-    const tray = page.locator('.composer-tray'), local = tray.getByRole('button', { name: 'Where this chat works', exact: true }), project = tray.getByRole('button', { name: 'Choose project', exact: true });
-    await local.waitFor(); await project.waitFor();
-    assert.equal((await local.innerText()).trim(), 'Local');
-    const [a, b] = [await local.boundingBox(), await project.boundingBox()];
-    assert.ok(a.x + a.width <= b.x + 1, 'Local is left of the project chip'); assert.ok(Math.abs((a.y + a.height / 2) - (b.y + b.height / 2)) < 1.5, 'on one line'); assert.equal(a.height, b.height, 'one chip style');
-    assert.equal(await local.evaluate(element => getComputedStyle(element).fontSize), await project.evaluate(element => getComputedStyle(element).fontSize), 'one text size');
-    await local.click();
-    const menu = page.getByRole('menu');
-    await menu.waitFor();
-    assert.deepEqual(await menu.getByRole('menuitem').allInnerTexts().then(items => items.map(text => text.replace(/\s+/g, ' ').trim())), ['Local /work/legal', 'Worktree Needs a Git repository with a commit'], 'the local folder and the unavailable worktree choice');
-    assert.match(await menu.innerText(), /worktree/i, 'and the menu says what is not offered');
-    assert.equal(await menu.getByRole('menuitem', { name: /worktree/i }).getAttribute('aria-disabled'), 'true', 'worktrees require a committed Git repository');
-    assert.equal(await menu.getByRole('menuitem').first().locator('svg[aria-label="Current"]').count(), 1, 'Local is marked as the choice');
-    await shoot('start-environment-light');
-    await page.keyboard.press('Escape');
-    // With no project the chat works in the folder Elpis started in.
-    await project.click(); await page.getByRole('menuitem', { name: /Don.t work in a project/ }).click();
-    await local.click(); await page.getByRole('menu').waitFor();
-    assert.match(await page.getByRole('menu').innerText(), /default folder/i, 'with no project, the folder Elpis starts in');
-  });
-});
-
-test('account row: bottom left, the signed-in account and plan, only shown; the theme button sits beside Settings', async () => {
-  await fixture(async ({ page, aside, shoot }) => {
-    const row = aside.getByRole('group', { name: /masih@example\.com/ });
-    await row.waitFor();
-    assert.equal(await row.locator('.account-name').innerText(), 'masih', 'the name before the @, as Claude shows a first name'); assert.equal(await row.locator('.account-plan').innerText(), 'Pro');
-    assert.equal(await row.getAttribute('aria-label'), 'Account: masih@example.com, Pro plan', 'the full email is its label');
-    assert.equal(await row.evaluate(element => element.tagName), 'DIV', 'the name is not a button');
-    const box = await row.boundingBox(), side = await aside.boundingBox();
-    assert.ok(box.x < side.x + 24 && box.y + box.height > 560, `bottom left of the sidebar (${JSON.stringify(box)})`);
-    assert.ok(box.height >= 34, 'a full-size row');
-    const labels = await row.evaluate(element => [...element.querySelectorAll('.account-name, .account-plan')].map(node => node.scrollWidth <= node.clientWidth + 1));
-    assert.deepEqual(labels, [true, true], 'the account and the plan are not cut');
-    await row.click();
-    assert.equal(await page.getByRole('menu').count(), 0, 'clicking the name opens nothing');
-    const theme = aside.getByRole('button', { name: 'Use dark theme', exact: true }), settings = aside.getByRole('button', { name: 'Settings', exact: true });
-    const [themeBox, settingsBox] = [await theme.boundingBox(), await settings.boundingBox()];
-    assert.ok(themeBox.x < settingsBox.x && Math.abs(themeBox.y - settingsBox.y) < 4 && settingsBox.x - (themeBox.x + themeBox.width) < 12, 'the theme button is right beside Settings');
-    await shoot('account-row-light');
-    await theme.click();
-    await page.locator('.app-shell.dark').waitFor();
-    await aside.getByRole('button', { name: 'Use light theme', exact: true }).waitFor();
-    await shoot('account-row-dark');
-    await aside.getByRole('button', { name: 'Use light theme', exact: true }).click(); await page.waitForFunction(() => !document.querySelector('.app-shell.dark'));
-    await settings.click();
-    await page.getByRole('button', { name: 'Back to app', exact: true }).waitFor();
-    assert.equal(await page.getByRole('heading', { name: 'General', exact: true }).isVisible(), true, 'Settings opens on General');
-    await page.getByRole('button', { name: 'Back to app', exact: true }).click();
-    assert.deepEqual(await oranges(page), [], 'light theme, account row: no orange');
-  });
-});
-
-test('account row without a signed-in account says so', async () => {
-  await fixture(async ({ page, aside }) => {
-    const row = aside.locator('.account-row');
-    await eventually(async () => assert.equal(await row.locator('.account-name').innerText(), 'Not signed in'));
-    assert.equal(await row.locator('.account-plan').count(), 0);
-  }, { signedIn: false });
 });

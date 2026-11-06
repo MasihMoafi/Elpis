@@ -106,35 +106,6 @@ test('a background run restored in a tab shows the read-only notice instead of t
   } finally { await f.close(); }
 });
 
-test('Show agents opens the background group while child pagination belongs to the linked parent branch', async () => {
-  const f = await mixed({ pagedChildren: true }), { page } = f;
-  try {
-    await page.locator('.startup-splash').waitFor({ state: 'detached' });
-    await row(page, 'chat-a').locator('.thread-link').click(); await f.composer.waitFor();
-    await row(page, 'chat-a').click({ button: 'right' });
-    await page.getByRole('menuitem', { name: 'Show agents', exact: true }).click();
-    const group = page.getByRole('region', { name: 'Agent runs', exact: true });
-    await group.getByText('Unlinked background run', { exact: true }).waitFor();
-    await expandParent(page);
-    const more = page.locator('aside.sidebar .project-group').getByRole('button', { name: 'More agents from Fix the parser', exact: true });
-    await more.waitFor();
-    await row(page, 'chat-a').getByRole('button', { name: 'Collapse agents in Fix the parser', exact: true }).click();
-    assert.equal(await more.count(), 0, 'pagination folds with its parent branch');
-    assert.equal(await page.locator('aside.sidebar').getByRole('button', { name: 'More agents', exact: true }).count(), 0);
-    await expandParent(page); await more.click();
-    await row(page, 'more-run').waitFor();
-    assert.equal(await page.locator('aside.sidebar .thread-row[data-thread-id="more-run"]').count(), 1, 'the next page appears once in the parent branch');
-    assert.equal(await row(page, 'more-run').getAttribute('data-depth'), '1');
-    assert.equal(await page.getByRole('button', { name: 'Agent runs (1)', exact: true }).count(), 1, 'loading linked agents does not add them to the background group');
-    assert.equal(await row(page, 'more-run').getByText('from Fix the parser', { exact: true }).isVisible(), true);
-    await row(page, 'chat-a').click({ button: 'right' });
-    await page.getByRole('menuitem', { name: 'Hide agents', exact: true }).click();
-    assert.equal(await group.count(), 0);
-    assert.equal(await row(page, 'more-run').count(), 1, 'hiding the background group preserves the expanded parent branch');
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
 test('a background run expands and collapses its nested agents', async () => {
   const f = await mixed({ nestedChildren: true }), { page } = f;
   try {

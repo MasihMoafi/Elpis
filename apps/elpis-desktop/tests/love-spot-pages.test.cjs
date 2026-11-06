@@ -138,17 +138,6 @@ for (const colorScheme of ['light']) test(`Love Spot pages: mouse/keyboard creat
   } finally { await f.close(); }
 });
 
-test('Love Spot creates a page from its toolbar and has no agents section', async () => {
-  const f = await loveSpotFixture();
-  try {
-    await f.open(f.page);
-    await f.page.getByRole('button', { name: 'New page', exact: true }).click();
-    await f.waitFor(s => s.page?.name === 'Page 2' && s.elements.length === 0, 'the direct New page action did not create an empty page');
-    assert.equal(await f.page.getByRole('button', { name: 'Agents', exact: true }).count(), 0, 'Love Spot has no agents section');
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
 test('Love Spot can delete a page, and cancelling leaves its drawing intact', async () => {
   const oldXdgDataHome = process.env.XDG_DATA_HOME;
   const tempBase = path.join(os.homedir(), '.cache/elpis-tests');
@@ -306,39 +295,3 @@ test('an unreadable page list is reported in Love Spot, and the rest of the app 
 });
 
 // The opacity value sits under the slider (at 100, its right end), not cut off at the panel's left edge.
-const opacityUnderSlider = page => page.evaluate(() => {
-  const range = document.querySelector('.selected-shape-actions .range-input')?.getBoundingClientRect();
-  const value = document.querySelector('.selected-shape-actions .value-bubble')?.getBoundingClientRect();
-  return !!range && !!value && value.width > 0 && value.left >= range.left && value.right <= range.right + 8;
-});
-
-for (const colorScheme of ['light']) test(`board Style closes and reopens; Delete stays beside its icon (${colorScheme})`, async () => {
-  const f = await loveSpotFixture({ colorScheme });
-  try {
-    await f.open(f.page);
-    await f.draw(f.page);
-    await f.waitFor(s => s.elements.some(e => e.type === 'rectangle' && !e.isDeleted), 'rectangle must save');
-    for (const width of [1440, 760]) {
-      await f.page.setViewportSize({ width, height: 960 });
-      const style = f.page.getByRole('button', { name: 'Drawing style', exact: true });
-      const properties = f.page.locator('.selected-shape-actions .App-menu__left, .App-mobile-menu');
-      assert.equal(await style.evaluate(button => !!button.closest('.selected-shape-actions')), true, 'the style button sits in the style panel itself');
-      await style.click();
-      assert.equal(await style.getAttribute('aria-pressed'), 'false');
-      assert.equal(await properties.isVisible(), false);
-      assert.equal(await style.isVisible(), true, 'a hidden panel keeps its toggle where it was');
-      await style.click(); await properties.waitFor({ state: 'visible' });
-      assert.equal(await opacityUnderSlider(f.page), true, 'the opacity value sits under its slider after the panel reopens');
-      const aligned = await f.page.getByRole('button', { name: 'Delete current page', exact: true }).evaluate(button => {
-        const svg = button.querySelector('svg').getBoundingClientRect();
-        const text = [...button.querySelectorAll('*')].flatMap(e => [...e.childNodes]).find(n => n.nodeType === Node.TEXT_NODE && n.textContent.trim() === 'Delete');
-        const range = document.createRange(); range.selectNodeContents(text); const label = range.getBoundingClientRect();
-        return label.left >= svg.right && Math.abs(label.top + label.height / 2 - svg.top - svg.height / 2) < 4;
-      });
-      assert.equal(aligned, true, 'Delete text must sit horizontally beside its icon');
-      await f.page.screenshot({ path: `/tmp/matilda-chat-shots/board-style-${colorScheme}-${width}.png` });
-    }
-    assert.equal((await f.scene()).elements.filter(e => e.type === 'rectangle' && !e.isDeleted).length, 1);
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});

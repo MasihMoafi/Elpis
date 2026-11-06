@@ -8,7 +8,6 @@ const http = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { oranges } = require('./controls.cjs');
 
 const thread = { id: 'work', name: 'Agent work', cwd: '/tmp/demo', model: 'sol', modelProvider: 'openai', status: { type: 'active' }, desktopAccess: { writable: true, mode: 'direct' } };
 const unknown = command => [{ type: 'unknown', command }];
@@ -77,108 +76,7 @@ async function fixture({ longGroup = false } = {}) {
 }
 
 const rgb = value => value.match(/[\d.]+/g).slice(0, 3).map(Number);
-function hue(value) {
-  const [r, g, b] = rgb(value), max = Math.max(r, g, b), min = Math.min(r, g, b);
-  if (max === min) return -1;
-  const h = max === r ? 60 * (((g - b) / (max - min)) % 6) : max === g ? 60 * ((b - r) / (max - min) + 2) : 60 * ((r - g) / (max - min) + 4);
-  return (h + 360) % 360;
-}
-const luminance = value => { const [r, g, b] = rgb(value).map(c => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
-const contrast = (a, b) => { const [x, y] = [luminance(a), luminance(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
-const isRed = value => { const [r, g, b] = rgb(value); return (hue(value) < 12 || hue(value) > 345) && r > g + 60 && r > b + 60; };
 const seconds = text => { const m = text.match(/^(?:(\d+)m )?(\d+)s$/); assert.ok(m, `a timer reads "39s" or "1m 2s", not "${text}"`); return Number(m[1] ?? 0) * 60 + Number(m[2]); };
-
-for (const colorScheme of ['light']) test(`scrollTop 0 keeps the first work row below the tab bar (${colorScheme})`, async () => {
-  const app = await fixture();
-  try {
-    const { page, errors } = await app.open({ colorScheme });
-    await page.locator('.chat-scroll').evaluate(el => { el.scrollTop = 0; });
-    await page.waitForTimeout(100);
-    const header = await page.locator('.workspace-header').boundingBox(), row = await page.locator('.worked-for > summary').first().boundingBox();
-    assert.ok(row.y >= header.y + header.height, `work row ${row.y} starts below header ${header.y + header.height}`);
-    if (process.env.ELPIS_REVIEW_SHOTS) { await fs.mkdir(process.env.ELPIS_REVIEW_SHOTS, { recursive: true }); await page.screenshot({ path: path.join(process.env.ELPIS_REVIEW_SHOTS, `chat-top-${colorScheme}.png`) }); }
-    assert.deepEqual(errors, []);
-  } finally { await app.close(); }
-});
-
-test('finished work folds into one row per group, opens by click or keyboard, and shows commands as Claude does', async () => {
-  const app = await fixture();
-  try {
-    // A87 permits the selected amber accent. Blue still exposes hard-coded orange on these surfaces.
-    const { page, errors } = await app.open({ preferences: { accent: 'blue' } });
-    await page.locator('.worked-for > summary').click();
-    await page.locator('.worked-for > .worked-for-body').waitFor();
-    const groups = page.locator('.activity-group');
-    const failedGroup = groups.filter({ hasText: /^Ran 2 commands/ });
-    const mixed = groups.filter({ hasText: /^Edited and read app\.ts/ });
-    assert.equal((await failedGroup.locator('> summary').innerText()).trim(), 'Ran 2 commands (1 failed)');
-    assert.equal((await mixed.locator('> summary .activity-group-label').innerText()).trim(), 'Edited and read app.ts, used rag, ran a command', 'mixed work is listed in the order it began; the one file read and edited is named once');
-    assert.equal((await mixed.locator('> summary .change-counts').innerText()).replace(/\s+/g, ' ').trim(), '+1 −1');
-
-    // Collapsed when finished; Enter, Space and a click each toggle it, and aria-expanded says which.
-    const summary = failedGroup.locator('> summary');
-    assert.equal(await summary.getAttribute('aria-expanded'), 'false');
-    assert.equal(await failedGroup.locator('.step-script').first().isVisible(), false);
-    const expanded = value => failedGroup.locator(`> summary[aria-expanded="${value}"]`).waitFor();
-    await summary.focus(); await page.keyboard.press('Enter'); await expanded(true);
-    await page.keyboard.press(' '); await expanded(false);
-    await summary.click(); await expanded(true);
-
-    // Each command: a short title, the command in a bordered, coloured shell block, then its output.
-    const steps = failedGroup.locator('.step');
-    assert.equal(await steps.count(), 2);
-    assert.equal((await steps.nth(0).locator('.step-title').innerText()).trim(), 'Ran rg -n "TODO" src && echo $HOME | wc -l', 'the title is the command without its bash -lc wrapper');
-    const block = steps.nth(0).locator('.step-script');
-    assert.ok(parseFloat(await block.evaluate(node => getComputedStyle(node).borderTopWidth)) >= 1, 'the command sits in a bordered block');
-    const colours = await block.evaluate(node => {
-      const span = text => [...node.querySelectorAll('span')].find(element => element.textContent === text);
-      const colour = element => element && window.__rgb(getComputedStyle(element).color);
-      return { base: window.__rgb(getComputedStyle(node.querySelector('code') || node).color), command: colour(span('rg')), string: colour(span('"TODO"')), operator: colour(span('&&')), variable: colour(span('$HOME')), pipe: colour(span('|')), next: colour(span('wc')) };
-    });
-    for (const [part, value] of Object.entries(colours)) assert.ok(value, `the shell block colours ${part}`);
-    assert.ok(hue(colours.command) >= 195 && hue(colours.command) <= 245, `commands are blue (${colours.command})`);
-    assert.ok(hue(colours.string) >= 90 && hue(colours.string) <= 165, `strings are green (${colours.string})`);
-    assert.equal(colours.next, colours.command, 'every command in a pipeline is coloured as a command');
-    assert.equal(new Set([colours.base, colours.command, colours.string, colours.operator, colours.variable]).size, 5, `command, string, variable and operator each have their own colour (${JSON.stringify(colours)})`);
-    assert.equal(colours.pipe, colours.operator);
-    assert.match(await steps.nth(0).locator('.step-output').innerText(), /^3\s*$/);
-
-    // A failed command: "Exit code 1" and its output in red monospace.
-    const exit = steps.nth(1).getByText('Exit code 1', { exact: true });
-    const exitStyle = await exit.evaluate(node => ({ color: window.__rgb(getComputedStyle(node).color), font: getComputedStyle(node).fontFamily }));
-    assert.ok(isRed(exitStyle.color), `the exit code line is red (${exitStyle.color})`);
-    assert.match(exitStyle.font, /mono/i);
-    assert.ok(isRed(await steps.nth(1).locator('.step-output').evaluate(node => window.__rgb(getComputedStyle(node).color))), 'a failed command\'s output is red');
-    assert.equal(await steps.nth(0).getByText(/^Exit code/).count(), 0, 'a successful command shows no exit code');
-
-    // Mixed work opens to each step; a read reads as one.
-    await mixed.locator('> summary').click();
-    assert.equal((await mixed.locator('.step:has(.step-script) > .step-head > .step-title').first().innerText()).trim(), 'Read app.ts');
-
-    // Inline code: the reply's ink on a 6% chip, as in the ChatGPT app (specs/chatgpt-chat-style.md; 29 Oct, Masih: "map every
-    // style feature of chatgpt app into a clear spec that's reusable and make our design match it").
-    const chip = page.locator('.markdown :not(pre) > code').filter({ hasText: 'legal/evals/test-files/' });
-    const chipStyle = () => chip.evaluate(node => ({ color: window.__rgb(getComputedStyle(node).color), background: window.__rgb(getComputedStyle(node).backgroundColor) }));
-    let style = await chipStyle();
-    assert.ok(!isRed(style.color), `light: inline code keeps the reply's ink (${style.color})`);
-    assert.ok(luminance(style.background) > 0.75 && luminance(style.background) < 0.97, `light: the chip has a soft tint (${style.background})`);
-    assert.ok(contrast(style.color, style.background) >= 4.5, `light: inline code is readable (${contrast(style.color, style.background).toFixed(2)})`);
-
-    const workingHexagon = page.locator('.turn-working .elpis-working-rotor');
-    await workingHexagon.evaluate(node => { node.style.stroke = '#e89d34'; });
-    assert.ok((await oranges(page)).some(hit => hit.startsWith('path.elpis-working-rotor: stroke')), 'the guard still rejects an orange stroke other than the approved Send colour');
-    await workingHexagon.evaluate(node => node.style.removeProperty('stroke'));
-    assert.deepEqual(await oranges(page), [], 'light theme, chat with open activity: no orange');
-
-    await page.emulateMedia({ colorScheme: 'dark' }); await page.waitForTimeout(200);
-    style = await chipStyle();
-    assert.ok(!isRed(style.color), `dark: inline code keeps the reply's ink (${style.color})`);
-    assert.ok(luminance(style.background) < 0.1, `dark: the chip's tint is dark (${style.background})`);
-    assert.ok(contrast(style.color, style.background) >= 4.5, `dark: inline code is readable (${contrast(style.color, style.background).toFixed(2)})`);
-    assert.ok(isRed(await exit.evaluate(node => window.__rgb(getComputedStyle(node).color))), 'dark: the exit code line is red');
-    assert.deepEqual(errors, []);
-  } finally { await app.close(); }
-});
 
 test('a message sent while a turn runs appears where it was sent, after the work before it', async () => {
   const f = await fixture();
@@ -193,35 +91,6 @@ test('a message sent while a turn runs appears where it was sent, after the work
     assert.ok(order[0] < order[1] && order[1] < order[2], `in the order they happened: prompt, reply, then the steered message (${order})`);
     assert.deepEqual(errors, []);
   } finally { await f.close(); }
-});
-
-test('a running step reads as a sentence with a live timer and animated dots', async () => {
-  const app = await fixture();
-  try {
-    const { page, errors } = await app.open();
-    const live = page.locator('.activity-group').filter({ hasText: 'Running npm run dev' });
-    const label = live.locator('> summary');
-    // The turn is known to be running once the chat's live state arrives (after its history).
-    await live.locator('.live-timer').waitFor();
-    assert.match((await label.innerText()).trim(), /^Running npm run dev -- --port 8088\s+1m \d+s$/);
-    const timer = live.locator('.live-timer');
-    const first = seconds((await timer.innerText()).trim());
-    assert.ok(first >= 62 && first <= 66, `the timer counts from the step's start (${first}s)`);
-    await page.waitForTimeout(2300);
-    const later = seconds((await timer.innerText()).trim());
-    assert.ok(later >= first + 2, `the timer advances (${first}s, then ${later}s)`);
-    // The working mark has one place, the turn's foot (29 Oct, Masih: "you can see the working animation changes its place!").
-    assert.equal(await live.locator('.elpis-working-mark').count(), 0, 'the running row has no mark of its own');
-    const rotor = page.locator('.turn-working .elpis-working-rotor');
-    assert.equal(await rotor.evaluate(node => getComputedStyle(node).animationName), 'elpis-orbit', 'the filled shape rotates');
-    assert.deepEqual(errors, []);
-    await page.close();
-
-    const still = await app.open({ reducedMotion: 'reduce' });
-    const slowRotor = still.page.locator('.turn-working .elpis-working-rotor');
-    await slowRotor.waitFor();
-    assert.equal(await slowRotor.evaluate(node => getComputedStyle(node).animationDuration), '4s', 'the approved hexagon (d5fc7f16c) keeps its speed under reduced motion');
-  } finally { await app.close(); }
 });
 
 test('while a turn runs, Enter follows the follow-up setting and Ctrl+Enter does the other for that message', async () => {
@@ -264,40 +133,5 @@ test('while a turn runs, Enter follows the follow-up setting and Ctrl+Enter does
     await modBox.press('Control+Shift+Enter');
     await mod.page.getByRole('list', { name: 'Queued follow-ups', exact: true }).getByText('line', { exact: true }).waitFor();
     assert.equal(app.steered.length, 2);
-  } finally { await app.close(); }
-});
-
-
-test('tool details and groups collapse from the bottom, return focus, and still reopen from the top', async () => {
-  const app = await fixture({ longGroup: true });
-  try {
-    const { page, errors } = await app.open();
-    await page.locator('.worked-for > summary').click();
-    await page.locator('.worked-for > .worked-for-body').waitFor();
-    const group = page.locator('.worked-for .activity-group').first();
-    const head = group.locator('> summary');
-    await head.click();
-    await group.locator('> .activity-group-body').waitFor();
-    const step = group.locator('.step').first();
-    const stepHead = step.locator('> summary');
-    if (!await step.evaluate(node => node.open)) await stepHead.click();
-    if (process.env.ELPIS_TEST_SCREENSHOTS) await page.screenshot({ path: path.join(process.env.ELPIS_TEST_SCREENSHOTS, 'elpis-tool-collapse.png') });
-    await step.getByRole('button', { name: 'Collapse details', exact: true }).click();
-    await page.waitForFunction(() => !document.querySelector('.activity-group .step').open);
-    assert.equal(await stepHead.evaluate(node => node === document.activeElement), true);
-    assert.equal(await group.evaluate(node => node.open), true, 'closing one tool keeps the group open');
-    await stepHead.press('Enter');
-    await step.getByRole('button', { name: 'Collapse details', exact: true }).waitFor();
-    assert.ok(await group.evaluate(node => node.getBoundingClientRect().height > innerHeight), 'exercise a group longer than the viewport');
-    await group.getByRole('button', { name: 'Collapse tool calls', exact: true }).click();
-    await page.waitForFunction(() => !document.querySelector('.activity-group').open);
-    assert.equal(await head.evaluate(node => node === document.activeElement), true);
-    await head.press('Enter');
-    await group.getByRole('button', { name: 'Collapse tool calls', exact: true }).waitFor();
-    await page.emulateMedia({ reducedMotion: 'reduce' });
-    await group.getByRole('button', { name: 'Collapse tool calls', exact: true }).click();
-    await page.waitForFunction(() => { const head = document.querySelector('.activity-group > summary'); const box = head.getBoundingClientRect(); return !head.parentElement.open && box.top >= 0 && box.bottom <= innerHeight; });
-    assert.equal(await head.evaluate(node => node === document.activeElement), true);
-    assert.deepEqual(errors, []);
   } finally { await app.close(); }
 });

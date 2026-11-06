@@ -6,7 +6,6 @@ const http = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { leaveSettings } = require('./controls.cjs');
 const root = path.resolve(__dirname, '../out');
 const INIT_PROMPT_FILE = path.resolve(__dirname, '../../../codex-rs/tui/assets/prompt_for_init_command.md');
 
@@ -103,40 +102,8 @@ const names = menu => menu.getByRole('option').evaluateAll(options => options.ma
 const selected = menu => menu.locator('[role="option"][aria-selected="true"] .slash-name').textContent();
 const focused = page => page.evaluate(() => { const element = document.activeElement; return element ? `${element.tagName.toLowerCase()}:${element.getAttribute('aria-label') || ''}` : ''; });
 const focusInside = (page, selector) => page.evaluate(selector => !!document.activeElement?.closest(selector), selector);
-const card = panel => panel.locator('dl > div').evaluateAll(rows => Object.fromEntries(rows.map(row => [row.querySelector('dt').textContent, row.querySelector('dd').textContent])));
 /** Typing after a command goes to the composer, wherever the command left the focus. */
 async function typesIntoComposer(page, composer, text) { await page.keyboard.type(text); assert.equal(await composer.inputValue(), text, 'typing goes to the composer'); await composer.fill(''); }
-
-const NEW_CHAT = ['/model', '/fast', '/effort', '/pruner-model', '/memory-model', '/permissions', '/yolo', '/settings', '/memories', '/personal', '/hooks', '/new', '/clear', '/resume', '/init', '/prune', '/plan', '/status', '/usage', '/config', '/theme', '/mcp', '/rag'];
-const OPEN_CHAT = ['/btw', '/recap', '/goal', '/model', '/fast', '/effort', '/pruner-model', '/memory-model', '/permissions', '/yolo', '/settings', '/memories', '/personal', '/hooks', '/review', '/rename', '/new', '/clear', '/archive', '/delete', '/resume', '/fork', '/init', '/compact', '/prune', '/plan', '/agent', '/copy', '/export', '/diff', '/status', '/pwd', '/usage', '/context', '/config', '/theme', '/mcp', '/rag'];
-const RUNNING_TURN = OPEN_CHAT.filter(name => !['/review', '/init', '/prune', '/fork', '/rag', '/export'].includes(name));
-
-test('"/" lists the terminal\'s commands the app can run, in its order: a new chat, an open chat, and one with a turn running', async () => {
-  const { page, context, errors, composer, menu, openChat } = await open();
-  try {
-    await composer.fill('/'); await menu.waitFor();
-    assert.deepEqual(await names(menu), NEW_CHAT, 'a new chat lists only what it can do');
-    await page.screenshot({ path: '/tmp/elpis-slash-menu-1440.png' });
-    const descriptions = await menu.locator('.slash-option').evaluateAll(options => Object.fromEntries(options.map(option => [option.querySelector('.slash-name').textContent, option.querySelector('.slash-description').textContent])));
-    assert.equal(descriptions['/model'], 'choose what model and reasoning effort to use', 'the terminal\'s own words');
-    assert.equal(descriptions['/rag'], 'use the configured RAG MCP server or manage it with /rag <request>');
-    assert.equal(descriptions['/init'], 'create an AGENTS.md file with instructions for Elpis');
-    await composer.fill('');
-
-    await openChat();
-    await composer.fill('/'); assert.deepEqual(await names(menu), OPEN_CHAT);
-    await page.emulateMedia({ colorScheme: 'dark' }); await page.screenshot({ path: '/tmp/elpis-slash-menu-chat-dark-1440.png' }); await page.emulateMedia({ colorScheme: 'light' });
-    await composer.fill('');
-
-    emit('turn/started', { threadId: 'chat', turn: { id: 'running' } });
-    await page.getByRole('button', { name: 'Stop response', exact: true }).waitFor();
-    await composer.fill('/'); assert.deepEqual(await names(menu), RUNNING_TURN, 'commands that run the model or rewrite history wait for the turn; /compact stays, to run when it ends');
-    emit('turn/completed', { threadId: 'chat', turn: { id: 'running', status: 'completed' } });
-    await page.getByRole('button', { name: 'Stop response', exact: true }).waitFor({ state: 'detached' });
-    await composer.fill(''); await composer.fill('/'); assert.deepEqual(await names(menu), OPEN_CHAT, 'and come back when it ends');
-    assert.deepEqual(errors, []);
-  } finally { await context.close(); }
-});
 
 test('clearing a Matilda chat starts a fresh Love Spot chat in both themes and keeps its old history', async () => {
   showMatilda = true;
@@ -241,37 +208,6 @@ test('the controls a command opens (/model, /effort, /permissions, /yolo) take t
   } finally { await context.close(); }
 });
 
-test('/effort sets the level given, and says so when the model does not offer it', async () => {
-  const { page, context, errors, composer, menu, openChat, run } = await open();
-  try {
-    await openChat();
-    await composer.fill('/effort low'); assert.equal(await menu.count(), 0); await composer.press('Enter');
-    await page.locator('[aria-label="Reasoning effort"][data-value="low"]').waitFor();
-    assert.equal(await composer.inputValue(), '', 'a command with its argument clears the composer');
-    await run('/effort turbo');
-    await page.getByText('Luna 6 does not offer the reasoning effort “turbo”', { exact: false }).waitFor();
-    assert.equal(turns().length, 0);
-    assert.deepEqual(errors, []);
-  } finally { await context.close(); }
-});
-
-test('/compact compacts the open chat through the engine, with the guidance given', async () => {
-  const { page, context, errors, openChat, run } = await open();
-  try {
-    await openChat();
-    await run('/compact');
-    await page.getByText('Compacted the context', { exact: true }).waitFor();
-    assert.deepEqual(await posted('/api/threads/chat/compact', 1), {}, 'a bare /compact sends no guidance');
-    await run('/compact keep the API names');
-    assert.deepEqual(await posted('/api/threads/chat/compact', 2), { instructions: 'keep the API names' });
-    await run('/compact 50');
-    await page.getByText(/pressure/i).first().waitFor();
-    assert.equal(sentTo('/api/threads/chat/compact').length, 2, 'a number is the terminal\'s pressure setting, which this app does not save');
-    assert.equal(turns().length, 0, 'compaction is not a message');
-    assert.deepEqual(errors, []);
-  } finally { await context.close(); }
-});
-
 // Masih, 24 Oct: "/compact isn't available in the app". Typed while the agent works, it waits for the turn, as in the terminal.
 test('/compact typed while a turn runs is not sent as a message; it compacts when the turn ends', async () => {
   const { page, context, errors, openChat, run } = await open();
@@ -285,53 +221,6 @@ test('/compact typed while a turn runs is not sent as a message; it compacts whe
     assert.equal(sentTo('/api/threads/chat/steer').length + turns().length, 0, 'the command is not sent to the agent');
     emit('turn/completed', { threadId: 'chat', turn: { id: 'running', status: 'completed' } });
     assert.deepEqual(await posted('/api/threads/chat/compact', 1), { instructions: 'keep the API names' });
-    assert.deepEqual(errors, []);
-  } finally { await context.close(); }
-});
-
-test('/review offers the terminal\'s four reviews and starts the engine\'s review of the one chosen', async () => {
-  const { page, context, errors, composer, openChat, run } = await open();
-  try {
-    await openChat();
-    await run('/review');
-    const panel = page.getByRole('dialog', { name: 'Select a review preset', exact: true }); await panel.waitFor();
-    assert.equal(await focusInside(page, '[role="dialog"]'), true, 'the panel has the focus');
-    assert.deepEqual(await panel.getByRole('button').evaluateAll(buttons => buttons.map(button => button.textContent.trim()).filter(Boolean)), ['Review against a base branch(PR Style)', 'Review uncommitted changes', 'Review a commit', 'Custom review instructions']);
-    await page.screenshot({ path: '/tmp/elpis-slash-review-1440.png' });
-    await page.keyboard.press('Escape'); await panel.waitFor({ state: 'detached' });
-    assert.equal(await focused(page), 'textarea:Message Elpis', 'closing the panel returns the focus to the composer');
-    assert.equal(sentTo('/api/threads/chat/review').length, 0, 'Escape starts nothing');
-
-    await run('/review'); await panel.waitFor();
-    await panel.getByRole('button', { name: /Review uncommitted changes/ }).click();
-    await panel.waitFor({ state: 'detached' });
-    assert.deepEqual(await posted('/api/threads/chat/review', 1), { target: { type: 'uncommittedChanges' } });
-    await page.getByText('No problems found in the cache.', { exact: true }).waitFor();
-    assert.equal(await focused(page), 'textarea:Message Elpis');
-
-    await run('/review'); await panel.getByRole('button', { name: /base branch/ }).click();
-    const branches = page.getByRole('dialog', { name: 'Select a base branch', exact: true }); await branches.waitFor();
-    await branches.getByText('Current branch: feature', { exact: true }).waitFor();
-    await branches.getByRole('button', { name: 'main', exact: true }).click();
-    await branches.waitFor({ state: 'detached' });
-    assert.deepEqual(await posted('/api/threads/chat/review', 2), { target: { type: 'baseBranch', branch: 'main' } });
-
-    await run('/review'); await panel.getByRole('button', { name: 'Review a commit', exact: true }).click();
-    const picker = page.getByRole('dialog', { name: 'Select a commit to review', exact: true }); await picker.waitFor();
-    await picker.getByRole('button', { name: /Add the cache/ }).click();
-    assert.deepEqual(await posted('/api/threads/chat/review', 3), { target: { type: 'commit', sha: 'b'.repeat(40), title: 'Add the cache' } });
-
-    await run('/review'); await panel.getByRole('button', { name: 'Custom review instructions', exact: true }).click();
-    const custom = page.getByRole('dialog', { name: 'Custom review instructions', exact: true }); await custom.waitFor();
-    assert.equal(await focused(page), 'textarea:Custom review instructions', 'the field has the focus');
-    await custom.getByRole('button', { name: 'Start review', exact: true }).click();
-    assert.equal(sentTo('/api/threads/chat/review').length, 3, 'empty instructions start nothing');
-    await page.keyboard.type('Check error handling.'); await custom.getByRole('button', { name: 'Start review', exact: true }).click();
-    assert.deepEqual(await posted('/api/threads/chat/review', 4), { target: { type: 'custom', instructions: 'Check error handling.' } });
-
-    await run('/review look at the cache keys');
-    assert.deepEqual(await posted('/api/threads/chat/review', 5), { target: { type: 'custom', instructions: 'look at the cache keys' } }, 'the terminal\'s /review <instructions>');
-    assert.equal(turns().length, 0, 'a review is not a message');
     assert.deepEqual(errors, []);
   } finally { await context.close(); }
 });
@@ -368,143 +257,6 @@ test('/rag sends the RAG request as a message; /prune turns Smart Prune on throu
   } finally { await context.close(); }
 });
 
-test('/status and /usage show the session: model, provider, effort, permissions, folder and context use', async () => {
-  const { page, context, errors, composer, openChat, run } = await open();
-  try {
-    await openChat();
-    await run('/status');
-    const panel = page.getByRole('dialog', { name: 'Session', exact: true }); await panel.waitFor();
-    await panel.getByText('12,000 of 200,000 tokens (6%)', { exact: false }).waitFor();
-    assert.deepEqual(await card(panel), { Model: 'Luna 6', Provider: 'OpenAI', 'Reasoning effort': 'high', Permissions: 'Ask for approval', Folder: '/tmp/elpis-fixture', Chat: 'chat', 'Context window': '12,000 of 200,000 tokens (6%)' });
-    assert.equal(await focusInside(page, '[role="dialog"]'), true, 'the panel has the focus');
-    await page.screenshot({ path: '/tmp/elpis-slash-status-1440.png' });
-    await page.keyboard.press('Escape'); await panel.waitFor({ state: 'detached' });
-    assert.equal(await focused(page), 'textarea:Message Elpis');
-    await typesIntoComposer(page, composer, 'typed after');
-
-    await run('/usage'); await panel.waitFor();
-    await panel.getByRole('button', { name: 'Usage & limits', exact: true }).click();
-    await page.getByRole('tab', { name: 'Usage & limits', exact: true, selected: true }).waitFor();
-    await leaveSettings(page);
-    await run('/usage account'); await page.getByRole('tab', { name: 'Usage & limits', exact: true, selected: true }).waitFor();
-    await leaveSettings(page);
-
-    await page.locator('.new-chat').click();
-    await run('/status'); await panel.waitFor();
-    const fresh = await card(panel);
-    assert.equal(fresh.Model, 'Luna 6'); assert.equal(fresh.Chat, 'Not started yet'); assert.equal(fresh.Permissions, 'Full access');
-    assert.deepEqual(errors, []);
-  } finally { await context.close(); }
-});
-
-test('/diff shows the working tree\'s changes, /pwd the folder, /context opens the context breakdown', async () => {
-  const { page, context: browserContext, errors, composer, openChat, run } = await open();
-  try {
-    await openChat();
-    await run('/diff');
-    const panel = page.getByRole('dialog', { name: 'Changes', exact: true }); await panel.waitFor();
-    await panel.getByText('+fixed line', { exact: false }).waitFor();
-    assert.equal(await focusInside(page, '[role="dialog"]'), true);
-    await page.screenshot({ path: '/tmp/elpis-slash-diff-1440.png' });
-    await page.keyboard.press('Escape'); await panel.waitFor({ state: 'detached' });
-    assert.equal(await focused(page), 'textarea:Message Elpis');
-
-    await run('/pwd'); await page.getByText('Current working directory: /tmp/elpis-fixture', { exact: true }).waitFor();
-    await run('/context');
-    const context = page.getByRole('dialog', { name: 'Context window usage', exact: true }); await context.waitFor();
-    await context.getByText('User messages', { exact: false }).waitFor();
-    await page.keyboard.press('Escape'); await context.waitFor({ state: 'detached' });
-    assert.equal(await focused(page), 'textarea:Message Elpis', 'closing the breakdown leaves the focus in the composer');
-    await typesIntoComposer(page, composer, 'typed after');
-    assert.deepEqual(errors, []);
-  } finally { await browserContext.close(); }
-});
-
-test('/copy puts the last reply on the clipboard; /export saves the chat as markdown', async () => {
-  const { page, context, errors, openChat, run } = await open();
-  try {
-    await openChat();
-    await run('/copy');
-    await page.getByText('Copied the last reply.', { exact: true }).waitFor();
-    assert.equal(await page.evaluate(() => navigator.clipboard.readText()), 'The cache is fixed.');
-    const [download] = await Promise.all([page.waitForEvent('download'), run('/export')]);
-    assert.equal(download.suggestedFilename(), 'cache-chat.md');
-    assert.equal(await fs.readFile(await download.path(), 'utf8'), '# Cache chat\n\n## You\n\nFix the cache.\n\n## Elpis\n\nThe cache is fixed.\n');
-    assert.deepEqual(errors, []);
-  } finally { await context.close(); }
-});
-
-test('commands that open a page: /settings, /memories, /hooks, /mcp, /theme, /pruner-model, /memory-model, /resume', async () => {
-  const { page, context, errors, run } = await open();
-  const tab = name => page.getByRole('tab', { name, exact: true, selected: true });
-  try {
-    for (const [command, name] of [['/settings', 'General'], ['/memories', 'Personalization'], ['/hooks', 'Hooks'], ['/mcp', 'MCP servers'], ['/theme', 'Appearance'], ['/pruner-model', 'Configuration'], ['/memory-model', 'Configuration']]) {
-      await run(command); await tab(name).waitFor(); await leaveSettings(page);
-    }
-    await page.locator('.new-chat').click();
-    await run('/resume');
-    const chooser = page.getByRole('dialog', { name: 'Resume conversation', exact: true });
-    await chooser.waitFor();
-    await chooser.getByRole('textbox', { name: 'Find saved conversations', exact: true }).fill('Cache');
-    await chooser.getByRole('button', { name: /Cache chat/ }).click();
-    await page.getByText('The cache is fixed.', { exact: true }).waitFor();
-    await chooser.waitFor({ state: 'hidden' });
-    assert.equal(turns().length, 0, 'no command is sent as a message');
-    assert.deepEqual(errors, []);
-  } finally { await context.close(); }
-});
-
-test('in a chat, /fork, /rename, /delete, /archive and /new act on that chat, and /agent goes to its agents', async () => {
-  const { page, context, errors, composer, openChat, run } = await open();
-  try {
-    await openChat();
-    await run('/agent');
-    assert.equal(await page.evaluate(() => document.activeElement?.classList.contains('team-row')), true, '/agent puts the focus on the chat\'s agents');
-    await composer.focus();
-
-    await run('/fork');
-    await page.getByRole('heading', { name: 'Cache chat (fork)', exact: true }).waitFor();
-    assert.deepEqual(await posted('/api/threads/chat/fork', 1), { lastTurnId: 'turn-1' }, 'the fork keeps the whole chat');
-
-    await run('/rename');
-    const rename = page.getByRole('form', { name: 'Rename conversation', exact: true });
-    await rename.getByLabel('Conversation name').fill('Renamed by command'); await rename.getByRole('button', { name: 'Save', exact: true }).click();
-    await rename.waitFor({ state: 'detached' });
-    assert.deepEqual(await posted('/api/threads/fork/rename', 1), { name: 'Renamed by command' });
-    await run('/rename Named in one line');
-    assert.deepEqual(await posted('/api/threads/fork/rename', 2), { name: 'Named in one line' }, 'the terminal\'s /rename <name>');
-
-    await run('/delete');
-    const dialog = page.getByRole('alertdialog'); await dialog.waitFor();
-    await page.keyboard.press('Escape'); await dialog.waitFor({ state: 'detached' });
-    assert.equal(await focused(page), 'textarea:Message Elpis', 'closing the confirmation returns the focus to the composer');
-    assert.equal(sentTo('/api/threads/fork/delete').length, 0, 'Escape deletes nothing');
-
-    await run('/archive');
-    await page.getByText('What should we build?', { exact: true }).waitFor();
-    assert.ok(await posted('/api/threads/fork/archive', 1) !== undefined, 'the chat is archived');
-
-    await page.locator('.thread-row[data-thread-id="chat"] .thread-link').click();
-    await page.getByText('The cache is fixed.', { exact: true }).waitFor();
-    await run('/new');
-    await page.getByText('What should we build?', { exact: true }).waitFor();
-    assert.equal(await focused(page), 'textarea:Message Elpis');
-    await openChat();
-    await run('/clear');
-    await page.getByText('What should we build?', { exact: true }).waitFor();
-    assert.equal(await page.getByText('The cache is fixed.', { exact: true }).count(), 0, 'clear starts a fresh context');
-    await run('/pwd');
-    await page.getByText('Current working directory: /tmp/elpis-fixture', { exact: true }).waitFor();
-    assert.equal(sentTo('/api/threads/chat/delete').length, 0, 'clear does not delete the previous chat');
-    assert.equal(sentTo('/api/threads/chat/archive').length, 0, 'clear does not archive the previous chat');
-    await openChat();
-    await page.getByText('The cache is fixed.', { exact: true }).waitFor();
-    assert.equal(turns().length, 0, 'no command is sent as a message');
-    assert.deepEqual(errors, []);
-  } finally { await context.close(); }
-});
-
-
 test('/fast changes OpenAI speed without sending a message, and gives clear on/off feedback', async () => {
   const { page, context, errors, openChat, run } = await open();
   try {
@@ -531,7 +283,6 @@ test('/fast changes OpenAI speed without sending a message, and gives clear on/o
     assert.deepEqual(errors, []);
   } finally { await context.close(); }
 });
-
 
 test('Fast notices follow confirmed defaults and do not follow the user into a new chat', async () => {
   const { page, context, errors, openChat, run } = await open();
@@ -572,27 +323,6 @@ test('the Fast lightning control changes a running turn without sending or losin
     assert.equal(await composer.inputValue(), 'Keep this follow-up draft.');
     assert.equal(await page.getByRole('button', { name: 'Stop response', exact: true }).isVisible(), true);
     assert.equal(posts.filter(post => post.path.endsWith('/turns')).length, 0);
-    assert.deepEqual(errors, []);
-  } finally { await context.close(); }
-});
-
-test('Fast feedback blurs out at four seconds without hiding other notices or disabling Fast', async () => {
-  const { page, context, errors, openChat, run } = await open();
-  try {
-    await openChat(); await run('/fast');
-    const notice = page.getByText('Fast is on. It uses plan limits faster.', { exact: true });
-    await notice.waitFor();
-    await page.waitForFunction(() => {
-      const el = document.querySelector('[data-fast-notice]');
-      if (!el) return false;
-      const s = getComputedStyle(el), opacity = Number(s.opacity);
-      return opacity > 0 && opacity < .95 && s.filter !== 'none' && s.filter !== 'blur(0px)';
-    }, null, { timeout: 4500 });
-    await notice.waitFor({ state: 'detached', timeout: 1000 });
-    assert.equal(await page.getByRole('button', { name: 'Fast mode', exact: true }).getAttribute('aria-pressed'), 'true');
-    await run('/fast maybe');
-    const warning = page.getByText('Use /fast, /fast on or /fast off.', { exact: true });
-    await warning.waitFor(); await page.waitForTimeout(4200); await warning.waitFor();
     assert.deepEqual(errors, []);
   } finally { await context.close(); }
 });

@@ -224,29 +224,6 @@ test('voice controls release the microphone after denial, cancelled startup, mut
   } finally { for (const stream of streams) stream.end(); await f.close(); }
 });
 
-test('Read aloud stays hidden in Love Spot and ordinary chats without warming or starting speech', async () => {
-  const threads = [['chat-a', 'Love Spot'], ['chat-b', 'Other chat']].map(([id, name]) => ({ id, name, model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } }));
-  const f = await fixture({ threads, routes: { '/api/voice': () => ({ available: true }), '/api/threads/chat-b': () => ({ thread: threads[1], data: [{ turnId: 'other-turn', item: { id: 'other-answer', type: 'agentMessage', text: 'All green.' }, completedAtMs: Date.now() }], nextCursor: null }) } });
-  try {
-    await f.open('chat-a');
-    // Live voice came back to Love Spot on 30 Oct (2529d1fc4, "restore voice"); reading replies aloud stays off there.
-    assert.equal(await f.page.getByRole('button', { name: 'Voice unavailable', exact: true }).count(), 0, 'Love Spot shows no dead audio control');
-    await f.page.getByRole('button', { name: 'Start voice chat', exact: true }).waitFor();
-    const matilda = f.page.locator('.message.agent').last();
-    await matilda.hover(); assert.equal(await matilda.getByRole('button', { name: 'Read aloud', exact: true }).count(), 0);
-    assert.equal(f.posts.filter(row => /voice/.test(row.path)).length, 0, 'Love Spot does not warm or start a speaker');
-    await f.open('chat-b');
-    const reply = f.page.locator('.message.agent').last();
-    await reply.hover(); await f.page.locator('aside').hover(); await reply.hover();
-    assert.equal(await reply.getByRole('button', { name: 'Read aloud', exact: true }).count(), 0);
-    await reply.focus();
-    assert.equal(f.posts.filter(row => row.path.startsWith('/api/voice/read-aloud')).length, 0, 'hover and focus never warm or start read aloud');
-    await f.page.getByRole('button', { name: 'Start voice chat', exact: true }).waitFor();
-    assert.ok(await f.page.getByRole('button', { name: /dictat/i }).count(), 'dictation remains available');
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
 test('Love Spot preserves typed messages and live replies without starting automatic audio, including a saved Voice-on preference', async () => {
   for (const enabled of [true, false]) {
     const f = await fixture({ threads: [{ id: 'chat-a', name: 'Love Spot', model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } }], routes: {

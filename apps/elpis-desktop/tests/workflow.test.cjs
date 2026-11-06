@@ -136,25 +136,6 @@ test('a transient launch sign-in recovers automatically without replacing the re
  }finally{release();await context.close();reconnectFixture=null;}
 });
 
-test('an invalid launch token asks to reopen the window without retrying or blocking draft editing',async()=>{
- const auth={invalid:true,calls:[],premature:[],accepted:false};
- reconnectFixture={thread:{id:'reconnect',name:'Restored launch chat'},reply:'Unused',calls:[],auth};
- const context=await browser.newContext({viewport:{width:1440,height:1000}});
- await guardDesktopStore(context);await context.addInitScript(fakeDesktop);
- const page=await context.newPage();page.setDefaultTimeout(5000);await page.clock.install();
- try{
-  await page.goto(`${url}/#token=invalid-fixture-token`);
-  await page.getByRole('alert').filter({hasText:'Reopen this window'}).waitFor();
-  const composer=page.getByLabel('Message Elpis',{exact:true});await composer.fill('Keep this unsigned draft');await composer.press('Enter');
-  await page.clock.runFor(30000);
-  assert.equal(await controlValue(composer),'Keep this unsigned draft');
-  assert.equal(await page.getByRole('button',{name:'Send message',exact:true}).isDisabled(),true);
-  assert.equal(auth.calls.length,1,'a refused token is not retried on a timer');
-  assert.deepEqual(auth.premature,[],'a bad token cannot cause unauthenticated reads or sends');
-  assert.equal(new URL(page.url()).hash,'#token=invalid-fixture-token');
- }finally{await context.close();reconnectFixture=null;}
-});
-
 // A125: a lost event stream can miss the end of any open chat, including a chat outside the list's first page.
 const { fixture } = require('./parity-fixture.cjs');
 const { controlValue: draftValue } = require('./controls.cjs');

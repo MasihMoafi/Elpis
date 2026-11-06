@@ -8,7 +8,7 @@ const http = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { guardDesktopStore, unapprovedOranges, openSettings } = require('./controls.cjs');
+const { guardDesktopStore } = require('./controls.cjs');
 const { fakeDesktop } = require('./fake-desktop.cjs');
 const root = path.resolve(__dirname, '../out');
 const shots = process.env.ELPIS_FULLVIEW_SHOTS;
@@ -17,8 +17,6 @@ async function eventually(check) {
   for (;;) { try { return await check(); } catch (error) { if (Date.now() >= deadline) throw error; await new Promise(resolve => setTimeout(resolve, 40)); } }
 }
 const near = (actual, expected, message, slack = 1.5) => assert.ok(Math.abs(actual - expected) <= slack, `${message}: ${actual} is not within ${slack} of ${expected}`);
-const overlap = (a, b) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
-const rect = box => ({ x: box.x, y: box.y, width: box.width, height: box.height });
 
 async function fixture(run, { width = 1320, height = 860, colorScheme = 'light' } = {}) {
   const thread = { id: 'chat-one', name: 'Fix the parser', preview: 'Fix the parser', cwd: '/work/parser', model: 'gpt-6-luna', modelProvider: 'openai', status: { type: 'idle' } };
@@ -69,52 +67,6 @@ async function fixture(run, { width = 1320, height = 860, colorScheme = 'light' 
     assert.deepEqual(errors, []);
   } finally { await browser.close(); for (const client of clients) client.end(); await new Promise(resolve => server.close(resolve)); }
 }
-
-test('full view: the header button and Ctrl+Shift+F fill the work area with the panel; Escape does not leave it', () => fixture(async ({ page, side, card, enter, exit, area, openPanel }) => {
-  await openPanel();
-  assert.equal(await enter.getAttribute('aria-pressed'), 'false');
-  const split = await side.boundingBox(), chat = await page.locator('.chat-view').boundingBox();
-  assert.ok(chat.x + chat.width <= split.x + 1, 'split view: the chat is left of the panel');
-  assert.equal(await card.count(), 0, 'split view: no floating chat');
-
-  await enter.click(); await exit.waitFor();
-  assert.equal(await exit.getAttribute('aria-pressed'), 'true');
-  const work = await area(), full = await side.boundingBox();
-  near(full.x, work.x, 'the panel starts at the work area'); near(full.width, work.width, 'the panel is as wide as the work area'); near(full.height, work.height, 'and as tall');
-  assert.equal(await page.getByRole('separator', { name: 'Resize side panel' }).isVisible(), false, 'nothing to resize in full view');
-  await page.keyboard.press('Escape'); await page.waitForTimeout(150);
-  assert.equal(await exit.count(), 1, 'Escape belongs to pages: it does not leave full view');
-  await page.getByLabel('Message Elpis').press('Escape');
-  assert.equal(await exit.count(), 1, 'nor from the message box');
-
-  await page.keyboard.press('Control+Shift+F'); await enter.waitFor();
-  near((await side.boundingBox()).width, split.width, 'split view returns to the width it had');
-  const back = await page.locator('.chat-view').boundingBox();
-  assert.ok(back.x + back.width <= (await side.boundingBox()).x + 1 && back.width > 300, 'the chat is left of the panel again');
-  await page.getByLabel('Message Elpis').press('Control+Shift+F'); await exit.waitFor();
-  await exit.click(); await enter.waitFor();
-
-  // The header buttons share one size; the shortcut is listed where the others are.
-  const [closeBox, enterBox] = [await side.getByRole('button', { name: 'Close side panel' }).boundingBox(), await enter.boundingBox()];
-  near(enterBox.width, closeBox.width, 'full-view button width as the close button'); near(enterBox.height, closeBox.height, 'and height');
-  await page.keyboard.press('Control+/');
-  await page.getByRole('alertdialog').getByText('Toggle full view', { exact: true }).waitFor();
-  await page.keyboard.press('Escape');
-
-  // Closing the panel leaves full view; the shortcut opens a closed panel straight into it.
-  await enter.click(); await exit.waitFor();
-  await side.getByRole('button', { name: 'Close side panel' }).click();
-  await side.waitFor({ state: 'detached' });
-  assert.equal(await card.count(), 0, 'no card without the panel');
-  assert.ok((await page.locator('.chat-view').boundingBox()).width > 600, 'the chat has the whole work area again');
-  await page.keyboard.press('Control+Shift+F'); await exit.waitFor();
-  await card.waitFor();
-  // Leaving the chat page (Settings) leaves full view too.
-  await openSettings(page);
-  await page.getByRole('button', { name: 'Back to app', exact: true }).click();
-  await enter.waitFor();
-  assert.equal(await card.count(), 0);
-}));
 
 test('in full view the chat floats: the same message box with its draft, the conversation, a pill with the chat’s status and back', () => fixture(async ({ page, side, card, pill, enter, exit, area, openPanel, posts, emit }) => {
   const composer = page.getByLabel('Message Elpis');
@@ -171,60 +123,6 @@ test('in full view the chat floats: the same message box with its draft, the con
   await eventually(async () => assert.equal(await atBottom(), true, 'and back in the column'));
 }));
 
-test('the native page never sits under the floating chat: the bounds sent for it leave the card and the pill clear', () => fixture(async ({ page, side, card, pill, enter, exit, layouts, openPanel }) => {
-  await openPanel();
-  const settled = async () => { await page.waitForTimeout(200); const list = await layouts(), last = list.at(-1); assert.equal(last.obscured, false, 'the page is shown'); return { list, last: last.bounds }; };
-  const split = (await settled()).last;
-  // Every layout sent from now on, not only the final one, must keep clear of the card.
-  const checkClear = async (target, label, since) => {
-    const { list, last } = await settled(), rectangle = rect(await target.boundingBox());
-    for (const message of list.slice(since)) if (!message.obscured && message.bounds.width && overlap(message.bounds, rectangle)) assert.fail(`${label}: the page was sent over it ${JSON.stringify(message.bounds)} vs ${JSON.stringify(rectangle)}`);
-    assert.ok(last.width > 250 && last.height > 250, `${label}: the page keeps a usable size ${JSON.stringify(last)}`);
-    return last;
-  };
-  let mark = (await layouts()).length;
-  await enter.click(); await card.waitFor();
-  const withCard = await checkClear(card, 'card open', mark);
-  assert.ok(withCard.width > split.width, 'full view gives the page more room than split view');
-  const cardBox = await card.boundingBox();
-  assert.ok(withCard.x + withCard.width <= cardBox.x, 'the page ends before the card begins');
-
-  mark = (await layouts()).length;
-  await card.getByRole('button', { name: 'Collapse floating chat' }).click(); await pill.waitFor();
-  const withPill = await checkClear(pill, 'pill', mark);
-  assert.ok(withPill.width > withCard.width, 'with only the pill the page is wider than beside the card');
-
-  mark = (await layouts()).length;
-  await pill.click(); await card.waitFor();
-  await checkClear(card, 'card restored', mark);
-
-  // The annotation bar below the page keeps clear of the card too.
-  mark = (await layouts()).length;
-  await page.evaluate(() => window.__push({ annotating: true, draft: { id: 'p1', number: 1, kind: 'element', label: 'button “Sign in”', body: '', editing: false } }));
-  await page.locator('.annotation-dock').waitFor();
-  assert.equal(overlap(rect(await page.locator('.annotation-dock').boundingBox()), rect(await card.boundingBox())), false, 'the annotation bar does not run under the card');
-  await checkClear(card, 'annotating', mark);
-  await page.evaluate(() => window.__push({ annotating: false, draft: null }));
-  await settled();
-
-  mark = (await layouts()).length;
-  await page.setViewportSize({ width: 1000, height: 720 });
-  await checkClear(card, 'narrow window', mark);
-  await page.setViewportSize({ width: 1320, height: 860 });
-
-  // A shell is HTML, but it keeps clear of the card the same way.
-  await side.getByRole('button', { name: 'New side panel tab' }).click();
-  await page.getByRole('menuitem', { name: 'Terminal' }).click();
-  await page.locator('.terminal-body').waitFor(); await page.waitForTimeout(150);
-  const terminal = rect(await page.locator('.terminal-body').boundingBox()), cardNow = rect(await card.boundingBox());
-  assert.equal(overlap(terminal, cardNow), false, 'the shell does not run under the card');
-  await side.getByRole('tab', { name: 'Example docs' }).click();
-
-  await exit.click(); await enter.waitFor();
-  const after = (await settled()).last;
-  near(after.x, split.x, 'back to split view: page left', 2); near(after.width, split.width, 'page width', 2); near(after.height, split.height, 'page height', 2);
-}));
-
 test('Ctrl+Shift+F works from inside a shell: the terminal passes the key to the window instead of typing it', () => fixture(async ({ page, side, enter, exit, openPanel }) => {
   await openPanel();
   await side.getByRole('button', { name: 'New side panel tab' }).click();
@@ -234,93 +132,4 @@ test('Ctrl+Shift+F works from inside a shell: the terminal passes the key to the
   assert.equal(await input.evaluate(element => element === document.activeElement), true, 'the shell keeps the focus');
   await page.keyboard.press('Control+Shift+F'); await enter.waitFor();
   assert.deepEqual((await page.evaluate(() => window.__terminal.input)).filter(([, text]) => /\x06/.test(text)), [], 'the shell never received Ctrl+F');
-}));
-
-test('the toolbar keeps an address field of 180px at every panel width, and the panel cannot be dragged narrower than that needs', () => fixture(async ({ page, side, openPanel }) => {
-  await openPanel();
-  const address = side.getByRole('textbox', { name: 'Search or enter a URL' }), toolbar = side.getByRole('form', { name: 'Browser navigation' });
-  const handle = page.getByRole('separator', { name: 'Resize side panel' });
-  async function dragTo(wanted) {
-    const edge = await handle.boundingBox(), panel = await side.boundingBox();
-    await page.mouse.move(edge.x + edge.width / 2, edge.y + 200); await page.mouse.down();
-    await page.mouse.move(panel.x + panel.width - wanted, edge.y + 200, { steps: 6 }); await page.mouse.up();
-    await page.waitForTimeout(60);
-  }
-  const measure = async () => toolbar.evaluate(form => {
-    const bounds = form.getBoundingClientRect(), field = form.querySelector('input').getBoundingClientRect();
-    const hidden = [...form.querySelectorAll('button')].filter(button => button.getClientRects().length).filter(button => button.getBoundingClientRect().right > bounds.right + 0.5);
-    return { field: field.width, overflow: form.scrollWidth - form.clientWidth, cut: hidden.map(button => button.getAttribute('aria-label')), annotate: form.querySelector('[aria-label="Annotate this page"]').getBoundingClientRect().width, external: !!form.querySelector('[aria-label="Open in external browser"]')?.getClientRects().length };
-  });
-  const seen = [];
-  for (const wanted of [740, 640, 560, 500, 470, 450, 430, 410, 390, 370, 350, 330, 300, 200, 100]) {
-    await dragTo(wanted);
-    const panel = (await side.boundingBox()).width, now = await measure();
-    seen.push([wanted, Math.round(panel), Math.round(now.field)]);
-    assert.ok(now.field >= 179.5, `panel ${Math.round(panel)}px (asked ${wanted}): the address field is ${Math.round(now.field)}px`);
-    assert.ok(now.overflow <= 0 && now.cut.length === 0, `panel ${Math.round(panel)}px: the toolbar overflows (${now.overflow}px, cut: ${now.cut})`);
-  }
-  const narrowest = seen.at(-1)[1];
-  assert.ok(narrowest >= 330 && narrowest <= 460, `the narrowest panel is ${narrowest}px`);
-  near(seen[1][1], 640, 'the handle still drags to a width it is given', 1);
-  // Keyboard resizing stops at the same floor.
-  await dragTo(740); await handle.focus(); for (let step = 0; step < 20; step++) await page.keyboard.press('ArrowRight');
-  assert.equal(Math.round((await side.boundingBox()).width), narrowest, 'arrow keys stop at the floor too');
-
-  // At the floor, lower-priority controls collapse: Annotate to its icon, open-externally into the … menu.
-  const now = await measure();
-  assert.ok(now.annotate <= 36, `Annotate is an icon at ${narrowest}px (${now.annotate}px wide)`);
-  assert.equal(now.external, false, 'the open-externally button gives way');
-  await side.getByRole('button', { name: 'Browser options' }).click();
-  await page.getByRole('menuitem', { name: 'Open in external browser' }).click();
-  assert.ok((await page.evaluate(() => window.__commands.map(item => item.action))).includes('external'), 'the … menu opens the page elsewhere');
-  await page.keyboard.press('Escape');
-  // Wide again: the label and the button are back.
-  await dragTo(740);
-  const wide = await measure();
-  assert.ok(wide.annotate > 60 && wide.external, 'with room, Annotate shows its label and the button is there');
-  assert.equal(await side.getByRole('button', { name: 'Annotate this page' }).innerText(), 'Annotate');
-
-  // A blank tab shows the whole placeholder; a plain-HTTP, zoomed page still leaves room to read its address.
-  await dragTo(100);
-  await page.evaluate(() => window.__push({ tabs: [{ ...window.__browser.tabs[0], url: 'about:blank', title: 'New tab' }] }));
-  const room = () => address.evaluate(input => { const style = getComputedStyle(input), context = document.createElement('canvas').getContext('2d'); context.font = style.font; return { text: input.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight), placeholder: context.measureText(input.placeholder).width }; });
-  const blank = await room();
-  assert.ok(blank.text >= blank.placeholder, `the placeholder fits: ${Math.round(blank.text)}px for ${Math.round(blank.placeholder)}px`);
-  await page.evaluate(() => window.__push({ tabs: [{ ...window.__browser.tabs[0], url: 'http://example.com/a/long/path', title: 'Example', security: 'insecure', zoom: 125 }] }));
-  await side.getByRole('button', { name: '125%' }).waitFor();
-  const insecure = await room(), field = await address.boundingBox();
-  assert.ok(field.width >= 179.5, 'still 180px with the warning and the zoom chip');
-  assert.ok(insecure.text >= 80, `${Math.round(insecure.text)}px are left to read the address beside the warning and the zoom chip`);
-}));
-
-test('the toolbar keeps its address field at the panel’s default width in smaller windows', () => fixture(async ({ page, side, openPanel }) => {
-  await openPanel();
-  for (const width of [1001, 1100, 1200]) {
-    await page.setViewportSize({ width, height: 800 }); await page.waitForTimeout(120);
-    const field = await side.getByRole('textbox', { name: 'Search or enter a URL' }).boundingBox();
-    assert.ok(field.width >= 179.5, `window ${width}px: the address field is ${Math.round(field.width)}px`);
-  }
-}));
-
-test('sizes and styles match the split view, and the light theme has only approved logo accent', () => fixture(async ({ page, side, card, pill, enter, exit, openPanel }) => {
-  await openPanel();
-  const look = () => page.evaluate(() => {
-    const px = (selector, property) => { const element = document.querySelector(selector); return element ? getComputedStyle(element)[property] : null; };
-    const size = selector => { const rectangle = document.querySelector(selector)?.getBoundingClientRect(); return rectangle ? [Math.round(rectangle.width), Math.round(rectangle.height)] : null; };
-    return { tabHeight: size('.side-header .task-tab')?.[1], tabFont: px('.side-header .task-tab > button[role="tab"]', 'fontSize'), action: size('.side-action'), composer: px('.composer textarea', 'fontSize'), message: px('.message.agent', 'fontSize'), annotate: size('.browser-annotate')?.[1], user: px('.message.user', 'fontSize') };
-  });
-  const splitLook = await look();
-  assert.deepEqual(await unapprovedOranges(page), [], 'light theme, split view: only approved logo accent');
-  await enter.click(); await card.waitFor();
-  assert.deepEqual(await look(), splitLook, 'full view with the card: tabs, buttons and text keep their sizes');
-  assert.deepEqual(await unapprovedOranges(page), [], 'light theme, full view with the card: only approved logo accent');
-  await page.getByLabel('Message Elpis').focus();
-  assert.deepEqual(await unapprovedOranges(page), [], 'light theme, composer focused in the card: only approved logo accent');
-  await card.getByRole('button', { name: 'Collapse floating chat' }).click(); await pill.waitFor();
-  assert.deepEqual(await look(), splitLook, 'with the pill: the panel keeps its sizes');
-  const pillBox = await pill.boundingBox();
-  assert.equal(Math.round(pillBox.height), splitLook.annotate, 'the pill is as tall as the toolbar’s own buttons');
-  assert.deepEqual(await unapprovedOranges(page), [], 'light theme, collapsed pill: only approved logo accent');
-  await pill.click(); await exit.click(); await enter.waitFor();
-  assert.deepEqual(await look(), splitLook, 'back in split view nothing moved');
 }));

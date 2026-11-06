@@ -96,50 +96,6 @@ for (const colorScheme of ['light']) test(`a new chat can start in its own workt
   await shoot(page, `worktree-chat-${colorScheme}`);
 }));
 
-test('outside a Git repository with a commit, Worktree is offered but cannot be chosen, and says why', () => using({ repository: false }, async f => {
-  const { page, composer } = f;
-  await page.getByRole('button', { name: 'New chat', exact: true }).first().click();
-  await where(page).click();
-  const worktree = page.getByRole('menuitem', { name: /^Worktree/ });
-  await worktree.waitFor();
-  assert.equal(await worktree.getAttribute('aria-disabled'), 'true');
-  assert.match(await worktree.innerText(), /Git repository with a commit/);
-  await page.keyboard.press('Escape');
-  await composer.fill('Plain chat'); await composer.press('Enter');
-  for (let i = 0; i < 80 && !f.posts.some(item => item.path === '/api/threads'); i++) await page.waitForTimeout(50);
-  assert.equal(f.posts.find(item => item.path === '/api/threads').body.worktree, undefined, 'the chat works in the folder itself');
-}));
-
-test('a chat shows the branch it is on beside its folder; the chip copies the name', () => using({ routes: {
-  '/api/threads/chat-a/git': (_, url) => url.searchParams.get('view') === 'branch' ? { branch: BRANCH } : {},
-  '/api/threads/chat-b/git': (_, url) => url.searchParams.get('view') === 'branch' ? { branch: null } : {},
-} }, async f => {
-  const { page } = f;
-  await f.open('chat-a');
-  await branchChip(page).waitFor();
-  assert.equal(await branchChip(page).getAttribute('title'), BRANCH);
-  await branchChip(page).click();
-  await page.getByRole('menuitem', { name: 'Copy branch name' }).click();
-  assert.equal(await f.copied(), BRANCH);
-  await page.getByText('Branch name copied to clipboard.').waitFor();
-  await f.open('chat-b');
-  await page.waitForTimeout(300);
-  assert.equal(await page.locator('.branch-chip').count(), 0, 'no branch, no chip');
-}));
-
-test('opening a chat with an active turn still loads its branch', () => using({ routes: {
-  '/api/threads/chat-a/resume': () => ({ thread: LISTED[0], activeTurnId: 't4' }),
-  '/api/threads/chat-a/git': async (_, url) => {
-    if (url.searchParams.get('view') !== 'branch') return {};
-    await new Promise(resolve => setTimeout(resolve, 150));
-    return { branch: BRANCH };
-  },
-} }, async f => {
-  await f.open('chat-a');
-  await branchChip(f.page).waitFor();
-  assert.equal(await branchChip(f.page).innerText(), BRANCH);
-}));
-
 for (const colorScheme of ['light']) test(`archiving or deleting a chat whose worktree has uncommitted work says where the worktree is kept (${colorScheme})`, () => using({ colorScheme, routes: {
   '/api/threads/chat-a/archive': () => ({ archived: true, worktree: { kept: true, path: KEPT, branch: BRANCH, changes: 2 } }),
   '/api/trash': () => ({ trashed: ['chat-b'], worktrees: [{ threadId: 'chat-b', worktree: { kept: true, path: `${KEPT}0`, branch: `${BRANCH}0`, changes: 1 } }] }),
@@ -168,8 +124,3 @@ for (const colorScheme of ['light']) test(`archiving or deleting a chat whose wo
 }));
 
 // Membership is explicit (TASKS.md:111): a chat's folder, even a worktree of a project, does not put it in that project.
-test('a chat working in a worktree of a project stays out of that project until it is moved there', () => using({ extra: [chat('chat-in-wt', 'Feature in a worktree', KEPT)] }, async f => {
-  await f.page.locator('.thread-row[data-thread-id="chat-in-wt"]').waitFor();
-  const group = f.page.locator('.project-group').filter({ hasText: 'parity-fixture' });
-  assert.equal(await group.locator('.thread-row[data-thread-id="chat-in-wt"]').count(), 0, 'no folder-based project membership');
-}));

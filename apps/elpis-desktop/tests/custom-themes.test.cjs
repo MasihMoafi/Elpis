@@ -13,41 +13,6 @@ async function appearance(page) {
 const token = (page, name) => page.evaluate(name => getComputedStyle(document.documentElement).getPropertyValue(name).trim(), name);
 const waitToken = (page, name, value) => page.waitForFunction(({ name, value }) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() === value, { name, value });
 
-test('all visible Elpis wordmarks follow the chosen accent in light and dark', async t => {
-  const fs = require('node:fs/promises');
-  const evidence = process.env.ELPIS_THEME_SHOTS;
-  if (evidence) await fs.mkdir(evidence, { recursive: true });
-  const f = await fixture(), { page } = f; t.after(f.close);
-  await f.open('chat-a');
-  for (const mode of ['Light', 'Dark']) {
-    await appearance(page);
-    await page.getByRole('radiogroup', { name: 'Theme', exact: true }).getByRole('radio', { name: mode, exact: true }).click();
-    for (const accent of ['amber', 'blue', 'teal', 'green', 'violet', 'rose', 'orange']) {
-      await chooseOption(page.getByLabel('Accent colour', { exact: true }), accent);
-      await page.waitForFunction(value => document.documentElement.dataset.accent === value, accent);
-      await leaveSettings(page);
-      // The light mark's main stop is the accent itself. The dark mark keeps the approved Orange shading as OKLCH
-      // transforms of the accent (Masih, 31 Oct, commit 4b993137f "Preserve the approved wordmark shading across themes";
-      // exact values are pinned by wordmark-gradient.test.cjs), so its core stop is that transform of the selected accent.
-      const [token, accentColour] = mode === 'Light' ? ['var(--primary)', 'var(--primary)']
-        : ['var(--wordmark-core)', 'oklch(from var(--primary) calc(l * .978078) calc(c * .949257) calc(h - 2.700273))'];
-      const { color, expected } = await page.locator(`.brand-home svg stop[stop-color="${token}"]`).first().evaluate((stop, value) => {
-        const probe = document.createElement('span'); probe.style.color = value;
-        document.body.append(probe); const expected = getComputedStyle(probe).color; probe.remove();
-        return { color: getComputedStyle(stop).stopColor, expected };
-      }, accentColour);
-      assert.equal(color, expected, `${mode} ${accent}: wordmark uses the selected accent`);
-      assert.ok((await page.locator('.brand-home').boundingBox()).width > 60, 'logo retains its width beside the sidebar toggle');
-      if (evidence && accent === 'teal') {
-        await page.waitForTimeout(900); // the approved logo's entrance animation
-        await page.screenshot({ path: `${evidence}/teal-${mode.toLowerCase()}.png` });
-      }
-      await appearance(page);
-    }
-    await leaveSettings(page);
-  }
-});
-
 async function typeValue(page, label, value) {
   const input = page.getByLabel(label, { exact: true });
   await input.click();

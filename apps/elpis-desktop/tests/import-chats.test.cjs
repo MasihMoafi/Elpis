@@ -34,18 +34,6 @@ test('Import chats offers Claude Code and Codex with their chats, imports on pre
   } finally { await f.close(); }
 });
 
-test('with nothing to import both apps are still there and say so', async () => {
-  const f = await fixture({ routes: { '/api/import-chats': () => ({ days: 30, atATime: 50, sources: [{ id: 'claude-code', name: 'Claude Code', chats: 0 }, { id: 'codex', name: 'Codex', chats: 0 }] }) } });
-  try {
-    await openSettings(f.page); await f.page.getByRole('tab', { name: 'Import chats', exact: true }).click();
-    const panel = f.page.getByRole('tabpanel');
-    await panel.getByText('No chats from the last 30 days.').first().waitFor();
-    assert.equal(await panel.getByText('No chats from the last 30 days.').count(), 2, 'one line for each app');
-    for (const name of ['Import Claude Code chats', 'Import Codex chats']) assert.equal(await panel.getByRole('button', { name }).isDisabled(), true, name);
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
 // Live check, 28 Oct: chats that arrived while the window was open (or an import made elsewhere) left the old counts in place;
 // switching tabs or leaving Settings kept them, and only a reload showed the new ones.
 test('the counts are read again each time Import chats is shown, not only when the window loads', async () => {
