@@ -123,7 +123,7 @@ import { useSessionSplit } from "@/components/session-split";
 import { Tab, TabStrip } from "@/components/tab-strip";
 import { activate, activeTab, addBackgroundTab, addTab, closeTab, cycle, followChat, forgetChats, makeTab, renameTabs, tabFor, type ChatTab } from "@/lib/chat-tabs";
 import { AttachmentChips } from "@/components/attachment-chips";
-import { ATTACHMENT_ACCEPT, ATTACHMENT_LIMITS, TEXT_ONLY_NOTICE, attachFiles, attachmentFromFile, fitAttachments, transferFiles, type Attachment } from "@/lib/attachments";
+import { ATTACHMENT_ACCEPT, ATTACHMENT_LIMITS, TEXT_ONLY_NOTICE, attachmentFromFile, fitAttachments, transferFiles, type Attachment } from "@/lib/attachments";
 import { scanDeletionThreads } from "@/lib/thread-deletion";
 import { changesModelCatalog } from "@/lib/account-events";
 import { loadConversationPage } from "@/lib/conversation-page";
@@ -132,6 +132,7 @@ import { activityOf, api, unreadable, chatProvider, choiceById, choiceOf, effort
   mediaUrl, sessionReady, retryableSessionError, type Approval, type Entry, type Item, type ProviderSettings, type Thread } from "@/lib/api";
 import { historyPath, inReadingOrder, type HistoryPage } from "@/lib/chat-history";
 import { useComposerHeight } from "@/lib/use-composer-height";
+import { useComposerAttachments } from "@/lib/use-composer-attachments";
 import { useChatTabs } from "@/lib/use-chat-tabs";
 import { approvalDraftKey, useApprovalDrafts, useDraftStore, useSubmitOnce } from "@/lib/use-drafts";
 import { sessionWindowApi, useDesktopCapabilities } from "@/lib/use-desktop-capabilities";
@@ -277,11 +278,6 @@ export default function Home() {
   /** The mentions picked in the message box; a message carries those whose @name is still in its text. */
   const pickedMentions = useRef(new Map<string, Mention>());
   const filePickerRef = useRef<HTMLInputElement>(null);
-  const [attachments, setAttachmentsState] = useState<Attachment[]>([]);
-  const attachmentsRef = useRef<Attachment[]>([]);
-  const [attaching, setAttaching] = useState(false);
-  const readingFiles = useRef(false);
-  const setAttachments = useCallback((value: Attachment[]) => { attachmentsRef.current = value; setAttachmentsState(value); }, []);
   const [dictating, setDictating] = useState(false);
   const [voiceBusy, setVoiceBusy] = useState(false);
   const setText = useCallback((value: string) => { textRef.current = value; setTextState(value); }, []);
@@ -292,7 +288,6 @@ export default function Home() {
   const { answersFor, draftAnswer, clearApprovalDraft } = useApprovalDrafts();
   const draftStore = useDraftStore(setError), { savedDraft, saveDraft, savedAttachments, saveAttachments } = draftStore;
   const newDraftKey = useRef("new");
-  const [fileNotice, setFileNotice] = useState("");
   const [connected, setConnected] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState("Connecting to Elpis…");
   const [ready, setReady] = useState(false);
@@ -303,28 +298,8 @@ export default function Home() {
   const sending = useRef(0);
   const [loading, setLoading] = useState(false);
   const editDraft = (value: string) => { setText(value); saveDraft(selectedRef.current?.id || newDraftKey.current, value); };
-  const restoreAttachments = useCallback((id: string) => {
-    try { setAttachments(savedAttachments(id)); savedAttachments(`recovery-${id}`); }
-    catch { setAttachments([]); setError("Saved attachments could not be restored. Add the files again before sending."); }
-    setFileNotice("");
-  }, [savedAttachments, setAttachments]);
-  async function addFiles(files: File[]) {
-    if (!files.length) return;
-    if (shellMode) { setFileNotice("Bash mode is on, so nothing was added. Press Backspace in the empty message box to return to chat, then try again."); return; }
-    if (readingFiles.current) { setFileNotice("Wait for the current files to finish reading."); return; }
-    const owner = selectedRef.current?.id || newDraftKey.current;
-    readingFiles.current = true; setAttaching(true); setFileNotice("");
-    try {
-      const read = await attachFiles(savedAttachments(owner), files, body => api("/attachments/extract", body));
-      const fit = fitAttachments(savedAttachments(owner), read.added); // the list may have changed while the files were read
-      if (read.added.length) { saveAttachments(owner, fit.kept); if ((selectedRef.current?.id || newDraftKey.current) === owner) setAttachments(fit.kept); }
-      if (read.problems.length || fit.problems.length) throw Error([...read.problems, ...fit.problems].join("\n"));
-    } catch (cause) {
-      const message = errorText(cause);
-      if ((selectedRef.current?.id || newDraftKey.current) === owner) setFileNotice(message);
-      else setRuntimeNotices(previous => ({ ...previous, [owner]: message }));
-    } finally { readingFiles.current = false; setAttaching(false); }
-  }
+  const [runtimeNotices, setRuntimeNotices] = useState<Record<string, string>>({});
+  const { attachments, attachmentsRef, attaching, setAttaching, readingFiles, fileNotice, setFileNotice, setAttachments, restoreAttachments, addFiles } = useComposerAttachments({ selectedRef, newDraftKey, shellMode, savedAttachments, saveAttachments, setError, setRuntimeNotices });
   /** The browser's annotations and screenshots join the composer's files; its Send also sends the message. */
   async function attachFromBrowser(parts: Attachment[], submit: boolean) {
     const owner = selectedRef.current?.id || newDraftKey.current;
@@ -359,7 +334,6 @@ export default function Home() {
   const [activity, setActivity] = useState<Record<string, string>>({});
   const [liveError, setLiveError] = useState<Record<string, string>>({});
   const [historyOnly, setHistoryOnly] = useState<Record<string, boolean>>({});
-  const [runtimeNotices, setRuntimeNotices] = useState<Record<string, string>>({});
   const [failedTurns, setFailedTurns] = useState<Record<string, FailedTurn>>({});
   // A turn that ended stopped (by Stop, Esc, another window or the engine) says so until the next turn starts.
   const [stoppedTurns, setStoppedTurns] = useState<Record<string, string>>({});
