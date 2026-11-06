@@ -68,7 +68,9 @@
     "tests/files-pane.test.mjs",
     "tests/improve-reason.test.mjs",
     "tests/failed-turn.test.mjs",
-    "tests/run-log.test.mjs"
+    "tests/run-log.test.mjs",
+    "tests/read-aloud-provider.test.cjs",
+    "tests/use-for-settings.test.cjs"
   ],
   "bridge": [
     "bridge/cloudroom-vm.test.mjs",
@@ -142,7 +144,8 @@
     "bridge/matilda-companion.test.mjs",
     "bridge/love-spot-painting.test.cjs",
     "bridge/agent-output.test.mjs",
-    "bridge/trajectory-projection.test.mjs"
+    "bridge/trajectory-projection.test.mjs",
+    "bridge/kokoro.test.mjs"
   ],
   "desktop": [
     "desktop/app-menu.test.cjs",
