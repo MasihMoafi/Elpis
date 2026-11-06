@@ -401,7 +401,7 @@ export default function Home() {
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [childCursors, setChildCursors] = useState<Record<string, string | null>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const { itemCursor, setItemCursor, historyGaps, noteHistoryGap, heldEarlier, heldCount, setHeldCount, transcripts, liveRevision, liveVersions, liveKeysAfter, applyHistoryPage } = useTranscriptHistory(selected, loading, entries, setEntries);
+  const { itemCursor, setItemCursor, historyGaps, noteHistoryGap, heldEarlier, heldCount, setHeldCount, transcripts, prefetching, prefetchThread, liveRevision, liveVersions, liveKeysAfter, applyHistoryPage } = useTranscriptHistory(selected, loading, entries, setEntries);
   const scroll = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
   const followingBottom = useRef(false);
@@ -490,16 +490,6 @@ export default function Home() {
     setLiveError(previous => without(previous, id));
   }, [select, upsertThread]);
 
-  // A chat's recent history is read while the pointer rests on its row, so the click shows it at once and its own
-  // fresh read only refreshes it (Masih, 23 Oct: "When I click on them it takes a second to load them").
-  const prefetching = useRef(new Map<string, Promise<void>>());
-  const prefetchThread = useCallback((thread: Thread) => {
-    if (transcripts.current.has(thread.id) || prefetching.current.has(thread.id)) return;
-    prefetching.current.set(thread.id, api<{ data: Entry[]; nextCursor: string | null }>(historyPath(thread.id))
-      .then(result => { if (Array.isArray(result.data) && !transcripts.current.has(thread.id)) transcripts.current.set(thread.id, { entries: inReadingOrder(result), cursor: result.nextCursor }); })
-      .catch(() => {}) // The click reads it again and reports a failure.
-      .finally(() => prefetching.current.delete(thread.id)));
-  }, []);
   const loadThread = useCallback(async (thread: Thread) => {
     markRead(thread.id);
     // A chat that is already open in another tab brings that tab forward instead of opening twice.
