@@ -1,3 +1,4 @@
+import type { AgentPanelState } from "@/lib/use-chat-team";
 import type React from "react";
 import { PanelLeft, PanelRightClose, PanelRightOpen, RefreshCw, X } from "lucide-react";
 import { BrandWordmark } from "@/components/brand-wordmark";
@@ -30,7 +31,7 @@ type Props = {
   pendingInputOpen: boolean; setPendingInputOpen: React.Dispatch<React.SetStateAction<boolean>>;
   heading: string; meta: string; dark: boolean; desktop: boolean; loading: boolean; panelShown: boolean;
   team: Thread[]; awaitingTeam: boolean; agentsPanel: boolean;
-  setAgentsPanelState: React.Dispatch<React.SetStateAction<{ open: boolean; held: ReadonlySet<string> }>>;
+  setAgentsPanelState: React.Dispatch<React.SetStateAction<AgentPanelState>>;
   setLoveToolbarHost: React.Dispatch<React.SetStateAction<HTMLDivElement | null>>;
   find: (id?: string | null) => Thread | undefined; show: (view: View) => void; showSidebar: (open: boolean) => void;
   openById: (id: string) => Promise<void>; loadThread: ReturnType<typeof useOpenConversation>["loadThread"];

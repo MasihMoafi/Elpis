@@ -4,7 +4,7 @@ import { ElpisFeatures } from "@/components/elpis-features";
 import { EnvironmentMenu, ProjectMenu } from "@/components/project-picker";
 import { QueuedFollowUps } from "@/components/queued-follow-ups";
 import type { SettingsDestination } from "@/components/settings-view";
-import { SideChat, type SideRequest } from "@/components/side-chat";
+import { SideChat } from "@/components/side-chat";
 import { DiffPanel, ReviewPanel, SessionPanel } from "@/components/slash-panels";
 import { TaskList } from "@/components/task-list";
 import { Button } from "@/components/ui/button";
@@ -18,13 +18,12 @@ import type { createReplyActions } from "@/lib/reply-actions";
 import type { useConversationSession } from "@/lib/use-conversation-session";
 import type { useProjectState } from "@/lib/use-project-state";
 import type { useRuntimeState } from "@/lib/use-runtime-state";
+import type { ComposerPanel, SideChatState } from "@/lib/use-composer-panels";
 
-type SideChatState = { parentId: string; open: boolean; question?: SideRequest } | null;
-type Panel = "status" | "review" | "diff" | null;
 type Props = {
   session: ReturnType<typeof useConversationSession>; runtime: ReturnType<typeof useRuntimeState>; projectState: ReturnType<typeof useProjectState>;
   sideChat: SideChatState; setSideChat: React.Dispatch<React.SetStateAction<SideChatState>>;
-  panel: Panel; setPanel: React.Dispatch<React.SetStateAction<Panel>>; sessionRows: [string, string][]; closePanel: () => void;
+  panel: ComposerPanel; setPanel: React.Dispatch<React.SetStateAction<ComposerPanel>>; sessionRows: [string, string][]; closePanel: () => void;
   openSettings: (tab: SettingsDestination) => void; startReview: ReturnType<typeof createCommandActions>["startReview"];
   visibleSlashNotice: string; fastSuccess: RegExpExecArray | null; slashNotice: string; setSlashNotice: React.Dispatch<React.SetStateAction<string>>;
   selectedLiveError: string | undefined; setError: React.Dispatch<React.SetStateAction<string>>; restoreComposerFocus: (origin: Element | null) => number;

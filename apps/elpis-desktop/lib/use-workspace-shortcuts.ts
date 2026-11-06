@@ -1,6 +1,6 @@
 import { useEffect, useRef, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { stopsOnEscape } from "@/lib/prompt-history";
-import type { SideRequest } from "@/components/side-chat";
+import type { SideChatState } from "@/lib/use-composer-panels";
 import type { Thread } from "@/lib/api";
 import type { View } from "@/lib/workspace-types";
 import type { useSidePanel } from "@/components/side-panel";
@@ -8,8 +8,8 @@ import type { useSidePanel } from "@/components/side-panel";
 type Inputs = {
   shortcutAction: RefObject<(id: string, index?: number) => void>; selected: Thread | null; ordered: Thread[];
   readOnlyRun: boolean; activeTurn: unknown; view: View; cwd: string; desktop: boolean; hasTerminal: boolean;
-  side: ReturnType<typeof useSidePanel>; sideChat: { parentId: string; open: boolean; question?: SideRequest } | null;
-  setSideChat: Dispatch<SetStateAction<{ parentId: string; open: boolean; question?: SideRequest } | null>>;
+  side: ReturnType<typeof useSidePanel>; sideChat: SideChatState;
+  setSideChat: Dispatch<SetStateAction<SideChatState>>;
   sidebar: boolean; sidebarCollapsed: boolean; activeTabId: string;
   commandReturnFocus: RefObject<HTMLElement | null>; shortcutsReturnFocus: RefObject<HTMLElement | null>;
   setCommandMenuOpen: Dispatch<SetStateAction<boolean>>; setShortcutsOpen: Dispatch<SetStateAction<boolean>>;

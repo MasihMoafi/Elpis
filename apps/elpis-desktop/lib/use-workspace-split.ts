@@ -1,3 +1,4 @@
+import type { AgentPanelState } from "@/lib/use-chat-team";
 import { useLayoutEffect, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { useSessionSplit } from "@/components/session-split";
 import type { Thread } from "@/lib/api";
@@ -18,7 +19,7 @@ type Inputs = {
   workspacePanels: ReturnType<typeof useWorkspacePanels>; children: ReturnType<typeof useChildConversations>;
   desktop: boolean; newDraftKey: RefObject<string>; newChat: () => void; editDraft: (value: string) => void;
   loadThread: ReturnType<typeof useOpenConversation>["loadThread"];
-  setAgentsPanelState: Dispatch<SetStateAction<{ open: boolean; held: ReadonlySet<string> }>>;
+  setAgentsPanelState: Dispatch<SetStateAction<AgentPanelState>>;
 };
 
 export function useWorkspaceSplit({ session, composer, attachments: attachmentState, drafts, runtime, pages, workspacePanels, children, desktop, newDraftKey, newChat, editDraft, loadThread, setAgentsPanelState }: Inputs) {

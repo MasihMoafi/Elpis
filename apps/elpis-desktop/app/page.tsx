@@ -69,7 +69,7 @@ import { useDesktopEntryPoints } from "@/lib/use-desktop-entry-points";
 import { createPromptEditing } from "@/lib/prompt-editing";
 import { createSideChatActions } from "@/lib/side-chat-actions";
 import { useWorkspaceRestoration } from "@/lib/use-workspace-restoration";
-import { useChatTeam } from "@/lib/use-chat-team";
+import { useChatTeam, type AgentPanelState } from "@/lib/use-chat-team";
 import { useWorkspaceShortcuts } from "@/lib/use-workspace-shortcuts";
 import { useWorkflowWorkspace } from "@/lib/use-workflow-workspace";
 import { createSidebarChatSelection } from "@/lib/sidebar-chat-selection";
@@ -152,7 +152,7 @@ export default function Home() {
   const { desktop, windowAvailable, hasTerminal } = useDesktopCapabilities();
   const workspacePanels = useWorkspacePanels({ selected, cwd, activeTabId: tabs.activeId, desktop, pages, setError, setSidebarCollapsed, searchInput: () => searchInput.current });
   const { browser, side, browserPins, tuiLaunch, setTuiLaunch, panelShown, fullView, pendingInputOpen, setPendingInputOpen, pendingInputButton, sidebar, setSidebar, panelDrawer, showChat, show, narrow, showSidebar, focusSearch } = workspacePanels;
-  const [agentsPanelState, setAgentsPanelState] = useState<{ open: boolean; held: ReadonlySet<string> }>({ open: true, held: new Set() });
+  const [agentsPanelState, setAgentsPanelState] = useState<AgentPanelState>({ open: true, held: new Set() });
   const [workingAgentsOnly, setWorkingAgentsOnly] = useState(true);
   const [loveToolbarHost, setLoveToolbarHost] = useState<HTMLDivElement | null>(null);
   const [workingHost, setWorkingHost] = useState<HTMLDivElement | null>(null);
