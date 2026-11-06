@@ -134,6 +134,7 @@ import { createSlashCommands } from "@/lib/slash-commands";
 import { createChatSend } from "@/lib/chat-send";
 import { createChatNavigation } from "@/lib/chat-navigation";
 import { createProjectActions } from "@/lib/project-actions";
+import { createEarlierMessages } from "@/lib/earlier-messages";
 import { refusedOffline, type Live, type View, type WorkflowReplay, type NextTurn } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
 import { useComposerState } from "@/lib/use-composer-state";
@@ -357,7 +358,7 @@ export default function Home() {
   const [childCursors, setChildCursors] = useState<Record<string, string | null>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const history = useTranscriptHistory(selected, loading, entries, setEntries);
-  const { itemCursor, setItemCursor, historyGaps, heldEarlier, heldCount, setHeldCount, transcripts, prefetchThread, liveRevision, liveKeysAfter } = history;
+  const { itemCursor, setItemCursor, historyGaps, heldCount, transcripts, prefetchThread, liveRevision, liveKeysAfter } = history;
   const scroll = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
   const followingBottom = useRef(false);
@@ -863,45 +864,7 @@ export default function Home() {
     setApprovals(prev => prev.filter(a => a.id !== id)); clearApprovalDraft(id);
     if (request.current === originalRequest) restoreComposerFocus(originalFocus);
   }
-  const EARLIER_MESSAGES = 10;
-  const earlierHeld = (id?: string) => !!id && (heldEarlier.current.get(id)?.length ?? 0) > 0;
-  async function older(untilTurnId?: string, untilItemId?: string): Promise<boolean> {
-    if (!selected || !itemCursor && !earlierHeld(selected.id)) return false;
-    const revision = request.current;
-    setLoading(true);
-    const id = selected.id, pages: Entry[] = [...heldEarlier.current.get(id) ?? []], seen = new Set<string>();
-    const messagesIn = (list: Entry[]) => list.filter(entry => entry.item.type === "userMessage").length;
-    let cursor: string | null = itemCursor, found = pages.some(entry => entry.turnId === untilTurnId && entry.item.type === "userMessage" && (!untilItemId || entry.item.id === untilItemId));
-    try {
-      // A press brings ten more of the chat's messages, however many tool steps lie between them.
-      while (cursor && !found && (untilTurnId || messagesIn(pages) < EARLIER_MESSAGES)) {
-        if (seen.has(cursor)) throw new Error("Repeated conversation cursor");
-        seen.add(cursor);
-        const result: { data: Entry[]; nextCursor: string | null } = await api(historyPath(id, cursor));
-        if (!Array.isArray(result.data)) throw unreadable("conversations");
-        found = result.data.some(entry => entry.turnId === untilTurnId && entry.item.type === "userMessage" && (!untilItemId || entry.item.id === untilItemId));
-        pages.unshift(...result.data.reverse());
-        cursor = result.nextCursor;
-        if (selectedRef.current?.id !== id || request.current !== revision) break;
-      }
-      if (selectedRef.current?.id !== id || request.current !== revision) return false;
-      // Show from the tenth message back; keep the rest for the next press.
-      let split = 0;
-      if (!untilTurnId && messagesIn(pages) > EARLIER_MESSAGES) {
-        let count = 0;
-        for (let index = pages.length - 1; index >= 0; index--) if (pages[index].item.type === "userMessage" && ++count === EARLIER_MESSAGES) { split = index; break; }
-      }
-      heldEarlier.current.set(id, pages.slice(0, split));
-      setError("");
-      stickToBottom.current = false;
-      if (scroll.current) restoreScroll.current = { height: scroll.current.scrollHeight, top: scroll.current.scrollTop };
-      setEntries(prev => [...pages.slice(split), ...prev]);
-      setItemCursor(cursor);
-      setHeldCount(count => count + 1);
-      return untilTurnId ? found : true;
-    } catch (e) { if (request.current === revision) setError(String(e)); return false; }
-    finally { if (request.current === revision) setLoading(false); }
-  }
+  const { earlierHeld, older } = createEarlierMessages({ history, selected, selectedRef, request, setLoading, setError, setEntries, stickToBottom, scroll, restoreScroll });
   const openById = (id: string) => openThread(threads.find(thread => thread.id === id) || related[id] || { id });
   /** "Open in Elpis TUI": the chat opens here and its terminal resumes it in the TUI (`elpis resume <id>`). */
   const openInTui = (thread: Thread) => {
