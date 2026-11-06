@@ -12,8 +12,8 @@ const deltaItemTypes: Record<string, "agentMessage" | "commandExecution" | "file
   "item/reasoning/summaryTextDelta": "reasoning",
 };
 
-type LiveItemEvent = { turnId: string; item: Item; model?: string } | {
-  turnId: string; itemId: string; type: string; delta: string; summaryIndex: number; model?: string;
+type LiveItemEvent = { turnId: string; item: Item; model?: string | undefined } | {
+  turnId: string; itemId: string; type: string; delta: string; summaryIndex: number; model?: string | undefined;
 };
 
 function liveItemEvent(method: string, params: Record<string, unknown>): LiveItemEvent | null {

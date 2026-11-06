@@ -22,7 +22,8 @@ const bytes = (dataUrl: string) => Math.ceil((dataUrl.length - dataUrl.indexOf("
 /** One JPEG for the agent: each comment's screenshot under a "Comment N" header, two per row. */
 export async function screenshotSheet(images: { number: number; dataUrl: string }[]): Promise<string> {
   const loaded = await Promise.all(images.map(async item => ({ number: item.number, image: await load(item.dataUrl) })));
-  const columns = loaded.length > 1 ? 2 : 1, width = columns > 1 ? 800 : Math.min(1280, loaded[0].image.naturalWidth), header = 30, gap = 8;
+  const first = loaded[0]; if (!first) throw Error("No screenshots to combine.");
+  const columns = loaded.length > 1 ? 2 : 1, width = columns > 1 ? 800 : Math.min(1280, first.image.naturalWidth), header = 30, gap = 8;
   const heights = loaded.map(item => header + Math.round(item.image.naturalHeight * width / item.image.naturalWidth));
   const rows: number[] = []; for (let index = 0; index < loaded.length; index += columns) rows.push(Math.max(...heights.slice(index, index + columns)));
   const canvas = document.createElement("canvas");
@@ -32,7 +33,8 @@ export async function screenshotSheet(images: { number: number; dataUrl: string 
   let y = gap;
   rows.forEach((row, rowIndex) => {
     loaded.slice(rowIndex * columns, rowIndex * columns + columns).forEach((item, column) => {
-      const x = gap + column * (width + gap), height = heights[rowIndex * columns + column] - header;
+      const measured = heights[rowIndex * columns + column]; if (measured === undefined) throw Error("A screenshot size is missing.");
+      const x = gap + column * (width + gap), height = measured - header;
       context.fillStyle = BLUE; context.fillRect(x, y, width, header);
       context.fillStyle = "#fff"; context.font = "600 16px system-ui, sans-serif"; context.textBaseline = "middle"; context.fillText(`Comment ${item.number}`, x + 10, y + header / 2);
       context.drawImage(item.image, x, y + header, width, height);

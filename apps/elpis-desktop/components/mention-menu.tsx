@@ -42,7 +42,7 @@ export function useMentionMenu({ text, caret, cwd, threads, currentId, onPick }:
   function onKeyDown(event: KeyboardEvent) {
     if (!open || event.nativeEvent.isComposing) return false;
     if (event.key === "ArrowDown" || event.key === "ArrowUp") select((active + (event.key === "ArrowDown" ? 1 : -1) + matches.length) % matches.length);
-    else if ((event.key === "Enter" && !event.shiftKey) || event.key === "Tab") choose(matches[active]);
+    else if ((event.key === "Enter" && !event.shiftKey) || event.key === "Tab") { const selected = matches[active]; if (selected) choose(selected); }
     else if (event.key === "Escape") setDismissed(text);
     else return false;
     event.preventDefault(); return true;
@@ -54,5 +54,5 @@ export function useMentionMenu({ text, caret, cwd, threads, currentId, onPick }:
 export function MentionMenu({ menu }: { menu: ReturnType<typeof useMentionMenu> }) {
   if (!menu.open) return null;
   return <OptionList kind id={MENU_ID} label="Mentions" options={menu.matches.map((item, index) => ({ key: String(index), name: item.name, description: item.detail }))}
-    active={menu.active} onHover={menu.select} onPick={index => menu.choose(menu.matches[index])} />;
+    active={menu.active} onHover={menu.select} onPick={index => { const selected = menu.matches[index]; if (selected) menu.choose(selected); }} />;
 }

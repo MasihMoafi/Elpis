@@ -56,7 +56,7 @@ function useProviderCatalogs(value: ElpisSettings, models: Model[], selected: (s
 }
 
 export function ModelChoice({ label, value, models, provider, catalogStatus, disabled, inheritLabel, onChange }: {
-  label: string; value: string | null; models: Model[]; provider: string; catalogStatus?: string; disabled: boolean; inheritLabel?: string; onChange: (value: string | null) => void;
+  label: string; value: string | null; models: Model[]; provider: string; catalogStatus?: string | undefined; disabled: boolean; inheritLabel?: string | undefined; onChange: (value: string | null) => void;
 }) {
   return <div role="group" aria-label={`${label} choices`} className="settings-field-stack text-sm">
     {models.length ? <OptionSelect aria-label={label} className="settings-choice" value={value ?? ""} onChange={event => onChange(event.target.value || null)} disabled={disabled}>

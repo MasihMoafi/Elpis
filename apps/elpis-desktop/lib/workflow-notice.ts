@@ -20,5 +20,6 @@ export function workflowNotice(text: string): WorkflowNotice | null {
 export function noticeOf(item: Item): WorkflowNotice | null {
   if (item.type !== "userMessage") return null;
   const parts = item.content ?? [];
-  return parts.length === 1 && parts[0].type === "text" ? workflowNotice(parts[0].text ?? "") : null;
+  const first = parts[0];
+  return parts.length === 1 && first?.type === "text" ? workflowNotice(first.text ?? "") : null;
 }

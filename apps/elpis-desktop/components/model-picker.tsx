@@ -11,7 +11,7 @@ import { Combobox, ComboboxContent, ComboboxEmpty, ComboboxInput, ComboboxItem, 
 import { api, choiceById, modelLabel, modelName, subscriptionOf, type ProviderChoice, type Model } from "@/lib/api";
 import { refreshModelCatalog, useModelCatalog } from "@/lib/model-catalog";
 import { errorText } from "@/lib/error-text.mts";
-type Choice = { key: string; model: string; choiceId: string; label: string; providerLabel: string; description?: string };
+type Choice = { key: string; model: string; choiceId: string; label: string; providerLabel: string; description?: string | undefined };
 /** Where each built-in API provider issues keys, as the terminal's /provider names them. */
 const KEY_PAGES: Record<string, string> = { openrouter: "openrouter.ai/keys", anthropic: "console.anthropic.com/settings/keys", "google-gemini": "aistudio.google.com/apikey" };
 
@@ -97,7 +97,7 @@ export function ModelPicker({ choices, models, model, choiceId, defaultModel, di
   const configured = choices.filter(choice => !!choice.provider);
   const choose = (choice: { model: string; choiceId: string }) => { onChange(choice); setOpen(false); setQuery(""); };
   return <Combobox items={rows} value={current} inputValue={query} onInputValueChange={setQuery} open={open}
-    onOpenChange={next => { setOpen(next); if (next) { setQuery(""); setTab(choices.length === 1 ? choices[0].id : "all"); setCatalogs(previous => Object.fromEntries(Object.entries(previous).map(([key, value]) => [key, { ...value, loaded: false }]))); void refreshModelCatalog(); } }}
+    onOpenChange={next => { setOpen(next); if (next) { setQuery(""); setTab(choices.length === 1 ? choices[0]?.id ?? "all" : "all"); setCatalogs(previous => Object.fromEntries(Object.entries(previous).map(([key, value]) => [key, { ...value, loaded: false }]))); void refreshModelCatalog(); } }}
     itemToStringLabel={(item: Choice) => `${item.label} ${item.providerLabel} ${item.model}`} itemToStringValue={(item: Choice) => item.key}
     onValueChange={item => { if (item) choose(item); }}>
     <ComboboxTrigger role="combobox" aria-label="Model" disabled={disabled} data-value={model} title={[currentLabel, currentProvider].filter(Boolean).join(" · ")} className="model-picker-trigger model-select"><span className="model-trigger-label">{currentModel ? currentLabel : "Choose model"}</span>{currentProvider && <span className="model-trigger-provider">{currentProvider}</span>}<ChevronDown size={16} /></ComboboxTrigger>

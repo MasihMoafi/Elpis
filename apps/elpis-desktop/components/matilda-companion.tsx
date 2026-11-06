@@ -99,7 +99,7 @@ function useVoiceAvailable() {
 /** Beside her face: Call Matilda when no call runs (5 Nov, Masih: "add that call button, the same call button that we use
  * for hang up, this is just for calling her up"); during a call, Mute, Pause and Hang up. The call is Love Spot's chat's,
  * so it goes on across the app as one started in that chat does. */
-function HerVoiceControls({ voice, threadId }: { voice: ReturnType<typeof useHerVoice>; threadId?: string | null }) {
+function HerVoiceControls({ voice, threadId }: { voice: ReturnType<typeof useHerVoice>; threadId?: string | null | undefined }) {
   const { live, call, speech } = voice;
   const available = useVoiceAvailable();
   if (!voice.shown) return live && !live.call && threadId && available

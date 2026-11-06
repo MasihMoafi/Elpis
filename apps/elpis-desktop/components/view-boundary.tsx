@@ -17,10 +17,10 @@ type State = { error: string | null; resetKey: unknown };
  * page) says so in its own place, with a way to try again, and the rest of the window carries on. Views read their
  * replies defensively too (lib/api.ts `unreadable`); this catches whatever they did not foresee. */
 export class ViewBoundary extends Component<Props, State> {
-  state: State = { error: null, resetKey: this.props.resetKey };
+  override state: State = { error: null, resetKey: this.props.resetKey };
   static getDerivedStateFromError(error: unknown) { return { error: errorText(error) }; }
   static getDerivedStateFromProps(props: Props, state: State) { return props.resetKey === state.resetKey ? null : { error: null, resetKey: props.resetKey }; }
-  render() {
+  override render() {
     if (this.state.error === null) return this.props.children;
     return <div role="alert" className="alert view-error">
       <p>{this.props.label ?? "This page"} could not be shown: {this.state.error}</p>

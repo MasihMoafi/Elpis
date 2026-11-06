@@ -77,7 +77,7 @@ export function DecisionCard({ title, className, choices, keys, busy, error, glo
   }
   const escape = choices?.findIndex(choice => choice.escape) ?? -1;
   const ownKeys: DecisionKeys | null = busy ? null : ask ? null : choices
-    ? { count: choices.length, pick: take, enter: () => take(choices.findIndex(choice => !choice.disabled)), escape: escape >= 0 ? () => take(escape) : undefined }
+    ? { count: choices.length, pick: take, enter: () => take(choices.findIndex(choice => !choice.disabled)), ...(escape >= 0 ? { escape: () => take(escape) } : {}) }
     : keys ?? null;
   useDecisionKeys(root, ownKeys, globalKeys);
   const send = () => { if (ask && !busy) void ask.send(text.trim()); };
@@ -93,8 +93,8 @@ export function DecisionCard({ title, className, choices, keys, busy, error, glo
         }} />
       <div className="decision-actions"><Button variant="ghost" size="sm" disabled={busy} onClick={back}>Back</Button><Button size="sm" disabled={busy} onClick={send}>{ask.submit}</Button></div>
     </div> : choices && <div className="decision-choices">{choices.map((choice, index) =>
-      <ChoiceRow key={index} index={index} label={choice.label} description={choice.description} primary={index === 0} disabled={busy || choice.disabled} onClick={() => take(index)}
-        shortcut={index === 0 ? "Enter" : choice.escape ? "Esc" : undefined} rowRef={element => { rows.current[index] = element; }} />)}</div>}
+      <ChoiceRow key={index} index={index} label={choice.label} description={choice.description} primary={index === 0} disabled={Boolean(busy || choice.disabled)} onClick={() => take(index)}
+        {...(index === 0 ? { shortcut: "Enter" } : choice.escape ? { shortcut: "Esc" } : {})} rowRef={element => { rows.current[index] = element; }} />)}</div>}
     {error && <p className="decision-error" role="alert">{error}</p>}
     {actions && !ask && <div className="decision-actions">{actions}</div>}
   </section>;

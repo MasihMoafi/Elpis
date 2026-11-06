@@ -143,7 +143,7 @@ export function BrowserPanel({ browser, covered, onAttach, imagesAllowed = true,
         <PenLine size={16} aria-hidden="true" /><span className="browser-annotate-label">Draw</span>
       </Button>
       <Button type="button" variant="ghost" size="icon-sm" className="browser-external" aria-label="Open in external browser" title="Open in external browser" disabled={!active || active.url === "about:blank"} onClick={() => void command("external")}><ExternalLink size={16} /></Button>
-      <BrowserOptions browser={browser} tab={active} onNotice={setNotice} onAttach={onAttach} imagesAllowed={imagesAllowed} />
+      <BrowserOptions browser={browser} {...(active === undefined ? {} : { tab: active })} onNotice={setNotice} {...(onAttach ? { onAttach } : {})} imagesAllowed={imagesAllowed} />
     </form>
     <DevServerPreview key={cwd} cwd={cwd} browser={browser} />
     {state.agent && (!state.agent.enabled || state.agent.tabId) && <div role="status" className="alert flex shrink-0 items-center justify-between gap-3 border-b border-border bg-muted px-3 py-2 text-sm text-foreground">
@@ -172,7 +172,7 @@ export function BrowserPanel({ browser, covered, onAttach, imagesAllowed = true,
         <Button type="button" size="sm" onClick={() => void command("reload")}>Reload</Button>
       </div>}
     </div>
-    <AnnotationDock browser={browser} onAttach={onAttach} imagesAllowed={imagesAllowed} />
+    <AnnotationDock browser={browser} {...(onAttach ? { onAttach } : {})} imagesAllowed={imagesAllowed} />
     {drawing && onAttach && <Suspense fallback={<div role="dialog" aria-modal="true" aria-label="Draw on the page" className="absolute inset-0 z-10 grid place-items-center bg-background text-sm text-muted-foreground"><p role="status">Opening the drawing tools…</p></div>}>
       <BrowserDrawing draft={drawing} dark={document.documentElement.classList.contains("dark")} onAttach={onAttach}
         onChat={() => { setDrawing(null); setHeld(!!heldDrawing()); onReturnToChat?.(); requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('[aria-label="Message Elpis"]')?.focus()); }}

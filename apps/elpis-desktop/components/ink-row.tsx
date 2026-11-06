@@ -37,7 +37,8 @@ function schedule(row: HTMLElement) {
       return { gap, items, insets: items.map(insetsOf) };
     });
     for (const { gap, items, insets: inner } of plans) items.forEach((item, index) => {
-      item.style.marginInlineStart = index ? `${gap - inner[index - 1].right - inner[index].left}px` : "";
+      const previous = inner[index - 1], current = inner[index];
+      item.style.marginInlineStart = index && previous && current ? `${gap - previous.right - current.left}px` : "";
     });
   });
 }
