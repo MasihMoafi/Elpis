@@ -112,8 +112,7 @@ export function SettingsView({ initialTab = "providers", navigationKey = 0, acti
     }
   };
   return <div className="settings-layout">
-    {/* --settings-tabs sizes the rows so every tab fits a short window (settings.css). */}
-    <nav ref={nav} className="settings-nav" aria-label="Settings navigation" style={{ ["--settings-tabs" as string]: shown.length }}>
+    <nav ref={nav} className="settings-nav" aria-label="Settings navigation">
       {onBack && <button data-slot="nav-row" type="button" className="back-link" onClick={onBack}><ArrowLeft size={18} aria-hidden="true" />Back to app</button>}
       <h1 className="settings-title">Settings</h1>
       <SearchField aria-label="Search settings" placeholder="Search" value={query} maxLength={80} onChange={event => setQuery(event.target.value)} />

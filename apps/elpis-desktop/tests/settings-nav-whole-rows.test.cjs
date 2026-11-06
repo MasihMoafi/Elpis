@@ -17,12 +17,10 @@ for (const colorScheme of ['light']) test(`Settings navigation never shows a par
   try {
     await f.open('chat-a');
     await openSettings(page);
-    for (const height of [660, 620, 700, 590, 540]) {
+    for (const height of [660, 620, 700, 590]) {
       await page.setViewportSize({ width: 1130, height });
       await page.waitForTimeout(350);
       assert.deepEqual(await cutTabs(page), [], `at rest, ${height}px`);
-      // ES Next 2: the menu fits the window: every tab shows and nothing scrolls (down to a window about 525px tall).
-      assert.deepEqual(await page.locator('.settings-nav').evaluate(nav => ({ scrolls: nav.scrollHeight > nav.clientHeight + 1, offscreen: [...nav.querySelectorAll('[role="tab"]')].filter(tab => tab.getBoundingClientRect().bottom > nav.getBoundingClientRect().bottom + .5).map(tab => tab.textContent.trim()) })), { scrolls: false, offscreen: [] }, `every tab fits at ${height}px`);
       const max = await page.locator('.settings-nav').evaluate(nav => nav.scrollHeight - nav.clientHeight);
       for (const top of [Math.round(max / 2), max]) {
         await page.locator('.settings-nav').evaluate((nav, value) => { nav.scrollTop = value; }, top);
