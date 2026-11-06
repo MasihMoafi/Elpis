@@ -10,7 +10,7 @@ import { api } from "@/lib/api";
 import { providerFormId, type ProviderType } from "@/lib/provider-form";
 import { RefreshButton, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
 import { ClaudeAccountsSettings } from "@/components/claude-accounts-settings";
-import { UseForSettings } from "@/components/settings/use-for-settings";
+import { useKeyUses } from "@/components/settings/use-for-settings";
 
 import { useProviderUsage, type ConfiguredProvider as Configured, type Subscription } from "@/components/provider-usage";
 import { errorText } from "@/lib/error-text.mjs";
@@ -27,12 +27,14 @@ function Card({ id, name, state, children }: { id: string; name: string; state: 
     {children}
   </section>;
 }
-function ConfiguredList({ items, empty, config, onEdit }: { items: Configured[]; empty: string; config: ProviderConfigs | null; onEdit: (provider: ProviderConfig) => void }) {
+/** Each key lists the features it can be used for (`uses`), ticked where it is. */
+function ConfiguredList({ items, empty, config, onEdit, uses }: { items: Configured[]; empty: string; config: ProviderConfigs | null; onEdit: (provider: ProviderConfig) => void; uses: (provider: ProviderConfig) => React.ReactNode }) {
   if (!items.length) return <p className="provider-note">{empty}</p>;
   return <ul className="grid gap-3">{items.map(item => {
     const provider = config?.providers.find(provider => provider.id === item.id);
     return <li key={item.id} className="text-sm"><div className="flex flex-wrap items-center justify-between gap-2"><p className="min-w-0 break-all"><span className="font-medium">{item.name}</span><span className="text-muted-foreground"> · {item.baseUrl ?? "no base URL"}</span></p>{provider && <Button variant="outline" disabled={!config?.write?.available || !provider.editable} onClick={() => onEdit(provider)}>Edit {item.name}</Button>}</div>
       {(item.envKey || provider?.auth.keySet) && <p className="mt-1 text-xs text-muted-foreground">API key {item.keySet || provider?.auth.keySet ? "set" : "not set"}</p>}
+      {provider && uses(provider)}
     </li>;
   })}</ul>;
 }
@@ -116,6 +118,7 @@ export function ProvidersSettings({ refreshKey, onChanged, active = true }: { re
     } catch (e) { setError(errorText(e)); }
     finally { setBusy(false); }
   }
+  const uses = useKeyUses({ providers: config?.providers.filter(provider => provider.id !== "openai" && provider.auth.source !== "subscription" && !provider.gateway) ?? [], refreshKey, active });
   const custom = config && data ? config.providers.filter(provider => provider.id !== "openai" && provider.auth.source !== "subscription" && !provider.gateway && !data.openrouter.some(item => item.id === provider.id)) : [];
   const sub = (value: Subscription) => value.state === "connected" ? <State tone="ok">Connected</State> : value.state === "available" ? <State tone="warn">Models available</State> : value.state === "unknown" ? <State tone="off">Not reported</State> : <State tone="off">Not connected</State>;
   return <div aria-label="Providers">
@@ -123,7 +126,6 @@ export function ProvidersSettings({ refreshKey, onChanged, active = true }: { re
     <div className="settings-stack">
     {(error || accountsError) && <SettingsNotice tone="alert">{error || accountsError}</SettingsNotice>}
     {notice && <SettingsNotice>{notice}</SettingsNotice>}
-    <UseForSettings providers={config?.providers ?? []} refreshKey={refreshKey} active={active} chatgptAvailable={data?.openai.auth.state === "signedIn" && data.openai.auth.method === "ChatGPT"} />
     {config?.write?.reason && !config.write?.available && <p className="settings-notice">{config.write?.reason}</p>}
     {!data && !accountsError && <SettingsNotice>Reading providers…</SettingsNotice>}
     {data && <>
@@ -150,9 +152,9 @@ export function ProvidersSettings({ refreshKey, onChanged, active = true }: { re
         <p className="provider-note">{data.gemini.models.length ? `${plural(data.gemini.models.length, "model")} available through your existing Google/Antigravity connection.` : "Sign in to Antigravity with Google on this computer to connect its models."}</p>
       </Card>
       {data.openrouter.length > 0 && <Card id="openrouter" name="OpenRouter" state={data.openrouter.length ? (data.openrouter.every(item => item.keySet) ? <State tone="ok">Key set</State> : <State tone="warn">Key missing</State>) : <State tone="off">Not configured</State>}>
-        <ConfiguredList config={config} onEdit={edit} items={data.openrouter} empty="No OpenRouter connection yet." />
+        <ConfiguredList config={config} onEdit={edit} uses={uses} items={data.openrouter} empty="No OpenRouter connection yet." />
       </Card>}
-      {custom.length > 0 && <Card id="custom" name="Custom API providers" state={<State tone="ok">Configured</State>}><ConfiguredList config={config} onEdit={edit} empty="No custom providers configured." items={custom.map(provider => ({ id: provider.id, name: provider.name, baseUrl: provider.baseUrl, envKey: provider.auth.envKey, keySet: provider.auth.keySet }))} /></Card>}
+      {custom.length > 0 && <Card id="custom" name="Custom API providers" state={<State tone="ok">Configured</State>}><ConfiguredList config={config} onEdit={edit} uses={uses} empty="No custom providers configured." items={custom.map(provider => ({ id: provider.id, name: provider.name, baseUrl: provider.baseUrl, envKey: provider.auth.envKey, keySet: provider.auth.keySet }))} /></Card>}
     </>}
     <details className="provider-advanced settings-card"><DisclosureSummary>Advanced API connections</DisclosureSummary><p className="provider-note">Connect OpenRouter, a local server or another compatible service.</p><Button variant="outline" disabled={!config?.write?.available || saving} onClick={() => { setNotice(""); setError(""); setEditing({ id: "", type: "custom", name: "", baseUrl: "", existing: false, credential: "preserve", secret: "" }); }}>Add API provider</Button></details>
     {editing && <form className="settings-card" aria-label="API provider settings" onSubmit={saveProvider}>

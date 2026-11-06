@@ -1,213 +1,195 @@
+// Models & accounts: each API key carries a checkbox per feature (Masih, 6 Nov: "optionally one key for everything;
+// remember? we get to check and uncheck."). A ticked box routes that feature to the key through its existing owner
+// (Configuration's main model, the read aloud preference, WhisperType); an unticked one returns it to the default.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const React = require('react');
-const { renderToStaticMarkup } = require('react-dom/server');
 const ts = require('typescript');
 
 const root = path.resolve(__dirname, '..');
-const providers = [
-  { id: 'openrouter', name: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', auth: { keySet: true } },
-  { id: 'api-other', name: 'Other API', baseUrl: 'https://example.test/v1', auth: { keySet: true } },
-];
-function component(records, overrides = {}) {
+const ROUTER = { id: 'openrouter', name: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', auth: { keySet: true } };
+const OTHER = { id: 'api-other', name: 'Other API', baseUrl: 'https://example.test/v1', auth: { keySet: true } };
+
+/** The hook under fake React hooks: `render()` returns the per-key sections; `settle()` runs effects and awaits replies. */
+function harness({ providers = [ROUTER, OTHER], speech = { source: 'local', model: null, voice: null }, whisper = { backend: null, model: null }, main = { provider: 'openai', model: 'sol' }, api: answer } = {}) {
+  const slots = [], pending = [], posts = []; let cursor = 0;
+  const settings = { version: 'v1', main: { ...main }, providers: [{ id: 'openai', displayName: 'ChatGPT' }, ...providers.map(item => ({ id: item.id, displayName: item.name }))], write: { available: true } };
+  const state = { speech: { ...speech }, whisper: { ...whisper } };
+  const hooks = { ...React,
+    useState(initial) { const key = cursor++; if (!(key in slots)) slots[key] = typeof initial === 'function' ? initial() : initial; return [slots[key], next => { slots[key] = typeof next === 'function' ? next(slots[key]) : next; }]; },
+    useEffect(effect, deps) { const key = cursor++, old = slots[key]; if (!old || deps.some((value, index) => !Object.is(value, old.deps[index]))) { slots[key] = { deps, cleanup: old?.cleanup }; pending.push(() => { old?.cleanup?.(); slots[key].cleanup = effect(); }); } },
+  };
+  const api = async (route, body) => {
+    if (body !== undefined) posts.push({ route, body });
+    const custom = answer?.(route, body);
+    if (custom !== undefined) return custom;
+    if (route === '/read-aloud/settings') { if (body) state.speech = body; return state.speech; }
+    if (route === '/mcp') {
+      if (body) state.whisper = { backend: body.backend, model: body.model === undefined ? state.whisper.model : body.model, ...(body.everyChat ? { everyChat: true, explicit: true } : {}) };
+      return { version: 'v1', write: { available: true }, servers: [{ name: 'whispertype', whispertype: state.whisper }] };
+    }
+    if (route.includes('outputModality=speech')) return { data: [{ model: 'fish/voice', displayName: 'Fish' }] };
+    if (route.includes('outputModality=transcription')) return { data: [{ model: 'openai/whisper', displayName: 'Whisper' }] };
+    if (route === '/models?provider=openai') return { data: [{ model: 'mini', displayName: 'Mini' }, { model: 'sol', displayName: 'Sol', isDefault: true }] };
+    if (route.startsWith('/models?provider=')) return { data: [{ model: 'qwen/coder', displayName: 'Qwen Coder' }] };
+    return {};
+  };
+  const passthrough = name => props => React.createElement(name, props, props.children);
+  const mocks = {
+    '@/components/ui/option-select': { OptionSelect: passthrough('select') },
+    '@/components/ui/checkbox': { Checkbox: passthrough('input') },
+    '@/components/ui/button': { Button: passthrough('button') },
+    '@/components/settings/rows': { SettingsNotice: passthrough('p') },
+    '@/lib/api': { api },
+    '@/lib/error-text.mjs': { errorText: error => String(error?.message ?? error) },
+    '@/lib/speech-model.mjs': require('../lib/speech-model.mjs'),
+    '@/lib/settings-store': { useElpisSettings: () => ({ data: settings }), editable: () => true, saveSettings: async (route, body) => { posts.push({ route, body }); Object.assign(settings.main, body.main); return settings; } },
+  };
   const file = path.join(root, 'components/settings/use-for-settings.tsx');
   const code = ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
   const module = { exports: {} };
-  const select = props => { records.push(props); return React.createElement('select', props, props.children); };
-  const passthrough = name => props => React.createElement(name, props, props.children);
-  const mocks = {
-    '@/components/ui/option-select': { OptionSelect: select },
-    '@/components/ui/button': { Button: passthrough('button') },
-    '@/components/settings/rows': { SettingsGroup: passthrough('section'), SettingRow: props => React.createElement('section', { 'aria-label': props.title }, props.description, props.children), SettingsNotice: passthrough('p'), SettingsActions: passthrough('div') },
-    '@/lib/api': { api: overrides.api ?? (async () => ({})), connectionOrder: rows => rows, subscriptionOf: model => model?.startsWith('claude/') ? { prefix: 'claude/', label: 'Claude subscription' } : null },
-    '@/lib/error-text.mjs': { errorText: error => String(error) },
-    '@/lib/speech-model.mjs': require('../lib/speech-model.mjs'),
-    '@/lib/settings-store': { useElpisSettings: () => ({ data: { version: 'v1', main: { provider: 'openai', model: 'model' }, providers: [{ id: 'openai', displayName: 'ChatGPT' }], write: { available: true } } }), editable: () => true, saveSettings: overrides.saveSettings ?? (async () => {}) },
-    '@/components/settings/maintenance': { useModelCatalog: () => ({ models: [{ id: 'claude/opus', model: 'claude/opus', displayName: 'Claude Opus' }] }) },
-  };
-  new Function('require', 'module', 'exports', code)(id => id === 'react' && overrides.react ? overrides.react : mocks[id] || require(id), module, module.exports);
-  return module.exports.UseForSettings;
+  new Function('require', 'module', 'exports', code)(id => id === 'react' ? hooks : mocks[id] || require(id), module, module.exports);
+  const props = { providers, refreshKey: 0, active: true };
+  const elements = node => React.isValidElement(node) ? [node, ...React.Children.toArray(node.props.children).flatMap(elements)] : Array.isArray(node) ? node.flatMap(elements) : [];
+  const render = () => { cursor = 0; const uses = module.exports.useKeyUses(props); return providers.map(item => uses(item)); };
+  const settle = async () => { for (let round = 0; round < 3; round++) { render(); for (const effect of pending.splice(0)) effect(); await new Promise(setImmediate); } };
+  const find = label => elements(render()).find(item => item.props['aria-label'] === label);
+  const box = (key, feature) => find(`Use ${key.name} for ${feature}`);
+  const text = (key) => elements(render()[providers.indexOf(key)]).map(item => typeof item.props.children === 'string' ? item.props.children : '').join(' | ');
+  const click = async node => { await node.props.onClick(); await settle(); };
+  const tick = async (key, feature, checked) => { await box(key, feature).props.onCheckedChange(checked); await settle(); };
+  const choose = async (label, value) => { find(label).props.onChange({ target: { value } }); await settle(); };
+  const save = (key, feature) => elements(render()[providers.indexOf(key)]).find(item => item.props['aria-label'] === `Save ${feature} for ${key.name}`);
+  return { settle, box, find, text, tick, choose, save, click, posts, settings, state };
 }
 
-function providersPage(UseForSettings) {
-  const file = path.join(root, 'components/providers-settings.tsx');
-  const code = ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
-  const module = { exports: {} };
-  const passthrough = name => props => React.createElement(name, null, props.children);
-  const subscription = { state: 'notConnected', models: [], usage: [] };
-  const mocks = {
-    '@/components/settings/settings.css': {},
-    '@/components/ui/disclosure-summary': { DisclosureSummary: passthrough('summary') },
-    '@/components/ui/button': { Button: passthrough('button') },
-    '@/components/ui/option-select': { OptionSelect: passthrough('select') },
-    '@/components/ui/input': { Input: passthrough('input') },
-    '@/lib/api': { api: async () => ({}) },
-    '@/lib/provider-form': { providerFormId: () => '' },
-    '@/components/settings/rows': { RefreshButton: passthrough('button'), SettingsHeader: passthrough('header'), SettingsNotice: passthrough('p') },
-    '@/components/claude-accounts-settings': { ClaudeAccountsSettings: () => null },
-    '@/components/settings/use-for-settings': { UseForSettings },
-    '@/components/provider-usage': { useProviderUsage: () => ({ data: { openai: { auth: { state: 'signedOut' } }, claude: subscription, gemini: subscription, openrouter: [] }, error: '', load: async () => {} }) },
-    '@/lib/error-text.mjs': { errorText: error => String(error) },
-  };
-  new Function('require', 'module', 'exports', code)(id => mocks[id] || require(id), module, module.exports);
-  return module.exports.ProvidersSettings;
-}
+test('ticking read aloud on the OpenRouter key routes read aloud to it', async () => {
+  const app = harness();
+  await app.settle();
+  assert.equal(app.box(ROUTER, 'Read aloud').props.checked, false, 'read aloud starts on its local default');
+  assert.equal(app.find('Read aloud model for OpenRouter'), undefined, 'no model picker before the box is ticked');
+  await app.tick(ROUTER, 'Read aloud', true);
+  assert.equal(app.box(ROUTER, 'Read aloud').props.checked, true);
+  assert.equal(app.save(ROUTER, 'Read aloud').props.disabled, true, 'saving waits for a model');
+  await app.choose('Read aloud model for OpenRouter', 'fish/voice');
+  await app.click(app.save(ROUTER, 'Read aloud'));
+  assert.deepEqual(app.posts.filter(item => item.route === '/read-aloud/settings'), [{ route: '/read-aloud/settings', body: { source: 'openrouter', model: 'fish/voice', voice: null } }]);
+  assert.equal(app.box(ROUTER, 'Read aloud').props.checked, true, 'the saved choice stays ticked');
+  assert.equal(app.box(OTHER, 'Read aloud').props.checked, false);
+});
 
-for (const response of ['rejected', 'empty', 'malformed']) test(`provider cards remain visible when Use for replies are ${response}`, async () => {
-  const slots = [], pending = []; let cursor = 0;
-  const hooks = { ...React,
-    useState(initial) { const key = cursor++; if (!(key in slots)) slots[key] = typeof initial === 'function' ? initial() : initial; return [slots[key], next => { slots[key] = typeof next === 'function' ? next(slots[key]) : next; }]; },
-    useEffect(effect, deps) { const key = cursor++, old = slots[key]; if (!old || deps.some((value, index) => !Object.is(value, old.deps[index]))) { slots[key] = { deps, cleanup: old?.cleanup }; pending.push(() => { old?.cleanup?.(); slots[key].cleanup = effect(); }); } },
-  };
-  const api = async route => {
+test('a feature the key cannot do is disabled with its reason and cannot be ticked', async () => {
+  const app = harness();
+  await app.settle();
+  for (const [key, feature] of [[OTHER, 'Read aloud'], [OTHER, 'Dictation'], [OTHER, 'Live voice'], [ROUTER, 'Live voice']]) {
+    const box = app.box(key, feature);
+    assert.equal(box.props.disabled, true, `${feature} on ${key.name} is disabled`);
+    assert.equal(box.props.checked, false);
+    await app.tick(key, feature, true);
+    assert.equal(app.box(key, feature).props.checked, false, `${feature} on ${key.name} stays unticked`);
+  }
+  assert.match(app.text(OTHER), /no speech models/i);
+  assert.match(app.text(ROUTER), /ChatGPT subscription/i, 'live voice says where it runs');
+  assert.equal(app.box(OTHER, 'Chat').props.disabled, false, 'any key with a Responses endpoint can chat');
+  assert.deepEqual(app.posts, [], 'nothing is saved');
+});
+
+test('a key without a saved API key offers nothing', async () => {
+  const bare = { ...ROUTER, id: 'openrouter-bare', name: 'Bare', auth: { keySet: false } };
+  const app = harness({ providers: [ROUTER, bare] });
+  await app.settle();
+  for (const feature of ['Chat', 'Read aloud', 'Live voice', 'Dictation']) assert.equal(app.box(bare, feature).props.disabled, true);
+  assert.match(app.text(bare), /Add an API key first/);
+});
+
+test('a server on this computer can take chat without a key, but not hosted speech', async () => {
+  const local = { id: 'local-server', name: 'Local server', baseUrl: 'http://127.0.0.1:1234/v1', auth: { keySet: false } };
+  const app = harness({ providers: [ROUTER, local] });
+  await app.settle();
+  assert.equal(app.box(local, 'Chat').props.disabled, false);
+  assert.equal(app.box(local, 'Read aloud').props.disabled, true);
+});
+
+test('unticking read aloud returns it to local Kokoro', async () => {
+  const app = harness({ speech: { source: 'openrouter', model: 'fish/voice', voice: null } });
+  await app.settle();
+  assert.equal(app.box(ROUTER, 'Read aloud').props.checked, true);
+  await app.tick(ROUTER, 'Read aloud', false);
+  assert.deepEqual(app.posts, [{ route: '/read-aloud/settings', body: { source: 'local', model: null, voice: null } }]);
+  assert.equal(app.box(ROUTER, 'Read aloud').props.checked, false);
+});
+
+test('ticking read aloud on one key unticks it on another', async () => {
+  const second = { ...ROUTER, id: 'openrouter-work', name: 'Work key' };
+  const app = harness({ providers: [ROUTER, second], speech: { source: 'openrouter-work', model: 'fish/voice', voice: null } });
+  await app.settle();
+  assert.equal(app.box(second, 'Read aloud').props.checked, true);
+  await app.tick(ROUTER, 'Read aloud', true);
+  assert.match(app.text(ROUTER), /Moves Read aloud from Work key/);
+  await app.choose('Read aloud model for OpenRouter', 'fish/voice');
+  await app.click(app.save(ROUTER, 'Read aloud'));
+  assert.equal(app.box(ROUTER, 'Read aloud').props.checked, true);
+  assert.equal(app.box(second, 'Read aloud').props.checked, false);
+});
+
+test('chat on a key saves the main model there; unticking returns chat to the ChatGPT default model', async () => {
+  const app = harness();
+  await app.settle();
+  await app.tick(ROUTER, 'Chat', true);
+  await app.choose('Chat model for OpenRouter', 'qwen/coder');
+  await app.click(app.save(ROUTER, 'Chat'));
+  assert.deepEqual(app.posts.at(-1), { route: '/settings', body: { version: 'v1', main: { provider: 'openrouter', model: 'qwen/coder' } } });
+  assert.equal(app.box(ROUTER, 'Chat').props.checked, true);
+  await app.tick(ROUTER, 'Chat', false);
+  assert.deepEqual(app.posts.at(-1), { route: '/settings', body: { version: 'v1', main: { provider: 'openai', model: 'sol' } } });
+  assert.equal(app.box(ROUTER, 'Chat').props.checked, false);
+});
+
+test('chat stays on the key when there is no ChatGPT model to return to', async () => {
+  const app = harness({ main: { provider: 'openrouter', model: 'qwen/coder' }, api: route => route === '/models?provider=openai' ? { data: [] } : undefined });
+  await app.settle();
+  await app.tick(ROUTER, 'Chat', false);
+  assert.equal(app.posts.some(item => item.route === '/settings'), false, 'no silent switch to another model');
+  assert.equal(app.box(ROUTER, 'Chat').props.checked, true);
+  assert.match(app.text(ROUTER), /Sign in with ChatGPT/);
+});
+
+test('dictation on the OpenRouter key saves WhisperType for every chat; unticking restores Automatic', async () => {
+  const app = harness();
+  await app.settle();
+  await app.tick(ROUTER, 'Dictation', true);
+  await app.choose('Dictation model for OpenRouter', 'openai/whisper');
+  await app.click(app.save(ROUTER, 'Dictation'));
+  assert.deepEqual(app.posts.at(-1), { route: '/mcp', body: { version: 'v1', name: 'whispertype', action: 'whispertype', backend: 'openrouter', model: 'openai/whisper', everyChat: true } });
+  assert.equal(app.box(ROUTER, 'Dictation').props.checked, true);
+  await app.tick(ROUTER, 'Dictation', false);
+  assert.deepEqual(app.posts.at(-1), { route: '/mcp', body: { version: 'v1', name: 'whispertype', action: 'whispertype', backend: null, everyChat: false } });
+  assert.equal(app.box(ROUTER, 'Dictation').props.checked, false);
+});
+
+test('unticking a box that was ticked but never saved changes nothing', async () => {
+  const app = harness();
+  await app.settle();
+  await app.tick(ROUTER, 'Read aloud', true);
+  await app.tick(ROUTER, 'Read aloud', false);
+  assert.equal(app.box(ROUTER, 'Read aloud').props.checked, false);
+  assert.equal(app.find('Read aloud model for OpenRouter'), undefined);
+  assert.deepEqual(app.posts, []);
+});
+
+for (const response of ['rejected', 'empty', 'malformed']) test(`a key explains unreadable read aloud and dictation settings when replies are ${response}`, async () => {
+  const app = harness({ api: route => {
+    if (route !== '/read-aloud/settings' && route !== '/mcp') return undefined;
     if (response === 'rejected') throw Error('route failed');
     if (response === 'malformed' && route === '/mcp') return { write: { available: true }, servers: [{ name: 'whispertype', whispertype: { backend: 'openrouter', model: {} } }] };
     return {};
-  };
-  const UseForSettings = component([], { react: hooks, api });
-  const props = { providers: [], refreshKey: 0, active: true };
-  UseForSettings(props);
-  for (const effect of pending.splice(0)) effect();
-  await new Promise(setImmediate);
-  cursor = 0;
-  const html = renderToStaticMarkup(React.createElement(providersPage(UseForSettings), { refreshKey: 0 }));
-  for (const name of ['openai', 'claude', 'cloudroom', 'gemini']) assert.match(html, new RegExp(`data-provider="${name}"`));
-  for (const name of ['Chat', 'Read aloud', 'Dictation']) {
-    const row = html.match(new RegExp(`<section aria-label="${name}">[\\s\\S]*?</section>`));
-    assert.ok(row, `${name} row is visible`);
-    assert.match(row[0], /unavailable/i, `${name} explains its unavailable route`);
-    if (name === 'Dictation') assert.doesNotMatch(row[0], /Add WhisperType/, 'an unreadable setting is not reported as missing');
-  }
-});
-
-for (const source of ['local', 'openrouter']) test(`Use for isolates unavailable ${source === 'local' ? 'voice' : 'speech model'} and dictation model choices`, async () => {
-  const slots = [], pending = []; let cursor = 0, failing = true;
-  const hooks = { ...React,
-    useState(initial) { const key = cursor++; if (!(key in slots)) slots[key] = typeof initial === 'function' ? initial() : initial; return [slots[key], next => { slots[key] = typeof next === 'function' ? next(slots[key]) : next; }]; },
-    useEffect(effect, deps) { const key = cursor++, old = slots[key]; if (!old || deps.some((value, index) => !Object.is(value, old.deps[index]))) { slots[key] = { deps, cleanup: old?.cleanup }; pending.push(() => { old?.cleanup?.(); slots[key].cleanup = effect(); }); } },
-  };
-  const api = async route => {
-    if (route === '/mcp') return { version: 'v1', write: { available: true }, servers: [{ name: 'whispertype', whispertype: { backend: 'local', model: null } }] };
-    if (route === '/read-aloud/settings') return { source, model: source === 'local' ? null : 'fish/voice', voice: null };
-    if (route === '/read-aloud/voices') { if (failing) throw Error('voices unavailable'); return { voices: ['warm'] }; }
-    if (route.includes('outputModality=')) { if (failing) return {}; return { data: [{ model: 'fish/voice', displayName: 'Fish' }] }; }
-    return { data: [{ model: 'model', displayName: 'Model' }] };
-  };
-  const UseForSettings = component([], { react: hooks, api }), props = { providers, refreshKey: 0, active: true };
-  const elements = node => React.isValidElement(node) ? [node, ...React.Children.toArray(node.props.children).flatMap(elements)] : [];
-  const render = () => { cursor = 0; return UseForSettings(props); };
-  const effects = () => { for (const effect of pending.splice(0)) effect(); };
-  const settle = async () => { render(); effects(); await new Promise(setImmediate); render(); effects(); await new Promise(setImmediate); };
-  const hasText = (row, text) => elements(row).some(item => item.props.children === text);
-  await settle();
-  let tree = elements(render());
-  let speech = tree.find(item => item.props.title === 'Read aloud'), dictation = tree.find(item => item.props.title === 'Dictation');
-  assert.ok(hasText(speech, source === 'local' ? 'Voice choices unavailable.' : 'Speech model choices unavailable.'));
-  assert.ok(hasText(dictation, 'Dictation model choices unavailable.'));
-  assert.equal(!!tree.find(item => item.props['aria-label'] === 'Chat model').props.disabled, false);
-  assert.equal(!!tree.find(item => item.props['aria-label'] === 'Dictation source').props.disabled, false);
-  failing = false; props.refreshKey++;
-  await settle();
-  tree = elements(render()); speech = tree.find(item => item.props.title === 'Read aloud'); dictation = tree.find(item => item.props.title === 'Dictation');
-  assert.equal(hasText(speech, 'Voice choices unavailable.') || hasText(speech, 'Speech model choices unavailable.'), false);
-  assert.equal(hasText(dictation, 'Dictation model choices unavailable.'), false);
-});
-
-test('Use for presents four capabilities with unsupported speech sources disabled', () => {
-  const records = [], UseForSettings = component(records);
-  const html = renderToStaticMarkup(React.createElement(UseForSettings, { providers, refreshKey: 0 }));
-  for (const name of ['Chat', 'Read aloud', 'Live voice', 'Dictation']) assert.match(html, new RegExp(name));
-  const speech = records.find(item => item['aria-label'] === 'Read aloud source');
-  const live = records.find(item => item['aria-label'] === 'Live voice source');
-  assert.ok(speech && live, 'the capability rows use selects');
-  const options = select => React.Children.toArray(select.children).filter(React.isValidElement);
-  assert.equal(options(speech).find(option => option.props.value === 'openrouter').props.disabled, false);
-  assert.equal(options(speech).find(option => option.props.value === 'api-other').props.disabled, true);
-  assert.equal(options(live).find(option => option.props.value === 'openrouter').props.disabled, true);
-  assert.equal(options(live).find(option => option.props.value === 'local').props.disabled, true);
-});
-
-test('Use for offers a connected Claude subscription for the chat default', () => {
-  const records = [], UseForSettings = component(records);
-  renderToStaticMarkup(React.createElement(UseForSettings, { providers, refreshKey: 0 }));
-  const chat = records.find(item => item['aria-label'] === 'Chat source');
-  const options = React.Children.toArray(chat.children).filter(React.isValidElement);
-  assert.ok(options.some(option => option.props.value === 'claude/'));
-  assert.ok(options.some(option => option.props.value === 'openai'));
-});
-
-test('Use for explains that ChatGPT live voice needs a sign-in', () => {
-  const records = [], UseForSettings = component(records);
-  renderToStaticMarkup(React.createElement(UseForSettings, { providers, refreshKey: 0, chatgptAvailable: false }));
-  const live = records.find(item => item['aria-label'] === 'Live voice source');
-  const option = React.Children.toArray(live.children).find(item => React.isValidElement(item) && item.props.value === 'chatgpt');
-  assert.equal(option.props.disabled, true);
-  assert.match(option.props['data-hint'], /sign in/i);
-});
-
-test('Use for reloads the Voice setting when returning to the providers page', async () => {
-  const slots = [], pending = []; let cursor = 0, backend = 'local';
-  const hooks = { ...React,
-    useState(initial) { const key = cursor++; if (!(key in slots)) slots[key] = typeof initial === 'function' ? initial() : initial; return [slots[key], next => { slots[key] = typeof next === 'function' ? next(slots[key]) : next; }]; },
-    useEffect(effect, deps) { const key = cursor++, old = slots[key]; if (!old || deps.some((value, index) => !Object.is(value, old.deps[index]))) { slots[key] = { deps, cleanup: old?.cleanup }; pending.push(() => { old?.cleanup?.(); slots[key].cleanup = effect(); }); } },
-  };
-  const api = async route => route === '/mcp' ? { version: 'v1', write: { available: true }, servers: [{ name: 'whispertype', whispertype: { backend, model: null } }] }
-    : route === '/read-aloud/settings' ? { source: 'local', model: null, voice: null } : { data: [], voices: [] };
-  const UseForSettings = component([], { react: hooks, api }), props = { providers, refreshKey: 0, active: true };
-  const elements = node => React.isValidElement(node) ? [node, ...React.Children.toArray(node.props.children).flatMap(elements)] : [];
-  const render = () => { cursor = 0; return UseForSettings(props); };
-  const effects = () => { for (const effect of pending.splice(0)) effect(); };
-  const selected = () => elements(render()).find(item => item.props['aria-label'] === 'Dictation source').props.value;
-  render(); effects(); await new Promise(setImmediate); assert.equal(selected(), 'local');
-  props.active = false; render(); effects();
-  backend = 'codex'; props.active = true; render(); effects(); await new Promise(setImmediate);
-  assert.equal(selected(), 'codex');
-});
-
-test('Use for saves the chosen Claude model through Configuration’s shared writer', async () => {
-  const slots = [], pending = [], saved = []; let cursor = 0;
-  const hooks = { ...React,
-    useState(initial) { const key = cursor++; if (!(key in slots)) slots[key] = typeof initial === 'function' ? initial() : initial; return [slots[key], next => { slots[key] = typeof next === 'function' ? next(slots[key]) : next; }]; },
-    useEffect(effect, deps) { const key = cursor++, old = slots[key]; if (!old || deps.some((value, index) => !Object.is(value, old.deps[index]))) { slots[key] = { deps, cleanup: old?.cleanup }; pending.push(() => { old?.cleanup?.(); slots[key].cleanup = effect(); }); } },
-  };
-  const api = async route => route === '/mcp' ? { version: 'v1', write: { available: true }, servers: [] }
-    : route === '/read-aloud/settings' ? { source: 'local', model: null, voice: null } : { data: [], voices: [] };
-  const UseForSettings = component([], { react: hooks, api, saveSettings: async (route, body) => { saved.push({ route, body }); } });
-  const props = { providers, refreshKey: 0, active: true };
-  const elements = node => React.isValidElement(node) ? [node, ...React.Children.toArray(node.props.children).flatMap(elements)] : [];
-  const render = () => { cursor = 0; return UseForSettings(props); };
-  const effects = () => { for (const effect of pending.splice(0)) effect(); };
-  render(); effects(); await new Promise(setImmediate);
-  elements(render()).find(item => item.props['aria-label'] === 'Chat source').props.onChange({ target: { value: 'claude/' } });
-  render(); effects();
-  elements(render()).find(item => item.props['aria-label'] === 'Chat model').props.onChange({ target: { value: 'claude/opus' } });
-  const row = elements(render()).find(item => item.props.title === 'Chat');
-  elements(row).find(item => item.props.children === 'Save').props.onClick();
-  await new Promise(setImmediate);
-  assert.deepEqual(saved, [{ route: '/settings', body: { version: 'v1', main: { provider: 'openai', model: 'claude/opus' } } }]);
-});
-
-test('Use for asks for a voice before saving a speech model that lists voices', async () => {
-  const slots = [], pending = []; let cursor = 0;
-  const hooks = { ...React,
-    useState(initial) { const key = cursor++; if (!(key in slots)) slots[key] = typeof initial === 'function' ? initial() : initial; return [slots[key], next => { slots[key] = typeof next === 'function' ? next(slots[key]) : next; }]; },
-    useEffect(effect, deps) { const key = cursor++, old = slots[key]; if (!old || deps.some((value, index) => !Object.is(value, old.deps[index]))) { slots[key] = { deps, cleanup: old?.cleanup }; pending.push(() => { old?.cleanup?.(); slots[key].cleanup = effect(); }); } },
-  };
-  const api = async route => route === '/mcp' ? { version: 'v1', write: { available: true }, servers: [] }
-    : route === '/read-aloud/settings' ? { source: 'local', model: null, voice: null }
-    : route.includes('outputModality=speech') ? { data: [{ model: 'fish/voice', displayName: 'Fish', voices: ['warm'] }] } : { data: [], voices: [] };
-  const UseForSettings = component([], { react: hooks, api }), props = { providers, refreshKey: 0, active: true };
-  const elements = node => React.isValidElement(node) ? [node, ...React.Children.toArray(node.props.children).flatMap(elements)] : [];
-  const render = () => { cursor = 0; return UseForSettings(props); };
-  const effects = () => { for (const effect of pending.splice(0)) effect(); };
-  const row = () => elements(render()).find(item => item.props.title === 'Read aloud');
-  render(); effects(); await new Promise(setImmediate);
-  elements(render()).find(item => item.props['aria-label'] === 'Read aloud source').props.onChange({ target: { value: 'openrouter' } });
-  render(); effects(); await new Promise(setImmediate);
-  elements(render()).find(item => item.props['aria-label'] === 'Read aloud model').props.onChange({ target: { value: 'fish/voice' } });
-  assert.equal(elements(row()).find(item => item.props.children === 'Save').props.disabled, true);
-  elements(render()).find(item => item.props['aria-label'] === 'Read aloud voice').props.onChange({ target: { value: 'warm' } });
-  assert.equal(elements(row()).find(item => item.props.children === 'Save').props.disabled, false);
+  } });
+  await app.settle();
+  assert.equal(app.box(ROUTER, 'Read aloud').props.disabled, true);
+  assert.equal(app.box(ROUTER, 'Dictation').props.disabled, true);
+  assert.equal(app.box(ROUTER, 'Chat').props.disabled, false, 'one unreadable setting leaves the others usable');
+  assert.match(app.text(ROUTER), /Read aloud settings unavailable/);
+  assert.match(app.text(ROUTER), /Dictation settings unavailable/);
 });
