@@ -1261,7 +1261,7 @@
  "tsx": {
   "app/page.tsx:TS2322": 1,
   "app/page.tsx:TS2345": 5,
-  "app/page.tsx:TS2375": 23,
+  "app/page.tsx:TS2375": 19,
   "app/page.tsx:TS2379": 1,
   "app/page.tsx:TS2532": 5,
   "components/account-row.tsx:TS2532": 1,
@@ -1427,8 +1427,8 @@
  },
  "lint": {
   "app/page.tsx:typescript(no-floating-promises)": 5,
-  "app/page.tsx:typescript(no-misused-promises)": 5,
-  "app/page.tsx:unused-disable-directive": 8,
+  "app/page.tsx:typescript(no-misused-promises)": 4,
+  "app/page.tsx:unused-disable-directive": 7,
   "bridge/acp-nodes.mjs:typescript(only-throw-error)": 3,
   "bridge/acp-nodes.test.mjs:eslint(prefer-const)": 1,
   "bridge/attachments.mjs:eslint(no-unused-expressions)": 1,

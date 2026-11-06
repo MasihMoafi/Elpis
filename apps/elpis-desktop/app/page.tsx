@@ -12,10 +12,9 @@ import { ReorderItem, useReorder } from "@/components/reorder";
 import { ApprovalCard } from "@/components/approval-card";
 import { PlanCard } from "@/components/plan-card";
 import { SearchField } from "@/components/ui/search-field";
-import { ChatMessage } from "@/components/chat-message";
 import { FailedTurnCard } from "@/components/failed-turn-card";
 import { ViewBoundary } from "@/components/view-boundary";
-import { Transcript, WorkingPlacement } from "@/components/transcript";
+import { WorkingPlacement } from "@/components/transcript";
 import { useBookmarks, useChatAttention, usePins, useSidebarFolds, useChatGroups } from "@/lib/use-sidebar-state";
 import { SIDEBAR, useAppearance } from "@/lib/use-appearance";
 import { addGroup, chatSelectionRoots, chatSubtree, moveChats, prioritizeChats, sidebarParents, type ChatGroups } from "@/lib/chat-groups";
@@ -38,8 +37,8 @@ import { permissionLabel, type PermissionMode } from "@/components/composer-cont
 import { CopyButton } from "@/components/markdown-text";
 import { fitChatListEnd, useWholeRows } from "@/lib/whole-rows";
 import { mergeHistoryWithLive } from "@/lib/live-events";
-import { entryKey, rememberSubmittedMessages, withSubmittedMessages, type SubmittedMessage } from "@/lib/submitted-messages";
-import { replacementEligibility, editableMessage, editBlocked, versionControl, type MessageVersion } from "@/lib/turn-replacement";
+import { rememberSubmittedMessages, withSubmittedMessages, type SubmittedMessage } from "@/lib/submitted-messages";
+import { replacementEligibility, type MessageVersion } from "@/lib/turn-replacement";
 import { AgentsGuide } from "@/components/agents-guide";
 import { CanvasGuideHelp } from "@/components/canvas-guide-help";
 import { ExperimentLab } from "@/components/experiment-lab";
@@ -54,6 +53,7 @@ import { createSidebarThreadRow } from "@/components/sidebar-thread-row";
 import { createSidebarBranches } from "@/components/sidebar-branches";
 import { ComposerControls } from "@/components/composer-controls-panel";
 import { ComposerForm } from "@/components/composer-form";
+import { useConversationTranscript } from "@/components/use-conversation-transcript";
 import { useSlashMenu } from "@/components/slash-menu";
 import { useMentionMenu } from "@/components/mention-menu";
 import { NavButtons } from "@/components/nav-buttons";
@@ -62,14 +62,12 @@ import { RewindDialog } from "@/components/rewind-dialog";
 import { useNavHistory } from "@/lib/nav-history";
 import { DiffPanel, ReviewPanel, SessionPanel } from "@/components/slash-panels";
 import { replyAttachment, withoutReplyAttachments } from "@/lib/message-reply";
-import { SelectionReply } from "@/components/message-reply";
-import { ImageReplyProvider, type ReplyImage } from "@/components/image-reply";
+import type { ReplyImage } from "@/components/image-reply";
 import { openControl } from "@/lib/slash-focus";
 import { reloadSettings, useElpisSettings } from "@/lib/settings-store";
 import { UsagePanel } from "@/components/provider-usage";
 import { isVoiceHandoff } from "@/bridge/voice-handoff.cjs";
 import { ReadAloud } from "@/components/read-aloud";
-import { MatildaAutoVoice } from "@/components/matilda-auto-voice";
 import { MatildaCompanion } from "@/components/matilda-companion";
 import { LiveVoiceProvider } from "@/components/live-voice";
 import { ObservabilityView } from "@/components/observability-view";
@@ -111,7 +109,7 @@ import { activeTab, followChat, forgetChats, renameTabs, type ChatTab } from "@/
 import { ATTACHMENT_LIMITS, TEXT_ONLY_NOTICE, attachmentFromFile, fitAttachments, transferFiles, type Attachment } from "@/lib/attachments";
 import { LoadOnScroll } from "@/components/load-on-scroll";
 import { api, unreadable, isAgentRun, AGENT_RUN_NOTICE, modelLabel, providerLabel, title, agentName,
-  mediaUrl, type Approval, type Entry, type ProviderSettings, type Thread } from "@/lib/api";
+  type Approval, type Entry, type ProviderSettings, type Thread } from "@/lib/api";
 import { historyPath, inReadingOrder } from "@/lib/chat-history";
 import { useComposerHeight } from "@/lib/use-composer-height";
 import { useTranscriptHistory } from "@/lib/use-transcript-history";
@@ -676,17 +674,7 @@ export default function Home() {
   const live = useRef({ openById, focusComposer, replaceFrom, forkFrom, showVersion, setRewindTurn, deleteFrom, setMessageEdits, setError, beginReply, beginImageReply });
   live.current = { openById, focusComposer, replaceFrom, forkFrom, showVersion, setRewindTurn, deleteFrom, setMessageEdits, setError, beginReply, beginImageReply };
   const versionsShown = selected ? messageVersions[selected.id] : undefined;
-  const conversation = useMemo(() => <ViewBoundary label="The conversation" resetKey={selected?.id}>{selected && !readOnlyRun && <SelectionReply key={selected.id} onQuote={(reference, text) => { const entry = shownEntries.find(entry => entryKey(entry) === reference); if (entry) live.current.beginReply(entry, text); }} />}<Transcript entries={shownEntries} activeTurnId={activeTurn ?? null} wrapItem={(entry, node) => <ImageReplyProvider reference={entryKey(entry)} onReply={selected && !readOnlyRun && !entry.clientPending ? image => { void live.current.beginImageReply(entry, image); } : undefined}>{node}</ImageReplyProvider>} onViewChanges={desktop && selected ? side.openChanges : undefined} mediaOf={e => selected ? mediaUrl(selected.id, e) : undefined} renderItem={e => { const editKey = JSON.stringify([selected?.id, e.turnId, e.item.id]); return <ChatMessage key={e.clientKey ?? editKey} item={e.item} model={e.item.type === "agentMessage" ? e.model : undefined} readAloud={!e.clientPending && (e.turnId !== activeTurn || e.completedAtMs !== undefined) && e.item.status !== "inProgress"} reference={entryKey(e)} onReply={selected && !readOnlyRun && !e.clientPending && (e.item.type === "userMessage" || e.item.type === "agentMessage") ? () => live.current.beginReply(e) : undefined} mediaBase={selected ? mediaUrl(selected.id, e) : undefined} threads={threads} speaker={agentName(selected) || "Elpis"} onOpenThread={id => live.current.openById(id)}
-            editDraft={messageEdits[editKey]} editPending={!!pendingDrafts[editKey]} onEditDraftChange={value => { live.current.setMessageEdits(previous => value === null ? without(previous, editKey) : { ...previous, [editKey]: value }); if (value === null) live.current.focusComposer(); }}
-            onEdit={!e.clientPending && replaceable && e.item.type === "userMessage" && editableMessage(replacementOptions.get(e.turnId), e.item.id) ? text => live.current.replaceFrom(e.turnId, text, editKey) : undefined}
-            editBlockedReason={replaceable && e.item.type === "userMessage" ? editBlocked(replacementOptions.get(e.turnId), e.item.id) : undefined}
-            version={e.item.type === "userMessage" ? versionControl(versionsShown, e.turnId, replacementOptions.get(e.turnId), e.item.id, replaceable, target => { live.current.showVersion(target).catch(error => live.current.setError(String(errorText(error)))); }) : undefined}
-            time={e.item.type === "userMessage" ? e.startedAtMs : undefined}
-            onFork={selected && !readOnlyRun && e.item.type === "agentMessage" && e.turnId !== activeTurn ? () => void live.current.forkFrom(selected, e.turnId, e.item.id) : undefined} onRewind={!e.clientPending && replaceable && e.item.type === "userMessage" && e.item.id !== newestPrompt ? () => live.current.setRewindTurn(e.turnId) : undefined}
-            onDelete={!e.clientPending && replaceable && e.item.type === "userMessage" ? { label: e.item.id === newestPrompt ? "Delete message" : "Delete from here", run: () => { live.current.deleteFrom(e.turnId).catch(error => live.current.setError(String(errorText(error)))); } } : undefined}
-            onRegenerate={regenerate && e.item.id === regenerate.replyId ? () => { live.current.replaceFrom(regenerate.turnId, regenerate.prompt).catch(error => live.current.setError(String(errorText(error)))); } : undefined} />; }} /></ViewBoundary>, [shownEntries, activeTurn, desktop, selected, side.openChanges, threads, messageEdits, pendingDrafts, replaceable, replacementOptionsKey, readOnlyRun, versionsShown, regenerate?.turnId, regenerate?.replyId, regenerate?.prompt]); // eslint-disable-line react-hooks/exhaustive-deps
-  // Keep the conversation's context providers outside composer-only renders.
-  const chatConversation = useMemo(() => <ReadAloud threadId={selected?.id} enabled={connected && !!selected} available={selected && agentName(selected) === "Matilda" ? LOVE_SPOT_AUDIO.readAloudAvailable : undefined} unavailableReason={loveSpotAudioReason}>{selected && !loveSpotAudioReason && agentName(selected) === "Matilda" && <MatildaAutoVoice key={selected.id} threadId={selected.id} activeTurnId={activeTurn ?? null} entries={shownEntries} disabled={!connected || voiceBusy} />}{conversation}</ReadAloud>, [selected, connected, activeTurn, shownEntries, voiceBusy, conversation, loveSpotAudioReason]);
+  const chatConversation = useConversationTranscript({ live, selected, shownEntries, activeTurn, desktop, openChanges: side.openChanges, threads, messageEdits, pendingDrafts, replaceable, replacementOptions, replacementOptionsKey, readOnlyRun, versionsShown, newestPrompt, regenerate, connected, voiceBusy, loveSpotAudioReason });
   /** A queued message's Edit in composer, as in Claude: it returns to the box above whatever is typed, with its files and @-mentions. */
   function editQueued(item: FollowUp) {
     editDraft([item.text, textRef.current].filter(part => part.trim()).join("\n\n"));
