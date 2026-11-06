@@ -9,6 +9,9 @@
     "moduleResolution": "nodenext",
     "allowJs": true,
     "checkJs": true,
+    "erasableSyntaxOnly": true,
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
     "noEmit": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
@@ -19,6 +22,6 @@
     "noFallthroughCasesInSwitch": true,
     "types": ["node"]
   },
-  "include": ["bridge/**/*.mjs", "bridge/**/*.cjs", "desktop/**/*.mjs", "desktop/**/*.cjs", "lib/**/*.mjs", "lib/**/*.cjs", "scripts/**/*.mjs", "scripts/**/*.cjs"],
+  "include": ["bridge/**/*.mjs", "bridge/**/*.cjs", "bridge/**/*.mts", "bridge/**/*.cts", "desktop/**/*.mjs", "desktop/**/*.cjs", "desktop/**/*.mts", "desktop/**/*.cts", "lib/**/*.mjs", "lib/**/*.cjs", "lib/**/*.mts", "lib/**/*.cts", "scripts/**/*.mjs", "scripts/**/*.cjs"],
   "exclude": ["node_modules", "bridge/resources"]
 }

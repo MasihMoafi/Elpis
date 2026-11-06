@@ -26,7 +26,7 @@ test('the package holds every local file its entry points import', async () => {
 // Files a window loads by path (a preload, a page, an icon) are not imports: Quick Entry's page and preload would be missing.
 test('the package holds every file the desktop code loads by path', async () => {
   const root = fileURLToPath(new URL('../', import.meta.url));
-  for (const name of production.filter(file => file.startsWith('desktop/') && file.endsWith('.cjs'))) {
+  for (const name of production.filter(file => file.startsWith('desktop/') && /\.[cm]?[jt]s$/.test(file))) {
     const text = await fs.readFile(path.join(root, name), 'utf8');
     for (const [, target] of text.matchAll(/path\.join\(__dirname, '([^']+)'\)/g)) {
       const file = path.posix.normalize(path.posix.join('desktop', target));
