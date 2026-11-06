@@ -1263,7 +1263,7 @@
   "app/page.tsx:TS2345": 5,
   "app/page.tsx:TS2375": 17,
   "app/page.tsx:TS2379": 1,
-  "app/page.tsx:TS2532": 5,
+  "app/page.tsx:TS2532": 2,
   "components/account-row.tsx:TS2532": 1,
   "components/action-menu.tsx:TS18048": 9,
   "components/action-menu.tsx:TS2322": 1,
@@ -1426,7 +1426,7 @@
   "lib/workflow-notice.ts:TS2532": 2
  },
  "lint": {
-  "app/page.tsx:typescript(no-floating-promises)": 3,
+  "app/page.tsx:typescript(no-floating-promises)": 2,
   "app/page.tsx:typescript(no-misused-promises)": 4,
   "app/page.tsx:unused-disable-directive": 6,
   "bridge/acp-nodes.mjs:typescript(only-throw-error)": 3,

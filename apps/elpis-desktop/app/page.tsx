@@ -51,6 +51,7 @@ import { createSidebarBranches } from "@/components/sidebar-branches";
 import { ComposerControls } from "@/components/composer-controls-panel";
 import { ComposerForm } from "@/components/composer-form";
 import { WorkflowPages } from "@/components/workflow-pages";
+import { PendingInputPanel, PendingInputTrigger } from "@/components/pending-input";
 import { useConversationTranscript } from "@/components/use-conversation-transcript";
 import { useSlashMenu } from "@/components/slash-menu";
 import { useMentionMenu } from "@/components/mention-menu";
@@ -103,7 +104,7 @@ import { activeTab, followChat, forgetChats, renameTabs, type ChatTab } from "@/
 import { TEXT_ONLY_NOTICE, fitAttachments, type Attachment } from "@/lib/attachments";
 import { LoadOnScroll } from "@/components/load-on-scroll";
 import { api, unreadable, isAgentRun, AGENT_RUN_NOTICE, modelLabel, providerLabel, title, agentName,
-  type Approval, type Entry, type ProviderSettings, type Thread } from "@/lib/api";
+  type Entry, type ProviderSettings, type Thread } from "@/lib/api";
 import { historyPath, inReadingOrder } from "@/lib/chat-history";
 import { useComposerHeight } from "@/lib/use-composer-height";
 import { useTranscriptHistory } from "@/lib/use-transcript-history";
@@ -130,6 +131,7 @@ import { createComposerHandlers } from "@/lib/composer-handlers";
 import { useRelatedConversations } from "@/lib/use-related-conversations";
 import { useTranscriptPresentation } from "@/lib/use-transcript-presentation";
 import { createSidebarPlacement } from "@/lib/sidebar-placement";
+import { createApprovalActions } from "@/lib/approval-actions";
 import { refusedOffline, type View, type WorkflowReplay, type NextTurn } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
 import { useComposerState } from "@/lib/use-composer-state";
@@ -252,8 +254,8 @@ export default function Home() {
   const [resumeOpen, setResumeOpen] = useState(false);
   const [agentRunsOpen, setAgentRunsOpen] = useState(false);
   const [messageEdits, setMessageEdits] = useState<Record<string, string>>({});
-  const { pending: pendingDrafts, submit: submitDraft } = useSubmitOnce();
-  const { answersFor, draftAnswer, clearApprovalDraft } = useApprovalDrafts();
+  const approvalSubmissions = useSubmitOnce(), { pending: pendingDrafts, submit: submitDraft } = approvalSubmissions;
+  const approvalDrafts = useApprovalDrafts(), { clearApprovalDraft } = approvalDrafts;
   const draftStore = useDraftStore(setError), { savedDraft, saveDraft, savedAttachments, saveAttachments } = draftStore;
   const newDraftKey = useRef("new");
   const runtime = useRuntimeState();
@@ -584,19 +586,7 @@ export default function Home() {
     finally { setBusy(false); if (request.current === originalRequest) focusComposer(); }
   }
   const { replaceFrom, rewindFrom, deleteFrom, switchRewind, loadVersions, showVersion } = createMessageActions({ composer, conversations, drafts: draftStore, history, runtime, selectedRef, request, stickToBottom, rewindSwitch, replacementOptions, entries, nextTurn, submitDraft, setRuntimeNotices, setMessageEdits, setNextTurn, setEntries, setThreads, setRewindBusy, setRewindActions, setMessageVersions, loadThread, editDraft, focusComposer: () => focusComposer(), restoreComposerFocus: origin => restoreComposerFocus(origin) });
-  /** Answers a request; `instead` is "Deny, and tell Elpis what to do instead" (body: { text }). */
-  /** An approval card's answers, sending and drafts: the same wherever the card is shown. */
-  const approvalCardProps = (approval: Approval) => {
-    const key = approvalDraftKey(approval);
-    return { approval, answer: (id: string, body: unknown) => answer(id, body, key), deny: (id: string, text: string) => answer(id, { text }, key, true),
-      busy: !!pendingDrafts[key], answers: answersFor(approval), onAnswerChange: (id: string, value: string[]) => draftAnswer(approval, id, value) };
-  };
-  async function answer(id: string, body: unknown, key: string, instead = false) {
-    const originalFocus = document.activeElement, originalRequest = request.current;
-    await submitDraft(key, () => api(`/approvals/${encodeURIComponent(id)}${instead ? "/instead" : ""}`, body));
-    setApprovals(prev => prev.filter(a => a.id !== id)); clearApprovalDraft(id);
-    if (request.current === originalRequest) restoreComposerFocus(originalFocus);
-  }
+  const { approvalCardProps } = createApprovalActions({ approvals: approvalDrafts, submissions: approvalSubmissions, runtime, request, restoreComposerFocus: origin => restoreComposerFocus(origin) });
   const { earlierHeld, older } = createEarlierMessages({ history, selected, selectedRef, request, setLoading, setError, setEntries, stickToBottom, scroll, restoreScroll });
   const openById = (id: string) => openThread(threads.find(thread => thread.id === id) || related[id] || { id });
   /** "Open in Elpis TUI": the chat opens here and its terminal resumes it in the TUI (`elpis resume <id>`). */
@@ -863,7 +853,7 @@ export default function Home() {
     <main className={`workspace${view === "chat" && selectedLoveChat ? " love-chat accent-scope" : ""}`} style={panelShown && !fullView ? { "--side-min": `${sideMinWidth(side.shown)}px`, ...(side.width ? { "--side-w": `clamp(${sideMinWidth(side.shown)}px, ${side.width}px, 70%)` } : {}) } as CSSProperties : undefined}>
       <header className={`workspace-header${heading ? "" : " untitled"}`}>
         <ImproveElpis threadId={view === "chat" ? selected?.id : undefined} onChat={loadThread} />
-        {outsideChatApprovals.length > 0 && <div className="pending-input-anchor"><Button ref={pendingInputButton} className="pending-input-trigger" variant="secondary" size="sm" aria-label={`Needs input (${outsideChatApprovals.length})`} aria-expanded={pendingInputOpen} aria-controls="pending-input-panel" onKeyDown={event => { if (event.key === "Escape") setPendingInputOpen(false); }} onClick={() => setPendingInputOpen(value => !value)}><span className="pending-count">{outsideChatApprovals.length}</span>Needs input<span className="pending-task-name">{title(threads.find(thread => thread.id === outsideChatApprovals[0].params.threadId) || outsideChatApprovals[0].thread || {id:outsideChatApprovals[0].params.threadId || "unreported"})}</span></Button></div>}
+        {outsideChatApprovals.length > 0 && <PendingInputTrigger approvals={outsideChatApprovals} threads={threads} button={pendingInputButton} setOpen={setPendingInputOpen} open={pendingInputOpen} />}
         <Button className="mobile-menu sidebar-open" variant="ghost" size="icon-sm" aria-label="Open sidebar" title={shortcutTitle("Open sidebar", "sidebar", preferences)} onClick={() => showSidebar(true)}><PanelLeft size={16} /></Button>
         <BrandWordmark className="mobile-brand" dark={dark} width={49} height={24} />
         <div className="header-titles min-w-0 flex-1">
@@ -889,14 +879,7 @@ export default function Home() {
         {(split.pane || (split.thread && view === "chat")) && <Button className="header-action" variant="ghost" size="icon-sm" aria-label="Close split view" title="Close split view" onClick={split.close}><X size={16} /></Button>}
         {selected && view === "chat" && <Button className="header-action" variant="ghost" size="icon-sm" aria-label="Refresh conversation" disabled={loading} onClick={() => loadThread(selected)}><RefreshCw size={16} /></Button>}
       </header>
-      {outsideChatApprovals.length > 0 && pendingInputOpen && <section id="pending-input-panel" aria-label="Pending input" className="pending-input-panel" onKeyDown={event => { if (event.key === "Escape") { setPendingInputOpen(false); pendingInputButton.current?.focus(); } }}>
-        <div className="pending-panel-heading"><div><h2>Needs input</h2><p>{outsideChatApprovals.length} {outsideChatApprovals.length === 1 ? "request" : "requests"} waiting for you</p></div><Button variant="ghost" size="icon-sm" aria-label="Close pending input" onClick={() => { setPendingInputOpen(false); pendingInputButton.current?.focus(); }}><X size={16}/></Button></div>
-        <div className="pending-request-list">{outsideChatApprovals.map(approval => {
-          const thread = threads.find(item => item.id === approval.params.threadId);
-          const requester = thread ?? approval.thread; const name = requester ? title(requester) : approval.params.threadId || "Conversation not reported";
-          return <div key={approvalDraftKey(approval)} className="pending-request"><div className="pending-request-heading"><p>{name}</p>{approval.params.threadId && <Button variant="ghost" size="sm" onClick={() => { setPendingInputOpen(false); openById(approval.params.threadId!); }}>Open chat</Button>}</div><ApprovalCard {...approvalCardProps(approval)} globalKeys={false} /></div>;
-        })}</div>
-      </section>}
+      {outsideChatApprovals.length > 0 && pendingInputOpen && <PendingInputPanel approvals={outsideChatApprovals} threads={threads} button={pendingInputButton} setOpen={setPendingInputOpen} openById={id => { void openById(id); }} approvalCardProps={approvalCardProps} />}
       <div className={`workspace-body${panelShown ? " panel-open" : ""}${fullView ? ` full-view${side.chatCollapsed ? " chat-collapsed" : ""}` : ""}${view !== "chat" ? " no-browser" : ""}`}><div className="workspace-content" {...(fullView ? { role: "region", "aria-label": "Floating chat" } : {})}>
       {fullView && <FloatChatBar title={chatName} onCollapse={() => side.setChatCollapsed(true)} />}
       {settingsVisited && <div className="page-scroll" hidden={view !== "settings"}><ViewBoundary label="Settings" resetKey={settingsNavigation}><SettingsView initialTab={settingsSection} navigationKey={settingsNavigation} active={view === "settings"} threadId={selected?.id} currentModel={selected?.model} currentPermission={selected ? permissionLabel(permissionMode) : null} accountRefresh={accountRefresh} theme={theme} onTheme={setTheme} onUnarchived={unarchived} onImported={() => void refreshThreads()} onDeleteThread={deleteThread} onBack={() => { show("chat"); requestAnimationFrame(focusComposer); }} onChatPermissions={() => { show("chat"); requestAnimationFrame(() => openComposerControl("Change permissions")); }} onChatModel={() => { show("chat"); requestAnimationFrame(() => openComposerControl("Model")); }} modelChangeReason={!ready ? "Wait for Elpis to connect." : busy ? "Wait for this turn to finish before changing the model." : undefined} onBrowser={url => { show("chat"); void browser.command("new", url ? { url } : undefined); }} onCustomize={() => show("customize")} onChatContext={() => { show("chat"); requestAnimationFrame(() => window.dispatchEvent(new CustomEvent(OPEN_CONTEXT_EVENT))); }} onProvidersChanged={async () => { await reloadSettings(); void refreshModels(); }} /></ViewBoundary></div>}
