@@ -21,8 +21,9 @@ function harness({ providers = [ROUTER, OTHER], speech = { source: 'local', mode
     useState(initial) { const key = cursor++; if (!(key in slots)) slots[key] = typeof initial === 'function' ? initial() : initial; return [slots[key], next => { slots[key] = typeof next === 'function' ? next(slots[key]) : next; }]; },
     useEffect(effect, deps) { const key = cursor++, old = slots[key]; if (!old || deps.some((value, index) => !Object.is(value, old.deps[index]))) { slots[key] = { deps, cleanup: old?.cleanup }; pending.push(() => { old?.cleanup?.(); slots[key].cleanup = effect(); }); } },
   };
+  const reads = [];
   const api = async (route, body) => {
-    if (body !== undefined) posts.push({ route, body });
+    if (body !== undefined) posts.push({ route, body }); else reads.push(route);
     const custom = answer?.(route, body);
     if (custom !== undefined) return custom;
     if (route === '/read-aloud/settings') { if (body) state.speech = body; return state.speech; }
@@ -49,11 +50,11 @@ function harness({ providers = [ROUTER, OTHER], speech = { source: 'local', mode
   };
   const file = path.join(root, 'components/settings/use-for-settings.tsx');
   const code = ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
-  const module = { exports: {} };
-  new Function('require', 'module', 'exports', code)(id => id === 'react' ? hooks : mocks[id] || require(id), module, module.exports);
+  const loaded = { exports: {} };
+  new Function('require', 'module', 'exports', code)(id => id === 'react' ? hooks : mocks[id] || require(id), loaded, loaded.exports);
   const props = { providers, refreshKey: 0, active: true };
   const elements = node => React.isValidElement(node) ? [node, ...React.Children.toArray(node.props.children).flatMap(elements)] : Array.isArray(node) ? node.flatMap(elements) : [];
-  const render = () => { cursor = 0; const uses = module.exports.useKeyUses(props); return providers.map(item => uses(item)); };
+  const render = () => { cursor = 0; const uses = loaded.exports.useKeyUses(props); return providers.map(item => uses(item)); };
   const settle = async () => { for (let round = 0; round < 3; round++) { render(); for (const effect of pending.splice(0)) effect(); await new Promise(setImmediate); } };
   const find = label => elements(render()).find(item => item.props['aria-label'] === label);
   const box = (key, feature) => find(`Use ${key.name} for ${feature}`);
@@ -62,7 +63,8 @@ function harness({ providers = [ROUTER, OTHER], speech = { source: 'local', mode
   const tick = async (key, feature, checked) => { await box(key, feature).props.onCheckedChange(checked); await settle(); };
   const choose = async (label, value) => { find(label).props.onChange({ target: { value } }); await settle(); };
   const save = (key, feature) => elements(render()[providers.indexOf(key)]).find(item => item.props['aria-label'] === `Save ${feature} for ${key.name}`);
-  return { settle, box, find, text, tick, choose, save, click, posts, settings, state };
+  const options = label => React.Children.toArray(find(label).props.children).flat().filter(React.isValidElement).map(item => item.props.value).filter(Boolean);
+  return { settle, box, find, text, tick, choose, save, click, options, posts, reads, settings, state };
 }
 
 test('ticking read aloud on the OpenRouter key routes read aloud to it', async () => {
@@ -192,4 +194,30 @@ for (const response of ['rejected', 'empty', 'malformed']) test(`a key explains 
   assert.equal(app.box(ROUTER, 'Chat').props.disabled, false, 'one unreadable setting leaves the others usable');
   assert.match(app.text(ROUTER), /Read aloud settings unavailable/);
   assert.match(app.text(ROUTER), /Dictation settings unavailable/);
+});
+
+// Masih, 6 Nov: Dictation gets its own model picker, as read aloud does: the key's speech-to-text models.
+test('ticking Dictation lists the key\'s speech-to-text models and saves the chosen one', async () => {
+  const app = harness({ api: route => route.includes('outputModality=transcription') ? { data: [{ model: 'elevenlabs/scribe-v2', displayName: 'Scribe v2' }, { model: 'mistralai/voxtral-mini-transcribe-3-0', displayName: 'Voxtral Mini Transcribe' }] } : undefined });
+  await app.settle();
+  assert.equal(app.find('Dictation model for OpenRouter'), undefined, 'no picker before the box is ticked');
+  await app.tick(ROUTER, 'Dictation', true);
+  assert.ok(app.reads.includes('/models?provider=openrouter&outputModality=transcription'), 'the picker asks the key for transcription models');
+  assert.deepEqual(app.options('Dictation model for OpenRouter'), ['elevenlabs/scribe-v2', 'mistralai/voxtral-mini-transcribe-3-0']);
+  await app.choose('Dictation model for OpenRouter', 'mistralai/voxtral-mini-transcribe-3-0');
+  await app.click(app.save(ROUTER, 'Dictation'));
+  assert.equal(app.posts.at(-1).body.model, 'mistralai/voxtral-mini-transcribe-3-0');
+  assert.equal(app.state.whisper.model, 'mistralai/voxtral-mini-transcribe-3-0', 'WhisperType is set to the chosen model');
+  assert.equal(app.find('Dictation model for OpenRouter').props.value, 'mistralai/voxtral-mini-transcribe-3-0');
+});
+
+test('a key that lists no speech-to-text models greys the Dictation picker out with the reason', async () => {
+  const app = harness({ api: route => route.includes('outputModality=transcription') ? { data: [] } : undefined });
+  await app.settle();
+  await app.tick(ROUTER, 'Dictation', true);
+  assert.equal(app.find('Dictation model for OpenRouter').props.disabled, true);
+  assert.match(app.text(ROUTER), /This key lists no speech-to-text models\./);
+  assert.equal(app.save(ROUTER, 'Dictation').props.disabled, true);
+  assert.match(app.text(OTHER), /This provider has no speech-to-text models\./);
+  assert.deepEqual(app.posts, []);
 });

@@ -19,6 +19,8 @@ type Pick = { model: string; voice: string | null };
 type Draft = Pick & { provider: string; feature: Feature };
 
 /** Masih, 6 Nov: "optionally one key for everything; remember? we get to check and uncheck." */
+/** What a ticked feature lists from its key: chat models, speech (text to speech) or speech-to-text (transcription) models. */
+const KINDS: Partial<Record<Feature, string>> = { chat: "chat", speech: "speech", dictation: "speech-to-text" };
 const FEATURES: [Feature, string][] = [["chat", "Chat"], ["speech", "Read aloud"], ["live", "Live voice"], ["dictation", "Dictation"]];
 const DEFAULT_SPEECH: Choice = { source: "local", model: null, voice: null };
 
@@ -88,7 +90,7 @@ export function useKeyUses({ providers, refreshKey, active = true }: { providers
   const reason = (provider: KeyProvider, feature: Feature): string | null => {
     if (feature === "live") return "Live voice runs only on the ChatGPT subscription.";
     if (feature === "speech" && !openrouter(provider)) return "This provider has no speech models.";
-    if (feature === "dictation" && !openrouter(provider)) return "This provider has no transcription models.";
+    if (feature === "dictation" && !openrouter(provider)) return "This provider has no speech-to-text models.";
     if (!provider.auth.keySet && !(feature === "chat" && onThisComputer(provider))) return "Add an API key first.";
     if (feature === "chat") {
       if (!settings) return settingsError ? "Chat settings unavailable." : "Reading chat settings…";
@@ -166,6 +168,7 @@ export function useKeyUses({ providers, refreshKey, active = true }: { providers
         const holder = pending && !current ? providers.find(item => item.id !== provider.id && saved(item, feature)) : undefined;
         const catalog = catalogs[`${refreshKey}|${feature}|${provider.id}`];
         const models = Array.isArray(catalog) ? catalog : [];
+        const none = Array.isArray(catalog) && !models.length;
         const chosen = models.find(item => item.model === pick?.model);
         const voices = feature === "speech" ? chosen?.voices ?? [] : [];
         const ready = !!pending && !!pending.model && !(feature === "speech" && (!chosen || speechModelUnavailable(pending.model) || (voices.length > 0 && !pending.voice)));
@@ -174,7 +177,7 @@ export function useKeyUses({ providers, refreshKey, active = true }: { providers
           <label className="key-use-label"><Checkbox aria-label={`Use ${provider.name} for ${label}`} checked={checked} disabled={!!why || busy} onCheckedChange={(value: boolean) => toggle(provider, feature, label, value)} />{label}</label>
           {why && <span className="key-use-note">{why}</span>}
           {checked && pick && <>
-            <OptionSelect aria-label={`${label} model for ${provider.name}`} className="settings-choice" value={pick.model} disabled={busy || catalog === "failed"} onChange={event => edit({ model: event.target.value, voice: null })}>
+            <OptionSelect aria-label={`${label} model for ${provider.name}`} className="settings-choice" value={pick.model} disabled={busy || catalog === "failed" || none} onChange={event => edit({ model: event.target.value, voice: null })}>
               <option value="" disabled>{catalog === "loading" ? "Reading models…" : "Choose model"}</option>
               {pick.model && !models.some(item => item.model === pick.model) && <option value={pick.model}>{pick.model}</option>}
               {models.map(item => { const blocked = feature === "speech" ? speechModelUnavailable(item.model) : null; return <option key={item.model} value={item.model} disabled={!!blocked} data-hint={blocked ?? undefined}>{item.displayName || item.model}</option>; })}
@@ -185,6 +188,7 @@ export function useKeyUses({ providers, refreshKey, active = true }: { providers
             {pending && <Button variant="outline" aria-label={`Save ${label} for ${provider.name}`} disabled={busy || !ready} onClick={() => void use(provider, feature, label, pending)}>Save</Button>}
             {holder && <span className="key-use-note">{`Moves ${label} from ${holder.name}.`}</span>}
             {catalog === "failed" && <span className="key-use-note">{`${label} model choices unavailable.`}</span>}
+            {none && <span className="key-use-note">{`This key lists no ${KINDS[feature]} models.`}</span>}
           </>}
         </div>;
       })}

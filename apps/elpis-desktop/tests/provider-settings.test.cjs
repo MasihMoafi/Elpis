@@ -78,7 +78,7 @@ const { accountsFirst, openAccounts } = require('./providers-order.cjs');
 
 const ROUTER_KEY = { id: 'openrouter', name: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', wireApi: 'responses', editable: true, auth: { source: 'key', keySet: true, envKey: null } };
 const OTHER_KEY = { id: 'api-other', name: 'Other API', baseUrl: 'https://example.test/v1', wireApi: 'responses', editable: true, auth: { source: 'key', keySet: true, envKey: null } };
-const keyRoutes = ({ writable = true, speech = { source: 'local', model: null, voice: null }, failing = null } = {}) => {
+const keyRoutes = ({ writable = true, speech = { source: 'local', model: null, voice: null }, whisper = { backend: null, model: null }, failing = null } = {}) => {
  const off = { state: 'notConnected', models: [], usage: [] };
  const listed = item => ({ id: item.id, name: item.name, baseUrl: item.baseUrl, envKey: null, keySet: true });
  return {
@@ -86,7 +86,7 @@ const keyRoutes = ({ writable = true, speech = { source: 'local', model: null, v
   '/api/providers': () => ({ openai: { auth: { state: 'signedOut' }, usage: [], usageError: null }, claude: off, gemini: off, openrouter: [listed(ROUTER_KEY)] }),
   '/api/providers/settings': () => ({ version: 'v1', write: { available: true }, managed: {}, providers: [ROUTER_KEY, OTHER_KEY] }),
   '/api/read-aloud/settings': body => failing === 'rejected' ? { __http: 503, error: 'Unavailable' } : failing === 'empty' ? {} : (body ? Object.assign(speech, body) : speech),
-  '/api/mcp': () => failing === 'rejected' ? { __http: 503, error: 'Unavailable' } : failing === 'empty' ? {} : { version: 'v1', write: { available: true }, servers: [{ name: 'whispertype', whispertype: { backend: null, model: null } }] },
+  '/api/mcp': body => failing === 'rejected' ? { __http: 503, error: 'Unavailable' } : failing === 'empty' ? {} : { version: 'v1', write: { available: true }, servers: [{ name: 'whispertype', whispertype: body ? Object.assign(whisper, { backend: body.backend, model: body.model ?? whisper.model }) : whisper }] },
   '/api/models': (_, url) => url.searchParams.get('outputModality') === 'speech' ? { data: [{ model: 'fish/voice', displayName: 'Fish Audio' }] }
    : url.searchParams.get('outputModality') === 'transcription' ? { data: [{ model: 'openai/whisper', displayName: 'Whisper' }] }
    : { data: [{ id: 'sol', model: 'sol', displayName: 'Sol', isDefault: true }] },
@@ -139,6 +139,13 @@ for (const colorScheme of ['light', 'dark']) test(`ticking Read aloud on the Ope
   await router.getByText('Read aloud is back on local Kokoro.', { exact: true }).waitFor();
   assert.deepEqual(app.posts.filter(item => item.path === '/api/read-aloud/settings').map(item => item.body).at(-1), { source: 'local', model: null, voice: null });
   assert.equal(await box(router, 'OpenRouter', 'Read aloud').getAttribute('aria-checked'), 'false');
+  // Dictation has its own picker: the key's speech-to-text models.
+  await box(router, 'OpenRouter', 'Dictation').click();
+  await chooseOption(panel.getByRole('combobox', { name: 'Dictation model for OpenRouter', exact: true }), 'openai/whisper');
+  await router.getByRole('button', { name: 'Save Dictation for OpenRouter', exact: true }).click();
+  await router.getByText('Dictation now uses OpenRouter. Paid per use.', { exact: true }).waitFor();
+  assert.deepEqual(app.posts.filter(item => item.path === '/api/mcp').map(item => item.body), [{ version: 'v1', name: 'whispertype', action: 'whispertype', backend: 'openrouter', model: 'openai/whisper', everyChat: true }]);
+  assert.equal(await box(router, 'OpenRouter', 'Dictation').getAttribute('aria-checked'), 'true');
   assert.deepEqual(app.errors, []);
  } finally { await app.close(); }
 });
