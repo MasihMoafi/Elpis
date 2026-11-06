@@ -1436,6 +1436,12 @@ export default function Home() {
     await switchRewind({ action: "restore", beforeTurnId: turnId, mode: "conversation" });
     focusComposer();
   }
+  /** The chat on screen gives way to `next` (a rewound copy or another version): read afresh, and the old one leaves the list. */
+  async function replaceShownChat(previous: Thread, next: Thread) {
+    transcripts.current.delete(next.id); hidden.current.delete(next.id); upsertThread(next);
+    if (next.id !== previous.id) { hidden.current.add(previous.id); setThreads(prev => prev.filter(item => item.id !== previous.id)); }
+    setEntries([]); await loadThread(next);
+  }
   async function switchRewind(body: { action: string; beforeTurnId?: string; mode?: RestoreMode; version?: string }, filesOnly = false) {
     const thread = selectedRef.current; if (!thread) return;
     const draft = textRef.current; rewindSwitch.current = thread.id; setRewindBusy(true);
@@ -1443,9 +1449,7 @@ export default function Home() {
       const result = await api<{ thread?: Thread; undo?: "undo" | "redo" }>(`/threads/${encodeURIComponent(thread.id)}/rewind`, body);
       if (filesOnly || selectedRef.current?.id !== thread.id) return;
       const next = result.thread ?? thread;
-      transcripts.current.delete(next.id); hidden.current.delete(next.id); upsertThread(next);
-      if (next.id !== thread.id) { hidden.current.add(thread.id); setThreads(prev => prev.filter(item => item.id !== thread.id)); }
-      setEntries([]); await loadThread(next);
+      await replaceShownChat(thread, next);
       if (draft.trim()) editDraft(draft);
       setRewindActions(prev => ({ ...prev, [thread.id]: undefined, [next.id]: result.undo }));
     } finally { rewindSwitch.current = null; setRewindBusy(false); }
@@ -1464,9 +1468,7 @@ export default function Home() {
       const result = await api<{ thread: Thread }>(`/threads/${encodeURIComponent(thread.id)}/versions`, { action: "switch", threadId: target });
       if (!result.thread || typeof result.thread.id !== "string") throw unreadable("version");
       if (selectedRef.current?.id !== thread.id) return;
-      transcripts.current.delete(result.thread.id); hidden.current.delete(result.thread.id); upsertThread(result.thread);
-      hidden.current.add(thread.id); setThreads(prev => prev.filter(item => item.id !== thread.id));
-      setEntries([]); await loadThread(result.thread);
+      await replaceShownChat(thread, result.thread);
     } finally { rewindSwitch.current = null; }
   }
   /** Answers a request; `instead` is "Deny, and tell Elpis what to do instead" (body: { text }). */
