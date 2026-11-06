@@ -1046,15 +1046,7 @@
   "lib/api.ts:TS2345": 1,
   "lib/api.ts:TS2375": 1,
   "lib/api.ts:TS2532": 3,
-  "lib/api.ts:TS2769": 1,
-  "lib/approvals.ts:TS2322": 1,
-  "lib/failed-turn.ts:TS18048": 1,
-  "lib/mentions.ts:TS2345": 1,
-  "lib/message-copy.ts:TS2769": 1,
-  "lib/question-reply.ts:TS2345": 1,
-  "lib/search-rank.ts:TS2345": 1,
-  "lib/shortcuts.ts:TS2322": 1,
-  "lib/use-drafts.ts:TS2532": 1
+  "lib/api.ts:TS2769": 1
  },
  "lint": {
   "app/page.tsx:eslint(no-unused-expressions)": 1,

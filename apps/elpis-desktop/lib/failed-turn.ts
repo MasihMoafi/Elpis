@@ -12,7 +12,7 @@ export function failureKind(info: string | Record<string, unknown> | undefined) 
 export function plainResetTime(message: string) {
   return message.replace(/\bResets in\s*((?:\d+\s*[dhms]\s*)+)(?=[.!?]|$)/gi, (match, duration: string) => {
     const labels: Record<string, string> = { d: "day", h: "hour", m: "minute", s: "second" };
-    const parts = [...duration.matchAll(/(\d+)\s*([dhms])/gi)].map(([, count, unit]) => `${count} ${labels[unit.toLowerCase()]}${count === "1" ? "" : "s"}`);
+    const parts = [...duration.matchAll(/(\d+)\s*([dhms])/gi)].flatMap(([, count, unit]) => count && unit ? [`${count} ${labels[unit.toLowerCase()]}${count === "1" ? "" : "s"}`] : []);
     if (!parts.length) return match;
     const list = parts.length === 1 ? parts[0] : parts.length === 2 ? `${parts[0]} and ${parts[1]}` : `${parts.slice(0, -1).join(", ")}, and ${parts.at(-1)}`;
     return `Resets in ${list}`;

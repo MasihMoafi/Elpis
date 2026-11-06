@@ -12,7 +12,7 @@ const space = /\s/;
 /** The mention being typed: an "@" at the start of the text or after whitespace, up to the caret. */
 export function mentionAt(text: string, caret: number): { start: number; query: string } | null {
   let start = caret;
-  while (start > 0 && !space.test(text[start - 1])) start--;
+  while (start > 0 && !space.test(text.charAt(start - 1))) start--;
   if (text[start] !== "@") return null;
   return { start, query: text.slice(start + 1, caret) };
 }

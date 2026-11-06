@@ -57,7 +57,7 @@ export function useApprovalDrafts() {
   };
   /** A request answered or withdrawn: its drafts go, in every chat. */
   const clearApprovalDraft = useCallback((id: string) => setDrafts(previous => {
-    const keys = Object.keys(previous).filter(key => previous[key].id === id);
+    const keys = Object.keys(previous).filter(key => previous[key]?.id === id);
     if (!keys.length) return previous;
     const next = { ...previous }; for (const key of keys) delete next[key]; return next;
   }), []);

@@ -16,6 +16,6 @@ export function plainText(markdown: string): string {
     .replace(/(^|[^\w*])\*(?=\S)([^*\n]*?\S)\*(?![\w*])/g, "$1$2")
     .replace(/(^|[^\w_])_(?=\S)([^_\n]*?\S)_(?![\w_])/g, "$1$2")
     .replace(/~~(?=\S)([\s\S]*?\S)~~/g, "$1")
-    .replace(/\u0000(\d+)\u0000/g, (_, index: string) => code[Number(index)])
+    .replace(/\u0000(\d+)\u0000/g, (match, index: string) => code[Number(index)] ?? match)
     .trim();
 }

@@ -15,7 +15,7 @@ export function elicitationChoices(params: ElicitationParams): Choice[] {
   const messageOnly = !params.requestedSchema || Object.keys(params.requestedSchema.properties).length === 0;
   const tool = params._meta?.codex_approval_kind === "mcp_tool_call" && messageOnly;
   const choices: Choice[] = [{label: messageOnly ? "Allow" : "Send answers", action:"accept"}];
-  if (messageOnly) for (const [persist, label] of [["session", "Allow for this session"], ["always", "Always allow"]]) {
+  if (messageOnly) for (const [persist, label] of [["session", "Allow for this session"], ["always", "Always allow"]] as const) {
     const offered = params._meta?.persist;
     if (offered === persist || Array.isArray(offered) && offered.includes(persist)) choices.push({label, action:"accept", persist});
   }

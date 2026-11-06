@@ -70,7 +70,7 @@ export function shortcutBindings(preferences: Pick<Preferences, "shortcutBinding
 
 export function configuredShortcuts(preferences: Pick<Preferences, "shortcutBindings">): Shortcut[] {
   const bindings = shortcutBindings(preferences);
-  return SHORTCUTS.map(item => Object.hasOwn(bindings, item.id) ? { ...item, keys: bindings[item.id] ? [bindings[item.id]] : [] } : item);
+  return SHORTCUTS.map(item => { const binding = bindings[item.id]; return Object.hasOwn(bindings, item.id) ? { ...item, keys: binding ? [binding] : [] } : item; });
 }
 
 type KeyPress = Pick<KeyboardEvent, "code" | "key" | "ctrlKey" | "altKey" | "shiftKey" | "metaKey">;

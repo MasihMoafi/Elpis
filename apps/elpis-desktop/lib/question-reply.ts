@@ -3,7 +3,7 @@ export type QuestionReply = { questionItemId: string; question: string; answer: 
 /** Match the engine's complete async-answer envelope, never tags quoted inside an ordinary message. */
 export function questionReplies(text: string): QuestionReply[] | null {
   const match = /^<send_user_message_question_reply>([\s\S]*)<\/send_user_message_question_reply>$/.exec(text.trim());
-  if (!match) return null;
+  if (match?.[1] === undefined) return null;
   try {
     const value: unknown = JSON.parse(match[1]);
     const replies: unknown[] = Array.isArray(value) ? value : [value];

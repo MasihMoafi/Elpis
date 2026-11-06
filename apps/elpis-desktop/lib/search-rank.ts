@@ -6,7 +6,7 @@ export function searchScore(name: string, other: string, query: string): number 
   if (n === q) return 1000;
   // A shorter name is the closer match among names that start the same way.
   if (n.startsWith(q)) return 900 - Math.min(n.length, 99);
-  for (let at = n.indexOf(q); at > 0; at = n.indexOf(q, at + 1)) if (!/[\p{L}\p{N}]/u.test(n[at - 1])) return 700 - Math.min(n.length, 99);
+  for (let at = n.indexOf(q); at > 0; at = n.indexOf(q, at + 1)) if (!/[\p{L}\p{N}]/u.test(n.charAt(at - 1))) return 700 - Math.min(n.length, 99);
   if (n.includes(q)) return 500 - Math.min(n.indexOf(q), 99);
   return other.toLowerCase().includes(q) ? 100 : 0;
 }
