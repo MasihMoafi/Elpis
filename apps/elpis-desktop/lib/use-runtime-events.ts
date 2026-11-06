@@ -12,6 +12,7 @@ import { liveEventItemKey, mergeLiveItem, RETRYING, retryRecovered, runtimeError
 import { notifyApproval, notifyRuntimeEvent } from "@/lib/notifications";
 import { reloadSettings } from "@/lib/settings-store";
 import type { useLoveActivity } from "@/lib/use-love-activity";
+import type { useConversationList } from "@/lib/use-conversation-list";
 import type { useRuntimeState } from "@/lib/use-runtime-state";
 import { without } from "@/lib/utils";
 import { refusedOffline, type Live, type View, type WorkflowReplay } from "@/lib/workspace-types";
@@ -19,31 +20,29 @@ import { refusedOffline, type Live, type View, type WorkflowReplay } from "@/lib
 type Setter<T> = Dispatch<SetStateAction<T>>;
 type Ref<T> = RefObject<T>;
 type RuntimeEvents = {
-  runtime: ReturnType<typeof useRuntimeState>;
+  runtime: ReturnType<typeof useRuntimeState>; conversations: ReturnType<typeof useConversationList>;
   selectedRef: Ref<Thread | null>; request: Ref<number>; tabsRef: Ref<ChatTabs>;
-  refreshModels: () => Promise<void>; refreshThreads: () => Promise<void>; setError: Setter<string>;
-  hidden: Ref<Set<string>>; initialRestoration: Ref<{ threadId: string; promise: Promise<void> } | null>;
+  refreshModels: () => Promise<void>; setError: Setter<string>;
+  initialRestoration: Ref<{ threadId: string; promise: Promise<void> } | null>;
   liveRevision: Ref<number>;
   applyHistoryPage: (id: string, page: HistoryPage, revision: number) => void;
   rememberFollowing: (id: string, live: Live) => void; rememberModes: (id: string, live: Live) => void;
   reconcileLiveThread: (id: string, live: Live) => void;
   restoredTabs: Ref<boolean>; loadThread: (thread: Thread) => Promise<void>;
-  threadsRef: Ref<Thread[]>; openThread: (thread: Thread) => Promise<void>;
+  openThread: (thread: Thread) => Promise<void>;
   viewRef: Ref<View>; planTurns: Ref<Map<string, string>>; setAttention: Setter<Attention>;
   loveRef: Ref<ReturnType<typeof useLoveActivity>>; isLoveChatId: (id: string) => boolean;
   setRewindActions: Setter<Record<string, "undo" | "redo" | undefined>>;
-  patchThread: (id: string, patch: Partial<Thread>) => void;
-  statusRevisions: Ref<Record<string, number>>;
   setThreadModes: Setter<Record<string, PermissionMode>>;
-  settingsOf: Ref<Record<string, Pick<Thread, "model" | "modelProvider" | "reasoningEffort">>>;
-  upsertThread: (thread: Thread) => void; rewindSwitch: Ref<string | null>;
+  rewindSwitch: Ref<string | null>;
   removeThreads: (ids: Set<string>, permanent: boolean) => void;
   liveVersions: Ref<Map<string, number>>; setEntries: Setter<Entry[]>; clearApprovalDraft: (id: string) => void;
-  select: (thread: Thread | null) => void; liveKeysAfter: (revision: number) => Set<string>;
+  liveKeysAfter: (revision: number) => Set<string>;
   noteHistoryGap: (id: string, page: { earliestHistoryMissing?: boolean }) => void;
 };
 
-export function useRuntimeEvents({ runtime, selectedRef, request, tabsRef, refreshModels, refreshThreads, setError, hidden, initialRestoration, liveRevision, applyHistoryPage, rememberFollowing, rememberModes, reconcileLiveThread, restoredTabs, loadThread, threadsRef, openThread, viewRef, planTurns, setAttention, loveRef, isLoveChatId, setRewindActions, patchThread, statusRevisions, setThreadModes, settingsOf, upsertThread, rewindSwitch, removeThreads, liveVersions, setEntries, clearApprovalDraft, select, liveKeysAfter, noteHistoryGap }: RuntimeEvents) {
+export function useRuntimeEvents({ conversations, runtime, selectedRef, request, tabsRef, refreshModels, setError, initialRestoration, liveRevision, applyHistoryPage, rememberFollowing, rememberModes, reconcileLiveThread, restoredTabs, loadThread, openThread, viewRef, planTurns, setAttention, loveRef, isLoveChatId, setRewindActions, setThreadModes, rewindSwitch, removeThreads, liveVersions, setEntries, clearApprovalDraft, liveKeysAfter, noteHistoryGap }: RuntimeEvents) {
+  const { refreshThreads, hidden, threadsRef, statusRevisions, settingsOf, patchThread, upsertThread, select } = conversations;
   const { setConnected, setConnectionStatus, setApprovals, setAccountRefresh, turnRevisions, modeRevisions, setLiveError, setReady, setReplays, completedTurns, setPlans, setActiveTurns, setRuntimeNotices, setFailedTurns, setStoppedTurns, setActivity } = runtime;
   useEffect(() => {
     let disposed = false; let events: EventSource | undefined; let wasConnected = false; let receivedConnection = false; let recovery = 0;

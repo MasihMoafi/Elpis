@@ -381,7 +381,8 @@ export default function Home() {
   const restoreScroll = useRef<{ height: number; top: number } | null>(null);
   const request = useRef(0);
   const initialRestoration = useRef<{ threadId: string; promise: Promise<void> } | null>(null);
-  const { select, settingsOf, remember, threadsRef, statusRevisions, patchThread, hidden, upsertThread, refreshThreads, loadMoreConversations, nextCursor, moreLoading } = useConversationList(threads, setThreads, selectedRef, setSelected, setError);
+  const conversations = useConversationList(threads, setThreads, selectedRef, setSelected, setError);
+  const { select, settingsOf, remember, threadsRef, statusRevisions, patchThread, hidden, upsertThread, refreshThreads, loadMoreConversations, nextCursor, moreLoading } = conversations;
   // Once an unavailable team read lets a draft appear, a later reply must not move it.
   const holdAgentPanel = useCallback((thread: Thread) => {
     const root = thread.parentThreadId ?? thread.id;
@@ -477,7 +478,7 @@ export default function Home() {
   }, []);
   useEffect(() => window.elpisDesktop?.storage?.onError(setError), []);
   useWorkspaceNavigation(shortcutAction);
-  useRuntimeEvents({ runtime, selectedRef, request, tabsRef, refreshModels, refreshThreads, setError, hidden, initialRestoration, liveRevision, applyHistoryPage, rememberFollowing, rememberModes, reconcileLiveThread, restoredTabs, loadThread, threadsRef, openThread, viewRef, planTurns, setAttention, loveRef, isLoveChatId, setRewindActions, patchThread, statusRevisions, setThreadModes, settingsOf, upsertThread, rewindSwitch, removeThreads, liveVersions, setEntries, clearApprovalDraft, select, liveKeysAfter, noteHistoryGap });
+  useRuntimeEvents({ conversations, runtime, selectedRef, request, tabsRef, refreshModels, setError, initialRestoration, liveRevision, applyHistoryPage, rememberFollowing, rememberModes, reconcileLiveThread, restoredTabs, loadThread, openThread, viewRef, planTurns, setAttention, loveRef, isLoveChatId, setRewindActions, setThreadModes, rewindSwitch, removeThreads, liveVersions, setEntries, clearApprovalDraft, liveKeysAfter, noteHistoryGap });
 
   const loadChildren = useCallback(async (id: string, cursor?: string, expand = false) => {
     if (childPaging.current.has(id)) return;
@@ -917,7 +918,7 @@ export default function Home() {
   }
   /** Sends the composer's message, or `own`: a command's message (such as /init's prompt), sent without the composer's files.
    * While a turn runs, `followUp` steers or queues this one message instead of following Settings (Ctrl+Enter). */
-  const send = createChatSend({ runtime, attachments: attachmentState, drafts: draftStore, sendShell: () => sendShell(), askSideQuestion: question => askSideQuestion(question), restoreComposerFocus: origin => restoreComposerFocus(origin), readOnlyRun, shellMode, textRef, selected, editDraft, busy, canSendFollowUp, dictating, projectChanging, imageBlocked, missingChoiceNotice, needsModelId, model, setError, sending, setBusy, pickedMentions, newDraftKey, request, tabsRef, setText, activeTurn, continues, preferences, stickToBottom, setSubmissions, entries, newMode, newChoice, cwd, newWorktree, noteStartedMode, browser, select, setThreads, projectId, assignProject, pending, effort, newPlan, upsertThread, selectedRef, loadThread, setThreadPlans, setNewPlan, setNextTurn, settingsOf, patchThread });
+  const send = createChatSend({ conversations, runtime, attachments: attachmentState, drafts: draftStore, sendShell: () => sendShell(), askSideQuestion: question => askSideQuestion(question), restoreComposerFocus: origin => restoreComposerFocus(origin), readOnlyRun, shellMode, textRef, selected, editDraft, busy, canSendFollowUp, dictating, projectChanging, imageBlocked, missingChoiceNotice, needsModelId, model, setError, sending, setBusy, pickedMentions, newDraftKey, request, tabsRef, setText, activeTurn, continues, preferences, stickToBottom, setSubmissions, entries, newMode, newChoice, cwd, newWorktree, noteStartedMode, browser, setThreads, projectId, assignProject, pending, effort, newPlan, selectedRef, loadThread, setThreadPlans, setNewPlan, setNextTurn });
   async function sendShell() {
     const command = textRef.current, originalRequest = request.current;
     if (!command.trim() || busy || !ready || !connected || projectChanging) return;
