@@ -29,7 +29,7 @@ test('a window link is policy-checked before its session browser is initialized'
   const browser = sessions.attach({ host, origin: 'http://127.0.0.1:4000', ipcMain: { handle() {}, on() {}, removeHandler() {}, removeListener() {} } });
   for (const url of ['javascript:alert(1)', 'http://127.0.0.1:4000/settings', 'file://server/share/x.pdf']) assert.throws(() => browser.open(url), /web address|file on this computer/);
   // Local files and PDFs open (29 Oct): a file: address or a plain path.
-  const { browserUrl } = require('./browser-policy.cjs');
+  const { browserUrl } = require('./browser-policy.cts');
   assert.equal(browserUrl('/home/me/Report 1.pdf', 'http://127.0.0.1:4000'), 'file:///home/me/Report%201.pdf');
   assert.equal(browserUrl('file:///tmp/a.html', 'http://127.0.0.1:4000'), 'file:///tmp/a.html');
   browser.dispose(); await sessions.flush();

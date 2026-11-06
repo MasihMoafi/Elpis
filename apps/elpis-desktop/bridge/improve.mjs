@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { BridgeError, object } from './client.mjs';
 import { attachmentInput } from './attachments.mjs';
-import { verifyImprovement } from './improve-check.mjs';
+import { verifyImprovement } from './improve-check.mts';
 import { durableSourceCheckout } from './improve-source.mts';
 const exec = promisify(execFile);
 const defaultAppRoot = fileURLToPath(new URL('..', import.meta.url));

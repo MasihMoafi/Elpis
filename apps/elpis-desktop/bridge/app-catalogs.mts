@@ -10,7 +10,7 @@ const CATALOGS = [
 ];
 
 /** The catalogs found under `home`: { app, label, name, source }. */
-export function appCatalogs(home) {
+export function appCatalogs(home: string) {
   return CATALOGS.flatMap(({ app, label, name, folder, manifest }) => {
     const source = path.join(home, folder);
     return fs.existsSync(path.join(source, manifest)) ? [{ app, label, name, source }] : [];
@@ -18,7 +18,7 @@ export function appCatalogs(home) {
 }
 
 /** Where the engine looks for the bundled marketplace of `elpisHome`, with the ChatGPT app's folder linked there. */
-export async function linkBundledCatalog(elpisHome, source) {
+export async function linkBundledCatalog(elpisHome: string, source: string) {
   const link = path.join(elpisHome, '.tmp', 'bundled-marketplaces', 'openai-bundled');
   await fs.promises.mkdir(path.dirname(link), { recursive: true });
   const existing = await fs.promises.readlink(link).catch(() => null);

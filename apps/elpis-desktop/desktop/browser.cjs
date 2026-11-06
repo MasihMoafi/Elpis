@@ -1,7 +1,7 @@
 'use strict';
 const {randomUUID}=require('node:crypto');
 const path=require('node:path');
-const {browserUrl,trustedBrowserSender,nativeBounds,loadFailure,pageSecurity,zoomStep}=require('./browser-policy.cjs');
+const {browserUrl,trustedBrowserSender,nativeBounds,loadFailure,pageSecurity,zoomStep}=require('./browser-policy.cts');
 const {cleanPick,commentLabel,commentsPrompt}=require('./browser-annotations.cjs');
 const {contextMenuTemplate}=require('./context-menu.cjs');
 const {createBrowserAgent}=require('./browser-agent.cjs');

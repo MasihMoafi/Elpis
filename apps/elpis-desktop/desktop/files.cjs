@@ -2,8 +2,8 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const nodeSpawn = require('node:child_process').spawn;
-const { trustedBrowserSender } = require('./browser-policy.cjs');
-const { installedEditors, editorCommand } = require('./editors.cjs');
+const { trustedBrowserSender } = require('./browser-policy.cts');
+const { installedEditors, editorCommand } = require('./editors.cts');
 
 function localFilePath(target) {
   if (typeof target !== 'string' || target.length > 4096 || !target.startsWith('/') || target.startsWith('//')) {

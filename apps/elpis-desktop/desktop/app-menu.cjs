@@ -1,6 +1,6 @@
 'use strict';
-const { APP_MENUS } = require('../lib/app-menu-commands.cjs');
-const { trustedBrowserSender, zoomStep } = require('./browser-policy.cjs');
+const { APP_MENUS } = require('../lib/app-menu-commands.cts');
+const { trustedBrowserSender, zoomStep } = require('./browser-policy.cts');
 const commands = APP_MENUS.flatMap(group => group.items).filter(item => 'id' in item);
 const nativeCommands = new Set(commands.filter(item => item.target === 'native').map(item => item.id));
 

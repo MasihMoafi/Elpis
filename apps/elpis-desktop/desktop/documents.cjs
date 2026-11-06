@@ -2,7 +2,7 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
-const { trustedBrowserSender } = require('./browser-policy.cjs');
+const { trustedBrowserSender } = require('./browser-policy.cts');
 
 const documentTools = [
   { name: 'document_open', description: 'Open an existing local text file beside this chat. The user edits and saves the real file; unsaved changes are preserved.', inputSchema: {

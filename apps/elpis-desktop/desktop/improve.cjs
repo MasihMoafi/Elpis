@@ -1,5 +1,5 @@
 'use strict';
-const { trustedBrowserSender } = require('./browser-policy.cjs');
+const { trustedBrowserSender } = require('./browser-policy.cts');
 
 function regionRect(bounds, viewport) {
   if (!bounds || !['x', 'y', 'width', 'height'].every(key => Number.isFinite(bounds[key]))) throw Error('Choose a visible region');

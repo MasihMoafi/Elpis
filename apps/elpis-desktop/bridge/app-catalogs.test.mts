@@ -1,4 +1,4 @@
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
@@ -7,27 +7,32 @@ import os from 'node:os';
 import path from 'node:path';
 import { DesktopClient } from './client.mjs';
 
+type Request = { id?: number; method: string; params: { source?: string } };
+type Socket = EventEmitter & { sent: Request[]; close: () => void; send: (raw: string) => void };
+
 /** A computer with the Claude app's catalog and the ChatGPT app's, and an engine that lists the marketplaces it was given. */
-function setup(t, { chatgpt = true } = {}) {
+function setup(t: TestContext, { chatgpt = true } = {}) {
   const root = path.join(os.tmpdir(), `app-catalogs-${randomUUID()}`), home = path.join(root, 'home'), elpis = path.join(root, 'elpis');
-  const make = (folder, manifest) => { fs.mkdirSync(path.join(home, folder, path.dirname(manifest)), { recursive: true }); fs.writeFileSync(path.join(home, folder, manifest), '{}'); };
+  const make = (folder: string, manifest: string) => { fs.mkdirSync(path.join(home, folder, path.dirname(manifest)), { recursive: true }); fs.writeFileSync(path.join(home, folder, manifest), '{}'); };
   make('.claude/plugins/marketplaces/claude-plugins-official', '.claude-plugin/marketplace.json');
   if (chatgpt) make('.codex/.tmp/bundled-marketplaces/openai-bundled', '.agents/plugins/marketplace.json');
   const previous = process.env.ELPIS_HOME; process.env.ELPIS_HOME = elpis; t.after(() => { if (previous === undefined) delete process.env.ELPIS_HOME; else process.env.ELPIS_HOME = previous; });
-  const socket = new EventEmitter(), listed = [], saved = []; socket.sent = []; socket.close = () => {};
-  socket.send = raw => {
-    const request = JSON.parse(raw); socket.sent.push(request);
+  const socket: Socket = Object.assign(new EventEmitter(), { sent: [] as Request[], close: () => {}, send: (_raw: string) => {} });
+  const listed: string[] = [], saved: unknown[] = [];
+  socket.send = (raw: string) => {
+    const request = JSON.parse(raw) as Request; socket.sent.push(request);
     if (request.id === undefined) return;
     const result = request.method === 'plugin/list' ? { marketplaces: listed.map(name => ({ name, path: `/${name}/marketplace.json`, plugins: [] })) } : {};
     queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, result })));
   };
-  const client = new DesktopClient(socket, { appHome: home, archiveDirectory: path.join(root, 'archives'), rewindHome: path.join(root, 'rewind'), spawnLinksFile: path.join(root, 'links.json'),
-    githubConnector: { instructions: async () => null }, workflowOptions: { stateDir: path.join(root, 'workflows') } });
-  Object.assign(client, { settings: async () => ({ version: 'v1', features: { available: true, data: [{ key: 'plugins', enabled: saved.length > 0 }] } }), saveSettings: async input => { saved.push(input); } });
+  const options = { appHome: home, archiveDirectory: path.join(root, 'archives'), rewindHome: path.join(root, 'rewind'), spawnLinksFile: path.join(root, 'links.json'),
+    githubConnector: { instructions: async () => null }, workflowOptions: { stateDir: path.join(root, 'workflows') } };
+  const client = new DesktopClient(socket, options);
+  Object.assign(client, { settings: async () => ({ version: 'v1', features: { available: true, data: [{ key: 'plugins', enabled: saved.length > 0 }] } }), saveSettings: async (input: unknown) => { saved.push(input); } });
   t.after(() => client.close());
   return { client, socket, listed, saved, home, elpis };
 }
-const sent = (socket, method) => socket.sent.filter(request => request.method === method).map(request => request.params);
+const sent = (socket: Socket, method: string) => socket.sent.filter(request => request.method === method).map(request => request.params);
 
 test('the catalogs of the Claude and ChatGPT apps on this computer are offered until they are added', async t => {
   const f = setup(t);
@@ -60,8 +65,8 @@ test('adding the ChatGPT catalog links the app\'s folder where the engine keeps 
 
 test('adding a marketplace from a Git URL waits for the clone; an ordinary request still times out', async t => {
   const f = setup(t); f.client.timeoutMs = 30;
-  f.socket.send = raw => {
-    const request = JSON.parse(raw); f.socket.sent.push(request);
+  f.socket.send = (raw: string) => {
+    const request = JSON.parse(raw) as Request; f.socket.sent.push(request);
     if (request.id !== undefined) setTimeout(() => f.socket.emit('message', JSON.stringify({ id: request.id, result: {} })), 120);
   };
   await f.client.changeMarketplace({ action: 'add', source: 'https://github.com/heygen-com/hyperframes' });

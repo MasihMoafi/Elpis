@@ -1,4 +1,4 @@
-// The editors "Open in" offers (desktop/editors.cjs lists the ones installed; VS Code is never among them) and the one the
+// The editors "Open in" offers (desktop/editors.cts lists the ones installed; VS Code is never among them) and the one the
 // person chose last, kept on this computer. With none chosen a file opens in the system's default app.
 import { useEffect, useSyncExternalStore } from "react";
 import { appStorage } from "./projects";

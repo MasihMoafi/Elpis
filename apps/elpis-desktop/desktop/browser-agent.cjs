@@ -5,7 +5,7 @@ const fsSync = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
-const { browserUrl } = require('./browser-policy.cjs');
+const { browserUrl } = require('./browser-policy.cts');
 const { documentTools } = require('./documents.cjs');
 const { screenTools } = require('./screen-capture.cjs');
 
