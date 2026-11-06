@@ -51,7 +51,6 @@ import { useBrowser } from "@/components/browser-panel";
 import { onRequest as onFileRequest, openFile, setFileView } from "@/lib/files-pane";
 import { usePersonal } from "@/components/personal-tip";
 import { SidePanel, sideMinWidth, useSidePanel } from "@/components/side-panel";
-import { type SideRequest } from "@/components/side-chat";
 import { FloatChatBar, FloatChatPill } from "@/components/float-chat";
 import { useSessionSplit } from "@/components/session-split";
 import { api, title, agentName,
@@ -106,6 +105,7 @@ import { createBrowserAttachment } from "@/lib/browser-attachments";
 import { sessionRows as makeSessionRows } from "@/lib/session-rows";
 import { useCommandNotices } from "@/lib/use-command-notices";
 import { useConversationView } from "@/lib/use-conversation-view";
+import { useComposerPanels, useComposerPanelScope } from "@/lib/use-composer-panels";
 import { PAGE_NAMES } from "@/lib/workspace-navigation-pages";
 import { refusedOffline } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
@@ -164,18 +164,11 @@ export default function Home() {
   const foldable = (key: string, name: string) => <SectionToggle name={name} open={!collapsedSections[key]} onToggle={() => changeFolds(value => ({ ...value, sections: { ...value.sections, [key]: !value.sections[key] } }))} />;
   const { rewindTurn, setRewindTurn, rewindActions, setRewindActions, messageVersions, setMessageVersions, rewindBusy, setRewindBusy, rewindSwitch } = useRewindState();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  /** What a slash command has open above the composer, and the one-line answer of a command that only reports. */
-  const [panel, setPanel] = useState<"status" | "review" | "diff" | null>(null);
-  const [slashNotice, setSlashNotice] = useState("");
-  // /compact typed while the agent works runs when that turn finishes, as in the terminal.
-  const [queuedCompact, setQueuedCompact] = useState<{ threadId: string; guidance?: string } | null>(null);
-  // A new chat in its own worktree (the Local/Worktree menu), and where an archived or deleted chat's worktree was kept.
-  const [newWorktree, setNewWorktree] = useState(false);
+  const panels = useComposerPanels();
+  const { panel, setPanel, slashNotice, setSlashNotice, queuedCompact, setQueuedCompact, newWorktree, setNewWorktree, sideChat, setSideChat, sideRequests } = panels;
   const shortcutAction = useRef<(id: string, index?: number) => void>(() => {});
   const composer = useComposerState();
-  const { text, setText, shellMode, setShellMode, shellCreated, textRef, composerRef, caret, setCaret, pickedMentions, dictating, voiceBusy } = composer;
-  const [sideChat, setSideChat] = useState<{ parentId: string; open: boolean; question?: SideRequest } | null>(null);
-  const sideRequests = useRef(0);
+  const { text, setText, shellMode, textRef, composerRef, caret, setCaret, pickedMentions, dictating, voiceBusy } = composer;
   const [agentRunsOpen, setAgentRunsOpen] = useState(false);
   const [messageEdits, setMessageEdits] = useState<Record<string, string>>({});
   const approvalSubmissions = useSubmitOnce(), { pending: pendingDrafts, submit: submitDraft } = approvalSubmissions;
@@ -354,10 +347,7 @@ export default function Home() {
   const slash = useSlashMenu(ready && connected ? text : "", slashCommands, () => { editDraft(""); setPanel(null); setSlashNotice(""); });
   const mention = useMentionMenu({ text, caret, cwd: chatFolder || undefined, threads, currentId: selected?.id,
     onPick: result => { pickedMentions.current.set(result.mention.path, result.mention); flushSync(() => editDraft(result.text)); setCaret(result.caret); composerRef.current?.setSelectionRange(result.caret, result.caret); } });
-  // A panel belongs to the chat and page it was opened on; a notice goes when the person types again.
-  useEffect(() => { setPanel(null); }, [selected?.id, view]);
-  useEffect(() => { if (shellCreated.current !== selected?.id || view !== "chat") setShellMode(false); shellCreated.current = null; setSideChat(null); }, [selected?.id, view]);
-  useEffect(() => { if (text) setSlashNotice(""); }, [text]);
+  useComposerPanelScope(panels, composer, selected?.id, view);
 
   const sidebarModel = useSidebarThreads({ ready, connected, threads, hidden, selected, chatGroups, loveActivity, expanded, setExpanded, recordedWorkflow, loadChildren, search, attention, waitingIds, pins, projectChats, releaseChatOrder, searchInput, setError, setDeleteRunHistory, setDeleteTargets, hiddenPages, preferences, collapsedSections, collapsedProjects, checkedChildren, agentRunsOpen });
   const { workflowCatalog, workflowRoots, sidebarThreads, nativeParents, treeParents, sidebarState, needsYou, ordinaryThreads, ordinaryIds, pinnedChats, grouped, recentChats, ordered } = sidebarModel;
