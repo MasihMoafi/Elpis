@@ -41,5 +41,7 @@ export function useLoveActivity(active: boolean, ready: boolean, activeThread?: 
       });
     }, unresolved);
   }, [ready]);
-  return { unread: unread.length, threads, originsResolved: ready && origins.resolved };
+  /** Whether a chat is one of Love Spot's (its board names it, or its title says so). */
+  const isLoveChat = (thread: { id: string; name?: string | null }) => chatOrigin(thread, threads) === "Love Spot";
+  return { unread: unread.length, threads, originsResolved: ready && origins.resolved, chatShown, isLoveChat };
 }

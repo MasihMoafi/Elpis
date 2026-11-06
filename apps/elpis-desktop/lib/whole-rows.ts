@@ -110,3 +110,17 @@ export function useWholeRows(ref: RefObject<HTMLElement | null>, rowSelector: st
     };
   }, [ref, rowSelector, targets]);
 }
+
+/** Sizes the chat list's end spacer (globals.css .thread-list::after) so that the end of the list is a whole-row snap
+ * position at every list height: the end then shows the last chat whole instead of snapping back over it. */
+export function fitChatListEnd(list: HTMLElement) {
+  const space = parseFloat(list.style.getPropertyValue("--list-end-space")) || 0;
+  const contentEnd = list.scrollHeight - space, view = list.clientHeight;
+  const origin = list.getBoundingClientRect().top - list.scrollTop;
+  const stops = [...list.querySelectorAll<HTMLElement>(".thread-row, .thread-more, .section-label-row, section > :first-child")]
+    .map(element => element.getBoundingClientRect().top - origin).sort((a, b) => a - b);
+  // A 10px gap under the last chat when a row position allows it, else the end of the last chat.
+  const stop = contentEnd + 10 <= view ? undefined : stops.find(top => top + view >= contentEnd + 10) ?? stops.find(top => top + view >= contentEnd - 0.5);
+  const next = `${stop === undefined ? 10 : Math.max(0, Math.round(stop + view - contentEnd))}px`;
+  if (list.style.getPropertyValue("--list-end-space") !== next) list.style.setProperty("--list-end-space", next);
+}

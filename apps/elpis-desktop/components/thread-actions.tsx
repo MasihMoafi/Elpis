@@ -2,7 +2,7 @@
 
 import { cloneElement, useEffect, useRef, useState, type KeyboardEvent, type ReactElement, type ReactNode } from "react";
 import { AgentsIcon, ArchiveIcon, PinIcon, TerminalIcon } from "@/components/elpis-icons";
-import { Bookmark, BookmarkMinus, CircleCheck, Columns2, Eye, EyeOff, FolderInput, FolderPlus, Palette, Pencil, Plus, SquareArrowOutUpRight, Trash2 } from "lucide-react";
+import { Bookmark, BookmarkMinus, CircleCheck, Columns2, Eye, EyeOff, FolderInput, FolderPlus, Palette, Pencil, SquareArrowOutUpRight, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";

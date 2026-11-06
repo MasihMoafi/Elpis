@@ -1,6 +1,5 @@
 "use client";
 import { useState } from "react";
-import { Workflow } from "lucide-react";
 import { WorkflowsIcon } from "@/components/elpis-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

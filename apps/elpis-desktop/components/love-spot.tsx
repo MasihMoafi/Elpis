@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import { Check, ChevronDown, Heart, ImagePlus, Pin, Trash2, X } from "lucide-react";
 import { PlusIcon, ModelsIcon } from "@/components/elpis-icons";
 import { ProvidersSettings } from "@/components/providers-settings";
-import { CaptureUpdateAction, Excalidraw, MainMenu, newElementWith, convertToExcalidrawElements, exportToBlob, serializeAsJSON, viewportCoordsToSceneCoords } from "@excalidraw/excalidraw";
+import { CaptureUpdateAction, Excalidraw, MainMenu, convertToExcalidrawElements, exportToBlob, serializeAsJSON, viewportCoordsToSceneCoords } from "@excalidraw/excalidraw";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { AppState, BinaryFiles, ExcalidrawImperativeAPI, ExcalidrawInitialDataState, PointerDownState } from "@excalidraw/excalidraw/types";
 import { Button } from "@/components/ui/button";
@@ -23,7 +23,6 @@ import { ModelPicker } from "@/components/model-picker";
 import { api, chatProvider, providerChoices, unreadable, type ProviderSettings } from "@/lib/api";
 import { refreshModelCatalog, useModelCatalog } from "@/lib/model-catalog";
 import { keepModel, savedModel, MATILDA_CHANGED } from "@/lib/matilda";
-import { Switch } from "@/components/ui/switch";
 import { useMatildaSettings, type MatildaSettings } from "@/lib/matilda-settings";
 import { MatildaSwitch } from "@/components/matilda-switch";
 import { applyRemoteScene, mergeRemoteElements, restoreRemoteElements } from "@/lib/love-spot-history";
@@ -78,7 +77,7 @@ async function savePicture(data: Saved) {
   await api("/love-spot/picture", { revision: data.revision, png: dataURL.split(",")[1] });
 }
 
-type LoveSpotProps = { dark: boolean; cwd?: string; onOpenChat?: (id: string) => void; toolbarHost?: HTMLElement | null };
+type LoveSpotProps = { dark: boolean; toolbarHost?: HTMLElement | null };
 type MatildaVoice = { enabled: boolean; available: boolean; reason: string; error: string };
 export default function LoveSpot(props: LoveSpotProps) {
   // Inside Elpis the app provides her voice, so it outlives the board; the standalone Love Spot brings its own.
@@ -86,7 +85,7 @@ export default function LoveSpot(props: LoveSpotProps) {
   if (app) return <LoveSpotBoard {...props} />;
   return <ReadAloud threadId="love-spot" enabled available={LOVE_SPOT_AUDIO.readAloudAvailable} unavailableReason={LOVE_SPOT_AUDIO.available ? undefined : LOVE_SPOT_AUDIO.reason}><LoveSpotBoard {...props} /></ReadAloud>;
 }
-function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
+function LoveSpotBoard({ dark, toolbarHost }: LoveSpotProps) {
   const speech = useReadAloud();
   const voiceEnabled = useRef(false);
   const voiceVersion = useRef(0);

@@ -1,5 +1,6 @@
 // Back and forward between the places the person has been: a chat, a new chat, or a page such as Agents.
-// A stack with a position, as a browser keeps it; the page owns the state and says where each visit lands.
+// A stack with a position, as a browser keeps it; the page says where each visit lands.
+import { useEffect, useRef, useState } from "react";
 
 /** Where the person is: the page, and for a chat the chat (null is an empty new chat). */
 export type Place = { view: string; threadId: string | null };
@@ -25,4 +26,23 @@ export function step(history: History, delta: -1 | 1, usable: (place: Place) => 
     if (usable(history.places[index])) return { history: { ...history, index }, place: history.places[index] };
   }
   return null;
+}
+
+/** The page's Back and Forward: each place reached once `ready` joins the stack (the first only starts it), and `go`
+ * moves along it, returning the place to show. */
+export function useNavHistory(ready: boolean, place: Place) {
+  const [history, setHistory] = useState<History>(() => startHistory({ view: "chat", threadId: null }));
+  const historyRef = useRef(history), seeded = useRef(false);
+  const commit = (next: History) => { if (next !== historyRef.current) { historyRef.current = next; setHistory(next); } };
+  useEffect(() => {
+    if (!ready) return;
+    commit(seeded.current ? visit(historyRef.current, place) : startHistory(place));
+    seeded.current = true;
+  }, [ready, place.view, place.threadId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const go = (delta: -1 | 1, usable: (place: Place) => boolean) => {
+    const found = step(historyRef.current, delta, usable);
+    if (found) commit(found.history);
+    return found?.place ?? null;
+  };
+  return { canBack: canBack(history), canForward: canForward(history), go };
 }

@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api } from "./api";
+import { api, unreadable } from "./api";
 import { appStorage } from "./projects";
 
 export const WORKFLOW_COLOURS = ["blue", "teal", "violet", "rose", "green", "amber"] as const;
@@ -113,3 +113,19 @@ export function useWorkflowCatalog(enabled: boolean) {
   return { identities, runs, hydrated, error, ensure, rename, recolour, attach, refresh };
 }
 export type WorkflowCatalog = ReturnType<typeof useWorkflowCatalog>;
+
+/** Workflows' own folder when no project is chosen: the bridge's sandbox, asked for once `wanted` (Workflows shown,
+ * connected, no project) and kept for the session. */
+export function useWorkflowSandbox(wanted: boolean, onError: (message: string) => void) {
+  const [sandbox, setSandbox] = useState<string>();
+  useEffect(() => {
+    if (!wanted || sandbox) return;
+    let current = true;
+    void api<{ cwd: string }>("/workflows/workspace", {}).then(result => {
+      if (!result.cwd?.startsWith("/")) throw unreadable("workflow sandbox");
+      if (current) setSandbox(result.cwd);
+    }).catch(cause => { if (current) onError(cause instanceof Error ? cause.message : "Could not open the workflow sandbox. Choose a project or reopen Workflows to retry."); });
+    return () => { current = false; };
+  }, [wanted, sandbox]); // eslint-disable-line react-hooks/exhaustive-deps
+  return sandbox;
+}

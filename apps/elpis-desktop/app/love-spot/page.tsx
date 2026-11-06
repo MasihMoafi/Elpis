@@ -30,6 +30,6 @@ export default function LoveSpotWindow() {
   return <main className={`flex h-dvh min-w-0 flex-col bg-background text-foreground${dark ? " dark" : ""}`}>
     <title>Love Spot · Elpis</title>
     <div className="title-bar shrink-0"><div className="title-bar-actions"><MatildaCompanion />{desktop && <AppUpdate inTitleBar />}</div></div>
-    <ViewBoundary label="Love Spot"><LoveSpot dark={dark} onOpenChat={id => { void window.elpisDesktop?.openSessionWindow?.(id); }} /></ViewBoundary>
+    <ViewBoundary label="Love Spot"><LoveSpot dark={dark} /></ViewBoundary>
   </main>;
 }

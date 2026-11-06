@@ -31,10 +31,8 @@ import { modelCatalogSnapshot, refreshModelCatalog } from "@/lib/model-catalog";
 import { useElpisSettings } from "@/lib/settings-store";
 import { appStorage } from "@/lib/projects";
 import { filesText, mergeStops, runPayload, stopText, wantsIsolation } from "@/lib/canvas-isolation";
-import { PATTERNS, PATTERN_TEAMS, WORKFLOWS, LANGUAGES, languageOf, type Language, type ReadyMade, agentCount, WHOLE_PROJECT, applyPattern, agent, ownFolders, agentColor, CHECK_LABEL, COLUMN, DONE, FATHER, MOTHER, STATUS_LABEL, TASKS_PER_AGENT, waits, TEMPLATES, agentName, promptName, applyPlan, arrange, boardForPlan, checkOf, commandParts, shapeOf, makesLoop, maxAgents, newAgents, newId, parseCommand, parents, initialGraph, runParts, saveGraph, waves, withMother, type AgentData, type CanvasEdge, type CanvasGraph, type CanvasNode, type CatalogModel, type Command, type MotherSettings, type NoteData, type Plan, type RunTask, type TaskStatus } from "@/lib/canvas";
+import { PATTERNS, PATTERN_TEAMS, WORKFLOWS, LANGUAGES, languageOf, type Language, type ReadyMade, agentCount, WHOLE_PROJECT, applyPattern, ownFolders, agentColor, CHECK_LABEL, COLUMN, DONE, FATHER, MOTHER, STATUS_LABEL, TASKS_PER_AGENT, waits, TEMPLATES, agentName, promptName, applyPlan, arrange, boardForPlan, checkOf, commandParts, shapeOf, makesLoop, maxAgents, newAgents, newId, parseCommand, parents, initialGraph, runParts, saveGraph, waves, withMother, type AgentData, type CanvasEdge, type CanvasGraph, type CanvasNode, type CatalogModel, type Command, type MotherSettings, type NoteData, type Plan, type RunTask, type TaskStatus } from "@/lib/canvas";
 
-/** The workflow side panel: 290 px by default, dragged wider or narrower by its left edge. */
-const CANVAS_SIDE = { min: 240, initial: 290, max: 640 };
 
 /** A run: the Mother's part, and the Father agent's when the graph has more agents than she runs (lib/canvas.ts `parents`):
  * his tasks wait in `father` until her part has succeeded, then run in his own chat. */
@@ -462,7 +460,7 @@ function RunClock({ since, until }: { since: number; until?: number }) {
 /** A span of time as mm:ss. */
 const clock = (ms: number) => { const seconds = Math.max(0, Math.floor(ms / 1000)); return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`; };
 
-function AgentDashboard({ node, own, wave, status, check, clash, chat, waitsFor, feeds, modelLabel, ready, onOpenChat, onSettings, onClose }: { node: Extract<CanvasNode, { type: "agent" }>; own: string; wave?: number; status: TaskStatus | "idle"; check: TaskStatus | "idle"; clash?: string[]; chat: string | null; waitsFor: string[]; feeds: string[]; modelLabel: string; ready: boolean; onOpenChat: (id: string) => void; onSettings: () => void; onClose: () => void }) {
+function AgentDashboard({ node, own, status, check, clash, chat, waitsFor, feeds, modelLabel, ready, onOpenChat, onSettings, onClose }: { node: Extract<CanvasNode, { type: "agent" }>; own: string; status: TaskStatus | "idle"; check: TaskStatus | "idle"; clash?: string[]; chat: string | null; waitsFor: string[]; feeds: string[]; modelLabel: string; ready: boolean; onOpenChat: (id: string) => void; onSettings: () => void; onClose: () => void }) {
   const data = node.data, panel = useRef<HTMLDivElement>(null);
   // A click anywhere else on the page closes it, as Escape does.
   useEffect(() => {
@@ -1841,7 +1839,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
         onAgents={command => { checkpoint(); addAgents(Math.max(1, command.count ?? 1), { model: command.model?.model ?? null, provider: command.model?.provider ?? null, effort: command.effort }, adding, command.tasks); setAdding(null); }}
         onNote={text => { checkpoint(); addNote(adding.at, text); setAdding(null); }} onAsk={text => { setAdding(null); void letElpis(text); }} />}
       {menu && (view => <CanvasMenu at={menu} {...view} onClose={() => setMenu(null)} />)(menuView(menu))}
-      {dashboard && <AgentDashboard node={dashboard} own={own.get(dashboard.id) ?? ""} wave={order.get(dashboard.id)} status={states[dashboard.id]?.status ?? "idle"} check={states[checkOf(dashboard.id)]?.status ?? "idle"} clash={clashes[dashboard.id]} chat={states[dashboard.id]?.chat ?? null} modelLabel={modelLabel(dashboard.data)} ready={ready}
+      {dashboard && <AgentDashboard node={dashboard} own={own.get(dashboard.id) ?? ""} status={states[dashboard.id]?.status ?? "idle"} check={states[checkOf(dashboard.id)]?.status ?? "idle"} clash={clashes[dashboard.id]} chat={states[dashboard.id]?.chat ?? null} modelLabel={modelLabel(dashboard.data)} ready={ready}
         waitsFor={inputsNeeded(dashboard.id)} feeds={graph.edges.filter(edge => waits(edge) && edge.source === dashboard.id).map(edge => titleOf(edge.target))}
         onOpenChat={onOpenChat} onSettings={() => { setSelection([dashboard.id]); showPanel(true); setDashboardId(null); }} onClose={() => setDashboardId(null)} />}
       {flowEdit && <div className="canvas-flow-edit" style={{ left: flowEdit.left, top: flowEdit.top }}><CanvasTextEdit key={flowEdit.edge.id} label="Flow label" maxLength={60} value={flowEdit.edge.source === MOTHER ? graph.motherFlow ?? "" : graph.edges.find(edge => edge.id === flowEdit.edge.id)?.label ?? ""} onSave={saveFlow} onCancel={() => setFlowEdit(null)} /></div>}

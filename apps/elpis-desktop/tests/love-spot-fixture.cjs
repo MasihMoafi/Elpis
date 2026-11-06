@@ -62,7 +62,9 @@ async function loveSpotFixture({ threadId, colorScheme = 'light', reply = 'I am 
   const nodeSpec = node => ({ name: node.name, command: process.execPath, args: [fakeAgent], env: { FAKE_ACP_LOG: acpLog, FAKE_ACP_NAME: node.name,
     ...(node.prompt.includes('LOVE_INTERVIEW') ? { FAKE_ACP_ANSWER: JSON.stringify({ question: 'What should I help you with?' }) } : {}), ...agentEnv?.(node) }, instructions: node.prompt });
   const acp = async () => { try { return (await fs.readFile(acpLog, 'utf8')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line)); } catch (e) { if (e.code === 'ENOENT') return []; throw e; } };
-  const server = await startDesktopServer({ client, staticDir: process.env.LOVE_SPOT_TEST_STATIC_DIR, loveSpot: { directory, screenshots }, trashFile: path.join(root, 'trash.json'), loveAgents: { nodeSpec } });
+  // Kokoro (read aloud) depends on this computer's files; tests run without it unless they say otherwise.
+  const kokoro = { available: () => false, warm() {}, speak: async () => { throw new Error('Read aloud is off in tests.'); }, close() {} };
+  const server = await startDesktopServer({ kokoro, client, staticDir: process.env.LOVE_SPOT_TEST_STATIC_DIR, loveSpot: { directory, screenshots }, trashFile: path.join(root, 'trash.json'), loveAgents: { nodeSpec } });
   const browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM || undefined, headless: process.env.ELPIS_UI_HEADFUL !== '1' });
   const context = await browser.newContext({ viewport: { width: 1440, height: 960 }, colorScheme });
   const errors = [], requests = [], responses = [];

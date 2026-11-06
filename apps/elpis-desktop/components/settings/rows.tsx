@@ -1,6 +1,7 @@
 "use client";
 
-import { createContext, useContext, type ReactNode } from "react";
+import { Children, createContext, useContext, type ReactNode } from "react";
+import { plainMessage } from "@/lib/use-workspace-notices";
 import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { OptionSelect } from "@/components/ui/option-select";
@@ -69,7 +70,8 @@ export function SettingsActions({ children, feedback }: { children?: ReactNode; 
 
 /** Feedback under a group or row: saved, failed, or why a control is unavailable. */
 export function SettingsNotice({ tone = "status", children }: { tone?: "status" | "alert"; children: ReactNode }) {
-  return <p className={`settings-notice${tone === "alert" ? " alert" : ""}`} role={tone}>{children}</p>;
+  // A message is shown plainly, without "Error:" or a diagnostic code (lib/use-workspace-notices.ts).
+  return <p className={`settings-notice${tone === "alert" ? " alert" : ""}`} role={tone}>{Children.map(children, child => typeof child === "string" ? plainMessage(child) : child)}</p>;
 }
 
 type Option<T extends string> = { value: T; label: string; disabled?: boolean; icon?: ReactNode; title?: string };

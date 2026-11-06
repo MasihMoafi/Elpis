@@ -42,7 +42,7 @@ for (const colorScheme of ['light']) {
       assert.equal(await f.page.getByText('History prompt 0', { exact: true }).count(), 0, 'opening shows only the latest page');
       const latest = await f.page.locator('.message.user').allTextContents();
       await scrollToLoadEarlier(f.page);
-      await f.page.getByText('Error: Earlier page temporarily unavailable', { exact: true }).waitFor();
+      await f.page.getByText('Earlier page temporarily unavailable', { exact: true }).waitFor();
       assert.deepEqual(await f.page.locator('.message.user').allTextContents(), latest, 'a refused page preserves loaded messages');
       await f.page.waitForTimeout(400);
       assert.deepEqual(await f.page.locator('.message.user').allTextContents(), latest, 'a refused page is not asked for again and again');

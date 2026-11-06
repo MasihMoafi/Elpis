@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { BROWSER_COMMENTS } from "@/lib/browser-notes";
-import { Eye, EyeOff, Send, SquareDashedMousePointer, Trash2, X } from "lucide-react";
+import { Eye, EyeOff, SquareDashedMousePointer, Trash2, X } from "lucide-react";
 import { SendIcon } from "@/components/elpis-icons";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";

@@ -59,6 +59,7 @@ async function fixture(t, { modelFailure = false, holdModels = false, descendant
     if (pathname === '/api/voice') return json({ available: false });
     if (pathname === '/api/personal') return json({ path: '/tmp/availability-fixture/skills/personal/SKILL.md', showTip: false });
     if (pathname === '/api/improvements') return json({ data: [] });
+    if (pathname === '/api/read-aloud') return json({ available: false });
     if (pathname === '/api/models') {
       if (url.searchParams.get('provider') === 'alternate-local') return json({ data: [{ id: 'local-choice', model: 'local-choice', displayName: 'Local choice' }], nextCursor: null });
       // A connection's own list (the menu's All tab reads each one since 5 Nov) is not the engine catalogue counted below.

@@ -6,12 +6,11 @@ import { BrandWordmark } from "@/components/brand-wordmark";
 import { flushSync } from "react-dom";
 import { cloneElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { AgentsIcon, BrowserIcon, ChatIcon, ExperimentLabIcon, FolderIcon, LoveSpotIcon, NewChatIcon, PinIcon, PlusIcon, SendIcon, SettingsIcon, ThemeIcon, WorkflowsIcon, StopIcon } from "@/components/elpis-icons";
-import { Activity, ListFilter, Archive, ArrowDown, Blocks, Bookmark, ChevronRight, EyeOff, Layers, PanelLeft, PanelRightClose, PanelRightOpen, Pin, RefreshCw, Search, X, Zap } from "lucide-react";
+import { Activity, ListFilter, ArrowDown, Blocks, Bookmark, ChevronRight, EyeOff, Layers, PanelLeft, PanelRightClose, PanelRightOpen, RefreshCw, X, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ReorderItem, useReorder } from "@/components/reorder";
 import { OptionSelect } from "@/components/ui/option-select";
-import { Input } from "@/components/ui/input";
-import { ApprovalCard, type QuestionAnswers } from "@/components/approval-card";
+import { ApprovalCard } from "@/components/approval-card";
 import { PlanCard } from "@/components/plan-card";
 import { SearchField } from "@/components/ui/search-field";
 import { Textarea } from "@/components/ui/textarea";
@@ -19,9 +18,9 @@ import { ChatMessage } from "@/components/chat-message";
 import { FailedTurnCard, type FailedTurn } from "@/components/failed-turn-card";
 import { ViewBoundary } from "@/components/view-boundary";
 import { Transcript, WorkingPlacement } from "@/components/transcript";
-import { useBookmarks, useChatAttention, usePins } from "@/lib/use-sidebar-state";
+import { useBookmarks, useChatAttention, usePins, useSidebarFolds, useChatGroups } from "@/lib/use-sidebar-state";
 import { SIDEBAR, useAppearance } from "@/lib/use-appearance";
-import { addGroup, chatSelectionRoots, chatSubtree, deleteGroup, emptyGroups, groupSections, moveChats, placeChat, prioritizeChats, putChatsUnder, readGroups, renameGroup, sidebarParents, sortChats, toggleCollapsed, writeGroups, type ChatGroup, type ChatGroups } from "@/lib/chat-groups";
+import { addGroup, chatSelectionRoots, chatSubtree, deleteGroup, groupSections, moveChats, placeChat, prioritizeChats, putChatsUnder, renameGroup, sidebarParents, sortChats, toggleCollapsed, writeGroups, type ChatGroup, type ChatGroups } from "@/lib/chat-groups";
 import { agentParentId } from "@/lib/agent-runs.mjs";
 import { configuredShortcuts, shortcutFor, shortcutHint, shortcutTitle } from "@/lib/shortcuts";
 import { CommandMenu, type CommandAction } from "@/components/command-menu";
@@ -42,7 +41,7 @@ import { AppUpdate } from "@/components/app-update";
 import { AppMenus } from "@/components/app-menus";
 import { permissionLabel, PermissionsMenu, PlanPill, PlusMenu, type PermissionMode } from "@/components/composer-controls";
 import { CopyButton } from "@/components/markdown-text";
-import { useWholeRows } from "@/lib/whole-rows";
+import { fitChatListEnd, useWholeRows } from "@/lib/whole-rows";
 import { liveEventItemKey, mergeHistoryWithLive, mergeLiveItem, RETRYING, retryRecovered, runtimeErrorNotice } from "@/lib/live-events";
 import { HEART_REACTION, nativeHeartReaction } from "@/lib/heart-reactions";
 import { entryKey, rememberSubmittedMessages, submittedContent, withSubmittedMessages, type SubmittedMessage } from "@/lib/submitted-messages";
@@ -55,7 +54,6 @@ import type { TerminalLaunch } from "@/components/terminal-view";
 import { SettingsView, type SettingsDestination } from "@/components/settings-view";
 import { configDestination } from "@/lib/config-sections";
 import { DeleteChatsDialog, ThreadActions } from "@/components/thread-actions";
-import { defaultFolds, readFolds, writeFolds, type SidebarFolds } from "@/lib/sidebar-folds";
 import { GroupActions, GroupAndSortMenu, GroupNameDialog, useChatListOrder } from "@/components/chat-groups";
 import { SectionToggle, SidebarGroup } from "@/components/sidebar-group";
 import { letterKey, MoreMenu, RightClickMenu, type MenuAction } from "@/components/action-menu";
@@ -66,11 +64,11 @@ import { NavButtons } from "@/components/nav-buttons";
 import { PromptRail } from "@/components/prompt-rail";
 import { RewindDialog, type RestoreMode } from "@/components/rewind-dialog";
 import { usedMentions, type Mention } from "@/lib/mentions";
-import { canBack, canForward, startHistory, step, visit, type History } from "@/lib/nav-history";
+import { useNavHistory } from "@/lib/nav-history";
 import { DiffPanel, ReviewPanel, SessionPanel, type ReviewTarget } from "@/components/slash-panels";
 import { INIT_PROMPT } from "@/lib/init-prompt";
 import { conversationMarkdown, exportFileName, lastReply } from "@/lib/slash";
-import { replyAttachment, readReply, withoutReplyAttachments } from "@/lib/message-reply";
+import { replyAttachment, withoutReplyAttachments } from "@/lib/message-reply";
 import { SelectionReply } from "@/components/message-reply";
 import { ImageReplyProvider, type ReplyImage } from "@/components/image-reply";
 import { openControl } from "@/lib/slash-focus";
@@ -87,7 +85,8 @@ import { ObservabilityView } from "@/components/observability-view";
 import { chooseProject, projectAt, EnvironmentMenu, MoveChatDialog, ProjectActions, ProjectDialog, ProjectMenu } from "@/components/project-picker";
 import { PutUnderDialog } from "@/components/put-under-dialog";
 import { WorkflowMark } from "@/components/workflow-identity";
-import { runSummary, useWorkflowCatalog, workflowMembers, type WorkflowRun } from "@/lib/workflow-identity";
+import { runSummary, useWorkflowSandbox, workflowMembers, type WorkflowRun } from "@/lib/workflow-identity";
+import { useWorkflowSidebar } from "@/lib/use-workflow-sidebar";
 import { BranchChip } from "@/components/branch-chip";
 import { keptNotice, type WorktreeOutcome } from "@/lib/chat-worktree";
 import { AccountRow } from "@/components/account-row";
@@ -100,7 +99,7 @@ import { TaskList, type TaskPlan } from "@/components/task-list";
 import { chatOrigin, originLabel } from "@/lib/love-activity";
 import { useLoveActivity } from "@/lib/use-love-activity";
 import { LOVE_SPOT_AUDIO } from "@/lib/love-spot-audio";
-import { MATILDA_CHAT_SHOWN, savedPersona } from "@/lib/matilda";
+import { savedPersona } from "@/lib/matilda";
 import { useScreenshotPopup } from "@/lib/use-screenshot-popup";
 import { AgentsCanvas } from "@/components/agents-canvas";
 import { WorkflowChat } from "@/components/workflow-chat";
@@ -119,33 +118,37 @@ import { SideChat, type SideRequest } from "@/components/side-chat";
 import { FloatChatBar, FloatChatPill } from "@/components/float-chat";
 import { useSessionSplit } from "@/components/session-split";
 import { Tab, TabStrip } from "@/components/tab-strip";
-import { activate, activeTab, addBackgroundTab, addTab, closeTab, cycle, followChat, forgetChats, makeTab, readTabs, renameTabs, startTabs, tabFor, writeTabs, type ChatTab, type ChatTabs } from "@/lib/chat-tabs";
-import { readDraft, writeDraft } from "@/lib/drafts";
+import { activate, activeTab, addBackgroundTab, addTab, closeTab, cycle, followChat, forgetChats, makeTab, renameTabs, tabFor, type ChatTab } from "@/lib/chat-tabs";
 import { AttachmentChips } from "@/components/attachment-chips";
-import { ATTACHMENT_ACCEPT, ATTACHMENT_LIMITS, TEXT_ONLY_NOTICE, attachFiles, attachmentFromFile, fitAttachments, readAttachmentDraft, transferFiles, writeAttachmentDraft, type Attachment } from "@/lib/attachments";
+import { ATTACHMENT_ACCEPT, ATTACHMENT_LIMITS, TEXT_ONLY_NOTICE, attachFiles, attachmentFromFile, fitAttachments, transferFiles, type Attachment } from "@/lib/attachments";
 import { scanDeletionThreads } from "@/lib/thread-deletion";
 import { changesModelCatalog } from "@/lib/account-events";
 import { loadConversationPage } from "@/lib/conversation-page";
 import { LoadOnScroll } from "@/components/load-on-scroll";
 import { activityOf, api, unreadable, chatProvider, choiceById, choiceOf, effortsOf, isAgent, isAgentRun, AGENT_RUN_NOTICE, modelLabel, providerChoices, providerLabel, title, agentName,
   mediaUrl, sessionReady, retryableSessionError, type Approval, type Entry, type Item, type ProviderSettings, type Thread } from "@/lib/api";
+import { historyPath, inReadingOrder, type HistoryPage } from "@/lib/chat-history";
+import { useComposerHeight } from "@/lib/use-composer-height";
+import { useChatTabs } from "@/lib/use-chat-tabs";
+import { approvalDraftKey, useApprovalDrafts, useDraftStore, useSubmitOnce } from "@/lib/use-drafts";
+import { sessionWindowApi, useDesktopCapabilities } from "@/lib/use-desktop-capabilities";
+import { useWorkspaceNotices } from "@/lib/use-workspace-notices";
+import { useSidebarSearch } from "@/lib/use-sidebar-search";
+import { WorkspaceNotices } from "@/components/workspace-notices";
+import { without } from "@/lib/utils";
 import { refreshModelCatalog, useModelCatalog } from "@/lib/model-catalog";
 
-const approvalDraftKey = (approval: Approval) => JSON.stringify([approval.ownerThreadId, approval.id]);
 
 const LoveSpot = dynamic(() => import("@/components/love-spot"), { ssr: false, loading: () => <p role="status">Opening Love Spot…</p> });
 
 type View = "chat" | "agentsGuide" | "canvas" | "experimentLab" | "loveSpot" | "customize" | "observability" | "settings";
 type NextTurn = { model?: string; plan?: boolean };
 type Live = { thread: Thread; activeTurnId?: string | null; permissions?: PermissionMode | null; planMode?: boolean; followingLive?: boolean };
-/** A page of a chat's history; `earliestHistoryMissing` when the record it continued was deleted. */
-type HistoryPage = { data: Entry[]; nextCursor: string | null; earliestHistoryMissing?: boolean };
 /** The terminal's answer to a finished plan: Plan mode off, then this message. */
 const IMPLEMENT_PLAN = "Implement the plan.";
 /** A read refused only because the background service is not there (bridge/server.mjs: 503 ELPIS_RUNTIME_UNAVAILABLE). */
 const refusedOffline = (message: string) => message.includes("(ELPIS_RUNTIME_UNAVAILABLE");
 /** The sidebar's width in pixels: the default, and how far its edge can be dragged. */
-const without = <T,>(record: Record<string, T>, key: string) => { if (!(key in record)) return record; const next = { ...record }; delete next[key]; return next; };
 // Sidebar sections by last activity, as in ChatGPT and Claude; the list keeps Elpis's own order inside each.
 const CHAT_DRAG_TYPE = "text/x-elpis-chat";
 
@@ -159,20 +162,7 @@ const NAV_PAGES = [
   { id: "customize", name: "Customize", Icon: Blocks },
 ] as const;
 
-/** Sizes the chat list's end spacer (globals.css .thread-list::after) so that the end of the list is a whole-row snap
- * position at every list height: the end then shows the last chat whole instead of snapping back over it. */
 const fittedLists = new WeakSet<HTMLElement>();
-function fitChatListEnd(list: HTMLElement) {
-  const space = parseFloat(list.style.getPropertyValue("--list-end-space")) || 0;
-  const contentEnd = list.scrollHeight - space, view = list.clientHeight;
-  const origin = list.getBoundingClientRect().top - list.scrollTop;
-  const stops = [...list.querySelectorAll<HTMLElement>(".thread-row, .thread-more, .section-label-row, section > :first-child")]
-    .map(element => element.getBoundingClientRect().top - origin).sort((a, b) => a - b);
-  // A 10px gap under the last chat when a row position allows it, else the end of the last chat.
-  const stop = contentEnd + 10 <= view ? undefined : stops.find(top => top + view >= contentEnd + 10) ?? stops.find(top => top + view >= contentEnd - 0.5);
-  const next = `${stop === undefined ? 10 : Math.max(0, Math.round(stop + view - contentEnd))}px`;
-  if (list.style.getPropertyValue("--list-end-space") !== next) list.style.setProperty("--list-end-space", next);
-}
 
 export default function Home() {
   const preferences = useAppPreferences();
@@ -181,11 +171,7 @@ export default function Home() {
   const [selected, setSelected] = useState<Thread | null>(null);
   const selectedRef = useRef<Thread | null>(null);
   // Chat tabs (lib/chat-tabs.ts): the shown tab follows the chat on screen, so every way of opening a chat lands in it.
-  const [tabs, setTabs] = useState<ChatTabs>(startTabs);
-  const tabsRef = useRef(tabs);
-  const [tabsRestored, setTabsRestored] = useState(false);
-  const restoredTabs = useRef(false);
-  const updateTabs = useCallback((next: ChatTabs) => { tabsRef.current = next; setTabs(next); }, []);
+  const { tabs, tabsRef, updateTabs, restoreTabs, restored: restoredTabs } = useChatTabs(message => setError(message));
   const [entries, setEntries] = useState<Entry[]>([]);
   const [submissions, setSubmissions] = useState<SubmittedMessage[]>([]);
   // The engine's live model list, shared by every model menu (lib/model-catalog.ts).
@@ -203,7 +189,6 @@ export default function Home() {
   const [projectId, setProjectId] = useState<string | null>(null);
   // Workflows and Love Spot run in the last project chosen, while new chats start in none (TASKS.md: unscoped new chats).
   const [workflowProjectId, setWorkflowProjectId] = useState<string | null>(null);
-  const [workflowSandbox, setWorkflowSandbox] = useState<string>();
   const [recordedWorkflow, setRecordedWorkflow] = useState<Pick<WorkflowRun, "id" | "rootThreadId">>();
   const [projectChats, setProjectChats] = useState<Record<string, string>>({});
   const projectChatsRef = useRef(projectChats), projectChatSave = useRef(Promise.resolve());
@@ -213,7 +198,6 @@ export default function Home() {
   const [projectChanging, setProjectChanging] = useState(false);
   const project = projects.find(item => item.id === projectId) ?? null;
   const workflowProject = projects.find(item => item.id === workflowProjectId) ?? null;
-  const workflowFolder = workflowProject?.cwd || workflowSandbox;
   const [projectEdit, setProjectEdit] = useState<Project | null | undefined>(undefined);
   // Existing conversations: overrides for their next turn only.
   const [nextTurn, setNextTurn] = useState<Record<string, NextTurn>>({});
@@ -224,27 +208,16 @@ export default function Home() {
   const [planAnswered, setPlanAnswered] = useState<Record<string, string>>({});
   const { pins, togglePinned } = usePins();
   const { bookmarks, toggleBookmarked } = useBookmarks();
-  // Groups the person made, and how the sidebar lists chats (lib/chat-groups.ts); kept on this computer, read once.
-  const [chatGroups, setChatGroups] = useState<ChatGroups>(emptyGroups);
-  const chatGroupsRef = useRef(chatGroups); chatGroupsRef.current = chatGroups;
+  // The sidebar's order is declared further down; groups release it through this ref.
+  const releaseChatOrder = useRef(() => {});
+  const { chatGroups, chatGroupsRef, updateGroups, commitGroups } = useChatGroups(message => setError(message), () => releaseChatOrder.current());
   const [newGroupFor, setNewGroupFor] = useState<string[] | null>(null);
-  useEffect(() => { setChatGroups(readGroups(appStorage())); }, []);
-  function updateGroups(change: (state: ChatGroups) => ChatGroups) {
-    const next = change(chatGroupsRef.current);
-    if (!writeGroups(next, appStorage())) { setError("Could not save chat groups on this device."); return false; }
-    chatListOrder.release();
-    chatGroupsRef.current = next; setChatGroups(next);
-    return true;
-  }
-  const [error, setError] = useState("");
-  // A notice fades by itself after a while; Dismiss closes it sooner.
-  useEffect(() => { if (!error) return; const timer = setTimeout(() => setError(""), 10_000); return () => clearTimeout(timer); }, [error]);
+  const { error, setError, deletedNotice, setDeletedNotice, worktreeNotice, setWorktreeNotice, noteKept } = useWorkspaceNotices();
   const { attention, setAttention, planTurns, markRead } = useChatAttention(planAnswered, setError);
   /** Chats awaiting the shared delete confirmation (a row's menu, D, or the header's Chat actions). */
   const [deleteTargets, setDeleteTargets] = useState<Thread[] | null>(null);
   const [deleteRunHistory, setDeleteRunHistory] = useState(false);
-  /** "Deleted …" with its Undo, after the sidebar deletes chats; Ctrl+Z does the same. `shownWhenDeleted` reopens the chat that was open. */
-  const [deletedNotice, setDeletedNotice] = useState<string | null>(null);
+  /** After the sidebar deletes chats, Undo (or Ctrl+Z) reopens the chat that was open. */
   const shownWhenDeleted = useRef(new Set<string>());
   /** Chats marked with Ctrl+click or Shift+click in the sidebar; `markAnchor` is where a Shift range starts. */
   const [marked, setMarked] = useState<string[]>([]);
@@ -260,13 +233,8 @@ export default function Home() {
   });
   // Async rows and viewport changes can leave the last chat painted only part way (lib/whole-rows.ts).
   useWholeRows(threadList, ".thread-row", ".thread-row, .section-label-row, .sidebar-group-row, .thread-more");
-  // Folded sections and projects stay as the person leaves them, across restarts (lib/sidebar-folds.ts).
-  const [folds, setFolds] = useState<SidebarFolds>(defaultFolds);
-  const foldsRef = useRef(folds);
-  useEffect(() => { foldsRef.current = readFolds(appStorage()); setFolds(foldsRef.current); }, []);
-  const changeFolds = (change: (folds: SidebarFolds) => SidebarFolds) => { const next = change(foldsRef.current); foldsRef.current = next; setFolds(next); writeFolds(next, appStorage()); };
+  const { folds, foldsRef, changeFolds, setCollapsedProjects } = useSidebarFolds();
   const collapsedProjects = folds.projects, collapsedSections = folds.sections;
-  const setCollapsedProjects = (change: (projects: Record<string, boolean>) => Record<string, boolean>) => changeFolds(value => ({ ...value, projects: change(value.projects) }));
   /** The heading of a sidebar section: every one of them folds its list the same way. */
   const foldable = (key: string, name: string) => <SectionToggle name={name} open={!collapsedSections[key]} onToggle={() => changeFolds(value => ({ ...value, sections: { ...value.sections, [key]: !value.sections[key] } }))} />;
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -279,9 +247,6 @@ export default function Home() {
   const [messageVersions, setMessageVersions] = useState<Record<string, MessageVersion[]>>({});
   const [rewindBusy, setRewindBusy] = useState(false);
   const rewindSwitch = useRef<string | null>(null);
-  /** The chats and pages visited, for Back and Forward (lib/nav-history.ts). */
-  const [history, setHistory] = useState<History>(() => startHistory({ view: "chat", threadId: null }));
-  const historyRef = useRef(history), historySeeded = useRef(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [renameRequest, setRenameRequest] = useState(false);
   /** What a slash command has open above the composer, and the one-line answer of a command that only reports. */
@@ -290,8 +255,7 @@ export default function Home() {
   // /compact typed while the agent works runs when that turn finishes, as in the terminal.
   const [queuedCompact, setQueuedCompact] = useState<{ threadId: string; guidance?: string } | null>(null);
   // A new chat in its own worktree (the Local/Worktree menu), and where an archived or deleted chat's worktree was kept.
-  const [newWorktree, setNewWorktree] = useState(false), [worktreeNotice, setWorktreeNotice] = useState("");
-  const noteKept = (text: string) => { if (text) setWorktreeNotice(previous => previous ? `${previous} ${text}` : text); };
+  const [newWorktree, setNewWorktree] = useState(false);
   const shortcutAction = useRef<(id: string, index?: number) => void>(() => {});
   const [newMode, setNewMode] = useState<PermissionMode | null>(null);
   const [text, setTextState] = useState("");
@@ -307,38 +271,18 @@ export default function Home() {
   const filePickerRef = useRef<HTMLInputElement>(null);
   const [attachments, setAttachmentsState] = useState<Attachment[]>([]);
   const attachmentsRef = useRef<Attachment[]>([]);
-  const attachmentDrafts = useRef<Record<string, Attachment[]>>({});
   const [attaching, setAttaching] = useState(false);
   const readingFiles = useRef(false);
   const setAttachments = useCallback((value: Attachment[]) => { attachmentsRef.current = value; setAttachmentsState(value); }, []);
   const [dictating, setDictating] = useState(false);
   const [voiceBusy, setVoiceBusy] = useState(false);
   const setText = useCallback((value: string) => { textRef.current = value; setTextState(value); }, []);
-  const [search, setSearch] = useState("");
   const [resumeOpen, setResumeOpen] = useState(false);
   const [agentRunsOpen, setAgentRunsOpen] = useState(false);
-  const searchTerm = search.trim();
-  const [searchResults, setSearchResults] = useState<{ query: string; data: Thread[]; nextCursor: string | null; loading: boolean; error: string }>({ query: "", data: [], nextCursor: null, loading: false, error: "" });
-  const drafts = useRef<Record<string, string>>({});
   const [messageEdits, setMessageEdits] = useState<Record<string, string>>({});
-  const [approvalDrafts, setApprovalDrafts] = useState<Record<string, { id: string; answers: QuestionAnswers }>>({});
-  const submitting = useRef(new Set<string>());
-  const [pendingDrafts, setPendingDrafts] = useState<Record<string, boolean>>({});
-  async function submitDraft<T,>(key: string, send: () => Promise<T>): Promise<T> {
-    if (submitting.current.has(key)) throw new Error("This request is already being sent.");
-    submitting.current.add(key); setPendingDrafts(previous => ({ ...previous, [key]: true }));
-    try { return await send(); }
-    finally { submitting.current.delete(key); setPendingDrafts(previous => without(previous, key)); }
-  }
-  const clearApprovalDraft = useCallback((id: string) => setApprovalDrafts(previous => {
-    const keys = Object.keys(previous).filter(key => previous[key].id === id);
-    if (!keys.length) return previous;
-    const next = { ...previous }; for (const key of keys) delete next[key]; return next;
-  }), []);
-  const draftAnswer = (approval: Approval, id: string, value: string[]) => {
-    const key = approvalDraftKey(approval);
-    setApprovalDrafts(previous => ({ ...previous, [key]: { id: approval.id, answers: { ...previous[key]?.answers, [id]: value } } }));
-  };
+  const { pending: pendingDrafts, submit: submitDraft } = useSubmitOnce();
+  const { answersFor, draftAnswer, clearApprovalDraft } = useApprovalDrafts();
+  const draftStore = useDraftStore(setError), { savedDraft, saveDraft, savedAttachments, saveAttachments } = draftStore;
   const newDraftKey = useRef("new");
   const [fileNotice, setFileNotice] = useState("");
   const [connected, setConnected] = useState(false);
@@ -347,31 +291,10 @@ export default function Home() {
   useEffect(() => {
     if (ready && connected && document.activeElement === document.body) composerRef.current?.focus();
   }, [ready, connected]);
-  useEffect(() => {
-    if (!ready || !searchTerm) { setSearchResults({ query: "", data: [], nextCursor: null, loading: false, error: "" }); return; }
-    let disposed = false;
-    setSearchResults({ query: searchTerm, data: [], nextCursor: null, loading: true, error: "" });
-    const timer = setTimeout(() => {
-      api<{ data: Thread[]; nextCursor: string | null }>(`/threads?limit=100&searchTerm=${encodeURIComponent(searchTerm)}`)
-        .then(result => { if (!Array.isArray(result.data)) throw unreadable("search"); if (!disposed) setSearchResults({ query: searchTerm, data: result.data, nextCursor: result.nextCursor, loading: false, error: "" }); })
-        .catch(cause => { if (!disposed) setSearchResults({ query: searchTerm, data: [], nextCursor: null, loading: false, error: cause instanceof Error ? cause.message : String(cause) }); });
-    }, 250);
-    return () => { disposed = true; clearTimeout(timer); };
-  }, [ready, searchTerm]);
   const [busy, setBusy] = useState(false);
   const sending = useRef(0);
   const [loading, setLoading] = useState(false);
-  const savedDraft = useCallback((id: string) => drafts.current[id] ?? readDraft(id), []);
-  const saveDraft = useCallback((id: string, value: string) => {
-    drafts.current[id] = value;
-    if (!writeDraft(id, value)) setError("Draft recovery is unavailable. Your text is kept in this window; copy it before reloading.");
-  }, []);
   const editDraft = (value: string) => { setText(value); saveDraft(selectedRef.current?.id || newDraftKey.current, value); };
-  const savedAttachments = useCallback((id: string) => attachmentDrafts.current[id] ?? (attachmentDrafts.current[id] = readAttachmentDraft(id)), []);
-  const saveAttachments = useCallback((id: string, value: Attachment[]) => {
-    attachmentDrafts.current[id] = value;
-    if (!writeAttachmentDraft(id, value)) setError("Attachment recovery is unavailable. Your files are kept in this window; save them before reloading.");
-  }, []);
   const restoreAttachments = useCallback((id: string) => {
     try { setAttachments(savedAttachments(id)); savedAttachments(`recovery-${id}`); }
     catch { setAttachments([]); setError("Saved attachments could not be restored. Add the files again before sending."); }
@@ -433,60 +356,28 @@ export default function Home() {
   const [related, setRelated] = useState<Record<string, Thread>>({});
   const [accountRefresh, setAccountRefresh] = useState(0);
   const [view, setView] = useState<View>(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("workspace") === "canvas" ? "canvas" : "chat");
-  // The input fits its text at every width, and scrolls only past its 240 px ceiling (29 Oct, Masih: "the scroll bar here is
-  // unnecessary": a narrower window wrapped the draft onto more lines, and a fraction of a pixel showed a scrollbar).
-  useLayoutEffect(() => {
-    const box = composerRef.current;
-    if (!box) return;
-    const fit = () => {
-      box.style.height = "auto";
-      box.style.height = `${Math.min(240, Math.max(44, box.scrollHeight))}px`;
-      box.style.overflowY = box.scrollHeight > 241 ? "auto" : "hidden";
-    };
-    fit();
-    let width = box.clientWidth;
-    const observer = new ResizeObserver(() => { if (box.clientWidth !== width) { width = box.clientWidth; fit(); } });
-    observer.observe(box);
-    return () => observer.disconnect();
-  }, [text, selected?.id, view]);
+  useComposerHeight(composerRef, [text, selected?.id, view]);
   const loveActivity = useLoveActivity(view === "loveSpot", ready, view === "chat" ? selected : null);
+  const loveRef = useRef(loveActivity); loveRef.current = loveActivity;
+  /** A Love Spot chat by id, read at event time. */
+  const isLoveChatId = (id: string) => loveRef.current.isLoveChat(threadsRef.current.find(thread => thread.id === id) ?? { id });
+  const selectedLoveChat = !!selected && loveActivity.isLoveChat(selected);
   const loveSpotAudioReason = selected && !LOVE_SPOT_AUDIO.available
-    ? chatOrigin(selected, loveActivity.threads) === "Love Spot" ? LOVE_SPOT_AUDIO.reason : !loveActivity.originsResolved ? LOVE_SPOT_AUDIO.pendingReason : undefined
+    ? selectedLoveChat ? LOVE_SPOT_AUDIO.reason : !loveActivity.originsResolved ? LOVE_SPOT_AUDIO.pendingReason : undefined
     : undefined;
   const viewRef = useRef(view); viewRef.current = view;
-  const loveThreadsRef = useRef(loveActivity.threads); loveThreadsRef.current = loveActivity.threads;
-  const matildaChatShown = useRef(false);
-  useEffect(() => {
-    const shown = (event: Event) => {
-      matildaChatShown.current = (event as CustomEvent<boolean>).detail === true;
-      if (matildaChatShown.current) setAttention(previous => ({ ...previous, unread: previous.unread.filter(id => chatOrigin(threadsRef.current.find(thread => thread.id === id) ?? { id }, loveThreadsRef.current) !== "Love Spot") }));
-    };
-    window.addEventListener(MATILDA_CHAT_SHOWN, shown); return () => window.removeEventListener(MATILDA_CHAT_SHOWN, shown);
-  }, [setAttention]);
-  useEffect(() => {
-    if (view !== "canvas" || !ready || !connected || workflowProject || workflowSandbox) return;
-    let current = true;
-    void api<{ cwd: string }>("/workflows/workspace", {}).then(result => {
-      if (!result.cwd?.startsWith("/")) throw unreadable("workflow sandbox");
-      if (current) setWorkflowSandbox(result.cwd);
-    }).catch(cause => { if (current) setError(cause instanceof Error ? cause.message : "Could not open the workflow sandbox. Choose a project or reopen Workflows to retry."); });
-    return () => { current = false; };
-  }, [view, ready, connected, workflowProject, workflowSandbox]);
+  const workflowSandbox = useWorkflowSandbox(view === "canvas" && ready && connected && !workflowProject, setError), workflowFolder = workflowProject?.cwd || workflowSandbox;
+  // Matilda's chat on screen reads every Love Spot reply.
+  useEffect(() => { if (loveActivity.chatShown) setAttention(previous => ({ ...previous, unread: previous.unread.filter(id => !isLoveChatId(id)) })); }, [loveActivity.chatShown, setAttention]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (view === "chat" && selected) markRead(selected.id); }, [view, selected?.id, markRead]);
   const [settingsSection, setSettingsSection] = useState<SettingsDestination>("general");
-  const [desktop, setDesktop] = useState(false);
-  const [windowAvailable, setWindowAvailable] = useState(false);
-  const sessionWindowApi = () => window.elpisDesktop?.openSessionWindow ?? (window.parent !== window && new URLSearchParams(location.search).get("pane") === "1" ? window.parent.elpisDesktop?.openSessionWindow : undefined);
-  useEffect(() => { setWindowAvailable(!!sessionWindowApi()); }, []);
+  const { desktop, windowAvailable, hasTerminal } = useDesktopCapabilities();
   const browser = useBrowser(selected?.id ?? `draft:${tabs.activeId}`);
   const side = useSidePanel(browser, selected?.cwd || cwd);
   const browserPins = useBrowserPins(setError);
   useEffect(() => onFileRequest(() => { if (view !== "chat") setView("chat"); }), [view]);
-  useEffect(() => { setDesktop(!!window.elpisDesktop?.browser); }, []);
   // The side panel (components/side-panel.tsx): shells and browser pages as tabs, beside the chat.
-  const [hasTerminal, setHasTerminal] = useState(false);
   const [tuiLaunch, setTuiLaunch] = useState<TerminalLaunch | null>(null);
-  useEffect(() => { setHasTerminal(!!window.elpisDesktop?.terminal); }, []);
   const panelShown = desktop && side.open && view === "chat";
   /** Full view (the side panel's): the panel fills the work area and the chat floats over it, as a card or folded to a pill. */
   const fullView = panelShown && side.full;
@@ -563,12 +454,13 @@ export default function Home() {
   }, [select]);
   // Deleted and archived chats never reappear from a list read that raced with their removal.
   const hidden = useRef(new Set<string>());
+  const search = useSidebarSearch(ready, hidden), searchTerm = search.searchTerm;
   const upsertThread = useCallback((thread: Thread) => setThreads(prev => hidden.current.has(thread.id) ? prev : prev.some(item => item.id === thread.id) ? prev.map(item => item.id === thread.id ? { ...item, ...thread } : item) : [thread, ...prev]), []);
   const removeThreads = useCallback((ids: Set<string>, permanent: boolean) => {
     for (let grew = true; grew;) { grew = false; for (const thread of threadsRef.current) if (thread.parentThreadId && ids.has(thread.parentThreadId) && !ids.has(thread.id)) { ids.add(thread.id); grew = true; } }
     for (const id of ids) { hidden.current.add(id); transcripts.current.delete(id); browser.closeSession(id); }
     if (permanent) {
-      for (const id of ids) for (const key of [id, `recovery-${id}`]) { delete drafts.current[key]; writeDraft(key, ""); delete attachmentDrafts.current[key]; writeAttachmentDraft(key, []); }
+      draftStore.forget(ids);
       setMessageEdits(previous => Object.fromEntries(Object.entries(previous).filter(([key]) => !ids.has((JSON.parse(key) as [string, string, string])[0]))));
     }
     updateTabs(forgetChats(tabsRef.current, ids));
@@ -603,15 +495,6 @@ export default function Home() {
     } catch (cause) { setError(String(cause)); }
     finally { rootPaging.current = false; setMoreLoading(false); }
   }, [nextCursor]);
-  async function loadMoreSearch() {
-    if (!searchResults.nextCursor || searchResults.loading || searchResults.query !== searchTerm) return;
-    const query = searchTerm;
-    setSearchResults(previous => ({ ...previous, loading: true, error: "" }));
-    try {
-      const result = await api<{ data: Thread[]; nextCursor: string | null }>(`/threads?limit=100&searchTerm=${encodeURIComponent(query)}&cursor=${encodeURIComponent(searchResults.nextCursor)}`); if (!Array.isArray(result.data)) throw unreadable("conversations");
-      setSearchResults(previous => previous.query === query ? { query, data: mergeListedThreads(previous.data, result.data, hidden.current), nextCursor: result.nextCursor, loading: false, error: "" } : previous);
-    } catch (cause) { setSearchResults(previous => previous.query === query ? { ...previous, loading: false, error: cause instanceof Error ? cause.message : String(cause) } : previous); }
-  }
 
   const rememberFollowing = useCallback((id: string, live: Live) => {
     setHistoryOnly(previous => live.followingLive === false ? { ...previous, [id]: true } : without(previous, id));
@@ -630,8 +513,8 @@ export default function Home() {
   const prefetching = useRef(new Map<string, Promise<void>>());
   const prefetchThread = useCallback((thread: Thread) => {
     if (transcripts.current.has(thread.id) || prefetching.current.has(thread.id)) return;
-    prefetching.current.set(thread.id, api<{ data: Entry[]; nextCursor: string | null }>(`/threads/${encodeURIComponent(thread.id)}?limit=100`)
-      .then(result => { if (Array.isArray(result.data) && !transcripts.current.has(thread.id)) transcripts.current.set(thread.id, { entries: [...result.data].reverse(), cursor: result.nextCursor }); })
+    prefetching.current.set(thread.id, api<{ data: Entry[]; nextCursor: string | null }>(historyPath(thread.id))
+      .then(result => { if (Array.isArray(result.data) && !transcripts.current.has(thread.id)) transcripts.current.set(thread.id, { entries: inReadingOrder(result), cursor: result.nextCursor }); })
       .catch(() => {}) // The click reads it again and reports a failure.
       .finally(() => prefetching.current.delete(thread.id)));
   }, []);
@@ -647,9 +530,9 @@ export default function Home() {
     const shown = transcripts.current.get(thread.id);
     select(thread); setView("chat"); setSidebar(false); setEntries(shown?.entries ?? []); setItemCursor(shown?.cursor ?? null); setLoading(true); setError(""); restoreAttachments(thread.id);
     try {
-      const result = await api<HistoryPage & { thread: Thread }>(`/threads/${encodeURIComponent(thread.id)}?limit=100`); if (!Array.isArray(result.data)) throw unreadable("conversations"); if (!result.thread || typeof result.thread.id !== "string") throw unreadable("conversation");
+      const result = await api<HistoryPage & { thread: Thread }>(historyPath(thread.id)); if (!Array.isArray(result.data)) throw unreadable("conversations"); if (!result.thread || typeof result.thread.id !== "string") throw unreadable("conversation");
       if (request.current !== id) return;
-      select(remember(result.thread)); setEntries(previous => mergeHistoryWithLive(previous, [...result.data].reverse(), liveKeysAfter(historyRevision))); setItemCursor(result.nextCursor); noteHistoryGap(thread.id, result); heldEarlier.current.delete(thread.id);
+      select(remember(result.thread)); setEntries(previous => mergeHistoryWithLive(previous, inReadingOrder(result), liveKeysAfter(historyRevision))); setItemCursor(result.nextCursor); noteHistoryGap(thread.id, result); heldEarlier.current.delete(thread.id);
       // The engine lists a chat's items only once it has loaded the chat; until then a saved chat reads as empty. Like
       // the Codex TUI, which resumes before it reads history, read it again once the resume below has loaded it.
       unread = !result.data.length && !result.nextCursor;
@@ -674,8 +557,8 @@ export default function Home() {
       if (modeRevisions.current[thread.id] === modeRevision) rememberModes(thread.id, live);
       if (turnRevisions.current[thread.id] === turnRevision) reconcileLiveThread(thread.id, live);
       if (unread || live.thread?.canAcceptDirectInput === false) {
-        const again = await api<HistoryPage>(`/threads/${encodeURIComponent(thread.id)}?limit=100`);
-        if (request.current === id && Array.isArray(again.data)) { setEntries(previous => mergeHistoryWithLive(previous, [...again.data].reverse(), liveKeysAfter(historyRevision))); setItemCursor(again.nextCursor); noteHistoryGap(thread.id, again); heldEarlier.current.delete(thread.id); }
+        const again = await api<HistoryPage>(historyPath(thread.id));
+        if (request.current === id && Array.isArray(again.data)) { setEntries(previous => mergeHistoryWithLive(previous, inReadingOrder(again), liveKeysAfter(historyRevision))); setItemCursor(again.nextCursor); noteHistoryGap(thread.id, again); heldEarlier.current.delete(thread.id); }
       }
     } catch (e) { if (request.current === id) setLiveError(prev => ({ ...prev, [thread.id]: e instanceof Error ? e.message : String(e) })); }
   }, [select, setText, reconcileLiveThread, rememberFollowing, saveDraft, savedDraft, liveKeysAfter, restoreAttachments, updateTabs, markRead, noteHistoryGap]);
@@ -691,15 +574,8 @@ export default function Home() {
   useEffect(() => {
     try { const stored = readProjects(); newDraftKey.current = "new"; setText(savedDraft(newDraftKey.current)); restoreAttachments(newDraftKey.current); setProjects(stored.projects); setWorkflowProjectId(stored.selectedId); const memberships = readProjectChats(); projectChatsRef.current = memberships; setProjectChats(memberships); }
     catch (e) { setError(e instanceof Error ? e.message : "Could not restore workspace preferences."); }
-    try {
-      const store = window.elpisDesktop?.storage, restored = store && readTabs(store);
-      if (restored) {
-        updateTabs(restored); restoredTabs.current = true;
-        const shown = activeTab(restored);
-        if (!shown.threadId && shown.draftKey) { newDraftKey.current = shown.draftKey; setText(savedDraft(shown.draftKey)); restoreAttachments(shown.draftKey); }
-      }
-    } catch { /* The tabs start afresh. */ }
-    setTabsRestored(true);
+    const restored = restoreTabs(), shown = restored && activeTab(restored);
+    if (shown && !shown.threadId && shown.draftKey) { newDraftKey.current = shown.draftKey; setText(savedDraft(shown.draftKey)); restoreAttachments(shown.draftKey); }
   }, []);
   useEffect(() => window.elpisDesktop?.storage?.onError(setError), []);
   // The mouse's side buttons go back and forward, as in a browser.
@@ -758,8 +634,8 @@ export default function Home() {
         const shown = () => open() && request.current === requestId && selectedRef.current?.id === id;
         // History and resume are independent: a refused history read must not leave a finished turn running.
         const history = thread?.id === id ? (async () => {
-          const result = await api<HistoryPage & { thread: Thread }>(`/threads/${encodeURIComponent(id)}?limit=100`);
-          if (shown()) { setEntries(previous => mergeHistoryWithLive(previous, [...result.data].reverse(), liveKeysAfter(historyRevision))); setItemCursor(result.nextCursor); noteHistoryGap(id, result); heldEarlier.current.delete(id); }
+          const result = await api<HistoryPage & { thread: Thread }>(historyPath(id));
+          if (shown()) { setEntries(previous => mergeHistoryWithLive(previous, inReadingOrder(result), liveKeysAfter(historyRevision))); setItemCursor(result.nextCursor); noteHistoryGap(id, result); heldEarlier.current.delete(id); }
           return !result.data.length && !result.nextCursor;
         })() : Promise.resolve(false);
         const resume = (async () => {
@@ -773,8 +649,8 @@ export default function Home() {
         if (!open()) return;
         // A saved chat reads as empty until the resume has loaded it (see loadThread): read it again.
         if (results[0].status === "fulfilled" && results[0].value && results[1].status === "fulfilled" && shown()) {
-          const again = await api<HistoryPage>(`/threads/${encodeURIComponent(id)}?limit=100`).catch(() => null);
-          if (again && Array.isArray(again.data) && shown()) { setEntries(previous => mergeHistoryWithLive(previous, [...again.data].reverse(), liveKeysAfter(historyRevision))); setItemCursor(again.nextCursor); noteHistoryGap(id, again); heldEarlier.current.delete(id); }
+          const again = await api<HistoryPage>(historyPath(id)).catch(() => null);
+          if (again && Array.isArray(again.data) && shown()) { setEntries(previous => mergeHistoryWithLive(previous, inReadingOrder(again), liveKeysAfter(historyRevision))); setItemCursor(again.nextCursor); noteHistoryGap(id, again); heldEarlier.current.delete(id); }
         }
         const failed = results.find(result => result.status === "rejected");
         if (failed?.status === "rejected") setLiveError(previous => ({ ...previous, [id]: failed.reason instanceof Error ? failed.reason.message : String(failed.reason) }));
@@ -833,7 +709,7 @@ export default function Home() {
           if (threadId && method === "item/completed" && params.item?.type === "plan") planTurns.current.set(threadId, params.turnId);
           if (threadId && method === "turn/completed" && !completedTurns.current.has(params.turn.id) && params.turn.status === "completed" && !params.turn.error && !isAgentRun(threadsRef.current.find(thread => thread.id === threadId) ?? {})) {
             // A reply is read when it is on screen: in its open chat, or on the open Love Spot board for a Love Spot chat.
-            const unread = viewRef.current === "loveSpot" || matildaChatShown.current ? chatOrigin(threadsRef.current.find(thread => thread.id === threadId) ?? { id: threadId }, loveThreadsRef.current) !== "Love Spot"
+            const unread = viewRef.current === "loveSpot" || loveRef.current.chatShown ? !isLoveChatId(threadId)
               : selectedRef.current?.id !== threadId || viewRef.current !== "chat";
             const planReady = planTurns.current.get(threadId) === params.turn.id || params.turn.items?.some((item: Item) => item.type === "plan");
             setAttention(previous => ({
@@ -948,11 +824,11 @@ export default function Home() {
       inFlight = true;
       const historyRevision = liveRevision.current;
       try {
-        const result = await api<{ thread: Thread; data: Entry[] }>(`/threads/${encodeURIComponent(id)}?limit=100`); if (!Array.isArray(result.data)) throw unreadable("conversations"); if (!result.thread || typeof result.thread.id !== "string") throw unreadable("conversation");
+        const result = await api<{ thread: Thread; data: Entry[] }>(historyPath(id)); if (!Array.isArray(result.data)) throw unreadable("conversations"); if (!result.thread || typeof result.thread.id !== "string") throw unreadable("conversation");
         if (disposed || selectedRef.current?.id !== id) return;
         select(result.thread);
         setEntries(prev => {
-          const fresh = [...result.data].reverse(); const byId = new Map(fresh.map(entry => [`${entry.turnId}:${entry.item.id}`, entry]));
+          const fresh = inReadingOrder(result); const byId = new Map(fresh.map(entry => [`${entry.turnId}:${entry.item.id}`, entry]));
           const merged = prev.map(entry => byId.get(`${entry.turnId}:${entry.item.id}`) || entry);
           const previousIds = new Set(prev.map(entry => `${entry.turnId}:${entry.item.id}`));
           merged.push(...fresh.filter(entry => !previousIds.has(`${entry.turnId}:${entry.item.id}`)));
@@ -1033,21 +909,14 @@ export default function Home() {
   const composerNotice = [fileNotice, imageBlocked ? TEXT_ONLY_NOTICE : "", !shellMode ? missingChoiceNotice : ""].filter(Boolean).join("\n");
   const canSendFollowUp = !!selected && !!activeTurn && !continues;
   const sendBlocked = readOnlyRun || (!text.trim() && !attachments.length) || (busy && (!canSendFollowUp || shellMode)) || dictating || attaching || imageBlocked || !ready || !connected || (!shellMode && (!!missingChoiceNotice || needsModelId && !model.trim()));
-  const recoveryAttachments = selected ? attachmentDrafts.current[`recovery-${selected.id}`] ?? [] : [];
+  const recoveryAttachments = selected ? draftStore.heldAttachments(`recovery-${selected.id}`) ?? [] : [];
 
   const find = (id?: string | null) => id ? threads.find(thread => thread.id === id) ?? related[id] : undefined;
   const selectedTitle = selected ? title(selected) : "";
   useEffect(() => { if (ready) updateTabs(followChat(tabsRef.current, selected ? { id: selected.id, title: selectedTitle } : null)); }, [ready, selected?.id, selectedTitle]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { updateTabs(renameTabs(tabsRef.current, id => { const thread = find(id); return thread ? title(thread) : undefined; })); }, [threads, related]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { const store = window.elpisDesktop?.storage; if (tabsRestored && store && !writeTabs(tabs, store)) setError("Could not save the open chat tabs on this device."); }, [tabs, tabsRestored]);
-  // Back and forward: each place reached (a chat, a new chat, a page) joins the stack; the first one only starts it.
-  useEffect(() => {
-    if (!ready) return;
-    const place = { view, threadId: view === "chat" ? selected?.id ?? null : null };
-    const next = historySeeded.current ? visit(historyRef.current, place) : startHistory(place);
-    historySeeded.current = true;
-    if (next !== historyRef.current) { historyRef.current = next; setHistory(next); }
-  }, [ready, view, selected?.id]);
+  // Back and forward: each place reached (a chat, a new chat, a page) joins the stack.
+  const navHistory = useNavHistory(ready, { view, threadId: view === "chat" ? selected?.id ?? null : null });
   // Elpis can replace turns only in chats it lets this app write directly, and not while one is running.
   const replaceable = !!selected && !continues && !activeTurn && selected.status?.type !== "active" && connected && !busy;
   const { turnEntries, replacementOptions, replacementOptionsKey } = useMemo(() => {
@@ -1097,7 +966,7 @@ export default function Home() {
   const newChat = () => { setProjectId(null); setCwd(""); openNewChat(activeTab(tabsRef.current).draftKey ?? "new"); };
   const clearChat = async () => {
     const previous = selectedRef.current;
-    if (previous && chatOrigin(previous, loveActivity.threads) === "Love Spot" && agentName(previous) === "Matilda") {
+    if (previous && loveActivity.isLoveChat(previous) && agentName(previous) === "Matilda") {
       if (activeTurns[previous.id]) { setError("Love Spot is already replying. Wait for this turn."); return; }
       const originalRequest = request.current;
       const settings = { ...previous, ...settingsOf.current[previous.id] };
@@ -1163,10 +1032,9 @@ export default function Home() {
   function cycleTabs(delta: number) { const next = cycle(tabsRef.current, delta); if (next !== tabsRef.current) { updateTabs(next); openTab(activeTab(next)); } }
   /** Back (-1) or Forward (1): to the previous or next place visited, skipping chats that are gone. */
   function goHistory(delta: -1 | 1) {
-    const found = step(historyRef.current, delta, place => !place.threadId || !hidden.current.has(place.threadId));
-    if (!found) return;
-    historyRef.current = found.history; setHistory(found.history);
-    const { view: target, threadId } = found.place;
+    const place = navHistory.go(delta, place => !place.threadId || !hidden.current.has(place.threadId));
+    if (!place) return;
+    const { view: target, threadId } = place;
     if (target !== "chat") show(target as View);
     else if (threadId === (selectedRef.current?.id ?? null)) show("chat");
     else if (threadId) void loadThread(find(threadId) ?? { id: threadId } as Thread);
@@ -1201,7 +1069,7 @@ export default function Home() {
       const revealGroups = new Set(reveals.map(reveal => reveal.group));
       if (groups.collapsed.some(id => revealGroups.has(id))) groups = { ...groups, collapsed: groups.collapsed.filter(id => !revealGroups.has(id)) };
       if (!writeGroups(groups, appStorage())) { if (destination !== undefined) await saveProjectChats(previous); throw Error("Could not save chat placement on this device."); }
-      chatListOrder.release(); chatGroupsRef.current = groups; setChatGroups(groups);
+      commitGroups(groups);
       projectChatsRef.current = next; setProjectChats(next); setMarked([]);
       revealPlacement(reveals);
     });
@@ -1594,6 +1462,12 @@ export default function Home() {
     } finally { rewindSwitch.current = null; }
   }
   /** Answers a request; `instead` is "Deny, and tell Elpis what to do instead" (body: { text }). */
+  /** An approval card's answers, sending and drafts: the same wherever the card is shown. */
+  const approvalCardProps = (approval: Approval) => {
+    const key = approvalDraftKey(approval);
+    return { approval, answer: (id: string, body: unknown) => answer(id, body, key), deny: (id: string, text: string) => answer(id, { text }, key, true),
+      busy: !!pendingDrafts[key], answers: answersFor(approval), onAnswerChange: (id: string, value: string[]) => draftAnswer(approval, id, value) };
+  };
   async function answer(id: string, body: unknown, key: string, instead = false) {
     const originalFocus = document.activeElement, originalRequest = request.current;
     await submitDraft(key, () => api(`/approvals/${encodeURIComponent(id)}${instead ? "/instead" : ""}`, body));
@@ -1614,7 +1488,7 @@ export default function Home() {
       while (cursor && !found && (untilTurnId || messagesIn(pages) < EARLIER_MESSAGES)) {
         if (seen.has(cursor)) throw new Error("Repeated conversation cursor");
         seen.add(cursor);
-        const result: { data: Entry[]; nextCursor: string | null } = await api(`/threads/${encodeURIComponent(id)}?limit=100&cursor=${encodeURIComponent(cursor)}`);
+        const result: { data: Entry[]; nextCursor: string | null } = await api(historyPath(id, cursor));
         if (!Array.isArray(result.data)) throw unreadable("conversations");
         found = result.data.some(entry => entry.turnId === untilTurnId && entry.item.type === "userMessage" && (!untilItemId || entry.item.id === untilItemId));
         pages.unshift(...result.data.reverse());
@@ -1806,8 +1680,8 @@ export default function Home() {
     try {
       const all: Entry[] = []; let cursor: string | null = null;
       do { // Pages come newest first; each older page goes in front.
-        const result: { data: Entry[]; nextCursor: string | null } = await api(`/threads/${encodeURIComponent(thread.id)}?limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`); if (!Array.isArray(result.data)) throw unreadable("conversations");
-        all.unshift(...[...result.data].reverse()); cursor = result.nextCursor;
+        const result: { data: Entry[]; nextCursor: string | null } = await api(historyPath(thread.id, cursor)); if (!Array.isArray(result.data)) throw unreadable("conversations");
+        all.unshift(...inReadingOrder(result)); cursor = result.nextCursor;
       } while (cursor && all.length < 100000);
       const link = document.createElement("a"), file = exportFileName(title(thread));
       link.href = URL.createObjectURL(new Blob([conversationMarkdown(title(thread), all)], { type: "text/markdown" })); link.download = file;
@@ -1929,29 +1803,10 @@ export default function Home() {
   useEffect(() => { if (shellCreated.current !== selected?.id || view !== "chat") setShellMode(false); shellCreated.current = null; setSideChat(null); }, [selected?.id, view]);
   useEffect(() => { if (text) setSlashNotice(""); }, [text]);
 
-  const workflowCatalog = useWorkflowCatalog(ready && connected);
-  const listedThreadIds = useMemo(() => new Set(threads.map(thread => thread.id)), [threads]);
-  const workflowRuns = useMemo(() => workflowCatalog.runs.filter(run => !hidden.current.has(run.rootThreadId) && (listedThreadIds.has(run.rootThreadId) || workflowMembers(run).some(member => listedThreadIds.has(member.threadId)))), [workflowCatalog.runs, listedThreadIds]);
-  const workflowRoots = useMemo(() => new Map([...workflowRuns].sort((a, b) => (a.startedAt ?? a.createdAt ?? 0) - (b.startedAt ?? b.createdAt ?? 0)).map(run => [run.rootThreadId, run])), [workflowRuns]);
+  const { catalog: workflowCatalog, runs: workflowRuns, roots: workflowRoots, steps: workflowSteps, sidebarTitle } = useWorkflowSidebar(ready && connected, threads, hidden,
+    ended => setExpanded(previous => ({ ...previous, ...Object.fromEntries(ended.map(run => [`workflow:${run.id}`, false])) })));
   const selectedWorkflow = selected ? workflowRoots.get(selected.id) : undefined;
-  const workflowSteps = useMemo(() => new Map(workflowRuns.flatMap(run => workflowMembers(run).map(member => [member.threadId, { parent: run.rootThreadId, title: member.title, runId: run.id, mother: !!member.mother, check: !!member.check }] as const))), [workflowRuns]);
-  // A run started or moving on in another window tells this one nothing, and a new step's chat arrives before its run's
-  // record does: a workflow chat no run claims, or a run still going, reads the runs again (28 Oct: another window's run
-  // left its step, check and Mother chats loose here until a restart).
-  const unclaimedWorkflowChats = useMemo(() => threads.filter(thread => chatOrigin(thread) === "Workflows" && !workflowSteps.has(thread.id) && !workflowRoots.has(thread.id)).map(thread => thread.id).sort().join(" "), [threads, workflowSteps, workflowRoots]);
-  const workflowRunning = workflowCatalog.runs.some(run => run.status === "running"), refreshWorkflows = workflowCatalog.refresh;
-  useEffect(() => { if (ready && connected && unclaimedWorkflowChats) void refreshWorkflows(); }, [ready, connected, unclaimedWorkflowChats, refreshWorkflows]);
-  useEffect(() => {
-    if (!ready || !connected || !workflowRunning) return;
-    const timer = setInterval(() => void refreshWorkflows(), 4000);
-    return () => clearInterval(timer);
-  }, [ready, connected, workflowRunning, refreshWorkflows]);
   const sidebarThreads = useMemo(() => [...threads, ...[...workflowRoots.values()].filter(run => !threads.some(thread => thread.id === run.rootThreadId)).map(run => ({ id: run.rootThreadId, name: run.name, status: { type: run.status === "running" ? "active" : "idle" } } as Thread))], [threads, workflowRoots]);
-  const sidebarTitle = (thread: Thread) => {
-    const step = workflowSteps.get(thread.id), chosen = thread.name?.trim();
-    if (step) return chosen && !chosen.startsWith("Workflows · ") ? chosen : step.title;
-    return workflowCatalog.identities[workflowRoots.get(thread.id)?.id ?? ""]?.name ?? (chosen?.startsWith("Workflows · ") ? chosen.slice(12) : title(thread));
-  };
   const nativeParents = useMemo(() => Object.fromEntries(sidebarThreads.map(thread => [thread.id, agentParentId(thread) ?? workflowSteps.get(thread.id)?.parent ?? null])), [sidebarThreads, workflowSteps]);
   const treeParents = useMemo(() => sidebarParents(sidebarThreads.map(thread => thread.id), chatGroups, nativeParents), [sidebarThreads, chatGroups.parents, nativeParents]);
   const sidebarParent = (thread: Thread) => treeParents[thread.id];
@@ -1963,12 +1818,6 @@ export default function Home() {
     return !owner?.mother && !owner?.check && sidebarParent(child) === run.rootThreadId && (owner?.parent === run.rootThreadId
       ? owner.runId === run.id : workflowRoots.get(run.rootThreadId)?.id === run.id);
   };
-  const previousRuns = useRef(new Map<string, string>());
-  useEffect(() => {
-    const ended = workflowCatalog.runs.filter(run => previousRuns.current.get(run.id) === "running" && run.status !== "running");
-    previousRuns.current = new Map(workflowCatalog.runs.map(run => [run.id, run.status]));
-    if (ended.length) setExpanded(previous => ({ ...previous, ...Object.fromEntries(ended.map(run => [`workflow:${run.id}`, false])) }));
-  }, [workflowCatalog.runs]);
   // Follow agents whose parent is expanded in the sidebar. An expanded workflow is keyed `workflow:<run id>`: follow its
   // chat, as its Expand button does; the bridge refuses any other key as an invalid thread ID.
   const observedIds = JSON.stringify([...new Set(Object.keys(expanded).filter(id => expanded[id]).flatMap(id => id.startsWith("workflow:")
@@ -1987,8 +1836,8 @@ export default function Home() {
     void refresh(); const timer = setInterval(() => void refresh(), 5000);
     return () => { disposed = true; clearInterval(timer); };
   }, [observedIds, loadChildren]);
-  const searchedThreads = searchTerm && searchResults.query === searchTerm ? mergeListedThreads(sidebarThreads, searchResults.data, hidden.current) : sidebarThreads;
-  const matchedOnServer = new Set(searchTerm && searchResults.query === searchTerm ? searchResults.data.map(thread => thread.id) : []);
+  const searchedThreads = search.results ? mergeListedThreads(sidebarThreads, search.results.data, hidden.current) : sidebarThreads;
+  const matchedOnServer = new Set(search.results?.data.map(thread => thread.id) ?? []);
   const unreadIds = new Set(attention.unread);
   const sidebarState = (thread: Thread) => agentState(thread, waitingIds, unreadIds);
   const needsYou = (thread: Thread) => sidebarState(thread) === "waiting" || !!attention.plans[thread.id];
@@ -2002,6 +1851,7 @@ export default function Home() {
   const ownChat = (thread: Thread) => placedByHim(thread) || (!isAgentRun(thread) && !agentParentId(thread) && originOf(thread) !== "Workflows");
   const sortedChats = sortChats(sidebarThreads.filter(isTreeChat), chatGroups.sortBy, title, chatGroups.order);
   const chatListOrder = useChatListOrder(prioritizeChats(sortedChats, thread => sidebarState(thread) === "working" ? "working" : needsYou(thread) ? "waiting" : sidebarState(thread)));
+  releaseChatOrder.current = chatListOrder.release;
   // Hover holds ordinary rows still, but a newly working chat must still rise immediately. Once it finishes with an unread
   // reply (or needs him) it stays risen, right after the working chats, until the hold ends (1 Nov: "the unread chat that's
   // just finished should show after the working chats; no idle chat should sit in between them").
@@ -2148,7 +1998,6 @@ export default function Home() {
       if (reopen) await loadThread(reopen);
     } catch (e) { setError(`Could not bring back the deleted chat: ${e instanceof Error ? e.message : String(e)}`); }
   }
-  useEffect(() => { if (!deletedNotice) return; const timer = setTimeout(() => setDeletedNotice(null), 8000); return () => clearTimeout(timer); }, [deletedNotice]);
   /** A click opens the chat; Ctrl+click marks or unmarks it; Shift+click marks the range from the last click, as in a file manager. */
   function clickRow(thread: Thread, event: React.MouseEvent<HTMLButtonElement>) {
     if (event.altKey) { event.preventDefault(); openSplit(thread); return; }
@@ -2450,7 +2299,7 @@ export default function Home() {
   // One Matilda voice and one live call for the whole app: both go on when he leaves the board or Love Spot's chat; her face shows and controls them.
   return <DocumentReviewProvider onAttach={parts => attachFromBrowser(parts, false)}><LiveVoiceProvider><ReadAloud threadId="love-spot" enabled available={LOVE_SPOT_AUDIO.readAloudAvailable} unavailableReason={LOVE_SPOT_AUDIO.available ? undefined : LOVE_SPOT_AUDIO.reason}><div data-workspace={view} data-desktop={desktop || undefined} className={`app-shell${split.pane ? " session-pane" : ""}${split.thread && view === "chat" ? " session-split" : ""}${dark ? " dark" : ""} has-title-bar${sidebarCollapsed ? " sidebar-collapsed" : ""}${view === "settings" ? " settings-mode" : ""}${panelShown ? " panel-active" : ""}`} style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>
     <title>{view === "canvas" ? "Workflows · Elpis" : view === "experimentLab" ? "Lab · Elpis" : view === "customize" ? "Customize — Elpis" : "Elpis"}</title>
-    {desktop && <div className="title-bar"><NavButtons preferences={preferences} canBack={canBack(history)} canForward={canForward(history)} onBack={() => goHistory(-1)} onForward={() => goHistory(1)} />{(sidebarCollapsed || !sidebar) && <Button className={sidebarCollapsed || panelShown && panelDrawer ? undefined : "sidebar-open-narrow"} variant="ghost" size="icon-sm" aria-label="Open sidebar" title={shortcutTitle("Open sidebar", "sidebar", preferences)} onClick={() => showSidebar(true)}><PanelLeft size={16} /></Button>}<AppMenus preferences={preferences} onError={setError} onNewChat={newChat} onOpenFolder={() => void addProject()} onSettings={() => show("settings")} onToggleSidebar={() => showSidebar(narrow() ? !sidebar : sidebarCollapsed)} onBack={() => goHistory(-1)} onForward={() => goHistory(1)} canGoBack={canBack(history)} canGoForward={canForward(history)} onShortcuts={() => shortcutAction.current("shortcuts")} /><div className="title-bar-actions"><MatildaCompanion /><AppUpdate inTitleBar /></div></div>}
+    {desktop && <div className="title-bar"><NavButtons preferences={preferences} canBack={navHistory.canBack} canForward={navHistory.canForward} onBack={() => goHistory(-1)} onForward={() => goHistory(1)} />{(sidebarCollapsed || !sidebar) && <Button className={sidebarCollapsed || panelShown && panelDrawer ? undefined : "sidebar-open-narrow"} variant="ghost" size="icon-sm" aria-label="Open sidebar" title={shortcutTitle("Open sidebar", "sidebar", preferences)} onClick={() => showSidebar(true)}><PanelLeft size={16} /></Button>}<AppMenus preferences={preferences} onError={setError} onNewChat={newChat} onOpenFolder={() => void addProject()} onSettings={() => show("settings")} onToggleSidebar={() => showSidebar(narrow() ? !sidebar : sidebarCollapsed)} onBack={() => goHistory(-1)} onForward={() => goHistory(1)} canGoBack={navHistory.canBack} canGoForward={navHistory.canForward} onShortcuts={() => shortcutAction.current("shortcuts")} /><div className="title-bar-actions"><MatildaCompanion /><AppUpdate inTitleBar /></div></div>}
     {!desktop && <div className="title-bar"><div className="title-bar-actions"><MatildaCompanion /></div></div>}
     <ProfileDialog ready={ready && connected} />
     <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} returnFocus={shortcutsReturnFocus} />
@@ -2473,7 +2322,7 @@ export default function Home() {
         {arrangedPages.map(page => <ReorderItem key={page.id} reorder={pageReorder} itemId={page.id} render={<Button data-slot="nav-row" variant="ghost" data-nav-page={page.id} className={page.id === "loveSpot" ? "accent-scope" : undefined} aria-label={page.name} aria-current={view === page.id ? "page" : undefined} onClick={() => show(page.id)} title={`${page.name} (drag, or Alt+Up/Down, to reorder)`}>
           <page.Icon size={16} />{page.name}{page.id === "loveSpot" && loveActivity.unread > 0 && <span className="love-unread badge badge-sm" role="status" aria-label={`${loveActivity.unread} Love Spot agents replied`}>{loveActivity.unread}</span>}</Button>} />)}
       </nav>
-      <SearchField ref={searchInput} hint="Ctrl Shift K" aria-label="Search conversations" placeholder="Search chats" maxLength={200} value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === "Escape") { e.preventDefault(); setSearch(""); focusComposer(); } }} />
+      <SearchField ref={searchInput} hint="Ctrl Shift K" aria-label="Search conversations" placeholder="Search chats" maxLength={200} value={search.search} onChange={e => search.setSearch(e.target.value)} onKeyDown={e => { if (e.key === "Escape") { e.preventDefault(); search.setSearch(""); focusComposer(); } }} />
       <div className="thread-list" ref={threadList} onKeyDown={listKeys} {...chatListOrder.pointer}>
         {workflowCatalog.error && <p role="alert" className="px-2 text-xs text-destructive">{workflowCatalog.error}</p>}
         {!searchTerm && <section aria-label="Projects"><div className="section-label-row">{foldable("projects", "Projects")}<Button variant="ghost" size="icon-xs" aria-label="Add new project" title="Add new project: choose a folder" onClick={() => void addProject()}><PlusIcon size={13} /></Button></div>
@@ -2499,10 +2348,10 @@ export default function Home() {
           {(searchTerm || !collapsedSections.recents) && recentChats.map(chatRows)}
         </section>}
         {ready && !threads.length && <p className="px-2 text-xs text-muted-foreground">Your conversations will appear here.</p>}
-        {searchTerm && searchResults.query === searchTerm && searchResults.loading && <p role="status" className="px-2 py-3 text-xs text-muted-foreground">Searching saved conversations…</p>}
-        {searchTerm && searchResults.query === searchTerm && searchResults.error && <p role="alert" className="px-2 py-3 text-xs text-destructive">Could not search saved conversations: {searchResults.error}</p>}
-        {searchTerm && searchResults.query === searchTerm && !searchResults.loading && !searchResults.error && !filtered.length && <p className="px-2 py-3 text-xs text-muted-foreground">No matching conversations.</p>}
-        {searchTerm ? searchResults.nextCursor && <LoadOnScroll className="thread-more" loading={searchResults.loading} label="Loading more search results" onLoad={() => void loadMoreSearch()} /> : nextCursor && <LoadOnScroll className="thread-more" loading={moreLoading} label="Loading more chats" onLoad={() => void loadMoreConversations()} />}
+        {search.results?.loading && <p role="status" className="px-2 py-3 text-xs text-muted-foreground">Searching saved conversations…</p>}
+        {search.results?.error && <p role="alert" className="px-2 py-3 text-xs text-destructive">Could not search saved conversations: {search.results?.error}</p>}
+        {search.results && !search.results.loading && !search.results.error && !filtered.length && <p className="px-2 py-3 text-xs text-muted-foreground">No matching conversations.</p>}
+        {searchTerm ? search.results?.nextCursor && <LoadOnScroll className="thread-more" loading={search.results.loading} label="Loading more search results" onLoad={() => void search.loadMore()} /> : nextCursor && <LoadOnScroll className="thread-more" loading={moreLoading} label="Loading more chats" onLoad={() => void loadMoreConversations()} />}
         {!searchTerm && preferences.showAgentRuns && agentRuns.length + unlinked.length > 0 && <section className="mt-4" aria-label="Background runs">
           <RightClickMenu actions={runActions} area={<div className="flex items-center" />}>
             <Button data-sidebar-stop variant="ghost" size="sm" className="min-w-0 flex-1 justify-start text-muted-foreground" aria-expanded={agentRunsOpen} aria-controls="agent-runs" onClick={() => setAgentRunsOpen(open => !open)}><ChevronRight size={13} className={agentRunsOpen ? "rotate-90" : undefined} /><AgentsIcon size={14} />Agent runs ({agentRuns.length + unlinked.length})</Button>
@@ -2523,7 +2372,7 @@ export default function Home() {
       </div>
       <ResizeEdge label="Resize sidebar" width={sidebarWidth} min={SIDEBAR.min} max={SIDEBAR.max} initial={SIDEBAR.initial} grows="right" onResize={resizeSidebar} onClose={() => showSidebar(false)} />
     </aside>
-    <main className={`workspace${view === "chat" && selected && chatOrigin(selected, loveActivity.threads) === "Love Spot" ? " love-chat accent-scope" : ""}`} style={panelShown && !fullView ? { "--side-min": `${sideMinWidth(side.shown)}px`, ...(side.width ? { "--side-w": `clamp(${sideMinWidth(side.shown)}px, ${side.width}px, 70%)` } : {}) } as CSSProperties : undefined}>
+    <main className={`workspace${view === "chat" && selectedLoveChat ? " love-chat accent-scope" : ""}`} style={panelShown && !fullView ? { "--side-min": `${sideMinWidth(side.shown)}px`, ...(side.width ? { "--side-w": `clamp(${sideMinWidth(side.shown)}px, ${side.width}px, 70%)` } : {}) } as CSSProperties : undefined}>
       <header className={`workspace-header${heading ? "" : " untitled"}`}>
         <ImproveElpis threadId={view === "chat" ? selected?.id : undefined} onChat={loadThread} />
         {outsideChatApprovals.length > 0 && <div className="pending-input-anchor"><Button ref={pendingInputButton} className="pending-input-trigger" variant="secondary" size="sm" aria-label={`Needs input (${outsideChatApprovals.length})`} aria-expanded={pendingInputOpen} aria-controls="pending-input-panel" onKeyDown={event => { if (event.key === "Escape") setPendingInputOpen(false); }} onClick={() => setPendingInputOpen(value => !value)}><span className="pending-count">{outsideChatApprovals.length}</span>Needs input<span className="pending-task-name">{title(threads.find(thread => thread.id === outsideChatApprovals[0].params.threadId) || outsideChatApprovals[0].thread || {id:outsideChatApprovals[0].params.threadId || "unreported"})}</span></Button></div>}
@@ -2556,7 +2405,7 @@ export default function Home() {
         <div className="pending-request-list">{outsideChatApprovals.map(approval => {
           const thread = threads.find(item => item.id === approval.params.threadId);
           const requester = thread ?? approval.thread; const name = requester ? title(requester) : approval.params.threadId || "Conversation not reported";
-          return <div key={approvalDraftKey(approval)} className="pending-request"><div className="pending-request-heading"><p>{name}</p>{approval.params.threadId && <Button variant="ghost" size="sm" onClick={() => { setPendingInputOpen(false); openById(approval.params.threadId!); }}>Open chat</Button>}</div><ApprovalCard approval={approval} globalKeys={false} answer={(id, body) => answer(id, body, approvalDraftKey(approval))} deny={(id, text) => answer(id, { text }, approvalDraftKey(approval), true)} busy={!!pendingDrafts[approvalDraftKey(approval)]} answers={approvalDrafts[approvalDraftKey(approval)]?.answers ?? {}} onAnswerChange={(id, value) => draftAnswer(approval, id, value)} /></div>;
+          return <div key={approvalDraftKey(approval)} className="pending-request"><div className="pending-request-heading"><p>{name}</p>{approval.params.threadId && <Button variant="ghost" size="sm" onClick={() => { setPendingInputOpen(false); openById(approval.params.threadId!); }}>Open chat</Button>}</div><ApprovalCard {...approvalCardProps(approval)} globalKeys={false} /></div>;
         })}</div>
       </section>}
       <div className={`workspace-body${panelShown ? " panel-open" : ""}${fullView ? ` full-view${side.chatCollapsed ? " chat-collapsed" : ""}` : ""}${view !== "chat" ? " no-browser" : ""}`}><div className="workspace-content" {...(fullView ? { role: "region", "aria-label": "Floating chat" } : {})}>
@@ -2566,7 +2415,7 @@ export default function Home() {
       {view === "experimentLab" && <ViewBoundary label="Lab"><ExperimentLab /></ViewBoundary>}
       {view === "canvas" && <ViewBoundary label="Workflows"><CanvasGuideHelp onOpen={() => show("agentsGuide")}><AgentsCanvas threads={threads} key={recordedWorkflow?.id ?? "draft"} recordedRun={recordedWorkflow} onLeaveRecordedRun={() => setRecordedWorkflow(undefined)} onOpenRecordedRun={run => setRecordedWorkflow(run)} ready={ready && connected} workflowCatalog={workflowCatalog} models={models} cwd={workflowFolder} dark={dark} onOpenChat={id => { show("chat"); void openById(id); }} onRunStarted={keepWorkflowTab}
         projectMenu={<ProjectMenu variant="chip" projects={projects} selected={workflowProject ?? { id: "workflow-sandbox", name: "Sandbox", cwd: workflowSandbox ?? "" }} allowNone={!!workflowProject} noneLabel="Use sandbox" disabled={!ready || projectChanging} onSelect={selectProject} onAdd={() => void addProject()} />} onUseFolder={workIn} /></CanvasGuideHelp></ViewBoundary>}
-      {view === "loveSpot" && <ViewBoundary label="Love Spot"><LoveSpot dark={dark} toolbarHost={loveToolbarHost} cwd={newChatFolder(cwd || workflowProject?.cwd || "") || undefined} onOpenChat={id => { show("chat"); void openById(id); }} /></ViewBoundary>}
+      {view === "loveSpot" && <ViewBoundary label="Love Spot"><LoveSpot dark={dark} toolbarHost={loveToolbarHost} /></ViewBoundary>}
       {view === "observability" && <ViewBoundary label="Observability"><ObservabilityView threadId={selected?.id} chats={threads} /></ViewBoundary>}
       {view === "customize" && <div className="page-scroll"><ViewBoundary label="Customize"><CustomizeView cwd={cwd} onOpenSettings={() => openSettings("mcp")}
         onConnectGithub={hasTerminal ? () => { show("chat"); setTuiLaunch({ key: side.openTerminal(cwd), command: "github-login", token: Date.now() }); } : undefined}
@@ -2584,7 +2433,7 @@ export default function Home() {
             blockedReason={continues ? "Continue this conversation here before trying again." : failedInput?.allowed ? undefined : failedInput?.reason ?? "The original complete input is unavailable, so this turn cannot be safely resent."}
             onRetry={!continues && failedInput?.allowed ? retryModel => replaceFrom(failedTurn.turnId, failedInput.prompt, undefined, retryModel) : undefined} />}
           {selected && proposedPlan && !readOnlyRun && <PlanCard mode={permissionMode} busy={busy || !connected} onImplement={permissions => answerPlan(selected, proposedPlan, { implement: true, permissions })} onKeepPlanning={feedback => answerPlan(selected, proposedPlan, { feedback })} />}
-          {approvals.filter(a => a.params.threadId === selected?.id).map(a => <ApprovalCard key={approvalDraftKey(a)} approval={a} answer={(id, body) => answer(id, body, approvalDraftKey(a))} deny={(id, text) => answer(id, { text }, approvalDraftKey(a), true)} busy={!!pendingDrafts[approvalDraftKey(a)]} answers={approvalDrafts[approvalDraftKey(a)]?.answers ?? {}} onAnswerChange={(id, value) => draftAnswer(a, id, value)} />)}
+          {approvals.filter(a => a.params.threadId === selected?.id).map(a => <ApprovalCard key={approvalDraftKey(a)} {...approvalCardProps(a)} />)}
         </div><PromptRail scroller={scroll} threadId={selected?.id ?? null} entries={shownEntries} onLoadEarlier={older} onNavigate={() => { followingBottom.current = false; stickToBottom.current = false; }} />
           {awayFromBottom && <Button variant="outline" size="icon-lg" className="scroll-to-bottom" aria-label="Scroll to bottom" title="Scroll to bottom" onClick={() => { followingBottom.current = true; stickToBottom.current = true; scroll.current?.scrollTo({ top: scroll.current.scrollHeight, behavior: "smooth" }); }}><ArrowDown size={16} /></Button>}</div>
           {awaitingTeam && <p role="status" className="chat-loading chat-team-loading text-muted-foreground">Loading conversation…</p>}</div>
@@ -2629,7 +2478,7 @@ export default function Home() {
               </OptionSelect>}
               <Button type="button" variant="ghost" size="icon-sm" className="fast-toggle" data-unavailable={fastAvailable ? undefined : ""} aria-label="Fast mode" aria-pressed={fastAvailable && fastOn} title={!fastAvailable ? "Fast is not offered for this model. GPT models have it; Claude's Fast bills extra usage, so it stays off." : fastOn ? "Fast is on. Turn off Fast." : "Turn on Fast. Applies from the next model request, including during this turn."} disabled={!fastAvailable || !ready || !connected || busy || projectChanging || readOnlyRun} onClick={() => void chooseFast(fastOn ? "off" : "on")}><Zap size={16} fill={fastAvailable && fastOn ? "currentColor" : "none"} aria-hidden="true" /></Button>
               <div className="composer-actions">
-              {ready && selected && <Voice key={`voice:${selected.id}`} threadId={selected.id} disabled={!connected || projectChanging || dictating} persistent={chatOrigin(selected, loveActivity.threads) === "Love Spot"} unavailableReason={loveSpotAudioReason} onBusy={setVoiceBusy} />}
+              {ready && selected && <Voice key={`voice:${selected.id}`} threadId={selected.id} disabled={!connected || projectChanging || dictating} persistent={selectedLoveChat} unavailableReason={loveSpotAudioReason} onBusy={setVoiceBusy} />}
               {ready && <Dictation key={selected?.id || newDraftKey.current} provider={dictationProvider} disabled={!ready || !connected || busy || projectChanging || voiceBusy} onBusy={setDictating}
                 selection={() => ({ text: textRef.current, start: composerRef.current?.selectionStart ?? textRef.current.length, end: composerRef.current?.selectionEnd ?? textRef.current.length })}
                 onTranscript={(selection, transcript) => {
@@ -2660,20 +2509,12 @@ export default function Home() {
       </aside>}
       </div></ViewBoundary>}
       </div>{fullView && side.chatCollapsed && <FloatChatPill title={chatName} state={floatState} onRestore={() => side.setChatCollapsed(false)} />}{desktop && <SidePanel panel={side} browser={browser} hasTerminal={hasTerminal} dark={dark} cwd={selected?.cwd || cwd} threadId={selected?.id} running={!!activeTurn} launch={tuiLaunch} covered={pendingInputOpen || sidebar || view !== "chat"} onAttach={attachFromBrowser} imagesAllowed={!(knownModel?.inputModalities && !knownModel.inputModalities.includes("image"))} />}</div>
-      <div className="workspace-notices">
-      {(!ready || !connected) && <div className="error-banner notice" role="status"><span>{connectionStatus}</span></div>}
-      {deletedNotice && <div className="error-banner notice" role="status"><span className="min-w-0 flex-1 truncate">{deletedNotice}</span><Button variant="outline" size="sm" title="Undo (Ctrl+Z)" onClick={() => void undoDelete()}>Undo</Button><Button variant="ghost" size="icon-sm" aria-label="Dismiss" onClick={() => setDeletedNotice(null)}><X size={15} /></Button></div>}
-      {selected && rewindActions[selected.id] && <div className="error-banner notice" role="status"><span className="min-w-0 flex-1">Your files stay as they are.</span><Button variant="outline" size="sm" disabled={rewindBusy || !!activeTurn} onClick={() => void switchRewind({ action: rewindActions[selected.id]! }).catch(cause => setError(String(cause)))}>{rewindActions[selected.id] === "undo" ? "Undo rewind" : "Redo rewind"}</Button></div>}
-      {/* A quiet line, not a red band: no "Error:" prefix and no codes, and it fades on its own (6 Nov, Masih: "even if there is
-          an error I like it shown gracefully"). */}
-      {error && !(refusedOffline(error) && !connected) && <div key={error} className="error-banner quiet" role="alert"><span>{error.replace(/^(?:Type)?Error:\s*/, "").replace(/\s*\(ELPIS_[A-Z_]+(?:; request [a-f0-9-]+)?\)\s*$/, "")}</span><Button variant="ghost" size="icon-sm" aria-label="Dismiss error" onClick={() => setError("")}><X size={14} /></Button></div>}
-      {worktreeNotice && <div className="error-banner warning worktree-notice" role="status"><span>{worktreeNotice}</span><Button variant="ghost" size="icon-sm" aria-label="Dismiss worktree notice" onClick={() => setWorktreeNotice("")}><X size={15} /></Button></div>}
-      {/* A failed model-list refresh shows no banner (4 Nov): the last list stays, lib/model-catalog.ts retries quietly, and the model menu says so only when it has no models. */}
-      {/* Only the first load shows this line: account events refresh the list during turns, and a line appearing above the chat for each refresh shook it. */}
-      {catalogLoading && !catalogError && !models.length && <p className="px-4 py-2 text-sm text-muted-foreground" role="status">Loading models…</p>}
-      {selected && runtimeNotices[selected.id] && <div className="error-banner" role="alert"><span>{runtimeNotices[selected.id]}</span><Button variant="ghost" size="icon-sm" aria-label="Dismiss conversation error" onClick={() => setRuntimeNotices(prev => without(prev, selected.id))}><X size={15} /></Button></div>}
-      {selected && (recoveredEdit || recoveryAttachments.length > 0) && <div className="error-banner"><details className="min-w-0 w-full"><DisclosureSummary>Recover unsent message</DisclosureSummary><pre className="whitespace-pre-wrap break-words py-2" dir="auto">{recoveredEdit}</pre>{recoveryAttachments.length > 0 && <p>Files: {recoveryAttachments.map(part => part.name).join(", ")}</p>}<div className="flex flex-wrap items-center gap-2">{recoveredEdit && <CopyButton label="Copy unsent message" text={() => recoveredEdit} />}<Button variant="outline" size="sm" disabled={!!text.trim() || attachments.length > 0} title={text.trim() || attachments.length ? "Keep or clear your current draft before restoring this message." : undefined} onClick={() => { saveDraft(`recovery-${selected.id}`, ""); saveAttachments(`recovery-${selected.id}`, []); editDraft(recoveredEdit); setAttachments(recoveryAttachments); saveAttachments(selected.id, recoveryAttachments); }}>Use in composer</Button>{(!!text.trim() || attachments.length > 0) && <span>Your current draft is kept. Save it, or clear it to restore the unsent message.</span>}</div></details></div>}
-      </div>
+      <WorkspaceNotices connection={!ready || !connected ? connectionStatus : undefined} deleted={deletedNotice} onUndoDelete={() => void undoDelete()} onDismissDeleted={() => setDeletedNotice(null)}
+        rewind={selected && rewindActions[selected.id] && <div className="error-banner notice" role="status"><span className="min-w-0 flex-1">Your files stay as they are.</span><Button variant="outline" size="sm" disabled={rewindBusy || !!activeTurn} onClick={() => void switchRewind({ action: rewindActions[selected.id]! }).catch(cause => setError(String(cause)))}>{rewindActions[selected.id] === "undo" ? "Undo rewind" : "Redo rewind"}</Button></div>}
+        error={error && !(refusedOffline(error) && !connected) ? error : undefined} onDismissError={() => setError("")}
+        worktree={worktreeNotice} onDismissWorktree={() => setWorktreeNotice("")} loadingModels={catalogLoading && !catalogError && !models.length}
+        conversationError={selected ? runtimeNotices[selected.id] : undefined} onDismissConversationError={() => selected && setRuntimeNotices(prev => without(prev, selected.id))}
+        recovery={selected && (recoveredEdit || recoveryAttachments.length > 0) && <div className="error-banner"><details className="min-w-0 w-full"><DisclosureSummary>Recover unsent message</DisclosureSummary><pre className="whitespace-pre-wrap break-words py-2" dir="auto">{recoveredEdit}</pre>{recoveryAttachments.length > 0 && <p>Files: {recoveryAttachments.map(part => part.name).join(", ")}</p>}<div className="flex flex-wrap items-center gap-2">{recoveredEdit && <CopyButton label="Copy unsent message" text={() => recoveredEdit} />}<Button variant="outline" size="sm" disabled={!!text.trim() || attachments.length > 0} title={text.trim() || attachments.length ? "Keep or clear your current draft before restoring this message." : undefined} onClick={() => { saveDraft(`recovery-${selected.id}`, ""); saveAttachments(`recovery-${selected.id}`, []); editDraft(recoveredEdit); setAttachments(recoveryAttachments); saveAttachments(selected.id, recoveryAttachments); }}>Use in composer</Button>{(!!text.trim() || attachments.length > 0) && <span>Your current draft is kept. Save it, or clear it to restore the unsent message.</span>}</div></details></div>} />
       {split.thread && view === "chat" && <iframe key={split.thread.id} ref={split.frame} className="split-session" title="Split session" src={`/?pane=1&session=${encodeURIComponent(split.thread.id)}`} />}
     </main>
   </div></ReadAloud></LiveVoiceProvider></DocumentReviewProvider>;

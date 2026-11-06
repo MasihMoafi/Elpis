@@ -6,7 +6,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { BranchIcon, BrowserIcon, PlanIcon, StopIcon } from "@/components/elpis-icons";
 import { BrowserComments } from "@/components/browser-comments";
 import { BROWSER_COMMENTS, DRAWING_NOTE } from "@/lib/browser-notes";
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleCheck, CircleX, Copy, Signpost, FileText, Pencil, RefreshCw, Reply, Terminal, Trash2, Undo2, Volume2 } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleCheck, CircleX, Copy, Signpost, FileText, Pencil, RefreshCw, Reply, Trash2, Undo2, Volume2 } from "lucide-react";
 import { MoreMenu, RightClickMenu, type MenuAction } from "@/components/action-menu";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
