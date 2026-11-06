@@ -75,7 +75,7 @@ export async function startDesktopServer(rawOptions = {}) {
   await loveSpot.start();
   const companion = createMatildaCompanion({ store: loveSpot });
   const loveTalk = createLoveSpotTalk({ client, store: loveSpot, companion, audio: options.loveSpotAudio ?? LOVE_SPOT_AUDIO });
-  // Love Spot's agents run as ACP agent processes (bridge/acp-nodes.mjs), not through this Elpis connection.
+  // Love Spot's agents run as ACP agent processes (bridge/acp-nodes.mts), not through this Elpis connection.
   const loveAgents = createLoveAgents(loveSpot, { ...options.loveAgents, env: profileEnvironment(options.elpisHome, options.loveAgents?.env) });
   const devServers = createDevServers();
   const experimentLab = createExperimentLab(/** @type {Parameters<typeof createExperimentLab>[0]} */ ({ client, ...(options.elpisHome ? { file: path.join(options.elpisHome, 'experiment-lab', 'latest.json') } : {}) }));

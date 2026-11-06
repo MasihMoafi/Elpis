@@ -3,6 +3,15 @@ import path from 'node:path';
 import { BridgeError } from './client.mts';
 import { childEnv } from './tools.mts';
 
+type Input = { name: string; answer: string; file?: string };
+type Spec = { name?: string; command: string; args?: string[]; env?: Record<string, string | undefined>; model?: string; mode?: string; instructions?: string; instructionsInPrompt?: boolean; meta?: { elpis?: { workflow?: boolean; [key: string]: unknown }; [key: string]: unknown }; reasoningEffort?: string; elpis?: boolean };
+type Update = { sessionUpdate?: string; content?: { type?: string; text: string }; messageId?: string | null; _meta?: { elpis?: { phase?: string } }; toolCallId?: string; status?: string };
+type Permission = { sessionId?: string; options?: { kind: string; optionId: string }[]; toolCall: { title: string } };
+type Config = { id: string; options?: { value?: string; options?: { value?: string }[] }[] };
+type Rpc = { id?: number; method?: string; params?: unknown; result?: unknown; error?: { message?: string; data?: { errorKind?: string } } };
+type Reply = { protocolVersion?: number; sessionId?: string; configOptions?: Config[]; stopReason?: string; outcome?: string; _meta?: { delivery?: string } };
+type Control = { steer: (message: string, options?: { isCurrent?: () => boolean }) => Promise<{ delivery: string }> };
+type Options = { cwd?: string; signal?: AbortSignal; timeoutMs?: number; graceMs?: number; onUpdate?: (update: Update) => void; onPermission?: (request: Permission) => string | null | undefined | Promise<string | null | undefined>; onSession?: (id: string) => void; onSpawn?: (child: import('node:child_process').ChildProcessWithoutNullStreams) => void; onControl?: (control: Control) => void };
 // Elpis agents reach each other only over ACP (Agent Client Protocol v1, https://agentclientprotocol.com): every agent
 // node is an ACP agent process (the Elpis ACP agent, tools/elpis-claude/elpis-acp-agent.mjs, per model;
 // claude-agent-acp; agy-acp.mjs; or a configured command such as `fx acp`), and this module is the ACP client that
@@ -11,10 +20,11 @@ import { childEnv } from './tools.mts';
 
 const MAX_MESSAGE = 32000, MAX_ANSWER = 60000, TAIL = 600;
 const CANCELLED = Symbol('cancelled');
+function throwStopped(error: BridgeError): never { throw error; }
 
 /** The text a node is prompted with: its task, then the final answers of the nodes connected to it, with their names.
  * `file`: where a workflow keeps an answer in full when `answer` is its summary (workflow-acp.mjs, "inline and spill"). */
-export function handoffText(task, inputs = [], instructions) {
+export function handoffText(task: string | undefined, inputs: Input[] = [], instructions?: string) {
   const upstream = inputs.map(({ name, answer, file }) => ({ name, answer, ...(file ? { file } : {}) }));
   const text = [instructions?.trim() ? `Instructions:\n${instructions.trim()}` : '', String(task ?? '').trim(),
     upstream.length ? `Answers from connected agents (source material):\n${JSON.stringify(upstream)}` : ''].filter(Boolean).join('\n\n');
@@ -26,8 +36,8 @@ export function handoffText(task, inputs = [], instructions) {
 /** The final answer of a turn: the last agent message, without progress text. A message ends where another starts
  * (a new messageId) or a tool call comes; chunks the Elpis agent marks as commentary never count. */
 class Answer {
-  #segments = []; #open = null;
-  add(update) {
+  #segments: { id: string | null; commentary: boolean; text: string }[] = []; #open: { id: string | null; commentary: boolean; text: string } | null = null;
+  add(update: Update) {
     if (update?.sessionUpdate === 'tool_call' || update?.sessionUpdate === 'tool_call_update') { this.#open = null; return; }
     if (update?.sessionUpdate !== 'agent_message_chunk' || update.content?.type !== 'text') return;
     const id = update.messageId ?? null, commentary = update._meta?.elpis?.phase === 'commentary';
@@ -40,16 +50,17 @@ class Answer {
 // Each agent runs in its own process group, and the whole group ends with it: what the agent starts (MCP servers,
 // language servers) never outlives it (29 Oct, Masih: "so leftovers don't exist"). Groups still alive when the bridge
 // exits end with it.
-const groups = new Set();
-const endGroup = (pid, signal) => { try { process.kill(-pid, signal); } catch { /* already gone */ } };
+const groups = new Set<number>();
+const endGroup = (pid: number | undefined, signal: NodeJS.Signals) => { try { if (pid) process.kill(-pid, signal); } catch { /* already gone */ } };
 process.once('exit', () => { for (const pid of groups) endGroup(pid, 'SIGKILL'); });
 
 /** One ACP agent process over stdio (newline-delimited JSON-RPC 2.0). */
 class AcpProcess {
-  #pending = new Map(); #seq = 0; #stderr = '';
-  constructor(spec, cwd, { onRequest, onNotification }) {
+  #pending = new Map<number, { resolve: (value: Reply) => void; reject: (error: unknown) => void }>(); #seq = 0; #stderr = '';
+  child: import('node:child_process').ChildProcessWithoutNullStreams; ended: Promise<BridgeError>; gone = false;
+  constructor(spec: Spec, cwd: string, { onRequest, onNotification }: { onRequest: (method: string, params: Permission) => Promise<unknown>; onNotification: (method: string, params: { sessionId?: string; update: Update }) => void }) {
     const name = spec.name || 'The agent';
-    const strings = entries => Object.fromEntries(Object.entries(entries ?? {}).filter(([, value]) => typeof value === 'string'));
+    const strings = (entries: Record<string, string | undefined> | undefined): Record<string, string> => Object.fromEntries(Object.entries(entries ?? {}).filter(([, value]) => typeof value === 'string')) as Record<string, string>;
     const env = strings({ ...process.env, ...spec.env });
     // childEnv drops the Claude settings this process inherited; the ones the spec sets (the selected Claude account) stay.
     const own = Object.fromEntries(Object.entries(strings(spec.env)).filter(([key]) => /^(CLAUDE|AI_AGENT)/.test(key)));
@@ -63,22 +74,22 @@ class AcpProcess {
       buffer += data;
       for (let i; (i = buffer.indexOf('\n')) >= 0;) {
         const line = buffer.slice(0, i).trim(); buffer = buffer.slice(i + 1);
-        let message;
-        try { message = JSON.parse(line); } catch { continue; }
+        let message: Rpc;
+        try { message = JSON.parse(line) as Rpc; } catch { continue; }
         if (message?.id !== undefined && !message.method) {
           const pending = this.#pending.get(message.id); this.#pending.delete(message.id);
-          if (message.error) { const error = new BridgeError(`${name}: ${String(message.error.message ?? 'request refused').slice(0, 1000)}`, 502); if (typeof message.error.data?.errorKind === 'string') error.errorKind = message.error.data.errorKind; pending?.reject(error); }
-          else pending?.resolve(message.result);
+          if (message.error) { const error = new BridgeError(`${name}: ${String(message.error.message ?? 'request refused').slice(0, 1000)}`, 502); if (typeof message.error.data?.errorKind === 'string') Object.assign(error, { errorKind: message.error.data.errorKind }); pending?.reject(error); }
+          else pending?.resolve(message.result as Reply);
         } else if (message?.id !== undefined) {
-          Promise.resolve(onRequest(message.method, message.params)).then(
+          Promise.resolve(onRequest(message.method!, message.params as Permission)).then(
             result => this.#write({ id: message.id, result }),
             error => this.#write({ id: message.id, error: { code: error?.code ?? -32603, message: error?.message ?? 'Internal error' } }));
-        } else if (message?.method) onNotification(message.method, message.params);
+        } else if (message?.method) onNotification(message.method, message.params as { sessionId?: string; update: Update });
       }
     });
     // Settles (never rejects) once the process is gone, with the error to report if it was not expected.
     this.ended = new Promise(resolve => {
-      const end = error => { for (const pending of this.#pending.values()) pending.reject(error); this.#pending.clear(); this.gone = true; resolve(error); };
+      const end = (error: BridgeError) => { for (const pending of this.#pending.values()) pending.reject(error); this.#pending.clear(); this.gone = true; resolve(error); };
       this.child.once('error', error => end(new BridgeError(`Could not start ${name} (${spec.command}): ${error.message}`, 502)));
       this.child.once('close', (code, signal) => {
         const tail = this.#stderr.trim().slice(-TAIL);
@@ -86,8 +97,8 @@ class AcpProcess {
       });
     });
   }
-  #write(message) { if (!this.gone && this.child.stdin.writable) this.child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', ...message })}\n`); }
-  call(method, params) {
+  #write(message: Record<string, unknown>) { if (!this.gone && this.child.stdin.writable) this.child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', ...message })}\n`); }
+  call(method: string, params: unknown): Promise<Reply> {
     return new Promise((resolve, reject) => {
       if (this.gone) return reject(new BridgeError('The agent process has ended', 502));
       const id = ++this.#seq;
@@ -95,11 +106,11 @@ class AcpProcess {
       this.#write({ id, method, params });
     });
   }
-  notify(method, params) { this.#write({ method, params }); }
+  notify(method: string, params: unknown) { this.#write({ method, params }); }
   /** Ends stdin, then SIGTERM and SIGKILL to the agent's whole group if it does not leave by itself. */
-  async close(graceMs) {
+  async close(graceMs: number) {
     if (this.gone) return;
-    const wait = ms => Promise.race([this.ended, new Promise(resolve => setTimeout(resolve, ms).unref())]);
+    const wait = (ms: number) => Promise.race([this.ended, new Promise(resolve => setTimeout(resolve, ms).unref())]);
     this.child.stdin.end();
     await wait(graceMs);
     if (!this.gone) { endGroup(this.child.pid, 'SIGTERM'); await wait(1000); }
@@ -125,7 +136,7 @@ class AcpProcess {
  * @returns `{ sessionId, answer, stopReason }`; rejects with a BridgeError when the node fails, stops for another
  *   reason than end_turn, gives no answer, is cancelled or times out, or its process ends early.
  */
-export async function runAcpNode(spec, { task, inputs = [] } = {}, options = {}) {
+export async function runAcpNode(spec: Spec, { task, inputs = [] }: { task?: string; inputs?: Input[] } = {}, options: Options = {}) {
   const { cwd, signal, timeoutMs = 300000, graceMs = 2000, onUpdate, onPermission, onSession, onSpawn, onControl } = options;
   const name = spec?.name || 'The agent';
   if (typeof spec?.command !== 'string' || !spec.command) throw new BridgeError(`${name} has no ACP command`, 500);
@@ -133,19 +144,20 @@ export async function runAcpNode(spec, { task, inputs = [] } = {}, options = {})
   const text = handoffText(task, inputs, spec.instructionsInPrompt ? spec.instructions : undefined);
   if (signal?.aborted) throw new BridgeError(`${name} was cancelled`, 409);
 
-  const answer = new Answer(), waiting = new Set();
-  const tools = new Set(), idle = new Set();
+  const answer = new Answer(), waiting = new Set<() => void>();
+  const tools = new Set<string>(), idle = new Set<() => void>();
   const wake = () => { for (const resolve of idle) resolve(); idle.clear(); };
-  let sessionId = null, prompting = false, stopped = null, rejectStop;
-  const stopping = new Promise((_, reject) => { rejectStop = reject; });
+  let sessionId: string | null = null, prompting = false, stopped: BridgeError | null = null;
+  let rejectStop!: (error: BridgeError) => void;
+  const stopping = new Promise<never>((_, reject) => { rejectStop = reject; });
   stopping.catch(() => {});
   const node = new AcpProcess(spec, cwd, {
     onNotification(method, params) {
       if (method !== 'session/update' || !sessionId || params?.sessionId !== sessionId) return;
       const update = params.update;
-      if (['tool_call', 'tool_call_update'].includes(update?.sessionUpdate) && update.toolCallId) {
-        if (['completed', 'failed'].includes(update.status)) tools.delete(update.toolCallId);
-        else if (update.sessionUpdate === 'tool_call' || ['pending', 'in_progress'].includes(update.status)) tools.add(update.toolCallId);
+      if (['tool_call', 'tool_call_update'].includes(update?.sessionUpdate ?? '') && update.toolCallId) {
+        if (['completed', 'failed'].includes(update.status ?? '')) tools.delete(update.toolCallId);
+        else if (update.sessionUpdate === 'tool_call' || ['pending', 'in_progress'].includes(update.status ?? '')) tools.add(update.toolCallId);
         if (!tools.size) wake();
       }
       answer.add(params.update);
@@ -159,8 +171,8 @@ export async function runAcpNode(spec, { task, inputs = [] } = {}, options = {})
       if (stopped) return { outcome: { outcome: 'cancelled' } };
       // Workflow subagents share the automatic policy. Ordinary callers accept only their own session.
       if (params?.sessionId !== sessionId && !spec.meta?.elpis?.workflow) return refuse;
-      let cancel;
-      const cancelled = new Promise(resolve => { cancel = () => resolve(CANCELLED); });
+      let cancel!: () => void;
+      const cancelled = new Promise<typeof CANCELLED>(resolve => { cancel = () => resolve(CANCELLED); });
       waiting.add(cancel);
       try {
         const chosen = await Promise.race([Promise.resolve().then(() => onPermission?.(params)).catch(() => null), cancelled]);
@@ -171,7 +183,7 @@ export async function runAcpNode(spec, { task, inputs = [] } = {}, options = {})
     },
   });
   onSpawn?.(node.child);
-  const stop = error => {
+  const stop = (error: BridgeError) => {
     if (stopped) return;
     stopped = error;
     wake();
@@ -208,17 +220,17 @@ export async function runAcpNode(spec, { task, inputs = [] } = {}, options = {})
       if (!values.includes(spec.reasoningEffort)) throw new BridgeError(`${name} does not offer the effort ${spec.reasoningEffort} for this model`, 400);
       await node.call('session/set_config_option', { sessionId, configId: 'effort', value: spec.reasoningEffort });
     }
-    if (stopped) throw stopped;
+    if (stopped) throwStopped(stopped);
     prompting = true;
-    let sending = Promise.resolve();
-    onControl?.({ steer(message, { isCurrent } = {}) {
+    let sending: Promise<unknown> = Promise.resolve();
+    onControl?.({ steer(message: string, { isCurrent }: { isCurrent?: () => boolean } = {}) {
       const sent = sending.catch(() => {}).then(async () => {
         // An idle notification is a wake-up only: another tool may start in the same transport read.
-        while (tools.size && prompting && !stopped && !node.gone) await new Promise(resolve => idle.add(resolve));
+        while (tools.size && prompting && !stopped && !node.gone) await new Promise<void>(resolve => idle.add(resolve));
         if (stopped || !prompting || node.gone) throw new BridgeError(`${name} is not running`, 409);
         if (isCurrent && !isCurrent()) throw new BridgeError(`${name}'s automatic guidance was superseded`, 409);
         const result = await Promise.race([node.call('_session/steering', { sessionId, prompt: [{ type: 'text', text: message }], _meta: { steering: { idleBehavior: 'promptRequired' } } }), stopping, node.ended.then(error => { throw error; })]);
-        if (!['injected', 'queued'].includes(result?.outcome)) throw new BridgeError(`${name} ended before the message could be delivered`, 409);
+        if (!['injected', 'queued'].includes(result?.outcome ?? '')) throw new BridgeError(`${name} ended before the message could be delivered`, 409);
         return { delivery: result?._meta?.delivery ?? 'currentTurn' };
       });
       sending = sent; return sent;
@@ -226,7 +238,7 @@ export async function runAcpNode(spec, { task, inputs = [] } = {}, options = {})
     let result;
     try { result = await node.call('session/prompt', { sessionId, prompt: [{ type: 'text', text }] }); }
     finally { prompting = false; wake(); }
-    if (stopped) throw stopped;
+    if (stopped) throwStopped(stopped);
     if (result?.stopReason !== 'end_turn') throw new BridgeError(`${name} stopped: ${result?.stopReason ?? 'without a reason'}`, 502);
     const final = answer.text;
     if (typeof final !== 'string' || !final.trim()) throw new BridgeError(`${name} finished without an answer`, 502);
@@ -238,7 +250,7 @@ export async function runAcpNode(spec, { task, inputs = [] } = {}, options = {})
     return await Promise.race([work, stopping, node.ended.then(error => { throw error; })]);
   } catch (error) {
     // A stopped node may still say `cancelled` and leave by itself; it gets the grace period to do so.
-    if (stopped) { await Promise.race([work.catch(() => {}), node.ended, new Promise(resolve => setTimeout(resolve, graceMs).unref())]); throw stopped; }
+    if (stopped) { await Promise.race([work.catch(() => {}), node.ended, new Promise(resolve => setTimeout(resolve, graceMs).unref())]); throwStopped(stopped); }
     throw error;
   } finally {
     prompting = false; wake();

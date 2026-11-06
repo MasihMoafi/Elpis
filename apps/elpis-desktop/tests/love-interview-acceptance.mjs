@@ -5,7 +5,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { interviewRuntime } from './love-interview-runtime.mjs';
-import { runAcpNode } from '../bridge/acp-nodes.mjs';
+import { runAcpNode } from '../bridge/acp-nodes.mts';
 
 const [appDirectory, toolsDirectory, evidence] = process.argv.slice(2);
 const { _electron } = createRequire(import.meta.url)(process.env.ELPIS_PLAYWRIGHT_PACKAGE);

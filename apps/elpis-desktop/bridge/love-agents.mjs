@@ -5,7 +5,7 @@ import { createRequire } from 'node:module';
 import { BridgeError, elpisHome, object, text } from './client.mts';
 import { runtimeTools } from './runtime-paths.mts';
 import { BRIDGE_ENDPOINT_KEYS } from './profile-env.mts';
-import { handoffText, runAcpNode } from './acp-nodes.mjs';
+import { handoffText, runAcpNode } from './acp-nodes.mts';
 import { interviewReply, INVALID_INTERVIEW_REPLY } from './love-interview.mts';
 const require = createRequire(import.meta.url);
 
@@ -106,7 +106,7 @@ export function loveNodeSpec(node, env = process.env) {
     env: { ...accountEnv, ELPIS_ENGINE_BIN: engine, ...profile }, meta: { elpis: { name: `Love Spot · ${node.name}` } }, elpis: true };
 }
 
-/** Runs a card's connected agents in order, each as its own ACP agent process (bridge/acp-nodes.mjs): a card's final
+/** Runs a card's connected agents in order, each as its own ACP agent process (bridge/acp-nodes.mts): a card's final
  * answer reaches the cards its arrows point to through their session/prompt, and nothing else passes between them.
  * Automatic permission callbacks never wait for the person. */
 export function createLoveAgents(store, { timeoutMs = 300000, nodeSpec = loveNodeSpec, env = process.env } = {}) {

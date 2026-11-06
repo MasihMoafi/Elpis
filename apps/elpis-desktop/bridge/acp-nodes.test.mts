@@ -4,23 +4,24 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { runAcpNode } from './acp-nodes.mjs';
+import { BridgeError } from './client.mts';
+import { runAcpNode } from './acp-nodes.mts';
 
 // A scripted agent on the official ACP SDK (tools/elpis-claude/test/fake-acp-agent.mjs); it logs what reaches it.
 const FAKE = fileURLToPath(new URL('../../../tools/elpis-claude/test/fake-acp-agent.mjs', import.meta.url));
-const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
-function agentSpec(t, name, extra = {}) {
+const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+function agentSpec(t: import('node:test').TestContext, name: string, extra: { env?: Record<string, string>; spec?: Partial<Parameters<typeof runAcpNode>[0]> } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'acp-node-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const log = path.join(dir, 'agent.jsonl');
   const received = () => fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line)) : [];
   return { dir, received, spec: { name, command: process.execPath, args: [FAKE], env: { FAKE_ACP_LOG: log, FAKE_ACP_NAME: name, ...extra.env }, ...extra.spec } };
 }
-const alive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } };
+const alive = (pid: number | undefined) => { try { if (!pid) return false; process.kill(pid, 0); return true; } catch { return false; } };
 
 test('handshake, model choice and instructions go over ACP; the final answer is the last message', { timeout: 20000 }, async t => {
   const a = agentSpec(t, 'A', { env: { FAKE_ACP_MODELS: 'm-fast,m-slow' }, spec: { model: 'm-slow', instructions: 'Be exact.' } });
-  const updates = [], sessions = [];
+  const updates: Parameters<NonNullable<NonNullable<Parameters<typeof runAcpNode>[2]>['onUpdate']>>[0][] = [], sessions: string[] = [];
   const result = await runAcpNode(a.spec, { task: 'Unique seed 41c9' }, { cwd: a.dir, onUpdate: update => updates.push(update), onSession: id => sessions.push(id) });
   assert.equal(result.answer, 'A(m-slow) answered: Unique seed 41c9');
   assert.equal(result.stopReason, 'end_turn');
@@ -33,7 +34,7 @@ test('handshake, model choice and instructions go over ACP; the final answer is 
   assert.deepEqual(got.find(m => m.method === 'session/set_config_option').params, { sessionId: result.sessionId, configId: 'model', value: 'm-slow' });
   assert.deepEqual(got.find(m => m.method === 'session/prompt').params.prompt, [{ type: 'text', text: 'Unique seed 41c9' }]);
   assert.ok(updates.some(u => u.sessionUpdate === 'tool_call'), 'updates reach the caller as they stream');
-  assert.ok(updates.some(u => u.sessionUpdate === 'agent_message_chunk' && u.content.text === 'Thinking about it.'));
+  assert.ok(updates.some(u => u.sessionUpdate === 'agent_message_chunk' && u.content?.text === 'Thinking about it.'));
   assert.ok(got.some(m => m.closed), 'the agent process is closed after its answer');
 });
 
@@ -69,11 +70,11 @@ test('instructions go in the prompt for an agent that takes no system prompt', {
 
 test('permission requests go to onPermission; the chosen option reaches the agent; no answer rejects', { timeout: 20000 }, async t => {
   const a = agentSpec(t, 'A');
-  const asked = [];
+  const asked: Parameters<NonNullable<NonNullable<Parameters<typeof runAcpNode>[2]>['onPermission']>>[0][] = [];
   const allowed = await runAcpNode(a.spec, { task: '[permission] write it' }, { cwd: a.dir, onPermission: request => { asked.push(request); return 'allow_once'; } });
   assert.equal(asked.length, 1);
-  assert.equal(asked[0].toolCall.title, 'Write notes.txt');
-  assert.deepEqual(asked[0].options.map(o => o.optionId), ['allow_once', 'reject_once']);
+  assert.equal(asked[0]!.toolCall.title, 'Write notes.txt');
+  assert.deepEqual(asked[0]!.options!.map(o => o.optionId), ['allow_once', 'reject_once']);
   assert.match(allowed.answer, /permission: allow_once/);
   const b = agentSpec(t, 'B');
   const refused = await runAcpNode(b.spec, { task: '[permission] write it' }, { cwd: b.dir });
@@ -112,7 +113,7 @@ test('a timeout cancels over ACP, and an agent that ignores it is stopped', { ti
   await assert.rejects(runAcpNode(a.spec, { task: '[hang]' }, { cwd: a.dir, timeoutMs: 3000 }), /timed out/);
   assert.ok(a.received().some(m => m.method === 'session/cancel'));
   const b = agentSpec(t, 'B');
-  let pid;
+  let pid: number | undefined;
   const started = Date.now();
   await assert.rejects(runAcpNode(b.spec, { task: '[ignore-cancel]' }, { cwd: b.dir, timeoutMs: 3000, graceMs: 200, onSpawn: child => { pid = child.pid; } }), /timed out/);
   assert.ok(b.received().some(m => m.method === 'session/cancel'));
@@ -122,7 +123,7 @@ test('a timeout cancels over ACP, and an agent that ignores it is stopped', { ti
 
 test('a crashed node rejects with its exit code and stderr; a missing command is named', { timeout: 20000 }, async t => {
   const a = agentSpec(t, 'A');
-  await assert.rejects(runAcpNode(a.spec, { task: '[crash]' }, { cwd: a.dir }), error => /A exited \(code 5\) before answering/.test(error.message) && /crashed on purpose/.test(error.message) && error.status === 502);
+  await assert.rejects(runAcpNode(a.spec, { task: '[crash]' }, { cwd: a.dir }), error => error instanceof BridgeError && /A exited \(code 5\) before answering/.test(error.message) && /crashed on purpose/.test(error.message) && error.status === 502);
   await assert.rejects(runAcpNode({ name: 'Ghost', command: '/nonexistent/acp-agent', args: [] }, { task: 'x' }, { cwd: a.dir }), /Could not start Ghost/);
 });
 
@@ -131,7 +132,7 @@ test('turns that end without a usable answer fail visibly', { timeout: 20000 }, 
   await assert.rejects(runAcpNode(a.spec, { task: '[empty]' }, { cwd: a.dir }), /A finished without an answer/);
   await assert.rejects(runAcpNode(a.spec, { task: '[commentary-only]' }, { cwd: a.dir }), /A finished without an answer/);
   await assert.rejects(runAcpNode(a.spec, { task: '[refuse]' }, { cwd: a.dir }), /A stopped: refusal/);
-  await assert.rejects(runAcpNode(a.spec, { task: 'x', inputs: [{ name: 'big', answer: 'y'.repeat(32000) }] }, { cwd: a.dir }), error => error.status === 413);
+  await assert.rejects(runAcpNode(a.spec, { task: 'x', inputs: [{ name: 'big', answer: 'y'.repeat(32000) }] }, { cwd: a.dir }), error => error instanceof BridgeError && error.status === 413);
   assert.equal(a.received().filter(m => m.method === 'session/prompt').length, 3, 'an oversized handoff never starts a turn');
 });
 
@@ -151,18 +152,19 @@ test('two nodes: the first final answer arrives in the second node\'s session/pr
 
 
 test('steering rechecks its current-target guard after a foreground tool before injecting', { timeout: 20000 }, async t => {
-  const controller = new AbortController(); let running;
-  t.after(async () => { controller.abort(); await running?.catch(() => {}); });
+  const controller = new AbortController();
   const a = agentSpec(t, 'Guarded');
   const toolRelease = path.join(a.dir, 'tool-release'), finish = path.join(a.dir, 'finish');
   Object.assign(a.spec.env, { FAKE_ACP_TOOL_RELEASE: toolRelease, FAKE_ACP_RELEASE: finish });
-  let control, toolStarted;
-  const started = new Promise(resolve => { toolStarted = resolve; });
-  running = runAcpNode(a.spec, { task: '[tool-flight] [wait]' }, { cwd: a.dir, signal: controller.signal,
+  let control: Parameters<NonNullable<NonNullable<Parameters<typeof runAcpNode>[2]>['onControl']>>[0] | undefined, toolStarted!: () => void;
+  const started = new Promise<void>(resolve => { toolStarted = resolve; });
+  const running = runAcpNode(a.spec, { task: '[tool-flight] [wait]' }, { cwd: a.dir, signal: controller.signal,
     onControl: value => { control = value; }, onUpdate: update => { if (update.sessionUpdate === 'tool_call' && update.status === 'in_progress') toolStarted(); },
   });
+  t.after(async () => { controller.abort(); await running.catch(() => {}); });
   await started;
   let current = true;
+  assert.ok(control);
   const pending = control.steer('Stale automatic advice must not arrive.', { isCurrent: () => current });
   const refused = assert.rejects(pending, /stale|superseded/i); refused.catch(() => {});
   current = false;

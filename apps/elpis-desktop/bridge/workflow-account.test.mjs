@@ -6,7 +6,7 @@ import os from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { loveNodeSpec } from './love-agents.mjs';
-import { runAcpNode } from './acp-nodes.mjs';
+import { runAcpNode } from './acp-nodes.mts';
 // gio trash refuses /tmp, so test roots live where the trash works.
 const TEST_ROOT = path.join(os.homedir(), '.cache/elpis-tests'); fs.mkdirSync(TEST_ROOT, { recursive: true });
 const FAKE = fileURLToPath(new URL('../../../tools/elpis-claude/test/fake-acp-agent.mjs', import.meta.url));

@@ -3,7 +3,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { BridgeError, text } from './client.mts';
 import { loveNodeSpec } from './love-agents.mjs';
-import { runAcpNode, handoffText } from './acp-nodes.mjs';
+import { runAcpNode, handoffText } from './acp-nodes.mts';
 import { workflowRoute, quotaFailure } from './workflow-models.mts';
 import { checkPlan } from './canvas-plan.mjs';
 import { agentParentId } from '../lib/agent-runs.mts';

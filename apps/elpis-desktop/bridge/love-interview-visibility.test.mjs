@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createLoveAgents } from './love-agents.mjs';
 import { interviewRuntime } from '../tests/love-interview-runtime.mjs';
-import { runAcpNode } from './acp-nodes.mjs';
+import { runAcpNode } from './acp-nodes.mts';
 
 test('saved interview chats show only the real answers and decoded agent question', async t => {
   const f = await interviewRuntime(); t.after(() => f.close());

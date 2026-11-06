@@ -81,7 +81,7 @@
     "bridge/memory-count.test.mjs",
     "tests/workflow-routing.mjs",
     "tests/workflow-titles.mjs",
-    "bridge/acp-nodes.test.mjs",
+    "bridge/acp-nodes.test.mts",
     "bridge/workflow-coding.test.mjs",
     "bridge/workflow-replan.test.mjs",
     "bridge/workflow-account.test.mjs",
