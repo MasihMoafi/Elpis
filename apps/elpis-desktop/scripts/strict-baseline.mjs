@@ -12,6 +12,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
 
 const app = fileURLToPath(new URL('../', import.meta.url));
 const baselineFile = path.join(app, 'strict-baseline.json');
@@ -51,7 +52,29 @@ function typeCounts(config) {
   // The bridge imports generated copies in bridge/resources; make them first so every checkout counts the same program.
   run(process.execPath, ['bridge/build-resources.mjs', '--bridge-only']);
   /** @type {Counts} */ const counts = {};
-  for (const line of run(bin('tsc'), ['-p', config, '--noEmit', '--pretty', 'false']).split('\n')) {
+  const configPath = path.join(app, config);
+  const parsed = ts.getParsedCommandLineOfConfigFile(configPath, { noEmit: true }, {
+    ...ts.sys, onUnRecoverableConfigFileDiagnostic: diagnostic => { throw new Error(ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n')); },
+  });
+  if (!parsed) throw new Error(`Cannot read ${configPath}`);
+  const host = ts.createCompilerHost(parsed.options);
+  const appModules = path.join(app, 'node_modules');
+  const realAppModules = fs.realpathSync(appModules);
+  const allowed = (/** @type {string} */ name) => {
+    const absolute = path.resolve(name);
+    const parts = absolute.split(path.sep);
+    const index = parts.indexOf('node_modules');
+    if (index < 0) return true;
+    const root = parts.slice(0, index + 1).join(path.sep);
+    return root === appModules || absolute === realAppModules || absolute.startsWith(`${realAppModules}${path.sep}`);
+  };
+  const fileExists = host.fileExists.bind(host), directoryExists = host.directoryExists?.bind(host);
+  host.fileExists = name => allowed(name) && fileExists(name);
+  host.directoryExists = name => allowed(name) && (directoryExists?.(name) ?? false);
+  const program = ts.createProgram(parsed.fileNames, parsed.options, host);
+  const diagnostics = [...parsed.errors, ...ts.getPreEmitDiagnostics(program)];
+  const output = ts.formatDiagnostics(diagnostics, { getCurrentDirectory: () => app, getCanonicalFileName: name => name, getNewLine: () => '\n' });
+  for (const line of output.split('\n')) {
     const match = /^(.+?)\(\d+,\d+\): error (TS\d+)/.exec(line);
     if (match) counts[`${match[1]}:${match[2]}`] = (counts[`${match[1]}:${match[2]}`] ?? 0) + 1;
   }

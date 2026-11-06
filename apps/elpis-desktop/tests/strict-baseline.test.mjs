@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { spawnSync } from 'node:child_process';
 import { compare, lintCounts } from '../scripts/strict-baseline.mjs';
 
 test('a count above the baseline, or any finding in an unlisted file, fails', () => {
@@ -36,5 +37,36 @@ test('the linter reports a dropped promise and passes an awaited one', () => {
     assert.deepEqual(lintCounts([awaited]), {});
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('type counts ignore dependencies outside the desktop while still detecting errors', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-types-probe-'));
+  try {
+    const app = path.join(root, 'apps', 'elpis-desktop');
+    const external = path.join(root, 'tools', 'example');
+    for (const dir of ['scripts', 'bridge']) fs.mkdirSync(path.join(app, dir), { recursive: true });
+    fs.mkdirSync(external, { recursive: true });
+    fs.symlinkSync(path.resolve('node_modules'), path.join(app, 'node_modules'), 'dir');
+    fs.copyFileSync(path.resolve('scripts/strict-baseline.mjs'), path.join(app, 'scripts/strict-baseline.mjs'));
+    fs.writeFileSync(path.join(app, 'bridge/build-resources.mjs'), '');
+    fs.writeFileSync(path.join(app, 'tsconfig.node.json'), JSON.stringify({ compilerOptions: { strict: true, allowJs: true, checkJs: true, noEmit: true, noUncheckedSideEffectImports: true, skipLibCheck: true, types: [] }, include: ['bridge/*.mjs'] }));
+    fs.writeFileSync(path.join(app, 'bridge/check.mjs'), "import '../../../tools/example/check.mjs';\n");
+    fs.writeFileSync(path.join(external, 'check.mjs'), "import 'outside-package';\n/** @type {number} */ const value = 'bad';\n");
+    fs.writeFileSync(path.join(app, 'strict-baseline.json'), JSON.stringify({ types: { '../../tools/example/check.mjs:TS2307': 1, '../../tools/example/check.mjs:TS2322': 1 } }));
+    const run = () => spawnSync(process.execPath, ['scripts/strict-baseline.mjs', 'types'], { cwd: app, encoding: 'utf8' });
+    const before = run();
+    assert.equal(before.status, 0, before.stderr);
+    fs.mkdirSync(path.join(external, 'node_modules/outside-package'), { recursive: true });
+    fs.writeFileSync(path.join(external, 'node_modules/outside-package/index.d.ts'), 'export {};\n');
+    const after = run();
+    assert.equal(after.status, 0, after.stderr);
+    assert.equal(after.stdout, before.stdout);
+    fs.writeFileSync(path.join(external, 'check.mjs'), "import 'outside-package';\n/** @type {number} */ const value = 'bad';\n/** @type {number} */ const other = 'bad';\n");
+    const worse = run();
+    assert.equal(worse.status, 1);
+    assert.match(worse.stderr, /TS2322: 1 -> 2/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
   }
 });
