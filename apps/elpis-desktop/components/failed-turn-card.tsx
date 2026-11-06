@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { Model } from "@/lib/api";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 import { failureKind, plainResetTime } from "@/lib/failed-turn";
 
 export type FailedTurn = { turnId: string; error: { message: string; codexErrorInfo?: string | Record<string, unknown>; additionalDetails?: string | null } };

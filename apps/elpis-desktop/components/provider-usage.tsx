@@ -2,7 +2,7 @@
 
 import { useEffect, useSyncExternalStore } from "react";
 import { api, unreadable } from "@/lib/api";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 // Usage as Elpis reports it from account/rateLimits/read, one provider at a time (Cloudroom's usage card).
 export type UsageWindow = { usedPercent: number | null; windowDurationMins: number | null; resetsAt: number | null };

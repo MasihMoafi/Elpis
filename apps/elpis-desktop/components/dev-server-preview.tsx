@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import type { Browser } from "@/components/browser-panel";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 type Candidate = { name: string; command: string };
 type Server = Candidate & { status: "starting" | "running" | "stopped" | "failed"; url: string; logs: string; error: string | null };

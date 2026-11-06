@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
 import { PROTOCOL, keepPersona, savedPersona } from "@/lib/matilda";
 import { appStorage } from "@/lib/projects";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 /** How long the board stays quiet before she looks at what was written or drawn (ms). */
 const QUIET = 300;

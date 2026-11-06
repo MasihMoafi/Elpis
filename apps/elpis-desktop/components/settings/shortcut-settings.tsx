@@ -7,7 +7,7 @@ import { SHORTCUTS, configuredShortcuts, canCustomizeShortcut, keyCombination, s
 import { savePreferences, usePreferences } from "@/lib/preferences";
 import { ShortcutRecorder } from "@/components/settings/system-settings";
 import { SettingRow, SettingsEmpty, SettingsGroup, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 const matches = (shortcut: Shortcut, query: string) => {
   const text = [shortcut.group, shortcut.label, shortcut.keys.join("+"), ...shortcut.keys].join(" ").toLowerCase();

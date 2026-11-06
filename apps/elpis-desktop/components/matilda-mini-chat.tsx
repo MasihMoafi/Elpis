@@ -15,7 +15,7 @@ import { attachedFile } from "@/lib/prompt-history";
 import { LoadOnScroll } from "@/components/load-on-scroll";
 import { MatildaFace } from "@/components/matilda-face";
 import "@/components/matilda-mini-chat.css";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 /** Earlier messages shown when the history icon opens them, and how many more each scroll to the top reveals (31 Oct: "when I
  * hover up load them"; 1 Nov: none until the icon is pressed). */

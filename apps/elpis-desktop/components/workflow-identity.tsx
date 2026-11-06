@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { WORKFLOW_COLOURS, workflowNameProblem, type WorkflowCatalog, type WorkflowIdentity } from "@/lib/workflow-identity";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 export function WorkflowMark({ identity, decorative = false, neutral = false }: { identity: WorkflowIdentity; decorative?: boolean; neutral?: boolean }) {
   if (neutral) return <WorkflowsIcon className="shrink-0 text-muted-foreground" size={14} role={decorative ? undefined : "img"} aria-hidden={decorative || undefined} aria-label={decorative ? undefined : "Workflow"} />;

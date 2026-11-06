@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { api, sessionReady } from "@/lib/api";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 type Heard = { events: Record<string, number>; bytes: number; packets: number; energy: number; mic: number; listened: boolean; began: number };
 type Call = { threadId: string; controller: AbortController; peer: RTCPeerConnection | null; stream: MediaStream | null; audio: HTMLAudioElement | null; timer: ReturnType<typeof setTimeout> | null; sampler: ReturnType<typeof setInterval> | null; heard: Heard };

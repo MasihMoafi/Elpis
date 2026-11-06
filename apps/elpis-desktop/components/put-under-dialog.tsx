@@ -4,7 +4,7 @@ import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogFoo
 import { Button } from "@/components/ui/button";
 import { OptionSelect } from "@/components/ui/option-select";
 import { title, type Thread } from "@/lib/api";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 export function PutUnderDialog({ chats, candidates, onPutUnder, onClose }: {
   chats: Thread[] | null; candidates: Thread[]; onPutUnder: (parent: string) => Promise<void>; onClose: () => void;

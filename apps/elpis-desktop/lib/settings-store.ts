@@ -2,7 +2,7 @@
 
 import { useEffect, useSyncExternalStore } from "react";
 import { api, unreadable, type PermissionRequirements } from "@/lib/api";
-import { errorText } from "./error-text.mjs";
+import { errorText } from "./error-text.mts";
 
 /** The bridge's /settings snapshot. Every config-backed Settings page shares this one copy,
  * so a save on one page gives the others the new config version. */

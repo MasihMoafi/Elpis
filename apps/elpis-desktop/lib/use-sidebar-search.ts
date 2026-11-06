@@ -1,7 +1,7 @@
 import { useEffect, useState, type RefObject } from "react";
 import { api, unreadable, type Thread } from "./api";
 import { mergeListedThreads } from "./agents";
-import { errorText } from "./error-text.mjs";
+import { errorText } from "./error-text.mts";
 
 type SearchPage = { query: string; data: Thread[]; nextCursor: string | null; loading: boolean; error: string };
 const EMPTY: SearchPage = { query: "", data: [], nextCursor: null, loading: false, error: "" };

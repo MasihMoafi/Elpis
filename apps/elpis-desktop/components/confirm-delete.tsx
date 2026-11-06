@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { readPreferences, savePreferences } from "@/lib/preferences";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 /** One confirmation and preference for named deletions. A failed automatic delete opens the dialog for retry. */
 export function ConfirmDelete<T>({ request, names, noun, description, onDelete, onClose, alwaysConfirm, finalFocus, children }: {

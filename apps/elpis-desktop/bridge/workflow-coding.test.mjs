@@ -7,7 +7,7 @@ import os from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createWorkflowRuns } from './workflow-acp.mjs';
-import { workflowModelRoutes } from './workflow-models.mjs';
+import { workflowModelRoutes } from './workflow-models.mts';
 import { DesktopClient } from './client.mjs';
 import { startDesktopServer } from './server.mjs';
 import { EventEmitter } from 'node:events';
@@ -362,6 +362,7 @@ test('subscription recovery routes exclude API billing, expired limits and manag
   const providers = { openai: { auth: { state: 'signedIn', method: 'API key' }, usage: [] }, claude: { state: 'connected', usage: [{ secondary: { usedPercent: 100, resetsAt: Date.now() / 1000 - 60 } }] }, gemini: { state: 'connected', usage: [] }, openrouter: [{ keySet: true }] };
   const routes = workflowModelRoutes(models, providers, {});
   assert.deepEqual(routes.map(route => route.provider), ['claude', 'agy'], 'a stored API key never authorizes automatic paid fallback');
+  assert.ok(routes[0]);
   assert.equal(routes[0].exhausted, false, 'an expired usage window does not block a fresh allowance');
   assert.deepEqual(workflowModelRoutes(models, providers, { modelProvider: 'claude' }).map(route => route.provider), ['claude'], 'managed connection restrictions apply before routing');
   assert.deepEqual(workflowModelRoutes(models, { ...providers, claude: { state: 'notConnected', signedOut: true }, gemini: { state: 'notConnected' } }, {}), [], 'signed-out subscriptions are unavailable');

@@ -96,7 +96,7 @@ test('a new chat every run, a one-time task ends, and a paused task does not run
 });
 
 test('a chat\'s one sentence becomes a task: the tools create into this chat, list, pause and delete', async () => {
-  const { callTool } = await import('./schedule-mcp.mjs');
+  const { callTool } = await import('./schedule-mcp.mts');
   const file = path.join(await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-schedule-')), 'tasks.json');
   const h = harness(at(2026, 11, 4, 8, 0));
   const schedule = createSchedule({ client: h.client, file, now: h.now, timers: h.timers });
@@ -108,11 +108,13 @@ test('a chat\'s one sentence becomes a task: the tools create into this chat, li
   };
   const here = '00000000-0000-4000-8000-0000000000aa';
   const { created } = await callTool('automation_create', { title: 'Stand-up', prompt: 'What changed since yesterday?', rule: rule('20261101T093000', 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR'), target: 'this_chat' }, here, request);
+  assert.ok(created);
   assert.equal(created.when, 'Every weekday at 09:30 (UTC)');
   await h.advance(at(2026, 11, 4, 9, 30));
   assert.deepEqual(h.sent, [{ id: here, text: 'What changed since yesterday?', automatic: true }], 'sent into the chat that asked, without a new one');
   assert.equal(h.made.length, 0);
   const listed = await callTool('automation_list', {}, here, request);
+  assert.ok(listed.automations);
   assert.equal(listed.automations.length, 1);
   assert.equal((await callTool('automation_update', { id: created.id, action: 'pause' }, here, request)).updated.status, 'paused');
   await callTool('automation_update', { id: created.id, action: 'delete' }, here, request);

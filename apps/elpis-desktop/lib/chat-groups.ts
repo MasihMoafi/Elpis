@@ -1,6 +1,6 @@
 // Chats organised in the sidebar, as Claude's desktop app organises sessions: groups the person names and moves chats
 // into ("Move to group"), whether the list is drawn by those groups, and the order of its chats. Kept on this computer
-// (the desktop store's elpis-chat-groups-v1, desktop/state.cjs); app/page.tsx draws it. No value imports, so the node
+// (the desktop store's elpis-chat-groups-v1, desktop/state.cts); app/page.tsx draws it. No value imports, so the node
 // tests load this file as it is.
 
 export type ChatGroup = { id: string; name: string };

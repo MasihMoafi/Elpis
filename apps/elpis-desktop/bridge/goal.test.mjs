@@ -6,7 +6,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { DesktopClient } from './client.mjs';
 import { startDesktopServer } from './server.mjs';
-import { sessionContextFiles } from './session-context.mjs';
+import { sessionContextFiles } from './session-context.mts';
 
 const ID = '00000000-0000-0000-0000-0000000000a1';
 const scratch = os.tmpdir();
@@ -53,10 +53,11 @@ test('session context exposes missing project intent and Create cannot overwrite
   const cwd = await fs.mkdtemp(path.join(scratch, 'goal-project-'));
   const { client } = runtime(cwd); t.after(() => client.close()); await client.initialize();
   let state = await client.sessionContext(ID), intent = state.files.find(f => f.path === path.join(cwd, 'ES.md'));
+  assert.ok(intent);
   assert.equal(intent.exists, false); assert.equal(intent.included, false);
   await assert.rejects(client.createSessionIntent(ID, { path: '/elsewhere' }), /fields/i);
   await client.createSessionIntent(ID, {});
-  state = await client.sessionContext(ID); assert.equal(state.files.find(f => f.path === intent.path).exists, true);
+  state = await client.sessionContext(ID); assert.equal(state.files.find(f => f.path === intent.path)?.exists, true);
   await fs.writeFile(intent.path, 'User intent must survive.');
   await assert.rejects(client.createSessionIntent(ID, {}), /already exists/i);
   assert.equal(await fs.readFile(intent.path, 'utf8'), 'User intent must survive.');
@@ -75,13 +76,13 @@ test('context lists recorded sources and selected skills, never the available ca
   await fs.writeFile(file, item('developer', `### Source: ${rules} (13 characters)\n\nContext file.\n\n### Source: ${recorded} (13 characters)\n\nContext file.`) + item('developer', `Available skills: unused (file: ${unused})`) + item('assistant', `### Source: ${unused}\nQuoted only.`));
   const engine = [{ name: 'CLAUDE.md', path: rules, group: 'instructions', included: false, selectable: true, estimatedTokens: 4, reason: 'Excluded by the user' }];
   const read = () => sessionContextFiles({ cwd, path: file }, engine);
-  let result = await read(); assert.equal(result.files.filter(row => row.path === rules).length, 1); assert.equal(result.files.find(row => row.path === rules).included, false);
+  let result = await read(); assert.equal(result.files.filter(row => row.path === rules).length, 1); assert.equal(result.files.find(row => row.path === rules)?.included, false);
   assert.equal(result.files.find(row => row.path === recorded)?.included, true);
   assert.equal(result.files.some(row => row.path === unused), false); assert.equal(result.files.some(row => row.path === skill), false);
   const record = item('user', `<skill>\n<name>Selected</name>\n<path>${skill}</path>\nSkill contents\n</skill>`), cut = Math.floor(record.length / 2);
   await fs.appendFile(file, record.slice(0, cut)); assert.equal((await read()).files.some(row => row.path === skill), false);
   await fs.appendFile(file, record.slice(cut)); result = await read();
-  assert.equal(result.files.find(row => row.path === skill).group, 'skills'); assert.equal(result.files.some(row => row.path === unused), false);
+  assert.equal(result.files.find(row => row.path === skill)?.group, 'skills'); assert.equal(result.files.some(row => row.path === unused), false);
   const manual = path.join(cwd, 'manual/SKILL.md'); await fs.mkdir(path.dirname(manual)); await fs.writeFile(manual, 'Manually read skill.');
   const readCommand = (target, exit_code) => JSON.stringify({ type: 'event_msg', payload: { type: 'exec_command_end', cwd, exit_code, aggregated_output: 'Skill content', parsed_cmd: [{ type: 'read', path: target }] } }) + '\n';
   await fs.appendFile(file, readCommand(unused, 1) + readCommand('manual/SKILL.md', 0)); result = await read();

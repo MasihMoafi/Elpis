@@ -82,7 +82,7 @@ async function openCanvas({ width = 1440, height = 900, repository = false, grap
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM || undefined, headless: true });
   const page = await browser.newPage({ viewport: { width, height } }); page.setDefaultTimeout(6000);
-  // `desktop`: the page runs inside the app, whose store refuses keys it does not know (desktop/state.cjs).
+  // `desktop`: the page runs inside the app, whose store refuses keys it does not know (desktop/state.cts).
   if (desktop) { await guardDesktopStore(page); await page.addInitScript(fakeDesktop); }
   const errors = []; page.on('pageerror', error => errors.push(error.message));
   await page.addInitScript(saved => {

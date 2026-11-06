@@ -7,7 +7,7 @@ import { Switch } from "@/components/ui/switch";
 import { api, unreadable } from "@/lib/api";
 import { RefreshButton, SaveFeedback, SettingRow, SettingsEmpty, SettingsGroup, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
 import { useSaver } from "@/components/settings/use-saver";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 type Hook = { key: string; event: string | null; handler: string | null; command: string | null; server: string | null; tool: string | null; matcher: string | null; timeoutSec: number | null; statusMessage: string | null; source: string | null; sourcePath: string | null; pluginId: string | null; enabled: boolean; managed: boolean; trust: string | null };
 type Hooks = { version: string | null; write: { available: boolean }; hooks: Hook[]; warnings: string[]; errors: { path: string | null; message: string }[] };

@@ -9,7 +9,7 @@ import { Choice, Segmented, SettingRow, SettingsGroup, SettingsHeader, SettingsN
 import { savePreferences, usePreferences, type Accent, type Preferences } from "@/lib/preferences";
 import { BUILT_IN_THEMES, parseCustomThemes, STARTER_THEME, THEME_COLORS, validTheme, type CustomTheme, type ThemeColor } from "@/lib/theme-palettes";
 import { codeFontProblem, type ReadingStep } from "@/lib/reading";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 export type ThemeChoice = "system" | "light" | "dark";
 const OPTIONS: { value: ThemeChoice; label: string; icon: React.ReactNode }[] = [

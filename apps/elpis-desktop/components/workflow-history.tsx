@@ -7,7 +7,7 @@ import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover
 import { api, unreadable } from "@/lib/api";
 import { WorkflowMark } from "@/components/workflow-identity";
 import type { WorkflowCatalog, WorkflowRun as CatalogRun } from "@/lib/workflow-identity";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 type WorkflowRun = { id: string; rootThreadId: string; name?: string; status: string; tasks?: { status: string }[]; removable?: boolean; removalReason?: string };
 export function WorkflowHistory({ revision, onOpenChat, catalog, onOpenCanvas }: { revision?: string; onOpenChat: (id: string) => void; catalog?: WorkflowCatalog; onOpenCanvas?: (run: Pick<CatalogRun, "id" | "rootThreadId">) => void }) {

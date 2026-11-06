@@ -177,7 +177,7 @@ test('the Mother agent rescues a failed step on Claude Opus and knows the run\'s
   const f = fixture(t); await f.client.initialize();
   const g = await f.finished((await f.run([task('a', [], '[crash]')], { goal: 'Translate the leaflet into Farsi' })).graphId);
   assert.equal(g.goal, 'Translate the leaflet into Farsi');
-  // Since 3 Nov (caeea5006) the Mother runs on the Claude subscription, Opus first (bridge/workflow-models.mjs).
+  // Since 3 Nov (caeea5006) the Mother runs on the Claude subscription, Opus first (bridge/workflow-models.mts).
   assert.deepEqual([g.mother.model, g.mother.provider], ['claude/opus', 'claude'], 'she rescues on Claude Opus');
   const rescue = f.log('Mother agent').filter(row => row.method === 'session/prompt').map(row => row.params.prompt[0].text).join('\n');
   assert.match(rescue, /Goal: Translate the leaflet into Farsi\./);

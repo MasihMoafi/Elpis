@@ -12,7 +12,7 @@ import { DevServerPreview } from "@/components/dev-server-preview";
 import { heldDrawing, holdDrawing, type DrawingDraft } from "@/lib/browser-drawing-store";
 import type { MenuAction } from "@/components/action-menu";
 import type { BrowserCommand, BrowserState, BrowserTab, DesktopBrowser } from "@/lib/desktop";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 /** The desktop's built-in browser: tabs and pages live in the Electron main process. */
 export function useBrowser(sessionId: string) {

@@ -7,7 +7,7 @@ import { OptionSelect } from "@/components/ui/option-select";
 import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { api, unreadable, type Model } from "@/lib/api";
 import { SettingRow, SettingsActions, SettingsGroup, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 type Backend = "openrouter" | "codex" | "local";
 /** "auto" saves no explicit engine: the bridge then uses the ChatGPT sign-in while Elpis is signed in to ChatGPT, else Local. */

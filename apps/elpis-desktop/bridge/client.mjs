@@ -1,12 +1,12 @@
-import { readClaudeMcp } from './claude-mcp-import.mjs';
-import { subscriptionModels } from "./subscription-models.mjs";
-import { workflowModelRoutes, workflowDefaults, workflowRoute } from "./workflow-models.mjs";
-import voiceHandoff from './voice-handoff.cjs';
-import { fastServiceTier } from '../lib/service-tier.mjs';
-import { profileEnvironment } from './profile-env.mjs';
-import { legacyInterview, interviewTurns } from './love-interview.mjs';
+import { readClaudeMcp } from './claude-mcp-import.mts';
+import { subscriptionModels } from "./subscription-models.mts";
+import { workflowModelRoutes, workflowDefaults, workflowRoute } from "./workflow-models.mts";
+import voiceHandoff from './voice-handoff.cts';
+import { fastServiceTier } from '../lib/service-tier.mts';
+import { profileEnvironment } from './profile-env.mts';
+import { legacyInterview, interviewTurns } from './love-interview.mts';
 import { EventEmitter } from 'node:events';
-import { agentParentId, isAgentRun, AGENT_RUN_NOTICE } from '../lib/agent-runs.mjs';
+import { agentParentId, isAgentRun, AGENT_RUN_NOTICE } from '../lib/agent-runs.mts';
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -17,24 +17,24 @@ import { saveProviderKey, savedProviderKey, savedProviderKeyIds } from './provid
 import { PERMISSION_PRESETS, PROFILES } from './permission-presets.mjs';
 import { settingsSnapshot, userConfigVersion, tokenUsageSnapshot, contextLedger, cacheUse, restoredTokenUsage, rolloutShares, rolloutTurnModels, contextSwitchesSnapshot, CONTEXT_SWITCH_KEYS, smartPruneSnapshot, providersSnapshot, mcpSnapshot, optionEdits, hooksSnapshot, defaultPermissionMode } from './elpis-features.mjs';
 import { replacementEligibility } from '../lib/turn-replacement.ts';
-import { providerModels } from './provider-models.mjs';
-import { attachmentInput, recordedMedia } from './attachments.mjs';
-import { SkillTrash } from './skill-trash.mjs';
+import { providerModels } from './provider-models.mts';
+import { attachmentInput, recordedMedia } from './attachments.mts';
+import { SkillTrash } from './skill-trash.mts';
 import { createGithubConnector } from './github-connector.mjs';
 import { changedFiles, createChatWorktree, currentBranch, repositoryHealth, discardFile, fileDiff, isChatWorktreePath, releaseChatWorktree, restoreChatWorktree, reviewChoices, undoChatWorktree, workingDiff, NOT_A_REPOSITORY } from './git.mjs';
 import { recordedChanges } from './recorded-changes.mjs';
 import { elicitationResponse, grantedPermissions, permissionsResponse } from '../lib/approvals.ts';
-import { RewindSnapshots } from './rewind-snapshots.mjs';
+import { RewindSnapshots } from './rewind-snapshots.mts';
 import { createWorkflowHistory, createWorkflowRuns } from './workflow-acp.mjs';
 import { createCloudroomVm } from './cloudroom-vm.mjs';
 import { agentOutput } from './agent-output.mjs';
 import { MOTHER_MODEL, WORKFLOW_PRESETS, workflowPreset } from './workflow-presets.mjs';
-import { RewindHistory } from './rewind-history.mjs';
-import { MessageVersions } from './message-versions.mjs';
+import { RewindHistory } from './rewind-history.mts';
+import { MessageVersions } from './message-versions.mts';
 import { SpawnLinks, createdThread } from './spawn-links.mjs';
 import { CustomizePage } from './customize-page.mjs';
-import { sessionContextFiles } from './session-context.mjs';
-import { BridgeError, object, text, threadId } from './validate.mjs';
+import { sessionContextFiles } from './session-context.mts';
+import { BridgeError, object, text, threadId } from './validate.mts';
 const { isVoiceHandoff } = voiceHandoff;
 const string = value => typeof value === 'string' ? value : null;
 /** Every kind of conversation the window lists, agents included. */
@@ -46,7 +46,7 @@ const SEARCH_SCAN_PAGES = 20;
 // Image history can exceed 8 MiB; keep runtime messages and HTTP responses bounded together.
 export const MAX_BRIDGE_MESSAGE_BYTES = 100 * 1024 * 1024;
 
-export { BridgeError, object, text, threadId } from './validate.mjs';
+export { BridgeError, object, text, threadId } from './validate.mts';
 
 /** The Elpis home the runtime uses: its config, sessions and logs. */
 export const elpisHome = (env = process.env) => path.resolve(env.ELPIS_HOME || path.join(os.homedir(), '.elpis-next'));
@@ -765,7 +765,7 @@ export class DesktopClient extends EventEmitter {
       // config/read reflects current defaults; model/list retains the engine's startup
       // catalog. An explicit API connection always lists its own endpoint.
       // A connection the engine signs in to itself (ChatGPT, the Anthropic credits) but that is not the default: the engine lists
-      // its models (subscription-models.mjs). 1 Nov: with ChatGPT made the default, the Anthropic credits lost every model.
+      // its models (subscription-models.mts). 1 Nov: with ChatGPT made the default, the Anthropic credits lost every model.
       // A menu that opens (refresh) asks the engine again instead of reusing its last answer.
       if ((options.provider !== read?.config?.model_provider || options.provider === 'openai') && !options.inputModality && !options.outputModality && !savedProviderKey(configHome(read), options.provider)) {
         // account/read describes the default connection's account, so the engine is simply asked; when it cannot list them
@@ -1558,7 +1558,7 @@ export class DesktopClient extends EventEmitter {
     if(body.replan!==undefined){if(typeof body.replan!=='boolean')throw new BridgeError('Invalid replan switch');params.replan=body.replan;}
     // "Runs on" (1 Nov): this computer, or his CloudRoom VM for every agent's task (the Mother stays here).
     if(body.runsOn!==undefined){if(!['local','cloudroom'].includes(body.runsOn))throw new BridgeError('Choose where the agents run: this computer or the CloudRoom VM');if(body.runsOn==='cloudroom')params.runsOn='cloudroom';}
-    // Her model, when he chose one for her on the board; otherwise the default (workflow-models.mjs MOTHER_ROUTE).
+    // Her model, when he chose one for her on the board; otherwise the default (workflow-models.mts MOTHER_ROUTE).
     if(body.motherModel!==undefined){
       object(body.motherModel,['model','provider']);
       const model=text(body.motherModel.model,'Mother model',200);

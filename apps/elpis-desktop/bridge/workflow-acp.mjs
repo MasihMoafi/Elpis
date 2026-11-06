@@ -4,9 +4,9 @@ import { randomUUID } from 'node:crypto';
 import { BridgeError, text } from './client.mjs';
 import { loveNodeSpec } from './love-agents.mjs';
 import { runAcpNode, handoffText } from './acp-nodes.mjs';
-import { workflowRoute, quotaFailure } from './workflow-models.mjs';
+import { workflowRoute, quotaFailure } from './workflow-models.mts';
 import { checkPlan } from './canvas-plan.mjs';
-import { agentParentId } from '../lib/agent-runs.mjs';
+import { agentParentId } from '../lib/agent-runs.mts';
 import { workflowWorktrees, mergeWorkflowReview, checkWorkflowReview, workflowCandidateChanged, removeWorkflowWorkspace } from './workflow-worktrees.mjs';
 import { workerBudget } from './memory-budget.mjs';
 
@@ -256,7 +256,7 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
       attempt.status = 'succeeded'; attempt.endedAt = Date.now(); return { answer: result.answer };
     } catch (error) { attempt.status = 'failed'; attempt.reason = error.message; attempt.endedAt = Date.now(); throw error; }
   }
-  /** The Mother's model: one he chose for her on the board, else the default (workflow-models.mjs MOTHER_ROUTE), else
+  /** The Mother's model: one he chose for her on the board, else the default (workflow-models.mts MOTHER_ROUTE), else
    * `fallback` (her chat's model, as before the defaults). */
   const motherRoute = (record, fallback) => record.motherModel ?? record.defaults?.mother ?? fallback;
   const motherOf = (record, route) => {
@@ -497,7 +497,7 @@ Prefer continue. Add only for a part the plan misses; cancel only work that is n
             // A dependency the Mother cancelled has no answer; the agent goes on without it.
             const inputs = [...task.dependsOn.filter(id => answers.has(id)).map(id => ({ name: byId.get(id).title, ...answers.get(id) })),
               ...(round > 1 ? (task.feedbackFrom ?? []).filter(id => previous.has(id)).map(id => ({ name: `${byId.get(id).title} · round ${round - 1}`, ...previous.get(id) })) : [])];
-            // A model he set on the agent wins; else the run's default for children (workflow-models.mjs), else the chat's.
+            // A model he set on the agent wins; else the run's default for children (workflow-models.mts), else the chat's.
             const requested = record.recovery?.model ? { model: record.recovery.model, provider: record.recovery.provider ?? root.modelProvider ?? '' }
               : task.model ? { model: task.model, provider: task.provider ?? root.modelProvider ?? '' }
               : record.defaults?.child ? { ...record.defaults.child } : { model: root.model ?? '', provider: root.modelProvider ?? '' };
@@ -641,7 +641,7 @@ Prefer continue. Add only for a part the plan misses; cancel only work that is n
         if (alive(pid)) throw new BridgeError('A workflow is already running in this conversation', 409);
         await fs.unlink(lock); return this.start(params, root);
       }
-      // The run's default models, read once from the real catalogues (workflow-models.mjs workflowDefaults).
+      // The run's default models, read once from the real catalogues (workflow-models.mts workflowDefaults).
       const defaults = modelDefaults ? await Promise.resolve().then(modelDefaults).catch(() => null) : null;
       const record = { ...structuredClone(params), ...(defaults ? { defaults } : {}), projectCwd: root.cwd, id: randomUUID(), ownerPid: process.pid, status: 'running', startedAt: Date.now(), round: 1,
         tasks: params.tasks.map(task => ({ ...structuredClone(task), status: 'pending', assignedThreadId: null, result: null, failureReason: null })) };

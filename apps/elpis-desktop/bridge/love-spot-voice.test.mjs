@@ -7,7 +7,7 @@ import { EventEmitter } from 'node:events';
 import { createLoveSpot } from './love-spot-store.cjs';
 import { createLoveSpotTalk } from './love-spot-talk.mjs';
 import { startDesktopServer } from './server.mjs';
-import { LOVE_SPOT_AUDIO } from '../lib/love-spot-audio.mjs';
+import { LOVE_SPOT_AUDIO } from '../lib/love-spot-audio.mts';
 import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cjs';
 
 const enabledAudio = { available: true };

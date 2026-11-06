@@ -11,7 +11,7 @@ import { api } from "@/lib/api";
 import { initialGraph, TEMPLATES, type CanvasGraph } from "@/lib/canvas";
 import { labProgress, labStages, labSummary, type LabRecord, type LabStop } from "@/lib/experiment-lab";
 import styles from "./experiment-lab.module.css";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 type LabEntry = { id: string; startedAt: string; status: LabRecord["status"]; task: string };
 type LabResponse = { record: LabRecord | null; entries?: LabEntry[] };
 

@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { BridgeError, object, text } from './client.mjs';
 import { askBackground } from './side-turn.mjs';
-import { workflowModelRoutes, MOTHER_ROUTE, MOTHER_FALLBACK } from './workflow-models.mjs';
+import { workflowModelRoutes, MOTHER_ROUTE, MOTHER_FALLBACK } from './workflow-models.mts';
 
 /** "Elpis handle it" on the agents canvas (POST /api/canvas/plan): the Mother agent first decides whether the goal is
  * one agent's job ("direct": one agent whose prompt is the goal) or a team's ("team"), and plans it, in one call.

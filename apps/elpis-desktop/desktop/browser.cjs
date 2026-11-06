@@ -2,10 +2,10 @@
 const {randomUUID}=require('node:crypto');
 const path=require('node:path');
 const {browserUrl,trustedBrowserSender,nativeBounds,loadFailure,pageSecurity,zoomStep}=require('./browser-policy.cts');
-const {cleanPick,commentLabel,commentsPrompt}=require('./browser-annotations.cjs');
-const {contextMenuTemplate}=require('./context-menu.cjs');
+const {cleanPick,commentLabel,commentsPrompt}=require('./browser-annotations.cts');
+const {contextMenuTemplate}=require('./context-menu.cts');
 const {createBrowserAgent}=require('./browser-agent.cjs');
-const {presentAsChrome,presentPageAsChrome}=require('./browser-identity.cjs');
+const {presentAsChrome,presentPageAsChrome}=require('./browser-identity.cts');
 
 const PRELOAD=path.join(__dirname,'browser-page-preload.cjs');
 const COMMANDS=['action','id','url','body','text','value'];
@@ -179,7 +179,7 @@ function createBrowser({host,origin,WebContentsView,session,ipcMain,openExternal
   function pageMenu(tab,params){
     if(!Menu)return;
     const wc=tab.view.webContents,zoom=wc.getZoomFactor()||1,x=Math.round(params.x/zoom),y=Math.round(params.y/zoom),groups=[];
-    // Text, spelling, image and link items are the app's own (desktop/context-menu.cjs); a link opens in a new tab.
+    // Text, spelling, image and link items are the app's own (desktop/context-menu.cts); a link opens in a new tab.
     const shared=contextMenuTemplate(params,{contents:wc,clipboard,origin,openLink:url=>{try{open(url);}catch{}}});
     if(/^https?:/i.test(params.linkURL||'')&&openExternal)shared.push({label:'Open link in external browser',click:()=>void openExternal(params.linkURL)});
     if(shared.length)groups.push(shared);

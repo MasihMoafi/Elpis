@@ -13,7 +13,7 @@ import { ClaudeAccountsSettings } from "@/components/claude-accounts-settings";
 import { useKeyUses } from "@/components/settings/use-for-settings";
 
 import { useProviderUsage, type ConfiguredProvider as Configured, type Subscription } from "@/components/provider-usage";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 // `gateway`: a route the engine serves through its own gateway (such as the Anthropic credits), not a server the user added.
 type ProviderConfig = { id: string; name: string; baseUrl: string | null; wireApi: string; editable: boolean; gateway?: boolean; auth: { source: string; keySet: boolean; envKey: string | null } };
 type ProviderConfigs = { application?: { scope: string; message: string; credentialClearMessage: string }; version: string | null; configPath: string | null; write: { available: boolean; reason?: string | null }; managed: { modelProvider: string | null }; providers: ProviderConfig[] };

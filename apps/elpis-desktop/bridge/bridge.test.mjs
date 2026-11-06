@@ -9,10 +9,10 @@ import path from 'node:path';
 import http from 'node:http';
 import net from 'node:net';
 import { PassThrough, Readable } from 'node:stream';
-import { parseClaudeMcp } from './claude-mcp-import.mjs';
+import { parseClaudeMcp } from './claude-mcp-import.mts';
 import { DesktopClient, existingSocket } from './client.mjs';
 import { startDesktopServer } from './server.mjs';
-import { isAgentRun } from '../lib/agent-runs.mjs';
+import { isAgentRun } from '../lib/agent-runs.mts';
 import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cjs';
 
 // These requests exercise the same bridge routes as the renderer. The API key and audio are fixtures.

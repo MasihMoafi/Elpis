@@ -8,7 +8,7 @@ import { SettingRow, SettingsEmpty, SettingsHeader, SettingsNotice } from "@/com
 import { DeleteChatsDialog, ThreadActions } from "@/components/thread-actions";
 import { api, unreadable, title, type Thread } from "@/lib/api";
 import { LoadOnScroll } from "@/components/load-on-scroll";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 type Props = { onUnarchived: (thread: Thread, restored: string[]) => void; onDelete: (thread: Thread) => Promise<void> };
 

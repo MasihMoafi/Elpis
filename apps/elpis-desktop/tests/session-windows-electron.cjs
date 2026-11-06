@@ -5,7 +5,7 @@ const { app, Menu } = electron;
 process.on('uncaughtException', error => { console.error(error); app.exit(1); });
 process.on('unhandledRejection', error => { console.error(error); app.exit(1); });
 const { createSessionWindows, sessionWindowMenu } = require('../desktop/session-windows.cjs');
-const { createStateStore } = require('../desktop/state.cjs');
+const { createStateStore } = require('../desktop/state.cts');
 const { startQuickEntry } = require('../desktop/quick-entry.cjs');
 app.setPath('userData', process.env.SESSION_WINDOW_PROFILE);
 app.commandLine.appendSwitch('disable-gpu');

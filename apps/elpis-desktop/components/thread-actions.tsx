@@ -13,7 +13,7 @@ import { isAgent, title, type Thread } from "@/lib/api";
 import { useConversationColour } from "@/components/conversation-colour";
 import { WORKFLOW_COLOURS, type WorkflowColour } from "@/lib/workflow-identity";
 import type { ChatGroup } from "@/lib/chat-groups";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 const message = (e: unknown) => errorText(e);
 

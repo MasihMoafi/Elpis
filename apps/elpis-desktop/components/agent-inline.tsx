@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { ChatMessage } from "@/components/chat-message";
 import { Transcript } from "@/components/transcript";
 import { api, unreadable, type Entry, type Thread } from "@/lib/api";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 /** A subagent's conversation shown inside the chat that started it, as the ChatGPT app shows its agents (Masih, 30 Oct:
  * "I can! But in another chat only!"). "Show here" opens it under the agent's row; while the agent works it refreshes.

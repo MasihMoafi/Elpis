@@ -5,7 +5,7 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { startBrowserAgentSocket } = require('./browser-agent.cjs');
 const { closeNeedsConfirmation, closesToTray, quickEntryShortcut, seedShippedDefaults } = require('./preferences.cjs');
-const { createStateStore } = require('./state.cjs');
+const { createStateStore } = require('./state.cts');
 const { openThreadArgument } = require('./open-thread.cjs');
 const { createTray, createCloseToTray } = require('./tray.cts');
 const { startQuickEntry } = require('./quick-entry.cjs');
@@ -71,12 +71,12 @@ async function prepareWindows() {
     const { DesktopClient, existingSocket } = await import(pathToFileURL(path.join(__dirname, '../bridge/client.mjs')).href);
     const { ensureInstalledRuntime } = await import(pathToFileURL(path.join(__dirname, 'runtime.mjs')).href);
     const { browserMcpConfig } = await import(pathToFileURL(path.join(__dirname, '../bridge/browser-mcp.mjs')).href);
-    const { scheduleMcpConfig } = await import(pathToFileURL(path.join(__dirname, '../bridge/schedule-mcp.mjs')).href);
+    const { scheduleMcpConfig } = await import(pathToFileURL(path.join(__dirname, '../bridge/schedule-mcp.mts')).href);
     browserAgentSocket = await startBrowserAgentSocket({ connectionFile: path.join(app.getPath('userData'), 'browser-connection.json') });
     try {
       // The window opens without waiting for the runtime (24 Oct: a runtime still starting kept the app closed for 20 s).
       const client = await DesktopClient.connect({ background: true, beforeConnect: ensureInstalledRuntime, browserConfig: {
-        // Every chat gets the browser tools and, once the app's server is up, the Automations tools (bridge/schedule-mcp.mjs).
+        // Every chat gets the browser tools and, once the app's server is up, the Automations tools (bridge/schedule-mcp.mts).
         forSession: id => ({ ...browserMcpConfig(browserAgentSocket.path, undefined, browserAgentSocket.scope(id), browserAgentSocket.connectionFile),
           ...(server?.automationAccess ? scheduleMcpConfig(server.automationAccess) : {}) }),
         bind: (from, to) => browserAgentSocket.rebind(from, to),

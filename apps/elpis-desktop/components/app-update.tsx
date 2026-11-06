@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { AppUpdateState } from "@/lib/desktop";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 /** Every desktop title bar uses the same installed-update control. */
 export function AppUpdate({ showCurrent = false, inTitleBar = false }: { showCurrent?: boolean; inTitleBar?: boolean }) {

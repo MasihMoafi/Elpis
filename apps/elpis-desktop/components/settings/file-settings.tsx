@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { MarkdownText } from "@/components/markdown-text";
 import { Segmented, SettingRow, SettingsActions, SettingsGroup, SettingsNotice } from "@/components/settings/rows";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 type FileSnapshot = { path: string; content: string; version: string };
 const message = (error: unknown) => errorText(error);

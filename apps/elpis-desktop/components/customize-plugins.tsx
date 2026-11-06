@@ -11,7 +11,7 @@ import { SettingsEmpty, SettingsNotice } from "@/components/settings/rows";
 import { CustomizeRow } from "@/components/customize-row";
 import { api, unreadable } from "@/lib/api";
 import { LoadOnScroll } from "@/components/load-on-scroll";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 export type Plugin = { id: string; name: string; description: string; marketplace: string; enabled: boolean };
 export type ConfigWrite = { version?: string | null; write?: { available: boolean } };

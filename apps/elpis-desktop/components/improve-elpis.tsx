@@ -11,7 +11,7 @@ import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogFoo
 import { DiffLines } from "@/components/diff-view";
 import { parseDiff } from "@/lib/diff";
 import "./improve-elpis.css";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 import { changeBlockedReason } from "@/lib/improve-reason";
 
 type Target = { id: string; label: string; image: string; component: string; file: string };

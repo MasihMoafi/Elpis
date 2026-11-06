@@ -10,7 +10,7 @@ import { parseDiff } from "@/lib/diff";
 import { FileRefLink } from "@/components/file-ref";
 import { Counts, DIFF_LINE_LIMIT, DiffLines } from "@/components/diff-view";
 import "@/components/changes-panel.css";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 type Status = "modified" | "added" | "deleted" | "untracked" | "conflicted";
 type Change = { path: string; status: Status; added: number; removed: number; binary: boolean };

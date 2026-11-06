@@ -9,7 +9,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createWorkflowRuns, REPLAN_LIMIT } from './workflow-acp.mjs';
-import { workflowDefaults, MOTHER_ROUTE, MOTHER_FALLBACK } from './workflow-models.mjs';
+import { workflowDefaults, MOTHER_ROUTE, MOTHER_FALLBACK } from './workflow-models.mts';
 
 const TEST_ROOT = path.join(os.homedir(), '.cache/elpis-tests'); fs.mkdirSync(TEST_ROOT, { recursive: true });
 const FAKE = fileURLToPath(new URL('../../../tools/elpis-claude/test/fake-acp-agent.mjs', import.meta.url));

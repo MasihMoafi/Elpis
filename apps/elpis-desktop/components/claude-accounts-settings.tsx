@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { OptionSelect } from "@/components/ui/option-select";
 import { api } from "@/lib/api";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 type Account = { id: string; label: string; email: string | null; plan: string | null; authenticated: boolean; duplicate: boolean; signingIn: boolean; error: string | null };
 type Accounts = { activeId: string; accounts: Account[]; authUrl?: string };

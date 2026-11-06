@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ChatMessage } from "@/components/chat-message";
 import { api, type Entry } from "@/lib/api";
 import { mergeLiveItem, runtimeErrorNotice } from "@/lib/live-events";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 export type SideRequest = { id: number; text: string; kind?: "recap" };
 

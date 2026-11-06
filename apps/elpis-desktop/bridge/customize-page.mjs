@@ -1,7 +1,7 @@
-import { BridgeError, object, projectFolder, text } from './validate.mjs';
+import { BridgeError, object, projectFolder, text } from './validate.mts';
 import { appCatalogs, linkBundledCatalog } from './app-catalogs.mts';
 import { pluginCatalogSnapshot, pluginsSnapshot, skillsSnapshot } from './customize.mjs';
-import { skillRoots } from './skill-trash.mjs';
+import { skillRoots } from './skill-trash.mts';
 import { userConfigVersion } from './elpis-features.mjs';
 
 /** The Customize page's side of the bridge: the skills, plugins and connectors Elpis has, and the switches on them. The client

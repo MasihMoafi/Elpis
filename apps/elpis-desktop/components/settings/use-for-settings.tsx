@@ -6,7 +6,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { OptionSelect } from "@/components/ui/option-select";
 import { SettingsNotice } from "@/components/settings/rows";
 import { api } from "@/lib/api";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 import { editable, saveSettings, useElpisSettings } from "@/lib/settings-store";
 import { speechModelUnavailable } from "@/lib/speech-model.mts";
 

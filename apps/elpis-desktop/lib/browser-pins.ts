@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { appStorage } from "@/lib/projects";
-import { errorText } from "./error-text.mjs";
+import { errorText } from "./error-text.mts";
 
 export type BrowserPin = { url: string; title: string };
 const KEY = "elpis-browser-pins-v1", CHANGE = "elpis:browser-pins";

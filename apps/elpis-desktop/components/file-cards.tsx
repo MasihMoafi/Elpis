@@ -11,7 +11,7 @@ import { isAudioPath } from "@/lib/audio-path.mts";
 import { resolveRef } from "@/lib/file-refs";
 import { Button } from "@/components/ui/button";
 import { ReplyableImage } from "@/components/image-reply";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 /** What the agent looked at and made, as Claude's desktop app shows it (its "wiggle" file card and screenshot
  * thumbnail): a card per created file, its kind and extension under its name, with Open and Show in folder; an image

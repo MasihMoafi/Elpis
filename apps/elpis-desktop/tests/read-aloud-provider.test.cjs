@@ -17,7 +17,7 @@ function fixture() {
   const module = { exports: {} };
   const imports = id => id === 'react' ? hooks : id === '@/lib/api' ? { sessionReady: async () => {}, api: async () => ({ available }) }
     : id === '@/lib/love-spot-audio' ? { READ_ALOUD_AUDIO: { available: false } }
-    : id === '@/lib/error-text.mjs' ? { errorText: (error, fallback) => error?.message || fallback } : require(id);
+    : id === '@/lib/error-text.mts' ? { errorText: (error, fallback) => error?.message || fallback } : require(id);
   new Function('require', 'module', 'exports', code)(imports, module, module.exports);
   const previousWindow = global.window;
   global.window = { addEventListener: (name, callback) => listeners.set(name, callback), removeEventListener: name => listeners.delete(name) };

@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import { createRequire } from 'node:module';
 const bridgeOnly = process.argv.includes('--bridge-only');
 if (!bridgeOnly) {
-  const { instrument } = createRequire(import.meta.url)('./source-map.cjs');
+  const { instrument } = createRequire(import.meta.url)('./source-map.cts');
   const sourceMap = {};
   for (const dir of ['app', 'components']) {
     const root = new URL(`../${dir}/`, import.meta.url);

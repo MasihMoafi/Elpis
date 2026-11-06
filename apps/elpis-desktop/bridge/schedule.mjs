@@ -5,7 +5,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { BridgeError, object, projectFolder, text, threadId as chatId } from './validate.mjs';
+import { BridgeError, object, projectFolder, text, threadId as chatId } from './validate.mts';
 import { describeRule, legacyRule, nextRun, parseRule } from './schedule-rules.mjs';
 
 const TARGETS = ['reuse', 'new'], RUN_LIMIT = 50, LONGEST_WAIT = 2 ** 31 - 1;

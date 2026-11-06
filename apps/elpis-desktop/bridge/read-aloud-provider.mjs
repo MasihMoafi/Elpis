@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
-import { BridgeError, object, text } from './validate.mjs';
+import { BridgeError, object, text } from './validate.mts';
 import { speechModelUnavailable, speechPcmRate } from '../lib/speech-model.mts';
 
 const DEFAULT = Object.freeze({ source: 'local', model: null, voice: null });

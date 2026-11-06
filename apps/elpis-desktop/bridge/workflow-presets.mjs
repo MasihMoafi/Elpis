@@ -1,4 +1,4 @@
-import { BridgeError, text } from './validate.mjs';
+import { BridgeError, text } from './validate.mts';
 
 export const MOTHER_MODEL = 'claude/opus';
 const SOL = 'gpt-6.1-sol', GEMINI = 'agy/gemini-4-argon-high';

@@ -6,7 +6,7 @@
 // with a request id "doesn't even need to be shown to the user"); nothing here changes a chosen model.
 import { useEffect, useState } from "react";
 import type { Model } from "./api";
-import { errorText } from "./error-text.mjs";
+import { errorText } from "./error-text.mts";
 
 type ListReader = (path: string) => Promise<{ data?: unknown }>;
 // Loaded lazily, so this store has no runtime imports and its test can read it directly.

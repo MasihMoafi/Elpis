@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
-import { BridgeError, object, text } from './validate.mjs';
+import { BridgeError, object, text } from './validate.mts';
 import { FACE_DATA_URL } from './matilda-face.cjs';
 import { isAudioPath } from '../lib/audio-path.mts';
 

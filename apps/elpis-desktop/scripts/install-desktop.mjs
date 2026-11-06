@@ -80,9 +80,9 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) try {
   if (!actions) assertRendererCommit(root, commit);
   const renderer = actions ? ['--out-directory', await actionsRenderer(commit)] : [];
   // The package list is checked against what the entry points import before anything is installed (22 Oct: an unlisted module kept Elpis from opening).
-  if (fs.existsSync(path.join(root, 'desktop/package.test.mjs'))) execFileSync(process.execPath, ['--test', 'desktop/package.test.mjs'], { cwd: root, stdio: ['ignore', 'ignore', 'inherit'] });
+  if (fs.existsSync(path.join(root, 'desktop/package.test.mts'))) execFileSync(process.execPath, ['--test', 'desktop/package.test.mts'], { cwd: root, stdio: ['ignore', 'ignore', 'inherit'] });
   assertSourceCommit(root, commit);
-  execFileSync(process.execPath, ['desktop/package.mjs', '--source', '.', '--destination', destination, '--link-runtime',
+  execFileSync(process.execPath, ['desktop/package.mts', '--source', '.', '--destination', destination, '--link-runtime',
     '--electron-dist', electron, '--ws-directory', 'node_modules/ws', ...renderer], { cwd: root, stdio: ['ignore', 'ignore', 'inherit'] });
   if (actions) await verifyRendererReceipt({ root, out: path.join(destination, 'app/out'), commit });
   await verifyPackagedSources({ root, destination, commit });

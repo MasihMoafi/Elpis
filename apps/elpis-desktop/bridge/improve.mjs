@@ -6,7 +6,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { BridgeError, object } from './client.mjs';
-import { attachmentInput } from './attachments.mjs';
+import { attachmentInput } from './attachments.mts';
 import { verifyImprovement } from './improve-check.mts';
 import { durableSourceCheckout } from './improve-source.mts';
 const exec = promisify(execFile);

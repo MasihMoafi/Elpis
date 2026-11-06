@@ -44,7 +44,7 @@ function harness({ providers = [ROUTER, OTHER], speech = { source: 'local', mode
     '@/components/ui/button': { Button: passthrough('button') },
     '@/components/settings/rows': { SettingsNotice: passthrough('p') },
     '@/lib/api': { api },
-    '@/lib/error-text.mjs': { errorText: error => String(error?.message ?? error) },
+    '@/lib/error-text.mts': { errorText: error => String(error?.message ?? error) },
     '@/lib/speech-model.mts': require('../lib/speech-model.mts'),
     '@/lib/settings-store': { useElpisSettings: () => ({ data: settings }), editable: () => true, saveSettings: async (route, body) => { posts.push({ route, body }); Object.assign(settings.main, body.main); return settings; } },
   };

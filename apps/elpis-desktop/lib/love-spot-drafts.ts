@@ -2,7 +2,7 @@ import { newElementWith } from "@excalidraw/excalidraw";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import type {} from "./desktop";
-import { errorText } from "./error-text.mjs";
+import { errorText } from "./error-text.mts";
 
 export type DraftPage = { name: string; session: string };
 type TextElement = Extract<ExcalidrawElement, { type: "text" }>;

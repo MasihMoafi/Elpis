@@ -11,7 +11,7 @@ import { useSaver } from "@/components/settings/use-saver";
 import { ConfigChoice, SettingsLoader } from "@/components/settings/config-choice";
 import { SystemSettings } from "@/components/settings/system-settings";
 import { ProfileFields } from "@/components/profile-fields";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 const message = (error: unknown) => errorText(error);
 
