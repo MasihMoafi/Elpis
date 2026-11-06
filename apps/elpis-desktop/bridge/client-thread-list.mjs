@@ -33,7 +33,7 @@ const notImportMarker = entry => {
 
 /** @typedef {{ cursor?: unknown, limit?: unknown, ancestorThreadId?: unknown, archived?: unknown, searchTerm?: unknown, includeAgentRuns?: unknown }} ThreadListOptions */
 /** @typedef {{ id: string, parentThreadId?: string, source?: { subAgent?: { other?: unknown } }, status?: { type?: string } | undefined }} ListedThread */
-/** @typedef {{ id: string, cwd?: string, path?: string, name?: string | null, preview?: string | null, model?: string | null, modelProvider?: string, reasoningEffort?: string | null, turns?: unknown[], parentThreadId?: string | null, source?: { subAgent?: { other?: unknown, thread_spawn?: { agent_path?: unknown } } }, status?: { type?: string }, canAcceptDirectInput?: boolean | null, workflowTaskTitle?: string }} DecoratedInput */
+/** @typedef {{ id: string, cwd?: string, path?: string, name?: string | null, preview?: string | null, model?: string | null, modelProvider?: string, reasoningEffort?: string | null, turns?: Parameters<typeof interviewTurns>[0], parentThreadId?: string | null, source?: { subAgent?: { other?: unknown, thread_spawn?: { agent_path?: unknown } } }, status?: { type?: string }, canAcceptDirectInput?: boolean | null, workflowTaskTitle?: string }} DecoratedInput */
 
 /** A thread's status, corrected by its newest turn: "active" whose newest turn has ended is idle. No turn yet (a
  * bridged chat's first turn is listed only once it ends) or an unreadable list keeps the status as listed. */
@@ -247,7 +247,7 @@ export async function impl_readThread(clientState, id, input = {}) {
       if (!Number.isSafeInteger(start) || start < 0) throw new BridgeError('Invalid cursor');
       const saved = await internal_rpc.call(this, clientState, 'thread/read', { threadId: id, includeTurns: true });
       const turns = interviewTurns(saved.thread?.turns ?? []);
-      const entries = turns.flatMap(/** @param {{ id: string, items: unknown[] }} turn */ turn => turn.items.map(item => ({ turnId: turn.id, item }))).reverse();
+      const entries = turns.flatMap(turn => turn.items.map(item => ({ turnId: turn.id, item }))).reverse();
       const end = start + (options.limit ?? 30);
       return { thread, data: await internal_withTurnModels.call(this, clientState, thread.path, entries.slice(start, end)), nextCursor: end < entries.length ? `${WHOLE_TURNS}${end}` : null };
     }

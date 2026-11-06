@@ -57,7 +57,7 @@ export async function impl_revert(clientState, id, raw) {
       let started, sendError;
       try { started = await internal_startTurn.call(this, clientState, thread, { threadId: id, input, ...(model ? { model } : {}), ...(effort ? { effort } : {}) }); }
       catch (error) { sendError = `Conversation was rewound, but its replacement message was not confirmed: ${error instanceof Error ? error.message : String(error)}`; }
-      await clientState.versions.record(id, beforeTurnId, copy, started?.turn?.id, moved);
+      await clientState.versions.record(/** @type {string} */ (id), beforeTurnId, copy, started?.turn?.id, moved);
       return sendError ? { rewound: true, beforeTurnId, sendError } : started;
     });
   }
@@ -106,7 +106,7 @@ export async function impl_versions(clientState, id, raw) {
       const result = await internal_rpc.call(this, clientState, 'thread/unarchive', { threadId: target });
       try { await internal_rpc.call(this, clientState, 'thread/archive', { threadId: id }); internal_forgetSubscription.call(this, clientState, id); }
       catch (error) { await internal_rpc.call(this, clientState, 'thread/archive', { threadId: target }).catch(() => {}); throw error; }
-      await clientState.versions.list(id, false); await clientState.versions.list(target, true);
+      await clientState.versions.list(/** @type {string} */ (id), false); await clientState.versions.list(target, true);
       await internal_attach.call(this, clientState, target);
       return { thread: internal_decorate.call(this, clientState, result.thread) };
     });
@@ -122,18 +122,18 @@ export async function impl_rewind(clientState, id, raw) {
       if (thread.desktopAccess.mode === 'continue') throw new BridgeError('Only this agent’s parent can rewind its conversation.', 409);
       if (thread.status?.type === 'active') throw new BridgeError('Rewind is unavailable while Elpis is working.', 409);
       try {
-        if (body.action === 'status') return await clientState.rewindHistory.status(id);
+        if (body.action === 'status') return await clientState.rewindHistory.status(/** @type {string} */ (id));
         if (body.action === 'undo' || body.action === 'redo') {
-          const result = await clientState.rewindHistory.toggle(id, body.action); await internal_attach.call(this, clientState, result.thread.id);
+          const result = await clientState.rewindHistory.toggle(/** @type {string} */ (id), body.action); await internal_attach.call(this, clientState, result.thread.id);
           return { ...result, thread: internal_decorate.call(this, clientState, result.thread) };
         }
         const turn = text(body.beforeTurnId, 'turn ID', 200);
-        if (body.action === 'preview') return await clientState.rewindSnapshots.preview(id, turn, thread.cwd);
+        if (body.action === 'preview') return await clientState.rewindSnapshots.preview(/** @type {string} */ (id), turn, thread.cwd);
         if (!['both', 'conversation', 'code'].includes(/** @type {string} */ (body.mode))) throw new BridgeError('Choose what to restore.');
-        /** @param {unknown} [forkId] */
+        /** @param {string} [forkId] */
         const files = async forkId => {
-          if (body.mode !== 'conversation') await clientState.rewindSnapshots.restore(id, turn, thread.cwd, text(body.version, 'file preview version', 64));
-          if (forkId) await clientState.rewindSnapshots.inherit(id, forkId);
+          if (body.mode !== 'conversation') await clientState.rewindSnapshots.restore(/** @type {string} */ (id), turn, thread.cwd, text(body.version, 'file preview version', 64));
+          if (forkId) await clientState.rewindSnapshots.inherit(/** @type {string} */ (id), forkId);
         };
         if (body.mode === 'code') { await files(); return { rewound: true, mode: body.mode }; }
         const result = await clientState.rewindHistory.restore(thread, turn, files); clientState.owned.add(result.thread.id);

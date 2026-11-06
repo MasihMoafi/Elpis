@@ -33,7 +33,9 @@ test('a rewind obeys the replacement rules: not while a turn runs and never for 
 
 test('restore scopes fail closed for missing file checkpoints, invalid modes and parent-owned agents', async t => {
   const direct = fixture(); t.after(() => direct.client.close()); await direct.client.initialize();
-  assert.equal((await direct.client.rewind(ID, { action: 'preview', beforeTurnId: 'turn-3' })).available, false);
+  const preview = await direct.client.rewind(ID, { action: 'preview', beforeTurnId: 'turn-3' });
+  assert.ok(preview && 'available' in preview);
+  assert.equal(preview.available, false);
   await assert.rejects(direct.client.rewind(ID, { action: 'restore', beforeTurnId: 'turn-3', mode: 'code' }), /checkpoint|preview/);
   await assert.rejects(direct.client.rewind(ID, { action: 'restore', beforeTurnId: 'turn-3', mode: 'invalid' }), /what to restore/);
   await assert.rejects(direct.client.rewind(ID, { action: 'unknown' }), /rewind action/);

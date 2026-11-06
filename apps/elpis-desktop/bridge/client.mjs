@@ -46,14 +46,14 @@ export { BridgeError, object, text, threadId } from './validate.mts';
  *   browserConfig?: import('./client-state.mjs').ClientStateOptions['browserConfig'],
  *   archiveDirectory?: string, rewindHome?: string, spawnLinksFile?: string, appHome?: string,
  *   githubConnector?: unknown, skillTrashOptions?: ConstructorParameters<typeof SkillTrash>[0],
- *   workflowOptions?: Record<string, unknown> & { env?: object }, cloudroom?: unknown,
+ *   workflowOptions?: Record<string, unknown> & { env?: NodeJS.ProcessEnv }, cloudroom?: unknown,
  *   reportAttempts?: number, reportRetryMs?: number,
  *   socketPath?: string, beforeConnect?: () => void | Promise<void>, background?: boolean
  * }} DesktopClientOptions
  */
 
 export class DesktopClient extends EventEmitter {
-  #state;
+  /** @type {import('./client-state.mjs').ClientState} */ #state;
   /** @param {import('./client-state.mjs').ClientSocket | EventEmitter} socket @param {DesktopClientOptions} [options] */
   constructor(socket, { home, timeoutMs = 30000, openSocket, reconnectDelayMs = 500, settingsConfirmMs = 3000, browserConfig, archiveDirectory, rewindHome, spawnLinksFile, appHome = os.homedir(), githubConnector, skillTrashOptions, workflowOptions, cloudroom, reportAttempts = 4, reportRetryMs = 2000 } = {}) {
     super(); this.timeoutMs = timeoutMs;

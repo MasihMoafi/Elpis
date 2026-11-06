@@ -105,7 +105,7 @@ async function internal_savedShares(clientState, file) {
     return value;
   }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {unknown} file @param {Array<{ turnId: string }>} entries */
+/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {unknown} file @param {Array<{ turnId: string | undefined }>} entries */
 export async function internal_withTurnModels(clientState, file, entries) {
     if (!Array.isArray(entries) || !entries.length) return entries;
     const stat = typeof file === 'string' ? await fs.promises.stat(file).catch(() => null) : null;

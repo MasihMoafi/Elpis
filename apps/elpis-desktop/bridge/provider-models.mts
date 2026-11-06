@@ -3,7 +3,7 @@ type Model = { id: string; model: string; displayName: string; description?: str
 type ResponseLike = { ok: boolean; status: number; redirected: boolean; headers?: Headers; body?: ReadableStream<Uint8Array> | null };
 type FetchOptions = { method: 'GET'; headers: Headers; redirect: 'error'; signal: AbortSignal };
 type Fetch = (url: string, options: FetchOptions) => Promise<ResponseLike>;
-type Options = { env?: NodeJS.ProcessEnv; fetchImpl?: Fetch; signal?: AbortSignal; savedKey?: string | null; inputModality?: string; outputModality?: string };
+type Options = { env?: NodeJS.ProcessEnv; fetchImpl?: Fetch; signal?: AbortSignal; savedKey?: string | null; inputModality?: string | undefined; outputModality?: string | undefined };
 
 const MAX_BYTES = 2 * 1024 * 1024;
 const MAX_ROWS = 2000;

@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 
-type Thread = { id: string; name?: string; preview?: string; model?: string; modelProvider?: string };
+type Thread = { id: string; name?: string | null; preview?: string | null; model?: string | null; modelProvider?: string };
 type State = { original: string; prefix: string; current: string; action: string; tips: Record<string, string | null>; invalid?: boolean; hidden?: boolean };
 type Rpc = (method: string, body: Record<string, unknown>) => Promise<{ data?: { id?: string; status?: string }[]; thread?: Thread }>;
 

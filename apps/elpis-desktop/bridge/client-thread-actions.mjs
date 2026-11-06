@@ -276,7 +276,7 @@ export async function impl_archiveThread(clientState, id, body) {
       await clientState.archiveHistory.record(/** @type {string} */ (id), 'Archived by you.', agents);
       try { await internal_rpc.call(this, clientState, 'thread/archive', { threadId: id }); }
       catch (error) { await clientState.archiveHistory.forget(/** @type {string} */ (id)); throw error; }
-      await clientState.rewindHistory.hide(id, true);
+      await clientState.rewindHistory.hide(/** @type {string} */ (id), true);
       internal_forget.call(this, clientState, /** @type {string} */ (id));
       const worktree = await internal_releaseWorktree.call(this, clientState, cwd);
       return { archived: true, ...(worktree ? { worktree } : {}) };
@@ -296,7 +296,7 @@ export async function impl_unarchiveThread(clientState, id, body) {
       const result = await internal_rpc.call(this, clientState, 'thread/unarchive', { threadId: id });
       if (result.thread?.id !== id) throw new BridgeError('Elpis restored another thread', 502);
       await clientState.archiveHistory.forget(/** @type {string} */ (id));
-      await clientState.rewindHistory.hide(id, false);
+      await clientState.rewindHistory.hide(/** @type {string} */ (id), false);
       const worktree = isChatWorktreePath(result.thread.cwd) ? await restoreChatWorktree(result.thread.cwd) : null;
       return { thread: internal_decorate.call(this, clientState, result.thread), ...(worktree ? { worktree } : {}), agents: Array.isArray(saved?.agents) ? saved.agents : [] };
     });
