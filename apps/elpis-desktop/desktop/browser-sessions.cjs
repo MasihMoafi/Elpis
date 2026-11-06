@@ -1,6 +1,6 @@
 'use strict';
 const { randomUUID } = require('node:crypto');
-const { createBrowser } = require('./browser.cjs');
+const { createBrowser } = require('./browser.cts');
 const { browserUrl, trustedBrowserSender } = require('./browser-policy.cts');
 
 const KEY = 'elpis-browser-sessions-v1';

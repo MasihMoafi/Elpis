@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
-const { createBrowser } = require('./browser.cjs');
+const { createBrowser } = require('./browser.cts');
 // createBrowser runs inside Electron, which names its Chromium version.
 process.versions.chrome ??= '152.0.7977.130';
 
