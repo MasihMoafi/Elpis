@@ -13,7 +13,7 @@ type Backend = "openrouter" | "codex" | "local";
 /** "auto" saves no explicit engine: the bridge then uses the ChatGPT sign-in while Elpis is signed in to ChatGPT, else Local. */
 type Fallback = Backend | "auto";
 type Route = { available: boolean; backend?: string; label?: string; reason?: string };
-type VoiceServer = { name: string; enabled?: boolean; whispertype?: { backend: Backend | null; model: string | null } };
+type VoiceServer = { name: string; enabled?: boolean; whispertype?: { backend: Backend | null; model: string | null; everyChat?: boolean; explicit?: boolean } };
 type VoiceConfig = { version: string | null; write: { available: boolean }; servers: VoiceServer[] };
 function readVoice(data: VoiceConfig): VoiceConfig {
   if (!Array.isArray(data.servers)) throw unreadable("voice settings");
@@ -53,7 +53,7 @@ function WhisperTypeSettings({ server, save, active, refreshKey, disabled = fals
     catch (e) { setError(message(e)); } finally { setBusy(false); }
   }
   return <form onSubmit={submit} aria-label="Transcription settings">
-    <SettingRow title="OpenRouter transcription model" description="For chats that run on OpenRouter. Choose a model that accepts audio input; it is required there.">
+    <SettingRow title="OpenRouter transcription model" description={server.whispertype?.explicit && backend === "openrouter" ? "Used for dictation in every chat." : "For chats that run on OpenRouter. Choose a model that accepts audio input; it is required there."}>
       <div className="settings-field-stack text-sm">
         <OptionSelect aria-label="OpenRouter transcription model" aria-describedby="openrouter-transcription-status" className="settings-choice" value={model} disabled={disabled || busy || (!models.length && !model)} onChange={e => { setSaved(false); setModelDraft(e.target.value === savedModel ? null : e.target.value); }}>
           <option value="">Not set</option>
@@ -66,7 +66,7 @@ function WhisperTypeSettings({ server, save, active, refreshKey, disabled = fals
         </details>
       </div>
     </SettingRow>
-    <SettingRow title="Fallback transcription" description={`For chats on Anthropic, Claude and Antigravity, which offer Elpis no transcription. ${FALLBACK_NOTE[backend]}`}>
+    <SettingRow title="Fallback transcription" description={`${server.whispertype?.explicit ? "This selection applies to every chat. " : "For chats on Anthropic, Claude and Antigravity, which offer Elpis no transcription. "}${FALLBACK_NOTE[backend]}`}>
       <OptionSelect aria-label="Fallback transcription engine" className="settings-choice" value={backend} disabled={disabled || busy} onChange={e => { setSaved(false); setBackendDraft(e.target.value === savedBackend ? null : e.target.value as Fallback); }}><option value="auto">Automatic</option><option value="local">Local WhisperType</option><option value="codex">ChatGPT sign-in</option><option value="openrouter">OpenRouter</option></OptionSelect>
     </SettingRow>
     <SettingsActions feedback={error ? <SettingsNotice tone="alert">{error}</SettingsNotice> : saved ? <SettingsNotice>Transcription settings saved.</SettingsNotice> : null}>
