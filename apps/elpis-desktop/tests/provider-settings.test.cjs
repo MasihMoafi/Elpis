@@ -76,6 +76,28 @@ test('provider setup preserves edits on conflict, refreshes choices and never re
 const { fixture } = require('./parity-fixture.cjs');
 const { accountsFirst, openAccounts } = require('./providers-order.cjs');
 
+for (const response of ['rejected', 'empty']) test(`provider cards stay visible when Use for routes are ${response}`, async () => {
+ const off = { state: 'notConnected', models: [], usage: [] };
+ const app = await fixture({ routes: {
+  '/api/settings': () => ({ main: { model: 'sol', provider: 'openai' }, background: {}, smartPrune: { explicitOverride: {} }, memory: {}, write: { available: false }, providers: [] }),
+  '/api/providers': () => ({ openai: { auth: { state: 'signedOut' }, usage: [], usageError: null }, claude: off, gemini: off, openrouter: [] }),
+  '/api/providers/settings': () => ({ version: 'v1', write: { available: true }, managed: {}, providers: [] }),
+  '/api/read-aloud/settings': () => response === 'rejected' ? { __http: 503, error: 'Unavailable' } : {},
+  '/api/mcp': () => response === 'rejected' ? { __http: 503, error: 'Unavailable' } : {},
+  '/api/models': (_, url) => url.searchParams.has('provider')
+   ? response === 'rejected' ? { __http: 503, error: 'Unavailable' } : {}
+   : { data: [{ id: 'sol', model: 'sol', displayName: 'Sol' }] },
+ } });
+ try {
+  await openAccounts(app.page);
+  const panel = app.page.getByRole('tabpanel', { name: 'Models & accounts', exact: true });
+  for (const name of ['Chat model choices unavailable.', 'Read aloud settings unavailable.', 'Dictation settings unavailable.']) await panel.getByText(name, { exact: true }).waitFor();
+  for (const name of ['openai', 'claude', 'cloudroom', 'gemini']) await panel.locator(`[data-provider="${name}"]`).waitFor();
+  await panel.getByText('Advanced API connections', { exact: true }).waitFor();
+  assert.deepEqual(app.errors, []);
+ } finally { await app.close(); }
+});
+
 for (const connected of [0, 3]) for (const colorScheme of ['light']) test(`accounts precede advanced APIs with ${connected} connected subscriptions in ${colorScheme}, including an open form and reload`, async () => {
  let config = { version: 'v1', write: { available: true }, managed: { modelProvider: null }, providers: [] };
  const subscription = state => ({ state, models: state === 'connected' ? ['Subscription model'] : [], usage: [] });
