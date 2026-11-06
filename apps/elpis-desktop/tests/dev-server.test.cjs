@@ -16,7 +16,7 @@ for (const scheme of ['light']) test(`real Electron opens the started project in
   await fs.writeFile(path.join(root, 'package.json'), JSON.stringify({ scripts: { dev: 'node server.cjs' } }));
   const html = `<!doctype html><title>Project preview proof</title><style>body{font:16px system-ui;padding:24px;color:#222;background:#fafafa}button{font:inherit;padding:8px 12px}</style><h1>Project preview proof</h1><button onclick="this.textContent='Clicked in preview'">Test this page</button>`;
   await fs.writeFile(path.join(root, 'server.cjs'), `require('node:http').createServer((q,s)=>{s.setHeader('Content-Type','text/html');s.end(${JSON.stringify(html)})}).listen(process.env.PORT,'127.0.0.1',()=>console.log('native preview ready'))`);
-  const manager = (await import('../bridge/dev-servers.mjs')).createDevServers();
+  const manager = (await import('../bridge/dev-servers.mts')).createDevServers();
   const f = await fixture({ desktop: false, routes: {
     ...projectRoutes(root),
     '/api/dev-servers': () => manager.status(root), '/api/dev-servers/detect': () => manager.detect(root),

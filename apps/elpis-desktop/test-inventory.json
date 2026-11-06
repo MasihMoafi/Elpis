@@ -101,7 +101,7 @@
     "bridge/context-files.test.mjs",
     "bridge/goal.test.mjs",
     "bridge/customize.test.mts",
-    "bridge/dev-servers.test.mjs",
+    "bridge/dev-servers.test.mts",
     "bridge/experiment-lab.test.mts",
     "bridge/file-view.test.mjs",
     "bridge/files.test.mts",

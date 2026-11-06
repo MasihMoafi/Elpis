@@ -18,7 +18,7 @@ import { createLoveSpot } from './love-spot-store.cjs';
 import { createLoveSpotTalk } from './love-spot-talk.mjs';
 import { createMatildaCompanion } from './matilda-companion.mjs';
 import { createLoveAgents } from './love-agents.mjs';
-import { createDevServers } from './dev-servers.mjs';
+import { createDevServers } from './dev-servers.mts';
 import { createImprovements } from './improve.mts';
 import { createSettingsFiles } from './settings-files.mts';
 import { createThreadTitles } from './thread-titles.mjs';

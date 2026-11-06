@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import { BridgeError, object } from './client.mts';
 import { ATTACHMENT_BODY_LIMIT, PDF_BODY_LIMIT, extractPdf } from './attachments.mts';
-import { devServerRequest } from './dev-servers.mjs';
+import { devServerRequest } from './dev-servers.mts';
 import { listDirectory, listFiles, readFile, readFileAsset, searchFiles, writeFile } from './files.mts';
 import { listFolders, projectDirectory } from './folders.mts';
 import { isRepository } from './git.mjs';

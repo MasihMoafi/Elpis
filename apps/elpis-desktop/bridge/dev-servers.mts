@@ -9,25 +9,28 @@ import { BridgeError, object } from './client.mts';
 import { projectDirectory } from './folders.mts';
 import { childEnv } from './tools.mts';
 
-const quote = value => /^[\w./:@=-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`;
-async function readJson(file) {
+type Candidate = { name: string; command: string } & ({ source: 'launch'; port: number } | { source: 'package'; runner: string; port?: undefined });
+type Row = { name: string; command: string; status: string; url: string; pid: number | undefined | null; groupPid?: number | undefined | null; logs: string; error: string | null; stopping?: Promise<void> };
+type JsonFile = { configurations?: { name: string; runtimeExecutable: string; runtimeArgs: string[]; port: number }[]; scripts?: Record<string, string>; version?: string };
+const quote = (value: string) => /^[\w./:@=-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`;
+async function readJson(file: string): Promise<JsonFile | null> {
   try {
     if ((await fs.stat(file)).size > 256 * 1024) throw Error('too large');
     return JSON.parse(await fs.readFile(file, 'utf8'));
   } catch (error) {
-    if (error.code === 'ENOENT') return null;
-    throw new BridgeError(`Could not read ${path.basename(file)}: ${error instanceof SyntaxError ? 'invalid JSON' : error.message}`);
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw new BridgeError(`Could not read ${path.basename(file)}: ${error instanceof SyntaxError ? 'invalid JSON' : (error as Error).message}`);
   }
 }
-async function candidatesIn(cwd) {
+async function candidatesIn(cwd: string) {
   const launch = await readJson(path.join(cwd, '.elpis/launch.json'));
   if (launch && (!Array.isArray(launch.configurations) || launch.configurations.length > 30)) throw new BridgeError('launch.json must contain a configurations list (at most 30 servers)');
-  const candidates = (launch?.configurations ?? []).map(value => {
+  const candidates: Candidate[] = (launch?.configurations ?? []).map(value => {
     if (!value || typeof value.name !== 'string' || !value.name.trim() || value.name.length > 100
       || typeof value.runtimeExecutable !== 'string' || !value.runtimeExecutable || value.runtimeExecutable.includes('\0')
       || !Array.isArray(value.runtimeArgs) || value.runtimeArgs.some(arg => typeof arg !== 'string' || arg.includes('\0'))
       || !Number.isInteger(value.port) || value.port < 1 || value.port > 65535) throw new BridgeError('Invalid server configuration in launch.json: provide name, runtimeExecutable, runtimeArgs and port');
-    return { name: value.name, command: [value.runtimeExecutable, ...value.runtimeArgs].map(quote).join(' '), port: value.port, source: 'launch' };
+    return { name: value.name, command: [value.runtimeExecutable, ...value.runtimeArgs].map(quote).join(' '), port: value.port, source: 'launch' as const };
   });
   const pkg = await readJson(path.join(cwd, 'package.json'));
   const files = await fs.readdir(cwd);
@@ -39,82 +42,86 @@ async function candidatesIn(cwd) {
 async function freePort(port = 0) {
   const socket = net.createServer();
   try {
-    await new Promise((resolve, reject) => { socket.once('error', reject); socket.listen(port, '127.0.0.1', resolve); });
-    return socket.address().port;
+    await new Promise<void>((resolve, reject) => { socket.once('error', reject); socket.listen(port, '127.0.0.1', resolve); });
+    return (socket.address() as net.AddressInfo).port;
   } catch { throw new BridgeError(`Port ${port} is already in use. Stop that server, then try again.`); }
   finally { if (socket.listening) await new Promise(resolve => socket.close(resolve)); }
 }
-const groupAlive = pid => { try { process.kill(-pid, 0); return true; } catch { return false; } };
-async function killGroup(row) {
+const groupAlive = (pid: number) => { try { process.kill(-pid, 0); return true; } catch { return false; } };
+async function killGroup(row: Row) {
   if (row.stopping) return row.stopping;
   const pid = row.groupPid;
   if (!pid) return;
   // Retire ownership once. A later Stop must never signal a reused process-group ID.
   row.groupPid = null;
   row.stopping = (async () => {
-    try { process.kill(-pid, 'SIGTERM'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
+    try { process.kill(-pid, 'SIGTERM'); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
     for (let i = 0; i < 6 && groupAlive(pid); i++) await delay(50);
-    try { process.kill(-pid, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
+    try { process.kill(-pid, 'SIGKILL'); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
   })();
   return row.stopping;
 }
-const publicRow = ({ name, command, status, url, pid, logs, error }) => ({ name, command, status, url, pid, logs, error });
+const publicRow = ({ name, command, status, url, pid, logs, error }: Row) => ({ name, command, status, url, pid, logs, error });
 
 /** Owns only process groups started by this bridge; a URL or a port never grants permission to kill a process. */
 /** Types the HTML preview serves; anything else is sent as bytes. */
-const PAGE_TYPES = { '.html': 'text/html; charset=utf-8', '.htm': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.ico': 'image/x-icon', '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.txt': 'text/plain; charset=utf-8', '.pdf': 'application/pdf', '.mp4': 'video/mp4', '.webm': 'video/webm' };
+const PAGE_TYPES: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.htm': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.ico': 'image/x-icon', '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.txt': 'text/plain; charset=utf-8', '.pdf': 'application/pdf', '.mp4': 'video/mp4', '.webm': 'video/webm' };
 
 /** A local HTML file as a web page the built-in browser can open: a loopback server for its folder only, behind a random
  * path prefix, so the page loads its own CSS, scripts and images and nothing above that folder. */
-async function servePageFolder(root) {
+async function servePageFolder(root: string) {
   const prefix = randomBytes(16).toString('hex');
-  const server = http.createServer(async (request, response) => {
-    try {
-      const pathname = decodeURIComponent(new URL(request.url, 'http://local').pathname);
-      if (request.method !== 'GET' && request.method !== 'HEAD' || !pathname.startsWith(`/${prefix}/`) || pathname.includes('\0')) throw Error('not found');
-      const target = path.resolve(root, `.${pathname.slice(prefix.length + 1)}`);
-      const real = await fs.realpath(target);
-      if (real !== root && !real.startsWith(root + path.sep) || !(await fs.stat(real)).isFile()) throw Error('not found');
-      response.writeHead(200, { 'Content-Type': PAGE_TYPES[path.extname(real).toLowerCase()] ?? 'application/octet-stream', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
-      if (request.method === 'HEAD') return response.end();
-      response.end(await fs.readFile(real));
-    } catch { response.writeHead(404, { 'Content-Type': 'text/plain' }); response.end('Not found'); }
+  const server = http.createServer((request, response) => {
+    void (async () => {
+      try {
+        const pathname = decodeURIComponent(new URL(request.url ?? '', 'http://local').pathname);
+        if (request.method !== 'GET' && request.method !== 'HEAD' || !pathname.startsWith(`/${prefix}/`) || pathname.includes('\0')) throw Error('not found');
+        const target = path.resolve(root, `.${pathname.slice(prefix.length + 1)}`);
+        const real = await fs.realpath(target);
+        if (real !== root && !real.startsWith(root + path.sep) || !(await fs.stat(real)).isFile()) throw Error('not found');
+        response.writeHead(200, { 'Content-Type': PAGE_TYPES[path.extname(real).toLowerCase()] ?? 'application/octet-stream', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+        if (request.method === 'HEAD') return response.end();
+        response.end(await fs.readFile(real));
+      } catch { response.writeHead(404, { 'Content-Type': 'text/plain' }); response.end('Not found'); }
+    })();
   });
-  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
-  return { origin: `http://127.0.0.1:${server.address().port}/${prefix}/`, close: () => new Promise(resolve => { server.closeAllConnections?.(); server.close(() => resolve()); }) };
+  await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
+  return { origin: `http://127.0.0.1:${(server.address() as net.AddressInfo).port}/${prefix}/`, close: () => new Promise<void>(resolve => { server.closeAllConnections?.(); server.close(() => resolve()); }) };
 }
 
 export function createDevServers() {
-  const projects = new Map(), pending = new Map(), pages = new Map(); let closed = false;
-  const folder = async cwd => fs.realpath(await projectDirectory(cwd));
-  const state = cwd => ({ servers: [...(projects.get(cwd)?.values() ?? [])].map(publicRow) });
-  async function start(cwd, name) {
-    cwd = await folder(cwd);
+  const projects = new Map<string, Map<string, Row>>(), pending = new Map<string, Promise<ReturnType<typeof state>>>(), pages = new Map<string, ReturnType<typeof servePageFolder>>(); let closed = false;
+  const folder = async (cwd: unknown) => fs.realpath(await projectDirectory(cwd));
+  const state = (cwd: string) => ({ servers: [...(projects.get(cwd)?.values() ?? [])].map(publicRow) });
+  async function start(cwd: unknown, name: unknown) {
+    const project = await folder(cwd);
+    cwd = project;
     if (closed) throw new BridgeError('Preview service is closed');
     if (typeof name !== 'string') throw new BridgeError('Provide a detected server name');
     // Starts in one folder share launch.json; serialize them so neither choice is lost.
-    const key = cwd;
-    if (pending.has(key)) { await pending.get(key).catch(() => {}); return start(cwd, name); }
+    const key = project;
+    const existing = pending.get(key);
+    if (existing) { await existing.catch(() => {}); return start(cwd, name); }
     const task = (async () => {
-      const candidate = (await candidatesIn(cwd)).find(c => c.name === name);
+      const candidate = (await candidatesIn(project)).find(c => c.name === name);
       if (!candidate) throw new BridgeError('Dev server command not found. Detect dev server again.');
-      const rows = projects.get(cwd) ?? new Map(); projects.set(cwd, rows);
+      const rows = projects.get(project) ?? new Map(); projects.set(project, rows);
       const previous = rows.get(name);
-      if (previous && ['starting', 'running'].includes(previous.status)) return state(cwd);
+      if (previous && ['starting', 'running'].includes(previous.status)) return state(project);
       const port = await freePort(candidate.port);
       if (candidate.source === 'package') {
-        const file = path.join(cwd, '.elpis/launch.json'), launch = await readJson(file) ?? { version: '0.0.1', configurations: [] };
-        launch.configurations.push({ name, runtimeExecutable: candidate.runner, runtimeArgs: ['run', name], port });
+        const file = path.join(project, '.elpis/launch.json'), launch = await readJson(file) ?? { version: '0.0.1', configurations: [] };
+        launch.configurations!.push({ name, runtimeExecutable: candidate.runner, runtimeArgs: ['run', name], port });
         await fs.mkdir(path.dirname(file), { recursive: true }); await fs.writeFile(file, `${JSON.stringify(launch, null, 2)}\n`);
       }
       if (closed) throw new BridgeError('Preview service is closed');
-      const row = { name, command: candidate.command, status: 'starting', url: `http://127.0.0.1:${port}/`, pid: null, logs: '', error: null };
+      const row: Row = { name, command: candidate.command, status: 'starting', url: `http://127.0.0.1:${port}/`, pid: null, logs: '', error: null };
       rows.set(name, row);
-      const env = { ...childEnv(process.env), PORT: String(port) };
+      const env: NodeJS.ProcessEnv = { ...childEnv(process.env), PORT: String(port) };
       for (const key of Object.keys(env)) if (key.startsWith('ELECTRON_')) delete env[key];
-      const child = spawn(process.env.SHELL || '/bin/sh', ['-lc', candidate.command], { cwd, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+      const child = spawn(process.env.SHELL || '/bin/sh', ['-lc', candidate.command], { cwd: project, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
       row.pid = child.pid; row.groupPid = child.pid;
-      const append = chunk => {
+      const append = (chunk: Buffer) => {
         const text = chunk.toString().replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ''); row.logs = (row.logs + text).slice(-65536);
         const match = row.logs.match(/https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0):\d+(?:\/[^\s]*)?/);
         if (match) row.url = match[0].replace('0.0.0.0', '127.0.0.1');
@@ -135,16 +142,16 @@ export function createDevServers() {
         } catch { await delay(100); }
       }
       if (row.status === 'starting') { row.status = 'failed'; row.error = 'Dev server did not respond within 30 seconds. View logs and try again.'; await killGroup(row); }
-      if (row.status === 'failed') throw new BridgeError(row.error);
-      return state(cwd);
+      if (row.status === 'failed') throw new BridgeError(row.error ?? 'Dev server failed');
+      return state(project);
     })();
     pending.set(key, task);
     try { return await task; } finally { pending.delete(key); }
   }
   return {
-    async detect(cwd) { return { candidates: await candidatesIn(await folder(cwd)) }; },
+    async detect(cwd: unknown) { return { candidates: await candidatesIn(await folder(cwd)) }; },
     /** The address that opens `file` (an .html file inside the project `cwd`) in the built-in browser. */
-    async page(cwd, file) {
+    async page(cwd: unknown, file: unknown) {
       if (closed) throw new BridgeError('Preview service is closed');
       const project = await folder(cwd);
       if (typeof file !== 'string' || !file || file.includes('\0')) throw new BridgeError('Choose an HTML file in the project');
@@ -156,12 +163,12 @@ export function createDevServers() {
       if (!served) { served = servePageFolder(root); pages.set(root, served); served.catch(() => pages.delete(root)); }
       return { url: (await served).origin + encodeURI(path.basename(real)) };
     },
-    async status(cwd) { return state(await folder(cwd)); },
+    async status(cwd: unknown) { return state(await folder(cwd)); },
     start,
-    async stop(cwd, name) {
-      cwd = await folder(cwd); const row = projects.get(cwd)?.get(name);
+    async stop(cwd: unknown, name: unknown) {
+      const project = await folder(cwd); const row = typeof name === 'string' ? projects.get(project)?.get(name) : undefined;
       if (!row) throw new BridgeError('This server was not started by this preview');
-      row.status = 'stopped'; await killGroup(row); return state(cwd);
+      row.status = 'stopped'; await killGroup(row); return state(project);
     },
     async close() {
       closed = true;
@@ -172,7 +179,7 @@ export function createDevServers() {
 }
 
 /** Same-origin authenticated routes are dispatched by server.mjs before reaching this handler. */
-export async function devServerRequest(manager, method, url, body) {
+export async function devServerRequest(manager: ReturnType<typeof createDevServers>, method: string, url: URL, body: unknown) {
   if (method === 'GET' && url.pathname === '/api/dev-servers') {
     if ([...url.searchParams.keys()].some(key => key !== 'cwd') || url.searchParams.getAll('cwd').length !== 1) throw new BridgeError('Provide exactly one cwd');
     return manager.status(url.searchParams.get('cwd'));
@@ -180,5 +187,8 @@ export async function devServerRequest(manager, method, url, body) {
   const action = url.pathname.slice('/api/dev-servers/'.length);
   if (method !== 'POST' || !['detect', 'start', 'stop', 'page'].includes(action)) throw new BridgeError('Unknown preview operation', 404);
   const input = object(body, action === 'detect' ? ['cwd'] : action === 'page' ? ['cwd', 'path'] : ['cwd', 'name']);
-  return action === 'page' ? manager.page(input.cwd, input.path) : manager[action](input.cwd, input.name);
+  const fields = input as Record<string, unknown>;
+  if (action === 'page') return manager.page(fields.cwd, fields.path);
+  if (action === 'detect') return manager.detect(fields.cwd);
+  return action === 'start' ? manager.start(fields.cwd, fields.name) : manager.stop(fields.cwd, fields.name);
 }

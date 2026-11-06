@@ -21,7 +21,7 @@ import { AttachmentError } from './attachments.mts';
  *   loveTalk: ReturnType<typeof import('./love-spot-talk.mjs').createLoveSpotTalk>,
  *   loveAgents: ReturnType<typeof import('./love-agents.mjs').createLoveAgents>,
  *   loveStreams: Set<import('node:http').ServerResponse>,
- *   devServers: ReturnType<typeof import('./dev-servers.mjs').createDevServers>,
+ *   devServers: ReturnType<typeof import('./dev-servers.mts').createDevServers>,
  *   experimentLab: ReturnType<typeof import('./experiment-lab.mts').createExperimentLab>,
  *   automations: ReturnType<typeof import('./schedule.mts').createSchedule> | null,
  *   workflowDispatcher: ReturnType<typeof import('./server-workflows.mjs').createWorkflowDispatcher>,
