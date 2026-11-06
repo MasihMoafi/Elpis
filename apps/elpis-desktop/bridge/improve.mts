@@ -12,7 +12,7 @@ import { durableSourceCheckout } from './improve-source.mts';
 const exec = promisify(execFile);
 const defaultAppRoot = fileURLToPath(new URL('..', import.meta.url));
 const SAFE = ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false'];
-const git = async (cwd, ...args) => (await exec('git', [...SAFE, ...args], { cwd, timeout: 30000, maxBuffer: 2 * 1024 * 1024 })).stdout.trim();
+const git = async (cwd: string, ...args: string[]) => (await exec('git', [...SAFE, ...args], { cwd, timeout: 30000, maxBuffer: 2 * 1024 * 1024 })).stdout.trim();
 export const IMPROVE_INSTRUCTIONS = `You are improving Elpis in your own isolated git worktree. Work only in this worktree.
 Tests first: reproduce each requested behaviour with a focused test that fails before the change. Use real keys and mouse events for UI behaviour.
 Make the smallest sound change, reuse the existing components and styles, then build and run the relevant tests. Report exact commands and results, and any unchecked behaviour.
@@ -20,10 +20,20 @@ Dependencies may be linked from the source checkout; never edit them or install 
 Delete with gio trash. Never use git add -A, git add ., reset --hard, clean or stash. Stage named files only, inspect git diff --cached --stat and commit your change. Keep unrelated files untouched.
 The app independently checks your committed result. Finish with a short result and trade-offs; the user reads the diff and the check results in the review dialog.`;
 
-export async function createImprovements({ client, sourceRoot, appRoot = defaultAppRoot, stateDir = process.env.ELPIS_IMPROVE_HOME || path.join(os.homedir(), '.cache/elpis-improve'), sourceMap, verify = verifyImprovement } = {}) {
-  const records = new Map(), checking = new Map();
+type Source = { path: string; commit: string };
+type Target = { component: string; file: string };
+type Thread = { id: string; [key: string]: unknown };
+type Checks = Awaited<ReturnType<typeof verifyImprovement>> & { head: string; at: string };
+type Row = { id: string; cwd: string; branch: string; base: string; request: string; target: Target; status: string; thread: Thread | null; checks: Checks | null; error?: string };
+type Event = { type?: string; data?: { method?: string; params?: { threadId?: string } } };
+type Client = { models: () => Promise<unknown>; createThread: (body: { cwd: string; model: string; name: string; instructions: string; automatic: boolean }) => Promise<{ thread: Thread }>; send: (id: string, body: { text: string; attachments: { id: string; type: string; name: string; mimeType: string; dataUrl: string }[] }) => Promise<unknown>; on: (name: string, listener: (event: Event) => void) => unknown; removeListener: (name: string, listener: (event: Event) => void) => unknown };
+type Options = { client: Client; sourceRoot?: string; appRoot?: string; stateDir?: string; sourceMap?: Record<string, Target>; verify?: typeof verifyImprovement };
+const errorMessage = (error: unknown) => (error as Error).message;
+
+export async function createImprovements({ client, sourceRoot, appRoot = defaultAppRoot, stateDir = process.env.ELPIS_IMPROVE_HOME || path.join(os.homedir(), '.cache/elpis-improve'), sourceMap, verify = verifyImprovement }: Options = {} as Options) {
+  const records = new Map<string | undefined, Row>(), checking = new Map<string | undefined, Promise<Awaited<ReturnType<typeof review>>>>();
   const sourceFile = path.join(stateDir, 'source.json');
-  let chosenSource;
+  let chosenSource: Source | undefined;
   async function resolveSource() {
     const saved = await fs.readFile(sourceFile, 'utf8').then(JSON.parse).catch(() => null);
     const installed = await fs.readFile(path.resolve(appRoot, '../source.json'), 'utf8').then(JSON.parse).catch(() => null);
@@ -37,8 +47,8 @@ export async function createImprovements({ client, sourceRoot, appRoot = default
     const resolved = await resolveSource();
     return { path: resolved?.path ?? null, configured: !!resolved };
   }
-  async function setSource(body) {
-    object(body, ['path']);
+  async function setSource(raw: unknown) {
+    const body = object(raw, ['path']) as Record<string, unknown>;
     if (typeof body.path !== 'string' || !path.isAbsolute(body.path)) throw new BridgeError('Choose a local Elpis source folder');
     const current = await resolveSource();
     const resolved = await durableSourceCheckout(body.path) ?? (current && await durableSourceCheckout(body.path, current.commit));
@@ -64,16 +74,16 @@ export async function createImprovements({ client, sourceRoot, appRoot = default
   async function map() {
     return sourceMap ?? JSON.parse(await fs.readFile(new URL('../out/elpis-source-map.json', import.meta.url), 'utf8').catch(() => fs.readFile(new URL('../public/elpis-source-map.json', import.meta.url), 'utf8')));
   }
-  async function save(row) {
+  async function save(row: Row) {
     const file = path.join(stateDir, `${row.id}.json`), temp = `${file}.tmp`;
     await fs.writeFile(temp, JSON.stringify(row), { mode: 0o600 }); await fs.rename(temp, file); return row;
   }
-  async function linkDependencies(root, cwd) {
+  async function linkDependencies(root: string | null, cwd: string) {
     // Older worktrees retain their original checkout in this link, even if the selected source moved.
     const bin = await fs.realpath(path.join(cwd, 'apps/elpis-desktop/node_modules/.bin')).catch(() => null);
     const original = bin && path.resolve(bin, '../../../..');
     const identity = original && await fs.readFile(path.join(original, 'apps/elpis-desktop/package.json'), 'utf8').then(JSON.parse).catch(() => null);
-    const roots = [...new Set([identity?.name === 'elpis-desktop' ? original : null, root].filter(Boolean))];
+    const roots = [...new Set([identity?.name === 'elpis-desktop' ? original : null, root].filter((value): value is string => Boolean(value)))];
     // Share existing packages, keeping generated outputs and caches in the candidate worktree.
     for (const project of ['apps/elpis-desktop', 'tools/elpis-claude']) {
       let deps;
@@ -89,13 +99,13 @@ export async function createImprovements({ client, sourceRoot, appRoot = default
       }
     }
   }
-  const find = id => { const row = records.get(id); if (!row) throw new BridgeError('Unknown Elpis change', 404); return row; };
-  async function review(row) {
+  const find = (id: string | undefined) => { const row = records.get(id); if (!row) throw new BridgeError('Unknown Elpis change', 404); return row; };
+  async function review(row: Row) {
     const [head, dirty, diff] = await Promise.all([git(row.cwd, 'rev-parse', 'HEAD'), git(row.cwd, 'status', '--porcelain', '--untracked-files=normal'), git(row.cwd, 'diff', '--no-ext-diff', '--no-textconv', '--no-color', row.base)]);
     return { ...row, head, dirty: !!dirty, diff: diff.slice(0, 350000), truncated: diff.length > 350000 };
   }
-  async function start(body) {
-    object(body, ['request', 'target']); object(body.target, ['id', 'label', 'image']);
+  async function start(raw: unknown) {
+    const body = object(raw, ['request', 'target']) as { request: unknown; target: { id: string; label: unknown; image: unknown } }; object(body.target, ['id', 'label', 'image']);
     if (typeof body.request !== 'string' || !body.request.trim() || body.request.length > 16000) throw new BridgeError('Describe the change in 1–16000 characters');
     const sources = await map(), selected = sources[body.target.id];
     if (!selected || !Object.hasOwn(sources, body.target.id)) throw new BridgeError('Choose a component from this build’s source map');
@@ -112,19 +122,20 @@ export async function createImprovements({ client, sourceRoot, appRoot = default
     const branch = `improve/${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-${slug}-${id.slice(0, 8)}`;
     const cwd = path.join(stateDir, 'worktrees', id); await fs.mkdir(path.dirname(cwd), { recursive: true });
     await git(root, 'worktree', 'add', '-b', branch, cwd, base);
-    const row = { id, cwd, branch, base, request, target: selected, status: 'starting', thread: null, checks: null };
+    const row: Row = { id, cwd, branch, base, request, target: selected, status: 'starting', thread: null, checks: null };
     records.set(id, row); await save(row);
     await linkDependencies(root, cwd);
     try {
       const { thread } = await client.createThread({ cwd, model: 'gpt-6-luna', name: `Improve Elpis · ${request.slice(0, 90)}`, instructions: IMPROVE_INSTRUCTIONS, automatic: true });
       row.thread = thread; row.status = 'working'; await save(row);
       try { await client.send(thread.id, { text: `Improve Elpis: ${request}\n\nPointed component: ${selected.component}\nElpis source file: ${selected.file}\nVisible label: ${label}\nThe attached image shows the pointed region. Follow the isolated-worktree instructions and commit the result.`, attachments }); }
-      catch (error) { row.status = 'send-error'; row.error = `First message was not confirmed: ${error.message}. Inspect this chat before resending.`; await save(row); }
+      catch (error) { row.status = 'send-error'; row.error = `First message was not confirmed: ${errorMessage(error)}. Inspect this chat before resending.`; await save(row); }
       return row;
-    } catch (error) { row.status = 'failed'; row.error = error.message; await save(row); throw new BridgeError(`Could not start the improvement chat. Worktree retained at ${cwd}: ${error.message}`, 409); }
+    } catch (error) { row.status = 'failed'; row.error = errorMessage(error); await save(row); throw new BridgeError(`Could not start the improvement chat. Worktree retained at ${cwd}: ${errorMessage(error)}`, 409); }
   }
-  async function check(id) {
-    if (checking.has(id)) return checking.get(id);
+  async function check(id: string | undefined) {
+    const existing = checking.get(id);
+    if (existing) return existing;
     const row = find(id);
     const job = (async () => {
       const before = await review(row);
@@ -136,17 +147,17 @@ export async function createImprovements({ client, sourceRoot, appRoot = default
         const after = await review(row);
         row.checks = { ...result, head: before.head, passed: result.passed && before.head === after.head && !after.dirty, at: new Date().toISOString() };
         row.status = row.checks.passed ? 'review' : 'checks-failed';
-      } catch (error) { row.status = 'checks-failed'; row.error = error.message; }
+      } catch (error) { row.status = 'checks-failed'; row.error = errorMessage(error); }
       await save(row); return review(row);
     })();
     checking.set(id, job);
     try { return await job; } finally { checking.delete(id); }
   }
-  const completed = event => {
+  const completed = (event: Event) => {
     if (event.type !== 'message' || event.data?.method !== 'turn/completed') return;
-    const row = [...records.values()].find(row => row.thread?.id === event.data.params?.threadId);
-    if (row) void check(row.id).catch(async error => { row.status = 'needs-check'; row.error = error.message; await save(row); });
+    const row = [...records.values()].find(row => row.thread?.id === event.data?.params?.threadId);
+    if (row) void check(row.id).catch(async error => { row.status = 'needs-check'; row.error = errorMessage(error); await save(row); });
   };
   client.on('event', completed);
-  return { source, setSource, start, check, get: async id => review(find(id)), list: () => [...records.values()].map(({ id, thread, status }) => ({ id, threadId: thread?.id, status })), close: () => client.removeListener('event', completed) };
+  return { source, setSource, start, check, get: async (id: string | undefined) => review(find(id)), list: () => [...records.values()].map(({ id, thread, status }) => ({ id, threadId: thread?.id, status })), close: () => client.removeListener('event', completed) };
 }

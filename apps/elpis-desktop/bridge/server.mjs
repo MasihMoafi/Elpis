@@ -19,7 +19,7 @@ import { createLoveSpotTalk } from './love-spot-talk.mjs';
 import { createMatildaCompanion } from './matilda-companion.mjs';
 import { createLoveAgents } from './love-agents.mjs';
 import { createDevServers } from './dev-servers.mjs';
-import { createImprovements } from './improve.mjs';
+import { createImprovements } from './improve.mts';
 import { createSettingsFiles } from './settings-files.mts';
 import { createThreadTitles } from './thread-titles.mjs';
 import { COOKIE, ERROR_AREAS, applyFrameHeaders, applySecurityHeaders, body, json, requestDiagnostics, same, sendRequestError, serveStaticAsset } from './server-http.mjs';

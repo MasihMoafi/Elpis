@@ -25,7 +25,7 @@ import { AttachmentError } from './attachments.mts';
  *   experimentLab: ReturnType<typeof import('./experiment-lab.mts').createExperimentLab>,
  *   automations: ReturnType<typeof import('./schedule.mts').createSchedule> | null,
  *   workflowDispatcher: ReturnType<typeof import('./server-workflows.mjs').createWorkflowDispatcher>,
- *   improvements: () => Promise<Awaited<ReturnType<typeof import('./improve.mjs').createImprovements>>>,
+ *   improvements: () => Promise<Awaited<ReturnType<typeof import('./improve.mts').createImprovements>>>,
  *   tools: ReturnType<typeof import('./tools.mts').createTools>,
  *   settingsFiles: ReturnType<typeof import('./settings-files.mts').createSettingsFiles>,
  *   historyCursors: ReturnType<typeof import('./server-threads.mjs').createHistoryCursors>,

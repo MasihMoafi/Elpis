@@ -1,5 +1,5 @@
 import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cjs';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -7,7 +7,7 @@ import path from 'node:path';
 import { execFile as exec } from 'node:child_process';
 import { promisify } from 'node:util';
 import { EventEmitter } from 'node:events';
-import { createImprovements } from './improve.mjs';
+import { createImprovements } from './improve.mts';
 import { verifyImprovement } from './improve-check.mts';
 import { DesktopClient } from './client.mts';
 import { startDesktopServer } from './server.mjs';
@@ -15,25 +15,30 @@ const execFile = promisify(exec);
 const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGM4o6SEFTEMLQkAvM5EAT6yk8sAAAAASUVORK5CYII=';
 const target = { id: 'button', label: 'Send', image: PNG };
 const map = { button: { component: 'Composer', file: 'button.txt' } };
-async function setup(t, checks = true) {
+async function setup(t: TestContext, checks: boolean | typeof verifyImprovement = true) {
   const cache = path.join(os.homedir(), '.cache/elpis-tests'); await fs.mkdir(cache, { recursive: true });
   const root = createTestTempDir(path.join(cache, 'improve-'));
   t.after(async () => { removeTestTempDir(root); });
   const sourceRoot = path.join(root, 'source'); await fs.mkdir(sourceRoot);
-  const git = (...args) => execFile('git', args, { cwd: sourceRoot });
+  const git = (...args: string[]) => execFile('git', args, { cwd: sourceRoot });
   await git('init', '-q'); await git('config', 'user.name', 'Test'); await git('config', 'user.email', 'test@invalid');
   await git('commit', '--allow-empty', '-qm', 'before desktop');
   await fs.mkdir(path.join(sourceRoot, 'apps/elpis-desktop'), { recursive: true });
   await fs.writeFile(path.join(sourceRoot, 'apps/elpis-desktop/package.json'), JSON.stringify({ name: 'elpis-desktop' }));
   await fs.writeFile(path.join(sourceRoot, 'button.txt'), 'Send\n'); await git('add', 'button.txt', 'apps/elpis-desktop/package.json'); await git('commit', '-qm', 'baseline');
-  const client = new EventEmitter(); let created, sent;
-  client.models = async () => ({ data: [{ model: 'gpt-6-luna' }] });
-  client.createThread = async body => { created = body; return { thread: { id: 'fake-thread', cwd: body.cwd, status: { type: 'idle' } } }; };
-  client.send = async (id, body) => { sent = { id, body }; return { turn: { id: 'turn' } }; };
+  type Client = NonNullable<Parameters<typeof createImprovements>[0]>['client'];
+  type CreateBody = Parameters<Client['createThread']>[0];
+  type SendBody = Parameters<Client['send']>[1];
+  let created: CreateBody | undefined, sent: { id: string; body: SendBody } | undefined;
+  const client = Object.assign(new EventEmitter(), {
+    models: async () => ({ data: [{ model: 'gpt-6-luna' }] }),
+    createThread: async (body: CreateBody) => { created = body; return { thread: { id: 'fake-thread', cwd: body.cwd, status: { type: 'idle' } } }; },
+    send: async (id: string, body: SendBody): Promise<unknown> => { sent = { id, body }; return { turn: { id: 'turn' } }; },
+  });
   const store = path.join(root, 'state');
   const manager = await createImprovements({ client, sourceRoot, stateDir: store, sourceMap: map, verify: typeof checks === 'function' ? checks : async () => ({ passed: checks, commands: [{ command: 'fixture tests', code: checks ? 0 : 1, output: 'fixture result' }] }) });
   t.after(() => manager.close());
-  return { manager, client, git, sourceRoot, store, created: () => created, sent: () => sent };
+  return { manager, client, git, sourceRoot, store, created: () => { assert.ok(created); return created; }, createdOptional: () => created, sent: () => { assert.ok(sent); return sent; } };
 }
 test('pointed request starts an ordinary chat in a fresh improve branch with native image and source provenance', async t => {
   const f = await setup(t);
@@ -43,7 +48,7 @@ test('pointed request starts an ordinary chat in a fresh improve branch with nat
   assert.notEqual(row.cwd, f.sourceRoot); assert.equal(await fs.readFile(path.join(row.cwd, 'button.txt'), 'utf8'), 'Send\n');
   assert.equal(f.created().cwd, row.cwd); assert.match(f.created().instructions, /tests first/i); assert.match(f.created().instructions, /commit/i);
   assert.match(f.sent().body.text, /Composer/); assert.match(f.sent().body.text, /button.txt/); assert.match(f.sent().body.text, /Rename Send to Go/);
-  assert.equal(f.sent().body.attachments[0].dataUrl, PNG);
+  assert.equal(f.sent().body.attachments[0]!.dataUrl, PNG);
   assert.equal(await fs.readFile(path.join(f.sourceRoot, 'button.txt'), 'utf8'), 'open-tree edit\n');
 });
 
@@ -95,14 +100,14 @@ test('automatic discovery rejects an unrelated Git checkout as well as an invali
   assert.deepEqual(await manager.source(), { path: null, configured: false });
   await assert.rejects(manager.setSource({ path: unrelated }), /not an Elpis source checkout/);
   await assert.rejects(manager.start({ request: 'Readable', target }), /source folder/);
-  assert.equal(f.created(), undefined);
+  assert.equal(f.createdOptional(), undefined);
 });
 test('review measures the committed diff and leaves the source tree alone', async t => {
   const f = await setup(t), row = await f.manager.start({ request: 'Rename Send to Go', target });
   await execFile('git', ['-C', row.cwd, 'config', 'user.name', 'Test']); await execFile('git', ['-C', row.cwd, 'config', 'user.email', 'test@invalid']);
   await fs.writeFile(path.join(row.cwd, 'button.txt'), 'Go\n');
   await execFile('git', ['-C', row.cwd, 'add', 'button.txt']); await execFile('git', ['-C', row.cwd, 'commit', '-qm', 'Rename button']);
-  const review = await f.manager.check(row.id); assert.equal(review.checks.passed, true); assert.match(review.diff, /\+Go/); assert.match(review.diff, /-Send/);
+  const review = await f.manager.check(row.id); assert.equal(review.checks!.passed, true); assert.match(review.diff, /\+Go/); assert.match(review.diff, /-Send/);
   assert.equal(await fs.readFile(path.join(f.sourceRoot, 'button.txt'), 'utf8'), 'Send\n');
 });
 test('failed checks, missing source IDs and absent captures are reported, never silently sent', async t => {
@@ -111,10 +116,10 @@ test('failed checks, missing source IDs and absent captures are reported, never 
   await assert.rejects(f.manager.start({ request: 'x', target: { ...target, image: null } }), /screenshot/i);
   const row = await f.manager.start({ request: 'Rename', target });
   await fs.writeFile(path.join(row.cwd, 'button.txt'), 'Go\n'); await execFile('git', ['-C', row.cwd, 'add', 'button.txt']); await execFile('git', ['-C', row.cwd, 'commit', '-qm', 'change']);
-  assert.equal((await f.manager.check(row.id)).checks.passed, false);
+  assert.equal((await f.manager.check(row.id)).checks!.passed, false);
 });
 
-async function checkFixture(t, scenario = {}) {
+async function checkFixture(t: TestContext, scenario: { fail?: string; hang?: string } = {}) {
   const root = createTestTempDir(path.join(os.tmpdir(), 'improve-check-'));
   t.after(() => removeTestTempDir(root));
   const bin = path.join(root, 'bin'); await fs.mkdir(bin);
@@ -167,9 +172,9 @@ test('a child holding output open cannot outlive the verification budget or leav
   const started = performance.now();
   const review = await change.manager.check(row.id);
   assert.equal(review.status, 'checks-failed');
-  assert.equal(review.checks.passed, false);
-  assert.match(review.checks.commands.at(-1).output, /Timed out.*500/);
-  assert.equal(review.checks.commands.at(-1).command, 'npm run -s test:bridge');
+  assert.equal(review.checks!.passed, false);
+  assert.match(review.checks!.commands.at(-1)!.output, /Timed out.*500/);
+  assert.equal(review.checks!.commands.at(-1)!.command, 'npm run -s test:bridge');
   assert.ok(performance.now() - started < 1200);
 });
 
@@ -195,7 +200,7 @@ test('Improve links the existing ACP test dependencies into its isolated worktre
   await f.manager.setSource({ path: moved.sourceRoot });
   await fs.writeFile(path.join(row.cwd, 'button.txt'), 'Go\n');
   await execFile('git', ['-C', row.cwd, 'add', 'button.txt']); await execFile('git', ['-C', row.cwd, 'commit', '-qm', 'change']);
-  assert.equal((await f.manager.check(row.id)).checks.passed, true);
+  assert.equal((await f.manager.check(row.id)).checks!.passed, true);
   assert.equal(await fs.realpath(linked), path.join(deps, '@agentclientprotocol'));
 });
 
@@ -206,28 +211,27 @@ test('restart explains an interrupted check and persists a retryable state', asy
   t.after(() => manager.close());
   const restored = await manager.get(row.id);
   assert.equal(restored.status, 'needs-check');
-  assert.match(restored.error, /interrupted.*run.*again/i);
+  assert.match(restored.error!, /interrupted.*run.*again/i);
   assert.equal(JSON.parse(await fs.readFile(path.join(f.store, `${row.id}.json`), 'utf8')).status, 'needs-check');
 });
 test('authenticated HTTP flow reaches the fake engine with Luna, isolated cwd, instructions and native image input', async t => {
-  const f = await setup(t), requests = [], threads = new Map();
-  const socket = new EventEmitter(); socket.readyState = 1; socket.close = () => socket.emit('close');
-  socket.send = raw => {
+  const f = await setup(t), requests: { id?: number; method: string; params: { cwd: string; model: string; developerInstructions: string; threadId: string; input: { type: string; url: string }[] } }[] = [], threads = new Map<string, unknown>();
+  const socket = Object.assign(new EventEmitter(), { readyState: 1, close() { socket.emit('close'); }, send(raw: string) {
     const request = JSON.parse(raw); requests.push(request);
     if (request.id === undefined) return;
-    let result = {};
+    let result: Record<string, unknown> = {};
     if (request.method === 'model/list') result = { data: [{ id: 'gpt-6-luna', model: 'gpt-6-luna', displayName: 'Luna' }], nextCursor: null };
-    if (request.method === 'thread/start') { result = { thread: { id: '11111111-1111-4111-8111-111111111111', cwd: request.params.cwd, model: request.params.model, modelProvider: 'openai', status: { type: 'idle' }, source: 'appServer' } }; threads.set(result.thread.id, result.thread); }
+    if (request.method === 'thread/start') { result = { thread: { id: '11111111-1111-4111-8111-111111111111', cwd: request.params.cwd, model: request.params.model, modelProvider: 'openai', status: { type: 'idle' }, source: 'appServer' } }; threads.set('11111111-1111-4111-8111-111111111111', result.thread); }
     if (request.method === 'thread/read') result = { thread: threads.get(request.params.threadId) };
     if (request.method === 'turn/start') result = { turn: { id: 'turn', status: 'inProgress' } };
     queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, result })));
-  };
+  } });
   const client = new DesktopClient(socket, { rewindHome: path.join(f.store, 'rewind'), githubConnector: { instructions: async () => '' } }); await client.initialize();
   const app = await startDesktopServer({ client, trashFile: path.join(f.store, 'trash.json'), improvements: { sourceRoot: f.sourceRoot, stateDir: path.join(f.store, 'http'), sourceMap: map } });
   t.after(() => app.close());
   const url = new URL(app.url), token = new URLSearchParams(url.hash.slice(1)).get('token');
   const auth = await fetch(`${url.origin}/api/session`, { method: 'POST', headers: { Origin: url.origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) });
-  const cookie = auth.headers.get('set-cookie').split(';')[0];
+  const cookie = auth.headers.get('set-cookie')!.split(';')[0]!;
   const sourceUrl = `${url.origin}/api/improvements/source`;
   const unauthenticated = await fetch(sourceUrl); assert.equal(unauthenticated.status, 401);
   const configured = await fetch(sourceUrl, { headers: { Cookie: cookie } });
@@ -241,17 +245,17 @@ test('authenticated HTTP flow reaches the fake engine with Luna, isolated cwd, i
   const row = await response.json(); assert.equal(response.status, 201, JSON.stringify(row));
   assert.equal(row.error, undefined); assert.equal(row.status, 'working');
   const start = requests.find(request => request.method === 'thread/start');
-  assert.equal(start.params.cwd, row.cwd); assert.equal(start.params.model, 'gpt-6-luna'); assert.match(start.params.developerInstructions, /Tests first/);
-  const turn = requests.find(request => request.method === 'turn/start'); assert.ok(turn.params.input.some(input => input.type === 'image' && input.url === PNG));
+  assert.ok(start); assert.equal(start.params.cwd, row.cwd); assert.equal(start.params.model, 'gpt-6-luna'); assert.match(start.params.developerInstructions, /Tests first/);
+  const turn = requests.find(request => request.method === 'turn/start'); assert.ok(turn); assert.ok(turn.params.input.some(input => input.type === 'image' && input.url === PNG));
 });
 test('an uncertain send retains its chat and worktree without retrying; completed turns trigger independent checks', async t => {
   const f = await setup(t); let sends = 0;
   f.client.send = async () => { sends++; throw Error('connection lost'); };
   const row = await f.manager.start({ request: 'Rename', target });
-  assert.equal(row.status, 'send-error'); assert.equal(row.thread.id, 'fake-thread'); assert.equal(sends, 1); assert.match(row.error, /Inspect this chat/);
+  assert.equal(row.status, 'send-error'); assert.equal(row.thread!.id, 'fake-thread'); assert.equal(sends, 1); assert.match(row.error!, /Inspect this chat/);
   await fs.writeFile(path.join(row.cwd, 'button.txt'), 'Go\n'); await execFile('git', ['-C', row.cwd, 'add', 'button.txt']); await execFile('git', ['-C', row.cwd, 'commit', '-qm', 'change']);
-  f.client.emit('event', { type: 'message', data: { method: 'turn/completed', params: { threadId: row.thread.id } } });
-  for (let i = 0; i < 100; i++) { const next = await f.manager.get(row.id); if (next.status === 'review') { await f.manager.check(row.id); assert.equal(next.checks.passed, true); assert.equal(next.error, undefined); return; } await new Promise(resolve => setTimeout(resolve, 10)); }
+  f.client.emit('event', { type: 'message', data: { method: 'turn/completed', params: { threadId: row.thread!.id } } });
+  for (let i = 0; i < 100; i++) { const next = await f.manager.get(row.id); if (next.status === 'review') { await f.manager.check(row.id); assert.equal(next.checks!.passed, true); assert.equal(next.error, undefined); return; } await new Promise(resolve => setTimeout(resolve, 10)); }
   assert.fail('completed turn did not produce a measured review');
 });
 
@@ -261,7 +265,7 @@ test('a saved source folder repairs packaged Change this, survives restart and r
   const manager = await createImprovements({ client: f.client, sourceRoot: missing, stateDir: path.join(f.store, 'configured'), sourceMap: map }); t.after(() => manager.close());
   assert.equal((await manager.source()).configured, false);
   await assert.rejects(manager.start({ request: 'Rename', target }), /source folder/i);
-  assert.equal(f.created(), undefined);
+  assert.equal(f.createdOptional(), undefined);
   await assert.rejects(manager.setSource({ path: missing }), /source|folder|checkout/i);
   await fs.mkdir(path.join(f.sourceRoot, 'apps/elpis-desktop'), { recursive: true });
   await fs.writeFile(path.join(f.sourceRoot, 'apps/elpis-desktop/package.json'), JSON.stringify({ name: 'elpis-desktop' }));
