@@ -136,6 +136,7 @@ import { createChatNavigation } from "@/lib/chat-navigation";
 import { createProjectActions } from "@/lib/project-actions";
 import { createEarlierMessages } from "@/lib/earlier-messages";
 import { createMessageActions } from "@/lib/message-actions";
+import { createChatDeletion } from "@/lib/chat-deletion";
 import { refusedOffline, type Live, type View, type WorkflowReplay, type NextTurn } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
 import { useComposerState } from "@/lib/use-composer-state";
@@ -369,7 +370,7 @@ export default function Home() {
   const request = useRef(0);
   const initialRestoration = useRef<{ threadId: string; promise: Promise<void> } | null>(null);
   const conversations = useConversationList(threads, setThreads, selectedRef, setSelected, setError);
-  const { select, settingsOf, remember, threadsRef, patchThread, hidden, upsertThread, refreshThreads, loadMoreConversations, nextCursor, moreLoading } = conversations;
+  const { select, settingsOf, threadsRef, patchThread, hidden, upsertThread, refreshThreads, loadMoreConversations, nextCursor, moreLoading } = conversations;
   // Once an unavailable team read lets a draft appear, a later reply must not move it.
   const holdAgentPanel = useCallback((thread: Thread) => {
     const root = thread.parentThreadId ?? thread.id;
@@ -1028,7 +1029,7 @@ export default function Home() {
       setError(errorText(cause));
     }
   }
-  const slashCommands = createSlashCommands({ selected, askSideQuestion, readOnlyRun, recapConversation, chooseGoal, busy, openComposerControl, chooseFast, turnEfforts, chooseEffort, openSettings, personal, writable, idle, startReview, setPanel, renameThread, setError, setRenameRequest, newChat, clearChat, archiveChats, deleteChats, setResumeOpen, lastTurn, activeTurn, forkFrom, continues, send, compactChat, setQueuedCompact, setSlashNotice, turnSmartPruneOn, planMode, setPlan, team, panelShown, openAgentsPanel, entries, exportChat, chatFolder });
+  const slashCommands = createSlashCommands({ selected, askSideQuestion, readOnlyRun, recapConversation, chooseGoal, busy, openComposerControl, chooseFast, turnEfforts, chooseEffort, openSettings, personal, writable, idle, startReview, setPanel, renameThread, setError, setRenameRequest, newChat, clearChat, archiveChats: chats => archiveChats(chats), deleteChats: (ids, focusAt) => deleteChats(ids, focusAt), setResumeOpen, lastTurn, activeTurn, forkFrom, continues, send, compactChat, setQueuedCompact, setSlashNotice, turnSmartPruneOn, planMode, setPlan, team, panelShown, openAgentsPanel, entries, exportChat, chatFolder });
   const slash = useSlashMenu(ready && connected ? text : "", slashCommands, () => { editDraft(""); setPanel(null); setSlashNotice(""); });
   const mention = useMentionMenu({ text, caret, cwd: chatFolder || undefined, threads, currentId: selected?.id,
     onPick: result => { pickedMentions.current.set(result.mention.path, result.mention); flushSync(() => editDraft(result.text)); setCaret(result.caret); composerRef.current?.setSelectionRange(result.caret, result.caret); } });
@@ -1191,47 +1192,7 @@ export default function Home() {
   const chosenChats = () => marked.length ? chatsOf(marked) : selected ? [selected] : [];
   /** These chats and the chats put under them (Put under…): those go wherever their chat goes. */
   const withNested = (ids: string[]) => chatSubtree(ids, treeParents);
-  /** Archive, from a row's button, the menus, Ctrl+Shift+A and /archive: these chats with the chats put under them. An agent
-   * whose chat is archived too is left to go with it (bridge archiveThread), so it is not archived twice. */
-  function archiveChats(chats: Thread[]) {
-    const ids = withNested(chats.map(chat => chat.id)), all = [...chats, ...chatsOf(ids.filter(id => !chats.some(chat => chat.id === id)))];
-    const archiving = new Set(all.map(chat => chat.id));
-    const covered = (chat: Thread) => { for (let parent = chat.parentThreadId, depth = 0; parent && depth < 50; parent = find(parent)?.parentThreadId, depth++) if (archiving.has(parent)) return true; return false; };
-    for (const chat of all) if (!covered(chat)) void archiveThread(chat);
-  }
-  /** Deletes these chats as one step Ctrl+Z undoes: after the shared confirmation, or at once when it is turned off.
-   * `focusAt` is the sidebar row to focus afterwards, so Ctrl+Z reaches the app and not a text field. */
-  function deleteChats(ids: string[], focusAt?: number) {
-    setDeleteRunHistory(false);
-    const targets = chatsOf(withNested(ids));
-    if (!targets.length) return;
-    if (preferences.confirmDeleteChats) { setDeleteTargets(targets); return; }
-    void trashChats(targets).then(() => { if (focusAt !== undefined) requestAnimationFrame(() => { const links = rowLinks(); (links[focusAt] ?? links.at(-1))?.focus(); }); }, e => setError(String(errorText(e))));
-  }
-  /** The bridge archives them now and deletes them for good when Elpis quits (bridge/trash.mjs). */
-  async function trashChats(targets: Thread[]) {
-    const ids = targets.map(thread => thread.id);
-    if (selectedRef.current && ids.includes(selectedRef.current.id)) shownWhenDeleted.current.add(selectedRef.current.id);
-    const { trashed, worktrees } = await api<{ trashed: string[]; worktrees?: { threadId: string; worktree: WorktreeOutcome }[] }>("/trash", { threadIds: ids });
-    for (const { threadId, worktree } of worktrees ?? []) { const thread = targets.find(item => item.id === threadId); if (thread) noteKept(keptNotice(title(thread), "deleted", worktree)); }
-    // An agent deleted with its chat is not listed as trashed itself (bridge/trash.mjs); it leaves the list all the same.
-    removeThreads(new Set([...trashed, ...ids]), false);
-    setDeletedNotice(targets.length === 1 ? `Deleted “${title(targets[0])}”` : `Deleted ${targets.length} chats`);
-  }
-  /** Ctrl+Z and the notice's Undo: the newest deletion comes back, with the chat that was open opened again. */
-  async function undoDelete() {
-    try {
-      const { threads: back, restored } = await api<{ threads: Thread[]; restored?: string[] }>("/trash/undo", {});
-      if (!back.length) return;
-      setDeletedNotice(null);
-      for (const id of restored ?? back.map(thread => thread.id)) hidden.current.delete(id);
-      for (const thread of back) upsertThread(remember(thread));
-      await refreshThreads();
-      const reopen = back.find(thread => shownWhenDeleted.current.has(thread.id));
-      for (const thread of back) shownWhenDeleted.current.delete(thread.id);
-      if (reopen) await loadThread(reopen);
-    } catch (e) { setError(`Could not bring back the deleted chat: ${errorText(e)}`); }
-  }
+  const { archiveChats, deleteChats, trashChats, undoDelete } = createChatDeletion({ conversations, preferences, selectedRef, shownWhenDeleted, withNested, chatsOf, find, archiveThread, rowLinks, setDeleteRunHistory, setDeleteTargets, setDeletedNotice, setError, noteKept, removeThreads, loadThread });
   /** A click opens the chat; Ctrl+click marks or unmarks it; Shift+click marks the range from the last click, as in a file manager. */
   function clickRow(thread: Thread, event: React.MouseEvent<HTMLButtonElement>) {
     if (event.altKey) { event.preventDefault(); openSplit(thread); return; }

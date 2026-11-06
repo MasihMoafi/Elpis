@@ -830,7 +830,7 @@
  },
  "tsx": {
   "app/page.tsx:TS2322": 1,
-  "app/page.tsx:TS2345": 7,
+  "app/page.tsx:TS2345": 6,
   "app/page.tsx:TS2375": 30,
   "app/page.tsx:TS2379": 1,
   "app/page.tsx:TS2532": 5,
