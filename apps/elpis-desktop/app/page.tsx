@@ -77,8 +77,6 @@ import { createCommandActions } from "@/lib/command-actions";
 import { createConversationSettings } from "@/lib/conversation-settings";
 import { createConversationActions } from "@/lib/conversation-actions";
 import { createReplyActions } from "@/lib/reply-actions";
-import { useRelatedConversations } from "@/lib/use-related-conversations";
-import { useTranscriptPresentation } from "@/lib/use-transcript-presentation";
 import { createSidebarPlacement } from "@/lib/sidebar-placement";
 import { createApprovalActions } from "@/lib/approval-actions";
 import { createShellSend } from "@/lib/shell-send";
@@ -87,7 +85,6 @@ import { useTurnReplacementView } from "@/lib/use-turn-replacement-view";
 import { useWorkspacePagesState } from "@/lib/use-workspace-pages-state";
 import { useConversationOptions } from "@/lib/use-conversation-options";
 import { useSidebarSelection } from "@/lib/use-sidebar-selection";
-import { useHistoryFallback } from "@/lib/use-history-fallback";
 import { useDesktopEntryPoints } from "@/lib/use-desktop-entry-points";
 import { useConversationSession } from "@/lib/use-conversation-session";
 import { createPromptEditing } from "@/lib/prompt-editing";
@@ -108,6 +105,7 @@ import { useChatTabTitles } from "@/lib/use-chat-tab-titles";
 import { createBrowserAttachment } from "@/lib/browser-attachments";
 import { sessionRows as makeSessionRows } from "@/lib/session-rows";
 import { useCommandNotices } from "@/lib/use-command-notices";
+import { useConversationView } from "@/lib/use-conversation-view";
 import { PAGE_NAMES } from "@/lib/workspace-navigation-pages";
 import { refusedOffline } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
@@ -132,7 +130,7 @@ export default function Home() {
   const preferences = useAppPreferences();
   const hiddenPages = preferences.hiddenPages.split(",");
   const session = useConversationSession();
-  const { threads, setThreads, selected, setSelected, selectedRef, entries, setEntries, submissions, setSubmissions, busy, setBusy, loading, setLoading, scroll, stickToBottom, restoreScroll, request, initialRestoration } = session;
+  const { threads, setThreads, selected, setSelected, selectedRef, entries, setEntries, busy, setBusy, loading, setLoading, scroll, stickToBottom, restoreScroll, request, initialRestoration } = session;
   // Chat tabs (lib/chat-tabs.ts): the shown tab follows the chat on screen, so every way of opening a chat lands in it.
   const chatTabs = useChatTabs(message => setError(message));
   const { tabs, tabsRef, updateTabs, restoreTabs, restored: restoredTabs } = chatTabs;
@@ -186,7 +184,7 @@ export default function Home() {
   const newDraftKey = useRef("new");
   const runtime = useRuntimeState();
   const { connected, connectionStatus, ready, runtimeNotices, setRuntimeNotices,
-    activity, liveError } = runtime;
+    activity } = runtime;
   useEffect(() => {
     if (ready && connected && document.activeElement === document.body) composerRef.current?.focus();
   }, [ready, connected]);
@@ -252,13 +250,7 @@ export default function Home() {
   useWorkspaceNavigation(shortcutAction);
   useRuntimeEvents({ history, conversations, runtime, selectedRef, request, tabsRef, refreshModels, setError, initialRestoration, rememberFollowing, rememberModes: (id, live) => rememberModes(id, live), reconcileLiveThread, restoredTabs, loadThread, openThread, viewRef, planTurns, setAttention, loveRef, isLoveChatId, setRewindActions, setThreadModes, rewindSwitch, removeThreads, setEntries, clearApprovalDraft });
 
-  const selectedTeamId = selected?.parentThreadId ?? selected?.id;
-  useEffect(() => { if (ready && selectedTeamId) loadChildren(selectedTeamId); }, [ready, selectedTeamId, loadChildren]);
-  // Chats this app could not subscribe to are refreshed by reading them instead.
-  const selectedLiveError = selected ? liveError[selected.id] : undefined;
-  useHistoryFallback({ session, selectedLiveError, view, history, conversations });
-  const related = useRelatedConversations(selected, threads, preferences.showAgentRuns, agentRunsOpen);
-  const { shownEntries, newestPrompt } = useTranscriptPresentation({ selected, entries, submissions, setSubmissions, newDraftKey, scroll, restoreScroll, stickToBottom, view });
+  const { selectedLiveError, related, shownEntries, newestPrompt } = useConversationView({ session, runtime, history, conversations, children, view, showAgentRuns: preferences.showAgentRuns, agentRunsOpen, newDraftKey });
 
   const { activeTurn, permissionMode, planMode, proposedPlan, outsideChatApprovals, readOnlyRun, continues } = conversationStatus(session, options, runtime, providerSettings, view);
   useRewindStatus(ready, connected, selected?.id, activeTurn, setRewindActions, (id, disposed) => loadVersions(id, disposed));
