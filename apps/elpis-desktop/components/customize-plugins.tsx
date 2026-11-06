@@ -15,7 +15,7 @@ import { errorText } from "@/lib/error-text.mts";
 
 export type Plugin = { id: string; name: string; description: string; marketplace: string; enabled: boolean };
 export type ConfigWrite = { version?: string | null; write?: { available: boolean } };
-export type PluginChange = { action: "enable" | "uninstall" | "install"; id: string; enabled?: boolean; version?: string | null };
+export type PluginChange = { action: "enable" | "uninstall" | "install"; id: string; enabled?: boolean; version?: string | null | undefined };
 type CatalogPlugin = Plugin & { pluginName: string; marketplaceName: string; marketplacePath: string | null; installed: boolean; installable: boolean; reason: string | null };
 type Catalog = { marketplaces: { name: string; displayName: string; path: string | null }[]; appCatalogs?: { app: string; label: string; added: boolean }[]; plugins: CatalogPlugin[]; errors: string[]; nextCursor: string | null };
 const message = (error: unknown) => errorText(error);
@@ -50,7 +50,7 @@ export function CustomizePlugins({ cwd, plugins, loaded, config, onChange, onRel
   </>;
 }
 
-function PluginCatalog({ cwd, version, pending, install, errors, onReload }: { cwd: string | null; version?: string | null; pending: boolean; install: (plugin: CatalogPlugin) => Promise<boolean>; errors: Record<string, string>; onReload: () => Promise<void> }) {
+function PluginCatalog({ cwd, version, pending, install, errors, onReload }: { cwd: string | null; version?: string | null | undefined; pending: boolean; install: (plugin: CatalogPlugin) => Promise<boolean>; errors: Record<string, string>; onReload: () => Promise<void> }) {
   const [catalog, setCatalog] = useState<Catalog | null>(null), [query, setQuery] = useState(""), [search, setSearch] = useState("");
   const [source, setSource] = useState(""), [loading, setLoading] = useState(false), [fetchError, setFetchError] = useState("");
   const [changing, setChanging] = useState<string | null>(null), [actionErrors, setActionErrors] = useState<Record<string, string>>({});

@@ -19,8 +19,8 @@ const preview = (item: FollowUp) => item.text || `${item.attachments.length} att
 /** Messages waiting for the running turn to finish (Ctrl+Enter, or Settings → General → Follow-up behavior → Queue), above the
  * message box as in Claude: one message is a row with its three actions; several collapse into a stack that opens into a list. */
 export function QueuedFollowUps({ threadId, activeTurnId, onError, onComplete, onEdit }: {
-  threadId?: string; activeTurnId?: string; onError?: (message: string) => void; onComplete?: (origin: Element | null) => void;
-  /** Edit in composer: the message has left the queue; put it back in the message box. */ onEdit?: (item: FollowUp) => void;
+  threadId?: string; activeTurnId?: string | undefined; onError?: ((message: string) => void) | undefined; onComplete?: ((origin: Element | null) => void) | undefined;
+  /** Edit in composer: the message has left the queue; put it back in the message box. */ onEdit?: ((item: FollowUp) => void) | undefined;
 }) {
   const items = useFollowUps(threadId);
   if (!threadId || !items.length) return null;
@@ -35,6 +35,7 @@ function Tray({ threadId, items, activeTurnId, onError, onComplete, onEdit }: { 
     { id: "remove", label: "Remove from queue", icon: <X />, destructive: true, run: origin => { removeFollowUp(threadId, item.id); onComplete?.(origin); } },
   ];
   const [first] = items;
+  if (!first) return null;
 
   if (items.length === 1) return <ul aria-label="Queued follow-ups" className={TRAY}>
     <li className={ROW}>

@@ -62,6 +62,7 @@ function clearOfTools(area: HTMLElement | null) {
   const tools = part(".App-toolbar"), panel = part(".App-menu__left"), footer = part(".layer-ui__wrapper__footer-left"), gap = 16;
   return { top: (tools ? tools.bottom - board.top : 0) + gap, left: (panel?.width ? panel.right - board.left : 0) + gap, right: gap, bottom: (footer ? board.bottom - footer.top : 0) + gap };
 }
+const scrollOffsets = (area: HTMLElement | null) => { const offsets = clearOfTools(area); return offsets ? { canvasOffsets: offsets } : {}; };
 // Her faces on the board wear the theme's clothes: the saved scene keeps the dark-clothed picture, display swaps it.
 const boardFiles = (files: BinaryFiles, dark: boolean) => Object.fromEntries(Object.entries(files).map(([id, file]) => {
   const themed = (BOARD_THEMED as Record<string, { dark: string; light: string }>)[file.dataURL];
@@ -84,7 +85,7 @@ export default function LoveSpot(props: LoveSpotProps) {
   // Inside Elpis the app provides her voice, so it outlives the board; the standalone Love Spot brings its own.
   const app = useReadAloud();
   if (app) return <LoveSpotBoard {...props} />;
-  return <ReadAloud threadId="love-spot" enabled available={LOVE_SPOT_AUDIO.readAloudAvailable} unavailableReason={LOVE_SPOT_AUDIO.available ? undefined : LOVE_SPOT_AUDIO.reason}><LoveSpotBoard {...props} /></ReadAloud>;
+  return <ReadAloud threadId="love-spot" enabled available={LOVE_SPOT_AUDIO.readAloudAvailable} {...(LOVE_SPOT_AUDIO.available ? {} : { unavailableReason: LOVE_SPOT_AUDIO.reason })}><LoveSpotBoard {...props} /></ReadAloud>;
 }
 function LoveSpotBoard({ dark, toolbarHost }: LoveSpotProps) {
   const speech = useReadAloud();
@@ -195,7 +196,7 @@ function LoveSpotBoard({ dark, toolbarHost }: LoveSpotProps) {
     let frame = 0, tries = 60;
     const show = () => {
       const target = editor.getSceneElements().filter(e => ids.has(e.id));
-      if (target.length) editor.scrollToContent(target, { fitToViewport: true, viewportZoomFactor: 0.8, maxZoom: 1, canvasOffsets: clearOfTools(boardArea.current) });
+      if (target.length) editor.scrollToContent(target, { fitToViewport: true, viewportZoomFactor: 0.8, maxZoom: 1, ...scrollOffsets(boardArea.current) });
       else if (--tries > 0) frame = requestAnimationFrame(show);
     };
     frame = requestAnimationFrame(show);
@@ -272,7 +273,7 @@ function LoveSpotBoard({ dark, toolbarHost }: LoveSpotProps) {
       } finally { remote.current = false; }
       latest.current = snapshot(editor.getSceneElementsIncludingDeleted(), editor.getAppState(), editor.getFiles(), currentPage.current);
       setRenaming(false);
-      editor.scrollToContent(editor.getSceneElements(), { fitToViewport: true, viewportZoomFactor: 0.9, maxZoom: 1, canvasOffsets: clearOfTools(boardArea.current) });
+      editor.scrollToContent(editor.getSceneElements(), { fitToViewport: true, viewportZoomFactor: 0.9, maxZoom: 1, ...scrollOffsets(boardArea.current) });
       if (hasRecovery || art || Object.keys(data.scene.files).length) queueMicrotask(() => void saveLatest.current?.());
       return;
     }
@@ -297,7 +298,7 @@ function LoveSpotBoard({ dark, toolbarHost }: LoveSpotProps) {
       latest.current = snapshot(editor.getSceneElementsIncludingDeleted(), editor.getAppState(), editor.getFiles(), currentPage.current);
       if (screenshot) {
         editor.updateScene({ appState: { selectedElementIds: { [screenshot.id]: true } } });
-        editor.scrollToContent(screenshot, { fitToViewport: true, viewportZoomFactor: 0.9, canvasOffsets: clearOfTools(boardArea.current) });
+        editor.scrollToContent(screenshot, { fitToViewport: true, viewportZoomFactor: 0.9, ...scrollOffsets(boardArea.current) });
       }
       // Her reply never moves his view (5 Nov: it zoomed the board out; the switch that offered it is gone).
       // Inbox images and older pages also pass through the same pixel limit once they arrive.
@@ -439,7 +440,7 @@ function LoveSpotBoard({ dark, toolbarHost }: LoveSpotProps) {
     if (!on) void matilda.quiet();
     void shared.update({ replies: on }).catch(report);
   };
-  const matilda = useMatilda({ context: page?.session, enabled: () => repliesRef.current, ready: () => repliesRef.current && !placingAll.current && !!editorRef.current && !!settings && !calling && !pageBusy && !speech?.active && !editorRef.current.getAppState().editingTextElement && !document.querySelector("textarea.excalidraw-wysiwyg"), onError: setError,
+  const matilda = useMatilda({ ...(page?.session === undefined ? {} : { context: page.session }), enabled: () => repliesRef.current, ready: () => repliesRef.current && !placingAll.current && !!editorRef.current && !!settings && !calling && !pageBusy && !speech?.active && !editorRef.current.getAppState().editingTextElement && !document.querySelector("textarea.excalidraw-wysiwyg"), onError: setError,
     told: ids => told(editorRef.current?.getSceneElements() ?? [], ids),
     send: (text, persona, isCurrent) => sendWithBoard(async revision => {
       const version = voiceVersion.current;
