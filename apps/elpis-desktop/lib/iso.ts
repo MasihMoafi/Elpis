@@ -41,7 +41,7 @@ export function isoLayout(graph: Pick<CanvasGraph, "nodes">, waves: ReadonlyMap<
 
 /** A wire's way on the ground, as Deus Ex's grid lines run: along the waves, across them halfway to the next column,
  * then on into its agent. */
-export function isoRoute(from: Ground, to: Ground): Ground[] {
+export function isoRoute(from: Ground, to: Ground): [Ground, Ground, ...Ground[]] {
   if (from.v === to.v) return [from, to];
   const turn = from.u + Math.min(ISO_STEP.column / 2, (to.u - from.u) / 2);
   return [from, { u: turn, v: from.v }, { u: turn, v: to.v }, to];

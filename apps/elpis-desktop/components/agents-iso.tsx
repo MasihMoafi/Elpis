@@ -40,8 +40,24 @@ type View = { zoom: number; x: number; y: number };
 
 const xy = (point: Point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`;
 /** A square of `side` on the ground around `ground`, lifted to `z`: its back, right, front and left corners. */
-const square = (ground: Ground, side: number, z = 0) => [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([du, dv]) => project(ground.u + du * side / 2, ground.v + dv * side / 2, z));
+const square = (ground: Ground, side: number, z = 0): [Point, Point, Point, Point] => {
+  const corner = (du: number, dv: number) => project(ground.u + du * side / 2, ground.v + dv * side / 2, z);
+  return [corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)];
+};
 const points = (list: Point[]) => list.map(xy).join(" ");
+
+/** Routes always have at least two points. */
+function longestSpan(route: [Ground, Ground, ...Ground[]]): [Ground, Ground] {
+  let from = route[0], to = route[1], previous = to, length = Math.hypot(to.u - from.u, to.v - from.v);
+  for (let index = 2; index < route.length; index++) {
+    const next = route[index];
+    if (!next) continue;
+    const span = Math.hypot(next.u - previous.u, next.v - previous.v);
+    if (span > length) { from = previous; to = next; length = span; }
+    previous = next;
+  }
+  return [from, to];
+}
 
 /** The screen box of everything drawn, at zoom 1: each pedestal's top, its plate and its ring. */
 function bounds(places: IsoPlace[]): Box {
@@ -95,11 +111,8 @@ function wireState({ source, target, kind }: CanvasEdge, states: States) {
 
 /** Three chevrons flat on the ground on a wire's longest stretch, pointing the way the work flows, as on Deus Ex's
  * hacking screen; they stream along it while the wire is live. */
-function Chevrons({ route, live }: { route: Ground[]; live: boolean }) {
-  const span = (index: number) => Math.hypot(route[index].u - route[index - 1].u, route[index].v - route[index - 1].v);
-  let longest = 1;
-  for (let index = 2; index < route.length; index++) if (span(index) > span(longest)) longest = index;
-  const from = route[longest - 1], to = route[longest], length = span(longest) || 1;
+function Chevrons({ route, live }: { route: [Ground, Ground, ...Ground[]]; live: boolean }) {
+  const [from, to] = longestSpan(route), length = Math.hypot(to.u - from.u, to.v - from.v) || 1;
   const way = { u: (to.u - from.u) / length, v: (to.v - from.v) / length };
   const local = (along: number, side: number) => project(way.u * along - way.v * side, way.v * along + way.u * side);
   const start = project(from.u, from.v), end = project(to.u, to.v), dx = end.x - start.x, dy = end.y - start.y;
@@ -212,9 +225,9 @@ export function IsoBoard({ workflowIdentity, inserting, canConnect, onReconnect,
     ...agents.filter(place => his.has(place.id) && !graph.edges.some(edge => waits(edge) && edge.target === place.id && his.has(edge.source))).map(place => ({ id: `${FATHER}->${place.id}`, source: FATHER, target: place.id })),
     ...graph.edges.filter(edge => byId.has(edge.source) && byId.has(edge.target)),
   ];
-  const motherWires = wires.filter(wire => wire.source === MOTHER), motherPlace = byId.get(MOTHER);
+  const motherWires = wires.filter(wire => wire.source === MOTHER), motherWire = motherWires[0], motherPlace = byId.get(MOTHER);
   const junction = motherPlace ? { u: motherPlace.ground.u + ISO_STEP.column / 2, v: motherPlace.ground.v } : null;
-  const routeOf = (wire: CanvasEdge) => {
+  const routeOf = (wire: CanvasEdge): [Ground, Ground, ...Ground[]] => {
     const to = byId.get(wire.target)!.ground;
     return wire.source === MOTHER && junction ? [junction, { u: junction.u, v: to.v }, to] : isoRoute(byId.get(wire.source)!.ground, to);
   };
@@ -222,7 +235,8 @@ export function IsoBoard({ workflowIdentity, inserting, canConnect, onReconnect,
   // One agent is in the tab order (the last focused, else the selected, else the Mother); the arrows walk the rest.
   const tabbable = focusId && byId.has(focusId) ? focusId : selected.find(id => byId.has(id)) ?? order[0];
   const hot = hovered ?? focused;
-  const subject = hot ?? (selected.length === 1 && byId.has(selected[0]) ? selected[0] : null);
+  const singleSelection = selected.length === 1 ? selected[0] : undefined;
+  const subject = hot ?? (singleSelection && byId.has(singleSelection) ? singleSelection : null);
   const pick = (id: string, add: boolean) => { setFocusId(id); onSelect(add && id !== FATHER ? (selected.includes(id) ? selected.filter(item => item !== id) : [...selected, id]) : [id]); };
   const open = (id: string) => { pick(id, false); if (byId.get(id)?.kind === "agent") onOpen(id); };
   const screen = (point: Point) => ({ x: view.x + view.zoom * point.x, y: view.y + view.zoom * point.y });
@@ -239,7 +253,7 @@ export function IsoBoard({ workflowIdentity, inserting, canConnect, onReconnect,
     if (step && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey) {
       event.preventDefault();
       const next = order[Math.max(0, Math.min(order.length - 1, order.indexOf(id) + step))];
-      setFocusId(next); buttons.current.get(next)?.focus({ preventScroll: true }); reveal(next);
+      if (next) { setFocusId(next); buttons.current.get(next)?.focus({ preventScroll: true }); reveal(next); }
     } else if (event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey) { event.preventDefault(); open(id); }
   };
 
@@ -354,7 +368,7 @@ export function IsoBoard({ workflowIdentity, inserting, canConnect, onReconnect,
         <polygon className="iso-floor" points={points([project(u0, v0), project(u1, v0), project(u1, v1), project(u0, v1)])} />
         <g className="iso-grid">{grid.map(([a, b], index) => <line key={index} x1={a.x} y1={a.y} x2={b.x} y2={b.y} />)}</g>
         {places.map(place => { const glow = ellipse(shapeOf(place).ring * 1.15); return <ellipse key={place.id} className="iso-glow" data-status={statusOf(place.id)} filter={`url(#${blur})`} cx={place.at.x} cy={place.at.y} rx={glow.rx} ry={glow.ry} />; })}
-        {motherPlace && junction && motherWires[0] && <g className="iso-link iso-mother-trunk" data-mother="true" onClick={event => onWireClick(event, motherWires[0])} onContextMenu={event => { event.preventDefault(); event.stopPropagation(); onWireMenu(event, motherWires[0]); }}>
+        {motherPlace && junction && motherWire && <g className="iso-link iso-mother-trunk" data-mother="true" onClick={event => onWireClick(event, motherWire)} onContextMenu={event => { event.preventDefault(); event.stopPropagation(); onWireMenu(event, motherWire); }}>
           <path className="iso-wire-hit" d={`M ${xy(motherPlace.at)} L ${xy(project(junction.u, junction.v))}`} />
           <path className="iso-wire" d={`M ${xy(motherPlace.at)} L ${xy(project(junction.u, junction.v))}`} />
           <Chevrons route={[motherPlace.ground, junction]} live={motherWires.some(wire => wireState(wire, states) === "live")} />
@@ -434,13 +448,10 @@ export function IsoBoard({ workflowIdentity, inserting, canConnect, onReconnect,
       })}
       {[
         ...graph.edges.filter(wire => wire.label && byId.has(wire.source) && byId.has(wire.target)),
-        ...(graph.motherFlow && motherWires[0] ? [{ ...motherWires[0], label: graph.motherFlow }] : []),
+        ...(graph.motherFlow && motherWire ? [{ ...motherWire, label: graph.motherFlow }] : []),
       ].map(wire => {
-        const route = wire.source === MOTHER && motherPlace && junction ? [motherPlace.ground, junction] : routeOf(wire);
-        let longest = 1;
-        const length = (i: number) => Math.hypot(route[i].u - route[i - 1].u, route[i].v - route[i - 1].v);
-        for (let i = 2; i < route.length; i++) if (length(i) > length(longest)) longest = i;
-        const from = route[longest - 1], to = route[longest], at = screen(project((from.u + to.u) / 2, (from.v + to.v) / 2));
+        const route: [Ground, Ground, ...Ground[]] = wire.source === MOTHER && motherPlace && junction ? [motherPlace.ground, junction] : routeOf(wire);
+        const [from, to] = longestSpan(route), at = screen(project((from.u + to.u) / 2, (from.v + to.v) / 2));
         const width = Math.min(LABEL.max, textWidth(wire.label!, family) + 18);
         const preferred = { x: Math.max(width / 2 + 6, Math.min((size?.width ?? Infinity) - width / 2 - 6, at.x)), y: Math.max(LABEL.height + 6, Math.min((size?.height ?? Infinity) - INSET.bottom, at.y - 10)) };
         const xs = [preferred.x], ys = [preferred.y];
@@ -467,7 +478,7 @@ export function IsoBoard({ workflowIdentity, inserting, canConnect, onReconnect,
     {/* The status panel, as Deus Ex's: what the pointer, the keys or the selection is on. */}
     <section className="iso-hud iso-status iso-chamfer" aria-label="Agent status" data-kind={subjectPlace?.kind}>
       {subjectPlace ? <><strong title={titleOf(subjectPlace.id)}>{titleOf(subjectPlace.id)}</strong>
-        <small title={subjectPlace.kind !== "agent" ? parentLine(subjectPlace.id).join(" · ") : states[subjectPlace.id]?.status === "running" && states[subjectPlace.id]?.activity ? `Now: ${states[subjectPlace.id].activity}` : `${STATUS[statusOf(subjectPlace.id)]} · ${CHECK[statusOf(checkOf(subjectPlace.id))]}`}>{subjectPlace.kind !== "agent" ? parentLine(subjectPlace.id).join(" · ") : states[subjectPlace.id]?.status === "running" && states[subjectPlace.id]?.activity ? `Now: ${states[subjectPlace.id].activity}` : `${STATUS[statusOf(subjectPlace.id)]} · ${CHECK[statusOf(checkOf(subjectPlace.id))]}`}</small>{subjectModel && <small title={subjectModel}>{subjectModel}</small>}</>
+        <small title={subjectPlace.kind !== "agent" ? parentLine(subjectPlace.id).join(" · ") : states[subjectPlace.id]?.status === "running" && states[subjectPlace.id]?.activity ? `Now: ${states[subjectPlace.id]?.activity}` : `${STATUS[statusOf(subjectPlace.id)]} · ${CHECK[statusOf(checkOf(subjectPlace.id))]}`}>{subjectPlace.kind !== "agent" ? parentLine(subjectPlace.id).join(" · ") : states[subjectPlace.id]?.status === "running" && states[subjectPlace.id]?.activity ? `Now: ${states[subjectPlace.id]?.activity}` : `${STATUS[statusOf(subjectPlace.id)]} · ${CHECK[statusOf(checkOf(subjectPlace.id))]}`}</small>{subjectModel && <small title={subjectModel}>{subjectModel}</small>}</>
         : <><strong title={overview}>{overview}</strong><small title="Click an agent to select it · Enter opens it">Click an agent to select it · Enter opens it</small></>}
     </section>
   </div>;
