@@ -61,10 +61,18 @@ Elpis treats both as one problem, the context an agent works in, and answers it 
 - **Context Ledger.** Every instruction file, file and memory an agent receives, with its token cost; include or exclude each.
   <img src="website/assets/technical/context-ledger.webp" alt="The Context Ledger in the Elpis terminal app: each instruction file with its token cost and an INCLUDED mark" width="420">
 - **Workflows.** Describe a job; the Mother agent does it herself or designs a team on a board you can edit. Patterns: Sequential, Parallel, Kahn graph waves, Recursive and Voting.
+
+  ![Workflows: the Mother agent designs a team, runs it and checks each agent's work](website/assets/technical/workflows.gif)
+
 - **Observability.** Every request, tool call, token and cache hit of a chat on one timeline, in the desktop app's Observability page and the terminal's `/dashboard` (next release).
 - **One app for every model.** GPT, Claude and Gemini, through your ChatGPT or Claude subscription or an API key; switch models without losing the thread, and import chats from Claude Code and Codex.
-- **Two apps, one engine.** A desktop app (four themes, light and dark) and a terminal app, sharing sessions and state.
+- **Two apps, one engine.** A desktop app (four themes, light and dark) and a terminal app, sharing sessions and state. In the terminal, the Agent command center shows each helper under its parent chat.
+
+  ![The Agent command center in the Elpis terminal app, with example tasks: GPT and Claude helpers under their parent chat, each model in its own colour](website/assets/technical/tui-agent-command-center.webp)
+
 - **Love Spot.** A drawing board where Matilda, the app's companion, answers and draws with you.
+
+  ![Love Spot: Matilda answers on the drawing board](website/assets/technical/lovespot.gif)
 
 ![One Elpis desktop chat in six themes: Elpis dark and light, Midnight dark, Paper light, Plum dark and Midnight light](website/assets/technical/themes.gif)
 
@@ -97,6 +105,8 @@ flowchart LR
 | The owner decides what lives | The Mother agent reviews the combined commit and must pass it with evidence before Elpis fast-forwards your project. |
 
 A Voting team (three answering agents and one tally agent, each with its own check) finished on GPT-6 Luna and on Claude Haiku 5.5 in 74 to 100 seconds; the test is [`tests/canvas-live.runtime.mjs`](apps/elpis-desktop/tests/canvas-live.runtime.mjs). Outside a Git project the folders are instructions, not enforced.
+
+<img src="website/assets/technical/workflows-voting-dark.png" alt="A finished Voting workflow in the Elpis desktop app: the Mother agent starts three answering agents, each checked, and a tally agent joins their answers">
 
 **What Elpis builds on, and what it adds.** Elpis is a fork of [OpenAI's Codex](https://github.com/openai/codex) (Apache-2.0): its engine, about 2.3 million lines in `codex-rs/`, carries Elpis's changes but stays close to upstream. Elpis's own code is about 214,000 lines, 8% of the repository: the desktop app, the bridge, the Context Ledger, workflows, the terminal additions and their tests. The Observability page is a port of the Trajectory view from [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (MIT); thank you to its authors. Details: [technical guide](docs/GUIDE.md#runtime-architecture), [context](docs/context.md), [sessions](docs/sessions.md).
 
