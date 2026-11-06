@@ -125,6 +125,7 @@ import { useRelatedConversations } from "@/lib/use-related-conversations";
 import { useTranscriptPresentation } from "@/lib/use-transcript-presentation";
 import { createSidebarPlacement } from "@/lib/sidebar-placement";
 import { createApprovalActions } from "@/lib/approval-actions";
+import { createShellSend } from "@/lib/shell-send";
 import { refusedOffline, type View, type WorkflowReplay, type NextTurn } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
 import { useComposerState } from "@/lib/use-composer-state";
@@ -263,7 +264,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const editDraft = (value: string) => { setText(value); saveDraft(selectedRef.current?.id || newDraftKey.current, value); };
   const attachmentState = useComposerAttachments({ selectedRef, newDraftKey, shellMode, savedAttachments, saveAttachments, setError, setRuntimeNotices });
-  const { attachments, attachmentsRef, attaching, fileNotice, setFileNotice, setAttachments, restoreAttachments } = attachmentState;
+  const { attachments, attaching, fileNotice, setFileNotice, setAttachments, restoreAttachments } = attachmentState;
   /** The browser's annotations and screenshots join the composer's files; its Send also sends the message. */
   async function attachFromBrowser(parts: Attachment[], submit: boolean) {
     const owner = selectedRef.current?.id || newDraftKey.current;
@@ -557,27 +558,7 @@ export default function Home() {
   /** Sends the composer's message, or `own`: a command's message (such as /init's prompt), sent without the composer's files.
    * While a turn runs, `followUp` steers or queues this one message instead of following Settings (Ctrl+Enter). */
   const send = createChatSend({ projectState, composer, conversations, runtime, attachments: attachmentState, drafts: draftStore, sendShell: () => sendShell(), askSideQuestion: question => askSideQuestion(question), restoreComposerFocus: origin => restoreComposerFocus(origin), readOnlyRun, selected, editDraft, busy, canSendFollowUp, imageBlocked, missingChoiceNotice, needsModelId, model, setError, sending, setBusy, newDraftKey, request, tabsRef, activeTurn, continues, preferences, stickToBottom, setSubmissions, entries, newMode, newChoice, newWorktree, noteStartedMode, browser, setThreads, assignProject, pending, effort, newPlan, selectedRef, loadThread, setThreadPlans, setNewPlan, setNextTurn });
-  async function sendShell() {
-    const command = textRef.current, originalRequest = request.current;
-    if (!command.trim() || busy || !ready || !connected || projectChanging) return;
-    if (attachmentsRef.current.length) { setFileNotice("Bash mode is on. Return to chat to send attachments."); return; }
-    setBusy(true); setError("");
-    let thread = selectedRef.current;
-    const originalId = thread?.id || newDraftKey.current, browserDraft = `draft:${tabsRef.current.activeId}`;
-    try {
-      if (!thread) {
-        const result = await api<{ thread: Thread; permissions?: PermissionMode | null }>("/threads", { ...(newMode ? { permissions: newMode } : {}), ...(model.trim() ? { model: model.trim() } : {}), ...(newChoice?.provider ? { provider: newChoice.provider } : {}), ...(newChatFolder(cwd) ? { cwd: newChatFolder(cwd) } : {}) });
-        thread = result.thread; upsertThread(thread); noteStartedMode(thread.id, result.permissions ?? newMode);
-        if (projectId) await assignProject(thread.id, projectId);
-        await browser.adoptSession(browserDraft, thread.id);
-        if (request.current === originalRequest) { saveDraft(originalId, ""); saveDraft(thread.id, command); shellCreated.current = thread.id; select(thread); }
-      }
-      await api(`/threads/${encodeURIComponent(thread.id)}/shell`, { command });
-      if (savedDraft(thread.id) === command) saveDraft(thread.id, "");
-      if (selectedRef.current?.id === thread.id && textRef.current === command && request.current === originalRequest) setText("");
-    } catch (e) { if (request.current === originalRequest) setError(errorText(e)); }
-    finally { setBusy(false); if (request.current === originalRequest) focusComposer(); }
-  }
+  const sendShell = createShellSend({ composer, attachments: attachmentState, conversations, drafts: draftStore, projectState, runtime, selectedRef, request, newDraftKey, tabsRef, busy, setBusy, setError, newMode, model, newChoice, noteStartedMode, assignProject, browser, focusComposer: () => focusComposer() });
   const { replaceFrom, rewindFrom, deleteFrom, switchRewind, loadVersions, showVersion } = createMessageActions({ composer, conversations, drafts: draftStore, history, runtime, selectedRef, request, stickToBottom, rewindSwitch, replacementOptions, entries, nextTurn, submitDraft, setRuntimeNotices, setMessageEdits, setNextTurn, setEntries, setThreads, setRewindBusy, setRewindActions, setMessageVersions, loadThread, editDraft, focusComposer: () => focusComposer(), restoreComposerFocus: origin => restoreComposerFocus(origin) });
   const { approvalCardProps } = createApprovalActions({ approvals: approvalDrafts, submissions: approvalSubmissions, runtime, request, restoreComposerFocus: origin => restoreComposerFocus(origin) });
   const { earlierHeld, older } = createEarlierMessages({ history, selected, selectedRef, request, setLoading, setError, setEntries, stickToBottom, scroll, restoreScroll });
