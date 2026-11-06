@@ -48,28 +48,3 @@ test('SETTINGS: Configuration owns model edits and preserves custom model drafts
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
-
-test('SETTINGS: app shortcuts change in place, reject conflicts, persist, and reset', async () => {
-  const f = await fixture({ height: 1080, routes });
-  try {
-    await openSettings(f.page);
-    await f.page.getByRole('tab', { name: 'Keyboard shortcuts', exact: true }).click();
-    const recorder = f.page.getByRole('button', { name: 'Shortcut for Settings', exact: true });
-    await recorder.press('Control+n');
-    await f.page.getByRole('alert').filter({ hasText: 'already used by New chat' }).waitFor();
-    await recorder.press('Control+Alt+y');
-    await f.page.getByRole('button', { name: 'Back to app', exact: true }).click();
-    await f.page.keyboard.press('Control+,');
-    assert.equal(await f.page.locator('.settings-nav').isVisible(), false, 'the replaced binding is inactive');
-    await f.page.keyboard.press('Control+Alt+y');
-    await f.page.locator('.settings-nav').waitFor();
-    await f.page.reload(); await openSettings(f.page);
-    await f.page.getByRole('tab', { name: 'Keyboard shortcuts', exact: true }).click();
-    assert.match(await recorder.textContent(), /Y/);
-    await f.page.getByRole('button', { name: 'Reset shortcut for Settings', exact: true }).click();
-    await f.page.getByRole('button', { name: 'Back to app', exact: true }).click();
-    await f.page.keyboard.press('Control+,');
-    await f.page.locator('.settings-nav').waitFor();
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});

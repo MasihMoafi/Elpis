@@ -4,43 +4,6 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { fixture, THREADS } = require('./parity-fixture.cjs');
 const { scrollToLoadEarlier } = require('./controls.cjs');
-const { PORTRAIT_INSTRUCTIONS } = require('../bridge/matilda-face.cjs');
-
-for (const colorScheme of ['light']) test(`automatic portrait guidance does not duplicate a live message (${colorScheme})`, async t => {
-  const text = 'Keep the taller message box. ';
-  const f = await fixture({ running: true, colorScheme, routes: {
-    '/api/threads/chat-a/steer': () => ({ turnId: 't4' }),
-  } });
-  t.after(() => f.close());
-  await f.open('chat-a');
-  await f.composer.fill(text); await f.composer.press('Enter');
-  const users = f.page.locator('.message.user').filter({ hasText: text.trim() });
-  await users.waitFor();
-  const note = `File: Reply portrait.txt\n${PORTRAIT_INSTRUCTIONS}`;
-  const echo = { id: 'portrait-echo', type: 'userMessage', content: [
-    { type: 'text', text }, { type: 'text', text: note, text_elements: [{ byteRange: { start: 0, end: Buffer.byteLength(note) }, placeholder: 'Attachment: Reply portrait.txt' }] },
-  ] };
-  f.emit('message', { method: 'item/completed', params: { threadId: 'chat-a', turnId: 't4', item: echo } });
-  await f.page.locator('.user-turn[data-message-reference*="portrait-echo"]').waitFor();
-  assert.equal(await users.getByText('Reply portrait.txt', { exact: true }).count(), 0, 'internal portrait guidance stays out of the message');
-  assert.equal(await users.count(), 1, 'the enriched engine echo replaces the temporary bubble');
-  f.turns.at(-1)[3] = [echo];
-  await f.page.getByRole('button', { name: 'Refresh conversation', exact: true }).click();
-  await f.page.waitForTimeout(150);
-  assert.equal(await users.count(), 1, 'history refresh keeps one complete user message');
-  assert.equal(await users.getByText('Reply portrait.txt', { exact: true }).count(), 0, 'history keeps internal guidance hidden');
-  const realNote = 'File: Reply portrait.txt\nThese are my own portrait notes.';
-  const realFile = { id: 'real-portrait-file', type: 'userMessage', content: [{ type: 'text', text: realNote, text_elements: [{ byteRange: { start: 0, end: Buffer.byteLength(realNote) }, placeholder: 'Attachment: Reply portrait.txt' }] }] };
-  f.emit('message', { method: 'item/completed', params: { threadId: 'chat-a', turnId: 't4', item: realFile } });
-  await f.page.getByText('Reply portrait.txt', { exact: true }).waitFor();
-  await f.page.getByText('Reply portrait.txt', { exact: true }).click();
-  await f.page.getByText('These are my own portrait notes.', { exact: true }).waitFor();
-  assert.deepEqual(f.errors, []);
-  if (process.env.ELPIS_LIVE_EVIDENCE) {
-    await fs.mkdir(process.env.ELPIS_LIVE_EVIDENCE, { recursive: true });
-    await f.page.screenshot({ path: path.join(process.env.ELPIS_LIVE_EVIDENCE, `portrait-echo-${colorScheme}.png`) });
-  }
-});
 
 test('a follow-up stays after earlier work when the loaded history starts mid-turn', async t => {
   const turnId = 't4';

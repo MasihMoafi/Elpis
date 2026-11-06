@@ -266,3 +266,11 @@ test('a browser playing a video is not music: the music player is chosen, and th
   assert.equal(music.status, 'Paused', 'nothing plays, so the control stays hidden');
   await assert.rejects(fs.access(browser.calls), { code: 'ENOENT' });
 });
+
+test('only Elpis\'s exact portrait guidance is hidden from the transcript; a real file with the same name stays', async () => {
+  const { isPortraitInstruction, PORTRAIT_ATTACHMENT_NAME, PORTRAIT_INSTRUCTIONS } = await import('./matilda-face.cjs');
+  const guidance = `File: ${PORTRAIT_ATTACHMENT_NAME}\n${PORTRAIT_INSTRUCTIONS}`;
+  assert.equal(isPortraitInstruction({ type: 'text', text: guidance }), true);
+  for (const part of [{ type: 'text', text: `File: ${PORTRAIT_ATTACHMENT_NAME}\nMy own notes` }, { type: 'image', text: guidance }, { type: 'text', text: `${guidance} ` }, null, 'text'])
+    assert.equal(isPortraitInstruction(part), false, JSON.stringify(part));
+});
