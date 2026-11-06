@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { BridgeError } from './client.mts';
-import { childEnv } from './tools.mjs';
+import { childEnv } from './tools.mts';
 
 const MAX_AUDIO = 8 * 1024 * 1024;
 const MAX_PCM = 120 * 16000 * 2;

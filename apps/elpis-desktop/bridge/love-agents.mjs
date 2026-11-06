@@ -46,7 +46,7 @@ export function agentGraph(elements, selected) {
   return ordered;
 }
 
-// Where Elpis is installed, as desktop/runtime.mjs finds it: the runtime executable, and its provider tools beside it.
+// Where Elpis is installed, as desktop/runtime.mts finds it: the runtime executable, and its provider tools beside it.
 function installation(env) {
   const selected = env.ELPIS_ENGINE_BIN || path.join(os.homedir(), '.local', 'bin', 'elpis-next');
   let engine;

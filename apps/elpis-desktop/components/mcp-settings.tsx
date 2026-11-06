@@ -24,7 +24,7 @@ type Rag = { stages: Stage[]; keys: { openrouter: boolean } };
 const message = (e: unknown) => errorText(e);
 /** A reply without its server list (an older or failing bridge) reads as no servers, never as a broken page. */
 const readMcp = (value: Mcp): Mcp => ({ ...value, servers: Array.isArray(value?.servers) ? value.servers : [], write: value?.write ?? { available: false } });
-/** What the rag tool accepts for its reranker (bridge/tools.mjs): off, the local engine, or an OpenRouter reranker ID. */
+/** What the rag tool accepts for its reranker (bridge/tools.mts): off, the local engine, or an OpenRouter reranker ID. */
 /** Off and the local reranker, then OpenRouter's own reranker catalogue, read live (29 Oct, Masih: "we want real call and showing of real options"). */
 const LOCAL_RERANKERS: Model[] = ([["off", "Off"], ["fastembed", "Local (FastEmbed)"]] as const).map(([model, displayName]) => ({ id: model, model, displayName }));
 const providerName = (stage: Stage) => stage.location === "local" ? "Local" : stage.provider === "openrouter" ? "OpenRouter" : stage.provider === "openai_compatible" ? "OpenAI-compatible API" : stage.provider ?? "Not set";

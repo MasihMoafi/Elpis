@@ -5,22 +5,29 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { createTrash } from './trash.mjs';
+import { createTrash } from './trash.mts';
 import { startDesktopServer } from './server.mjs';
 
 /** The engine as the bridge sees it: chats with parents, archived flags, and every call it was asked to make. */
+type FakeThread = { id: string; name: string; status: { type: string }; archived: boolean; parentThreadId?: string };
+type Listener = (event: { type: string; data: { connected: boolean } }) => void;
 function fakeClient() {
-  const threads = new Map([['root', {}], ['agent', { parentThreadId: 'root' }], ['old-agent', { parentThreadId: 'root', archived: true }], ['other', {}]].map(([id, extra]) => [id, { id, name: id, status: { type: 'idle' }, archived: false, ...extra }]));
-  const calls = [];
-  const descends = (id, from) => { for (let at = threads.get(id); at?.parentThreadId; at = threads.get(at.parentThreadId)) if (at.parentThreadId === from) return true; return false; };
-  return { threads, calls, connected: true, pendingApprovals: [], on() {}, off() {}, close() {},
-    async listThreads({ ancestorThreadId, archived = false } = {}) {
+  const threads = new Map<string, FakeThread>([
+    ['root', { id: 'root', name: 'root', status: { type: 'idle' }, archived: false }],
+    ['agent', { id: 'agent', name: 'agent', status: { type: 'idle' }, archived: false, parentThreadId: 'root' }],
+    ['old-agent', { id: 'old-agent', name: 'old-agent', status: { type: 'idle' }, archived: true, parentThreadId: 'root' }],
+    ['other', { id: 'other', name: 'other', status: { type: 'idle' }, archived: false }],
+  ]);
+  const calls: (string | boolean | null)[][] = [];
+  const descends = (id: string, from: string) => { for (let at = threads.get(id); at?.parentThreadId; at = threads.get(at.parentThreadId)) if (at.parentThreadId === from) return true; return false; };
+  return { threads, calls, connected: true, pendingApprovals: [], on(_name: string, _listen: Listener): void {}, off(_name: string, _listen: Listener): void {}, close() {},
+    async listThreads({ ancestorThreadId, archived = false }: { ancestorThreadId?: string; archived?: boolean } = {}) {
       calls.push(['list', ancestorThreadId ?? null, archived]);
       return { data: [...threads.values()].filter(thread => thread.archived === archived && (!ancestorThreadId || descends(thread.id, ancestorThreadId))), nextCursor: null };
     },
-    async archiveThread(id) { calls.push(['archive', id]); for (const thread of threads.values()) if (thread.id === id || descends(thread.id, id)) thread.archived = true; return { archived: true }; },
-    async unarchiveThread(id) { calls.push(['unarchive', id]); threads.get(id).archived = false; return { thread: threads.get(id) }; },
-    async deleteThread(id) { calls.push(['delete', id]); if (!threads.has(id)) throw Error('thread not found'); for (const thread of [...threads.values()]) if (thread.id === id || descends(thread.id, id)) threads.delete(thread.id); return { deleted: true, alsoDeleted: [] }; },
+    async archiveThread(id: string) { calls.push(['archive', id]); for (const thread of threads.values()) if (thread.id === id || descends(thread.id, id)) thread.archived = true; return { archived: true }; },
+    async unarchiveThread(id: string) { calls.push(['unarchive', id]); threads.get(id)!.archived = false; return { thread: threads.get(id)! }; },
+    async deleteThread(id: string) { calls.push(['delete', id]); if (!threads.has(id)) throw Error('thread not found'); for (const thread of [...threads.values()]) if (thread.id === id || descends(thread.id, id)) threads.delete(thread.id); return { deleted: true, alsoDeleted: [] }; },
   };
 }
 const temp = () => fs.mkdtemp(path.join(os.tmpdir(), 'elpis-trash-test-')).then(dir => path.join(dir, 'deleted-chats.json'));
@@ -33,10 +40,10 @@ test('a deleted chat is archived with its agents, hidden from the archive, and C
   assert.equal(trash.has('old-agent'), false, 'an agent archived before stays an ordinary archived chat');
   assert.equal(client.calls.some(call => call[0] === 'delete'), false, 'nothing is deleted before the app quits');
   const back = await trash.undo();
-  assert.deepEqual([back.threads.map(thread => thread.id), back.restored], [['root'], ['root', 'agent']]);
+  assert.deepEqual([back.threads.map((thread: { id: string }) => thread.id), back.restored], [['root'], ['root', 'agent']]);
   assert.deepEqual(client.calls.filter(call => call[0] === 'unarchive'), [['unarchive', 'root'], ['unarchive', 'agent']]);
-  assert.equal(client.threads.get('old-agent').archived, true);
-  assert.deepEqual((await trash.undo()).threads.map(thread => thread.id), ['other']);
+  assert.equal(client.threads.get('old-agent')!.archived, true);
+  assert.deepEqual((await trash.undo()).threads.map((thread: { id: string }) => thread.id), ['other']);
   assert.deepEqual(await trash.undo(), { threads: [], restored: [] });
 });
 
@@ -44,7 +51,7 @@ test('quitting deletes the waiting chats for good; a crash leaves them on disk f
   const file = await temp(), client = fakeClient();
   const first = await createTrash({ client, file });
   await first.trash(['root', 'other']);
-  assert.deepEqual(JSON.parse(await fs.readFile(file, 'utf8')).entries.map(entry => entry.ids), [['root', 'other']]);
+  assert.deepEqual(JSON.parse(await fs.readFile(file, 'utf8')).entries.map((entry: { ids: string[] }) => entry.ids), [['root', 'other']]);
   // The app crashed here: no purge. The next start reads the file.
   const next = await createTrash({ client, file });
   assert.ok(next.has('root') && next.has('agent'));
@@ -62,23 +69,23 @@ test('a chat that is already gone does not keep the deletion list alive; a faile
   client.threads.delete('root'); client.threads.delete('agent');
   const real = client.deleteThread; client.deleteThread = async id => { if (id === 'other') throw Error('Elpis is busy'); return real(id); };
   await trash.purge();
-  assert.deepEqual(JSON.parse(await fs.readFile(file, 'utf8')).entries.map(entry => entry.ids), [['other']]);
+  assert.deepEqual(JSON.parse(await fs.readFile(file, 'utf8')).entries.map((entry: { ids: string[] }) => entry.ids), [['other']]);
 });
 
 test('the server deletes the earlier session’s chats before it serves, hides waiting chats from the archived list, and deletes this session’s chats when it closes', async t => {
   const file = await temp(), client = fakeClient();
   await fs.writeFile(file, JSON.stringify({ version: 1, entries: [{ ids: ['other'], archived: ['other'] }] }));
-  client.threads.get('other').archived = true;
+  client.threads.get('other')!.archived = true;
   const app = await startDesktopServer({ client, trashFile: file }); let closed = false; t.after(() => closed || app.close());
   assert.deepEqual(client.calls.filter(call => call[0] === 'delete'), [['delete', 'other']], 'a crash’s leftovers go at the next start');
   const url = new URL(app.url), origin = url.origin, token = new URLSearchParams(url.hash.slice(1)).get('token');
-  const post = (pathname, data, cookie) => fetch(origin + pathname, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin, ...(cookie ? { Cookie: cookie } : {}) }, body: JSON.stringify(data) });
-  const cookie = (await post('/api/session', { token })).headers.get('set-cookie').split(';')[0];
-  const get = pathname => fetch(origin + pathname, { headers: { Cookie: cookie } }).then(response => response.json());
+  const post = (pathname: string, data: unknown, cookie?: string) => fetch(origin + pathname, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin, ...(cookie ? { Cookie: cookie } : {}) }, body: JSON.stringify(data) });
+  const cookie = (await post('/api/session', { token })).headers.get('set-cookie')!.split(';')[0]!;
+  const get = (pathname: string) => fetch(origin + pathname, { headers: { Cookie: cookie } }).then(response => response.json());
   assert.deepEqual(await (await post('/api/trash', { threadIds: ['root'] }, cookie)).json(), { trashed: ['root'] });
-  assert.deepEqual((await get('/api/threads?archived=true')).data.map(thread => thread.id), ['old-agent']);
+  assert.deepEqual((await get('/api/threads?archived=true')).data.map((thread: { id: string }) => thread.id), ['old-agent']);
   assert.equal((await post('/api/trash', { threadIds: [] }, cookie)).status, 400);
-  assert.deepEqual((await (await post('/api/trash/undo', {}, cookie)).json()).threads.map(thread => thread.id), ['root']);
+  assert.deepEqual((await (await post('/api/trash/undo', {}, cookie)).json()).threads.map((thread: { id: string }) => thread.id), ['root']);
   await post('/api/trash', { threadIds: ['root'] }, cookie);
   closed = true; await app.close();
   assert.deepEqual(client.calls.filter(call => call[0] === 'delete').map(call => call[1]), ['other', 'root']);
@@ -92,7 +99,7 @@ test('trash reports kept worktrees per chat and omits clean worktrees', async ()
   client.archiveThread = async id => ({ ...await archive(id), worktree: id === 'root' ? kept : { removed: true, path: '/tmp/clean', branch: 'elpis/chat-456abc' } });
   const trash = await createTrash({ client });
   assert.deepEqual(await trash.trash(['root', 'other']), { trashed: ['root', 'other'], worktrees: [{ threadId: 'root', worktree: kept }] });
-  assert.deepEqual((await trash.undo()).threads.map(thread => thread.id), ['root', 'other']);
+  assert.deepEqual((await trash.undo()).threads.map((thread: { id: string }) => thread.id), ['root', 'other']);
 });
 
 test('Ctrl+Z works when unarchiving a chat brings its agents back with it: each chat is unarchived once', async () => {
@@ -100,38 +107,38 @@ test('Ctrl+Z works when unarchiving a chat brings its agents back with it: each 
   const client = fakeClient();
   client.unarchiveThread = async id => {
     client.calls.push(['unarchive', id]);
-    if (!client.threads.get(id).archived) throw Error(`thread ${id} is not archived`);
-    client.threads.get(id).archived = false;
+    if (!client.threads.get(id)!.archived) throw Error(`thread ${id} is not archived`);
+    client.threads.get(id)!.archived = false;
     const restored = id === 'root' ? ['agent'] : [];
-    for (const agent of restored) client.threads.get(agent).archived = false;
-    return { thread: client.threads.get(id), ...(restored.length ? { restored } : {}) };
+    for (const agent of restored) client.threads.get(agent)!.archived = false;
+    return { thread: client.threads.get(id)!, ...(restored.length ? { restored } : {}) };
   };
   const trash = await createTrash({ client, file: await temp() });
   await trash.trash(['root']);
   const back = await trash.undo();
-  assert.deepEqual([back.threads.map(thread => thread.id), back.restored], [['root'], ['root', 'agent']]);
+  assert.deepEqual([back.threads.map((thread: { id: string }) => thread.id), back.restored], [['root'], ['root', 'agent']]);
   assert.deepEqual(client.calls.filter(call => call[0] === 'unarchive'), [['unarchive', 'root']]);
-  assert.equal(client.threads.get('agent').archived, false);
+  assert.equal(client.threads.get('agent')!.archived, false);
 });
 
 test('a chat and its agent deleted together: the agent goes with its chat, and the deletion does not fail on it', async () => {
   // The engine refuses to archive a chat that is already archived; the sidebar's selection held both (24 Oct).
   const client = fakeClient(), archive = client.archiveThread;
-  client.archiveThread = async id => { if (client.threads.get(id).archived) throw Error(`thread ${id} is already archived`); return archive(id); };
+  client.archiveThread = async id => { if (client.threads.get(id)!.archived) throw Error(`thread ${id} is already archived`); return archive(id); };
   const trash = await createTrash({ client, file: await temp() });
   assert.deepEqual(await trash.trash(['root', 'agent']), { trashed: ['root'] });
   assert.ok(trash.has('agent'));
   const back = await trash.undo();
-  assert.deepEqual([back.threads.map(thread => thread.id), back.restored], [['root'], ['root', 'agent']]);
+  assert.deepEqual([back.threads.map((thread: { id: string }) => thread.id), back.restored], [['root'], ['root', 'agent']]);
 });
 
 test('a server that opens before the runtime deletes the earlier session’s chats once the runtime connects', async t => {
-  const file = await temp(), client = fakeClient(), listeners = new Set();
+  const file = await temp(), client = fakeClient(), listeners = new Set<Listener>();
   await fs.writeFile(file, JSON.stringify({ version: 1, entries: [{ ids: ['other'], archived: ['other'] }] }));
-  client.threads.get('other').archived = true; client.connected = false;
+  client.threads.get('other')!.archived = true; client.connected = false;
   const deleteThread = client.deleteThread;
   client.deleteThread = async id => { if (!client.connected) { client.calls.push(['refused', id]); throw Error('Elpis is disconnected'); } return deleteThread(id); };
-  client.on = (name, listen) => { if (name === 'event') listeners.add(listen); }; client.off = (name, listen) => listeners.delete(listen);
+  client.on = (name, listen) => { if (name === 'event') listeners.add(listen); }; client.off = (name, listen) => { listeners.delete(listen); };
   const app = await startDesktopServer({ client, trashFile: file }); t.after(() => app.close());
   assert.equal(client.calls.some(call => call[0] === 'delete'), false, 'nothing can be deleted before the runtime is there');
   client.connected = true; for (const listen of [...listeners]) listen({ type: 'connection', data: { connected: true } });

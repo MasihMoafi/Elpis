@@ -16,8 +16,8 @@ const validKey = (key: unknown): key is string => typeof key === 'string' && key
 const size = (value: unknown, fallback: number) => Number.isInteger(value) && (value as number) >= 2 && (value as number) <= 1000 ? value as number : fallback;
 const quote = (word: string) => /^[\w./-]+$/.test(word) ? word : `'${word.replaceAll("'", "'\\''")}'`;
 
-/** The app's environment for programs started in the terminal: ~/.local/bin first and loopback unproxied (bridge/tools.mjs). */
-const childEnv = (env: NodeJS.ProcessEnv) => import(pathToFileURL(path.join(__dirname, '../bridge/tools.mjs')).href).then(tools => tools.childEnv(env));
+/** The app's environment for programs started in the terminal: ~/.local/bin first and loopback unproxied (bridge/tools.mts). */
+const childEnv = (env: NodeJS.ProcessEnv) => import(pathToFileURL(path.join(__dirname, '../bridge/tools.mts')).href).then(tools => tools.childEnv(env));
 
 function directory(cwd: unknown, home: string) {
   try { if (typeof cwd === 'string' && path.isAbsolute(cwd) && fs.statSync(cwd).isDirectory()) return cwd; } catch { /* use home */ }

@@ -7,13 +7,13 @@ import { profileEnvironment } from './profile-env.mts';
 import { LOVE_SPOT_AUDIO } from '../lib/love-spot-audio.mts';
 import { createExperimentLab } from './experiment-lab.mjs';
 import { createSchedule } from './schedule.mts';
-import { createTools } from './tools.mjs';
+import { createTools } from './tools.mts';
 import { createTranscription } from './transcription.mjs';
 import { createVoice } from './voice.mjs';
 import { createKokoro } from './kokoro.mts';
 import { createReadAloudProvider } from './read-aloud-provider.mts';
-import { createImportChats } from './import-chats.mjs';
-import { createTrash } from './trash.mjs';
+import { createImportChats } from './import-chats.mts';
+import { createTrash } from './trash.mts';
 import { createLoveSpot } from './love-spot-store.cjs';
 import { createLoveSpotTalk } from './love-spot-talk.mjs';
 import { createMatildaCompanion } from './matilda-companion.mjs';
@@ -53,7 +53,7 @@ import { createHistoryCursors, handleThreadRoutes } from './server-threads.mjs';
  */
 
 /** Starts only this UI server; connects to an existing Elpis runtime and never starts/stops it. `trashFile` keeps the
- * chats deleted from the sidebar until they are deleted for good (bridge/trash.mjs): what a crash left is deleted now.
+ * chats deleted from the sidebar until they are deleted for good (bridge/trash.mts): what a crash left is deleted now.
  * @param {Record<string, unknown>} [rawOptions] */
 export async function startDesktopServer(rawOptions = {}) {
   const options = /** @type {DesktopServerOptions} */ (rawOptions);

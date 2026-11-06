@@ -14,7 +14,7 @@ import { errorText } from "@/lib/error-text.mts";
 
 type Status = "modified" | "added" | "deleted" | "untracked" | "conflicted";
 type Change = { path: string; status: Status; added: number; removed: number; binary: boolean };
-/** `recorded`: the folder has no Git, so the list is the edits this chat recorded (bridge/recorded-changes.mjs). */
+/** `recorded`: the folder has no Git, so the list is the edits this chat recorded (bridge/recorded-changes.mts). */
 type ChangeList = { root: string; files: Change[]; truncated: boolean; recorded?: boolean };
 type FileDiff = { diff: string; truncated: boolean; binary: boolean };
 

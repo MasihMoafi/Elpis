@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
 import { promisify } from 'node:util';
-import { childEnv } from '../bridge/tools.mjs';
+import { childEnv } from '../bridge/tools.mts';
 import { runtimeTools } from '../bridge/runtime-paths.mts';
 import { existingSocket } from '../bridge/client.mts';
 
@@ -19,10 +19,10 @@ export async function ensureInstalledRuntime({ env = process.env } = {}) {
   if (!env.ELPIS_ENGINE_BIN) {
     let socketPath;
     try { socketPath = existingSocket(undefined, env); }
-    catch (error) { if (error.status !== 503) throw error; }
+    catch (error) { if (!(error && typeof error === 'object' && 'status' in error && error.status === 503)) throw error; }
     if (socketPath && await new Promise(resolve => {
       const socket = net.createConnection(socketPath);
-      const done = connected => { socket.destroy(); resolve(connected); };
+      const done = (connected: boolean) => { socket.destroy(); resolve(connected); };
       socket.setTimeout(1000);
       socket.once('connect', () => done(true));
       socket.once('error', () => done(false));
@@ -46,7 +46,7 @@ export async function ensureInstalledRuntime({ env = process.env } = {}) {
 }
 
 /** Runs the installation's launcher helper: it starts that bridge, or has a running one from another installation hand over to it. */
-async function startRuntime(env, engine) {
+async function startRuntime(env: NodeJS.ProcessEnv, engine: string) {
   const bridgeDir = runtimeTools(engine);
   const helper = path.join(bridgeDir, 'shared-runtime.mjs');
   const bridge = path.join(bridgeDir, 'acp-bridge.mjs');

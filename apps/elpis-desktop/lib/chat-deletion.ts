@@ -35,13 +35,13 @@ export function createChatDeletion({ conversations, preferences, selectedRef, sh
     if (preferences.confirmDeleteChats) { setDeleteTargets(targets); return; }
     void trashChats(targets).then(() => { if (focusAt !== undefined) requestAnimationFrame(() => { const links = rowLinks(); (links[focusAt] ?? links.at(-1))?.focus(); }); }, e => setError(String(errorText(e))));
   }
-  /** The bridge archives them now and deletes them for good when Elpis quits (bridge/trash.mjs). */
+  /** The bridge archives them now and deletes them for good when Elpis quits (bridge/trash.mts). */
   async function trashChats(targets: Thread[]) {
     const ids = targets.map(thread => thread.id);
     if (selectedRef.current && ids.includes(selectedRef.current.id)) shownWhenDeleted.current.add(selectedRef.current.id);
     const { trashed, worktrees } = await api<{ trashed: string[]; worktrees?: { threadId: string; worktree: WorktreeOutcome }[] }>("/trash", { threadIds: ids });
     for (const { threadId, worktree } of worktrees ?? []) { const thread = targets.find(item => item.id === threadId); if (thread) noteKept(keptNotice(title(thread), "deleted", worktree)); }
-    // An agent deleted with its chat is not listed as trashed itself (bridge/trash.mjs); it leaves the list all the same.
+    // An agent deleted with its chat is not listed as trashed itself (bridge/trash.mts); it leaves the list all the same.
     removeThreads(new Set([...trashed, ...ids]), false);
     setDeletedNotice(targets.length === 1 ? `Deleted “${title(targets[0]!)}”` : `Deleted ${targets.length} chats`);
   }

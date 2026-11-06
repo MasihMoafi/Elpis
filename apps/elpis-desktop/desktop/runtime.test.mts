@@ -6,7 +6,7 @@ import path from 'node:path';
 import http from 'node:http';
 import net from 'node:net';
 import { createHash } from 'node:crypto';
-import { ensureInstalledRuntime } from './runtime.mjs';
+import { ensureInstalledRuntime } from './runtime.mts';
 
 for (const packaged of [false, true]) test(`desktop reuses ${packaged ? 'packaged' : 'legacy'} installation and keeps explicit sockets external`, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-app-launch-'));
@@ -25,26 +25,27 @@ for (const packaged of [false, true]) test(`desktop reuses ${packaged ? 'package
   await ensureInstalledRuntime({ env: { ...env, ELPIS_APP_BRIDGE_SOCKET: '/explicit/runtime.sock' } });
   assert.equal(fs.existsSync(marker), false);
   await ensureInstalledRuntime({ env });
-  assert.deepEqual(JSON.parse(fs.readFileSync(marker)), { engine, home: dir, bridge: path.join(bridgeDir, 'acp-bridge.mjs'), agentEnv: [] });
+  assert.deepEqual(JSON.parse(fs.readFileSync(marker, 'utf8')), { engine, home: dir, bridge: path.join(bridgeDir, 'acp-bridge.mjs'), agentEnv: [] });
   // A graphical session need not have node on PATH; the launcher passes its resolved executable.
   const dockHome = path.join(dir, 'dock-profile');
   await ensureInstalledRuntime({ env: { ...env, PATH: dir, ELPIS_NODE_BIN: process.execPath, ELPIS_HOME: dockHome } });
-  assert.equal(JSON.parse(fs.readFileSync(marker)).home, dockHome);
+  assert.equal(JSON.parse(fs.readFileSync(marker, 'utf8')).home, dockHome);
   await assert.rejects(ensureInstalledRuntime({ env: { ...env, ELPIS_ENGINE_BIN: path.join(dir, 'missing') } }), /could not be found/);
 });
 
 test('desktop runtime startup keeps loopback traffic outside a configured proxy', async () => {
   const server = http.createServer((_request, response) => response.end('local-runtime'));
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-app-proxy-'));
   const engine = path.join(dir, 'elpis-next');
   const bridgeDir = path.join(dir, 'tools', 'elpis-claude');
   fs.mkdirSync(bridgeDir, { recursive: true }); fs.writeFileSync(engine, 'fixture');
   fs.writeFileSync(path.join(bridgeDir, 'acp-bridge.mjs'), '');
-  fs.writeFileSync(path.join(bridgeDir, 'shared-runtime.mjs'), `const response = await fetch('http://127.0.0.1:${server.address().port}'); if (await response.text() !== 'local-runtime') throw new Error('Wrong endpoint');`);
+  const address = server.address(); assert.ok(address && typeof address !== 'string');
+  fs.writeFileSync(path.join(bridgeDir, 'shared-runtime.mjs'), `const response = await fetch('http://127.0.0.1:${address.port}'); if (await response.text() !== 'local-runtime') throw new Error('Wrong endpoint');`);
   try {
     await ensureInstalledRuntime({ env: { PATH: process.env.PATH, ELPIS_HOME: dir, ELPIS_ENGINE_BIN: engine, HTTP_PROXY: 'http://127.0.0.1:1' } });
-  } finally { await new Promise(resolve => server.close(resolve)); }
+  } finally { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); }
 });
 
 test('desktop reuses a live private runtime even when the launcher points to an older installation', async () => {
@@ -54,14 +55,14 @@ test('desktop reuses a live private runtime even when the launcher points to an 
   fs.mkdirSync(socketDir, { recursive: true, mode: 0o700 });
   const socketPath = path.join(socketDir, 'bridge.sock');
   const server = net.createServer(socket => socket.end());
-  await new Promise(resolve => server.listen(socketPath, resolve));
+  await new Promise<void>(resolve => server.listen(socketPath, resolve));
   fs.chmodSync(socketPath, 0o600);
   const env = { PATH: process.env.PATH, ELPIS_HOME: dir, XDG_RUNTIME_DIR: dir };
   const explicit = { ...env, ELPIS_ENGINE_BIN: path.join(dir, 'old-missing-engine') };
   try {
     await ensureInstalledRuntime({ env });
     await assert.rejects(ensureInstalledRuntime({ env: explicit }), /could not be found/);
-  } finally { await new Promise(resolve => server.close(resolve)); }
+  } finally { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); }
   await assert.rejects(ensureInstalledRuntime({ env: explicit }), /could not be found/);
 });
 
@@ -73,9 +74,9 @@ test('a running engine from another installation is asked to hand over to the se
   fs.mkdirSync(socketDir, { recursive: true, mode: 0o700 });
   const socketPath = path.join(socketDir, 'bridge.sock');
   const server = net.createServer(socket => socket.end());
-  await new Promise(resolve => server.listen(socketPath, resolve));
+  await new Promise<void>(resolve => server.listen(socketPath, resolve));
   fs.chmodSync(socketPath, 0o600);
-  const install = name => {
+  const install = (name: string) => {
     const engine = path.join(dir, name, 'package/bin/codex'), tools = path.join(dir, name, 'tools/elpis-claude');
     fs.mkdirSync(path.dirname(engine), { recursive: true }); fs.mkdirSync(tools, { recursive: true }); fs.writeFileSync(engine, 'fixture');
     fs.writeFileSync(path.join(tools, 'acp-bridge.mjs'), '');
@@ -91,6 +92,6 @@ test('a running engine from another installation is asked to hand over to the se
     assert.equal(fs.existsSync(path.join(dir, 'called.json')), false, 'the selected engine already runs: the app joins it');
     fs.writeFileSync(path.join(socketDir, 'state.json'), JSON.stringify({ engine: old }));
     await ensureInstalledRuntime({ env });
-    assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'called.json'))), selected, 'the selected installation takes over');
-  } finally { await new Promise(resolve => server.close(resolve)); }
+    assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'called.json'), 'utf8')), selected, 'the selected installation takes over');
+  } finally { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); }
 });

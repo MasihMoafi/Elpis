@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { runCli } from './tools.mjs';
+import { runCli } from './tools.mts';
 
 /** gh owns credentials. Elpis saves only whether new chats should receive its GitHub login. */
 export function createGithubConnector({ home, run = runCli }: { home: string; run?: (command: string, args: string[], options: { timeout: number }) => Promise<string> }) {

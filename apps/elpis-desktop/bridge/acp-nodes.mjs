@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { BridgeError } from './client.mts';
-import { childEnv } from './tools.mjs';
+import { childEnv } from './tools.mts';
 
 // Elpis agents reach each other only over ACP (Agent Client Protocol v1, https://agentclientprotocol.com): every agent
 // node is an ACP agent process (the Elpis ACP agent, tools/elpis-claude/elpis-acp-agent.mjs, per model;

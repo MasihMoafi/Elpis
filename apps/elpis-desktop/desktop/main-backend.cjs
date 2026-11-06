@@ -120,7 +120,7 @@ function createMainBackend({ electron, appDir, state, createStateStore, closeToT
       await seedShippedDefaults(store);
       const { startDesktopServer } = await import(pathToFileURL(path.join(appDir, '../bridge/server.mjs')).href);
       const { DesktopClient, existingSocket } = await import(pathToFileURL(path.join(appDir, '../bridge/client.mts')).href);
-      const { ensureInstalledRuntime } = await import(pathToFileURL(path.join(appDir, 'runtime.mjs')).href);
+      const { ensureInstalledRuntime } = await import(pathToFileURL(path.join(appDir, 'runtime.mts')).href);
       const { browserMcpConfig } = await import(pathToFileURL(path.join(appDir, '../bridge/browser-mcp.mjs')).href);
       const { scheduleMcpConfig } = await import(pathToFileURL(path.join(appDir, '../bridge/schedule-mcp.mts')).href);
       const browserAgentSocket = /** @type {BrowserAgentSocket} */ (await startBrowserAgentSocket({ connectionFile: path.join(app.getPath('userData'), 'browser-connection.json') }));

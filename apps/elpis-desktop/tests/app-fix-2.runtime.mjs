@@ -13,7 +13,7 @@ import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { startDesktopServer } from '../bridge/server.mjs';
 import WebSocket from 'ws';
-import { createTools } from '../bridge/tools.mjs';
+import { createTools } from '../bridge/tools.mts';
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const binary = process.argv[2];

@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { BridgeError } from './client.mts';
 
 // Agents use RAG through its MCP server; the app only shows and changes its provider, models and key
@@ -21,38 +22,38 @@ export function childEnv(env = process.env) {
   return next;
 }
 
-export function runCli(command, args, { timeout = 30000, env = {} } = {}) {
+export function runCli(command: string, args: string[], { timeout = 30000, env = {} }: { timeout?: number; env?: NodeJS.ProcessEnv } = {}): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(command, args, { timeout, maxBuffer: 8 * 1024 * 1024, env: childEnv({ ...process.env, ...env }) },
-      (error, stdout, stderr) => {
+      (error, stdout) => {
         if (error) return reject(new BridgeError(`${command} failed. Check its local configuration before retrying.`, 502));
         resolve(stdout);
       });
   });
 }
 
-const parseJson = text => { try { return JSON.parse(text); } catch { throw new BridgeError('Tool returned unreadable output', 502); } };
+const parseJson = (text: string) => { try { return JSON.parse(text); } catch { throw new BridgeError('Tool returned unreadable output', 502); } };
 const MODEL = /^[a-z0-9._-]+\/[a-z0-9._:-]+$/i;
 
-async function jsonBody(request) {
+async function jsonBody(request: IncomingMessage) {
   if (!/^application\/json(?:;|$)/i.test(request.headers['content-type'] ?? '')) throw new BridgeError('JSON content type required', 415);
-  let size = 0; const chunks = [];
+  let size = 0; const chunks: Buffer[] = [];
   for await (const chunk of request) { size += chunk.length; if (size > 65536) throw new BridgeError('Request is too large', 413); chunks.push(chunk); }
   try { return JSON.parse(Buffer.concat(chunks).toString()); } catch { throw new BridgeError('Invalid JSON'); }
 }
 
-export function createTools({ run = runCli, environment = async () => ({}) } = {}) {
+export function createTools({ run = runCli, environment = () => Promise.resolve({}) } = {}) {
   async function rag() {
     const env = await environment();
     const [capabilities, doctor] = await Promise.all([run('rag', ['capabilities', '--json'], { env }).then(parseJson), run('rag', ['doctor', '--json'], { timeout: 60000, env }).then(parseJson)]);
-    const stages = (capabilities.stages ?? []).filter(stage => ['embedding', 'reranking', 'generation'].includes(stage.stage)).map(stage => ({
+    const stages = (capabilities.stages ?? []).filter((stage: { stage: string }) => ['embedding', 'reranking', 'generation'].includes(stage.stage)).map((stage: { stage: string; provider?: unknown; model?: unknown; location?: unknown; required_credential?: unknown }) => ({
       stage: stage.stage, provider: typeof stage.provider === 'string' ? stage.provider : null, model: typeof stage.model === 'string' ? stage.model : null,
       location: stage.location === 'local' ? 'local' : stage.location === 'api' ? 'api' : null, credential: typeof stage.required_credential === 'string' ? stage.required_credential : null,
     }));
-    const keys = (doctor.detected?.api_keys ?? []).filter(key => typeof key === 'string');
+    const keys = (doctor.detected?.api_keys ?? []).filter((key: unknown) => typeof key === 'string');
     return { stages, keys: { openrouter: keys.includes('openrouter') } };
   }
-  return async function handle(request, response, url, json) {
+  return async function handle(request: IncomingMessage, response: ServerResponse, url: URL, json: (response: ServerResponse, status: number, value: unknown) => unknown) {
     const route = `${request.method} ${url.pathname}`;
     if (route === 'GET /api/tools/rag') return json(response, 200, await rag());
     if (route === 'POST /api/tools/rag') {

@@ -7,7 +7,7 @@ import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { BridgeError, object } from './client.mts';
 import { projectDirectory } from './folders.mts';
-import { childEnv } from './tools.mjs';
+import { childEnv } from './tools.mts';
 
 const quote = value => /^[\w./:@=-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`;
 async function readJson(file) {

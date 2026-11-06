@@ -15,7 +15,7 @@ import { AttachmentError } from './attachments.mts';
  * @typedef {{
  *   client: import('./client.mts').DesktopClient,
  *   options: { elpisHome?: string, [key: string]: unknown },
- *   trash: Awaited<ReturnType<typeof import('./trash.mjs').createTrash>>,
+ *   trash: Awaited<ReturnType<typeof import('./trash.mts').createTrash>>,
  *   loveSpot: ReturnType<typeof import('./love-spot-store.cjs').createLoveSpot>,
  *   companion: ReturnType<typeof import('./matilda-companion.mjs').createMatildaCompanion>,
  *   loveTalk: ReturnType<typeof import('./love-spot-talk.mjs').createLoveSpotTalk>,
@@ -26,14 +26,14 @@ import { AttachmentError } from './attachments.mts';
  *   automations: ReturnType<typeof import('./schedule.mts').createSchedule> | null,
  *   workflowDispatcher: ReturnType<typeof import('./server-workflows.mjs').createWorkflowDispatcher>,
  *   improvements: () => Promise<Awaited<ReturnType<typeof import('./improve.mjs').createImprovements>>>,
- *   tools: ReturnType<typeof import('./tools.mjs').createTools>,
+ *   tools: ReturnType<typeof import('./tools.mts').createTools>,
  *   settingsFiles: ReturnType<typeof import('./settings-files.mts').createSettingsFiles>,
  *   historyCursors: ReturnType<typeof import('./server-threads.mjs').createHistoryCursors>,
  *   transcription: ReturnType<typeof import('./transcription.mjs').createTranscription>,
  *   voice: ReturnType<typeof import('./voice.mjs').createVoice>,
  *   kokoro: { voices?: () => Promise<unknown[]> | unknown[], defaultVoice?: string, close: () => void, [key: string]: unknown },
  *   readAloud: ReturnType<typeof import('./read-aloud-provider.mts').createReadAloudProvider>,
- *   importChats: ReturnType<typeof import('./import-chats.mjs').createImportChats>
+ *   importChats: ReturnType<typeof import('./import-chats.mts').createImportChats>
  * }} ServerState
  */
 

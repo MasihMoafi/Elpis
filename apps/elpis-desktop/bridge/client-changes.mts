@@ -1,6 +1,6 @@
 import { BridgeError, object, threadId } from './validate.mts';
 import { NOT_A_REPOSITORY, changedFiles, currentBranch, discardFile, fileDiff, repositoryHealth, reviewChoices, workingDiff } from './git.mjs';
-import { recordedChanges } from './recorded-changes.mjs';
+import { recordedChanges } from './recorded-changes.mts';
 
 import { internal_attach, internal_itemsPage } from './client-thread-list.mts';
 import { internal_rpc } from './client-connection.mts';
@@ -16,9 +16,9 @@ export async function impl_git(this: DesktopClient, clientState: ClientState, id
     const cwd = await internal_folderOf.call(this, clientState, id);
     try { return await (view === 'review' ? reviewChoices(cwd) : view === 'changes' ? changedFiles(cwd) : view === 'file' ? fileDiff(cwd, file) : view === 'branch' ? currentBranch(cwd) : view === 'health' ? repositoryHealth(cwd) : workingDiff(cwd)); }
     catch (error) {
-      // Outside Git, the changes are the edits this chat recorded (bridge/recorded-changes.mjs); /review needs Git.
+      // Outside Git, the changes are the edits this chat recorded (bridge/recorded-changes.mts); /review needs Git.
       if ((error as Error).message !== NOT_A_REPOSITORY || !['changes', 'file', 'diff'].includes(view)) throw error;
-      const recorded = recordedChanges(cwd, await internal_chatItems.call(this, clientState, id));
+      const recorded = recordedChanges(cwd!, await internal_chatItems.call(this, clientState, id) as Parameters<typeof recordedChanges>[1]);
       return view === 'changes' ? recorded.changes : view === 'file' ? recorded.file(file) : recorded.diff();
     }
   }

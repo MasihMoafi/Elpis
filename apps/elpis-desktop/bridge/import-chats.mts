@@ -13,12 +13,15 @@ import { BridgeError, object, text } from './client.mts';
 const DAYS = 30, AT_A_TIME = 50;
 const LARGEST = 100 * 1024 * 1024; // one of his rollouts is 874 MB
 const CHAT_SOURCES = new Set(['cli', 'vscode']); // not exec runs or sub-agents such as {"subagent":{"other":"guardian"}}
-const SOURCES = [['claude-code', 'Claude Code'], ['codex', 'Codex']];
+const SOURCES = [['claude-code', 'Claude Code'], ['codex', 'Codex']] as const;
+type Rollout = { file: string; relative: string; modified: number; size: number };
+type Chat = { files: Rollout[]; head: Rollout; modified: number };
+type ImportClient = { externalSessions(): Promise<unknown[]>; importExternalSessions?(chats: unknown[]): Promise<{ imported: number; skipped: unknown[] }>; registerRollout?(file: string): Promise<unknown> };
 const ROLLOUT = /^rollout-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:_[0-9a-f-]{36})?\.jsonl$/;
-const exists = file => fs.access(file).then(() => true, () => false);
+const exists = (file: string) => fs.access(file).then(() => true, () => false);
 
 /** The rollout's first line, its session_meta; read in pieces so a large rollout is never loaded whole. */
-async function sessionMeta(file) {
+async function sessionMeta(file: string) {
   const handle = await fs.open(file, 'r');
   try {
     const chunks = [];
@@ -36,10 +39,10 @@ async function sessionMeta(file) {
   } catch { return null; } finally { await handle.close(); }
 }
 
-async function codexRollouts(sessions) {
-  const found = [];
-  async function walk(directory, depth) {
-    let entries; try { entries = await fs.readdir(directory, { withFileTypes: true }); } catch (cause) { if (cause.code === 'ENOENT') return; throw cause; }
+async function codexRollouts(sessions: string) {
+  const found: Rollout[] = [];
+  async function walk(directory: string, depth: number) {
+    let entries; try { entries = await fs.readdir(directory, { withFileTypes: true }); } catch (cause) { if ((cause as NodeJS.ErrnoException).code === 'ENOENT') return; throw cause; }
     for (const entry of entries) {
       const file = path.join(directory, entry.name);
       if (entry.isDirectory() && depth < 3) await walk(file, depth + 1);
@@ -54,19 +57,19 @@ async function codexRollouts(sessions) {
 }
 
 /** Rollouts as chats, newest first: each chat's files in the order they were started, and its newest file, which the engine registers. */
-function chatsOf(rollouts) {
-  const byChat = new Map();
+function chatsOf(rollouts: Rollout[]) {
+  const byChat = new Map<string, Rollout[]>();
   for (const rollout of rollouts) {
     const key = ROLLOUT.exec(path.basename(rollout.file))?.[1] ?? rollout.file; // a name of another form is a chat of its own
     byChat.set(key, [...(byChat.get(key) ?? []), rollout]);
   }
   return [...byChat.values()].map(files => {
     files.sort((a, b) => path.basename(a.file).localeCompare(path.basename(b.file)));
-    return { files, head: files.at(-1), modified: Math.max(...files.map(file => file.modified)) };
+    return { files, head: files.at(-1)!, modified: Math.max(...files.map(file => file.modified)) };
   }).sort((a, b) => b.modified - a.modified);
 }
 
-export function createImportChats({ client, codexHome = path.join(os.homedir(), '.codex'), elpisHome = process.env.ELPIS_HOME || path.join(os.homedir(), '.elpis-next'), now = Date.now, largest = LARGEST }) {
+export function createImportChats({ client, codexHome = path.join(os.homedir(), '.codex'), elpisHome = process.env.ELPIS_HOME || path.join(os.homedir(), '.elpis-next'), now = Date.now, largest = LARGEST }: { client: ImportClient; codexHome?: string; elpisHome?: string; now?: () => number; largest?: number }) {
   let running = false;
   const from = path.join(codexHome, 'sessions'), into = path.join(elpisHome, 'sessions');
   async function codexChats() {
@@ -79,7 +82,7 @@ export function createImportChats({ client, codexHome = path.join(os.homedir(), 
     }
     return chats;
   }
-  async function importCodex(chat) {
+  async function importCodex(chat: Chat) {
     const copied = [];
     try {
       for (const { file, relative } of chat.files) {
@@ -89,7 +92,7 @@ export function createImportChats({ client, codexHome = path.join(os.homedir(), 
         await fs.copyFile(file, target, fs.constants.COPYFILE_EXCL);
         copied.push(target);
       }
-      await client.registerRollout(path.join(into, chat.head.relative));
+      await client.registerRollout!(path.join(into, chat.head.relative));
     } catch (cause) { // a chat the engine refused is not left behind as "imported"
       for (const target of copied) await fs.unlink(target).catch(() => {});
       throw cause;
@@ -104,17 +107,17 @@ export function createImportChats({ client, codexHome = path.join(os.homedir(), 
       return { days: DAYS, atATime: AT_A_TIME, sources };
     },
     /** Imports up to 50 of one app's chats; the rest wait for the next press. */
-    async run(body) {
-      object(body, ['source']); text(body.source, 'source', 40);
-      if (!listers[body.source]) throw new BridgeError('Choose Claude Code or Codex.', 400);
+    async run(body: unknown) {
+      const request = object(body, ['source']) as { source?: unknown }; text(request.source, 'source', 40);
+      if (request.source !== 'claude-code' && request.source !== 'codex') throw new BridgeError('Choose Claude Code or Codex.', 400);
       if (running) throw new BridgeError('An import is already running.', 409);
       running = true;
       try {
-        const chats = (await listers[body.source]()).slice(0, AT_A_TIME);
-        if (body.source === 'claude-code') return await client.importExternalSessions(chats);
+        const chats = (await listers[request.source]()).slice(0, AT_A_TIME);
+        if (request.source === 'claude-code') return await client.importExternalSessions!(chats);
         const skipped = []; let imported = 0;
-        for (const chat of chats) {
-          try { await importCodex(chat); imported++; }
+        for (const chat of chats as Chat[]) {
+          try { await importCodex(chat as Chat); imported++; }
           catch (cause) { skipped.push(`${path.basename(chat.head.file)}: ${cause instanceof Error ? cause.message : String(cause)}`); }
         }
         return { imported, skipped };

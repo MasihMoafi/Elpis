@@ -1,19 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Readable } from 'node:stream';
-import { childEnv, createTools, runCli } from './tools.mjs';
+import type { IncomingMessage, ServerResponse } from 'node:http';
+import { BridgeError } from './client.mts';
+import { childEnv, createTools, runCli } from './tools.mts';
 
-function call(tools, method, pathname, { body, type = 'application/json' } = {}) {
+type Rag = { stages: { stage: string; provider: string | null; model: string | null; location: string | null; credential: string | null }[]; keys: { openrouter: boolean } };
+async function call(tools: ReturnType<typeof createTools>, method: string, pathname: string, { body, type = 'application/json' }: { body?: unknown; type?: string } = {}) {
   const raw = body === undefined ? [] : [Buffer.from(JSON.stringify(body))];
   const request = Object.assign(Readable.from(raw), { method, headers: { 'content-type': type } });
   const url = new URL(pathname, 'http://127.0.0.1');
-  let sent;
-  return tools(request, {}, url, (_response, status, value) => { sent = { status, value }; }).then(() => sent);
+  let sent: { status: number; value: Rag } | undefined;
+  await tools(request as IncomingMessage, {} as ServerResponse, url, (_response, status, value) => { sent = { status, value: value as Rag }; });
+  assert.ok(sent); return sent;
 }
 
 function fakeCli() {
-  const calls = [];
-  const run = async (command, args) => {
+  const calls: string[][] = [];
+  const run = async (command: string, args: string[]) => {
     calls.push([command, ...args]);
     if (command === 'rag' && args[0] === 'capabilities') return JSON.stringify({ stages: [
       { stage: 'lexical', provider: 'tantivy', model: 'BM25', location: 'local' },
@@ -37,19 +41,19 @@ test('RAG settings expose only provider, model, location and key presence', asyn
 });
 
 test('RAG commands receive configured MCP credentials internally and redact them from output', async () => {
-  const calls = [];
+  const calls: { command: string; args: string[]; options: { env?: NodeJS.ProcessEnv } | undefined }[] = [];
   const tools = createTools({ environment: async () => ({ OPENROUTER_API_KEY: 'fixture-secret-environment' }), run: async (command, args, options) => {
     calls.push({ command, args, options });
     return args[0] === 'capabilities' ? JSON.stringify({ stages: [] }) : args[0] === 'doctor' ? JSON.stringify({ detected: { api_keys: ['openrouter'] } }) : 'ok';
   } });
   const saved = await call(tools, 'POST', '/api/tools/rag', { body: { stage: 'generation', model: 'openai/gpt-5-mini' } });
   assert.equal(calls.length, 3);
-  assert(calls.every(call => call.options.env.OPENROUTER_API_KEY === 'fixture-secret-environment'));
+  assert(calls.every(call => call.options?.env?.OPENROUTER_API_KEY === 'fixture-secret-environment'));
   assert(!JSON.stringify(saved).includes('fixture-secret-environment'));
 });
 
 test('CLI failure cannot become success through stdout or reveal credentials through stderr', async () => {
-  await assert.rejects(runCli(process.execPath, ['-e', "process.stdout.write('partial output');process.stderr.write('fixture-secret-stderr');process.exit(1)"]), error => error.status === 502 && !error.message.includes('fixture-secret-stderr'));
+  await assert.rejects(runCli(process.execPath, ['-e', "process.stdout.write('partial output');process.stderr.write('fixture-secret-stderr');process.exit(1)"]), error => error instanceof BridgeError && error.status === 502 && !error.message.includes('fixture-secret-stderr'));
 });
 
 test('answer model and reranker changes go through `rag config`; embeddings and junk are refused', async () => {
@@ -72,7 +76,7 @@ test('removed dictation and search routes are gone', async () => {
 test('child processes follow the system proxy but never proxy loopback', () => {
   const proxied = childEnv({ PATH: '/usr/bin', HTTPS_PROXY: 'http://127.0.0.1:10808', NO_PROXY: 'example.internal' });
   assert.equal(proxied.NODE_USE_ENV_PROXY, '1');
-  for (const key of ['NO_PROXY', 'no_proxy']) assert.deepEqual(proxied[key].split(','), ['example.internal', 'localhost', '127.0.0.1', '::1']);
+  for (const key of ['NO_PROXY', 'no_proxy']) assert.deepEqual(proxied[key]!.split(','), ['example.internal', 'localhost', '127.0.0.1', '::1']);
   const direct = childEnv({ PATH: '/usr/bin' });
   assert.equal(direct.NODE_USE_ENV_PROXY, undefined, 'no proxy configured: nothing is forced');
   assert.equal(direct.NO_PROXY, undefined);
