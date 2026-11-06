@@ -7,7 +7,7 @@ type Props = Omit<React.ComponentProps<"select">, "onChange" | "value" | "defaul
   size?: "sm" | "default";
   value?: string | number; defaultValue?: string | number; onChange?: (event: Change) => void;
 };
-type Item = { value: string; label: ReactNode; hint?: string; disabled: boolean };
+type Item = { value: string; label: ReactNode; hint?: string | undefined; disabled: boolean };
 /** Reads `<option>`s; an option's `data-hint` shows under its name in the menu but not in the closed control. */
 function options(children: ReactNode): Item[] {
   const result: Item[] = [];

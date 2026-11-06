@@ -3,7 +3,7 @@ import { useThemeCharacter } from "@/lib/theme-characters";
 
 /** Matilda's face beside a reply, in the clothes of the current theme (white silk in light mode, black in dark). Every chat
  * surface that shows her reply uses this one component, so her look follows the theme everywhere at once. */
-export function MatildaFace({ expression = "listening", size, className = "" }: { expression?: string; size: number; className?: string }) {
+export function MatildaFace({ expression = "listening", size, className = "" }: { expression?: string | undefined; size: number; className?: string }) {
   const portrait = replyPortrait(`<!--matilda:${expression}-->`), character = useThemeCharacter();
   // A palette with its own character shows her instead, one picture in light and dark (lib/theme-characters.ts).
   // eslint-disable-next-line @next/next/no-img-element

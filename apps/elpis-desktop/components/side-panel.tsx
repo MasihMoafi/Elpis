@@ -281,7 +281,7 @@ export function SidePanel({ panel, browser, hasTerminal, dark, cwd, threadId, ru
       {shown?.kind === "changes" && <ChangesPanel threadId={threadId} running={running} />}
       {shown?.kind === "files" && <FilesPane cwd={cwd} />}
       {shown?.kind === "context" && <ContextPanel {...(threadId === undefined ? {} : { threadId })} />}
-      {shown?.kind === "browser" && <BrowserPanel onReturnToChat={panel.closePanel} browser={browser} cwd={cwd} covered={covered || resizing} {...(onAttach ? { onAttach } : {})} imagesAllowed={imagesAllowed} />}
+      {shown?.kind === "browser" && <BrowserPanel onReturnToChat={panel.closePanel} browser={browser} cwd={cwd} covered={covered || resizing} {...(onAttach ? { onAttach } : {})} {...(imagesAllowed === undefined ? {} : { imagesAllowed })} />}
       {!shown && <Empty>{kinds.map(kind => <Button key={kind.id} type="button" variant="outline" size="sm" onClick={kind.run}>{kind.icon}{kind.label}</Button>)}</Empty>}
     </ViewBoundary>{pinError && <p role="alert" className="browser-error">{pinError}</p>}</div>
     <AlertDialog open={!!renaming} onOpenChange={value => { if (!value && !savingName) setRenaming(null); }}>

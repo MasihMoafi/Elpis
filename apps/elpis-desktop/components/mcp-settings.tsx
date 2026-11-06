@@ -26,7 +26,7 @@ const message = (e: unknown) => errorText(e);
 const readMcp = (value: Mcp): Mcp => ({ ...value, servers: Array.isArray(value?.servers) ? value.servers : [], write: value?.write ?? { available: false } });
 /** What the rag tool accepts for its reranker (bridge/tools.mjs): off, the local engine, or an OpenRouter reranker ID. */
 /** Off and the local reranker, then OpenRouter's own reranker catalogue, read live (29 Oct, Masih: "we want real call and showing of real options"). */
-const LOCAL_RERANKERS: Model[] = [["off", "Off"], ["fastembed", "Local (FastEmbed)"]].map(([model, displayName]) => ({ id: model, model, displayName }));
+const LOCAL_RERANKERS: Model[] = ([["off", "Off"], ["fastembed", "Local (FastEmbed)"]] as const).map(([model, displayName]) => ({ id: model, model, displayName }));
 const providerName = (stage: Stage) => stage.location === "local" ? "Local" : stage.provider === "openrouter" ? "OpenRouter" : stage.provider === "openai_compatible" ? "OpenAI-compatible API" : stage.provider ?? "Not set";
 const Key = ({ name, set, note, plain }: { name: string; set: boolean; note?: string; plain?: boolean }) => <li className={`key-state ${set ? "set" : "unset"}`}>{plain ? name : <code>{name}</code>} · {set ? "set" : "not set"}{note && <span className="text-muted-foreground"> ({note})</span>}</li>;
 

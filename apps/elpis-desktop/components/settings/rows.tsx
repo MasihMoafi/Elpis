@@ -45,7 +45,7 @@ export function SettingsScope({ value, children }: { value: SettingScope; childr
   return <ScopeContext.Provider value={value}>{children}</ScopeContext.Provider>;
 }
 /** The single row shell, also used by feedback and archive rows. */
-function RowFrame({ children, control, leading, stacked, actions }: { children: ReactNode; control?: ReactNode; leading?: ReactNode; stacked?: boolean; actions?: boolean }) {
+function RowFrame({ children, control, leading, stacked, actions }: { children: ReactNode; control?: ReactNode; leading?: ReactNode; stacked?: boolean | undefined; actions?: boolean }) {
   return <div data-slot="settings-row" className={`settings-row${stacked ? " stacked" : ""}${actions ? " settings-actions" : ""}`}>
     {leading}
     <div className="settings-row-text">{children}</div>

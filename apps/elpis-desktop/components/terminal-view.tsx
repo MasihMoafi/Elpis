@@ -42,7 +42,7 @@ function rgb(value: string, alpha?: number) {
   const context = document.createElement("canvas").getContext("2d"); if (!context) return value;
   context.fillStyle = value; context.fillRect(0, 0, 1, 1);
   const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
-  return alpha === undefined ? `#${[r, g, b].map(part => part.toString(16).padStart(2, "0")).join("")}` : `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  return alpha === undefined ? `#${[r, g, b].map(part => (part ?? 0).toString(16).padStart(2, "0")).join("")}` : `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 function theme(element: HTMLElement) {
   const style = getComputedStyle(element), token = (name: string) => style.getPropertyValue(name).trim();

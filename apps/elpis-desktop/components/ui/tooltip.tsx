@@ -4,7 +4,7 @@ import { Tooltip as Primitive } from "@base-ui/react/tooltip";
 
 /** A hover and focus tooltip as Claude's app shows on its icon buttons: the text, and a quieter detail line under it.
  * `suppressed` keeps it closed while the control's own popover is open. */
-function Tooltip({ content, detail, children, side = "top", suppressed = false, glass = false }: { content: ReactNode; detail?: ReactNode; children: ReactElement<{ "aria-describedby"?: string }>; side?: "top" | "bottom"; suppressed?: boolean; glass?: boolean }) {
+function Tooltip({ content, detail, children, side = "top", suppressed = false, glass = false }: { content: ReactNode; detail?: ReactNode; children: ReactElement<{ "aria-describedby"?: string | undefined }>; side?: "top" | "bottom"; suppressed?: boolean; glass?: boolean }) {
   const id = useId();
   const [open, setOpen] = useState(false);
   const describedBy = [children.props["aria-describedby"], open && !suppressed ? id : undefined].filter(Boolean).join(" ") || undefined;
