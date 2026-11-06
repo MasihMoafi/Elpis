@@ -1,5 +1,5 @@
 import { elpisHome, object } from './client.mts';
-import { recordVoiceCall } from './voice.mjs';
+import { recordVoiceCall } from './voice.mts';
 import { body, json } from './server-http.mjs';
 
 /** @param {import('./server-http.mjs').ServerState} state @param {import('node:http').IncomingMessage} request @param {import('node:http').ServerResponse} response @param {URL} url @param {string} method */

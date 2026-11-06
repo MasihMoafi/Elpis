@@ -9,7 +9,7 @@ import { createExperimentLab } from './experiment-lab.mts';
 import { createSchedule } from './schedule.mts';
 import { createTools } from './tools.mts';
 import { createTranscription } from './transcription.mts';
-import { createVoice } from './voice.mjs';
+import { createVoice } from './voice.mts';
 import { createKokoro } from './kokoro.mts';
 import { createReadAloudProvider } from './read-aloud-provider.mts';
 import { createImportChats } from './import-chats.mts';

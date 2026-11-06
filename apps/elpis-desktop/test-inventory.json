@@ -86,7 +86,7 @@
     "bridge/workflow-replan.test.mjs",
     "bridge/workflow-account.test.mjs",
     "bridge/import-chats.test.mts",
-    "bridge/voice-report.test.mjs",
+    "bridge/voice-report.test.mts",
     "bridge/anthropic-signout.test.mts",
     "bridge/app-catalogs.test.mts",
     "bridge/approvals.test.mjs",

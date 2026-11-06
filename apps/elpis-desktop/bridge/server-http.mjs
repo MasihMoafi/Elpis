@@ -30,7 +30,7 @@ import { AttachmentError } from './attachments.mts';
  *   settingsFiles: ReturnType<typeof import('./settings-files.mts').createSettingsFiles>,
  *   historyCursors: ReturnType<typeof import('./server-threads.mjs').createHistoryCursors>,
  *   transcription: ReturnType<typeof import('./transcription.mts').createTranscription>,
- *   voice: ReturnType<typeof import('./voice.mjs').createVoice>,
+ *   voice: ReturnType<typeof import('./voice.mts').createVoice>,
  *   kokoro: { voices?: () => Promise<unknown[]> | unknown[], defaultVoice?: string, close: () => void, [key: string]: unknown },
  *   readAloud: ReturnType<typeof import('./read-aloud-provider.mts').createReadAloudProvider>,
  *   importChats: ReturnType<typeof import('./import-chats.mts').createImportChats>

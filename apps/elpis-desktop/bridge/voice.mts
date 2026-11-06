@@ -1,15 +1,26 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { speechChunks } from './client.mts';
+import { speechChunks, type DesktopClient } from './client.mts';
+import type { ServerResponse } from 'node:http';
 import { BridgeError, object, text, threadId } from './validate.mts';
+
+type Item = { id: string; type: string; phase?: string; text?: string; handoff_id?: string; input_transcript?: string };
+type Turn = { id: string; status: string; items?: Item[] };
+type Params = { threadId?: string; turnId?: string; turn?: Turn; item?: Item; status?: { type?: string }; role?: string; delta?: string; text?: string; sdp?: string };
+type Message = { method: string; params: Params };
+type Event = { type: string; data?: Partial<Message> & { connected?: boolean } };
+type Source = { threadId: string; fail(message: string): void; subscribe(callback: (event: { type: string; text: string }) => void | Promise<void>): () => void };
+type Conversation = { context: unknown; close(): void; transcript(params: Params): void; watch(callback: (context: unknown) => void, fail: (message: string) => void): Promise<() => void> };
+type Call = { stopped: boolean; started: Promise<void> | null; stopping: Promise<void> | null; stop: () => Promise<void>; id: string; speech: { id: string; voice: unknown } | null; ready: boolean; pending: boolean; finished: boolean; complete: boolean; source: Source | undefined; conversation: Conversation | undefined; startComplete?: boolean; completedAt?: number; readyForSpeech?: () => void; more?: (value: string) => void };
+type Relay = { turnId: string | null; items: Map<string | undefined, Map<string, Item>>; completed: Map<string | null | undefined, Turn> };
 
 /** One line per call in logs/voice-calls.jsonl, sent by the window when a call ends: how long, whether it connected, how many events of each kind the call
  * sent, and how much sound came in and went out. No words, no names: it exists so that "it says Listening and never answers" can be read from the machine. */
 const REPORT_KEYS = ['seconds', 'listened', 'events', 'inboundBytes', 'inboundPackets', 'inboundEnergy', 'micEnergy', 'error'];
-export async function recordVoiceCall(home, body) {
+export async function recordVoiceCall(home: string, body: Record<string, unknown>) {
   object(body, REPORT_KEYS);
-  const number = (value, name) => { if (!Number.isFinite(value) || value < 0 || value > 1e12) throw new BridgeError(`Invalid ${name}`); return Math.round(value * 1000) / 1000; };
+  const number = (value: unknown, name: string) => { if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1e12) throw new BridgeError(`Invalid ${name}`); return Math.round(value * 1000) / 1000; };
   if (typeof body.listened !== 'boolean') throw new BridgeError('Invalid listened');
   if (!body.events || typeof body.events !== 'object' || Array.isArray(body.events) || Object.keys(body.events).length > 40) throw new BridgeError('Invalid events');
   const events = Object.fromEntries(Object.entries(body.events).map(([kind, count]) => { if (!/^[A-Za-z0-9_.-]{1,60}$/.test(kind)) throw new BridgeError('Invalid event kind'); return [kind, number(count, 'event count')]; }));
@@ -17,42 +28,43 @@ export async function recordVoiceCall(home, body) {
     inboundEnergy: number(body.inboundEnergy, 'inbound energy'), micEnergy: number(body.micEnergy, 'microphone energy'), error: typeof body.error === 'string' ? body.error.slice(0, 200) : '' });
   const file = path.join(home, 'logs', 'voice-calls.jsonl');
   await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
-  let lines = []; try { lines = (await fs.readFile(file, 'utf8')).split('\n').filter(Boolean); } catch (cause) { if (cause.code !== 'ENOENT') throw cause; }
+  let lines: string[] = []; try { lines = (await fs.readFile(file, 'utf8')).split('\n').filter(Boolean); } catch (cause) { if ((cause as NodeJS.ErrnoException).code !== 'ENOENT') throw cause; }
   await fs.writeFile(file, [...lines.slice(-199), line].join('\n') + '\n', { mode: 0o600 });
   return { ok: true };
 }
 
 // All desktop windows share the engine. A call keeps its owner until native cleanup finishes.
-let owner;
-export function createVoice(client) {
-  let call;
+let owner: Call | undefined;
+export function createVoice(client: DesktopClient) {
+  let call: Call | undefined;
   async function close() { if (call) await call.stop(); }
-  async function start(input, response, { readAloud = false, source, conversation } = {}) {
+  async function start(input: Record<string, unknown>, response: ServerResponse, { readAloud = false, source, conversation }: { readAloud?: boolean; source?: Source; conversation?: Conversation } = {}) {
     readAloud ||= !!source;
     object(input, source || conversation ? ['sdp'] : readAloud ? ['threadId', 'sdp', 'text'] : ['threadId', 'sdp']);
     const chatId = conversation ? undefined : threadId(source?.threadId ?? input.threadId);
-    text(input.sdp, 'voice offer', 64000);
+    const sdp = text(input.sdp, 'voice offer', 64000);
     if (readAloud && !source) text(input.text, 'speech text', 2_000_000);
-    if (!input.sdp.startsWith('v=0\r\n') || !input.sdp.includes('\n')) throw new BridgeError('Invalid voice offer');
+    if (!sdp.startsWith('v=0\r\n') || !sdp.includes('\n')) throw new BridgeError('Invalid voice offer');
     if (readAloud) {
-      const audio = input.sdp.split(/\r?\nm=/).filter(section => section.startsWith('audio '));
+      const audio = sdp.split(/\r?\nm=/).filter(section => section.startsWith('audio '));
       // The window sends generated silence, never the microphone: the voice model only runs while audio comes in.
-      if (audio.length !== 1 || !/\r?\na=sendrecv(?:\r?\n|$)/.test(audio[0])) throw new BridgeError('Read aloud needs one two-way audio channel.');
+      if (audio.length !== 1 || !/\r?\na=sendrecv(?:\r?\n|$)/.test(audio[0]!)) throw new BridgeError('Read aloud needs one two-way audio channel.');
     }
     // A Read aloud call kept open after it finished speaking (its last words had two seconds to play) gives way.
-    if (owner?.more && owner.complete && Date.now() - owner.completedAt > 2000) await owner.stop();
+    if (owner?.more && owner.complete && Date.now() - owner.completedAt! > 2000) await owner.stop();
     if (owner) throw new BridgeError('Voice is already open. End that call first.', 409);
-    const current = { stopped: false, started: null, stopping: null, stop: null, id: randomUUID(), speech: null, ready: false, pending: false, finished: !source, complete: false, source, conversation };
-    const chunks = readAloud && !source ? speechChunks(input.text) : [];
-    const handoffs = [], seenHandoffs = new Set();
-    let relay, idleRevision = 0;
-    let unsubscribe;
+    const current: Call = { stopped: false, started: null, stopping: null, stop: () => Promise.resolve(), id: randomUUID(), speech: null, ready: false, pending: false, finished: !source, complete: false, source, conversation };
+    const chunks = readAloud && !source ? speechChunks(input.text as string) : [];
+    const handoffs: string[] = [], seenHandoffs = new Set<string>();
+    let relay: Relay | null = null, idleRevision = 0;
+    let unsubscribe: (() => void) | undefined;
     owner = call = current;
-    const send = value => { if (!current.stopped && !response.destroyed) response.write(JSON.stringify(value) + '\n'); };
-    let timeout, heartbeat;
+    const send = (value: unknown) => { if (!current.stopped && !response.destroyed) response.write(JSON.stringify(value) + '\n'); };
+    let timeout: NodeJS.Timeout;
+    const timers: { heartbeat?: NodeJS.Timeout } = {};
     const stop = () => {
       if (current.stopping) return current.stopping;
-      current.stopped = true; clearTimeout(timeout); clearInterval(heartbeat);
+      current.stopped = true; clearTimeout(timeout); clearInterval(timers.heartbeat);
       unsubscribe?.();
       conversation?.close();
       client.off('event', onEvent);
@@ -70,19 +82,19 @@ export function createVoice(client) {
       return current.stopping;
     };
     current.stop = stop;
-    const fail = message => { if (current.stopped) return; send({ type: 'error', message }); source?.fail(message); void stop(); };
+    const fail = (message: string) => { if (current.stopped) return; send({ type: 'error', message }); source?.fail(message); void stop(); };
     const finishRelay = () => {
       const turn = relay?.completed.get(relay.turnId);
       if (!turn || current.stopped) return;
       if (turn.status !== 'completed') return fail('The chat could not finish this voice request. Check its reply before trying again.');
-      const items = turn.items?.length ? turn.items : [...(relay.items.get(turn.id)?.values() ?? [])];
+      const items = turn.items?.length ? turn.items : [...(relay!.items.get(turn.id)?.values() ?? [])];
       const reply = items.findLast(item => item.type === 'agentMessage' && (!item.phase || item.phase === 'final_answer'))?.text ?? '';
       if (!reply.trim()) return fail('The chat finished without a reply to read aloud.');
       relay = null; chunks.push(...speechChunks(reply)); append();
     };
     const relayNext = async () => {
       if (current.stopped || !current.startComplete || !current.speech || relay || current.pending || chunks.length || !handoffs.length) return;
-      const pending = relay = { turnId: null, items: new Map(), completed: new Map() };
+      const pending: Relay = relay = { turnId: null, items: new Map(), completed: new Map() };
       const revision = idleRevision;
       try {
         const thread = await client.readThreadMetadata(chatId);
@@ -90,13 +102,13 @@ export function createVoice(client) {
         if (thread.status?.type === 'active') { relay = null; if (idleRevision !== revision) void relayNext(); return; }
         const result = await client.send(chatId, { text: handoffs[0] });
         if (current.stopped) return;
-        if (!result.turn?.id) return fail('The voice request was not confirmed. Check the chat before trying again.');
+        if (!('turn' in result) || !result.turn?.id) return fail('The voice request was not confirmed. Check the chat before trying again.');
         pending.turnId = result.turn.id; handoffs.shift(); finishRelay();
       } catch (cause) {
         if (current.stopped) return;
         relay = null;
         // A typed turn may have won the race; wait for it instead of steering it.
-        if (cause.status === 409 && cause.message === 'This conversation is running. Use Steer with its active turn ID.') { if (idleRevision !== revision) void relayNext(); return; }
+        if ((cause as BridgeError).status === 409 && (cause as BridgeError).message === 'This conversation is running. Use Steer with its active turn ID.') { if (idleRevision !== revision) void relayNext(); return; }
         fail(cause instanceof BridgeError && cause.status < 500 ? cause.message : 'The voice request could not be sent. Check the chat before trying again.');
       }
     };
@@ -115,7 +127,7 @@ export function createVoice(client) {
     if (readAloud) current.readyForSpeech = () => { if (!current.ready) { current.ready = true; append(); } };
     // An open call reads a further reply (the window keeps it open a minute after a read) without a new call.
     if (readAloud && !source) current.more = value => { chunks.push(...speechChunks(value)); current.complete = false; append(); };
-    const onSide = message => {
+    const onSide = (message: Message) => {
       const { method, params } = message;
       if (params?.threadId !== current.speech?.id || current.stopped) return;
       onEvent({ type: 'message', data: message });
@@ -128,9 +140,9 @@ export function createVoice(client) {
       }
       if (method === 'thread/realtime/transcript/done' && params.role === 'assistant' && current.pending) { current.pending = false; append(); }
     };
-    const onEvent = event => {
+    const onEvent = (event: Event) => {
       if (event.type === 'connection' && !event.data?.connected) return fail('Elpis disconnected. Reconnect before starting voice again.');
-      const { method, params } = event.data ?? {};
+      const { method, params = {} } = event.data ?? {};
       if (current.stopped || event.type !== 'message') return;
       if (!readAloud && current.speech && params?.threadId === chatId) {
         if (method === 'turn/completed' || (method === 'thread/status/changed' && params.status?.type !== 'active')) idleRevision++;
@@ -139,9 +151,9 @@ export function createVoice(client) {
         if (relay && (!relay.turnId || relay.turnId === turnId)) {
           if (method === 'item/completed' && params.item?.type === 'agentMessage') {
             if (!relay.items.has(turnId)) relay.items.set(turnId, new Map());
-            relay.items.get(turnId).set(params.item.id, params.item);
+            relay.items.get(turnId)!.set(params.item.id, params.item);
           }
-          if (method === 'turn/completed') relay.completed.set(turnId, params.turn);
+          if (method === 'turn/completed') relay.completed.set(turnId, params.turn!);
           finishRelay();
         }
         if (method === 'turn/completed' || method === 'thread/status/changed') void relayNext();
@@ -154,9 +166,9 @@ export function createVoice(client) {
     };
     response.writeHead(200, { 'Content-Type': 'application/x-ndjson', 'Cache-Control': 'no-store' });
     response.flushHeaders();
-    response.once('close', stop); client.on('event', onEvent); client.on('side', onSide);
+    response.once('close', () => { void stop(); }); client.on('event', onEvent); client.on('side', onSide);
     timeout = setTimeout(() => fail('Voice connection timed out. Try again.'), 30000).unref();
-    heartbeat = setInterval(() => send({ type: 'ping' }), 15000).unref();
+    timers.heartbeat = setInterval(() => send({ type: 'ping' }), 15000).unref();
     if (readAloud) send({ type: 'session', id: current.id });
     current.started = conversation ? Promise.resolve().then(async () => {
       if (current.stopped) return;
@@ -165,7 +177,7 @@ export function createVoice(client) {
       await client.startSpeechThread(current.speech, input.sdp, { conversation: conversation.context });
       if (current.stopped) return;
       unsubscribe = await conversation.watch(context => {
-        void client.updateSpeechContext(current.speech.id, context).catch(() => fail('Live voice could not read the updated board. End the call and start again.'));
+        void client.updateSpeechContext(current.speech!.id, context).catch(() => fail('Live voice could not read the updated board. End the call and start again.'));
       }, fail);
       if (current.stopped) unsubscribe();
     }) : readAloud ? Promise.resolve().then(async () => {
@@ -191,18 +203,18 @@ export function createVoice(client) {
           append();
         });
         if (current.stopped) unsubscribe();
-      } catch (cause) { fail(cause.message); }
+      } catch (cause) { fail((cause as Error).message); }
     }
   }
-  function ready(input) {
+  function ready(input: Record<string, unknown>) {
     object(input, ['id']); text(input.id, 'speech session', 64);
     if (!call || call.stopped || !call.readyForSpeech || call.id !== input.id) throw new BridgeError('This Read aloud session has ended.', 409);
     call.readyForSpeech(); return { ok: true };
   }
-  function more(input) {
+  function more(input: Record<string, unknown>) {
     object(input, ['id', 'text']); text(input.id, 'speech session', 64); text(input.text, 'speech text', 2_000_000);
     if (!call || call.stopped || !call.more || call.id !== input.id) throw new BridgeError('This Read aloud session has ended.', 409);
-    call.more(input.text); return { ok: true };
+    call.more(input.text as string); return { ok: true };
   }
   return { start, ready, more, close, closeStream: async () => { if (call?.source || call?.conversation) await call.stop(); }, busy: () => !!call };
 }
