@@ -1425,7 +1425,7 @@
  },
  "lint": {
   "app/page.tsx:typescript(no-floating-promises)": 2,
-  "app/page.tsx:unused-disable-directive": 5,
+  "app/page.tsx:unused-disable-directive": 3,
   "bridge/acp-nodes.mjs:typescript(only-throw-error)": 3,
   "bridge/acp-nodes.test.mjs:eslint(prefer-const)": 1,
   "bridge/attachments.mjs:eslint(no-unused-expressions)": 1,

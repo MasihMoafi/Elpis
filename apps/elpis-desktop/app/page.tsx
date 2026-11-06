@@ -55,7 +55,6 @@ import { SidePanel, sideMinWidth, useSidePanel } from "@/components/side-panel";
 import { type SideRequest } from "@/components/side-chat";
 import { FloatChatBar, FloatChatPill } from "@/components/float-chat";
 import { useSessionSplit } from "@/components/session-split";
-import { followChat, renameTabs } from "@/lib/chat-tabs";
 import { fitAttachments, type Attachment } from "@/lib/attachments";
 import { api, modelLabel, providerLabel, title, agentName,
   type ProviderSettings, type Thread } from "@/lib/api";
@@ -107,6 +106,7 @@ import { useRewindState, useRewindStatus } from "@/lib/use-rewind-state";
 import { useRemoveThreads } from "@/lib/use-remove-threads";
 import { createWorkspaceCommandMenu } from "@/lib/workspace-command-menu";
 import { conversationStatus } from "@/lib/conversation-status";
+import { useChatTabTitles } from "@/lib/use-chat-tab-titles";
 import { PAGE_NAMES } from "@/lib/workspace-navigation-pages";
 import { refusedOffline } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
@@ -284,10 +284,7 @@ export default function Home() {
   const canSendFollowUp = !!selected && !!activeTurn && !continues;
   const sendBlocked = readOnlyRun || (!text.trim() && !attachments.length) || (busy && (!canSendFollowUp || shellMode)) || dictating || attaching || imageBlocked || !ready || !connected || (!shellMode && (!!missingChoiceNotice || needsModelId && !model.trim()));
 
-  const find = (id?: string | null) => id ? threads.find(thread => thread.id === id) ?? related[id] : undefined;
-  const selectedTitle = selected ? title(selected) : "";
-  useEffect(() => { if (ready) updateTabs(followChat(tabsRef.current, selected ? { id: selected.id, title: selectedTitle } : null)); }, [ready, selected?.id, selectedTitle]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { updateTabs(renameTabs(tabsRef.current, id => { const thread = find(id); return thread ? title(thread) : undefined; })); }, [threads, related]); // eslint-disable-line react-hooks/exhaustive-deps
+  const find = useChatTabTitles(session, chatTabs, related, ready);
   // Back and forward: each place reached (a chat, a new chat, a page) joins the stack.
   const navHistory = useNavHistory(ready, { view, threadId: view === "chat" ? selected?.id ?? null : null });
   const replacement = useTurnReplacementView({ selected, entries, shownEntries, continues, activeTurn, connected, busy, loading, itemCursor });
