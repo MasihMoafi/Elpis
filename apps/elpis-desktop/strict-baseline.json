@@ -1427,7 +1427,6 @@
   "lib/workflow-notice.ts:TS2532": 2
  },
  "lint": {
-  "app/page.tsx:eslint(no-unused-expressions)": 1,
   "app/page.tsx:typescript(no-floating-promises)": 7,
   "app/page.tsx:typescript(no-misused-promises)": 11,
   "app/page.tsx:unused-disable-directive": 8,

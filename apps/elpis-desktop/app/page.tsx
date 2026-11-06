@@ -22,7 +22,7 @@ import { useBookmarks, useChatAttention, usePins, useSidebarFolds, useChatGroups
 import { SIDEBAR, useAppearance } from "@/lib/use-appearance";
 import { addGroup, chatSelectionRoots, chatSubtree, deleteGroup, groupSections, moveChats, placeChat, prioritizeChats, putChatsUnder, renameGroup, sidebarParents, sortChats, toggleCollapsed, writeGroups, type ChatGroup, type ChatGroups } from "@/lib/chat-groups";
 import { agentParentId } from "@/lib/agent-runs.mjs";
-import { configuredShortcuts, shortcutFor, shortcutHint, shortcutTitle } from "@/lib/shortcuts";
+import { configuredShortcuts, shortcutHint, shortcutTitle } from "@/lib/shortcuts";
 import { CommandMenu, type CommandAction } from "@/components/command-menu";
 import { ImproveElpis } from "@/components/improve-elpis";
 import { arrange, move } from "@/lib/nav-order";
@@ -56,7 +56,7 @@ import { configDestination } from "@/lib/config-sections";
 import { DeleteChatsDialog, ThreadActions } from "@/components/thread-actions";
 import { GroupActions, GroupAndSortMenu, GroupNameDialog, useChatListOrder } from "@/components/chat-groups";
 import { SectionToggle, SidebarGroup } from "@/components/sidebar-group";
-import { letterKey, MoreMenu, RightClickMenu, type MenuAction } from "@/components/action-menu";
+import { MoreMenu, RightClickMenu, type MenuAction } from "@/components/action-menu";
 import { fastServiceTier } from "@/lib/service-tier.mjs";
 import { SlashMenu, useSlashMenu, type SlashCommand } from "@/components/slash-menu";
 import { MentionMenu, useMentionMenu } from "@/components/mention-menu";
@@ -109,7 +109,7 @@ import { WorkflowChat } from "@/components/workflow-chat";
 import { DocumentReviewProvider } from "@/components/document-review";
 import { AgentIdentity, agentColourSlots } from "@/components/agent-identity";
 import { ResumeConversation } from "@/components/resume-conversation";
-import { selectElementContent } from "@/lib/pane-select";
+import { sidebarListKeys, useSidebarKeys, useWorkspaceNavigation } from "@/lib/use-workspace-navigation";
 import { agentState, attentionLine, mergeListedThreads, stateLabels } from "@/lib/agents";
 import { insertTranscript } from "@/lib/dictation";
 import { useBrowserPins } from "@/lib/browser-pins";
@@ -603,36 +603,7 @@ export default function Home() {
     if (shown && !shown.threadId && shown.draftKey) { newDraftKey.current = shown.draftKey; setText(savedDraft(shown.draftKey)); restoreAttachments(shown.draftKey); }
   }, []);
   useEffect(() => window.elpisDesktop?.storage?.onError(setError), []);
-  // The mouse's side buttons go back and forward, as in a browser.
-  useEffect(() => {
-    const onMouse = (event: MouseEvent) => {
-      if (event.button !== 3 && event.button !== 4) return;
-      event.preventDefault();
-      if (event.type === "mouseup") shortcutAction.current(event.button === 3 ? "back" : "forward");
-    };
-    const types = ["mousedown", "mouseup", "auxclick"] as const;
-    for (const type of types) window.addEventListener(type, onMouse);
-    return () => { for (const type of types) window.removeEventListener(type, onMouse); };
-  }, []);
-  // The ChatGPT app's shortcuts (lib/shortcuts.ts); the action reads this render's state.
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      const typing = !!target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
-      if (!typing && !event.defaultPrevented && (event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.code === "KeyA") {
-        event.preventDefault();
-        const selection = window.getSelection(), anchor = selection?.anchorNode;
-        const source = target === document.body ? (anchor instanceof Element ? anchor : anchor?.parentElement) : target;
-        const scope = source?.closest(".chat-content, .canvas-error-details, [data-select-all-scope]");
-        if (scope) selectElementContent(scope);
-        return;
-      }
-      if (target?.closest('[role="dialog"], [role="alertdialog"]')) return;
-      const hit = shortcutFor(event, typing); if (!hit) return;
-      event.preventDefault(); shortcutAction.current(hit.id, hit.index);
-    };
-    window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  useWorkspaceNavigation(shortcutAction);
   useEffect(() => {
     let disposed = false; let events: EventSource | undefined; let wasConnected = false; let receivedConnection = false; let recovery = 0;
     let retryTimer: ReturnType<typeof setTimeout> | undefined, retryDelay = 500;
@@ -2043,45 +2014,8 @@ export default function Home() {
       setMarked(ids.slice(Math.min(from, to), Math.max(from, to) + 1)); event.currentTarget.focus();
     } else { setMarked([]); markAnchor.current = thread.id; void openThread(thread); }
   }
-  /** Navigation moves focus; Enter activates the focused control. Menus and text editing keep their own keys. */
-  const arrowSelect = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(() => {
-    const cancel = () => { clearTimeout(arrowSelect.current); arrowSelect.current = undefined; };
-    document.addEventListener("focusout", cancel);
-    return () => { document.removeEventListener("focusout", cancel); cancel(); };
-  }, []);
-  function sidebarKeys(event: React.KeyboardEvent<HTMLElement>) {
-    if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
-    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
-    const target = event.target as HTMLElement;
-    const stops = [...event.currentTarget.querySelectorAll<HTMLElement>(".nav-list > button, input[aria-label='Search conversations'], .sidebar-group-toggle, .thread-row > .thread-link, [data-sidebar-stop]")]
-      .filter(element => !element.matches(":disabled") && element.getClientRects().length > 0);
-    const at = stops.indexOf(target);
-    if (at < 0 || !event.currentTarget.contains(target)) return;
-    if (target instanceof HTMLInputElement && target.value && (event.key === "Home" || event.key === "End")) return;
-    const index = event.key === "Home" ? 0 : event.key === "End" ? stops.length - 1 : Math.max(0, Math.min(stops.length - 1, at + (event.key === "ArrowDown" ? 1 : -1)));
-    event.preventDefault();
-    const destination = stops[index];
-    destination?.focus();
-    // Selection follows focus, as in ChatGPT: a page or a chat opens as the arrow reaches it, after a pause so that holding the
-    // key does not open every row on the way. New chat, the search field and the switches are only reached, never activated.
-    clearTimeout(arrowSelect.current);
-    if (destination?.matches(".nav-list > button:not(.new-chat), .thread-row > .thread-link")) arrowSelect.current = setTimeout(() => {
-      arrowSelect.current = undefined;
-      if (destination.isConnected && document.activeElement === destination) destination.click();
-    }, 150);
-  }
-  /** Keys on a focused chat row: D deletes, U changes attention, and Escape clears the marks. */
-  function listKeys(event: React.KeyboardEvent<HTMLDivElement>) {
-    const target = event.target as HTMLElement, id = rowOf(target);
-    if (!id || !event.currentTarget.contains(target) || event.ctrlKey || event.metaKey) return;
-    if (event.altKey) return;
-    if (event.key === "Escape" && marked.length) setMarked([]);
-    else if (letterKey(event) === "u") attentionFor(id).planReady ? attentionFor(id).onComplete() : attentionFor(id).onToggleRead();
-    else if (letterKey(event) === "d") deleteChats(marked.length ? marked : [id], rowLinks().findIndex(link => link.parentElement === target.closest(".thread-row")));
-    else return;
-    event.preventDefault();
-  }
+  const sidebarKeys = useSidebarKeys();
+  const listKeys = (event: React.KeyboardEvent<HTMLDivElement>) => sidebarListKeys(event, marked, () => setMarked([]), attentionFor, deleteChats, rowLinks);
   function attentionFor(id: string) {
     return { unread: attention.unread.includes(id), planReady: !!attention.plans[id],
       onToggleRead: () => setAttention(previous => ({ ...previous, unread: previous.unread.includes(id) ? previous.unread.filter(value => value !== id) : [...previous.unread, id] })),
