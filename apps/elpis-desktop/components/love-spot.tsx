@@ -31,7 +31,7 @@ import { subscribeLoveSpotEvents } from "@/lib/love-spot-events";
 import { MASIH_PEN, latestMessage, lightFiles, lightImage } from "@/lib/love-spot";
 import { LOVE_SPOT_AUDIO } from "@/lib/love-spot-audio";
 import { noticed, told } from "@/lib/matilda";
-import { newer } from "@/bridge/love-spot-order.cjs";
+import { newer } from "@/bridge/love-spot-order.cts";
 import { BOARD_THEMED } from "@/bridge/matilda-face.cjs";
 import { upgradeAgentArt } from "@/lib/love-agents";
 import "@excalidraw/excalidraw/index.css";

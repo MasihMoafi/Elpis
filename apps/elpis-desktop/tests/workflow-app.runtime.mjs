@@ -30,7 +30,7 @@ const tools = path.resolve(process.env.ELPIS_TEST_TOOLS || fileURLToPath(new URL
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const freePort = () => new Promise(resolve => { const s = net.createServer().listen(0, '127.0.0.1', () => { const { port: p } = s.address(); s.close(() => resolve(p)); }); });
 
-/** The engine behind the runtime under test: the app starts the runtime found beside its engine (runtime-paths.mjs). */
+/** The engine behind the runtime under test: the app starts the runtime found beside its engine (runtime-paths.mts). */
 function stageEngine(dir) {
   fs.mkdirSync(path.join(dir, 'package/bin'), { recursive: true }); fs.mkdirSync(path.join(dir, 'tools/elpis-claude'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'package/bin/codex'), `#!/bin/sh\nexec ${JSON.stringify(fs.realpathSync(process.env.ELPIS_TEST_ENGINE))} "$@"\n`, { mode: 0o755 });

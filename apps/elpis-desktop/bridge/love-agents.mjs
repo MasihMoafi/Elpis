@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { BridgeError, elpisHome, object, text } from './client.mjs';
-import { runtimeTools } from './runtime-paths.mjs';
+import { runtimeTools } from './runtime-paths.mts';
 import { BRIDGE_ENDPOINT_KEYS } from './profile-env.mjs';
 import { handoffText, runAcpNode } from './acp-nodes.mjs';
 import { interviewReply, INVALID_INTERVIEW_REPLY } from './love-interview.mjs';

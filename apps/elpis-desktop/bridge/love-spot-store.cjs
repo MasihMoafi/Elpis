@@ -8,7 +8,7 @@ const net = require('node:net');
 const { createHash, randomUUID } = require('node:crypto');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
-const { newer } = require('./love-spot-order.cjs');
+const { newer } = require('./love-spot-order.cts');
 const { paintElements, paintingSize, splitPainting } = require('./love-spot-painting.cjs');
 const { BOARD_FACE, OLD_BOARD_FACES, OLD_BOARD_SHOTS, replyPortrait } = require('./matilda-face.cjs');
 const FACE = 96, FACE_SIDE = FACE + 12;

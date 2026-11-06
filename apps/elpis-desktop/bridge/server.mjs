@@ -31,7 +31,7 @@ import { createImprovements } from './improve.mjs';
 import { dismissPersonalTip, openPersonal, personalStatus } from './personal.mjs';
 import { createSettingsFiles } from './settings-files.mjs';
 import { createThreadTitles } from './thread-titles.mjs';
-import { appIdentity } from './app-identity.mjs';
+import { appIdentity } from './app-identity.mts';
 
 const COOKIE = 'elpis_desktop';
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.txt': 'text/plain', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.ogg': 'audio/ogg', '.ico': 'image/x-icon', '.woff': 'font/woff', '.woff2': 'font/woff2' };

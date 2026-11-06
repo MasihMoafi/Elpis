@@ -8,7 +8,7 @@ import { SettingsNotice } from "@/components/settings/rows";
 import { api } from "@/lib/api";
 import { errorText } from "@/lib/error-text.mjs";
 import { editable, saveSettings, useElpisSettings } from "@/lib/settings-store";
-import { speechModelUnavailable } from "@/lib/speech-model.mjs";
+import { speechModelUnavailable } from "@/lib/speech-model.mts";
 
 export type KeyProvider = { id: string; name: string; baseUrl: string | null; auth: { keySet: boolean } };
 type Choice = { source: string; model: string | null; voice: string | null };

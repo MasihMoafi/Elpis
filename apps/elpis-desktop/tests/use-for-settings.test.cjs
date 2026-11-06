@@ -45,7 +45,7 @@ function harness({ providers = [ROUTER, OTHER], speech = { source: 'local', mode
     '@/components/settings/rows': { SettingsNotice: passthrough('p') },
     '@/lib/api': { api },
     '@/lib/error-text.mjs': { errorText: error => String(error?.message ?? error) },
-    '@/lib/speech-model.mjs': require('../lib/speech-model.mjs'),
+    '@/lib/speech-model.mts': require('../lib/speech-model.mts'),
     '@/lib/settings-store': { useElpisSettings: () => ({ data: settings }), editable: () => true, saveSettings: async (route, body) => { posts.push({ route, body }); Object.assign(settings.main, body.main); return settings; } },
   };
   const file = path.join(root, 'components/settings/use-for-settings.tsx');
@@ -85,7 +85,7 @@ test('ticking read aloud on the OpenRouter key routes read aloud to it', async (
 test('a feature the key cannot do is disabled with its reason and cannot be ticked', async () => {
   const app = harness();
   await app.settle();
-  for (const [key, feature] of [[OTHER, 'Read aloud'], [OTHER, 'Dictation'], [OTHER, 'Live voice'], [ROUTER, 'Live voice']]) {
+  for (const { key, feature } of [{ key: OTHER, feature: 'Read aloud' }, { key: OTHER, feature: 'Dictation' }, { key: OTHER, feature: 'Live voice' }, { key: ROUTER, feature: 'Live voice' }]) {
     const box = app.box(key, feature);
     assert.equal(box.props.disabled, true, `${feature} on ${key.name} is disabled`);
     assert.equal(box.props.checked, false);

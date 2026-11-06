@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { BridgeError, object } from './client.mjs';
 import { attachmentInput } from './attachments.mjs';
 import { verifyImprovement } from './improve-check.mjs';
-import { durableSourceCheckout } from './improve-source.mjs';
+import { durableSourceCheckout } from './improve-source.mts';
 const exec = promisify(execFile);
 const defaultAppRoot = fileURLToPath(new URL('..', import.meta.url));
 const SAFE = ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false'];

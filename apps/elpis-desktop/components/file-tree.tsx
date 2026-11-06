@@ -9,7 +9,7 @@ import { fileKind } from "@/components/file-cards";
 import { SearchField } from "@/components/ui/search-field";
 import { api } from "@/lib/api";
 import { loadDir, loadNames, openFile, openRef, paneIn, refresh, select as selectPath, toggleDir, treeRows, useFiles, type Row } from "@/lib/files-pane";
-import { isAudioPath } from "@/lib/audio-path.mjs";
+import { isAudioPath } from "@/lib/audio-path.mts";
 import { rankFiles } from "@/lib/mentions";
 import { errorText } from "@/lib/error-text.mjs";
 

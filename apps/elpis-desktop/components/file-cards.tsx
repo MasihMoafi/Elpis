@@ -7,7 +7,7 @@ import { FolderIcon } from "@/components/elpis-icons";
 import { MoreMenu } from "@/components/action-menu";
 import { useFileActions } from "@/components/file-actions";
 import { openRef, useHost } from "@/lib/files-pane";
-import { isAudioPath } from "@/lib/audio-path.mjs";
+import { isAudioPath } from "@/lib/audio-path.mts";
 import { resolveRef } from "@/lib/file-refs";
 import { Button } from "@/components/ui/button";
 import { ReplyableImage } from "@/components/image-reply";
