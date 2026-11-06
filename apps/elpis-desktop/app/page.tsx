@@ -11,7 +11,6 @@ import { newChatFolder, useAppPreferences } from "@/lib/preferences";
 import { usePromptKeys } from "@/lib/prompt-history";
 import { ShortcutsDialog } from "@/components/shortcuts-dialog";
 import { StartupSplash } from "@/components/startup-splash";
-import type { TerminalLaunch } from "@/components/terminal-view";
 import { type SettingsDestination } from "@/components/settings-view";
 import { DeleteChatsDialog } from "@/components/thread-actions";
 import { SectionToggle } from "@/components/sidebar-group";
@@ -45,11 +44,9 @@ import { ChatTeamPanel } from "@/components/chat-team-panel";
 import { ResumeConversation } from "@/components/resume-conversation";
 import { sidebarListKeys, useSidebarKeys, useWorkspaceNavigation } from "@/lib/use-workspace-navigation";
 import { agentState } from "@/lib/agents";
-import { useBrowserPins } from "@/lib/browser-pins";
-import { useBrowser } from "@/components/browser-panel";
-import { onRequest as onFileRequest, openFile, setFileView } from "@/lib/files-pane";
+import { openFile, setFileView } from "@/lib/files-pane";
 import { usePersonal } from "@/components/personal-tip";
-import { SidePanel, sideMinWidth, useSidePanel } from "@/components/side-panel";
+import { SidePanel, sideMinWidth } from "@/components/side-panel";
 import { FloatChatBar, FloatChatPill } from "@/components/float-chat";
 import { useSessionSplit } from "@/components/session-split";
 import { api, title, agentName,
@@ -92,7 +89,6 @@ import { useChatTeam } from "@/lib/use-chat-team";
 import { useWorkspaceShortcuts } from "@/lib/use-workspace-shortcuts";
 import { useWorkflowWorkspace } from "@/lib/use-workflow-workspace";
 import { useWorkspaceDialogState } from "@/lib/use-workspace-dialog-state";
-import { createWorkspaceVisibility } from "@/lib/workspace-visibility";
 import { createSidebarChatSelection } from "@/lib/sidebar-chat-selection";
 import { useWorkspaceOrder } from "@/lib/use-workspace-order";
 import { useRewindState, useRewindStatus } from "@/lib/use-rewind-state";
@@ -106,6 +102,7 @@ import { useCommandNotices } from "@/lib/use-command-notices";
 import { useConversationView } from "@/lib/use-conversation-view";
 import { useComposerPanels, useComposerPanelScope } from "@/lib/use-composer-panels";
 import { useLoveWorkspace, useReadLoveNotifications } from "@/lib/use-love-workspace";
+import { useWorkspacePanels } from "@/lib/use-workspace-panels";
 import { PAGE_NAMES } from "@/lib/workspace-navigation-pages";
 import { refusedOffline } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
@@ -191,27 +188,7 @@ export default function Home() {
   useReadLoveNotifications(loveActivity.chatShown, setAttention, isLoveChatId);
   useEffect(() => { if (view === "chat" && selected) markRead(selected.id); }, [view, selected?.id, markRead]);
   const { desktop, windowAvailable, hasTerminal } = useDesktopCapabilities();
-  const browser = useBrowser(selected?.id ?? `draft:${tabs.activeId}`);
-  const side = useSidePanel(browser, selected?.cwd || cwd);
-  const browserPins = useBrowserPins(setError);
-  useEffect(() => onFileRequest(() => { if (view !== "chat") setView("chat"); }), [view]);
-  // The side panel (components/side-panel.tsx): shells and browser pages as tabs, beside the chat.
-  const [tuiLaunch, setTuiLaunch] = useState<TerminalLaunch | null>(null);
-  const panelShown = desktop && side.open && view === "chat";
-  /** Full view (the side panel's): the panel fills the work area and the chat floats over it, as a card or folded to a pill. */
-  const fullView = panelShown && side.full;
-  const [pendingInputOpen, setPendingInputOpen] = useState(false);
-  const pendingInputButton = useRef<HTMLButtonElement>(null);
-  const [sidebar, setSidebar] = useState(false);
-  const [panelDrawer, setPanelDrawer] = useState(false);
-  const { showChat, show, narrow, showSidebar, focusSearch } = createWorkspaceVisibility({ side, pages, panelShown, panelDrawer, setSidebar, setSidebarCollapsed, searchInput: () => searchInput.current });
-  useEffect(() => { if (selected?.id) showChat(); }, [selected?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    const media = matchMedia("(max-width: 1000px)");
-    const update = () => setPanelDrawer(media.matches);
-    update(); media.addEventListener("change", update);
-    return () => media.removeEventListener("change", update);
-  }, []);
+  const { browser, side, browserPins, tuiLaunch, setTuiLaunch, panelShown, fullView, pendingInputOpen, setPendingInputOpen, pendingInputButton, sidebar, setSidebar, panelDrawer, showChat, show, narrow, showSidebar, focusSearch } = useWorkspacePanels({ selected, cwd, activeTabId: tabs.activeId, desktop, pages, setError, setSidebarCollapsed, searchInput: () => searchInput.current });
   const [agentsPanelState, setAgentsPanelState] = useState<{ open: boolean; held: ReadonlySet<string> }>({ open: true, held: new Set() });
   const [workingAgentsOnly, setWorkingAgentsOnly] = useState(true);
   const [loveToolbarHost, setLoveToolbarHost] = useState<HTMLDivElement | null>(null);
