@@ -6,7 +6,7 @@ import { ViewBoundary } from "@/components/view-boundary";
 import { useBookmarks, useChatAttention, usePins, useSidebarFolds, useChatGroups } from "@/lib/use-sidebar-state";
 import { useAppearance } from "@/lib/use-appearance";
 import { CommandMenu } from "@/components/command-menu";
-import { newChatFolder, useAppPreferences } from "@/lib/preferences";
+import { newChatFolder } from "@/lib/preferences";
 import { usePromptKeys } from "@/lib/prompt-history";
 import { ShortcutsDialog } from "@/components/shortcuts-dialog";
 import { StartupSplash } from "@/components/startup-splash";
@@ -74,11 +74,8 @@ import { createApprovalActions } from "@/lib/approval-actions";
 import { createShellSend } from "@/lib/shell-send";
 import { createClearConversation } from "@/lib/clear-conversation";
 import { useTurnReplacementView } from "@/lib/use-turn-replacement-view";
-import { useWorkspacePagesState } from "@/lib/use-workspace-pages-state";
-import { useConversationOptions } from "@/lib/use-conversation-options";
 import { useSidebarSelection } from "@/lib/use-sidebar-selection";
 import { useDesktopEntryPoints } from "@/lib/use-desktop-entry-points";
-import { useConversationSession } from "@/lib/use-conversation-session";
 import { createPromptEditing } from "@/lib/prompt-editing";
 import { createSideChatActions } from "@/lib/side-chat-actions";
 import { useWorkspaceRestoration } from "@/lib/use-workspace-restoration";
@@ -106,8 +103,6 @@ import { useLoveScreenshots } from "@/lib/use-love-screenshots";
 import { PAGE_NAMES } from "@/lib/workspace-navigation-pages";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
 import { useComposerState } from "@/lib/use-composer-state";
-import { useProjectState } from "@/lib/use-project-state";
-import { useChatTabs } from "@/lib/use-chat-tabs";
 import { useApprovalDrafts, useDraftStore, useSubmitOnce } from "@/lib/use-drafts";
 import { sessionWindowApi, useDesktopCapabilities } from "@/lib/use-desktop-capabilities";
 import { useWorkspaceNotices } from "@/lib/use-workspace-notices";
@@ -115,24 +110,18 @@ import { useSidebarSearch } from "@/lib/use-sidebar-search";
 import { createWorkspaceChatTabs } from "@/components/workspace-chat-tabs";
 import { WorkspaceOrganizationDialogs } from "@/components/workspace-organization-dialogs";
 import { errorText } from "@/lib/error-text.mjs";
-import { useWorkspaceModels } from "@/lib/use-workspace-models";
+import { useWorkspaceStores } from "@/lib/use-workspace-stores";
 
 
 
 export default function Home() {
-  const preferences = useAppPreferences();
+  const { preferences, session, chatTabs, models: workspaceModels, options, projectState, pages } = useWorkspaceStores(message => setError(message));
   const hiddenPages = preferences.hiddenPages.split(",");
-  const session = useConversationSession();
   const { threads, setThreads, selected, setSelected, selectedRef, entries, setEntries, busy, setBusy, loading, setLoading, scroll, stickToBottom, restoreScroll, request, initialRestoration } = session;
-  // Chat tabs (lib/chat-tabs.ts): the shown tab follows the chat on screen, so every way of opening a chat lands in it.
-  const chatTabs = useChatTabs(message => setError(message));
   const { tabs, tabsRef, updateTabs, restoreTabs, restored: restoredTabs } = chatTabs;
-  const { catalog, models, settingsSnapshot, providerSettings, refreshModels } = useWorkspaceModels();
-  const options = useConversationOptions();
+  const { catalog, models, settingsSnapshot, providerSettings, refreshModels } = workspaceModels;
   const { choiceId, model, effort, setEffort, nextTurn, setNextTurn, threadModes, setThreadModes, planAnswered } = options;
-  const projectState = useProjectState();
   const { cwd, projects, projectChats, projectChanging } = projectState;
-  const pages = useWorkspacePagesState();
   const { recordedWorkflow, view, setView, viewRef, setSettingsSection } = pages;
   const { pins, togglePinned } = usePins();
   const { bookmarks, toggleBookmarked } = useBookmarks();
