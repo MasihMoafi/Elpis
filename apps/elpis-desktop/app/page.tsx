@@ -12,7 +12,6 @@ import { ReorderItem, useReorder } from "@/components/reorder";
 import { ApprovalCard } from "@/components/approval-card";
 import { PlanCard } from "@/components/plan-card";
 import { SearchField } from "@/components/ui/search-field";
-import { Textarea } from "@/components/ui/textarea";
 import { ChatMessage } from "@/components/chat-message";
 import { FailedTurnCard } from "@/components/failed-turn-card";
 import { ViewBoundary } from "@/components/view-boundary";
@@ -29,7 +28,6 @@ import { followUpHint, followUpKey, isSendKey, newChatFolder, savePreferences, u
 import type { FollowUp } from "@/lib/follow-ups";
 import { QueuedFollowUps } from "@/components/queued-follow-ups";
 import { stopsOnEscape, usePromptKeys } from "@/lib/prompt-history";
-import { PromptStatusLine } from "@/components/prompt-status";
 import { OPEN_CONTEXT_EVENT } from "@/components/context-usage";
 import { ElpisFeatures } from "@/components/elpis-features";
 import { ShortcutsDialog } from "@/components/shortcuts-dialog";
@@ -55,8 +53,9 @@ import { SidebarChatList } from "@/components/sidebar-chat-list";
 import { createSidebarThreadRow } from "@/components/sidebar-thread-row";
 import { createSidebarBranches } from "@/components/sidebar-branches";
 import { ComposerControls } from "@/components/composer-controls-panel";
-import { SlashMenu, useSlashMenu } from "@/components/slash-menu";
-import { MentionMenu, useMentionMenu } from "@/components/mention-menu";
+import { ComposerForm } from "@/components/composer-form";
+import { useSlashMenu } from "@/components/slash-menu";
+import { useMentionMenu } from "@/components/mention-menu";
 import { NavButtons } from "@/components/nav-buttons";
 import { PromptRail } from "@/components/prompt-rail";
 import { RewindDialog } from "@/components/rewind-dialog";
@@ -83,7 +82,6 @@ import { useWorkflowSandbox, type WorkflowRun } from "@/lib/workflow-identity";
 import { BranchChip } from "@/components/branch-chip";
 import { AccountRow } from "@/components/account-row";
 import { ProfileDialog } from "@/components/profile-dialog";
-import { DRAWING_NOTE } from "@/lib/browser-notes";
 import { readProjectChats, readProjects, saveProjects } from "@/lib/projects";
 import { ResizeEdge } from "@/components/resize-edge";
 import { TaskList } from "@/components/task-list";
@@ -110,8 +108,7 @@ import { FloatChatBar, FloatChatPill } from "@/components/float-chat";
 import { useSessionSplit } from "@/components/session-split";
 import { Tab, TabStrip } from "@/components/tab-strip";
 import { activeTab, followChat, forgetChats, renameTabs, type ChatTab } from "@/lib/chat-tabs";
-import { AttachmentChips } from "@/components/attachment-chips";
-import { ATTACHMENT_ACCEPT, ATTACHMENT_LIMITS, TEXT_ONLY_NOTICE, attachmentFromFile, fitAttachments, transferFiles, type Attachment } from "@/lib/attachments";
+import { ATTACHMENT_LIMITS, TEXT_ONLY_NOTICE, attachmentFromFile, fitAttachments, transferFiles, type Attachment } from "@/lib/attachments";
 import { LoadOnScroll } from "@/components/load-on-scroll";
 import { api, unreadable, isAgentRun, AGENT_RUN_NOTICE, modelLabel, providerLabel, title, agentName,
   mediaUrl, type Approval, type Entry, type ProviderSettings, type Thread } from "@/lib/api";
@@ -1094,17 +1091,9 @@ export default function Home() {
           {readOnlyRun ? <div className="mx-auto flex w-full max-w-[var(--transcript-width,740px)] flex-col gap-3 rounded-lg border p-4 text-sm text-muted-foreground" role="status">
             <p>{AGENT_RUN_NOTICE}</p>
             {selected?.desktopAccess?.canContinue && !activeTurn && selected.status?.type !== "active" && <Button variant="outline" size="sm" className="self-start" disabled={busy || !connected || loading} onClick={() => void continueHere(selected)}>Continue here</Button>}
-          </div> : <form className="composer" onSubmit={e => { e.preventDefault(); send(); }} onDragOver={e => { if (e.dataTransfer.types.includes("Files")) e.preventDefault(); }} onDrop={e => { const files = transferFiles(e.dataTransfer); if (files.length || e.dataTransfer.types.includes("Files")) { e.preventDefault(); void addFiles(files); } }}>
-            {!shellMode && <><SlashMenu menu={slash} /><MentionMenu menu={mention} /></>}
-            <input ref={filePickerRef} type="file" multiple accept={ATTACHMENT_ACCEPT} className="hidden" aria-label="Choose files" onChange={e => { const files = Array.from(e.target.files ?? []); e.target.value = ""; void addFiles(files); }} />
-            <AttachmentChips attachments={attachments} disabled={busy || attaching} onRemove={id => { const removed = attachmentsRef.current.find(item => item.id === id), next = attachmentsRef.current.filter(item => item.id !== id && item.id !== `reply-image-${id}` && !(item.name === DRAWING_NOTE && removed?.name === "Page drawing.jpg")); setAttachments(next); saveAttachments(selectedRef.current?.id || newDraftKey.current, next); focusComposer(); }} />
-            {attaching && <p role="status" className="px-3 py-2 text-sm text-muted-foreground">Reading files…</p>}
-            {shellMode && <p role="status" className="bash-mode-notice"><span className="composer-pill">bash</span><span>Bash mode. Press Escape to return to chat.</span></p>}
-            {!shellMode && promptKeys.status && <PromptStatusLine status={promptKeys.status} />}
-            <Textarea ref={composerRef} aria-label="Message Elpis" {...(mention.open ? mention.inputProps : slash.inputProps)} onBlur={() => { slash.close(); mention.close(); promptKeys.cancel(); }} onSelect={e => setCaret(e.currentTarget.selectionStart)} placeholder={composerPlaceholder} value={text} onChange={onComposerChange} onPaste={onComposerPaste} disabled={projectChanging} onKeyDown={onComposerKeyDown} />
-            {composerNotice && <div className="flex items-center gap-2 px-3 text-sm text-destructive" role="alert"><span className="whitespace-pre-line">{composerNotice}</span>{fileNotice && <Button type="button" variant="ghost" size="icon-xs" aria-label="Dismiss file notice" onClick={() => setFileNotice("")}><X size={14} /></Button>}</div>}
+          </div> : <ComposerForm composer={composer} attachmentsState={attachmentState} drafts={draftStore} selectedRef={selectedRef} newDraftKey={newDraftKey} slash={slash} mention={mention} promptKeys={promptKeys} send={send} onComposerChange={onComposerChange} onComposerPaste={onComposerPaste} onComposerKeyDown={onComposerKeyDown} composerPlaceholder={composerPlaceholder} composerNotice={composerNotice} busy={busy} projectChanging={projectChanging} focusComposer={focusComposer}>
             <ComposerControls selected={selected} selectedModel={selectedModel} settings={conversationSettings} commands={conversationCommands} runtime={runtime} composer={composer} attachmentsState={attachmentState} projectState={projectState} slash={slash} mention={mention} promptKeys={promptKeys} models={models} settingsSnapshot={settingsSnapshot} providerSettings={providerSettings} preferences={preferences} model={model} choiceId={choiceId} setModel={setModel} setChoiceId={setChoiceId} setEffort={setEffort} newDraftKey={newDraftKey} permissionMode={permissionMode} planMode={planMode} busy={busy} activeTurn={activeTurn} readOnlyRun={readOnlyRun} continues={continues} sendBlocked={sendBlocked} selectedLoveChat={selectedLoveChat} loveSpotAudioReason={loveSpotAudioReason} manageConnections={manageConnections} pickFiles={pickFiles} startMention={startMention} startSlash={startSlash} focusComposer={focusComposer} editDraft={editDraft} stop={stop} />
-          </form>}
+          </ComposerForm>}
           <div className="composer-meta">
             {selected && <ProjectMenu variant="chip" label="Change folder" addLabel="Choose folder…" allowNone={false} projects={projects} disabled={!ready || !connected || readOnlyRun}
               selected={projects.find(item => item.cwd.replace(/\/+$/, "") === selected.cwd?.replace(/\/+$/, "")) ?? (selected.cwd ? { id: `folder:${selected.cwd}`, name: folder(selected.cwd), cwd: selected.cwd } : null)}
