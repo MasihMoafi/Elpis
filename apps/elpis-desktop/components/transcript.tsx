@@ -21,7 +21,7 @@ import { pauseBefore, turnTime } from "@/lib/turn-time";
  * collapsed into short activity lines, and once a turn ends everything before its final reply
  * folds into "Worked for …". `renderItem` draws one message or activity in full; `mediaOf` is where the bridge serves
  * an item's recorded pictures (lib/api.ts `mediaUrl`). */
-type Draw = { renderItem: (entry: Entry) => ReactNode; mediaOf?: (entry: Entry) => string | undefined; wrapItem?: (entry: Entry, node: ReactNode) => ReactNode };
+type Draw = { renderItem: (entry: Entry) => ReactNode; mediaOf?: ((entry: Entry) => string | undefined) | undefined; wrapItem?: ((entry: Entry, node: ReactNode) => ReactNode) | undefined };
 type ObserveTurn = (element: HTMLElement, show: () => void) => () => void;
 export const WorkingPlacement = createContext<HTMLElement | null>(null);
 function WorkingStatus({ children }: { children: ReactNode }) {
@@ -45,11 +45,14 @@ export function Transcript({ entries, activeTurnId, onViewChanges, ...draw }: { 
       let low = 0, high = turns.length;
       while (low < high) {
         const middle = Math.floor((low + high) / 2);
-        if (turns[middle].getBoundingClientRect().bottom < top) low = middle + 1; else high = middle;
+        const turn = turns[middle];
+        if (turn && turn.getBoundingClientRect().bottom < top) low = middle + 1; else high = middle;
       }
-      for (let index = low; index < turns.length && turns[index].getBoundingClientRect().top <= bottom; index++) {
-        const show = targets.current.get(turns[index]);
-        targets.current.delete(turns[index]); show?.();
+      for (let index = low; index < turns.length; index++) {
+        const turn = turns[index];
+        if (!turn || turn.getBoundingClientRect().top > bottom) break;
+        const show = targets.current.get(turn);
+        targets.current.delete(turn); show?.();
       }
     });
   }, []);
@@ -77,7 +80,7 @@ export function Transcript({ entries, activeTurnId, onViewChanges, ...draw }: { 
     const pause = pauseBefore(start, end);
     return <Fragment key={turn.clientKey ?? turn.id}>
       {pause && <div className="turn-time"><time dateTime={new Date(start).toISOString()}>{turnTime(start)}</time></div>}
-      <Turn turn={turn} active={turn.id === activeTurnId} defer={turns.length > 40 && index < turns.length - 1} observe={observe} onViewChanges={onViewChanges} {...wrapped} />
+      <Turn turn={turn} active={turn.id === activeTurnId} defer={turns.length > 40 && index < turns.length - 1} observe={observe} {...(onViewChanges ? { onViewChanges } : {})} {...wrapped} />
     </Fragment>;
   })}
     {activeTurnId && !turns.some(turn => turn.id === activeTurnId) && <WorkingStatus><LiveStep key={activeTurnId} label="Working" /></WorkingStatus>}
@@ -168,9 +171,9 @@ function Turn({ turn, active, defer, observe, onViewChanges, renderItem, mediaOf
       <DisclosureSummary><span>{turn.entries.some(entry => typeof entry.startedAtMs === "number") ? workedFor(turn.entries) : foldSummary(folded.map(entry => entry.item))}</span></DisclosureSummary>
       {workOpen && <div className="worked-for-body"><Flow entries={folded} renderItem={renderItem} mediaOf={mediaOf} wrapItem={wrapItem} /></div>}
     </details>}
-    <Flow entries={visible} renderItem={renderItem} mediaOf={mediaOf} wrapItem={wrapItem} live={active} end={finalReply >= 0 ? work[finalReply].item.id : undefined} />
+    <Flow entries={visible} renderItem={renderItem} mediaOf={mediaOf} wrapItem={wrapItem} live={active} end={finalReply >= 0 ? work[finalReply]?.item.id : undefined} />
     {!active && <CreatedFiles paths={createdFiles(work)} />}
-    {!active && <TurnChanges items={work.map(entry => entry.item)} onViewChanges={onViewChanges} />}
+    {!active && <TurnChanges items={work.map(entry => entry.item)} {...(onViewChanges ? { onViewChanges } : {})} />}
     {/* The working mark has one place, the turn's foot, for the whole turn; a running step's row keeps its sentence and
         timer without a mark (29 Oct, Masih: "you can see the working animation changes its place!"). */}
     {active && <WorkingStatus><LiveStep label="Working" since={earliest(turn.entries)} /></WorkingStatus>}
@@ -179,11 +182,11 @@ function Turn({ turn, active, defer, observe, onViewChanges, renderItem, mediaOf
 
 /** Replies stay as they are; each run of tool activity between them becomes one line. */
 /** `end` names the turn's final reply: only it keeps room under it for its hover actions (message-actions.css). */
-function Flow({ entries, renderItem, mediaOf, wrapItem, live = false, end }: { entries: Entry[]; live?: boolean; end?: string } & Draw) {
+function Flow({ entries, renderItem, mediaOf, wrapItem, live = false, end }: { entries: Entry[]; live?: boolean; end?: string | undefined } & Draw) {
   const blocks: ReactNode[] = [];
   let run: Entry[] = [];
   const flush = () => {
-    if (run.length) blocks.push(<ActivityGroup key={`group-${run[0].item.id}`} entries={run} renderItem={renderItem} mediaOf={mediaOf} wrapItem={wrapItem} live={live} />);
+    if (run[0]) blocks.push(<ActivityGroup key={`group-${run[0].item.id}`} entries={run} renderItem={renderItem} mediaOf={mediaOf} wrapItem={wrapItem} live={live} />);
     run = [];
   };
   for (const entry of entries) {
@@ -223,7 +226,7 @@ function ActivityGroup({ entries, renderItem, mediaOf, wrapItem, live }: { entri
 /** The timer is not drawn for a step's first seconds, as in Claude's rows. */
 const TIMER_FROM_MS = 2000;
 /** Something in progress, as a sentence with animated dots and a timer counting from `since` (else from now). */
-function LiveStep({ label, since, mark = true }: { label: string; since?: number; mark?: boolean }) {
+function LiveStep({ label, since, mark = true }: { label: string; since?: number | undefined; mark?: boolean }) {
   const [start] = useState(() => since ?? Date.now());
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
@@ -252,8 +255,8 @@ function earliest(entries: Entry[]): number | undefined {
   return starts.length ? Math.min(...starts) : undefined;
 }
 
-function findLastIndex<T>(values: T[], test: (value: T) => boolean): number {
-  for (let index = values.length - 1; index >= 0; index--) if (test(values[index])) return index;
+function findLastIndex(values: Entry[], test: (value: Entry) => boolean): number {
+  for (let index = values.length - 1; index >= 0; index--) { const value = values[index]; if (value && test(value)) return index; }
   return -1;
 }
 
