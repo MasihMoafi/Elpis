@@ -11,7 +11,7 @@ export { waits };
  * (`runTasks`), and reading or planning happens inside the writers (lat.md/tasks.md, 17 October 2026). */
 /** `provider` is null for the engine's own provider; `effort` is the thinking level (sent per task); `writeScopes` are the project's
  * folders the agent may write ("." is the whole project) besides its own folder (`ownFolders`). */
-export type AgentData = { character?: string; characterImage?: string; muted?: boolean; title: string; instruction: string; model: string | null; provider?: string | null; effort?: string | null; /** OpenAI Fast: the turn's "priority" tier. */ fast?: boolean; writeScopes: string[]; acceptanceCriteria: string[];
+export type AgentData = { character?: string; characterImage?: string; muted?: boolean; title: string; instruction: string; model: string | null; provider?: string | null; effort?: string | null | undefined; /** OpenAI Fast: the turn's "priority" tier. */ fast?: boolean; writeScopes: string[]; acceptanceCriteria: string[];
   /** How its check proves the work, when a ready-made workflow knows better than running the build or the tests; false: no check. */
   check?: string | false;
   /** Done by Elpis, not an agent: `parts` written in order into `output` (`flow`: pages that may end mid-sentence). */
@@ -23,12 +23,12 @@ export type CanvasNode = ({ id: string; type: "agent"; position: Position; data:
   | { id: typeof MOTHER; type: "mother"; position: Position; data: Record<string, never> }) & { isoPosition?: Position };
 /** A wire: by default the target waits for the source (directional); `alongside` (undirectional) means the two work
  * at the same time, each told about the other and kept out of its folders, with no order between them. */
-export type CanvasEdge = { id: string; source: string; target: string; kind?: "alongside"; label?: string; feedback?: boolean };
+export type CanvasEdge = { id: string; source: string; target: string; kind?: "alongside" | undefined; label?: string; feedback?: boolean | undefined };
 /** The Mother's settings, for the whole run: its goal (`brief`), which every agent gets and from which Elpis fills in
  * what the user left empty, and the model of her chat (the run's root). */
 export type MotherSettings = { brief: string; model: string | null; provider: string | null };
 /** `maxAgents` is the most agents the graph may hold; `template` is the architecture it was loaded from. */
-export type CanvasGraph = { name: string; request?: string; workflowId?: string; nodes: CanvasNode[]; edges: CanvasEdge[]; frames?: CanvasFrame[]; minimap?: boolean; maxAgents?: number; /** The whole run's time limit, in minutes. */ timeLimit?: number; template?: string; planningPattern?: string; result?: string; /** Translate: the target language's id. */ language?: string; mother?: MotherSettings; motherFlow?: string; roundLimit?: number; /** "Mother re-plans" (1 Nov): she may add, cancel or steer agents when one succeeds; on unless turned off. */ replan?: boolean; /** "Runs on" (1 Nov): every agent's task on this computer, or on his CloudRoom VM; the Mother stays here. */ runsOn?: "local" | "cloudroom" };
+export type CanvasGraph = { name: string; request?: string | undefined; workflowId?: string | undefined; nodes: CanvasNode[]; edges: CanvasEdge[]; frames?: CanvasFrame[] | undefined; minimap?: boolean; maxAgents?: number | undefined; /** The whole run's time limit, in minutes. */ timeLimit?: number; template?: string | undefined; planningPattern?: string; result?: string; /** Translate: the target language's id. */ language?: string; mother?: MotherSettings | undefined; motherFlow?: string; roundLimit?: number | undefined; /** "Mother re-plans" (1 Nov): she may add, cancel or steer agents when one succeeds; on unless turned off. */ replan?: boolean; /** "Runs on" (1 Nov): every agent's task on this computer, or on his CloudRoom VM; the Mother stays here. */ runsOn?: "local" | "cloudroom" };
 /** A task's state from /api/workflows, shared by ACP runs and retained native history. */
 export type TaskStatus = "pending" | "running" | "succeeded" | "failed" | "blocked" | "cancelled";
 /** The words both views of the board (flat and isometric) use for an agent's state, and for its check: the read-only
@@ -541,7 +541,7 @@ export function textParts(sources: { name: string; text: string }[]): TextPart[]
 export type Language = { id: string; name: string; rules?: string; worker?: RegExp[]; best: RegExp[] };
 const EUROPEAN = [/^anthropic\/claude-(opus|sonnet)/i, /^openai\/gpt-/i, /^google\/gemini-[\d.]+-pro/i];
 const ASIAN = [/^google\/gemini-[\d.]+-pro/i, /^anthropic\/claude-(opus|sonnet)/i, /^qwen\//i];
-export const LANGUAGES: Language[] = [
+export const LANGUAGES: [Language, ...Language[]] = [
   { id: "fa", name: "Farsi", rules: FARSI_RULES, worker: [/gemini-3\.8-flash-medium/i], best: [/^google\/gemini-[\d.]+-pro/i, /^anthropic\/claude-(opus|sonnet)/i] },
   { id: "ar", name: "Arabic", best: [/^google\/gemini-[\d.]+-pro/i, /^anthropic\/claude-(opus|sonnet)/i] },
   { id: "de", name: "German", best: EUROPEAN }, { id: "fr", name: "French", best: EUROPEAN }, { id: "es", name: "Spanish", best: EUROPEAN },
