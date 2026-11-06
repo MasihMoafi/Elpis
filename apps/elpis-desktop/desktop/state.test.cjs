@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { createStateStore, registerState } = require('./state.cjs');
-const { createWindowIpc } = require('./window-ipc.cjs');
+const { createWindowIpc } = require('./window-ipc.cts');
 const { EventEmitter } = require('node:events');
 const vm = require('node:vm');
 const { spawn } = require('node:child_process');
@@ -52,7 +52,7 @@ function windows(t, initial = {}) {
   const store = createStateStore(file), ipc = new EventEmitter(), handlers = new Map(), pending = [], broadcasts = [];
   ipc.handle = (key, handler) => handlers.set(key, handler);
   ipc.removeHandler = key => handlers.delete(key);
-  const scope = createWindowIpc(ipc);
+  const scope = createWindowIpc(/** @type {import('electron').IpcMain} */ (/** @type {unknown} */ (ipc)));
   let delay = false;
   const open = id => {
     const renderer = new EventEmitter(), mainFrame = { url: 'http://127.0.0.1:45001/' };
@@ -66,7 +66,7 @@ function windows(t, initial = {}) {
       const result = Promise.resolve().then(() => handlers.get(channel)(event(), ...args));
       pending.push(result); return result;
     };
-    const dispose = registerState({ host: { webContents }, origin: 'http://127.0.0.1:45001', ipcMain: scope({ webContents }), dialog: {}, store });
+    const dispose = registerState({ host: { webContents }, origin: 'http://127.0.0.1:45001', ipcMain: scope(/** @type {import('electron').BrowserWindow} */ (/** @type {unknown} */ ({ webContents }))), dialog: {}, store });
     t.after(dispose);
     const context = vm.createContext({ window: {}, require: name => {
       assert.equal(name, 'electron');

@@ -1,5 +1,5 @@
 'use strict';
-const { trustedBrowserSender } = require('./browser-policy.cjs');
+const { trustedBrowserSender } = require('./browser-policy.cts');
 
 /** A chat id as Elpis writes it (a UUID); nothing that could name a path or a command. */
 const THREAD_ID = /^[0-9A-Za-z][0-9A-Za-z_-]{0,127}$/;

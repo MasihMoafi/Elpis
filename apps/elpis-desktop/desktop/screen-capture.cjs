@@ -1,5 +1,5 @@
 'use strict';
-const { trustedBrowserSender } = require('./browser-policy.cjs');
+const { trustedBrowserSender } = require('./browser-policy.cts');
 
 const screenTools = [{
   name: 'screen_screenshot',

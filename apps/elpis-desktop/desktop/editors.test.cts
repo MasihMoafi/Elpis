@@ -1,4 +1,7 @@
 'use strict';
+import type {} from 'node:test';
+type EditorApi = { editors: () => Promise<unknown>; openInEditor: (file: string, editor: string, line?: number) => Promise<unknown> };
+type Handler = (event: unknown, ...args: unknown[]) => unknown;
 // "Open in editor": which editors the app offers and how it starts one. VS Code is prohibited on this machine, so no
 // code path may start `code` (or a build or fork of VS Code), whatever is on the PATH and whatever the page asks for.
 const test = require('node:test');
@@ -7,9 +10,9 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const vm = require('node:vm');
-const { installedEditors, editorCommand, EDITORS } = require('./editors.cjs');
+const { installedEditors, editorCommand, EDITORS } = require('./editors.cts');
 
-function binaries(names) {
+function binaries(names: string[]) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-editors-'));
   for (const name of names) { fs.writeFileSync(path.join(dir, name), '#!/bin/sh\n'); fs.chmodSync(path.join(dir, name), 0o755); }
   return dir;
@@ -41,7 +44,7 @@ test('~/.local/bin is searched as well as the PATH, a file that is not executabl
 
 test('each editor gets the file and the line the way it documents', () => {
   const dir = binaries(['zed', 'subl', 'gedit', 'kate', 'gnome-text-editor']);
-  const run = (id, line) => { const { command, args } = editorCommand(id, '/work/a b.ts', line, { PATH: dir, home: '/nonexistent' }); return [path.basename(command), ...args]; };
+  const run = (id: string, line?: number) => { const { command, args } = editorCommand(id, '/work/a b.ts', line, { PATH: dir, home: '/nonexistent' }); return [path.basename(command), ...args]; };
   assert.deepEqual(run('zed', 12), ['zed', '/work/a b.ts:12']);
   assert.deepEqual(run('sublime', 12), ['subl', '/work/a b.ts:12']);
   assert.deepEqual(run('gedit', 12), ['gedit', '+12', '/work/a b.ts']);
@@ -57,26 +60,26 @@ test('only an editor from the list can be started: not VS Code, not a command li
   for (const id of ['code', 'vscode', 'codium', '../code', '/snap/bin/code', 'zed --reuse-window', 'gedit', '', null, 42]) {
     assert.throws(() => editorCommand(id, '/work/a.ts', 1, env), /not available/i, String(id));
   }
-  assert.ok(EDITORS.every(editor => editor.commands.every(command => !/code|vscode/i.test(command))), 'no listed command is a VS Code command');
+  assert.ok(EDITORS.every((editor: { commands: string[] }) => editor.commands.every((command: string) => !/code|vscode/i.test(command))), 'no listed command is a VS Code command');
 });
 
 // The IPC around it: the page asks by editor id and file path; the main process starts the editor itself.
-function preload(invoke) {
-  let api;
-  const electron = { contextBridge: { exposeInMainWorld: (_name, value) => { api = value; } }, ipcRenderer: { sendSync: () => ({}), invoke, on: () => {}, removeListener: () => {} } };
+function preload(invoke: (channel: string, ...args: unknown[]) => unknown) {
+  let api!: EditorApi;
+  const electron = { contextBridge: { exposeInMainWorld: (_name: string, value: EditorApi) => { api = value; } }, ipcRenderer: { sendSync: () => ({}), invoke, on: () => {}, removeListener: () => {} } };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, 'preload.cjs'), 'utf8'), { require: () => electron });
   return api;
 }
-function setup({ started = [], fail } = {}) {
+function setup({ started = [], fail }: { started?: string[][]; fail?: string } = {}) {
   const { registerFiles } = require('./files.cjs');
-  const handlers = new Map(), mainFrame = { url: 'http://127.0.0.1:45001/' }, webContents = { mainFrame };
+  const handlers = new Map<string, Handler>(), mainFrame = { url: 'http://127.0.0.1:45001/' }, webContents = { mainFrame };
   const event = { sender: webContents, senderFrame: mainFrame };
   const dir = binaries(['zed', 'code']);
   const dispose = registerFiles({ host: { webContents }, origin: 'http://127.0.0.1:45001', shell: { openPath: async () => '' },
-    ipcMain: { handle: (name, handler) => handlers.set(name, handler), removeHandler: name => handlers.delete(name) },
+    ipcMain: { handle: (name: string, handler: Handler) => handlers.set(name, handler), removeHandler: (name: string) => handlers.delete(name) },
     env: { PATH: dir, home: '/nonexistent' },
-    spawn: (command, args) => { started.push([path.basename(command), ...args]); if (fail) throw Error(fail); return { unref() {}, once: (name, callback) => { if (name === 'spawn') setImmediate(callback); } }; } });
-  const api = preload((channel, ...args) => handlers.get(channel)(event, ...args));
+    spawn: (command: string, args: string[]) => { started.push([path.basename(command), ...args]); if (fail) throw Error(fail); return { unref() {}, once: (name: string, callback: () => void) => { if (name === 'spawn') setImmediate(callback); } }; } });
+  const api = preload((channel: string, ...args: unknown[]) => handlers.get(channel)!(event, ...args));
   return { api, handlers, event, webContents, dispose, started };
 }
 
@@ -100,9 +103,9 @@ test('a website or a navigated frame cannot start an editor, and a start that fa
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-edit-')), file = path.join(root, 'a.ts');
   fs.writeFileSync(file, 'x');
   const context = setup();
-  const result = await context.handlers.get('elpis:file:edit')({ sender: {}, senderFrame: { url: 'https://example.com' } }, { target: file, editor: 'zed' });
+  const result = await context.handlers.get('elpis:file:edit')!({ sender: {}, senderFrame: { url: 'https://example.com' } }, { target: file, editor: 'zed' }) as { error: string };
   assert.match(result.error, /application frame/);
-  assert.match((await context.handlers.get('elpis:editors:list')({ sender: {}, senderFrame: { url: 'https://example.com' } })).error, /application frame/);
+  assert.match((await context.handlers.get('elpis:editors:list')!({ sender: {}, senderFrame: { url: 'https://example.com' } }) as { error: string }).error, /application frame/);
   assert.equal(context.started.length, 0);
   const broken = setup({ fail: 'spawn zed ENOENT' });
   await assert.rejects(broken.api.openInEditor(file, 'zed'), /Could not start Zed/);

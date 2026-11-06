@@ -1,6 +1,7 @@
+import type {} from 'node:test';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { appAudio } = require('./media-policy.cjs');
+const { appAudio } = require('./media-policy.cts');
 
 test('only the Elpis main frame can capture audio; websites, camera and other permissions stay denied', () => {
   const origin = 'http://127.0.0.1:4000'; const contents = { getURL: () => origin + '/' }; const host = { webContents: contents };
@@ -13,7 +14,7 @@ test('only the Elpis main frame can capture audio; websites, camera and other pe
 });
 
 test('only the Elpis page may show notifications; websites and subframes may not', () => {
-  const { appNotifications, appPermission } = require('./media-policy.cjs');
+  const { appNotifications, appPermission } = require('./media-policy.cts');
   const origin = 'http://127.0.0.1:4000'; const contents = { getURL: () => origin + '/' }; const host = { webContents: contents };
   const details = { requestingUrl: origin + '/', isMainFrame: true };
   assert.equal(appNotifications(contents, host, 'notifications', details, origin), true);
@@ -24,7 +25,7 @@ test('only the Elpis page may show notifications; websites and subframes may not
 });
 
 test('Elpis can copy text without granting clipboard reads or allowing websites and subframes to write', () => {
-  const { appPermission } = require('./media-policy.cjs');
+  const { appPermission } = require('./media-policy.cts');
   const origin = 'http://127.0.0.1:4000', contents = { getURL: () => origin + '/' }, host = { webContents: contents };
   const details = { requestingUrl: origin + '/', isMainFrame: true };
   assert.equal(appPermission(contents, host, 'clipboard-sanitized-write', details, origin), true);

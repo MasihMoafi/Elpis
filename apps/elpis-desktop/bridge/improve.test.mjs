@@ -8,7 +8,7 @@ import { execFile as exec } from 'node:child_process';
 import { promisify } from 'node:util';
 import { EventEmitter } from 'node:events';
 import { createImprovements } from './improve.mjs';
-import { verifyImprovement } from './improve-check.mjs';
+import { verifyImprovement } from './improve-check.mts';
 import { DesktopClient } from './client.mjs';
 import { startDesktopServer } from './server.mjs';
 const execFile = promisify(exec);
@@ -150,9 +150,11 @@ test('independent checks stop at a failure and retain its exit code and reason',
   const f = await checkFixture(t, { fail: 'test:bridge' });
   const result = await verifyImprovement(f.root, { timeoutMs: 5000, env: f.env });
   assert.equal(result.passed, false);
-  assert.equal(result.commands.at(-1).command, 'npm run -s test:bridge');
-  assert.equal(result.commands.at(-1).code, 7);
-  assert.match(result.commands.at(-1).output, /planted assertion failed/);
+  const last = result.commands.at(-1);
+  assert.ok(last);
+  assert.equal(last.command, 'npm run -s test:bridge');
+  assert.equal(last.code, 7);
+  assert.match(last.output, /planted assertion failed/);
   assert.doesNotMatch(await fs.readFile(path.join(f.root, 'ran.txt'), 'utf8'), /test:desktop/);
 });
 test('a child holding output open cannot outlive the verification budget or leave the change checking', async t => {

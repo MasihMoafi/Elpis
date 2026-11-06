@@ -2,7 +2,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { trustedBrowserSender } = require('./browser-policy.cjs');
+const { trustedBrowserSender } = require('./browser-policy.cts');
 
 const resolved = file => { try { return fs.realpathSync(file); } catch { return null; } };
 function executableLauncher(file) {

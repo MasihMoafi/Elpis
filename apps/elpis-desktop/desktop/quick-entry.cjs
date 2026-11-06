@@ -1,7 +1,7 @@
 'use strict';
 const path = require('node:path');
 const { execFile } = require('node:child_process');
-const { trustedBrowserSender } = require('./browser-policy.cjs');
+const { trustedBrowserSender } = require('./browser-policy.cts');
 
 // Quick Entry as Claude's desktop app has it on Linux: Ctrl+Alt+Space opens a 606 × 470 frameless, transparent window
 // above everything, centred on the main display or where it was last left. Enter sends text longer than two characters

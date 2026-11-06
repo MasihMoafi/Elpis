@@ -1,6 +1,6 @@
 'use strict';
 const path = require('node:path');
-const { trustedBrowserSender } = require('./browser-policy.cjs');
+const { trustedBrowserSender } = require('./browser-policy.cts');
 
 // The macOS screenshot thumbnail (A239, 24 Oct: "whenever I take a screenshot … pops up and if I press it it does it"):
 // while Elpis runs, each new screenshot shows a small thumbnail in the bottom-right corner, above every window and without

@@ -1,4 +1,5 @@
 'use strict';
+import type {} from 'node:test';
 // The app's theme report ('elpis:theme') in the Electron main process, with Electron replaced by fakes: the window
 // buttons, nativeTheme (so web pages in the browser follow prefers-color-scheme) and the browser's page background.
 const test = require('node:test');
@@ -10,12 +11,13 @@ const vm = require('node:vm');
 const TITLE_BAR = { dark: { color: '#0d0e11' }, light: { color: '#f2f2f1' } };
 
 function setup({ reportDark = true } = {}) {
-  const { registerTheme } = require('./theme.cjs');
-  const listeners = new Map(), mainFrame = {}, webContents = { mainFrame }, overlays = [], backgrounds = [], darks = [];
-  const nativeTheme = { themeSource: 'system' }, host = { webContents, isDestroyed: () => false, setTitleBarOverlay: value => overlays.push(value) };
-  const dispose = registerTheme({ host, ipcMain: { on: (name, fn) => listeners.set(name, fn), removeListener: (name, fn) => { if (listeners.get(name) === fn) listeners.delete(name); } },
-    nativeTheme, titleBar: TITLE_BAR, browser: { setBackground: color => backgrounds.push(color) }, ...(reportDark ? { onDark: dark => darks.push(dark) } : {}) });
-  const report = (...args) => listeners.get('elpis:theme')({ sender: webContents, senderFrame: mainFrame }, ...args);
+  const { registerTheme } = require('./theme.cts');
+  const listeners = new Map<string, (...args: unknown[]) => void>(), mainFrame = {}, webContents = { mainFrame };
+  const overlays: unknown[] = [], backgrounds: string[] = [], darks: boolean[] = [];
+  const nativeTheme = { themeSource: 'system' }, host = { webContents, isDestroyed: () => false, setTitleBarOverlay: (value: unknown) => overlays.push(value) };
+  const dispose = registerTheme({ host, ipcMain: { on: (name: string, fn: (...args: unknown[]) => void) => listeners.set(name, fn), removeListener: (name: string, fn: (...args: unknown[]) => void) => { if (listeners.get(name) === fn) listeners.delete(name); } },
+    nativeTheme, titleBar: TITLE_BAR, browser: { setBackground: (color: string) => backgrounds.push(color) }, ...(reportDark ? { onDark: (dark: boolean) => darks.push(dark) } : {}) });
+  const report = (...args: unknown[]) => listeners.get('elpis:theme')!({ sender: webContents, senderFrame: mainFrame }, ...args);
   return { listeners, report, nativeTheme, overlays, backgrounds, darks, dispose, webContents, mainFrame };
 }
 
@@ -52,8 +54,8 @@ test('the browser gets the app\'s background colour, and only a plain colour', (
 
 test('only the app\'s own page may report a theme', () => {
   const t = setup();
-  t.listeners.get('elpis:theme')({ sender: {}, senderFrame: t.mainFrame }, true, { source: 'dark', background: '#000000' });
-  t.listeners.get('elpis:theme')({ sender: t.webContents, senderFrame: {} }, true, { source: 'dark', background: '#000000' });
+  t.listeners.get('elpis:theme')!({ sender: {}, senderFrame: t.mainFrame }, true, { source: 'dark', background: '#000000' });
+  t.listeners.get('elpis:theme')!({ sender: t.webContents, senderFrame: {} }, true, { source: 'dark', background: '#000000' });
   assert.deepEqual([t.overlays, t.backgrounds, t.nativeTheme.themeSource], [[], [], 'system']);
 });
 
@@ -63,9 +65,9 @@ test('disposing stops listening', () => {
 });
 
 test('the page\'s setTheme sends the dark flag, the choice and the background over the same channel', () => {
-  const sent = []; let api;
-  const electron = { contextBridge: { exposeInMainWorld: (_name, value) => { api = value; } },
-    ipcRenderer: { sendSync: () => ({}), send: (...args) => sent.push(args), invoke: async () => ({}), on: () => {}, removeListener: () => {} } };
+  const sent: unknown[][] = []; let api!: { setTheme: (...args: unknown[]) => void };
+  const electron = { contextBridge: { exposeInMainWorld: (_name: string, value: typeof api) => { api = value; } },
+    ipcRenderer: { sendSync: () => ({}), send: (...args: unknown[]) => sent.push(args), invoke: async () => ({}), on: () => {}, removeListener: () => {} } };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, 'preload.cjs'), 'utf8'), { require: () => electron });
   api.setTheme(true, { source: 'dark', background: 'rgb(10, 11, 13)', extra: 'dropped' });
   api.setTheme(false);

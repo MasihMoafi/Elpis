@@ -1,38 +1,42 @@
 'use strict';
+import type {} from 'node:test';
+type Entry = { type?: string; label?: string; click?: () => void };
+type TestImage = { file: string; size: { width: number; height: number } };
+type TestMenu = { template: Entry[] };
 // The tray and Close to tray, as Claude's desktop app has them on Linux, against a fake Electron.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
-const { trayMenu, createTray, createCloseToTray } = require('./tray.cjs');
+const { trayMenu, createTray, createCloseToTray } = require('./tray.cts');
 
 function actions() {
-  const calls = [];
+  const calls: string[] = [];
   return { calls, actions: { open: () => calls.push('open'), newChat: () => calls.push('newChat'), quickEntry: () => calls.push('quickEntry'), quit: () => calls.push('quit') } };
 }
 
 test("the tray menu has Claude's items where Elpis has them: Open Elpis, New chat, Open Quick Entry, then Quit", () => {
   const { calls, actions: handlers } = actions();
-  const items = trayMenu(handlers);
+  const items: Entry[] = trayMenu(handlers);
   assert.deepEqual(items.map(item => item.type === 'separator' ? '|' : item.label), ['Open Elpis', 'New chat', 'Open Quick Entry', '|', 'Quit']);
   for (const item of items) item.click?.();
   assert.deepEqual(calls, ['open', 'newChat', 'quickEntry', 'quit']);
 });
 
 test('the tray shows the Elpis logo, named Elpis, with that menu', () => {
-  const made = {};
-  class Tray { constructor(image) { made.image = image; made.tray = this; } setToolTip(text) { made.tooltip = text; } setContextMenu(menu) { made.menu = menu; } destroy() { made.destroyed = true; } }
-  const nativeImage = { createFromPath: file => ({ file, resize: size => ({ file, size }) }) };
-  const Menu = { buildFromTemplate: template => ({ template }) };
+  const made: { image?: TestImage; tray?: unknown; tooltip?: string; menu?: TestMenu; destroyed?: boolean } = {};
+  class Tray { constructor(image: TestImage) { made.image = image; made.tray = this; } setToolTip(text: string) { made.tooltip = text; } setContextMenu(menu: TestMenu) { made.menu = menu; } destroy() { made.destroyed = true; } }
+  const nativeImage = { createFromPath: (file: string) => ({ file, resize: (size: { width: number; height: number }) => ({ file, size }) }) };
+  const Menu = { buildFromTemplate: (template: Entry[]) => ({ template }) };
   const icon = path.join(__dirname, 'elpis-icon.png');
   const tray = createTray({ Tray, Menu, nativeImage, icon, actions: actions().actions });
   assert.equal(tray, made.tray);
   assert.deepEqual(made.image, { file: icon, size: { width: 64, height: 64 } }, "Claude's tray icon is 64 pixels");
   assert.equal(made.tooltip, 'Elpis');
-  assert.deepEqual(made.menu.template.map(item => item.label ?? '|'), ['Open Elpis', 'New chat', 'Open Quick Entry', '|', 'Quit']);
+  assert.deepEqual(made.menu!.template.map(item => item.label ?? '|'), ['Open Elpis', 'New chat', 'Open Quick Entry', '|', 'Quit']);
 });
 
-function closingWith({ enabled, quitting = false }) {
+function closingWith({ enabled, quitting = false }: { enabled: boolean; quitting?: boolean }) {
   const app = new EventEmitter(); app.quits = 0; app.quit = () => { app.quits++; };
   const window = new EventEmitter(); window.hidden = 0; window.hide = () => { window.hidden++; };
   const state = { enabled, quitting };

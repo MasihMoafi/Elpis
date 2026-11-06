@@ -2,7 +2,7 @@
 
 const SEARCH='https://www.google.com/search?q=';
 
-function browserUrl(input, appOrigin) {
+function browserUrlImpl(input: unknown, appOrigin?: string) {
   if(typeof input!=='string'||!input.trim()||input.length>4096)throw Error('Enter a web address.');
   let value=input.trim();
   if(value==='about:blank')return value;
@@ -20,23 +20,23 @@ function browserUrl(input, appOrigin) {
   return url.href;
 }
 
-function trustedBrowserSender(event, owner, origin) {
+function trustedBrowserSenderImpl(event: { sender: unknown; senderFrame: { url: string } | null }, owner: { mainFrame: { url: string } }, origin: string) {
   if(event.sender!==owner||event.senderFrame!==owner.mainFrame)return false;
   try{return new URL(event.senderFrame.url).origin===origin;}catch{return false;}
 }
 
-function nativeBounds(value,zoom,size) {
-  if(!value||typeof value!=='object'||Object.keys(value).some(key=>!['x','y','width','height'].includes(key))||['x','y','width','height'].some(key=>!Number.isFinite(value[key])||value[key]<0||value[key]>100000))throw Error('Invalid browser bounds.');
+function nativeBoundsImpl(value: { x: number; y: number; width: number; height: number },zoom: number,size: { width: number; height: number }) {
+  if(!value||typeof value!=='object'||Object.keys(value).some(key=>!['x','y','width','height'].includes(key))||['x','y','width','height'].some(key=>!Number.isFinite(value[key as keyof typeof value])||value[key as keyof typeof value]<0||value[key as keyof typeof value]>100000))throw Error('Invalid browser bounds.');
   const x=Math.min(size.width,Math.round(value.x*zoom)),y=Math.min(size.height,Math.round(value.y*zoom));
   const width=Math.max(0,Math.min(size.width-x,Math.round(value.width*zoom))),height=Math.max(0,Math.min(size.height-y,Math.round(value.height*zoom)));
   return width&&height?{x,y,width,height}:null;
 }
 
 const LOCAL_HOST=/^(localhost|127(?:\.\d{1,3}){3}|\[::1\]|[^/]+\.localhost)$/i;
-const hostOf=url=>{try{return new URL(url).hostname||null;}catch{return null;}};
+const hostOf=(url: string)=>{try{return new URL(url).hostname||null;}catch{return null;}};
 
 /** The ChatGPT app's "This site can't be reached" screen, from Chromium's network error code. */
-function loadFailure(code,description,url) {
+function loadFailureImpl(code: number,description: unknown,url: string) {
   const host=hostOf(url),name=host??'This page',local=!!host&&LOCAL_HOST.test(host);
   const connection='Checking the connection',network='Checking the proxy, firewall, and DNS configuration';
   let summary=`${name} could not be loaded`,tips=[connection,network];
@@ -50,7 +50,7 @@ function loadFailure(code,description,url) {
 }
 
 /** "secure", "insecure" (plain HTTP on the network) or "local" (a development server on this computer). */
-function pageSecurity(url) {
+function pageSecurityImpl(url: string) {
   let parsed;try{parsed=new URL(url);}catch{return null;}
   if(parsed.protocol==='https:')return 'secure';
   if(parsed.protocol!=='http:')return null;
@@ -59,9 +59,15 @@ function pageSecurity(url) {
 
 const ZOOM_STEPS=[0.25,0.33,0.5,0.67,0.75,0.8,0.9,1,1.1,1.25,1.5,1.75,2,2.5,3,4,5];
 /** Chromium's zoom ladder: "in" and "out" move to the next step from any factor; "reset" is 100%. */
-function zoomStep(factor,direction) {
+function zoomStepImpl(factor: number,direction: string) {
   if(direction==='reset')return 1;
   if(direction==='in')return ZOOM_STEPS.find(step=>step>factor+0.001)??ZOOM_STEPS.at(-1);
   return [...ZOOM_STEPS].reverse().find(step=>step<factor-0.001)??ZOOM_STEPS[0];
 }
-module.exports={browserUrl,trustedBrowserSender,nativeBounds,loadFailure,pageSecurity,zoomStep};
+export declare const browserUrl: typeof browserUrlImpl;
+export declare const trustedBrowserSender: typeof trustedBrowserSenderImpl;
+export declare const nativeBounds: typeof nativeBoundsImpl;
+export declare const loadFailure: typeof loadFailureImpl;
+export declare const pageSecurity: typeof pageSecurityImpl;
+export declare const zoomStep: typeof zoomStepImpl;
+module.exports={browserUrl:browserUrlImpl,trustedBrowserSender:trustedBrowserSenderImpl,nativeBounds:nativeBoundsImpl,loadFailure:loadFailureImpl,pageSecurity:pageSecurityImpl,zoomStep:zoomStepImpl};

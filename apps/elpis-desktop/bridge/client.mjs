@@ -11,7 +11,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { ragMessage } from './rag-command.mjs';
+import { ragMessage } from './rag-command.mts';
 import { acceptsPastedKey, BUILT_IN_KEY_PROVIDERS, configHome, providerDefinition, providerSettingsSnapshot, providerEdits, privateConfigFile } from './provider-settings.mjs';
 import { saveProviderKey, savedProviderKey, savedProviderKeyIds } from './provider-keys.mjs';
 import { PERMISSION_PRESETS, PROFILES } from './permission-presets.mjs';

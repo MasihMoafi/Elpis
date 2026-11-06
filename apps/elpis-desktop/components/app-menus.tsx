@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Menubar } from "@base-ui/react/menubar";
-import { APP_MENUS } from "@/lib/app-menu-commands.cjs";
+import { APP_MENUS } from "@/lib/app-menu-commands.cts";
 import { shortcutHint } from "@/lib/shortcuts";
 import type { Preferences } from "@/lib/preferences";
 import type { AppMenuCommand, NativeMenuCommand } from "@/lib/desktop";

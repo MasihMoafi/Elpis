@@ -1,5 +1,5 @@
 import { BridgeError, object, projectFolder, text } from './validate.mjs';
-import { appCatalogs, linkBundledCatalog } from './app-catalogs.mjs';
+import { appCatalogs, linkBundledCatalog } from './app-catalogs.mts';
 import { pluginCatalogSnapshot, pluginsSnapshot, skillsSnapshot } from './customize.mjs';
 import { skillRoots } from './skill-trash.mjs';
 import { userConfigVersion } from './elpis-features.mjs';
@@ -59,7 +59,7 @@ export class CustomizePage {
     for (const plugin of snapshot.plugins) if (shown.filter(name => name === plugin.name).length > 1 && plugin.pluginName !== plugin.name) plugin.name = `${plugin.name} (${plugin.pluginName})`;
     return { ...snapshot, appCatalogs: appCatalogs(this.#appHome).map(({ app, label, name }) => ({ app, label, added: snapshot.marketplaces.some(market => market.name === name) })) };
   }
-  /** Turns plugins on and adds the catalog the named desktop app keeps on this computer (bridge/app-catalogs.mjs). */
+  /** Turns plugins on and adds the catalog the named desktop app keeps on this computer (bridge/app-catalogs.mts). */
   async #addAppCatalog(app) {
     const found = appCatalogs(this.#appHome).find(catalog => catalog.app === app);
     if (!found) throw new BridgeError('That app has no plugin catalog on this computer', 404);

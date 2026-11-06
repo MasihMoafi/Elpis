@@ -1,7 +1,7 @@
 'use strict';
 const { randomUUID } = require('node:crypto');
 const { createBrowser } = require('./browser.cjs');
-const { browserUrl, trustedBrowserSender } = require('./browser-policy.cjs');
+const { browserUrl, trustedBrowserSender } = require('./browser-policy.cts');
 
 const KEY = 'elpis-browser-sessions-v1';
 const valid = id => typeof id === 'string' && /^[A-Za-z0-9:_-]{1,240}$/.test(id);

@@ -1,7 +1,7 @@
 'use strict';
 
 // The desktop menu and the rendered menubar share labels, ordering and command IDs.
-const APP_MENUS = /** @type {const} */ ([
+const menus = [
   { label: 'File', items: [
     { id: 'new-chat', label: 'New chat', target: 'renderer', shortcut: 'new-chat' },
     { id: 'new-window', label: 'New window', target: 'native', accelerator: 'CommandOrControl+Shift+N', shortcut: 'new-window' },
@@ -35,6 +35,7 @@ const APP_MENUS = /** @type {const} */ ([
   { label: 'Help', items: [
     { id: 'shortcuts', label: 'Keyboard shortcuts', target: 'renderer', shortcut: 'shortcuts' },
   ] },
-]);
+] as const;
 
-module.exports = { APP_MENUS };
+export declare const APP_MENUS: typeof menus;
+module.exports = { APP_MENUS: menus };
