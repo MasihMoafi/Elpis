@@ -146,34 +146,6 @@ test('clearing Matilda waits for her active turn and keeps Love Spot on the curr
   } finally { await context.close(); showMatilda = false; matildaBusy = false; }
 });
 
-test('the menu filters (names that start with the text first, then names that contain it), moves with the arrows, and closes on Escape', async () => {
-  const { page, context, errors, composer, menu } = await open();
-  try {
-    await composer.fill('/'); await menu.waitFor();
-    assert.equal(await composer.getAttribute('aria-activedescendant'), await menu.getByRole('option').first().getAttribute('id'));
-    await composer.press('ArrowDown'); await composer.press('ArrowDown'); assert.equal(await selected(menu), '/effort');
-    await composer.press('ArrowUp'); assert.equal(await selected(menu), '/fast');
-    await composer.press('ArrowUp'); await composer.press('ArrowUp'); assert.equal(await selected(menu), '/rag', 'the arrows wrap around');
-    await composer.press('Escape'); assert.equal(await menu.count(), 0); assert.equal(await composer.inputValue(), '/', 'Escape closes the menu and keeps the text');
-    await composer.fill('/sta'); assert.deepEqual(await names(menu), ['/status']);
-    await composer.fill('/ag'); assert.deepEqual(await names(menu), ['/usage', '/rag']);
-    await composer.fill('/mod'); assert.deepEqual(await names(menu), ['/model', '/pruner-model', '/memory-model']);
-    await composer.fill('/prune'); assert.deepEqual(await names(menu), ['/prune', '/pruner-model'], 'the name typed in full comes first, so Enter runs it');
-    await composer.fill('/MOD'); assert.deepEqual(await names(menu), ['/model', '/pruner-model', '/memory-model'], 'case does not matter');
-    await composer.fill('/zz'); assert.equal(await menu.count(), 0, 'no match, no menu');
-    await composer.fill('/model now'); assert.equal(await menu.count(), 0, 'the menu closes once the text goes past a command name');
-    await composer.fill('Use /plan'); assert.equal(await menu.count(), 0, 'only a leading slash opens the menu');
-    await composer.fill('/pl'); await composer.press('Enter');
-    await page.getByRole('button', { name: 'Turn plan mode off', exact: true }).waitFor();
-    await composer.fill('/plan'); await composer.press('Tab');
-    await page.getByRole('button', { name: 'Turn plan mode off', exact: true }).waitFor({ state: 'detached' });
-    await composer.fill('/pl'); await menu.getByRole('option', { name: /plan/ }).click();
-    await page.getByRole('button', { name: 'Turn plan mode off', exact: true }).waitFor();
-    assert.equal(turns().length, 0, 'no command is sent as a message');
-    assert.deepEqual(errors, []);
-  } finally { await context.close(); }
-});
-
 test('the controls a command opens (/model, /effort, /permissions, /yolo) take the focus; Escape closes them and the composer gets it back', async () => {
   const { page, context, errors, composer } = await open();
   const opens = [

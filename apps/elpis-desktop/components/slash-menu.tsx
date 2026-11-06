@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type KeyboardEvent } from "react";
-import { splitCommand } from "@/lib/slash";
+import { commandMatches, splitCommand } from "@/lib/slash";
 
 /** A terminal slash command the app performs (codex-rs/tui/src/slash_command.rs); unavailable ones are left out of the menu.
  * `args` marks a command that also takes text after its name (`/effort high`), which Enter then runs it with. */
@@ -17,7 +17,7 @@ export function useSlashMenu(text: string, commands: SlashCommand[], clear: () =
   const query = /^\/(\S*)$/.exec(text)?.[1]?.toLowerCase();
   const usable = query === undefined || dismissed === text ? [] : commands.filter(command => command.available !== false);
   // The name typed in full comes first, so Enter on "/prune" runs /prune and not /pruner-model.
-  const matches = query === undefined ? [] : [...usable.filter(command => command.name === query), ...usable.filter(command => command.name !== query && command.name.startsWith(query)), ...usable.filter(command => !command.name.startsWith(query) && command.name.includes(query))];
+  const matches = query === undefined ? [] : commandMatches(usable, query);
   const open = matches.length > 0;
   const active = cursor.query === query ? Math.min(cursor.index, matches.length - 1) : 0;
   const select = (index: number) => setCursor({ query: query ?? "", index });

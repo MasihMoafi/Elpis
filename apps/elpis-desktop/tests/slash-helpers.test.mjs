@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { conversationMarkdown, exportFileName, lastReply, splitCommand } from '../lib/slash.ts';
+import { commandMatches, conversationMarkdown, exportFileName, lastReply, splitCommand } from '../lib/slash.ts';
 
 const user = (id, text) => ({ turnId: 't', item: { id, type: 'userMessage', content: [{ type: 'text', text }, { type: 'image', url: 'data:' }] } });
 const agent = (id, text) => ({ turnId: 't', item: { id, type: 'agentMessage', text } });
@@ -33,4 +33,14 @@ test('splitCommand reads "/name arguments", and nothing else', () => {
   assert.equal(splitCommand('/effort   '), null);
   assert.equal(splitCommand('use /effort high'), null);
   assert.equal(splitCommand('/ high'), null);
+});
+
+test('the slash menu lists the name typed in full first, then names starting with it, then names containing it', () => {
+  const commands = ['status', 'usage', 'model', 'pruner-model', 'memory-model', 'prune', 'rag'].map(name => ({ name }));
+  const names = query => commandMatches(commands, query).map(command => command.name);
+  assert.deepEqual(names('sta'), ['status']);
+  assert.deepEqual(names('ag'), ['usage', 'rag']);
+  assert.deepEqual(names('mod'), ['model', 'pruner-model', 'memory-model']);
+  assert.deepEqual(names('prune'), ['prune', 'pruner-model'], 'Enter on /prune runs /prune');
+  assert.deepEqual(names('zzz'), []);
 });

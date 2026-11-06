@@ -34,3 +34,9 @@ export function exportFileName(title: string): string {
   const stem = title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "").slice(0, 60).replace(/-+$/, "");
   return `${stem || "conversation"}.md`;
 }
+
+/** The slash menu's order, as in the ChatGPT app's Codex composer: the name typed in full first (so Enter on "/prune" runs
+ * /prune, not /pruner-model), then names that start with the typed text, then names that contain it. */
+export function commandMatches<T extends { name: string }>(usable: T[], query: string): T[] {
+  return [...usable.filter(command => command.name === query), ...usable.filter(command => command.name !== query && command.name.startsWith(query)), ...usable.filter(command => !command.name.startsWith(query) && command.name.includes(query))];
+}
