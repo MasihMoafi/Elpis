@@ -1,12 +1,14 @@
 'use strict';
 
+import type {} from 'node:test';
+
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { enableWaylandIme } = require('./wayland-ime.cjs');
+const { enableWaylandIme } = require('./wayland-ime.cts');
 
 function commandLine() {
-  const switches = [];
-  return { switches, appendSwitch: (...args) => switches.push(args) };
+  const switches: string[][] = [];
+  return { switches, appendSwitch: (...args: string[]) => switches.push(args) };
 }
 
 test('Wayland enables Chromium IME support with text-input-v3; X11 does not', () => {

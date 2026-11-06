@@ -15,7 +15,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { records, requirePass } from './gate-guards.mjs';
 import { assertSourceCommit, verifyPackagedSources, verifyRendererReceipt } from './renderer-artifact-gate.mjs';
-import { durableSourceCheckout } from '../bridge/improve-source.mjs';
+import { durableSourceCheckout } from '../bridge/improve-source.mts';
 import { pruneVersions } from '../../../scripts/prune-versions.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));

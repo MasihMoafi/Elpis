@@ -7,7 +7,7 @@ import { SettingRow, SettingsGroup, SettingsNotice } from "@/components/settings
 import { api, subscriptionOf } from "@/lib/api";
 import { errorText } from "@/lib/error-text.mjs";
 import { editable, saveSettings, useElpisSettings } from "@/lib/settings-store";
-import { speechModelUnavailable } from "@/lib/speech-model.mjs";
+import { speechModelUnavailable } from "@/lib/speech-model.mts";
 import { useModelCatalog } from "@/components/settings/maintenance";
 
 type Provider = { id: string; name: string; baseUrl: string | null; auth: { keySet: boolean } };

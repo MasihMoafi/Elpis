@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { BridgeError, object, text } from './validate.mjs';
 import { FACE_DATA_URL } from './matilda-face.cjs';
-import { isAudioPath } from '../lib/audio-path.mjs';
+import { isAudioPath } from '../lib/audio-path.mts';
 
 const exec = promisify(execFile);
 /** The system Python, which has dbus; a python3 earlier on PATH (conda) may not. */

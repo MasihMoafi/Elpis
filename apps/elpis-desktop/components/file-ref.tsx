@@ -5,7 +5,7 @@ import { RightClickMenu } from "@/components/action-menu";
 import { useFileActions } from "@/components/file-actions";
 import { parseCodeRef, parseHref, resolveRef, withoutTail, type FileRef } from "@/lib/file-refs";
 import { openRef, useHost } from "@/lib/files-pane";
-import { isAudioPath } from "@/lib/audio-path.mjs";
+import { isAudioPath } from "@/lib/audio-path.mts";
 import "@/components/files-pane.css";
 
 /** One default action for every local file reference. */

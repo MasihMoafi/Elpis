@@ -50,8 +50,8 @@ for (const [expression, source] of Object.entries(MATILDA_SHOTS)) {
 }
 // Her clothing follows the theme (Masih, 31 Oct): white silk in light mode, black silk of the same texture in dark mode.
 // The circle clips the picture and leaves its backdrop clear; the board keeps one raster face, the dark one.
-const CLOTHES = require('./matilda-clothes.cjs');
-const BOARD = require('./matilda-board-faces.cjs');
+const CLOTHES = require('./matilda-clothes.cts');
+const BOARD = require('./matilda-board-faces.cts');
 const clothed = portrait => `data:image/svg+xml;base64,${btoa(`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="192" height="192" viewBox="0 0 192 192"><defs><clipPath id="avatar"><circle cx="96" cy="96" r="96"/></clipPath></defs><g clip-path="url(#avatar)"><image width="192" height="192" xlink:href="${portrait}"/></g></svg>`)}`;
 // On the board her faces are always the clothed RASTER pictures: Excalidraw's dark theme inverts SVG images but turns raster
 // ones back, so an SVG face showed as a photo negative (29 Oct and again 31 Oct, Masih: "this wrong obviously"). One rule for
@@ -63,7 +63,7 @@ for (const expression of Object.keys(MATILDA_SHOTS)) {
   MATILDA_SHOTS[expression] = clothed(CLOTHES.DARK[expression]);
   MATILDA_SHOTS_LIGHT[expression] = clothed(CLOTHES.LIGHT[expression]);
   OLD_BOARD_SHOTS[MATILDA_SHOTS[expression]] = expression;
-  // Cut to her circle (matilda-board-faces.cjs, 1 Nov); boards saved with the uncut pictures are migrated like the rest.
+  // Cut to her circle (matilda-board-faces.cts, 1 Nov); boards saved with the uncut pictures are migrated like the rest.
   OLD_BOARD_SHOTS[CLOTHES.DARK[expression]] = OLD_BOARD_SHOTS[CLOTHES.LIGHT[expression]] = expression;
   BOARD_SHOTS[expression] = BOARD.DARK[expression];
   BOARD_THEMED[BOARD.DARK[expression]] = { dark: BOARD.DARK[expression], light: BOARD.LIGHT[expression] };

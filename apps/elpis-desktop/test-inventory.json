@@ -172,9 +172,9 @@
     "desktop/state.test.cjs",
     "desktop/terminal.test.cjs",
     "desktop/theme.test.cjs",
-    "desktop/copy-keys.test.cjs",
+    "desktop/copy-keys.test.cts",
     "desktop/tray.test.cjs",
-    "desktop/wayland-ime.test.cjs",
+    "desktop/wayland-ime.test.cts",
     "desktop/love-spot.test.cjs",
     "desktop/sleep-blocker.test.cjs",
     "desktop/browser-identity.test.cjs"

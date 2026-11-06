@@ -6,7 +6,7 @@ set -euo pipefail
 repo="$(git rev-parse --show-toplevel)"; app="$repo/apps/elpis-desktop"
 git diff --cached --check
 mapfile -t files < <(git diff --cached --name-only --diff-filter=ACMR -- 'apps/elpis-desktop/*.mjs' 'apps/elpis-desktop/*.cjs' \
-  'apps/elpis-desktop/*.js' 'apps/elpis-desktop/*.ts' 'apps/elpis-desktop/*.tsx' | sed 's#^apps/elpis-desktop/##')
+  'apps/elpis-desktop/*.mts' 'apps/elpis-desktop/*.cts' 'apps/elpis-desktop/*.js' 'apps/elpis-desktop/*.ts' 'apps/elpis-desktop/*.tsx' | sed 's#^apps/elpis-desktop/##')
 [ "${#files[@]}" = 0 ] && exit 0
 if [ ! -x "$app/node_modules/.bin/oxlint" ]; then
   echo "pre-commit: oxlint is not installed; run: (cd apps/elpis-desktop && npm ci --ignore-scripts)" >&2; exit 1

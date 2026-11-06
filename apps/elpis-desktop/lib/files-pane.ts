@@ -5,7 +5,7 @@
 import { useSyncExternalStore } from "react";
 import { api } from "@/lib/api";
 import { resolveRef, type FileRef } from "@/lib/file-refs";
-import { isAudioPath } from "@/lib/audio-path.mjs";
+import { isAudioPath } from "@/lib/audio-path.mts";
 import { MATILDA_CHANGED } from "@/lib/matilda";
 import { errorText } from "./error-text.mjs";
 

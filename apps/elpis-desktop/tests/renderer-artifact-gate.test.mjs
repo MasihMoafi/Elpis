@@ -306,7 +306,7 @@ for (const mode of ['missing', 'stale', 'mutated', 'download-source', 'download-
   const f = await fixture(t);
   // The real installer records a durable Elpis checkout through this source module.
   await fs.mkdir(path.join(f.root, 'bridge'));
-  await fs.copyFile(new URL('../bridge/improve-source.mjs', import.meta.url), path.join(f.root, 'bridge/improve-source.mjs'));
+  await fs.copyFile(new URL('../bridge/improve-source.mts', import.meta.url), path.join(f.root, 'bridge/improve-source.mts'));
   const identity = JSON.parse(await fs.readFile(path.join(f.root, 'package.json'), 'utf8'));
   await fs.writeFile(path.join(f.root, 'package.json'), JSON.stringify({ ...identity, name: 'elpis-desktop' }));
   await fs.mkdir(path.join(f.root, 'scripts'));

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { api } from "@/lib/api";
 import { openRef } from "@/lib/files-pane";
-import { isAudioPath } from "@/lib/audio-path.mjs";
+import { isAudioPath } from "@/lib/audio-path.mts";
 import { errorText } from "@/lib/error-text.mjs";
 
 // thread/contextFiles/list and /set return the refreshed sources, including rows sharing one admission setting.
