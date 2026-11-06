@@ -54,7 +54,7 @@ function fileAttachment(part: Record<string, unknown>): string | null {
   const name = placeholder.startsWith("Attachment: ") ? placeholder.slice(12) : "";
   return name && contents.startsWith(`File: ${name}\n`) && range.start === 0 && range.end === new TextEncoder().encode(contents).length ? name : null;
 }
-function RecordedAttachment({part,index,mediaBase}:{part:Record<string,unknown>;index:number;mediaBase?:string}) {
+function RecordedAttachment({part,index,mediaBase}:{part:Record<string,unknown>;index:number;mediaBase?:string | undefined}) {
   const [failed,setFailed] = useState(false), label = attachmentLabel(part), type = text(part.type);
   const kind = type === "image" || type === "localImage" ? "image" : type === "audio" || type === "localAudio" ? "audio" : null;
   const url = text(part.url), local = type === "localImage" || type === "localAudio";
@@ -70,7 +70,7 @@ function TextOutput({value}:{value:unknown}) {
   return <pre className="step-output"><code><FilePathText text={typeof value==="string"?value:JSON.stringify(value,null,2)} /></code></pre>;
 }
 /** A tool's step: a sentence, its time (or what went wrong) at the right, and its details in the card that opens under it. */
-function Activity({label,status,time,failed,children,open=false}:{label:string;status?:unknown;time?:number;failed?:boolean;children?:React.ReactNode;open?:boolean}) {
+function Activity({label,status,time,failed,children,open=false}:{label:string;status?:unknown;time?:number | undefined;failed?:boolean;children?:React.ReactNode;open?:boolean}) {
   const word=statusLabel(status),duration=stepDuration(time);
   return <Step open={open} title={<FilePathText text={label}/>} failed={failed??text(status)==="failed"} body={children} meta={(word||duration)?<>{word&&<span className={`step-status ${text(status)}`}>{word}</span>}{duration&&<span>{duration}</span>}</>:undefined}/>;
 }
@@ -89,7 +89,7 @@ function WorkflowNoticeStep({notice}:{notice:WorkflowNotice}) {
  * the chat folds it under its label, pretty-printed, after the prompt's own words. */
 const EVIDENCE = /\n(Current evidence|Current nodes|Answers from connected agents \(source material\)):\n([\[{][\s\S]*)$/;
 function promptEvidence(value: string) {
-  const found = value.match(EVIDENCE); if (!found) return null;
+  const found = value.match(EVIDENCE); if (!found || found[2] === undefined) return null;
   try { return { text: value.slice(0, found.index).trim(), label: found[1], json: JSON.stringify(JSON.parse(found[2]), null, 2) }; } catch { return null; }
 }
 export function CommandStep({item,open=true}:{item:Item;open?:boolean}) {
@@ -132,7 +132,7 @@ function MessageVersions({version}:{version:VersionControl}) {
 const LONG_MESSAGE_PX=288;
 /** Sending an edit replaces this message and every later turn through Elpis (thread/revert), then starts the edited turn;
  * the message's attachments go with the edited text, and the chat as it was stays reachable as the previous version. */
-function UserMessage({body,bodyContent,attachments,attachmentContent,copyText,onEdit,onRewind,onDelete,editBlockedReason,editDraft,onEditDraftChange,editPending,time,onReply,reference,replyContent,version}:{version?:VersionControl;onDelete?:DeleteControl;onReply?:()=>void;reference?:string;replyContent?:React.ReactNode;body:string;bodyContent?:React.ReactNode;attachments:string[];attachmentContent?:React.ReactNode;copyText?:string;onEdit?:(text:string)=>Promise<void>;onRewind?:()=>void;editBlockedReason?:string;editDraft?:string;onEditDraftChange?:(value:string|null)=>void;editPending?:boolean;time?:number}) {
+function UserMessage({body,bodyContent,attachments,attachmentContent,copyText,onEdit,onRewind,onDelete,editBlockedReason,editDraft,onEditDraftChange,editPending,time,onReply,reference,replyContent,version}:{version?:VersionControl | undefined;onDelete?:DeleteControl | undefined;onReply?:(()=>void) | undefined;reference?:string | undefined;replyContent?:React.ReactNode;body:string;bodyContent?:React.ReactNode;attachments:string[];attachmentContent?:React.ReactNode;copyText?:string;onEdit?:((text:string)=>Promise<void>) | undefined;onRewind?:(()=>void) | undefined;editBlockedReason?:string | undefined;editDraft?:string | undefined;onEditDraftChange?:((value:string|null)=>void) | undefined;editPending?:boolean | undefined;time?:number | undefined}) {
   const [localEditing,setEditing]=useState(false);const [localDraft,setLocalDraft]=useState(body);const [localBusy,setBusy]=useState(false);const [error,setError]=useState("");
   const busy=localBusy||!!editPending;
   const editing=onEditDraftChange?editDraft!==undefined:localEditing,draft=onEditDraftChange?editDraft??body:localDraft;
@@ -185,9 +185,9 @@ export function ChatMessage({item,model,speaker="Elpis",threads=[],onOpenThread,
     const speechAction:MessageAction[] = speech && (speaking || (readAloud && spokenText.trim())) ? [{ id: "read-aloud", label: speaking ? "Stop" : "Read aloud", title: speaking ? "Stop reading aloud" : "Read aloud · Kokoro, on this computer", icon: speaking ? <StopIcon size={14}/> : <Volume2 size={14}/>, run: () => speaking ? speech.stop() : speech.play(speechId, spokenText) }] : [];
     const modelAction:MessageAction[]=model?[{id:"model",label:model,icon:null,run:()=>{}}]:[];
     const actions:MessageAction[]=item.text?[...modelAction,...replyAction(onReply),copyTextAction(()=>item.text||""),copyAction("Copy reply",()=>item.text||""),...speechAction,...(onRegenerate?[{id:"regenerate",label:"Regenerate reply",title:"Regenerate",icon:<RefreshCw size={14}/>,run:onRegenerate}]:[]),...rewindAction(onRewind),...(onFork?[{id:"fork",label:"Fork chat from here",icon:<BranchIcon size={14}/>,run:onFork}]:[])]:modelAction;
-    return <RightClickMenu actions={menuActions(actions)} area={<article className={speaker==="Matilda"?"message agent matilda-message flow-root":"message agent"} id={reference ? messageDomId(reference) : undefined} data-message-reference={onReply ? reference : undefined} tabIndex={reference ? -1 : undefined} {...(speechAction.length ? { onPointerEnter: speech?.warm, onFocus: speech?.warm } : {})}/>}>{speaker==="Matilda"&&<MatildaFace expression={portrait?.expression} size={64} className="float-left mb-2 mr-4"/>}{speaker!=="Elpis"&&<div className="speaker">{speaker}</div>}<div className="message-body">{verdict?<section className={verdict.failed?"plan-card check-failed accent-scope":"plan-card"} aria-label={verdict.label}><p className="plan-card-heading">{verdict.mother?<Signpost size={14} aria-hidden="true"/>:verdict.failed?<CircleX size={14} aria-hidden="true"/>:<CircleCheck size={14} aria-hidden="true"/>}{verdict.heading}</p><MarkdownText text={verdict.text}/></section>:<MarkdownText text={item.text||""}/>}</div>{speech?.error?.id===speechId&&<p role="alert" className="text-sm text-destructive">{speech.error.message}</p>}{actions.length>0&&<InkRow className="message-actions"><MessageButtons actions={actions}/></InkRow>}</RightClickMenu>;
+    return <RightClickMenu actions={menuActions(actions)} area={<article className={speaker==="Matilda"?"message agent matilda-message flow-root":"message agent"} id={reference ? messageDomId(reference) : undefined} data-message-reference={onReply ? reference : undefined} tabIndex={reference ? -1 : undefined} {...(speechAction.length ? { onPointerEnter: speech?.warm, onFocus: speech?.warm } : {})}/>}>{speaker==="Matilda"&&<MatildaFace {...(portrait?.expression === undefined ? {} : { expression: portrait.expression })} size={64} className="float-left mb-2 mr-4"/>}{speaker!=="Elpis"&&<div className="speaker">{speaker}</div>}<div className="message-body">{verdict?<section className={verdict.failed?"plan-card check-failed accent-scope":"plan-card"} aria-label={verdict.label}><p className="plan-card-heading">{verdict.mother?<Signpost size={14} aria-hidden="true"/>:verdict.failed?<CircleX size={14} aria-hidden="true"/>:<CircleCheck size={14} aria-hidden="true"/>}{verdict.heading}</p><MarkdownText text={verdict.text}/></section>:<MarkdownText text={item.text||""}/>}</div>{speech?.error?.id===speechId&&<p role="alert" className="text-sm text-destructive">{speech.error.message}</p>}{actions.length>0&&<InkRow className="message-actions"><MessageButtons actions={actions}/></InkRow>}</RightClickMenu>;
   }
-  if(item.type==="smartPrune")return <SmartPruneLine value={item.prune} mediaBase={mediaBase}/>;
+  if(item.type==="smartPrune")return <SmartPruneLine value={item.prune} {...(mediaBase === undefined ? {} : { mediaBase })}/>;
   if(item.type==="commandExecution")return <CommandStep item={item}/>;
   if(item.type==="fileChange")return <ItemEdits item={item}/>;
   if(item.type==="mcpToolCall"||item.type==="dynamicToolCall"){

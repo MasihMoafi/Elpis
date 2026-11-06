@@ -44,10 +44,11 @@ export function onArrowKey(event: KeyboardEvent) {
   const items = arrowGroup(control);
   if (!items) return;
   const at = items.indexOf(control);
-  const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : Math.max(0, Math.min(items.length - 1, at + STEP[event.key]));
-  if (next === at) return;
+  const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : Math.max(0, Math.min(items.length - 1, at + (STEP[event.key] ?? 0)));
+  const target = items[next];
+  if (next === at || !target) return;
   event.preventDefault();
-  items[next].focus();
-  items[next].scrollIntoView({ block: "nearest", inline: "nearest" });
-  if (items[next].matches('[role="tab"], [role="radio"]:not(input)')) items[next].click();
+  target.focus();
+  target.scrollIntoView({ block: "nearest", inline: "nearest" });
+  if (target.matches('[role="tab"], [role="radio"]:not(input)')) target.click();
 }
