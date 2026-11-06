@@ -71,7 +71,7 @@ function preload(invoke: (channel: string, ...args: unknown[]) => unknown) {
   return api;
 }
 function setup({ started = [], fail }: { started?: string[][]; fail?: string } = {}) {
-  const { registerFiles } = require('./files.cjs');
+  const { registerFiles } = require('./files.cts');
   const handlers = new Map<string, Handler>(), mainFrame = { url: 'http://127.0.0.1:45001/' }, webContents = { mainFrame };
   const event = { sender: webContents, senderFrame: mainFrame };
   const dir = binaries(['zed', 'code']);

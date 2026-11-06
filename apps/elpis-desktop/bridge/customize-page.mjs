@@ -1,6 +1,6 @@
 import { BridgeError, object, projectFolder, text } from './validate.mts';
 import { appCatalogs, linkBundledCatalog } from './app-catalogs.mts';
-import { pluginCatalogSnapshot, pluginsSnapshot, skillsSnapshot } from './customize.mjs';
+import { pluginCatalogSnapshot, pluginsSnapshot, skillsSnapshot } from './customize.mts';
 import { skillRoots } from './skill-trash.mts';
 import { userConfigVersion } from './elpis-features.mjs';
 

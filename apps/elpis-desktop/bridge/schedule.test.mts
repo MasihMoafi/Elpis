@@ -4,13 +4,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { describeRule, legacyRule, nextRun, parseRule } from './schedule-rules.mjs';
-import { createSchedule } from './schedule.mjs';
+import { describeRule, legacyRule, nextRun, parseRule } from './schedule-rules.mts';
+import { createSchedule } from './schedule.mts';
 
-const at = (y, mo, d, h = 0, mi = 0) => Date.UTC(y, mo - 1, d, h, mi);
+const at = (y: number, mo: number, d: number, h = 0, mi = 0) => Date.UTC(y, mo - 1, d, h, mi);
 /** A rule in UTC from its start and RRULE body, as the form writes it. */
-const rule = (start, body, zone = 'UTC') => `DTSTART;TZID=${zone}:${start}\nRRULE:${body}`;
-const runs = (text, from, count) => { const found = []; for (let t = from; found.length < count;) { t = nextRun(text, t); if (t === null) break; found.push(new Date(t).toISOString().slice(0, 16)); } return found; };
+const rule = (start: string, body: string, zone = 'UTC') => `DTSTART;TZID=${zone}:${start}\nRRULE:${body}`;
+const runs = (text: string, from: number, count: number) => { const found = []; for (let t: number | null = from; found.length < count;) { t = nextRun(text, t!); if (t === null) break; found.push(new Date(t).toISOString().slice(0, 16)); } return found; };
 
 test('each preset finds its next time, strictly after the given moment', () => {
   const wed = at(2026, 11, 4, 10); // a Wednesday, 10:00 UTC
@@ -34,22 +34,22 @@ test('a zone keeps its local clock across daylight saving: a skipped time is ski
 
 test('rules that cannot run are refused with what is wrong', () => {
   for (const [text, message] of [['FREQ=DAILY', /DTSTART line/], [rule('20261101T090000', 'FREQ=SECONDLY'), /FREQ/], [rule('20261101T090000', 'FREQ=DAILY;INTERVAL=0'), /INTERVAL/],
-    [rule('20261101T090000', 'FREQ=DAILY', 'Mars/Olympus'), /time zone/], [{ kind: 'daily' }, /when the automation runs/]])
+    [rule('20261101T090000', 'FREQ=DAILY', 'Mars/Olympus'), /time zone/], [{ kind: 'daily' }, /when the automation runs/]] as [unknown, RegExp][])
     assert.throws(() => parseRule(text), message);
   assert.equal(legacyRule({ kind: 'weekdays', time: '09:30' }, at(2026, 11, 4), 'UTC'), rule('20261104T093000', 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR'), 'a rule saved before 6 Nov is read as RRULE');
 });
 
-function harness(start) {
-  let clock = start, pending = null;
-  const sent = [], made = [];
+function harness(start: number) {
+  let clock = start, pending: { fn: () => void; due: number } | null = null;
+  const sent: { id: string; text: string; automatic: boolean }[] = [], made: { id: string; cwd?: string; name: string; automatic: boolean }[] = [];
   const client = {
-    async createThread(body) { const id = `chat-${made.length + 1}`; made.push({ id, ...body }); return { thread: { id } }; },
-    async send(id, body) { sent.push({ id, text: body.text, automatic: body.automatic }); },
+    async createThread(body: { cwd?: string; name: string; automatic: boolean }) { const id = `chat-${made.length + 1}`; made.push({ id, ...body }); return { thread: { id } }; },
+    async send(id: string, body: { text: string; automatic: boolean }) { sent.push({ id, text: body.text, automatic: body.automatic }); },
   };
-  const timers = { set(fn, ms) { pending = { fn, due: clock + ms }; return pending; }, clear(handle) { if (pending === handle) pending = null; } };
+  const timers = { set(fn: () => void, ms: number) { pending = { fn, due: clock + ms }; return pending; }, clear(handle: object) { if (pending === handle) pending = null; } };
   return { client, timers, sent, made, now: () => clock,
     /** Moves the clock and fires the timer if it came due; waits for the run to finish. */
-    async advance(to) { clock = to; const due = pending; if (due && due.due <= clock) { pending = null; due.fn(); } await new Promise(resolve => setTimeout(resolve, 20)); } };
+    async advance(to: number) { clock = to; const due = pending; if (due && due.due <= clock) { pending = null; due.fn(); } await new Promise(resolve => setTimeout(resolve, 20)); } };
 }
 
 test('a due task sends its prompt into one kept chat, and a missed stretch is one run', async () => {
@@ -67,12 +67,12 @@ test('a due task sends its prompt into one kept chat, and a missed stretch is on
   assert.deepEqual(h.sent.map(item => item.id), ['chat-1', 'chat-1'], 'the same chat, and one run for the missed days');
   assert.equal(h.made.length, 1);
   const [saved] = await schedule.list();
-  assert.equal(saved.nextRunAt, at(2026, 11, 8, 9));
-  assert.equal(saved.runs.length, 2);
+  assert.equal(saved!.nextRunAt, at(2026, 11, 8, 9));
+  assert.equal(saved!.runs.length, 2);
   await schedule.close();
   // Kept across restarts.
   const again = createSchedule({ client: h.client, file, now: h.now, timers: h.timers });
-  assert.equal((await again.list())[0].threadId, 'chat-1');
+  assert.equal((await again.list())[0]!.threadId, 'chat-1');
   await again.close();
 });
 
@@ -85,9 +85,9 @@ test('a new chat every run, a one-time task ends, and a paused task does not run
   await schedule.update(paused.id, { status: 'paused' });
   await h.advance(at(2026, 11, 4, 8, 45));
   assert.deepEqual(h.sent.map(item => item.text), ['Write the report'], 'the paused task sent nothing');
-  assert.equal(h.made[0].cwd, '/tmp');
-  assert.equal(h.made[0].name, 'Report');
-  assert.equal((await schedule.list()).find(task => task.id === once.id).status, 'ended');
+  assert.equal(h.made[0]!.cwd, '/tmp');
+  assert.equal(h.made[0]!.name, 'Report');
+  assert.equal((await schedule.list()).find(task => task.id === once.id)!.status, 'ended');
   // Run now sends once and keeps the schedule.
   await schedule.runNow(once.id);
   assert.equal(h.made.length, 2, 'a new chat again');
@@ -101,11 +101,11 @@ test('a chat\'s one sentence becomes a task: the tools create into this chat, li
   const h = harness(at(2026, 11, 4, 8, 0));
   const schedule = createSchedule({ client: h.client, file, now: h.now, timers: h.timers });
   // The app's routes, as bridge/server.mjs maps them.
-  const request = async (route, body) => {
+  const request = (async (route: string, body?: Record<string, unknown>) => {
     if (route === '/api/automations') return body ? schedule.create(body) : { data: await schedule.list() };
-    const id = route.split('/').pop(), { action, ...fields } = body;
+    const id = route.split('/').pop()!, { action, ...fields } = body!;
     return action === 'delete' ? schedule.remove(id) : schedule.update(id, fields);
-  };
+  }) as unknown as Parameters<typeof callTool>[3];
   const here = '00000000-0000-4000-8000-0000000000aa';
   const { created } = await callTool('automation_create', { title: 'Stand-up', prompt: 'What changed since yesterday?', rule: rule('20261101T093000', 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR'), target: 'this_chat' }, here, request);
   assert.ok(created);
@@ -116,7 +116,7 @@ test('a chat\'s one sentence becomes a task: the tools create into this chat, li
   const listed = await callTool('automation_list', {}, here, request);
   assert.ok(listed.automations);
   assert.equal(listed.automations.length, 1);
-  assert.equal((await callTool('automation_update', { id: created.id, action: 'pause' }, here, request)).updated.status, 'paused');
+  assert.equal((await callTool('automation_update', { id: created.id, action: 'pause' }, here, request)).updated!.status, 'paused');
   await callTool('automation_update', { id: created.id, action: 'delete' }, here, request);
   assert.equal((await schedule.list()).length, 0);
   await assert.rejects(callTool('automation_create', { title: 'x', prompt: 'x', rule: rule('20261101T090000', 'FREQ=DAILY'), target: 'this_chat' }, undefined, request), /one_chat/);
@@ -127,10 +127,10 @@ test('the Automations key opens /api/automations and no other route', async t =>
   const { startDesktopServer } = await import('./server.mjs');
   const { EventEmitter } = await import('node:events');
   const bus = new EventEmitter();
-  const client = { connected: true, pendingApprovals: [], close() {}, on: (n, l) => bus.on(n, l), off: (n, l) => bus.off(n, l), ragEnvironment: async () => ({}), async listThreads() { return { data: [], nextCursor: null }; } };
+  const client = { connected: true, pendingApprovals: [], close() {}, on: (n: string, l: (...args: unknown[]) => void) => bus.on(n, l), off: (n: string, l: (...args: unknown[]) => void) => bus.off(n, l), ragEnvironment: async () => ({}), async listThreads() { return { data: [], nextCursor: null }; } };
   const automationsFile = path.join(await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-schedule-')), 'tasks.json');
   const app = await startDesktopServer({ client, staticDir: '/tmp', automationsFile }); t.after(() => app.close());
-  const { url, key } = app.automationAccess;
+  const { url, key } = app.automationAccess!;
   const headers = { 'x-elpis-automations': key, 'content-type': 'application/json' };
   const made = await fetch(`${url}/api/automations`, { method: 'POST', headers, body: JSON.stringify({ title: 'T', prompt: 'P', rule: rule('20261101T090000', 'FREQ=DAILY') }) });
   assert.equal(made.status, 201);
@@ -145,22 +145,22 @@ test('a scheduled workflow is offered to the open windows: one claims it and rep
   const { startDesktopServer } = await import('./server.mjs');
   const { EventEmitter } = await import('node:events');
   const bus = new EventEmitter();
-  const client = { connected: true, pendingApprovals: [], close() {}, on: (n, l) => bus.on(n, l), off: (n, l) => bus.off(n, l), ragEnvironment: async () => ({}), async listThreads() { return { data: [], nextCursor: null }; } };
+  const client = { connected: true, pendingApprovals: [], close() {}, on: (n: string, l: (...args: unknown[]) => void) => bus.on(n, l), off: (n: string, l: (...args: unknown[]) => void) => bus.off(n, l), ragEnvironment: async () => ({}), async listThreads() { return { data: [], nextCursor: null }; } };
   const automationsFile = path.join(await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-schedule-')), 'tasks.json');
   const app = await startDesktopServer({ client, staticDir: '/tmp', automationsFile, workflowClaimWait: 300 }); t.after(() => app.close());
-  const { url, key } = app.automationAccess;
-  const post = (route, body) => fetch(`${url}${route}`, { method: 'POST', headers: { 'x-elpis-automations': key, 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(response => response.json());
+  const { url, key } = app.automationAccess!;
+  const post = (route: string, body: unknown) => fetch(`${url}${route}`, { method: 'POST', headers: { 'x-elpis-automations': key, 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(response => response.json());
   // A window's event stream, as the page opens it.
   const token = new URLSearchParams(new URL(app.url).hash.slice(1)).get('token');
   const session = await fetch(`${url}/api/session`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: url }, body: JSON.stringify({ token }) });
-  const cookie = session.headers.get('set-cookie').split(';')[0];
+  const cookie = session.headers.get('set-cookie')!.split(';')[0]!;
   const stream = await fetch(`${url}/api/events`, { headers: { Cookie: cookie } });
-  const reader = stream.body.getReader(), decoder = new TextDecoder();
+  const reader = stream.body!.getReader(), decoder = new TextDecoder();
   let buffered = '';
   const nextOffer = async () => {
     for (;;) {
       const match = /event: automationWorkflow\ndata: (.*)\n\n/.exec(buffered);
-      if (match) { buffered = buffered.slice(match.index + match[0].length); return JSON.parse(match[1]); }
+      if (match) { buffered = buffered.slice(match.index + match[0].length); return JSON.parse(match[1]!); }
       const { value } = await reader.read(); buffered += decoder.decode(value);
     }
   };

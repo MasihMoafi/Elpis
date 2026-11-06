@@ -6,34 +6,34 @@ const os = require('node:os');
 const path = require('node:path');
 const vm = require('node:vm');
 
-function preload(invoke) {
-  let api;
-  const electron = { contextBridge: { exposeInMainWorld: (_name, value) => { api = value; } },
+function preload(invoke: (channel: string, target: string) => Promise<unknown>) {
+  let api: { openFile: (target: string) => Promise<unknown>; openFolder: (target: string) => Promise<unknown> } | undefined;
+  const electron = { contextBridge: { exposeInMainWorld: (_name: string, value: typeof api) => { api = value; } },
     ipcRenderer: { sendSync: () => ({}), invoke, on: () => {}, removeListener: () => {} } };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, 'preload.cjs'), 'utf8'), { require: () => electron });
-  return api;
+  return api!;
 }
 
-function setup(openPath = async () => '') {
-  const { registerFiles } = require('./files.cjs');
-  const handlers = new Map();
+function setup(openPath: (target: string) => Promise<string> = async () => '') {
+  const { registerFiles }: typeof import('./files.cts') = require('./files.cts');
+  const handlers = new Map<string, (event: unknown, target: unknown) => Promise<{ error?: string; opened?: boolean }>>();
   const mainFrame = { url: 'http://127.0.0.1:45001/' };
-  const sent = [];
-  const webContents = { mainFrame, send: (...args) => sent.push(args) };
+  const sent: unknown[][] = [];
+  const webContents = { mainFrame, send: (...args: unknown[]) => sent.push(args) };
   const event = { sender: webContents, senderFrame: mainFrame };
   const dispose = registerFiles({ host: { webContents }, origin: 'http://127.0.0.1:45001',
-    ipcMain: { handle: (name, handler) => handlers.set(name, handler), removeHandler: name => handlers.delete(name) },
-    shell: { openPath } });
-  return { handlers, event, webContents, sent, dispose, open: async (target, sender = event) => {
-    const result = await handlers.get('elpis:file:open')(sender, target);
+    ipcMain: { handle: (name: string, handler: (event: unknown, target: unknown) => Promise<{ error?: string; opened?: boolean }>) => handlers.set(name, handler), removeHandler: (name: string) => handlers.delete(name) },
+    shell: { openPath } } as unknown as Parameters<typeof registerFiles>[0]);
+  return { handlers, event, webContents, sent, dispose, open: async (target: unknown, sender: unknown = event) => {
+    const result = await handlers.get('elpis:file:open')!(sender, target);
     if (result.error) throw Error(result.error);
     return result;
   } };
 }
 
 test('the app preload offers a narrow local-file API and reports a native failure', async () => {
-  let call;
-  const api = preload(async (...args) => { call = args; throw Error('No application can open this file.'); });
+  let call: unknown[] | undefined;
+  const api = preload(async (...args: [string, string]) => { call = args; throw Error('No application can open this file.'); });
   assert.equal(typeof api.openFile, 'function');
   await assert.rejects(api.openFile('/tmp/report.md:12'), /No application can open this file/);
   assert.deepEqual(call, ['elpis:file:open', '/tmp/report.md:12']);
@@ -45,16 +45,16 @@ test('a clicked local file reaches the Files pane with its line; only the explic
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-file-link-'));
   const file = path.join(root, 'گزارش with spaces.md');
   fs.writeFileSync(file, 'fixture');
-  const opened = [];
-  const context = setup(async target => { opened.push(target); return ''; });
-  const api = preload((channel, target) => {
+  const opened: string[] = [];
+  const context = setup(async (target: string) => { opened.push(target); return ''; });
+  const api = preload((channel: string, target: string) => {
     assert.equal(channel, 'elpis:file:open');
     return context.open(target);
   });
   await api.openFile(`${encodeURI(file)}:12`);
   assert.deepEqual(opened, []);
   assert.deepEqual(context.sent, [['elpis:file:requested', { path: fs.realpathSync(file), line: 12 }]]);
-  const external = await context.handlers.get('elpis:file:external')(context.event, file);
+  const external = await context.handlers.get('elpis:file:external')!(context.event, file);
   assert.equal(external.opened, true);
   assert.deepEqual(opened, [fs.realpathSync(file)]);
   context.dispose();
@@ -69,7 +69,7 @@ test('missing files, folders and OS association failures reject without silently
   await assert.rejects(context.open(path.join(root, 'missing.md')), /unavailable|existing local file/i);
   await assert.rejects(context.open(root), /regular file|existing local file|unavailable/i);
   assert.equal(calls, 0);
-  const failure = await context.handlers.get('elpis:file:external')(context.event, file);
+  const failure = await context.handlers.get('elpis:file:external')!(context.event, file);
   assert.match(failure.error, /No application is associated/);
   assert.equal(calls, 1);
   context.dispose();
@@ -81,7 +81,7 @@ test('only absolute file paths with well-formed optional line numbers are accept
   for (const target of [null, {}, '', 'relative.md', 'https://example.com/a.md', 'file:///tmp/a.md',
     '//example.com/a.md', '/%2Fexample.com/a.md', '/tmp/a%00.md', '/tmp/a\n.md', '/tmp/%ZZ.md',
     '/tmp/a.md:0', '/tmp/a.md:999999999999999999999', `/${'x'.repeat(4096)}`]) {
-    await assert.rejects(context.open(target), /absolute|valid|line|path/i, String(target));
+    await assert.rejects(context.open(target), /absolute|valid|line|path/i, typeof target === 'string' ? target : target === null ? 'null' : '[object Object]');
   }
   assert.equal(calls, 0);
   context.dispose();
@@ -108,9 +108,9 @@ test('a project folder opens in the file manager; files, missing and relative pa
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-folder-open-'));
   const file = path.join(root, 'notes.md');
   fs.writeFileSync(file, 'fixture');
-  const opened = [];
-  const { handlers, event } = setup(async target => { opened.push(target); return ''; });
-  const api = preload((channel, target) => handlers.get(channel)(event, target));
+  const opened: string[] = [];
+  const { handlers, event } = setup(async (target: string) => { opened.push(target); return ''; });
+  const api = preload((channel: string, target: string) => handlers.get(channel)!(event, target));
   await api.openFolder(root);
   assert.deepEqual(opened, [fs.realpathSync(root)]);
   await assert.rejects(api.openFolder(file), /folder is unavailable/);

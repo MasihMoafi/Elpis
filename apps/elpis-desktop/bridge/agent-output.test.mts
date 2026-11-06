@@ -3,23 +3,23 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { agentOutput, firstSentence, listedFiles, verdictLine, whatItDid } from './agent-output.mjs';
+import { agentOutput, firstSentence, listedFiles, verdictLine, whatItDid } from './agent-output.mts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fixture = path.join(here, '../tests/fixtures/transcribe-sample');
 
 test('a finished agent becomes plain work, output previews, and checker verdicts', async () => {
-  const record = JSON.parse(await fs.readFile(path.join(fixture, 'run.json'), 'utf8'));
+  const record = JSON.parse(await fs.readFile(path.join(fixture, 'run.json'), 'utf8')) as { projectCwd: string; tasks: { id: string; kind: string; cwd: string; writeScopes?: string[] }[] };
   record.projectCwd = fixture;
   for (const task of record.tasks) task.cwd = fixture;
 
   const output = await agentOutput(record, 'agent-mvs4dw79-1c');
   assert.equal(output.did, 'page-1.md contains the complete English text of page one in reading order.');
   assert.deepEqual(output.outputs.map(file => file.path), ['agents/transcribe-page-one/page-1.md']);
-  assert.match(output.outputs[0].lines[0], /^On the first day of that month/);
-  assert.equal(output.outputs[0].abs, undefined, 'the response does not expose an absolute local path');
-  assert.deepEqual(output.check.verdicts.map(item => item.state), ['passed', 'passed']);
-  assert.match(output.check.verdicts[0].criterion, /Markdown file contains the complete English transcription/);
+  assert.match(output.outputs[0]!.lines![0]!, /^On the first day of that month/);
+  assert.equal((output.outputs[0] as unknown as { abs?: unknown }).abs, undefined, 'the response does not expose an absolute local path');
+  assert.deepEqual(output.check!.verdicts.map(item => item.state), ['passed', 'passed']);
+  assert.match(output.check!.verdicts[0]!.criterion, /Markdown file contains the complete English transcription/);
 });
 
 test('report parsing accepts the checker forms agents actually write', () => {

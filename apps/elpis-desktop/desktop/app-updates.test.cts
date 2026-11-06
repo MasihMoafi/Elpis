@@ -1,14 +1,15 @@
+import type { EventEmitter as Emitter } from 'node:events';
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
-const changed = updates => new Promise(resolve => { const off = updates.subscribe(value => { off(); resolve(value); }); });
+const changed = (updates: ReturnType<typeof createAppUpdates>) => new Promise(resolve => { const off = updates.subscribe(value => { off(); resolve(value); }); });
 const { execFileSync } = require('node:child_process');
-const { createAppUpdates } = require('./app-updates.cjs');
+const { createAppUpdates }: typeof import('./app-updates.cts') = require('./app-updates.cts');
 
-function fixture({ restart } = {}) {
+function fixture({ restart }: { restart?: (target: string) => Promise<void> } = {}) {
   const base = path.join(os.homedir(), '.cache/elpis-tests'); fs.mkdirSync(base, { recursive: true });
   const root = fs.mkdtempSync(path.join(base, 'app-updates-'));
   const bin = path.join(root, 'bin'); fs.mkdirSync(bin);
@@ -19,9 +20,9 @@ function fixture({ restart } = {}) {
   }
   const desktop = path.join(bin, 'elpis-app'), engine = path.join(bin, 'elpis-next');
   fs.symlinkSync(path.join(root, 'one', 'launch'), desktop); fs.symlinkSync(path.join(root, 'one', 'engine'), engine);
-  const select = (link, target) => { const temporary = `${link}.next`; fs.symlinkSync(path.join(root, 'two', target), temporary); fs.renameSync(temporary, link); };
-  const app = new EventEmitter(), calls = [];
-  const updates = createAppUpdates({ app, desktopLauncher: desktop, engineLauncher: engine, runningApp: path.join(root, 'one', 'app'), runningEngine: path.join(root, 'one', 'engine'), restart: async target => { calls.push(target); await restart?.(target); } });
+  const select = (link: string, target: string) => { const temporary = `${link}.next`; fs.symlinkSync(path.join(root, 'two', target), temporary); fs.renameSync(temporary, link); };
+  const app = new EventEmitter(), calls: string[] = [];
+  const updates = createAppUpdates({ app: app as unknown as Parameters<typeof createAppUpdates>[0]['app'], desktopLauncher: desktop, engineLauncher: engine, runningApp: path.join(root, 'one', 'app'), runningEngine: path.join(root, 'one', 'engine'), restart: async (target: string) => { calls.push(target); await restart?.(target); } });
   const close = () => { updates.dispose(); execFileSync('gio', ['trash', root]); };
   return { root, app, updates, calls, desktop, engine, select, close };
 }
@@ -30,9 +31,9 @@ test('atomic desktop install notifies every subscribed window, then restarts thr
   const f = fixture();
   try {
     assert.equal(f.updates.status().available, false);
-    const changes = [], off = f.updates.subscribe(state => changes.push(state));
+    const changes: ReturnType<ReturnType<typeof createAppUpdates>['status']>[] = [], off = f.updates.subscribe(state => changes.push(state));
     const wait = changed(f.updates); f.select(f.desktop, 'launch'); await wait;
-    assert.equal(changes.at(-1).desktop, true); assert.equal(changes.at(-1).engine, false);
+    assert.equal(changes.at(-1)!.desktop, true); assert.equal(changes.at(-1)!.engine, false);
     await Promise.all([f.updates.restart(), f.updates.restart()]);
     assert.deepEqual(f.calls, [path.join(f.root, 'two', 'launch')]); off();
   } finally { f.close(); }
@@ -54,7 +55,7 @@ test('a refused save keeps every window open and permits one later restart', asy
   try {
     const wait = changed(f.updates); f.select(f.desktop, 'launch'); await wait;
     await assert.rejects(f.updates.restart(), /draft save failed/);
-    assert.equal(f.updates.status().restarting, false); assert.match(f.updates.status().error, /draft save failed/);
+    assert.equal(f.updates.status().restarting, false); assert.match(f.updates.status().error!, /draft save failed/);
     refuse = false; await f.updates.restart(); await f.updates.restart();
     assert.equal(f.calls.length, 2, 'one refused attempt followed by one successful request, no duplicate relaunch');
   } finally { f.close(); }
@@ -72,11 +73,11 @@ test('an engine update cannot restart through a missing desktop launcher', async
 
 
 test('quit can await fire-and-forget draft writes and a refused save stays blocked until retry', async () => {
-  const vm = require('node:vm'), ipc = new EventEmitter();
-  const waiting = [];
+  const vm = require('node:vm'), ipc = new EventEmitter() as Emitter & { sendSync: () => unknown; invoke: (channel: string, patch: { key: string; value: string }) => Promise<unknown> };
+  const waiting: { patch: { key: string; value: string }; resolve: (result: unknown) => void }[] = [];
   ipc.sendSync = () => ({ values: {}, revision: 0 });
-  ipc.invoke = (_channel, patch) => new Promise(resolve => waiting.push({ patch, resolve }));
-  const context = vm.createContext({ require: () => ({ ipcRenderer: ipc, contextBridge: { exposeInMainWorld: (_name, value) => { context.api = value; } } }) });
+  ipc.invoke = (_channel: string, patch: { key: string; value: string }) => new Promise(resolve => waiting.push({ patch, resolve }));
+  const context = vm.createContext({ require: () => ({ ipcRenderer: ipc, contextBridge: { exposeInMainWorld: (_name: string, value: unknown) => { context.api = value; } } }) });
   const source = process.env.ELPIS_A12_BASELINE ? execFileSync('git', ['show', `${process.env.ELPIS_A12_BASELINE}:apps/elpis-desktop/desktop/preload.cjs`], { encoding: 'utf8' }) : fs.readFileSync(path.join(__dirname, 'preload.cjs'), 'utf8');
   vm.runInContext(source, context);
   const { storage } = context.api;
@@ -84,15 +85,15 @@ test('quit can await fire-and-forget draft writes and a refused save stays block
   let saved = false;
   const flush = storage.flush().then(() => { saved = true; });
   await new Promise(resolve => setImmediate(resolve)); assert.equal(saved, false);
-  const first = waiting.shift(); first.resolve({ key: first.patch.key, value: first.patch.value, revision: 1 });
+  const first = waiting.shift()!; first.resolve({ key: first.patch.key, value: first.patch.value, revision: 1 });
   await flush; assert.equal(saved, true);
   storage.setItem('elpis-draft-v1:chat', 'Changed words');
   const refused = storage.flush();
-  waiting.shift().resolve({ error: 'Fixture disk unavailable' });
+  waiting.shift()!.resolve({ error: 'Fixture disk unavailable' });
   await assert.rejects(refused, /disk unavailable/);
   await assert.rejects(storage.flush(), /disk unavailable/);
   storage.setItem('elpis-draft-v1:chat', 'Changed words');
-  const retry = storage.flush(), last = waiting.shift(); last.resolve({ key: last.patch.key, value: last.patch.value, revision: 2 });
+  const retry = storage.flush(), last = waiting.shift()!; last.resolve({ key: last.patch.key, value: last.patch.value, revision: 2 });
   await retry; assert.equal(storage.getItem('elpis-draft-v1:chat'), 'Changed words');
 });
 

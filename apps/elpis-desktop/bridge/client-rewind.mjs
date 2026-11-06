@@ -3,7 +3,7 @@ import { ragMessage } from './rag-command.mts';
 import { randomUUID } from 'node:crypto';
 import { replacementEligibility } from '../lib/turn-replacement.ts';
 import { archivedSession } from './client-protocol.mts';
-import { modeOf } from './client-permissions.mjs';
+import { modeOf } from './client-permissions.mts';
 import { internal_attach, internal_decorate, internal_forgetSubscription, internal_itemsPage } from './client-thread-list.mjs';
 import { internal_chatModel } from './client-context.mjs';
 import { internal_mutate } from './client-mutation.mjs';

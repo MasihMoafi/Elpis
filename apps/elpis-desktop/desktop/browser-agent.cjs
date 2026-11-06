@@ -7,7 +7,7 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { browserUrl } = require('./browser-policy.cts');
 const { documentTools } = require('./documents.cjs');
-const { screenTools } = require('./screen-capture.cjs');
+const { screenTools } = require('./screen-capture.cts');
 
 const string = {type:'string'}, number = {type:'number'}, tabId = {type:'string',description:'ID from browser_tabs or browser_open.'};
 const target = {selector:string,nodeId:string};

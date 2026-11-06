@@ -5,7 +5,7 @@ import { defaultPermissionMode } from './elpis-features.mjs';
 import { isAgentRun } from '../lib/agent-runs.mts';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { PERMISSIONS, modeOf, permissionMode, permissionSetting } from './client-permissions.mjs';
+import { PERMISSIONS, modeOf, permissionMode, permissionSetting } from './client-permissions.mts';
 import { SOURCE_KINDS } from './client-thread-list.mjs';
 import { internal_browserOptions, internal_rpc } from './client-connection.mjs';
 import { internal_current } from './client-rewind.mjs';

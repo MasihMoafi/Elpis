@@ -1,7 +1,7 @@
 // An isolated Electron host with the production preload and file IPC. No engine, installed profile or inference.
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('node:path');
-const { registerFiles } = require('../desktop/files.cjs');
+const { registerFiles } = require('../desktop/files.cts');
 app.setPath('userData', process.env.CODE_OPEN_PROFILE);
 app.commandLine.appendSwitch('disable-gpu');
 global.fileOpens = [];

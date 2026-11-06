@@ -2,7 +2,7 @@
 // Reads the renderer's desktop preferences (lib/preferences.ts) from the workspace store.
 type ReadStore = { read: () => Record<string, unknown> };
 type SeedStore = ReadStore & { snapshot: () => { revision?: number }; patch: (input: { key: string; changes: Record<string, unknown>; baseRevision: number }, writer: null) => Promise<unknown> };
-const { DEFAULT_SHORTCUT }: typeof import('./quick-entry.cjs') = require('./quick-entry.cjs');
+const { DEFAULT_SHORTCUT }: typeof import('./quick-entry.cts') = require('./quick-entry.cts');
 const PREFERENCES_KEY_VALUE = 'elpis-preferences-v1';
 function saved(store: ReadStore): Record<string, unknown> {
   try {

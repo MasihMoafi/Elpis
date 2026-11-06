@@ -20,7 +20,7 @@ for (const theme of ['light']) test(`running card and finished output panel use 
   const record = JSON.parse(await fs.readFile(path.join(fixture, 'run.json'), 'utf8'));
   record.projectCwd = fixture;
   for (const task of record.tasks) task.cwd = fixture;
-  const output = await import('../bridge/agent-output.mjs').then(module => module.agentOutput(record, id));
+  const output = await import('../bridge/agent-output.mts').then(module => module.agentOutput(record, id));
   let finished = false;
   const f = await openCanvas({ graph, agentOutput: output, listed(run) {
     const source = new Map(record.tasks.map(task => [task.id, task]));

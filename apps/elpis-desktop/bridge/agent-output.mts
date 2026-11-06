@@ -10,7 +10,7 @@ import { BridgeError } from './validate.mts';
 const REPORT_BYTES = 256 * 1024, PREVIEW_BYTES = 16 * 1024, PREVIEW_LINES = 6, LINE_CHARS = 400, MOST_FILES = 20, TEXT_CHARS = 600;
 
 /** The body of a report's `## <name>` section (its heading may go on, as in "## Verdict (passed or failed…)"). */
-export function section(markdown, name) {
+export function section(markdown: string, name: string) {
   const lines = markdown.split(/\r?\n/), heading = new RegExp(`^##\\s+${name}\\b`, 'i');
   const start = lines.findIndex(line => heading.test(line.trim()));
   if (start < 0) return '';
@@ -20,18 +20,18 @@ export function section(markdown, name) {
 
 /** The first sentence of markdown text: a full stop inside a code span or a “quotation”, after a one-letter word
  * ("e.g.", "B.C.") or not followed by a space ends nothing. */
-export function firstSentence(markdown) {
+export function firstSentence(markdown: string) {
   let code = false, quote = 0;
   for (let i = 0; i < markdown.length; i++) {
-    const char = markdown[i];
+    const char = markdown[i]!;
     if (char === '`') { code = !code; continue; }
     if (code) continue;
     if (char === '“') quote++;
     else if (char === '”') quote = Math.max(0, quote - 1);
     else if (/[.!?]/.test(char) && !quote) {
       let end = i + 1;
-      while (end < markdown.length && /[.!?"”’)\]*_]/.test(markdown[end])) end++;
-      if (end < markdown.length && !/\s/.test(markdown[end])) continue;
+      while (end < markdown.length && /[.!?"”’)\]*_]/.test(markdown[end]!)) end++;
+      if (end < markdown.length && !/\s/.test(markdown[end]!)) continue;
       if (char === '.' && /(?:^|[\s(])(?:\p{L}\.)*\p{L}$/u.test(markdown.slice(0, i))) continue;
       return markdown.slice(0, end).trim();
     }
@@ -40,18 +40,18 @@ export function firstSentence(markdown) {
 }
 
 /** Markdown inline text in plain words: a code span naming a path shows its file name; emphasis and link marks go. */
-export function plain(markdown) {
+export function plain(markdown: string) {
   return markdown.replace(/`([^`]+)`/g, (_, code) => /^\S*\/[^\s/]+$/.test(code) ? code.slice(code.lastIndexOf('/') + 1) : code)
     .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/\*\*|__/g, '')
     .replace(/(^|[\s(])[*_]([^*_\s][^*_]*)[*_](?=$|[\s.,;:)])/g, '$1$2').replace(/\s+/g, ' ').trim().slice(0, TEXT_CHARS);
 }
 
 /** A section's list items (`-`, `*` or `1.`), each with its wrapped lines; plain paragraphs when it has no list. */
-function items(body) {
-  const found = [];
+function items(body: string) {
+  const found: string[] = [];
   for (const line of body.split('\n')) {
     const item = line.match(/^\s*(?:[-*+]|\d+[.)])\s+(.*)$/);
-    if (item) found.push(item[1]);
+    if (item) found.push(item[1]!);
     else if (line.trim() && found.length && /^\s/.test(line)) found[found.length - 1] += ` ${line.trim()}`;
     else if (line.trim() && !found.length) found.push(line.trim());
     else if (!line.trim() && found.length && !/^\s*(?:[-*+]|\d+[.)])\s/.test(body.split('\n').find(row => row.trim()) ?? '')) break;
@@ -60,7 +60,7 @@ function items(body) {
 }
 
 /** What one agent did: the first sentence of its result, past a bare "Yes." or "Done.". */
-export function whatItDid(report) {
+export function whatItDid(report: string) {
   let text = items(section(report, 'Result'))[0] ?? '';
   for (let tries = 0; tries < 3 && text; tries++) {
     const sentence = firstSentence(text);
@@ -72,65 +72,65 @@ export function whatItDid(report) {
 
 const PASSED = /^(?:passed|pass|met|holds|yes|ok)$/i, FAILED = /^(?:failed|fail|not met|unmet|does not hold|not passed|no)$/i;
 const WORD = String.raw`(passed|pass|met|holds|yes|ok|failed|fail|not met|unmet|does not hold|not passed|no)`;
-const stateOf = word => PASSED.test(word.trim()) ? 'passed' : FAILED.test(word.trim()) ? 'failed' : 'unclear';
+const stateOf = (word: string) => PASSED.test(word.trim()) ? 'passed' : FAILED.test(word.trim()) ? 'failed' : 'unclear';
 /** One verdict line in the forms checkers write: "**Passed** — “criterion.” evidence", "**Passed — Criterion.** evidence",
  * "**Passed:** criterion. evidence" and "criterion: passed". `detail` is the first sentence of the evidence. */
-export function verdictLine(item) {
-  const say = (state, criterion, detail = '') => ({ state, criterion: plain(criterion), detail: detail.trim() ? plain(firstSentence(detail.trim())) : '' });
+export function verdictLine(item: string) {
+  const say = (state: string, criterion: string, detail = '') => ({ state, criterion: plain(criterion), detail: detail.trim() ? plain(firstSentence(detail.trim())) : '' });
   let match = item.match(new RegExp(String.raw`^\*\*\s*${WORD}\s*[—–:-]\s*(.+?)\*\*\s*(.*)$`, 'i'));
-  if (match) return say(stateOf(match[1]), match[2], match[3]);
+  if (match) return say(stateOf(match[1]!), match[2]!, match[3]!);
   match = item.match(new RegExp(String.raw`^\*\*\s*${WORD}\s*[:.]?\s*\*\*\s*[—–:.-]?\s*(.*)$`, 'i'));
   if (match) {
-    const rest = match[2], quoted = rest.match(/^[“"](.+?)[”"]\s*(.*)$/);
-    if (quoted) return say(stateOf(match[1]), quoted[1], quoted[2]);
+    const rest = match[2]!, quoted = rest.match(/^[“"](.+?)[”"]\s*(.*)$/);
+    if (quoted) return say(stateOf(match[1]!), quoted[1]!, quoted[2]!);
     const criterion = firstSentence(rest);
-    return say(stateOf(match[1]), criterion, rest.slice(criterion.length));
+    return say(stateOf(match[1]!), criterion, rest.slice(criterion.length));
   }
   match = item.match(new RegExp(String.raw`^(.+?)\s*(?:\*\*)?\s*[:—–-]\s*(?:\*\*)?\s*${WORD}\s*(?:\*\*)?[.!]?$`, 'i'));
-  if (match) return say(stateOf(match[2]), match[1].replace(/\*\*$/, ''));
+  if (match) return say(stateOf(match[2]!), match[1]!.replace(/\*\*$/, ''));
   return say('unclear', item);
 }
-export const verdicts = report => items(section(report, 'Verdict')).map(verdictLine);
+export const verdicts = (report: string) => items(section(report, 'Verdict')).map(verdictLine);
 
 /** The paths a report lists under `## Files`: its code spans and link targets. */
-export function listedFiles(report) {
+export function listedFiles(report: string) {
   const body = section(report, 'Files'), found = [];
-  for (const match of body.matchAll(/`([^`\n]+)`|\]\(([^)\s]+)\)/g)) found.push((match[1] ?? match[2]).trim());
+  for (const match of body.matchAll(/`([^`\n]+)`|\]\(([^)\s]+)\)/g)) found.push((match[1]! ?? match[2]!).trim());
   return [...new Set(found)];
 }
 
-const within = (child, parent) => child === parent || child.startsWith(parent + path.sep);
+const within = (child: string, parent: string) => child === parent || child.startsWith(parent + path.sep);
 /** A real directory of the run, or null. */
-async function directory(candidate) {
+async function directory(candidate: unknown) {
   if (typeof candidate !== 'string' || !path.isAbsolute(candidate)) return null;
   const real = await fs.realpath(candidate).catch(() => null), info = real && await fs.stat(real).catch(() => null);
-  return info?.isDirectory() ? real : null;
+  return (info as { isDirectory: () => boolean } | null)?.isDirectory() ? real : null;
 }
 /** `rel` (relative to the folder, or absolute inside it) as a project-relative path, or null when it leaves the folder. */
-function relative(folder, target) {
+function relative(folder: string, target: unknown) {
   if (typeof target !== 'string' || !target || target.length > 4096 || target.includes('\0')) return null;
   const abs = path.resolve(folder, target);
   return within(abs, folder) && abs !== folder ? path.relative(folder, abs).split(path.sep).join('/') : null;
 }
 /** The real file at `rel`, if it exists and stays inside the folder after its links are followed. */
-async function fileIn(folder, rel) {
+async function fileIn(folder: string, rel: string) {
   const real = await fs.realpath(path.join(folder, rel)).catch(() => null);
   if (!real || !within(real, folder)) return null;
   const info = await fs.stat(real).catch(() => null);
   return info?.isFile() ? { real, size: info.size } : null;
 }
 /** At most `limit` bytes of a file. */
-async function head(real, limit) {
+async function head(real: string, limit: number) {
   const handle = await fs.open(real, 'r');
   try { const buffer = Buffer.alloc(limit), { bytesRead } = await handle.read(buffer, 0, limit, 0); return buffer.subarray(0, bytesRead); }
   finally { await handle.close(); }
 }
-async function readReport(folder, rel) {
+async function readReport(folder: string, rel: string) {
   const file = await fileIn(folder, rel);
   return file ? (await head(file.real, REPORT_BYTES)).toString('utf8') : null;
 }
 /** The first non-empty lines of a text file, or null for a binary one. */
-async function preview(real) {
+async function preview(real: string) {
   const bytes = await head(real, PREVIEW_BYTES);
   if (bytes.includes(0)) return null;
   // A cut may split the last character; drop it rather than show a replacement mark.
@@ -140,25 +140,27 @@ async function preview(real) {
 
 /** The agent's own folder, `agents/<name>`: its check writes `<own>/check` (lib/canvas.ts `runParts`), and an agent with
  * no check has it as its last write scope. */
-function ownFolder(record, task) {
+type Task = { id: string; kind: string; cwd?: string | null; writeScopes?: string[] };
+type Record = { tasks: Task[]; projectCwd?: string | null };
+function ownFolder(record: Record, task: Task) {
   const check = record.tasks.find(item => item.kind === 'verify' && item.id === `${task.id}-check`);
   const own = check?.writeScopes?.[0]?.replace(/\/check$/, '') ?? task.writeScopes?.at(-1);
   return typeof own === 'string' && /^agents\/[^/\\]+$/.test(own) && own !== 'agents/..' && own !== 'agents/.' ? { own, check } : { own: null, check };
 }
 
 /** The agent's report, outputs and check verdicts. `record` is a board run (bridge/workflow-acp.mjs). */
-export async function agentOutput(record, taskId) {
+export async function agentOutput(record: Record | null | undefined, taskId: unknown) {
   const task = record?.tasks?.find(item => item.id === taskId);
   if (!task || task.kind === 'verify') throw new BridgeError('That agent is not part of this workflow.', 404);
-  const { own, check } = ownFolder(record, task);
+  const { own, check } = ownFolder(record!, task);
   // An isolated task works in its own worktree, which is freed once the run merged; the project then holds its work.
-  const folder = await directory(task.cwd) ?? await directory(record.projectCwd);
+  const folder = await directory(task.cwd) ?? await directory(record!.projectCwd);
   const checkFolder = await directory(check?.cwd) ?? folder;
   if (!folder || !own) return { folder: folder ?? null, report: null, did: null, outputs: [], check: null };
   const reportPath = `${own}/report.md`, report = await readReport(folder, reportPath);
   const scopes = (task.writeScopes ?? []).flatMap(scope => scope === '.' ? ['.'] : relative(folder, scope) ?? []);
-  const allowed = rel => scopes.some(scope => scope === '.' || rel === scope || rel.startsWith(`${scope}/`));
-  const outputs = [];
+  const allowed = (rel: string) => scopes.some(scope => scope === '.' || rel === scope || rel.startsWith(`${scope}/`));
+  const outputs: { path: string; size: number; lines: string[] | null }[] = [];
   for (const listed of report ? listedFiles(report) : []) {
     const rel = relative(folder, listed);
     if (!rel || rel === reportPath || rel.startsWith(`${own}/check/`) || !allowed(rel) || outputs.some(item => item.path === rel)) continue;
@@ -167,7 +169,7 @@ export async function agentOutput(record, taskId) {
     outputs.push({ path: rel, size: file.size, lines: await preview(file.real) });
     if (outputs.length === MOST_FILES) break;
   }
-  const checkPath = `${own}/check/report.md`, checked = check ? await readReport(checkFolder, checkPath) : null;
+  const checkPath = `${own}/check/report.md`, checked = check ? await readReport(checkFolder!, checkPath) : null;
   return {
     folder, report: report === null ? null : reportPath, did: report ? whatItDid(report) : null, outputs,
     check: check ? { report: checked === null ? null : checkPath, verdicts: checked ? verdicts(checked) : [] } : null,

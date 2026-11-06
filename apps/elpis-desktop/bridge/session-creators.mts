@@ -4,17 +4,22 @@ import os from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { agentParentId } from '../lib/agent-runs.mts';
 
+type Thread = { id: string; createdAt: string | number; threadSource?: string | null; path?: string; model?: string; cwd?: string; parentThreadId?: string | null; source?: unknown };
+type Scan = { ino: number; offset: number; size?: number; mtime?: number; refs: Record<string, number[]> };
+type ClaudeSession = { session?: string; model?: string; claudeAccountId?: string };
+type ThreadPage = { data: Thread[]; nextCursor?: string | null };
+
 const IDS = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
-const seconds = value => typeof value === 'number' ? (value > 1e12 ? value / 1000 : value) : Date.parse(value) / 1000;
+const seconds = (value: unknown) => typeof value === 'number' ? (value > 1e12 ? value / 1000 : value) : Date.parse(value as string) / 1000;
 // Rewritten rollouts can replace createdAt. Engine UUIDv7s retain the original creation millisecond.
-const createdAt = thread => {
+const createdAt = (thread: Thread) => {
   const saved = seconds(thread.createdAt);
   const original = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(thread.id)
     ? Number.parseInt(thread.id.replaceAll('-', '').slice(0, 12), 16) / 1000 : saved;
   return Math.min(saved, original);
 };
 /** The rollout header's thread_source ("user" for a chat the person started), or null. Only the first line is read. */
-async function headerSource(file) {
+async function headerSource(file: string) {
   let handle;
   try {
     handle = await fs.promises.open(file, 'r');
@@ -31,21 +36,21 @@ async function headerSource(file) {
   } catch { return null; } finally { await handle?.close().catch(() => {}); }
 }
 const HEADER_LIMIT = 1 << 20;
-const readJson = async file => { try { return JSON.parse(await fs.promises.readFile(file, 'utf8')); } catch { return {}; } };
+const readJson = async (file: string): Promise<Record<string, unknown>> => { try { return JSON.parse(await fs.promises.readFile(file, 'utf8')); } catch { return {}; } };
 
 /** Index timestamped ID references once, then only appended bytes. No transcript content is retained or written.
  * The small desktop-owned index survives restarts, including negative lookups. */
 export class SessionCreators {
-  #file; #home; #appHome; #scans; #catalog = new Map(); #store = {}; #storeKey; #sources = new Map();
-  constructor(file, { home = path.dirname(file), appHome = os.homedir() } = {}) {
+  #file: string; #home: string; #appHome: string; #scans?: Record<string, Scan>; #catalog = new Map<string, Thread>(); #store: Record<string, ClaudeSession> = {}; #storeKey?: string | null; #sources = new Map<string, string | null>();
+  constructor(file: string, { home = path.dirname(file), appHome = os.homedir() }: { home?: string; appHome?: string } = {}) {
     this.#file = file; this.#home = home; this.#appHome = appHome;
   }
-  thread(id) { return this.#catalog.get(id); }
-  async recover(listed, list, linked = new Set()) {
+  thread(id: string) { return this.#catalog.get(id); }
+  async recover(listed: Thread[], list: (cursor?: string | null) => Promise<ThreadPage>, linked = new Set<string>()) {
     const fresh = listed.some(thread => !this.#catalog.has(thread.id) && thread.threadSource !== 'user' && !agentParentId(thread) && Number.isFinite(seconds(thread.createdAt)));
     for (const thread of listed) this.#catalog.set(thread.id, thread);
     if (fresh) {
-      const cursors = new Set(); let cursor;
+      const cursors = new Set<string | null | undefined>(); let cursor: string | null | undefined;
       do {
         const page = await list(cursor);
         for (const thread of page.data) this.#catalog.set(thread.id, thread);
@@ -63,17 +68,17 @@ export class SessionCreators {
     }));
     const children = threads.filter(thread => !linked.has(thread.id) && thread.threadSource !== 'user' && !agentParentId(thread) && Number.isFinite(seconds(thread.createdAt)));
     if (!children.length) return [];
-    this.#scans ??= (await readJson(this.#file)).scans ?? {};
+    this.#scans ??= (await readJson(this.#file)).scans as Record<string, Scan> ?? {};
     const parents = threads.filter(thread => thread.threadSource === 'user' && !agentParentId(thread));
     if (parents.some(thread => thread.model?.startsWith('claude/'))) {
       const file = path.join(this.#home, 'elpis-claude/sessions.json');
       const stat = await fs.promises.stat(file).catch(() => null), key = stat && `${stat.ino}:${stat.size}:${stat.mtimeMs}`;
-      if (key !== this.#storeKey) { this.#store = key ? await readJson(file) : {}; this.#storeKey = key; }
+      if (key !== this.#storeKey) { this.#store = key ? await readJson(file) as Record<string, ClaudeSession> : {}; this.#storeKey = key; }
     }
     const store = this.#store;
-    const found = new Map(); let changed = false;
+    const found = new Map<string, { child: string; maker: string; at: number }>(); let changed = false;
     for (const parent of parents) {
-      const files = [parent.path];
+      const files: (string | undefined)[] = [parent.path];
       const saved = store[parent.id];
       if (saved?.session && /^(?:claude\/|claude$)/.test(saved.model ?? parent.model ?? '')) {
         const account = saved.claudeAccountId;
@@ -81,7 +86,7 @@ export class SessionCreators {
           : process.env.CLAUDE_CONFIG_DIR ?? path.join(this.#appHome, '.claude');
         files.push(path.join(config, 'projects', (parent.cwd ?? '').replace(/[^a-zA-Z0-9]/g, '-'), `${saved.session}.jsonl`));
       }
-      for (const file of files.filter(file => typeof file === 'string' && path.isAbsolute(file))) {
+      for (const file of files.filter((file): file is string => typeof file === 'string' && path.isAbsolute(file))) {
         let scan;
         try {
           const stat = await fs.promises.stat(file);
@@ -90,8 +95,9 @@ export class SessionCreators {
             scan = { ino: stat.ino, offset: 0, refs: {} }; this.#scans[file] = scan;
           }
           if (scan.offset < stat.size && (scan.size !== stat.size || scan.mtime !== stat.mtimeMs)) {
-            let fragments = [], bytes = 0;
-            for await (const chunk of fs.createReadStream(file, { start: scan.offset, end: stat.size - 1 })) {
+            let fragments: Buffer[] = [], bytes = 0;
+            for await (const raw of fs.createReadStream(file, { start: scan.offset, end: stat.size - 1 })) {
+              const chunk = raw as Buffer;
               let start = 0, end;
               while ((end = chunk.indexOf(10, start)) !== -1) {
                 const part = chunk.subarray(start, end);

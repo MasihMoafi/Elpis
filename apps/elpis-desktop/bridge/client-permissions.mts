@@ -7,14 +7,12 @@ import { PERMISSION_PRESETS, PROFILES } from './permission-presets.mts';
  * because a reopened chat gets back its last profile id; a sandbox chosen alone fell back to the config's. */
 const BYPASS_PROFILE = ':bypass-permissions';
 
-/** @type {Record<string, { approvalPolicy: string, approvalsReviewer: string, permissions: unknown }>} */
-export const PERMISSIONS = {
-  ...Object.fromEntries(Object.entries(PERMISSION_PRESETS).map(([mode, preset]) => [mode, { approvalPolicy: preset.approval, approvalsReviewer: preset.reviewer, permissions: /** @type {Record<string, string>} */ (PROFILES)[preset.sandbox] }])),
+export const PERMISSIONS: Record<string, { approvalPolicy: string; approvalsReviewer: string; permissions: unknown }> = {
+  ...Object.fromEntries(Object.entries(PERMISSION_PRESETS).map(([mode, preset]) => [mode, { approvalPolicy: preset.approval, approvalsReviewer: preset.reviewer, permissions: (PROFILES as Record<string, string>)[preset.sandbox] }])),
   bypass: { approvalPolicy: 'never', approvalsReviewer: 'user', permissions: BYPASS_PROFILE },
 };
 
-/** @param {unknown} value */
-export function permissionMode(value) {
+export function permissionMode(value: unknown) {
   if (value === undefined) return;
   if (typeof value !== 'string' || !Object.hasOwn(PERMISSIONS, value)) throw new BridgeError('Choose a permission mode: ask, auto, full or bypass');
   return value;
@@ -22,8 +20,7 @@ export function permissionMode(value) {
 
 /** Plan mode or the default mode for a turn, as the terminal's Shift+Tab switches them; the
  * engine keeps the mode for later turns, so it is sent only when it changes. */
-/** @param {unknown} value @param {unknown} model @param {unknown} effort */
-export function collaborationMode(value, model, effort) {
+export function collaborationMode(value: unknown, model: unknown, effort: unknown) {
   if (value === undefined) return {};
   if (value !== 'plan' && value !== 'default') throw new BridgeError('Choose a chat mode: plan or default');
   if (!model) throw new BridgeError('Choose a model before switching Plan mode', 409);
@@ -31,10 +28,9 @@ export function collaborationMode(value, model, effort) {
 }
 
 /** One of the terminal's /review targets (codex-rs/app-server-protocol review.rs), checked field by field. */
-/** @param {unknown} value */
-export function reviewTarget(value) {
+export function reviewTarget(value: unknown) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new BridgeError('Unknown review target');
-  const target = /** @type {Record<string, unknown>} */ (value);
+  const target = value as Record<string, unknown>;
   switch (target.type) {
     case 'uncommittedChanges': object(target, ['type']); return { type: target.type };
     case 'baseBranch': {
@@ -53,14 +49,12 @@ export function reviewTarget(value) {
   }
 }
 
-/** @param {string | undefined} mode */
-export const permissionSetting = mode => mode ? { ...PERMISSIONS[mode] } : {};
+export const permissionSetting = (mode: string | undefined) => mode ? { ...PERMISSIONS[mode] } : {};
 
 /** The mode a chat runs in, read back from its approval, sandbox and profile settings: a resume
  * result (`sandbox`) or the engine's thread/settings/updated (`sandboxPolicy`). */
-/** @param {unknown} input */
-export function modeOf(input) {
-  const result = /** @type {{ approvalPolicy?: unknown, activePermissionProfile?: { id?: unknown } | null, sandbox?: { type?: unknown } | null, sandboxPolicy?: { type?: unknown } | null, approvalsReviewer?: unknown } | null | undefined} */ (input);
+export function modeOf(input: unknown) {
+  const result = input as { approvalPolicy?: unknown; activePermissionProfile?: { id?: unknown } | null; sandbox?: { type?: unknown } | null; sandboxPolicy?: { type?: unknown } | null; approvalsReviewer?: unknown } | null | undefined;
   if (!result?.approvalPolicy) return null;
   if (result.activePermissionProfile?.id === BYPASS_PROFILE && result.approvalPolicy === 'never') return 'bypass';
   if ((result.sandbox ?? result.sandboxPolicy)?.type === 'dangerFullAccess' && result.approvalPolicy === 'never') return 'full';

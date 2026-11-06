@@ -22,7 +22,7 @@ async function launch(args, flushText, flushBrowsers, canRestart = async () => t
   const electron = { app, ipcMain: { handle() {}, removeHandler() {} }, dialog: { showErrorBox() {} }, Menu: { buildFromTemplate: x => x, setApplicationMenu() {} } };
   const context = vm.createContext({ __dirname, console, process: { argv: ['electron', 'app', ...args], env: {}, platform: 'linux' },
     sessions, openers, testStore: { get: () => null, flush: async () => calls.push('workspace-flush') }, testServer: { canRestart, close: async () => calls.push('board-close') },
-    require: name => name === './app-updates.cjs' ? { executableLauncher: file => file, createAppUpdates: () => ({ setRunningEngine() {} }) } : name === 'electron' ? electron : name === './quick-entry.cjs' ? { startQuickEntry: () => { calls.push('quick-entry'); return { start: async () => {} }; } }
+    require: name => name === './app-updates.cts' ? { executableLauncher: file => file, createAppUpdates: () => ({ setRunningEngine() {} }) } : name === 'electron' ? electron : name === './quick-entry.cts' ? { startQuickEntry: () => { calls.push('quick-entry'); return { start: async () => {} }; } }
       : name === './tray.cts' ? { createCloseToTray: () => ({}), createTray: () => { calls.push('tray'); return { destroy() {} }; } }
       : name === './screenshot-popup.cts' ? { createScreenshotPopup: () => ({ attach: () => () => {}, dispose() {} }), drawsOnWayland: () => false } : require(name) });
   vm.runInContext(fs.readFileSync(path.join(__dirname, 'main.cjs'), 'utf8'), context);
@@ -127,8 +127,8 @@ function sessionFixture() {
   const noop = () => {};
   const stubs = {
     './browser-sessions.cjs': { createBrowserSessions: () => ({ attach: () => ({ open: noop, setBackground: noop, dispose: noop }), drop: noop, flush: async () => {} }) },
-    './state.cts': { registerState: () => noop }, './files.cjs': { registerFiles: () => noop },
-    './terminal.cjs': { registerTerminal: () => noop }, './context-menu.cts': { attachContextMenu: () => noop },
+    './state.cts': { registerState: () => noop }, './files.cts': { registerFiles: () => noop },
+    './terminal.cts': { registerTerminal: () => noop }, './context-menu.cts': { attachContextMenu: () => noop },
     './theme.cts': { registerTheme: () => noop }, './improve.cts': { registerImprove: () => noop },
     './open-thread.cts': { createThreadOpener: () => ({ attach: () => noop }), createNewChatOpener: () => ({ attach: () => noop }) },
     './window-ipc.cts': { createWindowIpc: () => () => ({ handle: noop, removeHandler: noop }) },

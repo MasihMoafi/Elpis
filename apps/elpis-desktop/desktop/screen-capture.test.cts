@@ -1,42 +1,45 @@
 'use strict';
+import type { TestContext } from 'node:test';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createScreenCapture } = require('./screen-capture.cjs');
+const { createScreenCapture }: typeof import('./screen-capture.cts') = require('./screen-capture.cts');
+type Source = { name: string; thumbnail: unknown };
+type MenuEntry = { label?: string; click?: () => void };
 
-function fixture(t, { wayland = false } = {}) {
-  let current = 'chat-a', captureCalls = 0, options, popup, template;
-  const image = (value, size = { width: 1280, height: 720 }) => ({ isEmpty: () => false, getSize: () => size,
-    toJPEG: () => Buffer.from(value), resize: next => image(value, next) });
-  let sources = [{ name: 'Elpis', thumbnail: image('elpis') }, { name: 'External app', thumbnail: image('external') }];
+function fixture(t: TestContext, { wayland = false } = {}) {
+  let current = 'chat-a', captureCalls = 0, options: { types: string[] } | undefined, popup: { callback: () => void } | undefined, template: MenuEntry[] | undefined;
+  const image = (value: string | Buffer, size = { width: 1280, height: 720 }) => ({ isEmpty: () => false, getSize: () => size,
+    toJPEG: () => Buffer.from(value as string), resize: (next: { width: number; height: number }) => image(value, next) });
+  let sources: Source[] | (() => Source[]) = [{ name: 'Elpis', thumbnail: image('elpis') }, { name: 'External app', thumbnail: image('external') }];
   const mainFrame = { url: 'http://127.0.0.1:45001/' };
   const host = { webContents: { mainFrame, isDestroyed: () => false }, isDestroyed: () => false, isFocused: () => false };
   const service = createScreenCapture({ env: { XDG_SESSION_TYPE: wayland ? 'wayland' : 'x11' }, platform: 'linux',
-    desktopCapturer: { async getSources(value) { captureCalls++; options = value; return typeof sources === 'function' ? sources() : sources; } },
-    Menu: { buildFromTemplate(value) { template = value; return { popup(value) { popup = value; }, closePopup() { popup.callback(); } }; } },
-  });
-  const handlers = new Map(), ipcMain = { handle: (name, callback) => handlers.set(name, callback), removeHandler: name => handlers.delete(name) };
+    desktopCapturer: { async getSources(value: { types: string[] }) { captureCalls++; options = value; return typeof sources === 'function' ? sources() : sources; } },
+    Menu: { buildFromTemplate(value: MenuEntry[]) { template = value; return { popup(value: { callback: () => void }) { popup = value; }, closePopup() { popup!.callback(); } }; } },
+  } as unknown as Parameters<typeof createScreenCapture>[0]);
+  const handlers = new Map<string, (event: unknown, id: unknown) => unknown>(), ipcMain = { handle: (name: string, callback: (event: unknown, id: unknown) => unknown) => handlers.set(name, callback), removeHandler: (name: string) => handlers.delete(name) };
   const event = { sender: host.webContents, senderFrame: mainFrame };
-  const dispose = service.attach({ host, origin: 'http://127.0.0.1:45001', ipcMain, session: () => current });
+  const dispose = service.attach({ host, origin: 'http://127.0.0.1:45001', ipcMain, session: () => current } as unknown as Parameters<typeof service.attach>[0]);
   t.after(() => service.close());
-  return { service, host, image, dispose, event, bind: (id, sender = event) => handlers.get('elpis:screen-capture:session')(sender, id), calls: () => captureCalls, options: () => options, template: () => template,
-    session: value => { current = value; }, sources: value => { sources = value; },
+  return { service, host, image, dispose, event, bind: (id: unknown, sender: unknown = event) => handlers.get('elpis:screen-capture:session')!(sender, id), calls: () => captureCalls, options: () => options, template: () => template,
+    session: (value: string) => { current = value; }, sources: (value: Source[] | (() => Source[])) => { sources = value; },
     async menu() { while (!popup) await new Promise(setImmediate); },
-    choose(index) { template[index].click(); popup.callback(); }, cancel() { popup.callback(); } };
+    choose(index: number) { template![index]!.click!(); popup!.callback(); }, cancel() { popup!.callback(); } };
 }
 
-test('one explicit source selection shares the chosen external image, without recording or saved files', async t => {
+test('one explicit source selection shares the chosen external image, without recording or saved files', async (t: TestContext) => {
   const f = fixture(t);
   assert.equal(f.calls(), 0);
   const capture = f.service.call('chat-a', 'screen_screenshot', {});
   await f.menu(); assert.equal(f.calls(), 1);
-  assert.deepEqual(f.options().types, ['screen', 'window']);
-  assert.deepEqual(f.template().slice(0, 2).map(item => item.label), ['Elpis', 'External app']);
+  assert.deepEqual(f.options()!.types, ['screen', 'window']);
+  assert.deepEqual(f.template()!.slice(0, 2).map(item => item.label), ['Elpis', 'External app']);
   f.choose(1);
   assert.deepEqual(await capture, { content: [{ type: 'image', mimeType: 'image/jpeg', data: Buffer.from('external').toString('base64') }] });
   await new Promise(setImmediate); assert.equal(f.calls(), 1);
 });
 
-test('another chat, foreign origin and injected source arguments cannot capture', async t => {
+test('another chat, foreign origin and injected source arguments cannot capture', async (t: TestContext) => {
   const f = fixture(t);
   await assert.rejects(f.service.call('chat-b', 'screen_screenshot', {}), /Open this chat/);
   for (const args of [{ sourceId: 'guessed' }, null, []]) await assert.rejects(f.service.call('chat-a', 'screen_screenshot', args), /picker/);
@@ -45,18 +48,18 @@ test('another chat, foreign origin and injected source arguments cannot capture'
   assert.equal(f.calls(), 0);
 });
 
-test('only the trusted main frame can bind the pinned companion chat, without replacing the shown chat', async t => {
+test('only the trusted main frame can bind the pinned companion chat, without replacing the shown chat', async (t: TestContext) => {
   const f = fixture(t, { wayland: true });
   f.sources([{ name: 'Chosen page', thumbnail: f.image('portal') }]);
   for (const event of [{ ...f.event, sender: {} }, { ...f.event, senderFrame: { url: f.event.senderFrame.url } }]) assert.throws(() => f.bind('companion', event), /application frame/);
   assert.throws(() => f.bind('../foreign'), /Invalid screenshot session/);
   await assert.rejects(f.service.call('companion', 'screen_screenshot', {}), /Open this chat/);
   assert.deepEqual(f.bind('companion'), { bound: true });
-  for (const id of ['companion', 'chat-a']) assert.equal((await f.service.call(id, 'screen_screenshot', {})).content[0].type, 'image');
+  for (const id of ['companion', 'chat-a']) assert.equal((await f.service.call(id, 'screen_screenshot', {})).content[0]!.type, 'image');
   f.bind(null); await assert.rejects(f.service.call('companion', 'screen_screenshot', {}), /Open this chat/);
 });
 
-test('closing or switching the requesting chat while choosing discards the pixels and prevents parallel capture', async t => {
+test('closing or switching the requesting chat while choosing discards the pixels and prevents parallel capture', async (t: TestContext) => {
   const f = fixture(t);
   const first = f.service.call('chat-a', 'screen_screenshot', {}); await f.menu();
   await assert.rejects(f.service.call('chat-a', 'screen_screenshot', {}), /already/);
@@ -68,19 +71,19 @@ test('closing or switching the requesting chat while choosing discards the pixel
   assert.equal(f.calls(), 2);
 });
 
-test('portal and menu cancellation return a clear error with no image; a later request still works', async t => {
+test('portal and menu cancellation return a clear error with no image; a later request still works', async (t: TestContext) => {
   const f = fixture(t, { wayland: true });
   f.sources(() => { throw Error('Picker dismissed'); });
   await assert.rejects(f.service.call('chat-a', 'screen_screenshot', {}), /cancelled/);
   f.sources([]); await assert.rejects(f.service.call('chat-a', 'screen_screenshot', {}), /No screen/);
   f.sources([{ name: 'Chosen page', thumbnail: f.image('portal') }]);
-  assert.equal((await f.service.call('chat-a', 'screen_screenshot', {})).content[0].data, Buffer.from('portal').toString('base64'));
+  assert.equal((await f.service.call('chat-a', 'screen_screenshot', {})).content[0]!.data, Buffer.from('portal').toString('base64'));
   const native = fixture(t);
   const cancelled = native.service.call('chat-a', 'screen_screenshot', {}); await native.menu(); native.cancel();
   await assert.rejects(cancelled, /cancelled/);
 });
 
-test('empty and oversized screenshots never report successful capture', async t => {
+test('empty and oversized screenshots never report successful capture', async (t: TestContext) => {
   const f = fixture(t, { wayland: true });
   for (const thumbnail of [null, { isEmpty: () => true }, f.image('', { width: 0, height: 0 }), f.image(''), f.image(Buffer.alloc(8 * 1024 * 1024 + 1))]) {
     f.sources([{ name: 'Chosen page', thumbnail }]);

@@ -1,31 +1,37 @@
 // Automations: prompts Elpis sends on a schedule (6 Nov, Masih: "a schedule tab ... mimic deepseek's", its "Automation
-// tasks"). Each task says what to send, when (bridge/schedule-rules.mjs), and where: one chat it keeps using, or a new chat
+// tasks"). Each task says what to send, when (bridge/schedule-rules.mts), and where: one chat it keeps using, or a new chat
 // every run. The timer lives in this process, so tasks run while Elpis runs (open or in the tray); runs missed while it was
 // closed become one run at the next start, as in DeepSeek Harness. Kept in <ELPIS_HOME>/automations/tasks.json.
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { BridgeError, object, projectFolder, text, threadId as chatId } from './validate.mts';
-import { describeRule, legacyRule, nextRun, parseRule } from './schedule-rules.mjs';
+import { describeRule, legacyRule, nextRun, parseRule } from './schedule-rules.mts';
+
+type Board = { nodes: unknown[] };
+type Workflow = { id: string; name: string; board?: Board | undefined };
+type Run = { at: number; scheduledFor: number | null; threadId: string | null; error: string | null };
+type Task = { id: string; title: string; prompt: string; cwd: string | null; rule: string; target: string; status: string; threadId: string | null; runs: Run[]; lastRunAt: number | null; nextRunAt: number | null; createdAt: number; updatedAt: number; workflow?: Workflow | null };
+type Timers = { set: (fn: () => void, ms: number) => object; clear: (handle: object) => unknown };
+type Client = { createThread: (body: { cwd?: string; name: string; automatic: boolean }) => Promise<{ thread?: { id?: string } }>; send: (id: string, body: { text: string; automatic: boolean }) => Promise<unknown> };
 
 const TARGETS = ['reuse', 'new'], RUN_LIMIT = 50, LONGEST_WAIT = 2 ** 31 - 1;
 
 /** The task as the page and agents see it. */
-const shown = task => ({ ...task, ...(task.workflow ? { workflow: { id: task.workflow.id, name: task.workflow.name } } : {}), description: describeRule(task.rule) });
+const shown = (task: Task) => ({ ...task, ...(task.workflow ? { workflow: { id: task.workflow.id, name: task.workflow.name } } : {}), description: describeRule(task.rule) });
 /** A task's saved board, for the window that replays it. */
-export const boardOf = task => task.workflow?.board ?? null;
+export const boardOf = (task: Task) => task.workflow?.board ?? null;
 
-/** `dispatchWorkflow(job)` runs a scheduled workflow in an open window (bridge/server.mjs) and resolves to its chat.
- * @param {{ client: { createThread: Function, send: Function }, file: string, now?: () => number, timers?: { set: Function, clear: Function }, dispatchWorkflow?: (job: object) => Promise<{ threadId: string }> }} options */
-export function createSchedule({ client, file, now = Date.now, timers = { set: setTimeout, clear: clearTimeout }, dispatchWorkflow }) {
-  let tasks = /** @type {any[]} */ ([]), timer, closed = false, writing = Promise.resolve();
-  const running = new Map(); // task id -> its run in flight
+/** `dispatchWorkflow(job)` runs a scheduled workflow in an open window and resolves to its chat. */
+export function createSchedule({ client, file, now = Date.now, timers = { set: setTimeout, clear: clearTimeout } as Timers, dispatchWorkflow }: { client: Client; file: string; now?: () => number; timers?: Timers; dispatchWorkflow?: (job: object) => Promise<{ threadId: string }> }) {
+  let tasks: Task[] = [], timer: object | undefined, closed = false, writing = Promise.resolve();
+  const running = new Map<string, Promise<ReturnType<typeof shown>>>(); // task id -> its run in flight
   const loaded = (async () => {
     try {
-      const saved = JSON.parse(await fs.readFile(file, 'utf8'));
+      const saved = JSON.parse(await fs.readFile(file, 'utf8')) as { tasks?: (Task & { anchor?: number })[] };
       // Rules saved before 6 Nov were local-time objects; they become RFC 5545 text in this computer's zone.
       tasks = (Array.isArray(saved?.tasks) ? saved.tasks : []).map(task => ({ ...task, rule: legacyRule(task.rule, task.anchor ?? task.createdAt) }));
-    } catch (error) { if (error.code !== 'ENOENT') throw new BridgeError(`Automations could not be read from ${file}: ${error.message}`, 500); }
+    } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new BridgeError(`Automations could not be read from ${file}: ${(error as Error).message}`, 500); }
     arm();
   })();
   const save = () => (writing = writing.then(async () => {
@@ -34,7 +40,7 @@ export function createSchedule({ client, file, now = Date.now, timers = { set: s
     await fs.writeFile(temporary, JSON.stringify({ version: 1, tasks }, null, 2));
     await fs.rename(temporary, file);
   }));
-  const find = id => { const task = tasks.find(item => item.id === id); if (!task) throw new BridgeError('That automation no longer exists', 404); return task; };
+  const find = (id: string) => { const task = tasks.find(item => item.id === id); if (!task) throw new BridgeError('That automation no longer exists', 404); return task; };
 
   /** One timer for the earliest active task; a task already due runs now. */
   function arm() {
@@ -43,9 +49,9 @@ export function createSchedule({ client, file, now = Date.now, timers = { set: s
     if (closed) return;
     const due = tasks.filter(task => task.status === 'active' && task.nextRunAt != null && !running.has(task.id));
     if (!due.length) return;
-    const wait = Math.max(0, Math.min(...due.map(task => task.nextRunAt)) - now());
+    const wait = Math.max(0, Math.min(...due.map(task => task.nextRunAt!)) - now());
     timer = timers.set(tick, Math.min(wait, LONGEST_WAIT));
-    timer?.unref?.();
+    (timer as { unref?: () => void } | undefined)?.unref?.();
   }
   function tick() {
     timer = undefined;
@@ -55,12 +61,12 @@ export function createSchedule({ client, file, now = Date.now, timers = { set: s
 
   /** One delivery: a scheduled workflow replays its saved board in an open window (6 Nov, Masih's choice), which
    * starts the run and reports its chat; any other task sends its prompt into its chat. Resolves to the chat's id. */
-  async function deliver(task) {
+  async function deliver(task: Task) {
     if (task.workflow) {
       if (!dispatchWorkflow) throw new Error('Workflows run in the Elpis window, and none is connected');
       return (await dispatchWorkflow({ taskId: task.id, title: task.title, request: task.prompt, cwd: task.cwd, workflow: task.workflow })).threadId;
     }
-    let threadId = task.target === 'reuse' ? task.threadId : null;
+    let threadId: string | null | undefined = task.target === 'reuse' ? task.threadId : null;
     if (!threadId) {
       const made = await client.createThread({ ...(task.cwd ? { cwd: task.cwd } : {}), name: task.title, automatic: true });
       threadId = made?.thread?.id;
@@ -72,9 +78,9 @@ export function createSchedule({ client, file, now = Date.now, timers = { set: s
   }
 
   /** Runs a task once and records it, with its error if it failed; runs that came due meanwhile are one run. */
-  function run(task, scheduledFor) {
+  function run(task: Task, scheduledFor: number | null) {
     const work = (async () => {
-      const record = { at: now(), scheduledFor, threadId: null, error: null };
+      const record: Run = { at: now(), scheduledFor, threadId: null, error: null };
       try { record.threadId = await deliver(task); }
       catch (error) {
         record.error = error instanceof Error ? error.message : String(error);
@@ -95,51 +101,51 @@ export function createSchedule({ client, file, now = Date.now, timers = { set: s
     return work;
   }
 
-  function fields(input, partial) {
-    object(input, partial ? ['title', 'prompt', 'cwd', 'rule', 'target', 'status', 'workflow'] : ['title', 'prompt', 'cwd', 'rule', 'target', 'status', 'threadId', 'workflow']);
-    const value = {};
+  function fields(raw: unknown, partial: boolean) {
+    const input = object(raw, partial ? ['title', 'prompt', 'cwd', 'rule', 'target', 'status', 'workflow'] : ['title', 'prompt', 'cwd', 'rule', 'target', 'status', 'threadId', 'workflow']) as Record<string, unknown>;
+    const value: Partial<Task> = {};
     if (!partial || input.title !== undefined) value.title = text(input.title, 'name', 120).trim();
     if (!partial || input.prompt !== undefined) value.prompt = text(input.prompt, 'instruction', 32000);
-    if (input.cwd !== undefined) value.cwd = projectFolder(input.cwd || null) ?? null;
+    if (input.cwd !== undefined) value.cwd = (projectFolder(input.cwd || null) ?? null) as string | null;
     if (!partial || input.rule !== undefined) value.rule = parseRule(input.rule);
     if (!partial || input.target !== undefined) {
       const target = input.target ?? 'reuse';
-      if (!TARGETS.includes(target)) throw new BridgeError('Run in must be "reuse" (one chat) or "new" (a new chat each run)');
-      value.target = target;
+      if (!TARGETS.includes(target as string)) throw new BridgeError('Run in must be "reuse" (one chat) or "new" (a new chat each run)');
+      value.target = target as string;
     }
     // A workflow scheduled from the Workflows board (6 Nov): which one, by its id and name; its request is the prompt.
     if (input.workflow !== undefined) {
       if (input.workflow === null) value.workflow = null;
       else {
-        object(input.workflow, ['id', 'name', 'board']);
-        const board = input.workflow.board;
+        const workflow = object(input.workflow, ['id', 'name', 'board']) as Record<string, unknown>;
+        const board = workflow.board as Board | undefined;
         // The board as it was when he pressed Schedule; the window replays exactly this one. An edit may leave it out.
         if (board === undefined && !partial) throw new BridgeError('A scheduled workflow needs its board');
         if (board !== undefined && (!board || typeof board !== 'object' || Array.isArray(board) || !Array.isArray(board.nodes) || JSON.stringify(board).length > 2_000_000)) throw new BridgeError('The workflow board could not be saved with the automation');
-        value.workflow = { id: text(input.workflow.id, 'workflow id', 200), name: text(input.workflow.name, 'workflow name', 120), ...(board ? { board } : {}) };
+        value.workflow = { id: text(workflow.id, 'workflow id', 200), name: text(workflow.name, 'workflow name', 120), ...(board ? { board } : {}) };
       }
     }
     // Create only: the chat to keep using from the first run (an agent's "remind me here").
     if (input.threadId !== undefined) { value.threadId = chatId(input.threadId); value.target = 'reuse'; }
     if (input.status !== undefined) {
-      if (!['active', 'paused'].includes(input.status)) throw new BridgeError('Status must be active or paused');
-      value.status = input.status;
+      if (!['active', 'paused'].includes(input.status as string)) throw new BridgeError('Status must be active or paused');
+      value.status = input.status as string;
     }
     return value;
   }
 
   return {
     async list() { await loaded; return [...tasks].sort((a, b) => b.createdAt - a.createdAt).map(shown); },
-    async create(input) {
+    async create(input: unknown) {
       await loaded;
       const value = fields(input, false), at = now();
-      const task = { id: randomUUID(), cwd: null, status: 'active', threadId: null, runs: [], lastRunAt: null, createdAt: at, updatedAt: at, ...value };
+      const task = { id: randomUUID(), cwd: null, status: 'active', threadId: null, runs: [], lastRunAt: null, createdAt: at, updatedAt: at, ...value } as Task;
       task.nextRunAt = task.status === 'active' ? nextRun(task.rule, at) : null;
       if (task.nextRunAt == null && task.status === 'active') throw new BridgeError('That time has already passed');
       tasks.push(task); await save(); arm();
       return shown(task);
     },
-    async update(id, input) {
+    async update(id: string, input: unknown) {
       await loaded;
       const task = find(id), value = fields(input, true);
       if (value.target && value.target !== task.target) task.threadId = null;
@@ -152,9 +158,9 @@ export function createSchedule({ client, file, now = Date.now, timers = { set: s
       await save(); arm();
       return shown(task);
     },
-    async remove(id) { await loaded; find(id); tasks = tasks.filter(task => task.id !== id); await save(); arm(); return { deleted: id }; },
+    async remove(id: string) { await loaded; find(id); tasks = tasks.filter(task => task.id !== id); await save(); arm(); return { deleted: id }; },
     /** Run now: once, outside the schedule; the next scheduled run stays. */
-    async runNow(id) {
+    async runNow(id: string) {
       await loaded;
       const task = find(id);
       if (running.has(id)) throw new BridgeError('This automation is running now', 409);
