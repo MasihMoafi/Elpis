@@ -1,6 +1,5 @@
-import type React from "react";
 import { AgentsCanvas } from "@/components/agents-canvas";
-import { AutomationsView, type WorkflowPrefill } from "@/components/automations-view";
+import { AutomationsView } from "@/components/automations-view";
 import { CanvasGuideHelp } from "@/components/canvas-guide-help";
 import { ProjectMenu } from "@/components/project-picker";
 import { ViewBoundary } from "@/components/view-boundary";
@@ -10,14 +9,11 @@ import type { createProjectActions } from "@/lib/project-actions";
 import type { useProjectState } from "@/lib/use-project-state";
 import type { useRuntimeState } from "@/lib/use-runtime-state";
 import type { useSidebarThreads } from "@/lib/use-sidebar-threads";
-import type { WorkflowRun } from "@/lib/workflow-identity";
+import type { useWorkspacePagesState } from "@/lib/use-workspace-pages-state";
 import type { View, WorkflowReplay } from "@/lib/workspace-types";
 
-type Setter<T> = React.Dispatch<React.SetStateAction<T>>;
 type Props = {
-  view: View; workflowTab: "board" | "scheduled"; setWorkflowTab: Setter<"board" | "scheduled">;
-  recordedWorkflow: Pick<WorkflowRun, "id" | "rootThreadId"> | undefined; setRecordedWorkflow: Setter<Pick<WorkflowRun, "id" | "rootThreadId"> | undefined>;
-  workflowPrefill: WorkflowPrefill | null; setWorkflowPrefill: Setter<WorkflowPrefill | null>;
+  pages: ReturnType<typeof useWorkspacePagesState>;
   sidebarModel: ReturnType<typeof useSidebarThreads>; projectState: ReturnType<typeof useProjectState>; runtime: ReturnType<typeof useRuntimeState>;
   threads: Thread[]; models: Model[]; workflowFolder: string | undefined; workflowSandbox: string | undefined; dark: boolean;
   show: (view: View) => void; openById: (id: string) => void; keepWorkflowTab: ReturnType<typeof createChatNavigation>["keepWorkflowTab"];
@@ -25,7 +21,8 @@ type Props = {
   finishReplay: (replay: WorkflowReplay, result: { threadId?: string; error?: string }) => void;
 };
 
-export function WorkflowPages({ view, workflowTab, setWorkflowTab, recordedWorkflow, setRecordedWorkflow, workflowPrefill, setWorkflowPrefill, sidebarModel, projectState, runtime, threads, models, workflowFolder, workflowSandbox, dark, show, openById, keepWorkflowTab, selectProject, addProject, workIn, finishReplay }: Props) {
+export function WorkflowPages({ pages, sidebarModel, projectState, runtime, threads, models, workflowFolder, workflowSandbox, dark, show, openById, keepWorkflowTab, selectProject, addProject, workIn, finishReplay }: Props) {
+  const { view, workflowTab, setWorkflowTab, recordedWorkflow, setRecordedWorkflow, workflowPrefill, setWorkflowPrefill } = pages;
   const { workflowCatalog } = sidebarModel;
   const { projects, workflowProject, projectChanging } = projectState;
   const { ready, connected, replays } = runtime;

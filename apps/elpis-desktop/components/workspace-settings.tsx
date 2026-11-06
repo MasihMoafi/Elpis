@@ -1,7 +1,7 @@
 import type { useBrowser } from "@/components/browser-panel";
 import { permissionLabel, type PermissionMode } from "@/components/composer-controls";
 import { OPEN_CONTEXT_EVENT } from "@/components/context-usage";
-import { SettingsView, type SettingsDestination } from "@/components/settings-view";
+import { SettingsView } from "@/components/settings-view";
 import { ViewBoundary } from "@/components/view-boundary";
 import type { Thread } from "@/lib/api";
 import type { createConversationActions } from "@/lib/conversation-actions";
@@ -9,17 +9,19 @@ import { reloadSettings } from "@/lib/settings-store";
 import type { useAppearance } from "@/lib/use-appearance";
 import type { useConversationList } from "@/lib/use-conversation-list";
 import type { useRuntimeState } from "@/lib/use-runtime-state";
+import type { useWorkspacePagesState } from "@/lib/use-workspace-pages-state";
 import type { View } from "@/lib/workspace-types";
 
 type Props = {
-  visited: boolean; navigation: number; section: SettingsDestination; view: View; selected: Thread | null; permissionMode: PermissionMode;
+  pages: ReturnType<typeof useWorkspacePagesState>; selected: Thread | null; permissionMode: PermissionMode;
   appearance: ReturnType<typeof useAppearance>; conversations: ReturnType<typeof useConversationList>; runtime: ReturnType<typeof useRuntimeState>;
   unarchived: ReturnType<typeof createConversationActions>["unarchived"]; deleteThread: ReturnType<typeof createConversationActions>["deleteThread"];
   browser: ReturnType<typeof useBrowser>; busy: boolean; show: (view: View) => void; focusComposer: () => void;
   openComposerControl: (label: string) => void; refreshModels: () => Promise<void>;
 };
 
-export function WorkspaceSettings({ visited, navigation, section, view, selected, permissionMode, appearance, conversations, runtime, unarchived, deleteThread, browser, busy, show, focusComposer, openComposerControl, refreshModels }: Props) {
+export function WorkspaceSettings({ pages, selected, permissionMode, appearance, conversations, runtime, unarchived, deleteThread, browser, busy, show, focusComposer, openComposerControl, refreshModels }: Props) {
+  const { settingsVisited: visited, settingsNavigation: navigation, settingsSection: section, view } = pages;
   const { theme, setTheme } = appearance;
   const { refreshThreads } = conversations;
   const { ready, accountRefresh } = runtime;
