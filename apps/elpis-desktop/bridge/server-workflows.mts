@@ -6,39 +6,26 @@ import { body, json } from './server-http.mts';
 
 const START_WAIT = 15 * 60_000;
 
-/**
- * @typedef {{
- *   taskId: string,
- *   title: string,
- *   request: string,
- *   cwd: string,
- *   workflow: { id: string, name: string, board: unknown }
- * }} ScheduledWorkflowJob
- */
+export type ScheduledWorkflowJob = { taskId: string, title: string, request: string, cwd: string, workflow: { id: string, name: string, board: unknown } };
 
 /** A scheduled workflow runs in an open window (6 Nov, Masih chose the board replay): the service announces it, the
- * first window to claim it starts the saved board out of sight and reports the run's chat.
- * @param {{ event: (payload: { type: string, data: unknown }) => void, claimWait?: number }} options */
-export function createWorkflowDispatcher({ event, claimWait = 60_000 }) {
-  /** @type {Map<unknown, { taskId: string, claimed: boolean, settle: (error: string | null, threadId?: string) => void, timer: ReturnType<typeof setTimeout> }>} */
-  const workflowJobs = new Map();
+ * first window to claim it starts the saved board out of sight and reports the run's chat. */
+export function createWorkflowDispatcher({ event, claimWait = 60_000 }: { event: (payload: { type: string, data: unknown }) => void, claimWait?: number }) {
+  const workflowJobs = new Map<unknown, { taskId: string, claimed: boolean, settle: (error: string | null, threadId?: string) => void, timer: ReturnType<typeof setTimeout> }>();
   return {
-    /** @param {ScheduledWorkflowJob} job @returns {Promise<{ threadId: string }>} */
-    dispatch(job) {
+    dispatch(job: ScheduledWorkflowJob): Promise<{ threadId: string }> {
       return new Promise((resolve, reject) => {
         const token = randomUUID();
-        /** @param {string | null} error @param {string} [threadId] */
-        const settle = (error, threadId) => {
+        const settle = (error: string | null, threadId?: string) => {
           const pending = workflowJobs.get(token); if (!pending) return;
           clearTimeout(pending.timer); workflowJobs.delete(token);
-          if (error) reject(new Error(error)); else resolve({ threadId: /** @type {string} */ (threadId) });
+          if (error) reject(new Error(error)); else resolve({ threadId: threadId as string });
         };
         workflowJobs.set(token, { taskId: job.taskId, claimed: false, settle, timer: setTimeout(() => settle('No Elpis window was open to run it'), claimWait) });
         event({ type: 'automationWorkflow', data: { token, taskId: job.taskId, title: job.title, request: job.request, cwd: job.cwd, workflow: { id: job.workflow.id, name: job.workflow.name }, board: job.workflow.board } });
       });
     },
-    /** @param {string} id @param {'claim' | 'result'} action @param {Record<string, unknown>} fields */
-    handleAction(id, action, fields) {
+    handleAction(id: string, action: 'claim' | 'result', fields: Record<string, unknown>) {
       const job = workflowJobs.get(fields.token);
       if (!job || job.taskId !== id) return { granted: false };
       if (action === 'claim') {
@@ -57,8 +44,7 @@ export function createWorkflowDispatcher({ event, claimWait = 60_000 }) {
   };
 }
 
-/** @param {import('./server-http.mts').ServerState} state @param {import('node:http').IncomingMessage} request @param {import('node:http').ServerResponse} response @param {URL} url @param {string} method */
-export async function handleWorkflowRoutes(state, request, response, url, method) {
+export async function handleWorkflowRoutes(state: import('./server-http.mts').ServerState, request: import('node:http').IncomingMessage, response: import('node:http').ServerResponse, url: URL, method: string) {
   const { client, options, experimentLab, automations, workflowDispatcher } = state;
   if (url.pathname === '/api/canvas/plan' && method === 'POST') { json(response, 200, await planCanvas(client, await body(request))); return true; }
   if (url.pathname === '/api/experiment-lab') {

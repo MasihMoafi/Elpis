@@ -23,12 +23,12 @@ import { createImprovements } from './improve.mts';
 import { createSettingsFiles } from './settings-files.mts';
 import { createThreadTitles } from './thread-titles.mjs';
 import { COOKIE, ERROR_AREAS, applyFrameHeaders, applySecurityHeaders, body, json, requestDiagnostics, same, sendRequestError, serveStaticAsset } from './server-http.mts';
-import { handleLoveSpotRoutes } from './server-love-spot.mjs';
-import { handleVoiceRoutes } from './server-voice.mjs';
+import { handleLoveSpotRoutes } from './server-love-spot.mts';
+import { handleVoiceRoutes } from './server-voice.mts';
 import { handleFileRoutes } from './server-files.mts';
 import { handleSettingsRoutes } from './server-settings.mts';
-import { createWorkflowDispatcher, handleWorkflowRoutes } from './server-workflows.mjs';
-import { createHistoryCursors, handleThreadRoutes } from './server-threads.mjs';
+import { createWorkflowDispatcher, handleWorkflowRoutes } from './server-workflows.mts';
+import { createHistoryCursors, handleThreadRoutes } from './server-threads.mts';
 
 /**
  * @typedef {{
@@ -91,7 +91,7 @@ export async function startDesktopServer(rawOptions = {}) {
   // Automations (bridge/schedule.mjs) run only where the caller asks for them: the app passes `automations: true`, a test
   // its own `automationsFile`; otherwise the routes say they are off, so no test touches his tasks.
   const automationsFile = options.automationsFile ?? (options.automations ? path.join(options.elpisHome ?? elpisHome(), 'automations', 'tasks.json') : null);
-  const automations = automationsFile ? createSchedule({ client, file: automationsFile, dispatchWorkflow: (/** @type {object} */ job) => workflowDispatcher.dispatch(/** @type {import('./server-workflows.mjs').ScheduledWorkflowJob} */ (job)) }) : null;
+  const automations = automationsFile ? createSchedule({ client, file: automationsFile, dispatchWorkflow: (/** @type {object} */ job) => workflowDispatcher.dispatch(/** @type {import('./server-workflows.mts').ScheduledWorkflowJob} */ (job)) }) : null;
   /** @type {Set<import('node:http').ServerResponse>} */
   const loveStreams = new Set();
   /** @type {Promise<Awaited<ReturnType<typeof createImprovements>>> | undefined} */

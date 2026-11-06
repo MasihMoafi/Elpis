@@ -2,8 +2,7 @@ import { BridgeError, object, text } from './client.mts';
 import { PORTRAIT_ATTACHMENT_NAME, PORTRAIT_INSTRUCTIONS } from './matilda-face.cjs';
 import { body, json } from './server-http.mts';
 
-/** @param {import('./server-http.mts').ServerState} state @param {import('node:http').IncomingMessage} request @param {import('node:http').ServerResponse} response @param {URL} url @param {string} method */
-export async function handleLoveSpotRoutes(state, request, response, url, method) {
+export async function handleLoveSpotRoutes(state: import('./server-http.mts').ServerState, request: import('node:http').IncomingMessage, response: import('node:http').ServerResponse, url: URL, method: string) {
   const { loveSpot, companion, loveTalk, voice, loveAgents, loveStreams } = state;
   if (url.pathname === '/api/love-spot') {
     const value = method === 'GET' ? await loveSpot.read() : await loveSpot.save(await body(request, 64 * 1024 * 1024));
@@ -40,14 +39,14 @@ export async function handleLoveSpotRoutes(state, request, response, url, method
   if (url.pathname === '/api/love-spot/voice/call' && method === 'POST') {
     const input = await body(request); object(input, ['sdp', 'persona']);
     if (input.persona !== undefined) text(input.persona, 'persona', 4000);
-    await voice.start({ sdp: input.sdp }, response, /** @type {Parameters<typeof voice.start>[2]} */ ({ conversation: await loveTalk.conversation(/** @type {string | undefined} */ (input.persona)) })); return true;
+    await voice.start({ sdp: input.sdp }, response, /** @type {Parameters<typeof voice.start>[2]} */ ({ conversation: await loveTalk.conversation(input.persona as string | undefined) })); return true;
   }
   if (url.pathname === '/api/love-spot/talk/events' && method === 'GET') {
     // Load first so a failed resume still returns a useful HTTP error.
     await loveTalk.read();
     response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
     loveStreams.add(response);
-    const stop = await loveTalk.watch((/** @type {unknown} */ value) => {
+    const stop = await loveTalk.watch((value: unknown) => {
       if (response.writableLength > 1024 * 1024) response.destroy();
       else response.write(`data: ${JSON.stringify(value)}\n\n`);
     });
@@ -64,7 +63,7 @@ export async function handleLoveSpotRoutes(state, request, response, url, method
     let bootstrap = request.headers['last-event-id'] === undefined ? hint : null;
     response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
     loveStreams.add(response);
-    const stop = await loveSpot.watch((/** @type {{ type?: string, revision?: string }} */ value) => {
+    const stop = await loveSpot.watch((value: { type?: string, revision?: string }) => {
       if (value.type === 'scene') {
         if (bootstrap !== null && value.revision === bootstrap) return;
         bootstrap = null;
@@ -77,8 +76,7 @@ export async function handleLoveSpotRoutes(state, request, response, url, method
   return false;
 }
 
-/** @param {import('./server-http.mts').ServerState['loveSpot']} loveSpot @param {string} id @param {string} operation @param {Record<string, unknown>} input */
-export async function prepareLoveSpotTurn(loveSpot, id, operation, input) {
+export async function prepareLoveSpotTurn(loveSpot: import('./server-http.mts').ServerState['loveSpot'], id: string, operation: string, input: Record<string, unknown>) {
   // A normal chat tab uses the same portrait choices as the board, including existing conversations.
   // Writing to her in her own chat turns her on (6 Nov, Masih: "when I directly go to her and message, it should
   // automatically unlock her"); off still keeps her quiet on the board until then.

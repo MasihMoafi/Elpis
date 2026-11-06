@@ -3,17 +3,15 @@ import { BridgeError, object } from './client.mts';
 import { ATTACHMENT_BODY_LIMIT } from './attachments.mts';
 import { smartPruneDetail } from './smart-prune.mts';
 import { body, json, pageQuery } from './server-http.mts';
-import { prepareLoveSpotTurn } from './server-love-spot.mjs';
+import { prepareLoveSpotTurn } from './server-love-spot.mts';
 
 /** Provider continuations include consumed native item IDs and can exceed the HTTP
  * query limit. Keep that engine state here; the renderer gets a short, chat-bound
  * continuation. The prompt index uses the engine directly and cannot evict these. */
 export function createHistoryCursors() {
-  /** @type {Map<string, { id: string, cursor: string }>} */
-  const historyCursors = new Map();
+  const historyCursors = new Map<string, { id: string, cursor: string }>();
   return {
-    /** @param {string} id @param {unknown} cursor */
-    expose(id, cursor) {
+    expose(id: string, cursor: unknown) {
       if (typeof cursor !== 'string' || cursor.length <= 4096) return cursor;
       const token = 'desktop-page:' + createHash('sha256').update(id).update('\0').update(cursor).digest('base64url');
       historyCursors.delete(token);
@@ -22,8 +20,7 @@ export function createHistoryCursors() {
       if (historyCursors.size > 256 && oldest !== undefined) historyCursors.delete(oldest);
       return token;
     },
-    /** @param {string} id @param {string | undefined} cursor */
-    resolve(id, cursor) {
+    resolve(id: string, cursor: string | undefined) {
       if (!cursor?.startsWith('desktop-page:')) return cursor;
       const saved = historyCursors.get(cursor);
       if (!saved || saved.id !== id) throw new BridgeError('This conversation history page has expired. Reopen the chat and try again.');
@@ -33,16 +30,14 @@ export function createHistoryCursors() {
   };
 }
 
-/** @type {Record<string, 'send' | 'steer' | 'interrupt' | 'resume' | 'continueThread' | 'deleteThread' | 'renameThread' | 'archiveThread' | 'unarchiveThread' | 'revert' | 'rewind' | 'versions' | 'forkThread' | 'compact' | 'review' | 'setPermissions' | 'setEffort' | 'setServiceTier' | 'setFolder'>} */
-const THREAD_POST_OPS = {
+const THREAD_POST_OPS: Record<string, 'send' | 'steer' | 'interrupt' | 'resume' | 'continueThread' | 'deleteThread' | 'renameThread' | 'archiveThread' | 'unarchiveThread' | 'revert' | 'rewind' | 'versions' | 'forkThread' | 'compact' | 'review' | 'setPermissions' | 'setEffort' | 'setServiceTier' | 'setFolder'> = {
   turns: 'send', steer: 'steer', interrupt: 'interrupt', resume: 'resume', continue: 'continueThread',
   delete: 'deleteThread', rename: 'renameThread', archive: 'archiveThread', unarchive: 'unarchiveThread',
   revert: 'revert', rewind: 'rewind', versions: 'versions', fork: 'forkThread', compact: 'compact',
   review: 'review', permissions: 'setPermissions', effort: 'setEffort', 'service-tier': 'setServiceTier', folder: 'setFolder',
 };
 
-/** @param {import('./server-http.mts').ServerState} state @param {import('node:http').IncomingMessage} request @param {import('node:http').ServerResponse} response @param {URL} url @param {string} method */
-export async function handleThreadRoutes(state, request, response, url, method) {
+export async function handleThreadRoutes(state: import('./server-http.mts').ServerState, request: import('node:http').IncomingMessage, response: import('node:http').ServerResponse, url: URL, method: string) {
   const { client, options, trash, loveSpot, historyCursors } = state;
   const media = url.pathname.match(/^\/api\/threads\/([^/]+)\/turns\/([^/]+)\/items\/([^/]+)\/media\/(\d{1,3})$/);
   if (media && method === 'GET') {
@@ -66,7 +61,7 @@ export async function handleThreadRoutes(state, request, response, url, method) 
     if (method === 'GET') {
       const query = pageQuery(url, true), listed = await (query.archived && client.listArchivedThreads ? client.listArchivedThreads(query) : client.listThreads(query));
       // A chat waiting to be deleted is archived, but it is not an archived chat.
-      json(response, 200, query.archived ? { ...listed, data: listed.data.filter((/** @type {{ id: string }} */ item) => !trash.has(item.id)) } : listed);
+      json(response, 200, query.archived ? { ...listed, data: listed.data.filter((item: { id: string }) => !trash.has(item.id)) } : listed);
       return true;
     }
     json(response, 201, await client.createThread(await body(request))); return true;
