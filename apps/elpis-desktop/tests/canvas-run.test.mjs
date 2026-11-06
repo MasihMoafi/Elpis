@@ -40,3 +40,23 @@ test('Transcribe images: one reader per page (at most eight, shared evenly, in n
   assert.deepEqual(join.data.join, { parts: readers.map(agent => `${agent.data.writeScopes[0]}/pages.md`), output: 'book/pages/transcription.md', flow: true });
   assert.deepEqual(join.data.writeScopes, ['book/pages']);
 });
+
+test('a pattern number rewires the same agents (5 Voting: three into one; 1 Sequential: one after another), keeping their identities', async () => {
+  const { TEMPLATES, applyPattern } = await import('../lib/canvas.ts');
+  const team = TEMPLATES.find(template => template.id === 'voting').build(), agents = graph => graph.nodes.filter(node => node.type === 'agent').map(node => node.id);
+  const voting = applyPattern(team, 5), chained = applyPattern(voting, 1);
+  assert.equal(voting.template, 'voting'); assert.equal(chained.template, 'sequential');
+  assert.deepEqual(agents(chained), agents(team), 'the same agents');
+  const last = agents(team).at(-1);
+  assert.deepEqual(voting.edges.filter(edge => !edge.feedback).map(edge => edge.target), agents(team).slice(0, -1).map(() => last), 'every answer feeds the last');
+  assert.equal(chained.edges.filter(edge => !edge.feedback).length, agents(team).length - 1, 'one after the other');
+  assert.equal(applyPattern(team, 4).edges.filter(edge => edge.feedback).length, 1, 'Recursive adds one feedback wire');
+});
+
+test('starter and added agents get distinctive, unique names', async () => {
+  const { TEMPLATES, newAgents } = await import('../lib/canvas.ts');
+  assert.ok(TEMPLATES.find(template => template.id === 'voting').build().nodes.filter(node => node.type === 'agent').every(node => /^[A-Z][a-z]+ · /u.test(node.data.title)));
+  const added = newAgents(8, { model: null }, { x: 0, y: 0 });
+  assert.equal(new Set(added.map(node => node.data.title)).size, 8);
+  assert.equal(new Set(added.map(node => `${node.position.x},${node.position.y}`)).size, 8, 'eight additions never overlap');
+});

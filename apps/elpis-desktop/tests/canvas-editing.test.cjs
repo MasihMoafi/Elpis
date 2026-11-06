@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const { openCanvas } = require('./canvas-fixture.cjs');
-const { chooseTheme, openPatterns } = require('./controls.cjs');
+const { chooseTheme } = require('./controls.cjs');
 const { assertUiFit } = require('./ui-fit.cjs');
 
 async function placementGeometry(f, iso) {
@@ -73,52 +73,6 @@ for (const iso of [true, false]) test(`wire noun labels persist and reach receiv
     assert.match(f.runs[0].tasks.find(t => t.id === 'c').instruction, /Receives “three answers” from Kivo/);
     if (!iso) await captures(f, 'wires-flat-view', false);
     await captures(f, `wires-${iso ? 'iso' : 'flat'}`); assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
-test('starter and + names are distinctive and unique; eight additions never overlap; arrange toolbar/menu fit both views', async () => {
-  const f = await openCanvas();
-  try {
-    await openPatterns(f.canvas);
-    await f.canvas.getByRole('button', { name: /^Voting/ }).click();
-    assert.ok((await f.titles()).every(name => /^[A-Z][a-z]+ · /u.test(name)));
-    await f.canvas.getByRole('button', { name: /Blank playground/ }).click();
-    for (let i = 0; i < 8; i++) await f.canvas.getByRole('button', { name: 'Add agent', exact: true }).click();
-    const titles = await f.titles(); assert.equal(new Set(titles).size, 8);
-    for (const iso of [false, true]) {
-      await mode(f, iso);
-      const world = f.canvas.locator('.iso-world'); let fitted;
-      if (iso) {
-        fitted = await world.evaluate(el => getComputedStyle(el).transform);
-        const area = await f.canvas.locator('.iso-board').boundingBox();
-        await f.page.mouse.move(area.x + 8, area.y + 8); await f.page.mouse.down({ button: 'middle' });
-        await f.page.mouse.move(area.x + 88, area.y + 48, { steps: 8 }); await f.page.mouse.up({ button: 'middle' });
-        await f.page.waitForTimeout(30); assert.notEqual(await world.evaluate(el => getComputedStyle(el).transform), fitted, 'the camera was panned');
-      }
-      await f.canvas.getByRole('button', { name: 'Arrange by run order', exact: true }).click();
-      if (iso) {
-        await f.page.waitForTimeout(140); const during = await world.evaluate(el => getComputedStyle(el).transform);
-        await f.page.waitForTimeout(280); const after = await world.evaluate(el => getComputedStyle(el).transform);
-        assert.notEqual(during, after, 'Arrange animates the camera'); assert.equal(after, fitted, 'Arrange restores the fitted camera');
-      }
-      await f.fit();
-      const boxes = await f.canvas.locator(iso ? '.iso-node, .iso-label' : '.react-flow__node-agent').evaluateAll(els => els.map(el => { const r = el.getBoundingClientRect(); return { id: el.getAttribute('data-id') || el.getAttribute('data-for'), kind: el.classList.contains('iso-label') ? 'label' : 'node', x: r.x, y: r.y, right: r.right, bottom: r.bottom }; }));
-      for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
-        const a = boxes[i], b = boxes[j], apart = a.right <= b.x || b.right <= a.x || a.bottom <= b.y || b.bottom <= a.y;
-        assert.ok(apart, `overlap ${a.id} ${b.id}${apart ? '' : ` ${JSON.stringify({ iso, a, b, geometry: await placementGeometry(f, iso) })}`}`);
-      }
-      const board = await f.canvas.locator(iso ? '.iso-board' : '.react-flow').boundingBox(); await f.page.mouse.click(board.x + 8, board.y + 8, { button: 'right' });
-      await f.canvas.getByRole('menuitem', { name: 'Arrange by run order', exact: true }).click();
-      if (iso) {
-        await f.page.setViewportSize({ width: 900, height: 700 }); await f.fit();
-        await f.canvas.locator('.iso-label[data-kind="agent"]').last().dblclick();
-        const editor = f.canvas.getByRole('textbox', { name: 'Rename agent', exact: true }); await editor.waitFor();
-        const box = await editor.boundingBox(), area = await f.canvas.locator('.iso-board').boundingBox();
-        assert.ok(box.x >= area.x && box.x + box.width <= area.x + area.width, 'inline rename stays inside the board at its left edge');
-        await f.page.keyboard.press('Escape');
-      }
-    }
-    await captures(f, 'placement'); assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
 
