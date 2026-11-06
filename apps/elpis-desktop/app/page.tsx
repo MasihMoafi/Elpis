@@ -4,20 +4,19 @@ import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { BrandWordmark } from "@/components/brand-wordmark";
 import { flushSync } from "react-dom";
 import { cloneElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { AgentsIcon, ChatIcon, ExperimentLabIcon, LoveSpotIcon, NewChatIcon, PlusIcon, SettingsIcon, ThemeIcon, WorkflowsIcon } from "@/components/elpis-icons";
-import { Activity, ArrowDown, Blocks, PanelLeft, PanelRightClose, PanelRightOpen, RefreshCw, X } from "lucide-react";
+import { AgentsIcon, ChatIcon, LoveSpotIcon, PlusIcon } from "@/components/elpis-icons";
+import { ArrowDown, PanelLeft, PanelRightClose, PanelRightOpen, RefreshCw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ReorderItem, useReorder } from "@/components/reorder";
+import { useReorder } from "@/components/reorder";
 import { ApprovalCard } from "@/components/approval-card";
 import { PlanCard } from "@/components/plan-card";
-import { SearchField } from "@/components/ui/search-field";
 import { FailedTurnCard } from "@/components/failed-turn-card";
 import { ViewBoundary } from "@/components/view-boundary";
 import { WorkingPlacement } from "@/components/transcript";
 import { useBookmarks, useChatAttention, usePins, useSidebarFolds, useChatGroups } from "@/lib/use-sidebar-state";
-import { SIDEBAR, useAppearance } from "@/lib/use-appearance";
+import { useAppearance } from "@/lib/use-appearance";
 import { addGroup, chatSubtree, moveChats, prioritizeChats } from "@/lib/chat-groups";
-import { configuredShortcuts, shortcutHint, shortcutTitle } from "@/lib/shortcuts";
+import { configuredShortcuts, shortcutTitle } from "@/lib/shortcuts";
 import { CommandMenu, type CommandAction } from "@/components/command-menu";
 import { ImproveElpis } from "@/components/improve-elpis";
 import { arrange, move } from "@/lib/nav-order";
@@ -48,6 +47,7 @@ import { PendingInputPanel, PendingInputTrigger } from "@/components/pending-inp
 import { WorkspaceSettings } from "@/components/workspace-settings";
 import { WorkspaceGuideAndLab, OtherWorkspacePages } from "@/components/other-workspace-pages";
 import { WorkspaceTitleBar } from "@/components/workspace-title-bar";
+import { WorkspaceSidebar } from "@/components/workspace-sidebar";
 import { useConversationTranscript } from "@/components/use-conversation-transcript";
 import { useSlashMenu } from "@/components/slash-menu";
 import { useMentionMenu } from "@/components/mention-menu";
@@ -57,7 +57,6 @@ import { useNavHistory } from "@/lib/nav-history";
 import { DiffPanel, ReviewPanel, SessionPanel } from "@/components/slash-panels";
 import { openControl } from "@/lib/slash-focus";
 import { useElpisSettings } from "@/lib/settings-store";
-import { UsagePanel } from "@/components/provider-usage";
 import { ReadAloud } from "@/components/read-aloud";
 import { LiveVoiceProvider } from "@/components/live-voice";
 import { Segmented } from "@/components/settings/rows";
@@ -66,10 +65,8 @@ import { PutUnderDialog } from "@/components/put-under-dialog";
 import { WorkflowMark } from "@/components/workflow-identity";
 import { useWorkflowSandbox } from "@/lib/workflow-identity";
 import { BranchChip } from "@/components/branch-chip";
-import { AccountRow } from "@/components/account-row";
 import { ProfileDialog } from "@/components/profile-dialog";
 import { readProjectChats, readProjects, saveProjects } from "@/lib/projects";
-import { ResizeEdge } from "@/components/resize-edge";
 import { TaskList } from "@/components/task-list";
 import { chatOrigin, originLabel } from "@/lib/love-activity";
 import { useLoveActivity } from "@/lib/use-love-activity";
@@ -128,6 +125,7 @@ import { createClearConversation } from "@/lib/clear-conversation";
 import { useTurnReplacementView } from "@/lib/use-turn-replacement-view";
 import { useWorkspacePagesState } from "@/lib/use-workspace-pages-state";
 import { useConversationOptions } from "@/lib/use-conversation-options";
+import { NAV_PAGES, PAGE_NAMES } from "@/lib/workspace-navigation-pages";
 import { refusedOffline, type View, type WorkflowReplay } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
 import { useComposerState } from "@/lib/use-composer-state";
@@ -143,18 +141,6 @@ import { errorText } from "@/lib/error-text.mjs";
 import { refreshModelCatalog, useModelCatalog } from "@/lib/model-catalog";
 
 
-
-/** The sidebar's pages after New chat, in their default order; the person may rearrange them. */
-const NAV_PAGES = [
-  { id: "experimentLab", name: "Lab", Icon: ExperimentLabIcon },
-  { id: "canvas", name: "Workflows", Icon: WorkflowsIcon },
-  { id: "loveSpot", name: "Love Spot", Icon: LoveSpotIcon },
-  // 5 Nov: back, as the TUI's /dashboard page (DeepSeek's Trajectory), with the pulse icon he approved.
-  { id: "observability", name: "Observability", Icon: Activity },
-  { id: "customize", name: "Customize", Icon: Blocks },
-] as const;
-/** Every page's name, for its heading and the command menu: the sidebar pages, the guide and Settings. */
-const PAGE_NAMES: Record<Exclude<View, "chat">, string> = { ...Object.fromEntries(NAV_PAGES.map(page => [page.id, page.name])) as Record<typeof NAV_PAGES[number]["id"], string>, agentsGuide: "Guide to managing agents", settings: "Settings" };
 
 const fittedLists = new WeakSet<HTMLElement>();
 
@@ -248,7 +234,7 @@ export default function Home() {
   const { connected, connectionStatus, ready, runtimeNotices, setRuntimeNotices,
     activeTurns, plans, approvals, setApprovals,
     activity, liveError, historyOnly, failedTurns, stoppedTurns,
-    accountRefresh, setReplays } = runtime;
+    setReplays } = runtime;
   useEffect(() => {
     if (ready && connected && document.activeElement === document.body) composerRef.current?.focus();
   }, [ready, connected]);
@@ -317,7 +303,7 @@ export default function Home() {
   const [loveToolbarHost, setLoveToolbarHost] = useState<HTMLDivElement | null>(null);
   const [workingHost, setWorkingHost] = useState<HTMLDivElement | null>(null);
   const appearance = useAppearance(setError);
-  const { dark, setTheme, sidebarWidth, resizeSidebar } = appearance;
+  const { dark, sidebarWidth } = appearance;
   // The website's animated wordmark, its dark or light version (website/assets/branding).
   const searchInput = useRef<HTMLInputElement>(null);
   const shortcutsReturnFocus = useRef<HTMLElement | null>(null);
@@ -739,26 +725,9 @@ export default function Home() {
       onSave={name => { const ids = newGroupFor ?? [], id = crypto.randomUUID(); updateGroups(state => moveChats(addGroup(state, name, id), ids, id)); setNewGroupFor(null); setMarked([]); }} />
     <DeleteChatsDialog threads={deleteTargets} trash={trashChats} alwaysConfirm={deleteRunHistory} onClose={() => { setDeleteTargets(null); setDeleteRunHistory(false); }} />
     <RewindDialog threadId={selected?.id} turnId={rewindTurn} prompt={rewindTurn ? turnEntries.get(rewindTurn)?.find(entry => entry.item.type === "userMessage")?.item.content?.map(part => part.text ?? "").join("\n") ?? "" : ""} turns={rewindTurn ? Math.max(1, turnEntries.size - [...turnEntries.keys()].indexOf(rewindTurn)) : null} onConfirm={(mode, version) => rewindFrom(rewindTurn!, mode, version)} onClose={() => setRewindTurn(null)} />
-    <aside className={`sidebar${sidebar ? " open" : ""}`} aria-label="Workspace navigation" onKeyDown={sidebarKeys}>
-      <div className="brand"><Button type="button" variant="ghost" size="logo" className="brand-home" aria-label="Elpis home" onClick={() => show("chat")}><BrandWordmark dark={dark} width={73} height={36} /></Button><Button className="sidebar-toggle" variant="ghost" size="icon-sm" aria-label="Close sidebar" title={shortcutTitle("Close sidebar", "sidebar", preferences)} onClick={() => showSidebar(false)}><PanelLeft size={16} /></Button></div>
-      <nav className="nav-list" aria-label="Workspace">
-        <Button data-slot="nav-row" className="new-chat" variant="ghost" aria-label="New chat" data-shortcut={shortcutHint("new-chat", preferences)} aria-current={view === "chat" && !selected ? "page" : undefined} disabled={projectChanging} onClick={newChat}><NewChatIcon size={16} />New chat</Button>
-        {arrangedPages.map(page => <ReorderItem key={page.id} reorder={pageReorder} itemId={page.id} render={<Button data-slot="nav-row" variant="ghost" data-nav-page={page.id} className={page.id === "loveSpot" ? "accent-scope" : undefined} aria-label={page.name} aria-current={view === page.id ? "page" : undefined} onClick={() => show(page.id)} title={`${page.name} (drag, or Alt+Up/Down, to reorder)`}>
-          <page.Icon size={16} />{page.name}{page.id === "loveSpot" && loveActivity.unread > 0 && <span className="love-unread badge badge-sm" role="status" aria-label={`${loveActivity.unread} Love Spot agents replied`}>{loveActivity.unread}</span>}</Button>} />)}
-      </nav>
-      <SearchField ref={searchInput} hint="Ctrl Shift K" aria-label="Search conversations" placeholder="Search chats" maxLength={200} value={search.search} onChange={e => search.setSearch(e.target.value)} onKeyDown={e => { if (e.key === "Escape") { e.preventDefault(); search.setSearch(""); focusComposer(); } }} />
+    <WorkspaceSidebar sidebar={sidebar} sidebarKeys={sidebarKeys} appearance={appearance} pages={pages} preferences={preferences} projectState={projectState} runtime={runtime} loveActivity={loveActivity} search={search} searchInput={searchInput} selected={selected} arrangedPages={arrangedPages} pageReorder={pageReorder} show={show} showSidebar={showSidebar} focusComposer={focusComposer} openSettings={openSettings} newChat={newChat}>
       <SidebarChatList model={sidebarModel} projectState={projectState} search={search} browser={browser} browserPins={browserPins} preferences={preferences} chatGroups={chatGroups} updateGroups={updateGroups} setAttention={setAttention} conversations={conversations} threadList={threadList} listKeys={listKeys} collapsedSections={collapsedSections} collapsedProjects={collapsedProjects} expanded={expanded} pins={pins} setCollapsedProjects={setCollapsedProjects} chatReorder={chatReorder} projectReorder={projectReorder} foldable={foldable} addProject={addProject} removeProject={removeProject} selectProject={selectProject} chatRows={chatRows} chatGroupSection={chatGroupSection} threadRow={threadRow} descendants={descendants} threadBranch={threadBranch} runDescendants={runDescendants} show={show} ready={ready} busy={busy} threads={threads} agentRunsOpen={agentRunsOpen} setAgentRunsOpen={setAgentRunsOpen} />
-      <UsagePanel refreshKey={accountRefresh} onOpen={() => { setSettingsSection("usage"); show("settings"); }} />
-      <div className="sidebar-footer"><AccountRow refreshKey={accountRefresh} /></div>
-      <div className="sidebar-status">
-        <span className="status-line"><i className={`status-dot${connected ? " connected" : ""}`} />{connected ? "Local workspace" : "Disconnected"}</span>
-        <span className="flex items-center gap-1">
-          <Button variant="ghost" size="icon-xs" aria-label={dark ? "Use light theme" : "Use dark theme"} title={dark ? "Use light theme" : "Use dark theme"} onClick={() => setTheme(dark ? "light" : "dark")}><ThemeIcon size={14} /></Button>
-          <Button variant="ghost" size="icon-xs" aria-label="Settings" title="Settings (Ctrl+,)" onClick={() => openSettings("general")}><SettingsIcon size={14} /></Button>
-        </span>
-      </div>
-      <ResizeEdge label="Resize sidebar" width={sidebarWidth} min={SIDEBAR.min} max={SIDEBAR.max} initial={SIDEBAR.initial} grows="right" onResize={resizeSidebar} onClose={() => showSidebar(false)} />
-    </aside>
+    </WorkspaceSidebar>
     <main className={`workspace${view === "chat" && selectedLoveChat ? " love-chat accent-scope" : ""}`} style={panelShown && !fullView ? { "--side-min": `${sideMinWidth(side.shown)}px`, ...(side.width ? { "--side-w": `clamp(${sideMinWidth(side.shown)}px, ${side.width}px, 70%)` } : {}) } as CSSProperties : undefined}>
       <header className={`workspace-header${heading ? "" : " untitled"}`}>
         <ImproveElpis threadId={view === "chat" ? selected?.id : undefined} onChat={loadThread} />
