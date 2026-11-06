@@ -1,8 +1,6 @@
 import { useEffect, type Dispatch, type RefObject, type SetStateAction } from "react";
 import type { PermissionMode } from "@/components/composer-controls";
-import type { FailedTurn } from "@/components/failed-turn-card";
-import type { TaskPlan } from "@/components/task-list";
-import { api, activityOf, isAgentRun, retryableSessionError, sessionReady, type Approval, type Entry, type Item, type Thread } from "@/lib/api";
+import { api, activityOf, isAgentRun, retryableSessionError, sessionReady, type Entry, type Item, type Thread } from "@/lib/api";
 import type { Attention } from "@/lib/attention";
 import { changesModelCatalog } from "@/lib/account-events";
 import { activeTab, type ChatTabs } from "@/lib/chat-tabs";
@@ -14,38 +12,39 @@ import { liveEventItemKey, mergeLiveItem, RETRYING, retryRecovered, runtimeError
 import { notifyApproval, notifyRuntimeEvent } from "@/lib/notifications";
 import { reloadSettings } from "@/lib/settings-store";
 import type { useLoveActivity } from "@/lib/use-love-activity";
+import type { useRuntimeState } from "@/lib/use-runtime-state";
 import { without } from "@/lib/utils";
 import { refusedOffline, type Live, type View, type WorkflowReplay } from "@/lib/workspace-types";
 
 type Setter<T> = Dispatch<SetStateAction<T>>;
 type Ref<T> = RefObject<T>;
 type RuntimeEvents = {
-  setConnected: Setter<boolean>; setConnectionStatus: Setter<string>; setApprovals: Setter<Approval[]>;
-  selectedRef: Ref<Thread | null>; request: Ref<number>; tabsRef: Ref<ChatTabs>; setAccountRefresh: Setter<number>;
+  runtime: ReturnType<typeof useRuntimeState>;
+  selectedRef: Ref<Thread | null>; request: Ref<number>; tabsRef: Ref<ChatTabs>;
   refreshModels: () => Promise<void>; refreshThreads: () => Promise<void>; setError: Setter<string>;
   hidden: Ref<Set<string>>; initialRestoration: Ref<{ threadId: string; promise: Promise<void> } | null>;
-  turnRevisions: Ref<Record<string, number>>; modeRevisions: Ref<Record<string, number>>; liveRevision: Ref<number>;
+  liveRevision: Ref<number>;
   applyHistoryPage: (id: string, page: HistoryPage, revision: number) => void;
   rememberFollowing: (id: string, live: Live) => void; rememberModes: (id: string, live: Live) => void;
-  reconcileLiveThread: (id: string, live: Live) => void; setLiveError: Setter<Record<string, string>>;
-  restoredTabs: Ref<boolean>; loadThread: (thread: Thread) => Promise<void>; setReady: Setter<boolean>;
-  setReplays: Setter<WorkflowReplay[]>; threadsRef: Ref<Thread[]>; openThread: (thread: Thread) => Promise<void>;
-  viewRef: Ref<View>; completedTurns: Ref<Set<string>>; planTurns: Ref<Map<string, string>>; setAttention: Setter<Attention>;
+  reconcileLiveThread: (id: string, live: Live) => void;
+  restoredTabs: Ref<boolean>; loadThread: (thread: Thread) => Promise<void>;
+  threadsRef: Ref<Thread[]>; openThread: (thread: Thread) => Promise<void>;
+  viewRef: Ref<View>; planTurns: Ref<Map<string, string>>; setAttention: Setter<Attention>;
   loveRef: Ref<ReturnType<typeof useLoveActivity>>; isLoveChatId: (id: string) => boolean;
-  setPlans: Setter<Record<string, TaskPlan>>; setRewindActions: Setter<Record<string, "undo" | "redo" | undefined>>;
-  setActiveTurns: Setter<Record<string, string>>; setRuntimeNotices: Setter<Record<string, string>>;
-  setFailedTurns: Setter<Record<string, FailedTurn>>; patchThread: (id: string, patch: Partial<Thread>) => void;
-  setStoppedTurns: Setter<Record<string, string>>; statusRevisions: Ref<Record<string, number>>;
+  setRewindActions: Setter<Record<string, "undo" | "redo" | undefined>>;
+  patchThread: (id: string, patch: Partial<Thread>) => void;
+  statusRevisions: Ref<Record<string, number>>;
   setThreadModes: Setter<Record<string, PermissionMode>>;
   settingsOf: Ref<Record<string, Pick<Thread, "model" | "modelProvider" | "reasoningEffort">>>;
   upsertThread: (thread: Thread) => void; rewindSwitch: Ref<string | null>;
-  removeThreads: (ids: Set<string>, permanent: boolean) => void; setActivity: Setter<Record<string, string>>;
+  removeThreads: (ids: Set<string>, permanent: boolean) => void;
   liveVersions: Ref<Map<string, number>>; setEntries: Setter<Entry[]>; clearApprovalDraft: (id: string) => void;
   select: (thread: Thread | null) => void; liveKeysAfter: (revision: number) => Set<string>;
   noteHistoryGap: (id: string, page: { earliestHistoryMissing?: boolean }) => void;
 };
 
-export function useRuntimeEvents({ setConnected, setConnectionStatus, setApprovals, selectedRef, request, tabsRef, setAccountRefresh, refreshModels, refreshThreads, setError, hidden, initialRestoration, turnRevisions, modeRevisions, liveRevision, applyHistoryPage, rememberFollowing, rememberModes, reconcileLiveThread, setLiveError, restoredTabs, loadThread, setReady, setReplays, threadsRef, openThread, viewRef, completedTurns, planTurns, setAttention, loveRef, isLoveChatId, setPlans, setRewindActions, setActiveTurns, setRuntimeNotices, setFailedTurns, patchThread, setStoppedTurns, statusRevisions, setThreadModes, settingsOf, upsertThread, rewindSwitch, removeThreads, setActivity, liveVersions, setEntries, clearApprovalDraft, select, liveKeysAfter, noteHistoryGap }: RuntimeEvents) {
+export function useRuntimeEvents({ runtime, selectedRef, request, tabsRef, refreshModels, refreshThreads, setError, hidden, initialRestoration, liveRevision, applyHistoryPage, rememberFollowing, rememberModes, reconcileLiveThread, restoredTabs, loadThread, threadsRef, openThread, viewRef, planTurns, setAttention, loveRef, isLoveChatId, setRewindActions, patchThread, statusRevisions, setThreadModes, settingsOf, upsertThread, rewindSwitch, removeThreads, liveVersions, setEntries, clearApprovalDraft, select, liveKeysAfter, noteHistoryGap }: RuntimeEvents) {
+  const { setConnected, setConnectionStatus, setApprovals, setAccountRefresh, turnRevisions, modeRevisions, setLiveError, setReady, setReplays, completedTurns, setPlans, setActiveTurns, setRuntimeNotices, setFailedTurns, setStoppedTurns, setActivity } = runtime;
   useEffect(() => {
     let disposed = false; let events: EventSource | undefined; let wasConnected = false; let receivedConnection = false; let recovery = 0;
     let retryTimer: ReturnType<typeof setTimeout> | undefined, retryDelay = 500;
