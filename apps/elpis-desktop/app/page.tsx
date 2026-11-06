@@ -20,7 +20,7 @@ import { ViewBoundary } from "@/components/view-boundary";
 import { Transcript, WorkingPlacement } from "@/components/transcript";
 import { useBookmarks, useChatAttention, usePins, useSidebarFolds, useChatGroups } from "@/lib/use-sidebar-state";
 import { SIDEBAR, useAppearance } from "@/lib/use-appearance";
-import { addGroup, chatSelectionRoots, chatSubtree, deleteGroup, groupSections, moveChats, placeChat, prioritizeChats, putChatsUnder, renameGroup, sidebarParents, sortChats, toggleCollapsed, writeGroups, type ChatGroup, type ChatGroups } from "@/lib/chat-groups";
+import { addGroup, chatSelectionRoots, chatSubtree, deleteGroup, groupSections, moveChats, placeChat, prioritizeChats, renameGroup, sidebarParents, sortChats, toggleCollapsed, type ChatGroup, type ChatGroups } from "@/lib/chat-groups";
 import { agentParentId } from "@/lib/agent-runs.mjs";
 import { configuredShortcuts, shortcutHint, shortcutTitle } from "@/lib/shortcuts";
 import { CommandMenu, type CommandAction } from "@/components/command-menu";
@@ -79,7 +79,7 @@ import { LiveVoiceProvider } from "@/components/live-voice";
 import { ObservabilityView } from "@/components/observability-view";
 import { AutomationsView, type WorkflowPrefill } from "@/components/automations-view";
 import { Segmented } from "@/components/settings/rows";
-import { chooseProject, projectAt, EnvironmentMenu, MoveChatDialog, ProjectActions, ProjectDialog, ProjectMenu } from "@/components/project-picker";
+import { EnvironmentMenu, MoveChatDialog, ProjectActions, ProjectDialog, ProjectMenu } from "@/components/project-picker";
 import { PutUnderDialog } from "@/components/put-under-dialog";
 import { WorkflowMark } from "@/components/workflow-identity";
 import { runSummary, useWorkflowSandbox, workflowMembers, type WorkflowRun } from "@/lib/workflow-identity";
@@ -90,7 +90,7 @@ import { AccountRow } from "@/components/account-row";
 import { ProfileDialog } from "@/components/profile-dialog";
 import { DRAWING_NOTE } from "@/lib/browser-notes";
 import { ModelPicker } from "@/components/model-picker";
-import { appStorage, readProjectChats, readProjects, saveProjectChats, saveProjects, type Project } from "@/lib/projects";
+import { readProjectChats, readProjects, saveProjects } from "@/lib/projects";
 import { ResizeEdge } from "@/components/resize-edge";
 import { TaskList } from "@/components/task-list";
 import { chatOrigin, originLabel } from "@/lib/love-activity";
@@ -133,6 +133,7 @@ import { useRuntimeState } from "@/lib/use-runtime-state";
 import { createSlashCommands } from "@/lib/slash-commands";
 import { createChatSend } from "@/lib/chat-send";
 import { createChatNavigation } from "@/lib/chat-navigation";
+import { createProjectActions } from "@/lib/project-actions";
 import { refusedOffline, type Live, type View, type WorkflowReplay, type NextTurn } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
 import { useComposerState } from "@/lib/use-composer-state";
@@ -192,8 +193,8 @@ export default function Home() {
   const [effort, setEffort] = useState("");
   const projectState = useProjectState();
   const { cwd, setCwd, projects, setProjects, projectId, setProjectId, setWorkflowProjectId, projectChats, setProjectChats,
-    projectChatsRef, projectChatSave, projectMove, setProjectMove, newProjectFor, setNewProjectFor, nestTargets, setNestTargets,
-    projectChanging, setProjectChanging, project, workflowProject, projectEdit, setProjectEdit } = projectState;
+    projectChatsRef, projectMove, setProjectMove, newProjectFor, setNewProjectFor, nestTargets, setNestTargets,
+    projectChanging, project, workflowProject, projectEdit, setProjectEdit } = projectState;
   const [recordedWorkflow, setRecordedWorkflow] = useState<Pick<WorkflowRun, "id" | "rootThreadId">>();
   // Existing conversations: overrides for their next turn only.
   const [nextTurn, setNextTurn] = useState<Record<string, NextTurn>>({});
@@ -613,85 +614,7 @@ export default function Home() {
   const openSplit = (thread: Thread) => { side.closePanel(); setAgentsPanelState(previous => ({ ...previous, open: false })); setView("chat"); split.open(thread); };
   const openSessionWindow = (thread?: Thread) => { void sessionWindowApi()?.(thread?.id).catch(cause => setError(String(cause))); };
 
-  function assignProject(threadIds: string | string[], destination: string | null | undefined, parentId?: string, arrangeGroups?: (state: ChatGroups, roots: string[]) => ChatGroups): Promise<void> {
-    const saved = projectChatSave.current.catch(() => {}).then(async () => {
-      const requested = typeof threadIds === "string" ? [threadIds] : threadIds;
-      const currentParents = sidebarParents(Object.keys(nativeParents), chatGroupsRef.current, nativeParents);
-      const roots = chatSelectionRoots(requested, currentParents), ids = new Set(chatSubtree(roots, currentParents));
-      const previous = projectChatsRef.current, next = { ...previous };
-      if (destination !== undefined) for (const id of ids) { if (destination) next[id] = destination; else delete next[id]; }
-      if (parentId && (!Object.hasOwn(nativeParents, parentId) || ids.has(parentId))) throw Error("A chat cannot be put under itself or one of its descendants.");
-      if (destination !== undefined) await saveProjectChats(next);
-      const state = chatGroupsRef.current;
-      const latestParents = sidebarParents(Object.keys(nativeParents), state, nativeParents);
-      if (parentId && chatSubtree(roots, latestParents).includes(parentId)) { if (destination !== undefined) await saveProjectChats(previous); throw Error("A chat cannot be put under one of its descendants."); }
-      let groups = putChatsUnder(state, parentId ? roots : roots.filter(id => !!latestParents[id]), parentId ?? null, nativeParents);
-      if (arrangeGroups) groups = arrangeGroups(groups, roots);
-      const reveals = parentId ? [placementReveal(parentId, groups, next, roots)] : roots.map(root => placementReveal(root, groups, next, []));
-      const revealGroups = new Set(reveals.map(reveal => reveal.group));
-      if (groups.collapsed.some(id => revealGroups.has(id))) groups = { ...groups, collapsed: groups.collapsed.filter(id => !revealGroups.has(id)) };
-      if (!writeGroups(groups, appStorage())) { if (destination !== undefined) await saveProjectChats(previous); throw Error("Could not save chat placement on this device."); }
-      commitGroups(groups);
-      projectChatsRef.current = next; setProjectChats(next); setMarked([]);
-      revealPlacement(reveals);
-    });
-    projectChatSave.current = saved; return saved;
-  }
-  async function selectProject(next: Project | null) {
-    setProjectChanging(true);
-    try {
-      if (next && window.elpisDesktop?.resolveFolder) await window.elpisDesktop.resolveFolder(next.cwd);
-      await saveProjects(projects, next?.id ?? null); setWorkflowProjectId(next?.id ?? null);
-      if (viewRef.current === "canvas") return;
-      setProjectId(next?.id ?? null); setCwd(next?.cwd ?? ""); openNewChat(next ? `new-${next.id}` : "new");
-    } finally { setProjectChanging(false); }
-  }
-  async function saveProject(next: Project) {
-    const known = projects.some(item => item.id === next.id), updated = known ? projects.map(item => item.id === next.id ? next : item) : [...projects, next];
-    if (known) { await saveProjects(updated, projectId); setProjects(updated); if (projectId === next.id) setCwd(next.cwd); return; }
-    await saveProjects(updated, next.id); setProjects(updated); setWorkflowProjectId(next.id);
-    if (viewRef.current === "canvas") return;
-    setProjectId(next.id); setCwd(next.cwd); openNewChat(`new-${next.id}`);
-  }
-  function newProjectFrom(chats: Thread[]) { setNewProjectFor(chats); setProjectEdit(null); }
-  async function saveProjectFromChats(next: Project) {
-    const updated = [...projects, next];
-    await saveProjects(updated, projectId);
-    try { await assignProject((newProjectFor ?? []).map(chat => chat.id), next.id); }
-    catch (cause) { await saveProjects(projects, projectId); throw cause; }
-    setProjects(updated); setNewProjectFor(null);
-  }
-  /** "Add new project" in the sidebar and the project menu: one click opens the native folder chooser, as in the ChatGPT app.
-   * A browser has no chooser, so it asks for the path instead. */
-  /** Workflows' own folder choice (Transcribe images): the project that has it, or a new one named after it. */
-  async function workIn(folder: string) {
-    const next = projectAt(projects, folder);
-    await (projects.some(item => item.id === next.id) ? selectProject(next) : saveProject(next));
-  }
-  async function addProject() {
-    try {
-      const chosen = await chooseProject(projects);
-      if (chosen === undefined) setProjectEdit(null);
-      else if (chosen) await (projects.some(item => item.id === chosen.id) ? selectProject(chosen) : saveProject(chosen));
-    } catch (e) { setError(errorText(e)); }
-  }
-  /** Moves the open chat to a project's folder (A26): its next turns run there; earlier turns keep theirs. */
-  async function moveChat(target: Project | null) {
-    if (!ready || !connected || !selected || !target) return;
-    const { cwd: moved } = await api<{ cwd: string }>(`/threads/${encodeURIComponent(selected.id)}/folder`, { cwd: target.cwd });
-    patchThread(selected.id, { cwd: moved });
-  }
-  /** The chip's "Choose folder…": the native chooser, then the move; cancelling moves nothing. */
-  async function moveChatToFolder() {
-    try { const chosen = await chooseProject(projects); if (chosen) await moveChat(chosen); }
-    catch (e) { setError(errorText(e)); }
-  }
-  /** Forgets the project; its folder and chats stay as they are. */
-  async function removeProject(item: Project) {
-    const updated = projects.filter(other => other.id !== item.id), current = projectId === item.id ? null : projectId;
-    try { await saveProjects(updated, current); setProjects(updated); if (!current) { setProjectId(null); setCwd(""); } }
-    catch (e) { setError(errorText(e)); }
-  }
+  const { assignProject, selectProject, saveProject, newProjectFrom, saveProjectFromChats, workIn, addProject, moveChat, moveChatToFolder, removeProject } = createProjectActions({ projectState, conversations, runtime, chatGroupsRef, commitGroups, placementReveal, revealPlacement, setMarked, viewRef, selected, openNewChat, setError, getNativeParents: () => nativeParents });
   const show = (next: View) => { if (next !== "chat") side.toggleFull(false); if (next === "settings") { setSettingsVisited(true); setSettingsNavigation(value => value + 1); } setView(next); setSidebar(false); };
   // A click on the screenshot thumbnail puts the screenshots on the Love Spot page already open, below what is there, in the
   // order they were taken, then shows them (A239; Masih, 5 Nov: "when I want to post a screenshot, it shouldn't open a new page").
