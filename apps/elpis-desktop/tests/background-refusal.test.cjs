@@ -44,6 +44,8 @@ test('a chat on screen gets no error bar when the engine refuses a background re
     await page.locator(`aside [data-thread-id="${broken}"] .thread-link`).click();
     await bar.waitFor();
     assert.match(await bar.innerText(), /temporarily unavailable/);
+    // 6 Nov: shown gracefully, no "Error:" prefix, no code or request ID.
+    assert.doesNotMatch(await bar.innerText(), /^Error|ELPIS_|request [a-f0-9]/);
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

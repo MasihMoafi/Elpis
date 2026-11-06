@@ -45,7 +45,9 @@ async function call<T>(path: string, body?: unknown, signal?: AbortSignal): Prom
     const message = detail.trim() && !/^-?\d+$/.test(detail.trim()) && !/^Elpis rejected the operation \([^)]+\)/.test(detail.trim()) ? detail : fallback;
     const code = typeof result?.code === "string" && /^ELPIS_[A-Z_]{1,64}$/.test(result.code) ? result.code : "";
     const requestId = typeof result?.requestId === "string" && /^[a-f0-9-]{36}$/.test(result.requestId) ? result.requestId : "";
-    throw new RequestError(`${message}${code ? ` (${code}${requestId ? `; request ${requestId}` : ""})` : ""}`, response.status);
+    // The code and request ID are for diagnosis, not for him to read (6 Nov, Masih: "I don't like to see such errors ... like
+    // this ever"); they stay on the error, and the notice shows them only as its tooltip.
+    throw Object.assign(new RequestError(message, response.status), { details: code ? `${code}${requestId ? `; request ${requestId}` : ""}` : "" });
   }
   if (!isObject(result)) throw unreadable(path.split("?")[0]);
   return result as T;

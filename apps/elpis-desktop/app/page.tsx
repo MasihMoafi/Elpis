@@ -237,6 +237,8 @@ export default function Home() {
     return true;
   }
   const [error, setError] = useState("");
+  // A notice fades by itself after a while; Dismiss closes it sooner.
+  useEffect(() => { if (!error) return; const timer = setTimeout(() => setError(""), 10_000); return () => clearTimeout(timer); }, [error]);
   const { attention, setAttention, planTurns, markRead } = useChatAttention(planAnswered, setError);
   /** Chats awaiting the shared delete confirmation (a row's menu, D, or the header's Chat actions). */
   const [deleteTargets, setDeleteTargets] = useState<Thread[] | null>(null);
@@ -2662,7 +2664,9 @@ export default function Home() {
       {(!ready || !connected) && <div className="error-banner notice" role="status"><span>{connectionStatus}</span></div>}
       {deletedNotice && <div className="error-banner notice" role="status"><span className="min-w-0 flex-1 truncate">{deletedNotice}</span><Button variant="outline" size="sm" title="Undo (Ctrl+Z)" onClick={() => void undoDelete()}>Undo</Button><Button variant="ghost" size="icon-sm" aria-label="Dismiss" onClick={() => setDeletedNotice(null)}><X size={15} /></Button></div>}
       {selected && rewindActions[selected.id] && <div className="error-banner notice" role="status"><span className="min-w-0 flex-1">Your files stay as they are.</span><Button variant="outline" size="sm" disabled={rewindBusy || !!activeTurn} onClick={() => void switchRewind({ action: rewindActions[selected.id]! }).catch(cause => setError(String(cause)))}>{rewindActions[selected.id] === "undo" ? "Undo rewind" : "Redo rewind"}</Button></div>}
-      {error && !(refusedOffline(error) && !connected) && <div className="error-banner" role="alert"><span>{error}</span><Button variant="ghost" size="icon-sm" aria-label="Dismiss error" onClick={() => setError("")}><X size={15} /></Button></div>}
+      {/* A quiet line, not a red band: no "Error:" prefix and no codes, and it fades on its own (6 Nov, Masih: "even if there is
+          an error I like it shown gracefully"). */}
+      {error && !(refusedOffline(error) && !connected) && <div key={error} className="error-banner quiet" role="alert"><span>{error.replace(/^(?:Type)?Error:\s*/, "").replace(/\s*\(ELPIS_[A-Z_]+(?:; request [a-f0-9-]+)?\)\s*$/, "")}</span><Button variant="ghost" size="icon-sm" aria-label="Dismiss error" onClick={() => setError("")}><X size={14} /></Button></div>}
       {worktreeNotice && <div className="error-banner warning worktree-notice" role="status"><span>{worktreeNotice}</span><Button variant="ghost" size="icon-sm" aria-label="Dismiss worktree notice" onClick={() => setWorktreeNotice("")}><X size={15} /></Button></div>}
       {/* A failed model-list refresh shows no banner (4 Nov): the last list stays, lib/model-catalog.ts retries quietly, and the model menu says so only when it has no models. */}
       {/* Only the first load shows this line: account events refresh the list during turns, and a line appearing above the chat for each refresh shook it. */}

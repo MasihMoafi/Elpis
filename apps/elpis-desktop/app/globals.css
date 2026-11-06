@@ -267,6 +267,11 @@ button:disabled { cursor:not-allowed; }
 .error-banner.warning { background:color-mix(in oklch, var(--warning), var(--background) 88%); border-bottom-color:color-mix(in oklch, var(--warning), transparent 60%); }
 /* A notice that is not an error, such as "Deleted …" with its Undo. */
 .error-banner.notice { background:var(--muted); border-bottom-color:var(--border); }
+/* An error is a quiet line under the chat, not a red band across the window (6 Nov): muted text with a small accent dot,
+   centred to the chat column, fading in. */
+.error-banner.quiet { align-self:center; width:auto; max-width:min(720px, calc(100% - 32px)); margin:0 auto 8px; padding:4px 6px 4px 12px; gap:8px; border:1px solid var(--border); border-radius:999px; corner-shape:round; background:color-mix(in oklab, var(--card) 92%, transparent); color:var(--muted-foreground); font-size:var(--text-sm); box-shadow:0 2px 10px rgb(0 0 0 / 0.06); animation:quiet-notice-in .2s ease-out; }
+.error-banner.quiet::before { content:""; flex:none; width:6px; height:6px; border-radius:50%; background:var(--warning); }
+@keyframes quiet-notice-in { from { opacity:0; transform:translateY(4px); } }
 /* The last reply's hover actions hang in its own 40px margin, so the foot needs only 12px more above the message box
  * (29 Oct, Masih: "there is too much space between the message box and the gray things on top and the last mesasge"). */
 .chat-scroll { --chat-top-inset:var(--thread-inset); flex:1; min-height:0; overflow:auto; padding:var(--chat-top-inset) 32px 12px; scroll-timeline:--chat-scroll y; }

@@ -460,8 +460,9 @@ export async function startDesktopServer(options = {}) {
             const operation = { turns: 'send', steer: 'steer', interrupt: 'interrupt', resume: 'resume', continue: 'continueThread', delete: 'deleteThread', rename: 'renameThread', archive: 'archiveThread', unarchive: 'unarchiveThread', revert: 'revert', rewind: 'rewind', versions: 'versions', fork: 'forkThread', compact: 'compact', review: 'review', permissions: 'setPermissions', effort: 'setEffort', 'service-tier': 'setServiceTier', folder: 'setFolder' }[thread[2]];
             const input = await body(request, ['send', 'steer'].includes(operation) ? ATTACHMENT_BODY_LIMIT : 65536);
             // A normal chat tab uses the same portrait choices as the board, including existing conversations.
-            // Matilda off means off in her own chat tab too, not only on the board.
-            if (['send', 'steer'].includes(operation) && await loveSpot.chat() === id && !(await loveSpot.matildaSettings()).replies) throw new BridgeError('Matilda is off. Turn her on to talk to her.', 409);
+            // Writing to her in her own chat turns her on (6 Nov, Masih: "when I directly go to her and message, it should
+            // automatically unlock her"); off still keeps her quiet on the board until then.
+            if (['send', 'steer'].includes(operation) && await loveSpot.chat() === id && !(await loveSpot.matildaSettings()).replies) await loveSpot.matildaSettings({ replies: true });
             if (['send', 'steer'].includes(operation) && await loveSpot.chat() === id && input && typeof input === 'object' && !Array.isArray(input) && (input.attachments === undefined || Array.isArray(input.attachments))) {
               input.attachments = [...(input.attachments ?? []), { id: 'matilda-portrait', name: PORTRAIT_ATTACHMENT_NAME, type: 'text', mimeType: 'text/plain', text: PORTRAIT_INSTRUCTIONS }];
             }
