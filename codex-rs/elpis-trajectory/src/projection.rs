@@ -327,7 +327,8 @@ impl Builder {
                 groups: Vec::new(),
             });
         }
-        self.doc.turns.last_mut().expect("a turn was just ensured")
+        let last = self.doc.turns.len() - 1;
+        &mut self.doc.turns[last]
     }
 
     fn message_group(&mut self) -> &mut TrajectoryGroup {
@@ -338,7 +339,8 @@ impl Builder {
                 ..Default::default()
             });
         }
-        turn.groups.last_mut().expect("a group was just ensured")
+        let last = turn.groups.len() - 1;
+        &mut turn.groups[last]
     }
 
     fn line(&mut self, seq: usize, row: &Value) {

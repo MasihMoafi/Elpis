@@ -259,7 +259,7 @@ fn a_continuity_change_appends_only_the_changed_sources_and_names_withdrawals() 
     let earlier = format!("{ELPIS_CONTINUITY_PROMPT_PREFIX}{memory}\n\n{rule}");
     let current = format!("{ELPIS_CONTINUITY_PROMPT_PREFIX}{rule}\n\n{notes}");
 
-    let section = continuity_section(Some(current.clone()));
+    let section = continuity_section(Some(current));
     let snapshot = json!({ "body": earlier });
     let previous = &snapshot;
     let (_, fragment) = section.render_diff(PreviousWorldStateSection::Known(previous));

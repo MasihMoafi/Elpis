@@ -1171,6 +1171,10 @@ mod tests {
     /// With `JEV_LIVE_DRY=1` it only prints each input's question count, offline.
     #[tokio::test]
     #[ignore]
+    #[allow(
+        clippy::print_stdout,
+        reason = "a manual live run reports each dry input"
+    )]
     async fn live_scores_saved_admission_inputs() {
         let input_dir = std::path::PathBuf::from(std::env::var("JEV_LIVE_IN").unwrap());
         let output_dir = std::path::PathBuf::from(std::env::var("JEV_LIVE_OUT").unwrap());

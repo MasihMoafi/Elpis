@@ -195,6 +195,10 @@ async fn forward(
 }
 
 /// Returns the body to forward. Each failure returns the source bytes.
+#[allow(
+    clippy::await_holding_invalid_type,
+    reason = "the lock serializes optimizer calls so two requests never pay to decide the same candidates"
+)]
 async fn prune_body(state: &ProxyState, source: Bytes) -> Bytes {
     let Ok(mut body) = serde_json::from_slice::<Value>(&source) else {
         return source;
