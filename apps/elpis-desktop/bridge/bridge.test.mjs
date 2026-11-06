@@ -1856,7 +1856,7 @@ test('deleting a chat waits for its pending operation and then releases its lock
   assert.equal(f.socket.sent.some(row => row.method === 'thread/archive' && row.params.threadId === id), false);
   release(); await renaming;
   const result = await deleting;
-  assert.ifError(result.error);
+  if ('error' in result) throw result.error;
   assert.equal(result.value.archived, true);
   assert.equal(f.threads.get(id).archived, true);
   await f.client.unarchiveThread(id, {});
