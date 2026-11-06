@@ -23,7 +23,7 @@ import { configuredShortcuts, shortcutHint, shortcutTitle } from "@/lib/shortcut
 import { CommandMenu, type CommandAction } from "@/components/command-menu";
 import { ImproveElpis } from "@/components/improve-elpis";
 import { arrange, move } from "@/lib/nav-order";
-import { followUpHint, followUpKey, isSendKey, newChatFolder, savePreferences, useAppPreferences } from "@/lib/preferences";
+import { followUpHint, newChatFolder, savePreferences, useAppPreferences } from "@/lib/preferences";
 import { QueuedFollowUps } from "@/components/queued-follow-ups";
 import { stopsOnEscape, usePromptKeys } from "@/lib/prompt-history";
 import { OPEN_CONTEXT_EVENT } from "@/components/context-usage";
@@ -102,7 +102,7 @@ import { FloatChatBar, FloatChatPill } from "@/components/float-chat";
 import { useSessionSplit } from "@/components/session-split";
 import { Tab, TabStrip } from "@/components/tab-strip";
 import { activeTab, followChat, forgetChats, renameTabs, type ChatTab } from "@/lib/chat-tabs";
-import { TEXT_ONLY_NOTICE, fitAttachments, transferFiles, type Attachment } from "@/lib/attachments";
+import { TEXT_ONLY_NOTICE, fitAttachments, type Attachment } from "@/lib/attachments";
 import { LoadOnScroll } from "@/components/load-on-scroll";
 import { api, unreadable, isAgentRun, AGENT_RUN_NOTICE, modelLabel, providerLabel, title, agentName,
   type Approval, type Entry, type ProviderSettings, type Thread } from "@/lib/api";
@@ -128,6 +128,7 @@ import { createCommandActions } from "@/lib/command-actions";
 import { createConversationSettings } from "@/lib/conversation-settings";
 import { createConversationActions } from "@/lib/conversation-actions";
 import { createReplyActions } from "@/lib/reply-actions";
+import { createComposerHandlers } from "@/lib/composer-handlers";
 import { refusedOffline, type View, type WorkflowReplay, type NextTurn } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
 import { useComposerState } from "@/lib/use-composer-state";
@@ -267,7 +268,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const editDraft = (value: string) => { setText(value); saveDraft(selectedRef.current?.id || newDraftKey.current, value); };
   const attachmentState = useComposerAttachments({ selectedRef, newDraftKey, shellMode, savedAttachments, saveAttachments, setError, setRuntimeNotices });
-  const { attachments, attachmentsRef, attaching, fileNotice, setFileNotice, setAttachments, restoreAttachments, addFiles } = attachmentState;
+  const { attachments, attachmentsRef, attaching, fileNotice, setFileNotice, setAttachments, restoreAttachments } = attachmentState;
   /** The browser's annotations and screenshots join the composer's files; its Send also sends the message. */
   async function attachFromBrowser(parts: Attachment[], submit: boolean) {
     const owner = selectedRef.current?.id || newDraftKey.current;
@@ -888,27 +889,7 @@ export default function Home() {
   // One Matilda voice and one live call for the whole app: both go on when he leaves the board or Love Spot's chat; her face shows and controls them.
   // The message box: its hint, what typing, pasting and keys do.
   const composerPlaceholder = shellMode ? "Run a shell command…" : continues ? `Message ${title(selected!)}…` : selected && activeTurn ? followUpHint(preferences) : selected ? "Ask for a follow-up" : "Ask Elpis to build, fix or explain something";
-  const onComposerChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const value = e.target.value;
-    // "!" at the start of an empty box switches to Bash mode, as in the TUI.
-    if (!shellMode && !textRef.current && value.startsWith("!") && !attachmentsRef.current.length) { setShellMode(true); promptKeys.cancel(); editDraft(value.slice(1)); setCaret(value.length - 1); }
-    else { editDraft(value); setCaret(e.target.selectionStart); }
-  };
-  const onComposerPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => { const files = transferFiles(e.clipboardData); if (files.length) { if (!e.clipboardData.getData("text/plain")) e.preventDefault(); void addFiles(files); } };
-  const onComposerKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    const plain = !e.ctrlKey && !e.altKey && !e.metaKey;
-    // Esc, or Backspace in an empty box, leaves Bash mode.
-    if (shellMode && (e.key === "Escape" || (e.key === "Backspace" && !textRef.current))) { e.preventDefault(); e.stopPropagation(); setShellMode(false); promptKeys.cancel(); return; }
-    if (!ready || !connected) { if (isSendKey(e, preferences)) e.preventDefault(); return; }
-    if (shellMode) { if (isSendKey(e, preferences)) { e.preventDefault(); void sendShell(); } return; }
-    // Shift+↑/↓ steps the reasoning effort.
-    if (e.shiftKey && plain && turnEfforts.length && (e.key === "ArrowUp" || e.key === "ArrowDown")) { e.preventDefault(); e.stopPropagation(); stepEffort(e.key === "ArrowUp" ? 1 : -1); return; }
-    if (mention.onKeyDown(e) || slash.onKeyDown(e) || promptKeys.onKeyDown(e)) return;
-    // Shift+Tab cycles the permission mode.
-    if (e.key === "Tab" && e.shiftKey && plain) { e.preventDefault(); cycleMode(); return; }
-    if (activeTurn && !continues) { const followUp = followUpKey(e, preferences); if (followUp) { e.preventDefault(); send(undefined, followUp); } }
-    else if (isSendKey(e, preferences)) { e.preventDefault(); send(); }
-  };
+  const { onComposerChange, onComposerPaste, onComposerKeyDown } = createComposerHandlers({ composer, attachmentsState: attachmentState, runtime, preferences, promptKeys, mention, slash, turnEfforts, activeTurn, continues, editDraft, stepEffort, cycleMode, sendShell, send });
   return <DocumentReviewProvider onAttach={parts => attachFromBrowser(parts, false)}><LiveVoiceProvider><ReadAloud threadId="love-spot" enabled available={LOVE_SPOT_AUDIO.readAloudAvailable} unavailableReason={LOVE_SPOT_AUDIO.available ? undefined : LOVE_SPOT_AUDIO.reason}><div data-workspace={view} data-desktop={desktop || undefined} className={`app-shell${split.pane ? " session-pane" : ""}${split.thread && view === "chat" ? " session-split" : ""}${dark ? " dark" : ""} has-title-bar${sidebarCollapsed ? " sidebar-collapsed" : ""}${view === "settings" ? " settings-mode" : ""}${panelShown ? " panel-active" : ""}`} style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>
     <title>{view === "canvas" ? "Workflows · Elpis" : view === "experimentLab" ? "Lab · Elpis" : view === "customize" ? "Customize — Elpis" : "Elpis"}</title>
     {desktop && <div className="title-bar"><NavButtons preferences={preferences} canBack={navHistory.canBack} canForward={navHistory.canForward} onBack={() => goHistory(-1)} onForward={() => goHistory(1)} />{(sidebarCollapsed || !sidebar) && <Button className={sidebarCollapsed || panelShown && panelDrawer ? undefined : "sidebar-open-narrow"} variant="ghost" size="icon-sm" aria-label="Open sidebar" title={shortcutTitle("Open sidebar", "sidebar", preferences)} onClick={() => showSidebar(true)}><PanelLeft size={16} /></Button>}<AppMenus preferences={preferences} onError={setError} onNewChat={newChat} onOpenFolder={() => void addProject()} onSettings={() => show("settings")} onToggleSidebar={() => showSidebar(narrow() ? !sidebar : sidebarCollapsed)} onBack={() => goHistory(-1)} onForward={() => goHistory(1)} canGoBack={navHistory.canBack} canGoForward={navHistory.canForward} onShortcuts={() => shortcutAction.current("shortcuts")} /><div className="title-bar-actions"><MatildaCompanion /><AppUpdate inTitleBar /></div></div>}

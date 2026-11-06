@@ -841,7 +841,7 @@
   "lib/api.ts:TS2769": 1
  },
  "lint": {
-  "app/page.tsx:typescript(no-floating-promises)": 5,
+  "app/page.tsx:typescript(no-floating-promises)": 3,
   "app/page.tsx:typescript(no-misused-promises)": 4,
   "app/page.tsx:unused-disable-directive": 7,
   "bridge/acp-nodes.mjs:typescript(only-throw-error)": 3,
