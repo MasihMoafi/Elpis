@@ -101,7 +101,7 @@ html { font-size:var(--interface-size, 16px); }
 /* The HUD label: every small uppercase caption (the lab's mono labels) in one type — 12px, never smaller (--text-small),
  * mono, .14em, uppercase. Each label keeps its own line-height, colour and spacing. */
 :where(.hud-label, .hud-menu-title, .section-label, .plan-card-heading, .canvas-toolbar-label, .canvas-hud span,
-  .quick-add-crumb, .canvas-template-loaded, .agent-node-kind, .canvas-note-grip, .splash-boot li) {
+  .quick-add-crumb, .canvas-template-loaded, .agent-node-kind, .canvas-note-grip) {
   font-family:var(--mono); font-size:var(--label-size); font-weight:500; letter-spacing:var(--label-track); text-transform:uppercase; }
 /* Section header: the title over a group of rows (Settings groups, Ledger sections) — the lab status
  * panel's accent tick, the title at 14px/600 in its own case, then a hairline running to the actions. */
@@ -110,7 +110,7 @@ html { font-size:var(--interface-size, 16px); }
 :where(.settings-group-heading, .customize-title) > :is(h2, h3) { flex:0 1 auto; min-width:0; margin:0; font-size:var(--text-base); font-weight:600; overflow-wrap:anywhere; }
 :where(.settings-group-heading, .customize-title) > :not(h2, h3) { order:2; }
 /* One cut per role. Controls and the rows that light on hover or selection, and code blocks inside panels: --cut. */
-:where(.search-field, .model-select, .composer-chip, .feature-form select, .provider-model-input, .field select, .composer-pill, .context-ring, .feature-chip, .task-tab,
+:where(.search-field, .model-select, .composer-chip, .field select, .composer-pill, .context-ring, .feature-chip, .task-tab,
   .browser-toolbar input, .browser-find input, .annotation-editor textarea, .canvas-chip, .agent-dashboard header button,
   .thread-row, .account-row, .back-link, .usage-summary, .team-row, .activity-card, .activity-heading, .activity-group > summary, .hud-menu-item,
   .sidebar-group-row, .command-row, .canvas-template, .step-head, .turn-changes-toggle, .choice, .change-row,
@@ -119,7 +119,7 @@ html { font-size:var(--interface-size, 16px); }
 :where(.kbd, .model-provider-tabs button, .model-option-provider, .pending-count, .customize-badge, .plan-pill button, .canvas-toolbar kbd, .quick-add kbd:not(.kbd-hint), .canvas-help kbd,
   .canvas-inspector-actions kbd, .settings-badge, .choice-key:not([data-radio]), .change-status, .browser-zoom, .annotation-hint kbd) { border-radius:var(--corner-radius-sm, var(--cut-sm) 0); corner-shape:var(--corner-shape, bevel); }
 /* Panels (edge --border) and the accented ones: floating surfaces and the composer (edge --hud-edge, set by each): --cut-lg. */
-:where(.view-error, .tool-item, .feature-section, .customize-list, .agent-conversation-group, .file-card, .provider-key-form, .plan-card, .task-list, .canvas-notice, .agent-node,
+:where(.view-error, .customize-list, .file-card, .provider-key-form, .plan-card, .task-list, .canvas-notice, .agent-node,
   .settings-rows, .settings-card, .step-card, .decision-card, .failed-turn-card, .message.user,
   .hud-menu, .hud-popover, .hud-dialog, .side-chat, .pending-input-panel, .full-view > .workspace-content, .composer) { border-radius:var(--corner-radius-lg, var(--cut-lg) 0); corner-shape:var(--corner-shape, bevel); }
 @layer base { * { box-sizing:border-box; border-color:var(--border); } [hidden] { display:none!important; } }
@@ -158,6 +158,7 @@ button:disabled { cursor:not-allowed; }
 .back-link { display:flex; align-items:center; cursor:pointer; }
 .nav-list button[aria-current="page"] svg, .settings-nav button[role="tab"].active svg { color:var(--primary); }
 @keyframes pulse { 50% { opacity:.35; } }
+@keyframes spin { to { transform:rotate(360deg); } }
 /* Search fields: one component (components/ui/search-field.tsx), one look, wherever they are. */
 /* The magnifier and text line up with the navigation rows' icons and labels (same 8px inset, 18px icon, 10px gap). */
 .search-field { display:flex; align-items:center; gap:8px; height:var(--row-h); padding:0 10px 0 8px; background:var(--hover); color:var(--muted-foreground); min-width:0; cursor:text; }
@@ -195,7 +196,6 @@ button:disabled { cursor:not-allowed; }
 .account-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:450; }
 .account-plan { flex-shrink:0; color:var(--muted-foreground); }
 .account-plan::before { content:"· "; }
-.account-chevron { flex-shrink:0; margin-inline-start:auto; color:var(--muted-foreground); }
 .sidebar-status { display:flex; align-items:center; justify-content:space-between; padding:0 4px 2px 8px; }
 .sidebar-status .status-line { color:var(--subtle-foreground); font-size:var(--text-small); }
 .header-action { order:3; }
@@ -230,20 +230,6 @@ button:disabled { cursor:not-allowed; }
 .side-body { display:flex; flex-direction:column; flex:1; min-height:0; min-width:0; }
 .side-empty { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; color:var(--muted-foreground); font-size:var(--text-sm); }
 .side-empty p { margin:0; } .side-empty div { display:flex; flex-wrap:wrap; justify-content:center; gap:8px; max-width:100%; padding:0 16px; }
-.browser-panel { position:relative; display:flex; flex-direction:column; flex:1; min-width:0; min-height:0; }
-.browser-tabs { display:flex; align-items:center; gap:2px; padding:5px 5px 0; min-height:37px; background:var(--sidebar); border-bottom:1px solid var(--hairline); }
-.browser-tabs [role="tablist"] { display:flex; flex:1; min-width:0; overflow-x:auto; gap:4px; }
-.browser-tab { display:flex; align-items:center; gap:2px; flex:1 0 95px; max-width:180px; min-width:0; border-radius:7px 7px 0 0; color:var(--muted-foreground); padding:3px 3px 3px 7px; }
-.browser-tab.active { color:var(--foreground); background:var(--background); }
-.browser-tab [role="tab"] { display:flex; align-items:center; gap:6px; min-width:0; flex:1; border:0; background:none; color:inherit; padding:3px 0; font:inherit; font-size:var(--text-xs); text-align:start; }
-.browser-tab [role="tab"] span { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.browser-tab svg { flex-shrink:0; }
-.browser-toolbar { display:flex; align-items:center; gap:2px; padding:6px; border-bottom:1px solid var(--hairline); }
-.browser-toolbar input { min-width:0; height:var(--control-h); font-size:var(--text-xs); background:var(--recessed); }
-.browser-viewport { flex:1; min-height:0; background:var(--background); }
-.browser-empty { padding:16px; margin:0; font-size:var(--text-sm); color:var(--muted-foreground); }
-.browser-empty span { display:block; margin-top:4px; font-size:var(--text-small); }
-.browser-error { padding:8px 12px; font-size:var(--text-xs); color:var(--destructive); overflow-wrap:anywhere; }
 @media(min-width:761px) and (max-width:1000px) {
  .app-shell.panel-active { --chat-shell-sidebar:0px; grid-template-columns:1fr; }
  .app-shell.panel-active > .sidebar { display:none; }
@@ -302,7 +288,6 @@ button:disabled { cursor:not-allowed; }
 .message.user { background:var(--card); border:1px solid var(--hairline); padding:10px 16px; margin-left:auto; width:fit-content; max-width:70%; white-space:pre-wrap; }
 .message.agent .speaker { font-size:var(--text-xs); font-weight:600; color:var(--muted-foreground); margin-bottom:6px; }
 .markdown p { margin:0 0 1em; } .markdown > :last-child { margin-bottom:0; } .markdown pre { background:var(--recessed); border:1px solid var(--hairline); padding:12px 14px; overflow:auto; line-height:1.55; } .markdown code { font-size:var(--code-size, 13px); font-family:var(--mono); } .markdown :not(pre) > code { color:inherit; background:color-mix(in oklab, var(--foreground) 6%, var(--background)); padding:1px 6px; border-radius:6px; corner-shape:round; font-size:var(--text-sm); } .markdown ul,.markdown ol { padding-inline-start:22px; margin:8px 0 12px; } .markdown li { margin:3px 0; } .markdown ul { list-style:disc; } .markdown ol { list-style:decimal; } .markdown a { color:inherit; text-decoration:underline dotted 1px; text-underline-offset:2px; text-decoration-color:var(--thread-tertiary); } .markdown a:hover { color:var(--accent-text); } .markdown-table { max-width:100%; overflow:auto; margin:0 0 14px; } .markdown table { border-collapse:collapse; font-size:var(--text-sm); width:max-content; } .markdown td,.markdown th { border:1px solid var(--border); padding:6px 10px; min-width:6rem; overflow-wrap:normal; word-break:normal; } .markdown h1,.markdown h2,.markdown h3,.markdown h4,.markdown h5,.markdown h6 { font-weight:600; margin:18px 0 8px; letter-spacing:-.01em; } .markdown h1 { font-size:var(--text-base); } .markdown h2 { font-size:var(--text-base); } .markdown h3 { font-size:var(--text-base); }
-.tool-item { border:1px solid var(--border); margin:12px 0; font-size:var(--text-xs); } .tool-item summary { padding:10px 14px; cursor:pointer; } .tool-item pre { margin:0; padding:12px; overflow:auto; max-height:340px; white-space:pre-wrap; }
 .composer-wrap { position:relative; padding:6px 32px 16px; }
 .composer { max-width:var(--transcript-width, 740px); margin:auto; border:1px solid var(--border); background:var(--composer); padding:11px 8px 8px 13px; box-shadow:var(--elevation-composer); }
 /* Stop stays plain in both themes; keyboard focus uses an outline instead of a shadow ring. */
@@ -400,10 +385,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 /* Hide shows on the heading's hover or focus, like a row's actions. */
 .section-label-row > .section-hide { opacity:0; color:var(--muted-foreground); }
 .section-label-row:is(:hover, :focus-within) > .section-hide { opacity:1; }
-.workspace-picker { display:flex; align-items:center; gap:6px; color:var(--muted-foreground); font-size:var(--text-xs); min-width:0; }
-.workspace-picker > button { height:24px; padding:0 6px; font-size:var(--text-xs); font-weight:450; color:var(--muted-foreground); }
 .workspace-header.untitled { border-bottom-color:transparent; }
-.workspace-path { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:440px; }
 .project-menu { max-width:min(380px,calc(100vw - 32px)); max-height:60vh; overflow:auto; }
 .project-option { display:grid; min-width:0; gap:2px; }
 .project-option strong { font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -439,30 +421,11 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 /* The hover buttons sit in the gap under their message, so a message that is not hovered holds no room for them. */
 .message-actions { display:flex; align-items:center; gap:2px; position:absolute; top:100%; left:0; color:var(--subtle-foreground); }
 .message-model { padding-inline:4px; font-size:var(--text-xs); line-height:var(--control-sm); white-space:nowrap; }
-.feature-section { border:1px solid var(--border); background:var(--card); padding:20px; }
-.feature-section h2 { font-size:var(--text-base); font-weight:600; margin-bottom:14px; }
-.feature-section > .muted { color:var(--muted-foreground); font-size:var(--text-sm); line-height:1.6; margin-bottom:18px; }
-.feature-form { display:grid; gap:16px; margin:16px 0 20px; }
-.feature-form label { display:flex; flex-direction:column; gap:6px; font-size:var(--text-sm); color:var(--foreground); }
-.feature-form select { width:100%; min-height:36px; border:1px solid var(--border); padding:6px 10px; background:var(--background); color:var(--foreground); }
-.feature-form select:focus-visible { outline:2px solid var(--ring); outline-offset:2px; }
-.feature-section .feedback { margin-top:12px; color:var(--muted-foreground); font-size:var(--text-sm); line-height:1.6; }
-.feature-values { display:grid; grid-template-columns:minmax(120px,1fr) minmax(0,1.4fr); gap:12px 20px; font-size:var(--text-sm); }
-.feature-values dt { color:var(--muted-foreground); }
-.feature-values dd { overflow-wrap:anywhere; }
-@media(max-width:760px) {
- .workspace-path { max-width:210px; }
- .feature-section { padding:16px; }
- .feature-values { gap:8px; }
-}
 
 .activity-title { flex-shrink:0; font-weight:500; color:var(--foreground); }
 .activity-preview { flex:1; color:var(--muted-foreground); white-space:nowrap; font:var(--text-xs) var(--mono); }
 
 .model-controls { display:flex; align-items:center; flex-wrap:wrap; gap:var(--composer-control-gap, 8px); min-width:0; }
-.provider-model-input { border:1px solid var(--border); }
-.provider-select { color:var(--foreground); }
-.provider-model-input { max-width:240px; min-width:0; background:transparent; color:var(--foreground); height:28px; padding:0 8px; font-size:var(--text-sm); }
 .model-select:hover:not(:disabled) { background-color:var(--hover); color:var(--foreground); }
 /* Shared primary action. White sRGB tints preserve its hue; hud-cut owns the parallel chamfers. */
 
@@ -563,7 +526,6 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .mobile-brand { display:none; border-radius:6px; flex-shrink:0; }
 .field [data-slot="select-trigger"] { width:100%; min-height:36px; font-size:var(--text-sm); font-weight:400; }
 .field .model-picker-trigger { width:100%; height:36px; max-width:none; }
-.feature-form [data-slot="select-trigger"] { width:100%; min-height:36px; }
 .field select { width:100%; height:36px; border:1px solid var(--border); padding:0 10px; background:var(--background); color:var(--foreground); font-size:var(--text-base); font-weight:400; }
 @media(max-width:760px) { .mobile-brand { display:block; } }
 /* Chat parity: your messages can be copied and edited; code blocks carry their own copy button. */
@@ -658,7 +620,6 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .team-row.working .team-state i { border:1.5px solid color-mix(in oklch, var(--success), transparent 70%); border-top-color:var(--success); animation:spin .9s linear infinite; }
 .team-row.waiting .team-state i { border:0; background:var(--primary); }
 .team-row.error .team-state i { border:0; background:var(--destructive); }
-@keyframes spin { to { transform:rotate(360deg); } }
 @media(max-width:1100px) { .team-panel { display:none; } }
 
 /* Customize (components/customize-view.tsx), as Claude's: the three sections, then each one's list of rows. */
@@ -740,10 +701,9 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .live-timer { flex-shrink:0; color:var(--muted-foreground); font-variant-numeric:tabular-nums; }
 .elpis-working-mark { width:18px; height:18px; flex-shrink:0; vertical-align:middle; color:var(--primary-action, var(--primary)); }
 .elpis-working-mark path { fill:none; stroke:currentColor; stroke-width:4; stroke-linejoin:round; }
-.elpis-working-rotor { transform-origin:32px 32px; animation:elpis-orbit 4s linear infinite; }
+.elpis-working-rotor { transform-origin:32px 32px; animation:spin 4s linear infinite; }
 .elpis-working-dot { fill:currentColor; animation:elpis-blink 2s ease-in-out infinite; }
 .elpis-working-edge { animation:elpis-working-edge-opacity 4s ease-in-out infinite; }
-@keyframes elpis-orbit { to { transform:rotate(360deg); } }
 @keyframes elpis-blink { 0%,100% { opacity:1; } 50% { opacity:.15; } }
 @keyframes elpis-working-edge-opacity { 0%,100% { opacity:.45; } 50% { opacity:1; } }
 @media(prefers-reduced-motion:reduce) { .elpis-working-edge { animation:none; opacity:1; } }
@@ -993,7 +953,6 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 /* 4 Nov: an unread chat kept its amber circle, so choosing a colour seemed to do nothing. A coloured chat shows its colour
    read or unread (unread stays bold); working, waiting and error keep their status colours. */
 .thread-row[data-conversation-colour] .conversation-state-slot .thread-dot:is([data-state="idle"], [data-state="unread"]) { border-color:var(--workflow-colour); background:var(--workflow-colour); }
-@keyframes spin { to { transform:rotate(360deg); } }
 /* A collapsible group of chats (components/sidebar-group.tsx): a project, or a group the person made. */
 .sidebar-group { margin-bottom:2px; }
 .sidebar-group-row { display:flex; align-items:center; min-height:var(--row-h); padding-inline-end:8px; }  /* the "+" lines up with the Projects header's */
@@ -1077,54 +1036,6 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .task-tab.chat-tab.active > button svg { color:var(--primary); }
 .task-tab + .task-tab:not(.active):not(:hover)::before { content:""; position:absolute; left:-2px; top:9px; bottom:9px; width:1px; background:var(--hairline); }
 .task-tab-new { flex-shrink:0; color:var(--muted-foreground); }
-.browser-toolbar { gap:4px; background:var(--sidebar); }
-.browser-toolbar input { border-color:var(--hairline); background:var(--recessed); }
-.browser-toolbar input:focus-visible { border-color:color-mix(in srgb, var(--primary) 50%, var(--border)); }
-/* Browser parity (16 Oct 2026): address states, Annotate, find bar, failure screen, options menu, annotation dock.
- * Page markers and comment numbers share one blue (--annotation) so a number in Elpis matches the one on the page. */
-.browser-panel { --annotation:#2f6fed; }
-.browser-address { position:relative; display:flex; align-items:center; flex:1; min-width:180px; }
-.browser-address input { flex:1; }
-.browser-security { position:absolute; inset-inline-start:7px; z-index:1; display:flex; align-items:center; gap:4px; font-size:var(--text-small); color:var(--warning); pointer-events:none; }
-.browser-address:has(.browser-security) input { padding-inline-start:90px; }
-.browser-address:has(.browser-zoom) input { padding-inline-end:56px; }
-.browser-zoom { position:absolute; inset-inline-end:5px; height:20px; padding:0 6px; border:1px solid var(--hairline); background:var(--card); color:var(--muted-foreground); font-size:var(--text-small); }
-.browser-zoom:hover { color:var(--foreground); }
-.browser-annotate { gap:6px; color:var(--muted-foreground); }
-.browser-annotate[aria-pressed="true"] { color:var(--annotation); background:color-mix(in oklab, var(--annotation) 14%, transparent); }
-.browser-badge { min-width:16px; height:16px; padding:0 4px; border-radius:8px; background:var(--annotation); color:#fff; font-size:var(--text-small); line-height:16px; text-align:center; }
-.browser-notice { padding:6px 12px; font-size:var(--text-xs); color:var(--muted-foreground); border-bottom:1px solid var(--hairline); }
-.browser-find { display:flex; align-items:center; gap:4px; padding:5px 6px; border-bottom:1px solid var(--hairline); background:var(--sidebar); }
-.browser-find input { max-width:280px; height:28px; font-size:var(--text-xs); border-color:var(--hairline); background:var(--recessed); }
-.browser-find-count { min-width:72px; font-size:var(--text-small); color:var(--muted-foreground); font-variant-numeric:tabular-nums; }
-.browser-viewport { position:relative; }
-.browser-failure { position:absolute; inset:0; overflow:auto; padding:56px 48px; background:var(--background); color:var(--foreground); font-size:var(--text-sm); line-height:1.55; }
-.browser-failure h2 { margin:0 0 10px; font-size:var(--text-title); font-weight:600; }
-.browser-failure p { margin:0 0 6px; max-width:560px; color:var(--muted-foreground); }
-.browser-failure .browser-failure-try { margin-top:14px; color:var(--foreground); }
-.browser-failure ul { margin:0 0 14px; padding-inline-start:20px; list-style:disc; color:var(--muted-foreground); }
-.browser-failure code { display:block; margin-bottom:20px; font:var(--text-small) var(--mono); color:var(--muted-foreground); }
-.browser-options { min-width:248px; }
-.browser-options-separator { height:1px; margin:5px 4px; background:var(--hairline); }
-.browser-zoom-row { display:flex; align-items:center; gap:4px; padding:4px 8px; font-size:var(--text-base); }
-.browser-zoom-row > span { flex:1; }
-.browser-zoom-value { min-width:48px; border:0; background:none; color:var(--muted-foreground); font-size:var(--text-sm); font-variant-numeric:tabular-nums; }
-.annotation-dock { flex-shrink:0; border-top:1px solid var(--hairline); background:var(--sidebar); }
-.annotation-editor { display:flex; align-items:flex-start; gap:8px; height:72px; padding:8px; border-bottom:1px solid var(--hairline); }
-.annotation-editor textarea { flex:1; min-height:0; height:56px; resize:none; field-sizing:fixed; font-size:var(--text-sm); border-color:var(--hairline); background:var(--recessed); }
-.annotation-target { display:flex; align-items:center; gap:6px; max-width:30%; padding-top:6px; font-size:var(--text-xs); color:var(--muted-foreground); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
-.annotation-target b, .annotation-chips button { flex-shrink:0; width:20px; height:20px; border-radius:10px; background:var(--annotation); color:#fff; font-size:var(--text-small); font-weight:700; line-height:20px; text-align:center; }
-.annotation-editor-actions { display:flex; gap:4px; align-self:flex-end; }
-.annotation-hint { display:flex; align-items:center; gap:8px; margin:0; height:100%; padding-inline:4px; font-size:var(--text-sm); color:var(--muted-foreground); }
-.annotation-hint svg { color:var(--annotation); flex-shrink:0; }
-.annotation-hint kbd { margin:0; padding:0 4px; border:1px solid var(--border); }
-.annotation-bar { display:flex; align-items:center; gap:4px; min-height:42px; padding:5px 8px; }
-.annotation-status { display:flex; align-items:center; gap:6px; flex-shrink:0; font-size:var(--text-sm); font-weight:500; }
-.annotation-status i { width:7px; height:7px; border-radius:4px; background:var(--annotation); box-shadow:0 0 6px var(--annotation); }
-.annotation-chips { display:flex; gap:4px; flex:1; min-width:0; margin:0 6px; padding:0; list-style:none; overflow-x:auto; scrollbar-width:none; }
-.annotation-chips button { border:0; cursor:pointer; }
-.annotation-chips button[aria-pressed="true"] { outline:2px solid color-mix(in oklab, var(--annotation) 45%, transparent); outline-offset:1px; }
-.annotation-error { font-size:var(--text-xs); color:var(--destructive); }
 .workspace-body { position:relative; }
 .composer .model-controls { flex-wrap:nowrap; flex-shrink:0; }
 .composer-right { flex:1 1 auto; flex-wrap:nowrap; min-width:0; justify-content:flex-end; }
@@ -1136,355 +1047,6 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .slash-name { flex-shrink:0; min-width:110px; font:500 var(--text-sm)/1.4 var(--mono); color:var(--foreground); }
 .slash-description { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted-foreground); }
 
-/* The agents canvas (components/agents-canvas.tsx): architectures on the left, agents as linked nodes in the middle,
- * the selected agent on the right. Running is the context olive, done is success, failed is destructive. */
-.agents-canvas { container:agents-canvas / inline-size; flex:1; min-height:0; display:grid; grid-template-columns:minmax(0,1fr) 290px; grid-template-rows:auto minmax(0,1fr); border-top:1px solid var(--hairline); }
-.agents-canvas[data-panel="closed"] { grid-template-columns:minmax(0,1fr); }
-/* Dragging on the board never selects the page's text; fields keep their own selection. */
-.canvas-board { user-select:none; }
-.canvas-board :is(input, textarea, [contenteditable="true"]) { user-select:text; }
-.canvas-board[data-tool="lasso"] :is(.react-flow__pane, .iso-board) { cursor:crosshair; }
-.canvas-stroke { position:absolute; inset:0; z-index:10; width:100%; height:100%; pointer-events:none; }
-.canvas-stroke polyline { fill:color-mix(in oklab, var(--primary) 8%, transparent); stroke:var(--primary); stroke-width:1; stroke-dasharray:5 4; }
-.canvas-stroke polyline[data-tool="cut"] { fill:none; stroke:var(--destructive); stroke-width:2; }
-.canvas-gesture-hint { position:absolute; left:12px; top:12px; z-index:10; max-width:calc(100% - 24px); padding:6px 10px; border:1px solid var(--border); background:var(--card); color:var(--foreground); font-size:var(--text-small); pointer-events:none; }
-.canvas-search { top:12px; left:12px; max-height:calc(100% - 24px); }
-/* A frame never takes the clicks meant for the agents it holds; only its title does. React Flow sets pointer-events
-   inline on a draggable node, so only !important lets its node through (an external library's inline style). */
-.canvas-frame { width:100%; height:100%; border:1px solid var(--border); background:color-mix(in oklab, var(--muted-foreground) 6%, transparent); pointer-events:none; }
-.agents-canvas .react-flow__node.react-flow__node-frame { pointer-events:none !important; }
-.canvas-frame-title { min-height:30px; padding:6px 10px; overflow:hidden; color:var(--muted-foreground); font-size:var(--text-small); cursor:grab; pointer-events:auto; }
-.canvas-frame-title strong { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:500; }
-.agent-node[data-muted], .iso-node[data-muted] { opacity:.5; }
-.agent-node[data-muted] .agent-node-title { text-decoration:line-through; }
-.iso-frame { position:absolute; pointer-events:none; }
-.iso-frame .canvas-frame-title { pointer-events:auto; }
-.iso-note { position:absolute; }
-.iso-wire-end { border-color:var(--primary); }
-.iso-port[data-valid="true"] { outline:1px solid var(--primary); outline-offset:3px; }
-.iso-port[data-valid="false"] { opacity:.35; }
-.iso-link[data-inserting] .iso-wire { stroke:var(--primary); }
-/* The header fits any window: the name gives way first, then the controls wrap to a second row; nothing is cut off. */
-/* The request keeps a usable width: the controls beside it wrap to the next line instead of crushing it (28 Oct: "Cr…",
- * "Tra" and a label one word per line). `.field` alone allows any width. */
-.canvas-request { flex:1 1 20rem; min-width:min(20rem, 100%); white-space:nowrap; }
-.canvas-header { grid-column:1 / -1; display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:8px 16px; border-bottom:1px solid var(--hairline); background:var(--background); }
-.canvas-header > * { flex-shrink:0; }
-.canvas-header > .canvas-name { flex:0 1 280px; min-width:140px; font-weight:600; }
-/* Readiness stays beside Run; errors use a contained row at the workspace's bottom. */
-.canvas-header > .canvas-run-control { display:flex; align-items:center; gap:8px; flex:0 1 auto; min-width:0; max-width:100%; }
-.canvas-run-control > button { flex:none; }
-.canvas-header > .canvas-name-group { flex-shrink:1; }
-.canvas-name-group .canvas-name { width:160px; }
-.canvas-toolbar > .canvas-guide { display:flex; margin-inline-start:6px; padding-inline-start:6px; border-inline-start:1px solid var(--hairline); }
-@container agents-canvas (max-width:760px) {
-  .canvas-header > .canvas-name { flex-basis:140px; }
-  .canvas-board .canvas-minimap { display:none; }
-}
-.canvas-spacer { flex:1; }
-.canvas-chip { display:inline-flex; align-items:center; gap:8px; height:32px; padding:0 10px; border:1px solid var(--hairline); color:var(--muted-foreground); font-size:var(--text-sm); font-variant-numeric:tabular-nums; }
-.canvas-chip select { height:26px; }
-.canvas-dot { width:8px; height:8px; border-radius:50%; background:var(--context); box-shadow:0 0 0 3px color-mix(in oklab, var(--context) 25%, transparent); }
-.canvas-dot[data-status="failed"], .canvas-dot[data-status="cancelled"] { background:var(--destructive); box-shadow:none; }
-.canvas-dot[data-status="succeeded"], .canvas-dot[data-status="completed"] { background:var(--success); box-shadow:none; }
-.canvas-template { display:grid; justify-content:stretch; align-items:start; gap:4px; padding:9px 10px; text-align:left; cursor:pointer; }
-.canvas-template:hover { background:var(--hover); border-color:var(--hairline); }
-.canvas-template:focus-visible { outline:1.5px solid var(--ring); }
-.canvas-template small { color:var(--muted-foreground); font-size:var(--text-xs); line-height:1.35; }
-.canvas-toolbar { flex:none; display:flex; flex-wrap:wrap; justify-content:center; align-items:center; gap:2px; padding:4px 8px; border-top:1px solid var(--hairline); background:var(--card); }
-.canvas-guide-short { display:none; }
-@container agents-canvas (min-width:700px) and (max-width:900px) {
-  .canvas-toolbar { flex-wrap:nowrap; }
-  .canvas-toolbar kbd { display:none; }
-  .canvas-guide-wide { display:none; }
-  .canvas-guide-short { display:inline; }
-}
-.canvas-kind { width:9px; height:9px; border-radius:2px; background:var(--kind); }
-.canvas-toolbar-label { padding:0 6px 0 8px; line-height:1; color:var(--muted-foreground); }
-.canvas-toolbar-more { border-inline-start:1px solid var(--hairline); }
-.canvas-toolbar kbd, .quick-add kbd:not(.kbd-hint) { padding:1px 5px; border:1px solid var(--hairline); font:var(--text-xs)/1.3 var(--mono); color:var(--muted-foreground); }
-/* Counts typed in the header (CountField): out of range is refused in a note under the field. */
-.canvas-count { position:relative; }
-.canvas-count-error { position:absolute; top:calc(100% + 6px); right:0; z-index:7; width:max-content; max-width:280px; padding:6px 9px; border:1px solid var(--destructive); background:var(--card); color:var(--foreground); font-size:var(--text-xs); line-height:1.35; box-shadow:var(--shadow); }
-/* Quick add (Ctrl+A, double-click, or a wire let go on the board): how many, which kind, then one model. */
-.quick-add { position:absolute; z-index:6; display:flex; flex-direction:column; gap:6px; width:min(340px, calc(100% - 16px)); overflow-y:auto; }
-.quick-add > * { flex:none; }
-.quick-add > .quick-add-list { flex:0 1 auto; min-height:60px; }
-.quick-add-title { display:flex; justify-content:space-between; gap:8px; }
-.quick-add-title span:last-child:not(:first-child) { text-transform:none; letter-spacing:0; font-family:inherit; font-size:var(--text-xs); }
-.quick-add-list { display:grid; gap:2px; max-height:300px; overflow:auto; }
-.quick-add-plan { display:flex; flex-wrap:wrap; gap:4px 6px; margin:0; padding:0 4px; font-size:var(--text-xs); color:var(--muted-foreground); }
-.quick-add-plan b { color:var(--foreground); font-weight:600; }
-.quick-add-plan span:not(:first-child)::before, .quick-add-plan b + span::before { content:"· "; }
-.quick-add-plan em { flex-basis:100%; font-style:normal; color:var(--destructive); }
-.quick-add-crumb { display:flex; justify-content:space-between; margin:2px 0 0; padding:0 4px; line-height:1.4; color:var(--muted-foreground); }
-.quick-add-more { margin-inline-start:auto; flex:none; color:var(--muted-foreground); }
-.quick-add-note, .quick-add-help { margin:0; padding:0 4px; color:var(--muted-foreground); font-size:var(--text-xs); line-height:1.35; }
-/* An agent's dashboard (Enter or double-click): what it is, its wiring, and its live work. */
-.agent-dashboard { position:absolute; z-index:7; top:16px; right:16px; display:grid; gap:12px; width:min(420px, calc(100% - 32px)); max-height:calc(100% - 32px); overflow:auto; padding:14px; border-left:3px solid var(--kind); }
-.agent-dashboard header { display:grid; grid-template-columns:1fr auto; gap:4px 8px; align-items:start; }
-.agent-dashboard header strong { grid-column:1; font-size:var(--text-base); line-height:1.3; overflow-wrap:anywhere; }
-.agent-dashboard header > [data-slot="button"] { grid-column:2; grid-row:1 / span 2; }
-.agent-dashboard dl { display:grid; gap:6px; margin:0; }
-.agent-dashboard dl div { display:grid; grid-template-columns:84px 1fr; gap:8px; font-size:var(--text-sm); line-height:1.4; }
-.agent-dashboard dt { color:var(--muted-foreground); }
-.agent-dashboard dd { margin:0; overflow-wrap:anywhere; white-space:pre-wrap; }
-.agent-dashboard-live { display:grid; gap:6px; padding-top:10px; border-top:1px solid var(--hairline); font-size:var(--text-sm); }
-.agent-dashboard-live p { margin:0; }
-.agent-dashboard-live .hud-menu-title { padding:0; }
-.agent-dashboard-live blockquote { margin:0; padding:8px 10px; max-height:180px; overflow:auto; border-left:2px solid var(--context); background:var(--hover); white-space:pre-wrap; overflow-wrap:anywhere; }
-.agent-dashboard > button { justify-self:start; }
-.canvas-templates { display:grid; gap:2px; }
-.canvas-template small.canvas-template-source { color:var(--muted-foreground); }
-/* The guide: Anthropic's and LangGraph's own advice on teams of agents. */
-/* Shared run instruments sit outside either board so they never cover nodes or editor controls. */
-.canvas-telemetry { flex:none; display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; padding:8px 12px; border-bottom:1px solid var(--hairline); background:var(--card); }
-.canvas-hud { flex:none; display:grid; gap:0; padding-right:14px; border-right:1px solid var(--border); }
-.canvas-hud span { line-height:1.4; color:var(--muted-foreground); }
-.canvas-hud strong { font:600 var(--text-title)/1.25 var(--mono); font-variant-numeric:tabular-nums; color:var(--accent-text); }
-/* In the header the clock is one small time beside the run's status; its label is read out, not printed. */
-.canvas-header .canvas-hud { display:inline-flex; align-items:center; height:32px; padding:0; border:0; }
-.canvas-header .canvas-hud span { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
-.canvas-header .canvas-hud strong { font:500 var(--text-sm)/1 var(--mono); color:var(--muted-foreground); }
-.canvas-log-panel { flex:none; min-width:0; padding:6px 12px; border-top:1px solid var(--hairline); background:var(--card); }
-.canvas-log-panel .hud-menu-title { margin:0 0 4px; }
-.canvas-log { display:grid; align-content:start; gap:2px; height:76px; overflow:auto; margin:0; padding:0; list-style:none; }
-.canvas-log li { min-width:0; border-left:3px solid var(--muted-foreground); }
-.canvas-log [data-slot="button"] { align-items:baseline; min-width:0; }
-.canvas-log [data-slot="button"] > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.canvas-log li[data-tone="start"] { border-left-color:var(--context); }
-.canvas-log li[data-tone="done"] { border-left-color:var(--success); }
-.canvas-log li[data-tone="fail"] { border-left-color:var(--destructive); }
-.canvas-log time { flex:none; font:var(--text-xs)/1.5 var(--mono); color:var(--muted-foreground); }
-/* Which architecture is on the board, each one's shape (the Mother, then a column per wave), and the role-split caution. */
-.canvas-template[aria-current="true"] { border-color:var(--border); background:var(--hover); }
-.canvas-template-loaded { margin-inline-start:8px; line-height:1; color:var(--muted-foreground); vertical-align:2px; }
-.canvas-template small.canvas-template-caution { font-style:italic; }
-.canvas-shape { display:flex; align-items:center; gap:12px; padding:3px 0 1px; }
-.canvas-shape > span { position:relative; display:grid; gap:4px; }
-.canvas-shape > span + span::before { content:""; position:absolute; right:calc(100% + 2px); top:50%; width:8px; border-top:1px solid var(--muted-foreground); opacity:.6; }
-.canvas-mother-counts { display:flex; flex-wrap:wrap; gap:8px; }
-.canvas-side .canvas-mother-switch { display:flex; align-items:center; justify-content:space-between; gap:8px; }
-.canvas-side .canvas-count { display:flex; flex-wrap:wrap; height:auto; min-height:32px; padding-block:4px; }
-.canvas-help kbd, .canvas-inspector-actions kbd { padding:0 4px; border:1px solid var(--hairline); font:var(--text-xs)/1.4 var(--mono); }
-/* Run order: Kahn's waves, each with how it is doing. */
-.canvas-help { margin:6px 4px 0; color:var(--muted-foreground); font-size:var(--text-xs); line-height:1.4; }
-[data-kind="mother"], [data-kind="father"] { --kind:var(--foreground); } [data-kind="agent"] { --kind:#6d5bd0; }
-.dark [data-kind="agent"] { --kind:#ab84ff; }
-.canvas-board { position:relative; display:flex; flex-direction:column; min-width:0; min-height:0; background:var(--background); }
-.canvas-board > .react-flow { flex:1 1 0; height:auto; min-height:0; }
-/* A short window keeps the board in view: the run clock and run log give up their height first (and scroll), the
-   board keeps room, and nothing in it spills over the error below (27 Oct). */
-.canvas-board { overflow:hidden; }
-.canvas-board > :is(.react-flow, .iso-board) { min-height:min(140px, 45%); }
-.canvas-board > :is(.canvas-telemetry, .canvas-log-panel) { flex:0 1 auto; min-height:0; overflow:auto; }
-.canvas-board .react-flow { --xy-background-color:var(--background); --xy-background-pattern-color:var(--border); --xy-edge-stroke:var(--muted-foreground); --xy-edge-stroke-selected:var(--foreground); --xy-connectionline-stroke:var(--context); --xy-controls-button-background-color:var(--card); --xy-controls-button-color:var(--foreground); --xy-controls-button-border-color:var(--hairline); --xy-minimap-background-color:var(--card); --xy-node-border-radius:10px; }
-/* Colour means state, as on Deus Ex's board: idle wires are a neutral grey in both themes, never the theme's gold. */
-.dark .canvas-board .react-flow { --xy-edge-stroke:color-mix(in oklch, var(--foreground) 45%, transparent); }
-.canvas-board .react-flow__edge.canvas-edge-done .react-flow__edge-path { stroke:var(--success); }
-.canvas-board .react-flow__edge.canvas-edge-cut .react-flow__edge-path { stroke:var(--destructive); stroke-dasharray:3 5; }
-.canvas-board .react-flow__edge.canvas-edge-live .react-flow__edge-path { stroke:var(--context); }
-.canvas-board .react-flow__edge.canvas-edge-mother .react-flow__edge-path { stroke-dasharray:2 5; }
-/* Two agents working alongside: a plain dashed line, no direction. */
-.canvas-board .react-flow__edge.canvas-edge-alongside .react-flow__edge-path { stroke-dasharray:7 5; }
-/* Chevrons on every wire point the way the work flows; on a live wire they stream (FlowEdge). */
-.canvas-chevron { fill:none; stroke:var(--xy-edge-stroke); stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; pointer-events:none; }
-.canvas-chevron[data-live] { stroke:var(--context); stroke-width:2; }
-.canvas-edge-done .canvas-chevron { stroke:var(--success); }
-.canvas-edge-cut .canvas-chevron { stroke:var(--destructive); }
-.canvas-board .react-flow__edge-path { stroke-width:1.6; }
-.canvas-board .react-flow__controls-button { width:var(--control-h); height:var(--control-h); }
-.canvas-board .react-flow__controls-button svg { width:var(--icon-size); height:var(--icon-size); max-width:var(--icon-size); max-height:var(--icon-size); }
-/* No group rectangle after a box selection (Fusion and Slate have none): it sat over the agents, took the next click and
-   dragged the whole group. Dragging any selected agent still moves them all. */
-.canvas-board .react-flow__nodesselection { display:none; }
-/* A wire is clickable (its menu inserts agents or removes it): it thickens under the pointer and while its menu is open. */
-.canvas-board .react-flow__edge { cursor:pointer; }
-.canvas-board .react-flow__edge:hover .react-flow__edge-path, .canvas-board .react-flow__edge.selected .react-flow__edge-path { stroke-width:2.6; }
-.canvas-board .react-flow__edge.selected .canvas-chevron { stroke:var(--xy-edge-stroke-selected); }
-.canvas-minimap { border:1px solid var(--hairline); border-radius:8px; overflow:hidden; }
-.agent-node { position:relative; display:grid; gap:4px; width:190px; padding:11px 34px 11px 14px; border:1px solid var(--border); border-left:3px solid var(--kind); background:var(--card); color:var(--foreground); box-shadow:var(--shadow); font-size:var(--text-sm); }
-.react-flow__node.selected .agent-node { outline:1.5px dashed color-mix(in oklch, var(--foreground) 70%, transparent); outline-offset:4px; }
-.mother-node { border-left-width:5px; padding-right:14px; }
-.agent-node-kind { line-height:1; color:var(--muted-foreground); white-space:nowrap; }
-.agent-node-title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:var(--text-base); font-weight:600; line-height:1.3; }
-.agent-node-meta { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted-foreground); font-size:var(--text-sm); }
-.agent-node[data-status="running"] .agent-node-meta { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; white-space:normal; line-height:1.35; }
-.agent-node-mark { position:absolute; top:10px; right:10px; display:grid; place-items:center; width:18px; height:18px; border-radius:50%; box-shadow:inset 0 0 0 1.5px var(--border); }
-.agent-node[data-status="running"] { border-color:var(--context); box-shadow:0 0 0 3px color-mix(in oklab, var(--context) 22%, transparent), var(--shadow); }
-.agent-node-mark[data-check="running"] { box-shadow:inset 0 0 0 2px var(--context); border-top-color:transparent; animation:canvas-spin 1s linear infinite; background:conic-gradient(var(--context) 0 25%, transparent 25%); -webkit-mask:radial-gradient(circle, transparent 5px, #000 5.5px); }
-.agent-node[data-status="succeeded"] { border-color:color-mix(in oklch, var(--success) 60%, var(--border)); }
-.agent-node-mark[data-check="succeeded"] { background:var(--success); color:var(--background); box-shadow:none; }
-.agent-node[data-status="failed"], .agent-node[data-status="blocked"] { border-color:var(--destructive); }
-.agent-node-mark[data-check="failed"], .agent-node-mark[data-check="blocked"] { background:var(--destructive); color:var(--background); box-shadow:none; }
-.agent-node[data-status="pending"], .agent-node[data-status="cancelled"] { opacity:.75; }
-@keyframes canvas-spin { to { transform:rotate(360deg); } }
-@media (prefers-reduced-motion:reduce) { .agent-node-mark[data-check="running"] { animation:none; } }
-/* Quick create: either + adds one successor linked only from this agent, shown on hover or focus. */
-.agent-node-plus { position:absolute; opacity:0; transition:opacity .12s ease; }
-.agent-node-plus[data-side="right"] { top:50%; right:-46px; transform:translateY(-50%); }
-.agent-node-plus[data-side="bottom"] { left:50%; bottom:-27px; transform:translateX(-50%); }
-.agent-node-plus { z-index:2; pointer-events:none; }
-/* The hovered agent rises above its neighbours, so its + buttons never sit behind the agent below. React Flow sets each
-   node's z-index inline, so only !important can lift it (an external library's inline style). */
-.canvas-board .react-flow__node:hover { z-index:2000 !important; }
-.react-flow__node:hover .agent-node-plus, .react-flow__node.selected .agent-node-plus, .agent-node-plus:focus-visible { opacity:1; pointer-events:auto; }
-/* While an agent is hovered, an invisible bridge to its + buttons keeps the hover as the pointer crosses the gap; it
-   exists only then, so it never blocks a wire or the board. */
-.react-flow__node:hover .agent-node::before, .react-flow__node:hover .agent-node::after { content:""; position:absolute; }
-.react-flow__node:hover .agent-node::before { top:20%; bottom:20%; left:100%; width:48px; }
-.react-flow__node:hover .agent-node::after { left:30%; right:30%; top:100%; height:28px; }
-@media (prefers-reduced-motion:reduce) { .agent-node-plus { transition:none; } }
-/* Dots retain their centre on hover; the invisible ring stays easy to hit at normal board zoom. */
-.agent-node .react-flow__handle { width:12px; height:12px; border:2px solid var(--card); background:var(--kind); z-index:3; transition:scale .12s ease; }
-.agent-node .react-flow__handle::after { content:""; position:absolute; inset:-12px; border-radius:50%; }
-.agent-node .react-flow__handle:hover { scale:1.15; }
-@media (prefers-reduced-motion:reduce) { .agent-node .react-flow__handle { transition:none; } }
-/* A note for the user, never sent: dragged by its strip, written in below. */
-.canvas-note { display:grid; border-radius:4px; background:#f6e9a8; box-shadow:var(--shadow); }
-.canvas-note-grip { padding:6px 10px 0; line-height:1.4; color:#6b5f2a; cursor:grab; user-select:none; }
-.canvas-note textarea { width:180px; min-height:80px; padding:4px 10px 10px; border:0; background:transparent; color:#2b2611; font-size:var(--text-sm); line-height:1.4; field-sizing:fixed; resize:both; box-shadow:none; }
-.dark .canvas-note textarea { background:#3a3518; color:#f1ead0; }
-.canvas-notice { flex:none; display:flex; align-items:center; gap:8px; margin:6px 12px; padding:8px 12px; border:1px solid var(--destructive); background:var(--card); color:var(--foreground); font-size:var(--text-sm); box-shadow:var(--shadow); }
-.canvas-notice[data-tone="info"] { border-color:var(--border); }
-.canvas-error-notice { grid-column:1 / -1; min-width:0; align-items:flex-start; }
-.canvas-error-notice > button { flex:none; }
-.canvas-error-details { flex:1; min-width:0; max-height:min(24vh, 192px); overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.5; }
-.canvas-error-details:focus-visible { outline:2px solid var(--ring); outline-offset:2px; }
-.canvas-side { display:flex; flex-direction:column; gap:8px; padding:14px 14px; overflow:auto; border-left:1px solid var(--hairline); background:var(--sidebar); }
-.canvas-side .hud-menu-title { padding:2px 4px; }
-.canvas-side input { text-overflow:ellipsis; }
-.canvas-side [data-slot="select-trigger"] { width:100%; min-width:0; }
-.canvas-side [data-slot="select-trigger"] > span { min-width:0; overflow:hidden; text-overflow:ellipsis; }
-.canvas-side label, .canvas-folders { display:grid; gap:4px; color:var(--muted-foreground); font-size:var(--text-xs); }
-/* A finished agent's own report, named outputs and checker evidence stay in the existing selected-agent drawer. */
-.agent-run-output { display:grid; gap:12px; padding:2px 4px 12px; border-bottom:1px solid var(--hairline); font-size:var(--text-xs); line-height:1.45; }
-.agent-run-output section, .agent-output-files { display:grid; gap:6px; min-width:0; }
-.agent-run-output h3 { margin:0; color:var(--foreground); font:600 var(--text-xs)/1.3 var(--mono); letter-spacing:.08em; text-transform:uppercase; }
-.agent-run-output p { margin:0; overflow-wrap:anywhere; color:var(--muted-foreground); }
-.agent-output-files article { display:grid; gap:4px; min-width:0; }
-.agent-output-files article > strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--foreground); font-family:var(--mono); font-weight:500; }
-.agent-output-files pre { max-height:180px; margin:0; overflow:auto; padding:8px 10px; border:1px solid var(--hairline); background:var(--recessed); color:var(--foreground); white-space:pre-wrap; overflow-wrap:anywhere; }
-.agent-output-files code { font:var(--text-xs)/1.45 var(--mono); }
-.agent-verdicts { display:grid; gap:8px; margin:0; padding:0; list-style:none; }
-.agent-verdicts li { display:grid; grid-template-columns:auto minmax(0,1fr); gap:2px 6px; align-items:baseline; min-width:0; }
-.agent-verdicts li > strong { color:var(--muted-foreground); }
-.agent-verdicts li[data-state="passed"] > strong { color:var(--success); }
-.agent-verdicts li[data-state="failed"] > strong { color:var(--destructive); }
-.agent-verdicts li > span, .agent-verdicts li > small { overflow-wrap:anywhere; }
-.agent-verdicts li > small { grid-column:2; color:var(--muted-foreground); }
-/* The folders an agent may write: chosen ones as chips, then a menu of the project's other folders. */
-.canvas-folders-chosen { display:flex; flex-wrap:wrap; gap:4px; }
-.canvas-folders .canvas-chip { height:26px; max-width:100%; gap:4px; padding:0 4px 0 8px; color:var(--foreground); font-family:var(--mono); font-size:var(--text-xs); }
-.canvas-chip-label { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.canvas-inspector-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:4px; }
-/* The isometric view (components/agents-iso.tsx), as Deus Ex's hacking screen: pedestals on a ground grid in one SVG,
- * upright titles and chamfered controls in HTML over it. Colours come from the theme's tokens and the agent's --kind;
- * state colours match the flat board's (done --success, live --context, cut --destructive). */
-.canvas-view { flex:none; }
-.iso-board { container:iso-board / inline-size; position:relative; flex:1 1 0; min-height:0; overflow:clip; outline:none; cursor:crosshair; touch-action:none; user-select:none; --iso-wire:var(--muted-foreground); }
-.dark .iso-board { --iso-wire:color-mix(in oklch, var(--foreground) 45%, transparent); background:radial-gradient(ellipse at 45% 40%, color-mix(in srgb, var(--gold) 7%, var(--accent-canvas)), var(--canvas) 70%); }
-.iso-board[data-panning] { cursor:grabbing; }
-.iso-board > svg { position:absolute; inset:0; width:100%; height:100%; }
-.iso-board :is(.iso-floor, .iso-grid, .iso-wire, .iso-wire-bed, .iso-chevron, .iso-ring, .iso-plate, .iso-focus, .iso-inlay, .iso-face-top) { vector-effect:non-scaling-stroke; }
-.iso-floor { fill:var(--recessed); stroke:var(--hairline); }
-.iso-grid { stroke:var(--hairline); stroke-width:1; pointer-events:none; }
-.dark .iso-floor { fill:color-mix(in srgb, var(--gold) 4%, var(--accent-surface)); stroke:color-mix(in oklch, var(--gold) 24%, transparent); }
-.dark .iso-grid { stroke:color-mix(in oklch, var(--gold) 11%, transparent); }
-.iso-glow { opacity:0; pointer-events:none; }
-.iso-glow[data-status="running"] { fill:var(--context); opacity:.5; animation:iso-pulse 1.6s ease-in-out infinite; }
-.iso-glow[data-status="succeeded"] { fill:var(--success); opacity:.35; }
-.iso-glow:is([data-status="failed"], [data-status="blocked"]) { fill:var(--destructive); opacity:.4; }
-@keyframes iso-pulse { 50% { opacity:.15; } }
-.iso-link { cursor:pointer; }
-.iso-wire-hit { fill:none; stroke:transparent; stroke-width:18; pointer-events:stroke; }
-.iso-link .iso-chevron { pointer-events:none; }
-.iso-world { transition:transform 250ms ease; }
-.iso-board[data-panning] .iso-world { transition:none; }
-.canvas-flow-edit { position:absolute; z-index:25; width:min(300px, calc(100% - 16px)); padding:8px; border:1px solid var(--hairline); border-radius:6px; background:var(--card); }
-.canvas-text-edit { width:100%; min-width:0; height:28px; font:inherit; }
-.iso-label:has(.canvas-text-edit) { width:176px; padding:3px; z-index:5; }
-.iso-flow-label { position:absolute; pointer-events:auto; max-width:176px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; transform:translate(-50%, -100%); padding:2px 7px; border:1px solid var(--hairline); border-radius:4px; color:var(--foreground); background:var(--card); font-size:var(--text-xs); line-height:18px; cursor:text; }
-.iso-flow-leader { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; stroke:var(--muted-foreground); stroke-width:1; stroke-dasharray:2 3; }
-.canvas-flow-leader { fill:none; pointer-events:none; stroke:var(--xy-edge-stroke); stroke-width:1; stroke-dasharray:2 3; }
-.canvas-notice > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-@media (prefers-reduced-motion: reduce) { .iso-world { transition:none; } }
-.iso-link[data-state="done"] { --iso-wire:var(--success); }
-.iso-link[data-state="live"] { --iso-wire:var(--context); }
-.iso-link[data-state="cut"] { --iso-wire:var(--destructive); }
-.iso-link[data-hot]:not([data-state]) { --iso-wire:var(--foreground); }
-.iso-wire { fill:none; stroke:var(--iso-wire); stroke-width:1.8; stroke-dasharray:7 5; stroke-linejoin:round; }
-.iso-wire-bed { fill:none; stroke:var(--iso-wire); stroke-width:6; stroke-linejoin:round; opacity:.13; }
-.iso-link:is([data-mother], [data-father]) .iso-wire { stroke-dasharray:2 5; }
-/* A two-way wire sets no order: a plain line, with no chevrons. */
-.iso-link[data-kind="alongside"] .iso-wire { stroke-dasharray:none; }
-.iso-link[data-state="cut"] .iso-wire { stroke-dasharray:3 5; }
-.iso-link[data-hot] .iso-wire { stroke-width:2.6; }
-.iso-link[data-hot] .iso-wire-bed { opacity:.24; }
-.iso-chevron { fill:none; stroke:var(--iso-wire); stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round; transform:translate(var(--x), var(--y)); }
-.iso-chevron[data-live] { stroke-width:2.6; animation:iso-stream 1.8s linear infinite; }
-@keyframes iso-stream { from { transform:translate(var(--sx), var(--sy)); opacity:0; } 20%, 80% { opacity:1; } to { transform:translate(var(--ex), var(--ey)); opacity:0; } }
-.iso-node { cursor:pointer; outline:none; }
-.iso-node:is([data-status="pending"], [data-status="cancelled"]) { opacity:.75; }
-.iso-hit { fill:transparent; }
-.iso-plate, .iso-focus { fill:none; pointer-events:none; }
-.iso-node[aria-pressed="true"] .iso-plate { fill:color-mix(in oklab, var(--context) 14%, transparent); stroke:var(--context); stroke-width:1.5; stroke-dasharray:5 4; }
-.iso-node:focus-visible .iso-focus { stroke:var(--ring); stroke-width:2; }
-.iso-ring { fill:none; stroke:var(--border); stroke-width:1.5; stroke-dasharray:2 5; pointer-events:none; }
-.iso-ring[data-check="pending"] { stroke:var(--muted-foreground); }
-.iso-ring[data-check="running"] { stroke:var(--context); stroke-width:2; stroke-dasharray:10 6; animation:iso-turn 1.2s linear infinite; }
-.iso-ring[data-check="succeeded"] { stroke:var(--success); stroke-width:2.5; stroke-dasharray:none; }
-.iso-ring:is([data-check="failed"], [data-check="blocked"]) { stroke:var(--destructive); stroke-width:2.5; stroke-dasharray:none; }
-@keyframes iso-turn { to { stroke-dashoffset:-32; } }
-.iso-lift { transition:transform .15s ease; }
-.iso-node:is(:hover, [data-hot]) .iso-lift { transform:translateY(-4px); }
-.iso-core .iso-face-top { fill:color-mix(in oklch, var(--kind) 82%, var(--card)); }
-.iso-core .iso-face-left { fill:color-mix(in oklch, var(--kind) 76%, #000); }
-.iso-core .iso-face-right { fill:color-mix(in oklch, var(--kind) 56%, #000); }
-.iso-base .iso-face-top { fill:var(--card); stroke:var(--border); }
-.iso-base .iso-face-left { fill:color-mix(in oklch, var(--ink) 12%, var(--canvas)); }
-.iso-base .iso-face-right { fill:color-mix(in oklch, var(--ink) 22%, var(--canvas)); }
-.dark .iso-base .iso-face-top { stroke:color-mix(in oklch, var(--gold) 35%, transparent); }
-.dark .iso-base .iso-face-left { fill:color-mix(in srgb, var(--gold) 12%, #151515); }
-.dark .iso-base .iso-face-right { fill:color-mix(in srgb, var(--gold) 6%, #0f0f0f); }
-.iso-node[data-status="running"] .iso-core .iso-face-top { stroke:var(--context); stroke-width:2; }
-.iso-node[data-status="succeeded"] .iso-core .iso-face-top { stroke:var(--success); stroke-width:2; }
-.iso-node:is([data-status="failed"], [data-status="blocked"]) .iso-core .iso-face-top { stroke:var(--destructive); stroke-width:2; }
-.iso-inlay { fill:none; stroke:color-mix(in oklch, var(--kind) 40%, #fff); stroke-width:1; opacity:.75; pointer-events:none; }
-.iso-port { position:absolute; z-index:1; width:16px; height:16px; padding:0; transform:translate(-50%, -50%); border:2px solid var(--card); border-radius:50%; background:var(--kind, var(--context)); box-shadow:0 0 0 1px var(--border); cursor:crosshair; touch-action:none; }
-.iso-port:hover, .iso-port:focus-visible { outline:2px solid var(--ring); outline-offset:2px; }
-.iso-connection { fill:none; stroke:var(--context); stroke-width:2; stroke-dasharray:4 4; pointer-events:none; }
-.iso-labels { position:absolute; inset:0; pointer-events:none; }
-.iso-label { pointer-events:auto; cursor:pointer; position:absolute; display:flex; align-items:center; gap:6px; max-width:176px; padding:2px 8px 2px 3px; transform:translate(-50%, -100%); border:1px solid var(--hairline); border-radius:4px; background:color-mix(in oklab, var(--card) 88%, transparent); color:var(--foreground); font-size:var(--text-sm); font-weight:600; line-height:18px; white-space:nowrap; }
-.iso-label > span { min-width:0; overflow:hidden; text-overflow:ellipsis; }
-.iso-label:is([data-kind="mother"], [data-kind="father"]) { padding-inline-start:8px; }
-.iso-label[data-short] { padding:2px; }
-.iso-label:is([data-hot], [data-selected]) { z-index:1; }
-.iso-label[data-hot] { border-color:var(--foreground); }
-.iso-label[data-selected] { border-color:var(--context); box-shadow:0 0 0 1px var(--context); }
-.iso-badge { flex:none; display:grid; place-items:center; min-width:18px; height:18px; padding:0 4px; border-radius:3px; background:var(--kind); color:var(--card); font:600 var(--text-xs)/1 var(--mono); }
-/* The isometric HUD uses the same native border as the other cut controls and cards. */
-.iso-chamfer { --cut:7px; border:1px solid var(--hud-edge); background:var(--hud-face); }
-.iso-hud { position:absolute; z-index:2; bottom:12px; }
-.iso-controls { left:12px; display:flex; align-items:center; gap:6px; }
-.iso-status { right:12px; --cut:10px; display:grid; gap:2px; min-width:0; width:min(320px, calc(100% - 180px)); padding:7px 14px 7px 15px; border-left-color:var(--kind, var(--border)); }
-.iso-status strong { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:var(--text-sm); font-weight:600; color:var(--foreground); }
-.iso-status small { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:var(--text-xs); color:var(--muted-foreground); }
-@media (prefers-reduced-motion:reduce) { .iso-glow, .iso-ring, .iso-chevron { animation:none; } .iso-lift { transition:none; } }
-
-/* The browser toolbar never squeezes the address field (180px, above): as the panel narrows, Annotate and Draw become icons
- * and open-externally moves into the … menu. The panel's own floor (components/side-panel.tsx) keeps what is left enough. */
-.browser-panel { container:browser-panel / inline-size; }
-@container browser-panel (max-width:559px) {
-  .browser-annotate-label { display:none; }
-  .browser-annotate { position:relative; width:28px; padding:0; justify-content:center; }
-  .browser-badge { position:absolute; top:-3px; inset-inline-end:-3px; }
-}
-@container browser-panel (max-width:459px) {
-  .browser-security-text { display:none; }
-  .browser-address:has(.browser-security) input { padding-inline-start:28px; }
-}
-@container browser-panel (max-width:394px) { .browser-external { display:none; } }
 
 /* Full view (components/side-panel.tsx): the panel fills the work area and the chat floats over it as a card, folded
  * to a pill on request. The native page paints over any HTML, so the page, the shell and the annotation bar give up
@@ -1608,17 +1170,6 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .context-files-error { padding:8px 16px; overflow-wrap:anywhere; }
 .context-files-error [role="alert"] { color:var(--destructive); }
 
-/* Identity edges stay distinct; restrained tints keep secondary text readable in both themes. */
-.agent-node[data-kind="agent"] { --kind:var(--agent-color); border-left:5px solid var(--agent-color); background:color-mix(in oklab, var(--agent-color) 20%, var(--card)); }
-.dark .agent-node[data-kind="agent"] { background:color-mix(in oklab, var(--agent-color) 10%, var(--card)); }
-.iso-node[data-kind="agent"] { --kind:var(--agent-color); }
-.canvas-pattern-command { position:absolute; bottom:48px; left:12px; right:12px; z-index:12; display:grid; gap:6px; padding:10px; }
-.canvas-round-limit { position:absolute; bottom:48px; right:12px; z-index:3; display:flex; align-items:center; gap:8px; padding:6px 10px; background:var(--card); color:var(--foreground); border:1px solid var(--border); }
-/* Reuse the installed controls and theme: the offline desktop bundle has no daisyUI stylesheet. */
-.canvas-characters { position:relative; }
-.canvas-characters > summary { list-style:none; cursor:pointer; }
-.canvas-characters:not([open]) > .dropdown-content { display:none; }
-.canvas-characters > .dropdown-content { position:absolute; bottom:calc(100% + 8px); left:0; width:190px; border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); }
 
 /* Love Spot's brand color stays local to its navigation mark and drawing controls. */
 :root { --love-red:#8B1017; }

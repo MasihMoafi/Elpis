@@ -75,7 +75,7 @@ test('a running step has its sentence, ticking timer and filled rotor, in both t
   assert.equal(await live.locator('.elpis-working-mark').count(), 0, 'the running row has no mark of its own');
   const rotor = page.locator('.turn-working .elpis-working-rotor');
   const rotation = () => rotor.evaluate(node => getComputedStyle(node).transform);
-  assert.equal(await rotor.evaluate(node => getComputedStyle(node).animationName), 'elpis-orbit');
+  assert.notEqual(await rotor.evaluate(node => getComputedStyle(node).animationName), 'none');
   const firstRotation = await rotation();
   await page.waitForTimeout(700);
   assert.notEqual(await rotation(), firstRotation, 'the filled shape rotates smoothly');

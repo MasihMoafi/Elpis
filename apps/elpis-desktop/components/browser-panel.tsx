@@ -1,6 +1,7 @@
 "use client";
 
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import "@/components/browser-panel.css";
 import { ExternalLink, ArrowLeft, ArrowRight, ChevronDown, ChevronUp, Ellipsis, RefreshCw, PenLine, SquareDashedMousePointer, CircleAlert, X, Copy, Link, Pencil, Volume2, VolumeX } from "lucide-react";
 import { PinIcon, PlusIcon, StopIcon } from "@/components/elpis-icons";
 import { Button } from "@/components/ui/button";

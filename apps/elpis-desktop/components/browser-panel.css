@@ -1,0 +1,71 @@
+/* The side panel's browser (components/browser-panel.tsx) and its annotations (components/browser-annotations.tsx). */
+.browser-panel { position:relative; display:flex; flex-direction:column; flex:1; min-width:0; min-height:0; }
+.browser-toolbar { display:flex; align-items:center; gap:2px; padding:6px; border-bottom:1px solid var(--hairline); }
+.browser-toolbar input { min-width:0; height:var(--control-h); font-size:var(--text-xs); background:var(--recessed); }
+.browser-viewport { flex:1; min-height:0; background:var(--background); }
+.browser-empty { padding:16px; margin:0; font-size:var(--text-sm); color:var(--muted-foreground); }
+.browser-empty span { display:block; margin-top:4px; font-size:var(--text-small); }
+.browser-error { padding:8px 12px; font-size:var(--text-xs); color:var(--destructive); overflow-wrap:anywhere; }
+
+.browser-toolbar { gap:4px; background:var(--sidebar); }
+.browser-toolbar input { border-color:var(--hairline); background:var(--recessed); }
+.browser-toolbar input:focus-visible { border-color:color-mix(in srgb, var(--primary) 50%, var(--border)); }
+/* Browser parity (16 Oct 2026): address states, Annotate, find bar, failure screen, options menu, annotation dock.
+ * Page markers and comment numbers share one blue (--annotation) so a number in Elpis matches the one on the page. */
+.browser-panel { --annotation:#2f6fed; }
+.browser-address { position:relative; display:flex; align-items:center; flex:1; min-width:180px; }
+.browser-address input { flex:1; }
+.browser-security { position:absolute; inset-inline-start:7px; z-index:1; display:flex; align-items:center; gap:4px; font-size:var(--text-small); color:var(--warning); pointer-events:none; }
+.browser-address:has(.browser-security) input { padding-inline-start:90px; }
+.browser-address:has(.browser-zoom) input { padding-inline-end:56px; }
+.browser-zoom { position:absolute; inset-inline-end:5px; height:20px; padding:0 6px; border:1px solid var(--hairline); background:var(--card); color:var(--muted-foreground); font-size:var(--text-small); }
+.browser-zoom:hover { color:var(--foreground); }
+.browser-annotate { gap:6px; color:var(--muted-foreground); }
+.browser-annotate[aria-pressed="true"] { color:var(--annotation); background:color-mix(in oklab, var(--annotation) 14%, transparent); }
+.browser-badge { min-width:16px; height:16px; padding:0 4px; border-radius:8px; background:var(--annotation); color:#fff; font-size:var(--text-small); line-height:16px; text-align:center; }
+.browser-notice { padding:6px 12px; font-size:var(--text-xs); color:var(--muted-foreground); border-bottom:1px solid var(--hairline); }
+.browser-find { display:flex; align-items:center; gap:4px; padding:5px 6px; border-bottom:1px solid var(--hairline); background:var(--sidebar); }
+.browser-find input { max-width:280px; height:28px; font-size:var(--text-xs); border-color:var(--hairline); background:var(--recessed); }
+.browser-find-count { min-width:72px; font-size:var(--text-small); color:var(--muted-foreground); font-variant-numeric:tabular-nums; }
+.browser-viewport { position:relative; }
+.browser-failure { position:absolute; inset:0; overflow:auto; padding:56px 48px; background:var(--background); color:var(--foreground); font-size:var(--text-sm); line-height:1.55; }
+.browser-failure h2 { margin:0 0 10px; font-size:var(--text-title); font-weight:600; }
+.browser-failure p { margin:0 0 6px; max-width:560px; color:var(--muted-foreground); }
+.browser-failure .browser-failure-try { margin-top:14px; color:var(--foreground); }
+.browser-failure ul { margin:0 0 14px; padding-inline-start:20px; list-style:disc; color:var(--muted-foreground); }
+.browser-failure code { display:block; margin-bottom:20px; font:var(--text-small) var(--mono); color:var(--muted-foreground); }
+.browser-options { min-width:248px; }
+.browser-options-separator { height:1px; margin:5px 4px; background:var(--hairline); }
+.browser-zoom-row { display:flex; align-items:center; gap:4px; padding:4px 8px; font-size:var(--text-base); }
+.browser-zoom-row > span { flex:1; }
+.browser-zoom-value { min-width:48px; border:0; background:none; color:var(--muted-foreground); font-size:var(--text-sm); font-variant-numeric:tabular-nums; }
+.annotation-dock { flex-shrink:0; border-top:1px solid var(--hairline); background:var(--sidebar); }
+.annotation-editor { display:flex; align-items:flex-start; gap:8px; height:72px; padding:8px; border-bottom:1px solid var(--hairline); }
+.annotation-editor textarea { flex:1; min-height:0; height:56px; resize:none; field-sizing:fixed; font-size:var(--text-sm); border-color:var(--hairline); background:var(--recessed); }
+.annotation-target { display:flex; align-items:center; gap:6px; max-width:30%; padding-top:6px; font-size:var(--text-xs); color:var(--muted-foreground); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.annotation-target b, .annotation-chips button { flex-shrink:0; width:20px; height:20px; border-radius:10px; background:var(--annotation); color:#fff; font-size:var(--text-small); font-weight:700; line-height:20px; text-align:center; }
+.annotation-editor-actions { display:flex; gap:4px; align-self:flex-end; }
+.annotation-hint { display:flex; align-items:center; gap:8px; margin:0; height:100%; padding-inline:4px; font-size:var(--text-sm); color:var(--muted-foreground); }
+.annotation-hint svg { color:var(--annotation); flex-shrink:0; }
+.annotation-hint kbd { margin:0; padding:0 4px; border:1px solid var(--border); }
+.annotation-bar { display:flex; align-items:center; gap:4px; min-height:42px; padding:5px 8px; }
+.annotation-status { display:flex; align-items:center; gap:6px; flex-shrink:0; font-size:var(--text-sm); font-weight:500; }
+.annotation-status i { width:7px; height:7px; border-radius:4px; background:var(--annotation); box-shadow:0 0 6px var(--annotation); }
+.annotation-chips { display:flex; gap:4px; flex:1; min-width:0; margin:0 6px; padding:0; list-style:none; overflow-x:auto; scrollbar-width:none; }
+.annotation-chips button { border:0; cursor:pointer; }
+.annotation-chips button[aria-pressed="true"] { outline:2px solid color-mix(in oklab, var(--annotation) 45%, transparent); outline-offset:1px; }
+.annotation-error { font-size:var(--text-xs); color:var(--destructive); }
+
+/* The browser toolbar never squeezes the address field (180px, above): as the panel narrows, Annotate and Draw become icons
+ * and open-externally moves into the … menu. The panel's own floor (components/side-panel.tsx) keeps what is left enough. */
+.browser-panel { container:browser-panel / inline-size; }
+@container browser-panel (max-width:559px) {
+  .browser-annotate-label { display:none; }
+  .browser-annotate { position:relative; width:28px; padding:0; justify-content:center; }
+  .browser-badge { position:absolute; top:-3px; inset-inline-end:-3px; }
+}
+@container browser-panel (max-width:459px) {
+  .browser-security-text { display:none; }
+  .browser-address:has(.browser-security) input { padding-inline-start:28px; }
+}
+@container browser-panel (max-width:394px) { .browser-external { display:none; } }
