@@ -60,16 +60,17 @@ export function PromptRail({ scroller, threadId, entries, onLoadEarlier, onNavig
     const root = scroller.current, list = loadedOrder.current;
     if (!root || !list.length) return;
     const top = root.getBoundingClientRect().top, bottom = root.scrollHeight - root.scrollTop - root.clientHeight < 4;
-    if (bottom) { setCurrent(list[list.length - 1]); return; }
+    if (bottom) { setCurrent(list.at(-1) ?? null); return; }
     // Positions are ordered; avoid measuring every offscreen turn on each scroll.
     let low = 0, high = list.length - 1;
     const boundary = top + root.clientHeight / 3;
     while (low < high) {
       const middle = Math.ceil((low + high) / 2);
-      if (elements.current.get(list[middle])!.getBoundingClientRect().top <= boundary) low = middle;
+      const id = list[middle], element = id === undefined ? undefined : elements.current.get(id);
+      if (element && element.getBoundingClientRect().top <= boundary) low = middle;
       else high = middle - 1;
     }
-    setCurrent(list[low]);
+    setCurrent(list[low] ?? null);
   };
   const read = () => {
     const root = scroller.current;
@@ -87,7 +88,7 @@ export function PromptRail({ scroller, threadId, entries, onLoadEarlier, onNavig
     elements.current = new Map(found.map(prompt => [prompt.turnId, prompt.element]));
     loadedOrder.current = found.map(prompt => prompt.turnId);
     const data = found.map(({ turnId, itemId, text }) => ({ turnId, itemId, text }));
-    setLoaded(previous => previous?.threadId === threadId && previous.data.length === data.length && previous.data.every((prompt, index) => prompt.turnId === data[index].turnId && prompt.itemId === data[index].itemId && prompt.text === data[index].text) ? previous : { threadId, data });
+    setLoaded(previous => previous?.threadId === threadId && previous.data.length === data.length && previous.data.every((prompt, index) => prompt.turnId === data[index]?.turnId && prompt.itemId === data[index]?.itemId && prompt.text === data[index]?.text) ? previous : { threadId, data });
     place();
   };
   const show = (turnId: string, button: HTMLButtonElement) => {
@@ -234,7 +235,7 @@ export function PromptRail({ scroller, threadId, entries, onLoadEarlier, onNavig
   if (prompts.length < 4) return null;
 
   const select = ({ turnId, itemId }: Prompt) => {
-    if (threadId) setTarget({ threadId, turnId, itemId });
+    if (threadId) setTarget({ threadId, turnId, ...(itemId === undefined ? {} : { itemId }) });
   };
   const toggleBookmark = (turnId: string) => {
     if (!threadId) return;

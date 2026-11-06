@@ -46,6 +46,7 @@ export function AgentsGuideLink({ onOpen }: { onOpen: () => void }) {
 export function AgentsGuide({ onBack }: { onBack: () => void }) {
   const [index, setIndex] = useState(0);
   const topic = topics[index];
+  if (!topic) return null;
   return <section aria-label="Guide to managing agents" className="mx-auto max-w-3xl space-y-2 lg:space-y-5">
     {/* Back and the topics share one wrapping row, so every topic still fits one screen at 900x700 with the longer
         "Mother agent and Father agent" name (Masih, 29 Oct: "it's not mother; it's mother agent."). */}
