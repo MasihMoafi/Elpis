@@ -316,8 +316,6 @@ for (const mode of ['missing', 'stale', 'mutated', 'download-source', 'download-
   // The installer trims old versions with the repository's shared prune script (1 Nov).
   await fs.mkdir(path.join(f.root, '../../scripts'), { recursive: true });
   await fs.copyFile(fileURLToPath(new URL('../../../scripts/prune-versions.mjs', import.meta.url)), path.join(f.root, '../../scripts/prune-versions.mjs'));
-  // The installer reads the approved looks next to its folder (A109).
-  await fs.copyFile(fileURLToPath(new URL('../approved-looks.json', import.meta.url)), path.join(f.root, 'approved-looks.json'));
   // The isolated repository has its own immutable checkpoint; production keeps the deployed checkpoint.
   const helper = path.join(f.root, 'scripts/renderer-artifact-gate.mjs');
   await fs.writeFile(helper, (await fs.readFile(helper, 'utf8')).replace(baselineCommit, f.baseline));

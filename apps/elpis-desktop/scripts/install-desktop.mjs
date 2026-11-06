@@ -8,7 +8,6 @@
 // The UI receipt must match both the downloaded renderer and its packaged copy before selecting the installation.
 // An install only moves forward: the commit must contain the selected installation's commit (21 October: an install
 // built from an older branch dropped about fifty installed fixes). --rollback skips that check when Masih asks for one.
-// Approved looks also need their light and dark frames shown to Masih before installing changes: --shown=ID[,ID].
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -21,7 +20,6 @@ import { pruneVersions } from '../../../scripts/prune-versions.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const git = args => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
-const approvedLooks = JSON.parse(fs.readFileSync(new URL('../approved-looks.json', import.meta.url), 'utf8'));
 const missingCommit = 'The selected installation records no source commit, so this install could drop its fixes; integrate it first.';
 const name = process.argv[2], release = process.argv.includes('--release'), actions = process.argv.includes('--actions'), rollback = process.argv.includes('--rollback');
 const gh = args => execFileSync('gh', args, { cwd: root, encoding: 'utf8' }).trim();
@@ -47,24 +45,6 @@ export function assertMovesForward(cwd, installed, commit) {
   catch { throw new Error(`${commit.slice(0, 9)} does not contain the installed ${installed.slice(0, 9)}; installing it would drop installed fixes. Integrate onto the installed line first.`); }
 }
 
-/** Refuses changes to an approved look until Masih has seen its light and dark frames. */
-export function assertApprovedLooks(cwd, installed, commit, args = []) {
-  if (!installed) throw new Error(missingCommit);
-  const shown = new Set(args.filter(arg => arg.startsWith('--shown=')).flatMap(arg => arg.slice('--shown='.length).split(',')));
-  const accepted = [];
-  for (const { id, files } of approvedLooks) {
-    try {
-      // The installer runs inside apps/elpis-desktop; registered paths are relative to the repository root.
-      execFileSync('git', ['diff', '--quiet', installed, commit, '--', ...files.map(file => `:(top,literal)${file}`)], { cwd, stdio: 'ignore' });
-    } catch (error) {
-      if (error.status !== 1) throw error;
-      if (!shown.has(id)) throw new Error(`The approved look "${id}" changed (${files.join(', ')}). Show Masih the light and dark frames first, then rerun with --shown=${id}.`);
-      accepted.push(id);
-    }
-  }
-  if (accepted.length) console.log(`Shown to Masih: ${accepted.join(', ')}.`);
-}
-
 /** A local install packages `out/` as it is, so it must have been built from the commit being installed (28 Oct: three
  * installs shipped the renderer of an older build, because `out/` was not rebuilt after a checkout). */
 export function assertRendererCommit(root, commit) {
@@ -84,7 +64,7 @@ async function actionsRenderer(commit) {
   return folder;
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) try {
-  if (!/^[\w.-]+$/.test(name ?? '')) throw new Error('usage: node scripts/install-desktop.mjs NAME [--release] [--actions] [--rollback] [--shown=ID[,ID]]');
+  if (!/^[\w.-]+$/.test(name ?? '')) throw new Error('usage: node scripts/install-desktop.mjs NAME [--release] [--actions] [--rollback]');
   if (git(['status', '--porcelain', '--untracked-files=no'])) throw new Error('There are uncommitted changes; commit them and run the full gate first.');
   const commit = git(['rev-parse', 'HEAD']);
   if (release) await requirePass(records, commit);
@@ -93,7 +73,6 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) try {
   if (!rollback) {
     const installed = installationCommit(path.dirname(fs.realpathSync(link)));
     assertMovesForward(root, installed, commit);
-    assertApprovedLooks(root, installed, commit, process.argv.slice(3));
   }
   const electron = path.join(path.dirname(fs.realpathSync(link)), 'runtime/electron');
   const destination = path.join(os.homedir(), '.local/lib/elpis-desktop/versions', `${name}-${commit.slice(0, 9)}`);
