@@ -10,12 +10,12 @@ const GUARDED = /^(?:\S*\/)?python3?(?:\s+-\S+)*\s+\S*\/agent-resource-guard\/gu
 const QUOTED = /^(['"])([\s\S]*)\1$/;
 export function unwrapShell(command: string): string {
   const guarded = command.trim().match(GUARDED);
-  if (guarded) {
+  if (guarded?.[1] !== undefined) {
     const inner = guarded[1].trim(), quoted = inner.match(QUOTED);
-    return unwrapShell(!quoted ? inner : quoted[1] === "'" ? quoted[2].replace(/'\\''|'"'"'/g, "'") : quoted[2].replace(/\\(["\\$`])/g, "$1"));
+    return unwrapShell(!quoted || quoted[2] === undefined ? inner : quoted[1] === "'" ? quoted[2].replace(/'\\''|'"'"'/g, "'") : quoted[2].replace(/\\(["\\$`])/g, "$1"));
   }
   const match = command.trim().match(/^(?:\S*\/)?(?:bash|sh|zsh|dash)\s+-[a-z]*c\s+(['"])([\s\S]*)\1$/);
-  if (!match) return command;
+  if (!match || match[2] === undefined) return command;
   const [, quote, body] = match, inner = quote === "'" ? body.replace(/'\\''|'"'"'/g, "'") : body.replace(/\\(["\\$`])/g, "$1");
   return GUARDED.test(inner.trim()) ? unwrapShell(inner) : inner;
 }
@@ -42,7 +42,7 @@ export function shellTokens(source: string): ShellToken[] {
   const delimiters: { word: string; tabs: boolean }[] = [];
   let tabs = false;
   while (i < source.length) {
-    const char = source[i];
+    const char = source.charAt(i);
     if (char === "\n") {
       push("text", char); i++; start = true;
       // Heredoc bodies follow the line that opened them, up to their delimiter line; they are text, not commands.
@@ -71,8 +71,8 @@ export function shellTokens(source: string): ShellToken[] {
     // A word: plain characters, quoted strings and variables, up to a space or an operator.
     const parts: [ShellTokenKind | "plain", string][] = [];
     let j = i;
-    while (j < source.length && !WORD_END.test(source[j])) {
-      const c = source[j];
+    while (j < source.length && !WORD_END.test(source.charAt(j))) {
+      const c = source.charAt(j);
       if (c === "'" || (c === "$" && source[j + 1] === "'")) {
         const open = c === "$" ? j + 1 : j, end = source.indexOf("'", open + 1), stop = end < 0 ? source.length : end + 1;
         parts.push(["string", source.slice(j, stop)]); j = stop; continue;
@@ -178,7 +178,7 @@ export function stepLabel(item: Item, running = item.status === "inProgress"): s
   if (item.type === "fileChange") {
     const changes = changesOf(item), kinds = new Set(changes.map(change => change.kind)), [kind] = kinds;
     const files = distinctFiles(changes.map(change => change.path)), name = files.length === 1 && files[0] ? baseName(files[0]) : undefined;
-    const [now, done] = kinds.size === 1 && kind === "add" ? ["Creating", "Created"] : kinds.size === 1 && kind === "delete" ? ["Deleting", "Deleted"] : ["Editing", "Edited"];
+    const [now, done]: [string, string] = kinds.size === 1 && kind === "add" ? ["Creating", "Created"] : kinds.size === 1 && kind === "delete" ? ["Deleting", "Deleted"] : ["Editing", "Edited"];
     return say(now, done, fileWord(files.length, name));
   }
   if (item.type === "webSearch") return say("Searching", "Searched", String(item.query ?? "the web"));
@@ -218,8 +218,8 @@ const FILE_VERBS: Record<FileKind, string> = { add: "created", update: "edited",
  * it ("Edited and read app.ts"); a failure is counted on its own phrase; a lone step the model described is that
  * sentence. Elpis keeps the MCP server's name where Claude says "used a tool". */
 export function summaryParts(items: Item[]): SummaryPart[] {
-  const said = items.length === 1 ? describedAs(items[0]) : undefined;
-  if (said) return [{ text: said, failed: stepFailed(items[0]) ? 1 : 0 }];
+  const only = items.length === 1 ? items[0] : undefined, said = only ? describedAs(only) : undefined;
+  if (said && only) return [{ text: said, failed: stepFailed(only) ? 1 : 0 }];
   type FileOp = { verb: string; path: string | null; failed: boolean };
   const order: string[] = [], members = new Map<string, Item[]>(), fileOps: FileOp[] = [];
   const note = (key: string, item: Item) => { if (!members.has(key)) { members.set(key, []); order.push(key); } members.get(key)!.push(item); };
@@ -245,7 +245,7 @@ export function summaryParts(items: Item[]): SummaryPart[] {
   const failures = (list: Item[]) => list.filter(stepFailed).length;
   const parts = keys.map((key): SummaryPart => {
     const list = members.get(key) ?? [], failed = failures(list);
-    if (key === "files") return { text: `${andList(fileVerbs)} ${baseName(fileOps[0].path)}`, failed: fileVerbs.filter(verb => fileOps.some(op => op.verb === verb && op.failed)).length };
+    if (key === "files") return { text: `${andList(fileVerbs)} ${baseName(fileOps[0]?.path)}`, failed: fileVerbs.filter(verb => fileOps.some(op => op.verb === verb && op.failed)).length };
     if (key.startsWith("file:")) {
       const ops = fileOps.filter(op => op.verb === key.slice(5));
       return { text: `${key.slice(5)} ${fileWord(distinctFiles(ops.map(op => op.path)).length)}`, failed: distinctFiles(ops.filter(op => op.failed).map(op => op.path)).filter(Boolean).length };
@@ -263,7 +263,8 @@ export function summaryParts(items: Item[]): SummaryPart[] {
     }
   });
   if (!parts.length) parts.push({ text: items.some(item => item.type === "reasoning") ? "thought" : `${items.length} steps`, failed: 0 });
-  parts[0] = { ...parts[0], text: parts[0].text[0].toUpperCase() + parts[0].text.slice(1) };
+  const first = parts[0];
+  if (first) parts[0] = { ...first, text: first.text.charAt(0).toUpperCase() + first.text.slice(1) };
   return parts;
 }
 
@@ -278,5 +279,5 @@ export function foldSummary(items: Item[]): string {
   const messages = items.filter(said).length, work = items.filter(item => !said(item));
   if (!messages) return summarize(work);
   const rest = work.length ? summarize(work) : "";
-  return [countWord(messages, "1 message", "# messages"), rest && rest[0].toLowerCase() + rest.slice(1)].filter(Boolean).join(", ");
+  return [countWord(messages, "1 message", "# messages"), rest && rest.charAt(0).toLowerCase() + rest.slice(1)].filter(Boolean).join(", ");
 }
