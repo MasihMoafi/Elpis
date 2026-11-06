@@ -140,7 +140,8 @@ import { useSidebarThreads } from "@/lib/use-sidebar-threads";
 import { useChildConversations } from "@/lib/use-child-conversations";
 import { modelSelection } from "@/lib/model-selection";
 import { createCommandActions } from "@/lib/command-actions";
-import { refusedOffline, type Live, type View, type WorkflowReplay, type NextTurn } from "@/lib/workspace-types";
+import { createConversationSettings } from "@/lib/conversation-settings";
+import { refusedOffline, type View, type WorkflowReplay, type NextTurn } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
 import { useComposerState } from "@/lib/use-composer-state";
 import { useProjectState } from "@/lib/use-project-state";
@@ -157,8 +158,6 @@ import { refreshModelCatalog, useModelCatalog } from "@/lib/model-catalog";
 
 const LoveSpot = dynamic(() => import("@/components/love-spot"), { ssr: false, loading: () => <p role="status">Opening Love Spot…</p> });
 
-/** The terminal's answer to a finished plan: Plan mode off, then this message. */
-const IMPLEMENT_PLAN = "Implement the plan.";
 /** The sidebar's pages after New chat, in their default order; the person may rearrange them. */
 const NAV_PAGES = [
   { id: "experimentLab", name: "Lab", Icon: ExperimentLabIcon },
@@ -270,7 +269,7 @@ export default function Home() {
   const newDraftKey = useRef("new");
   const runtime = useRuntimeState();
   const { connected, connectionStatus, ready, runtimeNotices, setRuntimeNotices,
-    activeTurns, plans, markTurnStarted, modeRevisions, approvals, setApprovals,
+    activeTurns, plans, approvals, setApprovals,
     activity, liveError, historyOnly, failedTurns, setFailedTurns, stoppedTurns,
     accountRefresh, replays, setReplays } = runtime;
   useEffect(() => {
@@ -381,7 +380,7 @@ export default function Home() {
     setApprovals(prev => prev.filter(approval => !ids.has(approval.params.threadId ?? "")));
     if (selectedRef.current && ids.has(selectedRef.current.id)) { request.current++; select(null); setText(savedDraft(newDraftKey.current)); restoreAttachments(newDraftKey.current); setEntries([]); setItemCursor(null); }
   }, [select, setText, savedDraft, restoreAttachments, updateTabs, browser.closeSession]);
-  const { rememberFollowing, reconcileLiveThread, loadThread, openThread } = useOpenConversation({ composer, runtime, conversations, history, drafts: draftStore, attachments: attachmentState, tabsRef, updateTabs, selectedRef, newDraftKey, markRead, request, stickToBottom, followingBottom, restoreScroll, setView, setSidebar, setLoading, setError, setEntries, rememberModes });
+  const { rememberFollowing, reconcileLiveThread, loadThread, openThread } = useOpenConversation({ composer, runtime, conversations, history, drafts: draftStore, attachments: attachmentState, tabsRef, updateTabs, selectedRef, newDraftKey, markRead, request, stickToBottom, followingBottom, restoreScroll, setView, setSidebar, setLoading, setError, setEntries, rememberModes: (id, live) => rememberModes(id, live) });
 
   useEffect(() => { setText(savedDraft(newDraftKey.current)); }, [savedDraft]);
 
@@ -393,7 +392,7 @@ export default function Home() {
   }, []);
   useEffect(() => window.elpisDesktop?.storage?.onError(setError), []);
   useWorkspaceNavigation(shortcutAction);
-  useRuntimeEvents({ history, conversations, runtime, selectedRef, request, tabsRef, refreshModels, setError, initialRestoration, rememberFollowing, rememberModes, reconcileLiveThread, restoredTabs, loadThread, openThread, viewRef, planTurns, setAttention, loveRef, isLoveChatId, setRewindActions, setThreadModes, rewindSwitch, removeThreads, setEntries, clearApprovalDraft });
+  useRuntimeEvents({ history, conversations, runtime, selectedRef, request, tabsRef, refreshModels, setError, initialRestoration, rememberFollowing, rememberModes: (id, live) => rememberModes(id, live), reconcileLiveThread, restoredTabs, loadThread, openThread, viewRef, planTurns, setAttention, loveRef, isLoveChatId, setRewindActions, setThreadModes, rewindSwitch, removeThreads, setEntries, clearApprovalDraft });
 
   const selectedTeamId = selected?.parentThreadId ?? selected?.id;
   useEffect(() => { if (ready && selectedTeamId) loadChildren(selectedTeamId); }, [ready, selectedTeamId, loadChildren]);
@@ -605,77 +604,7 @@ export default function Home() {
     } catch (cause) { setError(errorText(cause)); }
     finally { setBusy(false); }
   }
-  /** What a reopened chat reports about its approval mode and Plan mode. It is applied even when the chat's status
-   * changed meanwhile (a resume itself reports one), unless the engine announced newer settings for it since the
-   * request: without it the composer fell back to Ask for a Full access chat after a reload. */
-  function rememberModes(id: string, live: Live) {
-    if (live.permissions) setThreadModes(prev => ({ ...prev, [id]: live.permissions! }));
-    if (typeof live.planMode === "boolean") setThreadPlans(prev => ({ ...prev, [id]: live.planMode! }));
-  }
-  const setPlan = (on: boolean) => selected ? setOverride(selected.id, { plan: on }) : setNewPlan(on);
-  /** The plan card's answers (components/plan-card.tsx). Accept leaves Plan mode and asks Elpis to carry the plan out,
-   * after switching the chat to `permissions` when one is chosen; Keep planning sends what should change, in Plan mode,
-   * or with nothing to say just stays there. */
-  async function answerPlan(thread: Thread, turnId: string, answer: { implement: true; permissions?: PermissionMode } | { feedback: string }) {
-    const originalFocus = document.activeElement, originalRequest = request.current;
-    setPlanAnswered(prev => ({ ...prev, [thread.id]: turnId })); setError("");
-    const implement = "implement" in answer, feedback = implement ? "" : answer.feedback.trim();
-    if (!implement && !feedback) { focusComposer(); return; }
-    try {
-      if (implement && answer.permissions) {
-        const changed = await api<{ permissions: PermissionMode }>(`/threads/${encodeURIComponent(thread.id)}/permissions`, { permissions: answer.permissions });
-        setThreadModes(prev => ({ ...prev, [thread.id]: changed.permissions }));
-      }
-      const result = await api<{ turn?: { id: string } }>(`/threads/${encodeURIComponent(thread.id)}/turns`, implement ? { text: IMPLEMENT_PLAN, mode: "default" } : { text: feedback });
-      if (!result.turn?.id) throw new Error("Elpis did not acknowledge the new turn. Check the conversation before retrying.");
-      if (implement) { setThreadPlans(prev => ({ ...prev, [thread.id]: false })); setNextTurn(prev => { const { plan: _, ...rest } = prev[thread.id] ?? {}; return Object.keys(rest).length ? { ...prev, [thread.id]: rest } : without(prev, thread.id); }); }
-      markTurnStarted(thread.id, result.turn!.id);
-    } catch (e) { setPlanAnswered(prev => without(prev, thread.id)); setError(errorText(e)); }
-    finally { if (request.current === originalRequest && selectedRef.current?.id === thread.id) restoreComposerFocus(originalFocus); }
-  }
-  /** A chat's permission mode changes now, as the terminal's /permissions does: the engine applies it to the
-   * running turn too, and the composer shows the mode the engine reports. A new chat's mode goes in its thread/start. */
-  const permissionsLocked = !ready || !connected || (busy && !selected) || projectChanging || changingPermissions;
-  const choosePermissions = (next: PermissionMode) => selected ? void changePermissions(selected.id, next) : setNewMode(next);
-  /** Shift+Tab in the message box, as in Claude Code: Ask for approval, then Approve for me, then Plan mode, then back.
-   * Full access and Bypass are chosen from the menu only; Shift+Tab from them returns to Ask for approval. */
-  function cycleMode() {
-    if (permissionsLocked) return;
-    if (planMode) setPlan(false);
-    else if (permissionMode === "auto") { choosePermissions("ask"); setPlan(true); }
-    else choosePermissions(permissionMode === "ask" ? "auto" : "ask");
-  }
-  /** A new chat shows the mode the engine started it in. */
-  const noteStartedMode = (id: string, mode: PermissionMode | null | undefined) => { if (mode) setThreadModes(prev => ({ ...prev, [id]: mode })); };
-  async function changePermissions(id: string, mode: PermissionMode) {
-    if (!ready || !connected) return;
-    setChangingPermissions(true); setError("");
-    try {
-      const result = await api<{ permissions: PermissionMode }>(`/threads/${encodeURIComponent(id)}/permissions`, { permissions: mode });
-      modeRevisions.current[id] = (modeRevisions.current[id] ?? 0) + 1; setThreadModes(prev => ({ ...prev, [id]: result.permissions }));
-    } catch (e) { setError(errorText(e)); }
-    finally { setChangingPermissions(false); }
-  }
-  /** A chat's effort is saved the moment it is picked (menu, /effort, Shift+Up/Down): later turns, a restart and a
-   * running turn take it. "Default" is not a saved level, so it changes nothing here. */
-  async function saveEffort(id: string, value: string) {
-    if (!ready || !connected) return;
-    const before = settingsOf.current[id]?.reasoningEffort ?? (selectedRef.current?.id === id ? selectedRef.current.reasoningEffort : null) ?? null;
-    if (!value || value === before) return;
-    const apply = (reasoningEffort: string | null) => { settingsOf.current[id] = { ...settingsOf.current[id], reasoningEffort }; patchThread(id, { reasoningEffort }); };
-    apply(value); setError("");
-    try { await api(`/threads/${encodeURIComponent(id)}/effort`, { effort: value }); }
-    catch (e) { apply(before); setError(errorText(e)); }
-  }
-  function setOverride(id: string, patch: NextTurn) {
-    const thread = selectedRef.current; if (!thread) return;
-    setNextTurn(prev => {
-      const merged = { ...prev[id], ...patch };
-      if (merged.model === (thread.model ?? undefined)) delete merged.model;
-      if (merged.plan === (threadPlans[id] ?? false)) delete merged.plan;
-      return Object.keys(merged).length ? { ...prev, [id]: merged } : without(prev, id);
-    });
-  }
+  const { rememberModes, setPlan, answerPlan, permissionsLocked, choosePermissions, cycleMode, noteStartedMode, saveEffort, setOverride } = createConversationSettings({ selected, selectedRef, request, runtime, conversations, ready, connected, busy, projectChanging, changingPermissions, planMode, permissionMode, threadPlans, setThreadModes, setThreadPlans, setPlanAnswered, setNextTurn, setNewPlan, setNewMode, setChangingPermissions, setError, focusComposer: () => focusComposer(), restoreComposerFocus: origin => restoreComposerFocus(origin) });
   /** Sends the composer's message, or `own`: a command's message (such as /init's prompt), sent without the composer's files.
    * While a turn runs, `followUp` steers or queues this one message instead of following Settings (Ctrl+Enter). */
   const send = createChatSend({ projectState, composer, conversations, runtime, attachments: attachmentState, drafts: draftStore, sendShell: () => sendShell(), askSideQuestion: question => askSideQuestion(question), restoreComposerFocus: origin => restoreComposerFocus(origin), readOnlyRun, selected, editDraft, busy, canSendFollowUp, imageBlocked, missingChoiceNotice, needsModelId, model, setError, sending, setBusy, newDraftKey, request, tabsRef, activeTurn, continues, preferences, stickToBottom, setSubmissions, entries, newMode, newChoice, newWorktree, noteStartedMode, browser, setThreads, assignProject, pending, effort, newPlan, selectedRef, loadThread, setThreadPlans, setNewPlan, setNextTurn });
