@@ -14,9 +14,7 @@ import { configuredShortcuts } from "@/lib/shortcuts";
 import { CommandMenu, type CommandAction } from "@/components/command-menu";
 import { arrange, move } from "@/lib/nav-order";
 import { followUpHint, newChatFolder, savePreferences, useAppPreferences } from "@/lib/preferences";
-import { QueuedFollowUps } from "@/components/queued-follow-ups";
 import { stopsOnEscape, usePromptKeys } from "@/lib/prompt-history";
-import { ElpisFeatures } from "@/components/elpis-features";
 import { ShortcutsDialog } from "@/components/shortcuts-dialog";
 import { StartupSplash } from "@/components/startup-splash";
 import { permissionLabel, type PermissionMode } from "@/components/composer-controls";
@@ -40,24 +38,22 @@ import { WorkspaceTitleBar } from "@/components/workspace-title-bar";
 import { WorkspaceSidebar } from "@/components/workspace-sidebar";
 import { WorkspaceHeader } from "@/components/workspace-header";
 import { WorkspaceTranscript } from "@/components/workspace-transcript";
+import { WorkspaceComposer } from "@/components/workspace-composer";
 import { useConversationTranscript } from "@/components/use-conversation-transcript";
 import { useSlashMenu } from "@/components/slash-menu";
 import { useMentionMenu } from "@/components/mention-menu";
 import { RewindDialog } from "@/components/rewind-dialog";
 import { useNavHistory } from "@/lib/nav-history";
-import { DiffPanel, ReviewPanel, SessionPanel } from "@/components/slash-panels";
 import { openControl } from "@/lib/slash-focus";
 import { useElpisSettings } from "@/lib/settings-store";
 import { ReadAloud } from "@/components/read-aloud";
 import { LiveVoiceProvider } from "@/components/live-voice";
-import { EnvironmentMenu, MoveChatDialog, ProjectDialog, ProjectMenu } from "@/components/project-picker";
+import { MoveChatDialog, ProjectDialog } from "@/components/project-picker";
 import { PutUnderDialog } from "@/components/put-under-dialog";
 import { WorkflowMark } from "@/components/workflow-identity";
 import { useWorkflowSandbox } from "@/lib/workflow-identity";
-import { BranchChip } from "@/components/branch-chip";
 import { ProfileDialog } from "@/components/profile-dialog";
 import { readProjectChats, readProjects, saveProjects } from "@/lib/projects";
-import { TaskList } from "@/components/task-list";
 import { useLoveActivity } from "@/lib/use-love-activity";
 import { LOVE_SPOT_AUDIO } from "@/lib/love-spot-audio";
 import { useScreenshotPopup } from "@/lib/use-screenshot-popup";
@@ -72,13 +68,13 @@ import { useBrowser } from "@/components/browser-panel";
 import { onRequest as onFileRequest, openFile, setFileView } from "@/lib/files-pane";
 import { usePersonal } from "@/components/personal-tip";
 import { SidePanel, sideMinWidth, useSidePanel } from "@/components/side-panel";
-import { SideChat, type SideRequest } from "@/components/side-chat";
+import { type SideRequest } from "@/components/side-chat";
 import { FloatChatBar, FloatChatPill } from "@/components/float-chat";
 import { useSessionSplit } from "@/components/session-split";
 import { Tab } from "@/components/tab-strip";
 import { activeTab, followChat, forgetChats, renameTabs, type ChatTab } from "@/lib/chat-tabs";
 import { TEXT_ONLY_NOTICE, fitAttachments, type Attachment } from "@/lib/attachments";
-import { api, isAgentRun, AGENT_RUN_NOTICE, modelLabel, providerLabel, title, agentName,
+import { api, isAgentRun, modelLabel, providerLabel, title, agentName,
   type ProviderSettings, type Thread } from "@/lib/api";
 import { useComposerHeight } from "@/lib/use-composer-height";
 import { useTranscriptHistory } from "@/lib/use-transcript-history";
@@ -150,7 +146,7 @@ export default function Home() {
   const projectState = useProjectState();
   const { cwd, projects, setProjects, projectId, setWorkflowProjectId, projectChats, setProjectChats,
     projectChatsRef, projectMove, setProjectMove, newProjectFor, setNewProjectFor, nestTargets, setNestTargets,
-    projectChanging, project, workflowProject, projectEdit, setProjectEdit } = projectState;
+    projectChanging, workflowProject, projectEdit, setProjectEdit } = projectState;
   const pages = useWorkspacePagesState();
   const { recordedWorkflow, setSettingsVisited, setSettingsNavigation, view, setView, viewRef, setSettingsSection } = pages;
   const { pins, togglePinned } = usePins();
@@ -204,8 +200,8 @@ export default function Home() {
   const newDraftKey = useRef("new");
   const runtime = useRuntimeState();
   const { connected, connectionStatus, ready, runtimeNotices, setRuntimeNotices,
-    activeTurns, plans, approvals, setApprovals,
-    activity, liveError, historyOnly,
+    activeTurns, approvals, setApprovals,
+    activity, liveError,
     setReplays } = runtime;
   useEffect(() => {
     if (ready && connected && document.activeElement === document.body) composerRef.current?.focus();
@@ -382,7 +378,6 @@ export default function Home() {
     if (teamRoot) held.delete(teamRoot.id);
     return { open: true, held };
   });
-  const folder = (path?: string | null) => path ? path.split("/").filter(Boolean).at(-1) || path : "";
 
   const { openNewChat, newChat, showTab, newChatTab, closeChatTab, cycleTabs, goHistory, openInNewTab, keepWorkflowTab } = createChatNavigation({ projectState, composer, conversations, history, drafts: draftStore, attachments: attachmentState, tabsRef, updateTabs, session, newDraftKey, setError, setView, setSidebar, find, openThread, loadThread, showChat, browser, navHistory, show: next => show(next) });
   const clearChat = createClearConversation({ composer, conversations, projectState, runtime, loveActivity, selectedRef, request, setError, threadModes, permissionMode, openNewChat, loadThread, noteStartedMode: (id, mode) => noteStartedMode(id, mode) });
@@ -650,33 +645,11 @@ export default function Home() {
       <OtherWorkspacePages view={view} selected={selected} threads={threads} cwd={cwd} dark={dark} loveToolbarHost={loveToolbarHost} side={side} hasTerminal={hasTerminal} setTuiLaunch={setTuiLaunch} show={show} openSettings={openSettings} newChat={newChat} editDraft={editDraft} />
       {view === "chat" && <ViewBoundary label="Chat" resetKey={selected?.id}><div className="chat-split"><div className={`chat-view${!selected && !shownEntries.length ? " empty-chat" : ""}`} data-team-loading={awaitingTeam || undefined}>
         <WorkspaceTranscript session={session} runtime={runtime} history={history} projectState={projectState} pages={pages} sidebarModel={sidebarModel} selectedModel={selectedModel} replacement={replacement} earlier={earlier} personal={personal} shownEntries={shownEntries} models={models} chatConversation={chatConversation} workingHost={workingHost} activeTurn={activeTurn} proposedPlan={proposedPlan} permissionMode={permissionMode} error={error} dark={dark} awaitingTeam={awaitingTeam} continues={continues} readOnlyRun={readOnlyRun} selectProject={selectProject} addProject={addProject} replaceFrom={replaceFrom} answerPlan={answerPlan} approvalCardProps={approvalCardProps} openById={openById} show={show} />
-        <div className="composer-wrap">
-          {sideChat && selected?.id === sideChat.parentId && <SideChat key={`${sideChat.parentId}:${sideChat.question?.kind === "recap" ? sideChat.question.id : "side"}`} parentId={sideChat.parentId} open={sideChat.open} question={sideChat.question} onClose={() => { setSideChat(previous => previous ? { ...previous, open: false } : null); focusComposer(); }}  onForward={answer => void send(`From the side chat:\n\n${answer}`)} />}
-          <ViewBoundary label="This panel" resetKey={panel}>
-          {panel === "status" && <SessionPanel rows={sessionRows} threadId={selected?.id} onUsage={() => { setPanel(null); openSettings("usage"); }} onClose={closePanel} />}
-          {panel === "review" && selected && <ReviewPanel threadId={selected.id} onStart={target => void startReview(selected, target)} onClose={closePanel} />}
-          {panel === "diff" && selected && <DiffPanel threadId={selected.id} onClose={closePanel} />}
-          </ViewBoundary>
-          {visibleSlashNotice && <p key={visibleSlashNotice} role="status" data-fast-notice={fastSuccess ? "" : undefined} onAnimationEnd={fastSuccess ? () => setSlashNotice(current => current === slashNotice ? "" : current) : undefined} className="mx-auto mb-2 w-full max-w-[var(--transcript-width,740px)] px-1 text-sm text-muted-foreground">{visibleSlashNotice}</p>}
-          {selected && plans[selected.id] && <TaskList plan={plans[selected.id]} running={activeTurns[selected.id] === plans[selected.id].turnId} />}
-          <QueuedFollowUps threadId={selected?.id} activeTurnId={activeTurn} onError={setError} onComplete={restoreComposerFocus} onEdit={editQueued} />
-          {!selected && <div className="composer-tray"><EnvironmentMenu folder={chatFolder || null} disabled={!ready || busy} worktree={newWorktree} onWorktree={setNewWorktree} /><ProjectMenu variant="chip" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} /></div>}
-          <div className="composer-working" ref={setWorkingHost} />
-          {readOnlyRun ? <div className="mx-auto flex w-full max-w-[var(--transcript-width,740px)] flex-col gap-3 rounded-lg border p-4 text-sm text-muted-foreground" role="status">
-            <p>{AGENT_RUN_NOTICE}</p>
-            {selected?.desktopAccess?.canContinue && !activeTurn && selected.status?.type !== "active" && <Button variant="outline" size="sm" className="self-start" disabled={busy || !connected || loading} onClick={() => void continueHere(selected)}>Continue here</Button>}
-          </div> : <ComposerForm composer={composer} attachmentsState={attachmentState} drafts={draftStore} selectedRef={selectedRef} newDraftKey={newDraftKey} slash={slash} mention={mention} promptKeys={promptKeys} send={send} onComposerChange={onComposerChange} onComposerPaste={onComposerPaste} onComposerKeyDown={onComposerKeyDown} composerPlaceholder={composerPlaceholder} composerNotice={composerNotice} busy={busy} projectChanging={projectChanging} focusComposer={focusComposer}>
+        <WorkspaceComposer session={session} runtime={runtime} projectState={projectState} sideChat={sideChat} setSideChat={setSideChat} panel={panel} setPanel={setPanel} sessionRows={sessionRows} closePanel={closePanel} openSettings={openSettings} startReview={startReview} visibleSlashNotice={visibleSlashNotice} fastSuccess={fastSuccess} slashNotice={slashNotice} setSlashNotice={setSlashNotice} selectedLiveError={selectedLiveError} setError={setError} restoreComposerFocus={restoreComposerFocus} editQueued={editQueued} send={send} focusComposer={focusComposer} activeTurn={activeTurn} chatFolder={chatFolder} newWorktree={newWorktree} setNewWorktree={setNewWorktree} readOnlyRun={readOnlyRun} setWorkingHost={setWorkingHost} continueHere={continueHere} selectProject={selectProject} addProject={addProject} moveChat={moveChat} moveChatToFolder={moveChatToFolder}>
+          <ComposerForm composer={composer} attachmentsState={attachmentState} drafts={draftStore} selectedRef={selectedRef} newDraftKey={newDraftKey} slash={slash} mention={mention} promptKeys={promptKeys} send={send} onComposerChange={onComposerChange} onComposerPaste={onComposerPaste} onComposerKeyDown={onComposerKeyDown} composerPlaceholder={composerPlaceholder} composerNotice={composerNotice} busy={busy} projectChanging={projectChanging} focusComposer={focusComposer}>
             <ComposerControls selected={selected} selectedModel={selectedModel} settings={conversationSettings} commands={conversationCommands} runtime={runtime} composer={composer} attachmentsState={attachmentState} projectState={projectState} slash={slash} mention={mention} promptKeys={promptKeys} models={models} settingsSnapshot={settingsSnapshot} providerSettings={providerSettings} preferences={preferences} model={model} choiceId={choiceId} setModel={setModel} setChoiceId={setChoiceId} setEffort={setEffort} newDraftKey={newDraftKey} permissionMode={permissionMode} planMode={planMode} busy={busy} activeTurn={activeTurn} readOnlyRun={readOnlyRun} continues={continues} sendBlocked={sendBlocked} selectedLoveChat={selectedLoveChat} loveSpotAudioReason={loveSpotAudioReason} manageConnections={manageConnections} pickFiles={pickFiles} startMention={startMention} startSlash={startSlash} focusComposer={focusComposer} editDraft={editDraft} stop={stop} />
-          </ComposerForm>}
-          <div className="composer-meta">
-            {selected && <ProjectMenu variant="chip" label="Change folder" addLabel="Choose folder…" allowNone={false} projects={projects} disabled={!ready || !connected || readOnlyRun}
-              selected={projects.find(item => item.cwd.replace(/\/+$/, "") === selected.cwd?.replace(/\/+$/, "")) ?? (selected.cwd ? { id: `folder:${selected.cwd}`, name: folder(selected.cwd), cwd: selected.cwd } : null)}
-              onSelect={moveChat} onAdd={() => void moveChatToFolder()} />}
-            {selected?.cwd && <BranchChip key={selected.id} threadId={selected.id} running={!!activeTurn} onNotice={setSlashNotice} />}
-            <span className="composer-hint">{selectedLiveError ? `Not following live (${selectedLiveError}); the chat refreshes every few seconds.` : selected && historyOnly[selected.id] ? "This agent is running in an earlier Elpis runtime. Its completed history will appear when it finishes." : ""}</span>
-            <ElpisFeatures />
-          </div>
-        </div>
+          </ComposerForm>
+        </WorkspaceComposer>
       </div>
       {selected && teamRoot && team.length > 0 && agentsPanel && !panelShown && <ChatTeamPanel selected={selected} teamRoot={teamRoot} team={team} workingTeam={workingTeam} shownTeam={shownTeam} workingAgentsOnly={workingAgentsOnly} setWorkingAgentsOnly={setWorkingAgentsOnly} waitingIds={waitingIds} activity={activity} models={models} agentColours={agentColours} openById={openById} openThread={openThread} />}
       </div></ViewBoundary>}
