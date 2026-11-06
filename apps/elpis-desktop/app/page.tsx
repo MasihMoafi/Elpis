@@ -3,14 +3,12 @@
 import { flushSync } from "react-dom";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { Button } from "@/components/ui/button";
-import { useReorder } from "@/components/reorder";
 import { ViewBoundary } from "@/components/view-boundary";
 import { useBookmarks, useChatAttention, usePins, useSidebarFolds, useChatGroups } from "@/lib/use-sidebar-state";
 import { useAppearance } from "@/lib/use-appearance";
 import { configuredShortcuts } from "@/lib/shortcuts";
 import { CommandMenu, type CommandAction } from "@/components/command-menu";
-import { arrange, move } from "@/lib/nav-order";
-import { newChatFolder, savePreferences, useAppPreferences } from "@/lib/preferences";
+import { newChatFolder, useAppPreferences } from "@/lib/preferences";
 import { usePromptKeys } from "@/lib/prompt-history";
 import { ShortcutsDialog } from "@/components/shortcuts-dialog";
 import { StartupSplash } from "@/components/startup-splash";
@@ -43,7 +41,6 @@ import { useElpisSettings } from "@/lib/settings-store";
 import { ReadAloud } from "@/components/read-aloud";
 import { LiveVoiceProvider } from "@/components/live-voice";
 import { ProfileDialog } from "@/components/profile-dialog";
-import { saveProjects } from "@/lib/projects";
 import { useLoveActivity } from "@/lib/use-love-activity";
 import { LOVE_SPOT_AUDIO } from "@/lib/love-spot-audio";
 import { useScreenshotPopup } from "@/lib/use-screenshot-popup";
@@ -107,6 +104,7 @@ import { useWorkflowWorkspace } from "@/lib/use-workflow-workspace";
 import { useWorkspaceDialogState } from "@/lib/use-workspace-dialog-state";
 import { createWorkspaceVisibility } from "@/lib/workspace-visibility";
 import { createSidebarChatSelection } from "@/lib/sidebar-chat-selection";
+import { useWorkspaceOrder } from "@/lib/use-workspace-order";
 import { NAV_PAGES, PAGE_NAMES } from "@/lib/workspace-navigation-pages";
 import { refusedOffline } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
@@ -143,8 +141,7 @@ export default function Home() {
   const options = useConversationOptions();
   const { choiceId, model, effort, setEffort, nextTurn, setNextTurn, threadModes, setThreadModes, threadPlans, newPlan, planAnswered, setPlanAnswered, newMode } = options;
   const projectState = useProjectState();
-  const { cwd, projects, setProjects, projectId, projectChats,
-    projectChanging } = projectState;
+  const { cwd, projects, projectChats, projectChanging } = projectState;
   const pages = useWorkspacePagesState();
   const { recordedWorkflow, view, setView, viewRef, setSettingsSection } = pages;
   const { pins, togglePinned } = usePins();
@@ -469,18 +466,7 @@ export default function Home() {
     return { id, name: id === "pin" ? `${pins.includes(selected!.id) ? "Unpin" : "Pin"} chat` : id === "archive" && marked.length > 1 ? `Archive ${marked.length} chats` : id === "shortcuts" ? "Keyboard shortcuts" : shortcut.label, keys: shortcut.keys, run: () => { if (id === "shortcuts") { shortcutsReturnFocus.current = commandReturnFocus.current; setShortcutsOpen(true); } else shortcutAction.current(id); } };
   });
   commandActions.push({ id: "improve-elpis", name: "Improve Elpis…", run: () => window.dispatchEvent(new CustomEvent("elpis:improve")) });
-  // The sidebar's pages in the person's order (drag and drop, or Alt+Up/Down), saved with the preferences.
-  const arrangedPages = arrange(NAV_PAGES.filter(page => !hiddenPages.includes(page.id)), preferences.navOrder.split(",").filter(Boolean));
-  const reorderPages = (ids: string[]) => { try { savePreferences({ navOrder: ids.join(",") }); } catch (cause) { setError(errorText(cause)); } };
-  const pageReorder = useReorder({ dragType: "text/x-elpis-page", order: () => arrangedPages.map(page => page.id),
-    canDrop: (id, target) => arrangedPages.some(page => page.id === id) && arrangedPages.some(page => page.id === target),
-    onMove: (id, place) => reorderPages(move(arrangedPages.map(page => page.id), id, place)) });
-  const projectReorder = useReorder({ dragType: "text/x-elpis-project", order: () => projects.map(project => project.id),
-    canDrop: (id, target) => projects.some(project => project.id === id) && projects.some(project => project.id === target),
-    onMove: (id, place) => {
-      const next = arrange(projects, move(projects.map(project => project.id), id, place));
-      return saveProjects(next, projectId).then(() => setProjects(next)).catch(cause => setError(String(cause)));
-    } });
+  const { arrangedPages, pageReorder, projectReorder } = useWorkspaceOrder(preferences, hiddenPages, projectState, setError);
   for (const target of ["agentsGuide", ...NAV_PAGES.map(page => page.id)] as const) { const name = PAGE_NAMES[target]; if (!hiddenPages.includes(target) && !(target === "agentsGuide" && hiddenPages.includes("canvas"))) commandActions.push({ id: target, name, run: () => show(target) }); }
 
   // One Matilda voice and one live call for the whole app: both go on when he leaves the board or Love Spot's chat; her face shows and controls them.
