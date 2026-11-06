@@ -13,7 +13,7 @@ import { addGroup, chatSubtree, moveChats, prioritizeChats } from "@/lib/chat-gr
 import { configuredShortcuts } from "@/lib/shortcuts";
 import { CommandMenu, type CommandAction } from "@/components/command-menu";
 import { arrange, move } from "@/lib/nav-order";
-import { followUpHint, newChatFolder, savePreferences, useAppPreferences } from "@/lib/preferences";
+import { newChatFolder, savePreferences, useAppPreferences } from "@/lib/preferences";
 import { stopsOnEscape, usePromptKeys } from "@/lib/prompt-history";
 import { ShortcutsDialog } from "@/components/shortcuts-dialog";
 import { StartupSplash } from "@/components/startup-splash";
@@ -28,8 +28,6 @@ import { SectionToggle } from "@/components/sidebar-group";
 import { SidebarChatList } from "@/components/sidebar-chat-list";
 import { createSidebarThreadRow } from "@/components/sidebar-thread-row";
 import { createSidebarBranches } from "@/components/sidebar-branches";
-import { ComposerControls } from "@/components/composer-controls-panel";
-import { ComposerForm } from "@/components/composer-form";
 import { WorkflowPages } from "@/components/workflow-pages";
 import { PendingInputPanel } from "@/components/pending-input";
 import { WorkspaceSettings } from "@/components/workspace-settings";
@@ -39,6 +37,7 @@ import { WorkspaceSidebar } from "@/components/workspace-sidebar";
 import { WorkspaceHeader } from "@/components/workspace-header";
 import { WorkspaceTranscript } from "@/components/workspace-transcript";
 import { WorkspaceComposer } from "@/components/workspace-composer";
+import { WorkspaceComposerInput } from "@/components/workspace-composer-input";
 import { useConversationTranscript } from "@/components/use-conversation-transcript";
 import { useSlashMenu } from "@/components/slash-menu";
 import { useMentionMenu } from "@/components/mention-menu";
@@ -73,7 +72,7 @@ import { FloatChatBar, FloatChatPill } from "@/components/float-chat";
 import { useSessionSplit } from "@/components/session-split";
 import { Tab } from "@/components/tab-strip";
 import { activeTab, followChat, forgetChats, renameTabs, type ChatTab } from "@/lib/chat-tabs";
-import { TEXT_ONLY_NOTICE, fitAttachments, type Attachment } from "@/lib/attachments";
+import { fitAttachments, type Attachment } from "@/lib/attachments";
 import { api, isAgentRun, modelLabel, providerLabel, title, agentName,
   type ProviderSettings, type Thread } from "@/lib/api";
 import { useComposerHeight } from "@/lib/use-composer-height";
@@ -97,7 +96,6 @@ import { createCommandActions } from "@/lib/command-actions";
 import { createConversationSettings } from "@/lib/conversation-settings";
 import { createConversationActions } from "@/lib/conversation-actions";
 import { createReplyActions } from "@/lib/reply-actions";
-import { createComposerHandlers } from "@/lib/composer-handlers";
 import { useRelatedConversations } from "@/lib/use-related-conversations";
 import { useTranscriptPresentation } from "@/lib/use-transcript-presentation";
 import { createSidebarPlacement } from "@/lib/sidebar-placement";
@@ -142,7 +140,7 @@ export default function Home() {
   const settingsSnapshot = useElpisSettings().data as unknown as ProviderSettings | null;
   const providerSettings = settingsSnapshot?.main && Array.isArray(settingsSnapshot.providers) ? settingsSnapshot : null;
   const options = useConversationOptions();
-  const { choiceId, setChoiceId, model, setModel, effort, setEffort, nextTurn, setNextTurn, threadModes, setThreadModes, threadPlans, newPlan, planAnswered, setPlanAnswered, newMode } = options;
+  const { choiceId, model, effort, setEffort, nextTurn, setNextTurn, threadModes, setThreadModes, threadPlans, newPlan, planAnswered, setPlanAnswered, newMode } = options;
   const projectState = useProjectState();
   const { cwd, projects, setProjects, projectId, setWorkflowProjectId, projectChats, setProjectChats,
     projectChatsRef, projectMove, setProjectMove, newProjectFor, setNewProjectFor, nestTargets, setNestTargets,
@@ -188,7 +186,7 @@ export default function Home() {
   const [newWorktree, setNewWorktree] = useState(false);
   const shortcutAction = useRef<(id: string, index?: number) => void>(() => {});
   const composer = useComposerState();
-  const { text, setText, shellMode, setShellMode, shellCreated, textRef, composerRef, caret, setCaret, pickedMentions, filePickerRef, dictating, voiceBusy } = composer;
+  const { text, setText, shellMode, setShellMode, shellCreated, textRef, composerRef, caret, setCaret, pickedMentions, dictating, voiceBusy } = composer;
   const [sideChat, setSideChat] = useState<{ parentId: string; open: boolean; question?: SideRequest } | null>(null);
   const sideRequests = useRef(0);
   const [resumeOpen, setResumeOpen] = useState(false);
@@ -208,7 +206,7 @@ export default function Home() {
   }, [ready, connected]);
   const editDraft = (value: string) => { setText(value); saveDraft(selectedRef.current?.id || newDraftKey.current, value); };
   const attachmentState = useComposerAttachments({ selectedRef, newDraftKey, shellMode, savedAttachments, saveAttachments, setError, setRuntimeNotices });
-  const { attachments, attaching, fileNotice, setFileNotice, setAttachments, restoreAttachments } = attachmentState;
+  const { attachments, attaching, setFileNotice, setAttachments, restoreAttachments } = attachmentState;
   /** The browser's annotations and screenshots join the composer's files; its Send also sends the message. */
   async function attachFromBrowser(parts: Attachment[], submit: boolean) {
     const owner = selectedRef.current?.id || newDraftKey.current;
@@ -346,7 +344,6 @@ export default function Home() {
   const fastSuccess = /^Fast is (on|off)\./.exec(slashNotice);
   const visibleSlashNotice = fastSuccess && (fastNoticeOwner.current !== commandNoticeScope || (fastSuccess[1] === "on") !== fastOn) ? "" : slashNotice;
   const imageBlocked = attachments.some(part => part.type === "image") && !!knownModel?.inputModalities && !knownModel.inputModalities.includes("image");
-  const composerNotice = [fileNotice, imageBlocked ? TEXT_ONLY_NOTICE : "", !shellMode ? missingChoiceNotice : ""].filter(Boolean).join("\n");
   const canSendFollowUp = !!selected && !!activeTurn && !continues;
   const sendBlocked = readOnlyRun || (!text.trim() && !attachments.length) || (busy && (!canSendFollowUp || shellMode)) || dictating || attaching || imageBlocked || !ready || !connected || (!shellMode && (!!missingChoiceNotice || needsModelId && !model.trim()));
   const recoveryAttachments = selected ? draftStore.heldAttachments(`recovery-${selected.id}`) ?? [] : [];
@@ -405,10 +402,9 @@ export default function Home() {
       show("loveSpot");
     })().catch(cause => setError(errorText(cause, "The screenshots could not open in Love Spot.")));
   });
-  const manageConnections = () => { setSettingsSection("providers"); show("settings"); };
   const { forkFrom, continueHere, stop, deleteThread, renameThread, archiveThread, unarchived } = createConversationActions({ conversations, runtime, selectedRef, request, setBusy, setError, loadThread, loadChildren, restoreComposerFocus: origin => restoreComposerFocus(origin), removeThreads, noteKept });
   const conversationSettings = createConversationSettings({ selected, selectedRef, request, runtime, conversations, options, ready, connected, busy, projectChanging, planMode, permissionMode, setError, focusComposer: () => focusComposer(), restoreComposerFocus: origin => restoreComposerFocus(origin) });
-  const { rememberModes, setPlan, answerPlan, cycleMode, noteStartedMode, saveEffort } = conversationSettings;
+  const { rememberModes, setPlan, answerPlan, noteStartedMode, saveEffort } = conversationSettings;
   /** Sends the composer's message, or `own`: a command's message (such as /init's prompt), sent without the composer's files.
    * While a turn runs, `followUp` steers or queues this one message instead of following Settings (Ctrl+Enter). */
   const send = createChatSend({ projectState, composer, conversations, runtime, attachments: attachmentState, drafts: draftStore, session, options, sendShell: () => sendShell(), askSideQuestion: question => askSideQuestion(question), restoreComposerFocus: origin => restoreComposerFocus(origin), readOnlyRun, editDraft, canSendFollowUp, imageBlocked, missingChoiceNotice, needsModelId, setError, newDraftKey, tabsRef, activeTurn, continues, preferences, newChoice, newWorktree, noteStartedMode, browser, assignProject, pending, loadThread });
@@ -448,16 +444,6 @@ export default function Home() {
     if (!option?.allowed) { if (option) setSlashNotice(option.reason); return; }
     setMessageEdits(previous => ({ ...previous, [JSON.stringify([selected.id, last.turnId, option.messageId])]: option.prompt }));
   }
-  /** The "+" menu's Add files or photos: the one chooser, for pictures and documents alike. */
-  const pickFiles = () => filePickerRef.current?.click();
-  /** The "+" menu's Mention: an "@" at the caret (after a space when words come before it), which opens the picker. */
-  function startMention() {
-    const box = composerRef.current, at = box?.selectionStart ?? textRef.current.length, before = textRef.current.slice(0, at);
-    const glue = before && !/\s$/.test(before) ? " " : "", next = before + glue + "@" + textRef.current.slice(at), position = before.length + glue.length + 1;
-    editDraft(next); setCaret(position); box?.focus(); requestAnimationFrame(() => box?.setSelectionRange(position, position));
-  }
-  /** The "+" menu's Slash commands: a "/" in an empty box, which opens the command list. */
-  function startSlash() { editDraft("/"); setCaret(1); focusComposer(); }
   function askSideQuestion(question?: string) {
     if (readOnlyRun) return;
     if (!selected) { setError("Start a conversation before asking a side question."); return; }
@@ -484,7 +470,7 @@ export default function Home() {
   // The profile opens as source: /personal is for editing it.
   const personal = usePersonal(ready && !selected, path => { const at = selected?.cwd || cwd; openFile(at, path); setFileView(at, path, "source"); side.openFiles(); }, setError);
   const conversationCommands = createCommandActions({ selected, selectedRef, textRef, turnEfforts, turnEffort, turnModel, models, providerSettings, newChoice, commandNoticeOwner, fastNoticeOwner, side, runtime, conversations, ready, connected, desktop, setSlashNotice, setEffort, setPanel, setError, setBusy, openComposerControl, saveEffort, focusComposer, editDraft });
-  const { chooseEffort, stepEffort, startReview, compactChat, exportChat, turnSmartPruneOn, chooseFast, chooseGoal } = conversationCommands;
+  const { chooseEffort, startReview, compactChat, exportChat, turnSmartPruneOn, chooseFast, chooseGoal } = conversationCommands;
   useEffect(() => {
     if (!queuedCompact) return;
     if (selected?.id !== queuedCompact.threadId) { setQueuedCompact(null); return; }
@@ -611,9 +597,6 @@ export default function Home() {
   for (const target of ["agentsGuide", ...NAV_PAGES.map(page => page.id)] as const) { const name = PAGE_NAMES[target]; if (!hiddenPages.includes(target) && !(target === "agentsGuide" && hiddenPages.includes("canvas"))) commandActions.push({ id: target, name, run: () => show(target) }); }
 
   // One Matilda voice and one live call for the whole app: both go on when he leaves the board or Love Spot's chat; her face shows and controls them.
-  // The message box: its hint, what typing, pasting and keys do.
-  const composerPlaceholder = shellMode ? "Run a shell command…" : continues ? `Message ${title(selected!)}…` : selected && activeTurn ? followUpHint(preferences) : selected ? "Ask for a follow-up" : "Ask Elpis to build, fix or explain something";
-  const { onComposerChange, onComposerPaste, onComposerKeyDown } = createComposerHandlers({ composer, attachmentsState: attachmentState, runtime, preferences, promptKeys, mention, slash, turnEfforts, activeTurn, continues, editDraft, stepEffort, cycleMode, sendShell, send });
   return <DocumentReviewProvider onAttach={parts => attachFromBrowser(parts, false)}><LiveVoiceProvider><ReadAloud threadId="love-spot" enabled available={LOVE_SPOT_AUDIO.readAloudAvailable} unavailableReason={LOVE_SPOT_AUDIO.available ? undefined : LOVE_SPOT_AUDIO.reason}><div data-workspace={view} data-desktop={desktop || undefined} className={`app-shell${split.pane ? " session-pane" : ""}${split.thread && view === "chat" ? " session-split" : ""}${dark ? " dark" : ""} has-title-bar${sidebarCollapsed ? " sidebar-collapsed" : ""}${view === "settings" ? " settings-mode" : ""}${panelShown ? " panel-active" : ""}`} style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>
     <title>{view === "canvas" ? "Workflows · Elpis" : view === "experimentLab" ? "Lab · Elpis" : view === "customize" ? "Customize — Elpis" : "Elpis"}</title>
     <WorkspaceTitleBar desktop={desktop} preferences={preferences} navHistory={navHistory} sidebar={sidebar} sidebarCollapsed={sidebarCollapsed} panelShown={panelShown} panelDrawer={panelDrawer} setError={setError} newChat={newChat} goHistory={goHistory} addProject={addProject} show={show} showSidebar={showSidebar} narrow={narrow} shortcutAction={shortcutAction} />
@@ -646,9 +629,7 @@ export default function Home() {
       {view === "chat" && <ViewBoundary label="Chat" resetKey={selected?.id}><div className="chat-split"><div className={`chat-view${!selected && !shownEntries.length ? " empty-chat" : ""}`} data-team-loading={awaitingTeam || undefined}>
         <WorkspaceTranscript session={session} runtime={runtime} history={history} projectState={projectState} pages={pages} sidebarModel={sidebarModel} selectedModel={selectedModel} replacement={replacement} earlier={earlier} personal={personal} shownEntries={shownEntries} models={models} chatConversation={chatConversation} workingHost={workingHost} activeTurn={activeTurn} proposedPlan={proposedPlan} permissionMode={permissionMode} error={error} dark={dark} awaitingTeam={awaitingTeam} continues={continues} readOnlyRun={readOnlyRun} selectProject={selectProject} addProject={addProject} replaceFrom={replaceFrom} answerPlan={answerPlan} approvalCardProps={approvalCardProps} openById={openById} show={show} />
         <WorkspaceComposer session={session} runtime={runtime} projectState={projectState} sideChat={sideChat} setSideChat={setSideChat} panel={panel} setPanel={setPanel} sessionRows={sessionRows} closePanel={closePanel} openSettings={openSettings} startReview={startReview} visibleSlashNotice={visibleSlashNotice} fastSuccess={fastSuccess} slashNotice={slashNotice} setSlashNotice={setSlashNotice} selectedLiveError={selectedLiveError} setError={setError} restoreComposerFocus={restoreComposerFocus} editQueued={editQueued} send={send} focusComposer={focusComposer} activeTurn={activeTurn} chatFolder={chatFolder} newWorktree={newWorktree} setNewWorktree={setNewWorktree} readOnlyRun={readOnlyRun} setWorkingHost={setWorkingHost} continueHere={continueHere} selectProject={selectProject} addProject={addProject} moveChat={moveChat} moveChatToFolder={moveChatToFolder}>
-          <ComposerForm composer={composer} attachmentsState={attachmentState} drafts={draftStore} selectedRef={selectedRef} newDraftKey={newDraftKey} slash={slash} mention={mention} promptKeys={promptKeys} send={send} onComposerChange={onComposerChange} onComposerPaste={onComposerPaste} onComposerKeyDown={onComposerKeyDown} composerPlaceholder={composerPlaceholder} composerNotice={composerNotice} busy={busy} projectChanging={projectChanging} focusComposer={focusComposer}>
-            <ComposerControls selected={selected} selectedModel={selectedModel} settings={conversationSettings} commands={conversationCommands} runtime={runtime} composer={composer} attachmentsState={attachmentState} projectState={projectState} slash={slash} mention={mention} promptKeys={promptKeys} models={models} settingsSnapshot={settingsSnapshot} providerSettings={providerSettings} preferences={preferences} model={model} choiceId={choiceId} setModel={setModel} setChoiceId={setChoiceId} setEffort={setEffort} newDraftKey={newDraftKey} permissionMode={permissionMode} planMode={planMode} busy={busy} activeTurn={activeTurn} readOnlyRun={readOnlyRun} continues={continues} sendBlocked={sendBlocked} selectedLoveChat={selectedLoveChat} loveSpotAudioReason={loveSpotAudioReason} manageConnections={manageConnections} pickFiles={pickFiles} startMention={startMention} startSlash={startSlash} focusComposer={focusComposer} editDraft={editDraft} stop={stop} />
-          </ComposerForm>
+          <WorkspaceComposerInput session={session} options={options} composer={composer} attachmentsState={attachmentState} drafts={draftStore} runtime={runtime} projectState={projectState} pages={pages} preferences={preferences} selectedModel={selectedModel} settings={conversationSettings} commands={conversationCommands} slash={slash} mention={mention} promptKeys={promptKeys} models={models} settingsSnapshot={settingsSnapshot} providerSettings={providerSettings} newDraftKey={newDraftKey} permissionMode={permissionMode} planMode={planMode} activeTurn={activeTurn} readOnlyRun={readOnlyRun} continues={continues} sendBlocked={sendBlocked} imageBlocked={imageBlocked} selectedLoveChat={selectedLoveChat} loveSpotAudioReason={loveSpotAudioReason} send={send} sendShell={sendShell} stop={stop} editDraft={editDraft} focusComposer={focusComposer} show={show} />
         </WorkspaceComposer>
       </div>
       {selected && teamRoot && team.length > 0 && agentsPanel && !panelShown && <ChatTeamPanel selected={selected} teamRoot={teamRoot} team={team} workingTeam={workingTeam} shownTeam={shownTeam} workingAgentsOnly={workingAgentsOnly} setWorkingAgentsOnly={setWorkingAgentsOnly} waitingIds={waitingIds} activity={activity} models={models} agentColours={agentColours} openById={openById} openThread={openThread} />}
