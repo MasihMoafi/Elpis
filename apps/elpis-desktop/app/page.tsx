@@ -39,7 +39,6 @@ import { mergeHistoryWithLive } from "@/lib/live-events";
 import { rememberSubmittedMessages, withSubmittedMessages, type SubmittedMessage } from "@/lib/submitted-messages";
 import { replacementEligibility, type MessageVersion } from "@/lib/turn-replacement";
 import { AgentsGuide } from "@/components/agents-guide";
-import { CanvasGuideHelp } from "@/components/canvas-guide-help";
 import { ExperimentLab } from "@/components/experiment-lab";
 import { CustomizeView } from "@/components/customize-view";
 import type { TerminalLaunch } from "@/components/terminal-view";
@@ -52,6 +51,7 @@ import { createSidebarThreadRow } from "@/components/sidebar-thread-row";
 import { createSidebarBranches } from "@/components/sidebar-branches";
 import { ComposerControls } from "@/components/composer-controls-panel";
 import { ComposerForm } from "@/components/composer-form";
+import { WorkflowPages } from "@/components/workflow-pages";
 import { useConversationTranscript } from "@/components/use-conversation-transcript";
 import { useSlashMenu } from "@/components/slash-menu";
 import { useMentionMenu } from "@/components/mention-menu";
@@ -68,7 +68,7 @@ import { ReadAloud } from "@/components/read-aloud";
 import { MatildaCompanion } from "@/components/matilda-companion";
 import { LiveVoiceProvider } from "@/components/live-voice";
 import { ObservabilityView } from "@/components/observability-view";
-import { AutomationsView, type WorkflowPrefill } from "@/components/automations-view";
+import type { WorkflowPrefill } from "@/components/automations-view";
 import { Segmented } from "@/components/settings/rows";
 import { EnvironmentMenu, MoveChatDialog, ProjectDialog, ProjectMenu } from "@/components/project-picker";
 import { PutUnderDialog } from "@/components/put-under-dialog";
@@ -85,7 +85,6 @@ import { useLoveActivity } from "@/lib/use-love-activity";
 import { LOVE_SPOT_AUDIO } from "@/lib/love-spot-audio";
 import { savedPersona } from "@/lib/matilda";
 import { useScreenshotPopup } from "@/lib/use-screenshot-popup";
-import { AgentsCanvas } from "@/components/agents-canvas";
 import { WorkflowChat } from "@/components/workflow-chat";
 import { DocumentReviewProvider } from "@/components/document-review";
 import { ChatTeamPanel } from "@/components/chat-team-panel";
@@ -259,7 +258,7 @@ export default function Home() {
   const { connected, connectionStatus, ready, runtimeNotices, setRuntimeNotices,
     activeTurns, plans, approvals, setApprovals,
     activity, liveError, historyOnly, failedTurns, stoppedTurns,
-    accountRefresh, replays, setReplays } = runtime;
+    accountRefresh, setReplays } = runtime;
   useEffect(() => {
     if (ready && connected && document.activeElement === document.body) composerRef.current?.focus();
   }, [ready, connected]);
@@ -990,14 +989,7 @@ export default function Home() {
       {settingsVisited && <div className="page-scroll" hidden={view !== "settings"}><ViewBoundary label="Settings" resetKey={settingsNavigation}><SettingsView initialTab={settingsSection} navigationKey={settingsNavigation} active={view === "settings"} threadId={selected?.id} currentModel={selected?.model} currentPermission={selected ? permissionLabel(permissionMode) : null} accountRefresh={accountRefresh} theme={theme} onTheme={setTheme} onUnarchived={unarchived} onImported={() => void refreshThreads()} onDeleteThread={deleteThread} onBack={() => { show("chat"); requestAnimationFrame(focusComposer); }} onChatPermissions={() => { show("chat"); requestAnimationFrame(() => openComposerControl("Change permissions")); }} onChatModel={() => { show("chat"); requestAnimationFrame(() => openComposerControl("Model")); }} modelChangeReason={!ready ? "Wait for Elpis to connect." : busy ? "Wait for this turn to finish before changing the model." : undefined} onBrowser={url => { show("chat"); void browser.command("new", url ? { url } : undefined); }} onCustomize={() => show("customize")} onChatContext={() => { show("chat"); requestAnimationFrame(() => window.dispatchEvent(new CustomEvent(OPEN_CONTEXT_EVENT))); }} onProvidersChanged={async () => { await reloadSettings(); void refreshModels(); }} /></ViewBoundary></div>}
       {view === "agentsGuide" && <div className="page-scroll"><ViewBoundary label="Guide to managing agents"><AgentsGuide onBack={() => show("canvas")} /></ViewBoundary></div>}
       {view === "experimentLab" && <ViewBoundary label="Lab"><ExperimentLab /></ViewBoundary>}
-      {/* 6 Nov, Masih: "automation is kind of a workflow, isn't it? couldn't we have merged those?" Workflows has two views:
-          the board and its Scheduled automations (components/automations-view.tsx). The board stays mounted, so its draft
-          survives a look at the schedule. */}
-      {view === "canvas" && <ViewBoundary label="Workflows"><div className="contents" hidden={workflowTab !== "board"}><CanvasGuideHelp onOpen={() => show("agentsGuide")}><AgentsCanvas threads={threads} key={recordedWorkflow?.id ?? "draft"} recordedRun={recordedWorkflow} onLeaveRecordedRun={() => setRecordedWorkflow(undefined)} onOpenRecordedRun={run => setRecordedWorkflow(run)} ready={ready && connected} workflowCatalog={workflowCatalog} models={models} cwd={workflowFolder} dark={dark} onOpenChat={id => { show("chat"); void openById(id); }} onRunStarted={keepWorkflowTab} onSchedule={workflow => { setWorkflowPrefill(workflow); setWorkflowTab("scheduled"); }}
-        projectMenu={<ProjectMenu variant="chip" projects={projects} selected={workflowProject ?? { id: "workflow-sandbox", name: "Sandbox", cwd: workflowSandbox ?? "" }} allowNone={!!workflowProject} noneLabel="Use sandbox" disabled={!ready || projectChanging} onSelect={selectProject} onAdd={() => void addProject()} />} onUseFolder={workIn} /></CanvasGuideHelp></div>
-        {workflowTab === "scheduled" && <AutomationsView projects={projects} prefill={workflowPrefill} onPrefillUsed={() => setWorkflowPrefill(null)} onOpenChat={id => { show("chat"); void openById(id); }} />}</ViewBoundary>}
-      {replays.map(replay => <div key={replay.token} hidden aria-hidden="true"><AgentsCanvas threads={threads} workflowCatalog={workflowCatalog} models={models} cwd={replay.cwd ?? undefined} dark={dark} ready={ready && connected}
-        onOpenChat={id => { show("chat"); void openById(id); }} scheduled={{ board: replay.board, onDone: result => finishReplay(replay, result) }} /></div>)}
+      <WorkflowPages view={view} workflowTab={workflowTab} setWorkflowTab={setWorkflowTab} recordedWorkflow={recordedWorkflow} setRecordedWorkflow={setRecordedWorkflow} workflowPrefill={workflowPrefill} setWorkflowPrefill={setWorkflowPrefill} sidebarModel={sidebarModel} projectState={projectState} runtime={runtime} threads={threads} models={models} workflowFolder={workflowFolder} workflowSandbox={workflowSandbox} dark={dark} show={show} openById={id => { void openById(id); }} keepWorkflowTab={keepWorkflowTab} selectProject={selectProject} addProject={addProject} workIn={workIn} finishReplay={finishReplay} />
       {view === "loveSpot" && <ViewBoundary label="Love Spot"><LoveSpot dark={dark} toolbarHost={loveToolbarHost} /></ViewBoundary>}
       {view === "observability" && <ViewBoundary label="Observability"><ObservabilityView threadId={selected?.id} chats={threads} /></ViewBoundary>}
       {view === "customize" && <div className="page-scroll"><ViewBoundary label="Customize"><CustomizeView cwd={cwd} onOpenSettings={() => openSettings("mcp")}
