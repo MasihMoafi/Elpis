@@ -7,7 +7,6 @@ import { useReorder } from "@/components/reorder";
 import { ViewBoundary } from "@/components/view-boundary";
 import { useBookmarks, useChatAttention, usePins, useSidebarFolds, useChatGroups } from "@/lib/use-sidebar-state";
 import { useAppearance } from "@/lib/use-appearance";
-import { chatSubtree } from "@/lib/chat-groups";
 import { configuredShortcuts } from "@/lib/shortcuts";
 import { CommandMenu, type CommandAction } from "@/components/command-menu";
 import { arrange, move } from "@/lib/nav-order";
@@ -107,6 +106,7 @@ import { useWorkspaceShortcuts } from "@/lib/use-workspace-shortcuts";
 import { useWorkflowWorkspace } from "@/lib/use-workflow-workspace";
 import { useWorkspaceDialogState } from "@/lib/use-workspace-dialog-state";
 import { createWorkspaceVisibility } from "@/lib/workspace-visibility";
+import { createSidebarChatSelection } from "@/lib/sidebar-chat-selection";
 import { NAV_PAGES, PAGE_NAMES } from "@/lib/workspace-navigation-pages";
 import { refusedOffline } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
@@ -431,16 +431,11 @@ export default function Home() {
   useEffect(() => { if (text) setSlashNotice(""); }, [text]);
 
   const sidebarModel = useSidebarThreads({ ready, connected, threads, hidden, selected, chatGroups, loveActivity, expanded, setExpanded, recordedWorkflow, loadChildren, search, attention, waitingIds, pins, projectChats, releaseChatOrder, searchInput, setError, setDeleteRunHistory, setDeleteTargets, hiddenPages, preferences, collapsedSections, collapsedProjects, checkedChildren, agentRunsOpen });
-  const { workflowCatalog, workflowRoots, sidebarThreads, nativeParents, treeParents, searchedThreads, sidebarState, needsYou, ordinaryThreads, ordinaryIds, pinnedChats, grouped, recentChats, ordered } = sidebarModel;
+  const { workflowCatalog, workflowRoots, sidebarThreads, nativeParents, treeParents, sidebarState, needsYou, ordinaryThreads, ordinaryIds, pinnedChats, grouped, recentChats, ordered } = sidebarModel;
   useWorkspaceShortcuts({ shortcutAction, selected, ordered, readOnlyRun, activeTurn, view, cwd, desktop, hasTerminal, side, sideChat, setSideChat, sidebar, sidebarCollapsed, activeTabId: tabs.activeId, commandReturnFocus, shortcutsReturnFocus, setCommandMenuOpen, setShortcutsOpen, setRenameRequest, setSettingsSection, newChat, stop, focusComposer, focusSearch, undoDelete: () => undoDelete(), showSidebar: open => showSidebar(open), narrow: () => narrow(), show, goHistory, loadThread, archiveChats: chats => archiveChats(chats), chosenChats: () => chosenChats(), togglePin: thread => togglePin(thread), moveToEdge: (id, top) => moveToEdge(id, top), newChatTab, closeChatTab, cycleTabs });
   const togglePin = (thread: Thread) => togglePinned(thread.id);
   const toggleBookmark = (thread: Thread) => toggleBookmarked(thread.id);
-  /** Opens the shared delete confirmation for these chats. */
-  const chatsOf = (ids: string[]) => ids.map(id => searchedThreads.find(thread => thread.id === id) ?? find(id)).filter((thread): thread is Thread => !!thread);
-  /** What Ctrl+Shift+A and the command menu act on: the chats selected in the sidebar, or else the open chat. */
-  const chosenChats = () => marked.length ? chatsOf(marked) : selected ? [selected] : [];
-  /** These chats and the chats put under them (Put under…): those go wherever their chat goes. */
-  const withNested = (ids: string[]) => chatSubtree(ids, treeParents);
+  const { chatsOf, chosenChats, withNested } = createSidebarChatSelection(sidebarModel, selection, selected, find);
   const { archiveChats, deleteChats, trashChats, undoDelete } = createChatDeletion({ conversations, preferences, selectedRef, shownWhenDeleted, withNested, chatsOf, find, archiveThread, rowLinks, setDeleteRunHistory, setDeleteTargets, setDeletedNotice, setError, noteKept, removeThreads, loadThread });
   const sidebarKeys = useSidebarKeys();
   const listKeys = (event: React.KeyboardEvent<HTMLDivElement>) => sidebarListKeys(event, marked, () => setMarked([]), attentionFor, deleteChats, rowLinks);
