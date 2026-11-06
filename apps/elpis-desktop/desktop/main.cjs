@@ -11,27 +11,27 @@ const { startQuickEntry } = require('./quick-entry.cts');
 const { createScreenshotPopup } = require('./screenshot-popup.cts');
 const { createAppMenu } = require('./app-menu.cts');
 const { createAppUpdates, executableLauncher } = require('./app-updates.cts');
-const { configureMainProfile } = require('./main-profile.cjs');
-const { createMainBackend } = require('./main-backend.cjs');
-const { createMainQuit } = require('./main-quit.cjs');
+const { configureMainProfile } = require('./main-profile.cts');
+const { createMainBackend } = require('./main-backend.cts');
+const { createMainQuit } = require('./main-quit.cts');
 
 // The renderer gets only the loopback app, never Node or filesystem access.
-/** @type {import('./main-backend.cjs').MainServer | undefined} */
+/** @type {import('./main-backend.cts').MainServer | undefined} */
 let server;
-/** @type {import('./main-backend.cjs').BrowserAgentSocket | undefined} */
+/** @type {import('./main-backend.cts').BrowserAgentSocket | undefined} */
 let browserAgentSocket;
 let closing = false;
-/** @type {import('./main-backend.cjs').StateStore | undefined} */
+/** @type {import('./main-backend.cts').StateStore | undefined} */
 let store;
-/** @type {import('./main-backend.cjs').WindowOpeners | undefined} */
+/** @type {import('./main-backend.cts').WindowOpeners | undefined} */
 let primaryOpeners;
-/** @type {import('./main-backend.cjs').SessionWindows | undefined} */
+/** @type {import('./main-backend.cts').SessionWindows | undefined} */
 let sessionWindows;
 /** @type {import('electron').Tray | undefined} */
 let tray;
-/** @type {import('./main-backend.cjs').QuickEntry | undefined} */
+/** @type {import('./main-backend.cts').QuickEntry | undefined} */
 let quickEntry;
-/** @type {import('./main-backend.cjs').ScreenshotPopup | undefined} */
+/** @type {import('./main-backend.cts').ScreenshotPopup | undefined} */
 let screenshotPopup;
 let darkTheme = true;
 /** @type {{ dispose: () => void } | undefined} */
@@ -47,7 +47,7 @@ const closeToTray = createCloseToTray({ app, enabled: () => !!store && closesToT
 const updates = createAppUpdates({ app, runningApp: path.resolve(__dirname, '..'), restart: async (/** @type {string} */ target) => {
   if (!await quitApp(target)) throw Error('Restart cancelled. Your windows and drafts are kept open.');
 } });
-/** @type {import('./main-backend.cjs').MainState} */
+/** @type {import('./main-backend.cts').MainState} */
 const state = {
   getServer: () => server, setServer: value => { server = value; },
   getBrowserAgentSocket: () => browserAgentSocket, setBrowserAgentSocket: value => { browserAgentSocket = value; },

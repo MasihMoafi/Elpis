@@ -1,23 +1,17 @@
 'use strict';
 
-/**
- * @param {{
- *   app: import('electron').App,
- *   loveSpotApp: boolean,
- *   workflowsApp: boolean,
- *   executableLauncher: (file: string) => string,
- *   mayClose: (host?: import('electron').BrowserWindow) => boolean,
- *   state: import('./main-backend.cjs').MainState
- * }} options
- */
-function createMainQuit({ app, loveSpotApp, workflowsApp, executableLauncher, mayClose, state }) {
-  /** @type {Promise<boolean> | null | undefined} */
-  let quitAttempt;
-  /** @type {string | null | undefined} */
-  let pendingRestartTarget;
+function createMainQuitImpl({ app, loveSpotApp, workflowsApp, executableLauncher, mayClose, state }: {
+    app: import('electron').App,
+    loveSpotApp: boolean,
+    workflowsApp: boolean,
+    executableLauncher: (file: string) => string,
+    mayClose: (host?: import('electron').BrowserWindow) => boolean,
+    state: import('./main-backend.cts').MainState
+}) {
+  let quitAttempt: Promise<boolean> | null | undefined;
+  let pendingRestartTarget: string | null | undefined;
 
-  /** @param {string} [restartTarget] */
-  async function quitApp(restartTarget) {
+  async function quitApp(restartTarget?: string) {
     if (restartTarget) pendingRestartTarget = restartTarget;
     if (quitAttempt) return quitAttempt;
     quitAttempt = (async () => {
@@ -67,4 +61,5 @@ function createMainQuit({ app, loveSpotApp, workflowsApp, executableLauncher, ma
   return { quitApp, isQuitting: () => Boolean(quitAttempt) };
 }
 
-module.exports = { createMainQuit };
+export declare const createMainQuit: typeof createMainQuitImpl;
+module.exports = { createMainQuit: createMainQuitImpl };

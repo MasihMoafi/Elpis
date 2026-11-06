@@ -1,17 +1,14 @@
 'use strict';
 
-const path = require('node:path');
-const { openThreadArgument } = require('./open-thread.cts');
-const { enableWaylandIme } = require('./wayland-ime.cts');
+const path: typeof import('node:path') = require('node:path');
+const { openThreadArgument }: typeof import('./open-thread.cts') = require('./open-thread.cts');
+const { enableWaylandIme }: typeof import('./wayland-ime.cts') = require('./wayland-ime.cts');
 
-/**
- * @param {{
- *   app: import('electron').App,
- *   argv?: string[],
- *   env?: NodeJS.ProcessEnv
- * }} options
- */
-function configureMainProfile({ app, argv = process.argv, env = process.env }) {
+function configureMainProfileImpl({ app, argv = process.argv, env = process.env }: {
+    app: import('electron').App,
+    argv?: string[],
+    env?: NodeJS.ProcessEnv
+}) {
   // WM_CLASS comes from package.json "name" (elpis-desktop) when launched as the app directory;
   // elpis-desktop.desktop.in sets StartupWMClass=elpis-desktop to match, so docks show the Elpis icon.
   // --love-spot-app (the Love Spot dock icon): Love Spot as its own app, so its window groups under that icon. Wayland
@@ -25,14 +22,14 @@ function configureMainProfile({ app, argv = process.argv, env = process.env }) {
   enableWaylandIme(app.commandLine, env);
   // Wayland gives apps global shortcuts only through the desktop portal; Claude's app turns on Chromium's portal support the same way.
   app.commandLine.appendSwitch('enable-features', [app.commandLine.getSwitchValue('enable-features'), 'GlobalShortcutsPortal'].filter(Boolean).join(','));
-  /** @type {{ openThread: string | null, loveSpot: boolean, workflows?: boolean }} */
-  const lockData = { openThread: openThreadArgument(argv), loveSpot: argv.includes('--love-spot'), ...(argv.includes('--workflows') ? { workflows: true } : {}) };
+  const lockData: { openThread: string | null, loveSpot: boolean, workflows?: boolean } = { openThread: openThreadArgument(argv), loveSpot: argv.includes('--love-spot'), ...(argv.includes('--workflows') ? { workflows: true } : {}) };
   return {
     loveSpotApp,
     workflowsApp,
-    initialThread: /** @type {string | null} */ (openThreadArgument(argv)),
+    initialThread: openThreadArgument(argv) as string | null,
     lockData,
   };
 }
 
-module.exports = { configureMainProfile };
+export declare const configureMainProfile: typeof configureMainProfileImpl;
+module.exports = { configureMainProfile: configureMainProfileImpl };

@@ -175,7 +175,7 @@
     "desktop/copy-keys.test.cts",
     "desktop/tray.test.cts",
     "desktop/wayland-ime.test.cts",
-    "desktop/love-spot.test.cjs",
+    "desktop/love-spot.test.cts",
     "desktop/sleep-blocker.test.cts",
     "desktop/browser-identity.test.cts"
   ],

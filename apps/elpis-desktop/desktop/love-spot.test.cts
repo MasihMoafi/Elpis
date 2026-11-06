@@ -1,5 +1,4 @@
 const { createTestTempDir, removeTestTempDir } = require('../tests/temp-root.cjs');
-'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
@@ -7,33 +6,38 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
 
-async function launch(args, flushText, flushBrowsers, canRestart = async () => true) {
-  const app = new EventEmitter(); let ready, lock;
-  const identity = {};
-  Object.assign(app, { setName: name => { identity.name = name; }, setPath: (key, value) => { identity[key] = value; },
-    setDesktopName: name => { identity.desktop = name; }, getPath: () => '/tmp/love-dock-test',
+type Control = { dirty: unknown; workflowSaved: boolean; inert?: boolean; readFailure?: boolean };
+type Relaunch = { execPath: string; args: string[] };
+type Call = string | ['thread', string] | ['relaunch', Relaunch];
+type Host = { isDestroyed: () => boolean; webContents: { executeJavaScript: (script: string) => Promise<unknown> } };
+
+async function launch(args: string[], flushText?: () => Promise<boolean>, flushBrowsers?: () => Promise<void>, canRestart = async () => true) {
+  const app = new EventEmitter(); let ready!: () => void, lock!: { loveSpot: boolean };
+  const identity: Record<string, string> = {};
+  Object.assign(app, { setName: (name: string) => { identity.name = name; }, setPath: (key: string, value: string) => { identity[key] = value; },
+    setDesktopName: (name: string) => { identity.desktop = name; }, getPath: () => '/tmp/love-dock-test',
     commandLine: { appendSwitch() {}, getSwitchValue: () => '' },
-    requestSingleInstanceLock: data => { lock = data; return true; },
-    whenReady: () => new Promise(resolve => { ready = resolve; }), quit() {}, relaunch: value => calls.push(['relaunch', value]) });
-  const calls = [], host = { isDestroyed: () => false, isMinimized: () => false, isVisible: () => true, focus: () => calls.push('focus-chat') };
-  const openers = { threads: { queue: id => calls.push(['thread', id]) }, newChats: { queue() {} } };
-  const sessions = { windows: new Set(), flushText, flushBrowsers: async () => { calls.push('browser-flush'); await flushBrowsers?.(); }, openersFor: () => openers,
+    requestSingleInstanceLock: (data: { loveSpot: boolean }) => { lock = data; return true; },
+    whenReady: () => new Promise<void>(resolve => { ready = resolve; }), quit() {}, relaunch: (value: Relaunch) => calls.push(['relaunch', value]) });
+  const calls: Call[] = []; const host = { isDestroyed: () => false, isMinimized: () => false, isVisible: () => true, focus: () => calls.push('focus-chat') };
+  const openers = { threads: { queue: (id: string) => calls.push(['thread', id]) }, newChats: { queue() {} } };
+  const sessions = { windows: new Set<Host>(), flushText, flushBrowsers: async () => { calls.push('browser-flush'); await flushBrowsers?.(); }, openersFor: () => openers,
     open: async () => { calls.push('chat'); return host; }, openLoveSpot: async () => { calls.push('love'); }, openWorkflows: async () => { calls.push('workflows'); } };
-  const electron = { app, ipcMain: { handle() {}, removeHandler() {} }, dialog: { showErrorBox() {} }, Menu: { buildFromTemplate: x => x, setApplicationMenu() {} } };
+  const electron = { app, ipcMain: { handle() {}, removeHandler() {} }, dialog: { showErrorBox() {} }, Menu: { buildFromTemplate: (x: unknown) => x, setApplicationMenu() {} } };
   const context = vm.createContext({ __dirname, console, process: { argv: ['electron', 'app', ...args], env: {}, platform: 'linux' },
     sessions, openers, testStore: { get: () => null, flush: async () => calls.push('workspace-flush') }, testServer: { canRestart, close: async () => calls.push('board-close') },
-    require: name => name === './app-updates.cts' ? { executableLauncher: file => file, createAppUpdates: () => ({ setRunningEngine() {} }) } : name === 'electron' ? electron : name === './quick-entry.cts' ? { startQuickEntry: () => { calls.push('quick-entry'); return { start: async () => {} }; } }
+    require: (name: string) => name === './app-updates.cts' ? { executableLauncher: (file: string) => file, createAppUpdates: () => ({ setRunningEngine() {} }) } : name === 'electron' ? electron : name === './quick-entry.cts' ? { startQuickEntry: () => { calls.push('quick-entry'); return { start: async () => {} }; } }
       : name === './tray.cts' ? { createCloseToTray: () => ({}), createTray: () => { calls.push('tray'); return { destroy() {} }; } }
       : name === './screenshot-popup.cts' ? { createScreenshotPopup: () => ({ attach: () => () => {}, dispose() {} }), drawsOnWayland: () => false } : require(name) });
   vm.runInContext(fs.readFileSync(path.join(__dirname, 'main.cjs'), 'utf8'), context);
   vm.runInContext('server = testServer; store = testStore; sessionWindows = sessions; primaryOpeners = openers;', context);
   ready();
   const settle = () => new Promise(resolve => setImmediate(resolve)); await settle();
-  return { app, calls, lock, settle, identity, sessions, quit: () => vm.runInContext('quitApp', context)(), restart: target => vm.runInContext('quitApp', context)(target) };
+  return { app, calls, lock, settle, identity, sessions, quit: () => vm.runInContext('quitApp', context)(), restart: (target: string) => vm.runInContext('quitApp', context)(target) };
 }
 
-function editableHost(control, calls) {
-  const webContents = Object.assign(new EventEmitter(), { executeJavaScript: async script => {
+function editableHost(control: Control, calls: Call[]) {
+  const webContents = Object.assign(new EventEmitter(), { executeJavaScript: async (script: string) => {
     if (script.includes('__elpisHasUnsavedFiles')) { calls.push('files-check'); if (control.readFailure) throw Error('Private file status read failed'); return control.dirty; }
     if (script.includes('__elpisFlushWorkflow')) { calls.push('workflow-flush'); return control.workflowSaved; }
     if (script.includes('inert = true')) control.inert = true;
@@ -44,7 +48,7 @@ function editableHost(control, calls) {
   return { isDestroyed: () => false, webContents };
 }
 for (const action of ['quit', 'restart']) test(`explicit ${action} keeps all windows open for hidden source edits and permits a clean retry`, async () => {
-  const f = await launch([], async () => true), clean = { dirty: false, workflowSaved: true }, hidden = { dirty: true, workflowSaved: true };
+  const f = await launch([], async () => true), clean: Control = { dirty: false, workflowSaved: true }, hidden: Control = { dirty: true, workflowSaved: true };
   f.sessions.windows.add(editableHost(clean, f.calls)); f.sessions.windows.add(editableHost(hidden, f.calls));
   const run = () => action === 'quit' ? f.quit() : f.restart('/selected/new/launch');
   await assert.rejects(run(), /Save or revert file edits/);
@@ -53,7 +57,7 @@ for (const action of ['quit', 'restart']) test(`explicit ${action} keeps all win
   hidden.dirty = false; assert.equal(await run(), true); assert.ok(f.calls.includes('board-close'));
 });
 test('explicit quit flushes the latest workflow before native storage and refuses a failed graph save', async () => {
-  const f = await launch([], async () => true), control = { dirty: false, workflowSaved: false };
+  const f = await launch([], async () => true), control: Control = { dirty: false, workflowSaved: false };
   f.sessions.windows.add(editableHost(control, f.calls));
   await assert.rejects(f.quit(), /Workflow could not be saved/);
   assert.ok(!f.calls.includes('storage-flush')); assert.ok(!f.calls.includes('board-close')); assert.equal(control.inert, false);
@@ -62,19 +66,19 @@ test('explicit quit flushes the latest workflow before native storage and refuse
   assert.ok(f.calls.indexOf('storage-flush') < f.calls.indexOf('board-close'));
 });
 for (const dirty of [undefined, null, 1, 'false']) test(`an invalid installed file status (${String(dirty)}) refuses explicit quit`, async () => {
-  const f = await launch([], async () => true), control = { dirty, workflowSaved: true };
+  const f = await launch([], async () => true), control: Control = { dirty, workflowSaved: true };
   f.sessions.windows.add(editableHost(control, f.calls));
   await assert.rejects(f.quit(), /Save or revert file edits/); assert.equal(control.inert, false); assert.ok(!f.calls.includes('board-close'));
 });
 test('a failed file status read restores editing and permits retry after the renderer recovers', async () => {
-  const f = await launch([], async () => true), control = { dirty: false, workflowSaved: true, readFailure: true };
+  const f = await launch([], async () => true), control: Control = { dirty: false, workflowSaved: true, readFailure: true };
   f.sessions.windows.add(editableHost(control, f.calls));
   await assert.rejects(f.quit(), /Private file status read failed/); assert.equal(control.inert, false); assert.ok(!f.calls.includes('board-close'));
   control.readFailure = false; assert.equal(await f.quit(), true);
 });
 
 test('app quit waits for live text before closing the board server; a failure permits retry', async () => {
-  let release, saves = 0;
+  let release!: (value: boolean) => void, saves = 0;
   const f = await launch([], () => { saves++; return new Promise(resolve => { release = resolve; }); });
   let prevented = 0, quit = 0; f.app.quit = () => { quit++; };
   const request = () => f.app.emit('before-quit', { preventDefault() { prevented++; } });
@@ -87,7 +91,7 @@ test('app quit waits for live text before closing the board server; a failure pe
 });
 
 test('app quit waits for browser persistence and permits retry after a failed save', async () => {
-  let finish;
+  let finish!: { resolve: () => void; reject: (error: Error) => void };
   const f = await launch([], async () => true, () => new Promise((resolve, reject) => { finish = { resolve, reject }; }));
   let quit = 0; f.app.quit = () => { quit++; };
   const request = () => f.app.emit('before-quit', { preventDefault() {} });
@@ -117,7 +121,7 @@ function sessionFixture() {
       });
     }
     isDestroyed() { return !!this.destroyed; }
-    async loadURL(url) { this.url = url; }
+    async loadURL(url: string) { this.url = url; }
     close() {
       let prevented = false;
       this.emit('close', { preventDefault() { prevented = true; } });
@@ -135,9 +139,9 @@ function sessionFixture() {
     // Shared documents (84f35b9d4) attach to each window; these checks are about saving and closing.
     './documents.cjs': { createDocuments: () => ({ attach: () => noop, call: async () => null }) },
   };
-  const module = { exports: {} };
+  const module = { exports: {} as { createSessionWindows: (options: unknown) => { open: () => Promise<Window>; openLoveSpot: () => Promise<Window>; flushText: () => Promise<boolean>; windows: Set<Window> } } };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, 'session-windows.cjs'), 'utf8'), {
-    __dirname, module, console: { ...console, error: noop }, URL, require: name => stubs[name] ?? require(name),
+    __dirname, module, console: { ...console, error: noop }, URL, require: (name: string) => (stubs as Record<string, unknown>)[name] ?? require(name),
   });
   return module.exports.createSessionWindows({ electron: { BrowserWindow: Window }, url: 'http://127.0.0.1:4000/',
     closeToTray: { hides: () => false, closed: noop }, mayClose: () => true });
@@ -233,7 +237,7 @@ test('Restart refuses active work and a later idle retry preserves standalone Lo
   assert.ok(!f.calls.includes('board-close'));
   active = false; assert.equal(await f.restart('/selected/new/launch'), true);
   assert.ok(f.calls.includes('board-close'));
-  const relaunched = f.calls.find(call => Array.isArray(call) && call[0] === 'relaunch')[1];
+  const relaunched = f.calls.find((call): call is ['relaunch', Relaunch] => Array.isArray(call) && call[0] === 'relaunch')![1];
   assert.equal(relaunched.execPath, '/selected/new/launch');
   assert.deepEqual(Array.from(relaunched.args), ['--love-spot-app']);
 });
@@ -249,11 +253,11 @@ test('a refused final save does not schedule a relaunch or close the board', asy
 
 
 test('a Restart requested during an ordinary Quit is retained and schedules only one launch', async () => {
-  let finish;
+  let finish!: (value: boolean) => void;
   const f = await launch([], () => new Promise(resolve => { finish = resolve; }));
   f.app.emit('before-quit', { preventDefault() {} }); await f.settle();
   const restarting = f.restart('/selected/new/launch');
   finish(true); await restarting;
-  const launches = f.calls.filter(call => Array.isArray(call) && call[0] === 'relaunch');
-  assert.equal(launches.length, 1); assert.equal(launches[0][1].execPath, '/selected/new/launch');
+  const launches = f.calls.filter((call): call is ['relaunch', Relaunch] => Array.isArray(call) && call[0] === 'relaunch');
+  assert.equal(launches.length, 1); assert.equal(launches[0]![1].execPath, '/selected/new/launch');
 });
