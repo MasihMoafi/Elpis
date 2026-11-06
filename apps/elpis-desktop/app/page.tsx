@@ -122,6 +122,7 @@ import { useWorkspacePagesState } from "@/lib/use-workspace-pages-state";
 import { useConversationOptions } from "@/lib/use-conversation-options";
 import { useSidebarSelection } from "@/lib/use-sidebar-selection";
 import { useHistoryFallback } from "@/lib/use-history-fallback";
+import { useDesktopEntryPoints } from "@/lib/use-desktop-entry-points";
 import { NAV_PAGES, PAGE_NAMES } from "@/lib/workspace-navigation-pages";
 import { refusedOffline, type View, type WorkflowReplay } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
@@ -449,18 +450,7 @@ export default function Home() {
     if (selectedRef.current?.id !== thread.id || view !== "chat") void loadThread(thread);
     setTuiLaunch({ key: side.openTerminal(thread.cwd || cwd, thread.id), threadId: thread.id, token: Date.now() });
   };
-  // The TUI's /app (`elpis-app --open-thread <id>`): the running window opens that chat.
-  const openFromTui = useRef(openById); openFromTui.current = openById;
-  useEffect(() => window.elpisDesktop?.onOpenThread?.(id => void openFromTui.current(id)), []);
-  // Quick Entry's text opens a new chat and is sent, as in Claude; the tray's New chat opens one empty (desktop/main.cjs).
-  // The text waits until the new chat is on screen and Elpis can send.
-  const [desktopPrompt, setDesktopPrompt] = useState<string | null>(null);
-  const openFromDesktop = useRef(newChat); openFromDesktop.current = newChat;
-  useEffect(() => window.elpisDesktop?.onNewChat?.(prompt => { openFromDesktop.current(); setDesktopPrompt(prompt.trim() ? prompt : null); }), []);
-  useEffect(() => {
-    if (desktopPrompt === null || selected || view !== "chat" || !connected || busy || dictating || attaching || projectChanging) return;
-    setDesktopPrompt(null); void send(desktopPrompt);
-  }, [desktopPrompt, selected, view, connected, busy, dictating, attaching, projectChanging]); // eslint-disable-line react-hooks/exhaustive-deps
+  const setDesktopPrompt = useDesktopEntryPoints({ pages, composer, attachments: attachmentState, projectState, runtime, selected, busy, openById, newChat, send });
   /** The terminal's slash commands this app performs (codex-rs/tui/src/slash_command.rs), in its popup order and mostly in its words.
    * Commands that run the model or rewrite the chat wait for an idle chat; controls and views are always there. */
   const openSettings = (tab: SettingsDestination) => { setSettingsSection(tab); show("settings"); };
