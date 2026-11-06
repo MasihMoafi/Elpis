@@ -11,7 +11,6 @@ import { newChatFolder, useAppPreferences } from "@/lib/preferences";
 import { usePromptKeys } from "@/lib/prompt-history";
 import { ShortcutsDialog } from "@/components/shortcuts-dialog";
 import { StartupSplash } from "@/components/startup-splash";
-import { permissionLabel } from "@/components/composer-controls";
 import type { TerminalLaunch } from "@/components/terminal-view";
 import { type SettingsDestination } from "@/components/settings-view";
 import { DeleteChatsDialog } from "@/components/thread-actions";
@@ -55,7 +54,7 @@ import { SidePanel, sideMinWidth, useSidePanel } from "@/components/side-panel";
 import { type SideRequest } from "@/components/side-chat";
 import { FloatChatBar, FloatChatPill } from "@/components/float-chat";
 import { useSessionSplit } from "@/components/session-split";
-import { api, modelLabel, providerLabel, title, agentName,
+import { api, title, agentName,
   type ProviderSettings, type Thread } from "@/lib/api";
 import { useComposerHeight } from "@/lib/use-composer-height";
 import { useTranscriptHistory } from "@/lib/use-transcript-history";
@@ -107,6 +106,7 @@ import { createWorkspaceCommandMenu } from "@/lib/workspace-command-menu";
 import { conversationStatus } from "@/lib/conversation-status";
 import { useChatTabTitles } from "@/lib/use-chat-tab-titles";
 import { createBrowserAttachment } from "@/lib/browser-attachments";
+import { sessionRows as makeSessionRows } from "@/lib/session-rows";
 import { PAGE_NAMES } from "@/lib/workspace-navigation-pages";
 import { refusedOffline } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
@@ -360,14 +360,7 @@ export default function Home() {
     if (!idle) return;
     setQueuedCompact(null); setSlashNotice(""); compactChat(selected, queuedCompact.guidance);
   }, [queuedCompact, selected, idle]); // eslint-disable-line react-hooks/exhaustive-deps
-  const sessionRows: [string, string][] = [
-    ["Model", modelLabel(turnModel || providerSettings?.main.model, models)],
-    ["Provider", providerLabel(turnModel || providerSettings?.main.model, selected ? selected.modelProvider : newChoice?.provider ?? providerSettings?.main.provider, providerSettings?.providers)],
-    ["Reasoning effort", turnEffort || "Default"],
-    ["Permissions", permissionLabel(permissionMode)],
-    ["Folder", chatFolder || "Default folder"],
-    ["Chat", selected?.id ?? "Not started yet"],
-  ];
+  const sessionRows = makeSessionRows(session, selectedModel, models, providerSettings, permissionMode, chatFolder);
   const slashCommands = createSlashCommands({ selected, askSideQuestion, readOnlyRun, recapConversation, chooseGoal, busy, openComposerControl, chooseFast, turnEfforts, chooseEffort, openSettings, personal, writable, idle, startReview, setPanel, renameThread, setError, setRenameRequest, newChat, clearChat, archiveChats: chats => archiveChats(chats), deleteChats: (ids, focusAt) => deleteChats(ids, focusAt), setResumeOpen, lastTurn, activeTurn, forkFrom, continues, send, compactChat, setQueuedCompact, setSlashNotice, turnSmartPruneOn, planMode, setPlan, team, panelShown, openAgentsPanel, entries, exportChat, chatFolder });
   const slash = useSlashMenu(ready && connected ? text : "", slashCommands, () => { editDraft(""); setPanel(null); setSlashNotice(""); });
   const mention = useMentionMenu({ text, caret, cwd: chatFolder || undefined, threads, currentId: selected?.id,
