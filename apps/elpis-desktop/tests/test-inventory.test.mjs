@@ -23,10 +23,12 @@ test('discovery includes new specs and legacy node:test files outside existing t
   await fs.mkdir(path.join(directory, 'feature'));
   await fs.mkdir(path.join(directory, 'node_modules'));
   await fs.writeFile(path.join(directory, 'feature', 'added.spec.ts'), '');
+  await fs.writeFile(path.join(directory, 'feature', 'added.test.mts'), '');
+  await fs.writeFile(path.join(directory, 'feature', 'added.test.cts'), '');
   await fs.writeFile(path.join(directory, 'feature', 'legacy.mjs'), "import test from 'node:test';");
   await fs.writeFile(path.join(directory, 'node_modules', 'excluded.test.cjs'), '');
   const files = await discoverTests(directory);
-  assert.deepEqual(files, ['feature/added.spec.ts', 'feature/legacy.mjs']);
+  assert.deepEqual(files, ['feature/added.spec.ts', 'feature/added.test.cts', 'feature/added.test.mts', 'feature/legacy.mjs']);
   assert.throws(() => checkInventory({ fast: [], bridge: [], desktop: [], ui: [], 'opt-in': [] }, files), /Unassigned test: feature\/added.spec.ts/);
 });
 
