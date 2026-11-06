@@ -23,11 +23,15 @@ def main():
         'docs/evals/rq3/LUNA_PUBLISHED_RATES_2026-09-08.json',
         'docs/evals/rq3/OPENAI_PUBLISHED_RATES_2026-09-09.json',
     ]
+    # Since 5 Nov (b1bbd7381) the website holds the only copy of most media and evidence; copy only what docs/ still has.
+    def bring(name, folder):
+        if (ROOT / name).exists(): shutil.copyfile(ROOT / name, folder / Path(name).name)
+        elif not (folder / Path(name).name).exists(): raise SystemExit(f'{name}: in neither docs/ nor {folder.relative_to(ROOT)}')
     for name in local_docs:
-        shutil.copyfile(ROOT / name, evidence / Path(name).name)
+        bring(name, evidence)
     source = (SITE / 'technical.md').read_text()
     for name in set(re.findall(r'docs/assets/[^\s)"<>]+', source)):
-        shutil.copyfile(ROOT / name, assets / Path(name).name)
+        bring(name, assets)
         source = source.replace(name, './assets/technical/' + Path(name).name)
     for name in local_docs:
         source = source.replace(name, './evidence/' + Path(name).name)
