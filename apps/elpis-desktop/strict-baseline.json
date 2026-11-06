@@ -1259,7 +1259,7 @@
   "tests/temp-root.cjs:TS7006": 3
  },
  "tsx": {
-  "app/page.tsx:TS2375": 4,
+  "app/page.tsx:TS2375": 3,
   "app/page.tsx:TS2379": 1,
   "components/account-row.tsx:TS2532": 1,
   "components/action-menu.tsx:TS18048": 9,

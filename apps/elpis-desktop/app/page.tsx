@@ -2,7 +2,6 @@
 
 import { flushSync } from "react-dom";
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
-import { Button } from "@/components/ui/button";
 import { ViewBoundary } from "@/components/view-boundary";
 import { useBookmarks, useChatAttention, usePins, useSidebarFolds, useChatGroups } from "@/lib/use-sidebar-state";
 import { useAppearance } from "@/lib/use-appearance";
@@ -104,8 +103,8 @@ import { useComposerPanels, useComposerPanelScope } from "@/lib/use-composer-pan
 import { useLoveWorkspace, useReadLoveNotifications } from "@/lib/use-love-workspace";
 import { useWorkspacePanels } from "@/lib/use-workspace-panels";
 import { createSidebarAttention } from "@/lib/sidebar-attention";
+import { WorkspaceAlertArea } from "@/components/workspace-alert-area";
 import { PAGE_NAMES } from "@/lib/workspace-navigation-pages";
-import { refusedOffline } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
 import { useComposerState } from "@/lib/use-composer-state";
 import { useProjectState } from "@/lib/use-project-state";
@@ -114,11 +113,8 @@ import { useApprovalDrafts, useDraftStore, useSubmitOnce } from "@/lib/use-draft
 import { sessionWindowApi, useDesktopCapabilities } from "@/lib/use-desktop-capabilities";
 import { useWorkspaceNotices } from "@/lib/use-workspace-notices";
 import { useSidebarSearch } from "@/lib/use-sidebar-search";
-import { WorkspaceNotices } from "@/components/workspace-notices";
-import { WorkspaceRecovery } from "@/components/workspace-recovery";
 import { createWorkspaceChatTabs } from "@/components/workspace-chat-tabs";
 import { WorkspaceOrganizationDialogs } from "@/components/workspace-organization-dialogs";
-import { without } from "@/lib/utils";
 import { errorText } from "@/lib/error-text.mjs";
 import { refreshModelCatalog, useModelCatalog } from "@/lib/model-catalog";
 
@@ -133,7 +129,7 @@ export default function Home() {
   const chatTabs = useChatTabs(message => setError(message));
   const { tabs, tabsRef, updateTabs, restoreTabs, restored: restoredTabs } = chatTabs;
   // The engine's live model list, shared by every model menu (lib/model-catalog.ts).
-  const { models, error: catalogError, loading: catalogLoading } = useModelCatalog();
+  const catalog = useModelCatalog(), { models } = catalog;
   const refreshModels = refreshModelCatalog;
   // One settings snapshot for the whole app, so a main model saved in Settings is what the next new chat starts with.
   const settingsSnapshot = useElpisSettings().data as unknown as ProviderSettings | null;
@@ -152,7 +148,7 @@ export default function Home() {
   const { chatGroups, chatGroupsRef, updateGroups, commitGroups } = groups;
   const dialogs = useWorkspaceDialogState();
   const { setNewGroupFor, deleteTargets, setDeleteTargets, deleteRunHistory, setDeleteRunHistory, shownWhenDeleted, shortcutsOpen, setShortcutsOpen, commandMenuOpen, setCommandMenuOpen, commandReturnFocus, shortcutsReturnFocus, renameRequest, setRenameRequest, resumeOpen, setResumeOpen } = dialogs;
-  const { error, setError, deletedNotice, setDeletedNotice, worktreeNotice, setWorktreeNotice, noteKept } = useWorkspaceNotices();
+  const notices = useWorkspaceNotices(), { error, setError, setDeletedNotice, noteKept } = notices;
   const attentionState = useChatAttention(planAnswered, setError);
   const { attention, setAttention, planTurns, markRead } = attentionState;
   const selection = useSidebarSelection({ selected, openSplit: thread => openSplit(thread), openThread: thread => openThread(thread) });
@@ -161,7 +157,7 @@ export default function Home() {
   const collapsedProjects = folds.projects, collapsedSections = folds.sections;
   /** The heading of a sidebar section: every one of them folds its list the same way. */
   const foldable = (key: string, name: string) => <SectionToggle name={name} open={!collapsedSections[key]} onToggle={() => changeFolds(value => ({ ...value, sections: { ...value.sections, [key]: !value.sections[key] } }))} />;
-  const { rewindTurn, setRewindTurn, rewindActions, setRewindActions, messageVersions, setMessageVersions, rewindBusy, setRewindBusy, rewindSwitch } = useRewindState();
+  const rewindState = useRewindState(), { rewindTurn, setRewindTurn, setRewindActions, messageVersions, setMessageVersions, setRewindBusy, rewindSwitch } = rewindState;
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const panels = useComposerPanels();
   const { panel, setPanel, slashNotice, setSlashNotice, queuedCompact, setQueuedCompact, newWorktree, setNewWorktree, sideChat, setSideChat, sideRequests } = panels;
@@ -175,8 +171,7 @@ export default function Home() {
   const draftStore = useDraftStore(setError), { saveDraft, savedAttachments, saveAttachments } = draftStore;
   const newDraftKey = useRef("new");
   const runtime = useRuntimeState();
-  const { connected, connectionStatus, ready, runtimeNotices, setRuntimeNotices,
-    activity } = runtime;
+  const { connected, ready, setRuntimeNotices, activity } = runtime;
   useEffect(() => {
     if (ready && connected && document.activeElement === document.body) composerRef.current?.focus();
   }, [ready, connected]);
@@ -384,12 +379,7 @@ export default function Home() {
       {selected && teamRoot && team.length > 0 && agentsPanel && !panelShown && <ChatTeamPanel selected={selected} teamRoot={teamRoot} team={team} workingTeam={workingTeam} shownTeam={shownTeam} workingAgentsOnly={workingAgentsOnly} setWorkingAgentsOnly={setWorkingAgentsOnly} waitingIds={waitingIds} activity={activity} models={models} agentColours={agentColours} openById={openById} openThread={openThread} />}
       </div></ViewBoundary>}
       </div>{fullView && side.chatCollapsed && <FloatChatPill title={chatName} state={floatState} onRestore={() => side.setChatCollapsed(false)} />}{desktop && <SidePanel panel={side} browser={browser} hasTerminal={hasTerminal} dark={dark} cwd={selected?.cwd || cwd} threadId={selected?.id} running={!!activeTurn} launch={tuiLaunch} covered={pendingInputOpen || sidebar || view !== "chat"} onAttach={attachFromBrowser} imagesAllowed={!(knownModel?.inputModalities && !knownModel.inputModalities.includes("image"))} />}</div>
-      <WorkspaceNotices connection={!ready || !connected ? connectionStatus : undefined} deleted={deletedNotice} onUndoDelete={() => void undoDelete()} onDismissDeleted={() => setDeletedNotice(null)}
-        rewind={selected && rewindActions[selected.id] && <div className="error-banner notice" role="status"><span className="min-w-0 flex-1">Your files stay as they are.</span><Button variant="outline" size="sm" disabled={rewindBusy || !!activeTurn} onClick={() => void switchRewind({ action: rewindActions[selected.id]! }).catch(cause => setError(String(cause)))}>{rewindActions[selected.id] === "undo" ? "Undo rewind" : "Redo rewind"}</Button></div>}
-        error={error && !(refusedOffline(error) && !connected) ? error : undefined} onDismissError={() => setError("")}
-        worktree={worktreeNotice} onDismissWorktree={() => setWorktreeNotice("")} loadingModels={catalogLoading && !catalogError && !models.length}
-        conversationError={selected ? runtimeNotices[selected.id] : undefined} onDismissConversationError={() => selected && setRuntimeNotices(prev => without(prev, selected.id))}
-        recovery={<WorkspaceRecovery session={session} composer={composer} attachmentsState={attachmentState} drafts={draftStore} editDraft={editDraft} />} />
+      <WorkspaceAlertArea notices={notices} session={session} runtime={runtime} composer={composer} attachments={attachmentState} drafts={draftStore} rewind={rewindState} catalog={catalog} activeTurn={activeTurn} undoDelete={undoDelete} switchRewind={switchRewind} editDraft={editDraft} />
       {split.thread && view === "chat" && <iframe key={split.thread.id} ref={split.frame} className="split-session" title="Split session" src={`/?pane=1&session=${encodeURIComponent(split.thread.id)}`} />}
     </main>
   </div></ReadAloud></LiveVoiceProvider></DocumentReviewProvider>;
