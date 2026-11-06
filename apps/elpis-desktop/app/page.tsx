@@ -9,7 +9,6 @@ import { newChatFolder } from "@/lib/preferences";
 import { usePromptKeys } from "@/lib/prompt-history";
 import { ShortcutsDialog } from "@/components/shortcuts-dialog";
 import { StartupSplash } from "@/components/startup-splash";
-import { type SettingsDestination } from "@/components/settings-view";
 import { DeleteChatsDialog } from "@/components/thread-actions";
 import { SidebarChatList } from "@/components/sidebar-chat-list";
 import { createSidebarThreadRow } from "@/components/sidebar-thread-row";
@@ -29,7 +28,6 @@ import { useSlashMenu } from "@/components/slash-menu";
 import { useMentionMenu } from "@/components/mention-menu";
 import { RewindDialog } from "@/components/rewind-dialog";
 import { useNavHistory } from "@/lib/nav-history";
-import { openControl } from "@/lib/slash-focus";
 import { ReadAloud } from "@/components/read-aloud";
 import { LiveVoiceProvider } from "@/components/live-voice";
 import { ProfileDialog } from "@/components/profile-dialog";
@@ -107,6 +105,7 @@ import { WorkspaceOrganizationDialogs } from "@/components/workspace-organizatio
 import { errorText } from "@/lib/error-text.mjs";
 import { useWorkspaceStores } from "@/lib/use-workspace-stores";
 import { useWorkspaceSidebarState } from "@/lib/use-workspace-sidebar-state";
+import { createWorkspaceControls } from "@/lib/workspace-controls";
 
 
 
@@ -155,7 +154,8 @@ export default function Home() {
   useReadLoveNotifications(loveActivity.chatShown, setAttention, isLoveChatId);
   useEffect(() => { if (view === "chat" && selected) markRead(selected.id); }, [view, selected?.id, markRead]);
   const { desktop, windowAvailable, hasTerminal } = useDesktopCapabilities();
-  const { browser, side, browserPins, tuiLaunch, setTuiLaunch, panelShown, fullView, pendingInputOpen, setPendingInputOpen, pendingInputButton, sidebar, setSidebar, panelDrawer, showChat, show, narrow, showSidebar, focusSearch } = useWorkspacePanels({ selected, cwd, activeTabId: tabs.activeId, desktop, pages, setError, setSidebarCollapsed, searchInput: () => searchInput.current });
+  const workspacePanels = useWorkspacePanels({ selected, cwd, activeTabId: tabs.activeId, desktop, pages, setError, setSidebarCollapsed, searchInput: () => searchInput.current });
+  const { browser, side, browserPins, tuiLaunch, setTuiLaunch, panelShown, fullView, pendingInputOpen, setPendingInputOpen, pendingInputButton, sidebar, setSidebar, panelDrawer, showChat, show, narrow, showSidebar, focusSearch } = workspacePanels;
   const [agentsPanelState, setAgentsPanelState] = useState<{ open: boolean; held: ReadonlySet<string> }>({ open: true, held: new Set() });
   const [workingAgentsOnly, setWorkingAgentsOnly] = useState(true);
   const [loveToolbarHost, setLoveToolbarHost] = useState<HTMLDivElement | null>(null);
@@ -231,16 +231,8 @@ export default function Home() {
   const { approvalCardProps } = createApprovalActions({ approvals: approvalDrafts, submissions: approvalSubmissions, runtime, request, restoreComposerFocus: origin => restoreComposerFocus(origin) });
   const earlier = createEarlierMessages({ history, selected, selectedRef, request, setLoading, setError, setEntries, stickToBottom, scroll, restoreScroll });
   const openById = (id: string) => openThread(threads.find(thread => thread.id === id) || related[id] || { id });
-  /** "Open in Elpis TUI": the chat opens here and its terminal resumes it in the TUI (`elpis resume <id>`). */
-  const openInTui = (thread: Thread) => {
-    if (selectedRef.current?.id !== thread.id || view !== "chat") void loadThread(thread);
-    setTuiLaunch({ key: side.openTerminal(thread.cwd || cwd, thread.id), threadId: thread.id, token: Date.now() });
-  };
+  const { openInTui, openSettings, focusComposer, restoreComposerFocus, openComposerControl, closePanel } = createWorkspaceControls({ session, composer, panels, pages, workspacePanels, cwd, loadThread });
   const setDesktopPrompt = useDesktopEntryPoints({ pages, composer, attachments: attachmentState, projectState, runtime, selected, busy, openById, newChat, send });
-  /** The terminal's slash commands this app performs (codex-rs/tui/src/slash_command.rs), in its popup order and mostly in its words.
-   * Commands that run the model or rewrite the chat wait for an idle chat; controls and views are always there. */
-  const openSettings = (tab: SettingsDestination) => { setSettingsSection(tab); show("settings"); };
-  const focusComposer = () => composerRef.current?.focus();
   const { beginReply, beginImageReply, editQueued } = createReplyActions({ composer, attachmentsState: attachmentState, drafts: draftStore, runtime, selectedRef, newDraftKey, readOnlyRun, focusComposer, editDraft });
   // The transcript is redrawn only when what it shows changes, not on every keystroke in the message box; its
   // handlers call the current render's functions through a ref, so a reused row never calls a stale one.
@@ -249,14 +241,6 @@ export default function Home() {
   const versionsShown = selected ? messageVersions[selected.id] : undefined;
   const chatConversation = useConversationTranscript({ live, selected, shownEntries, activeTurn, desktop, openChanges: side.openChanges, threads, messageEdits, pendingDrafts, replaceable, replacementOptions, replacementOptionsKey, readOnlyRun, versionsShown, newestPrompt, regenerate, connected, voiceBusy, loveSpotAudioReason });
   const { askSideQuestion, recapConversation } = createSideChatActions({ session, readOnlyRun, sideRequests, setSideChat, setError });
-  // Returning from a disappearing action must not override a field the person chose while it was pending.
-  const restoreComposerFocus = (origin: Element | null) => requestAnimationFrame(() => {
-    const active = document.activeElement;
-    if (!active || active === document.body || active === origin) focusComposer();
-  });
-  /** A composer control opened for a command takes the focus; the composer gets it back when the control closes. */
-  const openComposerControl = (label: string) => { const trigger = composerRef.current?.form?.querySelector<HTMLElement>(`[aria-label="${label}"]`); if (trigger) openControl(trigger, () => composerRef.current); };
-  const closePanel = () => { setPanel(null); focusComposer(); };
   const lastTurn = entries.at(-1)?.turnId;
   const idle = !busy && !activeTurn && selected?.status?.type !== "active";
   const writable = !!selected && !continues;
