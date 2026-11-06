@@ -335,6 +335,9 @@ test('the footer figures open their details', async () => {
     const tokens = page.getByRole('dialog', { name: 'Tokens' })
     const text = await tokens.innerText()
     for (const shown of ['Cache hit', 'Input', 'Cache read', 'Output', 'Context Ledger update', 'compaction']) assert.ok(text.includes(shown), `Tokens shows "${shown}":\n${text}`)
+    // 6 Nov, Masih: "our cache in trajectory is transparent; it shouldn't be." The panel is solid; rows never show through.
+    const fill = await tokens.evaluate(node => getComputedStyle(node).backgroundColor)
+    assert.ok(!/rgba\([^)]*,\s*0?\.\d+\)|transparent/.test(fill), `the panel's fill is opaque: ${fill}`)
     assert.equal(await usage.getAttribute('aria-expanded'), 'true')
     await page.locator('[data-stat="activity"] button').click()
     assert.equal(await tokens.count(), 0, 'opening another figure closes the first')
