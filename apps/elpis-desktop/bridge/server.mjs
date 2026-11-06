@@ -1,100 +1,34 @@
 import http from 'node:http';
-import fs from 'node:fs/promises';
 import path from 'node:path';
-import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { BridgeError, DesktopClient, elpisHome, MAX_BRIDGE_MESSAGE_BYTES, object, text } from './client.mjs';
+import { BridgeError, DesktopClient, elpisHome, object } from './client.mjs';
 import { profileEnvironment } from './profile-env.mts';
 import { LOVE_SPOT_AUDIO } from '../lib/love-spot-audio.mts';
-import { PORTRAIT_ATTACHMENT_NAME, PORTRAIT_INSTRUCTIONS } from './matilda-face.cjs';
-import { planCanvas } from './canvas-plan.mjs';
 import { createExperimentLab } from './experiment-lab.mjs';
 import { createSchedule } from './schedule.mjs';
-import { listDirectory, listFiles, readFile, readFileAsset, searchFiles, writeFile } from './files.mjs';
-import { listFolders, projectDirectory, workflowWorkspace } from './folders.mjs';
-import { isRepository } from './git.mjs';
 import { createTools } from './tools.mjs';
 import { createTranscription } from './transcription.mjs';
-import { createVoice, recordVoiceCall } from './voice.mjs';
+import { createVoice } from './voice.mjs';
 import { createKokoro } from './kokoro.mjs';
 import { createReadAloudProvider } from './read-aloud-provider.mjs';
 import { createImportChats } from './import-chats.mjs';
-import { ATTACHMENT_BODY_LIMIT, AttachmentError, PDF_BODY_LIMIT, extractPdf } from './attachments.mts';
 import { createTrash } from './trash.mjs';
-import { smartPruneDetail } from './smart-prune.mjs';
 import { createLoveSpot } from './love-spot-store.cjs';
 import { createLoveSpotTalk } from './love-spot-talk.mjs';
 import { createMatildaCompanion } from './matilda-companion.mjs';
 import { createLoveAgents } from './love-agents.mjs';
-import { createDevServers, devServerRequest } from './dev-servers.mjs';
+import { createDevServers } from './dev-servers.mjs';
 import { createImprovements } from './improve.mjs';
-import { dismissPersonalTip, openPersonal, personalStatus } from './personal.mjs';
 import { createSettingsFiles } from './settings-files.mjs';
 import { createThreadTitles } from './thread-titles.mjs';
-import { appIdentity } from './app-identity.mts';
-
-const COOKIE = 'elpis_desktop';
-const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.txt': 'text/plain', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.ogg': 'audio/ogg', '.ico': 'image/x-icon', '.woff': 'font/woff', '.woff2': 'font/woff2' };
-const same = (a, b) => typeof a === 'string' && Buffer.byteLength(a) === Buffer.byteLength(b) && timingSafeEqual(Buffer.from(a), Buffer.from(b));
-const ERROR_CAUSES = new Set(['Error', 'TypeError', 'RangeError', 'SyntaxError', 'ReferenceError']);
-const ERROR_AREAS = new Set(['session', 'health', 'models', 'threads', 'settings', 'providers', 'approvals', 'workflows', 'files', 'file', 'folders', 'repository', 'tools', 'context', 'customize', 'mcp', 'hooks', 'events', 'dev-servers', 'love-spot', 'import-chats']);
-/** Only fixed categories and numeric runtime codes enter this bounded log. Never serialize an error or request. */
-function requestDiagnostics(home) {
-  const directory = path.join(home, 'logs'), file = path.join(directory, 'desktop-requests.jsonl');
-  let writing = Promise.resolve();
-  return record => {
-    writing = writing.catch(() => {}).then(async () => {
-      await fs.mkdir(directory, { recursive: true, mode: 0o700 });
-      const handle = await fs.open(file, 'a', 0o600);
-      try {
-        await handle.chmod(0o600);
-        if ((await handle.stat()).size >= 1024 * 1024) await handle.truncate(0);
-        await handle.writeFile(JSON.stringify(record) + '\n');
-      } finally { await handle.close(); }
-    });
-    // An unwritable diagnostics directory must not replace the original response.
-    return writing.catch(() => { process.stderr.write(JSON.stringify({ ...record, diagnostics: 'unavailable' }) + '\n'); });
-  };
-}
-/** The one `cwd` a project-folder request names (and, for the Files pane, the other fields it may carry). */
-function cwdOf(url, ...others) {
-  if ([...url.searchParams.keys()].some(key => key !== 'cwd' && !others.includes(key)) || url.searchParams.getAll('cwd').length !== 1 || others.some(key => url.searchParams.getAll(key).length > 1)) throw new BridgeError('Provide exactly one cwd');
-  return url.searchParams.get('cwd');
-}
-function pageQuery(url, ancestor = false, models = false) {
-  const result = {};
-  for (const [key, value] of url.searchParams) {
-    if (!['limit', 'cursor', ...(ancestor ? ['ancestorThreadId', 'archived', 'searchTerm', 'includeAgentRuns'] : []), ...(models ? ['provider', 'inputModality', 'outputModality', 'refresh'] : [])].includes(key) || result[key] !== undefined) throw new BridgeError('Unsupported query parameter');
-    if (key === 'searchTerm') {
-      if (!value.trim() || value.length > 200) throw new BridgeError('Search must contain 1 through 200 characters');
-      result.searchTerm = value.trim();
-    } else if (key === 'archived' || key === 'includeAgentRuns' || key === 'refresh') {
-      if (!['true', 'false'].includes(value)) throw new BridgeError(`${key} must be true or false`);
-      result[key] = value === 'true';
-    } else if (key === 'limit') {
-      if (!/^\d+$/.test(value) || Number(value) < 1 || Number(value) > 100) throw new BridgeError('Limit must be 1 through 100');
-      result.limit = Number(value);
-    } else {
-      if (!value || value.length > 4096) throw new BridgeError('Invalid cursor or ancestor ID');
-      result[key] = value;
-    }
-  }
-  return result;
-}
-async function body(request, limit = 65536) {
-  if (!/^application\/json(?:;|$)/i.test(request.headers['content-type'] ?? '')) throw new BridgeError('JSON content type required', 415);
-  let size = 0; const chunks = [];
-  for await (const chunk of request) {
-    size += chunk.length; if (size > limit) throw new BridgeError('Request is too large', 413);
-    chunks.push(chunk);
-  }
-  try { return JSON.parse(Buffer.concat(chunks).toString()); } catch { throw new BridgeError('Invalid JSON'); }
-}
-function json(response, status, value) {
-  const bytes = Buffer.from(JSON.stringify(value));
-  if (bytes.length > MAX_BRIDGE_MESSAGE_BYTES) return json(response, 413, { error: 'Response is too large; request a smaller page' });
-  response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Length': bytes.length }); response.end(bytes);
-}
+import { COOKIE, ERROR_AREAS, applyFrameHeaders, applySecurityHeaders, body, json, requestDiagnostics, same, sendRequestError, serveStaticAsset } from './server-http.mjs';
+import { handleLoveSpotRoutes } from './server-love-spot.mjs';
+import { handleVoiceRoutes } from './server-voice.mjs';
+import { handleFileRoutes } from './server-files.mjs';
+import { handleSettingsRoutes } from './server-settings.mjs';
+import { createWorkflowDispatcher, handleWorkflowRoutes } from './server-workflows.mjs';
+import { createHistoryCursors, handleThreadRoutes } from './server-threads.mjs';
 
 /** Starts only this UI server; connects to an existing Elpis runtime and never starts/stops it. `trashFile` keeps the
  * chats deleted from the sidebar until they are deleted for good (bridge/trash.mjs): what a crash left is deleted now. */
@@ -119,52 +53,6 @@ export async function startDesktopServer(options = {}) {
   const loveAgents = createLoveAgents(loveSpot, { ...options.loveAgents, env: profileEnvironment(options.elpisHome, options.loveAgents?.env) });
   const devServers = createDevServers();
   const experimentLab = createExperimentLab({ client, ...(options.elpisHome ? { file: path.join(options.elpisHome, 'experiment-lab', 'latest.json') } : {}) });
-  // Automations (bridge/schedule.mjs) run only where the caller asks for them: the app passes `automations: true`, a test
-  // its own `automationsFile`; otherwise the routes say they are off, so no test touches his tasks.
-  const automationsFile = options.automationsFile ?? (options.automations ? path.join(options.elpisHome ?? elpisHome(), 'automations', 'tasks.json') : null);
-  const automations = automationsFile ? createSchedule({ client, file: automationsFile, dispatchWorkflow: job => dispatchWorkflow(job) }) : null;
-  // A scheduled workflow runs in an open window (6 Nov, Masih chose the board replay): the service announces it, the
-  // first window to claim it starts the saved board out of sight and reports the run's chat.
-  const workflowJobs = new Map(); // token -> { taskId, claimed, settle, timer }
-  const CLAIM_WAIT = options.workflowClaimWait ?? 60_000, START_WAIT = 15 * 60_000;
-  function dispatchWorkflow(job) {
-    return new Promise((resolve, reject) => {
-      const token = randomUUID();
-      const settle = (error, threadId) => { const pending = workflowJobs.get(token); if (!pending) return; clearTimeout(pending.timer); workflowJobs.delete(token); if (error) reject(new Error(error)); else resolve({ threadId }); };
-      workflowJobs.set(token, { taskId: job.taskId, claimed: false, settle, timer: setTimeout(() => settle('No Elpis window was open to run it'), CLAIM_WAIT) });
-      event({ type: 'automationWorkflow', data: { token, taskId: job.taskId, title: job.title, request: job.request, cwd: job.cwd, workflow: { id: job.workflow.id, name: job.workflow.name }, board: job.workflow.board } });
-    });
-  }
-  const loveStreams = new Set();
-  let improvementStore;
-  const improvements = () => improvementStore ??= createImprovements({ client, ...options.improvements });
-  const tools = options.tools ?? createTools({ environment: () => client.ragEnvironment() });
-  const diagnose = requestDiagnostics(options.elpisHome ?? elpisHome());
-  const settingsFiles = createSettingsFiles(options.elpisHome ?? elpisHome());
-  // Provider continuations include consumed native item IDs and can exceed the HTTP
-  // query limit. Keep that engine state here; the renderer gets a short, chat-bound
-  // continuation. The prompt index uses the engine directly and cannot evict these.
-  const historyCursors = new Map();
-  const exposeHistoryCursor = (id, cursor) => {
-    if (typeof cursor !== 'string' || cursor.length <= 4096) return cursor;
-    const token = 'desktop-page:' + createHash('sha256').update(id).update('\0').update(cursor).digest('base64url');
-    historyCursors.delete(token);
-    historyCursors.set(token, { id, cursor });
-    if (historyCursors.size > 256) historyCursors.delete(historyCursors.keys().next().value);
-    return token;
-  };
-  const resolveHistoryCursor = (id, cursor) => {
-    if (!cursor?.startsWith('desktop-page:')) return cursor;
-    const saved = historyCursors.get(cursor);
-    if (!saved || saved.id !== id) throw new BridgeError('This conversation history page has expired. Reopen the chat and try again.');
-    historyCursors.delete(cursor); historyCursors.set(cursor, saved);
-    return saved.cursor;
-  };
-  const transcription = createTranscription({ definition: () => client.transcriptionDefinition(), environment: () => client.transcriptionEnvironment() });
-  const voice = createVoice(client);
-  const kokoro = options.kokoro ?? createKokoro();
-  const readAloud = createReadAloudProvider({ home: options.elpisHome ?? elpisHome(), kokoro, provider: id => client.readAloudProvider(id), ...(options.readAloudFetch ? { fetchImpl: options.readAloudFetch } : {}) });
-  const importChats = createImportChats({ client, elpisHome: options.elpisHome ?? elpisHome(), ...(options.codexHome ? { codexHome: options.codexHome } : {}) });
   const event = value => {
     const bytes = `event: ${value.type}\ndata: ${JSON.stringify(value.data)}\n\n`;
     for (const response of listeners) {
@@ -172,18 +60,36 @@ export async function startDesktopServer(options = {}) {
       else response.write(bytes);
     }
   };
+  const workflowDispatcher = createWorkflowDispatcher({ event, claimWait: options.workflowClaimWait ?? 60_000 });
+  // Automations (bridge/schedule.mjs) run only where the caller asks for them: the app passes `automations: true`, a test
+  // its own `automationsFile`; otherwise the routes say they are off, so no test touches his tasks.
+  const automationsFile = options.automationsFile ?? (options.automations ? path.join(options.elpisHome ?? elpisHome(), 'automations', 'tasks.json') : null);
+  const automations = automationsFile ? createSchedule({ client, file: automationsFile, dispatchWorkflow: job => workflowDispatcher.dispatch(job) }) : null;
+  const loveStreams = new Set();
+  let improvementStore;
+  const improvements = () => improvementStore ??= createImprovements({ client, ...options.improvements });
+  const tools = options.tools ?? createTools({ environment: () => client.ragEnvironment() });
+  const diagnose = requestDiagnostics(options.elpisHome ?? elpisHome());
+  const settingsFiles = createSettingsFiles(options.elpisHome ?? elpisHome());
+  const historyCursors = createHistoryCursors();
+  const transcription = createTranscription({ definition: () => client.transcriptionDefinition(), environment: () => client.transcriptionEnvironment() });
+  const voice = createVoice(client);
+  const kokoro = options.kokoro ?? createKokoro();
+  const readAloud = createReadAloudProvider({ home: options.elpisHome ?? elpisHome(), kokoro, provider: id => client.readAloudProvider(id), ...(options.readAloudFetch ? { fetchImpl: options.readAloudFetch } : {}) });
+  const importChats = createImportChats({ client, elpisHome: options.elpisHome ?? elpisHome(), ...(options.codexHome ? { codexHome: options.codexHome } : {}) });
   client.on('event', event);
   // A chat Masih starts is named from its first message, as the TUI names it.
   const titles = createThreadTitles(client);
   client.on('event', value => { if (value.type === 'message') void titles.event(value.data); });
+  const state = {
+    client, options, trash, loveSpot, companion, loveTalk, loveAgents, loveStreams,
+    devServers, experimentLab, automations, workflowDispatcher, improvements, tools,
+    settingsFiles, historyCursors, transcription, voice, kokoro, readAloud, importChats,
+  };
   const server = http.createServer(async (request, response) => {
     const requestId = randomUUID();
     let area = 'other';
-    response.setHeader('X-Request-Id', requestId);
-    response.setHeader('X-Content-Type-Options', 'nosniff');
-    response.setHeader('Referrer-Policy', 'no-referrer');
-    response.setHeader('X-Frame-Options', 'DENY');
-    response.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; media-src 'self' data: blob:; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
+    applySecurityHeaders(response, requestId);
     try {
       if (request.headers.host !== new URL(origin).host || (request.headers.origin && request.headers.origin !== origin)
         || request.headers['sec-fetch-site'] === 'cross-site') throw new BridgeError('Local application origin required', 403);
@@ -192,16 +98,7 @@ export async function startDesktopServer(options = {}) {
       const requestedArea = url.pathname.split('/')[2];
       if (ERROR_AREAS.has(requestedArea)) area = requestedArea;
       if (url.origin !== origin) throw new BridgeError('Local application origin required', 403);
-      // The split document and Obsidian plugin panes permit embedding by the local application or Obsidian.
-      if ((url.pathname === '/' || url.pathname === '/love-spot.html') && url.searchParams.get('pane') === '1') {
-        response.removeHeader('X-Frame-Options');
-        response.setHeader('Content-Security-Policy', response.getHeader('Content-Security-Policy').replace("frame-ancestors 'none'", "frame-ancestors 'self' app://obsidian.md"));
-      }
-      // Observability frames the Trajectory page; only the application itself may embed it.
-      if (url.pathname.startsWith('/trajectory/')) {
-        response.setHeader('X-Frame-Options', 'SAMEORIGIN');
-        response.setHeader('Content-Security-Policy', response.getHeader('Content-Security-Policy').replace("frame-ancestors 'none'", "frame-ancestors 'self'"));
-      }
+      applyFrameHeaders(url, response);
       const key = request.headers['x-elpis-automations'];
       const automationTool = typeof key === 'string' && same(key, automationKey) && /^\/api\/automations(?:\/|$)/.test(url.pathname);
       if (request.method === 'POST' && !automationTool && request.headers.origin !== origin) throw new BridgeError('Same-origin request required', 403);
@@ -215,355 +112,24 @@ export async function startDesktopServer(options = {}) {
         const cookies = (request.headers.cookie ?? '').split(';').map(value => value.trim());
         if (!automationTool && !cookies.some(value => same(value, `${COOKIE}=${session}`))) throw new BridgeError('Open the application using its private launch URL', 401);
         const method = request.method;
-        if (url.pathname === '/api/dev-servers' || url.pathname.startsWith('/api/dev-servers/')) return json(response, 200, await devServerRequest(devServers, method, url, method === 'POST' ? await body(request) : undefined));
-        if (url.pathname === '/api/love-spot') {
-          const value = method === 'GET' ? await loveSpot.read() : await loveSpot.save(await body(request, 64 * 1024 * 1024));
-          // A drawing with screenshots can exceed the paginated chat response limit.
-          response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-          return response.end(JSON.stringify(value));
-        }
-        if (url.pathname === '/api/love-spot/text' && method === 'POST') return json(response, 200, await loveSpot.saveText(await body(request)));
-        if (url.pathname === '/api/love-spot/pages' && ['GET', 'POST'].includes(method)) {
-          const value = method === 'GET' ? await loveSpot.listPages() : await loveSpot.changePage(await body(request));
-          response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-          return response.end(JSON.stringify(value));
-        }
-        if (url.pathname === '/api/love-spot/picture' && method === 'POST') return json(response, 200, await loveSpot.picture(await body(request, 32 * 1024 * 1024)));
-        if (url.pathname === '/api/love-spot/screenshots' && ['GET', 'POST'].includes(method)) {
-          const value = method === 'GET' ? { screenshots: loveSpot.screenshotsList() } : await loveSpot.chooseScreenshot(await body(request, 32 * 1024 * 1024));
-          response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-          return response.end(JSON.stringify(value));
-        }
-        if (url.pathname === '/api/love-spot/companion' && ['GET', 'POST'].includes(method)) {
-          return json(response, 200, method === 'GET' ? await companion.read(url.searchParams.get('page') ?? '') : await companion.act(await body(request)));
-        }
-        if (url.pathname === '/api/love-spot/matilda') return json(response, 200, method === 'POST' ? await loveTalk.setMatilda(await body(request)) : await loveTalk.matilda());
-        if (url.pathname === '/api/love-spot/talk/stop' && method === 'POST') return json(response, 200, await loveTalk.stop());
-        if (url.pathname === '/api/love-spot/talk/new' && method === 'POST') return json(response, 201, await loveTalk.startFresh(await body(request)));
-        if (url.pathname === '/api/love-spot/talk') return json(response, 200, method === 'GET' ? await loveTalk.read() : await loveTalk.send(await body(request)));
-        if (url.pathname === '/api/love-spot/voice/settings' && ['GET', 'POST'].includes(method)) {
-          const state = method === 'GET' ? await loveTalk.voice() : await loveTalk.setVoice(await body(request));
-          if (method === 'POST') await voice.closeStream();
-          return json(response, 200, state);
-        }
-        if (url.pathname === '/api/love-spot/voice' && method === 'POST') return await voice.start(await body(request), response, { source: await loveTalk.speech() });
-        if (url.pathname === '/api/love-spot/voice/call' && method === 'POST') {
-          const input = await body(request); object(input, ['sdp', 'persona']);
-          if (input.persona !== undefined) text(input.persona, 'persona', 4000);
-          return await voice.start({ sdp: input.sdp }, response, { conversation: await loveTalk.conversation(input.persona) });
-        }
-        if (url.pathname === '/api/love-spot/talk/events' && method === 'GET') {
-          // Load first so a failed resume still returns a useful HTTP error.
-          await loveTalk.read();
-          response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
-          loveStreams.add(response);
-          const stop = await loveTalk.watch(value => {
-            if (response.writableLength > 1024 * 1024) response.destroy();
-            else response.write(`data: ${JSON.stringify(value)}\n\n`);
-          });
-          response.on('close', () => { stop(); loveStreams.delete(response); }); return;
-        }
-        if (url.pathname === '/api/love-spot/agents/run' && method === 'POST') return json(response, 200, await loveAgents.run(await body(request)));
-        if (url.pathname === '/api/love-spot/agents/interview' && method === 'POST') return json(response, 200, await loveAgents.interview(await body(request)));
-        if (url.pathname === '/api/love-spot/agents/permission' && method === 'POST') return json(response, 200, loveAgents.answer(await body(request)));
-        if (url.pathname === '/api/love-spot/events' && method === 'GET') {
-          const hint = url.searchParams.get('revision');
-          if (hint !== null && (!/^[a-f0-9]{64}$/.test(hint) || url.searchParams.getAll('revision').length > 1)) throw new BridgeError('Invalid drawing revision', 400);
-          // Skip only the fresh subscription's already loaded snapshot. All live
-          // updates and reconnect snapshots retain the existing reconciliation path.
-          let bootstrap = request.headers['last-event-id'] === undefined ? hint : null;
-          response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
-          loveStreams.add(response);
-          const stop = await loveSpot.watch(value => {
-            if (value.type === 'scene') {
-              if (bootstrap !== null && value.revision === bootstrap) return;
-              bootstrap = null;
-            }
-            if (response.writableLength > 64 * 1024 * 1024) response.destroy();
-            else response.write(`${hint === null ? '' : 'id: love-spot\n'}data: ${JSON.stringify(value)}\n\n`);
-          });
-          response.on('close', () => { stop(); loveStreams.delete(response); }); return;
-        }
-        if (url.pathname === '/api/import-chats' && method === 'GET') return json(response, 200, await importChats.list());
-        if (url.pathname === '/api/import-chats' && method === 'POST') return json(response, 200, await importChats.run(await body(request)));
-        // Observability (5 Nov): the selected chat's rollout projected as the TUI's /dashboard does (bridge/trajectory-projection.mts).
-        if (url.pathname === '/api/trajectory' && method === 'GET') {
-          if ([...url.searchParams.keys()].some(key => key !== 'thread') || url.searchParams.getAll('thread').length !== 1) throw new BridgeError('Open a chat to see its trajectory.', 400);
-          const thread = await client.readThreadMetadata(url.searchParams.get('thread'));
-          if (typeof thread.path !== 'string' || !thread.path) throw new BridgeError('This chat has no recorded history yet.', 404);
-          const { project } = await import('./trajectory-projection.mts');
-          return json(response, 200, project(await fs.readFile(thread.path, 'utf8')));
-        }
-        if (url.pathname === '/api/voice/report' && method === 'POST') return json(response, 200, await recordVoiceCall(options.elpisHome ?? elpisHome(), await body(request)));
-        if (url.pathname === '/api/read-aloud/settings' && method === 'GET') return json(response, 200, await readAloud.read());
-        if (url.pathname === '/api/read-aloud/settings' && method === 'POST') return json(response, 200, await readAloud.save(await body(request)));
-        if (url.pathname === '/api/read-aloud/voices' && method === 'GET') return json(response, 200, { voices: await kokoro.voices?.() ?? [], defaultVoice: kokoro.defaultVoice });
-        // Read aloud returns only the chosen source's audio; an API failure never starts Kokoro.
-        if (url.pathname === '/api/read-aloud' && method === 'GET') return json(response, 200, await readAloud.status());
-        if (url.pathname === '/api/read-aloud' && method === 'POST') {
-          const controller = new AbortController();
-          const abort = () => { if (!response.writableEnded) controller.abort(); };
-          request.once('aborted', abort); response.once('close', abort);
-          try {
-            const result = await readAloud.speak(await body(request), controller.signal);
-            response.writeHead(200, { 'Content-Type': result.type, 'Cache-Control': 'no-store' }); return response.end(result.audio);
-          } finally { request.removeListener('aborted', abort); response.removeListener('close', abort); }
-        }
-        if (url.pathname === '/api/voice' && method === 'GET') return json(response, 200, await client.voiceStatus());
-        if (url.pathname === '/api/voice' && method === 'POST') return await voice.start(await body(request), response);
-        if (url.pathname === '/api/voice/read-aloud' && method === 'POST') return await voice.start(await body(request, 8 * 1024 * 1024), response, { readAloud: true });
-        if (url.pathname === '/api/voice/read-aloud/ready' && method === 'POST') return json(response, 200, voice.ready(await body(request)));
-        if (url.pathname === '/api/voice/read-aloud/more' && method === 'POST') return json(response, 200, voice.more(await body(request, 8 * 1024 * 1024)));
-        if (url.pathname === '/api/voice/read-aloud/warm' && method === 'POST') { const input = await body(request); object(input, ['threadId']); return json(response, 200, await client.warmSpeechThread(input.threadId)); }
-        if (url.pathname === '/api/voice/choice' && method === 'POST') return json(response, 200, await client.setVoice(await body(request)));
-        if (url.pathname === '/api/tools/transcription') return await transcription(request, response, json);
-        if (url.pathname.startsWith('/api/tools/')) return await tools(request, response, url, json);
         if (url.pathname === '/api/health' && method === 'GET') return json(response, 200, { connected: client.connected, ...(client.connectionError ? { error: client.connectionError } : {}) });
-        if (url.pathname === '/api/improvements/source') {
-          const store = await improvements();
-          if (method === 'GET') return json(response, 200, await store.source());
-          if (method === 'POST') return json(response, 200, await store.setSource(await body(request)));
-        }
-        if (url.pathname === '/api/improvements') {
-          const store = await improvements();
-          return json(response, method === 'POST' ? 201 : 200, method === 'POST' ? await store.start(await body(request, ATTACHMENT_BODY_LIMIT)) : { data: store.list() });
-        }
-        const improvement = url.pathname.match(/^\/api\/improvements\/([a-f0-9-]+)(?:\/(check))?$/);
-        if (improvement) {
-          const store = await improvements();
-          if (method === 'GET' && !improvement[2]) return json(response, 200, await store.get(improvement[1]));
-          if (method === 'POST' && improvement[2]) { object(await body(request), []); return json(response, 200, await store[improvement[2]](improvement[1])); }
-          throw new BridgeError('Method is not allowed', 405);
-        }
-        if (url.pathname === '/api/personal' && method === 'GET') return json(response, 200, await personalStatus(options.elpisHome));
-        if (url.pathname === '/api/personal' && method === 'POST') {
-          const input = object(await body(request), ['action']);
-          if (!['open', 'dismiss'].includes(input.action)) throw new BridgeError('Choose open or dismiss');
-          return json(response, 200, await (input.action === 'open' ? openPersonal : dismissPersonalTip)(options.elpisHome));
-        }
-        if (url.pathname === '/api/attachments/extract' && method === 'POST') return json(response, 200, await extractPdf(await body(request, PDF_BODY_LIMIT)));
-        const media = url.pathname.match(/^\/api\/threads\/([^/]+)\/turns\/([^/]+)\/items\/([^/]+)\/media\/(\d{1,3})$/);
-        if (media && method === 'GET') {
-          const asset = await client.media(...media.slice(1, 4).map(decodeURIComponent), Number(media[4]));
-          response.writeHead(200, { 'Content-Type': asset.mimeType, 'Content-Length': asset.bytes.length, 'Cache-Control': 'no-store' });
-          return response.end(asset.bytes);
-        }
         if (url.pathname === '/api/events' && method === 'GET') {
           response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
           listeners.add(response); response.write(`event: connection\ndata: ${JSON.stringify({ connected: client.connected })}\n\n`);
           for (const pending of client.pendingApprovals) response.write(`event: approval\ndata: ${JSON.stringify(pending)}\n\n`);
           request.on('close', () => listeners.delete(response)); return;
         }
-        if (url.pathname === '/api/models' && method === 'GET') return json(response, 200, await client.models(pageQuery(url, false, true)));
-        if (url.pathname === '/api/folders' && method === 'GET') return json(response, 200, await listFolders(cwdOf(url)));
-        if (url.pathname === '/api/files' && method === 'GET') return json(response, 200, await listFiles(cwdOf(url)));
-        // The Files pane: a folder's entries, a file's text and saving it, a search of the contents.
-        if (url.pathname === '/api/files/dir' && method === 'GET') return json(response, 200, await listDirectory(cwdOf(url, 'dir', 'hidden'), url.searchParams.get('dir') ?? '', url.searchParams.get('hidden') === '1'));
-        if (url.pathname === '/api/files/search' && method === 'GET') return json(response, 200, await searchFiles(cwdOf(url, 'q'), url.searchParams.get('q') ?? ''));
-        if (url.pathname === '/api/file/asset' && method === 'GET') {
-          const asset = await readFileAsset(cwdOf(url, 'path'), url.searchParams.get('path') ?? '');
-          // Only these validated passive assets may be framed by the private app. Other routes retain DENY.
-          response.setHeader('X-Frame-Options', 'SAMEORIGIN');
-          response.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'self'; form-action 'none'");
-          const filename = encodeURIComponent(asset.name).replace(/['()*]/g, char => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
-          response.writeHead(200, { 'Content-Type': asset.mimeType, 'Content-Length': asset.bytes.length, 'Content-Disposition': `inline; filename*=UTF-8''${filename}`, 'Cache-Control': 'no-store' });
-          return response.end(asset.bytes);
-        }
-        if (url.pathname === '/api/file' && method === 'GET') return json(response, 200, await readFile(cwdOf(url, 'path'), url.searchParams.get('path') ?? ''));
-        if (url.pathname === '/api/file' && method === 'POST') {
-          const edit = object(await body(request, 3 * 1024 * 1024), ['cwd', 'path', 'content', 'mtimeMs']);
-          return json(response, 200, await writeFile(edit.cwd, edit.path, edit.content, edit.mtimeMs));
-        }
-        // Whether the project is a Git repository with a commit: the canvas asks for worktree isolation only then.
-        if (url.pathname === '/api/repository' && method === 'GET') return json(response, 200, { repository: await isRepository(await projectDirectory(cwdOf(url))) });
-        if (url.pathname === '/api/canvas/plan' && method === 'POST') return json(response, 200, await planCanvas(client, await body(request)));
-        if (url.pathname === '/api/experiment-lab') {
-          if (method === 'GET') return json(response, 200, { record: await experimentLab.read(url.searchParams.get('id') || undefined), entries: await experimentLab.list() });
-          const input = await body(request);
-          if (input?.action === 'stop') { object(input, ['action']); return json(response, 200, { record: await experimentLab.stop(), entries: await experimentLab.list() }); }
-          return json(response, 200, { record: await experimentLab.start(input), entries: await experimentLab.list() });
-        }
-        // GET lists them, POST creates one; POST to one task { action: 'update' | 'delete' | 'run', ...fields }.
-        const automation = url.pathname.match(/^\/api\/automations(?:\/([a-f0-9-]{36}))?$/);
-        if (automation) {
-          if (!automations) throw new BridgeError('Automations are off in this window', 503);
-          const id = automation[1];
-          if (!id) return method === 'GET' ? json(response, 200, { data: await automations.list() }) : json(response, 201, await automations.create(await body(request)));
-          if (method === 'POST') {
-            const { action, ...fields } = await body(request) ?? {};
-            if (action === 'run') { object(fields, []); return json(response, 200, await automations.runNow(id)); }
-            if (action === 'delete') { object(fields, []); return json(response, 200, await automations.remove(id)); }
-            if (action === 'update') return json(response, 200, await automations.update(id, fields));
-            // The window's half of a scheduled workflow run: claim it (one window only), then report its chat or error.
-            if (action === 'claim' || action === 'result') {
-              const job = workflowJobs.get(fields.token);
-              if (!job || job.taskId !== id) return json(response, 200, { granted: false });
-              if (action === 'claim') {
-                object(fields, ['token']);
-                if (job.claimed) return json(response, 200, { granted: false });
-                job.claimed = true; clearTimeout(job.timer); job.timer = setTimeout(() => job.settle('The window did not report whether the workflow started'), START_WAIT);
-                return json(response, 200, { granted: true });
-              }
-              object(fields, ['token', 'threadId', 'error']);
-              if (typeof fields.threadId === 'string') job.settle(null, text(fields.threadId, 'chat', 200)); else job.settle(text(fields.error ?? 'The workflow did not start', 'error', 2000));
-              return json(response, 200, { recorded: true });
-            }
-            throw new BridgeError('Action must be update, delete, run, claim or result');
-          }
-        }
-        if (url.pathname === '/api/about' && method === 'GET') return json(response, 200, await appIdentity());
-        const settingsFile = url.pathname.match(/^\/api\/settings\/files\/(instructions|memory)$/);
-        if (settingsFile) return json(response, 200, method === 'GET' ? await settingsFiles.read(settingsFile[1]) : await settingsFiles.save(settingsFile[1], await body(request, MAX_BRIDGE_MESSAGE_BYTES)));
-        if (url.pathname === '/api/settings' && method === 'GET') return json(response, 200, await client.settings());
-        if (url.pathname === '/api/settings' && method === 'POST') return json(response, 200, await client.saveSettings(await body(request)));
-        if (url.pathname === '/api/pruner' && method === 'POST') return json(response, 200, await client.savePruner(await body(request)));
-        if (url.pathname === '/api/providers') return json(response, 200, method === 'GET' ? await client.providers() : await client.signIn(await body(request)));
-        if (url.pathname === '/api/providers/cloudroom') return json(response, 200, method === 'GET' ? await client.cloudroom() : await client.cloudroom(await body(request)));
-        if (url.pathname === '/api/providers/claude-accounts') return json(response, 200, method === 'GET' ? await client.claudeAccounts() : await client.claudeAccounts(await body(request)));
-        if (url.pathname === '/api/providers/settings') return json(response, 200, method === 'GET' ? await client.providerSettings() : await client.saveProvider(await body(request)));
-        if (url.pathname === '/api/providers/key' && method === 'POST') return json(response, 200, await client.saveProviderKey(await body(request)));
-        if (url.pathname === '/api/mcp/import') return json(response, 200, method === 'GET' ? await client.previewClaudeMcp() : await client.importClaudeMcp(await body(request)));
-        if (url.pathname === '/api/mcp') return json(response, 200, method === 'GET' ? await client.mcp() : await client.saveMcp(await body(request)));
-        const inlinePrune = url.pathname.match(/^\/api\/threads\/([^/]+)\/smart-prune\/([^/]+)\/([^/]+)$/);
-        if (inlinePrune && method === 'GET') return json(response, 200, await smartPruneDetail(options.elpisHome, ...inlinePrune.slice(1).map(decodeURIComponent)));
-        if (url.pathname === '/api/customize' && method === 'GET') return json(response, 200, await client.customize(url.searchParams.get('cwd') || undefined));
-        if (url.pathname === '/api/customize/skill' && method === 'POST') return json(response, 200, await client.setSkill(await body(request)));
-        if (url.pathname === '/api/customize/skill/delete' && method === 'POST') return json(response, 200, await client.deleteSkill(await body(request)));
-        if (url.pathname === '/api/customize/skill/undo' && method === 'POST') return json(response, 200, await client.undoSkillDelete(await body(request)));
-        if (url.pathname === '/api/customize/github' && method === 'POST') return json(response, 200, await client.setGithubConnector(await body(request)));
-        if (url.pathname === '/api/customize/plugins' && method === 'GET') return json(response, 200, await client.pluginCatalog(Object.fromEntries(['cwd', 'search', 'cursor'].filter(key => url.searchParams.has(key)).map(key => [key, url.searchParams.get(key)]))));
-        if (url.pathname === '/api/customize/plugin' && method === 'POST') return json(response, 200, await client.changePlugin(await body(request)));
-        if (url.pathname === '/api/customize/marketplace' && method === 'POST') return json(response, 200, await client.changeMarketplace(await body(request)));
-        if (url.pathname === '/api/context/switches') return json(response, 200, method === 'GET' ? await client.contextSwitches() : await client.saveContextSwitches(await body(request)));
-        if (url.pathname === '/api/hooks') return json(response, 200, method === 'GET' ? await client.hooks() : await client.saveHook(await body(request)));
-        if (url.pathname === '/api/memories/count' && method === 'GET') {
-          if ([...url.searchParams.keys()].length) throw new BridgeError('Unsupported memory count parameters');
-          return json(response, 200, { count: await settingsFiles.countMemoryFiles() });
-        }
-        if (url.pathname === '/api/memories/reset' && method === 'POST') return json(response, 200, await client.resetMemories(await body(request)));
-        if (url.pathname === '/api/workflows/workspace' && method === 'POST') { object(await body(request), []); return json(response, 200, await workflowWorkspace(options.elpisHome ?? elpisHome())); }
-        if (url.pathname === '/api/workflows/history' && method === 'GET') {
-          if ([...url.searchParams.keys()].length) throw new BridgeError('Unexpected workflow history parameters');
-          return json(response, 200, await client.workflowHistory());
-        }
-        if (url.pathname === '/api/workflows/history/undo' && method === 'POST') return json(response, 200, await client.undoWorkflowHistory(await body(request)));
-        const removeHistory = url.pathname.match(/^\/api\/workflows\/history\/([a-f0-9-]{36})\/remove$/i);
-        if (removeHistory && method === 'POST') return json(response, 200, await client.removeWorkflowHistory(removeHistory[1], await body(request)));
-        if (url.pathname === '/api/workflows' && method === 'GET') {
-          if([...url.searchParams.keys()].some(key=>key!=='threadId')||url.searchParams.getAll('threadId').length!==1)throw new BridgeError('Choose one workflow conversation');
-          return json(response,200,await client.workflows(url.searchParams.get('threadId')));
-        }
-        // Workflows that run until they finish (SPEC WR7).
-        if (url.pathname === '/api/workflow-runs' && method === 'GET') {
-          if ([...url.searchParams.keys()].some(key => key !== 'threadId') || url.searchParams.getAll('threadId').length > 1) throw new BridgeError('Unexpected workflow run parameters');
-          return json(response, 200, await client.scriptRuns(url.searchParams.get('threadId') ?? undefined));
-        }
-        if (url.pathname === '/api/workflow-runs' && method === 'POST') return json(response, 200, await client.startScriptRun(await body(request)));
-        const scriptRun = url.pathname.match(/^\/api\/workflow-runs\/(wf_[0-9a-f-]{36})(?:\/(stop|resume|agents\/(a[0-9a-f]{16})\/skip))?$/);
-        if (scriptRun && !scriptRun[2] && method === 'GET') return json(response, 200, await client.scriptRun(scriptRun[1]));
-        if (scriptRun?.[2] === 'stop' && method === 'POST') return json(response, 200, await client.stopScriptRun(scriptRun[1]));
-        if (scriptRun?.[2] === 'resume' && method === 'POST') return json(response, 200, await client.resumeScriptRun(scriptRun[1]));
-        if (scriptRun?.[3] && method === 'POST') return json(response, 200, await client.skipScriptAgent(scriptRun[1], scriptRun[3]));
-        if (url.pathname === '/api/workflows/run' && method === 'POST') return json(response,200,await client.runWorkflow(await body(request)));
-        if (url.pathname === '/api/workflows/presets' && method === 'GET') return json(response, 200, client.workflowPresets());
-        if (url.pathname === '/api/workflows/presets' && method === 'POST') return json(response, 200, await client.runWorkflowPreset(await body(request)));
-        const workflowRun = url.pathname.match(/^\/api\/workflows\/([a-f0-9-]{36})$/i);
-        if (workflowRun && method === 'GET') return json(response, 200, await client.workflowRun(workflowRun[1]));
-        const workflowOutput = url.pathname.match(/^\/api\/workflows\/([a-f0-9-]{36})\/nodes\/([A-Za-z0-9_-]{1,100})\/output$/i);
-        if (workflowOutput && method === 'GET') return json(response, 200, await client.workflowAgentOutput(workflowOutput[1], workflowOutput[2]));
-        const workflowMessage = url.pathname.match(/^\/api\/workflows\/([a-f0-9-]{36})\/nodes\/([A-Za-z0-9_-]{1,100})\/messages$/i);
-        if (workflowMessage && method === 'POST') return json(response, 200, await client.steerWorkflow(workflowMessage[1], workflowMessage[2], await body(request)));
-        const workflowMerge = url.pathname.match(/^\/api\/workflows\/([a-f0-9-]{36})\/merge$/i);
-        if (workflowMerge && method === 'POST') return json(response, 200, await client.mergeWorkflow(workflowMerge[1], await body(request)));
-        const workflowResume = url.pathname.match(/^\/api\/workflows\/([a-f0-9-]{36})\/resume$/i);
-        if (workflowResume && method === 'POST') return json(response, 200, await client.resumeWorkflow(workflowResume[1], await body(request)));
-        // Sidebar deletion: archived now, Ctrl+Z brings back the newest, quitting deletes for good.
-        if (url.pathname === '/api/trash' && method === 'POST') return json(response, 200, await trash.trash(object(await body(request), ['threadIds']).threadIds));
-        if (url.pathname === '/api/trash/undo' && method === 'POST') { object(await body(request), []); return json(response, 200, await trash.undo()); }
-        if (url.pathname === '/api/threads') {
-          if (method === 'GET') {
-            const query = pageQuery(url, true), listed = await (query.archived && client.listArchivedThreads ? client.listArchivedThreads(query) : client.listThreads(query));
-            // A chat waiting to be deleted is archived, but it is not an archived chat.
-            return json(response, 200, query.archived ? { ...listed, data: listed.data.filter(thread => !trash.has(thread.id)) } : listed);
-          }
-          return json(response, 201, await client.createThread(await body(request)));
-        }
-        const sideChat = url.pathname.match(/^\/api\/side-chats\/([^/]+)\/(turns|close)$/);
-        if (sideChat && method === 'POST') return json(response, 200, await client[sideChat[2] === 'turns' ? 'sendSideChat' : 'closeSideChat'](decodeURIComponent(sideChat[1]), await body(request)));
-        const contextFiles = url.pathname.match(/^\/api\/threads\/([^/]+)\/context-files$/);
-        if (contextFiles) {
-          const id = decodeURIComponent(contextFiles[1]);
-          if (method === 'GET') return json(response, 200, await client.contextFiles(id));
-          if (method === 'POST') return json(response, 200, await client.setContextFile(id, await body(request)));
-        }
-        const sessionContext = url.pathname.match(/^\/api\/threads\/([^/]+)\/(goal|session-context|session-intent)$/);
-        if (sessionContext) {
-          const id = decodeURIComponent(sessionContext[1]), action = sessionContext[2];
-          if (action === 'goal' && method === 'GET') return json(response, 200, await client.goal(id));
-          if (action === 'goal' && method === 'POST') return json(response, 200, await client.setGoal(id, await body(request)));
-          if (action === 'session-context' && method === 'GET') return json(response, 200, await client.sessionContext(id));
-          if (action === 'session-intent' && method === 'POST') return json(response, 201, await client.createSessionIntent(id, await body(request)));
-          throw new BridgeError('Method is not allowed', 405);
-        }
-        const thread = url.pathname.match(/^\/api\/threads\/([^/]+)(?:\/(turns|steer|interrupt|resume|continue|context|prompts|delete|rename|archive|unarchive|revert|rewind|versions|fork|compact|review|git|permissions|effort|service-tier|folder|shell|side-chat))?$/);
-        if (thread) {
-          const id = decodeURIComponent(thread[1]);
-          if (thread[2] === 'shell' && method === 'POST') return json(response, 200, await client.shellCommand(id, await body(request)));
-          if (thread[2] === 'side-chat' && method === 'POST') return json(response, 200, await client.createSideChat(id, await body(request)));
-          if (!thread[2] && method === 'GET') {
-            const query = pageQuery(url);
-            if (query.cursor) query.cursor = resolveHistoryCursor(id, query.cursor);
-            const page = await client.readThread(id, query);
-            return json(response, 200, { ...page, nextCursor: exposeHistoryCursor(id, page.nextCursor) });
-          }
-          if (thread[2] === 'prompts' && method === 'GET') return json(response, 200, await client.readPrompts(id));
-          if (thread[2] === 'context' && method === 'GET') return json(response, 200, await client.context(id));
-          if (thread[2] === 'git' && method === 'GET') {
-            if ([...url.searchParams.keys()].some(key => key !== 'view' && key !== 'path') || url.searchParams.getAll('view').length !== 1 || url.searchParams.getAll('path').length > 1) throw new BridgeError('Unsupported Git query');
-            return json(response, 200, await client.git(id, url.searchParams.get('view'), url.searchParams.get('path') ?? undefined));
-          }
-          if (thread[2] === 'git' && method === 'POST') return json(response, 200, await client.discardChange(id, await body(request, 65536)));
-          if (thread[2] && !['context', 'prompts', 'git'].includes(thread[2]) && method === 'POST') {
-            const operation = { turns: 'send', steer: 'steer', interrupt: 'interrupt', resume: 'resume', continue: 'continueThread', delete: 'deleteThread', rename: 'renameThread', archive: 'archiveThread', unarchive: 'unarchiveThread', revert: 'revert', rewind: 'rewind', versions: 'versions', fork: 'forkThread', compact: 'compact', review: 'review', permissions: 'setPermissions', effort: 'setEffort', 'service-tier': 'setServiceTier', folder: 'setFolder' }[thread[2]];
-            const input = await body(request, ['send', 'steer'].includes(operation) ? ATTACHMENT_BODY_LIMIT : 65536);
-            // A normal chat tab uses the same portrait choices as the board, including existing conversations.
-            // Writing to her in her own chat turns her on (6 Nov, Masih: "when I directly go to her and message, it should
-            // automatically unlock her"); off still keeps her quiet on the board until then.
-            if (['send', 'steer'].includes(operation) && await loveSpot.chat() === id && !(await loveSpot.matildaSettings()).replies) await loveSpot.matildaSettings({ replies: true });
-            if (['send', 'steer'].includes(operation) && await loveSpot.chat() === id && input && typeof input === 'object' && !Array.isArray(input) && (input.attachments === undefined || Array.isArray(input.attachments))) {
-              input.attachments = [...(input.attachments ?? []), { id: 'matilda-portrait', name: PORTRAIT_ATTACHMENT_NAME, type: 'text', mimeType: 'text/plain', text: PORTRAIT_INSTRUCTIONS }];
-            }
-            return json(response, 200, await client[operation](id, input));
-          }
-          throw new BridgeError('Method is not allowed', 405);
-        }
-        const approval = url.pathname.match(/^\/api\/approvals\/([a-f0-9-]+)(\/instead)?$/);
-        if (approval && method === 'POST') return json(response, 200, approval[2] ? await client.denyInstead(approval[1], await body(request)) : client.answerApproval(approval[1], await body(request)));
+        if (await handleLoveSpotRoutes(state, request, response, url, method)) return;
+        if (await handleVoiceRoutes(state, request, response, url, method)) return;
+        if (await handleFileRoutes(state, request, response, url, method)) return;
+        if (await handleSettingsRoutes(state, request, response, url, method)) return;
+        if (await handleWorkflowRoutes(state, request, response, url, method)) return;
+        if (await handleThreadRoutes(state, request, response, url, method)) return;
         throw new BridgeError('Unknown application operation', 404);
       }
-      if (request.method !== 'GET') throw new BridgeError('Method is not allowed', 405);
-      let relative = decodeURIComponent(url.pathname);
-      if (relative.includes('\\') || relative.includes('\0') || relative.split('/').includes('..')) throw new BridgeError('Invalid asset path', 400);
-      if (relative.endsWith('/')) relative += 'index.html';
-      const candidate = path.resolve(staticDir, `.${relative}`);
-      const [root, real] = await Promise.all([fs.realpath(staticDir), fs.realpath(candidate)]);
-      if (!real.startsWith(`${root}${path.sep}`)) throw new BridgeError('Asset is outside the application', 403);
-      const type = MIME[path.extname(real)]; if (!type) throw new BridgeError('Unsupported asset', 404);
-      const file = await fs.readFile(real);
-      response.writeHead(200, { 'Content-Type': `${type}; charset=utf-8`, 'Cache-Control': 'no-store' }); response.end(file);
+      await serveStaticAsset(staticDir, url, request, response);
     } catch (error) {
-      const known = error instanceof BridgeError || error instanceof AttachmentError || error?.loveSpot === true;
-      const status = known && Number.isInteger(error.status) && error.status >= 400 && error.status <= 599 ? error.status : error?.code === 'ENOENT' ? 404 : 500;
-      const runtimeCode = error instanceof BridgeError && Number.isSafeInteger(error.code) ? error.code : undefined;
-      const code = runtimeCode === -32601 ? 'ELPIS_RUNTIME_UNSUPPORTED' : runtimeCode !== undefined ? 'ELPIS_RUNTIME_ERROR'
-        : status === 503 ? 'ELPIS_RUNTIME_UNAVAILABLE' : status >= 500 ? 'ELPIS_REQUEST_FAILED' : 'ELPIS_REQUEST_REJECTED';
-      if (status >= 500) {
-        await diagnose({ at: new Date().toISOString(), requestId, method: ['GET', 'POST'].includes(request.method) ? request.method : 'OTHER',
-          area, status, code, ...(runtimeCode !== undefined ? { runtimeCode } : {}),
-          cause: error instanceof BridgeError ? 'BridgeError' : ERROR_CAUSES.has(error?.name) ? error.name : 'Error' });
-      }
-      if (!response.headersSent) json(response, status, { error: known ? error.message : 'Application request failed', code, requestId, ...(runtimeCode !== undefined ? { runtimeCode } : {}) });
-      else response.destroy();
+      await sendRequestError(error, request, response, requestId, area, diagnose);
     }
   });
   server.requestTimeout = 35000; server.headersTimeout = 10000;
@@ -585,7 +151,7 @@ export async function startDesktopServer(options = {}) {
     async close() {
       if (closed) return; closed = true; clearInterval(heartbeat);
       await voice.close(); kokoro.close();
-      for (const job of workflowJobs.values()) job.settle('Elpis closed before the workflow started');
+      workflowDispatcher.close();
       await experimentLab.close(); await automations?.close();
       if (improvementStore) (await improvementStore).close();
       await devServers.close();
