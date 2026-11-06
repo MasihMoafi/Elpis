@@ -24,7 +24,7 @@
 /* Every tab shows, with no scrollbar, in a short window too (ES Next 2): the rows, with Back and Search, give up height
    first, from 34px down to 20px; it fits down to a window about 525px tall. 144px is the rest: the title bar, the nav's
    padding, the title and the group labels. */
-.settings-mode .settings-nav { --settings-row: clamp(20px, calc((100vh - 144px) / (var(--settings-tabs, 17) + 2)), var(--row-h)); }
+.settings-mode .settings-nav { --settings-row: clamp(20px, calc((100dvh - 144px) / (var(--settings-tabs, 17) + 2)), var(--row-h)); }
 .settings-mode .settings-nav button[role="tab"], .settings-mode .settings-nav > .back-link, .settings-mode .settings-nav > .search-field { height:var(--settings-row); }
 .settings-section-link[aria-current="page"] { color:var(--accent-text); background:var(--selected); }
 .settings-row-description { font-size:var(--text-xs); line-height:1.45; color:var(--muted-foreground); margin-top:2px; overflow-wrap:anywhere; }
