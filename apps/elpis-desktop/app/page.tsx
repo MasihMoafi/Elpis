@@ -136,6 +136,7 @@ import { createChatNavigation } from "@/lib/chat-navigation";
 import { refusedOffline, type Live, type View, type WorkflowReplay, type NextTurn } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
 import { useComposerState } from "@/lib/use-composer-state";
+import { useProjectState } from "@/lib/use-project-state";
 import { useChatTabs } from "@/lib/use-chat-tabs";
 import { approvalDraftKey, useApprovalDrafts, useDraftStore, useSubmitOnce } from "@/lib/use-drafts";
 import { sessionWindowApi, useDesktopCapabilities } from "@/lib/use-desktop-capabilities";
@@ -189,21 +190,11 @@ export default function Home() {
   const [choiceId, setChoiceId] = useState("");
   const [model, setModel] = useState("");
   const [effort, setEffort] = useState("");
-  const [cwd, setCwd] = useState("");
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [projectId, setProjectId] = useState<string | null>(null);
-  // Workflows and Love Spot run in the last project chosen, while new chats start in none (TASKS.md: unscoped new chats).
-  const [workflowProjectId, setWorkflowProjectId] = useState<string | null>(null);
+  const projectState = useProjectState();
+  const { cwd, setCwd, projects, setProjects, projectId, setProjectId, setWorkflowProjectId, projectChats, setProjectChats,
+    projectChatsRef, projectChatSave, projectMove, setProjectMove, newProjectFor, setNewProjectFor, nestTargets, setNestTargets,
+    projectChanging, setProjectChanging, project, workflowProject, projectEdit, setProjectEdit } = projectState;
   const [recordedWorkflow, setRecordedWorkflow] = useState<Pick<WorkflowRun, "id" | "rootThreadId">>();
-  const [projectChats, setProjectChats] = useState<Record<string, string>>({});
-  const projectChatsRef = useRef(projectChats), projectChatSave = useRef(Promise.resolve());
-  const [projectMove, setProjectMove] = useState<Thread[] | null>(null);
-  const [newProjectFor, setNewProjectFor] = useState<Thread[] | null>(null);
-  const [nestTargets, setNestTargets] = useState<Thread[] | null>(null);
-  const [projectChanging, setProjectChanging] = useState(false);
-  const project = projects.find(item => item.id === projectId) ?? null;
-  const workflowProject = projects.find(item => item.id === workflowProjectId) ?? null;
-  const [projectEdit, setProjectEdit] = useState<Project | null | undefined>(undefined);
   // Existing conversations: overrides for their next turn only.
   const [nextTurn, setNextTurn] = useState<Record<string, NextTurn>>({});
   const [threadModes, setThreadModes] = useState<Record<string, PermissionMode>>({});
@@ -577,7 +568,7 @@ export default function Home() {
   });
   const folder = (path?: string | null) => path ? path.split("/").filter(Boolean).at(-1) || path : "";
 
-  const { openNewChat, newChat, showTab, newChatTab, closeChatTab, cycleTabs, goHistory, openInNewTab, keepWorkflowTab } = createChatNavigation({ composer, conversations, history, drafts: draftStore, attachments: attachmentState, tabsRef, updateTabs, selectedRef, newDraftKey, request, stickToBottom, followingBottom, restoreScroll, setEntries, setError, setLoading, setView, setSidebar, setProjectId, setCwd, find, openThread, loadThread, showChat, browser, navHistory, show: next => show(next) });
+  const { openNewChat, newChat, showTab, newChatTab, closeChatTab, cycleTabs, goHistory, openInNewTab, keepWorkflowTab } = createChatNavigation({ projectState, composer, conversations, history, drafts: draftStore, attachments: attachmentState, tabsRef, updateTabs, selectedRef, newDraftKey, request, stickToBottom, followingBottom, restoreScroll, setEntries, setError, setLoading, setView, setSidebar, find, openThread, loadThread, showChat, browser, navHistory, show: next => show(next) });
   const clearChat = async () => {
     const previous = selectedRef.current;
     if (previous && loveActivity.isLoveChat(previous) && agentName(previous) === "Matilda") {
@@ -806,7 +797,7 @@ export default function Home() {
   }
   /** Sends the composer's message, or `own`: a command's message (such as /init's prompt), sent without the composer's files.
    * While a turn runs, `followUp` steers or queues this one message instead of following Settings (Ctrl+Enter). */
-  const send = createChatSend({ composer, conversations, runtime, attachments: attachmentState, drafts: draftStore, sendShell: () => sendShell(), askSideQuestion: question => askSideQuestion(question), restoreComposerFocus: origin => restoreComposerFocus(origin), readOnlyRun, selected, editDraft, busy, canSendFollowUp, projectChanging, imageBlocked, missingChoiceNotice, needsModelId, model, setError, sending, setBusy, newDraftKey, request, tabsRef, activeTurn, continues, preferences, stickToBottom, setSubmissions, entries, newMode, newChoice, cwd, newWorktree, noteStartedMode, browser, setThreads, projectId, assignProject, pending, effort, newPlan, selectedRef, loadThread, setThreadPlans, setNewPlan, setNextTurn });
+  const send = createChatSend({ projectState, composer, conversations, runtime, attachments: attachmentState, drafts: draftStore, sendShell: () => sendShell(), askSideQuestion: question => askSideQuestion(question), restoreComposerFocus: origin => restoreComposerFocus(origin), readOnlyRun, selected, editDraft, busy, canSendFollowUp, imageBlocked, missingChoiceNotice, needsModelId, model, setError, sending, setBusy, newDraftKey, request, tabsRef, activeTurn, continues, preferences, stickToBottom, setSubmissions, entries, newMode, newChoice, newWorktree, noteStartedMode, browser, setThreads, assignProject, pending, effort, newPlan, selectedRef, loadThread, setThreadPlans, setNewPlan, setNextTurn });
   async function sendShell() {
     const command = textRef.current, originalRequest = request.current;
     if (!command.trim() || busy || !ready || !connected || projectChanging) return;

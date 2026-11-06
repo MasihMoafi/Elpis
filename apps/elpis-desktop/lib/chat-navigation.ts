@@ -7,24 +7,26 @@ import type { useComposerAttachments } from "@/lib/use-composer-attachments";
 import type { useComposerState } from "@/lib/use-composer-state";
 import type { useConversationList } from "@/lib/use-conversation-list";
 import type { useDraftStore } from "@/lib/use-drafts";
+import type { useProjectState } from "@/lib/use-project-state";
 import type { useTranscriptHistory } from "@/lib/use-transcript-history";
 import type { View } from "@/lib/workspace-types";
 
 type Setter<T> = Dispatch<SetStateAction<T>>;
 type Ref<T> = RefObject<T>;
 type NavigationInputs = {
-  composer: ReturnType<typeof useComposerState>; conversations: ReturnType<typeof useConversationList>;
+  projectState: ReturnType<typeof useProjectState>; composer: ReturnType<typeof useComposerState>; conversations: ReturnType<typeof useConversationList>;
   history: ReturnType<typeof useTranscriptHistory>; drafts: ReturnType<typeof useDraftStore>; attachments: ReturnType<typeof useComposerAttachments>;
   tabsRef: ReturnType<typeof useChatTabs>["tabsRef"]; updateTabs: ReturnType<typeof useChatTabs>["updateTabs"];
   selectedRef: Ref<Thread | null>; newDraftKey: Ref<string>; request: Ref<number>;
   stickToBottom: Ref<boolean>; followingBottom: Ref<boolean>; restoreScroll: Ref<{ height: number; top: number } | null>;
   setEntries: Setter<Entry[]>; setError: Setter<string>; setLoading: Setter<boolean>; setView: Setter<View>; setSidebar: Setter<boolean>;
-  setProjectId: Setter<string | null>; setCwd: Setter<string>; find: (id?: string | null) => Thread | undefined;
+  find: (id?: string | null) => Thread | undefined;
   openThread: (thread: Thread) => Promise<void>; loadThread: (thread: Thread) => Promise<void>; showChat: () => void;
   browser: { closeSession: (id: string) => void }; navHistory: ReturnType<typeof useNavHistory>; show: (view: View) => void;
 };
 
-export function createChatNavigation({ composer, conversations, history, drafts, attachments, tabsRef, updateTabs, selectedRef, newDraftKey, request, stickToBottom, followingBottom, restoreScroll, setEntries, setError, setLoading, setView, setSidebar, setProjectId, setCwd, find, openThread, loadThread, showChat, browser, navHistory, show }: NavigationInputs) {
+export function createChatNavigation({ projectState, composer, conversations, history, drafts, attachments, tabsRef, updateTabs, selectedRef, newDraftKey, request, stickToBottom, followingBottom, restoreScroll, setEntries, setError, setLoading, setView, setSidebar, find, openThread, loadThread, showChat, browser, navHistory, show }: NavigationInputs) {
+  const { setProjectId, setCwd } = projectState;
   const { textRef, setText, composerRef } = composer;
   const { select, upsertThread, hidden } = conversations;
   const { setItemCursor } = history;
