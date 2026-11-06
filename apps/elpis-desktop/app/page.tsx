@@ -75,7 +75,6 @@ import { TaskList } from "@/components/task-list";
 import { chatOrigin, originLabel } from "@/lib/love-activity";
 import { useLoveActivity } from "@/lib/use-love-activity";
 import { LOVE_SPOT_AUDIO } from "@/lib/love-spot-audio";
-import { savedPersona } from "@/lib/matilda";
 import { useScreenshotPopup } from "@/lib/use-screenshot-popup";
 import { WorkflowChat } from "@/components/workflow-chat";
 import { DocumentReviewProvider } from "@/components/document-review";
@@ -126,6 +125,7 @@ import { useTranscriptPresentation } from "@/lib/use-transcript-presentation";
 import { createSidebarPlacement } from "@/lib/sidebar-placement";
 import { createApprovalActions } from "@/lib/approval-actions";
 import { createShellSend } from "@/lib/shell-send";
+import { createClearConversation } from "@/lib/clear-conversation";
 import { refusedOffline, type View, type WorkflowReplay, type NextTurn } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
 import { useComposerState } from "@/lib/use-composer-state";
@@ -177,7 +177,7 @@ export default function Home() {
   const [model, setModel] = useState("");
   const [effort, setEffort] = useState("");
   const projectState = useProjectState();
-  const { cwd, setCwd, projects, setProjects, projectId, setProjectId, setWorkflowProjectId, projectChats, setProjectChats,
+  const { cwd, projects, setProjects, projectId, setWorkflowProjectId, projectChats, setProjectChats,
     projectChatsRef, projectMove, setProjectMove, newProjectFor, setNewProjectFor, nestTargets, setNestTargets,
     projectChanging, project, workflowProject, projectEdit, setProjectEdit } = projectState;
   const [recordedWorkflow, setRecordedWorkflow] = useState<Pick<WorkflowRun, "id" | "rootThreadId">>();
@@ -347,7 +347,7 @@ export default function Home() {
   const request = useRef(0);
   const initialRestoration = useRef<{ threadId: string; promise: Promise<void> } | null>(null);
   const conversations = useConversationList(threads, setThreads, selectedRef, setSelected, setError);
-  const { select, settingsOf, threadsRef, hidden, upsertThread } = conversations;
+  const { select, threadsRef, hidden } = conversations;
   const children = useChildConversations({ conversations, selectedRef, setThreads, setError, setAgentsPanelState });
   const { loadingChildren, checkedChildren, childCursors, expanded, setExpanded, holdAgentPanel, loadChildren } = children;
   const search = useSidebarSearch(ready, hidden), searchTerm = search.searchTerm;
@@ -497,36 +497,7 @@ export default function Home() {
   const folder = (path?: string | null) => path ? path.split("/").filter(Boolean).at(-1) || path : "";
 
   const { openNewChat, newChat, showTab, newChatTab, closeChatTab, cycleTabs, goHistory, openInNewTab, keepWorkflowTab } = createChatNavigation({ projectState, composer, conversations, history, drafts: draftStore, attachments: attachmentState, tabsRef, updateTabs, selectedRef, newDraftKey, request, stickToBottom, followingBottom, restoreScroll, setEntries, setError, setLoading, setView, setSidebar, find, openThread, loadThread, showChat, browser, navHistory, show: next => show(next) });
-  const clearChat = async () => {
-    const previous = selectedRef.current;
-    if (previous && loveActivity.isLoveChat(previous) && agentName(previous) === "Matilda") {
-      if (activeTurns[previous.id]) { setError("Love Spot is already replying. Wait for this turn."); return; }
-      const originalRequest = request.current;
-      const settings = { ...previous, ...settingsOf.current[previous.id] };
-      try {
-        const result = await api<{ thread: Thread; permissions?: PermissionMode | null }>("/love-spot/talk/new", {
-          threadId: previous.id,
-          ...(settings.model ? { model: settings.model } : {}),
-          ...(settings.modelProvider ? { provider: settings.modelProvider } : {}),
-          ...(previous.cwd ? { cwd: previous.cwd } : {}),
-          permissions: threadModes[previous.id] ?? permissionMode,
-          persona: savedPersona(),
-        });
-        if (!result.thread || typeof result.thread.id !== "string") throw new Error("Matilda could not start a fresh chat.");
-        upsertThread(result.thread);
-        noteStartedMode(result.thread.id, result.permissions ?? threadModes[previous.id] ?? permissionMode);
-        setProjectId(projectChatsRef.current[previous.id] ?? projectId);
-        setCwd(result.thread.cwd ?? previous.cwd ?? cwd);
-        if (request.current === originalRequest) {
-          await loadThread(result.thread);
-          requestAnimationFrame(() => composerRef.current?.focus());
-        }
-      } catch (cause) { setError(errorText(cause)); }
-      return;
-    }
-    if (previous) { setCwd(previous.cwd || cwd); setProjectId(projectChatsRef.current[previous.id] ?? projectId); }
-    openNewChat(`clear-${crypto.randomUUID()}`);
-  };
+  const clearChat = createClearConversation({ composer, conversations, projectState, runtime, loveActivity, selectedRef, request, setError, threadModes, permissionMode, openNewChat, loadThread, noteStartedMode: (id, mode) => noteStartedMode(id, mode) });
   const split = useSessionSplit({ thread: selected, text, attachments }, () => composerRef.current?.focus(), remaining => {
     const restore = () => { editDraft(remaining.text); setAttachments(remaining.attachments); saveAttachments(remaining.thread?.id || newDraftKey.current, remaining.attachments); };
     if (remaining.thread) void loadThread(remaining.thread).then(restore); else { newChat(); restore(); }
