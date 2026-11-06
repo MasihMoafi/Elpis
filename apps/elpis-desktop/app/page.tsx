@@ -103,6 +103,7 @@ import { useConversationView } from "@/lib/use-conversation-view";
 import { useComposerPanels, useComposerPanelScope } from "@/lib/use-composer-panels";
 import { useLoveWorkspace, useReadLoveNotifications } from "@/lib/use-love-workspace";
 import { useWorkspacePanels } from "@/lib/use-workspace-panels";
+import { createSidebarAttention } from "@/lib/sidebar-attention";
 import { PAGE_NAMES } from "@/lib/workspace-navigation-pages";
 import { refusedOffline } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
@@ -138,7 +139,7 @@ export default function Home() {
   const settingsSnapshot = useElpisSettings().data as unknown as ProviderSettings | null;
   const providerSettings = settingsSnapshot?.main && Array.isArray(settingsSnapshot.providers) ? settingsSnapshot : null;
   const options = useConversationOptions();
-  const { choiceId, model, effort, setEffort, nextTurn, setNextTurn, threadModes, setThreadModes, planAnswered, setPlanAnswered } = options;
+  const { choiceId, model, effort, setEffort, nextTurn, setNextTurn, threadModes, setThreadModes, planAnswered } = options;
   const projectState = useProjectState();
   const { cwd, projects, projectChats, projectChanging } = projectState;
   const pages = useWorkspacePagesState();
@@ -152,7 +153,8 @@ export default function Home() {
   const dialogs = useWorkspaceDialogState();
   const { setNewGroupFor, deleteTargets, setDeleteTargets, deleteRunHistory, setDeleteRunHistory, shownWhenDeleted, shortcutsOpen, setShortcutsOpen, commandMenuOpen, setCommandMenuOpen, commandReturnFocus, shortcutsReturnFocus, renameRequest, setRenameRequest, resumeOpen, setResumeOpen } = dialogs;
   const { error, setError, deletedNotice, setDeletedNotice, worktreeNotice, setWorktreeNotice, noteKept } = useWorkspaceNotices();
-  const { attention, setAttention, planTurns, markRead } = useChatAttention(planAnswered, setError);
+  const attentionState = useChatAttention(planAnswered, setError);
+  const { attention, setAttention, planTurns, markRead } = attentionState;
   const selection = useSidebarSelection({ selected, openSplit: thread => openSplit(thread), openThread: thread => openThread(thread) });
   const { marked, setMarked, threadList, rowLinks, clickRow } = selection;
   const { folds, foldsRef, changeFolds, setCollapsedProjects } = useSidebarFolds();
@@ -327,15 +329,7 @@ export default function Home() {
   const { archiveChats, deleteChats, trashChats, undoDelete } = createChatDeletion({ conversations, preferences, selectedRef, shownWhenDeleted, withNested, chatsOf, find, archiveThread, rowLinks, setDeleteRunHistory, setDeleteTargets, setDeletedNotice, setError, noteKept, removeThreads, loadThread });
   const sidebarKeys = useSidebarKeys();
   const listKeys = (event: React.KeyboardEvent<HTMLDivElement>) => sidebarListKeys(event, marked, () => setMarked([]), attentionFor, deleteChats, rowLinks);
-  function attentionFor(id: string) {
-    return { unread: attention.unread.includes(id), planReady: !!attention.plans[id],
-      onToggleRead: () => setAttention(previous => ({ ...previous, unread: previous.unread.includes(id) ? previous.unread.filter(value => value !== id) : [...previous.unread, id] })),
-      onComplete: () => {
-        setPlanAnswered(previous => ({ ...previous, [id]: attention.plans[id] }));
-        setAttention(previous => ({ unread: previous.unread.filter(value => value !== id), plans: without(previous.plans, id) }));
-      },
-    };
-  }
+  const attentionFor = createSidebarAttention(attentionState, options);
   const placement = createSidebarPlacement({ model: sidebarModel, projectState, children, chatGroups, updateGroups, foldsRef, changeFolds, pins, marked, setMarked, setNewGroupFor, setError, assignProject, newProjectFrom });
   const { groupMenu, movingIds, canNest, placementReveal, revealPlacement, nestChats, organizationActions } = placement;
   async function renameDisplayedThread(thread: Thread, name: string, runId = workflowRoots.get(thread.id)?.id) {
