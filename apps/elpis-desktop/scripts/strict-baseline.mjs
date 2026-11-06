@@ -48,6 +48,8 @@ function run(command, args) {
 
 /** @param {string} config */
 function typeCounts(config) {
+  // The bridge imports generated copies in bridge/resources; make them first so every checkout counts the same program.
+  run(process.execPath, ['bridge/build-resources.mjs', '--bridge-only']);
   /** @type {Counts} */ const counts = {};
   for (const line of run(bin('tsc'), ['-p', config, '--noEmit', '--pretty', 'false']).split('\n')) {
     const match = /^(.+?)\(\d+,\d+\): error (TS\d+)/.exec(line);

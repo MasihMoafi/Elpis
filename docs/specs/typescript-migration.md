@@ -16,7 +16,7 @@ All run from `apps/elpis-desktop` and in CI (`.github/workflows/lint.yml`, job `
 - `strict-baseline.json` holds every existing finding, per file and rule. A count may only go down, and a file not listed must be clean. After a fix, record it with `node scripts/strict-baseline.mjs <check> --update`; that command refuses to raise a count.
 - The test tiers in `test-inventory.json`, run by `.github/workflows/elpis-desktop.yml` on every push to `main` and `integrate/**` and on every pull request.
 
-Baseline on 6 Nov: 9,122 JS type errors (TS7006, untyped parameters, is about half), 496 renderer errors under the extra flags, 365 lint findings, 5 duplicate blocks (0.10% of lines).
+Baseline on 6 Nov: 9,143 JS type errors (TS7006, untyped parameters, is about half), 496 renderer errors under the extra flags, 365 lint findings, 5 duplicate blocks (0.10% of lines).
 
 ## Before the first batch
 
@@ -29,10 +29,10 @@ The import graph of the 118 sources has 13 levels. A batch moves files whose loc
 
 | Batch | Level | Sources | Type errors now | Examples |
 |---|---|---|---|---|
-| 1-3 | 0 (import nothing local) | 53 | 761 | `bridge/app-identity.mjs`, `bridge/love-spot-order.cjs`, `lib/*.mjs` |
+| 1-3 | 0 (import nothing local) | 53 | 759 | `bridge/app-identity.mjs`, `bridge/love-spot-order.cjs`, `lib/*.mjs` |
 | 4-5 | 1 | 25 | 701 | `bridge/github-connector.mjs`, `desktop/improve.cjs` |
 | 6 | 2-3 | 13 | 768 | `desktop/preferences.cjs`, `bridge/workflow-acp.mjs` |
-| 7 | 4 | 1 | 494 | `bridge/client.mjs` (175 KB), on its own |
+| 7 | 4 | 1 | 495 | `bridge/client.mjs` (175 KB), on its own |
 | 8-9 | 5-6 | 18 | 675 | `bridge/files.mjs`, `desktop/runtime.mjs` |
 | 10 | 7-12 | 8 | 563 | `bridge/server.mjs`, `desktop/browser.cjs`, last `desktop/main.cjs` |
 
