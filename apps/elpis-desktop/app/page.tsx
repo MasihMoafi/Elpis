@@ -1,7 +1,7 @@
 "use client";
 
 import { flushSync } from "react-dom";
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { ViewBoundary } from "@/components/view-boundary";
 import { useAppearance } from "@/lib/use-appearance";
 import { CommandMenu } from "@/components/command-menu";
@@ -41,7 +41,6 @@ import { openFile, setFileView } from "@/lib/files-pane";
 import { usePersonal } from "@/components/personal-tip";
 import { SidePanel, sideMinWidth } from "@/components/side-panel";
 import { FloatChatBar, FloatChatPill } from "@/components/float-chat";
-import { useSessionSplit } from "@/components/session-split";
 import { title, agentName,
   type Thread } from "@/lib/api";
 import { useComposerHeight } from "@/lib/use-composer-height";
@@ -106,6 +105,7 @@ import { errorText } from "@/lib/error-text.mjs";
 import { useWorkspaceStores } from "@/lib/use-workspace-stores";
 import { useWorkspaceSidebarState } from "@/lib/use-workspace-sidebar-state";
 import { createWorkspaceControls } from "@/lib/workspace-controls";
+import { useWorkspaceSplit } from "@/lib/use-workspace-split";
 
 
 
@@ -146,7 +146,7 @@ export default function Home() {
   }, [ready, connected]);
   const editDraft = (value: string) => { setText(value); saveDraft(selectedRef.current?.id || newDraftKey.current, value); };
   const attachmentState = useComposerAttachments({ selectedRef, newDraftKey, shellMode, savedAttachments, saveAttachments, setError, setRuntimeNotices });
-  const { attachments, attaching, setAttachments } = attachmentState;
+  const { attachments, attaching } = attachmentState;
   const attachFromBrowser = createBrowserAttachment({ session, composer, attachments: attachmentState, drafts: draftStore, newDraftKey, showChat: () => showChat(), send: () => send() });
   useComposerHeight(composerRef, [text, selected?.id, view]);
   const { loveActivity, loveRef, isLoveChatId, selectedLoveChat, loveSpotAudioReason } = useLoveWorkspace(view, ready, selected, () => threadsRef.current);
@@ -203,18 +203,7 @@ export default function Home() {
 
   const { openNewChat, newChat, showTab, newChatTab, closeChatTab, cycleTabs, goHistory, openInNewTab, keepWorkflowTab } = createChatNavigation({ projectState, composer, conversations, history, drafts: draftStore, attachments: attachmentState, tabsRef, updateTabs, session, newDraftKey, setError, setView, setSidebar, find, openThread, loadThread, showChat, browser, navHistory, show: next => show(next) });
   const clearChat = createClearConversation({ composer, conversations, projectState, runtime, loveActivity, selectedRef, request, setError, threadModes, permissionMode, openNewChat, loadThread, noteStartedMode: (id, mode) => noteStartedMode(id, mode) });
-  const split = useSessionSplit({ thread: selected, text, attachments }, () => composerRef.current?.focus(), remaining => {
-    const restore = () => { editDraft(remaining.text); setAttachments(remaining.attachments); saveAttachments(remaining.thread?.id || newDraftKey.current, remaining.attachments); };
-    if (remaining.thread) void loadThread(remaining.thread).then(restore); else { newChat(); restore(); }
-  });
-  // A disconnected chat must remain editable even if the team could not be read.
-  useLayoutEffect(() => {
-    if (view !== "chat" || !selected || (ready && connected) || panelShown || split.thread ||
-        (!desktop && window.elpisDesktop) || document.querySelector(".startup-splash:not(.leaving)") ||
-        !window.matchMedia("(min-width: 1101px)").matches) return;
-    holdAgentPanel(selected);
-  }, [view, selected, ready, connected, desktop, panelShown, split.thread, holdAgentPanel]);
-  const openSplit = (thread: Thread) => { side.closePanel(); setAgentsPanelState(previous => ({ ...previous, open: false })); setView("chat"); split.open(thread); };
+  const { split, openSplit } = useWorkspaceSplit({ session, composer, attachments: attachmentState, drafts: draftStore, runtime, pages, workspacePanels, children, desktop, newDraftKey, newChat, editDraft, loadThread, setAgentsPanelState });
   const openSessionWindow = (thread?: Thread) => { void sessionWindowApi()?.(thread?.id).catch(cause => setError(String(cause))); };
 
   const projectActions = createProjectActions({ projectState, conversations, runtime, chatGroupsRef, commitGroups, placementReveal: (...args) => placementReveal(...args), revealPlacement: (...args) => revealPlacement(...args), setMarked, viewRef, selected, openNewChat, setError, getNativeParents: () => nativeParents });
