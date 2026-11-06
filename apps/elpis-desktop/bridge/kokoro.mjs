@@ -10,7 +10,7 @@ import { randomUUID } from 'node:crypto';
 import { BridgeError } from './validate.mjs';
 
 const home = os.homedir();
-const WORKER = fileURLToPath(new URL('./resources/kokoro-worker.py', import.meta.url));
+const WORKER = fileURLToPath(new URL('./kokoro-worker.py', import.meta.url));
 /** Where Kokoro lives on this machine; each can be overridden by its environment variable. */
 export function kokoroPaths(env = process.env) {
   return {
