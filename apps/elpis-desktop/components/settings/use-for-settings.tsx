@@ -83,7 +83,7 @@ export function useKeyUses({ providers, refreshKey, active = true }: { providers
   const saved = (provider: KeyProvider, feature: Feature): Pick | null => {
     if (feature === "chat") return settings && settings.main.provider === provider.id ? { model: settings.main.model ?? "", voice: null } : null;
     if (feature === "speech") return speech && speech.source === provider.id ? { model: speech.model ?? "", voice: speech.voice } : null;
-    if (feature === "dictation") return server?.whispertype?.backend === "openrouter" && routers.length === 1 && routers[0].id === provider.id ? { model: server.whispertype.model ?? "", voice: null } : null;
+    if (feature === "dictation") return server?.whispertype?.backend === "openrouter" && routers.length === 1 && routers[0]?.id === provider.id ? { model: server.whispertype.model ?? "", voice: null } : null;
     return null;
   };
   const drafted = (provider: KeyProvider, feature: Feature) => draft && draft.provider === provider.id && draft.feature === feature ? draft : null;
