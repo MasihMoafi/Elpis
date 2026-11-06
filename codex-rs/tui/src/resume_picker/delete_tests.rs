@@ -326,7 +326,7 @@ fn elpis_delete_prompt_renders_target_warning_and_cancel_keys() {
         }
         terminal.flush().unwrap();
         let screen = terminal.backend().vt100().screen().contents();
-        println!("Delete prompt at {width} columns:\n{screen}\n");
+        tracing::info!("Delete prompt at {width} columns:\n{screen}\n");
         assert!(screen.contains("Harbor retrieval"), "{screen}");
         assert!(screen.contains("subagent"), "{screen}");
         assert!(screen.contains("cannot undo"), "{screen}");

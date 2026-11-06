@@ -125,5 +125,5 @@ fn welcome_tmux_preview() {
         screen.is_done(),
         "preview timed out before keyboard confirmation"
     );
-    eprintln!("welcome keyboard confirmation after {:?}", start.elapsed());
+    tracing::info!("welcome keyboard confirmation after {:?}", start.elapsed());
 }

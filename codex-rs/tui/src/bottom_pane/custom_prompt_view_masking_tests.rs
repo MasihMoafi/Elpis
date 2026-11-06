@@ -19,7 +19,11 @@ fn elpis_masked_provider_key_stays_private_after_paste_edit_and_resize() {
         let area = Rect::new(0, 0, width, 8);
         let mut buffer = Buffer::empty(area);
         view.render(area, &mut buffer);
-        let rendered: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
+        let rendered: String = buffer
+            .content()
+            .iter()
+            .map(ratatui::buffer::Cell::symbol)
+            .collect();
         assert!(rendered.contains('•'), "masked input must remain visible");
         for fragment in ["sk-", "private", "fixture", "0123456789", "abcdefghijkl"] {
             assert!(!rendered.contains(fragment), "key leaked at width {width}");

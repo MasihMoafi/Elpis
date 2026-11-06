@@ -1122,7 +1122,11 @@ mod tests {
                     let area = ratatui::layout::Rect::new(0, 0, 100, 100);
                     let mut buffer = ratatui::buffer::Buffer::empty(area);
                     chat.render_context_ledger(area, &mut buffer);
-                    let ledger: String = buffer.content.iter().map(|cell| cell.symbol()).collect();
+                    let ledger: String = buffer
+                        .content
+                        .iter()
+                        .map(ratatui::buffer::Cell::symbol)
+                        .collect();
                     assert!(ledger.contains("capacity unknown"), "{ledger}");
                     assert!(!ledger.contains("of 258.4k"), "{ledger}");
                 }
@@ -1280,7 +1284,7 @@ mod tests {
             TOOL_DEFINITIONS_COLOR,
             UNRECOGNIZED_ITEMS_COLOR,
         ];
-        let terminal_background = Color::Rgb(30, 30, 30);
+        let terminal_background = crate::elpis_palette::rgb(30, 30, 30);
 
         assert!(colors_have_minimum_distance(
             &terminal_colors,
@@ -1292,18 +1296,27 @@ mod tests {
                 .all(|color| contrast_ratio(*color, terminal_background) >= MINIMUM_CONTRAST)
         );
 
-        let near_duplicate = [Color::Rgb(95, 135, 255), Color::Rgb(96, 136, 255)];
+        let near_duplicate = [
+            crate::elpis_palette::rgb(95, 135, 255),
+            crate::elpis_palette::rgb(96, 136, 255),
+        ];
         assert!(!colors_have_minimum_distance(
             &near_duplicate,
             MINIMUM_LAB_DISTANCE
         ));
         // The old purple/pink markers were different RGBs but visually too close.
-        let old_markers = [Color::Rgb(210, 153, 244), Color::Rgb(240, 136, 187)];
+        let old_markers = [
+            crate::elpis_palette::rgb(210, 153, 244),
+            crate::elpis_palette::rgb(240, 136, 187),
+        ];
         assert!(!colors_have_minimum_distance(
             &old_markers,
             MINIMUM_LAB_DISTANCE
         ));
-        assert!(contrast_ratio(Color::Rgb(36, 36, 36), terminal_background) < MINIMUM_CONTRAST);
+        assert!(
+            contrast_ratio(crate::elpis_palette::rgb(36, 36, 36), terminal_background)
+                < MINIMUM_CONTRAST
+        );
     }
 
     fn lab(color: Color) -> (f64, f64, f64) {
@@ -1361,9 +1374,9 @@ mod tests {
                 );
             }
             for background in [
-                Color::Rgb(240, 240, 240),
-                Color::Rgb(248, 246, 239),
-                Color::Rgb(255, 255, 255),
+                crate::elpis_palette::rgb(240, 240, 240),
+                crate::elpis_palette::rgb(248, 246, 239),
+                crate::elpis_palette::rgb(255, 255, 255),
             ] {
                 assert!(
                     contrast_ratio(*left, background) >= 3.0,
@@ -1371,7 +1384,10 @@ mod tests {
                 );
             }
         }
-        let old_markers = [Color::Rgb(147, 99, 181), Color::Rgb(173, 86, 132)];
+        let old_markers = [
+            crate::elpis_palette::rgb(147, 99, 181),
+            crate::elpis_palette::rgb(173, 86, 132),
+        ];
         assert!(!colors_have_minimum_distance(
             &old_markers,
             MINIMUM_LAB_DISTANCE
@@ -1415,7 +1431,7 @@ mod tests {
                         assert!(
                             contrast_ratio(
                                 context_display_color(color),
-                                Color::Rgb(bg.0, bg.1, bg.2)
+                                crate::elpis_palette::rgb(bg.0, bg.1, bg.2)
                             ) >= 3.0
                         );
                     }
@@ -1426,7 +1442,10 @@ mod tests {
                         .find(|span| span.content.contains('░'))
                         .unwrap();
                     assert!(
-                        contrast_ratio(free.style.fg.unwrap(), Color::Rgb(bg.0, bg.1, bg.2)) >= 3.0
+                        contrast_ratio(
+                            free.style.fg.unwrap(),
+                            crate::elpis_palette::rgb(bg.0, bg.1, bg.2)
+                        ) >= 3.0
                     );
                     assert!(
                         lines
@@ -1454,9 +1473,9 @@ mod tests {
                     // The hue remains olive; its declared light/dark pigments brighten
                     // the original by only a small step.
                     let expected = if crate::color::is_light(bg) {
-                        Color::Rgb(116, 132, 27)
+                        crate::elpis_palette::rgb(116, 132, 27)
                     } else {
-                        Color::Rgb(217, 219, 117)
+                        crate::elpis_palette::rgb(217, 219, 117)
                     };
                     assert_eq!(olive, expected);
                     assert_ne!(crate::style::context_style().fg, Some(olive));
@@ -1558,8 +1577,8 @@ mod tests {
                     ))
                     .style(
                         Style::default()
-                            .fg(Color::Rgb(fg.0, fg.1, fg.2))
-                            .bg(Color::Rgb(bg.0, bg.1, bg.2)),
+                            .fg(crate::elpis_palette::rgb(fg.0, fg.1, fg.2))
+                            .bg(crate::elpis_palette::rgb(bg.0, bg.1, bg.2)),
                     )
                     .render(area, &mut buf);
                 },

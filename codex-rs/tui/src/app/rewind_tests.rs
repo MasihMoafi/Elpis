@@ -30,7 +30,7 @@ fn error_text(events: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>) -> St
             AppEvent::InsertHistoryCell(cell) => cell
                 .display_lines(/*width*/ 120)
                 .iter()
-                .map(|line| line.to_string())
+                .map(ToString::to_string)
                 .collect::<Vec<_>>()
                 .join("\n"),
             AppEvent::RevertSessionForPromptEdit { .. } => panic!("rejected rewind sent a request"),
@@ -168,7 +168,7 @@ async fn rewind_escape_during_work_explains_why_and_still_interrupts() -> Result
                         &cell
                             .display_lines(/*width*/ 120)
                             .iter()
-                            .map(|line| line.to_string())
+                            .map(ToString::to_string)
                             .collect::<Vec<_>>()
                             .join("\n"),
                     );

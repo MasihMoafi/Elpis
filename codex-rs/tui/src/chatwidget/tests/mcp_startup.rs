@@ -307,11 +307,7 @@ async fn review_during_mcp_startup_queues_when_foreground_work_is_pending() {
                 queued.remote_image_urls,
                 vec!["https://example.com/image.png".to_string()]
             );
-            let errors = drain_insert_history(&mut rx)
-                .iter()
-                .map(|cell| lines_to_single_string(cell))
-                .collect::<Vec<_>>();
-            assert!(errors.is_empty());
+            assert!(drain_insert_history(&mut rx).is_empty());
             assert!(
                 !std::iter::from_fn(|| op_rx.try_recv().ok())
                     .any(|op| matches!(op, Op::Review { .. } | Op::UserTurn { .. }))
