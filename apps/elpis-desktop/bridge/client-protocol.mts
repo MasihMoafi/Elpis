@@ -34,6 +34,6 @@ export const archivedSession = (error: unknown) => ARCHIVED_SESSION.test((error 
 // thread/read opens a chat before any change since 31 Oct (it used to be thread/resume): a missing chat still says so.
 export const EXPLAINED = new Set(['externalAgentConfig/import', 'thread/read', 'thread/settings/update', 'model/list', 'account/read', 'account/rateLimits/read', 'thread/delete', 'thread/fork', 'thread/start', 'thread/resume', 'thread/name/set', 'thread/archive', 'thread/unarchive', 'thread/revert', 'thread/compact/start', 'review/start', 'turn/start', 'turn/steer', 'turn/interrupt', 'config/batchWrite', 'account/login/start', 'account/logout', 'claudeSubscription/write', 'hooks/list', 'memory/reset', 'plugin/list', 'plugin/search', 'plugin/install', 'plugin/uninstall', 'marketplace/add', 'marketplace/remove']);
 
-/** What a module with a conversation of its own (bridge/side-turn.mjs: the canvas planner and chat titles) may ask of the
+/** What a module with a conversation of its own (bridge/side-turn.mts: the canvas planner and chat titles) may ask of the
  * engine; see `sideRpc`. config/read names the MCP servers a chat-title conversation switches off. */
 export const SIDE_RPCS = new Set(['thread/start', 'turn/start', 'turn/interrupt', 'thread/unsubscribe', 'thread/delete', 'config/read']);

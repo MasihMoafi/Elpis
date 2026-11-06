@@ -12,28 +12,28 @@ export const NOT_A_REPOSITORY = 'This chat\'s folder is not a Git repository.';
 const SAFE = ['-c', 'core.fsmonitor=false', '-c', 'core.hooksPath=/dev/null', '--no-optional-locks', '--literal-pathspecs'];
 const SAFE_DIFF = ['--no-ext-diff', '--no-textconv', '--no-color'];
 
-function run(cwd, args, { limit = 4_000_000, okCodes = [0] } = {}) {
-  return new Promise((resolve, reject) => execFile('git', [...SAFE, ...args], { cwd, timeout: 15000, maxBuffer: limit, encoding: 'utf8', env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_PAGER: 'cat' } }, (error, stdout, stderr) => {
-    if (!error || okCodes.includes(error.code)) return resolve(stdout);
+function run(cwd: unknown, args: string[], { limit = 4_000_000, okCodes = [0] }: { limit?: number; okCodes?: number[] } = {}): Promise<string> {
+  return new Promise((resolve, reject) => execFile('git', [...SAFE, ...args], { cwd: cwd as string, timeout: 15000, maxBuffer: limit, encoding: 'utf8', env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_PAGER: 'cat' } }, (error, stdout, stderr) => {
+    if (!error || typeof error.code === 'number' && okCodes.includes(error.code)) return resolve(stdout);
     if (error.code === 'ENOENT') return reject(new BridgeError('Git is not installed on this computer.', 501));
     if (error.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') return resolve(String(stdout ?? ''));
-    reject(new BridgeError(/not a git repository/i.test(stderr) ? NOT_A_REPOSITORY : `Git could not read this folder: ${String(stderr).trim().split('\n')[0].slice(0, 200)}`, 409));
+    reject(new BridgeError(/not a git repository/i.test(stderr) ? NOT_A_REPOSITORY : `Git could not read this folder: ${String(stderr).trim().split('\n')[0]!.slice(0, 200)}`, 409));
   }));
 }
-const folder = cwd => {
+const folder = (cwd: unknown): string => {
   if (typeof cwd !== 'string' || !cwd.startsWith('/')) throw new BridgeError('This chat has no folder to read.', 409);
   return cwd;
 };
 
 /** Whether `cwd` is inside a Git repository that has a commit: what Elpis's worktree isolation needs, since each agent's worktree branches from HEAD. */
-export async function isRepository(cwd) {
+export async function isRepository(cwd: unknown) {
   folder(cwd);
   return repoRoot(cwd).then(hasHead, () => false);
 }
 
 /** The terminal's /review presets that need Git: local branches, the current one, and recent commits. */
-export async function reviewChoices(cwd) {
-  folder(cwd);
+export async function reviewChoices(cwd: unknown) {
+  cwd = folder(cwd);
   const [branches, current, log] = await Promise.all([
     run(cwd, ['for-each-ref', '--format=%(refname:short)', 'refs/heads']),
     run(cwd, ['branch', '--show-current']),
@@ -46,8 +46,8 @@ export async function reviewChoices(cwd) {
 }
 
 /** The terminal's /diff: tracked changes against HEAD plus every untracked file, as plain text. */
-export async function workingDiff(cwd) {
-  folder(cwd);
+export async function workingDiff(cwd: unknown) {
+  cwd = folder(cwd);
   const head = await run(cwd, ['rev-parse', '--verify', '--quiet', 'HEAD']).then(() => 'HEAD', () => null);
   const tracked = await run(cwd, ['diff', ...SAFE_DIFF, ...(head ? [head] : [])], { limit: DIFF_LIMIT * 2 });
   const names = (await run(cwd, ['ls-files', '--others', '--exclude-standard', '-z'])).split('\0').filter(Boolean);
@@ -63,22 +63,22 @@ export async function workingDiff(cwd) {
 const MAX_FILES = 200;
 const NOT_CHANGED = 'Choose a file from the list of changes.';
 /** One name from the list of changes: relative to the chat's folder, never leaving it. */
-function changeName(file) {
+function changeName(file: unknown): asserts file is string {
   if (typeof file !== 'string' || !file || file.length > 4096 || file.includes('\0') || file.startsWith('/') || file.split('/').includes('..')) throw new BridgeError(NOT_CHANGED, 400);
-  return file;
+  return;
 }
 /** The repository's top folder: names in the list of changes are relative to it, wherever in the repository the chat works. */
-const repoRoot = async cwd => (await run(folder(cwd), ['rev-parse', '--show-toplevel'])).trim();
-const hasHead = cwd => run(cwd, ['rev-parse', '--verify', '--quiet', 'HEAD']).then(() => true, () => false);
-function statusOf(xy) {
+const repoRoot = async (cwd: unknown) => (await run(folder(cwd), ['rev-parse', '--show-toplevel'])).trim();
+const hasHead = (cwd: string) => run(cwd, ['rev-parse', '--verify', '--quiet', 'HEAD']).then(() => true, () => false);
+function statusOf(xy: string) {
   if (xy === '??') return 'untracked';
   if (xy.includes('U') || xy === 'AA' || xy === 'DD') return 'conflicted';
   if (xy.includes('D')) return 'deleted';
   return xy[0] === 'A' ? 'added' : 'modified';
 }
 /** Git's `added removed name` rows (--numstat -z) as a map; a binary file reads `- -`. */
-function counts(text) {
-  const rows = new Map();
+function counts(text: string) {
+  const rows = new Map<string, { added: number; removed: number; binary: boolean }>();
   for (const record of text.split('\0').filter(Boolean)) {
     const [added, removed, ...name] = record.split('\t');
     rows.set(name.join('\t'), added === '-' ? { added: 0, removed: 0, binary: true } : { added: Number(added), removed: Number(removed), binary: false });
@@ -89,7 +89,7 @@ const SMALL = 1_000_000;
 /** An untracked file's counts. Small plain files are counted here (a line per newline, and the last line even without one;
  * a NUL byte in the first 8000 bytes makes it binary, as in Git), since the list is read every second or two while a turn
  * runs. Anything else, a link or a big file, is left to Git, which compares it with an empty file. */
-async function newFileCounts(cwd, name) {
+async function newFileCounts(cwd: string, name: string) {
   const file = path.join(cwd, name), info = await fs.lstat(file).catch(() => null);
   if (info?.isFile() && info.size <= SMALL) {
     const bytes = await fs.readFile(file).catch(() => null);
@@ -103,14 +103,14 @@ async function newFileCounts(cwd, name) {
   return added === '-' ? { added: 0, removed: 0, binary: true } : { added: Number(added) || 0, removed: Number(removed) || 0, binary: false };
 }
 /** The working tree's changed files, from Git's own status: [{ path, status, added, removed, binary }], by name. */
-async function statusEntries(cwd, file) {
+async function statusEntries(cwd: string, file?: string) {
   const text = await run(cwd, ['status', '--porcelain=v1', '-z', '--no-renames', '--untracked-files=all', ...(file === undefined ? [] : ['--', file])]);
   return text.split('\0').filter(Boolean).map(record => ({ xy: record.slice(0, 2), path: record.slice(3) }));
 }
 
 /** The review surface's file list: every changed file against HEAD, untracked files included, with its status and
  * how many lines it adds and removes. Read-only; at most 200 files, then `truncated`. */
-export async function changedFiles(chatFolder) {
+export async function changedFiles(chatFolder: unknown) {
   const cwd = await repoRoot(chatFolder), head = await hasHead(cwd);
   const [entries, tracked] = await Promise.all([
     statusEntries(cwd),
@@ -129,7 +129,7 @@ export async function changedFiles(chatFolder) {
 }
 
 /** The entry for one name in the list of changes, or an error: nothing else is read or touched. */
-async function entryOf(chatFolder, file) {
+async function entryOf(chatFolder: unknown, file: unknown) {
   const cwd = await repoRoot(chatFolder);
   changeName(file);
   const entry = (await statusEntries(cwd, file)).find(item => item.path === file);
@@ -138,40 +138,40 @@ async function entryOf(chatFolder, file) {
 }
 
 /** One changed file's diff against HEAD (an untracked file as all added lines), as plain text. */
-export async function fileDiff(chatFolder, file) {
-  const entry = await entryOf(chatFolder, file), { cwd } = entry, status = statusOf(entry.xy), head = await hasHead(cwd);
+export async function fileDiff(chatFolder: unknown, file: unknown) {
+  const entry = await entryOf(chatFolder, file), { cwd, path: name } = entry, status = statusOf(entry.xy), head = await hasHead(cwd);
   const diff = status === 'untracked'
-    ? await run(cwd, ['diff', ...SAFE_DIFF, '--no-index', '--', '/dev/null', file], { limit: DIFF_LIMIT * 2, okCodes: [0, 1] })
-    : await run(cwd, ['diff', ...SAFE_DIFF, '--no-renames', ...(head ? ['HEAD'] : ['--cached']), '--', file], { limit: DIFF_LIMIT * 2 });
+    ? await run(cwd, ['diff', ...SAFE_DIFF, '--no-index', '--', '/dev/null', name], { limit: DIFF_LIMIT * 2, okCodes: [0, 1] })
+    : await run(cwd, ['diff', ...SAFE_DIFF, '--no-renames', ...(head ? ['HEAD'] : ['--cached']), '--', name], { limit: DIFF_LIMIT * 2 });
   return { diff: diff.slice(0, DIFF_LIMIT), truncated: diff.length > DIFF_LIMIT, binary: /^Binary files .* differ$/m.test(diff) || /^GIT binary patch$/m.test(diff) };
 }
 
 /** Throws one changed file away: a committed file goes back to HEAD, a new one is removed. It cannot be undone, so the
  * window asks first. Only a name in the list of changes is accepted. */
-export async function discardFile(chatFolder, file) {
-  const entry = await entryOf(chatFolder, file), { cwd } = entry;
-  if (statusOf(entry.xy) === 'untracked') await run(cwd, ['clean', '-f', '-q', '--', file]);
-  else if ((await run(cwd, ['ls-tree', '--name-only', '-z', 'HEAD', '--', file]).catch(() => '')).split('\0').includes(file)) await run(cwd, ['checkout', 'HEAD', '--', file]);
-  else await run(cwd, ['rm', '-f', '-q', '--', file]);
-  return { discarded: file };
+export async function discardFile(chatFolder: unknown, file: unknown) {
+  const entry = await entryOf(chatFolder, file), { cwd, path: name } = entry;
+  if (statusOf(entry.xy) === 'untracked') await run(cwd, ['clean', '-f', '-q', '--', name]);
+  else if ((await run(cwd, ['ls-tree', '--name-only', '-z', 'HEAD', '--', name]).catch(() => '')).split('\0').includes(name)) await run(cwd, ['checkout', 'HEAD', '--', name]);
+  else await run(cwd, ['rm', '-f', '-q', '--', name]);
+  return { discarded: name };
 }
 
 /** The branch checked out in a folder, for the chat's branch chip; null outside a repository, on a detached HEAD, or
  * when the folder is gone. */
 /** The repository's loose ends, as the project board counts them (5 Nov, Masih: "in our dashboard ... give us those
  * numbers too"): uncommitted files, worktrees, branches not merged into HEAD (local and on the remote) and stashes. */
-export async function repositoryHealth(cwd) {
-  folder(cwd);
-  const lines = text => text.split('\n').filter(line => line.trim()).length;
-  const count = args => run(cwd, args).then(lines);
+export async function repositoryHealth(cwd: unknown) {
+  cwd = folder(cwd);
+  const lines = (text: string) => text.split('\n').filter(line => line.trim()).length;
+  const count = (args: string[]) => run(cwd, args).then(lines);
   const [uncommitted, worktrees, localUnmerged, remoteUnmerged, stashes, branch] = await Promise.all([
     count(['status', '--porcelain']), count(['worktree', 'list']), count(['branch', '--no-merged', 'HEAD']),
     count(['branch', '-r', '--no-merged', 'HEAD']), count(['stash', 'list']), run(cwd, ['branch', '--show-current']).then(text => text.trim() || null)]);
   return { branch, uncommitted, worktrees, unmerged: { local: localUnmerged, remote: remoteUnmerged }, stashes };
 }
 
-export async function currentBranch(cwd) {
-  folder(cwd);
+export async function currentBranch(cwd: unknown) {
+  cwd = folder(cwd);
   return { branch: await run(cwd, ['branch', '--show-current']).then(text => text.trim() || null, () => null) };
 }
 
@@ -181,23 +181,23 @@ export async function currentBranch(cwd) {
 // repository and branch it belongs to, so a removed one can be put back.
 const NO_COMMIT = 'A worktree needs a Git repository with a commit.';
 /** Where a chat worktree's folder says it belongs: { root, source, branch }, or null for any other folder. */
-function chatPlace(cwd) {
+function chatPlace(cwd: unknown) {
   const match = typeof cwd === 'string' && path.isAbsolute(cwd) ? path.normalize(cwd).replace(/\/+$/, '').match(CHAT_WORKTREE) : null;
   if (!match) return null;
-  const [, parent, repository, name] = match;
+  const [, parent, repository, name] = match as RegExpMatchArray & [string, string, string, string];
   return { root: path.join(parent, `${repository}-elpis`, 'chats', name), source: path.join(parent, repository), branch: `elpis/${name}` };
 }
 /** Whether a chat's folder is named like a chat worktree; a cheap check before any Git runs. */
-export const isChatWorktreePath = cwd => chatPlace(cwd) !== null;
-const isFolder = file => fs.stat(file).then(info => info.isDirectory(), () => false);
-const branchExists = (cwd, branch) => run(cwd, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`]).then(() => true, () => false);
-const absoluteGitPath = (cwd, which) => run(cwd, ['rev-parse', '--path-format=absolute', which]).then(text => text.trim(), () => null);
+export const isChatWorktreePath = (cwd: unknown) => chatPlace(cwd) !== null;
+const isFolder = (file: string) => fs.stat(file).then(info => info.isDirectory(), () => false);
+const branchExists = (cwd: string, branch: string) => run(cwd, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`]).then(() => true, () => false);
+const absoluteGitPath = (cwd: string, which: string) => run(cwd, ['rev-parse', '--path-format=absolute', which]).then(text => text.trim(), () => null);
 /** The empty `chats/` and `<repo>-elpis/` folders a removed worktree leaves; rmdir refuses any other. */
-async function removeEmptyParents(root) {
+async function removeEmptyParents(root: string) {
   for (const dir of [path.dirname(root), path.dirname(path.dirname(root))]) await fs.rmdir(dir).catch(() => {});
 }
 /** The chat worktree a folder lies in, only when Git agrees: a linked worktree of the repository its name points to. */
-async function chatWorktreeOf(cwd) {
+async function chatWorktreeOf(cwd: unknown) {
   const place = chatPlace(cwd);
   if (!place || await fs.realpath(place.root).catch(() => null) !== place.root) return null;
   const [top, common, own, sourceCommon] = await Promise.all([
@@ -209,18 +209,18 @@ async function chatWorktreeOf(cwd) {
 
 /** Makes a new chat's worktree for the project in `projectFolder`. The chat's folder keeps the project's place inside
  * the repository. The main checkout, its branch and its uncommitted work are not touched. */
-export async function createChatWorktree(projectFolder) {
-  folder(projectFolder);
-  const source = await repoRoot(projectFolder).then(root => fs.realpath(root), error => { throw error.status === 501 ? error : new BridgeError(NO_COMMIT, 409); });
+export async function createChatWorktree(projectFolder: unknown) {
+  const project = folder(projectFolder);
+  const source = await repoRoot(project).then(root => fs.realpath(root), error => { throw error.status === 501 ? error : new BridgeError(NO_COMMIT, 409); });
   if (!await hasHead(source)) throw new BridgeError(NO_COMMIT, 409);
-  const relative = path.relative(source, await fs.realpath(projectFolder)), home = path.join(path.dirname(source), `${path.basename(source)}-elpis`, 'chats');
+  const relative = path.relative(source, await fs.realpath(project)), home = path.join(path.dirname(source), `${path.basename(source)}-elpis`, 'chats');
   for (let attempt = 0; attempt < 8; attempt++) {
     const name = `chat-${randomBytes(3).toString('hex')}`, root = path.join(home, name), branch = `elpis/${name}`;
     if (await fs.lstat(root).then(() => true, () => false) || await branchExists(source, branch)) continue;
     try {
       await fs.mkdir(home, { recursive: true });
       await run(source, ['worktree', 'add', '-q', '--no-track', '-b', branch, root, 'HEAD']);
-    } catch (error) { await removeEmptyParents(root); throw new BridgeError(`Could not create the worktree: ${error.message.replace(/^Git could not read this folder: /, '')}`, 409); }
+    } catch (error) { await removeEmptyParents(root); throw new BridgeError(`Could not create the worktree: ${(error as Error).message.replace(/^Git could not read this folder: /, '')}`, 409); }
     const made = { root, cwd: path.join(root, relative), branch, source };
     if (!await isFolder(made.cwd)) { await undoChatWorktree(made); throw new BridgeError('The project\'s folder is not in the repository\'s last commit, so a worktree cannot hold it.', 409); }
     return made;
@@ -229,7 +229,7 @@ export async function createChatWorktree(projectFolder) {
 }
 
 /** Takes back a worktree made a moment ago for a chat that did not start: nothing in it is anyone's work yet. */
-export async function undoChatWorktree({ root, branch, source }) {
+export async function undoChatWorktree({ root, branch, source }: { root: string; branch: string; source: string }) {
   await run(source, ['worktree', 'remove', '--force', root]).catch(() => {});
   await run(source, ['branch', '-q', '-D', branch]).catch(() => {});
   await removeEmptyParents(root);
@@ -238,7 +238,7 @@ export async function undoChatWorktree({ root, branch, source }) {
 /** After its chat is archived or deleted: a chat worktree with nothing uncommitted is removed and its branch kept, so
  * committed work stays on it (Claude: "Committed work stays on its branch."). One with uncommitted changes is kept, and
  * the answer says where. Null, and nothing touched, for any folder that is not a chat worktree. */
-export async function releaseChatWorktree(cwd) {
+export async function releaseChatWorktree(cwd: unknown) {
   const place = await chatWorktreeOf(cwd);
   if (!place) return null;
   const { root, source } = place, branch = (await run(root, ['branch', '--show-current']).catch(() => '')).trim() || place.branch;
@@ -252,7 +252,7 @@ export async function releaseChatWorktree(cwd) {
 
 /** When an archived chat comes back: its removed worktree is put back on its branch. Null when the folder is still there,
  * the branch is gone, or the folder is not a chat worktree's. */
-export async function restoreChatWorktree(cwd) {
+export async function restoreChatWorktree(cwd: unknown) {
   const place = chatPlace(cwd);
   if (!place || await fs.lstat(place.root).then(() => true, () => false)) return null;
   if (await fs.realpath(place.source).catch(() => null) !== place.source || (await run(place.source, ['rev-parse', '--show-toplevel']).catch(() => '')).trim() !== place.source) return null;

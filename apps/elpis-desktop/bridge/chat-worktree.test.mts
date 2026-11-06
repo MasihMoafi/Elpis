@@ -2,7 +2,7 @@
 // the repository (the agents canvas's place, `<repo>-elpis/`), starts the chat there on a new `elpis/` branch, names the
 // branch on request, and on archive or delete removes the worktree only when it holds nothing uncommitted.
 // Real throwaway repositories under the system temp folder; the engine is a scripted socket. No provider, no model.
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { execFileSync } from 'node:child_process';
@@ -10,17 +10,17 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { DesktopClient } from './client.mts';
-import { currentBranch, createChatWorktree, releaseChatWorktree, restoreChatWorktree } from './git.mjs';
+import { currentBranch, createChatWorktree, releaseChatWorktree, restoreChatWorktree } from './git.mts';
 import { startDesktopServer } from './server.mts';
 
-const git = (cwd, ...args) => execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', '-c', 'commit.gpgsign=false', ...args], { cwd, encoding: 'utf8', env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' } }).trim();
-const write = (dir, name, text) => fs.mkdir(path.dirname(path.join(dir, name)), { recursive: true }).then(() => fs.writeFile(path.join(dir, name), text));
-const exists = file => fs.access(file).then(() => true, () => false);
-const hasBranch = (repo, branch) => { try { git(repo, 'show-ref', '--verify', '--quiet', `refs/heads/${branch}`); return true; } catch { return false; } };
+const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', '-c', 'commit.gpgsign=false', ...args], { cwd, encoding: 'utf8', env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' } }).trim();
+const write = (dir: string, name: string, text: string) => fs.mkdir(path.dirname(path.join(dir, name)), { recursive: true }).then(() => fs.writeFile(path.join(dir, name), text));
+const exists = (file: string) => fs.access(file).then(() => true, () => false);
+const hasBranch = (repo: string, branch: string) => { try { git(repo, 'show-ref', '--verify', '--quiet', `refs/heads/${branch}`); return true; } catch { return false; } };
 
 /** A parent folder holding `repo` (one commit on main: keep.txt and src/app.js) with an uncommitted edit, so the
  * worktree's sibling folder lands in the same throwaway parent. */
-async function project(t) {
+async function project(t: TestContext) {
   const parent = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-chat-wt-'))), repo = path.join(parent, 'repo');
   t.after(() => fs.rm(parent, { recursive: true, force: true }));
   await fs.mkdir(repo); git(repo, 'init', '-q', '-b', 'main');
@@ -106,11 +106,11 @@ test('currentBranch names the branch checked out in a folder, and null where the
 const CHAT = '00000000-0000-0000-0000-0000000000c1', OTHER = '00000000-0000-0000-0000-0000000000c2';
 /** The engine as a scripted socket: thread/start records the cwd it is given; `failStart` makes it refuse. */
 function engine({ failStart = false } = {}) {
-  const threads = new Map(), socket = new EventEmitter(); socket.sent = [];
+  const threads = new Map<string, { id: string; cwd: string; status: { type: string }; source?: string; archived?: boolean; parentThreadId?: string }>(), socket = new EventEmitter() as EventEmitter & { sent: { id?: number; method?: string; params: Record<string, string> }[]; send: (raw: string) => void; close: () => void }; socket.sent = [];
   socket.send = raw => {
     const request = JSON.parse(raw); socket.sent.push(request);
     if (request.id === undefined || !request.method) return;
-    const reply = value => queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, ...value })));
+    const reply = (value: object) => queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, ...value })));
     const p = request.params;
     switch (request.method) {
       case 'initialize': return reply({ result: {} });
@@ -121,15 +121,15 @@ function engine({ failStart = false } = {}) {
       }
       case 'thread/read': return reply({ result: { thread: structuredClone(threads.get(p.threadId)) } });
       case 'thread/list': return reply({ result: { data: [...threads.values()].filter(thread => !!thread.archived === !!p.archived && (!p.cwd || thread.cwd === p.cwd) && (!p.ancestorThreadId || thread.parentThreadId === p.ancestorThreadId)), nextCursor: null } });
-      case 'thread/archive': threads.get(p.threadId).archived = true; return reply({ result: {} });
-      case 'thread/unarchive': delete threads.get(p.threadId).archived; return reply({ result: { thread: structuredClone(threads.get(p.threadId)) } });
-      case 'thread/delete': threads.delete(p.threadId); return reply({ result: {} });
+      case 'thread/archive': threads.get(p.threadId!)!.archived = true; return reply({ result: {} });
+      case 'thread/unarchive': delete threads.get(p.threadId!)!.archived; return reply({ result: { thread: structuredClone(threads.get(p.threadId)) } });
+      case 'thread/delete': threads.delete(p.threadId!); return reply({ result: {} });
       default: return reply({ error: { code: -32601, message: `Unexpected protocol method ${request.method}` } });
     }
   };
   socket.close = () => socket.emit('close');
   const client = new DesktopClient(socket);
-  return { client, socket, threads, started: () => socket.sent.findLast(row => row.method === 'thread/start')?.params };
+  return { client, socket, threads, started: () => socket.sent.findLast(row => row.method === 'thread/start')?.params as { cwd: string } };
 }
 
 test('a new chat asked to work in a worktree starts there, and says its branch', async t => {
@@ -192,9 +192,9 @@ test('the window reaches it: POST /api/threads takes worktree, GET /api/threads/
   const app = await startDesktopServer({ client, staticDir: repo }); t.after(() => app.close());
   const url = new URL(app.url), origin = url.origin, token = new URLSearchParams(url.hash.slice(1)).get('token');
   const auth = await fetch(origin + '/api/session', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin }, body: JSON.stringify({ token }) });
-  const headers = { Cookie: auth.headers.get('set-cookie').split(';')[0], 'Content-Type': 'application/json', Origin: origin };
+  const headers = { Cookie: auth.headers.get('set-cookie')!.split(';')[0]!, 'Content-Type': 'application/json', Origin: origin };
   const created = await fetch(origin + '/api/threads', { method: 'POST', headers, body: JSON.stringify({ cwd: repo, worktree: true }) });
-  assert.equal(created.status, 201); const { worktree } = await created.json();
+  assert.equal(created.status, 201); const { worktree } = await created.json() as { worktree: { branch: string } };
   const branch = await fetch(`${origin}/api/threads/${CHAT}/git?view=branch`, { headers });
   assert.equal(branch.status, 200); assert.deepEqual(await branch.json(), { branch: worktree.branch });
 });

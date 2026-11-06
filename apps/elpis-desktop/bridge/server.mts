@@ -21,7 +21,7 @@ import { createLoveAgents } from './love-agents.mjs';
 import { createDevServers } from './dev-servers.mts';
 import { createImprovements } from './improve.mts';
 import { createSettingsFiles } from './settings-files.mts';
-import { createThreadTitles } from './thread-titles.mjs';
+import { createThreadTitles } from './thread-titles.mts';
 import { COOKIE, ERROR_AREAS, applyFrameHeaders, applySecurityHeaders, body, json, requestDiagnostics, same, sendRequestError, serveStaticAsset } from './server-http.mts';
 import { handleLoveSpotRoutes } from './server-love-spot.mts';
 import { handleVoiceRoutes } from './server-voice.mts';

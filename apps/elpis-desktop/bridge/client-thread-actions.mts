@@ -1,6 +1,6 @@
 import { BridgeError, object, text, threadId } from './validate.mts';
 import { MOTHER_MODEL } from './workflow-presets.mts';
-import { createChatWorktree, isChatWorktreePath, releaseChatWorktree, restoreChatWorktree, undoChatWorktree } from './git.mjs';
+import { createChatWorktree, isChatWorktreePath, releaseChatWorktree, restoreChatWorktree, undoChatWorktree } from './git.mts';
 import { defaultPermissionMode } from './elpis-features.mjs';
 import { isAgentRun } from '../lib/agent-runs.mts';
 import path from 'node:path';
@@ -67,7 +67,7 @@ async function internal_defaultPermissions(this: DesktopClient, clientState: Cli
   }
 
 /** After a chat is archived or deleted: its worktree, when it has one that no open chat still works in, is removed if
-   * nothing in it is uncommitted, and kept otherwise (bridge/git.mjs releaseChatWorktree). */
+   * nothing in it is uncommitted, and kept otherwise (bridge/git.mts releaseChatWorktree). */
 async function internal_releaseWorktree(this: DesktopClient, clientState: ClientState, cwd: unknown) {
     if (!isChatWorktreePath(cwd)) return null;
     const inUse = await internal_rpc(this, clientState, 'thread/list', { cwd, limit: 1, modelProviders: [], sourceKinds: SOURCE_KINDS }).then(result => result.data?.length > 0, () => true);

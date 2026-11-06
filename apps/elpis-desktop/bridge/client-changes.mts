@@ -1,5 +1,5 @@
 import { BridgeError, object, threadId } from './validate.mts';
-import { NOT_A_REPOSITORY, changedFiles, currentBranch, discardFile, fileDiff, repositoryHealth, reviewChoices, workingDiff } from './git.mjs';
+import { NOT_A_REPOSITORY, changedFiles, currentBranch, discardFile, fileDiff, repositoryHealth, reviewChoices, workingDiff } from './git.mts';
 import { recordedChanges } from './recorded-changes.mts';
 
 import { internal_attach, internal_itemsPage } from './client-thread-list.mts';

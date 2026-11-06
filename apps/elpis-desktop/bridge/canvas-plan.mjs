@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { BridgeError, object, text } from './client.mts';
-import { askBackground } from './side-turn.mjs';
+import { askBackground } from './side-turn.mts';
 import { workflowModelRoutes, MOTHER_ROUTE, MOTHER_FALLBACK } from './workflow-models.mts';
 
 /** "Elpis handle it" on the agents canvas (POST /api/canvas/plan): the Mother agent first decides whether the goal is

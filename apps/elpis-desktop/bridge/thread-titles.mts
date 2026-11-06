@@ -1,5 +1,9 @@
 import { isAgentRun, agentParentId } from '../lib/agent-runs.mts';
-import { askBackground } from './side-turn.mjs';
+import { askBackground } from './side-turn.mts';
+import type { DesktopClient } from './client.mts';
+
+type TitleEvent = { method?: string; params?: { threadId?: unknown; item?: { type?: string; content?: { type?: string; text?: string }[] }; [key: string]: unknown } };
+
 
 // A chat is named when it starts, as the Elpis TUI names it (codex-rs/tui/src/app/thread_title.rs and the trigger in
 // tui/src/app/thread_routing.rs): its first user message, in a hidden read-only side turn, saved only while it has no name.
@@ -18,9 +22,9 @@ const NO_TOOLS = Object.fromEntries(['features.apps', 'features.code_mode', 'fea
   'skills.include_instructions', 'tools.experimental_request_user_input.enabled', 'tools.update_plan.enabled'].map(key => [key, false]));
 
 /** The request part of a message an IDE wrapped in context (tui/src/ide_context/prompt.rs). */
-const request = text => { const at = text.lastIndexOf(PROMPT_REQUEST_BEGIN); return at < 0 ? text : text.slice(at + PROMPT_REQUEST_BEGIN.length).trim(); };
+const request = (text: string) => { const at = text.lastIndexOf(PROMPT_REQUEST_BEGIN); return at < 0 ? text : text.slice(at + PROMPT_REQUEST_BEGIN.length).trim(); };
 /** The instructions and the user's message, cut to 960 bytes without splitting a character. */
-export function titlePrompt(userMessage) {
+export function titlePrompt(userMessage: string) {
   const prefix = `${TITLE_INSTRUCTIONS}\n\nUser prompt:\n`;
   let room = PROMPT_MAX_BYTES - Buffer.byteLength(prefix), kept = '';
   for (const character of userMessage.trim()) {
@@ -31,7 +35,7 @@ export function titlePrompt(userMessage) {
   return `${prefix}${kept}`;
 }
 /** The model's {title}, unquoted, on one line, without trailing punctuation, at most 36 characters; else null. */
-function parseTitle(response) {
+function parseTitle(response: string) {
   if (!response.trimStart().startsWith('{')) return null;
   let answer;
   try { answer = JSON.parse(response); } catch { return null; }
@@ -41,14 +45,14 @@ function parseTitle(response) {
 }
 
 /** Follows the engine's events (`event`), and names a chat Masih started when its first message arrives. */
-export function createThreadTitles(client) {
-  const pending = new Map();
-  async function generate(id, message, ticket) {
+export function createThreadTitles(client: DesktopClient) {
+  const pending = new Map<string, { cancelled: boolean }>();
+  async function generate(id: string, message: string, ticket: { cancelled: boolean }) {
     const chat = await client.readThreadMetadata(id);
-    if (chat.name?.trim() || isAgentRun(chat) || agentParentId(chat)) return;
+    if (chat.name?.trim() || isAgentRun(chat) || agentParentId(chat as Parameters<typeof agentParentId>[0])) return;
     const catalog = await client.models().catch(() => ({ data: [] }));
     const luna = catalog.data?.some(model => model.model === TITLE_MODEL);
-    const servers = await client.sideRpc('config/read', { includeLayers: false, ...(chat.cwd ? { cwd: chat.cwd } : {}) }).then(read => read?.config?.mcp_servers ?? {}, () => null);
+    const servers = await client.sideRpc('config/read', { includeLayers: false, ...(chat.cwd ? { cwd: chat.cwd } : {}) }).then(read => (read as { config?: { mcp_servers?: Record<string, unknown> } } | null)?.config?.mcp_servers ?? {}, () => null);
     if (servers === null) return; // as the TUI, fail closed when the MCP servers to switch off are unknown
     const answer = await askBackground(client, { prompt: titlePrompt(message), schema: TITLE_SCHEMA, cwd: chat.cwd, permissions: ':read-only',
       model: luna ? { model: TITLE_MODEL, provider: 'openai' } : { model: chat.model, provider: chat.modelProvider },
@@ -62,7 +66,7 @@ export function createThreadTitles(client) {
   }
   return {
     /** Returns the title work it started, if any, so a caller may wait for it. */
-    event({ method, params } = {}) {
+    event({ method, params }: TitleEvent = {}) {
       const id = params?.threadId;
       if (typeof id !== 'string') return;
       if (method === 'thread/name/updated') {
@@ -70,8 +74,8 @@ export function createThreadTitles(client) {
         if (ticket) { ticket.cancelled = true; pending.delete(id); }
         return;
       }
-      if (method !== 'item/completed' || params.item?.type !== 'userMessage' || pending.has(id)) return;
-      const message = (params.item.content ?? []).filter(part => part?.type === 'text' && typeof part.text === 'string').map(part => request(part.text)).join(' ');
+      if (method !== 'item/completed' || params?.item?.type !== 'userMessage' || pending.has(id)) return;
+      const message = (params?.item?.content ?? []).filter(part => part?.type === 'text' && typeof part.text === 'string').map(part => request(part.text!)).join(' ');
       if (!message.trim()) return;
       const ticket = { cancelled: false };
       pending.set(id, ticket);

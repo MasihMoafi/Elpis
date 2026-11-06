@@ -1,6 +1,6 @@
 /** A chat in its own Git worktree, as in Claude's desktop app ("Start with worktree"). The bridge makes it beside the
  * repository, where the agents canvas puts its worktrees: `<repo>-elpis/chats/chat-<6 hex>`, on the branch
- * `elpis/chat-<6 hex>` (bridge/git.mjs createChatWorktree). Plain functions with no imports, so the bridge and node
+ * `elpis/chat-<6 hex>` (bridge/git.mts createChatWorktree). Plain functions with no imports, so the bridge and node
  * tests load them. */
 
 /** A chat worktree's folder: [parent of the repository, repository name, worktree name, the chat's sub-folder]. */

@@ -1,17 +1,17 @@
-// The review surface's Git reads and its one write (bridge/git.mjs): a real throwaway repository, no engine, no provider.
+// The review surface's Git reads and its one write (bridge/git.mts): a real throwaway repository, no engine, no provider.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { changedFiles, discardFile, fileDiff, isRepository, repositoryHealth } from './git.mjs';
+import { changedFiles, discardFile, fileDiff, isRepository, repositoryHealth } from './git.mts';
 import { startDesktopServer } from './server.mts';
 
-const git = (cwd, ...args) => execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', '-c', 'commit.gpgsign=false', ...args], { cwd, encoding: 'utf8', env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' } });
-const write = (dir, name, text) => fs.mkdir(path.dirname(path.join(dir, name)), { recursive: true }).then(() => fs.writeFile(path.join(dir, name), text));
-const read = (dir, name) => fs.readFile(path.join(dir, name), 'utf8');
-const exists = (dir, name) => fs.access(path.join(dir, name)).then(() => true, () => false);
+const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', '-c', 'commit.gpgsign=false', ...args], { cwd, encoding: 'utf8', env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' } });
+const write = (dir: string, name: string, text: string) => fs.mkdir(path.dirname(path.join(dir, name)), { recursive: true }).then(() => fs.writeFile(path.join(dir, name), text));
+const read = (dir: string, name: string) => fs.readFile(path.join(dir, name), 'utf8');
+const exists = (dir: string, name: string) => fs.access(path.join(dir, name)).then(() => true, () => false);
 
 /** A repository with one commit holding keep.txt, gone.txt and src/app.js, then the working tree edited in every way a chat does. */
 async function repository() {
@@ -119,10 +119,10 @@ test('untracked files count their lines like Git: a last line without a newline 
     git(dir, 'init', '-q', '-b', 'main'); await write(dir, 'base.txt', 'b\n'); git(dir, 'add', '.'); git(dir, 'commit', '-q', '-m', 'first');
     await write(dir, 'no-newline.txt', 'a\nb'); await write(dir, 'empty.txt', ''); await write(dir, 'blank-lines.txt', '\n\n\n'); await fs.symlink('base.txt', path.join(dir, 'link.txt'));
     await write(dir, 'big.txt', 'line\n'.repeat(300_000));
-    const found = Object.fromEntries((await changedFiles(dir)).files.map(file => [file.path, [file.added, file.removed, file.binary]]));
+    const found: Record<string, (number | boolean)[]> = Object.fromEntries((await changedFiles(dir)).files.map(file => [file.path, [file.added, file.removed, file.binary]]));
     assert.deepEqual(found, { 'big.txt': [300000, 0, false], 'blank-lines.txt': [3, 0, false], 'empty.txt': [0, 0, false], 'link.txt': [1, 0, false], 'no-newline.txt': [2, 0, false] });
-    const gitCount = name => { try { return git(dir, 'diff', '--no-index', '--numstat', '--', '/dev/null', name); } catch (error) { return String(error.stdout); } };  // exit 1: the files differ
-    for (const name of Object.keys(found)) assert.equal(gitCount(name).split('\t')[0] || '0', String(found[name][0]), `${name}: the same count as Git's`);
+    const gitCount = (name: string) => { try { return git(dir, 'diff', '--no-index', '--numstat', '--', '/dev/null', name); } catch (error) { return String((error as { stdout: unknown }).stdout); } };  // exit 1: the files differ
+    for (const name of (Object.keys(found) as (keyof typeof found)[])) assert.equal(gitCount(name).split('\t')[0] || '0', String(found[name]![0]), `${name}: the same count as Git's`);
   } finally { await fs.rm(dir, { recursive: true, force: true }); }
 });
 
@@ -144,11 +144,11 @@ test('GET /api/repository answers { repository } for a project folder, and a 400
   const client = { on() {}, off() {}, close() {}, connected: true, pendingApprovals: [], ragEnvironment: async () => ({}) };
   const app = await startDesktopServer({ client, staticDir: plain }); t.after(() => app.close());
   const url = new URL(app.url), origin = url.origin, token = new URLSearchParams(url.hash.slice(1)).get('token');
-  const query = cwd => `/api/repository?cwd=${encodeURIComponent(cwd)}`;
+  const query = (cwd: string) => `/api/repository?cwd=${encodeURIComponent(cwd)}`;
   assert.equal((await fetch(origin + query(dir))).status, 401);
   const auth = await fetch(origin + '/api/session', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin }, body: JSON.stringify({ token }) });
-  const cookie = auth.headers.get('set-cookie').split(';')[0], get = pathname => fetch(origin + pathname, { headers: { Cookie: cookie } });
-  for (const [folder, repository] of [[dir, true], [plain, false]]) { const answer = await get(query(folder)); assert.equal(answer.status, 200); assert.deepEqual(await answer.json(), { repository }); }
+  const cookie = auth.headers.get('set-cookie')!.split(';')[0]!, get = (pathname: string) => fetch(origin + pathname, { headers: { Cookie: cookie } });
+  for (const [folder, repository] of [[dir, true], [plain, false]] as const) { const answer = await get(query(folder)); assert.equal(answer.status, 200); assert.deepEqual(await answer.json(), { repository }); }
   for (const pathname of ['/api/repository', '/api/repository?cwd=', query('relative'), query(path.join(plain, 'nope')), `${query(dir)}&cwd=${encodeURIComponent(dir)}`, `${query(dir)}&extra=1`]) assert.equal((await get(pathname)).status, 400, pathname);
 });
 

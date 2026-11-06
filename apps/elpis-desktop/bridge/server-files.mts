@@ -4,7 +4,7 @@ import { ATTACHMENT_BODY_LIMIT, PDF_BODY_LIMIT, extractPdf } from './attachments
 import { devServerRequest } from './dev-servers.mts';
 import { listDirectory, listFiles, readFile, readFileAsset, searchFiles, writeFile } from './files.mts';
 import { listFolders, projectDirectory } from './folders.mts';
-import { isRepository } from './git.mjs';
+import { isRepository } from './git.mts';
 import { dismissPersonalTip, openPersonal, personalStatus } from './personal.mts';
 import { body, cwdOf, json } from './server-http.mts';
 
