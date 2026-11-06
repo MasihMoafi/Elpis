@@ -16,14 +16,16 @@ function runs(actions: MenuAction[]) {
   const out: MenuAction[][] = [];
   for (const action of actions) {
     const last = out.at(-1);
-    if (action.checked !== undefined && last?.[0].checked !== undefined && !action.separated) last.push(action); else out.push([action]);
+    if (action.checked !== undefined && last?.[0]?.checked !== undefined && !action.separated) last.push(action); else out.push([action]);
   }
   return out;
 }
 
 function ActionItems({ actions }: { actions: MenuAction[] }) {
   return <>{runs(actions).map(run => {
-    const [first] = run, line = first.separated ? <DropdownMenuSeparator /> : null;
+    const [first] = run;
+    if (!first) return null;
+    const line = first.separated ? <DropdownMenuSeparator /> : null;
     if (first.checked !== undefined) return <DropdownMenuRadioGroup key={first.id} value={run.find(action => action.checked)?.id ?? null} onValueChange={id => run.find(action => action.id === id)?.run()}>
       {line}{run.map(action => <DropdownMenuRadioItem key={action.id} value={action.id} closeOnClick>{action.icon}{action.label}</DropdownMenuRadioItem>)}
     </DropdownMenuRadioGroup>;

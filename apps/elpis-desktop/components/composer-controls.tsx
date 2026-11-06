@@ -13,7 +13,8 @@ export type PermissionMode = "ask" | "auto" | "full" | "bypass";
 
 /** ChatGPT's three approval modes plus Elpis's Bypass permissions; the bridge maps each to Elpis
  * approval and sandbox settings. */
-export const PERMISSION_MODES: { id: PermissionMode; label: string; /** What the button says when room is short. */ short: string; description: string; Icon: ElementType }[] = [
+type PermissionChoice = { id: PermissionMode; label: string; /** What the button says when room is short. */ short: string; description: string; Icon: ElementType };
+export const PERMISSION_MODES: [PermissionChoice, ...PermissionChoice[]] = [
   { id: "ask", label: "Ask for approval", short: "Ask", description: "Always ask to edit files outside the workspace and to use the internet", Icon: AskIcon },
   { id: "auto", label: "Approve for me", short: "Auto", description: "Only ask for actions a reviewer judges potentially unsafe", Icon: AutoApproveIcon },
   { id: "full", label: "Full access", short: "Full", description: "Unrestricted access to the internet and any file on this computer", Icon: FullAccessIcon },
@@ -72,7 +73,7 @@ export function PlusMenu({ disabled, attachDisabled, slashDisabled, plan, return
   useEffect(() => {
     const composer = returnFocus.current?.closest(".composer");
     if (!composer) return;
-    const observer = new ResizeObserver(entries => setCompact(entries[0].contentRect.width <= 640));
+    const observer = new ResizeObserver(entries => { const entry = entries[0]; if (entry) setCompact(entry.contentRect.width <= 640); });
     observer.observe(composer);
     return () => observer.disconnect();
   }, [returnFocus]);
@@ -84,9 +85,9 @@ export function PlusMenu({ disabled, attachDisabled, slashDisabled, plan, return
     <DropdownMenuTrigger render={<Button type="button" variant="ghost" size="icon-sm" className="composer-plus" aria-label="Add files and more" title="Add files and more" disabled={disabled} />}><PlusIcon size={16} /></DropdownMenuTrigger>
     <DropdownMenuContent align="start" className="hud-menu w-80" finalFocus={returnFocus}>
       <p className="hud-menu-title">Add</p>
-      {item(AttachIcon, "Add files or photos", "Pictures, PDFs and text", { disabled: attachDisabled, onClick: onAttach })}
+      {item(AttachIcon, "Add files or photos", "Pictures, PDFs and text", { disabled: Boolean(attachDisabled), onClick: onAttach })}
       {item(AtSign, "Mention", "A file in this project or another chat", { onClick: () => { afterClose.current = onMention; } })}
-      {item(SquareSlash, "Slash commands", slashDisabled ? "Clear the message box first" : "Run a command such as /model or /review", { disabled: slashDisabled, onClick: () => { afterClose.current = onSlash; } })}
+      {item(SquareSlash, "Slash commands", slashDisabled ? "Clear the message box first" : "Run a command such as /model or /review", { disabled: Boolean(slashDisabled), onClick: () => { afterClose.current = onSlash; } })}
       {item(PlanIcon, "Plan mode", plan ? "Turn plan mode off" : "Turn plan mode on", { onClick: () => onPlan(!plan) }, plan)}
       {item(TerminalIcon, "Run as a shell command", "Run a command directly in this project's shell", { onClick: () => { afterClose.current = onShell; } })}
       {compact && fast && item(Zap, "Fast mode", fast.unavailable ?? (fast.on ? "Fast is on" : "Fast is off"), { disabled: fast.disabled, onClick: fast.onChange }, fast.on)}

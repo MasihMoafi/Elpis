@@ -14,7 +14,7 @@ export function WorkflowSources({ id, onBack }: { id: string; onBack: () => void
     <Button variant="ghost" size="sm" onClick={onBack}>Back to patterns</Button>
     <h2>{pattern.name}</h2>
     <p className={styles.muted}>{pattern.status} · Elpis graph unproven</p>
-    {pattern.sources.map(id => { const source = papers[id]; return <article key={id}>
+    {pattern.sources.map(id => { const source = papers[id]; if (!source) return null; return <article key={id}>
       <h3><a href={source.url} target="_blank" rel="noreferrer">{source.title}</a></h3>
       <p className={styles.muted}>{source.year} · {source.venue}</p>
       <p>{source.finding}</p>
@@ -23,7 +23,7 @@ export function WorkflowSources({ id, onBack }: { id: string; onBack: () => void
     </article>; })}
     <section><h3>What is proven</h3><p>{pattern.proven}</p></section>
     <section><h3>What is not</h3><p>{pattern.unproven}</p></section>
-    {pattern.origins.length > 0 && <section><h3>Starter inspiration</h3>{pattern.origins.map(id => <p key={id}><a href={origins[id].url} target="_blank" rel="noreferrer">{origins[id].title}</a></p>)}<p className={styles.muted}>Implementation guidance, separate from the paper results above.</p></section>}
+    {pattern.origins.length > 0 && <section><h3>Starter inspiration</h3>{pattern.origins.map(id => { const origin = origins[id]; return origin ? <p key={id}><a href={origin.url} target="_blank" rel="noreferrer">{origin.title}</a></p> : null; })}<p className={styles.muted}>Implementation guidance, separate from the paper results above.</p></section>}
     <p className={styles.muted}>Reviewed {data.reviewed}. A published result applies to the paper&rsquo;s model, task and method.</p>
   </aside>;
 }
