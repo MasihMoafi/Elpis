@@ -915,7 +915,6 @@
   "desktop/terminal.test.cjs:TS7006": 32,
   "desktop/terminal.test.cjs:TS7019": 5,
   "desktop/terminal.test.cjs:TS7034": 7,
-  "lib/approvals.ts:TS2322": 1,
   "scripts/changed-tests.mjs:TS2339": 4,
   "scripts/changed-tests.mjs:TS7006": 1,
   "scripts/changed-tests.mjs:TS7019": 1,
