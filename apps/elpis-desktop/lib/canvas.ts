@@ -20,7 +20,7 @@ export type NoteData = { text: string };
 type Position = { x: number; y: number };
 /** `isoPosition` pins a manually placed pedestal in projected ground units until Arrange is used. */
 export type CanvasNode = ({ id: string; type: "agent"; position: Position; data: AgentData } | { id: string; type: "note"; position: Position; data: NoteData }
-  | { id: typeof MOTHER; type: "mother"; position: Position; data: Record<string, never> }) & { isoPosition?: Position };
+  | { id: typeof MOTHER; type: "mother"; position: Position; data: Record<string, never> }) & { isoPosition?: Position | undefined };
 /** A wire: by default the target waits for the source (directional); `alongside` (undirectional) means the two work
  * at the same time, each told about the other and kept out of its folders, with no order between them. */
 export type CanvasEdge = { id: string; source: string; target: string; kind?: "alongside" | undefined; label?: string; feedback?: boolean | undefined };
@@ -113,9 +113,9 @@ export const graphOf = (name: string, nodes: CanvasNode[], edges: CanvasEdge[]) 
     return { ...node, data: { ...node.data, title } };
   }), edges }));
 };
-export const chain = (...steps: CanvasNode[]) => steps.slice(1).map((step, index) => wire(steps[index], step));
+export const chain = (...steps: CanvasNode[]) => steps.slice(1).flatMap((step, index) => { const previous = steps[index]; return previous ? [wire(previous, step)] : []; });
 const fan = (from: CanvasNode[], to: CanvasNode[]) => from.flatMap(source => to.map(target => wire(source, target)));
-export const TEMPLATES: Template[] = [
+export const TEMPLATES: [Template, ...Template[]] = [
   // The default: split by parts, as Anthropic advises (context isolation and parallelism, not roles).
   { id: "split-parts", name: "Split by parts", group: "Patterns", source: "Anthropic, Building multi-agent systems", description: "Each agent owns one independent part end to end: plans, builds and tests it in its own context. A last agent joins the parts.", build: () => {
     const parts = [1, 2, 3].map(index => agent(`Part ${index}`, `Own part ${index} end to end: plan it, build it and run its tests.`));
@@ -227,7 +227,7 @@ export function arrange(graph: CanvasGraph): CanvasGraph {
 export const nameFrom = (task: string) => task.length <= 48 ? task : `${task.slice(0, 48).replace(/\s+\S*$/, "")}…`;
 /** A new agent keeps its invented name when its prompt supplies the descriptive part. Manual names stay manual. */
 export function promptName(data: AgentData, instruction: string) {
-  const [name, role] = data.title.split(" · ");
+  const [name = "", role] = data.title.split(" · ");
   return AGENT_NAMES.includes(name.replace(/ \d+$/, "")) && (!role || role === nameFrom(data.instruction))
     ? `${name}${instruction.trim() ? ` · ${nameFrom(instruction)}` : ""}` : data.title;
 }
@@ -280,7 +280,7 @@ export function parseCommand(text: string, catalog: CatalogModel[]): Command {
       const narrower = matches.filter(item => named(item).includes(word));
       if (narrower.length) { matches = narrower; named_ = true; } else command.unknown.push(word);
     }
-    command.model = named_ ? matches[0] : null;
+    command.model = named_ ? matches[0] ?? null : null;
     if (provider && !pool.length) command.unknown.push(`@${provider}`);
   }
   // Without a colon, a first line that isn't all command words is a prompt: the whole text is prompts.
@@ -430,8 +430,9 @@ export function applyPlan(graph: CanvasGraph, plan: Plan): CanvasGraph {
   let below = Math.max(...reused.map(node => node.position.y));
   const positioned = agents.map((node, index) => {
     if (placed.has(node.id)) return node;
-    const from = plan.agents[index].waitsFor.flatMap(key => { const at = placed.get(ids.get(key) ?? ""); return at ? [at] : []; });
-    const position = from.length ? { x: Math.max(...from.map(at => at.x)) + COLUMN, y: from[0].y + ROW / 2 } : { x: left, y: (below += ROW) };
+    const from = (plan.agents[index]?.waitsFor ?? []).flatMap(key => { const at = placed.get(ids.get(key) ?? ""); return at ? [at] : []; });
+    const first = from[0];
+    const position = first ? { x: Math.max(...from.map(at => at.x)) + COLUMN, y: first.y + ROW / 2 } : { x: left, y: (below += ROW) };
     placed.set(node.id, position);
     return { ...node, position };
   });
@@ -466,7 +467,8 @@ export function applyPattern(graph: CanvasGraph, number: number): CanvasGraph {
   const sequential = () => chain(...agents);
   const edges = number === 3 ? graph.edges.filter(edge => !edge.feedback) : number === 2 ? []
     : number === 5 ? fan(agents.slice(0, -1), agents.slice(-1)) : sequential();
-  if (number === 4 && agents.length) edges.push({ ...wire(agents.at(-1)!, agents[0]), feedback: true, label: "Next round" });
+  const first = agents[0], last = agents.at(-1);
+  if (number === 4 && first && last) edges.push({ ...wire(last, first), feedback: true, label: "Next round" });
   return arrange({ ...graph, edges, template: ["sequential", "parallel", "kahn", "recursive", "voting"][number - 1],
     roundLimit: number === 4 ? graph.roundLimit ?? 3 : undefined });
 }
@@ -569,7 +571,7 @@ export function translationTeam(folder: string, parts: TextPart[], worker: Parti
   const terms = agent("Glossary", [`Read in full: ${files.map(at).join(", ")}. Open no other file or folder.`,
     `In your own folder, write glossary.md: every person's name, place, title and recurring term, one per line as English → ${into}, in the spellings ${into} readers know. Answer with the path of glossary.md.`].join("\n"),
     { ...worker, acceptanceCriteria: ["glossary.md lists every name and recurring term", `Each ${into} spelling is the one ${into} readers know`] });
-  const translators = parts.map(part => agent(`${files.length > 1 ? `${part.file} ` : ""}${lines(part)[0].toUpperCase()}${lines(part).slice(1)}`, "",
+  const translators = parts.map(part => agent(`${files.length > 1 ? `${part.file} ` : ""}${lines(part).charAt(0).toUpperCase()}${lines(part).slice(1)}`, "",
     { ...worker, acceptanceCriteria: [`part.md translates every sentence of ${lines(part)} of ${part.file} into ${into}, adding nothing`, ...(farsi ? ["Its verbs are spoken Farsi («میرم», not «می‌روم»)"] : []), "Names and terms follow glossary.md"] }));
   const join = agent("Join the parts", "", { writeScopes: [folder], acceptanceCriteria: [`${output} holds every part in order`] });
   const team = graphOf(`Translate to ${into}`, [terms, ...translators, join], [...fan([terms], translators), ...fan(translators, [join])]), own = ownFolders(team);
@@ -579,8 +581,8 @@ export function translationTeam(folder: string, parts: TextPart[], worker: Parti
     `Write the ${into} in your own folder as part.md, and nothing else in it. Answer with the path of part.md.`].join("\n");
   // Every folder is known before the run, so each agent is told its own and the join is told the parts' exact paths.
   const done = new Map<string, Partial<AgentData>>([[terms.id, { writeScopes: [own.get(terms.id)!] }],
-    ...translators.map((item, index): [string, Partial<AgentData>] => [item.id, { writeScopes: [own.get(item.id)!], instruction: instruction(parts[index]),
-      check: `Read part.md beside ${lines(parts[index])} of ${at(parts[index].file)}, sentence by sentence. Run no scripts. Quote any sentence left out, added${farsi ? " or written in formal Farsi" : ` or not in natural ${into}`}, or say none is.` }]),
+    ...translators.flatMap((item, index): [string, Partial<AgentData>][] => { const part = parts[index]; return part ? [[item.id, { writeScopes: [own.get(item.id)!], instruction: instruction(part),
+      check: `Read part.md beside ${lines(part)} of ${at(part.file)}, sentence by sentence. Run no scripts. Quote any sentence left out, added${farsi ? " or written in formal Farsi" : ` or not in natural ${into}`}, or say none is.` }]] : []; }),
     [join.id, { instruction: `Elpis puts the translators' parts together, in order, into ${output}.`, join: { parts: translators.map(item => `${own.get(item.id)}/part.md`), output } }]]);
   return { ...team, result: output, planningPattern: "translate", language: language.id, nodes: team.nodes.map(node => node.type === "agent" && done.has(node.id) ? { ...node, data: { ...node.data, ...done.get(node.id) } } : node) };
 }
