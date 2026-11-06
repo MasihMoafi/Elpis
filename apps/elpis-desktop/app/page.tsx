@@ -6,7 +6,7 @@ import { BrandWordmark } from "@/components/brand-wordmark";
 import { flushSync } from "react-dom";
 import { cloneElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { AgentsIcon, BrowserIcon, ChatIcon, ExperimentLabIcon, FolderIcon, LoveSpotIcon, NewChatIcon, PinIcon, PlusIcon, SendIcon, SettingsIcon, ThemeIcon, WorkflowsIcon, StopIcon } from "@/components/elpis-icons";
-import { Activity, ListFilter, ArrowDown, Blocks, Bookmark, ChevronRight, EyeOff, Layers, PanelLeft, PanelRightClose, PanelRightOpen, RefreshCw, X, Zap } from "lucide-react";
+import { Activity, ArrowDown, Blocks, Bookmark, ChevronRight, EyeOff, Layers, PanelLeft, PanelRightClose, PanelRightOpen, RefreshCw, X, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ReorderItem, useReorder } from "@/components/reorder";
 import { OptionSelect } from "@/components/ui/option-select";
@@ -107,6 +107,7 @@ import { useScreenshotPopup } from "@/lib/use-screenshot-popup";
 import { AgentsCanvas } from "@/components/agents-canvas";
 import { WorkflowChat } from "@/components/workflow-chat";
 import { DocumentReviewProvider } from "@/components/document-review";
+import { ChatTeamPanel } from "@/components/chat-team-panel";
 import { AgentIdentity, agentColourSlots } from "@/components/agent-identity";
 import { ResumeConversation } from "@/components/resume-conversation";
 import { sidebarListKeys, useSidebarKeys, useWorkspaceNavigation } from "@/lib/use-workspace-navigation";
@@ -2468,16 +2469,7 @@ export default function Home() {
           </div>
         </div>
       </div>
-      {selected && teamRoot && team.length > 0 && agentsPanel && !panelShown && <aside className="team-panel" aria-label="Agents in this chat">
-        <div className="team-heading"><span className="inline-flex items-center gap-2"><AgentsIcon size={16} />Agents</span><span className="inline-flex items-center gap-1"><small>{workingTeam.length} working · {team.length} total</small><Button variant="ghost" size="icon-xs" aria-label="Working agents only" aria-pressed={workingAgentsOnly} title={workingAgentsOnly ? "Show all agents" : "Show working agents only"} className={workingAgentsOnly ? "text-primary" : "text-muted-foreground"} onClick={() => setWorkingAgentsOnly(value => !value)}>{/* The Recents filter turned upside down (Masih, 31 Oct: "a simple ^ opposite of this ^"). */}<ListFilter size={13} viewBox="-2 -2 28 28" className="-scale-y-100" aria-hidden="true" /></Button></span></div>
-        <button data-slot="team-row" className={`team-row root${selected.id === teamRoot.id ? " active" : ""}`} onClick={() => openById(teamRoot.id)}><span className="team-state"><i /></span><span className="team-title">{title(teamRoot)}</span><small>Main chat</small></button>
-        {workingAgentsOnly && !shownTeam.length && <p className="px-2 text-xs text-muted-foreground">No working agents</p>}
-        {shownTeam.map(thread => { const state = agentState(thread, waitingIds), runtime = state === "working" && activity[thread.id] ? activity[thread.id] : [modelLabel(thread.model, models), thread.reasoningEffort].filter(Boolean).join(" · ");
-          return <button data-slot="team-row" data-thread-id={thread.id} key={thread.id} className={`team-row ${state}${selected.id === thread.id ? " active" : ""}`} onClick={() => openThread(thread)} title={activity[thread.id] || title(thread)}>
-            <span className="team-state" aria-label={stateLabels[state]}><i /></span>
-            <AgentIdentity compact id={thread.id} colourSlot={agentColours.get(thread.id)} name={title(thread)} nameClassName="team-title" model={null} provider={null} role={runtime || undefined} />
-          </button>; })}
-      </aside>}
+      {selected && teamRoot && team.length > 0 && agentsPanel && !panelShown && <ChatTeamPanel selected={selected} teamRoot={teamRoot} team={team} workingTeam={workingTeam} shownTeam={shownTeam} workingAgentsOnly={workingAgentsOnly} setWorkingAgentsOnly={setWorkingAgentsOnly} waitingIds={waitingIds} activity={activity} models={models} agentColours={agentColours} openById={openById} openThread={openThread} />}
       </div></ViewBoundary>}
       </div>{fullView && side.chatCollapsed && <FloatChatPill title={chatName} state={floatState} onRestore={() => side.setChatCollapsed(false)} />}{desktop && <SidePanel panel={side} browser={browser} hasTerminal={hasTerminal} dark={dark} cwd={selected?.cwd || cwd} threadId={selected?.id} running={!!activeTurn} launch={tuiLaunch} covered={pendingInputOpen || sidebar || view !== "chat"} onAttach={attachFromBrowser} imagesAllowed={!(knownModel?.inputModalities && !knownModel.inputModalities.includes("image"))} />}</div>
       <WorkspaceNotices connection={!ready || !connected ? connectionStatus : undefined} deleted={deletedNotice} onUndoDelete={() => void undoDelete()} onDismissDeleted={() => setDeletedNotice(null)}
