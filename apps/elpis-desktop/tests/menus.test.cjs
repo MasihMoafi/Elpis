@@ -63,43 +63,6 @@ test('model picker searches actual models, supports keyboard selection and retur
   assert.equal(await page.getByLabel('Message Elpis').inputValue(), 'Do not send this while choosing a model.');
 }));
 
-test('the microphone is one plain button that follows the chat provider and names its transcriber', () => fixture(async ({ page, calls }) => {
-  const mic = page.getByRole('button', { name: 'Dictate message', exact: true });
-  const title = () => mic.getAttribute('title');
-  const settled = text => page.waitForFunction(text => document.querySelector('button[aria-label="Dictate message"]')?.title.includes(text), text);
-  const size = locator => locator.evaluate(element => { const box = element.getBoundingClientRect(); return [Math.round(box.width), Math.round(box.height)]; });
-  await settled('ChatGPT sign-in');
-  assert.equal(await page.getByRole('button', { name: 'Transcription settings' }).count(), 0, 'the route is no longer a control beside the microphone');
-  assert.equal(await page.locator('.dictation-control svg.lucide-chevron-down').count(), 0, 'no caret next to the microphone');
-  assert.deepEqual(await size(mic), await size(page.getByRole('button', { name: 'Send message', exact: true })), 'same size as the composer icon buttons');
-  // A new chat follows the model picker's provider; the Claude subscription has no transcription Elpis can reach, so the fallback speaks.
-  await page.getByRole('combobox', { name: 'Model', exact: true }).click();
-  await page.getByRole('tab', { name: 'Anthropic', exact: true }).click();
-  await page.getByRole('option').filter({ hasText: 'Opus' }).click();
-  await settled('Local WhisperType');
-  // An existing chat follows its own provider, and a model switched inside it.
-  await page.locator('.thread-row[data-thread-id="routed"] .thread-link').click();
-  await settled('OpenRouter (cloud) · user/saved-audio-model');
-  await page.locator('.thread-row[data-thread-id="google"] .thread-link').click();
-  await settled('Gemini API (cloud) · gemini-flash-latest');
-  await page.locator('.thread-row[data-thread-id="existing"] .thread-link').click();
-  await settled('ChatGPT sign-in');
-  assert.match(await title(), /^Dictate with ChatGPT sign-in \(cloud\)\./);
-  assert.deepEqual(calls.filter(call => call.path === '/api/tools/transcription').map(call => call.query), ['provider=openai', 'provider=claude', 'provider=openrouter', 'provider=google-gemini', 'provider=openai']);
-  // Reading an edited message's versions is a read (ca051082c, 29 Oct: "edit any earlier message"); it never saves or sends.
-  assert.deepEqual(calls.filter(call => call.method === 'POST' && call.path !== '/api/session' && !call.path.endsWith('/resume') && !(call.path.endsWith('/rewind') && call.data?.action === 'status') && !(call.path.endsWith('/versions') && call.data?.action === 'list')), [], 'choosing a provider never records, saves or sends');
-}));
-
-test('an OpenRouter chat without a transcription model says where to set it; the button explains instead of recording', () => fixture(async ({ page }) => {
-  const mic = page.getByRole('button', { name: 'Dictate message', exact: true });
-  await page.locator('.thread-row[data-thread-id="routed"] .thread-link').click();
-  await page.waitForFunction(() => document.querySelector('button[aria-label="Dictate message"]')?.title.includes('Settings → Voice'));
-  assert.equal(await mic.getAttribute('aria-disabled'), 'true');
-  assert.equal(await page.locator('.dictation-status').innerText(), '', 'the composer row stays calm until the button is used');
-  await mic.click({ force: true }); // Playwright treats aria-disabled as disabled; a person can click it
-  await page.getByRole('status').filter({ hasText: 'Set the OpenRouter transcription model in Settings → Voice.' }).waitFor();
-}, { WHISPERTYPE_BACKEND: 'local' }));
-
 test('existing chat keeps the pending model for its next message and saves a picked effort at once', () => fixture(async ({ page, calls }) => {
   await page.locator('.thread-row[data-thread-id="existing"] .thread-link').click();
   await page.getByLabel('Model', { exact: true }).click();

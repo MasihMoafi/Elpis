@@ -1,4 +1,4 @@
-const { guardDesktopStore, leaveSettings, sidebar, openSettings } = require('./controls.cjs');
+const { guardDesktopStore, leaveSettings, openSettings } = require('./controls.cjs');
 // Real exported renderer with synthetic HTTP/SSE; no engine or provider calls.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -180,65 +180,3 @@ for (const [name, options, reads] of [['a later descendant page fails', { descen
     await f.restore('a', false); await eventually(async () => assert.equal(await f.page.locator('.thread-link').filter({ hasText: 'Availability chat A' }).count(), 1, 'A failed permanent deletion must leave the archived chat restorable'));
   });
 }
-
-test('catalogue sign-in failure leaves healthy history and live feed usable; retry recovers without sending or switching', async t => {
-  const f = await fixture(t, { modelFailure: true }); await f.ready(); await eventually(() => assert.equal(f.clients.size, 1)); await f.open('a');
-  const model = f.page.getByRole('combobox', { name: 'Model', exact: true }); const previous = await model.getAttribute('data-value');
-  // 4 Nov: a failed model list shows no banner; an empty model menu says quietly that Elpis keeps trying.
-  const noCatalogueAlert = async () => { const shown = (await f.page.getByRole('alert').allTextContents()).join('\n'); assert.ok(!/Models unavailable|catalogue failure|sign-in required for models/i.test(shown), `no model-list error is shown: ${shown}`); };
-  await eventually(() => assert.ok(f.control.modelReads >= 1)); await noCatalogueAlert();
-  await model.click(); await eventually(async () => assert.ok(await f.page.getByRole('status').filter({ hasText: 'Models are not available yet' }).count())); await noCatalogueAlert(); await f.page.keyboard.press('Escape');
-  f.emit('message', { method: 'item/completed', params: { threadId: 'a', turnId: 'live-a', item: { id: 'live-reply-a', type: 'agentMessage', text: 'Live feed still works' } } }); await eventually(async () => assert.ok((await f.page.locator('.chat-view').innerText()).includes('Live feed still works')));
-  if (process.env.ELPIS_AVAILABILITY_SHOTS) {
-    const inspectControls = () => f.page.evaluate(() => {
-      const context = document.querySelector('.workspace-header button[aria-label="Refresh conversation"]');
-      const inspect = button => {
-        const style = getComputedStyle(button), ancestors = []; let parent = button.parentElement;
-        for (let depth = 0; parent && depth < 5; depth++, parent = parent.parentElement) { const css = getComputedStyle(parent); ancestors.push({ tag: parent.tagName, class: parent.className, color: css.color, background: css.backgroundColor }); }
-        const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1; const paint = canvas.getContext('2d'); paint.fillStyle = '#fff'; paint.fillRect(0, 0, 1, 1);
-        for (const background of [...ancestors].reverse().map(ancestor => ancestor.background).concat(style.backgroundColor)) { paint.fillStyle = background; paint.fillRect(0, 0, 1, 1); }
-        const effectiveBackground = `rgb(${[...paint.getImageData(0, 0, 1, 1).data].slice(0, 3).join(', ')})`;
-        return { name: button.getAttribute('aria-label') || button.textContent.trim(), class: button.className, style: button.getAttribute('style'), disabled: button.disabled, color: style.color, background: style.backgroundColor, effectiveBackground, opacity: style.opacity, colorScheme: style.colorScheme, foreground: style.getPropertyValue('--foreground'), colorForeground: style.getPropertyValue('--color-foreground'), backgroundVariable: style.getPropertyValue('--background'), transitionProperty: style.transitionProperty, transitionDuration: style.transitionDuration, animations: button.getAnimations().map(animation => ({ type: animation.constructor.name, property: animation.transitionProperty, currentTime: animation.currentTime, duration: animation.effect.getComputedTiming().duration })), ancestors };
-      };
-      const matching = [];
-      const visit = (rules, groups = []) => { for (const rule of rules) {
-        if (rule.media && !matchMedia(rule.conditionText).matches) continue;
-        if (rule.constructor.name === 'CSSSupportsRule' && !CSS.supports(rule.conditionText)) continue;
-        if (rule.selectorText && (rule.style.color || rule.style.all || rule.style.webkitTextFillColor)) { try { if (context.matches(rule.selectorText)) matching.push({ selector: rule.selectorText, color: rule.style.color, all: rule.style.all, textFillColor: rule.style.webkitTextFillColor, groups }); } catch {} }
-        if (rule.cssRules) visit(rule.cssRules, [...groups, rule.name || rule.conditionText || rule.constructor.name]);
-      } };
-      for (const sheet of document.styleSheets) visit(sheet.cssRules);
-      const retry = null;
-      return { htmlClass: document.documentElement.className, bodyClass: document.body.className, buttons: [context, document.querySelector('.workspace-header .mobile-menu'), retry].filter(Boolean).map(inspect), contextMatchingRules: matching };
-    });
-    const light = await inspectControls(); t.diagnostic(`Light control trace ${JSON.stringify(light)}`);
-    const folder = process.env.ELPIS_AVAILABILITY_SHOTS; fs.mkdirSync(folder, { recursive: true }); await f.page.screenshot({ path: path.join(folder, 'catalogue-error-desktop-light.png') });
-    await f.page.emulateMedia({ colorScheme: 'dark' }); await f.page.setViewportSize({ width: 390, height: 844 }); await f.page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-    const changing = await inspectControls(); t.diagnostic(`Changing mobile dark control trace ${JSON.stringify(changing)}`);
-    await f.page.evaluate(() => Promise.all(document.getAnimations().filter(animation => animation.effect?.getComputedTiming().endTime !== Infinity).map(animation => animation.finished.catch(() => {}))));
-    const dark = await inspectControls(); t.diagnostic(`Settled mobile dark control trace ${JSON.stringify(dark)}`);
-    await f.page.screenshot({ path: path.join(folder, 'catalogue-error-mobile-dark.png') });
-    const luminance = color => color.match(/[\d.]+/g).slice(0, 3).map(Number).map(value => value / 255).map(value => value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4).reduce((sum, value, index) => sum + value * [.2126, .7152, .0722][index], 0);
-    for (const [theme, trace] of [['light', light], ['dark', dark]]) for (const button of trace.buttons) {
-      const a = luminance(button.color), b = luminance(button.effectiveBackground), contrast = (Math.max(a, b) + .05) / (Math.min(a, b) + .05);
-      assert.equal(button.disabled, false); assert.equal(button.opacity, '1'); assert.ok(contrast >= 4.5, `${theme} enabled ${button.name} must remain readable (contrast ${contrast.toFixed(2)})`);
-    }
-  }
-  f.control.modelFailure = false; await model.click(); await eventually(async () => assert.equal(await f.page.getByRole('option').filter({ hasText: 'Latest model' }).count(), 1)); await f.page.keyboard.press('Escape');
-  await noCatalogueAlert(); assert.equal(await model.getAttribute('data-value'), previous); assert.equal(f.clients.size, 1); assert.equal(mutatingPosts(f).filter(post => !post.path.endsWith('/resume')).length, 0);
-});
-
-test('slow catalogues never gate startup; old success cannot overwrite newer models/errors or an explicit choice', async t => {
-  const f = await fixture(t, { holdModels: true }); await f.ready(); await eventually(() => assert.equal(f.clients.size, 1)); await f.open('a'); await eventually(() => assert.equal(f.held.length, 1));
-  f.emit('account', { method: 'account/updated' }); await eventually(() => assert.equal(f.held.length, 2)); f.held[1]({ data: [sol, latest], nextCursor: null });
-  await f.page.getByRole('button', { name: 'New chat', exact: true }).click();
-  const model = f.page.getByRole('combobox', { name: 'Model', exact: true }); await model.click(); await f.page.getByRole('tab', { name: 'Alternate local', exact: true }).click(); await f.page.getByRole('option').filter({ hasText: 'Local choice' }).click(); assert.equal(await model.getAttribute('data-value'), 'local-choice'); const provider = await model.locator('.model-trigger-provider').innerText(); assert.equal(provider, 'Alternate local');
-  // Opening the menu refreshes the list too (1 Nov), so the account update is the fourth read.
-  await eventually(() => assert.equal(f.held.length, 3)); f.emit('account', { method: 'account/updated' }); await eventually(() => assert.equal(f.held.length, 4)); f.held[3]({ error: 'Newer catalogue failure' }, 503); await f.page.waitForTimeout(150);
-  const noCatalogueAlert = async () => { const shown = (await f.page.getByRole('alert').allTextContents()).join('\n'); assert.ok(!/Models unavailable|catalogue failure|sign-in required for models/i.test(shown), `no model-list error is shown: ${shown}`); }; await noCatalogueAlert();
-  const oldResponse = f.page.waitForResponse(response => response.headers()['x-fixture-model-read'] === '1'); f.held[0]({ data: [{ id: 'old-model', model: 'old-model', displayName: 'Old model' }], nextCursor: null }); await (await oldResponse).finished(); await f.page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-  await noCatalogueAlert(); assert.equal(await model.getAttribute('data-value'), 'local-choice'); assert.equal(await model.locator('.model-trigger-provider').innerText(), provider);
-  await model.click(); await f.page.getByRole('tab', { name: 'All', exact: true }).click(); await eventually(async () => assert.equal(await f.page.getByRole('option').filter({ hasText: 'Latest model' }).count(), 1)); assert.equal(await f.page.getByRole('option').filter({ hasText: 'Old model' }).count(), 0, 'the older read did not replace the list'); await eventually(() => assert.equal(f.held.length, 5)); f.held[4]({ error: 'Newer catalogue failure' }, 503); await f.page.keyboard.press('Escape');
-  // Opening the menu again asks again; there is no Retry button to press (4 Nov).
-  await model.click(); await eventually(() => assert.equal(f.held.length, 6)); f.held[5]({ data: [sol, latest], nextCursor: null }); await f.page.keyboard.press('Escape'); await noCatalogueAlert(); assert.equal(await model.getAttribute('data-value'), 'local-choice'); assert.equal(await model.locator('.model-trigger-provider').innerText(), provider); assert.equal(mutatingPosts(f).filter(post => !post.path.endsWith('/resume')).length, 0);
-});

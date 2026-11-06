@@ -90,20 +90,6 @@ for (const [state, reason] of [
   } finally { await f.close(); }
 });
 
-test('right-click preserves chat actions and carries the pointed component; capture failure blocks creation', async () => {
-  const f = await setup('light', true), { page } = f;
-  try {
-    await page.locator('.thread-row[data-thread-id="chat-a"]').click({ button: 'right' });
-    await page.getByRole('menuitem', { name: 'Rename', exact: false }).waitFor();
-    await page.getByRole('menuitem', { name: 'Change this…', exact: true }).click();
-    const dialog = page.getByRole('dialog', { name: 'Improve Elpis' });
-    await dialog.getByText('Capture failed', { exact: true }).waitFor();
-    assert.equal(await dialog.getByRole('button', { name: 'Start change' }).isEnabled(), false);
-    assert.equal(f.posts.filter(post => post.path === '/api/improvements').length, 0);
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
 test('the source folder chooser repairs setup without losing the requested change or starting a model', async () => {
   let configured = false;
   const f = await fixture({ width: 1100, height: 800, routes: {

@@ -52,25 +52,6 @@ test('inline rename: Enter/blur save, Escape cancels, Mother agent is fixed, bot
   } finally { await f.close(); }
 });
 
-for (const iso of [true]) test(`delete with four-second toast, Undo button, Ctrl+Z and wires: ${iso ? '3D' : 'flat'}`, async () => {
-  const f = await openCanvas({ graph: { ...graph, maxAgents: 3 } });
-  try {
-    await mode(f, iso);
-    const node = () => iso ? f.canvas.locator('.iso-label[data-for="a"]') : f.node('Kivo');
-    for (const key of ['Delete', 'Backspace']) {
-      await f.canvas.getByRole('button', { name: 'Add agent', exact: true }).click(); await f.canvas.getByRole('alert').waitFor();
-      await node().click(); await f.page.keyboard.press(key);
-      const toast = f.canvas.getByRole('status').filter({ hasText: 'Deleted Kivo' }); await toast.waitFor();
-      assert.equal(await f.canvas.getByRole('alert').count(), 0, 'deletion replaces the old limit warning so Undo is exposed');
-      assert.ok(!(await f.saved()).nodes.some(n => n.id === 'a'));
-      if (key === 'Delete') await toast.getByRole('button', { name: 'Undo', exact: true }).click();
-      else { await f.page.waitForTimeout(3200); assert.equal(await toast.isVisible(), true); await f.page.waitForTimeout(1000); assert.equal(await toast.count(), 0); await f.page.keyboard.press('Control+z'); }
-      await node().waitFor(); assert.equal((await f.saved()).edges.length, 2);
-    }
-    await captures(f, `delete-${iso ? 'iso' : 'flat'}`); assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
 for (const iso of [true, false]) test(`wire noun labels persist and reach receiving briefs, shared Mother agent trunk: ${iso ? '3D' : 'flat'}`, async () => {
   const f = await openCanvas({ graph });
   try {

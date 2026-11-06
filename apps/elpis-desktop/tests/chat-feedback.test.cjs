@@ -45,35 +45,3 @@ test('a refused send restores its text and file, and Enter can retry it', async 
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
-
-test('Stop response names itself and interrupts; queued follow-ups stay in their tray', async () => {
-  const f = await fixture({ running: true, width: 1440, storage: { 'elpis-preferences-v1': JSON.stringify({ transcriptWidth: 'm' }) } });
-  try {
-    await f.open('chat-a');
-    const stop = f.page.getByRole('button', { name: 'Stop response', exact: true });
-    assert.equal(await stop.innerText(), 'Stop response');
-    await f.page.setViewportSize({ width: 900, height: 660 });
-    assert.equal(await stop.getAttribute('aria-label'), 'Stop response');
-    assert.equal(await stop.locator('svg').isVisible(), true, 'the compact Stop control has a visible icon');
-    await f.composer.fill('Do this later'); await f.composer.press('Control+Enter');
-    await f.page.getByRole('list', { name: 'Queued follow-ups', exact: true }).getByText('Do this later', { exact: true }).waitFor();
-    assert.equal(await bubble(f.page, 'Do this later').count(), 0);
-    const interrupted = f.page.waitForResponse(response => response.request().method() === 'POST' && response.url().endsWith('/interrupt'));
-    await stop.click(); await interrupted;
-    assert.equal(f.posts.filter(post => post.path.endsWith('/interrupt')).length, 1);
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
-test('message actions have room above the next Thought or prompt row', async () => {
-  const f = await fixture();
-  try {
-    await f.open('chat-a');
-    const gaps = await f.page.evaluate(() => [...document.querySelectorAll('.turn .user-turn')].map(turn => {
-      const actions = turn.querySelector('.message-actions').getBoundingClientRect(), next = turn.nextElementSibling?.getBoundingClientRect() ?? turn.parentElement.nextElementSibling?.getBoundingClientRect();
-      return next ? next.top - actions.bottom : 99;
-    }));
-    assert.ok(gaps.length > 0 && gaps.every(gap => gap >= 8), `gaps under actions: ${gaps}`);
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});

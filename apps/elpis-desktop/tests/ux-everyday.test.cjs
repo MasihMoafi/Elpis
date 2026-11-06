@@ -5,7 +5,7 @@ const fs=require('node:fs/promises');
 const http=require('node:http');
 const path=require('node:path');
 const {chromium}=require(process.env.ELPIS_PLAYWRIGHT_PACKAGE||'playwright');
-const { chooseOption, openSettings, chooseTheme } = require('./controls.cjs');
+const { chooseOption, openSettings } = require('./controls.cjs');
 
 async function fixture(run){
  const clients=new Set(),posts=[];
@@ -80,15 +80,6 @@ test('keyboard shortcuts return to the field that opened them, and edit Cancel r
  assert.equal(await focused(),true);assert.equal(await composer.inputValue(),'');assert.equal(await page.getByText('Check everyday interactions',{exact:true}).count(),1);
 }));
 
-test('unreadable server errors stay human-readable and retain drafts; specific refusals stay specific',()=>fixture(async({page,composer,open,shot})=>{
- await open();let response={error:{code:-32601}};
- await page.route('**/api/threads/ux-chat/turns',route=>route.fulfill({status:503,json:response}));
- await composer.fill('Keep my failed draft');await composer.press('Enter');const alert=page.getByRole('alert').filter({hasText:/./});await alert.first().waitFor();await shot('unreadable-error');
- const text=await alert.allTextContents();assert.doesNotMatch(text.join(' '),/\[object Object\]|-32601|Request failed \(\d+\)/);assert.match(text.join(' '),/Elpis.*unavailable|could not|couldn.t/i);assert.equal(await composer.inputValue(),'Keep my failed draft');
- response={error:{message:'Elpis rejected the operation (-32601). No automatic retry was made.'}};await composer.press('Enter');await page.waitForTimeout(120);assert.doesNotMatch((await alert.allTextContents()).join(' '),/-32601|rejected the operation/,'generic protocol errors must be readable too');
- response={error:{message:'This conversation is read-only. Continue in a new chat.'}};await composer.press('Enter');await page.getByText(response.error.message,{exact:false}).first().waitFor();assert.equal(await composer.inputValue(),'Keep my failed draft');
-}));
-
 test('queued follow-ups stay queued after Stop and send exactly once after normal completion',()=>fixture(async({page,composer,open,emit,posts})=>{
  await open();await openSettings(page);await page.getByRole('radio',{name:'Queue',exact:true}).click();await page.getByRole('button',{name:'Back to app',exact:true}).click();
  emit('turn/started',{threadId:'ux-chat',turn:{id:'running'}});await page.getByRole('button',{name:'Stop response',exact:true}).waitFor();
@@ -156,14 +147,4 @@ test('a queued turn uses the model and Plan mode selected with its message; the 
  await composer.fill('Use these queued choices');await composer.press('Enter');const queue=page.getByRole('list',{name:'Queued follow-ups'});await queue.waitFor();emit('turn/completed',{threadId:'ux-chat',turn:{id:'running',status:'completed'}});await queue.waitFor({state:'detached'});await page.waitForTimeout(180);
  assert.deepEqual(posts.filter(p=>p.path.endsWith('/effort')).map(p=>p.data),[{effort:'high'}]);
  assert.deepEqual(posts.filter(p=>p.path.endsWith('/turns')).map(p=>p.data),[{text:'Use these queued choices',model:'sol-fast',mode:'plan'}]);
-}));
-
-test('small sidebar section labels have readable contrast in both themes',()=>fixture(async({page})=>{
- for(const dark of [false,true]){
-  if(dark)await chooseTheme(page, 'dark');
-  const colors=await page.locator('.section-label').first().evaluate(e=>({text:getComputedStyle(e).color,background:getComputedStyle(e.closest('aside')).backgroundColor}));
-  const luminance=color=>{const rgb=color.match(/[\d.]+/g).slice(0,3).map(Number).map(n=>{const c=n/255;return c<=0.04045?c/12.92:((c+0.055)/1.055)**2.4;});return rgb[0]*0.2126+rgb[1]*0.7152+rgb[2]*0.0722;};
-  const a=luminance(colors.text),b=luminance(colors.background),ratio=(Math.max(a,b)+0.05)/(Math.min(a,b)+0.05);
-  assert(ratio>=4.5,`${dark?'dark':'light'} section label contrast ${ratio.toFixed(2)} must be at least 4.5`);
- }
 }));

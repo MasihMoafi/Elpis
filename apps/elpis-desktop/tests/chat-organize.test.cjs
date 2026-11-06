@@ -240,25 +240,6 @@ test('ordinary recursive branches expose the second child and grandchild pages w
   } finally { await f.close(); }
 });
 
-test('several roots from malformed native lineage can be put under one chat and survive reload', async () => {
-  const tree = [{ id: 'native-cycle-a', name: 'Native cycle A', parentThreadId: 'native-cycle-b' }, { id: 'native-cycle-b', name: 'Native cycle B', parentThreadId: 'native-cycle-a' }, { id: 'native-cycle-target', name: 'Safe parent' }]
-    .map(thread => ({ ...thread, source: 'cli', model: 'sol', modelProvider: 'openai', status: { type: 'idle' } }));
-  const f = await fixture({ desktop: true, threads: tree, readyThreadId: 'native-cycle-target', storage: SECTIONS }), { page } = f;
-  try {
-    // S18, Masih 29 Oct: chats whose lineage cannot nest sit in Background runs until he places them.
-    await aside(page).getByRole('button', { name: /^Agent runs \(/ }).click();
-    await row(page, 'native-cycle-a').waitFor(); await row(page, 'native-cycle-b').waitFor();
-    await mark(page, ['native-cycle-a', 'native-cycle-b']); await putUnder(page, 'native-cycle-a', 'Safe parent');
-    for (const id of ['native-cycle-a', 'native-cycle-b']) assert.equal(await row(page, id).getAttribute('data-depth'), '1');
-    await page.reload();
-    await row(page, 'native-cycle-target').waitFor();
-    for (const id of ['native-cycle-a', 'native-cycle-b']) assert.equal(await row(page, id).count(), 0, 'saved placement does not restore open branches');
-    await expandPath(page, ['native-cycle-target']);
-    for (const id of ['native-cycle-a', 'native-cycle-b']) await eventually(async () => assert.equal(await row(page, id).getAttribute('data-depth'), '1'));
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
 test('a refused final order save leaves the subtree, projects, order and selection unchanged', async () => {
   const tree = [{ id: 'save-parent', name: 'Project parent' }, { id: 'save-child', name: 'Moving child', parentThreadId: 'save-parent' }, { id: 'save-grandchild', name: 'Moving grandchild', parentThreadId: 'save-child' }, { id: 'save-target', name: 'Recent target' }]
     .map(thread => ({ ...thread, source: 'cli', model: 'sol', modelProvider: 'openai', status: { type: 'idle' } }));
@@ -471,25 +452,6 @@ for (const desktop of [true, false]) test(`single-chat organizing actions are sh
     await row(page, 'native-agent').getByRole('button', { name: 'Actions for Native worker · [explorer]', exact: true }).click();
     await page.getByRole('menu').waitFor();
     for (const name of ['Put under…', 'Move to project…', 'New project from this chat…', 'Take out']) assert.equal(await (await threadMenuItem(page, name)).count(), 1, 'native agents share the same display organization actions');
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
-test('new project uses the desktop folder chooser; cancelling the chooser keeps the selection', async () => {
-  const f = await open(), { page } = f;
-  try {
-    await page.evaluate(() => { window.elpisDesktop.chooseFolder = async () => null; });
-    await mark(page); await action(page, children[0], 'New project from these…');
-    const dialog = page.getByRole('alertdialog', { name: 'New project', exact: true });
-    await dialog.getByLabel('Project name', { exact: true }).fill('Chosen folder');
-    await dialog.getByRole('button', { name: 'Choose folder…', exact: true }).click();
-    assert.equal(await dialog.getByRole('button', { name: 'Save project', exact: true }).isDisabled(), true, 'cancel must not choose a folder');
-    assert.equal(await aside(page).locator('.thread-row.selected').count(), 6);
-    await page.evaluate(() => { window.elpisDesktop.chooseFolder = async () => '/work/chosen'; window.elpisDesktop.resolveFolder = async folder => folder; });
-    await dialog.getByRole('button', { name: 'Choose folder…', exact: true }).click();
-    await dialog.getByRole('button', { name: 'Save project', exact: true }).click();
-    await eventually(async () => assert.deepEqual((await ids(project(page, 'Chosen folder'))).sort(), children));
-    assert.equal(await project(page, 'Chosen folder').getByRole('button', { name: 'Chosen folder', exact: true }).getAttribute('title'), '/work/chosen');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

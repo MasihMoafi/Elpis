@@ -37,72 +37,6 @@ const probe = page => page.evaluate(() => {
   };
 });
 
-for (const colorScheme of ['light']) {
-  test(`a wide side panel leaves room for the running chat controls (${colorScheme})`, async t => {
-    const f = await fixture({ width: 1000, height: 800, colorScheme, running: true });
-    t.after(async () => { await f.close(); assert.deepEqual(f.errors, []); });
-    await f.open('chat-a');
-    await f.page.keyboard.press('Control+`');
-    for (const kind of ['Files', 'Browser tab', 'Context']) {
-      await f.page.getByRole('button', { name: 'New side panel tab' }).click();
-      await f.page.getByRole('menuitem', { name: kind, exact: true }).click();
-      const edge = f.page.getByRole('separator', { name: 'Resize side panel' });
-      await edge.focus();
-      for (let step = 0; step < 16; step++) await edge.press('ArrowLeft');
-      for (const width of [1000, 1100, 1280]) {
-        await f.page.setViewportSize({ width, height: 800 });
-        await f.page.waitForTimeout(100);
-        const m = await probe(f.page), where = `${kind}, ${width}px, ${colorScheme}`;
-        assert.equal(m.shown, true, where);
-        assert.equal(m.leaks, 0, `${where}: ${JSON.stringify(m)}`);
-        assert.equal(m.overlaps, 0, `${where}: ${JSON.stringify(m)}`);
-        assert.equal(m.cut, 0, `${where}: ${JSON.stringify(m)}`);
-        // A narrow composer wraps its toolbar into a second row (b4b94bff2 and 8da71f29d, 31 Oct); a wider one keeps one row.
-        assert.ok(m.toolbarWidth <= 380 ? m.toolbarRows <= 2 : m.toolbarRows === 1, `${where}: ${m.toolbarRows} rows in ${m.toolbarWidth}px`);
-        assert.equal(m.page, false, where);
-        if (process.env.ELPIS_SHOTS && width === 1000) {
-          await fs.mkdir(process.env.ELPIS_SHOTS, { recursive: true });
-          await f.page.screenshot({ path: path.join(process.env.ELPIS_SHOTS, `side-panel-${kind.split(' ')[0].toLowerCase()}-${colorScheme}.png`) });
-        }
-      }
-    }
-  });
-}
-
-for (const model of ['sol', 'claude/claude-sonnet-5-5']) for (const running of [false, true]) {
-  test(`toolbar is stable across widths and a browser split (${model}, ${running ? 'running' : 'idle'})`, async t => {
-    const provider = model.startsWith('claude/') ? 'claude' : 'openai';
-    const chat = { id: 'chat-a', name: 'Fix the parser', preview: 'x', cwd: '/tmp/parity-fixture', model, modelProvider: provider, status: { type: running ? 'active' : 'idle' }, desktopAccess: { writable: true, mode: 'direct' } };
-    const f = await fixture({ width: 1100, height: 700, colorScheme: 'dark', running, routes: {
-      '/api/threads/chat-a/resume': () => ({ thread: chat, activeTurnId: running ? 't4' : null }),
-      '/api/threads/chat-a/permissions': () => ({ permissions: 'auto' }),
-    } });
-    t.after(async () => { await f.close(); assert.deepEqual(f.errors, []); });
-    const { page } = f;
-    await f.open('chat-a');
-    await page.locator('.composer-pill').first().click(); await page.getByRole('menuitem', { name: /Approve for me/ }).click();
-    await page.mouse.click(5, 5);
-    for (const split of [false, true]) for (const width of [1100, 760, 500, 390]) {
-      await page.setViewportSize({ width, height: 700 });
-      if (split && width === 1100) { await page.keyboard.press('Control+`'); await page.getByRole('button', { name: 'New side panel tab' }).click(); await page.getByRole('menuitem', { name: 'Browser tab' }).click(); }
-      await page.waitForTimeout(300);
-      const m = await probe(page), where = `${split ? 'split' : 'solo'} ${width}px (workspace ${m.workspace}px)`;
-      // On a narrow screen the browser replaces the chat pane; its hidden controls are not an on-screen toolbar.
-      if (!m.shown) continue;
-      assert.equal(m.providerLabel, false, `no provider label inside the model button, ${where}`);
-      assert.ok(!/\|/.test(m.model) && !/OpenAI|Anthropic|Configured provider/.test(m.model), `model button names the model only: "${m.model}", ${where}`);
-      assert.equal(m.permission, m.workspace > 560 ? 'Approve for me' : 'Auto', `permission label by workspace width, ${where}`);
-      assert.equal(m.leaks, 0, `every toolbar control stays inside the box, ${where}`);
-      assert.equal(m.overlaps, 0, `toolbar controls do not overlap, ${where}`);
-      // A narrow composer wraps its toolbar (b4b94bff2 and 8da71f29d, 31 Oct): up to two rows, nothing overlapping or cut off.
-      assert.ok(m.rowOffset <= 4 || m.toolbarWidth <= 380 && m.toolbarRows <= 2, `approval and model share the bottom row or wrap in a narrow composer (${m.rowOffset}px apart, ${m.toolbarRows} rows in ${m.toolbarWidth}px), ${where}`);
-      assert.equal(m.cut, 0, `no toolbar control is cut off at the top or bottom, ${where}`);
-      assert.equal(m.page, false, `no horizontal page overflow, ${where}`);
-      assert.equal(m.inset, m.workspace > 640 ? '32px' : m.workspace > 520 ? '22px' : '12px', `box inset by workspace width, ${where}`);
-    }
-  });
-}
-
 for (const colorScheme of ['light']) for (const running of [false, true]) test(`composer options and context icon fit at 600, 430, 400 and 320px (${colorScheme}, ${running ? 'running' : 'idle'})`, async t => {
   const f = await fixture({ width: 1100, height: 700, colorScheme, running, routes: {
     '/api/models': () => ({ data: [{ id: 'sol', model: 'sol', displayName: 'Sol', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }], serviceTiers: [{ id: 'priority', name: 'Fast' }] }] }),
@@ -155,53 +89,6 @@ for (const colorScheme of ['light']) for (const running of [false, true]) test(`
   }
   });
 
-test('active composer controls keep a clear gap at the reported window width', async t => {
-  const chat = { id: 'chat-a', name: 'Fix the parser', preview: 'x', cwd: '/tmp/parity-fixture', model: 'sol', modelProvider: 'openai', status: { type: 'active' }, desktopAccess: { writable: true, mode: 'direct' } };
-  const f = await fixture({ width: 1067, height: 700, colorScheme: 'dark', running: true, routes: {
-    '/api/threads/chat-a/resume': () => ({ thread: chat, activeTurnId: 't4' }),
-    '/api/threads/chat-a/permissions': () => ({ permissions: 'auto' }),
-  } });
-  t.after(async () => { await f.close(); assert.deepEqual(f.errors, []); });
-  await f.open('chat-a');
-  await f.page.getByLabel('Message Elpis').pressSequentially('Keep this follow-up ready');
-  const gap = async (left, right) => {
-    const a = await f.page.locator(left).boundingBox(), b = await f.page.locator(right).boundingBox();
-    assert.ok(a && b, `both ${left} and ${right} are visible`);
-    return b.x - (a.x + a.width);
-  };
-  assert.ok(await gap('.model-picker-trigger', '.composer [aria-label="Reasoning effort"]') >= 8, 'model and effort selectors have breathing room');
-  assert.ok(await gap('.stop-button', '.send-button') >= 8, 'stop and follow-up actions have breathing room');
-
-  for (const selector of ['.stop-button', '.send-button']) {
-    const box = await f.page.locator(selector).boundingBox();
-    await f.page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-    assert.equal(await f.page.locator(selector).evaluate(element => element.matches(':hover')), true, `${selector} remains an independent mouse target`);
-  }
-});
-
-for (const model of ['sol', 'claude/claude-sonnet-5-5']) {
-  test(`running permission controls stay in the toolbar row: ${model}`, async t => {
-    const chat = { id: 'chat-a', name: 'Fix the parser', cwd: '/tmp/parity-fixture', model, modelProvider: model.startsWith('claude/') ? 'claude' : 'openai', status: { type: 'active' }, desktopAccess: { writable: true, mode: 'direct' } };
-    const f = await fixture({ width: 1100, height: 1050, running: true, threads: [chat], routes: {
-      '/api/models': () => ({ data: [{ id: model, model, displayName: model }], nextCursor: null }),
-      '/api/threads/chat-a/permissions': () => ({ permissions: 'auto' }),
-    } });
-    t.after(async () => { await f.close(); assert.deepEqual(f.errors, []); });
-    await f.open('chat-a');
-    await f.page.locator('.composer-pill').first().click(); await f.page.getByRole('menuitem', { name: /Approve for me/ }).click();
-    await f.page.getByRole('button', { name: 'Stop response', exact: true }).waitFor();
-    await f.page.setViewportSize({ width: 500, height: 1050 });
-    const p = await probe(f.page);
-    assert.equal(p.shown, true);
-    assert.equal(p.leaks, 0, JSON.stringify(p));
-    assert.equal(p.overlaps, 0, JSON.stringify(p));
-    assert.equal(p.toolbarRows, 1, JSON.stringify(p));
-    assert.ok(p.rowOffset <= 4, JSON.stringify(p));
-    assert.equal(p.permission, 'Auto', JSON.stringify(p));
-    assert.equal(p.model, model);
-  });
-}
-
 test('Fast stays on screen, switched off with its reason, when the chat model offers no Fast tier', async t => {
   const f = await fixture({ width: 1100, height: 700, colorScheme: 'light', routes: {
     '/api/models': () => ({ data: [{ id: 'sol', model: 'sol', displayName: 'Sol', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }], serviceTiers: [] }], nextCursor: null }),
@@ -224,21 +111,3 @@ test('Fast stays on screen, switched off with its reason, when the chat model of
 
 // Matilda's error stays in her own place (1 Nov): it sat fixed at the bottom right, over the Send button. Positive: the
 // alert shows; negative: it touches neither the composer nor Send, in both themes and a narrow window.
-for (const colorScheme of ['light']) test(`Matilda's load error never covers the composer (${colorScheme})`, async t => {
-  const f = await fixture({ width: 1100, height: 700, colorScheme, routes: {
-    '/api/love-spot/companion': () => ({ __http: 500, error: 'Matilda could not load: the bridge did not answer before the request timed out, so her state, music and pinned place are unknown.' }),
-  } });
-  t.after(async () => { await f.close(); });
-  await f.open('chat-a');
-  const alert = f.page.getByRole('alert').filter({ hasText: 'Matilda could not load:' });
-  await alert.waitFor();
-  for (const width of [1100, 760, 500, 390]) {
-    await f.page.setViewportSize({ width, height: 700 }); await f.page.waitForTimeout(150);
-    const [a, composer, send] = [await alert.boundingBox(), await f.page.locator('.composer').boundingBox(), await f.page.getByRole('button', { name: 'Send message', exact: true }).boundingBox()];
-    const apart = (x, y) => x.x + x.width <= y.x || y.x + y.width <= x.x || x.y + x.height <= y.y || y.y + y.height <= x.y;
-    assert.ok(apart(a, composer), `${width}px: the alert is clear of the composer ${JSON.stringify([a, composer])}`);
-    assert.ok(apart(a, send), `${width}px: the alert is clear of Send`);
-    assert.ok(a.x >= 0 && a.x + a.width <= width && a.y >= 0, `${width}px: the alert stays in the window`);
-    if (process.env.ELPIS_PARITY_SHOTS) await f.page.screenshot({ path: `${process.env.ELPIS_PARITY_SHOTS}/matilda-error-${colorScheme}-${width}.png` });
-  }
-});

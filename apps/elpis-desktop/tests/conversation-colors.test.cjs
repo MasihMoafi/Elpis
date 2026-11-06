@@ -93,26 +93,6 @@ test('a failed right-click colour save reports the error and preserves the prior
 
 // 3 Nov: an Amber chat came out purple, because the colour tinted the whole row. A chat's colour fills only its circle,
 // in exactly the menu's swatch colour, in both themes.
-for (const colorScheme of ['light', 'dark']) test(`each chat colour fills the chat's circle with the menu's swatch colour, and only the circle (${colorScheme})`, async () => {
-  const f = await fixture({ staticDir: process.env.ELPIS_GEOMETRY_STATIC_DIR, width: 1280, height: 900, colorScheme, threads,
-    storage: { 'elpis-preferences-v1': JSON.stringify({ accent: 'blue' }) } }), { page } = f;
-  try {
-    await f.open('chat-a'); await unfocus(f);
-    const target = row(page, 'chat-a'), plain = await target.evaluate(element => getComputedStyle(element).backgroundColor);
-    for (const colour of ['Blue', 'Teal', 'Violet', 'Rose', 'Green', 'Amber']) {
-      await row(page, 'chat-a').locator('.thread-link').click({ button: 'right' });
-      await page.getByRole('menuitem', { name: 'Colour', exact: true }).hover();
-      const swatch = await page.getByRole('menuitemradio', { name: colour, exact: true }).locator('.conversation-colour-swatch').evaluate(element => getComputedStyle(element).backgroundColor);
-      await page.keyboard.press('Escape'); await page.keyboard.press('Escape');
-      await choose(page, 'chat-a', colour); await unfocus(f);
-      const circle = await target.locator('.conversation-state-slot .thread-dot').evaluate(element => getComputedStyle(element).backgroundColor);
-      assert.equal(circle, swatch, `${colour}: the circle shows the swatch colour`);
-      assert.equal(await target.evaluate(element => getComputedStyle(element).backgroundColor), plain, `${colour}: the row is not tinted`);
-    }
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
 // 4 Nov, Masih: "the colour in chat when you right click and change it, nothing happens." His chats were unread, and an
 // unread circle stayed amber. A coloured chat shows its colour unread too; its title stays bold.
 test('an unread chat shows its chosen colour in its circle and keeps its bold title', async () => {

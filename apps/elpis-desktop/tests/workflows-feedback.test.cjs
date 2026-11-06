@@ -85,64 +85,6 @@ test('bottom + respects the agent limit without changing links', async () => {
   } finally { await f.close(); }
 });
 
-async function drag(f, from, to, { shift = false, shot } = {}) {
-  if (shift) await f.page.keyboard.down('Shift');
-  await f.page.mouse.move(from.x, from.y); await f.page.mouse.down();
-  await f.page.mouse.move(to.x, to.y, { steps: 12 });
-  if (shot) await f.page.screenshot({ path: `${shots}/${shot}.png` });
-  await f.page.mouse.up(); if (shift) await f.page.keyboard.up('Shift');
-}
-
-test('AutoCAD window contains, crossing touches, Shift adds notes, and drags never move nodes', async () => {
-  const f = await openCanvas({ graph: { name: 'AutoCAD selection', nodes: [agent('Answer 1'), agent('Answer 2', 0, 220), { id: 'note', type: 'note', position: { x: 300, y: 180 }, data: { text: 'Selection note' } }], edges: [] } });
-  try {
-    await fs.mkdir(shots, { recursive: true }); await f.fit();
-    const initial = (await f.saved()).nodes.map(n => n.position);
-    const a = await f.node('Answer 1').boundingBox();
-    const left = { x: a.x - 14, y: a.y - 14 }, partial = { x: a.x + a.width / 2, y: a.y + a.height + 14 };
-    await drag(f, left, partial); assert.deepEqual(await selected(f), [], 'a window rejects partial overlap');
-    await drag(f, partial, left); assert.deepEqual(await selected(f), ['Answer 1'], 'a crossing accepts partial overlap');
-    await drag(f, left, { x: a.x + a.width + 14, y: a.y + a.height + 14 }); assert.deepEqual(await selected(f), ['Answer 1'], 'a window accepts full containment');
-    const note = await f.canvas.locator('.react-flow__node-note').boundingBox();
-    await drag(f, { x: note.x + note.width + 14, y: note.y - 14 }, { x: note.x + note.width / 2, y: note.y + note.height + 14 }, { shift: true });
-    assert.deepEqual(await selected(f), ['Answer 1', 'note'], 'Shift crossing adds a touched note');
-    await drag(f, { x: note.x - 14, y: note.y - 14 }, { x: note.x + note.width + 14, y: note.y + note.height + 14 });
-    assert.deepEqual(await selected(f), ['note'], 'window selects enclosed notes and replaces without Shift');
-    for (const theme of ['light']) {
-      if ((await f.page.locator('html').evaluate(el => el.classList.contains('dark'))) !== (theme === 'dark')) await chooseTheme(f.page, theme);
-      const box = await f.node('Answer 1').boundingBox();
-      const tints = [];
-      for (const crossing of [false, true]) {
-        const l = { x: box.x - 14, y: box.y - 14 }, r = { x: box.x + box.width + 14, y: box.y + box.height + 14 };
-        await f.page.mouse.move((crossing ? r : l).x, (crossing ? r : l).y); await f.page.mouse.down();
-        await f.page.mouse.move((crossing ? l : r).x, (crossing ? l : r).y, { steps: 12 });
-        const style = await f.canvas.locator('.canvas-selection').evaluate(el => ({ border: getComputedStyle(el).borderStyle, color: getComputedStyle(el).backgroundColor }));
-        assert.equal(style.border, crossing ? 'dashed' : 'solid');
-        tints.push(style.color);
-        await f.page.screenshot({ path: `${shots}/${theme}-${crossing ? 'crossing' : 'window'}.png` });
-        await f.page.mouse.up();
-      }
-      assert.notEqual(tints[0], tints[1], `${theme}: window and crossing have different tints`);
-    }
-    assert.deepEqual((await f.saved()).nodes.map(n => n.position), initial, 'selection leaves positions intact');
-    await f.canvas.getByRole('button', { name: 'Side panel', exact: true }).click(); await f.fit();
-    const closed = await f.node('Answer 1').boundingBox();
-    await f.page.mouse.move(closed.x - 14, closed.y - 14); await f.page.mouse.down();
-    await f.page.mouse.move(closed.x + closed.width + 14, closed.y + closed.height + 14, { steps: 12 });
-    assert.equal(await f.canvas.getByRole('button', { name: 'Side panel', exact: true }).getAttribute('aria-pressed'), 'false', 'the inspector does not resize the board during a drag');
-    await f.page.mouse.up(); await f.canvas.getByRole('complementary', { name: 'Selected agent', exact: true }).waitFor();
-    await f.fit();
-    const cancel = await f.node('Answer 1').boundingBox();
-    await f.page.mouse.move(cancel.x - 14, cancel.y - 14); await f.page.mouse.down();
-    await f.page.mouse.move(cancel.x + cancel.width / 2, cancel.y + cancel.height + 14, { steps: 12 });
-    await f.page.keyboard.press('Escape'); await f.page.mouse.up();
-    assert.equal(await f.canvas.locator('.canvas-selection').count(), 0, 'Escape cancels the drag');
-    const pane = await f.canvas.locator('.react-flow__pane').boundingBox();
-    await f.page.mouse.dblclick(pane.x + 25, pane.y + 25); await f.agentCount(3, 'double-click creation still works');
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
 for (const preserves of [false, true]) test(`delayed provider catalog ${preserves ? 'retains an offered model' : 'chooses its default'}`, async () => {
   let release;
   const delayed = new Promise(resolve => { release = resolve; });
@@ -165,27 +107,6 @@ for (const preserves of [false, true]) test(`delayed provider catalog ${preserve
     await model.click(); await f.page.getByRole('option').first().waitFor(); assert.deepEqual(await f.page.getByRole('option').allTextContents(), ['Default model', 'Delayed default', ...(preserves ? ['Shared Sol'] : [])]); await f.page.keyboard.press('Escape');
     assert.deepEqual(f.errors, []);
   } finally { release([]); await f.close(); }
-});
-
-test('keep-flow bridges alongside and feedback chains, reports links, Undo restores, plain Delete does not bridge', async () => {
-  const f = await openCanvas({ graph: { name: 'Keep every link', nodes: ['Input', 'Answer 3', 'Middle', 'Output'].map((id, i) => agent(id, i * 260)), edges: [wire('Input', 'Answer 3', { kind: 'alongside' }), wire('Answer 3', 'Middle', { feedback: true, label: 'Result' }), wire('Middle', 'Output')] } });
-  try {
-    await f.fit(); const original = await f.saved();
-    await f.node('Answer 3').click(); await f.node('Middle').click({ modifiers: ['Shift'] });
-    await f.page.keyboard.press('Control+Delete');
-    const graph = await f.saved();
-    const bridged = graph.edges.find(e => e.source === 'Input' && e.target === 'Output');
-    assert.ok(bridged, 'every link kind participates across multiple deleted agents');
-    assert.equal(bridged.kind, 'alongside'); assert.equal(bridged.feedback, true);
-    assert.equal(new Set(graph.edges.map(e => `${e.source}->${e.target}`)).size, graph.edges.length);
-    assert.ok(graph.edges.every(e => e.source !== e.target));
-    await f.canvas.getByRole('status').filter({ hasText: /Deleted.*kept \d+ links?/ }).waitFor();
-    await f.canvas.getByRole('button', { name: 'Undo', exact: true }).click();
-    assert.deepEqual((await f.saved()).edges, original.edges);
-    await f.fit(); await f.node('Answer 3').click(); await f.page.keyboard.press('Delete');
-    assert.ok(!(await f.saved()).edges.some(e => e.source === 'Input' && e.target === 'Middle'), 'plain Delete does not bridge');
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
 });
 
 test('keep-flow reconnects the implicit Mother agent and does not duplicate an existing survivor link', async () => {

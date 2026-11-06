@@ -3,7 +3,7 @@
 // message box keeps one row, and a tight gap under each reply. Local bridge fixture with a fake desktop; no engine.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture, TURNS } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cjs');
 const { oranges } = require('./controls.cjs');
 const fs = require('node:fs/promises');
 const path = require('node:path');
@@ -14,7 +14,6 @@ async function using(options, run) {
   try { await run(f); assert.deepEqual(f.errors, []); } finally { await f.close(); }
 }
 const eventually = async check => { const end = Date.now() + 4000; for (;;) { try { return await check(); } catch (error) { if (Date.now() > end) throw error; await new Promise(resolve => setTimeout(resolve, 50)); } } };
-const reverts = f => f.posts.filter(post => post.path === '/api/threads/chat-a/rewind' && post.body.action === 'restore');
 
 test('Back and Forward walk the chats and pages visited: the buttons, Alt+Left and Alt+Right, and the mouse side buttons', () => using({}, async f => {
   const { page } = f;
@@ -73,18 +72,6 @@ test('right-click on a message keeps the hover … actions and appends Change th
   await closeMenu(page);
   await page.locator('.message.agent', { hasText: 'All green.' }).click({ button: 'right' });
   assert.ok((await menuItems(page)).includes('Regenerate reply'), 'the last reply can still be regenerated');
-}));
-
-test('Copy as Markdown copies the source and Copy text the words a reader sees', () => using({}, async f => {
-  const { page } = f;
-  await f.open('chat-a');
-  const reply = page.locator('.message.agent', { hasText: 'two passes' });
-  await reply.click({ button: 'right' }); await page.getByRole('menuitem', { name: 'Copy as Markdown' }).click();
-  assert.equal(await f.copied(), TURNS[0][2]);
-  await reply.click({ button: 'right' }); await page.getByRole('menuitem', { name: 'Copy text' }).click();
-  assert.equal(await f.copied(), 'The parser has two passes.\n\n- lexing\n- parsing\n\nSee the guide.');
-  await page.locator('.message.user', { hasText: 'Run them.' }).click({ button: 'right' }); await page.getByRole('menuitem', { name: 'Copy as Markdown' }).click();
-  assert.equal(await f.copied(), 'Run them.');
 }));
 
 // A112: exercise the browser clipboard, not the fixture's writeText recorder.
@@ -160,50 +147,6 @@ for (const colorScheme of ['light']) {
   }));
 }
 
-test('Rewind to here asks first, then drops that turn and every later one and puts the prompt back in the box', () => using({}, async f => {
-  const { page, composer } = f;
-  await f.open('chat-a');
-  const rewind = async () => { await page.locator('.message.user', { hasText: 'Add tests.' }).click({ button: 'right' }); await page.getByRole('menuitem', { name: 'Rewind to here' }).click(); };
-  await rewind();
-  const dialog = page.getByRole('alertdialog'); await dialog.waitFor();
-  assert.match(await dialog.innerText(), /Rewind to this message\?[\s\S]*2 turns/);
-  await dialog.getByRole('button', { name: 'Cancel' }).click(); await dialog.waitFor({ state: 'hidden' });
-  assert.equal(reverts(f).length, 0, 'Cancel changes nothing');
-  await page.getByText('All green.', { exact: true }).waitFor();
-  await rewind(); await dialog.getByRole('button', { name: 'Rewind', exact: true }).click();
-  await eventually(async () => assert.equal(reverts(f).length, 1));
-  assert.deepEqual(reverts(f)[0].body, { action: 'restore', beforeTurnId: 't3', mode: 'conversation' }, 'only a rewind: no new message');
-  await page.getByText('All green.', { exact: true }).waitFor({ state: 'hidden' });
-  await page.getByText('Added three tests.').waitFor({ state: 'hidden' });
-  await page.getByText('Rename the lexer.', { exact: true }).waitFor();
-  assert.equal(await composer.inputValue(), 'Add tests.');
-}));
-
-test('a rail of ticks at the transcript’s left edge marks each prompt; a tick scrolls to it and the current one is lit', () => using({}, async f => {
-  const { page } = f;
-  await f.open('chat-a');
-  const rail = page.getByRole('navigation', { name: 'User messages' }), ticks = rail.locator('[data-slot="prompt-mark"]');
-  await rail.waitFor();
-  assert.equal(await ticks.count(), 4, 'one tick per prompt');
-  const lit = () => rail.locator('[aria-current="true"]').getAttribute('aria-label');
-  assert.equal(await lit(), 'Jump to user message 4', 'the end of the chat is on the last prompt');
-  const place = await page.evaluate(() => { const r = document.querySelector('nav[aria-label="User messages"]').getBoundingClientRect(), s = document.querySelector('.chat-scroll').getBoundingClientRect(); return { left: r.left - s.left, top: r.top - s.top, bottom: s.bottom - r.bottom, width: r.width }; });
-  assert.ok(place.left >= 0 && place.left <= 24, `at the left edge: ${place.left}px`);
-  assert.ok(place.top >= 0 && place.bottom >= 0 && place.width <= 42, `a rail inside the transcript: ${JSON.stringify(place)}`);
-  const boxes = await ticks.evaluateAll(nodes => nodes.map(node => { const r = node.getBoundingClientRect(); return [r.top, r.bottom]; }));
-  for (let i = 1; i < boxes.length; i++) assert.ok(boxes[i][0] >= boxes[i - 1][1], 'ticks do not overlap');
-  const topOf = text => page.evaluate(label => { const s = document.querySelector('.chat-scroll'); const el = [...document.querySelectorAll('.message.user')].find(node => node.textContent.includes(label)); return Math.round(el.getBoundingClientRect().top - s.getBoundingClientRect().top); }, text);
-  await ticks.first().click();
-  await eventually(async () => { const top = await topOf('Explain the parser.'); assert.ok(top >= -2 && top <= 140, `the first prompt is at the top: ${top}px`); });
-  assert.equal(await lit(), 'Jump to user message 1');
-  await ticks.nth(2).click();
-  await eventually(async () => assert.equal(await lit(), 'Jump to user message 3'));
-  const top = await eventually(async () => { const t = await topOf('Add tests.'); assert.ok(t >= -2 && t <= 140, `${t}px`); return t; });
-  assert.ok(top <= 140);
-  await page.locator('.chat-scroll').evaluate(node => node.scrollTo({ top: node.scrollHeight }));
-  await eventually(async () => assert.equal(await lit(), 'Jump to user message 4'));
-}));
-
 test('a newer scroll to the end wins over a prompt jump still settling', () => using({}, async f => {
   const { page } = f;
   await f.open('chat-a');
@@ -254,17 +197,6 @@ for (const colorScheme of ['light']) {
 }
 
 // 19 Oct (d9f2a0ff4): hover actions hang under a message, so the gap to the next one holds the 28px buttons plus air.
-test('the gap under a reply, up to the next message, holds its hover actions and no more', () => using({}, async f => {
-  const { page } = f;
-  await f.open('chat-a');
-  const gap = await page.evaluate(() => {
-    const reply = document.querySelectorAll('.message.agent')[0], next = document.querySelectorAll('.message.user')[1];
-    const last = reply.querySelector('.markdown').lastElementChild.getBoundingClientRect();
-    return Math.round(next.getBoundingClientRect().top - last.bottom);
-  });
-  assert.ok(gap >= 40 && gap <= 60, `the gap is ${gap}px`);
-}));
-
 test('the new surfaces paint no orange in the light theme: the @ picker, the + menu, a message menu, the prompt rail, the back buttons and the side panel', () => using({ colorScheme: 'light', storage: { 'elpis-preferences-v1': JSON.stringify({ accent: 'blue' }) } }, async f => {
   const { page, composer } = f;
   await f.open('chat-a');

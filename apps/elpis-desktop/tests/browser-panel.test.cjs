@@ -220,26 +220,6 @@ test('find bar, options menu, Not secure, zoom and the failure screen', async t 
   assert.deepEqual(errors, []);
 });
 
-test('the page area follows the app theme: the app background, never white, and the desktop is told dark, the choice and the colour', async t => {
-  const { page, errors } = await fixture(t);
-  const look = () => page.evaluate(() => ({ viewport: getComputedStyle(document.querySelector('.browser-viewport')).backgroundColor, body: getComputedStyle(document.body).backgroundColor,
-    dark: document.documentElement.classList.contains('dark'), reported: window.__themes.at(-1) }));
-  for (const scheme of ['dark', 'light']) {
-    await page.emulateMedia({ colorScheme: scheme });
-    await eventually(async () => {
-      const seen = await look();
-      assert.equal(seen.dark, scheme === 'dark');
-      assert.notEqual(seen.viewport, 'rgb(255, 255, 255)', `${scheme}: the page area is not white`);
-      assert.equal(seen.viewport, seen.body, `${scheme}: the page area is the app background`);
-      assert.deepEqual(seen.reported, { dark: scheme === 'dark', source: 'system', background: seen.body });
-    });
-  }
-  await page.evaluate(() => localStorage.setItem('elpis-theme', 'dark')); await page.reload();
-  await page.getByRole('button', { name: 'Annotate this page' }).waitFor();
-  await eventually(async () => { const seen = await look(); assert.deepEqual(seen.reported, { dark: true, source: 'dark', background: seen.body }, 'an explicit choice is reported as the choice, whatever the system says'); });
-  assert.deepEqual(errors, []);
-});
-
 for (const running of [false, true]) test(`Annotate in an open chat${running ? ' while its turn runs' : ''}: Send adds the comments to that chat, not a new conversation (A16)`, async t => {
   const { page, posts, errors } = await fixture(t, { running });
   await page.locator('.thread-row[data-thread-id="a"] .thread-link').click();

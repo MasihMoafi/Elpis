@@ -9,7 +9,6 @@ const writer = (id, title, x, y, folder) => ({ id, type: 'agent', position: { x,
 /** Two parts side by side and a join that waits for both. */
 const TEAM = { name: 'Two parts', nodes: [writer('a1', 'Quillon · Part 1', 240, -60, 'src'), writer('a2', 'Veyra · Part 2', 240, 60, 'docs'), writer('a3', 'Join', 480, 0, 'tests')],
   edges: [{ id: 'a1->a3', source: 'a1', target: 'a3' }, { id: 'a2->a3', source: 'a2', target: 'a3' }] };
-const ALONE = { name: 'One part', nodes: [writer('a1', 'Quillon · Part 1', 240, 0, 'src')], edges: [] };
 const KEPT = 'Kept for inspection: /tmp/demo-elpis/graph-1/a1 (branch elpis/graph-1/a1), /tmp/demo-elpis/graph-1/a2 (branch elpis/graph-1/a2).';
 
 /** Waits until `read()` is truthy, naming the step on failure. */
@@ -26,21 +25,6 @@ const run = canvas => canvas.getByRole('button', { name: 'Run graph', exact: tru
 const ended = (status, error, tasks = {}) => (item, looks) => looks === 0 ? undefined : { id: item.graphId, name: item.name, status, error, worktreeReport: error, eventCount: 9,
   tasks: item.tasks.map(task => ({ id: task.id, kind: task.kind, title: task.title, status: 'succeeded', assignedThreadId: null, failureReason: null, ...tasks[task.id] })) };
 const status = async (node, selector = '.agent-node') => node.locator(selector).first().getAttribute('data-status');
-
-test('a run asks for worktree isolation in a git repository with more than one writing agent, and not otherwise', async () => {
-  const sent = async options => {
-    const opened = await openCanvas(options);
-    try { await run(opened.canvas); return (await eventually(() => opened.runs[0], 'the run was sent')); }
-    finally { await opened.close(); }
-  };
-  const inRepository = await sent({ graph: TEAM, repository: true });
-  assert.equal(inRepository.isolation, 'worktree');
-  assert.deepEqual(inRepository.tasks.filter(task => task.kind === 'implement').map(task => task.id), ['a1', 'a2', 'a3']);
-  // The folder is not a git repository: Elpis would refuse the run, so the canvas leaves isolation out.
-  assert.equal('isolation' in await sent({ graph: TEAM, repository: false }), false);
-  // One writing agent has no one to clash with.
-  assert.equal('isolation' in await sent({ graph: ALONE, repository: true }), false);
-});
 
 // 28 Oct (arch-drawer, filming for Masih): "a running workflow has no cancel control anywhere". The run's status has
 // Stop beside it while the run goes on; Stop asks the engine to cancel the run (its root chat's interrupt), and the

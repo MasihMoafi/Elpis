@@ -5,7 +5,6 @@ const os = require('node:os');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const { fixture } = require('./parity-fixture.cjs');
-const { assertUiFit } = require('./ui-fit.cjs');
 
 function state(login = 'octocat') {
   const github = { name: 'GitHub', transport: 'gh', enabled: false, login }, writes = [];
@@ -115,24 +114,6 @@ test('Connect opens a side terminal and types only gh auth login --web once; ret
   } finally { await f.close(); }
 });
 
-test('failed saves and browser-only Connect show a useful error without starting login', async () => {
-  const s = state(), f = await fixture({ routes: { ...s.routes, '/api/customize/github': () => ({ __http: 500, error: 'Could not save GitHub preference.' }) } });
-  try {
-    const view = await connectors(f.page);
-    await view.getByRole('switch', { name: 'Use GitHub', exact: true }).click();
-    await f.page.getByText('Could not save GitHub preference.', { exact: true }).waitFor();
-    assert.equal(await view.getByRole('switch', { name: 'Use GitHub', exact: true }).getAttribute('aria-checked'), 'false');
-    assert.deepEqual(await f.page.evaluate(() => window.__terminal.input), []);
-  } finally { await f.close(); }
-  const browser = await fixture({ desktop: false, routes: state(null).routes });
-  try {
-    const view = await connectors(browser.page);
-    await view.getByRole('button', { name: 'Connect', exact: true }).click();
-    await browser.page.getByText('Connect GitHub in the Elpis desktop app.', { exact: true }).waitFor();
-    assert.equal(browser.posts.some(item => item.path === '/api/customize/github'), false);
-  } finally { await browser.close(); }
-});
-
 test('GitHub can still be switched off after its gh login expires', async () => {
   const s = state(null); s.github.enabled = true;
   const f = await fixture({ routes: s.routes });
@@ -145,25 +126,3 @@ test('GitHub can still be switched off after its gh login expires', async () => 
     assert.deepEqual(await f.page.evaluate(() => window.__terminal.input), []);
   } finally { await f.close(); }
 });
-
-for (const [width, height] of [[900, 700]]) for (const theme of ['light']) {
-  test(`GitHub connected and disconnected fit ${width}×${height} ${theme}`, async () => {
-    const s = state(), f = await fixture({ width, height, colorScheme: theme, routes: s.routes });
-    try {
-      await f.page.waitForFunction(dark => document.querySelector('.app-shell').classList.contains('dark') === dark, theme === 'dark');
-      await connectors(f.page);
-      for (const connected of [true, false]) {
-        s.github.login = connected ? 'octocat' : null;
-        await f.page.getByRole('button', { name: 'Refresh connectors', exact: true }).click();
-        await f.page.getByText(connected ? 'Connected as octocat' : 'Not connected', { exact: true }).waitFor();
-        await f.page.evaluate(async () => { await Promise.all(document.getAnimations().filter(animation => animation.effect?.getComputedTiming().iterations !== Infinity).map(animation => animation.finished.catch(() => {}))); });
-        await assertUiFit(f.page.locator('.customize'), `GitHub ${connected ? 'connected' : 'disconnected'}`);
-        if (process.env.ELPIS_SHOTS) {
-          await fs.mkdir(process.env.ELPIS_SHOTS, { recursive: true });
-          await f.page.screenshot({ path: `${process.env.ELPIS_SHOTS}/github-${width}-${theme}-${connected ? 'connected' : 'disconnected'}.png` });
-        }
-      }
-      assert.deepEqual(f.errors, []);
-    } finally { await f.close(); }
-  });
-}

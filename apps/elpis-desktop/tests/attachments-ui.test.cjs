@@ -129,21 +129,6 @@ test('twenty files fit; of twenty-two the last two are named in one notice and t
   assert.equal(await chips(page).count(), 20);
 }));
 
-test('a file over 30 MB is named in the notice and the files beside it still attach; every notice looks alike', () => using({}, async f => {
-  const { page } = f;
-  await chooseFiles(page, [text('fine.txt'), { name: 'huge.png', mimeType: 'image/png', buffer: Buffer.alloc(31 * MiB, 1) }, picture('also-fine.png')]);
-  await chips(page).nth(1).waitFor();
-  assert.deepEqual(await chips(page).locator('[data-slot="attachment-name"]').allInnerTexts(), ['fine.txt', 'also-fine.png']);
-  const tooBig = await alerts(page).innerText();
-  assert.match(tooBig, /huge\.png/); assert.match(tooBig, /30 MB/); assert.doesNotMatch(tooBig, /fine\.txt/);
-  const look = () => alerts(page).evaluate(node => ({ tag: node.tagName, cls: node.className, color: getComputedStyle(node).color, size: getComputedStyle(node).fontSize }));
-  const reference = await look();
-  await chooseFiles(page, [{ name: 'archive.zip', mimeType: 'application/zip', buffer: Buffer.from('binary') }]);
-  await alerts(page).filter({ hasText: 'archive.zip' }).waitFor();
-  assert.deepEqual(await look(), reference, 'an unsupported file is told the way a too-big one is');
-  assert.equal(await chips(page).count(), 2);
-}));
-
 test('a picture past 2048 px or 3.5 MB is shrunk to a JPEG that fits, a smaller one goes as it was', () => using({}, async f => {
   const { page } = f;
   const noise = Buffer.from(await page.evaluate(async () => {

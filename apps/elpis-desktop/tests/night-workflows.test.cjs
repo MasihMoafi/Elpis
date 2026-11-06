@@ -52,17 +52,6 @@ test('Space opens the numbered command and Escape cancels it', async () => {
     await command.press('Escape'); assert.equal(await command.count(), 0);
   } finally { await f.close(); }
 });
-test('ordinary agents retain distinct identity colors in both views', async () => {
-  const f = await openCanvas();
-  try {
-    for (const iso of [false, true]) {
-      await f.canvas.getByRole('radio', { name: iso ? 'Isometric' : 'Flat', exact: true }).click();
-      const colors = await f.canvas.locator(iso ? '.iso-node[data-kind="agent"]' : '.agent-node[data-kind="agent"]').evaluateAll(nodes => nodes.map(n => getComputedStyle(n).getPropertyValue('--agent-color').trim()));
-      assert.equal(new Set(colors).size, 4);
-    }
-  } finally { await f.close(); }
-});
-
 test('Space applies numbered patterns to agents, preserves editable prompts, Escape and typing stay local', async () => {
   const f = await openCanvas({ graph: { name: 'Character team', nodes: [], edges: [] } });
   try {

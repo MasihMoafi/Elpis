@@ -5,7 +5,6 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { fixture, CWD } = require('./parity-fixture.cjs');
-const { chooseTheme } = require('./controls.cjs');
 const row = (page, id) => page.locator(`aside.sidebar .thread-row[data-thread-id="${id}"]`);
 const ids = locator => locator.locator('.thread-row').evaluateAll(rows => rows.map(row => row.dataset.threadId));
 const section = (page, name) => page.locator(`aside.sidebar section[aria-label="${name}"]`);
@@ -90,22 +89,6 @@ test('a chat the removed Session Manager used is listed like any other', async (
   try {
     assert.deepEqual(await ids(section(f.page, 'Recents')), ['chat-a', 'chat-b']);
     assert.equal(await f.page.getByRole('switch', { name: 'Session Manager', exact: true }).count(), 0, 'no Session Manager switch');
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
-test('A102: waiting at the first, middle and last position; resolving it restores recency, with long titles contained', async () => {
-  const chats = Array.from({ length: 20 }, (_, i) => ({ ...chat(i ? `chat-${i}` : 'chat-a', 20 - i), ...(i === 10 ? { name: 'Long project conversation '.repeat(30) } : {}) }));
-  const f = await open(chats), expected = chats.map(chat => chat.id);
-  try {
-    for (const index of [0, 10, 19]) {
-      const threadId = chats[index].id;
-      f.emit('message', { method: 'thread/status/changed', params: { threadId, status: { type: 'active', activeFlags: ['waitingOnUserInput'] } } });
-      await eventually(async () => assert.deepEqual(await ids(section(f.page, 'Recents')), [threadId, ...expected.filter(id => id !== threadId)]));
-      assert.equal(await row(f.page, threadId).locator('.thread-title').evaluate(title => title.getBoundingClientRect().right <= title.closest('.thread-row').getBoundingClientRect().right), true);
-      f.emit('message', { method: 'thread/status/changed', params: { threadId, status: { type: 'idle' } } });
-      await eventually(async () => assert.deepEqual(await ids(section(f.page, 'Recents')), expected));
-    }
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

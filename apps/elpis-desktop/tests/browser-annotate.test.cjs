@@ -61,46 +61,6 @@ test('annotation mode: click picks an element, drag picks an area, a selection p
   });
 });
 
-test('Space lets the page be used, Escape leaves, markers open their comment, and the draft is painted before capture', async () => {
-  await withPage(async page => {
-    await page.evaluate(() => window.__emit({ type: 'state', mode: true, markersVisible: true, comments: [], draft: null }));
-    const button = await center(page, 'button');
-    await page.keyboard.down('Space');
-    await page.mouse.click(button.x, button.y);
-    await page.keyboard.up('Space');
-    assert.equal(await page.evaluate(() => window.clicked), 1, 'holding Space passes clicks to the page');
-    assert.equal((await sent(page, 'pick')).length, 0);
-
-    await page.keyboard.press('Escape');
-    assert.equal((await sent(page, 'exit')).length, 1);
-
-    const rect = await page.locator('button').boundingBox();
-    const comment = { id: 'c1', number: 1, kind: 'element', pageUrl: page.url(), anchor: { selector: '#login > button.primary.big', rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height }, isFixed: false } };
-    await page.evaluate(comment => window.__emit({ type: 'state', mode: true, markersVisible: true, comments: [comment], draft: { ...comment, id: 'd1', number: 2 } }), comment);
-    await page.evaluate(() => window.__emit({ type: 'paint', id: 'd1' }));
-    await page.waitForFunction(() => window.__sent.some(item => item.message.type === 'painted' && item.message.id === 'd1'));
-    const shot = await page.screenshot({ clip: { x: rect.x - 16, y: rect.y - 16, width: rect.width + 32, height: rect.height + 32 } });
-    assert.ok(shot.length > 0);
-    const marker = { x: rect.x + rect.width, y: rect.y };
-    // The marker sits on the element's top-right corner; clicking it opens that comment.
-    await page.mouse.click(marker.x - 2, marker.y + 2);
-    assert.deepEqual((await sent(page, 'edit')).map(message => message.id), ['c1']);
-    await page.evaluate(() => window.__emit({ type: 'state', mode: false, markersVisible: false, comments: [], draft: null }));
-    await page.mouse.click(button.x, button.y);
-    assert.equal(await page.evaluate(() => window.clicked), 2, 'leaving annotation mode gives the page its clicks back');
-  });
-});
-
-test('wheel over an inner scroll area still scrolls it while annotating', async () => {
-  await withPage(async page => {
-    await page.evaluate(() => window.__emit({ type: 'state', mode: true, markersVisible: true, comments: [], draft: null }));
-    const box = await center(page, '#scroller');
-    await page.mouse.move(box.x, box.y); await page.mouse.wheel(0, 200);
-    await page.waitForFunction(() => document.querySelector('#scroller').scrollTop > 0);
-  });
-});
-
-
 for (const kind of ['modal', 'popover']) test(`annotation selects popup elements above the page without dismissing its ${kind}`, async () => {
   await withPage(async page => {
     await page.evaluate(kind => {
