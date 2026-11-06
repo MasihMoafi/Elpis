@@ -18,12 +18,14 @@ export function readReply(part: Pick<Attachment, "name" | "type"> & { text?: str
   if (part.type !== "text" || !part.text) return null;
   const match = /^Replying to ([^\n]+)\nMessage: ([^\n]+)\n\n([\s\S]+)$/.exec(part.text);
   if (!match || part.name !== `Reply to ${match[1]}`) return null;
-  try { const ids: unknown = JSON.parse(match[2]); if (!Array.isArray(ids) || ids.length !== 2 || ids.some(id => typeof id !== "string" || !id || id.length > 500)) return null; } catch { return null; }
-  if (match[3].startsWith('Image: "')) {
+  const [, speaker, reference, text] = match;
+  if (speaker === undefined || reference === undefined || text === undefined) return null;
+  try { const ids: unknown = JSON.parse(reference); if (!Array.isArray(ids) || ids.length !== 2 || ids.some(id => typeof id !== "string" || !id || id.length > 500)) return null; } catch { return null; }
+  if (text.startsWith('Image: "')) {
     try {
-      const name: unknown = JSON.parse(match[3].slice(7));
-      if (typeof name === "string" && name && name.length <= 500) return { speaker: match[1], reference: match[2], text: name, image: { name } };
+      const name: unknown = JSON.parse(text.slice(7));
+      if (typeof name === "string" && name && name.length <= 500) return { speaker, reference, text: name, image: { name } };
     } catch { /* A plain text quote may itself start with Image:. */ }
   }
-  return { speaker: match[1], reference: match[2], text: match[3] };
+  return { speaker, reference, text };
 }

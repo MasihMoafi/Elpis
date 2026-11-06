@@ -93,7 +93,7 @@ export function FileTree({ cwd }: { cwd: string }) {
     setProblem("");
     if (dir) toggleDir(cwd, path);
     else if (isAudioPath(path)) { if (!openRef({ path }, { onError: setProblem })) setProblem("Open a project folder to play this file."); }
-    else openFile(cwd, path, { preview: !keep, line, endLine: line });
+    else openFile(cwd, path, { preview: !keep, ...(line === undefined ? {} : { line, endLine: line }) });
   }, [cwd]);
   const onError = useCallback((text: string) => setProblem(text), []);
 
@@ -102,7 +102,8 @@ export function FileTree({ cwd }: { cwd: string }) {
   const keys = (event: KeyboardEvent<HTMLDivElement>) => {
     const items = [...(box.current?.querySelectorAll<HTMLElement>('[role="treeitem"]') ?? [])], at = items.indexOf(document.activeElement as HTMLElement);
     if (at < 0 || event.ctrlKey || event.metaKey || event.altKey) return;
-    const here = items[at], path = here.dataset.path ?? "", dir = !!here.dataset.dir, expanded = here.getAttribute("aria-expanded") === "true";
+    const here = items[at]; if (!here) return;
+    const path = here.dataset.path ?? "", dir = !!here.dataset.dir, expanded = here.getAttribute("aria-expanded") === "true";
     const go = (item?: HTMLElement) => { if (item) { event.preventDefault(); item.focus(); } };
     if (event.key === "ArrowDown") go(items[at + 1]);
     else if (event.key === "ArrowUp") go(items[at - 1]);
@@ -118,7 +119,7 @@ export function FileTree({ cwd }: { cwd: string }) {
 
   const note = (text: string) => <p className="files-note" role="status">{text}</p>;
   const rowFor = (path: string, where?: string) => <TreeRow key={`f:${path}`} cwd={cwd} path={path} name={path.slice(path.lastIndexOf("/") + 1)} depth={0} dir={false} selected={pane.selected === path} current={pane.active === path}
-    flash={false} tab={false} where={where} onError={onError} onOpen={open} />;
+    flash={false} tab={false} {...(where === undefined ? {} : { where })} onError={onError} onOpen={open} />;
 
   let body: React.ReactNode;
   if (mode === "contents") {
