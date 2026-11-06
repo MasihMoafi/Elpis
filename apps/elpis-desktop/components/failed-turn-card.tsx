@@ -5,18 +5,9 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { Model } from "@/lib/api";
 import { errorText } from "@/lib/error-text.mjs";
+import { failureKind, plainResetTime } from "@/lib/failed-turn";
 
 export type FailedTurn = { turnId: string; error: { message: string; codexErrorInfo?: string | Record<string, unknown>; additionalDetails?: string | null } };
-
-function plainResetTime(message: string) {
-  return message.replace(/\bResets in\s*((?:\d+\s*[dhms]\s*)+)(?=[.!?]|$)/gi, (match, duration: string) => {
-    const labels: Record<string, string> = { d: "day", h: "hour", m: "minute", s: "second" };
-    const parts = [...duration.matchAll(/(\d+)\s*([dhms])/gi)].map(([, count, unit]) => `${count} ${labels[unit.toLowerCase()]}${count === "1" ? "" : "s"}`);
-    if (!parts.length) return match;
-    const list = parts.length === 1 ? parts[0] : parts.length === 2 ? `${parts[0]} and ${parts[1]}` : `${parts.slice(0, -1).join(", ")}, and ${parts.at(-1)}`;
-    return `Resets in ${list}`;
-  });
-}
 
 /** Keep recovery beside the failed answer. Only complete text input can use thread/revert. */
 export function FailedTurnCard({ failure, models, currentModel, disabled, blockedReason, onRetry }: {
@@ -26,10 +17,7 @@ export function FailedTurnCard({ failure, models, currentModel, disabled, blocke
   const [pending, setPending] = useState(false), [sent, setSent] = useState(false), [error, setError] = useState("");
   const sending = useRef(false);
   const info = failure.error.codexErrorInfo;
-  const kind = (typeof info === "string" ? info : Object.keys(info ?? {})[0] ?? "").toLowerCase();
-  const overloaded = kind === "serveroverloaded" || (typeof info === "object" && info !== null &&
-    (info.httpStatusCode === 529 || Object.values(info).some(value => typeof value === "object" && value !== null && "httpStatusCode" in value && value.httpStatusCode === 529)));
-  const usage = kind === "usagelimitexceeded", limited = usage || kind === "ratelimitexceeded";
+  const { overloaded, usage, limited } = failureKind(info);
   const alternatives = [...new Map(models.filter(model => model.model !== currentModel).map(model => [model.model, model])).values()];
   async function retry(model?: string) {
     if (!onRetry || sending.current || sent || disabled) return;

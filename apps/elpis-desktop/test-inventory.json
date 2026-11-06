@@ -66,7 +66,8 @@
     "tests/follow-ups.test.mjs",
     "tests/canvas-run.test.mjs",
     "tests/files-pane.test.mjs",
-    "tests/improve-reason.test.mjs"
+    "tests/improve-reason.test.mjs",
+    "tests/failed-turn.test.mjs"
   ],
   "bridge": [
     "bridge/cloudroom-vm.test.mjs",

@@ -39,30 +39,6 @@ test('failed turns show inline and Try again resends once, preserving the draft'
   assert.equal(await composer.inputValue(), 'Keep this draft');
 }));
 
-for (const codexErrorInfo of ['serverOverloaded', { httpConnectionFailed: { httpStatusCode: 529 } }, 'usageLimitExceeded']) test(`a ${JSON.stringify(codexErrorInfo)} failure can switch model and retry`, () => using(async ({ page, posts, fail }) => {
-  await fail({ message: 'Please try later.', codexErrorInfo });
-  const notice = card(page); await notice.waitFor();
-  const usage = codexErrorInfo === 'usageLimitExceeded';
-  assert.match(await notice.innerText(), usage ? /Rate limited/ : /Model overloaded/);
-  await notice.getByRole('button', { name: usage ? 'Switch model' : 'Switch model and retry', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'GPT-6-Luna', exact: true }).click();
-  await eventually(() => assert.equal(posts.filter(p => p.path.endsWith('/revert')).length, 1));
-  assert.deepEqual(posts.find(p => p.path.endsWith('/revert')).body, { beforeTurnId: 't4', text: 'Run them.', model: 'gpt-6-luna' });
-}));
-
-test('rate limits have no overload switch; unsafe input explains why retry is unavailable', () => using(async ({ page, fail }) => {
-  await fail({ message: 'Wait a moment.', codexErrorInfo: 'rateLimitExceeded' });
-  await card(page).getByRole('heading', { name: 'Rate limited', exact: true }).waitFor();
-  assert.equal(await card(page).getByRole('button', { name: /Switch model/ }).count(), 0);
-  await fail({ message: 'Missing input.', codexErrorInfo: 'other' }, 'not-loaded');
-  await card(page).getByText(/original|complete input/i).waitFor();
-  assert.equal(await card(page).getByRole('button', { name: 'Try again', exact: true }).count(), 0);
-  await page.locator('.thread-row[data-thread-id="chat-b"] .thread-link').click();
-  assert.equal(await card(page).count(), 0);
-  await page.locator('.thread-row[data-thread-id="chat-a"] .thread-link').click();
-  await card(page).waitFor();
-}));
-
 for (const colorScheme of ['light']) test(`${colorScheme} quota reset time is readable and changing the composer model clears the stale card`, () => using(async ({ page, fail }) => {
   await fail({ message: 'Gemini (ACP) error: Individual quota reached. Resets in 17h3m6s.', codexErrorInfo: 'usageLimitExceeded' });
   const notice = card(page);
