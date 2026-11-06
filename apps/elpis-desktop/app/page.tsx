@@ -4,11 +4,8 @@ import { flushSync } from "react-dom";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { ViewBoundary } from "@/components/view-boundary";
 import { useAppearance } from "@/lib/use-appearance";
-import { CommandMenu } from "@/components/command-menu";
 import { newChatFolder } from "@/lib/preferences";
 import { usePromptKeys } from "@/lib/prompt-history";
-import { ShortcutsDialog } from "@/components/shortcuts-dialog";
-import { StartupSplash } from "@/components/startup-splash";
 import { DeleteChatsDialog } from "@/components/thread-actions";
 import { SidebarChatList } from "@/components/sidebar-chat-list";
 import { createSidebarThreadRow } from "@/components/sidebar-thread-row";
@@ -30,7 +27,6 @@ import { RewindDialog } from "@/components/rewind-dialog";
 import { useNavHistory } from "@/lib/nav-history";
 import { ReadAloud } from "@/components/read-aloud";
 import { LiveVoiceProvider } from "@/components/live-voice";
-import { ProfileDialog } from "@/components/profile-dialog";
 import { LOVE_SPOT_AUDIO } from "@/lib/love-spot-audio";
 import { DocumentReviewProvider } from "@/components/document-review";
 import { ChatTeamPanel } from "@/components/chat-team-panel";
@@ -101,11 +97,11 @@ import { sessionWindowApi, useDesktopCapabilities } from "@/lib/use-desktop-capa
 import { useSidebarSearch } from "@/lib/use-sidebar-search";
 import { createWorkspaceChatTabs } from "@/components/workspace-chat-tabs";
 import { WorkspaceOrganizationDialogs } from "@/components/workspace-organization-dialogs";
-import { errorText } from "@/lib/error-text.mjs";
 import { useWorkspaceStores } from "@/lib/use-workspace-stores";
 import { useWorkspaceSidebarState } from "@/lib/use-workspace-sidebar-state";
 import { createWorkspaceControls } from "@/lib/workspace-controls";
 import { useWorkspaceSplit } from "@/lib/use-workspace-split";
+import { WorkspaceCommandDialogs } from "@/components/workspace-command-dialogs";
 
 
 
@@ -116,12 +112,12 @@ export default function Home() {
   const { tabs, tabsRef, updateTabs, restoreTabs, restored: restoredTabs } = chatTabs;
   const { catalog, models, settingsSnapshot, providerSettings, refreshModels } = workspaceModels;
   const { choiceId, model, effort, setEffort, nextTurn, setNextTurn, threadModes, setThreadModes } = options;
-  const { cwd, projects, projectChats, projectChanging } = projectState;
+  const { cwd, projectChats, projectChanging } = projectState;
   const { recordedWorkflow, view, setView, viewRef, setSettingsSection } = pages;
   const sidebarStateStores = useWorkspaceSidebarState(session, options, thread => openSplit(thread), thread => openThread(thread));
   const { pins, togglePinned, bookmarks, toggleBookmarked, releaseChatOrder, groups, dialogs, notices, attentionState, selection, foldsState, collapsedProjects, collapsedSections, foldable } = sidebarStateStores;
   const { chatGroups, chatGroupsRef, updateGroups, commitGroups } = groups;
-  const { setNewGroupFor, deleteTargets, setDeleteTargets, deleteRunHistory, setDeleteRunHistory, shownWhenDeleted, shortcutsOpen, setShortcutsOpen, commandMenuOpen, setCommandMenuOpen, commandReturnFocus, shortcutsReturnFocus, renameRequest, setRenameRequest, resumeOpen, setResumeOpen } = dialogs;
+  const { setNewGroupFor, deleteTargets, setDeleteTargets, deleteRunHistory, setDeleteRunHistory, shownWhenDeleted, setShortcutsOpen, setCommandMenuOpen, commandReturnFocus, shortcutsReturnFocus, renameRequest, setRenameRequest, resumeOpen, setResumeOpen } = dialogs;
   const { error, setError, setDeletedNotice, noteKept } = notices;
   const { attention, setAttention, planTurns, markRead } = attentionState;
   const { marked, setMarked, threadList, rowLinks, clickRow } = selection;
@@ -169,7 +165,7 @@ export default function Home() {
   const conversations = useConversationList(threads, setThreads, selectedRef, setSelected, setError);
   const { threadsRef, hidden } = conversations;
   const children = useChildConversations({ conversations, selectedRef, setThreads, setError, setAgentsPanelState });
-  const { loadingChildren, checkedChildren, childCursors, expanded, setExpanded, holdAgentPanel, loadChildren } = children;
+  const { loadingChildren, checkedChildren, childCursors, expanded, setExpanded, loadChildren } = children;
   const search = useSidebarSearch(ready, hidden), searchTerm = search.searchTerm;
 
   const removeThreads = useRemoveThreads({ session, conversations, history, composer, attachments: attachmentState, drafts: draftStore, selection, runtime, tabs: chatTabs, browser, newDraftKey, setMessageEdits });
@@ -283,12 +279,7 @@ export default function Home() {
   return <DocumentReviewProvider onAttach={parts => attachFromBrowser(parts, false)}><LiveVoiceProvider><ReadAloud threadId="love-spot" enabled available={LOVE_SPOT_AUDIO.readAloudAvailable} unavailableReason={LOVE_SPOT_AUDIO.available ? undefined : LOVE_SPOT_AUDIO.reason}><div data-workspace={view} data-desktop={desktop || undefined} className={`app-shell${split.pane ? " session-pane" : ""}${split.thread && view === "chat" ? " session-split" : ""}${dark ? " dark" : ""} has-title-bar${sidebarCollapsed ? " sidebar-collapsed" : ""}${view === "settings" ? " settings-mode" : ""}${panelShown ? " panel-active" : ""}`} style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>
     <title>{view === "canvas" ? "Workflows · Elpis" : view === "experimentLab" ? "Lab · Elpis" : view === "customize" ? "Customize — Elpis" : "Elpis"}</title>
     <WorkspaceTitleBar desktop={desktop} preferences={preferences} navHistory={navHistory} sidebar={sidebar} sidebarCollapsed={sidebarCollapsed} panelShown={panelShown} panelDrawer={panelDrawer} setError={setError} newChat={newChat} goHistory={goHistory} addProject={addProject} show={show} showSidebar={showSidebar} narrow={narrow} shortcutAction={shortcutAction} />
-    <ProfileDialog ready={ready && connected} />
-    <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} returnFocus={shortcutsReturnFocus} />
-    {commandMenuOpen && <CommandMenu threads={ordinaryThreads} projects={busy || projectChanging ? [] : projects} actions={commandActions} returnFocus={commandReturnFocus} onClose={() => setCommandMenuOpen(false)} onThread={thread => { void openThread(thread); }} onProject={item => { void selectProject(item).catch(cause => setError(errorText(cause))); }} onNewChat={prompt => { newChat(); setDesktopPrompt(prompt); }} />}
-    {desktop && <StartupSplash onLeaving={() => {
-      if (view === "chat" && selected && (!ready || !connected) && !panelShown && !split.thread && window.matchMedia("(min-width: 1101px)").matches) holdAgentPanel(selected);
-    }} />}
+    <WorkspaceCommandDialogs session={session} runtime={runtime} notices={notices} pages={pages} dialogs={dialogs} projectState={projectState} sidebarModel={sidebarModel} childrenState={children} split={split} desktop={desktop} panelShown={panelShown} actions={commandActions} openThread={openThread} selectProject={selectProject} newChat={newChat} setDesktopPrompt={setDesktopPrompt} />
     <WorkspaceOrganizationDialogs projectState={projectState} dialogs={dialogs} model={sidebarModel} groups={groups} selection={selection} placement={placement} actions={projectActions}>
       <ResumeConversation open={resumeOpen} chats={sidebarThreads} returnFocus={composerRef} onClose={() => setResumeOpen(false)} onChoose={thread => { setResumeOpen(false); void openThread(thread); }} />
     </WorkspaceOrganizationDialogs>
