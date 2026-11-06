@@ -64,7 +64,8 @@
     "tests/search-rank.test.mjs",
     "tests/workflow-identity.test.mjs",
     "tests/follow-ups.test.mjs",
-    "tests/canvas-run.test.mjs"
+    "tests/canvas-run.test.mjs",
+    "tests/files-pane.test.mjs"
   ],
   "bridge": [
     "bridge/cloudroom-vm.test.mjs",

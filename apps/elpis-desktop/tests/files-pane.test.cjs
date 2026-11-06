@@ -13,7 +13,6 @@ const { promisify } = require('node:util');
 const execFile = promisify(require('node:child_process').execFile);
 const { fixture } = require('./parity-fixture.cjs');
 const { widenSidePanel } = require('./controls.cjs');
-const { assertCollectionIcon } = require('./collection-icon-assertions.cjs');
 const CWD = path.join(os.homedir(), '.cache', `elpis-file-previews-${process.pid}`);
 const trashProject = async () => { if (await fs.stat(CWD).catch(() => null)) await execFile('gio', ['trash', CWD]); };
 /** Retries `check` until it stops throwing: a folder is read by the bridge after the click that opens it. */
@@ -154,31 +153,6 @@ async function openFilesTab(f) {
   await widenSidePanel(f.page, 600);
 }
 const lit = f => f.side.locator('.fe-line.hit').evaluateAll(lines => lines.map(line => line.textContent));
-
-test('a failed file refresh preserves text typed while the read was pending', async () => {
-  const f = await open();
-  let release;
-  try {
-    await f.ref('src/lib/parser.ts:2-3').click();
-    const editor = f.editor('src/lib/parser.ts');
-    await editor.waitFor();
-    let started;
-    const reading = new Promise(resolve => started = resolve), gate = new Promise(resolve => release = resolve);
-    await f.page.route('**/api/file?**', async route => {
-      if (new URL(route.request().url()).searchParams.get('path') !== 'src/lib/parser.ts') return route.continue();
-      started(); await gate;
-      await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'The file is temporarily unavailable.' }) });
-    });
-    await f.ref('src/lib/parser.ts:2-3').click(); await reading;
-    const draft = 'My unfinished change — متن فارسی\n';
-    await editor.fill(draft);
-    const response = f.page.waitForResponse(reply => reply.status() === 503);
-    release(); await response;
-    await eventually(async () => assert.equal(await editor.inputValue(), draft));
-    assert.equal(await fs.readFile(path.join(CWD, 'src/lib/parser.ts'), 'utf8'), PROJECT['src/lib/parser.ts']);
-    assert.equal(await f.page.evaluate(() => window.__elpisHasUnsavedFiles), true);
-  } finally { release?.(); await f.close(); }
-});
 
 test('Markdown opens as a document; source editing and relative links/images keep their file context', async () => {
   for (const colorScheme of ['light']) {
@@ -349,106 +323,6 @@ test('a path in a reply is a button that opens the Files tab on the file at its 
   } finally { await f.close(); }
 });
 
-test('the Files tab is a project tree: folders open and close by click and by key, one folder is read at a time', async () => {
-  const f = await open();
-  try {
-    await openFilesTab(f);
-    assert.equal(await f.side.getByRole('tab', { name: 'Files', exact: true }).getAttribute('aria-selected'), 'true');
-    assert.match(await f.view.innerText(), /Pick a file in the tree, or click a file path in the conversation\./);
-    await eventually(async () => assert.deepEqual(await f.tree.getByRole('treeitem').allInnerTexts(), ['docs', 'src', 'package.json', 'README.md'], 'folders first, then files, by name'));
-    for (const folder of ['docs', 'src']) await assertCollectionIcon(f.row(folder).locator('svg.tree-icon'), 'folder', `Collapsed folder ${folder}`);
-    assert.equal(await f.row('src').getAttribute('aria-expanded'), 'false');
-    await f.row('src').click();
-    assert.equal(await f.row('src').getAttribute('aria-expanded'), 'true');
-    await eventually(async () => assert.deepEqual(await f.tree.getByRole('treeitem').allInnerTexts(), ['docs', 'src', 'lib', 'app.ts', 'package.json', 'README.md']));
-    assert.equal(await f.row('lib').getAttribute('aria-level'), '2');
-    await f.row('lib').click();
-    await eventually(async () => assert.deepEqual(await f.tree.getByRole('treeitem').allInnerTexts(), ['docs', 'src', 'lib', 'lexer.ts', 'parser.ts', 'app.ts', 'package.json', 'README.md']));
-    for (const folder of ['src', 'lib']) await assertCollectionIcon(f.row(folder).locator('svg.tree-icon'), 'folder', `Expanded folder ${folder}`);
-    await f.row('src').click();
-    await eventually(async () => assert.deepEqual(await f.tree.getByRole('treeitem').allInnerTexts(), ['docs', 'src', 'package.json', 'README.md'], 'a closed folder hides what it held'));
-    await f.row('src').click();
-    assert.equal(await f.row('lib').getAttribute('aria-expanded'), 'true', 'and shows it again as it was');
-
-    // Keys: arrows move, Right opens a folder, Left closes it or goes to its folder, Enter opens a file.
-    await f.row('docs').focus();
-    await f.page.keyboard.press('ArrowRight');
-    assert.equal(await f.row('docs').getAttribute('aria-expanded'), 'true');
-    await f.row('guide.md').waitFor();
-    await f.page.keyboard.press('ArrowDown');
-    assert.equal(await f.page.evaluate(() => document.activeElement?.textContent), 'guide.md');
-    await f.page.keyboard.press('ArrowLeft');
-    assert.equal(await f.page.evaluate(() => document.activeElement?.textContent), 'docs', 'Left on a file goes to its folder');
-    await f.page.keyboard.press('ArrowLeft');
-    assert.equal(await f.row('docs').getAttribute('aria-expanded'), 'false');
-    await f.row('README.md').focus();
-    await f.page.keyboard.press('Enter');
-    await f.view.getByRole('heading', { name: 'Parser', exact: true }).waitFor();
-    assert.match(await f.view.innerText(), /A tiny parser/);
-    await f.shot('files-tree-light');
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
-test('a click on a file previews it in a tab the next click replaces; a double click, or an edit, keeps it', async () => {
-  const f = await open();
-  try {
-    await openFilesTab(f);
-    await f.row('README.md').click();
-    await f.view.getByRole('heading', { name: 'Parser', exact: true }).waitFor();
-    assert.deepEqual(await f.tabs.getByRole('tab').allInnerTexts(), ['README.md']);
-    assert.equal(await f.tabs.locator('.task-tab.preview').count(), 1, 'the tab is a preview');
-    await f.row('package.json').click();
-    await f.editor('package.json').waitFor();
-    assert.deepEqual(await f.tabs.getByRole('tab').allInnerTexts(), ['package.json'], 'the preview was replaced');
-    await f.row('package.json').dblclick();
-    assert.equal(await f.tabs.locator('.task-tab.preview').count(), 0, 'a double click keeps it');
-    await f.row('README.md').click();
-    await f.view.getByRole('heading', { name: 'Parser', exact: true }).waitFor();
-    assert.deepEqual(await f.tabs.getByRole('tab').allInnerTexts(), ['package.json', 'README.md']);
-    await f.view.getByRole('button', { name: 'Edit', exact: true }).click();
-    await f.editor('README.md').click();
-    await f.page.keyboard.press('End');
-    await f.page.keyboard.type('!');
-    assert.equal(await f.tabs.locator('.task-tab.preview').count(), 0, 'an edit keeps it');
-    await f.row('docs').click(); await f.row('guide.md').click();
-    assert.deepEqual(await f.tabs.getByRole('tab').allInnerTexts(), ['package.json', 'README.md', 'guide.md'], 'a kept tab stays when another is previewed');
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
-test('the filter finds files by name from anywhere in the tree, and ? searches the contents', async () => {
-  const f = await open();
-  try {
-    await openFilesTab(f);
-    const filter = f.side.getByRole('textbox', { name: 'Filter files', exact: true });
-    assert.equal(await filter.getAttribute('placeholder'), 'Filter files… (? for contents)');
-    await filter.fill('lpar');
-    await eventually(async () => assert.deepEqual(await f.tree.getByRole('treeitem').allInnerTexts(), ['parser.ts\nsrc/lib'], 'the file and its folder, found by letters in order'));
-    await filter.fill('guide');
-    await f.tree.getByRole('treeitem').filter({ hasText: 'guide.md' }).click();
-    await f.view.getByText(/See the parser section/).waitFor();
-    await filter.fill('zzzz');
-    assert.match(await f.side.locator('.files-tree').innerText(), /No matching files/);
-    await filter.fill('');
-    assert.deepEqual(await f.tree.getByRole('treeitem').allInnerTexts(), ['docs', 'src', 'package.json', 'README.md'], 'cleared, the tree is back');
-
-    await filter.fill('?');
-    assert.match(await f.side.locator('.files-tree').innerText(), /Type after \? to search file contents/);
-    await filter.fill('?PARSER');
-    const hits = f.tree.getByRole('treeitem');
-    await hits.nth(1).waitFor();
-    assert.deepEqual(await hits.allInnerTexts(), ['README.md', '1\n# Parser', '2\nA tiny parser.', 'guide.md\ndocs', '2\nSee the parser section.', 'package.json', '2\n"name": "parser"', 'app.ts\nsrc', '1\nimport { parse } from "./lib/parser";']);
-    await hits.nth(4).click();
-    await f.editor('docs/guide.md').waitFor();
-    assert.deepEqual(await lit(f), ['See the parser section.'], 'a found line opens its file at that line');
-    await filter.fill('?nothing-like-this');
-    await f.side.getByText('No matches in file contents').waitFor();
-    await f.shot('files-search-light');
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
 test('a file is edited in place: the tab shows unsaved edits, Ctrl+S saves them, a file that changed on disk is not overwritten, a closed edit asks first', async () => {
   const f = await open();
   try {
@@ -507,18 +381,6 @@ test('open files and unsaved edits stay when another side-panel tab is shown', a
     await f.side.getByRole('tab', { name: 'Files', exact: true }).click();
     assert.match(await f.editor('src/lib/lexer.ts').inputValue(), /done = true;\nx$/);
     await f.tabs.getByRole('img', { name: 'Unsaved changes' }).waitFor();
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
-test('an HTML file in a reply opens as a page in the built-in browser, served from its folder, not as text', async () => {
-  const f = await open();
-  try {
-    await f.ref('docs/report.html').click();
-    await eventually(async () => assert.deepEqual(await f.page.evaluate(() => window.__commands.filter(command => command.action === 'new').map(command => command.url)), [`http://127.0.0.1:4999/${'a'.repeat(32)}/report.html`]));
-    const asked = f.posts.find(post => post.path === '/api/dev-servers/page');
-    assert.deepEqual(asked.body, { cwd: `${CWD}/docs`, path: 'report.html' }, 'its folder is what gets served');
-    assert.equal(await f.side.getByRole('textbox', { name: 'Contents of docs/report.html', exact: true }).count(), 0, 'not opened as text');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
