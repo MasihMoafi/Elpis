@@ -18,33 +18,19 @@ use super::ChatWidget;
 use crate::elpis_ledger_events::ContextUsageTranscriptTotals;
 use crate::history_cell::HistoryCell;
 
-// Recognizable hues for category dots and bar segments. Labels keep the terminal
-// foreground; charcoal markers retain at least 4.5:1 contrast.
-pub(super) const USER_MESSAGES_COLOR: Color = Color::Rgb(83, 177, 255);
-pub(super) const AGENT_RESPONSES_COLOR: Color = Color::Rgb(63, 211, 148);
-pub(super) const REASONING_COLOR: Color = Color::Rgb(171, 132, 255);
-const REASONING_CATEGORY_LABEL: &str = "Reasoning + compaction";
-pub(super) const TOOL_CALLS_COLOR: Color = Color::Rgb(255, 161, 58);
-pub(super) const TOOL_RESULTS_COLOR: Color = Color::Rgb(217, 219, 117);
-pub(super) const SYSTEM_INSTRUCTIONS_COLOR: Color = Color::Rgb(240, 68, 93);
-pub(super) const DEVELOPER_MESSAGES_COLOR: Color = Color::Rgb(255, 153, 194);
-pub(super) const TOOL_DEFINITIONS_COLOR: Color = Color::Rgb(160, 160, 160);
-pub(super) const UNRECOGNIZED_ITEMS_COLOR: Color = Color::Rgb(29, 209, 226);
-pub(super) const CONTEXT_CATEGORY_MARKER: &str = "●";
+pub(super) use crate::elpis_palette::{
+    AGENT_RESPONSES_COLOR, DEVELOPER_MESSAGES_COLOR, REASONING_COLOR, SYSTEM_INSTRUCTIONS_COLOR,
+    TOOL_CALLS_COLOR, TOOL_DEFINITIONS_COLOR, TOOL_RESULTS_COLOR, UNRECOGNIZED_ITEMS_COLOR,
+    USER_MESSAGES_COLOR,
+};
+use crate::elpis_palette::{
+    LIGHT_AGENT_RESPONSES_COLOR, LIGHT_DEVELOPER_MESSAGES_COLOR, LIGHT_REASONING_COLOR,
+    LIGHT_SYSTEM_INSTRUCTIONS_COLOR, LIGHT_TOOL_CALLS_COLOR, LIGHT_TOOL_DEFINITIONS_COLOR,
+    LIGHT_TOOL_RESULTS_COLOR, LIGHT_UNRECOGNIZED_ITEMS_COLOR, LIGHT_USER_MESSAGES_COLOR,
+};
 
-// Each category has the same hue role on paper and charcoal. In particular,
-// reasoning is violet, separate from green agents and olive tool results.
-// Markers keep at least 3:1 contrast on light backgrounds; labels use the
-// terminal foreground rather than inheriting a graphical marker's color.
-const LIGHT_USER_MESSAGES_COLOR: Color = Color::Rgb(0, 108, 206);
-const LIGHT_AGENT_RESPONSES_COLOR: Color = Color::Rgb(0, 135, 92);
-const LIGHT_REASONING_COLOR: Color = Color::Rgb(113, 67, 214);
-const LIGHT_TOOL_CALLS_COLOR: Color = Color::Rgb(205, 103, 0);
-const LIGHT_TOOL_RESULTS_COLOR: Color = Color::Rgb(116, 132, 27);
-const LIGHT_SYSTEM_INSTRUCTIONS_COLOR: Color = Color::Rgb(140, 45, 60);
-const LIGHT_DEVELOPER_MESSAGES_COLOR: Color = Color::Rgb(206, 71, 143);
-const LIGHT_TOOL_DEFINITIONS_COLOR: Color = Color::Rgb(100, 100, 100);
-const LIGHT_UNRECOGNIZED_ITEMS_COLOR: Color = Color::Rgb(0, 131, 149);
+const REASONING_CATEGORY_LABEL: &str = "Reasoning + compaction";
+pub(super) const CONTEXT_CATEGORY_MARKER: &str = "●";
 
 fn light_category_color(color: Color) -> Color {
     match color {
@@ -59,7 +45,7 @@ fn light_category_color(color: Color) -> Color {
         UNRECOGNIZED_ITEMS_COLOR => LIGHT_UNRECOGNIZED_ITEMS_COLOR,
         Color::Rgb(r, g, b) => {
             let deepen = |v: u8| (u16::from(v) * 45 / 100) as u8;
-            Color::Rgb(deepen(r), deepen(g), deepen(b))
+            crate::elpis_palette::rgb(deepen(r), deepen(g), deepen(b))
         }
         other => other,
     }
@@ -625,8 +611,7 @@ fn build_category_bar_chart(
     // for small-but-material request categories.
     let bar_width = usize::from(width)
         .saturating_sub(if narrow { 13 } else { 20 })
-        .max(1)
-        .min(96);
+        .clamp(1, 96);
     let mut lines = Vec::new();
     lines.push(Line::from(
         " Context Accounting · history savings excluded".bold(),
@@ -1395,7 +1380,7 @@ mod tests {
         let darkened = [TOOL_CALLS_COLOR, TOOL_RESULTS_COLOR].map(|color| {
             let (r, g, b) = rgb(color);
             let deepen = |v: u8| (u16::from(v) * 45 / 100) as u8;
-            Color::Rgb(deepen(r), deepen(g), deepen(b))
+            crate::elpis_palette::rgb(deepen(r), deepen(g), deepen(b))
         });
         assert!(lab_distance(darkened[0], darkened[1]) < MINIMUM_LAB_DISTANCE);
     }

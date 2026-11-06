@@ -502,7 +502,7 @@ impl AgentsOverviewView {
                 ("Error", "!".red())
             }
             AgentsOverviewGroup::NeedsYou => ("Needs you", "!".red()),
-            AgentsOverviewGroup::Working => ("Working", "◐".yellow()),
+            AgentsOverviewGroup::Working => ("Working", "◐".fg(crate::elpis_palette::WORKING)),
             AgentsOverviewGroup::Ready => ("Ready", "◇".cyan()),
             AgentsOverviewGroup::Done => ("Done", "✓".green()),
             AgentsOverviewGroup::Finished => ("Inactive", "○".dim()),

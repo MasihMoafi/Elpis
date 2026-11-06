@@ -248,7 +248,7 @@ pub(crate) fn comparison_lines(record: &PruneLogRecord, width: u16) -> Vec<Line<
             .flat_map(|line| {
                 textwrap::wrap(&safe_text(line), column)
                     .into_iter()
-                    .map(|line| line.into_owned())
+                    .map(std::borrow::Cow::into_owned)
                     .collect::<Vec<_>>()
             })
             .collect()

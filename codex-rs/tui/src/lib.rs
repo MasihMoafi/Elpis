@@ -143,6 +143,11 @@ mod elpis_local_bridge;
 mod elpis_ledger_events;
 // Elpis: the Elpis motion palette.
 mod elpis_motion;
+#[allow(
+    clippy::disallowed_methods,
+    reason = "Elpis palette, matches the desktop app"
+)]
+mod elpis_palette;
 mod empty_state_animation;
 mod experimental_features;
 mod markdown_copy;

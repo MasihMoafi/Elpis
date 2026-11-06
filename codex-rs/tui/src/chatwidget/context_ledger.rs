@@ -1188,8 +1188,7 @@ impl ChatWidget {
                 context,
             ),
         ]));
-        if compact {
-            let headline = lines.pop().expect("context headline");
+        if compact && let Some(headline) = lines.pop() {
             lines.push(
                 crate::line_truncation::truncate_line_with_ellipsis_if_overflow(
                     headline,
@@ -2605,7 +2604,7 @@ fn format_source_count(value: u64) -> String {
         if !grouped.is_empty() {
             grouped.push(',');
         }
-        grouped.push_str(std::str::from_utf8(chunk).expect("digits are UTF-8"));
+        grouped.extend(chunk.iter().copied().map(char::from));
     }
     grouped
 }
