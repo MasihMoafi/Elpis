@@ -27,7 +27,6 @@ import { ShortcutsDialog } from "@/components/shortcuts-dialog";
 import { StartupSplash } from "@/components/startup-splash";
 import { permissionLabel, type PermissionMode } from "@/components/composer-controls";
 import { CopyButton } from "@/components/markdown-text";
-import { type SubmittedMessage } from "@/lib/submitted-messages";
 import { type MessageVersion } from "@/lib/turn-replacement";
 import type { TerminalLaunch } from "@/components/terminal-view";
 import { type SettingsDestination } from "@/components/settings-view";
@@ -88,7 +87,7 @@ import { activeTab, followChat, forgetChats, renameTabs, type ChatTab } from "@/
 import { TEXT_ONLY_NOTICE, fitAttachments, type Attachment } from "@/lib/attachments";
 import { LoadOnScroll } from "@/components/load-on-scroll";
 import { api, isAgentRun, AGENT_RUN_NOTICE, modelLabel, providerLabel, title, agentName,
-  type Entry, type ProviderSettings, type Thread } from "@/lib/api";
+  type ProviderSettings, type Thread } from "@/lib/api";
 import { useComposerHeight } from "@/lib/use-composer-height";
 import { useTranscriptHistory } from "@/lib/use-transcript-history";
 import { useConversationList } from "@/lib/use-conversation-list";
@@ -123,6 +122,7 @@ import { useConversationOptions } from "@/lib/use-conversation-options";
 import { useSidebarSelection } from "@/lib/use-sidebar-selection";
 import { useHistoryFallback } from "@/lib/use-history-fallback";
 import { useDesktopEntryPoints } from "@/lib/use-desktop-entry-points";
+import { useConversationSession } from "@/lib/use-conversation-session";
 import { NAV_PAGES, PAGE_NAMES } from "@/lib/workspace-navigation-pages";
 import { refusedOffline, type View, type WorkflowReplay } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
@@ -143,13 +143,10 @@ import { refreshModelCatalog, useModelCatalog } from "@/lib/model-catalog";
 export default function Home() {
   const preferences = useAppPreferences();
   const hiddenPages = preferences.hiddenPages.split(",");
-  const [threads, setThreads] = useState<Thread[]>([]);
-  const [selected, setSelected] = useState<Thread | null>(null);
-  const selectedRef = useRef<Thread | null>(null);
+  const session = useConversationSession();
+  const { threads, setThreads, selected, setSelected, selectedRef, entries, setEntries, submissions, setSubmissions, busy, setBusy, sending, loading, setLoading, scroll, stickToBottom, followingBottom, awayFromBottom, setAwayFromBottom, restoreScroll, request, initialRestoration } = session;
   // Chat tabs (lib/chat-tabs.ts): the shown tab follows the chat on screen, so every way of opening a chat lands in it.
   const { tabs, tabsRef, updateTabs, restoreTabs, restored: restoredTabs } = useChatTabs(message => setError(message));
-  const [entries, setEntries] = useState<Entry[]>([]);
-  const [submissions, setSubmissions] = useState<SubmittedMessage[]>([]);
   // The engine's live model list, shared by every model menu (lib/model-catalog.ts).
   const { models, error: catalogError, loading: catalogLoading } = useModelCatalog();
   const refreshModels = refreshModelCatalog;
@@ -221,9 +218,6 @@ export default function Home() {
   useEffect(() => {
     if (ready && connected && document.activeElement === document.body) composerRef.current?.focus();
   }, [ready, connected]);
-  const [busy, setBusy] = useState(false);
-  const sending = useRef(0);
-  const [loading, setLoading] = useState(false);
   const editDraft = (value: string) => { setText(value); saveDraft(selectedRef.current?.id || newDraftKey.current, value); };
   const attachmentState = useComposerAttachments({ selectedRef, newDraftKey, shellMode, savedAttachments, saveAttachments, setError, setRuntimeNotices });
   const { attachments, attaching, fileNotice, setFileNotice, setAttachments, restoreAttachments } = attachmentState;
@@ -292,14 +286,6 @@ export default function Home() {
   const shortcutsReturnFocus = useRef<HTMLElement | null>(null);
   const history = useTranscriptHistory(selected, loading, entries, setEntries);
   const { itemCursor, setItemCursor, historyGaps, heldCount, transcripts, prefetchThread } = history;
-  const scroll = useRef<HTMLDivElement>(null);
-  const stickToBottom = useRef(true);
-  const followingBottom = useRef(false);
-  // ChatGPT's round "scroll to bottom" button shows while the chat is away from its newest message.
-  const [awayFromBottom, setAwayFromBottom] = useState(false);
-  const restoreScroll = useRef<{ height: number; top: number } | null>(null);
-  const request = useRef(0);
-  const initialRestoration = useRef<{ threadId: string; promise: Promise<void> } | null>(null);
   const conversations = useConversationList(threads, setThreads, selectedRef, setSelected, setError);
   const { select, threadsRef, hidden } = conversations;
   const children = useChildConversations({ conversations, selectedRef, setThreads, setError, setAgentsPanelState });
