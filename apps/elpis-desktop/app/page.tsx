@@ -1,18 +1,12 @@
 "use client";
 
 import { DisclosureSummary } from "@/components/ui/disclosure-summary";
-import { BrandWordmark } from "@/components/brand-wordmark";
 import { flushSync } from "react-dom";
 import { cloneElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { ChatIcon } from "@/components/elpis-icons";
-import { ArrowDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useReorder } from "@/components/reorder";
-import { ApprovalCard } from "@/components/approval-card";
-import { PlanCard } from "@/components/plan-card";
-import { FailedTurnCard } from "@/components/failed-turn-card";
 import { ViewBoundary } from "@/components/view-boundary";
-import { WorkingPlacement } from "@/components/transcript";
 import { useBookmarks, useChatAttention, usePins, useSidebarFolds, useChatGroups } from "@/lib/use-sidebar-state";
 import { useAppearance } from "@/lib/use-appearance";
 import { addGroup, chatSubtree, moveChats, prioritizeChats } from "@/lib/chat-groups";
@@ -45,10 +39,10 @@ import { WorkspaceGuideAndLab, OtherWorkspacePages } from "@/components/other-wo
 import { WorkspaceTitleBar } from "@/components/workspace-title-bar";
 import { WorkspaceSidebar } from "@/components/workspace-sidebar";
 import { WorkspaceHeader } from "@/components/workspace-header";
+import { WorkspaceTranscript } from "@/components/workspace-transcript";
 import { useConversationTranscript } from "@/components/use-conversation-transcript";
 import { useSlashMenu } from "@/components/slash-menu";
 import { useMentionMenu } from "@/components/mention-menu";
-import { PromptRail } from "@/components/prompt-rail";
 import { RewindDialog } from "@/components/rewind-dialog";
 import { useNavHistory } from "@/lib/nav-history";
 import { DiffPanel, ReviewPanel, SessionPanel } from "@/components/slash-panels";
@@ -67,7 +61,6 @@ import { TaskList } from "@/components/task-list";
 import { useLoveActivity } from "@/lib/use-love-activity";
 import { LOVE_SPOT_AUDIO } from "@/lib/love-spot-audio";
 import { useScreenshotPopup } from "@/lib/use-screenshot-popup";
-import { WorkflowChat } from "@/components/workflow-chat";
 import { DocumentReviewProvider } from "@/components/document-review";
 import { ChatTeamPanel } from "@/components/chat-team-panel";
 import { agentColourSlots } from "@/components/agent-identity";
@@ -77,7 +70,7 @@ import { agentState } from "@/lib/agents";
 import { useBrowserPins } from "@/lib/browser-pins";
 import { useBrowser } from "@/components/browser-panel";
 import { onRequest as onFileRequest, openFile, setFileView } from "@/lib/files-pane";
-import { PersonalTip, usePersonal } from "@/components/personal-tip";
+import { usePersonal } from "@/components/personal-tip";
 import { SidePanel, sideMinWidth, useSidePanel } from "@/components/side-panel";
 import { SideChat, type SideRequest } from "@/components/side-chat";
 import { FloatChatBar, FloatChatPill } from "@/components/float-chat";
@@ -85,7 +78,6 @@ import { useSessionSplit } from "@/components/session-split";
 import { Tab } from "@/components/tab-strip";
 import { activeTab, followChat, forgetChats, renameTabs, type ChatTab } from "@/lib/chat-tabs";
 import { TEXT_ONLY_NOTICE, fitAttachments, type Attachment } from "@/lib/attachments";
-import { LoadOnScroll } from "@/components/load-on-scroll";
 import { api, isAgentRun, AGENT_RUN_NOTICE, modelLabel, providerLabel, title, agentName,
   type ProviderSettings, type Thread } from "@/lib/api";
 import { useComposerHeight } from "@/lib/use-composer-height";
@@ -129,7 +121,7 @@ import { useComposerAttachments } from "@/lib/use-composer-attachments";
 import { useComposerState } from "@/lib/use-composer-state";
 import { useProjectState } from "@/lib/use-project-state";
 import { useChatTabs } from "@/lib/use-chat-tabs";
-import { approvalDraftKey, useApprovalDrafts, useDraftStore, useSubmitOnce } from "@/lib/use-drafts";
+import { useApprovalDrafts, useDraftStore, useSubmitOnce } from "@/lib/use-drafts";
 import { sessionWindowApi, useDesktopCapabilities } from "@/lib/use-desktop-capabilities";
 import { useWorkspaceNotices } from "@/lib/use-workspace-notices";
 import { useSidebarSearch } from "@/lib/use-sidebar-search";
@@ -144,7 +136,7 @@ export default function Home() {
   const preferences = useAppPreferences();
   const hiddenPages = preferences.hiddenPages.split(",");
   const session = useConversationSession();
-  const { threads, setThreads, selected, setSelected, selectedRef, entries, setEntries, submissions, setSubmissions, busy, setBusy, sending, loading, setLoading, scroll, stickToBottom, followingBottom, awayFromBottom, setAwayFromBottom, restoreScroll, request, initialRestoration } = session;
+  const { threads, setThreads, selected, setSelected, selectedRef, entries, setEntries, submissions, setSubmissions, busy, setBusy, sending, loading, setLoading, scroll, stickToBottom, restoreScroll, request, initialRestoration } = session;
   // Chat tabs (lib/chat-tabs.ts): the shown tab follows the chat on screen, so every way of opening a chat lands in it.
   const { tabs, tabsRef, updateTabs, restoreTabs, restored: restoredTabs } = useChatTabs(message => setError(message));
   // The engine's live model list, shared by every model menu (lib/model-catalog.ts).
@@ -160,7 +152,7 @@ export default function Home() {
     projectChatsRef, projectMove, setProjectMove, newProjectFor, setNewProjectFor, nestTargets, setNestTargets,
     projectChanging, project, workflowProject, projectEdit, setProjectEdit } = projectState;
   const pages = useWorkspacePagesState();
-  const { recordedWorkflow, setRecordedWorkflow, setSettingsVisited, setSettingsNavigation, view, setView, viewRef, setSettingsSection } = pages;
+  const { recordedWorkflow, setSettingsVisited, setSettingsNavigation, view, setView, viewRef, setSettingsSection } = pages;
   const { pins, togglePinned } = usePins();
   const { bookmarks, toggleBookmarked } = useBookmarks();
   // The sidebar's order is declared further down; groups release it through this ref.
@@ -213,7 +205,7 @@ export default function Home() {
   const runtime = useRuntimeState();
   const { connected, connectionStatus, ready, runtimeNotices, setRuntimeNotices,
     activeTurns, plans, approvals, setApprovals,
-    activity, liveError, historyOnly, failedTurns, stoppedTurns,
+    activity, liveError, historyOnly,
     setReplays } = runtime;
   useEffect(() => {
     if (ready && connected && document.activeElement === document.body) composerRef.current?.focus();
@@ -285,7 +277,7 @@ export default function Home() {
   const searchInput = useRef<HTMLInputElement>(null);
   const shortcutsReturnFocus = useRef<HTMLElement | null>(null);
   const history = useTranscriptHistory(selected, loading, entries, setEntries);
-  const { itemCursor, setItemCursor, historyGaps, heldCount, transcripts, prefetchThread } = history;
+  const { itemCursor, setItemCursor, transcripts, prefetchThread } = history;
   const conversations = useConversationList(threads, setThreads, selectedRef, setSelected, setError);
   const { select, threadsRef, hidden } = conversations;
   const children = useChildConversations({ conversations, selectedRef, setThreads, setError, setAgentsPanelState });
@@ -350,7 +342,7 @@ export default function Home() {
   const readOnlyRun = !!selected && (isAgentRun(selected) || selected.desktopAccess?.writable === false);
   const continues = readOnlyRun || selected?.desktopAccess?.mode === "continue";
   const selectedModel = modelSelection({ models, providerSettings, selected, choiceId, model, effort, nextTurn });
-  const { newChoice, missingChoiceNotice, needsModelId, pending, turnModel, selectedChoice, turnEfforts, turnEffort, knownModel, fastOn } = selectedModel;
+  const { newChoice, missingChoiceNotice, needsModelId, pending, turnModel, turnEfforts, turnEffort, knownModel, fastOn } = selectedModel;
   const commandNoticeScope = JSON.stringify([view, tabs.activeId, selected?.id ?? newDraftKey.current]);
   const commandNoticeOwner = useRef(commandNoticeScope), fastNoticeOwner = useRef<string | null>(null);
   commandNoticeOwner.current = commandNoticeScope;
@@ -369,9 +361,8 @@ export default function Home() {
   useEffect(() => { updateTabs(renameTabs(tabsRef.current, id => { const thread = find(id); return thread ? title(thread) : undefined; })); }, [threads, related]); // eslint-disable-line react-hooks/exhaustive-deps
   // Back and forward: each place reached (a chat, a new chat, a page) joins the stack.
   const navHistory = useNavHistory(ready, { view, threadId: view === "chat" ? selected?.id ?? null : null });
-  const { replaceable, turnEntries, replacementOptions, replacementOptionsKey, regenerate } = useTurnReplacementView({ selected, entries, shownEntries, continues, activeTurn, connected, busy, loading, itemCursor });
-  const failedTurn = selected ? failedTurns[selected.id] : undefined;
-  const failedInput = failedTurn ? replacementOptions.get(failedTurn.turnId) : undefined;
+  const replacement = useTurnReplacementView({ selected, entries, shownEntries, continues, activeTurn, connected, busy, loading, itemCursor });
+  const { replaceable, turnEntries, replacementOptions, replacementOptionsKey, regenerate } = replacement;
   const recoveredEdit = selected ? savedDraft(`recovery-${selected.id}`) : "";
   // The message box's history keys (lib/prompt-history.ts): ↑/↓ and Ctrl+R through what you sent, Esc Esc to edit the last.
   const promptKeys = usePromptKeys(selected?.id ?? newDraftKey.current, { entries, box: () => composerRef.current, read: () => textRef.current, write: writePrompt, editLast: editLastMessage });
@@ -429,7 +420,7 @@ export default function Home() {
   const sendShell = createShellSend({ composer, attachments: attachmentState, conversations, drafts: draftStore, projectState, runtime, selectedRef, request, newDraftKey, tabsRef, busy, setBusy, setError, newMode, model, newChoice, noteStartedMode, assignProject, browser, focusComposer: () => focusComposer() });
   const { replaceFrom, rewindFrom, deleteFrom, switchRewind, loadVersions, showVersion } = createMessageActions({ composer, conversations, drafts: draftStore, history, runtime, selectedRef, request, stickToBottom, rewindSwitch, replacementOptions, entries, nextTurn, submitDraft, setRuntimeNotices, setMessageEdits, setNextTurn, setEntries, setThreads, setRewindBusy, setRewindActions, setMessageVersions, loadThread, editDraft, focusComposer: () => focusComposer(), restoreComposerFocus: origin => restoreComposerFocus(origin) });
   const { approvalCardProps } = createApprovalActions({ approvals: approvalDrafts, submissions: approvalSubmissions, runtime, request, restoreComposerFocus: origin => restoreComposerFocus(origin) });
-  const { earlierHeld, older } = createEarlierMessages({ history, selected, selectedRef, request, setLoading, setError, setEntries, stickToBottom, scroll, restoreScroll });
+  const earlier = createEarlierMessages({ history, selected, selectedRef, request, setLoading, setError, setEntries, stickToBottom, scroll, restoreScroll });
   const openById = (id: string) => openThread(threads.find(thread => thread.id === id) || related[id] || { id });
   /** "Open in Elpis TUI": the chat opens here and its terminal resumes it in the TUI (`elpis resume <id>`). */
   const openInTui = (thread: Thread) => {
@@ -523,7 +514,7 @@ export default function Home() {
   useEffect(() => { if (text) setSlashNotice(""); }, [text]);
 
   const sidebarModel = useSidebarThreads({ ready, connected, threads, hidden, selected, chatGroups, loveActivity, expanded, setExpanded, recordedWorkflow, loadChildren, search, attention, waitingIds, pins, projectChats, releaseChatOrder, searchInput, setError, setDeleteRunHistory, setDeleteTargets, hiddenPages, preferences, collapsedSections, collapsedProjects, checkedChildren, agentRunsOpen });
-  const { workflowCatalog, workflowRoots, workflowSteps, sidebarTitle, selectedWorkflow, sidebarThreads, nativeParents, treeParents, searchedThreads, sidebarState, needsYou, ordinaryThreads, ordinaryIds, pinnedChats, grouped, recentChats, ordered } = sidebarModel;
+  const { workflowCatalog, workflowRoots, workflowSteps, sidebarTitle, sidebarThreads, nativeParents, treeParents, searchedThreads, sidebarState, needsYou, ordinaryThreads, ordinaryIds, pinnedChats, grouped, recentChats, ordered } = sidebarModel;
   // Esc stops the running reply, as in Claude, wherever in the chat the focus is, unless a menu, dialog or field owns the key.
   const escapeStops = useRef<(event: KeyboardEvent) => void>(() => {});
   escapeStops.current = event => { if (selected && !readOnlyRun && activeTurn && view === "chat" && stopsOnEscape(event)) { event.preventDefault(); void stop(selected); } };
@@ -658,22 +649,7 @@ export default function Home() {
       <WorkflowPages pages={pages} sidebarModel={sidebarModel} projectState={projectState} runtime={runtime} threads={threads} models={models} workflowFolder={workflowFolder} workflowSandbox={workflowSandbox} dark={dark} show={show} openById={id => { void openById(id); }} keepWorkflowTab={keepWorkflowTab} selectProject={selectProject} addProject={addProject} workIn={workIn} finishReplay={finishReplay} />
       <OtherWorkspacePages view={view} selected={selected} threads={threads} cwd={cwd} dark={dark} loveToolbarHost={loveToolbarHost} side={side} hasTerminal={hasTerminal} setTuiLaunch={setTuiLaunch} show={show} openSettings={openSettings} newChat={newChat} editDraft={editDraft} />
       {view === "chat" && <ViewBoundary label="Chat" resetKey={selected?.id}><div className="chat-split"><div className={`chat-view${!selected && !shownEntries.length ? " empty-chat" : ""}`} data-team-loading={awaitingTeam || undefined}>
-        <div className="chat-scroll-wrap"><div className="chat-scroll" aria-busy={awaitingTeam || undefined} ref={scroll} onClickCapture={event => { if (event.target instanceof Element && event.target.closest("[data-preserve-scroll]")) { followingBottom.current = false; stickToBottom.current = false; } }} onWheel={() => { followingBottom.current = false; }} onPointerDown={() => { followingBottom.current = false; }} onKeyDown={event => { if (["PageUp", "PageDown", "Home", "End", "ArrowUp", "ArrowDown"].includes(event.key)) followingBottom.current = false; }} onScrollEnd={event => { if (followingBottom.current) { followingBottom.current = false; event.currentTarget.scrollTo({ top: event.currentTarget.scrollHeight }); } }} onScroll={event => { const element = event.currentTarget; const atBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 80; stickToBottom.current = followingBottom.current || atBottom; setAwayFromBottom(!atBottom); }}><div className="chat-content">
-          {(itemCursor || heldCount >= 0 && earlierHeld(selected?.id)) ? <LoadOnScroll className="load-earlier-messages" loading={loading} paused={!!error} label="Loading earlier messages" onLoad={() => void older()} />
-            : !loading && selected && historyGaps.has(selected.id) && <div className="context-event" role="note">The earliest part of this chat is missing, so it opened with the history that remains.</div>}
-          {loading && !shownEntries.length && <p role="status" className="chat-loading text-muted-foreground">Loading conversation…</p>}
-          {selectedWorkflow && <WorkflowChat threads={threads} run={selectedWorkflow} identity={workflowCatalog.identities[selectedWorkflow.id]} ready={ready && connected} models={models} onOpenChat={id => void openById(id)} onOpenCanvas={run => { setRecordedWorkflow({ id: run.id, rootThreadId: run.rootThreadId }); show("canvas"); }} />}
-          {!selectedWorkflow && !loading && !shownEntries.length && !activeTurn && <div className="empty-state">{selected ? <><h2>This conversation has no messages yet.</h2><p>Messages and tool activity appear here.</p></> : <><BrandWordmark className="empty-mark" dark={dark} /><h2>{project ? <>What should we build in <ProjectMenu variant="heading" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} />?</> : "What should we build?"}</h2>{personal.showTip && <PersonalTip onOpen={personal.open} onDismiss={personal.dismiss} />}</>}</div>}
-          <WorkingPlacement.Provider value={workingHost}>{chatConversation}</WorkingPlacement.Provider>
-          {selected && stoppedTurns[selected.id] && !activeTurn && <p className="turn-stopped" role="status">Stopped. The reply above is where it was when the turn was stopped.</p>}
-          {failedTurn && <FailedTurnCard key={`${selected?.id}:${failedTurn.turnId}`} failure={failedTurn} models={selectedChoice?.models ?? models} currentModel={selected?.model} disabled={!replaceable}
-            blockedReason={continues ? "Continue this conversation here before trying again." : failedInput?.allowed ? undefined : failedInput?.reason ?? "The original complete input is unavailable, so this turn cannot be safely resent."}
-            onRetry={!continues && failedInput?.allowed ? retryModel => replaceFrom(failedTurn.turnId, failedInput.prompt, undefined, retryModel) : undefined} />}
-          {selected && proposedPlan && !readOnlyRun && <PlanCard mode={permissionMode} busy={busy || !connected} onImplement={permissions => answerPlan(selected, proposedPlan, { implement: true, permissions })} onKeepPlanning={feedback => answerPlan(selected, proposedPlan, { feedback })} />}
-          {approvals.filter(a => a.params.threadId === selected?.id).map(a => <ApprovalCard key={approvalDraftKey(a)} {...approvalCardProps(a)} />)}
-        </div><PromptRail scroller={scroll} threadId={selected?.id ?? null} entries={shownEntries} onLoadEarlier={older} onNavigate={() => { followingBottom.current = false; stickToBottom.current = false; }} />
-          {awayFromBottom && <Button variant="outline" size="icon-lg" className="scroll-to-bottom" aria-label="Scroll to bottom" title="Scroll to bottom" onClick={() => { followingBottom.current = true; stickToBottom.current = true; scroll.current?.scrollTo({ top: scroll.current.scrollHeight, behavior: "smooth" }); }}><ArrowDown size={16} /></Button>}</div>
-          {awaitingTeam && <p role="status" className="chat-loading chat-team-loading text-muted-foreground">Loading conversation…</p>}</div>
+        <WorkspaceTranscript session={session} runtime={runtime} history={history} projectState={projectState} pages={pages} sidebarModel={sidebarModel} selectedModel={selectedModel} replacement={replacement} earlier={earlier} personal={personal} shownEntries={shownEntries} models={models} chatConversation={chatConversation} workingHost={workingHost} activeTurn={activeTurn} proposedPlan={proposedPlan} permissionMode={permissionMode} error={error} dark={dark} awaitingTeam={awaitingTeam} continues={continues} readOnlyRun={readOnlyRun} selectProject={selectProject} addProject={addProject} replaceFrom={replaceFrom} answerPlan={answerPlan} approvalCardProps={approvalCardProps} openById={openById} show={show} />
         <div className="composer-wrap">
           {sideChat && selected?.id === sideChat.parentId && <SideChat key={`${sideChat.parentId}:${sideChat.question?.kind === "recap" ? sideChat.question.id : "side"}`} parentId={sideChat.parentId} open={sideChat.open} question={sideChat.question} onClose={() => { setSideChat(previous => previous ? { ...previous, open: false } : null); focusComposer(); }}  onForward={answer => void send(`From the side chat:\n\n${answer}`)} />}
           <ViewBoundary label="This panel" resetKey={panel}>

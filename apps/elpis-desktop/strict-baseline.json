@@ -1260,8 +1260,8 @@
  },
  "tsx": {
   "app/page.tsx:TS2322": 1,
-  "app/page.tsx:TS2345": 5,
-  "app/page.tsx:TS2375": 13,
+  "app/page.tsx:TS2345": 4,
+  "app/page.tsx:TS2375": 11,
   "app/page.tsx:TS2379": 1,
   "app/page.tsx:TS2532": 2,
   "components/account-row.tsx:TS2532": 1,
