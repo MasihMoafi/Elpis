@@ -1,12 +1,14 @@
 name: Elpis desktop
 
-# Builds the desktop renderer for every build/* branch. Since 22 October the GUI app builds locally (Masih: "do the GUI
-# app locally and only TUI on github"; docs/LOCAL_BUILD_RULES.md); this build is the alternative that
+# Builds the desktop renderer and runs the full test set (every UI shard and the fast, bridge and desktop tiers) on
+# main, integrate/**, build/** and every pull request (6 Nov, Masih approved running it beyond build/**). Since 22
+# October the GUI app also builds locally (docs/LOCAL_BUILD_RULES.md); the build/** artifact is the alternative that
 # scripts/install-desktop.mjs --actions installs, the artifact of exactly that commit.
 on:
   workflow_dispatch:
+  pull_request:
   push:
-    branches: ['build/**']
+    branches: ['main', 'integrate/**', 'build/**']
 
 permissions:
   contents: read

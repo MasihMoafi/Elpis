@@ -1,0 +1,13 @@
+{
+  "minTokens": 60,
+  "minLines": 6,
+  "mode": "mild",
+  "format": ["javascript", "typescript", "tsx"],
+  "pattern": "**/*.{mjs,cjs,js,ts,tsx}",
+  "ignore": ["**/node_modules/**", "**/.next/**", "**/out/**", "**/public/**", "**/*.test.*", "tests/**", "next-env.d.ts"],
+  "ignorePattern": ["(?s)/\\* jscpd:ignore-start \\*/.*?/\\* jscpd:ignore-end \\*/"],
+  "reporters": ["console"],
+  "exitCode": 1,
+  "noColors": true,
+  "noTips": true
+}
