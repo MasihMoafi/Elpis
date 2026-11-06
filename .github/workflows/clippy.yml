@@ -3,7 +3,7 @@ name: Rust clippy
 # ([workspace.lints.clippy]) fail CI instead of waiting for someone to run clippy locally (6 Nov).
 on:
   push:
-    branches: [main, 'integrate/**']
+    branches: [main, 'integrate/**', 'work/strict-checks-*'] # work/strict-checks-*: temporary, to prove this workflow before it reaches main
     paths: ['codex-rs/**', '.github/workflows/clippy.yml']
   pull_request:
     paths: ['codex-rs/**', '.github/workflows/clippy.yml']
