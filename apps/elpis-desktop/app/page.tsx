@@ -15,7 +15,7 @@ import { PlanCard } from "@/components/plan-card";
 import { SearchField } from "@/components/ui/search-field";
 import { Textarea } from "@/components/ui/textarea";
 import { ChatMessage } from "@/components/chat-message";
-import { FailedTurnCard, type FailedTurn } from "@/components/failed-turn-card";
+import { FailedTurnCard } from "@/components/failed-turn-card";
 import { ViewBoundary } from "@/components/view-boundary";
 import { Transcript, WorkingPlacement } from "@/components/transcript";
 import { useBookmarks, useChatAttention, usePins, useSidebarFolds, useChatGroups } from "@/lib/use-sidebar-state";
@@ -95,7 +95,7 @@ import { DRAWING_NOTE } from "@/lib/browser-notes";
 import { ModelPicker } from "@/components/model-picker";
 import { appStorage, readProjectChats, readProjects, saveProjectChats, saveProjects, type Project } from "@/lib/projects";
 import { ResizeEdge } from "@/components/resize-edge";
-import { TaskList, type TaskPlan } from "@/components/task-list";
+import { TaskList } from "@/components/task-list";
 import { chatOrigin, originLabel } from "@/lib/love-activity";
 import { useLoveActivity } from "@/lib/use-love-activity";
 import { LOVE_SPOT_AUDIO } from "@/lib/love-spot-audio";
@@ -131,6 +131,7 @@ import { historyPath, inReadingOrder, type HistoryPage } from "@/lib/chat-histor
 import { useComposerHeight } from "@/lib/use-composer-height";
 import { useTranscriptHistory } from "@/lib/use-transcript-history";
 import { useRuntimeEvents } from "@/lib/use-runtime-events";
+import { useRuntimeState } from "@/lib/use-runtime-state";
 import { refusedOffline, type Live, type View, type WorkflowReplay } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
 import { useChatTabs } from "@/lib/use-chat-tabs";
@@ -282,9 +283,11 @@ export default function Home() {
   const { answersFor, draftAnswer, clearApprovalDraft } = useApprovalDrafts();
   const draftStore = useDraftStore(setError), { savedDraft, saveDraft, savedAttachments, saveAttachments } = draftStore;
   const newDraftKey = useRef("new");
-  const [connected, setConnected] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState("Connecting to Elpis…");
-  const [ready, setReady] = useState(false);
+  const runtime = useRuntimeState();
+  const { connected, connectionStatus, ready, runtimeNotices, setRuntimeNotices,
+    activeTurns, setActiveTurns, plans, completedTurns, markTurnStarted, turnRevisions, modeRevisions, approvals, setApprovals,
+    activity, liveError, setLiveError, historyOnly, setHistoryOnly, failedTurns, setFailedTurns, stoppedTurns,
+    accountRefresh, replays, setReplays } = runtime;
   useEffect(() => {
     if (ready && connected && document.activeElement === document.body) composerRef.current?.focus();
   }, [ready, connected]);
@@ -292,7 +295,6 @@ export default function Home() {
   const sending = useRef(0);
   const [loading, setLoading] = useState(false);
   const editDraft = (value: string) => { setText(value); saveDraft(selectedRef.current?.id || newDraftKey.current, value); };
-  const [runtimeNotices, setRuntimeNotices] = useState<Record<string, string>>({});
   const { attachments, attachmentsRef, attaching, setAttaching, readingFiles, fileNotice, setFileNotice, setAttachments, restoreAttachments, addFiles } = useComposerAttachments({ selectedRef, newDraftKey, shellMode, savedAttachments, saveAttachments, setError, setRuntimeNotices });
   /** The browser's annotations and screenshots join the composer's files; its Send also sends the message. */
   async function attachFromBrowser(parts: Attachment[], submit: boolean) {
@@ -313,26 +315,7 @@ export default function Home() {
   const checkedChildren = useRef(new Set<string>());
   const [settingsVisited, setSettingsVisited] = useState(false);
   const [settingsNavigation, setSettingsNavigation] = useState(0);
-  const [activeTurns, setActiveTurns] = useState<Record<string, string>>({});
-  // Each chat's latest task list (turn/plan/updated), shown above the message box (components/task-list.tsx).
-  const [plans, setPlans] = useState<Record<string, TaskPlan>>({});
-  // A fast turn can finish over SSE before its HTTP start response arrives.
-  const completedTurns = useRef(new Set<string>());
-  /** A turn this app started or steered is running, unless its end already arrived. */
-  const markTurnStarted = (threadId: string, turnId: string) => { if (!completedTurns.current.has(turnId)) setActiveTurns(prev => ({ ...prev, [threadId]: turnId })); };
-  // A resume snapshot must not overwrite a turn event that arrived while it was being read.
-  const turnRevisions = useRef<Record<string, number>>({});
-  /** Bumped by each engine settings announcement, so an older resume answer never replaces a newer mode. */
-  const modeRevisions = useRef<Record<string, number>>({});
-  const [approvals, setApprovals] = useState<Approval[]>([]);
-  const [activity, setActivity] = useState<Record<string, string>>({});
-  const [liveError, setLiveError] = useState<Record<string, string>>({});
-  const [historyOnly, setHistoryOnly] = useState<Record<string, boolean>>({});
-  const [failedTurns, setFailedTurns] = useState<Record<string, FailedTurn>>({});
-  // A turn that ended stopped (by Stop, Esc, another window or the engine) says so until the next turn starts.
-  const [stoppedTurns, setStoppedTurns] = useState<Record<string, string>>({});
   const [related, setRelated] = useState<Record<string, Thread>>({});
-  const [accountRefresh, setAccountRefresh] = useState(0);
   const [view, setView] = useState<View>(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("workspace") === "canvas" ? "canvas" : "chat");
   useComposerHeight(composerRef, [text, selected?.id, view]);
   const loveActivity = useLoveActivity(view === "loveSpot", ready, view === "chat" ? selected : null);
@@ -349,7 +332,6 @@ export default function Home() {
   const [workflowPrefill, setWorkflowPrefill] = useState<WorkflowPrefill | null>(null);
   /** Scheduled workflows this window claimed (bridge/server.mjs dispatchWorkflow): each replays its saved board out of
    * sight and reports the run's chat. */
-  const [replays, setReplays] = useState<WorkflowReplay[]>([]);
   const finishReplay = useCallback((replay: WorkflowReplay, result: { threadId?: string; error?: string }) => {
     setReplays(previous => previous.filter(item => item.token !== replay.token));
     void api(`/automations/${replay.taskId}`, { action: "result", token: replay.token, ...result }).catch(() => {});
@@ -543,7 +525,7 @@ export default function Home() {
   }, []);
   useEffect(() => window.elpisDesktop?.storage?.onError(setError), []);
   useWorkspaceNavigation(shortcutAction);
-  useRuntimeEvents({ setConnected, setConnectionStatus, setApprovals, selectedRef, request, tabsRef, setAccountRefresh, refreshModels, refreshThreads, setError, hidden, initialRestoration, turnRevisions, modeRevisions, liveRevision, applyHistoryPage, rememberFollowing, rememberModes, reconcileLiveThread, setLiveError, restoredTabs, loadThread, setReady, setReplays, threadsRef, openThread, viewRef, completedTurns, planTurns, setAttention, loveRef, isLoveChatId, setPlans, setRewindActions, setActiveTurns, setRuntimeNotices, setFailedTurns, patchThread, setStoppedTurns, statusRevisions, setThreadModes, settingsOf, upsertThread, rewindSwitch, removeThreads, setActivity, liveVersions, setEntries, clearApprovalDraft, select, liveKeysAfter, noteHistoryGap });
+  useRuntimeEvents({ runtime, selectedRef, request, tabsRef, refreshModels, refreshThreads, setError, hidden, initialRestoration, liveRevision, applyHistoryPage, rememberFollowing, rememberModes, reconcileLiveThread, restoredTabs, loadThread, threadsRef, openThread, viewRef, planTurns, setAttention, loveRef, isLoveChatId, setRewindActions, patchThread, statusRevisions, setThreadModes, settingsOf, upsertThread, rewindSwitch, removeThreads, liveVersions, setEntries, clearApprovalDraft, select, liveKeysAfter, noteHistoryGap });
 
   const loadChildren = useCallback(async (id: string, cursor?: string, expand = false) => {
     if (childPaging.current.has(id)) return;
