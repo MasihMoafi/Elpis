@@ -116,7 +116,8 @@ function main() {
     if (!check) { console.error(`strict-baseline: unknown check ${name}`); process.exit(2); }
     const actual = check(files);
     const { worse, better } = compare(baseline[name] ?? {}, actual, files);
-    console.log(`strict-baseline ${name}: ${total(actual)} (baseline ${total(baseline[name] ?? {})})`);
+    const recorded = Object.fromEntries(Object.entries(baseline[name] ?? {}).filter(([key]) => !files || files.some(file => key.startsWith(`${file}:`))));
+    console.log(`strict-baseline ${name}: ${total(actual)} (baseline ${total(recorded)}${files ? ` for ${files.length} file(s)` : ''})`);
     if (update) {
       if (worse.length && process.env.ELPIS_BASELINE_RAISE !== '1') {
         console.error(`strict-baseline ${name}: --update would raise counts; fix these instead:\n  ${worse.join('\n  ')}`);
