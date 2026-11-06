@@ -105,7 +105,11 @@ printf 'app=%s\\nargument=%s\\nnode-bin=%s\\nnode-mode=%s\\npath-first=%s\\nno-p
   for (const name of ['LICENSE', 'lib/index.js', 'lib/unixTerminal.js', 'build/Release/pty.node']) await put(path.join(ptyReal, name), `node-pty ${name}`);
   for (const name of ['lib/index.test.js', 'lib/index.js.map', 'prebuilds/darwin-x64/pty.node', 'src/unix/pty.cc', 'build/Release/obj.target/pty.node']) await put(path.join(ptyReal, name), 'not runtime');
   await fs.symlink(ptyReal, ptyDirectory);
-  return { root, source, electronDist, wsDirectory, ptyDirectory, node, destination: path.join(root, 'staged') };
+  // Automations' calendar rules: rrule's self-contained build, its manifest and licence (not its sources or maps).
+  const rruleDirectory = path.join(source, 'node_modules', 'rrule');
+  await put(path.join(rruleDirectory, 'package.json'), JSON.stringify({ name: 'rrule', version: '2.8.1', main: 'dist/es5/rrule.js' }));
+  for (const name of ['LICENCE', 'dist/es5/rrule.js', 'dist/es5/rrule.min.js.map', 'dist/esm/index.js']) await put(path.join(rruleDirectory, name), `rrule ${name}`);
+  return { root, source, electronDist, wsDirectory, ptyDirectory, rruleDirectory, node, destination: path.join(root, 'staged') };
 }
 
 async function inventory(directory, relative = '') {
@@ -136,7 +140,8 @@ test('production package runs after its source and dependency installations move
   assert.equal(identity.desktopName, 'elpis-desktop.desktop', 'the window is matched to its launcher entry and icon');
   assert.equal(identity.main, 'desktop/main.cjs');
   assert.equal(identity.type, 'module');
-  assert.deepEqual(identity.dependencies, { ws: '8.22.0', 'node-pty': '1.1.0' });
+  assert.deepEqual(identity.dependencies, { ws: '8.22.0', 'node-pty': '1.1.0', rrule: '2.8.1' });
+  assert.deepEqual(all.filter(name => name.startsWith('app/node_modules/rrule/')), ['app/node_modules/rrule/LICENCE', 'app/node_modules/rrule/dist/es5/rrule.js', 'app/node_modules/rrule/package.json'], 'rrule ships its build alone');
   assert.equal(identity.scripts, undefined);
   const manifest = JSON.parse(await fs.readFile(result.manifest, 'utf8'));
   assert(manifest.externalRequirements.some(requirement => requirement.startsWith('Node.js')));

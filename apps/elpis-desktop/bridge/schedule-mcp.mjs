@@ -1,4 +1,4 @@
-// The Automations tools a chat gets (7 Nov, Masih: "they should be able to write a single prompt and we should implement
+// The Automations tools a chat gets (6 Nov, Masih: "they should be able to write a single prompt and we should implement
 // it for them"): one sentence such as "every weekday at 9, check the CI" becomes a task on the Automations page. A stdio
 // MCP server, attached per chat like bridge/browser-mcp.mjs; it reaches only /api/automations, with the key the app gives
 // it (bridge/server.mjs automationAccess).
@@ -6,11 +6,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline';
 
+// The rule help is DeepSeek Harness's (packages/schedule/tool-schedule/src/index.ts RRULE_HELP), for the subset Elpis reads.
 const RULE = {
-  type: 'object',
-  description: 'When it runs, in this computer\'s local time. One of: {kind:"once", at:"YYYY-MM-DDTHH:MM"}; {kind:"daily", time:"HH:MM"}; '
-    + '{kind:"weekdays", time:"HH:MM"} (Monday to Friday); {kind:"weekly", days:[1-7, 1 is Monday], time:"HH:MM"}; '
-    + '{kind:"monthly", day:1-31, time:"HH:MM"} (a shorter month uses its last day); {kind:"every", minutes:N} (from now, every N minutes; 60 is hourly).',
+  type: 'string',
+  description: 'When it runs: one DTSTART line, a newline, and one RRULE line (RFC 5545). DTSTART carries TZID with an IANA time zone '
+    + `(this computer's is ${Intl.DateTimeFormat().resolvedOptions().timeZone}) or ends in Z for UTC. A TZID rule keeps local clock time across `
+    + 'daylight-saving changes; skipped local times are skipped, and repeated ones occur once, at the earlier instant. A one-time run is '
+    + 'RRULE:FREQ=DAILY;COUNT=1. FREQ is MINUTELY, HOURLY, DAILY, WEEKLY, MONTHLY or YEARLY. MINUTELY and HOURLY take no BY parts, so pick clock '
+    + 'times with DAILY or WEEKLY plus BYHOUR and BYMINUTE. Example: "DTSTART;TZID=Asia/Tehran:20261109T090000\\nRRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR".',
 };
 export const tools = [
   { name: 'automation_create', description: 'Schedule a prompt that Elpis sends later or repeatedly. Only when the user explicitly asks for a reminder, a recurring check or a scheduled task. '

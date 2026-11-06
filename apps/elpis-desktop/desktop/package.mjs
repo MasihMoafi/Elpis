@@ -120,15 +120,16 @@ function resolveDestination(file) {
  * `outDirectory` is the renderer to ship (default: the source's out/, or one GitHub Actions built). With `linkRuntime`,
  * Electron's files are hard-linked from `electronDist` (an earlier installation's runtime) rather than copied, so an
  * installation adds about 30 MB instead of 310 MB; installations are never changed after staging. */
-export function stageDesktop({ source = fileURLToPath(new URL('../', import.meta.url)), destination, electronDist, wsDirectory, ptyDirectory, outDirectory, linkRuntime = false } = {}) {
+export function stageDesktop({ source = fileURLToPath(new URL('../', import.meta.url)), destination, electronDist, wsDirectory, ptyDirectory, rruleDirectory, outDirectory, linkRuntime = false } = {}) {
   if (typeof destination !== 'string' || !path.isAbsolute(destination)) throw new Error('An absolute destination is required');
   const target = resolveDestination(path.resolve(destination));
   source = fs.realpathSync(source);
   const electron = fs.realpathSync(electronDist || path.join(source, 'node_modules/electron/dist'));
   const ws = fs.realpathSync(wsDirectory || path.join(source, 'node_modules/ws'));
   const pty = fs.realpathSync(ptyDirectory || path.join(source, 'node_modules/node-pty'));
+  const rrule = fs.realpathSync(rruleDirectory || path.join(source, 'node_modules/rrule'));
   const out = fs.realpathSync(outDirectory || path.join(source, 'out'));
-  for (const input of [source, electron, ws, pty, out]) {
+  for (const input of [source, electron, ws, pty, rrule, out]) {
     const relative = path.relative(input, target);
     if (!relative || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative))) {
       throw new Error(`Destination is inside a package input: ${input}`);
@@ -146,6 +147,8 @@ export function stageDesktop({ source = fileURLToPath(new URL('../', import.meta
   const ptyIdentity = JSON.parse(fs.readFileSync(path.join(pty, 'package.json'), 'utf8'));
   if (ptyIdentity.name !== 'node-pty' || typeof ptyIdentity.version !== 'string') throw new Error('node-pty package identity is invalid');
   for (const name of ['LICENSE', 'lib/index.js', 'build/Release/pty.node']) requireFile(path.join(pty, name));
+  const rruleIdentity = JSON.parse(fs.readFileSync(path.join(rrule, 'package.json'), 'utf8'));
+  for (const name of ['LICENCE', 'dist/es5/rrule.js']) requireFile(path.join(rrule, name));
   if (typeof identity.name !== 'string' || typeof identity.version !== 'string' || wsIdentity.name !== 'ws' || typeof wsIdentity.version !== 'string') {
     throw new Error('Desktop or ws package identity is invalid');
   }
@@ -157,11 +160,13 @@ export function stageDesktop({ source = fileURLToPath(new URL('../', import.meta
     // The integrated terminal (desktop/terminal.cjs): node-pty's loader, licence and its build for this Electron.
     ...['package.json', 'LICENSE', 'build/Release/pty.node'].map(name => inputFile(path.join(pty, name), `app/node_modules/node-pty/${name}`)),
     ...inputTree(path.join(pty, 'lib'), 'app/node_modules/node-pty/lib', name => !/\.test\.js$|\.map$/.test(name)),
+    // Automations' calendar rules (bridge/schedule-rules.mjs): rrule's self-contained build, its manifest and licence.
+    ...['package.json', 'LICENCE', 'dist/es5/rrule.js'].map(name => inputFile(path.join(rrule, name), `app/node_modules/rrule/${name}`)),
   ];
   let commit = identity.commit || null;
   try { commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: source, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { /* Repackaging preserves the installed identity. */ }
   const packageIdentity = { name: identity.name, productName: identity.productName || 'Elpis', desktopName: identity.desktopName, version: identity.version, commit,
-    private: true, type: 'module', main: 'desktop/main.cjs', dependencies: { ws: wsIdentity.version, 'node-pty': ptyIdentity.version } };
+    private: true, type: 'module', main: 'desktop/main.cjs', dependencies: { ws: wsIdentity.version, 'node-pty': ptyIdentity.version, rrule: rruleIdentity.version } };
   const generated = [
     { path: 'app/package.json', data: `${JSON.stringify(packageIdentity, null, 2)}\n`, mode: 0o644 },
     { path: 'launch', data: launcher, mode: 0o755 },

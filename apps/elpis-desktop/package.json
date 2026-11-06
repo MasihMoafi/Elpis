@@ -29,8 +29,8 @@
     "check:install": "node scripts/pre-install.mjs"
   },
   "dependencies": {
-    "@excalidraw/excalidraw": "0.18.1",
     "@base-ui/react": "1.7.0",
+    "@excalidraw/excalidraw": "0.18.1",
     "@xterm/addon-fit": "0.11.0",
     "@xterm/addon-web-links": "0.12.0",
     "@xterm/xterm": "6.0.0",
@@ -48,6 +48,7 @@
     "rehype-katex": "7.0.1",
     "remark-gfm": "4.0.1",
     "remark-math": "6.0.0",
+    "rrule": "2.8.1",
     "tailwind-merge": "3.6.0",
     "ws": "8.18.3"
   },

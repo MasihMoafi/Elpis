@@ -1,4 +1,4 @@
-// Automations: prompts Elpis sends on a schedule (7 Nov, Masih: "a schedule tab ... mimic deepseek's", its "Automation
+// Automations: prompts Elpis sends on a schedule (6 Nov, Masih: "a schedule tab ... mimic deepseek's", its "Automation
 // tasks"). Each task says what to send, when (bridge/schedule-rules.mjs), and where: one chat it keeps using, or a new chat
 // every run. The timer lives in this process, so tasks run while Elpis runs (open or in the tray); runs missed while it was
 // closed become one run at the next start, as in DeepSeek Harness. Kept in <ELPIS_HOME>/automations/tasks.json.
@@ -6,7 +6,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { BridgeError, object, projectFolder, text, threadId as chatId } from './validate.mjs';
-import { describeRule, nextRun, parseRule } from './schedule-rules.mjs';
+import { describeRule, legacyRule, nextRun, parseRule } from './schedule-rules.mjs';
 
 const TARGETS = ['reuse', 'new'], RUN_LIMIT = 50, LONGEST_WAIT = 2 ** 31 - 1;
 
@@ -20,7 +20,8 @@ export function createSchedule({ client, file, now = Date.now, timers = { set: s
   const loaded = (async () => {
     try {
       const saved = JSON.parse(await fs.readFile(file, 'utf8'));
-      tasks = Array.isArray(saved?.tasks) ? saved.tasks : [];
+      // Rules saved before 6 Nov were local-time objects; they become RFC 5545 text in this computer's zone.
+      tasks = (Array.isArray(saved?.tasks) ? saved.tasks : []).map(task => ({ ...task, rule: legacyRule(task.rule, task.anchor ?? task.createdAt) }));
     } catch (error) { if (error.code !== 'ENOENT') throw new BridgeError(`Automations could not be read from ${file}: ${error.message}`, 500); }
     arm();
   })();
@@ -71,7 +72,7 @@ export function createSchedule({ client, file, now = Date.now, timers = { set: s
       task.runs = [record, ...(task.runs ?? [])].slice(0, RUN_LIMIT);
       task.lastRunAt = record.at;
       if (scheduledFor != null) {
-        task.nextRunAt = nextRun(task.rule, Math.max(now(), scheduledFor), task.anchor);
+        task.nextRunAt = nextRun(task.rule, Math.max(now(), scheduledFor));
         if (task.nextRunAt == null) task.status = 'ended';
       }
       task.updatedAt = now();
@@ -108,8 +109,8 @@ export function createSchedule({ client, file, now = Date.now, timers = { set: s
     async create(input) {
       await loaded;
       const value = fields(input, false), at = now();
-      const task = { id: randomUUID(), cwd: null, status: 'active', threadId: null, runs: [], lastRunAt: null, createdAt: at, updatedAt: at, anchor: at, ...value };
-      task.nextRunAt = task.status === 'active' ? nextRun(task.rule, at, at) : null;
+      const task = { id: randomUUID(), cwd: null, status: 'active', threadId: null, runs: [], lastRunAt: null, createdAt: at, updatedAt: at, ...value };
+      task.nextRunAt = task.status === 'active' ? nextRun(task.rule, at) : null;
       if (task.nextRunAt == null && task.status === 'active') throw new BridgeError('That time has already passed');
       tasks.push(task); await save(); arm();
       return shown(task);
@@ -119,10 +120,9 @@ export function createSchedule({ client, file, now = Date.now, timers = { set: s
       const task = find(id), value = fields(input, true);
       if (value.target && value.target !== task.target) task.threadId = null;
       Object.assign(task, value, { updatedAt: now() });
-      // A new rule or a resume counts from now; an ended task given a new rule runs again.
-      if (value.rule || value.status === 'active') task.anchor = now();
+      // An ended task given a new rule runs again; the next run counts from now.
       if (value.rule && task.status === 'ended') task.status = 'active';
-      task.nextRunAt = task.status === 'active' ? nextRun(task.rule, now(), task.anchor) : null;
+      task.nextRunAt = task.status === 'active' ? nextRun(task.rule, now()) : null;
       if (task.status === 'active' && task.nextRunAt == null) task.status = 'ended';
       await save(); arm();
       return shown(task);

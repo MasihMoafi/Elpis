@@ -161,7 +161,7 @@ const NAV_PAGES = [
   { id: "loveSpot", name: "Love Spot", Icon: LoveSpotIcon },
   // 5 Nov: back, as the TUI's /dashboard page (DeepSeek's Trajectory), with the pulse icon he approved.
   { id: "observability", name: "Observability", Icon: Activity },
-  // 7 Nov: DeepSeek Harness's "Automation tasks": prompts Elpis sends on a schedule (components/automations-view.tsx).
+  // 6 Nov: DeepSeek Harness's "Automation tasks": prompts Elpis sends on a schedule (components/automations-view.tsx).
   { id: "automations", name: "Automations", Icon: CalendarClock },
   { id: "customize", name: "Customize", Icon: Blocks },
 ] as const;

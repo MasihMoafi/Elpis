@@ -1,4 +1,4 @@
-// Automations (7 Nov): the page creates a task through the app's service, Run now sends its instruction, and its run
+// Automations (6 Nov): the page creates a task through the app's service, Run now sends its instruction, and its run
 // opens the chat it ran in.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -13,10 +13,17 @@ test('a new automation is listed with its schedule; Run now sends it and its run
     await page.getByRole('button', { name: 'New automation', exact: true }).click();
     await page.getByLabel('Automation name', { exact: true }).fill('Morning check');
     await page.getByLabel('Automation instruction', { exact: true }).fill('Check last night\'s builds');
-    await page.getByLabel('Time', { exact: true }).fill('09:00');
+    // DeepSeek's form: Repeat, then the clock picker's hour and minute columns.
+    await page.getByRole('combobox', { name: 'Repeat', exact: true }).click();
+    await page.getByRole('option', { name: 'Every day', exact: true }).click();
+    await page.getByRole('button', { name: 'Time', exact: true }).click();
+    await page.getByRole('listbox', { name: 'Hour' }).getByRole('option', { name: '09', exact: true }).click();
+    await page.getByRole('listbox', { name: 'Minute' }).getByRole('option', { name: '00', exact: true }).click();
+    await page.keyboard.press('Escape');
+    assert.equal(await page.getByRole('button', { name: 'Time', exact: true }).innerText(), '09:00');
     await page.getByRole('button', { name: 'Create', exact: true }).click();
     const row = page.locator('.automation').filter({ hasText: 'Morning check' });
-    await row.getByText(/Every day at 09:00 · next/).waitFor();
+    await row.getByText(/Every day at 09:00 \(.+\) · next/).waitFor();
     assert.equal(f.turns.length, 0, 'nothing is sent before its time');
 
     await row.getByRole('button', { name: 'Run now', exact: true }).click();

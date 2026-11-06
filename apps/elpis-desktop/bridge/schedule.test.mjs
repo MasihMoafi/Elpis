@@ -4,26 +4,39 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { nextRun, parseRule } from './schedule-rules.mjs';
+import { describeRule, legacyRule, nextRun, parseRule } from './schedule-rules.mjs';
 import { createSchedule } from './schedule.mjs';
 
-const at = (y, mo, d, h = 0, mi = 0) => new Date(y, mo - 1, d, h, mi).getTime();
+const at = (y, mo, d, h = 0, mi = 0) => Date.UTC(y, mo - 1, d, h, mi);
+/** A rule in UTC from its start and RRULE body, as the form writes it. */
+const rule = (start, body, zone = 'UTC') => `DTSTART;TZID=${zone}:${start}\nRRULE:${body}`;
+const runs = (text, from, count) => { const found = []; for (let t = from; found.length < count;) { t = nextRun(text, t); if (t === null) break; found.push(new Date(t).toISOString().slice(0, 16)); } return found; };
 
-test('each rule kind finds its next local time, strictly after the given moment', () => {
-  const wed = at(2026, 11, 4, 10, 0); // a Wednesday, 10:00
-  assert.equal(nextRun(parseRule({ kind: 'daily', time: '09:00' }), wed), at(2026, 11, 5, 9));
-  assert.equal(nextRun(parseRule({ kind: 'daily', time: '10:00' }), wed), at(2026, 11, 5, 10), 'the same minute is not "after"');
-  assert.equal(nextRun(parseRule({ kind: 'weekdays', time: '09:00' }), at(2026, 11, 6, 12)), at(2026, 11, 9, 9), 'Friday noon -> Monday');
-  assert.equal(nextRun(parseRule({ kind: 'weekly', days: [7, 2], time: '08:30' }), wed), at(2026, 11, 8, 8, 30), 'Sunday comes before next Tuesday');
-  assert.equal(nextRun(parseRule({ kind: 'monthly', day: 31, time: '09:00' }), at(2026, 2, 1)), at(2026, 2, 28, 9), 'a short month runs on its last day');
-  assert.equal(nextRun(parseRule({ kind: 'once', at: '2026-11-04T11:00' }), wed), at(2026, 11, 4, 11));
-  assert.equal(nextRun(parseRule({ kind: 'once', at: '2026-11-04T09:00' }), wed), null, 'a past one-time rule has no next run');
-  assert.equal(nextRun(parseRule({ kind: 'every', minutes: 90 }), wed + 100 * 60_000, wed), wed + 180 * 60_000, 'every: anchor + k × interval');
+test('each preset finds its next time, strictly after the given moment', () => {
+  const wed = at(2026, 11, 4, 10); // a Wednesday, 10:00 UTC
+  assert.equal(nextRun(rule('20261101T090000', 'FREQ=DAILY;INTERVAL=1;BYHOUR=9;BYMINUTE=0'), wed), at(2026, 11, 5, 9));
+  assert.equal(nextRun(rule('20261101T100000', 'FREQ=DAILY'), wed), at(2026, 11, 5, 10), 'the same minute is not "after"');
+  assert.equal(nextRun(rule('20261101T090000', 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR'), at(2026, 11, 6, 12)), at(2026, 11, 9, 9), 'Friday noon -> Monday');
+  assert.equal(nextRun(rule('20261101T083000', 'FREQ=WEEKLY;BYDAY=SU,TU'), wed), at(2026, 11, 8, 8, 30), 'Sunday comes before next Tuesday');
+  assert.deepEqual(runs(rule('20260131T090000', 'FREQ=MONTHLY;BYMONTHDAY=31,-1;BYSETPOS=1'), at(2026, 2, 1), 2), ['2026-02-28T09:00', '2026-03-31T09:00'], 'a short month runs on its last day');
+  assert.equal(nextRun(rule('20261104T110000', 'FREQ=DAILY;COUNT=1'), wed), at(2026, 11, 4, 11));
+  assert.equal(nextRun(rule('20261104T090000', 'FREQ=DAILY;COUNT=1'), wed), null, 'a past one-time rule has no next run');
+  assert.equal(nextRun(rule('20261104T100000', 'FREQ=MINUTELY;INTERVAL=90'), wed + 100 * 60_000), wed + 180 * 60_000, 'every 90 minutes from its start');
+  assert.equal(describeRule(rule('20261101T090000', 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR', 'Asia/Tehran')), 'Every weekday at 09:00 (Asia/Tehran)');
+});
+
+test('a zone keeps its local clock across daylight saving: a skipped time is skipped, a repeated one runs once', () => {
+  assert.equal(nextRun(rule('20261106T090000', 'FREQ=DAILY', 'Asia/Tehran'), at(2026, 11, 6, 4)), at(2026, 11, 6, 5, 30), '09:00 in Tehran is 05:30 UTC');
+  // Berlin: 28 Mar 2027 has no 02:30; 25 Oct 2026 has two.
+  assert.deepEqual(runs(rule('20270320T023000', 'FREQ=DAILY', 'Europe/Berlin'), at(2027, 3, 26), 3), ['2027-03-26T01:30', '2027-03-27T01:30', '2027-03-29T00:30']);
+  assert.deepEqual(runs(rule('20261020T023000', 'FREQ=DAILY', 'Europe/Berlin'), at(2026, 10, 24), 3), ['2026-10-24T00:30', '2026-10-25T00:30', '2026-10-26T01:30']);
 });
 
 test('rules that cannot run are refused with what is wrong', () => {
-  for (const [rule, message] of [[{ kind: 'daily', time: '9:00' }, /HH:MM/], [{ kind: 'weekly', days: [], time: '09:00' }, /weekday/], [{ kind: 'every', minutes: 0 }, /interval/], [{ kind: 'yearly' }, /Repeat/], [{ kind: 'once', at: '2026-13-01T09:00' }, /YYYY/]])
-    assert.throws(() => parseRule(rule), message);
+  for (const [text, message] of [['FREQ=DAILY', /DTSTART line/], [rule('20261101T090000', 'FREQ=SECONDLY'), /FREQ/], [rule('20261101T090000', 'FREQ=DAILY;INTERVAL=0'), /INTERVAL/],
+    [rule('20261101T090000', 'FREQ=DAILY', 'Mars/Olympus'), /time zone/], [{ kind: 'daily' }, /when the automation runs/]])
+    assert.throws(() => parseRule(text), message);
+  assert.equal(legacyRule({ kind: 'weekdays', time: '09:30' }, at(2026, 11, 4), 'UTC'), rule('20261104T093000', 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR'), 'a rule saved before 6 Nov is read as RRULE');
 });
 
 function harness(start) {
@@ -43,7 +56,7 @@ test('a due task sends its prompt into one kept chat, and a missed stretch is on
   const file = path.join(await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-schedule-')), 'tasks.json');
   const h = harness(at(2026, 11, 4, 8, 0));
   const schedule = createSchedule({ client: h.client, file, now: h.now, timers: h.timers });
-  const task = await schedule.create({ title: 'Morning check', prompt: 'Check the build', rule: { kind: 'daily', time: '09:00' }, target: 'reuse' });
+  const task = await schedule.create({ title: 'Morning check', prompt: 'Check the build', rule: rule('20261101T090000', 'FREQ=DAILY'), target: 'reuse' });
   assert.equal(task.nextRunAt, at(2026, 11, 4, 9));
   await h.advance(at(2026, 11, 4, 8, 59));
   assert.equal(h.sent.length, 0, 'nothing before its time');
@@ -67,8 +80,8 @@ test('a new chat every run, a one-time task ends, and a paused task does not run
   const file = path.join(await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-schedule-')), 'tasks.json');
   const h = harness(at(2026, 11, 4, 8, 0));
   const schedule = createSchedule({ client: h.client, file, now: h.now, timers: h.timers });
-  const once = await schedule.create({ title: 'Report', prompt: 'Write the report', cwd: '/tmp', rule: { kind: 'once', at: '2026-11-04T08:30' }, target: 'new' });
-  const paused = await schedule.create({ title: 'Quiet', prompt: 'Never', rule: { kind: 'every', minutes: 10 } });
+  const once = await schedule.create({ title: 'Report', prompt: 'Write the report', cwd: '/tmp', rule: rule('20261104T083000', 'FREQ=DAILY;COUNT=1'), target: 'new' });
+  const paused = await schedule.create({ title: 'Quiet', prompt: 'Never', rule: rule('20261104T080000', 'FREQ=MINUTELY;INTERVAL=10') });
   await schedule.update(paused.id, { status: 'paused' });
   await h.advance(at(2026, 11, 4, 8, 45));
   assert.deepEqual(h.sent.map(item => item.text), ['Write the report'], 'the paused task sent nothing');
@@ -78,7 +91,7 @@ test('a new chat every run, a one-time task ends, and a paused task does not run
   // Run now sends once and keeps the schedule.
   await schedule.runNow(once.id);
   assert.equal(h.made.length, 2, 'a new chat again');
-  await assert.rejects(schedule.create({ title: 'Late', prompt: 'x', rule: { kind: 'once', at: '2026-11-04T08:00' } }), /already passed/);
+  await assert.rejects(schedule.create({ title: 'Late', prompt: 'x', rule: rule('20261104T080000', 'FREQ=DAILY;COUNT=1') }), /already passed/);
   await schedule.close();
 });
 
@@ -94,8 +107,8 @@ test('a chat\'s one sentence becomes a task: the tools create into this chat, li
     return action === 'delete' ? schedule.remove(id) : schedule.update(id, fields);
   };
   const here = '00000000-0000-4000-8000-0000000000aa';
-  const { created } = await callTool('automation_create', { title: 'Stand-up', prompt: 'What changed since yesterday?', rule: { kind: 'weekdays', time: '09:30' }, target: 'this_chat' }, here, request);
-  assert.equal(created.when, 'Monday to Friday at 09:30');
+  const { created } = await callTool('automation_create', { title: 'Stand-up', prompt: 'What changed since yesterday?', rule: rule('20261101T093000', 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR'), target: 'this_chat' }, here, request);
+  assert.equal(created.when, 'Every weekday at 09:30 (UTC)');
   await h.advance(at(2026, 11, 4, 9, 30));
   assert.deepEqual(h.sent, [{ id: here, text: 'What changed since yesterday?', automatic: true }], 'sent into the chat that asked, without a new one');
   assert.equal(h.made.length, 0);
@@ -104,7 +117,7 @@ test('a chat\'s one sentence becomes a task: the tools create into this chat, li
   assert.equal((await callTool('automation_update', { id: created.id, action: 'pause' }, here, request)).updated.status, 'paused');
   await callTool('automation_update', { id: created.id, action: 'delete' }, here, request);
   assert.equal((await schedule.list()).length, 0);
-  await assert.rejects(callTool('automation_create', { title: 'x', prompt: 'x', rule: { kind: 'daily', time: '09:00' }, target: 'this_chat' }, undefined, request), /one_chat/);
+  await assert.rejects(callTool('automation_create', { title: 'x', prompt: 'x', rule: rule('20261101T090000', 'FREQ=DAILY'), target: 'this_chat' }, undefined, request), /one_chat/);
   await schedule.close();
 });
 
@@ -117,7 +130,7 @@ test('the Automations key opens /api/automations and no other route', async t =>
   const app = await startDesktopServer({ client, staticDir: '/tmp', automationsFile }); t.after(() => app.close());
   const { url, key } = app.automationAccess;
   const headers = { 'x-elpis-automations': key, 'content-type': 'application/json' };
-  const made = await fetch(`${url}/api/automations`, { method: 'POST', headers, body: JSON.stringify({ title: 'T', prompt: 'P', rule: { kind: 'daily', time: '09:00' } }) });
+  const made = await fetch(`${url}/api/automations`, { method: 'POST', headers, body: JSON.stringify({ title: 'T', prompt: 'P', rule: rule('20261101T090000', 'FREQ=DAILY') }) });
   assert.equal(made.status, 201);
   assert.equal((await (await fetch(`${url}/api/automations`, { headers })).json()).data.length, 1);
   assert.equal((await fetch(`${url}/api/threads`, { headers })).status, 401, 'the key is not a session');

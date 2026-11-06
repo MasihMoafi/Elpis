@@ -1,5 +1,5 @@
 "use client";
-// Automations (7 Nov, Masih: "we need a schedule tab in Elpis ... mimic deepseek's"): prompts Elpis sends on a schedule,
+// Automations (6 Nov, Masih: "we need a schedule tab in Elpis ... mimic deepseek's"): prompts Elpis sends on a schedule,
 // as DeepSeek Harness's "Automation tasks". The list filters by state; New and Edit open the same form; each task has
 // Run now, Pause or Resume, Edit, Delete and its past runs, each opening the chat it ran in. bridge/schedule.mjs runs them.
 import "@/components/automations-view.css";
@@ -9,86 +9,49 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ConfirmDelete } from "@/components/confirm-delete";
-import { Choice, Segmented, SettingRow, SettingsEmpty, SettingsGroup, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
+import { Choice, Segmented, SettingsEmpty, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
+import { defaultTiming, rruleFromDraft, ScheduleFields, timingFromRule, timingValid, type TimingDraft } from "@/components/schedule-editor";
 import { api } from "@/lib/api";
 import { errorText } from "@/lib/error-text.mjs";
 import type { Project } from "@/lib/projects";
 
-type Rule = { kind: "once"; at: string } | { kind: "daily" | "weekdays"; time: string } | { kind: "weekly"; days: number[]; time: string }
-  | { kind: "monthly"; day: number; time: string } | { kind: "every"; minutes: number };
 type Run = { at: number; scheduledFor: number | null; threadId: string | null; error: string | null };
-export type Automation = { id: string; title: string; prompt: string; cwd: string | null; rule: Rule; target: "reuse" | "new"; status: "active" | "paused" | "ended";
+/** `rule` is RFC 5545 text, one DTSTART and one RRULE (bridge/schedule-rules.mjs). */
+export type Automation = { id: string; title: string; prompt: string; cwd: string | null; rule: string; target: "reuse" | "new"; status: "active" | "paused" | "ended";
   nextRunAt: number | null; lastRunAt: number | null; runs: Run[]; description: string };
 
-/** The form's choice of repeat; "hours" and "minutes" are one `every` rule. */
-type Repeat = "once" | "daily" | "weekdays" | "weekly" | "monthly" | "hours" | "minutes";
-type Draft = { title: string; prompt: string; cwd: string; target: "reuse" | "new"; repeat: Repeat; date: string; time: string; days: number[]; day: number; interval: number };
-const REPEATS: { value: Repeat; label: string }[] = [
-  { value: "once", label: "Once" }, { value: "daily", label: "Every day" }, { value: "weekdays", label: "Monday to Friday" }, { value: "weekly", label: "Weekly" },
-  { value: "monthly", label: "Every month" }, { value: "hours", label: "Every few hours" }, { value: "minutes", label: "Every few minutes" },
-];
-const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+type Draft = TimingDraft & { title: string; prompt: string; cwd: string; target: "reuse" | "new" };
 const FILTERS = [{ value: "active", label: "Active" }, { value: "paused", label: "Paused" }, { value: "ended", label: "Ended" }, { value: "all", label: "All" }] as const;
 type Filter = typeof FILTERS[number]["value"];
+const TARGETS = [{ value: "reuse", label: "One chat, reused every run" }, { value: "new", label: "A new chat every run" }] as const;
 
-const pad = (n: number) => String(n).padStart(2, "0");
-const today = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
-const inAnHour = () => { const d = new Date(Date.now() + 60 * 60 * 1000); return `${pad(d.getHours())}:00`; };
-const blank = (): Draft => ({ title: "", prompt: "", cwd: "", target: "reuse", repeat: "daily", date: today(), time: inAnHour(), days: [new Date().getDay() || 7], day: new Date().getDate(), interval: 1 });
-
-function draftOf(task: Automation): Draft {
-  const draft = { ...blank(), title: task.title, prompt: task.prompt, cwd: task.cwd ?? "", target: task.target };
-  const rule = task.rule;
-  if (rule.kind === "once") return { ...draft, repeat: "once", date: rule.at.slice(0, 10), time: rule.at.slice(11) };
-  if (rule.kind === "every") return rule.minutes % 60 === 0 ? { ...draft, repeat: "hours", interval: rule.minutes / 60 } : { ...draft, repeat: "minutes", interval: rule.minutes };
-  if (rule.kind === "weekly") return { ...draft, repeat: "weekly", days: rule.days, time: rule.time };
-  if (rule.kind === "monthly") return { ...draft, repeat: "monthly", day: rule.day, time: rule.time };
-  return { ...draft, repeat: rule.kind, time: rule.time };
-}
-function ruleOf(draft: Draft): Rule {
-  if (draft.repeat === "once") return { kind: "once", at: `${draft.date}T${draft.time}` };
-  if (draft.repeat === "hours") return { kind: "every", minutes: draft.interval * 60 };
-  if (draft.repeat === "minutes") return { kind: "every", minutes: draft.interval };
-  if (draft.repeat === "weekly") return { kind: "weekly", days: draft.days, time: draft.time };
-  if (draft.repeat === "monthly") return { kind: "monthly", day: draft.day, time: draft.time };
-  return { kind: draft.repeat, time: draft.time };
-}
-
+const blank = (): Draft => ({ ...defaultTiming(), title: "", prompt: "", cwd: "", target: "reuse" });
+const draftOf = (task: Automation): Draft => ({ ...timingFromRule(task.rule), title: task.title, prompt: task.prompt, cwd: task.cwd ?? "", target: task.target });
 const when = (ms: number) => new Date(ms).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
-/** New or Edit: one form for both. */
-function AutomationForm({ initial, projects, onSave, onCancel }: { initial: Draft; projects: Project[]; onSave: (draft: Draft) => Promise<void>; onCancel: () => void }) {
+/** New or Edit, as DeepSeek Harness's editor: name, instruction, where it runs, then its Run time. */
+function AutomationForm({ initial, editing, projects, onSave, onCancel }: { initial: Draft; editing: boolean; projects: Project[]; onSave: (draft: Draft) => Promise<void>; onCancel: () => void }) {
   const [draft, setDraft] = useState(initial), [busy, setBusy] = useState(false), [error, setError] = useState("");
-  const set = <K extends keyof Draft>(key: K, value: Draft[K]) => setDraft(previous => ({ ...previous, [key]: value }));
-  const clock = draft.repeat !== "hours" && draft.repeat !== "minutes";
+  const set = (patch: Partial<Draft>) => setDraft(previous => ({ ...previous, ...patch }));
   async function save() {
     setBusy(true); setError("");
     try { await onSave(draft); } catch (cause) { setError(errorText(cause)); } finally { setBusy(false); }
   }
-  return <SettingsGroup title={initial.title ? "Edit automation" : "New automation"}>
-    <SettingRow title="Name"><Input aria-label="Automation name" maxLength={120} value={draft.title} onChange={event => set("title", event.target.value)} placeholder="Morning build check" /></SettingRow>
-    <SettingRow title="Instruction" description="What Elpis is asked each time it runs." stacked>
-      <Textarea aria-label="Automation instruction" rows={4} value={draft.prompt} onChange={event => set("prompt", event.target.value)} placeholder="Check last night's CI runs and tell me what failed." />
-    </SettingRow>
-    <SettingRow title="Project"><Choice label="Project" value={draft.cwd} onChange={value => set("cwd", value)} options={[{ value: "", label: "No project" }, ...projects.map(project => ({ value: project.cwd, label: project.name }))]} /></SettingRow>
-    <SettingRow title="Run in" description={draft.target === "reuse" ? "One chat, made on the first run and used every time." : "A new chat for every run."}>
-      <Segmented label="Run in" value={draft.target} onChange={value => set("target", value)} options={[{ value: "reuse", label: "One chat" }, { value: "new", label: "New chat each run" }]} />
-    </SettingRow>
-    <SettingRow title="Repeat"><Choice label="Repeat" value={draft.repeat} onChange={value => set("repeat", value)} options={REPEATS} /></SettingRow>
-    {draft.repeat === "once" && <SettingRow title="Date"><Input aria-label="Date" type="date" value={draft.date} onChange={event => set("date", event.target.value)} /></SettingRow>}
-    {draft.repeat === "weekly" && <SettingRow title="Days">
-      <div className="automation-days" role="group" aria-label="Days">{WEEKDAYS.map((name, index) => { const day = index + 1, on = draft.days.includes(day);
-        return <Button key={name} type="button" size="sm" variant={on ? "secondary" : "ghost"} aria-pressed={on} onClick={() => set("days", on ? draft.days.filter(value => value !== day) : [...draft.days, day])}>{name}</Button>; })}</div>
-    </SettingRow>}
-    {draft.repeat === "monthly" && <SettingRow title="Day of the month" description="A shorter month runs on its last day."><Input aria-label="Day of the month" type="number" min={1} max={31} value={draft.day} onChange={event => set("day", Number(event.target.value))} /></SettingRow>}
-    {!clock && <SettingRow title={draft.repeat === "hours" ? "Every how many hours" : "Every how many minutes"}><Input aria-label="Interval" type="number" min={1} max={draft.repeat === "hours" ? 168 : 59} value={draft.interval} onChange={event => set("interval", Number(event.target.value))} /></SettingRow>}
-    {clock && <SettingRow title="Time"><Input aria-label="Time" type="time" value={draft.time} onChange={event => set("time", event.target.value)} /></SettingRow>}
+  return <section className="automation-form" aria-label={editing ? "Edit automation" : "New automation"}>
+    <h3>{editing ? "Edit automation" : "New automation"}</h3>
+    <label className="automation-field">Name<Input aria-label="Automation name" maxLength={120} value={draft.title} onChange={event => set({ title: event.target.value })} placeholder="Morning build check" /></label>
+    <label className="automation-field">Instruction<Textarea aria-label="Automation instruction" rows={4} value={draft.prompt} onChange={event => set({ prompt: event.target.value })} placeholder="Check last night's CI runs and tell me what failed." /></label>
+    <div className="schedule-rows">
+      <div className="schedule-row"><span className="schedule-row-label">Run in</span><Choice label="Run in" value={draft.target} options={[...TARGETS]} onChange={target => set({ target })} /></div>
+      <div className="schedule-row"><span className="schedule-row-label">Project</span><Choice label="Project" value={draft.cwd} onChange={cwd => set({ cwd })} options={[{ value: "", label: "No project" }, ...projects.map(project => ({ value: project.cwd, label: project.name }))]} /></div>
+    </div>
+    <ScheduleFields draft={draft} onChange={timing => set(timing)} />
     <div className="automation-form-actions">
       {error && <SettingsNotice tone="alert">{error}</SettingsNotice>}
       <Button variant="ghost" disabled={busy} onClick={onCancel}>Cancel</Button>
-      <Button disabled={busy || !draft.title.trim() || !draft.prompt.trim()} onClick={() => void save()}>{busy ? "Saving…" : initial.title ? "Save" : "Create"}</Button>
+      <Button disabled={busy || !draft.title.trim() || !draft.prompt.trim() || !timingValid(draft)} onClick={() => void save()}>{busy ? "Saving…" : editing ? "Save" : "Create"}</Button>
     </div>
-  </SettingsGroup>;
+  </section>;
 }
 
 export function AutomationsView({ projects, onOpenChat }: { projects: Project[]; onOpenChat: (threadId: string) => void }) {
@@ -108,7 +71,7 @@ export function AutomationsView({ projects, onOpenChat }: { projects: Project[];
     catch (cause) { setError(errorText(cause)); } finally { setBusy(null); }
   }
   async function save(draft: Draft) {
-    const fields = { title: draft.title, prompt: draft.prompt, cwd: draft.cwd || null, target: draft.target, rule: ruleOf(draft) };
+    const fields = { title: draft.title, prompt: draft.prompt, cwd: draft.cwd || null, target: draft.target, rule: rruleFromDraft(draft, editing === "new") };
     const saved = editing === "new" ? await api<Automation>("/automations", fields) : await api<Automation>(`/automations/${(editing as Automation).id}`, { action: "update", ...fields });
     replace(saved); setEditing(null); setOpen(saved.id);
     if (filter !== "all" && saved.status !== filter) setFilter("all");
@@ -118,7 +81,7 @@ export function AutomationsView({ projects, onOpenChat }: { projects: Project[];
     <SettingsHeader title="Automations" description="Prompts Elpis sends on a schedule. They run while Elpis is open or in the tray; runs missed while it was closed happen once when it starts."
       action={editing ? undefined : <Button onClick={() => setEditing("new")}><Plus />New automation</Button>} />
     {error && <SettingsNotice tone="alert">{error}</SettingsNotice>}
-    {editing && <AutomationForm initial={editing === "new" ? blank() : draftOf(editing)} projects={projects} onSave={save} onCancel={() => setEditing(null)} />}
+    {editing && <AutomationForm initial={editing === "new" ? blank() : draftOf(editing)} editing={editing !== "new"} projects={projects} onSave={save} onCancel={() => setEditing(null)} />}
     {!editing && <>
       <div className="automation-filter"><Segmented label="Show" value={filter} onChange={setFilter} options={[...FILTERS]} /></div>
       {tasks && !shown.length && <SettingsEmpty title={filter === "all" || filter === "active" ? "No automations yet" : `No ${filter} automations`}>
