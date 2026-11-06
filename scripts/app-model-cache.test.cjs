@@ -60,7 +60,7 @@ async function main() {
     await wait(()=>fs.existsSync(f.ready),'subscription prompt');fs.writeFileSync(f.release,'go');await wait(()=>a.event('turn/completed',subscription.thread.id).some(e=>e.params.turn.id===st.id),'subscription completed');
     await a.req('thread/name/set', { threadId: subscription.thread.id, name: 'Cache model before external switch' });
     const { pathToFileURL } = require('node:url');
-    const { startDesktopServer } = await import(pathToFileURL(path.join(repo, 'apps/elpis-desktop/bridge/server.mjs')).href);
+    const { startDesktopServer } = await import(pathToFileURL(path.join(repo, 'apps/elpis-desktop/bridge/server.mts')).href);
     const playwright = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
     const staticArg = process.argv.indexOf('--static-dir');
     const staticDir = staticArg >= 0 ? process.argv[staticArg + 1] : path.join(repo, '.tmp/dashboard-repair/app-final-20261014/out');

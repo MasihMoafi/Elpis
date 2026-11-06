@@ -18,7 +18,7 @@ function findDesktopRoot() {
     try {
       const resolved = fs.realpathSync(candidate);
       const appDir = resolved.endsWith('/launch') ? path.join(path.dirname(resolved), 'app') : resolved;
-      if (fs.existsSync(path.join(appDir, 'bridge/server.mjs'))) return appDir;
+      if (fs.existsSync(path.join(appDir, 'bridge/server.mts'))) return appDir;
     } catch {}
   }
   return null;
@@ -87,7 +87,7 @@ module.exports = class ElpisWorkflowsPlugin extends Plugin {
     if (!appDir) throw new Error('Install elpis-desktop on this computer to run the local Multiagent Control Center.');
     const nodeBin = fs.existsSync('/opt/elpis-desktop/bin/node') ? '/opt/elpis-desktop/bin/node' : 'node';
     return await new Promise((resolve, reject) => {
-      const child = spawn(nodeBin, [path.join(appDir, 'bridge/server.mjs')], {
+      const child = spawn(nodeBin, [path.join(appDir, 'bridge/server.mts')], {
         cwd: appDir,
         stdio: ['ignore', 'pipe', 'pipe'],
       });

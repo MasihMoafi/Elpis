@@ -40,7 +40,7 @@ async function main() {
     if (process.argv.includes('--browser')) {
       // A real-engine browser fallback is evidence of renderer behaviour, never packaged acceptance.
       process.env = { ...env };
-      const { startDesktopServer } = await import('../bridge/server.mjs');
+      const { startDesktopServer } = await import('../bridge/server.mts');
       server = await startDesktopServer({ staticDir: path.join(app, 'app/out'), socketPath: bridge.socketPath, elpisHome: home });
       browser = await chromium.launch({ headless: true });
       page = await browser.newPage({ viewport: { width: 1200, height: 850 } });

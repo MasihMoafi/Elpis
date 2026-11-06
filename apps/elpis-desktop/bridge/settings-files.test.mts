@@ -6,7 +6,7 @@ import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { BridgeError } from './client.mts';
 import { createSettingsFiles } from './settings-files.mts';
-import { startDesktopServer } from './server.mjs';
+import { startDesktopServer } from './server.mts';
 
 const home = () => fs.mkdtemp(path.join(os.tmpdir(), 's2-files-'));
 test('both engine files create, roundtrip Unicode/long text and empty contents across reopen', async () => {

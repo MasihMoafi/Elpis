@@ -100,7 +100,7 @@ test('a chat\'s one sentence becomes a task: the tools create into this chat, li
   const file = path.join(await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-schedule-')), 'tasks.json');
   const h = harness(at(2026, 11, 4, 8, 0));
   const schedule = createSchedule({ client: h.client, file, now: h.now, timers: h.timers });
-  // The app's routes, as bridge/server.mjs maps them.
+  // The app's routes, as bridge/server.mts maps them.
   const request = (async (route: string, body?: Record<string, unknown>) => {
     if (route === '/api/automations') return body ? schedule.create(body) : { data: await schedule.list() };
     const id = route.split('/').pop()!, { action, ...fields } = body!;
@@ -124,7 +124,7 @@ test('a chat\'s one sentence becomes a task: the tools create into this chat, li
 });
 
 test('the Automations key opens /api/automations and no other route', async t => {
-  const { startDesktopServer } = await import('./server.mjs');
+  const { startDesktopServer } = await import('./server.mts');
   const { EventEmitter } = await import('node:events');
   const bus = new EventEmitter();
   const client = { connected: true, pendingApprovals: [], close() {}, on: (n: string, l: (...args: unknown[]) => void) => bus.on(n, l), off: (n: string, l: (...args: unknown[]) => void) => bus.off(n, l), ragEnvironment: async () => ({}), async listThreads() { return { data: [], nextCursor: null }; } };
@@ -142,7 +142,7 @@ test('the Automations key opens /api/automations and no other route', async t =>
 });
 
 test('a scheduled workflow is offered to the open windows: one claims it and reports its chat; unclaimed, it is missed', async t => {
-  const { startDesktopServer } = await import('./server.mjs');
+  const { startDesktopServer } = await import('./server.mts');
   const { EventEmitter } = await import('node:events');
   const bus = new EventEmitter();
   const client = { connected: true, pendingApprovals: [], close() {}, on: (n: string, l: (...args: unknown[]) => void) => bus.on(n, l), off: (n: string, l: (...args: unknown[]) => void) => bus.off(n, l), ragEnvironment: async () => ({}), async listThreads() { return { data: [], nextCursor: null }; } };

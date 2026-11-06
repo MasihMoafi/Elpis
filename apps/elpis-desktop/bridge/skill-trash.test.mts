@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { DesktopClient } from './client.mts';
-import { startDesktopServer } from './server.mjs';
+import { startDesktopServer } from './server.mts';
 import { SkillTrash } from './skill-trash.mts';
 
 type Skill = { name: string; scope: string; pluginId?: string | undefined; path: string; enabled: boolean };

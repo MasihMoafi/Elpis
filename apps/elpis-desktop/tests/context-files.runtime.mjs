@@ -8,7 +8,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { spawn, execFileSync } from 'node:child_process';
-import { startDesktopServer } from '../bridge/server.mjs';
+import { startDesktopServer } from '../bridge/server.mts';
 import { DesktopClient } from '../bridge/client.mts';
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');

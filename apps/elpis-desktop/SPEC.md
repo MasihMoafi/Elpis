@@ -89,7 +89,7 @@ These are the required behaviors, numbered 1–85 without gaps; refer to one as 
 65. The script language, safety bounds and worktree isolation are owned by [workflow-script.mjs](../../tools/elpis-claude/workflow-script.mjs) and [workflow-runner.mjs](../../tools/elpis-claude/workflow-runner.mjs). (WR2)
 66. A workflow run persists its script, journal, agents and result. It resumes unfinished work after interruption, retries bounded failures, and can be stopped or resumed. An edited run reuses only its unchanged journaled prefix; the first changed call and later calls run again. (WR3–WR4)
 67. A finished, stopped or failed run delivers one notification with its ID, status, result and script path to its originating chat when available. It is not a user prompt. An archived chat keeps the notice until restored; delivery does not unarchive it. (WR5)
-68. Workflow-run RPCs, desktop routes and updates are owned by [client.mjs](bridge/client.mjs) and [server.mjs](bridge/server.mjs). (WR7)
+68. Workflow-run RPCs, desktop routes and updates are owned by [client.mjs](bridge/client.mjs) and [server.mts](bridge/server.mts). (WR7)
 69. The board and chat workflow tool use one runner: independent agents start together, dependents start after their inputs finish, and writers use isolated worktrees. (WR8)
 
 ## Permissions

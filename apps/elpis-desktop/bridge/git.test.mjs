@@ -6,7 +6,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { changedFiles, discardFile, fileDiff, isRepository, repositoryHealth } from './git.mjs';
-import { startDesktopServer } from './server.mjs';
+import { startDesktopServer } from './server.mts';
 
 const git = (cwd, ...args) => execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', '-c', 'commit.gpgsign=false', ...args], { cwd, encoding: 'utf8', env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' } });
 const write = (dir, name, text) => fs.mkdir(path.dirname(path.join(dir, name)), { recursive: true }).then(() => fs.writeFile(path.join(dir, name), text));

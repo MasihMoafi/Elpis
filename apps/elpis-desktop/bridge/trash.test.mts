@@ -6,7 +6,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createTrash } from './trash.mts';
-import { startDesktopServer } from './server.mjs';
+import { startDesktopServer } from './server.mts';
 
 /** The engine as the bridge sees it: chats with parents, archived flags, and every call it was asked to make. */
 type FakeThread = { id: string; name: string; status: { type: string }; archived: boolean; parentThreadId?: string };

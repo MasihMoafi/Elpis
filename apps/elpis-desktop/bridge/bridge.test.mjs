@@ -11,7 +11,7 @@ import net from 'node:net';
 import { PassThrough, Readable } from 'node:stream';
 import { parseClaudeMcp } from './claude-mcp-import.mts';
 import { DesktopClient, existingSocket } from './client.mts';
-import { startDesktopServer } from './server.mjs';
+import { startDesktopServer } from './server.mts';
 import { isAgentRun } from '../lib/agent-runs.mts';
 import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cjs';
 

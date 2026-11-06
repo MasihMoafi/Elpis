@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { BridgeError } from './client.mts';
 import { listFiles } from './files.mts';
-import { startDesktopServer } from './server.mjs';
+import { startDesktopServer } from './server.mts';
 
 const files = [
   'README.md', 'package.json', '.env', '.gitignore',

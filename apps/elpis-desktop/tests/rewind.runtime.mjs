@@ -6,7 +6,7 @@ import { createRequire } from 'node:module';
 import { spawn, execFileSync } from 'node:child_process';
 import { once } from 'node:events';
 import { DesktopClient } from '../bridge/client.mts';
-import { startDesktopServer } from '../bridge/server.mjs';
+import { startDesktopServer } from '../bridge/server.mts';
 import { chooseOption } from './controls.cjs';
 const require = createRequire(import.meta.url);
 const { Provider, message } = require('../../../scripts/lib/mock-provider.js');

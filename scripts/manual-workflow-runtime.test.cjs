@@ -52,7 +52,7 @@ async function list(rootThreadId) { return (await rpc('workGraph/list', { rootTh
 
 async function runApprovalFixture() {
   const { DesktopClient } = await import('../apps/elpis-desktop/bridge/client.mts');
-  const { startDesktopServer } = await import('../apps/elpis-desktop/bridge/server.mjs');
+  const { startDesktopServer } = await import('../apps/elpis-desktop/bridge/server.mts');
   desktopClient = new DesktopClient(transport, { timeoutMs: 15000 });
   await desktopClient.initialize();
   desktop = await startDesktopServer({ client: desktopClient, staticDir: cwd });

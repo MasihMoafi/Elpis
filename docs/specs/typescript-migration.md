@@ -34,7 +34,7 @@ The import graph of the 118 sources has 13 levels. A batch moves files whose loc
 | 6 | 2-3 | 13 | 768 | `desktop/preferences.cjs`, `bridge/workflow-acp.mjs` |
 | 7 | 4 | 1 | 495 | `bridge/client.mjs` (175 KB), on its own |
 | 8-9 | 5-6 | 18 | 675 | `bridge/files.mjs`, `desktop/runtime.mjs` |
-| 10 | 7-12 | 8 | 563 | `bridge/server.mjs`, `desktop/browser.cjs`, last `desktop/main.cjs` |
+| 10 | 7-12 | 8 | 563 | `bridge/server.mts`, `desktop/browser.cjs`, last `desktop/main.cjs` |
 
 A test file moves in the same batch as the module it tests. The rest of the errors sit in the tests and in the imported `tools/elpis-claude` files.
 

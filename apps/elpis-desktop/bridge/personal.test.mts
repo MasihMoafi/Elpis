@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { dismissPersonalTip, openPersonal, personalStatus } from './personal.mts';
-import { startDesktopServer } from './server.mjs';
+import { startDesktopServer } from './server.mts';
 
 async function home(t: TestContext) {
   const root = path.join(os.homedir(), '.cache/elpis-tests');

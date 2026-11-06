@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { DesktopClient } from './client.mts';
-import { startDesktopServer } from './server.mjs';
+import { startDesktopServer } from './server.mts';
 const ID = '00000000-0000-0000-0000-000000000001';
 function fixture({ unsupported = false } = {}) {
   const socket = new EventEmitter(), sent = [];

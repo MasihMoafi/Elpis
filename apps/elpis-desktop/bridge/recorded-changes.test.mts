@@ -7,7 +7,7 @@ import { spawn } from 'node:child_process';
 import { EventEmitter, once } from 'node:events';
 import { createInterface } from 'node:readline';
 import { DesktopClient } from './client.mts';
-import { startDesktopServer } from './server.mjs';
+import { startDesktopServer } from './server.mts';
 import { recordedChanges } from './recorded-changes.mts';
 
 const edit = (file: string, type: string, diff: string, status = 'completed') => ({ type: 'fileChange', status, changes: [{ path: file, kind: { type }, diff }] });

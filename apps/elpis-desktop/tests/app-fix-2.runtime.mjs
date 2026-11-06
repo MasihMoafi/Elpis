@@ -11,7 +11,7 @@ import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
-import { startDesktopServer } from '../bridge/server.mjs';
+import { startDesktopServer } from '../bridge/server.mts';
 import WebSocket from 'ws';
 import { createTools } from '../bridge/tools.mts';
 const require = createRequire(import.meta.url);

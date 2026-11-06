@@ -10,7 +10,7 @@ import { EventEmitter } from 'node:events';
 import { createImprovements } from './improve.mts';
 import { verifyImprovement } from './improve-check.mts';
 import { DesktopClient } from './client.mts';
-import { startDesktopServer } from './server.mjs';
+import { startDesktopServer } from './server.mts';
 const execFile = promisify(exec);
 const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGM4o6SEFTEMLQkAvM5EAT6yk8sAAAAASUVORK5CYII=';
 const target = { id: 'button', label: 'Send', image: PNG };

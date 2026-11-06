@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { createWorkflowRuns } from './workflow-acp.mjs';
 import { workflowModelRoutes } from './workflow-models.mts';
 import { DesktopClient } from './client.mts';
-import { startDesktopServer } from './server.mjs';
+import { startDesktopServer } from './server.mts';
 import { EventEmitter } from 'node:events';
 // gio trash refuses /tmp, so test roots live where the trash works.
 const TEST_ROOT = path.join(os.homedir(), '.cache/elpis-tests'); fs.mkdirSync(TEST_ROOT, { recursive: true });

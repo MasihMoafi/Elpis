@@ -9,7 +9,7 @@ const { guardDesktopStore } = require('./controls.cjs');
 
 // Love Spot cards run as ACP agent processes; here each is the scripted SDK agent, which logs what reaches it.
 // Retained tests live in a scratch checkout whose bridge links to the candidate.
-const FAKE_ACP_AGENT = path.resolve(path.dirname(require.resolve('../bridge/server.mjs')), '../../../tools/elpis-claude/test/fake-acp-agent.mjs');
+const FAKE_ACP_AGENT = path.resolve(path.dirname(require.resolve('../bridge/server.mts')), '../../../tools/elpis-claude/test/fake-acp-agent.mjs');
 
 // `threadId(n)` names the n-th chat it makes; live voice needs real (UUID) chat IDs.
 async function loveSpotFixture({ threadId, colorScheme = 'light', reply = 'I am here with you.', replyDelay = 80, configureClient, prepareDirectory, agentEnv, prepareScreenshots, newBoard = false, automations = false } = {}) {
@@ -25,7 +25,7 @@ async function loveSpotFixture({ threadId, colorScheme = 'light', reply = 'I am 
   if (prepareScreenshots) await prepareScreenshots(screenshots);
   if (!newBoard) await fs.writeFile(path.join(directory, 'scene.excalidraw'), JSON.stringify({ type: 'excalidraw', version: 2, elements: [], files: {}, appState: {} }));
   if (prepareDirectory) await prepareDirectory(directory);
-  const { startDesktopServer } = await import('../bridge/server.mjs');
+  const { startDesktopServer } = await import('../bridge/server.mts');
   const emitter = new EventEmitter();
   const chats = [], turns = [], entries = [];
   const models = [

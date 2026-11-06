@@ -6,7 +6,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { createExperimentLab } from './experiment-lab.mts';
-import { startDesktopServer } from './server.mjs';
+import { startDesktopServer } from './server.mts';
 
 const stage = { id: 'answer', title: 'Answer', instruction: 'Answer independently.', kind: 'implement', dependsOn: [] };
 const input = () => ({ pattern: 'voting', task: 'What is 19 + 23?', expected: '42', repetitions: 2, stages: [stage] });

@@ -6,7 +6,7 @@ import net from 'node:net';
 import { spawn } from 'node:child_process';
 import { createDevServers } from './dev-servers.mts';
 import { EventEmitter } from 'node:events';
-import { startDesktopServer } from './server.mjs';
+import { startDesktopServer } from './server.mts';
 
 async function availablePort() {
   const socket = net.createServer();

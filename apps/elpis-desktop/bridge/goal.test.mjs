@@ -5,7 +5,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { DesktopClient } from './client.mts';
-import { startDesktopServer } from './server.mjs';
+import { startDesktopServer } from './server.mts';
 import { sessionContextFiles } from './session-context.mts';
 
 const ID = '00000000-0000-0000-0000-0000000000a1';

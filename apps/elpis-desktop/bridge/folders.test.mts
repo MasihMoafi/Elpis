@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { BridgeError } from './client.mts';
 import { listFolders } from './folders.mts';
-import { startDesktopServer } from './server.mjs';
+import { startDesktopServer } from './server.mts';
 import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cjs';
 
 const dirs = [

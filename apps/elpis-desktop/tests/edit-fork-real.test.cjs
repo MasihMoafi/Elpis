@@ -53,7 +53,7 @@ before(async () => {
   const bridge = spawn(process.execPath, [path.join(repo, 'tools/elpis-claude/acp-bridge.mjs')], { env, cwd: project, detached: true, stdio: ['ignore', log.fd, log.fd] });
   await until(async () => { if (bridge.exitCode !== null) throw new Error(`provider bridge exited; see ${root}/bridge.log`); return fs.stat(socketPath).then(() => true, () => false); }, 'provider bridge socket');
   const { DesktopClient } = await import('../bridge/client.mts');
-  const { startDesktopServer } = await import('../bridge/server.mjs');
+  const { startDesktopServer } = await import('../bridge/server.mts');
   const client = await DesktopClient.connect({ socketPath, appHome: root, home });
   await client.models();
   const app = await startDesktopServer({ client, elpisHome: home, trashFile: path.join(home, 'trash.json'), loveSpot: { directory: path.join(root, 'drawing') } });

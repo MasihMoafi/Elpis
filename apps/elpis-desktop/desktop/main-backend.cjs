@@ -118,7 +118,7 @@ function createMainBackend({ electron, appDir, state, createStateStore, closeToT
       let store = state.getStore();
       if (!store) { store = createStateStore(path.join(app.getPath('userData'), 'workspace.json')); state.setStore(store); }
       await seedShippedDefaults(store);
-      const { startDesktopServer } = await import(pathToFileURL(path.join(appDir, '../bridge/server.mjs')).href);
+      const { startDesktopServer } = await import(pathToFileURL(path.join(appDir, '../bridge/server.mts')).href);
       const { DesktopClient, existingSocket } = await import(pathToFileURL(path.join(appDir, '../bridge/client.mts')).href);
       const { ensureInstalledRuntime } = await import(pathToFileURL(path.join(appDir, 'runtime.mts')).href);
       const { browserMcpConfig } = await import(pathToFileURL(path.join(appDir, '../bridge/browser-mcp.mjs')).href);

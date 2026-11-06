@@ -72,7 +72,7 @@ test('"Deny, and tell Elpis what to do instead" steers the waiting turn, then de
   assert.equal(f.socket.sent.some(message=>message.id===failing.wireId),false);
 });
 test('POST /api/approvals/<id>/instead reaches denyInstead',async t=>{
-  const fs=await import('node:fs/promises'),os=await import('node:os'),path=await import('node:path');const {startDesktopServer}=await import('./server.mjs');
+  const fs=await import('node:fs/promises'),os=await import('node:os'),path=await import('node:path');const {startDesktopServer}=await import('./server.mts');
   const f=await fixture(t);const p=f.request('item/commandExecution/requestApproval',{turnId:'turn-1',itemId:'cmd-1',command:'make'});
   const dir=await fs.mkdtemp(path.join(os.tmpdir(),'elpis-approvals-test-'));const app=await startDesktopServer({client:f.client,trashFile:path.join(dir,'deleted-chats.json')});t.after(()=>app.close());
   const url=new URL(app.url),origin=url.origin,token=new URLSearchParams(url.hash.slice(1)).get('token');

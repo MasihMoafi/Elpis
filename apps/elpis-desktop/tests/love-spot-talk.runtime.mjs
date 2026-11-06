@@ -9,7 +9,7 @@ import { spawn, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { once } from 'node:events';
 import { DesktopClient } from '../bridge/client.mts';
-import { startDesktopServer } from '../bridge/server.mjs';
+import { startDesktopServer } from '../bridge/server.mts';
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const { fakeDesktop } = require('./fake-desktop.cjs');

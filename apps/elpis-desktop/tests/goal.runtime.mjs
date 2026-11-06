@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { setTimeout as pause } from 'node:timers/promises';
 import provider from '../../../scripts/lib/mock-provider.js';
 import { DesktopClient } from '../bridge/client.mts';
-import { startDesktopServer } from '../bridge/server.mjs';
+import { startDesktopServer } from '../bridge/server.mts';
 
 const repo = fileURLToPath(new URL('../../../', import.meta.url));
 async function until(check, label, timeout = 15000) {

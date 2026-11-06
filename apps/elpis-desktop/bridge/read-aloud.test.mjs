@@ -7,7 +7,7 @@ import path from 'node:path';
 import http from 'node:http';
 import { Readable } from 'node:stream';
 import * as native from './client.mts';
-import { startDesktopServer } from './server.mjs';
+import { startDesktopServer } from './server.mts';
 
 const CHAT = '00000000-0000-0000-0000-000000000001';
 const SPEECH = '00000000-0000-0000-0000-000000000002';

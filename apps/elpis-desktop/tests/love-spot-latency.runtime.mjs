@@ -137,7 +137,7 @@ test('Love Spot sidebar and Matilda small chat expose staged first-text latency'
       return listener(request, response);
     });
   };
-  const { startDesktopServer } = await import(`../bridge/server.mjs?latency=${Date.now()}`);
+  const { startDesktopServer } = await import(`../bridge/server.mts?latency=${Date.now()}`);
   const app = await startDesktopServer({
     client,
     staticDir: path.join(appRoot, 'out'),

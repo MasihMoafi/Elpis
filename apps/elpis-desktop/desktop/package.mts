@@ -27,7 +27,7 @@ export const productionFiles = [
   'bridge/client-models.mts', 'bridge/client-settings.mts', 'bridge/client-voice.mts', 'bridge/client-mcp.mts',
   'bridge/client-context.mts', 'bridge/client-workflows.mts', 'bridge/client-rewind.mts', 'bridge/client-turns.mts',
   'bridge/client-changes.mts', 'bridge/client-mutation.mts', 'bridge/client-approvals.mts',
-  'bridge/rag-command.mts', 'bridge/rewind-history.mts', 'bridge/message-versions.mts', 'bridge/rewind-snapshots.mts', 'bridge/spawn-links.mjs', 'bridge/session-creators.mts', 'bridge/app-catalogs.mts', 'bridge/customize-page.mjs', 'bridge/validate.mts', 'bridge/server.mjs',
+  'bridge/rag-command.mts', 'bridge/rewind-history.mts', 'bridge/message-versions.mts', 'bridge/rewind-snapshots.mts', 'bridge/spawn-links.mjs', 'bridge/session-creators.mts', 'bridge/app-catalogs.mts', 'bridge/customize-page.mjs', 'bridge/validate.mts', 'bridge/server.mts',
   'bridge/server-http.mts', 'bridge/server-love-spot.mts', 'bridge/server-voice.mts', 'bridge/server-files.mts', 'bridge/server-settings.mts', 'bridge/server-workflows.mts', 'bridge/server-threads.mts',
   'bridge/trajectory-projection.mts', 'bridge/dev-servers.mts', 'bridge/tools.mts', 'bridge/runtime-paths.mts', 'bridge/transcription.mts', 'bridge/attachments.mts', 'bridge/trash.mts',
   'bridge/workflow-presets.mts', 'bridge/resources/rag.md', 'bridge/resources/personal.md', 'bridge/personal.mts', 'desktop/browser-policy.cts', 'desktop/browser.cjs', 'desktop/browser-sessions.cjs', 'desktop/browser-annotations.cts', 'desktop/browser-page-preload.cjs', 'desktop/context-menu.cts',

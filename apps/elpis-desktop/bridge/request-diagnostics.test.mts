@@ -6,7 +6,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { BridgeError } from './client.mts';
-import { startDesktopServer } from './server.mjs';
+import { startDesktopServer } from './server.mts';
 
 async function fixture(t: import('node:test').TestContext) {
   const cache = path.join(os.homedir(), '.cache', 'elpis-tests');

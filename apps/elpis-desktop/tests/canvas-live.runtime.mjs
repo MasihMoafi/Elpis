@@ -14,7 +14,7 @@ import { createRequire } from 'node:module';
 import { execFileSync, spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
-import { startDesktopServer } from '../bridge/server.mjs';
+import { startDesktopServer } from '../bridge/server.mts';
 const require = createRequire(import.meta.url);
 const { chooseTheme } = require('./controls.cjs');
 const { uiFit } = require('./ui-fit.cjs');

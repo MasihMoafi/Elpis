@@ -6,7 +6,7 @@ import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { createGithubConnector } from './github-connector.mts';
 import { DesktopClient } from './client.mts';
-import { startDesktopServer } from './server.mjs';
+import { startDesktopServer } from './server.mts';
 
 type Message = { method: string; id: number; params: { cwds?: string[]; developerInstructions?: string; config?: unknown } };
 async function fixture(t: TestContext, { login = 'octocat', fail = false } = {}) {

@@ -73,7 +73,7 @@ try {
   // The production provider bridge's per-connection engine transport also works in a worker sandbox,
   // where the host's shared daemon rendezvous directory is deliberately hidden.
   bridge = await ledgerBridge(root, binary, env);
-  const { startDesktopServer } = await import('../bridge/server.mjs');
+  const { startDesktopServer } = await import('../bridge/server.mts');
   app = await startDesktopServer({ socketPath: bridge.socketPath, elpisHome: home });
   const url = new URL(app.url);
   const session = await fetch(`${url.origin}/api/session`, { method: 'POST', headers: { Origin: url.origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ token: new URLSearchParams(url.hash.slice(1)).get('token') }) });

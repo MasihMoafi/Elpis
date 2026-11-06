@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { startDesktopServer } from './server.mjs';
+import { startDesktopServer } from './server.mts';
 
 test('only the split-session document (application and Obsidian) and the Trajectory page (application) may be framed; external embedding remains refused', async () => {
   const client = new EventEmitter(); client.close = () => {}; client.connected = true;

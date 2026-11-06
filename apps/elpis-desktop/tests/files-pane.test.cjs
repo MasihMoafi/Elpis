@@ -40,7 +40,7 @@ async function routes() {
   const answer = async run => { try { return await run(); } catch (error) { return { __http: error.status ?? 500, error: error.message }; } };
   let backend;
   const assetServer = () => backend ??= (async () => {
-    const { startDesktopServer } = await import('../bridge/server.mjs');
+    const { startDesktopServer } = await import('../bridge/server.mts');
     const app = await startDesktopServer({ client: { on() {}, off() {}, close() {}, connected: true, pendingApprovals: [], ragEnvironment: async () => ({}) }, staticDir: CWD, elpisHome: path.join(CWD, '.elpis-test-home'), loveSpot: { directory: path.join(CWD, '.love-spot'), screenshots: path.join(CWD, '.screenshots') } });
     const launch = new URL(app.url);
     const auth = await fetch(`${launch.origin}/api/session`, { method: 'POST', headers: { Origin: launch.origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ token: new URLSearchParams(launch.hash.slice(1)).get('token') }) });

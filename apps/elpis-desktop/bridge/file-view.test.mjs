@@ -9,7 +9,7 @@ import { promisify } from 'node:util';
 import { execFile } from 'node:child_process';
 import { BridgeError } from './client.mts';
 import { listDirectory, readFile, writeFile, searchFiles } from './files.mts';
-import { startDesktopServer } from './server.mjs';
+import { startDesktopServer } from './server.mts';
 
 const tempRoot = await fs.mkdtemp(path.join(os.homedir(), '.cache/elpis-file-view-'));
 after(() => promisify(execFile)('gio', ['trash', tempRoot]));

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { BridgeError, DesktopClient } from './client.mts';
 import { planCanvas } from './canvas-plan.mjs';
-import { startDesktopServer } from './server.mjs';
+import { startDesktopServer } from './server.mts';
 
 const THREAD = '00000000-0000-0000-0000-0000000000a1';
 const FOLDERS = ['api', 'docs', 'web', 'web/components'];

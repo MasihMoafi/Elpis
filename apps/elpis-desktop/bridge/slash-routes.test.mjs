@@ -7,7 +7,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { DesktopClient } from './client.mts';
-import { startDesktopServer } from './server.mjs';
+import { startDesktopServer } from './server.mts';
 
 const CHAT = '00000000-0000-0000-0000-0000000000a1';
 const AGENT = '00000000-0000-0000-0000-0000000000a2';

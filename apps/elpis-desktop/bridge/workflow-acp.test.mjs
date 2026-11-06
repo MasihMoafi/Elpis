@@ -8,7 +8,7 @@ import { execFileSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { DesktopClient } from './client.mts';
-import { startDesktopServer } from './server.mjs';
+import { startDesktopServer } from './server.mts';
 import { workflowWorktrees } from './workflow-worktrees.mjs';
 import { loveNodeSpec } from './love-agents.mjs';
 import { createWorkflowHistory, createWorkflowRuns } from './workflow-acp.mjs';

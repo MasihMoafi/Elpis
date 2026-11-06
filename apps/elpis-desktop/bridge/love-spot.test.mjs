@@ -8,7 +8,7 @@ import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { EventEmitter } from 'node:events';
 import { fileURLToPath } from 'node:url';
-import { startDesktopServer } from './server.mjs';
+import { startDesktopServer } from './server.mts';
 import { createLoveSpot } from './love-spot-store.cjs';
 
 const FAKE_ACP_AGENT = fileURLToPath(new URL('../../../tools/elpis-claude/test/fake-acp-agent.mjs', import.meta.url));

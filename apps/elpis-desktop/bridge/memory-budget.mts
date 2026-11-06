@@ -18,7 +18,7 @@ export async function appTreeGb() {
 }
 
 let meterFailed = false;
-// Outside Electron (tests, `node bridge/server.mjs`) the meter finds the installed app, not this process, so nothing of
+// Outside Electron (tests, `node bridge/server.mts`) the meter finds the installed app, not this process, so nothing of
 // ours counts. A meter that cannot run counts nothing, said once: it must not stop every workflow; the cap and floor hold.
 const ownTreeGb = async () => !process.versions.electron ? 0 : appTreeGb().catch(error => {
   if (!meterFailed) console.error('Memory meter unavailable; the app memory budget is not enforced:', (error as Error).message);

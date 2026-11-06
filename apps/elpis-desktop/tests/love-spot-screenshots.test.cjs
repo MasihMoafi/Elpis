@@ -19,7 +19,7 @@ for (const colorScheme of ['light']) test(`screenshots before the first Love Spo
     await f.open(f.page);
     await add(f.page, 'before-opening.png').waitFor();
     assert.equal(await add(f.page, 'old.png').count(), 0, 'startup screenshots must stay excluded');
-    const { startDesktopServer } = await import('../bridge/server.mjs');
+    const { startDesktopServer } = await import('../bridge/server.mts');
     const client = new Proxy(f.emitter, { get(target, key) { return key in target ? Reflect.get(target, key) : async () => ({}); } });
     dock = await startDesktopServer({ client, loveSpot: { directory: f.directory, screenshots: f.screenshots }, trashFile: path.join(f.root, 'dock-trash.json') });
     const other = await f.newPage(dock.url);

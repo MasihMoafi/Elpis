@@ -130,7 +130,7 @@
     "bridge/source-map.test.mts",
     "bridge/spawn-links.test.mjs",
     "bridge/speech-buffer.test.mts",
-    "bridge/static-assets.test.mjs",
+    "bridge/static-assets.test.mts",
     "bridge/thread-deletion.test.mjs",
     "bridge/tools.test.mts",
     "bridge/transcription.test.mts",
