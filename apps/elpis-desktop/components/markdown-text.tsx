@@ -38,7 +38,7 @@ function languageOf(node: unknown) {
 }
 
 /** A code block: coloured by its language (rehype-highlight), named on its bar, with a button that copies the source. */
-function CodeBlock({ language, source, ...props }: React.ComponentProps<"pre"> & { language?: string; source?: string }) {
+function CodeBlock({ language, source, ...props }: React.ComponentProps<"pre"> & { language?: string | undefined; source?: string | undefined }) {
   const ref = useRef<HTMLPreElement>(null);
   const diagram = language === "excalidraw";
   return <div className="code-block">
@@ -54,7 +54,7 @@ function MarkdownLink({ href, children, ...props }: React.ComponentProps<"a">) {
   return <a {...props} href={href} target="_blank" rel="noreferrer noopener">{children}</a>;
 }
 
-function ChatImage({ src, alt }: { src?: string; alt?: string }) {
+function ChatImage({ src, alt }: { src?: string | undefined; alt?: string | undefined }) {
   const { cwd } = useHost();
   const ref = parseHref(src || "");
   const absolute = ref ? resolveRef(ref, cwd).abs : undefined;
@@ -87,10 +87,11 @@ const HIGHLIGHT: NonNullable<React.ComponentProps<typeof Markdown>["rehypePlugin
 /** file:/// links are kept (they are file refs); everything else is Markdown's own check. */
 const urlTransform = (url: string) => url.startsWith("file:///") ? url : defaultUrlTransform(url);
 const PLUGINS = [remarkGfm, remarkMath, linkFilePaths];
+const noImage = ({ alt }: React.ComponentProps<"img">) => alt ? <span>{alt}</span> : null;
 
 export const MarkdownText = memo(function MarkdownText({ text, file, allowImages = true }: { text: string; file?: { cwd: string; path: string }; allowImages?: boolean }) {
   const rendered = useMemo<Components>(() => {
-    const base: Components = allowImages ? components : { ...components, img: ({ alt }) => alt ? <span>{alt}</span> : null };
+    const base: Components = allowImages ? components : { ...components, img: noImage };
     if (!file) return base;
     const abs = resolveRef({ path: file.path }, file.cwd).abs, folder = abs.slice(0, abs.lastIndexOf("/")) || "/";
     return { ...base,
@@ -99,7 +100,7 @@ export const MarkdownText = memo(function MarkdownText({ text, file, allowImages
         if (target) return <FileRefLink target={{ ...target, path: resolveRef(target, folder).abs }}>{children}</FileRefLink>;
         return <MarkdownLink {...props} href={href}>{children}</MarkdownLink>;
       },
-      img: !allowImages ? base.img : ({ src, alt }) => {
+      img: !allowImages ? noImage : ({ src, alt }) => {
         const target = typeof src === "string" ? parseHref(src) : null;
         const found = target ? resolveRef({ path: resolveRef(target, folder).abs }, file.cwd) : null;
         // Documents cannot silently fetch remote resources or files outside the folder the tab was opened in.

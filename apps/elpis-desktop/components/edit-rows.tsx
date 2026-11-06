@@ -19,9 +19,10 @@ const PROBLEMS: Record<string, string> = { failed: "Failed", declined: "Declined
  * line above the change, marked in the accent red, so it read as a removed line). Without added lines, the first changed line. */
 export function addedLines(edit: FileEdit): FileRef {
   const at = edit.lines.findIndex(line => line.kind === "add" && line.newNo);
-  if (at < 0) return { path: edit.path, line: edit.lines.find(line => line.kind !== "ctx" && line.newNo)?.newNo ?? edit.lines.find(line => line.newNo)?.newNo ?? undefined };
+  if (at < 0) { const line = edit.lines.find(line => line.kind !== "ctx" && line.newNo)?.newNo ?? edit.lines.find(line => line.newNo)?.newNo; return { path: edit.path, ...(line == null ? {} : { line }) }; }
   let end = at; while (edit.lines[end + 1]?.kind === "add") end++;
-  return { path: edit.path, line: edit.lines[at].newNo!, endLine: edit.lines[end].newNo!, added: true };
+  const line = edit.lines[at]?.newNo, endLine = edit.lines[end]?.newNo;
+  return { path: edit.path, ...(line == null ? {} : { line }), ...(endLine == null ? {} : { endLine }), added: true };
 }
 export function EditRow({ edit, verb }: { edit: FileEdit; verb?: string }) {
   const { name, hint } = shortPath(edit.path), problem = PROBLEMS[edit.status];

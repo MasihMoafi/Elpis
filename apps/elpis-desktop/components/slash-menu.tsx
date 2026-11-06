@@ -33,13 +33,13 @@ export function useSlashMenu(text: string, commands: SlashCommand[], clear: () =
       run(withArgs, typed.args); event.preventDefault(); return true;
     }
     if (event.key === "ArrowDown" || event.key === "ArrowUp") select((active + (event.key === "ArrowDown" ? 1 : -1) + matches.length) % matches.length);
-    else if ((event.key === "Enter" && !event.shiftKey) || event.key === "Tab") run(matches[active]);
+    else if ((event.key === "Enter" && !event.shiftKey) || event.key === "Tab") { const selected = matches[active]; if (selected) run(selected); }
     else if (event.key === "Escape") setDismissed(text);
     else return false;
     event.preventDefault(); return true;
   }
   return { open, matches, active, select, run, onKeyDown, close: () => setDismissed(text),
-    inputProps: { "aria-autocomplete": "list" as const, "aria-controls": open ? MENU_ID : undefined, "aria-activedescendant": open ? `${MENU_ID}-${matches[active].name}` : undefined } };
+    inputProps: { "aria-autocomplete": "list" as const, "aria-controls": open ? MENU_ID : undefined, "aria-activedescendant": open && matches[active] ? `${MENU_ID}-${matches[active].name}` : undefined } };
 }
 
 /** One line of an option list above the message box: a name and what it is. */
@@ -60,5 +60,5 @@ export function OptionList({ id, label, options, active, onHover, onPick, kind }
 export function SlashMenu({ menu }: { menu: ReturnType<typeof useSlashMenu> }) {
   if (!menu.open) return null;
   return <OptionList id={MENU_ID} label="Slash commands" options={menu.matches.map(command => ({ key: command.name, name: `/${command.name}`, description: command.description }))}
-    active={menu.active} onHover={menu.select} onPick={index => menu.run(menu.matches[index])} />;
+    active={menu.active} onHover={menu.select} onPick={index => { const selected = menu.matches[index]; if (selected) menu.run(selected); }} />;
 }
