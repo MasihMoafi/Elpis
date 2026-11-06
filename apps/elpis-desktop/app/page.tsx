@@ -37,7 +37,6 @@ import { ReadAloud } from "@/components/read-aloud";
 import { LiveVoiceProvider } from "@/components/live-voice";
 import { ProfileDialog } from "@/components/profile-dialog";
 import { LOVE_SPOT_AUDIO } from "@/lib/love-spot-audio";
-import { useScreenshotPopup } from "@/lib/use-screenshot-popup";
 import { DocumentReviewProvider } from "@/components/document-review";
 import { ChatTeamPanel } from "@/components/chat-team-panel";
 import { ResumeConversation } from "@/components/resume-conversation";
@@ -48,7 +47,7 @@ import { usePersonal } from "@/components/personal-tip";
 import { SidePanel, sideMinWidth } from "@/components/side-panel";
 import { FloatChatBar, FloatChatPill } from "@/components/float-chat";
 import { useSessionSplit } from "@/components/session-split";
-import { api, title, agentName,
+import { title, agentName,
   type ProviderSettings, type Thread } from "@/lib/api";
 import { useComposerHeight } from "@/lib/use-composer-height";
 import { useTranscriptHistory } from "@/lib/use-transcript-history";
@@ -104,6 +103,7 @@ import { useLoveWorkspace, useReadLoveNotifications } from "@/lib/use-love-works
 import { useWorkspacePanels } from "@/lib/use-workspace-panels";
 import { createSidebarAttention } from "@/lib/sidebar-attention";
 import { WorkspaceAlertArea } from "@/components/workspace-alert-area";
+import { useLoveScreenshots } from "@/lib/use-love-screenshots";
 import { PAGE_NAMES } from "@/lib/workspace-navigation-pages";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
 import { useComposerState } from "@/lib/use-composer-state";
@@ -249,14 +249,7 @@ export default function Home() {
 
   const projectActions = createProjectActions({ projectState, conversations, runtime, chatGroupsRef, commitGroups, placementReveal: (...args) => placementReveal(...args), revealPlacement: (...args) => revealPlacement(...args), setMarked, viewRef, selected, openNewChat, setError, getNativeParents: () => nativeParents });
   const { assignProject, selectProject, newProjectFrom, workIn, addProject, moveChat, moveChatToFolder, removeProject } = projectActions;
-  // A click on the screenshot thumbnail puts the screenshots on the Love Spot page already open, below what is there, in the
-  // order they were taken, then shows them (A239; Masih, 5 Nov: "when I want to post a screenshot, it shouldn't open a new page").
-  useScreenshotPopup(ready, ids => {
-    void (async () => {
-      for (const id of ids) await api("/love-spot/screenshots", { id, action: "place" });
-      show("loveSpot");
-    })().catch(cause => setError(errorText(cause, "The screenshots could not open in Love Spot.")));
-  });
+  useLoveScreenshots(ready, show, setError);
   const { forkFrom, continueHere, stop, deleteThread, renameThread, archiveThread, unarchived } = createConversationActions({ conversations, runtime, selectedRef, request, setBusy, setError, loadThread, loadChildren, restoreComposerFocus: origin => restoreComposerFocus(origin), removeThreads, noteKept });
   const conversationSettings = createConversationSettings({ selected, selectedRef, request, runtime, conversations, options, ready, connected, busy, projectChanging, planMode, permissionMode, setError, focusComposer: () => focusComposer(), restoreComposerFocus: origin => restoreComposerFocus(origin) });
   const { rememberModes, setPlan, answerPlan, noteStartedMode, saveEffort } = conversationSettings;
