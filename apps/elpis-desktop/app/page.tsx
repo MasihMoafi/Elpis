@@ -7,7 +7,7 @@ import { useReorder } from "@/components/reorder";
 import { ViewBoundary } from "@/components/view-boundary";
 import { useBookmarks, useChatAttention, usePins, useSidebarFolds, useChatGroups } from "@/lib/use-sidebar-state";
 import { useAppearance } from "@/lib/use-appearance";
-import { addGroup, chatSubtree, moveChats } from "@/lib/chat-groups";
+import { chatSubtree } from "@/lib/chat-groups";
 import { configuredShortcuts } from "@/lib/shortcuts";
 import { CommandMenu, type CommandAction } from "@/components/command-menu";
 import { arrange, move } from "@/lib/nav-order";
@@ -20,7 +20,6 @@ import { type MessageVersion } from "@/lib/turn-replacement";
 import type { TerminalLaunch } from "@/components/terminal-view";
 import { type SettingsDestination } from "@/components/settings-view";
 import { DeleteChatsDialog } from "@/components/thread-actions";
-import { GroupNameDialog } from "@/components/chat-groups";
 import { SectionToggle } from "@/components/sidebar-group";
 import { SidebarChatList } from "@/components/sidebar-chat-list";
 import { createSidebarThreadRow } from "@/components/sidebar-thread-row";
@@ -44,8 +43,6 @@ import { openControl } from "@/lib/slash-focus";
 import { useElpisSettings } from "@/lib/settings-store";
 import { ReadAloud } from "@/components/read-aloud";
 import { LiveVoiceProvider } from "@/components/live-voice";
-import { MoveChatDialog, ProjectDialog } from "@/components/project-picker";
-import { PutUnderDialog } from "@/components/put-under-dialog";
 import { ProfileDialog } from "@/components/profile-dialog";
 import { saveProjects } from "@/lib/projects";
 import { useLoveActivity } from "@/lib/use-love-activity";
@@ -122,6 +119,7 @@ import { useSidebarSearch } from "@/lib/use-sidebar-search";
 import { WorkspaceNotices } from "@/components/workspace-notices";
 import { WorkspaceRecovery } from "@/components/workspace-recovery";
 import { createWorkspaceChatTabs } from "@/components/workspace-chat-tabs";
+import { WorkspaceOrganizationDialogs } from "@/components/workspace-organization-dialogs";
 import { without } from "@/lib/utils";
 import { errorText } from "@/lib/error-text.mjs";
 import { refreshModelCatalog, useModelCatalog } from "@/lib/model-catalog";
@@ -145,20 +143,21 @@ export default function Home() {
   const { choiceId, model, effort, setEffort, nextTurn, setNextTurn, threadModes, setThreadModes, threadPlans, newPlan, planAnswered, setPlanAnswered, newMode } = options;
   const projectState = useProjectState();
   const { cwd, projects, setProjects, projectId, projectChats,
-    projectMove, setProjectMove, newProjectFor, setNewProjectFor, nestTargets, setNestTargets,
-    projectChanging, projectEdit, setProjectEdit } = projectState;
+    projectChanging } = projectState;
   const pages = useWorkspacePagesState();
   const { recordedWorkflow, setSettingsVisited, setSettingsNavigation, view, setView, viewRef, setSettingsSection } = pages;
   const { pins, togglePinned } = usePins();
   const { bookmarks, toggleBookmarked } = useBookmarks();
   // The sidebar's order is declared further down; groups release it through this ref.
   const releaseChatOrder = useRef(() => {});
-  const { chatGroups, chatGroupsRef, updateGroups, commitGroups } = useChatGroups(message => setError(message), () => releaseChatOrder.current());
+  const groups = useChatGroups(message => setError(message), () => releaseChatOrder.current());
+  const { chatGroups, chatGroupsRef, updateGroups, commitGroups } = groups;
   const dialogs = useWorkspaceDialogState();
-  const { newGroupFor, setNewGroupFor, deleteTargets, setDeleteTargets, deleteRunHistory, setDeleteRunHistory, shownWhenDeleted, shortcutsOpen, setShortcutsOpen, commandMenuOpen, setCommandMenuOpen, commandReturnFocus, shortcutsReturnFocus, renameRequest, setRenameRequest, resumeOpen, setResumeOpen } = dialogs;
+  const { setNewGroupFor, deleteTargets, setDeleteTargets, deleteRunHistory, setDeleteRunHistory, shownWhenDeleted, shortcutsOpen, setShortcutsOpen, commandMenuOpen, setCommandMenuOpen, commandReturnFocus, shortcutsReturnFocus, renameRequest, setRenameRequest, resumeOpen, setResumeOpen } = dialogs;
   const { error, setError, deletedNotice, setDeletedNotice, worktreeNotice, setWorktreeNotice, noteKept } = useWorkspaceNotices();
   const { attention, setAttention, planTurns, markRead } = useChatAttention(planAnswered, setError);
-  const { marked, setMarked, threadList, rowLinks, clickRow } = useSidebarSelection({ selected, openSplit: thread => openSplit(thread), openThread: thread => openThread(thread) });
+  const selection = useSidebarSelection({ selected, openSplit: thread => openSplit(thread), openThread: thread => openThread(thread) });
+  const { marked, setMarked, threadList, rowLinks, clickRow } = selection;
   const { folds, foldsRef, changeFolds, setCollapsedProjects } = useSidebarFolds();
   const collapsedProjects = folds.projects, collapsedSections = folds.sections;
   /** The heading of a sidebar section: every one of them folds its list the same way. */
@@ -353,7 +352,8 @@ export default function Home() {
   const openSplit = (thread: Thread) => { side.closePanel(); setAgentsPanelState(previous => ({ ...previous, open: false })); setView("chat"); split.open(thread); };
   const openSessionWindow = (thread?: Thread) => { void sessionWindowApi()?.(thread?.id).catch(cause => setError(String(cause))); };
 
-  const { assignProject, selectProject, saveProject, newProjectFrom, saveProjectFromChats, workIn, addProject, moveChat, moveChatToFolder, removeProject } = createProjectActions({ projectState, conversations, runtime, chatGroupsRef, commitGroups, placementReveal: (...args) => placementReveal(...args), revealPlacement: (...args) => revealPlacement(...args), setMarked, viewRef, selected, openNewChat, setError, getNativeParents: () => nativeParents });
+  const projectActions = createProjectActions({ projectState, conversations, runtime, chatGroupsRef, commitGroups, placementReveal: (...args) => placementReveal(...args), revealPlacement: (...args) => revealPlacement(...args), setMarked, viewRef, selected, openNewChat, setError, getNativeParents: () => nativeParents });
+  const { assignProject, selectProject, newProjectFrom, workIn, addProject, moveChat, moveChatToFolder, removeProject } = projectActions;
   const show = (next: View) => { if (next !== "chat") side.toggleFull(false); if (next === "settings") { setSettingsVisited(true); setSettingsNavigation(value => value + 1); } setView(next); setSidebar(false); };
   // A click on the screenshot thumbnail puts the screenshots on the Love Spot page already open, below what is there, in the
   // order they were taken, then shows them (A239; Masih, 5 Nov: "when I want to post a screenshot, it shouldn't open a new page").
@@ -503,12 +503,9 @@ export default function Home() {
     {desktop && <StartupSplash onLeaving={() => {
       if (view === "chat" && selected && (!ready || !connected) && !panelShown && !split.thread && window.matchMedia("(min-width: 1101px)").matches) holdAgentPanel(selected);
     }} />}
-    <ProjectDialog projects={projects} editing={projectEdit} folders={projectEdit !== undefined ? [cwd, ...ordinaryThreads.map(thread => thread.cwd ?? "")] : []} description={newProjectFor ? `${newProjectFor.length} chats will move into this project. Their working folders stay as they are.` : undefined} onClose={() => { setProjectEdit(undefined); setNewProjectFor(null); }} onSave={newProjectFor ? saveProjectFromChats : saveProject} />
-    <MoveChatDialog name={projectMove ? projectMove.length === 1 ? title(projectMove[0]) : `${projectMove.length} selected chats` : null} count={projectMove?.length} projects={projects} currentId={projectMove ? new Set(projectMove.map(chat => projectChats[chat.id] ?? null)).size === 1 ? projectChats[projectMove[0].id] ?? null : undefined : null} onMove={id => projectMove ? assignProject(projectMove.map(chat => chat.id), id) : Promise.resolve()} onClose={() => setProjectMove(null)} />
-    <ResumeConversation open={resumeOpen} chats={sidebarThreads} returnFocus={composerRef} onClose={() => setResumeOpen(false)} onChoose={thread => { setResumeOpen(false); void openThread(thread); }} />
-    <PutUnderDialog chats={nestTargets} candidates={nestTargets ? ordinaryThreads.filter(thread => canNest(nestTargets.map(chat => chat.id), thread.id)) : []} onPutUnder={parent => nestChats((nestTargets ?? []).map(chat => chat.id), parent)} onClose={() => setNestTargets(null)} />
-    <GroupNameDialog open={!!newGroupFor} state={chatGroups} group={null} switches={chatGroups.groupBy !== "custom"} onClose={() => setNewGroupFor(null)}
-      onSave={name => { const ids = newGroupFor ?? [], id = crypto.randomUUID(); updateGroups(state => moveChats(addGroup(state, name, id), ids, id)); setNewGroupFor(null); setMarked([]); }} />
+    <WorkspaceOrganizationDialogs projectState={projectState} dialogs={dialogs} model={sidebarModel} groups={groups} selection={selection} placement={placement} actions={projectActions}>
+      <ResumeConversation open={resumeOpen} chats={sidebarThreads} returnFocus={composerRef} onClose={() => setResumeOpen(false)} onChoose={thread => { setResumeOpen(false); void openThread(thread); }} />
+    </WorkspaceOrganizationDialogs>
     <DeleteChatsDialog threads={deleteTargets} trash={trashChats} alwaysConfirm={deleteRunHistory} onClose={() => { setDeleteTargets(null); setDeleteRunHistory(false); }} />
     <RewindDialog threadId={selected?.id} turnId={rewindTurn} prompt={rewindTurn ? turnEntries.get(rewindTurn)?.find(entry => entry.item.type === "userMessage")?.item.content?.map(part => part.text ?? "").join("\n") ?? "" : ""} turns={rewindTurn ? Math.max(1, turnEntries.size - [...turnEntries.keys()].indexOf(rewindTurn)) : null} onConfirm={(mode, version) => rewindFrom(rewindTurn!, mode, version)} onClose={() => setRewindTurn(null)} />
     <WorkspaceSidebar sidebar={sidebar} sidebarKeys={sidebarKeys} appearance={appearance} pages={pages} preferences={preferences} projectState={projectState} runtime={runtime} loveActivity={loveActivity} search={search} searchInput={searchInput} selected={selected} arrangedPages={arrangedPages} pageReorder={pageReorder} show={show} showSidebar={showSidebar} focusComposer={focusComposer} openSettings={openSettings} newChat={newChat}>
