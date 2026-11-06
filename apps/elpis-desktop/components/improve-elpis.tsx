@@ -12,6 +12,7 @@ import { DiffLines } from "@/components/diff-view";
 import { parseDiff } from "@/lib/diff";
 import "./improve-elpis.css";
 import { errorText } from "@/lib/error-text.mjs";
+import { changeBlockedReason } from "@/lib/improve-reason";
 
 type Target = { id: string; label: string; image: string; component: string; file: string };
 type Change = { id: string; branch: string; cwd: string; status: string; head?: string; dirty?: boolean; diff?: string; truncated?: boolean; error?: string; note?: string; thread: Thread; checks: { passed: boolean; head: string; commands: { command: string; code: number; output: string }[] } | null };
@@ -132,15 +133,7 @@ export function ImproveElpis({ threadId, onChat }: { threadId?: string; onChat: 
     : !source?.configured ? "Choose an Elpis source folder to start a change."
     : !request.trim() ? "Describe what should change."
     : "";
-  const failedCheck = change?.checks?.commands.find(command => command.code !== 0);
-  const blockedReason = !change ? "Loading change…"
-    : change.status === "checking" ? "Checking build and tests…"
-    : busy ? "Wait for the current action to finish."
-    : change.dirty ? "Commit this change, then run build and tests."
-    : !change.checks ? "Run build and tests on this commit."
-    : !change.checks.passed ? failedCheck ? `Check failed: ${failedCheck.command} (exit ${failedCheck.code}). See the output below.` : change.error || "Build or test checks failed. Run build and tests again."
-    : !change.head || change.checks.head !== change.head ? "The commit changed after checks passed. Run build and tests again."
-    : "";
+  const blockedReason = changeBlockedReason(change, busy);
   const changeItem = <button data-slot="change-menuitem" type="button" role="menuitem" className="elpis-change-menuitem" onClick={() => { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); void begin(pointed.current); }}>Change this…</button>;
   return <>
     {menu?.isConnected && createPortal(changeItem, menu)}

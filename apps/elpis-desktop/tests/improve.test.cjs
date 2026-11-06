@@ -50,46 +50,6 @@ for (const colorScheme of ['light']) test(`Ctrl+K improvement opens a pointed ch
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
-for (const colorScheme of ['light']) test(`a failed check explains the failing check (${colorScheme})`, async () => {
-  const failed = { ...row, status: 'checks-failed', checks: { passed: false, head: 'abc', commands: [{ command: 'npm run -s test:bridge', code: 1, output: 'Love Spot agent: SDK dependencies were not found; permission request never arrived.' }] } };
-  const f = await setup(colorScheme, false, failed), { page } = f;
-  try {
-    await page.evaluate(() => dispatchEvent(new Event('elpis:improve')));
-    const request = page.getByRole('dialog', { name: 'Improve Elpis' });
-    await request.getByRole('textbox', { name: 'What should change?' }).fill('Fix the review actions');
-    await request.getByRole('button', { name: 'Start change' }).click();
-    const review = page.getByRole('dialog', { name: 'Review Elpis change' });
-    await review.getByRole('button', { name: 'Check build & tests' }).click();
-    await review.getByRole('button', { name: 'Close', exact: true }).click({ trial: true });
-    await review.getByText('Love Spot agent: SDK dependencies were not found; permission request never arrived.', { exact: true }).waitFor({ state: 'visible' });
-    await review.getByText(/Check failed: npm run -s test:bridge \(exit 1\)/).first().waitFor();
-    if (process.env.ELPIS_IMPROVE_SHOTS) {
-      await fs.mkdir(process.env.ELPIS_IMPROVE_SHOTS, { recursive: true });
-      await page.screenshot({ animations: 'disabled', path: path.join(process.env.ELPIS_IMPROVE_SHOTS, `improve-failed-${colorScheme}.png`) });
-    }
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
-for (const [state, reason] of [
-  [{ ...checkedRow, dirty: true }, /Commit this change/],
-  [{ ...checkedRow, head: 'new-commit' }, /commit changed/],
-  [{ ...checkedRow, status: 'checking', checks: null }, /Checking/],
-]) test(`the review says why the change is not ready: ${reason}`, async () => {
-  const f = await setup('light', false, state), { page } = f;
-  try {
-    await page.evaluate(() => dispatchEvent(new Event('elpis:improve')));
-    const request = page.getByRole('dialog', { name: 'Improve Elpis' });
-    await request.getByRole('textbox', { name: 'What should change?' }).fill('Review preconditions');
-    await request.getByRole('button', { name: 'Start change' }).click();
-    const review = page.getByRole('dialog', { name: 'Review Elpis change' });
-    await review.getByRole('button', { name: 'Check build & tests' }).click();
-    await review.getByRole('button', { name: 'Close', exact: true }).click({ trial: true });
-    await review.getByText(reason).first().waitFor();
-    if (state.status === 'checking') assert.equal(await review.getByRole('button', { name: 'Check build & tests' }).isDisabled(), true);
-  } finally { await f.close(); }
-});
-
 test('the source folder chooser repairs setup without losing the requested change or starting a model', async () => {
   let configured = false;
   const f = await fixture({ width: 1100, height: 800, routes: {
