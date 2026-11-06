@@ -11,7 +11,7 @@ import { newChatFolder, useAppPreferences } from "@/lib/preferences";
 import { usePromptKeys } from "@/lib/prompt-history";
 import { ShortcutsDialog } from "@/components/shortcuts-dialog";
 import { StartupSplash } from "@/components/startup-splash";
-import { permissionLabel, type PermissionMode } from "@/components/composer-controls";
+import { permissionLabel } from "@/components/composer-controls";
 import type { TerminalLaunch } from "@/components/terminal-view";
 import { type SettingsDestination } from "@/components/settings-view";
 import { DeleteChatsDialog } from "@/components/thread-actions";
@@ -57,7 +57,7 @@ import { FloatChatBar, FloatChatPill } from "@/components/float-chat";
 import { useSessionSplit } from "@/components/session-split";
 import { followChat, renameTabs } from "@/lib/chat-tabs";
 import { fitAttachments, type Attachment } from "@/lib/attachments";
-import { api, isAgentRun, modelLabel, providerLabel, title, agentName,
+import { api, modelLabel, providerLabel, title, agentName,
   type ProviderSettings, type Thread } from "@/lib/api";
 import { useComposerHeight } from "@/lib/use-composer-height";
 import { useTranscriptHistory } from "@/lib/use-transcript-history";
@@ -106,6 +106,7 @@ import { useWorkspaceOrder } from "@/lib/use-workspace-order";
 import { useRewindState, useRewindStatus } from "@/lib/use-rewind-state";
 import { useRemoveThreads } from "@/lib/use-remove-threads";
 import { createWorkspaceCommandMenu } from "@/lib/workspace-command-menu";
+import { conversationStatus } from "@/lib/conversation-status";
 import { PAGE_NAMES } from "@/lib/workspace-navigation-pages";
 import { refusedOffline } from "@/lib/workspace-types";
 import { useComposerAttachments } from "@/lib/use-composer-attachments";
@@ -141,7 +142,7 @@ export default function Home() {
   const settingsSnapshot = useElpisSettings().data as unknown as ProviderSettings | null;
   const providerSettings = settingsSnapshot?.main && Array.isArray(settingsSnapshot.providers) ? settingsSnapshot : null;
   const options = useConversationOptions();
-  const { choiceId, model, effort, setEffort, nextTurn, setNextTurn, threadModes, setThreadModes, threadPlans, newPlan, planAnswered, setPlanAnswered, newMode } = options;
+  const { choiceId, model, effort, setEffort, nextTurn, setNextTurn, threadModes, setThreadModes, planAnswered, setPlanAnswered } = options;
   const projectState = useProjectState();
   const { cwd, projects, projectChats, projectChanging } = projectState;
   const pages = useWorkspacePagesState();
@@ -184,7 +185,6 @@ export default function Home() {
   const newDraftKey = useRef("new");
   const runtime = useRuntimeState();
   const { connected, connectionStatus, ready, runtimeNotices, setRuntimeNotices,
-    activeTurns, approvals,
     activity, liveError } = runtime;
   useEffect(() => {
     if (ready && connected && document.activeElement === document.body) composerRef.current?.focus();
@@ -270,20 +270,8 @@ export default function Home() {
   const related = useRelatedConversations(selected, threads, preferences.showAgentRuns, agentRunsOpen);
   const { shownEntries, newestPrompt } = useTranscriptPresentation({ selected, entries, submissions, setSubmissions, newDraftKey, scroll, restoreScroll, stickToBottom, view });
 
-  const activeTurn = selected ? activeTurns[selected.id] : undefined;
+  const { activeTurn, permissionMode, planMode, proposedPlan, outsideChatApprovals, readOnlyRun, continues } = conversationStatus(session, options, runtime, providerSettings, view);
   useRewindStatus(ready, connected, selected?.id, activeTurn, setRewindActions, (id, disposed) => loadVersions(id, disposed));
-  // A new chat starts in Settings' default permissions (Full access unless the config names an approval policy) until a
-  // mode is chosen, so the button shows that; a config that matches no preset shows Ask.
-  const defaultMode = providerSettings?.options?.defaultPermissions;
-  const configuredMode: PermissionMode = defaultMode === "ask" || defaultMode === "custom" ? "ask" : defaultMode === "auto" ? "auto" : "full";
-  const permissionMode: PermissionMode = selected ? threadModes[selected.id] ?? "ask" : newMode ?? configuredMode;
-  const planMode = selected ? nextTurn[selected.id]?.plan ?? threadPlans[selected.id] ?? false : newPlan;
-  // The last finished turn's proposed plan, while the chat is still in Plan mode and it is unanswered.
-  const lastTurnId = entries.at(-1)?.turnId;
-  const proposedPlan = selected && planMode && lastTurnId && lastTurnId !== activeTurn && planAnswered[selected.id] !== lastTurnId && entries.some(entry => entry.turnId === lastTurnId && entry.item.type === "plan") ? lastTurnId : null;
-  const outsideChatApprovals = approvals.filter(approval => view !== "chat" || approval.params.threadId !== selected?.id);
-  const readOnlyRun = !!selected && (isAgentRun(selected) || selected.desktopAccess?.writable === false);
-  const continues = readOnlyRun || selected?.desktopAccess?.mode === "continue";
   const selectedModel = modelSelection({ models, providerSettings, selected, choiceId, model, effort, nextTurn });
   const { newChoice, missingChoiceNotice, needsModelId, pending, turnModel, turnEfforts, turnEffort, knownModel, fastOn } = selectedModel;
   const commandNoticeScope = JSON.stringify([view, tabs.activeId, selected?.id ?? newDraftKey.current]);
