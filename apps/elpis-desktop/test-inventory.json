@@ -110,7 +110,7 @@
     "bridge/recorded-changes.test.mts",
     "bridge/github-connector.test.mts",
     "bridge/helper-desktop.test.mjs",
-    "bridge/improve.test.mjs",
+    "bridge/improve.test.mts",
     "bridge/love-agents.test.mjs",
     "bridge/love-interview.test.mts",
     "bridge/love-interview-visibility.test.mjs",
