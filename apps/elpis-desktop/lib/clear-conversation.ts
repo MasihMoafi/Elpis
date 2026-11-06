@@ -3,7 +3,7 @@ import type { PermissionMode } from "@/components/composer-controls";
 import { agentName, api, type Thread } from "@/lib/api";
 import type { createChatNavigation } from "@/lib/chat-navigation";
 import type { createConversationSettings } from "@/lib/conversation-settings";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 import { savedPersona } from "@/lib/matilda";
 import type { useComposerState } from "@/lib/use-composer-state";
 import type { useConversationList } from "@/lib/use-conversation-list";

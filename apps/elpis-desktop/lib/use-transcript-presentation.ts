@@ -1,5 +1,5 @@
 import { useEffect, useMemo, type Dispatch, type RefObject, type SetStateAction } from "react";
-import { isVoiceHandoff } from "@/bridge/voice-handoff.cjs";
+import { isVoiceHandoff } from "@/bridge/voice-handoff.cts";
 import type { Entry, Thread } from "@/lib/api";
 import { rememberSubmittedMessages, withSubmittedMessages, type SubmittedMessage } from "@/lib/submitted-messages";
 import type { View } from "@/lib/workspace-types";

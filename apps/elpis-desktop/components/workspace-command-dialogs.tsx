@@ -2,7 +2,7 @@ import { ProfileDialog } from "@/components/profile-dialog";
 import { ShortcutsDialog } from "@/components/shortcuts-dialog";
 import { CommandMenu, type CommandAction } from "@/components/command-menu";
 import { StartupSplash } from "@/components/startup-splash";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 import type { useConversationSession } from "@/lib/use-conversation-session";
 import type { useRuntimeState } from "@/lib/use-runtime-state";
 import type { useWorkspacePagesState } from "@/lib/use-workspace-pages-state";

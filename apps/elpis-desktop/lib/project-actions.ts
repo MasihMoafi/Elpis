@@ -2,7 +2,7 @@ import type { Dispatch, RefObject, SetStateAction } from "react";
 import { chooseProject, projectAt } from "@/components/project-picker";
 import { api, type Thread } from "@/lib/api";
 import { chatSelectionRoots, chatSubtree, putChatsUnder, sidebarParents, writeGroups, type ChatGroups } from "@/lib/chat-groups";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 import { appStorage, saveProjectChats, saveProjects, type Project } from "@/lib/projects";
 import type { useConversationList } from "@/lib/use-conversation-list";
 import type { useProjectState } from "@/lib/use-project-state";

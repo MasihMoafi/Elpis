@@ -2,7 +2,7 @@ import type { Dispatch, RefObject, SetStateAction } from "react";
 import type { PermissionMode } from "@/components/composer-controls";
 import { api, type ProviderChoice, type Thread } from "@/lib/api";
 import type { ChatTabs } from "@/lib/chat-tabs";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 import { newChatFolder } from "@/lib/preferences";
 import type { useComposerAttachments } from "@/lib/use-composer-attachments";
 import type { useComposerState } from "@/lib/use-composer-state";

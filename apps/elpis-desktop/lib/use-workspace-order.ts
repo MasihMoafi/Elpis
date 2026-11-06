@@ -3,7 +3,7 @@ import { useReorder } from "@/components/reorder";
 import { arrange, move } from "@/lib/nav-order";
 import { savePreferences, type useAppPreferences } from "@/lib/preferences";
 import { saveProjects } from "@/lib/projects";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 import { NAV_PAGES } from "@/lib/workspace-navigation-pages";
 import type { useProjectState } from "@/lib/use-project-state";
 

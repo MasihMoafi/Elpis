@@ -5,7 +5,7 @@ import type { Attention } from "@/lib/attention";
 import { changesModelCatalog } from "@/lib/account-events";
 import { activeTab, type ChatTabs } from "@/lib/chat-tabs";
 import { historyPath, type HistoryPage } from "@/lib/chat-history";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 import { sendQueuedFollowUp } from "@/lib/follow-ups";
 import { HEART_REACTION, nativeHeartReaction } from "@/lib/heart-reactions";
 import { liveEventItemKey, mergeLiveItem, RETRYING, retryRecovered, runtimeErrorNotice } from "@/lib/live-events";

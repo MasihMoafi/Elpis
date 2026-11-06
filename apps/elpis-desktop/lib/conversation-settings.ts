@@ -1,7 +1,7 @@
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import type { PermissionMode } from "@/components/composer-controls";
 import { api, type Thread } from "@/lib/api";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 import type { useConversationOptions } from "@/lib/use-conversation-options";
 import type { useConversationList } from "@/lib/use-conversation-list";
 import type { useRuntimeState } from "@/lib/use-runtime-state";

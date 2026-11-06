@@ -1,5 +1,5 @@
 import { chatProvider, choiceById, choiceOf, effortsOf, providerChoices, type Model, type ProviderSettings, type Thread } from "@/lib/api";
-import { fastServiceTier } from "@/lib/service-tier.mjs";
+import { fastServiceTier } from "@/lib/service-tier.mts";
 import type { NextTurn } from "@/lib/workspace-types";
 
 type Inputs = { models: Model[]; providerSettings: ProviderSettings | null; selected: Thread | null; choiceId: string; model: string; effort: string; nextTurn: Record<string, NextTurn> };

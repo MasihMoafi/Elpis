@@ -7,7 +7,7 @@ export function useRewindState() {
   /** The message whose "Rewind to here" is awaiting confirmation (its turn). */
   const [rewindTurn, setRewindTurn] = useState<string | null>(null);
   const [rewindActions, setRewindActions] = useState<Record<string, "undo" | "redo" | undefined>>({});
-  /** ChatGPT's ‹ 1/2 › under an edited message, per chat: its versions by turn (bridge/message-versions.mjs). */
+  /** ChatGPT's ‹ 1/2 › under an edited message, per chat: its versions by turn (bridge/message-versions.mts). */
   const [messageVersions, setMessageVersions] = useState<Record<string, MessageVersion[]>>({});
   const [rewindBusy, setRewindBusy] = useState(false);
   const rewindSwitch = useRef<string | null>(null);

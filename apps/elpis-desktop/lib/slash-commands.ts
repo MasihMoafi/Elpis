@@ -5,7 +5,7 @@ import type { ReviewTarget } from "@/components/slash-panels";
 import type { SlashCommand } from "@/components/slash-menu";
 import type { Entry, Thread } from "@/lib/api";
 import { configDestination } from "@/lib/config-sections";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 import { INIT_PROMPT } from "@/lib/init-prompt";
 import { lastReply } from "@/lib/slash";
 

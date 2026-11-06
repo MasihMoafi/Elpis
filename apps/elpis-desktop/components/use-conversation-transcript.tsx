@@ -8,7 +8,7 @@ import { Transcript } from "@/components/transcript";
 import { ViewBoundary } from "@/components/view-boundary";
 import { agentName, mediaUrl, type Entry, type Thread } from "@/lib/api";
 import type { createConversationActions } from "@/lib/conversation-actions";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 import { LOVE_SPOT_AUDIO } from "@/lib/love-spot-audio";
 import type { createMessageActions } from "@/lib/message-actions";
 import { entryKey } from "@/lib/submitted-messages";

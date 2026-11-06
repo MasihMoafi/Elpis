@@ -2,7 +2,7 @@ import type { Dispatch, RefObject, SetStateAction } from "react";
 import type { PermissionMode } from "@/components/composer-controls";
 import { api, title, type ProviderChoice, type Thread } from "@/lib/api";
 import type { ChatTabs } from "@/lib/chat-tabs";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 import { queueFollowUp, type FollowUpOptions } from "@/lib/follow-ups";
 import { usedMentions } from "@/lib/mentions";
 import { newChatFolder, type Preferences } from "@/lib/preferences";

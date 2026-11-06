@@ -1,6 +1,6 @@
 import type { Dispatch, SetStateAction } from "react";
 import { api } from "@/lib/api";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 import { useScreenshotPopup } from "@/lib/use-screenshot-popup";
 import type { createWorkspaceVisibility } from "@/lib/workspace-visibility";
 

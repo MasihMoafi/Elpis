@@ -1,7 +1,7 @@
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { api, title, unreadable, type Thread } from "@/lib/api";
 import { keptNotice, type WorktreeOutcome } from "@/lib/chat-worktree";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 import { scanDeletionThreads } from "@/lib/thread-deletion";
 import type { useConversationList } from "@/lib/use-conversation-list";
 import type { useRuntimeState } from "@/lib/use-runtime-state";

@@ -2,7 +2,7 @@ import { useCallback, type Dispatch, type RefObject, type SetStateAction } from 
 import { api, retryableSessionError, unreadable, type Thread } from "@/lib/api";
 import { activate, tabFor } from "@/lib/chat-tabs";
 import { historyPath, type HistoryPage } from "@/lib/chat-history";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 import { mergeHistoryWithLive } from "@/lib/live-events";
 import type { useChatTabs } from "@/lib/use-chat-tabs";
 import type { useComposerState } from "@/lib/use-composer-state";

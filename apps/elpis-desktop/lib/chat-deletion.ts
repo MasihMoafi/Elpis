@@ -1,7 +1,7 @@
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { api, title, type Thread } from "@/lib/api";
 import { keptNotice, type WorktreeOutcome } from "@/lib/chat-worktree";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 import type { useAppPreferences } from "@/lib/preferences";
 import type { useConversationList } from "@/lib/use-conversation-list";
 

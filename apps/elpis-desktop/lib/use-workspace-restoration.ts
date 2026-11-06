@@ -1,7 +1,7 @@
 import { useEffect, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { activeTab } from "@/lib/chat-tabs";
 import { readProjectChats, readProjects } from "@/lib/projects";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 import type { useProjectState } from "@/lib/use-project-state";
 import type { useComposerState } from "@/lib/use-composer-state";
 import type { useComposerAttachments } from "@/lib/use-composer-attachments";

@@ -1,7 +1,7 @@
 import type { RefObject } from "react";
 import { agentName, type Entry, type Thread } from "@/lib/api";
 import { ATTACHMENT_LIMITS, attachmentFromFile, fitAttachments } from "@/lib/attachments";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 import type { FollowUp } from "@/lib/follow-ups";
 import { replyAttachment, withoutReplyAttachments } from "@/lib/message-reply";
 import type { ReplyImage } from "@/components/image-reply";

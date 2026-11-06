@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, type Dispatch, type RefObject, type SetStateAction } from "react";
 import type { MenuAction } from "@/components/action-menu";
 import { useChatListOrder } from "@/components/chat-groups";
-import { agentParentId } from "@/lib/agent-runs.mjs";
+import { agentParentId } from "@/lib/agent-runs.mts";
 import { agentState, mergeListedThreads } from "@/lib/agents";
 import { isAgent, isAgentRun, title, type Thread } from "@/lib/api";
 import { groupSections, prioritizeChats, sidebarParents, sortChats, type ChatGroups } from "@/lib/chat-groups";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 import { chatOrigin } from "@/lib/love-activity";
 import { savePreferences, type useAppPreferences } from "@/lib/preferences";
 import { rankBySearch } from "@/lib/search-rank";

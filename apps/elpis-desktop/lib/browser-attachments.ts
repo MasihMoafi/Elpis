@@ -1,6 +1,6 @@
 import type { RefObject } from "react";
 import { fitAttachments, type Attachment } from "@/lib/attachments";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 import type { useConversationSession } from "@/lib/use-conversation-session";
 import type { useComposerState } from "@/lib/use-composer-state";
 import type { useComposerAttachments } from "@/lib/use-composer-attachments";

@@ -6,7 +6,7 @@ import { ThreadActions } from "@/components/thread-actions";
 import { Button } from "@/components/ui/button";
 import { agentState, attentionLine, stateLabels } from "@/lib/agents";
 import { isAgent, isAgentRun, title, type Thread } from "@/lib/api";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 import { chatOrigin, originLabel } from "@/lib/love-activity";
 import { savePreferences, type useAppPreferences } from "@/lib/preferences";
 import type { useLoveActivity } from "@/lib/use-love-activity";

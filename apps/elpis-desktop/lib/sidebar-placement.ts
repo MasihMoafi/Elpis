@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from "react";
-import { agentParentId } from "@/lib/agent-runs.mjs";
+import { agentParentId } from "@/lib/agent-runs.mts";
 import type { Thread } from "@/lib/api";
 import { chatSelectionRoots, chatSubtree, moveChats, sidebarParents, type ChatGroups } from "@/lib/chat-groups";
 import type { createProjectActions } from "@/lib/project-actions";

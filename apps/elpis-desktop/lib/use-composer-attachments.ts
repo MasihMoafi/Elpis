@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { api, type Thread } from "@/lib/api";
 import { attachFiles, fitAttachments, type Attachment } from "@/lib/attachments";
-import { errorText } from "@/lib/error-text.mjs";
+import { errorText } from "@/lib/error-text.mts";
 
 export function useComposerAttachments({ selectedRef, newDraftKey, shellMode, savedAttachments, saveAttachments, setError, setRuntimeNotices }: {
   selectedRef: RefObject<Thread | null>;
