@@ -91,7 +91,7 @@ export function ThreadActions({ thread, onDelete, onRequestDelete, onRename, ren
   };
   const many = selection && selection.length > 1 ? selection : null, suffix = many ? ` ${many.length} chats` : "";
   const remove: MenuAction | undefined = onRequestDelete || onDelete ? { id: "delete", label: `Delete${suffix}`, icon: <Trash2 size={14} />, hint: "D", destructive: true, run: () => onRequestDelete ? onRequestDelete(thread) : setDeleting([thread]) } : undefined;
-  const archive: MenuAction | undefined = onArchive ? { id: "archive", label: `Archive${suffix}`, icon: <ArchiveIcon size={14} />, hint: shortcutHint("archive"), run: () => onArchive(many ?? [thread]) } : undefined;
+  const archive: MenuAction | undefined = onArchive ? { id: "archive", label: `Archive${suffix}`, icon: <ArchiveIcon size={14} />, ...(shortcutHint("archive") === undefined ? {} : { hint: shortcutHint("archive")! }), run: () => onArchive(many ?? [thread]) } : undefined;
   const move: MenuAction | undefined = group ? { id: "move", label: many ? `Move ${many.length} chats to group` : "Move to group", icon: <FolderInput size={14} />, run: () => {}, items: [
     ...group.groups.map(item => ({ id: `group:${item.id}`, label: item.name, checked: group.current === item.id, run: () => group.onMove(item.id) })),
     { id: "ungrouped", label: "Ungrouped", checked: group.current === null, run: () => group.onMove(null) },
@@ -114,11 +114,11 @@ export function ThreadActions({ thread, onDelete, onRequestDelete, onRename, ren
   const openItems = openIn.filter((action): action is MenuAction => !!action);
   const actions = (many ? [organize, archive, remove] : [
     onRename ? { id: "rename", label: "Rename", icon: <Pencil size={14} />, hint: "F2", run: rename } : undefined,
-    onPin ? { id: "pin", label: pinned ? "Unpin" : "Pin", icon: <PinIcon size={14} />, hint: shortcutHint("pin"), run: () => onPin(thread) } : undefined,
+    onPin ? { id: "pin", label: pinned ? "Unpin" : "Pin", icon: <PinIcon size={14} />, ...(shortcutHint("pin") === undefined ? {} : { hint: shortcutHint("pin")! }), run: () => onPin(thread) } : undefined,
     onBookmark ? { id: "bookmark", label: bookmarked ? "Remove bookmark" : "Bookmark", icon: bookmarked ? <BookmarkMinus size={14} /> : <Bookmark size={14} />, run: () => onBookmark(thread) } : undefined,
     // Colour marks a chat in the sidebar; an archived chat (no Archive action) is not there, so it is not offered.
     onArchive ? { id: "colour", label: "Colour", icon: <Palette size={14} />, run: () => {}, items: [
-      ...WORKFLOW_COLOURS.map(value => ({ id: `colour:${value}`, label: value[0].toUpperCase() + value.slice(1), icon: <span className="conversation-colour-swatch" data-colour={value} aria-hidden="true" />, checked: conversationColour.colour === value, run: () => void conversationColour.choose(value) })),
+      ...WORKFLOW_COLOURS.map(value => ({ id: `colour:${value}`, label: value.charAt(0).toUpperCase() + value.slice(1), icon: <span className="conversation-colour-swatch" data-colour={value} aria-hidden="true" />, checked: conversationColour.colour === value, run: () => void conversationColour.choose(value) })),
       { id: "colour:reset", label: "Reset colour", separated: true, run: () => void conversationColour.choose(null) },
     ] } : undefined,
     organize,
@@ -129,7 +129,7 @@ export function ThreadActions({ thread, onDelete, onRequestDelete, onRename, ren
     archive, remove,
   ]).filter((action): action is MenuAction => !!action);
   return <>
-    <RightClickMenu actions={actions} area={cloneElement(area as ReactElement<{ "data-conversation-colour"?: WorkflowColour; onKeyDown?: (event: KeyboardEvent<HTMLElement>) => void }>, { "data-conversation-colour": conversationColour.colour, ...(!many && onRename ? { onKeyDown: (event: KeyboardEvent<HTMLElement>) => { (area.props as { onKeyDown?: (event: KeyboardEvent<HTMLElement>) => void }).onKeyDown?.(event); renameKey(event); } } : {}) })}>
+    <RightClickMenu actions={actions} area={cloneElement(area as ReactElement<{ "data-conversation-colour"?: WorkflowColour | undefined; onKeyDown?: (event: KeyboardEvent<HTMLElement>) => void }>, { "data-conversation-colour": conversationColour.colour, ...(!many && onRename ? { onKeyDown: (event: KeyboardEvent<HTMLElement>) => { (area.props as { onKeyDown?: (event: KeyboardEvent<HTMLElement>) => void }).onKeyDown?.(event); renameKey(event); } } : {}) })}>
       {children(<MoreMenu actions={actions} className="thread-actions" label={label ?? `Actions for ${current}`} title="Rename, archive or delete" />)}
     </RightClickMenu>
     {conversationColour.error && <p role="alert" className="px-2 text-xs text-destructive">{conversationColour.error}</p>}
@@ -161,7 +161,7 @@ export function DeleteChatsDialog({ threads, onDelete, trash, onClose, alwaysCon
   const previous = useRef<Thread[] | null>(null);
   if (previous.current !== threads) { previous.current = threads; deleted.current.clear(); }
   const only = threads?.length === 1 ? threads[0] : null;
-  return <ConfirmDelete request={threads} names={threads?.map(title) ?? []} noun="chat" alwaysConfirm={alwaysConfirm} onClose={onClose}
+  return <ConfirmDelete request={threads} names={threads?.map(title) ?? []} noun="chat" {...(alwaysConfirm === undefined ? {} : { alwaysConfirm })} onClose={onClose}
     description={trash
       ? <>{only ? isAgent(only) ? "This deletes this agent's chat from Elpis." : "This deletes the conversation and all of its agents from Elpis." : "This deletes these conversations and all of their agents from Elpis."} Chats continued from these agents are deleted too. Ctrl+Z brings {only ? "it" : "them"} back until you quit Elpis.</>
       : <>{only ? isAgent(only) ? "This permanently deletes this agent's chat from Elpis." : "This permanently deletes the conversation and all of its agents from Elpis." : "This permanently deletes these conversations and all of their agents from Elpis."} Chats continued from these agents are deleted too. This cannot be undone.</>}

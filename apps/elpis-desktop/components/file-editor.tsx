@@ -27,7 +27,7 @@ const mod = (n: number, size: number) => ((n % size) + size) % size;
 const lowlight = createLowlight(common);
 const LANGUAGE: Record<string, string> = { ts: "typescript", tsx: "typescript", mts: "typescript", cts: "typescript", js: "javascript", jsx: "javascript", mjs: "javascript", cjs: "javascript", py: "python", rs: "rust", go: "go", rb: "ruby", java: "java", kt: "kotlin", c: "c", h: "c", cpp: "cpp", cc: "cpp", hpp: "cpp", cs: "csharp", php: "php", swift: "swift", sh: "bash", bash: "bash", zsh: "bash", json: "json", yml: "yaml", yaml: "yaml", toml: "ini", ini: "ini", md: "markdown", css: "css", scss: "scss", html: "xml", xml: "xml", svg: "xml", sql: "sql", lua: "lua", r: "r", diff: "diff" };
 const languageOf = (label: string) => LANGUAGE[label.slice(label.lastIndexOf(".") + 1).toLowerCase()];
-type Piece = { text: string; className?: string };
+type Piece = { text: string; className?: string | undefined };
 /** Highlights the whole file once, then splits the coloured pieces at line breaks, so each layer line keeps its colours
  * even inside a multi-line comment or string. */
 function colourLines(value: string, language: string | undefined): Piece[][] | null {
@@ -37,7 +37,7 @@ function colourLines(value: string, language: string | undefined): Piece[][] | n
   const lines: Piece[][] = [[]];
   const walk = (nodes: ElementContent[], className?: string) => {
     for (const node of nodes) {
-      if (node.type === "text") node.value.split("\n").forEach((part, index) => { if (index) lines.push([]); if (part) lines[lines.length - 1].push({ text: part, className }); });
+      if (node.type === "text") node.value.split("\n").forEach((part, index) => { if (index) lines.push([]); if (part) lines.at(-1)?.push({ text: part, className }); });
       else if (node.type === "element") walk(node.children, [className, ...((node as Element).properties?.className as string[] | undefined ?? [])].filter(Boolean).join(" ") || undefined);
     }
   };
@@ -47,7 +47,7 @@ function colourLines(value: string, language: string | undefined): Piece[][] | n
 
 /** One line of the layer behind the text: it marks the lines a reply pointed at and the places the find matched. The
  * letters are transparent (the textarea above draws them); only the marks show. */
-const Line = memo(function Line({ text, hit, pieces, current, colours }: { text: string; hit: boolean | "added"; pieces: (Found & { index: number })[]; current: number; colours?: Piece[] }) {
+const Line = memo(function Line({ text, hit, pieces, current, colours }: { text: string; hit: boolean | "added"; pieces: (Found & { index: number })[]; current: number; colours?: Piece[] | undefined }) {
   if (colours && !pieces.length) return <div className={`fe-line${hit ? " hit" : ""}${hit === "added" ? " added" : ""}`}>{colours.length ? colours.map((piece, index) => <span key={index} className={piece.className}>{piece.text}</span>) : " "}</div>;
   const parts: React.ReactNode[] = [];
   let at = 0;
@@ -109,7 +109,7 @@ export function FileEditor({ label, value, marks, softWrap = false, onChange, on
     return () => observer.disconnect();
   }, [value, softWrap]);
   useLayoutEffect(() => { if (marks?.line) show(marks.line - 1, true); }, [marks?.focus, label]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { if (current >= 0) show(found[current].line); }, [current, find?.query]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { const match = found[current]; if (current >= 0 && match) show(match.line); }, [current, find?.query]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (find?.focus) { field.current?.focus(); field.current?.select(); } }, [find?.focus]);
 
   const openFind = () => {

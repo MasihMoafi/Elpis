@@ -94,7 +94,7 @@ const WEEKDAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 /** A month calendar for one date; arrows move the day, Enter picks it. */
 function DatePicker({ value, onPick }: { value: string; onPick: (date: string) => void }) {
   const parsed = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value), today = new Date();
-  const [view, setView] = useState(() => parsed ? { year: +parsed[1], month: +parsed[2] - 1, day: +parsed[3] } : { year: today.getFullYear(), month: today.getMonth(), day: today.getDate() });
+  const [view, setView] = useState(() => parsed?.[1] && parsed[2] && parsed[3] ? { year: +parsed[1], month: +parsed[2] - 1, day: +parsed[3] } : { year: today.getFullYear(), month: today.getMonth(), day: today.getDate() });
   const cells = useRef(new Map<number, HTMLDivElement>());
   useEffect(() => { cells.current.get(view.day)?.focus(); }, [view]);
   const iso = (day: number) => `${view.year}-${pad(view.month + 1)}-${pad(day)}`, todayIso = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
@@ -216,7 +216,7 @@ export function ScheduleFields({ draft, onChange }: { draft: TimingDraft; onChan
     <div className="schedule-rows">
       <Row label="Repeat"><Choice label="Repeat" value={repeat} options={REPEATS} onChange={value => {
         const frequency = value === "weekdays" ? "weekly" : value;
-        change({ frequency, ...(value === "weekdays" ? { weekdays: [1, 2, 3, 4, 5] } : value === "weekly" && weekdays ? { weekdays: [draft.weekdays[0]] } : {}), ...(frequency === "advanced" ? { rrule: rruleFromDraft(draft, true) } : {}) });
+        change({ frequency, ...(value === "weekdays" ? { weekdays: [1, 2, 3, 4, 5] } : value === "weekly" && weekdays && draft.weekdays[0] !== undefined ? { weekdays: [draft.weekdays[0]] } : {}), ...(frequency === "advanced" ? { rrule: rruleFromDraft(draft, true) } : {}) });
       }} /></Row>
       {unit && <Row label={`Every how many ${unit}`}><Stepper label="Interval" value={Number(draft.interval)} min={1} max={9999} onChange={value => change({ interval: String(value) })} /></Row>}
       {draft.frequency === "weekly" && <Row label="Weekday"><div className="schedule-weekdays" role="group" aria-label="Weekday">{WEEKDAY_NAMES.map((name, index) => {

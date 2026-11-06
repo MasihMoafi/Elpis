@@ -42,7 +42,7 @@ function allocate(identities: Identities, id: string, preferred: string, colour?
   const entries = Object.values(identities), last = entries.at(-1)?.colour;
   const colours = WORKFLOW_COLOURS.filter(value => value !== last);
   const leastUsed = [...colours].sort((a, b) => entries.filter(item => item.colour === a).length - entries.filter(item => item.colour === b).length)[0];
-  return { id, name, colour: colour ?? leastUsed };
+  return { id, name, colour: colour ?? leastUsed ?? WORKFLOW_COLOURS[0] };
 }
 
 /** One desktop owner for draft/run identity. Saved engine metadata supplies membership; names never mutate threads. */
@@ -103,12 +103,16 @@ export function useWorkflowCatalog(enabled: boolean) {
   const rename = useCallback((id: string, name: string) => {
     const problem = workflowNameProblem(current.current, id, name);
     if (problem) return problem;
-    try { commit({ ...current.current, [id]: { ...current.current[id], name: name.trim() } }); return null; }
+    const identity = current.current[id];
+    if (!identity) return "This workflow is no longer available.";
+    try { commit({ ...current.current, [id]: { ...identity, name: name.trim() } }); return null; }
     catch (cause) { return errorText(cause); }
   }, [commit]);
-  const recolour = useCallback((id: string, colour: WorkflowColour) => { commit({ ...current.current, [id]: { ...current.current[id], colour } }); }, [commit]);
+  const recolour = useCallback((id: string, colour: WorkflowColour) => { const identity = current.current[id]; if (!identity) { setError("This workflow is no longer available."); return; } commit({ ...current.current, [id]: { ...identity, colour } }); }, [commit]);
   const attach = useCallback((from: string, id: string, rootThreadId: string) => {
-    const next = { ...current.current }, identity = next[from]; delete next[from];
+    const next = { ...current.current }, identity = next[from];
+    if (!identity) { setError("This workflow is no longer available."); return; }
+    delete next[from];
     next[id] = { ...identity, id, rootThreadId }; commit(next); void refresh();
   }, [commit, refresh]);
   return { identities, runs, hydrated, error, ensure, rename, recolour, attach, refresh };

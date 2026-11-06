@@ -5,7 +5,7 @@ import { api, sessionReady } from "@/lib/api";
 import { READ_ALOUD_AUDIO } from "@/lib/love-spot-audio";
 import { errorText } from "@/lib/error-text.mts";
 
-type Playback = { controller: AbortController; peer: RTCPeerConnection | null; audio: HTMLAudioElement | null; silence: AudioContext | null; timer: ReturnType<typeof setTimeout> | null; monitor: ReturnType<typeof setInterval> | null; soundTimeout: ReturnType<typeof setTimeout> | null; audible: boolean; draining: boolean; energy: number; session?: string; ready: boolean; complete: boolean; idle?: boolean; reply: string };
+type Playback = { controller: AbortController; peer: RTCPeerConnection | null; audio: HTMLAudioElement | null; silence: AudioContext | null; timer: ReturnType<typeof setTimeout> | null; monitor: ReturnType<typeof setInterval> | null; soundTimeout: ReturnType<typeof setTimeout> | null; audible: boolean; draining: boolean; energy: number; session?: string | undefined; ready: boolean; complete: boolean; idle?: boolean; reply: string };
 type Speech = { active: string | null; error: { id: string; message: string } | null; play: (id: string, text: string) => void; stream: (id: string) => void; stop: () => void; warm: () => void };
 /** After a read the call stays open this long, so the next Read aloud only sends its text. */
 const KEEP_OPEN_MS = 60_000;
@@ -52,10 +52,11 @@ export function ReadAloud({ threadId, enabled, available = READ_ALOUD_AUDIO.avai
       .then(async response => { if (!response.ok) { const result = await response.json().catch(() => ({})); throw new Error(typeof result?.error === "string" ? result.error : "Read aloud could not voice this reply."); } return URL.createObjectURL(await response.blob()); });
     try {
       const pieces = spokenPieces(text);
-      let next = pieces.length ? voice(pieces[0]) : null;
+      let next = pieces[0] === undefined ? null : voice(pieces[0]);
       for (let index = 0; next && local.current === mine; index++) {
         const url = await next;
-        next = index + 1 < pieces.length ? voice(pieces[index + 1]) : null;
+        const piece = pieces[index + 1];
+        next = piece === undefined ? null : voice(piece);
         next?.catch(() => {});
         audio.src = url;
         await new Promise<void>((resolve, reject) => {
@@ -169,7 +170,9 @@ export function ReadAloud({ threadId, enabled, available = READ_ALOUD_AUDIO.avai
         const trigger = silence.createBufferSource(); trigger.buffer = buffer;
         trigger.connect(sink); trigger.start();
       }).catch(cause => fail(errorText(cause, "The voice playback cue could not load.")));
-      peer.addTransceiver(sink.stream.getAudioTracks()[0], { direction: "sendrecv" });
+      const track = sink.stream.getAudioTracks()[0];
+      if (!track) throw new Error("Read aloud could not create its audio track.");
+      peer.addTransceiver(track, { direction: "sendrecv" });
       const events = peer.createDataChannel("oai-events");
       events.onmessage = message => {
         if (call.current !== current) return;
