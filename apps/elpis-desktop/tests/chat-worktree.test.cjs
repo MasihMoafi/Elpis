@@ -96,31 +96,4 @@ for (const colorScheme of ['light']) test(`a new chat can start in its own workt
   await shoot(page, `worktree-chat-${colorScheme}`);
 }));
 
-for (const colorScheme of ['light']) test(`archiving or deleting a chat whose worktree has uncommitted work says where the worktree is kept (${colorScheme})`, () => using({ colorScheme, routes: {
-  '/api/threads/chat-a/archive': () => ({ archived: true, worktree: { kept: true, path: KEPT, branch: BRANCH, changes: 2 } }),
-  '/api/trash': () => ({ trashed: ['chat-b'], worktrees: [{ threadId: 'chat-b', worktree: { kept: true, path: `${KEPT}0`, branch: `${BRANCH}0`, changes: 1 } }] }),
-  '/api/threads/chat-c/archive': () => ({ archived: true, worktree: { removed: true, path: KEPT, branch: BRANCH } }),
-} }, async f => {
-  const { page } = f;
-  const row = id => page.locator(`.recents .thread-row[data-thread-id="${id}"], section[aria-label="Recents"] .thread-row[data-thread-id="${id}"]`).first();
-  // The row's hover Archive button is gone (577d5a5ad; Masih, 27 Oct: "it moves when I hover over it", "this thing showing all
-  // of these is very ugly"); Archive and Delete are in the row's "…" menu.
-  const act = async (id, name, item) => { await row(id).hover(); await row(id).getByRole('button', { name: `Actions for ${name}` }).click(); await page.getByRole('menuitem', { name: item }).click(); };
-  await act('chat-a', 'Fix the parser', /^Archive/);
-  const notice = page.locator('.worktree-notice');
-  await notice.waitFor();
-  assert.equal(await notice.innerText(), `“Fix the parser” was archived with 2 uncommitted changes. Its worktree is still on disk at ${KEPT} (branch ${BRANCH}). Unarchive the chat to keep working in it.`);
-  await shoot(page, `worktree-kept-${colorScheme}`);
-  await page.getByRole('button', { name: 'Dismiss worktree notice' }).click();
-  await notice.waitFor({ state: 'detached' });
-  await act('chat-b', 'Write the docs', /^Delete/);
-  await page.getByRole('alertdialog').getByRole('button', { name: 'Delete', exact: true }).click();
-  await notice.waitFor();
-  assert.equal(await notice.innerText(), `“Write the docs” was deleted. Its worktree has 1 uncommitted change, so it is still on disk at ${KEPT}0 (branch ${BRANCH}0).`);
-  await page.getByRole('button', { name: 'Dismiss worktree notice' }).click();
-  await act('chat-c', 'Plan the release', /^Archive/);
-  await row('chat-c').waitFor({ state: 'detached' });
-  assert.equal(await notice.count(), 0, 'a clean worktree goes without a word');
-}));
-
 // Membership is explicit (TASKS.md:111): a chat's folder, even a worktree of a project, does not put it in that project.

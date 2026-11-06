@@ -1,7 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cjs');
-const { chooseOption } = require('./controls.cjs');
 
 const settings = () => ({ version: 'v1', main: { model: 'sol', provider: 'openai' }, background: { model: null, provider: null },
   smartPrune: { enabled: false, explicitOverride: { available: false } }, memory: { enabled: false, generate: false, use: false, extractionModel: null, consolidationModel: null },
@@ -59,23 +58,6 @@ test('changing this chat’s permissions does not write the new-chats default', 
     await saved;
     assert.deepEqual(f.posts.filter(post => post.path === '/api/settings'), []);
     assert.deepEqual(f.posts.filter(post => post.path.endsWith('/permissions')).map(post => post.body), [{ permissions: 'auto' }]);
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
-test('a stale new-chats write reports the conflict and keeps the saved value', async () => {
-  const current = settings();
-  const f = await fixture({ routes: { '/api/settings': body => body
-    ? { __http: 409, error: 'Settings changed in another client. Reload settings before saving again.' }
-    : current } });
-  const { page, composer } = f;
-  try {
-    await composer.fill('/config permissions'); await composer.press('Enter');
-    const panel = page.getByRole('tabpanel', { name: 'Configuration' });
-    await chooseOption(panel.getByLabel('Web search', { exact: true }), 'live');
-    await panel.getByRole('alert').filter({ hasText: 'changed in another client' }).waitFor();
-    assert.equal(current.options.webSearch, undefined);
-    assert.deepEqual(f.posts.filter(post => post.path === '/api/settings').map(post => post.body), [{ version: 'v1', options: { webSearch: 'live' } }]);
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

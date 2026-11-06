@@ -29,3 +29,12 @@ test('reopening re-reads a default another client saved, without writing anythin
   assert.equal((await reloadSettings()).main.model, 'sol');
   assert.deepEqual(posts, []);
 });
+
+test('a save based on a stale version reports the bridge\'s conflict instead of overwriting', async t => {
+  const original = globalThis.fetch; t.after(() => { globalThis.fetch = original; });
+  globalThis.fetch = async (url, init) => init?.body
+    ? { ok: false, status: 409, json: async () => ({ error: 'Settings changed elsewhere. Reload to see the current values.' }) }
+    : { ok: true, status: 200, json: async () => snapshot('v1', 'medium') };
+  const read = await reloadSettings();
+  await assert.rejects(saveOptions(read, { reasoningEffort: 'high' }), /Settings changed elsewhere/);
+});

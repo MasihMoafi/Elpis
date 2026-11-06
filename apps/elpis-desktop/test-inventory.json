@@ -58,7 +58,12 @@
     "tests/dollar-math.test.mjs",
     "tests/settings-store.test.mjs",
     "tests/smart-prune.test.mjs",
-    "tests/turn-time.test.mjs"
+    "tests/turn-time.test.mjs",
+    "tests/chat-worktree.test.mjs",
+    "tests/question-reply.test.mjs",
+    "tests/search-rank.test.mjs",
+    "tests/workflow-identity.test.mjs",
+    "tests/follow-ups.test.mjs"
   ],
   "bridge": [
     "bridge/cloudroom-vm.test.mjs",

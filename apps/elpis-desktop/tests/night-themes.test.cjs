@@ -55,12 +55,6 @@ test('system theme follows OS changes while explicit theme ignores them', async 
   assert.deepEqual(f.errors, []);
 });
 
-test('an unknown saved accent recovers to the default', async t => {
-  const f = await fixture({ storage: { 'elpis-preferences-v1': JSON.stringify({ accent: 'bad', chatFont: 'url(bad)' }) } }), { page } = f; t.after(f.close);
-  await appearance(page); await selected(page, 'Accent colour', 'amber');
-  assert.deepEqual(f.errors, []);
-});
-
 test('a failed preference write shows an error and leaves the saved choice active', async t => {
   const f = await fixture(), { page } = f; t.after(f.close);
   await appearance(page);

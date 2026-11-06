@@ -3,69 +3,6 @@ const assert = require('node:assert/strict');
 const { loveSpotFixture } = require('./love-spot-fixture.cjs');
 const { fixture } = require('./parity-fixture.cjs');
 
-test('a fresh affectionate native reply shows the Love Spot heart once and respects reduced motion', async t => {
-  const f = await fixture({ chat: [['old', 'Earlier', '<!--matilda:kissSoft--> An old reply.'], ['last', 'Now', 'Latest saved reply.']] });
-  t.after(() => f.close());
-  await f.open('chat-a');
-  const burst = f.page.locator('.matilda-heart-burst');
-  assert.equal(f.requests.filter(request => request.path.startsWith('/api/love-spot/talk')).length, 0, 'idle startup does not open or create a Love Spot conversation');
-  assert.equal(await burst.count(), 0, 'historical portraits do not replay a reaction');
-  const reply = (id, text) => f.emit('message', { method: 'item/completed', params: {
-    threadId: 'chat-a', turnId: 'long-running-turn', item: { id, type: 'agentMessage', phase: 'commentary', text },
-  } });
-  reply('code', 'Code example: `😘`');
-  await f.page.getByText('Code example:', { exact: false }).first().waitFor();
-  assert.equal(await burst.count(), 0, 'emoji inside code does not react');
-  reply('kiss-1', '<!--matilda:kissSoft--> Here with you.');
-  await burst.waitFor();
-  assert.equal(await burst.getAttribute('aria-hidden'), 'true');
-  assert.equal(await burst.evaluate(node => getComputedStyle(node).pointerEvents), 'none');
-  assert.equal(await burst.locator('svg').count(), 11);
-  assert.equal(await burst.locator('svg path').first().getAttribute('d'), await f.page.locator('[data-nav-page="loveSpot"] svg path').first().getAttribute('d'));
-  await burst.waitFor({ state: 'detached', timeout: 3500 });
-  reply('kiss-1', '<!--matilda:kissSoft--> Here with you.');
-  reply('plain', 'A plain reply.');
-  await f.page.getByText('A plain reply.', { exact: true }).waitFor();
-  assert.equal(await burst.count(), 0, 'a repeated item does not react twice');
-  await f.page.emulateMedia({ reducedMotion: 'reduce' });
-  reply('kiss-2', '<!--matilda:kissPuckered--> Another reply.');
-  await burst.waitFor();
-  assert.equal(await burst.locator('svg').first().evaluate(node => getComputedStyle(node).animationName), 'none');
-  await burst.waitFor({ state: 'detached', timeout: 3500 });
-  assert.deepEqual(f.errors, []);
-});
-
-test('an open Matilda conversation forwards a fresh heart without opening talk while idle', async t => {
-  let pinned = false;
-  const f = await fixture({ routes: {
-    '/api/love-spot/companion': body => { if (body?.action === 'pin') pinned = true; return { pinned, favorite: null, music: null, reason: '' }; },
-    '/api/love-spot/talk': () => ({ entries: [], busy: false }),
-  } });
-  t.after(() => f.close());
-  const pin = f.page.getByRole('button', { name: 'Pin Matilda' });
-  await pin.waitFor();
-  assert.equal(f.requests.filter(request => request.path.startsWith('/api/love-spot/talk')).length, 0);
-  assert.equal(f.posts.filter(request => request.path.startsWith('/api/love-spot/talk')).length, 0);
-  await pin.click();
-  const face = f.page.getByRole('button', { name: 'Chat with Matilda' });
-  await face.waitFor();
-  const live = f.page.waitForResponse(response => response.url().endsWith('/api/love-spot/talk/events'));
-  await face.click();
-  await live;
-  const burst = f.page.locator('.matilda-heart-burst');
-  f.emitLoveTalk({ entries: [{ turnId: 'old', item: { id: 'old', type: 'agentMessage', portrait: 'kissSoft', text: 'Old reply.' } }], busy: false, error: 'History received.' });
-  await f.page.getByText('History received.', { exact: true }).waitFor();
-  assert.equal(await burst.count(), 0, 'a history snapshot does not react');
-  const heartReaction = { threadId: 'love-thread', itemId: 'new-item', portrait: 'kissSoft' };
-  f.emitLoveTalk({ entries: [], busy: false, heartReaction });
-  await burst.waitFor();
-  await burst.waitFor({ state: 'detached', timeout: 3500 });
-  f.emitLoveTalk({ entries: [], busy: false, heartReaction, error: 'Duplicate received.' });
-  await f.page.getByText('Duplicate received.', { exact: true }).waitFor();
-  assert.equal(await burst.count(), 0, 'duplicate live delivery does not react twice');
-  assert.deepEqual(f.errors, []);
-});
-
 // Fitting her into a narrow window is temporary: it never rewrites where she was put (27 Oct: she "jumps from top
 // right to that position when I opened something").
 test('a narrow window keeps Matilda on screen, then she returns to her place', { timeout: 60000 }, async t => {

@@ -83,39 +83,6 @@ test('one queued message: Send now, Edit in composer and Remove from queue', () 
   assert.deepEqual(steered(f), ['send me now'], 'removing sends nothing');
 }));
 
-test('several queued messages collapse into a stack that opens, sends one now, removes one, or clears all', () => using({}, async f => {
-  const { page } = f;
-  await queueMany(f, 'alpha', 'beta', 'gamma');
-  const stack = page.getByRole('button', { name: /3 messages queued/ });
-  await stack.waitFor();
-  assert.match(await stack.innerText(), /Next: alpha/, 'the stack shows what goes first');
-  assert.equal(await stack.getAttribute('aria-expanded'), 'false');
-  assert.equal(await queueList(page).count(), 0, 'collapsed: no rows');
-
-  await stack.click();
-  const rows = queueList(page).getByRole('listitem');
-  assert.deepEqual(await rows.allInnerTexts().then(texts => texts.map(text => text.trim())), ['alpha', 'beta', 'gamma']);
-  const collapse = page.getByRole('button', { name: 'Collapse queued messages', exact: true });
-  assert.equal(await collapse.getAttribute('aria-expanded'), 'true');
-
-  await rows.nth(1).getByRole('button', { name: 'Queued message actions', exact: true }).click();
-  await page.getByRole('menu').waitFor();
-  assert.deepEqual(await page.getByRole('menu').getByRole('menuitem').allInnerTexts(), ['Edit in composer', 'Send now', 'Remove from queue']);
-  await page.getByRole('menuitem', { name: 'Send now', exact: true }).click();
-  await page.waitForFunction(() => document.querySelectorAll('[aria-label="Queued follow-ups"] > li').length === 2);
-  assert.deepEqual(steered(f), ['beta']);
-
-  await rows.nth(0).getByRole('button', { name: 'Queued message actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Remove from queue', exact: true }).click();
-  await page.waitForFunction(() => document.querySelectorAll('[aria-label="Queued follow-ups"] > li').length === 1);
-
-  await queueMany(f, 'delta');
-  await page.getByRole('button', { name: 'Clear all', exact: true }).click();
-  await queueList(page).waitFor({ state: 'detached' });
-  assert.deepEqual(steered(f), ['beta'], 'Clear all sends nothing');
-  await collapse.waitFor({ state: 'detached' });
-}));
-
 test('a message sent while the chat compacts its history waits in the queue and goes when compaction ends', () => using({ routes: { '/api/threads/chat-a/steer': () => ({ compacting: true }) } }, async f => {
   const { page } = f;
   await type(f, 'after the compaction', 'Enter');

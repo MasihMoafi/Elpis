@@ -5,7 +5,7 @@ const path = require('node:path');
 const os = require('node:os');
 const { fixture, CWD } = require('./parity-fixture.cjs');
 const { assertUiFit } = require('./ui-fit.cjs');
-const { captureReview, chooseTheme, openSettings, leaveSettings } = require('./controls.cjs');
+const { chooseTheme, openSettings, leaveSettings } = require('./controls.cjs');
 
 const runs = ['Fix a bug', 'Fix a bug', 'Research pricing', 'Ship exporter'].map((name, i) => ({
   id: `run-${i}`, rootThreadId: i ? `root-${i}` : 'chat-a', name, status: i < 2 ? 'running' : 'succeeded', startedAt: 100 + i,
@@ -119,28 +119,6 @@ for (const colorScheme of ['light']) test(`four saved workflows have distinct na
 // 28 Oct, Masih: "mothers all over the place ... wrong stuff", in the sidebar: every run row said Mother, and a run's checks
 // were rows of their own in no order. A run's row says how it went, in the board's words; its steps follow in run order,
 // a retried step's chats each once, every check folded into its step as Mother agent's reviews fold into the run's row.
-test('a run row says how the run went; its steps follow in run order with their checks and Mother agent’s reviews folded in', async () => {
-  const run = { ...runs[0], status: 'succeeded', tasks: [
-    { id: 'build', title: 'Build', threads: ['build-0', 'build-1'], status: 'succeeded' },
-    { id: 'build-check', kind: 'verify', dependsOn: ['build'], title: 'Check: Build', assignedThreadId: 'check-2', threads: ['check-1', 'check-2'], status: 'succeeded' },
-    { id: 'join', title: 'Join', assignedThreadId: 'join-1', status: 'succeeded' },
-    { id: 'join-check', kind: 'verify', dependsOn: ['join'], title: 'Check: Join', assignedThreadId: 'join-check-1', status: 'succeeded' }],
-    mother: { assignedThreadId: 'mother-2', threads: ['mother-1', 'mother-2'] } };
-  const f = await open('light', [run], {}, {}, {}, { [run.rootThreadId]: 'claude/opus', 'build-1': 'agy/gemini-3.8-flash-high' });
-  try {
-    const page = f.page, model = id => row(page, id).locator('.agent-model').innerText();
-    assert.equal(await model(run.rootThreadId), '2 of 2 done', 'the run says how it went, not "Mother agent"');
-    await row(page, run.rootThreadId).getByRole('button', { name: /^Expand / }).click();
-    await row(page, 'join-1').waitFor();
-    assert.deepEqual(await workflows(page).locator('.thread-row').evaluateAll(rows => rows.map(item => item.dataset.threadId)), [run.rootThreadId, 'build-0', 'build-1', 'join-1'],
-      'its steps in run order (build-0 and build-1 are listed after join-1); no check or review is a row');
-    assert.equal(await model('build-1'), 'Antigravity · gemini-3.8-flash-high', 'a subscription is named by its model, not the engine');
-    await captureReview(page, 'workflow-run-rows');
-    assert.equal(await workflows(page).locator('.thread-origin').count(), 0, 'the section names the origin: no row repeats "Workflows"');
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
 // 28 Oct, Masih: "mothers all over the place". A run going on in another window told this one nothing, so its new step,
 // check and Mother chats stayed loose here until a restart. A workflow chat no run claims, or a run still going, makes the
 // sidebar read the runs again by itself.
@@ -411,7 +389,6 @@ test('saved failed workflow opens its live team in chat and both canvas views wi
   } finally { await f.close(); }
 });
 
-
 test('failed workflow follows a resumed agent and paginated descendants without duplicate recovery', async () => {
   const saved = { id: 'observed-run', rootThreadId: 'chat-a', name: 'Observed team', status: 'failed', tasks: [
     { id: 'inspect', title: 'Inspect evidence', kind: 'research', assignedThreadId: 'observed-child', status: 'failed', failureReason: 'Previous attempt reached the weekly limit.', writeScopes: [], acceptanceCriteria: [], dependsOn: [] },
@@ -538,7 +515,6 @@ for (const colorScheme of ['light']) test(`exact quota fallback shows the preser
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
-
 
 test('cancelled workflow offers explicit same-run recovery without replaying completed tasks', async () => {
   const saved = { id: 'cancelled-run', rootThreadId: 'chat-a', name: 'Interrupted evidence review', status: 'cancelled', tasks: [

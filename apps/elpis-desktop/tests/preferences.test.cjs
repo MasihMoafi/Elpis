@@ -133,6 +133,12 @@ test('preferences keep valid choices on this device, and the desktop reads the s
   env.values.set(PREFERENCES_KEY, JSON.stringify({ sendShortcut: 'always', followUp: 'queue', defaultFolder: 'relative', showContextUsage: 'yes' }));
   const fresh = loader()('lib/preferences.ts').readPreferences();
   assert.deepEqual([fresh.sendShortcut, fresh.followUp, fresh.defaultFolder, fresh.showContextUsage], ['enter', 'queue', '', true], 'unknown or unsafe values fall back to defaults (the context ring is on by default, as in the ChatGPT app)');
+  env.values.set(PREFERENCES_KEY, JSON.stringify({ accent: 'chartreuse', profileName: `  ${'M'.repeat(60)}  ` }));
+  const recovered = loader()('lib/preferences.ts').readPreferences();
+  assert.equal(recovered.accent, 'amber', 'an unknown saved accent recovers to the default');
+  assert.equal(recovered.profileName, 'M'.repeat(40), 'the name is trimmed and kept to 40 characters');
+  savePreferences({ profileName: 'Masih' });
+  assert.equal(JSON.parse(env.values.get(PREFERENCES_KEY)).profileName, 'Masih', 'a new name is saved');
 });
 
 test('send shortcut, hint and new-chat folder follow the saved preferences', () => {

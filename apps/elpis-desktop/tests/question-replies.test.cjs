@@ -46,33 +46,6 @@ for (const colorScheme of ['light']) test(`stored question replies show muted qu
   assert.deepEqual(f.errors, []);
 });
 
-test('ordinary prose, quoted tags, code blocks and malformed envelopes stay literal, including copy and edit', async t => {
-  const messages = [
-    'An ordinary message with {braces}, **literal emphasis** and فارسی.',
-    `This is quoted protocol text: ${envelope([first])}\nPlease explain it.`,
-    `\`\`\`json\n${envelope([first])}\n\`\`\``,
-    `${envelope([first])}\nThis is additional prose.`,
-    envelope([]),
-    envelope([first, null]),
-    envelope({ question: 'Missing identity?', answer: 'Keep literal' }),
-    '<send_user_message_question_reply>{bad JSON}</send_user_message_question_reply>',
-  ];
-  const f = await using(t, { chat: messages.map((message, i) => [`literal-${i}`, message, `Literal reply ${i}`]) });
-  const turns = f.page.locator('.user-turn');
-  for (const [index, message] of messages.entries()) {
-    const turn = turns.nth(index);
-    assert.equal(await turn.locator('.message.user').innerText(), message);
-    await turn.getByRole('button', { name: 'Copy message', exact: true }).click();
-    assert.equal(await f.copied(), message);
-    await turn.getByRole('button', { name: 'Edit message', exact: true }).click();
-    const edit = f.page.getByRole('textbox', { name: 'Edited message', exact: true });
-    assert.equal(await edit.inputValue(), message);
-    await edit.press('Escape');
-  }
-  assert.equal(f.posts.filter(post => post.path.endsWith('/revert')).length, 0);
-  assert.deepEqual(f.errors, []);
-});
-
 test('copy and edit use readable question replies; unchanged edits preserve the original payload', async t => {
   const raw = ` \n${envelope([first, second])}\n `;
   const f = await using(t, { chat: [['reply', raw, 'Both answers received.']], routes: {
