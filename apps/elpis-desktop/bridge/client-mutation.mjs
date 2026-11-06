@@ -1,6 +1,13 @@
 import { BridgeError, threadId } from './validate.mts';
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
+/**
+ * @template T
+ * @param {import('./client-state.mjs').ClientState} clientState
+ * @param {unknown} id
+ * @param {() => T | Promise<T>} run
+ * @param {boolean} [wait]
+ * @returns {Promise<Awaited<T>>}
+ */
 export async function internal_mutate(clientState, id, run, wait = false) {
     threadId(id);
     if (clientState.mutating.has(id)) {

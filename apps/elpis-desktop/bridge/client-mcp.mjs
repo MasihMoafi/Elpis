@@ -14,9 +14,9 @@ export async function impl_previewClaudeMcp(clientState) {
     return { servers: source.preview, revision: source.revision, version: current.version };
   }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
-export async function impl_importClaudeMcp(clientState, input) {
-    object(input, ['version', 'revision', 'names']);
+/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {unknown} raw */
+export async function impl_importClaudeMcp(clientState, raw) {
+    const input = /** @type {Record<string, unknown>} */ (object(raw, ['version', 'revision', 'names']));
     text(input.version, 'MCP settings version', 200);
     text(input.revision, 'Claude settings revision', 200);
     if (!Array.isArray(input.names) || !input.names.length || input.names.length > 100 || new Set(input.names).size !== input.names.length || input.names.some(name => typeof name !== 'string' || !MCP_NAME.test(name))) throw new BridgeError('Choose one or more available servers.');
@@ -27,14 +27,14 @@ export async function impl_importClaudeMcp(clientState, input) {
     privateConfigFile(current.configPath);
     const edits = input.names.map(name => ({ keyPath: `mcp_servers.${name}`, value: source.definitions[name], mergeStrategy: 'replace' }));
     try { await internal_rpc.call(this, clientState, 'config/batchWrite', { edits, expectedVersion: input.version, reloadUserConfig: false }); }
-    catch (error) { if (error.status === 409) throw new BridgeError('Settings changed. Preview the import again.', 409); throw new BridgeError('MCP servers could not be imported.', error.status ?? 502); }
+    catch (error) { const failure = /** @type {{ status?: number }} */ (error); if (failure.status === 409) throw new BridgeError('Settings changed. Preview the import again.', 409); throw new BridgeError('MCP servers could not be imported.', failure.status ?? 502); }
     return { imported: input.names.length };
   }
 
 /** Adds, removes, enables or configures one MCP server through the native versioned config writer. */
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
-export async function impl_saveMcp(clientState, input) {
-    object(input, ['version', 'action', 'name', 'command', 'args', 'enabled', 'backend', 'model', 'env', 'everyChat']);
+/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {unknown} raw */
+export async function impl_saveMcp(clientState, raw) {
+    const input = /** @type {Record<string, unknown>} */ (object(raw, ['version', 'action', 'name', 'command', 'args', 'enabled', 'backend', 'model', 'env', 'everyChat']));
     text(input.version, 'MCP settings version', 200);
     if (typeof input.name !== 'string' || !MCP_NAME.test(input.name)) throw new BridgeError('Use letters, numbers, - or _ for the server name');
     const current = await this.mcp();
@@ -63,10 +63,10 @@ export async function impl_saveMcp(clientState, input) {
       }
     } else if (input.action === 'whispertype' && input.name === 'whispertype') {
       // null is Automatic: no explicit backend, so the bridge picks the ChatGPT sign-in or Local (see bridge/transcription.mjs).
-      if (input.backend !== null && !['openrouter', 'codex', 'local'].includes(input.backend)) throw new BridgeError('Choose OpenRouter, Codex sign-in or local transcription');
+      if (input.backend !== null && !['openrouter', 'codex', 'local'].includes(/** @type {string} */ (input.backend))) throw new BridgeError('Choose OpenRouter, Codex sign-in or local transcription');
       edits = [{ keyPath: `${key}.env.WHISPERTYPE_BACKEND`, value: input.backend, mergeStrategy: 'replace' }];
       if (input.model !== undefined) {
-        if (input.model !== null && !/^[a-z0-9._-]+\/[a-z0-9._:-]+$/i.test(input.model)) throw new BridgeError('Choose an OpenRouter model.');
+        if (input.model !== null && !/^[a-z0-9._-]+\/[a-z0-9._:-]+$/i.test(/** @type {string} */ (input.model))) throw new BridgeError('Choose an OpenRouter model.');
         edits.push({ keyPath: `${key}.env.WHISPERTYPE_CLOUD_MODEL`, value: input.model, mergeStrategy: 'replace' });
       }
       if (input.everyChat !== undefined) {
@@ -83,8 +83,9 @@ export async function impl_saveMcp(clientState, input) {
     try { await internal_rpc.call(this, clientState, 'config/batchWrite', { edits, expectedVersion: input.version, reloadUserConfig: true }); }
     catch (error) {
       // Native TOML errors can contain submitted values. Keep safe status semantics only.
-      if (error.status === 409) throw new BridgeError('Settings changed in another client. Reload settings before saving again.', 409);
-      throw new BridgeError('MCP settings could not be saved. Refresh settings before retrying.', error.status ?? 502);
+      const failure = /** @type {{ status?: number }} */ (error);
+      if (failure.status === 409) throw new BridgeError('Settings changed in another client. Reload settings before saving again.', 409);
+      throw new BridgeError('MCP settings could not be saved. Refresh settings before retrying.', failure.status ?? 502);
     }
     let reloadRequested = true;
     await internal_rpc.call(this, clientState, 'config/mcpServer/reload', undefined).catch(() => { reloadRequested = false; });

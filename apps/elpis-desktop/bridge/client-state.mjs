@@ -1,4 +1,4 @@
-/** @typedef {import('node:events').EventEmitter & { send(value: string): void, close(): void, terminate?(): void }} ClientSocket */
+/** @typedef {{ on(event: string, handler: (...args: unknown[]) => void): unknown, send(value: string): void, close(): void, terminate?(): void }} ClientSocket */
 /**
  * @typedef {{
  *   socket: ClientSocket,
@@ -45,7 +45,7 @@ export class ClientState {
   known = new Set();
   models = new Set();
   historyOnly = new Set();
-  catalog = null;
+  /** @type {Promise<{ data: { model: string }[] }> | null} */ catalog = null;
   /** @type {string | undefined} */ claudeAccountsKey;
   approvals = new Map();
   mutating = new Set();

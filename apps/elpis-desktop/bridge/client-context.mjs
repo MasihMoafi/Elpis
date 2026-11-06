@@ -8,32 +8,32 @@ import { internal_mutate } from './client-mutation.mjs';
 import { internal_rpc } from './client-connection.mjs';
 
 /** Context sources and admission use the same engine functions as the TUI Ledger. */
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
+/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {unknown} id */
 export async function impl_contextFiles(clientState, id) {
     threadId(id);
     return internal_rpc.call(this, clientState, 'thread/contextFiles/list', { threadId: id });
   }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
+/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {unknown} id */
 export async function impl_goal(clientState, id) {
     threadId(id);
     return internal_rpc.call(this, clientState, 'thread/goal/get', { threadId: id });
   }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
-export async function impl_setGoal(clientState, id, input) {
-    threadId(id); object(input, ['objective', 'clear']);
+/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {unknown} id @param {unknown} raw */
+export async function impl_setGoal(clientState, id, raw) {
+    threadId(id); const input = /** @type {{ objective?: string, clear?: boolean }} */ (object(raw, ['objective', 'clear']));
     if (input.clear !== undefined && (input.clear !== true || input.objective !== undefined)) throw new BridgeError('Choose a goal or clear it');
     if (input.clear !== true) text(input.objective, 'goal', 32000);
-    return internal_mutate.call(this, clientState, id, async () => {
+    return internal_mutate(clientState, id, async () => {
       const { thread } = await internal_rpc.call(this, clientState, 'thread/read', { threadId: id, includeTurns: false });
       if (thread?.id !== id) throw new BridgeError('Elpis returned another thread', 502);
       if (!internal_decorate.call(this, clientState, thread).desktopAccess.writable) throw new BridgeError('Only this agent’s parent can change its goal.', 409);
-      return input.clear ? internal_rpc.call(this, clientState, 'thread/goal/clear', { threadId: id }) : internal_rpc.call(this, clientState, 'thread/goal/set', { threadId: id, objective: input.objective.trim(), status: 'active' });
+      return input.clear ? internal_rpc.call(this, clientState, 'thread/goal/clear', { threadId: id }) : internal_rpc.call(this, clientState, 'thread/goal/set', { threadId: id, objective: /** @type {string} */ (input.objective).trim(), status: 'active' });
     });
   }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
+/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {unknown} id */
 export async function impl_sessionContext(clientState, id) {
     threadId(id);
     const [{ thread }, sources, { goal }] = await Promise.all([
@@ -43,10 +43,10 @@ export async function impl_sessionContext(clientState, id) {
     return { ...await sessionContextFiles(thread, sources.files), ...(sources.note ? { note: sources.note } : {}), goal, writable: internal_decorate.call(this, clientState, thread).desktopAccess.writable };
   }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
+/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {unknown} id @param {unknown} input */
 export async function impl_createSessionIntent(clientState, id, input) {
     threadId(id); object(input, []);
-    return internal_mutate.call(this, clientState, id, async () => {
+    return internal_mutate(clientState, id, async () => {
       const { thread } = await internal_rpc.call(this, clientState, 'thread/read', { threadId: id, includeTurns: false });
       if (thread?.id !== id) throw new BridgeError('Elpis returned another thread', 502);
       if (!internal_decorate.call(this, clientState, thread).desktopAccess.writable) throw new BridgeError('Only this agent’s parent can create its session intent.', 409);
@@ -57,22 +57,22 @@ export async function impl_createSessionIntent(clientState, id, input) {
         handle = await fs.promises.open(file, 'wx', 0o600);
         await handle.writeFile('# Session intent\n\n');
       } catch (error) {
-        if (error.code === 'EEXIST') throw new BridgeError('ES.md already exists. Open it to edit the current intent.', 409);
+        if (/** @type {NodeJS.ErrnoException} */ (error).code === 'EEXIST') throw new BridgeError('ES.md already exists. Open it to edit the current intent.', 409);
         throw error;
       } finally { await handle?.close(); }
       return { path: file };
     });
   }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
-export async function impl_setContextFile(clientState, id, input) {
-    threadId(id); object(input, ['path', 'included']);
+/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {unknown} id @param {unknown} raw */
+export async function impl_setContextFile(clientState, id, raw) {
+    threadId(id); const input = /** @type {{ path?: unknown, included?: unknown }} */ (object(raw, ['path', 'included']));
     text(input.path, 'context file path');
     if (typeof input.included !== 'boolean') throw new BridgeError('Choose included or excluded');
     return internal_rpc.call(this, clientState, 'thread/contextFiles/set', { threadId: id, path: input.path, included: input.included });
   }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
+/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {unknown} id */
 export async function impl_context(clientState, id) {
     threadId(id);
     const { thread } = await internal_rpc.call(this, clientState, 'thread/read', { threadId: id, includeTurns: false });
@@ -94,7 +94,7 @@ export async function impl_context(clientState, id) {
     };
   }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
+/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {unknown} file */
 async function internal_savedShares(clientState, file) {
     const stat = typeof file === 'string' ? await fs.promises.stat(file).catch(() => null) : null;
     if (!stat?.isFile()) return null;
@@ -105,7 +105,7 @@ async function internal_savedShares(clientState, file) {
     return value;
   }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
+/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {unknown} file @param {Array<{ turnId: string }>} entries */
 export async function internal_withTurnModels(clientState, file, entries) {
     if (!Array.isArray(entries) || !entries.length) return entries;
     const stat = typeof file === 'string' ? await fs.promises.stat(file).catch(() => null) : null;
@@ -119,7 +119,7 @@ export async function internal_withTurnModels(clientState, file, entries) {
     });
   }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
+/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {unknown} file */
 async function internal_restoredUsage(clientState, file) {
     const stat = typeof file === 'string' ? await fs.promises.stat(file).catch(() => null) : null;
     if (!stat?.isFile()) return null;
@@ -135,9 +135,9 @@ async function internal_restoredUsage(clientState, file) {
 export async function impl_contextSwitches(clientState) { return contextSwitchesSnapshot(await internal_rpc.call(this, clientState, 'config/read', { includeLayers: true })); }
 
 /** Writes the switches as the TUI ledger does: one config key each, reloaded so open chats use it from their next turn. */
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
-export async function impl_saveContextSwitches(clientState, input) {
-    object(input, ['version', ...Object.keys(CONTEXT_SWITCH_KEYS)]);
+/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {unknown} raw */
+export async function impl_saveContextSwitches(clientState, raw) {
+    const input = /** @type {Record<string, unknown>} */ (object(raw, ['version', ...Object.keys(CONTEXT_SWITCH_KEYS)]));
     text(input.version, 'settings version', 200);
     const current = await this.contextSwitches();
     if (!current.write.available || current.version !== input.version) throw new BridgeError('Settings changed in another client. Reload settings before saving again.', 409);
@@ -151,21 +151,22 @@ export async function impl_saveContextSwitches(clientState, input) {
     if (!edits.length) throw new BridgeError('No switch was changed');
     try { await internal_rpc.call(this, clientState, 'config/batchWrite', { edits, expectedVersion: input.version, reloadUserConfig: true }); }
     catch (error) {
-      if (error.status === 409) throw new BridgeError('Settings changed in another client. Reload settings before saving again.', 409);
-      throw new BridgeError('The switch could not be saved. Refresh and try again.', error.status ?? 502);
+      const failure = /** @type {{ status?: number }} */ (error);
+      if (failure.status === 409) throw new BridgeError('Settings changed in another client. Reload settings before saving again.', 409);
+      throw new BridgeError('The switch could not be saved. Refresh and try again.', failure.status ?? 502);
     }
     if ('rag' in input) await internal_rpc.call(this, clientState, 'config/mcpServer/reload', undefined).catch(() => {});
     return this.contextSwitches();
   }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
+/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {unknown} model */
 export function internal_model(clientState, model) {
     if (model === undefined) return;
     if (!clientState.models.has(model)) throw new BridgeError('Select a model returned by the current Elpis model list');
     return model;
   }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
+/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {unknown} model @param {unknown} provider */
 export async function internal_providerModel(clientState, model, provider) {
     if (model !== undefined && provider) {
       const current = await this.providerSettings();
@@ -179,7 +180,7 @@ export async function internal_providerModel(clientState, model, provider) {
     return internal_model.call(this, clientState, model);
   }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
+/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {unknown} model @param {unknown} provider */
 export async function internal_chatModel(clientState, model, provider) {
     // An existing chat can switch to a subscription even if its carrier uses an API provider.
     if (typeof model === 'string' && /^(?:claude|agy)\//.test(model)) return internal_model.call(this, clientState, model);

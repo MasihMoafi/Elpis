@@ -236,6 +236,7 @@ test('/fast reports a rejected running-turn change while retaining the saved spe
     const { client, calls, tiers } = fixture({ active: true, serviceTier: initial, liveTierError: 'Fast is disabled by managed settings.' }); await client.initialize();
     try {
       const result = await client.setServiceTier(CHAT, { enabled });
+      assert.ok(result.warning);
       assert.match(result.warning, /saved for later turns.*running turn could not change speed/i);
       assert.match(result.warning, /disabled by managed settings/);
       assert.equal(result.activeTurnApplied, false);

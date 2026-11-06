@@ -39,8 +39,22 @@ export { speechChunks } from './client-voice.mjs';
 export { settledStatus } from './client-thread-list.mjs';
 export { BridgeError, object, text, threadId } from './validate.mts';
 
+/**
+ * @typedef {{
+ *   home?: string, timeoutMs?: number, openSocket?: () => Promise<import('./client-state.mjs').ClientSocket>,
+ *   reconnectDelayMs?: number, settingsConfirmMs?: number,
+ *   browserConfig?: import('./client-state.mjs').ClientStateOptions['browserConfig'],
+ *   archiveDirectory?: string, rewindHome?: string, spawnLinksFile?: string, appHome?: string,
+ *   githubConnector?: unknown, skillTrashOptions?: ConstructorParameters<typeof SkillTrash>[0],
+ *   workflowOptions?: Record<string, unknown> & { env?: object }, cloudroom?: unknown,
+ *   reportAttempts?: number, reportRetryMs?: number,
+ *   socketPath?: string, beforeConnect?: () => void | Promise<void>, background?: boolean
+ * }} DesktopClientOptions
+ */
+
 export class DesktopClient extends EventEmitter {
   #state;
+  /** @param {import('./client-state.mjs').ClientSocket | EventEmitter} socket @param {DesktopClientOptions} [options] */
   constructor(socket, { home, timeoutMs = 30000, openSocket, reconnectDelayMs = 500, settingsConfirmMs = 3000, browserConfig, archiveDirectory, rewindHome, spawnLinksFile, appHome = os.homedir(), githubConnector, skillTrashOptions, workflowOptions, cloudroom, reportAttempts = 4, reportRetryMs = 2000 } = {}) {
     super(); this.timeoutMs = timeoutMs;
     const workflowEnv = profileEnvironment(home, workflowOptions?.env);
@@ -49,11 +63,11 @@ export class DesktopClient extends EventEmitter {
     spawnLinksFile ??= path.join(profileHome, 'desktop-spawn-links.json'); githubConnector ??= createGithubConnector({ home: profileHome });
     const archiveHistory = new ArchiveHistory(archiveDirectory);
     const spawnLinks = new SpawnLinks(spawnLinksFile, { home: path.dirname(spawnLinksFile), appHome });
-    const customize = new CustomizePage({ rpc: (method, params) => internal_rpc.call(this, this.#state, method, params), mcp: () => this.mcp(), settings: () => this.settings(), saveSettings: input => this.saveSettings(input),
+    const customize = new CustomizePage({ rpc: (/** @type {string} */ method, /** @type {unknown} */ params) => internal_rpc.call(this, this.#state, method, params), mcp: () => this.mcp(), settings: () => this.settings(), saveSettings: (/** @type {unknown} */ input) => this.saveSettings(input),
       githubConnector, skillTrash: new SkillTrash(skillTrashOptions), appHome, home: () => profileHome });
     const rewindSnapshots = new RewindSnapshots(rewindHome);
     const versions = new MessageVersions(path.join(rewindHome, 'versions.json'));
-    const rewindHistory = new RewindHistory(rewindHome, async (method, params) => {
+    const rewindHistory = new RewindHistory(rewindHome, async (/** @type {string} */ method, /** @type {{ threadId?: unknown }} */ params) => {
       const result = await internal_rpc.call(this, this.#state, method, params);
       if (method === 'thread/archive') internal_forgetSubscription.call(this, this.#state, params.threadId);
       return result;
@@ -61,9 +75,9 @@ export class DesktopClient extends EventEmitter {
     // His CloudRoom VM (bridge/cloudroom-vm.mjs): its sign-in lives in this profile's home, beside the provider keys.
     cloudroom ??= createCloudroomVm({ home: profileHome });
     const workflowRuns = createWorkflowRuns({ stateDir: path.join(profileHome, 'desktop-workflows'), cloudroom,
-      onSession: (_record, _task, id) => { this.#state.known.add(id); return () => void internal_releaseNode.call(this, this.#state, id); }, onEnd: record => internal_workflowEnded.call(this, this.#state, record),
-      observeThread: id => this.readThreadMetadata(id),
-      listThreadDescendants: options => this.listThreads(options),
+      onSession: (/** @type {unknown} */ _record, /** @type {unknown} */ _task, /** @type {string} */ id) => { this.#state.known.add(id); return () => void internal_releaseNode.call(this, this.#state, id); }, onEnd: (/** @type {import('./client-workflows.mjs').FinishedWorkflow} */ record) => internal_workflowEnded.call(this, this.#state, record),
+      observeThread: (/** @type {unknown} */ id) => this.readThreadMetadata(id),
+      listThreadDescendants: (/** @type {unknown} */ options) => this.listThreads(options),
       modelRoutes: async () => {
         const [catalog, providers, policy] = await Promise.all([this.models(), this.providers(), internal_rpc.call(this, this.#state, 'configRequirements/read', {}).catch(() => null)]);
         // Unknown managed policy cannot authorize a different connection.
@@ -73,16 +87,23 @@ export class DesktopClient extends EventEmitter {
       // A list that cannot be read in time leaves its default empty, so the run keeps its earlier choice.
       modelDefaults: async () => {
         // The fallback timer is cleared once the list arrives, so a closed client never waits 15 s to exit.
-        const within = promise => { let timer; return Promise.race([promise, new Promise(resolve => { timer = setTimeout(resolve, 15000, null); })]).catch(() => null).finally(() => clearTimeout(timer)); };
+        /** @template T @param {Promise<T>} promise @returns {Promise<T | null>} */
+        const within = promise => {
+          /** @type {ReturnType<typeof setTimeout> | undefined} */
+          let timer;
+          return Promise.race([promise, new Promise(resolve => { timer = setTimeout(resolve, 15000, null); })]).catch(() => null).finally(() => clearTimeout(timer));
+        };
         return workflowDefaults((await within(this.models()))?.data ?? []);
       }, ...workflowOptions,
       env: workflowEnv });
     const workflowHistory = createWorkflowHistory(path.join(profileHome, 'desktop-workflow-history.json'));
-    this.#state = new ClientState({ socket, openSocket, browserConfig, archiveHistory, spawnLinks, appHome,
-      rewindSnapshots, rewindHistory, versions, githubConnector, customize, cloudroom, workflowRuns, workflowHistory,
+    const transport = /** @type {import('./client-state.mjs').ClientSocket} */ (socket);
+    this.#state = new ClientState({ socket: transport, openSocket, browserConfig, archiveHistory, spawnLinks, appHome,
+      rewindSnapshots, rewindHistory, versions, githubConnector: /** @type {import('./client-state.mjs').ClientStateOptions['githubConnector']} */ (githubConnector), customize, cloudroom: /** @type {import('./client-state.mjs').ClientStateOptions['cloudroom']} */ (cloudroom), workflowRuns, workflowHistory,
       reportAttempts, reportRetryMs, retryDelay: reconnectDelayMs, settingsConfirmMs });
-    internal_bind.call(this, this.#state, socket);
+    internal_bind.call(this, this.#state, transport);
   }
+  /** @param {DesktopClientOptions} [options] */
   static async connect(options = {}) {
     const { default: WebSocket } = await import('ws');
     const openSocket = async () => {
@@ -91,11 +112,11 @@ export class DesktopClient extends EventEmitter {
       const socketEnv = profileEnvironment(options.home);
       const socketPath = existingSocket(options.socketPath, socketEnv);
       const socket = new WebSocket(`ws+unix://${socketPath}:/`, { maxPayload: MAX_BRIDGE_MESSAGE_BYTES });
-      await new Promise((resolve, reject) => {
+      await /** @type {Promise<void>} */ (new Promise((resolve, reject) => {
         const timer = setTimeout(() => { socket.terminate(); reject(new BridgeError('Bridge connection timed out', 504)); }, 10000);
         socket.once('open', () => { clearTimeout(timer); resolve(); });
         socket.once('error', () => { clearTimeout(timer); reject(new BridgeError('Could not connect to the existing Elpis bridge', 503)); });
-      });
+      }));
       return socket;
     };
     // In the background the client exists at once and connects, and reconnects, on its own: the window never waits for

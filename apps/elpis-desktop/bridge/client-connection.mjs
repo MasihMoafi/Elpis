@@ -5,11 +5,11 @@ import { ACCOUNT_NOTIFICATIONS, APPROVALS, ARCHIVED_SESSION, DOWNLOADS, EXPLAINE
 import { modeOf } from './client-permissions.mjs';
 import { internal_decorate, internal_forget, internal_learnSpawn } from './client-thread-list.mjs';
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
+/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {import('./client-state.mjs').ClientSocket} socket */
 export function internal_bind(clientState, socket) {
     socket.on('message', data => { if (socket === clientState.socket) internal_receive.call(this, clientState, data); });
-    socket.on('close', (code, reason) => { if (socket === clientState.socket) { if (!clientState.closed && typeof code === 'number' && code !== 1000) console.warn('Elpis runtime socket closed', code, String(reason || '').slice(0, 200)); internal_disconnect.call(this, clientState); } });
-    socket.on('error', error => { if (socket === clientState.socket) { if (!clientState.closed) console.warn('Elpis runtime socket error', error?.code || '', String(error?.message || '').slice(0, 200)); internal_disconnect.call(this, clientState); } });
+    socket.on('close', (code, reason) => { if (socket === clientState.socket) { if (!clientState.closed && typeof code === 'number' && code !== 1000) console.warn('Elpis runtime socket closed', code, String(/** @type {string | Buffer} */ (reason) || '').slice(0, 200)); internal_disconnect.call(this, clientState); } });
+    socket.on('error', error => { if (socket === clientState.socket) { const detail = /** @type {{ code?: unknown, message?: string } | null | undefined} */ (error); if (!clientState.closed) console.warn('Elpis runtime socket error', detail?.code || '', String(detail?.message || '').slice(0, 200)); internal_disconnect.call(this, clientState); } });
   }
 
 /** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
@@ -28,7 +28,7 @@ export function impl_connectionError(clientState) { return this.connected ? null
 /** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
 export function impl_hasLocalActivity(clientState) { return clientState.mutating.size > 0 || clientState.workflowRuns.busy(); }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
+/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {string} id */
 export function internal_browserOptions(clientState, id) {
     const config = clientState.browserConfig ? (clientState.browserConfig.forSession ? clientState.browserConfig.forSession(id) : clientState.browserConfig) : {};
     return Object.keys(config).length ? { config } : {};
@@ -75,7 +75,8 @@ export async function internal_reconnect(clientState) {
       clientState.retryAttempt = 0; clientState.connectionError = null;
       this.emit('event', { type: 'connection', data: { connected: true } });
     } catch (error) {
-      const reason = String(error?.message || error);
+      const detail = /** @type {{ message?: unknown } | null | undefined} */ (error);
+      const reason = String(detail?.message || error);
       if (reason !== clientState.connectionError) console.warn('Elpis runtime connection failed:', reason.slice(0, 300));
       clientState.connectionError = reason;
       internal_disconnect.call(this, clientState);
@@ -91,9 +92,10 @@ export function impl_close(clientState) { clientState.disposed = true; clearTime
 /** For a module that runs a short conversation of its own: only the requests in SIDE_RPCS, only on conversations it started
    * here, which are always ephemeral. Their notifications go to 'side' listeners and never to the app, so no chat appears;
    * the conversation is forgotten once the engine closes it. */
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
-export async function impl_sideRpc(clientState, method, params = {}) {
-    if (!SIDE_RPCS.has(method)) throw new BridgeError('Unsupported request');
+/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {unknown} method @param {unknown} [input] */
+export async function impl_sideRpc(clientState, method, input = {}) {
+    if (typeof method !== 'string' || !SIDE_RPCS.has(method)) throw new BridgeError('Unsupported request');
+    const params = /** @type {{ threadId?: unknown, [key: string]: unknown }} */ (input);
     if (!['thread/start', 'config/read'].includes(method) && !clientState.side.has(params.threadId)) throw new BridgeError('Not a conversation of this module');
     const result = await internal_rpc.call(this, clientState, method, method === 'thread/start' ? { ...params, ephemeral: true } : params);
     if (method === 'thread/start' && typeof result?.thread?.id === 'string') clientState.side.add(result.thread.id);
@@ -114,7 +116,7 @@ export function internal_rpc(clientState, method, params) {
     });
   }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
+/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {unknown} raw */
 function internal_receive(clientState, raw) {
     let message;
     try { message = JSON.parse(String(raw)); } catch { return; }
@@ -129,7 +131,7 @@ function internal_receive(clientState, raw) {
         const unsupported = (workflow || contextFiles) && /unknown (method|variant)/i.test(message.error.message ?? '');
         // An operation Elpis does not support (-32601) says which one; the bare code would not.
         const detail = ARCHIVED_SESSION.test(message.error.message ?? '') ? 'This chat is archived. Unarchive it, or send a message in it, to continue.' : (workflow || pending.method.startsWith('thread/goal/') || EXPLAINED.has(pending.method) || message.error.code === -32601) && typeof message.error.message === 'string' ? message.error.message.slice(0,1000) : `Elpis rejected the operation (${message.error.code ?? 'unknown'}). No automatic retry was made.`;
-        const error = new BridgeError(conflict ? 'Settings changed in another client. Reload settings before saving again.' : unsupported ? contextFiles ? 'Update and restart Elpis to view and change context files.' : 'Update and restart Elpis to run workflows from this app.' : detail, conflict || message.error.data?.reason === 'threadBusy' ? 409 : unsupported ? 503 : workflow ? 400 : 502);
+        const error = /** @type {BridgeError & { code?: unknown, engineMessage?: string }} */ (new BridgeError(conflict ? 'Settings changed in another client. Reload settings before saving again.' : unsupported ? contextFiles ? 'Update and restart Elpis to view and change context files.' : 'Update and restart Elpis to run workflows from this app.' : detail, conflict || message.error.data?.reason === 'threadBusy' ? 409 : unsupported ? 503 : workflow ? 400 : 502));
         error.code = message.error.code; error.engineMessage = typeof message.error.message === 'string' ? message.error.message : '';
         pending.reject(error);
       }
@@ -204,7 +206,8 @@ function internal_receive(clientState, raw) {
         const value = key === 'tokenUsage' ? tokenUsageSnapshot(message.params?.[key]) : smartPruneSnapshot(message.params?.[key]);
         // As in the TUI, an update without category shares (a replay after resume) keeps the last known ones.
         const shares = clientState.context.get(id)?.tokenUsage?.contextAttribution;
-        if (key === 'tokenUsage' && value && !value.contextAttribution && shares) value.contextAttribution = shares;
+        const usage = /** @type {ReturnType<typeof tokenUsageSnapshot>} */ (value);
+        if (key === 'tokenUsage' && usage && !usage.contextAttribution && shares) usage.contextAttribution = shares;
         clientState.context.set(id, { ...clientState.context.get(id), [key]: value });
         this.emit('event', { type: 'message', data: { method: message.method, params: { threadId: id, [key]: value } } });
         return;
@@ -214,7 +217,7 @@ function internal_receive(clientState, raw) {
     if (message.method === 'turn/completed' && id && turnId) clientState.liveTurnModels.delete(`${id}:${turnId}`);
   }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
+/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {unknown} id */
 async function internal_approvalOwner(clientState, id) {
     const seen = new Set();
     let current = id, requester;
@@ -231,7 +234,7 @@ async function internal_approvalOwner(clientState, id) {
     return null;
   }
 
-/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState */
+/** @this {import('./client.mjs').DesktopClient} @param {import('./client-state.mjs').ClientState} clientState @param {{ id: unknown, method: string, params?: { threadId?: unknown } }} message @param {{ ownerThreadId: unknown, thread?: unknown }} owner */
 function internal_admitApproval(clientState, message, owner) {
     if ([...clientState.approvals.values()].some(pending => pending.wireId === message.id)) return;
     if (!APPROVALS.has(message.method)) {

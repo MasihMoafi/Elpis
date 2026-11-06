@@ -21,7 +21,8 @@ export const ACCOUNT_NOTIFICATIONS = new Set(['account/updated', 'account/login/
 
 const READ_RPCS = new Set(['initialize','externalAgentConfig/detect','externalAgentConfig/import/readHistories','thread/list','thread/read','thread/items/list','thread/turns/list','model/list','experimentalFeature/list','claudeAccounts/read','account/read','account/rateLimits/read','config/read','configRequirements/read','pruner/read','workGraph/list','hooks/list','workflowRun/list','workflowRun/read']);
 
-export const readRpc = (method, params) => READ_RPCS.has(method) || ['thread/goal/get', 'thread/contextFiles/list'].includes(method) || (method === 'thread/resume' && Object.keys(params || {}).every(key => ['threadId','excludeTurns','initialTurnsPage'].includes(key)));
+/** @param {string} method @param {unknown} params */
+export const readRpc = (method, params) => READ_RPCS.has(method) || ['thread/goal/get', 'thread/contextFiles/list'].includes(method) || (method === 'thread/resume' && Object.keys(/** @type {object} */ (params || {})).every(key => ['threadId','excludeTurns','initialTurnsPage'].includes(key)));
 
 /** Requests that download (a Git clone, a plugin bundle) can take minutes; the rest answer within the default wait. */
 export const DOWNLOADS = new Set(['marketplace/add', 'marketplace/upgrade', 'plugin/install']);
@@ -29,7 +30,8 @@ export const DOWNLOADS = new Set(['marketplace/add', 'marketplace/upgrade', 'plu
 // The engine refuses to resume an archived chat and names its terminal command (`codex unarchive`), which this app does not have.
 export const ARCHIVED_SESSION = /^session \S+ is archived\./;
 
-export const archivedSession = error => ARCHIVED_SESSION.test(error?.engineMessage ?? '');
+/** @param {unknown} error */
+export const archivedSession = error => ARCHIVED_SESSION.test((/** @type {{ engineMessage?: string } | null | undefined} */ (error))?.engineMessage ?? '');
 
 // thread/read opens a chat before any change since 31 Oct (it used to be thread/resume): a missing chat still says so.
 export const EXPLAINED = new Set(['externalAgentConfig/import', 'thread/read', 'thread/settings/update', 'model/list', 'account/read', 'account/rateLimits/read', 'thread/delete', 'thread/fork', 'thread/start', 'thread/resume', 'thread/name/set', 'thread/archive', 'thread/unarchive', 'thread/revert', 'thread/compact/start', 'review/start', 'turn/start', 'turn/steer', 'turn/interrupt', 'config/batchWrite', 'account/login/start', 'account/logout', 'claudeSubscription/write', 'hooks/list', 'memory/reset', 'plugin/list', 'plugin/search', 'plugin/install', 'plugin/uninstall', 'marketplace/add', 'marketplace/remove']);
