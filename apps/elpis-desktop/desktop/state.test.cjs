@@ -337,6 +337,15 @@ test('chat groups, their chats and the sidebar order persist across a desktop re
   await assert.rejects(store.set('elpis-session-manager-v2', 'manager-thread'), /Unsupported/);
 });
 
+test('the Workflows side-panel and auto-arrange choices survive a desktop restart', async () => {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-canvas-state-')), 'workspace.json');
+  const store = createStateStore(file);
+  await store.set('elpis-canvas-panel', 'closed');
+  await store.set('elpis-canvas-auto', 'off');
+  const reopened = createStateStore(file).read();
+  assert.deepEqual([reopened['elpis-canvas-panel'], reopened['elpis-canvas-auto']], ['closed', 'off']);
+});
+
 test('saved project memberships and Session Manager survive a full workspace round trip', async () => {
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-state-union-')), 'workspace.json');
   const saved = {

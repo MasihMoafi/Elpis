@@ -15,6 +15,7 @@ import { TurnChanges } from "@/components/edit-rows";
 import { turnEdits } from "@/lib/diff";
 import { messageDomId } from "@/lib/message-reply";
 import { entryKey } from "@/lib/submitted-messages";
+import { pauseBefore, turnTime } from "@/lib/turn-time";
 
 /** The conversation as the ChatGPT app shows it: each user message, then the turn's work
  * collapsed into short activity lines, and once a turn ends everything before its final reply
@@ -73,7 +74,7 @@ export function Transcript({ entries, activeTurnId, onViewChanges, ...draw }: { 
   const turns = turnsOf(entries);
   return <>{turns.map((turn, index) => {
     const start = turn.entries[0]?.startedAtMs, before = turns[index - 1]?.entries.at(-1), end = before?.completedAtMs ?? before?.startedAtMs;
-    const pause = typeof start === "number" && typeof end === "number" && (start - end >= HOUR || new Date(start).toDateString() !== new Date(end).toDateString());
+    const pause = pauseBefore(start, end);
     return <Fragment key={turn.clientKey ?? turn.id}>
       {pause && <div className="turn-time"><time dateTime={new Date(start).toISOString()}>{turnTime(start)}</time></div>}
       <Turn turn={turn} active={turn.id === activeTurnId} defer={turns.length > 40 && index < turns.length - 1} observe={observe} onViewChanges={onViewChanges} {...wrapped} />
@@ -81,18 +82,6 @@ export function Transcript({ entries, activeTurnId, onViewChanges, ...draw }: { 
   })}
     {activeTurnId && !turns.some(turn => turn.id === activeTurnId) && <WorkingStatus><LiveStep key={activeTurnId} label="Working" /></WorkingStatus>}
   </>;
-}
-
-const HOUR = 3_600_000;
-/** ChatGPT's time line ("Yesterday 8:41 PM") above a turn that starts an hour or more after the one before, or on another day. */
-export function turnTime(at: number, now = new Date()): string {
-  const date = new Date(at), time = date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-  const midnight = (day: Date) => new Date(day.getFullYear(), day.getMonth(), day.getDate()).getTime();
-  const days = Math.round((midnight(now) - midnight(date)) / 86_400_000);
-  if (days === 0) return `Today ${time}`;
-  if (days === 1) return `Yesterday ${time}`;
-  if (days > 1 && days < 7) return `${date.toLocaleDateString(undefined, { weekday: "long" })} ${time}`;
-  return `${date.toLocaleDateString(undefined, { month: "short", day: "numeric", ...(date.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }) })}, ${time}`;
 }
 
 type TurnEntries = { id: string; clientKey?: string; entries: Entry[] };

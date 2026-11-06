@@ -7,6 +7,7 @@ import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
+import { dollarMath } from "@/lib/dollar-math";
 import "katex/dist/katex.min.css";
 import { Button } from "@/components/ui/button";
 import { FileRefLink } from "@/components/file-ref";
@@ -86,16 +87,6 @@ const HIGHLIGHT: NonNullable<React.ComponentProps<typeof Markdown>["rehypePlugin
 /** file:/// links are kept (they are file refs); everything else is Markdown's own check. */
 const urlTransform = (url: string) => url.startsWith("file:///") ? url : defaultUrlTransform(url);
 const PLUGINS = [remarkGfm, remarkMath, linkFilePaths];
-
-/** Models write math as \( … \) and \[ … \] as often as $ … $ and $$ … $$; remark-math reads only dollars, so the
- * bracket forms become dollars everywhere except inside code, and a line that is only $$ … $$ is a display formula. */
-export function dollarMath(text: string): string {
-  if (!text.includes("\\(") && !text.includes("\\[") && !text.includes("$$")) return text;
-  return text.split(/(```[\s\S]*?(?:```|$)|`[^`\n]*`)/).map((part, index) => index % 2 ? part : part
-    .replace(/^[ \t]*\$\$([^\n]+?)\$\$[ \t]*$/gm, (_, math: string) => `$$\n${math.trim()}\n$$`)
-    .replace(/\\\[([\s\S]+?)\\\]/g, (_, math: string) => `\n$$\n${math.trim()}\n$$\n`)
-    .replace(/\\\(([\s\S]+?)\\\)/g, (_, math: string) => `$${math.trim()}$`)).join("");
-}
 
 export const MarkdownText = memo(function MarkdownText({ text, file, allowImages = true }: { text: string; file?: { cwd: string; path: string }; allowImages?: boolean }) {
   const rendered = useMemo<Components>(() => {
