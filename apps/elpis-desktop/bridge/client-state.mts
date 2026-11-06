@@ -1,5 +1,5 @@
 import type { ArchiveHistory } from './client-archive-history.mts';
-import type { CustomizePage } from './customize-page.mjs';
+import type { CustomizePage } from './customize-page.mts';
 import type { MessageVersions } from './message-versions.mts';
 import type { RewindHistory } from './rewind-history.mts';
 import type { RewindSnapshots } from './rewind-snapshots.mts';

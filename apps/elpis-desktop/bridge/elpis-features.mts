@@ -1,4 +1,4 @@
-import { acceptsPastedKey, BUILT_IN_KEY_PROVIDERS } from './provider-settings.mjs';
+import { acceptsPastedKey, BUILT_IN_KEY_PROVIDERS } from './provider-settings.mts';
 import { PERMISSION_PRESETS, PROFILES, permissionAllowed } from './permission-presets.mts';
 import { defaultPermissionMode } from './resources/permission-policy.mjs';
 export { defaultPermissionMode } from './resources/permission-policy.mjs';
@@ -7,12 +7,28 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import readline from 'node:readline';
 import zlib from 'node:zlib';
+import type { Readable } from 'node:stream';
+type RecordValue = Record<string, unknown>;
+type RolloutItem = RecordValue & { type?: unknown; role?: string; output?: { body?: unknown } | string; encrypted_content?: unknown };
+type Usage = { inputTokens?: unknown; cachedInputTokens?: unknown; cacheWriteInputTokens?: unknown; totalTokens?: unknown };
+type TokenUsage = { last?: Usage | null; total?: Usage | null; modelContextWindow?: unknown; contextAttribution?: Record<string, number> | null };
+type Shares = Record<string, number> & { toolDefinitions: number };
+type Definition = Parameters<typeof acceptsPastedKey>[1];
+type ServerDefinition = { enabled?: unknown; url?: unknown; command?: unknown; env?: Record<string, unknown>; env_vars?: unknown; bearer_token_env_var?: unknown };
+type Config = RecordValue & { model_providers?: Record<string, NonNullable<Definition>>; features?: { automatic_context_pruning?: unknown; memories?: unknown; multi_agent?: unknown; multi_agent_v2?: { enabled?: boolean; max_concurrent_threads_per_session?: unknown } | boolean }; agents?: { max_threads?: unknown; max_concurrent_threads_per_session?: unknown }; memories?: RecordValue; mcp_servers?: Record<string, ServerDefinition> };
+type ConfigRead = { config?: Config; layers?: { config?: Config; name?: { type?: string; profile?: unknown; file?: unknown }; version?: unknown; disabledReason?: unknown }[]; origins?: Record<string, { name?: { type?: string } }> } | null | undefined;
+type Requirements = { modelProvider?: unknown; modelProviders?: Record<string, NonNullable<Definition>>; allowedApprovalPolicies?: unknown; allowedApprovalsReviewers?: unknown; allowedSandboxModes?: unknown; allowedPermissionProfiles?: unknown; allowedWebSearchModes?: unknown };
+type RequirementsRead = { requirements?: Requirements | null } | null;
+type Pruner = { providers?: { id?: unknown; displayName?: unknown }[]; model?: unknown; provider?: unknown; reasoningEffort?: unknown; version?: unknown } | null;
+type Option = { keyPath: string; values?: unknown[]; text?: number; names?: number; absolutePath?: number };
+
+
 // Keep provider credentials, full config layers, audit paths and arbitrary fields server-side.
-const string = value => typeof value === 'string' ? value : null;
-const boolean = value => typeof value === 'boolean' ? value : null;
-const strings = value => Array.isArray(value) ? value.filter(item => typeof item === 'string') : null;
-const numericFields = (value, keys) => value && typeof value === 'object'
-  ? Object.fromEntries(keys.filter(key => typeof value[key] === 'number' && Number.isFinite(value[key])).map(key => [key, value[key]])) : null;
+const string = (value: unknown) => typeof value === 'string' ? value : null;
+const boolean = (value: unknown) => typeof value === 'boolean' ? value : null;
+const strings = (value: unknown) => Array.isArray(value) ? value.filter(item => typeof item === 'string') : null;
+const numericFields = (value: unknown, keys: string[]) => value && typeof value === 'object'
+  ? Object.fromEntries(keys.filter(key => typeof (value as RecordValue)[key] === 'number' && Number.isFinite((value as RecordValue)[key])).map(key => [key, (value as RecordValue)[key]])) : null;
 
 // Config fields the Settings pages edit, by their native key. Values are the
 // native serde spellings; null removes the key so Elpis uses its own default.
@@ -28,21 +44,21 @@ export const CONFIG_OPTIONS = {
   worktreeRoot: { keyPath: 'desktop.git-worktree-root', absolutePath: 4096 },
   automaticPruning: { keyPath: 'features.automatic_context_pruning', values: [true, false] },
 };
-const configValue = (config, keyPath) => keyPath.split('.').reduce((value, key) => value && typeof value === 'object' ? value[key] : undefined, config);
+const configValue = (config: Config, keyPath: string) => keyPath.split('.').reduce<unknown>((value, key) => value && typeof value === 'object' ? (value as RecordValue)[key] : undefined, config);
 /** Whether the engine takes the default sandbox from `default_permissions`, as
  * codex-rs/core/src/config/mod.rs resolve_permission_config_syntax decides: the highest layer naming either key
  * wins, and within a layer `default_permissions` wins over `sandbox_mode`. */
-function usesPermissionProfiles(read) {
+function usesPermissionProfiles(read: ConfigRead) {
   const layer = (read?.layers ?? []).find(layer => layer?.config?.default_permissions != null || layer?.config?.sandbox_mode != null);
-  return layer ? layer.config.default_permissions != null : read?.config?.default_permissions != null;
+  return layer ? layer.config!.default_permissions != null : read?.config?.default_permissions != null;
 }
 /** New chats' mode: the preset the config names, Full access when it names no approval policy (Masih, 24 Oct: "default
  * permission be full access"), or `custom` for any other combination, which new chats then take from the config. */
-function defaultPermissions(config, profiles) {
+function defaultPermissions(config: Config, profiles: boolean) {
   return defaultPermissionMode({ config, layers: [{ config: profiles ? { default_permissions: config.default_permissions } : { sandbox_mode: config.sandbox_mode } }] });
 }
 /** The mode new chats start in, from a config/read (with layers): `ask`, `auto` or `full`, or `custom`. */
-function optionSnapshot(config, profiles) {
+function optionSnapshot(config: Config, profiles: boolean) {
   const tier = string(config.service_tier);
   return {
     reasoningEffort: string(config.model_reasoning_effort),
@@ -57,20 +73,20 @@ function optionSnapshot(config, profiles) {
 /** Native edits for the submitted options; rejects anything outside CONFIG_OPTIONS or managed policy. Default
  * permissions write approval policy, reviewer and sandbox together; with `profiles`, the sandbox is saved as the
  * built-in permission profile the engine reads instead of `sandbox_mode`. */
-export function optionEdits(input, managed = {}, profiles = false) {
+export function optionEdits(input: unknown, managed: { allowedWebSearchModes?: unknown } = {}, profiles = false) {
   if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(key => !Object.hasOwn(CONFIG_OPTIONS, key))) throw new Error('Unsupported setting');
   return Object.entries(input).flatMap(([name, value]) => {
-    const option = CONFIG_OPTIONS[name];
+    const option = (CONFIG_OPTIONS as Record<string, Option>)[name]!;
     if (name === 'defaultPermissions') {
-      const preset = PERMISSION_PRESETS[value];
-      if (!option.values.includes(value) || !preset) throw new Error('Choose one of the listed values');
-      if (!permissionAllowed(value, managed)) throw new Error('This choice is restricted by managed settings');
+      const preset = PERMISSION_PRESETS[value as keyof typeof PERMISSION_PRESETS];
+      if (!option.values!.includes(value) || !preset) throw new Error('Choose one of the listed values');
+      if (!permissionAllowed(value as string, managed)) throw new Error('This choice is restricted by managed settings');
       return [{ keyPath: 'approval_policy', value: preset.approval, mergeStrategy: 'replace' }, { keyPath: 'approvals_reviewer', value: preset.reviewer, mergeStrategy: 'replace' },
-        profiles ? { keyPath: 'default_permissions', value: PROFILES[preset.sandbox], mergeStrategy: 'replace' } : { keyPath: 'sandbox_mode', value: preset.sandbox, mergeStrategy: 'replace' }];
+        profiles ? { keyPath: 'default_permissions', value: PROFILES[preset.sandbox as keyof typeof PROFILES], mergeStrategy: 'replace' } : { keyPath: 'sandbox_mode', value: preset.sandbox, mergeStrategy: 'replace' }];
     }
     if (value !== null) {
       if (option.values) {
-        if (!option.values.includes(value)) throw new Error('Choose one of the listed values');
+        if (!option.values!.includes(value)) throw new Error('Choose one of the listed values');
         const allowed = name === 'webSearch' ? managed.allowedWebSearchModes : null;
         if (Array.isArray(allowed) && !allowed.includes(value)) throw new Error('This choice is restricted by managed settings');
       } else if (option.text) {
@@ -82,7 +98,7 @@ export function optionEdits(input, managed = {}, profiles = false) {
       } else if (option.absolutePath) {
         if (typeof value !== 'string' || value.length > option.absolutePath || /[\0\r\n]/.test(value)) throw new Error('Give an absolute folder path');
         value = value.trim() || null;
-        if (value !== null && !value.startsWith('/')) throw new Error('Give an absolute folder path');
+        if (value !== null && !(value as string).startsWith('/')) throw new Error('Give an absolute folder path');
       }
     }
     return { keyPath: option.keyPath, value, mergeStrategy: 'replace' };
@@ -90,15 +106,15 @@ export function optionEdits(input, managed = {}, profiles = false) {
 }
 
 /** Whether a provider reads its key from a variable that is unset and has no key saved in the Elpis home. */
-const needsKey = (definition, saved, id, env) => acceptsPastedKey(id, definition) && !saved.has(id) && !(typeof env[definition.env_key] === 'string' && env[definition.env_key].trim());
+const needsKey = (definition: Definition, saved: Set<string>, id: string, env: NodeJS.ProcessEnv) => acceptsPastedKey(id, definition) && !saved.has(id) && !(typeof env[definition!.env_key as string] === 'string' && env[definition!.env_key as string]!.trim());
 
 /** How many agents a work graph may use (codex-rs core/src/tools/handlers/work_graphs.rs, core/src/config/mod.rs): up
  * to 256 in one graph, and at once no more than the session's agent threads: agents.max_threads (6 by default), or
  * with multi-agent v2 its threads per session less the chat itself (4 by default); never more than 32. */
-function agentLimits(config) {
-  const count = value => Number.isSafeInteger(value) && value >= 0 ? value : null, v2 = config.features?.multi_agent_v2;
+function agentLimits(config: Config) {
+  const count = (value: unknown) => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null, v2 = config.features?.multi_agent_v2;
   if (v2 === true || (v2 && typeof v2 === 'object' && v2.enabled !== false)) {
-    const session = count(v2?.max_concurrent_threads_per_session) ?? (count(config.agents?.max_concurrent_threads_per_session) ?? 3) + 1;
+    const session = count((v2 as { max_concurrent_threads_per_session?: unknown })?.max_concurrent_threads_per_session) ?? (count(config.agents?.max_concurrent_threads_per_session) ?? 3) + 1;
     return { graph: 256, atOnce: Math.min(32, Math.max(0, session - 1)), source: 'features.multi_agent_v2' };
   }
   const threads = count(config.agents?.max_threads);
@@ -106,10 +122,10 @@ function agentLimits(config) {
 }
 
 /** The version of the user's config layer: the one a write must quote. */
-export function userConfigVersion(read) {
+export function userConfigVersion(read: ConfigRead) {
   return string(read?.layers?.find(layer => layer.name?.type === 'user' && !layer.name.profile && !layer.disabledReason)?.version);
 }
-export function settingsSnapshot(read, requirementsRead, prunerRead = null, saved = new Set(), env = process.env) {
+export function settingsSnapshot(read: ConfigRead, requirementsRead: RequirementsRead, prunerRead: Pruner = null, saved = new Set<string>(), env = process.env) {
   const config = read?.config ?? {};
   const requirements = requirementsRead?.requirements;
   const definitions = { ...(config.model_providers ?? {}), ...(requirements?.modelProviders ?? {}) };
@@ -157,7 +173,8 @@ export function settingsSnapshot(read, requirementsRead, prunerRead = null, save
 
 const usageKeys = ['inputTokens', 'cachedInputTokens', 'cacheWriteInputTokens', 'outputTokens', 'reasoningOutputTokens', 'totalTokens'];
 const attributionKeys = ['systemInstructions', 'developerMessages', 'userMessages', 'agentMessages', 'reasoning', 'toolCalls', 'toolResults', 'toolDefinitions', 'outputSchema', 'unrecognizedItems', 'estimatedTotal'];
-export function tokenUsageSnapshot(value) {
+export function tokenUsageSnapshot(raw: unknown) {
+  const value = raw as (RecordValue & { total?: unknown; last?: unknown; modelContextWindow?: unknown; contextAttribution?: unknown }) | null;
   if (!value || typeof value !== 'object') return null;
   return { total: numericFields(value.total, usageKeys), last: numericFields(value.last, usageKeys),
     modelContextWindow: typeof value.modelContextWindow === 'number' ? value.modelContextWindow : null,
@@ -165,7 +182,7 @@ export function tokenUsageSnapshot(value) {
 }
 
 // The Context Ledger's categories, in the TUI's order and words (codex-rs/tui/src/chatwidget/context_usage.rs).
-const LEDGER_CATEGORIES = [
+const LEDGER_CATEGORIES: [string, string, string?][] = [
   ['userMessages', 'User messages'], ['agentMessages', 'Agent messages'], ['reasoning', 'Reasoning + compaction'],
   ['toolCalls', 'Tool calls'], ['toolResults', 'Tool results'], ['systemInstructions', 'System instructions'],
   ['developerMessages', 'Developer messages'], ['toolDefinitions', 'Tool definitions + schema', 'outputSchema'],
@@ -173,7 +190,7 @@ const LEDGER_CATEGORIES = [
 ];
 /** The categories of one attribution, in the TUI's order and words, scaled to `used` by largest remainder so they sum to
  * it exactly (`reconcile_context_categories`); empty when nothing is attributed. */
-function reconciledCategories(attribution, used) {
+function reconciledCategories(attribution: Record<string, number> | null | undefined, used: number) {
   const estimated = LEDGER_CATEGORIES.map(([id, label, extra]) => ({ id, label, tokens: (attribution?.[id] ?? 0) + (extra ? attribution?.[extra] ?? 0 : 0) })).filter(row => row.tokens > 0);
   const total = estimated.reduce((sum, row) => sum + row.tokens, 0);
   if (!total) return [];
@@ -184,7 +201,7 @@ function reconciledCategories(attribution, used) {
 }
 /** The prompt cache's share of one usage record: the engine's `inputTokens` include cached and cache-written input, so
  * the parts are disjoint here and `hitPercent` is cached input over the whole prompt. Null when no prompt was measured. */
-function cacheShare(usage) {
+function cacheShare(usage: Usage | null | undefined) {
   const prompt = number(usage?.inputTokens);
   if (prompt === null || prompt <= 0) return null;
   const cacheRead = Math.max(0, number(usage?.cachedInputTokens) ?? 0), cacheWrite = Math.max(0, number(usage?.cacheWriteInputTokens) ?? 0);
@@ -192,7 +209,7 @@ function cacheShare(usage) {
 }
 /** The Ledger's Prompt cache row (4 Nov, Masih: "add that cache button which shows that important info"): the latest
  * request's share and the whole chat's. Null before the first measured request. */
-export function cacheUse(tokenUsage) {
+export function cacheUse(tokenUsage: TokenUsage | null | undefined) {
   const last = cacheShare(tokenUsage?.last), total = cacheShare(tokenUsage?.total);
   return last || total ? { last, total } : null;
 }
@@ -204,7 +221,7 @@ const TRANSCRIPT_SLACK = 1.15;
  * attribution is unavailable. The TUI has the shares only once its own process has seen a request, so a chat the engine
  * has not run since this app connected would have none: `transcript` (`rolloutShares`) then stands in for them
  * (`basis: 'transcript'`), with the rest of the measured total, which no transcript holds, as the tool definitions. */
-export function contextLedger(tokenUsage, transcript = null) {
+export function contextLedger(tokenUsage: TokenUsage | null | undefined, transcript: Shares | null = null) {
   const used = number(tokenUsage?.last?.totalTokens), window = number(tokenUsage?.modelContextWindow);
   const ledger = { used: used !== null && used >= 0 ? used : null, window: window !== null && window > 0 ? window : null, categories: [] };
   if (!ledger.used) return ledger;
@@ -212,23 +229,23 @@ export function contextLedger(tokenUsage, transcript = null) {
   if (engine.length) return { ...ledger, categories: engine, basis: 'engine' };
   const known = transcript ? Object.values(transcript).reduce((sum, tokens) => sum + tokens, 0) : 0;
   if (!known || known > ledger.used * TRANSCRIPT_SLACK) return ledger;
-  const categories = reconciledCategories({ ...transcript, toolDefinitions: transcript.toolDefinitions + Math.max(0, ledger.used - known) }, ledger.used);
+  const categories = reconciledCategories({ ...transcript, toolDefinitions: transcript!.toolDefinitions + Math.max(0, ledger.used - known) }, ledger.used);
   return categories.length ? { ...ledger, categories, basis: 'transcript' } : ledger;
 }
 
 // ---- The shares of a chat the engine has not run yet, estimated from its saved transcript (rollout).
 export const SHARE_KEYS = ['systemInstructions', 'developerMessages', 'userMessages', 'agentMessages', 'reasoning', 'toolCalls', 'toolResults', 'toolDefinitions', 'outputSchema', 'unrecognizedItems'];
 const IMAGE_BYTES = 7373;
-const textBytes = value => typeof value === 'string' ? Buffer.byteLength(value) : 0;
-const jsonBytes = value => value === undefined || value === null ? 0 : Buffer.byteLength(JSON.stringify(value) ?? '');
-const partBytes = part => part?.type === 'input_image' ? IMAGE_BYTES : part?.type === 'encrypted_content' ? Math.ceil(textBytes(part.encrypted_content) * 9 / 16) : textBytes(part?.text);
-const partsBytes = parts => Array.isArray(parts) ? parts.reduce((sum, part) => sum + partBytes(part), 0) : 0;
+const textBytes = (value: unknown) => typeof value === 'string' ? Buffer.byteLength(value) : 0;
+const jsonBytes = (value: unknown) => value === undefined || value === null ? 0 : Buffer.byteLength(JSON.stringify(value) ?? '');
+const partBytes = (part: RecordValue | null | undefined) => part?.type === 'input_image' ? IMAGE_BYTES : part?.type === 'encrypted_content' ? Math.ceil(textBytes(part.encrypted_content) * 9 / 16) : textBytes(part?.text);
+const partsBytes = (parts: unknown) => Array.isArray(parts) ? parts.reduce((sum, part) => sum + partBytes(part), 0) : 0;
 /** One saved item as core classifies and sizes it (core elpis_context_attribution.rs `classify`, context_manager
  * `estimate_item_token_count`): its share and its model-visible bytes. Items it does not know weigh nothing. */
-export function sizedItem(item) {
+export function sizedItem(item: RolloutItem): [string, number] {
   const call = () => textBytes(item.name) + textBytes(item.namespace ?? 'functions') + textBytes(item.arguments ?? item.input);
   switch (item.type) {
-    case 'message': return [{ system: 'systemInstructions', developer: 'developerMessages', user: 'userMessages', assistant: 'agentMessages' }[item.role] ?? 'unrecognizedItems', partsBytes(item.content)];
+    case 'message': return [{ system: 'systemInstructions', developer: 'developerMessages', user: 'userMessages', assistant: 'agentMessages' }[item.role as 'system' | 'developer' | 'user' | 'assistant'] ?? 'unrecognizedItems', partsBytes(item.content)];
     case 'agent_message': return ['agentMessages', textBytes(item.author) + textBytes(item.recipient) + partsBytes(item.content)];
     // Encrypted model state: 1,287 characters of overhead, then a token per 14.14 (core `encrypted_reasoning_tokens`), as bytes here.
     case 'reasoning': case 'compaction': case 'context_compaction': return ['reasoning', typeof item.encrypted_content === 'string' ? Math.ceil(Math.max(0, item.encrypted_content.length - 1287) * 100 / 1414) * 4 : 0];
@@ -236,15 +253,15 @@ export function sizedItem(item) {
     case 'local_shell_call': case 'web_search_call': return ['toolCalls', jsonBytes(item.action)];
     case 'tool_search_call': return ['toolCalls', jsonBytes(item.arguments)];
     case 'image_generation_call': return ['toolCalls', textBytes(item.revised_prompt) + (item.result ? IMAGE_BYTES : 0)];
-    case 'function_call_output': case 'custom_tool_call_output': { const body = item.output?.body ?? item.output; return ['toolResults', (typeof body === 'string' ? textBytes(body) : partsBytes(body)) + textBytes(item.call_id) + textBytes(item.name) + textBytes(item.namespace)]; }
+    case 'function_call_output': case 'custom_tool_call_output': { const body = (item.output as { body?: unknown } | null | undefined)?.body ?? item.output; return ['toolResults', (typeof body === 'string' ? textBytes(body) : partsBytes(body)) + textBytes(item.call_id) + textBytes(item.name) + textBytes(item.namespace)]; }
     case 'tool_search_output': return ['toolResults', jsonBytes(item.tools)];
     case 'additional_tools': return ['toolDefinitions', jsonBytes(item.tools)];
     default: return ['unrecognizedItems', 0];
   }
 }
-const rolloutPath = file => typeof file === 'string' && path.isAbsolute(file) && /\.jsonl(\.zst)?$/.test(file);
+const rolloutPath = (file: unknown): file is string => typeof file === 'string' && path.isAbsolute(file) && /\.jsonl(\.zst)?$/.test(file);
 /** The model recorded for each saved turn. Old or imported rows without a model stay absent. */
-export async function rolloutTurnModels(file, limit = 1 << 28) {
+export async function rolloutTurnModels(file: unknown, limit = 1 << 28) {
   const models = new Map();
   if (!rolloutPath(file)) return models;
   try {
@@ -264,14 +281,14 @@ export async function rolloutTurnModels(file, limit = 1 << 28) {
  * the transcript cannot say what the model last saw: no readable rollout, a compaction saved without its replacement
  * history, or a rolled-back turn. Plain rollouts are read whole, compressed ones streamed. The tool definitions and the
  * output schema are not in a rollout; `contextLedger` takes them from the measured total. */
-export async function rolloutShares(file, limit = 1 << 28) {
+export async function rolloutShares(file: unknown, limit = 1 << 28) {
   if (!rolloutPath(file)) return null;
-  const tokens = Object.fromEntries(SHARE_KEYS.map(key => [key, 0]));
+  const tokens = Object.fromEntries(SHARE_KEYS.map(key => [key, 0])) as Shares;
   try {
     if ((await fsp.stat(file)).size > limit) return null;
     const input = file.endsWith('.zst') ? (typeof zlib.createZstdDecompress === 'function' ? fs.createReadStream(file).pipe(zlib.createZstdDecompress()) : null) : fs.createReadStream(file);
     if (!input) return null;
-    const add = item => { const [key, size] = sizedItem(item); tokens[key] += Math.ceil(size / 4); };
+    const add = (item: RolloutItem) => { const [key, size] = sizedItem(item); tokens[key] = tokens[key]! + Math.ceil(size / 4); };
     for await (const line of readline.createInterface({ input, crlfDelay: Infinity })) {
       if (!/"(session_meta|response_item|compacted|thread_rolled_back)"/.test(line)) continue;
       let row; try { row = JSON.parse(line); } catch { continue; }
@@ -290,13 +307,13 @@ export async function rolloutShares(file, limit = 1 << 28) {
 }
 
 // A rollout's `token_count` record carries usage in the engine's snake_case.
-const rolloutUsage = value => value && typeof value === 'object'
-  ? Object.fromEntries(usageKeys.map(key => [key, value[key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`)]]).filter(([, count]) => typeof count === 'number')) : null;
-const countedUsage = line => {
+const rolloutUsage = (value: unknown) => value && typeof value === 'object'
+  ? Object.fromEntries(usageKeys.map(key => [key, (value as RecordValue)[key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`)]]).filter(([, count]) => typeof count === 'number')) : null;
+const countedUsage = (line: string) => {
   if (!line.includes('"token_count"')) return null;
   try { const payload = JSON.parse(line)?.payload; return payload?.type === 'token_count' && payload.info && typeof payload.info === 'object' ? payload.info : null; } catch { return null; }
 };
-async function lastCountFromEnd(file, chunk = 1 << 16, limit = 1 << 25) {
+async function lastCountFromEnd(file: string, chunk = 1 << 16, limit = 1 << 25) {
   const handle = await fsp.open(file, 'r');
   try {
     let end = (await handle.stat()).size, carry = Buffer.alloc(0), scanned = 0;
@@ -314,7 +331,7 @@ async function lastCountFromEnd(file, chunk = 1 << 16, limit = 1 << 25) {
     return null;
   } finally { await handle.close(); }
 }
-async function lastCountInStream(input) {
+async function lastCountInStream(input: Readable) {
   let found = null;
   for await (const line of readline.createInterface({ input, crlfDelay: Infinity })) found = countedUsage(line) ?? found;
   return found;
@@ -322,7 +339,7 @@ async function lastCountInStream(input) {
 /** The usage a chat's rollout recorded last: the `token_count` the engine restores on a cold resume
  * (app-server token_usage_replay.rs), so an old chat shows its numbers before it runs again. Rollouts keep no
  * category shares; those come with the next request. Plain rollouts are read from their end, compressed ones streamed. */
-export async function restoredTokenUsage(file) {
+export async function restoredTokenUsage(file: unknown) {
   if (!rolloutPath(file)) return null;
   let info;
   try {
@@ -337,7 +354,7 @@ export async function restoredTokenUsage(file) {
 /** The Context Ledger's switches, read from the keys the TUI ledger writes: Smart Prune is
  * `features.automatic_context_pruning` (off by default), Subagents is `features.multi_agent` (on unless false; the
  * Claude bridge reads the same key), and RAG is the `rag` MCP server's `enabled` (null when none is configured). */
-export function contextSwitchesSnapshot(read) {
+export function contextSwitchesSnapshot(read: ConfigRead) {
   const config = read?.config ?? {}, userLayer = read?.layers?.find(layer => layer.name?.type === 'user' && !layer.name.profile);
   const rag = config.mcp_servers?.rag, version = string(userLayer?.version);
   return { version, write: version ? { available: true } : { available: false, reason: 'Elpis reported no writable config.toml, so these switches cannot be saved here.' },
@@ -346,12 +363,13 @@ export function contextSwitchesSnapshot(read) {
 }
 export const CONTEXT_SWITCH_KEYS = { smartPrune: 'features.automatic_context_pruning', subagents: 'features.multi_agent', rag: 'mcp_servers.rag.enabled' };
 
-export function smartPruneSnapshot(value) {
+export function smartPruneSnapshot(raw: unknown) {
+  const value = raw as (RecordValue & { latestAttempt?: RecordValue | null }) | null;
   if (!value || typeof value !== 'object') return null;
   const result = {
     enabled: boolean(value.enabled),
     ...numericFields(value, ['examinedOutputs', 'admittedOutputs', 'unchangedOutputs', 'failedBatches', 'approxSourceTokens', 'approxAdmittedTokens', 'approxSavedTokens', 'optimizerRequests', 'optimizerUsageReports', 'optimizerLatencyMs', 'mainRequestSequence']),
-    optimizerUsage: numericFields(value.optimizerUsage, usageKeys), latestAttempt: null,
+    optimizerUsage: numericFields(value.optimizerUsage, usageKeys), latestAttempt: null as null | { status: string | null; failureReason: string | null; modelSlug: string | null; reasoningEffort: string | null; usage: Record<string, unknown> | null },
   };
   if (value.latestAttempt && typeof value.latestAttempt === 'object') {
     const attempt = value.latestAttempt;
@@ -365,24 +383,24 @@ export function smartPruneSnapshot(value) {
   return result;
 }
 
-const number = value => typeof value === 'number' && Number.isFinite(value) ? value : null;
+const number = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? value : null;
 // Base URLs may carry tokens in their query; only the scheme, host and path leave the bridge.
-const publicUrl = value => { try { const url = new URL(value); return `${url.origin}${url.pathname.replace(/\/$/, '')}`; } catch { return null; } };
-const hostOf = value => { try { return new URL(value).hostname.replace(/^\[|\]$/g, ''); } catch { return ''; } };
-const usageWindow = value => value && typeof value === 'object'
+const publicUrl = (value: unknown) => { try { const url = new URL(value as string); return `${url.origin}${url.pathname.replace(/\/$/, '')}`; } catch { return null; } };
+const hostOf = (value: unknown) => { try { return new URL(value as string).hostname.replace(/^\[|\]$/g, ''); } catch { return ''; } };
+const usageWindow = (value: RecordValue | null | undefined) => value && typeof value === 'object'
   ? { usedPercent: number(value.usedPercent), windowDurationMins: number(value.windowDurationMins), resetsAt: number(value.resetsAt) } : null;
-const usageLimit = value => value && typeof value === 'object'
+const usageLimit = (value: (RecordValue & { primary?: RecordValue | null; secondary?: RecordValue | null }) | null | undefined) => value && typeof value === 'object'
   ? { limitId: string(value.limitId), limitName: string(value.limitName), planType: string(value.planType), primary: usageWindow(value.primary), secondary: usageWindow(value.secondary), reached: string(value.rateLimitReachedType) } : null;
 
 /** Each provider's own sign-in and usage. Subscription limits arrive keyed by limit ID from the Elpis bridge.
  * `anthropic.signedOut`: Elpis's own sign-out of the Claude subscription, which shows no models or usage while it is on.
  * `models`: the engine's model list, or null when it could not be read. */
-export function providersSnapshot({ account, limits, config, models, anthropic, env = process.env }) {
+export function providersSnapshot({ account, limits, config, models, anthropic, env = process.env }: { account?: { account?: { type?: unknown; email?: unknown; planType?: unknown } | null; error?: unknown; requiresOpenaiAuth?: unknown } | null; limits?: { rateLimitsByLimitId?: Record<string, RecordValue>; rateLimits?: RecordValue & { limitId?: unknown }; error?: unknown } | null; config?: Config | null | undefined; models?: { model?: unknown; displayName?: unknown }[] | null; anthropic?: { signedOut?: unknown } | null; env?: NodeJS.ProcessEnv }) {
   const byId = { ...(limits?.rateLimitsByLimitId ?? {}) };
   if (typeof limits?.rateLimits?.limitId === 'string' && !byId[limits.rateLimits.limitId]) byId[limits.rateLimits.limitId] = limits.rateLimits;
-  const usage = prefix => Object.entries(byId).filter(([id]) => id === prefix || id.startsWith(`${prefix}-`)).map(([, value]) => usageLimit(value)).filter(Boolean);
-  const offered = prefix => (models ?? []).filter(model => typeof model?.model === 'string' && model.model.startsWith(prefix)).map(model => string(model.displayName) ?? model.model);
-  const subscription = (prefix, limitPrefix) => {
+  const usage = (prefix: string) => Object.entries(byId).filter(([id]) => id === prefix || id.startsWith(`${prefix}-`)).map(([, value]) => usageLimit(value as RecordValue)).filter(Boolean);
+  const offered = (prefix: string) => (models ?? []).filter(model => typeof model?.model === 'string' && model.model.startsWith(prefix)).map(model => string(model.displayName) ?? model.model);
+  const subscription = (prefix: string, limitPrefix: string) => {
     const names = offered(prefix), found = usage(limitPrefix);
     // `models` is null when the model list could not be read: then a subscription without usage is unknown, not signed out.
     return { state: found.length ? 'connected' : names.length ? 'available' : models ? 'notConnected' : 'unknown', models: names, usage: found };
@@ -393,7 +411,7 @@ export function providersSnapshot({ account, limits, config, models, anthropic, 
     : signedIn ? { state: 'signedIn', method: signedIn.type === 'apiKey' ? 'API key' : string(signedIn.type) }
     : { state: 'signedOut' };
   const configured = Object.entries(config?.model_providers ?? {}).filter(([, def]) => def && typeof def === 'object');
-  const describe = ([id, def]) => ({ id, name: string(def.name) ?? id, baseUrl: publicUrl(def.base_url),
+  const describe = ([id, def]: [string, NonNullable<Definition>]) => ({ id, name: string(def.name) ?? id, baseUrl: publicUrl(def.base_url),
     envKey: string(def.env_key), keySet: typeof def.env_key === 'string' ? Boolean(env[def.env_key]) : Boolean(def.experimental_bearer_token) });
   const codex = usage('codex');
   return {
@@ -406,9 +424,9 @@ export function providersSnapshot({ account, limits, config, models, anthropic, 
 }
 
 /** Lifecycle hooks as Elpis discovered them, with the user-layer version their state writes need. */
-export function hooksSnapshot(list, read) {
+export function hooksSnapshot(list: { data?: { hooks?: RecordValue[]; warnings?: unknown[]; errors?: { path?: unknown; message?: unknown }[] }[] } | null | undefined, read: ConfigRead) {
   const userLayer = read?.layers?.find(layer => layer.name?.type === 'user' && !layer.name.profile);
-  const seen = new Set(), hooks = [], warnings = [], errors = [];
+  const seen = new Set(), hooks = [], warnings: string[] = [], errors = [];
   for (const entry of Array.isArray(list?.data) ? list.data : []) {
     for (const hook of Array.isArray(entry?.hooks) ? entry.hooks : []) {
       if (typeof hook?.key !== 'string' || seen.has(hook.key)) continue;
@@ -429,7 +447,7 @@ export function hooksSnapshot(list, read) {
 
 const CREDENTIAL = /KEY|TOKEN|SECRET|PASSWORD|AUTH|CREDENTIAL/i;
 /** MCP servers from the effective config: names, transport and credential presence only. */
-export function mcpSnapshot(read, env = process.env) {
+export function mcpSnapshot(read: ConfigRead, env = process.env) {
   const servers = read?.config?.mcp_servers ?? {};
   const userLayer = read?.layers?.find(layer => layer.name?.type === 'user' && !layer.name.profile);
   return {

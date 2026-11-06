@@ -1,5 +1,5 @@
 import { BridgeError, object, text } from './validate.mts';
-import { privateConfigFile } from './provider-settings.mjs';
+import { privateConfigFile } from './provider-settings.mts';
 import { readClaudeMcp } from './claude-mcp-import.mts';
 
 import { internal_rpc } from './client-connection.mts';

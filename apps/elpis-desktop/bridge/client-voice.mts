@@ -1,4 +1,4 @@
-import { BUILT_IN_KEY_PROVIDERS, configHome, providerDefinition } from './provider-settings.mjs';
+import { BUILT_IN_KEY_PROVIDERS, configHome, providerDefinition } from './provider-settings.mts';
 import { BridgeError, object, text, threadId } from './validate.mts';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -155,8 +155,8 @@ export async function impl_transcriptionDefinition(this: DesktopClient, clientSt
 export async function impl_transcriptionEnvironment(this: DesktopClient, clientState: ClientState) {
     const [read, account] = await Promise.all([internal_rpc(this, clientState, 'config/read', { includeLayers: true }), internal_rpc(this, clientState, 'account/read', { refreshToken: false }).catch(() => null)]);
     const home = configHome(read), gemini = providerDefinition(read, 'google-gemini');
-    const official = gemini?.base_url === BUILT_IN_KEY_PROVIDERS['google-gemini'].base_url;
-    const key = official ? savedProviderKey(home, 'google-gemini') || (typeof gemini.env_key === 'string' ? process.env[gemini.env_key] : '') || '' : '';
+    const official = gemini?.base_url === BUILT_IN_KEY_PROVIDERS['google-gemini']!.base_url;
+    const key = official ? savedProviderKey(home, 'google-gemini') || (typeof gemini!.env_key === 'string' ? process.env[gemini!.env_key as string] : '') || '' : '';
     const configured = Object.entries(read?.config?.model_providers ?? {}).filter(([, definition]) => {
       try { const url = new URL((definition as { base_url?: string } | undefined)?.base_url ?? ''); return url.protocol === 'https:' && url.hostname === 'openrouter.ai' && url.pathname.replace(/\/+$/, '') === '/api/v1' && !url.username && !url.password && !url.search && !url.hash; }
       catch { return false; }

@@ -45,7 +45,9 @@ try {
   config = await client.saveMcp({ version: config.version, action: 'whispertype', name: 'whispertype', backend: 'local', model: 'openai/gpt-4o-mini-transcribe' });
   const whisper = config.servers.find(server => server.name === 'whispertype');
   assert.equal(whisper.whispertype.backend, 'local');
-  assert.equal(whisper.credentials.find(key => key.name === 'OPENROUTER_API_KEY_COMPANY').set, true);
+  const whisperKey = whisper.credentials.find(key => key.name === 'OPENROUTER_API_KEY_COMPANY');
+  assert.ok(whisperKey);
+  assert.equal(whisperKey.set, true);
   assert(!JSON.stringify(config).includes('fixture-whisper'));
   config = await client.saveMcp({ version: config.version, action: 'credentials', name: 'rag', env: { OPENROUTER_API_KEY: null } });
   assert.equal((await client.ragEnvironment()).OPENROUTER_API_KEY, undefined);

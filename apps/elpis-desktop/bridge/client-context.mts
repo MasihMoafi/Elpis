@@ -1,5 +1,5 @@
 import { BridgeError, object, text, threadId } from './validate.mts';
-import { CONTEXT_SWITCH_KEYS, cacheUse, contextLedger, contextSwitchesSnapshot, restoredTokenUsage, rolloutShares, rolloutTurnModels } from './elpis-features.mjs';
+import { CONTEXT_SWITCH_KEYS, cacheUse, contextLedger, contextSwitchesSnapshot, restoredTokenUsage, rolloutShares, rolloutTurnModels } from './elpis-features.mts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { sessionContextFiles } from './session-context.mts';
@@ -122,7 +122,7 @@ async function internal_restoredUsage(this: DesktopClient, clientState: ClientSt
     return value;
   }
 
-/** The Context Ledger's Smart Prune, Subagents and RAG switches (elpis-features.mjs `contextSwitchesSnapshot`). */
+/** The Context Ledger's Smart Prune, Subagents and RAG switches (elpis-features.mts `contextSwitchesSnapshot`). */
 export async function impl_contextSwitches(this: DesktopClient, clientState: ClientState) { return contextSwitchesSnapshot(await internal_rpc(this, clientState, 'config/read', { includeLayers: true })); }
 
 /** Writes the switches as the TUI ledger does: one config key each, reloaded so open chats use it from their next turn. */

@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { providerFormId } from '../lib/provider-form.ts';
-import { providerEdits } from '../bridge/provider-settings.mjs';
+import { providerEdits } from '../bridge/provider-settings.mts';
 
-const valid = id => assert.match(id, /^[a-z][a-z0-9_-]{0,63}$/);
+const valid = (id: string) => assert.match(id, /^[a-z][a-z0-9_-]{0,63}$/);
 
 test('known connections generate their own internal identity without an ID field', () => {
   assert.equal(providerFormId({ type: 'openrouter', name: 'OpenRouter' }, []), 'openrouter');
@@ -11,10 +11,10 @@ test('known connections generate their own internal identity without an ID field
 });
 
 test('custom names become bounded valid internal keys while names stay untouched', () => {
-  const identity = { type: 'custom', name: 'Café Research 2' };
+  const identity = { type: 'custom' as const, name: 'Café Research 2' };
   assert.equal(providerFormId(identity, []), 'api-cafe-research-2');
   assert.equal(identity.name, 'Café Research 2');
-  const long = { type: 'custom', name: 'Research '.repeat(30) };
+  const long = { type: 'custom' as const, name: 'Research '.repeat(30) };
   const first = providerFormId(long, []), second = providerFormId(long, [first]);
   valid(first); valid(second); assert.notEqual(first, second); assert.match(second, /-2$/);
 });
@@ -27,7 +27,7 @@ test('creating a connection never selects an existing or reserved account identi
   const occupied = ['local', 'local-2', 'local-3'];
   assert.equal(providerFormId({ type: 'local', name: 'Local' }, occupied), 'local-4');
   assert.deepEqual(occupied, ['local', 'local-2', 'local-3']);
-  assert.equal(providerFormId({ type: 'custom', name: 'Research' }, ['API-RESEARCH']), 'api-research-2');
+  assert.equal(providerFormId({ type: 'custom' as const, name: 'Research' }, ['API-RESEARCH']), 'api-research-2');
 });
 
 test('non-Latin or punctuation-only display names still receive a valid unique internal key', () => {
@@ -44,7 +44,7 @@ test('editing retains the existing identity even when its name or type changes',
 });
 
 test('retry after a refreshed configuration generates a new free key instead of overwriting the competing connection', () => {
-  const identity = { type: 'custom', name: 'Research' };
+  const identity = { type: 'custom' as const, name: 'Research' };
   const versionOneIds = ['api-old'];
   const first = providerFormId(identity, versionOneIds);
   const refreshedIds = [...versionOneIds, first];
@@ -53,7 +53,7 @@ test('retry after a refreshed configuration generates a new free key instead of 
 });
 
 test('generated IDs pass the actual provider writer while stale versions leave form credentials intact', () => {
-  const draft = { type: 'custom', name: 'Research', baseUrl: 'https://example.invalid/v1', secret: 'fixture-only-key' };
+  const draft = { type: 'custom' as const, name: 'Research', baseUrl: 'https://example.invalid/v1', secret: 'fixture-only-key' };
   const current = { version: 'v2', write: { available: true }, providers: [{ id: 'api-research', editable: true }] };
   const body = { version: 'v1', id: providerFormId(draft, current.providers.map(provider => provider.id)), name: draft.name,
     baseUrl: draft.baseUrl, credential: { action: 'replace', value: draft.secret } };

@@ -34,7 +34,7 @@
     "tests/nav-history.test.mjs",
     "tests/panel-tabs.test.mjs",
     "tests/provider-choices.test.mjs",
-    "tests/provider-form.test.mjs",
+    "tests/provider-form.test.mts",
     "tests/reading.test.mjs",
     "tests/slash-helpers.test.mjs",
     "tests/steps.test.mjs",

@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { pluginCatalogSnapshot, pluginsSnapshot, skillsSnapshot } from './customize.mts';
-import { CustomizePage } from './customize-page.mjs';
+import { CustomizePage } from './customize-page.mts';
 
 test('skills: each once, named by their interface when they have one, by name, with scope, state and load errors', () => {
   const skill = (name: string, extra: object = {}) => ({ name, description: `${name} long`, path: `/s/${name}/SKILL.md`, scope: 'user', enabled: true, ...extra });
@@ -79,7 +79,7 @@ test('remote catalog refusal falls back to case-insensitive local names, display
   }
   const installed = await f.page.changePlugin({ action: 'install', id: f.plugin.id, cwd: '/project' });
   assert.deepEqual(f.calls.filter(call => call.method === 'plugin/install').map(call => call.params), [{ pluginName: 'hyperframes', marketplacePath: f.market.path }]);
-  assert.deepEqual(installed.plugins.data.map((plugin: { id: string }) => plugin.id), [f.plugin.id]);
+  assert.deepEqual(installed.plugins.data!.map((plugin: { id: string }) => plugin.id), [f.plugin.id]);
 });
 
 test('an unmatched local search stays empty without an error when the remote catalog refuses', async t => {

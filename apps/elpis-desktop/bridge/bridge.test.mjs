@@ -2037,7 +2037,7 @@ test('context exposes actual scoped events without resuming and strips audit pat
 });
 
 test('the context ledger measures the latest request and reconciles the estimated categories to it, as the TUI ledger does', async () => {
-  const { contextLedger } = await import('./elpis-features.mjs');
+  const { contextLedger } = await import('./elpis-features.mts');
   const attribution = { userMessages: 1000, agentMessages: 3000, reasoning: 0, toolCalls: 500, toolResults: 27000, systemInstructions: 8000, developerMessages: 1500, toolDefinitions: 9000, outputSchema: 1000, unrecognizedItems: 0, estimatedTotal: 51000 };
   const usage = (last, window, contextAttribution) => ({ total: { totalTokens: 900000 }, last, modelContextWindow: window, contextAttribution });
   const ledger = contextLedger(usage({ inputTokens: 48000, outputTokens: 2000, totalTokens: 50000 }, 200000, attribution));
@@ -2074,7 +2074,7 @@ test('saved replies use the model recorded in each turn context and never guess 
     JSON.stringify({ type: 'turn_context', payload: { turn_id: 't1', model: 'gpt-6.1-sol' } }),
     JSON.stringify({ type: 'turn_context', payload: { turn_id: 'older' } }),
   ].join('\n'));
-  const { rolloutTurnModels } = await import('./elpis-features.mjs');
+  const { rolloutTurnModels } = await import('./elpis-features.mts');
   assert.deepEqual([...await rolloutTurnModels(rollout)], [['t1', 'gpt-6.1-sol']]);
   const { client, threads } = fixture(); await client.initialize(); threads.get(ROOT).path = rollout;
   const page = await client.readThread(ROOT);
@@ -2083,7 +2083,7 @@ test('saved replies use the model recorded in each turn context and never guess 
 });
 
 test('an old chat shows the last usage its rollout recorded, plain or compressed, until live events replace it', async () => {
-  const { restoredTokenUsage } = await import('./elpis-features.mjs');
+  const { restoredTokenUsage } = await import('./elpis-features.mts');
   const zlib = await import('node:zlib');
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-rollout-usage-'));
   const usage = total => ({ input_tokens: total - 100, cached_input_tokens: 10, cache_write_input_tokens: 0, output_tokens: 100, reasoning_output_tokens: 7, total_tokens: total });
@@ -2119,7 +2119,8 @@ test('an old chat shows the last usage its rollout recorded, plain or compressed
 
 
 test('encrypted reasoning weighs what the model is sent, as the engine counts it (A225, A260)', async () => {
-  const { sizedItem } = await import('./elpis-features.mjs');
+  const { sizedItem } = await import('./elpis-features.mts');
+  /** @returns {[string, number]} */
   const tokens = item => { const [key, bytes] = sizedItem(item); return [key, Math.ceil(bytes / 4)]; };
   const reasoning = length => ({ type: 'reasoning', summary: [], encrypted_content: 'g'.repeat(length) });
   const old = length => Math.ceil(Math.max(0, Math.floor(length * 3 / 4) - 650) / 4);
@@ -2151,7 +2152,7 @@ test('encrypted reasoning weighs what the model is sent, as the engine counts it
 });
 
 test('reasoning cost holds on held-out responses after the fit window', async () => {
-  const { sizedItem } = await import('./elpis-features.mjs');
+  const { sizedItem } = await import('./elpis-features.mts');
   // Independent 25 Oct gpt-6.1-sol replies; numeric-only extraction documented in the core test.
   const responses = JSON.parse(await fs.readFile(new URL('../../../codex-rs/core/src/elpis_reasoning_cost_heldout.json', import.meta.url), 'utf8'));
   let reported = 0, estimated = 0;
@@ -2169,7 +2170,7 @@ test('reasoning cost holds on held-out responses after the fit window', async ()
 });
 
 test('an old chat shows category shares estimated from its saved transcript, until the engine sends its own', async () => {
-  const { rolloutShares, contextLedger } = await import('./elpis-features.mjs');
+  const { rolloutShares, contextLedger } = await import('./elpis-features.mts');
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-rollout-shares-'));
   const record = (type, payload) => JSON.stringify({ timestamp: '2026-10-17T00:00:00Z', type, payload });
   const item = payload => record('response_item', payload);
@@ -2398,7 +2399,7 @@ test('a model list that cannot be read leaves the subscriptions unknown, not sig
   assert.deepEqual([providers.claude.usage, providers.gemini.usage], [[], []]);
   socket.send = send;
   // A list that was read and offers no Antigravity model does mean it is not connected.
-  const { providersSnapshot } = await import('./elpis-features.mjs');
+  const { providersSnapshot } = await import('./elpis-features.mts');
   assert.equal(providersSnapshot({ account: null, limits: {}, config: {}, models: [], anthropic: null }).gemini.state, 'notConnected');
   // Elpis's own Anthropic sign-out stays a sign-out whatever the list says.
   assert.equal(providersSnapshot({ account: null, limits: {}, config: {}, models: null, anthropic: { signedOut: true } }).claude.state, 'notConnected');
@@ -2758,7 +2759,7 @@ test('fork chat from here copies history through the chosen turn and names the c
 });
 
 test('Smart Prune is switched by its feature key, and a writable config gives no "cannot save" reason', async () => {
-  const { optionEdits, settingsSnapshot } = await import('./elpis-features.mjs');
+  const { optionEdits, settingsSnapshot } = await import('./elpis-features.mts');
   assert.deepEqual(optionEdits({ automaticPruning: true }), [{ keyPath: 'features.automatic_context_pruning', value: true, mergeStrategy: 'replace' }]);
   assert.throws(() => optionEdits({ automaticPruning: 'yes' }), /listed values/);
   const writable = settingsSnapshot({ config: {}, layers: [{ name: { type: 'user', file: '/home/fixture/.elpis/config.toml' }, version: 'v1' }] }, { requirements: {} });
@@ -2767,7 +2768,7 @@ test('Smart Prune is switched by its feature key, and a writable config gives no
 });
 
 test('the agents a work graph may use follow Elpis: 256 in a graph, and at once its agent threads, never over 32', async () => {
-  const { settingsSnapshot } = await import('./elpis-features.mjs');
+  const { settingsSnapshot } = await import('./elpis-features.mts');
   const allowed = config => settingsSnapshot({ config, layers: [] }, { requirements: {} }).agents;
   assert.deepEqual(allowed({}), { graph: 256, atOnce: 6, source: 'Elpis default' });
   assert.deepEqual(allowed({ agents: { max_threads: 3 } }), { graph: 256, atOnce: 3, source: 'agents.max_threads' });
@@ -2976,7 +2977,7 @@ test('malformed definitions and unsupported fields cannot be silently imported',
 });
 
 test('the Ledger prompt cache share counts cached input once, for OpenAI and Claude usage alike (5 Nov)', async () => {
-  const { cacheUse } = await import('./elpis-features.mjs');
+  const { cacheUse } = await import('./elpis-features.mts');
   // The engine's inputTokens include cached and cache-written input (elpis-gateway adds Claude's back in).
   const openai = cacheUse({ last: { inputTokens: 10_200, cachedInputTokens: 9_000, cacheWriteInputTokens: 0 }, total: { inputTokens: 20_400, cachedInputTokens: 9_000 } });
   assert.deepEqual(openai.last, { prompt: 10_200, cacheRead: 9_000, cacheWrite: 0, uncached: 1_200, hitPercent: 88 });

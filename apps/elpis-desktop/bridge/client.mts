@@ -1,5 +1,5 @@
 import { BridgeError } from './validate.mts';
-import { CustomizePage } from './customize-page.mjs';
+import { CustomizePage } from './customize-page.mts';
 import { EventEmitter } from 'node:events';
 import { MessageVersions } from './message-versions.mts';
 import { RewindHistory } from './rewind-history.mts';
@@ -75,7 +75,7 @@ export class DesktopClient extends EventEmitter {
     const archiveHistory = new ArchiveHistory(archiveDirectory);
     const spawnLinks = new SpawnLinks(spawnLinksFile, { home: path.dirname(spawnLinksFile), appHome });
     const customize = new CustomizePage({ rpc: (method: string, params: unknown) => internal_rpc(this, this.#state, method, params), mcp: () => this.mcp(), settings: () => this.settings(), saveSettings: (input: unknown) => this.saveSettings(input),
-      githubConnector, skillTrash: new SkillTrash(skillTrashOptions), appHome, home: () => profileHome });
+      githubConnector: githubConnector as ClientStateOptions['githubConnector'], skillTrash: new SkillTrash(skillTrashOptions), appHome, home: () => profileHome });
     const rewindSnapshots = new RewindSnapshots(rewindHome);
     const versions = new MessageVersions(path.join(rewindHome, 'versions.json'));
     const rewindHistory = new RewindHistory(rewindHome, async (method: string, params: Record<string, unknown>) => {

@@ -1,4 +1,4 @@
-import { BUILT_IN_KEY_PROVIDERS, configHome, providerDefinition } from './provider-settings.mjs';
+import { BUILT_IN_KEY_PROVIDERS, configHome, providerDefinition } from './provider-settings.mts';
 import { BridgeError, object, text } from './validate.mts';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -30,7 +30,7 @@ export async function impl_models(this: DesktopClient, clientState: ClientState,
       const managed = policy.requirements;
       if (managed?.modelProvider && managed.modelProvider !== provider) throw new BridgeError('This connection is restricted by your organization', 403);
       if (options.inputModality || options.outputModality) {
-        let host; try { const url = new URL(providerDefinition(read, provider)?.base_url); host = url.protocol === 'https:' && url.hostname === 'openrouter.ai'; } catch { host = false; }
+        let host; try { const url = new URL(providerDefinition(read, provider)?.base_url as string); host = url.protocol === 'https:' && url.hostname === 'openrouter.ai'; } catch { host = false; }
         if (!host) throw new BridgeError('This connection does not provide OpenRouter audio models.');
       }
       // config/read reflects current defaults; model/list retains the engine's startup

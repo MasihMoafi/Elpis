@@ -2,21 +2,25 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { BridgeError, object, text } from './client.mts';
 import { gatewayRouted } from './provider-models.mts';
+type Definition = { name?: unknown; base_url?: string; env_key?: unknown; wire_api?: unknown; requires_openai_auth?: unknown; auth?: unknown; aws?: unknown; gateway_oauth?: unknown; http_headers?: Record<string, unknown>; env_http_headers?: Record<string, unknown>; experimental_bearer_token?: unknown };
+type ConfigRead = { config?: { model_providers?: Record<string, Definition> }; layers?: { name?: { type?: string; profile?: unknown; file?: string }; version?: string }[] } | null | undefined;
+type RequirementsRead = { requirements?: { modelProvider?: unknown; modelProviders?: Record<string, unknown> } | null } | null;
+type Current = { version?: unknown; write: { available: boolean; reason?: string | null }; providers: { id: string; editable: boolean }[] };
 const reserved = new Set(['openai', 'claude', 'agy', 'antigravity']);
 
 /** The engine's built-in key providers, served through its gateway (codex-rs/model-provider-info/src/elpis_gateway.rs,
  * BUILT_IN_GATEWAY_PROVIDERS). They are not in config.toml, so the desktop needs their address and key variable here. */
-export const BUILT_IN_KEY_PROVIDERS = {
+export const BUILT_IN_KEY_PROVIDERS: Record<string, Definition> = {
   anthropic: { name: 'Anthropic Claude', base_url: 'https://api.anthropic.com/v1', env_key: 'ANTHROPIC_API_KEY', wire_api: 'anthropic_messages' },
   'google-gemini': { name: 'Google Gemini', base_url: 'https://generativelanguage.googleapis.com/v1beta', env_key: 'GEMINI_API_KEY', wire_api: 'gemini_generate_content' },
   openrouter: { name: 'OpenRouter', base_url: 'https://openrouter.ai/api/v1', env_key: 'OPENROUTER_API_KEY', wire_api: 'chat', http_headers: { 'X-OpenRouter-Title': 'Elpis' } },
 };
 /** A provider's definition: the user's config first, then the engine's built-in one. */
-export const providerDefinition = (read, id) => read?.config?.model_providers?.[id] ?? BUILT_IN_KEY_PROVIDERS[id] ?? null;
+export const providerDefinition = (read: ConfigRead, id: string) => read?.config?.model_providers?.[id] ?? BUILT_IN_KEY_PROVIDERS[id] ?? null;
 /** Whether a key can be pasted for this provider: it reads one from a variable, and no command or subscription signs it in. */
-export const acceptsPastedKey = (id, definition) => !reserved.has(id) && typeof definition?.env_key === 'string' && !definition.requires_openai_auth && !definition.auth && !definition.aws && !definition.gateway_oauth;
+export const acceptsPastedKey = (id: string, definition: Definition | null | undefined) => !reserved.has(id) && typeof definition?.env_key === 'string' && !definition.requires_openai_auth && !definition.auth && !definition.aws && !definition.gateway_oauth;
 
-export function privateConfigFile(configPath) {
+export function privateConfigFile(configPath: string | null | undefined) {
   try {
     if (!configPath || !path.isAbsolute(configPath)) throw new Error();
     const file = fs.lstatSync(configPath);
@@ -26,9 +30,9 @@ export function privateConfigFile(configPath) {
 }
 
 /** The Elpis home: the folder of the user's config.toml. */
-export const configHome = read => { const file = read?.layers?.find(layer => layer.name?.type === 'user' && !layer.name.profile)?.name?.file; return typeof file === 'string' && path.isAbsolute(file) ? path.dirname(file) : null; };
+export const configHome = (read: ConfigRead) => { const file = read?.layers?.find(layer => layer.name?.type === 'user' && !layer.name.profile)?.name?.file; return typeof file === 'string' && path.isAbsolute(file) ? path.dirname(file) : null; };
 
-export function providerSettingsSnapshot(read, requirementsRead, env = process.env, saved = new Set()) {
+export function providerSettingsSnapshot(read: ConfigRead, requirementsRead: RequirementsRead, env = process.env, saved = new Set<string>()) {
   const user = read?.layers?.find(layer => layer.name?.type === 'user' && !layer.name.profile);
   const managed = requirementsRead?.requirements;
   const available = typeof user?.version === 'string' && requirementsRead !== null && !managed?.modelProvider;
@@ -47,7 +51,7 @@ export function providerSettingsSnapshot(read, requirementsRead, env = process.e
       // The engine's own gateway route: its address and headers are internal, and an edit here would overwrite the vendor's.
       const gateway = gatewayRouted(def);
       const envKey = typeof def.env_key === 'string' ? def.env_key : null;
-      let baseUrl = null; try { const url = new URL(def.base_url); baseUrl = `${url.origin}${url.pathname}`.replace(/\/$/, ''); } catch {}
+      let baseUrl = null; try { const url = new URL(def.base_url as string); baseUrl = `${url.origin}${url.pathname}`.replace(/\/$/, ''); } catch {}
       return { id, name: typeof def.name === 'string' ? def.name : id, baseUrl, gateway,
         wireApi: typeof def.wire_api === 'string' ? def.wire_api : 'responses', editable: available && !subscription && !command && !gateway && !managed?.modelProviders?.[id],
         auth: { source: subscription ? 'subscription' : command ? 'command' : envKey && saved.has(id) ? 'saved' : envKey ? 'environment' : def.experimental_bearer_token ? 'stored' : 'none',
@@ -59,8 +63,8 @@ export function providerSettingsSnapshot(read, requirementsRead, env = process.e
   };
 }
 
-export function providerEdits(input, current) {
-  object(input, ['version', 'id', 'name', 'baseUrl', 'credential']);
+export function providerEdits(raw: unknown, current: Current) {
+  const input = object(raw, ['version', 'id', 'name', 'baseUrl', 'credential']) as { version: unknown; id: unknown; name: unknown; baseUrl: unknown; credential: { action: string; value?: string } };
   text(input.version, 'provider settings version', 200);
   if (typeof input.id !== 'string' || !/^[a-z][a-z0-9_-]{0,63}$/.test(input.id) || reserved.has(input.id)) throw new BridgeError('Choose a custom provider ID using lowercase letters, numbers, - or _');
   const name = text(input.name, 'provider name', 200).trim();
@@ -82,10 +86,10 @@ export function providerEdits(input, current) {
   const existing = current.providers.find(provider => provider.id === input.id);
   if (existing && !existing.editable) throw new BridgeError('This provider is controlled by another authentication source or organization policy', 403);
   const prefix = `model_providers.${input.id}`;
-  const edits = Object.entries({ name, base_url: baseUrl, wire_api: 'responses', requires_openai_auth: false }).map(([key, value]) => ({ keyPath: `${prefix}.${key}`, value, mergeStrategy: 'replace' }));
-  const replace = input.credential.action === 'replace' && value.trim() && !/^[*•●]+$/.test(value.trim());
+  const edits: { keyPath: string; value: string | boolean | null; mergeStrategy: string }[] = Object.entries({ name, base_url: baseUrl, wire_api: 'responses', requires_openai_auth: false }).map(([key, value]) => ({ keyPath: `${prefix}.${key}`, value, mergeStrategy: 'replace' }));
+  const replace = input.credential.action === 'replace' && value!.trim() && !/^[*•●]+$/.test(value!.trim());
   if (replace || input.credential.action === 'clear') edits.push(
-    { keyPath: `${prefix}.experimental_bearer_token`, value: replace ? value : null, mergeStrategy: 'replace' },
+    { keyPath: `${prefix}.experimental_bearer_token`, value: replace ? value! : null, mergeStrategy: 'replace' },
     { keyPath: `${prefix}.env_key`, value: null, mergeStrategy: 'replace' },
   );
   return edits;

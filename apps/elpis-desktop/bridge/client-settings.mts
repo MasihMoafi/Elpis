@@ -1,6 +1,6 @@
 import { BridgeError, object, text } from './validate.mts';
-import { acceptsPastedKey, configHome, privateConfigFile, providerDefinition, providerEdits, providerSettingsSnapshot } from './provider-settings.mjs';
-import { hooksSnapshot, mcpSnapshot, optionEdits, providersSnapshot, settingsSnapshot } from './elpis-features.mjs';
+import { acceptsPastedKey, configHome, privateConfigFile, providerDefinition, providerEdits, providerSettingsSnapshot } from './provider-settings.mts';
+import { hooksSnapshot, mcpSnapshot, optionEdits, providersSnapshot, settingsSnapshot } from './elpis-features.mts';
 import { saveProviderKey, savedProviderKey, savedProviderKeyIds } from './provider-keys.mts';
 
 import { internal_effort } from './client-rewind.mts';
@@ -8,7 +8,7 @@ import { internal_modelList } from './client-models.mts';
 import { internal_rpc } from './client-connection.mts';
 import type { DesktopClient } from './client.mts';
 import type { ClientState } from './client-state.mts';
-import type { CustomizePage } from './customize-page.mjs';
+import type { CustomizePage } from './customize-page.mts';
 
 const string = (value: unknown) => typeof value === 'string' ? value : null;
 
@@ -124,7 +124,7 @@ export async function impl_providers(this: DesktopClient, clientState: ClientSta
       // Elpis's own Anthropic sign-out; a bridge that predates it has none.
       internal_rpc(this, clientState, 'claudeSubscription/read', {}).catch(() => null),
     ]);
-    return providersSnapshot({ account, limits, config: read?.config, models: Array.isArray(models?.data) ? models.data : null, anthropic });
+    return providersSnapshot({ account, limits: limits as Exclude<Parameters<typeof providersSnapshot>[0]['limits'], undefined>, config: read?.config, models: Array.isArray(models?.data) ? models.data : null, anthropic: anthropic as Exclude<Parameters<typeof providersSnapshot>[0]['anthropic'], undefined> });
   }
 
 export async function impl_providerSettings(this: DesktopClient, clientState: ClientState) {
@@ -143,9 +143,9 @@ export async function impl_readAloudProvider(this: DesktopClient, clientState: C
     if (policy.requirements?.modelProvider && policy.requirements.modelProvider !== id) throw new BridgeError('This provider is restricted by your organization.', 403);
     const definition = providerDefinition(read, id);
     let url;
-    try { url = new URL(definition?.base_url); } catch { throw new BridgeError('This provider does not support read aloud.', 400); }
+    try { url = new URL(definition?.base_url as string); } catch { throw new BridgeError('This provider does not support read aloud.', 400); }
     if (url.protocol !== 'https:' || url.hostname !== 'openrouter.ai' || url.username || url.password || url.search || url.hash || url.pathname.replace(/\/+$/, '') !== '/api/v1') throw new BridgeError('This provider does not support read aloud.', 400);
-    const key = savedProviderKey(configHome(read), id) || (typeof definition.env_key === 'string' ? process.env[definition.env_key] : definition.experimental_bearer_token);
+    const key = savedProviderKey(configHome(read), id) || (typeof definition!.env_key === 'string' ? process.env[definition!.env_key as string] : definition!.experimental_bearer_token);
     if (typeof key !== 'string' || !key.trim() || /[\r\n\0]/.test(key)) throw new BridgeError('Add an OpenRouter API key under Models & accounts.', 403);
     return { baseUrl: `${url.origin}/api/v1`, key: key.trim() };
   }
@@ -230,7 +230,7 @@ async function internal_anthropicSignedOut(this: DesktopClient, clientState: Cli
 
 export async function impl_mcp(this: DesktopClient, clientState: ClientState) { return mcpSnapshot(await internal_rpc(this, clientState, 'config/read', { includeLayers: true })); }
 
-// The Customize page (skills, plugins, connectors): bridge/customize-page.mjs.
+// The Customize page (skills, plugins, connectors): bridge/customize-page.mts.
 export function impl_customize(this: DesktopClient, clientState: ClientState, cwd?: Parameters<CustomizePage['customize']>[0]): ReturnType<CustomizePage['customize']> { return clientState.customize.customize(cwd); }
 
 export function impl_pluginCatalog(this: DesktopClient, clientState: ClientState, input?: Parameters<CustomizePage['pluginCatalog']>[0]): ReturnType<CustomizePage['pluginCatalog']> { return clientState.customize.pluginCatalog(input); }
@@ -249,7 +249,7 @@ export function impl_undoSkillDelete(this: DesktopClient, clientState: ClientSta
 
 export async function impl_hooks(this: DesktopClient, clientState: ClientState) {
     const [list, read] = await Promise.all([internal_rpc(this, clientState, 'hooks/list', {}), internal_rpc(this, clientState, 'config/read', { includeLayers: true })]);
-    return hooksSnapshot(list, read);
+    return hooksSnapshot(list as Parameters<typeof hooksSnapshot>[0], read);
   }
 
 /** Enables, disables or trusts one discovered hook through native `hooks.state`, as the Elpis terminal does. */

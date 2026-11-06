@@ -50,13 +50,13 @@ test('owned user and project folders go to the real GIO Trash and Undo restores 
   for (const name of ['own', 'project']) {
     const skill = f.skills.find(skill => skill.name === name)!, before = await fs.readFile(skill.path, 'utf8');
     const result = await f.client.deleteSkill({ path: skill.path, cwd: f.home });
-    assert.equal(result.skills.data.some((item: { path: string }) => item.path === skill.path), false);
+    assert.equal(result.skills.data!.some((item: { path: string }) => item.path === skill.path), false);
     await assert.rejects(fs.stat(path.dirname(skill.path)), { code: 'ENOENT' });
     assert.ok(result.deleted.token);
     const restored = await f.client.undoSkillDelete({ token: result.deleted.token, cwd: f.home });
     assert.equal(await fs.readFile(skill.path, 'utf8'), before);
     assert.equal(await fs.readFile(path.join(path.dirname(skill.path), 'notes.txt'), 'utf8'), 'Companion file');
-    assert.ok(restored.skills.data.some((item: { path: string }) => item.path === skill.path));
+    assert.ok(restored.skills.data!.some((item: { path: string }) => item.path === skill.path));
     await assert.rejects(f.client.undoSkillDelete({ token: result.deleted.token }), /Undo|expired/i);
   }
   assert.ok(f.calls.filter(call => call.method === 'skills/list').length >= 6);
@@ -69,7 +69,7 @@ test('built-in, admin, plugin and unknown scopes have no delete capability and c
   await fs.mkdir(path.dirname(f.skills.at(-1)!.path)); await fs.writeFile(f.skills.at(-1)!.path, 'protected');
   const snapshot = await f.client.customize(f.home);
   for (const skill of f.skills.filter(skill => !['own', 'project'].includes(skill.name))) {
-    assert.equal(snapshot.skills.data.find((item: { path: string }) => item.path === skill.path).deletable, false);
+    assert.equal(snapshot.skills.data!.find((item: { path: string }) => item.path === skill.path)!.deletable, false);
     await assert.rejects(f.client.deleteSkill({ path: skill.path }), /turned off|protected|owned/i);
     assert.ok(await fs.stat(skill.path));
   }
@@ -129,7 +129,7 @@ test('an owned skill containing another owned skill can be trashed and restored 
   await fs.mkdir(path.dirname(nested)); await fs.writeFile(nested, 'owned child');
   f.skills.push({ ...skill, name: 'owned child', path: nested });
   const result = await f.client.deleteSkill({ path: skill.path });
-  assert.equal(result.skills.data.some((item: { path: string }) => item.path === nested), false);
+  assert.equal(result.skills.data!.some((item: { path: string }) => item.path === nested), false);
   await f.client.undoSkillDelete({ token: result.deleted.token });
   assert.equal(await fs.readFile(nested, 'utf8'), 'owned child');
 });
