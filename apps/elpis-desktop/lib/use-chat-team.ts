@@ -6,11 +6,11 @@ import type { Thread } from "@/lib/api";
 import type { useConversationSession } from "@/lib/use-conversation-session";
 import type { useRuntimeState } from "@/lib/use-runtime-state";
 
-type PanelState = { open: boolean; held: ReadonlySet<string> };
+export type AgentPanelState = { open: boolean; held: ReadonlySet<string> };
 type Inputs = {
   session: ReturnType<typeof useConversationSession>; runtime: ReturnType<typeof useRuntimeState>;
   find: (id?: string | null) => Thread | undefined; checkedChildren: RefObject<Set<string>>;
-  workingAgentsOnly: boolean; agentsPanelState: PanelState; setAgentsPanelState: Dispatch<SetStateAction<PanelState>>;
+  workingAgentsOnly: boolean; agentsPanelState: AgentPanelState; setAgentsPanelState: Dispatch<SetStateAction<AgentPanelState>>;
   panelShown: boolean;
 };
 

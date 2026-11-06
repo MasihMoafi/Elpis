@@ -1,3 +1,4 @@
+import type { ComposerPanel } from "@/lib/use-composer-panels";
 import type { Dispatch, SetStateAction } from "react";
 import type { SettingsDestination } from "@/components/settings-view";
 import type { ReviewTarget } from "@/components/slash-panels";
@@ -14,7 +15,7 @@ type CommandInputs = {
   chooseGoal: (args?: string) => Promise<void>; busy: boolean; openComposerControl: (label: string) => void;
   chooseFast: (args?: string) => Promise<void>; turnEfforts: string[]; chooseEffort: (level?: string) => void;
   openSettings: (tab: SettingsDestination) => void; personal: { open: () => void }; writable: boolean; idle: boolean;
-  startReview: (thread: Thread, target: ReviewTarget) => Promise<void>; setPanel: Setter<"status" | "review" | "diff" | null>;
+  startReview: (thread: Thread, target: ReviewTarget) => Promise<void>; setPanel: Setter<ComposerPanel>;
   renameThread: (thread: Thread, name: string) => Promise<void>; setError: Setter<string>; setRenameRequest: Setter<boolean>;
   newChat: () => void; clearChat: () => Promise<void>; archiveChats: (chats: Thread[]) => void;
   deleteChats: (ids: string[], focusAt?: number) => void; setResumeOpen: Setter<boolean>;

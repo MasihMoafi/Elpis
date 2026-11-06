@@ -1,3 +1,4 @@
+import type { AgentPanelState } from "@/lib/use-chat-team";
 import { useCallback, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { mergeListedThreads } from "@/lib/agents";
 import { api, unreadable, type Thread } from "@/lib/api";
@@ -6,7 +7,7 @@ import type { useConversationList } from "@/lib/use-conversation-list";
 type Inputs = {
   conversations: ReturnType<typeof useConversationList>; selectedRef: RefObject<Thread | null>;
   setThreads: Dispatch<SetStateAction<Thread[]>>; setError: Dispatch<SetStateAction<string>>;
-  setAgentsPanelState: Dispatch<SetStateAction<{ open: boolean; held: ReadonlySet<string> }>>;
+  setAgentsPanelState: Dispatch<SetStateAction<AgentPanelState>>;
 };
 
 export function useChildConversations({ conversations, selectedRef, setThreads, setError, setAgentsPanelState }: Inputs) {

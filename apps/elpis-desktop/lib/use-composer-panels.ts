@@ -3,15 +3,18 @@ import type { SideRequest } from "@/components/side-chat";
 import type { useComposerState } from "@/lib/use-composer-state";
 import type { View } from "@/lib/workspace-types";
 
+export type ComposerPanel = "status" | "review" | "diff" | null;
+export type SideChatState = { parentId: string; open: boolean; question?: SideRequest } | null;
+
 export function useComposerPanels() {
   /** What a slash command has open above the composer, and the one-line answer of a command that only reports. */
-  const [panel, setPanel] = useState<"status" | "review" | "diff" | null>(null);
+  const [panel, setPanel] = useState<ComposerPanel>(null);
   const [slashNotice, setSlashNotice] = useState("");
   // /compact typed while the agent works runs when that turn finishes, as in the terminal.
   const [queuedCompact, setQueuedCompact] = useState<{ threadId: string; guidance?: string } | null>(null);
   // A new chat in its own worktree (the Local/Worktree menu).
   const [newWorktree, setNewWorktree] = useState(false);
-  const [sideChat, setSideChat] = useState<{ parentId: string; open: boolean; question?: SideRequest } | null>(null);
+  const [sideChat, setSideChat] = useState<SideChatState>(null);
   const sideRequests = useRef(0);
   return { panel, setPanel, slashNotice, setSlashNotice, queuedCompact, setQueuedCompact, newWorktree, setNewWorktree, sideChat, setSideChat, sideRequests };
 }

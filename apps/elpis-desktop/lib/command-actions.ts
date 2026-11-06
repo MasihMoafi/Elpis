@@ -1,3 +1,4 @@
+import type { ComposerPanel } from "@/lib/use-composer-panels";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import type { ReviewTarget } from "@/components/slash-panels";
 import type { useSidePanel } from "@/components/side-panel";
@@ -17,7 +18,7 @@ type Inputs = {
   models: Model[]; providerSettings: ProviderSettings | null; newChoice: ReturnType<typeof modelSelection>["newChoice"];
   commandNoticeOwner: RefObject<string>; fastNoticeOwner: RefObject<string | null>; side: ReturnType<typeof useSidePanel>; runtime: ReturnType<typeof useRuntimeState>;
   conversations: ReturnType<typeof useConversationList>; ready: boolean; connected: boolean; desktop: boolean;
-  setSlashNotice: Setter<string>; setEffort: Setter<string>; setPanel: Setter<"status" | "review" | "diff" | null>; setError: Setter<string>; setBusy: Setter<boolean>;
+  setSlashNotice: Setter<string>; setEffort: Setter<string>; setPanel: Setter<ComposerPanel>; setError: Setter<string>; setBusy: Setter<boolean>;
   openComposerControl: (label: string) => void; saveEffort: (id: string, value: string) => Promise<void>; focusComposer: () => void; editDraft: (value: string) => void;
 };
 

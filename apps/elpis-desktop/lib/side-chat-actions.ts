@@ -1,8 +1,7 @@
 import type { Dispatch, RefObject, SetStateAction } from "react";
-import type { SideRequest } from "@/components/side-chat";
+import type { SideChatState } from "@/lib/use-composer-panels";
 import type { useConversationSession } from "@/lib/use-conversation-session";
 
-type SideChatState = { parentId: string; open: boolean; question?: SideRequest } | null;
 type Inputs = {
   session: ReturnType<typeof useConversationSession>; readOnlyRun: boolean; sideRequests: RefObject<number>;
   setSideChat: Dispatch<SetStateAction<SideChatState>>; setError: Dispatch<SetStateAction<string>>;
