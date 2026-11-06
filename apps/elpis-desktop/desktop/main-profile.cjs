@@ -1,7 +1,7 @@
 'use strict';
 
 const path = require('node:path');
-const { openThreadArgument } = require('./open-thread.cjs');
+const { openThreadArgument } = require('./open-thread.cts');
 const { enableWaylandIme } = require('./wayland-ime.cts');
 
 /**

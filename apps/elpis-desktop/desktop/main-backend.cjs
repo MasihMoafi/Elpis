@@ -4,9 +4,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { startBrowserAgentSocket } = require('./browser-agent.cjs');
-const { closeNeedsConfirmation, seedShippedDefaults } = require('./preferences.cjs');
+const { closeNeedsConfirmation, seedShippedDefaults } = require('./preferences.cts');
 const { createSessionWindows } = require('./session-windows.cjs');
-const { createSleepBlocker } = require('./sleep-blocker.cjs');
+const { createSleepBlocker } = require('./sleep-blocker.cts');
 
 /**
  * @typedef {{
