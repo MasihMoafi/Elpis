@@ -72,7 +72,7 @@ fn work_graph_history_cell(graph: &WorkGraphSummary) -> PlainHistoryCell {
         let status = match task.status.as_str() {
             "succeeded" => "✓".green(),
             "failed" | "blocked" | "cancelled" => "✕".red(),
-            "running" => "●".yellow(),
+            "running" => "●".fg(crate::elpis_palette::WORKING),
             _ => "○".dim(),
         };
         lines.push(Line::from(vec![

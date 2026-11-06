@@ -85,7 +85,7 @@ impl App {
                 cwd.as_path(),
                 thread_id,
                 &goal.objective,
-                goal_status_label(&goal.status),
+                goal_status_label(goal.status),
                 goal.updated_at,
             )
             .await
@@ -151,7 +151,7 @@ impl App {
     }
 }
 
-fn goal_status_label(status: &ThreadGoalStatus) -> &'static str {
+fn goal_status_label(status: ThreadGoalStatus) -> &'static str {
     match status {
         ThreadGoalStatus::Active => "active",
         ThreadGoalStatus::Paused => "paused",

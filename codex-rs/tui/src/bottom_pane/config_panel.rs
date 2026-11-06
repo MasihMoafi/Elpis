@@ -714,7 +714,7 @@ impl ConfigPanelView {
         }
         let value = key
             .split('.')
-            .fold(Some(&config), |node, part| node?.get(part));
+            .try_fold(&config, |node, part| node.get(part));
         match value {
             Some(serde_json::Value::String(value)) => value.clone(),
             Some(serde_json::Value::Bool(value)) => if *value { "on" } else { "off" }.to_string(),
