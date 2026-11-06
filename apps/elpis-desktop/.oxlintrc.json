@@ -6,7 +6,7 @@
   "categories": { "correctness": "off" },
   "options": { "reportUnusedDisableDirectives": "warn", "typeAware": true },
   "env": { "builtin": true, "node": true, "browser": true },
-  "ignorePatterns": ["**/node_modules/**", ".next/**", "out/**", "public/**", "test-results/**", "next-env.d.ts"],
+  "ignorePatterns": ["**/node_modules/**", "bridge/resources/**", ".next/**", "out/**", "public/**", "test-results/**", "next-env.d.ts"],
   "rules": {
     "no-var": "error",
     "prefer-const": "error",
