@@ -75,6 +75,14 @@
 .settings-page .field { font-size:var(--text-sm); }
 .settings-page :is(.provider-note, .settings-card .text-xs, .settings-stack .text-xs) { font-size:var(--text-sm); }
 .settings-card > :empty { display:none; }
+/* Models & accounts: the features an API key is used for, a checkbox each, under the key (use-for-settings.tsx).
+ * A ticked feature shows its model picker on the same row; one that the key cannot do gives its reason there. */
+.key-uses { display:grid; gap:4px; margin:8px 0 0; padding:0; border:0; min-width:0; }
+.key-uses-title { padding:0; margin-bottom:4px; font-size:var(--text-xs); color:var(--muted-foreground); }
+.key-use { display:flex; flex-wrap:wrap; align-items:center; gap:8px; min-height:var(--settings-control-h, 32px); }
+.key-use-label { display:flex; align-items:center; gap:8px; min-width:96px; font-size:var(--text-sm); color:var(--foreground); cursor:pointer; }
+.key-use-label:has([data-disabled]) { color:var(--muted-foreground); cursor:not-allowed; }
+.key-use-note { font-size:var(--text-xs); color:var(--muted-foreground); }
 /* In a narrow pane the section list becomes one scrolling row above the page, so the page keeps the full width. */
 @container workspace (max-width:760px) {
   .settings-mode .settings-layout { grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); }

@@ -76,24 +76,69 @@ test('provider setup preserves edits on conflict, refreshes choices and never re
 const { fixture } = require('./parity-fixture.cjs');
 const { accountsFirst, openAccounts } = require('./providers-order.cjs');
 
-for (const response of ['rejected', 'empty']) test(`provider cards stay visible when Use for routes are ${response}`, async () => {
+const ROUTER_KEY = { id: 'openrouter', name: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', wireApi: 'responses', editable: true, auth: { source: 'key', keySet: true, envKey: null } };
+const OTHER_KEY = { id: 'api-other', name: 'Other API', baseUrl: 'https://example.test/v1', wireApi: 'responses', editable: true, auth: { source: 'key', keySet: true, envKey: null } };
+const keyRoutes = ({ writable = true, speech = { source: 'local', model: null, voice: null }, failing = null } = {}) => {
  const off = { state: 'notConnected', models: [], usage: [] };
- const app = await fixture({ routes: {
-  '/api/settings': () => ({ main: { model: 'sol', provider: 'openai' }, background: {}, smartPrune: { explicitOverride: {} }, memory: {}, write: { available: false }, providers: [] }),
-  '/api/providers': () => ({ openai: { auth: { state: 'signedOut' }, usage: [], usageError: null }, claude: off, gemini: off, openrouter: [] }),
-  '/api/providers/settings': () => ({ version: 'v1', write: { available: true }, managed: {}, providers: [] }),
-  '/api/read-aloud/settings': () => response === 'rejected' ? { __http: 503, error: 'Unavailable' } : {},
-  '/api/mcp': () => response === 'rejected' ? { __http: 503, error: 'Unavailable' } : {},
-  '/api/models': (_, url) => url.searchParams.has('provider')
-   ? response === 'rejected' ? { __http: 503, error: 'Unavailable' } : {}
-   : { data: [{ id: 'sol', model: 'sol', displayName: 'Sol' }] },
- } });
+ const listed = item => ({ id: item.id, name: item.name, baseUrl: item.baseUrl, envKey: null, keySet: true });
+ return {
+  '/api/settings': () => ({ version: 'v1', main: { model: 'sol', provider: 'openai' }, background: {}, smartPrune: { explicitOverride: {} }, memory: {}, write: { available: writable }, managed: {}, providers: [{ id: 'openai', displayName: 'OpenAI' }, { id: 'openrouter', displayName: 'OpenRouter' }, { id: 'api-other', displayName: 'Other API' }] }),
+  '/api/providers': () => ({ openai: { auth: { state: 'signedOut' }, usage: [], usageError: null }, claude: off, gemini: off, openrouter: [listed(ROUTER_KEY)] }),
+  '/api/providers/settings': () => ({ version: 'v1', write: { available: true }, managed: {}, providers: [ROUTER_KEY, OTHER_KEY] }),
+  '/api/read-aloud/settings': body => failing === 'rejected' ? { __http: 503, error: 'Unavailable' } : failing === 'empty' ? {} : (body ? Object.assign(speech, body) : speech),
+  '/api/mcp': () => failing === 'rejected' ? { __http: 503, error: 'Unavailable' } : failing === 'empty' ? {} : { version: 'v1', write: { available: true }, servers: [{ name: 'whispertype', whispertype: { backend: null, model: null } }] },
+  '/api/models': (_, url) => url.searchParams.get('outputModality') === 'speech' ? { data: [{ model: 'fish/voice', displayName: 'Fish Audio' }] }
+   : url.searchParams.get('outputModality') === 'transcription' ? { data: [{ model: 'openai/whisper', displayName: 'Whisper' }] }
+   : { data: [{ id: 'sol', model: 'sol', displayName: 'Sol', isDefault: true }] },
+ };
+};
+
+for (const response of ['rejected', 'empty']) test(`provider cards and key checkboxes stay visible when Use for routes are ${response}`, async () => {
+ const app = await fixture({ routes: keyRoutes({ writable: false, failing: response }) });
  try {
   await openAccounts(app.page);
   const panel = app.page.getByRole('tabpanel', { name: 'Models & accounts', exact: true });
-  for (const name of ['Chat model choices unavailable.', 'Read aloud settings unavailable.', 'Dictation settings unavailable.']) await panel.getByText(name, { exact: true }).waitFor();
-  for (const name of ['openai', 'claude', 'cloudroom', 'gemini']) await panel.locator(`[data-provider="${name}"]`).waitFor();
+  const key = panel.getByRole('group', { name: 'Use OpenRouter for', exact: true });
+  for (const name of ["Chat settings can't be saved here.", 'Read aloud settings unavailable.', 'Dictation settings unavailable.']) await key.getByText(name, { exact: true }).waitFor();
+  for (const name of ['openai', 'claude', 'cloudroom', 'gemini', 'openrouter']) await panel.locator(`[data-provider="${name}"]`).waitFor();
   await panel.getByText('Advanced API connections', { exact: true }).waitFor();
+  assert.deepEqual(app.errors, []);
+ } finally { await app.close(); }
+});
+
+// Masih, 6 Nov: "optionally one key for everything; remember? we get to check and uncheck."
+for (const colorScheme of ['light', 'dark']) test(`ticking Read aloud on the OpenRouter key routes read aloud there and unticking returns it to Kokoro (${colorScheme})`, async () => {
+ const app = await fixture({ colorScheme, height: 900, routes: keyRoutes() });
+ try {
+  await openAccounts(app.page);
+  const panel = app.page.getByRole('tabpanel', { name: 'Models & accounts', exact: true });
+  const router = panel.getByRole('group', { name: 'Use OpenRouter for', exact: true });
+  const other = panel.getByRole('group', { name: 'Use Other API for', exact: true });
+  const box = (group, key, feature) => group.getByRole('checkbox', { name: `Use ${key} for ${feature}`, exact: true });
+  await box(router, 'OpenRouter', 'Read aloud').waitFor();
+  // Negative: what a key cannot do is disabled, with its reason beside it, and a click does nothing.
+  for (const [group, key, feature] of [[other, 'Other API', 'Read aloud'], [other, 'Other API', 'Dictation'], [router, 'OpenRouter', 'Live voice']]) {
+   assert.equal(await box(group, key, feature).getAttribute('aria-disabled') ?? await box(group, key, feature).getAttribute('data-disabled'), 'true');
+   await box(group, key, feature).click({ force: true });
+   assert.equal(await box(group, key, feature).getAttribute('aria-checked'), 'false');
+  }
+  await other.getByText('This provider has no speech models.', { exact: true }).waitFor();
+  await router.getByText('Live voice runs only on the ChatGPT subscription.', { exact: true }).waitFor();
+  // Positive: tick, choose the model beside it, save.
+  assert.equal(await panel.getByRole('combobox', { name: 'Read aloud model for OpenRouter', exact: true }).count(), 0);
+  await box(router, 'OpenRouter', 'Read aloud').click();
+  const model = panel.getByRole('combobox', { name: 'Read aloud model for OpenRouter', exact: true });
+  await chooseOption(model, 'fish/voice');
+  await router.getByRole('button', { name: 'Save Read aloud for OpenRouter', exact: true }).click();
+  await router.getByText('Read aloud now uses OpenRouter. Paid per use.', { exact: true }).waitFor();
+  assert.deepEqual(app.posts.filter(item => item.path === '/api/read-aloud/settings').map(item => item.body), [{ source: 'openrouter', model: 'fish/voice', voice: null }]);
+  assert.equal(await box(router, 'OpenRouter', 'Read aloud').getAttribute('aria-checked'), 'true');
+  if (process.env.ELPIS_KEY_SCREENSHOTS) await router.locator('xpath=ancestor::section[@data-provider="openrouter"]').screenshot({ path: path.join(process.env.ELPIS_KEY_SCREENSHOTS, `key-checkboxes-${colorScheme}.png`) });
+  // Unticking returns read aloud to its default.
+  await box(router, 'OpenRouter', 'Read aloud').click();
+  await router.getByText('Read aloud is back on local Kokoro.', { exact: true }).waitFor();
+  assert.deepEqual(app.posts.filter(item => item.path === '/api/read-aloud/settings').map(item => item.body).at(-1), { source: 'local', model: null, voice: null });
+  assert.equal(await box(router, 'OpenRouter', 'Read aloud').getAttribute('aria-checked'), 'false');
   assert.deepEqual(app.errors, []);
  } finally { await app.close(); }
 });
