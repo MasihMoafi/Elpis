@@ -1,6 +1,7 @@
 // The Files pane's side of the bridge: one folder's entries at a time (the tree), one file's text (the viewer), saving
 // it back (in-place editing) and a search of the files' contents. Temporary folders only; nothing outside them is read.
 import test, { after } from 'node:test';
+import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -16,7 +17,7 @@ after(() => promisify(execFile)('gio', ['trash', tempRoot]));
 
 async function project() {
   const root = await fs.realpath(await fs.mkdtemp(path.join(tempRoot, 'elpis-view-')));
-  const put = async (file, content = 'x') => { await fs.mkdir(path.dirname(path.join(root, file)), { recursive: true }); await fs.writeFile(path.join(root, file), content); };
+  const put = async (file: string, content = 'x') => { await fs.mkdir(path.dirname(path.join(root, file)), { recursive: true }); await fs.writeFile(path.join(root, file), content); };
   await put('README.md', '# Parser\nA tiny parser.\n');
   await put('package.json', '{}\n');
   await put('src/app.ts', 'import { parse } from "./lib/parser";\nparse();\n');
@@ -34,8 +35,8 @@ async function project() {
   await fs.symlink(path.join(outside, 'secret.txt'), path.join(root, 'escape.txt'));
   return { root, outside };
 }
-const cleanup = (t, ...dirs) => t.after(() => promisify(execFile)('gio', ['trash', ...dirs]));
-const refused = (promise, status, message) => assert.rejects(promise, error => error instanceof BridgeError && error.status === status && message.test(error.message));
+const cleanup = (t: TestContext, ...dirs: string[]) => t.after(() => promisify(execFile)('gio', ['trash', ...dirs]));
+const refused = (promise: Promise<unknown>, status: number, message: RegExp) => assert.rejects(promise, error => error instanceof BridgeError && error.status === status && message.test(error.message));
 
 test('lists one folder: folders first, then files, each in name order; dot entries and generated folders stay out', async t => {
   const { root, outside } = await project(); cleanup(t, root, outside);
@@ -75,11 +76,12 @@ test('reads a text file by a path inside the project, relative or absolute, with
 
 test('a chat link written from a repository one folder down opens that file; nothing deeper or hidden is guessed', async t => {
   const { root, outside } = await project(); cleanup(t, root, outside);
-  const put = async (file, content) => { await fs.mkdir(path.dirname(path.join(root, file)), { recursive: true }); await fs.writeFile(path.join(root, file), content); };
+  const put = async (file: string, content: string) => { await fs.mkdir(path.dirname(path.join(root, file)), { recursive: true }); await fs.writeFile(path.join(root, file), content); };
   await put('repo/apps/desktop/SPEC.md', '# Spec\n');
   await put('a/b/deep/only.md', 'deep');
   await put('.hidden/apps/secret.md', 'hidden');
   const found = await readFile(root, 'apps/desktop/SPEC.md');
+  assert.ok('content' in found);
   assert.equal(found.path, 'repo/apps/desktop/SPEC.md');
   assert.equal(found.content, '# Spec\n');
   await refused(readFile(root, 'deep/only.md'), 404, /No such file/);
@@ -93,6 +95,7 @@ test('large UTF-8 text and HTML use a read-only preview beyond the editor limit'
   for (const name of ['large.md', 'large.txt', 'large.html']) {
     await fs.writeFile(path.join(root, name), content);
     const result = await readFile(root, name);
+    assert.ok('content' in result);
     assert.equal(result.preview, 'text');
     assert.equal(result.content, content, 'UTF-8 and source blocks are retained exactly for paging');
     assert.equal(result.tooLarge, undefined);
@@ -101,7 +104,7 @@ test('large UTF-8 text and HTML use a read-only preview beyond the editor limit'
   await fs.writeFile(path.join(root, 'huge.txt'), '');
   await fs.truncate(path.join(root, 'huge.txt'), 31 * 1024 * 1024);
   const huge = await readFile(root, 'huge.txt');
-  assert.equal(huge.tooLarge, true); assert.equal(huge.content, undefined);
+  assert.equal(huge.tooLarge, true); assert.equal('content' in huge ? huge.content : undefined, undefined);
   assert.equal(huge.limit, 30 * 1024 * 1024);
 });
 
@@ -120,6 +123,7 @@ test('saves a file in place when it has not changed since it was read; keeps its
   const { root, outside } = await project(); cleanup(t, root, outside);
   await fs.chmod(path.join(root, 'package.json'), 0o754);
   const before = await readFile(root, 'package.json');
+  assert.ok('mtimeMs' in before);
   const saved = await writeFile(root, 'package.json', '{ "name": "x" }\n', before.mtimeMs);
   assert.equal(await fs.readFile(path.join(root, 'package.json'), 'utf8'), '{ "name": "x" }\n');
   assert.equal((await fs.stat(path.join(root, 'package.json'))).mode & 0o777, 0o754);
@@ -130,6 +134,7 @@ test('saves a file in place when it has not changed since it was read; keeps its
 test('refuses to save over a file that changed on disk, a missing file, a file outside the project or inside .git, and a bad body', async t => {
   const { root, outside } = await project(); cleanup(t, root, outside);
   const read = await readFile(root, 'README.md');
+  assert.ok('mtimeMs' in read);
   await fs.writeFile(path.join(root, 'README.md'), 'changed elsewhere\n'); await fs.utimes(path.join(root, 'README.md'), new Date(), new Date(read.mtimeMs + 5000));
   await refused(writeFile(root, 'README.md', 'mine', read.mtimeMs), 409, /changed/i);
   assert.equal(await fs.readFile(path.join(root, 'README.md'), 'utf8'), 'changed elsewhere\n');
@@ -165,6 +170,7 @@ test('caps a search at 200 rows and says it was cut; cuts a long line', async t 
   const found = await searchFiles(root, 'hit');
   assert.equal(found.data.length, 200); assert.equal(found.truncated, true);
   const long = (await searchFiles(root, 'yyy')).data[0];
+  assert.ok(long);
   assert.ok(long.text.length <= 240, `the row keeps ${long.text.length} characters`);
 });
 
@@ -173,15 +179,15 @@ test('the routes need the session and answer the same as the functions, with a 4
   const client = { on() {}, off() {}, close() {}, connected: true, pendingApprovals: [], ragEnvironment: async () => ({}) };
   const app = await startDesktopServer({ client, staticDir: root, elpisHome: path.join(tempRoot, 'home'), loveSpot: { directory: path.join(tempRoot, 'love-spot'), screenshots: path.join(tempRoot, 'screenshots') } }); t.after(() => app.close());
   const url = new URL(app.url), origin = url.origin, token = new URLSearchParams(url.hash.slice(1)).get('token');
-  const q = (route, params) => `${route}?${new URLSearchParams(params)}`;
+  const q = (route: string, params: Record<string, string>) => `${route}?${new URLSearchParams(params)}`;
   assert.equal((await fetch(origin + q('/api/file', { cwd: root, path: 'README.md' }))).status, 401);
   const auth = await fetch(origin + '/api/session', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin }, body: JSON.stringify({ token }) });
-  const cookie = auth.headers.get('set-cookie').split(';')[0];
-  const get = pathname => fetch(origin + pathname, { headers: { Cookie: cookie } });
-  const post = (pathname, body) => fetch(origin + pathname, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin, Cookie: cookie }, body: JSON.stringify(body) });
+  const cookie = auth.headers.get('set-cookie')?.split(';')[0]; assert.ok(cookie);
+  const get = (pathname: string) => fetch(origin + pathname, { headers: { Cookie: cookie } });
+  const post = (pathname: string, body: unknown) => fetch(origin + pathname, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin, Cookie: cookie }, body: JSON.stringify(body) });
   const dir = await get(q('/api/files/dir', { cwd: root, dir: 'src' }));
-  assert.equal(dir.status, 200); assert.deepEqual((await dir.json()).data.map(entry => entry.name), ['lib', 'app.ts', 'Zeta.ts']);
-  assert.deepEqual((await (await get(q('/api/files/dir', { cwd: root, dir: '', hidden: '1' }))).json()).data.some(entry => entry.name === '.env'), true);
+  assert.equal(dir.status, 200); assert.deepEqual((await dir.json()).data.map((entry: { name: string }) => entry.name), ['lib', 'app.ts', 'Zeta.ts']);
+  assert.deepEqual((await (await get(q('/api/files/dir', { cwd: root, dir: '', hidden: '1' }))).json()).data.some((entry: { name: string }) => entry.name === '.env'), true);
   const file = await get(q('/api/file', { cwd: root, path: 'src/lib/parser.ts' }));
   const body = await file.json(); assert.equal(file.status, 200); assert.match(body.content, /return 1/);
   const saved = await post('/api/file', { cwd: root, path: 'src/lib/parser.ts', content: 'export {}\n', mtimeMs: body.mtimeMs });
@@ -191,7 +197,7 @@ test('the routes need the session and answer the same as the functions, with a 4
   assert.equal((await post('/api/file', { cwd: root, path: 'src/lib/parser.ts', content: 'x', mtimeMs: 1, extra: true })).status, 400);
   const search = await get(q('/api/files/search', { cwd: root, q: 'guide' }));
   assert.equal(search.status, 200); assert.equal((await search.json()).data[0].path, 'docs/guide.md');
-  for (const [route, params] of [['/api/file', { cwd: root }], ['/api/file', { cwd: root, path: '../x' }], ['/api/files/dir', { cwd: root, dir: '../' }], ['/api/files/search', { cwd: root }], ['/api/files/search', { cwd: 'relative', q: 'x' }]]) {
+  for (const [route, params] of [['/api/file', { cwd: root }], ['/api/file', { cwd: root, path: '../x' }], ['/api/files/dir', { cwd: root, dir: '../' }], ['/api/files/search', { cwd: root }], ['/api/files/search', { cwd: 'relative', q: 'x' }]] as [string, Record<string, string>][]) {
     const response = await get(q(route, params)); assert.equal(response.status, 400, `${route} ${JSON.stringify(params)}`);
     assert.equal(typeof (await response.json()).error, 'string');
   }
@@ -204,7 +210,7 @@ test('a PDF is described as a document, including one larger than the text edito
   await fs.writeFile(path.join(root, 'report.pdf'), bytes);
   const file = await readFile(root, 'report.pdf');
   assert.equal(file.preview, 'pdf', 'PDF bytes must not enter the source editor or its 512 KB limit');
-  assert.equal(file.content, undefined);
+  assert.equal('content' in file ? file.content : undefined, undefined);
   assert.equal(file.size, bytes.length);
 });
 
@@ -221,21 +227,23 @@ test('preview assets require the app session and canonical project path and serv
   const client = { on() {}, off() {}, close() {}, connected: true, pendingApprovals: [], ragEnvironment: async () => ({}) };
   const app = await startDesktopServer({ client, staticDir: root, elpisHome: path.join(tempRoot, 'home'), loveSpot: { directory: path.join(tempRoot, 'love-spot'), screenshots: path.join(tempRoot, 'screenshots') } }); t.after(() => app.close());
   const launch = new URL(app.url), origin = launch.origin;
-  const asset = (target, extra = {}) => `${origin}/api/file/asset?${new URLSearchParams({ cwd: root, path: target, ...extra })}`;
+  const asset = (target: string, extra = {}) => `${origin}/api/file/asset?${new URLSearchParams({ cwd: root, path: target, ...extra })}`;
   assert.equal((await fetch(asset('report.pdf'))).status, 401);
   const auth = await fetch(`${origin}/api/session`, { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ token: new URLSearchParams(launch.hash.slice(1)).get('token') }) });
-  const headers = { Cookie: auth.headers.get('set-cookie').split(';')[0] };
+  const cookie = auth.headers.get('set-cookie')?.split(';')[0]; assert.ok(cookie);
+  const headers = { Cookie: cookie };
   const response = await fetch(asset('report.pdf'), { headers });
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('content-type'), 'application/pdf');
   assert.equal(response.headers.get('cache-control'), 'no-store');
   assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
   assert.equal(response.headers.get('x-frame-options'), 'SAMEORIGIN');
-  assert.match(response.headers.get('content-security-policy'), /frame-ancestors 'self'/);
+  const policy = response.headers.get('content-security-policy'); assert.ok(policy); assert.match(policy, /frame-ancestors 'self'/);
   assert.deepEqual(Buffer.from(await response.arrayBuffer()), pdf);
   const titled = await fetch(asset(`docs/${named}`), { headers });
   assert.equal(titled.status, 200);
   const disposition = titled.headers.get('content-disposition');
+  assert.ok(disposition);
   t.diagnostic(`Document filename header: ${disposition}`);
   assert.match(disposition, /^inline; filename\*=UTF-8''[\x21-\x7e]+$/);
   const encoded = disposition.slice("inline; filename*=UTF-8''".length);

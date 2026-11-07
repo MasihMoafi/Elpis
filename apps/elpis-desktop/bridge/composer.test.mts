@@ -7,14 +7,16 @@ import { startDesktopServer } from './server.mts';
 
 const ROOT = '00000000-0000-0000-0000-000000000001';
 const SIDE = '00000000-0000-0000-0000-000000000002';
+type Request = { id?: number; method: string; params: { threadId: string; input: { text: string }[] } };
+type SideEvent = { type: string; data: { method: string; params: { threadId: string } } };
 function fixture({ writable = true, ephemeral = true, failSend = false, deferSend = false, earlySide = false } = {}) {
-  const socket = new EventEmitter(); socket.sent = [];
-  let releaseSend;
+  const socket = Object.assign(new EventEmitter(), { sent: [] as Request[], send: (_raw: string) => {}, close: () => {} });
+  let releaseSend: (() => void) | undefined;
   const row = { id: ROOT, cwd: '/work', model: 'gpt-6-luna', modelProvider: 'openai', canAcceptDirectInput: writable, source: 'cli', status: { type: 'idle' } };
-  socket.send = raw => {
-    const req = JSON.parse(raw); socket.sent.push(req);
+  socket.send = (raw: string) => {
+    const req = JSON.parse(raw) as Request; socket.sent.push(req);
     if (!req.id) return;
-    let result = {};
+    let result: { thread?: typeof row & { ephemeral?: boolean }; turn?: { id: string } } = {};
     if (req.method === 'thread/read' || req.method === 'thread/resume') result = { thread: row };
     if (req.method === 'thread/fork') result = { thread: { ...row, id: SIDE, ephemeral } };
     if (req.method === 'thread/fork' && earlySide) queueMicrotask(() => {
@@ -27,8 +29,8 @@ function fixture({ writable = true, ephemeral = true, failSend = false, deferSen
   };
   socket.close = () => {};
   const client = new DesktopClient(socket);
-  const events = []; client.on('event', e => events.push(e));
-  return { client, socket, events, releaseSend: () => releaseSend(), params: method => socket.sent.filter(req => req.method === method).map(req => req.params) };
+  const events: SideEvent[] = []; client.on('event', (e: SideEvent) => events.push(e));
+  return { client, socket, events, releaseSend: () => { assert.ok(releaseSend); releaseSend(); }, params: (method: string) => socket.sent.filter(req => req.method === method).map(req => req.params) };
 }
 
 test('shell commands preserve shell syntax and call the thread shell escape hatch, without a model turn', async () => {
@@ -53,8 +55,8 @@ test('side chat forks history ephemerally with the recorded model and no-write t
   assert.deepEqual(await f.client.createSideChat(ROOT, {}), { threadId: SIDE });
   assert.deepEqual(f.params('thread/fork'), [{ threadId: ROOT, ephemeral: true, excludeTurns: true, model: 'gpt-6-luna', modelProvider: 'openai', approvalPolicy: 'never', permissions: ':danger-full-access' }]);
   await f.client.sendSideChat(SIDE, { text: 'What is the return type?' });
-  assert.equal(f.params('turn/start')[0].threadId, SIDE);
-  assert.equal(f.params('turn/start')[0].input[0].text, 'What is the return type?');
+  assert.equal(f.params('turn/start')[0]?.threadId, SIDE);
+  assert.equal(f.params('turn/start')[0]?.input[0]?.text, 'What is the return type?');
   assert.deepEqual(f.params('thread/name/set'), []);
 });
 
@@ -124,10 +126,10 @@ test('composer routes require authentication, enforce their schema, and reach on
   const app = await startDesktopServer({ client: f.client, trashFile: fileURLToPath(new URL(`../.tmp/composer-http-${process.pid}.json`, import.meta.url)) });
   t.after(() => app.close());
   const url = new URL(app.url), origin = url.origin;
-  const post = (route, body, cookie) => fetch(origin + route, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin, ...(cookie ? { Cookie: cookie } : {}) }, body: JSON.stringify(body) });
+  const post = (route: string, body: unknown, cookie?: string) => fetch(origin + route, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin, ...(cookie ? { Cookie: cookie } : {}) }, body: JSON.stringify(body) });
   assert.equal((await post(`/api/threads/${ROOT}/shell`, { command: 'pwd' })).status, 401);
   const auth = await post('/api/session', { token: new URLSearchParams(url.hash.slice(1)).get('token') });
-  const cookie = auth.headers.get('set-cookie').split(';')[0];
+  const cookie = auth.headers.get('set-cookie')?.split(';')[0];
   assert.equal((await post(`/api/threads/${ROOT}/shell`, { command: 'pwd', cwd: '/elsewhere' }, cookie)).status, 400);
   assert.equal((await post(`/api/threads/${ROOT}/shell`, { command: 'pwd' }, cookie)).status, 200);
   assert.deepEqual(await (await post(`/api/threads/${ROOT}/side-chat`, {}, cookie)).json(), { threadId: SIDE });
