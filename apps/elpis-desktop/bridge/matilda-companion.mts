@@ -7,6 +7,11 @@ import { promisify } from 'node:util';
 import { BridgeError, object, text } from './validate.mts';
 import { FACE_DATA_URL } from './matilda-face.cts';
 import { isAudioPath } from '../lib/audio-path.mts';
+import type { createLoveSpot } from './love-spot-store.cts';
+
+type Favorite = { player?: string; uri?: string; title?: string; artist?: string };
+type MusicTrack = { player: string; title: string; artist: string; uri: string; status: string; canPlay: boolean; canPause: boolean; canNext: boolean; volume: number | null; canMute: boolean; muted?: boolean };
+type CompanionSettings = { pinned: unknown[]; favorite: Favorite | null; musicVolumes?: Record<string, number> };
 
 const exec = promisify(execFile);
 /** The system Python, which has dbus; a python3 earlier on PATH (conda) may not. */
@@ -74,31 +79,32 @@ meta = props.get('Metadata', {})
 print(json.dumps({'player': name, 'title': str(meta.get('xesam:title', '')), 'artist': ', '.join(str(a) for a in meta.get('xesam:artist', [])), 'uri': str(meta.get('xesam:url', '')), 'status': str(props.get('PlaybackStatus', 'Stopped')), 'canPlay': bool(props.get('CanPlay')), 'canPause': bool(props.get('CanPause')), 'canNext': bool(props.get('CanGoNext')), 'volume': float(props['Volume']) if 'Volume' in props else None, 'canMute': bool(props.get('CanControl')) and 'Volume' in props}))
 `;
 
-export function createMatildaCompanion({ store, env = process.env }) {
-  async function music(action = 'read', favorite, volume) {
+export function createMatildaCompanion({ store, env = process.env }: { store: ReturnType<typeof createLoveSpot>; env?: NodeJS.ProcessEnv }) {
+  async function music(action = 'read', favorite?: Favorite, volume?: number): Promise<MusicTrack> {
     if (process.platform !== 'linux') throw new BridgeError('Music controls currently need a Linux MPRIS player.');
     try {
       const { stdout } = await exec(PYTHON, ['-c', MPRIS, action, favorite?.player ?? '', favorite?.uri ?? '', volume === undefined ? '' : String(volume)], { env, timeout: 6000, maxBuffer: 128 * 1024 });
       return JSON.parse(stdout);
     } catch (cause) {
-      const detail = cause.stderr?.trim().split('\n').at(-1)?.replace(/^Exception: /, '');
+      const error = cause as Error & { stderr?: string; killed?: boolean };
+      const detail = error.stderr?.trim().split('\n').at(-1)?.replace(/^Exception: /, '');
       const explained = /^(Open your music player first|Several music players are available|This player does not support|The player has not confirmed)/.test(detail ?? '');
-      throw new BridgeError(explained ? detail : cause.killed ? 'The player has not confirmed this request. Check playback before trying again.' : action === 'open' ? 'The player could not open your favorite. Check that the track is still available.' : action === 'open-file' ? 'The player could not open this audio file.' : 'Music controls are unavailable. Open your music player and try again.');
+      throw new BridgeError(explained ? detail : error.killed ? 'The player has not confirmed this request. Check playback before trying again.' : action === 'open' ? 'The player could not open your favorite. Check that the track is still available.' : action === 'open-file' ? 'The player could not open this audio file.' : 'Music controls are unavailable. Open your music player and try again.');
     }
   }
-  async function state(page, track) {
-    const saved = await store.companion(), pinned = saved.pinned.length > 0;
+  async function state(page: string, track?: MusicTrack) {
+    const saved = await store.companion() as CompanionSettings, pinned = saved.pinned.length > 0;
     let reason = '';
-    if (pinned && !track) try { track = await music(); } catch (cause) { reason = cause.message; }
+    if (pinned && !track) try { track = await music(); } catch (cause) { reason = (cause as Error).message; }
     if (track) {
       const volume = track.volume, previous = saved.musicVolumes?.[track.player];
-      track = { ...track, muted: volume === 0, canMute: track.canMute && Number.isFinite(volume) && (volume > 0 || (volume === 0 && Number.isFinite(previous) && previous > 0)) };
+      track = { ...track, muted: volume === 0, canMute: track.canMute && volume !== null && Number.isFinite(volume) && (volume > 0 || (volume === 0 && typeof previous === 'number' && Number.isFinite(previous) && previous > 0)) };
     }
     return { pinned, favorite: saved.favorite, music: pinned || track ? track ?? null : null, reason, threadId: await store.chat(), face: pinned ? FACE_DATA_URL : undefined };
   }
-  async function act(input) {
-    object(input, input?.action === 'play-file' ? ['action', 'page', 'path'] : ['action', 'page']); text(input.page, 'page', 200);
-    const { action, page } = input;
+  async function act(input: Record<string, unknown>) {
+    object(input, input?.action === 'play-file' ? ['action', 'page', 'path'] : ['action', 'page']);
+    const page = text(input.page, 'page', 200), { action } = input;
     if (action === 'pin' || action === 'unpin') {
       await store.companion(saved => ({ ...saved, pinned: action === 'pin' ? ['global'] : [] }));
       return state(page);
@@ -111,7 +117,7 @@ export function createMatildaCompanion({ store, env = process.env }) {
       return state(page, track);
     }
     if (action === 'play-favorite') {
-      const { favorite } = await store.companion();
+      const { favorite } = await store.companion() as CompanionSettings;
       if (!favorite) throw new BridgeError('Play a track and ask me to remember this song as your favorite first.');
       if (!/^(file|https?):\/\//.test(favorite.uri ?? '') || !/^org\.mpris\.MediaPlayer2\.[\w.-]+$/.test(favorite.player ?? '')) throw new BridgeError('The saved favorite is invalid. Remember the track again.');
       return state(page, await music('open', favorite));
@@ -126,17 +132,17 @@ export function createMatildaCompanion({ store, env = process.env }) {
       return state(page, await music('open-file', { uri: pathToFileURL(resolved).href }));
     }
     if (action === 'toggle-mute') {
-      const track = await music(), saved = await store.companion();
+      const track = await music(), saved = await store.companion() as CompanionSettings;
       const previous = saved.musicVolumes?.[track.player];
-      if (!track.canMute || !Number.isFinite(track.volume) || track.volume < 0) throw new BridgeError('This player does not support volume controls.');
-      if (track.volume === 0 && (!Number.isFinite(previous) || previous <= 0)) throw new BridgeError('This player is muted, but its previous volume is unknown. Unmute it in the music player first.');
-      if (track.volume > 0) await store.companion(current => ({ ...current, musicVolumes: { ...current.musicVolumes, [track.player]: track.volume } }));
+      if (!track.canMute || typeof track.volume !== 'number' || !Number.isFinite(track.volume) || track.volume < 0) throw new BridgeError('This player does not support volume controls.');
+      if (track.volume === 0 && (typeof previous !== 'number' || !Number.isFinite(previous) || previous <= 0)) throw new BridgeError('This player is muted, but its previous volume is unknown. Unmute it in the music player first.');
+      if (track.volume > 0) await store.companion(current => ({ ...current, musicVolumes: { ...(current.musicVolumes as Record<string, number> | undefined), [track.player]: track.volume } }));
       return state(page, await music('volume', track, track.volume > 0 ? 0 : previous));
     }
-    if (['play', 'pause', 'next'].includes(action)) return state(page, await music(action));
+    if (typeof action === 'string' && ['play', 'pause', 'next'].includes(action)) return state(page, await music(action));
     throw new BridgeError('Unknown Matilda action.');
   }
-  async function command(words, page) {
+  async function command(words: unknown, page: string) {
     if (typeof words !== 'string' || words.length > 180 || /[\n\r"“”]/.test(words)) return null;
     const said = words.trim().toLowerCase().replace(/^(?:hey\s+)?matilda[,!:\s]+/, '').replace(/^please\s+/, '').replace(/[.!]+$/, '').trim();
     const commands = new Map([
@@ -149,15 +155,15 @@ export function createMatildaCompanion({ store, env = process.env }) {
     ]);
     let action = commands.get(said);
     if (!action && said.startsWith('play ')) {
-      const { favorite } = await store.companion();
+      const { favorite } = await store.companion() as CompanionSettings;
       if (favorite?.title && said === `play ${favorite.title.toLowerCase()}`) action = 'play-favorite';
     }
     if (!action) return null;
     try {
       const result = await act({ action, page });
-      const message = action === 'pin' ? 'Matilda is pinned at the top of every page.' : action === 'unpin' ? 'Matilda is unpinned everywhere. Music was left alone.' : action === 'favorite' ? `Remembered ${result.favorite.title} as your favorite.` : `${result.music?.status ?? 'Updated'}: ${result.music?.title || 'music'}.`;
+      const message = action === 'pin' ? 'Matilda is pinned at the top of every page.' : action === 'unpin' ? 'Matilda is unpinned everywhere. Music was left alone.' : action === 'favorite' ? `Remembered ${(result.favorite as Favorite).title} as your favorite.` : `${result.music?.status ?? 'Updated'}: ${result.music?.title || 'music'}.`;
       return { ok: true, message };
-    } catch (cause) { return { ok: false, message: cause.message }; }
+    } catch (cause) { return { ok: false, message: (cause as Error).message }; }
   }
   return { read: state, act, command };
 }

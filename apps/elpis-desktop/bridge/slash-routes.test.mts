@@ -12,15 +12,21 @@ import { startDesktopServer } from './server.mts';
 const CHAT = '00000000-0000-0000-0000-0000000000a1';
 const AGENT = '00000000-0000-0000-0000-0000000000a2';
 
-function fixture({ cwd, items = [], provider = 'openai', serviceTier = null, supportsFast = true, refuseTier = false, active = false, finishOnTierUpdate = false, liveTierError = null } = {}) {
+type WireRequest = { id?: number; method: string; params: { threadId: string; turnId: string; serviceTier: string | null; [key: string]: unknown } };
+type FixtureOptions = { cwd?: string; items?: unknown[]; provider?: string; serviceTier?: string | null; supportsFast?: boolean; refuseTier?: boolean; active?: boolean; finishOnTierUpdate?: boolean; liveTierError?: string | null };
+type TestThread = { id: string; cwd?: string | undefined; source: string | { subAgent: { thread_spawn: { agent_path: string } } }; canAcceptDirectInput: boolean; status: { type: string } };
+
+function required<T>(value: T | null | undefined): T { assert.ok(value); return value; }
+
+function fixture({ cwd, items = [], provider = 'openai', serviceTier = null, supportsFast = true, refuseTier = false, active = false, finishOnTierUpdate = false, liveTierError = null }: FixtureOptions = {}) {
   let activeTurnId = active ? 'active-turn' : null, activeServiceTier = serviceTier;
-  const threads = new Map([
+  const threads = new Map<string, TestThread>([
     [CHAT, { id: CHAT, cwd, source: 'cli', canAcceptDirectInput: true, status: { type: active ? 'active' : 'idle' } }],
     [AGENT, { id: AGENT, cwd, source: { subAgent: { thread_spawn: { agent_path: '/root/helper' } } }, canAcceptDirectInput: false, status: { type: 'idle' } }],
   ]);
-  const socket = new EventEmitter(); socket.sent = []; socket.close = () => socket.emit('close');
+  const socket = new EventEmitter() as EventEmitter & { sent: WireRequest[]; close: () => boolean; send: (raw: string) => void }; socket.sent = []; socket.close = () => socket.emit('close');
   socket.send = raw => {
-    const request = JSON.parse(raw); socket.sent.push(request);
+    const request = JSON.parse(raw) as WireRequest; socket.sent.push(request);
     if (request.id === undefined || !request.method) return;
     let result;
     switch (request.method) {
@@ -30,7 +36,7 @@ function fixture({ cwd, items = [], provider = 'openai', serviceTier = null, sup
       case 'model/list': result = { data: [{ model: 'gpt-6-luna', serviceTiers: supportsFast ? [{ id: 'priority', name: 'Fast' }] : [] }], nextCursor: null }; break;
       case 'thread/settings/update':
         if (!refuseTier) serviceTier = request.params.serviceTier;
-        if (finishOnTierUpdate) { activeTurnId = null; threads.get(CHAT).status = { type: 'idle' }; }
+        if (finishOnTierUpdate) { activeTurnId = null; required(threads.get(CHAT)).status = { type: 'idle' }; }
         result = {}; break;
       case 'thread/turns/list': result = { data: activeTurnId ? [{ id: activeTurnId, status: 'inProgress' }] : [], nextCursor: null }; break;
       case 'turn/settings/update':
@@ -49,11 +55,11 @@ function fixture({ cwd, items = [], provider = 'openai', serviceTier = null, sup
     queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, result })));
   };
   const client = new DesktopClient(socket);
-  const calls = method => socket.sent.filter(message => message.method === method);
+  const calls = (method: string) => socket.sent.filter(message => message.method === method);
   return { client, socket, threads, calls, tiers: () => ({ saved: serviceTier, active: activeServiceTier }) };
 }
 
-const git = (cwd, ...args) => execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', '-c', 'commit.gpgsign=false', ...args], { cwd, encoding: 'utf8', env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' } });
+const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', '-c', 'commit.gpgsign=false', ...args], { cwd, encoding: 'utf8', env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' } });
 async function repository() {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-slash-git-'));
   git(dir, 'init', '-q', '-b', 'main');
@@ -69,14 +75,14 @@ test('compact starts the engine compaction, with the guidance as typed, only on 
   const { client, calls, threads } = fixture(); await client.initialize();
   try {
     await client.compact(CHAT, {});
-    assert.deepEqual(calls('thread/compact/start').at(-1).params, { threadId: CHAT });
+    assert.deepEqual(required(calls('thread/compact/start').at(-1)).params, { threadId: CHAT });
     await client.compact(CHAT, { instructions: 'Keep the API names.' });
-    assert.deepEqual(calls('thread/compact/start').at(-1).params, { threadId: CHAT, instructions: 'Keep the API names.' });
+    assert.deepEqual(required(calls('thread/compact/start').at(-1)).params, { threadId: CHAT, instructions: 'Keep the API names.' });
     const sent = calls('thread/compact/start').length;
     await assert.rejects(client.compact(CHAT, { instructions: '   ' }), /instructions/);
     await assert.rejects(client.compact(CHAT, { extra: 1 }), /Unsupported request fields/);
     await assert.rejects(client.compact('not-an-id', {}), /Invalid thread ID/);
-    threads.get(CHAT).status = { type: 'active' };
+    required(threads.get(CHAT)).status = { type: 'active' };
     await assert.rejects(client.compact(CHAT, {}), /Wait for the current turn/);
     await assert.rejects(client.compact(AGENT, {}), /parent/);
     assert.equal(calls('thread/compact/start').length, sent, 'a refused compaction reaches the engine never');
@@ -87,19 +93,19 @@ test('review starts the engine review inline for each of the terminal\'s targets
   const { client, calls, threads } = fixture(); await client.initialize();
   try {
     const started = await client.review(CHAT, { target: { type: 'uncommittedChanges' } });
-    assert.deepEqual(calls('review/start').at(-1).params, { threadId: CHAT, target: { type: 'uncommittedChanges' }, delivery: 'inline' });
+    assert.deepEqual(required(calls('review/start').at(-1)).params, { threadId: CHAT, target: { type: 'uncommittedChanges' }, delivery: 'inline' });
     assert.equal(started.turn.id, 'review-turn');
     await client.review(CHAT, { target: { type: 'baseBranch', branch: 'main' } });
-    assert.deepEqual(calls('review/start').at(-1).params.target, { type: 'baseBranch', branch: 'main' });
+    assert.deepEqual(required(calls('review/start').at(-1)).params.target, { type: 'baseBranch', branch: 'main' });
     await client.review(CHAT, { target: { type: 'commit', sha: 'abc1234', title: 'Fix the cache' } });
-    assert.deepEqual(calls('review/start').at(-1).params.target, { type: 'commit', sha: 'abc1234', title: 'Fix the cache' });
+    assert.deepEqual(required(calls('review/start').at(-1)).params.target, { type: 'commit', sha: 'abc1234', title: 'Fix the cache' });
     await client.review(CHAT, { target: { type: 'custom', instructions: 'Look at error handling.' } });
-    assert.deepEqual(calls('review/start').at(-1).params.target, { type: 'custom', instructions: 'Look at error handling.' });
+    assert.deepEqual(required(calls('review/start').at(-1)).params.target, { type: 'custom', instructions: 'Look at error handling.' });
     const sent = calls('review/start').length;
     for (const target of [{ type: 'detached' }, { type: 'baseBranch' }, { type: 'baseBranch', branch: '--output=x' }, { type: 'commit', sha: 'not a sha' }, { type: 'custom', instructions: ' ' }, { type: 'uncommittedChanges', extra: 1 }, null])
       await assert.rejects(client.review(CHAT, { target }), /target|branch|commit|instructions|fields/i, JSON.stringify(target));
     await assert.rejects(client.review(CHAT, { target: { type: 'uncommittedChanges' }, delivery: 'detached' }), /Unsupported request fields/);
-    threads.get(CHAT).status = { type: 'active' };
+    required(threads.get(CHAT)).status = { type: 'active' };
     await assert.rejects(client.review(CHAT, { target: { type: 'uncommittedChanges' } }), /Wait for the current turn/);
     await assert.rejects(client.review(AGENT, { target: { type: 'uncommittedChanges' } }), /parent/);
     assert.equal(calls('review/start').length, sent, 'a refused review reaches the engine never');
@@ -108,17 +114,18 @@ test('review starts the engine review inline for each of the terminal\'s targets
 
 test('outside Git, Changes and /diff show the edits the chat recorded, a file edited twice as one; /review still needs Git', async () => {
   const plain = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-slash-plain-'));
-  const change = (file, type, diff, status = 'completed') => ({ id: `${file}-${type}`, type: 'fileChange', status, changes: [{ path: path.join(plain, file), kind: { type }, diff }] });
+  const change = (file: string, type: string, diff: string, status = 'completed') => ({ id: `${file}-${type}`, type: 'fileChange', status, changes: [{ path: path.join(plain, file), kind: { type }, diff }] });
   const items = [change('notes.md', 'add', 'one\ntwo\n'), change('src/app.py', 'update', '@@ -1,2 +1,2 @@\n a = 1\n-b = 2\n+b = 3\n'),
     { id: 'said', type: 'agentMessage', text: 'Done' }, change('notes.md', 'update', '@@ -2 +2 @@\n-two\n+three\n'), change('skip.txt', 'add', 'no\n', 'declined')];
   const { client } = fixture({ cwd: plain, items }); await client.initialize();
   try {
     const list = await client.git(CHAT, 'changes');
+    assert.ok('root' in list && 'recorded' in list);
     assert.deepEqual([list.root, list.recorded, list.truncated], [plain, true, false]);
     assert.deepEqual(list.files.map(file => [file.path, file.status, file.added, file.removed, file.binary]), [['notes.md', 'added', 3, 1, false], ['src/app.py', 'modified', 1, 1, false]]);
     assert.deepEqual(await client.git(CHAT, 'file', 'notes.md'), { diff: '@@ -0,0 +1,2 @@\n+one\n+two\n@@ -2 +2 @@\n-two\n+three\n', truncated: false, binary: false });
     await assert.rejects(client.git(CHAT, 'file', 'skip.txt'), /no change/i);
-    const { diff } = await client.git(CHAT, 'diff');
+    const changes = await client.git(CHAT, 'diff'); assert.ok('diff' in changes); const { diff } = changes;
     assert.match(diff, /^--- a\/notes\.md\n\+\+\+ b\/notes\.md\n@@ -0,0 \+1,2 @@\n\+one\n/);
     assert.match(diff, /\n--- a\/src\/app\.py\n\+\+\+ b\/src\/app\.py\n@@ -1,2 \+1,2 @@\n a = 1\n-b = 2\n\+b = 3\n/);
     await assert.rejects(client.git(CHAT, 'review'), /not a Git repository/);
@@ -130,17 +137,18 @@ test('git choices and diff come from the chat\'s own folder: branches, recent co
   const { client, threads } = fixture({ cwd: dir }); await client.initialize();
   try {
     const choices = await client.git(CHAT, 'review');
+    assert.ok('branches' in choices);
     assert.deepEqual(choices.branches, ['feature', 'main']); assert.equal(choices.current, 'feature');
     assert.deepEqual(choices.commits.map(commit => commit.subject), ['second commit', 'first commit']);
-    assert.match(choices.commits[0].sha, /^[0-9a-f]{40}$/);
-    const { diff, truncated } = await client.git(CHAT, 'diff');
+    assert.match(required(required(choices.commits[0]).sha), /^[0-9a-f]{40}$/);
+    const changes = await client.git(CHAT, 'diff'); assert.ok('diff' in changes); const { diff, truncated } = changes;
     assert.equal(truncated, false);
     assert.match(diff, /\+three-uncommitted/, 'tracked change'); assert.match(diff, /b\.txt/); assert.match(diff, /\+brand-new-untracked/, 'untracked file');
     assert.doesNotMatch(diff, /\+two\n/, 'committed changes are not part of the working diff');
     await assert.rejects(client.git(CHAT, 'other'), /view/);
-    threads.get(CHAT).cwd = plain;
+    required(threads.get(CHAT)).cwd = plain;
     await assert.rejects(client.git(CHAT, 'review'), /not a Git repository/);
-    delete threads.get(CHAT).cwd;
+    delete required(threads.get(CHAT)).cwd;
     await assert.rejects(client.git(CHAT, 'diff'), /folder/);
   } finally { client.close(); await fs.rm(dir, { recursive: true, force: true }); await fs.rm(plain, { recursive: true, force: true }); }
 });
@@ -149,7 +157,7 @@ test('a huge working diff is cut at a fixed size and says so', async () => {
   const dir = await repository(); await fs.writeFile(path.join(dir, 'huge.txt'), 'x'.repeat(2_000_000) + '\n');
   const { client } = fixture({ cwd: dir }); await client.initialize();
   try {
-    const { diff, truncated } = await client.git(CHAT, 'diff');
+    const changes = await client.git(CHAT, 'diff'); assert.ok('diff' in changes); const { diff, truncated } = changes;
     assert.equal(truncated, true); assert.ok(diff.length <= 400_000 + 200, `kept ${diff.length} characters`);
   } finally { client.close(); await fs.rm(dir, { recursive: true, force: true }); }
 });
@@ -160,14 +168,14 @@ test('HTTP: compact, review and git are routed, POST-only or GET-only, behind th
   const out = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-slash-out-')); await fs.writeFile(path.join(out, 'index.html'), '<h1>Elpis</h1>');
   const app = await startDesktopServer({ client, staticDir: out }); t.after(async () => { await app.close(); await fs.rm(dir, { recursive: true, force: true }); await fs.rm(out, { recursive: true, force: true }); });
   const url = new URL(app.url), origin = url.origin, token = new URLSearchParams(url.hash.slice(1)).get('token');
-  const post = (pathname, data, cookie) => fetch(origin + pathname, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin, ...(cookie ? { Cookie: cookie } : {}) }, body: JSON.stringify(data) });
+  const post = (pathname: string, data: unknown, cookie?: string) => fetch(origin + pathname, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin, ...(cookie ? { Cookie: cookie } : {}) }, body: JSON.stringify(data) });
   assert.equal((await post(`/api/threads/${CHAT}/compact`, {})).status, 401, 'no session, no compaction');
-  const cookie = (await post('/api/session', { token })).headers.get('set-cookie').split(';')[0];
-  const get = pathname => fetch(origin + pathname, { headers: { Cookie: cookie } });
+  const cookie = required(required((await post('/api/session', { token })).headers.get('set-cookie')).split(';')[0]);
+  const get = (pathname: string) => fetch(origin + pathname, { headers: { Cookie: cookie } });
   assert.equal((await post(`/api/threads/${CHAT}/service-tier`, { enabled: true }, cookie)).status, 200);
-  assert.deepEqual(calls('thread/settings/update').at(-1).params, { threadId: CHAT, serviceTier: 'priority' });
+  assert.deepEqual(required(calls('thread/settings/update').at(-1)).params, { threadId: CHAT, serviceTier: 'priority' });
   assert.equal((await post(`/api/threads/${CHAT}/compact`, { instructions: 'short' }, cookie)).status, 200);
-  assert.deepEqual(calls('thread/compact/start').at(-1).params, { threadId: CHAT, instructions: 'short' });
+  assert.deepEqual(required(calls('thread/compact/start').at(-1)).params, { threadId: CHAT, instructions: 'short' });
   const review = await post(`/api/threads/${CHAT}/review`, { target: { type: 'uncommittedChanges' } }, cookie);
   assert.equal(review.status, 200); assert.equal((await review.json()).turn.id, 'review-turn');
   assert.equal((await post(`/api/threads/${CHAT}/review`, { target: { type: 'nope' } }, cookie)).status, 400);
@@ -178,7 +186,7 @@ test('HTTP: compact, review and git are routed, POST-only or GET-only, behind th
   assert.equal((await get(`/api/threads/${CHAT}/compact`)).status, 405, 'compaction is never a GET');
   // The review surface: the file list and one file's diff are GETs; throwing a file away is the one POST, and takes only a listed file.
   const changes = await (await get(`/api/threads/${CHAT}/git?view=changes`)).json();
-  assert.deepEqual(changes.files.map(file => [file.path, file.status]), [['a.txt', 'modified'], ['b.txt', 'untracked']]);
+  assert.deepEqual(changes.files.map((file: { path: string; status: string }) => [file.path, file.status]), [['a.txt', 'modified'], ['b.txt', 'untracked']]);
   assert.match((await (await get(`/api/threads/${CHAT}/git?view=file&path=b.txt`)).json()).diff, /\+brand-new-untracked/);
   assert.equal((await get(`/api/threads/${CHAT}/git?view=file&path=..%2Fx`)).status, 400);
   assert.equal((await get(`/api/threads/${CHAT}/git?view=file&path=a.txt&other=1`)).status, 400);
@@ -187,7 +195,7 @@ test('HTTP: compact, review and git are routed, POST-only or GET-only, behind th
   assert.equal((await post(`/api/threads/${CHAT}/git`, { action: 'discard', path: 'b.txt' })).status, 401, 'no session, no discard');
   assert.equal((await post(`/api/threads/${CHAT}/git`, { action: 'discard', path: 'b.txt' }, cookie)).status, 200);
   await assert.rejects(fs.access(path.join(dir, 'b.txt')), 'the new file is gone');
-  assert.deepEqual((await (await get(`/api/threads/${CHAT}/git?view=changes`)).json()).files.map(file => file.path), ['a.txt']);
+  assert.deepEqual((await (await get(`/api/threads/${CHAT}/git?view=changes`)).json()).files.map((file: { path: string }) => file.path), ['a.txt']);
 });
 
 
@@ -208,18 +216,18 @@ test('/fast toggles the real OpenAI thread service tier and accepts explicit on/
 test('/fast changes the running turn and saved speed without starting another turn', async () => {
   const { client, calls, tiers } = fixture({ active: true }); await client.initialize();
   try {
-    for (const [enabled, tier] of [[true, 'priority'], [false, 'default']]) {
+    for (const [enabled, tier] of [[true, 'priority'], [false, 'default']] as const) {
       const result = await client.setServiceTier(CHAT, { enabled });
       assert.deepEqual(tiers(), { saved: tier, active: tier });
       assert.equal(result.activeTurnApplied, true, 'the engine confirms the running turn changed');
-      assert.deepEqual(calls('turn/settings/update').at(-1).params, { threadId: CHAT, turnId: 'active-turn', serviceTier: tier });
+      assert.deepEqual(required(calls('turn/settings/update').at(-1)).params, { threadId: CHAT, turnId: 'active-turn', serviceTier: tier });
     }
     assert.equal(calls('turn/start').length, 0);
   } finally { client.close(); }
 });
 
 test('/fast keeps the saved speed when its captured active turn ends, without retargeting it', async () => {
-  for (const [enabled, initial, saved] of [[true, null, 'priority'], [false, 'priority', 'default']]) {
+  for (const [enabled, initial, saved] of [[true, null, 'priority'], [false, 'priority', 'default']] as const) {
     const { client, calls, tiers } = fixture({ active: true, serviceTier: initial, finishOnTierUpdate: true }); await client.initialize();
     try {
       const result = await client.setServiceTier(CHAT, { enabled });
@@ -232,7 +240,7 @@ test('/fast keeps the saved speed when its captured active turn ends, without re
 });
 
 test('/fast reports a rejected running-turn change while retaining the saved speed', async () => {
-  for (const [enabled, initial, saved] of [[true, null, 'priority'], [false, 'priority', 'default']]) {
+  for (const [enabled, initial, saved] of [[true, null, 'priority'], [false, 'priority', 'default']] as const) {
     const { client, calls, tiers } = fixture({ active: true, serviceTier: initial, liveTierError: 'Fast is disabled by managed settings.' }); await client.initialize();
     try {
       const result = await client.setServiceTier(CHAT, { enabled });
@@ -253,7 +261,7 @@ test('/fast rejects other providers, unsupported models, invalid options and bac
     [{}, CHAT, { enabled: 'yes' }, /on or off/],
     [{}, CHAT, { secret: true }, /Unsupported request fields/],
     [{}, AGENT, {}, /parent|background|agent/i],
-  ]) {
+  ] as const) {
     const { client, calls } = fixture(options); await client.initialize();
     try {
       await assert.rejects(client.setServiceTier(id, body), message);

@@ -2,12 +2,6 @@ apps/elpis-desktop/bridge/bridge.test.mjs
 apps/elpis-desktop/bridge/composer.test.mjs
 apps/elpis-desktop/bridge/file-view.test.mjs
 apps/elpis-desktop/bridge/love-spot.test.mjs
-apps/elpis-desktop/bridge/matilda-companion.mjs
-apps/elpis-desktop/bridge/matilda-companion.test.mjs
-apps/elpis-desktop/bridge/read-aloud.test.mjs
-apps/elpis-desktop/bridge/slash-routes.test.mjs
-apps/elpis-desktop/bridge/workflow-coding.test.mjs
-apps/elpis-desktop/bridge/workflow-replan.test.mjs
 apps/elpis-desktop/desktop/browser-page-preload.cjs
 apps/elpis-desktop/desktop/preload.cjs
 apps/elpis-desktop/desktop/quick-entry-preload.cjs
