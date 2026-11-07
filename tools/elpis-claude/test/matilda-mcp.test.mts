@@ -45,7 +45,7 @@ test('the MCP server loads manager modules from an isolated engine bundle', asyn
   const bundle = path.join(root, 'tools', 'elpis-claude'), modules = path.join(bundle, 'matilda');
   await fs.mkdir(modules, { recursive: true });
   for (const name of ['elpis-agents-mcp.mjs', 'matilda-mcp.mts', 'log-redaction.mts', 'app-server-connection.mjs']) await fs.copyFile(new URL(`../${name}`, import.meta.url), path.join(bundle, name));
-  for (const name of ['matilda-goals.mts', 'matilda-sessions.mts']) await fs.copyFile(new URL(`../../../apps/elpis-desktop/bridge/${name}`, import.meta.url), path.join(modules, name));
+  for (const name of ['matilda-goals.mts', 'matilda-sessions.mts']) await fs.copyFile(new URL(`../../../apps/elpis-desktop/bridge/${name === 'matilda-sessions.mts' ? 'router/executor/discovery.mts' : name}`, import.meta.url), path.join(modules, name));
   await fs.symlink(fileURLToPath(new URL('../node_modules', import.meta.url)), path.join(bundle, 'node_modules'));
   const client = new Client({ name: 'matilda-bundle-test', version: '1' });
   await client.connect(new StdioClientTransport({ command: process.execPath, args: [path.join(bundle, 'elpis-agents-mcp.mjs')], env: { PATH: process.env.PATH ?? '', HOME: root, ELPIS_HOME: path.join(root, 'home'), ELPIS_AGENT_TOOLS: '0', ELPIS_AGENTS_LOG: path.join(root, 'log') } }));

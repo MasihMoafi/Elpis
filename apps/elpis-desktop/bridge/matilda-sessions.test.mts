@@ -34,7 +34,7 @@ test('discovers sessions from all runtimes without claiming unknown processes ar
   const unknown = await list();
   assert.equal(unknown.find(row => row.runtime === 'claude')?.state, 'unreachable');
   for (const row of unknown.filter(row => row.runtime !== 'claude')) assert.ok(['closed', 'unreachable'].includes(row.state));
-  assert.deepEqual(await sessionSettings(elpisHome), { runtimes: ['elpis', 'codex', 'claude'], idleMs: 600_000 });
+  assert.deepEqual(await sessionSettings(elpisHome), { runtimes: ['elpis', 'codex', 'claude', 'gemini'], idleMs: 600_000 });
   await fs.mkdir(path.join(elpisHome, 'matilda'), { recursive: true });
   await fs.writeFile(path.join(elpisHome, 'matilda/settings.json'), JSON.stringify({ runtimes: ['claude'], idleMs: 42 }));
   assert.deepEqual(await sessionSettings(elpisHome), { runtimes: ['claude'], idleMs: 42 });

@@ -12,9 +12,10 @@ type Table = 'trigger' | 'disposition' | 'thread' | 'ticket' | 'decision'
 
 /** Domain-only SQLite repositories. The host holds the directory lock until close. */
 export class RouterStore implements Repositories {
-  private readonly db: DatabaseSync
+  readonly db: DatabaseSync
   private readonly release: () => void
   private depth = 0
+  private commits: (() => void)[] = []
   constructor(home = elpisHome(), onCompromised: (error: Error) => void = error => { throw error }) {
     const dir = join(home, 'router')
     mkdirSync(dir, { recursive: true, mode: 0o700 })
@@ -36,11 +37,19 @@ export class RouterStore implements Repositories {
   close(): void { try { this.db.close() } finally { this.release() } }
   atomic<T>(work: () => T): T {
     const name = `router_atomic_${this.depth++}`
+    const queued = this.commits.length
     this.db.exec(`SAVEPOINT ${name}`)
-    try { const value = work(); this.db.exec(`RELEASE ${name}`); return value }
-    catch (error) { this.db.exec(`ROLLBACK TO ${name}`); this.db.exec(`RELEASE ${name}`); throw error }
-    finally { this.depth-- }
+    let value: T
+    try { value = work(); this.db.exec(`RELEASE ${name}`) }
+    catch (error) {
+      this.commits.length = queued
+      this.db.exec(`ROLLBACK TO ${name}`); this.db.exec(`RELEASE ${name}`); throw error
+    } finally { this.depth-- }
+    // Side effects happen only after the outermost transaction commits. A callback failure cannot roll it back.
+    if (!this.depth) for (const commit of this.commits.splice(0)) commit()
+    return value
   }
+  afterCommit(work: () => void): void { if (this.depth) this.commits.push(work); else work() }
   private get<T>(table: Table, id: string): T | undefined {
     const row = this.db.prepare(`SELECT value FROM ${table} WHERE id=?`).get(id)
     return row ? JSON.parse(String(row.value)) as T : undefined
