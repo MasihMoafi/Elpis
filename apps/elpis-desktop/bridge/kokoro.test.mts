@@ -4,6 +4,8 @@ import { EventEmitter } from 'node:events';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { createKokoro } from './kokoro.mts';
 
 test('Kokoro lists its installed voices and uses the selected voice', async t => {
@@ -24,4 +26,106 @@ test('Kokoro lists its installed voices and uses the selected voice', async t =>
   assert.equal((await kokoro.speak('Hello.', 'am_michael')).toString(), 'wav');
   assert.equal(sent[0]!.voice, 'am_michael');
   await assert.rejects(kokoro.speak('Hello.', 'not-a-voice'), /voice/i);
+});
+
+test('the worker refuses CPU-only or failed CUDA sessions before loading Kokoro', () => {
+  const script = `
+import runpy, sys, types
+worker, mode = sys.argv[1:]
+sys.argv = [worker, 'model', 'voices']
+runtime = types.ModuleType('onnxruntime')
+runtime.get_available_providers = lambda: ['CPUExecutionProvider'] if mode == 'unavailable' else ['CUDAExecutionProvider', 'CPUExecutionProvider']
+runtime.SessionOptions = type('SessionOptions', (), {})
+class Session:
+    def __init__(self, *args, **kwargs): pass
+    def get_providers(self): return ['CPUExecutionProvider']
+    def disable_fallback(self): pass
+runtime.InferenceSession = Session
+sys.modules['onnxruntime'] = runtime
+kokoro = types.ModuleType('kokoro_onnx')
+class Kokoro:
+    def __init__(self, *args): print('MODEL_LOADED', flush=True)
+    @classmethod
+    def from_session(cls, *args):
+        print('MODEL_LOADED', flush=True)
+        return cls()
+    def get_voices(self): return []
+kokoro.Kokoro = Kokoro
+sys.modules['kokoro_onnx'] = kokoro
+sys.modules['soundfile'] = types.ModuleType('soundfile')
+runpy.run_path(worker, run_name='__main__')
+`;
+  const worker = fileURLToPath(new URL('./kokoro-worker.py', import.meta.url));
+  for (const mode of ['unavailable', 'initialization-fell-back']) {
+    const result = spawnSync('python3', ['-c', script, worker, mode], { input: '', encoding: 'utf8', timeout: 10000 });
+    assert.notEqual(result.status, 0, mode);
+    assert.doesNotMatch(result.stdout, /MODEL_LOADED/, mode);
+    const message = JSON.parse(result.stdout.trim()) as { ready: boolean; error: string };
+    assert.equal(message.ready, false, mode);
+    assert.match(message.error, /GPU/i, mode);
+  }
+});
+
+test('a GPU failure during speech cannot retry inference on the CPU', () => {
+  const script = `
+import runpy, sys, types
+worker = sys.argv[1]
+sys.argv = [worker, 'model', 'voices']
+runtime = types.ModuleType('onnxruntime')
+runtime.get_available_providers = lambda: ['CUDAExecutionProvider', 'CPUExecutionProvider']
+runtime.SessionOptions = type('SessionOptions', (), {})
+class Session:
+    def __init__(self, *args, **kwargs): self.fallback = True
+    def get_providers(self): return ['CUDAExecutionProvider', 'CPUExecutionProvider']
+    def disable_fallback(self): self.fallback = False
+    def run(self):
+        if self.fallback:
+            print('CPU_INFERENCE', flush=True)
+            return [], 24000
+        raise RuntimeError('GPU stopped')
+runtime.InferenceSession = Session
+sys.modules['onnxruntime'] = runtime
+kokoro = types.ModuleType('kokoro_onnx')
+class Kokoro:
+    @classmethod
+    def from_session(cls, session, voices):
+        model = cls()
+        model.session = session
+        return model
+    def get_voices(self): return ['af_heart']
+    def create(self, *args, **kwargs): return self.session.run()
+kokoro.Kokoro = Kokoro
+sys.modules['kokoro_onnx'] = kokoro
+sys.modules['soundfile'] = types.ModuleType('soundfile')
+runpy.run_path(worker, run_name='__main__')
+`;
+  const worker = fileURLToPath(new URL('./kokoro-worker.py', import.meta.url));
+  const result = spawnSync('python3', ['-c', script, worker], { input: `${JSON.stringify({ id: '1', text: 'Hello.', out: 'unused.wav' })}\n`, encoding: 'utf8', timeout: 10000 });
+  assert.equal(result.status, 0, result.stderr);
+  assert.doesNotMatch(result.stdout, /CPU_INFERENCE/);
+  const messages = result.stdout.trim().split('\n').map(line => JSON.parse(line) as { ready?: boolean; id?: string; ok?: boolean });
+  assert.equal(messages[0]?.ready, true);
+  assert.equal(messages[1]?.id, '1');
+  assert.equal(messages[1]?.ok, false);
+});
+
+test('a GPU startup failure reaches the caller instead of hanging', async t => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-kokoro-start-'));
+  t.after(() => fs.rm(home, { recursive: true, force: true }));
+  const paths = ['python', 'model', 'voices'].map(name => path.join(home, name));
+  await Promise.all(paths.map(file => fs.writeFile(file, 'fixture')));
+  const spawnWorker = () => {
+    const worker = Object.assign(new EventEmitter(), { stdout: new EventEmitter(), kill: () => {}, stdin: { write: () => {} } });
+    queueMicrotask(() => {
+      worker.emit('exit', 1);
+      worker.stdout.emit('data', `${JSON.stringify({ ready: false, error: 'Read aloud needs a working GPU.' })}\n`);
+      worker.emit('close', 1);
+    });
+    return worker;
+  };
+  const kokoro = createKokoro({ env: { ELPIS_KOKORO_PYTHON: paths[0]!, ELPIS_KOKORO_MODEL: paths[1]!, ELPIS_KOKORO_VOICES: paths[2]! }, spawnWorker: spawnWorker as unknown as NonNullable<NonNullable<Parameters<typeof createKokoro>[0]>['spawnWorker']> });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await assert.rejects(Promise.race([kokoro.speak('Hello.'), new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('Read aloud hung')), 1000); })]), /working GPU/i);
+  } finally { clearTimeout(timer); }
 });

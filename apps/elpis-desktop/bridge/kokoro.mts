@@ -30,23 +30,30 @@ export function createKokoro({ env = process.env, spawnWorker = spawn as SpawnWo
   function start() {
     if (ready) return ready;
     worker = spawnWorker(paths.python, ['-u', WORKER, paths.model, paths.voices], { stdio: ['pipe', 'pipe', 'ignore'], env: { ...env } });
+    const child = worker;
     ready = new Promise<void>((resolve, reject) => {
-      worker!.once('error', error => { reject(error); });
-      worker!.stdout.on('data', chunk => {
+      child.once('error', () => { reject(new BridgeError('Read aloud could not start.', 503)); });
+      child.once('close', () => { reject(new BridgeError('Read aloud stopped before it was ready.', 503)); });
+      child.stdout.on('data', chunk => {
         buffer += chunk;
         for (let end = buffer.indexOf('\n'); end >= 0; end = buffer.indexOf('\n')) {
           const line = buffer.slice(0, end); buffer = buffer.slice(end + 1);
-          let message: { ready?: boolean; voices?: unknown; id: string; ok?: boolean }; try { message = JSON.parse(line); } catch { continue; }
+          let message: { ready?: boolean; error?: string; voices?: unknown; id?: string; ok?: boolean }; try { message = JSON.parse(line); } catch { continue; }
+          if (message.ready === false) { reject(new BridgeError(message.error || 'Read aloud could not start.', 503)); continue; }
           if (message.ready) { voiceNames = Array.isArray(message.voices) ? message.voices.filter((name: unknown): name is string => typeof name === 'string') : []; resolve(); continue; }
+          if (typeof message.id !== 'string') continue;
           const waiting = pending.get(message.id); pending.delete(message.id);
           if (waiting) { if (message.ok) waiting.resolve(); else waiting.reject(new BridgeError('Read aloud could not voice this text.', 500)); }
         }
       });
     });
-    worker.once('exit', () => {
+    const stopped = () => {
+      if (worker !== child) return;
       for (const waiting of pending.values()) waiting.reject(new BridgeError('Read aloud stopped. Try again.', 503));
       pending.clear(); worker = null; ready = null; buffer = ''; voiceNames = [];
-    });
+    };
+    child.once('close', stopped);
+    child.once('error', stopped);
     return ready;
   }
   /** WAV bytes for `text`. */
@@ -54,6 +61,7 @@ export function createKokoro({ env = process.env, spawnWorker = spawn as SpawnWo
     if (typeof text !== 'string' || !text.trim() || text.length > 4000) throw new BridgeError('Read aloud takes up to 4000 characters at a time.', 400);
     if (!available()) throw new BridgeError('Read aloud needs Kokoro on this computer.', 503);
     await start();
+    if (!worker) throw new BridgeError('Read aloud stopped. Try again.', 503);
     if (voice && !voiceNames.includes(voice)) throw new BridgeError('Choose an installed Kokoro voice.', 400);
     const id = randomUUID(), out = path.join(os.tmpdir(), `elpis-read-aloud-${id}.wav`);
     const done = new Promise<void>((resolve, reject) => pending.set(id, { resolve, reject }));
