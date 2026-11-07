@@ -137,7 +137,7 @@
     "bridge/trash.test.mts",
     "bridge/personal.test.mts",
     "bridge/smart-prune.test.mts",
-    "bridge/workflow-acp.test.mjs",
+    "bridge/workflow-acp.test.mts",
     "bridge/workflow-worktrees.test.mts",
     "bridge/memory-budget.test.mts",
     "bridge/settings-files.test.mts",

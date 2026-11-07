@@ -1,5 +1,6 @@
 import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cjs';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
+import type { DesktopClientOptions } from './client.mts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -16,17 +17,25 @@ import { createMemoryBudget } from './memory-budget.mts';
 const ROOT = '00000000-0000-0000-0000-000000000001';
 const FATHER = '00000000-0000-0000-0000-00000000000f';
 const FAKE = fileURLToPath(new URL('../../../tools/elpis-claude/test/fake-acp-agent.mjs', import.meta.url));
-const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
-const task = (id, dependsOn = [], instruction = 'Seed workflow-acp-739') => ({ id, title: id, instruction, kind: 'explore', dependsOn, writeScopes: [], acceptanceCriteria: ['Return evidence'] });
-function fixture(t, overrides = {}, clientOptions = {}) {
+type WorkflowRun = Awaited<ReturnType<ReturnType<typeof createWorkflowRuns>['list']>>[number];
+type WorkflowInput = Parameters<ReturnType<typeof createWorkflowRuns>['start']>[0];
+type NodeSpec = NonNullable<NonNullable<Parameters<typeof createWorkflowRuns>[0]>['nodeSpec']>;
+type FakeEnv = { workflowFake?: Record<string, Record<string, string>>; ELPIS_HOME?: string; ELPIS_NODE_BIN?: string; ELPIS_ENGINE_BIN?: string; ELPIS_ACP_AGENT?: string };
+type Overrides = { env?: FakeEnv; stateDir?: string; nodeSpec?: NodeSpec };
+type LogRow = { method: string; params: { threadId: string; cwd: string; developerInstructions: string; input: unknown; prompt: { text: string }[]; _meta: { elpis: { workflow: { writeScopes: string[]; kind: string; serviceTier?: string } }; systemPrompt: { append: string } } } };
+type SocketRow = LogRow & { id: number };
+
+const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+const task = (id: string, dependsOn: string[] = [], instruction = 'Seed workflow-acp-739') => ({ id, title: id, instruction, kind: 'explore', dependsOn, writeScopes: [], acceptanceCriteria: ['Return evidence'] });
+function fixture(t: TestContext, overrides: Overrides = {}, clientOptions: DesktopClientOptions = {}) {
   const tempRoot = createTestTempDir(path.join(os.homedir(), '.cache/elpis-tests/workflow-acp-'));
   const dir = path.join(tempRoot, 'project'); fs.mkdirSync(dir);
-  const socket = new EventEmitter(); socket.sent = []; socket.close = () => {};
+  const socket = new EventEmitter() as EventEmitter & { sent: SocketRow[]; close: () => void; refuseTurns: number; send: (raw: string) => void }; socket.sent = []; socket.close = () => {};
   const root = { id: ROOT, cwd: dir, source: 'cli', model: 'm-fast', modelProvider: 'openai', status: { type: 'idle' } };
   // Chats the bridge starts (the Father's) are kept, so reading one returns it.
   const threads = new Map([[ROOT, root]]);
   socket.send = raw => {
-    const row = JSON.parse(raw); socket.sent.push(row); if (!row.id) return;
+    const row = JSON.parse(raw) as SocketRow; socket.sent.push(row); if (!row.id) return;
     const result = row.method === 'model/list' ? { data: [{ id: 'm-fast', model: 'm-fast' }, { id: 'claude/opus', model: 'claude/opus' }] }
       : row.method === 'thread/list' ? { data: [root], nextCursor: null }
       : row.method === 'thread/read' || row.method === 'thread/resume' ? { thread: threads.get(row.params.threadId) ?? root }
@@ -35,20 +44,20 @@ function fixture(t, overrides = {}, clientOptions = {}) {
       : row.method === 'turn/start' ? { turn: { id: `turn-${socket.sent.length}`, status: 'inProgress', items: [] } }
       : row.method === 'workGraph/list' ? { data: [] }
       : row.method.startsWith('workGraph/run') ? { graphId: 'native', threadId: ROOT } : {};
-    queueMicrotask(() => socket.emit('message', JSON.stringify(result?.__error ? { id: row.id, error: { code: -32000, message: result.__error } } : { id: row.id, result })));
+    queueMicrotask(() => socket.emit('message', JSON.stringify('__error' in result && result.__error ? { id: row.id, error: { code: -32000, message: result.__error } } : { id: row.id, result })));
   };
-  const log = id => {
+  const log = (id: string): LogRow[] => {
     const p = path.join(dir, `${id}.jsonl`);
-    return fs.existsSync(p) ? fs.readFileSync(p, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse) : [];
+    return fs.existsSync(p) ? fs.readFileSync(p, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line) as LogRow) : [];
   };
-  const client = new DesktopClient(socket, { home: overrides.env?.ELPIS_HOME ?? path.join(dir, 'profile'), rewindHome: path.join(dir, 'rewind'), reportRetryMs: 20, workflowOptions: { stateDir: path.join(dir, 'state'), nodeSpec: (node, env) => ({ name: node.name, instructions: node.prompt, elpis: true, command: process.execPath, args: [FAKE], env: { FAKE_ACP_NAME: node.name, FAKE_ACP_MODELS: node.name === 'Mother agent' ? 'opus' : 'm-fast', FAKE_ACP_LOG: path.join(dir, `${node.name}.jsonl`), ...(node.prompt.includes('Return only JSON:') ? { FAKE_ACP_ANSWER: JSON.stringify({ passed: !node.prompt.includes('[fail-check]'), summary: 'Observed the planted evidence' }) } : {}), ...(env.workflowFake?.[node.name] ?? {}) }, model: node.name === 'Mother agent' ? 'opus' : node.model }), ...overrides }, ...clientOptions });
+  const client = new DesktopClient(socket, { home: overrides.env?.ELPIS_HOME ?? path.join(dir, 'profile'), rewindHome: path.join(dir, 'rewind'), reportRetryMs: 20, workflowOptions: { stateDir: path.join(dir, 'state'), nodeSpec: ((node, env) => ({ name: node.name, instructions: node.prompt, elpis: true, command: process.execPath, args: [FAKE], env: { FAKE_ACP_NAME: node.name, FAKE_ACP_MODELS: node.name === 'Mother agent' ? 'opus' : 'm-fast', FAKE_ACP_LOG: path.join(dir, `${node.name}.jsonl`), ...(node.prompt.includes('Return only JSON:') ? { FAKE_ACP_ANSWER: JSON.stringify({ passed: !node.prompt.includes('[fail-check]'), summary: 'Observed the planted evidence' }) } : {}), ...((env as unknown as FakeEnv).workflowFake?.[node.name] ?? {}) }, model: node.name === 'Mother agent' ? 'opus' : node.model })) as NodeSpec, ...overrides as unknown as Record<string, unknown> & { env?: NodeJS.ProcessEnv } }, ...clientOptions });
   t.after(() => { client.close(); removeTestTempDir(tempRoot); });
-  const run = (tasks, extra = {}) => client.runWorkflow({ rootThreadId: ROOT, name: 'ACP team', tasks, maxConcurrency: 2, ...extra });
-  const finished = async id => {
+  const run = (tasks: WorkflowInput['tasks'], extra: Partial<Omit<WorkflowInput, 'next'>> & { next?: object } = {}) => client.runWorkflow({ rootThreadId: ROOT, name: 'ACP team', tasks, maxConcurrency: 2, ...extra });
+  const finished = async (id: string): Promise<WorkflowRun> => {
     for (let n = 0; n < 500; n++) {
       const g = (await client.workflows(ROOT)).data.find(g => g.id === id);
       // This fixture returns no native work graphs, so every result is an ACP record.
-      if (g && g.status !== 'running') return /** @type {Awaited<ReturnType<ReturnType<typeof createWorkflowRuns>['list']>>[number]} */ (g);
+      if (g && g.status !== 'running') return g as WorkflowRun;
       await pause(20);
     }
     throw Error('workflow did not finish');
@@ -81,7 +90,7 @@ test('Restart waits through local workflow admission and final persistence while
   const f = fixture(t); await f.client.initialize();
   const app = await startDesktopServer({ client: f.client, elpisHome: f.dir, trashFile: path.join(f.dir, 'trash.json'),
     loveSpot: { directory: path.join(f.dir, 'drawing'), screenshots: path.join(f.dir, 'screenshots') } });
-  const gate = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
+  const gate = () => { let resolve!: () => void; const promise = new Promise<void>(done => { resolve = done; }); return { promise, resolve }; };
   const admission = gate(), admitting = gate(), finish = gate(), finishing = gate();
   const send = f.socket.send, rename = fs.promises.rename;
   let holdRead = true, run;
@@ -91,7 +100,7 @@ test('Restart waits through local workflow admission and final persistence while
     } else send(raw);
   };
   fs.promises.rename = async (from, to) => {
-    if (to.startsWith(path.join(f.dir, 'state') + path.sep) && JSON.parse(await fs.promises.readFile(from, 'utf8')).status === 'succeeded') {
+    if ((to as string).startsWith(path.join(f.dir, 'state') + path.sep) && JSON.parse(await fs.promises.readFile(from, 'utf8')).status === 'succeeded') {
       finishing.resolve(); await finish.promise;
     }
     return rename(from, to);
@@ -121,7 +130,7 @@ test('Workflows uses real ACP and hands only completed dependency answers to the
   const r = await f.run([task('a'), task('b', ['a'], 'Use the planted answer')]);
   assert.equal(f.socket.sent.some(row => row.method.startsWith('workGraph/run')), false, 'native execution is disabled');
   const g = await f.finished(r.graphId); assert.equal(g.status, 'succeeded');
-  const prompt = f.log('b').find(row => row.method === 'session/prompt').params.prompt[0].text;
+  const prompt = f.log('b').find(row => row.method === 'session/prompt')!.params.prompt[0]!.text;
   assert.match(prompt, /a\(m-fast\) answered: Seed workflow-acp-739/);
   assert.equal(f.log('a').filter(row => row.method === 'session/prompt').length, 1);
   assert.ok(g.tasks.every(row => row.assignedThreadId && row.result?.summary));
@@ -184,7 +193,7 @@ test('the Mother agent rescues a failed step on Claude Opus and knows the run\'s
   // Since 3 Nov (caeea5006) the Mother runs on the Claude subscription, Opus first (bridge/workflow-models.mts).
   assert.ok(g.mother);
   assert.deepEqual([g.mother.model, g.mother.provider], ['claude/opus', 'claude'], 'she rescues on Claude Opus');
-  const rescue = f.log('Mother agent').filter(row => row.method === 'session/prompt').map(row => row.params.prompt[0].text).join('\n');
+  const rescue = f.log('Mother agent').filter(row => row.method === 'session/prompt').map(row => row.params.prompt[0]!.text).join('\n');
   assert.match(rescue, /Goal: Translate the leaflet into Farsi\./);
   const blank = await f.finished((await f.run([task('b')], { goal: '   ' })).graphId);
   assert.equal(blank.goal, undefined, 'a blank goal is not kept');
@@ -195,8 +204,8 @@ test('recursive feedback runs exactly the explicit number of rounds, with previo
   const r = await f.run(tasks, { roundLimit: 2 }); const g = await f.finished(r.graphId);
   assert.equal(g.status, 'succeeded'); assert.equal(g.round, 2);
   const prompts = f.log('a').filter(row => row.method === 'session/prompt'); assert.equal(prompts.length, 2);
-  assert.doesNotMatch(prompts[0].params.prompt[0].text, /b\(m-fast\)/);
-  assert.match(prompts[1].params.prompt[0].text, /b\(m-fast\) answered/);
+  assert.doesNotMatch(prompts[0]!.params.prompt[0]!.text, /b\(m-fast\)/);
+  assert.match(prompts[1]!.params.prompt[0]!.text, /b\(m-fast\) answered/);
 });
 test('cycles, missing dependencies, duplicate IDs and unbounded feedback fail before spawning', async t => {
   const f = fixture(t); await f.client.initialize();
@@ -245,7 +254,7 @@ test('a join step puts its parts together in order with no agent, and refuses a 
 // clause and the run stopped, because Mother may only retry the failed node, the check itself. A failed check now sends
 // its step back once with the check's findings, and the step is checked again.
 test('a failed check sends its step back once with the findings, then checks again and the run goes on', { timeout: 20000 }, async t => {
-  const env = { workflowFake: {} }, f = fixture(t, { env }); fs.mkdirSync(path.join(f.dir, 'src')); const out = path.join(f.dir, 'src', 'out.txt');
+  const env: FakeEnv & { workflowFake: Record<string, Record<string, string>> } = { workflowFake: {} }, f = fixture(t, { env }); fs.mkdirSync(path.join(f.dir, 'src')); const out = path.join(f.dir, 'src', 'out.txt');
   Object.assign(env.workflowFake, { writer: { FAKE_ACP_WRITE: JSON.stringify({ file: out, text: 'fixed', when: 'Your check found a problem' }) }, check: { FAKE_ACP_EXPECT: JSON.stringify({ file: out, text: 'fixed' }) } });
   await f.client.initialize();
   const r = await f.run([{ ...task('writer'), kind: 'implement', writeScopes: ['src'] }, { ...task('check', ['writer']), kind: 'verify' }, task('next', ['check'])]);
@@ -267,7 +276,7 @@ test('every agent writes: a check gets its own folder, and folders the run names
   const g = await f.finished((await f.run([writer, check])).graphId);
   assert.equal(g.status, 'succeeded', g.error ?? undefined);
   assert.ok(fs.statSync(path.join(f.dir, 'agents/writer/check')).isDirectory());
-  const opened = f.log('check').find(row => row.method === 'session/new').params._meta.elpis.workflow;
+  const opened = f.log('check').find(row => row.method === 'session/new')!.params._meta.elpis.workflow;
   assert.deepEqual([opened.kind, opened.writeScopes], ['verify', ['agents/writer/check']]);
 });
 
@@ -278,19 +287,19 @@ test('a task in Fast runs its agent on the Fast tier; an unknown tier is refused
   const plain = { ...task('plain'), kind: 'implement', writeScopes: ['agents/plain'], unchecked: true };
   const g = await f.finished((await f.run([fast, plain])).graphId);
   assert.equal(g.status, 'succeeded', g.error ?? undefined);
-  assert.equal(f.log('fast').find(row => row.method === 'session/new').params._meta.elpis.workflow.serviceTier, 'priority');
-  assert.equal(f.log('plain').find(row => row.method === 'session/new').params._meta.elpis.workflow.serviceTier, undefined);
+  assert.equal(f.log('fast').find(row => row.method === 'session/new')!.params._meta.elpis.workflow.serviceTier, 'priority');
+  assert.equal(f.log('plain').find(row => row.method === 'session/new')!.params._meta.elpis.workflow.serviceTier, undefined);
   await assert.rejects(f.run([{ ...task('odd'), kind: 'implement', writeScopes: ['agents/odd'], serviceTier: 'turbo', unchecked: true }]), /service tier/i);
   await assert.rejects(f.run([{ ...task('bare'), kind: 'implement', writeScopes: ['agents/bare'] }]), /directly dependent check/, 'a writer still needs a check unless it says it goes unchecked');
 });
 
 test('A30: an empty project runs real ACP processes; every writer and check creates its own report, including a whole-project writer', { timeout: 20000 }, async t => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'wf1-reports-'));
-  const env = { workflowFake: {} };
+  const env: FakeEnv & { workflowFake: Record<string, Record<string, string>> } = { workflowFake: {} };
   const f = fixture(t, { stateDir: path.join(home, 'workflow-state'), env });
   await f.client.initialize();
   assert.deepEqual(fs.readdirSync(f.dir), [], 'the run starts in a project with no files or subfolders');
-  const tasks = [], reports = new Map();
+  const tasks: WorkflowInput['tasks'] = [], reports = new Map<string, string>();
   for (const [index, id] of ['first', 'middle', 'last'].entries()) {
     const folder = `agents/${id}`, ownReport = `${folder}/report.md`, checkReport = `${folder}/check/report.md`;
     const content = `# ${id}\n## Result\nPlanted evidence A30-${index}.\n## Evidence\nACP wrote this file.\n## Files\n${ownReport}\n## Open\nNone.\n`;
@@ -322,7 +331,7 @@ test('A30: an empty project runs real ACP processes; every writer and check crea
   t.diagnostic('Six ACP child sessions wrote and read all six report.md files; a writer had scope ".". No model or credentials used.');
 });
 // A41: stages belong to the bridge, not to the Workflows screen, so a run goes on when that screen is closed.
-const staged = async (f, id) => { let graph; for (let n = 0; n < 400; n++) { graph = (await f.client.workflows(ROOT)).data.find(item => item.id === id); if (graph?.next && ['cancelled', 'failed'].includes(graph.next.status) || graph?.next?.reported || graph?.next?.error) return graph; await pause(25); } throw Error(`the next stage did not settle: ${JSON.stringify(graph?.next)}`); };
+const staged = async (f: ReturnType<typeof fixture>, id: string) => { let graph; for (let n = 0; n < 400; n++) { graph = (await f.client.workflows(ROOT)).data.find(item => item.id === id) as WorkflowRun | undefined; if (graph?.next && ['cancelled', 'failed'].includes(graph.next.status) || graph?.next?.reported || graph?.next?.error) return graph as WorkflowRun & { next: NonNullable<WorkflowRun['next']> & { error?: string; reported?: boolean } }; await pause(25); } throw Error(`the next stage did not settle: ${JSON.stringify(graph?.next)}`); };
 const fatherPart = { name: 'Father agent · Team', thread: { name: 'Father agent · Team', instructions: 'You are the Father agent.' }, tasks: [task('f')] };
 test('the Father agent part starts from the bridge after the Mother agent part, in his own chat, and his report reaches hers', { timeout: 30000 }, async t => {
   const f = fixture(t); await f.client.initialize();
@@ -331,18 +340,18 @@ test('the Father agent part starts from the bridge after the Mother agent part, 
   const graph = await staged(f, r.graphId);
   assert.deepEqual([graph.next.threadId, graph.next.status, graph.next.reported], [FATHER, 'succeeded', true]);
   assert.equal(f.log('f').filter(row => row.method === 'session/prompt').length, 1, "the Father agent's agent ran");
-  assert.match(f.socket.sent.find(row => row.method === 'thread/start').params.developerInstructions, /You are the Father agent\./);
+  assert.match(f.socket.sent.find(row => row.method === 'thread/start')!.params.developerInstructions, /You are the Father agent\./);
   const report = f.socket.sent.find(row => row.method === 'turn/start' && row.params.threadId === ROOT);
-  assert.match(JSON.stringify(report.params.input), /Report from the Father agent[\s\S]*Status: succeeded/);
+  assert.match(JSON.stringify(report!.params.input), /Report from the Father agent[\s\S]*Status: succeeded/);
 });
 test("a refused Father agent report is tried again, and its reason is kept when it never goes through", { timeout: 30000 }, async t => {
-  for (const [refusals, reported] of [[2, true], [9, false]]) {
+  for (const [refusals, reported] of [[2, true], [9, false]] as const) {
     const f = fixture(t); await f.client.initialize(); f.socket.refuseTurns = refusals;
     const r = await f.run([task('m')], { next: fatherPart });
     const graph = await staged(f, r.graphId);
-    if (!reported) for (let n = 0; n < 200 && !graph.next.error; n++) Object.assign(graph, (await f.client.workflows(ROOT)).data.find(item => item.id === r.graphId)), await pause(25);
+    if (!reported) for (let n = 0; n < 200 && !graph.next.error; n++) { Object.assign(graph, (await f.client.workflows(ROOT)).data.find(item => item.id === r.graphId)); await pause(25); }
     assert.equal(!!graph.next.reported, reported);
-    if (!reported) assert.match(graph.next.error, /^Father agent report not delivered: busy/);
+    if (!reported) assert.match(graph.next.error!, /^Father agent report not delivered: busy/);
     assert.equal(f.socket.sent.filter(row => row.method === 'turn/start' && row.params.threadId === ROOT).length, reported ? 3 : 4);
   }
 });
@@ -356,7 +365,7 @@ test('a Mother agent part that fails never starts the Father agent', { timeout: 
 });
 test('workflow ACP permissions are allowed and recorded on the node without reaching the approval UI', { timeout: 20000 }, async t => {
   const f = fixture(t); await f.client.initialize();
-  const questions = [];
+  const questions: unknown[] = [];
   f.client.on('event', event => {
     if (event.type !== 'approval') return;
     questions.push(event.data);
@@ -381,15 +390,15 @@ test('time limit cancels the process and blocks dependents', { timeout: 20000 },
 test('isolated ACP writes reach their verifier, then the source; scope escape or a changed source prevents integration', { timeout: 30000 }, async t => {
   for (const mode of ['success', 'scope', 'dirty']) {
     const f = fixture(t, { env: { workflowFake: {} } }); await f.client.initialize();
-    const git = (...args) => execFileSync('git', ['-c', 'core.hooksPath=/dev/null', '-c', 'user.name=Test', '-c', 'user.email=test@example.test', ...args], { cwd: f.dir, encoding: 'utf8' }).trim();
+    const git = (...args: string[]) => execFileSync('git', ['-c', 'core.hooksPath=/dev/null', '-c', 'user.name=Test', '-c', 'user.email=test@example.test', ...args], { cwd: f.dir, encoding: 'utf8' }).trim();
     git('init', '-q'); fs.writeFileSync(path.join(f.dir, '.gitignore'), 'state/\n*.jsonl\n'); fs.mkdirSync(path.join(f.dir, 'src')); fs.writeFileSync(path.join(f.dir, 'src', 'seed'), 'base'); git('add', '.gitignore', 'src/seed'); git('commit', '-qm', 'baseline');
     const baseline = git('rev-parse', 'HEAD');
     // The fake ACP command writes relative to its session's actual isolated cwd.
     const a = { ...task('writer'), kind: 'implement', writeScopes: ['src'] };
     const check = { ...task('check', ['writer']), kind: 'verify' };
     // Recreate only the injected fake environment, without replacing runAcpNode.
-    f.fakeEnv.workflowFake.writer = { FAKE_ACP_WRITE: JSON.stringify({ file: mode === 'scope' ? 'outside.txt' : 'src/result', text: 'workflow planted result' }) };
-    f.fakeEnv.workflowFake.check = { FAKE_ACP_EXPECT: JSON.stringify({ file: 'src/result', text: 'workflow planted result' }) };
+    f.fakeEnv!.workflowFake!.writer = { FAKE_ACP_WRITE: JSON.stringify({ file: mode === 'scope' ? 'outside.txt' : 'src/result', text: 'workflow planted result' }) };
+    f.fakeEnv!.workflowFake!.check = { FAKE_ACP_EXPECT: JSON.stringify({ file: 'src/result', text: 'workflow planted result' }) };
     if (mode === 'dirty') fs.writeFileSync(path.join(f.dir, 'src', 'seed'), 'user edit');
     const r = await f.run([a, check], { isolation: 'worktree' }); const g = await f.finished(r.graphId);
     if (mode === 'success') {
@@ -397,7 +406,7 @@ test('isolated ACP writes reach their verifier, then the source; scope escape or
       await f.client.mergeWorkflow(r.graphId, {});
       assert.equal(g.status, 'succeeded', g.error ?? undefined); assert.equal(fs.readFileSync(path.join(f.dir, 'src/result'), 'utf8'), 'workflow planted result');
       assert.notEqual(git('rev-parse', 'HEAD'), baseline);
-      assert.equal(f.log('check').find(row => row.method === 'session/new').params.cwd.includes('-elpis/workflows/'), true);
+      assert.equal(f.log('check').find(row => row.method === 'session/new')!.params.cwd.includes('-elpis/workflows/'), true);
     } else {
       if (mode === 'dirty') { assert.equal(g.status, 'succeeded'); await assert.rejects(f.client.mergeWorkflow(r.graphId, {}), /project changed/); }
       else assert.equal(g.status, 'failed');
@@ -425,21 +434,21 @@ test('the concurrency cap and overlapping writer scopes hold before another proc
 });
 
 // One bridge runs every workflow under one memory budget (bridge/memory-budget.mjs). Each node holds its turn until `release`.
-function budgetFixture(t, budget) {
+function budgetFixture(t: TestContext, budget: ReturnType<typeof createMemoryBudget>) {
   const tempRoot = createTestTempDir(path.join(os.homedir(), '.cache/elpis-tests/workflow-budget-'));
   const dir = path.join(tempRoot, 'project'); fs.mkdirSync(dir);
   const release = path.join(tempRoot, 'release');
-  const log = id => { const file = path.join(tempRoot, `${id}.jsonl`); return fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse) : []; };
-  const instructions = new Map();
+  const log = (id: string): LogRow[] => { const file = path.join(tempRoot, `${id}.jsonl`); return fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line) as LogRow) : []; };
+  const instructions = new Map<string, string>();
   const runs = createWorkflowRuns({ stateDir: path.join(tempRoot, 'state'), budget, nodeSpec: node => (instructions.set(node.name, node.prompt), { name: node.name, command: process.execPath, args: [FAKE], model: node.model,
     env: { FAKE_ACP_NAME: node.name, FAKE_ACP_MODELS: 'm-fast', FAKE_ACP_LOG: path.join(tempRoot, `${node.name}.jsonl`), FAKE_ACP_HOLD_TURN: '1', FAKE_ACP_RELEASE: release } }) });
-  const record = async id => { const found = (await runs.list()).find(record => record.id === id); assert.ok(found); return found; };
-  const until = async (check, message) => { for (let n = 0; n < 500; n++) { if (await check()) return; await pause(20); } assert.fail(message); };
+  const record = async (id: string) => { const found = (await runs.list()).find(record => record.id === id); assert.ok(found); return found; };
+  const until = async (check: () => boolean | Promise<boolean>, message: string) => { for (let n = 0; n < 500; n++) { if (await check()) return; await pause(20); } assert.fail(message); };
   t.after(async () => { runs.close(); await until(async () => (await runs.list()).every(record => record.status !== 'running'), 'runs stopped'); removeTestTempDir(tempRoot); });
-  return { log, record, until, instructions, release: () => fs.writeFileSync(release, ''), cancel: rootThreadId => runs.cancel(rootThreadId),
-    started: ids => ids.filter(id => log(id).some(row => row.method === 'session/prompt')),
-    start: (rootThreadId, tasks, extra = {}) => runs.start({ rootThreadId, name: rootThreadId, tasks, ...extra }, { cwd: dir, model: 'm-fast', modelProvider: 'openai' }),
-    finished: async id => { await until(async () => (await record(id)).status !== 'running', 'workflow did not finish'); return record(id); } };
+  return { log, record, until, instructions, release: () => fs.writeFileSync(release, ''), cancel: (rootThreadId: string) => runs.cancel(rootThreadId),
+    started: (ids: string[]) => ids.filter(id => log(id).some(row => row.method === 'session/prompt')),
+    start: (rootThreadId: string, tasks: WorkflowInput['tasks'], extra: Partial<WorkflowInput> = {}) => runs.start({ rootThreadId, name: rootThreadId, tasks, ...extra }, { cwd: dir, model: 'm-fast', modelProvider: 'openai' }),
+    finished: async (id: string) => { await until(async () => (await record(id)).status !== 'running', 'workflow did not finish'); return record(id); } };
 }
 const plenty = { available: async () => 64, app: async () => 0, pollMs: 20 };
 
@@ -501,7 +510,7 @@ test('a run stops at its time limit and says so; agents are told the time left; 
   f.release();
   const quick = await f.start('quick', [task('fine')], { runLimitSeconds: 60 });
   assert.equal((await f.finished(quick.graphId)).status, 'succeeded');
-  const prompt = id => f.instructions.get(id) ?? '';
+  const prompt = (id: string) => f.instructions.get(id) ?? '';
   assert.match(prompt('fine'), /Time left for the whole run: about 1 minute\./, 'agents are told the time left so they finish inside it');
   const open = await f.start('open', [task('unlimited')]);
   await f.finished(open.graphId);
