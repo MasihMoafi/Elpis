@@ -1,4 +1,4 @@
-import { createTestTempDir, removeTestTempDir } from './temp-root.mjs';
+import { createTestTempDir, removeTestTempDir } from './temp-root.mts';
 // Actual bridge, scripted engine and ACP adapter, isolated state; no provider calls.
 // A chat whose first turn is still running must list (and search) with its prompt, model, name and status.
 // Run: node --test tools/elpis-claude/test/active-first-turn-list.test.mjs

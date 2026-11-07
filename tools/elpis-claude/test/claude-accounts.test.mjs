@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { once } from "node:events";
-import { createTestTempDir, removeTestTempDir } from "./temp-root.mjs";
+import { createTestTempDir, removeTestTempDir } from "./temp-root.mts";
 import { ClaudeAccounts } from "../claude-accounts.mjs";
 
 function fixture(t) {

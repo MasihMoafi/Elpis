@@ -1,37 +1,40 @@
 // The Claude Code processes the adapter starts (workers) load only the MCP servers Elpis passes,
 // and leave no process behind: each runs in its own process group, which ends with it.
 import { spawn } from 'node:child_process';
+import type { SpawnOptionsWithoutStdio } from 'node:child_process';
 
 const STARTS_WORKER = new Set(['session/new', 'session/load', 'session/resume']);
 const GRACE_MS = 2000;
-const groups = new Map(); // a worker's process group -> its ending, once begun
+const groups = new Map<number, Promise<void> | null>(); // a worker's process group -> its ending, once begun
 
 // A request that can start a worker gets strict MCP config, so Claude Code ignores the user's own
 // servers (ELPIS_WORKER_USER_MCP=1 keeps them), and the spawn below. `mcpServers` is untouched.
-export function workerRequest(msg) {
-  if (!STARTS_WORKER.has(msg?.method) || !msg.params) return msg;
+type Request = { method?: string; params?: { _meta?: { claudeCode?: { options?: Record<string, unknown>; [key: string]: unknown }; [key: string]: unknown }; [key: string]: unknown }; [key: string]: unknown };
+export function workerRequest<T extends Request>(msg: T) {
+  if (!msg?.method || !STARTS_WORKER.has(msg.method) || !msg.params) return msg;
   const meta = msg.params._meta ?? {}, claudeCode = meta.claudeCode ?? {};
   const options = { ...claudeCode.options, spawnClaudeCodeProcess: spawnWorker, ...(process.env.ELPIS_WORKER_USER_MCP !== '1' && { strictMcpConfig: true }) };
   return { ...msg, params: { ...msg.params, _meta: { ...meta, claudeCode: { ...claudeCode, options } } } };
 }
 
 // The Agent SDK's own spawn, in a new process group. Its stderr goes to the adapter's, which the bridge logs.
-export function spawnWorker({ command, args, cwd, env, signal }) {
+export function spawnWorker({ command, args, cwd, env, signal }: { command: string; args: string[]; cwd?: string; env?: NodeJS.ProcessEnv; signal?: SpawnOptionsWithoutStdio["signal"] }) {
   const child = spawn(command, args, { cwd, env, signal, detached: true, stdio: ['pipe', 'pipe', 'inherit'], windowsHide: true });
-  if (child.pid) {
-    groups.set(child.pid, null);
-    child.once('exit', () => endGroup(child.pid));
+  const pid = child.pid;
+  if (pid) {
+    groups.set(pid, null);
+    child.once('exit', () => endGroup(pid));
   }
   return child;
 }
 
-const toGroup = (pgid, name) => { try { process.kill(-pgid, name); return true; } catch { return false; } };
+const toGroup = (pgid: number, name: NodeJS.Signals | 0) => { try { process.kill(-pgid, name); return true; } catch { return false; } };
 
 // SIGTERM to every process left in the group (MCP servers keep it after the worker is gone),
 // SIGKILL after GRACE_MS to any still there.
-function endGroup(pgid) {
+function endGroup(pgid: number) {
   if (!groups.get(pgid)) {
-    const ending = new Promise(resolve => {
+    const ending = new Promise<void>(resolve => {
       if (!toGroup(pgid, 'SIGTERM')) return resolve();
       const started = Date.now();
       const timer = setInterval(() => {

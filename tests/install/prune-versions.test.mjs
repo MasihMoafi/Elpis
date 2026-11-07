@@ -8,7 +8,7 @@ import { mkdirSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { pruneVersions } from '../../scripts/prune-versions.mjs';
+import { pruneVersions } from '../../scripts/prune-versions.mts';
 
 // Under the home folder, not /tmp: gio trash cannot trash on a tmpfs mount.
 function versions(t, count) {

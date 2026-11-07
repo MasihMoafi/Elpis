@@ -9,15 +9,15 @@ for await (const chunk of process.stdin) input += chunk;
 const call = JSON.parse(input || "{}").toolCall ?? {};
 const args = call.args ?? {};
 const { ELPIS_AGY_GATE: gate, ELPIS_AGY_CWD: cwd, ELPIS_AGY_HOOKS: hooks } = process.env;
-const answer = (decision) => process.stdout.write(JSON.stringify(decision));
-const inHooks = (path) => typeof path === "string" && !!hooks && path.startsWith(hooks);
+const answer = (decision: unknown) => process.stdout.write(JSON.stringify(decision));
+const inHooks = (path: unknown) => typeof path === "string" && !!hooks && path.startsWith(hooks);
 
 const target = args.TargetFile ?? args.AbsolutePath ?? args.FilePath;
 if (inHooks(target)) {
   answer({ decision: "deny", reason: `Work in ${cwd}: ${hooks} is Elpis's approval folder, not part of the task.` });
 } else {
   const overwrite = inHooks(args.Cwd) && cwd ? { Cwd: cwd } : null;
-  const reply = !gate ? { allowed: true } : await new Promise((resolve) => {
+  const reply = !gate ? { allowed: true } : await new Promise<{ allowed?: boolean } | null>((resolve) => {
     const sock = connect(gate);
     let buf = "";
     sock.on("connect", () => sock.write(JSON.stringify({ toolCall: { name: call.name, args: { ...args, ...overwrite } } }) + "\n"));

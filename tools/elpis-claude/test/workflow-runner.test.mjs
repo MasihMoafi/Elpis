@@ -9,7 +9,7 @@ import { execFileSync } from "node:child_process";
 import test from "node:test";
 import { WorkflowRunner, agentKey, personAskedForWorkflow, noticeText, NOTICE_TAG } from "../workflow-runner.mjs";
 import { parseScript } from "../workflow-script.mjs";
-import { createTestTempDir, removeTestTempDir } from "./temp-root.mjs";
+import { createTestTempDir, removeTestTempDir } from "./temp-root.mts";
 
 const homes = [];
 const home = () => { const dir = createTestTempDir(path.join(os.tmpdir(), "wf-runner-")); homes.push(dir); return dir; };

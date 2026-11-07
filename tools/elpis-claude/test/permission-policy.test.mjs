@@ -6,8 +6,8 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { defaultPermissionMode, defaultPermissionSettings, permissionAllowed, permissionMode, permissionSettings, permissionSettingsAllowed } from '../permission-policy.mjs';
-import { PermissionChoices } from '../permission-choices.mjs';
-import { forAll } from './property.mjs';
+import { PermissionChoices } from '../permission-choices.mts';
+import { forAll } from './property.mts';
 
 test('Full access is the missing-policy default and never enables Bypass', () => {
   for (const config of [{}, { default_permissions: ':danger-full-access' }, { sandbox_mode: 'workspace-write' }]) {

@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { records, requirePass } from './gate-guards.mts';
 import { assertSourceCommit, verifyPackagedSources, verifyRendererReceipt } from './renderer-artifact-gate.mjs';
 import { durableSourceCheckout } from '../bridge/improve-source.mts';
-import { pruneVersions } from '../../../scripts/prune-versions.mjs';
+import { pruneVersions } from '../../../scripts/prune-versions.mts';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();

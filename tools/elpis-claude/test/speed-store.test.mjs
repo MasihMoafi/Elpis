@@ -36,7 +36,7 @@ if (process.argv.includes('app-server')) {
   fs.mkdirSync(path.join(root, 'speed-evidence'), { recursive: true });
   const home = fs.mkdtempSync(path.join(root, `speed-bridge-${label}-`)), bundle = path.join(home, 'bundle');
   fs.mkdirSync(bundle, { recursive: true });
-  for (const file of fs.readdirSync(source).filter(f => f.endsWith('.mjs') || f === 'package.json')) fs.copyFileSync(path.join(source, file), path.join(bundle, file));
+  for (const file of fs.readdirSync(source).filter(f => (f.endsWith('.mjs') || f.endsWith('.mts')) || f === 'package.json')) fs.copyFileSync(path.join(source, file), path.join(bundle, file));
   if (!fs.existsSync(path.join(bundle, 'node_modules'))) fs.symlinkSync(path.join(source, 'node_modules'), path.join(bundle, 'node_modules'));
   const engine = path.join(home, 'engine.mjs');
   fs.writeFileSync(engine, `#!${process.execPath}\nimport ${JSON.stringify(import.meta.url)};\n`, { mode: 0o755 });

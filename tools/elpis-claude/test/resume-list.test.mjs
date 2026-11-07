@@ -1,4 +1,4 @@
-import { createTestTempDir, removeTestTempDir } from './temp-root.mjs';
+import { createTestTempDir, removeTestTempDir } from './temp-root.mts';
 // Actual bridge, deterministic local engine, isolated state; no provider calls.
 // Run: node --test tools/elpis-claude/test/resume-list.test.mjs
 import assert from "node:assert/strict";

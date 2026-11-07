@@ -3,7 +3,7 @@ import { ndJsonStream } from '@agentclientprotocol/sdk';
 import { v1AgentApp } from './node_modules/@agentclientprotocol/claude-agent-acp/dist/acp-agent.js';
 import { applyManagedPolicyEnv } from './node_modules/@agentclientprotocol/claude-agent-acp/dist/managed-policy.js';
 import { nodeToWebReadable, nodeToWebWritable } from './node_modules/@agentclientprotocol/claude-agent-acp/dist/utils.js';
-import { endWorkers, workerRequest } from './worker-lifecycle.mjs';
+import { endWorkers, workerRequest } from './worker-lifecycle.mts';
 
 await applyManagedPolicyEnv();
 console.log = console.error;

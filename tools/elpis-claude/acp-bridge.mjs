@@ -3,23 +3,23 @@
 import { splitContext, splitTokens, transcriptReader } from "./context-split.mjs";
 import { createBridgeServer, bridgeUrl, createEngine, stopBridgeListener, shutdownRuntime, createDrainServer, drainFile, probe, startToken, allowEngines } from "./shared-runtime.mjs";
 import { closeWhenQuiet, currentDrain, drainProxy, trackRequests } from "./handover.mjs";
-import { withFileLock } from "./file-lock.mjs";
-import { isSignedOut, setSignedOut, SIGNED_OUT_MESSAGE } from "./anthropic-signout.mjs";
+import { withFileLock } from "./file-lock.mts";
+import { isSignedOut, setSignedOut, SIGNED_OUT_MESSAGE } from "./anthropic-signout.mts";
 import { ClaudeAccounts } from "./claude-accounts.mjs";
-import { recordedClaudeEnd } from "./claude-turn-record.mjs";
+import { recordedClaudeEnd } from "./claude-turn-record.mts";
 import { WorkflowRunner, noticeText, personAskedForWorkflow } from "./workflow-runner.mjs";
 import { bridgeExecutor } from "./workflow-agents.mjs";
 import { connectAppServer } from "./app-server-connection.mjs";
 import { execFile, spawn } from "node:child_process";
 import { existsSync, readFileSync, renameSync, rmSync, statSync, watch, writeFileSync } from "node:fs";
 import { readFile, mkdir } from "node:fs/promises";
-import { appendLog, redactSecrets, redactedLines } from "./log-redaction.mjs";
+import { appendLog, redactSecrets, redactedLines } from "./log-redaction.mts";
 import { homedir } from "node:os";
 import { join, dirname, basename } from "node:path";
 import { randomUUID } from "node:crypto";
 import { defaultPermissionMode, defaultPermissionSettings, permissionSettingsAllowed, permissionSettings, permissionMode } from './permission-policy.mjs';
-import { PermissionChoices } from './permission-choices.mjs';
-import { acpErrorInfo } from './acp-errors.mjs';
+import { PermissionChoices } from './permission-choices.mts';
+import { acpErrorInfo } from './acp-errors.mts';
 
 const HOME = process.env.HOME;
 const permissionChoices = new PermissionChoices(process.env.ELPIS_HOME || join(HOME, '.elpis-next'));
@@ -231,7 +231,7 @@ function updateStore(fn) {
 const STATE_DIR = STORE.slice(0, STORE.lastIndexOf("/"));
 const claudeAccounts = new ClaudeAccounts({ home: HOME, dir: STATE_DIR, defaultConfigDir: process.env.CLAUDE_CONFIG_DIR ?? join(HOME, ".claude"), claudeBin: process.env.CLAUDE_CODE_EXECUTABLE ?? join(HOME, ".local/bin/claude") });
 const CATALOG = `${STATE_DIR}/catalog.json`;
-// Elpis's own sign-out of the Claude subscription (anthropic-signout.mjs), read whenever it matters, so
+// Elpis's own sign-out of the Claude subscription (anthropic-signout.mts), read whenever it matters, so
 // the terminal and the desktop follow it at once. While it is on, Claude's models, usage and turns are
 // gone from Elpis; Claude Code's own login (~/.claude) is never touched.
 const claudeSignedOut = () => isSignedOut(STATE_DIR);

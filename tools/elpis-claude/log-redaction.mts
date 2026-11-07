@@ -1,8 +1,9 @@
 import { appendFileSync } from "node:fs";
 import { StringDecoder } from "node:string_decoder";
+import type { Readable } from "node:stream";
 
 // Keep this policy aligned with core/src/log_redaction.rs; both run log-secrets.json.
-const rules = [
+const rules: [string, RegExp, boolean?][] = [
   ["env", /^([ \t]*(?:export[ \t]+)?(?:[A-Za-z_][A-Za-z0-9_]*)?(?:KEY|TOKEN|SECRET)[ \t]*=[ \t]*)([^\r\n]+)/gim, true],
   ["x-api-key", /(\bx-api-key[ \t]*:[ \t]*["']?)([^\s"'`,;}\[\]<>\\]+)/gi, true],
   ["bearer", /(\bBearer[ \t]+)([^\s"'`,;}\[\]<>\\]+)/gi, true],
@@ -16,11 +17,11 @@ const rules = [
 const marker = /^\[redacted:[a-z-]+\]$/;
 
 /** Redact a stored copy. counts contains occurrences, never credential values. */
-export function redactSecrets(text, counts = {}) {
-  text = String(text);
+export function redactSecrets(input: unknown, counts: Record<string, number> = {}): string {
+  let text = String(input);
   // Decode JSON string tokens even inside prefixed log messages and JSONL. Preserve
   // whitespace, numbers and escaping of untouched strings, including nested inputs.
-  let previous;
+  let previous: { end: number; kind: string | null } | null = null;
   const original = text;
   text = text.replace(/"(?:\\.|[^"\\])*"/g, (token, offset) => {
     let value;
@@ -45,19 +46,19 @@ export function redactSecrets(text, counts = {}) {
   return text;
 }
 
-export function appendLog(file, message) {
+export function appendLog(file: string, message: unknown) {
   appendFileSync(file, `${new Date().toISOString().slice(11, 23)} ${redactSecrets(message)}\n`, { mode: 0o600 });
 }
 
 // Credentials and UTF-8 characters can span data chunks. Redact complete lines.
-export function redactedLines(stream, emit) {
+export function redactedLines(stream: Readable, emit: (line: string) => void) {
   const decoder = new StringDecoder("utf8");
   let pending = "", discarded = false, ended = false;
   const flush = () => {
     emit(discarded ? "[redacted:oversize]" : redactSecrets(pending.replace(/\r$/, "")));
     pending = ""; discarded = false;
   };
-  const consume = text => {
+  const consume = (text: string) => {
     const parts = text.split("\n");
     for (const [index, part] of parts.entries()) {
       if (!discarded) {

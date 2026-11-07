@@ -12,14 +12,14 @@ const FILE = "anthropic.json";
 // No file: signed in. Otherwise signed out unless the file says `signedOut: false`; a file that cannot be
 // read or understood counts as signed out, so a damaged switch never spends the subscription against the
 // person's wish.
-export function isSignedOut(dir) {
+export function isSignedOut(dir: string) {
   let text;
-  try { text = readFileSync(join(dir, FILE), "utf8"); } catch (error) { return error.code !== "ENOENT"; }
+  try { text = readFileSync(join(dir, FILE), "utf8"); } catch (error) { return !(error instanceof Error && "code" in error && error.code === "ENOENT"); }
   try { return JSON.parse(text)?.signedOut !== false; } catch { return true; }
 }
 
 // Written to a private temporary file and renamed into place, so a reader never sees half a file.
-export function setSignedOut(dir, signedOut) {
+export function setSignedOut(dir: string, signedOut: boolean) {
   if (typeof signedOut !== "boolean") throw Object.assign(new Error("signedOut must be true or false"), { code: -32602 });
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const temporary = join(dir, `.${FILE}.${randomBytes(6).toString("hex")}`);

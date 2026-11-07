@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { acpErrorInfo } from "../acp-errors.mjs";
+import { acpErrorInfo } from "../acp-errors.mts";
 
 for (const [message, expected] of [
   ["Individual quota reached. Please upgrade your subscription. Resets in 17h3m6s.", "usageLimitExceeded"],

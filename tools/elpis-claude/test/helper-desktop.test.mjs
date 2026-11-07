@@ -17,7 +17,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { DesktopClient } from '../../../apps/elpis-desktop/bridge/client.mts';
 import { startDesktopServer } from '../../../apps/elpis-desktop/bridge/server.mts';
-import { createTestTempDir, removeTestTempDir } from './temp-root.mjs';
+import { createTestTempDir, removeTestTempDir } from './temp-root.mts';
 
 const source = fileURLToPath(new URL('..', import.meta.url));
 const self = fileURLToPath(import.meta.url);

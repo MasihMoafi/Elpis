@@ -30,7 +30,7 @@ test('every actual starter has exactly one evidence entry, valid primary sources
       assert.match(source.url, /^https:\/\/(arxiv.org|aclanthology.org)\//);
     }
   }
-  execFileSync(process.execPath, [path.join(__dirname, '../../../scripts/workflow-sources.mjs'), '--check']);
+  execFileSync(process.execPath, [path.join(__dirname, '../../../scripts/workflow-sources.mts'), '--check']);
 });
 
 test('Lab preserves every starter’s dependency barriers and critiques; multiple sinks receive one synthesis stage', () => {

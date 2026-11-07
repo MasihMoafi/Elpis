@@ -6,8 +6,8 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { WorkflowRunner } from "../workflow-runner.mjs";
-import { createTestTempDir, removeTestTempDir } from "./temp-root.mjs";
-import { forAll } from "./property.mjs";
+import { createTestTempDir, removeTestTempDir } from "./temp-root.mts";
+import { forAll } from "./property.mts";
 
 const homes = [];
 test.after(() => { for (const dir of homes) removeTestTempDir(dir); });
@@ -17,7 +17,7 @@ const META = "export const meta = { name: 'property', description: 'a generated 
 const lit = (v) => JSON.stringify(v);
 
 // hold(prompt) -> a promise the turn waits for, or null; every turn answers "done: <prompt>".
-function executor({ hold = () => null, delay = () => 0 } = {}) {
+function executor({ hold = () => null, delay = /** @returns {number} */ () => 0 } = {}) {
   let n = 0, active = 0;
   const ex = {
     turns: [], ended: [], maxActive: 0,

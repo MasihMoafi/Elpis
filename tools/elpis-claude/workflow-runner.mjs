@@ -14,7 +14,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { Worker } from "node:worker_threads";
 import { parseScript, checkSchema, validate, strictSchema, fromStrict, jsonAnswer } from "./workflow-script.mjs";
-import { autoConcurrency } from "./workflow-concurrency.mjs";
+import { autoConcurrency } from "./workflow-concurrency.mts";
 
 export const LIMITS = Object.freeze({ agents: 1000, items: 4096 });
 const EFFORTS = ["low", "medium", "high", "xhigh", "max"];

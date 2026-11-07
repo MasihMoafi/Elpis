@@ -16,7 +16,7 @@ if (!bridgeOnly) {
 const resources = new URL('./resources/', import.meta.url);
 await fs.mkdir(resources, { recursive: true });
 await fs.copyFile(new URL('../../../tools/elpis-claude/permission-policy.mjs', import.meta.url), new URL('./permission-policy.mjs', resources));
-await fs.copyFile(new URL('../../../tools/elpis-claude/workflow-concurrency.mjs', import.meta.url), new URL('./workflow-concurrency.mjs', resources));
+await fs.copyFile(new URL('../../../tools/elpis-claude/workflow-concurrency.mts', import.meta.url), new URL('./workflow-concurrency.mts', resources));
 await fs.copyFile(new URL('../../../codex-rs/core/src/prompts/rag.md', import.meta.url), new URL('./rag.md', resources));
 await fs.copyFile(new URL('../../../codex-rs/skills/src/assets/personal/SKILL.md', import.meta.url), new URL('./personal.md', resources));
 // Observability serves the Trajectory page (apps/elpis-trajectory, built and committed there) from the renderer's own files.

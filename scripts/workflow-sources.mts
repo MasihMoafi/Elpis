@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 const root = new URL('../', import.meta.url);
 const evidence = JSON.parse(await fs.readFile(new URL('apps/elpis-desktop/lib/workflow-sources.json', root), 'utf8'));
 const lines = ['# Workflow sources', '', `Reviewed ${evidence.reviewed}. ${evidence.scope}`, '',
-  'Generated from `apps/elpis-desktop/lib/workflow-sources.json`, also imported by the app. Edit that file, then run `node scripts/workflow-sources.mjs`; `--check` detects drift. Years identify the first paper version; venue notes identify later publication. The source links on Canvas starters describe implementation inspiration, not efficacy.', ''];
+  'Generated from `apps/elpis-desktop/lib/workflow-sources.json`, also imported by the app. Edit that file, then run `node scripts/workflow-sources.mts`; `--check` detects drift. Years identify the first paper version; venue notes identify later publication. The source links on Canvas starters describe implementation inspiration, not efficacy.', ''];
 for (const pattern of evidence.patterns) {
   lines.push(`## ${pattern.name}`, '', `**${pattern.status}.** What is proven: ${pattern.proven}`, '', `What is not: ${pattern.unproven}`, '');
   for (const id of pattern.origins) {
@@ -20,6 +20,6 @@ for (const pattern of evidence.patterns) {
 }
 const result = lines.join('\n'), destination = new URL('docs/workflow-sources.md', root);
 if (process.argv.includes('--check')) {
-  if (await fs.readFile(destination, 'utf8') !== result) throw Error('workflow-sources.md is stale; run node scripts/workflow-sources.mjs');
+  if (await fs.readFile(destination, 'utf8') !== result) throw Error('workflow-sources.md is stale; run node scripts/workflow-sources.mts');
   process.stdout.write('Workflow sources match the canonical data.\n');
 } else { await fs.writeFile(destination, result); process.stdout.write(`${fileURLToPath(destination)}\n`); }

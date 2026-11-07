@@ -19,7 +19,7 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { redactSecrets, redactedLines } from "./log-redaction.mjs";
+import { redactSecrets, redactedLines } from "./log-redaction.mts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const shared = () => Boolean(process.env.ELPIS_SHARED_BRIDGE);
@@ -463,7 +463,7 @@ export function codeIdentity(bridgeScript, node = process.execPath) {
   const script = fs.realpathSync(bridgeScript);
   const dir = path.dirname(script);
   const files = {};
-  for (const name of fs.readdirSync(dir).filter((n) => n.endsWith(".mjs") || n === "package.json" || n === "package-lock.json").sort()) files[name] = sha(fs.readFileSync(path.join(dir, name)));
+  for (const name of fs.readdirSync(dir).filter((n) => (n.endsWith(".mjs") || n.endsWith(".mts")) || n === "package.json" || n === "package-lock.json").sort()) files[name] = sha(fs.readFileSync(path.join(dir, name)));
   let modules = null;
   try {
     const adapter = JSON.parse(fs.readFileSync(path.join(dir, "node_modules/@agentclientprotocol/claude-agent-acp/package.json"), "utf8"));

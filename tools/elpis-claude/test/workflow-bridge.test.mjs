@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 import WebSocket, { WebSocketServer } from "ws";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { createTestTempDir, removeTestTempDir } from "./temp-root.mjs";
+import { createTestTempDir, removeTestTempDir } from "./temp-root.mts";
 import { DesktopClient } from "../../../apps/elpis-desktop/bridge/client.mts";
 import { startDesktopServer } from "../../../apps/elpis-desktop/bridge/server.mts";
 

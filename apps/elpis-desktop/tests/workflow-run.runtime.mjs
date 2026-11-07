@@ -233,7 +233,7 @@ test('an update hands a running workflow to the newer runtime, which takes it wi
   // second one's launch is an update, and the first hands over (startDrain releases its runs).
   const bundle = (name) => {
     const dir = path.join(root, name); fs.mkdirSync(dir);
-    for (const file of fs.readdirSync(tools).filter((f) => f.endsWith('.mjs') || f === 'package.json')) fs.copyFileSync(path.join(tools, file), path.join(dir, file));
+    for (const file of fs.readdirSync(tools).filter((f) => (f.endsWith('.mjs') || f.endsWith('.mts')) || f === 'package.json')) fs.copyFileSync(path.join(tools, file), path.join(dir, file));
     fs.symlinkSync(path.join(tools, 'node_modules'), path.join(dir, 'node_modules'));
     return dir;
   };

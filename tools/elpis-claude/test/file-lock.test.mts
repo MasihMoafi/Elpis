@@ -1,5 +1,5 @@
 // Two bridges share the chat store while one hands over to the other: each read-modify-write holds a lock
-// every process sees. Run: node --test tools/elpis-claude/test/file-lock.test.mjs
+// every process sees. Run: node --test tools/elpis-claude/test/file-lock.test.mts
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
@@ -8,7 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { withFileLock } from "../file-lock.mjs";
+import { withFileLock } from "../file-lock.mts";
 
 const self = fileURLToPath(import.meta.url);
 
@@ -17,7 +17,7 @@ if (process.argv[2] === "writer") {
   for (let i = 0; i < Number(count); i++) await withFileLock(file, async () => {
     const value = JSON.parse(fs.readFileSync(file, "utf8"));
     value[key] = (value[key] ?? 0) + 1;
-    await new Promise((resolve) => setTimeout(resolve, 1)); // a real save takes a moment
+    await new Promise<void>((resolve) => setTimeout(resolve, 1)); // a real save takes a moment
     fs.writeFileSync(`${file}.${key}.tmp`, JSON.stringify(value)); fs.renameSync(`${file}.${key}.tmp`, file);
   });
 } else {

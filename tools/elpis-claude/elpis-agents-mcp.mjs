@@ -3,7 +3,7 @@
 // it up, steer it mid-turn or stop it. list_models says what each model is for. Each helper is a
 // normal Elpis thread, so it appears in Elpis history (`elpis resume <thread id>` opens it).
 import { spawn } from "node:child_process";
-import { appendLog } from "./log-redaction.mjs";
+import { appendLog } from "./log-redaction.mts";
 import { connectAppServer } from "./app-server-connection.mjs";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
