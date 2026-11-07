@@ -192,7 +192,7 @@ export async function impl_steer(this: DesktopClient, clientState: ClientState, 
     return internal_mutate(clientState, id, async () => {
       const thread = await internal_current.call(this, clientState, id);
       if (thread.desktopAccess.mode === 'continue') throw new BridgeError('Wait for this agent to finish; a message then continues it in a new conversation.', 409);
-      await clientState.workflowRuns.noteManualSteer(id);
+      await clientState.workflowRuns.noteManualSteer(id as string);
       try { return await internal_rpc(this, clientState, 'turn/steer', params); }
       catch (error) {
         const failure = error as { code?: unknown; engineMessage: string };
@@ -213,7 +213,7 @@ export async function impl_steer(this: DesktopClient, clientState: ClientState, 
 export async function impl_interrupt(this: DesktopClient, clientState: ClientState, id: unknown, raw: unknown) {
     const body = object(raw, ['turnId']) as { turnId?: unknown };
     threadId(id);
-    if(clientState.workflowRuns.cancel(id))return { interrupted: true };
+    if(clientState.workflowRuns.cancel(id as string))return { interrupted: true };
     return internal_mutate(clientState, id, async () => {
       // A Claude subagent's thread is read-only (the bridge refuses to resume it), yet Stop reaches it.
       await internal_attach.call(this, clientState, id).catch((error: unknown) => { if (!/read-only/.test((error as Error).message)) throw error; });

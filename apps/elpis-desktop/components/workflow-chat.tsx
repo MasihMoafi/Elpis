@@ -69,7 +69,7 @@ export function graphForWorkflow(run: RecordedWorkflow, liveAgents: readonly Thr
   return arrange(withMother({ name: run.name || "Workflow", workflowId: run.id, nodes, edges }));
 }
 
-/** The agents the Mother added during a run (bridge/workflow-acp.mjs `decide`), put on the live board with their
+/** The agents the Mother added during a run (bridge/workflow-acp.mts `decide`), put on the live board with their
  * wiring; the board is returned unchanged when there are none new. Their checks stay inside them, as on any board. */
 export function withAddedAgents(graph: CanvasGraph, tasks: readonly Omit<RecordedTask, "result" | "status">[]): CanvasGraph {
   const present = new Set(graph.nodes.map(node => node.id)), fresh = tasks.filter(task => task.addedBy === "mother" && task.kind !== "verify" && !present.has(task.id));

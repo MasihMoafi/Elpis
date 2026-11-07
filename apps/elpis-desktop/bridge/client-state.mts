@@ -6,7 +6,7 @@ import type { RewindSnapshots } from './rewind-snapshots.mts';
 import type { SpawnLinks } from './spawn-links.mjs';
 import type { createCloudroomVm } from './cloudroom-vm.mjs';
 import type { createGithubConnector } from './github-connector.mts';
-import type { createWorkflowHistory, createWorkflowRuns } from './workflow-acp.mjs';
+import type { createWorkflowHistory, createWorkflowRuns } from './workflow-acp.mts';
 
 export type ClientSocket = {
   on(event: string, handler: (...args: unknown[]) => void): unknown;

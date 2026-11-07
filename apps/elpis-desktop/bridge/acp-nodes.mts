@@ -4,7 +4,7 @@ import { BridgeError } from './client.mts';
 import { childEnv } from './tools.mts';
 
 type Input = { name: string; answer: string; file?: string };
-type Spec = { name?: string; command: string; args?: string[]; env?: Record<string, string | undefined>; model?: string; mode?: string; instructions?: string; instructionsInPrompt?: boolean; meta?: { elpis?: { workflow?: boolean; [key: string]: unknown }; [key: string]: unknown }; reasoningEffort?: string; elpis?: boolean };
+type Spec = { name?: string; command: string; args?: string[]; env?: Record<string, string | undefined>; model?: string; mode?: string; instructions?: string; instructionsInPrompt?: boolean; meta?: { elpis?: { workflow?: unknown; [key: string]: unknown }; [key: string]: unknown }; reasoningEffort?: string; elpis?: boolean };
 type Update = { sessionUpdate?: string; content?: { type?: string; text: string }; messageId?: string | null; _meta?: { elpis?: { phase?: string } }; toolCallId?: string; status?: string };
 type Permission = { sessionId?: string; options?: { kind: string; optionId: string }[]; toolCall: { title: string } };
 type Config = { id: string; options?: { value?: string; options?: { value?: string }[] }[] };
@@ -23,7 +23,7 @@ const CANCELLED = Symbol('cancelled');
 function throwStopped(error: BridgeError): never { throw error; }
 
 /** The text a node is prompted with: its task, then the final answers of the nodes connected to it, with their names.
- * `file`: where a workflow keeps an answer in full when `answer` is its summary (workflow-acp.mjs, "inline and spill"). */
+ * `file`: where a workflow keeps an answer in full when `answer` is its summary (workflow-acp.mts, "inline and spill"). */
 export function handoffText(task: string | undefined, inputs: Input[] = [], instructions?: string) {
   const upstream = inputs.map(({ name, answer, file }) => ({ name, answer, ...(file ? { file } : {}) }));
   const text = [instructions?.trim() ? `Instructions:\n${instructions.trim()}` : '', String(task ?? '').trim(),

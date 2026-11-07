@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { DesktopClient } from './client.mts';
 import { startDesktopServer } from './server.mts';
 import { loveNodeSpec } from './love-agents.mjs';
-import { createWorkflowHistory, createWorkflowRuns } from './workflow-acp.mjs';
+import { createWorkflowHistory, createWorkflowRuns } from './workflow-acp.mts';
 import { createMemoryBudget } from './memory-budget.mts';
 
 const ROOT = '00000000-0000-0000-0000-000000000001';
@@ -47,7 +47,8 @@ function fixture(t, overrides = {}, clientOptions = {}) {
   const finished = async id => {
     for (let n = 0; n < 500; n++) {
       const g = (await client.workflows(ROOT)).data.find(g => g.id === id);
-      if (g && g.status !== 'running') return g;
+      // This fixture returns no native work graphs, so every result is an ACP record.
+      if (g && g.status !== 'running') return /** @type {Awaited<ReturnType<ReturnType<typeof createWorkflowRuns>['list']>>[number]} */ (g);
       await pause(20);
     }
     throw Error('workflow did not finish');
@@ -123,7 +124,7 @@ test('Workflows uses real ACP and hands only completed dependency answers to the
   const prompt = f.log('b').find(row => row.method === 'session/prompt').params.prompt[0].text;
   assert.match(prompt, /a\(m-fast\) answered: Seed workflow-acp-739/);
   assert.equal(f.log('a').filter(row => row.method === 'session/prompt').length, 1);
-  assert.ok(g.tasks.every(row => row.assignedThreadId && row.result.summary));
+  assert.ok(g.tasks.every(row => row.assignedThreadId && row.result?.summary));
 });
 test('workflow history lists persisted teams without a selected conversation', { timeout: 20000 }, async t => {
   const f = fixture(t); await f.client.initialize();
@@ -132,6 +133,7 @@ test('workflow history lists persisted teams without a selected conversation', {
   const completed = await f.finished(started.graphId);
   const history = (await f.client.workflowHistory()).data;
   const record = history.find(row => row.id === completed.id);
+  assert.ok(record); assert.ok(record.tasks[0]);
   assert.equal(record.rootThreadId, ROOT);
   assert.equal(record.name, 'ACP team');
   assert.equal(record.status, 'succeeded');
@@ -159,6 +161,7 @@ test('a dead workflow owner cannot leave Mother agent running and block history 
   const listed = await history.list(await read());
   for (const [index, entry] of cases.entries()) {
     const row = listed.data.find(row => row.id === ids[index]);
+    assert.ok(row);
     assert.equal(row.removable, entry.removable, `${entry.status}/${entry.mother}, owner ${entry.ownerPid}`);
     if (entry.removable) assert.equal((await history.remove(row.id, read)).removed, row.id);
     else await assert.rejects(history.remove(row.id, read), /Finish this workflow/);
@@ -169,14 +172,17 @@ test('failure blocks dependent ACP nodes; an independent node can finish', { tim
   const f = fixture(t); await f.client.initialize();
   const r = await f.run([task('a', [], '[crash]'), task('b', ['a']), task('c')]);
   const g = await f.finished(r.graphId); assert.equal(g.status, 'failed');
-  assert.equal(g.tasks.find(n => n.id === 'b').status, 'blocked'); assert.equal(f.log('b').length, 0);
-  assert.equal(g.tasks.find(n => n.id === 'c').status, 'succeeded');
+  const b = g.tasks.find(n => n.id === 'b'); assert.ok(b);
+  assert.equal(b.status, 'blocked'); assert.equal(f.log('b').length, 0);
+  const c = g.tasks.find(n => n.id === 'c'); assert.ok(c);
+  assert.equal(c.status, 'succeeded');
 });
 test('the Mother agent rescues a failed step on Claude Opus and knows the run\'s goal; a blank goal is not kept', { timeout: 20000 }, async t => {
   const f = fixture(t); await f.client.initialize();
   const g = await f.finished((await f.run([task('a', [], '[crash]')], { goal: 'Translate the leaflet into Farsi' })).graphId);
   assert.equal(g.goal, 'Translate the leaflet into Farsi');
   // Since 3 Nov (caeea5006) the Mother runs on the Claude subscription, Opus first (bridge/workflow-models.mts).
+  assert.ok(g.mother);
   assert.deepEqual([g.mother.model, g.mother.provider], ['claude/opus', 'claude'], 'she rescues on Claude Opus');
   const rescue = f.log('Mother agent').filter(row => row.method === 'session/prompt').map(row => row.params.prompt[0].text).join('\n');
   assert.match(rescue, /Goal: Translate the leaflet into Farsi\./);
@@ -213,7 +219,8 @@ test('failed verification cannot release a downstream writer', { timeout: 20000 
   const check = { ...task('check', ['writer'], '[fail-check]'), kind: 'verify' };
   const r = await f.run([a, check, task('next', ['check'])]);
   const g = await f.finished(r.graphId); assert.equal(g.status, 'failed');
-  assert.equal(g.tasks.find(t => t.id === 'check').status, 'failed'); assert.equal(f.log('next').length, 0);
+  const checkResult = g.tasks.find(t => t.id === 'check'); assert.ok(checkResult);
+  assert.equal(checkResult.status, 'failed'); assert.equal(f.log('next').length, 0);
 });
 // 28 Oct, Masih: "Why is it taking so excruciatingly long?" Putting finished parts together needs no agent, no model and
 // no check: a join step writes its parts, in order, into its output, and nothing outside the project.
@@ -223,15 +230,15 @@ test('a join step puts its parts together in order with no agent, and refuses a 
   fs.writeFileSync(path.join(f.dir, 'agents', 'a', 'pages.md'), 'Page one.\n'); fs.writeFileSync(path.join(f.dir, 'agents', 'b', 'pages.md'), 'Page two.\n');
   const join = { id: 'join', kind: 'join', title: 'Join the pages', instruction: 'Join', dependsOn: [], writeScopes: ['.'], acceptanceCriteria: ['all parts'], parts: ['agents/a/pages.md', 'agents/b/pages.md'], output: 'transcription.md' };
   const g = await f.finished((await f.run([join])).graphId);
-  assert.equal(g.status, 'succeeded', g.error);
+  assert.equal(g.status, 'succeeded', g.error ?? undefined);
   assert.equal(fs.readFileSync(path.join(f.dir, 'transcription.md'), 'utf8'), 'Page one.\n\nPage two.\n');
   assert.equal(f.log('join').length, 0, 'no agent was started');
   // Pages of one text: a page that ends mid-sentence runs on into the next.
   fs.writeFileSync(path.join(f.dir, 'agents', 'a', 'pages.md'), 'A sentence that runs\n');
-  const flowing = await f.finished((await f.run([{ ...join, id: 'flow', flow: true }])).graphId); assert.equal(flowing.status, 'succeeded', flowing.error);
+  const flowing = await f.finished((await f.run([{ ...join, id: 'flow', flow: true }])).graphId); assert.equal(flowing.status, 'succeeded', flowing.error ?? undefined);
   assert.equal(fs.readFileSync(path.join(f.dir, 'transcription.md'), 'utf8'), 'A sentence that runs Page two.\n');
   const outside = await f.finished((await f.run([{ ...join, id: 'outside', parts: ['../secret.md'] }])).graphId);
-  assert.equal(outside.status, 'failed'); assert.match(outside.error, /outside the project/);
+  assert.equal(outside.status, 'failed'); assert.ok(outside.error); assert.match(outside.error, /outside the project/);
 });
 
 // 28 Oct, Masih: the OCR run "shouldn't take this long" and must finish with no further input. Its check found a dropped
@@ -242,9 +249,10 @@ test('a failed check sends its step back once with the findings, then checks aga
   Object.assign(env.workflowFake, { writer: { FAKE_ACP_WRITE: JSON.stringify({ file: out, text: 'fixed', when: 'Your check found a problem' }) }, check: { FAKE_ACP_EXPECT: JSON.stringify({ file: out, text: 'fixed' }) } });
   await f.client.initialize();
   const r = await f.run([{ ...task('writer'), kind: 'implement', writeScopes: ['src'] }, { ...task('check', ['writer']), kind: 'verify' }, task('next', ['check'])]);
-  const g = await f.finished(r.graphId); assert.equal(g.status, 'succeeded', g.error);
+  const g = await f.finished(r.graphId); assert.equal(g.status, 'succeeded', g.error ?? undefined);
   const prompts = f.log('writer').filter(entry => entry.method === 'session/prompt').map(entry => JSON.stringify(entry.params));
   assert.equal(prompts.length, 2, 'the step ran once more');
+  assert.ok(prompts[1]);
   assert.match(prompts[1], /The planted result did not arrive/, 'with its check\u2019s findings');
   assert.ok(f.log('next').length > 0, 'and the run went on');
 });
@@ -257,7 +265,7 @@ test('every agent writes: a check gets its own folder, and folders the run names
   const writer = { ...task('writer'), kind: 'implement', writeScopes: ['agents/writer'] };
   const check = { ...task('check', ['writer']), kind: 'verify', writeScopes: ['agents/writer/check'] };
   const g = await f.finished((await f.run([writer, check])).graphId);
-  assert.equal(g.status, 'succeeded', g.error);
+  assert.equal(g.status, 'succeeded', g.error ?? undefined);
   assert.ok(fs.statSync(path.join(f.dir, 'agents/writer/check')).isDirectory());
   const opened = f.log('check').find(row => row.method === 'session/new').params._meta.elpis.workflow;
   assert.deepEqual([opened.kind, opened.writeScopes], ['verify', ['agents/writer/check']]);
@@ -269,7 +277,7 @@ test('a task in Fast runs its agent on the Fast tier; an unknown tier is refused
   const fast = { ...task('fast'), kind: 'implement', writeScopes: ['agents/fast'], serviceTier: 'priority', unchecked: true };
   const plain = { ...task('plain'), kind: 'implement', writeScopes: ['agents/plain'], unchecked: true };
   const g = await f.finished((await f.run([fast, plain])).graphId);
-  assert.equal(g.status, 'succeeded', g.error);
+  assert.equal(g.status, 'succeeded', g.error ?? undefined);
   assert.equal(f.log('fast').find(row => row.method === 'session/new').params._meta.elpis.workflow.serviceTier, 'priority');
   assert.equal(f.log('plain').find(row => row.method === 'session/new').params._meta.elpis.workflow.serviceTier, undefined);
   await assert.rejects(f.run([{ ...task('odd'), kind: 'implement', writeScopes: ['agents/odd'], serviceTier: 'turbo', unchecked: true }]), /service tier/i);
@@ -295,17 +303,19 @@ test('A30: an empty project runs real ACP processes; every writer and check crea
     reports.set(ownReport, content); reports.set(checkReport, verdict);
   }
   const started = await f.run(tasks);
-  for (const task of tasks) assert.ok(fs.statSync(path.join(f.dir, task.writeScopes.at(-1))).isDirectory(), `${task.id}'s folder exists as soon as the run starts`);
+  for (const task of tasks) { const folder = task.writeScopes.at(-1); assert.ok(folder); assert.ok(fs.statSync(path.join(f.dir, folder)).isDirectory(), `${task.id}'s folder exists as soon as the run starts`); }
   const result = await f.finished(started.graphId);
-  assert.equal(result.status, 'succeeded', result.error);
+  assert.equal(result.status, 'succeeded', result.error ?? undefined);
   for (const [report, content] of reports) assert.equal(fs.readFileSync(path.join(f.dir, report), 'utf8'), content, `real report written: ${report}`);
   for (const task of tasks) {
     const session = f.log(task.id).find(row => row.method === 'session/new');
     assert.ok(session, `${task.id} started its own ACP session`);
     assert.deepEqual(session.params._meta.elpis.workflow.writeScopes, task.writeScopes);
     assert.doesNotMatch(session.params._meta.systemPrompt.append, /read.only/i);
-    assert.ok(fs.statSync(path.join(f.dir, task.writeScopes.at(-1))).isDirectory());
-    assert.match(result.tasks.find(item => item.id === task.id).result.summary, task.kind === 'verify' ? /Read planted result/ : /answered/);
+    const folder = task.writeScopes.at(-1); assert.ok(folder);
+    assert.ok(fs.statSync(path.join(f.dir, folder)).isDirectory());
+    const finishedTask = result.tasks.find(item => item.id === task.id); assert.ok(finishedTask); assert.ok(finishedTask.result);
+    assert.match(finishedTask.result.summary, task.kind === 'verify' ? /Read planted result/ : /answered/);
   }
   assert.equal(new Set(tasks.map(task => task.writeScopes.at(-1))).size, tasks.length);
   assert.equal(f.socket.sent.some(row => row.method.startsWith('workGraph/run')), false, 'the ACP scheduler, not native work graphs, ran');
@@ -355,15 +365,17 @@ test('workflow ACP permissions are allowed and recorded on the node without reac
   });
   const r = await f.run([task('a', [], '[permission]')]);
   const g = await f.finished(r.graphId); assert.equal(g.status, 'succeeded');
-  assert.match(g.tasks[0].result.summary, /permission: allow_once/); assert.equal(f.client.pendingApprovals.length, 0);
+  const firstTask = g.tasks[0]; assert.ok(firstTask); assert.ok(firstTask.result); assert.ok(firstTask.permissions?.[0]); assert.ok(firstTask.progress);
+  assert.match(firstTask.result.summary, /permission: allow_once/); assert.equal(f.client.pendingApprovals.length, 0);
   assert.deepEqual(questions, [], 'no permission question is emitted to the person');
-  assert.equal(g.tasks[0].permissions[0].optionId, 'allow_once');
-  assert.match(g.tasks[0].progress.find(entry => entry.text?.includes('automatically')).text, /Write notes.txt/);
+  assert.equal(firstTask.permissions[0].optionId, 'allow_once');
+  const automatic = firstTask.progress.find(entry => entry.text?.includes('automatically')); assert.ok(automatic?.text);
+  assert.match(automatic.text, /Write notes.txt/);
 });
 test('time limit cancels the process and blocks dependents', { timeout: 20000 }, async t => {
   const f = fixture(t); await f.client.initialize();
   const r = await f.run([task('a', [], '[hang]'), task('b', ['a'])], { maxRuntimeSeconds: 1 });
-  const g = await f.finished(r.graphId); assert.equal(g.status, 'failed'); assert.match(g.error, /timed out/);
+  const g = await f.finished(r.graphId); assert.equal(g.status, 'failed'); assert.ok(g.error); assert.match(g.error, /timed out/);
   assert.equal(f.log('b').length, 0);
 });
 test('isolated ACP writes reach their verifier, then the source; scope escape or a changed source prevents integration', { timeout: 30000 }, async t => {
@@ -383,7 +395,7 @@ test('isolated ACP writes reach their verifier, then the source; scope escape or
     if (mode === 'success') {
       assert.equal(fs.existsSync(path.join(f.dir, 'src/result')), false, 'the candidate waits for Mother agent');
       await f.client.mergeWorkflow(r.graphId, {});
-      assert.equal(g.status, 'succeeded', g.error); assert.equal(fs.readFileSync(path.join(f.dir, 'src/result'), 'utf8'), 'workflow planted result');
+      assert.equal(g.status, 'succeeded', g.error ?? undefined); assert.equal(fs.readFileSync(path.join(f.dir, 'src/result'), 'utf8'), 'workflow planted result');
       assert.notEqual(git('rev-parse', 'HEAD'), baseline);
       assert.equal(f.log('check').find(row => row.method === 'session/new').params.cwd.includes('-elpis/workflows/'), true);
     } else {
@@ -421,7 +433,7 @@ function budgetFixture(t, budget) {
   const instructions = new Map();
   const runs = createWorkflowRuns({ stateDir: path.join(tempRoot, 'state'), budget, nodeSpec: node => (instructions.set(node.name, node.prompt), { name: node.name, command: process.execPath, args: [FAKE], model: node.model,
     env: { FAKE_ACP_NAME: node.name, FAKE_ACP_MODELS: 'm-fast', FAKE_ACP_LOG: path.join(tempRoot, `${node.name}.jsonl`), FAKE_ACP_HOLD_TURN: '1', FAKE_ACP_RELEASE: release } }) });
-  const record = async id => (await runs.list()).find(record => record.id === id);
+  const record = async id => { const found = (await runs.list()).find(record => record.id === id); assert.ok(found); return found; };
   const until = async (check, message) => { for (let n = 0; n < 500; n++) { if (await check()) return; await pause(20); } assert.fail(message); };
   t.after(async () => { runs.close(); await until(async () => (await runs.list()).every(record => record.status !== 'running'), 'runs stopped'); removeTestTempDir(tempRoot); });
   return { log, record, until, instructions, release: () => fs.writeFileSync(release, ''), cancel: rootThreadId => runs.cancel(rootThreadId),
@@ -456,6 +468,7 @@ test('no node starts below the memory floor; the run log says so once when the w
   const waiting = await f.record(run.graphId);
   assert.deepEqual(waiting.tasks.map(task => task.status), ['pending', 'pending']);
   assert.equal(f.log('m1').length + f.log('m2').length, 0, 'no agent process starts');
+  assert.ok(waiting.log);
   assert.deepEqual(waiting.log.map(line => line.text), ['waiting for memory: 3.1 GB available, floor 4 GB'], 'one line however long the wait');
   f.cancel('stopped');
   assert.equal((await f.finished(stopped.graphId)).status, 'cancelled', 'a run cancelled while it waits for memory ends');
@@ -463,6 +476,7 @@ test('no node starts below the memory floor; the run log says so once when the w
   free = 12;
   const ended = await f.finished(run.graphId);
   assert.deepEqual(ended.tasks.map(task => task.status), ['succeeded', 'succeeded']);
+  assert.ok(ended.log);
   assert.deepEqual(ended.log.map(line => line.text), ['waiting for memory: 3.1 GB available, floor 4 GB', 'memory available: 12.0 GB available, the app uses 0.0 GB']);
 });
 
@@ -483,7 +497,7 @@ test('a run stops at its time limit and says so; agents are told the time left; 
   const slow = await f.start('slow', [task('held')], { runLimitSeconds: 1 });
   const ended = await f.finished(slow.graphId);
   assert.equal(ended.status, 'cancelled');
-  assert.match(ended.error, /time limit/);
+  assert.ok(ended.error); assert.match(ended.error, /time limit/);
   f.release();
   const quick = await f.start('quick', [task('fine')], { runLimitSeconds: 60 });
   assert.equal((await f.finished(quick.graphId)).status, 'succeeded');

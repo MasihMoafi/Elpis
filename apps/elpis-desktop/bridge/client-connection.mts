@@ -126,7 +126,7 @@ type RpcResponses = {
   'externalAgentConfig/import/readHistories': { data: { importId: string; successes: unknown[]; failures: { message?: unknown }[] }[] };
   'experimentalFeature/list': { data: { stage: string; name: string; displayName?: string; description?: string; enabled: boolean }[]; nextCursor?: string | null };
   'account/login/start': { authUrl?: string; loginId?: string };
-  'workGraph/list': { data: { id: string; startedAt?: number; createdAt?: number }[] };
+  'workGraph/list': { data: { id: string; name: string; status: string; tasks: { id: string; kind: string; title: string; status: string; dependencies: string[]; assignedThreadId: string | null; provider: string | null; model: string | null; result: unknown; evidence: string[]; failureReason: string | null }[]; startedAt?: number; createdAt?: number; error: string | null }[] };
   'account/read': { account?: { type?: string } | null };
   'thread/realtime/listVoices': { voices: { v1: string[]; defaultV1: string } };
   'claudeAccounts/read': { activeId: string; accounts: { id?: unknown; authenticated?: unknown; duplicate?: unknown }[] };

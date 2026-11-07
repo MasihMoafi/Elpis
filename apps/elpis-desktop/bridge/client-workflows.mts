@@ -32,7 +32,7 @@ async function internal_workflowRecords(this: DesktopClient, clientState: Client
     const native = [];
     for (const rootThreadId of roots) {
       const listed = await internal_rpc(this, clientState, 'workGraph/list', { rootThreadId });
-      native.push(...(listed.data ?? []).map((record: { id: string; startedAt?: number; createdAt?: number }) => ({ ...record, rootThreadId })));
+      native.push(...(listed.data ?? []).map(record => ({ ...record, rootThreadId })));
     }
     const byId = new Map([...native, ...saved].map(record => [record.id, record]));
     return [...byId.values()].sort((a, b) => (b.startedAt ?? b.createdAt ?? 0) - (a.startedAt ?? a.createdAt ?? 0));
@@ -43,8 +43,8 @@ export async function impl_workflowHistory(this: DesktopClient, clientState: Cli
 /** Leaving History ends a run: its worktrees and branches are freed (Undo brings back only the record). */
 export async function impl_removeWorkflowHistory(this: DesktopClient, clientState: ClientState, id: unknown, body: unknown) {
     threadId(id); object(body, []);
-    const result = await clientState.workflowHistory.remove(id, () => internal_workflowRecords.call(this, clientState));
-    await clientState.workflowRuns.free(id); return result;
+    const result = await clientState.workflowHistory.remove(id as string, () => internal_workflowRecords.call(this, clientState));
+    await clientState.workflowRuns.free(id as string); return result;
   }
 
 export async function impl_undoWorkflowHistory(this: DesktopClient, clientState: ClientState, body: unknown) { object(body, []); return clientState.workflowHistory.undo(); }
@@ -98,7 +98,7 @@ export async function impl_skipScriptAgent(this: DesktopClient, clientState: Cli
 
 export async function impl_steerWorkflow(this: DesktopClient, clientState: ClientState, id: unknown, taskId: unknown, body: unknown) {
     threadId(id); text(taskId, 'workflow node', 100); object(body, ['id', 'text']);
-    return clientState.workflowRuns.steer(id, taskId, body);
+    return clientState.workflowRuns.steer(id as string, taskId as string, body as { id?: unknown; text?: unknown });
   }
 
 export async function impl_resumeWorkflow(this: DesktopClient, clientState: ClientState, id: unknown, raw: unknown) {
@@ -112,12 +112,12 @@ export async function impl_resumeWorkflow(this: DesktopClient, clientState: Clie
       const root = await internal_current.call(this, clientState, record.rootThreadId);
       if (root.status?.type === 'active') throw new BridgeError('Wait for the current conversation turn before resuming this workflow', 409);
       if (body.model !== undefined) { await this.models(); await internal_providerModel.call(this, clientState, body.model, body.provider ?? root.modelProvider); }
-      return clientState.workflowRuns.resume(id, root, body);
+      return clientState.workflowRuns.resume(id as string, root as Parameters<typeof clientState.workflowRuns.resume>[1], body as { model?: string; provider?: string });
     });
   }
 
 export async function impl_mergeWorkflow(this: DesktopClient, clientState: ClientState, id: unknown, body: unknown) {
-    threadId(id); object(body, []); return clientState.workflowRuns.merge(id);
+    threadId(id); object(body, []); return clientState.workflowRuns.merge(id as string);
   }
 
 export function impl_workflowPresets(this: DesktopClient, _clientState: ClientState) { return { data: WORKFLOW_PRESETS }; }
@@ -129,7 +129,7 @@ export async function impl_runWorkflowPreset(this: DesktopClient, clientState: C
     await this.models();
     for (const model of new Set([MOTHER_MODEL, ...preset.tasks.map(task => task.model)])) internal_model.call(this, clientState, model);
     const created = await this.createThread({ cwd: body.cwd, model: MOTHER_MODEL, name: preset.name, agents: true, instructions: `You are the Mother agent, the workflow coordinator. Goal: ${body.goal}. Review the children’s candidate commits and merge only after passing checks.` });
-    return clientState.workflowRuns.start({ ...preset, rootThreadId: created.thread.id }, created.thread);
+    return clientState.workflowRuns.start({ ...preset, rootThreadId: created.thread.id } as unknown as Parameters<typeof clientState.workflowRuns.start>[0], created.thread as Parameters<typeof clientState.workflowRuns.start>[1]);
   }
 
 /** One stage's tasks, checked as the scheduler takes them. */
@@ -217,7 +217,7 @@ export async function impl_runWorkflow(this: DesktopClient, clientState: ClientS
       const current=await internal_current.call(this, clientState, id);
       if(current.desktopAccess.mode==='continue')throw new BridgeError('Run workflows from a root conversation; this agent takes turns only from its parent',409);
       if(current.status?.type==='active')throw new BridgeError('Wait for the current turn to finish before running a workflow',409);
-      return clientState.workflowRuns.start(params,current);
+      return clientState.workflowRuns.start(params as Parameters<typeof clientState.workflowRuns.start>[0], current as Parameters<typeof clientState.workflowRuns.start>[1]);
     });
   }
 
@@ -260,7 +260,7 @@ export async function internal_workflowEnded(this: DesktopClient, clientState: C
       const created=await this.createThread({...(mother.cwd?{cwd:mother.cwd}:{}),agents:true,name:next.thread.name,instructions:next.thread.instructions,
         ...(next.thread.model?{model:next.thread.model}:{}),...(next.thread.provider?{provider:next.thread.provider}:{})});
       const {thread:_thread,status:_status,...stage}=next;
-      const run=await clientState.workflowRuns.start({...stage,autoMerge:true,rootThreadId:created.thread.id,report:{to:record.rootThreadId,from:record.id}},created.thread);
+      const run=await clientState.workflowRuns.start({...stage,autoMerge:true,rootThreadId:created.thread.id,report:{to:record.rootThreadId,from:record.id}} as unknown as Parameters<typeof clientState.workflowRuns.start>[0],created.thread as Parameters<typeof clientState.workflowRuns.start>[1]);
       await clientState.workflowRuns.note(from,{threadId:created.thread.id,graphId:run.graphId,status:'running'});
     }catch(error){const failure = error as { message?: string } | null | undefined;await clientState.workflowRuns.note(from,{status:'failed',error:String(failure?.message ?? (error as string)).slice(0,500)}).catch(()=>{});}
   }

@@ -148,7 +148,7 @@ function ownFolder(record: Record, task: Task) {
   return typeof own === 'string' && /^agents\/[^/\\]+$/.test(own) && own !== 'agents/..' && own !== 'agents/.' ? { own, check } : { own: null, check };
 }
 
-/** The agent's report, outputs and check verdicts. `record` is a board run (bridge/workflow-acp.mjs). */
+/** The agent's report, outputs and check verdicts. `record` is a board run (bridge/workflow-acp.mts). */
 export async function agentOutput(record: Record | null | undefined, taskId: unknown) {
   const task = record?.tasks?.find(item => item.id === taskId);
   if (!task || task.kind === 'verify') throw new BridgeError('That agent is not part of this workflow.', 404);

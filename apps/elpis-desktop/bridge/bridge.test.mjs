@@ -1328,6 +1328,7 @@ test('workflow history includes native teams discovered through their task chats
     workflowRecords.push({ id, rootThreadId: ROOT, name: 'Native review', status: 'running', tasks: [] });
     const result = await client.workflowHistory();
     assert.equal(result.data.length, 1);
+    assert.ok(result.data[0]);
     assert.equal(result.data[0].id, id);
     assert.equal(result.data[0].rootThreadId, ROOT);
   } finally { client.close(); }
@@ -1464,6 +1465,7 @@ test('manual workflows require an idle root and dispatch the reviewed graph thro
   assert.equal(socket.sent.some(row=>row.method==='workGraph/run'),false);
   const started=await client.runWorkflow(draft);
   const record=(await client.workflows(ROOT)).data.find(row=>row.id===started.graphId);
+  assert.ok(record); assert.ok(record.tasks[0]); assert.ok('instruction' in record.tasks[0]);
   assert.equal(record.name,draft.name); assert.equal(record.tasks[0].instruction,task.instruction);
   assert.equal(socket.sent.some(row=>row.method==='turn/start'),false);
   assert.equal(socket.sent.filter(row=>row.method==='workGraph/run').length,0);
@@ -1479,6 +1481,7 @@ test('a task reasoning effort is validated and retained for ACP execution', asyn
   assert.equal(socket.sent.some(row=>row.method.startsWith('workGraph/run')),false);
   const started=await client.runWorkflow(draft);
   const record=(await client.workflows(ROOT)).data.find(row=>row.id===started.graphId);
+  assert.ok(record); assert.ok(record.tasks[0]); assert.ok('reasoningEffort' in record.tasks[0]);
   assert.equal(record.tasks[0].reasoningEffort,'high');
   assert.equal(socket.sent.some(row=>row.method.startsWith('workGraph/run')),false);
   client.close();
@@ -1492,7 +1495,9 @@ test('worktree isolation is validated and retained by the ACP workflow', async (
     await assert.rejects(client.runWorkflow({...draft,isolation:bad}),/isolation/,JSON.stringify(bad));
   assert.equal(socket.sent.some(row=>row.method.startsWith('workGraph/run')),false);
   const started=await client.runWorkflow(draft);
-  assert.equal((await client.workflows(ROOT)).data.find(row=>row.id===started.graphId).isolation,'worktree');
+  const record=(await client.workflows(ROOT)).data.find(row=>row.id===started.graphId);
+  assert.ok(record); assert.ok('isolation' in record);
+  assert.equal(record.isolation,'worktree');
   assert.equal(socket.sent.some(row=>row.method.startsWith('workGraph/run')),false);
   client.close();
 });

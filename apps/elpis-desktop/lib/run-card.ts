@@ -1,4 +1,4 @@
-/** Workflow agents answer the run in JSON (bridge/workflow-acp.mjs): a check's verdict, or Mother agent's decision. Chats show it
+/** Workflow agents answer the run in JSON (bridge/workflow-acp.mts): a check's verdict, or Mother agent's decision. Chats show it
  * as a card and the run's progress as a sentence, never the JSON (27-28 Oct: "showing this way is wrong"). */
 export type RunCard = { label: string; heading: string; failed: boolean; mother: boolean; text: string; summary: string };
 const MOTHER: Record<string, string> = { continue: "Mother agent lets the agent continue", steer: "Mother agent steers the agent", retry: "Mother agent retries the agent", stop: "Mother agent stops the run" };

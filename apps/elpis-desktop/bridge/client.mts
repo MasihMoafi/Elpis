@@ -8,7 +8,7 @@ import { SkillTrash } from './skill-trash.mts';
 import { SpawnLinks } from './spawn-links.mjs';
 import { createCloudroomVm } from './cloudroom-vm.mjs';
 import { createGithubConnector } from './github-connector.mts';
-import { createWorkflowHistory, createWorkflowRuns } from './workflow-acp.mjs';
+import { createWorkflowHistory, createWorkflowRuns } from './workflow-acp.mts';
 import os from 'node:os';
 import path from 'node:path';
 import { profileEnvironment } from './profile-env.mts';

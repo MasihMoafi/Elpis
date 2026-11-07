@@ -11,7 +11,7 @@ import { spawn, execFileSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { createCloudroomVm } from './cloudroom-vm.mjs';
-import { createWorkflowRuns } from './workflow-acp.mjs';
+import { createWorkflowRuns } from './workflow-acp.mts';
 
 const TEST_ROOT = path.join(os.homedir(), '.cache/elpis-tests'); fs.mkdirSync(TEST_ROOT, { recursive: true });
 const FAKE_ACP = fileURLToPath(new URL('../../../tools/elpis-claude/test/fake-acp-agent.mjs', import.meta.url));
@@ -211,7 +211,7 @@ test('a workflow agent runs on the VM: worktree pushed, Claude Code run there, c
   const git = (...args) => execFileSync('git', ['-c', 'core.hooksPath=/dev/null', '-c', 'user.name=Test', '-c', 'user.email=test@elpis.local', ...args], { cwd, encoding: 'utf8' }).trim();
   git('init', '-q'); fs.writeFileSync(path.join(cwd, 'src/seed'), 'base'); fs.writeFileSync(path.join(cwd, 'src/gone'), 'old'); git('add', 'src'); git('commit', '-qm', 'base');
   const local = [];
-  const runs = createWorkflowRuns({ stateDir: path.join(f.root, 'state'), timeoutMs: 20000, cloudroom: f.vm,
+  const runs = createWorkflowRuns({ stateDir: path.join(f.root, 'state'), timeoutMs: 20000, cloudroom: /** @type {NonNullable<NonNullable<Parameters<typeof createWorkflowRuns>[0]>['cloudroom']>} */ (/** @type {unknown} */ (f.vm)),
     // Only the Mother may start an ACP agent on this computer; any other local agent fails the test.
     nodeSpec: node => { local.push(node.name); return { name: node.name, command: process.execPath, args: [FAKE_ACP], env: { FAKE_ACP_NAME: node.name, FAKE_ACP_EFFORTS: 'low,high', FAKE_ACP_ANSWER: JSON.stringify({ passed: true, summary: 'Reviewed the VM work here' }) } }; } });
   t.after(() => runs.close());
@@ -222,15 +222,20 @@ test('a workflow agent runs on the VM: worktree pushed, Claude Code run there, c
   ];
   const started = await runs.start({ rootThreadId: 'root', name: 'VM team', tasks, maxConcurrency: 2, isolation: 'worktree', autoMerge: true, runsOn: 'cloudroom' }, { cwd, model: 'm', modelProvider: 'openai' });
   let record;
-  for (let n = 0; n < 1000; n++) { record = (await runs.list()).find(run => run.id === started.graphId); if (record.status !== 'running') break; await pause(20); }
+  for (let n = 0; n < 1000; n++) { record = (await runs.list()).find(run => run.id === started.graphId); if (record && record.status !== 'running') break; await pause(20); }
+  assert.ok(record);
   assert.equal(record.status, 'succeeded', record.error ?? JSON.stringify(record.tasks.map(task => [task.id, task.failureReason])));
   assert.deepEqual(local, ['Mother agent'], 'every child ran on the VM; only the Mother ran here');
   const writer = record.tasks.find(task => task.id === 'writer');
+  assert.ok(writer); assert.ok(writer.result); assert.ok(writer.routing); assert.ok(writer.routing.attempts[0]);
   assert.match(writer.result.summary, /Claude on the VM did it/);
   assert.equal(writer.routing.attempts[0].runsOn, 'cloudroom');
-  assert.match(record.tasks.find(task => task.id === 'reader').result.summary, /Codex on the VM did it/);
+  const reader = record.tasks.find(task => task.id === 'reader');
+  assert.ok(reader); assert.ok(reader.result);
+  assert.match(reader.result.summary, /Codex on the VM did it/);
   assert.equal(fs.readFileSync(path.join(f.vmHome, 'claude-args'), 'utf8').trim(), '-p --dangerously-skip-permissions --output-format text --model sonnet');
   // The changes reached the project through the local review and merge.
+  assert.ok(record.review);
   assert.equal(record.review.status, 'merged');
   assert.equal(fs.readFileSync(path.join(cwd, 'src/vm.txt'), 'utf8'), 'made on the VM\n');
   assert.equal(fs.readFileSync(path.join(cwd, 'src/seed'), 'utf8'), 'changed on the VM\n');
@@ -242,7 +247,7 @@ test('a workflow agent runs on the VM: worktree pushed, Claude Code run there, c
 
 test('a VM run refuses to start when CloudRoom is not signed in', async t => {
   const f = await fakeCloudroom(t);
-  const runs = createWorkflowRuns({ stateDir: path.join(f.root, 'state'), cloudroom: f.vm });
+  const runs = createWorkflowRuns({ stateDir: path.join(f.root, 'state'), cloudroom: /** @type {NonNullable<NonNullable<Parameters<typeof createWorkflowRuns>[0]>['cloudroom']>} */ (/** @type {unknown} */ (f.vm)) });
   t.after(() => runs.close());
   const cwd = path.join(f.root, 'p'); fs.mkdirSync(cwd);
   await assert.rejects(runs.start({ rootThreadId: 'root', name: 'x', tasks: [{ id: 'a', title: 'a', kind: 'explore', instruction: 'x', dependsOn: [], writeScopes: [], acceptanceCriteria: ['x'] }], runsOn: 'cloudroom' }, { cwd }),

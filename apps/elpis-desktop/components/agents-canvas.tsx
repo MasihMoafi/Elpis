@@ -710,7 +710,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, onRunStart
         const stopLines = fresh.map(stop => ({ at: Date.now(), agent: stop.agent ?? undefined, text: stop.agent ? `${titleOf(stop.agent)}: merge clash in ${filesText(stop.files, 3)}` : `Merge blocked: uncommitted changes in ${filesText(stop.files, 3)}`, tone: "fail" as const }));
         // An agent the Mother just added is not on the board yet in this look: its own title names it.
         const lines = taskLogLines(found.tasks, said.current, reports.current, agent => agents.some(node => node.id === agent) ? titleOf(agent) : found.tasks.find(item => item.id === agent)?.title || titleOf(agent));
-        // The Mother's re-plans (bridge/workflow-acp.mjs `decide`): each decision once in the history, and the agents she
+        // The Mother's re-plans (bridge/workflow-acp.mts `decide`): each decision once in the history, and the agents she
         // added on the board as they come; those she cancelled show as cancelled like any task.
         const decided = motherDecisionLines(found), seen = decisionsSeen.current;
         decisionsSeen.current = Math.max(seen, decided.length);

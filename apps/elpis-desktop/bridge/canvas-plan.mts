@@ -145,7 +145,7 @@ function textList(agent: Record<string, unknown>, field: string, label: string):
   return agent[field] as string[];
 }
 
-/** Also checks the Mother's mid-run additions (bridge/workflow-acp.mjs): the same rules for keys, folders and wiring. */
+/** Also checks the Mother's mid-run additions (bridge/workflow-acp.mts): the same rules for keys, folders and wiring. */
 export function checkPlan(answer: string, { folders, agents: board, maxAgents, models = [] }: { folders: string[]; agents: BoardAgent[]; maxAgents: number; models?: ModelRoute[] }) {
   const plan = shape(parse(answer), PLAN_FIELDS, 'The plan');
   if (typeof plan.name !== 'string' || !plan.name.trim() || plan.name.length > 200) throw refuse('the plan has no name');

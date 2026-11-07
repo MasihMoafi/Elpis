@@ -6,7 +6,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { createWorkflowRuns } from './workflow-acp.mjs';
+import { createWorkflowRuns } from './workflow-acp.mts';
 import { workflowModelRoutes } from './workflow-models.mts';
 import { DesktopClient } from './client.mts';
 import { startDesktopServer } from './server.mts';
@@ -205,7 +205,8 @@ test('isolated nodes with the same scope run concurrently in different branches;
     else { await pause(150); assert.equal(f.log('second').length, 0); }
     assert.equal(f.log('queued').length, 0, 'concurrency cap still applies');
     if (isolated) {
-      const record = await f.record(started.graphId), [a, b] = record.tasks;
+      const record = await f.record(started.graphId); assert.ok(record);
+      const [a, b] = record.tasks; assert.ok(a); assert.ok(b); assert.ok(a.worktree); assert.ok(b.worktree);
       assert.notEqual(a.cwd, b.cwd); assert.notEqual(a.worktree.branch, b.worktree.branch);
       assert.equal(f.git('rev-parse', 'HEAD'), execFileSync('git', ['rev-parse', 'HEAD'], { cwd: a.cwd, encoding: 'utf8' }).trim());
       assert.equal(f.log('first').find(row => row.method === 'session/new').params.cwd, a.cwd);
@@ -238,6 +239,7 @@ test('live ACP progress survives reload; steering waits for tools and records de
   await assert.rejects(g.runs.steer(run.graphId, 'live', { text: 'Too late' }), /not running/i);
   const restored = createWorkflowRuns({ stateDir: path.join(g.home, 'state') });
   const saved = (await restored.list())[0];
+  assert.ok(saved); assert.ok(saved.tasks[0]);
   assert.deepEqual(saved.tasks[0].progress, completed.tasks[0].progress);
   assert.deepEqual(saved.tasks[0].messages, completed.tasks[0].messages);
   await assert.rejects(restored.steer('missing', 'live', { text: 'No such run' }), /not found/i);

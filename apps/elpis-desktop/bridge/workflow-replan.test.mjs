@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { createWorkflowRuns, REPLAN_LIMIT } from './workflow-acp.mjs';
+import { createWorkflowRuns, REPLAN_LIMIT } from './workflow-acp.mts';
 import { workflowDefaults, MOTHER_ROUTE, MOTHER_FALLBACK } from './workflow-models.mts';
 
 const TEST_ROOT = path.join(os.homedir(), '.cache/elpis-tests'); fs.mkdirSync(TEST_ROOT, { recursive: true });
@@ -150,6 +150,7 @@ test('an invalid answer is ignored and logged: not JSON, cancelling a running ag
   const done = await f.finished(graphId);
   assert.equal(done.status, 'succeeded');
   assert.deepEqual(done.tasks.map(item => [item.id, item.status]), [['a', 'succeeded'], ['b', 'succeeded'], ['c', 'succeeded'], ['d', 'succeeded']], 'nothing was added or cancelled');
+  assert.ok(before); assert.ok(before.mother);
   const invalid = before.mother.decisions.map(item => [item.decision, item.summary]);
   assert.deepEqual(invalid, [['invalid', 'Ignored her answer — her answer was not JSON'], ['invalid', 'Ignored her answer — cancel names only pending agents'],
     ['invalid', 'Ignored her answer — Agent "x" uses the folder "secret", which is not in the project\'s folder list']]);
