@@ -27,7 +27,7 @@ export function useModelCatalog() {
 }
 
 /** Model lists by configured connection; another connection's catalog is read from its own endpoint. */
-function useProviderCatalogs(value: ElpisSettings, models: Model[], selected: (string | null)[]) {
+export function useProviderCatalogs(value: ElpisSettings, models: Model[], selected: (string | null)[]) {
   const mainModels = models.filter(model => !subscriptionOf(model.model));
   const [catalogs, setCatalogs] = useState<Record<string, { version: string | null | undefined; models: Model[]; loading?: boolean; error?: string }>>({});
   const active = useRef(true);
@@ -71,7 +71,7 @@ export function ModelChoice({ label, value, models, provider, catalogStatus, dis
   </div>;
 }
 
-function providerOptions(current: string, providers: ElpisSettings["providers"] = []) {
+export function providerOptions(current: string, providers: ElpisSettings["providers"] = []) {
   const listed = providers.filter(item => item.id === current || isListedProvider(item.id)).map(item => ({ id: item.id, label: providerLabel(null, item.id, providers) }));
   return <>{current && !providers.some(item => item.id === current) && <option value={current}>{current}</option>}{connectionOrder(listed).map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</>;
 }

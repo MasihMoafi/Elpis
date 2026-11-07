@@ -29,7 +29,8 @@ type Inputs = {
   checkedChildren: RefObject<Set<string>>; agentRunsOpen: boolean;
 };
 
-export function useSidebarThreads({ ready, connected, threads, hidden, selected, chatGroups, loveActivity, expanded, setExpanded, recordedWorkflow, loadChildren, search, attention, waitingIds, pins, projectChats, releaseChatOrder, searchInput, setError, setDeleteRunHistory, setDeleteTargets, hiddenPages, preferences, collapsedSections, collapsedProjects, checkedChildren, agentRunsOpen }: Inputs) {
+export function useSidebarThreads({ ready, connected, threads, hidden, selected, chatGroups, loveActivity, expanded, setExpanded, recordedWorkflow, loadChildren, search, attention, waitingIds, pins: manualPins, projectChats, releaseChatOrder, searchInput, setError, setDeleteRunHistory, setDeleteTargets, hiddenPages, preferences, collapsedSections, collapsedProjects, checkedChildren, agentRunsOpen }: Inputs) {
+  const pins = [...manualPins, ...threads.filter(thread => thread.motherAgent).map(thread => thread.id)];
   const searchTerm = search.searchTerm;
   const { catalog: workflowCatalog, runs: workflowRuns, roots: workflowRoots, steps: workflowSteps, sidebarTitle } = useWorkflowSidebar(ready && connected, threads, hidden,
     ended => setExpanded(previous => ({ ...previous, ...Object.fromEntries(ended.map(run => [`workflow:${run.id}`, false])) })));

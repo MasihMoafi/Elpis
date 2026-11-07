@@ -29,6 +29,7 @@ import { handleFileRoutes } from './server-files.mts';
 import { handleSettingsRoutes } from './server-settings.mts';
 import { createWorkflowDispatcher, handleWorkflowRoutes } from './server-workflows.mts';
 import { createHistoryCursors, handleThreadRoutes } from './server-threads.mts';
+import { MotherAgent } from './router/mother-agent.mts';
 
 type DesktopServerOptions = {
   client?: DesktopClient;
@@ -98,6 +99,10 @@ export async function startDesktopServer(rawOptions: Record<string, unknown> = {
   const tools = options.tools ?? createTools({ environment: () => client.ragEnvironment() });
   const diagnose = requestDiagnostics(options.elpisHome ?? elpisHome());
   const settingsFiles = createSettingsFiles(options.elpisHome ?? elpisHome());
+  const mother = new MotherAgent({ client, home: options.elpisHome ?? elpisHome(), ...(options.socketPath ? { socketPath: options.socketPath } : {}) });
+  const motherConnection = (value: { type: string; data?: { connected?: boolean } }) => { if (value.type === 'connection' && value.data?.connected) void mother.start(); };
+  client.on('event', motherConnection);
+  void mother.start();
   const historyCursors = createHistoryCursors();
   const transcription = createTranscription({ definition: () => client.transcriptionDefinition(), environment: () => client.transcriptionEnvironment() });
   const voice = createVoice(client);
@@ -112,7 +117,7 @@ export async function startDesktopServer(rawOptions: Record<string, unknown> = {
   const state: import('./server-http.mts').ServerState = {
     client, options, trash, loveSpot, companion, loveTalk, loveAgents, loveStreams,
     devServers, experimentLab, automations, workflowDispatcher, improvements, tools,
-    settingsFiles, historyCursors, transcription, voice, kokoro, readAloud, importChats,
+    settingsFiles, mother, historyCursors, transcription, voice, kokoro, readAloud, importChats,
   };
   let origin = '';
   /** @param {import('node:http').IncomingMessage} request @param {import('node:http').ServerResponse} response */
@@ -166,7 +171,7 @@ export async function startDesktopServer(rawOptions: Record<string, unknown> = {
   server.requestTimeout = 35000; server.headersTimeout = 10000;
   try {
     await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(options.port ?? 0, '127.0.0.1', () => resolve()); });
-  } catch (error) { await loveSpot.close(); client.off('event', event); client.close(); throw error; }
+  } catch (error) { await mother.close(); await loveSpot.close(); client.off('event', event); client.off('event', motherConnection); client.close(); throw error; }
   const address = server.address();
   const port = typeof address === 'object' && address ? address.port : 0;
   origin = `http://127.0.0.1:${port}`;
@@ -183,6 +188,7 @@ export async function startDesktopServer(rawOptions: Record<string, unknown> = {
     },
     async close() {
       if (closed) return; closed = true; clearInterval(heartbeat);
+      client.off('event', motherConnection); await mother.close();
       await voice.close(); kokoro.close();
       workflowDispatcher.close();
       await experimentLab.close(); await automations?.close();

@@ -1,4 +1,9 @@
 import type { RoleModel } from './settings.mts'
+import { existsSync, realpathSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+import { pathToFileURL, fileURLToPath } from 'node:url'
+import { runtimeTools } from '../../runtime-paths.mts'
 
 export type Runtime = 'elpis' | 'codex' | 'claude' | 'gemini'
 export interface Connection {
@@ -16,7 +21,7 @@ export function runtimeOf(model: RoleModel | null): Runtime {
   if (['agy', 'gemini'].includes(model?.provider ?? '') || model?.model.startsWith('agy/')) return 'gemini'
   return model?.provider === 'codex' ? 'codex' : 'elpis'
 }
-export interface WorkerSession { threadId: string; activeTurn: string | null; model: string | null; messages: { id: string; text: string }[] }
+export interface WorkerSession { threadId: string; activeTurn: string | null; model: string | null; messages: { id: string; text: string }[]; result?: { id: string; text: string } }
 export interface OpenOptions { cwd: string; name: string; model: RoleModel | null; parentThreadId?: string; instructions?: string }
 export interface RuntimeAdapter {
   readonly runtime: Runtime
@@ -118,7 +123,12 @@ export class AppServerAdapter implements RuntimeAdapter {
       if (cursor) seen.add(cursor)
     } while (cursor)
     const active = turns.find(turn => object(turn).status === 'inProgress')
-    return { threadId, activeTurn: string(object(active).id) ?? null, model: string(thread.model) ?? string(response.model) ?? null, messages: messages(turns) }
+    const completed = turns.find(turn => object(turn).status === 'completed')
+    const items = object(completed).items
+    const final = Array.isArray(items) ? items.findLast(item => object(item).type === 'agentMessage' && object(item).phase !== 'commentary') : undefined
+    const text = string(object(final).text), id = string(object(completed).id)
+    return { threadId, activeTurn: string(object(active).id) ?? null, model: string(thread.model) ?? string(response.model) ?? null, messages: messages(turns),
+      ...(text && id ? { result: { id, text } } : {}) }
   }
   async send(threadId: string, id: string, text: string, activeTurn: string | null, includedIds: readonly string[] = []): Promise<string> {
     const conn = await this.connection(threadId)
@@ -198,8 +208,10 @@ export class GeminiAdapter extends AppServerAdapter {
   }
 }
 export async function runtimeAdapters(options: { url: string; codexBin?: string }): Promise<RuntimeAdapter[]> {
+  const source = fileURLToPath(new URL('../../../../../tools/elpis-claude/app-server-connection.mjs', import.meta.url))
+  const module = existsSync(source) ? source : join(runtimeTools(realpathSync(process.env.ELPIS_ENGINE_BIN ?? join(homedir(), '.local', 'bin', 'elpis-next'))), 'app-server-connection.mjs')
   const { connectAppServer }: { connectAppServer: (options: { url?: string | undefined; engineBin?: string | undefined; name: string }) => Connection } =
-    await import(new URL('../../../../../tools/elpis-claude/app-server-connection.mjs', import.meta.url).href)
+    await import(pathToFileURL(module).href)
   const bridge = (): Connection => connectAppServer({ url: options.url, engineBin: undefined, name: 'elpis-agents' })
   const codex = (): Connection => connectAppServer({ url: undefined, engineBin: options.codexBin ?? 'codex', name: 'elpis-agents' })
   return [new ElpisAdapter(bridge), new CodexAdapter(codex), new ClaudeAdapter(bridge), new GeminiAdapter(bridge)]

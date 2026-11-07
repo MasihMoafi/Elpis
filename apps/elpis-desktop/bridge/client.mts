@@ -151,6 +151,7 @@ export class DesktopClient extends EventEmitter {
   async readThreadMetadata(id?: unknown) { return clientThreadList.impl_readThreadMetadata.call(this, this.#state, id); }
   async readThread(id: unknown, options: Parameters<typeof clientThreadList.impl_readThread>[2] = {}) { return clientThreadList.impl_readThread.call(this, this.#state, id, options); }
   async appendAssistant(id: string, reply: { id: string; text: string }) { return clientThreadActions.impl_appendAssistant.call(this, this.#state, id, reply); }
+  async appendUser(id: string, message: { id: string; text: string }) { return clientThreadActions.impl_appendUser.call(this, this.#state, id, message); }
   async readPrompts(id?: unknown) { return clientThreadList.impl_readPrompts.call(this, this.#state, id); }
   async media(id?: unknown, turn?: unknown, itemId?: unknown, inputIndex?: unknown) { return clientThreadList.impl_media.call(this, this.#state, id, turn, itemId, inputIndex); }
   async models(options: Parameters<typeof clientModels.impl_models>[1] = {}) { return clientModels.impl_models.call(this, this.#state, options); }

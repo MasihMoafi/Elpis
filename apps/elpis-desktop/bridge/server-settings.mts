@@ -4,6 +4,7 @@ import { body, json, pageQuery } from './server-http.mts';
 
 export async function handleSettingsRoutes(state: import('./server-http.mts').ServerState, request: import('node:http').IncomingMessage, response: import('node:http').ServerResponse, url: URL, method: string) {
   const { client, settingsFiles } = state;
+  if (url.pathname === '/api/mother-agent') { json(response, 200, method === 'GET' ? state.mother.snapshot() : await state.mother.save(await body(request))); return true; }
   if (url.pathname === '/api/models' && method === 'GET') { json(response, 200, await client.models(pageQuery(url, false, true))); return true; }
   if (url.pathname === '/api/about' && method === 'GET') { json(response, 200, await appIdentity()); return true; }
   const settingsFile = url.pathname.match(/^\/api\/settings\/files\/(instructions|memory)$/);

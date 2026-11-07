@@ -5,12 +5,13 @@ import { DatabaseSync } from 'node:sqlite'
 import { z } from 'zod'
 import type { EngineItem } from '../../client-thread-list.mts'
 
-const ReplySchema = z.object({ id: z.string(), threadId: z.string(), text: z.string(), at: z.number(), after: z.string() })
+const ReplySchema = z.object({ id: z.string(), threadId: z.string(), text: z.string(), at: z.number(), after: z.string(), role: z.enum(['user', 'assistant']).default('assistant') })
 type Reply = z.infer<typeof ReplySchema>
 export type ChatHistoryEntry = { turnId: string; item: EngineItem & { phase?: string }; startedAtMs?: number | null; completedAtMs?: number | null }
 const identity = (entry: ChatHistoryEntry) => `${entry.turnId}:${entry.item.id}`
 const entryOf = (reply: Reply): ChatHistoryEntry => ({ turnId: `router-${createHash('sha256').update(JSON.stringify([reply.threadId, reply.id])).digest('hex')}`,
-  item: { id: reply.id, type: 'agentMessage', text: reply.text, phase: 'final_answer' }, startedAtMs: reply.at, completedAtMs: reply.at })
+  item: reply.role === 'user' ? { id: reply.id, type: 'userMessage', content: [{ type: 'text', text: reply.text }] }
+    : { id: reply.id, type: 'agentMessage', text: reply.text, phase: 'final_answer' }, startedAtMs: reply.at, completedAtMs: reply.at })
 
 /** Visible router replies: native inject_items is model context only, so these belong to the bridge's chat history. */
 export class ElpisChatHistory {
@@ -28,13 +29,13 @@ export class ElpisChatHistory {
     finally { db.close() }
   }
   /** The first payload wins, even across clients, crashes and lost acknowledgements. */
-  append(threadId: string, reply: { id: string; text: string }, after: string) {
+  append(threadId: string, reply: { id: string; text: string }, after: string, role: Reply['role'] = 'assistant') {
     mkdirSync(this.directory, { recursive: true, mode: 0o700 })
     const db = new DatabaseSync(this.file)
     try {
       chmodSync(this.file, 0o600)
       db.exec('PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS reply (thread TEXT NOT NULL, id TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY(thread,id));')
-      const value: Reply = { ...reply, threadId, after, at: Date.now() }
+      const value: Reply = { ...reply, threadId, after, at: Date.now(), role }
       db.prepare('INSERT INTO reply VALUES (?,?,?) ON CONFLICT(thread,id) DO NOTHING').run(threadId, reply.id, JSON.stringify(value))
       const row = db.prepare('SELECT value FROM reply WHERE thread=? AND id=?').get(threadId, reply.id)
       return entryOf(ReplySchema.parse(JSON.parse(String(row?.value))))

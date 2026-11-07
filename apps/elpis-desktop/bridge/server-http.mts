@@ -25,6 +25,7 @@ export type ServerState = {
   improvements: () => Promise<Awaited<ReturnType<typeof import('./improve.mts').createImprovements>>>,
   tools: ReturnType<typeof import('./tools.mts').createTools>,
   settingsFiles: ReturnType<typeof import('./settings-files.mts').createSettingsFiles>,
+  mother: import('./router/mother-agent.mts').MotherAgent,
   historyCursors: ReturnType<typeof import('./server-threads.mts').createHistoryCursors>,
   transcription: ReturnType<typeof import('./transcription.mts').createTranscription>,
   voice: ReturnType<typeof import('./voice.mts').createVoice>,

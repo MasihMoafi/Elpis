@@ -23,6 +23,7 @@ interface Options {
   sourceLink?: ExecutorHost['sourceLink']
   repliedTo?: ExecutorHost['repliedTo']
   instructions?: (sessionId: string) => string
+  relay?: (id: string, text: string) => Promise<void>
 }
 export class ExecutorService {
   readonly executor: DshExecutor
@@ -38,6 +39,7 @@ export class ExecutorService {
     this.effects = new Effects(options.store, this.health)
     const workerHealth = this.health.claim('worker')
     this.sessions = new Sessions({ store: options.store, adapters: options.adapters, subprocess: options.subprocess, effects: this.effects,
+      ...(options.relay ? { relay: options.relay } : {}),
       ...(options.mainSessionId ? { mainSessionId: options.mainSessionId } : {}), ...(options.parentThreadId ? { parentThreadId: options.parentThreadId } : {}),
       instructions: id => {
         const ticketId = ticketOfSession(id), ticket = ticketId ? options.store.tickets.get(ticketId) : undefined

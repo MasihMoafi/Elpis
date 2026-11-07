@@ -13,6 +13,7 @@ export interface Agent {
   whenIdle(): Promise<void>
 }
 export interface RuntimeEvents {
+  'agent/result': [event: { agent: Agent; text: string }]
   'agent/status': [event: { agent: Agent; status: Agent['status'] }]
   'agent/inbox/claimed': [event: { agent: Agent; message: { source: { kind: string } } }]
   'session/event': [session: { id: string }, event: SessionEvent]

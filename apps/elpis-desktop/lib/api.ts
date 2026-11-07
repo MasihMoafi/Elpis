@@ -2,6 +2,7 @@ import { agentParentId } from "./agent-runs.mts";
 import { errorText } from "./error-text.mts";
 export { isAgentRun, AGENT_RUN_NOTICE } from "./agent-runs.mts";
 export type Thread = {
+  motherAgent?: boolean;
   id: string; cwd?: string; name?: string | null; workflowTaskTitle?: string; preview?: string; model?: string | null; modelProvider?: string | undefined;
   reasoningEffort?: string | null; serviceTier?: string | null; parentThreadId?: string | null; forkedFromId?: string | null;
   updatedAt?: number; recencyAt?: number; createdAt?: number;

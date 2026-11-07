@@ -61,7 +61,8 @@ export async function handleThreadRoutes(state: import('./server-http.mts').Serv
     if (method === 'GET') {
       const query = pageQuery(url, true), listed = await (query.archived && client.listArchivedThreads ? client.listArchivedThreads(query) : client.listThreads(query));
       // A chat waiting to be deleted is archived, but it is not an archived chat.
-      json(response, 200, query.archived ? { ...listed, data: listed.data.filter((item: { id: string }) => !trash.has(item.id)) } : listed);
+      const data = await state.mother.list(query.archived ? listed.data.filter((item: { id: string }) => !trash.has(item.id)) : listed.data, query);
+      json(response, 200, { ...listed, data });
       return true;
     }
     json(response, 201, await client.createThread(await body(request))); return true;
@@ -96,7 +97,7 @@ export async function handleThreadRoutes(state: import('./server-http.mts').Serv
       const query = pageQuery(url);
       if (query.cursor) query.cursor = historyCursors.resolve(id, query.cursor);
       const page = await client.readThread(id, query);
-      json(response, 200, { ...page, nextCursor: historyCursors.expose(id, page.nextCursor) }); return true;
+      json(response, 200, { ...page, thread: state.mother.decorate(page.thread), nextCursor: historyCursors.expose(id, page.nextCursor) }); return true;
     }
     if (thread[2] === 'prompts' && method === 'GET') { json(response, 200, await client.readPrompts(id)); return true; }
     if (thread[2] === 'context' && method === 'GET') { json(response, 200, await client.context(id)); return true; }
@@ -108,6 +109,7 @@ export async function handleThreadRoutes(state: import('./server-http.mts').Serv
     const operation = thread[2] ? THREAD_POST_OPS[thread[2]] : undefined;
     if (operation && method === 'POST') {
       const input = await body(request, ['send', 'steer'].includes(operation) ? ATTACHMENT_BODY_LIMIT : 65536);
+      if (['send', 'steer'].includes(operation) && state.mother.owns(id)) { json(response, 200, await state.mother.send(id, input)); return true; }
       await prepareLoveSpotTurn(loveSpot, id, operation, input);
       json(response, 200, await client[operation](id, input)); return true;
     }

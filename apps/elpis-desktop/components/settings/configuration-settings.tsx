@@ -13,6 +13,8 @@ import { PERMISSION_MODES } from "@/components/composer-controls";
 import { permissionAllowed } from "../../bridge/permission-presets.mts";
 import { ModelSettings, CatalogNotice, PrunerSettings, useModelCatalog } from "@/components/settings/maintenance";
 
+import { MotherAgentSettings } from "@/components/settings/mother-settings";
+
 const OPTIONS: { name: keyof ConfigOptions; title: string; description: string; values: { value: string; label: string }[] }[] = [
   { name: "reasoningEffort", title: "Default reasoning effort", description: "Reasoning effort for new chats in the app and terminal, on models that support it. The model menu changes the current chat separately.", values: [
     { value: "none", label: "None" }, { value: "minimal", label: "Minimal" }, { value: "low", label: "Low" }, { value: "medium", label: "Medium" }, { value: "high", label: "High" }, { value: "xhigh", label: "Extra high" }, { value: "max", label: "Max" }, { value: "ultra", label: "Ultra" }, { value: "persistent", label: "Persistent" }] },
@@ -89,6 +91,7 @@ export function ConfigurationSettings() {
       <ConfigOptionsGroup settings={settings} />
       <CatalogNotice error={error} />
       <ModelSettings value={settings} models={models} />
+      <MotherAgentSettings settings={settings} models={models} />
       <PrunerSettings value={settings} models={models} />
       <FeatureDefaults settings={settings} />
     </>}</SettingsLoader>

@@ -31,7 +31,7 @@ export class FakeServer {
         const threadId = String(params.threadId), thread = this.threads.get(threadId)
         if (!thread) throw Object.assign(new Error('Thread not found'), { code: -32600 })
         if (method === 'thread/resume' || method === 'thread/read') return { thread: { id: threadId, model: thread.model, turns: thread.turns } }
-        if (method === 'thread/turns/list') return { data: thread.turns, nextCursor: null }
+        if (method === 'thread/turns/list') return { data: [...thread.turns].reverse(), nextCursor: null }
         if (method === 'thread/backgroundTerminals/list') return { data: (this.jobs.get(threadId) ?? []).map(job => ({ processId: job.id, command: job.label })), nextCursor: null }
         if (method === 'thread/backgroundTerminals/terminate') {
           const jobs = this.jobs.get(threadId) ?? [], selected = jobs.find(job => job.id === params.processId)
@@ -61,6 +61,7 @@ export class FakeServer {
     const turn = this.threads.get(threadId)?.turns.findLast(turn => turn.status === 'inProgress')
     if (!turn) return
     turn.status = status
+    turn.items.push({ id: `answer-${turn.id}`, type: 'agentMessage', text })
     this.emit(threadId, 'item/completed', { item: { type: 'agentMessage', text } })
     this.emit(threadId, 'turn/completed', { turn })
   }

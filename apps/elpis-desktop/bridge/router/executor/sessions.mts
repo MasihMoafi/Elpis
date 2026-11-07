@@ -11,7 +11,7 @@ import type { Effects } from './effects.mts'
 import { RuntimeBackground } from './runtime-background.mts'
 
 const MessageSchema = z.object({ id: z.string(), text: z.string(), mode: z.enum(['queue', 'steer', 'inject']), state: z.enum(['queued', 'sending', 'sent']), read: z.boolean().default(false), accepted: z.boolean().default(false) })
-const RecordSchema = z.object({ runtime: z.enum(['elpis', 'codex', 'claude', 'gemini']), threadId: z.string().nullable(), creating: z.boolean().default(false), model: RoleModelSchema.nullable(), messages: z.array(MessageSchema).default([]) })
+const RecordSchema = z.object({ runtime: z.enum(['elpis', 'codex', 'claude', 'gemini']), threadId: z.string().nullable(), creating: z.boolean().default(false), model: RoleModelSchema.nullable(), messages: z.array(MessageSchema).default([]), resultId: z.string().optional() })
 type Record = z.infer<typeof RecordSchema>
 type Mode = 'queue' | 'steer' | { inject: string }
 export interface SessionOptions {
@@ -24,6 +24,7 @@ export interface SessionOptions {
   jobs?: Jobs
   subagents?: Subagents
   instructions?: (sessionId: string) => string
+  relay?: (id: string, text: string) => Promise<void>
   onError?: (error: unknown) => void
 }
 class WorkerAgent implements Agent {
@@ -64,6 +65,7 @@ export class Sessions implements Context {
   readonly subagents?: Subagents
   private readonly options: SessionOptions
   private readonly listeners: { [K in keyof RuntimeEvents]: Set<(...args: RuntimeEvents[K]) => void> } = {
+    'agent/result': new Set(),
     'agent/status': new Set(), 'agent/inbox/claimed': new Set(), 'session/event': new Set(), 'agent/error': new Set(),
   }
   private readonly ensuring = new Map<string, Promise<WorkerAgent>>()
@@ -80,6 +82,7 @@ export class Sessions implements Context {
     this.jobs = options.jobs ?? this.backgroundWork.jobs
     this.subagents = options.subagents ?? this.backgroundWork.subagents
     options.effects?.handle('relay', async (payload, key) => {
+      if (options.relay) { await options.relay(key, payload.text); return }
       if (!options.mainSessionId) throw new Error('The router main session is not bound')
       await this.prompt(options.mainSessionId, key, payload.text, 'steer')
     }, { ordered: true })
@@ -206,7 +209,15 @@ export class Sessions implements Context {
         this.emit('session/event', { id: agent.id }, { type: 'user/message', data: { id: message.id, source: { kind: 'dsh-superagent' } } })
       }
     }
+    if (remote.result) this.result(agent, remote.result.id, remote.result.text)
     this.save(agent); agent.state(remote.activeTurn)
+  }
+  private result(agent: WorkerAgent, id: string, text: string): void {
+    if (agent.record.resultId === id) return
+    this.options.store.atomic(() => {
+      this.emit('agent/result', { agent, text })
+      agent.record.resultId = id; this.save(agent)
+    })
   }
   private receive(agent: WorkerAgent, raw: unknown): void {
     const message = object(raw), params = object(message.params), turn = object(params.turn)
@@ -222,6 +233,7 @@ export class Sessions implements Context {
     } else if (message.method === 'turn/completed') {
       if (agent.activeTurn && turn.id !== agent.activeTurn) return
       if (turn.status === 'failed') this.emit('agent/error', { agent, error: new Error(typeof object(turn.error).message === 'string' ? String(object(turn.error).message) : 'The worker turn failed') })
+      if (turn.status === 'completed' && typeof turn.id === 'string' && agent.lastText) this.result(agent, turn.id, agent.lastText)
       agent.state(null)
       this.background(this.flush(agent))
     } else if (message.method === 'error') {
