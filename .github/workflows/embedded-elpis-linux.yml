@@ -310,7 +310,7 @@ jobs:
             --output "$RUNNER_TEMP/elpis-ledger-native" --phase candidate
       - name: Subagent switch follows an open chat
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
-        run: node scripts/subagents-switch-runtime.test.cjs "$PWD/codex-rs/target/release/elpis"
+        run: node scripts/subagents-switch-runtime.test.cts "$PWD/codex-rs/target/release/elpis"
       - name: Preserve native Ledger evidence
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification != 'build' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
