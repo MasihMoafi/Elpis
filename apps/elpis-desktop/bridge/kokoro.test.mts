@@ -140,6 +140,7 @@ test('local read aloud status reports a failed GPU startup and recovers', async 
   const readAloud = createReadAloudProvider({ home, kokoro, provider: async () => { throw new Error('Unexpected API provider'); } });
   const unavailable = await readAloud.status();
   assert.equal(unavailable.available, false);
+  assert.ok('reason' in unavailable);
   assert.match(unavailable.reason ?? '', /GPU/);
   const recovered = await readAloud.status();
   assert.equal(recovered.available, true);
