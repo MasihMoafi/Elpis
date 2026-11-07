@@ -106,6 +106,14 @@ impl Session {
                 }
             }
         }
+        if matches!(scope, RuntimeConfigRefresh::User)
+            && let Err(err) = config.features.set_enabled(
+                Feature::Collab,
+                next_config.features.enabled(Feature::Collab),
+            )
+        {
+            warn!("failed to refresh Subagents config: {err}");
+        }
         let mut config = Arc::new(config);
         let notify_contributors = !matches!(scope, RuntimeConfigRefresh::Mcp)
             && !self.services.extensions.config_contributors().is_empty();
