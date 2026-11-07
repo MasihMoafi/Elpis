@@ -7,6 +7,7 @@ import type { SpawnLinks } from './spawn-links.mts';
 import type { createCloudroomVm } from './cloudroom-vm.mts';
 import type { createGithubConnector } from './github-connector.mts';
 import type { createWorkflowHistory, createWorkflowRuns } from './workflow-acp.mts';
+import type { ElpisChatHistory } from './router/sources/elpis-chat-history.mts';
 
 export type ClientSocket = {
   on(event: string, handler: (...args: unknown[]) => void): unknown;
@@ -23,6 +24,7 @@ export type BrowserConfig = {
 };
 
 export type ClientStateOptions = {
+  chatHistory: ElpisChatHistory;
   socket: ClientSocket;
   openSocket: (() => Promise<ClientSocket>) | undefined;
   browserConfig: BrowserConfig | undefined;
@@ -47,6 +49,7 @@ export type ClientStateOptions = {
 export interface ClientState extends ClientStateOptions {}
 export class ClientState {
   constructor(options: ClientStateOptions) {
+    this.chatHistory = options.chatHistory;
     this.socket = options.socket;
     this.openSocket = options.openSocket;
     this.browserConfig = options.browserConfig;

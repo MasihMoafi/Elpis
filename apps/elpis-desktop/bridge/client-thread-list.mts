@@ -267,7 +267,8 @@ export async function impl_readThread(this: DesktopClient, clientState: ClientSt
     if (thread.model?.startsWith('claude/') && thread.status?.type === 'idle' && clientState.turnRevisions.get(id) === revision) {
       this.emit('event', { type: 'message', data: { method: 'thread/status/changed', params: { threadId: id, status: thread.status } } });
     }
-    return { thread, ...items, data: await internal_withTurnModels(clientState, thread.path, items.data) };
+    const data = clientState.chatHistory.merge(thread.id, items);
+    return { thread, ...items, data: await internal_withTurnModels(clientState, thread.path, data) };
   }
 
 export async function impl_readPrompts(this: DesktopClient, _clientState: ClientState, id?: unknown) {
