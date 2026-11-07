@@ -8,7 +8,7 @@ const normal = (id, name) => ({ id, name, cwd: CWD, source: 'cli', status: { typ
 async function mixed({ continueError = false, restoredRun = false, pagedChildren = false, nestedChildren = false, ...options } = {}) {
   const parent = normal('chat-a', 'Fix the parser'), own = normal('chat-b', 'Worker · my own chat');
   const run = { ...normal('exec-run', 'Worker · inspect'), source: 'exec', parentThreadId: parent.id, desktopAccess: { writable: false, mode: 'continue', canContinue: true, reason: notice } };
-  const child = { ...run, id: 'child-run', name: 'Review the fix', source: { subAgent: { thread_spawn: { agent_path: '/root/review' } } }, status: { type: 'active' }, desktopAccess: { ...run.desktopAccess, canContinue: false } };
+  const child = { ...run, id: 'child-run', name: 'Review the fix', model: 'sol', reasoningEffort: 'high', source: { subAgent: { thread_spawn: { agent_path: '/root/review' } } }, status: { type: 'active' }, desktopAccess: { ...run.desktopAccess, canContinue: false } };
   const nested = { ...child, id: 'nested-run', name: 'Nested agent', parentThreadId: run.id };
   const orphan = { ...run, id: 'orphan-run', name: 'Unlinked background run', parentThreadId: null };
   const additional = { ...run, id: 'more-run', name: 'Another background task' };
@@ -35,6 +35,24 @@ async function mixed({ continueError = false, restoredRun = false, pagedChildren
 }
 const row = (page, id) => page.locator(`aside.sidebar .thread-row[data-thread-id="${id}"]`).first();
 const expandParent = page => row(page, 'chat-a').getByRole('button', { name: 'Expand agents in Fix the parser', exact: true }).click();
+
+for (const colorScheme of ['light', 'dark']) test(`agent model remains visible in the panel and its chat (${colorScheme})`, async () => {
+  const f = await mixed({ colorScheme, width: 1500 }), { page } = f;
+  try {
+    await row(page, 'chat-a').locator('.thread-link').click();
+    const panel = page.locator('.team-panel');
+    await panel.waitFor({ state: 'visible' });
+    const known = panel.locator('[data-thread-id="child-run"]');
+    f.emit('message', { method: 'turn/started', params: { threadId: 'child-run', turn: { id: 'working' } } });
+    await known.getByText('Thinking…', { exact: true }).waitFor();
+    await known.getByText('GPT-6.1-Sol · high', { exact: true }).waitFor();
+    assert.equal(await panel.locator('[data-thread-id="exec-run"] .agent-model').count(), 0, 'unknown model is not guessed');
+    await known.click();
+    await page.getByText(notice, { exact: true }).waitFor();
+    await page.locator('.workspace-header').getByText('GPT-6.1-Sol · high', { exact: true }).waitFor();
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
 
 test('mixed chats keep projects, pins, tabs and searches while linked agents fold under their parent and unlinked runs fold at the end', async () => {
   const f = await mixed(), { page } = f;
