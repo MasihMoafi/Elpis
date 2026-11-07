@@ -8,7 +8,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { startApp, stopApp, skipFirstRun } = require('./real-app.cts');
-const { chooseTheme } = require('./controls.cjs');
+const { chooseTheme } = require('./controls.cts');
 type Locator = { waitFor(options: object): Promise<void>; click(): Promise<void>; first(): Locator };
 type Page = { locator(selector: string): Locator; getByRole(role: string, options: object): Locator; waitForTimeout(ms: number): Promise<void>; evaluate<T>(fn: () => T): Promise<T>; screenshot(options: object): Promise<void> };
 type Screen = { found: boolean; height: number; top: number; bottom: number; left: number; right: number; boardWidth: number; boardHeight: number };

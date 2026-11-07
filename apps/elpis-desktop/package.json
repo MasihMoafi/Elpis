@@ -70,6 +70,7 @@
     "jscpd": "5.1.2",
     "oxlint": "1.81.0",
     "oxlint-tsgolint": "7.0.2001",
+    "playwright-core": "1.64.1",
     "tailwindcss": "4.3.0",
     "typescript": "^5"
   }

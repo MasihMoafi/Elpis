@@ -1,8 +1,8 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
-const { openCanvas } = require('./canvas-fixture.cjs');
-const { chooseTheme, captureReview } = require('./controls.cjs');
+const { openCanvas } = require('./canvas-fixture.cts');
+const { chooseTheme, captureReview } = require('./controls.cts');
 const { assertUiFit } = require('./ui-fit.cjs');
 
 type Run = { graphId: string; tasks: { id: string }[] };

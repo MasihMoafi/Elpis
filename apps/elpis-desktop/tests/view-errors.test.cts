@@ -5,7 +5,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cjs');
-const { openSettings } = require('./controls.cjs');
+const { openSettings } = require('./controls.cts');
 
 type Locator = {
   locator(selector: string): Locator;

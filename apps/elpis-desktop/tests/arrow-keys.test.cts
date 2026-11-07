@@ -8,7 +8,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cjs');
-const { openSettings, openPatterns } = require('./controls.cjs');
+const { openSettings, openPatterns } = require('./controls.cts');
 
 /** Every checked control on the page as it is now; returns the ones no arrow key moved away from. */
 

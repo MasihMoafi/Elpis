@@ -5,7 +5,7 @@ const path = require('node:path');
 const os = require('node:os');
 const { fixture, CWD } = require('./parity-fixture.cjs');
 const { assertUiFit } = require('./ui-fit.cjs');
-const { chooseTheme, openSettings, leaveSettings } = require('./controls.cjs');
+const { chooseTheme, openSettings, leaveSettings } = require('./controls.cts');
 
 const runs = ['Fix a bug', 'Fix a bug', 'Research pricing', 'Ship exporter'].map((name, i) => ({
   id: `run-${i}`, rootThreadId: i ? `root-${i}` : 'chat-a', name, status: i < 2 ? 'running' : 'succeeded', startedAt: 100 + i,

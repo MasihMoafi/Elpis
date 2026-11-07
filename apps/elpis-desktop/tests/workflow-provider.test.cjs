@@ -1,4 +1,4 @@
-const { chooseOption, controlValue } = require("./controls.cjs");
+const { chooseOption, controlValue } = require("./controls.cts");
 const {test}=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs/promises');const path=require('node:path');const http=require('node:http');const {chromium}=require(process.env.ELPIS_PLAYWRIGHT_PACKAGE||'playwright');
 test('alternate configured provider requires explicit model and native thread keeps it on later sends',async()=>{
  const calls=[],clients=new Set();const thread={id:'local-thread',name:'Local conversation',modelProvider:'local',model:'local/custom-model',status:{type:'idle'},desktopAccess:{writable:true,reason:null}};

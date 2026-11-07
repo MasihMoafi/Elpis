@@ -5,7 +5,7 @@ const fs=require('node:fs/promises');
 const http=require('node:http');
 const path=require('node:path');
 const {chromium}=require(process.env.ELPIS_PLAYWRIGHT_PACKAGE||'playwright');
-const { chooseOption, openSettings } = require('./controls.cjs');
+const { chooseOption, openSettings } = require('./controls.cts');
 
 async function fixture(run){
  const clients=new Set(),posts=[];

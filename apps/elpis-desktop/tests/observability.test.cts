@@ -5,7 +5,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { loveSpotFixture } = require('./love-spot-fixture.cjs');
+const { loveSpotFixture } = require('./love-spot-fixture.cts');
 
 const line = (timestamp: string, type: string, payload: unknown) => JSON.stringify({ timestamp, type, payload });
 const usage = (input: number, cached: number, output: number) => ({ usage: { input_tokens: input, cached_input_tokens: cached, cache_write_input_tokens: 0, output_tokens: output, reasoning_output_tokens: 5, total_tokens: input + output } });

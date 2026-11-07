@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { chooseTheme } = require('./controls.cjs');
+const { chooseTheme } = require('./controls.cts');
 
 async function main() {
   const [port, shots, phase = 'after'] = process.argv.slice(2);

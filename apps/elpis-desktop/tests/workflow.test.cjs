@@ -1,5 +1,5 @@
-const { controlValue, guardDesktopStore } = require("./controls.cjs");
-const { fakeDesktop } = require('./fake-desktop.cjs');
+const { controlValue, guardDesktopStore } = require("./controls.cts");
+const { fakeDesktop } = require('./fake-desktop.cts');
 // Browser contracts for the actual static app; fixtures never run model calls.
 const {test,before,after}=require('node:test');
 const assert=require('node:assert/strict');
@@ -140,7 +140,7 @@ test('a transient launch sign-in recovers automatically without replacing the re
 
 // A125: a lost event stream can miss the end of any open chat, including a chat outside the list's first page.
 const { fixture } = require('./parity-fixture.cjs');
-const { controlValue: draftValue } = require('./controls.cjs');
+const { controlValue: draftValue } = require('./controls.cts');
 async function reconnectChats(run, colorScheme = 'light') {
  const threads=['chat-a','chat-b','chat-c'].map((id,index)=>({id,name:`Recovery ${index+1}`,model:'sol',modelProvider:'openai',status:{type:'active'},desktopAccess:{writable:true}}));
  const turns=new Map(threads.map(thread=>[thread.id,`turn-${thread.id}`])),reads=[],routes={};

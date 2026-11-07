@@ -1,4 +1,4 @@
-const { chooseOption, controlValue, leaveSettings, sidebar, openSettings } = require('./controls.cjs');
+const { chooseOption, controlValue, leaveSettings, sidebar, openSettings } = require('./controls.cts');
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const http=require('node:http');

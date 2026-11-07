@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { fixture } = require('./parity-fixture.cjs');
-const { openSettings, leaveSettings, chooseOption, controlValue } = require('./controls.cjs');
+const { openSettings, leaveSettings, chooseOption, controlValue } = require('./controls.cts');
 const { colours } = require('./primary-action-colours.cjs');
 type Locator = { evaluate<T>(fn: (element: Element) => T): Promise<T>; getByRole(role: string, options: object): Locator; click(): Promise<void> };
 type Page = { evaluate<T>(fn: (value: string) => T, value: string): Promise<T>; getByRole(role: string, options: object): Locator; getByLabel(label: string, options: object): Locator };

@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { openSettings } = require('./controls.cjs');
+const { openSettings } = require('./controls.cts');
 type Locator = { evaluate<T>(fn: (element: HTMLElement) => T): Promise<T>; locator(selector: string): Locator; getByRole(role: string, options?: object): Locator; waitFor(): Promise<void>; click(): Promise<void>; all(): Promise<Locator[]>; innerText(): Promise<string> };
 type Page = { locator(selector: string): Locator; getByRole(role: string, options?: object): Locator; setViewportSize(size: { width: number; height: number }): Promise<void> };
 type Edges = { left: number; right: number };

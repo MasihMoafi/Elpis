@@ -1,4 +1,4 @@
-const { guardDesktopStore, leaveSettings, openSettings } = require('./controls.cjs');
+const { guardDesktopStore, leaveSettings, openSettings } = require('./controls.cts');
 // Exported desktop UI, synthetic history/approvals, no engine or provider calls.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');

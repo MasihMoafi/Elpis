@@ -2,7 +2,7 @@
 // the draw board, or draw something. and I EXPECT a reply from Matilda. Her face must show next to her replies." The board is the conversation.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { loveSpotFixture } = require('./love-spot-fixture.cjs');
+const { loveSpotFixture } = require('./love-spot-fixture.cts');
 
 type SceneElement = { id: string; isDeleted?: boolean; type: string; text: string; fileId: string; x: number; y: number; width: number; height: number };
 type Scene = { elements: SceneElement[]; files: Record<string, object> };

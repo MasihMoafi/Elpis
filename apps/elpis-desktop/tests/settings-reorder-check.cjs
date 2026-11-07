@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { openSettings } = require('./controls.cjs');
+const { openSettings } = require('./controls.cts');
 
 const nav = page => page.getByRole('navigation', { name: 'Settings navigation' });
 const sections = page => nav(page).locator('[data-slot="section-link"]');

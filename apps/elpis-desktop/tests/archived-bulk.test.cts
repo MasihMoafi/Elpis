@@ -7,7 +7,7 @@ const http = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { leaveSettings, openSettings } = require('./controls.cjs');
+const { leaveSettings, openSettings } = require('./controls.cts');
 const root = path.resolve(__dirname, '../out');
 
 test('archived chats: select all across pages, delete all after one confirmation, unarchive a selection', async () => {

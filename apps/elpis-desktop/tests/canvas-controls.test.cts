@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
-const { openCanvas } = require('./canvas-fixture.cjs');
+const { openCanvas } = require('./canvas-fixture.cts');
 const drag = async (page: Awaited<ReturnType<typeof openCanvas>>['page'], a: { x: number; y: number }, b: { x: number; y: number }, button = 'left') => { await page.mouse.move(a.x, a.y); await page.mouse.down({ button }); await page.mouse.move(b.x, b.y, { steps: 12 }); await page.mouse.up({ button }); };
 
 test('dragging handles connects; a dropped output creates and wires the new agent', async () => {

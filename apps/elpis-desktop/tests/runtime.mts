@@ -1,4 +1,3 @@
-import { chooseOption, controlValue } from "./controls.cjs";
 // Real Elpis protocol + real browser, with only inference supplied by a local fixture.
 // Usage: ELPIS_PLAYWRIGHT_PACKAGE=... ELPIS_CHROMIUM=... node tests/runtime.mts /absolute/elpis-next
 import assert from 'node:assert/strict';
@@ -11,6 +10,7 @@ import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { startDesktopServer } from '../bridge/server.mts';
 const require = createRequire(import.meta.url);
+const { chooseOption, controlValue }: Pick<import('./controls.cts').Controls, 'chooseOption' | 'controlValue'> = require('./controls.cts');
 const { Provider, message } = require('../../../scripts/lib/mock-provider.js');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const binary = process.argv[2];

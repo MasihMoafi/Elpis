@@ -2,7 +2,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cjs');
-const { openSettings } = require('./controls.cjs');
+const { openSettings } = require('./controls.cts');
 
 test('Import chats offers Claude Code and Codex with their chats, imports on press, reports the result and refreshes the list', async () => {
   let chats = 60, codex = 3;

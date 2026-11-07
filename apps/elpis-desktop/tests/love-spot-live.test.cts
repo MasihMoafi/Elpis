@@ -3,7 +3,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { loveSpotFixture } = require('./love-spot-fixture.cjs');
+const { loveSpotFixture } = require('./love-spot-fixture.cts');
 const nonMatildaElements =  (scene: Scene) => scene.elements.filter(e => !e.id.startsWith('love-'));
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGM4o6SEFTEMLQkAvM5EAT6yk8sAAAAASUVORK5CYII=', 'base64');
 

@@ -1,0 +1,469 @@
+// The exported UI's browser panel against a scripted desktop browser (the Electron side is faked in the page):
+// Annotate, the comment editor, sending comments to the chat with their screenshot sheet, find in page,
+// the options menu, "Not secure" and the failure screen. Synthetic HTTP/SSE; no engine or provider calls.
+// Screenshots go to $ELPIS_SHOTS when it is set.
+import type { Page } from 'playwright-core';
+import type { TestContext } from 'node:test';
+import type { BrowserCommand, BrowserResult, BrowserState, BrowserTab } from '../lib/desktop.ts';
+type Tab = Pick<BrowserTab, 'id' | 'url' | 'title' | 'zoom'> & Partial<BrowserTab>;
+type State = Omit<BrowserState, 'tabs' | 'sessionId' | 'find'> & { tabs: Tab[]; sessionId?: string | null | undefined; find: Omit<BrowserState['find'], 'text'> & { text: string | undefined } };
+type PanelWindow = typeof window & { __state: State; __commands: (BrowserCommand & { action: string })[]; __layouts: { obscured: boolean }[]; __themes: object[]; __jpeg: string; __rejectComment: boolean; __push(patch: Partial<State>): void };
+type Attachment = { type: string; name: string; text: string; dataUrl: string };
+type Post = { path: string; body: { text: string; attachments: Attachment[] } };
+const { test }: typeof import('node:test') = require('node:test');
+const assert: typeof import('node:assert/strict') = require('node:assert/strict');
+const http: typeof import('node:http') = require('node:http');
+const fs: typeof import('node:fs') = require('node:fs');
+const path: typeof import('node:path') = require('node:path');
+const { chromium }: typeof import('playwright-core') = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
+const { guardDesktopStore, widenSidePanel }: { guardDesktopStore(page: Page): Promise<void>; widenSidePanel(page: Page, width: number): Promise<void> } = require('./controls.cts');
+function required<T>(value: T | null | undefined): T { assert(value !== null && value !== undefined); return value; }
+const staticOut = path.join(__dirname, '../out');
+const shots = process.env.ELPIS_SHOTS;
+
+async function eventually(check: () => unknown | Promise<unknown>) {
+  const deadline = Date.now() + 4000;
+  for (;;) { try { return await check(); } catch (error) { if (Date.now() >= deadline) throw error; await new Promise(resolve => setTimeout(resolve, 50)); } }
+}
+
+// The desktop browser as the renderer sees it: state pushed by "main", commands recorded. A tiny JPEG stands in for page captures.
+// With `scoped`, each chat has its own browser, as the real preload's (sessionScoped): "session" shows that chat's.
+function fakeDesktop(scoped = false) {
+  const tab: BrowserTab = { id: 't1', url: 'https://example.com/login', title: 'Example login', loading: false, error: null, failure: null, security: 'secure', zoom: 100, comments: 0, canGoBack: true, canGoForward: false };
+  const fresh = (sessionId: string | null | undefined): State => ({ visible: true, activeId: 't1', focusAddress: 0, tabs: [tab], annotating: false, markersVisible: true, annotations: [], draft: null, find: { open: false, text: '', matches: 0, active: 0, focus: 0 }, ...(scoped ? { sessionId } : {}) });
+  const sessions = new Map<string | null | undefined, State>();
+  (window as PanelWindow).__state = fresh(null);
+  (window as PanelWindow).__commands = []; (window as PanelWindow).__layouts = []; (window as PanelWindow).__themes = []; const listeners = new Set<(state: State) => void>();
+  const canvas = document.createElement('canvas'); canvas.width = 320; canvas.height = 180;
+  const ctx = canvas.getContext('2d'); if (!ctx) throw Error('Canvas missing'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, 320, 180); ctx.strokeStyle = '#2f6fed'; ctx.lineWidth = 3; ctx.strokeRect(40, 60, 120, 40);
+  (window as PanelWindow).__jpeg = canvas.toDataURL('image/jpeg', 0.8);
+  (window as PanelWindow).__push = (patch: Partial<State>) => { (window as PanelWindow).__state = { ...(window as PanelWindow).__state, ...patch }; for (const listener of listeners) listener((window as PanelWindow).__state); };
+  const commands: Record<string, (data: BrowserCommand) => Partial<State> & { result?: BrowserResult }> = {
+    session: data => { sessions.set((window as PanelWindow).__state.sessionId, (window as PanelWindow).__state); (window as PanelWindow).__state = sessions.get(data.sessionId) ?? fresh(data.sessionId); return {}; },
+    annotate: data => ({ annotating: data.value === undefined ? !(window as PanelWindow).__state.annotating : data.value === true }),
+    comment: data => { const draft = (window as PanelWindow).__state.draft, tab = (window as PanelWindow).__state.tabs[0]; if (!draft || !tab || data.body === undefined) throw Error('Comment missing'); const annotations = [...(window as PanelWindow).__state.annotations, { id: draft.id, number: (window as PanelWindow).__state.annotations.length + 1, kind: 'element' as const, label: draft.label, body: data.body.trim() }]; return { draft: null, annotations, tabs: [{ ...tab, comments: annotations.length }] }; },
+    commentCancel: () => ({ draft: null }),
+    annotationsCollect: data => ({ result: { count: (window as PanelWindow).__state.annotations.length, text: '# Browser comments:\n\n' + (window as PanelWindow).__state.annotations.map(item => `## User Comment ${item.number}\nBrowser\nComment:\n${item.body}\n`).join('\n'), images: data.value === 'images' ? (window as PanelWindow).__state.annotations.map(item => ({ number: item.number, dataUrl: (window as PanelWindow).__jpeg })) : [] } }),
+    annotationsSent: () => { const tab = (window as PanelWindow).__state.tabs[0]; if (!tab) throw Error('Tab missing'); return { annotations: [], annotating: false, tabs: [{ ...tab, comments: 0 }] }; },
+    findOpen: () => ({ find: { ...(window as PanelWindow).__state.find, open: true, focus: (window as PanelWindow).__state.find.focus + 1 } }),
+    find: data => ({ find: { ...(window as PanelWindow).__state.find, open: true, text: data.text, matches: data.text ? 3 : 0, active: data.text ? 1 : 0 } }),
+    findClose: () => ({ find: { ...(window as PanelWindow).__state.find, open: false } }),
+    screenshot: data => ({ result: data.value === 'copy' ? { copied: true } : { image: (window as PanelWindow).__jpeg } }),
+  };
+  Object.assign(window, { elpisDesktop: {
+    setTheme: (dark: boolean, details?: object) => (window as PanelWindow).__themes.push({ dark, ...details }),
+    storage: { getItem: (key: string) => localStorage.getItem(key), setItem: (key: string, value: string) => localStorage.setItem(key, value), removeItem: (key: string) => localStorage.removeItem(key), onError: () => () => {} },
+    browser: {
+      ...(scoped ? { sessionScoped: true } : {}),
+      command: async (action: string, data: BrowserCommand = {}) => {
+        (window as PanelWindow).__commands.push({ action, ...data });
+        if (action === 'comment' && (window as PanelWindow).__rejectComment) throw Error('The browser could not save this comment.');
+        if (scoped && action !== 'session' && data.sessionId !== (window as PanelWindow).__state.sessionId) return { error: 'This browser session is no longer shown.' };
+        const { result, ...patch } = commands[action]?.(data) ?? {};
+        if (Object.keys(patch).length) (window as PanelWindow).__push(patch);
+        return { ...(window as PanelWindow).__state, ...(result ? { result } : {}) };
+      },
+      layout: (value: { obscured: boolean }) => (window as PanelWindow).__layouts.push(value),
+      subscribe: (listener: (state: State) => void) => { listeners.add(listener); return () => listeners.delete(listener); },
+    },
+  } });
+}
+
+async function fixture(t: TestContext, { running = false, scoped = false, hold = null }: { running?: boolean; scoped?: boolean; hold?: (() => Promise<unknown>) | null } = {}) {
+  const streams = new Set<import('node:http').ServerResponse>(), posts: Post[] = [], errors: string[] = [];
+  const thread = { id: 'a', name: 'Chat A', cwd: '/tmp/browser-fixture', model: 'sol', modelProvider: 'openai', status: { type: 'idle' } };
+  const server = http.createServer(async (req, res) => {
+    const url = new URL(req.url ?? '/', 'http://fixture'), pathname = url.pathname;
+    const json = (data: unknown) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(data)); };
+    if (pathname === '/api/events') { res.writeHead(200, { 'Content-Type': 'text/event-stream' }); res.write(': connected\n\n'); streams.add(res); req.on('close', () => streams.delete(res)); return; }
+    if (req.method === 'POST') {
+      let raw = ''; for await (const chunk of req) raw += chunk; const body = raw ? JSON.parse(raw) : {}; posts.push({ path: pathname, body });
+      if (pathname === '/api/threads') return json({ thread: { ...thread, id: 'fresh', name: 'New chat' } });
+      if (/\/resume$/.test(pathname)) return json({ thread: running ? { ...thread, status: { type: 'active', activeFlags: [] } } : thread, activeTurnId: running ? 'turn-0' : null });
+      if (/\/steer$/.test(pathname)) return json({ turnId: 'turn-0' });
+      if (/\/turns$/.test(pathname)) {
+        if (hold && await hold() === 'fail') { res.writeHead(502, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: 'The engine is unavailable.' })); }
+        return json({ turn: { id: `turn-${posts.length}` } });
+      }
+      return json({});
+    }
+    if (pathname === '/api/health') return json({ connected: true, cwd: '/tmp/browser-fixture' });
+    if (pathname === '/api/threads') return json({ data: [thread], nextCursor: null });
+    if (pathname === '/api/models') return json({ data: [{ id: 'sol', model: 'sol', displayName: 'Sol', inputModalities: ['text', 'image'] }], nextCursor: null });
+    if (pathname === '/api/settings') return json({ version: 'v1', main: { model: 'sol', provider: 'openai' }, providers: [{ id: 'openai', displayName: 'OpenAI' }], write: { available: true }, background: { model: 'sol', provider: 'openai' }, memory: { generate: true, use: true, extractionModel: 'sol', consolidationModel: null } });
+    if (pathname === '/api/providers') return json({ openai: { auth: { state: 'signedIn', method: 'ChatGPT', email: 'fixture@example.invalid' }, usage: [], usageError: null }, claude: { state: 'notConnected', models: [], usage: [] }, gemini: { state: 'notConnected', models: [], usage: [] }, openrouter: [], local: [] });
+    if (pathname.startsWith('/api/')) return json({});
+    const file = path.join(staticOut, pathname === '/' ? 'index.html' : pathname);
+    if (!fs.existsSync(file)) { res.writeHead(404); return res.end(); }
+    const types: Record<string, string> = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' }; res.setHeader('Content-Type', types[path.extname(file)] || 'application/octet-stream'); res.end(fs.readFileSync(file));
+  });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const browser = await chromium.launch({ headless: true, ...(process.env.ELPIS_CHROMIUM ? { executablePath: process.env.ELPIS_CHROMIUM } : {}) });
+  t.after(async () => { await browser.close(); for (const stream of streams) stream.end(); await new Promise<void>(resolve => server.close(() => resolve())); });
+  const page = await browser.newPage({ viewport: { width: 1320, height: 860 } });
+  page.setDefaultTimeout(4000); page.on('pageerror', error => errors.push(error.message));
+  await guardDesktopStore(page);
+  await page.addInitScript(fakeDesktop, scoped);
+  const address = server.address(); assert(address && typeof address !== 'string');
+  await page.goto(`http://127.0.0.1:${address.port}/`);
+  await page.getByRole('button', { name: 'Annotate this page' }).waitFor();
+  const commands = () => page.evaluate(() => (window as PanelWindow).__commands.map(item => item.action));
+  const shoot = async (name: string) => { if (shots) { fs.mkdirSync(shots, { recursive: true }); await page.waitForTimeout(400); await page.screenshot({ path: path.join(shots, `${name}.png`) }); } };
+  return { page, posts, errors, commands, shoot };
+}
+
+test('Annotate: the editor takes a comment and Send gives the chat the comments and one screenshot sheet', async t => {
+  const { page, posts, errors, commands, shoot } = await fixture(t);
+  const annotate = page.getByRole('button', { name: 'Annotate this page' });
+  assert.equal(await annotate.getAttribute('aria-pressed'), 'false');
+  await annotate.click();
+  assert.equal(await annotate.getAttribute('aria-pressed'), 'true');
+  await page.getByText('Click anything on the page to comment on it').waitFor();
+  await shoot('elpis-annotate-mode');
+  await page.evaluate(() => (window as PanelWindow).__push({ draft: { id: 'p1', number: 1, kind: 'element', label: 'button “Sign in”', body: '', editing: false } }));
+  const comment = page.getByRole('textbox', { name: 'Comment', exact: true });
+  await eventually(async () => assert.equal(await comment.evaluate(element => element === document.activeElement), true, 'a new selection puts the cursor in the comment'));
+  assert.equal((await page.locator('.annotation-target').innerText()).replace(/\s+/g, ' '), '1 button “Sign in”');
+  await comment.fill('Make this the accent colour');
+  await shoot('elpis-annotate-editor');
+  await comment.press('Control+Enter');
+  await eventually(async () => assert.deepEqual((await page.evaluate(() => (window as PanelWindow).__commands)).filter(item => item.action === 'comment'), [{ action: 'comment', body: 'Make this the accent colour' }]));
+  const send = page.getByRole('button', { name: 'Send 1 pending annotation' });
+  await send.waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Edit comment 1: button “Sign in”' }).count(), 1);
+  await shoot('elpis-annotate-pending');
+  await send.click();
+  await eventually(async () => assert.ok((await commands()).includes('annotationsSent'), 'comments are cleared only after the chat took them'));
+  const turn = posts.find(post => /\/turns$/.test(post.path));
+  assert.ok(turn, 'Send sends the message');
+  const [text, image] = turn.body.attachments;
+  assert(text && image);
+  assert.equal(text.name, 'Browser comments'); assert.match(text.text, /^# Browser comments:/);
+  assert.equal(image.name, 'Browser comments.jpg'); assert.match(image.dataUrl, /^data:image\/jpeg;base64,/);
+  assert.ok((await commands()).indexOf('annotationsCollect') < (await commands()).indexOf('annotationsSent'));
+  assert.deepEqual(errors, []);
+});
+
+test('A21: Send clears the message and its comments before the server answers, and the next Send carries only its own comments', async t => {
+  let release: (() => void) | undefined; const gate = () => new Promise<void>(resolve => { release = resolve; });
+  let waiting = gate();
+  const { page, posts, errors } = await fixture(t, { hold: () => waiting });
+  const input = page.getByRole('textbox', { name: 'Message Elpis', exact: true });
+  const cards = page.locator('.composer').getByRole('list', { name: 'Message attachments', exact: true }).getByRole('listitem');
+  const turns = () => posts.filter(post => /\/(turns|steer)$/.test(post.path));
+  const comment = (body: string) => page.evaluate(body => (window as PanelWindow).__push({ annotating: true, annotations: [{ id: body, number: 1, kind: 'element', label: 'link', body }] }), body);
+  await input.fill('make it Elpis like');
+  await comment('first comment');
+  await page.getByRole('button', { name: 'Send 1 pending annotation' }).click();
+  await eventually(async () => assert.equal(turns().length, 1));
+  assert.equal(await input.inputValue(), '', 'the text leaves the composer at once (R2)');
+  assert.equal(await cards.count(), 0, 'the comment cards leave the composer at once (R2)');
+  assert(release); release(); waiting = Promise.resolve();
+  await page.waitForTimeout(300);
+  assert.equal(await input.inputValue(), ''); assert.equal(await cards.count(), 0);
+  await input.fill('second');
+  await comment('second comment');
+  await page.getByRole('button', { name: 'Send 1 pending annotation' }).click();
+  await eventually(async () => assert.equal(turns().length, 2));
+  const second = required(turns()[1]).body;
+  assert.equal(second.text, 'second');
+  assert.deepEqual(second.attachments.filter(part => part.type === 'text').map(part => required(part.text.match(/Comment:\n(.*)/))[1]), ['second comment'], 'only this Send’s comments');
+  assert.deepEqual(errors, []);
+});
+
+test('A21: a Send that fails puts the message and its comments back in the composer', async t => {
+  const { page, posts, errors } = await fixture(t, { hold: async () => 'fail' });
+  const input = page.getByRole('textbox', { name: 'Message Elpis', exact: true });
+  const cards = page.locator('.composer').getByRole('list', { name: 'Message attachments', exact: true }).getByRole('listitem');
+  await input.fill('keep me');
+  await page.evaluate(() => (window as PanelWindow).__push({ annotating: true, annotations: [{ id: 'c1', number: 1, kind: 'element', label: 'link', body: 'kept comment' }] }));
+  await page.getByRole('button', { name: 'Send 1 pending annotation' }).click();
+  await eventually(async () => assert.equal(posts.filter(post => /\/turns$/.test(post.path)).length, 1));
+  await eventually(async () => assert.equal(await input.inputValue(), 'keep me'));
+  assert.ok(await cards.count() >= 1, 'the comment cards come back');
+  await page.getByText('The engine is unavailable.').first().waitFor();
+  assert.deepEqual(errors, []);
+});
+
+test('find bar, options menu, Not secure, zoom and the failure screen', async t => {
+  const { page, errors, commands, shoot } = await fixture(t);
+  await page.evaluate(() => { const tab = (window as PanelWindow).__state.tabs[0]; if (!tab) throw Error('Tab missing'); (window as PanelWindow).__push({ tabs: [{ ...tab, url: 'http://example.com/', security: 'insecure', zoom: 125 }] }); });
+  // The panel opens small (A217: as wide as the sidebar, and a page's 380px floor), where the warning is its icon; widened, it is in words.
+  await page.getByTitle('This site does not use a secure connection').waitFor();
+  assert.equal(await page.getByText('Not secure').isVisible(), false);
+  await widenSidePanel(page, 480);
+  await page.getByText('Not secure').waitFor();
+  await page.getByRole('button', { name: '125%' }).click();
+  assert.deepEqual((await page.evaluate(() => (window as PanelWindow).__commands)).at(-1), { action: 'zoom', value: 'reset' });
+
+  await page.getByRole('tab', { name: 'Example login' }).click({ button: 'right' });
+  for (const name of ['Reload', 'Duplicate', 'Copy URL', 'Open in external browser', 'Close tab']) await page.getByRole('menuitem', { name: new RegExp(`^${name}`) }).waitFor();
+  await page.getByRole('menuitem', { name: 'Copy URL' }).click();
+  assert.deepEqual((await page.evaluate(() => (window as PanelWindow).__commands)).at(-1), { action: 'copyUrl', id: 't1' });
+
+  await page.getByRole('button', { name: 'Browser options' }).click();
+  for (const name of ['Find in page', 'Print', 'Take a screenshot', 'Add a screenshot to your message', 'Force reload', 'Developer tools', 'Clear cookies', 'Clear cache']) await page.getByRole('menuitem', { name: new RegExp(`^${name}`) }).waitFor();
+  await eventually(async () => assert.equal(required(await page.evaluate(() => (window as PanelWindow).__layouts.at(-1))).obscured, true, 'the native page hides under the menu'));
+  await shoot('elpis-browser-options');
+  await page.getByRole('menuitem', { name: 'Take a screenshot' }).click();
+  await page.getByText('Screenshot saved to clipboard').waitFor();
+
+  await page.getByRole('button', { name: 'Browser options' }).click();
+  await page.getByRole('menuitem', { name: /^Find in page/ }).click();
+  const find = page.getByRole('textbox', { name: 'Find in page' });
+  await eventually(async () => assert.equal(await find.evaluate(element => element === document.activeElement), true));
+  await find.fill('cache');
+  await page.getByText('1 of 3').waitFor();
+  await find.press('Shift+Enter');
+  assert.deepEqual((await page.evaluate(() => (window as PanelWindow).__commands)).at(-1), { action: 'find', text: 'cache', value: 'previous' });
+  await shoot('elpis-browser-find');
+  await find.press('Escape');
+  assert.ok((await commands()).includes('findClose'));
+
+  await page.evaluate(() => { const tab = (window as PanelWindow).__state.tabs[0]; if (!tab) throw Error('Tab missing'); (window as PanelWindow).__push({ tabs: [{ ...tab, url: 'http://localhost:3000/', security: 'local', zoom: 100, error: 'ERR_CONNECTION_REFUSED',
+    failure: { heading: "This site can't be reached", summary: 'localhost refused to connect', tips: ['Checking that the development server is running on this port', 'Checking the connection'], code: 'ERR_CONNECTION_REFUSED' } }] }); });
+  await page.getByRole('heading', { name: "This site can't be reached" }).waitFor();
+  assert.equal(await page.locator('.browser-error').count(), 0, 'the one-line error gives way to the explanation');
+  await eventually(async () => assert.equal(required(await page.evaluate(() => (window as PanelWindow).__layouts.at(-1))).obscured, true, 'Chromium\'s blank error page is hidden'));
+  await shoot('elpis-browser-failure');
+  await page.locator('.browser-failure').getByRole('button', { name: 'Reload' }).click();
+  assert.equal((await commands()).at(-1), 'reload');
+  assert.deepEqual(errors, []);
+});
+
+for (const running of [false, true]) test(`Annotate in an open chat${running ? ' while its turn runs' : ''}: Send adds the comments to that chat, not a new conversation (A16)`, async t => {
+  const { page, posts, errors } = await fixture(t, { running });
+  await page.locator('.thread-row[data-thread-id="a"] .thread-link').click();
+  await page.locator('.thread-row.active[data-thread-id="a"]').waitFor();
+  await page.getByRole('button', { name: 'Annotate this page' }).click();
+  await page.evaluate(() => (window as PanelWindow).__push({ draft: { id: 'p1', number: 1, kind: 'element', label: 'button “Sign in”', body: '', editing: false } }));
+  const comment = page.getByRole('textbox', { name: 'Comment', exact: true });
+  await comment.fill('Make this the accent colour'); await comment.press('Control+Enter');
+  await page.getByRole('button', { name: 'Send 1 pending annotation' }).click();
+  const sent = () => posts.filter(post => /\/(turns|steer)$/.test(post.path) || post.path === '/api/threads').map(post => post.path);
+  await eventually(async () => assert.ok(sent().length, 'Send sends the message'));
+  assert.equal(sent().length, 1); assert.match(required(sent()[0]), /^\/api\/threads\/a\/(turns|steer)$/, 'the comments go to chat A, not a new conversation');
+  assert.equal(await page.locator('.thread-row.active[data-thread-id="a"]').count(), 1, 'chat A stays the open chat');
+  assert.deepEqual(errors, []);
+});
+
+test('Comments made in a chat\'s browser stay with that chat: a new chat tab has its own browser, and Send back in the chat goes to it (A16)', async t => {
+  const { page, posts, errors } = await fixture(t, { scoped: true });
+  await page.locator('.thread-row[data-thread-id="a"] .thread-link').click();
+  await page.locator('.thread-row.active[data-thread-id="a"]').waitFor();
+  await page.getByRole('button', { name: 'Annotate this page' }).click();
+  await eventually(async () => assert.equal(await page.evaluate(() => (window as PanelWindow).__state.annotating), true));
+  await page.evaluate(() => (window as PanelWindow).__push({ draft: { id: 'p1', number: 1, kind: 'element', label: 'button “Sign in”', body: '', editing: false } }));
+  const comment = page.getByRole('textbox', { name: 'Comment', exact: true });
+  await comment.fill('Make this the accent colour'); await comment.press('Control+Enter');
+  const send = page.getByRole('button', { name: 'Send 1 pending annotation' });
+  await send.waitFor();
+  await page.getByRole('button', { name: 'New chat tab', exact: true }).click();
+  await send.waitFor({ state: 'detached' });
+  await page.getByRole('tab', { name: /Chat A/ }).click();
+  await page.locator('.thread-row.active[data-thread-id="a"]').waitFor();
+  await send.click();
+  const sent = () => posts.filter(post => /\/(turns|steer)$/.test(post.path) || post.path === '/api/threads').map(post => post.path);
+  await eventually(async () => assert.ok(sent().length, 'Send sends the message'));
+  assert.deepEqual(sent(), ['/api/threads/a/turns'], 'the comments go to chat A, not a new conversation');
+  assert.deepEqual(errors, []);
+});
+
+test('Enter in a comment sends it to the chat at once, like the chat box; Shift+Enter is a new line', async t => {
+  const { page, posts, errors } = await fixture(t);
+  await page.locator('.thread-row[data-thread-id="a"] .thread-link').click();
+  await page.locator('.thread-row.active[data-thread-id="a"]').waitFor();
+  await page.getByRole('button', { name: 'Annotate this page' }).click();
+  await page.evaluate(() => (window as PanelWindow).__push({ draft: { id: 'p1', number: 1, kind: 'element', label: 'button “Sign in”', body: '', editing: false } }));
+  const comment = page.getByRole('textbox', { name: 'Comment', exact: true });
+  await comment.fill('Make this'); await comment.press('Shift+Enter'); await comment.pressSequentially('the accent colour');
+  assert.equal(await comment.inputValue(), 'Make this\nthe accent colour');
+  await comment.press('Enter');
+  const sent = () => posts.filter(post => /\/(turns|steer)$/.test(post.path)).map(post => post);
+  await eventually(async () => assert.equal(sent().length, 1, 'one Enter sends'));
+  assert.match(required(sent()[0]).path, /^\/api\/threads\/a\/(turns|steer)$/);
+  assert.equal(required(required(sent()[0]).body.attachments[0]).name, 'Browser comments');
+  assert.deepEqual(errors, []);
+});
+
+for (const key of ['Enter', 'Control+Enter']) test(`a rejected comment keeps its draft and pending comments; ${key} can retry once`, async t => {
+  const { page, posts, commands, errors, shoot } = await fixture(t);
+  await page.locator('.thread-row[data-thread-id="a"] .thread-link').click();
+  await page.locator('.thread-row.active[data-thread-id="a"]').waitFor();
+  await page.getByRole('button', { name: 'Annotate this page' }).click();
+  await page.evaluate(() => {
+    (window as PanelWindow).__rejectComment = true;
+    (window as PanelWindow).__push({
+      annotations: [{ id: 'saved', number: 1, kind: 'element', label: 'Saved target', body: 'Previous saved comment' }],
+      draft: { id: 'draft', number: 2, kind: 'element', label: 'New target', body: '', editing: false },
+    });
+  });
+  const comment = page.getByRole('textbox', { name: 'Comment', exact: true });
+  const text = 'Keep this exact draft — آزمون — before sending.';
+  await comment.fill(text); await comment.press(key);
+  await page.getByText('The browser could not save this comment.', { exact: true }).waitFor();
+  assert.equal(await comment.count(), 1, 'a rejected save keeps the editor open');
+  assert.equal(await comment.inputValue(), text, 'a rejected save never clears typed text');
+  const sent = () => posts.filter(post => /\/(turns|steer)$/.test(post.path) || post.path === '/api/threads');
+  assert.deepEqual(sent(), [], 'a failed new comment must not send older comments by themselves');
+  assert.equal((await commands()).includes('annotationsCollect'), false, 'collection waits for the current comment to save');
+  assert.equal((await commands()).includes('annotationsSent'), false, 'pending comments stay unsent');
+  assert.deepEqual(await page.evaluate(() => (window as PanelWindow).__state.annotations.map(item => item.body)), ['Previous saved comment']);
+  await page.emulateMedia({ colorScheme: key === 'Enter' ? 'light' : 'dark' });
+  await shoot(`comment-save-rejected-${key === 'Enter' ? 'light' : 'dark'}`);
+
+  await page.evaluate(() => { (window as PanelWindow).__rejectComment = false; });
+  await comment.press(key);
+  if (key === 'Control+Enter') {
+    await eventually(async () => assert.deepEqual(await page.evaluate(() => (window as PanelWindow).__state.annotations.map(item => item.body)), ['Previous saved comment', text]));
+    assert.deepEqual(sent(), [], 'Ctrl+Enter only saves the comment');
+    await page.getByRole('button', { name: 'Send 2 pending annotations' }).click();
+  }
+  await eventually(async () => assert.equal(sent().length, 1, 'retry sends exactly once'));
+  assert.match(required(sent()[0]).path, /^\/api\/threads\/a\/(turns|steer)$/);
+  assert.match(required(required(sent()[0]).body.attachments[0]).text, /Previous saved comment/);
+  assert.ok(required(required(sent()[0]).body.attachments[0]).text.includes(text), 'retry includes the previously rejected draft');
+  await eventually(async () => assert.equal(await page.evaluate(() => (window as PanelWindow).__state.annotations.length), 0));
+  assert.deepEqual(errors, []);
+});
+
+
+for (const colorScheme of ['light'] as const) test(`browser tabs select a range, toggle individual tabs and batch only that selection (${colorScheme})`, async t => {
+  const { page, errors, shoot } = await fixture(t);
+  await page.emulateMedia({ colorScheme });
+  await page.evaluate(() => {
+    const sample = (window as PanelWindow).__state.tabs[0]; if (!sample) throw Error('Tab missing');
+    (window as PanelWindow).__push({ tabs: Array.from({ length: 6 }, (_, index) => ({ ...sample, id: `range-${index}`, title: `Reference ${index + 1}`, url: `https://example.com/${index + 1}` })), activeId: 'range-0' });
+  });
+  const tabs = page.getByRole('tablist', { name: 'Side panel tabs', includeHidden: true });
+  // A modal context menu hides the background from the accessibility tree; its marked tabs retain their selection.
+  const selected = () => tabs.getByRole('tab', { selected: true, includeHidden: true }).allTextContents();
+  await tabs.getByRole('tab', { name: 'Reference 2', exact: true }).click();
+  await tabs.getByRole('tab', { name: 'Reference 5', exact: true }).click({ modifiers: ['Shift'] });
+  assert.deepEqual(await selected(), ['Reference 2', 'Reference 3', 'Reference 4', 'Reference 5']);
+  await tabs.getByRole('tab', { name: 'Reference 3', exact: true }).click({ modifiers: ['Control'] });
+  await tabs.getByRole('tab', { name: 'Reference 6', exact: true }).click({ modifiers: ['Meta'] });
+  assert.deepEqual(await selected(), ['Reference 2', 'Reference 4', 'Reference 5', 'Reference 6']);
+  await tabs.getByRole('tab', { name: 'Reference 4', exact: true }).click({ button: 'right' });
+  const menu = page.getByRole('menu');
+  for (const label of ['New tab to the right', 'Reload 4 tabs', 'Duplicate 4 tabs', 'Copy URL', 'Open in external browser', 'Rename', 'Mute 4 tabs', 'Close 4 tabs', 'Close other tabs']) {
+    const item = menu.getByRole('menuitem', { name: label, exact: true });
+    await item.waitFor();
+    assert.equal(await item.locator('svg').count(), 1, `${label} uses the shared icon menu`);
+  }
+  assert.ok(await menu.getByRole('separator').count() >= 2, 'navigation, labels/audio and closing have separate groups');
+  await shoot(`browser-tab-selection-${colorScheme}`);
+  const before = await page.evaluate(() => (window as PanelWindow).__commands.length);
+  await menu.getByRole('menuitem', { name: 'Reload 4 tabs', exact: true }).click();
+  await eventually(async () => assert.deepEqual((await page.evaluate(() => (window as PanelWindow).__commands)).slice(before), ['range-1', 'range-3', 'range-4', 'range-5'].map(id => ({ action: 'reload', id }))));
+  await tabs.getByRole('tab', { name: 'Reference 4', exact: true }).click({ button: 'right' });
+  const beforeClose = await page.evaluate(() => (window as PanelWindow).__commands.length);
+  await page.getByRole('menuitem', { name: 'Close 4 tabs', exact: true }).click();
+  await eventually(async () => assert.deepEqual((await page.evaluate(() => (window as PanelWindow).__commands)).slice(beforeClose).filter(item => item.action === 'close'), ['range-1', 'range-3', 'range-4', 'range-5'].map(id => ({ action: 'close', id }))));
+  await tabs.getByRole('tab', { name: 'Reference 1', exact: true }).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Close tab', exact: true }).waitFor();
+  assert.deepEqual(await selected(), ['Reference 1'], 'right-clicking outside the selection targets only that tab');
+  await page.keyboard.press('Escape');
+  assert.deepEqual(errors, []);
+});
+
+test('closing the last tab in full view reopens a compact empty chooser', async t => {
+  const { page, errors, shoot } = await fixture(t);
+  const side = page.getByRole('region', { name: 'Side panel', exact: true });
+  await widenSidePanel(page, 700);
+  await side.getByRole('button', { name: 'Enter full view', exact: true }).click();
+  await page.evaluate(() => (window as PanelWindow).__push({ visible: false, activeId: null, tabs: [] }));
+  await side.waitFor({ state: 'detached' });
+  await page.getByRole('button', { name: 'Show side panel', exact: true }).click();
+  await side.waitFor();
+  assert.equal(await side.evaluate(element => element.classList.contains('full')), false, 'an empty panel never inherits full view');
+  assert.ok(required(await side.boundingBox()).width <= 320, 'the empty chooser stays compact despite an earlier large content width');
+  await shoot('browser-compact-empty-chooser');
+  await page.evaluate(() => (window as PanelWindow).__push({ visible: true, activeId: 'restored', tabs: [{ id: 'restored', title: 'Restored page', url: 'https://example.com/', zoom: 100 }] }));
+  await page.getByRole('tab', { name: 'Restored page', exact: true }).waitFor();
+  assert.ok(required(await side.boundingBox()).width >= 650, 'real content restores the person’s chosen width');
+  assert.deepEqual(errors, []);
+});
+
+
+test('browser page pin, rename and mute use real controls; sidebar bookmarks survive reload and open in the current chat', async t => {
+  const { page, errors } = await fixture(t, { scoped: true });
+  const tab = page.getByRole('tab', { name: 'Example login', exact: true });
+  await tab.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Pin to sidebar', exact: true }).click();
+  const pins = page.getByRole('region', { name: 'Pinned browser pages', exact: true });
+  await pins.getByRole('button', { name: 'Example login', exact: true }).waitFor();
+  await page.reload();
+  await pins.getByRole('button', { name: 'Example login', exact: true }).click();
+  await eventually(async () => assert.ok(await page.evaluate(() => (window as PanelWindow).__commands.some(item => item.action === 'new' && item.url === 'https://example.com/login' && item.sessionId === (window as PanelWindow).__state.sessionId)), 'a saved address opens in this chat, without adopting another chat’s browser'));
+  await tab.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Rename', exact: true }).click();
+  const dialog = page.getByRole('alertdialog', { name: 'Rename tab', exact: true });
+  await dialog.getByRole('textbox', { name: 'Tab name', exact: true }).fill('My browser reference');
+  await dialog.getByRole('button', { name: 'Save', exact: true }).click();
+  await eventually(async () => assert.ok((await page.evaluate(() => (window as PanelWindow).__commands)).some(item => item.action === 'rename' && item.id === 't1' && item.text === 'My browser reference')));
+  await tab.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Mute tab', exact: true }).click();
+  await eventually(async () => assert.ok((await page.evaluate(() => (window as PanelWindow).__commands)).some(item => item.action === 'mute' && item.id === 't1' && item.value === true)));
+  const before = await page.evaluate(() => (window as PanelWindow).__commands.length);
+  await pins.getByRole('button', { name: 'Unpin Example login from sidebar', exact: true }).click();
+  await pins.waitFor({ state: 'detached' });
+  assert.equal((await page.evaluate(() => (window as PanelWindow).__commands)).slice(before).filter(item => item.action === 'close').length, 0, 'unpinning never closes the person’s page');
+  await page.reload();
+  assert.equal(await pins.count(), 0, 'unpinning is persisted');
+  assert.deepEqual(errors, []);
+});
+
+
+test('browser Close other tabs preserves the context or selected group; Close tabs to the right preserves its left neighbours', async t => {
+  const { page, errors } = await fixture(t);
+  const tabs = page.getByRole('tablist', { name: 'Side panel tabs', includeHidden: true });
+  for (const scenario of [
+    { id: 'selected', grouped: true, action: 'Close other tabs', closed: [0, 4, 5] },
+    { id: 'context', grouped: false, action: 'Close other tabs', closed: [0, 1, 3, 4, 5] },
+    { id: 'right', grouped: false, action: 'Close tabs to the right', closed: [3, 4, 5] },
+  ]) {
+    await page.evaluate(id => {
+      const sample = (window as PanelWindow).__state.tabs[0]; if (!sample) throw Error('Tab missing');
+      (window as PanelWindow).__push({ visible: true, activeId: `${id}-0`, tabs: Array.from({ length: 6 }, (_, index) => ({ ...sample, id: `${id}-${index}`, title: `${id} reference ${index + 1}`, url: `https://example.com/${id}/${index + 1}` })) });
+    }, scenario.id);
+    const tab = (number: number) => tabs.getByRole('tab', { name: `${scenario.id} reference ${number}`, exact: true });
+    await tab(scenario.grouped ? 2 : 1).click();
+    if (scenario.grouped) await tab(4).click({ modifiers: ['Shift'] });
+    await tab(3).click({ button: 'right' });
+    assert.deepEqual(await tabs.getByRole('tab', { selected: true, includeHidden: true }).allTextContents(), (scenario.grouped ? [2, 3, 4] : [3]).map(number => `${scenario.id} reference ${number}`), 'right-click preserves an existing marked group and replaces a selection outside its target');
+    const before = await page.evaluate(() => (window as PanelWindow).__commands.length);
+    await page.getByRole('menuitem', { name: scenario.action, exact: true }).click();
+    await eventually(async () => assert.deepEqual((await page.evaluate(() => (window as PanelWindow).__commands)).slice(before).filter(item => item.action === 'close'), scenario.closed.map(index => ({ action: 'close', id: `${scenario.id}-${index}` })), `${scenario.action} closes exactly the requested neighbours`));
+  }
+  assert.deepEqual(errors, []);
+});
+
+
+test('closing a selected group containing the final active tab selects its surviving neighbour once', async t => {
+  const { page, errors } = await fixture(t);
+  await page.evaluate(() => {
+    const sample = (window as PanelWindow).__state.tabs[0]; if (!sample) throw Error('Tab missing');
+    (window as PanelWindow).__push({ activeId: 'survivor-a', tabs: ['A', 'B', 'C'].map(letter => ({ ...sample, id: `survivor-${letter.toLowerCase()}`, title: `Page ${letter}`, url: `https://example.com/${letter.toLowerCase()}` })) });
+  });
+  const tabs = page.getByRole('tablist', { name: 'Side panel tabs', includeHidden: true });
+  await tabs.getByRole('tab', { name: 'Page B', exact: true }).click();
+  await tabs.getByRole('tab', { name: 'Page C', exact: true }).click({ modifiers: ['Shift'] });
+  await tabs.getByRole('tab', { name: 'Page C', exact: true }).click({ button: 'right' });
+  const before = await page.evaluate(() => (window as PanelWindow).__commands.length);
+  await page.getByRole('menuitem', { name: 'Close 2 tabs', exact: true }).click();
+  let delivered: (BrowserCommand & { action: string })[] = [];
+  await eventually(async () => {
+    delivered = (await page.evaluate(() => (window as PanelWindow).__commands)).slice(before);
+    assert.equal(delivered.filter(item => item.action === 'close').length, 2);
+  });
+  const closed = new Set();
+  for (const command of delivered) {
+    if (command.action === 'close') closed.add(command.id);
+    if (command.action === 'select') assert.ok(!closed.has(command.id), 'a selected neighbour must still exist at delivery');
+  }
+  assert.deepEqual(delivered.filter(item => item.action === 'select'), [{ action: 'select', id: 'survivor-a' }], 'select the one surviving browser neighbour once');
+  assert.deepEqual([...closed], ['survivor-b', 'survivor-c']);
+  assert.equal(await tabs.getByRole('tab', { name: 'Page A', exact: true }).getAttribute('aria-selected'), 'true', 'the actual visible tab is the survivor');
+  assert.deepEqual(errors, []);
+});

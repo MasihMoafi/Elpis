@@ -3,7 +3,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture, THREADS } = require('./parity-fixture.cjs');
-const { scrollToLoadEarlier } = require('./controls.cjs');
+const { scrollToLoadEarlier } = require('./controls.cts');
 
 const PAGE = 100, PAGES = 30;
 const pageOf = (n: number) => Array.from({ length: PAGE }, (_, i) => i === 0

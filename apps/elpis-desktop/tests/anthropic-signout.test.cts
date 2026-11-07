@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-const { leaveSettings, openSettings } = require('./controls.cjs');
+const { leaveSettings, openSettings } = require('./controls.cts');
 // Elpis's own Anthropic sign-out on Models & accounts against a local adapter: the card offers Sign out / Sign in like the
 // ChatGPT card, and after either the sidebar's Anthropic usage, the Usage & limits page and the model picker follow.
 // No runtime or model calls.

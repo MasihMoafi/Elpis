@@ -15,7 +15,7 @@ import { startDesktopServer } from '../bridge/server.mts';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { fakeDesktop } = require('../tests/fake-desktop.cjs');
+const { fakeDesktop } = /** @type {{ fakeDesktop: import('../tests/fake-desktop.cts').FakeDesktop }} */ (require('../tests/fake-desktop.cts'));
 const appRoot = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const fakeAgent = path.resolve(appRoot, '../../tools/elpis-claude/test/fake-acp-agent.mjs');
 const count = Number(process.argv[2]);

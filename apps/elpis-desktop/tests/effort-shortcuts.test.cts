@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cjs');
-const { chooseOption, controlValue } = require('./controls.cjs');
+const { chooseOption, controlValue } = require('./controls.cts');
 
 const model = { id: 'sol', model: 'sol', displayName: 'Sol', defaultReasoningEffort: 'medium', supportedReasoningEfforts: ['low', 'medium', 'high', 'xhigh'].map(reasoningEffort => ({ reasoningEffort })) };
 const routes = { '/api/models': () => ({ data: [model], nextCursor: null }), '/api/settings': () => ({ background: {}, memory: {}, smartPrune: { explicitOverride: {} }, write: { available: false }, main: { model: 'sol', provider: 'openai' }, providers: [{ id: 'openai', displayName: 'OpenAI' }] }) };

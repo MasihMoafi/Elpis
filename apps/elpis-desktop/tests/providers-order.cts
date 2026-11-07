@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { leaveSettings, openSettings } = require('./controls.cjs');
+const { leaveSettings, openSettings } = require('./controls.cts');
 
 type AccountPage = { waitForFunction(fn: () => boolean | null): Promise<unknown>; locator(selector: string): { isVisible(): Promise<boolean> }; keyboard: { press(key: string): Promise<unknown> }; getByRole(role: string, options: { name: string; exact: boolean }): AccountPanel };
 type AccountPanel = { locator(selector: string): { waitFor(): Promise<unknown> }; evaluate<T>(fn: (panel: HTMLElement) => T): Promise<T> };

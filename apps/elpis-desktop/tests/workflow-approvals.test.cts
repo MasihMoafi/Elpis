@@ -1,4 +1,4 @@
-const { leaveSettings, openSettings } = require('./controls.cjs');
+const { leaveSettings, openSettings } = require('./controls.cts');
 // The bridge owns authorization; this verifies delivery/discovery of its authorized child approvals.
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs/promises'),path=require('node:path'),http=require('node:http');const{chromium}=require(process.env.ELPIS_PLAYWRIGHT_PACKAGE||'playwright');
 test('authorized child approvals remain visible across views and answer once',async()=>{

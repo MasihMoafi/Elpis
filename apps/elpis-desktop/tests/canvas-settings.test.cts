@@ -1,8 +1,8 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
-const { openCanvas } = require('./canvas-fixture.cjs');
-const { chooseOption, chooseTheme } = require('./controls.cjs');
+const { openCanvas } = require('./canvas-fixture.cts');
+const { chooseOption, chooseTheme } = require('./controls.cts');
 
 test('a configured API default keeps its own provider and models in the agent inspector', async () => {
   const f = await openCanvas({ settings: { main: { provider: 'anthropic-credits', model: 'claude-opus-5-5' }, providers: [{ id: 'openai', displayName: 'OpenAI' }, { id: 'anthropic-credits', displayName: 'Anthropic credits' }] }, providerModels: {

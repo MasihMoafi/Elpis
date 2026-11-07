@@ -1,0 +1,366 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { createRequire } from 'node:module';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { transpileModule, ModuleKind, JsxEmit, ScriptTarget } from 'typescript';
+import type { ReactElement, ReactNode } from 'react';
+
+type ElementProps = { children: ReactNode; disabled: boolean; value: string; placeholder: string; onChange(event: { target: { value: string } }): void; onClick(): void; 'aria-label': string };
+type Element = ReactElement<ElementProps>;
+type MockResponse = { ok: boolean; status?: number; json(): Promise<object> };
+type MockFetch = (path: string, init?: { body: string }) => Promise<MockResponse>;
+type EffectSlot = { deps?: unknown[] | undefined; cleanup?: (() => void) | undefined };
+type CallbackSlot = { callback: unknown; deps?: unknown[] };
+const setMockFetch = (mock: MockFetch) => { Reflect.set(globalThis, 'fetch', mock); };
+
+const require = createRequire(import.meta.url), root = path.resolve(import.meta.dirname, '..');
+function load<T = Element>(relative: string, react: object = React): Record<string, (props: object) => T> {
+  const cache = new Map<string, { exports: Record<string, (props: object) => T> }>();
+  function compiled(filename: string): Record<string, (props: object) => T> {
+    const absolute = path.resolve(root, filename);
+    const cached = cache.get(absolute); if (cached) return cached.exports;
+    const module: { exports: Record<string, (props: object) => T> } = { exports: {} }; cache.set(absolute, module);
+    // ModelPair is private to ModelSettings; exercise the actual background pair without adding a production export.
+    const source = readFileSync(absolute, 'utf8') + (absolute === path.join(root, 'components/settings/maintenance.tsx') ? '\nexport { ModelPair };' : '');
+    const code = transpileModule(source, { compilerOptions: { module: ModuleKind.CommonJS, jsx: JsxEmit.ReactJSX, target: ScriptTarget.ES2022 } }).outputText;
+    const localRequire = (id: string) => {
+      // Hooks of the rendered component and its shared save hook use the fixture's hook slots.
+      if (id === 'react' && (absolute === path.resolve(root, relative) || absolute === path.resolve(root, 'components/settings/use-saver.ts'))) return react;
+      if (!id.startsWith('@/') && !id.startsWith('.')) return require(id);
+      const base = id.startsWith('@/') ? path.join(root, id.slice(2)) : path.resolve(path.dirname(absolute), id);
+      for (const extension of ['', '.tsx', '.ts', '.js']) { try { readFileSync(base + extension); return compiled(base + extension); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT' && (error as NodeJS.ErrnoException).code !== 'EISDIR') throw error; } }
+      throw new Error(`Missing local module ${id}`);
+    };
+    new Function('require', 'exports', 'module', code)(localRequire, module.exports, module);
+    return module.exports;
+  }
+  const exports = compiled(relative);
+  return relative === 'components/settings/maintenance.tsx' ? { ...exports, BackgroundSettings: (props: object) => { const pair = exports.ModelPair; assert.ok(pair); return pair({ ...props, which: 'background' }); } } : exports;
+}
+
+const models = [{ id: 'sol', model: 'gpt-6-sol', displayName: 'Sol 6' }, { id: 'claude', model: 'claude/opus', displayName: 'Opus' }];
+const providers = [{ id: 'openai', displayName: 'OpenAI' }, { id: 'lab', displayName: 'Lab server' }, { id: 'home', displayName: 'Home server' }];
+const settings = {
+  version: 'v1', main: { model: 'gpt-6-sol', provider: 'openai' }, providers,
+  background: { model: 'gpt-6-sol', provider: 'openai' },
+  memory: { enabled: true, generate: true, use: true, extractionModel: 'gpt-6-sol', consolidationModel: null },
+  smartPrune: { enabled: true, explicitOverride: { available: true, version: 'p1', model: 'gpt-6-sol', provider: 'openai' } },
+  write: { available: true },
+};
+
+const MAINTENANCE='components/settings/maintenance.tsx';
+const render=(name: string,props: object)=>{ const component = load(MAINTENANCE)[name]; assert.ok(component); return renderToStaticMarkup(React.createElement(component,props)); };
+
+test('catalog-backed maintenance models keep selections and offer custom IDs in a closed advanced disclosure', () => {
+  const html = render('BackgroundSettings', { value: settings, models }) + render('MemorySettings', { value: settings, models });
+  assert.match(html, /<details><summary[^>]*data-slot="disclosure-summary"/);
+  assert.match(html, /lucide-chevron-right/);
+  assert.match(html, /Advanced: custom model/);
+  assert.doesNotMatch(html, /<details open/);
+  for (const label of ['Background model', 'Memory extraction model', 'Memory consolidation model']) assert.match(html, new RegExp(`aria-label="Custom ${label}"`));
+  assert.match(html, /Sol 6/);
+  assert.match(html, /Memory extraction model/);
+  assert.match(html, /Default conversation model/);
+});
+
+test('an external provider without a catalog keeps an honest advanced model path', () => {
+  const external = { ...settings, background: { model: 'gpt-oss', provider: 'home' }, smartPrune: { enabled: true, explicitOverride: { available: false, model: null, provider: null } } };
+  const html = render('BackgroundSettings', { value: external, models });
+  assert.match(html, /No model catalog is available for/);
+  assert.match(html, /Home server/);
+  assert.match(html, /value="gpt-oss"/);
+  assert.match(html, /Advanced/);
+  assert.match(render('PrunerSettings', { value: external, models }), /Pruning model settings are unavailable/);
+});
+
+function fixture<T = Element>(relative: string, exportName: string, props: object) {
+  const slots: unknown[]=[], pending: (() => void)[]=[];
+  let cursor=0;
+  const hooks={...React,
+    useState(initial: unknown) { const key=cursor++; if(!(key in slots))slots[key]=typeof initial==='function'?initial():initial; return [slots[key],(next: unknown)=>{slots[key]=typeof next==='function'?next(slots[key]):next;}]; },
+    // MemorySettings memoizes its memory-count refresh (f243c5865, "show saved memory file count"); the fixture keeps it in a slot like React.
+    useCallback(callback: unknown,deps?: unknown[]) { const key=cursor++,old=slots[key] as CallbackSlot | undefined; if(!old||!deps||deps.some((value,index)=>!Object.is(value,(old.deps as unknown[])[index])))slots[key]={callback,deps}; return (slots[key] as CallbackSlot).callback; },
+    useRef(initial: unknown) { const key=cursor++; if(!(key in slots))slots[key]={current:initial}; return slots[key]; },
+    useEffect(effect: () => undefined | (() => void),deps?: unknown[]) { const key=cursor++,old=slots[key] as EffectSlot | undefined; if(!old||!deps||deps.some((value,index)=>!Object.is(value,(old.deps as unknown[])[index]))) { const slot: EffectSlot={deps,cleanup:old?.cleanup}; slots[key]=slot; pending.push(()=>{old?.cleanup?.();slot.cleanup=effect();}); } },
+  };
+  const Component=load<T>(relative,hooks)[exportName]; assert.ok(Component);
+  return {
+    render(next: object=props) { cursor=0; return Component(next); },
+    effects() { for(const effect of pending.splice(0))effect(); },
+    dispose() { for(const slot of slots)(slot as EffectSlot | null | undefined)?.cleanup?.(); },
+  };
+}
+function elements(node: ReactNode): Element[] {
+  if(!React.isValidElement<ElementProps>(node))return Array.isArray(node)?node.flatMap(elements):[];
+  if(typeof node.type==='function'&&node.type.name==='ModelChoice')return elements((node.type as (props: ElementProps) => ReactNode)(node.props));
+  return [node,...React.Children.toArray(node.props.children).flatMap(elements)];
+}
+function control(tree: Element,label: string) {
+  const result=elements(tree).find(element=>element.props['aria-label']===label);
+  assert.ok(result, 'Missing control '+label);
+  return result;
+}
+function button(tree: Element,label: string) {
+  const result=elements(tree).find(element=>element.props.children===label&&typeof element.props.onClick==='function');
+  assert.ok(result, 'Missing button '+label);
+  return result;
+}
+function values(control: Element) { return elements(control.props.children).filter(element=>element.type==='option').map(element=>element.props.value); }
+
+test('pruner effort reads shared Max, limits choices to the model and clears incompatible changes', () => {
+  const catalog = [
+    { ...models[0], supportedReasoningEfforts: ['low', 'max'].map(reasoningEffort => ({ reasoningEffort })) },
+    { id: 'limited', model: 'limited', displayName: 'Limited', supportedReasoningEfforts: [{ reasoningEffort: 'medium' }] },
+    { id: 'unknown', model: 'unknown', displayName: 'Unknown' },
+  ];
+  const value = { ...settings, smartPrune: { ...settings.smartPrune, explicitOverride: { ...settings.smartPrune.explicitOverride, reasoningEffort: 'max' } } };
+  const view = fixture(MAINTENANCE, 'PrunerSettings', { value, models: catalog });
+  let tree = view.render();
+  assert.equal(control(tree, 'Pruning effort').props.value, 'max');
+  assert.deepEqual(values(control(tree, 'Pruning effort')), ['', 'low', 'max']);
+  assert.equal(button(tree, 'Save pruning model').props.disabled, true);
+  control(tree, 'Pruning model').props.onChange({ target: { value: 'limited' } });
+  tree = view.render();
+  assert.equal(control(tree, 'Pruning effort').props.value, '');
+  assert.deepEqual(values(control(tree, 'Pruning effort')), ['', 'medium']);
+  control(tree, 'Pruning model').props.onChange({ target: { value: 'unknown' } });
+  tree = view.render();
+  assert.deepEqual(values(control(tree, 'Pruning effort')), ['']);
+  assert.match(renderToStaticMarkup(tree), /Default \(Low\)/);
+  const unavailable = fixture(MAINTENANCE, 'PrunerSettings', { value, models: [] }).render();
+  assert.deepEqual(values(control(unavailable, 'Pruning effort')), ['']);
+  assert.equal(control(unavailable, 'Pruning effort').props.value, 'max', 'loading a catalog never silently clears the saved choice');
+});
+
+test('pruner effort-only save round trips Max and Default without changing the model or provider', async () => {
+  const original = globalThis.fetch, posts: { path: string; body: object }[] = [];
+  let value = structuredClone(settings);
+  const catalog = [{ ...models[0], supportedReasoningEfforts: [{ reasoningEffort: 'max' }] }];
+  setMockFetch(async (path, init) => {
+    assert.ok(init); const body = JSON.parse(init.body); posts.push({ path, body });
+    value = { ...value, smartPrune: { ...value.smartPrune, explicitOverride: { available: true, ...body, version: 'p2' } } };
+    return { ok: true, json: async () => value };
+  });
+  try {
+    for (const effort of ['max', '']) {
+      const view = fixture(MAINTENANCE, 'PrunerSettings', { value, models: catalog });
+      let tree = view.render();
+      const version = value.smartPrune.explicitOverride.version;
+      control(tree, 'Pruning effort').props.onChange({ target: { value: effort } });
+      tree = view.render(); assert.equal(button(tree, 'Save pruning model').props.disabled, false);
+      button(tree, 'Save pruning model').props.onClick(); await new Promise(setImmediate);
+      assert.deepEqual(posts.at(-1), { path: '/api/pruner', body: { version, model: 'gpt-6-sol', provider: 'openai', reasoningEffort: effort || null } });
+      tree = fixture(MAINTENANCE, 'PrunerSettings', { value, models: catalog }).render();
+      assert.equal(control(tree, 'Pruning effort').props.value, effort);
+      assert.equal(button(tree, 'Save pruning model').props.disabled, true);
+      assert.equal(value.main.model, settings.main.model);
+    }
+  } finally { globalThis.fetch = original; }
+});
+
+test('pruner effort waits for its provider catalog and keeps the draft when saving is rejected', async () => {
+  const original = globalThis.fetch;
+  let release: (() => void) | undefined;
+  setMockFetch(async (path, init) => init ? { ok: false, status: 409, json: async () => ({ error: 'Settings changed elsewhere' }) }
+    : new Promise(resolve => { release = () => resolve({ ok: true, json: async () => ({ data: [{ ...models[0], supportedReasoningEfforts: ['medium', 'max'].map(reasoningEffort => ({ reasoningEffort })) }] }) }); }));
+  const value = { ...settings, smartPrune: { ...settings.smartPrune, explicitOverride: { ...settings.smartPrune.explicitOverride, provider: 'home', reasoningEffort: 'max' } } };
+  const view = fixture(MAINTENANCE, 'PrunerSettings', { value, models: [{ ...models[0], supportedReasoningEfforts: [{ reasoningEffort: 'low' }] }] });
+  try {
+    let tree = view.render(); view.effects();
+    assert.deepEqual(values(control(tree, 'Pruning effort')), ['']);
+    await new Promise(setImmediate);
+    assert.ok(release); release(); await new Promise(setImmediate);
+    tree = view.render(); view.effects();
+    assert.deepEqual(values(control(tree, 'Pruning effort')), ['', 'medium', 'max']);
+    control(tree, 'Pruning effort').props.onChange({ target: { value: 'medium' } });
+    tree = view.render(); button(tree, 'Save pruning model').props.onClick(); await new Promise(setImmediate);
+    tree = view.render(); assert.equal(control(tree, 'Pruning effort').props.value, 'medium');
+    assert.match(renderToStaticMarkup(tree), /Settings changed elsewhere/);
+  } finally { view.dispose(); globalThis.fetch = original; }
+});
+
+test('model options stay within their provider and retain unknown current values',()=>{
+  const current={...settings,background:{model:'legacy-model',provider:'openai'}};
+  assert.deepEqual(values(control(fixture(MAINTENANCE,'BackgroundSettings',{value:current,models}).render(),'Background model')),['','legacy-model','gpt-6-sol']);
+  const memory=fixture(MAINTENANCE,'MemorySettings',{value:current,models}).render();
+  assert.deepEqual(values(control(memory,'Memory extraction model')),['','gpt-6-sol']);
+  assert.equal(control(memory,'Memory consolidation model').props.value,'');
+  assert.equal(control(fixture(MAINTENANCE,'PrunerSettings',{value:current,models}).render(),'Pruning model').props.value,'gpt-6-sol');
+});
+
+test('inherited selections survive a failed save without changing provider or other settings',async()=>{
+  const posts: { path: string; body: object }[]=[], original=globalThis.fetch;
+  setMockFetch(async(path,init)=>{assert.ok(init);posts.push({path,body:JSON.parse(init.body)});return {ok:false,status:409,json:async()=>({error:'Settings changed elsewhere'})};});
+  try {
+    for (const [name,label,saveLabel] of [['BackgroundSettings','Background model','Save background model'],['MemorySettings','Memory extraction model','Save memory models']] as const) {
+      const view=fixture(MAINTENANCE,name,{value:settings,models});
+      let tree=view.render();
+      control(tree,label).props.onChange({target:{value:''}});
+      tree=view.render();
+      assert.equal(control(tree,label).props.value,'');
+      button(tree,saveLabel).props.onClick();
+      await new Promise(setImmediate);
+      tree=view.render();
+      assert.equal(control(tree,label).props.value,'',`${label} keeps the unsaved choice`);
+      assert.match(renderToStaticMarkup(tree),/Settings changed elsewhere/);
+    }
+    assert.deepEqual(posts,[{path:'/api/settings',body:{version:'v1',background:{model:null}}},{path:'/api/settings',body:{version:'v1',memory:{extractionModel:null}}}]);
+  } finally { globalThis.fetch=original; }
+});
+
+test('switching a provider preserves its configured model and never borrows the main catalog',()=>{
+  const view=fixture(MAINTENANCE,'BackgroundSettings',{value:settings,models});
+  let tree=view.render();
+  control(tree,'Background provider').props.onChange({target:{value:'home'}});
+  tree=view.render();
+  const model=control(tree,'Background model');
+  assert.equal(model.props.value,'gpt-6-sol');
+  assert.equal(model.props.placeholder,'Model name supplied by this connection');
+  assert.deepEqual(values(model),[]);
+  assert.match(renderToStaticMarkup(tree),/No model catalog is available for Home server/);
+});
+
+test('configured external provider fetches its own catalog once and keeps its current model',async()=>{
+  const original=globalThis.fetch,calls: string[]=[];
+  setMockFetch(async path=>{calls.push(path);return {ok:true,json:async()=>({data:[{id:'oss',model:'gpt-oss',displayName:'GPT OSS local'}],nextCursor:null})};});
+  const value={...settings,background:{model:'gpt-oss',provider:'home'},smartPrune:{...settings.smartPrune,explicitOverride:{...settings.smartPrune.explicitOverride,model:'gpt-oss',provider:'home'}}};
+  try {
+    for (const [name,label] of [['BackgroundSettings','Background model'],['PrunerSettings','Pruning model']] as const) {
+      calls.length=0;
+      const view=fixture(MAINTENANCE,name,{value,models});
+      view.render();view.effects();
+      let tree=view.render();
+      assert.equal(control(tree,label).props.value,'gpt-oss');
+      await new Promise(setImmediate);
+      tree=view.render();view.effects();
+      assert.deepEqual(values(control(tree,label)),['','gpt-oss']);
+      assert.match(renderToStaticMarkup(tree),/GPT OSS local/);
+      assert.deepEqual(calls,['/api/models?provider=home&refresh=true']);
+      view.dispose();
+    }
+    calls.length=0;
+    const memory=fixture(MAINTENANCE,'MemorySettings',{value,models});
+    const tree=memory.render();memory.effects();await new Promise(setImmediate);
+    assert.deepEqual(values(control(tree,'Memory extraction model')),['','gpt-6-sol']);
+    // The memory page reads its saved file count (f243c5865, "show saved memory file count"); it fetches no model catalog.
+    assert.deepEqual(calls,['/api/memories/count'],'memory models use the main catalog');
+    memory.dispose();
+  } finally {globalThis.fetch=original;}
+});
+
+test('failed external catalog keeps current model and does not retry on every render',async()=>{
+  const original=globalThis.fetch,calls: string[]=[];
+  setMockFetch(async path=>{calls.push(path);throw Error('Connection unavailable');});
+  const value={...settings,background:{model:'private-model',provider:'lab'}};
+  const view=fixture(MAINTENANCE,'BackgroundSettings',{value,models});
+  try {
+    view.render();view.effects();
+    await new Promise(setImmediate);
+    const tree=view.render();view.effects();
+    assert.equal(control(tree,'Background model').props.value,'private-model');
+    assert.match(renderToStaticMarkup(tree),/Could not reach Elpis/);
+    assert.deepEqual(calls,['/api/models?provider=lab&refresh=true']);
+  } finally {view.dispose();globalThis.fetch=original;}
+});
+
+test('inherited provider uses main catalog while unknown providers are never fetched',()=>{
+  const original=globalThis.fetch,calls: string[]=[];
+  setMockFetch(async path=>{calls.push(path);throw Error('unexpected');});
+  const value={...settings,background:{model:null,provider:null},smartPrune:{...settings.smartPrune,explicitOverride:{...settings.smartPrune.explicitOverride,model:'old-model',provider:'removed-provider'}}};
+  try {
+    const background=fixture(MAINTENANCE,'BackgroundSettings',{value,models}), pruner=fixture(MAINTENANCE,'PrunerSettings',{value,models});
+    assert.deepEqual(values(control(background.render(),'Background model')),['','gpt-6-sol']);background.effects();
+    const tree=pruner.render();pruner.effects();
+    assert.equal(control(tree,'Pruning model').props.value,'old-model');
+    assert.deepEqual(values(control(tree,'Pruning model')),[]);
+    assert.deepEqual(calls,[]);
+    background.dispose();pruner.dispose();
+  } finally {globalThis.fetch=original;}
+});
+
+test('malformed main model catalog gives a recoverable error instead of crashing settings',async()=>{
+  const original=globalThis.fetch;
+  setMockFetch(async()=>({ok:true,json:async()=>({data:null})}));
+  const view=fixture<{ models: object[]; error: string }>(MAINTENANCE,'useModelCatalog',{});
+  try {
+    view.render();view.effects();
+    await new Promise(setImmediate);
+    const catalog=view.render();
+    assert.deepEqual(catalog.models,[]);
+    assert.equal(catalog.error,'The model catalogue did not return a model list.');
+    assert.match(render('CatalogNotice',{error:catalog.error}),/Model choices could not be loaded: The model catalogue did not return a model list/);
+  } finally {view.dispose();globalThis.fetch=original;}
+});
+
+test('malformed provider model catalog preserves existing provider/model as an advanced setting',async()=>{
+  const original=globalThis.fetch;
+  setMockFetch(async()=>({ok:true,json:async()=>({data:null})}));
+  const value={...settings,background:{model:'private-model',provider:'lab'}};
+  const view=fixture(MAINTENANCE,'BackgroundSettings',{value,models});
+  try {
+    view.render();view.effects();
+    await new Promise(setImmediate);
+    const tree=view.render();
+    assert.equal(control(tree,'Background model').props.value,'private-model');
+    assert.match(renderToStaticMarkup(tree),/Model catalog response did not contain models/);
+  } finally {view.dispose();globalThis.fetch=original;}
+});
+
+test('changed configuration version refreshes provider models without discarding background, memory or pruning drafts',async()=>{
+  const original=globalThis.fetch,calls: string[]=[];
+  const value={...settings,background:{model:'original-background',provider:'home'},smartPrune:{...settings.smartPrune,explicitOverride:{...settings.smartPrune.explicitOverride,model:'original-pruner',provider:'home'}}};
+  try {
+    for (const [name,label] of [['BackgroundSettings','Background model'],['PrunerSettings','Pruning model']] as const) {
+      calls.length=0;
+      setMockFetch(async path=>{calls.push(path);return {ok:true,json:async()=>({data:calls.length===1?[{id:'selected-old',model:'selected-old',displayName:'Selected old model'},{id:'old-only',model:'old-only',displayName:'Old endpoint model'}]:[{id:'new-model',model:'new-model',displayName:'New endpoint model'}]})};});
+      const props={value,models}, view=fixture(MAINTENANCE,name,props);
+      view.render();view.effects();await new Promise(setImmediate);
+      let tree=view.render();view.effects();
+      assert.ok(values(control(tree,label)).includes('old-only'));
+      control(tree,label).props.onChange({target:{value:'selected-old'}});
+      view.render();view.effects();
+      const next={...props,value:{...value,version:'v2'}};
+      tree=view.render(next);
+      assert.ok(!values(control(tree,label)).includes('old-only'));
+      assert.equal(control(tree,label).props.value,'selected-old');
+      view.effects();await new Promise(setImmediate);
+      tree=view.render(next);view.effects();
+      assert.deepEqual(calls,['/api/models?provider=home&refresh=true','/api/models?provider=home&refresh=true']);
+      assert.deepEqual(values(control(tree,label)),['','selected-old','new-model']);
+      view.dispose();
+    }
+    const memory=fixture(MAINTENANCE,'MemorySettings',{value,models});
+    control(memory.render(),'Memory extraction model').props.onChange({target:{value:''}});
+    assert.equal(control(memory.render({value:{...value,version:'v2'},models}),'Memory extraction model').props.value,'');
+  } finally {globalThis.fetch=original;}
+});
+
+for(const staleResult of ['success','failure'])test(`late old-version catalog ${staleResult} cannot overwrite the refreshed model list`,async()=>{
+  const original=globalThis.fetch,requests: { path: string; resolve(response: MockResponse): void; reject(error: Error): void }[]=[];
+  setMockFetch(path=>new Promise((resolve,reject)=>requests.push({path,resolve,reject})));
+  const value={...settings,background:{model:'kept-model',provider:'home'}};
+  const props={value,models};
+  const view=fixture(MAINTENANCE,'BackgroundSettings',props);
+  try {
+    view.render();view.effects();
+    await new Promise(setImmediate);
+    const next={...props,value:{...value,version:'v2'}};
+    view.render(next);view.effects();
+    await new Promise(setImmediate);
+    assert.equal(requests.length,2);
+    assert.ok(requests[1] && requests[0]); requests[1].resolve({ok:true,json:async()=>({data:[{id:'new-model',model:'new-model',displayName:'New endpoint model'}]})});
+    await new Promise(setImmediate);
+    let tree=view.render(next);view.effects();
+    assert.deepEqual(values(control(tree,'Background model')),['','kept-model','new-model']);
+    if(staleResult==='success')requests[0].resolve({ok:true,json:async()=>({data:[{id:'old-model',model:'old-model',displayName:'Old endpoint model'}]})});
+    else requests[0].reject(Error('Old endpoint failed'));
+    await new Promise(setImmediate);
+    tree=view.render(next);view.effects();
+    assert.deepEqual(values(control(tree,'Background model')),['','kept-model','new-model']);
+    assert.doesNotMatch(renderToStaticMarkup(tree),/Old endpoint (model|failed)/);
+    assert.equal(requests.length,2);
+  } finally {view.dispose();globalThis.fetch=original;}
+});

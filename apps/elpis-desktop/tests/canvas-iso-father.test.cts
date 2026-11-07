@@ -2,7 +2,7 @@
 // starting his agents, and two-way (alongside) wires with no arrows, since they set no order.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { openCanvas } = require('./canvas-fixture.cjs');
+const { openCanvas } = require('./canvas-fixture.cts');
 
 test('isometric: the Father agent and his wires past ten agents, and two-way wires without arrows', async () => {
   const { page, canvas, node, agentCount, fit, errors, close } = await openCanvas();

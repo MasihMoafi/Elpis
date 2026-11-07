@@ -4,8 +4,8 @@ const http = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { fakeDesktop } = require('./fake-desktop.cjs');
-const { rowAction, threadMenuItem } = require('./controls.cjs');
+const { fakeDesktop } = require('./fake-desktop.cts');
+const { rowAction, threadMenuItem } = require('./controls.cts');
 const { assertCollectionIcon } = require('./collection-icon-assertions.cts');
 
 test('projects: explicit membership, drag, menu moves, persistence, and unscoped new chats', async () => {

@@ -6,7 +6,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const { fixture } = require('./parity-fixture.cjs');
-const { openSettings, leaveSettings } = require('./controls.cjs');
+const { openSettings, leaveSettings } = require('./controls.cts');
 
 const PREFERENCES = 'elpis-preferences-v1';
 type Locator = { first(): Locator; evaluate<T>(fn: (element: Element, name: keyof CSSStyleDeclaration) => T, name: keyof CSSStyleDeclaration): Promise<T>; locator(selector: string): Locator; innerText(): Promise<string>; allInnerTexts(): Promise<string[]>; getByRole(role: string, options?: { name: string; exact?: boolean }): Locator; getByText(text: string, options?: { exact?: boolean }): Locator; click(): Promise<void>; waitFor(): Promise<void>; inputValue(): Promise<string>; fill(value: string): Promise<void>; press(key: string): Promise<void>; count(): Promise<number> };

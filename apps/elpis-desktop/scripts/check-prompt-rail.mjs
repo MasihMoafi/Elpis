@@ -224,7 +224,7 @@ try {
     } finally { await page.unroute(pattern, rejectOnce); }
   });
   for (const theme of ['light', 'dark']) await check(`${theme}: real hover, navigation and screenshot`, async () => {
-    const controls = require('../tests/controls.cjs');
+    const controls = /** @type {{ chooseTheme(page: import('playwright-core').Page, theme: string): Promise<void> }} */ (require('../tests/controls.cts'));
     if (await page.evaluate(() => document.documentElement.classList.contains('dark')) !== (theme === 'dark')) await controls.chooseTheme(page, theme);
     await open(many); const prompts = await index(many);
     try {

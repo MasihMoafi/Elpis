@@ -10,7 +10,7 @@ import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { existingSocket } from '../bridge/client.mts';
 const require = createRequire(import.meta.url);
-const { chooseOption, chooseTheme, openSettings } = require('./controls.cjs');
+const { chooseOption, chooseTheme, openSettings } = require('./controls.cts');
 const { _electron } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const { Provider, message } = require('../../../scripts/lib/mock-provider.js');
 const binary = process.argv[2];

@@ -6,7 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { chooseTheme } = require('./controls.cjs');
+const { chooseTheme } = require('./controls.cts');
 
 async function main() {
   const app = path.resolve(process.argv[2]), binary = path.resolve(process.argv[3]), port = Number(process.argv[4] || 9486), baseline = process.argv.includes('--baseline');

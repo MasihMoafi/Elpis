@@ -2,7 +2,7 @@
 const {test}=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs/promises');const path=require('node:path');const http=require('node:http');
 const {chromium}=require(process.env.ELPIS_PLAYWRIGHT_PACKAGE||'playwright');
 // Earlier history loads as the chat's top scrolls into view; the Load earlier button became one LoadOnScroll marker (ee719dbe8, 31 Oct).
-const {scrollToLoadEarlier}=require('./controls.cjs');
+const {scrollToLoadEarlier}=require('./controls.cts');
 test('a chat the app cannot follow live is refreshed by reading: messages, child status, history and scroll survive',async()=>{
  const calls: {method: string | undefined; path: string; body: {action?: string} | null}[]=[],clients=new Set<import('node:http').ServerResponse>();let childReads=0,lineageReads=0;
  const root={id:'root',name:'Root conversation',desktopAccess:{writable:false,reason:'Terminal owned'},status:{type:'active'}};

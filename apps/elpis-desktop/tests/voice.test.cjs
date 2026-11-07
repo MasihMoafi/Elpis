@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cjs');
-const { controlValue, openSettings } = require('./controls.cjs');
+const { controlValue, openSettings } = require('./controls.cts');
 const { assertCollectionIcon } = require('./collection-icon-assertions.cts');
 const fs = require('node:fs/promises');
 const path = require('node:path');

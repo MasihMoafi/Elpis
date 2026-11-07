@@ -1,8 +1,8 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
-const { openCanvas } = require('./canvas-fixture.cjs');
-const { openPatterns } = require('./controls.cjs');
+const { openCanvas } = require('./canvas-fixture.cts');
+const { openPatterns } = require('./controls.cts');
 
 async function staged(options = {}) {
   let phase = 0;

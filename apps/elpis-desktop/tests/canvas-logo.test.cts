@@ -3,8 +3,8 @@
 // one agent, with no check and no planner, for the brand in the request box (or else the project's name).
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { openCanvas } = require('./canvas-fixture.cjs');
-const { chooseOption } = require('./controls.cjs');
+const { openCanvas } = require('./canvas-fixture.cts');
+const { chooseOption } = require('./controls.cts');
 
 const OPUS = { id: 'opus', model: 'claude/opus', displayName: 'Opus 5.5' };
 // Launch list (27 Oct): the tracer comes from the environment Elpis starts with, defaulting to this workstation's layout under $HOME.

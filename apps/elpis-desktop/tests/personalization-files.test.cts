@@ -2,7 +2,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cjs');
-const { captureReview, openSettings } = require('./controls.cjs');
+const { captureReview, openSettings } = require('./controls.cts');
 const { settingsBody } = require('./settings-fixture.cts');
 
 const home = '/home/person/.elpis-next';

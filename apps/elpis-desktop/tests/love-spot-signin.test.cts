@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { loveSpotFixture } = require('./love-spot-fixture.cjs');
-const { chooseOption, controlValue } = require('./controls.cjs');
+const { loveSpotFixture } = require('./love-spot-fixture.cts');
+const { chooseOption, controlValue } = require('./controls.cts');
 
 type Route = { request(): { method(): string; postDataJSON(): { action: string; id: string; name: string; baseUrl: string; provider: string; key: string; credential?: { action: string; value?: string } } }; fulfill(options: { status: number; json: object }): Promise<void> };
 type Account = { id: string; label: string; email: string | null; plan: string | null; authenticated: boolean; duplicate: boolean; signingIn: boolean; error: null };

@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { fixture } = require('./parity-fixture.cjs');
-const { scrollToLoadEarlier } = require('./controls.cjs');
+const { scrollToLoadEarlier } = require('./controls.cts');
 
 type WorkItem = { id: string; type: string; command?: string; status?: string };
 type ChatTurn = [string, string, string, WorkItem[]?];

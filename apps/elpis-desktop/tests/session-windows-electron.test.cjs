@@ -1,4 +1,4 @@
-const { threadMenuItem } = require('./controls.cjs');
+const { threadMenuItem } = require('./controls.cts');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
@@ -7,9 +7,9 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { _electron } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const { fixture } = require('./parity-fixture.cjs');
-const { loveSpotFixture } = require('./love-spot-fixture.cjs');
+const { loveSpotFixture } = require('./love-spot-fixture.cts');
 const { assertUiFit } = require('./ui-fit.cjs');
-const { openSettings, chooseOption, controlValue, leaveSettings } = require('./controls.cjs');
+const { openSettings, chooseOption, controlValue, leaveSettings } = require('./controls.cts');
 
 test('native Love Spot dock and embedded windows retain live text after a cancelled quit', { skip: !process.env.ELPIS_PRIVATE_DISPLAY && 'Use ELPIS_PRIVATE_DISPLAY=1 xvfb-run -a for native windows' }, async () => {
   const f = await loveSpotFixture(); let electron, standalone, release;

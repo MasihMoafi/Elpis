@@ -2,7 +2,7 @@
 // Workflows board, whose React Flow root has the class `light`; the agents were there and clickable but invisible).
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { openCanvas } = require('./canvas-fixture.cjs');
+const { openCanvas } = require('./canvas-fixture.cts');
 
 test('in the light theme the flat Workflows board is drawn while the wordmark is on screen; the wordmark keeps its sweep', async () => {
   const f = await openCanvas(); const { page, canvas } = f;

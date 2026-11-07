@@ -4,8 +4,8 @@ type TestWindow = typeof window & { __chosen: string[]; __opened: string[]; __as
 // request, with no planner: Gemini 3.8 Flash readers a page each, by vision, side by side, and Elpis joining them in page order.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { openCanvas } = require('./canvas-fixture.cjs');
-const { chooseOption } = require('./controls.cjs');
+const { openCanvas } = require('./canvas-fixture.cts');
+const { chooseOption } = require('./controls.cts');
 
 // As the engine lists them: the subscriptions' models in its own list, routed by prefix (bridge/workflow-models.mjs).
 const MODELS = { extraModels: [{ id: 'opus', model: 'claude/opus', displayName: 'Opus 5.5' }, { id: 'argon', model: 'agy/gemini-4-argon-high', displayName: 'Gemini 4 Argon' }, { id: 'g38', model: 'agy/gemini-3.8-flash-high', displayName: 'Gemini 3.8 Flash (High)' }, { id: 'g38l', model: 'agy/gemini-3.8-flash-low', displayName: 'Gemini 3.8 Flash (Low)' }] };

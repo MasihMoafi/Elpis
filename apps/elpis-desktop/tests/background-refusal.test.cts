@@ -4,7 +4,7 @@
 // be shown at all still says so.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { loveSpotFixture } = require('./love-spot-fixture.cjs');
+const { loveSpotFixture } = require('./love-spot-fixture.cts');
 
 const shown = '00000000-0000-4000-8000-0000000000b1', broken = '00000000-0000-4000-8000-0000000000b2';
 

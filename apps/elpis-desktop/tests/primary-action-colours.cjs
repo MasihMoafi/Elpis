@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { LOGO_ACCENT } = require('./controls.cjs');
+const { LOGO_ACCENT } = require('./controls.cts');
 const LOGO_RGB = LOGO_ACCENT.slice(1).match(/../g).map(value => parseInt(value, 16));
 
 function hue([r, g, b]) {

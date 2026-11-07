@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { chooseTheme, leaveSettings } = require('./controls.cjs');
+const { chooseTheme, leaveSettings } = require('./controls.cts');
 const { ledgerGeometry, sameLedger, sharedColumns } = require('./page-column.cts');
 
 (async () => {

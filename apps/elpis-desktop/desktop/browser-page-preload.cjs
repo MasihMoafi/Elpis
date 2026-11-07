@@ -2,7 +2,7 @@
 // In-app browser pages: the annotation layer (the ChatGPT app's "Annotate" mode). It runs in Electron's
 // isolated world before the page's scripts, exposes nothing to the page and draws in a closed shadow root.
 // Comments are typed in Elpis, never in the page, so the page cannot read them. Sandboxed preloads cannot
-// load other files, so this file stands alone; tests/browser-annotate.test.cjs runs it in Chromium.
+// load other files, so this file stands alone; tests/browser-annotate.test.cts runs it in Chromium.
 const { ipcRenderer } = require('electron');
 
 const BLUE = '#2f6fed', WASH = 'rgba(47,111,237,0.10)';

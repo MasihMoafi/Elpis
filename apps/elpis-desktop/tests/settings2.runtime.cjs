@@ -6,7 +6,7 @@ const path = require('node:path');
 const assert = require('node:assert/strict');
 const { spawn, execFileSync } = require('node:child_process');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { chooseTheme, openSettings } = require('./controls.cjs');
+const { chooseTheme, openSettings } = require('./controls.cts');
 const shots = process.env.ELPIS_SETTINGS2_SHOTS || path.resolve(process.env.HOME, '.cache/elpis-tests/settings2/shots');
 const visit = async (page, name) => page.getByRole('tab', { name, exact: true }).click();
 async function capture(page, name) { await fs.mkdir(shots, { recursive: true }); await page.screenshot({ path: path.join(shots, `${name}.png`) }); }

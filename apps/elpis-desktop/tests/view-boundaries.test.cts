@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { fixture } = require('./parity-fixture.cjs');
-const { openSettings } = require('./controls.cjs');
+const { openSettings } = require('./controls.cts');
 
 // Replace a mounted view's render function in the test browser, then use the
 // real theme subscription to render it. No failure switch ships in the app.
