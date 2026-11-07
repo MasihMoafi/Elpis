@@ -63,7 +63,8 @@ function mergeImpl(current: Drawing, incoming: IncomingDrawing) {
   return { ...current, type: 'excalidraw', version: 2, source: 'Love Spot', elements: [...elements.values()],
     appState: { ...current.appState, ...incoming.appState }, files: Object.fromEntries(Object.entries(files).filter(([id]) => referenced.has(id))) };
 }
-function createLoveSpotImpl({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.join(os.homedir(), '.local/share/excalidraw-local'), screenshots = process.env.EXCALIDRAW_SCREENSHOTS_DIR || path.join(os.homedir(), 'Pictures/Screenshots') } = {}) {
+function createLoveSpotImpl({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.join(os.homedir(), '.local/share/excalidraw-local'), screenshots = process.env.EXCALIDRAW_SCREENSHOTS_DIR || path.join(os.homedir(), 'Pictures/Screenshots'),
+  settings = undefined as string | undefined } = {}) {
   const sceneFile = path.join(directory, 'scene.excalidraw'), lock = path.join(directory, '.scene-lock'), inbox = path.join(directory, 'inbox'), pages = path.join(directory, 'pages');
   const choicesFile = path.join(directory, '.screenshot-choices.json');
   // Same-user local IPC keeps private trays available to a later dock process
@@ -307,7 +308,9 @@ function createLoveSpotImpl({ directory = process.env.EXCALIDRAW_LOCAL_DIR || pa
   const expiresAt = (modified: number, { since }: { since: number }) => Math.max(modified, since) + PAGE_DAYS * DAY;
   // One Matilda (Masih, 31 Oct: "what happens with Matilda in the chat isn't the same as what happens on the board"): whether
   // she answers, and with which model, is one setting here that the board, the small chat and her chat tab all read.
-  const matildaFile = path.join(directory, '.matilda-settings.json');
+  // The standalone app keeps it in its own home: a model or account chosen there must not become hers inside Elpis, nor
+  // an Elpis subscription model hers in the app (7 Nov).
+  const matildaFile = path.join(settings ?? (process.env.LOVE_SPOT_APP === '1' && process.env.ELPIS_HOME ? process.env.ELPIS_HOME : directory), '.matilda-settings.json');
   async function matildaSettings(update?: Record<string, unknown>) {
     let value: Record<string, unknown> = {};
     try { const saved = JSON.parse(await fs.readFile(matildaFile, 'utf8')); if (record(saved)) value = saved; }

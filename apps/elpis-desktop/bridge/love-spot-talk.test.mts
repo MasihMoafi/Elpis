@@ -406,6 +406,19 @@ test('standalone Love Spot uses the chosen account and never a Claude or Gemini 
   await f.talk.send({ text: 'With OpenRouter', model: 'text', provider: 'openrouter' }); f.finish('turn-2'); await f.talk.idle();
   assert.deepEqual(f.created.map(item => item.provider), ['anthropic', 'openrouter']);
   assert.deepEqual(f.sent.map(item => [item.text, item.model]), [['With my key', 'text'], ['With OpenRouter', 'text']]);
+  // The chosen account survives a restart (spec check 6) and stays the app's own: Elpis's board settings do not get it.
+  await f.talk.setMatilda({ model: 'text', provider: 'openrouter' });
+  const appHome = createTestTempDir(path.join(os.tmpdir(), 'love-app-home-'));
+  t.after(() => removeTestTempDir(appHome));
+  const app = createLoveSpot({ directory: f.directory, screenshots: path.join(f.directory, 'shots'), settings: appHome });
+  t.after(() => app.close());
+  await app.matildaSettings({ model: 'text', provider: 'openrouter' });
+  const reopened = createLoveSpot({ directory: f.directory, screenshots: path.join(f.directory, 'shots'), settings: appHome });
+  t.after(() => reopened.close());
+  assert.deepEqual([(await reopened.matildaSettings()).provider, (await reopened.matildaSettings()).model], ['openrouter', 'text']);
+  const elpisBoard = createLoveSpot({ directory: f.directory, screenshots: path.join(f.directory, 'shots'), settings: createTestTempDir(path.join(os.tmpdir(), 'love-elpis-')) });
+  t.after(() => elpisBoard.close());
+  assert.equal((await elpisBoard.matildaSettings()).provider, null, 'the same board inside Elpis keeps its own choice');
   // Love Spot inside Elpis keeps the Claude subscription route.
   const inElpis = await fixture(t);
   await inElpis.talk.send({ text: 'Hi', model: 'claude/sonnet', provider: 'anthropic' });
