@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 
 async function using(run, options = {}) {
   const f = await fixture({ width: 1280, height: 800, ...options, routes: {

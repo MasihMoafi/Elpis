@@ -1,8 +1,8 @@
 // D deletes a sidebar chat and Ctrl+Z brings it back, newest first, with its messages. Ctrl+Z in a text field stays
-// the field's own undo. The exported UI against tests/parity-fixture.cjs; the bridge's trash routes are faked here.
+// the field's own undo. The exported UI against tests/parity-fixture.cts; the bridge's trash routes are faked here.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture, CWD } = require('./parity-fixture.cjs');
+const { fixture, CWD } = require('./parity-fixture.cts');
 
 const NAMES = { 'chat-a': 'Fix the parser', 'chat-b': 'Write the docs', 'chat-c': 'Plan the release' };
 const chat = (id: keyof typeof NAMES) => ({ id, name: NAMES[id], preview: NAMES[id], cwd: CWD, model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } });

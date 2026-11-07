@@ -1,7 +1,7 @@
 // S4, R40: a file that does not exist reads "Not created yet", and a file that exists can be previewed rendered.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 const { captureReview, openSettings } = require('./controls.cjs');
 const { settingsBody } = require('./settings-fixture.cts');
 

@@ -2,7 +2,7 @@
 // when the chat is scrolled away from its newest message, and one click returns there and keeps following.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 
 test('the scroll-to-bottom button shows only away from the newest message and returns there', async () => {
   const chat = Array.from({ length: 10 }, (_, i) => [`t${i + 1}`, `Prompt ${i + 1}`, `Reply ${i + 1}.\n\nA second paragraph.\n\nA third paragraph.`]);

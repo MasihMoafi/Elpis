@@ -6,7 +6,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { fixture, CWD } = require('./parity-fixture.cjs');
+const { fixture, CWD } = require('./parity-fixture.cts');
 
 const SENTENCE = 'Stopping local site and moving worktree and running setup into legal';
 const unknown = (command: string) => [{ type: 'unknown', command }];

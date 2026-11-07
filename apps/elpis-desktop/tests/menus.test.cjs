@@ -79,7 +79,7 @@ test('existing chat keeps the pending model for its next message and saves a pic
   assert.deepEqual(turn.data, {text:'Keep the model and effort together.',model:'gpt-5.5'});
 }));
 
-const { fixture: parityFixture } = require('./parity-fixture.cjs');
+const { fixture: parityFixture } = require('./parity-fixture.cts');
 const { chooseOption, controlValue, openSettings } = require('./controls.cjs');
 
 for (const connected of [true, false]) test(`transcription menu ${connected ? 'retains a saved custom model' : 'explains a disconnected OpenRouter'}`, async () => {

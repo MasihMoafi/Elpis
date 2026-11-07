@@ -2,7 +2,7 @@
 // sidebar's bottom row with its first letter in a circle.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 const asking = { 'elpis-preferences-v1': JSON.stringify({ profileAsked: false }) };
 type ProfileLocator = {
   locator: (selector: string) => ProfileLocator;

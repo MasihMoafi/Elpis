@@ -2,9 +2,9 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const path = require('node:path');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 const { feedback } = require('./shared-reorder-check.cts');
-const { drag } = require('./settings-reorder-check.cjs');
+const { drag } = require('./settings-reorder-check.cts');
 
 const projects = ['First', 'Middle', 'Last'].map(name => ({ id: name, name, cwd: `/tmp/a70-${name}` }));
 const projectStorage = { 'elpis-projects-v1': JSON.stringify({ projects, selectedId: null }) };

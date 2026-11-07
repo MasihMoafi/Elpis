@@ -6,8 +6,8 @@ const { spawn, execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const run = promisify(execFile);
 const { _electron } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { fixture } = require('./parity-fixture.cjs');
-const { assertUiFit } = require('./ui-fit.cjs');
+const { fixture } = require('./parity-fixture.cts');
+const { assertUiFit } = require('./ui-fit.cts');
 const projectChat = (cwd: string) => ({ id: 'chat-a', name: 'Project preview', cwd, model: 'sol', modelProvider: 'openai', desktopAccess: { writable: true, mode: 'direct' }, status: { type: 'idle' } });
 const projectRoutes = (cwd: string) => ({ '/api/threads/chat-a/resume': () => ({ thread: projectChat(cwd) }) });
 

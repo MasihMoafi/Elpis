@@ -1,9 +1,9 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { captureReview } = require('./controls.cjs');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 const { files, contextRoutes } = require('./context-files-fixture.cts');
-const { assertUiFit } = require('./ui-fit.cjs');
+const { assertUiFit } = require('./ui-fit.cts');
 
 for (const colorScheme of ['light']) test(`goal slash and right Context tab: set, read, clear, errors, file editing and missing intent (${colorScheme})`, async () => {
   let goal: { objective: string; status: string } | null = null;

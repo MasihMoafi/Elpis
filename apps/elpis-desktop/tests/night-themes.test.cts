@@ -3,9 +3,9 @@ const { test }: typeof import('node:test') = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 const { openSettings, leaveSettings, chooseOption, controlValue } = require('./controls.cjs');
-const { colours } = require('./primary-action-colours.cjs');
+const { colours } = require('./primary-action-colours.cts');
 type Locator = { evaluate<T>(fn: (element: Element) => T): Promise<T>; getByRole(role: string, options: object): Locator; click(): Promise<void> };
 type Page = { evaluate<T>(fn: (value: string) => T, value: string): Promise<T>; getByRole(role: string, options: object): Locator; getByLabel(label: string, options: object): Locator };
 

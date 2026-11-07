@@ -3,7 +3,7 @@
 // the action does not show (SPEC 45: no hidden paid fallback).
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 
 /** A short silent WAV, as the bridge returns. */
 function silentWav(seconds = 0.3, rate = 24000) {

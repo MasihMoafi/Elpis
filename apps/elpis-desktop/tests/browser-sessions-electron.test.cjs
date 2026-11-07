@@ -7,7 +7,7 @@ const path = require('node:path');
 const http = require('node:http');
 const { spawn, execFileSync } = require('node:child_process');
 const { _electron } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 
 test('session browsers switch, start empty, restore history, isolate concurrent tools and close with their chat', async () => {
   const profiles = path.join(os.homedir(), '.cache/elpis-tests'); await fs.mkdir(profiles, { recursive: true });

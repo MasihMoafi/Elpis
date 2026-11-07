@@ -1,11 +1,11 @@
 // Approvals, questions and plans as Claude's desktop app offers them (parity gap 8): numbered choices that the number
 // keys pick, Enter for the highlighted one and Esc to deny; "Deny, and tell Elpis what to do instead"; a question card
 // with "Other"; a plan card with Accept, Accept and approve for me, and Keep planning. Each test checks what the bridge
-// receives. Local bridge fixture (tests/parity-fixture.cjs); no engine, no model.
+// receives. Local bridge fixture (tests/parity-fixture.cts); no engine, no model.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
-const { fixture, CWD } = require('./parity-fixture.cjs');
+const { fixture, CWD } = require('./parity-fixture.cts');
 type Post = { path: string; body: unknown };
 type Locator = { evaluate<T>(fn: (element: HTMLElement) => T): Promise<T>; evaluateAll<T>(fn: (rows: HTMLElement[]) => T): Promise<T>; locator(selector: string): Locator; screenshot(options: { path: string }): Promise<void> };
 type Page = { viewportSize(): { width: number; height: number } | null; setViewportSize(size: { width: number; height: number }): Promise<void> };

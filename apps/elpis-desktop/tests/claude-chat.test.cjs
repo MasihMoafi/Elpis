@@ -3,7 +3,7 @@
 // message box keeps one row, and a tight gap under each reply. Local bridge fixture with a fake desktop; no engine.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 const { oranges } = require('./controls.cjs');
 const fs = require('node:fs/promises');
 const path = require('node:path');

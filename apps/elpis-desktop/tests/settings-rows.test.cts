@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { settingsFixture, visit } = require('./settings-row-audit.cjs');
+const { settingsFixture, visit } = require('./settings-row-audit.cts');
 
 test('General Speed does not offer unsupported Flex and preserves a saved unknown tier', async () => {
   for (const saved of [null, 'flex']) {

@@ -1,7 +1,7 @@
 // S8, S12, S18: the packaged app ships Lab and Workflows hidden and (desktop/preferences.cjs); their code and tests stay.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 
 const workflowChat = { id: 'chat-w', name: 'Workflows · demo', preview: 'Workflows · demo', cwd: '/tmp/parity-fixture', model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } };
 const nav = (page: { locator: (selector: string) => { getByRole: (role: string) => { allTextContents: () => Promise<string[]> } } }) => page.locator('aside.sidebar nav[aria-label="Workspace"]');

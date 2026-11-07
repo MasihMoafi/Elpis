@@ -5,8 +5,8 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { fixture, CWD } = require('./parity-fixture.cjs');
-const { assertUiFit } = require('./ui-fit.cjs');
+const { fixture, CWD } = require('./parity-fixture.cts');
+const { assertUiFit } = require('./ui-fit.cts');
 
 const children = ['chat-b', 'chat-c', 'chat-d', 'chat-e', 'chat-f', 'chat-g'];
 const chats = [

@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
-const { fixture: startFixture } = require('./parity-fixture.cjs');
+const { fixture: startFixture } = require('./parity-fixture.cts');
 async function fixture() {
   const f = await startFixture();
   await f.page.getByRole('status', { name: 'Elpis is starting' }).waitFor({ state: 'detached', timeout: 10000 });

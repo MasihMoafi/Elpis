@@ -4,7 +4,7 @@
 // maker is not listed sit in Background runs; both follow their switches, off by default. Nothing is lost or deleted.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture, CWD } = require('./parity-fixture.cjs');
+const { fixture, CWD } = require('./parity-fixture.cts');
 
 const spawn = (parent: string) => ({ subAgent: { thread_spawn: { parent_thread_id: parent, depth: 1, agent_path: null, agent_nickname: 'Ampere', agent_role: null } } });
 const chats = [

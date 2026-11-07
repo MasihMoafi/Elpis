@@ -1,0 +1,251 @@
+const { threadMenuItem } = require('./controls.cjs');
+const { test } = require('node:test');
+const assert: typeof import('node:assert/strict') = require('node:assert/strict');
+import type { Page } from './playwright-types.mts';
+const fs = require('node:fs/promises');
+const os = require('node:os');
+const path = require('node:path');
+const { execFileSync } = require('node:child_process');
+type NativeWindow = { id: number; close(): void; isDestroyed(): boolean; webContents: { id: number; capturePage(): Promise<{ toDataURL(): string }> } };
+type Send = (channel: string, ...args: unknown[]) => void;
+type Write = (event: unknown, request: { key: string }) => Promise<{ code?: string }>;
+type ElectronMain = { BrowserWindow: { fromId(id: number): NativeWindow; getFocusedWindow(): { getNativeWindowHandle(): Buffer } }; webContents: { fromId(id: number): { send: Send } }; ipcMain: { _invokeHandlers: Map<string, Write> } };
+type ElectronApp = { firstWindow(): Promise<Page>; waitForEvent(name: string): Promise<Page>; browserWindow(page: Page): Promise<{ evaluate<T>(fn: (window: NativeWindow) => T): Promise<Awaited<T>> }>; evaluate<T>(fn: (electron: ElectronMain) => T): Promise<Awaited<T>>; evaluate<T, A>(fn: (electron: ElectronMain, arg: A) => T, arg: A): Promise<Awaited<T>>; close(): Promise<void> };
+type LoveFixture = { root: string; url: string; errors: string[]; open(page: Page): Promise<void>; draw(page: Page, x: number): Promise<void>; waitFor(check: (scene: { elements: { text?: string; isDeleted?: boolean }[] }) => boolean, message: string): Promise<void>; close(): Promise<void> };
+type Fixture = { page: Page; emit(type: string, data: unknown): void; close(): Promise<void> };
+declare global { var sessionWindows: { openLoveSpot(): Promise<void>; flushText(): Promise<boolean>; open(options: object): Promise<void>; windows: Set<unknown> }; var restoreStateBroadcasts: () => void; var appearanceConflicts: string[]; var appearanceWrites: string[]; }
+const { _electron }: { _electron: { launch(options: object): Promise<ElectronApp> } } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
+const { fixture }: { fixture(options: object): Promise<Fixture> } = require('./parity-fixture.cts');
+const { loveSpotFixture }: { loveSpotFixture(): Promise<LoveFixture> } = require('./love-spot-fixture.cjs');
+const { assertUiFit } = require('./ui-fit.cts');
+const { openSettings, chooseOption, controlValue, leaveSettings } = require('./controls.cjs');
+
+test('native Love Spot dock and embedded windows retain live text after a cancelled quit', { skip: !process.env.ELPIS_PRIVATE_DISPLAY && 'Use ELPIS_PRIVATE_DISPLAY=1 xvfb-run -a for native windows' }, async () => {
+  const f = await loveSpotFixture(); let electron: ElectronApp | undefined, standalone: Page | undefined, release: (() => void) | undefined;
+  try {
+    const nativeEnv: NodeJS.ProcessEnv = { ...process.env, XDG_SESSION_TYPE: 'x11', ELECTRON_OZONE_PLATFORM_HINT: 'x11', ELPIS_HOME: path.join(f.root, 'elpis-home'),
+      ELPIS_DESKTOP_PROFILE: path.join(f.root, 'profile'), SESSION_WINDOW_PROFILE: path.join(f.root, 'profile'), SESSION_WINDOW_URL: f.url };
+    delete nativeEnv.WAYLAND_DISPLAY;
+    electron = await _electron.launch({ executablePath: require('electron'), args: ['--no-sandbox', '--ozone-platform=x11', path.resolve(__dirname, 'session-windows-electron.cts')], env: nativeEnv });
+    const embedded = await electron.firstWindow(); embedded.setDefaultTimeout(10000); await f.open(embedded);
+    const opened = electron.waitForEvent('window');
+    await electron.evaluate(async () => { await global.sessionWindows.openLoveSpot(); });
+    standalone = await opened; standalone.setDefaultTimeout(10000);
+    await standalone.locator('.excalidraw canvas').first().waitFor();
+    for (const page of [embedded, standalone]) page.on('pageerror', error => f.errors.push(error.message));
+    assert.match(new URL(standalone.url()).pathname, /love-spot\.html$/);
+    const bounds = await embedded.locator('.excalidraw').boundingBox(); assert.ok(bounds);
+    await embedded.mouse.click(bounds.x + 450, bounds.y + 220); await embedded.keyboard.press('t');
+    await embedded.mouse.click(bounds.x + 450, bounds.y + 220);
+    const input = embedded.locator('textarea.excalidraw-wysiwyg'); await input.waitFor();
+    await embedded.keyboard.type('Native verdict'); await embedded.keyboard.press('Control+s');
+    await f.waitFor(s => s.elements.some(e => e.text === 'Native verdict' && !e.isDeleted), 'native Ctrl+S did not save active text');
+    await f.draw(standalone, 180);
+    await embedded.bringToFront(); await embedded.keyboard.type(' after remote update'); await embedded.keyboard.press('Control+s');
+    assert.equal(await input.inputValue(), 'Native verdict after remote update');
+    await f.waitFor(s => s.elements.some(e => e.text === 'Native verdict after remote update' && !e.isDeleted), 'remote update lost the native verdict');
+    await standalone.route('**/api/love-spot', route => route.request().method() === 'POST'
+      ? route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Test native disk unavailable' }) }) : route.continue());
+    assert.equal(await electron.evaluate(async () => global.sessionWindows.flushText()), false);
+    assert.equal(embedded.isClosed(), false); assert.equal(standalone.isClosed(), false);
+    await standalone.getByRole('alert').filter({ hasText: 'Test native disk unavailable' }).waitFor();
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    await embedded.route('**/api/love-spot', async route => {
+      if (route.request().method() === 'POST') await gate;
+      return route.continue();
+    });
+    await embedded.keyboard.type(' and final words');
+    const id = await (await electron.browserWindow(embedded)).evaluate(window => window.id);
+    const closed = embedded.waitForEvent('close');
+    assert.equal(await electron.evaluate(({ BrowserWindow }, id) => {
+      const window = BrowserWindow.fromId(id); window.close(); return window.isDestroyed();
+    }, id), false, 'closing must wait for the text written after the failed quit');
+    assert.ok(release); release(); await closed;
+    await f.waitFor(s => s.elements.some(e => e.text === 'Native verdict after remote update and final words' && !e.isDeleted), 'native close lost the final text');
+    await standalone.unroute('**/api/love-spot');
+    assert.equal(await electron.evaluate(async () => global.sessionWindows.flushText()), true);
+    assert.deepEqual(f.errors, []);
+  } finally { release?.(); if (standalone && !standalone.isClosed()) await standalone.unroute('**/api/love-spot'); if (electron) await electron.close(); await f.close(); }
+});
+
+test('native settings changes update both windows without reverting another preference', { skip: !process.env.ELPIS_PRIVATE_DISPLAY && 'Use ELPIS_PRIVATE_DISPLAY=1 xvfb-run -a for native windows' }, async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'session-settings-'));
+  const f = await fixture({ desktop: false, routes: { '/api/settings': () => ({
+    version: 'fixture', main: { model: 'sol', provider: 'openai' }, background: { model: null, provider: null },
+    smartPrune: { enabled: false, explicitOverride: {} }, memory: {}, options: { serviceTier: 'default' }, write: { available: false, reason: 'Fixture' },
+  }) } }); let electron: ElectronApp | undefined;
+  try {
+    electron = await _electron.launch({ executablePath: require('electron'), args: ['--no-sandbox', '--ozone-platform=x11', path.resolve(__dirname, 'session-windows-electron.cts')], env: { ...process.env, XDG_SESSION_TYPE: 'x11', WAYLAND_DISPLAY: '', HOME: root, ELPIS_HOME: root, SESSION_WINDOW_PROFILE: path.join(root, 'profile'), SESSION_WINDOW_URL: f.page.url() } });
+    const first = await electron.firstWindow(); first.setDefaultTimeout(10000);
+    await first.locator('.thread-row[data-thread-id="chat-a"]').waitFor();
+    await first.locator('.thread-row[data-thread-id="chat-a"] .thread-link').click();
+    await first.getByRole('button', { name: 'Chat actions', exact: true }).click();
+    const opened = electron.waitForEvent('window');
+    await (await threadMenuItem(first, 'Open session in new window')).click();
+    const second = await opened; second.setDefaultTimeout(10000);
+    await second.locator('.thread-row[data-thread-id="chat-a"]').waitFor();
+    for (const page of [first, second]) { await openSettings(page); await page.getByRole('tab', { name: 'General', exact: true }).click(); }
+    const usage = (page: Page) => page.getByRole('switch', { name: 'Show context window usage', exact: true });
+    await usage(first).click();
+    await second.waitForFunction(() => (document.querySelector('[aria-label="Show context window usage"]') as Element).getAttribute('aria-checked') === 'false');
+    await second.getByRole('tab', { name: 'Notifications', exact: true }).click();
+    await chooseOption(second.getByLabel('Turn completion notifications', { exact: true }), 'always');
+    await first.getByRole('tab', { name: 'Notifications', exact: true }).click();
+    await first.waitForFunction(() => (document.querySelector('[aria-label="Turn completion notifications"]') as Element).getAttribute('data-value') === 'always');
+    assert.equal(await controlValue(first.getByLabel('Turn completion notifications', { exact: true })), 'always');
+    for (const page of [first, second]) { await page.getByRole('tab', { name: 'General', exact: true }).click(); assert.equal(await usage(page).getAttribute('aria-checked'), 'false'); }
+    const saved = JSON.parse(JSON.parse(await fs.readFile(path.join(root, 'profile/workspace.json'), 'utf8'))['elpis-preferences-v1']);
+    assert.equal(saved.showContextUsage, false); assert.equal(saved.turnNotifications, 'always');
+    // Delayed broadcasts reproduce the false conflict: two real windows choose
+    // the same appearance while the second still holds the older revision.
+    const secondId = await (await electron.browserWindow(second)).evaluate(window => window.webContents.id);
+    await electron.evaluate(({ ipcMain, webContents }, id) => {
+      const target = webContents.fromId(id), send = target.send.bind(target), held: [string, ...unknown[]][] = [];
+      global.restoreStateBroadcasts = () => { target.send = send; for (const args of held) send(...args); };
+      target.send = (...args) => { if (args[0] === 'elpis:state:changed') held.push(args); else send(...args); };
+      global.appearanceConflicts = [];
+      global.appearanceWrites = [];
+      const write = ipcMain._invokeHandlers.get('elpis:state:write'); if (!write) throw Error('State writer is unavailable');
+      ipcMain._invokeHandlers.set('elpis:state:write', async (...args) => {
+        const result = await write(...args);
+        global.appearanceWrites.push(args[1].key);
+        if (result.code === 'STATE_CONFLICT') global.appearanceConflicts.push(args[1].key);
+        return result;
+      });
+    }, secondId);
+    for (const page of [first, second]) {
+      await page.getByRole('tab', { name: 'Appearance', exact: true }).click();
+      await page.getByRole('radiogroup', { name: 'Theme', exact: true }).getByRole('radio', { name: 'Dark', exact: true }).click();
+      await page.waitForFunction(() => { const storage = window.elpisDesktop?.storage; if (!storage) throw Error('Desktop storage unavailable'); return storage.getItem('elpis-theme') === 'dark'; });
+    }
+    await electron.evaluate(async () => {
+      const deadline = Date.now() + 5000;
+      while (global.appearanceWrites.filter(key => key === 'elpis-theme').length < 2) {
+        if (Date.now() > deadline) throw Error('Appearance writes were not acknowledged');
+        await new Promise(resolve => setTimeout(resolve, 20));
+      }
+      global.restoreStateBroadcasts();
+    });
+    assert.deepEqual(await electron.evaluate(() => global.appearanceConflicts), []);
+    for (const page of [first, second]) assert.equal(await page.getByText(/This setting or draft changed in another window/).count(), 0);
+    for (const page of [first, second]) await page.getByRole('radiogroup', { name: 'Theme', exact: true }).getByRole('radio', { name: 'System', exact: true }).click();
+    if (process.env.ELPIS_PARITY_SHOTS) for (const colorScheme of ['light', 'dark']) {
+      await second.emulateMedia({ colorScheme });
+      await second.waitForFunction(dark => (document.querySelector('.app-shell') as Element).classList.contains('dark') === dark, colorScheme === 'dark');
+      await second.screenshot({ path: path.join(process.env.ELPIS_PARITY_SHOTS, `settings-${colorScheme}.png`), fullPage: true });
+    }
+    await leaveSettings(second); await first.close(); await second.reload();
+    await second.locator('.thread-row[data-thread-id="chat-a"]').waitFor();
+    await openSettings(second); await second.getByRole('tab', { name: 'General', exact: true }).click();
+    assert.equal(await usage(second).getAttribute('aria-checked'), 'false');
+  } finally { if (electron) await electron.close(); await f.close(); }
+});
+
+test('production Electron windows share chats and live replies; native menu, chat menu, independent close and IPC survive', { skip: !process.env.ELPIS_PRIVATE_DISPLAY && 'Use ELPIS_PRIVATE_DISPLAY=1 xvfb-run -a for native keys' }, async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'session-windows-'));
+  const f = await fixture({ desktop: false }); let electron: ElectronApp | undefined;
+  try {
+    electron = await _electron.launch({ executablePath: require('electron'), args: ['--no-sandbox', '--ozone-platform=x11', path.resolve(__dirname, 'session-windows-electron.cts')], env: { ...process.env, XDG_SESSION_TYPE: 'x11', WAYLAND_DISPLAY: '', HOME: root, ELPIS_HOME: root, CODEX_HOME: root, SESSION_WINDOW_PROFILE: path.join(root, 'profile'), SESSION_WINDOW_URL: f.page.url() } });
+    const first = await electron.firstWindow(); first.setDefaultTimeout(10000);
+    await first.locator('.thread-row[data-thread-id="chat-a"]').waitFor();
+    await first.getByRole('status', { name: 'Elpis is starting', exact: true }).waitFor({ state: 'detached' });
+    await first.locator('.thread-row[data-thread-id="chat-a"] .thread-link').click();
+    await first.getByRole('textbox', { name: 'Message Elpis', exact: true }).fill('First window draft');
+    const opened = electron.waitForEvent('window');
+    await first.getByRole('button', { name: 'Chat actions', exact: true }).click();
+    await (await threadMenuItem(first, 'Open session in new window')).click();
+    const second = await opened; second.setDefaultTimeout(10000);
+    await second.locator('.thread-row[data-thread-id="chat-a"]').waitFor();
+    await second.getByRole('status', { name: 'Elpis is starting', exact: true }).waitFor({ state: 'detached' });
+    await assert.rejects(second.evaluate(() => { const open = window.elpisDesktop?.openSessionWindow; if (!open) throw Error('Session windows unavailable'); return open('../invalid'); }), /Invalid session/);
+    assert.equal((await second.evaluate(() => { const quick = window.elpisDesktop?.quickEntry; if (!quick) throw Error('Quick entry unavailable'); return quick.status(); })).supported, true);
+    await second.locator('.thread-row.active[data-thread-id="chat-a"]').waitFor();
+    assert.equal(new URL(first.url()).origin, new URL(second.url()).origin);
+    assert.deepEqual(await first.locator('.thread-list .thread-title').allTextContents(), await second.locator('.thread-list .thread-title').allTextContents());
+    // Native menu's accelerator is a real keyboard event, with production menu construction.
+    const menuWindow = electron.waitForEvent('window');
+    await second.bringToFront();
+    const nativeId = await electron.evaluate(({ BrowserWindow }) => BrowserWindow.getFocusedWindow().getNativeWindowHandle().readUInt32LE());
+    execFileSync('xdotool', ['windowfocus', '--sync', String(nativeId)], { timeout: 3000 });
+    execFileSync('xdotool', ['key', '--clearmodifiers', 'ctrl+shift+n'], { timeout: 3000 });
+    const third = await menuWindow;
+    await third.getByRole('textbox', { name: 'Message Elpis', exact: true }).waitFor();
+    assert.equal(await third.locator('.thread-row.active').count(), 0, 'new session is empty');
+    await third.close();
+    await second.getByRole('textbox', { name: 'Message Elpis', exact: true }).fill('Second window draft');
+    assert.equal(await first.getByRole('textbox', { name: 'Message Elpis', exact: true }).inputValue(), 'First window draft');
+    f.emit('message', { method: 'item/completed', params: { threadId: 'chat-a', turnId: 'shared', item: { id: 'shared-native', type: 'agentMessage', text: 'Live in both native windows.' } } });
+    for (const page of [first, second]) await page.getByText('Live in both native windows.', { exact: true }).waitFor();
+    for (const colorScheme of ['light', 'dark']) {
+      for (const page of [first, second]) { await page.emulateMedia({ colorScheme }); await page.waitForFunction(dark => (document.querySelector('.app-shell') as Element).classList.contains('dark') === dark, colorScheme === 'dark'); await page.evaluate(async () => { await Promise.all(document.getAnimations().filter(animation => Number.isFinite(animation.effect?.getComputedTiming().endTime)).map(animation => animation.finished.catch(() => {}))); });
+        assert.ok(await page.evaluate(() => { const foreground = getComputedStyle(document.querySelector('.app-shell') as Element).color; return ['.new-chat', 'textarea[aria-label="Message Elpis"]'].every(selector => getComputedStyle(document.querySelector(selector) as Element).color === foreground); }), 'navigation and composer text use the settled theme foreground');
+        await assertUiFit(page.locator('.workspace'), 'native chat fits'); }
+      if (process.env.ELPIS_PARITY_SHOTS) {
+        const host = await electron.browserWindow(second);
+        const picture = await host.evaluate(async window => (await window.webContents.capturePage()).toDataURL());
+        const encoded = picture.split(',')[1]; assert.ok(encoded); await fs.writeFile(path.join(process.env.ELPIS_PARITY_SHOTS, `window-${colorScheme}.png`), Buffer.from(encoded, 'base64'));
+      }
+    }
+    await second.locator('.thread-row[data-thread-id="chat-b"]').getByRole('button', { name: /^Actions for/ }).click();
+    await (await threadMenuItem(second, 'Open session in split view')).click();
+    const pane = second.frameLocator('iframe[title="Split session"]');
+    await pane.getByRole('textbox', { name: 'Message Elpis', exact: true }).fill('Native split draft');
+    await second.getByRole('textbox', { name: 'Message Elpis', exact: true }).click(); await second.keyboard.press('Control+]');
+    assert.ok(await pane.getByRole('textbox', { name: 'Message Elpis', exact: true }).evaluate(el => el === document.activeElement));
+    await second.keyboard.press('Control+[');
+    await assertUiFit(second.locator('.workspace'), 'native split primary fits');
+    await assertUiFit(pane.locator('.workspace'), 'native split secondary fits');
+    await pane.getByRole('button', { name: 'Chat actions', exact: true }).click();
+    const fromPane = electron.waitForEvent('window'); await (await threadMenuItem(pane, 'Open session in new window')).click();
+    const paneWindow = await fromPane; await paneWindow.locator('.thread-row.active[data-thread-id="chat-b"]').waitFor(); await paneWindow.close();
+    await pane.getByRole('button', { name: 'Close split view', exact: true }).click();
+    await second.locator('iframe').waitFor({ state: 'detached' });
+    await first.close();
+    // The surviving window must keep its registered handlers and create another window after its sibling closes.
+    await second.getByRole('button', { name: 'Chat actions', exact: true }).click();
+    const newWindow = electron.waitForEvent('window');
+    await (await threadMenuItem(second, 'Open session in new window')).click();
+    const fourth = await newWindow; await fourth.locator('.thread-row[data-thread-id="chat-a"]').waitFor();
+    assert.equal(await second.getByRole('textbox', { name: 'Message Elpis', exact: true }).inputValue(), 'Second window draft');
+    await fourth.close();
+    assert.equal(await electron.evaluate(() => global.sessionWindows.windows.size), 1);
+    await second.locator('.thread-row[data-thread-id="chat-b"] .thread-link').click(); await second.reload();
+    await second.locator('.thread-row.active[data-thread-id="chat-b"]').waitFor();
+  } finally { if (electron) await electron.close(); await f.close(); }
+});
+
+
+test('native file previews keep their document when scripts navigate or rename the frame in either app window', { skip: !process.env.ELPIS_PRIVATE_DISPLAY && 'Use ELPIS_PRIVATE_DISPLAY=1 xvfb-run -a for native windows' }, async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'preview-navigation-'));
+  const f = await fixture({ desktop: false }); let electron: ElectronApp | undefined;
+  try {
+    electron = await _electron.launch({ executablePath: require('electron'), args: ['--no-sandbox', '--ozone-platform=x11', path.resolve(__dirname, 'session-windows-electron.cts')], env: { ...process.env, XDG_SESSION_TYPE: 'x11', WAYLAND_DISPLAY: '', HOME: root, ELPIS_HOME: root, SESSION_WINDOW_PROFILE: path.join(root, 'profile'), SESSION_WINDOW_URL: f.page.url() } });
+    const primary = await electron.firstWindow(); primary.setDefaultTimeout(10000);
+    const opened = electron.waitForEvent('window');
+    await electron.evaluate(async () => { await global.sessionWindows.open({ newSession: true }); });
+    const secondary = await opened; secondary.setDefaultTimeout(10000);
+    for (const page of [primary, secondary]) {
+      await page.getByRole('textbox', { name: 'Message Elpis', exact: true }).waitFor();
+      const attempts: string[] = [], target = new URL('/preview-navigation-away', page.url()).href;
+      page.on('request', request => { if (request.url().startsWith(target)) attempts.push(request.url()); });
+      await page.evaluate(() => {
+        const frame = document.createElement('iframe'); frame.style.cssText = 'position:fixed;left:80px;top:100px;width:500px;height:200px;z-index:99999;background:white'; frame.name = 'elpis-file-preview'; frame.title = 'Navigation guard preview'; frame.setAttribute('sandbox', 'allow-scripts');
+        frame.srcdoc = '<h1>Retained local preview</h1><button id="leave">Navigate away</button><button id="rename">Rename and navigate</button>';
+        document.body.append(frame);
+      });
+      const preview = page.frameLocator('iframe[title="Navigation guard preview"]');
+      await preview.getByRole('heading', { name: 'Retained local preview', exact: true }).waitFor();
+      await preview.locator('body').evaluate(body => { body.dataset.previewDocument = 'retained'; });
+      for (const rename of [false, true]) {
+        await preview.locator(rename ? '#rename' : '#leave').evaluate((button, { target, rename }) => {
+          button.onclick = () => { if (rename) window.name = 'renamed-by-document'; location.href = target; };
+        }, { target: `${target}?renamed=${rename}`, rename });
+        await preview.getByRole('button', { name: rename ? 'Rename and navigate' : 'Navigate away', exact: true }).click();
+        await preview.getByRole('heading', { name: 'Retained local preview', exact: true }).waitFor();
+      }
+      assert.deepEqual(attempts, [], 'native interception blocks even same-origin navigation before a network request');
+      assert.equal(await preview.locator('body').getAttribute('data-preview-document'), 'retained', 'the original preview document remains loaded after attempts');
+      await page.evaluate(() => (document.querySelector('iframe[title="Navigation guard preview"]') as Element).remove());
+    }
+  } finally { if (electron) await electron.close(); await f.close(); }
+});

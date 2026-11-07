@@ -2,8 +2,8 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { fixture } = require('./parity-fixture.cjs');
-const { assertUiFit } = require('./ui-fit.cjs');
+const { fixture } = require('./parity-fixture.cts');
+const { assertUiFit } = require('./ui-fit.cts');
 
 type Locator = { click(options?: object): Promise<void>; press(key: string): Promise<void>; innerText(): Promise<string>; inputValue(): Promise<string>; getAttribute(name: string): Promise<string | null>; count(): Promise<number>; waitFor(options?: object): Promise<void>; allInnerTexts(): Promise<string[]>; locator(selector: string, options?: object): Locator; getByRole(role: string, options?: object): Locator; getByText(text: string | RegExp, options?: object): Locator; getByLabel(text: string, options?: object): Locator; page(): Page };
 type Page = { locator(selector: string, options?: object): Locator; getByRole(role: string, options?: object): Locator; getByText(text: string, options?: object): Locator; keyboard: { press(key: string): Promise<void> }; screenshot(options: object): Promise<void> };

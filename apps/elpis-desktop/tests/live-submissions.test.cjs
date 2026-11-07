@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { fixture, THREADS } = require('./parity-fixture.cjs');
+const { fixture, THREADS } = require('./parity-fixture.cts');
 const { scrollToLoadEarlier } = require('./controls.cjs');
 
 test('a follow-up stays after earlier work when the loaded history starts mid-turn', async t => {

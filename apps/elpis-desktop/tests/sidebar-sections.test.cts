@@ -1,7 +1,7 @@
 // Masih, 23 Oct (screenshot of the sidebar): "I should be able to collapse these as well"; then "When I say change one thing I want it to apply to all those similar elements in the UI." So: every section heading of the sidebar folds, and a new heading that does not breaks this test.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture, CWD } = require('./parity-fixture.cjs');
+const { fixture, CWD } = require('./parity-fixture.cts');
 const { chooseTheme, leaveSettings, openSettings } = require('./controls.cjs');
 
 const chat = (id: string, name: string) => ({ id, name, preview: name, cwd: CWD, model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } });

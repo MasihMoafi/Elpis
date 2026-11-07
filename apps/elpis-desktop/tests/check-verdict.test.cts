@@ -2,7 +2,7 @@
 // Check failed or Check passed, then the evidence. A reply that only looks like JSON stays as written.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 
 test('a workflow check reply reads as Check failed or Check passed with its evidence, never raw JSON', async () => {
   const failed = JSON.stringify({ passed: false, summary: 'There is no `elpis-check.txt` in the workspace root.' });

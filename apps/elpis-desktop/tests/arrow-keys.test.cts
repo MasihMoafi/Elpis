@@ -7,7 +7,7 @@
 // stopped at Speed). Text fields, the board, the drawing, editors and terminals keep their own keys.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 const { openSettings, openPatterns } = require('./controls.cjs');
 
 /** Every checked control on the page as it is now; returns the ones no arrow key moved away from. */

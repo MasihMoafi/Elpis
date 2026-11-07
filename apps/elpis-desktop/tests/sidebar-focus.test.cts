@@ -1,8 +1,8 @@
 // A sidebar chat shows one focus ring, round its whole row, and only for the keyboard: on 17 Oct a clicked chat drew a
-// second box round its title inside the highlighted row. Local bridge fixture (tests/parity-fixture.cjs); no engine.
+// second box round its title inside the highlighted row. Local bridge fixture (tests/parity-fixture.cts); no engine.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 
 const rings = (page: { evaluate: (fn: () => (string | false)[]) => Promise<(string | false)[]> }) => page.evaluate(() => [...document.querySelectorAll<HTMLElement>('aside.sidebar .thread-row')].flatMap(row => {
   const link = row.querySelector('.thread-link'), drawn = (element: Element) => getComputedStyle(element).outlineStyle !== 'none' && getComputedStyle(element).outlineWidth !== '0px';

@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { loveSpotFixture } = require('./love-spot-fixture.cjs');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 
 // Fitting her into a narrow window is temporary: it never rewrites where she was put (27 Oct: she "jumps from top
 // right to that position when I opened something").
@@ -86,7 +86,7 @@ for (const colorScheme of ['light']) test(`Matilda floats out of the title bar a
 
 
 for (const colorScheme of ['light']) test(`Matilda mini chat, mute and dragging leave the main conversation unchanged (${colorScheme})`, { timeout: 60000 }, async t => {
-  const { fixture } = require('./parity-fixture.cjs');
+  const { fixture } = require('./parity-fixture.cts');
   const { FACE_DATA_URL } = require('../bridge/matilda-face.cts');
   let music = { title: 'Linkin Park masterpiece', artist: 'Linkin Park', uri: 'file:///favorite.m4a', status: 'Playing', canMute: true, muted: false };
   let entries = [], replyMode = 'ok', release, slowArrived;
@@ -233,7 +233,7 @@ for (const colorScheme of ['light']) test(`Matilda mini chat, mute and dragging 
 // 28 Oct: "that small chatbox shouldn't show previous messages; it's for quick new chats", like Dot's "Start new chat".
 // And her reply had arrived while the small chat still said "Matilda is replying…": one failed read ended the asking.
 for (const colorScheme of ['light']) test(`the small chat shows its last messages from its history icon, loads older ones as he scrolls up, and asks until her reply arrives (${colorScheme})`, { timeout: 60000 }, async t => {
-  const { fixture } = require('./parity-fixture.cjs');
+  const { fixture } = require('./parity-fixture.cts');
   const { FACE_DATA_URL } = require('../bridge/matilda-face.cts');
   const say = (turnId, type, text) => ({ turnId, item: type === 'agentMessage' ? { id: `${turnId}-a`, type, text } : { id: `${turnId}-u`, type, content: [{ type: 'text', text }] } });
   let entries = [say('first', 'userMessage', 'The first question'), say('first', 'agentMessage', 'The first answer'),
@@ -301,7 +301,7 @@ for (const colorScheme of ['light']) test(`the small chat shows its last message
 
 // 29 Oct, Masih, with nothing but a paused player: "what's this mute doing? ... no music is playing!"
 test('the sound control shows only while music plays', { timeout: 60000 }, async t => {
-  const { fixture } = require('./parity-fixture.cjs');
+  const { fixture } = require('./parity-fixture.cts');
   const { FACE_DATA_URL } = require('../bridge/matilda-face.cts');
   const music = { title: 'Linkin Park masterpiece', artist: 'Linkin Park', uri: 'file:///favorite.m4a', status: 'Paused', canMute: true, muted: false };
   const f = await fixture({ width: 1000, height: 800, routes: {

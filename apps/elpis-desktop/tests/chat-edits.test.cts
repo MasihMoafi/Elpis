@@ -1,10 +1,10 @@
 // Edits in the chat as Claude's desktop app shows them: an edit row ("Edited" + the file + "+3 −1") that opens to the same
 // coloured, numbered diff as the Changes tab; the +N −M on the group's row; a "Changes · N files · View changes" footer
 // per finished turn; and every kind of step (command, tool, search, edit) drawn as one kind of row. Local fixture of the
-// bridge (tests/parity-fixture.cjs): no engine, no model, no Git.
+// bridge (tests/parity-fixture.cts): no engine, no model, no Git.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture, CWD } = require('./parity-fixture.cjs');
+const { fixture, CWD } = require('./parity-fixture.cts');
 
 const PARSER = `${CWD}/src/lib/parser.ts`;
 const PARSER_DIFF = "@@ -1,3 +1,5 @@\n import { lex } from './lexer';\n-export const parse = 1;\n+export function parse(src) {\n+  return lex(src);\n+}\n export default parse;\n";

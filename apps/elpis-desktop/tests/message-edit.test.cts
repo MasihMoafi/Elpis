@@ -3,7 +3,7 @@
 import type { TestContext } from 'node:test';
 const { test }: typeof import('node:test') = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture, CWD } = require('./parity-fixture.cjs');
+const { fixture, CWD } = require('./parity-fixture.cts');
 
 const PROMPT = 'Private pencil verdict 714\n\nمتن فارسی';
 const user = (turnId: string, id: string, text: string) => ({ turnId, item: { id, type: 'userMessage', content: [{ type: 'text', text }] } });

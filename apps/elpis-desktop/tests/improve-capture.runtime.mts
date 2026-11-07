@@ -6,7 +6,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
-const require = createRequire(import.meta.url), { fixture } = require('./parity-fixture.cjs');
+const require = createRequire(import.meta.url), { fixture } = require('./parity-fixture.cts');
 const { _electron } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const appRoot = fileURLToPath(new URL('..', import.meta.url));
 const cache = path.join(os.homedir(), '.cache/elpis-tests'); await fs.mkdir(cache, { recursive: true });

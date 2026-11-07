@@ -1,4 +1,4 @@
-// Focused renderer check of the real shared components, like preferences.test.cjs; no app build or bridge.
+// Focused renderer check of the real shared components, like preferences.test.cts; no app build or bridge.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');

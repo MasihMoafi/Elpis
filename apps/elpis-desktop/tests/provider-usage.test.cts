@@ -7,7 +7,7 @@ const http: typeof import('node:http') = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { MOTHER_SETTINGS } = require('./parity-fixture.cjs');
+const { MOTHER_SETTINGS } = require('./parity-fixture.cts');
 
 const limit = (limitId: string, limitName: string, usedPercent: number) => ({ limitId, limitName, planType: null, primary: { usedPercent, windowDurationMins: 300, resetsAt: null }, secondary: null, reached: null });
 

@@ -6,7 +6,7 @@ const test = require('node:test'), assert = require('node:assert/strict'), fs = 
 
 // The import preview carries only names and types; only an explicit, available selection is submitted.
 test('Claude MCP import previews selections and handles a stale source without changing existing servers', async () => {
-  const { fixture } = require('./parity-fixture.cjs');
+  const { fixture } = require('./parity-fixture.cts');
   let conflict = false;
   const source = { version: 'm1', revision: 'r1', servers: [
     { name: 'shadcn', transport: 'stdio', status: 'available' },
@@ -43,7 +43,7 @@ test('Claude MCP import previews selections and handles a stale source without c
 });
 
 test('Browser settings opens the native new tab and shares pinned websites with the browser store', async () => {
-  const { fixture } = require('./parity-fixture.cjs');
+  const { fixture } = require('./parity-fixture.cts');
   const key = 'elpis-browser-pins-v1', pin = { title: 'Docs', url: 'https://example.test/docs' };
   const f = await fixture({ storage: { [key]: JSON.stringify([pin]) } });
   try {

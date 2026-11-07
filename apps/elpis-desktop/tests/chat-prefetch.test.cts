@@ -2,7 +2,7 @@
 // pointer rests on its row, so the click shows it at once and the fresh read only refreshes it.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 
 test('a chat shows its history at once when clicked after the pointer rested on it', async () => {
   let reads = 0;

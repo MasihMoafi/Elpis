@@ -1,0 +1,160 @@
+// The shared fixture of the Claude-parity UI tests (claude-composer, claude-chat): the exported UI against a local
+// bridge with three chats (the first has four turns of Markdown replies), a files route, a revert route that really
+// drops turns, a fake desktop (browser, terminal, storage) and a clipboard that records what is written. Every POST is
+// recorded. No engine, no model, no shell.
+const http: typeof import('node:http') = require('node:http');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+type Turn = [string, string, string, unknown[]?, (number | null)?];
+type Thread = { id: string; cwd: string; [key: string]: unknown };
+type Locator = { first(): Locator; waitFor(options?: object): Promise<void>; click(): Promise<void>; getAttribute(name: string, options?: object): Promise<string | null> };
+type FixturePage = { url(): string; setDefaultTimeout(ms: number): void; on(event: string, callback: (error: Error) => void): void; addInitScript(fn: () => unknown): Promise<void>; addInitScript<T>(fn: (value: T) => unknown, value: T): Promise<void>; context(): { grantPermissions(values: string[]): Promise<void> }; clock: { install(options: { time: string | number | Date }): Promise<void> }; goto(url: string): Promise<void>; getByRole(role: string, options?: object): Locator; getByText(text: string, options?: object): Locator; locator(selector: string): Locator; evaluate<T>(fn: () => T): Promise<Awaited<T>> };
+type FixtureBrowser = { newPage(options: object): Promise<FixturePage>; close(): Promise<void> };
+type Options = { staticDir?: string; cwd?: string; width?: number; height?: number; colorScheme?: string; deviceScaleFactor?: number; running?: boolean; desktop?: boolean; chat?: Turn[]; threads?: Thread[]; readyThreadId?: string; routes?: Record<string, (body: unknown, url: URL, response: import('node:http').ServerResponse) => unknown>; storage?: Record<string, string>; browserChannel?: string; browserArgs?: string[]; nativeClipboard?: boolean; showScrollbars?: boolean; clockTime?: string | number | Date; loveScene?: unknown };
+type ClipboardWindow = Window & { __copied?: string };
+const { chromium }: { chromium: { launch(options: object): Promise<FixtureBrowser> } } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
+const { guardDesktopStore } = require('./controls.cjs');
+const { fakeDesktop } = require('./fake-desktop.cjs');
+
+const out = path.resolve(__dirname, '../out');
+const CWD = '/tmp/parity-fixture';
+/** An 8×8 red PNG. */
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGM4o6SEFTEMLQkAvM5EAT6yk8sAAAAASUVORK5CYII=', 'base64');
+const FILES = ['README.md', 'package.json', 'docs/guide.md', 'src/app.ts', 'src/lib/parser.ts', 'src/lib/lexer.ts'];
+// The real bridge returns this shape when Mother is disabled and has no configured roles.
+const MOTHER_SETTINGS = { enabled: false, threadId: null, creating: false, roles: { dispatch: null, worker: null }, version: 'fixture' };
+const thread = (id: string, name: string) => ({ id, name, preview: name, cwd: CWD, model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } });
+const THREADS = [thread('chat-a', 'Fix the parser'), thread('chat-b', 'Write the docs'), thread('chat-c', 'Plan the release')];
+const filler = (count: number) => Array.from({ length: count }, (_, i) => `Detail ${i + 1} of the explanation, in a sentence of its own.`).join('\n\n');
+/** The first chat: four turns, [turn id, prompt, reply]. The first reply is the Markdown the copy tests read. */
+const TURNS: Turn[] = [
+  ['t1', 'Explain the parser.', 'The parser has **two passes**.\n\n- lexing\n- parsing\n\nSee [the guide](https://example.invalid/guide).'],
+  ['t2', 'Rename the lexer.', `Done: \`lexer.ts\` is now \`scan.ts\`.\n\n${filler(8)}`],
+  ['t3', 'Add tests.', `Added three tests.\n\n${filler(8)}`],
+  ['t4', 'Run them.', 'All green.'],
+];
+
+/** Starts the bridge and a browser page. `running` makes the first chat run a turn; `desktop` is the fake desktop;
+ * `threads` replaces the chat list; `readyThreadId` names a visible initial root (default: chat-a);
+ * `chat` replaces the first chat's turns: [turn id, prompt, reply, work items between them]; `routes` answers more
+ * API paths: path → (body, url) → reply. `nativeClipboard` uses Chromium's clipboard
+ * with read/write permissions instead of the default writeText recorder. `showScrollbars` keeps native scrollbar
+ * geometry in headless Chromium, where Playwright otherwise passes --hide-scrollbars. `loveScene: null` holds the
+ * initial board snapshot until emitLove sends it, for origin-resolution checks. */
+async function fixtureImpl({ staticDir = out, cwd = CWD, width = 1130, height = 660, colorScheme = 'light', deviceScaleFactor = 1, running = false, desktop = true, chat: start = TURNS, threads: initialThreads = THREADS, readyThreadId = 'chat-a', routes = {}, storage = {}, browserChannel, browserArgs, nativeClipboard = false, showScrollbars = false, clockTime, loveScene = { elements: [], files: {}, appState: {}, page: { name: 'Current page', session: 'fixture-page' } } }: Options = {}) {
+  const posts: { path: string; body: unknown }[] = [], requests: { method: string | undefined; path: string }[] = [], turns: Turn[] = start.map(turn => [...turn]), streams = new Set<import('node:http').ServerResponse>(), loveStreams = new Set<import('node:http').ServerResponse>(), loveBoardStreams = new Set<import('node:http').ServerResponse>(), loveTalkStreams = new Set<import('node:http').ServerResponse>();
+  const threads = initialThreads.map(item => ({ ...item, cwd }));
+  let rewindSaved: Turn[] | null = null, rewindAction: string | undefined;
+  // A turn may give its start time (ms) fifth, or null for a turn with no recorded times; otherwise turns are two
+  // minutes apart, ending now.
+  const entries = () => turns.flatMap(([id, prompt, reply, work, startedAt], index) => {
+    const at = startedAt ?? Date.now() - (turns.length - index) * 120_000;
+    const turn = [{ turnId: id, item: { id: `u-${id}`, type: 'userMessage', content: [{ type: 'text', text: prompt }] }, startedAtMs: at, completedAtMs: at },
+      ...(work ?? []).map(item => ({ turnId: id, item, startedAtMs: at + 1000, completedAtMs: at + 2000 })),
+      { turnId: id, item: { id: `a-${id}`, type: 'agentMessage', text: reply }, startedAtMs: at + 5000, completedAtMs: at + 5000 }];
+    return startedAt === null ? turn.map(({ turnId, item }) => ({ turnId, item })) : turn;
+  });
+  const server = http.createServer(async (req, res) => {
+    if (!req.url) throw Error('Request URL is missing'); const url = new URL(req.url, 'http://local'); let raw = ''; for await (const chunk of req) raw += chunk;
+    requests.push({ method: req.method, path: url.pathname });
+    const json = (value: unknown) => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(value)); };
+    const chat = threads.find(item => item.id === url.pathname.split('/')[3]);
+    if (req.method === 'POST') posts.push({ path: url.pathname, body: raw ? JSON.parse(raw) : {} });
+    if (url.pathname === '/api/events') { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write('event: connection\ndata: {"connected":true}\n\n'); streams.add(res); req.on('close', () => streams.delete(res)); return; }
+    if (/^\/api\/love-spot\/(?:talk\/)?events$/.test(url.pathname)) {
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      if (url.pathname === '/api/love-spot/events') {
+        loveBoardStreams.add(res);
+        res.write(loveScene === null ? ': fixture\n\n' : `data: ${JSON.stringify({ type: 'scene', scene: loveScene, revision: '0'.repeat(64) })}\n\n`);
+      } else { loveTalkStreams.add(res); res.write(': fixture\n\n'); }
+      loveStreams.add(res); req.on('close', () => { loveStreams.delete(res); loveBoardStreams.delete(res); loveTalkStreams.delete(res); }); return;
+    }
+    if (url.pathname === '/api/health') return json({ connected: true });
+    // A route answers with its value, or with { __http: status, error } for a refusal.
+    const route = routes[url.pathname];
+    if (route) {
+      const reply = await route(raw ? JSON.parse(raw) : null, url, res) as { __http?: number; error?: unknown; __asset?: { mimeType: string; headers?: Record<string, string>; bytes: Buffer } } | null | undefined;
+      if (res.headersSent) return; // Streaming routes keep ownership until the view disconnects.
+      if (reply?.__http) { res.statusCode = reply.__http; return json({ error: reply.error }); }
+      if (reply?.__asset) { res.writeHead(200, { 'Content-Type': reply.__asset.mimeType, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...reply.__asset.headers }); return res.end(reply.__asset.bytes); }
+      return json(reply);
+    }
+    // The bridge always answers the composer's feature switches (bridge/elpis-features.mjs contextSwitchesSnapshot); here as
+    // with no writable config.toml. Without them the composer's Elpis features row is missing, as it never is in the app.
+    if (url.pathname === '/api/context/switches' && req.method === 'GET') return json({ version: null, write: { available: false, reason: 'Elpis reported no writable config.toml, so these switches cannot be saved here.' }, smartPrune: false, subagents: true, rag: null });
+    if (url.pathname === '/api/mother-agent' && req.method === 'GET') return json(MOTHER_SETTINGS);
+    if (url.pathname === '/api/models') return json({ data: [{ id: 'sol', model: 'sol', displayName: 'GPT-6.1-Sol', inputModalities: ['text', 'image'], supportedReasoningEfforts: ['low', 'medium', 'high'].map(reasoningEffort => ({ reasoningEffort })) }], nextCursor: null });
+    if (url.pathname === '/api/providers/claude-accounts') return json({ activeId: '', accounts: [] });
+    if (url.pathname === '/api/files') return json({ data: FILES });
+    if (url.pathname === '/api/threads') return json({ data: url.searchParams.has('ancestorThreadId') || url.searchParams.get('archived') === 'true' ? [] : threads.map(item => item.id === 'chat-a' && running ? { ...item, status: { type: 'active' } } : item), nextCursor: null });
+    if (chat && url.pathname.endsWith('/resume')) return json({ thread: chat, activeTurnId: running && chat.id === 'chat-a' ? 't4' : null });
+    if (chat && url.pathname.endsWith('/rewind')) {
+      const body = JSON.parse(raw);
+      if (body.action === 'preview') return json({ available: false, reason: 'No file checkpoint for this message.' });
+      if (body.action === 'status') return json({ action: rewindAction });
+      if (body.action === 'restore') { rewindSaved = turns.map(turn => [...turn]); const at = turns.findIndex(turn => turn[0] === body.beforeTurnId); if (at >= 0) turns.length = at; rewindAction = 'undo'; }
+      else if (rewindSaved) { const previous: Turn[] = turns.map(turn => [...turn]); turns.splice(0, turns.length, ...rewindSaved); rewindSaved = previous; rewindAction = body.action === 'undo' ? 'redo' : 'undo'; }
+      return json({ rewound: true, undo: rewindAction });
+    }
+    if (chat && url.pathname.endsWith('/revert')) { const body = JSON.parse(raw); const at = turns.findIndex(turn => turn[0] === body.beforeTurnId); if (at >= 0) turns.length = at; return json({ rewound: true, beforeTurnId: body.beforeTurnId }); }
+    if (chat && url.pathname.endsWith('/turns')) return json({ turn: { id: 't-new' } });
+    // Recorded media: every item's picture is the same small PNG.
+    if (chat && /\/media\/\d+$/.test(url.pathname)) { res.setHeader('content-type', 'image/png'); res.end(PNG); return; }
+    if (chat && url.pathname.endsWith('/prompts')) return json({ data: chat.id === 'chat-a' ? turns.map(([turnId, text]) => ({ turnId, text })) : [] });
+    if (chat && req.method === 'GET') return json({ thread: chat, data: chat.id === 'chat-a' ? entries().reverse() : [], nextCursor: null });
+    if (url.pathname.startsWith('/api/')) return json({});
+    try {
+      const file = path.join(staticDir, url.pathname === '/' ? 'index.html' : url.pathname), content = await fs.readFile(file);
+      res.setHeader('content-type', file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : file.endsWith('.svg') ? 'image/svg+xml' : 'text/html'); res.end(content);
+    } catch { res.statusCode = 404; res.end(); }
+  });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address(); if (!address || typeof address === 'string') throw Error('Fixture did not bind a port');
+  let browser: FixtureBrowser | undefined;
+  try {
+  browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM || undefined, channel: browserChannel, headless: !process.env.ELPIS_UI_HEADED,
+    args: browserArgs,
+    ignoreDefaultArgs: showScrollbars ? ['--hide-scrollbars'] : undefined });
+  const activeBrowser = browser;
+  const page = await activeBrowser.newPage({ viewport: { width, height }, colorScheme, deviceScaleFactor }); page.setDefaultTimeout(6000);
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  await guardDesktopStore(page);
+  await page.addInitScript(values => { for (const [key, value] of Object.entries(values)) if (localStorage.getItem(key) === null) localStorage.setItem(key, value); }, storage);
+  if (desktop) await page.addInitScript(fakeDesktop);
+  if (nativeClipboard) await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  else await page.addInitScript(() => { Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (text: string) => { (window as ClipboardWindow).__copied = text; } } }); });
+  if (clockTime) await page.clock.install({ time: clockTime });
+  await page.goto(`http://127.0.0.1:${address.port}/#token=fixture`);
+  const composer = page.getByRole('textbox', { name: 'Message Elpis', exact: true });
+  await page.locator(`.thread-row[data-thread-id="${readyThreadId}"] .thread-link`).first().waitFor();
+  const deadline = Date.now() + 6000;
+  while (streams.size === 0 && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 20));
+  if (streams.size === 0) throw new Error('The fixture did not connect to /api/events');
+  // The start-up screen holds at least a moment, and covers the page (and a drag's drop targets) until it goes.
+  if (desktop) await page.locator('.startup-splash').waitFor({ state: 'detached' });
+  const open = async (id: string) => {
+    await page.locator(`.thread-row[data-thread-id="${id}"] .thread-link`).click();
+    await page.locator(`.thread-row.active[data-thread-id="${id}"]`).waitFor();
+    if (id === 'chat-a') { const latest = turns.at(-1); if (!latest) throw Error('No conversation turns'); await page.getByText(latest[2], { exact: true }).waitFor(); }
+  };
+  const shown = () => page.locator('.thread-row.active').first().getAttribute('data-thread-id', { timeout: 400 }).catch(() => null);
+  const copied = () => page.evaluate(() => (window as ClipboardWindow).__copied);
+  /** Sends a bridge event (approval, approvalResolved, message …) to the page, as the bridge's /api/events does. */
+  const emit = (event: string, data: unknown) => { for (const stream of streams) stream.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); };
+  const close = async () => { await activeBrowser.close(); for (const stream of loveStreams) stream.end(); await new Promise<void>(resolve => server.close(() => resolve())); };
+  /** How many pages are listening to /api/events: an event emitted before a pane subscribes never reaches it. */
+  const listening = () => streams.size;
+  const disconnectEvents = () => { for (const stream of streams) stream.end(); };
+  const emitLove = (data: unknown) => { for (const stream of loveBoardStreams) stream.write(`data: ${JSON.stringify(data)}\n\n`); };
+  const emitLoveTalk = (data: unknown) => { for (const stream of loveTalkStreams) stream.write(`data: ${JSON.stringify(data)}\n\n`); };
+  const loveListening = () => loveBoardStreams.size;
+  return { page, composer, errors, posts, requests, open, shown, copied, close, turns, emit, listening, disconnectEvents, emitLove, emitLoveTalk, loveListening };
+  } catch (error) {
+    await browser?.close().catch(() => {});
+    for (const stream of new Set([...streams, ...loveStreams, ...loveBoardStreams])) stream.end();
+    await new Promise<void>(resolve => { server.close(() => resolve()); server.closeAllConnections(); });
+    throw error;
+  }
+}
+export declare const fixture: typeof fixtureImpl;
+module.exports = { fixture: fixtureImpl, CWD, FILES, TURNS, THREADS, MOTHER_SETTINGS };

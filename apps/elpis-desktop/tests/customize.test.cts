@@ -1,9 +1,9 @@
 // Customize, based on Claude's Customize page: Skills, Plugins and Connectors, each a list of yours. A skill turns on and
 // off; Create skill starts a chat that makes one; Manage connectors opens the MCP servers settings. Local bridge
-// fixture (tests/parity-fixture.cjs); no engine.
+// fixture (tests/parity-fixture.cts); no engine.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 
 const skill = (name: string, scope: string, enabled: boolean, extra = {}) => ({ id: name, name, description: `Does ${name}`, path: `/home/u/.elpis-next/skills/${name}/SKILL.md`, scope, enabled, plugin: null, ...extra });
 function state() {

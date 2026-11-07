@@ -51,6 +51,6 @@ The prompt rail keeps a 28 px target inside the existing 32 px gutter, so showin
 1. Search for the concept (`rg`) and read its owner; check the tokens and shared patterns above.
 2. Extend the owner (a prop or variant) before adding a component; a page-local style is the last resort.
 3. Fix the shared source, delete the local overrides it makes obsolete, then check every page that uses it.
-4. Test: a UI test through `tests/parity-fixture.cjs` (light and dark); anything the real server must serve or the real engine must do needs a test at that boundary.
+4. Test: a UI test through `tests/parity-fixture.cts` (light and dark); anything the real server must serve or the real engine must do needs a test at that boundary.
 5. Retained tests change only through `scripts/renderer-artifact-gate.mjs` (pin with Masih's words as approval).
 6. Follow [desktop verification](TESTING.md) before installation.

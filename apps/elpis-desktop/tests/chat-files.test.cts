@@ -1,10 +1,10 @@
 // What the agent looked at and made, as Claude's chats show it: an image it viewed is a thumbnail on the folded
 // activity row and in the step itself, and each file it created is a card after the reply that opens the file (an HTML
 // file as a page in the chat's browser).
-// Local bridge fixture (tests/parity-fixture.cjs); no engine.
+// Local bridge fixture (tests/parity-fixture.cts); no engine.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture, CWD } = require('./parity-fixture.cjs');
+const { fixture, CWD } = require('./parity-fixture.cts');
 
 const WORK = [
   { id: 'view-1', type: 'imageView', path: `${CWD}/shots/home.png` },

@@ -5,7 +5,7 @@
 // edited in the composer or removed. Real key presses. Local bridge fixture; no engine or model.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 const { leaveSettings, openSettings } = require('./controls.cjs');
 type Locator = { waitFor(options?: object): Promise<void>; click(): Promise<void>; fill(text: string): Promise<void>; inputValue(): Promise<string>; getAttribute(name: string): Promise<string | null>; count(): Promise<number>; getByText(text: string, options?: object): Locator; getByRole(role: string, options?: object): Locator };
 type Page = { getByRole(role: string, options?: object): Locator; getByText(text: string | RegExp, options?: object): Locator; keyboard: { press(key: string): Promise<void> }; waitForFunction(fn: () => boolean): Promise<void>; evaluate<T>(fn: () => T): Promise<T> };

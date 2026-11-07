@@ -7,8 +7,8 @@ const assert = require('node:assert/strict');
 const { spawn, execFileSync } = require('node:child_process');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const { chooseTheme, openSettings, leaveSettings } = require('./controls.cjs');
-const { PAGES, visit } = require('./settings-row-audit.cjs');
-const { scanDisclosures, modelSpacing, cornerWidths, checkWidths, shot } = require('./polish-check.cjs');
+const { PAGES, visit } = require('./settings-row-audit.cts');
+const { scanDisclosures, modelSpacing, cornerWidths, checkWidths, shot } = require('./polish-check.cts');
 
 async function main() {
   assert.ok(process.argv[2], 'Pass a packaged app directory');

@@ -4,9 +4,9 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { openCanvas, planFor } = require('./canvas-fixture.cjs');
-const { assertUiFit } = require('./ui-fit.cjs');
+const { assertUiFit } = require('./ui-fit.cts');
 const { captureReview, chooseOption, chooseTheme } = require('./controls.cjs');
-const { fixture, THREADS } = require('./parity-fixture.cjs');
+const { fixture, THREADS } = require('./parity-fixture.cts');
 const reportPlan = body => ({ name: 'Harbor review', agents: [{ key: 'evidence', title: 'Review evidence', prompt: body.goal, folders: [], doneWhen: ['Return the observed findings'], waitsFor: [] }] });
 
 for (const colorScheme of ['light']) test(`workflows start in their sandbox without a project and keep reports scoped (${colorScheme})`, async () => {

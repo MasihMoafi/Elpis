@@ -1,9 +1,9 @@
 // Searching chats shows every matching chat as its own row, as the ChatGPT app does. On 24 Oct, searching "Rust" in
 // Masih's chats showed only the parents ("main", collapsed) of the chats that matched, so the hits stayed hidden.
-// Local bridge fixture (tests/parity-fixture.cjs) whose search answers as the engine does: name or first message.
+// Local bridge fixture (tests/parity-fixture.cts) whose search answers as the engine does: name or first message.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 const { rowAction } = require('./controls.cjs');
 
 const chat = (id: string, name: string, extra = {}) => ({ id, name, preview: name, model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' }, ...extra });

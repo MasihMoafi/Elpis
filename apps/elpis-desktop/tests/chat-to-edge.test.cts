@@ -1,7 +1,7 @@
 // Ctrl+[ and Ctrl+] send the open chat to the top or the bottom of its list; running chats stay on top of the list.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture, CWD } = require('./parity-fixture.cjs');
+const { fixture, CWD } = require('./parity-fixture.cts');
 type Locator = { click(): Promise<void>; locator(selector: string): Locator; evaluateAll(fn: (rows: HTMLElement[]) => (string | undefined)[]): Promise<(string | undefined)[]> };
 type Page = { locator(selector: string): Locator };
 type Chat = { id: string; name: string; cwd: string; updatedAt: number; status: { type: string } };

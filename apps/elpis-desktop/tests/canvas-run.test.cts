@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const { openCanvas } = require('./canvas-fixture.cjs');
 const { chooseTheme, captureReview } = require('./controls.cjs');
-const { assertUiFit } = require('./ui-fit.cjs');
+const { assertUiFit } = require('./ui-fit.cts');
 
 type Run = { graphId: string; tasks: { id: string }[] };
 

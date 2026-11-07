@@ -2,7 +2,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 type Locator = { page(): Page; getAttribute(name: string): Promise<string | null> };
 type Page = { locator(selector: string): { getByRole(role: string, options: object): { click(): Promise<void> } }; getByRole(role: string, options: object): { getByRole(role: string, options: object): { click(): Promise<void> } }; waitForFunction(fn: (arg: { label: string | null; value: boolean }) => boolean, arg: { label: string | null; value: boolean }): Promise<unknown>; screenshot(options: { path: string }): Promise<unknown> };
 type Body = { version: string; action: string; name: string; id: string; enabled: boolean };

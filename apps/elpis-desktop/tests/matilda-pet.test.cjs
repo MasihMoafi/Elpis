@@ -13,7 +13,7 @@ const { FACE_DATA_URL } = require('../bridge/matilda-face.cts');
 // and only his questions showed: her replies were below the fold. The panel hugs its messages and box, never scrolls
 // itself, fades its messages at the edges, and shows the newest message, hers too.
 for (const colorScheme of ['light']) test(`her chat hugs its messages, opens at the newest one, and never scrolls as a whole (${colorScheme})`, { timeout: 60000 }, async t => {
-  const { fixture } = require('./parity-fixture.cjs');
+  const { fixture } = require('./parity-fixture.cts');
   const question = n => `Question ${n}: I read the first chapter; can you explain certain parts, including those images and other tricky parts that I need to know here?`;
   const say = (turnId, type, text) => ({ turnId, item: type === 'agentMessage' ? { id: `${turnId}-a`, type, text } : { id: `${turnId}-u`, type, content: [{ type: 'text', text }] } });
   let entries = [1, 2, 3].flatMap(n => [say(`t${n}`, 'userMessage', question(n)), say(`t${n}`, 'agentMessage', `Answer ${n}: the images show the transaction log.`)]), busy = false;

@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 
 test('Lab hides the number for until-finished, sends ten, and keeps earlier experiments after New experiment', async () => {
   const f = await fixture();

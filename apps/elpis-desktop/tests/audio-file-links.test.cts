@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 
 test('audio file links play through Matilda without opening the Files preview', async () => {
   const cwd = '/workspace/audio-project', opened: { path: string }[] = [];

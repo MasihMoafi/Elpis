@@ -4,7 +4,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 const { EventEmitter } = require('node:events');
-const { fixture, CWD } = require('./parity-fixture.cjs');
+const { fixture, CWD } = require('./parity-fixture.cts');
 
 const maker = '00000000-0000-0000-0000-0000000000a1';
 const children: [string, string] = ['00000000-0000-0000-0000-0000000000a2', '00000000-0000-0000-0000-0000000000a3'];

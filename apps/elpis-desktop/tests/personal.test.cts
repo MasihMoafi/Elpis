@@ -2,8 +2,8 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const fs = require('node:fs');
-const { fixture } = require('./parity-fixture.cjs');
-const { assertUiFit } = require('./ui-fit.cjs');
+const { fixture } = require('./parity-fixture.cts');
+const { assertUiFit } = require('./ui-fit.cts');
 
 const PROFILE = '/tmp/personal-fixture/skills/personal/SKILL.md';
 const TEXT = fs.readFileSync(path.join(__dirname, '../../../codex-rs/skills/src/assets/personal/SKILL.md'), 'utf8');

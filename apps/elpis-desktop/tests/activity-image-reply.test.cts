@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture, CWD } = require('./parity-fixture.cjs');
+const { fixture, CWD } = require('./parity-fixture.cts');
 
 for (const colorScheme of ['light', 'dark']) test(`viewed images keep replies out of the activity summary (${colorScheme})`, async () => {
   const images = [1, 2, 3].map(n => ({ id: `view-${n}`, type: 'imageView', path: `${CWD}/image-${n}.png` }));

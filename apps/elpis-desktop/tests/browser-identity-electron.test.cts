@@ -10,7 +10,7 @@ const path = require('node:path');
 const http = require('node:http');
 const { spawn } = require('node:child_process');
 const { _electron } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 
 type Brand = { brand: string; version: string };
 type PageReport = { userAgent: string; brands: Brand[]; fullVersionList: Brand[]; webdriver: boolean };

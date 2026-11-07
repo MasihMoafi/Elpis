@@ -6,7 +6,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { fixture, CWD } = require('./parity-fixture.cjs');
+const { fixture, CWD } = require('./parity-fixture.cts');
 const { assertCollectionIcon } = require('./collection-icon-assertions.cts');
 
 type Locator = { first(): Locator; locator(selector: string): Locator; getAttribute(name: string): Promise<string | null>; getByRole(role: string, options: object): Locator; waitFor(): Promise<void>; click(): Promise<void>; isEnabled(): Promise<boolean>; fill(value: string): Promise<void>; inputValue(): Promise<string>; innerText(): Promise<string>; press(key: string): Promise<void> };

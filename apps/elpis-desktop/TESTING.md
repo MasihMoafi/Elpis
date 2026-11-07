@@ -18,7 +18,7 @@ Masih, 24 Oct: "make sure all the issues are fixed not just addressed and also e
 
 Each run prints `/tmp/elpis-test-gate-*/summary.json` and keeps per-file TAP and build logs there. `wallMs` includes shared-lock waits and build time; `testMs` sums Node test durations without them. A focused browser test: `flock /tmp/elpis-desktop-ui.lock node --test --test-timeout=180000 --test-reporter=tap tests/<file>`, output redirected to a TAP file.
 
-Focused checks: `npm run test:drafts` (drafts); `tests/project-journey.runtime.mjs` checks the actual desktop and installed runtime with isolated local inference.
+Focused checks: `npm run test:drafts` (drafts); `tests/project-journey.runtime.mts` checks the actual desktop and installed runtime with isolated local inference.
 
 Opt-ins stay explicit; never run the whole tier blindly. `ELPIS_TEST_ENGINE=/absolute/elpis-next node --test tests/composer-engine.test.mts` uses an isolated engine without inference. Native window tests (`code-opens-electron`, `session-windows-electron`) need a private display: `ELPIS_PRIVATE_DISPLAY=1 xvfb-run -a flock /tmp/elpis-desktop-ui.lock node --test tests/<file>.test.cjs`. Other runtime scripts document their arguments and profile isolation in their headers; some make subscription turns. Keep `ELPIS_HOME` isolated and read the script before running it.
 
