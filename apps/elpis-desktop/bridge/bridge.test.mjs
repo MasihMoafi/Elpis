@@ -625,6 +625,10 @@ test('configured connection models use only that endpoint and never authorize th
     const sent = socket.sent.findLast(message => message.method === 'thread/start');
     assert.equal(sent.params.modelProvider, 'local'); assert.equal(sent.params.model, 'unique-local-book-model');
     await assert.rejects(client.createThread({ model: 'unique-local-book-model' }), /current Elpis model list/);
+    // A built-in key provider (OpenRouter with a pasted key) is a connection too, not in config.toml (7 Nov).
+    await client.createThread({ provider: 'openrouter', model: 'deepseek/deepseek-v4.1-flash' });
+    assert.equal(socket.sent.findLast(message => message.method === 'thread/start').params.modelProvider, 'openrouter');
+    await assert.rejects(client.createThread({ model: 'deepseek/deepseek-v4.1-flash' }), /current Elpis model list/);
     await assert.rejects(client.models({ provider: 'missing' }), /saved API address/);
     requirementsRead.requirements = { modelProvider: 'openai' };
     await assert.rejects(client.models({ provider: 'local' }), /restricted/);

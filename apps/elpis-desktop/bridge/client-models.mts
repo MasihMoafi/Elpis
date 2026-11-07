@@ -57,11 +57,7 @@ export async function impl_models(this: DesktopClient, clientState: ClientState,
         if (!Object.hasOwn(definitions, provider)) throw new BridgeError('This connection needs a saved API address before Elpis can list its models. Add a connection in Settings → Models & accounts.');
         try {
           const providerOptions = { savedKey: savedProviderKey(configHome(read), provider), inputModality: options.inputModality, outputModality: options.outputModality };
-          const listed = await providerModels(definitions[provider], providerOptions);
-          // So a chat may start on them: a built-in key provider (OpenRouter with a pasted key) is not in config.toml, so
-          // only its listed models make its choice valid (7 Nov, live: Matilda refused an OpenRouter model).
-          for (const model of listed.data ?? []) if (typeof model?.model === 'string') clientState.models.add(model.model);
-          return listed;
+          return await providerModels(definitions[provider], providerOptions);
         }
         catch (error) { throw new BridgeError((error as Error).message || 'Could not load models from this connection.', 502); }
       }
