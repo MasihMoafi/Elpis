@@ -18,6 +18,12 @@ import { spawn, execFile } from 'node:child_process';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { BridgeError } from './validate.mts';
 
+type Connection = { url: string; token: string; gateToken?: string };
+type Saved = { version: number; website?: string; account: { id: string; email: string }; connection?: Connection; sandboxToken?: string; thread?: string; signedInAt?: number };
+type RunOptions = { cwd?: string | undefined; stdin?: string | Buffer | undefined; signal?: AbortSignal | undefined; wait?: number | undefined };
+type AgentOptions = { localDir: string | undefined; key: string; provider: string; model?: string | undefined; effort?: string | undefined; prompt: string; signal?: AbortSignal | undefined; timeoutMs?: number | undefined; onStatus?: ((text: string) => void) | undefined };
+type Options = { home?: string; website?: string; fetch?: typeof globalThis.fetch; wakeWaitMs?: number; retryMs?: number; pollMs?: number; pieceBytes?: number; maxTransferBytes?: number; tmpDir?: string };
+
 export const CLOUDROOM_WEBSITE = 'https://www.cloudroom.dev';
 const FILE_NAME = 'cloudroom.json';
 const MAX_FILE_BYTES = 32_768;
@@ -33,24 +39,25 @@ const PATHS = 'export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:$HOME/bin:/us
 const SETTINGS = 'Settings → Models & accounts';
 
 export class CloudroomError extends BridgeError {
-  constructor(code, message, status) { super(message, status ?? { not_signed_in: 401, too_big: 413, vm_asleep: 503, cli_missing: 424, cli_signed_out: 424 }[code] ?? 502); this.code = code; }
+  code: string;
+  constructor(code: string, message: string, status?: number) { super(message, status ?? ({ not_signed_in: 401, too_big: 413, vm_asleep: 503, cli_missing: 424, cli_signed_out: 424 } as Record<string, number>)[code] ?? 502); this.code = code; }
 }
 const notSignedIn = () => new CloudroomError('not_signed_in', `Sign in to CloudRoom under ${SETTINGS} first.`);
 const expired = () => new CloudroomError('not_signed_in', `CloudRoom no longer accepts this sign-in. Sign in again under ${SETTINGS}.`);
-const asleep = seconds => new CloudroomError('vm_asleep', `The CloudRoom VM is asleep or still waking up${seconds ? ` (waited ${seconds} s)` : ''}. Try again in a minute.`);
-const tooBig = (bytes, limit) => new CloudroomError('too_big', `This transfer is too big for CloudRoom${bytes ? `: ${mb(bytes)} packed` : ''}, over the ${mb(limit)} limit. Leave large files out (add them to .gitignore) and try again.`);
-const mb = bytes => `${(bytes / 1024 / 1024).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`;
-const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+const asleep = (seconds?: number) => new CloudroomError('vm_asleep', `The CloudRoom VM is asleep or still waking up${seconds ? ` (waited ${seconds} s)` : ''}. Try again in a minute.`);
+const tooBig = (bytes: number | undefined, limit: number) => new CloudroomError('too_big', `This transfer is too big for CloudRoom${bytes ? `: ${mb(bytes)} packed` : ''}, over the ${mb(limit)} limit. Leave large files out (add them to .gitignore) and try again.`);
+const mb = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`;
+const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 
 /** A VM path, quoted for its shell. `~` is the VM agent's home (as `room-cli vm` does); other paths stay literal. */
-export function vmPath(value) {
+export function vmPath(value: unknown) {
   if (typeof value !== 'string' || !value || value.length > 1024 || /[\0\n]/.test(value)) throw new BridgeError('Give a VM path.');
   const [prefix, rest] = value === '~' ? ['"$HOME"', ''] : value.startsWith('~/') ? ['"$HOME"/', value.slice(2)] : ['', value];
   return rest ? `${prefix}${quote(rest)}` : prefix;
 }
-const quote = value => `'${String(value).replaceAll("'", "'\\''")}'`;
+const quote = (value: unknown) => `'${String(value).replaceAll("'", "'\\''")}'`;
 
-function ownedHome(home) {
+function ownedHome(home: string | undefined) {
   if (typeof home !== 'string' || !path.isAbsolute(home)) throw new BridgeError('The Elpis home folder is unknown, so CloudRoom was not saved.', 503);
   fs.mkdirSync(home, { recursive: true, mode: 0o700 });
   const stat = fs.lstatSync(home);
@@ -58,7 +65,7 @@ function ownedHome(home) {
 }
 
 /** The handoff CloudRoom's website returns, checked as CloudRoom's own client checks it (account.ts handoffSchema). */
-function handoff(value) {
+function handoff(value: { account?: { id?: unknown; email?: unknown }; connection?: { url?: unknown; token?: unknown; gateToken?: string }; sandboxes?: { token?: string } } | null) {
   const bad = () => new CloudroomError('sign_in_failed', 'CloudRoom returned a sign-in Elpis cannot use. Try again.');
   if (!value || typeof value !== 'object') throw bad();
   const { account, connection, sandboxes } = value;
@@ -75,7 +82,7 @@ function handoff(value) {
 }
 
 /** A core URL: HTTPS, or HTTP on this computer (tests), without credentials, query or fragment (client.ts). */
-function coreUrl(value) {
+function coreUrl(value: string) {
   let url; try { url = new URL(value); } catch { throw new CloudroomError('sign_in_failed', 'CloudRoom returned an invalid VM address.'); }
   const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
   if ((url.protocol !== 'https:' && !(url.protocol === 'http:' && local)) || url.username || url.password || url.search || url.hash) throw new CloudroomError('sign_in_failed', 'CloudRoom returned an invalid VM address.');
@@ -83,7 +90,7 @@ function coreUrl(value) {
 }
 
 /** The CloudRoom website: its real address, or a loopback server (tests), as CloudRoom's own client allows. */
-function websiteOrigin(value) {
+function websiteOrigin(value: string) {
   const url = new URL(value);
   if (url.origin !== CLOUDROOM_WEBSITE && !(url.protocol === 'http:' && url.hostname === '127.0.0.1' && url.port)) throw new BridgeError('Use the CloudRoom website.');
   return url.origin;
@@ -96,23 +103,23 @@ function websiteOrigin(value) {
  * @param pollMs how often a running agent on the VM is checked.
  */
 export function createCloudroomVm({ home, website = CLOUDROOM_WEBSITE, fetch: fetcher = globalThis.fetch, wakeWaitMs = 180_000, retryMs = 2000,
-  pollMs = 5000, pieceBytes = PIECE_BYTES, maxTransferBytes = MAX_TRANSFER_BYTES, tmpDir = os.tmpdir() } = {}) {
+  pollMs = 5000, pieceBytes = PIECE_BYTES, maxTransferBytes = MAX_TRANSFER_BYTES, tmpDir = os.tmpdir() }: Options = {}) {
   const origin = websiteOrigin(website);
-  const file = path.join(home, FILE_NAME);
-  let pending = null, signInError = null, sandbox = null, saving = Promise.resolve();
+  const file = path.join(home as string, FILE_NAME);
+  let pending: { server: http.Server; timer: NodeJS.Timeout; claimed: boolean } | null = null, signInError: string | null = null, sandbox: Connection | null = null, saving = Promise.resolve();
 
   function load() {
     let stat;
-    try { stat = fs.lstatSync(file); } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+    try { stat = fs.lstatSync(file); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error; }
     if (!stat.isFile() || stat.isSymbolicLink() || stat.uid !== process.getuid?.() || (stat.mode & 0o077)) throw new BridgeError('The saved CloudRoom sign-in must be a private file you own. Sign out and sign in again.', 403);
     if (stat.size > MAX_FILE_BYTES) throw new BridgeError('The saved CloudRoom sign-in is too large.', 413);
-    try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
+    try { return JSON.parse(fs.readFileSync(file, 'utf8')) as Saved; } catch { return null; }
   }
-  function save(value) {
+  function save(value: Saved | null) {
     const work = saving.catch(() => {}).then(() => {
       ownedHome(home);
       if (value === null) { fs.rmSync(file, { force: true }); return; }
-      const temporary = path.join(home, `.${FILE_NAME}.${randomBytes(6).toString('hex')}`);
+      const temporary = path.join(home as string, `.${FILE_NAME}.${randomBytes(6).toString('hex')}`);
       const handle = fs.openSync(temporary, 'wx', 0o600);
       try { fs.writeSync(handle, JSON.stringify(value)); fs.fsyncSync(handle); } finally { fs.closeSync(handle); }
       try { fs.renameSync(temporary, file); } catch (error) { fs.rmSync(temporary, { force: true }); throw error; }
@@ -120,21 +127,21 @@ export function createCloudroomVm({ home, website = CLOUDROOM_WEBSITE, fetch: fe
     saving = work; return work;
   }
   /** Every message that leaves this module passes here: no saved token can reach a log, the UI or an agent. */
-  function redact(message) {
+  function redact(message: unknown) {
     let saved; try { saved = load(); } catch { saved = null; }
-    let text = String(message ?? '');
+    let text = String((message as string) ?? '');
     for (const secret of [saved?.connection?.token, saved?.connection?.gateToken, saved?.sandboxToken, sandbox?.token]) if (secret) text = text.split(secret).join('…');
     return text;
   }
-  const fail = (code, message, status) => new CloudroomError(code, redact(message), status);
+  const fail = (code: string, message: unknown, status?: number) => new CloudroomError(code, redact(message), status);
 
   // ---- Sign-in -------------------------------------------------------------------------------------------------------
   function cancelSignIn() {
     if (!pending) return;
     clearTimeout(pending.timer); pending.server.close(); pending.server.closeIdleConnections?.(); pending = null;
   }
-  function page(ok, message) {
-    const escaped = message.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  function page(ok: boolean, message: string) {
+    const escaped = message.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as Record<string, string>)[c]!);
     return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${ok ? 'Signed in' : 'Sign-in not completed'} · Elpis</title></head><body style="font-family:sans-serif;max-width:32rem;margin:4rem auto;line-height:1.5"><h1>${ok ? 'CloudRoom is connected to Elpis' : 'Sign-in not completed'}</h1><p>${escaped}</p><p>You can close this tab.</p></body></html>`;
   }
   async function signIn() {
@@ -142,8 +149,8 @@ export function createCloudroomVm({ home, website = CLOUDROOM_WEBSITE, fetch: fe
     const state = randomBytes(32).toString('hex'), verifier = randomBytes(32).toString('hex');
     const challenge = createHash('sha256').update(verifier).digest('hex');
     let callback = '';
-    const server = http.createServer(async (request, response) => {
-      const reply = (status, message) => {
+    const server = http.createServer((request, response) => { void (async () => {
+      const reply = (status: number, message: string) => {
         response.writeHead(status, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', Connection: 'close', 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'" });
         response.end(page(status === 200, message));
       };
@@ -169,10 +176,10 @@ export function createCloudroomVm({ home, website = CLOUDROOM_WEBSITE, fetch: fe
         signInError = error instanceof CloudroomError ? error.message : 'Sign-in could not complete. Start again from Elpis.';
         reply(400, signInError);
       } finally { if (pending?.server === server) cancelSignIn(); }
-    });
+    })(); });
     server.requestTimeout = 20_000; server.headersTimeout = 10_000;
-    await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
-    callback = `http://127.0.0.1:${server.address().port}/cloudroom/return`;
+    await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
+    callback = `http://127.0.0.1:${(server.address() as import('node:net').AddressInfo).port}/cloudroom/return`;
     const timer = setTimeout(() => { if (pending?.server === server) { cancelSignIn(); signInError = 'Sign-in expired. Try again.'; } }, SIGN_IN_MS);
     timer.unref();
     pending = { server, timer, claimed: false };
@@ -191,9 +198,9 @@ export function createCloudroomVm({ home, website = CLOUDROOM_WEBSITE, fetch: fe
 
   // ---- The VM's core -------------------------------------------------------------------------------------------------
   const saved = () => { const value = load(); if (!value?.account || (!value.connection && !value.sandboxToken)) throw notSignedIn(); return value; };
-  const basic = value => `Basic ${Buffer.from(`${value.account.id}:${value.sandboxToken}`).toString('base64')}`;
+  const basic = (value: Saved) => `Basic ${Buffer.from(`${value.account.id}:${value.sandboxToken}`).toString('base64')}`;
   /** A sandbox account has no one VM: Elpis keeps one CloudRoom thread, and its sandbox is woken for work (sandboxes.ts). */
-  async function wakeSandbox(value, wake) {
+  async function wakeSandbox(value: Saved, wake: boolean) {
     let response;
     try {
       response = await fetcher(`${value.website ?? origin}/api/desktop/sandboxes`, { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(120_000),
@@ -213,11 +220,11 @@ export function createCloudroomVm({ home, website = CLOUDROOM_WEBSITE, fetch: fe
     return sandbox;
   }
   /** One vm/run request (client.ts runOnVm): JSON with hex stdin, hex stdout and stderr. */
-  async function runOnce(command, { cwd, stdin, signal } = {}) {
+  async function runOnce(command: string, { cwd, stdin, signal }: RunOptions = {}) {
     const core = await connection(true);
     let response;
     try {
-      response = await fetcher(`${core.url}/v1/vm/run`, { method: 'POST', redirect: 'error', signal,
+      response = await fetcher(`${core.url}/v1/vm/run`, { method: 'POST', redirect: 'error', signal: signal as AbortSignal,
         headers: { Authorization: `Bearer ${core.token}`, 'X-Cloudroom-Token': core.token, ...(core.gateToken ? { Cookie: `_port_auth=${core.gateToken}` } : {}), Accept: 'application/json', 'Content-Type': 'application/json' },
         body: JSON.stringify({ command, stdin: stdin === undefined ? '' : Buffer.from(stdin).toString('hex'), ...(cwd ? { cwd } : {}) }) });
     } catch (error) {
@@ -233,13 +240,13 @@ export function createCloudroomVm({ home, website = CLOUDROOM_WEBSITE, fetch: fe
     return { code: value.code ?? null, stdout: Buffer.from(String(value.stdout ?? ''), 'hex'), stderr: Buffer.from(String(value.stderr ?? ''), 'hex'), truncated: value.truncated === true };
   }
   /** Runs a shell command on the VM as its agent account. A sleeping VM is waited for, up to `wakeWaitMs`. */
-  async function run(command, { cwd, stdin, signal, wait = wakeWaitMs } = {}) {
+  async function run(command: string, { cwd, stdin, signal, wait = wakeWaitMs }: RunOptions = {}) {
     if (typeof command !== 'string' || !command.trim()) throw new BridgeError('Give a command to run on the VM.');
     const started = Date.now();
     for (let tries = 0; ; tries++) {
       try { return await runOnce(command, { cwd, stdin, signal }); }
       catch (error) {
-        if (!error.retry || signal?.aborted) throw error;
+        if (!(error as { retry?: boolean }).retry || signal?.aborted) throw error;
         const left = started + wait - Date.now();
         if (left <= 0) throw asleep(Math.round((Date.now() - started) / 1000));
         await pause(Math.min(retryMs * 2 ** Math.min(tries, 4), 15_000, left));
@@ -247,7 +254,7 @@ export function createCloudroomVm({ home, website = CLOUDROOM_WEBSITE, fetch: fe
     }
   }
   /** Fails with the command's error output unless it succeeded. */
-  async function must(command, options) {
+  async function must(command: string, options?: RunOptions) {
     const result = await run(command, options);
     if (result.truncated) throw tooBig(0, pieceBytes);
     if (result.code !== 0) throw fail('vm_error', `The VM command failed: ${result.stderr.toString().trim().slice(-600) || `exit ${result.code}`}`);
@@ -255,12 +262,12 @@ export function createCloudroomVm({ home, website = CLOUDROOM_WEBSITE, fetch: fe
   }
 
   // ---- Copying files -------------------------------------------------------------------------------------------------
-  const exec = (command, args, options = {}) => new Promise((resolve, reject) => execFile(command, args, { maxBuffer: 64 * 1024 * 1024, encoding: 'buffer', ...options }, (error, stdout) => error ? reject(error) : resolve(stdout)));
+  const exec = (command: string, args: string[], options: object = {}) => new Promise<Buffer>((resolve, reject) => execFile(command, args, { maxBuffer: 64 * 1024 * 1024, encoding: 'buffer', ...options }, (error, stdout) => error ? reject(error as Error) : resolve(stdout)));
   /** Packs a local folder: in a Git checkout its tracked and unignored files (as a workflow worktree holds them), else everything but `.git`. */
-  async function pack(localDir, archive) {
+  async function pack(localDir: string, archive: string) {
     const listed = await exec('git', ['-C', localDir, 'ls-files', '-z', '--cached', '--others', '--exclude-standard']).catch(() => null);
     const names = listed === null ? null : listed.toString().split('\0').filter(name => name && fs.existsSync(path.join(localDir, name)));
-    await new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       const args = names ? ['--no-xattrs', '-czf', archive, '--null', '-T', '-'] : ['--no-xattrs', '-czf', archive, '--exclude=./.git', '.'];
       const tar = spawn('tar', args, { cwd: localDir, stdio: ['pipe', 'ignore', 'pipe'] });
       let error = ''; tar.stderr.on('data', data => { error += data; });
@@ -274,7 +281,7 @@ export function createCloudroomVm({ home, website = CLOUDROOM_WEBSITE, fetch: fe
     return fsp.mkdtemp(path.join(tmpDir, 'elpis-cloudroom-'));
   }
   /** Sends a local file to `remote` (relative to the VM home) in pieces; a resent piece replaces itself (project-copy.ts). */
-  async function upload(local, remote, size, signal) {
+  async function upload(local: string, remote: string, size: number, signal?: AbortSignal) {
     const handle = await fsp.open(local);
     try {
       if (!size) await must(`mkdir -p -- "$(dirname -- ${quote(remote)})" && : > ${quote(remote)}`, { signal });
@@ -285,7 +292,7 @@ export function createCloudroomVm({ home, website = CLOUDROOM_WEBSITE, fetch: fe
     } finally { await handle.close(); }
   }
   /** Fetches `remote` (`size` bytes) in pieces to a local file. */
-  async function download(remote, size, local, signal) {
+  async function download(remote: string, size: number, local: string, signal?: AbortSignal) {
     const handle = await fsp.open(local, 'w', 0o600);
     try {
       for (let offset = 0; offset < size; offset += pieceBytes) {
@@ -296,33 +303,36 @@ export function createCloudroomVm({ home, website = CLOUDROOM_WEBSITE, fetch: fe
       }
     } finally { await handle.close(); }
   }
-  async function unpack(archive, localDir) {
+  async function unpack(archive: string, localDir: string) {
     await fsp.mkdir(localDir, { recursive: true });
-    await new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       const tar = spawn('tar', ['-xzf', archive, '-C', localDir, '--no-same-owner'], { stdio: ['ignore', 'ignore', 'pipe'] });
       let error = ''; tar.stderr.on('data', data => { error += data; });
       tar.on('error', reject).on('close', code => code === 0 ? resolve() : reject(new BridgeError(`Could not unpack the files from the VM: ${error.trim().slice(-300)}`)));
     });
   }
+  async function cleanupTransfer(folder: string, remote: string) {
+    await fsp.rm(folder, { recursive: true, force: true });
+    await run(`rm -f -- ${quote(remote)}`, { wait: 0 }).catch(() => {});
+  }
   const remoteTemp = () => `.cache/elpis/transfer-${randomUUID()}.tgz`;
   /** Copies a local folder's contents into `vmDir` on the VM. */
-  async function push(localDir, vmDir, { signal } = {}) {
+  async function push(localDir: string | undefined, vmDir: string, { signal }: { signal?: AbortSignal | undefined } = {}) {
     saved();
-    if (!path.isAbsolute(localDir ?? '') || !fs.statSync(localDir).isDirectory()) throw new BridgeError('Choose a folder on this computer to copy.');
+    if (!path.isAbsolute(localDir ?? '') || !fs.statSync(localDir as string).isDirectory()) throw new BridgeError('Choose a folder on this computer to copy.');
     const target = vmPath(vmDir), folder = await scratch(), archive = path.join(folder, 'push.tgz'), remote = remoteTemp();
     try {
-      const size = await pack(localDir, archive);
+      const size = await pack(localDir as string, archive);
       if (size > maxTransferBytes) throw tooBig(size, maxTransferBytes);
       await upload(archive, remote, size, signal);
       await must(`mkdir -p -- ${target} && tar -xzf ${quote(remote)} -C ${target}; code=$?; rm -f -- ${quote(remote)}; exit $code`, { signal });
       return { bytes: size, pieces: Math.max(1, Math.ceil(size / pieceBytes)) };
     } finally {
-      await fsp.rm(folder, { recursive: true, force: true });
-      await run(`rm -f -- ${quote(remote)}`, { wait: 0 }).catch(() => {});
+      await cleanupTransfer(folder, remote);
     }
   }
   /** Packs `command`'s archive on the VM, then fetches and unpacks it into `localDir`. */
-  async function fetchArchive(packCommand, remote, localDir, signal) {
+  async function fetchArchive(packCommand: string, remote: string, localDir: string, signal?: AbortSignal) {
     const folder = await scratch(), archive = path.join(folder, 'pull.tgz');
     try {
       const size = Number((await must(`mkdir -p .cache/elpis && ${packCommand} && wc -c < ${quote(remote)}`, { signal })).toString().trim());
@@ -332,48 +342,47 @@ export function createCloudroomVm({ home, website = CLOUDROOM_WEBSITE, fetch: fe
       await unpack(archive, localDir);
       return { bytes: size, pieces: Math.max(1, Math.ceil(size / pieceBytes)) };
     } finally {
-      await fsp.rm(folder, { recursive: true, force: true });
-      await run(`rm -f -- ${quote(remote)}`, { wait: 0 }).catch(() => {});
+      await cleanupTransfer(folder, remote);
     }
   }
   /** Copies a VM file or folder into `localDir` (as `room-cli vm pull`, in pieces). */
-  async function pull(vmFile, localDir, { signal } = {}) {
+  async function pull(vmFile: string, localDir: string, { signal }: { signal?: AbortSignal | undefined } = {}) {
     saved();
     if (!path.isAbsolute(localDir ?? '')) throw new BridgeError('Choose a folder on this computer to copy into.');
     const source = vmPath(vmFile), remote = remoteTemp();
-    return fetchArchive(`p=${source}; tar -czf ${quote(remote)} -C "$(dirname -- "$p")" -- "$(basename -- "$p")"`, remote, localDir, signal);
+    return fetchArchive(`p=${source}; tar -czf ${quote(remote)} -C "$(dirname -- "$p")" -- "$(basename -- "$p")"`, remote, localDir as string, signal);
   }
 
   // ---- What the VM can run -------------------------------------------------------------------------------------------
   /** Which agent CLIs the VM has and whether each is signed in, as its shell sees them. */
-  async function probe(options = {}) {
+  async function probe(options: RunOptions = {}) {
     const script = [PATHS,
       'for c in claude codex; do p=$(command -v "$c" 2>/dev/null) && echo "$c=$p"; done',
       '{ [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}${ANTHROPIC_API_KEY:-}" ] || [ -s "$HOME/.claude/.credentials.json" ] || { command -v claude >/dev/null 2>&1 && claude auth status >/dev/null 2>&1; }; } && echo claude_login=1',
       'command -v codex >/dev/null 2>&1 && codex login status >/dev/null 2>&1 && echo codex_login=1', 'true'].join('\n');
     const out = (await must(script, options)).toString();
-    const has = name => new RegExp(`^${name}=`, 'm').test(out);
+    const has = (name: string) => new RegExp(`^${name}=`, 'm').test(out);
     return { claude: { installed: has('claude'), signedIn: has('claude_login') }, codex: { installed: has('codex'), signedIn: has('codex_login') } };
   }
   async function status({ check = false } = {}) {
     let value;
-    try { value = load(); } catch (error) { return { signedIn: false, signingIn: Boolean(pending), error: error.message }; }
+    try { value = load(); } catch (error) { return { signedIn: false, signingIn: Boolean(pending), error: (error as Error).message }; }
     const base = { signedIn: Boolean(value?.account && (value.connection || value.sandboxToken)), signingIn: Boolean(pending), error: signInError,
       ...(value?.account ? { email: value.account.email, kind: value.connection ? 'vm' : 'sandbox' } : {}) };
     if (!check || !base.signedIn) return base;
     try { return { ...base, vm: { state: 'awake', ...await probe({ wait: Math.min(wakeWaitMs, 20_000) }) } }; }
-    catch (error) { return { ...base, vm: { state: error.code === 'vm_asleep' ? 'asleep' : error.code === 'not_signed_in' ? 'signed_out' : 'error', message: redact(error.message) } }; }
+    catch (error) { return { ...base, vm: { state: (error as CloudroomError).code === 'vm_asleep' ? 'asleep' : (error as CloudroomError).code === 'not_signed_in' ? 'signed_out' : 'error', message: redact((error as Error).message) } }; }
   }
 
   // ---- Running a workflow agent there --------------------------------------------------------------------------------
   /** The CLI an agent's provider needs: Claude Code for Claude models, Codex for ChatGPT models. */
-  function agentCommand({ provider, model, effort }, meta) {
+  function agentCommand({ provider, model, effort }: Pick<AgentOptions, 'provider' | 'model' | 'effort'>, meta: string) {
     if (!['claude', 'openai'].includes(provider)) throw new CloudroomError('cli_missing', `The CloudRoom VM runs Claude Code and Codex agents only. Give this agent a Claude or ChatGPT model, or run the workflow on this computer.`);
     const bare = String(model ?? '').replace(/^(claude|openai)\//, '');
     if (bare && !/^[A-Za-z0-9][A-Za-z0-9._:@+-]{0,199}$/.test(bare)) throw new BridgeError('Invalid model for the CloudRoom VM.');
-    if (provider === 'claude') return { cli: 'claude', name: 'Claude Code', answer: `${meta}/out`,
+    if (provider === 'claude') return { cli: 'claude' as const, name: 'Claude Code', answer: `${meta}/out`,
       line: `claude -p --dangerously-skip-permissions --output-format text${bare ? ` --model ${quote(bare)}` : ''}` };
-    if (provider === 'openai') return { cli: 'codex', name: 'Codex', answer: `${meta}/answer`,
+    return { cli: 'codex' as const, name: 'Codex', answer: `${meta}/answer`,
       // `$M`: the run's folder, set by its script (the agent runs inside the copied worktree).
       line: `codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check --color never -o "$M/answer"${bare ? ` -m ${quote(bare)}` : ''}${/^(minimal|low|medium|high|xhigh)$/.test(effort ?? '') ? ` -c model_reasoning_effort=${quote(effort)}` : ''} -` };
   }
@@ -381,7 +390,7 @@ export function createCloudroomVm({ home, website = CLOUDROOM_WEBSITE, fetch: fe
    * One workflow agent on the VM: copy `localDir` there, run the provider's CLI on `prompt` in it, then bring its
    * changes (new, changed and deleted files) back into `localDir`. `onStatus(text)` hears each step.
    */
-  async function runAgent({ localDir, key, provider, model, effort, prompt, signal, timeoutMs = 30 * 60_000, onStatus = () => {} }) {
+  async function runAgent({ localDir, key, provider, model, effort, prompt, signal, timeoutMs = 30 * 60_000, onStatus = () => {} }: AgentOptions) {
     saved();
     if (!/^[A-Za-z0-9_.-]{1,200}$/.test(key ?? '')) throw new BridgeError('Invalid CloudRoom run name.');
     const work = `elpis-runs/${key}`, meta = `.cache/elpis/runs/${key}`;
@@ -410,7 +419,7 @@ export function createCloudroomVm({ home, website = CLOUDROOM_WEBSITE, fetch: fe
         if (Date.now() > ends) throw new BridgeError(`${agent.name} on the CloudRoom VM ran past its time limit and was stopped.`, 408);
         const read = (await must(`cat ${quote(`${meta}/code`)} 2>/dev/null; true`, { signal })).toString().trim();
         if (/^\d+$/.test(read)) { code = Number(read); break; }
-        await new Promise(resolve => { const timer = setTimeout(resolve, pollMs); signal?.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true }); });
+        await new Promise<void>(resolve => { const timer = setTimeout(resolve, pollMs); signal?.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true }); });
       }
     } catch (error) { await stop(); throw error; }
     const answer = (await must(`head -c 1048576 -- ${quote(agent.answer)} 2>/dev/null; true`, { signal })).toString();
@@ -424,10 +433,10 @@ export function createCloudroomVm({ home, website = CLOUDROOM_WEBSITE, fetch: fe
     const remote = `${meta}/changes.tgz`;
     const back = await fetchArchive(`cd -- "$HOME"/${quote(work)} && find . -type f ! -path './.git/*' -newer "$HOME"/${quote(`${meta}/start`)} -print0 > "$HOME"/${quote(`${meta}/changed`)}`
       + ` && xargs -0 -r sh -c 'for f; do [ -e "$f" ] || [ -L "$f" ] || printf "%s\\0" "$f"; done' sh < "$HOME"/${quote(`${meta}/manifest`)} > "$HOME"/${quote(`${meta}/deleted`)}`
-      + ` && tar -czf "$HOME"/${quote(remote)} --null -T "$HOME"/${quote(`${meta}/changed`)} && cd "$HOME"`, remote, localDir, signal);
+      + ` && tar -czf "$HOME"/${quote(remote)} --null -T "$HOME"/${quote(`${meta}/changed`)} && cd "$HOME"`, remote, localDir as string, signal);
     const changed = (await must(`cat -- ${quote(`${meta}/changed`)}`, { signal })).toString().split('\0').filter(Boolean);
     const deleted = (await must(`cat -- ${quote(`${meta}/deleted`)}`, { signal })).toString().split('\0').filter(Boolean);
-    const root = path.resolve(localDir);
+    const root = path.resolve(localDir as string);
     for (const name of deleted) {
       const relative = path.posix.normalize(name.replace(/^\.\//, ''));
       if (!relative || relative.startsWith('../') || relative === '..' || path.posix.isAbsolute(relative) || relative.split('/')[0] === '.git') continue;

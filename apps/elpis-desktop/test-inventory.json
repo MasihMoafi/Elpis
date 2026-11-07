@@ -74,7 +74,7 @@
     "tests/use-for-settings.test.cjs"
   ],
   "bridge": [
-    "bridge/cloudroom-vm.test.mjs",
+    "bridge/cloudroom-vm.test.mts",
     "bridge/schedule.test.mts",
     "bridge/live-model-catalogue.test.mts",
     "bridge/subscription-models.test.mts",
@@ -128,7 +128,7 @@
     "bridge/skill-trash.test.mts",
     "bridge/slash-routes.test.mjs",
     "bridge/source-map.test.mts",
-    "bridge/spawn-links.test.mjs",
+    "bridge/spawn-links.test.mts",
     "bridge/speech-buffer.test.mts",
     "bridge/static-assets.test.mts",
     "bridge/thread-deletion.test.mjs",

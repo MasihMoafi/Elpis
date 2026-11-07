@@ -5,8 +5,8 @@ import { MessageVersions } from './message-versions.mts';
 import { RewindHistory } from './rewind-history.mts';
 import { RewindSnapshots } from './rewind-snapshots.mts';
 import { SkillTrash } from './skill-trash.mts';
-import { SpawnLinks } from './spawn-links.mjs';
-import { createCloudroomVm } from './cloudroom-vm.mjs';
+import { SpawnLinks } from './spawn-links.mts';
+import { createCloudroomVm } from './cloudroom-vm.mts';
 import { createGithubConnector } from './github-connector.mts';
 import { createWorkflowHistory, createWorkflowRuns } from './workflow-acp.mts';
 import os from 'node:os';
@@ -83,7 +83,7 @@ export class DesktopClient extends EventEmitter {
       if (method === 'thread/archive') internal_forgetSubscription.call(this, this.#state, params.threadId);
       return result as Awaited<ReturnType<ConstructorParameters<typeof RewindHistory>[1]>>;
     });
-    // His CloudRoom VM (bridge/cloudroom-vm.mjs): its sign-in lives in this profile's home, beside the provider keys.
+    // His CloudRoom VM (bridge/cloudroom-vm.mts): its sign-in lives in this profile's home, beside the provider keys.
     cloudroom ??= (createCloudroomVm as (options: { home: string }) => ReturnType<typeof createCloudroomVm>)({ home: profileHome });
     const workflowRuns = (createWorkflowRuns as (options: Record<string, unknown>) => ReturnType<typeof createWorkflowRuns>)({ stateDir: path.join(profileHome, 'desktop-workflows'), cloudroom,
       onSession: (_record: unknown, _task: unknown, id: string) => { this.#state.known.add(id); return () => void internal_releaseNode.call(this, this.#state, id); }, onEnd: (record: FinishedWorkflow) => internal_workflowEnded.call(this, this.#state, record),

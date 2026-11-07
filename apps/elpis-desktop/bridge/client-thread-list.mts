@@ -1,6 +1,6 @@
 import { AGENT_RUN_NOTICE, agentParentId, isAgentRun } from '../lib/agent-runs.mts';
 import { BridgeError, object, text, threadId } from './validate.mts';
-import { createdThread } from './spawn-links.mjs';
+import { createdThread } from './spawn-links.mts';
 import { interviewTurns, legacyInterview } from './love-interview.mts';
 import { recordedMedia } from './attachments.mts';
 
@@ -145,7 +145,7 @@ export async function impl_listThreads(this: DesktopClient, clientState: ClientS
     }
     // The engine relates a chat only to the agents it spawned itself; add the chats made by create_thread.
     if (!options.archived && !options.ancestorThreadId && !searchTerm) {
-      await clientState.spawnLinks.recover(result.data, (cursor: unknown) => internal_rpc(this, clientState, 'thread/list', { limit: 100, cursor, modelProviders: [], sourceKinds: SOURCE_KINDS })).catch(() => {});
+      await clientState.spawnLinks.recover(result.data as Parameters<typeof clientState.spawnLinks.recover>[0], (cursor: unknown) => internal_rpc(this, clientState, 'thread/list', { limit: 100, cursor, modelProviders: [], sourceKinds: SOURCE_KINDS }) as ReturnType<Parameters<typeof clientState.spawnLinks.recover>[1]>).catch(() => {});
       // The creator may be on an older history page. Its children still need their real row here.
       for (const child of [...result.data]) {
         const maker = clientState.spawnLinks.thread(clientState.spawnLinks.makerOf(child.id));

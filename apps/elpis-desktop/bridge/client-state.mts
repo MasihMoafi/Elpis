@@ -3,8 +3,8 @@ import type { CustomizePage } from './customize-page.mts';
 import type { MessageVersions } from './message-versions.mts';
 import type { RewindHistory } from './rewind-history.mts';
 import type { RewindSnapshots } from './rewind-snapshots.mts';
-import type { SpawnLinks } from './spawn-links.mjs';
-import type { createCloudroomVm } from './cloudroom-vm.mjs';
+import type { SpawnLinks } from './spawn-links.mts';
+import type { createCloudroomVm } from './cloudroom-vm.mts';
 import type { createGithubConnector } from './github-connector.mts';
 import type { createWorkflowHistory, createWorkflowRuns } from './workflow-acp.mts';
 

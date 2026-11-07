@@ -1,4 +1,4 @@
-// A chat another chat made with create_thread is an ordinary chat that the bridge reports under its maker (bridge/spawn-links.mjs).
+// A chat another chat made with create_thread is an ordinary chat that the bridge reports under its maker (bridge/spawn-links.mts).
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture, CWD } = require('./parity-fixture.cjs');
