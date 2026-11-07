@@ -179,7 +179,8 @@
     "desktop/wayland-ime.test.cts",
     "desktop/love-spot.test.cts",
     "desktop/sleep-blocker.test.cts",
-    "desktop/browser-identity.test.cts"
+    "desktop/browser-identity.test.cts",
+    "desktop/main-error-guard.test.cts"
   ],
   "ui": [
     "tests/cloudroom-settings.test.cjs",
