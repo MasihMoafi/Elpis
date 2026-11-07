@@ -343,11 +343,7 @@
  },
  "tsx": {
   "app/page.tsx:TS2375": 3,
-  "app/page.tsx:TS2379": 1,
-  "lib/api.ts:TS2345": 1,
-  "lib/api.ts:TS2375": 1,
-  "lib/api.ts:TS2532": 3,
-  "lib/api.ts:TS2769": 1
+  "app/page.tsx:TS2379": 1
  },
  "lint": {
   "app/page.tsx:typescript(no-floating-promises)": 1,

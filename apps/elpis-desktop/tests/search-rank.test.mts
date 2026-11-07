@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { rankBySearch, searchScore } from '../lib/search-rank.ts';
 
 test('search ranks exact, prefix, word start, anywhere, then other text; no match and an empty query score 0', () => {
-  const chats = [['Other', 'mentions parser in the first message'], ['Reparser it', ''], ['Fix the parser', ''], ['Parser tests', ''], ['Parser', ''], ['Unrelated', '']];
+  const chats: [string, string][] = [['Other', 'mentions parser in the first message'], ['Reparser it', ''], ['Fix the parser', ''], ['Parser tests', ''], ['Parser', ''], ['Unrelated', '']];
   assert.deepEqual(rankBySearch(chats, 'parser', c => c[0], c => c[1]).map(c => c[0]), ['Parser', 'Parser tests', 'Fix the parser', 'Reparser it', 'Other', 'Unrelated']);
   assert.equal(searchScore('Parser', '', '  '), 0);
   assert.equal(searchScore('Unrelated', 'nothing', 'parser'), 0);

@@ -36,7 +36,7 @@ class SessionError extends Error {
 export const retryableSessionError = (error: unknown) => error instanceof SessionError && error.retryable;
 async function call<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   let response: Response;
-  try { response = await fetch(`/api${path}`, body === undefined ? (signal ? { signal } : undefined) : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal }); }
+  try { response = await fetch(`/api${path}`, body === undefined ? (signal ? { signal } : undefined) : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), ...(signal ? { signal } : {}) }); }
   catch { throw new RequestError("Could not reach Elpis. Check the connection and try again.", 0); }
   const result = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -50,7 +50,7 @@ async function call<T>(path: string, body?: unknown, signal?: AbortSignal): Prom
     // it through plainMessage (lib/use-workspace-notices.ts), without them (6 Nov, Masih: "I don't like to see such errors").
     throw new RequestError(`${message}${code ? ` (${code}${requestId ? `; request ${requestId}` : ""})` : ""}`, response.status);
   }
-  if (!isObject(result)) throw unreadable(path.split("?")[0]);
+  if (!isObject(result)) throw unreadable(path.split("?")[0] ?? path);
   return result as T;
 }
 /** Keep the original launch token until its exchange succeeds. Only mounted initialization retries a transient
@@ -107,7 +107,7 @@ const spawn = (thread: Thread) => {
 export function taskOf(thread: Thread) { return taskFromPath(spawn(thread)?.agent_path ?? spawn(thread)?.agentPath); }
 export function taskFromPath(path: unknown) {
   const task = typeof path === "string" ? path.split("/").filter(Boolean).at(-1)?.replace(/[_-]+/g, " ").trim() : "";
-  return task ? task[0].toUpperCase() + task.slice(1) : "";
+  return task ? task.charAt(0).toUpperCase() + task.slice(1) : "";
 }
 /** Love Spot records the card's name in the conversation title. */
 export function agentName(thread?: Thread | null): string {
@@ -137,7 +137,7 @@ export function title(thread: Thread) {
     if (named) return named;
     if (thread.workflowTaskTitle?.trim()) return thread.workflowTaskTitle.trim();
   }
-  const preview = thread.preview?.trim().split(/\r?\n/)[0].slice(0, 80);
+  const preview = thread.preview?.trim().split(/\r?\n/)[0]?.slice(0, 80);
   if (preview && (!isAgent(thread) || !/^you are\b/i.test(preview))) return preview;
   return isAgent(thread) ? `Untitled agent · ${thread.id.slice(-8)}` : "Untitled conversation";
 }
@@ -182,7 +182,7 @@ export function agentModelLabel(thread: Thread, models: Model[]) {
 }
 
 export type Activity = { label: string; at: number };
-const firstLine = (value: unknown) => typeof value === "string" ? value.replace(/[`*]+/g, "").trim().split("\n")[0].replace(/^[#>\s-]+/, "").slice(0, 120) : "";
+const firstLine = (value: unknown) => typeof value === "string" ? (value.replace(/[`*]+/g, "").trim().split("\n")[0] ?? "").replace(/^[#>\s-]+/, "").slice(0, 120) : "";
 /** One line saying what an agent is doing, from the native item it just started or finished. */
 export function activityOf(method: string, params: Record<string, unknown>): string | null {
   const item = (params.item ?? {}) as Record<string, unknown>;
@@ -218,7 +218,7 @@ export const isListedProvider = (id: string) => !UNLISTED.has(id);
 export function providerChoices(models: Model[], settings: ProviderSettings | null): ProviderChoice[] {
   const main = settings?.main.provider ?? null;
   const connection = (provider: string, id = provider): ProviderChoice => ({ id, label: providerLabel(null, provider, settings?.providers), provider,
-    models: [], catalogVersion: settings?.version, ...(settings?.providers?.find(item => item.id === provider)?.needsKey ? { needsKey: true } : {}) });
+    models: [], ...(settings?.version !== undefined ? { catalogVersion: settings.version } : {}), ...(settings?.providers?.find(item => item.id === provider)?.needsKey ? { needsKey: true } : {}) });
   const others: ProviderChoice[] = [
     ...SUBSCRIPTIONS.map(item => ({ id: item.prefix, label: item.label, models: models.filter(model => model.model.startsWith(item.prefix)) })).filter(choice => choice.models.length),
     ...(settings?.providers ?? []).filter(item => item.id !== main && !UNLISTED.has(item.id) && !(settings?.managed?.modelProvider && settings.managed.modelProvider !== item.id))

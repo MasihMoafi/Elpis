@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { questionReplies, questionReplyText } from '../lib/question-reply.ts';
 
-const envelope = body => `<send_user_message_question_reply>${body}</send_user_message_question_reply>`;
+const envelope = (body: string) => `<send_user_message_question_reply>${body}</send_user_message_question_reply>`;
 
 test('a complete envelope, single or many, becomes replies; copying gives question and answer', () => {
   const reply = { questionItemId: 'q1', question: 'Which file?', answer: 'parser.ts' };
