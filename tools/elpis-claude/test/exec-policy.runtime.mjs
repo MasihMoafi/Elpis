@@ -20,7 +20,7 @@ test('headless native turns and old resumes use the shared default; a child neve
   await fs.writeFile(path.join(home, 'config.toml'), config(null));
   const env = { PATH: process.env.PATH, HOME: root, ELPIS_HOME: home, CODEX_HOME: home, ELPIS_ENGINE_BIN: process.env.ELPIS_TEST_ENGINE };
   const turn = async (fixed, args, extra = {}) => {
-    const result = fixed ? run(process.execPath, [new URL('../exec-policy.mjs', import.meta.url).pathname, ...args], { env: { ...env, ...extra }, timeout: 30000 }) : run(process.env.ELPIS_TEST_ENGINE, args, { env, timeout: 30000 });
+    const result = fixed ? run(process.execPath, [new URL('../exec-policy.mts', import.meta.url).pathname, ...args], { env: { ...env, ...extra }, timeout: 30000 }) : run(process.env.ELPIS_TEST_ENGINE, args, { env, timeout: 30000 });
     result.child.stdin.end();
     const { stdout } = await result;
     return stdout.trim().split('\n').map(line => JSON.parse(line)).find(row => row.type === 'thread.started').thread_id;

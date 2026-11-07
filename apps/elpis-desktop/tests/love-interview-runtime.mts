@@ -41,7 +41,7 @@ export async function interviewRuntime({ toolsDirectory = fileURLToPath(new URL(
   const card = { id: 'writer', type: 'rectangle', x: 0, y: 0, width: 220, height: 170, version: 1, versionNonce: 1, customData: { loveAgent: { preset: 'writer', name: 'Writer', prompt: 'You are a careful writer.', task: '', model: 'gpt-6-luna', provider: 'openai', interview: { messages: [] } } } };
   if (seed) await store.save({ elements: [card], files: {}, appState: {} });
   const nodeSpec = (node: { name: string; model: string; prompt: string }) => ({ name: node.name, command: process.execPath,
-    args: [path.join(toolsDirectory, 'elpis-acp-agent.mjs'), '--model', node.model],
+    args: [path.join(toolsDirectory, 'elpis-acp-agent.mts'), '--model', node.model],
     env: { ELPIS_HOME: path.join(root, 'elpis'), ELPIS_APP_BRIDGE_SOCKET: socketPath },
     instructions: node.prompt, meta: { elpis: { name: `Love Spot · ${node.name}` } }, elpis: true });
   const runner = createLoveAgents(store, { nodeSpec, timeoutMs: 5000 });

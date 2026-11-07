@@ -10,7 +10,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import WebSocket, { WebSocketServer } from "ws";
-import { startToken } from "../shared-runtime.mjs";
+import { startToken } from "../shared-runtime.mts";
 
 const self = fileURLToPath(import.meta.url);
 const source = fileURLToPath(new URL("..", import.meta.url));
@@ -109,7 +109,7 @@ if (process.argv.includes("--elpis-local-bridge")) {
     };
     const launch = async (dir, overrides = {}, terminal = false) => {
       const child = terminal ? run(path.join(dir, "elpis-claude"), [], overrides, "/bin/bash")
-        : run(path.join(dir, "shared-runtime.mjs"), [path.join(dir, "acp-bridge.mjs")], overrides);
+        : run(path.join(dir, "shared-runtime.mts"), [path.join(dir, "acp-bridge.mjs")], overrides);
       await once(child, "exit");
       if (child.exitCode === 0 && !terminal) endpoint = child.output.split("\n")[0].trim().replace(/^unix:\/\//, "");
       return child;

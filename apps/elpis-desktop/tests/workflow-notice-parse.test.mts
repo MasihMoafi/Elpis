@@ -1,10 +1,10 @@
 // The end notice as the app reads it (lib/workflow-notice.ts) from what the runtime writes (noticeText in
-// tools/elpis-claude/workflow-runner.mjs): for any run name, status, summary and result, the app gets back exactly what
+// tools/elpis-claude/workflow-runner.mts): for any run name, status, summary and result, the app gets back exactly what
 // the runtime put in; anything else the person sends stays their own message, and ↑ never brings a notice back.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
-import { noticeText } from '../../../tools/elpis-claude/workflow-runner.mjs';
+import { noticeText } from '../../../tools/elpis-claude/workflow-runner.mts';
 import { forAll, type gen } from '../../../tools/elpis-claude/test/property.mts';
 
 // The app's @ alias under Node, without a build (as tests/canvas-editing.test.mjs does).

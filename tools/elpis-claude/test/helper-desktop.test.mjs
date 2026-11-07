@@ -164,7 +164,7 @@ if (process.argv.includes('app-server')) {
     assert.ifError(parent.error);
     assert.equal(parent.result.model, 'claude/haiku');
     mcp = new Client({ name: 'a166-desktop-test', version: '1' });
-    await mcp.connect(new StdioClientTransport({ command: process.execPath, args: [path.join(source, 'elpis-agents-mcp.mjs')], env: { ...env, ELPIS_BRIDGE_URL: `ws+unix://${socketPath}:/`, ELPIS_PARENT_THREAD: parent.result.thread.id, ELPIS_AGENTS_LOG: path.join(root, 'agents.log') } }));
+    await mcp.connect(new StdioClientTransport({ command: process.execPath, args: [path.join(source, 'elpis-agents-mcp.mts')], env: { ...env, ELPIS_BRIDGE_URL: `ws+unix://${socketPath}:/`, ELPIS_PARENT_THREAD: parent.result.thread.id, ELPIS_AGENTS_LOG: path.join(root, 'agents.log') } }));
     const delegate = async allow_writes => {
       const result = await mcp.callTool({ name: 'delegate', arguments: { model: 'gpt-test', task: 'Keep working for the desktop test', cwd: root, wait: false, allow_writes } });
       assert.ok(!result.isError, JSON.stringify(result));

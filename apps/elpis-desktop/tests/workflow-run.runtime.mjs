@@ -92,7 +92,7 @@ async function client(name = 'e2e-desktop') {
   await once(ws, 'open');
   const pending = new Map(), events = [];
   let seq = 0;
-  ws.on('message', (d) => { const m = JSON.parse(String(d)); if (m.method) events.push(m); if (m.id !== undefined && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); } });
+  ws.on('message', (d) => { const m = JSON.parse(String(/** @type {Buffer} */ (d))); if (m.method) events.push(m); if (m.id !== undefined && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); } });
   const rpc = (method, params) => new Promise((resolve) => { const id = ++seq; pending.set(id, resolve); ws.send(JSON.stringify({ id, method, params })); });
   const ok = async (method, params) => { const r = await rpc(method, params); assert.ifError(r.error); return r.result; };
   await ok('initialize', { clientInfo: { name, version: '1' }, capabilities: { experimentalApi: true } });
@@ -229,7 +229,7 @@ test('workflows run to the end from a chat whose person asked, with the Subagent
 });
 
 test('an update hands a running workflow to the newer runtime, which takes it within 5 s and finishes it (WR3)', { timeout: 240_000 }, async () => {
-  // Two installed bundles of this runtime, started the way the app and the terminals start it (shared-runtime.mjs): the
+  // Two installed bundles of this runtime, started the way the app and the terminals start it (shared-runtime.mts): the
   // second one's launch is an update, and the first hands over (startDrain releases its runs).
   const bundle = (name) => {
     const dir = path.join(root, name); fs.mkdirSync(dir);
@@ -244,7 +244,7 @@ test('an update hands a running workflow to the newer runtime, which takes it wi
   const { ELPIS_SHARED_BRIDGE, ELPIS_BRIDGE_SOCKET, ...base } = env;
   const env2 = { ...base, ELPIS_HOME: home2, CODEX_HOME: home2, XDG_RUNTIME_DIR: run2, ACP_BRIDGE_LOG: path.join(root, 'bridge2.log') };
   const launch = async (dir) => {
-    const child = spawn(process.execPath, [path.join(dir, 'shared-runtime.mjs'), path.join(dir, 'acp-bridge.mjs')], { env: env2, cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(process.execPath, [path.join(dir, 'shared-runtime.mts'), path.join(dir, 'acp-bridge.mjs')], { env: env2, cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '', err = ''; child.stdout.on('data', (d) => { out += d; }); child.stderr.on('data', (d) => { err += d; });
     await once(child, 'exit');
     assert.equal(child.exitCode, 0, err);
@@ -256,7 +256,7 @@ test('an update hands a running workflow to the newer runtime, which takes it wi
   const connect = async () => {
     const ws = new WebSocket(`ws+unix://${sock}:/`); await once(ws, 'open');
     const pending = new Map(), events = []; let seq = 0;
-    ws.on('message', (d) => { const m = JSON.parse(String(d)); if (m.method) events.push(m); if (m.id !== undefined && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); } });
+    ws.on('message', (d) => { const m = JSON.parse(String(/** @type {Buffer} */ (d))); if (m.method) events.push(m); if (m.id !== undefined && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); } });
     const ok = async (method, params) => { const r = await new Promise((resolve) => { const id = ++seq; pending.set(id, resolve); ws.send(JSON.stringify({ id, method, params })); }); assert.ifError(r.error); return r.result; };
     await ok('initialize', { clientInfo: { name: 'e2e-desktop', version: '1' }, capabilities: { experimentalApi: true } }); ws.send(JSON.stringify({ method: 'initialized' }));
     return { ws, ok, events };

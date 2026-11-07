@@ -1,5 +1,5 @@
 // Antigravity's PreToolUse hook in the agy runs Elpis starts while Elpis asks before acting
-// (agy-acp.mjs writes it into <Elpis home>/elpis-claude/agy-approvals/.agents/hooks.json and adds
+// (agy-acp.mts writes it into <Elpis home>/elpis-claude/agy-approvals/.agents/hooks.json and adds
 // that folder as a workspace). It asks the Elpis user through the wrapper over a local socket,
 // and keeps the tool in the chat's folder: agy may pick the hooks folder as the place to work.
 import { connect } from "node:net";

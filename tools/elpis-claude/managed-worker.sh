@@ -1,5 +1,5 @@
 #!/bin/bash
-# managed-worker.sh <workdir>: runs managed-worker.mjs inside bubblewrap. The agent's tools see the system read-only,
+# managed-worker.sh <workdir>: runs managed-worker.mts inside bubblewrap. The agent's tools see the system read-only,
 # <workdir> and its git metadata read-write, the desktop app's node_modules, Playwright and Chrome read-only, and a
 # private empty home; nothing else of Masih's home. The environment is cleared except for the environment key.
 # The key file (~/.config/elpis/anthropic-environment.env, mode 600) holds ANTHROPIC_ENVIRONMENT_KEY and _ID.
@@ -29,4 +29,4 @@ exec env -i PATH=/usr/local/node/bin:/usr/local/bin:/usr/bin:/bin HOME="$SANDBOX
     --ro-bind "$HERE" "$HERE" \
     --bind "$GIT_COMMON" "$GIT_COMMON" --bind "$WORKDIR" "$WORKDIR" --bind "$SANDBOX_HOME" "$SANDBOX_HOME" \
     --chdir "$WORKDIR" \
-    "${CHECK[@]:-/usr/local/node/bin/node}" "${CHECK_ARGS[@]:-$HERE/managed-worker.mjs}" ${CHECK:+} "$WORKDIR"
+    "${CHECK[@]:-/usr/local/node/bin/node}" "${CHECK_ARGS[@]:-$HERE/managed-worker.mts}" ${CHECK:+} "$WORKDIR"

@@ -27,7 +27,7 @@ test('a refused helper start preserves its managed-policy reason and closes its 
         : { result: {} }) }));
     });
   });
-  const child = spawn(process.execPath, [new URL('../elpis-agents-mcp.mjs', import.meta.url).pathname], {
+  const child = spawn(process.execPath, [new URL('../elpis-agents-mcp.mts', import.meta.url).pathname], {
     cwd: root, stdio: ['pipe', 'pipe', 'pipe'],
     env: { PATH: process.env.PATH, HOME: root, ELPIS_HOME: root, ELPIS_PARENT_THREAD: 'parent',
       ELPIS_BRIDGE_URL: `ws://127.0.0.1:${server.address().port}`, ELPIS_AGENTS_LOG: path.join(root, 'agents.log') },
@@ -81,7 +81,7 @@ test('a helper is parented to the chat that called delegate, never another chat'
         ? { error: { code: -32600, message: 'fixture stops here' } } : { result: {} }) }));
     });
   });
-  const child = spawn(process.execPath, [new URL('../elpis-agents-mcp.mjs', import.meta.url).pathname], {
+  const child = spawn(process.execPath, [new URL('../elpis-agents-mcp.mts', import.meta.url).pathname], {
     cwd: root, stdio: ['pipe', 'pipe', 'pipe'],
     env: { PATH: process.env.PATH, HOME: root, ELPIS_HOME: root,
       ELPIS_BRIDGE_URL: `ws://127.0.0.1:${server.address().port}`, ELPIS_AGENTS_LOG: path.join(root, 'agents.log') },

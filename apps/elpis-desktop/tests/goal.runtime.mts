@@ -109,7 +109,7 @@ test('native Claude reports loaded project instructions and excludes unrelated f
   await fs.mkdir(project); await fs.mkdir(config);
   const projectFile = path.join(project, 'CLAUDE.md'), unrelated = path.join(project, 'NOT-LOADED.md');
   await fs.writeFile(projectFile, 'Project instructions for the context manifest.'); await fs.writeFile(unrelated, 'This unrelated file must be excluded.');
-  const adapter = process.env.ELPIS_CONTEXT_ADAPTER ?? path.join(repo, 'tools/elpis-claude/context-agent.mjs');
+  const adapter = process.env.ELPIS_CONTEXT_ADAPTER ?? path.join(repo, 'tools/elpis-claude/context-agent.mts');
   const child = spawn(process.execPath, [adapter], { cwd: project, env: { PATH: process.env.PATH, HOME: root, CLAUDE_CONFIG_DIR: config, TMPDIR: root,
     CLAUDE_CODE_EXECUTABLE: process.env.ELPIS_GOAL_CLAUDE, ANTHROPIC_API_KEY: 'local-context-test', ANTHROPIC_BASE_URL: 'http://127.0.0.1:9' }, stdio: ['pipe', 'pipe', 'pipe'], detached: true });
   let errors = ''; child.stderr.on('data', chunk => { errors += chunk; });

@@ -11,7 +11,7 @@ Every descendant counts, plus the engine app-server bound to the elpis-bridge so
 when it has been reparented. Components, by command line:
   app       Electron (window, renderer, GPU, utility processes)
   bridge    acp-bridge.mjs
-  adapters  context-agent.mjs, agy-acp.mjs and other node adapters
+  adapters  context-agent.mts, agy-acp.mts and other node adapters
   engine    codex/elpis app-server
   workers   claude or agy processes run for threads and workflow nodes
   browser   headless Chromium

@@ -1,7 +1,7 @@
-// managed-agent.mjs's event loop against a scripted client: no network.
+// managed-agent.mts's event loop against a scripted client: no network.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { apiKey, parseArgs, runSession } from './managed-agent.mjs';
+import { apiKey, parseArgs, runSession } from './managed-agent.mts';
 
 const sink = () => { const s = { text: '', write: chunk => { s.text += chunk; } }; return s; };
 /** A client whose streams replay `scripts` in order (an Error entry drops the stream there); `history` answers list(). */

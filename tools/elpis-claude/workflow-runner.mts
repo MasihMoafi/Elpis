@@ -13,8 +13,40 @@ import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { Worker } from "node:worker_threads";
-import { parseScript, checkSchema, validate, strictSchema, fromStrict, jsonAnswer } from "./workflow-script.mjs";
+import { parseScript, checkSchema, validate, strictSchema, fromStrict, jsonAnswer } from "./workflow-script.mts";
 import { autoConcurrency } from "./workflow-concurrency.mts";
+
+type Schema = Parameters<typeof checkSchema>[0];
+type AgentOptions = { label?: string; phase?: string; schema?: Schema; model?: string; effort?: string; isolation?: string; agentType?: string };
+type Owner = { pid: number; token: string | null | undefined; instance: string };
+type AgentRecord = { id: string; key: string; label: string; phase: string | null; group: string | null; state: string; cached: boolean;
+  threadId: string | null; model: string | null; startedAt: number | null; endedAt: number | null; attempts: number; error: string | null;
+  worktree: string | null; worktreeBranch: string | null; resumed?: boolean };
+type Phase = { title: string; detail: string | null; model?: string; group?: string };
+type Run = { id: string; dir: string; name: string; description: string; whenToUse: string | null; phases: Phase[]; status: string;
+  origin: string; parentThreadId: string | null; cwd: string; model: string | null; provider: string | null; effort: string | null;
+  args: unknown; argsGiven: boolean; budget: number | null; spent: number; scriptPath: string; resumedFrom: string | null;
+  createdAt: number; updatedAt: number; endedAt: number | null; launches: number; result: unknown; error: string | null;
+  logs: { at: number; message: string; group?: string }[]; agents: AgentRecord[]; scriptErrors: { at: number; where: string; message: string }[];
+  notice: { state?: string; [key: string]: unknown } | null; owner: Owner | null; currentPhase?: string | null };
+type NoticeRun = Pick<Run, 'id' | 'dir' | 'name' | 'status' | 'scriptPath' | 'createdAt' | 'updatedAt' | 'endedAt'> & {
+  agents: { state: string }[]; result?: unknown; error?: string | null;
+};
+type Executor = { open: (request: { runId: string; agentId: string; label: string; phase: string | null; model: string | null; providerName: string | null; effort: string | null; cwd: string; parentThreadId: string | null; signal: AbortSignal }) => Promise<{ threadId: string; model?: string | null }>;
+  turn: (request: { threadId: string; text: string; outputSchema: Schema | null; signal: AbortSignal }) => Promise<{ text?: string; outputTokens?: number }>;
+  close?: (threadId: string) => void };
+type Cache = { results: Map<string, { agentId: string; result: unknown }[]>; unfinished: Map<string, string[]>; known: Set<string>; any: boolean };
+type LaunchState = { cache: Cache | null; copy: boolean; broken: boolean; count: number; previous: Map<string, AgentRecord>; seen: Set<string> };
+type Control = AbortController & { skipped?: boolean };
+type Live = { controller: AbortController; spent: SharedArrayBuffer; agents: Map<string, Control>; state: LaunchState; worker: Worker | null };
+type AgentMessage = { type: "agent"; id?: number; prompt: string; opts: AgentOptions; phase?: string | null; group?: string | null };
+type WorkerMessage = AgentMessage | { type: "phase"; id?: number; title: string } | { type: "log"; id?: number; message: string; group?: string | null }
+  | { type: "scriptError"; id?: number; where: string; message: string } | { type: "child"; id?: number; name: string; phases: Phase[] }
+  | { type: "workflow"; id?: number; ref: unknown } | { type: "done"; id?: number; value: unknown } | { type: "failed"; id?: number; message: string };
+type RunnerOptions = { home: string; executor: Executor; concurrency?: number; retry?: { attempts?: number; delays?: number[] }; schemaTries?: number;
+  maxAgents?: number; maxItems?: number; log?: (message: string) => void; now?: () => number };
+type StartOptions = { script?: string | null; scriptPath?: string; args?: unknown; resumeFromRunId?: string; parentThreadId?: string | null;
+  cwd?: string; model?: string | null; provider?: string | null; effort?: string | null; budget?: number | null; origin?: string };
 
 export const LIMITS = Object.freeze({ agents: 1000, items: 4096 });
 const EFFORTS = ["low", "medium", "high", "xhigh", "max"];
@@ -22,28 +54,28 @@ const OPTS = ["label", "phase", "schema", "model", "effort", "isolation", "agent
 const LOG_LINES = 2000;
 const NOTICE_RESULT_CHARS = 60_000;
 
-const sha256 = (s) => createHash("sha256").update(s).digest("hex");
-const sorted = (v) => JSON.stringify(v, (_k, x) => (x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((k) => [k, x[k]])) : x));
+const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
+const sorted = (v: unknown) => JSON.stringify(v, (_k, x) => (x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((k) => [k, x[k]])) : x));
 // The reference's cache key: the prompt and the options exactly as the script passed them.
-export const agentKey = (prompt, opts) => `v2:${sha256(sorted({ prompt, opts: opts ?? {} }))}`;
-const firstLine = (s) => { const l = String(s).trim().split("\n")[0]; return l.length <= 80 ? l : `${l.slice(0, 80).replace(/\s+\S*$/, "")}…`; };
-const pause = (ms, signal) => new Promise((resolve, reject) => {
+export const agentKey = (prompt: string, opts: AgentOptions | null | undefined) => `v2:${sha256(sorted({ prompt, opts: opts ?? {} }))}`;
+const firstLine = (s: string) => { const l = String(s).trim().split("\n")[0] as string; return l.length <= 80 ? l : `${l.slice(0, 80).replace(/\s+\S*$/, "")}…`; };
+const pause = (ms: number, signal?: AbortSignal) => new Promise<void>((resolve, reject) => {
   if (signal?.aborted) { reject(signal.reason); return; }
   const t = setTimeout(() => { signal?.removeEventListener("abort", stop); resolve(); }, ms);
-  const stop = () => { clearTimeout(t); reject(signal.reason); };
+  const stop = () => { clearTimeout(t); reject((signal as AbortSignal).reason); };
   signal?.addEventListener("abort", stop, { once: true });
 });
-const git = (cwd, args) => new Promise((resolve, reject) => execFile("git", ["-C", cwd, ...args], { timeout: 60_000 }, (e, out, err) => (e ? reject(new Error(String(err || e.message).trim())) : resolve(String(out).trim()))));
-const writeAtomic = (file, data) => { fs.writeFileSync(`${file}.tmp`, data, { mode: 0o600 }); fs.renameSync(`${file}.tmp`, file); };
-const readJson = (file) => { try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return null; } };
+const git = (cwd: string, args: string[]) => new Promise<string>((resolve, reject) => execFile("git", ["-C", cwd, ...args], { timeout: 60_000 }, (e, out, err) => (e ? reject(new Error(String(err || e.message).trim())) : resolve(String(out).trim()))));
+const writeAtomic = (file: string, data: string) => { fs.writeFileSync(`${file}.tmp`, data, { mode: 0o600 }); fs.renameSync(`${file}.tmp`, file); };
+const readJson = <T,>(file: string): T | null => { try { return JSON.parse(fs.readFileSync(file, "utf8")) as T; } catch { return null; } };
 const Stopped = () => Object.assign(new Error("The run was stopped."), { name: "Stopped" });
 
-export function startTokenOf(pid) {
+export function startTokenOf(pid: number) {
   try { const stat = fs.readFileSync(`/proc/${pid}/stat`, "utf8"); return stat.slice(stat.lastIndexOf(")") + 2).split(" ")[19]; } catch { return null; }
 }
-function ownerAlive(owner) {
+function ownerAlive(owner: Owner | null | undefined) {
   if (!owner?.pid) return false;
-  try { process.kill(owner.pid, 0); } catch (e) { if (e.code !== "EPERM") return false; }
+  try { process.kill(owner.pid, 0); } catch (e) { if ((e as NodeJS.ErrnoException).code !== "EPERM") return false; }
   return owner.token == null || startTokenOf(owner.pid) === owner.token;
 }
 
@@ -51,14 +83,14 @@ function ownerAlive(owner) {
 // started. Autonomous turns (a workflow's notice, a background job's reply) never count.
 export const NOTICE_TAG = "<workflow-notification>";
 const ASKED = /\bultracode\b|\b(?:use|run|start|launch|create|write|try|with|via|through|using)\s+(?:a|an|the|this|that|my|one|some|\w+\s+)?\s*(?:multi-agent\s+)?workflows?\b|\bworkflows?\s+(?:tool|run)\b|\bfan(?:ning)?\s+out\b[^.\n]{0,40}\bagents?\b/i;
-export function personAskedForWorkflow(texts) {
+export function personAskedForWorkflow(texts: unknown[]) {
   return texts.some((t) => typeof t === "string" && !t.trimStart().startsWith(NOTICE_TAG) && ASKED.test(t));
 }
 
-export function noticeText(run) {
+export function noticeText(run: NoticeRun) {
   let result = run.status === "completed" ? JSON.stringify(run.result ?? null, null, 2) : null;
   const cut = result && result.length > NOTICE_RESULT_CHARS;
-  if (cut) result = `${result.slice(0, NOTICE_RESULT_CHARS)}\n… (cut; the full result is in ${path.join(run.dir, "result.json")})`;
+  if (cut) result = `${(result as string).slice(0, NOTICE_RESULT_CHARS)}\n… (cut; the full result is in ${path.join(run.dir, "result.json")})`;
   const agents = run.agents.length, failed = run.agents.filter((a) => a.state === "failed").length;
   const secs = Math.round(((run.endedAt ?? run.updatedAt) - run.createdAt) / 1000);
   const summary = run.status === "completed" ? `Workflow "${run.name}" completed: ${agents} agents${failed ? ` (${failed} returned null after retries)` : ""}, ${secs} s.`
@@ -70,12 +102,13 @@ export function noticeText(run) {
 }
 
 export class WorkflowRunner extends EventEmitter {
-  #home; #executor; #slots; #retry; #schemaTries; #maxAgents; #maxItems; #owner; #log; #now;
-  #runs = new Map(); // run id -> state (what run.json holds)
-  #live = new Map(); // run id -> { worker, controller, slots, agents: Map agentId -> AbortController }
-  #saving = new Map();
+  #home: string; #executor: Executor; #slots: { running: number; queue: { runId: string; resolve: () => void; reject: (reason: unknown) => void }[]; limit: () => number };
+  #retry: { attempts: number; delays: number[] }; #schemaTries: number; #maxAgents: number; #maxItems: number; #owner: Owner; #log: (message: string) => void; #now: () => number;
+  #runs = new Map<string, Run>(); // run id -> state (what run.json holds)
+  #live = new Map<string, Live>(); // run id -> { worker, controller, slots, agents: Map agentId -> AbortController }
+  #saving = new Map<string, NodeJS.Timeout>();
 
-  constructor({ home, executor, concurrency, retry = {}, schemaTries = 3, maxAgents = LIMITS.agents, maxItems = LIMITS.items, log = () => {}, now = Date.now }) {
+  constructor({ home, executor, concurrency, retry = {}, schemaTries = 3, maxAgents = LIMITS.agents, maxItems = LIMITS.items, log = () => {}, now = Date.now }: RunnerOptions) {
     super();
     this.#home = path.join(home, "workflows");
     this.#executor = executor;
@@ -97,14 +130,14 @@ export class WorkflowRunner extends EventEmitter {
 
   // Launch: `script` (saved to the run's script.js) or `scriptPath`; `resumeFromRunId` starts a new run whose
   // unchanged prefix of agent() calls returns that run's journaled results.
-  async start({ script, scriptPath, args, resumeFromRunId, parentThreadId = null, cwd = process.cwd(), model = null, provider = null, effort = null, budget = null, origin = "tool" }) {
+  async start({ script, scriptPath, args, resumeFromRunId, parentThreadId = null, cwd = process.cwd(), model = null, provider = null, effort = null, budget = null, origin = "tool" }: StartOptions) {
     let source = script;
     if (source === undefined || source === null || source === "") {
       if (!scriptPath) throw new Error("Pass script (the workflow's source) or scriptPath.");
-      try { source = fs.readFileSync(scriptPath, "utf8"); } catch (e) { throw new Error(`Cannot read scriptPath ${scriptPath}: ${e.message}`); }
+      try { source = fs.readFileSync(scriptPath, "utf8"); } catch (e) { throw new Error(`Cannot read scriptPath ${scriptPath}: ${(e as Error).message}`); }
     }
     const { meta } = parseScript(source); // a broken meta or script fails the launch, not the run
-    let cache = null, from = null;
+    let cache: Cache | null = null, from: Run | null = null;
     if (resumeFromRunId) {
       from = this.#load(resumeFromRunId);
       if (!from) throw new Error(`No workflow run ${resumeFromRunId}.`);
@@ -116,11 +149,11 @@ export class WorkflowRunner extends EventEmitter {
     const saved = path.join(dir, "script.js");
     writeAtomic(saved, source);
     const at = this.#now();
-    const run = {
+    const run: Run = {
       id, dir, name: meta.name, description: meta.description, whenToUse: meta.whenToUse ?? null,
-      phases: (meta.phases ?? []).map((p) => ({ title: p.title, detail: p.detail ?? null, ...(p.model && { model: p.model }) })),
+      phases: (meta.phases ?? []).map((p: { title: string; detail?: string; model?: string }) => ({ title: p.title, detail: p.detail ?? null, ...(p.model && { model: p.model }) })),
       status: "running", origin, parentThreadId, cwd, model, provider, effort, args: args === undefined ? null : args, argsGiven: args !== undefined,
-      budget: Number.isFinite(budget) && budget > 0 ? budget : null, spent: 0,
+      budget: typeof budget === "number" && Number.isFinite(budget) && budget > 0 ? budget : null, spent: 0,
       scriptPath: saved, resumedFrom: from?.id ?? null, createdAt: at, updatedAt: at, endedAt: null, launches: 0,
       result: null, error: null, logs: [], agents: [], scriptErrors: [], notice: null, owner: this.#owner,
     };
@@ -130,13 +163,13 @@ export class WorkflowRunner extends EventEmitter {
     return { runId: id, scriptPath: saved, name: run.name, status: run.status };
   }
 
-  list({ parentThreadId } = {}) {
+  list({ parentThreadId }: { parentThreadId?: string } = {}) {
     this.#scan();
     return [...this.#runs.values()].filter((r) => !parentThreadId || r.parentThreadId === parentThreadId)
       .sort((a, b) => b.createdAt - a.createdAt).map((r) => this.#summary(r));
   }
 
-  read(runId) {
+  read(runId: string) {
     const run = this.#runs.get(runId) ?? this.#load(runId);
     if (!run) return null;
     const now = this.#now();
@@ -147,7 +180,7 @@ export class WorkflowRunner extends EventEmitter {
     };
   }
 
-  async stop(runId) {
+  async stop(runId: string) {
     const run = this.#runs.get(runId) ?? this.#load(runId);
     if (!run) throw new Error(`No workflow run ${runId}.`);
     if (run.status !== "running") return this.read(runId);
@@ -158,7 +191,7 @@ export class WorkflowRunner extends EventEmitter {
   }
 
   // Resume in place: the same run, its journal as the cache.
-  async resume(runId) {
+  async resume(runId: string) {
     const run = this.#runs.get(runId) ?? this.#load(runId);
     if (!run) throw new Error(`No workflow run ${runId}.`);
     if (this.#live.has(runId)) return this.read(runId);
@@ -170,7 +203,7 @@ export class WorkflowRunner extends EventEmitter {
   }
 
   // The person skips one agent: agent() returns null for it (the reference's skip).
-  skip(runId, agentId) {
+  skip(runId: string, agentId: string) {
     const live = this.#live.get(runId);
     const control = live?.agents.get(agentId);
     if (!control) throw new Error(`Agent ${agentId} is not running in ${runId}.`);
@@ -179,12 +212,12 @@ export class WorkflowRunner extends EventEmitter {
   }
 
   // A run whose chat is still owed its notice, for the runtime to deliver it now.
-  pending(runId) {
+  pending(runId: string) {
     const run = this.#runs.get(runId) ?? this.#load(runId);
     return run?.parentThreadId && run.status !== "running" && run.notice?.state === "pending" ? run : null;
   }
 
-  markNotice(runId, notice) {
+  markNotice(runId: string, notice: Record<string, unknown>) {
     const run = this.#runs.get(runId);
     if (!run) return;
     run.notice = { ...run.notice, ...notice };
@@ -227,8 +260,8 @@ export class WorkflowRunner extends EventEmitter {
 
   // ---- runs -------------------------------------------------------------------------------------------
 
-  #summary(run) {
-    const count = (s) => run.agents.filter((a) => a.state === s).length;
+  #summary(run: Run) {
+    const count = (s: string) => run.agents.filter((a) => a.state === s).length;
     return {
       id: run.id, name: run.name, status: run.status, parentThreadId: run.parentThreadId, origin: run.origin, cwd: run.cwd,
       scriptPath: run.scriptPath, resumedFrom: run.resumedFrom, createdAt: run.createdAt, updatedAt: run.updatedAt, endedAt: run.endedAt,
@@ -238,72 +271,72 @@ export class WorkflowRunner extends EventEmitter {
   }
 
   #scan() {
-    let names = [];
+    let names: string[] = [];
     try { names = fs.readdirSync(this.runsDir); } catch {}
     for (const name of names) if (!this.#runs.has(name)) this.#load(name);
   }
 
-  #load(id) {
-    if (this.#runs.has(id)) return this.#runs.get(id);
+  #load(id: string): Run | null {
+    if (this.#runs.has(id)) return this.#runs.get(id) as Run;
     if (!/^wf_[\w-]+$/.test(id)) return null;
-    const run = readJson(path.join(this.runsDir, id, "run.json"));
+    const run = readJson<Run>(path.join(this.runsDir, id, "run.json"));
     if (!run) return null;
     run.dir = path.join(this.runsDir, id);
     this.#runs.set(id, run);
     return run;
   }
 
-  #claim(run) { run.owner = this.#owner; this.#save(run, true); }
+  #claim(run: Run) { run.owner = this.#owner; this.#save(run, true); }
 
-  #save(run, now = false) {
+  #save(run: Run, now = false) {
     run.updatedAt = this.#now();
-    const write = () => { this.#saving.delete(run.id); try { const { dir, ...rest } = run; writeAtomic(path.join(run.dir, "run.json"), JSON.stringify(rest)); } catch (e) { this.#log(`workflow ${run.id}: save failed: ${e.message}`); } };
+    const write = () => { this.#saving.delete(run.id); try { const { dir, ...rest } = run; writeAtomic(path.join(run.dir, "run.json"), JSON.stringify(rest)); } catch (e) { this.#log(`workflow ${run.id}: save failed: ${(e as Error).message}`); } };
     if (now) { clearTimeout(this.#saving.get(run.id)); write(); return; }
     if (!this.#saving.has(run.id)) this.#saving.set(run.id, setTimeout(write, 50));
   }
 
-  #changed(run, change = {}) {
+  #changed(run: Run, change: object = {}) {
     this.#save(run);
     this.emit("updated", { runId: run.id, run: this.#summary(run), ...change });
   }
 
-  #append(run, record) { fs.appendFileSync(path.join(run.dir, "journal.jsonl"), `${JSON.stringify(record)}\n`, { mode: 0o600 }); }
+  #append(run: Run, record: object) { fs.appendFileSync(path.join(run.dir, "journal.jsonl"), `${JSON.stringify(record)}\n`, { mode: 0o600 }); }
 
   // The journal as a cache: results per key in order, and agents started without a result.
-  #journal(dir) {
-    const results = new Map(), unfinished = new Map(), known = new Set();
-    let lines = [];
+  #journal(dir: string): Cache {
+    const results = new Map<string, { agentId: string; result: unknown }[]>(), unfinished = new Map<string, string[]>(), known = new Set<string>();
+    let lines: string[] = [];
     try { lines = fs.readFileSync(path.join(dir, "journal.jsonl"), "utf8").split("\n").filter(Boolean); } catch {}
-    const open = new Map();
+    const open = new Map<string, { type: string; key: string; agentId: string; result?: unknown }>();
     for (const line of lines) {
-      let r; try { r = JSON.parse(line); } catch { continue; }
+      let r: { type: string; key: string; agentId: string; result?: unknown }; try { r = JSON.parse(line); } catch { continue; }
       if (r.type === "started") { known.add(r.key); open.set(r.agentId, r); }
       if (r.type === "result") {
         known.add(r.key); open.delete(r.agentId);
         if (!results.has(r.key)) results.set(r.key, []);
-        if (!results.get(r.key).some((x) => x.agentId === r.agentId)) results.get(r.key).push({ agentId: r.agentId, result: r.result });
+        if (!(results.get(r.key) as { agentId: string; result: unknown }[]).some((x) => x.agentId === r.agentId)) (results.get(r.key) as { agentId: string; result: unknown }[]).push({ agentId: r.agentId, result: r.result });
       }
     }
     for (const r of open.values()) {
       if (!unfinished.has(r.key)) unfinished.set(r.key, []);
-      if (!unfinished.get(r.key).includes(r.agentId)) unfinished.get(r.key).push(r.agentId);
+      if (!(unfinished.get(r.key) as string[]).includes(r.agentId)) (unfinished.get(r.key) as string[]).push(r.agentId);
     }
     return { results, unfinished, known, any: lines.length > 0 };
   }
 
-  #launch(run, cache, { copy, previous: earlier }) {
+  #launch(run: Run, cache: Cache | null, { copy, previous: earlier }: { copy: boolean; previous?: AgentRecord[] | undefined }) {
     run.launches = (run.launches ?? 0) + 1;
     this.#append(run, { type: "launched" });
     const previous = new Map((earlier ?? run.agents).map((a) => [a.id, a]));
-    const state = { cache, copy, broken: false, count: 0, previous, seen: new Set() };
+    const state: LaunchState = { cache, copy, broken: false, count: 0, previous, seen: new Set<string>() };
     if (!copy) run.agents = [];
     const source = fs.readFileSync(run.scriptPath, "utf8");
     const spent = new SharedArrayBuffer(8);
     const controller = new AbortController();
-    const live = { controller, spent, agents: new Map(), state, worker: null };
+    const live: Live = { controller, spent, agents: new Map(), state, worker: null };
     Atomics.store(new BigInt64Array(spent), 0, BigInt(run.spent ?? 0));
     this.#live.set(run.id, live);
-    const worker = live.worker = new Worker(new URL("./workflow-worker.mjs", import.meta.url), {
+    const worker = live.worker = new Worker(new URL("./workflow-worker.mts", import.meta.url), {
       workerData: { source, args: run.argsGiven ? run.args : undefined, budgetTotal: run.budget, spent, maxItems: this.#maxItems, scriptPath: run.scriptPath },
       resourceLimits: { maxOldGenerationSizeMb: 256 }, stdout: true, stderr: true,
     });
@@ -313,10 +346,10 @@ export class WorkflowRunner extends EventEmitter {
     this.#changed(run, { kind: "launched" });
   }
 
-  #message(run, live, m) {
+  #message(run: Run, live: Live, m: WorkerMessage) {
     if (this.#live.get(run.id) !== live) return;
-    const reply = (value) => live.worker.postMessage({ id: m.id, value });
-    const refuse = (e) => live.worker.postMessage({ id: m.id, error: e.message, errorName: e.name });
+    const reply = (value: unknown) => (live.worker as Worker).postMessage({ id: m.id, value });
+    const refuse = (e: Error) => (live.worker as Worker).postMessage({ id: m.id, error: e.message, errorName: e.name });
     switch (m.type) {
       case "agent": this.#agent(run, live, m).then(reply, (e) => { if (e?.name !== "Stopped") refuse(e); }); return;
       case "phase":
@@ -340,9 +373,9 @@ export class WorkflowRunner extends EventEmitter {
     }
   }
 
-  async #child(run, ref) {
+  async #child(run: Run, ref: unknown) {
     let file;
-    if (ref && typeof ref === "object" && typeof ref.scriptPath === "string") file = path.resolve(run.cwd ?? process.cwd(), ref.scriptPath);
+    if (ref && typeof ref === "object" && "scriptPath" in ref && typeof ref.scriptPath === "string") file = path.resolve(run.cwd ?? process.cwd(), ref.scriptPath);
     else if (typeof ref === "string" && /^[\w.-]+$/.test(ref)) file = path.join(this.#home, `${ref}.js`);
     else throw new Error("workflow() takes a saved workflow's name or {scriptPath}");
     let source;
@@ -351,24 +384,24 @@ export class WorkflowRunner extends EventEmitter {
     return { source, path: file };
   }
 
-  #halt(run, why) {
+  #halt(run: Run, why: string) {
     const live = this.#live.get(run.id);
     if (!live) return;
     this.#live.delete(run.id);
     live.controller.abort(Stopped());
     for (const c of live.agents.values()) c.abort(Stopped());
     this.#slots.queue = this.#slots.queue.filter(slot => { if (slot.runId !== run.id) return true; slot.reject(Stopped()); return false; });
-    live.worker.terminate().catch(() => {});
+    (live.worker as Worker).terminate().catch(() => {});
     this.#log(`workflow ${run.id} halted: ${why}`);
   }
 
-  #finish(run, outcome) {
+  #finish(run: Run, outcome: { status: string; result?: unknown; error?: string | null }) {
     if (run.status !== "running") return;
     this.#halt(run, outcome.status);
     this.#end(run, outcome);
   }
 
-  #end(run, { status, result = null, error = null }) {
+  #end(run: Run, { status, result = null, error = null }: { status: string; result?: unknown; error?: string | null }) {
     Object.assign(run, { status, result, error, endedAt: this.#now(), currentPhase: null });
     if (status === "completed") writeAtomic(path.join(run.dir, "result.json"), JSON.stringify(result, null, 2));
     if (run.parentThreadId) run.notice = { state: "pending" };
@@ -379,7 +412,7 @@ export class WorkflowRunner extends EventEmitter {
 
   // ---- agents -----------------------------------------------------------------------------------------
 
-  #validate(prompt, opts) {
+  #validate(prompt: string, opts: AgentOptions) {
     if (typeof prompt !== "string" || !prompt.trim()) throw new TypeError("agent() needs a prompt (a non-empty string)");
     if (opts === null || typeof opts !== "object" || Array.isArray(opts)) throw new TypeError("agent() options must be an object");
     const unknown = Object.keys(opts).filter((k) => !OPTS.includes(k));
@@ -387,10 +420,10 @@ export class WorkflowRunner extends EventEmitter {
     if (opts.schema !== undefined) checkSchema(opts.schema);
     if (opts.effort !== undefined && !EFFORTS.includes(opts.effort)) throw new TypeError(`effort must be one of ${EFFORTS.join(", ")}`);
     if (opts.isolation !== undefined && opts.isolation !== "worktree") throw new TypeError("isolation can only be 'worktree'");
-    for (const k of ["label", "phase", "model", "agentType"]) if (opts[k] !== undefined && typeof opts[k] !== "string") throw new TypeError(`${k} must be a string`);
+    for (const k of ["label", "phase", "model", "agentType"] as const) if (opts[k] !== undefined && typeof opts[k] !== "string") throw new TypeError(`${k} must be a string`);
   }
 
-  async #agent(run, live, m) {
+  async #agent(run: Run, live: Live, m: AgentMessage) {
     const { prompt, opts } = m;
     this.#validate(prompt, opts);
     const { state } = live;
@@ -407,9 +440,9 @@ export class WorkflowRunner extends EventEmitter {
     if (cache && !state.broken) {
       const hit = cache.results.get(key);
       if (hit?.length) {
-        const { agentId, result } = hit.shift();
+        const { agentId, result } = hit.shift() as { agentId: string; result: unknown };
         const before = state.previous.get(agentId);
-        const rec = { id: agentId, key, label, phase, group, state: "done", cached: true, threadId: before?.threadId ?? null, model: before?.model ?? null,
+        const rec: AgentRecord = { id: agentId, key, label, phase, group, state: "done", cached: true, threadId: before?.threadId ?? null, model: before?.model ?? null,
           startedAt: before?.startedAt ?? null, endedAt: before?.endedAt ?? null, attempts: before?.attempts ?? 1, error: null, worktree: before?.worktree ?? null, worktreeBranch: before?.worktreeBranch ?? null };
         if (state.copy || !run.agents.some((a) => a.id === agentId)) run.agents.push(rec);
         if (state.copy) { this.#append(run, { type: "started", key, agentId, label, phase }); this.#append(run, { type: "result", key, agentId, result }); }
@@ -420,12 +453,12 @@ export class WorkflowRunner extends EventEmitter {
     }
     const again = !state.copy ? cache?.unfinished.get(key)?.shift() : undefined;
     const before = again ? state.previous.get(again) : null;
-    const rec = { id: again ?? `a${randomBytes(8).toString("hex")}`, key, label, phase, group, state: "queued", cached: false,
+    const rec: AgentRecord = { id: again ?? `a${randomBytes(8).toString("hex")}`, key, label, phase, group, state: "queued", cached: false,
       threadId: before?.threadId ?? null, model: null, startedAt: null, endedAt: null, attempts: 0, error: null, worktree: null, worktreeBranch: null, resumed: Boolean(again) };
     run.agents.push(rec);
     this.#changed(run, { kind: "agent", agent: rec });
     await this.#acquire(run.id);
-    const control = new AbortController();
+    const control: Control = new AbortController();
     live.agents.set(rec.id, control);
     try {
       if (live.controller.signal.aborted) throw Stopped();
@@ -448,21 +481,21 @@ export class WorkflowRunner extends EventEmitter {
     }
   }
 
-  #writeAgentMeta(run, rec, opts) {
+  #writeAgentMeta(run: Run, rec: AgentRecord, opts: AgentOptions) {
     try {
       writeAtomic(path.join(run.dir, `agent-${rec.id}.meta.json`), JSON.stringify({ agentType: opts.agentType ?? "workflow-agent", description: rec.label, workflowPhase: rec.phase,
         group: rec.group, model: opts.model ?? run.model ?? null, effort: opts.effort ?? run.effort ?? null, isolation: opts.isolation ?? null, threadId: rec.threadId }));
     } catch {}
   }
 
-  #acquire(runId) {
+  #acquire(runId: string) {
     this.#drain();
     if (!this.#slots.queue.length && this.#slots.running < this.#slots.limit()) { this.#slots.running++; return Promise.resolve(); }
-    return new Promise((resolve, reject) => this.#slots.queue.push({ runId, resolve, reject }));
+    return new Promise<void>((resolve, reject) => this.#slots.queue.push({ runId, resolve, reject }));
   }
   #drain() {
     while (this.#slots.queue.length && this.#slots.running < this.#slots.limit()) {
-      this.#slots.running++; this.#slots.queue.shift().resolve();
+      this.#slots.running++; (this.#slots.queue.shift() as { resolve: () => void }).resolve();
     }
   }
   #release() {
@@ -470,10 +503,10 @@ export class WorkflowRunner extends EventEmitter {
   }
 
   // One agent: retried with backoff until its attempts run out; null after that.
-  async #runAgent(run, rec, prompt, opts, signal) {
+  async #runAgent(run: Run, rec: AgentRecord, prompt: string, opts: AgentOptions, signal: AbortSignal) {
     let cwd = run.cwd;
     if (opts.isolation === "worktree") ({ top: rec.worktree, branch: rec.worktreeBranch, cwd } = await this.#worktree(run, rec));
-    let value = null;
+    let value: unknown = null;
     try {
       for (let attempt = 1; ; attempt++) {
         rec.attempts = attempt;
@@ -491,17 +524,17 @@ export class WorkflowRunner extends EventEmitter {
           break;
         } catch (e) {
           if (signal.aborted) throw signal.reason ?? Stopped();
-          rec.error = String(e?.message ?? e).slice(0, 500);
-          if (e?.terminal || attempt >= this.#retry.attempts) {
+          rec.error = String((e as { message?: unknown } | null)?.message ?? e).slice(0, 500);
+          if ((e as { terminal?: boolean } | null)?.terminal || attempt >= this.#retry.attempts) {
             rec.state = "failed"; rec.endedAt = this.#now();
             this.#log(`workflow ${run.id} agent ${rec.id} failed: ${rec.error}`);
             this.#changed(run, { kind: "agent", agent: rec });
             return null;
           }
-          if (e?.threadGone) rec.threadId = null;
+          if ((e as { threadGone?: boolean } | null)?.threadGone) rec.threadId = null;
           rec.state = "retrying";
           this.#changed(run, { kind: "agent", agent: rec });
-          await pause(this.#retry.delays[Math.min(attempt - 1, this.#retry.delays.length - 1)], signal);
+          await pause(this.#retry.delays[Math.min(attempt - 1, this.#retry.delays.length - 1)] as number, signal);
           rec.state = "running";
           this.#changed(run, { kind: "agent", agent: rec });
         }
@@ -515,7 +548,7 @@ export class WorkflowRunner extends EventEmitter {
   }
 
   // Subagents are told their final message is the return value, not a message for a person (the reference).
-  #frame(run, prompt, opts) {
+  #frame(run: Run, prompt: string, opts: AgentOptions) {
     const lines = [`You are an agent in the workflow "${run.name}". Your final message is returned to the workflow's script as data, not shown to a person: give the result itself.`];
     if (opts.isolation === "worktree") lines.push("You work in your own git worktree; commit nothing unless the task says so.");
     if (opts.schema) lines.push(`Answer with only a JSON object that matches this JSON Schema:\n${JSON.stringify(opts.schema)}`);
@@ -523,9 +556,9 @@ export class WorkflowRunner extends EventEmitter {
   }
 
   // A structured answer is validated; a mismatch asks again in the same chat, and is final after its tries.
-  async #ask(run, rec, text, schema, signal) {
+  async #ask(run: Run, rec: AgentRecord, text: string, schema: Schema | undefined, signal: AbortSignal) {
     for (let i = 1; ; i++) {
-      const r = await this.#executor.turn({ threadId: rec.threadId, text, outputSchema: schema ? strictSchema(schema) : null, signal });
+      const r = await this.#executor.turn({ threadId: rec.threadId as string, text, outputSchema: schema ? strictSchema(schema) : null, signal });
       this.#spend(run, r.outputTokens ?? 0);
       if (!schema) return r.text ?? "";
       let answer = jsonAnswer(r.text);
@@ -538,7 +571,7 @@ export class WorkflowRunner extends EventEmitter {
     }
   }
 
-  #spend(run, tokens) {
+  #spend(run: Run, tokens: number) {
     if (!tokens) return;
     run.spent = (run.spent ?? 0) + tokens;
     const live = this.#live.get(run.id);
@@ -548,12 +581,12 @@ export class WorkflowRunner extends EventEmitter {
   // The reference's isolation: a fresh worktree on its own branch per agent, removed with the branch when the agent
   // changed nothing, kept with it otherwise. Where it started is saved beside it, so an agent resumed after a restart
   // keeps its worktree, and one that committed before the restart is not taken for unchanged.
-  async #worktree(run, rec) {
+  async #worktree(run: Run, rec: AgentRecord) {
     let repo;
     try { repo = await git(run.cwd, ["rev-parse", "--show-toplevel"]); }
     catch { throw Object.assign(new Error("isolation: 'worktree' needs the run's folder to be in a git repository"), { terminal: true }); }
     const top = path.join(run.dir, "worktrees", rec.id), file = `${top}.json`;
-    let made = readJson(file);
+    let made = readJson<{ repo: string; branch: string; base: string }>(file);
     if (!made || !fs.existsSync(top)) {
       made ??= { repo, branch: `elpis-workflow/${run.id.slice(3, 11)}/${rec.id}`, base: await git(repo, ["rev-parse", "HEAD"]) };
       fs.mkdirSync(path.dirname(top), { recursive: true });
@@ -564,24 +597,24 @@ export class WorkflowRunner extends EventEmitter {
     return { top, branch: made.branch, cwd: path.join(top, path.relative(repo, run.cwd)) };
   }
 
-  async #dropWorktree(run, rec) {
+  async #dropWorktree(run: Run, rec: AgentRecord) {
     const file = `${rec.worktree}.json`;
     try {
-      const made = readJson(file);
-      const dirty = await git(rec.worktree, ["status", "--porcelain"]);
-      const head = await git(rec.worktree, ["rev-parse", "HEAD"]);
+      const made = readJson<{ repo: string; branch: string; base: string }>(file);
+      const dirty = await git(rec.worktree as string, ["status", "--porcelain"]);
+      const head = await git(rec.worktree as string, ["rev-parse", "HEAD"]);
       if (made && !dirty && head === made.base) {
-        await git(made.repo, ["worktree", "remove", "--force", rec.worktree]);
+        await git(made.repo, ["worktree", "remove", "--force", rec.worktree as string]);
         await git(made.repo, ["branch", "-D", made.branch]);
         fs.rmSync(file, { force: true });
         return null;
       }
       this.#note(run, `${rec.label}: changes kept in worktree ${rec.worktree} on branch ${rec.worktreeBranch}`);
       return rec.worktree;
-    } catch (e) { this.#log(`workflow ${run.id}: worktree cleanup: ${e.message}`); return rec.worktree; }
+    } catch (e) { this.#log(`workflow ${run.id}: worktree cleanup: ${(e as Error).message}`); return rec.worktree; }
   }
 
-  #note(run, message, group = null) {
+  #note(run: Run, message: string, group: string | null = null) {
     const line = { at: this.#now(), message, ...(group && { group }) };
     run.logs.push(line);
     if (run.logs.length > LOG_LINES) run.logs.splice(0, run.logs.length - LOG_LINES);

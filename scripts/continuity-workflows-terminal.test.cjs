@@ -198,7 +198,7 @@ async function worktreeMenu(label) {
   const savedRuntime = process.env.XDG_RUNTIME_DIR;
   try {
     process.env.XDG_RUNTIME_DIR = runtime;
-    const { runtimeDir, startToken } = await import('../tools/elpis-claude/shared-runtime.mjs');
+    const { runtimeDir, startToken } = await import('../tools/elpis-claude/shared-runtime.mts');
     const stateFile = runtimeDir(home).state;
     if (fs.existsSync(stateFile)) {
       const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));

@@ -110,7 +110,7 @@ test('inherited permissions follow Settings across restart; explicit Ask stays; 
   await page.reload(); await page.locator('.startup-splash').waitFor({ state: 'detached', timeout: 60000 });
   await select(normal); await command('reload-explicit-ask', true);
   await select(id); await command('reload-inherited-full');
-  const { connectAppServer } = await import(path.join(repo, 'tools/elpis-claude/app-server-connection.mjs'));
+  const { connectAppServer } = await import(path.join(repo, 'tools/elpis-claude/app-server-connection.mts'));
   const { existingSocket } = await import(path.join(repo, 'apps/elpis-desktop/bridge/client.mts'));
   const socket = existingSocket(undefined, { ELPIS_HOME: path.join(app.home, 'elpis'), XDG_RUNTIME_DIR: path.join(app.home, 'run') });
   const helper = connectAppServer({ url: `ws+unix://${socket}:/`, name: 'elpis-agents' });
@@ -188,7 +188,7 @@ test('inherited permissions follow Settings across restart; explicit Ask stays; 
   t.after(() => peer.close());
   let peerSequence = 0;
   peer.on('message', data => {
-    const message = JSON.parse(String(data));
+    const message = JSON.parse(String(/** @type {Buffer} */ (data)));
     if (message.method && message.id !== undefined) peerRequests.push(message);
     else if (peerPending.has(message.id)) { const pending = peerPending.get(message.id); peerPending.delete(message.id); message.error ? pending.reject(message.error) : pending.resolve(message.result); }
   });

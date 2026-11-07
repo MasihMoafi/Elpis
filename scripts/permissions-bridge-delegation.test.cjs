@@ -176,7 +176,7 @@ async function main() {
     }
     // The parent chat's elpis-agents server, as the bridge configures it for that chat's session.
     async function delegateServer(parentThreadId) {
-      const proc = spawn(process.execPath, [path.resolve(__dirname, '../tools/elpis-claude/elpis-agents-mcp.mjs')], {
+      const proc = spawn(process.execPath, [path.resolve(__dirname, '../tools/elpis-claude/elpis-agents-mcp.mts')], {
         cwd, env: { PATH: process.env.PATH, HOME: home, ELPIS_HOME: home, ELPIS_ENGINE_BIN: binary, ELPIS_BRIDGE_URL: url,
           ELPIS_PARENT_THREAD: parentThreadId, ELPIS_AGENTS_LOG: path.join(root, 'agents.log') }, stdio: ['pipe', 'pipe', 'ignore'],
       });

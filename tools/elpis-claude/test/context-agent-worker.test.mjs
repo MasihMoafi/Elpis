@@ -1,4 +1,4 @@
-// context-agent.mjs with the real ACP adapter and Agent SDK, and a `claude` that records how it
+// context-agent.mts with the real ACP adapter and Agent SDK, and a `claude` that records how it
 // was started: every session start loads only the MCP servers it is given, and a worker that
 // ends, or an adapter that shuts down, leaves no process behind.
 import assert from 'node:assert/strict';
@@ -14,7 +14,7 @@ import { setTimeout as pause } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { createTestTempDir, removeTestTempDir } from './temp-root.mts';
 
-const AGENT = fileURLToPath(new URL('../context-agent.mjs', import.meta.url));
+const AGENT = fileURLToPath(new URL('../context-agent.mts', import.meta.url));
 // Started as a session's worker with FAKE_TREE, it starts sleeps the way MCP servers hang below
 // Claude Code: a child, a grandchild, and one that outlives SIGTERM and writes when it came.
 // Then it exits or stays.

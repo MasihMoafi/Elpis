@@ -25,7 +25,7 @@ const followOnly = process.argv.includes('--only-follow');
 const wireRequests = [];
 const originalWebSocketSend = WebSocket.prototype.send;
 if (followOnly) WebSocket.prototype.send = function (data, ...args) {
-  try { wireRequests.push(JSON.parse(String(data))); } catch {}
+  try { wireRequests.push(JSON.parse(String(/** @type {string} */ (data)))); } catch {}
   return originalWebSocketSend.call(this, data, ...args);
 };
 const appRoot = fileURLToPath(new URL('..', import.meta.url));

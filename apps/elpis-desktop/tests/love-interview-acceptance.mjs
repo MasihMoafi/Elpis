@@ -24,7 +24,7 @@ const check = label => { checks.push(label); console.log(`PASS ${label}`); };
 const until = async predicate => { for (const end = Date.now() + 15000; Date.now() < end;) { if (await predicate()) return; await new Promise(r => setTimeout(r, 30)); } throw new Error('Interview condition timed out'); };
 try {
   const launch = () => _electron.launch({ executablePath: path.join(appDirectory, 'runtime/electron/electron'), args: [path.join(appDirectory, 'app'), '--ozone-platform=x11'],
-    env: { ...f.env, DISPLAY: process.env.DISPLAY, XAUTHORITY: process.env.XAUTHORITY, ELPIS_APP_BRIDGE_SOCKET: f.socketPath, ELPIS_ACP_AGENT: path.join(toolsDirectory, 'elpis-acp-agent.mjs'), EXCALIDRAW_LOCAL_DIR: path.join(f.root, 'drawing'), EXCALIDRAW_SCREENSHOTS_DIR: path.join(f.root, 'shots'), TMPDIR: f.root, ELECTRON_OZONE_PLATFORM_HINT: 'x11', WAYLAND_DISPLAY: '', ELECTRON_RUN_AS_NODE: '' }, timeout: 20000 });
+    env: { ...f.env, DISPLAY: process.env.DISPLAY, XAUTHORITY: process.env.XAUTHORITY, ELPIS_APP_BRIDGE_SOCKET: f.socketPath, ELPIS_ACP_AGENT: path.join(toolsDirectory, 'elpis-acp-agent.mts'), EXCALIDRAW_LOCAL_DIR: path.join(f.root, 'drawing'), EXCALIDRAW_SCREENSHOTS_DIR: path.join(f.root, 'shots'), TMPDIR: f.root, ELECTRON_OZONE_PLATFORM_HINT: 'x11', WAYLAND_DISPLAY: '', ELECTRON_RUN_AS_NODE: '' }, timeout: 20000 });
   app = await launch();
   page = await app.firstWindow(); page.setDefaultTimeout(15000);
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1680, 1080));

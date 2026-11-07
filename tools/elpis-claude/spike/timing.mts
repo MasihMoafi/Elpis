@@ -2,6 +2,7 @@
 // own tools, and routes permission requests to the client (the future Elpis).
 import { spawn } from "node:child_process";
 import { mkdirSync } from "node:fs";
+import type { ProbeMessage, ProbeReplies } from "./acp-types.mts";
 
 const cwd = "/tmp/acp-probe";
 mkdirSync(cwd, { recursive: true });
@@ -11,13 +12,13 @@ const agent = spawn("node", ["../node_modules/@agentclientprotocol/claude-agent-
 });
 
 let nextId = 1;
-const pending = new Map();
-const seen = { updates: {}, permissions: [], tools: [] };
-const send = (msg) => agent.stdin.write(JSON.stringify(msg) + "\n");
-const call = (method, params) =>
-  new Promise((resolve, reject) => {
+const pending = new Map<number, { resolve: (value: unknown) => void; reject: (reason: unknown) => void }>();
+const seen: { updates: Record<string, number>; permissions: (string | undefined)[]; tools: string[] } = { updates: {}, permissions: [], tools: [] };
+const send = (msg: Record<string, unknown>) => agent.stdin.write(JSON.stringify(msg) + "\n");
+const call = <K extends keyof ProbeReplies>(method: K, params: Record<string, unknown>) =>
+  new Promise<ProbeReplies[K]>((resolve, reject) => {
     const id = nextId++;
-    pending.set(id, { resolve, reject });
+    pending.set(id, { resolve: value => resolve(value as ProbeReplies[K]), reject });
     send({ jsonrpc: "2.0", id, method, params });
   });
 
@@ -30,11 +31,11 @@ agent.stdout.on("data", (chunk) => {
     const line = buf.slice(0, i).trim();
     buf = buf.slice(i + 1);
     if (!line) continue;
-    const msg = JSON.parse(line);
+    const msg = JSON.parse(line) as ProbeMessage;
     if (msg.id !== undefined && pending.has(msg.id) && !msg.method) {
       const p = pending.get(msg.id);
       pending.delete(msg.id);
-      msg.error ? p.reject(msg.error) : p.resolve(msg.result);
+      if (p) msg.error ? p.reject(msg.error) : p.resolve(msg.result);
     } else if (msg.method === "session/update") {
       const u = msg.params.update;
       seen.updates[u.sessionUpdate] = (seen.updates[u.sessionUpdate] ?? 0) + 1;

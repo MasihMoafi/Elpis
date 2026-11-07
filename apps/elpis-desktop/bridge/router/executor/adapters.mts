@@ -208,8 +208,8 @@ export class GeminiAdapter extends AppServerAdapter {
   }
 }
 export async function runtimeAdapters(options: { url: string; codexBin?: string }): Promise<RuntimeAdapter[]> {
-  const source = fileURLToPath(new URL('../../../../../tools/elpis-claude/app-server-connection.mjs', import.meta.url))
-  const module = existsSync(source) ? source : join(runtimeTools(realpathSync(process.env.ELPIS_ENGINE_BIN ?? join(homedir(), '.local', 'bin', 'elpis-next'))), 'app-server-connection.mjs')
+  const source = fileURLToPath(new URL('../../../../../tools/elpis-claude/app-server-connection.mts', import.meta.url))
+  const module = existsSync(source) ? source : join(runtimeTools(realpathSync(process.env.ELPIS_ENGINE_BIN ?? join(homedir(), '.local', 'bin', 'elpis-next'))), 'app-server-connection.mts')
   const { connectAppServer }: { connectAppServer: (options: { url?: string | undefined; engineBin?: string | undefined; name: string }) => Connection } =
     await import(pathToFileURL(module).href)
   const bridge = (): Connection => connectAppServer({ url: options.url, engineBin: undefined, name: 'elpis-agents' })

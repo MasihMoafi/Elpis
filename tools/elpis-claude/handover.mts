@@ -6,21 +6,27 @@
 // (bridge/released) and the newer bridge asks the client to reconnect, which then reopens the chat in the newer bridge.
 import fs from "node:fs";
 import WebSocket from "ws";
-import { drainFile, startToken } from "./shared-runtime.mjs";
+import { drainFile, startToken } from "./shared-runtime.mts";
+
+type Id = string | number;
+type HandoverMessage = { id?: Id; method?: string; params?: { threadId?: string; [key: string]: unknown }; error?: { code?: number; message?: string }; result?: { thread?: { id?: string }; [key: string]: unknown }; [key: string]: unknown };
+type ClientSocket = WebSocket & { pending: Set<Id>; sendWire: (line: string) => void };
+type Drain = { pid: number; token: string; sock: string; threads: Set<string> };
+type Route = { id: Id; threadId: string; subscribe?: boolean; legacyRead?: boolean };
 
 /** Counts the requests a client is waiting on, so it is asked to reconnect only between answers. */
-export function trackRequests(ws) {
-  ws.pending = new Set();
+export function trackRequests(ws: ClientSocket) {
+  ws.pending = new Set<Id>();
   const wire = ws.sendWire;
-  ws.sendWire = (line) => {
+  ws.sendWire = (line: string) => {
     if (ws.pending.size) { try { const msg = JSON.parse(String(line)); if (msg.id !== undefined && !msg.method) ws.pending.delete(msg.id); } catch {} }
     wire(line);
   };
-  return (msg) => { if (msg?.id !== undefined && msg.method) ws.pending.add(msg.id); };
+  return (msg: HandoverMessage) => { if (msg?.id !== undefined && msg.method) ws.pending.add(msg.id); };
 }
 
 /** Asks a client to reconnect once it waits on no answer, or after `capMs` at most. */
-export function closeWhenQuiet(ws, reason, capMs = 10_000) {
+export function closeWhenQuiet(ws: ClientSocket, reason: string, capMs = 10_000) {
   const deadline = Date.now() + capMs;
   const attempt = () => {
     if (ws.readyState !== WebSocket.OPEN) return;
@@ -31,7 +37,7 @@ export function closeWhenQuiet(ws, reason, capMs = 10_000) {
 }
 
 /** The old bridge's drain socket and working chats, while it lives; read again when drain.json changes. */
-let drain = null, drainRead = 0, drainStat = "";
+let drain: Drain | null = null, drainRead = 0, drainStat = "";
 export function currentDrain() {
   const now = Date.now();
   if (now - drainRead < 250) return drain;
@@ -41,7 +47,7 @@ export function currentDrain() {
   if (stat !== drainStat) {
     drainStat = stat;
     try {
-      const value = JSON.parse(fs.readFileSync(drainFile(), "utf8"));
+      const value: { pid: number; token: string; sock: string; threads?: string[] } = JSON.parse(fs.readFileSync(drainFile(), "utf8"));
       drain = value?.pid !== process.pid ? { ...value, threads: new Set(value.threads ?? []) } : null;
     } catch { drain = null; }
   }
@@ -50,31 +56,31 @@ export function currentDrain() {
 }
 
 /** The newer bridge's side, for one client: `take(msg)` handles (returns true) what belongs to the old bridge. */
-export function drainProxy(ws, log = () => {}) {
-  let shadow = null, initialize = null, seq = 0;
-  const waiting = new Map(); // shadow request id -> client request and optional legacy follow
-  const asked = new Map();   // id shown to the client -> the old bridge's own request id
-  const touched = new Set(); // chats of the old bridge this client used
-  const outbox = [];
-  const reconnect = (why) => { log(`drain: asking a client to reconnect (${why})`); closeWhenQuiet(ws, "Session backend changed"); };
-  const open = (sock) => {
+export function drainProxy(ws: ClientSocket, log: (message: string) => void = () => {}) {
+  let shadow: WebSocket | null = null, initialize: HandoverMessage['params'] | null = null, seq = 0;
+  const waiting = new Map<Id, Route>(); // shadow request id -> client request and optional legacy follow
+  const asked = new Map<Id, Id>();   // id shown to the client -> the old bridge's own request id
+  const touched = new Set<string>(); // chats of the old bridge this client used
+  const outbox: string[] = [];
+  const reconnect = (why: string) => { log(`drain: asking a client to reconnect (${why})`); closeWhenQuiet(ws, "Session backend changed"); };
+  const open = (sock: string) => {
     shadow = new WebSocket(`ws+unix://${sock}:/`);
     shadow.on("open", () => {
-      shadow.send(JSON.stringify({ id: "drain-init", method: "initialize", params: initialize ?? { clientInfo: { name: "elpis-handover" }, capabilities: { experimentalApi: true } } }));
-      for (const line of outbox.splice(0)) shadow.send(line);
+      (shadow as WebSocket).send(JSON.stringify({ id: "drain-init", method: "initialize", params: initialize ?? { clientInfo: { name: "elpis-handover" }, capabilities: { experimentalApi: true } } }));
+      for (const line of outbox.splice(0)) (shadow as WebSocket).send(line);
     });
     shadow.on("message", (data) => {
-      let msg; try { msg = JSON.parse(String(data)); } catch { return; }
+      let msg: HandoverMessage; try { msg = JSON.parse(String(data)) as HandoverMessage; } catch { return; }
       if (msg.id === "drain-init") return;
       // Another connection of the old bridge may have seen the chat's end first: its last events get a second to arrive.
       if (msg.method === "bridge/released") {
         const id = msg.params?.threadId;
-        if (touched.has(id)) setTimeout(() => { if (touched.delete(id)) reconnect(`chat ${id} moved`); }, 1000).unref?.();
+        if (touched.has(id as string)) setTimeout(() => { if (touched.delete(id as string)) reconnect(`chat ${id} moved`); }, 1000).unref?.();
         return;
       }
       if (msg.id !== undefined && !msg.method) {
         if (!waiting.has(msg.id)) return;
-        const route = waiting.get(msg.id); waiting.delete(msg.id);
+        const route = waiting.get(msg.id) as Route; waiting.delete(msg.id);
         if (route.subscribe && msg.error?.code === -32600 && typeof msg.error.message === "string"
           && msg.error.message.startsWith("Invalid request: unknown variant `thread/subscribe`")) {
           const id = `drain-${++seq}`;
@@ -88,25 +94,25 @@ export function drainProxy(ws, log = () => {}) {
       } else if (msg.method && msg.id !== undefined) {
         const id = `drain-ask-${++seq}`; asked.set(id, msg.id); log(`drain: the old bridge asks ${msg.method}`);
         ws.sendWire(JSON.stringify({ ...msg, id }));
-      } else if (msg.method && touched.has(msg.params?.threadId)) ws.sendWire(JSON.stringify(msg));
+      } else if (msg.method && touched.has(msg.params?.threadId as string)) ws.sendWire(JSON.stringify(msg));
     });
     shadow.on("close", (code, reason) => { log(`drain: old bridge connection closed (${code} ${reason})`); shadow = null; if (touched.size) reconnect("the old bridge finished"); });
     shadow.on("error", (e) => log(`drain: old bridge connection error: ${e.message}`));
   };
-  const send = (msg) => {
+  const send = (msg: HandoverMessage) => {
     const line = JSON.stringify(msg);
     if (shadow?.readyState === WebSocket.OPEN) shadow.send(line); else outbox.push(line);
   };
   return {
-    take(msg) {
+    take(msg: HandoverMessage) {
       if (msg?.method === "initialize") initialize = msg.params;
-      if (msg?.id !== undefined && !msg.method && asked.has(msg.id)) { const id = asked.get(msg.id); asked.delete(msg.id); send({ ...msg, id }); return true; }
+      if (msg?.id !== undefined && !msg.method && asked.has(msg.id)) { const id = asked.get(msg.id) as Id; asked.delete(msg.id); send({ ...msg, id }); return true; }
       const threadId = msg?.params?.threadId;
       if (!msg?.method || typeof threadId !== "string") return false;
       const old = currentDrain();
       if (!old?.threads.has(threadId) && !(shadow && touched.has(threadId))) return false;
       touched.add(threadId);
-      if (!shadow) open(old.sock);
+      if (!shadow) open((old as Drain).sock);
       if (msg.id === undefined) { send(msg); return true; }
       const id = `drain-${++seq}`; waiting.set(id, { id: msg.id, threadId, subscribe: msg.method === "thread/subscribe" });
       send({ ...msg, id });

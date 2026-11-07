@@ -5,30 +5,38 @@
 import { spawn } from "node:child_process";
 import { appendLog } from "./log-redaction.mts";
 import { registerMatildaTools } from "./matilda-mcp.mts";
-import { connectAppServer } from "./app-server-connection.mjs";
+import { connectAppServer } from "./app-server-connection.mts";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 
+type Connection = ReturnType<typeof connectAppServer>;
+type Model = { id: string; description?: string; displayName?: string; supportedReasoningEfforts?: { reasoningEffort: string }[] };
+type Notification = { threadId?: string; delta?: string; turn?: { id?: string; status?: string; error?: unknown }; item?: { type?: string; command?: string } };
+type Run = { label: string; conn: Connection; status?: string; text?: string; commands?: (string | undefined)[]; error?: unknown; turnId?: string | null; done?: Promise<void>; parentThreadId?: string; recovered?: boolean };
+type ActiveRun = Run & { status: string; text: string; commands: (string | undefined)[]; turnId: string | null; done: Promise<void> };
+type ReportRun = Pick<ActiveRun, 'label' | 'status' | 'text' | 'commands'> & { error?: unknown };
+type MemoryResult = { error?: string; enabled?: boolean; description?: string; memoryEditsDescription?: string; checkpointDescription?: string; memoryChanged?: boolean; checkpointChanged?: boolean };
+
 const LOG = process.env.ELPIS_AGENTS_LOG ?? "/tmp/acp-bridge/elpis-agents.log";
-const log = (s) => { try { appendLog(LOG, s); } catch {} };
+const log = (s: string) => { try { appendLog(LOG, s); } catch {} };
 const ENGINE = process.env.ELPIS_ENGINE_BIN ?? `${process.env.HOME}/.local/bin/elpis`;
 
 // Set by the bridge: helpers start through it, so any model it serves can be one, and each
 // records the chat that started it. Without a bridge, helpers run on the Elpis engine alone.
 const BRIDGE = process.env.ELPIS_BRIDGE_URL;
 const PARENT = process.env.ELPIS_PARENT_THREAD ?? null;
-const bridgedModel = (m) => /^(claude|agy)\//.test(m ?? "");
+const bridgedModel = (m: string | null | undefined) => /^(claude|agy)\//.test(m ?? "");
 
-const connect = (name) => connectAppServer({ url: BRIDGE, engineBin: ENGINE, ...(name && { name }) });
+const connect = (name?: string) => connectAppServer({ url: BRIDGE, engineBin: ENGINE, ...(name && { name }) });
 
 // What each model is for, grouped by where it runs, from the app server's own model list.
-let catalogConn = null;
+let catalogConn: Connection | null = null;
 async function modelCatalog() {
   catalogConn ??= connect();
   await catalogConn.ready;
-  const list = (await catalogConn.call("model/list", { cursor: null, limit: null, includeHidden: false }))?.data ?? [];
-  const groups = [
+  const list = (await catalogConn.call<{ data?: Model[] }>("model/list", { cursor: null, limit: null, includeHidden: false }))?.data ?? [];
+  const groups: [string, (model: Model) => boolean][] = [
     ["Elpis engine (your OpenAI sign-in; provider openai)", (m) => !bridgedModel(m.id)],
     ["Antigravity (your Google sign-in)", (m) => m.id.startsWith("agy/")],
     ["Claude subscription", (m) => m.id.startsWith("claude/")],
@@ -59,24 +67,24 @@ const server = new McpServer({ name: "elpis-agents", version: "0.3.0" }, { instr
 registerMatildaTools(server);
 
 // One entry per delegated thread this server has run: its active turn and what it produced.
-const runs = new Map();
+const runs = new Map<string, Run>();
 
-function report(threadId, run = runs.get(threadId)) {
+function report(threadId: string, run: ReportRun = runs.get(threadId) as ReportRun) {
   return [
     `Agent: ${run.label} (Elpis thread ${threadId}), status: ${run.status}`,
     run.commands.length ? `Commands it ran: ${run.commands.join("; ")}` : "Commands it ran: none",
-    run.error ? `Error: ${run.error.message ?? JSON.stringify(run.error)}` : "",
+    run.error ? `Error: ${(run.error as { message?: string }).message ?? JSON.stringify(run.error)}` : "",
     "Answer:",
     run.text.trim() || (run.status === "running" ? "(still working)" : "(no answer)"),
   ].filter(Boolean).join("\n");
 }
 
 // Start a turn on a thread and resolve when it ends; `run` collects its output meanwhile.
-function startTurn(threadId, task) {
-  const run = runs.get(threadId);
+function startTurn(threadId: string, task: string) {
+  const run = runs.get(threadId) as ActiveRun;
   Object.assign(run, { status: "running", text: "", commands: [], error: null, turnId: null });
-  run.done = new Promise((resolve) => {
-    const finish = (status, error) => {
+  run.done = new Promise<void>((resolve) => {
+    const finish = (status: string, error?: unknown) => {
       clearTimeout(timer);
       run.conn.listeners.delete(l);
       Object.assign(run, { status, error: error ?? null, turnId: null });
@@ -84,12 +92,13 @@ function startTurn(threadId, task) {
       resolve();
     };
     const timer = setTimeout(() => finish("timeout"), 30 * 60 * 1000);
-    const l = (m) => {
-      if (m.params?.threadId !== threadId) return;
-      if (m.method === "turn/started") run.turnId = m.params.turn?.id ?? run.turnId;
-      if (m.method === "item/agentMessage/delta") run.text += m.params.delta;
-      if (m.method === "item/completed" && m.params.item?.type === "commandExecution") run.commands.push(m.params.item.command);
-      if (m.method === "turn/completed") finish(m.params.turn?.status ?? "completed", m.params.turn?.error);
+    const l: Parameters<Connection['listeners']['add']>[0] = (m) => {
+      const params = m.params as Notification | undefined;
+      if (params?.threadId !== threadId) return;
+      if (m.method === "turn/started") run.turnId = params.turn?.id ?? run.turnId;
+      if (m.method === "item/agentMessage/delta") run.text += params.delta;
+      if (m.method === "item/completed" && params.item?.type === "commandExecution") run.commands.push(params.item.command);
+      if (m.method === "turn/completed") finish(params.turn?.status ?? "completed", params.turn?.error);
     };
     run.conn.listeners.add(l);
     run.conn.call("turn/start", { threadId, input: [{ type: "text", text: task, text_elements: [] }] })
@@ -99,14 +108,14 @@ function startTurn(threadId, task) {
 }
 
 // A turn's id arrives just after it starts; wait briefly for it so an early steer or stop works.
-async function activeTurn(run) {
+async function activeTurn(run: Run) {
   for (let i = 0; i < 50 && run.status === "running" && !run.turnId; i++) await new Promise((r) => setTimeout(r, 200));
   return run.status === "running" ? run.turnId : null;
 }
 
 const threadArg = z.string().describe("Elpis thread id returned by delegate.");
 // Read a helper from Elpis without resuming it or adding it to this server's owned runs.
-async function storedRun(threadId, connection) {
+async function storedRun(threadId: string, connection?: Connection) {
   const conn = connection ?? connect();
   try {
     await conn.ready;
@@ -129,17 +138,17 @@ async function storedRun(threadId, connection) {
 
 // A replacement MCP process controls the helper through its existing bridge runtime. Reading
 // its current turn does not acquire another writer or cache a status that can go stale.
-async function withRun(threadId, extra, action) {
+async function withRun<T>(threadId: string, extra: { _meta?: Record<string, unknown> | undefined }, action: (run: ActiveRun) => Promise<T>) {
   const own = runs.get(threadId);
-  if (own) return action(own);
+  if (own) return action(own as ActiveRun);
   const conn = connect();
   try {
     const run = await storedRun(threadId, conn);
     const parent = PARENT ?? extra?._meta?.threadId;
     if (!run || !parent || run.parentThreadId !== parent) {
-      return { content: [{ type: "text", text: `Thread ${threadId} is not a delegated helper of this chat.` }], isError: true };
+      return { content: [{ type: "text" as const, text: `Thread ${threadId} is not a delegated helper of this chat.` }], isError: true };
     }
-    return await action({ ...run, conn, recovered: true });
+    return await action({ ...run, conn, recovered: true } as ActiveRun);
   } finally { conn.close(); }
 }
 
@@ -198,7 +207,7 @@ if (process.env.ELPIS_AGENT_TOOLS !== "0") {
             await conn.call("thread/resume", { threadId });
           } catch (e) {
             conn.close();
-            return { content: [{ type: "text", text: `Could not reopen thread ${threadId}: ${e.message ?? JSON.stringify(e)}` }], isError: true };
+            return { content: [{ type: "text", text: `Could not reopen thread ${threadId}: ${(e as Error).message ?? JSON.stringify(e)}` }], isError: true };
           }
           runs.set(threadId, { label: "resumed agent", conn });
         }
@@ -225,18 +234,18 @@ if (process.env.ELPIS_AGENT_TOOLS !== "0") {
           });
         } catch (error) {
           conn.close();
-          return { content: [{ type: "text", text: `Could not start helper: ${error.message ?? JSON.stringify(error)}` }], isError: true };
+          return { content: [{ type: "text", text: `Could not start helper: ${(error as Error).message ?? JSON.stringify(error)}` }], isError: true };
         }
         threadId = started.thread.id;
         // Titled by its task: the agent list already shows it under the chat that started it.
-        const firstLine = task.trim().split("\n")[0];
+        const firstLine = task.trim().split("\n")[0] as string;
         const title = firstLine.length <= 80 ? firstLine : `${firstLine.slice(0, 80).replace(/\s+\S*$/, "")}…`;
         await conn.call("thread/name/set", { threadId, name: title }).catch(() => {});
         runs.set(threadId, { label, conn });
       }
       startTurn(threadId, task);
-      if (wait) await runs.get(threadId).done;
-      const run = runs.get(threadId);
+      if (wait) await (runs.get(threadId) as ActiveRun).done;
+      const run = runs.get(threadId) as ActiveRun;
       return { content: [{ type: "text", text: report(threadId) }], isError: !["running", "completed"].includes(run.status) };
     },
   );
@@ -249,7 +258,7 @@ if (process.env.ELPIS_AGENT_TOOLS !== "0") {
       let run;
       try { run = await storedRun(thread_id); }
       catch (error) {
-        return { content: [{ type: "text", text: `Could not read helper ${thread_id}: ${error.message ?? JSON.stringify(error)}` }], isError: true };
+        return { content: [{ type: "text", text: `Could not read helper ${thread_id}: ${(error as Error).message ?? JSON.stringify(error)}` }], isError: true };
       }
       return run
         ? { content: [{ type: "text", text: report(thread_id, run) }] }
@@ -343,7 +352,7 @@ if (WORKFLOW_TOOL) {
         log(`workflow ${r.runId} started by ${threadId}`);
         return { content: [{ type: "text", text: `Workflow "${r.name}" is running in the background as ${r.runId}.\nScript saved at ${r.scriptPath} (edit it and launch {scriptPath, resumeFromRunId: "${r.runId}"} to change it).\nThis chat gets a <workflow-notification> with its result when it ends; do not wait or poll.` }] };
       } catch (e) {
-        return { content: [{ type: "text", text: `The workflow did not start: ${e.message ?? JSON.stringify(e)}` }], isError: true };
+        return { content: [{ type: "text", text: `The workflow did not start: ${(e as Error).message ?? JSON.stringify(e)}` }], isError: true };
       } finally { conn.close(); }
     },
   );
@@ -352,8 +361,8 @@ if (WORKFLOW_TOOL) {
 // Elpis's durable memory, saved by the engine's own guarded save (`elpis memory-save`): offered
 // to a chat the user started, in a workspace where saving is on, as the engine offers it.
 const MEMORY_CWD = process.env.ELPIS_MEMORY_CWD ?? null;
-function memorySave(request) {
-  return new Promise((resolve) => {
+function memorySave(request: object) {
+  return new Promise<MemoryResult>((resolve) => {
     const child = spawn(ENGINE, ["memory-save"], { stdio: ["pipe", "pipe", "pipe"] });
     let out = "", err = "";
     child.stdout.on("data", (d) => { out += d; });
@@ -370,8 +379,8 @@ if (memoryTool?.enabled && memoryTool.description) {
     {
       description: memoryTool.description,
       inputSchema: {
-        memory_edits: z.array(z.object({ old_text: z.string().nullable(), new_text: z.string().nullable() })).describe(memoryTool.memoryEditsDescription),
-        checkpoint: z.string().nullable().describe(memoryTool.checkpointDescription),
+        memory_edits: z.array(z.object({ old_text: z.string().nullable(), new_text: z.string().nullable() })).describe(memoryTool.memoryEditsDescription as string),
+        checkpoint: z.string().nullable().describe(memoryTool.checkpointDescription as string),
       },
     },
     async ({ memory_edits, checkpoint }) => {

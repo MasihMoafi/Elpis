@@ -1,5 +1,5 @@
 'use strict';
-// tools/elpis-claude/shared-runtime.mjs: the transport under the shared bridge.
+// tools/elpis-claude/shared-runtime.mts: the transport under the shared bridge.
 //  A. engines in shared mode against a fake engine: two clients share one engine, the delegate tool
 //     (elpis-agents) stays private, a closing client leaves the engine up, failures are visible.
 //  B. the same against the native candidate: two connections see one real session.
@@ -20,7 +20,7 @@ const { Provider, message } = require('./lib/mock-provider.js');
 const binary = process.argv[2];
 assert(binary && path.isAbsolute(binary), 'provide the absolute path of the engine binary');
 const tools = path.resolve(__dirname, '../tools/elpis-claude');
-const runtimePath = path.join(tools, 'shared-runtime.mjs');
+const runtimePath = path.join(tools, 'shared-runtime.mts');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'esr-'));
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const checks = [];
@@ -427,9 +427,9 @@ async function launcherGroup(runtime) {
   const installed = name => {
     const bundle = path.join(versions, name), directory = path.join(bundle, 'tools/elpis-claude');
     fs.mkdirSync(directory, { recursive: true });
-    const script = path.join(directory, 'acp-bridge.mjs'), launcher = path.join(directory, 'shared-runtime.mjs');
+    const script = path.join(directory, 'acp-bridge.mjs'), launcher = path.join(directory, 'shared-runtime.mts');
     fs.copyFileSync(fakeBridgeDir(`installed-${name}`), script);
-    for (const file of ['shared-runtime.mjs', 'log-redaction.mts']) fs.copyFileSync(path.join(tools, file), path.join(directory, file));
+    for (const file of ['shared-runtime.mts', 'log-redaction.mts']) fs.copyFileSync(path.join(tools, file), path.join(directory, file));
     fs.symlinkSync(path.join(tools, 'node_modules'), path.join(directory, 'node_modules'));
     const engine = path.join(bundle, 'package/bin/codex');
     fs.mkdirSync(path.dirname(engine), { recursive: true });
@@ -748,7 +748,7 @@ async function launcherGroup(runtime) {
   fs.mkdirSync(toolDir);
   fs.copyFileSync(path.join(tools, 'elpis-claude'), path.join(toolDir, 'elpis-claude'));
   fs.chmodSync(path.join(toolDir, 'elpis-claude'), 0o755);
-  fs.copyFileSync(runtimePath, path.join(toolDir, 'shared-runtime.mjs'));
+  fs.copyFileSync(runtimePath, path.join(toolDir, 'shared-runtime.mts'));
   fs.copyFileSync(path.join(tools, 'log-redaction.mts'), path.join(toolDir, 'log-redaction.mts'));
   fs.symlinkSync(path.join(tools, 'node_modules'), path.join(toolDir, 'node_modules'));
   fs.copyFileSync(bridgeA, path.join(toolDir, 'acp-bridge.mjs'));

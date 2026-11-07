@@ -7,8 +7,8 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import WebSocket, { WebSocketServer } from "ws";
-import { drainProxy } from "../handover.mjs";
-import { startToken } from "../shared-runtime.mjs";
+import { drainProxy } from "../handover.mts";
+import { startToken } from "../shared-runtime.mts";
 
 test("old-drain subscription falls back to one read, while other results stay exact", async (t) => {
   const base = path.join(os.homedir(), ".cache", "elpis-tests");

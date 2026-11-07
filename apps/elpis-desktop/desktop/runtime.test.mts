@@ -16,7 +16,7 @@ for (const packaged of [false, true]) test(`desktop reuses ${packaged ? 'package
   fs.mkdirSync(bridgeDir, { recursive: true }); fs.writeFileSync(engine, 'fixture');
   const marker = path.join(dir, 'called.json');
   fs.writeFileSync(path.join(bridgeDir, 'acp-bridge.mjs'), '');
-  fs.writeFileSync(path.join(bridgeDir, 'shared-runtime.mjs'), `import fs from 'node:fs'; fs.writeFileSync(${JSON.stringify(marker)}, JSON.stringify({ engine:process.env.ELPIS_ENGINE_BIN, home:process.env.ELPIS_HOME, bridge:process.argv[2], agentEnv:Object.keys(process.env).filter(key => /^(CLAUDE|AI_AGENT)/.test(key)) }));`);
+  fs.writeFileSync(path.join(bridgeDir, 'shared-runtime.mts'), `import fs from 'node:fs'; fs.writeFileSync(${JSON.stringify(marker)}, JSON.stringify({ engine:process.env.ELPIS_ENGINE_BIN, home:process.env.ELPIS_HOME, bridge:process.argv[2], agentEnv:Object.keys(process.env).filter(key => /^(CLAUDE|AI_AGENT)/.test(key)) }));`);
   const env = {
     PATH: process.env.PATH, ELPIS_ENGINE_BIN: engine, ELPIS_HOME: dir,
     CLAUDE_CONFIG_DIR: '/agent/claude-config', CLAUDE_CODE_CHILD_SESSION: '1',
@@ -42,7 +42,7 @@ test('desktop runtime startup keeps loopback traffic outside a configured proxy'
   fs.mkdirSync(bridgeDir, { recursive: true }); fs.writeFileSync(engine, 'fixture');
   fs.writeFileSync(path.join(bridgeDir, 'acp-bridge.mjs'), '');
   const address = server.address(); assert.ok(address && typeof address !== 'string');
-  fs.writeFileSync(path.join(bridgeDir, 'shared-runtime.mjs'), `const response = await fetch('http://127.0.0.1:${address.port}'); if (await response.text() !== 'local-runtime') throw new Error('Wrong endpoint');`);
+  fs.writeFileSync(path.join(bridgeDir, 'shared-runtime.mts'), `const response = await fetch('http://127.0.0.1:${address.port}'); if (await response.text() !== 'local-runtime') throw new Error('Wrong endpoint');`);
   try {
     await ensureInstalledRuntime({ env: { PATH: process.env.PATH, ELPIS_HOME: dir, ELPIS_ENGINE_BIN: engine, HTTP_PROXY: 'http://127.0.0.1:1' } });
   } finally { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); }
@@ -80,7 +80,7 @@ test('a running engine from another installation is asked to hand over to the se
     const engine = path.join(dir, name, 'package/bin/codex'), tools = path.join(dir, name, 'tools/elpis-claude');
     fs.mkdirSync(path.dirname(engine), { recursive: true }); fs.mkdirSync(tools, { recursive: true }); fs.writeFileSync(engine, 'fixture');
     fs.writeFileSync(path.join(tools, 'acp-bridge.mjs'), '');
-    fs.writeFileSync(path.join(tools, 'shared-runtime.mjs'), `import fs from 'node:fs'; fs.writeFileSync(${JSON.stringify(path.join(dir, 'called.json'))}, JSON.stringify(process.env.ELPIS_ENGINE_BIN));`);
+    fs.writeFileSync(path.join(tools, 'shared-runtime.mts'), `import fs from 'node:fs'; fs.writeFileSync(${JSON.stringify(path.join(dir, 'called.json'))}, JSON.stringify(process.env.ELPIS_ENGINE_BIN));`);
     return fs.realpathSync(engine);
   };
   const old = install('old'), selected = install('new');

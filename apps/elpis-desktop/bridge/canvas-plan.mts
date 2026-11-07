@@ -212,7 +212,7 @@ export async function planCanvas(client: PlannerClient, input: unknown, { timeou
   const request = parseRequest(input);
   const options = typeof client.models === 'function' ? await choices(client as Required<PlannerClient>) : { models: [], preferences: '' };
   // A Claude-subscription model runs through the elpis-claude bridge: no provider, its level in the thread's config,
-  // and no schema parameter, so the schema goes in the prompt (as tools/elpis-claude/workflow-agents.mjs does).
+  // and no schema parameter, so the schema goes in the prompt (as tools/elpis-claude/workflow-agents.mts does).
   const ask = (route: typeof MOTHER_ROUTE | null) => askBackground(client, { cwd: request.cwd, permissions: ':danger-full-access', timeoutMs,
     ...(route?.provider === 'claude'
       ? { prompt: `${promptFor(request, options)}\n\nAnswer with JSON only, matching this JSON Schema:\n${JSON.stringify(PLAN_SCHEMA)}`,

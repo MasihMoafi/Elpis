@@ -13,7 +13,7 @@ const pass = (msg) => console.log(`PASS ${msg}`);
 const client = new Client({ name: "delegate-e2e", version: "0.1.0" });
 await client.connect(new StdioClientTransport({
   command: process.execPath,
-  args: [join(here, "elpis-agents-mcp.mjs")],
+  args: [join(here, "elpis-agents-mcp.mts")],
   env: { ...process.env, ELPIS_AGENTS_LOG: "/tmp/acp-bridge/delegate-e2e.log" },
 }));
 const cwd = mkdtempSync(join(tmpdir(), "delegate-e2e-"));
@@ -63,7 +63,7 @@ for (const s of scenarios) {
     const word = `PLUM-${Math.floor(Math.random() * 9000 + 1000)}`;
     const ask = async (args) => {
       const c = new Client({ name: "delegate-e2e-resume", version: "0.1.0" });
-      await c.connect(new StdioClientTransport({ command: process.execPath, args: [join(here, "elpis-agents-mcp.mjs")], env: process.env }));
+      await c.connect(new StdioClientTransport({ command: process.execPath, args: [join(here, "elpis-agents-mcp.mts")], env: process.env }));
       const r = await c.callTool({ name: "delegate", arguments: args });
       await c.close();
       return r.content.map((x) => x.text).join("\n");

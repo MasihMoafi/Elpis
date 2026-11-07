@@ -1,6 +1,7 @@
 // Keep the upstream ACP adapter and add a read-only view of Claude's own admitted memory files.
 import { ndJsonStream } from '@agentclientprotocol/sdk';
 import { v1AgentApp } from './node_modules/@agentclientprotocol/claude-agent-acp/dist/acp-agent.js';
+import type { ClaudeAcpAgent } from './node_modules/@agentclientprotocol/claude-agent-acp/dist/acp-agent.js';
 import { applyManagedPolicyEnv } from './node_modules/@agentclientprotocol/claude-agent-acp/dist/managed-policy.js';
 import { nodeToWebReadable, nodeToWebWritable } from './node_modules/@agentclientprotocol/claude-agent-acp/dist/utils.js';
 import { endWorkers, workerRequest } from './worker-lifecycle.mts';
@@ -8,19 +9,19 @@ import { endWorkers, workerRequest } from './worker-lifecycle.mts';
 await applyManagedPolicyEnv();
 console.log = console.error;
 console.info = console.error; console.debug = console.error;
-let agent;
+let agent: ClaudeAcpAgent | undefined;
 const app = v1AgentApp(console, value => { agent = value; }).onRequest('_elpis/contextFiles', { parse: params => {
-  if (typeof params?.sessionId !== 'string') throw new Error('Choose a Claude session.');
-  return params;
+  if (!params || typeof params !== 'object' || !('sessionId' in params) || typeof params.sessionId !== 'string') throw new Error('Choose a Claude session.');
+  return params as { sessionId: string };
 } }, async ({ params }) => {
-  const session = agent?.sessions[params.sessionId];
+  const session = (agent as ClaudeAcpAgent | undefined)?.sessions[params.sessionId];
   if (!session) throw new Error('Claude session is not loaded.');
   // Summary is local: full detail would make token-count API calls for each category.
   const usage = await session.query.getContextUsage({ detail: 'summary' });
   return { files: usage.memoryFiles.map(file => ({ path: file.path, estimatedTokens: file.tokens })) };
 });
-const stream = ndJsonStream(nodeToWebWritable(process.stdout), nodeToWebReadable(process.stdin));
-const connection = app.connect({ writable: stream.writable, readable: stream.readable.pipeThrough(new TransformStream({ transform: (msg, out) => out.enqueue(workerRequest(msg)) })) });
+const stream = ndJsonStream(nodeToWebWritable(process.stdout) as WritableStream<Uint8Array>, nodeToWebReadable(process.stdin) as ReadableStream<Uint8Array>);
+const connection = app.connect({ writable: stream.writable, readable: stream.readable.pipeThrough(new TransformStream({ transform: (msg, out) => out.enqueue(workerRequest(msg as Parameters<typeof workerRequest>[0]) as typeof msg) })) });
 let closing = false;
 async function shutdown() {
   if (closing) return;

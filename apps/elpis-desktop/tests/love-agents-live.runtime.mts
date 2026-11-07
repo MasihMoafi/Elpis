@@ -1,5 +1,5 @@
 import { createTestTempDir, removeTestTempDir } from './temp-root.cts';
-// One real two-character handoff over ACP: two Elpis ACP agents (this worktree's tools/elpis-claude/elpis-acp-agent.mjs,
+// One real two-character handoff over ACP: two Elpis ACP agents (this worktree's tools/elpis-claude/elpis-acp-agent.mts,
 // or $ELPIS_ACP_AGENT) on the installed engine, in an isolated Elpis home with a copy of the sign-in.
 // Usage: node tests/love-agents-live.runtime.mts /absolute/path/to/elpis-next
 import assert from 'node:assert/strict';
@@ -19,7 +19,7 @@ const sourceHome = process.env.ELPIS_HOME || path.join(os.homedir(), '.elpis-nex
 await fs.copyFile(path.join(sourceHome, 'auth.json'), path.join(home, 'auth.json'));
 await fs.chmod(path.join(home, 'auth.json'), 0o600);
 await fs.writeFile(path.join(home, 'config.toml'), `model = "gpt-6-luna"\n[projects.${JSON.stringify(project)}]\ntrust_level = "trusted"\n`);
-const agent = process.env.ELPIS_ACP_AGENT || fileURLToPath(new URL('../../../tools/elpis-claude/elpis-acp-agent.mjs', import.meta.url));
+const agent = process.env.ELPIS_ACP_AGENT || fileURLToPath(new URL('../../../tools/elpis-claude/elpis-acp-agent.mts', import.meta.url));
 const env = { ...process.env, ELPIS_HOME: home, ELPIS_ENGINE_BIN: engine, ELPIS_NODE_BIN: process.execPath, ELPIS_ACP_AGENT: agent };
 let store;
 try {

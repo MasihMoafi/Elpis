@@ -31,9 +31,9 @@ async function slowEngine(delay: number) {
   const real = realpathSync(engine), root = path.resolve(path.dirname(real), '../..'), dir = await scratch('slow-engine-');
   await fs.mkdir(path.join(dir, 'package/bin'), { recursive: true }); await fs.mkdir(path.join(dir, 'tools/elpis-claude'), { recursive: true });
   await fs.writeFile(path.join(dir, 'package/bin/codex'), `#!/bin/sh\nexec ${JSON.stringify(real)} "$@"\n`, { mode: 0o755 });
-  for (const name of await fs.readdir(path.join(root, 'tools/elpis-claude'))) if (name !== 'shared-runtime.mjs') await fs.symlink(path.join(root, 'tools/elpis-claude', name), path.join(dir, 'tools/elpis-claude', name));
-  const helper = path.join(root, 'tools/elpis-claude/shared-runtime.mjs');
-  await fs.writeFile(path.join(dir, 'tools/elpis-claude/shared-runtime.mjs'), `await new Promise(resolve => setTimeout(resolve, ${delay}));\nprocess.argv[1] = ${JSON.stringify(helper)};\nawait import(process.argv[1]);\n`);
+  for (const name of await fs.readdir(path.join(root, 'tools/elpis-claude'))) if (name !== 'shared-runtime.mts') await fs.symlink(path.join(root, 'tools/elpis-claude', name), path.join(dir, 'tools/elpis-claude', name));
+  const helper = path.join(root, 'tools/elpis-claude/shared-runtime.mts');
+  await fs.writeFile(path.join(dir, 'tools/elpis-claude/shared-runtime.mts'), `await new Promise(resolve => setTimeout(resolve, ${delay}));\nprocess.argv[1] = ${JSON.stringify(helper)};\nawait import(process.argv[1]);\n`);
   return path.join(dir, 'package/bin/codex');
 }
 const row = (page: { locator(selector: string, options: { hasText: string }): unknown; locator(selector: string, options: { has: unknown }): { first(): { waitFor(options?: { timeout: number }): Promise<void>; click(): Promise<void> } } }, title: string) => page.locator('aside.sidebar .thread-row', { has: page.locator('.thread-title', { hasText: title }) }).first();

@@ -127,7 +127,7 @@ if (process.argv.includes("app-server")) {
     await ok("initialize", { clientInfo: { name: "wf-desktop", version: "1" }, capabilities: { experimentalApi: true } });
     const tool = async (parentEnv) => {
       const c = new Client({ name: "wf-chat", version: "1" });
-      await c.connect(new StdioClientTransport({ command: process.execPath, args: [path.join(source, "elpis-agents-mcp.mjs")], env: { ...env, ELPIS_BRIDGE_URL: `ws+unix://${socketPath}:/`, ELPIS_AGENT_TOOLS: "0", ELPIS_WORKFLOW_TOOL: "1", ELPIS_AGENTS_LOG: path.join(root, "agents.log"), ...parentEnv } }));
+      await c.connect(new StdioClientTransport({ command: process.execPath, args: [path.join(source, "elpis-agents-mcp.mts")], env: { ...env, ELPIS_BRIDGE_URL: `ws+unix://${socketPath}:/`, ELPIS_AGENT_TOOLS: "0", ELPIS_WORKFLOW_TOOL: "1", ELPIS_AGENTS_LOG: path.join(root, "agents.log"), ...parentEnv } }));
       mcps.push(c);
       return c;
     };

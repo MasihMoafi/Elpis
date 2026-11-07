@@ -338,7 +338,7 @@ for (const s of scenarios) {
     // are those the transcript gives, and they add up to the context Claude reports.
     const { readFileSync } = await import("node:fs");
     const { homedir } = await import("node:os");
-    const { transcriptTokens } = await import(join(here, "context-split.mjs"));
+    const { transcriptTokens } = await import(join(here, "context-split.mts"));
     const st = await call("thread/start", { cwd: dir, approvalPolicy: "never", sandbox: "danger-full-access" });
     const tid = st.result?.thread?.id;
     await call("thread/settings/update", { threadId: tid, model: process.env.E2E_MODEL ?? "claude/opus", effort: "low" });
@@ -814,7 +814,7 @@ for (const s of scenarios) {
   } else if (s === "agy-model") {
     // A bare Antigravity family id, as a delegating agent may write it, runs as its medium version.
     const { spawn } = await import("node:child_process");
-    const agy = spawn(process.execPath, [new URL("../agy-acp.mjs", import.meta.url).pathname], { stdio: ["pipe", "pipe", "inherit"] });
+    const agy = spawn(process.execPath, [new URL("../agy-acp.mts", import.meta.url).pathname], { stdio: ["pipe", "pipe", "inherit"] });
     let buf = ""; const waiting = new Map(); let n = 0;
     agy.stdout.on("data", (d) => { buf += d; for (let i; (i = buf.indexOf("\n")) >= 0;) { const l = buf.slice(0, i); buf = buf.slice(i + 1); try { const m = JSON.parse(l); waiting.get(m.id)?.(m); } catch {} } });
     const rpc = (method, params) => new Promise((r) => { const id = ++n; waiting.set(id, r); agy.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n"); });

@@ -544,7 +544,7 @@ async function stopAppServer() {
   try { tmux('kill-server'); } catch {}
   await stopAppServer();
   if (useLauncher) {
-    const { runtimeDir, startToken } = await import('../tools/elpis-claude/shared-runtime.mjs');
+    const { runtimeDir, startToken } = await import('../tools/elpis-claude/shared-runtime.mts');
     const stateFile = runtimeDir(home).state;
     if (fs.existsSync(stateFile)) {
       const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));

@@ -12,10 +12,10 @@ const HEAD = /^export\s+const\s+meta\s*=\s*/;
 
 // Scans a literal from `{` and returns its end. Allowed: objects, arrays, strings (templates without ${}),
 // numbers (with a leading minus), true/false/null, and bare identifiers as keys. Anything else is refused.
-function scanLiteral(src, start) {
+function scanLiteral(src: string, start: number) {
   let i = start, depth = 0;
   const stack = [];
-  const fail = (why) => { throw new ScriptError(`meta must be a pure literal (no variables, calls, spreads or interpolation): ${why} at offset ${i}`); };
+  const fail = (why: string): never => { throw new ScriptError(`meta must be a pure literal (no variables, calls, spreads or interpolation): ${why} at offset ${i}`); };
   const skip = () => {
     for (;;) {
       const m = /^(?:\s+|\/\/[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/)/.exec(src.slice(i));
@@ -60,9 +60,9 @@ function scanLiteral(src, start) {
   return i;
 }
 
-export function parseScript(source) {
+export function parseScript(source: string) {
   if (typeof source !== "string" || !source.trim()) throw new ScriptError("The script is empty.");
-  const lead = LEAD.exec(source)[0].length;
+  const lead = LEAD.exec(source)?.[0].length ?? 0;
   const head = HEAD.exec(source.slice(lead));
   if (!head) throw new ScriptError("The script must begin with `export const meta = { name, description, ... }`.");
   const start = lead + head[0].length;
@@ -70,12 +70,12 @@ export function parseScript(source) {
   const end = scanLiteral(source, start);
   let meta;
   try { meta = vm.runInNewContext(`(${source.slice(start, end)})`, Object.create(null), { timeout: 1000 }); }
-  catch (e) { throw new ScriptError(`meta is not a valid literal: ${e.message}`); }
+  catch (e) { throw new ScriptError(`meta is not a valid literal: ${(e as Error).message}`); }
   meta = JSON.parse(JSON.stringify(meta));
   if (typeof meta.name !== "string" || !meta.name.trim()) throw new ScriptError("meta.name is required (a string).");
   if (typeof meta.description !== "string" || !meta.description.trim()) throw new ScriptError("meta.description is required (a string).");
   if (meta.phases !== undefined) {
-    if (!Array.isArray(meta.phases) || meta.phases.some((p) => typeof p?.title !== "string")) throw new ScriptError("meta.phases must be a list of { title, detail? }.");
+    if (!Array.isArray(meta.phases) || meta.phases.some((p: { title?: unknown }) => typeof p?.title !== "string")) throw new ScriptError("meta.phases must be a list of { title, detail? }.");
   }
   const rest = source.slice(end).replace(/^\s*;/, "");
   return { meta, body: rest, bodyOffset: source.length - rest.length };
@@ -173,14 +173,14 @@ const HOOKS = `"use strict";
 
 // Compiles the body once; run(host, config) returns a promise of the script's return value as JSON text.
 //   config: { args (JSON text or undefined), budgetTotal (number or null), maxItems, nested }
-export function compileScript(source, filename = "workflow.js") {
+export function compileScript(source: string, filename = "workflow.js") {
   const { meta, body } = parseScript(source);
   let code;
   try { code = new vm.Script(`(async () => {\n${body}\n})`, { filename, lineOffset: -1 }); }
-  catch (e) { throw new ScriptError(`The script does not parse (plain JavaScript only, no TypeScript): ${e.message}`); }
+  catch (e) { throw new ScriptError(`The script does not parse (plain JavaScript only, no TypeScript): ${(e as Error).message}`); }
   return {
     meta,
-    run(host, { args, budgetTotal = null, maxItems, nested = false } = {}) {
+    run(host: object, { args, budgetTotal = null, maxItems, nested = false }: { args?: string | undefined; budgetTotal?: number | null; maxItems?: number; nested?: boolean } = {}) {
       const context = vm.createContext(Object.create(null), { codeGeneration: { strings: false, wasm: false } });
       vm.runInContext(GUARDS, context);
       const start = vm.runInContext(HOOKS, context);
@@ -191,19 +191,25 @@ export function compileScript(source, filename = "workflow.js") {
 
 // ---- JSON Schema: the subset structured answers use ----------------------------------------------------
 
-const typeOf = (v) => (v === null ? "null" : Array.isArray(v) ? "array" : Number.isInteger(v) ? "integer" : typeof v);
-const isType = (v, t) => t === "number" ? typeof v === "number" : t === "integer" ? Number.isInteger(v) : typeOf(v) === t;
+type Schema = {
+  type?: string | string[]; enum?: unknown[]; const?: unknown; anyOf?: Schema[]; oneOf?: Schema[];
+  properties?: Record<string, Schema>; required?: string[]; additionalProperties?: boolean | Schema;
+  items?: Schema; minItems?: number; maxItems?: number; minimum?: number; maximum?: number;
+  minLength?: number; maxLength?: number;
+};
+const typeOf = (v: unknown) => (v === null ? "null" : Array.isArray(v) ? "array" : Number.isInteger(v) ? "integer" : typeof v);
+const isType = (v: unknown, t: string) => t === "number" ? typeof v === "number" : t === "integer" ? Number.isInteger(v) : typeOf(v) === t;
 
-export function validate(schema, value, at = "$") {
-  if (!schema || typeof schema !== "object" || schema === true) return [];
+export function validate(schema: Schema | boolean | null | undefined, value: unknown, at = "$"): string[] {
+  if (!schema || schema === true || typeof schema !== "object") return [];
   const errors = [];
-  const types = schema.type === undefined ? null : [].concat(schema.type);
+  const types = schema.type === undefined ? null : [schema.type].flat();
   if (types && !types.some((t) => isType(value, t))) return [`${at}: expected ${types.join(" or ")}, got ${typeOf(value)}`];
   if (schema.enum && !schema.enum.some((e) => JSON.stringify(e) === JSON.stringify(value))) errors.push(`${at}: must be one of ${JSON.stringify(schema.enum)}`);
   if ("const" in schema && JSON.stringify(schema.const) !== JSON.stringify(value)) errors.push(`${at}: must be ${JSON.stringify(schema.const)}`);
   if (schema.anyOf && !schema.anyOf.some((s) => !validate(s, value, at).length)) errors.push(`${at}: matches none of anyOf`);
   if (schema.oneOf && schema.oneOf.filter((s) => !validate(s, value, at).length).length !== 1) errors.push(`${at}: must match exactly one of oneOf`);
-  if (typeOf(value) === "object") {
+  if (typeOf(value) === "object" && value !== null && typeof value === "object") {
     const props = schema.properties ?? {};
     for (const key of schema.required ?? []) if (!(key in value)) errors.push(`${at}.${key}: required`);
     for (const [key, v] of Object.entries(value)) {
@@ -229,17 +235,18 @@ export function validate(schema, value, at = "$") {
 }
 
 // A schema agent() accepts: an object root with properties, required naming only listed properties.
-export function checkSchema(schema) {
+export function checkSchema(schema: Schema) {
   if (!schema || typeof schema !== "object" || schema.type !== "object" || !schema.properties || typeof schema.properties !== "object") {
     throw new Error("schema must be a JSON Schema with {type: 'object', properties: {...}} at its root");
   }
-  const missing = (schema.required ?? []).filter((k) => !(k in schema.properties));
+  const properties = schema.properties;
+  const missing = (schema.required ?? []).filter((k) => !(k in properties));
   if (missing.length) throw new Error(`schema is unsatisfiable: required ${missing.join(", ")} not in properties`);
 }
 
 // The engine asks OpenAI for strict structured output, which needs every property required and no extra
 // ones. Optional properties become nullable; fromStrict drops their nulls again before validation.
-export function strictSchema(schema) {
+export function strictSchema(schema: Schema): Schema {
   if (!schema || typeof schema !== "object") return schema;
   const out = { ...schema };
   if (schema.type === "object" || schema.properties) {
@@ -252,19 +259,19 @@ export function strictSchema(schema) {
     out.additionalProperties = false;
   }
   if (schema.items) out.items = strictSchema(schema.items);
-  for (const k of ["anyOf", "oneOf"]) if (schema[k]) out[k] = schema[k].map(strictSchema);
+  for (const k of ["anyOf", "oneOf"] as const) if (schema[k]) out[k] = schema[k].map(strictSchema);
   return out;
 }
-const nullable = (s) => {
+const nullable = (s: Schema): Schema => {
   if (typeof s.type === "string") return { ...s, type: [s.type, "null"] };
   if (Array.isArray(s.type)) return s.type.includes("null") ? s : { ...s, type: [...s.type, "null"] };
   return { anyOf: [s, { type: "null" }] };
 };
-export function fromStrict(value, schema) {
+export function fromStrict(value: unknown, schema: Schema | undefined): unknown {
   if (!schema || typeof schema !== "object" || value === null || typeof value !== "object") return value;
   if (Array.isArray(value)) return schema.items ? value.map((v) => fromStrict(v, schema.items)) : value;
   const required = new Set(schema.required ?? []);
-  const out = {};
+  const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(value)) {
     if (v === null && !required.has(k) && schema.properties?.[k]) continue;
     out[k] = fromStrict(v, schema.properties?.[k]);
@@ -273,7 +280,7 @@ export function fromStrict(value, schema) {
 }
 
 // The JSON object in a reply: the whole text, a fenced block, or the outermost braces.
-export function jsonAnswer(text) {
+export function jsonAnswer(text: unknown) {
   const t = String(text ?? "").trim();
   const fenced = /^```[\w-]*\n([\s\S]*?)\n?```$/.exec(t)?.[1];
   for (const s of [t, fenced, t.slice(t.indexOf("{"), t.lastIndexOf("}") + 1)]) {

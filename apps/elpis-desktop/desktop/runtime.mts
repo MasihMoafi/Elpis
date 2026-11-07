@@ -30,7 +30,7 @@ export async function ensureInstalledRuntime({ env = process.env } = {}) {
     })) {
       // 27 Oct: after an engine install, Restart reopened the app on the engine already running, so "Update ready"
       // never went away. A runtime from another installation is asked to hand over to the selected one (its working
-      // chats finish where they are: shared-runtime.mjs); when it cannot, the app keeps the running one.
+      // chats finish where they are: shared-runtime.mts); when it cannot, the app keeps the running one.
       let running, selected;
       try { running = JSON.parse(fs.readFileSync(path.join(path.dirname(socketPath), 'state.json'), 'utf8')).engine; } catch { /* unknown: keep it */ }
       try { selected = fs.realpathSync(path.join(env.HOME || os.homedir(), '.local', 'bin', 'elpis-next')); } catch { /* none selected */ }
@@ -48,7 +48,7 @@ export async function ensureInstalledRuntime({ env = process.env } = {}) {
 /** Runs the installation's launcher helper: it starts that bridge, or has a running one from another installation hand over to it. */
 async function startRuntime(env: NodeJS.ProcessEnv, engine: string) {
   const bridgeDir = runtimeTools(engine);
-  const helper = path.join(bridgeDir, 'shared-runtime.mjs');
+  const helper = path.join(bridgeDir, 'shared-runtime.mts');
   const bridge = path.join(bridgeDir, 'acp-bridge.mjs');
   if (!fs.existsSync(helper) || !fs.existsSync(bridge)) {
     throw new Error('The selected Elpis installation is missing its provider bridge. Reinstall Elpis, or connect to an existing runtime with ELPIS_APP_BRIDGE_SOCKET.');

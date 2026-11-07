@@ -2,27 +2,46 @@ import { closeSync, openSync, readSync, statSync } from "node:fs";
 // How a bridged chat's context splits into the categories Elpis draws (/context, the Context
 // Ledger). The parts come from text length (about 4 characters a token); the
 // total is what the model reports.
-const tok = (n) => Math.round((n ?? 0) / 4);
+type ContextChars = { user?: number; agent?: number; reasoning?: number; toolCalls?: number; toolResults?: number };
+type TokenParts = { system: number; user: number; agent: number; reasoning: number; toolCalls: number; toolResults: number };
+type TranscriptContent = { type: string; text: string; input?: unknown; content?: unknown };
+type TranscriptMessage = {
+  id?: string;
+  usage?: { input_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number; output_tokens?: number };
+  content?: string | TranscriptContent[];
+};
+type TranscriptEntry = {
+  type?: string;
+  subtype?: string;
+  isSidechain?: boolean;
+  message?: TranscriptMessage;
+  attachment?: { type?: string; systemPrompt?: unknown; tools?: unknown };
+};
+type Reply = { id: string | undefined; out: number; text: number; calls: number };
+type TranscriptCacheEntry = { stamp: string; size: number; at: number; from: number; tokens: TokenParts };
 
-export function splitContext(chars, developerChars, used) {
+const tok = (n: number | null | undefined) => Math.round((n ?? 0) / 4);
+
+export function splitContext(chars: ContextChars | null | undefined, developerChars: number | null | undefined, used: number) {
   const c = chars ?? {};
   return splitTokens({ developerMessages: tok(developerChars), userMessages: tok(c.user), agentMessages: tok(c.agent), reasoning: tok(c.reasoning), toolCalls: tok(c.toolCalls), toolResults: tok(c.toolResults) }, used);
 }
 
 // Parts in tokens, fitted to the reported total; what they leave is the system instructions.
-export function splitTokens(parts, used) {
+export function splitTokens(parts: Record<string, number>, used: number) {
   parts = { ...parts };
   const known = Object.values(parts).reduce((a, b) => a + b, 0);
   // Elpis needs the parts to add up to the total. Estimates larger than the reported context
   // shrink to fit it, keeping their proportions (largest remainder).
   if (known > used) {
     const keys = Object.keys(parts);
-    const exact = keys.map((k) => (parts[k] * used) / known);
-    keys.forEach((k, i) => { parts[k] = Math.floor(exact[i]); });
-    let left = used - keys.reduce((sum, k) => sum + parts[k], 0);
-    for (const i of keys.map((_, i) => i).sort((a, b) => (exact[b] % 1) - (exact[a] % 1))) {
+    const exact = keys.map((k) => ((parts[k] as number) * used) / known);
+    keys.forEach((k, i) => { parts[k] = Math.floor(exact[i] as number); });
+    let left = used - keys.reduce((sum, k) => sum + (parts[k] as number), 0);
+    for (const i of keys.map((_, i) => i).sort((a, b) => ((exact[b] as number) % 1) - ((exact[a] as number) % 1))) {
       if (left-- <= 0) break;
-      parts[keys[i]] += 1;
+      const key = keys[i] as string;
+      parts[key] = (parts[key] as number) + 1;
     }
   }
   const fitted = Object.values(parts).reduce((a, b) => a + b, 0);
@@ -39,13 +58,13 @@ export function splitTokens(parts, used) {
 // - the first request, and one after a new system prompt (a prompt snapshot), carry the system
 //   prompt and tools: the inputs added are estimated by length and the rest is system. Claude
 //   Code saves a snapshot of its prompt before each request; only a changed one is new.
-export function transcriptTokens(jsonl) {
-  const t = { system: 0, user: 0, agent: 0, reasoning: 0, toolCalls: 0, toolResults: 0 };
-  const entries = jsonl.split("\n").flatMap((l) => { try { return l ? [JSON.parse(l)] : []; } catch { return []; } });
+export function transcriptTokens(jsonl: string) {
+  const t: TokenParts = { system: 0, user: 0, agent: 0, reasoning: 0, toolCalls: 0, toolResults: 0 };
+  const entries: TranscriptEntry[] = jsonl.split("\n").flatMap((l) => { try { return l ? [JSON.parse(l) as TranscriptEntry] : []; } catch { return []; } });
   const from = entries.findLastIndex((d) => d.type === "system" && d.subtype === "compact_boundary") + 1;
-  const textOf = (v) => typeof v === "string" ? v.length : Array.isArray(v) ? v.reduce((n, x) => n + (x?.type === "text" ? x.text.length : 0), 0) : 0;
-  let pending = [], newPrompt = true, prevTotal = 0, reply = null;
-  let prompt = null; // the system prompt and tools of the snapshots so far
+  const textOf = (v: unknown) => typeof v === "string" ? v.length : Array.isArray(v) ? v.reduce((n: number, x: TranscriptContent) => n + (x?.type === "text" ? x.text.length : 0), 0) : 0;
+  let pending: [keyof TokenParts, number][] = [], newPrompt = true, prevTotal = 0, reply: Reply | null = null;
+  let prompt: { system: unknown; tools: unknown } | null = null; // the system prompt and tools of the snapshots so far
   const closeReply = () => {
     if (!reply) return;
     const shown = tok(reply.text) + tok(reply.calls);
@@ -59,7 +78,7 @@ export function transcriptTokens(jsonl) {
     if (d.isSidechain) continue;
     if (d.type === "assistant") {
       const m = d.message ?? {};
-      if (reply?.id !== m.id) {
+      if ((reply as Reply | null)?.id !== m.id) {
         const u = m.usage ?? {};
         const total = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
         if (!total) continue; // a reply Claude Code wrote itself
@@ -80,9 +99,9 @@ export function transcriptTokens(jsonl) {
         pending = []; newPrompt = false; prevTotal = total;
         reply = { id: m.id, out: u.output_tokens ?? 0, text: 0, calls: 0 };
       }
-      for (const x of m.content ?? []) {
-        if (x.type === "text") reply.text += x.text.length;
-        else if (x.type === "tool_use") reply.calls += JSON.stringify(x.input ?? {}).length;
+      for (const x of (m.content ?? []) as TranscriptContent[]) {
+        if (x.type === "text") (reply as Reply).text += x.text.length;
+        else if (x.type === "tool_use") (reply as Reply).calls += JSON.stringify(x.input ?? {}).length;
       }
     } else if (d.type === "user") {
       const content = d.message?.content;
@@ -95,24 +114,25 @@ export function transcriptTokens(jsonl) {
       if (d.attachment?.type === "prompt_snapshot") {
         // A snapshot may leave out what has not changed (the first one has no tools).
         const { systemPrompt: system, tools } = d.attachment;
-        const changed = (was, now) => was !== undefined && now !== undefined && JSON.stringify(was) !== JSON.stringify(now);
+        const changed = (was: unknown, now: unknown) => was !== undefined && now !== undefined && JSON.stringify(was) !== JSON.stringify(now);
         if (prompt && (changed(prompt.system, system) || changed(prompt.tools, tools))) newPrompt = true;
-        prompt = { system: system ?? prompt?.system, tools: tools ?? prompt?.tools };
+        const previous = prompt as { system: unknown; tools: unknown } | null;
+        prompt = { system: system ?? previous?.system, tools: tools ?? previous?.tools };
       }
       else pending.push(["system", JSON.stringify(d.attachment ?? {}).length]);
     }
   }
   closeReply();
-  for (const k of Object.keys(t)) t[k] = Math.round(t[k]);
+  for (const k of Object.keys(t) as (keyof TokenParts)[]) t[k] = Math.round(t[k]);
   return t;
 }
 
 /** transcriptTokens for a Claude transcript file, read cheaply: only from its last compaction (the counts ignore what
  * precedes it), and at most once per `interval` while the file grows. A shorter file is a new one, read from the start. */
-export function transcriptReader({ now = Date.now, interval = 15000, onRead = () => {} } = {}) {
-  const seen = new Map(); // file -> { stamp, at, from, tokens }
+export function transcriptReader({ now = Date.now, interval = 15000, onRead = () => {} }: { now?: () => number; interval?: number; onRead?: (bytes: number) => void } = {}) {
+  const seen = new Map<string, TranscriptCacheEntry>(); // file -> { stamp, at, from, tokens }
   const BOUNDARY = Buffer.from('"compact_boundary"');
-  return (file) => {
+  return (file: string) => {
     const { mtimeMs, size } = statSync(file), stamp = `${mtimeMs}:${size}`;
     let entry = seen.get(file);
     if (entry && (entry.stamp === stamp || now() - entry.at < interval)) return entry.tokens;

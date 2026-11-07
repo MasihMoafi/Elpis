@@ -7,8 +7,8 @@ REAL="$HOME/.local/lib/elpis-next/elpis-next"
 BRIDGE_DIR="$HOME/Desktop/p/Elpis-wt-acp/tools/elpis-claude"
 
 direct() {
-  if [ "${1:-}" = exec ] && [ -f "$BRIDGE_DIR/exec-policy.mjs" ]; then
-    ELPIS_ENGINE_BIN="$REAL" exec node "$BRIDGE_DIR/exec-policy.mjs" "$@"
+  if [ "${1:-}" = exec ] && [ -f "$BRIDGE_DIR/exec-policy.mts" ]; then
+    ELPIS_ENGINE_BIN="$REAL" exec node "$BRIDGE_DIR/exec-policy.mts" "$@"
   fi
   exec "$REAL" "$@"
 }
@@ -20,7 +20,7 @@ for a in "$@"; do
 done
 case "${1:-}" in
   ""|-*|resume|fork) ELPIS_ENGINE_BIN="$REAL" exec "$BRIDGE_DIR/elpis-claude" "$@" ;;
-  # Elpis as an ACP agent over stdio (elpis-acp-agent.mjs), e.g. `elpis acp --model gpt-6-luna`.
-  acp) shift; ELPIS_ENGINE_BIN="$REAL" exec node "$BRIDGE_DIR/elpis-acp-agent.mjs" "$@" ;;
+  # Elpis as an ACP agent over stdio (elpis-acp-agent.mts), e.g. `elpis acp --model gpt-6-luna`.
+  acp) shift; ELPIS_ENGINE_BIN="$REAL" exec node "$BRIDGE_DIR/elpis-acp-agent.mts" "$@" ;;
   *) direct "$@" ;;
 esac

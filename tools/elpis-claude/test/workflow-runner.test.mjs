@@ -7,8 +7,8 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import test from "node:test";
-import { WorkflowRunner, agentKey, personAskedForWorkflow, noticeText, NOTICE_TAG } from "../workflow-runner.mjs";
-import { parseScript } from "../workflow-script.mjs";
+import { WorkflowRunner, agentKey, personAskedForWorkflow, noticeText, NOTICE_TAG } from "../workflow-runner.mts";
+import { parseScript } from "../workflow-script.mts";
 import { createTestTempDir, removeTestTempDir } from "./temp-root.mts";
 
 const homes = [];
@@ -100,6 +100,7 @@ test("agent() returns its final text, runs as a helper chat on the starting chat
   assert.deepEqual({ label: records[1].label, phase: records[1].phase }, { label: "greeter", phase: "One" });
   assert.equal(records[2].result, "done: say hi");
   const read = r.read(started.runId);
+  assert.ok(read?.agents[0]);
   assert.equal(read.agents[0].threadId, "chat-1");
   assert.equal(read.agents[0].phase, "One");
   assert.equal(read.agents[0].state, "done");
@@ -115,7 +116,9 @@ test("parallel() is a barrier; a throwing thunk gives null and the call never re
   const { run: done } = await run(r, `${META}const out = await parallel([() => agent('fast'), () => agent('slow'), () => { throw new Error('boom') }])\nawait agent('after')\nreturn out`);
   assert.deepEqual(done.result, ["done: fast", "done: slow", null]);
   assert.ok(ex.events.indexOf("start after") > ex.events.indexOf("end slow"), ex.events.join(", "));
-  assert.match(done.scriptErrors?.[0]?.message ?? r.read(done.id).scriptErrors[0].message, /boom/);
+  const read = r.read(done.id);
+  assert.ok(read?.scriptErrors[0]);
+  assert.match(done.scriptErrors?.[0]?.message ?? read.scriptErrors[0].message, /boom/);
 });
 
 test("pipeline() has no barrier between stages; a throwing stage drops that item to null (WR2)", async () => {
@@ -137,14 +140,17 @@ test("a failing agent is retried with backoff, then null; the run still finishes
   assert.equal(done.status, "completed");
   assert.deepEqual(done.result, { a: null, b: "done: fine" });
   assert.equal(ex.turns.filter((t) => t.prompt === "flaky").length, 3);
-  const flaky = r.read(done.id).agents.find((a) => a.label === "flaky");
+  const flaky = r.read(done.id)?.agents.find((a) => a.label === "flaky");
+  assert.ok(flaky);
   assert.deepEqual([flaky.state, flaky.attempts], ["failed", 3]);
   assert.match(ex.turns.filter((t) => t.prompt === "flaky")[1].text, /Attempt 2: the last one failed with "ECONNRESET"/);
   assert.equal(journal(done.dir).filter((x) => x.type === "result").length, 1, "a dead agent's null is not journaled, so a resume runs it again");
   const r2 = runner(flakyOnce);
   const { run: second } = await run(r2, `${META}return await agent('once')`);
   assert.equal(second.result, "done: once");
-  assert.equal(r2.read(second.id).agents[0].attempts, 2);
+  const secondRead = r2.read(second.id);
+  assert.ok(secondRead?.agents[0]);
+  assert.equal(secondRead.agents[0].attempts, 2);
 });
 
 test("schema answers are validated, mismatches are asked again, and a third mismatch gives null (WR2)", async () => {
@@ -160,7 +166,8 @@ test("schema answers are validated, mismatches are asked again, and a third mism
   assert.match(good[1].text, /did not match the required JSON Schema: the answer is not a JSON object/);
   assert.deepEqual(good[0].outputSchema.required, ["n", "note"], "the engine gets a strict schema");
   assert.equal(good[0].outputSchema.additionalProperties, false);
-  const bad = r.read(done.id).agents[1];
+  const bad = r.read(done.id)?.agents[1];
+  assert.ok(bad);
   assert.equal(ex.turns.filter((t) => t.threadId === bad.threadId).length, 3, "three tries, no outer retries");
   assert.equal(bad.state, "failed");
   const { run: unsatisfiable } = await run(r, `${META}try { await agent('x', { schema: { type: 'object', properties: {}, required: ['missing'] } }) } catch (e) { return e.message }`);
@@ -253,7 +260,8 @@ test("a restarted runtime resumes a running run from its journal without re-runn
   const finished = await done;
   assert.equal(finished.status, "completed");
   assert.deepEqual(ex2.turns.map((t) => t.prompt), ["slow 3", "last done: fast 1|done: fast 2|done: slow 3"]);
-  const slow = r2.read(runId).agents.find((a) => a.label === "slow 3");
+  const slow = r2.read(runId)?.agents.find((a) => a.label === "slow 3");
+  assert.ok(slow);
   assert.equal(slow.threadId, "chat-3", "the unfinished agent runs again in its own chat");
   assert.match(ex2.turns[0].text, /The workflow restarted before you finished/);
   assert.equal(journal(finished.dir).filter((x) => x.type === "launched").length, 2);
@@ -290,7 +298,9 @@ test("skip makes one running agent return null (WR7)", async () => {
   const done = ended(r, runId);
   r.skip(runId, agent.id);
   assert.deepEqual((await done).result, [null, "done: next"]);
-  assert.equal(r.read(runId).agents[0].state, "skipped");
+  const read = r.read(runId);
+  assert.ok(read?.agents[0]);
+  assert.equal(read.agents[0].state, "skipped");
 });
 
 test("workflow() runs a saved workflow inline, one level deep (WR2)", async () => {
@@ -303,6 +313,7 @@ test("workflow() runs a saved workflow inline, one level deep (WR2)", async () =
   assert.equal(done.status, "completed", done.error);
   assert.deepEqual(done.result, { x: "done: child 7", nested: "workflow() nesting is one level only: a workflow run by workflow() cannot run another" });
   const read = r.read(done.id);
+  assert.ok(read?.agents[0]);
   assert.equal(read.agents[0].group, "child");
   assert.equal(read.agents[0].phase, "Inner");
   const { run: unknown } = await run(r, `${META}return await workflow('nope')`);
@@ -336,7 +347,10 @@ test("isolation: 'worktree' gives each agent its own worktree and branch: unchan
   assert.equal(new Set(Object.values(cwds)).size, 3, "a worktree per agent");
   assert.ok(Object.values(cwds).every((c) => c.startsWith(done.dir) && c !== main), JSON.stringify(cwds));
   assert.equal(fs.existsSync(cwds.clean), false, "an unchanged worktree is removed");
-  const agents = Object.fromEntries(r.read(done.id).agents.map((a) => [a.label, a]));
+  const read = r.read(done.id);
+  assert.ok(read);
+  const agents = Object.fromEntries(read.agents.map((a) => [a.label, a]));
+  assert.ok(agents.dirty && agents.commit);
   assert.deepEqual(branches(main).sort(), [agents.dirty.worktreeBranch, agents.commit.worktreeBranch].sort(), "the unchanged agent's branch goes with it; the others stay");
   assert.equal(fs.readFileSync(path.join(cwds.dirty, "changed.txt"), "utf8"), "x", "an uncommitted change is kept");
   assert.equal(gitIn(main, "show", `${agents.commit.worktreeBranch}:made.txt`), "y", "a commit is kept on its branch");
@@ -370,7 +384,8 @@ test("an isolated agent resumed after its runtime died keeps its worktree, and w
   assert.equal(finished.status, "completed", finished.error);
   assert.equal(ex2.turns.length, 1);
   assert.equal(fs.existsSync(path.join(first, "half.txt")), true, "the resumed agent works on in the same worktree, and it is kept");
-  const agent = r2.read(runId).agents[0];
+  const agent = r2.read(runId)?.agents[0];
+  assert.ok(agent);
   assert.equal(agent.worktree, first);
   assert.equal(gitIn(main, "show", `${agent.worktreeBranch}:half.txt`), "1", "the commit made before the restart is on its branch");
   assert.match(finished.result, /Changes left in worktree/);
@@ -441,6 +456,7 @@ test("list and read give the app what it shows: phases, agents with state, chat 
   const [listed] = r.list({ parentThreadId: "chat-parent" }).filter((x) => x.id === done.id);
   assert.deepEqual([listed.name, listed.status, listed.agents.total, listed.agents.done], ["test", "completed", 1, 1]);
   const read = r.read(done.id);
+  assert.ok(read?.agents[0]);
   assert.deepEqual(read.phases.map((p) => p.title), ["One", "Two", "Three"]);
   assert.equal(read.agents[0].label, "A");
   assert.ok(read.agents[0].elapsedMs >= 10);

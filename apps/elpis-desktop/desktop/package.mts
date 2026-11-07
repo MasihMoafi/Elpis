@@ -14,7 +14,7 @@ export const productionFiles = [
   'bridge/matilda-companion.mjs',
   'desktop/app-menu.cts', 'lib/app-menu-commands.cts',
   'bridge/voice.mts', 'bridge/voice-handoff.cts', 'bridge/kokoro.mts', 'bridge/read-aloud-provider.mts', 'lib/speech-model.mts', 'bridge/schedule.mts', 'bridge/schedule-rules.mts', 'bridge/schedule-mcp.mts', 'bridge/kokoro-worker.py',
-  'bridge/resources/permission-policy.mjs', 'bridge/resources/workflow-concurrency.mts',
+  'bridge/resources/permission-policy.mts', 'bridge/resources/workflow-concurrency.mts',
   'bridge/import-chats.mts',
   'bridge/settings-files.mts', 'bridge/app-identity.mts', 'desktop/sleep-blocker.cts',
   'bridge/session-context.mts', 'bridge/side-turn.mts', 'bridge/thread-titles.mts',

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Runs one task on an Anthropic Managed Agent and prints the agent's text as it streams.
-//   node managed-agent.mjs --setup [--agent ID]   (once: applies managed-agent-system.md, xhigh effort and the tools)
-//   node managed-agent.mjs [--agent ID] [--environment ID] [--budget-usd N] [--title T] (--message TEXT | --message-file PATH)
+//   node managed-agent.mts --setup [--agent ID]   (once: applies managed-agent-system.md, xhigh effort and the tools)
+//   node managed-agent.mts [--agent ID] [--environment ID] [--budget-usd N] [--title T] (--message TEXT | --message-file PATH)
 // The control-plane key comes from ANTHROPIC_API_KEY or ~/.config/elpis/anthropic-credits.env and is never printed.
 // The agent's tools run wherever the environment's worker runs (managed-worker.sh for this machine).
 import fs from 'node:fs';
@@ -9,6 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Anthropic from '@anthropic-ai/sdk';
+import type { BetaManagedAgentsStreamSessionEvents } from '@anthropic-ai/sdk/resources/beta/sessions/events';
 
 export const DEFAULTS = { agent: 'agent_01NFcJcyAz14txaLSkbj5pY1', environment: 'env_012gguPeTQSEmhpbjVNvkmjp', budgetUsd: 10, title: 'Elpis task' };
 // The Console workspace of Masih's promotional credits (as in ~/.elpis-next/config.toml's anthropic-credits provider).
@@ -24,35 +25,38 @@ export function apiKey(env = process.env, file = KEY_FILE) {
   } catch { return null; }
 }
 
-export function parseArgs(argv) {
-  const args = { ...DEFAULTS, message: null };
+export function parseArgs(argv: string[]) {
+  const args: typeof DEFAULTS & { message: string | null } = { ...DEFAULTS, message: null };
   for (let i = 0; i < argv.length; i++) {
     const [flag, value] = [argv[i], argv[i + 1]];
-    if (flag === '--agent') args.agent = value;
-    else if (flag === '--environment') args.environment = value;
+    if (flag === '--agent') args.agent = value as string;
+    else if (flag === '--environment') args.environment = value as string;
     else if (flag === '--budget-usd') args.budgetUsd = Number(value);
-    else if (flag === '--title') args.title = value;
-    else if (flag === '--message') args.message = value;
-    else if (flag === '--message-file') args.message = fs.readFileSync(value, 'utf8');
+    else if (flag === '--title') args.title = value as string;
+    else if (flag === '--message') args.message = value as string;
+    else if (flag === '--message-file') args.message = fs.readFileSync(value as string, 'utf8');
     else throw Error(`unknown argument ${flag}`);
     i++;
   }
   if (!args.message?.trim()) throw Error('give the task with --message or --message-file');
   if (!(args.budgetUsd > 0)) throw Error('--budget-usd must be above 0');
-  return args;
+  return args as typeof args & { message: string };
 }
 
-const said = event => (event.content ?? []).filter(block => block.type === 'text').map(block => block.text).join('');
-const terminal = event => event.type === 'session.status_terminated'
+type SessionEvent = BetaManagedAgentsStreamSessionEvents;
+type FinalEvent = Extract<SessionEvent, { type: 'session.status_idle' | 'session.status_terminated' }>;
+const said = (event: Extract<SessionEvent, { type: 'agent.message' }>) => (event.content ?? []).filter(block => block.type === 'text').map(block => block.text).join('');
+const terminal = (event: SessionEvent): event is FinalEvent => event.type === 'session.status_terminated'
   || (event.type === 'session.status_idle' && event.stop_reason?.type !== 'requires_action');
+const stopReason = (event: FinalEvent) => (event as FinalEvent & { stop_reason?: { type?: string } }).stop_reason?.type ?? 'terminated';
 
 /** Streams one session from the kickoff to its end. Opens the stream before sending, survives dropped streams by
  * reading the event history and skipping events already handled, answers paused tool calls with a denial (nobody is
  * watching), and returns how the session stopped. */
-export async function runSession(client, sessionId, message, out = process.stdout, log = process.stderr) {
-  const seen = new Set();
+export async function runSession(client: Anthropic, sessionId: string, message: string, out = process.stdout, log = process.stderr) {
+  const seen = new Set<string | undefined>();
   let sent = false, started = false;
-  const handle = async event => {
+  const handle = async (event: SessionEvent) => {
     if (event.type === 'session.status_running') started = true;
     else if (event.type === 'agent.message') out.write(said(event));
     else if (event.type === 'agent.tool_use' || event.type === 'agent.mcp_tool_use') {
@@ -67,17 +71,18 @@ export async function runSession(client, sessionId, message, out = process.stdou
     if (attempt > 0) for await (const event of client.beta.sessions.events.list(sessionId)) {
       if (seen.has(event.id)) continue;
       seen.add(event.id); await handle(event);
-      if (started && terminal(event)) return event.stop_reason?.type ?? 'terminated';
+      if (started && terminal(event)) return stopReason(event);
     }
     if (!sent) { await client.beta.sessions.events.send(sessionId, { events: [{ type: 'user.message', content: [{ type: 'text', text: message }] }] }); sent = true; }
     try {
       for await (const event of stream) {
-        if (!seen.has(event.id)) { seen.add(event.id); await handle(event); }
-        if (started && terminal(event)) return event.stop_reason?.type ?? 'terminated';
+        const id = (event as { id?: string }).id;
+        if (!seen.has(id)) { seen.add(id); await handle(event); }
+        if (started && terminal(event)) return stopReason(event);
       }
     } catch (error) {
       if (attempt >= 4 || error instanceof Anthropic.APIError) throw error;
-      log.write(`\n[stream dropped: ${error.message}; reconnecting]\n`);
+      log.write(`\n[stream dropped: ${(error as Error).message}; reconnecting]\n`);
     }
   }
 }
@@ -85,7 +90,7 @@ export async function runSession(client, sessionId, message, out = process.stdou
 /** The agent's configuration, versioned by the API: the brief in managed-agent-system.md (no persona), extra-high
  * effort, and the built-in tools with no approval prompts (they run in managed-worker.sh's sandbox); the web tools
  * stay off because they would run on Anthropic's servers, outside that sandbox. */
-export async function setupAgent(client, agentId, system) {
+export async function setupAgent(client: Anthropic, agentId: string, system: string) {
   const agent = await client.beta.agents.retrieve(agentId);
   const model = typeof agent.model === 'string' ? agent.model : agent.model?.id;
   return client.beta.agents.update(agentId, {
@@ -104,7 +109,7 @@ async function main() {
   if (setup) {
     const agentId = argv[1] === '--agent' ? argv[2] : DEFAULTS.agent;
     const system = fs.readFileSync(new URL('./managed-agent-system.md', import.meta.url), 'utf8');
-    const agent = await setupAgent(client, agentId, system);
+    const agent = await setupAgent(client, agentId as string, system);
     console.error(`agent ${agent.id} is now version ${agent.version} (${typeof agent.model === 'string' ? agent.model : agent.model?.id}, xhigh)`);
     return 0;
   }
@@ -124,7 +129,7 @@ async function main() {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === fs.realpathSync(process.argv[1])) {
-  main().then(code => { process.exitCode = code; }, error => {
+  main().then(code => { process.exitCode = code; }, (error: Error) => {
     const detail = error instanceof Anthropic.APIError ? `${error.status ?? ''} ${error.error?.error?.message ?? error.message}` : error.message;
     console.error(`managed-agent: ${detail.trim()}`);
     process.exitCode = 1;

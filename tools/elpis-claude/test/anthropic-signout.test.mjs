@@ -166,7 +166,7 @@ if (process.argv.includes("app-server")) {
 
   test("switching accounts changes the actual ACP login, usage and identity, retains history, and refuses active-turn switches", async (t) => {
     const fx = await setup(t), tui = await fx.connect("tui"), desktop = await fx.connect("desktop");
-    const { ClaudeAccounts } = await import("../claude-accounts.mjs");
+    const { ClaudeAccounts } = await import("../claude-accounts.mts");
     const accounts = new ClaudeAccounts({ home: path.join(fx.root, "home"), dir: fx.state });
     const second = accounts.add(), configDir = accounts.configDir(second.id);
     fs.writeFileSync(path.join(configDir, ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "second-local-token", subscriptionType: "pro" } }));

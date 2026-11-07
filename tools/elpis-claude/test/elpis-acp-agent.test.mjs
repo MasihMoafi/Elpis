@@ -1,5 +1,5 @@
 import { createTestTempDir, removeTestTempDir } from './temp-root.mts';
-// The Elpis ACP agent (elpis-acp-agent.mjs) driven by the official ACP SDK client, on a scripted app-server
+// The Elpis ACP agent (elpis-acp-agent.mts) driven by the official ACP SDK client, on a scripted app-server
 // (fake-app-server.mjs as ELPIS_ENGINE_BIN). No model calls.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -14,9 +14,9 @@ import { client, ndJsonStream } from "@agentclientprotocol/sdk";
 import http from "node:http";
 import { randomUUID } from "node:crypto";
 import { DesktopClient } from "../../../apps/elpis-desktop/bridge/client.mts";
-import { runtimeDir } from "../shared-runtime.mjs";
+import { runtimeDir } from "../shared-runtime.mts";
 
-const AGENT = fileURLToPath(new URL("../elpis-acp-agent.mjs", import.meta.url));
+const AGENT = fileURLToPath(new URL("../elpis-acp-agent.mts", import.meta.url));
 const ENGINE = fileURLToPath(new URL("./fake-app-server.mjs", import.meta.url));
 const BRIDGE = fileURLToPath(new URL("../acp-bridge.mjs", import.meta.url));
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -245,7 +245,7 @@ test("session/new forwards HTTP MCP URL and headers to the engine", { timeout: 2
 });
 
 // A desktop Workflows node's chat starts without the person's own MCP servers, as the runner's agents do
-// (workflow-agents.mjs): each loaded chat runs its own copy of them, about 300 MB.
+// (workflow-agents.mts): each loaded chat runs its own copy of them, about 300 MB.
 test("a Workflows node's chat starts with every configured MCP server off; Love Spot's chat and ELPIS_WORKFLOW_USER_MCP=1 keep them", { timeout: 20000 }, async t => {
   fs.mkdirSync(path.join(os.homedir(), ".cache/elpis-tests"), { recursive: true });
   const dir = createTestTempDir(path.join(os.homedir(), ".cache/elpis-tests/acp-config-"));

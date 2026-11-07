@@ -9,8 +9,12 @@ import { EnvironmentWorker } from '@anthropic-ai/sdk/helpers/beta/environments';
 const environmentKey = process.env.ANTHROPIC_ENVIRONMENT_KEY;
 const environmentId = process.env.ANTHROPIC_ENVIRONMENT_ID;
 const workdir = process.argv[2] || process.env.ELPIS_MANAGED_WORKDIR;
-for (const [name, value] of [['ANTHROPIC_ENVIRONMENT_KEY', environmentKey], ['ANTHROPIC_ENVIRONMENT_ID', environmentId], ['workdir', workdir]])
+function required(name: string, value: string | undefined): asserts value is string {
   if (!value) { console.error(`managed-worker: missing ${name}`); process.exit(2); }
+}
+required('ANTHROPIC_ENVIRONMENT_KEY', environmentKey);
+required('ANTHROPIC_ENVIRONMENT_ID', environmentId);
+required('workdir', workdir);
 for (const name of ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN'])
   if (process.env[name]) { console.error(`managed-worker: refusing to run with ${name} set`); process.exit(2); }
 
@@ -22,6 +26,7 @@ console.error(`managed-worker: polling ${environmentId}; tools run in ${workdir}
 try {
   await new EnvironmentWorker({ client, environmentId, environmentKey, workdir, signal: stop.signal }).run();
 } catch (error) {
-  if (!stop.signal.aborted) { console.error(`managed-worker: ${error?.message ?? error}`); process.exit(1); }
+  const message = error !== null && (typeof error === 'object' || typeof error === 'function') && 'message' in error ? error.message : undefined;
+  if (!stop.signal.aborted) { console.error(`managed-worker: ${message ?? error}`); process.exit(1); }
 }
 console.error('managed-worker: stopped');

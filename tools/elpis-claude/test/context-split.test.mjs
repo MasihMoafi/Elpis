@@ -3,7 +3,7 @@
 // text-length estimates exceeded what Antigravity reported (4379 vs 3210).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { splitContext, splitTokens, transcriptTokens } from "../context-split.mjs";
+import { splitContext, splitTokens, transcriptTokens } from "../context-split.mts";
 
 const total = (split) => Object.entries(split).filter(([k]) => k !== "estimatedTotal").reduce((sum, [, v]) => sum + v, 0);
 
@@ -77,7 +77,7 @@ test("a request after a changed system prompt carries it as system", () => {
 
 // 24 Oct: the bridge re-read a 52 MB transcript on every change (about 165 MB/s, 118% CPU) and made the app slow.
 test("a growing transcript is read from its last compaction, at most once per interval, with the same counts", async () => {
-  const { transcriptReader } = await import("../context-split.mjs");
+  const { transcriptReader } = await import("../context-split.mts");
   const fs = await import("node:fs"), os = await import("node:os"), path = await import("node:path");
   const dir = fs.mkdtempSync(path.join(os.homedir(), ".cache", "elpis-ctx-")), file = path.join(dir, "t.jsonl");
   const reply = (id, n, text) => JSON.stringify({ type: "assistant", message: { id, usage: { input_tokens: n, output_tokens: 10 }, content: [{ type: "text", text }] } });

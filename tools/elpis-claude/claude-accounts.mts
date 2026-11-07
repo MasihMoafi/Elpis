@@ -1,25 +1,39 @@
 import { spawn } from "node:child_process";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-const invalid = message => Object.assign(new Error(message), { code: -32602 });
-const readJson = file => { try { return JSON.parse(readFileSync(file, "utf8")); } catch { return null; } };
+type AccountState = { activeId: string; ids: string[] };
+type ClaudeProfile = { emailAddress?: string; organizationUuid?: string; accountUuid?: string };
+type ClaudeCredentials = { accessToken?: string; subscriptionType?: string };
+type ClaudeFile = { oauthAccount?: ClaudeProfile; claudeAiOauth?: ClaudeCredentials };
+type Login = { child: ChildProcessWithoutNullStreams; running: boolean; error: string | null };
+
+const invalid = (message: string) => Object.assign(new Error(message), { code: -32602 });
+const readJson = (file: string): ClaudeFile | null => { try { return JSON.parse(readFileSync(file, "utf8")) as ClaudeFile; } catch { return null; } };
 
 // Credentials stay in Claude Code's own private configuration directories. The index contains IDs only.
 export class ClaudeAccounts {
-  constructor({ home, dir, defaultConfigDir = join(home, ".claude"), claudeBin = join(home, ".local/bin/claude") }) {
+  declare home: string;
+  declare dir: string;
+  declare defaultConfigDir: string;
+  declare claudeBin: string;
+  declare file: string;
+  declare logins: Map<string, Login>;
+
+  constructor({ home, dir, defaultConfigDir = join(home, ".claude"), claudeBin = join(home, ".local/bin/claude") }: { home: string; dir: string; defaultConfigDir?: string; claudeBin?: string }) {
     this.home = home; this.dir = dir; this.defaultConfigDir = defaultConfigDir; this.claudeBin = claudeBin;
-    this.file = join(dir, "claude-accounts.json"); this.logins = new Map();
+    this.file = join(dir, "claude-accounts.json"); this.logins = new Map<string, Login>();
   }
   state() {
-    let value;
+    let value: unknown;
     try { value = JSON.parse(readFileSync(this.file, "utf8")); }
-    catch (error) { if (error.code === "ENOENT") return { activeId: "default", ids: [] }; throw invalid("Claude account settings could not be read."); }
-    if (!value || !Array.isArray(value.ids) || value.ids.length > 1 || value.ids.some(id => typeof id !== "string" || !/^[a-f0-9-]{36}$/.test(id)) || !["default", ...value.ids].includes(value.activeId)) throw invalid("Claude account settings could not be read.");
-    return value;
+    catch (error) { if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") return { activeId: "default", ids: [] }; throw invalid("Claude account settings could not be read."); }
+    if (!value || typeof value !== "object" || !("ids" in value) || !Array.isArray(value.ids) || value.ids.length > 1 || value.ids.some(id => typeof id !== "string" || !/^[a-f0-9-]{36}$/.test(id)) || !("activeId" in value) || typeof value.activeId !== "string" || !["default", ...value.ids].includes(value.activeId)) throw invalid("Claude account settings could not be read.");
+    return value as AccountState;
   }
-  write(state) {
+  write(state: AccountState) {
     mkdirSync(this.dir, { recursive: true, mode: 0o700 });
     const temporary = `${this.file}.${randomUUID()}.tmp`;
     writeFileSync(temporary, `${JSON.stringify(state)}\n`, { mode: 0o600, flag: "wx" });
@@ -31,13 +45,13 @@ export class ClaudeAccounts {
     return id === "default" ? this.defaultConfigDir : join(this.dir, "claude-accounts", id);
   }
   credentials(id = this.activeId()) { return readJson(join(this.configDir(id), ".credentials.json"))?.claudeAiOauth ?? null; }
-  profile(id) {
+  profile(id: string) {
     return readJson(join(this.configDir(id), ".claude.json"))?.oauthAccount ?? (id === "default" && this.defaultConfigDir === join(this.home, ".claude") ? readJson(join(this.home, ".claude.json"))?.oauthAccount : null);
   }
   account(id = this.activeId()) {
     return { email: this.profile(id)?.emailAddress ?? null, plan: this.credentials(id)?.subscriptionType ?? null };
   }
-  duplicate(id) {
+  duplicate(id: string) {
     if (id === "default") return false;
     const first = this.profile("default"), second = this.profile(id);
     if (first?.organizationUuid && second?.organizationUuid && first.organizationUuid !== second.organizationUuid) return false;
@@ -60,7 +74,7 @@ export class ClaudeAccounts {
     this.write({ ...state, ids: [id] });
     return { id };
   }
-  select(id) {
+  select(id: string) {
     const state = this.state();
     if (typeof id !== "string") throw invalid("Choose a Claude account.");
     if (!this.credentials(id)?.accessToken) throw invalid("Sign in to this Claude account before switching.");
@@ -72,20 +86,20 @@ export class ClaudeAccounts {
     if (id === "default") return process.env.CLAUDE_CONFIG_DIR ? { CLAUDE_CONFIG_DIR: this.configDir(id) } : {};
     return { CLAUDE_CONFIG_DIR: this.configDir(id), ANTHROPIC_API_KEY: undefined, ANTHROPIC_AUTH_TOKEN: undefined, CLAUDE_CODE_OAUTH_TOKEN: undefined };
   }
-  async login(id) {
+  async login(id: string) {
     const environment = this.environment(id);
     if (this.logins.get(id)?.running) throw invalid("Claude sign-in is already open. Complete it in your browser.");
     const child = spawn(this.claudeBin, ["auth", "login", "--claudeai"], { env: { ...process.env, ...environment, BROWSER: "true" }, stdio: ["pipe", "pipe", "pipe"] });
-    const login = { child, running: true, error: null }; this.logins.set(id, login);
-    return new Promise((resolve, reject) => {
+    const login: Login = { child, running: true, error: null }; this.logins.set(id, login);
+    return new Promise<{ accounts: ReturnType<ClaudeAccounts["snapshot"]>; authUrl?: string }>((resolve, reject) => {
       let output = "", answered = false;
       const timer = setTimeout(() => { child.kill(); finish(new Error("Claude sign-in timed out. Try signing in again.")); }, 15 * 60_000);
       timer.unref();
-      const finish = error => {
+      const finish = (error: Error | null) => {
         clearTimeout(timer); login.running = false; login.error = error?.message ?? null;
         if (!answered) { answered = true; if (error) reject(error); else resolve({ accounts: this.snapshot() }); }
       };
-      const read = chunk => {
+      const read = (chunk: Buffer | string) => {
         output = (output + chunk.toString()).slice(-32_000);
         for (const match of output.matchAll(/https:\/\/[^\s\u001b<>"']+/g)) {
           let url; try { url = new URL(match[0]); } catch { continue; }

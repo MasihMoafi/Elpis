@@ -1,15 +1,15 @@
 // Elpis TUI <-ws-> bridge <-stdio-> real `elpis app-server` (everything else)
 //                         \-stdio-> claude-agent-acp (chat turns -> Claude)
-import { splitContext, splitTokens, transcriptReader } from "./context-split.mjs";
-import { createBridgeServer, bridgeUrl, createEngine, stopBridgeListener, shutdownRuntime, createDrainServer, drainFile, probe, startToken, allowEngines } from "./shared-runtime.mjs";
-import { closeWhenQuiet, currentDrain, drainProxy, trackRequests } from "./handover.mjs";
+import { splitContext, splitTokens, transcriptReader } from "./context-split.mts";
+import { createBridgeServer, bridgeUrl, createEngine, stopBridgeListener, shutdownRuntime, createDrainServer, drainFile, probe, startToken, allowEngines } from "./shared-runtime.mts";
+import { closeWhenQuiet, currentDrain, drainProxy, trackRequests } from "./handover.mts";
 import { withFileLock } from "./file-lock.mts";
 import { isSignedOut, setSignedOut, SIGNED_OUT_MESSAGE } from "./anthropic-signout.mts";
-import { ClaudeAccounts } from "./claude-accounts.mjs";
+import { ClaudeAccounts } from "./claude-accounts.mts";
 import { recordedClaudeEnd } from "./claude-turn-record.mts";
-import { WorkflowRunner, noticeText, personAskedForWorkflow } from "./workflow-runner.mjs";
-import { bridgeExecutor } from "./workflow-agents.mjs";
-import { connectAppServer } from "./app-server-connection.mjs";
+import { WorkflowRunner, noticeText, personAskedForWorkflow } from "./workflow-runner.mts";
+import { bridgeExecutor } from "./workflow-agents.mts";
+import { connectAppServer } from "./app-server-connection.mts";
 import { execFile, spawn } from "node:child_process";
 import { existsSync, readFileSync, renameSync, rmSync, statSync, watch, writeFileSync } from "node:fs";
 import { readFile, mkdir } from "node:fs/promises";
@@ -17,7 +17,7 @@ import { appendLog, redactSecrets, redactedLines } from "./log-redaction.mts";
 import { homedir } from "node:os";
 import { join, dirname, basename } from "node:path";
 import { randomUUID } from "node:crypto";
-import { defaultPermissionMode, defaultPermissionSettings, permissionSettingsAllowed, permissionSettings, permissionMode } from './permission-policy.mjs';
+import { defaultPermissionMode, defaultPermissionSettings, permissionSettingsAllowed, permissionSettings, permissionMode } from './permission-policy.mts';
 import { PermissionChoices } from './permission-choices.mts';
 import { acpErrorInfo } from './acp-errors.mts';
 
@@ -34,7 +34,7 @@ const log = (s) => {
     process.stderr.write(`[acp-bridge] could not write bridge log${detail}\n`);
   }
 };
-const ADAPTER = process.env.ACP_ADAPTER ?? new URL("./context-agent.mjs", import.meta.url).pathname;
+const ADAPTER = process.env.ACP_ADAPTER ?? new URL("./context-agent.mts", import.meta.url).pathname;
 const CLAUDE = process.env.ELPIS_CLAUDE_PRUNE
   ? new URL("./claude-via-elpis", import.meta.url).pathname
   : process.env.CLAUDE_CODE_EXECUTABLE ?? `${HOME}/.local/bin/claude`;
@@ -57,7 +57,7 @@ function jsonIn(text) {
   for (const s of [t, t.slice(t.indexOf("{"), t.lastIndexOf("}") + 1)]) { try { const v = JSON.parse(s); if (v && typeof v === "object") return JSON.stringify(v); } catch {} }
   return null;
 }
-const AGENTS_MCP = new URL("./elpis-agents-mcp.mjs", import.meta.url).pathname;
+const AGENTS_MCP = new URL("./elpis-agents-mcp.mts", import.meta.url).pathname;
 // The Context Ledger's Subagents switch off: Claude Code's tools that start or drive other
 // agents (the subagent tool is "Agent", listed as "Task"; Workflow runs agent scripts;
 // RemoteTrigger runs cloud agents) are disallowed, including shell and configured MCP routes.
@@ -236,12 +236,12 @@ const CATALOG = `${STATE_DIR}/catalog.json`;
 // gone from Elpis; Claude Code's own login (~/.claude) is never touched.
 const claudeSignedOut = () => isSignedOut(STATE_DIR);
 // The subscriptions Elpis reaches through ACP, each by a model-id prefix. Antigravity (Gemini on
-// the Google sign-in) runs through agy-acp.mjs and is offered only when `agy` is installed.
+// the Google sign-in) runs through agy-acp.mts and is offered only when `agy` is installed.
 const AGY_BIN = process.env.AGY_BIN ?? `${HOME}/.local/bin/agy`;
 const AGENTS = [
   { key: "claude", speaker: "Claude", prefix: "claude/", label: "Claude subscription", description: "Claude Code on your Pro/Max plan", adapter: ADAPTER, get env() { return { CLAUDE_CODE_EXECUTABLE: CLAUDE, ...claudeAccounts.environment() }; }, catalogFile: CATALOG, signedOut: claudeSignedOut, limits: () => (claudeSignedOut() ? Promise.resolve([]) : claudeLimitsCached().then((one) => [one])) },
   ...(!process.env.ELPIS_NO_AGY && existsSync(AGY_BIN)
-    ? [{ key: "agy", speaker: "Gemini", prefix: "agy/", label: "Antigravity", description: "Antigravity, your Google sign-in", adapter: new URL("./agy-acp.mjs", import.meta.url).pathname, env: { AGY_BIN }, catalogFile: CATALOG.replace(/catalog\.json$/, "catalog-agy.json"), limits: () => agyLimitsCached() }]
+    ? [{ key: "agy", speaker: "Gemini", prefix: "agy/", label: "Antigravity", description: "Antigravity, your Google sign-in", adapter: new URL("./agy-acp.mts", import.meta.url).pathname, env: { AGY_BIN }, catalogFile: CATALOG.replace(/catalog\.json$/, "catalog-agy.json"), limits: () => agyLimitsCached() }]
     : []),
 ];
 const agentOf = (model) => (typeof model === "string" ? AGENTS.find((a) => model.startsWith(a.prefix)) : undefined);
@@ -548,10 +548,10 @@ async function stopBridge(successor) {
   for (const c of contexts) c.close();
   await shutdownRuntime();
   // Started only now, so the new bridge never meets this one's engines or unsaved chats.
-  if (successor) spawn(process.execPath, [join(dirname(successor), "shared-runtime.mjs"), successor], { detached: true, stdio: ["ignore", "ignore", "inherit"], cwd: HOME }).unref();
+  if (successor) spawn(process.execPath, [join(dirname(successor), "shared-runtime.mts"), successor], { detached: true, stdio: ["ignore", "ignore", "inherit"], cwd: HOME }).unref();
   process.exit(0);
 }
-// A newer installation takes over while chats work (handover.mjs): this bridge gives it bridge.sock at once and keeps
+// A newer installation takes over while chats work (handover.mts): this bridge gives it bridge.sock at once and keeps
 // only the chats working now, which the newer bridge reaches through this drain socket until each is done.
 let draining = null; // { threads, held, released, server }
 function busyThreads() { const ids = new Set(); for (const c of contexts) for (const id of c.busyThreads()) ids.add(id); return ids; }
@@ -564,7 +564,7 @@ function writeDrain() {
 }
 async function startDrain(successor) {
   if (stopping || draining) return;
-  const launchSuccessor = () => spawn(process.execPath, [join(dirname(successor), "shared-runtime.mjs"), successor], { detached: true, stdio: ["ignore", "ignore", "inherit"], cwd: HOME }).unref();
+  const launchSuccessor = () => spawn(process.execPath, [join(dirname(successor), "shared-runtime.mts"), successor], { detached: true, stdio: ["ignore", "ignore", "inherit"], cwd: HOME }).unref();
   workflows.release(); // the newer runtime resumes the runs from their journals
   if (![...contexts].some((c) => c.busy())) return void stopBridge(successor);
   const server = createDrainServer();
@@ -688,7 +688,7 @@ workflows.on("ended", (run) => { void deliverNotice(run); });
 const recoverWorkflows = () => { if (!stopping && !draining) { try { workflows.recover(); } catch (e) { log(`workflow recovery: ${e.message}`); } } };
 wss.on("listening", recoverWorkflows);
 setInterval(recoverWorkflows, 5000).unref();
-// A newer installation that joined this bridge left its bridge's path here (shared-runtime.mjs). This bridge starts
+// A newer installation that joined this bridge left its bridge's path here (shared-runtime.mts). This bridge starts
 // that one and hands it every connection (startDrain); the open terminals and the desktop app reconnect to it.
 const successorFile = process.env.ELPIS_SHARED_BRIDGE && process.env.ELPIS_BRIDGE_SOCKET && join(dirname(process.env.ELPIS_BRIDGE_SOCKET), "successor");
 if (successorFile) setInterval(() => {
