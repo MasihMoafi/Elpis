@@ -1,0 +1,91 @@
+name: Love Spot snap
+
+# Builds the standalone Love Spot snap from the pushed commit, installs it confined on a clean Ubuntu machine as a user
+# would (`snap install --dangerous`), and runs scripts/check-love-spot-package.mts against it on a private display.
+# Masih, 7 Nov: test the snap's sandbox on a GitHub machine, not on his laptop; Docker cannot run snapd.
+# The engine comes from an "Elpis Linux verification" run of the same commit (dispatch it with verification=build),
+# which this job waits for. Push the commit to a snap-check/** branch to run it. It publishes nothing.
+on:
+  push:
+    branches: ['snap-check/**']
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: love-spot-snap-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  snap:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '26.1.0'
+          cache: npm
+          cache-dependency-path: apps/elpis-desktop/package-lock.json
+      - name: Tools the snap build and check use
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ripgrep squashfs-tools rsync python3-yaml xvfb xdotool
+          sudo snap install core24 gnome-46-2404 mesa-2404
+      - name: Desktop dependencies and Electron
+        working-directory: apps/elpis-desktop
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          node node_modules/electron/install.js
+      - name: Provider bridge dependencies
+        working-directory: tools/elpis-claude
+        run: npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+      - name: Renderer
+        working-directory: apps/elpis-desktop
+        run: |
+          node bridge/build-resources.mjs
+          npm run -s build
+      - name: Engine built from this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 90); do
+            run=$(gh run list -R "$GITHUB_REPOSITORY" --workflow embedded-elpis-linux.yml --commit "$GITHUB_SHA" --status success --json databaseId --jq '.[0].databaseId // empty')
+            [ -n "$run" ] && break
+            echo "Waiting for an Elpis Linux verification run of $GITHUB_SHA ($attempt/90)"; sleep 60
+          done
+          [ -n "${run:-}" ] || { echo "No successful Elpis Linux verification run for $GITHUB_SHA; dispatch one with verification=build." >&2; exit 1; }
+          gh run download "$run" -R "$GITHUB_REPOSITORY" -n elpis-linux-x86_64 -D "$RUNNER_TEMP/engine-download"
+          mkdir -p "$RUNNER_TEMP/engine"
+          install -m 0755 "$RUNNER_TEMP/engine-download/elpis-linux-x86_64" "$RUNNER_TEMP/engine/codex"
+          install -m 0755 "$RUNNER_TEMP/engine-download/elpis-code-mode-host-linux-x86_64" "$RUNNER_TEMP/engine/codex-code-mode-host"
+          install -m 0755 "$RUNNER_TEMP/engine-download/elpis-bwrap-linux-x86_64" "$RUNNER_TEMP/engine/bwrap"
+      - name: Build the snap
+        env:
+          ENGINE_DIR: ${{ runner.temp }}/engine
+          ELPIS_STAGE_DIR: ${{ runner.temp }}/stage
+          ELPIS_SNAP_DIR: ${{ runner.temp }}/snap
+        run: scripts/build-love-spot-snap.sh
+      - name: Install it confined, as a user would
+        run: |
+          sudo snap install --dangerous "$RUNNER_TEMP"/snap/love-spot_*_amd64.snap
+          snap connections love-spot
+      - name: Check the installed snap on a private display
+        env:
+          ELPIS_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/pw/node_modules/playwright-core
+          ELPIS_STAGE_DIR: ${{ runner.temp }}/stage
+        run: |
+          npm install --prefix "$RUNNER_TEMP/pw" --no-save --ignore-scripts --no-audit --no-fund playwright-core@1.62.1
+          mkdir -p "$RUNNER_TEMP/shots"
+          xvfb-run -a node scripts/check-love-spot-package.mts "$(ls "$RUNNER_TEMP"/snap/love-spot_*_amd64.snap)" "$RUNNER_TEMP/shots"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: ${{ !cancelled() }}
+        with:
+          name: love-spot-snap-check
+          path: ${{ runner.temp }}/shots
+          if-no-files-found: warn
+          retention-days: 7

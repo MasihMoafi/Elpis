@@ -32,7 +32,7 @@ const env = { PATH: process.env.PATH, DISPLAY: process.env.DISPLAY, XAUTHORITY: 
   NO_PROXY: '127.0.0.1,localhost',
   // Where the internet is reached through a proxy, the app needs it to reach the provider.
   ...Object.fromEntries(['HTTPS_PROXY', 'HTTP_PROXY', 'https_proxy', 'http_proxy', 'ALL_PROXY', 'all_proxy'].flatMap(key => process.env[key] ? [[key, process.env[key]]] : [])) };
-const app = spawn(launcher, ['--no-sandbox', `--remote-debugging-port=${port}`], { env, stdio: ['ignore', 'ignore', 'pipe'], detached: true });
+const app = spawn(launcher, ['--no-sandbox', `--remote-debugging-port=${port}`], { env: Object.fromEntries(Object.entries(env).filter(([, value]) => value !== undefined)) as NodeJS.ProcessEnv, stdio: ['ignore', 'ignore', 'pipe'], detached: true });
 let stderr = ''; app.stderr.on('data', chunk => { stderr += chunk; });
 const results: { name: string; ok: boolean }[] = [];
 const check = (name: string, ok: boolean, detail = '') => { results.push({ name, ok }); console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${detail ? `: ${detail}` : ''}`); };
