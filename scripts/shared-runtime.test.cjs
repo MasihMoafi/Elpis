@@ -429,7 +429,7 @@ async function launcherGroup(runtime) {
     fs.mkdirSync(directory, { recursive: true });
     const script = path.join(directory, 'acp-bridge.mjs'), launcher = path.join(directory, 'shared-runtime.mjs');
     fs.copyFileSync(fakeBridgeDir(`installed-${name}`), script);
-    for (const file of ['shared-runtime.mjs', 'log-redaction.mjs']) fs.copyFileSync(path.join(tools, file), path.join(directory, file));
+    for (const file of ['shared-runtime.mjs', 'log-redaction.mts']) fs.copyFileSync(path.join(tools, file), path.join(directory, file));
     fs.symlinkSync(path.join(tools, 'node_modules'), path.join(directory, 'node_modules'));
     const engine = path.join(bundle, 'package/bin/codex');
     fs.mkdirSync(path.dirname(engine), { recursive: true });
@@ -749,7 +749,7 @@ async function launcherGroup(runtime) {
   fs.copyFileSync(path.join(tools, 'elpis-claude'), path.join(toolDir, 'elpis-claude'));
   fs.chmodSync(path.join(toolDir, 'elpis-claude'), 0o755);
   fs.copyFileSync(runtimePath, path.join(toolDir, 'shared-runtime.mjs'));
-  fs.copyFileSync(path.join(tools, 'log-redaction.mjs'), path.join(toolDir, 'log-redaction.mjs'));
+  fs.copyFileSync(path.join(tools, 'log-redaction.mts'), path.join(toolDir, 'log-redaction.mts'));
   fs.symlinkSync(path.join(tools, 'node_modules'), path.join(toolDir, 'node_modules'));
   fs.copyFileSync(bridgeA, path.join(toolDir, 'acp-bridge.mjs'));
   const printer = path.join(lroot, 'tui');

@@ -15,7 +15,7 @@ import path from "node:path";
 import { Readable, Writable } from "node:stream";
 import { parseArgs } from "node:util";
 import { agent, ndJsonStream, RequestError } from "@agentclientprotocol/sdk";
-import { redactSecrets } from "./log-redaction.mjs";
+import { redactSecrets } from "./log-redaction.mts";
 import { runtimeDir } from "./shared-runtime.mjs";
 import { defaultPermissionSettings, permissionSettingsAllowed } from './permission-policy.mjs';
 import { withoutUserMcp } from "./workflow-agents.mjs";

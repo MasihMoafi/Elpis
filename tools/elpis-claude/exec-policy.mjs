@@ -3,7 +3,7 @@
 import { spawn } from 'node:child_process';
 import { connectAppServer } from './app-server-connection.mjs';
 import { defaultPermissionMode, defaultPermissionSettings, permissionSettingsAllowed } from './permission-policy.mjs';
-import { PermissionChoices } from './permission-choices.mjs';
+import { PermissionChoices } from './permission-choices.mts';
 import path from 'node:path';
 
 const bin = process.env.ELPIS_ENGINE_BIN;

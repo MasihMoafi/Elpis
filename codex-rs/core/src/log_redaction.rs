@@ -9,7 +9,7 @@ use std::sync::LazyLock;
 use regex_lite::Captures;
 use regex_lite::Regex;
 
-// Keep aligned with tools/elpis-claude/log-redaction.mjs. Shared fixtures cover both.
+// Keep aligned with tools/elpis-claude/log-redaction.mts. Shared fixtures cover both.
 static RULES: LazyLock<Vec<(&str, Regex, bool)>> = LazyLock::new(|| {
     [
         ("env", r"(?im)^([ \t]*(?:export[ \t]+)?(?:[A-Za-z_][A-Za-z0-9_]*)?(?:KEY|TOKEN|SECRET)[ \t]*=[ \t]*)([^\r\n]+)", true),

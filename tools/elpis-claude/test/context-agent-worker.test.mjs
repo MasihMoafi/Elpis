@@ -12,7 +12,7 @@ import readline from 'node:readline';
 import test from 'node:test';
 import { setTimeout as pause } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
-import { createTestTempDir, removeTestTempDir } from './temp-root.mjs';
+import { createTestTempDir, removeTestTempDir } from './temp-root.mts';
 
 const AGENT = fileURLToPath(new URL('../context-agent.mjs', import.meta.url));
 // Started as a session's worker with FAKE_TREE, it starts sleeps the way MCP servers hang below

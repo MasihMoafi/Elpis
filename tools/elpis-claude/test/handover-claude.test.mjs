@@ -1,4 +1,4 @@
-import { createTestTempDir, removeTestTempDir } from "./temp-root.mjs";
+import { createTestTempDir, removeTestTempDir } from "./temp-root.mts";
 // A newer bundle is installed while a Claude turn works: it serves new connections within seconds, the turn finishes
 // in the old bridge and reaches the desktop client, which reconnects by itself. Real launcher and bridges, scripted
 // Claude (fake-acp-agent.mjs) and engine (fake-app-server.mjs); no provider calls.
@@ -29,7 +29,7 @@ function bundle(root, name, managed) {
   const home = managed ? path.join(root, "versions", name) : null;
   const dir = home ? path.join(home, "tools/elpis-claude") : path.join(root, name);
   fs.mkdirSync(dir, { recursive: true });
-  for (const file of fs.readdirSync(source).filter((file) => file.endsWith(".mjs") || ["package.json", "package-lock.json"].includes(file))) fs.copyFileSync(path.join(source, file), path.join(dir, file));
+  for (const file of fs.readdirSync(source).filter((file) => (file.endsWith(".mjs") || file.endsWith(".mts")) || ["package.json", "package-lock.json"].includes(file))) fs.copyFileSync(path.join(source, file), path.join(dir, file));
   fs.symlinkSync(path.join(source, "node_modules"), path.join(dir, "node_modules"));
   if (!home) return { dir };
   const engine = path.join(home, "package/bin/codex");

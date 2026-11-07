@@ -31,7 +31,7 @@ Do not edit these by hand; change the source and rerun the command.
 | File | Source | Command |
 | --- | --- | --- |
 | `codex-rs/app-server-protocol/schema/` | protocol types in `app-server-protocol/src/` | `python3 codex-rs/app-server-protocol/scripts/write_schema_fixtures.py` |
-| `docs/workflow-sources.md` | `apps/elpis-desktop/lib/workflow-sources.json` | `node scripts/workflow-sources.mjs` (`--check` detects drift) |
+| `docs/workflow-sources.md` | `apps/elpis-desktop/lib/workflow-sources.json` | `node scripts/workflow-sources.mts` (`--check` detects drift) |
 | `apps/elpis-trajectory/dist/` | `apps/elpis-trajectory/src/` | `npm run build` in `apps/elpis-trajectory` |
 | `website/technical.html` | `readme.md`, `website/technical-template.html` | `python3 scripts/build-public-content.py` |
 | `website/styles.css` | `website/source.css` | `npm run build:css` in `website` |

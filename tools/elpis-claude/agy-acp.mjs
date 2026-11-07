@@ -6,7 +6,7 @@
 //
 // Approvals: agy has no approval channel in print mode, but runs PreToolUse hooks from each
 // workspace's .agents/hooks.json. The wrapper adds its own hooks folder as a workspace;
-// agy-gate.mjs forwards tool decisions through this wrapper's session/request_permission.
+// agy-gate.mts forwards tool decisions through this wrapper's session/request_permission.
 // Full access and Plan keep those hooks active so the bridge can allow or deny within scope;
 // only explicit Bypass passes --dangerously-skip-permissions. Plan mode uses --mode plan.
 import { spawn, execFile } from "node:child_process";
@@ -36,7 +36,7 @@ const GATED_TOOLS = "run_command|send_command_input|write_to_file|replace_file_c
 const HOOKS_DIR = join(process.env.ELPIS_HOME || join(process.env.HOME, ".elpis-next"), "elpis-claude", "agy-approvals");
 function writeHooks() {
   mkdirSync(join(HOOKS_DIR, ".agents"), { recursive: true });
-  const gate = fileURLToPath(new URL("./agy-gate.mjs", import.meta.url));
+  const gate = fileURLToPath(new URL("./agy-gate.mts", import.meta.url));
   const hook = { command: `"${process.execPath}" "${gate}"`, timeout: 86400 };
   writeFileSync(join(HOOKS_DIR, ".agents", "hooks.json"), JSON.stringify({ "elpis-approvals": { PreToolUse: [{ matcher: GATED_TOOLS, hooks: [hook] }] } }, null, 1));
 }

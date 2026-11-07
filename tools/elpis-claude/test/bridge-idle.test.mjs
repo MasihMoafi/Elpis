@@ -1,4 +1,4 @@
-import { createTestTempDir, removeTestTempDir } from './temp-root.mjs';
+import { createTestTempDir, removeTestTempDir } from './temp-root.mts';
 // Real bridges and launcher, private homes/sockets, deterministic engine; no provider calls.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -94,7 +94,7 @@ if (process.argv.includes("--elpis-local-bridge")) {
     fs.writeFileSync(env.ACP_BRIDGE_STORE, JSON.stringify(saved));
     const bundle = (name, from = source) => {
       const dir = path.join(root, name); fs.mkdirSync(dir);
-      for (const file of fs.readdirSync(from).filter(file => file.endsWith(".mjs") || ["elpis-claude", "package.json", "package-lock.json"].includes(file))) fs.copyFileSync(path.join(from, file), path.join(dir, file));
+      for (const file of fs.readdirSync(from).filter(file => (file.endsWith(".mjs") || file.endsWith(".mts")) || ["elpis-claude", "package.json", "package-lock.json"].includes(file))) fs.copyFileSync(path.join(from, file), path.join(dir, file));
       fs.symlinkSync(path.join(source, "node_modules"), path.join(dir, "node_modules"));
       return dir;
     };

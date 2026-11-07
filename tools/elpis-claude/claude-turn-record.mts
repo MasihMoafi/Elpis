@@ -1,20 +1,24 @@
 import { open } from "node:fs/promises";
 
+type Content = string | Array<{ type: string; text?: string }> | null | undefined;
+type RecordRow = { type: string; isSidechain?: boolean; uuid?: string; message?: { content?: Content; stop_reason?: string; id?: string } };
+
 // A native terminal message is useful only after this turn's inputs, never a previous
 // answer, a subagent's answer, a tool result, or a partly written JSONL record.
-export async function recordedClaudeEnd(file, offset, inputs) {
+export async function recordedClaudeEnd(file: string, offset: number, inputs: string[]) {
   let handle;
   try {
     handle = await open(file, "r");
     if ((await handle.stat()).size <= offset) return null;
-    let pending = "", users = "", last = null;
+    let pending = "", users = "";
+    let last: RecordRow | null = null;
     for await (const chunk of handle.createReadStream({ start: offset, encoding: "utf8", autoClose: false })) {
       pending += chunk;
       let end;
       while ((end = pending.indexOf("\n")) !== -1) {
         const line = pending.slice(0, end); pending = pending.slice(end + 1);
         if (!line.trim()) continue;
-        let row;
+        let row: RecordRow;
         try { row = JSON.parse(line); } catch { return null; }
         if (row.isSidechain || !["user", "assistant"].includes(row.type)) continue;
         last = row;
@@ -28,14 +32,14 @@ export async function recordedClaudeEnd(file, offset, inputs) {
       if (at === -1) return null;
       after = at + input.trim().length;
     }
-    const text = messageText(last.message.content);
-    return text.trim() ? { text, id: last.uuid ?? last.message.id } : null;
+    const text = messageText(last.message?.content);
+    return text.trim() ? { text, id: last.uuid ?? last.message?.id } : null;
   } catch (error) {
-    if (error.code === "ENOENT") return null;
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return null;
     throw error;
   } finally { await handle?.close(); }
 }
 
-function messageText(content) {
+function messageText(content: Content) {
   return typeof content === "string" ? content : (content ?? []).filter(block => block.type === "text").map(block => block.text).join("\n");
 }

@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { recordedClaudeEnd } from "../claude-turn-record.mjs";
+import { recordedClaudeEnd } from "../claude-turn-record.mts";
 
 const user = text => ({ type: "user", message: { content: [{ type: "text", text }] } });
 const final = (text, more = {}) => ({ type: "assistant", uuid: "answer", message: { stop_reason: "end_turn", content: [{ type: "text", text }] }, ...more });

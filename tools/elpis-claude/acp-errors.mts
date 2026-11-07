@@ -1,7 +1,9 @@
-const kindOf = error => String(error?.data?.errorKind ?? error?.errorKind ?? "").toLowerCase();
+type AcpError = { data?: { errorKind?: unknown } | null; errorKind?: unknown; message?: unknown } | null | undefined;
+
+const kindOf = (error: AcpError) => String(error?.data?.errorKind ?? error?.errorKind ?? "").toLowerCase();
 
 /** Translate subscription ACP failures into the error kinds the desktop recovery card understands. */
-export function acpErrorInfo(error) {
+export function acpErrorInfo(error: AcpError) {
   const kind = kindOf(error);
   if (/^(?:rate_limit_error|rate_limit_exceeded)$/.test(kind)) return "rateLimitExceeded";
   if (/^(?:usage_limit_reached|quota_exceeded|insufficient_quota)$/.test(kind)) return "usageLimitExceeded";

@@ -7,7 +7,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { setTimeout as pause } from 'node:timers/promises';
 import { WebSocketServer } from '../node_modules/ws/wrapper.mjs';
-import { createTestTempDir, removeTestTempDir } from './temp-root.mjs';
+import { createTestTempDir, removeTestTempDir } from './temp-root.mts';
 
 test('a refused helper start preserves its managed-policy reason and closes its connection', { timeout: 10000 }, async t => {
   const root = createTestTempDir(path.join(os.tmpdir(), 'elpis-delegate-start-'));

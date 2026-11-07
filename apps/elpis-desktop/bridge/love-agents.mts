@@ -102,7 +102,7 @@ export function loveNodeSpec(node: Pick<Agent, 'name' | 'prompt' | 'model' | 'pr
     const state = env.ACP_BRIDGE_STORE ? path.dirname(env.ACP_BRIDGE_STORE) : path.join(elpisHome(env), 'elpis-claude');
     // Use the provider bridge's account owner; the index contains IDs, never credentials.
     if (fs.existsSync(path.join(state, 'anthropic.json'))) {
-      const { isSignedOut, SIGNED_OUT_MESSAGE } = require(present(path.join(tools, 'anthropic-signout.mjs')));
+      const { isSignedOut, SIGNED_OUT_MESSAGE } = require(present(path.join(tools, 'anthropic-signout.mts')));
       if (isSignedOut(state)) throw new BridgeError(SIGNED_OUT_MESSAGE, 409);
     }
     if (fs.existsSync(path.join(state, 'claude-accounts.json'))) {

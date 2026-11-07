@@ -1,4 +1,4 @@
-import { createTestTempDir, removeTestTempDir } from './temp-root.mjs';
+import { createTestTempDir, removeTestTempDir } from './temp-root.mts';
 // Elpis's own "Anthropic sign out": a switch in the Elpis home that stops Elpis, and only Elpis, from
 // using the Claude subscription. Claude Code's login (~/.claude) is never touched.
 // Actual bridge, deterministic local engine and ACP adapter, isolated home; no provider calls.
@@ -60,7 +60,7 @@ if (process.argv.includes("app-server")) {
   });
 } else {
   const sha = (file) => createHash("sha256").update(fs.readFileSync(file)).digest("hex");
-  const { isSignedOut, setSignedOut, SIGNED_OUT_MESSAGE } = await import("../anthropic-signout.mjs");
+  const { isSignedOut, setSignedOut, SIGNED_OUT_MESSAGE } = await import("../anthropic-signout.mts");
 
   test("the switch file: missing means signed in; it is private, atomic and fails closed", (t) => {
     const dir = createTestTempDir(path.join(os.tmpdir(), "elpis-signout-unit-"));

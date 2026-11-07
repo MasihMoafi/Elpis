@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { autoConcurrency } from './resources/workflow-concurrency.mjs';
+import { autoConcurrency } from './resources/workflow-concurrency.mts';
 
 const run = promisify(execFile);
 const KB_PER_GB = 1024 * 1024; // as `free -h` and scripts/mem-meter.py count

@@ -142,6 +142,6 @@ cp "$NEW/elpis-wrapper" "$HOME/.local/bin/elpis.new"
 mv "$HOME/.local/bin/elpis.new" "$HOME/.local/bin/elpis"
 ln -sfn "$NEW/elpis-next" "$HOME/.local/bin/elpis-next"
 # Old bundles go to the trash: the newest five stay, with this one, its rollback and any the live launcher names.
-node "$HERE/prune-versions.mjs" "$V" --keep "$NEW" --keep "$OLD" --named-in "$HOME/.local/bin/elpis" ||
+node "$HERE/prune-versions.mts" "$V" --keep "$NEW" --keep "$OLD" --named-in "$HOME/.local/bin/elpis" ||
     printf 'could not move old engine bundles to the trash\n' >&2
 printf 'installed %s (rollback: bash %s/rollback.sh)\n' "$NEW" "$NEW"

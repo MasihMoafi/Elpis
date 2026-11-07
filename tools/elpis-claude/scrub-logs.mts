@@ -1,23 +1,23 @@
 #!/usr/bin/env node
 // Run while log writers are stopped. No backups or credential values are emitted.
-// Usage: node tools/elpis-claude/scrub-logs.mjs [--log-dir /path/to/logs]
+// Usage: node tools/elpis-claude/scrub-logs.mts [--log-dir /path/to/logs]
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
-import { redactSecrets } from "./log-redaction.mjs";
+import { redactSecrets } from "./log-redaction.mts";
 
-export function scrubLogs(directory) {
-  const report = { filesChanged: 0, secrets: {}, filesSkipped: 0, filesFailed: 0 };
+export function scrubLogs(directory: string) {
+  const report: { filesChanged: number; secrets: Record<string, number>; filesSkipped: number; filesFailed: number } = { filesChanged: 0, secrets: {}, filesSkipped: 0, filesFailed: 0 };
   const decoder = new TextDecoder("utf-8", { fatal: true });
-  const walk = dir => {
+  const walk = (dir: string): void => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const file = path.join(dir, entry.name);
       if (entry.isSymbolicLink()) { report.filesSkipped++; continue; }
       if (entry.isDirectory()) { walk(file); continue; }
       if (!entry.isFile()) { report.filesSkipped++; continue; }
-      let source, staged, temporary;
+      let source: number | undefined, staged: number | undefined, temporary: string | undefined;
       try {
         source = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
         const before = fs.fstatSync(source, { bigint: true });
@@ -26,7 +26,7 @@ export function scrubLogs(directory) {
         let original;
         try { original = decoder.decode(bytes); } catch { report.filesSkipped++; continue; }
         if (original.includes("\0")) { report.filesSkipped++; continue; }
-        const counts = {};
+        const counts: Record<string, number> = {};
         const clean = redactSecrets(original, counts);
         if (clean === original) continue;
         temporary = path.join(dir, `.scrub-${randomUUID()}`);

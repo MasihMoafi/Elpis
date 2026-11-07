@@ -1,4 +1,4 @@
-import { createTestTempDir, removeTestTempDir } from './temp-root.mjs';
+import { createTestTempDir, removeTestTempDir } from './temp-root.mts';
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -7,7 +7,7 @@ import path from "node:path";
 import test from "node:test";
 import { PassThrough } from "node:stream";
 import { once } from "node:events";
-import { appendLog, redactSecrets, redactedLines } from "../log-redaction.mjs";
+import { appendLog, redactSecrets, redactedLines } from "../log-redaction.mts";
 
 const fixtures = JSON.parse(fs.readFileSync(new URL("./fixtures/log-secrets.json", import.meta.url), "utf8"));
 
@@ -30,7 +30,7 @@ test("scrub command atomically rewrites a log copy, preserves JSON and skips lin
   fs.writeFileSync(path.join(logs, "binary"), Buffer.from([0, 255, 128]));
   const before = fs.statSync(file);
   const names = fs.readdirSync(logs, { recursive: true }).sort();
-  const run = () => spawnSync(process.execPath, [new URL("../scrub-logs.mjs", import.meta.url).pathname, "--log-dir", logs], { encoding: "utf8" });
+  const run = () => spawnSync(process.execPath, [new URL("../scrub-logs.mts", import.meta.url).pathname, "--log-dir", logs], { encoding: "utf8" });
   const first = run();
   assert.ok(first.status === 0, "scrub succeeds without printing credential values");
   const report = JSON.parse(first.stdout);

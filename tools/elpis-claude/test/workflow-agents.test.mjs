@@ -11,7 +11,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import WebSocket, { WebSocketServer } from "ws";
 import { bridgeExecutor } from "../workflow-agents.mjs";
-import { createTestTempDir, removeTestTempDir } from "./temp-root.mjs";
+import { createTestTempDir, removeTestTempDir } from "./temp-root.mts";
 
 const BRIDGE = fileURLToPath(new URL("../acp-bridge.mjs", import.meta.url));
 const ENGINE = fileURLToPath(new URL("./fake-app-server.mjs", import.meta.url));

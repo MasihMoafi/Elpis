@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "strict": true,
+    "skipLibCheck": true,
+    "types": [],
+    "rootDir": "assets/src",
+    "outDir": "assets"
+  },
+  "include": ["assets/src/**/*.mts", "assets/src/**/*.d.ts"],
+  "exclude": []
+}

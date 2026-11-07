@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
 import { noticeText } from '../../../tools/elpis-claude/workflow-runner.mjs';
-import { forAll } from '../../../tools/elpis-claude/test/property.mjs';
+import { forAll } from '../../../tools/elpis-claude/test/property.mts';
 
 // The app's @ alias under Node, without a build (as tests/canvas-editing.test.mjs does).
 registerHooks({ resolve: (specifier, context, next) => next(specifier.startsWith('@/') ? new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href : specifier, context) });

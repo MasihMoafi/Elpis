@@ -2,7 +2,7 @@
 
 Reviewed 2026-10-18. Primary abstracts and results were read. Published findings are evidence for related methods; every Elpis starter remains unproven until measured locally.
 
-Generated from `apps/elpis-desktop/lib/workflow-sources.json`, also imported by the app. Edit that file, then run `node scripts/workflow-sources.mjs`; `--check` detects drift. Years identify the first paper version; venue notes identify later publication. The source links on Canvas starters describe implementation inspiration, not efficacy.
+Generated from `apps/elpis-desktop/lib/workflow-sources.json`, also imported by the app. Edit that file, then run `node scripts/workflow-sources.mts`; `--check` detects drift. Years identify the first paper version; venue notes identify later publication. The source links on Canvas starters describe implementation inspiration, not efficacy.
 
 ## Split by parts
 
