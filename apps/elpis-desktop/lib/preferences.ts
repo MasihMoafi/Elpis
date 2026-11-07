@@ -12,6 +12,7 @@ export type Accent = "amber" | "blue" | "teal" | "green" | "violet" | "rose" | "
  * (desktop workspace store, or localStorage in a browser). desktop/preferences.cjs reads confirmClose, closeToTray and
  * quickEntryShortcut. */
 export type Preferences = {
+  speakMatildaReplies: boolean;
   defaultFolder: string;
   softWrap: boolean;
   sendShortcut: "enter" | "modEnter";
@@ -62,7 +63,7 @@ export type Preferences = {
   shortcutBindings: string;
 };
 export const DEFAULT_PREFERENCES: Preferences = {
-  softWrap: true, defaultFolder: "", sendShortcut: "enter", followUp: "steer", showContextUsage: true, showAgentRuns: false, sidebarWorkflows: false, confirmClose: false, closeToTray: false, quickEntryShortcut: "Ctrl+Alt+Space", confirmDeleteChats: true,
+  speakMatildaReplies: true, softWrap: true, defaultFolder: "", sendShortcut: "enter", followUp: "steer", showContextUsage: true, showAgentRuns: false, sidebarWorkflows: false, confirmClose: false, closeToTray: false, quickEntryShortcut: "Ctrl+Alt+Space", confirmDeleteChats: true,
   turnNotifications: "unfocused", inputNotifications: true, notificationSound: false,
   transcriptSize: "m", transcriptWidth: "s", interfaceFont: "sans", codeFont: "", interfaceSize: "m", codeSize: "m", cornerStyle: "cut", preventSleep: false, chatFont: "default", accent: "amber", customThemes: "[]", selectedPalette: "elpis", navOrder: "", hiddenPages: "", profileName: "", profileAsked: true, settingsSectionOrder: "", settingsPageOrder: "", settingsPageGroups: "{}", shortcutBindings: "{}",
 };

@@ -88,7 +88,7 @@ for (const colorScheme of ['light']) test(`her chat hugs its messages, opens at 
   // where he scrolled to, and it shows the newest message only when one arrives.
   await mini.getByRole('textbox', { name: 'Message Matilda', exact: true }).fill('And the second chapter?');
   await mini.getByRole('button', { name: 'Send to Matilda', exact: true }).click();
-  await log.getByText('And the second chapter?', { exact: true }).waitFor(); await mini.getByRole('status').waitFor();
+  await log.getByText('And the second chapter?', { exact: true }).waitFor(); await mini.getByRole('status').filter({ hasText: 'Matilda is replying' }).waitFor();
   const sent = await geometry();
   assert.ok(sent.newestShown, `what he just sent is in view: ${JSON.stringify(sent)}`);
   await log.evaluate(el => { el.scrollTop = 40; });
@@ -97,7 +97,7 @@ for (const colorScheme of ['light']) test(`her chat hugs its messages, opens at 
   assert.deepEqual([waited.height, waited.logScroll, waited.popupScroll], [sent.height, 40, 0], 'asking again moves nothing');
   entries = [...entries, say('t4', 'agentMessage', 'Answer 4: chapter two builds on it.')]; busy = false;
   await mini.getByText('Answer 4: chapter two builds on it.', { exact: true }).waitFor({ timeout: 5000 });
-  await mini.getByRole('status').waitFor({ state: 'hidden' });
+  await mini.getByRole('status').filter({ hasText: 'Matilda is replying' }).waitFor({ state: 'hidden' });
   const answered = await geometry();
   assert.ok(answered.newestShown && answered.popupScroll === 0, `her new answer comes into view: ${JSON.stringify(answered)}`);
   assert.deepEqual(f.errors, []);

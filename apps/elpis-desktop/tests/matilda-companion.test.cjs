@@ -160,7 +160,7 @@ for (const colorScheme of ['light']) test(`Matilda mini chat, mute and dragging 
   await field.fill('New text while waiting');
   assert.equal(sends().length, 3);
   await slowStarted; release();
-  await mini.getByRole('status').waitFor({ state: 'hidden' });
+  await mini.getByRole('status').filter({ hasText: 'Matilda is replying' }).waitFor({ state: 'hidden' });
   assert.equal(await field.inputValue(), 'New text while waiting', 'a slow acknowledgement cannot erase later typing');
   assert.deepEqual(await mainState(), mainBefore);
   await page.keyboard.press('Escape'); await mini.waitFor({ state: 'hidden' });
@@ -278,7 +278,7 @@ for (const colorScheme of ['light']) test(`the small chat shows its last message
   await checkMood('smile');
   await mini.getByText('Hey, love.', { exact: true }).waitFor({ timeout: 10000 });
   await checkMood('softSmile');
-  await mini.getByRole('status').waitFor({ state: 'hidden' });
+  await mini.getByRole('status').filter({ hasText: 'Matilda is replying' }).waitFor({ state: 'hidden' });
   assert.equal(await mini.getByText('hey', { exact: true }).count(), 1, 'what was just said shows');
   // Each scroll to the top reveals more, until the first message.
   await page.waitForFunction(() => {

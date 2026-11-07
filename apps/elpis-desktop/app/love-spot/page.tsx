@@ -7,6 +7,7 @@ import { appStorage } from "@/lib/projects";
 import { PREFERENCES_KEY } from "@/lib/preferences";
 import { AppUpdate } from "@/components/app-update";
 import { MatildaCompanion } from "@/components/matilda-companion";
+import { ReadAloud } from "@/components/read-aloud";
 
 const LoveSpot = dynamic(() => import("@/components/love-spot"), { ssr: false, loading: () => <p role="status">Opening Love Spot…</p> });
 
@@ -28,9 +29,9 @@ export default function LoveSpotWindow() {
     const stop = window.elpisDesktop?.storage?.onChange?.(key => { if (key === "elpis-theme" || key === PREFERENCES_KEY) refresh(); });
     return () => { media.removeEventListener("change", refresh); window.removeEventListener("storage", refresh); stop?.(); };
   }, []);
-  return <main className={`flex h-dvh min-w-0 flex-col bg-background text-foreground${dark ? " dark" : ""}`}>
+  return <ReadAloud threadId="love-spot" enabled><main className={`flex h-dvh min-w-0 flex-col bg-background text-foreground${dark ? " dark" : ""}`}>
     <title>Love Spot · Elpis</title>
     <div className="title-bar shrink-0"><div className="title-bar-actions"><MatildaCompanion />{desktop && <AppUpdate inTitleBar />}</div></div>
     <ViewBoundary label="Love Spot"><LoveSpot dark={dark} /></ViewBoundary>
-  </main>;
+  </main></ReadAloud>;
 }

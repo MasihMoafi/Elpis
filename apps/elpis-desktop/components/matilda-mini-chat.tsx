@@ -3,7 +3,11 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { History } from "lucide-react";
+import { History, Volume2, VolumeX } from "lucide-react";
+import { Dictation } from "@/components/dictation";
+import { insertTranscript } from "@/lib/dictation";
+import { isSendKey, savePreferences, usePreferences } from "@/lib/preferences";
+import { useReadAloud } from "@/components/read-aloud";
 import { SendIcon } from "@/components/elpis-icons";
 import { MarkdownText } from "@/components/markdown-text";
 import { api, unreadable, type Entry } from "@/lib/api";
@@ -21,7 +25,7 @@ import { errorText } from "@/lib/error-text.mts";
  * hover up load them"; 1 Nov: none until the icon is pressed). */
 const EARLIER_STEP = 6;
 
-type Conversation = { entries: Entry[]; busy: boolean; error?: string };
+type Conversation = { entries: Entry[]; busy: boolean; error?: string; thread?: { modelProvider?: string | null } | null };
 function received(value: Conversation) {
   if (!Array.isArray(value.entries) || typeof value.busy !== "boolean") throw unreadable("Matilda conversation");
   return value;
@@ -123,6 +127,54 @@ export function MatildaMiniChat({ chat }: { chat: ReturnType<typeof useMatildaMi
   // Her on/off is the board's; the pinned chat always works (Masih, 1 Nov: "disabling it shouldn't disrupt me from using the
   // pinned version").
   const log = useRef<HTMLDivElement>(null), fromBottom = useRef<number | null>(null);
+  const field = useRef<HTMLTextAreaElement>(null), draft = useRef(chat.draft); draft.current = chat.draft;
+  const speech = useReadAloud(), speechRef = useRef(speech); speechRef.current = speech;
+  const preferences = usePreferences();
+  const voice = useRef({ seen: new Map<string, number>(), stopped: new Set<string>(), queue: [] as { id: string; text: string }[], running: false, generation: 0, suppress: false });
+  const [voiceError, setVoiceError] = useState(""), toldUnavailable = useRef(false);
+  const stopSpeech = useCallback(() => {
+    const state = voice.current; if (state.running) speechRef.current?.stop();
+    state.generation++; state.queue = []; state.running = false; state.suppress = true;
+    for (const id of state.seen.keys()) state.stopped.add(id);
+  }, []);
+  const dictationBusy = useCallback((busy: boolean) => { if (busy) stopSpeech(); }, [stopSpeech]);
+  useEffect(() => () => stopSpeech(), [stopSpeech]);
+  useEffect(() => {
+    if (!chat.earlier) return;
+    const state = voice.current;
+    for (const entry of chat.conversation.entries) {
+      if (entry.item.type !== "agentMessage" || (entry.item.phase && entry.item.phase !== "final_answer") || chat.earlier.has(entry.turnId)) continue;
+      const id = `${entry.turnId}:${entry.item.id}`, text = message(entry), offset = state.seen.get(id) ?? 0;
+      if (state.suppress || state.stopped.has(id) || !preferences.speakMatildaReplies) { state.seen.set(id, text.length); state.stopped.add(id); continue; }
+      const pending = text.slice(offset);
+      const complete = chat.conversation.busy ? [...pending.matchAll(/[.!?](?:["')\]]*)\s+/g)].at(-1) : null;
+      let length = complete?.index !== undefined ? complete.index + complete[0].length : chat.conversation.busy ? 0 : pending.length;
+      if (chat.conversation.busy) {
+        // Wait for closing markup before sending a chunk to the shared Markdown-to-speech rules.
+        const fence = [...pending.matchAll(/```/g)];
+        if (fence.length % 2 && fence.at(-1)?.index !== undefined) length = Math.min(length, fence.at(-1)!.index!);
+        const comment = pending.lastIndexOf('<!--');
+        if (comment > pending.lastIndexOf('-->')) length = Math.min(length, comment);
+        const link = pending.lastIndexOf('[');
+        if (link > pending.lastIndexOf(']')) length = Math.min(length, link);
+      }
+      if (!length) continue;
+      state.seen.set(id, offset + length); state.queue.push({ id, text: pending.slice(0, length) });
+    }
+    if (!chat.conversation.busy) state.suppress = false;
+    if (state.running || !state.queue.length) return;
+    // Said once per opening, not after every reply while the voice stays unavailable.
+    if (!speech) { state.queue = []; if (!toldUnavailable.current) { toldUnavailable.current = true; setVoiceError("The selected read aloud source is unavailable. Check Models & accounts."); } return; }
+    state.running = true; const generation = state.generation;
+    void (async () => {
+      while (state.generation === generation && state.queue.length) {
+        const piece = state.queue.shift(); if (piece) await speech.play(piece.id, piece.text);
+      }
+      if (state.generation === generation) state.running = false;
+    })();
+  }, [chat.conversation, chat.earlier, preferences.speakMatildaReplies, speech]);
+  useEffect(() => { if (speech?.error) setVoiceError(speech.error.message); }, [speech?.error]);
+  useEffect(() => { if (voiceError) { const timer = setTimeout(() => setVoiceError(""), 6000); return () => clearTimeout(timer); } }, [voiceError]);
   // Revealing earlier messages keeps what he is reading where it is.
   const reveal = () => { if (log.current) fromBottom.current = log.current.scrollHeight - log.current.scrollTop; chat.showMoreEarlier(); };
   useLayoutEffect(() => {
@@ -138,7 +190,7 @@ export function MatildaMiniChat({ chat }: { chat: ReturnType<typeof useMatildaMi
   const last = entries.at(-1), newest = last ? `${last.turnId}:${last.item.id}:${message(last).length}` : "";
   useLayoutEffect(() => { if (log.current) log.current.scrollTop = log.current.scrollHeight; }, [newest]);
   return <div className="matilda-mini-chat" role="dialog" aria-label="Small chat with Matilda">
-    {!!before.length && <div className="matilda-mini-bar"><Button variant="ghost" size="icon-xs" aria-label={chat.history ? "Hide earlier messages" : "Show earlier messages"} title={chat.history ? "Hide earlier messages" : "Show earlier messages"} aria-pressed={chat.history} onClick={() => chat.setHistory(open => !open)}><History size={14} /></Button></div>}
+    <div className="matilda-mini-bar"><Button type="button" variant="ghost" size="icon-xs" aria-label="Speak Matilda's replies" title="Speak Matilda's replies" aria-pressed={preferences.speakMatildaReplies} onClick={() => { if (preferences.speakMatildaReplies) stopSpeech(); setVoiceError(""); savePreferences({ speakMatildaReplies: !preferences.speakMatildaReplies }); }}>{preferences.speakMatildaReplies ? <Volume2 size={14} /> : <VolumeX size={14} />}</Button>{!!before.length && <Button variant="ghost" size="icon-xs" aria-label={chat.history ? "Hide earlier messages" : "Show earlier messages"} title={chat.history ? "Hide earlier messages" : "Show earlier messages"} aria-pressed={chat.history} onClick={() => chat.setHistory(open => !open)}><History size={14} /></Button>}</div>
     {!!entries.length && <div ref={log} className="matilda-mini-messages" role="log" aria-label="Matilda conversation" aria-live="polite" aria-relevant="additions text">
       {moreEarlier && <LoadOnScroll label="Loading earlier messages" onLoad={reveal} />}
       {entries.map(entry => <div key={`${entry.turnId}:${entry.item.id}`} className="matilda-mini-message flow-root" data-speaker={entry.item.type === "userMessage" ? "you" : "matilda"}>
@@ -148,8 +200,12 @@ export function MatildaMiniChat({ chat }: { chat: ReturnType<typeof useMatildaMi
     </div>}
     {(chat.posting || chat.conversation.busy) && <p className="matilda-mini-status" role="status">Matilda is replying…</p>}
     {chat.error && <div className="matilda-mini-error" role="alert"><span>{chat.error}</span><Button variant="ghost" size="xs" onClick={() => void chat.retry()}>Retry</Button></div>}
-    <form aria-label="Message Matilda" className="matilda-mini-composer" onSubmit={event => { event.preventDefault(); void chat.send(); }}>
-      <Textarea aria-label="Message Matilda" placeholder="Message Matilda…" rows={1} autoFocus value={chat.draft} onChange={event => chat.setDraft(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} />
+    {voiceError && <p className="matilda-mini-error" aria-live="polite">{voiceError}</p>}
+    <form aria-label="Message Matilda" className="matilda-mini-composer" onSubmit={event => { event.preventDefault(); stopSpeech(); voice.current.suppress = false; void chat.send(); }}>
+      <Textarea ref={field} aria-label="Message Matilda" placeholder="Message Matilda…" rows={1} autoFocus value={chat.draft} onChange={event => { stopSpeech(); chat.setDraft(event.target.value); }} onKeyDown={event => { if (isSendKey(event, preferences)) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} />
+      <Dictation provider={chat.conversation.thread?.modelProvider || "openai"} disabled={chat.posting} onBusy={dictationBusy}
+        selection={() => ({ text: draft.current, start: field.current?.selectionStart ?? draft.current.length, end: field.current?.selectionEnd ?? draft.current.length })}
+        onTranscript={(selection, transcript) => { const result = insertTranscript(draft.current, selection, transcript); chat.setDraft(result.text); requestAnimationFrame(() => { field.current?.focus(); field.current?.setSelectionRange(result.caret, result.caret); }); }} />
       <Button type="submit" variant="ghost" size="icon-sm" aria-label="Send to Matilda" title="Send to Matilda" disabled={!chat.draft.trim() || chat.posting || chat.conversation.busy}><SendIcon size={18} /></Button>
     </form>
   </div>;

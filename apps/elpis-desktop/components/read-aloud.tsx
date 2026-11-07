@@ -6,7 +6,7 @@ import { READ_ALOUD_AUDIO } from "@/lib/love-spot-audio";
 import { errorText } from "@/lib/error-text.mts";
 
 type Playback = { controller: AbortController; peer: RTCPeerConnection | null; audio: HTMLAudioElement | null; silence: AudioContext | null; timer: ReturnType<typeof setTimeout> | null; monitor: ReturnType<typeof setInterval> | null; soundTimeout: ReturnType<typeof setTimeout> | null; audible: boolean; draining: boolean; energy: number; session?: string | undefined; ready: boolean; complete: boolean; idle?: boolean; reply: string };
-type Speech = { active: string | null; error: { id: string; message: string } | null; play: (id: string, text: string, literal?: boolean) => void; stream: (id: string) => void; stop: () => void; warm: () => void };
+type Speech = { active: string | null; error: { id: string; message: string } | null; play: (id: string, text: string, literal?: boolean) => Promise<void>; stream: (id: string) => void; stop: () => void; warm: () => void };
 /** After a read the call stays open this long, so the next Read aloud only sends its text. */
 const KEEP_OPEN_MS = 60_000;
 const SpeechContext = createContext<Speech | null>(null);
@@ -251,5 +251,5 @@ export function ReadAloud({ threadId, enabled, available = READ_ALOUD_AUDIO.avai
       if (call.current === current) fail("Read aloud disconnected.");
     } catch (cause) { fail(errorText(cause, "Read aloud could not start.")); }
   }
-  return <SpeechContext.Provider value={unavailableReason || !(available || source.available) ? null : { active, error, play: (id, text, literal) => void play(id, text, literal), stream: id => void play(id), stop, warm }}>{children}</SpeechContext.Provider>;
+  return <SpeechContext.Provider value={unavailableReason || !(available || source.available) ? null : { active, error, play: (id, text, literal) => play(id, text, literal), stream: id => void play(id), stop, warm }}>{children}</SpeechContext.Provider>;
 }
