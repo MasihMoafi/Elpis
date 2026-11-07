@@ -32,6 +32,9 @@ bridge="$APP/../../tools/elpis-claude"
 # A script, not a link: the app resolves links, and the bridge must sit beside the path it finds.
 mkdir -p "$OPT/engine/tools"; printf '#!/bin/sh\nexec /usr/bin/elpis "$@"\n' > "$OPT/engine/elpis-next"; chmod 0755 "$OPT/engine/elpis-next"
 rsync -aL --exclude 'claude-agent-sdk-linux-*' --exclude test --exclude spike --exclude '*.orig' --exclude '*.test.*' "$bridge/" "$OPT/engine/tools/elpis-claude/"
+mkdir -p "$OPT/engine/tools/elpis-claude/matilda"
+cp "$APP/bridge/matilda-goals.mts" "$OPT/engine/tools/elpis-claude/matilda/"
+cp "$APP/bridge/router/executor/discovery.mts" "$OPT/engine/tools/elpis-claude/matilda/matilda-sessions.mts"
 
 mkdir -p "$OPT/bin" "$ROOT/usr/bin" "$ROOT/usr/share/applications" "$ROOT/usr/share/icons/hicolor/256x256/apps" "$ROOT/usr/share/icons/hicolor/scalable/apps" "$ROOT/DEBIAN"
 cat > "$OPT/bin/node" <<'NODE'

@@ -15,6 +15,28 @@ import { internal_providerModel } from './client-context.mts';
 import type { DesktopClient } from './client.mts';
 import type { ClientState } from './client-state.mts';
 
+/** Adds a router result or decision request without running the chat's model. */
+export async function impl_appendAssistant(this: DesktopClient, clientState: ClientState, id: string, reply: { id: string; text: string }): Promise<'sent'> {
+    await internal_appendChatMessage.call(this, clientState, id, reply, 'assistant'); return 'sent';
+  }
+
+export function impl_appendUser(this: DesktopClient, clientState: ClientState, id: string, reply: { id: string; text: string }) {
+    return internal_appendChatMessage.call(this, clientState, id, reply, 'user');
+  }
+
+async function internal_appendChatMessage(this: DesktopClient, clientState: ClientState, id: string, reply: { id: string; text: string }, role: 'user' | 'assistant') {
+    threadId(id); text(reply.id, 'reply ID', 1024); text(reply.text, 'reply', 1_000_000);
+    return internal_mutate(clientState, id, async () => {
+      const thread = await this.readThreadMetadata(id);
+      if (!thread.desktopAccess.writable) throw new BridgeError('Only this agent’s parent can write to this chat.', 409);
+      const page = await internal_itemsPage.call(this, clientState, { threadId: id, limit: 1, sortDirection: 'desc' });
+      const latest = page.data[0];
+      const entry = clientState.chatHistory.append(id, reply, latest ? `${latest.turnId}:${latest.item.id}` : '', role);
+      this.emit('event', { type: 'message', data: { method: 'item/completed', params: { threadId: id, ...entry } } });
+      return entry;
+    }, true);
+  }
+
 /** `agents`: the chat runs the agents canvas's graph, so the multi-agent runtime is on for it alone; the Ledger's
    * SUBAGENTS switch (features.multi_agent) keeps deciding whether a model may delegate in every other chat. */
 export async function impl_createThread(this: DesktopClient, clientState: ClientState, raw?: unknown) {

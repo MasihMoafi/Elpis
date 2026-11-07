@@ -1,4 +1,4 @@
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -59,8 +59,9 @@ async function put(file: string, data: string, mode?: number) {
   await fs.writeFile(file, data, mode ? { mode } : undefined);
 }
 
-async function fixture() {
+async function fixture(t: TestContext) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-package-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
   const source = path.join(root, 'source', 'apps', 'elpis-desktop');
   const electronDist = path.join(root, 'electron-dist');
   const node = path.join(root, 'canonical-node', 'node');
@@ -109,6 +110,11 @@ printf 'app=%s\\nargument=%s\\nnode-bin=%s\\nnode-mode=%s\\npath-first=%s\\nno-p
   const rruleDirectory = path.join(source, 'node_modules', 'rrule');
   await put(path.join(rruleDirectory, 'package.json'), JSON.stringify({ name: 'rrule', version: '2.8.1', main: 'dist/es5/rrule.js' }));
   for (const name of ['LICENCE', 'dist/es5/rrule.js', 'dist/es5/rrule.min.js.map', 'dist/esm/index.js']) await put(path.join(rruleDirectory, name), `rrule ${name}`);
+  for (const [name, dependencies] of Object.entries({ zod: {}, 'proper-lockfile': { 'graceful-fs': '1', retry: '1', 'signal-exit': '1' }, 'graceful-fs': {}, retry: {}, 'signal-exit': {} })) {
+    await put(path.join(source, 'node_modules', name, 'package.json'), JSON.stringify({ name, version: '1.0.0', main: 'index.js', dependencies }));
+    await put(path.join(source, 'node_modules', name, 'index.js'), 'module.exports = {};');
+    await put(path.join(source, 'node_modules', name, 'LICENSE'), 'MIT fixture');
+  }
   return { root, source, electronDist, wsDirectory, ptyDirectory, rruleDirectory, node, destination: path.join(root, 'staged') };
 }
 
@@ -123,8 +129,8 @@ async function inventory(directory: string, relative = ''): Promise<string[]> {
   return files.sort();
 }
 
-test('production package runs after its source and dependency installations move', async () => {
-  const options = await fixture();
+test('production package runs after its source and dependency installations move', async t => {
+  const options = await fixture(t);
   const result = stageDesktop(options);
   const all = await inventory(options.destination);
   for (const name of production) assert(all.includes(`app/${name}`), name);
@@ -140,7 +146,7 @@ test('production package runs after its source and dependency installations move
   assert.equal(identity.desktopName, 'elpis-desktop.desktop', 'the window is matched to its launcher entry and icon');
   assert.equal(identity.main, 'desktop/main.cts');
   assert.equal(identity.type, 'module');
-  assert.deepEqual(identity.dependencies, { ws: '8.22.0', 'node-pty': '1.1.0', rrule: '2.8.1' });
+  assert.deepEqual(identity.dependencies, { ws: '8.22.0', 'node-pty': '1.1.0', rrule: '2.8.1', zod: '1.0.0', 'proper-lockfile': '1.0.0', 'graceful-fs': '1.0.0', retry: '1.0.0', 'signal-exit': '1.0.0' });
   assert.deepEqual(all.filter(name => name.startsWith('app/node_modules/rrule/')), ['app/node_modules/rrule/LICENCE', 'app/node_modules/rrule/dist/es5/rrule.js', 'app/node_modules/rrule/package.json'], 'rrule ships its build alone');
   assert.equal(identity.scripts, undefined);
   const manifest = JSON.parse(await fs.readFile(result.manifest, 'utf8'));
@@ -204,8 +210,8 @@ esac
   await assert.rejects(run(path.join(options.destination, 'launch'), [], { env: { PATH: '/usr/bin:/bin', ELPIS_NODE_BIN: '/missing/node' } }), /Elpis requires Node\.js/);
 });
 
-test('an installation can ship a renderer built elsewhere and share Electron with the one before it', async () => {
-  const options = await fixture();
+test('an installation can ship a renderer built elsewhere and share Electron with the one before it', async t => {
+  const options = await fixture(t);
   const built = path.join(options.root, 'actions-renderer');
   await put(path.join(built, 'index.html'), '<p>Built on GitHub</p>');
   await put(path.join(built, '.commit'), 'abc123\n');
@@ -220,16 +226,16 @@ test('an installation can ship a renderer built elsewhere and share Electron wit
   assert.equal(app.nlink, 1, 'the app itself is still copied');
 });
 
-test('packager refuses an existing destination and preserves its contents', async () => {
-  const options = await fixture();
+test('packager refuses an existing destination and preserves its contents', async t => {
+  const options = await fixture(t);
   await put(path.join(options.destination, 'keep'), 'existing installation');
   assert.throws(() => stageDesktop(options), /destination.*exist/i);
   assert.equal(await fs.readFile(path.join(options.destination, 'keep'), 'utf8'), 'existing installation');
 });
 
-test('missing renderer or Electron licenses cannot produce an installation', async () => {
+test('missing renderer or Electron licenses cannot produce an installation', async t => {
   for (const missing of ['out/index.html', 'LICENSES.chromium.html']) {
-    const options = await fixture();
+    const options = await fixture(t);
     const file = missing.startsWith('out/') ? path.join(options.source, missing) : path.join(options.electronDist, missing);
     await fs.rename(file, `${file}-missing`);
     assert.throws(() => stageDesktop(options), /index\.html|LICENSES\.chromium\.html/);
@@ -237,22 +243,22 @@ test('missing renderer or Electron licenses cannot produce an installation', asy
   }
 });
 
-test('packager rejects source links instead of depending on another installation', async () => {
-  const options = await fixture();
+test('packager rejects source links instead of depending on another installation', async t => {
+  const options = await fixture(t);
   await fs.symlink(path.join(options.source, 'app/page.tsx'), path.join(options.source, 'out/leaked-source'));
   assert.throws(() => stageDesktop(options), /symlink|symbolic link/i);
   await assert.rejects(fs.stat(options.destination), { code: 'ENOENT' });
 });
 
-test('packager rejects a destination inside its inputs', async () => {
-  const options = await fixture();
+test('packager rejects a destination inside its inputs', async t => {
+  const options = await fixture(t);
   options.destination = path.join(options.electronDist, 'nested');
   assert.throws(() => stageDesktop(options), /inside|overlap/i);
   await assert.rejects(fs.stat(options.destination), { code: 'ENOENT' });
 });
 
-test('command-line packaging emits its receipt without launching the desktop', async () => {
-  const options = await fixture();
+test('command-line packaging emits its receipt without launching the desktop', async t => {
+  const options = await fixture(t);
   const result = await run(process.execPath, [fileURLToPath(new URL('./package.mts', import.meta.url)),
     '--source', options.source, '--destination', options.destination,
     '--electron-dist', options.electronDist, '--ws-directory', options.wsDirectory, '--pty-directory', options.ptyDirectory]);

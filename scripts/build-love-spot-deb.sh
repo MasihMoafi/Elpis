@@ -35,6 +35,8 @@ install -m 0755 "$host" "$OPT/engine/package/bin/codex-code-mode-host"
 install -m 0755 "$bwrap" "$OPT/engine/package/codex-resources/bwrap"
 ln -s package/bin/codex "$OPT/engine/elpis-next"
 rsync -aL --exclude 'claude-agent-sdk-linux-*' --exclude test --exclude spike --exclude '*.orig' --exclude '*.test.*' "$bridge/" "$OPT/engine/tools/elpis-claude/"
+mkdir -p "$OPT/engine/tools/elpis-claude/matilda"
+cp "$R/apps/elpis-desktop/bridge/matilda-goals.mts" "$R/apps/elpis-desktop/bridge/matilda-sessions.mts" "$OPT/engine/tools/elpis-claude/matilda/"
 
 mkdir -p "$OPT/bin" "$ROOT/usr/bin" "$ROOT/usr/share/applications" "$ROOT/usr/share/icons/hicolor/256x256/apps" "$ROOT/usr/share/icons/hicolor/scalable/apps" "$ROOT/DEBIAN"
 cat > "$OPT/bin/node" <<'NODE'

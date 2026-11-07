@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { execFileSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 
 type PackageFile = { source?: string; path: string; bytes: number; mode: number; sha256: string; generated?: boolean };
 type Options = { source?: string | undefined; destination?: string | undefined; electronDist?: string | undefined; wsDirectory?: string | undefined; ptyDirectory?: string | undefined; rruleDirectory?: string | undefined; outDirectory?: string | undefined; linkRuntime?: boolean | undefined };
@@ -35,6 +36,29 @@ export const productionFiles = [
   'desktop/terminal.cts', 'desktop/open-thread.cts', 'desktop/tray.cts', 'desktop/quick-entry.cts', 'desktop/theme.cts', 'desktop/copy-keys.cts', 'desktop/quick-entry-preload.cjs', 'desktop/quick-entry.html', 'desktop/screenshot-popup.cts', 'desktop/screenshot-popup-preload.cjs', 'desktop/screenshot-popup.html',
   'desktop/runtime.mts', 'desktop/state.cts', 'desktop/elpis-icon.png', 'desktop/love-spot-icon.png', 'desktop/love-spot-icon.svg', 'lib/agent-runs.mts', 'lib/service-tier.mts', 'lib/chat-worktree.ts', 'lib/turn-replacement.ts', 'lib/thread-deletion.ts', 'lib/approvals.ts', 'bridge/love-spot-store.cts', 'bridge/love-spot-order.cts', 'bridge/love-spot-painting.cts', 'bridge/matilda-face.cts', 'bridge/matilda-clothes.cts', 'bridge/matilda-board-faces.cts', 'bridge/love-spot-talk.mts', 'bridge/speech-buffer.mts', 'bridge/love-agents.mts', 'bridge/acp-nodes.mts', 'bridge/workflow-acp.mts', 'bridge/workflow-acp/create-execution.mts', 'bridge/workflow-acp/create-mother-turns.mts', 'bridge/workflow-acp/create-node-routing.mts', 'bridge/workflow-acp/create-replanning.mts', 'bridge/workflow-acp/create-review.mts', 'bridge/workflow-acp/create-run-api.mts', 'bridge/workflow-acp/create-run-outputs.mts', 'bridge/workflow-acp/create-run-progress.mts', 'bridge/workflow-acp/create-run-storage.mts', 'bridge/workflow-acp/create-supervision.mts', 'bridge/workflow-acp/format.mts', 'bridge/workflow-acp/history.mts', 'bridge/workflow-acp/limits.mts', 'bridge/workflow-acp/mother-runtime.mts', 'bridge/workflow-acp/locks.mts', 'bridge/workflow-acp/status.mts', 'bridge/workflow-acp/types.mts', 'bridge/workflow-acp/validation.mts', 'bridge/workflow-models.mts', 'bridge/workflow-worktrees.mts', 'lib/love-spot.ts',
   'bridge/memory-budget.mts', 'scripts/mem-meter.py',
+  // Mother agent: the complete ported router closure and its MIT notice.
+  'bridge/router/LICENSE-dsh-superagent', 'bridge/router/app.mts', 'bridge/router/core/assignments.mts',
+  'bridge/router/core/engine.mts', 'bridge/router/core/errors.mts', 'bridge/router/core/evals.mts',
+  'bridge/router/core/ids.mts', 'bridge/router/core/index.mts', 'bridge/router/core/intake.mts',
+  'bridge/router/core/memory.mts', 'bridge/router/core/model.mts', 'bridge/router/core/part.mts',
+  'bridge/router/core/ports.mts', 'bridge/router/core/reasons.mts', 'bridge/router/core/replies.mts',
+  'bridge/router/core/stage.mts', 'bridge/router/core/tickets.mts', 'bridge/router/dispatch.mts',
+  'bridge/router/executor/adapters.mts', 'bridge/router/executor/background.mts', 'bridge/router/executor/discovery.mts',
+  'bridge/router/executor/dsh.mts', 'bridge/router/executor/effects.mts', 'bridge/router/executor/execution-environment.mts',
+  'bridge/router/executor/index.mts', 'bridge/router/executor/notices.mts', 'bridge/router/executor/role-models.mts',
+  'bridge/router/executor/runtime-background.mts', 'bridge/router/executor/runtime.mts', 'bridge/router/executor/service.mts',
+  'bridge/router/executor/sessions.mts', 'bridge/router/executor/settings.mts', 'bridge/router/executor/store.mts',
+  'bridge/router/infra/commands.mts', 'bridge/router/infra/environment.mts', 'bridge/router/infra/health.mts',
+  'bridge/router/infra/paths.mts', 'bridge/router/infra/setup.mts', 'bridge/router/infra/store.mts',
+  'bridge/router/infra/text.mts', 'bridge/router/infra/types.mts', 'bridge/router/model.mts',
+  'bridge/router/mother-agent.mts', 'bridge/router/outbox.mts', 'bridge/router/settings.mts',
+  'bridge/router/source-context.mts', 'bridge/router/sources/admission-context.mts', 'bridge/router/sources/elpis-chat-channel.mts',
+  'bridge/router/sources/elpis-chat-history.mts', 'bridge/router/sources/elpis-chat-transport.mts', 'bridge/router/sources/elpis-chat.mts',
+  'bridge/router/sources/github-channel.mts', 'bridge/router/sources/github-pull.mts', 'bridge/router/sources/github-read.mts',
+  'bridge/router/sources/github-trigger.mts', 'bridge/router/sources/github.mts', 'bridge/router/sources/host.mts',
+  'bridge/router/sources/kind.mts', 'bridge/router/sources/kv.mts', 'bridge/router/sources/poll.mts',
+  'bridge/router/sources/registry.mts', 'bridge/router/sources/settings.mts', 'bridge/router/subprocess.mts',
+  'bridge/router/worker-reports.mts',
 ];
 
 const launcher = `#!/usr/bin/env bash
@@ -109,6 +133,23 @@ function inputTree(directory: string, destination: string, keep: (path: string) 
   });
 }
 
+/** Router validation and locking run in Node, outside the renderer bundle. Include their production dependencies. */
+function routerDependencies(source: string) {
+  const files: PackageFile[] = [], versions: Record<string, string> = {};
+  const visit = (name: string, from: string) => {
+    const require = createRequire(path.join(from, 'package.json'));
+    const directory = path.dirname(require.resolve(`${name}/package.json`));
+    const manifest = JSON.parse(fs.readFileSync(path.join(directory, 'package.json'), 'utf8')) as { name: string; version: string; dependencies?: Record<string, string> };
+    if (versions[name]) { if (versions[name] !== manifest.version) throw new Error(`Conflicting runtime dependency: ${name}`); return; }
+    versions[name] = manifest.version;
+    files.push(...inputTree(directory, `app/node_modules/${name}`, target => !/(?:^|\/)(?:tests?|examples?)(?:\/|$)|\.test\./.test(target)
+      && (!path.posix.extname(target) || /\.(?:[cm]?js|json)$|\/LICEN[CS]E[^/]*$/.test(target))));
+    for (const dependency of Object.keys(manifest.dependencies ?? {})) visit(dependency, directory);
+  };
+  for (const name of ['zod', 'proper-lockfile']) visit(name, source);
+  return { files, versions };
+}
+
 /** Hard-links `source` to `output`; false when the filesystem refuses (another device, no permission). */
 function tryLink(source: string, output: string) {
   try { fs.linkSync(source, output); return true; } catch (error) {
@@ -162,11 +203,13 @@ export function stageDesktop({ source = fileURLToPath(new URL('../', import.meta
   if (typeof identity.name !== 'string' || typeof identity.version !== 'string' || wsIdentity.name !== 'ws' || typeof wsIdentity.version !== 'string') {
     throw new Error('Desktop or ws package identity is invalid');
   }
+  const router = routerDependencies(source);
   const files = [
     ...productionFiles.map(name => inputFile(path.join(source, name), `app/${name}`)),
     ...inputTree(out, 'app/out'),
     ...inputTree(electron, 'runtime/electron'),
     ...inputTree(ws, 'app/node_modules/ws'),
+    ...router.files,
     // The integrated terminal (desktop/terminal.cjs): node-pty's loader, licence and its build for this Electron.
     ...['package.json', 'LICENSE', 'build/Release/pty.node'].map(name => inputFile(path.join(pty, name), `app/node_modules/node-pty/${name}`)),
     ...inputTree(path.join(pty, 'lib'), 'app/node_modules/node-pty/lib', name => !/\.test\.js$|\.map$/.test(name)),
@@ -176,7 +219,7 @@ export function stageDesktop({ source = fileURLToPath(new URL('../', import.meta
   let commit = identity.commit || null;
   try { commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: source, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { /* Repackaging preserves the installed identity. */ }
   const packageIdentity = { name: identity.name, productName: identity.productName || 'Elpis', desktopName: identity.desktopName, version: identity.version, commit,
-    private: true, type: 'module', main: 'desktop/main.cts', dependencies: { ws: wsIdentity.version, 'node-pty': ptyIdentity.version, rrule: rruleIdentity.version } };
+    private: true, type: 'module', main: 'desktop/main.cts', dependencies: { ws: wsIdentity.version, 'node-pty': ptyIdentity.version, rrule: rruleIdentity.version, ...router.versions } };
   const generated = [
     { path: 'app/package.json', data: `${JSON.stringify(packageIdentity, null, 2)}\n`, mode: 0o644 },
     { path: 'launch', data: launcher, mode: 0o755 },

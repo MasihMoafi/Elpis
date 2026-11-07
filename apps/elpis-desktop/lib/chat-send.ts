@@ -97,7 +97,7 @@ export function createChatSend({ projectState, composer, conversations, runtime,
           updateSubmission({ turnId: steered.turnId });
         }
       } else {
-        const result = await api<{ turn?: { id: string }; thread?: Thread; continuedFrom?: string; sendError?: string }>(`/threads/${encodeURIComponent(thread.id)}/turns`, { text: sentText, ...attached, ...turnOptions, ...(continues ? { continueAs: `${title(thread)} (continued)` } : {}) });
+        const result = await api<{ turn?: { id: string }; thread?: Thread; continuedFrom?: string; sendError?: string; routed?: boolean }>(`/threads/${encodeURIComponent(thread.id)}/turns`, { text: sentText, ...attached, ...turnOptions, ...(continues ? { continueAs: `${title(thread)} (continued)` } : {}) });
         if (result.thread && result.sendError) {
           updateSubmission({ failed: true });
           const forkDraft = savedDraft(result.thread.id);
@@ -110,7 +110,7 @@ export function createChatSend({ projectState, composer, conversations, runtime,
         }
         if (!result.turn?.id) throw new Error("Elpis did not acknowledge the new turn. Check the conversation before retrying.");
         updateSubmission({ turnId: result.turn.id, ...(result.thread ? { scope: result.thread.id } : {}) });
-        markTurnStarted(result.thread?.id || thread!.id, result.turn!.id);
+        if (!result.routed) markTurnStarted(result.thread?.id || thread!.id, result.turn!.id);
         if (used?.plan !== undefined) { setThreadPlans(prev => ({ ...prev, [result.thread?.id || thread!.id]: used.plan! })); if (!selected) setNewPlan(false); }
         if (selected && used) {
           setNextTurn(prev => without(prev, selected.id));
