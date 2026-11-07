@@ -10,7 +10,7 @@ import { EventEmitter } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { DesktopClient } from './client.mts';
 import { startDesktopServer } from './server.mts';
-import { loveNodeSpec } from './love-agents.mjs';
+import { loveNodeSpec } from './love-agents.mts';
 import { createWorkflowHistory, createWorkflowRuns } from './workflow-acp.mts';
 import { createMemoryBudget } from './memory-budget.mts';
 

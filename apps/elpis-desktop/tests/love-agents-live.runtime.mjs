@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createLoveSpot } from '../bridge/love-spot-store.cts';
-import { createLoveAgents } from '../bridge/love-agents.mjs';
+import { createLoveAgents } from '../bridge/love-agents.mts';
 const engine = process.argv[2];
 assert(engine && path.isAbsolute(engine), 'Provide the absolute installed engine path');
 const base = path.join(os.homedir(), '.cache/elpis-tests'); await fs.mkdir(base, { recursive: true });

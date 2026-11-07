@@ -9,13 +9,21 @@ import { handoffText, runAcpNode } from './acp-nodes.mts';
 import { interviewReply, INVALID_INTERVIEW_REPLY } from './love-interview.mts';
 const require = createRequire(import.meta.url);
 
+type Agent = { name: string; prompt: string; model: string; provider: string; task: string; interview?: Interview };
+type Interview = { messages: { role: string; text: string }[]; proposal?: string; busy?: boolean; error?: string; approved?: boolean };
+type Element = { id: string; type: string; isDeleted?: boolean; startBinding?: { elementId: string }; endBinding?: { elementId: string }; startArrowhead?: string | null; endArrowhead?: string | null; customData?: { loveAgent?: Agent } };
+type Node = Agent & { id: string; incoming: string[]; outgoing: string[] };
+type NodeSpec = Parameters<typeof runAcpNode>[0];
+type Store = ReturnType<typeof import('./love-spot-store.cts').createLoveSpot>;
+type AgentCommand = { command: string; args?: string[]; env?: Record<string, string> };
+
 // Excalidraw remains the source of truth: bound arrows, not a second edge store.
-export function agentGraph(elements, selected) {
+export function agentGraph(elements: Element[], selected: string) {
   const cards = elements.filter(e => !e.isDeleted && e.type === 'rectangle' && e.customData?.loveAgent);
   if (cards.length > 64) throw new BridgeError('Run at most 64 agents at once');
-  const nodes = new Map(cards.map(e => {
-    const a = e.customData.loveAgent;
-    for (const [key, limit] of [['name', 120], ['prompt', 32000], ['model', 200], ['provider', 200]]) text(a[key], `agent ${key}`, limit);
+  const nodes = new Map<string, Node>(cards.map(e => {
+    const a = e.customData!.loveAgent!;
+    for (const [key, limit] of [['name', 120], ['prompt', 32000], ['model', 200], ['provider', 200]] as const) text(a[key], `agent ${key}`, limit);
     if (typeof a.task !== 'string' || a.task.length > 16000) throw new BridgeError('Invalid agent task');
     return [e.id, { ...a, id: e.id, incoming: [], outgoing: [] }];
   }));
@@ -25,20 +33,20 @@ export function agentGraph(elements, selected) {
     let a = e.startBinding?.elementId, b = e.endBinding?.elementId;
     if (e.startArrowhead === 'arrow' && !e.endArrowhead) [a, b] = [b, a];
     else if (e.endArrowhead !== 'arrow' || e.startArrowhead) continue;
-    if (nodes.has(a) && nodes.has(b)) {
-      if (!nodes.get(b).incoming.includes(a)) nodes.get(b).incoming.push(a);
-      if (!nodes.get(a).outgoing.includes(b)) nodes.get(a).outgoing.push(b);
+    if (nodes.has(a as string) && nodes.has(b as string)) {
+      if (!nodes.get(b as string)!.incoming.includes(a as string)) nodes.get(b as string)!.incoming.push(a as string);
+      if (!nodes.get(a as string)!.outgoing.includes(b as string)) nodes.get(a as string)!.outgoing.push(b as string);
     }
   }
-  const component = new Set();
-  const collect = id => { if (component.has(id)) return; component.add(id); const n = nodes.get(id); [...n.incoming, ...n.outgoing].forEach(collect); };
+  const component = new Set<string>();
+  const collect = (id: string) => { if (component.has(id)) return; component.add(id); const n = nodes.get(id)!; [...n.incoming, ...n.outgoing].forEach(collect); };
   collect(selected);
-  const ordered = [], visiting = new Set(), done = new Set();
-  const visit = id => {
+  const ordered: Node[] = [], visiting = new Set<string>(), done = new Set<string>();
+  const visit = (id: string) => {
     if (visiting.has(id)) throw new BridgeError('The agents have a loop. Remove an arrow before running.');
     if (done.has(id)) return;
     visiting.add(id);
-    const node = nodes.get(id);
+    const node = nodes.get(id)!;
     if (!node.incoming.length && !node.task.trim()) throw new BridgeError(`Give ${node.name} a task before running`);
     node.incoming.forEach(visit); visiting.delete(id); done.add(id); ordered.push(node);
   };
@@ -47,40 +55,41 @@ export function agentGraph(elements, selected) {
 }
 
 // Where Elpis is installed, as desktop/runtime.mts finds it: the runtime executable, and its provider tools beside it.
-function installation(env) {
+function installation(env: NodeJS.ProcessEnv) {
   const selected = env.ELPIS_ENGINE_BIN || path.join(os.homedir(), '.local', 'bin', 'elpis-next');
   let engine;
   try { engine = fs.realpathSync(selected); }
   catch { throw new BridgeError('Install Elpis before running agents. The Elpis runtime executable could not be found.', 503); }
   return { engine, tools: runtimeTools(engine) };
 }
-const present = file => {
+const present = (file: string) => {
   if (!fs.existsSync(file)) throw new BridgeError(`This Elpis installation has no ${path.basename(file)} (${file}). Update Elpis to run agents over ACP.`, 503);
   return file;
 };
-const strings = value => Array.isArray(value) && value.every(item => typeof item === 'string');
+const strings = (value: unknown): value is string[] => Array.isArray(value) && value.every(item => typeof item === 'string');
 
 /** ACP agents the person configured in $ELPIS_HOME/acp-agents.json, by the provider name a card uses:
  * `{ "fx": { "command": "fx", "args": ["acp"], "env": { … } } }`. Kept out of the drawing, which can come from anyone. */
-export function configuredAgents(env = process.env) {
+export function configuredAgents(env: NodeJS.ProcessEnv = process.env): Record<string, AgentCommand> {
   const file = path.join(elpisHome(env), 'acp-agents.json');
   let raw;
-  try { raw = fs.readFileSync(file, 'utf8'); } catch (error) { if (error.code === 'ENOENT') return {}; throw new BridgeError(`Could not read ${file}`, 500); }
-  let agents;
+  try { raw = fs.readFileSync(file, 'utf8'); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {}; throw new BridgeError(`Could not read ${file}`, 500); }
+  let agents: unknown;
   try { agents = JSON.parse(raw); } catch { throw new BridgeError(`${file} is not valid JSON`, 400); }
   if (!agents || typeof agents !== 'object' || Array.isArray(agents)) throw new BridgeError(`${file} must map provider names to ACP agent commands`, 400);
-  for (const [name, agent] of Object.entries(agents)) {
+  for (const [name, value] of Object.entries(agents)) {
+    const agent = value as Partial<AgentCommand> | null;
     if (typeof agent?.command !== 'string' || !agent.command || (agent.args !== undefined && !strings(agent.args))
       || (agent.env !== undefined && (typeof agent.env !== 'object' || Array.isArray(agent.env) || !Object.values(agent.env).every(value => typeof value === 'string')))) {
       throw new BridgeError(`${file}: "${name}" needs a command, and optional args (strings) and env (strings)`, 400);
     }
   }
-  return agents;
+  return agents as Record<string, AgentCommand>;
 }
 
 /** Built-in providers share Elpis's ACP agent and permission defaults. A configured
  * external ACP command keeps its own protocol and provider. */
-export function loveNodeSpec(node, env = process.env) {
+export function loveNodeSpec(node: Pick<Agent, 'name' | 'prompt' | 'model' | 'provider'> & { id?: string }, env: NodeJS.ProcessEnv = process.env): NodeSpec & { env: Record<string, string | undefined> } {
   const base = { name: node.name, instructions: node.prompt };
   const profile = { ELPIS_HOME: elpisHome(env), ...Object.fromEntries(BRIDGE_ENDPOINT_KEYS.map(key => [key, env[key]])) };
   const agents = configuredAgents(env), configured = Object.hasOwn(agents, node.provider) ? agents[node.provider] : null;
@@ -109,37 +118,38 @@ export function loveNodeSpec(node, env = process.env) {
 /** Runs a card's connected agents in order, each as its own ACP agent process (bridge/acp-nodes.mts): a card's final
  * answer reaches the cards its arrows point to through their session/prompt, and nothing else passes between them.
  * Automatic permission callbacks never wait for the person. */
-export function createLoveAgents(store, { timeoutMs = 300000, nodeSpec = loveNodeSpec, env = process.env } = {}) {
+export function createLoveAgents(store: Store, { timeoutMs = 300000, nodeSpec = loveNodeSpec, env = process.env }: { timeoutMs?: number; nodeSpec?: (node: Pick<Agent, 'name' | 'prompt' | 'model' | 'provider'> & { id?: string }, env: NodeJS.ProcessEnv) => NodeSpec; env?: NodeJS.ProcessEnv } = {}) {
   let running = false, saving = Promise.resolve();
-  const interviewing = new Map();
+  const interviewing = new Map<string, { controller: AbortController; done: Promise<void> }>();
   // Changes are saved one after another, so a permission shown mid-run is not lost to a concurrent save.
-  const patch = (id, change, requireLive = false) => (saving = saving.catch(() => {}).then(async () => {
+  const patch = (id: string, change: Record<string, unknown>, requireLive = false) => (saving = saving.catch(() => {}).then(async () => {
     const { scene } = await store.read();
     if (requireLive && !scene.elements.some(e => e.id === id && !e.isDeleted && e.customData?.loveAgent)) throw new BridgeError('This agent is no longer on the current page', 409);
-    const elements = scene.elements.map(e => e.id !== id || e.isDeleted ? e : { ...e, version: e.version + 1, versionNonce: Math.floor(Math.random() * 2147483647), updated: Date.now(), customData: { ...e.customData, loveAgent: { ...e.customData.loveAgent, ...change } } });
+    const elements = scene.elements.map(e => e.id !== id || e.isDeleted ? e : { ...e, version: e.version + 1, versionNonce: Math.floor(Math.random() * 2147483647), updated: Date.now(), customData: { ...e.customData, loveAgent: { ...(e.customData!.loveAgent as object), ...change } } });
     await store.save({ ...scene, elements });
   }));
   // A change shown while the run goes on; a failed save must not stop the run (or the bridge).
-  const shown = (id, change) => { patch(id, change).catch(error => console.warn('Love Spot could not save an agent update', String(error?.message ?? error).slice(0, 200))); };
-  const permission = request => request.options?.find(option => option.kind === 'allow_once')?.optionId
+  const shown = (id: string, change: Record<string, unknown>) => { patch(id, change).catch(error => console.warn('Love Spot could not save an agent update', String(error?.message ?? error).slice(0, 200))); };
+  const permission: NonNullable<NonNullable<Parameters<typeof runAcpNode>[2]>['onPermission']> = request => request.options?.find(option => option.kind === 'allow_once')?.optionId
     ?? request.options?.find(option => option.kind === 'allow_always')?.optionId ?? null;
   return {
     /** Interviews use the same role/model ACP path and shared automatic-agent permissions.
      * Each bounded turn carries the saved conversation; no idle process or hidden chat owns interview state. */
-    async interview(input) {
+    async interview(body: Record<string, unknown>) {
+      const input = body as { id: string; cwd?: string; message?: string };
       object(input, ['id', 'cwd', 'message']); text(input.id, 'agent ID', 200);
       if (input.cwd !== undefined && !path.isAbsolute(text(input.cwd, 'working folder', 4096))) throw new BridgeError('Working folder must be absolute');
       if (input.message !== undefined) text(input.message, 'interview answer', 16000);
       if (interviewing.has(input.id)) throw new BridgeError('This agent is already interviewing', 409);
       const controller = new AbortController();
-      let finished;
+      let finished!: () => void;
       interviewing.set(input.id, { controller, done: new Promise(resolve => { finished = resolve; }) });
-      let interview;
+      let interview: Interview | undefined;
       try {
         const { scene } = await store.read();
-        const node = scene.elements.find(e => e.id === input.id && !e.isDeleted && e.type === 'rectangle')?.customData?.loveAgent;
+        const node = (scene.elements as Element[]).find(e => e.id === input.id && !e.isDeleted && e.type === 'rectangle')?.customData?.loveAgent;
         if (!node) throw new BridgeError('This agent is no longer on the current page', 409);
-        for (const [key, limit] of [['name', 120], ['prompt', 32000], ['model', 200], ['provider', 200]]) text(node[key], `agent ${key}`, limit);
+        for (const [key, limit] of [['name', 120], ['prompt', 32000], ['model', 200], ['provider', 200]] as const) text(node[key], `agent ${key}`, limit);
         const messages = node.interview?.messages ?? [];
         if (!Array.isArray(messages) || messages.length > 40 || messages.some(m => !m || !['assistant', 'user'].includes(m.role) || typeof m.text !== 'string' || !m.text.trim() || m.text.length > 16000)) throw new BridgeError('Invalid interview history');
         if (input.message !== undefined && !messages.length) throw new BridgeError('Wait for the agent to ask its first question');
@@ -167,7 +177,7 @@ export function createLoveAgents(store, { timeoutMs = 300000, nodeSpec = loveNod
         await patch(input.id, { interview }, true);
         return { interview };
       } catch (error) {
-        if (interview) await patch(input.id, { interview: { ...interview, busy: false, error: error.message } }, true).catch(() => {});
+        if (interview) await patch(input.id, { interview: { ...interview, busy: false, error: (error as Error).message } }, true).catch(() => {});
         throw error;
       } finally { interviewing.delete(input.id); finished(); }
     },
@@ -178,7 +188,8 @@ export function createLoveAgents(store, { timeoutMs = 300000, nodeSpec = loveNod
       await saving.catch(() => {});
     },
     busy: () => running || interviewing.size > 0,
-    async run(input) {
+    async run(body: Record<string, unknown>) {
+      const input = body as { id: string; cwd?: string; confirm?: boolean };
       object(input, ['id', 'cwd', 'confirm']); text(input.id, 'agent ID', 200);
       if (input.confirm !== undefined && typeof input.confirm !== 'boolean') throw new BridgeError('Invalid task confirmation');
       if (input.cwd !== undefined && !path.isAbsolute(text(input.cwd, 'working folder', 4096))) throw new BridgeError('Working folder must be absolute');
@@ -188,17 +199,17 @@ export function createLoveAgents(store, { timeoutMs = 300000, nodeSpec = loveNod
         if (interviewing.has(input.id)) throw new BridgeError('Wait for the interview to finish', 409);
         if (input.confirm) {
           const { scene } = await store.read();
-          const interview = scene.elements.find(e => e.id === input.id && !e.isDeleted)?.customData?.loveAgent?.interview;
+          const interview = (scene.elements as Element[]).find(e => e.id === input.id && !e.isDeleted)?.customData?.loveAgent?.interview;
           if (!interview?.proposal || interview.busy || interview.error) throw new BridgeError('Wait for a proposed task before starting', 409);
           await patch(input.id, { task: text(interview.proposal, 'proposed task', 300), interview: { ...interview, approved: true } }, true);
         }
         const { scene } = await store.read();
-        const nodes = agentGraph(scene.elements, input.id), answers = new Map(), results = [];
+        const nodes = agentGraph(scene.elements as unknown as Element[], input.id), answers = new Map<string, string>(), results = [];
         if (nodes.some(node => interviewing.has(node.id))) throw new BridgeError('Wait for the connected agents to finish interviewing', 409);
         const cwd = input.cwd ?? os.homedir();
         for (const node of nodes) {
           try {
-            const inputs = node.incoming.map(id => ({ name: nodes.find(n => n.id === id).name, answer: answers.get(id) }));
+            const inputs = node.incoming.map(id => ({ name: nodes.find(n => n.id === id)!.name, answer: answers.get(id)! }));
             handoffText(node.task, inputs); // an oversized handoff fails before the agent starts
             const spec = nodeSpec(node, env);
             await patch(node.id, { status: 'running', error: '', output: '', threadId: '', sessionId: '', permission: null });
@@ -211,7 +222,7 @@ export function createLoveAgents(store, { timeoutMs = 300000, nodeSpec = loveNod
             await patch(node.id, { status: 'completed', output: result.answer, permission: null });
             results.push({ id: node.id, sessionId: result.sessionId, ...(spec.elpis ? { threadId: result.sessionId } : {}), output: result.answer });
           } catch (error) {
-            await patch(node.id, { status: 'failed', error: error.message, permission: null });
+            await patch(node.id, { status: 'failed', error: (error as Error).message, permission: null });
             throw error;
           }
         }
@@ -219,7 +230,8 @@ export function createLoveAgents(store, { timeoutMs = 300000, nodeSpec = loveNod
       } finally { running = false; }
     },
     /** Old clients may still answer a previously saved card; automatic runs do not wait. */
-    answer(input) {
+    answer(body: Record<string, unknown>) {
+      const input = body as { id: string; optionId: string };
       object(input, ['id', 'optionId']); text(input.id, 'agent ID', 200); text(input.optionId, 'option', 200);
       throw new BridgeError('No permission request is waiting for this agent', 409);
     },

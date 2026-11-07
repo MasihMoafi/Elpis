@@ -185,7 +185,7 @@ function LoveSpotBoard({ dark, toolbarHost }: LoveSpotProps) {
     return () => { active = false; };
   }, []);
   const provider = chatProvider(settings?.main.model, undefined, settings?.main.provider);
-  // Any connected model: a model from another connection starts her a new chat (bridge/love-spot-talk.mjs).
+  // Any connected model: a model from another connection starts her a new chat (bridge/love-spot-talk.mts).
   const choices = providerChoices(models, settings);
   const pickedProvider = choices.find(choice => choice.id === pick.choiceId)?.provider;
 

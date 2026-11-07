@@ -8,7 +8,7 @@ import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { DesktopClient } from '../bridge/client.mts';
-import { createLoveAgents } from '../bridge/love-agents.mjs';
+import { createLoveAgents } from '../bridge/love-agents.mts';
 import { createLoveSpot } from '../bridge/love-spot-store.cts';
 
 export async function interviewRuntime({ toolsDirectory = fileURLToPath(new URL('../../../tools/elpis-claude/', import.meta.url)), seed = true } = {}) {

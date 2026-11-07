@@ -23,7 +23,7 @@ function keepPending(context: string | undefined, ids: ReadonlySet<string>) {
   try { const all = pendingNotes(); if (ids.size) all[context] = [...ids]; else delete all[context]; appStorage().setItem(PENDING, JSON.stringify(all)); } catch { /* kept for this visit only */ }
 }
 
-/** Matilda reads the board once it has been quiet for a moment, then answers on it; the bridge places the reply (bridge/love-spot-talk.mjs). */
+/** Matilda reads the board once it has been quiet for a moment, then answers on it; the bridge places the reply (bridge/love-spot-talk.mts). */
 export function useMatilda({ ready, enabled, context, told, send, onError }: {
   ready: () => boolean; /** Replies on: off means nothing is sent, not even on leaving the board. */ enabled: () => boolean; context?: string; told: (ids: ReadonlySet<string>) => string; send: (text: string, persona: string, isCurrent: () => boolean) => Promise<boolean>; onError: (message: string) => void;
 }) {

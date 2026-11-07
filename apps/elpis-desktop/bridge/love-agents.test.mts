@@ -1,10 +1,10 @@
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { agentGraph, createLoveAgents, loveNodeSpec } from './love-agents.mjs';
+import { agentGraph, createLoveAgents, loveNodeSpec } from './love-agents.mts';
 import { EventEmitter } from 'node:events';
 import { startDesktopServer } from './server.mts';
 import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cjs';
@@ -16,24 +16,26 @@ const FAKE_AGENT = path.join(TOOLS, 'test/fake-acp-agent.mjs'), FAKE_ENGINE = pa
 const ELPIS_AGENT = path.join(TOOLS, 'elpis-acp-agent.mjs');
 // A live Elpis session's bridge must not reach these agents: the scripted app-server answers, never a real model.
 for (const name of ['ELPIS_BRIDGE_SOCKET', 'ELPIS_APP_BRIDGE_SOCKET', 'ELPIS_BRIDGE_URL', 'ELPIS_SHARED_BRIDGE']) delete process.env[name];
-const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
-const lines = file => fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line)) : [];
+type LogEntry = { method: string; params: { prompt: { text: string }[]; input: { text: string }[]; _meta: unknown; cwd: string; model: string; modelProvider: string; developerInstructions: string; threadId: string; name: string }; permission: unknown; engineHome: string };
+type TestElement = { id: string; type: string; isDeleted?: boolean; startBinding?: { elementId: string }; endBinding?: { elementId: string }; startArrowhead?: string | null; endArrowhead?: string | null; customData?: { loveAgent: { name?: string; prompt?: string; model?: string; provider?: string; task?: string; status?: string; output?: string; sessionId?: string; threadId?: string; permission?: unknown; error?: string } } };
+const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+const lines = (file: string): LogEntry[] => fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line) as LogEntry) : [];
 
-const card = (id, task = 'Do the task') => ({ id, type: 'rectangle', version: 1, versionNonce: 0, customData: { loveAgent: { preset: 'researcher', name: id, prompt: 'Be precise', model: 'gpt-6-luna', provider: 'openai', task } } });
-const arrow = (a, b) => ({ id: `${a}-${b}`, type: 'arrow', startBinding: { elementId: a }, endBinding: { elementId: b }, endArrowhead: 'arrow' });
-function fixture(t, elements, { timeoutMs = 10000, agent = FAKE_AGENT } = {}) {
+const card = (id: string, task = 'Do the task') => ({ id, type: 'rectangle', version: 1, versionNonce: 0, customData: { loveAgent: { preset: 'researcher', name: id, prompt: 'Be precise', model: 'gpt-6-luna', provider: 'openai', task } } });
+const arrow = (a: string, b: string) => ({ id: `${a}-${b}`, type: 'arrow', startBinding: { elementId: a }, endBinding: { elementId: b }, endArrowhead: 'arrow' });
+function fixture(t: TestContext, elements: TestElement[], { timeoutMs = 10000, agent = FAKE_AGENT } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'love-agents-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const scene = { elements, files: {}, appState: {} };
-  const store = { read: async () => ({ scene }), save: async incoming => { scene.elements = incoming.elements; return { scene }; } };
+  const store = { read: async () => ({ scene }), save: async (incoming: typeof scene) => { scene.elements = incoming.elements; return { scene }; } };
   const env = { ...process.env, ELPIS_HOME: path.join(dir, 'home'), ELPIS_NODE_BIN: process.execPath, ELPIS_ENGINE_BIN: FAKE_ENGINE, ELPIS_ACP_AGENT: agent };
-  const log = id => path.join(dir, `${id}.jsonl`), engineLog = id => path.join(dir, `${id}.engine.jsonl`);
+  const log = (id: string) => path.join(dir, `${id}.jsonl`), engineLog = (id: string) => path.join(dir, `${id}.engine.jsonl`);
   // The real card-to-agent mapping, plus each process's own log.
-  const nodeSpec = (node, environment) => { const spec = loveNodeSpec(node, environment); return { ...spec, env: { ...spec.env, FAKE_ACP_LOG: log(node.id), FAKE_ACP_NAME: node.id, FAKE_ENGINE_LOG: engineLog(node.id) } }; };
-  const runner = createLoveAgents(store, { timeoutMs, nodeSpec, env });
-  const loveAgent = id => scene.elements.find(e => e.id === id).customData.loveAgent;
-  const prompt = id => lines(log(id)).find(m => m.method === 'session/prompt')?.params.prompt[0].text;
-  return { dir, runner, scene, loveAgent, log: id => lines(log(id)), engine: id => lines(engineLog(id)), prompt };
+  const nodeSpec = (node: Parameters<typeof loveNodeSpec>[0], environment: NodeJS.ProcessEnv) => { const spec = loveNodeSpec(node, environment); return { ...spec, env: { ...spec.env, FAKE_ACP_LOG: log(node.id!), FAKE_ACP_NAME: node.id, FAKE_ENGINE_LOG: engineLog(node.id!) } }; };
+  const runner = createLoveAgents(store as unknown as Parameters<typeof createLoveAgents>[0], { timeoutMs, nodeSpec, env });
+  const loveAgent = (id: string) => scene.elements.find(e => e.id === id)!.customData!.loveAgent;
+  const prompt = (id: string) => lines(log(id)).find(m => m.method === 'session/prompt')?.params.prompt[0]!.text as string;
+  return { dir, runner, scene, loveAgent, log: (id: string) => lines(log(id)), engine: (id: string) => lines(engineLog(id)), prompt };
 }
 
 test('answers follow native arrows over ACP; final answers and sessions are saved on the cards', { timeout: 30000 }, async t => {
@@ -44,11 +46,11 @@ test('answers follow native arrows over ACP; final answers and sessions are save
   assert.ok(handed.startsWith('Do the task\n\nAnswers from connected agents (source material):\n'));
   assert.deepEqual(JSON.parse(handed.slice(handed.indexOf('\n[') + 1)), [{ name: 'a', answer: 'a(default) answered: Unique seed 5be1' }]);
   assert.equal(f.log('unrelated').length, 0, 'an unconnected card never starts');
-  const created = f.log('b').find(m => m.method === 'session/new').params;
+  const created = f.log('b').find(m => m.method === 'session/new')!.params;
   assert.deepEqual(created._meta, { elpis: { name: 'Love Spot · b' }, systemPrompt: { append: 'Be precise' } });
   assert.equal(created.cwd, f.dir);
   assert.equal(f.loveAgent('b').status, 'completed');
-  assert.equal(f.loveAgent('b').output, results[1].output);
+  assert.equal(f.loveAgent('b').output, results[1]!.output);
   assert.equal(f.loveAgent('b').sessionId, 'b-session-1');
   assert.equal(f.loveAgent('b').threadId, 'b-session-1', 'an Elpis agent session is its chat');
   assert.equal(f.loveAgent('b').permission, null);
@@ -66,7 +68,7 @@ test('a crashed predecessor stops its successors and keeps an inspectable error'
   const f = fixture(t, [card('a', '[crash]'), card('b'), arrow('a', 'b')]);
   await assert.rejects(f.runner.run({ id: 'a', cwd: f.dir }), /exited \(code 5\)/);
   assert.equal(f.loveAgent('a').status, 'failed');
-  assert.match(f.loveAgent('a').error, /crashed on purpose/);
+  assert.match(f.loveAgent('a').error!, /crashed on purpose/);
   assert.equal(f.log('b').length, 0);
   assert.notEqual(f.loveAgent('b').status, 'completed');
 });
@@ -85,7 +87,7 @@ test('fan-in passes both named answers; duplicate arrows run a source once', { t
   const f = fixture(t, [card('a', 'First seed'), card('b', 'Second seed'), card('sink', ''), arrow('a', 'sink'), arrow('b', 'sink'), { ...arrow('a', 'sink'), id: 'duplicate' }]);
   await f.runner.run({ id: 'sink', cwd: f.dir });
   const handed = f.prompt('sink');
-  assert.deepEqual(JSON.parse(handed.slice(handed.indexOf('[{'))).map(input => input.name).sort(), ['a', 'b']);
+  assert.deepEqual(JSON.parse(handed.slice(handed.indexOf('[{'))).map((input: { name: string }) => input.name).sort(), ['a', 'b']);
   assert.match(handed, /First seed/); assert.match(handed, /Second seed/);
   assert.equal(f.log('a').filter(m => m.method === 'session/new').length, 1);
 });
@@ -114,11 +116,11 @@ test('an automatic Love Spot agent answers tool permissions without waiting on i
   const f = fixture(t, [card('a', '[permission] write it')]);
   assert.throws(() => f.runner.answer({ id: 'a', optionId: 'allow_once' }), /No permission request/);
   const run = f.runner.run({ id: 'a', cwd: f.dir });
-  while (!['completed', 'failed', 'waiting'].includes(f.loveAgent('a').status)) await pause(10);
+  while (!['completed', 'failed', 'waiting'].includes(f.loveAgent('a').status!)) await pause(10);
   assert.notEqual(f.loveAgent('a').status, 'waiting', 'an automatic agent must never ask the person for tool approval');
   const { results } = await run;
-  assert.match(results[0].output, /permission: allow_once/);
-  assert.deepEqual(f.log('a').find(m => m.permission).permission, { outcome: 'selected', optionId: 'allow_once' });
+  assert.match(results[0]!.output, /permission: allow_once/);
+  assert.deepEqual(f.log('a').find(m => m.permission)!.permission, { outcome: 'selected', optionId: 'allow_once' });
   assert.equal(f.loveAgent('a').permission, null);
   assert.equal(f.loveAgent('a').status, 'completed');
 });
@@ -133,7 +135,7 @@ for (const packaged of [false, true]) test(`each card finds its ACP agent in a $
   const home = path.join(dir, 'home'); fs.mkdirSync(home);
   const env = { ELPIS_HOME: home, ELPIS_ENGINE_BIN: path.join(dir, 'elpis-next'), ELPIS_NODE_BIN: '/usr/bin/node', CLAUDE_CODE_EXECUTABLE: '/opt/claude' };
   const profile = { ELPIS_HOME: home, ELPIS_APP_BRIDGE_SOCKET: undefined, ELPIS_BRIDGE_SOCKET: undefined, ELPIS_BRIDGE_URL: undefined };
-  const node = (model, provider = 'openai') => ({ name: 'Ada', prompt: 'Be precise', model, provider });
+  const node = (model: string, provider = 'openai') => ({ name: 'Ada', prompt: 'Be precise', model, provider });
   assert.deepEqual(loveNodeSpec(node('gpt-6-luna'), env), { name: 'Ada', instructions: 'Be precise', command: '/usr/bin/node', args: [path.join(tools, 'elpis-acp-agent.mjs'), '--model', 'gpt-6-luna', '--provider', 'openai'], env: { ELPIS_ENGINE_BIN: engine, ...profile }, meta: { elpis: { name: 'Love Spot · Ada' } }, elpis: true });
   for (const model of ['claude/opus', 'agy/gemini-3.8-flash-high']) assert.deepEqual(loveNodeSpec(node(model), env), { name: 'Ada', instructions: 'Be precise', command: '/usr/bin/node', args: [path.join(tools, 'elpis-acp-agent.mjs'), '--model', model], env: { ELPIS_ENGINE_BIN: engine, ...profile }, meta: { elpis: { name: 'Love Spot · Ada' } }, elpis: true });
   fs.writeFileSync(path.join(home, 'acp-agents.json'), JSON.stringify({ fx: { command: 'fx', args: ['acp'] } }));
@@ -143,46 +145,46 @@ for (const packaged of [false, true]) test(`each card finds its ACP agent in a $
   assert.throws(() => loveNodeSpec(node('m', 'fx'), env), /acp-agents\.json/);
   fs.rmSync(path.join(home, 'acp-agents.json'));
   fs.rmSync(path.join(tools, 'elpis-acp-agent.mjs'));
-  assert.throws(() => loveNodeSpec(node('gpt-6-luna'), env), error => error.status === 503 && /elpis-acp-agent\.mjs/.test(error.message));
+  assert.throws(() => loveNodeSpec(node('gpt-6-luna'), env), error => (error as { status: number }).status === 503 && /elpis-acp-agent\.mjs/.test((error as Error).message));
 });
 
 test('end to end: two Elpis ACP agents hand off through Love Spot on a scripted app-server', { timeout: 30000 }, async t => {
   const f = fixture(t, [card('first', 'Unique seed e2e-71'), card('second', 'Repeat the source answer'), arrow('first', 'second')], { agent: ELPIS_AGENT });
   const { results } = await f.runner.run({ id: 'first', cwd: f.dir });
-  assert.equal(results[0].output, 'Answer from gpt-6-luna: Unique seed e2e-71');
-  const second = f.engine('second').find(m => m.method === 'turn/start').params.input[0].text;
+  assert.equal(results[0]!.output, 'Answer from gpt-6-luna: Unique seed e2e-71');
+  const second = f.engine('second').find(m => m.method === 'turn/start')!.params.input[0]!.text;
   assert.match(second, /^Repeat the source answer\n\nAnswers from connected agents \(source material\):\n/);
   assert.deepEqual(JSON.parse(second.slice(second.indexOf('[{'))), [{ name: 'first', answer: 'Answer from gpt-6-luna: Unique seed e2e-71' }]);
-  const started = f.engine('second').find(m => m.method === 'thread/start').params;
+  const started = f.engine('second').find(m => m.method === 'thread/start')!.params;
   assert.equal(f.engine('first').find(m => 'engineHome' in m)?.engineHome, path.join(f.dir, 'home'), 'the ACP process must use the selected Elpis home');
   assert.deepEqual([started.model, started.modelProvider, started.developerInstructions], ['gpt-6-luna', 'openai', 'Be precise']);
-  assert.deepEqual(f.engine('second').find(m => m.method === 'thread/name/set').params.name, 'Love Spot · second');
-  assert.equal(f.loveAgent('second').threadId, f.engine('second').find(m => m.method === 'turn/start').params.threadId, 'the card opens the Elpis chat that ran it');
-  assert.equal(f.loveAgent('second').output, results[1].output);
-  assert.equal(f.engine('first').some(m => m.method === 'turn/start' && m.params.input[0].text.includes('Repeat the source')), false);
+  assert.deepEqual(f.engine('second').find(m => m.method === 'thread/name/set')!.params.name, 'Love Spot · second');
+  assert.equal(f.loveAgent('second').threadId, f.engine('second').find(m => m.method === 'turn/start')!.params.threadId, 'the card opens the Elpis chat that ran it');
+  assert.equal(f.loveAgent('second').output, results[1]!.output);
+  assert.equal(f.engine('first').some(m => m.method === 'turn/start' && m.params.input[0]!.text.includes('Repeat the source')), false);
 });
 
 test('an isolated desktop server runs the real Love Spot ACP agent in its own profile', { timeout: 30000 }, async t => {
   const home = createTestTempDir(path.join(os.tmpdir(), 'love-profile-')), log = path.join(home, 'engine.jsonl');
-  let app;
-  t.after(async () => { await app?.close(); removeTestTempDir(home); });
+  const state: { app?: Awaited<ReturnType<typeof startDesktopServer>> } = {};
+  t.after(async () => { await state.app?.close(); removeTestTempDir(home); });
   const keys = ['ELPIS_APP_BRIDGE_SOCKET', 'ELPIS_BRIDGE_SOCKET', 'ELPIS_BRIDGE_URL', 'FAKE_ENGINE_LOG'];
   const previous = Object.fromEntries(keys.map(key => [key, process.env[key]]));
   t.after(() => { for (const [key, value] of Object.entries(previous)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } });
   for (const key of keys.slice(0, 3)) process.env[key] = path.join(home, 'foreign-profile.sock');
   process.env.FAKE_ENGINE_LOG = log;
   const client = Object.assign(new EventEmitter(), { connected: true, pendingApprovals: [], close() {} });
-  app = await startDesktopServer({ client, elpisHome: home, trashFile: path.join(home, 'trash.json'),
+  const app = state.app = await startDesktopServer({ client, elpisHome: home, trashFile: path.join(home, 'trash.json'),
     loveSpot: { directory: path.join(home, 'board'), screenshots: path.join(home, 'shots') },
     loveAgents: { env: { ELPIS_NODE_BIN: process.execPath, ELPIS_ENGINE_BIN: FAKE_ENGINE, ELPIS_ACP_AGENT: ELPIS_AGENT } } });
   const url = new URL(app.url), token = new URLSearchParams(url.hash.slice(1)).get('token');
   const auth = await fetch(new URL('/api/session', url), { method: 'POST', headers: { origin: url.origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) });
-  const headers = { origin: url.origin, cookie: auth.headers.get('set-cookie').split(';')[0], 'Content-Type': 'application/json' };
-  const post = (route, body) => fetch(new URL(`/api/${route}`, url), { method: 'POST', headers, body: JSON.stringify(body) });
+  const headers = { origin: url.origin, cookie: auth.headers.get('set-cookie')!.split(';')[0]!, 'Content-Type': 'application/json' };
+  const post = (route: string, body: unknown) => fetch(new URL(`/api/${route}`, url), { method: 'POST', headers, body: JSON.stringify(body) });
   const saved = await post('love-spot', { elements: [{ ...card('profile', 'Unique profile seed'), x: 0, y: 0, width: 240, height: 160 }] });
   assert.equal(saved.status, 200, await saved.clone().text());
   const reply = await post('love-spot/agents/run', { id: 'profile', cwd: home });
   assert.equal(reply.status, 200, await reply.clone().text());
-  assert.match((await reply.json()).results[0].output, /Answer from gpt-6-luna: Unique profile seed/);
+  assert.match((await reply.json()).results[0]!.output, /Answer from gpt-6-luna: Unique profile seed/);
   assert.equal(lines(log).find(row => 'engineHome' in row)?.engineHome, home, 'the real ACP process reaches only the selected profile engine');
 });

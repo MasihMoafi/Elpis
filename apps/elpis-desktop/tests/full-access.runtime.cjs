@@ -154,7 +154,7 @@ test('inherited permissions follow Settings across restart; explicit Ask stays; 
   const modes = (await fs.readFile(path.join(root, 'acp.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse).filter(x => x.method === 'session/set_mode');
   assert.ok(modes.some(x => x.params.modeId === 'default'), 'Full access uses Claude permission checks with automatic answers');
   assert.equal(modes.some(x => x.params.modeId === 'bypassPermissions'), false, 'Full access never selects Bypass');
-  const { createLoveAgents, loveNodeSpec } = await import(path.join(process.env.ELPIS_TEST_APP, 'app/bridge/love-agents.mjs'));
+  const { createLoveAgents, loveNodeSpec } = await import(path.join(process.env.ELPIS_TEST_APP, 'app/bridge/love-agents.mts'));
   for (const [tag, model, provider] of [['love-gpt', 'gpt-5.5', 'mock'], ['love-claude', 'claude/haiku', 'claude']]) {
     const file = path.join(root, tag);
     const card = { id: tag, type: 'rectangle', customData: { loveAgent: { name: tag, prompt: 'Run the requested command.', model, provider, task: `${provider === 'claude' ? '[permission] ' : ''}PERMISSION_FILE:${file}` } } };

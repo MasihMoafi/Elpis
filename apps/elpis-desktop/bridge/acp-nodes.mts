@@ -120,7 +120,7 @@ class AcpProcess {
 
 /**
  * Runs one agent node over ACP and resolves with its final answer. This is the one function agent graphs call to
- * move work between agents: Love Spot (bridge/love-agents.mjs) per card, and the Workflows bridge runtime per stage
+ * move work between agents: Love Spot (bridge/love-agents.mts) per card, and the Workflows bridge runtime per stage
  * transition, passing the previous stage's answer in `inputs` instead of posting it into a chat.
  *
  * @param spec `{ name, command, args?, env?, model?, mode?, instructions?, instructionsInPrompt?, meta? }`: the ACP agent

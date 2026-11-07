@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createLoveAgents } from './love-agents.mjs';
+import { createLoveAgents } from './love-agents.mts';
 type Interview = { messages: { role: string; text: string }[]; proposal?: string; error?: string; busy?: boolean };
 type Card = { id: string; type: string; version: number; isDeleted?: boolean; customData: { loveAgent: { preset: string; name: string; prompt: string; task: string; model: string; provider: string; status?: string; interview: Interview } } };
 type LogEntry = { method: string; params: { _meta: { systemPrompt: { append: string } }; prompt: { text: string }[] } };
@@ -18,7 +18,7 @@ function fixture(t: TestContext, answer: string | { question?: string; task?: st
   const scene = { elements: [structuredClone(card)], files: {}, appState: {} };
   let spawned = 0;
   const store = { read: async () => ({ scene }), save: async (s: Partial<typeof scene>) => Object.assign(scene, s) };
-  const runner = createLoveAgents(store, { timeoutMs: 3000, nodeSpec: (node: { name: string; prompt: string }) => { spawned++; return { name: node.name, command: process.execPath, args: [fake], instructions: node.prompt, env: { FAKE_ACP_LOG: log, FAKE_ACP_ANSWER: typeof answer === 'string' ? answer : JSON.stringify(answer) } }; } } as unknown as NonNullable<Parameters<typeof createLoveAgents>[1]>);
+  const runner = createLoveAgents(store as unknown as Parameters<typeof createLoveAgents>[0], { timeoutMs: 3000, nodeSpec: (node: { name: string; prompt: string }) => { spawned++; return { name: node.name, command: process.execPath, args: [fake], instructions: node.prompt, env: { FAKE_ACP_LOG: log, FAKE_ACP_ANSWER: typeof answer === 'string' ? answer : JSON.stringify(answer) } }; } } as unknown as NonNullable<Parameters<typeof createLoveAgents>[1]>);
   t.after(async () => { await runner.close?.(); removeTestTempDir(dir); });
   return { runner, scene, dir, spawned: () => spawned, agent: () => scene.elements[0]!.customData.loveAgent, log: () => fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n').map(line => JSON.parse(line) as LogEntry) : [] };
 }

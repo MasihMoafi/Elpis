@@ -10,7 +10,7 @@ type Turn = { id: string; status: string; items?: Item[] };
 type Params = { threadId?: string; turnId?: string; turn?: Turn; item?: Item; status?: { type?: string }; role?: string; delta?: string; text?: string; sdp?: string };
 type Message = { method: string; params: Params };
 type Event = { type: string; data?: Partial<Message> & { connected?: boolean } };
-type Source = { threadId: string; fail(message: string): void; subscribe(callback: (event: { type: string; text: string }) => void | Promise<void>): () => void };
+type Source = Awaited<ReturnType<ReturnType<typeof import('./love-spot-talk.mts').createLoveSpotTalk>['speech']>>;
 type Conversation = { context: unknown; close(): void; transcript(params: Params): void; watch(callback: (context: unknown) => void, fail: (message: string) => void): Promise<() => void> };
 type Call = { stopped: boolean; started: Promise<void> | null; stopping: Promise<void> | null; stop: () => Promise<void>; id: string; speech: { id: string; voice: unknown } | null; ready: boolean; pending: boolean; finished: boolean; complete: boolean; source: Source | undefined; conversation: Conversation | undefined; startComplete?: boolean; completedAt?: number; readyForSpeech?: () => void; more?: (value: string) => void };
 type Relay = { turnId: string | null; items: Map<string | undefined, Map<string, Item>>; completed: Map<string | null | undefined, Turn> };

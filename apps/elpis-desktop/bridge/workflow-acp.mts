@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { BridgeError, text } from './client.mts';
-import { loveNodeSpec } from './love-agents.mjs';
+import { loveNodeSpec } from './love-agents.mts';
 import { runAcpNode, handoffText } from './acp-nodes.mts';
 import { workflowRoute, quotaFailure, type workflowModelRoutes, type workflowDefaults } from './workflow-models.mts';
 import { checkPlan } from './canvas-plan.mts';

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createLoveAgents } from './love-agents.mjs';
+import { createLoveAgents } from './love-agents.mts';
 import { interviewRuntime } from '../tests/love-interview-runtime.mjs';
 import { runAcpNode } from './acp-nodes.mts';
 
