@@ -131,7 +131,15 @@ fn startup_draft_renders_full_empty_and_multiline_composer_frames() {
             .join("\n")
             .replace(crate::version::CODEX_CLI_VERSION, "<VERSION>")
             // Elpis: the header shows the Elpis release.
-            .replace(crate::branding::ELPIS_VERSION, "<VERSION>");
+            .replace(crate::branding::ELPIS_VERSION, "<VERSION>")
+            // A narrow header truncates the patch version before it can be replaced above.
+            .replace(
+                &format!(
+                    "{}.…",
+                    crate::branding::ELPIS_VERSION.rsplit_once('.').unwrap().0
+                ),
+                "<VERSION>…",
+            );
 
         assert!(
             cursor.1 >= pump.header.desired_height(width),
