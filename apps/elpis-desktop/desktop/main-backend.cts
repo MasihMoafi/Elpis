@@ -70,8 +70,9 @@ export type MainState = {
     takeInitialThread: () => string | null
 };
 
-function createMainBackendImpl({ electron, appDir, state, createStateStore, closeToTray, updates }: {
+function createMainBackendImpl({ electron, appDir, state, createStateStore, closeToTray, updates, loveSpotApp = false }: {
     electron: typeof import('electron'),
+    loveSpotApp?: boolean,
     appDir: string,
     state: MainState,
     createStateStore: typeof import('./state.cts').createStateStore,
@@ -130,7 +131,7 @@ function createMainBackendImpl({ electron, appDir, state, createStateStore, clos
     }
     if (!state.getSessionWindows()) {
       const server = state.getServer() as MainServer;
-      const sessionWindows: SessionWindows = createSessionWindows({ electron, url: server.url, store: state.getStore(), browserAgentSocket: state.getBrowserAgentSocket(), quickEntry: state.getQuickEntry(), screenshotPopup: state.getScreenshotPopup(), closeToTray, updates,
+      const sessionWindows: SessionWindows = createSessionWindows({ electron, url: server.url, store: state.getStore(), browserAgentSocket: state.getBrowserAgentSocket(), quickEntry: state.getQuickEntry(), screenshotPopup: state.getScreenshotPopup(), closeToTray, updates, loveSpotApp,
         mayClose, quitting: () => state.isClosing(), onDark: (dark: boolean) => state.setDarkTheme(dark),
         onClosed: (host: import('electron').BrowserWindow) => { if (window === host) { window = [...sessionWindows.windows].find(item => !sessionWindows.openersFor(item)?.loveSpot && !sessionWindows.openersFor(item)?.workflows); state.setPrimaryOpeners(sessionWindows.openersFor(window)); } },
         onFocused: (host: import('electron').BrowserWindow, openers: WindowOpeners | undefined) => { if (!openers?.loveSpot && !openers?.workflows) { window = host; state.setPrimaryOpeners(openers); } } } as unknown as Parameters<typeof createSessionWindows>[0]);

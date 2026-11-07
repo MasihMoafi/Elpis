@@ -22,8 +22,8 @@ const ZOOM = 1.1;
 const TITLE_BAR = { dark: { color: '#0d0e11', symbolColor: '#e6e0d3' }, light: { color: '#f2f2f1', symbolColor: '#252524' } };
 
 /** All session windows use one bridge URL and one workspace store. No window owns the engine. */
-function createSessionWindowsImpl({ electron, url, store, browserAgentSocket, quickEntry, screenshotPopup, closeToTray, updates, mayClose, quitting = () => false, onDark, onClosed, onFocused }: {
-  electron: typeof import('electron'); url: string; store: StateStore; browserAgentSocket?: ReturnType<typeof import('./browser-agent.cts').startBrowserAgentSocket> extends Promise<infer T> ? T : never;
+function createSessionWindowsImpl({ electron, url, store, browserAgentSocket, quickEntry, screenshotPopup, closeToTray, updates, mayClose, quitting = () => false, onDark, onClosed, onFocused, loveSpotApp = false }: {
+  electron: typeof import('electron'); url: string; loveSpotApp?: boolean; store: StateStore; browserAgentSocket?: ReturnType<typeof import('./browser-agent.cts').startBrowserAgentSocket> extends Promise<infer T> ? T : never;
   quickEntry?: { attach: (options: { host: BrowserWindow; origin: string; ipcMain: ReturnType<ReturnType<typeof createWindowIpc>> }) => () => void };
   screenshotPopup?: { attach: (options: { host: BrowserWindow; origin: string; ipcMain: ReturnType<ReturnType<typeof createWindowIpc>> }) => () => void };
   closeToTray: ReturnType<typeof import('./tray.cts').createCloseToTray>; updates?: { attach: (options: { host: BrowserWindow; origin: string; ipcMain: ReturnType<ReturnType<typeof createWindowIpc>> }) => () => void };
@@ -160,7 +160,7 @@ function createSessionWindowsImpl({ electron, url, store, browserAgentSocket, qu
     const target = new URL(url);
     if (loveSpot) target.pathname = '/love-spot.html';
     // The standalone Love Spot (its own app and home) offers only the routes it may use; see bridge/love-spot-talk.mts.
-    if (loveSpot && process.env.LOVE_SPOT_APP === '1') target.searchParams.set('app', 'love-spot');
+    if (loveSpot && loveSpotApp) target.searchParams.set('app', 'love-spot');
     if (workflows) target.searchParams.set('workspace', 'canvas');
     if (threadId || newSession) target.searchParams.set('session', threadId || '');
     await window.loadURL(target.href);

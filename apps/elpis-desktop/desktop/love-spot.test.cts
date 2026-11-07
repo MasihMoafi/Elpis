@@ -106,7 +106,7 @@ test('app quit waits for browser persistence and permits retry after a failed sa
   assert.ok(f.calls.includes('board-close')); assert.equal(quit, 1);
 });
 
-function sessionFixture() {
+function sessionFixture({ loveSpotApp = false } = {}) {
   class Window extends EventEmitter {
     constructor() {
       super(); this.text = 'First words'; this.saved = ''; this.saves = 0;
@@ -145,7 +145,7 @@ function sessionFixture() {
     __dirname, module, console: { ...console, error: noop }, URL, require: (name: string) => (stubs as Record<string, unknown>)[name] ?? require(name),
   });
   return module.exports.createSessionWindows({ electron: { BrowserWindow: Window }, url: 'http://127.0.0.1:4000/',
-    closeToTray: { hides: () => false, closed: noop }, mayClose: () => true });
+    closeToTray: { hides: () => false, closed: noop }, mayClose: () => true, loveSpotApp });
 }
 
 for (const failure of ['refuse', 'throw']) test(`a partly failed quit still flushes later text when another window closes (${failure})`, async () => {
@@ -261,4 +261,12 @@ test('a Restart requested during an ordinary Quit is retained and schedules only
   finish(true); await restarting;
   const launches = f.calls.filter((call): call is ['relaunch', Relaunch] => Array.isArray(call) && call[0] === 'relaunch');
   assert.equal(launches.length, 1); assert.equal(launches[0]![1].execPath, '/selected/new/launch');
+});
+
+test('only the standalone Love Spot app opens its board marked as the app, which hides subscription routes', async () => {
+  const inElpis = await sessionFixture().openLoveSpot();
+  assert.equal(new URL(inElpis.url).searchParams.get('app'), null);
+  const app = await sessionFixture({ loveSpotApp: true }).openLoveSpot();
+  assert.equal(new URL(app.url).pathname, '/love-spot.html');
+  assert.equal(new URL(app.url).searchParams.get('app'), 'love-spot');
 });

@@ -52,7 +52,7 @@ const state: import('./main-backend.cts').MainState = {
   setDarkTheme: value => { darkTheme = value; },
   takeInitialThread: () => { const value = initialThread; initialThread = null; return value; },
 };
-const { mayClose, prepareWindows, openWindow } = createMainBackend({ electron, appDir: __dirname, state, createStateStore, closeToTray, updates });
+const { mayClose, prepareWindows, openWindow } = createMainBackend({ electron, appDir: __dirname, state, createStateStore, closeToTray, updates, loveSpotApp });
 const { quitApp, isQuitting } = createMainQuit({ app, loveSpotApp, workflowsApp, executableLauncher, mayClose, state });
 
 if (!app.requestSingleInstanceLock(profile.lockData)) {
