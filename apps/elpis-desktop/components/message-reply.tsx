@@ -37,7 +37,12 @@ export function SelectionReply({ onQuote }: { onQuote: (reference: string, text:
       const start = owner(range.startContainer), end = owner(range.endContainer);
       if (!start || start !== end) { setQuote(null); return; }
       const rect = range.getBoundingClientRect();
-      setQuote({ reference: start.dataset.messageReference!, text: selection.toString().trim(), x: Math.min(Math.max(8, rect.left), innerWidth - 130), y: rect.bottom + 40 < innerHeight ? rect.bottom + 6 : Math.max(40, rect.top - 38) });
+      const actions = start.querySelector(".message-actions")?.getBoundingClientRect();
+      const below = rect.bottom + 40 < innerHeight ? rect.bottom + 6 : Math.max(8, rect.top - 38);
+      const y = actions && below < actions.bottom && below + 32 > actions.top
+        ? rect.top >= 46 ? rect.top - 38 : actions.bottom + 38 < innerHeight ? actions.bottom + 6 : 8
+        : below;
+      setQuote({ reference: start.dataset.messageReference!, text: selection.toString().trim(), x: Math.min(Math.max(8, rect.left), innerWidth - 130), y });
     };
     const clear = () => { if (window.getSelection()?.isCollapsed) setQuote(null); };
     const escape = (event: KeyboardEvent) => { if (event.key === "Escape") setQuote(null); else show(); };
