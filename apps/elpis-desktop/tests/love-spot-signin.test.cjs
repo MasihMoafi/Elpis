@@ -247,9 +247,10 @@ test('Love Spot signs in with ChatGPT, Claude subscription, OpenRouter and API k
     await anthropic.getByText('No key', { exact: true }).waitFor();
     assert.equal(await anthropic.getByRole('button', { name: 'Add Claude account' }).count(), 0);
     assert.equal(await own.locator('[data-provider="gemini"]').count(), 0, 'no Antigravity subscription');
-    await anthropic.getByLabel('Anthropic API key', { exact: true }).fill('sk-ant-local-test-key');
+    await anthropic.getByRole('textbox', { name: 'Anthropic API key', exact: true }).fill('sk-ant-local-test-key');
+    const saved = page.waitForResponse(response => response.url().endsWith('/api/providers/key'));
     await anthropic.getByRole('button', { name: 'Save key', exact: true }).click();
-    await own.locator('[data-provider="claude"]').getByRole('form', { name: 'Anthropic API key' }).waitFor();
+    await saved;
     assert.deepEqual(state.builtInKeys.at(-1), { provider: 'anthropic', key: 'sk-ant-local-test-key' });
 
     assert.deepEqual(f.errors, []);
