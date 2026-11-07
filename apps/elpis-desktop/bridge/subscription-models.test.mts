@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { forgetSubscriptionModels, subscriptionModels } from './subscription-models.mts';
 
 const catalog = JSON.stringify({ models: [
-  { slug: 'gpt-6-luna', display_name: 'GPT-6 Luna', visibility: 'list', default_reasoning_level: 'medium', supported_reasoning_levels: [{ effort: 'low' }, { effort: 'medium' }] },
+  { slug: 'gpt-6-luna', display_name: 'GPT-6 Luna', visibility: 'list', input_modalities: ['text', 'image'], default_reasoning_level: 'medium', supported_reasoning_levels: [{ effort: 'low' }, { effort: 'medium' }] },
   { slug: 'codex-auto-review', display_name: 'Review', visibility: 'hide' },
 ] });
 
@@ -18,6 +18,7 @@ test('the engine is asked for the openai catalog with the profile home; hidden m
   assert.deepEqual(first.data.map(model => model.model), ['gpt-6-luna']);
   assert.deepEqual(first.data[0]!.supportedReasoningEfforts.map(item => item.reasoningEffort), ['low', 'medium']);
   assert.equal(first.data[0]!.defaultReasoningEffort, 'medium');
+  assert.deepEqual(first.data[0]!.inputModalities, ['text', 'image'], 'vision capability reaches the board');
   await subscriptionModels({ env, run, now: 60000 });
   assert.equal(calls.length, 1, 'reused within ten minutes');
   await subscriptionModels({ env, run, now: 11 * 60000 });
