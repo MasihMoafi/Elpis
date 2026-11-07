@@ -64,6 +64,40 @@ try {
     await dialog.getByRole('button', { name: 'Done', exact: true }).click();
     await dialog.waitFor({ state: 'detached' });
   }
+  // Live route (Masih, 7 Nov: "we can test via the openrouter key"): add OpenRouter by key in Models & accounts, choose a
+  // small model for Matilda, write on the board and wait for her real reply. Paid: one short turn on the company key.
+  const key = process.env.LOVE_SPOT_LIVE_OPENROUTER_KEY;
+  if (key) {
+    await page.emulateMedia({ colorScheme: 'light' });
+    await page.locator('.love-spot-tools').getByRole('button', { name: 'Models & accounts', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Models & accounts' });
+    await dialog.locator('.provider-advanced summary').click();
+    await dialog.getByRole('button', { name: 'Add API provider', exact: true }).click();
+    const form = dialog.getByRole('form', { name: 'API provider settings' });
+    const choose = async (label: string, value: string) => { await form.getByLabel(label, { exact: true }).click(); await page.getByRole('option', { name: value }).click(); };
+    await choose('Provider type', 'OpenRouter');
+    await choose('API key action', 'Set a new key');
+    await form.getByLabel('Provider API key', { exact: true }).fill(key);
+    await form.getByRole('button', { name: 'Save provider', exact: true }).click();
+    await dialog.locator('[data-provider="openrouter"]').getByText('Key set', { exact: true }).waitFor({ timeout: 30_000 });
+    check('OpenRouter key saved in the app', true);
+    check('key file stays in the app\'s home', !fs.existsSync(path.join(home, '.elpis-next')));
+    await dialog.getByRole('button', { name: 'Done', exact: true }).click();
+    await page.getByRole('group', { name: "Matilda's model" }).getByRole('combobox').click();
+    await page.getByRole('tab', { name: 'OpenRouter', exact: true }).click();
+    await page.keyboard.type(process.env.LOVE_SPOT_LIVE_MODEL || 'gpt-4.1-mini');
+    await page.getByRole('option').first().click({ timeout: 60_000 });
+    const bounds = (await page.locator('.excalidraw').boundingBox())!;
+    const boardFile = path.join(home, '.local/share/excalidraw-local/scene.excalidraw');
+    const texts = () => { try { return (JSON.parse(fs.readFileSync(boardFile, 'utf8')).elements as { type: string; isDeleted?: boolean; text?: string }[]).filter(e => e.type === 'text' && !e.isDeleted); } catch { return []; } };
+    await page.mouse.click(bounds.x + 300, bounds.y + 300); await page.keyboard.press('t');
+    await page.mouse.click(bounds.x + 300, bounds.y + 300); await page.keyboard.type('Hi Matilda, say hello in five words.'); await page.keyboard.press('Escape');
+    const end = Date.now() + 120_000;
+    while (Date.now() < end && texts().length < 2) await new Promise(r => setTimeout(r, 1000));
+    const reply = texts().find(e => !e.text?.startsWith('Hi Matilda'));
+    check('Matilda answered through OpenRouter', !!reply, reply?.text?.slice(0, 80) ?? (await page.locator('[role="alert"]').allInnerTexts()).join(' | '));
+    if (shots) await page.screenshot({ path: path.join(shots, 'live-openrouter-reply-light.png') });
+  }
 } finally {
   await browser?.close().catch(() => {});
   try { process.kill(-app.pid!, 'SIGTERM'); } catch {}
