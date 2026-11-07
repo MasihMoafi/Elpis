@@ -217,7 +217,7 @@
   "scripts/renderer-artifact-gate.mjs:TS7006": 39,
   "scripts/renderer-artifact-gate.mjs:TS7023": 1,
   "scripts/renderer-artifact-gate.mjs:TS7031": 4,
-  "scripts/renderer-artifact-gate.mjs:TS7053": 6,
+  "scripts/renderer-artifact-gate.mjs:TS7053": 4,
   "scripts/workflows-live-metrics.mjs:TS2339": 3,
   "scripts/workflows-live-metrics.mjs:TS7005": 8,
   "scripts/workflows-live-metrics.mjs:TS7006": 16,

@@ -145,7 +145,8 @@ return { a, b }`;
     await t.test("an engine chat: refused without the person's request or a running turn, run to the end with it", async () => {
       const chat = await tool({});
       const listed = (await chat.listTools()).tools.map((x) => x.name);
-      assert.deepEqual(listed, ["workflow"], "the workflow tool alone, with the Subagents switch off");
+      assert.deepEqual(listed, ["sessions_list", "session_status", "goal_create", "goal_update", "goal_list", "workflow"],
+        "session and goal tools and workflow stay available, with delegation off");
       const parent = (await ok("thread/start", { cwd: root, approvalPolicy: "never", sandbox: "danger-full-access" })).thread.id;
       const idle = await launch(chat, { script: SCRIPT, args: { word: "x" } }, { threadId: parent });
       assert.match(idle.text, /did not start: Workflows start only during a message from the person/);

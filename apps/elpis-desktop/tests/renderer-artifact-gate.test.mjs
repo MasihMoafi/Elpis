@@ -100,6 +100,30 @@ test('a saved-workspace regression renamed to TypeScript after the checkpoint st
   await assert.rejects(fs.access(path.join(prepared.root, 'desktop/state.test.cts')), { code: 'ENOENT' });
 });
 
+test('retired regressions resolve their checkpoint filename after a TypeScript rename', async t => {
+  for (const extension of ['cts', 'tsx']) await t.test(extension, async t => {
+    const f = await fixture(t), candidate = `tests/kept.test.${extension}`;
+    await fs.rename(path.join(f.root, 'tests/kept.test.cjs'), path.join(f.root, candidate));
+    await fs.writeFile(path.join(f.root, 'test-inventory.json'), JSON.stringify({ ...f.inventory, ui: [candidate] }));
+    gate.retiredPaths[f.baseline] = [candidate];
+    t.after(() => { delete gate.retiredPaths[f.baseline]; });
+    const plan = await planSuite(f.root, f.baseline);
+    assert.ok(plan.files.some(file => file.source === 'candidate' && file.name === candidate));
+    assert.equal(plan.support.baseline, plan.support.candidate);
+    const prepared = await prepareBaseline(f.root, f.baseline);
+    t.after(() => execFileSync('gio', ['trash', prepared.scratch]));
+    await assert.rejects(fs.access(path.join(prepared.root, 'tests/kept.test.cjs')), { code: 'ENOENT' });
+  });
+});
+
+test('a retired regression missing from the checkpoint fails before a shard runs', async t => {
+  const f = await fixture(t);
+  gate.retiredPaths[f.baseline] = ['tests/missing.test.cts'];
+  t.after(() => { delete gate.retiredPaths[f.baseline]; });
+  await assert.rejects(planSuite(f.root, f.baseline), /Expected one retired checkpoint path/);
+  await assert.rejects(prepareBaseline(f.root, f.baseline), /Expected one retired checkpoint path/);
+});
+
 test('prepare writes the renderer and plan identity once without a receipt', async t => {
   const f = await fixture(t);
   const manifest = await gate.prepareGate({ ...f, shardCount: 6 });

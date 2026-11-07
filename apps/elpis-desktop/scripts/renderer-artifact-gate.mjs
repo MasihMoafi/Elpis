@@ -608,6 +608,7 @@ export const retainedUpdates = {
 // split into tests/love-spot-board.test.cjs (what reaches her, where her reply lands, the microphone, navigating away, the toolbar fit); the
 // Talk-only checks (the panel, its model picker and hover buttons, quoting a note, its fit) go with the panel.
 // Workflow artwork picker was removed in installed source 141be35a2; night-workflows retains pattern, prompt, keyboard and colour proof.
+/** @type {Record<string, string[]>} */
 export const retiredPaths = {
   '988aad0e78bd264c00e435be07598e79f08941e8': ['tests/settings-reorder.test.cjs', 'tests/observability.test.cts', 'tests/temp-root-ui.test.cjs', 'tests/love-agents.test.cjs', 'tests/love-agents-v2.test.cjs', 'tests/love-spot-standalone.test.cjs', 'tests/love-spot-talk.test.cjs', 'tests/workflow-characters.test.cjs'],
 };
@@ -625,6 +626,20 @@ const trackedFiles = (root, commit, paths) => new Map(git(root, ['ls-tree', '-r'
   assert(match, `Unexpected tracked source entry: ${line}`);
   return [match[2].slice(appPrefix.length), match[1]];
 }));
+
+// Resolve a retired test against the checkpoint, where it may still have its old JS/TS extension.
+/** @param {string} baseline @param {ReadonlyMap<unknown, unknown>} files */
+function retiredAtBaseline(baseline, files) {
+  const testStem = (/** @type {string} */ name) => name.replace(/\.[cm]?[jt]sx?$/, '');
+  const checkpointPaths = [...files.keys()].filter(file => typeof file === 'string');
+  return (retiredPaths[baseline] ?? []).map(name => {
+    const stem = testStem(name);
+    const matches = checkpointPaths.filter(file => file === name || (file !== stem && testStem(file) === stem));
+    const [match] = matches;
+    assert(matches.length === 1 && match, `Expected one retired checkpoint path for ${name}`);
+    return match;
+  });
+}
 
 export function assertSourceCommit(root, commit) {
   assert.equal(git(root, ['rev-parse', 'HEAD']).trim(), commit, 'Source HEAD changed during installation');
@@ -696,7 +711,7 @@ export async function planSuite(root = appRoot, baseline = baselineCommit, updat
   checkInventory(inventory, await discoverTests(root));
   const oldFiles = trackedFiles(root, baseline, [`${appPrefix}tests/`, ...stateTests.map(name => appPrefix + name)]);
   for (const [name, pin] of Object.entries(updates)) oldFiles.set(name, blob(await retainedUpdate(root, name, pin)));
-  for (const name of retiredPaths[baseline] ?? []) oldFiles.delete(name);
+  for (const name of retiredAtBaseline(baseline, oldFiles)) oldFiles.delete(name);
   const currentFiles = new Map(await Promise.all((await treeFiles(path.join(root, 'tests'))).map(async name => [`tests/${name}`, blob(await fs.readFile(path.join(root, 'tests', name)))])));
   for (const name of stateTests) {
     try { currentFiles.set(name, blob(await fs.readFile(path.join(root, name)))); }
@@ -748,7 +763,8 @@ export async function prepareBaseline(root = appRoot, baseline = baselineCommit,
       await fs.mkdir(path.dirname(path.join(retainedRoot, name)), { recursive: true });
       await fs.writeFile(path.join(retainedRoot, name), bytes);
     }
-    for (const name of retiredPaths[baseline] ?? []) execFileSync('gio', ['trash', path.join(retainedRoot, name)]);
+    const baselineFiles = trackedFiles(root, baseline, [`${appPrefix}tests/`]);
+    for (const name of retiredAtBaseline(baseline, baselineFiles)) execFileSync('gio', ['trash', path.join(retainedRoot, name)]);
     // /init and /personal compare the renderer with the candidate terminal's canonical resources.
     await fs.symlink(path.join(repository, 'codex-rs'), path.join(scratch, 'codex-rs'));
     for (const entry of await fs.readdir(root)) {

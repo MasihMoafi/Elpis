@@ -40,7 +40,7 @@ test('discovers sessions from all runtimes without claiming unknown processes ar
   assert.deepEqual(await sessionSettings(elpisHome), { runtimes: ['claude'], idleMs: 42 });
 });
 
-test('closed and unreadable transcripts retain distinct evidence for each runtime', async t => {
+test('closed, unreadable and uncertain sessions retain distinct evidence for each runtime', async t => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'matilda-status-'));
   t.after(() => fs.rm(home, { recursive: true, force: true }));
   const elpisHome = path.join(home, '.elpis-next'), claudeHome = path.join(home, '.claude');
@@ -53,12 +53,23 @@ test('closed and unreadable transcripts retain distinct evidence for each runtim
     const hidden = path.join(dir, index === 2 ? 'unreadable.jsonl' : 'rollout-unreadable.jsonl');
     await fs.writeFile(hidden, '{}\n'); await fs.chmod(hidden, 0);
   }
-  const rows = await listSessions({ home, elpisHome, claudeHome, settings: { runtimes: ['elpis', 'codex', 'claude'], idleMs: 1 } });
-  for (const runtime of ['elpis', 'codex', 'claude']) {
-    const unreadable = rows.find(row => row.runtime === runtime && row.evidence === 'Transcript cannot be read.');
-    assert.equal(unreadable?.state, 'unreachable');
-    const closed = rows.find(row => row.runtime === runtime && row.id.startsWith('closed-'));
-    assert.equal(closed?.state, 'closed');
-    assert.match(closed.evidence, /No live process/);
+  const originalReaddir = fs.readdir.bind(fs);
+  let processEvidenceComplete = true;
+  t.mock.method(fs, 'readdir', (async (...args: Parameters<typeof fs.readdir>) => {
+    if (args[0] === '/proc') return processEvidenceComplete ? [] : ['12345'];
+    if (args[0] === '/proc/12345/fd') throw Object.assign(new Error('Permission denied'), { code: 'EACCES' });
+    return originalReaddir(...args);
+  }) as typeof fs.readdir);
+  for (processEvidenceComplete of [true, false]) {
+    const rows = await listSessions({ home, elpisHome, claudeHome, settings: { runtimes: ['elpis', 'codex', 'claude'], idleMs: 1 } });
+    for (const runtime of ['elpis', 'codex', 'claude']) {
+      const unreadable = rows.find(row => row.runtime === runtime && row.evidence === 'Transcript cannot be read.');
+      assert.equal(unreadable?.state, 'unreachable');
+      const readable = rows.find(row => row.runtime === runtime && row.id.startsWith('closed-'));
+      assert.ok(readable);
+      const uncertain = runtime !== 'claude' && !processEvidenceComplete;
+      assert.equal(readable.state, uncertain ? 'unreachable' : 'closed');
+      assert.equal(readable.evidence, uncertain ? 'Process evidence is incomplete.' : 'No live process evidence found.');
+    }
   }
 });
