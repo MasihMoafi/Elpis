@@ -503,7 +503,7 @@ async fn elpis_backspace_edits_nonempty_search_before_offering_delete() {
         .handle_key(KeyEvent::from(KeyCode::Backspace))
         .await
         .unwrap();
-    assert_eq!(state.query, "Lawer");
+    assert_eq!(state.query, "Harbo");
     assert_eq!(state.delete_state, DeleteState::Idle);
     assert!(requests.lock().unwrap().is_empty());
     assert_eq!(
