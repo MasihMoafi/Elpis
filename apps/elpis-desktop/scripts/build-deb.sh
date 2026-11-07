@@ -21,7 +21,7 @@ electron=${ELECTRON_DIST:-$APP/node_modules/electron/dist}
 # carries a copy with that path replaced by where the app is installed.
 cp -r "$APP/out" "$STAGE/out"
 real_app=$(dirname "$(readlink -f "$APP/node_modules")")
-(rg -l -F -e "$APP" -e "$real_app" "$STAGE/out" || true) | xargs -r sed -i -e "s|$APP|/opt/elpis-desktop/app|g" -e "s|$real_app|/opt/elpis-desktop/app|g"
+(rg -0 -l -F -e "$APP" -e "$real_app" "$STAGE/out" || true) | xargs -0 -r sed -i -e "s|$APP|/opt/elpis-desktop/app|g" -e "s|$real_app|/opt/elpis-desktop/app|g"
 node "$APP/desktop/package.mts" --source "$APP" --destination "$OPT" --electron-dist "$electron" --out-directory "$STAGE/out" > "$STAGE/manifest.json"
 find "$OPT/runtime/electron/locales" -name '*.pak' ! -name 'en-US.pak' -delete
 # Chromium's setuid sandbox helper: Ubuntu 24.04 blocks the user-namespace sandbox for apps without an AppArmor profile,

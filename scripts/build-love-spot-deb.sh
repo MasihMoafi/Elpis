@@ -24,7 +24,7 @@ electron=${ELECTRON_DIST:-$APP/node_modules/electron/dist}
 [[ -x "$electron/electron" ]] || electron=$(dirname "$(readlink -f "$(dirname "$(readlink -f ~/.local/bin/elpis-app)")/runtime/electron/electron")")
 cp -r "$APP/out" "$STAGE/out"
 real_app=$(dirname "$(readlink -f "$APP/node_modules")")
-(rg -l -F -e "$APP" -e "$real_app" "$STAGE/out" || true) | xargs -r sed -i -e "s|$APP|/opt/love-spot/app|g" -e "s|$real_app|/opt/love-spot/app|g"
+(rg -0 -l -F -e "$APP" -e "$real_app" "$STAGE/out" || true) | xargs -0 -r sed -i -e "s|$APP|/opt/love-spot/app|g" -e "s|$real_app|/opt/love-spot/app|g"
 node "$APP/desktop/package.mts" --source "$APP" --destination "$OPT" --electron-dist "$electron" --out-directory "$STAGE/out" > "$STAGE/manifest.json"
 find "$OPT/runtime/electron/locales" -name '*.pak' ! -name 'en-US.pak' -delete
 chmod 4755 "$OPT/runtime/electron/chrome-sandbox"
@@ -39,13 +39,15 @@ rsync -aL --exclude 'claude-agent-sdk-linux-*' --exclude test --exclude spike --
 mkdir -p "$OPT/bin" "$ROOT/usr/bin" "$ROOT/usr/share/applications" "$ROOT/usr/share/icons/hicolor/256x256/apps" "$ROOT/usr/share/icons/hicolor/scalable/apps" "$ROOT/DEBIAN"
 cat > "$OPT/bin/node" <<'NODE'
 #!/bin/sh
-ELECTRON_RUN_AS_NODE=1 exec /opt/love-spot/runtime/electron/electron "$@"
+R=$(cd "$(dirname "$0")/.." && pwd)
+ELECTRON_RUN_AS_NODE=1 exec "$R/runtime/electron/electron" "$@"
 NODE
 cat > "$OPT/bin/elpis" <<'TUI'
 #!/usr/bin/env bash
-REAL=/opt/love-spot/engine/elpis-next; BRIDGE_DIR=/opt/love-spot/engine/tools/elpis-claude
+R=$(cd "$(dirname "$0")/.." && pwd)
+REAL=$R/engine/elpis-next; BRIDGE_DIR=$R/engine/tools/elpis-claude
 NODE=$(command -v node || true)
-if [[ -z "$NODE" ]] || (( $("$NODE" -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0) < 22 )); then NODE=/opt/love-spot/bin/node; fi
+if [[ -z "$NODE" ]] || (( $("$NODE" -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0) < 22 )); then NODE=$R/bin/node; fi
 export ELPIS_DESKTOP_APP="${ELPIS_DESKTOP_APP:-/usr/bin/love-spot}"
 for a in "$@"; do case "$a" in -h|--help|-V|--version) exec "$REAL" "$@" ;; esac; done
 case "${1:-}" in ""|-*|resume|fork) ;; *) exec "$REAL" "$@" ;; esac
@@ -57,14 +59,19 @@ ELPIS_ENGINE_BIN="$engine" exec "$REAL" --elpis-local-bridge --remote "$out" "$@
 TUI
 cat > "$ROOT/usr/bin/love-spot" <<'LOVELAUNCH'
 #!/usr/bin/env bash
-export ELPIS_ENGINE_BIN=${ELPIS_ENGINE_BIN:-/opt/love-spot/engine/elpis-next} ELPIS_TUI_BIN=${ELPIS_TUI_BIN:-/opt/love-spot/bin/elpis}
+R=${LOVE_SPOT_ROOT:-/opt/love-spot}
+cfg_dir="${ELPIS_HOME:-$HOME/.elpis-next}"
+if [[ ! -e "$cfg_dir/config.toml" ]] && mkdir -p "$cfg_dir" 2>/dev/null; then
+  (umask 077 && : > "$cfg_dir/config.toml") 2>/dev/null || true
+fi
+export ELPIS_ENGINE_BIN=${ELPIS_ENGINE_BIN:-$R/engine/elpis-next} ELPIS_TUI_BIN=${ELPIS_TUI_BIN:-$R/bin/elpis}
 if [[ -z "${ELPIS_NODE_BIN:-}" ]]; then
   node=$(command -v node || true)
   if [[ -z "$node" ]] || (( $("$node" -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0) < 22 )); then
-    export ELPIS_NODE_BIN=/opt/love-spot/bin/node
+    export ELPIS_NODE_BIN=$R/bin/node
   fi
 fi
-exec /opt/love-spot/launch --love-spot-app "$@"
+exec "$R/launch" --love-spot-app "$@"
 LOVELAUNCH
 chmod 0755 "$OPT/bin/node" "$OPT/bin/elpis" "$ROOT/usr/bin/love-spot"
 cp "$APP/desktop/love-spot-icon.png" "$ROOT/usr/share/icons/hicolor/256x256/apps/love-spot.png"

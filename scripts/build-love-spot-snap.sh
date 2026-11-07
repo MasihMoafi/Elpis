@@ -24,7 +24,7 @@ electron=${ELECTRON_DIST:-$APP/node_modules/electron/dist}
 [[ -x "$electron/electron" ]] || electron=$(dirname "$(readlink -f "$(dirname "$(readlink -f ~/.local/bin/elpis-app)")/runtime/electron/electron")")
 cp -r "$APP/out" "$STAGE/out"
 real_app=$(dirname "$(readlink -f "$APP/node_modules")")
-(rg -l -F -e "$APP" -e "$real_app" "$STAGE/out" || true) | xargs -r sed -i -e "s|$APP|/snap/love-spot/current/desktop/app|g" -e "s|$real_app|/snap/love-spot/current/desktop/app|g"
+(rg -0 -l -F -e "$APP" -e "$real_app" "$STAGE/out" || true) | xargs -0 -r sed -i -e "s|$APP|/snap/love-spot/current/desktop/app|g" -e "s|$real_app|/snap/love-spot/current/desktop/app|g"
 node "$APP/desktop/package.mts" --source "$APP" --destination "$S/desktop" --electron-dist "$electron" --out-directory "$STAGE/out" > "$STAGE/manifest.json"
 find "$S/desktop/runtime/electron/locales" -name '*.pak' ! -name 'en-US.pak' -delete
 
@@ -81,6 +81,10 @@ if [ -n "${SNAP:-}" ]; then
   fi
 fi
 export ELPIS_ENGINE_BIN="$R/engine/elpis-next" ELPIS_NODE_BIN="$R/bin/node" ELPIS_TUI_BIN="$R/bin/elpis" PATH="$R/bin:$PATH"
+cfg_dir="${ELPIS_HOME:-$HOME/.elpis-next}"
+if [ ! -e "$cfg_dir/config.toml" ] && mkdir -p "$cfg_dir" 2>/dev/null; then
+  (umask 077 && : > "$cfg_dir/config.toml") 2>/dev/null || true
+fi
 if [ -n "${SNAP:-}" ] || [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null)" = 1 ]; then
   set -- --no-sandbox "$@"
 fi
