@@ -52,3 +52,62 @@ test('her pinned chat works while she is off on the board; her pop-up hides earl
   await page.getByRole('button', { name: 'Pin Matilda', exact: true }).waitFor();
   assert.deepEqual(f.errors, []);
 });
+
+test('small chat dictates into the draft and remembers whether to speak new replies', { timeout: 60000 }, async (t: import('node:test').TestContext) => {
+  let pinned = false, turn = 0;
+  let entries: { turnId: string; item: object }[] = [];
+  const voiced: string[] = [];
+  const f = await fixture({ routes: {
+    '/api/love-spot/companion': (body: { action?: string } | null) => {
+      if (body?.action === 'pin') pinned = true;
+      return { pinned, face: FACE_DATA_URL, threadId: 'chat-a', favorite: null, music: null, reason: '' };
+    },
+    '/api/love-spot/talk': (body: { text: string } | null) => {
+      if (body) { turn++; entries = [...entries, { turnId: String(turn), item: { id: `q${turn}`, type: 'userMessage', content: [{ type: 'text', text: body.text }] } }, { turnId: String(turn), item: { id: `a${turn}`, type: 'agentMessage', text: '**Hello** there.' } }]; }
+      return { entries, busy: false };
+    },
+  } });
+  t.after(() => f.close());
+  await f.page.addInitScript(() => {
+    Object.defineProperty(navigator, 'mediaDevices', { value: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) } });
+    Object.defineProperty(window, 'MediaRecorder', { value: class {
+      static isTypeSupported() { return true; }
+      state = 'inactive'; ondataavailable?: (event: { data: Blob }) => void; onstop?: () => void;
+      start() { this.state = 'recording'; }
+      stop() { this.state = 'inactive'; this.ondataavailable?.({ data: new Blob(['audio']) }); this.onstop?.(); }
+    } });
+    Object.defineProperty(window, 'Audio', { value: class {
+      onended: (() => void) | null = null; onerror: (() => void) | null = null; src = '';
+      play() { document.body.dataset.matildaPlaying = 'yes'; return Promise.resolve(); }
+      pause() { document.body.dataset.matildaPaused = 'yes'; }
+      removeAttribute() {}
+    } });
+  });
+  await f.page.route('**/api/tools/transcription?*', (route: { request(): { method(): string }; fulfill(options: object): Promise<unknown> }) => route.fulfill({ json: route.request().method() === 'POST' ? { text: 'Dictated words' } : { available: true, backend: 'fixture', label: 'test' } }));
+  await f.page.route('**/api/read-aloud', (route: { request(): { method(): string; postData(): string }; fulfill(options: object): Promise<unknown> }) => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: { available: true } });
+    voiced.push(JSON.parse(route.request().postData()).text);
+    return route.fulfill({ contentType: 'audio/wav', body: 'audio' });
+  });
+  await f.page.reload(); await f.page.locator('.startup-splash').waitFor({ state: 'detached' });
+  await f.page.getByRole('button', { name: 'Pin Matilda', exact: true }).click();
+  await f.page.getByRole('button', { name: 'Chat with Matilda', exact: true }).click();
+  const mini = f.page.getByRole('dialog', { name: 'Small chat with Matilda' });
+  const field = mini.getByRole('textbox', { name: 'Message Matilda' });
+  await f.page.waitForFunction(() => document.querySelector('[aria-label="Dictate message"]')?.getAttribute('title')?.includes('Dictate with test'));
+  await mini.getByRole('button', { name: 'Dictate message' }).click();
+  await mini.getByRole('button', { name: 'Stop recording and transcribe' }).click();
+  await f.page.waitForFunction(() => document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Message Matilda"]')?.value === 'Dictated words');
+  await mini.getByRole('button', { name: 'Send to Matilda' }).click();
+  await f.page.waitForFunction(() => document.body.dataset.matildaPlaying === 'yes');
+  assert.deepEqual(voiced, ['Hello there.']);
+  await field.fill('Another message');
+  assert.equal(await f.page.locator('body').getAttribute('data-matilda-paused'), 'yes');
+  await mini.getByRole('button', { name: "Speak Matilda's replies" }).click();
+  await mini.getByRole('button', { name: 'Send to Matilda' }).click();
+  await mini.getByText('Hello there.', { exact: true }).last().waitFor();
+  assert.deepEqual(voiced, ['Hello there.']);
+  await f.page.keyboard.press('Escape');
+  await f.page.getByRole('button', { name: 'Chat with Matilda', exact: true }).click();
+  assert.equal(await f.page.getByRole('button', { name: "Speak Matilda's replies" }).getAttribute('aria-pressed'), 'false');
+});

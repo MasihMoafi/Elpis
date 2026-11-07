@@ -154,6 +154,9 @@ test('Agent runs visibility persists through actual desktop IPC and synchronizes
   assert.deepEqual(a.errors, []);
   assert.equal(JSON.parse(createStateStore(f.file).read()['elpis-preferences-v1']).showAgentRuns, false);
   assert.equal(b.preferences.readPreferences().showAgentRuns, false);
+  assert.equal(a.preferences.readPreferences().speakMatildaReplies, true);
+  a.preferences.savePreferences({ speakMatildaReplies: false }); await f.settle();
+  assert.equal(b.preferences.readPreferences().speakMatildaReplies, false);
   b.preferences.savePreferences({ showAgentRuns: true }); await f.settle();
   assert.equal(a.preferences.readPreferences().showAgentRuns, true);
   assert.deepEqual(b.errors, []);
