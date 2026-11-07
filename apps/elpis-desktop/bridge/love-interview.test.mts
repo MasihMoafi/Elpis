@@ -10,7 +10,7 @@ type Interview = { messages: { role: string; text: string }[]; proposal?: string
 type Card = { id: string; type: string; version: number; isDeleted?: boolean; customData: { loveAgent: { preset: string; name: string; prompt: string; task: string; model: string; provider: string; status?: string; interview: Interview } } };
 type LogEntry = { method: string; params: { _meta: { systemPrompt: { append: string } }; prompt: { text: string }[] } };
 
-const fake = fileURLToPath(new URL('../../../tools/elpis-claude/test/fake-acp-agent.mjs', import.meta.url));
+const fake = fileURLToPath(new URL('../../../tools/elpis-claude/test/fake-acp-agent.mts', import.meta.url));
 const card: Card = { id: 'a', type: 'rectangle', version: 1, customData: { loveAgent: { preset: 'researcher', name: 'Researcher', prompt: 'ROLE_SEED: careful researcher', task: '', model: 'gpt-6-luna', provider: 'test', interview: { messages: [] } } } };
 function fixture(t: TestContext, answer: string | { question?: string; task?: string } = { question: 'Which claim should I investigate?' }) {
   const base = path.join(os.homedir(), '.cache/elpis-tests'); fs.mkdirSync(base, { recursive: true });

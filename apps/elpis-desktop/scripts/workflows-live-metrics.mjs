@@ -17,7 +17,7 @@ const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const { fakeDesktop } = require('../tests/fake-desktop.cjs');
 const appRoot = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
-const fakeAgent = path.resolve(appRoot, '../../tools/elpis-claude/test/fake-acp-agent.mjs');
+const fakeAgent = path.resolve(appRoot, '../../tools/elpis-claude/test/fake-acp-agent.mts');
 const count = Number(process.argv[2]);
 if (![3, 10].includes(count)) throw Error('Choose a 3-agent or 10-agent sample.');
 const option = name => { const at = process.argv.indexOf(name); return at < 0 ? null : process.argv[at + 1]; };

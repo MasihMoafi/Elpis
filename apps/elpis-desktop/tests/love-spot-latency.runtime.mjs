@@ -83,7 +83,7 @@ test('Love Spot sidebar and Matilda small chat expose staged first-text latency'
     ELPIS_SHARED_BRIDGE: '1',
     ELPIS_BRIDGE_SOCKET: socketPath,
     ELPIS_ENGINE_BIN: engine,
-    ACP_ADAPTER: path.join(repo, 'tools/elpis-claude/test/fake-acp-agent.mjs'),
+    ACP_ADAPTER: path.join(repo, 'tools/elpis-claude/test/fake-acp-agent.mts'),
     ACP_BRIDGE_STORE: path.join(root, 'provider-sessions.json'),
     ACP_BRIDGE_LOG: path.join(root, 'provider-bridge.log'),
     ACP_BRIDGE_NO_AGENTS: '1',

@@ -1,6 +1,6 @@
 // Workflows that run until they finish (SPEC WR1–WR8), end to end: the real engine (ELPIS_ENGINE_BIN, default
 // ~/.local/bin/elpis-next) behind the real shared bridge, a GPT chat on a local mock Responses provider
-// (tools/elpis-claude/test/mock-responses.mjs), in a throwaway HOME/ELPIS_HOME with the Subagents switch off,
+// (tools/elpis-claude/test/mock-responses.mts), in a throwaway HOME/ELPIS_HOME with the Subagents switch off,
 // no credentials and no session bus. Every process it starts is stopped at the end, including after a crash.
 //   [ELPIS_TEST_TOOLS=/abs/tools/elpis-claude] node --test --test-timeout=400000 tests/workflow-run.runtime.mjs
 import assert from 'node:assert/strict';
@@ -62,7 +62,7 @@ const env = { PATH: process.env.PATH, LANG: 'C.UTF-8', HOME: root, ELPIS_HOME: h
   ELPIS_SHARED_BRIDGE: '1', ELPIS_BRIDGE_SOCKET: socketPath, ELPIS_ENGINE_BIN: ENGINE, ELPIS_NO_AGY: '1', ACP_BRIDGE_LOG: path.join(root, 'bridge.log'),
   ELPIS_WORKFLOW_RETRY_MS: '300', ELPIS_WORKFLOW_ATTEMPTS: '3' };
 
-const mock = spawn(process.execPath, [path.join(fixtures, 'mock-responses.mjs'), String(port), mockDir], { stdio: ['ignore', 'pipe', 'inherit'] });
+const mock = spawn(process.execPath, [path.join(fixtures, 'mock-responses.mts'), String(port), mockDir], { stdio: ['ignore', 'pipe', 'inherit'] });
 await once(mock.stdout, 'data');
 
 let bridge = null;

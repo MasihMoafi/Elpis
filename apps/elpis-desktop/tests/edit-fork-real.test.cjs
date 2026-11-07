@@ -43,11 +43,11 @@ before(async () => {
   await fs.writeFile(path.join(home, 'config.toml'), `model="gpt-5.5"\nmodel_provider="fixture"\nmodel_catalog_json=${JSON.stringify(path.join(home, 'models.json'))}\napproval_policy="never"\nsandbox_mode="workspace-write"\n[features]\ncode_mode=false\n[model_providers.fixture]\nname="Edit test"\nbase_url=${JSON.stringify(provider.url)}\nwire_api="responses"\nrequires_openai_auth=false\n[projects.${JSON.stringify(project)}]\ntrust_level="trusted"\n`);
   const socketPath = path.join(root, 'b.sock'), acpLog = path.join(root, 'acp.jsonl'), agyLog = path.join(root, 'agy.jsonl');
   const agy = path.join(root, 'fake-agy');
-  await fs.copyFile(path.join(repo, 'tools/elpis-claude/test/fake-agy.cjs'), agy); await fs.chmod(agy, 0o755);
+  await fs.copyFile(path.join(repo, 'tools/elpis-claude/test/fake-agy.cts'), agy); await fs.chmod(agy, 0o755);
   const log = await fs.open(path.join(root, 'bridge.log'), 'a');
   const env = { PATH: process.env.PATH, HOME: root, ELPIS_HOME: home, CODEX_HOME: home, CODEX_AUTH_HOME: home, CODEX_SQLITE_HOME: home,
     XDG_CONFIG_HOME: path.join(root, '.config'), XDG_RUNTIME_DIR: root, TMPDIR: root, LANG: 'C.UTF-8', ELPIS_SHARED_BRIDGE: '1', ELPIS_BRIDGE_SOCKET: socketPath,
-    ELPIS_ENGINE_BIN: engine, ACP_ADAPTER: path.join(repo, 'tools/elpis-claude/test/fake-acp-agent.mjs'),
+    ELPIS_ENGINE_BIN: engine, ACP_ADAPTER: path.join(repo, 'tools/elpis-claude/test/fake-acp-agent.mts'),
     ACP_BRIDGE_STORE: path.join(root, 'sessions.json'), ACP_BRIDGE_LOG: path.join(root, 'adapter.log'), ACP_BRIDGE_NO_AGENTS: '1',
     FAKE_ACP_LOG: acpLog, FAKE_ACP_NAME: 'Claude', FAKE_ACP_MODELS: 'sonnet', FAKE_ACP_RELEASE: path.join(root, 'claude-release'), AGY_BIN: agy, FAKE_AGY_LOG: agyLog, FAKE_AGY_RELEASE: path.join(root, 'agy-release') };
   const bridge = spawn(process.execPath, [path.join(repo, 'tools/elpis-claude/acp-bridge.mjs')], { env, cwd: project, detached: true, stdio: ['ignore', log.fd, log.fd] });

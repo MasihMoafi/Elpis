@@ -7,8 +7,8 @@ import { fileURLToPath } from 'node:url';
 import { BridgeError } from './client.mts';
 import { runAcpNode } from './acp-nodes.mts';
 
-// A scripted agent on the official ACP SDK (tools/elpis-claude/test/fake-acp-agent.mjs); it logs what reaches it.
-const FAKE = fileURLToPath(new URL('../../../tools/elpis-claude/test/fake-acp-agent.mjs', import.meta.url));
+// A scripted agent on the official ACP SDK (tools/elpis-claude/test/fake-acp-agent.mts); it logs what reaches it.
+const FAKE = fileURLToPath(new URL('../../../tools/elpis-claude/test/fake-acp-agent.mts', import.meta.url));
 const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 function agentSpec(t: import('node:test').TestContext, name: string, extra: { env?: Record<string, string>; spec?: Partial<Parameters<typeof runAcpNode>[0]> } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'acp-node-'));
