@@ -563,6 +563,7 @@ jobs:
             elpis_ memory_save save_memory smart_prune compact_instructions world_state build_agent_spawn_config \
             refresh_runtime_config_follows_the_subagent_switch_in_the_same_chat \
             subagent_switch_off_overrides_explicit_v2 enabling_subagents_does_not_enable_an_internal_reviewer \
+            enabling_subagents_does_not_enable_an_isolated_root \
             reloading_user_file_updates_the_subagent_switch mcp_refresh_does_not_change_the_subagent_switch \
             live_permissions inherited_permissions step_activation thread_settings turn_input \
             loaded_children_give_up_the_full_access_their_parent_gives_up \
