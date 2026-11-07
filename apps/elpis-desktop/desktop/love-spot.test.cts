@@ -138,10 +138,10 @@ function sessionFixture() {
     './open-thread.cts': { createThreadOpener: () => ({ attach: () => noop }), createNewChatOpener: () => ({ attach: () => noop }) },
     './window-ipc.cts': { createWindowIpc: () => () => ({ handle: noop, removeHandler: noop }) },
     // Shared documents (84f35b9d4) attach to each window; these checks are about saving and closing.
-    './documents.cjs': { createDocuments: () => ({ attach: () => noop, call: async () => null }) },
+    './documents.cts': { createDocuments: () => ({ attach: () => noop, call: async () => null }) },
   };
   const module = { exports: {} as { createSessionWindows: (options: unknown) => { open: () => Promise<Window>; openLoveSpot: () => Promise<Window>; flushText: () => Promise<boolean>; windows: Set<Window> } } };
-  vm.runInNewContext(fs.readFileSync(path.join(__dirname, 'session-windows.cjs'), 'utf8'), {
+  vm.runInNewContext(stripTypeScriptTypes(fs.readFileSync(path.join(__dirname, 'session-windows.cts'), 'utf8')), {
     __dirname, module, console: { ...console, error: noop }, URL, require: (name: string) => (stubs as Record<string, unknown>)[name] ?? require(name),
   });
   return module.exports.createSessionWindows({ electron: { BrowserWindow: Window }, url: 'http://127.0.0.1:4000/',

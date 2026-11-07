@@ -1,37 +1,45 @@
 'use strict';
-const path = require('node:path');
+import type { BrowserWindow, IpcMainInvokeEvent, WebContents } from 'electron';
+import type { StateStore, WindowOpeners } from './main-backend.cts';
+const path: typeof import('node:path') = require('node:path');
 const { createBrowserSessions } = require('./browser-sessions.cjs');
-const { registerState } = require('./state.cts');
-const { registerFiles } = require('./files.cts');
-const { createDocuments } = require('./documents.cjs');
-const { registerTerminal } = require('./terminal.cts');
-const { attachContextMenu } = require('./context-menu.cts');
-const { registerTheme } = require('./theme.cts');
-const { registerCopyKeys } = require('./copy-keys.cts');
-const { appPermission } = require('./media-policy.cts');
-const { trustedBrowserSender } = require('./browser-policy.cts');
-const { createThreadOpener, createNewChatOpener, threadId: validThreadId } = require('./open-thread.cts');
-const { createWindowIpc } = require('./window-ipc.cts');
-const { registerImprove } = require('./improve.cts');
-const { createScreenCapture } = require('./screen-capture.cts');
+const { registerState }: typeof import('./state.cts') = require('./state.cts');
+const { registerFiles }: typeof import('./files.cts') = require('./files.cts');
+const { createDocuments }: typeof import('./documents.cts') = require('./documents.cts');
+const { registerTerminal }: typeof import('./terminal.cts') = require('./terminal.cts');
+const { attachContextMenu }: typeof import('./context-menu.cts') = require('./context-menu.cts');
+const { registerTheme }: typeof import('./theme.cts') = require('./theme.cts');
+const { registerCopyKeys }: typeof import('./copy-keys.cts') = require('./copy-keys.cts');
+const { appPermission }: typeof import('./media-policy.cts') = require('./media-policy.cts');
+const { trustedBrowserSender }: typeof import('./browser-policy.cts') = require('./browser-policy.cts');
+const { createThreadOpener, createNewChatOpener, threadId: validThreadId }: typeof import('./open-thread.cts') = require('./open-thread.cts');
+const { createWindowIpc }: typeof import('./window-ipc.cts') = require('./window-ipc.cts');
+const { registerImprove }: typeof import('./improve.cts') = require('./improve.cts');
+const { createScreenCapture }: typeof import('./screen-capture.cts') = require('./screen-capture.cts');
 const ICON = path.join(__dirname, 'elpis-icon.png');
 const LOVE_SPOT_ICON = path.join(__dirname, 'love-spot-icon.png');
 const ZOOM = 1.1;
 const TITLE_BAR = { dark: { color: '#0d0e11', symbolColor: '#e6e0d3' }, light: { color: '#f2f2f1', symbolColor: '#252524' } };
 
 /** All session windows use one bridge URL and one workspace store. No window owns the engine. */
-function createSessionWindows({ electron, url, store, browserAgentSocket, quickEntry, screenshotPopup, closeToTray, updates, mayClose, quitting = () => false, onDark, onClosed, onFocused }) {
+function createSessionWindowsImpl({ electron, url, store, browserAgentSocket, quickEntry, screenshotPopup, closeToTray, updates, mayClose, quitting = () => false, onDark, onClosed, onFocused }: {
+  electron: typeof import('electron'); url: string; store: StateStore; browserAgentSocket?: ReturnType<typeof import('./browser-agent.cjs').startBrowserAgentSocket> extends Promise<infer T> ? T : never;
+  quickEntry?: { attach: (options: { host: BrowserWindow; origin: string; ipcMain: ReturnType<ReturnType<typeof createWindowIpc>> }) => () => void };
+  screenshotPopup?: { attach: (options: { host: BrowserWindow; origin: string; ipcMain: ReturnType<ReturnType<typeof createWindowIpc>> }) => () => void };
+  closeToTray: ReturnType<typeof import('./tray.cts').createCloseToTray>; updates?: { attach: (options: { host: BrowserWindow; origin: string; ipcMain: ReturnType<ReturnType<typeof createWindowIpc>> }) => () => void };
+  mayClose: (host: BrowserWindow) => boolean; quitting?: () => boolean; onDark?: (dark: boolean) => void; onClosed?: (host: BrowserWindow) => void; onFocused?: (host: BrowserWindow, openers: WindowOpeners | undefined) => void;
+}) {
   const { BrowserWindow, WebContentsView, session, ipcMain: globalIpc, Menu, clipboard, shell, dialog, nativeTheme } = electron;
-  const windows = new Set();
-  const savedText = new WeakSet();
-  const openers = new Map();
+  const windows = new Set<BrowserWindow>();
+  const savedText = new WeakSet<BrowserWindow>();
+  const openers = new Map<BrowserWindow, WindowOpeners>();
   const windowIpc = createWindowIpc(globalIpc);
   const browsers = createBrowserSessions({ store, browserAgentSocket });
   const documents = createDocuments();
-  browserAgentSocket?.setDocuments((id, name, args) => documents.call(id, name, args));
+  browserAgentSocket?.setDocuments((id: unknown, name: unknown, args: unknown) => documents.call(id, name, args));
   const screenCapture = createScreenCapture({ desktopCapturer: electron.desktopCapturer, Menu });
-  browserAgentSocket?.setScreenCapture((id, name, args) => screenCapture.call(id, name, args));
-  let loveSpotWindow, openingLoveSpot, workflowsWindow, openingWorkflows;
+  browserAgentSocket?.setScreenCapture((id: unknown, name: unknown, args: unknown) => screenCapture.call(id, name, args));
+  let loveSpotWindow: BrowserWindow | undefined, openingLoveSpot: Promise<BrowserWindow> | null = null, workflowsWindow: BrowserWindow | undefined, openingWorkflows: Promise<BrowserWindow> | null = null;
   async function openLoveSpot() {
     if (loveSpotWindow && !loveSpotWindow.isDestroyed()) {
       if (loveSpotWindow.isMinimized()) loveSpotWindow.restore();
@@ -40,7 +48,7 @@ function createSessionWindows({ electron, url, store, browserAgentSocket, quickE
       return loveSpotWindow;
     }
     if (!openingLoveSpot) openingLoveSpot = open({ loveSpot: true }).then(host => { loveSpotWindow = host; return host; }).finally(() => { openingLoveSpot = null; });
-    return openingLoveSpot;
+    return await openingLoveSpot;
   }
   async function openWorkflows() {
     if (workflowsWindow && !workflowsWindow.isDestroyed()) {
@@ -50,9 +58,9 @@ function createSessionWindows({ electron, url, store, browserAgentSocket, quickE
       return workflowsWindow;
     }
     if (!openingWorkflows) openingWorkflows = open({ workflows: true }).then(host => { workflowsWindow = host; return host; }).finally(() => { openingWorkflows = null; });
-    return openingWorkflows;
+    return await openingWorkflows;
   }
-  async function open({ threadId, newSession = false, onPrimary, loveSpot = false, workflows = false } = {}) {
+  async function open({ threadId, newSession = false, onPrimary, loveSpot = false, workflows = false }: { threadId?: string | null | undefined; newSession?: boolean; onPrimary?: (openers: WindowOpeners) => void; loveSpot?: boolean; workflows?: boolean } = {}) {
     const origin = new URL(url).origin;
     const window = new BrowserWindow({
       title: loveSpot ? 'Love Spot · Elpis' : workflows ? 'Workflows · Elpis' : 'Elpis', width: 1320, height: 900, minWidth: 600, minHeight: 480,
@@ -69,7 +77,7 @@ function createSessionWindows({ electron, url, store, browserAgentSocket, quickE
     });
     const ipcMain = windowIpc(window);
     windows.add(window);
-    const browser = browsers.attach({ host: window, origin, WebContentsView, session, ipcMain, Menu, clipboard, openExternal: url => shell.openExternal(url) });
+    const browser = browsers.attach({ host: window, origin, WebContentsView, session, ipcMain, Menu, clipboard, openExternal: (url: string) => shell.openExternal(url) });
     window.on('focus', () => { onFocused?.(window, openers.get(window)); });
     const threads = createThreadOpener(threadId);
     const newChats = createNewChatOpener();
@@ -89,9 +97,9 @@ function createSessionWindows({ electron, url, store, browserAgentSocket, quickE
     const disposeUpdates = updates?.attach({ host: window, origin, ipcMain }) ?? (() => {});
     // The app's theme colours the window buttons, Quick Entry, the browser's pages and nativeTheme; only the app's own page may report it.
     const host = window;
-    const disposeTheme = registerTheme({ host, ipcMain, nativeTheme, titleBar: TITLE_BAR, browser, onDark });
+    const disposeTheme = registerTheme({ host, ipcMain, nativeTheme, titleBar: TITLE_BAR, browser, onDark } as Parameters<typeof registerTheme>[0]);
     // Website permissions are handled by the browser's separate session.
-    const permits = (contents, permission, details) => {
+    const permits = (contents: WebContents | null, permission: string, details: Parameters<typeof appPermission>[3]) => {
       const host = [...windows].find(host => !host.isDestroyed() && host.webContents === contents);
       return !!host && appPermission(contents, host, permission, details, origin);
     };
@@ -116,14 +124,14 @@ function createSessionWindows({ electron, url, store, browserAgentSocket, quickE
     window.webContents.on('will-navigate', (event, target) => {
       if (new URL(target).origin !== origin) event.preventDefault();
     });
-    const openInBrowser = url => { try { browser.open(url); } catch { /* Invalid links remain closed. */ } };
+    const openInBrowser = (url: string) => { try { browser.open(url); } catch { /* Invalid links remain closed. */ } };
     window.webContents.setWindowOpenHandler(({ url }) => { openInBrowser(url); return { action: 'deny' }; });
     const detachContextMenu = attachContextMenu(window.webContents, { Menu, clipboard, openLink: openInBrowser, origin, window, changeThis: point => window.webContents.send('elpis:improve:point', point) });
     window.once('ready-to-show', () => window.show());
-    ipcMain.handle('elpis:session-window', async (event, id) => {
+    ipcMain.handle('elpis:session-window', async (event: IpcMainInvokeEvent, id: unknown) => {
       if (!trustedBrowserSender(event, window.webContents, origin)) throw Error('Elpis application frame required');
       if (id !== undefined && !validThreadId(id)) throw Error('Invalid session');
-      await open({ threadId: id, newSession: id === undefined });
+      await open({ threadId: id as string | undefined, newSession: id === undefined });
       return { opened: true };
     });
     let disposed = false;
@@ -167,7 +175,9 @@ function createSessionWindows({ electron, url, store, browserAgentSocket, quickE
     return saved;
   };
   return { open, openLoveSpot, openWorkflows, windows, flushText, cancelQuit: () => { for (const host of windows) savedText.delete(host); },
-    openersFor: host => openers.get(host), closeBrowser: browsers.drop, flushBrowsers: browsers.flush };
+    openersFor: (host: BrowserWindow | undefined) => host ? openers.get(host) : undefined, closeBrowser: browsers.drop, flushBrowsers: browsers.flush };
 }
-const sessionWindowMenu = open => ({ label: 'New Session in New Window', accelerator: 'CommandOrControl+Shift+N', click: () => { void open(); } });
-module.exports = { createSessionWindows, sessionWindowMenu };
+const sessionWindowMenuImpl = (open: () => Promise<unknown>) => ({ label: 'New Session in New Window', accelerator: 'CommandOrControl+Shift+N', click: () => { void open(); } });
+export declare const createSessionWindows: typeof createSessionWindowsImpl;
+export declare const sessionWindowMenu: typeof sessionWindowMenuImpl;
+module.exports = { createSessionWindows: createSessionWindowsImpl, sessionWindowMenu: sessionWindowMenuImpl };

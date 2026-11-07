@@ -5,7 +5,7 @@ const path: typeof import('node:path') = require('node:path');
 const { pathToFileURL }: typeof import('node:url') = require('node:url');
 const { startBrowserAgentSocket }: typeof import('./browser-agent.cjs') = require('./browser-agent.cjs');
 const { closeNeedsConfirmation, seedShippedDefaults }: typeof import('./preferences.cts') = require('./preferences.cts');
-const { createSessionWindows }: typeof import('./session-windows.cjs') = require('./session-windows.cjs');
+const { createSessionWindows }: typeof import('./session-windows.cts') = require('./session-windows.cts');
 const { createSleepBlocker }: typeof import('./sleep-blocker.cts') = require('./sleep-blocker.cts');
 
 export type MainServer = {
@@ -133,7 +133,7 @@ function createMainBackendImpl({ electron, appDir, state, createStateStore, clos
       const sessionWindows: SessionWindows = createSessionWindows({ electron, url: server.url, store: state.getStore(), browserAgentSocket: state.getBrowserAgentSocket(), quickEntry: state.getQuickEntry(), screenshotPopup: state.getScreenshotPopup(), closeToTray, updates,
         mayClose, quitting: () => state.isClosing(), onDark: (dark: boolean) => state.setDarkTheme(dark),
         onClosed: (host: import('electron').BrowserWindow) => { if (window === host) { window = [...sessionWindows.windows].find(item => !sessionWindows.openersFor(item)?.loveSpot && !sessionWindows.openersFor(item)?.workflows); state.setPrimaryOpeners(sessionWindows.openersFor(window)); } },
-        onFocused: (host: import('electron').BrowserWindow, openers: WindowOpeners | undefined) => { if (!openers?.loveSpot && !openers?.workflows) { window = host; state.setPrimaryOpeners(openers); } } });
+        onFocused: (host: import('electron').BrowserWindow, openers: WindowOpeners | undefined) => { if (!openers?.loveSpot && !openers?.workflows) { window = host; state.setPrimaryOpeners(openers); } } } as unknown as Parameters<typeof createSessionWindows>[0]);
       state.setSessionWindows(sessionWindows);
     }
   }

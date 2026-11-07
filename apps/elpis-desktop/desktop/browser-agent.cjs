@@ -6,7 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { browserUrl } = require('./browser-policy.cts');
-const { documentTools } = require('./documents.cjs');
+const { documentTools } = require('./documents.cts');
 const { screenTools } = require('./screen-capture.cts');
 
 const string = {type:'string'}, number = {type:'number'}, tabId = {type:'string',description:'ID from browser_tabs or browser_open.'};

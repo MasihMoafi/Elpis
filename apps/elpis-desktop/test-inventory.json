@@ -160,7 +160,7 @@
     "desktop/context-menu.test.cts",
     "desktop/editors.test.cts",
     "desktop/files.test.cts",
-    "desktop/documents.test.cjs",
+    "desktop/documents.test.cts",
     "desktop/improve.test.cts",
     "desktop/screen-capture.test.cts",
     "desktop/launch.test.mjs",

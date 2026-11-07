@@ -1,32 +1,32 @@
 'use strict';
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('node:fs/promises');
-const os = require('node:os');
-const path = require('node:path');
-const { EventEmitter, once } = require('node:events');
-const { createDocuments } = require('./documents.cjs');
+const test: typeof import('node:test') = require('node:test');
+const assert: typeof import('node:assert/strict') = require('node:assert/strict');
+const fs: typeof import('node:fs/promises') = require('node:fs/promises');
+const os: typeof import('node:os') = require('node:os');
+const path: typeof import('node:path') = require('node:path');
+const { EventEmitter, once }: typeof import('node:events') = require('node:events');
+const { createDocuments }: typeof import('./documents.cts') = require('./documents.cts');
 
-async function fixture(t) {
+async function fixture(t: import('node:test').TestContext) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-documents-'));
   const file = path.join(root, 'گزارش with spaces.md');
   await fs.writeFile(file, '# Draft\nA saved paragraph.\n');
   const documents = createDocuments();
   t.after(() => documents.close());
   t.after(() => fs.rm(root, { recursive: true, force: true }));
-  function windowFor(threadId, focused = false) {
+  function windowFor(threadId: string, focused = false) {
     let current = threadId;
-    const ipc = new EventEmitter(), requests = [], sent = new EventEmitter();
+    const ipc = new EventEmitter(), requests: { id: string; threadId: string; action: string; path: string; view: string }[] = [], sent = new EventEmitter();
     const mainFrame = { url: 'http://127.0.0.1:45001/' };
-    const webContents = { mainFrame, isDestroyed: () => false, send(channel, request) {
+    const webContents = { mainFrame, isDestroyed: () => false, send(channel: string, request: { id: string; threadId: string; action: string; path: string; view: string }) {
       assert.equal(channel, 'elpis:document:request'); requests.push(request); sent.emit('request');
     } };
     const host = { webContents, isDestroyed: () => false, isFocused: () => focused };
     const event = { sender: webContents, senderFrame: mainFrame };
-    const dispose = documents.attach({ host, origin: 'http://127.0.0.1:45001', ipcMain: ipc, session: () => current });
-    return { requests, host, event, dispose, listeners: () => ipc.listenerCount('elpis:document:reply'), session(value) { current = value; },
-      async next(index = 0) { while (!requests[index]) await once(sent, 'request'); return requests[index]; },
-      reply(value, sender = event) { ipc.emit('elpis:document:reply', sender, value); },
+    const dispose = documents.attach({ host, origin: 'http://127.0.0.1:45001', ipcMain: ipc, session: () => current } as unknown as Parameters<typeof documents.attach>[0]);
+    return { requests, host, event, dispose, listeners: () => ipc.listenerCount('elpis:document:reply'), session(value: string) { current = value; },
+      async next(index = 0) { while (!requests[index]) await once(sent, 'request'); return requests[index]!; },
+      reply(value: unknown, sender = event) { ipc.emit('elpis:document:reply', sender, value); },
     };
   }
   return { root, file, documents, windowFor };
