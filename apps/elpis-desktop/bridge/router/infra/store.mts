@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { elpisHome } from '../../client-paths.mts'
 import type { Decision, Repositories, Thread, Ticket, Trigger, TriggerDisposition } from '../core/index.mts'
+import type { Family, Key } from '../sources/kv.mts'
 
 const require = createRequire(import.meta.url)
 const { lockSync } = require('proper-lockfile') as { lockSync(path: string, options: { stale: number; onCompromised: (error: Error) => void }): () => void }
@@ -30,6 +31,7 @@ export class RouterStore implements Repositories {
         CREATE TABLE IF NOT EXISTS thread (id TEXT PRIMARY KEY, value TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS ticket (id TEXT PRIMARY KEY, value TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS decision (id TEXT PRIMARY KEY, value TEXT NOT NULL);`)
+      db.exec('CREATE TABLE IF NOT EXISTS source_state (id TEXT PRIMARY KEY, value TEXT NOT NULL);')
       this.db = db
     } catch (error) { db?.close(); this.release(); throw error }
   }
@@ -74,5 +76,17 @@ export class RouterStore implements Repositories {
     get: (id: string) => this.get<Decision>('decision', id),
     save: (value: Decision) => this.save('decision', value.id, value),
     byThread: (key: string) => this.list<Decision>('decision').filter(value => value.threadKey === key),
+  }
+  readonly state = {
+    get: <V,>(key: Key<V>): V | undefined => {
+      const row = this.db.prepare('SELECT value FROM source_state WHERE id=?').get(key)
+      return row ? JSON.parse(String(row.value)) as V : undefined
+    },
+    set: <V,>(key: Key<V>, value: V | undefined): void => {
+      if (value === undefined) this.db.prepare('DELETE FROM source_state WHERE id=?').run(key)
+      else this.db.prepare('INSERT INTO source_state VALUES (?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value').run(key, JSON.stringify(value))
+    },
+    keys: <V,>(family: Family<V, never>): Key<V>[] => this.db.prepare('SELECT id FROM source_state ORDER BY id').all()
+      .map(row => String(row.id)).filter(id => id.startsWith(family.prefix)) as Key<V>[],
   }
 }

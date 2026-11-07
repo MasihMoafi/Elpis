@@ -8,6 +8,7 @@ export function family<V, A extends unknown[] = [string]>(prefix: string): Famil
   return Object.assign((...name: A) => `${prefix}${name.join(':')}` as Key<V>, { prefix })
 }
 export const KV = {
+  elpisChat: { cursor: family<string>('elpis-chat-cursor:') },
   github: {
     since: record<string>('github-since'), retries: record<Record<string, Retry>>('github-retry'),
     cursor: family<string, [number: number]>('github-cursor:'),

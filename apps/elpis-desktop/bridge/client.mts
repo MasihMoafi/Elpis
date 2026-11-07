@@ -35,6 +35,7 @@ import * as clientRewind from './client-rewind.mts';
 import * as clientTurns from './client-turns.mts';
 import * as clientChanges from './client-changes.mts';
 import * as clientApprovals from './client-approvals.mts';
+import { ElpisChatHistory } from './router/sources/elpis-chat-history.mts';
 
 export { MAX_BRIDGE_MESSAGE_BYTES, elpisHome, existingSocket } from './client-paths.mts';
 export { speechChunks } from './client-voice.mts';
@@ -107,7 +108,7 @@ export class DesktopClient extends EventEmitter {
       env: workflowEnv });
     const workflowHistory = createWorkflowHistory(path.join(profileHome, 'desktop-workflow-history.json'));
     const transport = socket as ClientSocket;
-    this.#state = new ClientState({ socket: transport, openSocket, browserConfig, archiveHistory, spawnLinks, appHome,
+    this.#state = new ClientState({ socket: transport, openSocket, browserConfig, archiveHistory, spawnLinks, appHome, chatHistory: new ElpisChatHistory(profileHome),
       rewindSnapshots, rewindHistory, versions, githubConnector: githubConnector as ClientStateOptions['githubConnector'], customize, cloudroom: cloudroom as ClientStateOptions['cloudroom'], workflowRuns: workflowRuns as unknown as ClientStateOptions['workflowRuns'], workflowHistory,
       reportAttempts, reportRetryMs, retryDelay: reconnectDelayMs, settingsConfirmMs });
     internal_bind.call(this, this.#state, transport);
@@ -149,6 +150,7 @@ export class DesktopClient extends EventEmitter {
   async listArchivedThreads(options: Parameters<typeof clientThreadList.impl_listArchivedThreads>[1] = {}) { return clientThreadList.impl_listArchivedThreads.call(this, this.#state, options); }
   async readThreadMetadata(id?: unknown) { return clientThreadList.impl_readThreadMetadata.call(this, this.#state, id); }
   async readThread(id: unknown, options: Parameters<typeof clientThreadList.impl_readThread>[2] = {}) { return clientThreadList.impl_readThread.call(this, this.#state, id, options); }
+  async appendAssistant(id: string, reply: { id: string; text: string }) { return clientThreadActions.impl_appendAssistant.call(this, this.#state, id, reply); }
   async readPrompts(id?: unknown) { return clientThreadList.impl_readPrompts.call(this, this.#state, id); }
   async media(id?: unknown, turn?: unknown, itemId?: unknown, inputIndex?: unknown) { return clientThreadList.impl_media.call(this, this.#state, id, turn, itemId, inputIndex); }
   async models(options: Parameters<typeof clientModels.impl_models>[1] = {}) { return clientModels.impl_models.call(this, this.#state, options); }

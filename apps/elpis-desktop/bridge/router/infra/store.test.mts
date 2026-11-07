@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { RouterStore } from './store.mts'
 import type { Thread } from '../core/index.mts'
+import { KV } from '../sources/kv.mts'
 
 it('persists domain state, rolls back nested writes, and excludes a second owner', () => {
   const home = mkdtempSync(join(tmpdir(), 'router-store-'))
@@ -14,13 +15,24 @@ it('persists domain state, rolls back nested writes, and excludes a second owner
     const store = new RouterStore(home)
     try {
       store.threads.save(thread)
+      store.state.set(KV.elpisChat.cursor('one'), 'message-1')
       assert.throws(() => new RouterStore(home))
-      assert.throws(() => store.atomic(() => { store.threads.save({ ...thread, pending: [] }); throw new Error('rollback') }))
+      assert.throws(() => store.atomic(() => {
+        store.threads.save({ ...thread, pending: [] })
+        store.state.set(KV.elpisChat.cursor('one'), 'uncommitted')
+        throw new Error('rollback')
+      }))
       assert.deepEqual(store.threads.active(), [thread])
+      assert.equal(store.state.get(KV.elpisChat.cursor('one')), 'message-1')
       assert.equal(statSync(join(home, 'router', 'orchestrator.sqlite')).mode & 0o777, 0o600)
     } finally { store.close() }
     const reopened = new RouterStore(home)
-    try { assert.deepEqual(reopened.threads.get(thread.key), thread) } finally { reopened.close() }
+    try {
+      assert.deepEqual(reopened.threads.get(thread.key), thread)
+      assert.equal(reopened.state.get(KV.elpisChat.cursor('one')), 'message-1')
+      reopened.state.set(KV.elpisChat.cursor('one'), undefined)
+      assert.equal(reopened.state.get(KV.elpisChat.cursor('one')), undefined)
+    } finally { reopened.close() }
   } finally { rmSync(home, { recursive: true, force: true }) }
 })
 
