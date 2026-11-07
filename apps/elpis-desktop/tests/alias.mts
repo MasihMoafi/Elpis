@@ -1,6 +1,6 @@
 // Resolves the renderer's "@/…" imports (tsconfig paths) and its extensionless relative imports ("./api") for unit
 // tests that import TypeScript directly:
-// import './alias.mjs' first, then import the module under test with await import().
+// import './alias.mts' first, then import the module under test with await import().
 import { registerHooks } from 'node:module';
 import { statSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
