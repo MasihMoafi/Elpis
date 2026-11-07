@@ -6,7 +6,7 @@ import { READ_ALOUD_AUDIO } from "@/lib/love-spot-audio";
 import { errorText } from "@/lib/error-text.mts";
 
 type Playback = { controller: AbortController; peer: RTCPeerConnection | null; audio: HTMLAudioElement | null; silence: AudioContext | null; timer: ReturnType<typeof setTimeout> | null; monitor: ReturnType<typeof setInterval> | null; soundTimeout: ReturnType<typeof setTimeout> | null; audible: boolean; draining: boolean; energy: number; session?: string | undefined; ready: boolean; complete: boolean; idle?: boolean; reply: string };
-type Speech = { active: string | null; error: { id: string; message: string } | null; play: (id: string, text: string) => void; stream: (id: string) => void; stop: () => void; warm: () => void };
+type Speech = { active: string | null; error: { id: string; message: string } | null; play: (id: string, text: string, literal?: boolean) => void; stream: (id: string) => void; stop: () => void; warm: () => void };
 /** After a read the call stays open this long, so the next Read aloud only sends its text. */
 const KEEP_OPEN_MS = 60_000;
 const SpeechContext = createContext<Speech | null>(null);
@@ -23,6 +23,22 @@ export function spokenPieces(text: string): string[] {
     if (last && last.length + sentence.length <= 280) pieces[pieces.length - 1] = last + sentence; else pieces.push(sentence);
   }
   return pieces.map(piece => piece.trim()).filter(Boolean).flatMap(piece => piece.length <= 3800 ? [piece] : piece.match(/.{1,3800}(\s|$)/g) ?? []);
+}
+export function selectedPieces(text: string): string[] {
+  const pieces: string[] = [];
+  let current = "";
+  for (const token of text.match(/\S+\s*|\s+/gu) ?? []) {
+    if (current && current.length + token.length > 280) { pieces.push(current); current = ""; }
+    let rest = token;
+    while (rest.length > 3800) {
+      let end = 3800;
+      if (rest.charCodeAt(end - 1) >= 0xd800 && rest.charCodeAt(end - 1) <= 0xdbff && rest.charCodeAt(end) >= 0xdc00 && rest.charCodeAt(end) <= 0xdfff) end--;
+      pieces.push(rest.slice(0, end)); rest = rest.slice(end);
+    }
+    current += rest;
+  }
+  if (current) pieces.push(current);
+  return pieces;
 }
 /** The chosen read-aloud source; refresh after Settings changes it. */
 function useReadAloudSource() {
@@ -44,14 +60,14 @@ export function ReadAloud({ threadId, enabled, available = READ_ALOUD_AUDIO.avai
   const call = useRef<Playback | null>(null);
   const source = useReadAloudSource(), local = useRef<{ controller: AbortController; audio: HTMLAudioElement } | null>(null);
   /** Each piece is voiced by the chosen source while the preceding piece plays. */
-  async function speakFile(id: string, text: string) {
+  async function speakFile(id: string, text: string, literal = false) {
     stop(); setError(null);
     const controller = new AbortController(), audio = new Audio(), mine = { controller, audio };
     local.current = mine; setActive(id);
     const voice = (piece: string) => fetch("/api/read-aloud", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: piece, ...(source.revision ? { revision: source.revision } : {}) }), signal: controller.signal })
       .then(async response => { if (!response.ok) { const result = await response.json().catch(() => ({})); throw new Error(typeof result?.error === "string" ? result.error : "Read aloud could not voice this reply."); } return URL.createObjectURL(await response.blob()); });
     try {
-      const pieces = spokenPieces(text);
+      const pieces = literal ? selectedPieces(text) : spokenPieces(text);
       let next = pieces[0] === undefined ? null : voice(pieces[0]);
       for (let index = 0; next && local.current === mine; index++) {
         const url = await next;
@@ -92,11 +108,11 @@ export function ReadAloud({ threadId, enabled, available = READ_ALOUD_AUDIO.avai
   }, [threadId]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (!enabled || unavailableReason) stop(); }, [enabled, unavailableReason]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function play(id: string, text?: string) {
+  async function play(id: string, text?: string, literal = false) {
     if (unavailableReason) return;
     // A reply's text uses the selected source; only Matilda's live board voice uses the call below.
     if (text !== undefined) {
-      if (source.available) return speakFile(id, text);
+      if (source.available) return speakFile(id, text, literal);
       setError({ id, message: "The selected read aloud source is unavailable. Check Models & accounts." });
       return;
     }
@@ -235,5 +251,5 @@ export function ReadAloud({ threadId, enabled, available = READ_ALOUD_AUDIO.avai
       if (call.current === current) fail("Read aloud disconnected.");
     } catch (cause) { fail(errorText(cause, "Read aloud could not start.")); }
   }
-  return <SpeechContext.Provider value={unavailableReason || !(available || source.available) ? null : { active, error, play: (id, text) => void play(id, text), stream: id => void play(id), stop, warm }}>{children}</SpeechContext.Provider>;
+  return <SpeechContext.Provider value={unavailableReason || !(available || source.available) ? null : { active, error, play: (id, text, literal) => void play(id, text, literal), stream: id => void play(id), stop, warm }}>{children}</SpeechContext.Provider>;
 }
