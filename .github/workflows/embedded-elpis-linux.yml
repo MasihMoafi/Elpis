@@ -230,6 +230,10 @@ jobs:
       - name: Install locked bridge dependencies
         working-directory: tools/elpis-claude
         run: npm ci --ignore-scripts
+      - name: Install locked desktop runtime dependencies
+        # The bridge tests load bridge/schedule-rules.mts, which needs rrule (7 Nov: "package 'rrule' not found").
+        working-directory: apps/elpis-desktop
+        run: npm ci --ignore-scripts --omit=dev
       - name: Provider history and message retention checks
         run: |
           node apps/elpis-desktop/bridge/build-resources.mts --bridge-only
@@ -328,8 +332,8 @@ jobs:
         env:
           A124_ENGINE: ${{ github.workspace }}/codex-rs/target/release/elpis
         run: |
-          # DesktopClient only needs ws here; reuse the locked bridge dependencies.
-          ln -s "$PWD/tools/elpis-claude/node_modules" apps/elpis-desktop/node_modules
+          # DesktopClient only needs ws here; the desktop dependencies are installed above.
+          [ -e apps/elpis-desktop/node_modules ] || ln -s "$PWD/tools/elpis-claude/node_modules" apps/elpis-desktop/node_modules
           mkdir -p apps/elpis-desktop/bridge/resources
           cp codex-rs/core/src/prompts/rag.md apps/elpis-desktop/bridge/resources/rag.md
           cp codex-rs/skills/src/assets/personal/SKILL.md apps/elpis-desktop/bridge/resources/personal.md
