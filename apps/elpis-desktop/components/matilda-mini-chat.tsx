@@ -131,7 +131,7 @@ export function MatildaMiniChat({ chat }: { chat: ReturnType<typeof useMatildaMi
   const speech = useReadAloud(), speechRef = useRef(speech); speechRef.current = speech;
   const preferences = usePreferences();
   const voice = useRef({ seen: new Map<string, number>(), stopped: new Set<string>(), queue: [] as { id: string; text: string }[], running: false, generation: 0, suppress: false });
-  const [voiceError, setVoiceError] = useState("");
+  const [voiceError, setVoiceError] = useState(""), toldUnavailable = useRef(false);
   const stopSpeech = useCallback(() => {
     const state = voice.current; if (state.running) speechRef.current?.stop();
     state.generation++; state.queue = []; state.running = false; state.suppress = true;
@@ -163,7 +163,8 @@ export function MatildaMiniChat({ chat }: { chat: ReturnType<typeof useMatildaMi
     }
     if (!chat.conversation.busy) state.suppress = false;
     if (state.running || !state.queue.length) return;
-    if (!speech) { state.queue = []; setVoiceError("The selected read aloud source is unavailable. Check Models & accounts."); return; }
+    // Said once per opening, not after every reply while the voice stays unavailable.
+    if (!speech) { state.queue = []; if (!toldUnavailable.current) { toldUnavailable.current = true; setVoiceError("The selected read aloud source is unavailable. Check Models & accounts."); } return; }
     state.running = true; const generation = state.generation;
     void (async () => {
       while (state.generation === generation && state.queue.length) {
@@ -199,7 +200,7 @@ export function MatildaMiniChat({ chat }: { chat: ReturnType<typeof useMatildaMi
     </div>}
     {(chat.posting || chat.conversation.busy) && <p className="matilda-mini-status" role="status">Matilda is replying…</p>}
     {chat.error && <div className="matilda-mini-error" role="alert"><span>{chat.error}</span><Button variant="ghost" size="xs" onClick={() => void chat.retry()}>Retry</Button></div>}
-    {voiceError && <p className="matilda-mini-error" role="status">{voiceError}</p>}
+    {voiceError && <p className="matilda-mini-error" aria-live="polite">{voiceError}</p>}
     <form aria-label="Message Matilda" className="matilda-mini-composer" onSubmit={event => { event.preventDefault(); stopSpeech(); voice.current.suppress = false; void chat.send(); }}>
       <Textarea ref={field} aria-label="Message Matilda" placeholder="Message Matilda…" rows={1} autoFocus value={chat.draft} onChange={event => { stopSpeech(); chat.setDraft(event.target.value); }} onKeyDown={event => { if (isSendKey(event, preferences)) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} />
       <Dictation provider={chat.conversation.thread?.modelProvider || "openai"} disabled={chat.posting} onBusy={dictationBusy}
