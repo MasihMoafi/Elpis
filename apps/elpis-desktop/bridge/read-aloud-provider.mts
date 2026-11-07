@@ -35,7 +35,7 @@ function pcmWav(audio: Buffer, rate: number) {
 }
 
 /** The bridge owns this preference; keys remain in the existing provider credential store. */
-export function createReadAloudProvider({ home, kokoro, provider, fetchImpl = fetch }: { home: string; kokoro: { voices?: () => Promise<string[]>; warm?: () => void; available: () => boolean; speak: (text: string, voice: string | null) => Promise<Buffer> }; provider: (source: string) => Promise<{ baseUrl: string; key: string }>; fetchImpl?: typeof fetch }) {
+export function createReadAloudProvider({ home, kokoro, provider, fetchImpl = fetch }: { home: string; kokoro: { voices?: () => Promise<string[]>; available: () => boolean; speak: (text: string, voice: string | null) => Promise<Buffer> }; provider: (source: string) => Promise<{ baseUrl: string; key: string }>; fetchImpl?: typeof fetch }) {
   const file = path.join(home, 'read-aloud.json');
   let writing: Promise<unknown> = Promise.resolve();
   function validate(input: unknown) {
@@ -75,8 +75,9 @@ export function createReadAloudProvider({ home, kokoro, provider, fetchImpl = fe
   async function status() {
     const choice = await read();
     if (choice.source === 'local') {
-      kokoro.warm?.();
-      return { ...choice, revision: revision(choice), available: kokoro.available(), ...(!kokoro.available() ? { reason: 'Kokoro is unavailable on this computer.' } : {}) };
+      if (!kokoro.available()) return { ...choice, revision: revision(choice), available: false, reason: 'Kokoro is unavailable on this computer.' };
+      try { await kokoro.voices?.(); return { ...choice, revision: revision(choice), available: true }; }
+      catch (error) { return { ...choice, revision: revision(choice), available: false, reason: (error as Error).message }; }
     }
     try { await provider(choice.source); return { ...choice, revision: revision(choice), available: true }; }
     catch (error) { return { ...choice, revision: revision(choice), available: false, reason: (error as Error).message }; }

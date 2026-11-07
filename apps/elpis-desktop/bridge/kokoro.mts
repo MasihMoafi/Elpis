@@ -31,6 +31,11 @@ export function createKokoro({ env = process.env, spawnWorker = spawn as SpawnWo
     if (ready) return ready;
     worker = spawnWorker(paths.python, ['-u', WORKER, paths.model, paths.voices], { stdio: ['pipe', 'pipe', 'ignore'], env: { ...env } });
     const child = worker;
+    const rejectPending = () => {
+      for (const waiting of pending.values()) waiting.reject(new BridgeError('Read aloud stopped. Try again.', 503));
+      pending.clear();
+    };
+    child.stdin.on('error', () => { rejectPending(); child.kill(); });
     ready = new Promise<void>((resolve, reject) => {
       child.once('error', () => { reject(new BridgeError('Read aloud could not start.', 503)); });
       child.once('close', () => { reject(new BridgeError('Read aloud stopped before it was ready.', 503)); });
@@ -49,8 +54,7 @@ export function createKokoro({ env = process.env, spawnWorker = spawn as SpawnWo
     });
     const stopped = () => {
       if (worker !== child) return;
-      for (const waiting of pending.values()) waiting.reject(new BridgeError('Read aloud stopped. Try again.', 503));
-      pending.clear(); worker = null; ready = null; buffer = ''; voiceNames = [];
+      rejectPending(); worker = null; ready = null; buffer = ''; voiceNames = [];
     };
     child.once('close', stopped);
     child.once('error', stopped);
@@ -69,8 +73,6 @@ export function createKokoro({ env = process.env, spawnWorker = spawn as SpawnWo
     await done;
     try { return await fs.readFile(out); } finally { await fs.rm(out, { force: true }); }
   }
-  /** Loads the voice ahead of the first read, when the app asks whether it is there. */
-  const warm = () => { if (available()) start().catch(() => {}); };
   const voices = async () => { if (!available()) return []; await start(); return voiceNames; };
-  return { available, warm, voices, speak, defaultVoice: env.ELPIS_KOKORO_VOICE ?? 'af_heart', close: () => { worker?.kill(); } };
+  return { available, voices, speak, defaultVoice: env.ELPIS_KOKORO_VOICE ?? 'af_heart', close: () => { worker?.kill(); } };
 }

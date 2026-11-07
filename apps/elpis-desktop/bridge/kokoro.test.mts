@@ -7,6 +7,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createKokoro } from './kokoro.mts';
+import { createReadAloudProvider } from './read-aloud-provider.mts';
 
 test('Kokoro lists its installed voices and uses the selected voice', async t => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-kokoro-'));
@@ -15,8 +16,9 @@ test('Kokoro lists its installed voices and uses the selected voice', async t =>
   await Promise.all(paths.map(file => fs.writeFile(file, 'fixture')));
   const sent: { out: string; voice?: string; id: string }[] = [];
   const spawnWorker = () => {
-    const worker = Object.assign(new EventEmitter(), { stdout: new EventEmitter(), kill: () => {}, stdin: { write: (_raw: string) => {} } });
-    worker.stdin = { write: (raw: string) => { const message = JSON.parse(raw) as { out: string; voice?: string; id: string }; sent.push(message); void fs.writeFile(message.out, 'wav').then(() => worker.stdout.emit('data', `${JSON.stringify({ id: message.id, ok: true })}\n`)); } };
+    const stdin = Object.assign(new EventEmitter(), { write: (_raw: string) => {} });
+    const worker = Object.assign(new EventEmitter(), { stdout: new EventEmitter(), kill: () => {}, stdin });
+    stdin.write = (raw: string) => { const message = JSON.parse(raw) as { out: string; voice?: string; id: string }; sent.push(message); void fs.writeFile(message.out, 'wav').then(() => worker.stdout.emit('data', `${JSON.stringify({ id: message.id, ok: true })}\n`)); };
     queueMicrotask(() => worker.stdout.emit('data', `${JSON.stringify({ ready: true, voices: ['af_heart', 'am_michael'] })}\n`));
     return worker;
   };
@@ -115,7 +117,7 @@ test('a GPU startup failure reaches the caller instead of hanging', async t => {
   const paths = ['python', 'model', 'voices'].map(name => path.join(home, name));
   await Promise.all(paths.map(file => fs.writeFile(file, 'fixture')));
   const spawnWorker = () => {
-    const worker = Object.assign(new EventEmitter(), { stdout: new EventEmitter(), kill: () => {}, stdin: { write: () => {} } });
+    const worker = Object.assign(new EventEmitter(), { stdout: new EventEmitter(), kill: () => {}, stdin: Object.assign(new EventEmitter(), { write: () => {} }) });
     queueMicrotask(() => {
       worker.emit('exit', 1);
       worker.stdout.emit('data', `${JSON.stringify({ ready: false, error: 'Read aloud needs a working GPU.' })}\n`);
@@ -128,4 +130,43 @@ test('a GPU startup failure reaches the caller instead of hanging', async t => {
   try {
     await assert.rejects(Promise.race([kokoro.speak('Hello.'), new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('Read aloud hung')), 1000); })]), /working GPU/i);
   } finally { clearTimeout(timer); }
+});
+
+test('local read aloud status reports a failed GPU startup and recovers', async t => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-kokoro-status-'));
+  t.after(() => fs.rm(home, { recursive: true, force: true }));
+  let attempts = 0;
+  const kokoro = { available: () => true, voices: async () => { if (++attempts === 1) throw new Error('Read aloud needs a working GPU.'); return ['af_heart']; }, speak: async () => Buffer.from('wav') };
+  const readAloud = createReadAloudProvider({ home, kokoro, provider: async () => { throw new Error('Unexpected API provider'); } });
+  const unavailable = await readAloud.status();
+  assert.equal(unavailable.available, false);
+  assert.match(unavailable.reason ?? '', /GPU/);
+  const recovered = await readAloud.status();
+  assert.equal(recovered.available, true);
+});
+
+test('a broken worker pipe rejects speech without an uncaught error', async t => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-kokoro-pipe-'));
+  t.after(() => fs.rm(home, { recursive: true, force: true }));
+  const paths = ['python', 'model', 'voices'].map(name => path.join(home, name));
+  await Promise.all(paths.map(file => fs.writeFile(file, 'fixture')));
+  let uncaught: Error | null = null, starts = 0;
+  const spawnWorker = () => {
+    starts++;
+    const stdin = Object.assign(new EventEmitter(), { write: () => {} });
+    const worker = Object.assign(new EventEmitter(), { stdout: new EventEmitter(), kill: () => {}, stdin });
+    worker.kill = () => { queueMicrotask(() => worker.emit('close', 1)); };
+    stdin.write = () => queueMicrotask(() => {
+      try { stdin.emit('error', new Error('EPIPE')); }
+      catch (error) { uncaught = error as Error; worker.emit('close', 1); }
+    });
+    queueMicrotask(() => worker.stdout.emit('data', `${JSON.stringify({ ready: true, voices: ['af_heart'] })}\n`));
+    return worker;
+  };
+  const kokoro = createKokoro({ env: { ELPIS_KOKORO_PYTHON: paths[0]!, ELPIS_KOKORO_MODEL: paths[1]!, ELPIS_KOKORO_VOICES: paths[2]! }, spawnWorker: spawnWorker as unknown as NonNullable<NonNullable<Parameters<typeof createKokoro>[0]>['spawnWorker']> });
+  await assert.rejects(kokoro.speak('Hello.'), /stopped|try again/i);
+  assert.equal(uncaught, null, 'the bridge must handle stream errors');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(await kokoro.voices(), ['af_heart']);
+  assert.equal(starts, 2, 'a broken worker is replaced before the next use');
 });
