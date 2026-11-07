@@ -24,17 +24,17 @@ function keepPending(context: string | undefined, ids: ReadonlySet<string>) {
 }
 
 /** Matilda reads the board once it has been quiet for a moment, then answers on it; the bridge places the reply (bridge/love-spot-talk.mts). */
-export function useMatilda({ ready, enabled, context, told, send, onError }: {
-  ready: () => boolean; /** Replies on: off means nothing is sent, not even on leaving the board. */ enabled: () => boolean; context?: string; told: (ids: ReadonlySet<string>) => string; send: (text: string, persona: string, isCurrent: () => boolean) => Promise<boolean>; onError: (message: string) => void;
+export function useMatilda({ ready, enabled, context, told, drawingOnly, send, onError }: {
+  ready: () => boolean; /** Replies on: off means nothing is sent, not even on leaving the board. */ enabled: () => boolean; context?: string; told: (ids: ReadonlySet<string>) => string; drawingOnly: (ids: ReadonlySet<string>) => boolean; send: (text: string, persona: string, isCurrent: () => boolean, drawingOnly: boolean) => Promise<boolean>; onError: (message: string) => void;
 }) {
   const [persona, setPersona] = useState(savedPersona), [replying, setReplying] = useState(false);
-  const latest = useRef({ ready, enabled, context, told, send, onError, persona });
-  latest.current = { ready, enabled, context, told, send, onError, persona };
+  const latest = useRef({ ready, enabled, context, told, drawingOnly, send, onError, persona });
+  latest.current = { ready, enabled, context, told, drawingOnly, send, onError, persona };
   const ids = useRef(new Set<string>()), timer = useRef<ReturnType<typeof setTimeout>>(undefined), busy = useRef(false), working = useRef(false);
   const said = useRef<string | null>(null), asking = useRef<ReturnType<typeof setTimeout>>(undefined);
   const mounted = useRef(false), poll = useRef(0), generation = useRef(0);
   // What she would be told now; the editor is already gone when the board unmounts.
-  const waiting = useRef("");
+  const waiting = useRef(""), waitingDrawingOnly = useRef(false);
   useEffect(() => { generation.current++; ids.current.clear(); clearTimeout(timer.current); }, [context]);
   /** Fallback when the shared live conversation stream disconnects. */
   const ask = useCallback(async () => {
@@ -57,15 +57,15 @@ export function useMatilda({ ready, enabled, context, told, send, onError }: {
     if (!now.ready()) { timer.current = setTimeout(look, QUIET); return; }
     if (busy.current || working.current) { timer.current = setTimeout(look, RETRY); return; }
     const batch = ids.current, token = generation.current;
-    const text = now.told(batch); ids.current = new Set(); waiting.current = "";
+    const text = now.told(batch), onlyDrawing = now.drawingOnly(batch); ids.current = new Set(); waiting.current = "";
     if (!text) { keepPending(now.context, ids.current); return; }
     const isCurrent = () => mounted.current && token === generation.current && now.context === latest.current.context && latest.current.ready();
     working.current = true; said.current = "";
     try {
-      if (await now.send(text, now.persona.trim() || PROTOCOL, isCurrent)) ask();
+      if (await now.send(text, now.persona.trim() || PROTOCOL, isCurrent, onlyDrawing)) ask();
       // Left while she was being told (the board's send gives up once it unmounts): send it as leaving does, or it is lost
       // (5 Nov: on a slower machine a note written just before leaving never reached her).
-      else if (!mounted.current && now.enabled()) await api("/love-spot/talk", { text, persona: now.persona.trim() || PROTOCOL }).catch(() => { for (const id of batch) ids.current.add(id); });
+      else if (!mounted.current && now.enabled()) await api("/love-spot/talk", { text, persona: now.persona.trim() || PROTOCOL, drawingOnly: onlyDrawing }).catch(() => { for (const id of batch) ids.current.add(id); });
       else if (mounted.current && now.context === latest.current.context) for (const id of batch) ids.current.add(id);
     }
     catch (cause) { if (mounted.current) now.onError(errorText(cause, "Matilda could not answer.")); }
@@ -79,7 +79,7 @@ export function useMatilda({ ready, enabled, context, told, send, onError }: {
     generation.current++;
     for (const id of found) ids.current.add(id);
     keepPending(latest.current.context, ids.current);
-    try { waiting.current = ids.current.size ? latest.current.told(ids.current) : ""; } catch { /* told again when she looks */ }
+    try { waiting.current = ids.current.size ? latest.current.told(ids.current) : ""; waitingDrawingOnly.current = !!ids.current.size && latest.current.drawingOnly(ids.current); } catch { /* told again when she looks */ }
     clearTimeout(timer.current);
     if (ids.current.size) timer.current = setTimeout(look, finished ? 0 : QUIET);
   }, [look]);
@@ -96,11 +96,11 @@ export function useMatilda({ ready, enabled, context, told, send, onError }: {
       const now = latest.current, batch = new Set(ids.current);
       if (!now.enabled()) { keepPending(now.context, new Set()); return; }
       if (!batch.size || busy.current || working.current) return;
-      let text = ""; try { text = now.told(batch); } catch { /* the editor is gone */ }
-      text ||= waiting.current;
+      let text = "", onlyDrawing = false; try { text = now.told(batch); onlyDrawing = now.drawingOnly(batch); } catch { /* the editor is gone */ }
+      if (!text) { text = waiting.current; onlyDrawing = waitingDrawingOnly.current; }
       if (!text) return;
       keepPending(now.context, new Set());
-      void api("/love-spot/talk", { text, persona: now.persona.trim() || PROTOCOL }).catch(() => keepPending(now.context, batch));
+      void api("/love-spot/talk", { text, persona: now.persona.trim() || PROTOCOL, drawingOnly: onlyDrawing }).catch(() => keepPending(now.context, batch));
     };
   }, [ask]);
   /** Replies off (Masih, 31 Oct: "I disabled her replies yet she still was thinking"): forget what was waiting and stop the reply she is writing. */

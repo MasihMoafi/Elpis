@@ -360,9 +360,10 @@ export function createLoveSpotTalk({ client, store, companion, audio = LOVE_SPOT
       };
     },
     async send(raw: Record<string, unknown>) {
-      let body = raw as { text: string; model?: string | undefined; provider?: string | undefined; revision?: string; persona?: string; pinned?: boolean };
-      object(body, ['text', 'model', 'provider', 'revision', 'persona', 'pinned']); text(body.text, 'message');
+      let body = raw as { text: string; model?: string | undefined; provider?: string | undefined; revision?: string; persona?: string; pinned?: boolean; drawingOnly?: boolean };
+      object(body, ['text', 'model', 'provider', 'revision', 'persona', 'pinned', 'drawingOnly']); text(body.text, 'message');
       if (body.pinned !== undefined && typeof body.pinned !== 'boolean') throw new BridgeError('pinned must be true or false');
+      if (body.drawingOnly !== undefined && typeof body.drawingOnly !== 'boolean') throw new BridgeError('drawingOnly must be true or false');
       if (body.persona !== undefined) text(body.persona, 'persona', 4000);
       if (body.model !== undefined) text(body.model, 'model', 200);
       if (body.provider !== undefined) text(body.provider, 'provider', 200);
@@ -370,7 +371,7 @@ export function createLoveSpotTalk({ client, store, companion, audio = LOVE_SPOT
       // Off quiets her on the board; her pinned chat always works (Masih, 1 Nov: "disabling it shouldn't disrupt me from using
       // the pinned version").
       if (!matilda.replies && body.pinned !== true) throw new BridgeError('Matilda is off. Turn her on to talk to her.', 409);
-      const { pinned: _pinned, ...rest } = body; body = rest;
+      const { pinned: _pinned, drawingOnly, ...rest } = body; body = rest;
       body = { ...body, model: body.model ?? matilda.model ?? undefined, provider: body.provider ?? matilda.provider ?? undefined };
       if (sending) throw new BridgeError('Love Spot is already replying. Wait for this turn.', 409);
       sending = true; error = ''; publish();
@@ -407,7 +408,7 @@ export function createLoveSpotTalk({ client, store, companion, audio = LOVE_SPOT
         if (picture) attachments.push({ id: 'love-spot-picture', name: 'view.png', type: 'image', mimeType: 'image/png', dataUrl: `data:image/png;base64,${picture}` });
         // A synthetic drawing notice without a new picture gives her nothing new to look at. Wait silently;
         // actual written messages still go through, and the next changed picture can be sent normally.
-        if (!picture && body.text.trim() === 'I drew something on the board.') return { ...snapshot(), busy: false, turn: null, waitingForPicture: true };
+        if (!picture && drawingOnly && body.text.trim() === 'I drew something on the board.') return { ...snapshot(), busy: false, turn: null, waitingForPicture: true };
         if (!threadId) {
           threadId = await store.chat(async cwd => {
             const made = await client.createThread({ cwd, name: 'Love Spot', model, ...(body.provider ? { provider: body.provider } : {}), instructions: INSTRUCTIONS, automatic: true });

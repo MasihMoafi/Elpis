@@ -507,20 +507,22 @@ test('a drawing notification waits silently until a picture is available, while 
   const f = await fixture(t);
   const shape = (id: string) => ({ ...note(id, ''), type: 'rectangle', text: undefined });
   await f.store.save({ elements: [shape('box')] });
-  const waiting = await f.talk.send({ text: 'I drew something on the board.', model: 'text' });
+  const waiting = await f.talk.send({ text: 'I drew something on the board.', model: 'text', drawingOnly: true });
   assert.equal(waiting.waitingForPicture, true, 'the board does not start speech for a silent wait');
   assert.equal(f.sent.length, 0, 'a drawing alone without a picture does not prompt a reply');
   await f.talk.send({ text: 'How are you?', model: 'text' });
   assert.equal(f.sent.length, 1, 'normal written messages still reach Matilda');
   f.finish(); await f.talk.idle();
   const { revision } = await f.store.read(); await f.store.picture({ revision, png: PNG });
-  await f.talk.send({ text: 'I drew something on the board.', model: 'luna', revision });
+  await f.talk.send({ text: 'I drew something on the board.', model: 'luna', revision, drawingOnly: true });
   assert.equal(f.sent.length, 2, 'a drawing goes through once its picture is available');
   assert.ok(f.sent[1]!.attachments.some(a => a.type === 'image'));
   f.finish('turn-2'); await f.talk.idle();
   const current = await f.store.read(); await f.store.picture({ revision: current.revision, png: PNG });
-  await f.talk.send({ text: 'I drew something on the board.', model: 'luna', revision: current.revision });
+  await f.talk.send({ text: 'I drew something on the board.', model: 'luna', revision: current.revision, drawingOnly: true });
   assert.equal(f.sent.length, 2, 'a repeated drawing signal without a new picture is quiet');
+  await f.talk.send({ text: 'I drew something on the board.', model: 'text', pinned: true });
+  assert.equal(f.sent.length, 3, 'the same words typed by Masih are still delivered');
 });
 test('an image-capable subscription model receives the new board picture', async t => {
   const f = await fixture(t);
