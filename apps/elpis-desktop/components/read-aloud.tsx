@@ -38,7 +38,7 @@ function useReadAloudSource() {
 export const useReadAloud = () => useContext(SpeechContext);
 
 /** One player with generated silence as input. Closing its request also retires its native session. */
-export function ReadAloud({ threadId, enabled, available = READ_ALOUD_AUDIO.available, unavailableReason, children }: { threadId?: string; enabled: boolean; available?: boolean; unavailableReason?: string; children: ReactNode }) {
+export function ReadAloud({ threadId, enabled, available = READ_ALOUD_AUDIO.available, unavailableReason, children }: { threadId?: string; enabled: boolean; available?: boolean; unavailableReason?: string | undefined; children: ReactNode }) {
   const [active, setActive] = useState<string | null>(null);
   const [error, setError] = useState<Speech["error"]>(null);
   const call = useRef<Playback | null>(null);

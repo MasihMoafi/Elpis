@@ -153,7 +153,7 @@ type Props = {
   /** The folder a new shell starts in: the open chat's. */
   cwd: string;
   /** The open chat, whose changes the Changes tab shows, and whether a turn is running in it. */
-  threadId?: string; running?: boolean;
+  threadId?: string | undefined; running?: boolean;
   launch: TerminalLaunch | null;
   /** The page is hidden while something else is on top of it. */
   covered: boolean;

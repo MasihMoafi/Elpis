@@ -4,7 +4,7 @@
 // does not list must be clean. Lower counts must be recorded (--update), so a fixed finding cannot come back.
 //   node scripts/strict-baseline.mts [types|tsx|lint|dup ...] [--update] [--files a.mjs b.tsx]
 // types: tsc -p tsconfig.node.json (bridge, desktop, lib, scripts as JS with checkJs);
-// tsx: tsc -p tsconfig.strict.json (renderer under the extra strict flags); lint: oxlint (.oxlintrc.json);
+// tsx: tsc -p tsconfig.json (renderer, with DeepSeek Harness's strict flags); lint: oxlint (.oxlintrc.json);
 // dup: jscpd (.jscpd.json), counted as clones per file pair. --files limits lint to those files (pre-commit).
 // --update refuses to raise a count; ELPIS_BASELINE_RAISE=1 allows it, for a reviewed exception only.
 import { spawnSync } from 'node:child_process';
@@ -116,7 +116,7 @@ function dupCounts() {
 
 const checks: Record<string, (files: string[] | null) => Counts> = {
   types: () => typeCounts('tsconfig.node.json'),
-  tsx: () => typeCounts('tsconfig.strict.json'),
+  tsx: () => typeCounts('tsconfig.json'),
   lint: files => lintCounts(files),
   dup: () => dupCounts(),
 };

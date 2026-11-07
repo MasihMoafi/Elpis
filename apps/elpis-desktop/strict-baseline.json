@@ -259,10 +259,7 @@
   "tests/temp-root.cjs:TS18046": 1,
   "tests/temp-root.cjs:TS7006": 3
  },
- "tsx": {
-  "app/page.tsx:TS2375": 3,
-  "app/page.tsx:TS2379": 1
- },
+ "tsx": {},
  "lint": {
   "app/page.tsx:typescript(no-floating-promises)": 1,
   "app/page.tsx:unused-disable-directive": 1,

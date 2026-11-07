@@ -11,7 +11,7 @@ Every file in `apps/elpis-desktop/bridge`, `desktop` and `lib` (219 `.mjs`/`.cjs
 All run from `apps/elpis-desktop` and in CI (`.github/workflows/lint.yml`, job `strict`):
 
 - `npm run typecheck`: the renderer, which must stay at zero errors.
-- `npm run typecheck:strict` (`tsconfig.node.json`, `tsconfig.strict.json`): the JS with `checkJs`, and the renderer under `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noImplicitOverride` and `noFallthroughCasesInSwitch`.
+- `npm run typecheck:strict` (`tsconfig.node.json`, `tsconfig.json`): the JS with `checkJs`, and the renderer. Since 7 Nov `tsconfig.json` itself carries `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noImplicitOverride` and `noFallthroughCasesInSwitch`, so `npm run typecheck` and the Next build enforce them.
 - `npm run lint` (oxlint, `.oxlintrc.json`) and `npm run duplication` (jscpd, `.jscpd.json`).
 - `strict-baseline.json` holds every existing finding, per file and rule. A count may only go down, and a file not listed must be clean. After a fix, record it with `node scripts/strict-baseline.mts <check> --update`; that command refuses to raise a count.
 - The test tiers in `test-inventory.json`, run by `.github/workflows/elpis-desktop.yml` on every push to `main` and `integrate/**` and on every pull request.

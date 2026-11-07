@@ -11,7 +11,7 @@ const MENU_ID = "mention-menu";
  * narrowed as they type. ↑↓ move, Enter or Tab insert "@name", Escape closes; the choice goes to `onPick` with the
  * mention the message will carry. Files come from the bridge once per folder and window. */
 export function useMentionMenu({ text, caret, cwd, threads, currentId, onPick }: {
-  text: string; caret: number; cwd?: string; threads: Thread[]; currentId?: string;
+  text: string; caret: number; cwd?: string | undefined; threads: Thread[]; currentId?: string | undefined;
   onPick: (result: { text: string; caret: number; mention: Mention }) => void;
 }) {
   const [dismissed, setDismissed] = useState<string | null>(null);

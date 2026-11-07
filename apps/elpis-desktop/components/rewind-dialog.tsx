@@ -13,7 +13,7 @@ export type RestoreMode = "both" | "conversation" | "code";
 type Preview = { available: boolean; reason?: string; version?: string; files?: string[]; added?: number; removed?: number; diff?: string; truncated?: boolean };
 
 /** Restore to before a message. A failure stays in the dialog; historical messages without snapshots remain rewindable. */
-export function RewindDialog({ threadId, turnId, prompt, turns, onConfirm, onClose }: { threadId?: string; turnId: string | null; prompt: string; turns: number | null; onConfirm: (mode: RestoreMode, version?: string) => Promise<void>; onClose: () => void }) {
+export function RewindDialog({ threadId, turnId, prompt, turns, onConfirm, onClose }: { threadId?: string | undefined; turnId: string | null; prompt: string; turns: number | null; onConfirm: (mode: RestoreMode, version?: string) => Promise<void>; onClose: () => void }) {
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
   const [mode, setMode] = useState<RestoreMode>("both"), [preview, setPreview] = useState<Preview | null>(null);
   useEffect(() => {
