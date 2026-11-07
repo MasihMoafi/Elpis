@@ -6,8 +6,8 @@ import { execFile } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 
-type CatalogEntry = { slug: string; display_name?: string; description?: string; visibility?: string; supported_reasoning_levels?: { effort: string; description?: string }[]; default_reasoning_level?: string };
-type CatalogModel = { id: string; model: string; displayName: string; description: string; hidden: boolean; supportedReasoningEfforts: { reasoningEffort: string; description: string }[]; defaultReasoningEffort: string | null };
+type CatalogEntry = { slug: string; display_name?: string; description?: string; visibility?: string; input_modalities?: string[]; supported_reasoning_levels?: { effort: string; description?: string }[]; default_reasoning_level?: string };
+type CatalogModel = { id: string; model: string; displayName: string; description: string; hidden: boolean; inputModalities?: string[]; supportedReasoningEfforts: { reasoningEffort: string; description: string }[]; defaultReasoningEffort: string | null };
 type CatalogResult = { data: CatalogModel[]; nextCursor: null };
 type Runner = (command: string, args: string[], env: NodeJS.ProcessEnv) => Promise<string>;
 
@@ -18,6 +18,7 @@ const cached = new Map<string, { at: number; result: CatalogResult }>(); // prov
 export const toModel = (entry: CatalogEntry): CatalogModel => ({
   id: entry.slug, model: entry.slug, displayName: entry.display_name || entry.slug, description: entry.description ?? '',
   hidden: entry.visibility !== 'list',
+  ...(entry.input_modalities ? { inputModalities: entry.input_modalities } : {}),
   supportedReasoningEfforts: (entry.supported_reasoning_levels ?? []).map(level => ({ reasoningEffort: level.effort, description: level.description ?? '' })),
   defaultReasoningEffort: entry.default_reasoning_level ?? null,
 });
