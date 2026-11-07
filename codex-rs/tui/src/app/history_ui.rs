@@ -554,7 +554,7 @@ fn powershell_single_quoted_string(value: &str) -> String {
 }
 
 // Elpis: on Linux `/app` starts `elpis-app --open-thread <id>` (or ELPIS_DESKTOP_APP). A running app keeps its one
-// window (Electron's single-instance lock, apps/elpis-desktop/desktop/open-thread.cjs) and opens the chat there.
+// window (Electron's single-instance lock, apps/elpis-desktop/desktop/open-thread.cts) and opens the chat there.
 #[cfg(target_os = "linux")]
 fn open_desktop_thread_url(url: &str) -> Result<(), String> {
     let (app, args) = elpis_desktop_command(url, std::env::var_os("ELPIS_DESKTOP_APP"))?;
