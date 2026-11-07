@@ -73,6 +73,33 @@ const shot = async (page, name) => {
   await page.screenshot({ path: path.join(dir, `organize-${name}.png`) });
 };
 
+test('the Agents panel follows an agent taken out and put under another chat', async () => {
+  const worker = { ...native, status: { type: 'active' } }, threads = [...chats, worker];
+  const f = await open({ threads, staticDir: process.env.ELPIS_TEST_STATIC_DIR || undefined, routes: { '/api/threads': (_body, url) => ({
+    data: url.searchParams.has('ancestorThreadId') ? url.searchParams.get('ancestorThreadId') === 'chat-a' ? [worker] : [] :
+      url.searchParams.get('archived') === 'true' ? [] : threads, nextCursor: null,
+  }) } });
+  const { page } = f, panelWorker = () => page.locator('.team-panel [data-thread-id="native-agent"]');
+  try {
+    await f.open('chat-a');
+    await panelWorker().waitFor();
+    await row(page, 'chat-a').getByRole('button', { name: /^Expand agents/ }).click();
+    await action(page, 'native-agent', 'Take out');
+    await eventually(async () => assert.equal(await row(page, 'native-agent').getAttribute('data-depth'), '0'));
+    await eventually(async () => assert.equal(await panelWorker().count(), 0, 'the old parent stops showing the moved agent'));
+    await page.reload();
+    await f.open('chat-a');
+    assert.equal(await panelWorker().count(), 0, 'the saved placement still wins over the runtime parent');
+    await putUnder(page, 'native-agent', 'Unrelated chat');
+    await f.open('chat-z');
+    await panelWorker().waitFor();
+    await f.open('chat-a');
+    assert.equal(await panelWorker().count(), 0, 'the old parent does not regain the agent after reparenting');
+    assert.equal(f.posts.some(({ path }) => path.startsWith('/api/threads/native-agent/')), false, 'placement does not write to the runtime agent');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
 test('workflow descendants and manual branches use the same recursive placement and corrupt cycles stay visible', async () => {
   const tree = ['flow-root', 'flow-step', 'flow-grandchild', 'latest-step', 'other-root', 'other-step', 'older-step', 'manual-root', 'manual-child', 'manual-branch', 'manual-leaf', 'cycle-a', 'cycle-b'].map(id => ({ id, name: id, source: 'cli', model: 'sol', modelProvider: 'openai', status: { type: 'idle' },
     ...(id === 'flow-step' || id === 'latest-step' ? { parentThreadId: 'flow-root' } : id === 'flow-grandchild' ? { parentThreadId: 'flow-step' } : id === 'other-step' || id === 'older-step' ? { parentThreadId: 'other-root' } : {}) }));
