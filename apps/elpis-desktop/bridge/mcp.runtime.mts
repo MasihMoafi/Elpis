@@ -1,5 +1,5 @@
 // Native MCP config acceptance only; no chat, provider request, or real-profile writes.
-// node bridge/mcp.runtime.mjs /absolute/path/to/elpis-next
+// node bridge/mcp.runtime.mts /absolute/path/to/elpis-next
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -15,7 +15,7 @@ const home = path.join(root, 'home');
 await fs.mkdir(home);
 await fs.writeFile(path.join(home, 'config.toml'), '[mcp_servers.rag]\ncommand="/bin/true"\n[mcp_servers.rag.env]\nOPENROUTER_API_KEY="fixture-original"\n[mcp_servers.whispertype]\ncommand="/bin/true"\n[mcp_servers.whispertype.env]\nWHISPERTYPE_BACKEND="openrouter"\n');
 const socketPath = path.join(root, 'bridge.sock');
-const env = { PATH: process.env.PATH, HOME: home, CODEX_AUTH_HOME: home, ELPIS_HOME: home, CODEX_HOME: home, LANG: 'C.UTF-8', RUST_LOG: 'error' };
+const env: NodeJS.ProcessEnv = { PATH: process.env.PATH, HOME: home, CODEX_AUTH_HOME: home, ELPIS_HOME: home, CODEX_HOME: home, LANG: 'C.UTF-8', RUST_LOG: 'error' };
 delete env.OPENROUTER_API_KEY;
 delete env.OPENROUTER_API_KEY_COMPANY;
 const child = spawn(binary, ['app-server', '--listen', `unix://${socketPath}`], { cwd: root, env, stdio: 'ignore' });
@@ -44,6 +44,7 @@ try {
   config = await client.saveMcp({ version: config.version, action: 'credentials', name: 'whispertype', env: { OPENROUTER_API_KEY_COMPANY: 'fixture-whisper' } });
   config = await client.saveMcp({ version: config.version, action: 'whispertype', name: 'whispertype', backend: 'local', model: 'openai/gpt-4o-mini-transcribe' });
   const whisper = config.servers.find(server => server.name === 'whispertype');
+  assert.ok(whisper?.whispertype);
   assert.equal(whisper.whispertype.backend, 'local');
   const whisperKey = whisper.credentials.find(key => key.name === 'OPENROUTER_API_KEY_COMPANY');
   assert.ok(whisperKey);
@@ -54,15 +55,15 @@ try {
   let providers = await client.providerSettings();
   const provider = { id: 'fixture-native', name: 'Native fixture', baseUrl: 'http://127.0.0.1:1234/v1' };
   providers = await client.saveProvider({ ...provider, version: providers.version, credential: { action: 'replace', value: 'fixture-provider-key' } });
-  assert.equal(providers.providers.find(item => item.id === provider.id).auth.source, 'stored');
-  assert.equal(providers.providers.find(item => item.id === provider.id).auth.keySet, true);
+  assert.equal(providers.providers.find(item => item.id === provider.id)!.auth.source, 'stored');
+  assert.equal(providers.providers.find(item => item.id === provider.id)!.auth.keySet, true);
   assert(!JSON.stringify(providers).includes('fixture-provider-key'));
   assert.equal((await fs.stat(path.join(home, 'config.toml'))).mode & 0o777, 0o600);
   for (const value of ['', '********']) providers = await client.saveProvider({ ...provider, version: providers.version, credential: { action: 'replace', value } });
-  assert.equal(providers.providers.find(item => item.id === provider.id).auth.keySet, true);
-  await assert.rejects(client.saveProvider({ ...provider, version: 'stale', credential: { action: 'clear' } }), error => error.status === 409);
+  assert.equal(providers.providers.find(item => item.id === provider.id)!.auth.keySet, true);
+  await assert.rejects(client.saveProvider({ ...provider, version: 'stale', credential: { action: 'clear' } }), error => (error as { status?: number }).status === 409);
   providers = await client.saveProvider({ ...provider, version: providers.version, credential: { action: 'clear' } });
-  assert.equal(providers.providers.find(item => item.id === provider.id).auth.keySet, false);
+  assert.equal(providers.providers.find(item => item.id === provider.id)!.auth.keySet, false);
   console.log('Native provider settings: add/replace/preserve/clear/redact + CAS +0600 passed. No inference.');
   console.log('Native MCP settings: replace/preserve/redact/remove keys, reject unknown/stale writes, and persist WhisperType local backend passed. No inference.');
 } finally {

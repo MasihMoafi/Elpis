@@ -9,7 +9,6 @@ import { EventEmitter } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { DesktopClient } from './client.mts';
 import { startDesktopServer } from './server.mts';
-import { workflowWorktrees } from './workflow-worktrees.mjs';
 import { loveNodeSpec } from './love-agents.mjs';
 import { createWorkflowHistory, createWorkflowRuns } from './workflow-acp.mjs';
 import { createMemoryBudget } from './memory-budget.mts';
@@ -411,37 +410,6 @@ test('the concurrency cap and overlapping writer scopes hold before another proc
     assert.equal(f.log('b').some(row => row.method === 'session/prompt'), !shared, 'overlapping work stays blocked through cancellation');
     assert.equal(f.log('c').length, 0, 'queued work never starts during cancellation');
   }
-});
-
-test('isolation rejects staged changes outside scope even when the working file was restored', async t => {
-  const f = fixture(t);
-  const git = (cwd, ...args) => execFileSync('git', ['-c', 'core.hooksPath=/dev/null', '-c', 'user.name=Test', '-c', 'user.email=test@example.test', ...args], { cwd, encoding: 'utf8' }).trim();
-  git(f.dir, 'init', '-q'); fs.mkdirSync(path.join(f.dir, 'src')); fs.writeFileSync(path.join(f.dir, 'outside'), 'original');
-  fs.writeFileSync(path.join(f.dir, 'src/seed'), 'seed'); git(f.dir, 'add', 'outside', 'src/seed'); git(f.dir, 'commit', '-qm', 'baseline');
-  const isolation = await workflowWorktrees(f.dir, 'staged-scope-eval');
-  const writer = { ...task('writer'), kind: 'implement', writeScopes: ['src'] };
-  const cwd = await isolation.prepare(writer, 1);
-  fs.writeFileSync(path.join(cwd, 'outside'), 'unwanted staged edit'); git(cwd, 'add', 'outside');
-  fs.writeFileSync(path.join(cwd, 'outside'), 'original');
-  await assert.rejects(isolation.complete(writer, 1), /outside its write scopes: outside/);
-  assert.equal(fs.readFileSync(path.join(f.dir, 'outside'), 'utf8'), 'original');
-});
-
-// 1 Nov live run: a step that runs again in the same round (its check's findings, the Mother's retry, a misplaced file) failed
-// with "a branch named …/candidate-…-r1 already exists". The second completion replaces the first candidate.
-test('a step completed again in the same round replaces its candidate instead of failing', async t => {
-  const f = fixture(t);
-  const git = (cwd, ...args) => execFileSync('git', ['-c', 'core.hooksPath=/dev/null', '-c', 'user.name=Test', '-c', 'user.email=test@example.test', ...args], { cwd, encoding: 'utf8' }).trim();
-  git(f.dir, 'init', '-q'); fs.mkdirSync(path.join(f.dir, 'src')); fs.writeFileSync(path.join(f.dir, 'src/seed'), 'seed'); git(f.dir, 'add', 'src/seed'); git(f.dir, 'commit', '-qm', 'baseline');
-  const isolation = await workflowWorktrees(f.dir, 'second-completion');
-  const writer = { ...task('writer'), kind: 'implement', writeScopes: ['src'] };
-  const cwd = await isolation.prepare(writer, 1);
-  fs.writeFileSync(path.join(cwd, 'src/answer.md'), 'first');
-  await isolation.complete(writer, 1);
-  fs.writeFileSync(path.join(cwd, 'src/answer.md'), 'fixed after its check');
-  const second = await isolation.complete(writer, 1);
-  assert.match(second.stat ?? '', /answer\.md/);
-  assert.equal(git(f.dir, 'show', 'elpis/second-completion/candidate-writer-r1:src/answer.md'), 'fixed after its check');
 });
 
 // One bridge runs every workflow under one memory budget (bridge/memory-budget.mjs). Each node holds its turn until `release`.

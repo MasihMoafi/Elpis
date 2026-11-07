@@ -7,7 +7,7 @@ import { runAcpNode, handoffText } from './acp-nodes.mts';
 import { workflowRoute, quotaFailure } from './workflow-models.mts';
 import { checkPlan } from './canvas-plan.mts';
 import { agentParentId } from '../lib/agent-runs.mts';
-import { workflowWorktrees, mergeWorkflowReview, checkWorkflowReview, workflowCandidateChanged, removeWorkflowWorkspace } from './workflow-worktrees.mjs';
+import { workflowWorktrees, mergeWorkflowReview, checkWorkflowReview, workflowCandidateChanged, removeWorkflowWorkspace } from './workflow-worktrees.mts';
 import { workerBudget } from './memory-budget.mts';
 
 const ended = new Set(['succeeded', 'failed', 'cancelled', 'blocked']);
