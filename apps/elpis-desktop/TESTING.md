@@ -20,7 +20,7 @@ Each run prints `/tmp/elpis-test-gate-*/summary.json` and keeps per-file TAP and
 
 Focused checks: `npm run test:drafts` (drafts); `tests/project-journey.runtime.mjs` checks the actual desktop and installed runtime with isolated local inference.
 
-Opt-ins stay explicit; never run the whole tier blindly. `ELPIS_TEST_ENGINE=/absolute/elpis-next node --test tests/composer-engine.test.mjs` uses an isolated engine without inference. Native window tests (`code-opens-electron`, `session-windows-electron`) need a private display: `ELPIS_PRIVATE_DISPLAY=1 xvfb-run -a flock /tmp/elpis-desktop-ui.lock node --test tests/<file>.test.cjs`. Other runtime scripts document their arguments and profile isolation in their headers; some make subscription turns. Keep `ELPIS_HOME` isolated and read the script before running it.
+Opt-ins stay explicit; never run the whole tier blindly. `ELPIS_TEST_ENGINE=/absolute/elpis-next node --test tests/composer-engine.test.mts` uses an isolated engine without inference. Native window tests (`code-opens-electron`, `session-windows-electron`) need a private display: `ELPIS_PRIVATE_DISPLAY=1 xvfb-run -a flock /tmp/elpis-desktop-ui.lock node --test tests/<file>.test.cjs`. Other runtime scripts document their arguments and profile isolation in their headers; some make subscription turns. Keep `ELPIS_HOME` isolated and read the script before running it.
 
 ## Artifact gate and install
 

@@ -1,0 +1,91 @@
+// Real packaged app and engine (tests/real-app.cts): a screenshot taken while Elpis runs shows a thumbnail in the screen's
+// corner, as macOS does; clicking it adds that screenshot to the open Love Spot page, and ignoring it does nothing (A239,
+// 24 Oct: "or at least pops up and if I press it it does it"; 5 Nov: "when I want to post a screenshot, it shouldn't open
+// a new page"). GNOME saves screenshots to ~/Pictures/Screenshots;
+// the copy's throwaway HOME has its own.
+// ELPIS_TEST_APP=/packaged/app ELPIS_TEST_ENGINE=$HOME/.local/bin/elpis-next ELPIS_PLAYWRIGHT_PACKAGE=... [ELPIS_TEST_PORT=9463]
+// [ELPIS_TEST_SHOTS=/dir] node --test tests/love-spot-screenshot-popup.runtime.cts
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const { startApp, stopApp, skipFirstRun } = require('./real-app.cts');
+const { chooseTheme } = require('./controls.cjs');
+
+type PopupPage = { url(): string; locator(selector: string): { count(): Promise<number>; click(): Promise<void> }; waitForTimeout(ms: number): Promise<void>; screenshot(options: { path: string }): Promise<void>; waitForEvent(event: string, options: { timeout: number }): Promise<void> };
+type Browser = { contexts(): { pages(): PopupPage[] }[] };
+type ScreenshotPage = { evaluate(fn: (colour: string) => string, colour: string): Promise<string> };
+type BoardPage = { evaluate<T>(fn: () => Promise<T>): Promise<T> };
+
+/** A screenshot as GNOME writes one: a real PNG drawn in the app's page, saved under the copy's Pictures/Screenshots. */
+async function takeScreenshot(page: ScreenshotPage, home: string, name: string, colour: string) {
+  const dataURL = await page.evaluate((colour: string) => {
+    const canvas = Object.assign(document.createElement('canvas'), { width: 960, height: 600 }), c = canvas.getContext('2d');
+    if (!c) throw Error('Canvas context unavailable');
+    c.fillStyle = colour; c.fillRect(0, 0, 960, 600); c.fillStyle = '#fff'; c.fillRect(80, 80, 400, 120);
+    return canvas.toDataURL('image/png');
+  }, colour);
+  const folder = path.join(home, 'Pictures/Screenshots');
+  await fs.mkdir(folder, { recursive: true });
+  const encoded = dataURL.split(',')[1]; if (!encoded) throw Error('Invalid screenshot data');
+  await fs.writeFile(path.join(folder, name), Buffer.from(encoded, 'base64'));
+}
+
+const popupPage = (browser: Browser) => browser.contexts().flatMap(context => context.pages()).find(page => page.url().includes('screenshot-popup.html'));
+async function waitForPopup(browser: Browser, timeout = 10000) {
+  for (const end = Date.now() + timeout; Date.now() < end; await new Promise(resolve => setTimeout(resolve, 200))) {
+    const page = popupPage(browser);
+    if (page && await page.locator('.shot.in img[src^="data:image/png"]').count().catch(() => 0)) return page;
+  }
+  throw new Error('No screenshot thumbnail appeared');
+}
+const board = (page: BoardPage) => page.evaluate(async () => {
+  const [scene, pages, tray] = await Promise.all(['/api/love-spot', '/api/love-spot/pages', '/api/love-spot/screenshots'].map(url => fetch(url).then(r => r.json())));
+  return { page: scene.scene.page.name, images: scene.scene.elements.filter((e: { type: string; isDeleted: boolean }) => e.type === 'image' && !e.isDeleted).length, pages: pages.pages.map((p: { name?: string } | string) => typeof p === 'string' ? p : p.name ?? p), tray: tray.screenshots.map((s: { name: string }) => s.name) };
+});
+
+test('a new screenshot pops up a thumbnail; ignoring it does nothing and clicking it adds it to the open Love Spot page', {
+  skip: !process.env.ELPIS_TEST_APP || !process.env.ELPIS_TEST_ENGINE, timeout: 180000,
+}, async () => {
+  const port = Number(process.env.ELPIS_TEST_PORT || 9463), shots = process.env.ELPIS_TEST_SHOTS;
+  let running;
+  try {
+    running = await startApp({ app: process.env.ELPIS_TEST_APP, port, engine: process.env.ELPIS_TEST_ENGINE });
+    const { page, browser, home } = running;
+    await skipFirstRun(page);
+    await page.waitForTimeout(1500);
+    const start = await board(page);
+
+    // Ignored: the thumbnail leaves by itself and nothing changes, except that Love Spot's tray still offers the screenshot.
+    await takeScreenshot(page, home, 'Screenshot From 2026-10-24 21-00-01.png', '#3a6ea5');
+    const ignored = await waitForPopup(browser);
+    if (shots) await ignored.waitForTimeout(400), await ignored.screenshot({ path: path.join(shots, 'popup-light.png') });
+    await ignored.waitForEvent('close', { timeout: 12000 });
+    const after = await board(page);
+    assert.equal(after.page, start.page, 'ignoring the thumbnail must not change the Love Spot page');
+    assert.deepEqual(after.pages, start.pages, 'ignoring the thumbnail must not add a page');
+    assert.equal(after.images, start.images);
+    assert.ok(after.tray.includes('Screenshot From 2026-10-24 21-00-01.png'), 'the ignored screenshot stays in the Love Spot tray');
+    assert.equal(await page.locator('.love-spot-editor').count(), 0, 'ignoring the thumbnail must not open Love Spot');
+
+    // Clicked: Elpis shows Love Spot on the same page, with the screenshot added to it.
+    if (shots) await chooseTheme(page, 'dark');
+    await takeScreenshot(page, home, 'Screenshot From 2026-10-24 21-00-09.png', '#a53a6e');
+    const popup = await waitForPopup(browser);
+    if (shots) await popup.waitForTimeout(400), await popup.screenshot({ path: path.join(shots, 'popup-dark.png') });
+    await popup.locator('.shot').click();
+    await page.locator('.love-spot-editor canvas.excalidraw__canvas.static').waitFor({ timeout: 20000 });
+    await page.waitForTimeout(1500);
+    const opened = await board(page);
+    assert.equal(opened.page, start.page, 'the screenshot goes onto the open page');
+    assert.deepEqual(opened.pages, start.pages, 'no page is added');
+    assert.equal(opened.images, start.images + 1, 'the open page holds the screenshot');
+    assert.ok(!opened.tray.includes('Screenshot From 2026-10-24 21-00-09.png'), 'the opened screenshot leaves the tray');
+    assert.equal(popupPage(browser), undefined, 'the thumbnail closes once clicked');
+    if (shots) {
+      await page.screenshot({ path: path.join(shots, 'opened-dark.png') });
+      await chooseTheme(page, 'light'); await page.locator('aside.sidebar [data-nav-page="loveSpot"]').click(); await page.waitForTimeout(1500);
+      await page.screenshot({ path: path.join(shots, 'opened-light.png') });
+    }
+  } finally { await stopApp(running); }
+});

@@ -1,0 +1,202 @@
+// Agent work worded as Claude's desktop app words it (its ion-dist source): a running step is the model's own sentence
+// with a ticking timer ("1m 2s") and the Elpis working mark; a finished group lists what was done in the order it began, with the
+// failure count on its own phrase ("Edited and read app.ts, used rag, ran 2 commands (1 failed)"); one described step
+// reads as its sentence. Local fixture of the bridge (parity-fixture); no engine, no model.
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const { fixture, CWD } = require('./parity-fixture.cjs');
+
+const SENTENCE = 'Stopping local site and moving worktree and running setup into legal';
+const unknown = (command: string) => [{ type: 'unknown', command }];
+const command = (id: string, extra: object = {}) => ({ id, type: 'commandExecution', command: `npm run ${id}`, cwd: CWD, status: 'completed', exitCode: 0, aggregatedOutput: 'ok', durationMs: 900, commandActions: unknown(`npm run ${id}`), ...extra });
+const read = (id: string, name: string) => command(id, { command: `sed -n 1,40p src/${name}`, commandActions: [{ type: 'read', command: `sed -n 1,40p src/${name}`, name, path: `${CWD}/src/${name}` }] });
+const change = (id: string, kind: string, path: string) => ({ id, type: 'fileChange', status: 'completed', changes: [{ path, kind: { type: kind }, diff: '- a\n+ b' }] });
+const CHAT = [
+  ['t1', 'Tidy the build folder.', 'Tidied.', [command('c1', { command: 'ls -la /tmp/build', description: 'Listed everything created outside the legal folder' })]],
+  ['t2', 'Fix the parser.', 'Parser fixed.', [change('f1', 'update', 'src/app.ts'), read('r1', 'app.ts'),
+    { id: 'm1', type: 'mcpToolCall', server: 'rag', tool: 'search', status: 'completed', arguments: { query: 'parser' }, result: { content: [{ type: 'text', text: '2 hits' }] } },
+    command('c2'), command('c3', { status: 'failed', exitCode: 1, aggregatedOutput: 'Error: expected 2, got 3' })]],
+  ['t3', 'Survey the repo.', 'Surveyed.', [command('s1', { commandActions: [{ type: 'search', command: 'rg TODO', query: 'TODO', path: null }] }), command('l1', { commandActions: [{ type: 'listFiles', command: 'ls src', path: 'src' }] }),
+    read('r2', 'a.ts'), read('r3', 'b.ts'), change('f2', 'add', 'notes/new.md'), change('f3', 'delete', 'notes/old.md')]],
+  // The running turn is always t4 in the fixture.
+  ['t4', 'Restart the local site.', 'Restarting.', [command('c4', { command: 'pkill -f dev && git worktree move a b', description: SENTENCE, status: 'inProgress', exitCode: null, aggregatedOutput: '', durationMs: null })]],
+];
+const seconds = (text: string) => { const m = text.match(/^(?:(\d+)m )?(\d+)s$/); if (!m) throw Error(`a timer reads "39s" or "1m 2s", not "${text}"`); return Number(m[1] ?? 0) * 60 + Number(m[2]); };
+const captures = process.env.ELPIS_APP_SCREENSHOTS || '/tmp';
+
+type Bounds = { x: number; y: number; width: number; height: number };
+type Locator = { locator(selector: string): Locator; filter(options: object): Locator; getByText(text: string, options: object): Locator; all(): Promise<Locator[]>; allInnerTexts(): Promise<string[]>; click(): Promise<void>; waitFor(): Promise<void>; innerText(): Promise<string>; count(): Promise<number>; evaluate<T>(fn: (node: HTMLElement) => T): Promise<T>; boundingBox(): Promise<Bounds | null>; last(): Locator };
+type Page = { locator(selector: string): Locator; waitForTimeout(ms: number): Promise<void>; emulateMedia(options: object): Promise<void>; screenshot(options: object): Promise<void> };
+async function using(run: (f: { page: Page }) => Promise<void>) {
+  const f = await fixture({ running: true, chat: CHAT, height: 760 });
+  try { await f.open('chat-a'); await run(f); assert.deepEqual(f.errors, []); } finally { await f.close(); }
+}
+
+test('finished groups read as Claude words them, and a described step reads as its sentence', () => using(async ({ page }) => {
+  for (const fold of await page.locator('.worked-for').all()) {
+    await fold.locator('> summary').click();
+    await fold.locator('> .worked-for-body').waitFor();
+  }
+  const rows = (await page.locator('.activity-group:not(:has(.live-timer)) > summary .activity-group-label').allInnerTexts()).map(text => text.trim());
+  assert.deepEqual(rows, [
+    'Listed everything created outside the legal folder',
+    'Edited and read app.ts, used rag, ran 2 commands (1 failed)',
+    'Searched code, listed files, read 2 files, created a file, deleted a file',
+  ]);
+  // The failure count sits on its phrase, in red, and nothing else is red in the row.
+  const mixed = page.locator('.activity-group > summary').filter({ hasText: /^Edited and read app\.ts/ });
+  const mark = mixed.locator('.activity-group-failed');
+  assert.equal((await mark.innerText()).trim(), '(1 failed)');
+  assert.equal(await mixed.locator('.live-timer').count(), 0, 'a finished row has no timer');
+  await mixed.click();
+  const mixedGroup = mixed.locator('..');
+  await mixedGroup.locator('> .activity-group-body').waitFor();
+  assert.equal(await mixedGroup.getByText('2 hits', { exact: true }).count(), 0, 'tool output stays lazy until its own row opens');
+  await mixedGroup.locator('.step-title').filter({ hasText: /rag/i }).click();
+  await mixedGroup.getByText('2 hits', { exact: true }).waitFor();
+  // Opened, the described command is titled by its sentence and still shows its script.
+  const single = page.locator('.activity-group').filter({ hasText: /^Listed everything created/ });
+  await single.locator('> summary').click();
+  assert.equal((await single.locator('.step-title').innerText()).trim(), 'Listed everything created outside the legal folder');
+  assert.match(await single.locator('.step-script').innerText(), /ls -la \/tmp\/build/);
+}));
+
+test('a running step has its sentence, ticking timer and filled rotor, in both themes and under reduced motion', () => using(async ({ page }) => {
+  const live = page.locator('.activity-group').filter({ has: page.locator('.live-timer') });
+  await live.locator('.live-timer').waitFor();
+  assert.equal((await live.locator('.live-label').innerText()).trim(), SENTENCE, 'the sentence, not "Running <command>"');
+  assert.doesNotMatch(await live.locator('> summary').innerText(), /pkill|worktree move/, 'the raw command stays inside the opened step');
+  const timer = live.locator('.live-timer');
+  const first = seconds((await timer.innerText()).trim());
+  assert.ok(first >= 119 && first <= 130, `the timer counts from the step's start (${first}s)`);
+  await page.waitForTimeout(2300);
+  const later = seconds((await timer.innerText()).trim());
+  assert.ok(later >= first + 2, `the timer ticks (${first}s, then ${later}s)`);
+  // The working mark has one place, the turn's foot (29 Oct, Masih: "you can see the working animation changes its place!").
+  assert.equal(await live.locator('.elpis-working-mark').count(), 0, 'the running row has no mark of its own');
+  const rotor = page.locator('.turn-working .elpis-working-rotor');
+  const rotation = () => rotor.evaluate(node => getComputedStyle(node).transform);
+  assert.notEqual(await rotor.evaluate(node => getComputedStyle(node).animationName), 'none');
+  const firstRotation = await rotation();
+  await page.waitForTimeout(700);
+  assert.notEqual(await rotation(), firstRotation, 'the filled shape rotates smoothly');
+  assert.equal(await page.locator('.turn-working .elpis-working-mark image').count(), 0, 'the working mark has no E');
+  // Light, then dark: the row is fully inside the chat column and legible.
+  for (const scheme of ['light']) {
+    await page.emulateMedia({ colorScheme: scheme }); await page.waitForTimeout(200);
+    const box = await live.locator('> summary').boundingBox(), column = await page.locator('.turn').last().boundingBox();
+    if (!box || !column) throw Error('live row or chat column is not visible');
+    assert.ok(box.x >= column.x - 8 && box.x + box.width <= column.x + column.width + 1, `${scheme}: the row fits the chat column`);
+    await fs.mkdir(captures, { recursive: true });
+    await page.screenshot({ path: path.join(captures, `step-sentences-${scheme}.png`) });
+  }
+  await page.emulateMedia({ reducedMotion: 'reduce' }); await page.waitForTimeout(100);
+  assert.equal(await rotor.evaluate(node => getComputedStyle(node).animationDuration), '4s', 'the approved hexagon (d5fc7f16c) keeps its speed under reduced motion');
+}));
+
+for (const input of ['pointer', 'keyboard']) {
+  test(`Thought exposes recorded reasoning with one ${input} activation`, async () => {
+    const expected = 'The recorded fixture summary.';
+    const f = await fixture({ running: true, chat: [['t4', 'Check the recorded step.', 'I will check the record.',
+      [{ id: 'reasoning-fixture', type: 'reasoning', status: 'completed', summary: [expected], content: [] }]]] });
+    try {
+      await f.open('chat-a');
+      const group = f.page.locator('.activity-group'), head = group.locator('> summary');
+      assert.equal(await group.count(), 1); assert.equal((await head.innerText()).trim(), 'Thought');
+      for (const scheme of ['light']) {
+        await f.page.emulateMedia({ colorScheme: scheme });
+        if (input === 'keyboard') { await head.focus(); await head.press('Enter'); } else await head.click();
+        await group.locator('> summary[aria-expanded="true"]').waitFor();
+        if (input === 'pointer') {
+          await fs.mkdir(captures, { recursive: true });
+          await f.page.screenshot({ path: path.join(captures, `thought-recorded-${scheme}.png`) });
+        }
+        assert.equal(await group.getByText(expected, { exact: true }).isVisible(), true, `${scheme}: the first activation exposes recorded text`);
+        if (input === 'keyboard') await head.press('Space'); else await head.click();
+        await group.locator('> summary[aria-expanded="false"]').waitFor();
+        assert.equal(await group.getByText(expected, { exact: true }).isVisible(), false, 'closing the outer group hides its contents');
+      }
+      assert.deepEqual(f.errors, []);
+    } finally { await f.close(); }
+  });
+}
+
+test('empty reasoning stays hidden while real streamed summaries and recorded content remain readable and copyable', async () => {
+  const f = await fixture({ running: true, chat: [
+    ['t1', 'Read the earlier result.', 'Earlier result.', [
+      { id: 'empty-reasoning', type: 'reasoning', status: 'completed', summary: [], content: [] },
+      { id: 'blank-reasoning', type: 'reasoning', status: 'completed', summary: ['', ' \n '], content: ['\t'] },
+    ]],
+    ['t4', 'Check the live step.', 'I will check it.', [
+      { id: 'streamed-reasoning', type: 'reasoning', status: 'inProgress', summary: ['  '], content: [] },
+    ]],
+  ] });
+  try {
+    await f.open('chat-a');
+    await f.page.getByText('Earlier result.', { exact: true }).waitFor();
+    assert.equal(await f.page.locator('.worked-for').count(), 0, 'empty recorded reasoning does not create an empty work disclosure');
+    assert.equal(await f.page.locator('.activity-group').count(), 0, 'empty and whitespace-only reasoning have no activity row');
+    assert.equal(await f.page.locator('.step-title').filter({ hasText: /^Reasoning$/ }).count(), 0);
+    await f.page.locator('.turn-working[role="status"]').waitFor();
+    assert.equal(await f.page.locator('.turn-working[role="status"]').count(), 1, 'a running turn still reports that it is working');
+    f.emit('message', { method: 'item/reasoning/summaryTextDelta', params: { threadId: 'chat-a', turnId: 't4', itemId: 'streamed-reasoning', summaryIndex: 0,
+      delta: 'The recorded streamed summary.\n\n```text\nkeep_exact()\n```' } });
+    const group = f.page.locator('.activity-group'), head = group.locator('> summary');
+    await head.waitFor(); await head.focus(); await head.press('Enter');
+    await group.getByText('The recorded streamed summary.', { exact: true }).waitFor();
+    assert.equal(await group.locator('.step-title').filter({ hasText: /^Reasoning$/ }).count(), 1);
+    assert.equal(await f.page.locator('.turn-working').count(), 1, 'the working mark stays at the turn\'s foot while reasoning streams');
+    await group.getByRole('button', { name: 'Copy code', exact: true }).click();
+    await f.page.waitForFunction(() => (window as Window & { __copied?: string }).__copied === 'keep_exact()');
+    assert.equal(await f.copied(), 'keep_exact()');
+    f.emit('message', { method: 'item/completed', params: { threadId: 'chat-a', turnId: 't4', item: {
+      id: 'streamed-reasoning', type: 'reasoning', status: 'completed', summary: [], content: ['The recorded content fallback.'],
+    } } });
+    await group.getByText('The recorded content fallback.', { exact: true }).waitFor();
+    assert.equal(await group.count(), 1, 'completion updates the same visible reasoning group');
+    assert.equal(await group.getByText('The recorded streamed summary.', { exact: true }).count(), 0);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+for (const scheme of ['light']) for (const input of ['pointer', 'keyboard']) {
+  test(`long tool groups stay collapsible after scrolling (${scheme}, ${input})`, async () => {
+    const work = Array.from({ length: 16 }, (_, index) => command(`long-${index}`, {
+      description: `Inspect fixture file ${index + 1}`,
+      aggregatedOutput: Array.from({ length: 24 }, (_, line) => `File ${index + 1}, output line ${line + 1}`).join('\n'),
+    }));
+    const f = await fixture({ staticDir: process.env.ELPIS_BASELINE_EXPORT || undefined, running: true, height: scheme === 'dark' ? 520 : 760, colorScheme: scheme,
+      chat: [['t4', 'Inspect these files.', 'Inspection continues.', work]] });
+    try {
+      await f.open('chat-a');
+      if (input === 'keyboard') await f.page.setViewportSize({ width: 700, height: scheme === 'dark' ? 520 : 760 });
+      const group = f.page.locator('.activity-group'), head = group.locator('> summary');
+      await head.click();
+      await group.locator('> summary[aria-expanded="true"]').waitFor();
+      await group.locator('.step').last().scrollIntoViewIfNeeded();
+      const scroll = f.page.locator('.chat-scroll'), box = await scroll.boundingBox();
+      // Scroll in the chat's right padding, rather than an individual output's inner scrollbar.
+      await f.page.mouse.move(box.x + box.width - 20, box.y + box.height / 2);
+      const before = await scroll.evaluate((node: HTMLElement) => node.scrollTop);
+      await f.page.mouse.wheel(0, -800);
+      await f.page.waitForFunction((start: number) => (document.querySelector('.chat-scroll')?.scrollTop ?? 0) < start - 400, before);
+      const bounds = await head.boundingBox();
+      await fs.mkdir(captures, { recursive: true });
+      await f.page.screenshot({ path: path.join(captures, `tool-collapse-${scheme}-${input}-scrolled.png`) });
+      assert.ok(bounds.y >= box.y - 1 && bounds.y + bounds.height <= box.y + box.height + 1,
+        `collapse header remains within the chat viewport after scrolling: ${JSON.stringify({ bounds, viewport: box })}`);
+      assert.ok(Math.abs(bounds.y - box.y) <= 1, 'the pinned header meets the top edge, without stray tool text above it');
+      assert.ok(bounds.x >= box.x && bounds.x + bounds.width <= box.x + box.width + 1, 'the header fits the chat column');
+      if (input === 'keyboard') { await head.focus(); await head.press(scheme === 'dark' ? 'Space' : 'Enter'); } else await head.click();
+      await group.locator('> summary[aria-expanded="false"]').waitFor();
+      const closed = await head.boundingBox();
+      assert.ok(closed.y >= box.y - 1 && closed.y + closed.height <= box.y + box.height + 1, 'closing keeps the same summary reachable');
+      await head.click();
+      await group.locator('> summary[aria-expanded="true"]').waitFor();
+      assert.equal(await group.locator('.step-card').count(), 16, 'reopening preserves all tool output');
+      assert.deepEqual(f.errors, []);
+    } finally { await f.close(); }
+  });
+}

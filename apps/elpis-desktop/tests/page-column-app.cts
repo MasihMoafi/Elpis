@@ -6,7 +6,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const { chooseTheme, leaveSettings } = require('./controls.cjs');
-const { ledgerGeometry, sameLedger, sharedColumns } = require('./page-column.cjs');
+const { ledgerGeometry, sameLedger, sharedColumns } = require('./page-column.cts');
 
 (async () => {
   const [port, home, shots, widthText = '2000', theme = 'light'] = process.argv.slice(2);

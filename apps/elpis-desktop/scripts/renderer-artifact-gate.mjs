@@ -64,7 +64,7 @@ export const retainedUpdates = {
       "approval": "af885eb4978ee37e98e1df11423d545be9a1c75f",
       "reason": "Masih 27 Oct: \"Please fix them all\". Follow deliberate 27 Oct changes: row hover Pin/Bookmark/Archive moved into the row's menu (577d5a5ad, R83) and Move to project under Organize (54442dcc7); Colour in chat menus (577d5a5ad, R84, SPEC C8); an idle ring is not a status (R8); Settings grouped as ChatGPT's and centred (d79d50cbe); Stop plain in both themes (00996c210, R22); the message fold wrapper (540411af9); agent rows show their mark and model (d832d5067). Assertions are kept or made stricter."
     },
-    "tests/chat-worktree.test.cjs": {
+    "tests/chat-worktree.test.cts": {
       "blob": "1cc85cebd18d3e584f71b73410f1771c5251205d",
       "approval": "af885eb4978ee37e98e1df11423d545be9a1c75f",
       "reason": "Masih 27 Oct: \"Please fix them all\". Follow deliberate 27 Oct changes: row hover Pin/Bookmark/Archive moved into the row's menu (577d5a5ad, R83) and Move to project under Organize (54442dcc7); Colour in chat menus (577d5a5ad, R84, SPEC C8); an idle ring is not a status (R8); Settings grouped as ChatGPT's and centred (d79d50cbe); Stop plain in both themes (00996c210, R22); the message fold wrapper (540411af9); agent rows show their mark and model (d832d5067). Assertions are kept or made stricter."
@@ -84,7 +84,7 @@ export const retainedUpdates = {
       "approval": "4778be07db9e766833b6797f1884f05dd9666cd1",
       "reason": "Masih 27 Oct (takeover list): \"Settings grouped as ChatGPT's (Personal, Integrations, Coding, Archived)\", built in d79d50cbe, with Browser settings added in c5e2a69fc. The sweep visits the pages in that order; its checks are unchanged."
     },
-    "tests/history-paging.test.cjs": {
+    "tests/history-paging.test.cts": {
       "blob": "1d5a27b96dd6ee101bb2953ba0e4405d14c30a6f",
       "approval": "7f37528ca78fffdfdd84ff7b8ea796d3faea772c",
       "reason": "Masih 27 Oct: Load earlier messages is stuck against the transcript; use the ChatGPT spacing reference. Extend the retained history owner to assert a readable gap while preserving complete pagination, retry, compaction and scroll behavior."
@@ -99,7 +99,7 @@ export const retainedUpdates = {
       "approval": "cfb6ed796d1598377c58dd370b93bfdf06294ef3",
       "reason": "Masih 27 Oct: HTML documents render with project-local computation; large text remains readable without a huge editor; cards and selected passages support explicit review/edit/removal feedback without sending unfinished text; secondary composer options collapse instead of wrapping; Fast feedback follows confirmed state and chat scope. Preserve existing file-save, PDF, image, chat and slash-command contracts; replace obsolete 512KB rejection expectations with bounded preview proof. Retain the original baseline."
     },
-    "tests/canvas-father.test.cjs": {
+    "tests/canvas-father.test.cts": {
       "blob": "78c1053e9cf7bc9fa66af647dbc7a4e254b6030e",
       "approval": "83d8782efe44951a031ad62e860228650d5d070f",
       "reason": "Masih 27 Oct: workflow History dismisses outside/on Escape; new drafts remain available during active runs; sandbox and project selection preserve the board; saved runs show their actual team in chat and both views; remove redundant sidebar colour dots; Ctrl/Cmd+A follows explicit board or editor focus. Retain existing behavior checks, aim node-selection journeys at the focused board, and add focused recovery/identity regressions without advancing the retained baseline."
@@ -144,7 +144,7 @@ export const retainedUpdates = {
       "approval": "af885eb4978ee37e98e1df11423d545be9a1c75f",
       "reason": "Masih 27 Oct: \"it's ugly; showing all sorts of things it shouldn't. The workflow particularly.\" then \"Please fix them all\". Workflows drops Kahn's order, the critical path, the reading list, the key strip and wave labels (SPEC.md Workflows, Removed); the minimap starts hidden; the run clock is a small time in the header; patterns open from the pattern menu and the guide sits under the board. Only assertions on removed elements changed; the rest are kept."
     },
-    "tests/canvas-run.test.cjs": {
+    "tests/canvas-run.test.cts": {
       "blob": "acf1b1e2e9ff45144f2157d71f8d8c0b434ea8ab",
       "approval": "af885eb4978ee37e98e1df11423d545be9a1c75f",
       "reason": "Masih 27 Oct: \"it's ugly; showing all sorts of things it shouldn't. The workflow particularly.\" then \"Please fix them all\". Workflows drops Kahn's order, the critical path, the reading list, the key strip and wave labels (SPEC.md Workflows, Removed); the minimap starts hidden; the run clock is a small time in the header; patterns open from the pattern menu and the guide sits under the board. Only assertions on removed elements changed; the rest are kept."
@@ -224,12 +224,12 @@ export const retainedUpdates = {
       "approval": "af885eb4978ee37e98e1df11423d545be9a1c75f",
       "reason": "Masih 27 Oct: \"it's ugly; showing all sorts of things it shouldn't. The workflow particularly.\" then \"Please fix them all\". Workflows drops Kahn's order, the critical path, the reading list, the key strip and wave labels (SPEC.md Workflows, Removed); the minimap starts hidden; the run clock is a small time in the header; patterns open from the pattern menu and the guide sits under the board. Only assertions on removed elements changed; the rest are kept."
     },
-    "tests/step-sentences.test.cjs": {
+    "tests/step-sentences.test.cts": {
       "blob": "35c9d36d67b257d1e3a40ad72e26c3fc76cbdf81",
       "approval": "dcf3b67c6df4340a3edbe285658f3069be456e83",
       "reason": "Wait for each opened lazy activity body before reading all finished sentences; every sentence and pointer/keyboard disclosure assertion remains. S36/R74, Masih 26 Oct: hide empty Reasoning and missing-summary placeholders. Replace obsolete empty-disclosure pointer/keyboard cases with saved-empty to streamed-summary to recorded-content lifecycle proof; preserve real-summary pointer/keyboard in both themes, working status, disclosure and exact code-copy assertions. Raw history remains unchanged. Masih 29 Oct: \"you can see the working animation changes its place!\". The working mark has one place, the turn's foot; a running row keeps its sentence and ticking timer without a mark. Every other assertion remains."
     },
-    "tests/night-workflows.test.cjs": {
+    "tests/night-workflows.test.cts": {
       "blob": "b7a51ea7c95482c50d29d9c0fd67ee0e360eece7",
       "approval": "325dac7f8f719014b25252b0e369bf0e1bee7b2a",
       "reason": "Retain the installed workflow simplification from 141be35a2d4e0ff10691bf670b759eecba52947d: plain agents replace removed character artwork. Preserve all five numbered patterns, editable prompts, Escape/typing, colour and no-portrait checks in both canvas views."
@@ -264,12 +264,12 @@ export const retainedUpdates = {
       "approval": "325dac7f8f719014b25252b0e369bf0e1bee7b2a",
       "reason": "Historical turns defer off-screen content. Scroll the actual visible placeholder before requiring its message; keep newest drawn, oldest skipped, navigation and no-send assertions."
     },
-    "tests/follow-up-queue.test.cjs": {
+    "tests/follow-up-queue.test.cts": {
       "blob": "dc96a06c9ed8415f75b66d86de2f58f47ee18a93",
       "approval": "325dac7f8f719014b25252b0e369bf0e1bee7b2a",
       "reason": "S35 persistent menubar items are separate from popup choices. Keep exact send choices and all queue stack, send-now, remove and clear behavior checks."
     },
-    "tests/claude-composer.test.cjs": {
+    "tests/claude-composer.test.cts": {
       "blob": "cd00617e4219835bb46d26180f2af7a230e6aef3",
       "approval": "325dac7f8f719014b25252b0e369bf0e1bee7b2a",
       "reason": "S35 persistent menubar items are separate from popup choices. Keep the exact composer actions and all command, plan, keyboard and no-send checks."
@@ -329,7 +329,7 @@ export const retainedUpdates = {
       "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
       "reason": "Masih 24 Oct: all chats must already be collapsed every time. Open the parent branch before using its children; retain collapse/keyboard, exact attachments, failed sends, observation and no-write checks."
     },
-    "tests/chat-edits.test.cjs": {
+    "tests/chat-edits.test.cts": {
       "blob": "6a103a535903e9c2acfe88c8798a6d8829fabc97",
       "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
       "reason": "TESTING.md: wait for observable states. Await opened lazy transcript bodies and prune rows before counting them; retain exact content, ordering and failure assertions."
@@ -384,7 +384,7 @@ export const retainedUpdates = {
       "approval": "fbe94e91f9d438cd87bcf582c03ce7f058e14a96",
       "reason": "CUSTOMIZE, Masih 22 Oct: \"The name of Ledger is incorrect for this, however. What do you think it should be called? ... Claude calls it customize\", then \"Yes please\". The page is Customize; this test follows its label (the chat's Context Ledger button keeps its name)."
     },
-    "tests/view-boundaries.test.cjs": {
+    "tests/view-boundaries.test.cts": {
       "blob": "ad77f2a2298ae388279ba3a26b20f0b63a1b408d",
       "approval": "325dac7f8f719014b25252b0e369bf0e1bee7b2a",
       "reason": "CUSTOMIZE, Masih 22 Oct: \"The name of Ledger is incorrect for this, however. What do you think it should be called? ... Claude calls it customize\", then \"Yes please\". The page is Customize; this test follows its label (the chat's Context Ledger button keeps its name). S35, Masih 25 Oct screenshot: the close control belongs at the right of the Elpis brand. Measure brand/close bounds in that order, retaining SVG, width and both-theme clipping checks."
@@ -407,7 +407,7 @@ export const retainedUpdates = {
     "tests/startup-splash.test.cts": {
       "blob": "2d301700cb300d3fe104b69d70f6329c4d104db6",
       "approval": "1de4129f742172ae62f0f63f5c3bd5d0a46374fe",
-      "reason": "BOOT, Masih 24 Oct: \"the splash must never wait on slow or failed data; show the app and fill lists as they arrive\" and \"Fix so the window always opens within ~2 s\". Preserve the approved gyroscope and both themes; replace the former conversation-wait and eight-second expectations with startup-responsive.test.cjs, which fails on the installed renderer. Mouse clicks still pass through the fade. Masih 24 Oct: a dark opening before a light app is wrong; the opening follows the app theme. Preserve every animation, timing and click-through assertion."
+      "reason": "BOOT, Masih 24 Oct: \"the splash must never wait on slow or failed data; show the app and fill lists as they arrive\" and \"Fix so the window always opens within ~2 s\". Preserve the approved gyroscope and both themes; replace the former conversation-wait and eight-second expectations with startup-responsive.test.cts, which fails on the installed renderer. Mouse clicks still pass through the fade. Masih 24 Oct: a dark opening before a light app is wrong; the opening follows the app theme. Preserve every animation, timing and click-through assertion."
     },
     "tests/sidebar-order.test.cjs": {
       "blob": "ee74fefc4d2b787f3ab2235e66126924458d54c6",
@@ -429,12 +429,12 @@ export const retainedUpdates = {
       "approval": "3b472fffa5c8b9158766709a6367f08a5f350b94",
       "reason": "A136/R32, Masih 22 Oct: the composer's cut corners are \"a different width ... ugly\"; they are now the border's own bevel, so the test asserts one border width and colour and no separate corner lines instead of the retired ::before and ::after lines."
     },
-    "tests/elpis-features.test.cjs": {
+    "tests/elpis-features.test.cts": {
       "blob": "4ea61facc7acc9044ebaf5bce4ad52f900b8a98d",
       "approval": "47a8a1712bb37dbf3df45f653d2678db9dd3a680",
       "reason": "A87/R28: feature controls keep their one-click checks with the approved logo accent"
     },
-    "tests/page-column.cjs": {
+    "tests/page-column.cts": {
       "blob": "e4e6b692bcfe74810bc0f0629dd5cd16393d956f",
       "approval": "fbe94e91f9d438cd87bcf582c03ce7f058e14a96",
       "reason": "A126: shared column measurements cover the centred page shells Then, Masih 22 Oct, \"Yes please\" to the page being called Customize; the label follows."
@@ -494,7 +494,7 @@ export const retainedUpdates = {
       "approval": "325dac7f8f719014b25252b0e369bf0e1bee7b2a",
       "reason": "SPEC O2 project creation uses known folder/chooser first; open Advanced: custom folder before typing. Deferred transcript bodies are opened and awaited before reading, preserving all activity/copy assertions. Masih 24 Oct: all chats start collapsed. Explicitly expand the parent before checking its child; preserve real exported renderer send, steer, interrupt, writable-history, theme and mobile journeys."
     },
-    "tests/sidebar-attention.test.cjs": {
+    "tests/sidebar-attention.test.cts": {
       "blob": "49489eeeeb40fb2d20ba75821b72040da2d19565",
       "approval": "9b3bfffb441e225b6d38cfdffb8f528c402d1c25",
       "reason": "Masih 27 Oct: explicit per-conversation colours replace idle markers while retaining active/unread/error semantics, alignment and keyboard proof; thinking stays visible as secondary controls collapse; GUI /resume visibly chooses and opens saved history. Retain document calculations, selected-text feedback before deliberate navigation fallback, paging and shared editing. Keep behavioral assertions and the immutable baseline."
@@ -528,7 +528,7 @@ export const retainedUpdates = {
       "approval": "fbe94e91f9d438cd87bcf582c03ce7f058e14a96",
       "reason": "LEDGER, Masih's approved request in GATE11: \"MCP and plugin switches, Add plugins\". Supply writable versions and check both switch states, metadata and exact save requests; keep skill and navigation checks. 22 Oct, Masih (relayed): the skills switch \"reacts slowly. He wants the UI to flip immediately while the backend catches up\"; the switch flips at once and goes back if refused. Then, Masih 22 Oct, \"Yes please\" to the page being called Customize; the label follows."
     },
-    "tests/night-themes.test.cjs": {
+    "tests/night-themes.test.cts": {
       "blob": "5deae3213e50c3df45df91e9fe810f5bbac84c53",
       "approval": "47a8a1712bb37dbf3df45f653d2678db9dd3a680",
       "reason": "A87, Masih: \"this logo color is the color I like to have all-across for both themes.\" Use the already updated exact-logo, interaction-state and contrast checks; retain all seven accent choices and font checks."
@@ -568,7 +568,7 @@ export const retainedUpdates = {
       "approval": "9b3bfffb441e225b6d38cfdffb8f528c402d1c25",
       "reason": "Masih 27 Oct: explicit per-conversation colours replace idle markers while retaining active/unread/error semantics, alignment and keyboard proof; thinking stays visible as secondary controls collapse; GUI /resume visibly chooses and opens saved history. Retain document calculations, selected-text feedback before deliberate navigation fallback, paging and shared editing. Keep behavioral assertions and the immutable baseline."
     },
-    "tests/love-spot.test.cjs": {
+    "tests/love-spot.test.cts": {
       "blob": "f5b82185db895c2a4dbf1414f0a5c0f3c1bd05f7",
       "approval": "8e43b6441294365f45d1193358c47cfb0a68da00",
       "reason": "Love Spot, Masih 22 Oct: \"I said remove the agents section in love spot; it's still there.\" The agents section is gone, so its steps leave this test (a3b057c0f). 23 Oct, Masih: \"remove the talk and matilda buttons.\" The toolbar has no Talk button, so the layout check no longer measures one; every other control is still measured. S35/R6: voice information stays compact and its unavailable reason remains keyboard accessible; retain wide/narrow and light/dark layout assertions. Keyboard focus must actually reach the shared tooltip; use Tab navigation and preserve all keyboard access, light/dark, wide/narrow and toolbar geometry checks. Shared tooltips expose role and an associated description. Preserve real Tab/Escape interaction, accessible unavailable information, all themes and complete toolbar fit checks. Love Spot, Masih 26 Oct: \u201cits audio doesn't work; if you don't know how to do it - disable it\u201d and \u201cforget that functionality for now\u201d. The temporary text-only gate supplies the unavailable reason; preserve all keyboard, tooltip association, layout and theme assertions. Resolve the focused information control's actual aria-describedby association instead of matching two equal tooltip texts. Preserve keyboard Tab/Escape, exact unavailable reason and every toolbar/theme/fit assertion. Masih 27 Oct: remove unavailable board audio controls, retain ordinary dictation plus both-theme sidebar, geometry and responsive fit checks."
@@ -609,7 +609,7 @@ export const retainedUpdates = {
 // Talk-only checks (the panel, its model picker and hover buttons, quoting a note, its fit) go with the panel.
 // Workflow artwork picker was removed in installed source 141be35a2; night-workflows retains pattern, prompt, keyboard and colour proof.
 export const retiredPaths = {
-  '988aad0e78bd264c00e435be07598e79f08941e8': ['tests/settings-reorder.test.cjs', 'tests/observability.test.cjs', 'tests/temp-root-ui.test.cjs', 'tests/love-agents.test.cjs', 'tests/love-agents-v2.test.cjs', 'tests/love-spot-standalone.test.cjs', 'tests/love-spot-talk.test.cjs', 'tests/workflow-characters.test.cjs'],
+  '988aad0e78bd264c00e435be07598e79f08941e8': ['tests/settings-reorder.test.cjs', 'tests/observability.test.cts', 'tests/temp-root-ui.test.cjs', 'tests/love-agents.test.cjs', 'tests/love-agents-v2.test.cjs', 'tests/love-spot-standalone.test.cjs', 'tests/love-spot-talk.test.cjs', 'tests/workflow-characters.test.cjs'],
 };
 export const receiptName = '.elpis-ui-receipt.json';
 // The saved-workspace regression; its .cjs name survives in older baselines (moved to TypeScript on 7 Nov).
