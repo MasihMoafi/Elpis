@@ -2,7 +2,7 @@
 import type { BrowserWindow, WebContentsView as View, Session, IpcMain, Menu as ElectronMenu, Event as ElectronEvent, IpcMainEvent, IpcMainInvokeEvent, Input, ContextMenuParams, MenuItemConstructorOptions, Rectangle } from 'electron';
 type Pick = ReturnType<typeof import('./browser-annotations.cts').cleanPick>;
 type Comment = { id: string; number: number; kind: string; pageUrl: string; anchor: Pick; body: string; screenshot: string | null; editing: string | null };
-type Tab = { id: string; url: string; title: string; customTitle: string | null; agent: boolean; loading: boolean; error: string | null; failure: ReturnType<typeof import('./browser-policy.cts').loadFailure> | null; view: View; comments: Comment[]; draft: Comment | null; find: { open: boolean; text: string; matches: number; active: number; focus: number } };
+type Tab = { id: string; url: string; title: string; customTitle: string | null; agent: boolean; loading: boolean; error: string | null; failure: ReturnType<typeof import('./browser-policy.cts').loadFailure> | null; view: View; identityReady: Promise<void>; navigation: number; comments: Comment[]; draft: Comment | null; find: { open: boolean; text: string; matches: number; active: number; focus: number } };
 type Options = { host: BrowserWindow; origin: string; WebContentsView: typeof View; session: { fromPartition: (partition: string) => Session }; ipcMain: IpcMain; openExternal?: (url: string) => Promise<void>; Menu?: typeof ElectronMenu; clipboard: { writeText: (text: string) => void; writeImage: (image: Electron.NativeImage) => void };  sessionId?: string; onChange?: () => void; presented?: boolean };
 type Command = { action: string; id: string; url: string; body: unknown; text: unknown; value: string | boolean | undefined };
 type Saved = { visible: boolean; activeId: string; tabs: { id: string; url: string; title: string; customTitle: string; agent: boolean; muted: boolean; zoom: number; history: Electron.NavigationEntry[]; historyIndex: number }[] };
@@ -82,8 +82,10 @@ function createBrowserImpl({host,origin,WebContentsView,session,ipcMain,openExte
   }
   function navigate(tab: Tab,url: string){
     tab.url=browserUrl(url,origin);tab.error=null;tab.failure=null;tab.title=tab.url==='about:blank'?'New tab':new URL(tab.url).hostname||decodeURIComponent(new URL(tab.url).pathname.split('/').pop()||'File');emit();
+    const target=tab.url,revision=++tab.navigation,wc=tab.view.webContents;
+    // A new tab (including an OAuth popup) must have its identity before its first document loads.
     // did-fail-load owns page errors; Stop and replaced navigations also reject loadURL.
-    void tab.view.webContents.loadURL(tab.url).catch(()=>{});
+    void tab.identityReady.then(()=>{if(!disposed&&tabs.has(tab.id)&&!wc.isDestroyed()&&tab.navigation===revision)return wc.loadURL(target);}).catch(()=>{});
   }
   // An agent's tab opens behind the person's tab; it is shown only when he has none.
   function open(url='about:blank',{focus=false,after=null,id=null,restoring=false,agent:owned=false}: { focus?: boolean; after?: string | null; id?: string | null; restoring?: boolean; agent?: boolean }={}){
@@ -96,10 +98,13 @@ function createBrowserImpl({host,origin,WebContentsView,session,ipcMain,openExte
     // A session can receive agent input before its pane has ever been shown.
     const {width,height}=host.getContentBounds();view.setBounds({x:0,y:0,width,height});
     host.contentView.addChildView(view);
-    const tab: Tab={id:typeof id==='string'&&/^[A-Za-z0-9_-]{1,200}$/.test(id)&&!tabs.has(id)?id:randomUUID(),url:'about:blank',title:'New tab',customTitle:null,agent:owned===true,loading:false,error:null,failure:null,view,comments:[],draft:null,find:{open:false,text:'',matches:0,active:0,focus:0}};tabs.set(tab.id,tab);
+    const tab: Tab={id:typeof id==='string'&&/^[A-Za-z0-9_-]{1,200}$/.test(id)&&!tabs.has(id)?id:randomUUID(),url:'about:blank',title:'New tab',customTitle:null,agent:owned===true,loading:false,error:null,failure:null,view,identityReady:Promise.resolve(),navigation:0,comments:[],draft:null,find:{open:false,text:'',matches:0,active:0,focus:0}};tabs.set(tab.id,tab);
     if(after&&tabs.has(after)){const order=[...tabs.entries()].filter(([id])=>id!==tab.id),at=order.findIndex(([id])=>id===after)+1;order.splice(at,0,[tab.id,tab]);tabs.clear();for(const [id,item] of order)tabs.set(id,item);}
     const wc=view.webContents;tint(tab);
-    presentPageAsChrome(wc);
+    // Electron needs an initialized renderer before it can apply a debugger identity override.
+    tab.identityReady=wc.loadURL('about:blank').catch(()=>{}).then(()=>{
+      if(!disposed&&tabs.has(tab.id)&&!wc.isDestroyed())return presentPageAsChrome(wc);
+    });
     agent.observe(tab);
     wc.on('will-attach-webview',event=>event.preventDefault());
     const guard=(event: ElectronEvent,url: string)=>{try{browserUrl(url,origin);}catch{event.preventDefault();tab.error='This address cannot be opened in the browser.';emit();}};
@@ -252,7 +257,7 @@ function createBrowserImpl({host,origin,WebContentsView,session,ipcMain,openExte
       case 'forward':if(tab?.view.webContents.navigationHistory.canGoForward())tab.view.webContents.navigationHistory.goForward();break;
       case 'reload':tab?.view.webContents.reload();break;
       case 'hardReload':tab?.view.webContents.reloadIgnoringCache();break;
-      case 'stop':tab?.view.webContents.stop();break;
+      case 'stop':if(tab){tab.navigation++;tab.view.webContents.stop();}break;
       case 'external-url':{
         const url=browserUrl(input.url,origin),target=new URL(url);
         // Sign-in pages only: Claude's, OpenAI's, and CloudRoom's desktop sign-in (1 Nov, bridge/cloudroom-vm.mts).
@@ -351,7 +356,9 @@ function createBrowserImpl({host,origin,WebContentsView,session,ipcMain,openExte
           if(Number.isFinite(item.zoom)&&item.zoom>=0.25&&item.zoom<=5)wc.setZoomFactor(item.zoom);
           // restore itself loads the active entry. A separate loadURL would duplicate it.
           // Do not wait for a remote site before allowing the user to switch chats.
-          if(history&&wc.navigationHistory.restore)void wc.navigationHistory.restore({entries:history,index:item.historyIndex}).catch(()=>{});
+          if(history&&wc.navigationHistory.restore)void tab.identityReady.then(()=>{
+            if(!disposed&&tabs.has(id)&&!wc.isDestroyed()&&tab.navigation===0)return wc.navigationHistory.restore({entries:history,index:item.historyIndex});
+          }).catch(()=>{});
         }catch{ /* An unavailable or previously blocked address must not expose another session. */ }
       }
       if(tabs.has(saved.activeId))activeId=saved.activeId;

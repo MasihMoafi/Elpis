@@ -14,6 +14,8 @@ const CWD = '/tmp/parity-fixture';
 /** An 8×8 red PNG. */
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGM4o6SEFTEMLQkAvM5EAT6yk8sAAAAASUVORK5CYII=', 'base64');
 const FILES = ['README.md', 'package.json', 'docs/guide.md', 'src/app.ts', 'src/lib/parser.ts', 'src/lib/lexer.ts'];
+// The real bridge returns this shape when Mother is disabled and has no configured roles.
+const MOTHER_SETTINGS = { enabled: false, threadId: null, creating: false, roles: { dispatch: null, worker: null }, version: 'fixture' };
 const thread = (id, name) => ({ id, name, preview: name, cwd: CWD, model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } });
 const THREADS = [thread('chat-a', 'Fix the parser'), thread('chat-b', 'Write the docs'), thread('chat-c', 'Plan the release')];
 const filler = count => Array.from({ length: count }, (_, i) => `Detail ${i + 1} of the explanation, in a sentence of its own.`).join('\n\n');
@@ -72,6 +74,7 @@ async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660,
     // The bridge always answers the composer's feature switches (bridge/elpis-features.mjs contextSwitchesSnapshot); here as
     // with no writable config.toml. Without them the composer's Elpis features row is missing, as it never is in the app.
     if (url.pathname === '/api/context/switches' && req.method === 'GET') return json({ version: null, write: { available: false, reason: 'Elpis reported no writable config.toml, so these switches cannot be saved here.' }, smartPrune: false, subagents: true, rag: null });
+    if (url.pathname === '/api/mother-agent' && req.method === 'GET') return json(MOTHER_SETTINGS);
     if (url.pathname === '/api/models') return json({ data: [{ id: 'sol', model: 'sol', displayName: 'GPT-6.1-Sol', inputModalities: ['text', 'image'], supportedReasoningEfforts: ['low', 'medium', 'high'].map(reasoningEffort => ({ reasoningEffort })) }], nextCursor: null });
     if (url.pathname === '/api/providers/claude-accounts') return json({ activeId: '', accounts: [] });
     if (url.pathname === '/api/files') return json({ data: FILES });
@@ -143,4 +146,4 @@ async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660,
     throw error;
   }
 }
-module.exports = { fixture, CWD, FILES, TURNS, THREADS };
+module.exports = { fixture, CWD, FILES, TURNS, THREADS, MOTHER_SETTINGS };

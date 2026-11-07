@@ -1,7 +1,7 @@
 'use strict';
 import type { WebContentsView, InputEvent } from 'electron';
 type Args = { [key: string]: string | number | boolean; selector: string; nodeId: string; tabId: string; url: string; action: string; x: number; y: number; deltaX: number; deltaY: number; timeoutMs: number; text: string; clear: boolean; key: string };
-type AgentTab = { id: string; url: string; title: string; agent: boolean; error?: string | null; view: WebContentsView };
+type AgentTab = { id: string; url: string; title: string; agent: boolean; error?: string | null; view: WebContentsView; identityReady?: Promise<void>; navigation?: number };
 type Log = { level: unknown; message: string; line: unknown; source: string };
 type SchemaProperty = { type: string; enum?: string[]; description?: string };
 type PageElement = HTMLElement & { type: string; labels: NodeListOf<HTMLLabelElement>; disabled: boolean; select: () => void };
@@ -114,7 +114,7 @@ function createBrowserAgentImpl({tabs,open,origin,emit,prepare}: { tabs: Map<str
   const logs=new Map<string, Log[]>();
   const state=()=>({enabled,tabId});
   const guard=(generation: number)=>{if(disposed)throw Error('Browser is closed.');if(!enabled||generation!==epoch)throw Error('The user has taken over the browser. Wait for them to allow agent control.');};
-  const stop=()=>{const wc=tabs.get(tabId as string)?.view.webContents;epoch++;enabled=false;tabId=null;if(wc&&!wc.isDestroyed())wc.stop();emit();};
+  const stop=()=>{const tab=tabs.get(tabId as string),wc=tab?.view.webContents;if(tab?.navigation!==undefined)tab.navigation++;epoch++;enabled=false;tabId=null;if(wc&&!wc.isDestroyed())wc.stop();emit();};
   const allow=()=>{epoch++;enabled=true;tabId=null;emit();};
   const observe=(tab: AgentTab)=>{
     const messages: Log[]=[];logs.set(tab.id,messages);
@@ -134,6 +134,7 @@ function createBrowserAgentImpl({tabs,open,origin,emit,prepare}: { tabs: Map<str
     const tab=tabs.get(args.tabId),wc=tab?.view.webContents;
     if(!wc||wc.isDestroyed())throw Error('This browser tab is closed.');
     if(INPUT.has(name)&&!tab.agent)throw Error('This is the person’s tab: you may read it, not navigate it or send it input. Open your own tab with browser_open.');
+    if(tab.identityReady){await tab.identityReady;guard(generation);if(wc.isDestroyed())throw Error('This browser tab is closed.');}
     browserUrl(wc.getURL()||tab.url,origin);
     if(name==='browser_navigate'&&(!args.action||args.action==='goto'))browserUrl(args.url,origin);
     if(name==='browser_click'&&!(args.selector||args.nodeId)&&(!Number.isFinite(args.x)||!Number.isFinite(args.y)))throw Error('Choose a selector, nodeId or x/y.');

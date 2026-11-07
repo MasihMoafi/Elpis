@@ -71,7 +71,7 @@ function presentAsChromeImpl(browserSession: Session){
 function presentPageAsChromeImpl(webContents: WebContents,identity=chromeIdentityImpl()){
   const override={userAgent:identity.userAgent,userAgentMetadata:identity.metadata},dbg=webContents.debugger;
   const send=(method: string,params?: Record<string, unknown>,sessionId?: string)=>dbg.sendCommand(method,params,sessionId).catch(()=>{});
-  try{if(!dbg.isAttached())dbg.attach('1.3');}catch{return;}
+  try{if(!dbg.isAttached())dbg.attach('1.3');}catch{return Promise.resolve();}
   dbg.on('message',(_event,method,params)=>{
     if(method!=='Target.attachedToTarget')return;
     const {sessionId,targetInfo,waitingForDebugger}=params;
@@ -79,8 +79,8 @@ function presentPageAsChromeImpl(webContents: WebContents,identity=chromeIdentit
     void (targetInfo.type==='iframe'?Promise.all([send('Emulation.setUserAgentOverride',override,sessionId),send('Target.setAutoAttach',{autoAttach:true,waitForDebuggerOnStart:true,flatten:true},sessionId)]):Promise.resolve())
       .then(()=>{if(waitingForDebugger)return send('Runtime.runIfWaitingForDebugger',undefined,sessionId);});
   });
-  void send('Emulation.setUserAgentOverride',override);
-  void send('Target.setAutoAttach',{autoAttach:true,waitForDebuggerOnStart:true,flatten:true});
+  return Promise.all([send('Emulation.setUserAgentOverride',override),
+    send('Target.setAutoAttach',{autoAttach:true,waitForDebuggerOnStart:true,flatten:true})]).then(()=>{});
 }
 
 export declare const chromeBrands: typeof chromeBrandsImpl;

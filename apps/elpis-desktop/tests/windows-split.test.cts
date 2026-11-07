@@ -18,6 +18,12 @@ test('split chats keep separate composers, send to their own chat, focus with br
     await composer.click(); await page.keyboard.press('Control+Alt+]');
     assert.ok(await right.evaluate((el: Element) => el === document.activeElement));
     await page.keyboard.press('Control+Alt+['); assert.ok(await composer.evaluate((el: Element) => el === document.activeElement));
+    // A split can be typed in before its connection is ready; Enter only sends once the send button is enabled.
+    await page.waitForFunction(() => {
+      const frame = document.querySelector<HTMLIFrameElement>('iframe[title="Split session"]');
+      const button = frame?.contentDocument?.querySelector<HTMLButtonElement>('button[aria-label="Send message"]');
+      return !!button && !button.disabled;
+    });
     await right.click(); const sent = page.waitForResponse((res: { url(): string }) => res.url().endsWith('/threads/chat-b/turns')); await page.keyboard.press('Enter'); await sent;
     assert.ok(f.posts.some((p: { path: string; body: unknown }) => p.path === '/api/threads/chat-b/turns' && JSON.stringify(p.body).includes('right draft')));
     assert.equal(await composer.inputValue(), 'left draft');

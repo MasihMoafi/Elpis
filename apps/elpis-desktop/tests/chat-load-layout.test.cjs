@@ -194,8 +194,12 @@ test('an offline draft stays usable and a late team needs a deliberate open', as
     await f.page.waitForFunction(() => getComputedStyle(document.querySelector('.composer-wrap')).opacity === '1');
     await f.composer.fill('Editable while disconnected');
     const before = await f.composer.boundingBox();
-    await observe(f.page);
     await f.emit('connection', { connected: true });
+    // The offline notice occupies space under the chat. Wait for its removal before measuring the delayed team,
+    // so the notice's intentional disappearance is not mistaken for a panel-induced layout shift.
+    await f.page.getByText(/Elpis is disconnected/).first().waitFor({ state: 'hidden' });
+    await observe(f.page);
+    await f.page.waitForFunction(() => window.__chatBounds.length >= 3);
     a.release();
     await f.page.getByRole('button', { name: 'Show agents panel' }).waitFor();
     await f.page.waitForTimeout(300);

@@ -32,7 +32,10 @@ test('a browser tab presents stock Chrome to sign-in pages; the app window keeps
   const seen = new Map<string, Entry>(), waiting = new Map<string, (entry: Entry) => void>();
   const report = (name: string): Promise<Entry> => {
     const entry = seen.get(name);
-    return entry?.page ? Promise.resolve(entry) : new Promise(resolve => waiting.set(name, resolve));
+    return entry?.page ? Promise.resolve(entry) : new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { waiting.delete(name); reject(new Error(`${name} did not report within 15 seconds`)); }, 15000);
+      waiting.set(name, value => { clearTimeout(timer); resolve(value); });
+    });
   };
   const site = http.createServer((req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => {
     if (!req.url) { res.writeHead(400).end(); return; }
@@ -53,10 +56,15 @@ test('a browser tab presents stock Chrome to sign-in pages; the app window keeps
   });
   await new Promise(resolve => site.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${site.address().port}`;
-  const xvfb = spawn('Xvfb', ['-displayfd', '3', '-screen', '0', '1440x960x24', '-nolisten', 'tcp'], { stdio: ['ignore', 'ignore', 'ignore', 'pipe'] });
-  const display = await new Promise<string>((resolve, reject) => { xvfb.once('error', reject); xvfb.stdio[3].once('data', (value: Buffer) => resolve(`:${String(value).trim()}`)); });
   let electron, nativeErrors = '';
+  const xvfb = spawn('Xvfb', ['-displayfd', '3', '-screen', '0', '1440x960x24', '-nolisten', 'tcp'], { stdio: ['ignore', 'ignore', 'pipe', 'pipe'] });
+  xvfb.stderr?.on('data', (data: Buffer) => { nativeErrors = (nativeErrors + data).slice(-6000); });
   try {
+    const display = await new Promise<string>((resolve, reject) => {
+      xvfb.once('error', reject);
+      xvfb.once('exit', (code: number | null, signal: NodeJS.Signals | null) => reject(new Error(`Xvfb exited before creating a display: ${signal ?? code}`)));
+      xvfb.stdio[3].once('data', (value: Buffer) => resolve(`:${String(value).trim()}`));
+    });
     electron = await _electron.launch({ executablePath: require('electron'), args: ['--no-sandbox', '--ozone-platform=x11', path.resolve(__dirname, 'session-windows-electron.cts')],
       env: { ...process.env, DISPLAY: display, WAYLAND_DISPLAY: '', ELECTRON_OZONE_PLATFORM_HINT: 'x11', HOME: root, ELPIS_HOME: root, SESSION_WINDOW_PROFILE: path.join(root, 'profile'), SESSION_WINDOW_URL: f.page.url() } });
     electron.process().stderr.on('data', (data: Buffer) => { nativeErrors = (nativeErrors + data).slice(-6000); });

@@ -7,6 +7,7 @@ const http: typeof import('node:http') = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
+const { MOTHER_SETTINGS } = require('./parity-fixture.cjs');
 
 const limit = (limitId: string, limitName: string, usedPercent: number) => ({ limitId, limitName, planType: null, primary: { usedPercent, windowDurationMins: 300, resetsAt: null }, secondary: null, reached: null });
 
@@ -33,6 +34,7 @@ test('usage is one shared store whose reported values stay until sign-out; gatew
     if (url.pathname === '/api/events') { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write('event: connection\ndata: {"connected":true}\n\n'); clients.add(res); req.on('close', () => clients.delete(res)); return; }
     if (url.pathname === '/api/health') return json({ connected: true });
     if (url.pathname === '/api/settings') return json(settings);
+    if (url.pathname === '/api/mother-agent') return json(MOTHER_SETTINGS);
     if (url.pathname === '/api/models') return json({ data: [{ id: 'luna', model: 'luna', displayName: 'Luna' }], nextCursor: null });
     if (url.pathname === '/api/threads') return json({ data: [], nextCursor: null });
     if (url.pathname === '/api/providers/settings') return json(providerSettings);

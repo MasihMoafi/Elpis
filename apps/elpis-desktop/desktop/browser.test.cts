@@ -21,6 +21,58 @@ test('a destroyed sign-in popup closes safely after Electron detaches its webCon
   assert.equal(browser.snapshot().tabs.length, 0);
   browser.dispose(); await new Promise<void>(resolve => setImmediate(resolve));
 });
+
+function identityFixture(requireBlank = false) {
+  let release!: () => void;
+  let blankLoaded = false;
+  const identity = new Promise<void>(resolve => { release = resolve; });
+  const awaitingDocument = new Promise<void>(() => undefined);
+  const loads: string[] = [];
+  const debuggerApi = Object.assign(new EventEmitter(), { isAttached: () => true,
+    sendCommand: (name: string) => name === 'Emulation.setUserAgentOverride' ? requireBlank && !blankLoaded ? awaitingDocument : identity : Promise.resolve() });
+  const wc = Object.assign(new EventEmitter(), { debugger: debuggerApi, setWindowOpenHandler() {},
+    navigationHistory: { canGoBack: () => false, canGoForward: () => false }, getURL: () => '', getZoomFactor: () => 1,
+    isDestroyed: () => false, close() {}, focus() {}, send() {}, stop() {}, loadURL: async (url: string) => { if (url === 'about:blank') blankLoaded = true; else loads.push(url); } });
+  class View { webContents = wc; setVisible() {} setBounds() {} }
+  const origin = 'http://127.0.0.1:4000';
+  const root = Object.assign(new EventEmitter(), { mainFrame: { url: origin }, isDestroyed: () => false, send() {}, focus() {}, getZoomFactor: () => 1 });
+  const host = Object.assign(new EventEmitter(), { getContentBounds: () => ({ width: 1320, height: 900 }),
+    contentView: { addChildView() {}, removeChildView() {} }, webContents: root, isDestroyed: () => false });
+  const session = { fromPartition: () => ({ setPermissionRequestHandler() {}, setPermissionCheckHandler() {},
+    setUserAgent() {}, webRequest: { onHeadersReceived() {}, onBeforeSendHeaders() {} } }) };
+  const handlers = new Map<string, (event: unknown, input: unknown) => Promise<unknown>>();
+  const browser = createBrowser({ host, WebContentsView: View, session, origin,
+    ipcMain: { handle: (name: string, handler: (event: unknown, input: unknown) => Promise<unknown>) => handlers.set(name, handler), on() {}, removeHandler() {}, removeListener() {} } });
+  const command = (id: string, action: string, data: Record<string, string> = {}) =>
+    handlers.get('elpis:browser')!({ sender: root, senderFrame: root.mainFrame }, { id, action, ...data });
+  return { browser, command, loads, release };
+}
+
+test('a new browser tab applies its identity before loading its first page', async () => {
+  const { browser, loads, release } = identityFixture();
+  browser.open('https://example.com/');
+  const premature = [...loads];
+  release(); await new Promise<void>(resolve => setImmediate(resolve)); browser.dispose();
+  assert.deepEqual(premature, []);
+  assert.deepEqual(loads, ['https://example.com/']);
+});
+
+test('a newer address, Stop, or Close supersedes a pending first page', async () => {
+  for (const action of ['navigate', 'stop', 'close']) {
+    const { browser, command, loads, release } = identityFixture();
+    const id = browser.open('https://example.com/first');
+    await command(id, action, action === 'navigate' ? { url: 'https://example.com/second' } : {});
+    release(); await new Promise<void>(resolve => setImmediate(resolve)); browser.dispose();
+    assert.deepEqual(loads, action === 'navigate' ? ['https://example.com/second'] : [], action);
+  }
+});
+
+test('a blank document initializes Electron before the identity override', async () => {
+  const { browser, loads, release } = identityFixture(true);
+  browser.open('https://example.com/');
+  release(); await new Promise<void>(resolve => setImmediate(resolve)); browser.dispose();
+  assert.deepEqual(loads, ['https://example.com/']);
+});
 const { createBrowserSessions } = require('./browser-sessions.cts');
 
 test('a window link is policy-checked before its session browser is initialized', async () => {

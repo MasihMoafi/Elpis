@@ -82,7 +82,7 @@ test('each tab page gets the annotation preload in a sandbox with context isolat
   assert.equal(preferences.sandbox, true); assert.equal(preferences.contextIsolation, true); assert.equal(preferences.nodeIntegration, false);
 });
 
-test('theme: every tab page takes the app background when it opens and again on each theme change, so a blank tab is never white', () => {
+test('theme: every tab page takes the app background when it opens and again on each theme change, so a blank tab is never white', async () => {
   const dark = 'rgb(10, 11, 13)', light = 'rgb(251, 251, 250)';
   const f = fixture(); f.browser.open('https://example.com');
   assert.equal(f.views[0]!.background, undefined, 'no colour is invented before the app reports its own');
@@ -90,6 +90,7 @@ test('theme: every tab page takes the app background when it opens and again on 
   assert.equal(f.views[0]!.background, dark, 'a tab that is open follows the dark theme');
   f.browser.open();
   assert.equal(f.views[1]!.background, dark, 'a new blank tab opens in the app background');
+  await settle();
   assert.equal(f.pages[1]!.backgroundAtLoad, dark, 'and has it before its first page loads');
   f.browser.setBackground(light);
   assert.deepEqual(f.views.map(view => view.background), [light, light], 'every tab follows the switch to light');
