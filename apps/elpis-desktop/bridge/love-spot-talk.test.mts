@@ -508,7 +508,7 @@ test('a drawing notification waits silently until a picture is available, while 
   const shape = (id: string) => ({ ...note(id, ''), type: 'rectangle', text: undefined });
   await f.store.save({ elements: [shape('box')] });
   const waiting = await f.talk.send({ text: 'I drew something on the board.', model: 'text', drawingOnly: true });
-  assert.equal(waiting.waitingForPicture, true, 'the board does not start speech for a silent wait');
+  assert.ok('waitingForPicture' in waiting && waiting.waitingForPicture, 'the board does not start speech for a silent wait');
   assert.equal(f.sent.length, 0, 'a drawing alone without a picture does not prompt a reply');
   await f.talk.send({ text: 'How are you?', model: 'text' });
   assert.equal(f.sent.length, 1, 'normal written messages still reach Matilda');
