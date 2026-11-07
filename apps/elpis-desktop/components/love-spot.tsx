@@ -89,6 +89,9 @@ export default function LoveSpot(props: LoveSpotProps) {
   if (app) return <LoveSpotBoard {...props} />;
   return <ReadAloud threadId="love-spot" enabled available={LOVE_SPOT_AUDIO.readAloudAvailable} {...(LOVE_SPOT_AUDIO.available ? {} : { unavailableReason: LOVE_SPOT_AUDIO.reason })}><LoveSpotBoard {...props} /></ReadAloud>;
 }
+const SUBSCRIPTION_CHOICE = /^(claude|agy)\//;
+const standaloneApp = typeof location !== "undefined" && new URLSearchParams(location.search).get("app") === "love-spot";
+
 function LoveSpotBoard({ dark, toolbarHost }: LoveSpotProps) {
   const speech = useReadAloud();
   const { selectedPalette } = usePreferences();
@@ -190,7 +193,8 @@ function LoveSpotBoard({ dark, toolbarHost }: LoveSpotProps) {
   }, []);
   const provider = chatProvider(settings?.main.model, undefined, settings?.main.provider);
   // Any connected model: a model from another connection starts her a new chat (bridge/love-spot-talk.mts).
-  const choices = providerChoices(models, settings);
+  // The standalone app may not route Claude or Gemini subscriptions (bridge/love-spot-talk.mts), so it does not offer them.
+  const choices = providerChoices(models, settings).filter(choice => !standaloneApp || !SUBSCRIPTION_CHOICE.test(choice.id));
   const pickedProvider = choices.find(choice => choice.id === pick.choiceId)?.provider;
 
   useEffect(() => {
@@ -662,7 +666,7 @@ function LoveSpotBoard({ dark, toolbarHost }: LoveSpotProps) {
       <AlertDialogContent role="dialog" aria-label="Models & accounts" className="flex max-h-[85vh] max-w-2xl flex-col overflow-hidden">
         <div className="min-h-0 flex-1 overflow-y-auto pr-1">
           {/* Settings already frames it as a page; here the dialog does (5 Nov: the class on the component nested two pages in Settings). */}
-          <div className="settings-page"><ProvidersSettings refreshKey={accountRefresh} onChanged={reloadAccounts} /></div>
+          <div className="settings-page"><ProvidersSettings refreshKey={accountRefresh} onChanged={reloadAccounts} standalone={standaloneApp} /></div>
         </div>
         <AlertDialogFooter>
           <AlertDialogClose render={<Button type="button" variant="outline" />}>Done</AlertDialogClose>

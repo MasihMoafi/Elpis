@@ -162,6 +162,7 @@
     "desktop/files.test.cts",
     "desktop/documents.test.cts",
     "desktop/improve.test.cts",
+    "desktop/main-profile.test.cts",
     "desktop/screen-capture.test.cts",
     "desktop/launch.test.mjs",
     "desktop/media-policy.test.cts",

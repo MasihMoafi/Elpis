@@ -6,7 +6,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { EventEmitter } from 'node:events';
 import { createLoveSpot } from './love-spot-store.cts';
-import { createLoveSpotTalk } from './love-spot-talk.mts';
+import { createLoveSpotTalk, SUBSCRIPTION_BLOCKED } from './love-spot-talk.mts';
 import { createMatildaCompanion } from './matilda-companion.mjs';
 import { LOVE_SPOT_AUDIO, READ_ALOUD_AUDIO } from '../lib/love-spot-audio.mts';
 import { splitPainting } from './love-spot-painting.cts';
@@ -31,7 +31,7 @@ type SpeechEvent = Parameters<Parameters<Awaited<ReturnType<Talk['speech']>>['su
 
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGM4o6SEFTEMLQkAvM5EAT6yk8sAAAAASUVORK5CYII=';
 const note = (id: string, text: string, color = '#e03131', extra = {}) => ({ id, type: 'text', text, strokeColor: color, version: 1, versionNonce: 1, x: 20, y: 30, width: 240, height: 40, updated: 1, ...extra });
-async function fixture(t: TestContext, { refuseFast = false, audio = enabledAudio, companion = false } = {}) {
+async function fixture(t: TestContext, { refuseFast = false, audio = enabledAudio, companion = false, standalone = false } = {}) {
   const base = os.tmpdir();
   const directory = createTestTempDir(path.join(base, 'love-talk-'));
   await fs.writeFile(path.join(directory, 'scene.excalidraw'), JSON.stringify({ type: 'excalidraw', version: 2, elements: [], files: {}, appState: {} }));
@@ -48,7 +48,7 @@ async function fixture(t: TestContext, { refuseFast = false, audio = enabledAudi
     setServiceTier: async (id: string, value: { enabled: boolean }) => { speeds.push({ id, ...value }); if (refuseFast) throw Error('no Fast here'); return { serviceTier: 'priority' }; },
   });
   const presence = companion ? createMatildaCompanion({ store, env: { ...process.env, DBUS_SESSION_BUS_ADDRESS: 'unix:path=/nonexistent-matilda-test' } }) : undefined;
-  const talk = createLoveSpotTalk({ client: client as unknown as Parameters<typeof createLoveSpotTalk>[0]['client'], store, audio, companion: presence });
+  const talk = createLoveSpotTalk({ client: client as unknown as Parameters<typeof createLoveSpotTalk>[0]['client'], store, audio, companion: presence, standalone });
   t.after(async () => { talk.close(); await store.close(); removeTestTempDir(directory); });
   const finish = (id = 'turn-1', status = 'completed', reply = 'Here with you.') => client.emit('event', { type: 'message', data: { method: 'turn/completed', params: { threadId: 'chat', turn: { id, status, items: [{ id: 'reply', type: 'agentMessage', text: reply }] } } } });
   return { directory, store, talk, client, created, sent, finish, entries, speeds, presence };
@@ -392,6 +392,24 @@ test('a model from another connection starts Matilda a new chat; one from the sa
   assert.equal(f.created.length, 2);
   assert.equal(f.created[1]!.provider, 'anthropic');
   assert.deepEqual(f.sent.map(item => [item.text, item.model]), [['Hello', 'text'], ['Same connection', 'text'], ['Now on Claude', 'claude/sonnet']]);
+});
+
+test('standalone Love Spot uses the chosen account and never a Claude or Gemini subscription', async t => {
+  const f = await fixture(t, { standalone: true });
+  f.client.createThread = async value => { f.created.push(value); return { thread: { id: 'chat', ...value, modelProvider: value.provider ?? 'openai' } }; };
+  for (const model of ['claude/sonnet', 'agy/gemini-pro']) {
+    await assert.rejects(f.talk.send({ text: 'Hi', model, provider: 'openai' }), { message: SUBSCRIPTION_BLOCKED });
+  }
+  assert.deepEqual([f.created.length, f.sent.length], [0, 0], 'a refused subscription model starts nothing');
+  // An Anthropic API key account is a normal provider; the chosen one is used, with no fallback to the default.
+  await f.talk.send({ text: 'With my key', model: 'text', provider: 'anthropic' }); f.finish(); await f.talk.idle();
+  await f.talk.send({ text: 'With OpenRouter', model: 'text', provider: 'openrouter' }); f.finish('turn-2'); await f.talk.idle();
+  assert.deepEqual(f.created.map(item => item.provider), ['anthropic', 'openrouter']);
+  assert.deepEqual(f.sent.map(item => [item.text, item.model]), [['With my key', 'text'], ['With OpenRouter', 'text']]);
+  // Love Spot inside Elpis keeps the Claude subscription route.
+  const inElpis = await fixture(t);
+  await inElpis.talk.send({ text: 'Hi', model: 'claude/sonnet', provider: 'anthropic' });
+  assert.equal(inElpis.sent.length, 1);
 });
 
 const delta = (f: Awaited<ReturnType<typeof fixture>>, text: string, itemId = 'reply', method = 'item/agentMessage/delta') => f.client.emit('event', { type: 'message', data: { method, params: { threadId: 'chat', turnId: `turn-${f.sent.length}`, itemId, delta: text } } });

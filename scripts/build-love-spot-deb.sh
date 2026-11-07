@@ -60,10 +60,6 @@ TUI
 cat > "$ROOT/usr/bin/love-spot" <<'LOVELAUNCH'
 #!/usr/bin/env bash
 R=${LOVE_SPOT_ROOT:-/opt/love-spot}
-cfg_dir="${ELPIS_HOME:-$HOME/.elpis-next}"
-if [[ ! -e "$cfg_dir/config.toml" ]] && mkdir -p "$cfg_dir" 2>/dev/null; then
-  (umask 077 && : > "$cfg_dir/config.toml") 2>/dev/null || true
-fi
 export ELPIS_ENGINE_BIN=${ELPIS_ENGINE_BIN:-$R/engine/elpis-next} ELPIS_TUI_BIN=${ELPIS_TUI_BIN:-$R/bin/elpis}
 if [[ -z "${ELPIS_NODE_BIN:-}" ]]; then
   node=$(command -v node || true)

@@ -11,6 +11,7 @@ import { type ProviderType } from "@/lib/provider-form";
 import { openAuthPage, providerLogin, readProviderConfig, type ProviderConfigItem as ProviderConfig, type ProviderConfigsSnapshot as ProviderConfigs } from "@/lib/provider-login";
 import { RefreshButton, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
 import { ClaudeAccountsSettings } from "@/components/claude-accounts-settings";
+import { ProviderKeyForm } from "@/components/model-picker";
 import { useKeyUses } from "@/components/settings/use-for-settings";
 
 import { useProviderUsage, type ConfiguredProvider as Configured, type Subscription } from "@/components/provider-usage";
@@ -76,7 +77,9 @@ function CloudroomCard() {
   </Card>;
 }
 
-export function ProvidersSettings({ refreshKey, onChanged, active = true }: { refreshKey: number; onChanged?: () => Promise<void> | void; active?: boolean }) {
+/** `standalone`: the Love Spot app, which may not route Claude or Gemini subscriptions (skills/provider-login/spec.md),
+ *  so Anthropic is an API key there and Antigravity is unavailable. */
+export function ProvidersSettings({ refreshKey, onChanged, active = true, standalone = false }: { refreshKey: number; onChanged?: () => Promise<void> | void; active?: boolean; standalone?: boolean }) {
   const { data, error: accountsError, load: loadAccounts } = useProviderUsage(refreshKey);
   const [config, setConfig] = useState<ProviderConfigs | null>(null);
   const [editing, setEditing] = useState<ProviderEdit | null>(null);
@@ -159,7 +162,10 @@ export function ProvidersSettings({ refreshKey, onChanged, active = true }: { re
           {waiting && <span role="status" className="self-center text-sm text-muted-foreground">Complete sign-in in the page that opened.</span>}
         </div>
       </Card>
-      <Card id="claude" name="Anthropic" state={data.claude.signedOut ? <State tone="off">Signed out in Elpis</State> : sub(data.claude)}>
+      {standalone ? <Card id="claude" name="Anthropic" state={config?.providers.find(item => item.id === "anthropic")?.auth.keySet ? <State tone="ok">Key set</State> : <State tone="off">No key</State>}>
+        <p className="provider-note">Love Spot uses Claude through an Anthropic API key. A Claude subscription works only in Claude Code.</p>
+        <ProviderKeyForm provider="anthropic" label="Anthropic" onSaved={() => { void load(); void onChanged?.(); }} />
+      </Card> : <Card id="claude" name="Anthropic" state={data.claude.signedOut ? <State tone="off">Signed out in Elpis</State> : sub(data.claude)}>
         <ClaudeAccountsSettings refreshKey={refreshKey} onChanged={async () => { await load(); await onChanged?.(); }} />
         <p className="provider-note">{data.claude.signedOut ? "Elpis is not using your Claude subscription. Claude Code on this computer stays signed in." : data.claude.models.length ? `${plural(data.claude.models.length, "Claude model")} available through your Claude Code connection.` : "Sign in to Claude Code on this computer to connect your subscription."}</p>
         <div className="flex flex-wrap gap-2">
@@ -167,11 +173,11 @@ export function ProvidersSettings({ refreshKey, onChanged, active = true }: { re
             ? <Button disabled={busy} onClick={() => void account("anthropicSignIn")}>Sign in</Button>
             : data.claude.state !== "notConnected" && <Button variant="outline" disabled={busy} onClick={() => void account("anthropicSignOut")}>Sign out</Button>}
         </div>
-      </Card>
-      <CloudroomCard />
-      <Card id="gemini" name="Antigravity" state={sub(data.gemini)}>
+      </Card>}
+      {!standalone && <CloudroomCard />}
+      {!standalone && <Card id="gemini" name="Antigravity" state={sub(data.gemini)}>
         <p className="provider-note">{data.gemini.models.length ? `${plural(data.gemini.models.length, "model")} available through your existing Google/Antigravity connection.` : "Sign in to Antigravity with Google on this computer to connect its models."}</p>
-      </Card>
+      </Card>}
       {data.openrouter.length > 0 && <Card id="openrouter" name="OpenRouter" state={data.openrouter.length ? (data.openrouter.every(item => item.keySet) ? <State tone="ok">Key set</State> : <State tone="warn">Key missing</State>) : <State tone="off">Not configured</State>}>
         <ConfiguredList config={config} onEdit={edit} uses={uses} items={data.openrouter} empty="No OpenRouter connection yet." />
       </Card>}

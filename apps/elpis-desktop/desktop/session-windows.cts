@@ -159,6 +159,8 @@ function createSessionWindowsImpl({ electron, url, store, browserAgentSocket, qu
     window.on('closed', () => { dispose(); windows.delete(window); openers.delete(window); onClosed?.(window); if (!windows.size) closeToTray.closed(); });
     const target = new URL(url);
     if (loveSpot) target.pathname = '/love-spot.html';
+    // The standalone Love Spot (its own app and home) offers only the routes it may use; see bridge/love-spot-talk.mts.
+    if (loveSpot && process.env.LOVE_SPOT_APP === '1') target.searchParams.set('app', 'love-spot');
     if (workflows) target.searchParams.set('workspace', 'canvas');
     if (threadId || newSession) target.searchParams.set('session', threadId || '');
     await window.loadURL(target.href);

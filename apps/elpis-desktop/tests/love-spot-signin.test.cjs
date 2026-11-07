@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { loveSpotFixture } = require('./love-spot-fixture.cjs');
 const { chooseOption, controlValue } = require('./controls.cjs');
 
-test('standalone Love Spot signs in with ChatGPT subscription, Claude subscription, OpenRouter, and API keys locally', async () => {
+test('Love Spot signs in with ChatGPT, Claude subscription, OpenRouter and API keys; the standalone app offers Anthropic by key only', async () => {
   const state = {
     openaiSignedIn: false,
     claudeSignedOut: false,
@@ -232,6 +232,25 @@ test('standalone Love Spot signs in with ChatGPT subscription, Claude subscripti
     await page.getByRole('option', { name: /Kimi K2 \(OpenRouter\)/ }).waitFor();
     assert.equal(state.builtInKeys.length, 1);
     assert.equal(state.builtInKeys[0].provider, 'openrouter');
+    await page.keyboard.press('Escape');
+
+    // 6. The standalone app (its own home) offers Anthropic by API key only: no Claude or Gemini subscription
+    // (skills/provider-login/spec.md, Claude subscription route; bridge/love-spot-talk.mts refuses those models too).
+    await page.goto(f.url.replace('/#', '/love-spot.html?app=love-spot#'));
+    await page.locator('.excalidraw canvas').first().waitFor();
+    await page.getByRole('group', { name: "Matilda's model" }).getByRole('combobox').click();
+    assert.equal(await page.getByRole('tab', { name: 'Anthropic', exact: true }).count(), 0, 'no Claude subscription models');
+    await page.keyboard.press('Escape');
+    await page.locator('.love-spot-tools').getByRole('button', { name: 'Models & accounts', exact: true }).click();
+    const own = page.getByRole('dialog', { name: 'Models & accounts' });
+    const anthropic = own.locator('[data-provider="claude"]');
+    await anthropic.getByText('No key', { exact: true }).waitFor();
+    assert.equal(await anthropic.getByRole('button', { name: 'Add Claude account' }).count(), 0);
+    assert.equal(await own.locator('[data-provider="gemini"]').count(), 0, 'no Antigravity subscription');
+    await anthropic.getByLabel('Anthropic API key', { exact: true }).fill('sk-ant-local-test-key');
+    await anthropic.getByRole('button', { name: 'Save key', exact: true }).click();
+    await own.locator('[data-provider="claude"]').getByRole('form', { name: 'Anthropic API key' }).waitFor();
+    assert.deepEqual(state.builtInKeys.at(-1), { provider: 'anthropic', key: 'sk-ant-local-test-key' });
 
     assert.deepEqual(f.errors, []);
   } finally {

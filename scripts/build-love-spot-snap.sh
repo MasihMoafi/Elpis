@@ -81,10 +81,6 @@ if [ -n "${SNAP:-}" ]; then
   fi
 fi
 export ELPIS_ENGINE_BIN="$R/engine/elpis-next" ELPIS_NODE_BIN="$R/bin/node" ELPIS_TUI_BIN="$R/bin/elpis" PATH="$R/bin:$PATH"
-cfg_dir="${ELPIS_HOME:-$HOME/.elpis-next}"
-if [ ! -e "$cfg_dir/config.toml" ] && mkdir -p "$cfg_dir" 2>/dev/null; then
-  (umask 077 && : > "$cfg_dir/config.toml") 2>/dev/null || true
-fi
 if [ -n "${SNAP:-}" ] || [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null)" = 1 ]; then
   set -- --no-sandbox "$@"
 fi

@@ -17,7 +17,7 @@ type Choice = { key: string; model: string; choiceId: string; label: string; pro
 const KEY_PAGES: Record<string, string> = { openrouter: "openrouter.ai/keys", anthropic: "console.anthropic.com/settings/keys", "google-gemini": "aistudio.google.com/apikey" };
 
 /** The terminal's "paste the key" step, in the picker: saved where Elpis keeps provider keys, never shown again. */
-function ProviderKeyForm({ provider, label, onSaved }: { provider: string; label: string; onSaved: () => void }) {
+export function ProviderKeyForm({ provider, label, onSaved }: { provider: string; label: string; onSaved: () => void }) {
   const [key, setKey] = useState(""), [busy, setBusy] = useState(false), [error, setError] = useState("");
   async function save(event: React.FormEvent) {
     event.preventDefault(); event.stopPropagation(); setBusy(true); setError("");

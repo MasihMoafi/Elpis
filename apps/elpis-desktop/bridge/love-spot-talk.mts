@@ -32,7 +32,11 @@ const INSTRUCTIONS = 'You are Matilda, the collaborator on Masih\'s shared Love 
 const drawing = (scene: Scene) => createHash('sha256').update(JSON.stringify(scene.elements.filter(e => !e.isDeleted && e.type !== 'text' && !e.id.startsWith('love-face-')).map(e => [e.id, e.version]))).digest('hex');
 
 /** One ordinary, persistent chat. Reply placement belongs to the bridge so it survives panel navigation. */
-export function createLoveSpotTalk({ client, store, companion, audio = LOVE_SPOT_AUDIO }: { client: Client; store: Store; companion?: { command: (text: string, session: string) => Promise<unknown> } | undefined; audio?: { available: boolean; reason?: string } }) {
+// Standalone Love Spot calls models directly, so it must not route Claude (or Antigravity) subscription credentials
+// (skills/provider-login/spec.md, Claude subscription route); an Anthropic API key works. Love Spot inside Elpis is unchanged.
+const SUBSCRIPTION_MODEL = /^(claude|agy)\//;
+export const SUBSCRIPTION_BLOCKED = 'Love Spot cannot use a Claude or Gemini subscription. Add an Anthropic API key in Models & accounts, or choose another model.';
+export function createLoveSpotTalk({ client, store, companion, audio = LOVE_SPOT_AUDIO, standalone = process.env.LOVE_SPOT_APP === '1' }: { client: Client; store: Store; companion?: { command: (text: string, session: string) => Promise<unknown> } | undefined; audio?: { available: boolean; reason?: string }; standalone?: boolean }) {
   let threadId: string | null = null, thread: Thread | null = null, entries: Entry[] = [], activeTurnId: string | null = null, finishedTurnId: string | null = null, error = '', loaded = false, sending = false, closed = false, stale: string | null | undefined;
   let work = Promise.resolve(), loading: Promise<void> | null | undefined, sendingPage: Page | undefined;
   let matilda: { replies: boolean; model: string | null; provider: string | null } = { replies: true, model: null, provider: null };
@@ -380,6 +384,7 @@ export function createLoveSpotTalk({ client, store, companion, audio = LOVE_SPOT
         await load(); await work; await refreshVoice();
         if (activeTurnId) throw new BridgeError('Love Spot is already replying. Wait for this turn.', 409);
         const settings = await client.settings(), model = body.model || settings.main.model;
+        if (standalone && SUBSCRIPTION_MODEL.test(model ?? '')) throw new BridgeError(SUBSCRIPTION_BLOCKED, 403);
         // Read all model pages: an unknown model never gets an unverified image attachment.
         let cursor, selected; const cursors = new Set();
         do {
