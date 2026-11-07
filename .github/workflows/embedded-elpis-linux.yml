@@ -230,6 +230,9 @@ jobs:
       - name: Install locked bridge dependencies
         working-directory: tools/elpis-claude
         run: npm ci --ignore-scripts
+      - name: Install locked desktop bridge dependencies
+        working-directory: apps/elpis-desktop
+        run: npm ci --ignore-scripts
       - name: Provider history and message retention checks
         run: |
           node apps/elpis-desktop/bridge/build-resources.mjs --bridge-only
