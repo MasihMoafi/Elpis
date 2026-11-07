@@ -4,6 +4,7 @@ use codex_extension_api::ExtensionFuture;
 use codex_extension_api::ExtensionRegistryBuilder;
 use codex_extension_api::ThreadLifecycleContributor;
 use codex_extension_api::ThreadStartInput;
+use codex_features::Feature;
 use codex_protocol::error::CodexErrorDetails;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::AgentStatus;
@@ -376,6 +377,54 @@ async fn delegate_isolation_does_not_depend_on_attribution() {
             session.thread_config_snapshot().await.thread_source,
             Some(expected_thread_source)
         );
+        io.shutdown_and_wait()
+            .await
+            .expect("delegate session should shut down");
+    }
+}
+
+#[tokio::test]
+async fn disabled_delegate_stays_disabled_when_v2_is_enabled_at_startup() {
+    let (parent_session, parent_ctx, _rx_events) =
+        crate::session::tests::make_session_and_context_with_rx().await;
+
+    for isolation in [
+        codex_extension_api::SessionIsolation::Isolated,
+        codex_extension_api::SessionIsolation::Inherit,
+    ] {
+        let mut config = parent_ctx.config.as_ref().clone();
+        config.permissions.approval_policy = Constrained::allow_only(AskForApproval::Never);
+        config.agents_enabled = true;
+        config.features.set_enabled(Feature::Collab, true).unwrap();
+        config
+            .features
+            .set_enabled(Feature::MultiAgentV2, true)
+            .unwrap();
+        let (session, io) = run_codex_thread_interactive(
+            config,
+            Arc::clone(&parent_session.services.auth_manager),
+            Arc::clone(&parent_session.services.models_manager),
+            Arc::clone(&parent_session),
+            Arc::clone(&parent_ctx),
+            parent_ctx.initial_environments.clone(),
+            CancellationToken::new(),
+            SubAgentSource::Review,
+            isolation,
+            /*initial_history*/ None,
+            crate::session::GitEnrichmentPolicy::Fresh,
+            codex_sandboxing::WindowsSandboxProxySettingsMode::Reconcile,
+        )
+        .await
+        .expect("delegate session should start");
+
+        assert_eq!(
+            session.multi_agent_version(),
+            Some(MultiAgentVersion::Disabled)
+        );
+        let turn = session
+            .new_turn_with_default_settings("delegate".to_string(), Default::default())
+            .await;
+        assert_eq!(turn.multi_agent_version, MultiAgentVersion::Disabled);
         io.shutdown_and_wait()
             .await
             .expect("delegate session should shut down");
