@@ -1,4 +1,5 @@
 'use strict';
+const { preloadPath }: typeof import('./preload-path.cts') = require('./preload-path.cts');
 import type {} from 'node:test';
 type EditorApi = { editors: () => Promise<unknown>; openInEditor: (file: string, editor: string, line?: number) => Promise<unknown> };
 type Handler = (event: unknown, ...args: unknown[]) => unknown;
@@ -67,7 +68,7 @@ test('only an editor from the list can be started: not VS Code, not a command li
 function preload(invoke: (channel: string, ...args: unknown[]) => unknown) {
   let api!: EditorApi;
   const electron = { contextBridge: { exposeInMainWorld: (_name: string, value: EditorApi) => { api = value; } }, ipcRenderer: { sendSync: () => ({}), invoke, on: () => {}, removeListener: () => {} } };
-  vm.runInNewContext(fs.readFileSync(path.join(__dirname, 'preload.cjs'), 'utf8'), { require: () => electron });
+  vm.runInNewContext(fs.readFileSync(preloadPath('preload'), 'utf8'), { require: () => electron });
   return api;
 }
 function setup({ started = [], fail }: { started?: string[][]; fail?: string } = {}) {

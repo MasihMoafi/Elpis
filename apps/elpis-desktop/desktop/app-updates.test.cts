@@ -1,4 +1,5 @@
 import type { EventEmitter as Emitter } from 'node:events';
+const { preloadPath }: typeof import('./preload-path.cts') = require('./preload-path.cts');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -78,7 +79,7 @@ test('quit can await fire-and-forget draft writes and a refused save stays block
   ipc.sendSync = () => ({ values: {}, revision: 0 });
   ipc.invoke = (_channel: string, patch: { key: string; value: string }) => new Promise(resolve => waiting.push({ patch, resolve }));
   const context = vm.createContext({ require: () => ({ ipcRenderer: ipc, contextBridge: { exposeInMainWorld: (_name: string, value: unknown) => { context.api = value; } } }) });
-  const source = process.env.ELPIS_A12_BASELINE ? execFileSync('git', ['show', `${process.env.ELPIS_A12_BASELINE}:apps/elpis-desktop/desktop/preload.cjs`], { encoding: 'utf8' }) : fs.readFileSync(path.join(__dirname, 'preload.cjs'), 'utf8');
+  const source = process.env.ELPIS_A12_BASELINE ? execFileSync('git', ['show', `${process.env.ELPIS_A12_BASELINE}:apps/elpis-desktop/desktop/preload.cjs`], { encoding: 'utf8' }) : fs.readFileSync(preloadPath('preload'), 'utf8');
   vm.runInContext(source, context);
   const { storage } = context.api;
   storage.setItem('elpis-draft-v1:chat', 'Final words');

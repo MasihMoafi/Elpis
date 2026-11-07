@@ -2,6 +2,7 @@
 import type { BrowserWindow, IpcMainInvokeEvent, WebContents } from 'electron';
 import type { StateStore, WindowOpeners } from './main-backend.cts';
 const path: typeof import('node:path') = require('node:path');
+const { preloadPath }: typeof import('./preload-path.cts') = require('./preload-path.cts');
 const { createBrowserSessions } = require('./browser-sessions.cts');
 const { registerState }: typeof import('./state.cts') = require('./state.cts');
 const { registerFiles }: typeof import('./files.cts') = require('./files.cts');
@@ -72,7 +73,7 @@ function createSessionWindowsImpl({ electron, url, store, browserAgentSocket, qu
         zoomFactor: ZOOM,
         nodeIntegration: false, contextIsolation: true, sandbox: true,
         webSecurity: true, webviewTag: false,
-        preload: path.join(__dirname, 'preload.cjs'),
+        preload: preloadPath('preload'),
       },
     });
     const ipcMain = windowIpc(window);

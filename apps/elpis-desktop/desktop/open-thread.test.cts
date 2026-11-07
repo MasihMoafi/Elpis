@@ -1,8 +1,8 @@
 'use strict';
+const { preloadPath }: typeof import('./preload-path.cts') = require('./preload-path.cts');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const path = require('node:path');
 const vm = require('node:vm');
 const { openThreadArgument, createThreadOpener, createNewChatOpener }: typeof import('./open-thread.cts') = require('./open-thread.cts');
 
@@ -47,7 +47,7 @@ test('the preload hands the page each chat to open, including one queued before 
   const electron = { contextBridge: { exposeInMainWorld: (_name: string, value: typeof api) => { api = value; } },
     ipcRenderer: { sendSync: () => ({}), invoke: async (channel: string) => channel === 'elpis:open-thread:take' ? queue.shift() ?? null : undefined,
       on: (name: string, listener: () => void) => listeners.set(name, listener), removeListener: (name: string) => listeners.delete(name) } };
-  vm.runInNewContext(fs.readFileSync(path.join(__dirname, 'preload.cjs'), 'utf8'), { require: () => electron });
+  vm.runInNewContext(fs.readFileSync(preloadPath('preload'), 'utf8'), { require: () => electron });
   const opened: string[] = [];
   const stop = api!.onOpenThread((thread: string) => opened.push(thread));
   await new Promise(resolve => setTimeout(resolve, 10));
@@ -65,7 +65,7 @@ test('Quick Entry and the tray hand the page a new chat to open, with its text o
   const electron = { contextBridge: { exposeInMainWorld: (_name: string, value: typeof api) => { api = value; } },
     ipcRenderer: { sendSync: () => ({}), invoke: async (channel: string) => channel === 'elpis:new-chat:take' ? queue.shift() ?? null : undefined,
       on: (name: string, listener: () => void) => listeners.set(name, listener), removeListener: (name: string) => listeners.delete(name) } };
-  vm.runInNewContext(fs.readFileSync(path.join(__dirname, 'preload.cjs'), 'utf8'), { require: () => electron });
+  vm.runInNewContext(fs.readFileSync(preloadPath('preload'), 'utf8'), { require: () => electron });
   const opened: string[] = [];
   const stop = api!.onNewChat((text: string) => opened.push(text));
   await new Promise(resolve => setTimeout(resolve, 10));

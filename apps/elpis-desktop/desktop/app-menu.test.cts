@@ -1,10 +1,10 @@
 'use strict';
+const { preloadPath }: typeof import('./preload-path.cts') = require('./preload-path.cts');
 import type { EventEmitter as Emitter } from 'node:events';
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const fs = require('node:fs');
-const path = require('node:path');
 const vm = require('node:vm');
 const { createAppMenu }: typeof import('./app-menu.cts') = require('./app-menu.cts');
 
@@ -52,7 +52,7 @@ test('native File/Edit/View/Help menus use the shared commands and dispatch app 
 test('preload exposes only the native menu command channel and unsubscribes app-menu events', async () => {
   const renderer = new EventEmitter() as Emitter & { sendSync: () => object; invoke: (...args: unknown[]) => Promise<{ performed: boolean }> }, invoked: unknown[][] = []; let api: { menu: { command: (action: string) => Promise<unknown>; subscribe: (listener: (action: string) => void) => () => void } } | undefined;
   renderer.sendSync = () => ({}); renderer.invoke = async (...args: unknown[]) => { invoked.push(args); return { performed: true }; };
-  vm.runInNewContext(fs.readFileSync(path.join(__dirname, 'preload.cjs'), 'utf8'), { require: () => ({ ipcRenderer: renderer, contextBridge: { exposeInMainWorld: (_name: string, value: typeof api) => { api = value; } } }) });
+  vm.runInNewContext(fs.readFileSync(preloadPath('preload'), 'utf8'), { require: () => ({ ipcRenderer: renderer, contextBridge: { exposeInMainWorld: (_name: string, value: typeof api) => { api = value; } } }) });
   assert.ok(api); await api!.menu.command('paste'); assert.deepEqual(invoked, [['elpis:menu:command', 'paste']]);
   const heard: string[] = [], stop = api!.menu.subscribe((action: string) => heard.push(action));
   renderer.emit('elpis:menu:requested', {}, 'settings'); stop(); renderer.emit('elpis:menu:requested', {}, 'shortcuts');

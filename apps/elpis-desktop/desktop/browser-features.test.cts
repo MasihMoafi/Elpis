@@ -3,7 +3,7 @@ import type { EventEmitter as NodeEmitter } from 'node:events';
 // annotation (page picks, capture, comments, the agent's text), the page menu, zoom, find, errors and keys.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const path = require('node:path');
+const { preloadPath }: typeof import('./preload-path.cts') = require('./preload-path.cts');
 const { EventEmitter } = require('node:events');
 const { createBrowser } = require('./browser.cts') as typeof import('./browser.cts');
 // createBrowser runs inside Electron, which names its Chromium version.
@@ -78,7 +78,7 @@ async function picked(f: ReturnType<typeof fixture>, page: Page, value: PickValu
 test('each tab page gets the annotation preload in a sandbox with context isolation', () => {
   const f = fixture(); f.browser.open('https://example.com');
   const preferences = f.views[0]!.options.webPreferences;
-  assert.equal(preferences.preload, path.join(__dirname, 'browser-page-preload.cjs'));
+  assert.equal(preferences.preload, preloadPath('browser-page-preload'));
   assert.equal(preferences.sandbox, true); assert.equal(preferences.contextIsolation, true); assert.equal(preferences.nodeIntegration, false);
 });
 

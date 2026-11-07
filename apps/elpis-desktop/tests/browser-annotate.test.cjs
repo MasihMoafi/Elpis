@@ -1,12 +1,12 @@
-// The in-page annotation layer (desktop/browser-page-preload.cjs) in a real Chromium page. Electron's IPC is
+// The in-page annotation layer (desktop/browser-page-preload.cts) in a real Chromium page. Electron's IPC is
 // replaced by a recorder; nothing leaves the test. Hover, click, drag, text, Space, Escape, markers and the
 // draft outline are exercised as a person would, with the mouse and keyboard.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const path = require('node:path');
+const { preloadPath } = require('../desktop/preload-path.cts');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const source = fs.readFileSync(path.join(__dirname, '../desktop/browser-page-preload.cjs'), 'utf8');
+const source = fs.readFileSync(preloadPath('browser-page-preload'), 'utf8');
 const shim = `window.__sent=[];const __listeners={};window.__emit=message=>__listeners['elpis:annotate']?.({},message);
 (function(require){${source}\n})(()=>({ipcRenderer:{send:(channel,message)=>window.__sent.push({channel,message}),on:(channel,listener)=>{__listeners[channel]=listener;}}}));`;
 const PAGE = `<!doctype html><title>Fixture login</title><style>body{margin:0;font:16px sans-serif}main{padding:40px}#scroller{height:120px;overflow:auto;border:1px solid #ccc}#scroller div{height:600px}</style>

@@ -8,10 +8,6 @@ apps/elpis-desktop/bridge/read-aloud.test.mjs
 apps/elpis-desktop/bridge/slash-routes.test.mjs
 apps/elpis-desktop/bridge/workflow-coding.test.mjs
 apps/elpis-desktop/bridge/workflow-replan.test.mjs
-apps/elpis-desktop/desktop/browser-page-preload.cjs
-apps/elpis-desktop/desktop/preload.cjs
-apps/elpis-desktop/desktop/quick-entry-preload.cjs
-apps/elpis-desktop/desktop/screenshot-popup-preload.cjs
 apps/elpis-desktop/scripts/check-prompt-rail.mjs
 apps/elpis-desktop/scripts/renderer-artifact-gate.mjs
 apps/elpis-desktop/scripts/workflows-live-metrics.mjs

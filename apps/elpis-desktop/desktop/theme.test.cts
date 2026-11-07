@@ -1,11 +1,11 @@
 'use strict';
+const { preloadPath }: typeof import('./preload-path.cts') = require('./preload-path.cts');
 import type {} from 'node:test';
 // The app's theme report ('elpis:theme') in the Electron main process, with Electron replaced by fakes: the window
 // buttons, nativeTheme (so web pages in the browser follow prefers-color-scheme) and the browser's page background.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const path = require('node:path');
 const vm = require('node:vm');
 
 const TITLE_BAR = { dark: { color: '#0d0e11' }, light: { color: '#f2f2f1' } };
@@ -68,7 +68,7 @@ test('the page\'s setTheme sends the dark flag, the choice and the background ov
   const sent: unknown[][] = []; let api!: { setTheme: (...args: unknown[]) => void };
   const electron = { contextBridge: { exposeInMainWorld: (_name: string, value: typeof api) => { api = value; } },
     ipcRenderer: { sendSync: () => ({}), send: (...args: unknown[]) => sent.push(args), invoke: async () => ({}), on: () => {}, removeListener: () => {} } };
-  vm.runInNewContext(fs.readFileSync(path.join(__dirname, 'preload.cjs'), 'utf8'), { require: () => electron });
+  vm.runInNewContext(fs.readFileSync(preloadPath('preload'), 'utf8'), { require: () => electron });
   api.setTheme(true, { source: 'dark', background: 'rgb(10, 11, 13)', extra: 'dropped' });
   api.setTheme(false);
   assert.deepEqual(JSON.parse(JSON.stringify(sent)), [['elpis:theme', true, { source: 'dark', background: 'rgb(10, 11, 13)' }], ['elpis:theme', false, {}]]);

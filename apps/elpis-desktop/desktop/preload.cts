@@ -1,46 +1,53 @@
 'use strict';
-const {contextBridge,ipcRenderer}=require('electron');
-const saved = ipcRenderer.sendSync('elpis:state:read');
-const committed = Object.assign(Object.create(null), saved.values ?? {});
-const values = Object.assign(Object.create(null), committed);
+import type { AppMenuCommand, AppUpdateState, BrowserState, DocumentRequest } from '../lib/desktop.ts';
+import type { IpcRendererEvent } from 'electron';
+const {contextBridge,ipcRenderer}: typeof import('electron') = require('electron');
+type Snapshot = { values?: Record<string, string>; revision?: number; error?: string };
+type Change = { key: string; value: string | null; revision: number };
+type Update = { value: string | null; changes?: never } | { changes: Record<string, unknown>; value?: never };
+type Pending = Update & { key: string; baseRevision: number };
+type WriteResult = Change | { error: string; code?: string; snapshot?: Snapshot };
+const saved: Snapshot = ipcRenderer.sendSync('elpis:state:read');
+const committed: Record<string, string> = Object.assign(Object.create(null), saved.values ?? {});
+const values: Record<string, string> = Object.assign(Object.create(null), committed);
 let revision = saved.revision ?? 0;
-const errors = new Set(), listeners = new Set(), pending = [], versions = new Map();
-const writes = new Set(), writeErrors = new Map();
-const failed = error => { for (const callback of errors) callback(String(error.message || error)); };
-function refresh(key) {
+const errors = new Set<(message: string) => void>(), listeners = new Set<(key: string) => void>(), pending: Pending[] = [], versions = new Map<string, number>();
+const writes = new Set<Promise<void>>(), writeErrors = new Map<string, unknown>();
+const failed = (error: unknown) => { for (const callback of errors) callback(String((error as { message?: unknown }).message || error)); };
+function refresh(key: string) {
   let value = committed[key] ?? null;
   for (const patch of pending) if (patch.key === key) {
     if (patch.changes) {
       let current = {};
       try { const parsed = JSON.parse(value || '{}'); if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) current = parsed; } catch {}
       value = JSON.stringify({ ...current, ...patch.changes });
-    } else value = patch.value;
+    } else value = patch.value ?? null;
   }
   if ((values[key] ?? null) === value) return;
   if (value === null) delete values[key]; else values[key] = value;
   for (const callback of listeners) callback(key);
 }
-function adopt(change) {
+function adopt(change: Change) {
   revision = Math.max(revision, change.revision);
   if (change.revision < (versions.get(change.key) ?? -1)) return;
   versions.set(change.key, change.revision);
   if (change.value === null) delete committed[change.key]; else committed[change.key] = change.value;
   refresh(change.key);
 }
-ipcRenderer.on('elpis:state:changed', (_event, change) => adopt(change));
-function write(key, update) {
-  const patch = { key, baseRevision: revision, ...update };
+ipcRenderer.on('elpis:state:changed', (_event, change: Change) => adopt(change));
+function write(key: string, update: Update) {
+  const patch: Pending = { key, baseRevision: revision, ...update };
   pending.push(patch); refresh(key);
-  const operation = ipcRenderer.invoke('elpis:state:write', patch).then(result => {
-    if (result.error) {
+  const operation: Promise<void> = ipcRenderer.invoke('elpis:state:write', patch).then((result: WriteResult) => {
+    if ('error' in result && result.error) {
       const state = result.snapshot;
-      if (state?.values && state.revision >= revision) {
+      if (state?.values && typeof state.revision === 'number' && state.revision >= revision) {
         const keys = new Set([...Object.keys(committed), ...Object.keys(state.values)]);
         for (const key of keys) adopt({ key, value: state.values[key] ?? null, revision: state.revision });
       }
       throw Object.assign(Error(result.error), { code: result.code });
     }
-    adopt(result);
+    adopt(result as Change);
     writeErrors.delete(key);
   }).catch(error => { writeErrors.set(key, error); throw error; })
     .finally(() => { pending.splice(pending.indexOf(patch), 1); refresh(key); writes.delete(operation); });
@@ -50,11 +57,11 @@ function write(key, update) {
 contextBridge.exposeInMainWorld('elpisDesktop',{
   menu:{
     command:command=>ipcRenderer.invoke('elpis:menu:command',command).then(checked),
-    subscribe:callback=>{const listener=(_event,command)=>callback(command);ipcRenderer.on('elpis:menu:requested',listener);return()=>ipcRenderer.removeListener('elpis:menu:requested',listener);},
+    subscribe:callback=>{const listener=(_event:IpcRendererEvent,command:AppMenuCommand)=>callback(command);ipcRenderer.on('elpis:menu:requested',listener);return()=>ipcRenderer.removeListener('elpis:menu:requested',listener);},
   },
   improve: {
     capture:bounds=>ipcRenderer.invoke('elpis:improve:capture',bounds).then(checked),
-    onPoint:callback=>{const listener=(_event,point)=>callback(point);ipcRenderer.on('elpis:improve:point',listener);return()=>ipcRenderer.removeListener('elpis:improve:point',listener);},
+    onPoint:callback=>{const listener=(_event:IpcRendererEvent,point:{x:number;y:number})=>callback(point);ipcRenderer.on('elpis:improve:point',listener);return()=>ipcRenderer.removeListener('elpis:improve:point',listener);},
   },
   screenCapture: {
     setSession:threadId=>ipcRenderer.invoke('elpis:screen-capture:session',threadId).then(checked),
@@ -76,7 +83,7 @@ contextBridge.exposeInMainWorld('elpisDesktop',{
   updates:{
     status:()=>ipcRenderer.invoke('elpis:updates:status').then(checked),
     restart:()=>ipcRenderer.invoke('elpis:updates:restart').then(checked),
-    subscribe:callback=>{const listener=(_event,state)=>callback(state);ipcRenderer.on('elpis:updates:changed',listener);return()=>ipcRenderer.removeListener('elpis:updates:changed',listener);},
+    subscribe:callback=>{const listener=(_event:IpcRendererEvent,state:AppUpdateState)=>callback(state);ipcRenderer.on('elpis:updates:changed',listener);return()=>ipcRenderer.removeListener('elpis:updates:changed',listener);},
   },
   openSessionWindow:threadId=>ipcRenderer.invoke('elpis:session-window',threadId).then(checked),
   chooseFolder:()=>ipcRenderer.invoke('elpis:folder'),
@@ -87,12 +94,12 @@ contextBridge.exposeInMainWorld('elpisDesktop',{
     if(result?.opened!==true)throw Error('Could not open this file.');
   }),
   onOpenFile:callback=>{
-    const listener=(_event,target)=>callback(target);
+    const listener=(_event:IpcRendererEvent,target:{path:string;line?:number})=>callback(target);
     ipcRenderer.on('elpis:file:requested',listener);
     return()=>ipcRenderer.removeListener('elpis:file:requested',listener);
   },
   documents:{subscribe:callback=>{
-    const listener=(_event,request)=>{
+    const listener=(_event:IpcRendererEvent,request:DocumentRequest)=>{
       void Promise.resolve().then(()=>callback(request)).then(
         result=>ipcRenderer.send('elpis:document:reply',{id:request.id,result}),
         error=>ipcRenderer.send('elpis:document:reply',{id:request.id,error:error instanceof Error?error.message:String(error)}),
@@ -121,7 +128,7 @@ contextBridge.exposeInMainWorld('elpisDesktop',{
     sessionScoped:true,
     command:(action,data={})=>ipcRenderer.invoke('elpis:browser',{action,...data}).then(result=>{if(typeof result?.error==='string')throw Error(result.error);return result;}),
     layout:value=>ipcRenderer.send('elpis:browser:layout',value),
-    subscribe:callback=>{const listener=(_event,state)=>callback(state);ipcRenderer.on('elpis:browser:state',listener);return()=>ipcRenderer.removeListener('elpis:browser:state',listener);},
+    subscribe:callback=>{const listener=(_event:IpcRendererEvent,state:BrowserState)=>callback(state);ipcRenderer.on('elpis:browser:state',listener);return()=>ipcRenderer.removeListener('elpis:browser:state',listener);},
   },
   // One shell per terminal tab (desktop/terminal.cjs); the key names the tab.
   terminal:{
@@ -134,7 +141,7 @@ contextBridge.exposeInMainWorld('elpisDesktop',{
     copy:text=>ipcRenderer.invoke('elpis:terminal:clipboard',String(text)).then(checked),
     paste:()=>ipcRenderer.invoke('elpis:terminal:clipboard').then(checked).then(result=>String(result.text??'')),
     subscribe:(onData,onExit)=>{
-      const data=(_event,key,id,end,text)=>onData(key,id,end,text),exit=(_event,key,id,code)=>onExit(key,id,code);
+      const data=(_event:IpcRendererEvent,key:string,id:number,end:number,text:string)=>onData(key,id,end,text),exit=(_event:IpcRendererEvent,key:string,id:number,code:number)=>onExit(key,id,code);
       ipcRenderer.on('elpis:terminal:data',data);ipcRenderer.on('elpis:terminal:exit',exit);
       return()=>{ipcRenderer.removeListener('elpis:terminal:data',data);ipcRenderer.removeListener('elpis:terminal:exit',exit);};
     },
@@ -146,18 +153,18 @@ contextBridge.exposeInMainWorld('elpisDesktop',{
   // The screenshot thumbnail (desktop/screenshot-popup.cjs): ask for one, and hear which screenshot its click opens.
   screenshotPopup:{
     show:shot=>ipcRenderer.send('elpis:screenshot-popup:request',{id:String(shot?.id??''),name:String(shot?.name??''),dataURL:String(shot?.dataURL??''),count:Number.isInteger(shot?.count)?shot.count:1}),
-    onOpen:callback=>{const open=(_event,id)=>{if(typeof id==='string')callback(id);};ipcRenderer.on('elpis:screenshot-popup:open',open);return()=>ipcRenderer.removeListener('elpis:screenshot-popup:open',open);},
+    onOpen:callback=>{const open=(_event:IpcRendererEvent,id:unknown)=>{if(typeof id==='string')callback(id);};ipcRenderer.on('elpis:screenshot-popup:open',open);return()=>ipcRenderer.removeListener('elpis:screenshot-popup:open',open);},
   },
   // Settings → General → Quick Entry keyboard shortcut (desktop/quick-entry.cjs).
   quickEntry:{
     status:()=>ipcRenderer.invoke('elpis:quick-entry:status'),
     setShortcut:accelerator=>ipcRenderer.invoke('elpis:quick-entry:shortcut',String(accelerator)).then(checked),
   },
-});
-function checked(result){if(typeof result?.error==='string')throw Error(result.error);return result;}
+} satisfies NonNullable<Window['elpisDesktop']>);
+function checked<T>(result: T){if(result && typeof result==='object' && 'error' in result && typeof result.error==='string')throw Error(result.error);return result;}
 /** Takes what the main process holds for this page (desktop/open-thread.cjs) at once and on each ping. */
-function handoff(channel,callback){
-  const take=()=>ipcRenderer.invoke(`${channel}:take`).then(value=>{if(typeof value==='string')callback(value);}).catch(()=>{});
+function handoff(channel: string,callback: (value: string) => void){
+  const take=()=>{void ipcRenderer.invoke(`${channel}:take`).then(value=>{if(typeof value==='string')callback(value);}).catch(()=>{});};
   ipcRenderer.on(channel,take);take();
   return()=>ipcRenderer.removeListener(channel,take);
 }

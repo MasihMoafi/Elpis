@@ -1,4 +1,5 @@
 'use strict';
+const { preloadPath }: typeof import('./preload-path.cts') = require('./preload-path.cts');
 import type { BrowserWindow as Window, IpcMain, IpcMainEvent, Screen } from 'electron';
 const path = require('node:path');
 const { trustedBrowserSender }: typeof import('./browser-policy.cts') = require('./browser-policy.cts');
@@ -19,7 +20,7 @@ function createScreenshotPopupImpl({ BrowserWindow, screen, ipcMain, dark }: { B
     window = new BrowserWindow({ ...SIZE, x: workArea.x + workArea.width - SIZE.width - MARGIN, y: workArea.y + workArea.height - SIZE.height - MARGIN,
       show: false, title: 'Elpis screenshot', frame: false, transparent: true, backgroundColor: '#00000000', hasShadow: false, focusable: false,
       resizable: false, minimizable: false, maximizable: false, fullscreenable: false, skipTaskbar: true,
-      webPreferences: { preload: path.join(__dirname, 'screenshot-popup-preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true } });
+      webPreferences: { preload: preloadPath('screenshot-popup-preload'), contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true } });
     window.setAlwaysOnTop(true, 'pop-up-menu');
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     window.webContents.on('will-navigate', event => event.preventDefault());
