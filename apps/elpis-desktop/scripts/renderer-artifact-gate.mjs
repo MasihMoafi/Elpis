@@ -614,7 +614,7 @@ export const retiredPaths = {
 export const receiptName = '.elpis-ui-receipt.json';
 // The saved-workspace regression; its .cjs name survives in older baselines (moved to TypeScript on 7 Nov).
 const stateTests = ['desktop/state.test.cts', 'desktop/state.test.cjs'];
-const isStateTest = name => stateTests.includes(name);
+const isStateTest = (/** @type {string} */ name) => stateTests.includes(name);
 const appPrefix = 'apps/elpis-desktop/';
 const appRoot = fileURLToPath(new URL('../', import.meta.url));
 const digest = value => createHash('sha256').update(value).digest('hex');
