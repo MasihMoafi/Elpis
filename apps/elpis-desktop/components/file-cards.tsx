@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { FileCode, FileImage, FileSpreadsheet, FileText, Presentation, Workflow, File } from "lucide-react";
+import { ChevronDown, ChevronUp, FileCode, FileImage, FileSpreadsheet, FileText, Presentation, Workflow, File } from "lucide-react";
 import { FolderIcon } from "@/components/elpis-icons";
 import { MoreMenu } from "@/components/action-menu";
 import { useFileActions } from "@/components/file-actions";
@@ -39,14 +39,24 @@ async function run(action: ((target: string) => Promise<void>) | undefined, targ
   try { await action(target); } catch (cause) { fail(errorText(cause, "Could not open it.")); }
 }
 
-/** The files a finished turn created, one card each, after its reply. */
+/** Cards shown before a long list folds (Masih, 7 Nov: "when files are these many, collapse them by default and show
+ * only a few"); a list only one longer than this shows whole, since folding would hide a single card. */
+export const SHOWN_FILES = 3;
+
+/** The files a finished turn created, one card each, after its reply; a long list shows its first few and folds the
+ * rest behind one button. */
 export function CreatedFiles({ paths }: { paths: string[] }) {
-  const [error, setError] = useState("");
+  const [error, setError] = useState(""), [open, setOpen] = useState(false);
   if (!paths.length) return null;
+  const folds = paths.length > SHOWN_FILES + 1, shown = folds && !open ? paths.slice(0, SHOWN_FILES) : paths;
   return <>
     <ul className="file-cards" aria-label="Files created">
-      {paths.map(path => <CreatedFile key={path} path={path} onError={setError} />)}
+      {shown.map(path => <CreatedFile key={path} path={path} onError={setError} />)}
     </ul>
+    {folds && <Button variant="ghost" size="sm" className="file-cards-more" aria-expanded={open} onClick={() => setOpen(value => !value)}>
+      {open ? <ChevronUp size={16} aria-hidden="true" /> : <ChevronDown size={16} aria-hidden="true" />}
+      {open ? "Show fewer" : `Show ${paths.length - SHOWN_FILES} more files`}
+    </Button>}
     {error && <p role="alert" className="file-cards-error">{error}</p>}
   </>;
 }

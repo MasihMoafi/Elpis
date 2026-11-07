@@ -694,6 +694,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .file-card-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:var(--text-base); font-weight:500; color:var(--foreground); }
 .file-card-type { font-size:var(--text-sm); color:var(--muted-foreground); }
 .file-card-actions { display:flex; align-items:center; gap:4px; flex:none; }
+.file-cards:has(+ .file-cards-more) { margin-bottom:6px; }
+.file-cards-more { margin:0 0 14px; gap:6px; color:var(--muted-foreground); }
 .file-cards-error { margin:-8px 0 12px; font-size:var(--text-sm); color:var(--destructive); }
 .activity-group-failed { color:var(--destructive); }
 .activity-group-body { margin:6px 0 4px 10px; padding-left:12px; border-left:1px solid var(--border); }
