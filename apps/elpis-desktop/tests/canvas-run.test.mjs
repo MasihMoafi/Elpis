@@ -2,7 +2,7 @@
 // agent and check writes its report in a folder of its own; the tally may also write the whole project.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import './alias.mjs';
+import './alias.mts';
 const { TEMPLATES, runTasks } = await import('../lib/canvas.ts');
 
 test('Voting: the tally waits for all three answers and their checks; each task writes its report in its own folder', () => {

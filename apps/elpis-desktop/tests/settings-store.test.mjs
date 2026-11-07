@@ -2,7 +2,7 @@
 // answer; reopening re-reads what another client saved.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import './alias.mjs';
+import './alias.mts';
 const { reloadSettings, saveOptions } = await import('../lib/settings-store.ts');
 
 const snapshot = (version, reasoningEffort, model = null) => ({ version, main: { model }, background: {}, smartPrune: {}, memory: {}, options: { reasoningEffort }, write: { available: true, reason: '' } });

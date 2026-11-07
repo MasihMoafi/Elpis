@@ -2,7 +2,7 @@
 // running turn), removed, or all cleared, and clearing sends nothing.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import './alias.mjs';
+import './alias.mts';
 
 const values = new Map(), posts = [];
 globalThis.window = { localStorage: { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) } };

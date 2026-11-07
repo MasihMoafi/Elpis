@@ -22,7 +22,6 @@ apps/elpis-desktop/tests/agents-guide.test.cjs
 apps/elpis-desktop/tests/agents-icon.test.cjs
 apps/elpis-desktop/tests/agents-iso.test.mjs
 apps/elpis-desktop/tests/agents.test.mjs
-apps/elpis-desktop/tests/alias.mjs
 apps/elpis-desktop/tests/anthropic-signout.test.cjs
 apps/elpis-desktop/tests/api-busy.test.mjs
 apps/elpis-desktop/tests/api-errors.test.mjs
@@ -113,7 +112,6 @@ apps/elpis-desktop/tests/context-menu.test.cjs
 apps/elpis-desktop/tests/controls.cjs
 apps/elpis-desktop/tests/conversation-colors.test.cjs
 apps/elpis-desktop/tests/custom-themes.test.cjs
-apps/elpis-desktop/tests/customize-description-fit.test.cjs
 apps/elpis-desktop/tests/customize.test.cjs
 apps/elpis-desktop/tests/decision-cards.test.cjs
 apps/elpis-desktop/tests/desktop-polish.test.cjs
@@ -121,10 +119,7 @@ apps/elpis-desktop/tests/desktop-small-fixes.test.cjs
 apps/elpis-desktop/tests/dev-server-electron.cjs
 apps/elpis-desktop/tests/dev-server.test.cjs
 apps/elpis-desktop/tests/dialog-actions.test.cjs
-apps/elpis-desktop/tests/dictation.test.mjs
-apps/elpis-desktop/tests/diff.test.mjs
 apps/elpis-desktop/tests/documents.runtime.mjs
-apps/elpis-desktop/tests/dollar-math.test.mjs
 apps/elpis-desktop/tests/drafts.test.mjs
 apps/elpis-desktop/tests/edit-fork-real.test.cjs
 apps/elpis-desktop/tests/edits.test.mjs
@@ -134,7 +129,6 @@ apps/elpis-desktop/tests/excalidraw-diagram.test.cjs
 apps/elpis-desktop/tests/experiment-lab.runtime.mjs
 apps/elpis-desktop/tests/experiment-lab.test.cjs
 apps/elpis-desktop/tests/failed-turn.test.cjs
-apps/elpis-desktop/tests/failed-turn.test.mjs
 apps/elpis-desktop/tests/fake-desktop.cjs
 apps/elpis-desktop/tests/file-refs.test.mjs
 apps/elpis-desktop/tests/files-pane.test.cjs
@@ -163,7 +157,6 @@ apps/elpis-desktop/tests/ledger.test.cjs
 apps/elpis-desktop/tests/live-events.test.mjs
 apps/elpis-desktop/tests/live-submissions.test.cjs
 apps/elpis-desktop/tests/load-earlier.test.cjs
-apps/elpis-desktop/tests/love-activity.test.mjs
 apps/elpis-desktop/tests/love-agents-live.runtime.mjs
 apps/elpis-desktop/tests/love-dock.test.cjs
 apps/elpis-desktop/tests/love-interview-acceptance.mjs
@@ -200,7 +193,6 @@ apps/elpis-desktop/tests/memory-count.test.cjs
 apps/elpis-desktop/tests/mentions.test.mjs
 apps/elpis-desktop/tests/menus.test.cjs
 apps/elpis-desktop/tests/message-copy.cjs
-apps/elpis-desktop/tests/message-copy.test.mjs
 apps/elpis-desktop/tests/message-edit.test.cjs
 apps/elpis-desktop/tests/message-fold.test.cjs
 apps/elpis-desktop/tests/message-replies.test.cjs
@@ -217,7 +209,6 @@ apps/elpis-desktop/tests/observability.test.cjs
 apps/elpis-desktop/tests/page-column-app.cjs
 apps/elpis-desktop/tests/page-column.cjs
 apps/elpis-desktop/tests/pane-select-all.test.cjs
-apps/elpis-desktop/tests/panel-tabs.test.mjs
 apps/elpis-desktop/tests/parity-fixture.cjs
 apps/elpis-desktop/tests/permissions-effort.runtime.mjs
 apps/elpis-desktop/tests/personal.test.cjs
@@ -302,7 +293,6 @@ apps/elpis-desktop/tests/startup-splash.test.cjs
 apps/elpis-desktop/tests/startup.runtime.cjs
 apps/elpis-desktop/tests/step-sentences.test.cjs
 apps/elpis-desktop/tests/steps.test.mjs
-apps/elpis-desktop/tests/strict-baseline.test.mjs
 apps/elpis-desktop/tests/submitted-messages.test.mjs
 apps/elpis-desktop/tests/tabs.test.cjs
 apps/elpis-desktop/tests/task-list.test.cjs
@@ -314,7 +304,6 @@ apps/elpis-desktop/tests/theme-characters.test.cjs
 apps/elpis-desktop/tests/tui-engine.runtime.mjs
 apps/elpis-desktop/tests/turn-replacement.test.mjs
 apps/elpis-desktop/tests/ui-fit.cjs
-apps/elpis-desktop/tests/ui-rules.test.mjs
 apps/elpis-desktop/tests/undo-delete.test.cjs
 apps/elpis-desktop/tests/usability.test.cjs
 apps/elpis-desktop/tests/use-for-settings.test.cjs

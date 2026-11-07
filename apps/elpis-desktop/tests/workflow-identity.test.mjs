@@ -2,7 +2,7 @@
 // row says how the run went.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import './alias.mjs';
+import './alias.mts';
 const { runSummary, workflowMembers } = await import('../lib/workflow-identity.ts');
 
 const run = (status, tasks, extra = {}) => ({ id: 'run-1', rootThreadId: 'root', status, tasks, ...extra });

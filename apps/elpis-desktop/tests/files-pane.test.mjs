@@ -2,7 +2,7 @@
 // file from a reply opening as a page in the built-in browser.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import './alias.mjs';
+import './alias.mts';
 
 let read = () => ({ content: 'saved text\n', size: 11, mtimeMs: 1 });
 globalThis.fetch = async () => { try { return { ok: true, status: 200, json: async () => read() }; } catch (error) { return { ok: false, status: 500, json: async () => ({ error: error.message }) }; } };

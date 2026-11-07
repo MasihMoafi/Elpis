@@ -59,7 +59,7 @@ jobs:
       - name: Strict type checks, lint and duplication against the baseline
         run: node scripts/strict-baseline.mts
       - name: Ratchet tests
-        run: node --test tests/strict-baseline.test.mjs
+        run: node --test tests/strict-baseline.test.mts
   rust-format:
     name: rust format
     runs-on: ubuntu-latest
