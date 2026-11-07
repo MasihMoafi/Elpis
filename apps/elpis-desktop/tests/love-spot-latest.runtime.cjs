@@ -1,4 +1,4 @@
-// Real packaged app and engine (tests/real-app.cjs): opening Love Spot shows the latest message, readable, the first time,
+// Real packaged app and engine (tests/real-app.cts): opening Love Spot shows the latest message, readable, the first time,
 // again after visiting a chat, and after a restart (24 Oct, A238: "when I open love spot it should take me to the latest
 // message"). The board is far wider than the window, so a fit-everything view would shrink the note to a few pixels.
 // ELPIS_TEST_APP=/packaged/app ELPIS_TEST_ENGINE=$HOME/.local/bin/elpis-next ELPIS_PLAYWRIGHT_PACKAGE=... [ELPIS_TEST_PORT=9461]
@@ -7,7 +7,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { startApp, stopApp, skipFirstRun } = require('./real-app.cjs');
+const { startApp, stopApp, skipFirstRun } = require('./real-app.cts');
 const { chooseTheme } = require('./controls.cjs');
 
 const LATEST = '#ff00ff';

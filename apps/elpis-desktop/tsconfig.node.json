@@ -20,7 +20,9 @@
     "exactOptionalPropertyTypes": true,
     "noImplicitOverride": true,
     "noFallthroughCasesInSwitch": true,
-    "types": ["node"]
+    "types": ["node"],
+    // The renderer's "@/" imports, which tests load through tests/alias.mts, resolve here too.
+    "paths": { "@/*": ["./*"] }
   },
   "include": ["bridge/**/*.mjs", "bridge/**/*.cjs", "bridge/**/*.mts", "bridge/**/*.cts", "desktop/**/*.mjs", "desktop/**/*.cjs", "desktop/**/*.mts", "desktop/**/*.cts", "lib/**/*.mjs", "lib/**/*.cjs", "lib/**/*.mts", "lib/**/*.cts", "scripts/**/*.mjs", "scripts/**/*.cjs", "scripts/**/*.mts", "scripts/**/*.cts", "tests/**/*.mts", "tests/**/*.cts"],
   "exclude": ["node_modules", "bridge/resources"]

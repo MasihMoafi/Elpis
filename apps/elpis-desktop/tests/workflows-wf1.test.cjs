@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
-const { openCanvas } = require(process.env.ELPIS_WF1_CDP ? './workflows-wf1-real.cjs' : './canvas-fixture.cjs');
+const { openCanvas } = require(process.env.ELPIS_WF1_CDP ? './workflows-wf1-real.cts' : './canvas-fixture.cjs');
 const { chooseTheme } = require('./controls.cjs');
 
 const shots = process.env.ELPIS_SHOTS || '/tmp/wf1-shots';
@@ -115,7 +115,7 @@ for (const iso of [false, true]) for (const color of ['light']) {
   });
 }
 
-for (const color of ['light']) test(`A30 ${color}: run rejection and failed agent explain the next action at the bottom; retry succeeds`, { skip: Boolean(process.env.ELPIS_WF1_CDP) && 'Mock responses are excluded from real-app acceptance; run workflows-wf1-real.cjs for a real refused write.' }, async () => {
+for (const color of ['light']) test(`A30 ${color}: run rejection and failed agent explain the next action at the bottom; retry succeeds`, { skip: Boolean(process.env.ELPIS_WF1_CDP) && 'Mock responses are excluded from real-app acceptance; run workflows-wf1-real.cts for a real refused write.' }, async () => {
   let failed = true;
   const f = await openCanvas({ graph, folders: [], listed(run) {
     return { id: run.graphId, status: failed ? 'failed' : 'succeeded', tasks: run.tasks.map((task, i) => ({ id: task.id, status: failed ? i === 0 ? 'failed' : 'blocked' : 'succeeded', assignedThreadId: null, failureReason: failed && i === 0 ? 'EACCES: permission denied, open agents/first/report.md' : null })) };

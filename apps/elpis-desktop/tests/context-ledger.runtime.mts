@@ -13,7 +13,7 @@ const standinPath = './responses-' + 'standin.mjs';
 const { model }: { model(): Promise<{ port: number; close(): void; state: { requests: { asked: string; truth?: { input: number; output: number; reasoning: number } }[] } }> } = await import(standinPath);
 
 const require = createRequire(import.meta.url);
-const { startApp, stopApp, skipFirstRun } = require('./real-app.cjs');
+const { startApp, stopApp, skipFirstRun } = require('./real-app.cts');
 const ready = !!(process.env.ELPIS_TEST_APP && process.env.ELPIS_TEST_ENGINE);
 const port = process.env.ELPIS_TEST_PORT || '9482';
 const tokens = (text: string) => { const match = /([\d.]+)\s*(k|M)?/.exec(text.replace(/,/g, '')); assert.ok(match, `missing token count: ${text}`); return Number(match[1]) * (match[2] === 'k' ? 1e3 : match[2] === 'M' ? 1e6 : 1); };
