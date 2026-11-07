@@ -30,12 +30,12 @@ function fixture(t, spaces = false) {
   symlinkSync(`${old}/elpis-next`, `${bin}/elpis-next`);
   // Bridge dependencies can contain external directory links. They must never enter the CLI package.
   symlinkSync(source, `${old}/tools/elpis-claude/node_modules`);
-  writeFileSync(`${source}/tools/elpis-claude/runtime.mjs`, 'export const fixture = true;\n');
+  writeFileSync(`${source}/tools/elpis-claude/runtime.mts`, 'export const fixture = true;\n');
   writeFileSync(`${source}/tools/elpis-claude/elpis-wrapper`, `#!/bin/sh\n${direct}\n`);
   writeFileSync(`${source}/codex-rs/prompts/fixture.md`, 'prompt\n');
   const git = (...args) => execFileSync('git', ['-C', source, ...args], { stdio: 'pipe' });
   git('init', '-q');
-  git('add', 'tools/elpis-claude/runtime.mjs', 'tools/elpis-claude/elpis-wrapper', 'codex-rs/prompts/fixture.md');
+  git('add', 'tools/elpis-claude/runtime.mts', 'tools/elpis-claude/elpis-wrapper', 'codex-rs/prompts/fixture.md');
   git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@localhost', 'commit', '-qm', 'fixture');
   const head = git('rev-parse', 'HEAD').toString().trim();
   writeFileSync(`${frontend}/verification.json`, JSON.stringify({ head: head.slice(0, 9), run: 1 }));
@@ -78,10 +78,10 @@ test('engine bundle takes tracked ACP tools from the selected source', (t) => {
   const host = '#!/bin/sh\necho new-host\n';
   writeFileSync(`${f.source}/codex-rs/target/release/codex-code-mode-host`, host);
   chmodSync(`${f.source}/codex-rs/target/release/codex-code-mode-host`, 0o755);
-  writeFileSync(`${f.old}/tools/elpis-claude/runtime.mjs`, 'old runtime\n');
-  writeFileSync(`${f.source}/tools/elpis-claude/runtime.mjs`, 'new runtime\n');
+  writeFileSync(`${f.old}/tools/elpis-claude/runtime.mts`, 'old runtime\n');
+  writeFileSync(`${f.source}/tools/elpis-claude/runtime.mts`, 'new runtime\n');
   writeFileSync(`${f.source}/tools/elpis-claude/new-mapper.mjs`, 'new mapper\n');
-  f.git('add', 'tools/elpis-claude/runtime.mjs', 'tools/elpis-claude/new-mapper.mjs');
+  f.git('add', 'tools/elpis-claude/runtime.mts', 'tools/elpis-claude/new-mapper.mjs');
   f.git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@localhost', 'commit', '-qm', 'new runtime');
   writeFileSync(`${f.source}/tools/elpis-claude/untracked.mjs`, 'untracked\n');
 
@@ -89,7 +89,7 @@ test('engine bundle takes tracked ACP tools from the selected source', (t) => {
   assert.equal(result.status, 0, result.stderr);
   const tools = `${f.bundle()}/tools/elpis-claude`;
   assert.equal(readFileSync(`${f.bundle()}/package/bin/codex-code-mode-host`, 'utf8'), host);
-  assert.equal(readFileSync(`${tools}/runtime.mjs`, 'utf8'), 'new runtime\n');
+  assert.equal(readFileSync(`${tools}/runtime.mts`, 'utf8'), 'new runtime\n');
   assert.equal(readFileSync(`${tools}/new-mapper.mjs`, 'utf8'), 'new mapper\n');
   assert.ok(!existsSync(`${tools}/untracked.mjs`));
 });

@@ -7,7 +7,7 @@ const { fixture } = require('./parity-fixture.cjs');
 const { oranges } = require('./controls.cjs');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { dragMessageText } = require('./message-copy.cjs');
+const { dragMessageText } = require('./message-copy.cts');
 
 async function using(options, run) {
   const f = await fixture(options);

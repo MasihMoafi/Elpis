@@ -1,4 +1,4 @@
-/** The terminal's /init prompt, word for word (codex-rs/tui/assets/prompt_for_init_command.md); tests/slash-helpers.test.mjs fails if the two drift apart. */
+/** The terminal's /init prompt, word for word (codex-rs/tui/assets/prompt_for_init_command.md); tests/slash-helpers.test.mts fails if the two drift apart. */
 export const INIT_PROMPT = `Generate a file named AGENTS.md that serves as a contributor guide for this repository.
 Before writing, check whether AGENTS.md already exists in the current working directory. If it does, do not overwrite or modify it.
 Your goal is to produce a clear, concise, and well-structured document with descriptive headings and actionable explanations for each section.

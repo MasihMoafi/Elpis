@@ -1,4 +1,4 @@
-import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cjs';
+import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -736,7 +736,7 @@ test('opening a board replaces her older faces with the raster one and keeps a c
 test('pages not kept go to the trash after a week untouched; kept pages and the open page stay', async t => {
   const fsp = (await import('node:fs/promises')).default, pathm = (await import('node:path')).default, osm = (await import('node:os')).default;
   const { createLoveSpot } = await import('./love-spot-store.cts');
-  const { createTestTempDir, removeTestTempDir } = await import('../tests/temp-root.cjs');
+  const { createTestTempDir, removeTestTempDir } = await import('../tests/temp-root.cts');
   const base = pathm.join(osm.homedir(), '.cache/elpis-tests'); await fsp.mkdir(base, { recursive: true });
   const directory = createTestTempDir(pathm.join(base, 'love-pages-'));
   t.after(() => removeTestTempDir(directory));
@@ -765,7 +765,7 @@ test('pages not kept go to the trash after a week untouched; kept pages and the 
 test('delete all pages trashes every page but the open one and the kept ones', async t => {
   const fsp = (await import('node:fs/promises')).default, pathm = (await import('node:path')).default, osm = (await import('node:os')).default;
   const { createLoveSpot } = await import('./love-spot-store.cts');
-  const { createTestTempDir, removeTestTempDir } = await import('../tests/temp-root.cjs');
+  const { createTestTempDir, removeTestTempDir } = await import('../tests/temp-root.cts');
   const base = pathm.join(osm.homedir(), '.cache/elpis-tests'); await fsp.mkdir(base, { recursive: true });
   const directory = createTestTempDir(pathm.join(base, 'love-clear-'));
   t.after(() => removeTestTempDir(directory));

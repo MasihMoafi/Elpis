@@ -36,7 +36,7 @@ test('native Love Spot is one full drawing window: pages, green pen, captured vo
     config = { command: process.execPath, args: ['-e', transcriber], env: { WHISPERTYPE_BACKEND: 'local', AUDIO_CHECK: check, AUDIO_REPLY: reply } };
     electron = await _electron.launch({ executablePath: require('electron'), args: ['--no-sandbox', '--ozone-platform=x11',
       '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', `--use-file-for-fake-audio-capture=${audio}`,
-      path.resolve(__dirname, 'session-windows-electron.cjs'), '--love-spot'],
+      path.resolve(__dirname, 'session-windows-electron.cts'), '--love-spot'],
     env: { ...process.env, XDG_SESSION_TYPE: 'x11', WAYLAND_DISPLAY: '', ELPIS_HOME: f.root,
       SESSION_WINDOW_PROFILE: path.join(f.root, 'profile'), SESSION_WINDOW_URL: f.url } });
     const page = await electron.firstWindow(); page.setDefaultTimeout(15000);

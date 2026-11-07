@@ -14,7 +14,7 @@ import test from 'node:test';
 import { setTimeout as pause } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import WebSocket from 'ws';
-import { createTestTempDir, removeTestTempDir } from './temp-root.cjs';
+import { createTestTempDir, removeTestTempDir } from './temp-root.cts';
 
 // ELPIS_TEST_TOOLS: the runtime under test (default this checkout's); the stand-in model is always this checkout's.
 const tools = path.resolve(process.env.ELPIS_TEST_TOOLS || fileURLToPath(new URL('../../../tools/elpis-claude/', import.meta.url)));

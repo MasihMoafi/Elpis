@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const { fixture } = require('./parity-fixture.cjs');
-const { files, contextRoutes } = require('./context-files-fixture.cjs');
+const { files, contextRoutes } = require('./context-files-fixture.cts');
 const { assertUiFit } = require('./ui-fit.cjs');
 const popupOf = page => page.getByRole('dialog', { name: 'Context window usage', exact: true });
 async function open(f) { await f.open('chat-a'); await f.page.locator('.composer .context-ring').click(); await popupOf(f.page).getByRole('switch', { name: 'Include ES.md', exact: true }).waitFor(); }

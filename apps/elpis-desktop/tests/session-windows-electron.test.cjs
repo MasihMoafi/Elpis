@@ -17,7 +17,7 @@ test('native Love Spot dock and embedded windows retain live text after a cancel
     const nativeEnv = { ...process.env, XDG_SESSION_TYPE: 'x11', ELECTRON_OZONE_PLATFORM_HINT: 'x11', ELPIS_HOME: path.join(f.root, 'elpis-home'),
       ELPIS_DESKTOP_PROFILE: path.join(f.root, 'profile'), SESSION_WINDOW_PROFILE: path.join(f.root, 'profile'), SESSION_WINDOW_URL: f.url };
     delete nativeEnv.WAYLAND_DISPLAY;
-    electron = await _electron.launch({ executablePath: require('electron'), args: ['--no-sandbox', '--ozone-platform=x11', path.resolve(__dirname, 'session-windows-electron.cjs')], env: nativeEnv });
+    electron = await _electron.launch({ executablePath: require('electron'), args: ['--no-sandbox', '--ozone-platform=x11', path.resolve(__dirname, 'session-windows-electron.cts')], env: nativeEnv });
     const embedded = await electron.firstWindow(); embedded.setDefaultTimeout(10000); await f.open(embedded);
     const opened = electron.waitForEvent('window');
     await electron.evaluate(async () => { await global.sessionWindows.openLoveSpot(); });
@@ -66,7 +66,7 @@ test('native settings changes update both windows without reverting another pref
     smartPrune: { enabled: false, explicitOverride: {} }, memory: {}, options: { serviceTier: 'default' }, write: { available: false, reason: 'Fixture' },
   }) } }); let electron;
   try {
-    electron = await _electron.launch({ executablePath: require('electron'), args: ['--no-sandbox', '--ozone-platform=x11', path.resolve(__dirname, 'session-windows-electron.cjs')], env: { ...process.env, XDG_SESSION_TYPE: 'x11', WAYLAND_DISPLAY: '', HOME: root, ELPIS_HOME: root, SESSION_WINDOW_PROFILE: path.join(root, 'profile'), SESSION_WINDOW_URL: f.page.url() } });
+    electron = await _electron.launch({ executablePath: require('electron'), args: ['--no-sandbox', '--ozone-platform=x11', path.resolve(__dirname, 'session-windows-electron.cts')], env: { ...process.env, XDG_SESSION_TYPE: 'x11', WAYLAND_DISPLAY: '', HOME: root, ELPIS_HOME: root, SESSION_WINDOW_PROFILE: path.join(root, 'profile'), SESSION_WINDOW_URL: f.page.url() } });
     const first = await electron.firstWindow(); first.setDefaultTimeout(10000);
     await first.locator('.thread-row[data-thread-id="chat-a"]').waitFor();
     await first.locator('.thread-row[data-thread-id="chat-a"] .thread-link').click();
@@ -136,7 +136,7 @@ test('production Electron windows share chats and live replies; native menu, cha
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'session-windows-'));
   const f = await fixture({ desktop: false }); let electron;
   try {
-    electron = await _electron.launch({ executablePath: require('electron'), args: ['--no-sandbox', '--ozone-platform=x11', path.resolve(__dirname, 'session-windows-electron.cjs')], env: { ...process.env, XDG_SESSION_TYPE: 'x11', WAYLAND_DISPLAY: '', HOME: root, ELPIS_HOME: root, CODEX_HOME: root, SESSION_WINDOW_PROFILE: path.join(root, 'profile'), SESSION_WINDOW_URL: f.page.url() } });
+    electron = await _electron.launch({ executablePath: require('electron'), args: ['--no-sandbox', '--ozone-platform=x11', path.resolve(__dirname, 'session-windows-electron.cts')], env: { ...process.env, XDG_SESSION_TYPE: 'x11', WAYLAND_DISPLAY: '', HOME: root, ELPIS_HOME: root, CODEX_HOME: root, SESSION_WINDOW_PROFILE: path.join(root, 'profile'), SESSION_WINDOW_URL: f.page.url() } });
     const first = await electron.firstWindow(); first.setDefaultTimeout(10000);
     await first.locator('.thread-row[data-thread-id="chat-a"]').waitFor();
     await first.getByRole('status', { name: 'Elpis is starting', exact: true }).waitFor({ state: 'detached' });
@@ -210,7 +210,7 @@ test('native file previews keep their document when scripts navigate or rename t
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'preview-navigation-'));
   const f = await fixture({ desktop: false }); let electron;
   try {
-    electron = await _electron.launch({ executablePath: require('electron'), args: ['--no-sandbox', '--ozone-platform=x11', path.resolve(__dirname, 'session-windows-electron.cjs')], env: { ...process.env, XDG_SESSION_TYPE: 'x11', WAYLAND_DISPLAY: '', HOME: root, ELPIS_HOME: root, SESSION_WINDOW_PROFILE: path.join(root, 'profile'), SESSION_WINDOW_URL: f.page.url() } });
+    electron = await _electron.launch({ executablePath: require('electron'), args: ['--no-sandbox', '--ozone-platform=x11', path.resolve(__dirname, 'session-windows-electron.cts')], env: { ...process.env, XDG_SESSION_TYPE: 'x11', WAYLAND_DISPLAY: '', HOME: root, ELPIS_HOME: root, SESSION_WINDOW_PROFILE: path.join(root, 'profile'), SESSION_WINDOW_URL: f.page.url() } });
     const primary = await electron.firstWindow(); primary.setDefaultTimeout(10000);
     const opened = electron.waitForEvent('window');
     await electron.evaluate(async () => { await global.sessionWindows.open({ newSession: true }); });

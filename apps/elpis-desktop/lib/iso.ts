@@ -1,7 +1,7 @@
-import type { CanvasGraph } from "@/lib/canvas";
+type LayoutNode = { id: string; type: string; position: { x: number; y: number }; isoPosition?: { x: number; y: number } | undefined };
 
 /** The isometric view of the agents canvas (components/agents-iso.tsx), as Deus Ex's hacking screen draws its nodes:
- * the run-order layout on a ground plane, projected. Pure, so tests/agents-iso.test.mjs runs it under node. */
+ * the run-order layout on a ground plane, projected. Pure, so tests/agents-iso.test.mts runs it under node. */
 
 /** Ground units between waves (columns) and between the agents of one wave (rows). */
 export const ISO_STEP = { column: 260, row: 180 };
@@ -21,8 +21,8 @@ export type IsoPlace = { id: string; kind: "mother" | "father" | "agent"; column
  * lib/canvas.ts), a wave's agents top to bottom as the flat board has them and centred on row 0. An agent on a loop
  * has no wave and stands in a column after the last one. Notes are not drawn. With agents past the Mother's ten
  * (lib/canvas.ts `parents`), the Father (`father`, his id) stands one row under her, as on the flat board. */
-export function isoLayout(graph: Pick<CanvasGraph, "nodes">, waves: ReadonlyMap<string, number>, father?: string): IsoPlace[] {
-  const last = Math.max(0, ...waves.values()), columns = new Map<number, CanvasGraph["nodes"]>();
+export function isoLayout(graph: { nodes: LayoutNode[] }, waves: ReadonlyMap<string, number>, father?: string): IsoPlace[] {
+  const last = Math.max(0, ...waves.values()), columns = new Map<number, LayoutNode[]>();
   for (const node of graph.nodes) {
     if (node.type === "note") continue;
     const column = node.type === "mother" ? 0 : waves.get(node.id) ?? last + 1;

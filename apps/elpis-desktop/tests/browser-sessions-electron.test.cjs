@@ -24,7 +24,7 @@ test('session browsers switch, start empty, restore history, isolate concurrent 
   const display = await new Promise((resolve, reject) => { xvfb.once('error', reject); xvfb.stdio[3].once('data', value => resolve(`:${String(value).trim()}`)); });
   let electron, page, nativeErrors = '';
   const launch = async () => {
-    electron = await _electron.launch({ executablePath: require('electron'), args: ['--no-sandbox', '--ozone-platform=x11', path.resolve(__dirname, 'session-windows-electron.cjs')],
+    electron = await _electron.launch({ executablePath: require('electron'), args: ['--no-sandbox', '--ozone-platform=x11', path.resolve(__dirname, 'session-windows-electron.cts')],
       env: { ...process.env, DISPLAY: display, WAYLAND_DISPLAY: '', ELECTRON_OZONE_PLATFORM_HINT: 'x11', HOME: root, ELPIS_HOME: root, SESSION_WINDOW_PROFILE: path.join(root, 'profile'), SESSION_WINDOW_URL: f.page.url(), SESSION_BROWSER_TOOLS: '1' } });
     electron.process().stderr.on('data', data => { nativeErrors = (nativeErrors + data).slice(-6000); });
     page = await electron.firstWindow(); page.setDefaultTimeout(10000);

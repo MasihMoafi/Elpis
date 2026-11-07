@@ -1,4 +1,4 @@
-import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cjs';
+import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cts';
 import test, { type TestContext } from 'node:test';
 import type { DesktopClientOptions } from './client.mts';
 import assert from 'node:assert/strict';

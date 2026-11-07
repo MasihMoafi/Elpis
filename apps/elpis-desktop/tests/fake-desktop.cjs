@@ -7,11 +7,13 @@
 function fakeDesktop({ tabs: initial = [], quickEntry: quick = {} } = {}) {
   const calls = window.__terminal = { open: [], closed: [], tui: [], input: [], resize: [] }, commands = window.__commands = [];
   window.__layouts = [];
-  let data = () => {}, sessions = 0, pages = 0;
+  /** @type {(key: string, id: number, end: number, text: string) => void} */
+  let data = () => {};
+  let sessions = 0, pages = 0;
   const shells = {}, listeners = new Set();
   window.__emit = (key, text) => { const shell = shells[key]; shell.end += text.length; data(key, shell.id, shell.end, text); };
   const makeTab = extra => ({ id: `page-${++pages}`, url: 'about:blank', title: 'New tab', loading: false, error: null, failure: null, security: null, zoom: 100, comments: 0, canGoBack: false, canGoForward: false, ...extra });
-  const state = window.__browser = { visible: false, activeId: null, focusAddress: 0, tabs: [], annotating: false, markersVisible: true, annotations: [], draft: null, find: { open: false, text: '', matches: 0, active: 0, focus: 0 } };
+  const state = window.__browser = { visible: false, activeId: null, focusAddress: 0, tabs: /** @type {ReturnType<typeof makeTab>[]} */ ([]), annotating: false, markersVisible: true, annotations: [], draft: null, find: { open: false, text: '', matches: 0, active: 0, focus: 0 } };
   state.tabs = initial.map(makeTab); state.activeId = state.tabs[0]?.id ?? null;
   const push = window.__push = patch => { Object.assign(state, patch); for (const listener of listeners) listener(JSON.parse(JSON.stringify(state))); };
   const handlers = {
@@ -40,7 +42,7 @@ function fakeDesktop({ tabs: initial = [], quickEntry: quick = {} } = {}) {
     },
     terminal: {
       open: async (...args) => { calls.open.push(args); return shellFor(args[0]); },
-      restart: async () => ({}), close: async key => { calls.closed.push(key); delete shells[key]; return {}; },
+      restart: async key => shellFor(key), close: async key => { calls.closed.push(key); delete shells[key]; return {}; },
       tui: async (...args) => { calls.tui.push(args); return { started: true }; },
       input: (key, text) => calls.input.push([key, text]), resize: (...args) => calls.resize.push(args),
       copy: async () => {}, paste: async () => '', subscribe: onData => { data = onData; return () => {}; },

@@ -1,4 +1,4 @@
-import type { Item } from "@/lib/api";
+import type { Item } from "./api";
 
 /** The end notice a workflow run sends the chat that started it (noticeText in tools/elpis-claude/workflow-runner.mjs).
  * It reaches the chat's model as a message, but the person did not write it: it shows as a step, as Claude Code shows

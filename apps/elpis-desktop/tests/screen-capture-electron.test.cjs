@@ -6,7 +6,7 @@ const path = require('node:path');
 const { spawn, execFileSync } = require('node:child_process');
 const { _electron } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const { fixture } = require('./parity-fixture.cjs');
-const { createTestTempDir, removeTestTempDir } = require('./temp-root.cjs');
+const { createTestTempDir, removeTestTempDir } = require('./temp-root.cts');
 
 test('a scoped companion request captures a chosen external app on a private display', async () => {
   const profiles = path.join(os.homedir(), '.cache/elpis-tests'); await fs.mkdir(profiles, { recursive: true });
@@ -18,7 +18,7 @@ test('a scoped companion request captures a chosen external app on a private dis
     ELECTRON_OZONE_PLATFORM_HINT: 'x11', HOME: root, ELPIS_HOME: root, SESSION_WINDOW_PROFILE: path.join(root, 'profile'), SESSION_WINDOW_URL: f.page.url(), SESSION_BROWSER_TOOLS: '1' };
   let electron, external, nativeErrors = '';
   try {
-    electron = await _electron.launch({ executablePath: require('electron'), args: ['--no-sandbox', '--ozone-platform=x11', path.resolve(__dirname, 'session-windows-electron.cjs')], env: environment });
+    electron = await _electron.launch({ executablePath: require('electron'), args: ['--no-sandbox', '--ozone-platform=x11', path.resolve(__dirname, 'session-windows-electron.cts')], env: environment });
     electron.process().stderr.on('data', data => { nativeErrors = (nativeErrors + data).slice(-6000); });
     const page = await electron.firstWindow(); page.setDefaultTimeout(12000);
     await page.locator('.thread-row[data-thread-id="chat-a"] .thread-link').waitFor();

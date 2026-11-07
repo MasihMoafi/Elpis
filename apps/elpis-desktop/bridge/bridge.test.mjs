@@ -13,7 +13,7 @@ import { parseClaudeMcp } from './claude-mcp-import.mts';
 import { DesktopClient, existingSocket } from './client.mts';
 import { startDesktopServer } from './server.mts';
 import { isAgentRun } from '../lib/agent-runs.mts';
-import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cjs';
+import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cts';
 
 // These requests exercise the same bridge routes as the renderer. The API key and audio are fixtures.
 async function useForSpeechFixture(t, { status = 200, contentType = 'audio/mpeg', bytes = Buffer.from('ID3-test-mp3') } = {}) {

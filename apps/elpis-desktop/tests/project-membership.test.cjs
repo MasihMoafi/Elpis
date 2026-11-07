@@ -6,7 +6,7 @@ const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const { fakeDesktop } = require('./fake-desktop.cjs');
 const { rowAction, threadMenuItem } = require('./controls.cjs');
-const { assertCollectionIcon } = require('./collection-icon-assertions.cjs');
+const { assertCollectionIcon } = require('./collection-icon-assertions.cts');
 
 test('projects: explicit membership, drag, menu moves, persistence, and unscoped new chats', async () => {
   const root = process.env.ELPIS_RENDERER_OUT || path.resolve(__dirname, '../out');

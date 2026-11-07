@@ -1,4 +1,4 @@
-import { createTestTempDir, removeTestTempDir } from './temp-root.cjs';
+import { createTestTempDir, removeTestTempDir } from './temp-root.cts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

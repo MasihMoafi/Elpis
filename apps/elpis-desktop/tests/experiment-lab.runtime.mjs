@@ -1,4 +1,4 @@
-import { createTestTempDir, removeTestTempDir } from './temp-root.cjs';
+import { createTestTempDir, removeTestTempDir } from './temp-root.cts';
 // Explicit live acceptance check. Uses a disposable ELPIS_HOME and only the ChatGPT gpt-6-luna subscription.
 // ELPIS_PLAYWRIGHT_PACKAGE=... ELPIS_CHROMIUM=... node tests/experiment-lab.runtime.mjs /abs/elpis-next /abs/evidence-dir
 import assert from 'node:assert/strict';

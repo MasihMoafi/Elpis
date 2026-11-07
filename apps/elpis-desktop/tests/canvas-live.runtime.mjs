@@ -130,7 +130,7 @@ try {
   say(`engine models: ${(await api('/models')).data.map(model => model.model).join(', ')}`);
   if (chosen.ready) {
     // A ready-made workflow (Logo) is picked from the workflow menu with the brand in the request box, as a user does; it
-    // keeps its own agent and model (Sol, Fast) and is not planned (tests/canvas-logo.test.cjs).
+    // keeps its own agent and model (Sol, Fast) and is not planned (tests/canvas-logo.test.cts).
     await canvas.getByRole('textbox', { name: 'Workflow request', exact: true }).fill(chosen.goal);
     const pattern = canvas.getByRole('combobox', { name: 'Workflow pattern', exact: true }); await pattern.click();
     await page.getByRole('option').and(page.locator(`[data-value="${chosen.ready}"]`)).first().click();

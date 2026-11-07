@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
 const { loveSpotFixture } = require('./love-spot-fixture.cjs');
-const { createTestTempDir, removeTestTempDir } = require('./temp-root.cjs');
+const { createTestTempDir, removeTestTempDir } = require('./temp-root.cts');
 
 test('page picker keeps its place while opening, navigating and deleting pages', async () => {
   const f = await loveSpotFixture({ prepareDirectory: async directory => {

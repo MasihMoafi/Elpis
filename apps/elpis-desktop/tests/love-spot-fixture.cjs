@@ -1,4 +1,4 @@
-const { createTestTempDir, removeTestTempDir } = require('./temp-root.cjs');
+const { createTestTempDir, removeTestTempDir } = require('./temp-root.cts');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');

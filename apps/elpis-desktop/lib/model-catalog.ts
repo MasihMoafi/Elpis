@@ -10,7 +10,7 @@ import { errorText } from "./error-text.mts";
 
 type ListReader = (path: string) => Promise<{ data?: unknown }>;
 // Loaded lazily, so this store has no runtime imports and its test can read it directly.
-const readList: ListReader = path => import("@/lib/api").then(module => module.api(path));
+const readList: ListReader = path => import("./api.ts").then(module => module.api(path));
 
 export type ModelCatalogState = { models: Model[]; loading: boolean; error: string };
 

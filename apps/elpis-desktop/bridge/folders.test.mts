@@ -6,7 +6,7 @@ import path from 'node:path';
 import { BridgeError } from './client.mts';
 import { listFolders } from './folders.mts';
 import { startDesktopServer } from './server.mts';
-import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cjs';
+import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cts';
 
 const dirs = [
   'src/lib/deep/deeper', 'src/components', 'src/.hidden/inner', 'docs', 'empty', 'Zed',

@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cjs');
 const { controlValue, openSettings } = require('./controls.cjs');
-const { assertCollectionIcon } = require('./collection-icon-assertions.cjs');
+const { assertCollectionIcon } = require('./collection-icon-assertions.cts');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 async function eventually(check, ms = 4000) { const end = Date.now() + ms; for (;;) { try { return await check(); } catch (error) { if (Date.now() > end) throw error; await new Promise(resolve => setTimeout(resolve, 50)); } } }

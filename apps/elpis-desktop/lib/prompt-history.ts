@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import type { Entry } from "@/lib/api";
-import { noticeOf } from "@/lib/workflow-notice";
+import type { Entry } from "./api";
+import { noticeOf } from "./workflow-notice.ts";
 
 /** The message box's keyboard basics, as Claude's desktop app has them (read from its source): ↑/↓ step through the
  * messages you sent, Ctrl+R searches them, Esc Esc in an empty box edits the last one, and Esc stops the reply. */

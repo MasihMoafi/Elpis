@@ -8,7 +8,7 @@ import { createRequire } from 'node:module';
 import { createSettingsFiles } from './settings-files.mts';
 import { startDesktopServer } from './server.mts';
 
-const { createTestTempDir, removeTestTempDir } = createRequire(import.meta.url)('../tests/temp-root.cjs');
+const { createTestTempDir, removeTestTempDir } = createRequire(import.meta.url)('../tests/temp-root.cts');
 
 test('counts saved Markdown files in the native memory folder and fails when a folder is unreadable', async t => {
   const home = createTestTempDir(path.join(os.tmpdir(), 'memory-count-'));

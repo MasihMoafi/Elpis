@@ -1,4 +1,4 @@
-import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cjs';
+import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';

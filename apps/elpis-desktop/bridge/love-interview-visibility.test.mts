@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createLoveAgents } from './love-agents.mts';
-import { interviewRuntime } from '../tests/love-interview-runtime.mjs';
+import { interviewRuntime } from '../tests/love-interview-runtime.mts';
 import { runAcpNode } from './acp-nodes.mts';
 
 test('saved interview chats show only the real answers and decoded agent question', async t => {
@@ -82,7 +82,7 @@ test('reload during an active interview waits for its saved result without dupli
   const pending = f.runner.interview({ id: 'writer', cwd: f.root, message: 'A letter.' });
   while (!(await f.agent()).interview.busy) await new Promise(r => setTimeout(r, 10));
   await assert.rejects(f.runner.interview({ id: 'writer', cwd: f.root }), /already interviewing/);
-  while (!f.requests.some(r => r.method === 'turn/start' && r.params.input[0].text.includes('A letter.'))) await new Promise(r => setTimeout(r, 10));
+  while (!f.requests.some(r => r.method === 'turn/start' && r.params.input[0]?.text.includes('A letter.'))) await new Promise(r => setTimeout(r, 10));
   f.resume(); await pending;
   const reopened = createLoveAgents(f.store, { nodeSpec: f.nodeSpec });
   t.after(() => reopened.close());

@@ -1,4 +1,4 @@
-import { createTestTempDir, removeTestTempDir } from './temp-root.cjs';
+import { createTestTempDir, removeTestTempDir } from './temp-root.cts';
 // One real two-character handoff over ACP: two Elpis ACP agents (this worktree's tools/elpis-claude/elpis-acp-agent.mjs,
 // or $ELPIS_ACP_AGENT) on the installed engine, in an isolated Elpis home with a copy of the sign-in.
 // Usage: node tests/love-agents-live.runtime.mjs /absolute/path/to/elpis-next

@@ -1,0 +1,83 @@
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const { openCanvas } = require('./canvas-fixture.cjs');
+const { openPatterns } = require('./controls.cjs');
+
+async function staged(options = {}) {
+  let phase = 0;
+  const f = await openCanvas({ ...options, listed(run: { graphId: string; tasks: { id: string; title: string; kind: string }[] }) {
+    return { id: run.graphId, status: phase === 4 ? 'succeeded' : 'running', tasks: run.tasks.map(task => {
+      const tally = task.title.includes('Tally'), check = task.kind === 'verify';
+      const step = (tally ? 2 : 0) + (check ? 1 : 0);
+      const status = phase > step ? 'succeeded' : phase === step ? 'running' : 'pending';
+      return { id: task.id, status, assignedThreadId: `agent-${task.id}`, result: status === 'succeeded' && !check ? { summary: `${task.title} captured` } : null };
+    }) };
+  } });
+  return { ...f, advance: (value: number) => { phase = value; } };
+}
+
+test('the complete chronological log retains starts, tasks, checks and actual reports; click and Enter open its agent', async () => {
+  const f = await staged(); const { canvas, page } = f;
+  try {
+    await openPatterns(canvas);
+    await canvas.getByRole('button', { name: /^Voting/ }).click();
+    await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
+    const log = canvas.getByRole('log', { name: 'Run log', exact: true });
+    await log.getByRole('button', { name: /AGENT STARTED.*Quillon · Answer 1/ }).waitFor();
+    assert.equal(await log.getByRole('button', { name: /REPORT RECEIVED/ }).count(), 0);
+    for (let phase = 1; phase <= 4; phase++) {
+      f.advance(phase);
+      await log.getByRole('button', { name: phase === 1 ? /CHECK STARTED.*Quillon · Answer 1/ : phase === 2 ? /AGENT STARTED.*Tally/ : phase === 3 ? /CHECK STARTED.*Tally/ : /CHECK PASSED.*Tally/ }).waitFor();
+    }
+    const texts = await log.locator('li').allTextContents();
+    assert.equal(texts.length, 20, 'all observed events survive, with no polling duplicates');
+    assert.equal(texts.filter((text: string) => /DATASTORE CAPTURED/.test(text)).length, 4);
+    assert.ok(texts.findIndex((text: string) => /AGENT STARTED.*Tally/.test(text)) > texts.findIndex((text: string) => /CHECK PASSED.*Orilo · Answer 3/.test(text)));
+    const times = await log.locator('time').allTextContents(); assert.deepEqual(times, [...times].sort());
+    await log.getByRole('button', { name: /AGENT STARTED.*Quillon · Answer 1/ }).click();
+    const dashboard = canvas.getByRole('dialog', { name: 'Quillon · Answer 1 info' }); await dashboard.waitFor();
+    await dashboard.getByRole('button', { name: 'Close info' }).click();
+    await canvas.getByRole('radio', { name: 'Isometric', exact: true }).click();
+    await log.getByRole('button', { name: /CHECK PASSED.*Tally/ }).focus(); await page.keyboard.press('Enter');
+    await canvas.getByRole('dialog', { name: 'Nuvani · Tally the answers info' }).waitFor();
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+test('the timer advances in either view and stops on completion, including a new run', async () => {
+  const f = await staged(); const { canvas, page } = f;
+  try {
+    await canvas.getByRole('radio', { name: 'Isometric', exact: true }).click();
+    await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
+    const clock = canvas.getByRole('region', { name: 'Run clock', exact: true });
+    await clock.waitFor(); const first = await clock.locator('strong').innerText();
+    await page.waitForFunction((value: string) => document.querySelector('[aria-label="Run clock"] strong')?.textContent !== value, first);
+    // 27 Oct: the clock is a small time beside the run's status in the header, not a block on the board.
+    assert.equal(await clock.evaluate((el: Element) => Boolean(el.closest('.canvas-header'))), true);
+    await canvas.getByRole('radio', { name: 'Flat', exact: true }).click(); await clock.waitFor();
+    f.advance(4); await canvas.locator('.canvas-header').getByRole('status').filter({ hasText: 'Finished' }).waitFor();
+    const ended = await clock.locator('strong').innerText(); await page.waitForTimeout(2100);
+    assert.equal(await clock.locator('strong').innerText(), ended);
+    await canvas.getByRole('radio', { name: 'Isometric', exact: true }).click(); assert.equal(await clock.locator('strong').innerText(), ended);
+    f.advance(0); await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
+    await page.waitForFunction((value: string) => document.querySelector('[aria-label="Run clock"] strong')?.textContent !== value, ended);
+    assert.equal(await clock.locator('strong').innerText(), '00:00');
+    assert.equal(await canvas.getByRole('log', { name: 'Run log' }).getByRole('button', { name: /REPORT RECEIVED/ }).count(), 0);
+  } finally { await f.close(); }
+});
+
+test('failed checks stay in the log, explain blocked inputs, and stop the clock without inventing reports', async () => {
+  const f = await openCanvas({ listed(run: { graphId: string; tasks: { id: string; title: string; kind: string }[] }) { return { id: run.graphId, status: 'failed', tasks: run.tasks.map((task, index) => ({ id: task.id, status: index === 1 ? 'failed' : index === 0 ? 'succeeded' : 'blocked', assignedThreadId: null, result: null })) }; } });
+  try {
+    await f.canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
+    const log = f.canvas.getByRole('log', { name: 'Run log' }); await log.getByRole('button', { name: /CHECK FAILED/ }).first().waitFor();
+    assert.equal(await log.getByRole('button', { name: /REPORT RECEIVED/ }).count(), 0);
+    await log.getByRole('button', { name: /CHECK FAILED/ }).first().click();
+    const dashboard = f.canvas.getByRole('dialog', { name: / info$/ }); await dashboard.waitFor();
+    await dashboard.getByRole('button', { name: 'Close info' }).click();
+    await log.getByRole('button', { name: /INPUT BLOCKED.*Nuvani · Join the parts/ }).first().click();
+    const clock = f.canvas.getByRole('region', { name: 'Run clock' }); const ended = await clock.locator('strong').innerText();
+    await f.page.waitForTimeout(1600); assert.equal(await clock.locator('strong').innerText(), ended);
+  } finally { await f.close(); }
+});

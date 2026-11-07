@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { agentGraph, createLoveAgents, loveNodeSpec } from './love-agents.mts';
 import { EventEmitter } from 'node:events';
 import { startDesktopServer } from './server.mts';
-import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cjs';
+import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cts';
 
 // Every card runs as an ACP agent process. The fake agent is built on the official ACP SDK and logs what reaches it;
 // the end-to-end case uses the real Elpis ACP agent on a scripted app-server.

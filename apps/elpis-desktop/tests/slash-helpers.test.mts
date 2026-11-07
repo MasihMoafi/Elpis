@@ -1,0 +1,46 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { commandMatches, conversationMarkdown, exportFileName, lastReply, splitCommand } from '../lib/slash.ts';
+
+const user = (id: string, text: string) => ({ turnId: 't', item: { id, type: 'userMessage', content: [{ type: 'text', text }, { type: 'image', url: 'data:' }] } });
+const agent = (id: string, text: string) => ({ turnId: 't', item: { id, type: 'agentMessage', text } });
+const entries = [user('1', 'Fix the cache.'), { turnId: 't', item: { id: 'x', type: 'commandExecution', command: 'ls' } }, agent('2', 'The cache is fixed.'), user('3', 'Thanks'), agent('4', '')];
+
+test('lastReply is the newest non-empty Elpis message, or null', () => {
+  assert.equal(lastReply(entries), 'The cache is fixed.');
+  assert.equal(lastReply([user('1', 'hi')]), null);
+  assert.equal(lastReply([]), null);
+});
+
+test('conversationMarkdown keeps the messages, in order, under who said them', () => {
+  assert.equal(conversationMarkdown('Cache chat', entries), '# Cache chat\n\n## You\n\nFix the cache.\n\n## Elpis\n\nThe cache is fixed.\n\n## You\n\nThanks\n');
+  assert.equal(conversationMarkdown('Empty', []), '# Empty\n');
+});
+
+test('exportFileName is a safe .md name from the chat title', () => {
+  assert.equal(exportFileName('Cache chat'), 'cache-chat.md');
+  assert.equal(exportFileName('  ../../etc/passwd: "x"  '), 'etc-passwd-x.md');
+  assert.equal(exportFileName('日本語'), '日本語.md');
+  assert.equal(exportFileName('?!?'), 'conversation.md');
+  assert.equal(exportFileName('x'.repeat(200)).length, 'x'.repeat(60).length + 3);
+});
+
+test('splitCommand reads "/name arguments", and nothing else', () => {
+  assert.deepEqual(splitCommand('/effort high'), { name: 'effort', args: 'high' });
+  assert.deepEqual(splitCommand('/Review   check the cache  \n'), { name: 'review', args: 'check the cache' });
+  assert.deepEqual(splitCommand('/compact keep\nnames'), { name: 'compact', args: 'keep\nnames' });
+  assert.equal(splitCommand('/effort'), null);
+  assert.equal(splitCommand('/effort   '), null);
+  assert.equal(splitCommand('use /effort high'), null);
+  assert.equal(splitCommand('/ high'), null);
+});
+
+test('the slash menu lists the name typed in full first, then names starting with it, then names containing it', () => {
+  const commands = ['status', 'usage', 'model', 'pruner-model', 'memory-model', 'prune', 'rag'].map(name => ({ name }));
+  const names = (query: string) => commandMatches(commands, query).map(command => command.name);
+  assert.deepEqual(names('sta'), ['status']);
+  assert.deepEqual(names('ag'), ['usage', 'rag']);
+  assert.deepEqual(names('mod'), ['model', 'pruner-model', 'memory-model']);
+  assert.deepEqual(names('prune'), ['prune', 'pruner-model'], 'Enter on /prune runs /prune');
+  assert.deepEqual(names('zzz'), []);
+});

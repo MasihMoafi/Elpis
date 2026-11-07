@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
-import { ledgerBridge, ledgerMarketplace } from './ledger-fixtures.mjs';
+import { ledgerBridge, ledgerMarketplace } from './ledger-fixtures.mts';
 
 const binary = process.argv[2];
 assert(binary && path.isAbsolute(binary), 'Provide an absolute engine executable');

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { interviewRuntime } from './love-interview-runtime.mjs';
+import { interviewRuntime } from './love-interview-runtime.mts';
 import { runAcpNode } from '../bridge/acp-nodes.mts';
 
 const [appDirectory, toolsDirectory, evidence] = process.argv.slice(2);

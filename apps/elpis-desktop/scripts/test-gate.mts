@@ -15,7 +15,7 @@ export async function discoverTests(directory = root, relative = ''): Promise<st
     const file = path.posix.join(relative, entry.name);
     if (entry.isDirectory() && !ignored.has(entry.name)) found.push(...await discoverTests(directory, file));
     else if (entry.isFile()) {
-      const namedTest = /\.(?:test|spec|runtime)\.[cm]?[jt]sx?$/.test(entry.name) || file === 'tests/runtime.mjs';
+      const namedTest = /\.(?:test|spec|runtime)\.[cm]?[jt]sx?$/.test(entry.name) || file === 'tests/runtime.mts';
       const legacyTest = !namedTest && /\.[cm]?[jt]sx?$/.test(entry.name) && /(?:from\s*['"]node:test['"]|require\(['"]node:test['"]\))/.test(await fs.readFile(path.join(directory, file), 'utf8'));
       if (namedTest || legacyTest) found.push(file);
     }

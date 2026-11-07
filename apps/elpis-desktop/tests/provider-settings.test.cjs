@@ -74,7 +74,7 @@ test('provider setup preserves edits on conflict, refreshes choices and never re
 });
 
 const { fixture } = require('./parity-fixture.cjs');
-const { accountsFirst, openAccounts } = require('./providers-order.cjs');
+const { accountsFirst, openAccounts } = require('./providers-order.cts');
 
 const ROUTER_KEY = { id: 'openrouter', name: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', wireApi: 'responses', editable: true, auth: { source: 'key', keySet: true, envKey: null } };
 const OTHER_KEY = { id: 'api-other', name: 'Other API', baseUrl: 'https://example.test/v1', wireApi: 'responses', editable: true, auth: { source: 'key', keySet: true, envKey: null } };

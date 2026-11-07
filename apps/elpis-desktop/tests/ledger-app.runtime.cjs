@@ -20,7 +20,7 @@ async function main() {
   const env = { PATH: process.env.PATH, LANG: 'C.UTF-8', ELPIS_NODE_BIN: process.execPath, HOME: root, ELPIS_HOME: home, CODEX_HOME: home, CODEX_AUTH_HOME: home, ELPIS_CONFIG_DIR: home,
     XDG_RUNTIME_DIR: `${root}/run`, XDG_CONFIG_HOME: `${root}/config`, XDG_CACHE_HOME: `${root}/cache`, XDG_DATA_HOME: `${root}/data`,
     XDG_STATE_HOME: `${root}/state`, TMPDIR: root, EXCALIDRAW_LOCAL_DIR: `${root}/love-spot`, EXCALIDRAW_SCREENSHOTS_DIR: shots, ELECTRON_OZONE_PLATFORM_HINT: 'x11' };
-  const { ledgerBridge, ledgerMarketplace } = await import('./ledger-fixtures.mjs');
+  const { ledgerBridge, ledgerMarketplace } = await import('./ledger-fixtures.mts');
   const fixtures = await Promise.all(['codex', 'claude'].map(format => ledgerMarketplace(root, format)));
   let bridge, child, browser, server;
   const log = await fs.open(path.join(shots, baseline ? 'app-baseline.log' : 'app.log'), 'w');

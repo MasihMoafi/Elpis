@@ -1,0 +1,47 @@
+// Exercise the renderer with delayed bridge acknowledgements; no model calls.
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const { fixture } = require('./parity-fixture.cjs');
+const gate = () => { let release = () => {}; const wait = new Promise<void>(resolve => { release = resolve; }); return { wait, release }; };
+const bubble = (page: { locator(selector: string): { filter(options: { hasText: string }): { waitFor(options?: { timeout: number }): Promise<void>; elementHandle(): Promise<{ evaluate(fn: (element: Element) => boolean): Promise<boolean> }>; count(): Promise<number> } } }, text: string) => page.locator('.message.user').filter({ hasText: text });
+const echo = (f: { emit(event: string, data: object): void }, text: string) => f.emit('message', { method: 'item/completed', params: { threadId: 'chat-a', turnId: 't-new', item: { id: 'u-new', type: 'userMessage', content: [{ type: 'text', text }] } } });
+
+for (const earlyEcho of [false, true]) test(`Enter shows the prompt while its request is held; one copy after acknowledgement (echo first: ${earlyEcho})`, async () => {
+  const held = gate();
+  const f = await fixture({ routes: { '/api/threads/chat-a/turns': async () => { await held.wait; return { turn: { id: 't-new' } }; } } });
+  try {
+    await f.open('chat-a'); await f.composer.fill('Immediate visible prompt'); await f.composer.press('Enter');
+    await bubble(f.page, 'Immediate visible prompt').waitFor({ timeout: 1500 });
+    assert.equal(await f.composer.inputValue(), '');
+    assert.equal(f.posts.filter((post: { path: string; body: { attachments: { name: string }[] } }) => post.path.endsWith('/turns')).length, 1);
+    const original = await bubble(f.page, 'Immediate visible prompt').elementHandle();
+    if (earlyEcho) echo(f, 'Immediate visible prompt');
+    held.release();
+    await f.page.getByRole('button', { name: 'Stop response', exact: true }).waitFor();
+    if (!earlyEcho) echo(f, 'Immediate visible prompt');
+    await f.page.waitForTimeout(200);
+    assert.equal(await bubble(f.page, 'Immediate visible prompt').count(), 1);
+    assert.equal(await original.evaluate((element: Element) => element.isConnected), true, 'the visible bubble survives the recorded echo');
+    assert.deepEqual(f.errors, []);
+  } finally { held.release(); await f.close(); }
+});
+
+test('a refused send restores its text and file, and Enter can retry it', async () => {
+  let refuse = true;
+  const f = await fixture({ routes: { '/api/threads/chat-a/turns': () => refuse ? { __http: 503, error: 'The model is unavailable.' } : { turn: { id: 't-new' } } } });
+  try {
+    await f.open('chat-a');
+    await f.page.locator('input[type=file]').setInputFiles({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('some notes') });
+    await f.page.locator('.composer').getByText('notes.txt').waitFor();
+    await f.composer.fill('Read these notes'); await f.composer.press('Enter');
+    await f.page.getByText('The model is unavailable.', { exact: true }).waitFor();
+    assert.equal(await f.composer.inputValue(), 'Read these notes');
+    assert.equal(await f.page.locator('.composer').getByText('notes.txt').count(), 1);
+    assert.equal(await bubble(f.page, 'Read these notes').count(), 0);
+    refuse = false; await f.composer.press('Enter');
+    await bubble(f.page, 'Read these notes').waitFor();
+    const calls = f.posts.filter((post: { path: string; body: { attachments: { name: string }[] } }) => post.path.endsWith('/turns'));
+    assert.equal(calls.length, 2); assert.equal(calls[1].body.attachments[0].name, 'notes.txt');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
