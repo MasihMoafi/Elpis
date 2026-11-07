@@ -27,7 +27,7 @@ concurrency:
 
 jobs:
   schemas:
-    if: github.event_name == 'workflow_dispatch' && (inputs.verification == 'check' || inputs.verification == 'follow-check')
+    if: github.event_name == 'workflow_dispatch' && inputs.verification == 'check'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -135,10 +135,10 @@ jobs:
         if: inputs.verification == 'check'
         working-directory: codex-rs
         run: cargo check --locked --tests -p codex-core -p codex-tui -p codex-cli -p codex-app-server
-      - name: Read-only child follow across app-server connections
+      - name: Compare instruction history on the installed engine source
         if: inputs.verification == 'follow-check'
         working-directory: codex-rs
-        run: cargo test --profile dev-small --locked -p codex-app-server --test all -- websocket_read_only_follow_delivers_child_events_across_connections_and_reconnect
+        run: cargo test --profile dev-small --locked -p codex-core --test all -- cold_resume_invalidates_deleted_legacy_agents_md_once fresh_thread_composes_global_before_project_and_reports_sources fork_injects_changed_agents_md_once
       - name: Retain compiler outputs
         if: always() && steps.cargo_cache.outputs.cache-hit != 'true' && steps.cargo_cache.outputs.cache-primary-key != ''
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
