@@ -2072,6 +2072,30 @@ test('the context ledger measures the latest request and reconciles the estimate
   client.close();
 });
 
+test('agent metadata follows the latest recorded model and effort without inventing them', async t => {
+  const temp = createTestTempDir(path.join(os.tmpdir(), 'elpis-agent-model-'));
+  t.after(() => removeTestTempDir(temp));
+  const rollout = path.join(temp, 'rollout.jsonl');
+  /** @param {{model: string, effort: string}} payload */
+  const record = payload => JSON.stringify({ type: 'turn_context', payload }) + '\n';
+  await fs.writeFile(rollout, record({ model: 'gpt-6-luna', effort: 'low' }));
+  const { client, threads } = fixture(); t.after(() => client.close()); await client.initialize();
+  const child = threads.get(CHILD); assert.ok(child);
+  Object.assign(child, { path: rollout, model: null, reasoningEffort: null });
+  const listed = async () => { const agent = (await client.listThreads({ includeAgentRuns: true })).data.find(thread => thread.id === CHILD); assert.ok(agent); return agent; };
+  const first = await listed();
+  assert.deepEqual([first.model, first.reasoningEffort], ['gpt-6-luna', 'low']);
+  await fs.appendFile(rollout, record({ model: 'gpt-6.1-terra', effort: 'high' }));
+  const updated = await client.readThreadMetadata(CHILD);
+  assert.deepEqual([updated.model, updated.reasoningEffort], ['gpt-6.1-terra', 'high']);
+  await fs.appendFile(rollout, JSON.stringify({ type: 'event_msg', payload: { type: 'thread_settings_applied', thread_id: CHILD, thread_settings: { model: 'gpt-6.1-sol', reasoning_effort: 'xhigh' } } }) + '\n');
+  const settings = await listed();
+  assert.deepEqual([settings.model, settings.reasoningEffort], ['gpt-6.1-sol', 'xhigh']);
+  await fs.writeFile(rollout, JSON.stringify({ type: 'session_meta', payload: {} }) + '\n');
+  const unknown = await listed();
+  assert.equal(unknown.model, null); assert.equal(unknown.reasoningEffort, null);
+});
+
 test('saved replies use the model recorded in each turn context and never guess a missing one', async () => {
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-turn-models-'));
   const rollout = path.join(temp, 'rollout.jsonl');

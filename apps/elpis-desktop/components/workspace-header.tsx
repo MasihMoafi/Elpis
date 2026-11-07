@@ -10,7 +10,8 @@ import type { useSidePanel } from "@/components/side-panel";
 import type { useSessionSplit } from "@/components/session-split";
 import { TabStrip } from "@/components/tab-strip";
 import { Button } from "@/components/ui/button";
-import { title, type Approval, type Thread } from "@/lib/api";
+import { agentModelLabel, title, type Approval, type Model, type Thread } from "@/lib/api";
+import { isAgentRun } from "@/lib/agent-runs.mts";
 import type { createChatNavigation } from "@/lib/chat-navigation";
 import type { ChatTab } from "@/lib/chat-tabs";
 import { chatOrigin, originLabel } from "@/lib/love-activity";
@@ -27,7 +28,7 @@ type Props = {
   pages: ReturnType<typeof useWorkspacePagesState>; preferences: ReturnType<typeof useAppPreferences>;
   composer: ReturnType<typeof useComposerState>; loveActivity: ReturnType<typeof useLoveActivity>;
   side: ReturnType<typeof useSidePanel>; split: ReturnType<typeof useSessionSplit>; tabs: ReturnType<typeof useChatTabs>["tabs"];
-  selected: Thread | null; threads: Thread[]; outsideChatApprovals: Approval[]; pendingInputButton: React.RefObject<HTMLButtonElement | null>;
+  selected: Thread | null; threads: Thread[]; models: Model[]; outsideChatApprovals: Approval[]; pendingInputButton: React.RefObject<HTMLButtonElement | null>;
   pendingInputOpen: boolean; setPendingInputOpen: React.Dispatch<React.SetStateAction<boolean>>;
   heading: string; meta: string; dark: boolean; desktop: boolean; loading: boolean; panelShown: boolean;
   team: Thread[]; awaitingTeam: boolean; agentsPanel: boolean;
@@ -39,7 +40,7 @@ type Props = {
   chatTab: (tab: ChatTab) => React.ReactNode; chatActions: (area: React.ReactElement, content: React.ReactNode) => React.ReactNode;
 };
 
-export function WorkspaceHeader({ pages, preferences, composer, loveActivity, side, split, tabs, selected, threads, outsideChatApprovals, pendingInputButton, pendingInputOpen, setPendingInputOpen, heading, meta, dark, desktop, loading, panelShown, team, awaitingTeam, agentsPanel, setAgentsPanelState, setLoveToolbarHost, find, show, showSidebar, openById, loadThread, newChatTab, openAgentsPanel, chatTab, chatActions }: Props) {
+export function WorkspaceHeader({ pages, preferences, composer, loveActivity, side, split, tabs, selected, threads, models, outsideChatApprovals, pendingInputButton, pendingInputOpen, setPendingInputOpen, heading, meta, dark, desktop, loading, panelShown, team, awaitingTeam, agentsPanel, setAgentsPanelState, setLoveToolbarHost, find, show, showSidebar, openById, loadThread, newChatTab, openAgentsPanel, chatTab, chatActions }: Props) {
   const { view, workflowTab, setWorkflowTab } = pages;
   const { composerRef } = composer;
   const parent = find(selected?.parentThreadId), source = find(selected?.forkedFromId);
@@ -58,6 +59,7 @@ export function WorkspaceHeader({ pages, preferences, composer, loveActivity, si
           {view === "canvas" && <Segmented label="Workflows view" className="workflow-view-switch" value={workflowTab} onChange={setWorkflowTab} options={[{ value: "board", label: "Board" }, { value: "scheduled", label: "Scheduled" }]} />}
           {view === "chat" && selected && originLabel(chatOrigin(selected, loveActivity.threads), title(selected)) === "Love Spot" && <Button variant="ghost" size="xs" className="thread-origin" data-origin="Love Spot" onClick={() => show("loveSpot")}><LoveSpotIcon size={13} />Love Spot</Button>}
           {view === "chat" && selected && meta && <p className="thread-meta">{meta}</p>}
+          {view === "chat" && selected && isAgentRun(selected) && !!selected.model && <p className="thread-meta basis-full">{agentModelLabel(selected, models)}</p>}
           {view === "chat" && selected && (selected.parentThreadId || selected.forkedFromId) && <p className="thread-links">
             {selected.parentThreadId && <Button variant="link" size="xs" aria-label={`Open parent: ${parent ? title(parent) : "parent conversation"}`} onClick={() => { void openById(selected.parentThreadId!); }}>Agent of {parent ? title(parent) : "its parent conversation"}</Button>}
             {selected.forkedFromId && <Button variant="link" size="xs" aria-label={`Open original: ${source ? title(source) : "original chat"}`} onClick={() => { void openById(selected.forkedFromId!); }}>Continued from {source ? title(source) : "the original chat"}</Button>}

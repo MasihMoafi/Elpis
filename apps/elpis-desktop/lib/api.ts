@@ -177,6 +177,9 @@ export function modelLabel(model: string | null | undefined, models: Model[] = [
   if (!model) return "Model not reported";
   return modelName(models.find(item => item.model === model)?.displayName || model);
 }
+export function agentModelLabel(thread: Thread, models: Model[]) {
+  return thread.model ? [modelLabel(thread.model, models), thread.reasoningEffort].filter(Boolean).join(" · ") : "";
+}
 
 export type Activity = { label: string; at: number };
 const firstLine = (value: unknown) => typeof value === "string" ? value.replace(/[`*]+/g, "").trim().split("\n")[0].replace(/^[#>\s-]+/, "").slice(0, 120) : "";

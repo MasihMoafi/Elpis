@@ -3,6 +3,8 @@ import { BridgeError, object, text, threadId } from './validate.mts';
 import { createdThread } from './spawn-links.mts';
 import { interviewTurns, legacyInterview } from './love-interview.mts';
 import { recordedMedia } from './attachments.mts';
+import { rolloutAgentModel } from './elpis-features.mts';
+import fs from 'node:fs/promises';
 
 import { internal_browserOptions, internal_rpc } from './client-connection.mts';
 import { internal_withTurnModels } from './client-context.mts';
@@ -27,6 +29,20 @@ const WHOLE_TURNS = 'whole-turns:';
 /** The engine's Claude Code import ends the last turn with this agent message, after the chat's real last reply
  * (codex-rs/external-agent-migration, EXTERNAL_SESSION_IMPORTED_MARKER). It is a note for the engine, not a reply. */
 const IMPORT_MARKER = '<EXTERNAL SESSION IMPORTED>';
+
+const agentModels = new Map<string, { key: string; value: Awaited<ReturnType<typeof rolloutAgentModel>> }>();
+async function recordedAgentModel(thread: DecoratedInput) {
+  if (!isAgentRun(thread) || typeof thread.path !== 'string') return;
+  const stat = await fs.stat(thread.path).catch(() => null);
+  if (!stat?.isFile()) return;
+  const key = `${stat.size}:${stat.mtimeMs}`, cached = agentModels.get(thread.path);
+  const value = cached?.key === key ? cached.value : await rolloutAgentModel(thread.path, thread.id);
+  if (cached?.key !== key) {
+    if (agentModels.size >= 500) agentModels.delete(agentModels.keys().next().value!);
+    agentModels.set(thread.path, { key, value });
+  }
+  if (value) Object.assign(thread, value);
+}
 
 const notImportMarker = (entry: unknown) => {
   const value = entry as { item?: { type?: unknown; text?: unknown } } | null | undefined;
@@ -159,6 +175,7 @@ export async function impl_listThreads(this: DesktopClient, clientState: ClientS
     }
     await internal_loadWorkflowTitles.call(this, clientState, result.data);
     await internal_settleWorking.call(this, clientState, result.data);
+    await Promise.all(result.data.map((thread: DecoratedInput) => recordedAgentModel(thread)));
     // Auto-review's reviewer works in threads of its own; they are not the user's chats.
     const data = result.data.filter((thread: ListedThread) => thread.source?.subAgent?.other !== 'guardian' && (includeAgentRuns || !isAgentRun(thread))).map((thread: ListedThread) => internal_decorate.call(this, clientState, thread));
     // Follow working agents live: only subscribers receive their items, approvals and deltas.
@@ -227,6 +244,7 @@ export async function impl_readThreadMetadata(this: DesktopClient, clientState: 
     if (thread?.id !== id) throw new BridgeError('Elpis returned another thread', 502);
     await internal_loadWorkflowTitles.call(this, clientState, [thread]);
     await internal_settleWorking.call(this, clientState, [thread]);
+    await recordedAgentModel(thread);
     return internal_decorate.call(this, clientState, thread);
   }
 
