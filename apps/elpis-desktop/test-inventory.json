@@ -166,6 +166,7 @@
     "desktop/launch.test.mjs",
     "desktop/media-policy.test.cts",
     "desktop/open-thread.test.cts",
+    "desktop/output-errors.test.cts",
     "desktop/package.test.mts",
     "desktop/preferences.test.cts",
     "desktop/quick-entry.test.cts",
