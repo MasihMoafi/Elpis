@@ -17,8 +17,8 @@ function report(error: unknown, context = 'Main process error') {
   try { process.stderr.write(line); } catch { /* A closed output pipe must not cause another exception. */ }
   if (!started) {
     // Startup failed: say so in plain words once, then exit; the stack stays in the log.
-    try { electron?.dialog.showErrorBox('Elpis could not open', error instanceof Error ? error.message : String(error)); } catch { /* exiting anyway */ }
-    if (electron) electron.app.exit(1);
+    try { electron?.dialog?.showErrorBox('Elpis could not open', error instanceof Error ? error.message : String(error)); } catch { /* exiting anyway */ }
+    if (electron?.app) electron.app.exit(1);
     else process.exit(1);
     return;
   }
@@ -29,7 +29,7 @@ function report(error: unknown, context = 'Main process error') {
 function showNotice() {
   if (!pendingNotice) return;
   try {
-    const windows = state.electron?.BrowserWindow.getAllWindows().filter(window => !window.isDestroyed()) ?? [];
+    const windows = state.electron?.BrowserWindow?.getAllWindows().filter(window => !window.isDestroyed()) ?? [];
     const window = windows.find(window => !window.webContents.isLoading());
     if (!window) {
       for (const candidate of windows) candidate.webContents.once('did-finish-load', showNotice);
@@ -54,7 +54,8 @@ function showNotice() {
 process.on('uncaughtException', error => report(error, 'Uncaught exception'));
 process.on('unhandledRejection', error => report(error, 'Unhandled rejection'));
 state.electron = require('electron');
-state.electron!.app.on('browser-window-created', (_event, window) => {
+// A test's stand-in for electron may have no app yet; the guard must load anywhere main.cts does.
+state.electron?.app?.on('browser-window-created', (_event, window) => {
   window.webContents.on('did-finish-load', showNotice);
 });
 function markReady() { started = true; }
