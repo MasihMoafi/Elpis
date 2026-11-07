@@ -4,7 +4,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 
 const names = { experimentLab: 'Lab', canvas: 'Workflows', loveSpot: 'Love Spot', observability: 'Observability', customize: 'Customize' };
 const nav = (page: { locator(selector: string): { getByRole(role: string): { allTextContents(): Promise<string[]> } } }) => page.locator('aside.sidebar nav[aria-label="Workspace"]');

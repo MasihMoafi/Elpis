@@ -1,5 +1,5 @@
 // Real packaged app only: no mocked endpoints, engine or bridge. Start with the handoff's e2e/app.sh.
-// ELPIS_WF1_CDP=http://127.0.0.1:9461 ELPIS_WF1_HOME="$h" node --test --test-name-pattern='W3|A27' tests/workflows-wf1.test.cjs
+// ELPIS_WF1_CDP=http://127.0.0.1:9461 ELPIS_WF1_HOME="$h" node --test --test-name-pattern='W3|A27' tests/workflows-wf1.test.cts
 // The same variables with `node tests/workflows-wf1-real.cts` check an actual filesystem refusal at the bottom.
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');

@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 const execFile = require('node:util').promisify(require('node:child_process').execFile);
 const renderer = process.env.ELPIS_RENDERER_OUT;
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGM4o6SEFTEMLQkAvM5EAT6yk8sAAAAASUVORK5CYII=', 'base64');

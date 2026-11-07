@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
-const { fixture, CWD } = require('./parity-fixture.cjs');
+const { fixture, CWD } = require('./parity-fixture.cts');
 const { openSettings, leaveSettings } = require('./controls.cjs');
 
 const evidence = path.join(os.homedir(), '.cache/elpis-tests/desktop-small-fixes');

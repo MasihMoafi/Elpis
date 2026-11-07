@@ -2,7 +2,7 @@
 // be followed by hundreds of tool steps, so a press keeps reading pages until ten more messages have arrived.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture, THREADS } = require('./parity-fixture.cjs');
+const { fixture, THREADS } = require('./parity-fixture.cts');
 const { scrollToLoadEarlier } = require('./controls.cjs');
 
 const PAGE = 100, PAGES = 30;

@@ -4,7 +4,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 
 /** Observe the brief introduction with the browser clock paused; bridge data has its own tests. */
 async function starting(t: import('node:test').TestContext, { colorScheme = 'light', reducedMotion = 'no-preference', failModels = false } = {}) {

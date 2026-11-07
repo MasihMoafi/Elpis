@@ -1,8 +1,8 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
-const { fixture } = require('./parity-fixture.cjs');
-const { assertUiFit } = require('./ui-fit.cjs');
+const { fixture } = require('./parity-fixture.cts');
+const { assertUiFit } = require('./ui-fit.cts');
 const path = require('node:path');
 
 async function dragDivider(page: { mouse: { move(x: number, y: number, options?: { steps: number }): Promise<void>; down(): Promise<void>; up(): Promise<void> } }, edge: { boundingBox(): Promise<{ x: number; y: number; width: number; height: number }> }, x: number, release = true) {

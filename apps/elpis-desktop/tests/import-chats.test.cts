@@ -1,7 +1,7 @@
 // Masih, 23 Oct: "we should add the import chats options like cloudroom does." Settings → Import chats lists Claude Code and Codex with their chats, imports on press, says what happened.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 const { openSettings } = require('./controls.cjs');
 
 test('Import chats offers Claude Code and Codex with their chats, imports on press, reports the result and refreshes the list', async () => {

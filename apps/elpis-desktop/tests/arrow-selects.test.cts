@@ -1,7 +1,7 @@
 // Masih, 22 Oct: arrow keys must change the page by the stroke, as in ChatGPT, in the sidebar and in Settings, with no Enter.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 const { openSettings } = require('./controls.cjs');
 type Page = { locator(selector: string): { innerText(): Promise<string>; getByRole(role: string, options: { name: string; exact: boolean }): { click(): Promise<void> } } };
 const title = (page: Page) => page.locator('.workspace-header h1');

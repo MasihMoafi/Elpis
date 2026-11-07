@@ -2,7 +2,7 @@
 // Responses API, in a throwaway home (no account, no session bus, no daemon of Masih's). 24 Oct 2026:
 //  - A225/A260 "the reasoning and compaction miscalculation": the Context Ledger's Reasoning + compaction share must be
 //    the share of reasoning in what the model was sent. The stand-in replays his chats' reasoning (real encrypted
-//    lengths, real reported tokens; responses-standin.mjs) and charges everything else at four bytes a token.
+//    lengths, real reported tokens; responses-standin.mts) and charges everything else at four bytes a token.
 //  - A224/A255 "enter should force it": /compact typed during a reply waits; an empty Enter stops the reply and compacts.
 //  - A chat whose earlier rollout is gone (his rust-obsidian chat, -32600 "missing source rollout") still opens.
 // ELPIS_TUI_BIN=/absolute/elpis node --test tests/tui-engine.runtime.mts
@@ -15,7 +15,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as pause } from 'node:timers/promises';
 import { createRequire } from 'node:module';
-const { model } = createRequire(import.meta.url)('./responses-standin.mjs');
+const { model } = createRequire(import.meta.url)('./responses-standin.mts');
 
 const { seedMissingEarlierChat } = createRequire(import.meta.url)('./seed-chats.cts');
 

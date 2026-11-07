@@ -1,0 +1,174 @@
+const test = require('node:test');
+const assert: typeof import('node:assert/strict') = require('node:assert/strict');
+const http: typeof import('node:http') = require('node:http');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
+const { fakeDesktop } = require('./fake-desktop.cjs');
+const { threadMenuItem } = require('./controls.cjs');
+const { assertCollectionIcon } = require('./collection-icon-assertions.cts');
+type Project = { id: string; name: string; cwd: string };
+type Thread = { id: string; name: string; cwd: string; model: string; modelProvider: string; status: { type: string }; parentThreadId?: string; agentNickname?: string };
+
+test('projects: explicit membership, drag, menu moves, persistence, and unscoped new chats', async () => {
+  const root = process.env.ELPIS_RENDERER_OUT || path.resolve(__dirname, '../out');
+  const projects: [Project, Project] = [{ id: 'one', name: 'First project', cwd: '/tmp/project-one' }, { id: 'two', name: 'Second project', cwd: '/tmp/project-two' }];
+  const threads: Thread[] = ['alpha', 'bravo'].map(id => ({ id, name: id === 'alpha' ? 'Alpha' : 'Bravo', cwd: projects[0].cwd, model: 'gpt-6-luna', modelProvider: 'openai', status: { type: 'idle' } }));
+  const alpha = threads[0]; assert.ok(alpha);
+  threads.push({ ...alpha, id: 'alpha-worker', name: 'Alpha worker', parentThreadId: 'alpha', agentNickname: 'Alpha worker' });
+  const creates: { cwd?: string }[] = [], shells: { threadId: string; body: unknown }[] = [];
+  const server = http.createServer(async (req, res) => {
+    assert.ok(req.url); const url = new URL(req.url, 'http://localhost'); let raw = ''; for await (const chunk of req) raw += chunk;
+    const json = (value: unknown) => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(value)); };
+    const thread = threads.find(item => item.id === url.pathname.split('/')[3]);
+    if (url.pathname === '/api/events') { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write('event: connection\ndata: {"connected":true}\n\n'); return; }
+    if (url.pathname === '/api/health') return json({ connected: true });
+    if (url.pathname === '/api/models') return json({ data: [{ id: 'luna', model: 'gpt-6-luna', displayName: 'Luna 6' }], nextCursor: null });
+    if (url.pathname === '/api/threads') {
+      if (req.method === 'POST') { const body = JSON.parse(raw) as { cwd?: string }; creates.push(body); const created = { ...alpha, id: `created-${creates.length}`, name: `Created ${creates.length}`, cwd: body.cwd ?? '/tmp/project-one' }; threads.push(created); return json({ thread: created }); }
+      return json({ data: threads, nextCursor: null });
+    }
+    const shell = url.pathname.match(/^\/api\/threads\/([^/]+)\/shell$/);
+    if (req.method === 'POST' && shell) { assert.ok(shell[1]); shells.push({ threadId: decodeURIComponent(shell[1]), body: JSON.parse(raw) }); return json({}); }
+    if (url.pathname.endsWith('/resume')) return json({ thread, activeTurnId: null });
+    if (url.pathname.endsWith('/turns')) return json({ turn: { id: 'fixture-turn' } });
+    if (thread) return json({ thread, data: [], nextCursor: null });
+    if (url.pathname.startsWith('/api/')) return json({});
+    try { const file = path.join(root, url.pathname === '/' ? 'index.html' : url.pathname); res.setHeader('content-type', file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : file.endsWith('.svg') ? 'image/svg+xml' : 'text/html'); res.end(await fs.readFile(file)); }
+    catch { res.statusCode = 404; res.end(); }
+  });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address(); assert.ok(address && typeof address !== 'string');
+  const browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM || undefined, headless: true });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } }); page.setDefaultTimeout(6000);
+    const errors: string[] = []; page.on('pageerror', (error: Error) => errors.push(error.message));
+    await page.addInitScript(fakeDesktop);
+    await page.addInitScript((projects: Project[]) => { if (!localStorage.getItem('project-fixture-initialized')) { localStorage.setItem('elpis-projects-v1', JSON.stringify({ projects, selectedId: 'one' })); localStorage.setItem('project-fixture-initialized', 'yes'); } }, projects);
+    const sidebar = page.locator('aside.sidebar');
+    const group = (name: string) => sidebar.locator('.project-group').filter({ has: page.getByRole('button', { name, exact: true, includeHidden: true }) });
+    const first = group('First project'), second = group('Second project');
+    const row = (id: string) => sidebar.locator(`.thread-row[data-thread-id="${id}"]`).first();
+    const waitForCount = async (locator: string, count: number) => { await page.waitForFunction(({ selector, count }: { selector: string; count: number }) => document.querySelectorAll(selector).length === count, { selector: locator, count }); };
+    await page.goto(`http://127.0.0.1:${address.port}/#token=fixture`);
+    await row('alpha').waitFor();
+    assert.equal(await first.locator('.thread-row').count(), 0, 'matching cwd must not assign unrelated chats to a project');
+    assert.match(await page.getByRole('button', { name: 'Choose project', exact: true }).innerText(), /Work in a project/, 'startup must not inherit the last project');
+
+    await first.getByRole('button', { name: 'First project', exact: true }).click();
+    await row('alpha').dragTo(first.locator('.project-row'));
+    await first.locator('.thread-row[data-thread-id="alpha"]').waitFor();
+    assert.equal(await sidebar.locator('.thread-row[data-thread-id="alpha"]').count(), 1, 'a project chat must not also appear in global Recents');
+    assert.equal(await sidebar.locator('.thread-row[data-thread-id="alpha-worker"]').count(), 0, 'children of a project chat must not become global root chats');
+    for (const label of ['Pin', 'Unpin']) {
+      await row('alpha').hover();
+      await page.getByRole('button', { name: 'Actions for Alpha' }).click();
+      const action = await threadMenuItem(page, label);
+      await assertCollectionIcon(action.locator('svg'), 'pin', label);
+      await action.click();
+      assert.equal(await sidebar.locator('.thread-row[data-thread-id="alpha"]').count(), 1, `${label} must not duplicate a project chat`);
+    }
+    await page.getByLabel('Search conversations', { exact: true }).fill('Alpha');
+    await row('alpha').waitFor();
+    assert.equal(await sidebar.locator('.thread-row[data-thread-id="alpha"]').count(), 1, 'global search must still find a project chat');
+    await page.getByLabel('Search conversations', { exact: true }).fill('');
+    await first.locator('.thread-row[data-thread-id="alpha"]').waitFor();
+    assert.equal(await sidebar.locator('.thread-row[data-thread-id="alpha"]').count(), 1, 'clearing search must restore project-only placement');
+    if (process.env.ELPIS_PROJECT_ISOLATION_SCREENSHOT) await page.screenshot({ path: process.env.ELPIS_PROJECT_ISOLATION_SCREENSHOT });
+    assert.equal(await first.locator('.thread-row[data-thread-id="bravo"]').count(), 0);
+    assert.equal(await second.locator('.thread-row').count(), 0);
+    await row('alpha').getByRole('button', { name: 'Actions for Alpha', exact: true }).click();
+    await (await threadMenuItem(page, 'Move to project…')).click();
+    const picker = page.getByRole('alertdialog', { name: 'Move chat to project' });
+    await page.evaluate(() => { const storage = window.elpisDesktop?.storage; if (!storage) throw Error('Desktop storage is unavailable'); storage.saveItem = async () => { throw Error('Project membership save failed'); }; });
+    await picker.getByRole('button', { name: 'Second project', exact: true }).click();
+    await picker.getByRole('alert').filter({ hasText: 'Project membership save failed' }).waitFor();
+    assert.equal(await first.locator('.thread-row[data-thread-id="alpha"]').count(), 1, 'failed saves retain the previous membership');
+    assert.equal(await second.locator('.thread-row').count(), 0);
+    await page.evaluate(() => { const storage = window.elpisDesktop?.storage; if (!storage) throw Error('Desktop storage is unavailable'); delete storage.saveItem; });
+    await picker.getByRole('button', { name: 'Second project', exact: true }).click();
+    await second.locator('.thread-row[data-thread-id="alpha"]').waitFor();
+    assert.equal(await first.locator('.thread-row').count(), 0, 'moving removes the former membership');
+    assert.equal(await sidebar.locator('.thread-row[data-thread-id="alpha"]').count(), 1, 'moving between projects must not leave a global copy');
+    await page.reload(); await second.locator('.thread-row[data-thread-id="alpha"]').waitFor();
+    assert.equal(await first.locator('.thread-row[data-thread-id="bravo"]').count(), 0, 'refresh must not reassign chats by cwd');
+    assert.equal(await sidebar.locator('.thread-row[data-thread-id="alpha"]').count(), 1, 'reload must preserve exclusive placement');
+
+    await row('alpha').getByRole('button', { name: 'Actions for Alpha', exact: true }).click();
+    await (await threadMenuItem(page, 'Move to project…')).click();
+    await picker.getByRole('button', { name: 'No project', exact: true }).click();
+    await waitForCount('.project-group .thread-row[data-thread-id="alpha"]', 0);
+    await row('alpha').dragTo(second.locator('.project-row'));
+    await second.locator('.thread-row[data-thread-id="alpha"]').waitFor();
+    await row('alpha').dragTo(sidebar.getByRole('region', { name: 'Recents', exact: true }));
+    await waitForCount('.project-group .thread-row[data-thread-id="alpha"]', 0);
+    const invalid = await page.evaluateHandle(() => { const data = new DataTransfer(); data.setData('text/plain', 'bravo'); return data; });
+    await first.dispatchEvent('dragover', { dataTransfer: invalid }); await first.dispatchEvent('drop', { dataTransfer: invalid });
+    assert.equal(await first.locator('.thread-row').count(), 0, 'unrelated drags must not assign chats');
+    await invalid.dispose();
+    await page.reload(); await row('alpha').waitFor();
+    assert.equal(await first.locator('.thread-row').count(), 0, 'removing membership persists');
+
+    await row('alpha').locator('.thread-link').click();
+    await page.getByRole('heading', { name: 'This conversation has no messages yet.', exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Start new chat in Second project', exact: true }).click();
+    assert.match(await page.getByRole('button', { name: 'Choose project', exact: true }).innerText(), /Second project/);
+    assert.equal(await page.getByRole('heading', { name: 'This conversation has no messages yet.', exact: true }).count(), 0, 'switching projects must clear the previous conversation');
+
+    await page.getByRole('button', { name: 'Start new chat in First project', exact: true }).click();
+    assert.match(await page.getByRole('button', { name: 'Choose project', exact: true }).innerText(), /First project/);
+    await page.getByRole('button', { name: 'New chat tab', exact: true }).click();
+    assert.match(await page.getByRole('button', { name: 'Choose project', exact: true }).innerText(), /Work in a project/, 'new tabs do not inherit a project');
+    await page.getByRole('button', { name: 'Start new chat in First project', exact: true }).click();
+    await page.getByRole('button', { name: 'New chat', exact: true }).click();
+    assert.match(await page.getByRole('button', { name: 'Choose project', exact: true }).innerText(), /Work in a project/, 'global New chat clears the project');
+    await page.getByLabel('Message Elpis', { exact: true }).fill('Unscoped fixture');
+    await page.getByRole('button', { name: 'Send message', exact: true }).click();
+    await row('created-1').waitFor(); assert.ok(creates[0]); assert.equal(creates[0].cwd, undefined);
+    assert.equal(await first.locator('.thread-row').count(), 0, 'server default cwd must not assign a global new chat');
+    await page.getByRole('button', { name: 'Start new chat in First project', exact: true }).click();
+    await page.getByLabel('Message Elpis', { exact: true }).fill('Project fixture');
+    await page.getByRole('button', { name: 'Send message', exact: true }).click();
+    await first.locator('.thread-row[data-thread-id="created-2"]').waitFor();
+    assert.ok(creates[1]); assert.equal(creates[1].cwd, projects[0].cwd);
+    await page.reload(); await first.locator('.thread-row[data-thread-id="created-2"]').waitFor();
+    await page.getByRole('button', { name: 'Start new chat in First project', exact: true }).click();
+    await page.getByRole('button', { name: 'Add files and more', exact: true }).click();
+    await page.getByRole('menuitem', { name: /^Run as a shell command/ }).click();
+    await page.getByLabel('Message Elpis', { exact: true }).fill('pwd');
+    await page.getByRole('button', { name: 'Run shell command', exact: true }).click();
+    await first.locator('.thread-row[data-thread-id="created-3"]').waitFor();
+    assert.ok(creates[2]); assert.equal(creates[2].cwd, projects[0].cwd, 'a shell chat started from a project must retain its selected project cwd');
+    assert.deepEqual(shells[0], { threadId: 'created-3', body: { command: 'pwd' } });
+    assert.equal(await sidebar.getByRole('region', { name: 'Recents', exact: true }).locator('.thread-row[data-thread-id="created-3"]').count(), 0, 'a project shell chat must not also appear in Recents');
+    await page.reload();
+    await first.locator('.thread-row[data-thread-id="created-3"]').waitFor();
+    assert.equal(await sidebar.getByRole('region', { name: 'Recents', exact: true }).locator('.thread-row[data-thread-id="created-3"]').count(), 0, 'project shell membership must persist after reload');
+    await page.getByRole('button', { name: 'New chat', exact: true }).click();
+    assert.match(await page.getByRole('button', { name: 'Choose project', exact: true }).innerText(), /Work in a project/);
+    await page.getByRole('button', { name: 'Add files and more', exact: true }).click();
+    await page.getByRole('menuitem', { name: /^Run as a shell command/ }).click();
+    await page.getByLabel('Message Elpis', { exact: true }).fill('pwd');
+    await page.getByRole('button', { name: 'Run shell command', exact: true }).click();
+    await row('created-4').waitFor();
+    assert.ok(creates[3]); assert.equal(creates[3].cwd, undefined, 'global shell start must not gain a project from the server-returned cwd');
+    assert.deepEqual(shells[1], { threadId: 'created-4', body: { command: 'pwd' } });
+    assert.equal(await first.locator('.thread-row[data-thread-id="created-4"]').count(), 0, 'an unselected-folder shell chat must remain unassigned');
+    await page.reload();
+    await row('created-4').waitFor();
+    assert.equal(await first.locator('.thread-row[data-thread-id="created-4"]').count(), 0, 'unselected-folder shell chat must remain unassigned after reload');
+    if (process.env.ELPIS_PROJECT_SCREENSHOT) {
+      for (const theme of ['light']) {
+        await page.evaluate((theme: string) => localStorage.setItem('elpis-theme', theme), theme);
+        await page.reload(); await row('alpha').waitFor();
+        await page.getByRole('status', { name: 'Elpis is starting', exact: true }).waitFor({ state: 'hidden', timeout: 15000 });
+        await row('alpha').getByRole('button', { name: 'Actions for Alpha', exact: true }).click();
+        await (await threadMenuItem(page, 'Move to project…')).click();
+        await picker.waitFor();
+        await page.screenshot({ path: process.env.ELPIS_PROJECT_SCREENSHOT.replace('.png', `-${theme}.png`) });
+        await picker.getByRole('button', { name: 'Cancel', exact: true }).click();
+      }
+    }
+    assert.deepEqual(errors, []);
+  } finally { await browser.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
+});

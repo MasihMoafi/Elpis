@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 const { scrollToLoadEarlier } = require('./controls.cjs');
 
 type WorkItem = { id: string; type: string; command?: string; status?: string };

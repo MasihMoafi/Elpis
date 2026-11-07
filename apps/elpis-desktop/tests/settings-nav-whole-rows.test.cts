@@ -2,7 +2,7 @@
 // the Settings navigation, the same kind of list, must too: in a short window its last tab was cut in half.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 const { openSettings } = require('./controls.cjs');
 
 const cutTabs = (page: { locator: (selector: string) => { evaluate: (fn: (nav: HTMLElement) => string[]) => Promise<string[]> } }) => page.locator('.settings-nav').evaluate((nav: HTMLElement) => {

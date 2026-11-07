@@ -5,7 +5,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const os = require('node:os');
 const path = require('node:path');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 const { chooseTheme } = require('./controls.cjs');
 
 const notice = (runId: string, name: string, status: string, summary: string, result?: unknown) => ['<workflow-notification>', `<run-id>${runId}</run-id>`, `<name>${name}</name>`, `<status>${status}</status>`,

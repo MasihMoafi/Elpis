@@ -1,11 +1,11 @@
 // The sidebar says which chats need you, as Claude's desktop app does: an unread reply, "Needs your approval · …",
 // "Waiting for your answer" and "Plan ready for review" under the chat's name, and Mark as read / unread / completed.
-// The exported UI against tests/parity-fixture.cjs; bridge events are sent with its `emit`. Screenshots go to
+// The exported UI against tests/parity-fixture.cts; bridge events are sent with its `emit`. Screenshots go to
 // $ELPIS_PARITY_SHOTS when it is set.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const { fixture, THREADS } = require('./parity-fixture.cjs');
+const { fixture, THREADS } = require('./parity-fixture.cts');
 const shots = process.env.ELPIS_PARITY_SHOTS;
 
 type Locator = {

@@ -5,12 +5,12 @@ type VisitPage = { getByRole(role: string, options?: { name: string; exact: bool
 type ShotPage = { screenshot(options: { path: string }): Promise<void> };
 type Dialog = { dismiss(): Promise<void>; accept(): Promise<void> };
 
-// CI renderer regression checks; real bridge acceptance: settings2.runtime.cjs.
+// CI renderer regression checks; real bridge acceptance: settings2.runtime.cts.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 const { openSettings } = require('./controls.cjs');
 const settings = { version: 'v1', main: {}, background: {}, smartPrune: { explicitOverride: {} }, memory: {}, write: { available: true } };
 async function setup(t: TestContext, theme = 'light') {

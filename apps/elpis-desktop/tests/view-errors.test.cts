@@ -4,7 +4,7 @@
 // well formed but holds something the transcript cannot draw. Real clicks and keys; local bridge fixture, no engine.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 const { openSettings } = require('./controls.cjs');
 
 type Locator = {

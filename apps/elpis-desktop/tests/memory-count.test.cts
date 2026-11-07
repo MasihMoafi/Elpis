@@ -1,5 +1,5 @@
 const test = require('node:test'), assert = require('node:assert/strict');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 const { openSettings } = require('./controls.cjs');
 
 const settings = (writable: boolean) => ({ version: 'v1', main: { model: 'sol', provider: 'openai' }, background: { model: null, provider: null },

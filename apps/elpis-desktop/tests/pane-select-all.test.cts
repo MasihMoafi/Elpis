@@ -2,7 +2,7 @@
 // One handler (lib/pane-select.ts) serves every content pane; here the open file and the Markdown preview of the Files pane, and the composer keeps its own select-all.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 
 const CWD = '/tmp/pane-select-project';
 const FILES: Record<string, string> = { 'src/a.txt': 'alpha line one\nbeta line two\ngamma line three\n', 'docs/guide.md': '# Heading\n\nA paragraph of the guide.\n' };

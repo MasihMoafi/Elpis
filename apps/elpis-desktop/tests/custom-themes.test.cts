@@ -1,7 +1,7 @@
 // User-authored themes run through the actual Appearance controls and shared renderer tokens.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 const { openSettings, leaveSettings, chooseOption } = require('./controls.cjs');
 
 type Locator = { click(): Promise<void>; press(key: string): Promise<void> };

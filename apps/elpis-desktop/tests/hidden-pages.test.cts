@@ -3,7 +3,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 
 const shipped = { 'elpis-preferences-v1': JSON.stringify({ hiddenPages: 'experimentLab,canvas' }) };
 const workflowChat = { id: 'chat-w', name: 'Workflows · demo', preview: 'Workflows · demo', cwd: '/tmp/parity-fixture', model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } };

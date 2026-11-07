@@ -6,7 +6,7 @@ const path = require('node:path');
 
 // ui-check runs only where its checker is installed, so its Playwright is there too.
 process.env.ELPIS_PLAYWRIGHT_PACKAGE ||= path.join(os.homedir(), 'Desktop/p/skills/web-dev/ui-check/node_modules/playwright');
-const { fixture }: typeof import('../tests/parity-fixture.cjs') = require('../tests/parity-fixture.cjs');
+const { fixture }: typeof import('../tests/parity-fixture.cts') = require('../tests/parity-fixture.cts');
 
 void fixture({ desktop: false }).then(({ page, close }) => {
   const bridge = Number(new URL(page.url()).port);

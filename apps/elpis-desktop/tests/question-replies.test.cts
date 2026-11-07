@@ -8,7 +8,7 @@ type Page = Locator & { screenshot(options: { path: string }): Promise<void>; wa
 type Post = { path: string; body: { text: string; beforeTurnId?: string } };
 type Fixture = { page: Page; composer: Locator; errors: string[]; posts: Post[]; open(id: string): Promise<void>; close(): Promise<void>; copied(): Promise<string> };
 type Options = { colorScheme?: string; chat?: string[][]; routes?: Record<string, () => object> };
-const { fixture } = require('./parity-fixture.cjs') as { fixture(options: Options & { height: number }): Promise<Fixture> };
+const { fixture } = require('./parity-fixture.cts') as { fixture(options: Options & { height: number }): Promise<Fixture> };
 
 const first = {
   answer: 'Reusable agent instructions (Recommended)',

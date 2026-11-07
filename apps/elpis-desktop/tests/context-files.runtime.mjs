@@ -12,7 +12,7 @@ import { startDesktopServer } from '../bridge/server.mts';
 import { DesktopClient } from '../bridge/client.mts';
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { assertUiFit } = require('./ui-fit.cjs');
+const { assertUiFit } = require('./ui-fit.cts');
 const engine = await fs.realpath(process.argv[2]);
 const root = process.env.LEDGER_LIVE_REUSE ? await fs.realpath(process.env.LEDGER_LIVE_REUSE) : await fs.mkdtemp('/tmp/cd-');
 assert.ok(root.startsWith('/tmp/cd-'), 'Reuse only this harness’s throwaway project');

@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const { openCanvas } = require('./canvas-fixture.cjs');
 const { chooseTheme } = require('./controls.cjs');
-const { assertUiFit } = require('./ui-fit.cjs');
+const { assertUiFit } = require('./ui-fit.cts');
 
 async function placementGeometry(f, iso) {
   return f.canvas.evaluate((canvas, iso) => {

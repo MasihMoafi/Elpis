@@ -4,10 +4,10 @@ type Post = { path: string; body: unknown };
 
 // Ctrl+K is a command menu, as in Claude's desktop app ("Search or start a chat"): recent chats and actions; typing
 // filters actions, chats and projects; ↑/↓ move (wrapping), Enter runs, Esc closes. Ctrl+Shift+K still searches the
-// sidebar. The exported UI against tests/parity-fixture.cjs. Screenshots go to $ELPIS_PARITY_SHOTS when it is set.
+// sidebar. The exported UI against tests/parity-fixture.cts. Screenshots go to $ELPIS_PARITY_SHOTS when it is set.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture, CWD } = require('./parity-fixture.cjs');
+const { fixture, CWD } = require('./parity-fixture.cts');
 
 const chat = (id: string, name: string) => ({ id, name, preview: name, cwd: CWD, model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } });
 const LIST = [chat('chat-a', 'Fix the parser'), chat('chat-b', 'Write the docs'), chat('chat-c', 'Plan the release')];

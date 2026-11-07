@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 
 for (const colorScheme of ['light']) test(`Enter immediately shows the message and preserves an identical next draft (${colorScheme})`, async () => {
   const { promise: waiting, resolve: acknowledge } = Promise.withResolvers<void>();

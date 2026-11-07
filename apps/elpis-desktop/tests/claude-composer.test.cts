@@ -7,7 +7,7 @@ type Locator = { getByRole(role: string, options?: object): Locator; getByText(t
 type Page = Locator & { keyboard: { type(text: string): Promise<void>; press(key: string): Promise<void>; down(key: string): Promise<void>; up(key: string): Promise<void> }; waitForFunction(fn: () => boolean): Promise<void>; waitForEvent(name: 'filechooser'): Promise<{ element(): Locator; setFiles(file: { name: string; mimeType: string; buffer: Buffer }): Promise<void> }> };
 type Post = { path: string; body: { text: string; mentions?: { name: string; path: string }[] } };
 type Fixture = { page: Page; composer: Locator; errors: string[]; posts: Post[]; open(id: string): Promise<void>; close(): Promise<void> };
-const { fixture, CWD } = require('./parity-fixture.cjs') as { fixture(options: { running?: boolean; colorScheme?: string }): Promise<Fixture>; CWD: string };
+const { fixture, CWD } = require('./parity-fixture.cts') as { fixture(options: { running?: boolean; colorScheme?: string }): Promise<Fixture>; CWD: string };
 
 async function using(options: { running?: boolean; colorScheme?: string }, run: (f: Fixture) => Promise<void>) {
   const f = await fixture(options);

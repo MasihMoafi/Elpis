@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { startDesktopServer } from '../bridge/server.mts';
 const require = createRequire(import.meta.url);
 const { chooseTheme } = require('./controls.cjs');
-const { uiFit } = require('./ui-fit.cjs');
+const { uiFit } = require('./ui-fit.cts');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 
 const [engine, plan = 'voting'] = process.argv.slice(2);

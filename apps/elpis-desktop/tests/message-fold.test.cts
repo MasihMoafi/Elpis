@@ -2,7 +2,7 @@
 // "when a message is too long there should be an option to collapse it").
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture, CWD } = require('./parity-fixture.cjs');
+const { fixture, CWD } = require('./parity-fixture.cts');
 
 const LONG = Array.from({ length: 40 }, (_, i) => `Line ${i + 1} of a long pasted brief.`).join('\n');
 const user = (turnId: string, id: string, text: string) => ({ turnId, item: { id, type: 'userMessage', content: [{ type: 'text', text }] } });

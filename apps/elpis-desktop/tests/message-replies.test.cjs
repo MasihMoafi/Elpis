@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture, CWD } = require('./parity-fixture.cjs');
+const { fixture, CWD } = require('./parity-fixture.cts');
 const fs = require('node:fs');
 const path = require('node:path');
 const preview = page => page.locator('.composer [data-slot="reply-preview"]');

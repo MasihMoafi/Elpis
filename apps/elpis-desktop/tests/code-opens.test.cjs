@@ -2,8 +2,8 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { fixture, CWD } = require('./parity-fixture.cjs');
-const { assertUiFit } = require('./ui-fit.cjs');
+const { fixture, CWD } = require('./parity-fixture.cts');
+const { assertUiFit } = require('./ui-fit.cts');
 const SOURCE = 'const long = "' + 'long_value '.repeat(55) + '";\nconst next = 2;\n';
 const PATCH = '@@ -1,2 +1,2 @@\n-old\n+new\n next\n';
 const WORK = [

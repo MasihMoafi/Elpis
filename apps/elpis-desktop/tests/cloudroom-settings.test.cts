@@ -3,7 +3,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 const { openAccounts } = require('./providers-order.cts');
 
 for (const colorScheme of ['light']) test(`the CloudRoom VM row signs in, checks the VM and signs out (${colorScheme})`, async () => {

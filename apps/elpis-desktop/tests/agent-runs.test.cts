@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { fixture, CWD } = require('./parity-fixture.cjs');
+const { fixture, CWD } = require('./parity-fixture.cts');
 const notice = 'Run by an agent in the background; open its parent to talk to it';
 const normal = (id: string, name: string) => ({ id, name, cwd: CWD, source: 'cli', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct', reason: null } });
 async function mixed({ continueError = false, restoredRun = false, pagedChildren = false, nestedChildren = false, ...options }: { continueError?: boolean; restoredRun?: boolean; pagedChildren?: boolean; nestedChildren?: boolean; colorScheme?: string; width?: number; height?: number } = {}) {

@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture } = require('./parity-fixture.cjs');
-const { assertUiFit } = require('./ui-fit.cjs');
+const { fixture } = require('./parity-fixture.cts');
+const { assertUiFit } = require('./ui-fit.cts');
 
 const description = 'Check every shared component, compare the rendered layout with the design, and explain which parts need attention before changing the interface. '.repeat(3);
 for (const colorScheme of ['light']) for (const width of [900]) test(`Customize keeps the full description available (${colorScheme}, ${width}px)`, async () => {

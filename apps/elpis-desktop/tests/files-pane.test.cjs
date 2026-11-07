@@ -2,7 +2,7 @@
 // file in the side panel's Files tab at its lines and shows it in the project tree; the tab is a real tree (folders open
 // and close, a filter finds by name, "?" searches the contents), open files are tabs, and a file can be edited in place and
 // saved. "Open in" starts an editor (never VS Code) or the system's default app. The exported UI against the real bridge
-// file functions (bridge/files.mts) on a temporary project at /tmp/parity-fixture, in a fake desktop (tests/parity-fixture.cjs).
+// file functions (bridge/files.mts) on a temporary project at /tmp/parity-fixture, in a fake desktop (tests/parity-fixture.cts).
 // Screenshots go to $ELPIS_SHOTS when it is set.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -11,7 +11,7 @@ const path = require('node:path');
 const os = require('node:os');
 const { promisify } = require('node:util');
 const execFile = promisify(require('node:child_process').execFile);
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 const { widenSidePanel } = require('./controls.cjs');
 const CWD = path.join(os.homedir(), '.cache', `elpis-file-previews-${process.pid}`);
 const trashProject = async () => { if (await fs.stat(CWD).catch(() => null)) await execFile('gio', ['trash', CWD]); };

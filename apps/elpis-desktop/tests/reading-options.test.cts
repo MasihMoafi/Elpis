@@ -1,11 +1,11 @@
 // Reading options in Settings → Appearance, as Claude's desktop app has them: Transcript text size (Small, Medium,
 // Large), Transcript width (Narrow, Medium, Wide), and Code font (code, diffs and the terminal). Saved on
-// this device with the other preferences. The exported UI against tests/parity-fixture.cjs, a mock bridge with no
+// this device with the other preferences. The exported UI against tests/parity-fixture.cts, a mock bridge with no
 // engine or model. Captures go to $ELPIS_PARITY_SHOTS when it is set.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 const { openSettings, leaveSettings } = require('./controls.cjs');
 
 const PREFERENCES = 'elpis-preferences-v1';

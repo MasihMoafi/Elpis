@@ -1,7 +1,7 @@
 // A chat another chat made with create_thread is an ordinary chat that the bridge reports under its maker (bridge/spawn-links.mts).
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture, CWD } = require('./parity-fixture.cjs');
+const { fixture, CWD } = require('./parity-fixture.cts');
 const chat = (id: string, name: string, parentThreadId?: string) => ({ id, name, cwd: CWD, source: 'vscode', status: { type: 'idle' }, ...(parentThreadId ? { parentThreadId } : {}), desktopAccess: { writable: true, mode: 'direct', reason: null } });
 const row = (page: Awaited<ReturnType<typeof fixture>>['page'], id: string) => page.locator(`aside.sidebar .thread-row[data-thread-id="${id}"]`).first();
 

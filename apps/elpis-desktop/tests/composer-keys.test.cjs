@@ -3,7 +3,7 @@
 // Real key presses. Local bridge fixture; no engine or model.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 
 async function using(options, run) {
   const f = await fixture(options);

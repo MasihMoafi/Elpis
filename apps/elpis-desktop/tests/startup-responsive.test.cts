@@ -6,7 +6,7 @@ type Route = { request(): { url(): string; method(): string }; fulfill(options: 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 
 for (const pending of ['threads', 'settings', 'health', 'restored chat', 'session', 'session last chat', 'unreachable', 'rejected']) test(`startup opens within two seconds with ${pending} pending`, async (t: TestContext) => {
   const f = await fixture({ desktop: true, width: 1440, height: 900, colorScheme: pending === 'unreachable' ? 'light' : 'dark' });

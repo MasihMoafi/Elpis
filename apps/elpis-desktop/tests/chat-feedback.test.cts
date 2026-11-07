@@ -1,7 +1,7 @@
 // Exercise the renderer with delayed bridge acknowledgements; no model calls.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture } = require('./parity-fixture.cts');
 const gate = () => { let release = () => {}; const wait = new Promise<void>(resolve => { release = resolve; }); return { wait, release }; };
 const bubble = (page: { locator(selector: string): { filter(options: { hasText: string }): { waitFor(options?: { timeout: number }): Promise<void>; elementHandle(): Promise<{ evaluate(fn: (element: Element) => boolean): Promise<boolean> }>; count(): Promise<number> } } }, text: string) => page.locator('.message.user').filter({ hasText: text });
 const echo = (f: { emit(event: string, data: object): void }, text: string) => f.emit('message', { method: 'item/completed', params: { threadId: 'chat-a', turnId: 't-new', item: { id: 'u-new', type: 'userMessage', content: [{ type: 'text', text }] } } });

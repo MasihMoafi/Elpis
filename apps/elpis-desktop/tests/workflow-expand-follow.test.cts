@@ -5,7 +5,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const { fixture, CWD } = require('./parity-fixture.cjs');
+const { fixture, CWD } = require('./parity-fixture.cts');
 
 const ROOT = '01a16e00-0000-7000-8000-000000000001', RUN = '7e713fd9-05cc-41f8-903f-9407045995a4';
 const STEPS = ['01a16e00-0000-7000-8000-000000000002', '01a16e00-0000-7000-8000-000000000003'];

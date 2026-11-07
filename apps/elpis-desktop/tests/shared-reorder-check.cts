@@ -1,6 +1,6 @@
 // Run unchanged against a CI renderer or a real packaged app with copied chat history.
 const assert = require('node:assert/strict');
-const { drag, shot } = require('./settings-reorder-check.cjs');
+const { drag, shot } = require('./settings-reorder-check.cts');
 
 type Locator = {
   getAttribute(name: string): Promise<string | null>;
