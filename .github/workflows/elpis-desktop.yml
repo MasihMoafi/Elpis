@@ -50,7 +50,7 @@ jobs:
       - name: Prepare the retained UI checkpoint
         run: |
           bash scripts/fetch-retained.sh
-      - name: Bind the renderer and complete regression plan to eight shards (7 Nov: six took 9.5 min on the slowest)
+      - name: Bind the renderer and complete regression plan to eight shards (six took 9.5 min on the slowest, 7 Nov)
         id: plan
         run: |
           node scripts/renderer-artifact-gate.mjs --prepare "$RUNNER_TEMP/elpis-ui-plan" 8
