@@ -200,6 +200,7 @@
     "desktop/open-thread.test.cts",
     "desktop/output-errors.test.cts",
     "desktop/package.test.mts",
+    "desktop/preload-path.test.cts",
     "desktop/preferences.test.cts",
     "desktop/quick-entry.test.cts",
     "desktop/runtime.test.mts",

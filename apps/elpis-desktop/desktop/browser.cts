@@ -8,14 +8,14 @@ type Command = { action: string; id: string; url: string; body: unknown; text: u
 type Saved = { visible: boolean; activeId: string; tabs: { id: string; url: string; title: string; customTitle: string; agent: boolean; muted: boolean; zoom: number; history: Electron.NavigationEntry[]; historyIndex: number }[] };
 
 const {randomUUID}=require('node:crypto');
-const path=require('node:path');
+const {preloadPath}: typeof import('./preload-path.cts')=require('./preload-path.cts');
 const {browserUrl,trustedBrowserSender,nativeBounds,loadFailure,pageSecurity,zoomStep}=require('./browser-policy.cts') as typeof import('./browser-policy.cts');
 const {cleanPick,commentLabel,commentsPrompt}=require('./browser-annotations.cts') as typeof import('./browser-annotations.cts');
 const {contextMenuTemplate}=require('./context-menu.cts') as typeof import('./context-menu.cts');
 const {createBrowserAgent}=require('./browser-agent.cts');
 const {presentAsChrome,presentPageAsChrome}=require('./browser-identity.cts') as typeof import('./browser-identity.cts');
 
-const PRELOAD=path.join(__dirname,'browser-page-preload.cjs');
+const PRELOAD=preloadPath('browser-page-preload');
 const COMMANDS=['action','id','url','body','text','value'];
 // One screenshot sheet holds twelve panels; send these before adding more.
 const MAX_COMMENTS=12;

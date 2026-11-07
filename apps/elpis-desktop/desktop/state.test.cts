@@ -1,4 +1,5 @@
 'use strict';
+const { preloadPath }: typeof import('./preload-path.cts') = require('./preload-path.cts');
 import type {} from 'node:test';
 const test: typeof import('node:test').test = require('node:test');
 type Preferences = { DEFAULT_PREFERENCES: Record<string, unknown>; readPreferences: () => Record<string, unknown>; savePreferences: (value: Record<string, unknown>) => void };
@@ -75,7 +76,7 @@ function windows(t: import('node:test').TestContext, initial = {}) {
       assert.equal(name, 'electron');
       return { ipcRenderer: renderer, contextBridge: { exposeInMainWorld: (key: string, value: unknown) => { context.window[key] = value; } } };
     } });
-    vm.runInContext(fs.readFileSync(path.join(__dirname, 'preload.cjs'), 'utf8'), context);
+    vm.runInContext(fs.readFileSync(preloadPath('preload'), 'utf8'), context);
     const storage = context.window.elpisDesktop.storage, errors: string[] = [], changes: string[] = [];
     storage.onError((message: string) => errors.push(message));
     storage.onChange?.((key: string) => changes.push(key));

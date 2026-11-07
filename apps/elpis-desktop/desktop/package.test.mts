@@ -14,7 +14,7 @@ const production = productionFiles;
 
 // A file the app imports but the package leaves out stops the installed app at start (16 Oct: preferences.cjs, provider-keys.mts).
 test('the package holds every local file its entry points import', async () => {
-  const root = fileURLToPath(new URL('../', import.meta.url)), seen = new Set<string>(), pending = ['desktop/main.cts', 'desktop/preload.cjs', 'desktop/runtime.mts', 'bridge/server.mts', 'bridge/client.mts'];
+  const root = fileURLToPath(new URL('../', import.meta.url)), seen = new Set<string>(), pending = ['desktop/main.cts', 'desktop/preload.cts', 'desktop/runtime.mts', 'bridge/server.mts', 'bridge/client.mts'];
   while (pending.length) {
     const name = pending.pop()!; if (seen.has(name)) continue; seen.add(name);
     const text = (await fs.readFile(path.join(root, name), 'utf8')).replace(/^import type .*;$/gm, '');

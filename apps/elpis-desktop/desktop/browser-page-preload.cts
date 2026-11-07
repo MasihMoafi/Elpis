@@ -3,15 +3,22 @@
 // isolated world before the page's scripts, exposes nothing to the page and draws in a closed shadow root.
 // Comments are typed in Elpis, never in the page, so the page cannot read them. Sandboxed preloads cannot
 // load other files, so this file stands alone; tests/browser-annotate.test.cjs runs it in Chromium.
-const { ipcRenderer } = require('electron');
+const { ipcRenderer }: typeof import('electron') = require('electron');
+type PageElement = Element & Partial<Pick<HTMLElement, 'innerText' | 'isContentEditable'>> & { labels?: NodeListOf<HTMLLabelElement> | null };
+type Rect = { x: number; y: number; width: number; height: number };
+type Anchor = ReturnType<typeof import('./browser-annotations.cts').cleanPick>;
+type Comment = { id: string; number: number; kind: string; pageUrl: string; anchor: Anchor; editing?: string | null };
+type Layer = { host: HTMLElement; catcher: HTMLElement; hover: HTMLElement; label: HTMLElement; drag: HTMLElement; draft: HTMLElement; markers: HTMLElement[]; shadow: ShadowRoot };
+type Drag = { x: number; y: number; moved: boolean; rect: Rect | null };
+type Message = { type?: string; mode?: boolean; markersVisible?: boolean; comments?: Comment[]; draft?: Comment | null; x?: number; y?: number; id?: string };
 
 const BLUE = '#2f6fed', WASH = 'rgba(47,111,237,0.10)';
-const send = message => { try { ipcRenderer.send('elpis:browser:page', message); } catch { /* the tab is closing */ } };
-const elements = new Map();
-let mode = false, markersVisible = true, comments = [], draft = null, space = false, hover = null, drag = null, layer = null, frame = 0;
+const send = (message: object) => { try { ipcRenderer.send('elpis:browser:page', message); } catch { /* the tab is closing */ } };
+const elements = new Map<string, PageElement>();
+let mode = false, markersVisible = true, comments: Comment[] = [], draft: Comment | null = null, space = false, hover: PageElement | null = null, drag: Drag | null = null, layer: Layer | null = null, frame = 0;
 
-function style(element, values) { for (const [key, value] of Object.entries(values)) element.style.setProperty(key, value, 'important'); return element; }
-function box(shadow, values) { const element = document.createElement('div'); style(element, { position: 'fixed', 'box-sizing': 'border-box', 'pointer-events': 'none', display: 'none', margin: '0', ...values }); shadow.append(element); return element; }
+function style(element: HTMLElement, values: Record<string, string>) { for (const [key, value] of Object.entries(values)) element.style.setProperty(key, value, 'important'); return element; }
+function box(shadow: ShadowRoot, values: Record<string, string>) { const element = document.createElement('div'); style(element, { position: 'fixed', 'box-sizing': 'border-box', 'pointer-events': 'none', display: 'none', margin: '0', ...values }); shadow.append(element); return element; }
 const pill = { background: BLUE, color: '#fff', font: '600 11px/16px system-ui, sans-serif', padding: '1px 6px', 'border-radius': '4px', 'white-space': 'nowrap', 'letter-spacing': '0' };
 
 function ensureLayer() {
@@ -30,7 +37,7 @@ function ensureLayer() {
     listen(catcher);
   }
   if (layer.host.parentElement !== root) { if (layer.host.matches(':popover-open')) layer.host.hidePopover(); root.append(layer.host); }
-  if (mode && layer.host.showPopover) {
+  if (mode && typeof layer.host.showPopover === 'function') {
     layer.host.setAttribute('popover', 'manual');
     if (!layer.host.matches(':popover-open')) layer.host.showPopover();
   } else if (layer.host.hasAttribute('popover')) {
@@ -41,16 +48,16 @@ function ensureLayer() {
 }
 
 // --- What a selection says about the page (untrusted evidence; main checks every field). ---
-const ROLES = { a: 'link', button: 'button', select: 'combobox', textarea: 'textbox', img: 'img', nav: 'navigation', main: 'main', header: 'banner', footer: 'contentinfo', ul: 'list', ol: 'list', li: 'listitem', table: 'table', form: 'form', dialog: 'dialog', h1: 'heading', h2: 'heading', h3: 'heading', h4: 'heading', h5: 'heading', h6: 'heading' };
-const INPUTS = { checkbox: 'checkbox', radio: 'radio', button: 'button', submit: 'button', reset: 'button', range: 'slider', search: 'searchbox' };
-const clean = (value, limit) => { const text = String(value ?? '').replace(/\s+/g, ' ').trim(); return text ? text.slice(0, limit) : null; };
-function role(element) {
+const ROLES: Record<string, string> = { a: 'link', button: 'button', select: 'combobox', textarea: 'textbox', img: 'img', nav: 'navigation', main: 'main', header: 'banner', footer: 'contentinfo', ul: 'list', ol: 'list', li: 'listitem', table: 'table', form: 'form', dialog: 'dialog', h1: 'heading', h2: 'heading', h3: 'heading', h4: 'heading', h5: 'heading', h6: 'heading' };
+const INPUTS: Record<string, string> = { checkbox: 'checkbox', radio: 'radio', button: 'button', submit: 'button', reset: 'button', range: 'slider', search: 'searchbox' };
+const clean = (value: string | null | undefined, limit: number) => { const text = String(value ?? '').replace(/\s+/g, ' ').trim(); return text ? text.slice(0, limit) : null; };
+function role(element: PageElement) {
   const explicit = element.getAttribute('role'); if (explicit) return explicit.split(/\s+/)[0];
   if (element.localName === 'a') return element.hasAttribute('href') ? 'link' : null;
-  if (element.localName === 'input') return INPUTS[element.type] ?? 'textbox';
+  if (element.localName === 'input') return INPUTS[(element as HTMLInputElement).type] ?? 'textbox';
   return ROLES[element.localName] ?? null;
 }
-function name(element) {
+function name(element: PageElement) {
   const labelled = element.getAttribute('aria-labelledby');
   const byId = labelled ? labelled.split(/\s+/).map(id => document.getElementById(id)?.innerText ?? '').join(' ') : '';
   const label = element.labels?.[0]?.innerText;
@@ -59,22 +66,22 @@ function name(element) {
   const text = clean(element.innerText, 400);
   return text && text.length <= 120 ? text : null;
 }
-function ownText(element) { return clean([...element.childNodes].filter(node => node.nodeType === 3).map(node => node.textContent).join(' '), 200); }
-function nearby(element) {
+function ownText(element: PageElement) { return clean([...element.childNodes].filter(node => node.nodeType === 3).map(node => node.textContent).join(' '), 200); }
+function nearby(element: PageElement) {
   for (let node = element.parentElement, depth = 0; node && depth < 4; node = node.parentElement, depth++) {
     const text = clean(node.innerText, 300); if (text && text !== clean(element.innerText, 300)) return text;
   }
   return null;
 }
-const escape = value => (globalThis.CSS?.escape ? CSS.escape(value) : value.replace(/[^\w-]/g, '\\$&'));
-function selector(element) {
+const escape = (value: string) => (typeof globalThis.CSS?.escape === 'function' ? CSS.escape(value) : value.replace(/[^\w-]/g, '\\$&'));
+function selector(element: PageElement) {
   const parts = [];
-  for (let node = element; node && node.nodeType === 1 && parts.length < 10; node = node.parentElement) {
+  for (let node: PageElement | null = element; node && node.nodeType === 1 && parts.length < 10; node = node.parentElement) {
     if (node.id && /^[A-Za-z][\w-]*$/.test(node.id) && document.querySelectorAll(`#${escape(node.id)}`).length === 1) { parts.unshift(`#${escape(node.id)}`); break; }
     let part = node.localName;
     const classes = [...node.classList].filter(name => /^[A-Za-z][\w-]{0,40}$/.test(name) && !/\d{3,}/.test(name)).slice(0, 3);
     if (classes.length) part += `.${classes.map(escape).join('.')}`;
-    const parent = node.parentElement;
+    const parent: HTMLElement | null = node.parentElement;
     if (parent && node.localName !== 'body' && node.localName !== 'html') {
       const same = [...parent.children].filter(child => child.localName === node.localName && (!classes.length || classes.every(name => child.classList.contains(name))));
       if (same.length > 1) part += `:nth-of-type(${[...parent.children].filter(child => child.localName === node.localName).indexOf(node) + 1})`;
@@ -85,49 +92,49 @@ function selector(element) {
   const value = parts.join(' > ');
   try { return document.querySelector(value) === element ? value : null; } catch { return null; }
 }
-function path(element) {
-  const parts = []; for (let node = element; node && node.nodeType === 1; node = node.parentElement) parts.unshift(node.localName);
+function path(element: PageElement) {
+  const parts = []; for (let node: PageElement | null = element; node && node.nodeType === 1; node = node.parentElement) parts.unshift(node.localName);
   return (parts.length > 12 ? ['…', ...parts.slice(-11)] : parts).join(' > ');
 }
-function fixed(element) {
-  for (let node = element, depth = 0; node && node.nodeType === 1 && depth < 12; node = node.parentElement, depth++) if (/^(fixed|sticky)$/.test(getComputedStyle(node).position)) return true;
+function fixed(element: PageElement) {
+  for (let node: PageElement | null = element, depth = 0; node && node.nodeType === 1 && depth < 12; node = node.parentElement, depth++) if (/^(fixed|sticky)$/.test(getComputedStyle(node).position)) return true;
   return false;
 }
 const id = () => `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
 const viewport = () => ({ width: innerWidth, height: innerHeight });
-const page = rect => ({ x: rect.x + scrollX, y: rect.y + scrollY, width: rect.width, height: rect.height });
-function elementAt(x, y) { return document.elementsFromPoint(x, y).find(element => element !== layer?.host) ?? null; }
+const page = (rect: Rect) => ({ x: rect.x + scrollX, y: rect.y + scrollY, width: rect.width, height: rect.height });
+function elementAt(x: number, y: number): PageElement | null { return document.elementsFromPoint(x, y).find(element => element !== layer?.host) ?? null; }
 
-function pickElement(element) {
-  const pick = { id: id(), kind: 'element', title: clean(document.title, 200), selector: selector(element), elementPath: path(element), role: role(element), name: name(element),
+function pickElement(element: PageElement) {
+  const pick: { id: string; isFixed: boolean; rect?: Rect; [key: string]: unknown } = { id: id(), kind: 'element', title: clean(document.title, 200), selector: selector(element), elementPath: path(element), role: role(element), name: name(element),
     nearbyText: nearby(element), immediateText: ownText(element), tag: element.localName, isFixed: fixed(element), viewport: viewport() };
   const rect = element.getBoundingClientRect();
   pick.rect = pick.isFixed ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height } : page(rect);
   elements.set(pick.id, element); send({ type: 'pick', pick });
 }
-function pickRegion(rect) {
+function pickRegion(rect: Rect) {
   const center = elementAt(rect.x + rect.width / 2, rect.y + rect.height / 2);
   send({ type: 'pick', pick: { id: id(), kind: 'region', title: clean(document.title, 200), elementPath: center ? path(center) : null, nearbyText: center ? clean(center.innerText, 300) : null, isFixed: false, viewport: viewport(), rect: page(rect) } });
 }
-function selectionAt(x, y) {
+function selectionAt(x: number, y: number) {
   const selection = getSelection(); if (!selection || selection.isCollapsed || !selection.rangeCount) return null;
   const range = selection.getRangeAt(0);
   return [...range.getClientRects()].some(rect => x >= rect.left - 2 && x <= rect.right + 2 && y >= rect.top - 2 && y <= rect.bottom + 2) ? range : null;
 }
-function pickText(range) {
-  const rect = range.getBoundingClientRect(), container = range.commonAncestorContainer.nodeType === 1 ? range.commonAncestorContainer : range.commonAncestorContainer.parentElement;
+function pickText(range: Range) {
+  const rect = range.getBoundingClientRect(), container = range.commonAncestorContainer.nodeType === 1 ? range.commonAncestorContainer as PageElement : range.commonAncestorContainer.parentElement;
   send({ type: 'pick', pick: { id: id(), kind: 'text', title: clean(document.title, 200), selectedText: clean(range.toString(), 2000), elementPath: container ? path(container) : null, nearbyText: container ? clean(container.innerText, 300) : null, isFixed: false, viewport: viewport(), rect: page(rect) } });
 }
-function pickAt(x, y) {
+function pickAt(x: number, y: number) {
   const range = selectionAt(x, y); if (range) return pickText(range);
   const element = elementAt(x, y); if (element) pickElement(element);
 }
 
 // --- Drawing ---
-function rectOf(item) {
+function rectOf(item: Comment) {
   let element = elements.get(item.id);
   if (!element?.isConnected && item.kind === 'element' && item.anchor?.selector && item.pageUrl === location.href) {
-    try { element = document.querySelector(item.anchor.selector); } catch { element = null; }
+    try { element = document.querySelector(item.anchor.selector) ?? undefined; } catch { element = undefined; }
     if (element) elements.set(item.id, element);
   }
   if (element?.isConnected) return element.getBoundingClientRect();
@@ -135,11 +142,11 @@ function rectOf(item) {
   const rect = item.anchor?.rect; if (!rect) return null;
   return item.anchor.isFixed ? rect : { x: rect.x - scrollX, y: rect.y - scrollY, width: rect.width, height: rect.height };
 }
-function place(element, rect) {
+function place(element: HTMLElement, rect: Rect | null) {
   if (!rect) { style(element, { display: 'none' }); return; }
   style(element, { display: 'block', left: `${rect.x}px`, top: `${rect.y}px`, width: `${Math.max(2, rect.width)}px`, height: `${Math.max(2, rect.height)}px` });
 }
-function marker(index) {
+function marker(index: number, layer: Layer) {
   if (!layer.markers[index]) {
     const element = box(layer.shadow, { width: '22px', height: '22px', 'border-radius': '11px', background: BLUE, color: '#fff', border: '2px solid #fff', 'box-shadow': '0 1px 4px rgba(0,0,0,0.35)',
       font: '700 11px/18px system-ui, sans-serif', 'text-align': 'center', cursor: 'pointer', 'letter-spacing': '0' });
@@ -150,12 +157,12 @@ function marker(index) {
   return layer.markers[index];
 }
 function render() {
-  frame = 0; if (!ensureLayer()) return;
+  frame = 0; const layer = ensureLayer(); if (!layer) return;
   const active = mode && !space;
   style(layer.catcher, { display: active ? 'block' : 'none', 'pointer-events': active ? 'auto' : 'none' });
   const hovered = active && !drag?.moved && hover?.isConnected ? hover.getBoundingClientRect() : null;
   place(layer.hover, hovered);
-  if (hovered) {
+  if (hovered && hover) {
     layer.label.textContent = `${hover.localName} · ${Math.round(hovered.width)}×${Math.round(hovered.height)}`;
     style(layer.label, { display: 'block', left: `${Math.max(0, hovered.x)}px`, top: `${hovered.y >= 20 ? hovered.y - 20 : hovered.y + hovered.height + 2}px` });
   } else style(layer.label, { display: 'none' });
@@ -164,7 +171,7 @@ function render() {
   place(layer.draft, draftRect);
   const shown = [...(markersVisible ? comments.filter(item => item.id !== draft?.editing) : []), ...(draft ? [draft] : [])];
   shown.forEach((item, index) => {
-    const element = marker(index), rect = rectOf(item);
+    const element = marker(index, layer), rect = rectOf(item);
     if (!rect) { style(element, { display: 'none' }); return; }
     element.textContent = String(item.number); element.dataset.id = item === draft ? '' : item.id;
     style(element, { display: 'block', left: `${Math.min(innerWidth - 24, Math.max(0, rect.x + rect.width - 11))}px`, top: `${Math.max(0, rect.y - 11)}px`, 'pointer-events': mode && item !== draft ? 'auto' : 'none' });
@@ -173,7 +180,7 @@ function render() {
 }
 const schedule = () => { if (!frame) frame = requestAnimationFrame(render); };
 
-function listen(catcher) {
+function listen(catcher: HTMLElement) {
   catcher.addEventListener('mousedown', event => event.preventDefault());
   catcher.addEventListener('pointerdown', event => {
     if (event.button !== 0) return;
@@ -190,7 +197,7 @@ function listen(catcher) {
   });
   catcher.addEventListener('pointerup', event => {
     const current = drag; drag = null; if (!current) return;
-    if (current.moved && current.rect.width >= 8 && current.rect.height >= 8) pickRegion(current.rect);
+    if (current.moved && current.rect && current.rect.width >= 8 && current.rect.height >= 8) pickRegion(current.rect);
     else if (!current.moved) pickAt(event.clientX, event.clientY);
     schedule();
   });
@@ -208,7 +215,7 @@ function listen(catcher) {
   }, { passive: false });
 }
 
-const editable = target => target instanceof Element && (target.isContentEditable || /^(input|textarea|select)$/.test(target.localName));
+const editable = (target: EventTarget | null) => target instanceof Element && ((target as PageElement).isContentEditable || /^(input|textarea|select)$/.test(target.localName));
 addEventListener('keydown', event => {
   if (!mode) return;
   if (event.key === 'Escape') { event.preventDefault(); event.stopImmediatePropagation(); send({ type: draft ? 'cancel' : 'exit' }); }
@@ -226,7 +233,7 @@ addEventListener('toggle', event => {
   schedule();
 }, true);
 
-ipcRenderer.on('elpis:annotate', (_event, message) => {
+ipcRenderer.on('elpis:annotate', (_event, message: Message) => {
   if (!message || typeof message !== 'object') return;
   if (message.type === 'state') {
     mode = message.mode === true; markersVisible = message.markersVisible !== false;
@@ -234,7 +241,7 @@ ipcRenderer.on('elpis:annotate', (_event, message) => {
     if (!mode) { hover = null; drag = null; space = false; }
     for (const key of elements.keys()) if (!comments.some(item => item.id === key) && draft?.id !== key) elements.delete(key);
     render();
-  } else if (message.type === 'pickAt' && Number.isFinite(message.x) && Number.isFinite(message.y)) pickAt(message.x, message.y);
+  } else if (message.type === 'pickAt' && typeof message.x === 'number' && typeof message.y === 'number' && Number.isFinite(message.x) && Number.isFinite(message.y)) pickAt(message.x, message.y);
   else if (message.type === 'paint') { hover = null; render(); requestAnimationFrame(() => requestAnimationFrame(() => send({ type: 'painted', id: message.id }))); }
 });
 if (document.readyState === 'loading') addEventListener('DOMContentLoaded', () => send({ type: 'ready' }), { once: true });

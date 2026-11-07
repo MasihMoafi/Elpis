@@ -1,4 +1,5 @@
 'use strict';
+const { preloadPath }: typeof import('./preload-path.cts') = require('./preload-path.cts');
 import type { TestContext } from 'node:test';
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -152,7 +153,7 @@ test('the preload gives the page a narrow terminal API', async () => {
   const electron = { contextBridge: { exposeInMainWorld: (_name: string, value: typeof api) => { api = value; } },
     ipcRenderer: { sendSync: () => ({}), invoke: async (...args: unknown[]) => { calls.push(args); return args[0] === 'elpis:terminal:clipboard' ? { text: 'x' } : { shell: 'bash', output: '', exited: null }; },
       send: (...args: unknown[]) => sends.push(args), on: (name: string, listener: (event: unknown, ...args: unknown[]) => void) => events.set(name, listener), removeListener: (name: string) => events.delete(name) } };
-  vm.runInNewContext(fs.readFileSync(path.join(__dirname, 'preload.cjs'), 'utf8'), { require: () => electron });
+  vm.runInNewContext(fs.readFileSync(preloadPath('preload'), 'utf8'), { require: () => electron });
   await api!.terminal.open('k', '/tmp', 80, 24);
   await api!.terminal.close('k');
   assert.deepEqual(JSON.parse(JSON.stringify(calls[1])), ['elpis:terminal:close', { key: 'k' }]);

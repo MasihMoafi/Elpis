@@ -6,6 +6,7 @@ const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const { DEFAULT_SHORTCUT, validAccelerator, shortcutSupport, createShortcut, createQuickEntry, startQuickEntry }: typeof import('./quick-entry.cts') = require('./quick-entry.cts');
 const { createNewChatOpener }: typeof import('./open-thread.cts') = require('./open-thread.cts');
+const { preloadPath }: typeof import('./preload-path.cts') = require('./preload-path.cts');
 
 function fakeShortcuts({ refuse = [] }: { refuse?: string[] } = {}) {
   const registered = new Map<string, () => void>(), log: string[][] = [];
@@ -91,7 +92,7 @@ test("Quick Entry is Claude's floating prompt: 606 by 470, frameless, on top, ce
   const { options } = window;
   assert.deepEqual([options.width, options.height, options.frame, options.transparent, options.resizable, options.skipTaskbar, options.show], [606, 470, false, true, false, true, false]);
   assert.deepEqual([options.webPreferences.contextIsolation, options.webPreferences.sandbox, options.webPreferences.nodeIntegration], [true, true, false]);
-  assert.equal(options.webPreferences.preload, path.join(__dirname, 'quick-entry-preload.cjs'));
+  assert.equal(options.webPreferences.preload, preloadPath('quick-entry-preload'));
   assert.equal(window.loaded.file, path.join(__dirname, 'quick-entry.html'));
   assert.deepEqual(window.loaded.options, { query: { theme: 'dark' } });
   assert.deepEqual(window.top, [true, 'pop-up-menu']);

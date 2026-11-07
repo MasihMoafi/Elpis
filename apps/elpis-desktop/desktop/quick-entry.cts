@@ -1,4 +1,5 @@
 'use strict';
+const { preloadPath }: typeof import('./preload-path.cts') = require('./preload-path.cts');
 import type { App, BrowserWindow as Window, GlobalShortcut, IpcMain, IpcMainEvent, IpcMainInvokeEvent, Screen } from 'electron';
 const path: typeof import('node:path') = require('node:path');
 const { execFile }: typeof import('node:child_process') = require('node:child_process');
@@ -80,7 +81,7 @@ function createQuickEntryImpl({ BrowserWindow, screen, ipcMain, dark, onSubmit, 
     const [x, y] = position ?? centre();
     window = new BrowserWindow({ ...SIZE, x, y, show: false, title: 'Elpis Quick Entry', frame: false, transparent: true, backgroundColor: '#00000000', hasShadow: false,
       resizable: false, minimizable: false, maximizable: false, fullscreenable: false, skipTaskbar: true,
-      webPreferences: { preload: path.join(__dirname, 'quick-entry-preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true } });
+      webPreferences: { preload: preloadPath('quick-entry-preload'), contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true } });
     window.setAlwaysOnTop(true, 'pop-up-menu');
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     window.webContents.on('will-navigate', event => event.preventDefault());

@@ -1,4 +1,5 @@
 'use strict';
+const { preloadPath }: typeof import('./preload-path.cts') = require('./preload-path.cts');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -10,7 +11,7 @@ function preload(invoke: (channel: string, target: string) => Promise<unknown>) 
   let api: { openFile: (target: string) => Promise<unknown>; openFolder: (target: string) => Promise<unknown> } | undefined;
   const electron = { contextBridge: { exposeInMainWorld: (_name: string, value: typeof api) => { api = value; } },
     ipcRenderer: { sendSync: () => ({}), invoke, on: () => {}, removeListener: () => {} } };
-  vm.runInNewContext(fs.readFileSync(path.join(__dirname, 'preload.cjs'), 'utf8'), { require: () => electron });
+  vm.runInNewContext(fs.readFileSync(preloadPath('preload'), 'utf8'), { require: () => electron });
   return api!;
 }
 
