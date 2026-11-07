@@ -27,7 +27,7 @@ electron=${ELECTRON_DIST:-$APP/node_modules/electron/dist}
 cp -r "$APP/out" "$STAGE/out"
 real_app=$(dirname "$(readlink -f "$APP/node_modules")")
 (rg -l -F -e "$APP" -e "$real_app" "$STAGE/out" || true) | xargs -r sed -i -e "s|$APP|/snap/elpis-agent/current/desktop/app|g" -e "s|$real_app|/snap/elpis-agent/current/desktop/app|g"
-node "$APP/desktop/package.mjs" --source "$APP" --destination "$S/desktop" --electron-dist "$electron" --out-directory "$STAGE/out" > "$STAGE/manifest.json"
+node "$APP/desktop/package.mts" --source "$APP" --destination "$S/desktop" --electron-dist "$electron" --out-directory "$STAGE/out" > "$STAGE/manifest.json"
 find "$S/desktop/runtime/electron/locales" -name '*.pak' ! -name 'en-US.pak' -delete
 
 # The engine, laid out as an installed bundle: runtimeTools() finds tools/elpis-claude beside package/.

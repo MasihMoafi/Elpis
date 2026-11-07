@@ -59,3 +59,25 @@ test('stopping a navigation does not turn its rejected load promise into a page 
   assert.equal(states.at(-1)!.tabs[0]!.error, 'Could not resolve this website');
   browser.dispose();
 });
+
+test('external-url opens Claude, OpenAI, and CloudRoom sign-in URLs and refuses unrelated URLs', async () => {
+  const origin = 'http://127.0.0.1:4000', opened: string[] = [], handlers = new Map<string, (event: unknown, input: unknown) => Promise<unknown>>();
+  const root = Object.assign(new EventEmitter(), { mainFrame: { url: origin }, isDestroyed: () => false, focus() {}, send() {}, getZoomFactor: () => 1 });
+  const host = Object.assign(new EventEmitter(), { webContents: root, isDestroyed: () => false, getContentBounds: () => ({ width: 1320, height: 900 }), contentView: { addChildView() {}, removeChildView() {} } });
+  class View { webContents = Object.assign(new EventEmitter(), { navigationHistory: { canGoBack: () => false, canGoForward: () => false }, setWindowOpenHandler() {}, isDestroyed: () => false, close() {}, focus() {}, send() {}, getZoomFactor: () => 1, getURL: () => '', loadURL: async () => {} }); setVisible() {} setBounds() {} }
+  const browser = createBrowser({ host, origin, WebContentsView: View, openExternal: async (url: string) => { opened.push(url); }, session: { fromPartition: () => ({ setPermissionRequestHandler() {}, setPermissionCheckHandler() {}, setUserAgent() {}, webRequest: { onHeadersReceived() {}, onBeforeSendHeaders() {} } }) },
+    ipcMain: { handle: (name: string, fn: (event: unknown, input: unknown) => Promise<unknown>) => handlers.set(name, fn), on() {}, removeHandler() {}, removeListener() {} } });
+  const invoke = (url: string) => handlers.get('elpis:browser')!({ sender: root, senderFrame: root.mainFrame }, { action: 'external-url', url });
+  await invoke('https://auth.openai.com/oauth/authorize?client_id=test');
+  await invoke('https://claude.ai/oauth/authorize?client_id=test');
+  await invoke('https://www.cloudroom.dev/desktop');
+  assert.deepEqual(opened, [
+    'https://auth.openai.com/oauth/authorize?client_id=test',
+    'https://claude.ai/oauth/authorize?client_id=test',
+    'https://www.cloudroom.dev/desktop',
+  ]);
+  const refused = await invoke('https://example.com/phishing') as { error?: string };
+  assert.match(refused.error ?? '', /Claude, OpenAI, or CloudRoom/);
+  assert.equal(opened.length, 3);
+  browser.dispose();
+});

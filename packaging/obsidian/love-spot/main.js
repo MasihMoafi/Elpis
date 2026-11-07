@@ -11,7 +11,9 @@ const LOVE_SPOT_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 225 
 
 function findDesktopRoot() {
   const candidates = [
+    '/opt/love-spot/app',
     '/opt/elpis-desktop/app',
+    '/snap/love-spot/current/desktop/app',
     path.join(os.homedir(), '.local/bin/elpis-app'),
   ];
   for (const candidate of candidates) {
@@ -22,6 +24,13 @@ function findDesktopRoot() {
     } catch {}
   }
   return null;
+}
+
+function findNodeBin() {
+  for (const candidate of ['/opt/love-spot/bin/node', '/opt/elpis-desktop/bin/node', '/snap/love-spot/current/bin/node']) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return 'node';
 }
 
 class LoveSpotView extends ItemView {
@@ -74,7 +83,11 @@ module.exports = class LoveSpotPlugin extends Plugin {
     }
   }
   openStandalone() {
-    const bin = fs.existsSync('/usr/bin/love-spot') ? '/usr/bin/love-spot' : path.join(os.homedir(), '.local/bin/elpis-app');
+    const bin = fs.existsSync('/usr/bin/love-spot')
+      ? '/usr/bin/love-spot'
+      : fs.existsSync('/snap/bin/love-spot')
+        ? '/snap/bin/love-spot'
+        : path.join(os.homedir(), '.local/bin/elpis-app');
     const args = bin.endsWith('love-spot') ? [] : ['--love-spot-app'];
     const child = spawn(bin, args, { detached: true, stdio: 'ignore' });
     child.unref();
@@ -83,8 +96,8 @@ module.exports = class LoveSpotPlugin extends Plugin {
   async ensureServer() {
     if (this.serverUrl) return this.serverUrl;
     const appDir = findDesktopRoot();
-    if (!appDir) throw new Error('Install elpis-desktop or love-spot on this computer to run the local board server.');
-    const nodeBin = fs.existsSync('/opt/elpis-desktop/bin/node') ? '/opt/elpis-desktop/bin/node' : 'node';
+    if (!appDir) throw new Error('Install love-spot or elpis-desktop on this computer to run the local board server.');
+    const nodeBin = findNodeBin();
     return await new Promise((resolve, reject) => {
       const child = spawn(nodeBin, [path.join(appDir, 'bridge/server.mts')], {
         cwd: appDir,

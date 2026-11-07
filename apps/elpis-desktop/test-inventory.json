@@ -361,6 +361,7 @@
     "tests/observability.test.cjs",
     "tests/background-refusal.test.cjs",
     "tests/theme-characters.test.cjs",
+    "tests/love-spot-signin.test.cjs",
     "tests/matilda-chat-unlock.test.cjs",
     "tests/read-aloud-kokoro.test.cjs"
   ],

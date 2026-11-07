@@ -1,0 +1,37 @@
+name: love-spot
+title: Love Spot
+summary: Shared Excalidraw drawing board with Matilda and multi-provider AI accounts
+description: |
+  Love Spot is a local-first Excalidraw drawing board where Matilda and 12 theme characters chat, draw, and brainstorm with you on a shared canvas.
+
+  • Bring your own AI subscriptions and keys: ChatGPT Plus/Pro, Claude Pro/Max, and OpenRouter or custom Responses API keys
+  • 13 selectable companion characters (Matilda default + 12 theme characters), each with light and dark palettes
+  • Multi-page Excalidraw boards, live canvas sync, and voice mode
+  • Local-first privacy: no Love Spot account, no server — boards, settings, and model credentials stay in your home folder
+
+  This snap uses strict confinement and stores boards in your home folder. To access files on another drive, run: sudo snap connect love-spot:removable-media
+
+  Source, downloads and bug reports: https://github.com/MasihMoafi/Elpis
+icon: apps/elpis-desktop/desktop/love-spot-icon.png
+license: Apache-2.0
+base: core24
+grade: stable
+confinement: strict
+contact: https://github.com/MasihMoafi/Elpis/issues
+issues: https://github.com/MasihMoafi/Elpis/issues
+source-code: https://github.com/MasihMoafi/Elpis
+website: https://elpis.masihmoafi.com
+compression: xz
+platforms:
+  amd64:
+
+apps:
+  love-spot:
+    command: bin/love-spot
+    extensions: [gnome]
+    plugs: [home, removable-media, network, network-bind, opengl, desktop, desktop-legacy, wayland, x11, gsettings, audio-playback, audio-record]
+
+parts:
+  love-spot:
+    plugin: dump
+    source: .

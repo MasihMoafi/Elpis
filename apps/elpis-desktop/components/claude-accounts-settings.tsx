@@ -4,11 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { OptionSelect } from "@/components/ui/option-select";
-import { api } from "@/lib/api";
+import { providerLogin, readClaudeAccounts, type ClaudeAccountsSnapshot as Accounts } from "@/lib/provider-login";
 import { errorText } from "@/lib/error-text.mts";
-
-type Account = { id: string; label: string; email: string | null; plan: string | null; authenticated: boolean; duplicate: boolean; signingIn: boolean; error: string | null };
-type Accounts = { activeId: string; accounts: Account[]; authUrl?: string };
 
 export function ClaudeAccountsSettings({ refreshKey, onChanged }: { refreshKey: number; onChanged?: () => Promise<void> | void }) {
   const [data, setData] = useState<Accounts | null>(null);
@@ -17,8 +14,7 @@ export function ClaudeAccountsSettings({ refreshKey, onChanged }: { refreshKey: 
   const [code, setCode] = useState("");
   const [loginId, setLoginId] = useState<string | null>(null);
   const load = useCallback(async () => {
-    const res = await api<Accounts>("/providers/claude-accounts");
-    setData(res && Array.isArray(res.accounts) ? res : null);
+    setData(await readClaudeAccounts());
   }, []);
   useEffect(() => { void load().catch(e => setError(errorText(e))); }, [load, refreshKey]);
   const signingIn = data?.accounts.some(account => account.signingIn) ?? false;
@@ -30,14 +26,14 @@ export function ClaudeAccountsSettings({ refreshKey, onChanged }: { refreshKey: 
   async function action(action: "login" | "select" | "code", id?: string) {
     setBusy(true); setError("");
     try {
-      const next = await api<Accounts>("/providers/claude-accounts", { action, ...(id && { id }), ...(action === "code" && { code: code.trim() }) });
+      const next = action === "login"
+        ? await providerLogin.loginClaudeAccount(id)
+        : action === "select"
+          ? await providerLogin.selectClaudeAccount(id ?? "")
+          : await providerLogin.completeClaudeCode(code, id);
       setData(next);
-      if (next.authUrl) {
-        setLoginId(next.accounts.find(account => account.signingIn)?.id ?? null);
-        if (window.elpisDesktop?.browser) await window.elpisDesktop.browser.command("external-url", { url: next.authUrl });
-        else window.open(next.authUrl, "_blank", "noopener");
-      }
-      if (action === "select") await onChanged?.();
+      if (next.authUrl) setLoginId(next.accounts.find(account => account.signingIn)?.id ?? null);
+      if (action === "select" || action === "code") await onChanged?.();
       if (action === "code") setCode("");
     } catch (e) { setError(errorText(e)); }
     finally { setBusy(false); }

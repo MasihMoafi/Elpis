@@ -23,6 +23,7 @@ src/uv.lock
 package-lock.json
 !apps/elpis-desktop/package-lock.json
 !tools/elpis-claude/package-lock.json
+tools/elpis-claude/node_modules
 website/node_modules/
 
 # IDE
@@ -146,6 +147,7 @@ ES.md
 !apps/elpis-desktop/desktop/elpis-icon.png
 !apps/elpis-desktop/desktop/love-spot-icon.png
 !apps/elpis-desktop/desktop/love-spot-icon.svg
+!docs/release/*.png
 
 # Agent handoff notes: local only, superseded by ES.md (27 Oct 2026)
 docs/HANDOFF.md

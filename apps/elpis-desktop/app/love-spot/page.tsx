@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import { ViewBoundary } from "@/components/view-boundary";
 import { appStorage } from "@/lib/projects";
+import { PREFERENCES_KEY } from "@/lib/preferences";
 import { AppUpdate } from "@/components/app-update";
 import { MatildaCompanion } from "@/components/matilda-companion";
 
@@ -24,7 +25,7 @@ export default function LoveSpotWindow() {
       window.elpisDesktop?.setTheme?.(dark, { source, background: getComputedStyle(document.body).backgroundColor });
     };
     refresh(); media.addEventListener("change", refresh); window.addEventListener("storage", refresh);
-    const stop = window.elpisDesktop?.storage?.onChange?.(key => { if (key === "elpis-theme") refresh(); });
+    const stop = window.elpisDesktop?.storage?.onChange?.(key => { if (key === "elpis-theme" || key === PREFERENCES_KEY) refresh(); });
     return () => { media.removeEventListener("change", refresh); window.removeEventListener("storage", refresh); stop?.(); };
   }, []);
   return <main className={`flex h-dvh min-w-0 flex-col bg-background text-foreground${dark ? " dark" : ""}`}>

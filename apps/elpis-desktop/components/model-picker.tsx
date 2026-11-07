@@ -9,6 +9,7 @@ import { SearchField } from "@/components/ui/search-field";
 import { OptionSelect } from "@/components/ui/option-select";
 import { Combobox, ComboboxContent, ComboboxEmpty, ComboboxInput, ComboboxItem, ComboboxList, ComboboxTrigger } from "@/components/ui/combobox";
 import { api, choiceById, modelLabel, modelName, subscriptionOf, type ProviderChoice, type Model } from "@/lib/api";
+import { providerLogin } from "@/lib/provider-login";
 import { refreshModelCatalog, useModelCatalog } from "@/lib/model-catalog";
 import { errorText } from "@/lib/error-text.mts";
 type Choice = { key: string; model: string; choiceId: string; label: string; providerLabel: string; description?: string | undefined };
@@ -20,7 +21,7 @@ function ProviderKeyForm({ provider, label, onSaved }: { provider: string; label
   const [key, setKey] = useState(""), [busy, setBusy] = useState(false), [error, setError] = useState("");
   async function save(event: React.FormEvent) {
     event.preventDefault(); event.stopPropagation(); setBusy(true); setError("");
-    try { await api("/providers/key", { provider, key }); setKey(""); onSaved(); }
+    try { await providerLogin.saveBuiltInKey(provider, key); setKey(""); onSaved(); }
     catch (cause) { setError(errorText(cause)); }
     finally { setBusy(false); }
   }
