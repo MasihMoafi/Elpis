@@ -81,3 +81,4 @@ All checks are **todo**; each must run against the real manager path, with contr
 2. She discovers and controls every local session (Elpis, Codex, Claude) by default.
 3. She merges verified work into the active integration branch herself, within the existing permissions; never main, tags or publication without his yes.
 4. Matilda is the router agent, like DeepSeek's super agent: event handling (CI, PRs) and the rest are user settings, not fixed rules; do not ask him per case.
+5. The router is a separate agent, not Matilda (Matilda is the go-to-market agent); its name does not matter. Its logic is copied from DeepSeek's dsh-superagent (MIT): same domain (Source, Trigger, Thread, Eval, Mandate, Ticket, Assignment, Subscription), same rules, adapted to Elpis's stack, which was moved to TypeScript to make this migration direct. This replaces the non-goal against copying the reference.
