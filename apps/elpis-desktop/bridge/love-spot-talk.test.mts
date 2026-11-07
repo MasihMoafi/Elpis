@@ -533,6 +533,15 @@ test('an image-capable subscription model receives the new board picture', async
   assert.equal(f.sent.length, 1);
   assert.ok(f.sent[0]!.attachments.some(a => a.type === 'image'), 'the model sees the drawing');
 });
+test('a note left on one page cannot be sent as if it came from another', async t => {
+  const f = await fixture(t);
+  const current = await f.store.read();
+  await assert.rejects(f.talk.send({ text: 'A thought from the old page', model: 'text', pageSession: 'another-page' }), /page changed/);
+  assert.equal(f.sent.length, 0);
+  await f.talk.send({ text: 'A thought from this page', model: 'text', pageSession: current.scene.page.session });
+  assert.equal(f.sent.length, 1);
+  assert.equal(f.sent[0]!.text, 'A thought from this page');
+});
 test('replies off stops the reply she is writing, and does nothing when she is quiet', async t => {
   const f = await fixture(t), interrupts: { id: string; turnId: string }[] = [];
   f.client.interrupt = async (id, body) => { interrupts.push({ id, ...body }); return {}; };

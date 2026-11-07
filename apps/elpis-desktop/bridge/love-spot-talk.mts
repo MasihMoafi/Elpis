@@ -360,10 +360,11 @@ export function createLoveSpotTalk({ client, store, companion, audio = LOVE_SPOT
       };
     },
     async send(raw: Record<string, unknown>) {
-      let body = raw as { text: string; model?: string | undefined; provider?: string | undefined; revision?: string; persona?: string; pinned?: boolean; drawingOnly?: boolean };
-      object(body, ['text', 'model', 'provider', 'revision', 'persona', 'pinned', 'drawingOnly']); text(body.text, 'message');
+      let body = raw as { text: string; model?: string | undefined; provider?: string | undefined; revision?: string; persona?: string; pinned?: boolean; drawingOnly?: boolean; pageSession?: string };
+      object(body, ['text', 'model', 'provider', 'revision', 'persona', 'pinned', 'drawingOnly', 'pageSession']); text(body.text, 'message');
       if (body.pinned !== undefined && typeof body.pinned !== 'boolean') throw new BridgeError('pinned must be true or false');
       if (body.drawingOnly !== undefined && typeof body.drawingOnly !== 'boolean') throw new BridgeError('drawingOnly must be true or false');
+      if (body.pageSession !== undefined) text(body.pageSession, 'page session', 200);
       if (body.persona !== undefined) text(body.persona, 'persona', 4000);
       if (body.model !== undefined) text(body.model, 'model', 200);
       if (body.provider !== undefined) text(body.provider, 'provider', 200);
@@ -371,7 +372,7 @@ export function createLoveSpotTalk({ client, store, companion, audio = LOVE_SPOT
       // Off quiets her on the board; her pinned chat always works (Masih, 1 Nov: "disabling it shouldn't disrupt me from using
       // the pinned version").
       if (!matilda.replies && body.pinned !== true) throw new BridgeError('Matilda is off. Turn her on to talk to her.', 409);
-      const { pinned: _pinned, drawingOnly, ...rest } = body; body = rest;
+      const { pinned: _pinned, drawingOnly, pageSession, ...rest } = body; body = rest;
       body = { ...body, model: body.model ?? matilda.model ?? undefined, provider: body.provider ?? matilda.provider ?? undefined };
       if (sending) throw new BridgeError('Love Spot is already replying. Wait for this turn.', 409);
       sending = true; error = ''; publish();
@@ -393,6 +394,7 @@ export function createLoveSpotTalk({ client, store, companion, audio = LOVE_SPOT
         const provider = body.provider ?? settings.main.provider;
         if (threadId && thread && provider && thread.modelProvider && provider !== thread.modelProvider) { stale = threadId; threadId = null; thread = null; entries = []; }
         const board = await store.read();
+        if (pageSession !== undefined && board.scene.page.session !== pageSession) throw new BridgeError('The Love Spot page changed. The pending note will wait for its page.', 409);
         const notes = board.scene.elements.filter(e => e.type === 'text' && !e.isDeleted).map(e => ({ author: agentColor(e.strokeColor, e.id) ? 'agent' : 'Masih', text: e.originalText || e.text || '' }));
         const drawn = drawing(board.scene), unchanged = !!threadId && seen.get(threadId) === drawn;
         const attachments: { id: string; name: string; type: string; mimeType: string; text?: string; dataUrl?: string }[] = [{ id: 'love-spot-notes', name: 'Love Spot notes.txt', type: 'text', mimeType: 'text/plain', text: `Current Love Spot board notes (by colour):\n${JSON.stringify(notes)}${unchanged ? '\nThe drawing is as it was in the last picture you saw.' : ''}` }];

@@ -397,24 +397,23 @@ function LoveSpotBoard({ dark, toolbarHost }: LoveSpotProps) {
     return () => { mounted.current = false; clearTimeout(saveTimer.current); clearTimeout(viewTimer.current); saveLatest.current?.(true, true); };
   }, []);
 
-  const sendWithBoard = useCallback(async (send: (revision: string) => Promise<void>, readyToSend: () => boolean) => {
+  const sendWithBoard = useCallback(async (send: (revision: string, pageSession: string | undefined) => Promise<boolean>, readyToSend: () => boolean): Promise<"sent" | "wait" | "stale"> => {
     const origin = currentPage.current?.session;
     const isCurrent = () => readyToSend() && currentPage.current?.session === origin;
     clearTimeout(saveTimer.current); clearTimeout(viewTimer.current);
     // Keep capture and dispatch in the save queue. A simultaneous save must
     // wait until Matilda accepts the picture before changing its revision.
     const work = saving.current.then(async () => {
-      if (!editor || !isCurrent()) return false;
+      if (!editor || !isCurrent()) return "stale" as const;
       const drawing = await lightDrawing(snapshot(editor.getSceneElementsIncludingDeleted(), editor.getAppState(), editor.getFiles(), currentPage.current));
-      if (!isCurrent()) return false;
+      if (!isCurrent()) return "stale" as const;
       const data = await api<Saved>("/love-spot", drawing);
-      if (!isCurrent()) return false;
+      if (!isCurrent()) return "stale" as const;
       receive(data);
       try { await savePicture(data); }
-      catch (cause) { if (!isCurrent()) return false; throw cause; }
-      if (!isCurrent()) return false;
-      await send(data.revision);
-      return true;
+      catch (cause) { if (!isCurrent()) return "stale" as const; throw cause; }
+      if (!isCurrent()) return "stale" as const;
+      return await send(data.revision, origin) ? "sent" as const : "wait" as const;
     });
     saving.current = work.then(() => {}, () => {});
     return work;
@@ -446,15 +445,18 @@ function LoveSpotBoard({ dark, toolbarHost }: LoveSpotProps) {
       const elements = (editorRef.current?.getSceneElements() ?? []).filter(element => ids.has(element.id) && !element.isDeleted);
       return elements.some(element => element.type !== "text") && elements.every(element => element.type !== "text" || !(element.originalText || element.text).trim());
     },
-    send: (text, persona, isCurrent, drawingOnly) => sendWithBoard(async revision => {
+    send: (text, persona, isCurrent, drawingOnly) => sendWithBoard(async (revision, pageSession) => {
       const version = voiceVersion.current;
       // 5 Nov: a board change must not cut her voice. `ready` holds the next turn until she has finished speaking.
       // Her model is the one shared setting (lib/matilda-settings.ts); the bridge applies it to every message.
-      const reply = await api<{ voice: MatildaVoice; waitingForPicture?: boolean }>("/love-spot/talk", { text, persona, revision, drawingOnly });
+      const reply = await api<{ voice: MatildaVoice; waitingForPicture?: boolean }>("/love-spot/talk", { text, persona, revision, drawingOnly, ...(pageSession ? { pageSession } : {}) });
       window.dispatchEvent(new Event(MATILDA_CHANGED));
       if (mounted.current && version === voiceVersion.current) { voiceEnabled.current = reply.voice.enabled; }
       if (mounted.current && !reply.waitingForPicture && voiceEnabled.current && reply.voice.enabled) speech?.stream("matilda");
+      return !reply.waitingForPicture;
     }, isCurrent) });
+  const wakeMatilda = matilda.wake;
+  useEffect(() => { wakeMatilda(); }, [wakeMatilda, shared.settings?.model, shared.settings?.provider]);
 
   const changed = useCallback((elements: readonly ExcalidrawElement[], appState: AppState, files: BinaryFiles) => {
     noticeStyle(appState);
