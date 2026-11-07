@@ -7,7 +7,7 @@ import os from 'node:os';
 import { EventEmitter } from 'node:events';
 import { createLoveSpot } from './love-spot-store.cts';
 import { createLoveSpotTalk, SUBSCRIPTION_BLOCKED } from './love-spot-talk.mts';
-import { createMatildaCompanion } from './matilda-companion.mjs';
+import { createMatildaCompanion } from './matilda-companion.mts';
 import { LOVE_SPOT_AUDIO, READ_ALOUD_AUDIO } from '../lib/love-spot-audio.mts';
 import { splitPainting } from './love-spot-painting.cts';
 import { toModel } from './subscription-models.mts';

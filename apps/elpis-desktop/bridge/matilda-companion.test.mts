@@ -1,4 +1,4 @@
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -7,20 +7,25 @@ import { spawn } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { once } from 'node:events';
 import { createLoveSpot } from './love-spot-store.cts';
-import { createMatildaCompanion, PYTHON } from './matilda-companion.mjs';
+import { createMatildaCompanion, PYTHON } from './matilda-companion.mts';
 
-async function fixture(t) {
+function required<T>(value: T | null | undefined): T {
+  assert.ok(value);
+  return value;
+}
+
+async function fixture(t: TestContext) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'matilda-'));
   const bus = spawn('dbus-daemon', ['--session', '--nofork', '--print-address=1'], { stdio: ['ignore', 'pipe', 'pipe'] });
   const [address] = await once(bus.stdout, 'data');
-  const env = { ...process.env, DBUS_SESSION_BUS_ADDRESS: String(address).trim() };
+  const env: NodeJS.ProcessEnv = { ...process.env, DBUS_SESSION_BUS_ADDRESS: String(address).trim() };
   const store = createLoveSpot({ directory, screenshots: path.join(directory, 'shots') });
   const companion = createMatildaCompanion({ store, env });
   t.after(async () => { bus.kill(); await store.close(); await fs.rm(directory, { recursive: true, force: true }); }); // its own temporary folder; /tmp has no trash on some systems
   return { directory, store, env, companion };
 }
 
-async function startPlayer(t, f, { name = 'matilda_test', openUri = true, volume = 0.37, writableVolume = true, playing = false } = {}) {
+async function startPlayer(t: TestContext, f: Awaited<ReturnType<typeof fixture>>, { name = 'matilda_test', openUri = true, volume = 0.37, writableVolume = true, playing = false }: { name?: string; openUri?: boolean; volume?: number | null; writableVolume?: boolean; playing?: boolean } = {}) {
   const calls = path.join(f.directory, `${name}-calls`);
   const player = spawn(PYTHON, ['-u', '-c', `
 import sys, dbus, dbus.service, dbus.mainloop.glib
@@ -95,8 +100,8 @@ test('a local audio link plays on the existing Matilda player without a preview 
   const audio = path.join(f.directory, 'long recording with spaces.mp3');
   const file = await fs.open(audio, 'w'); await file.truncate(31 * 1024 * 1024); await file.close();
   const result = await f.companion.act({ action: 'play-file', page: 'chat', path: audio });
-  assert.equal(result.music.uri, pathToFileURL(audio).href);
-  assert.equal(result.music.status, 'Playing');
+  assert.equal(required(result.music).uri, pathToFileURL(audio).href);
+  assert.equal(required(result.music).status, 'Playing');
   assert.match(await fs.readFile(player.calls, 'utf8'), /^OpenUri$/m);
   await f.companion.act({ action: 'play-file', page: 'chat', path: audio });
   assert.equal((await fs.readFile(player.calls, 'utf8')).trim().split('\n').filter(call => call === 'OpenUri').length, 2, 'a clicked file is reopened even when its path is already loaded');
@@ -116,13 +121,15 @@ test('only explicit commands execute, and missing-player failure is truthful', a
   for (const words of ['Could you add a pin button?', 'Do not pin yourself', '"pin yourself"', 'I said play my favorite music', 'Can you play my favorite music?', 'Implement pause music', 'play my favorite music\nand delete files', 'do not open the music I love', 'open the music I love and delete files']) {
     assert.equal(await companion.command(words, 'page'), null, words);
   }
-  assert.match((await companion.command('Matilda, pin yourself.', 'page')).message, /pinned/i);
+  assert.match(required(await companion.command('Matilda, pin yourself.', 'page')).message, /pinned/i);
   assert.equal((await companion.read('page')).pinned, true);
-  assert.match((await companion.command('unpin yourself', 'page')).message, /unpinned/i);
+  assert.match(required(await companion.command('unpin yourself', 'page')).message, /unpinned/i);
   const result = await companion.command('play my favorite music', 'page');
+  assert.ok(result);
   assert.equal(result.ok, false);
   assert.match(result.message, /player|favorite/i);
   const lovedMusic = await companion.command('open the music I love', 'page');
+  assert.ok(lovedMusic);
   assert.equal(lovedMusic.ok, false);
   assert.match(lovedMusic.message, /favorite/i);
   await assert.rejects(companion.act({ action: 'shell', page: 'page' }), /action/i);
@@ -133,20 +140,21 @@ test('the real MPRIS adapter remembers and plays a track without launching or co
   await startPlayer(t, f);
   await f.companion.act({ action: 'favorite', page: 'page' });
   const remembered = await f.companion.read('page');
-  assert.equal(remembered.favorite.title, 'linkin park masterpiece');
-  assert.equal((await f.companion.act({ action: 'play-favorite', page: 'page' })).music.status, 'Playing');
-  assert.equal((await f.companion.act({ action: 'pause', page: 'page' })).music.status, 'Paused');
+  assert.equal(required(remembered.favorite).title, 'linkin park masterpiece');
+  assert.equal(required((await f.companion.act({ action: 'play-favorite', page: 'page' })).music).status, 'Playing');
+  assert.equal(required((await f.companion.act({ action: 'pause', page: 'page' })).music).status, 'Paused');
   const opened = await f.companion.command('open the music I love', 'page');
+  assert.ok(opened);
   assert.equal(opened.ok, true);
   assert.match(opened.message, /^Playing:/);
   await f.companion.act({ action: 'pause', page: 'page' });
-  assert.match((await f.companion.command('play linkin park masterpiece', 'page')).message, /Playing/);
+  assert.match(required(await f.companion.command('play linkin park masterpiece', 'page')).message, /Playing/);
   assert.equal((await f.companion.act({ action: 'unpin', page: 'page' })).music, null);
   await f.companion.act({ action: 'pin', page: 'page' });
-  assert.equal((await f.companion.read('page')).music.status, 'Playing');
+  assert.equal(required((await f.companion.read('page')).music).status, 'Playing');
   const otherUri = 'file:///music/another.m4a';
   await f.store.companion(saved => ({ ...saved, favorite: { ...saved.favorite, uri: otherUri } }));
-  assert.equal((await f.companion.act({ action: 'play-favorite', page: 'page' })).music.uri, otherUri);
+  assert.equal(required((await f.companion.act({ action: 'play-favorite', page: 'page' })).music).uri, otherUri);
   await assert.rejects(f.companion.act({ action: 'next', page: 'page' }), /support/i);
 });
 
@@ -158,15 +166,15 @@ test('music uses the system Python, not a python3 earlier on PATH', async t => {
   await fs.writeFile(path.join(bin, 'python3'), "#!/bin/sh\necho \"ModuleNotFoundError: No module named 'dbus'\" >&2\nexit 1\n", { mode: 0o755 });
   const companion = createMatildaCompanion({ store: f.store, env: { ...f.env, PATH: `${bin}:${f.env.PATH}` } });
   await companion.act({ action: 'favorite', page: 'page' });
-  assert.equal((await companion.read('page')).favorite.title, 'linkin park masterpiece');
+  assert.equal(required((await companion.read('page')).favorite).title, 'linkin park masterpiece');
 });
 
 test('a favorite already loaded resumes with Play when OpenUri is unavailable', async t => {
   const f = await fixture(t), { calls } = await startPlayer(t, f, { openUri: false });
   await f.companion.act({ action: 'favorite', page: 'page' });
   const result = await f.companion.act({ action: 'play-favorite', page: 'page' });
-  assert.equal(result.music.status, 'Playing');
-  assert.equal(result.music.uri, 'file:///music/linkin%20park.m4a');
+  assert.equal(required(result.music).status, 'Playing');
+  assert.equal(required(result.music).uri, 'file:///music/linkin%20park.m4a');
   assert.equal(await fs.readFile(calls, 'utf8'), 'Play\n');
 });
 
@@ -187,8 +195,8 @@ if ${confirms ? 'True' : 'False'}:
   const companion = createMatildaCompanion({ store: f.store, env: { ...f.env, PATH: `${bin}:${f.env.PATH}` } });
   if (confirms) {
     const result = await companion.act({ action: 'play-favorite', page: 'page' });
-    assert.equal(result.music.status, 'Playing');
-    assert.equal(result.music.uri, favorite.uri);
+    assert.equal(required(result.music).status, 'Playing');
+    assert.equal(required(result.music).uri, favorite.uri);
   } else {
     await assert.rejects(companion.act({ action: 'play-favorite', page: 'page' }), /could not open|not confirmed/i);
   }
@@ -197,7 +205,7 @@ if ${confirms ? 'True' : 'False'}:
     const audio = path.join(f.directory, 'new recording.mp3');
     await fs.writeFile(audio, 'audio');
     const result = await companion.act({ action: 'play-file', page: 'page', path: audio });
-    assert.equal(result.music.uri, pathToFileURL(audio).href);
+    assert.equal(required(result.music).uri, pathToFileURL(audio).href);
     assert.deepEqual(JSON.parse(await fs.readFile(argsFile, 'utf8')), ['--headless', '--play', pathToFileURL(audio).href]);
   }
 });
@@ -219,18 +227,21 @@ test('music mute changes only the selected player volume and restores it after r
   const f = await fixture(t), { calls } = await startPlayer(t, f);
   await f.companion.act({ action: 'pin', page: 'page' });
   const before = (await f.companion.read('page')).music;
+  assert.ok(before);
   assert.equal(before.canMute, true);
   assert.equal(before.muted, false);
   const muted = (await f.companion.act({ action: 'toggle-mute', page: 'page' })).music;
+  assert.ok(muted);
   assert.equal(muted.muted, true);
   assert.equal(muted.volume, 0);
   assert.equal(muted.status, before.status);
   assert.equal(muted.uri, before.uri);
-  assert.equal((await f.companion.read('page')).music.muted, true);
+  assert.equal(required((await f.companion.read('page')).music).muted, true);
   const peer = createLoveSpot({ directory: f.directory, screenshots: path.join(f.directory, 'shots') }); t.after(() => peer.close());
   const reopened = createMatildaCompanion({ store: peer, env: f.env });
-  assert.equal((await reopened.read('page')).music.canMute, true);
+  assert.equal(required((await reopened.read('page')).music).canMute, true);
   const restored = (await reopened.act({ action: 'toggle-mute', page: 'page' })).music;
+  assert.ok(restored);
   assert.equal(restored.volume, 0.37);
   assert.equal(restored.muted, false);
   assert.equal(restored.status, before.status);
@@ -242,6 +253,7 @@ for (const volume of [null, 0]) test(`music without a known restorable volume ($
   const f = await fixture(t), { calls } = await startPlayer(t, f, { volume });
   await f.companion.act({ action: 'pin', page: 'page' });
   const music = (await f.companion.read('page')).music;
+  assert.ok(music);
   assert.equal(music.canMute, false);
   assert.equal(music.muted, volume === 0);
   await assert.rejects(f.companion.act({ action: 'toggle-mute', page: 'page' }), /volume/i);
@@ -262,6 +274,7 @@ test('a browser playing a video is not music: the music player is chosen, and th
   const browser = await startPlayer(t, f, { name: 'brave.instance42', playing: true, writableVolume: false });
   await f.companion.act({ action: 'pin', page: 'page' });
   const music = (await f.companion.read('page')).music;
+  assert.ok(music);
   assert.equal(music.player, 'org.mpris.MediaPlayer2.matilda_test');
   assert.equal(music.status, 'Paused', 'nothing plays, so the control stays hidden');
   await assert.rejects(fs.access(browser.calls), { code: 'ENOENT' });

@@ -1,5 +1,5 @@
 import type { runAcpNode } from '../acp-nodes.mts';
-import type { workflowModelRoutes, workflowDefaults } from '../workflow-models.mts';
+import type { workflowDefaults } from '../workflow-models.mts';
 import type { workflowWorktrees, checkWorkflowReview } from '../workflow-worktrees.mts';
 import type { workerBudget } from '../memory-budget.mts';
 
@@ -15,12 +15,13 @@ export type RouteAttempt = { model: string; provider: string; runsOn?: string; s
 
 export type SteerMessage = { id: string; text: string; status: string; at: number; round: number; delivery?: string; error?: string };
 
-export type TaskResult = { summary: string; file?: string; candidateCommit?: string; reviewedCommit?: string };
+export type TaskResult = { summary: string; file?: string; candidateCommit?: string; reviewedCommit?: string; diff?: string; commits?: { sha: string; subject: string }[]; relocated?: { from: string; to: string }[] };
 
 export type StoredTask = WorkflowTask & {
   title: string; instruction: string; acceptanceCriteria: string[]; status: string;
   model?: string; provider?: string; reasoningEffort?: string; serviceTier?: string;
   assignedThreadId?: string | null; sessionId?: string | null; threads?: string[];
+  addedBy?: string;
   result?: TaskResult | null; failureReason?: string | null; progress?: ProgressEntry[];
   permissions?: { at: number; round: number; sessionId?: string | undefined; toolCallId?: string | undefined; title: string; optionId: string | null }[];
   messages?: (SteerMessage & { source?: string })[]; manualRevision?: number;
@@ -68,7 +69,7 @@ export type PermissionRequest = { sessionId?: string; toolCall?: { toolCallId?: 
 
 export type CheckpointContext = { record: object; task: object; reason?: string; timer: ReturnType<typeof setTimeout>; controller: AbortController; queued: boolean; checkpoint: { status: string; reason?: string }; unlink: () => void };
 
-export type ModelRoute = ReturnType<typeof workflowModelRoutes>[number];
+export type ModelRoute = { model: string; provider: string; exhausted?: boolean; reason?: string; efforts?: string[] | undefined; defaultEffort?: string | null | undefined };
 
 export type WorkflowOptions = {
   stateDir: string;

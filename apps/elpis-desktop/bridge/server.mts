@@ -16,7 +16,7 @@ import { createImportChats } from './import-chats.mts';
 import { createTrash } from './trash.mts';
 import { createLoveSpot } from './love-spot-store.cts';
 import { createLoveSpotTalk } from './love-spot-talk.mts';
-import { createMatildaCompanion } from './matilda-companion.mjs';
+import { createMatildaCompanion } from './matilda-companion.mts';
 import { createLoveAgents } from './love-agents.mts';
 import { createDevServers } from './dev-servers.mts';
 import { createImprovements } from './improve.mts';

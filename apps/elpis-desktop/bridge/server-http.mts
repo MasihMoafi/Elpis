@@ -14,7 +14,7 @@ export type ServerState = {
   options: { elpisHome?: string, [key: string]: unknown },
   trash: Awaited<ReturnType<typeof import('./trash.mts').createTrash>>,
   loveSpot: ReturnType<typeof import('./love-spot-store.cts').createLoveSpot>,
-  companion: ReturnType<typeof import('./matilda-companion.mjs').createMatildaCompanion>,
+  companion: ReturnType<typeof import('./matilda-companion.mts').createMatildaCompanion>,
   loveTalk: ReturnType<typeof import('./love-spot-talk.mts').createLoveSpotTalk>,
   loveAgents: ReturnType<typeof import('./love-agents.mts').createLoveAgents>,
   loveStreams: Set<import('node:http').ServerResponse>,

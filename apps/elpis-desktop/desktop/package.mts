@@ -11,7 +11,7 @@ type Options = { source?: string | undefined; destination?: string | undefined; 
 
 /** Every file the packaged app loads besides the renderer; package.test.mjs checks it against their imports. */
 export const productionFiles = [
-  'bridge/matilda-companion.mjs',
+  'bridge/matilda-companion.mts',
   'desktop/app-menu.cts', 'lib/app-menu-commands.cts',
   'bridge/voice.mts', 'bridge/voice-handoff.cts', 'bridge/kokoro.mts', 'bridge/read-aloud-provider.mts', 'lib/speech-model.mts', 'bridge/schedule.mts', 'bridge/schedule-rules.mts', 'bridge/schedule-mcp.mts', 'bridge/kokoro-worker.py',
   'bridge/resources/permission-policy.mjs', 'bridge/resources/workflow-concurrency.mts',
