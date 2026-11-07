@@ -152,7 +152,7 @@
   "desktop": [
     "desktop/app-menu.test.cts",
     "desktop/app-updates.test.cts",
-    "desktop/browser-agent.test.cjs",
+    "desktop/browser-agent.test.cts",
     "desktop/browser-annotations.test.cts",
     "desktop/browser-features.test.cts",
     "desktop/browser-policy.test.cts",

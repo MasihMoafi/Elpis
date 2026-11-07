@@ -3,7 +3,7 @@
 const fs: typeof import('node:fs') = require('node:fs');
 const path: typeof import('node:path') = require('node:path');
 const { pathToFileURL }: typeof import('node:url') = require('node:url');
-const { startBrowserAgentSocket }: typeof import('./browser-agent.cjs') = require('./browser-agent.cjs');
+const { startBrowserAgentSocket }: typeof import('./browser-agent.cts') = require('./browser-agent.cts');
 const { closeNeedsConfirmation, seedShippedDefaults }: typeof import('./preferences.cts') = require('./preferences.cts');
 const { createSessionWindows }: typeof import('./session-windows.cts') = require('./session-windows.cts');
 const { createSleepBlocker }: typeof import('./sleep-blocker.cts') = require('./sleep-blocker.cts');

@@ -1,18 +1,27 @@
 'use strict';
-const net = require('node:net');
-const fs = require('node:fs/promises');
-const fsSync = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
-const { randomUUID } = require('node:crypto');
-const { browserUrl } = require('./browser-policy.cts');
-const { documentTools } = require('./documents.cts');
-const { screenTools } = require('./screen-capture.cts');
+import type { WebContentsView, InputEvent } from 'electron';
+type Args = { [key: string]: string | number | boolean; selector: string; nodeId: string; tabId: string; url: string; action: string; x: number; y: number; deltaX: number; deltaY: number; timeoutMs: number; text: string; clear: boolean; key: string };
+type AgentTab = { id: string; url: string; title: string; agent: boolean; error?: string | null; view: WebContentsView };
+type Log = { level: unknown; message: string; line: unknown; source: string };
+type SchemaProperty = { type: string; enum?: string[]; description?: string };
+type PageElement = HTMLElement & { type: string; labels: NodeListOf<HTMLLabelElement>; disabled: boolean; select: () => void };
+type PageState = { prefix: string; next: number; ids: WeakMap<Element, string>; nodes: Map<string, PageElement> };
+type ToolHandler = (id: string, name: string, args: unknown) => unknown;
+
+const net: typeof import('node:net') = require('node:net');
+const fs: typeof import('node:fs/promises') = require('node:fs/promises');
+const fsSync: typeof import('node:fs') = require('node:fs');
+const os: typeof import('node:os') = require('node:os');
+const path: typeof import('node:path') = require('node:path');
+const { randomUUID }: typeof import('node:crypto') = require('node:crypto');
+const { browserUrl }: typeof import('./browser-policy.cts') = require('./browser-policy.cts');
+const { documentTools }: typeof import('./documents.cts') = require('./documents.cts');
+const { screenTools }: typeof import('./screen-capture.cts') = require('./screen-capture.cts');
 
 const string = {type:'string'}, number = {type:'number'}, tabId = {type:'string',description:'ID from browser_tabs or browser_open.'};
 const target = {selector:string,nodeId:string};
-const tool = (name,description,properties,required=[]) => ({name,description,inputSchema:{type:'object',properties,required,additionalProperties:false}});
-const tools = [
+const tool = (name: string,description: string,properties: Record<string, SchemaProperty>,required: string[]=[]) => ({name,description,inputSchema:{type:'object',properties,required,additionalProperties:false}});
+const toolsImpl = [
   tool('browser_tabs','List this session’s in-app browser tabs. agent:true marks your own tabs; the others are the person’s, which you may read but not navigate or send input to. Other sessions are inaccessible.',{}),
   tool('browser_open','Open a URL in a new tab of your own in this session’s in-app browser, beside the person’s tabs. Returns tabId.',{url:string},['url']),
   tool('browser_navigate','Navigate this tab. action: goto (requires url), back, forward, reload.',{tabId,url:string,action:{type:'string',enum:['goto','back','forward','reload']}},['tabId']),
@@ -29,10 +38,10 @@ const tools = [
 ];
 
 // Runs only in the browser page's isolated world, never in the Elpis renderer.
-function pageOperation(action,args) {
-  const visible = element => !!element.getClientRects().length && getComputedStyle(element).visibility !== 'hidden';
-  const state = globalThis.__elpisAgentNodes ??= {prefix:crypto.randomUUID(),next:0,ids:new WeakMap(),nodes:new Map()};
-  const identify = element => {
+function pageOperationImpl(action: string,args: Args) {
+  const visible = (element: Element) => !!element.getClientRects().length && getComputedStyle(element).visibility !== 'hidden';
+  const state = (globalThis as typeof globalThis & { __elpisAgentNodes?: PageState }).__elpisAgentNodes ??= {prefix:crypto.randomUUID(),next:0,ids:new WeakMap(),nodes:new Map()};
+  const identify = (element: PageElement) => {
     let id=state.ids.get(element);
     if(!id){id=`${state.prefix}:${++state.next}`;state.ids.set(element,id);state.nodes.set(id,element);}
     return id;
@@ -41,13 +50,13 @@ function pageOperation(action,args) {
     if(args.nodeId){const element=state.nodes.get(args.nodeId);if(!element?.isConnected)throw Error('Stale snapshot node. Read a new snapshot.');return element;}
     const matches=document.querySelectorAll(args.selector);
     if(matches.length!==1)throw Error(`Selector must match one element (matched ${matches.length}).`);
-    return matches[0];
+    return matches[0] as PageElement;
   };
   if(action==='snapshot') {
     for(const [id,node] of state.nodes)if(!node.isConnected)state.nodes.delete(id);
-    const nodes=[...document.querySelectorAll('a,button,input,textarea,select,[role],[tabindex],summary')].filter(visible).slice(0,500).map(element=>{
+    const nodes=[...document.querySelectorAll<PageElement>('a,button,input,textarea,select,[role],[tabindex],summary')].filter(visible).slice(0,500).map(element=>{
       const tag=element.tagName.toLowerCase(),rect=element.getBoundingClientRect();
-      const role=element.getAttribute('role')||({a:'link',button:'button',input:element.type==='checkbox'?'checkbox':'textbox',textarea:'textbox',select:'combobox'}[tag]||tag);
+      const role=element.getAttribute('role')||(({a:'link',button:'button',input:element.type==='checkbox'?'checkbox':'textbox',textarea:'textbox',select:'combobox'} as Record<string, string>)[tag]||tag);
       const name=element.getAttribute('aria-label')||[...(element.labels||[])].map(label=>label.innerText).join(' ')||element.innerText||element.getAttribute('placeholder')||element.getAttribute('title')||'';
       return {nodeId:identify(element),tag,role,name:name.trim().slice(0,250),disabled:!!element.disabled,rect:{x:rect.x,y:rect.y,width:rect.width,height:rect.height}};
     });
@@ -69,7 +78,7 @@ function pageOperation(action,args) {
   if(!visible(element)||element.disabled)throw Error('The target is hidden or disabled.');
   if(action==='focus'||action==='focus-select')element.focus();
   // browser_type's clear, done in the page: an edit command can miss a background tab while he types in his own (CI, 5 Nov).
-  if(action==='focus-select'){if(typeof element.select==='function')element.select();else{const range=document.createRange();range.selectNodeContents(element);const selection=getSelection();selection.removeAllRanges();selection.addRange(range);}}
+  if(action==='focus-select'){if(typeof element.select==='function')element.select();else{const range=document.createRange();range.selectNodeContents(element);const selection=getSelection()!;selection.removeAllRanges();selection.addRange(range);}}
   const rect=element.getBoundingClientRect();
   const x=Math.max(0,Math.min(innerWidth-1,rect.x+rect.width/2)),y=Math.max(0,Math.min(innerHeight-1,rect.y+rect.height/2));
   if(action==='point'){
@@ -79,19 +88,19 @@ function pageOperation(action,args) {
   return {x,y};
 }
 
-function validate(name,args) {
-  const schema=tools.find(item=>item.name===name)?.inputSchema;
+function validate(name: string,args: Args) {
+  const schema=toolsImpl.find(item=>item.name===name)?.inputSchema as { properties: Record<string, SchemaProperty>; required: string[] } | undefined;
   if(!schema)throw Error('Unknown browser tool.');
   if(!args||typeof args!=='object'||Array.isArray(args))throw Error('Expected browser arguments.');
   for(const key of Object.keys(args)) {
-    const spec=schema.properties[key],value=args[key];
-    if(!spec||typeof value!==spec.type||spec.type==='number'&&!Number.isFinite(value)||spec.type==='string'&&value.length>40000||spec.enum&&!spec.enum.includes(value))throw Error(`Invalid ${key}.`);
+    const spec=(schema.properties as Record<string, SchemaProperty>)[key],value=(args as unknown as Record<string, string | number>)[key]!;
+    if(!spec||typeof value!==spec.type||spec.type==='number'&&!Number.isFinite(value)||spec.type==='string'&&(value as string).length>40000||spec.enum&&!spec.enum.includes(value as string))throw Error(`Invalid ${key}.`);
   }
   for(const key of schema.required)if(args[key]===undefined||args[key]==='')throw Error(`Missing ${key}.`);
   if(args.selector!==undefined&&(!args.selector||args.selector.length>2000)||args.nodeId!==undefined&&!args.nodeId)throw Error('Invalid target.');
   if(args.selector&&args.nodeId)throw Error('Use selector or nodeId.');
-  for(const key of ['x','y'])if(args[key]!==undefined&&(args[key]<0||args[key]>100000))throw Error(`Invalid ${key}.`);
-  for(const key of ['deltaX','deltaY'])if(args[key]!==undefined&&Math.abs(args[key])>100000)throw Error(`Invalid ${key}.`);
+  for(const key of ['x','y'])if(args[key]!==undefined&&((args[key] as number)<0||(args[key] as number)>100000))throw Error(`Invalid ${key}.`);
+  for(const key of ['deltaX','deltaY'])if(args[key]!==undefined&&Math.abs(args[key] as number)>100000)throw Error(`Invalid ${key}.`);
   if(args.timeoutMs!==undefined&&(args.timeoutMs<0||args.timeoutMs>30000))throw Error('Invalid timeoutMs.');
 }
 
@@ -100,23 +109,23 @@ const INPUT=new Set(['browser_navigate','browser_click','browser_type','browser_
 
 // The agent works only in tabs it opened (tab.agent), in the background: it never selects a tab or moves focus,
 // so the person keeps using his own tab, with his keyboard, at the same time.
-function createBrowserAgent({tabs,open,origin,emit,prepare}) {
-  let enabled=true,tabId=null,epoch=0,disposed=false,queue=Promise.resolve();
-  const logs=new Map();
+function createBrowserAgentImpl({tabs,open,origin,emit,prepare}: { tabs: Map<string, AgentTab>; open: (url: string, options: { agent: boolean }) => string; origin: string; emit: () => void; prepare: (id: string) => void }) {
+  let enabled=true,tabId: string | null=null,epoch=0,disposed=false,queue: Promise<unknown>=Promise.resolve();
+  const logs=new Map<string, Log[]>();
   const state=()=>({enabled,tabId});
-  const guard=generation=>{if(disposed)throw Error('Browser is closed.');if(!enabled||generation!==epoch)throw Error('The user has taken over the browser. Wait for them to allow agent control.');};
-  const stop=()=>{const wc=tabs.get(tabId)?.view.webContents;epoch++;enabled=false;tabId=null;if(wc&&!wc.isDestroyed())wc.stop();emit();};
+  const guard=(generation: number)=>{if(disposed)throw Error('Browser is closed.');if(!enabled||generation!==epoch)throw Error('The user has taken over the browser. Wait for them to allow agent control.');};
+  const stop=()=>{const wc=tabs.get(tabId as string)?.view.webContents;epoch++;enabled=false;tabId=null;if(wc&&!wc.isDestroyed())wc.stop();emit();};
   const allow=()=>{epoch++;enabled=true;tabId=null;emit();};
-  const observe=tab=>{
-    const messages=[];logs.set(tab.id,messages);
-    tab.view.webContents.on('console-message',(_event,details,message,line,source)=>{
+  const observe=(tab: AgentTab)=>{
+    const messages: Log[]=[];logs.set(tab.id,messages);
+    tab.view.webContents.on('console-message',(_event: Electron.Event,details: Electron.ConsoleMessageEvent | number,message?: string,line?: number,source?: string)=>{
       const entry=typeof details==='object'?details:{level:details,message,lineNumber:line,sourceId:source};
-      messages.push({level:entry.level,message:String(entry.message??'').slice(0,4000),line:entry.lineNumber,source:String(entry.sourceId??'').slice(0,1000)});
+      messages.push({level:entry.level,message:String(entry.message??'').slice(0,4000),line:(entry as { lineNumber?: number }).lineNumber,source:String(entry.sourceId??'').slice(0,1000)});
       if(messages.length>200)messages.shift();
     });
     tab.view.webContents.once('destroyed',()=>{logs.delete(tab.id);if(tabId===tab.id){tabId=null;emit();}});
   };
-  async function run(name,args,generation) {
+  async function run(name: string,args: Args,generation: number) {
     guard(generation);validate(name,args);
     if(name==='browser_tabs')return {tabs:[...tabs.values()].map(tab=>({id:tab.id,url:tab.url,title:tab.title,agent:!!tab.agent})),control:state()};
     if(name==='browser_open'){
@@ -130,20 +139,20 @@ function createBrowserAgent({tabs,open,origin,emit,prepare}) {
     if(name==='browser_click'&&!(args.selector||args.nodeId)&&(!Number.isFinite(args.x)||!Number.isFinite(args.y)))throw Error('Choose a selector, nodeId or x/y.');
     if(name==='browser_click'&&(args.selector||args.nodeId)&&(args.x!==undefined||args.y!==undefined))throw Error('Choose a target or coordinates.');
     if(tab.agent){tabId=tab.id;prepare(tab.id);emit();}
-    const dom=async action=>{
+    const dom=async (action: string)=>{
       guard(generation);
-      const result=await wc.executeJavaScriptInIsolatedWorld(999,[{code:`(${pageOperation.toString()})(${JSON.stringify(action)},${JSON.stringify(args)})`}]);
+      const result=await wc.executeJavaScriptInIsolatedWorld(999,[{code:`(${pageOperationImpl.toString()})(${JSON.stringify(action)},${JSON.stringify(args)})`}]);
       guard(generation);return result;
     };
-    const press=key=>{
-      const parts=key.split('+'),raw=parts.pop(),modifiers=parts.map(part=>({ctrl:'control',control:'control',meta:'meta',cmd:'meta',alt:'alt',shift:'shift'}[part.toLowerCase()]));
+    const press=(key: string)=>{
+      const parts=key.split('+'),raw=parts.pop()!,modifiers=parts.map(part=>(({ ctrl:'control',control:'control',meta:'meta',cmd:'meta',alt:'alt',shift:'shift'} as Record<string, string>)[part.toLowerCase()]));
       const aliases={ArrowLeft:'Left',ArrowRight:'Right',ArrowUp:'Up',ArrowDown:'Down',Escape:'Escape',Space:'Space',Enter:'Enter',Tab:'Tab',Backspace:'Backspace',Delete:'Delete',Home:'Home',End:'End',PageUp:'PageUp',PageDown:'PageDown'};
-      const keyCode=aliases[raw]||(/^(?:[a-zA-Z0-9]|F(?:[1-9]|1[0-2]))$/.test(raw)?raw:null);
+      const keyCode=(aliases as Record<string, string>)[raw]||(/^(?:[a-zA-Z0-9]|F(?:[1-9]|1[0-2]))$/.test(raw)?raw:null);
       if(!keyCode||modifiers.some(value=>!value))throw Error('Unsupported key. Use a key name or chord such as Control+A.');
-      wc.sendInputEvent({type:'keyDown',keyCode,modifiers});
+      wc.sendInputEvent({type:'keyDown',keyCode,modifiers: modifiers as NonNullable<InputEvent['modifiers']>});
       // Electron keyDown does not insert a printable character by itself.
-      if((raw.length===1||raw==='Space')&&!modifiers.some(value=>value!=='shift'))wc.sendInputEvent({type:'char',keyCode:raw==='Space'?' ':raw,modifiers});
-      wc.sendInputEvent({type:'keyUp',keyCode,modifiers});
+      if((raw.length===1||raw==='Space')&&!modifiers.some(value=>value!=='shift'))wc.sendInputEvent({type:'char',keyCode:raw==='Space'?' ':raw,modifiers: modifiers as NonNullable<InputEvent['modifiers']>});
+      wc.sendInputEvent({type:'keyUp',keyCode,modifiers: modifiers as NonNullable<InputEvent['modifiers']>});
     };
     switch(name) {
       case 'browser_navigate': {
@@ -190,18 +199,18 @@ function createBrowserAgent({tabs,open,origin,emit,prepare}) {
     }
     guard(generation);return {tabId:tab.id,url:wc.getURL()};
   }
-  return {state,stop,allow,observe,dispose(){disposed=true;epoch++;logs.clear();},call(name,args={}){
-    const generation=epoch,result=queue.then(()=>run(name,args,generation));queue=result.catch(()=>{});return result;
+  return {state,stop,allow,observe,dispose(){disposed=true;epoch++;logs.clear();},call(name: string,args: unknown={}){
+    const generation=epoch,result=queue.then(()=>run(name,args as Args,generation));queue=result.catch(()=>{});return result;
   }};
 }
 
-async function startBrowserAgentSocket({connectionFile}={}) {
+async function startBrowserAgentSocketImpl({connectionFile}: { connectionFile?: string }={}) {
   const directory=await fs.mkdtemp(path.join(os.tmpdir(),'elpis-browser-agent-'));
   await fs.chmod(directory,0o700);
-  const socketPath=path.join(directory,'browser.sock'),connections=new Set(),scopes=new Map(),tokens=new Map();let resolveAgent=()=>null,documents=null,screenCapture=null;
+  const socketPath=path.join(directory,'browser.sock'),connections=new Set<import('node:net').Socket>(),scopes=new Map<string, string>(),tokens=new Map<string, string>();let resolveAgent: (id: string) => Promise<{ call: (name: string, args: unknown) => unknown } | null> | { call: (name: string, args: unknown) => unknown } | null=()=>null,documents: ToolHandler | null=null,screenCapture: ToolHandler | null=null;
   if(connectionFile){
     try{const previous=JSON.parse(await fs.readFile(connectionFile,'utf8'));for(const [token,id] of Object.entries(previous.scopes||{}))if(typeof id==='string'){scopes.set(token,id);tokens.set(id,token);}}
-    catch(error){if(error.code!=='ENOENT')throw Error('Could not read the private browser connection record.');}
+    catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw Error('Could not read the private browser connection record.');}
   }
   function persist(){
     if(!connectionFile)return;
@@ -233,17 +242,21 @@ async function startBrowserAgentSocket({connectionFile}={}) {
             const agent=await resolveAgent(id);if(!agent)throw Error('This session browser is unavailable.');result=await agent.call(request.name,request.arguments);
           }
           socket.end(JSON.stringify({result})+'\n');}
-        catch(error){socket.end(JSON.stringify({error:error.message})+'\n');}
+        catch(error){socket.end(JSON.stringify({error:(error as Error).message})+'\n');}
       })();
     });
   });
-  await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(socketPath,resolve);});
+  await new Promise<void>((resolve,reject)=>{server.once('error',reject);server.listen(socketPath,resolve);});
   await fs.chmod(socketPath,0o600);
   persist();
-  return {path:socketPath,connectionFile,setResolver(value){resolveAgent=value;},setDocuments(value){documents=value;},setScreenCapture(value){screenCapture=value;},
-    scope(id){if(!tokens.has(id)){const token=randomUUID();tokens.set(id,token);scopes.set(token,id);persist();}return tokens.get(id);},
-    rebind(from,to){const token=tokens.get(from);if(token){tokens.delete(from);tokens.set(to,token);scopes.set(token,to);persist();}},
-    revoke(id){tokens.delete(id);for(const [token,owner] of scopes)if(owner===id)scopes.delete(token);persist();},
+  return {path:socketPath,connectionFile,setResolver(value: typeof resolveAgent){resolveAgent=value;},setDocuments(value: ToolHandler){documents=value;},setScreenCapture(value: ToolHandler){screenCapture=value;},
+    scope(id: string){if(!tokens.has(id)){const token=randomUUID();tokens.set(id,token);scopes.set(token,id);persist();}return tokens.get(id);},
+    rebind(from: string,to: string){const token=tokens.get(from);if(token){tokens.delete(from);tokens.set(to,token);scopes.set(token,to);persist();}},
+    revoke(id: string){tokens.delete(id);for(const [token,owner] of scopes)if(owner===id)scopes.delete(token);persist();},
     async close(){resolveAgent=()=>null;documents=null;screenCapture=null;scopes.clear();tokens.clear();for(const socket of connections)socket.destroy();await new Promise(resolve=>server.close(resolve));await fs.rmdir(directory);}};
 }
-module.exports={tools,createBrowserAgent,startBrowserAgentSocket,pageOperation};
+export declare const tools: typeof toolsImpl;
+export declare const createBrowserAgent: typeof createBrowserAgentImpl;
+export declare const startBrowserAgentSocket: typeof startBrowserAgentSocketImpl;
+export declare const pageOperation: typeof pageOperationImpl;
+module.exports={tools: toolsImpl,createBrowserAgent: createBrowserAgentImpl,startBrowserAgentSocket: startBrowserAgentSocketImpl,pageOperation: pageOperationImpl};

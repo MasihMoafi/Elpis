@@ -13,7 +13,7 @@ app.whenReady().then(async () => {
   const store = createStateStore(path.join(app.getPath('userData'), 'workspace.json'));
   await store.set('elpis-preferences-v1', JSON.stringify({ confirmClose: false }));
   const quickEntry = startQuickEntry({ ...electron, dark: () => false, onSubmit: () => {} });
-  if (process.env.SESSION_BROWSER_TOOLS) global.browserSocket = await require('../desktop/browser-agent.cjs').startBrowserAgentSocket();
+  if (process.env.SESSION_BROWSER_TOOLS) global.browserSocket = await require('../desktop/browser-agent.cts').startBrowserAgentSocket();
   global.sessionWindows = createSessionWindows({ electron, quickEntry, browserAgentSocket: global.browserSocket, url: process.env.SESSION_WINDOW_URL, store,
     closeToTray: { hides: () => false, closed: () => {} }, mayClose: () => true, onDark: () => {} });
   Menu.setApplicationMenu(Menu.buildFromTemplate([{ label: 'File', submenu: [sessionWindowMenu(() => global.sessionWindows.open({ newSession: true }))] }]));

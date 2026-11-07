@@ -12,7 +12,7 @@ const path=require('node:path');
 const {browserUrl,trustedBrowserSender,nativeBounds,loadFailure,pageSecurity,zoomStep}=require('./browser-policy.cts') as typeof import('./browser-policy.cts');
 const {cleanPick,commentLabel,commentsPrompt}=require('./browser-annotations.cts') as typeof import('./browser-annotations.cts');
 const {contextMenuTemplate}=require('./context-menu.cts') as typeof import('./context-menu.cts');
-const {createBrowserAgent}=require('./browser-agent.cjs');
+const {createBrowserAgent}=require('./browser-agent.cts');
 const {presentAsChrome,presentPageAsChrome}=require('./browser-identity.cts') as typeof import('./browser-identity.cts');
 
 const PRELOAD=path.join(__dirname,'browser-page-preload.cjs');

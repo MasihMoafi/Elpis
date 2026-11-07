@@ -2,28 +2,29 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const fs = require('node:fs/promises');
-const { createBrowserAgent, startBrowserAgentSocket } = require('./browser-agent.cjs');
+const { createBrowserAgent, startBrowserAgentSocket } = require('./browser-agent.cts');
 
 function fixture() {
-  const tabs = new Map(), inputs = [], scripts = []; let selected, count = 0;
-  // The agent's tool opens its tabs with {agent: true}; `user` opens a tab as the person does.
-  const open = (url, { agent: owned = false } = {}) => {
-    const id = `tab-${++count}`;
-    const wc = Object.assign(new EventEmitter(), { getURL: () => url, isDestroyed: () => false, isLoading: () => false,
+  const tabs = new Map<string, { id: string; url: string; title: string; agent: boolean; view: { webContents: ReturnType<typeof makeContents> }; error?: string }>(), inputs: (string | { type: string; modifiers: string[] })[] = [], scripts: {world: number; source: {code: string}[]}[] = []; let selected: string | undefined, count = 0;
+  function makeContents(url: string) { return Object.assign(new EventEmitter(), { getURL: () => url, isDestroyed: () => false, isLoading: () => false,
       navigationHistory: { canGoBack: () => true, canGoForward: () => true, goBack: () => inputs.push('back'), goForward: () => inputs.push('forward') },
-      loadURL: async value => { url = value; }, reload: () => inputs.push('reload'), stop() {}, focus() {},
-      getZoomFactor: () => 1, sendInputEvent: event => inputs.push(event), insertText: async text => inputs.push(text), selectAll: () => inputs.push('selectAll'),
-      executeJavaScriptInIsolatedWorld: async (world, source) => { scripts.push({world, source}); return { x: 10, y: 20 }; },
-      capturePage: async () => ({ isEmpty: () => false, toJPEG: () => Buffer.from('jpeg') }) });
+      loadURL: async (value: string) => { url = value; }, reload: () => inputs.push('reload'), stop() {}, focus() {},
+      getZoomFactor: () => 1, sendInputEvent: (event: {type: string; modifiers: string[]}) => inputs.push(event), insertText: async (text: string) => inputs.push(text), selectAll: () => inputs.push('selectAll'),
+      executeJavaScriptInIsolatedWorld: async (world: number, source: {code: string}[]): Promise<unknown> => { scripts.push({world, source}); return { x: 10, y: 20 }; },
+      capturePage: async () => ({ isEmpty: () => false, toJPEG: () => Buffer.from('jpeg') }) }); }
+  // The agent's tool opens its tabs with {agent: true}; `user` opens a tab as the person does.
+  const open = (url: string, { agent: owned = false } = {}) => {
+    const id = `tab-${++count}`;
+    const wc = makeContents(url);
     tabs.set(id, { id, url, title: 'Fixture', agent: owned, view: { webContents: wc } }); return id;
   };
-  const agent = createBrowserAgent({ tabs, open, select: id => { selected = id; }, origin: 'http://127.0.0.1:4000', emit() {}, prepare() {} });
-  return { agent, tabs, inputs, scripts, user: url => open(url), selected: () => selected };
+  const agent = createBrowserAgent({ tabs, open, select: (id: string) => { selected = id; }, origin: 'http://127.0.0.1:4000', emit() {}, prepare() {} });
+  return { agent, tabs, inputs, scripts, user: (url: string) => open(url), selected: () => selected };
 }
 
 test('open/list use the agent’s own tab and mark agent control without selecting it', async () => {
   const f = fixture(), result = await f.agent.call('browser_open', { url: 'https://example.com' });
-  assert.equal(result.tabId, 'tab-1'); assert.equal(f.tabs.get('tab-1').agent, true);
+  assert.equal(result.tabId, 'tab-1'); assert.equal(f.tabs.get('tab-1')!.agent, true);
   assert.equal(f.agent.state().tabId, 'tab-1');
   await f.agent.call('browser_click', { tabId: 'tab-1', x: 1, y: 1 });
   assert.equal(f.selected(), undefined, 'the agent never switches the shown tab');
@@ -32,8 +33,8 @@ test('open/list use the agent’s own tab and mark agent control without selecti
 
 test('the person’s tabs refuse every agent action that navigates or sends input, and stay readable', async () => {
   const f = fixture(), mine = f.user('https://example.com/mine');
-  for (const [name, args] of [['browser_navigate', { url: 'https://example.com/x' }], ['browser_navigate', { action: 'back' }], ['browser_click', { x: 1, y: 1 }],
-    ['browser_type', { text: 'INTRUDER' }], ['browser_press', { key: 'Enter' }], ['browser_scroll', { deltaY: 10 }]]) {
+  for (const [name, args] of ([['browser_navigate', { url: 'https://example.com/x' }], ['browser_navigate', { action: 'back' }], ['browser_click', { x: 1, y: 1 }],
+    ['browser_type', { text: 'INTRUDER' }], ['browser_press', { key: 'Enter' }], ['browser_scroll', { deltaY: 10 }]] as [string, Record<string, unknown>][]) ) {
     await assert.rejects(f.agent.call(name, { tabId: mine, ...args }), /person’s tab/);
   }
   assert.deepEqual(f.inputs, []); assert.equal(f.scripts.length, 0); assert.equal(f.agent.state().tabId, null);
@@ -58,17 +59,17 @@ test('click/type/press dispatch native input; scroll and target lookup use the i
   await f.agent.call('browser_type', {tabId:'tab-1',selector:'#email',text:'agent@example.com'});
   await f.agent.call('browser_press', {tabId:'tab-1',key:'Control+A'});
   await f.agent.call('browser_scroll', {tabId:'tab-1',x:50,y:50,deltaY:120});
-  assert.equal(f.inputs.filter(item => item.type === 'mouseDown').length, 1);
+  assert.equal(f.inputs.filter(item => (item as { type: string }).type === 'mouseDown').length, 1);
   assert.deepEqual(f.inputs.filter(item => typeof item === 'string'), ['selectAll', 'agent@example.com'], 'typing replaces the field');
-  assert(f.inputs.some(item => item.type === 'keyDown' && item.modifiers.includes('control')));
-  assert(f.scripts.some(item => item.source[0].code.includes(')("scroll",')));
-  assert(f.scripts.some(item => item.source[0].code.includes(')("focus-select",')), 'typing selects the field in the page too');
+  assert(f.inputs.some(item => (item as { type: string }).type === 'keyDown' && (item as { modifiers: string[] }).modifiers.includes('control')));
+  assert(f.scripts.some(item => item.source[0]!.code.includes(')("scroll",')));
+  assert(f.scripts.some(item => item.source[0]!.code.includes(')("focus-select",')), 'typing selects the field in the page too');
   assert(f.scripts.every(item => item.world === 999));
 });
 
 test('navigation actions, screenshot bytes and bounded console entries', async () => {
   const f = fixture(); await f.agent.call('browser_open', {url:'https://example.com'});
-  const wc = f.tabs.get('tab-1').view.webContents; f.agent.observe(f.tabs.get('tab-1'));
+  const wc = f.tabs.get('tab-1')!.view.webContents; f.agent.observe(f.tabs.get('tab-1')!);
   wc.emit('console-message', {}, {level:'info',message:'fixture console',lineNumber:4,sourceId:'fixture.js'});
   for (const action of ['back','forward','reload']) await f.agent.call('browser_navigate', {tabId:'tab-1',action});
   assert.deepEqual(f.inputs, ['back','forward','reload']);
@@ -78,7 +79,7 @@ test('navigation actions, screenshot bytes and bounded console entries', async (
 
 test('takeover aborts waits and blocks open/input until a user enables access', async () => {
   const f = fixture(); await f.agent.call('browser_open', {url:'https://example.com'});
-  f.tabs.get('tab-1').view.webContents.isLoading = () => true;
+  f.tabs.get('tab-1')!.view.webContents.isLoading = () => true;
   const waiting = f.agent.call('browser_wait', {tabId:'tab-1',timeoutMs:2000});
   f.agent.stop();
   await assert.rejects(waiting, /taken over/);
@@ -89,7 +90,7 @@ test('takeover aborts waits and blocks open/input until a user enables access', 
 
 test('invalid arguments and unknown tools fail before action', async () => {
   const f = fixture(); await f.agent.call('browser_open', {url:'https://example.com'});
-  for (const [name,args] of [['browser_click',{x:-1,y:1}],['browser_type',{text:42}],['browser_press',{key:''}],['browser_wait',{timeoutMs:90000}],['browser_open',{url:'https://example.com',unexpected:true}],['browser_evaluate',{expression:'process.env'}]]) {
+  for (const [name,args] of ([['browser_click',{x:-1,y:1}],['browser_type',{text:42}],['browser_press',{key:''}],['browser_wait',{timeoutMs:90000}],['browser_open',{url:'https://example.com',unexpected:true}],['browser_evaluate',{expression:'process.env'}]] as [string, Record<string, unknown>][]) ) {
     await assert.rejects(f.agent.call(name,{tabId:'tab-1',...args}));
   }
   assert.equal(f.inputs.length,0);
@@ -97,8 +98,8 @@ test('invalid arguments and unknown tools fail before action', async () => {
 
 test('takeover cancels in-flight DOM input and queued calls even after access is enabled again', async () => {
   const f=fixture();await f.agent.call('browser_open',{url:'https://example.com'});
-  let finish;
-  f.tabs.get('tab-1').view.webContents.executeJavaScriptInIsolatedWorld=()=>new Promise(resolve=>{finish=resolve;});
+  let finish!: (value: unknown) => void;
+  f.tabs.get('tab-1')!.view.webContents.executeJavaScriptInIsolatedWorld=()=>new Promise(resolve=>{finish=resolve;});
   const first=f.agent.call('browser_click',{tabId:'tab-1',selector:'#button'});
   const second=f.agent.call('browser_click',{tabId:'tab-1',x:10,y:10});
   const rejected=[assert.rejects(first,/taken over/),assert.rejects(second,/taken over/)];
@@ -109,7 +110,7 @@ test('takeover cancels in-flight DOM input and queued calls even after access is
 test('waits succeed for loaded/visible pages and fail for missing selectors or failed loads', async () => {
   const f=fixture();await f.agent.call('browser_open',{url:'https://example.com'});
   assert.deepEqual(await f.agent.call('browser_wait',{tabId:'tab-1'}),{ready:true});
-  const tab=f.tabs.get('tab-1');tab.view.webContents.executeJavaScriptInIsolatedWorld=async()=>true;
+  const tab=f.tabs.get('tab-1')!;tab.view.webContents.executeJavaScriptInIsolatedWorld=async()=>true;
   assert.deepEqual(await f.agent.call('browser_wait',{tabId:'tab-1',selector:'#ready'}),{ready:true});
   tab.view.webContents.executeJavaScriptInIsolatedWorld=async()=>false;
   await assert.rejects(f.agent.call('browser_wait',{tabId:'tab-1',selector:'#missing',timeoutMs:0}),/timed out/);
@@ -117,17 +118,17 @@ test('waits succeed for loaded/visible pages and fail for missing selectors or f
 });
 
 test('private Unix socket permissions and round-trip dispatch', async () => {
-  const net = require('node:net');
+  const net: typeof import('node:net') = require('node:net');
   const endpoint = await startBrowserAgentSocket();
   try {
     assert.equal((await fs.stat(endpoint.path)).mode & 0o777,0o600);
     assert.equal((await fs.stat(require('node:path').dirname(endpoint.path))).mode & 0o777,0o700);
-    endpoint.setResolver(() => ({call: async (name,args) => ({name,args})}));
+    endpoint.setResolver(() => ({call: async (name: string,args: unknown) => ({name,args})}));
     const capability=endpoint.scope('fixture');
-    const value = await new Promise((resolve,reject) => {
+    const value = await new Promise<{ result: unknown }>((resolve,reject) => {
       const socket=net.createConnection(endpoint.path);socket.on('error',reject);
       socket.on('connect',()=>socket.write(JSON.stringify({name:'browser_tabs',arguments:{},capability})+'\n'));
-      socket.once('data',data=>{socket.end();resolve(JSON.parse(data));});
+      socket.once('data',data=>{socket.end();resolve(JSON.parse(data.toString()));});
     });
     assert.deepEqual(value.result,{name:'browser_tabs',args:{}});
   } finally { await endpoint.close(); }

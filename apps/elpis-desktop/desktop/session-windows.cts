@@ -2,7 +2,7 @@
 import type { BrowserWindow, IpcMainInvokeEvent, WebContents } from 'electron';
 import type { StateStore, WindowOpeners } from './main-backend.cts';
 const path: typeof import('node:path') = require('node:path');
-const { createBrowserSessions } = require('./browser-sessions.cjs');
+const { createBrowserSessions } = require('./browser-sessions.cts');
 const { registerState }: typeof import('./state.cts') = require('./state.cts');
 const { registerFiles }: typeof import('./files.cts') = require('./files.cts');
 const { createDocuments }: typeof import('./documents.cts') = require('./documents.cts');
@@ -23,7 +23,7 @@ const TITLE_BAR = { dark: { color: '#0d0e11', symbolColor: '#e6e0d3' }, light: {
 
 /** All session windows use one bridge URL and one workspace store. No window owns the engine. */
 function createSessionWindowsImpl({ electron, url, store, browserAgentSocket, quickEntry, screenshotPopup, closeToTray, updates, mayClose, quitting = () => false, onDark, onClosed, onFocused }: {
-  electron: typeof import('electron'); url: string; store: StateStore; browserAgentSocket?: ReturnType<typeof import('./browser-agent.cjs').startBrowserAgentSocket> extends Promise<infer T> ? T : never;
+  electron: typeof import('electron'); url: string; store: StateStore; browserAgentSocket?: ReturnType<typeof import('./browser-agent.cts').startBrowserAgentSocket> extends Promise<infer T> ? T : never;
   quickEntry?: { attach: (options: { host: BrowserWindow; origin: string; ipcMain: ReturnType<ReturnType<typeof createWindowIpc>> }) => () => void };
   screenshotPopup?: { attach: (options: { host: BrowserWindow; origin: string; ipcMain: ReturnType<ReturnType<typeof createWindowIpc>> }) => () => void };
   closeToTray: ReturnType<typeof import('./tray.cts').createCloseToTray>; updates?: { attach: (options: { host: BrowserWindow; origin: string; ipcMain: ReturnType<ReturnType<typeof createWindowIpc>> }) => () => void };

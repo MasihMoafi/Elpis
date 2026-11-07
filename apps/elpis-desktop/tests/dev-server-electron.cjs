@@ -1,7 +1,7 @@
 // Isolated test host with the production browser and preload; no installed app or engine.
 const { app, BrowserWindow, WebContentsView, session, ipcMain, Menu, clipboard } = require('electron');
 const path = require('node:path');
-const { createBrowserSessions } = require('../desktop/browser-sessions.cjs');
+const { createBrowserSessions } = require('../desktop/browser-sessions.cts');
 const { createStateStore } = require('../desktop/state.cts');
 app.setPath('userData', process.env.PREVIEW_TEST_PROFILE);
 app.commandLine.appendSwitch('disable-gpu');

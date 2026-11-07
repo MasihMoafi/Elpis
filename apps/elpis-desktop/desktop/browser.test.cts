@@ -21,7 +21,7 @@ test('a destroyed sign-in popup closes safely after Electron detaches its webCon
   assert.equal(browser.snapshot().tabs.length, 0);
   browser.dispose(); await new Promise<void>(resolve => setImmediate(resolve));
 });
-const { createBrowserSessions } = require('./browser-sessions.cjs');
+const { createBrowserSessions } = require('./browser-sessions.cts');
 
 test('a window link is policy-checked before its session browser is initialized', async () => {
   const host = Object.assign(new EventEmitter(), { isDestroyed: () => false, webContents: { isDestroyed: () => false } });

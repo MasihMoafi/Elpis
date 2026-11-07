@@ -11,7 +11,7 @@ type Result = { page: string; session: string };
 type Response = { result: { protocolVersion: string; tools: { name: string }[]; content: { text: string }[]; isError: boolean }; error: { code: number } };
 const browserResult = async (value: Promise<unknown>) => await value as Result;
 const response = async (value: ReturnType<typeof handleMcp>) => await value as Response;
-const { startBrowserAgentSocket } = createRequire(import.meta.url)('../desktop/browser-agent.cjs');
+const { startBrowserAgentSocket } = createRequire(import.meta.url)('../desktop/browser-agent.cts');
 
 test('socket capabilities bind concurrent calls to their own session and reject missing or foreign scopes', async () => {
   const endpoint = await startBrowserAgentSocket();

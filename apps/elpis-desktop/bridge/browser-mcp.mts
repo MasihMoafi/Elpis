@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline';
-import browserAgent from '../desktop/browser-agent.cjs';
+import browserAgent from '../desktop/browser-agent.cts';
 export const tools=browserAgent.tools;
 
 // Thread-local override only: never writes the user's MCP configuration.
