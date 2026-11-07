@@ -27,7 +27,7 @@ concurrency:
 
 jobs:
   schemas:
-    if: github.event_name == 'workflow_dispatch' && (inputs.verification == 'check' || inputs.verification == 'follow-check')
+    if: github.event_name == 'workflow_dispatch' && inputs.verification == 'check'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -138,7 +138,7 @@ jobs:
       - name: Read-only child follow across app-server connections
         if: inputs.verification == 'follow-check'
         working-directory: codex-rs
-        run: cargo test --profile dev-small --locked -p codex-app-server --test all -- websocket_read_only_follow_delivers_child_events_across_connections_and_reconnect
+        run: cargo test --profile dev-small --locked -p codex-core --lib -- disabled_delegate_stays_disabled_when_v2_is_enabled_at_startup
       - name: Retain compiler outputs
         if: always() && steps.cargo_cache.outputs.cache-hit != 'true' && steps.cargo_cache.outputs.cache-primary-key != ''
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
@@ -308,6 +308,9 @@ jobs:
           node scripts/evals/ledger-close-placement.cjs \
             --binary "$PWD/codex-rs/target/release/elpis" \
             --output "$RUNNER_TEMP/elpis-ledger-native" --phase candidate
+      - name: Subagent switch follows an open chat
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
+        run: node scripts/subagents-switch-runtime.test.cts "$PWD/codex-rs/target/release/elpis"
       - name: Preserve native Ledger evidence
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification != 'build' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -562,6 +565,11 @@ jobs:
         run: |
           cargo test --profile dev-small --locked -p codex-core --lib -- \
             elpis_ memory_save save_memory smart_prune compact_instructions world_state build_agent_spawn_config \
+            refresh_runtime_config_follows_the_subagent_switch_in_the_same_chat \
+            subagent_switch_off_overrides_explicit_v2 enabling_subagents_does_not_enable_an_internal_reviewer \
+            enabling_subagents_does_not_enable_an_isolated_root \
+            disabled_delegate_stays_disabled_when_v2_is_enabled_at_startup \
+            reloading_user_file_updates_the_subagent_switch mcp_refresh_does_not_change_the_subagent_switch \
             live_permissions inherited_permissions step_activation thread_settings turn_input \
             loaded_children_give_up_the_full_access_their_parent_gives_up \
             revocation regains_full_access \

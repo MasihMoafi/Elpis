@@ -78,6 +78,8 @@ pub(crate) struct Session {
     pub(crate) windows_sandbox_proxy_settings_mode:
         codex_sandboxing::WindowsSandboxProxySettingsMode,
     pub(super) multi_agent_version: OnceLock<MultiAgentVersion>,
+    // A root chat started with Subagents off may select its mode when the switch is enabled.
+    pub(super) reenabled_multi_agent_version: OnceLock<MultiAgentVersion>,
     /// Owns invalidation and serializes refreshes without blocking captured calls.
     pub(super) mcp_refresh: McpRefresh,
     /// Non-owning lookup for approval data retained by running MCP invocations.
@@ -1825,6 +1827,7 @@ impl Session {
                 tool_policy,
                 windows_sandbox_proxy_settings_mode,
                 multi_agent_version,
+                reenabled_multi_agent_version: OnceLock::new(),
                 mcp_refresh: McpRefresh::new(),
                 mcp_tool_approval_metadata: Default::default(),
         mcp_elicitation_reviewer_handle: OnceLock::new(),

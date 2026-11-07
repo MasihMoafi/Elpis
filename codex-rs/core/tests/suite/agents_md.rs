@@ -256,50 +256,23 @@ pub(super) fn instruction_fragments(request: &responses::ResponsesRequest) -> Ve
         .collect()
 }
 
-/// Elpis: AGENTS.md owns one history slot, so a refill removes the earlier copy from the
-/// history a later request replays. This is the request input without any AGENTS.md fragment,
-/// for asserting that everything else is still replayed exactly.
-fn input_without_instruction_fragments(
-    request: &responses::ResponsesRequest,
-) -> Vec<serde_json::Value> {
-    request
-        .input()
-        .into_iter()
-        .filter_map(|mut item| {
-            let Some(content) = item.get("content").and_then(|content| content.as_array()) else {
-                return Some(item);
-            };
-            let fragments = content
-                .iter()
-                .enumerate()
-                .filter(|(_, entry)| {
-                    entry["text"]
-                        .as_str()
-                        .is_some_and(|text| text.starts_with("# AGENTS.md instructions"))
-                })
-                .map(|(index, _)| index)
-                .collect::<Vec<_>>();
-            let length = content.len();
-            if fragments.is_empty() {
-                return Some(item);
-            }
-            let remaining = length - fragments.len();
-            // Content kinds are aligned with content entries; keep them aligned.
-            for path in [
-                "/content",
-                "/internal_chat_message_metadata_passthrough/content_item_kinds",
-            ] {
-                if let Some(entries) = item.pointer_mut(path).and_then(|v| v.as_array_mut())
-                    && entries.len() == length
-                {
-                    for index in fragments.iter().rev() {
-                        entries.remove(*index);
-                    }
-                }
-            }
-            (remaining > 0).then_some(item)
-        })
-        .collect()
+/// Instruction changes preserve the cached input, including earlier instruction fragments.
+fn assert_input_prefix_preserved(
+    previous: &responses::ResponsesRequest,
+    current: &responses::ResponsesRequest,
+    forked: bool,
+) {
+    let previous = previous.input();
+    let mut current = current.input();
+    if forked {
+        // Only the request prefix has a new thread-scoped ID; history IDs stay unchanged.
+        current[0]["id"] = previous[0]["id"].clone();
+    }
+    assert_eq!(
+        current.get(..previous.len()),
+        Some(previous.as_slice()),
+        "instruction updates must preserve the complete earlier request input"
+    );
 }
 
 fn expected_instruction_fragment(cwd: &PathUri, contents: &str) -> String {
@@ -1272,8 +1245,7 @@ async fn thread_provider_composes_and_clears_only_its_instructions() -> Result<(
             "{GLOBAL_INSTRUCTIONS}\n\n{TASK_USER_INSTRUCTIONS}\n\n{PROJECT_SEPARATOR}\n\n{PROJECT_INSTRUCTIONS}"
         ),
     );
-    // Clearing the thread text refills the one AGENTS.md slot with the remaining sources and
-    // removes the earlier copy; no replacement notice is added.
+    // Clearing the thread text appends the remaining sources; unchanged turns add no copy.
     let cleared = expected_instruction_fragment(
         cwd,
         &format!("{GLOBAL_INSTRUCTIONS}\n\n{PROJECT_SEPARATOR}\n\n{PROJECT_INSTRUCTIONS}"),
@@ -1286,11 +1258,14 @@ async fn thread_provider_composes_and_clears_only_its_instructions() -> Result<(
             .collect::<Vec<_>>(),
         vec![
             vec![initial.clone()],
-            vec![initial],
-            vec![cleared.clone()],
-            vec![cleared],
+            vec![initial.clone()],
+            vec![initial.clone(), cleared.clone()],
+            vec![initial, cleared],
         ],
     );
+    for pair in response_mock.requests().windows(2) {
+        assert_input_prefix_preserved(&pair[0], &pair[1], /*forked*/ false);
+    }
     Ok(())
 }
 
@@ -1362,15 +1337,19 @@ async fn ledger_withholds_files_but_not_source_less_thread_instructions() -> Res
         &requests[0],
         &expected_provider_only_instruction_fragment(TASK_USER_INSTRUCTIONS),
     );
-    assert_single_instruction_fragment(
-        &requests[1],
-        &expected_instruction_fragment(
-            cwd,
-            &format!(
-                "{GLOBAL_INSTRUCTIONS}\n\n{TASK_USER_INSTRUCTIONS}\n\n{PROJECT_SEPARATOR}\n\n{PROJECT_INSTRUCTIONS}"
+    assert_eq!(
+        instruction_fragments(&requests[1]),
+        vec![
+            expected_provider_only_instruction_fragment(TASK_USER_INSTRUCTIONS),
+            expected_instruction_fragment(
+                cwd,
+                &format!(
+                    "{GLOBAL_INSTRUCTIONS}\n\n{TASK_USER_INSTRUCTIONS}\n\n{PROJECT_SEPARATOR}\n\n{PROJECT_INSTRUCTIONS}"
+                ),
             ),
-        ),
+        ],
     );
+    assert_input_prefix_preserved(&requests[0], &requests[1], /*forked*/ false);
     Ok(())
 }
 
@@ -1468,8 +1447,10 @@ async fn thread_provider_refreshes_at_the_next_step_of_an_active_turn() -> Resul
             .iter()
             .map(instruction_fragments)
             .collect::<Vec<_>>(),
-        vec![vec![initial], vec![updated]],
+        vec![vec![initial.clone()], vec![initial, updated]],
     );
+    let requests = response_mock.requests();
+    assert_input_prefix_preserved(&requests[0], &requests[1], /*forked*/ false);
     Ok(())
 }
 
@@ -1610,7 +1591,7 @@ async fn thread_provider_enforces_its_own_limit_before_startup_and_sampling() ->
     fixture.provider.set_warnings(Vec::new());
 
     // The full thread budget is independent of global instructions and wrapping.
-    // Changing environments must also remove the previously selected repository docs.
+    // Changing environments appends a snapshot without the previously selected repository docs.
     let host_text = "x".repeat(approx_bytes_for_tokens(/*tokens*/ 10_000));
     let expected = expected_provider_only_instruction_fragment(&format!(
         "{GLOBAL_INSTRUCTIONS}\n\n{host_text}"
@@ -1641,7 +1622,15 @@ async fn thread_provider_enforces_its_own_limit_before_startup_and_sampling() ->
     .await;
     let requests = response_mock.requests();
     assert_eq!(requests.len(), 2);
-    assert_single_instruction_fragment(&requests[1], &expected);
+    let initial = expected_instruction_fragment(
+        &fixture.test.executor_environment().selection().cwd,
+        &format!(
+            "{GLOBAL_INSTRUCTIONS}\n\n{TASK_USER_INSTRUCTIONS}\n\n{PROJECT_SEPARATOR}\n\n{PROJECT_INSTRUCTIONS}"
+        ),
+    );
+    assert_single_instruction_fragment(&requests[0], &initial);
+    assert_eq!(instruction_fragments(&requests[1]), vec![initial, expected]);
+    assert_input_prefix_preserved(&requests[0], &requests[1], /*forked*/ false);
     Ok(())
 }
 
@@ -1774,9 +1763,10 @@ async fn fork_preserves_thread_instructions(
     assert_eq!(parent_provider.load_count(), parent_loads);
     let initial = expected_provider_only_instruction_fragment(TASK_USER_INSTRUCTIONS);
     let final_fragments = if offline {
-        vec![expected_provider_only_instruction_fragment(
-            UPDATED_TASK_USER_INSTRUCTIONS,
-        )]
+        vec![
+            initial.clone(),
+            expected_provider_only_instruction_fragment(UPDATED_TASK_USER_INSTRUCTIONS),
+        ]
     } else {
         vec![initial.clone()]
     };
@@ -1788,6 +1778,9 @@ async fn fork_preserves_thread_instructions(
             .collect::<Vec<_>>(),
         vec![vec![initial.clone()], vec![initial], final_fragments]
     );
+    let requests = response_mock.requests();
+    assert_input_prefix_preserved(&requests[0], &requests[1], /*forked*/ true);
+    assert_input_prefix_preserved(&requests[1], &requests[2], /*forked*/ false);
     Ok(())
 }
 
@@ -1871,10 +1864,14 @@ async fn thread_provider_lives_with_its_session_across_resume() -> Result<()> {
         &requests[0],
         &expected_provider_only_instruction_fragment(UPDATED_TASK_USER_INSTRUCTIONS),
     );
-    assert_single_instruction_fragment(
-        &requests[1],
-        &expected_provider_only_instruction_fragment("cold session instructions"),
+    assert_eq!(
+        instruction_fragments(&requests[1]),
+        vec![
+            expected_provider_only_instruction_fragment(UPDATED_TASK_USER_INSTRUCTIONS),
+            expected_provider_only_instruction_fragment("cold session instructions"),
+        ],
     );
+    assert_input_prefix_preserved(&requests[0], &requests[1], /*forked*/ false);
     Ok(())
 }
 
@@ -1946,7 +1943,7 @@ async fn fresh_thread_composes_global_before_project_and_reports_sources() -> Re
     test.submit_turn("second turn").await?;
 
     // The global provider refreshes, while repository discovery keeps its cached snapshot.
-    // The changed instructions replace the earlier copy: AGENTS.md owns one history slot.
+    // The changed global instructions are appended without rewriting the cached input.
     let requests = response_mock.requests();
     assert_eq!(requests.len(), 2);
     let expected_contents =
@@ -1961,7 +1958,10 @@ async fn fresh_thread_composes_global_before_project_and_reports_sources() -> Re
         &test.executor_environment().selection().cwd,
         &format!("{NEW_GLOBAL_INSTRUCTIONS}\n\n{PROJECT_SEPARATOR}\n\n{PROJECT_INSTRUCTIONS}"),
     );
-    assert_eq!(instruction_fragments(&requests[1]), vec![updated_fragment]);
+    assert_eq!(
+        instruction_fragments(&requests[1]),
+        vec![expected_fragment, updated_fragment]
+    );
     let rendered = fragments
         .into_iter()
         .next()
@@ -1989,13 +1989,7 @@ async fn fresh_thread_composes_global_before_project_and_reports_sources() -> Re
         creation_sources,
         "same-path global refresh preserves source paths and composition order"
     );
-    let first_input = input_without_instruction_fragments(&requests[0]);
-    let second_input = input_without_instruction_fragments(&requests[1]);
-    assert_eq!(
-        second_input.get(..first_input.len()),
-        Some(first_input.as_slice()),
-        "the second turn should retain all earlier history except the replaced AGENTS.md copy"
-    );
+    assert_input_prefix_preserved(&requests[0], &requests[1], /*forked*/ false);
 
     Ok(())
 }
@@ -2182,7 +2176,11 @@ async fn multi_environment_thread_refreshes_global_and_keeps_repository_snapshot
     let replacement = expected_provider_only_instruction_fragment(
         &contents.replace(GLOBAL_INSTRUCTIONS, NEW_GLOBAL_INSTRUCTIONS),
     );
-    assert_eq!(instruction_fragments(&requests[1]), vec![replacement]);
+    assert_eq!(
+        instruction_fragments(&requests[1]),
+        vec![expected, replacement]
+    );
+    assert_input_prefix_preserved(&requests[0], &requests[1], /*forked*/ false);
     assert_eq!(provider.load_count(), 4);
     assert_eq!(
         thread.thread.instruction_sources().await,
@@ -2391,20 +2389,28 @@ async fn cold_resume_invalidates_deleted_legacy_agents_md_once() -> Result<()> {
 
     let requests = response_mock.requests();
     assert_eq!(requests.len(), 4);
-    let initial_input = input_without_instruction_fragments(&requests[0]);
-    let resumed_input = input_without_instruction_fragments(&requests[1]);
-    assert_eq!(
-        resumed_input.get(..initial_input.len()),
-        Some(initial_input.as_slice()),
-        "cold resume should replay the original structured input except the stale AGENTS.md copy"
-    );
-    // The deleted source's copy leaves history once, with no removal notice, and stays gone.
+    for pair in requests.windows(2) {
+        assert_input_prefix_preserved(&pair[0], &pair[1], /*forked*/ false);
+    }
+    // A legacy rollout has no instruction snapshot: withdraw its retained rules exactly once.
     let initial = expected_provider_only_instruction_fragment(OLD_GLOBAL_INSTRUCTIONS);
-    assert_eq!(instruction_fragments(&requests[0]), vec![initial]);
-    assert_eq!(instruction_fragments(&requests[1]), Vec::<String>::new());
-    assert_eq!(instruction_fragments(&requests[2]), Vec::<String>::new());
+    let withdrawn = expected_provider_only_instruction_fragment(
+        "The user withdrew these AGENTS.md instructions from your context. Do not follow the AGENTS.md instructions given earlier in this conversation; they no longer apply.",
+    );
+    assert_eq!(instruction_fragments(&requests[0]), vec![initial.clone()]);
+    assert_eq!(
+        instruction_fragments(&requests[1]),
+        vec![initial.clone(), withdrawn.clone()]
+    );
+    assert_eq!(
+        instruction_fragments(&requests[2]),
+        vec![initial.clone(), withdrawn.clone()]
+    );
     let replacement = expected_provider_only_instruction_fragment(NEW_GLOBAL_INSTRUCTIONS);
-    assert_eq!(instruction_fragments(&requests[3]), vec![replacement]);
+    assert_eq!(
+        instruction_fragments(&requests[3]),
+        vec![initial, withdrawn, replacement]
+    );
 
     Ok(())
 }
@@ -2500,26 +2506,27 @@ async fn fork_injects_changed_agents_md_once() -> Result<()> {
     // Assert the forked model request replays the parent's exact structured history.
     let requests = response_mock.requests();
     assert_eq!(requests.len(), 4);
-    let parent_input = input_without_instruction_fragments(&requests[0]);
-    let mut fork_input = input_without_instruction_fragments(&requests[1]);
-    // The request prefix has a thread-scoped ID; retained history IDs stay unchanged.
-    fork_input[0]["id"] = parent_input[0]["id"].clone();
-    assert_eq!(
-        fork_input.get(..parent_input.len()),
-        Some(parent_input.as_slice()),
-        "fork should replay the parent's structured input except the replaced AGENTS.md copy"
-    );
-    // Each change leaves exactly one copy: the parent's is replaced, not followed by a notice.
+    assert_input_prefix_preserved(&requests[0], &requests[1], /*forked*/ true);
+    for pair in requests[1..].windows(2) {
+        assert_input_prefix_preserved(&pair[0], &pair[1], /*forked*/ false);
+    }
+    // Each change appends exactly once, including a refresh after the fork.
     let initial = expected_provider_only_instruction_fragment(OLD_GLOBAL_INSTRUCTIONS);
     let replacement = expected_provider_only_instruction_fragment(NEW_GLOBAL_INSTRUCTIONS);
-    assert_eq!(instruction_fragments(&requests[0]), vec![initial]);
+    assert_eq!(instruction_fragments(&requests[0]), vec![initial.clone()]);
     assert_eq!(
         instruction_fragments(&requests[1]),
-        vec![replacement.clone()]
+        vec![initial.clone(), replacement.clone()]
     );
-    assert_eq!(instruction_fragments(&requests[2]), vec![replacement]);
+    assert_eq!(
+        instruction_fragments(&requests[2]),
+        vec![initial.clone(), replacement.clone()]
+    );
     let refreshed = expected_provider_only_instruction_fragment("instructions changed after fork");
-    assert_eq!(instruction_fragments(&requests[3]), vec![refreshed]);
+    assert_eq!(
+        instruction_fragments(&requests[3]),
+        vec![initial, replacement, refreshed]
+    );
 
     Ok(())
 }
@@ -2656,10 +2663,11 @@ async fn run_subagent_global_instruction_case(fork_context: bool) -> Result<()> 
     // that applied snapshot without independently loading the global provider.
     let expected_fragment = expected_provider_only_instruction_fragment(OLD_GLOBAL_INSTRUCTIONS);
     assert_single_instruction_fragment(&seed_request, &expected_fragment);
-    // The parent's refresh replaced its first copy, so that is all a forked child can inherit.
+    // A full-history child inherits both copies; a fresh child gets only the applied snapshot.
     let replacement = expected_provider_only_instruction_fragment(NEW_GLOBAL_INSTRUCTIONS);
-    let inherited_fragments = vec![replacement];
+    let inherited_fragments = vec![expected_fragment, replacement];
     assert_eq!(instruction_fragments(&spawn_request), inherited_fragments);
+    assert_input_prefix_preserved(&seed_request, &spawn_request, /*forked*/ false);
     if fork_context {
         assert_eq!(instruction_fragments(&child_request), inherited_fragments);
     } else {
@@ -2679,15 +2687,7 @@ async fn run_subagent_global_instruction_case(fork_context: bool) -> Result<()> 
         "subagent reports the parent's applied global source"
     );
     if fork_context {
-        let seed_input = input_without_instruction_fragments(&seed_request);
-        let mut child_input = input_without_instruction_fragments(&child_request);
-        // The request prefix has a thread-scoped ID; retained history IDs stay unchanged.
-        child_input[0]["id"] = seed_input[0]["id"].clone();
-        assert_eq!(
-            child_input.get(..seed_input.len()),
-            Some(seed_input.as_slice()),
-            "forked subagent should replay the parent's structured input except the replaced AGENTS.md copy"
-        );
+        assert_input_prefix_preserved(&seed_request, &child_request, /*forked*/ true);
     } else {
         let child_user_texts = child_request.message_input_texts("user");
         assert_eq!(
@@ -2732,7 +2732,15 @@ async fn run_subagent_global_instruction_case(fork_context: bool) -> Result<()> 
         expected_provider_only_instruction_fragment("instructions changed after child creation");
     assert_eq!(
         instruction_fragments(&parent_follow_up.single_request()),
-        vec![refreshed]
+        inherited_fragments
+            .into_iter()
+            .chain(std::iter::once(refreshed))
+            .collect::<Vec<_>>()
+    );
+    assert_input_prefix_preserved(
+        &spawn_request,
+        &parent_follow_up.single_request(),
+        /*forked*/ false,
     );
 
     Ok(())

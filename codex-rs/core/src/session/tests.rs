@@ -2176,6 +2176,160 @@ async fn refresh_runtime_config_follows_the_smart_prune_switch() {
     assert_eq!(session.smart_prune_snapshot().await.enabled, enabled);
 }
 
+// Elpis: changing the Ledger switch must change the tools of the same open chat.
+#[tokio::test]
+async fn refresh_runtime_config_follows_the_subagent_switch_in_the_same_chat() {
+    let (session, first_turn, _rx) = make_session_and_context_with_auth_and_config_and_rx(
+        CodexAuth::from_api_key("Test API Key"),
+        Vec::new(),
+        |config| {
+            config.agents_enabled = true;
+            config.features.set_enabled(Feature::Collab, false).unwrap();
+        },
+    )
+    .await;
+    assert_eq!(first_turn.multi_agent_version, MultiAgentVersion::Disabled);
+
+    for enabled in [true, false, true] {
+        let original = session.get_config().await;
+        let mut next = original.as_ref().clone();
+        next.features.set_enabled(Feature::Collab, enabled).unwrap();
+        assert_eq!(
+            session
+                .refresh_runtime_config(Arc::clone(&original), next)
+                .await,
+            crate::ConfigRefreshOutcome::Published
+        );
+        let turn = session
+            .new_turn_with_default_settings(format!("subagents-{enabled}"), Default::default())
+            .await;
+        assert_eq!(
+            turn.multi_agent_version != MultiAgentVersion::Disabled,
+            enabled,
+            "the next turn of the same chat must follow the subagent switch"
+        );
+        if enabled {
+            assert_eq!(
+                session.multi_agent_version(),
+                Some(turn.multi_agent_version)
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn subagent_switch_off_overrides_explicit_v2() {
+    let home = tempfile::tempdir().unwrap();
+    let mut config = build_test_config(home.path()).await;
+    config.agents_enabled = true;
+    config
+        .features
+        .set_enabled(Feature::MultiAgentV2, true)
+        .unwrap();
+    config.features.set_enabled(Feature::Collab, false).unwrap();
+    assert_eq!(
+        config.multi_agent_version_override(),
+        Some(MultiAgentVersion::Disabled)
+    );
+}
+
+#[tokio::test]
+async fn enabling_subagents_does_not_enable_an_internal_reviewer() {
+    let (session, first_turn, _rx) = make_session_and_context_with_auth_and_config_and_rx(
+        CodexAuth::from_api_key("Test API Key"),
+        Vec::new(),
+        |config| {
+            config.agents_enabled = true;
+            config.features.set_enabled(Feature::Collab, false).unwrap();
+        },
+    )
+    .await;
+    let mut config = session.get_config().await.as_ref().clone();
+    config.features.set_enabled(Feature::Collab, true).unwrap();
+    config
+        .features
+        .set_enabled(Feature::MultiAgentV2, true)
+        .unwrap();
+    assert_eq!(
+        session.resolve_multi_agent_version_for_model(
+            first_turn.model_info(),
+            &config,
+            &SessionSource::Internal(InternalSessionSource::Guardian),
+        ),
+        MultiAgentVersion::Disabled
+    );
+}
+
+#[tokio::test]
+async fn enabling_subagents_does_not_enable_an_isolated_root() {
+    let (mut session, first_turn) = make_session_and_context().await;
+    session.isolation = codex_extension_api::SessionIsolation::Isolated;
+    session.multi_agent_version = OnceLock::from(MultiAgentVersion::Disabled);
+    let mut config = first_turn.config.as_ref().clone();
+    config.agents_enabled = true;
+    config.features.set_enabled(Feature::Collab, true).unwrap();
+    config
+        .features
+        .set_enabled(Feature::MultiAgentV2, true)
+        .unwrap();
+    assert_eq!(
+        session.resolve_multi_agent_version_for_model(
+            first_turn.model_info(),
+            &config,
+            &SessionSource::Cli,
+        ),
+        MultiAgentVersion::Disabled
+    );
+}
+
+#[tokio::test]
+async fn reloading_user_file_updates_the_subagent_switch() {
+    let home = tempfile::tempdir().unwrap();
+    let (session, first_turn, _rx) = make_session_and_context_with_auth_config_home_and_rx(
+        CodexAuth::from_api_key("Test API Key"),
+        Vec::new(),
+        home.path(),
+        |config| {
+            config.agents_enabled = true;
+            config.features.set_enabled(Feature::Collab, false).unwrap();
+        },
+    )
+    .await;
+    assert_eq!(first_turn.multi_agent_version, MultiAgentVersion::Disabled);
+    std::fs::write(
+        home.path().join(CONFIG_TOML_FILE),
+        "[features]\nmulti_agent = true\n",
+    )
+    .unwrap();
+    session.reload_user_config_layer().await;
+    let turn = session
+        .new_turn_with_default_settings("after-reload".to_string(), Default::default())
+        .await;
+    assert_ne!(turn.multi_agent_version, MultiAgentVersion::Disabled);
+}
+
+#[tokio::test]
+async fn mcp_refresh_does_not_change_the_subagent_switch() {
+    let (session, _first_turn, _rx) = make_session_and_context_with_auth_and_config_and_rx(
+        CodexAuth::from_api_key("Test API Key"),
+        Vec::new(),
+        |config| {
+            config.features.set_enabled(Feature::Collab, false).unwrap();
+        },
+    )
+    .await;
+    let original = session.get_config().await;
+    let mut next = original.as_ref().clone();
+    next.features.set_enabled(Feature::Collab, true).unwrap();
+    assert_eq!(
+        session
+            .refresh_mcp_config(Arc::clone(&original), next)
+            .await,
+        crate::ConfigRefreshOutcome::Published
+    );
+    assert!(!session.get_config().await.features.enabled(Feature::Collab));
+}
+
 #[test_case::test_case(false; "published")]
 #[test_case::test_case(true; "rejected")]
 #[tokio::test]
@@ -7148,6 +7302,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         windows_sandbox_proxy_settings_mode:
             codex_sandboxing::WindowsSandboxProxySettingsMode::Reconcile,
         multi_agent_version: OnceLock::from(config.multi_agent_version_from_features()),
+        reenabled_multi_agent_version: OnceLock::new(),
         mcp_refresh: McpRefresh::new(),
         mcp_tool_approval_metadata: Default::default(),
         mcp_elicitation_reviewer_handle: OnceLock::new(),
@@ -9416,6 +9571,7 @@ where
         windows_sandbox_proxy_settings_mode:
             codex_sandboxing::WindowsSandboxProxySettingsMode::Reconcile,
         multi_agent_version: OnceLock::from(config.multi_agent_version_from_features()),
+        reenabled_multi_agent_version: OnceLock::new(),
         mcp_refresh: McpRefresh::new(),
         mcp_tool_approval_metadata: Default::default(),
         mcp_elicitation_reviewer_handle: OnceLock::new(),

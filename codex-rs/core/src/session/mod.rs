@@ -782,9 +782,18 @@ impl Session {
             token_budget::apply_model_defaults(Arc::make_mut(&mut config), &model_info);
         }
         let configured_config = Arc::clone(&config);
-        let multi_agent_version = config.multi_agent_version_override().or_else(|| {
-            resolve_multi_agent_version(&conversation_history, inherited_multi_agent_version)
-        });
+        let multi_agent_version = if inherited_multi_agent_version
+            == Some(MultiAgentVersion::Disabled)
+            && (isolation == codex_extension_api::SessionIsolation::Isolated
+                || session_source.is_non_root_agent())
+        {
+            // An internal delegate's inherited restriction must win even over V2.
+            Some(MultiAgentVersion::Disabled)
+        } else {
+            config.multi_agent_version_override().or_else(|| {
+                resolve_multi_agent_version(&conversation_history, inherited_multi_agent_version)
+            })
+        };
         let history_mode = conversation_history.get_history_mode(
             requested_history_mode.unwrap_or_else(|| thread_store.default_history_mode()),
         );
@@ -4193,7 +4202,10 @@ impl Session {
     }
 
     pub(crate) fn multi_agent_version(&self) -> Option<MultiAgentVersion> {
-        self.multi_agent_version.get().copied()
+        self.reenabled_multi_agent_version
+            .get()
+            .or_else(|| self.multi_agent_version.get())
+            .copied()
     }
 
     pub(crate) fn set_multi_agent_version_if_unset(
@@ -4207,8 +4219,24 @@ impl Session {
         &self,
         model_info: &ModelInfo,
         config: &Config,
+        session_source: &SessionSource,
     ) -> MultiAgentVersion {
         if let Some(multi_agent_version) = self.multi_agent_version() {
+            if multi_agent_version == MultiAgentVersion::Disabled
+                && (self.isolation == codex_extension_api::SessionIsolation::Isolated
+                    || session_source.is_non_root_agent())
+            {
+                return MultiAgentVersion::Disabled;
+            }
+            if multi_agent_version == MultiAgentVersion::Disabled
+                && config.agents_enabled
+                && config.features.enabled(Feature::Collab)
+            {
+                let selected = config.multi_agent_version_for_model(model_info.multi_agent_version);
+                if selected != MultiAgentVersion::Disabled {
+                    return *self.reenabled_multi_agent_version.get_or_init(|| selected);
+                }
+            }
             return config.multi_agent_version_for_model(Some(multi_agent_version));
         }
 

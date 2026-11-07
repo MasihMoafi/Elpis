@@ -52,6 +52,8 @@ The [TUI Ledger](../codex-rs/tui/src/chatwidget/context_ledger.rs) is visible by
 
 While focused, Up/Down or `j`/`k` move; Space or Enter toggles a row; `i` toggles all eligible rows; `p` toggles Smart Prune; `s` toggles subagents; `m` picks the pruning model; `w` shows row reasons. Typing returns to the draft. [Keys](../codex-rs/tui/src/chatwidget/context_ledger.rs).
 
+The Subagents switch controls delegation on the next turn of an open chat, including one started while it was off; off also wins over V2. [Runtime check](../scripts/subagents-switch-runtime.test.cts).
+
 The Ledger saves workspace choices in `$ELPIS_HOME/context/workspaces/<workspace>/admission.toml`. Global, project and development rules start admitted; goal, checkpoint and memory start excluded until selected. `/add <path>` adds a file or directory. An invalid admission record fails closed for instruction files. [Admission](../codex-rs/core/src/elpis_context.rs); [instruction filtering](../codex-rs/core/src/elpis_admission.rs); [`/add`](../codex-rs/tui/src/chatwidget/elpis_ledger_glue.rs).
 
 When Memory status is ready, its row includes a missing file, which cannot be admitted. Lowercase `c` creates a minimal template without admitting it; Space or Enter toggles an existing file for the next request. Bulk admission skips Memory while its status or change is pending. Ctrl+click follows a row's file link. [Memory row](../codex-rs/tui/src/chatwidget/context_ledger.rs); [status and creation](../codex-rs/core/src/elpis_context.rs).

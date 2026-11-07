@@ -1294,13 +1294,26 @@ impl Session {
                 self.services
                     .thread_extension_data
                     .insert(model_info.clone());
-                self.resolve_multi_agent_version_for_model(&model_info, &per_turn_config)
+                self.resolve_multi_agent_version_for_model(
+                    &model_info,
+                    &per_turn_config,
+                    &session_configuration.session_source,
+                )
             }
             TurnContextBuildMode::StartupPrewarm | TurnContextBuildMode::InjectItems => {
-                per_turn_config.multi_agent_version_for_model(
-                    self.multi_agent_version()
-                        .or(model_info.multi_agent_version),
-                )
+                let saved = self.multi_agent_version();
+                if saved == Some(MultiAgentVersion::Disabled)
+                    && (self.isolation == codex_extension_api::SessionIsolation::Isolated
+                        || session_configuration.session_source.is_non_root_agent())
+                {
+                    MultiAgentVersion::Disabled
+                } else {
+                    per_turn_config.multi_agent_version_for_model(
+                        saved
+                            .filter(|version| *version != MultiAgentVersion::Disabled)
+                            .or(model_info.multi_agent_version),
+                    )
+                }
             }
         };
         let plugins_input = per_turn_config.plugins_config_input();

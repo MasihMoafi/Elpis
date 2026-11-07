@@ -12,6 +12,23 @@ negative() {
   printf 'PASS negative control failed as expected: %s\n' "$*"
 }
 ELPIS_BIN="$binary" node scripts/continuity-admission-runtime.test.cjs
+continuity_negative() {
+  local mode=$1 expected=$2 output
+  if output=$(ELPIS_BIN="$binary" ELPIS_CONTINUITY_NEGATIVE_CONTROL="$mode" node scripts/continuity-admission-runtime.test.cjs 2>&1); then
+    printf 'FAIL continuity negative control unexpectedly passed: %s\n' "$mode" >&2
+    exit 1
+  fi
+  if [[ "$output" != *"AssertionError [ERR_ASSERTION]: $expected"* ]]; then
+    printf 'FAIL continuity negative control %s failed for the wrong reason:\n%s\n' "$mode" "$output" >&2
+    exit 1
+  fi
+  printf 'PASS continuity negative control failed as expected: %s\n' "$mode"
+}
+continuity_negative disable-memory-on-admission 'on request had the wrong MEMORY sentinel count'
+continuity_negative disable-agents-on-admission 'on request had the wrong AGENTS withdrawal note count'
+continuity_negative disable-dev-on-admission 'withdrawn request had the wrong dev-rule sentinel count'
+continuity_negative disable-added-on-admission 'on request had the wrong added-file sentinel count'
+continuity_negative disable-continuity-on-admission 'on request had the wrong GOAL sentinel count'
 positive pressure-compaction
 negative pressure-compaction --drop-pressure
 for mode in local token-budget remote-v2; do

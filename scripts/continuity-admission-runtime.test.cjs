@@ -1,5 +1,5 @@
-// Ledger admission eval: the provider request carries exactly the sources the Context
-// Ledger admits (MEMORY, GOAL, ES, global and project AGENTS.md, dev rules, /add files).
+// Ledger admission eval: admitted sources reach the provider, and withdrawals append
+// notices while earlier context stays in the request until compaction.
 // usage: ELPIS_BIN=/abs/elpis-next node scripts/continuity-admission-runtime.test.cjs
 //    or: ELPIS_APP_SERVER_BIN=/abs/codex-app-server node scripts/continuity-admission-runtime.test.cjs
 // Runs only against a loopback fake provider with a fresh temporary home; wrap it in
@@ -23,6 +23,8 @@ const GOAL_SENTINEL = "ELPIS_GOAL_SENTINEL_c61e0b7a24";
 const CHECKPOINT_SENTINEL = "ELPIS_CHECKPOINT_SENTINEL_2d9f4a13b8";
 const USER_SENTINEL = "ELPIS_NEIGHBOR_USER_SENTINEL_a329510b8e";
 const DEVELOPER_SENTINEL = "ELPIS_NEIGHBOR_DEVELOPER_SENTINEL_786ed03a7f";
+const AGENTS_WITHDRAWAL = "The user withdrew these AGENTS.md instructions";
+const CONTINUITY_UPDATE = "## Elpis Admitted Context: update";
 const NEGATIVE_CONTROLS = new Set([
   "disable-memory-on-admission",
   "disable-agents-on-admission",
@@ -254,6 +256,11 @@ function occurrenceCount(value, sentinel) {
   return JSON.stringify(value).split(sentinel).length - 1;
 }
 
+function messageText(item) {
+  return typeof item.content === "string" ? item.content
+    : (item.content || []).map(part => part.text || "").join("\n");
+}
+
 async function complete(threadId, text) {
   let listener;
   let exitListener;
@@ -324,6 +331,8 @@ function observe() {
     checkpointSentinelCount: occurrenceCount(body, CHECKPOINT_SENTINEL),
     userSentinelCount: occurrenceCount(body, USER_SENTINEL),
     developerSentinelCount: occurrenceCount(body, DEVELOPER_SENTINEL),
+    agentsWithdrawalCount: occurrenceCount(body, AGENTS_WITHDRAWAL),
+    continuityUpdateCount: occurrenceCount(body, CONTINUITY_UPDATE),
   }));
 }
 
@@ -401,23 +410,21 @@ async function run() {
   assert.equal(requests.length, STAGES.length, "unexpected auxiliary provider request count");
   assert.deepEqual(requests.map(entry => entry.stage), STAGES, "provider request stages changed");
   for (const { stage, body } of requests) {
-    const expectedMemoryCount = stage === "on" ? 1 : 0;
-    const expectedAgentsCount = ["default", "off", "on"].includes(stage) ? 1 : 0;
-    const expectedDevRuleCount = stage === "default" || stage === "off" || stage === "withdrawn" ? 1 : 0;
-    const expectedAddedFileCount = stage === "on" ? 1 : 0;
+    const expectedContinuityCount = ["on", "withdrawn", "malformed"].includes(stage) ? 1 : 0;
+    const expectedDevRuleCount = ["withdrawn", "malformed"].includes(stage) ? 2 : 1;
     assert.equal(
       occurrenceCount(body, MEMORY_SENTINEL),
-      expectedMemoryCount,
+      expectedContinuityCount,
       `${stage} request had the wrong MEMORY sentinel count`,
     );
     assert.equal(
       occurrenceCount(body, GLOBAL_AGENTS_SENTINEL),
-      expectedAgentsCount,
+      1,
       `${stage} request had the wrong global AGENTS sentinel count`,
     );
     assert.equal(
       occurrenceCount(body, PROJECT_AGENTS_SENTINEL),
-      expectedAgentsCount,
+      1,
       `${stage} request had the wrong project AGENTS sentinel count`,
     );
     assert.equal(
@@ -427,22 +434,66 @@ async function run() {
     );
     assert.equal(
       occurrenceCount(body, ADDED_FILE_SENTINEL),
-      expectedAddedFileCount,
+      expectedContinuityCount,
       `${stage} request had the wrong added-file sentinel count`,
     );
-    // Admitted GOAL and ES reach the request once, like MEMORY; excluded, they are absent.
+    // GOAL and ES, like MEMORY and the added file, remain in history once admitted.
     for (const [name, sentinel] of [["GOAL", GOAL_SENTINEL], ["ES", CHECKPOINT_SENTINEL]]) {
       assert.equal(
         occurrenceCount(body, sentinel),
-        expectedMemoryCount,
+        expectedContinuityCount,
         `${stage} request had the wrong ${name} sentinel count`,
       );
     }
     assert.match(JSON.stringify(body), new RegExp(DEVELOPER_SENTINEL), `${stage} lost developer context`);
+    assert.equal(
+      occurrenceCount(body, AGENTS_WITHDRAWAL),
+      ["withdrawn", "malformed"].includes(stage) ? 1 : 0,
+      `${stage} request had the wrong AGENTS withdrawal note count`,
+    );
+    assert.equal(
+      occurrenceCount(body, CONTINUITY_UPDATE),
+      { default: 0, off: 0, on: 1, withdrawn: 2, malformed: 3 }[stage],
+      `${stage} request had the wrong continuity update count`,
+    );
   }
-  for (const stage of ["off", "on", "withdrawn", "malformed"]) {
-    const body = requests.find(entry => entry.stage === stage).body;
+  const appendedDeveloperText = new Map();
+  for (let index = 1; index < requests.length; index++) {
+    const { stage, body } = requests[index];
+    const previousInput = requests[index - 1].body.input;
+    assert(Array.isArray(previousInput) && Array.isArray(body.input), `${stage} request has no input array`);
+    assert.deepEqual(
+      body.input.slice(0, previousInput.length),
+      previousInput,
+      `${stage} request changed the previous input instead of appending to it`,
+    );
     assert.match(JSON.stringify(body), new RegExp(USER_SENTINEL), `${stage} lost neighboring user history`);
+    const appended = body.input.slice(previousInput.length);
+    appendedDeveloperText.set(stage, appended
+      .filter(item => item.role === "developer")
+      .map(messageText)
+      .join("\n"));
+    if (stage === "withdrawn") {
+      const text = appended.filter(item => item.role === "user").map(messageText).join("\n");
+      assert(
+        text.includes(AGENTS_WITHDRAWAL) && text.includes("Do not follow the AGENTS.md instructions given earlier"),
+        "withdrawn did not instruct the model to ignore the earlier AGENTS.md instructions",
+      );
+    }
+  }
+
+  // Withdrawal notices tell the model to ignore the named historical text.
+  for (const [stage, paths] of [
+    ["on", [path.join(devRules, devRuleName)]],
+    ["withdrawn", [memoryFile, path.join(threadDir, "GOAL.md"), path.join(threadDir, "ES.md"), addedFile]],
+    ["malformed", [path.join(devRules, devRuleName)]],
+  ]) {
+    const text = appendedDeveloperText.get(stage);
+    assert(text.includes(CONTINUITY_UPDATE), `${stage} did not append a continuity update`);
+    assert(text.includes("ignore their earlier text"), `${stage} did not instruct the model to ignore withdrawn sources`);
+    for (const source of paths) {
+      assert(text.split("\n").includes(`- ${source}`), `${stage} did not name withdrawn source ${source}`);
+    }
   }
 
   const observations = observe();
@@ -454,14 +505,14 @@ async function run() {
     observations,
     checks: [
       "MEMORY is absent by default and while explicitly disabled",
-      "GOAL and ES are absent by default, admitted once when enabled, then withdrawn",
+      "GOAL and ES are absent by default and appended once when enabled",
       "MEMORY is admitted exactly once when enabled",
-      "disabling admission removes MEMORY on the next turn in the same thread",
-      "malformed admission fails closed",
-      "global and project AGENTS are admitted by default, then withdrawn when disabled",
-      "the configured dev rule is admitted by default, excluded explicitly, then restored",
-      "a file added with /add is sent only while it is included",
-      "neighboring user and developer context survives slot replacement",
+      "withdrawals append notices naming the affected sources; earlier text stays until compaction",
+      "malformed admission withdraws the remaining admitted dev rule",
+      "global and project AGENTS are admitted by default, then withdrawn with a note",
+      "the configured dev rule is admitted by default, withdrawn, and appended again when restored",
+      "a file added with /add is appended when included and named when withdrawn",
+      "neighboring user and developer context and the full request prefix survive changes",
       "one provider request occurs per turn with no auxiliary request",
     ],
   }, null, 2));
