@@ -6,7 +6,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { checkInventory, discoverTests } from './test-gate.mjs';
+import { checkInventory, discoverTests } from './test-gate.mts';
 
 // The retained UI regressions: the 21 October integration of every approved desktop fix. Move it only in a commit that
 // names the request (Masih's words) that changes a retained behaviour; never to make a failing gate pass.

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Elpis pre-commit (run by the shared hook in ~/Desktop/p/skills/dev/secret-guard/hooks/pre-commit), modelled on DeepSeek
 # Harness's lefthook.yml: whitespace errors in the staged changes, then oxlint on the staged desktop JS/TS files against
-# the ratchet in apps/elpis-desktop/strict-baseline.json (scripts/strict-baseline.mjs). Type checks run before a push.
+# the ratchet in apps/elpis-desktop/strict-baseline.json (scripts/strict-baseline.mts). Type checks run before a push.
 set -euo pipefail
 repo="$(git rev-parse --show-toplevel)"; app="$repo/apps/elpis-desktop"
 git diff --cached --check
@@ -11,4 +11,4 @@ mapfile -t files < <(git diff --cached --name-only --diff-filter=ACMR -- 'apps/e
 if [ ! -x "$app/node_modules/.bin/oxlint" ]; then
   echo "pre-commit: oxlint is not installed; run: (cd apps/elpis-desktop && npm ci --ignore-scripts)" >&2; exit 1
 fi
-cd "$app" && PATH="/usr/local/node/bin:$PATH" nice -n 19 node scripts/strict-baseline.mjs lint --files "${files[@]}"
+cd "$app" && PATH="/usr/local/node/bin:$PATH" nice -n 19 node scripts/strict-baseline.mts lint --files "${files[@]}"

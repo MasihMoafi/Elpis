@@ -17,7 +17,7 @@ import { useThemeCharacter } from "@/lib/theme-characters";
 import { api, signedIn } from "@/lib/api";
 import { MATILDA_CHANGED, MATILDA_CHAT_SHOWN } from "@/lib/matilda";
 import { appStorage } from "@/lib/projects";
-import { MATILDA_SHOTS, MATILDA_SHOTS_LIGHT } from "@/bridge/matilda-face.cjs";
+import { MATILDA_SHOTS, MATILDA_SHOTS_LIGHT } from "@/bridge/matilda-face.cts";
 import { errorText } from "@/lib/error-text.mts";
 
 type Track = { title: string; artist: string; uri: string; status: string; canPlay: boolean; canPause: boolean; canNext: boolean; muted: boolean; canMute: boolean };
@@ -46,7 +46,7 @@ const stillness = () => typeof matchMedia === "function" && matchMedia("(prefers
  * conversation, and when she is thinking"). */
 export function moodFromWords(words: string): Mood {
   const text = words.toLowerCase();
-  // Her kiss portraits join MATILDA_SHOTS after its literal (bridge/matilda-face.cjs), so its type does not list them.
+  // Her kiss portraits join MATILDA_SHOTS after its literal (bridge/matilda-face.cts), so its type does not list them.
   if (/\b(kiss|kisses|love you|my love|darling|sweetheart|xoxo)\b|😘|💋/.test(text)) return "kissSoft" in MATILDA_SHOTS ? "kissSoft" as Mood : "softSmile";
   if (/\b(haha|ha ha|lol|funny|joke|kidding|tease|teasing|naughty|cheeky)\b|😉|😜/.test(text)) return "wink";
   if (/\?\s*$/.test(text.trim())) return "tiltSmile";

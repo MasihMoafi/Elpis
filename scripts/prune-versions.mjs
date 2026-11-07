@@ -24,7 +24,9 @@ function inUse(dirs) {
   return used;
 }
 
-/** Trashes all but the versions kept (see the header) and returns the folders it trashed. */
+/** Trashes all but the versions kept (see the header) and returns the folders it trashed.
+ * @param {string} root
+ * @param {{ newest?: number, keep?: string[], namedIn?: string[], trash?: (dir: string) => unknown }} [options] */
 export function pruneVersions(root, { newest = 5, keep = [], namedIn = [], trash = dir => execFileSync('gio', ['trash', dir]) } = {}) {
   const base = fs.realpathSync(root);
   const born = dir => { const stat = fs.statSync(dir); return stat.birthtimeMs || stat.mtimeMs; };
@@ -45,10 +47,13 @@ export function pruneVersions(root, { newest = 5, keep = [], namedIn = [], trash
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const [root, ...args] = process.argv.slice(2);
-  const keep = [], namedIn = [];
+  if (!root) { console.error('usage: prune-versions.mjs VERSIONS [--keep PATH]... [--named-in FILE]...'); process.exit(2); }
+  /** @type {string[]} */ const keep = [];
+  /** @type {string[]} */ const namedIn = [];
   for (let i = 0; i < args.length; i += 2) {
-    if (args[i] === '--keep') keep.push(args[i + 1]);
-    else if (args[i] === '--named-in') namedIn.push(args[i + 1]);
+    const value = args[i + 1];
+    if (args[i] === '--keep' && value) keep.push(value);
+    else if (args[i] === '--named-in' && value) namedIn.push(value);
     else { console.error('usage: prune-versions.mjs VERSIONS [--keep PATH]... [--named-in FILE]...'); process.exit(2); }
   }
   const trashed = pruneVersions(root, { keep, namedIn });

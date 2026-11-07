@@ -1,4 +1,4 @@
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { DesktopClient } from './client.mts';
@@ -6,13 +6,14 @@ import { browserMcpConfig } from './browser-mcp.mts';
 
 const threadId = '00000000-0000-0000-0000-000000000001';
 const schema = {type:'object',properties:{count:{type:'integer',minimum:1,maximum:4},email:{type:'string',format:'email'},enabled:{type:'boolean'},tags:{type:'array',items:{type:'string',enum:['a','b']},minItems:1,maxItems:2}},required:['count','email','enabled']};
-async function fixture(t) {
-  const socket = new EventEmitter(); socket.sent=[]; socket.close=()=>{};
-  socket.send=raw=>{const request=JSON.parse(raw);socket.sent.push(request);if(request.method)queueMicrotask(()=>socket.emit('message',JSON.stringify({id:request.id,result:request.method==='thread/list'?{data:[{id:threadId,status:{type:'active'}}],nextCursor:null}:{thread:{id:threadId}}})));};
+type WireMessage = { id: number; method: string; params: { threadId: string; expectedTurnId: string; input: { text: string }[] }; error: { code: number } };
+async function fixture(t: TestContext) {
+  const socket = Object.assign(new EventEmitter(), { sent: [] as WireMessage[], close() {}, send(_raw: string) {} });
+  socket.send=(raw: string)=>{const request=JSON.parse(raw);socket.sent.push(request);if(request.method)queueMicrotask(()=>socket.emit('message',JSON.stringify({id:request.id,result:request.method==='thread/list'?{data:[{id:threadId,status:{type:'active'}}],nextCursor:null}:{thread:{id:threadId}}})));};
   const client=new DesktopClient(socket);t.after(()=>client.close());await client.listThreads();
   let next=100;
-  const request=(method,params)=>{const wireId=++next;socket.emit('message',JSON.stringify({id:wireId,method,params:{threadId,...params}}));const approval=client.pendingApprovals.at(-1);assert.ok(approval,`${method} must reach the card`);return {id:approval.id,wireId};};
-  const answer=(pending,body,result)=>{client.answerApproval(pending.id,body);assert.deepEqual(socket.sent.at(-1),{id:pending.wireId,result});assert.throws(()=>client.answerApproval(pending.id,body),/no longer pending/);};
+  const request=(method: string,params: Record<string, unknown>)=>{const wireId=++next;socket.emit('message',JSON.stringify({id:wireId,method,params:{threadId,...params}}));const approval=client.pendingApprovals.at(-1);assert.ok(approval,`${method} must reach the card`);return {id:approval.id,wireId};};
+  const answer=(pending: { id: string; wireId: number },body: unknown,result: unknown)=>{client.answerApproval(pending.id,body);assert.deepEqual(socket.sent.at(-1),{id:pending.wireId,result});assert.throws(()=>client.answerApproval(pending.id,body),/no longer pending/);};
   return {client,socket,request,answer};
 }
 test('MCP tool approvals round-trip only advertised persistence and TUI actions',async t=>{
@@ -40,7 +41,7 @@ test('permissions grant turn/session/strict review or deny without granting extr
   assert.equal(f.client.pendingApprovals.length,1);
 });
 test('unknown future approval still reports its method',async t=>{
-  const f=await fixture(t);const events=[];f.client.on('event',e=>events.push(e));f.socket.emit('message',JSON.stringify({id:500,method:'future/requestApproval',params:{threadId}}));assert.equal(f.socket.sent.at(-1).error.code,-32601);assert.equal(events.at(-1).data.method,'future/requestApproval');
+  const f=await fixture(t);const events: { data: { method: string } }[]=[];f.client.on('event',e=>events.push(e));f.socket.emit('message',JSON.stringify({id:500,method:'future/requestApproval',params:{threadId}}));assert.equal(f.socket.sent.at(-1)?.error.code,-32601);assert.equal(events.at(-1)?.data.method,'future/requestApproval');
 });
 test('browser config gates opening once per chat and approves interactions in the engine',()=>{
   const config=browserMcpConfig('/tmp/fixture.sock')['mcp_servers.elpis_browser'];
@@ -53,7 +54,8 @@ test('"Deny, and tell Elpis what to do instead" steers the waiting turn, then de
   assert.deepEqual(await f.client.denyInstead(p.id,{text}),{resolved:true});
   const steer=f.socket.sent.findIndex(message=>message.method==='turn/steer'),decline=f.socket.sent.findIndex(message=>message.id===p.wireId);
   assert.ok(steer>=0&&steer<decline,'the instruction reaches the turn before the denial lets it go on');
-  assert.equal(f.socket.sent[steer].params.threadId,threadId);assert.equal(f.socket.sent[steer].params.expectedTurnId,'turn-1');assert.equal(f.socket.sent[steer].params.input[0].text,text);
+  const steered = f.socket.sent[steer]; assert.ok(steered);
+  assert.equal(steered.params.threadId,threadId);assert.equal(steered.params.expectedTurnId,'turn-1');assert.equal(steered.params.input[0]?.text,text);
   assert.deepEqual(f.socket.sent[decline],{id:p.wireId,result:{decision:'decline'}});assert.equal(f.client.pendingApprovals.length,0);
   const patch=f.request('item/fileChange/requestApproval',{turnId:'turn-1',itemId:'patch-1'});await f.client.denyInstead(patch.id,{text:'Rename it in place.'});
   assert.deepEqual(f.socket.sent.at(-1),{id:patch.wireId,result:{decision:'decline'}});
@@ -76,10 +78,10 @@ test('POST /api/approvals/<id>/instead reaches denyInstead',async t=>{
   const f=await fixture(t);const p=f.request('item/commandExecution/requestApproval',{turnId:'turn-1',itemId:'cmd-1',command:'make'});
   const dir=await fs.mkdtemp(path.join(os.tmpdir(),'elpis-approvals-test-'));const app=await startDesktopServer({client:f.client,trashFile:path.join(dir,'deleted-chats.json')});t.after(()=>app.close());
   const url=new URL(app.url),origin=url.origin,token=new URLSearchParams(url.hash.slice(1)).get('token');
-  const post=(pathname,data,cookie)=>fetch(origin+pathname,{method:'POST',headers:{'Content-Type':'application/json',Origin:origin,...(cookie?{Cookie:cookie}:{})},body:JSON.stringify(data)});
-  const cookie=(await post('/api/session',{token})).headers.get('set-cookie').split(';')[0];
+  const post=(pathname: string,data: unknown,cookie?: string)=>fetch(origin+pathname,{method:'POST',headers:{'Content-Type':'application/json',Origin:origin,...(cookie?{Cookie:cookie}:{})},body:JSON.stringify(data)});
+  const cookie=(await post('/api/session',{token})).headers.get('set-cookie')?.split(';')[0]; assert.ok(cookie);
   const response=await post(`/api/approvals/${p.id}/instead`,{text:'Run make test instead.'},cookie);
   assert.equal(response.status,200);assert.deepEqual(await response.json(),{resolved:true});
-  assert.equal(f.socket.sent.find(message=>message.method==='turn/steer').params.input[0].text,'Run make test instead.');
+  assert.equal(f.socket.sent.find(message=>message.method==='turn/steer')?.params.input[0]?.text,'Run make test instead.');
   assert.deepEqual(f.socket.sent.at(-1),{id:p.wireId,result:{decision:'decline'}});
 });

@@ -3,7 +3,7 @@ name: Elpis desktop
 # Builds the desktop renderer and runs the full test set (every UI shard and the fast, bridge and desktop tiers) on
 # main, integrate/**, build/** and every pull request (6 Nov, Masih approved running it beyond build/**). Since 22
 # October the GUI app also builds locally (docs/LOCAL_BUILD_RULES.md); the build/** artifact is the alternative that
-# scripts/install-desktop.mjs --actions installs, the artifact of exactly that commit.
+# scripts/install-desktop.mts --actions installs, the artifact of exactly that commit.
 on:
   workflow_dispatch:
   pull_request:
@@ -44,7 +44,7 @@ jobs:
           restore-keys: next-${{ hashFiles('apps/elpis-desktop/package-lock.json') }}-
       - name: Build the renderer
         run: |
-          node bridge/build-resources.mjs
+          node bridge/build-resources.mts
           npm run -s build
           printf '%s\n' "$GITHUB_SHA" > out/.commit
       - name: Prepare the retained UI checkpoint
@@ -98,7 +98,7 @@ jobs:
       - name: Install the locked dependencies and test resources
         run: |
           npm ci --ignore-scripts --no-audit --no-fund
-          node bridge/build-resources.mjs
+          node bridge/build-resources.mts
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: renderer-unverified

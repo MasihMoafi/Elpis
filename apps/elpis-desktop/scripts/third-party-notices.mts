@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// third-party-notices.mjs PACKAGE_ROOT OUT [RUST_LIST]: the licence notices a package of Elpis must carry.
+// third-party-notices.mts PACKAGE_ROOT OUT [RUST_LIST]: the licence notices a package of Elpis must carry.
 // 1. Every npm package shipped as files inside PACKAGE_ROOT (any node_modules folder in it), with its licence text.
 // 2. The libraries bundled into the desktop renderer: the app's production dependencies, without build-only tools.
 // 3. The fonts Excalidraw (Love Spot) bundles, under the SIL Open Font License 1.1.
@@ -9,7 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const [root, out, rustList] = process.argv.slice(2);
-if (!root || !out) { console.error('usage: third-party-notices.mjs PACKAGE_ROOT OUT [RUST_LIST]'); process.exit(2); }
+if (!root || !out) { console.error('usage: third-party-notices.mts PACKAGE_ROOT OUT [RUST_LIST]'); process.exit(2); }
 const app = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const LICENCE = /^(licen[cs]e|copying|notice)(\.(md|txt|markdown))?$/i;
 // Build-time only: they produce the renderer and are not in it (sharp and libvips optimise images during the build).
@@ -27,14 +27,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
 COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
 OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.`;
-const entries = new Map();
-const read = file => { try { return fs.readFileSync(file, 'utf8'); } catch { return null; } };
-function add(dir, from) {
+const entries = new Map<string, { name: string; version: string; licence: string; text: string | null; from: string }>();
+const read = (file: string) => { try { return fs.readFileSync(file, 'utf8'); } catch { return null; } };
+function add(dir: string, from: string) {
   const pkg = JSON.parse(read(path.join(dir, 'package.json')) || 'null');
   if (!pkg?.name || BUILD_ONLY.test(pkg.name)) return;
   const key = `${pkg.name}@${pkg.version}`;
   if (entries.has(key)) return;
-  const licence = typeof pkg.license === 'string' ? pkg.license : (pkg.license?.type ?? ((pkg.licenses || []).map(l => l.type).join(' OR ') || 'see text'));
+  const licence = typeof pkg.license === 'string' ? pkg.license : (pkg.license?.type ?? ((pkg.licenses || []).map((l: { type: string }) => l.type).join(' OR ') || 'see text'));
   let text = null;
   try { for (const name of fs.readdirSync(dir)) if (LICENCE.test(name)) { text = read(path.join(dir, name)); if (text) break; } } catch {}
   // A package published without its licence file still carries its licence: write the standard MIT text for it.
@@ -43,7 +43,7 @@ function add(dir, from) {
   entries.set(key, { name: pkg.name, version: pkg.version, licence: licence === 'see text' && /\bMIT License\b|Permission is hereby granted, free of charge/.test(text || '') ? 'MIT' : licence, text, from });
 }
 // 1. Packages shipped as files.
-function walk(dir) {
+function walk(dir: string) {
   let list; try { list = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
   for (const item of list) {
     if (!item.isDirectory()) continue;
@@ -60,7 +60,7 @@ function walk(dir) {
 }
 walk(root);
 // 2. The renderer's bundled libraries.
-const lock = JSON.parse(fs.readFileSync(path.join(app, 'package-lock.json'), 'utf8'));
+const lock: { packages: Record<string, { dev?: boolean; optional?: boolean }> } = JSON.parse(fs.readFileSync(path.join(app, 'package-lock.json'), 'utf8'));
 for (const [where, meta] of Object.entries(lock.packages)) if (where && !meta.dev && !meta.optional) add(path.join(app, where), 'bundled in the desktop window');
 
 const ofl = read(path.join(app, 'scripts/OFL-1.1.txt'));
@@ -84,7 +84,7 @@ const parts = [
   '== Licence texts ==',
   '',
   '-- SIL Open Font License 1.1 --', ofl.trim(), '',
-  ...sorted.filter(e => e.text).flatMap(e => [`-- ${e.name} ${e.version} --`, e.text.trim(), '']),
+  ...sorted.filter(e => e.text).flatMap(e => [`-- ${e.name} ${e.version} --`, e.text?.trim() ?? '', '']),
 ];
 fs.writeFileSync(out, parts.join('\n') + '\n');
 console.log(`${out}: ${sorted.length} npm packages${rust ? ', Rust crates' : ''}`);

@@ -13,7 +13,7 @@ All run from `apps/elpis-desktop` and in CI (`.github/workflows/lint.yml`, job `
 - `npm run typecheck`: the renderer, which must stay at zero errors.
 - `npm run typecheck:strict` (`tsconfig.node.json`, `tsconfig.strict.json`): the JS with `checkJs`, and the renderer under `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noImplicitOverride` and `noFallthroughCasesInSwitch`.
 - `npm run lint` (oxlint, `.oxlintrc.json`) and `npm run duplication` (jscpd, `.jscpd.json`).
-- `strict-baseline.json` holds every existing finding, per file and rule. A count may only go down, and a file not listed must be clean. After a fix, record it with `node scripts/strict-baseline.mjs <check> --update`; that command refuses to raise a count.
+- `strict-baseline.json` holds every existing finding, per file and rule. A count may only go down, and a file not listed must be clean. After a fix, record it with `node scripts/strict-baseline.mts <check> --update`; that command refuses to raise a count.
 - The test tiers in `test-inventory.json`, run by `.github/workflows/elpis-desktop.yml` on every push to `main` and `integrate/**` and on every pull request.
 
 Baseline on 6 Nov: 9,143 JS type errors (TS7006, untyped parameters, is about half), 496 renderer errors under the extra flags, 365 lint findings, 5 duplicate blocks (0.10% of lines).
@@ -42,7 +42,7 @@ A test file moves in the same batch as the module it tests. The rest of the erro
 
 1. Rename 10-20 files (`.mjs` to `.mts`, `.cjs` to `.cts`) and their tests. Update their importers in the same commit.
 2. Type the exported functions first. Then clear the file's errors without `any`: use `unknown` and narrow it.
-3. Run `node scripts/strict-baseline.mjs --update`. The moved files must leave the baseline at zero; a file still listed means the batch is not done.
+3. Run `node scripts/strict-baseline.mts --update`. The moved files must leave the baseline at zero; a file still listed means the batch is not done.
 4. Run the batch's test tier locally against the last CI build, then push. CI runs the full set.
 5. Keep each batch to one commit, so a failure reverts cleanly.
 

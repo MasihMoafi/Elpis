@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// install-desktop.mjs NAME [--release] [--actions]: packages this commit as ~/.local/lib/elpis-desktop/versions/NAME-<commit> and
+// install-desktop.mts NAME [--release] [--actions]: packages this commit as ~/.local/lib/elpis-desktop/versions/NAME-<commit> and
 // points ~/.local/bin/elpis-app at it, with nothing uncommitted. A release also needs the full test gate's pass on exactly
 // this commit; a local install does not (Masih: "Only full suite for releases; for local deployment prefer fastest builds").
 // It links the installed Electron runtime rather than copying it, launches nothing, and prints the command that rolls back.
@@ -13,33 +13,33 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { records, requirePass } from './gate-guards.mjs';
+import { records, requirePass } from './gate-guards.mts';
 import { assertSourceCommit, verifyPackagedSources, verifyRendererReceipt } from './renderer-artifact-gate.mjs';
 import { durableSourceCheckout } from '../bridge/improve-source.mts';
 import { pruneVersions } from '../../../scripts/prune-versions.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-const git = args => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
 const missingCommit = 'The selected installation records no source commit, so this install could drop its fixes; integrate it first.';
 const name = process.argv[2], release = process.argv.includes('--release'), actions = process.argv.includes('--actions'), rollback = process.argv.includes('--rollback');
-const gh = args => execFileSync('gh', args, { cwd: root, encoding: 'utf8' }).trim();
+const gh = (args: string[]) => execFileSync('gh', args, { cwd: root, encoding: 'utf8' }).trim();
 
 /** Local installation metadata, derived from Git rather than the disposable checkout used to build/install. */
-export async function recordSourceCheckout(cwd, destination) {
+export async function recordSourceCheckout(cwd: string, destination: string) {
   const source = await durableSourceCheckout(cwd);
   if (!source) throw new Error('Cannot locate the durable Elpis source checkout for this installation.');
   fs.writeFileSync(path.join(destination, 'source.json'), JSON.stringify(source), { mode: 0o600, flag: 'wx' });
 }
 
 /** The commit an installation was built from: the renderer's recorded commit, else the NAME-<commit> suffix of its folder. */
-export function installationCommit(version) {
+export function installationCommit(version: string) {
   try { const recorded = fs.readFileSync(path.join(version, 'app/out/.commit'), 'utf8').trim(); if (/^[0-9a-f]{40}$/.test(recorded)) return recorded; }
-  catch (error) { if (error.code !== 'ENOENT') throw error; }
+  catch (error) { if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error; }
   return path.basename(version).match(/-([0-9a-f]{9,40})$/)?.[1] ?? null;
 }
 
 /** Refuses a commit that lacks the selected installation's commit, so installing never drops installed fixes. */
-export function assertMovesForward(cwd, installed, commit) {
+export function assertMovesForward(cwd: string, installed: string | null, commit: string) {
   if (!installed) throw new Error(missingCommit);
   try { execFileSync('git', ['merge-base', '--is-ancestor', installed, commit], { cwd, stdio: 'ignore' }); }
   catch { throw new Error(`${commit.slice(0, 9)} does not contain the installed ${installed.slice(0, 9)}; installing it would drop installed fixes. Integrate onto the installed line first.`); }
@@ -47,13 +47,13 @@ export function assertMovesForward(cwd, installed, commit) {
 
 /** A local install packages `out/` as it is, so it must have been built from the commit being installed (28 Oct: three
  * installs shipped the renderer of an older build, because `out/` was not rebuilt after a checkout). */
-export function assertRendererCommit(root, commit) {
+export function assertRendererCommit(root: string, commit: string) {
   let built = '';
   try { built = fs.readFileSync(path.join(root, 'out/.commit'), 'utf8').trim(); } catch { /* no record */ }
   if (built !== commit) throw new Error(`out/ was built from ${built ? built.slice(0, 9) : 'an unrecorded commit'}, not ${commit.slice(0, 9)}: build it and write the commit to out/.commit, or install with --actions.`);
 }
 /** Downloads the renderer GitHub Actions built for `commit` into a new temporary folder and returns that folder. */
-async function actionsRenderer(commit) {
+async function actionsRenderer(commit: string) {
   const [run] = JSON.parse(gh(['run', 'list', '--workflow', 'elpis-desktop.yml', '--commit', commit, '--status', 'success', '--json', 'databaseId', '--limit', '1']));
   if (!run) throw new Error(`GitHub Actions has no successful build of ${commit.slice(0, 9)}: push it to a build/* branch and wait for "Elpis desktop".`);
   const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-renderer-'));
@@ -64,7 +64,7 @@ async function actionsRenderer(commit) {
   return folder;
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) try {
-  if (!/^[\w.-]+$/.test(name ?? '')) throw new Error('usage: node scripts/install-desktop.mjs NAME [--release] [--actions] [--rollback]');
+  if (!/^[\w.-]+$/.test(name ?? '')) throw new Error('usage: node scripts/install-desktop.mts NAME [--release] [--actions] [--rollback]');
   if (git(['status', '--porcelain', '--untracked-files=no'])) throw new Error('There are uncommitted changes; commit them and run the full gate first.');
   const commit = git(['rev-parse', 'HEAD']);
   if (release) await requirePass(records, commit);
@@ -90,8 +90,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) try {
   // The package must open, with its own launcher, before `elpis-app` points at it (22 Oct: two installs shipped one Elpis could not open).
   // ELPIS_SKIP_LAUNCH_CHECK is set only by the installer's own tests, whose packages are not real apps.
   if (!process.env.ELPIS_SKIP_LAUNCH_CHECK) {
-    try { await (await import('./smoke-launch.mjs')).smokeLaunch(destination); }
-    catch (error) { execFileSync('gio', ['trash', destination]); throw new Error(`The new package does not open, so nothing was switched.\n${error.message}`); }
+    try { await (await import('./smoke-launch.mts')).smokeLaunch(destination); }
+    catch (error) { execFileSync('gio', ['trash', destination]); throw new Error(`The new package does not open, so nothing was switched.\n${error instanceof Error ? error.message : String(error)}`); }
   }
   const staged = `${link}.new-${process.pid}`;
   fs.symlinkSync(path.join(destination, 'launch'), staged);
@@ -102,8 +102,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) try {
   try {
     const trashed = pruneVersions(path.dirname(destination), { keep: [destination, path.resolve(path.dirname(link), previous)] });
     if (trashed.length) console.log(`Moved ${trashed.length} old version${trashed.length === 1 ? '' : 's'} to the trash.`);
-  } catch (error) { console.error(`install-desktop: could not move old versions to the trash: ${error.message}`); }
+  } catch (error) { console.error(`install-desktop: could not move old versions to the trash: ${error instanceof Error ? error.message : String(error)}`); }
 } catch (error) {
-  console.error(`install-desktop: ${error.message}`);
+  console.error(`install-desktop: ${error instanceof Error ? error.message : String(error)}`);
   process.exitCode = 1;
 }

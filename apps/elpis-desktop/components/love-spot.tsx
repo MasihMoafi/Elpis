@@ -32,7 +32,7 @@ import { MASIH_PEN, latestMessage, lightFiles, lightImage } from "@/lib/love-spo
 import { LOVE_SPOT_AUDIO } from "@/lib/love-spot-audio";
 import { noticed, told } from "@/lib/matilda";
 import { newer } from "@/bridge/love-spot-order.cts";
-import { BOARD_THEMED, MATILDA_SHOTS, MATILDA_SHOTS_LIGHT } from "@/bridge/matilda-face.cjs";
+import { BOARD_THEMED, MATILDA_SHOTS, MATILDA_SHOTS_LIGHT } from "@/bridge/matilda-face.cts";
 import { savePreferences, usePreferences } from "@/lib/preferences";
 import { THEME_CHARACTER_LIST, useThemeCharacter } from "@/lib/theme-characters";
 import { upgradeAgentArt } from "@/lib/love-agents";

@@ -4,13 +4,13 @@ import os from 'node:os';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { heldByAncestor, missingPlaywright, passRecord, records } from './gate-guards.mjs';
+import { heldByAncestor, missingPlaywright, passRecord, records } from './gate-guards.mts';
 
 export const root = fileURLToPath(new URL('../', import.meta.url));
 export const tiers = ['fast', 'bridge', 'desktop', 'ui', 'opt-in'];
 const ignored = new Set(['node_modules', '.next', 'out', '.tmp', '.git']);
-export async function discoverTests(directory = root, relative = '') {
-  const found = [];
+export async function discoverTests(directory = root, relative = ''): Promise<string[]> {
+  const found: string[] = [];
   for (const entry of await fs.readdir(path.join(directory, relative), { withFileTypes: true })) {
     const file = path.posix.join(relative, entry.name);
     if (entry.isDirectory() && !ignored.has(entry.name)) found.push(...await discoverTests(directory, file));
@@ -23,12 +23,12 @@ export async function discoverTests(directory = root, relative = '') {
   return found.sort();
 }
 
-export function checkInventory(inventory, files) {
-  const owners = new Map(), errors = [];
+export function checkInventory(inventory: Record<string, string[]>, files: string[]) {
+  const owners = new Map<string, string>(), errors: string[] = [];
   for (const tier of Object.keys(inventory)) if (!tiers.includes(tier)) errors.push(`Unknown tier: ${tier}`);
   for (const tier of tiers) {
     if (!Array.isArray(inventory[tier])) { errors.push(`Missing tier: ${tier}`); continue; }
-    for (const file of inventory[tier]) {
+    for (const file of inventory[tier] ?? []) {
       if (owners.has(file)) errors.push(`Duplicate test: ${file} (${owners.get(file)}, ${tier})`);
       owners.set(file, tier);
       if (!files.includes(file)) errors.push(`Missing test file: ${file}`);
@@ -39,11 +39,11 @@ export function checkInventory(inventory, files) {
 }
 
 // `dir`, `locks` and `seconds` let the gate's own tests run it on a fake app with short limits.
-export async function main(args, { dir = root, locks = { build: '/tmp/elpis-desktop-build.lock', ui: '/tmp/elpis-desktop-ui.lock' }, seconds: fileSeconds = 180 } = {}) {
-  const inventory = JSON.parse(await fs.readFile(path.join(dir, 'test-inventory.json'), 'utf8'));
+export async function main(args: string[], { dir = root, locks = { build: '/tmp/elpis-desktop-build.lock', ui: '/tmp/elpis-desktop-ui.lock' }, seconds: fileSeconds = 180 } = {}) {
+  const inventory: Record<string, string[]> = JSON.parse(await fs.readFile(path.join(dir, 'test-inventory.json'), 'utf8'));
   checkInventory(inventory, await discoverTests(dir));
   if (args[0] === '--check') {
-    console.log(tiers.map(tier => `${tier}: ${inventory[tier].length}`).join(', '));
+    console.log(tiers.map(tier => `${tier}: ${inventory[tier]?.length}`).join(', '));
     return;
   }
   const selected = args.length ? args : tiers.filter(tier => tier !== 'opt-in');
@@ -54,31 +54,31 @@ export async function main(args, { dir = root, locks = { build: '/tmp/elpis-desk
     const missing = missingPlaywright();
     if (missing) throw new Error(missing);
   }
-  const git = args => execFileSync('git', args, { cwd: dir, encoding: 'utf8' }).trim();
+  const git = (args: string[]) => execFileSync('git', args, { cwd: dir, encoding: 'utf8' }).trim();
   const start = { commit: git(['rev-parse', 'HEAD']), clean: git(['status', '--porcelain', '--untracked-files=no']) === '' };
   const evidence = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-test-gate-'));
   const home = path.join(evidence, 'home');
   await fs.mkdir(home);
-  const summary = { wallMs: 0, testMs: 0, files: [], evidence }, started = performance.now();
+  const summary: { wallMs: number; testMs: number; files: { name: string; tier: string; code: number | null; testMs: number; wallMs: number; log: string }[]; evidence: string } = { wallMs: 0, testMs: 0, files: [], evidence }, started = performance.now();
   console.log(`Test evidence: ${evidence}`);
   // Files run detached, so Ctrl+C reaches only the gate: it stops the running file's group before it exits.
-  let running = null;
+  let running: number | undefined;
   for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => { if (running) try { process.kill(-running, 'SIGKILL'); } catch {} process.exit(130); });
-  async function run(name, command, parameters, tier, { seconds = fileSeconds, lock } = {}) {
+  async function run(name: string, command: string, parameters: string[], tier: string, { seconds = fileSeconds, lock }: { seconds?: number; lock?: string } = {}) {
     const log = path.join(evidence, name.replaceAll('/', '-') + '.tap'), output = await fs.open(log, 'w');
     const at = performance.now();
     let code;
     console.log(`RUN ${name} (${tier}; limit ${seconds}s)`);
     try {
-      code = await new Promise((resolve, reject) => {
+      code = await new Promise<number | null>((resolve, reject) => {
         // Wait for the shared lock outside the limit, so the limit counts only the file's own run. The file runs in its
         // own process group (--foreground keeps timeout in it); whatever is left of that group when it exits is killed.
         const bounded = ['timeout', '--foreground', '--kill-after=5s', `${seconds}s`, command, ...parameters];
-        const child = spawn(lock ? 'flock' : bounded[0], lock ? [lock, ...bounded] : bounded.slice(1), { cwd: dir, env: { ...process.env, ELPIS_HOME: home,
+        const child = spawn(lock ? 'flock' : 'timeout', lock ? [lock, ...bounded] : bounded.slice(1), { cwd: dir, env: { ...process.env, ELPIS_HOME: home,
           EXCALIDRAW_LOCAL_DIR: path.join(home, 'love-spot'), EXCALIDRAW_SCREENSHOTS_DIR: path.join(home, 'Screenshots') }, stdio: ['ignore', output.fd, output.fd], detached: true });
         running = child.pid;
         child.on('error', reject);
-        child.on('exit', (status, signal) => { try { process.kill(-child.pid, 'SIGKILL'); } catch {} resolve(signal ? 1 : status); });
+        child.on('exit', (status, signal) => { try { if (child.pid) process.kill(-child.pid, 'SIGKILL'); } catch {} resolve(signal ? 1 : status); });
       });
     } finally { await output.close(); }
     const text = await fs.readFile(log, 'utf8');
@@ -92,7 +92,7 @@ export async function main(args, { dir = root, locks = { build: '/tmp/elpis-desk
     return code;
   }
   // Fast tests import bundled prompts too. Only browser (UI) files need the built renderer.
-  if (await run('bridge-resources', process.execPath, ['bridge/build-resources.mjs'], 'bridge', { seconds: 120 }) !== 0) return;
+  if (await run('bridge-resources', process.execPath, ['bridge/build-resources.mts'], 'bridge', { seconds: 120 }) !== 0) return;
   let rendererBuilt = false;
   for (const tier of selected) {
     if (!rendererBuilt && tier === 'ui') {
@@ -102,9 +102,9 @@ export async function main(args, { dir = root, locks = { build: '/tmp/elpis-desk
     }
     if (tier === 'ui') {
       // Keep every browser file bounded and serialized with the other workstation workers.
-      for (const file of inventory.ui) await run(file, process.execPath, ['--test', '--test-timeout=180000', '--test-reporter=tap', file], tier, { lock: locks.ui });
+      for (const file of inventory.ui ?? []) await run(file, process.execPath, ['--test', '--test-timeout=180000', '--test-reporter=tap', file], tier, { lock: locks.ui });
     } else {
-      for (const file of inventory[tier]) await run(file, process.execPath, ['--test', '--test-timeout=180000', '--test-reporter=tap', file], tier);
+      for (const file of inventory[tier] ?? []) await run(file, process.execPath, ['--test', '--test-timeout=180000', '--test-reporter=tap', file], tier);
     }
   }
   console.log(`Gate: ${(summary.wallMs / 1000).toFixed(2)}s wall; ${(summary.testMs / 1000).toFixed(2)}s in test runners. ${evidence}/summary.json`);

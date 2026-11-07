@@ -122,7 +122,7 @@ StartupWMClass=elpis-workflows
 WFENTRY
 # Licence notices for everything this package carries or bundles (the Electron runtime keeps its own LICENSE files).
 mkdir -p "$ROOT/usr/share/doc/elpis-desktop"
-node "$APP/scripts/third-party-notices.mjs" "$OPT" "$ROOT/usr/share/doc/elpis-desktop/THIRD-PARTY-NOTICES.txt"
+node "$APP/scripts/third-party-notices.mts" "$OPT" "$ROOT/usr/share/doc/elpis-desktop/THIRD-PARTY-NOTICES.txt"
 cp "$APP/../../LICENSE" "$ROOT/usr/share/doc/elpis-desktop/LICENSE"
 cat > "$ROOT/DEBIAN/control" <<CONTROL
 Package: elpis-desktop

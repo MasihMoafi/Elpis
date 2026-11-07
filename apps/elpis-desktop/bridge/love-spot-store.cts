@@ -15,7 +15,7 @@ const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { newer: newerImpl } = require('./love-spot-order.cts') as typeof import('./love-spot-order.cts');
 const { paintElements, paintingSize, splitPainting } = require('./love-spot-painting.cts') as typeof import('./love-spot-painting.cts');
-const { BOARD_FACE, OLD_BOARD_FACES, OLD_BOARD_SHOTS, replyPortrait } = require('./matilda-face.cjs');
+const { BOARD_FACE, OLD_BOARD_FACES, OLD_BOARD_SHOTS, replyPortrait } = require('./matilda-face.cts');
 const FACE = 96, FACE_SIDE = FACE + 12;
 const WELCOME_SHAPES = splitPainting('```excalidraw\n' + JSON.stringify([
   { type: 'text', x: 0, y: 0, text: 'Welcome to Love Spot', fontSize: 28, fontFamily: 5, textAlign: 'center', strokeColor: '#000000' },

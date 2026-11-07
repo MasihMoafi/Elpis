@@ -5,7 +5,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { heldByAncestor, missingPlaywright, passRecord, requirePass } from '../scripts/gate-guards.mjs';
+import { heldByAncestor, missingPlaywright, passRecord, requirePass } from '../scripts/gate-guards.mts';
 
 const tiers = ['fast', 'bridge', 'desktop', 'ui'];
 const passed = name => ({ name, code: 0 });
@@ -57,12 +57,12 @@ test('the gate records only the clean commit present before its tests run', asyn
       // This fixture builds no app; its lifecycle checks must not wait on workstation build locks.
       await fs.writeFile(path.join(root, 'bin/flock'), '#!/bin/sh\nshift\nexec "$@"\n', { mode: 0o755 });
       const scripts = new URL('../scripts/', import.meta.url);
-      for (const file of ['test-gate.mjs', 'gate-guards.mjs']) await fs.copyFile(new URL(file, scripts), path.join(root, 'scripts', file));
+      for (const file of ['test-gate.mts', 'gate-guards.mts']) await fs.copyFile(new URL(file, scripts), path.join(root, 'scripts', file));
       await fs.writeFile(path.join(root, 'test-inventory.json'), JSON.stringify({ fast: ['tests/state.test.mjs'], bridge: ['bridge/idle.test.mjs'], desktop: ['desktop/idle.test.mjs'], ui: ['ui/idle.test.mjs'], 'opt-in': [] }));
       await fs.writeFile(path.join(root, 'package.json'), JSON.stringify({ scripts: { build: 'node renderer.mjs' } }));
       await fs.writeFile(path.join(root, '.gitignore'), 'bridge/resources/\nout/\n');
       await fs.writeFile(path.join(root, 'renderer.mjs'), "import fs from 'node:fs'; if(process.env.GATE_SCENARIO === 'renderer-failure') process.exit(2); fs.mkdirSync('out', {recursive:true}); fs.writeFileSync('out/index.html', 'built renderer');");
-      await fs.writeFile(path.join(root, 'bridge/build-resources.mjs'), "import fs from 'node:fs'; if(process.env.GATE_SCENARIO === 'resource-failure') process.exit(2); fs.mkdirSync('bridge/resources', {recursive:true}); fs.writeFileSync('bridge/resources/rag.md', 'built resource');");
+      await fs.writeFile(path.join(root, 'bridge/build-resources.mts'), "import fs from 'node:fs'; if(process.env.GATE_SCENARIO === 'resource-failure') process.exit(2); fs.mkdirSync('bridge/resources', {recursive:true}); fs.writeFileSync('bridge/resources/rag.md', 'built resource');");
       for (const sub of ['bridge', 'desktop', 'ui']) await fs.writeFile(path.join(root, sub, 'idle.test.mjs'), "import { test } from 'node:test'; test('idle', () => {});\n");
       await fs.appendFile(path.join(root, 'ui/idle.test.mjs'), "import assert from 'node:assert/strict'; import fs from 'node:fs'; test('renderer exists before UI tests', () => assert.equal(fs.readFileSync('out/index.html','utf8'), 'built renderer'));\n");
       await fs.writeFile(path.join(root, 'probe'), 'original');
@@ -78,12 +78,12 @@ test('mutate during the real gate', () => {
 });
 `);
       git(['init', '-q']); git(['config', 'user.name', 'Gate test']); git(['config', 'user.email', 'gate@example.invalid']);
-      git(['add', 'scripts/test-gate.mjs', 'scripts/gate-guards.mjs', 'test-inventory.json', 'package.json', '.gitignore', 'renderer.mjs', 'bridge/build-resources.mjs', 'bridge/idle.test.mjs', 'desktop/idle.test.mjs', 'ui/idle.test.mjs', 'bin/flock', 'probe', 'tests/state.test.mjs']);
+      git(['add', 'scripts/test-gate.mts', 'scripts/gate-guards.mts', 'test-inventory.json', 'package.json', '.gitignore', 'renderer.mjs', 'bridge/build-resources.mts', 'bridge/idle.test.mjs', 'desktop/idle.test.mjs', 'ui/idle.test.mjs', 'bin/flock', 'probe', 'tests/state.test.mjs']);
       git(['commit', '-qm', 'fixture']);
       if (scenario === 'dirty-start') await fs.writeFile(path.join(root, 'probe'), 'changed');
       const env = { ...process.env, HOME: home, PATH: `${path.join(root, 'bin')}${path.delimiter}${process.env.PATH}`, GATE_SCENARIO: scenario, ELPIS_PLAYWRIGHT_PACKAGE: '/fixture/not-used' };
       delete env.NODE_TEST_CONTEXT; // The nested gate must execute its tests rather than skip recursive runners.
-      const args = ['scripts/test-gate.mjs', ...(scenario === 'fast-only' ? ['fast'] : scenario === 'desktop-only' ? ['desktop'] : [])];
+      const args = ['scripts/test-gate.mts', ...(scenario === 'fast-only' ? ['fast'] : scenario === 'desktop-only' ? ['desktop'] : [])];
       let output;
       try { output = execFileSync(process.execPath, args, { cwd: root, encoding: 'utf8', timeout: 30_000, env, stdio: ['ignore', 'pipe', 'pipe'] }); }
       catch (error) {

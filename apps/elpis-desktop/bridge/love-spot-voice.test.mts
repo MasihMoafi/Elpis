@@ -7,7 +7,6 @@ import { EventEmitter } from 'node:events';
 import { createLoveSpot } from './love-spot-store.cts';
 import { createLoveSpotTalk } from './love-spot-talk.mts';
 import { startDesktopServer } from './server.mts';
-import { LOVE_SPOT_AUDIO } from '../lib/love-spot-audio.mts';
 import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cjs';
 
 const enabledAudio = { available: true };
@@ -15,17 +14,17 @@ const enabledAudio = { available: true };
 test('live Matilda carries board/persona context and saves growing speech once; mute and hang-up reject later output', async t => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'lovevoice-unit-'));
   const store = createLoveSpot({ directory, screenshots: path.join(directory, 'shots') });
-  const client = new EventEmitter(); client.voiceStatus = async () => ({ available: true });
-  const talk = createLoveSpotTalk({ client: /** @type {Parameters<typeof createLoveSpotTalk>[0]['client']} */ (/** @type {unknown} */ (client)), store, audio: enabledAudio });
+  const client = Object.assign(new EventEmitter(), { voiceStatus: async () => ({ available: true }) });
+  const talk = createLoveSpotTalk({ client: client as unknown as Parameters<typeof createLoveSpotTalk>[0]['client'], store, audio: enabledAudio });
   t.after(async () => { talk.close(); await talk.idle(); await store.close(); });
   await store.save({ elements: [{ id: 'user-note', type: 'text', text: 'Our secret is apricot lantern.', strokeColor: '#2f9e44', version: 1, versionNonce: 1, x: 20, y: 20, width: 240, height: 40 }] });
   const call = await talk.conversation('Be brief and friendly.');
   assert.match(call.context, /apricot lantern/); assert.match(call.context, /Be brief and friendly/);
-  const contexts = [], stop = await call.watch(context => contexts.push(context), assert.fail);
+  const contexts: string[] = [], stop = await call.watch(context => contexts.push(context), assert.fail);
   const before = await store.read();
   await store.save({ elements: before.scene.elements.map(element => ({ ...element, text: 'Our secret is orange blossom.', version: 2 })) });
   for (let n = 0; !contexts.length && n < 40; n++) await new Promise(resolve => setTimeout(resolve, 50));
-  assert.match(contexts[0], /orange blossom/);
+  assert.ok(contexts[0]); assert.match(contexts[0], /orange blossom/);
   call.transcript({ role: 'assistant', delta: 'Hello ' });
   await new Promise(resolve => setTimeout(resolve, 350)); await talk.idle();
   let scene = (await store.read()).scene;
@@ -50,24 +49,27 @@ test('live Matilda carries board/persona context and saves growing speech once; 
 
 test('the live microphone endpoint starts the saved subscription voice with context and refuses muted/invalid requests', async t => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'lovevoice-http-'));
-  const client = new EventEmitter(), starts = [];
+  const client = new EventEmitter(), starts: unknown[][] = [];
   Object.assign(client, { connected: true, pendingApprovals: [], close() {}, voiceStatus: async () => ({ available: true }),
     createSpeechThread: async () => ({ id: 'speech', voice: 'juniper' }),
-    startSpeechThread: async (...args) => { starts.push(args); client.emit('side', { method: 'thread/realtime/sdp', params: { threadId: 'speech', sdp: 'v=0\r\nanswer' } }); },
+    startSpeechThread: async (...args: unknown[]) => { starts.push(args); client.emit('side', { method: 'thread/realtime/sdp', params: { threadId: 'speech', sdp: 'v=0\r\nanswer' } }); },
     closeSpeechThread: async () => {},
   });
   const app = await startDesktopServer({ client, elpisHome: root, loveSpotAudio: enabledAudio, trashFile: path.join(root, 'trash.json'), loveSpot: { directory: path.join(root, 'board'), screenshots: path.join(root, 'shots') } });
   t.after(() => app.close());
   const url = new URL(app.url), token = new URLSearchParams(url.hash.slice(1)).get('token');
   const auth = await fetch(new URL('/api/session', url), { method: 'POST', headers: { origin: url.origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) });
-  const headers = { origin: url.origin, cookie: auth.headers.get('set-cookie').split(';')[0], 'Content-Type': 'application/json' };
-  const post = (route, body) => fetch(new URL(`/api/${route}`, url), { method: 'POST', headers, body: JSON.stringify(body) });
+  const cookie = auth.headers.get('set-cookie')?.split(';')[0]; assert.ok(cookie);
+  const headers = { origin: url.origin, cookie, 'Content-Type': 'application/json' };
+  const post = (route: string, body: unknown) => fetch(new URL(`/api/${route}`, url), { method: 'POST', headers, body: JSON.stringify(body) });
   const reply = await post('love-spot/voice/call', { sdp: 'v=0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\na=sendrecv\r\n', persona: 'Be kind and brief.' });
   assert.equal(reply.status, 200);
-  const reader = reply.body.getReader();
+  assert.ok(reply.body); const reader = reply.body.getReader();
   assert.match(new TextDecoder().decode((await reader.read()).value), /sdp/);
-  assert.equal(starts[0][0].voice, 'juniper');
-  assert.match(starts[0][2].conversation, /Be kind and brief/);
+  assert.ok(starts[0]);
+  assert.deepEqual(starts[0][0], { id: 'speech', voice: 'juniper' });
+  assert.ok(starts[0][2] && typeof starts[0][2] === 'object' && 'conversation' in starts[0][2]);
+  assert.match(String(starts[0][2].conversation), /Be kind and brief/);
   await reader.cancel();
   assert.equal((await post('love-spot/voice/call', { sdp: 'invalid', persona: 42 })).status, 400);
   assert.equal((await post('love-spot/voice/settings', { enabled: false })).status, 200);
@@ -78,27 +80,27 @@ test('the live microphone endpoint starts the saved subscription voice with cont
 test('disabled audio skips legacy voice files, status and native audio', async t => {
   const disabledAudio = { available: false, reason: 'Voice is unavailable.' };
   const home = createTestTempDir(path.join(os.tmpdir(), 'lovevoice-disabled-'));
-  let app;
-  t.after(async () => { await app?.close(); removeTestTempDir(home); });
   const directory = path.join(home, 'board'), file = path.join(directory, '.voice.json'), saved = '{legacy invalid voice preference';
   await fs.mkdir(directory); await fs.writeFile(file, saved);
   let reads = 0, statuses = 0, starts = 0;
   const readFile = fs.readFile;
-  t.mock.method(fs, 'readFile', async (target, ...args) => { if (String(target) === file) reads++; return readFile(target, ...args); });
+  t.mock.method(fs, 'readFile', async (...args: Parameters<typeof readFile>) => { if (typeof args[0] === 'string' && args[0] === file) reads++; return readFile(...args); });
   const client = Object.assign(new EventEmitter(), { connected: true, pendingApprovals: [], close() {},
     voiceStatus: async () => { statuses++; throw Error('Disabled audio status must not load'); },
     createSpeechThread: async () => { starts++; throw Error('Disabled audio must not warm'); },
     startSpeechThread: async () => { starts++; throw Error('Disabled audio must not start'); } });
-  app = await startDesktopServer({ client, loveSpotAudio: disabledAudio, elpisHome: home, trashFile: path.join(home, 'trash.json'), loveSpot: { directory, screenshots: path.join(home, 'shots') } });
+  const app = await startDesktopServer({ client, loveSpotAudio: disabledAudio, elpisHome: home, trashFile: path.join(home, 'trash.json'), loveSpot: { directory, screenshots: path.join(home, 'shots') } });
+  t.after(async () => { await app.close(); removeTestTempDir(home); });
   const url = new URL(app.url), token = new URLSearchParams(url.hash.slice(1)).get('token');
   const auth = await fetch(new URL('/api/session', url), { method: 'POST', headers: { origin: url.origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) });
-  const headers = { origin: url.origin, cookie: auth.headers.get('set-cookie').split(';')[0], 'Content-Type': 'application/json' };
+  const cookie = auth.headers.get('set-cookie')?.split(';')[0]; assert.ok(cookie);
+  const headers = { origin: url.origin, cookie, 'Content-Type': 'application/json' };
   for (const route of ['love-spot/talk', 'love-spot/voice/settings']) {
     const response = await fetch(new URL(`/api/${route}`, url), { headers });
     assert.equal(response.status, 200);
     const state = await response.json(); assert.equal((state.voice ?? state).reason, disabledAudio.reason);
   }
-  for (const [route, body] of [['love-spot/voice/settings', { enabled: true }], ['love-spot/voice', { sdp: 'v=0\r\n' }], ['love-spot/voice/call', { sdp: 'v=0\r\n', persona: 'Be brief.' }]]) {
+  for (const [route, body] of [['love-spot/voice/settings', { enabled: true }], ['love-spot/voice', { sdp: 'v=0\r\n' }], ['love-spot/voice/call', { sdp: 'v=0\r\n', persona: 'Be brief.' }]] as const) {
     const response = await fetch(new URL(`/api/${route}`, url), { method: 'POST', headers, body: JSON.stringify(body) });
     assert.equal(response.status, 403, route);
   }

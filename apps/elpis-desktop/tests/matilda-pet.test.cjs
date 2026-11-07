@@ -4,7 +4,7 @@
 // anywhere inside the window and takes her small chat with her, and nothing under her moves.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { FACE_DATA_URL } = require('../bridge/matilda-face.cjs');
+const { FACE_DATA_URL } = require('../bridge/matilda-face.cts');
 
 // Where Excalidraw shows the board: its own view state, read from the editor component that draws `.excalidraw`.
 

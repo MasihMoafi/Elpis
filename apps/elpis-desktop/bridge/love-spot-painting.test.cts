@@ -4,7 +4,7 @@ const { splitPainting, paintElements, diagramSvg } = require('./love-spot-painti
 const fence = (shapes: unknown) => '```excalidraw\n' + JSON.stringify(shapes) + '\n```';
 
 test('each approved reply portrait is distinct, and its mood marker stays out of text and speech', () => {
-  const { replyPortrait, MATILDA_SHOTS } = require('./matilda-face.cjs');
+  const { replyPortrait, MATILDA_SHOTS } = require('./matilda-face.cts');
   const { withoutPainting } = require('./love-spot-painting.cts') as typeof import('./love-spot-painting.cts');
   const portraits = [];
   for (const expression of Object.keys(MATILDA_SHOTS)) {

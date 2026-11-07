@@ -38,7 +38,7 @@ jobs:
   strict:
     name: desktop strict checks (types, oxlint, jscpd)
     # The ratchet in apps/elpis-desktop/strict-baseline.json: counts may only go down and new files must be clean
-    # (scripts/strict-baseline.mjs; docs/specs/typescript-migration.md).
+    # (scripts/strict-baseline.mts; docs/specs/typescript-migration.md).
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -53,11 +53,11 @@ jobs:
       - name: Install the locked dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Build the bridge resources the bridge imports
-        run: node bridge/build-resources.mjs
+        run: node bridge/build-resources.mts
       - name: Renderer typecheck (clean)
         run: npm run -s typecheck -- --incremental false
       - name: Strict type checks, lint and duplication against the baseline
-        run: node scripts/strict-baseline.mjs
+        run: node scripts/strict-baseline.mts
       - name: Ratchet tests
         run: node --test tests/strict-baseline.test.mjs
   rust-format:
