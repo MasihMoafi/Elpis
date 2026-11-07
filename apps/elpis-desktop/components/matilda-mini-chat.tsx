@@ -10,7 +10,7 @@ import { api, unreadable, type Entry } from "@/lib/api";
 import { MATILDA_CHANGED, savedPersona } from "@/lib/matilda";
 import { subscribeLoveSpotTalk } from "@/lib/love-spot-talk-events";
 import { HEART_REACTION, talkHeartReaction } from "@/lib/heart-reactions";
-import { replyPortrait } from "@/bridge/matilda-face.cjs";
+import { replyPortrait } from "@/bridge/matilda-face.cts";
 import { attachedFile } from "@/lib/prompt-history";
 import { LoadOnScroll } from "@/components/load-on-scroll";
 import { MatildaFace } from "@/components/matilda-face";

@@ -1,5 +1,5 @@
 import { BridgeError, object, text } from './client.mts';
-import { PORTRAIT_ATTACHMENT_NAME, PORTRAIT_INSTRUCTIONS } from './matilda-face.cjs';
+import { PORTRAIT_ATTACHMENT_NAME, PORTRAIT_INSTRUCTIONS } from './matilda-face.cts';
 import { body, json } from './server-http.mts';
 
 export async function handleLoveSpotRoutes(state: import('./server-http.mts').ServerState, request: import('node:http').IncomingMessage, response: import('node:http').ServerResponse, url: URL, method: string) {

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { entryKey, rememberSubmittedMessages, submittedContent, withSubmittedMessages } from '../lib/submitted-messages.ts';
-import { PORTRAIT_INSTRUCTIONS } from '../bridge/matilda-face.cjs';
+import { PORTRAIT_INSTRUCTIONS } from '../bridge/matilda-face.cts';
 
 test('the recorded Matilda message replaces its pending copy after automatic portrait instructions are added', () => {
   const content = [{ type: 'text', text: 'Keep the taller composer. ' }];

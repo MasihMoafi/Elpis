@@ -1,6 +1,6 @@
 {
   // Modelled on DeepSeek Harness's .oxlintrc.json: its correctness and promise rules, for Elpis's JS and TSX.
-  // Existing violations are a ratcheting baseline (scripts/strict-baseline.mjs lint); new code must be clean.
+  // Existing violations are a ratcheting baseline (scripts/strict-baseline.mts lint); new code must be clean.
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "plugins": ["typescript"],
   "categories": { "correctness": "off" },

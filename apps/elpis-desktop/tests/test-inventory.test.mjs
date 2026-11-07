@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
 import { execFileSync, spawn } from 'node:child_process';
-import { checkInventory, discoverTests } from '../scripts/test-gate.mjs';
+import { checkInventory, discoverTests } from '../scripts/test-gate.mts';
 
 const inventory = JSON.parse(await fs.readFile(new URL('../test-inventory.json', import.meta.url), 'utf8'));
 test('new unassigned tests, duplicate ownership and stale entries fail the gate', async () => {
@@ -42,7 +42,7 @@ async function fakeApp(t, files, inventory, build = 'node -e 0') {
   await fs.mkdir(path.join(dir, 'tests'));
   await fs.mkdir(path.join(dir, 'bridge'));
   await fs.mkdir(path.join(dir, 'tmp'));
-  await fs.writeFile(path.join(dir, 'bridge', 'build-resources.mjs'), '');
+  await fs.writeFile(path.join(dir, 'bridge', 'build-resources.mts'), '');
   await fs.writeFile(path.join(dir, 'package.json'), JSON.stringify({ scripts: { build } }));
   await fs.writeFile(path.join(dir, 'test-inventory.json'), JSON.stringify({ fast: [], bridge: [], desktop: [], ui: [], 'opt-in': [], ...inventory }));
   for (const [name, source] of Object.entries(files)) await fs.writeFile(path.join(dir, 'tests', name), source);
@@ -51,7 +51,7 @@ async function fakeApp(t, files, inventory, build = 'node -e 0') {
   const locks = { build: path.join(dir, 'build.lock'), ui: path.join(dir, 'ui.lock') };
   // `interrupt`: once that file exists, press Ctrl+C on the gate (SIGINT), as a person stopping it would.
   const gate = (args, seconds = 30, interrupt) => new Promise((resolve, reject) => {
-    const source = `import { main } from ${JSON.stringify(new URL('../scripts/test-gate.mjs', import.meta.url).href)}; await main(...JSON.parse(process.argv[1]));`;
+    const source = `import { main } from ${JSON.stringify(new URL('../scripts/test-gate.mts', import.meta.url).href)}; await main(...JSON.parse(process.argv[1]));`;
     // Without NODE_TEST_CONTEXT the gate's own `node --test` children report as they do outside this runner.
     const { NODE_TEST_CONTEXT, ...env } = process.env;
     const child = spawn(process.execPath, ['--input-type=module', '-e', source, JSON.stringify([args, { dir, locks, seconds }])],

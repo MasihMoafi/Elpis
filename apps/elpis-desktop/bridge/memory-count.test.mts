@@ -38,13 +38,15 @@ test('the count endpoint authenticates, rejects parameters and returns no file c
   t.after(() => removeTestTempDir(home));
   await fs.mkdir(path.join(home, 'memories'));
   await fs.writeFile(path.join(home, 'memories', 'private.md'), 'a private memory');
-  const client = new EventEmitter(); client.close = () => {};
+  const client = Object.assign(new EventEmitter(), { close() {} });
   const bridge = await startDesktopServer({ client, elpisHome: home, loveSpot: { directory: path.join(home, 'love') }, trashFile: path.join(home, 'trash.json') });
   t.after(() => bridge.close());
   const url = new URL(bridge.url), origin = url.origin, token = new URLSearchParams(url.hash.slice(1)).get('token');
   assert.equal((await fetch(`${origin}/api/memories/count`)).status, 401);
   const session = await fetch(`${origin}/api/session`, { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify({ token }) });
-  const headers = { cookie: session.headers.get('set-cookie').split(';')[0], origin };
+  const setCookie = session.headers.get('set-cookie'); assert.ok(setCookie);
+  const cookie = setCookie.split(';')[0]; assert.ok(cookie);
+  const headers = { cookie, origin };
   assert.equal((await fetch(`${origin}/api/memories/count?path=elsewhere`, { headers })).status, 400);
   const result = await fetch(`${origin}/api/memories/count`, { headers });
   assert.equal(result.status, 200); assert.deepEqual(await result.json(), { count: 1 });

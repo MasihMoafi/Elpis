@@ -161,7 +161,7 @@ YAML
 python3 -c 'import sys, yaml; yaml.safe_load(open(sys.argv[1]))' "$S/meta/snap.yaml" || { echo "meta/snap.yaml does not parse" >&2; exit 1; }
 
 # Licence notices for everything the snap carries or bundles.
-node "$APP/scripts/third-party-notices.mjs" "$S" "$S/THIRD-PARTY-NOTICES.txt"; cp "$R/LICENSE" "$S/LICENSE"
+node "$APP/scripts/third-party-notices.mts" "$S" "$S/THIRD-PARTY-NOTICES.txt"; cp "$R/LICENSE" "$S/LICENSE"
 
 # No personal data: nothing may name the builder's home folder or git email.
 email=$(git -C "$R" config user.email || true)

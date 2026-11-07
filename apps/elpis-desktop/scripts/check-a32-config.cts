@@ -1,19 +1,21 @@
 // Real packaged app only; no mock bridge. Start with the handoff app.sh first.
-// ELPIS_PLAYWRIGHT_PACKAGE=/.../playwright node scripts/check-a32-config.cjs PORT /tmp/a32b-shots
+// ELPIS_PLAYWRIGHT_PACKAGE=/.../playwright node scripts/check-a32-config.cts PORT /tmp/a32b-shots
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE);
+const playwrightPackage = process.env.ELPIS_PLAYWRIGHT_PACKAGE;
+if (!playwrightPackage) throw new Error('Set ELPIS_PLAYWRIGHT_PACKAGE to the Playwright package path');
+const { chromium } = require(playwrightPackage);
 const { openSettings, chooseOption, controlValue } = require('../tests/controls.cjs');
 
 (async () => {
   const browser = await chromium.connectOverCDP(`http://127.0.0.1:${process.argv[2]}`);
-  const page = browser.contexts().flatMap(context => context.pages()).find(page => page.url().startsWith('http://127.0.0.1'));
+  const page = browser.contexts().flatMap((context: { pages(): { url(): string }[] }) => context.pages()).find((page: { url(): string }) => page.url().startsWith('http://127.0.0.1'));
   const output = process.argv[3] ?? '/tmp/a32b-shots'; fs.mkdirSync(output, { recursive: true });
   assert(page, 'No Elpis app window');
   const composer = page.getByRole('textbox', { name: /Message Elpis/ });
-  const back = async () => page.getByRole('button', { name: 'Back to app' }).click();
-  const command = async text => { await composer.fill(text); await composer.press('Enter'); };
+  const back = () => page.getByRole('button', { name: 'Back to app' }).click();
+  const command = async (text: string) => { await composer.fill(text); await composer.press('Enter'); };
   try {
     await command('/config');
     await page.getByRole('heading', { name: 'Settings', level: 2, exact: true }).waitFor();
@@ -44,7 +46,7 @@ const { openSettings, chooseOption, controlValue } = require('../tests/controls.
       await page.getByRole('radio', { name: theme, exact: true }).click();
       await page.getByRole('tab', { name: 'Configuration', exact: true }).click();
       await page.screenshot({ path: path.join(output, `${theme.toLowerCase()}.png`), fullPage: true });
-      assert(await page.locator('.settings-page').evaluate(node => node.scrollWidth <= node.clientWidth + 1), 'Settings overflow');
+      assert(await page.locator('.settings-page').evaluate((node: HTMLElement) => node.scrollWidth <= node.clientWidth + 1), 'Settings overflow');
     }
     await page.reload(); await openSettings(page);
     await page.getByRole('tab', { name: 'Configuration', exact: true }).click();

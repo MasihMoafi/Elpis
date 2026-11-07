@@ -213,7 +213,7 @@ test('a running Elpis routes second-instance Love Spot launches separately from 
 });
 
 test('dock preparation replaces both launch paths, preserves other actions, and can print an exact rollback', async () => {
-  const { prepareDock, rollbackCommand } = await import('../scripts/point-love-dock.mjs');
+  const { prepareDock, rollbackCommand } = await import('../scripts/point-love-dock.mts');
   const old = '[Desktop Entry]\nName=Love Spot\nExec=old-app\nActions=new-page;other;\nStartupWMClass=excalidraw\n\n[Desktop Action new-page]\nName=New page\nExec=old-new-page\n\n[Desktop Action other]\nExec=keep-this\n';
   const next = prepareDock(old, '/tmp/a home');
   assert.equal(next.match(/Exec="\/tmp\/a home\/\.local\/bin\/elpis-app" --love-spot-app$/gm)?.length, 2);

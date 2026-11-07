@@ -1,4 +1,4 @@
-import { replyPortrait } from "@/bridge/matilda-face.cjs";
+import { replyPortrait } from "@/bridge/matilda-face.cts";
 import { useThemeCharacter } from "@/lib/theme-characters";
 
 /** Matilda's face beside a reply, in the clothes of the current theme (white silk in light mode, black in dark). Every chat

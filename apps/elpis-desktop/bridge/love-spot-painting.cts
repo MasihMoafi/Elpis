@@ -4,7 +4,7 @@ type TextShape = BaseShape & { type: 'text'; text: string; fontSize: number; fon
 type LineShape = BaseShape & { type: 'line' | 'arrow'; points: [number, number][] };
 type Shape = TextShape | LineShape | (BaseShape & { type: 'rectangle' | 'ellipse' | 'diamond' });
 
-const { replyPortrait } = require('./matilda-face.cjs');
+const { replyPortrait } = require('./matilda-face.cts');
 // How an agent paints on the Love Spot board: a fenced ```excalidraw block in its reply holds a JSON list of simple shapes. The bridge
 // takes the block out of the note, checks every shape and draws them beside the note, as ordinary Excalidraw elements Masih can move,
 // recolour and delete. Nothing in the block can reach the file system or the model: it is data, bounded and validated here.

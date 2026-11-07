@@ -1,18 +1,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { scanDeletionThreads } from '../lib/thread-deletion.ts';
+import { scanDeletionThreads, type DeletionPage, type DeletionPageOptions } from '../lib/thread-deletion.ts';
 
-const row = id => ({ id, forkedFromId: `source-${id}`, marker: `metadata-${id}` });
-function pages({ failMode, badMode, badCursor, malformedRow } = {}) {
+const row = (id: string) => ({ id, forkedFromId: `source-${id}`, marker: `metadata-${id}` });
+type Row = ReturnType<typeof row>;
+function pages({ failMode, badMode, badCursor, malformedRow }: { failMode?: boolean; badMode?: boolean; badCursor?: unknown; malformedRow?: unknown } = {}) {
   const rows = { false: Array.from({ length: 125 }, (_, index) => row(`active-${index}`)), true: Array.from({ length: 125 }, (_, index) => row(`archived-${index}`)) };
   rows.true.unshift(row('active-0'));
-  const reads = [];
-  const readPage = async options => {
+  const reads: DeletionPageOptions[] = [];
+  const readPage = async (options: DeletionPageOptions): Promise<DeletionPage<Row>> => {
     reads.push(options); const start = Number(options.cursor || 0), next = start + options.limit;
     if (options.archived === failMode && start) throw new Error('Fixture later page failed');
-    const data = rows[options.archived].slice(start, next);
-    if (options.archived === badMode && malformedRow) data[0] = malformedRow;
-    return { data, nextCursor: options.archived === badMode && badCursor !== undefined ? badCursor : next < rows[options.archived].length ? String(next) : null };
+    const data = rows[String(options.archived) as 'true' | 'false'].slice(start, next);
+    if (options.archived === badMode && malformedRow) data[0] = malformedRow as Row;
+    return { data, nextCursor: options.archived === badMode && badCursor !== undefined ? badCursor as string | null : next < rows[String(options.archived) as 'true' | 'false'].length ? String(next) : null };
   };
   return { rows, reads, readPage };
 }
@@ -36,17 +37,17 @@ for (const archived of [false, true]) {
   });
   for (const cursor of ['100', '', 7, undefined]) test(`deletion scan refuses ${archived ? 'archived' : 'active'} ${cursor === '100' ? 'repeated' : String(cursor)} cursors`, async () => {
     const f = pages({ badMode: archived, badCursor: cursor }); let mutations = 0;
-    const readPage = cursor === undefined ? async options => { const page = await f.readPage(options); if (options.archived === archived) delete page.nextCursor; return page; } : f.readPage;
+    const readPage = cursor === undefined ? async (options: DeletionPageOptions) => { const page: Partial<DeletionPage<Row>> = await f.readPage(options); if (options.archived === archived) delete page.nextCursor; return page as DeletionPage<Row>; } : f.readPage;
     await assert.rejects(scanDeletionThreads(readPage).then(() => mutations++), /complete|list|cursor/i); assert.equal(mutations, 0);
   });
   for (const malformed of [null, {}, { id: '' }, { id: '   ' }, { id: 7 }]) test(`deletion scan refuses malformed ${archived ? 'archived' : 'active'} rows ${JSON.stringify(malformed)}`, async () => {
     const f = pages(); let mutations = 0;
-    const readPage = async options => { const page = await f.readPage(options); if (options.archived === archived) page.data[0] = malformed; return page; };
+    const readPage = async (options: DeletionPageOptions) => { const page = await f.readPage(options); if (options.archived === archived) page.data[0] = malformed as Row; return page; };
     await assert.rejects(scanDeletionThreads(readPage).then(() => mutations++), /complete|list|row/i); assert.equal(mutations, 0);
   });
 }
 
 test('deletion scan refuses malformed page data before returning any partial rows', async () => {
   let mutations = 0;
-  await assert.rejects(scanDeletionThreads(async () => ({ data: null, nextCursor: null })).then(() => mutations++), /complete|list|row/i); assert.equal(mutations, 0);
+  await assert.rejects(scanDeletionThreads(async () => ({ data: null, nextCursor: null }) as unknown as DeletionPage<Row>).then(() => mutations++), /complete|list|row/i); assert.equal(mutations, 0);
 });

@@ -2,7 +2,7 @@
 // Ratchet for the strict checks (6 Nov, Masih: "we want to be all TypeScript with strict checks"). Each check counts
 // its findings per file and compares them with strict-baseline.json: a file may only go down, and a file the baseline
 // does not list must be clean. Lower counts must be recorded (--update), so a fixed finding cannot come back.
-//   node scripts/strict-baseline.mjs [types|tsx|lint|dup ...] [--update] [--files a.mjs b.tsx]
+//   node scripts/strict-baseline.mts [types|tsx|lint|dup ...] [--update] [--files a.mjs b.tsx]
 // types: tsc -p tsconfig.node.json (bridge, desktop, lib, scripts as JS with checkJs);
 // tsx: tsc -p tsconfig.strict.json (renderer under the extra strict flags); lint: oxlint (.oxlintrc.json);
 // dup: jscpd (.jscpd.json), counted as clones per file pair. --files limits lint to those files (pre-commit).
@@ -16,9 +16,9 @@ import ts from 'typescript';
 
 const app = fileURLToPath(new URL('../', import.meta.url));
 const baselineFile = path.join(app, 'strict-baseline.json');
-const bin = (/** @type {string} */ name) => path.join(app, 'node_modules/.bin', name);
+const bin = (name: string) => path.join(app, 'node_modules/.bin', name);
 
-/** @typedef {Record<string, number>} Counts */
+type Counts = Record<string, number>;
 
 /**
  * Compares a check's counts with its baseline.
@@ -26,9 +26,9 @@ const bin = (/** @type {string} */ name) => path.join(app, 'node_modules/.bin', 
  * @param {Counts} actual
  * @param {string[] | null} scope files actually checked (keys are `file:rule`), or null for all
  */
-export function compare(baseline, actual, scope = null) {
-  /** @type {string[]} */ const worse = [];
-  /** @type {string[]} */ const better = [];
+export function compare(baseline: Counts, actual: Counts, scope: string[] | null = null) {
+  const worse: string[] = [];
+  const better: string[] = [];
   const keys = new Set([...Object.keys(baseline), ...Object.keys(actual)]);
   for (const key of [...keys].sort()) {
     if (scope && !scope.some(file => key.startsWith(`${file}:`))) continue;
@@ -41,17 +41,17 @@ export function compare(baseline, actual, scope = null) {
 }
 
 /** @param {string} command @param {string[]} args */
-function run(command, args) {
+function run(command: string, args: string[]) {
   const result = spawnSync(command, args, { cwd: app, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
   if (result.error) throw result.error;
   return `${result.stdout}${result.stderr}`;
 }
 
 /** @param {string} config */
-function typeCounts(config) {
+function typeCounts(config: string) {
   // The bridge imports generated copies in bridge/resources; make them first so every checkout counts the same program.
-  run(process.execPath, ['bridge/build-resources.mjs', '--bridge-only']);
-  /** @type {Counts} */ const counts = {};
+  run(process.execPath, ['bridge/build-resources.mts', '--bridge-only']);
+  const counts: Counts = {};
   const configPath = path.join(app, config);
   const parsed = ts.getParsedCommandLineOfConfigFile(configPath, { noEmit: true }, {
     ...ts.sys, onUnRecoverableConfigFileDiagnostic: diagnostic => { throw new Error(ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n')); },
@@ -60,7 +60,7 @@ function typeCounts(config) {
   const host = ts.createCompilerHost(parsed.options);
   const appModules = path.join(app, 'node_modules');
   const realAppModules = fs.realpathSync(appModules);
-  const allowed = (/** @type {string} */ name) => {
+  const allowed = (name: string) => {
     const absolute = path.resolve(name);
     const parts = absolute.split(path.sep);
     const index = parts.indexOf('node_modules');
@@ -76,16 +76,16 @@ function typeCounts(config) {
   const output = ts.formatDiagnostics(diagnostics, { getCurrentDirectory: () => app, getCanonicalFileName: name => name, getNewLine: () => '\n' });
   for (const line of output.split('\n')) {
     const match = /^(.+?)\(\d+,\d+\): error (TS\d+)/.exec(line);
-    if (match) counts[`${match[1]}:${match[2]}`] = (counts[`${match[1]}:${match[2]}`] ?? 0) + 1;
+    if (match?.[1] && match[2]) counts[`${match[1]}:${match[2]}`] = (counts[`${match[1]}:${match[2]}`] ?? 0) + 1;
   }
   return counts;
 }
 
 /** @param {string[] | null} files */
-export function lintCounts(files) {
+export function lintCounts(files: string[] | null) {
   const targets = files ?? ['bridge', 'desktop', 'lib', 'scripts', 'app', 'components', 'tests'];
   if (!targets.length) return {};
-  /** @type {Counts} */ const counts = {};
+  const counts: Counts = {};
   for (const line of run(bin('oxlint'), ['--type-aware', '-f', 'unix', '--no-error-on-unmatched-pattern', ...targets]).split('\n')) {
     // A rule finding ends in [Error/rule]; an unused disable directive ends in a bare [Warning].
     const match = /^(.+?):\d+:\d+: .*\[(?:(?:Error|Warning)\/(.+)|Warning)\]$/.exec(line);
@@ -101,9 +101,8 @@ function dupCounts() {
   const output = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-jscpd-'));
   try {
     run(bin('jscpd'), ['--config', '.jscpd.json', '--reporters', 'json', '--output', output, '--silent', 'bridge', 'desktop', 'lib', 'scripts', 'app', 'components']);
-    /** @type {{ duplicates: { firstFile: { name: string }, secondFile: { name: string } }[], statistics: { total: { percentage: number } } }} */
-    const report = JSON.parse(fs.readFileSync(path.join(output, 'jscpd-report.json'), 'utf8'));
-    /** @type {Counts} */ const counts = {};
+    const report: { duplicates: { firstFile: { name: string }, secondFile: { name: string } }[], statistics: { total: { percentage: number } } } = JSON.parse(fs.readFileSync(path.join(output, 'jscpd-report.json'), 'utf8'));
+    const counts: Counts = {};
     for (const { firstFile, secondFile } of report.duplicates) {
       const key = [firstFile.name, secondFile.name].sort().join(' ~ ');
       counts[key] = (counts[key] ?? 0) + 1;
@@ -115,8 +114,7 @@ function dupCounts() {
   }
 }
 
-/** @type {Record<string, (files: string[] | null) => Counts>} */
-const checks = {
+const checks: Record<string, (files: string[] | null) => Counts> = {
   types: () => typeCounts('tsconfig.node.json'),
   tsx: () => typeCounts('tsconfig.strict.json'),
   lint: files => lintCounts(files),
@@ -124,7 +122,7 @@ const checks = {
 };
 
 /** @param {Counts} counts */
-const total = counts => Object.values(counts).reduce((sum, count) => sum + count, 0);
+const total = (counts: Counts) => Object.values(counts).reduce((sum, count) => sum + count, 0);
 
 function main() {
   const args = process.argv.slice(2);
@@ -133,8 +131,7 @@ function main() {
   const files = filesAt >= 0 ? args.slice(filesAt + 1) : null;
   const named = (filesAt >= 0 ? args.slice(0, filesAt) : args).filter(arg => !arg.startsWith('--'));
   const selected = named.length ? named : Object.keys(checks);
-  /** @type {Record<string, Counts>} */
-  const baseline = fs.existsSync(baselineFile) ? JSON.parse(fs.readFileSync(baselineFile, 'utf8')) : {};
+  const baseline: Record<string, Counts> = fs.existsSync(baselineFile) ? JSON.parse(fs.readFileSync(baselineFile, 'utf8')) : {};
   let failed = false;
   for (const name of selected) {
     const check = checks[name];
@@ -157,7 +154,7 @@ function main() {
       failed = true;
     }
     if (better.length && !files) {
-      console.error(`strict-baseline ${name}: fewer findings than recorded; lock them in with\n  node scripts/strict-baseline.mjs ${name} --update\n  ${better.join('\n  ')}`);
+      console.error(`strict-baseline ${name}: fewer findings than recorded; lock them in with\n  node scripts/strict-baseline.mts ${name} --update\n  ${better.join('\n  ')}`);
       failed = true;
     }
   }

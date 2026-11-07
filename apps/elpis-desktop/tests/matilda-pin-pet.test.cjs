@@ -4,7 +4,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cjs');
-const { FACE_DATA_URL } = require('../bridge/matilda-face.cjs');
+const { FACE_DATA_URL } = require('../bridge/matilda-face.cts');
 
 test('her pinned chat works while she is off on the board; her pop-up hides earlier messages until its history icon is pressed', { timeout: 60000 }, async t => {
   let pinned = false, settings = { replies: false, model: null, provider: null };

@@ -19,6 +19,6 @@ test('application-menu launch uses bundled Electron and carries an explicit Node
   assert.equal(result.status, 0, result.stderr);
   const [node, searchPath, ...args] = fs.readFileSync(marker, 'utf8').trim().split('\n');
   assert.equal(node, process.execPath);
-  assert.equal(searchPath.split(path.delimiter)[0], path.dirname(process.execPath));
+  assert.equal(searchPath?.split(path.delimiter)[0], path.dirname(process.execPath));
   assert.deepEqual(args, [app, '--smoke']);
 });

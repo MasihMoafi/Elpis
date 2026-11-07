@@ -16,7 +16,7 @@ test('a test file that leaves a process running does not leave it behind after t
   const file = path.join(directory, 'leaves-a-child.test.mjs');
   fs.writeFileSync(file, `import { spawn } from 'node:child_process'; import { test } from 'node:test';\ntest('passes and leaves a sleeper', () => { spawn('sleep', ['600.${marker}'], { stdio: 'ignore' }).unref(); });\n`);
   try {
-    const result = spawnSync(process.execPath, ['scripts/pre-install.mjs'], { cwd: root, env: { ...Object.fromEntries(Object.entries(process.env).filter(([key]) => key !== 'NODE_TEST_CONTEXT')), ELPIS_CHECK_FILES: file, ELPIS_CHECK_JOBS: '1' }, encoding: 'utf8', timeout: 60_000 });
+    const result = spawnSync(process.execPath, ['scripts/pre-install.mts'], { cwd: root, env: { ...Object.fromEntries(Object.entries(process.env).filter(([key]) => key !== 'NODE_TEST_CONTEXT')), ELPIS_CHECK_FILES: file, ELPIS_CHECK_JOBS: '1' }, encoding: 'utf8', timeout: 60_000 });
     assert.match(result.stdout, /1 of 1 files pass/);
     assert.equal(running(`600.${marker}`), 0, 'the sleeper the file started is gone');
   } finally {

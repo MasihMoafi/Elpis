@@ -116,7 +116,7 @@ test('shards execute only their slice, including an empty slice; the merged rece
 test('the prepare, shard and merge CLI commands preserve the downloaded renderer and per-file evidence', async t => {
   const f = await fixture(t);
   await fs.mkdir(path.join(f.root, 'scripts'));
-  for (const name of ['renderer-artifact-gate.mjs', 'test-gate.mjs', 'gate-guards.mjs']) {
+  for (const name of ['renderer-artifact-gate.mjs', 'test-gate.mts', 'gate-guards.mts']) {
     const source = await fs.readFile(new URL(`../scripts/${name}`, import.meta.url), 'utf8');
     await fs.writeFile(path.join(f.root, 'scripts', name), source.replace(baselineCommit, f.baseline));
   }
@@ -310,7 +310,7 @@ for (const mode of ['missing', 'stale', 'mutated', 'download-source', 'download-
   const identity = JSON.parse(await fs.readFile(path.join(f.root, 'package.json'), 'utf8'));
   await fs.writeFile(path.join(f.root, 'package.json'), JSON.stringify({ ...identity, name: 'elpis-desktop' }));
   await fs.mkdir(path.join(f.root, 'scripts'));
-  for (const file of ['install-desktop.mjs', 'renderer-artifact-gate.mjs', 'test-gate.mjs', 'gate-guards.mjs']) {
+  for (const file of ['install-desktop.mts', 'renderer-artifact-gate.mjs', 'test-gate.mts', 'gate-guards.mts']) {
     await fs.copyFile(fileURLToPath(new URL(`../scripts/${file}`, import.meta.url)), path.join(f.root, 'scripts', file));
   }
   // The installer trims old versions with the repository's shared prune script (1 Nov).
@@ -362,7 +362,7 @@ if(process.env.MOCK_RECEIPT==='stale')fs.writeFileSync(path.join(folder,${JSON.s
   const env = { ...process.env, HOME: home, TMPDIR: temporary, PATH: `${bin}${path.delimiter}${process.env.PATH}`,
     MOCK_COMMIT: commit, MOCK_RECEIPT: mode, PACKAGING_MARKER: marker, SOURCE_OUT: f.out, ELPIS_SKIP_LAUNCH_CHECK: '1' };
   delete env.NODE_TEST_CONTEXT;
-  const result = spawnSync(process.execPath, ['scripts/install-desktop.mjs', 'candidate', '--actions'], { cwd: f.root, env, encoding: 'utf8', timeout: 10000 });
+  const result = spawnSync(process.execPath, ['scripts/install-desktop.mts', 'candidate', '--actions'], { cwd: f.root, env, encoding: 'utf8', timeout: 10000 });
   assert.equal(result.status, mode === 'valid' ? 0 : 1, result.stderr);
   if (mode === 'missing' || mode === 'stale' || mode === 'download-source' || mode === 'download-head') {
     assert.match(result.stderr, mode === 'missing' ? /ENOENT.*elpis-ui-receipt/ : mode === 'stale' ? /UI receipt belongs to another commit/ : mode === 'download-head' ? /Source HEAD changed/ : /Tracked source changed/);

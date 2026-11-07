@@ -87,7 +87,7 @@ for (const colorScheme of ['light']) test(`Matilda floats out of the title bar a
 
 for (const colorScheme of ['light']) test(`Matilda mini chat, mute and dragging leave the main conversation unchanged (${colorScheme})`, { timeout: 60000 }, async t => {
   const { fixture } = require('./parity-fixture.cjs');
-  const { FACE_DATA_URL } = require('../bridge/matilda-face.cjs');
+  const { FACE_DATA_URL } = require('../bridge/matilda-face.cts');
   let music = { title: 'Linkin Park masterpiece', artist: 'Linkin Park', uri: 'file:///favorite.m4a', status: 'Playing', canMute: true, muted: false };
   let entries = [], replyMode = 'ok', release, slowArrived;
   const slowStarted = new Promise(resolve => { slowArrived = resolve; });
@@ -234,7 +234,7 @@ for (const colorScheme of ['light']) test(`Matilda mini chat, mute and dragging 
 // And her reply had arrived while the small chat still said "Matilda is replying…": one failed read ended the asking.
 for (const colorScheme of ['light']) test(`the small chat shows its last messages from its history icon, loads older ones as he scrolls up, and asks until her reply arrives (${colorScheme})`, { timeout: 60000 }, async t => {
   const { fixture } = require('./parity-fixture.cjs');
-  const { FACE_DATA_URL } = require('../bridge/matilda-face.cjs');
+  const { FACE_DATA_URL } = require('../bridge/matilda-face.cts');
   const say = (turnId, type, text) => ({ turnId, item: type === 'agentMessage' ? { id: `${turnId}-a`, type, text } : { id: `${turnId}-u`, type, content: [{ type: 'text', text }] } });
   let entries = [say('first', 'userMessage', 'The first question'), say('first', 'agentMessage', 'The first answer'),
     ...Array.from({ length: 5 }, (_, n) => [say(`mid${n}`, 'userMessage', `Question ${n}`), say(`mid${n}`, 'agentMessage', `Answer ${n}`)]).flat(),
@@ -252,7 +252,7 @@ for (const colorScheme of ['light']) test(`the small chat shows its last message
   await f.open('chat-a');
   const page = f.page, presence = page.getByRole('region', { name: 'Pinned Matilda', exact: true }); await presence.waitFor();
   const avatar = presence.getByRole('button', { name: 'Chat with Matilda', exact: true });
-  const { MATILDA_SHOTS, MATILDA_SHOTS_LIGHT } = require('../bridge/matilda-face.cjs');
+  const { MATILDA_SHOTS, MATILDA_SHOTS_LIGHT } = require('../bridge/matilda-face.cts');
   const shots = colorScheme === 'light' ? MATILDA_SHOTS_LIGHT : MATILDA_SHOTS;
   const face = mood => avatar.locator(`img.matilda-avatar-${colorScheme}[data-mood="${mood}"][data-shown="true"]:visible`);
   const checkMood = async mood => {
@@ -302,7 +302,7 @@ for (const colorScheme of ['light']) test(`the small chat shows its last message
 // 29 Oct, Masih, with nothing but a paused player: "what's this mute doing? ... no music is playing!"
 test('the sound control shows only while music plays', { timeout: 60000 }, async t => {
   const { fixture } = require('./parity-fixture.cjs');
-  const { FACE_DATA_URL } = require('../bridge/matilda-face.cjs');
+  const { FACE_DATA_URL } = require('../bridge/matilda-face.cts');
   const music = { title: 'Linkin Park masterpiece', artist: 'Linkin Park', uri: 'file:///favorite.m4a', status: 'Paused', canMute: true, muted: false };
   const f = await fixture({ width: 1000, height: 800, routes: {
     '/api/love-spot/companion': () => ({ pinned: true, face: FACE_DATA_URL, threadId: 'chat-a', favorite: null, music, reason: '' }),

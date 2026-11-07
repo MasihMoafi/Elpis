@@ -4,7 +4,7 @@ import { splitPainting, withoutPainting } from './love-spot-painting.cts';
 import { createSentenceBuffer } from './speech-buffer.mts';
 import { createHash, randomUUID } from 'node:crypto';
 import { LOVE_SPOT_AUDIO } from '../lib/love-spot-audio.mts';
-import { PORTRAIT_INSTRUCTIONS, replyPortrait } from './matilda-face.cjs';
+import { PORTRAIT_INSTRUCTIONS, replyPortrait } from './matilda-face.cts';
 
 type Store = ReturnType<typeof import('./love-spot-store.cts').createLoveSpot>;
 type Scene = Awaited<ReturnType<Store['read']>>['scene'];

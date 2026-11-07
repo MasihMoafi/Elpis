@@ -6,10 +6,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-const quote = value => `'${value.replaceAll("'", "'\\''")}'`;
-const execPath = value => `"${value.replace(/[\\"`$%]/g, char => char === '%' ? '%%' : `\\${char}`)}"`;
+const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
+const execPath = (value: string) => `"${value.replace(/[\\"`$%]/g, char => char === '%' ? '%%' : `\\${char}`)}"`;
 
-export function prepareDock(text, home) {
+export function prepareDock(text: string, home: string) {
   const exec = `Exec=${execPath(path.join(home, '.local/bin/elpis-app'))} --love-spot-app`;
   const found = new Set(); let section = '';
   const next = text.split('\n').map(line => {
@@ -25,13 +25,13 @@ export function prepareDock(text, home) {
 }
 
 /** Carries the exact old contents in the command itself, without a backup file. */
-export function rollbackCommand(file, original) {
+export function rollbackCommand(file: string, original: string) {
   const code = `require('node:fs').writeFileSync(${JSON.stringify(file)},Buffer.from(${JSON.stringify(Buffer.from(original).toString('base64'))},'base64'))`;
   return `${quote(process.execPath)} -e ${quote(code)}`;
 }
 
-async function main(args) {
-  if (args.some(arg => !['--apply', '--dry-run'].includes(arg)) || args.length > 1) throw Error('Usage: node scripts/point-love-dock.mjs [--dry-run|--apply]');
+async function main(args: string[]) {
+  if (args.some(arg => !['--apply', '--dry-run'].includes(arg)) || args.length > 1) throw Error('Usage: node scripts/point-love-dock.mts [--dry-run|--apply]');
   const home = os.homedir(), file = path.join(home, '.local/share/applications/excalidraw.desktop');
   if (!(await fs.lstat(file)).isFile()) throw Error('The dock entry must be a regular file');
   const original = await fs.readFile(file, 'utf8'), next = prepareDock(original, home);

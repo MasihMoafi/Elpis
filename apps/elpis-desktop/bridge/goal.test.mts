@@ -10,11 +10,10 @@ import { sessionContextFiles } from './session-context.mts';
 
 const ID = '00000000-0000-0000-0000-0000000000a1';
 const scratch = os.tmpdir();
-function runtime(cwd, writable = true) {
-  let goal = null;
-  const socket = new EventEmitter(), calls = [];
-  socket.close = () => {};
-  socket.send = raw => {
+function runtime(cwd: string, writable = true) {
+  let goal: { threadId: string; objective: string; status: string } | null = null;
+  const calls: { method: string }[] = [];
+  const socket = Object.assign(new EventEmitter(), { close() {}, send(raw: string) {
     const msg = JSON.parse(raw); if (msg.id === undefined) return;
     calls.push(msg); let result;
     switch (msg.method) {
@@ -27,8 +26,8 @@ function runtime(cwd, writable = true) {
       default: throw Error(`Unexpected RPC ${msg.method}`);
     }
     queueMicrotask(() => socket.emit('message', JSON.stringify({ id: msg.id, result })));
-  };
-  return { client: new DesktopClient(socket, { appHome: scratch, spawnLinksFile: path.join(scratch, 'goal-test-links.json') }), calls, complete: () => { goal.status = 'complete'; } };
+  } });
+  return { client: new DesktopClient(socket, { appHome: scratch, spawnLinksFile: path.join(scratch, 'goal-test-links.json') }), calls, complete: () => { assert.ok(goal); goal.status = 'complete'; } };
 }
 test('authenticated goal routes preserve runtime state and reject invalid writes without dispatch', async t => {
   const { client, calls, complete } = runtime(scratch); await client.initialize();
@@ -36,9 +35,10 @@ test('authenticated goal routes preserve runtime state and reject invalid writes
   const url = new URL(app.url), endpoint = `${url.origin}/api/threads/${ID}/goal`;
   assert.equal((await fetch(endpoint)).status, 401);
   const login = await fetch(`${url.origin}/api/session`, { method: 'POST', headers: { Origin: url.origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ token: new URLSearchParams(url.hash.slice(1)).get('token') }) });
-  const headers = { Origin: url.origin, Cookie: login.headers.get('set-cookie').split(';')[0], 'Content-Type': 'application/json' };
+  const cookie = login.headers.get('set-cookie')?.split(';')[0]; assert.ok(cookie);
+  const headers = { Origin: url.origin, Cookie: cookie, 'Content-Type': 'application/json' };
   const get = () => fetch(endpoint, { headers }).then(r => r.json());
-  const post = body => fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body) });
+  const post = (body: unknown) => fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body) });
   assert.deepEqual(await get(), { goal: null });
   const saved = await post({ objective: 'Pass the focused checks.' }); assert.equal(saved.status, 200);
   assert.equal((await get()).goal.objective, 'Pass the focused checks.');
@@ -52,7 +52,8 @@ test('authenticated goal routes preserve runtime state and reject invalid writes
 test('session context exposes missing project intent and Create cannot overwrite it or accept a path', async t => {
   const cwd = await fs.mkdtemp(path.join(scratch, 'goal-project-'));
   const { client } = runtime(cwd); t.after(() => client.close()); await client.initialize();
-  let state = await client.sessionContext(ID), intent = state.files.find(f => f.path === path.join(cwd, 'ES.md'));
+  let state = await client.sessionContext(ID);
+  const intent = state.files.find(f => f.path === path.join(cwd, 'ES.md'));
   assert.ok(intent);
   assert.equal(intent.exists, false); assert.equal(intent.included, false);
   await assert.rejects(client.createSessionIntent(ID, { path: '/elsewhere' }), /fields/i);
@@ -72,7 +73,7 @@ test('context lists recorded sources and selected skills, never the available ca
   const cwd = await fs.mkdtemp(path.join(scratch, 'goal-sources-')), file = path.join(cwd, 'rollout.jsonl');
   const rules = path.join(cwd, 'CLAUDE.md'), recorded = path.join(cwd, 'CHAIN.md'), skill = path.join(cwd, 'selected/SKILL.md'), unused = path.join(cwd, 'unused/SKILL.md');
   for (const target of [rules, recorded, skill, unused]) { await fs.mkdir(path.dirname(target), { recursive: true }); await fs.writeFile(target, 'Context file.'); }
-  const item = (role, text) => JSON.stringify({ type: 'response_item', payload: { type: 'message', role, content: [{ type: 'input_text', text }] } }) + '\n';
+  const item = (role: string, text: string) => JSON.stringify({ type: 'response_item', payload: { type: 'message', role, content: [{ type: 'input_text', text }] } }) + '\n';
   await fs.writeFile(file, item('developer', `### Source: ${rules} (13 characters)\n\nContext file.\n\n### Source: ${recorded} (13 characters)\n\nContext file.`) + item('developer', `Available skills: unused (file: ${unused})`) + item('assistant', `### Source: ${unused}\nQuoted only.`));
   const engine = [{ name: 'CLAUDE.md', path: rules, group: 'instructions', included: false, selectable: true, estimatedTokens: 4, reason: 'Excluded by the user' }];
   const read = () => sessionContextFiles({ cwd, path: file }, engine);
@@ -84,7 +85,7 @@ test('context lists recorded sources and selected skills, never the available ca
   await fs.appendFile(file, record.slice(cut)); result = await read();
   assert.equal(result.files.find(row => row.path === skill)?.group, 'skills'); assert.equal(result.files.some(row => row.path === unused), false);
   const manual = path.join(cwd, 'manual/SKILL.md'); await fs.mkdir(path.dirname(manual)); await fs.writeFile(manual, 'Manually read skill.');
-  const readCommand = (target, exit_code) => JSON.stringify({ type: 'event_msg', payload: { type: 'exec_command_end', cwd, exit_code, aggregated_output: 'Skill content', parsed_cmd: [{ type: 'read', path: target }] } }) + '\n';
+  const readCommand = (target: string, exit_code: number) => JSON.stringify({ type: 'event_msg', payload: { type: 'exec_command_end', cwd, exit_code, aggregated_output: 'Skill content', parsed_cmd: [{ type: 'read', path: target }] } }) + '\n';
   await fs.appendFile(file, readCommand(unused, 1) + readCommand('manual/SKILL.md', 0)); result = await read();
   assert.equal(result.files.some(row => row.path === unused), false); assert.equal(result.files.find(row => row.path === manual)?.group, 'skills');
 });

@@ -31,7 +31,7 @@ import type { VersionControl } from "@/lib/turn-replacement";
 import { noticeOf, type WorkflowNotice } from "@/lib/workflow-notice";
 import { reasoningOf, shellTokens, stepDuration, stepFailed, stepLabel, summarize, unwrapShell } from "@/lib/steps";
 // Built into the page, as the board has it: no request that can fail or arrive late (Masih, 23 Oct).
-import { isPortraitInstruction, replyPortrait } from "@/bridge/matilda-face.cjs";
+import { isPortraitInstruction, replyPortrait } from "@/bridge/matilda-face.cts";
 import { MatildaFace } from "@/components/matilda-face";
 import { runCard } from "@/lib/run-card";
 

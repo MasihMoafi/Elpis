@@ -1,6 +1,6 @@
 import type { Entry, Item } from "./api";
 import type { Attachment } from "./attachments";
-import { isPortraitInstruction } from "../bridge/matilda-face.cjs";
+import { isPortraitInstruction } from "../bridge/matilda-face.cts";
 
 /** Renderer-only identity, kept across the bridge's acknowledgement and recorded user item. */
 export type SubmittedMessage = {

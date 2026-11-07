@@ -1,4 +1,4 @@
-import { replyPortrait } from "../bridge/matilda-face.cjs";
+import { replyPortrait } from "../bridge/matilda-face.cts";
 
 export type HeartReaction = { threadId: string; itemId: string };
 export const HEART_REACTION = "elpis:heart-reaction";
