@@ -1,6 +1,6 @@
 ---
 source: tui/src/startup_draft_tests.rs
-assertion_line: 144
+assertion_line: 151
 expression: "snapshots.join(\"\\n---\\n\")"
 ---
 empty (48 columns):
@@ -56,7 +56,7 @@ multiline (48 columns):
 ---
 narrow (18 columns):
 
-  >_ Elpis (v0.4.…
+  >_ Elpis (v<VERSION>…
      loading
 
 
