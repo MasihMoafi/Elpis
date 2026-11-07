@@ -2,7 +2,8 @@ import { it } from 'node:test'
 import assert from 'node:assert/strict'
 import { ElpisAdapter, CodexAdapter, ClaudeAdapter, GeminiAdapter, object } from './adapters.mts'
 
-import { FakeServer } from './fixtures.test.mts'
+import { FakeServer, deferred, waitFor } from './fixtures.test.mts'
+import { z } from 'zod'
 
 for (const [Adapter, provider, model, expected] of [
   [ElpisAdapter, 'openai', 'gpt-worker', 'gpt-worker'], [CodexAdapter, 'codex', 'gpt-worker', 'gpt-worker'],
@@ -40,4 +41,42 @@ it('recovers receipts from every history page, including a turn with paged items
     }
     assert.deepEqual((await adapter.read(session.threadId)).messages.map(item => item.id), ['durable'])
   } finally { adapter.close() }
+})
+
+it('refuses a Mother role before connecting when its runtime cannot expose the role tools', async () => {
+  const server = new FakeServer(), adapter = new GeminiAdapter(server.connect)
+  try {
+    await assert.rejects(adapter.open({ cwd: '/project', name: 'Mother', model: { provider: 'gemini', model: 'gemini-worker' },
+      tools: [{ name: 'orchestrator_read', description: 'Read context', schema: z.object({}), execute: async () => '' }] }), /does not expose session MCP tools/)
+    assert.equal(server.calls.length, 0)
+    assert.equal(server.connections.size, 0)
+  } finally { adapter.close() }
+})
+
+it('closing Mother also closes connections whose session creation has not finished', async () => {
+  const server = new FakeServer(), adapter = new ElpisAdapter(server.connect), gate = deferred()
+  server.hold = (method) => method === 'thread/start' ? gate.promise : Promise.resolve()
+  const opening = adapter.open({ cwd: '/project', name: 'Pending', model: null })
+  try {
+    await waitFor(() => assert.ok(server.calls.some(call => call.method === 'thread/start')))
+    adapter.close(); assert.equal(server.connections.size, 0)
+    gate.resolve()
+    await assert.rejects(opening, /stopped/)
+  } finally { gate.resolve(); await opening.catch(() => {}); adapter.close() }
+})
+
+it('does not start a paid turn if the ticket ends while its session is being refreshed', async () => {
+  const server = new FakeServer(), adapter = new ElpisAdapter(server.connect), gate = deferred(), lifetime = new AbortController()
+  let allowed = true
+  try {
+    const session = await adapter.open({ cwd: '/project', name: 'Work', model: null })
+    adapter.bind(session.threadId, { tools: () => [], instructions: () => 'Current instructions', signal: lifetime.signal,
+      authorize: () => { if (!allowed) throw new Error('Ticket ended') } })
+    server.hold = method => method === 'thread/resume' ? gate.promise : Promise.resolve()
+    const sending = adapter.send(session.threadId, 'request', 'Continue', null)
+    const denied = assert.rejects(sending, /Ticket ended/)
+    await waitFor(() => assert.ok(server.calls.some(call => call.method === 'thread/resume')))
+    allowed = false; gate.resolve(); await denied
+    assert.equal(server.calls.filter(call => call.method === 'turn/start').length, 0)
+  } finally { gate.resolve(); lifetime.abort(); adapter.close() }
 })

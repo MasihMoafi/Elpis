@@ -11,6 +11,10 @@ import { ElpisChatHistory } from './elpis-chat-history.mts'
 import { createElpisChatTransport } from './elpis-chat-transport.mts'
 import { mergeLiveItem } from '../../../lib/live-events.ts'
 import type { Entry } from '../../../lib/api.ts'
+import { chatContext } from './elpis-chat-read.mts'
+import { issueTrigger } from './github-trigger.mts'
+import { Commands } from '../infra/commands.mts'
+import { testDeployment } from '../infra/fixtures.test.mts'
 
 const CHAT = '00000000-0000-0000-0000-000000000001'
 const user = (id: string) => ({ turnId: 'turn', item: { id, type: 'userMessage', content: [{ type: 'text', text: `user ${id}` }] }, startedAtMs: 1794009600000 })
@@ -41,6 +45,23 @@ test('history transport refuses another chat, repeated cursors, malformed user c
   await assert.rejects(transport.read(CHAT, undefined, AbortSignal.abort()), /abort/i)
   const malformed = createElpisChatTransport({ ...client, readThread: async () => ({ thread: { id: CHAT }, data: [{ ...user('1'), item: { id: '1', type: 'userMessage', content: 'bad' } }] }) })
   await assert.rejects(malformed.read(CHAT, undefined), /array/)
+})
+
+test('chat images survive durable history and bounded reads only expose the image in the requested message', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'mother-images-'))
+  try {
+    const history = new ElpisChatHistory(home), url = 'data:image/png;base64,iVBORw0KGgo='
+    history.append(CHAT, { id: 'image', text: 'Inspect the screenshot', content: [{ type: 'text', text: 'Inspect the screenshot' }, { type: 'image', url }] }, '', 'user')
+    const entries = new ElpisChatHistory(home).merge(CHAT, { data: [] })
+    const transport = createElpisChatTransport({ readThread: async () => ({ thread: { id: CHAT }, data: entries }), appendAssistant: async () => 'sent' })
+    const messages = await transport.read(CHAT, undefined), message = messages[0]!
+    assert.match(message.text, /\[image:image-1\]/); assert.equal(message.images?.[0]?.url, url)
+    const trigger = { ...issueTrigger({ number: 1, title: 'Image', body: '', html_url: 'https://example.test/image', user: { login: 'user' }, created_at: new Date().toISOString() }, 'mother'), source: 'elpis-chat', meta: { threadId: CHAT, messageId: message.id } }
+    const context = chatContext(transport), commands = new Commands(testDeployment, {}, new AbortController().signal)
+    assert.deepEqual(await context.image?.({}, commands, trigger, { id: message.id, text: message.text }, 'image-1', home, new AbortController().signal), { image_url: url })
+    await assert.rejects(context.image!({}, commands, trigger, { id: 'another-message', text: message.text }, 'image-1', home, new AbortController().signal), /unavailable/)
+    await assert.rejects(context.image!({}, commands, trigger, { id: message.id, text: message.text }, 'image-1', home, AbortSignal.abort()), /abort/i)
+  } finally { rmSync(home, { recursive: true, force: true }) }
 })
 
 test('reply insertion is durable and immutable per thread and ID, and merges into the native anchor page', () => {

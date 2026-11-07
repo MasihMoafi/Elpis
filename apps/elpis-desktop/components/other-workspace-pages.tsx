@@ -12,10 +12,12 @@ import type { Thread } from "@/lib/api";
 import type { View } from "@/lib/workspace-types";
 
 const LoveSpot = dynamic(() => import("@/components/love-spot"), { ssr: false, loading: () => <p role="status">Opening Love Spot…</p> });
+const MotherPage = dynamic(() => import("@/components/mother"), { ssr: false, loading: () => <p role="status">Opening Mother…</p> });
 type Props = {
   view: View; selected: Thread | null; threads: Thread[]; cwd: string; dark: boolean; loveToolbarHost: HTMLDivElement | null;
   side: ReturnType<typeof useSidePanel>; hasTerminal: boolean; setTuiLaunch: React.Dispatch<React.SetStateAction<TerminalLaunch | null>>;
   show: (view: View) => void; openSettings: (tab: SettingsDestination) => void; newChat: () => void; editDraft: (value: string) => void;
+  onOpenThread: (id: string) => void;
 };
 
 export function WorkspaceGuideAndLab({ view, show }: Pick<Props, "view" | "show">) {
@@ -25,8 +27,9 @@ export function WorkspaceGuideAndLab({ view, show }: Pick<Props, "view" | "show"
   </>;
 }
 
-export function OtherWorkspacePages({ view, selected, threads, cwd, dark, loveToolbarHost, side, hasTerminal, setTuiLaunch, show, openSettings, newChat, editDraft }: Props) {
+export function OtherWorkspacePages({ view, selected, threads, cwd, dark, loveToolbarHost, side, hasTerminal, setTuiLaunch, show, openSettings, newChat, editDraft, onOpenThread }: Props) {
   return <>
+    {view === "mother" && <ViewBoundary label="Mother"><MotherPage onOpenThread={onOpenThread} /></ViewBoundary>}
     {view === "loveSpot" && <ViewBoundary label="Love Spot"><LoveSpot dark={dark} toolbarHost={loveToolbarHost} /></ViewBoundary>}
     {view === "observability" && <ViewBoundary label="Observability"><ObservabilityView {...(selected ? { threadId: selected.id } : {})} chats={threads} /></ViewBoundary>}
     {view === "customize" && <div className="page-scroll"><ViewBoundary label="Customize"><CustomizeView cwd={cwd} onOpenSettings={() => openSettings("mcp")}

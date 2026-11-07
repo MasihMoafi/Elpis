@@ -5,9 +5,11 @@ import { HealthBoard } from '../infra/health.mts'
 import type { RuntimeAdapter } from './adapters.mts'
 import { DshExecutor, mandateInstructions, ticketOfSession, type ExecutorHost } from './dsh.mts'
 import { Effects } from './effects.mts'
-import { reportRelay } from './notices.mts'
+import { reportRelay } from '../app/notices.mts'
 import { Sessions } from './sessions.mts'
 import type { ExecutorStore } from './store.mts'
+import type { Tool } from '../app/tools/tool.mts'
+import type { Prompts } from '../app/prompts.mts'
 
 interface Options {
   store: ExecutorStore
@@ -24,6 +26,10 @@ interface Options {
   repliedTo?: ExecutorHost['repliedTo']
   instructions?: (sessionId: string) => string
   relay?: (id: string, text: string) => Promise<void>
+  tools?: (sessionId: string) => Tool[]
+  prompts?: Prompts
+  sessionEnvironment?: (sessionId: string) => Record<string, string>
+  processEnvironment?: () => Record<string, string>
 }
 export class ExecutorService {
   readonly executor: DshExecutor
@@ -38,7 +44,10 @@ export class ExecutorService {
     this.options = options; this.health = options.health ?? new HealthBoard()
     this.effects = new Effects(options.store, this.health)
     const workerHealth = this.health.claim('worker')
-    this.sessions = new Sessions({ store: options.store, adapters: options.adapters, subprocess: options.subprocess, effects: this.effects,
+    this.sessions = new Sessions({ store: options.store, stateDir: options.stateDir, adapters: options.adapters, subprocess: options.subprocess, effects: this.effects,
+      modelHealth: this.health.claim('models'),
+      ...(options.tools ? { tools: options.tools } : {}), ...(options.prompts ? { prompts: options.prompts } : {}),
+      ...(options.sessionEnvironment ? { environment: options.sessionEnvironment } : {}),
       ...(options.relay ? { relay: options.relay } : {}),
       ...(options.mainSessionId ? { mainSessionId: options.mainSessionId } : {}), ...(options.parentThreadId ? { parentThreadId: options.parentThreadId } : {}),
       instructions: id => {
@@ -47,8 +56,11 @@ export class ExecutorService {
       }, onError: error => workerHealth.set({ state: 'error', detail: String(error) }) })
     this.executor = new DshExecutor({ store: options.store, effects: this.effects, context: this.sessions, sessions: this.sessions, health: workerHealth,
       get engine() { return options.engine() }, machine: { stateDir: options.stateDir }, lifetime: this.lifetime.signal,
+      ...(options.processEnvironment ? { processEnvironment: options.processEnvironment } : {}),
       closing: () => this.closing, paused: options.paused, environment: options.environment ?? (ticket => [
-        { key: 'DSH_SUPERAGENT_DIR', value: ticket.execution?.directory ?? '' }, { key: 'DSH_SUPERAGENT_NAME', value: ticket.execution?.name ?? '' }, { key: 'DSH_SUPERAGENT_TICKET', value: ticket.id },
+        { key: 'DSH_SUPERAGENT_DIR', value: ticket.execution?.directory ?? '', description: { en: 'Ticket directory', zh: '目录' }, owner: 'executor' },
+        { key: 'DSH_SUPERAGENT_NAME', value: ticket.execution?.name ?? '', description: { en: 'Ticket name', zh: '名称' }, owner: 'executor' },
+        { key: 'DSH_SUPERAGENT_TICKET', value: ticket.id, description: { en: 'Ticket id', zh: 'ID' }, owner: 'executor' },
       ]), sourceLink: options.sourceLink ?? (() => Promise.resolve({})), repliedTo: options.repliedTo ?? (() => undefined) })
   }
   /** Install hooks before reattaching, then recover Assignments before draining durable work. */
@@ -70,6 +82,6 @@ export class ExecutorService {
   async shutdown(): Promise<void> {
     this.closing = true
     try { await this.executor.shutdown() }
-    finally { this.executor.dispose(); this.lifetime.abort(); this.sessions.dispose(); await this.effects.drain() }
+    finally { this.executor.dispose(); this.lifetime.abort(); this.sessions.dispose(); await Promise.all([this.effects.drain(), this.sessions.drained()]) }
   }
 }

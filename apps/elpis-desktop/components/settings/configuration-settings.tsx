@@ -82,7 +82,7 @@ function FeatureDefaults({ settings }: { settings: ElpisSettings }) {
   </>;
 }
 
-export function ConfigurationSettings() {
+export function ConfigurationSettings({ onOpenMother }: { onOpenMother?: (() => void) | undefined }) {
   const { models, error } = useModelCatalog();
   return <div aria-label="Configuration">
     <SettingsHeader title="Configuration" description="Choose how Elpis works on your tasks." />
@@ -91,7 +91,7 @@ export function ConfigurationSettings() {
       <ConfigOptionsGroup settings={settings} />
       <CatalogNotice error={error} />
       <ModelSettings value={settings} models={models} />
-      <MotherAgentSettings settings={settings} models={models} />
+      <MotherAgentSettings onOpenMother={onOpenMother} settings={settings} models={models} />
       <PrunerSettings value={settings} models={models} />
       <FeatureDefaults settings={settings} />
     </>}</SettingsLoader>

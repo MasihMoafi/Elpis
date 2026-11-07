@@ -8,5 +8,5 @@ export { runtimeAdapters, ElpisAdapter, CodexAdapter, ClaudeAdapter, GeminiAdapt
 export type { RuntimeAdapter, Connection, Runtime } from './adapters.mts'
 export { SettingsSchema, RoleModelSchema, readSettings } from './settings.mts'
 export { listSessions, sessionSettings } from './discovery.mts'
-export { reportRelay } from './notices.mts'
+export { reportRelay } from '../app/notices.mts'
 export { ExecutorService } from './service.mts'

@@ -795,6 +795,7 @@ wss.on("connection", (ws) => {
   const pendingHelperTurns = new Map(); // native turn/start id -> helper awaiting its acknowledgement
   const sessions = new Map();
   const threadMcp = new Map(); // thread -> the app's `mcp_servers.*` overrides for it (A37)
+  const threadEnvironment = new Map(); // Managed shell overrides, scoped to this conversation.
   const acps = new Map();
   const claudeModel = new Map();
   const pendingSteers = new Map();       // threadId → client message id → undelivered steer
@@ -1081,6 +1082,7 @@ wss.on("connection", (ws) => {
   const pendingConfigRead = new Set();
   const pendingStart = new BusyMap();
   const openingMcp = new Map(); // thread/start or /fork request id -> the app's MCP overrides
+  const openingEnvironment = new Map();
   let engineDefault = null; // asked once, after the TUI has initialized the engine
   const pendingTurnsList = new Map();
   const pendingItemsList = new Map();
@@ -1317,11 +1319,12 @@ wss.on("connection", (ws) => {
     }
   }
   const textOf = (content) => (content ?? []).filter((c) => c.type === "text").map((c) => c.text).join("\n");
-  async function elpisInstructions(threadId) {
+  async function elpisInstructions(threadId, developerInstructions) {
     try {
       const r = await engineCall("thread/elpisInstructions/read", { threadId });
       const parts = [];
-      if (r.developerInstructions?.trim()) parts.push(r.developerInstructions.trim());
+      const developer = typeof developerInstructions === 'string' ? developerInstructions : r.developerInstructions;
+      if (developer?.trim()) parts.push(developer.trim());
       if (r.agentsMd?.trim()) parts.push(`# Project and global instructions admitted by Elpis (AGENTS.md)\n\n${r.agentsMd.trim()}`);
       if (r.continuity?.trim()) parts.push(r.continuity.trim());
       return parts.join("\n\n");
@@ -1978,6 +1981,11 @@ wss.on("connection", (ws) => {
       if (tid) threadMcp.set(tid, openingMcp.get(parsed.id));
       openingMcp.delete(parsed.id);
     }
+    if (parsed && openingEnvironment.has(parsed.id)) {
+      const tid = parsed.result?.thread?.id;
+      if (tid) threadEnvironment.set(tid, openingEnvironment.get(parsed.id));
+      openingEnvironment.delete(parsed.id);
+    }
     if (parsed && pendingStart.has(parsed.id)) {
       const pick = pendingStart.get(parsed.id); pendingStart.delete(parsed.id);
       const tid = parsed.result?.thread?.id;
@@ -2269,7 +2277,11 @@ wss.on("connection", (ws) => {
       const policy = threadPolicy.get(threadId) ?? "on-request";
       const ask = policy !== "never";
       const mode = ask ? "ask" : "full";
-      const subagents = await subagentsAllowed(cwd);
+      const appServers = acpServersFrom(threadMcp.get(threadId), threadId);
+      const managed = appServers.some(server => server.name === 'elpis_mother');
+      const environment = managed ? { ...threadEnvironment.get(threadId), GH_TOKEN: '', GITHUB_TOKEN: '' } : {};
+      const managedMain = managed && environment.ELPIS_MOTHER_ROLE === 'orchestrator';
+      const subagents = !managedMain && await subagentsAllowed(cwd);
       let live = sessions.get(threadId);
       let sessionId = null;
       let freshSession = false;
@@ -2278,24 +2290,24 @@ wss.on("connection", (ws) => {
       // Capture admitted context at the turn boundary. Changed instructions (including an empty
       // selection), approval mode, Subagents or Smart Prune reload the native conversation.
       // Nothing reloads an in-flight turn; a changed agent starts afresh.
-      const instructions = [await elpisInstructions(threadId), ...(!subagents ? [SUBAGENTS_DISABLED] : [])].filter(Boolean).join("\n\n");
+      const instructions = [await elpisInstructions(threadId, req.params.collaborationMode?.settings?.developer_instructions), ...(!subagents ? [SUBAGENTS_DISABLED] : [])].filter(Boolean).join("\n\n");
       // MCP servers are fixed when a session is created, so changed app servers reload it.
-      const appServers = acpServersFrom(threadMcp.get(threadId), threadId);
       const mcp = JSON.stringify(appServers);
+      const environmentKey = JSON.stringify(environment);
       if (followup) sessionId = req.sessionId;
-      else if (live && (live.accountId ?? null) === accountId && live.mode === mode && live.subagents === subagents && live.agent === agent.key && live.prune === prune && live.instructions === instructions && (live.mcp ?? "[]") === mcp) sessionId = live.id;
+      else if (live && (live.accountId ?? null) === accountId && live.mode === mode && live.subagents === subagents && live.agent === agent.key && live.prune === prune && live.instructions === instructions && (live.mcp ?? "[]") === mcp && (live.environment ?? '{}') === environmentKey) sessionId = live.id;
       else {
         const cwd = threadCwd.get(threadId) ?? process.cwd();
         const proxy = prune ? await smartPruneProxy() : null;
         const browser = appServers.some((s) => s.name === "elpis_browser");
-        const options = { ...(ask && { settingSources: ["project", "local"] }), ...(browser && { allowedTools: ["mcp__elpis_browser"] }), ...(!subagents && { disallowedTools: SUBAGENT_TOOLS }), ...(proxy && { env: { ANTHROPIC_BASE_URL: proxy, NO_PROXY: [process.env.NO_PROXY, "127.0.0.1", "localhost"].filter(Boolean).join(",") } }) };
+        const options = { ...(ask && { settingSources: ["project", "local"] }), ...(browser && { allowedTools: ["mcp__elpis_browser"] }), ...(managedMain && { tools: [] }), ...(!subagents && { disallowedTools: SUBAGENT_TOOLS }), ...((managed || proxy) && { env: { ...environment, ...(proxy && { ANTHROPIC_BASE_URL: proxy, NO_PROXY: [process.env.NO_PROXY, "127.0.0.1", "localhost"].filter(Boolean).join(",") }) } }) };
         const _meta = { systemPrompt: { append: instructions }, claudeCode: { options, emitRawSDKMessages: [{ type: "system", subtype: "init" }] } };
         devChars.set(threadId, instructions.length);
         log(`Elpis instructions for ${agent.speaker}: ${instructions.length} chars`);
         await storeChain;
         const store = await loadStore();
         const helper = !!store._delegations?.[threadId] || !!store[threadId]?.parentThreadId;
-        const mcpServers = [...mcpServersFor(subagents, threadId, helper ? null : cwd, !helper), ...appServers];
+        const mcpServers = [...(managedMain ? [] : mcpServersFor(subagents, threadId, helper ? null : cwd, !helper)), ...appServers];
         // A session belongs to one agent; a chat that switched agent starts a fresh one, seeded below.
         const sameAccount = agent.key !== "claude" || (store[threadId]?.claudeAccountId ?? "default") === accountId;
         const sameAgent = (store[threadId]?.agent ?? "claude") === agent.key && sameAccount;
@@ -2311,7 +2323,7 @@ wss.on("connection", (ws) => {
           freshSession = true;
           log(`session ${sessionId} for thread ${threadId} in ${cwd} (${ask ? "Elpis asks" : "full access"}, policy ${policy}, subagents ${subagents ? "on" : "off"})`);
         }
-        live = { id: sessionId, mode, subagents, agent: agent.key, accountId, prune, instructions, mcp };
+        live = { id: sessionId, mode, subagents, agent: agent.key, accountId, prune, instructions, mcp, environment: environmentKey };
         sessions.set(threadId, live);
         const sid = sessionId;
         updateStore((st) => { st[threadId] = { ...st[threadId], session: sid, mode, agent: agent.key, ...(agent.key === "claude" && { claudeAccountId: accountId }) }; });
@@ -3363,6 +3375,11 @@ wss.on("connection", (ws) => {
       const appMcp = appMcpConfig(msg.params?.config);
       if (appMcp && msg.method === "thread/resume") threadMcp.set(msg.params.threadId, appMcp);
       else if (appMcp) openingMcp.set(msg.id, appMcp);
+      const environment = msg.params?.config?.['shell_environment_policy.set'];
+      if (environment && typeof environment === 'object' && !Array.isArray(environment) && Object.values(environment).every(value => typeof value === 'string')) {
+        if (msg.method === 'thread/resume') threadEnvironment.set(msg.params.threadId, environment);
+        else openingEnvironment.set(msg.id, environment);
+      }
     }
     if (process.env.ACP_BRIDGE_DEBUG && msg.method && (process.env.ACP_BRIDGE_DEBUG === "all" || !/^thread\/(read|turns\/list|list|loaded)/.test(msg.method))) log(`tui-> ${redactSecrets(line).slice(0, 600)}`);
     if (msg.method === "thread/read" && claudeModel.has(msg.params?.threadId) && resumeResults.has(msg.params.threadId)) {

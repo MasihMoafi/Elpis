@@ -57,6 +57,7 @@ const CONFIG_PAGES: Tab[] = ["general", "personalization", "git", "worktrees", "
 
 /** Settings sections side by side, as in ChatGPT: one nav, one page at a time. Visited pages stay mounted to keep unsaved edits. */
 type Props = {
+  onOpenMother?: (() => void) | undefined;
   initialTab?: SettingsDestination;
   navigationKey?: number;
   /** Retained controls refresh when Settings becomes visible again. */
@@ -70,7 +71,7 @@ type Props = {
   onChatPermissions?: () => void; onChatModel?: () => void; modelChangeReason?: string; currentModel?: string | null; currentPermission?: string | null;
 };
 
-export function SettingsView({ initialTab = "providers", navigationKey = 0, active = true, accountRefresh, onProvidersChanged, theme, onTheme, onUnarchived, onImported, onDeleteThread, onBack, onBrowser, onCustomize, onChatContext, onChatPermissions, onChatModel, modelChangeReason, currentModel, currentPermission, threadId }: Props) {
+export function SettingsView({ initialTab = "providers", navigationKey = 0, active = true, accountRefresh, onProvidersChanged, theme, onTheme, onUnarchived, onImported, onDeleteThread, onBack, onBrowser, onCustomize, onOpenMother, onChatContext, onChatPermissions, onChatModel, modelChangeReason, currentModel, currentPermission, threadId }: Props) {
   // One standard order, the same for everyone (Masih, 23 Oct: the section titles "wouldn't make sense if I could just change
   // the order"; "Don't make users change them"). Chats keep their drag order; Settings has none.
   const groups = SECTIONS, pages = TABS;
@@ -106,7 +107,7 @@ export function SettingsView({ initialTab = "providers", navigationKey = 0, acti
       case "git": return <GitSettings />;
       case "worktrees": return <WorktreeSettings />;
       case "hooks": return <HooksSettings />;
-      case "configuration": return <><ConfigurationSettings />{threadId && onChatPermissions && <SettingsGroup title="Current chat"><SettingRow title="Current permissions" description={currentPermission ?? "Not reported"} scope="this chat"><Button variant="outline" onClick={onChatPermissions}>Change this chat permissions</Button></SettingRow></SettingsGroup>}</>;
+      case "configuration": return <><ConfigurationSettings onOpenMother={onOpenMother} />{threadId && onChatPermissions && <SettingsGroup title="Current chat"><SettingRow title="Current permissions" description={currentPermission ?? "Not reported"} scope="this chat"><Button variant="outline" onClick={onChatPermissions}>Change this chat permissions</Button></SettingRow></SettingsGroup>}</>;
       case "import": return <ImportSettings active={active && tab === "import"} {...(onImported ? { onImported } : {})} />;
       case "archived": return <ArchivedView onUnarchived={onUnarchived} onDelete={onDeleteThread} />;
     }

@@ -60,7 +60,7 @@ it('holds one slot per running or starting ticket and gives a person one extra s
   slots.free('t3'); assert.equal(slots.used(), 3)
 })
 it('words an assignment and inferred authorization from the ticket alone', () => {
-  const settings = SettingsSchema.parse({ policy: { rules: [{ id: 'copy', name: 'Copy fixes', instruction: 'Fix typos only.' }] } })
+  const settings = SettingsSchema.parse({ policy: { rules: [{ id: 'copy', name: 'Copy fixes', enabled: true, instruction: 'Fix typos only.' }] } })
   const ticket: Ticket = { id: 'ticket-0123456789abcdef', title: 'Fix', decisionId: 'd', channels: [], assignments: [], inputs: [], undelivered: [], createdAt: '', updatedAt: '', origin: { triggerId: 'tr1', triggerIds: [] },
     mandate: { strength: 'inferred', policyVersion: 'v1', basis: { via: 'listed', rules: ['copy'] }, actor: { source: 'github', id: 'alice' }, scope: '' } }
   const execution = ticketExecution(ticket, { kind: 'accept', title: 'Fix', scope: 'the typo', reason: 'r', name: 'fix-typo' }, settings, '/state')

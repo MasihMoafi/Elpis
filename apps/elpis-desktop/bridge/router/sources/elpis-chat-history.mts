@@ -5,12 +5,14 @@ import { DatabaseSync } from 'node:sqlite'
 import { z } from 'zod'
 import type { EngineItem } from '../../client-thread-list.mts'
 
-const ReplySchema = z.object({ id: z.string(), threadId: z.string(), text: z.string(), at: z.number(), after: z.string(), role: z.enum(['user', 'assistant']).default('assistant') })
+const ContentSchema = z.array(z.union([z.object({ type: z.literal('text'), text: z.string(), text_elements: z.array(z.unknown()).optional() }), z.object({ type: z.literal('image'), url: z.string() }), z.object({ type: z.literal('mention'), name: z.string(), path: z.string() })]))
+export interface ChatMessage { id: string; text: string; content?: z.infer<typeof ContentSchema> }
+const ReplySchema = z.object({ id: z.string(), threadId: z.string(), text: z.string(), at: z.number(), after: z.string(), role: z.enum(['user', 'assistant']).default('assistant'), content: ContentSchema.optional() })
 type Reply = z.infer<typeof ReplySchema>
 export type ChatHistoryEntry = { turnId: string; item: EngineItem & { phase?: string }; startedAtMs?: number | null; completedAtMs?: number | null }
 const identity = (entry: ChatHistoryEntry) => `${entry.turnId}:${entry.item.id}`
 const entryOf = (reply: Reply): ChatHistoryEntry => ({ turnId: `router-${createHash('sha256').update(JSON.stringify([reply.threadId, reply.id])).digest('hex')}`,
-  item: reply.role === 'user' ? { id: reply.id, type: 'userMessage', content: [{ type: 'text', text: reply.text }] }
+  item: reply.role === 'user' ? { id: reply.id, type: 'userMessage', content: reply.content ?? [{ type: 'text', text: reply.text }] }
     : { id: reply.id, type: 'agentMessage', text: reply.text, phase: 'final_answer' }, startedAtMs: reply.at, completedAtMs: reply.at })
 
 /** Visible router replies: native inject_items is model context only, so these belong to the bridge's chat history. */
@@ -29,7 +31,7 @@ export class ElpisChatHistory {
     finally { db.close() }
   }
   /** The first payload wins, even across clients, crashes and lost acknowledgements. */
-  append(threadId: string, reply: { id: string; text: string }, after: string, role: Reply['role'] = 'assistant') {
+  append(threadId: string, reply: ChatMessage, after: string, role: Reply['role'] = 'assistant') {
     mkdirSync(this.directory, { recursive: true, mode: 0o700 })
     const db = new DatabaseSync(this.file)
     try {

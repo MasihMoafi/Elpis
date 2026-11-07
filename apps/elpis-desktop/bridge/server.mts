@@ -128,7 +128,7 @@ export async function startDesktopServer(rawOptions: Record<string, unknown> = {
     try {
       if (request.headers.host !== new URL(origin).host || (request.headers.origin && request.headers.origin !== origin)
         || request.headers['sec-fetch-site'] === 'cross-site') throw new BridgeError('Local application origin required', 403);
-      if (!request.method || !['GET', 'POST'].includes(request.method)) throw new BridgeError('Method is not allowed', 405);
+      if (!request.method || !['GET', 'POST', 'PUT'].includes(request.method)) throw new BridgeError('Method is not allowed', 405);
       const url = new URL(request.url ?? '/', origin);
       const requestedArea = url.pathname.split('/')[2] ?? '';
       if (ERROR_AREAS.has(requestedArea)) area = requestedArea;
@@ -136,7 +136,7 @@ export async function startDesktopServer(rawOptions: Record<string, unknown> = {
       applyFrameHeaders(url, response);
       const key = request.headers['x-elpis-automations'];
       const automationTool = typeof key === 'string' && same(key, automationKey) && /^\/api\/automations(?:\/|$)/.test(url.pathname);
-      if (request.method === 'POST' && !automationTool && request.headers.origin !== origin) throw new BridgeError('Same-origin request required', 403);
+      if (request.method !== 'GET' && !automationTool && request.headers.origin !== origin) throw new BridgeError('Same-origin request required', 403);
       if (url.pathname === '/api/session' && request.method === 'POST') {
         const submitted = object(await body(request), ['token']) as { token?: unknown };
         if (!same(submitted.token, capability)) throw new BridgeError('Invalid application capability', 403);
@@ -157,6 +157,7 @@ export async function startDesktopServer(rawOptions: Record<string, unknown> = {
         if (await handleLoveSpotRoutes(state, request, response, url, method)) return;
         if (await handleVoiceRoutes(state, request, response, url, method)) return;
         if (await handleFileRoutes(state, request, response, url, method)) return;
+        if (url.pathname.startsWith('/api/mother/')) { await mother.handle(request, response, new URL(origin).port); return; }
         if (await handleSettingsRoutes(state, request, response, url, method)) return;
         if (await handleWorkflowRoutes(state, request, response, url, method)) return;
         if (await handleThreadRoutes(state, request, response, url, method)) return;

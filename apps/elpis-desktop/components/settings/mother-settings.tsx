@@ -37,7 +37,7 @@ function RoleChoice({ role, label, value, settings, models, disabled, onChange }
   </>;
 }
 
-export function MotherAgentSettings({ settings, models }: { settings: ElpisSettings; models: Model[] }) {
+export function MotherAgentSettings({ settings, models, onOpenMother }: { settings: ElpisSettings; models: Model[]; onOpenMother?: (() => void) | undefined }) {
   const [value, setValue] = useState<MotherSettings | null>(null), [draft, setDraft] = useState<MotherSettings["roles"] | null>(null);
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
   useEffect(() => { let live = true; void api<MotherSettings>("/mother-agent").then(value => { if (live) setValue(value); }).catch(error => { if (live) setError(errorText(error)); }); return () => { live = false; }; }, []);
@@ -50,6 +50,7 @@ export function MotherAgentSettings({ settings, models }: { settings: ElpisSetti
   }
   const failed = value?.error || Object.values(value?.health ?? {}).find(entry => entry.state === "error")?.detail;
   return <SettingsGroup title="Mother agent" description="Give Mother a goal in her pinned chat. She routes it to workers and brings the result back there.">
+    {onOpenMother && <SettingsActions><Button variant="outline" onClick={onOpenMother}>Open Mother panel</Button></SettingsActions>}
     <SettingRow title="Enable Mother agent" description="Off by default. Turning it off stops her workers; the chat and unfinished work are kept.">
       <Switch aria-label="Enable Mother agent" checked={value?.enabled ?? false} disabled={!value || busy} onCheckedChange={enabled => void save({ enabled })} />
     </SettingRow>
