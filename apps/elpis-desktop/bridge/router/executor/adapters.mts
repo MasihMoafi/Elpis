@@ -1,28 +1,42 @@
 import type { RoleModel } from './settings.mts'
-import { existsSync, realpathSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
-import { pathToFileURL, fileURLToPath } from 'node:url'
-import { runtimeTools } from '../../runtime-paths.mts'
+import { z } from 'zod'
+import type { Tool } from '../app/tools/tool.mts'
+import type { TranscriptEvent } from '../app/host.mts'
+import type { McpRuntime } from './tool-runtime.mts'
 
 export type Runtime = 'elpis' | 'codex' | 'claude' | 'gemini'
 export interface Connection {
   readonly ready: Promise<unknown>
   readonly closed: boolean
   readonly listeners: Set<(message: unknown) => void>
+  readonly requests?: Set<(message: unknown) => boolean>
+  respond?(id: string | number, result: object): void
   call(method: string, params: object): Promise<unknown>
   onClose(listener: (why: string) => void): unknown
   close(): void
 }
 export const object = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+const shellConfig = (values: Record<string, string>) => ({ 'shell_environment_policy.inherit': 'all',
+  'shell_environment_policy.ignore_default_excludes': false,
+  'shell_environment_policy.exclude': ['*KEY*', '*PASSWORD*', '*SECRET*', '*TOKEN*', 'GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_CONFIG_COUNT', 'GIT_CONFIG_PARAMETERS', 'GIT_AUTHOR_*', 'GIT_COMMITTER_*'],
+  'shell_environment_policy.set': values })
 const string = (value: unknown): string | undefined => typeof value === 'string' && value ? value : undefined
+const managedInstructions = 'This is a managed Mother session. Its current role instructions are supplied at each turn in collaboration mode developer instructions.'
+/** Main work stays in the domain queue; workers keep native coding tools without independent goals or interactive prompts. */
+function roleConfig(role: OpenOptions['role']): Record<string, unknown> {
+  return { 'features.code_mode': false, 'features.apps': false, 'features.plugins': false, 'features.goals': false,
+    'features.image_generation': false, 'tools.experimental_request_user_input.enabled': false,
+    ...(role === 'orchestrator' ? { 'features.shell_tool': false, 'features.unified_exec': false, 'features.apply_patch_freeform': false,
+      'features.view_image': false, 'features.multi_agent': false, 'features.multi_agent_v2': false, web_search: 'disabled' } : {}) }
+}
 export function runtimeOf(model: RoleModel | null): Runtime {
   if (model?.provider === 'claude' || model?.model.startsWith('claude/')) return 'claude'
   if (['agy', 'gemini'].includes(model?.provider ?? '') || model?.model.startsWith('agy/')) return 'gemini'
   return model?.provider === 'codex' ? 'codex' : 'elpis'
 }
-export interface WorkerSession { threadId: string; activeTurn: string | null; model: string | null; messages: { id: string; text: string }[]; result?: { id: string; text: string } }
-export interface OpenOptions { cwd: string; name: string; model: RoleModel | null; parentThreadId?: string; instructions?: string }
+export interface WorkerSession { threadId: string; activeTurn: string | null; model: string | null; messages: { id: string; text: string }[]; result?: { id: string; text: string }; transcript?: TranscriptEvent[] }
+export interface ToolBinding { tools(): Tool[]; instructions(): string; authorize(): void; signal: AbortSignal; environment?(): Record<string, string>; mcp?(): Promise<McpRuntime> }
+export interface OpenOptions { cwd: string; name: string; model: RoleModel | null; parentThreadId?: string; instructions?: string; tools?: Tool[]; role?: 'orchestrator' | 'worker'; environment?: Record<string, string>; mcp?: McpRuntime }
 export interface RuntimeAdapter {
   readonly runtime: Runtime
   open(options: OpenOptions): Promise<WorkerSession>
@@ -32,6 +46,9 @@ export interface RuntimeAdapter {
   background(threadId: string): Promise<{ jobs: { id: string; label: string }[]; children: { id: string }[] }>
   killJob(threadId: string, processId: string): Promise<void>
   subscribe(threadId: string, listener: (message: unknown) => void): () => void
+  bind?(threadId: string, binding: ToolBinding): void
+  configure?(threadId: string, mcp: McpRuntime, environment?: Record<string, string>): Promise<void>
+  drain?(): Promise<void>
   close(): void
 }
 /** Stable delivery IDs also live in the runtime's own history, covering a crash before the local receipt commits. */
@@ -55,42 +72,57 @@ function messages(turns: unknown[]): WorkerSession['messages'] {
 export class AppServerAdapter implements RuntimeAdapter {
   readonly runtime: Runtime
   private readonly connections = new Map<string, Connection>()
+  private readonly owned = new Set<Connection>()
+  private closed = false
   private readonly disposers = new Set<() => void>()
   private readonly watchers = new Map<string, Set<(message: unknown) => void>>()
   private readonly connect: () => Connection
+  private readonly bindings = new Map<string, ToolBinding>()
+  private readonly toolCalls = new Set<Promise<void>>()
   constructor(runtime: Runtime, connect: () => Connection) { this.runtime = runtime; this.connect = connect }
+  private createConnection(): Connection {
+    if (this.closed) throw new Error('The runtime adapter is stopped')
+    const conn = this.connect(); this.owned.add(conn); return conn
+  }
+  private attaching(conn: Connection): void { if (this.closed || conn.closed) throw new Error('The runtime adapter stopped while attaching the session') }
   private async connection(threadId: string): Promise<Connection> {
     const old = this.connections.get(threadId)
     if (old && !old.closed) return old
-    const conn = this.connect()
-    try { await conn.ready; await conn.call('thread/resume', { threadId }); this.connections.set(threadId, conn); this.watch(conn, threadId); return conn }
-    catch (error) { conn.close(); throw error }
+    const conn = this.createConnection()
+    try { await conn.ready; this.attaching(conn); await conn.call('thread/resume', { threadId }); this.attaching(conn); this.connections.set(threadId, conn); this.watch(conn, threadId); return conn }
+    catch (error) { conn.close(); this.owned.delete(conn); throw error }
   }
   protected route(model: RoleModel | null): { model?: string; modelProvider?: string; config?: Record<string, string> } {
     return model ? { model: model.model, modelProvider: model.provider, ...(model.reasoningEffort ? { config: { model_reasoning_effort: model.reasoningEffort } } : {}) } : {}
   }
   async open(options: OpenOptions): Promise<WorkerSession> {
-    const conn = this.connect()
+    if (this.runtime === 'gemini' && options.tools?.length) throw Object.assign(new Error('The Antigravity adapter does not expose session MCP tools. Choose Elpis, Codex or Claude for a Mother role.'), { creationUnknown: false })
+    const conn = this.createConnection()
     let creating = false
     try {
       await conn.ready
+      this.attaching(conn)
       // Match workflow agents: turn off user MCP servers individually; never replace the global configuration.
       const configured = object(object(await conn.call('config/read', { includeLayers: false, cwd: options.cwd })).config).mcp_servers
       const config = Object.fromEntries(Object.keys(object(configured)).map(name => [`mcp_servers.${name}.enabled`, false]))
       const route = this.route(options.model)
+      this.attaching(conn)
+      const environment = options.tools ? { ...options.environment, ELPIS_MOTHER_ROLE: options.role ?? 'worker' } : options.environment
       creating = true
-      const response = object(await conn.call('thread/start', { cwd: options.cwd, approvalPolicy: 'never', sandbox: 'workspace-write',
-        ...route, config: { ...config, ...route.config }, ...(options.instructions ? { developerInstructions: options.instructions } : {}),
+      const response = object(await conn.call('thread/start', { cwd: options.cwd, approvalPolicy: 'never', sandbox: options.role === 'orchestrator' ? 'read-only' : 'workspace-write',
+        ...route, config: { ...config, ...route.config, ...(options.tools ? roleConfig(options.role) : {}), ...(environment ? shellConfig(environment) : {}), ...(options.mcp ? { 'mcp_servers.elpis_mother': options.mcp } : {}) }, ...(options.instructions ? { developerInstructions: options.tools ? managedInstructions : options.instructions } : {}),
+        ...(options.tools && !options.mcp ? { dynamicTools: options.tools.map(tool => ({ type: 'function', name: tool.name, description: tool.description, inputSchema: z.toJSONSchema(tool.schema, { io: 'input' }) })) } : {}),
         ...(options.parentThreadId ? { elpisParentThreadId: options.parentThreadId } : {}) }))
       const threadId = string(object(response.thread).id)
       if (!threadId) throw new Error('The runtime did not return a session ID')
+      this.attaching(conn)
       this.connections.set(threadId, conn)
       this.watch(conn, threadId)
       // Naming is cosmetic: a failed name must not lose the created session's durable binding.
       await conn.call('thread/name/set', { threadId, name: options.name }).catch(() => {})
       return { threadId, activeTurn: null, model: string(response.model) ?? options.model?.model ?? null, messages: [] }
     } catch (error) {
-      if (![...this.connections.values()].includes(conn)) conn.close()
+      if (![...this.connections.values()].includes(conn)) { conn.close(); this.owned.delete(conn) }
       const failure = error instanceof Error ? error : new Error(String(object(error).message ?? error))
       throw Object.assign(failure, { creationUnknown: creating && (typeof object(error).code !== 'number' || !!object(error).connectionClosed) })
     }
@@ -127,18 +159,52 @@ export class AppServerAdapter implements RuntimeAdapter {
     const items = object(completed).items
     const final = Array.isArray(items) ? items.findLast(item => object(item).type === 'agentMessage' && object(item).phase !== 'commentary') : undefined
     const text = string(object(final).text), id = string(object(completed).id)
-    return { threadId, activeTurn: string(object(active).id) ?? null, model: string(thread.model) ?? string(response.model) ?? null, messages: messages(turns),
+    const transcript: TranscriptEvent[] = turns.slice().reverse().flatMap(turn => {
+      const entries = object(turn).items
+      return Array.isArray(entries) ? entries.flatMap((raw): TranscriptEvent[] => {
+        const item = object(raw)
+        if (item.type === 'userMessage') return [{ type: 'user/message', data: { role: 'user', content: Array.isArray(item.content) ? item.content.map(block => ({ type: 'text', text: string(object(block).text) ?? '' })) : [] } }]
+        if (item.type === 'agentMessage') return [{ type: 'assistant/message', data: { message: { role: 'assistant', content: [{ type: 'text', text: string(item.text) ?? '' }] } } }]
+        if (item.type === 'dynamicToolCall') return [{ type: 'tool/result', data: { message: { role: 'tool', content: [{ type: 'text', text: JSON.stringify({ tool: item.tool, arguments: item.arguments, result: item.contentItems }) }] } } }]
+        return []
+      }) : []
+    })
+    return { threadId, activeTurn: string(object(active).id) ?? null, model: string(thread.model) ?? string(response.model) ?? null, messages: messages(turns), transcript,
       ...(text && id ? { result: { id, text } } : {}) }
   }
   async send(threadId: string, id: string, text: string, activeTurn: string | null, includedIds: readonly string[] = []): Promise<string> {
     const conn = await this.connection(threadId)
+    const binding = this.bindings.get(threadId)
+    binding?.authorize()
+    let collaborationMode: object | undefined
+    if (binding && !activeTurn) {
+      const current = object(await conn.call('thread/resume', { threadId, excludeTurns: true }))
+      const mode = object(current.collaborationMode), settings = object(mode.settings)
+      const model = string(current.model) ?? string(object(current.thread).model)
+      if (!model) throw new Error('The runtime did not return the session model')
+      if (model.startsWith('agy/')) throw new Error('The Antigravity adapter does not expose Mother tools. Choose Elpis, Codex or Claude for this role.')
+      if (model.startsWith('claude/')) {
+        if (!binding.mcp) throw new Error('This session cannot reconnect Mother tools after a provider change')
+        await this.configure(threadId, await binding.mcp(), binding.environment?.())
+      }
+      collaborationMode = { mode: string(mode.mode) ?? 'default', settings: { model,
+        reasoning_effort: settings.reasoning_effort ?? current.reasoningEffort ?? null, developer_instructions: binding.instructions() } }
+    }
     const input = [{ type: 'text', text: `${marker(id, includedIds)}\n${text}`, text_elements: [] }]
-    const response = object(await conn.call(activeTurn ? 'turn/steer' : 'turn/start', { threadId, input, ...(activeTurn ? { expectedTurnId: activeTurn } : {}) }))
+    binding?.signal.throwIfAborted(); binding?.authorize()
+    const response = object(await conn.call(activeTurn ? 'turn/steer' : 'turn/start', { threadId, input,
+      ...(collaborationMode ? { collaborationMode } : {}), ...(activeTurn ? { expectedTurnId: activeTurn } : {}) }))
     const turn = string(object(response.turn).id) ?? string(response.turnId) ?? activeTurn
     if (!turn) throw new Error('The runtime did not acknowledge the turn')
     return turn
   }
   async stop(threadId: string, turnId: string): Promise<void> { const conn = await this.connection(threadId); await conn.call('turn/interrupt', { threadId, turnId }) }
+  async configure(threadId: string, mcp: McpRuntime, environment?: Record<string, string>): Promise<void> {
+    if (this.runtime === 'gemini') throw new Error('The Antigravity adapter does not expose Mother tools. Choose Elpis, Codex or Claude for this role.')
+    const conn = await this.connection(threadId)
+    await conn.call('thread/resume', { threadId, excludeTurns: true, config: { 'mcp_servers.elpis_mother': mcp,
+      ...shellConfig({ ...environment, ELPIS_MOTHER_ROLE: mcp.env.ELPIS_MOTHER_ROLE ?? 'worker' }) } })
+  }
   async background(threadId: string): Promise<{ jobs: { id: string; label: string }[]; children: { id: string }[] }> {
     const conn = await this.connection(threadId)
     const pages = async (method: string, params: object): Promise<Record<string, unknown>[]> => {
@@ -172,12 +238,32 @@ export class AppServerAdapter implements RuntimeAdapter {
     if (result.terminated !== true) throw new Error(`The runtime did not stop background process ${processId}`)
   }
   private watch(conn: Connection, threadId: string): void {
+    const request = (raw: unknown): boolean => {
+      const message = object(raw), params = object(message.params), binding = this.bindings.get(threadId)
+      if (message.method !== 'item/tool/call' || params.threadId !== threadId || !binding || !conn.respond || (typeof message.id !== 'string' && typeof message.id !== 'number')) return false
+      const id = message.id
+      const run = async () => {
+        let result: object
+        try {
+          binding.signal.throwIfAborted(); binding.authorize()
+          const tool = binding.tools().find(tool => tool.name === params.tool)
+          if (!tool) throw new Error('This tool is unavailable to this session')
+          const value = await tool.execute(tool.schema.parse(params.arguments), binding.signal)
+          const image = object(value).image_url
+          result = { success: true, contentItems: typeof image === 'string' ? [{ type: 'inputImage', imageUrl: image }] : [{ type: 'inputText', text: JSON.stringify(value) ?? 'null' }] }
+        } catch (error) { result = { success: false, contentItems: [{ type: 'inputText', text: error instanceof Error ? error.message : String(error) }] } }
+        if (!conn.closed) conn.respond?.(id, result)
+      }
+      const work = run().finally(() => this.toolCalls.delete(work)); this.toolCalls.add(work)
+      return true
+    }
+    conn.requests?.add(request)
     const receive = (message: unknown) => { if (object(object(message).params).threadId === threadId) for (const listener of this.watchers.get(threadId) ?? []) listener(message) }
     const closed = (why: string) => { for (const listener of this.watchers.get(threadId) ?? []) listener({ method: 'error', params: { threadId, error: { message: why, connectionClosed: true } } }) }
     conn.listeners.add(receive)
     let live = true
     conn.onClose(why => { if (live) closed(why) })
-    const dispose = () => { live = false; conn.listeners.delete(receive); this.disposers.delete(dispose) }
+    const dispose = () => { live = false; conn.listeners.delete(receive); conn.requests?.delete(request); this.disposers.delete(dispose) }
     this.disposers.add(dispose)
   }
   subscribe(threadId: string, listener: (message: unknown) => void): () => void {
@@ -186,7 +272,13 @@ export class AppServerAdapter implements RuntimeAdapter {
     watchers.add(listener); this.watchers.set(threadId, watchers)
     return () => { watchers.delete(listener) }
   }
-  close(): void { for (const dispose of this.disposers) dispose(); this.watchers.clear(); for (const conn of this.connections.values()) conn.close(); this.connections.clear() }
+  bind(threadId: string, binding: ToolBinding): void {
+    const conn = this.connections.get(threadId)
+    if (!conn?.requests || !conn.respond) throw new Error('This runtime connection cannot serve Mother tools; update the Elpis runtime')
+    this.bindings.set(threadId, binding)
+  }
+  close(): void { this.closed = true; for (const dispose of this.disposers) dispose(); this.bindings.clear(); this.watchers.clear(); for (const conn of this.owned) conn.close(); this.owned.clear(); this.connections.clear() }
+  async drain(): Promise<void> { await Promise.allSettled([...this.toolCalls]) }
 }
 export class ElpisAdapter extends AppServerAdapter { constructor(connect: () => Connection) { super('elpis', connect) } }
 export class CodexAdapter extends AppServerAdapter {
@@ -208,10 +300,9 @@ export class GeminiAdapter extends AppServerAdapter {
   }
 }
 export async function runtimeAdapters(options: { url: string; codexBin?: string }): Promise<RuntimeAdapter[]> {
-  const source = fileURLToPath(new URL('../../../../../tools/elpis-claude/app-server-connection.mjs', import.meta.url))
-  const module = existsSync(source) ? source : join(runtimeTools(realpathSync(process.env.ELPIS_ENGINE_BIN ?? join(homedir(), '.local', 'bin', 'elpis-next'))), 'app-server-connection.mjs')
+  const module = new URL('../../resources/app-server-connection.mjs', import.meta.url)
   const { connectAppServer }: { connectAppServer: (options: { url?: string | undefined; engineBin?: string | undefined; name: string }) => Connection } =
-    await import(pathToFileURL(module).href)
+    await import(module.href)
   const bridge = (): Connection => connectAppServer({ url: options.url, engineBin: undefined, name: 'elpis-agents' })
   const codex = (): Connection => connectAppServer({ url: undefined, engineBin: options.codexBin ?? 'codex', name: 'elpis-agents' })
   return [new ElpisAdapter(bridge), new CodexAdapter(codex), new ClaudeAdapter(bridge), new GeminiAdapter(bridge)]

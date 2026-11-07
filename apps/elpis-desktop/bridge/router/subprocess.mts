@@ -7,7 +7,8 @@ export const subprocess: SubprocessRuntime = {
     const [command, ...args] = options.argv
     if (!command) throw new Error('A process command is required')
     options.signal.throwIfAborted()
-    const child = spawn(command, args, { cwd: options.cwd, env: { ...process.env, ...options.env }, stdio: ['ignore', 'pipe', 'pipe'], detached: true })
+    const env = Object.fromEntries(Object.entries({ ...process.env, ...options.env }).filter(([name, value]) => value !== undefined && !/KEY|PASSWORD|SECRET|TOKEN/i.test(name)))
+    const child = spawn(command, args, { cwd: options.cwd, env, stdio: ['ignore', 'pipe', 'pipe'], detached: true })
     let stdout = '', stderr = '', timer: ReturnType<typeof setTimeout> | undefined
     const kill = (signal: NodeJS.Signals) => { try { if (child.pid) process.kill(-child.pid, signal) } catch { /* Already stopped. */ } }
     const abort = () => { kill('SIGTERM'); timer = setTimeout(() => kill('SIGKILL'), options.graceMs); timer.unref() }

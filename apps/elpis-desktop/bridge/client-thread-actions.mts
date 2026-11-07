@@ -16,15 +16,15 @@ import type { DesktopClient } from './client.mts';
 import type { ClientState } from './client-state.mts';
 
 /** Adds a router result or decision request without running the chat's model. */
-export async function impl_appendAssistant(this: DesktopClient, clientState: ClientState, id: string, reply: { id: string; text: string }): Promise<'sent'> {
+export async function impl_appendAssistant(this: DesktopClient, clientState: ClientState, id: string, reply: import('./router/sources/elpis-chat-history.mts').ChatMessage): Promise<'sent'> {
     await internal_appendChatMessage.call(this, clientState, id, reply, 'assistant'); return 'sent';
   }
 
-export function impl_appendUser(this: DesktopClient, clientState: ClientState, id: string, reply: { id: string; text: string }) {
+export function impl_appendUser(this: DesktopClient, clientState: ClientState, id: string, reply: import('./router/sources/elpis-chat-history.mts').ChatMessage) {
     return internal_appendChatMessage.call(this, clientState, id, reply, 'user');
   }
 
-async function internal_appendChatMessage(this: DesktopClient, clientState: ClientState, id: string, reply: { id: string; text: string }, role: 'user' | 'assistant') {
+async function internal_appendChatMessage(this: DesktopClient, clientState: ClientState, id: string, reply: import('./router/sources/elpis-chat-history.mts').ChatMessage, role: 'user' | 'assistant') {
     threadId(id); text(reply.id, 'reply ID', 1024); text(reply.text, 'reply', 1_000_000);
     return internal_mutate(clientState, id, async () => {
       const thread = await this.readThreadMetadata(id);

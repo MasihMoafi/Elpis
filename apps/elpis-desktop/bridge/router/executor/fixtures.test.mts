@@ -9,11 +9,27 @@ export class FakeServer {
   failure: ((method: string, params: Record<string, unknown>) => unknown) | undefined
   hold: ((method: string, params: Record<string, unknown>) => Promise<void>) | undefined
   private seq = 0
+  private readonly answers = new Map<string, (result: unknown) => void>()
+  async tool(threadId: string, tool: string, args: unknown): Promise<{ success: boolean; value: unknown }> {
+    const id = `tool-${++this.seq}`
+    const answer = new Promise<unknown>(resolve => this.answers.set(id, resolve))
+    const request = { id, method: 'item/tool/call', params: { threadId, tool, arguments: args } }
+    let handled = false
+    for (const conn of this.connections) if ([...conn.requests ?? []].some(handle => handle(request))) { handled = true; break }
+    if (!handled) throw new Error('No runtime owns this tool request')
+    const result = object(await answer), items = result.contentItems
+    const first = Array.isArray(items) ? object(items[0]) : {}
+    const text = typeof first.text === 'string' ? first.text : ''
+    let value: unknown
+    try { value = JSON.parse(text) } catch { value = first.type === 'inputImage' ? { image_url: first.imageUrl } : text }
+    return { success: result.success === true, value }
+  }
   connect = (): Connection => {
     let closed = false
     const listeners = new Set<(message: unknown) => void>(), closers = new Set<(why: string) => void>()
     const connection: Connection = {
       ready: Promise.resolve(), get closed() { return closed }, listeners,
+      requests: new Set(), respond: (id, result) => { this.answers.get(String(id))?.(result); this.answers.delete(String(id)) },
       call: async (method, raw) => {
         const params = object(raw)
         this.calls.push({ method, params })
@@ -72,9 +88,9 @@ export function deferred<T = void>() {
   const promise = new Promise<T>(done => { resolve = done })
   return { promise, resolve }
 }
-export async function waitFor(check: () => void): Promise<void> {
+export async function waitFor(check: () => void | Promise<void>): Promise<void> {
   const { setImmediate } = await import('node:timers/promises')
   let error: unknown
-  for (let attempt = 0; attempt < 100; attempt++) { try { check(); return } catch (failure) { error = failure; await setImmediate() } }
+  for (let attempt = 0; attempt < 100; attempt++) { try { await check(); return } catch (failure) { error = failure; await setImmediate() } }
   throw error
 }

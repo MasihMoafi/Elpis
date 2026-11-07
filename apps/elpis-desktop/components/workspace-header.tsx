@@ -57,6 +57,7 @@ export function WorkspaceHeader({ pages, preferences, composer, loveActivity, si
               </TabStrip>
             : chatActions(<div className="header-title-row" />, <h1>{heading}</h1>)}
           {view === "canvas" && <Segmented label="Workflows view" className="workflow-view-switch" value={workflowTab} onChange={setWorkflowTab} options={[{ value: "board", label: "Board" }, { value: "scheduled", label: "Scheduled" }]} />}
+          {view === "chat" && selected?.motherAgent && <Button variant="outline" size="xs" onClick={() => show("mother")}>Mother panel</Button>}
           {view === "chat" && selected && originLabel(chatOrigin(selected, loveActivity.threads), title(selected)) === "Love Spot" && <Button variant="ghost" size="xs" className="thread-origin" data-origin="Love Spot" onClick={() => show("loveSpot")}><LoveSpotIcon size={13} />Love Spot</Button>}
           {view === "chat" && selected && meta && <p className="thread-meta">{meta}</p>}
           {view === "chat" && selected && isAgentRun(selected) && !!selected.model && <p className="thread-meta basis-full">{agentModelLabel(selected, models)}</p>}

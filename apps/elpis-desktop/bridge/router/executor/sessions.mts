@@ -2,29 +2,42 @@
 import { z } from 'zod'
 import type { SubprocessRuntime } from '../infra/types.mts'
 import type { Jobs, Subagents } from './background.mts'
-import { object, runtimeOf, type OpenOptions, type Runtime, type RuntimeAdapter, type WorkerSession } from './adapters.mts'
+import { object, runtimeOf, type OpenOptions, type Runtime, type RuntimeAdapter, type ToolBinding, type WorkerSession } from './adapters.mts'
 import type { Agent, Context, RuntimeEvents } from './runtime.mts'
 import type { ExecutorStore } from './store.mts'
 import { RoleModelSchema } from './settings.mts'
 import { initializeRoleModel } from './role-models.mts'
 import type { Effects } from './effects.mts'
 import { RuntimeBackground } from './runtime-background.mts'
+import { key, liveTicket } from '../core/index.mts'
+import { KV } from '../sources/kv.mts'
+import type { Tool } from '../app/tools/tool.mts'
+import type { Prompts, PromptVersion } from '../app/prompts.mts'
+import type { TranscriptEvent } from '../app/host.mts'
+import { RetryHealth } from '../app/retry-health.mts'
+import type { HealthEntry } from '../infra/health.mts'
+import { ToolRuntime } from './tool-runtime.mts'
 
 const MessageSchema = z.object({ id: z.string(), text: z.string(), mode: z.enum(['queue', 'steer', 'inject']), state: z.enum(['queued', 'sending', 'sent']), read: z.boolean().default(false), accepted: z.boolean().default(false) })
 const RecordSchema = z.object({ runtime: z.enum(['elpis', 'codex', 'claude', 'gemini']), threadId: z.string().nullable(), creating: z.boolean().default(false), model: RoleModelSchema.nullable(), messages: z.array(MessageSchema).default([]), resultId: z.string().optional() })
-type Record = z.infer<typeof RecordSchema>
+type SessionRecord = z.infer<typeof RecordSchema>
 type Mode = 'queue' | 'steer' | { inject: string }
 export interface SessionOptions {
   store: ExecutorStore
   adapters: RuntimeAdapter[]
   subprocess: SubprocessRuntime
-  effects?: Pick<Effects, 'handle' | 'enqueue'>
+  effects?: Pick<Effects, 'handle' | 'enqueue' | 'pending' | 'idle'>
+  modelHealth?: HealthEntry
+  stateDir?: string
   mainSessionId?: string
   parentThreadId?: string
   jobs?: Jobs
   subagents?: Subagents
   instructions?: (sessionId: string) => string
   relay?: (id: string, text: string) => Promise<void>
+  tools?: (sessionId: string) => Tool[]
+  prompts?: Prompts
+  environment?: (sessionId: string) => Record<string, string>
   onError?: (error: unknown) => void
 }
 class WorkerAgent implements Agent {
@@ -32,13 +45,13 @@ class WorkerAgent implements Agent {
   status: Agent['status'] = 'idle'
   activeTurn: string | null = null
   lastText = ''
-  readonly record: Record
+  readonly record: SessionRecord
   private readonly owner: Sessions
   private readonly idle = new Set<() => void>()
   cancellation: Promise<void> = Promise.resolve()
   readonly inbox: Agent['inbox']
   readonly session: Agent['session']
-  constructor(id: string, record: Record, owner: Sessions) {
+  constructor(id: string, record: SessionRecord, owner: Sessions) {
     this.id = id; this.record = record; this.owner = owner
     this.inbox = { remove: id => { record.messages = record.messages.filter(message => message.id !== id || message.state === 'sent'); owner.save(this) } }
     this.session = { snapshotEvents: () => this.lastText ? [{ type: 'assistant/message', data: { message: { content: [{ type: 'text', text: this.lastText }] } } }] : [] }
@@ -72,9 +85,16 @@ export class Sessions implements Context {
   private readonly sending = new Map<string, Promise<void>>()
   private readonly subscriptions = new Map<string, () => void>()
   private disposed = false
+  private readonly lifetime = new AbortController()
+  private readonly retries = new RetryHealth()
+  private retrySeq = 0
+  private readonly retryTurns = new Map<string, { id: string; ordinal: number; attempts: number }>()
+  private readonly pendingWork = new Set<Promise<unknown>>()
   private readonly backgroundWork: RuntimeBackground
+  private readonly toolRuntime: ToolRuntime | undefined
   constructor(options: SessionOptions) {
     this.options = options; this.subprocess = options.subprocess
+    this.toolRuntime = options.tools && options.stateDir ? new ToolRuntime(options.store, options.stateDir) : undefined
     this.backgroundWork = new RuntimeBackground(id => {
       const agent = this.agents.get(id)
       return agent?.record.threadId ? { adapter: this.adapter(agent.record.runtime), threadId: agent.record.threadId } : undefined
@@ -86,6 +106,13 @@ export class Sessions implements Context {
       if (!options.mainSessionId) throw new Error('The router main session is not bound')
       await this.prompt(options.mainSessionId, key, payload.text, 'steer')
     }, { ordered: true })
+    options.effects?.handle('notice', async (payload, name) => {
+      if (!options.mainSessionId) throw new Error('The router main session is not bound')
+      const text = JSON.stringify(payload.value)
+      await this.prompt(options.mainSessionId, `notice:${name}:${key(text)}`, text, { inject: payload.summary })
+    }, { ordered: true })
+    this.on('agent/status', ({ agent, status }) => { if (status === 'idle') { this.retries.clear(agent.id); this.updateModelHealth() } })
+    this.updateModelHealth()
   }
   on<K extends keyof RuntimeEvents>(name: K, listener: (...args: RuntimeEvents[K]) => void): () => void { this.listeners[name].add(listener); return () => { this.listeners[name].delete(listener) } }
   emit<K extends keyof RuntimeEvents>(name: K, ...args: RuntimeEvents[K]): void { if (!this.disposed) for (const listener of this.listeners[name]) listener(...args) }
@@ -117,16 +144,26 @@ export class Sessions implements Context {
   private async open(id: string, cwd: string, title: string, role: 'worker' | 'orchestrator'): Promise<WorkerAgent> {
     const stored = this.options.store.session(id)
     const model = role === 'worker' ? this.options.store.settings().executor.model : this.options.store.settings().eval.model
-    const record: Record = stored === undefined ? { runtime: runtimeOf(model), threadId: null, creating: false, model, messages: [] } satisfies Record : RecordSchema.parse(stored)
+    const record: SessionRecord = stored === undefined ? { runtime: runtimeOf(model), threadId: null, creating: false, model, messages: [] } satisfies SessionRecord : RecordSchema.parse(stored)
+    if (!record.threadId && !record.creating) { record.model = model; record.runtime = runtimeOf(model) }
     const adapter = this.adapter(record.runtime)
+    const tools = this.options.tools?.(id)
+    const mcp = tools && (record.runtime === 'claude' || record.runtime === 'gemini')
+      ? await this.toolRuntime?.transport(id, tools, role) : undefined
     let remote: WorkerSession
-    if (record.threadId) remote = await adapter.read(record.threadId)
+    if (record.threadId) {
+      if (mcp) await adapter.configure?.(record.threadId, mcp, this.options.environment?.(id))
+      remote = await adapter.read(record.threadId)
+    }
     else {
       // A start with an unknown outcome may have created a paid worker. Never start another automatically.
       if (record.creating) throw new Error('Session creation outcome is unknown; bind the existing runtime session before retrying')
       record.creating = true; this.options.store.saveSession(id, record)
       const instructions = this.options.instructions?.(id)
-      const options: OpenOptions = { cwd, name: title, model: record.model, ...(this.options.parentThreadId ? { parentThreadId: this.options.parentThreadId } : {}), ...(instructions ? { instructions } : {}) }
+      const options: OpenOptions = { cwd, name: title, model: record.model, role,
+        ...(mcp ? { mcp } : {}),
+        ...(this.options.environment ? { environment: this.options.environment(id) } : {}),
+        ...(this.options.parentThreadId ? { parentThreadId: this.options.parentThreadId } : {}), ...(instructions ? { instructions } : {}), ...(tools ? { tools } : {}) }
       try { remote = await initializeRoleModel(adapter, options, record.model) }
       catch (error) { if (object(error).creationUnknown === false) { record.creating = false; this.options.store.saveSession(id, record) }; throw error }
       record.threadId = remote.threadId; record.creating = false; this.options.store.saveSession(id, record)
@@ -134,6 +171,24 @@ export class Sessions implements Context {
     if (this.disposed) throw new Error('The session manager stopped while attaching a worker')
     const agent = new WorkerAgent(id, record, this)
     this.agents.set(id, agent)
+    if (this.options.tools) {
+      if (!adapter.bind) throw new Error('This runtime cannot serve Mother tools')
+      const binding: ToolBinding = { tools: () => this.options.tools!(id), instructions: () => this.instructions(id),
+        mcp: async () => {
+          if (!this.toolRuntime) throw new Error('This session cannot reconnect Mother tools')
+          const config = await this.toolRuntime.transport(id, binding.tools(), role)
+          this.toolRuntime.bind(id, binding); return config
+        },
+        ...(this.options.environment ? { environment: () => this.options.environment!(id) } : {}),
+        signal: this.lifetime.signal, authorize: () => {
+          if (this.disposed) throw new Error('Mother is stopping')
+          const ticketId = id.startsWith('worker-') ? id.slice('worker-'.length) : undefined
+          const ticket = ticketId ? this.options.store.tickets.get(ticketId) : undefined
+          if (ticketId && (!ticket || !liveTicket(ticket))) throw new Error('Ticket ended; its tools are unavailable')
+        } }
+      this.toolRuntime?.bind(id, binding)
+      adapter.bind(remote.threadId, binding)
+    }
     this.reconcile(agent, remote)
     this.subscriptions.set(id, adapter.subscribe(remote.threadId, message => this.receive(agent, message)))
     return agent
@@ -221,6 +276,17 @@ export class Sessions implements Context {
   }
   private receive(agent: WorkerAgent, raw: unknown): void {
     const message = object(raw), params = object(message.params), turn = object(params.turn)
+    if (message.method === 'turn/started' && typeof turn.id === 'string') {
+      const previous = this.retryTurns.get(agent.id)
+      if (previous?.id !== turn.id) this.retryTurns.set(agent.id, { id: turn.id, ordinal: (previous?.ordinal ?? 0) + 1, attempts: 0 })
+    }
+    const retry = this.retryTurns.get(agent.id)
+    if (message.method === 'error' && params.willRetry === true && retry) {
+      this.retries.observe(agent.id, { type: 'llm/retry', seq: ++this.retrySeq, time: Date.now(), data: { turn: retry.ordinal, step: 0,
+        retryId: retry.id, provider: agent.record.model?.provider ?? '', retry: ++retry.attempts, failure: params.error } })
+    }
+    if (message.method === 'turn/completed' || message.method === 'item/completed' && object(params.item).type === 'agentMessage') this.retries.clear(agent.id)
+    this.updateModelHealth()
     if (message.method === 'turn/started' && typeof turn.id === 'string') { agent.lastText = ''; agent.state(turn.id) }
     else if (message.method === 'item/completed') {
       const item = object(params.item)
@@ -237,12 +303,21 @@ export class Sessions implements Context {
       agent.state(null)
       this.background(this.flush(agent))
     } else if (message.method === 'error') {
+      if (params.willRetry === true) return
       const error = params.error
       this.emit('agent/error', { agent, error: Object.assign(new Error(typeof object(error).message === 'string' ? String(object(error).message) : 'The runtime disconnected'), object(error)) })
       agent.state(null)
     }
   }
-  private background(work: Promise<unknown>): void { void work.catch(error => this.options.onError?.(error)) }
+  private updateModelHealth(): void {
+    const retries = this.retries.list()
+    this.options.modelHealth?.set(retries.length ? { state: 'error', detail: retries.slice(0, 5).map(item => `${item.sessionId}: ${item.provider} is over its model budget; retried ${item.attempts} times, waiting since ${item.since}`).join('; '), at: retries.at(-1)!.lastAt }
+      : { state: 'ready', detail: 'No managed session is waiting on a model budget retry' })
+  }
+  private background(work: Promise<unknown>): void {
+    this.pendingWork.add(work)
+    void work.catch(error => this.options.onError?.(error)).finally(() => this.pendingWork.delete(work))
+  }
   async cancel(agent: WorkerAgent, keepInbox: boolean): Promise<void> {
     if (!keepInbox) { agent.record.messages = agent.record.messages.filter(message => message.state === 'sent'); this.save(agent) }
     if (agent.record.threadId) {
@@ -257,6 +332,40 @@ export class Sessions implements Context {
     if (!this.options.effects) throw new Error('Worker reports need the durable relay effect queue')
     this.options.effects.enqueue('relay', id, { text })
   }
+  notify(id: string, value: Record<string, unknown>, summary: string): void {
+    if (!this.options.effects) throw new Error('Notices need the durable effect queue')
+    this.options.effects.enqueue('notice', id, { value, summary })
+  }
+  async delivery(id: string): Promise<'injected' | 'pending'> {
+    await this.options.effects?.idle('notice')
+    return this.options.effects?.pending('notice', id) ? 'pending' : 'injected'
+  }
+  private instructions(id: string): string {
+    const prompts = this.options.prompts
+    if (prompts) {
+      const revision = prompts.current().revision, key = KV.sessions.prompts(id), revisions = this.options.store.get(key) ?? []
+      if (revisions.at(-1) !== revision) this.options.store.set(key, [...revisions, revision])
+    }
+    return this.options.instructions?.(id) ?? ''
+  }
+  promptVersion(id: string): PromptVersion {
+    if (!this.options.prompts) throw new Error('Prompts are not configured')
+    const revision = this.options.store.get(KV.sessions.prompts(id))?.at(-1)
+    return revision === undefined ? this.options.prompts.current() : this.options.prompts.version(revision)
+  }
+  mayRead(id: string, revision: number): boolean { return revision === this.promptVersion(id).revision || (this.options.store.get(KV.sessions.prompts(id)) ?? []).includes(revision) }
+  status() {
+    return { revision: this.options.prompts?.current().revision ?? 0, notificationPending: this.options.effects?.pending('notice', 'prompts') ?? false,
+      sessions: [...this.agents.keys()].map(sessionId => ({ sessionId, revision: this.options.store.get(KV.sessions.prompts(sessionId))?.at(-1) ?? 0 })) }
+  }
+  modelRetry(id?: string | false) { const retry = id ? this.retries.get(id) : undefined; return retry ? { model_retry: retry } : {} }
+  nativeId(id: string): string | undefined { return this.agents.get(id)?.record.threadId ?? RecordSchema.safeParse(this.options.store.session(id)).data?.threadId ?? undefined }
+  async inspect(id: string): Promise<{ events: TranscriptEvent[] }> {
+    const agent = this.agents.get(id)
+    if (!agent?.record.threadId) throw new Error('This managed session is unavailable')
+    const remote = await this.adapter(agent.record.runtime).read(agent.record.threadId)
+    return { events: remote.transcript ?? [] }
+  }
   /** Reattach saved running workers before DshExecutor.resume interrupts or recovers Assignments. */
   async recover(): Promise<void> {
     for (const ticket of this.options.store.tickets.open()) {
@@ -269,9 +378,15 @@ export class Sessions implements Context {
   }
   dispose(): void {
     this.disposed = true
+    this.lifetime.abort()
     this.backgroundWork.dispose()
     for (const dispose of this.subscriptions.values()) dispose()
     this.subscriptions.clear(); for (const listeners of Object.values(this.listeners)) listeners.clear()
     for (const adapter of this.options.adapters) adapter.close()
+  }
+  async drained(): Promise<void> {
+    await Promise.allSettled([...this.ensuring.values(), ...this.sending.values(), ...this.pendingWork,
+      ...this.options.adapters.map(adapter => adapter.drain?.())])
+    await this.toolRuntime?.close()
   }
 }

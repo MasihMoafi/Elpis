@@ -36,6 +36,16 @@ it('seeds each new role model without changing global defaults and keeps manual 
   assert.equal(h.server.calls.filter(call => call.method === 'thread/start').length, 2)
   assert.equal(h.server.threads.get(threadId)!.model, 'manual-selection')
 })
+
+it('uses the corrected role choice after a runtime rejects creation without making a session', async t => {
+  const h = fixture(); t.after(h.stop)
+  h.configure({ executor: { model: { provider: 'openai', model: 'unavailable-model' } } })
+  h.server.failure = method => method === 'thread/start' ? Object.assign(new Error('Model unavailable'), { code: -32600 }) : undefined
+  await assert.rejects(h.sessions.ensure('worker-one', '/project', 'One', 'worker'), /Model unavailable/)
+  h.configure({ executor: { model: { provider: 'openai', model: 'corrected-model' } } }); h.server.failure = undefined
+  await h.sessions.ensure('worker-one', '/project', 'One', 'worker')
+  assert.equal(h.server.calls.findLast(call => call.method === 'thread/start')?.params.model, 'corrected-model')
+})
 it('queues concurrent duplicate sends once and records reads only after runtime history contains them', async t => {
   const h = fixture(); t.after(h.stop)
   await h.sessions.ensure('worker-one', '/project', 'One', 'worker')

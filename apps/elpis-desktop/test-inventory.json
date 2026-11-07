@@ -91,7 +91,27 @@
     "bridge/router/infra/text.test.mts",
     "bridge/router/executor/connection.test.mts",
     "bridge/matilda-goals.test.mts",
-    "bridge/matilda-sessions.test.mts"
+    "bridge/matilda-sessions.test.mts",
+    "bridge/router/app/assessment.test.mts",
+    "bridge/router/app/cache.test.mts",
+    "bridge/router/app/cards.test.mts",
+    "bridge/router/app/http.test.mts",
+    "bridge/router/app/migration.test.mts",
+    "bridge/router/app/passes.test.mts",
+    "bridge/router/app/prompts.test.mts",
+    "bridge/router/app/retry-health.test.mts",
+    "bridge/router/app/store.test.mts",
+    "bridge/router/app/timeline.test.mts",
+    "bridge/router/app/views.test.mts",
+    "bridge/router/outbox.test.mts",
+    "bridge/router/policy.test.mts",
+    "bridge/router/sources/github-process.test.mts",
+    "bridge/router/test-support.mts",
+    "components/mother/draft.test.mts",
+    "components/mother/locales.test.mts",
+    "components/mother/markdown.test.mts",
+    "components/mother/navigation.test.mts",
+    "components/mother/prompt-config.test.mts"
   ],
   "bridge": [
     "bridge/cloudroom-vm.test.mts",
@@ -178,7 +198,13 @@
     "bridge/router/sources/poll.test.mts",
     "bridge/router/sources/registry.test.mts",
     "bridge/router/sources/sources.test.mts",
-    "bridge/router/model.test.mts"
+    "bridge/router/model.test.mts",
+    "bridge/router/app/setup.test.mts",
+    "bridge/router/executor/acp-tools.test.mts",
+    "bridge/router/executor/tool-runtime.test.mts",
+    "bridge/router/sources/github-poll.test.mts",
+    "components/mother/panel.test.mts",
+    "components/mother/marks.test.mts"
   ],
   "desktop": [
     "desktop/app-menu.test.cts",

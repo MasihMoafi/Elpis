@@ -7,12 +7,13 @@ import WebSocket from "ws";
 export function connectAppServer({ url, engineBin, name = "elpis-agents", version = "0.3.0" }) {
   const pending = new Map();
   const listeners = new Set();
+  const requests = new Set();
   const closers = new Set();
   let seq = 0, closed = false;
   let send, close, opened;
   const onMessage = (m) => {
     if (m.id !== undefined && !m.method && pending.has(m.id)) { const p = pending.get(m.id); pending.delete(m.id); m.error ? p.reject(m.error) : p.resolve(m.result); return; }
-    if (m.id !== undefined && m.method) send({ id: m.id, result: { decision: "decline" } });
+    if (m.id !== undefined && m.method && ![...requests].some(handle => handle(m))) send({ id: m.id, result: { decision: "decline" } });
     for (const l of listeners) l(m);
   };
   const ended = (why) => {
@@ -56,5 +57,5 @@ export function connectAppServer({ url, engineBin, name = "elpis-agents", versio
   const ready = opened
     .then(() => call("initialize", { clientInfo: { name, title: null, version }, capabilities: { experimentalApi: true } }))
     .then(() => send({ method: "initialized" }));
-  return { call, send, listeners, onClose: (f) => closers.add(f), ready, close, get closed() { return closed; } };
+  return { call, send, listeners, requests, respond: (id, result) => send({ id, result }), onClose: (f) => closers.add(f), ready, close, get closed() { return closed; } };
 }

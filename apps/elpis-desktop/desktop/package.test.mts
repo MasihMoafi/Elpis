@@ -12,6 +12,16 @@ import { productionFiles, stageDesktop } from './package.mts';
 const run = promisify(execFile);
 const production = productionFiles;
 
+test('Mother runtime modules and instruction assets ship together', async () => {
+  const root = fileURLToPath(new URL('../bridge/router/', import.meta.url));
+  for (const entry of await fs.readdir(root, { recursive: true, withFileTypes: true })) {
+    if (!entry.isFile()) continue;
+    const file = path.relative(root, path.join(entry.parentPath, entry.name)).split(path.sep).join('/');
+    if (file.includes('fixtures/') || file.endsWith('.test.mts') || file === 'test-support.mts') continue;
+    if (/\.(mts|md)$/.test(file) || file === 'LICENSE-dsh-superagent') assert(production.includes(`bridge/router/${file}`), `Mother runtime asset missing: ${file}`);
+  }
+});
+
 // A file the app imports but the package leaves out stops the installed app at start (16 Oct: preferences.cjs, provider-keys.mts).
 test('the package holds every local file its entry points import', async () => {
   const root = fileURLToPath(new URL('../', import.meta.url)), seen = new Set<string>(), pending = ['desktop/main.cts', 'desktop/preload.cjs', 'desktop/runtime.mts', 'bridge/server.mts', 'bridge/client.mts'];

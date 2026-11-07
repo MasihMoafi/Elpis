@@ -1,20 +1,16 @@
+/** Model catalog through Elpis's configured providers; this never starts a model turn or reads credentials. */
 import type { DesktopClient } from '../client.mts'
-import { askBackground } from '../side-turn.mts'
-import { DISPATCH_INSTRUCTIONS, type DispatchModel } from './dispatch.mts'
-import type { RoleModel } from './executor/settings.mts'
-import { createElpisChatTransport } from './sources/elpis-chat-transport.mts'
-
-/** All inference stays on the existing signed-in provider path; the router never reads keys. */
-export function dispatchModel(client: DesktopClient, choice: () => RoleModel): DispatchModel {
-  return async (candidate, signal) => {
-    const model = choice()
-    const conversation = (await createElpisChatTransport(client).read(candidate.thread.ref.id, undefined, signal)).slice(-30)
-      .map(message => ({ role: message.role, text: message.text.slice(0, 8000) }))
-    const config = await client.sideRpc('config/read', { includeLayers: false }) as { config?: { mcp_servers?: Record<string, unknown> } }
-    const disabled = Object.fromEntries(Object.keys(config.config?.mcp_servers ?? {}).map(name => [`mcp_servers.${name}.enabled`, false]))
-    const answer = await askBackground(client, { prompt: `${DISPATCH_INSTRUCTIONS}\n\nConversation data:\n${JSON.stringify(conversation)}\n\nCandidate data:\n${JSON.stringify(candidate)}`,
-      model, effort: model.reasoningEffort, config: disabled, permissions: ':read-only', timeoutMs: 90_000,
-      failed: 'Mother agent could not route the message', late: 'Mother agent routing timed out', signal })
-    return JSON.parse(answer) as unknown
+import { z } from 'zod'
+import type { ModelCatalog } from './app/host.mts'
+const Models = z.object({ data: z.array(z.looseObject({ model: z.string(), displayName: z.string().optional() })) })
+export function modelCatalog(client: DesktopClient): () => Promise<ModelCatalog> {
+  return async () => {
+    const settings = await client.settings(), failures: ModelCatalog['failures'] = []
+    const groups = await Promise.all(settings.providers.map(async provider => {
+      try { const models = Models.parse(await client.models({ provider: provider.id })).data
+        return { id: provider.id, name: provider.displayName, models: models.map(model => ({ id: model.model, name: model.displayName ?? model.model })) }
+      } catch (error) { failures.push({ provider: provider.id, error: error instanceof Error ? error.message : String(error) }); return { id: provider.id, name: provider.id, models: [] } }
+    }))
+    return { default: settings.main.model ? { provider: settings.main.provider ?? 'openai', model: settings.main.model } : null, groups, failures }
   }
 }

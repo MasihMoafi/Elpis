@@ -1,47 +1,55 @@
-// Adapted from dsh-superagent (MIT), src/app/outbox.ts. Receipts and effects share one transaction.
-import { z } from 'zod'
+// Adapted from DeepSeek dsh-superagent-prototype (MIT), src/app/outbox.ts.
+/** Reliable outbound message delivery backed by persistent receipts and retried reply effects. */
 import type { OutboundMessage, Outbox as OutboxPort, ReplyStatus } from './core/index.mts'
-import { Later, type Effects } from './executor/effects.mts'
-import type { ExecutorStore } from './executor/store.mts'
-import type { SourceRegistry } from './sources/registry.mts'
 import type { Commands } from './infra/commands.mts'
+import { checkedImText } from './infra/text.mts'
+import type { SourceRegistry } from './sources/registry.mts'
+import { FAILURES_BEFORE_ERROR, Later, type Effects } from './executor/effects.mts'
+import type { Store } from './app/store.mts'
 
-const ReceiptSchema = z.object({ id: z.string(), channel: z.object({ source: z.string(), thread: z.string(), address: z.record(z.string(), z.string()) }),
-  text: z.string(), kind: z.enum(['acknowledgement', 'reply', 'notice']), ticketId: z.string().optional(), status: z.enum(['pending', 'sent', 'dropped']) })
+export interface OutboxHost {
+  readonly store: Pick<Store, 'atomic' | 'receipts'>
+  readonly effects: Pick<Effects, 'enqueue' | 'cancel' | 'handle' | 'idle'>
+  readonly sources: Pick<SourceRegistry, 'instance' | 'channelAllowed' | 'send'>
+  readonly commands: Commands
+  paused(): boolean
+}
+
+/**
+ * Persists outbound channel messages as receipts and delivers them sequentially through `Effects` and `SourceRegistry`.
+ * Implements the core `Outbox` port for `Engine` and source contexts, ensuring per-conversation ordering for each ticket until an earlier message fails repeatedly.
+ * Messages wait while processing is paused or their source is unavailable, and settle as dropped when the target conversation is ignored or gone.
+ */
 export class Outbox implements OutboxPort {
-  private readonly store: ExecutorStore
-  private readonly effects: Effects
-  constructor(store: ExecutorStore, effects: Effects, sources: SourceRegistry, commands: Commands, paused: () => boolean) {
-    this.store = store; this.effects = effects
-    store.db.exec('CREATE TABLE IF NOT EXISTS reply_receipt (id TEXT PRIMARY KEY, value TEXT NOT NULL);')
-    effects.handle('reply', async (_payload, id) => {
-      const receipt = this.get(id)
-      if (receipt?.status !== 'pending') return
-      if (!sources.instance(receipt.channel.source)?.enabled) throw new Later('The Source is off')
-      if (!sources.channelAllowed(receipt.channel)) { this.settle(receipt, 'dropped'); return }
-      const result = await sources.send(receipt, commands)
-      if (result === 'waiting') throw new Later('The Source is not installed')
-      this.settle(receipt, result === 'gone' ? 'dropped' : 'sent')
-    }, { ordered: true, limit: () => paused() ? 0 : 1, retry: [2000, 60_000] })
+  private readonly host: OutboxHost
+  constructor(host: OutboxHost) {
+    this.host = host
+    host.effects.handle('reply', (_payload, id) => this.deliver(id), { limit: () => host.paused() ? 0 : 1, retry: [5000, 300_000] })
   }
-  private get(id: string) {
-    const row = this.store.db.prepare('SELECT value FROM reply_receipt WHERE id=?').get(id)
-    if (!row) return undefined
-    const { ticketId, ...receipt } = ReceiptSchema.parse(JSON.parse(String(row.value)))
-    return { ...receipt, ...(ticketId ? { ticketId } : {}) }
-  }
-  private settle(message: OutboundMessage, status: ReplyStatus): void {
-    this.store.db.prepare('UPDATE reply_receipt SET value=? WHERE id=?').run(JSON.stringify({ ...message, status }), message.id)
-  }
+  /** Record a message receipt and enqueue its delivery effect atomically; duplicate message IDs are ignored. */
   send(message: OutboundMessage): void {
-    this.store.atomic(() => {
-      if (this.get(message.id)) return
-      this.store.db.prepare('INSERT INTO reply_receipt VALUES (?,?)').run(message.id, JSON.stringify({ ...message, status: 'pending' }))
-      this.effects.enqueue('reply', message.id, {})
-    })
+    // Validate IM reply length here; acknowledgements are already validated when decided.
+    if (message.kind === 'reply' && message.channel.source === 'elpis-chat') checkedImText(message.text)
+    const { store, effects } = this.host
+    store.atomic(() => { if (store.receipts.add(message)) effects.enqueue('reply', message.id, {}) })
   }
-  status(id: string): ReplyStatus | undefined { return this.get(id)?.status }
+  status(id: string): ReplyStatus | undefined { return this.host.store.receipts.get(id)?.status }
   withdraw(id: string): void {
-    this.store.atomic(() => { const receipt = this.get(id); if (receipt?.status === 'pending') { this.settle(receipt, 'dropped'); this.effects.cancel('reply', id) } })
+    const { store, effects } = this.host
+    store.atomic(() => { if (store.receipts.withdraw(id)) effects.cancel('reply', id) })
+  }
+  sent(): Promise<void> { return this.host.effects.idle('reply') }
+  private async deliver(id: string): Promise<void> {
+    const { store, sources, commands } = this.host
+    const receipt = store.receipts.get(id)
+    if (receipt?.status !== 'pending') return
+    if (!sources.instance(receipt.channel.source)?.enabled) throw new Later('The Source is off or not installed')
+    // Hold later messages for the same ticket and conversation behind an earlier pending message until it exceeds the failure threshold.
+    if (store.receipts.behind(id, FAILURES_BEFORE_ERROR)) throw new Later('An earlier message of this ticket to this conversation waits')
+    if (!sources.channelAllowed(receipt.channel)) { store.receipts.settle(receipt, 'channelIgnored'); return }
+    // A permanently unreachable target (such as a recalled message or deleted Issue) settles as `channelGone` so its receipt prevents retries.
+    const result = await sources.send(receipt, commands)
+    if (result === 'waiting') throw new Later('The Source is not installed')
+    store.receipts.settle(receipt, result === 'gone' ? 'channelGone' : 'sent')
   }
 }

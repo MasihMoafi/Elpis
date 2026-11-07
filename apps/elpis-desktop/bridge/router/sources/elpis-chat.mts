@@ -7,6 +7,8 @@ import type { SourceKind } from './kind.mts'
 import { KV } from './kv.mts'
 import { pause } from './poll.mts'
 import { elpisChatChannel } from './elpis-chat-channel.mts'
+import { chatContext } from './elpis-chat-read.mts'
+import { AllowedSchema } from '../policy.mts'
 
 export const SOURCE = 'elpis-chat'
 const ConfigSchema = z.object({ threadId: z.string().trim().default(''), pollSeconds: z.number().int().min(1).max(3600).default(2) }).strict()
@@ -14,6 +16,8 @@ export type ElpisChatConfig = z.infer<typeof ConfigSchema>
 export interface ElpisChatMessage {
   /** Stable message identity, including its native turn when item IDs are turn-local. */
   id: string; threadId: string; role: 'user' | 'assistant'; actorId: string; at: string; text: string
+  replyTo?: string
+  images?: { id: string; url: string }[]
 }
 export interface ElpisChatTransport {
   /** Oldest first, after the durable message ID. A missing/deleted anchor must replay history, never skip ahead. */
@@ -34,6 +38,11 @@ export function createElpisChatKind(transport: ElpisChatTransport): SourceKind<E
     scope: ({ meta }, config) => config.threadId && meta.threadId === config.threadId
       ? { listened: true, observed: false } : { listened: false, reason: 'chat_not_selected' },
     channel: elpisChatChannel(transport),
+    threadContext: chatContext(transport),
+    repliesTo: trigger => typeof trigger.meta.replyTo === 'string' ? elpisChatTriggerId(String(trigger.meta.threadId), trigger.meta.replyTo) : undefined,
+    policy: { schema: z.object({ allowed: z.array(AllowedSchema).default([]) }).strict(),
+      fields: [{ key: 'allowed', type: 'rows', label: { zh: '发送者', en: 'Allowed people' }, columns: [{ key: 'id', type: 'text', label: { zh: '发送者', en: 'Person' } }] }],
+      explicit: { zh: '所选聊天中的直接请求。', en: 'A direct request in the selected Mother chat.' } },
   }
 }
 
@@ -42,7 +51,7 @@ function trigger(message: ElpisChatMessage): Trigger {
     threads: [{ source: SOURCE, id: message.threadId }], actor: { source: SOURCE, id: message.actorId }, human: true, addressed: 'direct',
     at: message.at, text: message.text,
     channel: { source: SOURCE, thread: `${SOURCE}:${message.threadId}`, address: { threadId: message.threadId } },
-    meta: { threadId: message.threadId, messageId: message.id } }
+    meta: { threadId: message.threadId, messageId: message.id, ...(message.replyTo ? { replyTo: message.replyTo } : {}) } }
 }
 
 const polls = new WeakMap<SourceContext, Promise<void>>()
@@ -75,10 +84,10 @@ export function startElpisChat(host: SourceHost, transport: ElpisChatTransport):
   const kind = createElpisChatKind(transport)
   const release = host.sources.register(kind)
   const ctx = host.context(kind), controller = new AbortController()
-  const running = watch(ctx, transport, controller.signal)
+  const running = watchElpisChat(ctx, transport, controller.signal)
   return async () => { controller.abort(); try { await running } finally { release() } }
 }
-async function watch(ctx: SourceContext, transport: ElpisChatTransport, signal: AbortSignal): Promise<void> {
+export async function watchElpisChat(ctx: SourceContext, transport: ElpisChatTransport, signal: AbortSignal): Promise<void> {
   let onAbort: () => void = () => {}
   try {
     await Promise.race([ctx.ready, new Promise<void>(resolve => { onAbort = resolve; signal.addEventListener('abort', onAbort, { once: true }) })])
