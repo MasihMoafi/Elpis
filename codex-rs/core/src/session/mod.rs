@@ -4214,7 +4214,12 @@ impl Session {
     ) -> MultiAgentVersion {
         if let Some(multi_agent_version) = self.multi_agent_version() {
             if multi_agent_version == MultiAgentVersion::Disabled
-                && !session_source.is_non_root_agent()
+                && (self.isolation == codex_extension_api::SessionIsolation::Isolated
+                    || session_source.is_non_root_agent())
+            {
+                return MultiAgentVersion::Disabled;
+            }
+            if multi_agent_version == MultiAgentVersion::Disabled
                 && config.agents_enabled
                 && config.features.enabled(Feature::Collab)
             {

@@ -2246,11 +2246,37 @@ async fn enabling_subagents_does_not_enable_an_internal_reviewer() {
     .await;
     let mut config = session.get_config().await.as_ref().clone();
     config.features.set_enabled(Feature::Collab, true).unwrap();
+    config
+        .features
+        .set_enabled(Feature::MultiAgentV2, true)
+        .unwrap();
     assert_eq!(
         session.resolve_multi_agent_version_for_model(
             first_turn.model_info(),
             &config,
             &SessionSource::Internal(InternalSessionSource::Guardian),
+        ),
+        MultiAgentVersion::Disabled
+    );
+}
+
+#[tokio::test]
+async fn enabling_subagents_does_not_enable_an_isolated_root() {
+    let (mut session, first_turn) = make_session_and_context().await;
+    session.isolation = codex_extension_api::SessionIsolation::Isolated;
+    session.multi_agent_version = OnceLock::from(MultiAgentVersion::Disabled);
+    let mut config = first_turn.config.as_ref().clone();
+    config.agents_enabled = true;
+    config.features.set_enabled(Feature::Collab, true).unwrap();
+    config
+        .features
+        .set_enabled(Feature::MultiAgentV2, true)
+        .unwrap();
+    assert_eq!(
+        session.resolve_multi_agent_version_for_model(
+            first_turn.model_info(),
+            &config,
+            &SessionSource::Cli,
         ),
         MultiAgentVersion::Disabled
     );
