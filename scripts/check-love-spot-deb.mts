@@ -20,7 +20,9 @@ fs.mkdirSync(home);
 execFileSync('dpkg-deb', ['-x', deb, root]);
 const port = await new Promise<number>(resolve => { const server = net.createServer().listen(0, '127.0.0.1', () => { const { port } = server.address() as net.AddressInfo; server.close(() => resolve(port)); }); });
 const env = { PATH: process.env.PATH, DISPLAY: process.env.DISPLAY, XAUTHORITY: process.env.XAUTHORITY, HOME: home, LANG: 'C.UTF-8', LOVE_SPOT_ROOT: path.join(root, 'opt/love-spot'),
-  XDG_RUNTIME_DIR: fs.mkdtempSync(path.join(os.tmpdir(), 'love-spot-run-')), NO_PROXY: '127.0.0.1,localhost' };
+  XDG_RUNTIME_DIR: fs.mkdtempSync(path.join(os.tmpdir(), 'love-spot-run-')), NO_PROXY: '127.0.0.1,localhost',
+  // Where the internet is reached through a proxy, the app needs it to reach the provider.
+  ...Object.fromEntries(['HTTPS_PROXY', 'HTTP_PROXY', 'https_proxy', 'http_proxy', 'ALL_PROXY', 'all_proxy'].flatMap(key => process.env[key] ? [[key, process.env[key]]] : [])) };
 const app = spawn(path.join(root, 'usr/bin/love-spot'), ['--no-sandbox', `--remote-debugging-port=${port}`], { env, stdio: ['ignore', 'ignore', 'pipe'], detached: true });
 let stderr = ''; app.stderr.on('data', chunk => { stderr += chunk; });
 const results: { name: string; ok: boolean }[] = [];
@@ -85,16 +87,24 @@ try {
     await dialog.getByRole('button', { name: 'Done', exact: true }).click();
     await page.getByRole('group', { name: "Matilda's model" }).getByRole('combobox').click();
     await page.getByRole('tab', { name: 'OpenRouter', exact: true }).click();
-    await page.keyboard.type(process.env.LOVE_SPOT_LIVE_MODEL || 'gpt-4.1-mini');
-    await page.getByRole('option').first().click({ timeout: 60_000 });
+    try {
+      await page.getByRole('option').first().waitFor({ timeout: 60_000 });
+      await page.keyboard.type(process.env.LOVE_SPOT_LIVE_MODEL || 'gpt-4.1-mini');
+      await page.getByRole('option').first().click({ timeout: 15_000 });
+    } catch (error) {
+      if (shots) await page.screenshot({ path: path.join(shots, 'live-openrouter-picker-failure.png') });
+      throw error;
+    }
     const bounds = (await page.locator('.excalidraw').boundingBox())!;
     const boardFile = path.join(home, '.local/share/excalidraw-local/scene.excalidraw');
-    const texts = () => { try { return (JSON.parse(fs.readFileSync(boardFile, 'utf8')).elements as { type: string; isDeleted?: boolean; text?: string }[]).filter(e => e.type === 'text' && !e.isDeleted); } catch { return []; } };
-    await page.mouse.click(bounds.x + 300, bounds.y + 300); await page.keyboard.press('t');
-    await page.mouse.click(bounds.x + 300, bounds.y + 300); await page.keyboard.type('Hi Matilda, say hello in five words.'); await page.keyboard.press('Escape');
-    const end = Date.now() + 120_000;
-    while (Date.now() < end && texts().length < 2) await new Promise(r => setTimeout(r, 1000));
-    const reply = texts().find(e => !e.text?.startsWith('Hi Matilda'));
+    const texts = () => { try { return (JSON.parse(fs.readFileSync(boardFile, 'utf8')).elements as { id: string; type: string; isDeleted?: boolean; text?: string }[]).filter(e => e.type === 'text' && !e.isDeleted); } catch { return []; } };
+    const before = new Set(texts().map(e => e.id));
+    await page.mouse.click(bounds.x + 300, bounds.y + 600); await page.keyboard.press('t');
+    await page.mouse.click(bounds.x + 300, bounds.y + 600); await page.keyboard.type('Hi Matilda, say hello in five words.'); await page.keyboard.press('Escape');
+    const fresh = () => texts().filter(e => !before.has(e.id) && !e.text?.startsWith('Hi Matilda') && e.text !== 'Welcome to Love Spot');
+    const end = Date.now() + 150_000;
+    while (Date.now() < end && !fresh().length) await new Promise(r => setTimeout(r, 1000));
+    const reply = fresh()[0];
     check('Matilda answered through OpenRouter', !!reply, reply?.text?.slice(0, 80) ?? (await page.locator('[role="alert"]').allInnerTexts()).join(' | '));
     if (shots) await page.screenshot({ path: path.join(shots, 'live-openrouter-reply-light.png') });
   }

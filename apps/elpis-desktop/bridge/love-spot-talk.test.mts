@@ -406,23 +406,33 @@ test('standalone Love Spot uses the chosen account and never a Claude or Gemini 
   await f.talk.send({ text: 'With OpenRouter', model: 'text', provider: 'openrouter' }); f.finish('turn-2'); await f.talk.idle();
   assert.deepEqual(f.created.map(item => item.provider), ['anthropic', 'openrouter']);
   assert.deepEqual(f.sent.map(item => [item.text, item.model]), [['With my key', 'text'], ['With OpenRouter', 'text']]);
-  // The chosen account survives a restart (spec check 6) and stays the app's own: Elpis's board settings do not get it.
+  // The chosen account survives a restart (spec check 6).
   await f.talk.setMatilda({ model: 'text', provider: 'openrouter' });
-  const appHome = createTestTempDir(path.join(os.tmpdir(), 'love-app-home-'));
-  t.after(() => removeTestTempDir(appHome));
-  const app = createLoveSpot({ directory: f.directory, screenshots: path.join(f.directory, 'shots'), settings: appHome });
-  t.after(() => app.close());
-  await app.matildaSettings({ model: 'text', provider: 'openrouter' });
-  const reopened = createLoveSpot({ directory: f.directory, screenshots: path.join(f.directory, 'shots'), settings: appHome });
+  const reopened = createLoveSpot({ directory: f.directory, screenshots: path.join(f.directory, 'shots') });
   t.after(() => reopened.close());
-  assert.deepEqual([(await reopened.matildaSettings()).provider, (await reopened.matildaSettings()).model], ['openrouter', 'text']);
-  const elpisBoard = createLoveSpot({ directory: f.directory, screenshots: path.join(f.directory, 'shots'), settings: createTestTempDir(path.join(os.tmpdir(), 'love-elpis-')) });
-  t.after(() => elpisBoard.close());
-  assert.equal((await elpisBoard.matildaSettings()).provider, null, 'the same board inside Elpis keeps its own choice');
+  const kept = await reopened.matildaSettings();
+  assert.deepEqual([kept.provider, kept.model], ['openrouter', 'text']);
   // Love Spot inside Elpis keeps the Claude subscription route.
   const inElpis = await fixture(t);
   await inElpis.talk.send({ text: 'Hi', model: 'claude/sonnet', provider: 'anthropic' });
   assert.equal(inElpis.sent.length, 1);
+});
+
+test('the Love Spot app and Love Spot inside Elpis keep separate boards (Masih, 7 Nov)', async t => {
+  const home = createTestTempDir(path.join(os.tmpdir(), 'love-boards-'));
+  const saved = { HOME: process.env.HOME, ELPIS_HOME: process.env.ELPIS_HOME, LOVE_SPOT_APP: process.env.LOVE_SPOT_APP, EXCALIDRAW_LOCAL_DIR: process.env.EXCALIDRAW_LOCAL_DIR };
+  t.after(() => { for (const [key, value] of Object.entries(saved)) if (value === undefined) delete process.env[key]; else process.env[key] = value; removeTestTempDir(home); });
+  delete process.env.EXCALIDRAW_LOCAL_DIR; process.env.HOME = home;
+  const choose = async (env: Record<string, string | undefined>, provider: string) => {
+    for (const [key, value] of Object.entries(env)) if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    const store = createLoveSpot({ screenshots: path.join(home, 'shots') }); t.after(() => store.close());
+    await store.matildaSettings({ provider });
+  };
+  await choose({ LOVE_SPOT_APP: '1', ELPIS_HOME: path.join(home, '.local/share/love-spot') }, 'openrouter');
+  await choose({ LOVE_SPOT_APP: undefined, ELPIS_HOME: path.join(home, '.elpis-next') }, 'openai');
+  const read = async (dir: string) => JSON.parse(await fs.readFile(path.join(home, dir, '.matilda-settings.json'), 'utf8')).provider;
+  assert.equal(await read('.local/share/excalidraw-local'), 'openrouter', 'the app keeps its board where it always was');
+  assert.equal(await read('.elpis-next/love-spot'), 'openai', 'inside Elpis the board lives in the Elpis home');
 });
 
 const delta = (f: Awaited<ReturnType<typeof fixture>>, text: string, itemId = 'reply', method = 'item/agentMessage/delta') => f.client.emit('event', { type: 'message', data: { method, params: { threadId: 'chat', turnId: `turn-${f.sent.length}`, itemId, delta: text } } });

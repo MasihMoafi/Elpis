@@ -116,6 +116,7 @@
     "bridge/love-interview-visibility.test.mjs",
     "bridge/love-spot-talk.test.mts",
     "bridge/love-spot.test.mjs",
+    "bridge/provider-keys.test.mts",
     "bridge/provider-models.test.mts",
     "bridge/read-aloud.test.mjs",
     "bridge/request-diagnostics.test.mts",
