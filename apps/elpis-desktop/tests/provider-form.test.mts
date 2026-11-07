@@ -65,6 +65,15 @@ test('generated IDs pass the actual provider writer while stale versions leave f
   assert.deepEqual(current.providers, [{ id: 'api-research', editable: true }]);
 });
 
+test('a saved key is not kept when its connection moves to another address', () => {
+  const current = { version: 'v1', write: { available: true }, providers: [{ id: 'research', editable: true, baseUrl: 'https://api.one.example/v1', auth: { keySet: true } }] };
+  const edit = (baseUrl: string, credential: { action: string; value?: string }) => providerEdits({ version: 'v1', id: 'research', name: 'Research', baseUrl, credential }, current);
+  assert.throws(() => edit('https://api.two.example/v1', { action: 'preserve' }), /address changed/);
+  assert.ok(edit('https://api.one.example/v2', { action: 'preserve' }).every(item => !item.keyPath.endsWith('experimental_bearer_token')), 'same origin keeps its key');
+  assert.equal(edit('https://api.two.example/v1', { action: 'replace', value: 'new-key' }).find(item => item.keyPath.endsWith('experimental_bearer_token'))?.value, 'new-key');
+  assert.equal(edit('https://api.two.example/v1', { action: 'clear' }).find(item => item.keyPath.endsWith('experimental_bearer_token'))?.value, null);
+});
+
 test('editing keeps the original writer target and preserving a credential writes no key replacement', () => {
   const current = { version: 'v1', write: { available: true }, providers: [{ id: 'ollama', editable: true }] };
   const id = providerFormId({ type: 'custom', name: 'New visible name', existingId: 'ollama' }, ['ollama']);

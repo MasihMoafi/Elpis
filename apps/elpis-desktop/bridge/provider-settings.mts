@@ -5,7 +5,7 @@ import { gatewayRouted } from './provider-models.mts';
 type Definition = { name?: unknown; base_url?: string; env_key?: unknown; wire_api?: unknown; requires_openai_auth?: unknown; auth?: unknown; aws?: unknown; gateway_oauth?: unknown; http_headers?: Record<string, unknown>; env_http_headers?: Record<string, unknown>; experimental_bearer_token?: unknown };
 type ConfigRead = { config?: { model_providers?: Record<string, Definition> }; layers?: { name?: { type?: string; profile?: unknown; file?: string }; version?: string }[] } | null | undefined;
 type RequirementsRead = { requirements?: { modelProvider?: unknown; modelProviders?: Record<string, unknown> } | null } | null;
-type Current = { version?: unknown; write: { available: boolean; reason?: string | null }; providers: { id: string; editable: boolean }[] };
+type Current = { version?: unknown; write: { available: boolean; reason?: string | null }; providers: { id: string; editable: boolean; baseUrl?: string | null; auth?: { keySet?: boolean } }[] };
 const reserved = new Set(['openai', 'claude', 'agy', 'antigravity']);
 
 /** The engine's built-in key providers, served through its gateway (codex-rs/model-provider-info/src/elpis_gateway.rs,
@@ -85,6 +85,12 @@ export function providerEdits(raw: unknown, current: Current) {
   if (!current.write.available) throw new BridgeError(current.write.reason, 403);
   const existing = current.providers.find(provider => provider.id === input.id);
   if (existing && !existing.editable) throw new BridgeError('This provider is controlled by another authentication source or organization policy', 403);
+  // A key is bound to the address it was saved for (skills/provider-login/spec.md, check 1): moving a connection to
+  // another origin needs the key again, or a cleared one, so the old key never reaches the new address.
+  const origin = (url?: string | null) => { try { return url ? new URL(url).origin : null; } catch { return null; } };
+  if (existing?.auth?.keySet && input.credential.action === 'preserve' && origin(existing.baseUrl) && origin(existing.baseUrl) !== origin(baseUrl)) {
+    throw new BridgeError('The address changed. Enter the key again, or clear it, so the old key is not sent to the new address.');
+  }
   const prefix = `model_providers.${input.id}`;
   const edits: { keyPath: string; value: string | boolean | null; mergeStrategy: string }[] = Object.entries({ name, base_url: baseUrl, wire_api: 'responses', requires_openai_auth: false }).map(([key, value]) => ({ keyPath: `${prefix}.${key}`, value, mergeStrategy: 'replace' }));
   const replace = input.credential.action === 'replace' && value!.trim() && !/^[*•●]+$/.test(value!.trim());
