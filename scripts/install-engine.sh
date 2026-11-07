@@ -72,7 +72,8 @@ while IFS= read -r -d '' file; do
     cp -a "$R/$file" "$NEW/$file"
 done < <(git -C "$R" ls-files -z tools/elpis-claude)
 mkdir -p "$NEW/tools/elpis-claude/matilda"
-cp "$R/apps/elpis-desktop/bridge/matilda-goals.mts" "$R/apps/elpis-desktop/bridge/matilda-sessions.mts" "$NEW/tools/elpis-claude/matilda/"
+cp "$R/apps/elpis-desktop/bridge/matilda-goals.mts" "$NEW/tools/elpis-claude/matilda/"
+cp "$R/apps/elpis-desktop/bridge/router/executor/discovery.mts" "$NEW/tools/elpis-claude/matilda/matilda-sessions.mts"
 # The live launcher is the template: the bundle's own copy can be older (21 Oct: it lacked the
 # pinned TUI frontend and the shared bridge). Frontend changes require the explicit flag below.
 grep -qF "$OLD/" "$HOME/.local/bin/elpis" || { printf 'the live launcher does not use %s\n' "$OLD" >&2; exit 1; }

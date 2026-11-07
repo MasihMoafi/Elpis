@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { test } from 'node:test';
 
 const installer = process.env.INSTALL_ENGINE_SCRIPT ?? path.resolve('scripts/install-engine.sh');
@@ -33,6 +34,11 @@ function fixture(t, spaces = false) {
   writeFileSync(`${source}/tools/elpis-claude/runtime.mts`, 'export const fixture = true;\n');
   writeFileSync(`${source}/tools/elpis-claude/elpis-wrapper`, `#!/bin/sh\n${direct}\n`);
   writeFileSync(`${source}/codex-rs/prompts/fixture.md`, 'prompt\n');
+  const bridge = `${source}/apps/elpis-desktop/bridge`;
+  mkdirSync(`${bridge}/router/executor`, { recursive: true });
+  for (const file of ['matilda-goals.mts', 'matilda-sessions.mts', 'router/executor/discovery.mts']) {
+    copyFileSync(new URL(`../../apps/elpis-desktop/bridge/${file}`, import.meta.url), `${bridge}/${file}`);
+  }
   const git = (...args) => execFileSync('git', ['-C', source, ...args], { stdio: 'pipe' });
   git('init', '-q');
   git('add', 'tools/elpis-claude/runtime.mts', 'tools/elpis-claude/elpis-wrapper', 'codex-rs/prompts/fixture.md');
@@ -44,7 +50,7 @@ function fixture(t, spaces = false) {
   return { home, source, old, frontend, bin, run, bundle, git, head };
 }
 
-test('installs a self-contained local package and preserves rollback across two installs', (t) => {
+test('installs a self-contained local package and preserves rollback across two installs', async (t) => {
   const f = fixture(t);
   const before = readFileSync(`${f.bin}/elpis`);
   const first = f.run('first');
@@ -61,6 +67,13 @@ test('installs a self-contained local package and preserves rollback across two 
   const inspect = (dir) => { for (const name of readdirSync(dir)) { const file = `${dir}/${name}`; assert.ok(!lstatSync(file).isSymbolicLink(), file); if (lstatSync(file).isDirectory()) inspect(file); } };
   inspect(pkg);
   assert.ok(existsSync(`${bundle}/tools/elpis-claude/node_modules`));
+  const matilda = pathToFileURL(`${bundle}/tools/elpis-claude/matilda/`);
+  const { createGoalStore } = await import(new URL('matilda-goals.mts', matilda));
+  const { listSessions } = await import(new URL('matilda-sessions.mts', matilda));
+  const goals = createGoalStore(`${f.home}/.elpis-next`);
+  const goal = await goals.create({ originalRequest: 'Keep installed tools usable', decisions: [], constraints: [], tasks: [], messages: [], evidence: [], nextAction: '' });
+  assert.deepEqual(await goals.get(goal.id), goal, 'the bundled goal store persists a record');
+  assert.deepEqual(await listSessions({ home: f.home, elpisHome: `${f.home}/.elpis-next`, claudeHome: `${f.home}/.claude`, settings: { runtimes: [], idleMs: 0 } }), []);
   assert.equal(execFileSync(`${f.bin}/elpis`, ['--version'], { encoding: 'utf8' }).trim(), 'elpis 0.4.1');
   assert.equal(execFileSync(`${f.bin}/elpis`, [], { encoding: 'utf8' }).trim(), 'old-frontend');
   assert.equal(f.run('first').status, 1, 'duplicate bundle must be refused');

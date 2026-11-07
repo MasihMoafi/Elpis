@@ -147,6 +147,7 @@ function LoveSpotBoard({ dark, toolbarHost }: LoveSpotProps) {
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const viewTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const saving = useRef<Promise<void>>(Promise.resolve());
+  const pendingSaves = useRef(0);
   const saveLatest = useRef<((picture?: boolean, finishEdit?: boolean) => Promise<boolean>) | undefined>(undefined);
   const journal = useRef<ReturnType<typeof createTextJournal>>(undefined);
   const deferred = useRef<Saved>(undefined);
@@ -255,7 +256,7 @@ function LoveSpotBoard({ dark, toolbarHost }: LoveSpotProps) {
   const receive = useCallback((data: Saved) => {
     // Updating any scene can detach Excalidraw's live textarea. Admit the
     // newest complete remote scene only after the local edit is committed.
-    if (editor?.getAppState().editingTextElement || document.querySelector("textarea.excalidraw-wysiwyg")) {
+    if (pendingSaves.current || editor?.getAppState().editingTextElement || document.querySelector("textarea.excalidraw-wysiwyg")) {
       deferred.current = data;
       return;
     }
@@ -329,6 +330,7 @@ function LoveSpotBoard({ dark, toolbarHost }: LoveSpotProps) {
     const drawing = capture();
     if (!drawing) return Promise.resolve(false);
     const protectedIds = journal.current!.protectedIds(drawing.elements, drawing.page);
+    pendingSaves.current++;
     if (mounted.current) setSaveStatus("Saving…");
     let succeeded = false;
     saving.current = saving.current.catch(() => {}).then(async () => {
@@ -347,7 +349,16 @@ function LoveSpotBoard({ dark, toolbarHost }: LoveSpotProps) {
       }
       succeeded = true;
       if (picture) await savePicture(data);
-    }).catch(e => { if (mounted.current) setSaveStatus("Save failed"); report(e); });
+    }).catch(e => { if (mounted.current) setSaveStatus("Save failed"); report(e); }).then(async () => {
+      pendingSaves.current--;
+      if (pendingSaves.current || !succeeded || !deferred.current || !mounted.current) return;
+      try {
+        // Earlier replies can carry a version above the finished local edit.
+        // Read once after every queued save, including its retry, has settled.
+        const current = await api<Saved>("/love-spot");
+        if (mounted.current) { deferred.current = undefined; receive(current); }
+      } catch (e) { report(e); }
+    });
     return saving.current.then(() => succeeded);
   }, [capture, receive, report]);
   useEffect(() => { saveLatest.current = save; }, [save]);
@@ -479,7 +490,7 @@ function LoveSpotBoard({ dark, toolbarHost }: LoveSpotProps) {
     const endedEdit = editingId.current && !editing;
     editingId.current = editing?.id;
     if (!remote.current && editing && currentPage.current) journal.current!.record(editing, currentPage.current);
-    const admitRemote = !editing && !!deferred.current;
+    const admitRemote = !editing && !pendingSaves.current && !!deferred.current;
     if (admitRemote) deferred.current = undefined;
     // Loading, selection and pointer movement do not need a save or a new PNG.
     const filesChanged = before && (Object.keys(before.files).length !== Object.keys(files).length || Object.entries(files).some(([id, file]) => before.files[id]?.dataURL !== file.dataURL));

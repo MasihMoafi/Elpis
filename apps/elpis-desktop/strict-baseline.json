@@ -194,7 +194,6 @@
   "tests/fullview.test.cjs:typescript(no-misused-promises)": 1,
   "tests/goal.runtime.mts:eslint(no-unused-expressions)": 1,
   "tests/goal.test.cts:eslint(no-unused-vars)": 1,
-  "tests/hidden-pages.test.cts:eslint(no-unused-vars)": 2,
   "tests/ledger-engine.runtime.mjs:eslint(no-unused-expressions)": 1,
   "tests/love-agents-live.runtime.mts:typescript(no-floating-promises)": 1,
   "tests/love-interview-runtime.mts:typescript(no-floating-promises)": 1,

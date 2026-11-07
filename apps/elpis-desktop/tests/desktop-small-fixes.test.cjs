@@ -75,7 +75,7 @@ for (const colorScheme of ['light']) test(`sidebar arrows cover navigation, Sear
   const { page } = f, nav = page.locator('aside.sidebar');
   await page.locator('.startup-splash').waitFor({ state: 'detached' });
   const start = nav.getByRole('button', { name: 'New chat', exact: true }); await start.focus();
-  for (const name of ['Lab', 'Workflows', 'Love Spot', 'Observability', 'Customize']) {
+  for (const name of ['Lab', 'Workflows', 'Love Spot', 'Mother', 'Observability', 'Customize']) {
     await page.keyboard.press('ArrowDown');
     assert.equal(await page.evaluate(() => document.activeElement.textContent.trim()), name);
   }
@@ -156,15 +156,18 @@ test('sidebar pages reorder by drag and drop and by Alt+Arrow, and keep their or
   const { page } = f, nav = page.getByRole('navigation', { name: 'Workspace', exact: true });
   await page.locator('.startup-splash').waitFor({ state: 'detached' });
   const order = () => nav.getByRole('button').allInnerTexts().then(names => names.map(name => name.trim()));
-  assert.deepEqual(await order(), ['New chat', 'Lab', 'Workflows', 'Love Spot', 'Observability', 'Customize']);
+  assert.deepEqual(await order(), ['New chat', 'Lab', 'Workflows', 'Love Spot', 'Mother', 'Observability', 'Customize']);
   await nav.getByRole('button', { name: 'Love Spot', exact: true }).dragTo(nav.getByRole('button', { name: 'Lab', exact: true }), { targetPosition: { x: 20, y: 4 } });
-  assert.deepEqual(await order(), ['New chat', 'Love Spot', 'Lab', 'Workflows', 'Observability', 'Customize'], 'dropped on the top half of Lab, it goes above Lab');
+  assert.deepEqual(await order(), ['New chat', 'Love Spot', 'Lab', 'Workflows', 'Mother', 'Observability', 'Customize'], 'dropped on the top half of Lab, it goes above Lab');
   await nav.getByRole('button', { name: 'Customize', exact: true }).focus();
   await page.keyboard.press('Alt+ArrowUp'); await page.keyboard.press('Alt+ArrowUp');
-  assert.deepEqual(await order(), ['New chat', 'Love Spot', 'Lab', 'Customize', 'Workflows', 'Observability'], 'Alt+Up moves the focused page up');
+  assert.deepEqual(await order(), ['New chat', 'Love Spot', 'Lab', 'Workflows', 'Customize', 'Mother', 'Observability'], 'Alt+Up moves the focused page up');
   assert.equal(await page.evaluate(() => document.activeElement.textContent.trim()), 'Customize', 'focus stays on the moved page');
+  await nav.getByRole('button', { name: 'Mother', exact: true }).focus();
+  await page.keyboard.press('Alt+ArrowDown');
+  assert.deepEqual(await order(), ['New chat', 'Love Spot', 'Lab', 'Workflows', 'Customize', 'Observability', 'Mother'], 'Mother reorders with the same keys');
   await page.reload(); await page.locator('.startup-splash').waitFor({ state: 'detached' });
-  assert.deepEqual(await order(), ['New chat', 'Love Spot', 'Lab', 'Customize', 'Workflows', 'Observability'], 'the order is saved');
+  assert.deepEqual(await order(), ['New chat', 'Love Spot', 'Lab', 'Workflows', 'Customize', 'Observability', 'Mother'], 'the order, including Mother, is saved');
 });
 
 // P6: during a turn the bridge sends account events (usage updates); each reloads the model list. A "Loading models…"

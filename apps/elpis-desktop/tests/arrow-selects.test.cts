@@ -19,8 +19,8 @@ test('in the sidebar an arrow opens the page it reaches, but never New chat, the
     await page.waitForFunction(() => document.querySelector('.workspace-header h1')?.textContent === 'Observability');
     assert.equal(await page.evaluate(() => (document.activeElement?.textContent ?? '').trim()), 'Observability', 'focus is on the page it opened');
     assert.equal(await page.evaluate(() => document.activeElement ? getComputedStyle(document.activeElement).outlineOffset : ''), '-2px', 'the focus ring is drawn inside the row, where the column does not clip it');
-    for (let stroke = 0; stroke < 4; stroke++) await page.keyboard.press('ArrowUp');
-    assert.equal(await page.evaluate(() => (document.activeElement?.textContent ?? '').trim().replace(/Ctrl\+N$/, '')), 'New chat', 'four more arrows reach New chat');
+    for (let stroke = 0; stroke < 5; stroke++) await page.keyboard.press('ArrowUp');
+    assert.equal(await page.evaluate(() => (document.activeElement?.textContent ?? '').trim().replace(/Ctrl\+N$/, '')), 'New chat', 'five more arrows, including Mother, reach New chat');
     await page.waitForTimeout(400);
     assert.equal(await title(page).innerText(), 'Observability', 'pages passed in quick strokes do not open, and New chat is not activated');
     assert.deepEqual(f.errors, []);

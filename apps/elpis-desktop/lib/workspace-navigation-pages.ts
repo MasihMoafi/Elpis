@@ -6,8 +6,8 @@ import type { View } from "@/lib/workspace-types";
 export const NAV_PAGES = [
   { id: "experimentLab", name: "Lab", Icon: ExperimentLabIcon },
   { id: "canvas", name: "Workflows", Icon: WorkflowsIcon },
-  { id: "mother", name: "Mother", Icon: Network },
   { id: "loveSpot", name: "Love Spot", Icon: LoveSpotIcon },
+  { id: "mother", name: "Mother", Icon: Network },
   // 5 Nov: back, as the TUI's /dashboard page (DeepSeek's Trajectory), with the pulse icon he approved.
   { id: "observability", name: "Observability", Icon: Activity },
   { id: "customize", name: "Customize", Icon: Blocks },

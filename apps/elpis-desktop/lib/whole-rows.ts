@@ -19,10 +19,13 @@ export function useWholeRows(ref: RefObject<HTMLElement | null>, rowSelector: st
       list.style.marginTop = "";
       list.style.marginBottom = "";
       list.style.minHeight = "";
+      const rows = [...list.querySelectorAll<HTMLElement>(rowSelector)].filter(row => row.getBoundingClientRect().height > 0);
+      // Reserve a row before measuring: a growing nav must scroll instead of
+      // shrinking the chat list to zero and covering its click targets.
+      if (rows[0]) list.style.minHeight = `${rows[0].getBoundingClientRect().height}px`;
       let viewport = list.getBoundingClientRect();
       if (viewport.height <= 0) return;
 
-      const rows = [...list.querySelectorAll<HTMLElement>(rowSelector)].filter(row => row.getBoundingClientRect().height > 0);
       const firstChat = rows.find(row => row.getBoundingClientRect().bottom > viewport.top + .5);
       if (firstChat) {
         let box = firstChat.getBoundingClientRect();
@@ -54,12 +57,13 @@ export function useWholeRows(ref: RefObject<HTMLElement | null>, rowSelector: st
         }
       }
 
-      const bottomPartial = rows.some(row => {
+      const boundaries = [...list.querySelectorAll<HTMLElement>(targets)];
+      const bottomPartial = boundaries.some(row => {
         const box = row.getBoundingClientRect();
         return box.top < viewport.bottom - .5 && box.bottom > viewport.bottom + .5;
       });
       if (!bottomPartial) return;
-      const lastFull = [...list.querySelectorAll<HTMLElement>(targets)].filter(target => {
+      const lastFull = boundaries.filter(target => {
         const box = target.getBoundingClientRect();
         return box.height > 0 && box.top >= viewport.top - .5 && box.bottom <= viewport.bottom + .5;
       }).at(-1);

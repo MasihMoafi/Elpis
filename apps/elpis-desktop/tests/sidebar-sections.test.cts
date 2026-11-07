@@ -12,7 +12,7 @@ for (const thread of threads) {
   routes[`/api/threads/${thread.id}/resume`] = () => ({ thread, activeTurnId: null });
 }
 
-test('long sidebar lists keep every visible chat row whole at rest, through resize and at scroll ends', async () => {
+test('long sidebar lists keep every visible chat row and heading whole at rest, through resize and at scroll ends', async () => {
   const makeChat = (id: string, name: string, extra: { parentThreadId?: string } = {}) => ({ id, name, preview: name, cwd: CWD, model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' }, ...extra });
   const parent = makeChat('chat-a', 'Recover the longest customer conversation from last week and compare all follow-up notes');
   const projectChat = makeChat('project-chat', 'Write the implementation plan for the cross-service migration and its rollback');
@@ -38,8 +38,9 @@ test('long sidebar lists keep every visible chat row whole at rest, through resi
     const checkRows = async (label: string) => {
       const geometry = await list.evaluate((element: HTMLElement) => {
         const viewport = element.getBoundingClientRect();
-        const rows = [...element.querySelectorAll<HTMLElement>('.thread-row')].map(row => ({
+        const rows = [...element.querySelectorAll<HTMLElement>('.thread-row, .section-label-row, .sidebar-group-row, .thread-more')].map(row => ({
           id: row.dataset.threadId || (row.textContent?.trim() ?? ''),
+          chat: row.matches('.thread-row'),
           top: row.getBoundingClientRect().top,
           bottom: row.getBoundingClientRect().bottom,
         }));
@@ -52,13 +53,13 @@ test('long sidebar lists keep every visible chat row whole at rest, through resi
           clientHeight: element.clientHeight,
           viewportTop: viewport.top,
           viewportBottom: viewport.bottom,
-          visible: rows.filter(row => row.bottom > viewport.top && row.top < viewport.bottom),
+          visible: rows.filter(row => row.bottom > viewport.top + .5 && row.top < viewport.bottom - .5),
         };
       });
       assert.ok(geometry.scrollWidth <= geometry.clientWidth + 1, `${label}: no horizontal overflow (${geometry.scrollWidth}/${geometry.clientWidth}, ${geometry.overflowX})`);
       const partial = geometry.visible.filter((row: { top: number; bottom: number }) => row.top < geometry.viewportTop - .5 || row.bottom > geometry.viewportBottom + .5);
       assert.ok(partial.length === 0, `${label}: partial=${JSON.stringify(partial)}, viewport=${geometry.viewportTop}-${geometry.viewportBottom}, scroll=${geometry.scrollTop}/${geometry.scrollHeight - geometry.clientHeight}`);
-      assert.ok(geometry.visible.some((row: { top: number; bottom: number }) => row.top >= geometry.viewportTop - .5 && row.bottom <= geometry.viewportBottom + .5), `${label}: at least one whole chat row fits`);
+      assert.ok(geometry.visible.some((row: { top: number; bottom: number; chat: boolean }) => row.chat && row.top >= geometry.viewportTop - .5 && row.bottom <= geometry.viewportBottom + .5), `${label}: at least one whole chat row fits`);
     };
     await checkRows('initial');
     await page.locator(`.thread-row[data-thread-id="${parent.id}"] .thread-link`).click();

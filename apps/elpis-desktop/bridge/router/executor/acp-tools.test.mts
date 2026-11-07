@@ -27,7 +27,7 @@ for (const native of [false, true]) test(`${native ? 'Native-to-Claude switch' :
   await writeFile(config, JSON.stringify({ config: { features: { multi_agent: false }, mcp_servers: {} } }))
   const child = spawn(process.execPath, [fileURLToPath(new URL('acp-bridge.mjs', tools))], { cwd: root, stdio: ['pipe', 'ignore', 'pipe'], env: {
     PATH: process.env.PATH, HOME: root, ELPIS_HOME: join(root, 'elpis'), CODEX_HOME: join(root, 'elpis'), CODEX_AUTH_HOME: join(root, 'elpis'), XDG_RUNTIME_DIR: root,
-    ELPIS_ENGINE_BIN: fileURLToPath(new URL('test/fake-app-server.mjs', tools)), ACP_ADAPTER: fileURLToPath(new URL('test/fake-acp-agent.mjs', tools)),
+    ELPIS_ENGINE_BIN: fileURLToPath(new URL('test/fake-app-server.mts', tools)), ACP_ADAPTER: fileURLToPath(new URL('test/fake-acp-agent.mts', tools)),
     ACP_BRIDGE_LOG: log, ACP_BRIDGE_STORE: join(root, 'sessions.json'), ELPIS_NO_AGY: '1', ACP_BRIDGE_NO_AGENTS: '1', PORT: '0',
     FAKE_ENGINE_CONFIG: config, FAKE_ACP_LOG: trace, FAKE_ACP_MODELS: 'sonnet',
   } })
