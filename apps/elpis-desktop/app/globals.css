@@ -487,7 +487,11 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 /* The content column is centred in the space beside the navigation, as in ChatGPT and Claude (27 Oct). */
 .settings-mode .settings-page > :is([role="tabpanel"], .settings-page-header, .settings-group) { max-width:var(--settings-content-width); margin-inline:auto; }
 /* "Back to app" and "Back to Agents": one back row, its arrow on the content's left edge. */
-.settings-title { margin:10px 8px 4px; font:500 var(--text-base)/1.3 var(--ui-font); }
+/* Title, search and the first section each get room of their own (Masih, 7 Nov: "the settings and search too cramped up
+   together"). */
+.settings-title { margin:14px 8px 10px; font:500 var(--text-base)/1.3 var(--ui-font); }
+.settings-nav > .search-field { margin-bottom:12px; }
+.settings-nav-group + .settings-nav-group { margin-top:10px; }
 .settings-nav [role="tablist"] { display:grid; gap:2px; }
 .settings-nav-group { display:grid; gap:2px; }
 .settings-nav-empty { padding:8px; font-size:var(--text-xs); color:var(--muted-foreground); }
