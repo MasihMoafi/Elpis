@@ -72,7 +72,7 @@ if (process.env.QUEUE_STEER_FIXTURE_ADAPTER === '1') {
 } else {
   const WebSocket = require('../tools/elpis-claude/node_modules/ws');
   const binary = process.argv[2];
-  const bridgeFile = process.argv[3] ?? path.resolve(__dirname, '../tools/elpis-claude/acp-bridge.mjs');
+  const bridgeFile = process.argv[3] ?? path.resolve(__dirname, '../tools/elpis-claude/acp-bridge.mts');
   assert(binary && path.isAbsolute(binary), 'provide an absolute engine path');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-queue-steer-cancel-'));
   const home = path.join(root, 'home'), cwd = path.join(root, 'work');

@@ -13,7 +13,7 @@ direct() {
   exec "$REAL" "$@"
 }
 [ -n "${ELPIS_NO_CLAUDE:-}" ] && direct "$@"
-command -v node >/dev/null && [ -f "$BRIDGE_DIR/acp-bridge.mjs" ] \
+command -v node >/dev/null && [ -f "$BRIDGE_DIR/acp-bridge.mts" ] \
   && [ -d "$BRIDGE_DIR/node_modules/@agentclientprotocol/claude-agent-acp" ] || direct "$@"
 for a in "$@"; do
   case "$a" in --remote|--remote=*|-h|--help|-V|--version) direct "$@" ;; esac

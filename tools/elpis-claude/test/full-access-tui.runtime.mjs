@@ -33,7 +33,7 @@ test('installed TUI follows shared defaults and keeps its own Ask choice across 
   const config = approval => `model="gpt-5.5"\nmodel_provider="mock"\ndefault_permissions=":${approval === 'on-request' ? 'workspace' : 'danger-full-access'}"\n${approval ? `approval_policy="${approval}"\n` : ''}[features]\nhooks=false\n[model_providers.mock]\nname="Mock"\nbase_url="http://127.0.0.1:${/listening (\d+)/.exec(mockOutput)[1]}/v1"\nwire_api="responses"\n[projects.${JSON.stringify(work)}]\ntrust_level="trusted"\n`;
   await fs.writeFile(configFile, config(null));
   const env = { PATH: process.env.PATH, HOME: root, ELPIS_HOME: home, CODEX_HOME: home, ELPIS_ENGINE_BIN: process.env.ELPIS_TEST_ENGINE, TERM: 'xterm-256color', ELPIS_NO_AGY: '1', ACP_BRIDGE_NO_AGENTS: '1' };
-  const started = await run(process.execPath, [path.join(tools, 'shared-runtime.mts'), path.join(tools, 'acp-bridge.mjs')], { env, timeout: 30000 });
+  const started = await run(process.execPath, [path.join(tools, 'shared-runtime.mts'), path.join(tools, 'acp-bridge.mts')], { env, timeout: 30000 });
   const endpoint = started.stdout.trim().split('\n')[0];
   const hash = createHash('sha256').update(home).digest('hex').slice(0, 16);
   runtimeState = path.join(os.tmpdir(), `elpis-bridge-${process.getuid()}`, hash, 'state.json');

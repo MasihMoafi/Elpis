@@ -50,8 +50,8 @@ const savedBoard = custom ? { name: `Live ${plan}`, maxAgents: 12, mother: { bri
   }) } : null;
 const engineDirectory = path.dirname(realpathSync(engine));
 const bridgeScript = [
-  ...(path.basename(engineDirectory) === 'bin' && path.basename(path.dirname(engineDirectory)) === 'package' ? [path.resolve(engineDirectory, '../../tools/elpis-claude/acp-bridge.mjs')] : []),
-  path.join(engineDirectory, 'tools/elpis-claude/acp-bridge.mjs'),
+  ...(path.basename(engineDirectory) === 'bin' && path.basename(path.dirname(engineDirectory)) === 'package' ? [path.resolve(engineDirectory, '../../tools/elpis-claude/acp-bridge.mts')] : []),
+  path.join(engineDirectory, 'tools/elpis-claude/acp-bridge.mts'),
 ].find(candidate => existsSync(candidate));
 assert(bridgeScript, `No installed provider bridge for ${engine}`);
 const appRoot = fileURLToPath(new URL('..', import.meta.url));

@@ -41,7 +41,7 @@ async function start(t, store, env = {}) {
   const log = path.join(root, "log"), release = path.join(root, "release");
   const script = (name, source) => { const file = path.join(root, name); fs.writeFileSync(file, `#!${process.execPath}\n${source}`, { mode: 0o755 }); return file; };
   fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify(store));
-  const child = spawn(process.execPath, [process.env.ACTIVE_LIST_BRIDGE ?? fileURLToPath(new URL("../acp-bridge.mjs", import.meta.url))], {
+  const child = spawn(process.execPath, [process.env.ACTIVE_LIST_BRIDGE ?? fileURLToPath(new URL("../acp-bridge.mts", import.meta.url))], {
     cwd: root, stdio: ["ignore", "ignore", "pipe"],
     env: { PATH: process.env.PATH, HOME: root, ELPIS_HOME: root, CODEX_HOME: root, CODEX_AUTH_HOME: root, XDG_RUNTIME_DIR: root, TMPDIR: root,
       ELPIS_ENGINE_BIN: script("engine.mjs", engineSource.replace("import readline", "import readline")), ACP_ADAPTER: script("adapter.mjs", adapterSource),

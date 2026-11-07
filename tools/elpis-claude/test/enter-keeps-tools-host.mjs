@@ -10,6 +10,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { bridgeEntry, bridgeSourceDigest } from "./bridge-entry.mts";
 
 const { values } = parseArgs({ options: { engine: { type: "string" }, baseline: { type: "string" }, evidence: { type: "string" } } });
 assert.ok(values.engine && path.isAbsolute(values.engine), "--engine must name the actual native binary");
@@ -17,7 +18,7 @@ assert.ok(values.evidence && path.isAbsolute(values.evidence), "--evidence must 
 assert.ok(values.baseline && !values.baseline.startsWith("-"), "--baseline must name the unchanged commit");
 const repository = fileURLToPath(new URL("../../../", import.meta.url));
 const test = fileURLToPath(new URL("./turn-delivery.test.mjs", import.meta.url));
-const bridge = fileURLToPath(new URL("../acp-bridge.mjs", import.meta.url));
+const bridge = fileURLToPath(new URL("../acp-bridge.mts", import.meta.url));
 const evidence = values.evidence;
 const engine = fs.realpathSync(values.engine);
 assert.ok(!engine.endsWith(".mjs"), "the scripted engine is not host-native acceptance");
@@ -29,7 +30,7 @@ fs.symlinkSync(fs.realpathSync(new URL("../node_modules", import.meta.url)), pat
 const digest = file => createHash("sha256").update(fs.readFileSync(file)).digest("hex");
 fs.writeFileSync(path.join(evidence, "provenance.json"), JSON.stringify({ engine, engineSha256: digest(engine), node: process.execPath, nodeVersion: process.version,
   baseline: values.baseline, candidate: execFileSync("git", ["rev-parse", "HEAD"], { cwd: repository, encoding: "utf8" }).trim(),
-  bridgeSha256: digest(bridge), testSha256: digest(test), agentSha256: digest(new URL("./fake-acp-agent.mjs", import.meta.url)) }, null, 2) + "\n");
+  bridgeSha256: bridgeSourceDigest(path.dirname(bridge)), testSha256: digest(test), agentSha256: digest(new URL("./fake-acp-agent.mjs", import.meta.url)) }, null, 2) + "\n");
 
 function run(label, selectedBridge, pattern) {
   const home = fs.mkdtempSync("/tmp/a128h-");
@@ -45,7 +46,7 @@ function run(label, selectedBridge, pattern) {
   if (result.error) throw result.error;
   return { status: result.status, output };
 }
-const before = run("before", path.join(baseline, "tools/elpis-claude/acp-bridge.mjs"), "A128: (1|4) messages during");
+const before = run("before", bridgeEntry(path.join(baseline, "tools/elpis-claude")), "A128: (1|4) messages during");
 assert.notEqual(before.status, 0, "the unchanged bridge must fail");
 assert.match(before.output, /Enter must not (reject a running tool|interrupt the task)/, "a startup/sandbox failure is not a reproduced interruption");
 assert.match(before.output, /# fail 2\b/, "both one-message and several-message cases must reproduce");

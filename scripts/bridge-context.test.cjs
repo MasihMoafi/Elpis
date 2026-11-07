@@ -91,7 +91,7 @@ async function main() {
     fs.writeFileSync(file, `#!${process.execPath}\nprocess.argv.push(${JSON.stringify(mode)}); require(${JSON.stringify(__filename)});\n`, { mode: 0o755 });
   }
   const log = path.join(root, 'bridge.log');
-  const bridge = spawn(process.execPath, [bridgePath ?? path.resolve(__dirname, '../tools/elpis-claude/acp-bridge.mjs')], {
+  const bridge = spawn(process.execPath, [bridgePath ?? path.resolve(__dirname, '../tools/elpis-claude/acp-bridge.mts')], {
     cwd, env: { PATH: process.env.PATH, HOME: home, ELPIS_HOME: home, CODEX_HOME: home, CODEX_AUTH_HOME: home,
       ELPIS_ENGINE_BIN: engineWrapper, CONTEXT_FIXTURE_ENGINE: enginePath, CONTEXT_FIXTURE_CONTROL: controlPath,
       CONTEXT_FIXTURE_ADAPTER: '1', CONTEXT_FIXTURE_CALLS: callsPath, ACP_ADAPTER: __filename,

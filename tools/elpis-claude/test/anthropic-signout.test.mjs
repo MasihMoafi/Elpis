@@ -106,7 +106,7 @@ if (process.argv.includes("app-server")) {
     const usage = createServer((req, res) => { usageHits++; res.setHeader("content-type", "application/json"); res.end(JSON.stringify({ five_hour: { utilization: req.headers.authorization === "Bearer second-local-token" ? 73 : 41, resets_at: "2030-01-01T00:00:00Z" }, seven_day: { utilization: 86, resets_at: "2030-01-07T00:00:00Z" } })); });
     await new Promise((resolve) => usage.listen(0, "127.0.0.1", resolve));
     const log = path.join(root, "bridge.log");
-    const child = spawn(process.execPath, [process.env.ELPIS_SIGNOUT_TEST_BRIDGE ?? fileURLToPath(new URL("../acp-bridge.mjs", import.meta.url))], {
+    const child = spawn(process.execPath, [process.env.ELPIS_SIGNOUT_TEST_BRIDGE ?? fileURLToPath(new URL("../acp-bridge.mts", import.meta.url))], {
       cwd: root, stdio: ["ignore", "ignore", "pipe"],
       env: { PATH: `${path.join(root, "bin")}:${process.env.PATH}`, HOME: userHome, ELPIS_HOME: elpisHome, CODEX_HOME: elpisHome, CODEX_AUTH_HOME: elpisHome,
         XDG_RUNTIME_DIR: root, TMPDIR: root, ELPIS_ENGINE_BIN: engine, ACP_BRIDGE_LOG: log, ...(defaultStore ? {} : { ACP_BRIDGE_STORE: path.join(state, "sessions.json") }),

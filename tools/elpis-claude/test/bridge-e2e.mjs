@@ -21,7 +21,7 @@ await new Promise((r) => usageServer.listen(0, "127.0.0.1", r));
 const usageEnv = process.env.E2E_REAL_USAGE ? {} : { ELPIS_CLAUDE_USAGE_URL: `http://127.0.0.1:${usageServer.address().port}/usage`, NO_PROXY: "127.0.0.1,localhost", no_proxy: "127.0.0.1,localhost" };
 // The bridge's own store (Claude sessions and the default Claude pick) lives in a test folder.
 const storeEnv = { ACP_BRIDGE_STORE: process.env.ACP_BRIDGE_STORE ?? join(mkdtempSync(join(tmpdir(), "elpis-e2e-store-")), "sessions.json") };
-const bridge = spawn("node", [process.env.E2E_BRIDGE ?? join(here, "acp-bridge.mjs")], {
+const bridge = spawn("node", [process.env.E2E_BRIDGE ?? join(here, "acp-bridge.mts")], {
   env: { ...process.env, ...usageEnv, ...storeEnv, PORT: String(port), NODE_USE_ENV_PROXY: "1", ACP_BRIDGE_LOG: process.env.ACP_BRIDGE_LOG ?? "/tmp/acp-bridge/e2e.log" },
   stdio: "ignore",
 });
@@ -205,7 +205,7 @@ for (const s of scenarios) {
       wf(storePath, JSON.stringify(st, null, 1));
       console.log("(saved Claude session link broken on purpose)");
     }
-    const b2 = spawn("node", [process.env.E2E_BRIDGE ?? join(here, "acp-bridge.mjs")], { env: { ...process.env, ...usageEnv, ...storeEnv, PORT: String(port + 1), NODE_USE_ENV_PROXY: "1", ACP_BRIDGE_LOG: "/tmp/acp-bridge/e2e.log" }, stdio: "ignore" });
+    const b2 = spawn("node", [process.env.E2E_BRIDGE ?? join(here, "acp-bridge.mts")], { env: { ...process.env, ...usageEnv, ...storeEnv, PORT: String(port + 1), NODE_USE_ENV_PROXY: "1", ACP_BRIDGE_LOG: "/tmp/acp-bridge/e2e.log" }, stdio: "ignore" });
     await new Promise((r) => setTimeout(r, 800));
     const ws2 = new WebSocket(`ws://127.0.0.1:${port + 1}`);
     await new Promise((r) => ws2.on("open", r));
@@ -698,7 +698,7 @@ for (const s of scenarios) {
     const { readFileSync } = await import("node:fs");
     const home = mkdtempSync(join(tmpdir(), "elpis-e2e-home-"));
     const logPath = join(home, "bridge.log");
-    const b3 = spawn("node", [process.env.E2E_BRIDGE ?? join(here, "acp-bridge.mjs")], { env: { ...process.env, ...usageEnv, ...storeEnv, ELPIS_HOME: home, PORT: String(port + 2), NODE_USE_ENV_PROXY: "1", ACP_BRIDGE_LOG: logPath }, stdio: "ignore" });
+    const b3 = spawn("node", [process.env.E2E_BRIDGE ?? join(here, "acp-bridge.mts")], { env: { ...process.env, ...usageEnv, ...storeEnv, ELPIS_HOME: home, PORT: String(port + 2), NODE_USE_ENV_PROXY: "1", ACP_BRIDGE_LOG: logPath }, stdio: "ignore" });
     await new Promise((r) => setTimeout(r, 800));
     const ws3 = new WebSocket(`ws://127.0.0.1:${port + 2}`);
     await new Promise((r, j) => { ws3.on("open", r); ws3.on("error", j); });

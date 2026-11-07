@@ -18,7 +18,7 @@ import { runtimeDir } from "../shared-runtime.mts";
 
 const AGENT = fileURLToPath(new URL("../elpis-acp-agent.mts", import.meta.url));
 const ENGINE = fileURLToPath(new URL("./fake-app-server.mjs", import.meta.url));
-const BRIDGE = fileURLToPath(new URL("../acp-bridge.mjs", import.meta.url));
+const BRIDGE = fileURLToPath(new URL("../acp-bridge.mts", import.meta.url));
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function until(check, what, ms = 5000) {
   for (const end = Date.now() + ms; Date.now() < end; await pause(10)) { const value = await check(); if (value) return value; }

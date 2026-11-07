@@ -48,7 +48,7 @@ async function fixture(t, extra = {}, { model = "claude/sonnet", prepare, connec
   const bridges = [];
   let errors = "";
   const launch = () => {
-    const child = spawn(process.execPath, [process.env.A124_BRIDGE ?? path.join(source, "acp-bridge.mjs")], { env, cwd: root, detached: true, stdio: ["ignore", "ignore", "pipe"] });
+    const child = spawn(process.execPath, [process.env.A124_BRIDGE ?? path.join(source, "acp-bridge.mts")], { env, cwd: root, detached: true, stdio: ["ignore", "ignore", "pipe"] });
     child.stderr.on("data", data => { errors += data; });
     bridges.push(child); return child;
   };

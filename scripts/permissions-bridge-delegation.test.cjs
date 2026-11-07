@@ -95,7 +95,7 @@ async function main() {
     console.log(`OBSERVED ${JSON.stringify(observation)}`);
   };
   const disconnects = () => (fs.readFileSync(log, 'utf8').match(/tui disconnected/g) ?? []).length;
-  const bridge = spawn(process.execPath, [bridgePath ?? path.resolve(__dirname, '../tools/elpis-claude/acp-bridge.mjs')], {
+  const bridge = spawn(process.execPath, [bridgePath ?? path.resolve(__dirname, '../tools/elpis-claude/acp-bridge.mts')], {
     cwd, env: { PATH: process.env.PATH, HOME: home, ELPIS_HOME: home, CODEX_HOME: home, CODEX_AUTH_HOME: home,
       PORT: '0', ELPIS_ENGINE_BIN: engineShim, ENGINE_FAULT_REAL: binary, ENGINE_FAULT_CONTROL: faultControl,
       ACP_ADAPTER: path.join(__dirname, 'permissions-bridge.test.cjs'), AGY_BIN: agyShim,

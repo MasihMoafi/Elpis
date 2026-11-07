@@ -82,7 +82,7 @@ function threadSettings() {
 async function startAppServer(env) {
   const bridgeLog = path.join(root, 'bridge.log');
   appServer = useBridge
-    ? spawn(process.execPath, [process.env.ELPIS_BRIDGE_ENTRY ?? path.resolve(__dirname, '../tools/elpis-claude/acp-bridge.mjs')], {
+    ? spawn(process.execPath, [process.env.ELPIS_BRIDGE_ENTRY ?? path.resolve(__dirname, '../tools/elpis-claude/acp-bridge.mts')], {
       cwd, env: { ...env, PORT: '0', ELPIS_ENGINE_BIN: binary, ELPIS_NO_AGY: '1', ACP_BRIDGE_LOG: bridgeLog,
         ACP_ADAPTER: path.resolve(__dirname, queueClaude ? 'queue-steer-cancel.test.cjs' : 'permissions-bridge.test.cjs'),
         PERMISSION_FIXTURE_ADAPTER: '1', ...(queueClaude ? { QUEUE_STEER_FIXTURE_ADAPTER: '1',

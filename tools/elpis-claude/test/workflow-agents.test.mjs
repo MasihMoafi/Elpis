@@ -13,7 +13,7 @@ import WebSocket, { WebSocketServer } from "ws";
 import { bridgeExecutor } from "../workflow-agents.mts";
 import { createTestTempDir, removeTestTempDir } from "./temp-root.mts";
 
-const BRIDGE = fileURLToPath(new URL("../acp-bridge.mjs", import.meta.url));
+const BRIDGE = fileURLToPath(new URL("../acp-bridge.mts", import.meta.url));
 const ENGINE = fileURLToPath(new URL("./fake-app-server.mjs", import.meta.url));
 const SERVERS = { shadcn: { command: "shadcn-mcp" }, blender: { command: "blender-mcp" }, whispertype: { command: "whispertype-mcp" } };
 const ALL_OFF = { "mcp_servers.shadcn.enabled": false, "mcp_servers.blender.enabled": false, "mcp_servers.whispertype.enabled": false };

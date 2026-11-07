@@ -8,6 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { bridgeEntry, bridgeSourceDigest } from "./bridge-entry.mts";
 
 const { values } = parseArgs({ options: { engine: { type: "string" }, baseline: { type: "string" }, evidence: { type: "string" } } });
 assert.ok(values.engine && path.isAbsolute(values.engine), "--engine must name the actual native binary");
@@ -26,7 +27,7 @@ const sha256 = file => createHash("sha256").update(fs.readFileSync(file)).digest
 fs.writeFileSync(path.join(evidence, "provenance.json"), JSON.stringify({ engine, sha256: sha256(engine),
   node: process.execPath, nodeVersion: process.version, baseline: values.baseline,
   candidate: execFileSync("git", ["rev-parse", "HEAD"], { cwd: repository, encoding: "utf8" }).trim(),
-  candidateBridgeSha256: sha256(new URL("../acp-bridge.mjs", import.meta.url)), testSha256: sha256(test) }, null, 2) + "\n");
+  candidateBridgeSha256: bridgeSourceDigest(fileURLToPath(new URL("..", import.meta.url))), testSha256: sha256(test) }, null, 2) + "\n");
 
 function run(label, bridge) {
   const env = { ...process.env, A124_ENGINE: engine, A124_BRIDGE: bridge };
@@ -38,11 +39,11 @@ function run(label, bridge) {
   if (result.error) throw result.error;
   return { status: result.status, output };
 }
-const before = run("before", path.join(baseline, "tools/elpis-claude/acp-bridge.mjs"));
+const before = run("before", bridgeEntry(path.join(baseline, "tools/elpis-claude")));
 assert.notEqual(before.status, 0, "the unchanged product must fail the planted crash");
 assert.match(before.output, /thread not loaded:/, "a startup/sandbox error is not the host reproduction");
 for (let attempt = 1; attempt <= 10; attempt++) {
-  const after = run(`after-${attempt}`, fileURLToPath(new URL("../acp-bridge.mjs", import.meta.url)));
+  const after = run(`after-${attempt}`, fileURLToPath(new URL("../acp-bridge.mts", import.meta.url)));
   assert.equal(after.status, 0, `candidate run ${attempt} failed; see ${evidence}`);
   assert.match(after.output, /# pass 1\b/);
 }

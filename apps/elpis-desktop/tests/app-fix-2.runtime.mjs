@@ -177,7 +177,7 @@ const fakeRun = async (command, args) => {
 
 const socketPath = path.join(root, 'runtime.sock');
 const bridgeLog = path.join(root, 'bridge.log');
-const bridgeScript = fileURLToPath(new URL('../../../tools/elpis-claude/acp-bridge.mjs', import.meta.url));
+const bridgeScript = fileURLToPath(new URL('../../../tools/elpis-claude/acp-bridge.mts', import.meta.url));
 const child = spawn(followOnly ? process.execPath : binary, followOnly ? [bridgeScript] : ['app-server', '--listen', `unix://${socketPath}`], { cwd,
   env: { PATH: process.env.PATH, HOME: home, CODEX_HOME: home, CODEX_AUTH_HOME: home, ELPIS_HOME: home, LANG: 'C.UTF-8',
     ...(followOnly ? { ELPIS_SHARED_BRIDGE: '1', ELPIS_BRIDGE_SOCKET: socketPath, ELPIS_ENGINE_BIN: binary, ACP_BRIDGE_LOG: bridgeLog } : {}) }, stdio: ['ignore', 'pipe', 'pipe'] });

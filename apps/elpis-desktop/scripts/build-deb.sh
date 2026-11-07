@@ -50,7 +50,7 @@ if [[ -z "$NODE" ]] || (( $("$NODE" -p 'process.versions.node.split(".")[0]' 2>/
 export ELPIS_DESKTOP_APP="${ELPIS_DESKTOP_APP:-/usr/bin/elpis-app}"
 for a in "$@"; do case "$a" in -h|--help|-V|--version) exec "$REAL" "$@" ;; esac; done
 case "${1:-}" in ""|-*|resume|fork) ;; *) exec "$REAL" "$@" ;; esac
-out="$(ELPIS_ENGINE_BIN="$REAL" NODE_USE_ENV_PROXY=1 "$NODE" "$BRIDGE_DIR/shared-runtime.mts" "$BRIDGE_DIR/acp-bridge.mjs")" || exit $?
+out="$(ELPIS_ENGINE_BIN="$REAL" NODE_USE_ENV_PROXY=1 "$NODE" "$BRIDGE_DIR/shared-runtime.mts" "$BRIDGE_DIR/acp-bridge.mts")" || exit $?
 engine="$REAL"
 case "$out" in *$'\n'"engine "*) engine="${out#*$'\n'engine }"; out="${out%%$'\n'*}" ;; *$'\n'*) echo 'elpis: unexpected bridge reply' >&2; exit 1 ;; esac
 case "$out" in unix:///*) ;; *) echo 'elpis: unexpected bridge endpoint' >&2; exit 1 ;; esac

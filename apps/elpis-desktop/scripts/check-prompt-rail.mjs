@@ -106,7 +106,7 @@ if (values['private-engine']) {
   const engine = fs.realpathSync(values.engine), directory = path.dirname(engine);
   const root = path.basename(directory) === 'bin' && path.basename(path.dirname(directory)) === 'package' ? path.resolve(directory, '../..') : directory;
   const tcpPort = Number(values.port) + 1;
-  start(process.execPath, [path.join(root, 'tools/elpis-claude/acp-bridge.mjs')], { ...env, PORT: String(tcpPort) });
+  start(process.execPath, [path.join(root, 'tools/elpis-claude/acp-bridge.mts')], { ...env, PORT: String(tcpPort) });
   adapter = net.createServer(socket => {
     const upstream = net.connect(tcpPort, '127.0.0.1');
     upstream.on('error', () => socket.destroy()); socket.on('error', () => upstream.destroy()); socket.pipe(upstream).pipe(socket);

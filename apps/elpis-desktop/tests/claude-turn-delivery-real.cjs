@@ -2,7 +2,7 @@
 // Run on the host (the worker sandbox cannot start Electron or the native socket):
 // ELPIS_PLAYWRIGHT_PACKAGE=$HOME/.cache/elpis-tests/pw/node_modules/playwright \
 // node tests/claude-turn-delivery-real.cjs --app /tmp/a124-app \
-//   --bridge /path/to/tools/elpis-claude/acp-bridge.mjs --engine /path/to/elpis-next
+//   --bridge /path/to/tools/elpis-claude/acp-bridge.mts --engine /path/to/elpis-next
 // Use the installed app/bridge first, then the candidate. Default deliberately loses live
 // final events; --normal exercises late steering acknowledgements instead.
 // --restart crashes the bridge after Claude saves its answer, before any live end.

@@ -6,11 +6,11 @@
   mem-meter.py --watch S  sample every 2 s for S seconds, report the peak per component
   mem-meter.py --list     one sample, every counted process with its kind, largest first
 
-Roots: the Electron main process of elpis-desktop and tools/elpis-claude/acp-bridge.mjs.
+Roots: the Electron main process of elpis-desktop and tools/elpis-claude/acp-bridge.mts.
 Every descendant counts, plus the engine app-server bound to the elpis-bridge socket even
 when it has been reparented. Components, by command line:
   app       Electron (window, renderer, GPU, utility processes)
-  bridge    acp-bridge.mjs
+  bridge    acp-bridge.mts
   adapters  context-agent.mts, agy-acp.mts and other node adapters
   engine    codex/elpis app-server
   workers   claude or agy processes run for threads and workflow nodes

@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const BRIDGE = fileURLToPath(new URL("../acp-bridge.mjs", import.meta.url));
+const BRIDGE = fileURLToPath(new URL("../acp-bridge.mts", import.meta.url));
 const CACHE = path.join(os.homedir(), ".cache", "elpis-tests");
 
 function launchBridge(home, log) {

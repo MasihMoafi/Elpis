@@ -46,7 +46,7 @@ const fakeEngine = (name, version = '1') => {
   return file;
 };
 
-// A client of one engine surface (what acp-bridge.mjs reads and writes).
+// A client of one engine surface (what acp-bridge.mts reads and writes).
 function wire(engine) {
   const c = { frames: [], waiters: [], exited: false, errors: [], raw: [], order: [] };
   let buf = '';
@@ -427,7 +427,7 @@ async function launcherGroup(runtime) {
   const installed = name => {
     const bundle = path.join(versions, name), directory = path.join(bundle, 'tools/elpis-claude');
     fs.mkdirSync(directory, { recursive: true });
-    const script = path.join(directory, 'acp-bridge.mjs'), launcher = path.join(directory, 'shared-runtime.mts');
+    const script = path.join(directory, 'acp-bridge.mts'), launcher = path.join(directory, 'shared-runtime.mts');
     fs.copyFileSync(fakeBridgeDir(`installed-${name}`), script);
     for (const file of ['shared-runtime.mts', 'log-redaction.mts']) fs.copyFileSync(path.join(tools, file), path.join(directory, file));
     fs.symlinkSync(path.join(tools, 'node_modules'), path.join(directory, 'node_modules'));
@@ -751,7 +751,7 @@ async function launcherGroup(runtime) {
   fs.copyFileSync(runtimePath, path.join(toolDir, 'shared-runtime.mts'));
   fs.copyFileSync(path.join(tools, 'log-redaction.mts'), path.join(toolDir, 'log-redaction.mts'));
   fs.symlinkSync(path.join(tools, 'node_modules'), path.join(toolDir, 'node_modules'));
-  fs.copyFileSync(bridgeA, path.join(toolDir, 'acp-bridge.mjs'));
+  fs.copyFileSync(bridgeA, path.join(toolDir, 'acp-bridge.mts'));
   const printer = path.join(lroot, 'tui');
   fs.writeFileSync(printer, '#!/bin/sh\nif [ "${1:-}" = app-server ]; then exec "$TUI_FAKE_ENGINE" "$@"; fi\nprintf "arg:%s\\n" "$@" > "$TUI_OUT"\nexit "${TUI_EXIT:-0}"\n', { mode: 0o755 });
   const tuiEnv = { ...s.env, ELPIS_ENGINE_BIN: printer, TUI_FAKE_ENGINE: fakeEngine('launcher-engine'), TUI_OUT: path.join(lroot, 'tui.out'), TUI_EXIT: '3' };
@@ -768,7 +768,7 @@ async function launcherGroup(runtime) {
   const launcherSock = lines[2].slice('arg:unix://'.length), launcherInode = fs.statSync(launcherSock).ino;
   const launcherClient = await attachedClient(launcherSock);
   const launcherThread = (await launcherClient.request('thread/start')).thread.id;
-  fs.writeFileSync(path.join(toolDir, 'acp-bridge.mjs'), fs.readFileSync(bridgeA, 'utf8') + '\n// newer\n');
+  fs.writeFileSync(path.join(toolDir, 'acp-bridge.mts'), fs.readFileSync(bridgeA, 'utf8') + '\n// newer\n');
   const newerPrinter = path.join(lroot, 'newer-tui');
   fs.writeFileSync(newerPrinter, '#!/bin/sh\nprintf "wrong engine\\n" > "$TUI_OUT"\nexit 99\n', { mode: 0o755 });
   const joined = spawnSync(path.join(toolDir, 'elpis-claude'), ['resume', 'joined fixture'], { env: { ...tuiEnv, ELPIS_ENGINE_BIN: newerPrinter }, encoding: 'utf8' });

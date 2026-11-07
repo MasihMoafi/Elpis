@@ -1,4 +1,4 @@
-// Handing over to a newer bridge while chats work (acp-bridge.mjs startDrain).
+// Handing over to a newer bridge while chats work (acp-bridge.mts startDrain).
 //
 // The old bridge gives up bridge.sock to the newer one at once and keeps running the chats that were working, on a
 // private drain socket named in drain.json. The newer bridge sends every request about those chats there, over one
@@ -7,6 +7,7 @@
 import fs from "node:fs";
 import WebSocket from "ws";
 import { drainFile, startToken } from "./shared-runtime.mts";
+import { wireId, wireObject } from "./bridge-wire.mts";
 
 type Id = string | number;
 type HandoverMessage = { id?: Id; method?: string; params?: { threadId?: string; [key: string]: unknown }; error?: { code?: number; message?: string }; result?: { thread?: { id?: string }; [key: string]: unknown }; [key: string]: unknown };
@@ -14,12 +15,20 @@ type ClientSocket = WebSocket & { pending: Set<Id>; sendWire: (line: string) => 
 type Drain = { pid: number; token: string; sock: string; threads: Set<string> };
 type Route = { id: Id; threadId: string; subscribe?: boolean; legacyRead?: boolean };
 
+function handoverMessage(value: unknown): value is HandoverMessage {
+  return wireObject(value) && (value.id === undefined || wireId(value.id))
+    && (value.method === undefined || typeof value.method === "string")
+    && (value.params == null || wireObject(value.params))
+    && (value.result == null || wireObject(value.result))
+    && (value.error == null || wireObject(value.error));
+}
+
 /** Counts the requests a client is waiting on, so it is asked to reconnect only between answers. */
 export function trackRequests(ws: ClientSocket) {
   ws.pending = new Set<Id>();
   const wire = ws.sendWire;
   ws.sendWire = (line: string) => {
-    if (ws.pending.size) { try { const msg = JSON.parse(String(line)); if (msg.id !== undefined && !msg.method) ws.pending.delete(msg.id); } catch {} }
+    if (ws.pending.size) { try { const msg: unknown = JSON.parse(String(line)); if (handoverMessage(msg) && msg.id !== undefined && !msg.method) ws.pending.delete(msg.id); } catch {} }
     wire(line);
   };
   return (msg: HandoverMessage) => { if (msg?.id !== undefined && msg.method) ws.pending.add(msg.id); };
@@ -47,8 +56,10 @@ export function currentDrain() {
   if (stat !== drainStat) {
     drainStat = stat;
     try {
-      const value: { pid: number; token: string; sock: string; threads?: string[] } = JSON.parse(fs.readFileSync(drainFile(), "utf8"));
-      drain = value?.pid !== process.pid ? { ...value, threads: new Set(value.threads ?? []) } : null;
+      const value: unknown = JSON.parse(fs.readFileSync(drainFile(), "utf8"));
+      if (!wireObject(value) || typeof value.pid !== "number" || typeof value.token !== "string" || typeof value.sock !== "string"
+        || (value.threads !== undefined && (!Array.isArray(value.threads) || !value.threads.every(thread => typeof thread === "string")))) throw new Error("Invalid drain state");
+      drain = value.pid !== process.pid ? { pid: value.pid, token: value.token, sock: value.sock, threads: new Set(value.threads ?? []) } : null;
     } catch { drain = null; }
   }
   if (drain && startToken(drain.pid) !== drain.token) drain = null;
@@ -70,7 +81,8 @@ export function drainProxy(ws: ClientSocket, log: (message: string) => void = ()
       for (const line of outbox.splice(0)) (shadow as WebSocket).send(line);
     });
     shadow.on("message", (data) => {
-      let msg: HandoverMessage; try { msg = JSON.parse(String(data)) as HandoverMessage; } catch { return; }
+      let msg: unknown; try { msg = JSON.parse(String(data)); } catch { return; }
+      if (!handoverMessage(msg)) return;
       if (msg.id === "drain-init") return;
       // Another connection of the old bridge may have seen the chat's end first: its last events get a second to arrive.
       if (msg.method === "bridge/released") {

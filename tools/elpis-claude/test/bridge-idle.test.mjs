@@ -109,7 +109,7 @@ if (process.argv.includes("--elpis-local-bridge")) {
     };
     const launch = async (dir, overrides = {}, terminal = false) => {
       const child = terminal ? run(path.join(dir, "elpis-claude"), [], overrides, "/bin/bash")
-        : run(path.join(dir, "shared-runtime.mts"), [path.join(dir, "acp-bridge.mjs")], overrides);
+        : run(path.join(dir, "shared-runtime.mts"), [path.join(dir, "acp-bridge.mts")], overrides);
       await once(child, "exit");
       if (child.exitCode === 0 && !terminal) endpoint = child.output.split("\n")[0].trim().replace(/^unix:\/\//, "");
       return child;
@@ -141,7 +141,7 @@ if (process.argv.includes("--elpis-local-bridge")) {
       const preload = path.join(root, "timer.mjs");
       fs.writeFileSync(preload, "const original = globalThis.setTimeout; globalThis.setTimeout = (fn, ms, ...args) => original(fn, ms === 30_000 ? 200 : ms, ...args);\n");
       endpoint = path.join(root, "elpis-bridge", "direct.sock"); fs.mkdirSync(path.dirname(endpoint), { mode: 0o700 });
-      const child = run(path.join(first, "acp-bridge.mjs"), [], { ELPIS_SHARED_BRIDGE: "1", ELPIS_BRIDGE_SOCKET: endpoint, NODE_OPTIONS: `--import=${preload}` });
+      const child = run(path.join(first, "acp-bridge.mts"), [], { ELPIS_SHARED_BRIDGE: "1", ELPIS_BRIDGE_SOCKET: endpoint, NODE_OPTIONS: `--import=${preload}` });
       await until(() => fs.existsSync(endpoint), "private bridge starts");
       return child;
     };
@@ -265,7 +265,7 @@ if (process.argv.includes("--elpis-local-bridge")) {
     // It gives the newer bundle new connections at once and its clients reconnect to that one.
     const state = () => { try { return JSON.parse(fs.readFileSync(stateFile)); } catch { return {}; } };
     await until(() => state().pid && state().pid !== running.pid && fs.existsSync(path.join(path.dirname(stateFile), "bridge.sock")), "the newer bundle takes over", 25000);
-    assert.equal(state().script, fs.realpathSync(path.join(second, "acp-bridge.mjs")));
+    assert.equal(state().script, fs.realpathSync(path.join(second, "acp-bridge.mts")));
     await until(() => c.ws.readyState !== WebSocket.OPEN, "the old bridge's clients were disconnected");
     assert.equal((await (await f.connect()).call("thread/read", { threadId: "chat", includeTurns: true })).result.thread.turns[0].items[0].text, "preserve this answer");
   });
@@ -283,7 +283,7 @@ if (process.argv.includes("--elpis-local-bridge")) {
     assert.equal((await f.launch(second)).exitCode, 0); // the install: a launcher of the newer bundle
     await until(() => state().pid && state().pid !== running.pid, "the newer bundle serves new connections while the turn runs", 10000);
     t.diagnostic(`hand-over took ${Date.now() - installedAt} ms`);
-    assert.equal(state().script, fs.realpathSync(path.join(second, "acp-bridge.mjs")));
+    assert.equal(state().script, fs.realpathSync(path.join(second, "acp-bridge.mts")));
     assert.ok(alive(), "the old bridge keeps running its turn");
     await until(() => c.ws.readyState !== WebSocket.OPEN, "the old bridge's client is asked to reconnect");
     // The reconnecting client follows the running chat through the newer bridge and gets the turn's end.

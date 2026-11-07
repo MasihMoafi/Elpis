@@ -210,7 +210,6 @@ scripts/workflow-provider.test.cjs
 scripts/workflow-task-providers.test.cjs
 tests/install/install-engine.test.mjs
 tests/install/prune-versions.test.mjs
-tools/elpis-claude/acp-bridge.mjs
 tools/elpis-claude/test/active-first-turn-list.test.mjs
 tools/elpis-claude/test/anthropic-signout.test.mjs
 tools/elpis-claude/test/approval-review.test.mjs

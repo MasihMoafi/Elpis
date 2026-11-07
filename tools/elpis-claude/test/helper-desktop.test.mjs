@@ -23,9 +23,11 @@ const source = fileURLToPath(new URL('..', import.meta.url));
 const self = fileURLToPath(import.meta.url);
 
 if (process.argv.includes('app-server')) {
+  const fixtureHome = process.env.HOME;
+  assert.ok(fixtureHome);
   const loaded = new Map();
   const timers = new Map();
-  const file = id => path.join(process.env.HOME, `${id}.json`);
+  const file = id => path.join(fixtureHome, `${id}.json`);
   const stored = id => fs.existsSync(file(id)) ? JSON.parse(fs.readFileSync(file(id), 'utf8')) : null;
   const save = row => {
     fs.writeFileSync(file(row.thread.id) + '.pending', JSON.stringify(row));
@@ -40,7 +42,7 @@ if (process.argv.includes('app-server')) {
   const handle = (msg, send) => {
     if (msg.id === undefined) return;
     if (!msg.method && String(msg.id).startsWith('native-child-approval-')) {
-      fs.writeFileSync(path.join(process.env.HOME, 'native-child-decision.json'), JSON.stringify(msg.result)); return;
+      fs.writeFileSync(path.join(fixtureHome, 'native-child-decision.json'), JSON.stringify(msg.result)); return;
     }
     const p = msg.params ?? {};
     const reply = result => send({ id: msg.id, result });
@@ -48,8 +50,11 @@ if (process.argv.includes('app-server')) {
     let row = loaded.get(p.threadId);
     switch (msg.method) {
       case 'initialize': return reply({ userAgent: 'a166-fixture' });
-      case 'config/read': return reply({ config: fs.existsSync(path.join(process.env.HOME, 'permission-defaults.json')) ? JSON.parse(fs.readFileSync(path.join(process.env.HOME, 'permission-defaults.json'))) : {} });
-      case 'configRequirements/read': return reply({ requirements: fs.existsSync(path.join(process.env.HOME, 'requirements.json')) ? JSON.parse(fs.readFileSync(path.join(process.env.HOME, 'requirements.json'))) : null });
+      case 'config/read': return reply({ config: fs.existsSync(path.join(fixtureHome, 'permission-defaults.json')) ? JSON.parse(fs.readFileSync(path.join(fixtureHome, 'permission-defaults.json'))) : {} });
+      case 'configRequirements/read': return reply({ requirements: fs.existsSync(path.join(fixtureHome, 'requirements.json')) ? JSON.parse(fs.readFileSync(path.join(fixtureHome, 'requirements.json'))) : null });
+      case 'config/batchWrite':
+        if (fs.existsSync(path.join(fixtureHome, 'hold-profile'))) fs.writeFileSync(path.join(fixtureHome, 'permission-defaults.json'), JSON.stringify({ approval_policy: 'never', default_permissions: ':danger-full-access' }));
+        return reply({});
       case 'thread/start': {
         const id = randomUUID();
         row = { thread: { id, cwd: p.cwd, model: p.model, source: 'appServer', status: { type: 'idle' }, turns: [], historyMode: 'paginated' }, model: p.model, modelProvider: p.modelProvider ?? 'openai', ...settings(p) };
@@ -57,7 +62,7 @@ if (process.argv.includes('app-server')) {
         reply({ ...row, sandbox: row.sandboxPolicy });
         return send({ method: 'thread/started', params: { thread: row.thread } });
       }
-      case 'thread/list': return reply({ data: fs.readdirSync(process.env.HOME).filter(name => /^[\da-f-]{36}\.json$/.test(name)).map(name => stored(name.slice(0, -5)).thread), nextCursor: null });
+      case 'thread/list': return reply({ data: fs.readdirSync(fixtureHome).filter(name => /^[\da-f-]{36}\.json$/.test(name)).map(name => stored(name.slice(0, -5)).thread), nextCursor: null });
       case 'thread/read': {
         row ??= stored(p.threadId);
         return row ? reply({ thread: { ...row.thread, turns: p.includeTurns ? row.thread.turns : [] } }) : missing();
@@ -77,6 +82,21 @@ if (process.argv.includes('app-server')) {
         if (!row) return missing();
         row.thread.name = p.name; save(row); return reply({});
       case 'thread/settings/update':
+        if (fs.existsSync(path.join(fixtureHome, 'hold-profile'))) {
+          const marker = path.join(fixtureHome, 'profile-held');
+          const count = Number(fs.existsSync(marker) ? fs.readFileSync(marker, 'utf8') : 0) + 1;
+          fs.writeFileSync(marker, String(count));
+          // The turn's preliminary settings update may finish, while the earlier
+          // helper restriction and the native route's recheck remain pending.
+          if (count === 2) return reply({});
+          const release = () => {
+            if (!fs.existsSync(path.join(fixtureHome, 'release-profile'))) { setTimeout(release, 10); return; }
+            if (fs.existsSync(path.join(fixtureHome, 'reject-profile'))) return send({ id: msg.id, error: { code: -32600, message: 'fixture refuses restriction' } });
+            send({ method: 'thread/settings/updated', params: { threadId: p.threadId, threadSettings: { approvalPolicy: 'never', activePermissionProfile: { id: p.permissions } } } });
+            reply({});
+          };
+          release(); return;
+        }
         if (!row) return missing();
         Object.assign(row, settings(p, row)); save(row);
         send({ method: 'thread/settings/updated', params: { threadId: p.threadId, threadSettings: row } });
@@ -86,6 +106,7 @@ if (process.argv.includes('app-server')) {
         }
         return reply({});
       case 'turn/start': {
+        if (fs.existsSync(path.join(fixtureHome, 'hold-profile'))) fs.writeFileSync(path.join(fixtureHome, 'turn-started'), '1');
         if (!row) return missing();
         const turn = { id: randomUUID(), status: 'inProgress', items: [{ id: 'prompt', type: 'userMessage', content: p.input }] };
         row.thread.status = { type: 'active', activeFlags: [] }; row.thread.turns = [turn]; save(row);
@@ -127,6 +148,72 @@ if (process.argv.includes('app-server')) {
     server.listen(socket);
   } else readline.createInterface({ input: process.stdin }).on('line', line => handle(JSON.parse(line), msg => process.stdout.write(JSON.stringify(msg) + '\n')));
 } else {
+  for (const reject of [false, true]) test(`native helper waits for ${reject ? 'a refused' : 'a confirmed'} restriction before its turn`, { timeout: 20000 }, async t => {
+    const root = createTestTempDir(path.join(os.tmpdir(), 'helper-restriction-'));
+    const socketPath = path.join(root, 'bridge.sock'), engine = path.join(root, 'engine.mjs');
+    fs.writeFileSync(engine, `#!${process.execPath}\nawait import(${JSON.stringify(self)});\n`, { mode: 0o755 });
+    fs.writeFileSync(path.join(root, 'permission-defaults.json'), JSON.stringify({ approval_policy: 'on-request', default_permissions: ':workspace' }));
+    const env = { PATH: process.env.PATH, HOME: root, ELPIS_HOME: root, CODEX_HOME: root, CODEX_AUTH_HOME: root, XDG_RUNTIME_DIR: root, TMPDIR: root,
+      ELPIS_SHARED_BRIDGE: '1', ELPIS_BRIDGE_SOCKET: socketPath, ELPIS_ENGINE_BIN: engine, ELPIS_NO_AGY: '1', ACP_BRIDGE_NO_AGENTS: '1',
+      ACP_BRIDGE_STORE: path.join(root, 'sessions.json'), ACP_BRIDGE_LOG: path.join(root, 'bridge.log') };
+    const bridge = spawn(process.execPath, [process.env.HELPER_TEST_BRIDGE ?? path.join(source, 'acp-bridge.mts')], { env, cwd: root, detached: true, stdio: ['ignore', 'ignore', 'pipe'] });
+    let stderr = '';
+    /** @type {WebSocket | undefined} */
+    let ws;
+    const pid = bridge.pid;
+    assert.ok(pid);
+    bridge.stderr.on('data', data => { stderr += data; });
+    t.after(async () => {
+      ws?.close();
+      if (bridge.exitCode === null && bridge.signalCode === null) {
+        const ended = once(bridge, 'exit'); bridge.kill('SIGTERM');
+        const timer = setTimeout(() => { try { process.kill(-pid, 'SIGKILL'); } catch {} }, 2000);
+        await ended; clearTimeout(timer);
+      }
+      try { process.kill(-pid, 'SIGKILL'); } catch (error) { if (!(error instanceof Error && 'code' in error && error.code === 'ESRCH')) throw error; }
+      removeTestTempDir(root);
+    });
+    /** @param {() => boolean} predicate @param {string} label */
+    const until = async (predicate, label) => {
+      const deadline = Date.now() + 8000;
+      while (!predicate()) { assert.ok(Date.now() < deadline, `${label}: ${stderr}`); await pause(10); }
+    };
+    await until(() => fs.existsSync(socketPath), 'bridge startup');
+    const socket = new WebSocket(`ws+unix://${socketPath}:/`); ws = socket; await once(socket, 'open');
+    /** @typedef {{ id: number, error?: { message?: string }, result?: { thread?: { id: string }, turn?: { status: string } } }} RestrictionReply */
+    /** @type {Map<number, (value: RestrictionReply) => void>} */
+    const pending = new Map(); let seq = 0;
+    socket.on('message', (/** @type {Buffer | ArrayBuffer | Buffer[]} */ data) => { /** @type {RestrictionReply} */ const msg = JSON.parse(String(data)); const resolve = pending.get(msg.id); if (resolve) { resolve(msg); pending.delete(msg.id); } });
+    /** @param {string} method @param {Record<string, unknown>} params @returns {Promise<RestrictionReply>} */
+    const rpc = (method, params) => new Promise(resolve => { const id = ++seq; pending.set(id, resolve); socket.send(JSON.stringify({ id, method, params })); });
+    await rpc('initialize', { clientInfo: { name: 'helper-restriction-test' }, capabilities: { experimentalApi: true } });
+    const helper = await rpc('thread/start', { model: 'gpt-test', cwd: root, elpisParentThreadId: 'parent', sandbox: 'workspace-write' });
+    assert.ifError(helper.error);
+    const threadId = helper.result?.thread?.id;
+    assert.ok(threadId);
+    fs.writeFileSync(path.join(root, 'hold-profile'), '1');
+    if (reject) fs.writeFileSync(path.join(root, 'reject-profile'), '1');
+    void rpc('config/batchWrite', { edits: [{ keyPath: 'default_permissions', value: ':danger-full-access', mergeStrategy: 'replace' }] });
+    const held = path.join(root, 'profile-held');
+    await until(() => fs.existsSync(held), 'helper restriction pending');
+    /** @type {RestrictionReply | undefined} */
+    let early;
+    const started = rpc('turn/start', { threadId, model: 'gpt-test', input: [{ type: 'text', text: 'hello' }] }).then(result => { early = result; return result; });
+    await until(() => Boolean(early) || Number(fs.readFileSync(held, 'utf8')) >= 3, 'turn waits for restriction');
+    assert.equal(early, undefined, `turn replied before restriction: ${JSON.stringify(early)}`);
+    assert.equal(fs.existsSync(path.join(root, 'turn-started')), false);
+    fs.writeFileSync(path.join(root, 'release-profile'), '1');
+    const result = await started;
+    if (reject) {
+      assert.match(result.error?.message ?? '', /restricted permissions could not be applied/);
+      assert.equal(fs.existsSync(path.join(root, 'turn-started')), false);
+    } else {
+      assert.ifError(result.error);
+      assert.equal(result.result?.turn?.status, 'inProgress');
+      assert.equal(fs.existsSync(path.join(root, 'turn-started')), true);
+    }
+  });
+
   test('desktop opens a delegated helper and changes permissions during its live turn', { timeout: 20000 }, async t => {
     const root = createTestTempDir(path.join(os.tmpdir(), 'a166-'));
     const socketPath = path.join(root, 'bridge.sock'), log = path.join(root, 'bridge.log');
@@ -135,7 +222,7 @@ if (process.argv.includes('app-server')) {
     const env = { PATH: process.env.PATH, HOME: root, ELPIS_HOME: root, CODEX_HOME: root, CODEX_AUTH_HOME: root, XDG_RUNTIME_DIR: root, TMPDIR: root,
       ELPIS_SHARED_BRIDGE: '1', ELPIS_BRIDGE_SOCKET: socketPath, ELPIS_ENGINE_BIN: engine,
       ELPIS_NO_AGY: '1', ACP_BRIDGE_NO_AGENTS: '1', ACP_BRIDGE_STORE: path.join(root, 'sessions.json'), ACP_BRIDGE_LOG: log };
-    const bridge = spawn(process.execPath, [process.env.HELPER_TEST_BRIDGE ?? path.join(source, 'acp-bridge.mjs')], { env, cwd: root, detached: true, stdio: ['ignore', 'ignore', 'pipe'] });
+    const bridge = spawn(process.execPath, [process.env.HELPER_TEST_BRIDGE ?? path.join(source, 'acp-bridge.mts')], { env, cwd: root, detached: true, stdio: ['ignore', 'ignore', 'pipe'] });
     let stderr = '', app, desktop, mcp, observer, sse;
     bridge.stderr.on('data', data => { stderr += data; });
     t.after(async () => {

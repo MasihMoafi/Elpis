@@ -19,7 +19,7 @@ const offered = body => [...(body.tools || []), ...(body.input || []).filter(i =
   .flatMap(t => t.type === 'namespace' ? (t.tools || []).map(c => ({ ...c, namespace: t.name })) : [t]);
 const delegateTool = body => offered(body).find(t => t.name === 'delegate' && /elpis.agents/.test(t.namespace ?? '') || /elpis.agents__delegate$/.test(t.name ?? '')) ?? null;
 async function main() {
-  const binary = process.argv[2], bridgePath = process.argv[3] ?? path.resolve(__dirname, '../tools/elpis-claude/acp-bridge.mjs');
+  const binary = process.argv[2], bridgePath = process.argv[3] ?? path.resolve(__dirname, '../tools/elpis-claude/acp-bridge.mts');
   assert(path.isAbsolute(binary), 'absolute engine path required');
   const provider = new Provider(); await provider.start();
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-engine-delegate-'));

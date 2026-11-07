@@ -1,21 +1,7 @@
-// Exercise the actual bridge list merger with isolated in-memory history.
-// No provider, runtime, or user files are opened by the evaluated bridge code.
+// Exercise the bridge list merger with isolated in-memory history.
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-const vm = require('node:vm');
 const { test } = require('node:test');
-
-const bridgePath = process.env.HISTORY_BRIDGE_PATH
-  ?? path.join(__dirname, '../tools/elpis-claude/acp-bridge.mjs');
-const source = fs.readFileSync(bridgePath, 'utf8');
-const start = source.indexOf('  const pageFloor =');
-const end = source.indexOf('  const engineReqs =', start);
-const gateStart = source.indexOf('    if (msg.method === "thread/list" && !lp.archived');
-const gateEnd = source.indexOf('pendingThreadList.set(msg.id, lp);', gateStart)
-  + 'pendingThreadList.set(msg.id, lp);'.length;
-assert(start >= 0 && end > start && gateStart >= 0 && gateEnd > gateStart,
-  'bridge list implementation must be found');
+const { createThreadList, shouldMergeThreadList } = require('../tools/elpis-claude/bridge-thread-list.mts');
 
 function fixture(overrides = {}, options = {}) {
   const thread = {
@@ -30,28 +16,17 @@ function fixture(overrides = {}, options = {}) {
     },
   };
   let reads = 0, time = 0;
-  const ctx = vm.createContext({
-    storeChain: Promise.resolve(), loadStore: async () => store,
+  const merger = createThreadList({
+    storeChain: () => Promise.resolve(), loadStore: async () => store,
     engineCall: async () => { reads++; if (options.read) return options.read(reads, thread); return { thread: { ...thread } }; },
-    now: () => time, log: () => {},
-    inputSummary: content => content.map(item => item.text ?? '').join(''),
+    now: () => time, log: () => {}, activeTurns: new Map(),
     ownModel: t => { t.model = store[t.id].model; },
-    pendingThreadList: new Map(),
   });
-  vm.runInContext(source.slice(start, end)
-    + ';globalThis.list = unlistedClaudeThreads;', ctx);
-  const gate = new vm.Script(source.slice(gateStart, gateEnd));
   return {
     reads: () => reads,
     advance: ms => { time += ms; },
-    list: (req, page = { data: [], nextCursor: null }) => ctx.list(req, page),
-    request: async (req, page = { data: [], nextCursor: null }) => {
-      ctx.lp = req;
-      ctx.msg = { id: 'request', method: 'thread/list', params: req };
-      ctx.pendingThreadList.clear();
-      gate.runInContext(ctx);
-      return ctx.pendingThreadList.has('request') ? ctx.list(req, page) : [];
-    },
+    list: (req, page = { data: [], nextCursor: null }) => merger.unlistedClaudeThreads(req, page),
+    request: (req, page = { data: [], nextCursor: null }) => shouldMergeThreadList(req) ? merger.unlistedClaudeThreads(req, page) : [],
   };
 }
 

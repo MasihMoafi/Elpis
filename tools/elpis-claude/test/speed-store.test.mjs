@@ -10,6 +10,7 @@ import { once } from 'node:events';
 import readline from 'node:readline';
 import { createRequire } from 'node:module';
 import { performance } from 'node:perf_hooks';
+import { bridgeEntry } from './bridge-entry.mts';
 const root = process.env.ELPIS_SPEED_ROOT || path.join(os.homedir(), '.cache/elpis-briefs/cc');
 const source = process.env.ELPIS_SPEED_BRIDGE_SOURCE || fileURLToPath(new URL('..', import.meta.url));
 const require = createRequire(path.join(source, 'package.json'));
@@ -49,7 +50,7 @@ if (process.argv.includes('app-server')) {
     { id: `reply-${i}`, type: 'agentMessage', text: `Answer ${i}: ` + 'The parser preserves Unicode offsets and incomplete source. '.repeat(500) },
   ] }));
   fs.writeFileSync(store, JSON.stringify({ [thread.id]: { model: 'claude/haiku', providerHistory: true, thread, turns } }));
-  const child = spawn(process.execPath, ['--cpu-prof', `--cpu-prof-dir=${path.join(root, 'speed-evidence')}`, `--cpu-prof-name=${label}.cpuprofile`, path.join(bundle, 'acp-bridge.mjs')], {
+  const child = spawn(process.execPath, ['--cpu-prof', `--cpu-prof-dir=${path.join(root, 'speed-evidence')}`, `--cpu-prof-name=${label}.cpuprofile`, bridgeEntry(bundle)], {
     cwd: home, stdio: ['ignore', 'ignore', 'pipe'], env: { PATH: process.env.PATH, HOME: home, ELPIS_HOME: home, CODEX_HOME: home,
       CODEX_AUTH_HOME: home, XDG_RUNTIME_DIR: home, TMPDIR: home, ELPIS_ENGINE_BIN: engine, ACP_BRIDGE_STORE: store,
       ACP_BRIDGE_LOG: path.join(home, 'bridge.log'), PORT: '0', ELPIS_NO_AGY: '1', ACP_BRIDGE_NO_AGENTS: '1' },

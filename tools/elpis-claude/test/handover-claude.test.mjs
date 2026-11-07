@@ -67,7 +67,7 @@ async function fixture(t, { directMode = null, locks = false } = {}) {
   if (directMode === "nonproxy" || directMode === "mixed") nextEnv.AGY_DEFAULT_MODEL = "changed-fixture";
   if (directMode === "reverse") for (const name of proxyNames) nextEnv[name] = /^no_proxy$/i.test(name) ? "localhost,127.0.0.1,::1,example.invalid" : "http://127.0.0.1:9";
   const launchResult = async (dir, launchEnv = env) => {
-    const child = spawn(process.execPath, [path.join(dir, "shared-runtime.mts"), path.join(dir, "acp-bridge.mjs")], { env: launchEnv, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(process.execPath, [path.join(dir, "shared-runtime.mts"), path.join(dir, "acp-bridge.mts")], { env: launchEnv, stdio: ["ignore", "pipe", "pipe"] });
     let out = "", err = ""; child.stdout.on("data", (d) => { out += d; }); child.stderr.on("data", (d) => { err += d; });
     await once(child, "exit");
     return { code: child.exitCode, out, err };
@@ -174,7 +174,7 @@ for (const mode of ["symlink", "public", "wrong-target"]) {
     const key = createHash("sha256").update(fs.realpathSync(home)).digest("hex").slice(0, 16);
     const runtime = path.join(root, "elpis-bridge", key);
     fs.mkdirSync(runtime, { recursive: true, mode: 0o700 });
-    const target = path.join(next.dir, "acp-bridge.mjs"), marker = path.join(runtime, "successor-direct");
+    const target = path.join(next.dir, "acp-bridge.mts"), marker = path.join(runtime, "successor-direct");
     fs.writeFileSync(path.join(runtime, "successor"), target, { mode: 0o600 });
     if (mode === "symlink") {
       const file = path.join(root, "marker-target");

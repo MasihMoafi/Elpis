@@ -100,7 +100,7 @@ if (process.argv.includes("app-server")) {
       ELPIS_SHARED_BRIDGE: "1", ELPIS_BRIDGE_SOCKET: socketPath, ELPIS_ENGINE_BIN: engine, ELPIS_NO_AGY: "1",
       ACP_ADAPTER: path.join(source, "test/fake-acp-agent.mjs"), FAKE_ACP_LOG: acpLog, FAKE_ACP_MODELS: "default,haiku", ACP_BRIDGE_STORE: path.join(root, "sessions.json"), ACP_BRIDGE_LOG: path.join(root, "bridge.log"),
       ELPIS_WORKFLOW_RETRY_MS: "20" };
-    const bridge = spawn(process.execPath, [path.join(source, "acp-bridge.mjs")], { env, cwd: root, detached: true, stdio: ["ignore", "ignore", "pipe"] });
+    const bridge = spawn(process.execPath, [path.join(source, "acp-bridge.mts")], { env, cwd: root, detached: true, stdio: ["ignore", "ignore", "pipe"] });
     let stderr = "";
     bridge.stderr.on("data", (d) => { stderr += d; });
     const mcps = [];

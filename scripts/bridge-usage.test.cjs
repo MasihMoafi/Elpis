@@ -24,7 +24,7 @@ const usage = http.createServer((req, res) => {
   const env = { PATH: process.env.PATH, HOME: userHome, ELPIS_HOME: home, CODEX_HOME: home, CODEX_AUTH_HOME: home, XDG_RUNTIME_DIR: runtime, LANG: 'C.UTF-8',
     ELPIS_ENGINE_BIN: binary, ELPIS_NO_AGY: '1', PERMISSION_FIXTURE_ADAPTER: '1', ACP_ADAPTER: path.join(repo, 'scripts/permissions-bridge.test.cjs'),
     ACP_BRIDGE_STORE: path.join(home, 'elpis-claude/sessions.json'), ELPIS_CLAUDE_USAGE_URL: `http://127.0.0.1:${usage.address().port}/usage`, NO_PROXY: '127.0.0.1,localhost', no_proxy: '127.0.0.1,localhost' };
-  const start = spawnSync(process.execPath, [path.join(bridgeDir, 'shared-runtime.mts'), path.join(bridgeDir, 'acp-bridge.mjs')], { env, encoding: 'utf8', timeout: 30000 });
+  const start = spawnSync(process.execPath, [path.join(bridgeDir, 'shared-runtime.mts'), path.join(bridgeDir, 'acp-bridge.mts')], { env, encoding: 'utf8', timeout: 30000 });
   assert.equal(start.status, 0, start.stderr);
   const endpoint = start.stdout.trim().replace(/^unix:\/\//, '');
   const ws = new WebSocket(`ws+unix://${endpoint}:/`);

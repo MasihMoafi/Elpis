@@ -3,24 +3,17 @@ const { test } = require('node:test');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const vm = require('node:vm');
+const { createBridgeStore } = require('../tools/elpis-claude/bridge-store.mts');
+const { createTestTempDir, removeTestTempDir } = require('../apps/elpis-desktop/tests/temp-root.cts');
 
 // Run the bridge's real store functions against disposable files.
 async function store(file, messages = []) {
-  const source = await fs.readFile(path.join(__dirname, '../tools/elpis-claude/acp-bridge.mjs'), 'utf8');
-  const context = vm.createContext({
-    STORE: file, Error, readFile: fs.readFile, statSync: require('node:fs').statSync,
-    withFileLock: (_file, fn) => fn(),
-    readJson: async file => { try { return JSON.parse(await fs.readFile(file, 'utf8')); } catch { return null; } },
-    saveStore: value => fs.writeFile(file, JSON.stringify(value)),
-    log: message => messages.push(message),
-  });
-  vm.runInContext(source.slice(source.indexOf('async function readStore()'), source.indexOf('const STATE_DIR =')) + '\nthis.api = { loadStore, updateStore };', context);
-  return context.api;
+  return createBridgeStore(file, new Set(), message => messages.push(message));
 }
 
-test('damaged saved chats remain byte-identical and refuse writes without making copies', async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-store-damaged-'));
+test('damaged saved chats remain byte-identical and refuse writes without making copies', async t => {
+  const root = createTestTempDir(path.join(os.tmpdir(), 'elpis-store-damaged-'));
+  t.after(() => removeTestTempDir(root));
   const file = path.join(root, 'sessions.json');
   const messages = [];
   const api = await store(file, messages);
@@ -34,16 +27,18 @@ test('damaged saved chats remain byte-identical and refuse writes without making
   assert.ok(messages.some(message => message.includes('cannot load')));
 });
 
-test('missing saved-chat store starts empty and saves a new chat', async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-store-missing-'));
+test('missing saved-chat store starts empty and saves a new chat', async t => {
+  const root = createTestTempDir(path.join(os.tmpdir(), 'elpis-store-missing-'));
+  t.after(() => removeTestTempDir(root));
   const file = path.join(root, 'sessions.json');
   const api = await store(file);
   assert.equal(await api.updateStore(value => { value.newChat = { id: 'new' }; }), true);
   assert.deepEqual(JSON.parse(await fs.readFile(file, 'utf8')), { newChat: { id: 'new' } });
 });
 
-test('valid saved-chat update preserves other chats', async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-store-valid-'));
+test('valid saved-chat update preserves other chats', async t => {
+  const root = createTestTempDir(path.join(os.tmpdir(), 'elpis-store-valid-'));
+  t.after(() => removeTestTempDir(root));
   const file = path.join(root, 'sessions.json');
   await fs.writeFile(file, JSON.stringify({ oldChat: { id: 'old' } }));
   const api = await store(file);

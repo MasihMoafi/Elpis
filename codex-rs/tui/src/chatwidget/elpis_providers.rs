@@ -34,7 +34,7 @@ const LISTED_PROVIDERS: [&str; 5] = [
     codex_model_provider_info::OPENROUTER_PROVIDER_ID,
 ];
 
-/// A subscription the Elpis bridge (`tools/elpis-claude/acp-bridge.mjs`) serves: the bridge adds
+/// A subscription the Elpis bridge (`tools/elpis-claude/acp-bridge.mts`) serves: the bridge adds
 /// the models whose ids start with its prefix to the model list and answers their turns through
 /// the subscription's own agent, whatever provider is configured. It names no configured
 /// provider: choosing one of its models changes the model, never the provider, and its models

@@ -1,5 +1,5 @@
 // Edit an earlier message, fork from a reply and rewind, through the real chain: this renderer (out/), this bridge,
-// this provider bridge (tools/elpis-claude/acp-bridge.mjs) and the installed engine. Inference is local: the
+// this provider bridge (tools/elpis-claude/acp-bridge.mts) and the installed engine. Inference is local: the
 // Responses fixture for the native model, the fake ACP agent for claude/sonnet. Nothing leaves the machine.
 // Run: ELPIS_ENGINE_BIN=$(readlink -f ~/.local/bin/elpis-next) node --test tests/edit-fork-real.test.cjs
 const { test, before, after } = require('node:test');
@@ -50,7 +50,7 @@ before(async () => {
     ELPIS_ENGINE_BIN: engine, ACP_ADAPTER: path.join(repo, 'tools/elpis-claude/test/fake-acp-agent.mjs'),
     ACP_BRIDGE_STORE: path.join(root, 'sessions.json'), ACP_BRIDGE_LOG: path.join(root, 'adapter.log'), ACP_BRIDGE_NO_AGENTS: '1',
     FAKE_ACP_LOG: acpLog, FAKE_ACP_NAME: 'Claude', FAKE_ACP_MODELS: 'sonnet', FAKE_ACP_RELEASE: path.join(root, 'claude-release'), AGY_BIN: agy, FAKE_AGY_LOG: agyLog, FAKE_AGY_RELEASE: path.join(root, 'agy-release') };
-  const bridge = spawn(process.execPath, [path.join(repo, 'tools/elpis-claude/acp-bridge.mjs')], { env, cwd: project, detached: true, stdio: ['ignore', log.fd, log.fd] });
+  const bridge = spawn(process.execPath, [path.join(repo, 'tools/elpis-claude/acp-bridge.mts')], { env, cwd: project, detached: true, stdio: ['ignore', log.fd, log.fd] });
   await until(async () => { if (bridge.exitCode !== null) throw new Error(`provider bridge exited; see ${root}/bridge.log`); return fs.stat(socketPath).then(() => true, () => false); }, 'provider bridge socket');
   const { DesktopClient } = await import('../bridge/client.mts');
   const { startDesktopServer } = await import('../bridge/server.mts');

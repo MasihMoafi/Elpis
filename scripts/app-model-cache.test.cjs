@@ -7,6 +7,7 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 const WebSocket = require('../tools/elpis-claude/node_modules/ws');
 const { Provider, message } = require('./lib/mock-provider.js');
+const { bridgeSourceDigest } = require('../tools/elpis-claude/test/bridge-entry.mts');
 const pause = ms => new Promise(r => setTimeout(r, ms));
 const wait = async (f, label) => { const until = Date.now() + 20000; while (!f()) { assert(Date.now() < until, `timed out: ${label}`); await pause(20); } };
 async function main() {
@@ -24,8 +25,9 @@ async function main() {
   const agy = path.join(root, 'agy.cjs');
   fs.writeFileSync(agy, `#!/usr/bin/env node\nconst fs=require('node:fs');if(process.argv.includes('--input-format'))process.stdin.on('data',()=>fs.appendFileSync(${JSON.stringify(calls)},JSON.stringify({method:'agy/prompt',args:process.argv.slice(2)})+'\\n'));process.argv.push('--agy-fixture');require(${JSON.stringify(path.resolve(path.join(repo, 'scripts'), 'permissions-bridge.test.cjs'))});\n`, { mode: 0o755 });
   fs.writeFileSync(adapter, `const fs=require('node:fs');let b='';process.stdin.on('data',c=>{b+=c;let i;while((i=b.indexOf('\\n'))>=0){const l=b.slice(0,i);b=b.slice(i+1);if(l)fs.appendFileSync(${JSON.stringify(calls)},l+'\\n');}});require(${JSON.stringify(path.resolve(path.join(repo, 'scripts'), 'permissions-bridge.test.cjs'))});\n`);
-  const bridgeShaAtStart = require('node:crypto').createHash('sha256').update(fs.readFileSync(path.join(repo,'tools/elpis-claude/acp-bridge.mjs'))).digest('hex');
-  const bridge = spawn(process.execPath, [process.env.SHARED_PROVIDER_BRIDGE ?? path.resolve(path.join(repo, 'scripts'), '../tools/elpis-claude/acp-bridge.mjs')], { cwd, env: {
+  const bridgeFile = process.env.SHARED_PROVIDER_BRIDGE ?? path.resolve(path.join(repo, 'scripts'), '../tools/elpis-claude/acp-bridge.mts');
+  const bridgeShaAtStart = bridgeSourceDigest(path.dirname(bridgeFile));
+  const bridge = spawn(process.execPath, [bridgeFile], { cwd, env: {
     PATH: process.env.PATH, HOME: home, CODEX_HOME: home, ELPIS_HOME: home, CODEX_AUTH_HOME: home,
     ELPIS_ENGINE_BIN: binary, ELPIS_SHARED_BRIDGE: '1', ELPIS_BRIDGE_SOCKET: sock, ...(gemini ? { AGY_BIN: agy } : { ELPIS_NO_AGY: '1' }),
     ACP_BRIDGE_LOG: log, ACP_ADAPTER: adapter, ACP_BRIDGE_NO_AGENTS: '1', PERMISSION_FIXTURE_ADAPTER: '1', PERMISSION_FIXTURE_CONTROL: control,

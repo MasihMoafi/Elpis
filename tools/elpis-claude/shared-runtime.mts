@@ -1,6 +1,6 @@
 // One Elpis bridge per ELPIS_HOME, one native app-server per bridge.
 //
-// The bridge (acp-bridge.mjs) calls createBridgeServer(), createEngine(), bridgeUrl() and
+// The bridge (acp-bridge.mts) calls createBridgeServer(), createEngine(), bridgeUrl() and
 // shutdownRuntime(). Run as `node shared-runtime.mts <bridge script>`, this file is the launcher's
 // helper: it makes sure exactly one bridge serves this ELPIS_HOME and prints its endpoint
 // (`unix:///abs/path`) on stdout, nothing else. Errors go to stderr with a non-zero exit.
@@ -187,7 +187,7 @@ export function stopBridgeListener() {
 // A bridge handing over gave up its listener but still serves the chats working in it, so its connections reach the
 // engine again.
 export function allowEngines() { stopped = false; }
-// A bridge handing over to a newer one (acp-bridge.mjs startDrain) serves that bridge here, for the chats still
+// A bridge handing over to a newer one (acp-bridge.mts startDrain) serves that bridge here, for the chats still
 // running in it; drain.json names this socket and those chats.
 export const drainFile = () => path.join(path.dirname(process.env.ELPIS_BRIDGE_SOCKET as string), "drain.json");
 export function createDrainServer() {
@@ -663,7 +663,7 @@ async function ensureBridge(rt: Runtime, bridgeScript: string, identity: CodeIde
       if (state.identity !== identity.hash && !config.length && await retireUnattachedBridge(rt, state)) return ensureBridge(rt, bridgeScript, identity);
       // Like the desktop app, a terminal joins the Elpis that is already running instead of refusing (19 Oct: every
       // install made while the app was open stopped `elpis` from starting). It uses that installation's engine, so the
-      // pair matches. The running bridge hands over to this installation within seconds; chats working then finish in it (acp-bridge.mjs startDrain).
+      // pair matches. The running bridge hands over to this installation within seconds; chats working then finish in it (acp-bridge.mts startDrain).
       if (state.identity !== identity.hash && !config.length && usable(state.engine)) {
         fs.writeFileSync(rt.successor, identity.script, { mode: 0o600 });
         return { engine: state.engine, running: state.script };

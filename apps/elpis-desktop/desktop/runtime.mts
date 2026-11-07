@@ -49,7 +49,7 @@ export async function ensureInstalledRuntime({ env = process.env } = {}) {
 async function startRuntime(env: NodeJS.ProcessEnv, engine: string) {
   const bridgeDir = runtimeTools(engine);
   const helper = path.join(bridgeDir, 'shared-runtime.mts');
-  const bridge = path.join(bridgeDir, 'acp-bridge.mjs');
+  const bridge = path.join(bridgeDir, 'acp-bridge.mts');
   if (!fs.existsSync(helper) || !fs.existsSync(bridge)) {
     throw new Error('The selected Elpis installation is missing its provider bridge. Reinstall Elpis, or connect to an existing runtime with ELPIS_APP_BRIDGE_SOCKET.');
   }

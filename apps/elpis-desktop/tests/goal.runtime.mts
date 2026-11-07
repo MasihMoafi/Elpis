@@ -37,7 +37,7 @@ test('real engine and Claude adapter goal set/get/clear through authenticated de
     ELPIS_ENGINE_BIN: process.env.ELPIS_GOAL_ENGINE, ACP_ADAPTER: path.join(repo, 'tools/elpis-claude/test/fake-acp-agent.mjs'),
     ACP_BRIDGE_STORE: path.join(root, 'sessions.json'), ACP_BRIDGE_LOG: path.join(root, 'adapter.log'), ELPIS_NO_AGY: '1', ACP_BRIDGE_NO_AGENTS: '1',
     OPENAI_API_KEY: 'local-protocol-fixture', FAKE_ACP_LOG: path.join(root, 'acp.jsonl'), FAKE_ACP_MODELS: 'sonnet', FAKE_ACP_RELEASE: release };
-  const bridge = spawn(process.execPath, [path.join(repo, 'tools/elpis-claude/acp-bridge.mjs')], { env, cwd: project, detached: true, stdio: ['ignore', log.fd, log.fd] });
+  const bridge = spawn(process.execPath, [path.join(repo, 'tools/elpis-claude/acp-bridge.mts')], { env, cwd: project, detached: true, stdio: ['ignore', log.fd, log.fd] });
   t.after(async () => { if (bridge.exitCode === null && bridge.signalCode === null) { const ended = once(bridge, 'exit'); bridge.kill('SIGTERM'); await ended; } try { if (bridge.pid) process.kill(-bridge.pid, 'SIGKILL'); } catch {} await log.close(); });
   await until(async () => { try { await fs.stat(socketPath); return true; } catch { return false; } }, 'isolated bridge socket');
   const client = await DesktopClient.connect({ socketPath, appHome: root });

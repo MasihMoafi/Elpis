@@ -93,7 +93,7 @@ test('Love Spot sidebar and Matilda small chat expose staged first-text latency'
     FAKE_ACP_NAME: 'Matilda',
     FAKE_ACP_ANSWER: 'FAST_REPLY',
   };
-  const bridge = spawn(process.execPath, [path.join(repo, 'tools/elpis-claude/acp-bridge.mjs')], {
+  const bridge = spawn(process.execPath, [path.join(repo, 'tools/elpis-claude/acp-bridge.mts')], {
     cwd: drawing,
     env,
     detached: true,
