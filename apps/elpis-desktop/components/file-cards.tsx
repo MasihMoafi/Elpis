@@ -75,7 +75,7 @@ export function ImageThumb({ src, name, large = false }: { src: string; name: st
   const [failed, setFailed] = useState(false), view = useRef<HTMLDialogElement>(null);
   if (failed) return null;
   return <>
-    <ReplyableImage src={src} name={name}><img className={large ? "activity-image" : "activity-thumb"} src={src} alt={name} title="Click to view full size" loading="lazy" decoding="async"
+    <ReplyableImage src={src} name={name} compact={!large}><img className={large ? "activity-image" : "activity-thumb"} src={src} alt={name} title="Click to view full size" loading="lazy" decoding="async"
       onError={() => setFailed(true)} onClick={event => { event.preventDefault(); event.stopPropagation(); view.current?.showModal(); }} /></ReplyableImage>
     {typeof document !== "undefined" && createPortal(<dialog ref={view} className="image-view" aria-label={name} onClick={event => { event.stopPropagation(); event.currentTarget.close(); }}>
       <img src={src} alt={name} />

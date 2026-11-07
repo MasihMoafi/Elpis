@@ -40,7 +40,7 @@ function transparentTail(image: HTMLImageElement) {
 }
 
 /** One action for Markdown pictures, uploaded images and viewed-image thumbnails. */
-export function ReplyableImage({ src, name, children }: ReplyImage & { children: ReactNode }) {
+export function ReplyableImage({ src, name, children, compact = false }: ReplyImage & { children: ReactNode; compact?: boolean }) {
   const { onReply: reply, reference } = useContext(ImageReply);
   const root = useRef<HTMLSpanElement>(null);
   const enabled = Boolean(reply);
@@ -86,8 +86,8 @@ export function ReplyableImage({ src, name, children }: ReplyImage & { children:
     };
   }, [src, enabled]);
   if (!reply) return children;
-  return <span ref={root} data-image-reference={reference} tabIndex={-1} className="inline-flex max-w-full flex-col items-start gap-1" onClick={event => event.stopPropagation()}>
+  return <span ref={root} data-image-reference={reference} tabIndex={-1} className={compact ? "group relative inline-flex shrink-0" : "inline-flex max-w-full flex-col items-start gap-1"} onClick={event => event.stopPropagation()}>
     {children}
-    <Button type="button" variant="ghost" size="sm" aria-label={`Reply to image: ${name}`} onClick={event => { event.preventDefault(); event.stopPropagation(); reply({ src, name }); }}><Reply size={14} aria-hidden="true" />Reply</Button>
+    <Button type="button" variant={compact ? "secondary" : "ghost"} size={compact ? "icon-xs" : "sm"} className={compact ? "absolute -right-2 -top-2 size-4 opacity-0 group-hover:opacity-100 focus-visible:opacity-100" : undefined} aria-label={`Reply to image: ${name}`} onClick={event => { event.preventDefault(); event.stopPropagation(); reply({ src, name }); }}><Reply size={14} aria-hidden="true" />{!compact && "Reply"}</Button>
   </span>;
 }
