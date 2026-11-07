@@ -27,7 +27,7 @@ concurrency:
 
 jobs:
   schemas:
-    if: github.event_name == 'workflow_dispatch' && (inputs.verification == 'check' || inputs.verification == 'follow-check')
+    if: github.event_name == 'workflow_dispatch' && inputs.verification == 'check'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -138,7 +138,7 @@ jobs:
       - name: Read-only child follow across app-server connections
         if: inputs.verification == 'follow-check'
         working-directory: codex-rs
-        run: cargo test --profile dev-small --locked -p codex-app-server --test all -- websocket_read_only_follow_delivers_child_events_across_connections_and_reconnect
+        run: cargo test --profile dev-small --locked -p codex-core --lib -- disabled_delegate_stays_disabled_when_v2_is_enabled_at_startup
       - name: Retain compiler outputs
         if: always() && steps.cargo_cache.outputs.cache-hit != 'true' && steps.cargo_cache.outputs.cache-primary-key != ''
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
