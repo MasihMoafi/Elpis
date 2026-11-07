@@ -60,6 +60,8 @@ TUI
 cat > "$ROOT/usr/bin/love-spot" <<'LOVELAUNCH'
 #!/usr/bin/env bash
 R=${LOVE_SPOT_ROOT:-/opt/love-spot}
+# The window names this package's launcher, so the dock shows Love Spot's icon (desktop/main-profile.cts).
+export LOVE_SPOT_DESKTOP=love-spot.desktop
 export ELPIS_ENGINE_BIN=${ELPIS_ENGINE_BIN:-$R/engine/elpis-next} ELPIS_TUI_BIN=${ELPIS_TUI_BIN:-$R/bin/elpis}
 if [[ -z "${ELPIS_NODE_BIN:-}" ]]; then
   node=$(command -v node || true)
@@ -84,7 +86,7 @@ Icon=love-spot
 Terminal=false
 Categories=Graphics;Development;
 StartupNotify=true
-StartupWMClass=excalidraw
+StartupWMClass=love-spot
 
 [Desktop Action new-page]
 Name=New page

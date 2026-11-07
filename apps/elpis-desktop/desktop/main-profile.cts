@@ -16,7 +16,10 @@ function configureMainProfileImpl({ app, argv = process.argv, env = process.env 
   const loveSpotApp = argv.includes('--love-spot-app');
   const workflowsApp = argv.includes('--workflows-app');
   app.setName(loveSpotApp ? 'Love Spot' : workflowsApp ? 'Elpis Workflows' : 'Elpis');
-  if (loveSpotApp) app.setDesktopName('excalidraw.desktop');
+  // The desktop name is the Wayland app id and the X11 window class, which the dock matches to a launcher's icon. Masih's
+  // own Love Spot launcher is excalidraw.desktop; a package names its own entry (love-spot.desktop, the snap's
+  // love-spot_love-spot.desktop) through LOVE_SPOT_DESKTOP, or its windows show a generic icon (7 Nov).
+  if (loveSpotApp) app.setDesktopName(env.LOVE_SPOT_DESKTOP || 'excalidraw.desktop');
   else if (workflowsApp) app.setDesktopName('elpis-workflows.desktop');
   app.setPath('userData', env.ELPIS_DESKTOP_PROFILE || path.join(app.getPath('appData'), loveSpotApp ? 'Elpis Love Spot' : workflowsApp ? 'Elpis Workflows' : 'Elpis'));
   // Masih, 7 Nov: standalone Love Spot is its own app ("there we're doing different things"), so its chats, settings

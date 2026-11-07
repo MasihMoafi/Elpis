@@ -84,6 +84,8 @@ export ELPIS_ENGINE_BIN="$R/engine/elpis-next" ELPIS_NODE_BIN="$R/bin/node" ELPI
 if [ -n "${SNAP:-}" ] || [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null)" = 1 ]; then
   set -- --no-sandbox "$@"
 fi
+# The window names this package's launcher, so the dock shows Love Spot's icon (desktop/main-profile.cts).
+if [ -n "${SNAP:-}" ]; then export LOVE_SPOT_DESKTOP="${SNAP_INSTANCE_NAME:-love-spot}_love-spot.desktop"; else export LOVE_SPOT_DESKTOP=love-spot.desktop; fi
 exec "$R/desktop/launch" --love-spot-app "$@"
 LOVEAPPL
 chmod 0755 "$S/bin/"*
@@ -100,7 +102,7 @@ Exec=love-spot %U
 Icon=${SNAP}/meta/gui/love-spot.png
 Terminal=false
 Categories=Graphics;Development;
-StartupWMClass=excalidraw
+StartupWMClass=love-spot_love-spot
 LOVEENTRY
 cat > "$S/meta/snap.yaml" <<YAML
 name: love-spot

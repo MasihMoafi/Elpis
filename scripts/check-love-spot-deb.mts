@@ -40,6 +40,11 @@ try {
   if (!page) throw new Error('No Love Spot window opened.');
   await page.locator('.excalidraw canvas').first().waitFor({ timeout: 60_000 });
   check('window is the board, marked as the Love Spot app', new URL(page.url()).searchParams.get('app') === 'love-spot', page.url());
+  // The dock matches a window to its launcher by window class; a mismatch shows a generic icon (7 Nov).
+  const entry = fs.readFileSync(path.join(root, 'usr/share/applications/love-spot.desktop'), 'utf8');
+  const wmClass = /^StartupWMClass=(.+)$/m.exec(entry)?.[1] ?? '';
+  const windows = (() => { try { return execFileSync('xdotool', ['search', '--class', `^${wmClass}$`], { env: { ...process.env } }).toString().trim(); } catch { return ''; } })();
+  check('window class matches the launcher (dock icon)', !!wmClass && !!windows, wmClass);
   const own = path.join(home, '.local/share/love-spot');
   check('data in its own home', fs.existsSync(path.join(own, 'config.toml')), own);
   check('nothing in Elpis\'s home', !fs.existsSync(path.join(home, '.elpis-next')));

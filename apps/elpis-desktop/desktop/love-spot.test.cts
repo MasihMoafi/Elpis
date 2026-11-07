@@ -12,6 +12,10 @@ type Relaunch = { execPath: string; args: string[] };
 type Call = string | ['thread', string] | ['relaunch', Relaunch];
 type Host = { isDestroyed: () => boolean; webContents: { executeJavaScript: (script: string) => Promise<unknown> } };
 
+// The standalone app makes its own home on start; tests give it a throwaway one, never the real ~/.local/share/love-spot.
+const launchHome = createTestTempDir(path.join(require('node:os').tmpdir(), 'love-dock-home-'));
+test.after(() => removeTestTempDir(launchHome));
+let launchEnv: Record<string, string> = {};
 async function launch(args: string[], flushText?: () => Promise<boolean>, flushBrowsers?: () => Promise<void>, canRestart = async () => true) {
   const app = new EventEmitter(); let ready!: () => void, lock!: { loveSpot: boolean };
   const identity: Record<string, string> = {};
@@ -25,7 +29,7 @@ async function launch(args: string[], flushText?: () => Promise<boolean>, flushB
   const sessions = { windows: new Set<Host>(), flushText, flushBrowsers: async () => { calls.push('browser-flush'); await flushBrowsers?.(); }, openersFor: () => openers,
     open: async () => { calls.push('chat'); return host; }, openLoveSpot: async () => { calls.push('love'); }, openWorkflows: async () => { calls.push('workflows'); } };
   const electron = { app, ipcMain: { handle() {}, removeHandler() {} }, dialog: { showErrorBox() {} }, Menu: { buildFromTemplate: (x: unknown) => x, setApplicationMenu() {} } };
-  const context = vm.createContext({ __dirname, console, process: { argv: ['electron', 'app', ...args], env: {}, platform: 'linux' },
+  const context = vm.createContext({ __dirname, console, process: { argv: ['electron', 'app', ...args], env: { HOME: launchHome, ...launchEnv }, platform: 'linux' },
     sessions, openers, testStore: { get: () => null, flush: async () => calls.push('workspace-flush') }, testServer: { canRestart, close: async () => calls.push('board-close') },
     require: (name: string) => name === './app-updates.cts' ? { executableLauncher: (file: string) => file, createAppUpdates: () => ({ setRunningEngine() {} }) } : name === 'electron' ? electron : name === './quick-entry.cts' ? { startQuickEntry: () => { calls.push('quick-entry'); return { start: async () => {} }; } }
       : name === './tray.cts' ? { createCloseToTray: () => ({}), createTray: () => { calls.push('tray'); return { destroy() {} }; } }
@@ -189,6 +193,15 @@ test('--love-spot-app is its own app under the Love Spot dock icon', async () =>
   f.app.emit('second-instance', {}, ['electron', '--love-spot-app'], '', {}); await f.settle();
   f.app.emit('activate'); await f.settle();
   assert.deepEqual(f.calls, ['love', 'love', 'love'], 'every way back into it opens Love Spot');
+});
+
+// 7 Nov: a package's window must carry its own launcher's identity, or the dock shows a generic icon.
+test('a packaged Love Spot names its own launcher', async (t: import('node:test').TestContext) => {
+  t.after(() => { launchEnv = {}; });
+  launchEnv = { LOVE_SPOT_DESKTOP: 'love-spot.desktop' };
+  assert.equal((await launch(['--love-spot-app'])).identity.desktop, 'love-spot.desktop');
+  launchEnv = { LOVE_SPOT_DESKTOP: 'love-spot_love-spot.desktop' };
+  assert.equal((await launch(['--love-spot-app'])).identity.desktop, 'love-spot_love-spot.desktop');
 });
 
 test('--workflows-app is its own app under the Workflows dock icon', async () => {
