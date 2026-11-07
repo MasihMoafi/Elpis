@@ -260,6 +260,25 @@ export function sizedItem(item: RolloutItem): [string, number] {
   }
 }
 const rolloutPath = (file: unknown): file is string => typeof file === 'string' && path.isAbsolute(file) && /\.jsonl(\.zst)?$/.test(file);
+/** The latest recorded turn is the evidence for a background agent's model and effort. */
+export async function rolloutAgentModel(file: unknown, threadId: string, limit = 1 << 28): Promise<{ model: string; reasoningEffort: string | null } | null> {
+  if (!rolloutPath(file)) return null;
+  let latest: { model: string; reasoningEffort: string | null } | null = null;
+  try {
+    if ((await fsp.stat(file)).size > limit) return null;
+    const input = file.endsWith('.zst') ? (typeof zlib.createZstdDecompress === 'function' ? fs.createReadStream(file).pipe(zlib.createZstdDecompress()) : null) : fs.createReadStream(file);
+    if (!input) return null;
+    for await (const line of readline.createInterface({ input, crlfDelay: Infinity })) {
+      if (!line.includes('"turn_context"') && !line.includes('"thread_settings_applied"')) continue;
+      let row; try { row = JSON.parse(line); } catch { continue; }
+      const context = row?.type === 'turn_context' ? row.payload : row?.type === 'event_msg' && row.payload?.type === 'thread_settings_applied' && (!row.payload.thread_id || row.payload.thread_id === threadId) ? row.payload.thread_settings : null;
+      if (!context) continue;
+      const model = string(context.model)?.trim();
+      latest = model ? { model, reasoningEffort: string(context.effort ?? context.reasoning_effort)?.trim() || null } : null;
+    }
+  } catch { return null; }
+  return latest;
+}
 /** The model recorded for each saved turn. Old or imported rows without a model stay absent. */
 export async function rolloutTurnModels(file: unknown, limit = 1 << 28) {
   const models = new Map();

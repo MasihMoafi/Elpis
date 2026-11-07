@@ -1,5 +1,7 @@
 'use strict';
 
+require('./output-errors.cts');
+
 const electron: typeof import('electron') = require('electron');
 const { app, BrowserWindow, ipcMain, Menu, Tray, nativeImage, globalShortcut, screen, dialog } = electron;
 const path = require('node:path');

@@ -29,8 +29,8 @@ export function agentColourSlots(threads: readonly { id: string; parentThreadId?
 }
 
 /** One stable mark per agent; callers supply only observed runtime model/provider values. */
-export function AgentIdentity({ id, name, model, provider, role, compact = false, nameClassName, colourSlot }: {
-  id: string; name: string; model?: string | null | undefined; provider?: string | null | undefined; role?: string; compact?: boolean; nameClassName?: string; colourSlot?: number | undefined;
+export function AgentIdentity({ id, name, model, provider, role, detail, compact = false, nameClassName, colourSlot }: {
+  id: string; name: string; model?: string | null | undefined; provider?: string | null | undefined; role?: string; detail?: string | undefined; compact?: boolean; nameClassName?: string; colourSlot?: number | undefined;
 }) {
   let hash = 2166136261;
   for (const character of id) hash = Math.imul(hash ^ character.charCodeAt(0), 16777619);
@@ -52,6 +52,7 @@ export function AgentIdentity({ id, name, model, provider, role, compact = false
     <span className="agent-identity-text flex min-w-0 flex-col">
       <span className={`agent-name block truncate font-medium ${nameClassName || ""}`} title={name}>{name}</span>
       {runtime && <span className="agent-model block truncate text-xs text-muted-foreground" title={runtime}>{runtime}</span>}
+      {detail && <span className="block truncate text-xs text-muted-foreground" title={detail}>{detail}</span>}
     </span>
   </span>;
 }

@@ -180,9 +180,9 @@ export const retainedUpdates = {
       "reason": "Masih 27 Oct: restore the automatic orange completion/unread marker to the left; manual colour remains separate. Show observed Mother and recursively spawned live team despite a saved failure, keep recorded model evidence historical, and prevent duplicate recovery. Settings must fit beside navigation, hide unsupported Flex, show whole sidebar rows, and simplify chat actions into Organize/Open in with correct singular/bulk wording. Retain paging, keyboard, storage, action outcomes, isolation and alignment; shared test callers follow the same moved submenu actions. Immutable baseline retained."
     },
     "tests/agent-runs.test.cjs": {
-      "blob": "38a9d86b5019ba98dcb53ad2ba14dd50c036cb9a",
-      "approval": "50247373f624a24f0972f3922be179bdc260fece",
-      "reason": "Masih 29 Oct: \"those extra useless chats like the ones saying Task ID ... or chats I didn't start should not show in my side-bar chats. I want that place to be organized\". S18: Pinned, Projects, Groups and Recents list only his chats; Background runs and the sidebar Workflows section are off by default, so this test turns them on (orphans and broken-lineage chats are reached in Background runs). Masih 29 Oct: \"This mark all as read also doesn't make sense when I've already read all of them!\". Adds: a hidden subagent or unlisted thread finishing does not offer Mark all as read. Earlier S18 checks remain."
+      "blob": "8747becd55e0f0c09fa77d9cfd126bab7cbad6a2",
+      "approval": "d4e60534ad52abd70aa226157bb81158f40a61eb",
+      "reason": "Masih 7 Nov: show the model and effort as a small grey line under each agent's name in the Agents panel and at the top of the subagent's own chat. The earlier agent-runs checks remain."
     },
     "tests/provider-model-pairs.test.cjs": {
       "blob": "d107afadc886c3923c6de250e33ee821fbb5c650",

@@ -29,6 +29,159 @@ async function note(f, text, { x = 450, y = 300 } = {}) {
 
 const clear = (a, b) => a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y;
 const unit = e => e.groupIds?.at(-1) ?? e.id;
+test('a drawing waits quietly for its picture and is retried after leaving and returning', { timeout: 60000 }, async () => {
+  const f = await loveSpotFixture(); let notices = 0;
+  try {
+    await f.page.route('**/api/love-spot/talk', async route => {
+      if (route.request().method() !== 'POST') return route.fallback();
+      const body = route.request().postDataJSON();
+      if (body.drawingOnly && ++notices === 1) return route.fulfill({ json: { voice: { enabled: false }, waitingForPicture: true } });
+      return route.fallback();
+    });
+    await f.open(f.page); await f.draw(f.page);
+    await f.waitFor(() => notices === 1, 'the drawing did not wait for a picture', 20000);
+    await f.page.waitForTimeout(1000);
+    assert.equal(notices, 1, 'waiting does not repeatedly send the notice');
+    assert.equal(f.turns.length, 0, 'there is no reply while the picture is unavailable');
+    await f.page.locator('.nav-list').getByRole('button', { name: 'Workflows', exact: true }).click();
+    await f.open(f.page);
+    await f.waitFor(() => f.turns.length === 1, 'the waiting drawing was lost on leaving', 20000);
+    assert.ok(f.turns[0].attachments.some(a => a.type === 'image'), 'the retried drawing includes its picture');
+  } finally { await f.close(); }
+});
+test('returning while an older handover is still in flight does not send the drawing twice', { timeout: 60000 }, async () => {
+  const f = await loveSpotFixture(); let held = false, released;
+  const gate = new Promise(resolve => { released = resolve; });
+  try {
+    await f.page.route('**/api/love-spot/talk', async route => {
+      if (route.request().method() !== 'POST' || held || !route.request().postDataJSON().drawingOnly) return route.fallback();
+      held = true; await gate;
+      await route.fulfill({ json: { voice: { enabled: false }, waitingForPicture: true } }).catch(() => {});
+    });
+    await f.open(f.page); await f.draw(f.page);
+    await f.waitFor(() => held, 'the first handover did not start', 20000);
+    await f.page.locator('.nav-list').getByRole('button', { name: 'Workflows', exact: true }).click();
+    await f.open(f.page); await f.page.waitForTimeout(1000);
+    assert.equal(f.turns.length, 0, 'the new visit waits for the older handover');
+    released(); await f.waitFor(() => f.turns.length === 1, 'the drawing did not resume', 20000);
+    await f.page.locator('.nav-list').getByRole('button', { name: 'Workflows', exact: true }).click();
+    await f.open(f.page); await f.page.waitForTimeout(1000);
+    assert.equal(f.turns.length, 1, 'the late reply did not restore an already-sent drawing');
+  } finally { released(); await f.close(); }
+});
+test('editing a note during an older handover keeps the newer words', { timeout: 60000 }, async () => {
+  const f = await loveSpotFixture(); let held = false, released;
+  const gate = new Promise(resolve => { released = resolve; });
+  try {
+    await f.page.route('**/api/love-spot/talk', async route => {
+      if (route.request().method() !== 'POST' || held) return route.fallback();
+      const response = await route.fetch(); held = true; await gate;
+      await route.fulfill({ response }).catch(() => {});
+    });
+    await f.open(f.page); await note(f, 'Original thought');
+    await f.waitFor(() => held && f.turns.length === 1, 'the first handover did not start', 20000);
+    await f.page.locator('.nav-list').getByRole('button', { name: 'Workflows', exact: true }).click();
+    await f.open(f.page);
+    const bounds = await f.page.locator('.excalidraw').boundingBox();
+    await f.page.mouse.dblclick(bounds.x + 455, bounds.y + 305);
+    const editor = f.page.locator('textarea.excalidraw-wysiwyg'); await editor.waitFor();
+    await f.page.keyboard.press('ControlOrMeta+a'); await f.page.keyboard.type('Revised thought'); await f.page.keyboard.press('Escape');
+    await f.waitFor(s => s.elements.some(e => e.text === 'Revised thought'), 'the revised note did not save', 20000);
+    released(); await f.waitFor(() => f.turns.length === 2, 'the new words were lost', 20000);
+    assert.match(f.turns[1].text, /Revised thought/);
+  } finally { released(); await f.close(); }
+});
+test('a waiting drawing is retried when Matilda changes model', { timeout: 60000 }, async () => {
+  const f = await loveSpotFixture(); let notices = 0;
+  try {
+    await f.page.route('**/api/love-spot/talk', async route => {
+      if (route.request().method() !== 'POST') return route.fallback();
+      const body = route.request().postDataJSON();
+      if (body.drawingOnly && ++notices === 1) return route.fulfill({ json: { voice: { enabled: false }, waitingForPicture: true } });
+      return route.fallback();
+    });
+    await f.open(f.page); await f.draw(f.page);
+    await f.waitFor(() => notices === 1, 'the drawing did not wait', 20000);
+    const model = f.page.getByRole('group', { name: "Matilda's model" }).getByRole('combobox');
+    await model.click(); await f.page.getByRole('option', { name: /GPT-6-Luna/ }).click();
+    await f.waitFor(() => f.turns.length === 1, 'changing model did not retry the drawing', 20000);
+    assert.equal(f.turns[0].model, 'luna');
+    assert.ok(f.turns[0].attachments.some(a => a.type === 'image'));
+  } finally { await f.close(); }
+});
+test('changing model while a drawing handover is still in flight retries it', { timeout: 60000 }, async () => {
+  const f = await loveSpotFixture(); let held = false, released;
+  const gate = new Promise(resolve => { released = resolve; });
+  try {
+    await f.page.route('**/api/love-spot/talk', async route => {
+      if (route.request().method() !== 'POST' || held || !route.request().postDataJSON().drawingOnly) return route.fallback();
+      held = true; await gate;
+      await route.fulfill({ json: { voice: { enabled: false }, waitingForPicture: true } }).catch(() => {});
+    });
+    await f.open(f.page); await f.draw(f.page);
+    await f.waitFor(() => held, 'the drawing handover did not start', 20000);
+    const model = f.page.getByRole('group', { name: "Matilda's model" }).getByRole('combobox');
+    await model.click(); await f.page.getByRole('option', { name: /GPT-6-Luna/ }).click();
+    released();
+    await f.waitFor(() => f.turns.length === 1, 'the in-flight drawing was not retried', 20000);
+    assert.equal(f.turns[0].model, 'luna');
+    assert.ok(f.turns[0].attachments.some(a => a.type === 'image'));
+  } finally { released(); await f.close(); }
+});
+test('turning replies off during a handover does not resurrect that drawing', { timeout: 60000 }, async () => {
+  const f = await loveSpotFixture(); let held = false, released;
+  const gate = new Promise(resolve => { released = resolve; });
+  try {
+    await f.open(f.page);
+    await f.page.route('**/api/love-spot/picture', async route => {
+      if (held) return route.fallback();
+      held = true; await gate; await route.continue().catch(() => {});
+    });
+    await f.draw(f.page); await f.waitFor(() => held, 'the picture handover did not start', 20000);
+    const replies = f.page.getByRole('switch', { name: 'Matilda', exact: true });
+    await replies.click(); assert.equal(await replies.getAttribute('aria-checked'), 'false');
+    released(); await f.page.waitForTimeout(1000);
+    await replies.click(); assert.equal(await replies.getAttribute('aria-checked'), 'true');
+    await f.page.waitForTimeout(1200);
+    assert.equal(f.turns.length, 0, 'the disabled batch stayed cleared');
+  } finally { released(); await f.close(); }
+});
+
+test('a failed handover keeps a written note for the next visit', { timeout: 60000 }, async () => {
+  const f = await loveSpotFixture(); let refused = false;
+  try {
+    await f.page.route('**/api/love-spot/talk', async route => {
+      if (route.request().method() === 'POST' && !refused) { refused = true; return route.fulfill({ status: 503, json: { error: 'Test handover failure' } }); }
+      return route.fallback();
+    });
+    await f.open(f.page); await note(f, 'Keep this thought for later');
+    await f.waitFor(() => refused, 'the handover was not interrupted', 20000);
+    await f.page.waitForTimeout(500);
+    assert.equal(f.turns.length, 0);
+    await f.page.locator('.nav-list').getByRole('button', { name: 'Workflows', exact: true }).click();
+    await f.open(f.page);
+    await f.waitFor(() => f.turns.length === 1, 'the failed note was lost', 20000);
+    assert.match(f.turns[0].text, /Keep this thought for later/);
+  } finally { await f.close(); }
+});
+test('a note stays pending if its handover fails after leaving the board', { timeout: 60000 }, async () => {
+  const f = await loveSpotFixture(); let held = false, released;
+  const gate = new Promise(resolve => { released = resolve; });
+  try {
+    await f.page.route('**/api/love-spot/talk', async route => {
+      if (route.request().method() !== 'POST' || held) return route.fallback();
+      held = true; await gate;
+      await route.fulfill({ status: 503, json: { error: 'Test handover failure' } }).catch(() => {});
+    });
+    await f.open(f.page); await note(f, 'Keep this thought after I leave');
+    await f.waitFor(() => held, 'the handover did not start', 20000);
+    await f.page.locator('.nav-list').getByRole('button', { name: 'Workflows', exact: true }).click();
+    released(); await f.page.waitForTimeout(500);
+    await f.open(f.page);
+    await f.waitFor(() => f.turns.length === 1, 'the note was lost after leaving', 20000);
+    assert.match(f.turns[0].text, /Keep this thought after I leave/);
+  } finally { released(); await f.close(); }
+});
 test('what he writes reaches her with the board and its picture and the main model; her black reply lands clear of everything; the sidebar chat is one and says its origin once', async () => {
   const f = await loveSpotFixture();
   try {
