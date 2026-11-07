@@ -6,11 +6,11 @@ import { recordedClaudeEnd } from "./claude-turn-record.mts";
 import { acpErrorInfo } from "./acp-errors.mts";
 import { previewOf } from "./bridge-thread-list.mts";
 import { clipTurn,inputSummary,toAcpPrompt,plainCommand } from "./bridge-transcript.mts";
+import { wireObject } from "./bridge-wire.mts";
 import type { Acp } from "./bridge-acp.mts";
 import type { ClaudeAccounts } from "./claude-accounts.mts";
-import type { AcpHandlers,AcpPermission,AcpUpdate,AcpUsage,BridgeClient,BridgeError,BridgeMessage,BridgeResponses,CatalogResult,ChildThread,ClaudeTurnRequest,ContextChars,EngineThread,Lane,LiveSession,McpConfig,NoticeParams,PromptInput,ProviderAgent,ProviderTurn,RateLimit,Store,SubagentUpdate,SubLane,TranscriptItem,TranscriptTurn,TurnOutcome,UsageTotals } from "./bridge-types.mts";
+import type { EngineCall,AcpHandlers,AcpPermission,AcpUpdate,AcpUsage,BridgeClient,BridgeError,BridgeMessage,BridgeResponses,CatalogResult,ChildThread,ClaudeTurnRequest,ContextChars,EngineThread,Lane,LiveSession,McpConfig,NoticeParams,PromptInput,ProviderAgent,ProviderTurn,RateLimit,Store,SubagentUpdate,SubLane,TranscriptItem,TranscriptTurn,TurnOutcome,UsageTotals } from "./bridge-types.mts";
 
-type EngineCall = { <K extends keyof BridgeResponses>(method: K, params: object, timeoutMs?: number): Promise<BridgeResponses[K]>; <T = unknown>(method: string, params: object, timeoutMs?: number): Promise<T> };
 type Mode = "plan" | "bypassPermissions" | "default" | "auto" | "acceptEdits";
 type McpServer = { name: string; command: string | undefined; args: string[]; env: { name: string; value: string }[] };
 type Dependencies = {
@@ -285,7 +285,8 @@ export function createProviderTurn({
         }
         into.update(u);
         if (followup && into === lane) {
-          if (u.sessionUpdate === "usage_update" && AUTONOMOUS_ORIGINS.has((u._meta?.["_claude/origin"] as { kind: string } | undefined)?.kind as string)) (turnState.endFollowup as (result: { stopReason: string }) => void)({ stopReason: "end_turn" });
+          const origin = u.sessionUpdate === "usage_update" ? u._meta?.["_claude/origin"] : undefined;
+          if (u.sessionUpdate === "usage_update" && wireObject(origin) && typeof origin.kind === "string" && AUTONOMOUS_ORIGINS.has(origin.kind)) (turnState.endFollowup as (result: { stopReason: string }) => void)({ stopReason: "end_turn" });
           else quietEnd();
         }
       };
@@ -479,7 +480,9 @@ export function createProviderTurn({
           turnState.stopRecordWatch = () => { clearTimeout(timer); watcher.close(); };
         } catch (error) { log(`turn record watcher: ${(error as BridgeError).message}`); }
       }
-      const result = (turnState.cancelled ? { stopReason: "cancelled" } : followup ? await turnState.followupEnded : await acp.call("session/prompt", { sessionId, prompt })) as { stopReason: string; usage?: AcpUsage };
+      const followupEnded = turnState.followupEnded;
+      if (followup && !followupEnded) throw new Error("The provider follow-up has no completion signal.");
+      const result: { stopReason: string; usage?: AcpUsage | null } = turnState.cancelled ? { stopReason: "cancelled" } : followupEnded ? await followupEnded : await acp.call("session/prompt", { sessionId, prompt });
       clearTimeout(turnState.quiet);
       turnState.promptEnded = true;
       turnState.toolsIdle.splice(0).forEach(resolve => resolve());

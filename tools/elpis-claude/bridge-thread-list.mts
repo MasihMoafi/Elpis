@@ -1,8 +1,7 @@
 import { inputSummary } from "./bridge-transcript.mts";
-import type { ActiveRecord,BridgeResponses,EngineThread,ProviderTurn,SavedSession,Store,TranscriptItem,TranscriptTurn } from "./bridge-types.mts";
+import type { EngineCall,ActiveRecord,BridgeResponses,EngineThread,ProviderTurn,SavedSession,Store,TranscriptItem,TranscriptTurn } from "./bridge-types.mts";
 
 export type ThreadListRequest = { sortKey?: string; sortDirection?: string; cursor?: string; cwd?: string | string[]; sourceKinds?: string[]; modelProviders?: string[]; searchTerm?: string; archived?: boolean; sectionId?: unknown; projectId?: unknown; parentThreadId?: unknown; ancestorThreadId?: unknown };
-type EngineCall = { <K extends keyof BridgeResponses>(method: K, params: object, timeoutMs?: number): Promise<BridgeResponses[K]>; <T = unknown>(method: string, params: object, timeoutMs?: number): Promise<T> };
 type Dependencies = { engineCall: EngineCall; activeTurns: Map<string, ProviderTurn>; ownModel: (thread: EngineThread, store: Store) => boolean; storeChain: () => Promise<void>; loadStore: () => Promise<Store>; now: () => number; log: (message: string) => void };
 
 export const listField = (req: ThreadListRequest) => ({ updated_at: "updatedAt", recency_at: "recencyAt" } as Record<string, "updatedAt" | "recencyAt">)[req.sortKey as string] ?? "createdAt";

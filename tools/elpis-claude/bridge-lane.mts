@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { EDIT_TOOLS,toolItem } from "./bridge-transcript.mts";
 import type { ContextChars,Lane,NoticeParams,ToolState,UsageTotals } from "./bridge-types.mts";
+import { wireObject } from "./bridge-wire.mts";
 
 type Dependencies = { notify: (method: string, params: NoticeParams) => void; addChars: (threadId: string, part: keyof ContextChars, n: number) => void; lastContext: Map<string, { used?: number; size?: number | null }>; sendUsage: (threadId: string, turnId: string, last: UsageTotals | null) => void; now: () => number };
 
@@ -49,12 +50,13 @@ export function createLaneBuilder({ notify, addChars, lastContext, sendUsage, no
         // Claude reports a guessed 200k window until a turn result carries a cost. Antigravity's
         // agent state reports the actual window directly and marks it as such.
         const known = lastContext.get(threadId)?.size ?? null;
-        const actual = u.cost || (u._meta?.["elpis/contextWindow"] as { actual?: boolean } | undefined)?.actual === true;
+        const window = u._meta?.["elpis/contextWindow"];
+        const actual = u.cost || (wireObject(window) && window.actual === true);
         const size = actual && typeof u.size === "number" ? u.size : known;
         lastContext.set(threadId, { used: u.used, size });
         sendUsage(threadId, turnId, null);
       } else if (u.sessionUpdate === "plan" && Array.isArray(u.entries)) {
-        const step = { pending: "pending", in_progress: "inProgress", completed: "completed" };
+        const step: Record<string, string> = { pending: "pending", in_progress: "inProgress", completed: "completed" };
         const plan = u.entries.map((e) => ({ step: e.content, status: step[e.status] ?? "pending" }));
         // The adapter repeats an unchanged list (each task tool reports it twice); one row each.
         if (JSON.stringify(plan) === lane.lastPlan) return;
@@ -68,12 +70,11 @@ export function createLaneBuilder({ notify, addChars, lastContext, sendUsage, no
           t = { name: u.kind, title: null, raw: {}, response: null, text: null, diffs: [], status: "inProgress", declined: false, shown: false, start: now(), end: null };
           lane.tools.set(u.toolCallId, t);
         }
-        const cc = u._meta?.claudeCode as { toolName?: string; toolResponse?: ToolState["response"] } | null | undefined;
-        if (cc?.toolName) t.name = cc.toolName;
+        if (u.toolName) t.name = u.toolName;
         if (u.title) t.title = u.title;
-        if (u.rawInput && Object.keys(u.rawInput as object).length) t.raw = u.rawInput as ToolState["raw"];
-        if (cc?.toolResponse) t.response = cc.toolResponse;
-        for (const c of u.content ?? []) { if (c.type === "diff") t.diffs.push(c); else if ((c as { content?: { type?: string; text: string } }).content?.type === "text") t.text = ((c as { content?: { text: string } }).content as { text: string }).text; }
+        if (u.rawInput && Object.keys(u.rawInput).length) t.raw = u.rawInput;
+        if (u.toolResponse) t.response = u.toolResponse;
+        for (const c of u.content ?? []) { if (c.type === "diff") t.diffs.push(c); else t.text = c.content.text; }
         const finished = u.status === "completed" || u.status === "failed";
         if (finished) { t.status = u.status as "completed" | "failed"; t.end = now(); lane.onIdle(); }
         if (/^(TodoWrite|Task(Create|Update|List|Get))$/.test(t.name as string)) return; // drawn as the plan

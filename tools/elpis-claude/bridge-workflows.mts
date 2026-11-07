@@ -1,8 +1,7 @@
 import { personAskedForWorkflow } from "./workflow-runner.mts";
 import type { WorkflowRunner } from "./workflow-runner.mts";
-import type { BridgeClient,BridgeMessage,BridgeResponses,PromptInput,ProviderOwner,ProviderTurn,Store,ThreadRequest } from "./bridge-types.mts";
+import type { EngineCall,BridgeClient,BridgeMessage,BridgeResponses,PromptInput,ProviderOwner,ProviderTurn,Store,GlobalRequest } from "./bridge-types.mts";
 
-type EngineCall = { <K extends keyof BridgeResponses>(method: K, params: object, timeoutMs?: number): Promise<BridgeResponses[K]>; <T = unknown>(method: string, params: object, timeoutMs?: number): Promise<T> };
 type Dependencies = {
   storeChain: () => Promise<void>; loadStore: () => Promise<Store>;
   providerOwners: Map<string, ProviderOwner>; claudeModel: Map<string, string>;
@@ -42,7 +41,7 @@ export function createWorkflowRequests({ storeChain, loadStore, providerOwners, 
     return target ? Math.round(Number(target[1]) * ((target[2] as string).toLowerCase() === "m" ? 1e6 : 1e3)) : null;
   }
   // WR7: the protocol the app and the chats' workflow tool use.
-  async function workflowRequest(msg: ThreadRequest) {
+  async function workflowRequest(msg: GlobalRequest) {
     const p = msg.params ?? {};
     const reply = (result: unknown) => toTui({ id: msg.id, result });
     const need = (key: string) => { const value = p[key]; if (typeof value !== "string" || !value) throw Object.assign(new Error(`${key} is required`), { code: -32602 }); return value; };
@@ -68,7 +67,7 @@ export function createWorkflowRequests({ storeChain, loadStore, providerOwners, 
         log(`workflow ${started.runId} (${started.name}) started from ${fromTool ? "chat" : "the app"} ${threadId} on ${model ?? "the default model"}`);
         return reply(started);
       }
-      case "workflowRun/list": return reply({ data: workflows.list({ parentThreadId: p.threadId }) });
+      case "workflowRun/list": return reply({ data: workflows.list(p.threadId === undefined ? {} : { parentThreadId: p.threadId }) });
       case "workflowRun/read": {
         const run = workflows.read(need("runId"));
         if (!run) throw Object.assign(new Error(`No workflow run ${p.runId}.`), { code: -32600 });
@@ -80,10 +79,10 @@ export function createWorkflowRequests({ storeChain, loadStore, providerOwners, 
       default: throw Object.assign(new Error(`Unknown method ${msg.method}`), { code: -32601 });
     }
   }
-  async function runWorkGraph(msg: ThreadRequest) {
+  async function runWorkGraph(msg: GlobalRequest) {
     await storeChain();
-    const tid = msg.params?.rootThreadId as string;
-    const model = providerOwners.get(tid)?.model() ?? claudeModel.get(tid) ?? (await loadStore())[tid]?.model;
+    const tid = msg.params.rootThreadId;
+    const model = tid === undefined ? undefined : providerOwners.get(tid)?.model() ?? claudeModel.get(tid) ?? (await loadStore())[tid]?.model;
     if (typeof model === "string" && /^(claude|agy)\//.test(model)) {
       toTui({ id: msg.id, error: { code: -32600, message: "Workflows cannot run in Claude or Gemini subscription chats yet. Choose a conversation on a native provider; the subscription model must not be replaced by the engine's model." } });
       return;

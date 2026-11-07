@@ -1,6 +1,6 @@
 import { wireId,wireObject } from "./bridge-wire.mts";
 import { createHelperPermissions } from "./bridge-helper-permissions.mts";
-import type { BridgeError,RequestId,BridgeClient,BridgeMessage,ProviderOwner,BridgeResponses,Ceiling } from "./bridge-types.mts";
+import type { EngineCall,BridgeError,RequestId,BridgeClient,BridgeMessage,ProviderOwner,BridgeResponses,Ceiling } from "./bridge-types.mts";
 import type WebSocket from "ws";
 import { defaultPermissionMode,defaultPermissionSettings,permissionSettingsAllowed,permissionSettings,permissionMode } from './permission-policy.mts';
 import type { BridgeEnvironment } from "./bridge-server.mts";
@@ -8,7 +8,7 @@ import type { BridgeEnvironment } from "./bridge-server.mts";
 type Dependencies = Pick<BridgeEnvironment, "automaticThreads" | "blockedAutomaticThreads" | "ceilingOf" | "explicitChatChoices" | "helperConns" | "helperScope" | "loadStoreSnapshot" | "permissionChoices" | "providerOwners" | "updateStore"> & {
   boundAccess: ReturnType<typeof createHelperPermissions>["boundAccess"];
   claudeModel: Map<string, string>;
-  engineCall: { <K extends keyof BridgeResponses>(method: K, params: object, timeoutMs?: number): Promise<BridgeResponses[K]>; <T = unknown>(method: string, params: object, timeoutMs?: number): Promise<T> };
+  engineCall: EngineCall;
   handleMessage: (data: WebSocket.RawData | string) => void;
   permissionRefreshes: Set<RequestId>;
   permissionWrites: Map<RequestId, { threadId?: string; settings: { permissions?: string; inherit?: boolean; automatic?: boolean }; ephemeral?: boolean }>;
@@ -23,15 +23,18 @@ export function createClientPermissions({ automaticThreads, blockedAutomaticThre
   // new-chat choice, detaches a chat from Settings > Default permissions.
   async function withPermissions(data: WebSocket.RawData | string) {
     type PermissionParams = { threadId?: string | null; elpisPermissionSource?: string | null; elpisParentThreadId?: string | null; ephemeral?: boolean | null; model?: string | null; sandbox?: string | null; permissions?: string | null; approvalPolicy?: string | null; cwd?: string | null; edits?: { keyPath: string }[] | null; [key: string]: unknown };
+    const isPermissionMessage = (value: unknown): value is { id: RequestId; method: string; params: PermissionParams } => {
+      if (!wireObject(value) || !wireId(value.id) || typeof value.method !== 'string' || !wireObject(value.params)) return false;
+      const p = value.params;
+      const strings = ['threadId', 'elpisPermissionSource', 'elpisParentThreadId', 'sandbox', 'permissions', 'approvalPolicy', 'cwd'];
+      return !strings.some(key => p[key] != null && typeof p[key] !== 'string')
+        && (p.model == null || typeof p.model === 'string') && (p.ephemeral == null || typeof p.ephemeral === 'boolean')
+        && (p.edits == null || (Array.isArray(p.edits) && p.edits.every((edit: unknown) => wireObject(edit) && typeof edit.keyPath === 'string')));
+    };
     let value: unknown;
     try { value = JSON.parse(String(data)); } catch { handleMessage(data); return; }
-    if (!wireObject(value) || !wireId(value.id) || typeof value.method !== 'string' || !wireObject(value.params)) { handleMessage(data); return; }
-    const p = value.params;
-    const strings = ['threadId', 'elpisPermissionSource', 'elpisParentThreadId', 'sandbox', 'permissions', 'approvalPolicy', 'cwd'];
-    if (strings.some(key => p[key] != null && typeof p[key] !== 'string')
-      || (p.model != null && typeof p.model !== 'string') || (p.ephemeral != null && typeof p.ephemeral !== 'boolean')
-      || (p.edits != null && (!Array.isArray(p.edits) || !p.edits.every(edit => wireObject(edit) && typeof edit.keyPath === 'string')))) { handleMessage(data); return; }
-    const msg = value as { id: RequestId; method: string; params: PermissionParams };
+    if (!isPermissionMessage(value)) { handleMessage(data); return; }
+    const msg = value, p = msg.params;
     const method = msg.method, params = msg.params, tid = typeof params.threadId === 'string' ? params.threadId : undefined;
     if (method === 'thread/settings/update' && p.elpisPermissionSource == null && !helperConns.has(ws) && p.model == null
       && ['approvalPolicy', 'permissions', 'sandboxPolicy'].some(key => p[key] != null)) p.elpisPermissionSource = 'chat';
@@ -98,7 +101,7 @@ export function createClientPermissions({ automaticThreads, blockedAutomaticThre
             await updateStore(store => { const helper = store._delegations?.[tid]; if (helper) helper.ceiling = ceiling; });
           }
         }
-        if (scope && tid !== undefined && !explicitChatChoices.has(tid)) boundAccess(chosen, helperScope.has(tid) ? scope.ceiling : ceilingOf(tid, scope), 'sandboxPolicy');
+        if (scope && tid !== undefined && !explicitChatChoices.has(tid)) boundAccess(chosen, helperScope.get(tid)?.ceiling ?? ceilingOf(tid, scope), 'sandboxPolicy');
         // A loaded native thread ignores resume profile overrides. Apply the
         // confirmed settings before it resumes or starts either provider's turn.
         if ((method === 'thread/resume' || method === 'turn/start') && tid !== undefined) {

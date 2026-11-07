@@ -1,11 +1,7 @@
 import { plainCommand } from "./bridge-transcript.mts";
 import { wireObject } from "./bridge-wire.mts";
-import type { BridgeResponses,RequestId,BridgeClient,BridgeError,BridgeMessage,EngineThread,ForkLink,HistoryOptions,HistoryRequest,ProviderOwner,ProviderTurn,ResumeResult,Store,ThreadRequest,TranscriptItem,TranscriptTurn,TurnPage } from "./bridge-types.mts";
+import type { EngineCall,BridgeResponses,RequestId,BridgeClient,BridgeError,BridgeMessage,EngineThread,ForkLink,HistoryOptions,HistoryRequest,ProviderOwner,ProviderTurn,ResumeResult,Store,ThreadRequest,TranscriptItem,TranscriptTurn,TurnPage,ItemPage,ItemRow } from "./bridge-types.mts";
 
-type EngineCall = {
-  <K extends keyof BridgeResponses>(method: K, params: object, timeoutMs?: number): Promise<BridgeResponses[K]>;
-  <T = unknown>(method: string, params: object, timeoutMs?: number): Promise<T>;
-};
 type Dependencies = {
   forkParent: Map<string, ForkLink>;
   engineCall: EngineCall;
@@ -38,13 +34,15 @@ export function createProviderHistory({ forkParent, engineCall, resumeResults, a
     return [...kept.filter((t) => !have.has(t.id)), ...own];
   }
   const unrecorded = (error: unknown, method: string) => typeof (error as BridgeError | null | undefined)?.message === "string" && (error as BridgeError & { message: string }).message.includes("is not materialized yet;") && (error as BridgeError & { message: string }).message.includes(`${method} is unavailable before first user message`);
-  type ItemRow = { turnId: string; item: TranscriptItem; startedAtMs: number; completedAtMs: number | null };
-  type ItemPage = { data?: ItemRow[]; nextCursor?: string | null; backwardsCursor?: string | null };
   function nativeProviderHistory(method: "thread/turns/list", params: HistoryRequest): Promise<TurnPage>;
   function nativeProviderHistory(method: "thread/items/list", params: HistoryRequest): Promise<ItemPage>;
   function nativeProviderHistory(method: string, params: HistoryRequest): Promise<TurnPage | ItemPage>;
   async function nativeProviderHistory(method: string, params: HistoryRequest): Promise<TurnPage | ItemPage> {
-    try { return await engineCall<TurnPage | ItemPage>(method, params); }
+    try {
+      if (method === "thread/turns/list") return await engineCall("thread/turns/list", params);
+      if (method === "thread/items/list") return await engineCall("thread/items/list", params);
+      throw new Error(`Unsupported history method ${method}`);
+    }
     catch (error) {
       // A subscription turn can be active before its native carrier has any turns.
       // This known empty-carrier state is distinct from load/permission failures.
@@ -126,7 +124,7 @@ export function createProviderHistory({ forkParent, engineCall, resumeResults, a
     let nativePage: TurnPage | ItemPage | null = null;
     let nativeRows: HistoryRow[] = [];
     let nativeDone = !!child;
-    let seen = new Set(state.nativeSeen);
+    let seen = new Set<string | undefined>(state.nativeSeen);
     const nativeParams = { threadId, limit: state.nativeLimit, sortDirection: direction, ...(kind === "turns" ? { itemsView: view } : params.turnId ? { turnId: params.turnId } : {}) };
     const ensureNative = async () => {
       while (!nativeRows.length && !nativeDone) {
@@ -162,7 +160,7 @@ export function createProviderHistory({ forkParent, engineCall, resumeResults, a
         state.storedAfter = keyOf(a as HistoryRow);
       } else {
         nativeRows.shift();
-        seen.add(idOf(b as HistoryRow) as string);
+        seen.add(idOf(b as HistoryRow));
       }
       if (skipping) continue;
       state.boundary = null;
@@ -170,7 +168,7 @@ export function createProviderHistory({ forkParent, engineCall, resumeResults, a
     }
     // Determine continuation without hydrating another native page.
     const moreNative = nativeRows.length || (!nativeDone && (nativePage as TurnPage | ItemPage | null)?.nextCursor);
-    state.nativeSeen = [...seen];
+    state.nativeSeen = [...seen].filter((id): id is string => typeof id === "string");
     const nextCursor = storedIndex < stored.length || moreNative ? encode(state) : null;
     let backwardsCursor = null;
     if (data.length) {

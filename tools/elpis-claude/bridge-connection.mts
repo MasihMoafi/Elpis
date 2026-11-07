@@ -1,3 +1,4 @@
+import { installClientWire } from "./bridge-client-wire.mts";
 import { createProviderEdits } from "./bridge-edits.mts";
 import { createUsageTracker } from "./bridge-usage.mts";
 import { createProviderSteering } from "./bridge-steering.mts";
@@ -7,7 +8,7 @@ import { createClientRouter } from "./bridge-client-router.mts";
 import { createThreadLifecycle } from "./bridge-lifecycle.mts";
 import { createWorkflowRequests } from "./bridge-workflows.mts";
 import { createProviderCatalog } from "./bridge-catalog.mts";
-import { wireId,wireObject } from "./bridge-wire.mts";
+import { wireObject } from "./bridge-wire.mts";
 import { createHelperPermissions } from "./bridge-helper-permissions.mts";
 import { createProviderTurn } from "./bridge-turn.mts";
 import { createLaneBuilder } from "./bridge-lane.mts";
@@ -17,10 +18,10 @@ import { createProviderQueue } from "./bridge-queue.mts";
 import { createProviderHistory } from "./bridge-history.mts";
 import { inputSummary,clipTurn,jsonIn } from "./bridge-transcript.mts";
 import { Acp,lineReader } from "./bridge-acp.mts";
-import type { BridgeError,RequestId,BridgeClient,BridgeMessage,NoticeParams,ResumeResult,HelperScope,ProviderOwner,StartPick,LiveSession,BridgeContext,PromptInput,McpConfig,TranscriptTurn,ContextFile,ForkLink,SavedSession,SavedHelper,Store,ProviderAgent,EngineThread,AccessSettings,BridgeResponses,ChildThread,Steer,HistoryRequest,HistoryOptions,ThreadParams,ThreadRequest,ProviderTurn,Ceiling } from "./bridge-types.mts";
+import type { BridgeError,RequestId,BridgeClient,BridgeMessage,NoticeParams,ResumeResult,HelperScope,ProviderOwner,StartPick,LiveSession,BridgeContext,PromptInput,McpConfig,TranscriptTurn,ContextFile,ForkLink,SavedSession,SavedHelper,Store,ProviderAgent,EngineThread,AccessSettings,BridgeResponses,ChildThread,Steer,HistoryRequest,HistoryOptions,ThreadParams,ThreadRequest,GlobalRequest,ProviderTurn,Ceiling } from "./bridge-types.mts";
 import type WebSocket from "ws";
 import { createEngine } from "./shared-runtime.mts";
-import { currentDrain,drainProxy,trackRequests } from "./handover.mts";
+import { drainProxy,trackRequests,handoverMessage } from "./handover.mts";
 import { setSignedOut } from "./anthropic-signout.mts";
 import { recordedClaudeEnd } from "./claude-turn-record.mts";
 import { execFile } from "node:child_process";
@@ -44,53 +45,19 @@ function createConnectionState(socket: WebSocket, { HOME, permissionChoices, log
   ws.sendWire = ws.send.bind(ws);
   const noteRequest = trackRequests(ws);
   const handover = drainProxy(ws, log);
-  ws.send = (line) => {
-    let value: unknown;
-    try { value = JSON.parse(String(line)); } catch { if (ws.readyState === 1) ws.sendWire(line); return; }
-    if (!wireObject(value)) { if (ws.readyState === 1) ws.sendWire(line); return; }
-    let msg = value;
-    let result = wireObject(msg.result) ? msg.result : undefined;
-    let params = wireObject(msg.params) ? msg.params : undefined;
-    let resultThread = wireObject(result?.thread) ? result.thread : undefined;
-    const threadId = typeof resultThread?.id === "string" ? resultThread.id : undefined;
-    if (threadId && deletedThreads.has(threadId)) {
-      msg = { id: msg.id, error: { code: -32600, message: `thread not found: ${threadId}` } };
-      result = undefined; params = undefined; resultThread = undefined;
-    }
-    if (resultThread && typeof resultThread.id === "string") decorateThread(resultThread as { id: string });
-    if (wireObject(params?.thread) && typeof params.thread.id === "string") decorateThread(params.thread as { id: string });
-    if (Array.isArray(result?.data)) for (const t of result.data) if (wireObject(t) && typeof t.id === "string") decorateThread(t as { id: string });
-    // A chat still working in the bridge that handed over shows as working.
-    const old = Array.isArray(result?.data) && currentDrain();
-    if (old && Array.isArray(result?.data)) for (const t of result.data) if (wireObject(t) && typeof t.id === "string" && old.threads.has(t.id)) t.status = { type: "active", activeFlags: [] };
-    const target = typeof params?.threadId === "string" ? params.threadId : undefined;
-    const owner = target === undefined ? undefined : providerOwners.get(target);
-    if (msg.method === "thread/status/changed" && owner && params) params.status = owner.status();
-    if (msg.method === "thread/settings/updated" && owner) {
-      const model = owner.model();
-      if (model && params) params.threadSettings = { ...(wireObject(params.threadSettings) ? params.threadSettings : {}), model, effort: owner.effort() };
-    }
-    const route = !msg.method && wireId(msg.id) ? forwarded.get(msg.id) : undefined;
-    const recipient = route?.client ?? ws;
-    if (!msg.method && wireId(msg.id) && openingReplies.delete(msg.id) && typeof resultThread?.id === "string") subscriptions.get(recipient)?.add(resultThread.id);
-    if (route && wireId(msg.id)) { forwarded.delete(msg.id); sendClient(recipient, { ...msg, id: route.id }); }
-    else if (owner?.ws === ws && typeof msg.method === "string" && msg.id === undefined && !["thread/status/changed", "thread/name/updated", "thread/archived", "thread/closed", "thread/deleted", "thread/unarchived"].includes(msg.method)) {
-      const recipients = new Set(viewers(target, true));
-      // The delegate connection follows its helper even before subscribing. A thread/start
-      // reply also subscribes it, so combine the routes before sending each event once.
-      if (owner.nativeHelper) recipients.add(ws);
-      for (const client of recipients) sendClient(client, msg);
-    } else sendClient(recipient, msg);
-    // Hydration reaches the terminal before a pending question for that chat.
-    if (typeof resultThread?.id === "string") flushApprovals(recipient, resultThread.id);
-  };
+  const openingReplies = new Set<RequestId>();
+  installClientWire({ ws, openingReplies, deletedThreads, providerOwners, forwarded, subscriptions, sendClient, viewers, flushApprovals, decorateThread });
   const toOthers = (msg: BridgeMessage) => { const line = JSON.stringify(msg); for (const c of clients) if (c !== ws && c.readyState === 1) c.send(line); };
-  const shareHelper = (msg: BridgeMessage) => { if (msg?.method === "thread/status/changed" && helperThreads.has(msg.params?.threadId as string)) toOthers(msg); };
+  const shareHelper = (msg: BridgeMessage) => { if (msg?.method === "thread/status/changed" && typeof msg.params?.threadId === "string" && helperThreads.has(msg.params.threadId)) toOthers(msg); };
   // A chat's latest plan, kept in the store: the engine sends plans only while a turn runs, so
   // reopening a chat (GPT or Claude) shows it again.
+  const isPlan = (value: unknown): value is { step: string; status: string }[] => Array.isArray(value)
+    && value.every((step: unknown) => wireObject(step) && typeof step.step === "string" && typeof step.status === "string");
   const notePlan = (msg: BridgeMessage) => {
-    if (msg?.method !== "turn/plan/updated" || !msg.params?.threadId) return;
-    const { threadId, turnId, explanation, plan } = msg.params as { threadId: string; turnId: string; explanation?: string | null; plan: { step: string; status: string }[] };
+    if (msg?.method !== "turn/plan/updated" || !msg.params?.threadId || typeof msg.params.turnId !== "string"
+      || !isPlan(msg.params.plan)
+      || !(msg.params.explanation == null || typeof msg.params.explanation === "string")) return;
+    const { threadId, turnId, explanation, plan } = msg.params;
     updateStore((st) => { st[threadId] = { ...st[threadId], plan: { turnId, explanation: explanation ?? null, plan } }; });
   };
   const replayPlan = async (threadId: string) => {
@@ -141,7 +108,7 @@ function createConnectionState(socket: WebSocket, { HOME, permissionChoices, log
   const threadPolicy = new Map<string, string>();
   const smartPrune = new Map<string, boolean>(); // thread id -> its Smart Prune switch, as the engine reports it
   const threadSandbox = new Map<string, Ceiling>();
-  const pendingDelegation = new Map<RequestId, SavedHelper & { sandbox: Ceiling }>(); // thread/start id -> the chat that delegated it
+  const pendingDelegation = new Map<RequestId, SavedHelper & { requested: string; ceiling: Ceiling; sandbox: Ceiling }>(); // thread/start id -> the chat that delegated it
   const pendingHelperTurns = new Map<RequestId, string>(); // native turn/start id -> helper awaiting its acknowledgement
   const sessions = new Map<string, LiveSession>();
   const threadMcp = new Map<string, McpConfig>(); // thread -> the app's `mcp_servers.*` overrides for it (A37)
@@ -406,11 +373,11 @@ function createConnectionState(socket: WebSocket, { HOME, permissionChoices, log
     }
     return changed;
   }
-  const engineReqs = new BusyMap<RequestId, { resolve: (result: unknown) => void; reject: (error: unknown) => void }>();
+  const engineReqs = new BusyMap<RequestId, { method: string; resolve: (result: unknown) => void; reject: (error: unknown) => void }>();
   let engineSeq = 0;
   function engineCall<K extends keyof BridgeResponses>(method: K, params: object, timeoutMs?: number): Promise<BridgeResponses[K]>;
-  function engineCall<T = unknown>(method: string, params: object, timeoutMs?: number): Promise<T>;
-  function engineCall<T>(method: string, params: object, timeoutMs = 0): Promise<T> { return new Promise<T>((resolve, reject) => {
+  function engineCall(method: string, params: object, timeoutMs?: number): Promise<unknown>;
+  function engineCall(method: string, params: object, timeoutMs = 0): Promise<unknown> { return new Promise((resolve, reject) => {
     const id = `acp-bridge-engine-${++engineSeq}`;
     const timer = timeoutMs ? setTimeout(() => {
       engineReqs.delete(id);
@@ -420,7 +387,8 @@ function createConnectionState(socket: WebSocket, { HOME, permissionChoices, log
       checkIdle();
     }, timeoutMs) : null;
     engineReqs.set(id, {
-      resolve: (result) => { if (timer) clearTimeout(timer); resolve(result as T); },
+      method,
+      resolve: (result) => { if (timer) clearTimeout(timer); resolve(result); },
       reject: (error) => { if (timer) clearTimeout(timer); reject(error); },
     });
     engine.stdin.write(JSON.stringify({ id, method, params }) + "\n");
@@ -443,7 +411,8 @@ function createConnectionState(socket: WebSocket, { HOME, permissionChoices, log
   async function providerContextFiles(msg: { id: RequestId; method: string; params: { threadId: string; [key: string]: unknown } }) {
     try {
       const { threadId } = msg.params;
-      const result = await engineCall<{ files: ContextFile[] }>(msg.method, msg.params);
+      if (msg.method !== 'thread/contextFiles/list' && msg.method !== 'thread/contextFiles/set') throw new Error('Unsupported context files method');
+      const result = await engineCall(msg.method, msg.params);
       await storeChain();
       const entry = (await loadStore())[threadId];
       const saved = entry?.contextFiles ?? [];
@@ -451,7 +420,9 @@ function createConnectionState(socket: WebSocket, { HOME, permissionChoices, log
       let files = saved, note;
       if (agent?.key === 'claude' && live && !activeTurns.has(threadId)) {
         try {
-          const native = await (acps.get(agent.key) as Acp).call('_elpis/contextFiles', { sessionId: live.id }, 4000);
+          const acp = acps.get(agent.key);
+          if (!acp) throw new Error('No active provider session');
+          const native = await acp.call('_elpis/contextFiles', { sessionId: live.id }, 4000);
           const selected = entry?.contextSessionId === live.id ? saved.filter(file => file.group === 'skills') : [];
           files = [...native.files.filter(file => typeof file.path === 'string' && file.path.startsWith('/')).map(file => ({ name: basename(file.path), path: file.path, estimatedTokens: file.estimatedTokens, group: /(?:^|\/)MEMORY\.md$/.test(file.path) ? 'durableMemory' : 'instructions', included: true, selectable: false, reason: 'Loaded by Claude' })), ...selected];
           if (JSON.stringify(files) !== JSON.stringify(saved) || entry?.contextSessionId !== live.id) updateStore(st => {
@@ -493,7 +464,7 @@ function createConnectionState(socket: WebSocket, { HOME, permissionChoices, log
   // Reopening a helper (by a fresh delegate server, or by the TUI from the agents page) bounds its
   // permissions by its ceiling before the engine loads it, so the reopened thread and what the
   // TUI shows are already within it.
-  const pendingAdopt = new Map<RequestId, SavedHelper & { stored: Ceiling }>(); // thread/resume id -> the helper it reopens
+  const pendingAdopt = new Map<RequestId, SavedHelper & { ceiling: Ceiling; stored: Ceiling | undefined }>(); // thread/resume id -> the helper it reopens
   async function resumeThread(msg: ThreadRequest) {
     const tid = msg.params?.threadId;
     await storeChain();
@@ -538,7 +509,10 @@ function createConnectionState(socket: WebSocket, { HOME, permissionChoices, log
     engine.stdin.write(JSON.stringify(msg) + "\n");
   }
   const askTui = (method: string, params: NoticeParams, toolPermission = false) => new Promise<{ decision?: string } | null>((resolve) => {
-    if (!relayToTui({ method, params }, (reply) => resolve(reply.result as { decision?: string } | null), ws, toolPermission)) resolve(null);
+    if (!relayToTui({ method, params }, (reply) => {
+      const result = reply.result;
+      resolve(wireObject(result) ? (typeof result.decision === "string" ? { decision: result.decision } : {}) : null);
+    }, ws, toolPermission)) resolve(null);
   });
 
   const newLane = createLaneBuilder({ notify, addChars, lastContext, sendUsage, now });
@@ -561,9 +535,9 @@ function createConnectionState(socket: WebSocket, { HOME, permissionChoices, log
   async function startThread(msg: { id: RequestId; params?: { elpisParentThreadId?: string; elpisRequestedScope?: string; permissions?: string; sandbox?: Ceiling; elpisWorkflow?: { runId?: string; agentId?: string | null }; approvalPolicy?: string; parentThreadId?: string; model?: string | null; config?: Record<string, unknown> & { model_reasoning_effort?: string | null }; cwd?: string } }) {
     const p = msg.params ?? {};
     const helper = !!p.elpisParentThreadId;
-    if (helper) {
+    if (p.elpisParentThreadId) {
       // Resolve this helper's shared default or deliberately requested task scope.
-      const parentThreadId = p.elpisParentThreadId as string;
+      const parentThreadId = p.elpisParentThreadId;
       const requested = p.elpisRequestedScope ?? ([':workspace', ':danger-full-access'].includes(p.permissions as string) || ["workspace-write", "danger-full-access"].includes(p.sandbox as string) ? "workspace-write" : "read-only");
       delete p.elpisRequestedScope;
       p.sandbox = ({ ':read-only': 'read-only', ':workspace': 'workspace-write', ':danger-full-access': 'danger-full-access' } as Record<string, Ceiling>)[p.permissions as string] ?? helperCeiling(requested);
@@ -671,21 +645,21 @@ function createConnectionState(socket: WebSocket, { HOME, permissionChoices, log
 
   const { steerClaude, cancelClaudeSteers, cancelWaitingClaudeSteers } = createProviderSteering({ activeTurns, pendingSteers, deletedThreads, deletingThreads, archivingThreads, queueOf, runNext, queues, notify, toTui, now, updateStore, addChars, log });
   const { stopProvider, archiveProvider, deleteThread } = createThreadLifecycle({ pendingSteers, activeTurns, cancelWaitingClaudeSteers, contexts, storeChain, loadStore, archivingThreads, deletingThreads, deletedThreads, updateStore, toTui, notify, claudeModel, pendingArchive, queueOf, pendingHelpers, providerOwners, chatAccess, helperScope, helperThreads, subscriptions });
-  const openingReplies = new Set<RequestId>();
   const { workflowRequest, runWorkGraph } = createWorkflowRequests({ storeChain, loadStore, providerOwners, claudeModel, isBridged, activeTurns, engineCall, textOf, log, toTui, workflowToolConns, ws, claudeEffort, threadCwd, workflows, HOME, engine });
   // Elpis's own sign-out of the Claude subscription, for the desktop's Settings (the terminal reads the
   // same file). `claudeSubscription/write` {signedOut} flips the switch; both answer {signedOut}.
-  function claudeSubscriptionRequest(msg: ThreadRequest) {
+  function claudeSubscriptionRequest(msg: GlobalRequest) {
     try {
       if (msg.method === "claudeSubscription/write") {
-        setSignedOut(STATE_DIR, msg.params?.signedOut as boolean);
+        if (typeof msg.params.signedOut !== "boolean") throw Object.assign(new Error("Choose whether to sign out."), { code: -32602 });
+        setSignedOut(STATE_DIR, msg.params.signedOut);
         log(`Claude subscription: Elpis is ${msg.params.signedOut ? "signed out" : "signed in"}`);
         recordAccounts().catch((e) => log(`accounts: ${e.message}`));
       }
       toTui({ id: msg.id, result: { signedOut: claudeSignedOut() } });
     } catch (e) { toTui({ id: msg.id, error: { code: Number.isInteger((e as BridgeError).code) ? (e as BridgeError).code : -32603, message: (e as BridgeError).message ?? String(e) } }); }
   }
-  async function claudeAccountsRequest(msg: ThreadRequest) {
+  async function claudeAccountsRequest(msg: GlobalRequest) {
     try {
       const params = msg.params ?? {};
       if (Object.keys(params).some(key => !["action", "id", "code"].includes(key))) throw Object.assign(new Error("Unsupported Claude account setting."), { code: -32602 });
@@ -693,13 +667,14 @@ function createConnectionState(socket: WebSocket, { HOME, permissionChoices, log
       if (msg.method === "claudeAccounts/write") {
         if (params.action === "select") {
           if ([...contexts].some(context => context.claudeBusy())) throw Object.assign(new Error("Wait for the active Claude response to finish before switching accounts."), { code: -32600 });
-          claudeAccounts.select(params.id as string); setSignedOut(STATE_DIR, false);
+          if (typeof params.id !== "string") throw Object.assign(new Error("Choose a Claude account."), { code: -32602 });
+          claudeAccounts.select(params.id); setSignedOut(STATE_DIR, false);
           await recordAccounts();
         } else if (params.action === "login") {
           const id = params.id ?? claudeAccounts.add().id;
           extra = await claudeAccounts.login(id);
         } else if (params.action === "code") {
-          const login = claudeAccounts.logins.get(params.id as string);
+          const login = typeof params.id === "string" ? claudeAccounts.logins.get(params.id) : undefined;
           if (!login?.running || typeof params.code !== "string" || !/^[A-Za-z0-9_#.-]{1,4096}$/.test(params.code)) throw Object.assign(new Error("Enter the code from the Claude sign-in page."), { code: -32602 });
           login.child.stdin.write(`${params.code}\n`);
         } else throw Object.assign(new Error("Choose a Claude account action."), { code: -32602 });
@@ -731,9 +706,7 @@ function createConnectionState(socket: WebSocket, { HOME, permissionChoices, log
     let msg: Parameters<typeof noteRequest>[0] | undefined;
     try {
       const value: unknown = JSON.parse(String(data));
-      if (wireObject(value) && (value.id === undefined || wireId(value.id))
-        && (value.method === undefined || typeof value.method === "string")
-        && (value.params == null || wireObject(value.params))) msg = value as Parameters<typeof noteRequest>[0];
+      if (handoverMessage(value)) msg = value;
     } catch {}
     if (msg) noteRequest(msg);
     if (!msg || !handover.take(msg)) void withPermissions(data);

@@ -7,20 +7,21 @@
 import fs from "node:fs";
 import WebSocket from "ws";
 import { drainFile, startToken } from "./shared-runtime.mts";
-import { wireId, wireObject } from "./bridge-wire.mts";
+import { wireEnvelope,wireObject } from "./bridge-wire.mts";
 
 type Id = string | number;
-type HandoverMessage = { id?: Id; method?: string; params?: { threadId?: string; [key: string]: unknown }; error?: { code?: number; message?: string }; result?: { thread?: { id?: string }; [key: string]: unknown }; [key: string]: unknown };
+type HandoverMessage = { id?: Id; method?: string; params?: { threadId?: string; [key: string]: unknown } | null; error?: { code?: number; message?: string } | null; result?: { thread?: { id?: string } | null; [key: string]: unknown } | null; [key: string]: unknown };
 type ClientSocket = WebSocket & { pending: Set<Id>; sendWire: (line: string) => void };
 type Drain = { pid: number; token: string; sock: string; threads: Set<string> };
 type Route = { id: Id; threadId: string; subscribe?: boolean; legacyRead?: boolean };
 
-function handoverMessage(value: unknown): value is HandoverMessage {
-  return wireObject(value) && (value.id === undefined || wireId(value.id))
-    && (value.method === undefined || typeof value.method === "string")
-    && (value.params == null || wireObject(value.params))
-    && (value.result == null || wireObject(value.result))
-    && (value.error == null || wireObject(value.error));
+export function handoverMessage(value: unknown): value is HandoverMessage {
+  return wireEnvelope(value)
+    && (value.params == null || (wireObject(value.params) && (value.params.threadId === undefined || typeof value.params.threadId === "string")))
+    && (value.result == null || (wireObject(value.result) && (value.result.thread == null || (wireObject(value.result.thread)
+      && (value.result.thread.id === undefined || typeof value.result.thread.id === "string")))))
+    && (value.error == null || (wireObject(value.error) && (value.error.code === undefined || typeof value.error.code === "number")
+      && (value.error.message === undefined || typeof value.error.message === "string")));
 }
 
 /** Counts the requests a client is waiting on, so it is asked to reconnect only between answers. */

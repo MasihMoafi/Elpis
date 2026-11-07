@@ -1,7 +1,6 @@
-import type { BridgeClient,BridgeContext,BridgeResponses,Ceiling,HelperScope,NoticeParams,ProviderTurn,RequestId,SavedHelper,Store } from "./bridge-types.mts";
+import type { EngineCall,BridgeClient,BridgeContext,BridgeResponses,Ceiling,HelperScope,NoticeParams,ProviderTurn,RequestId,SavedHelper,Store } from "./bridge-types.mts";
 
 type Mode = "plan" | "bypassPermissions" | "default" | "auto" | "acceptEdits";
-type EngineCall = { <K extends keyof BridgeResponses>(method: K, params: object, timeoutMs?: number): Promise<BridgeResponses[K]>; <T = unknown>(method: string, params: object, timeoutMs?: number): Promise<T> };
 type Dependencies = {
   threadAccess: Map<string, { profile: string | undefined; reviewer: string | undefined }>;
   threadPolicy: Map<string, string>;
@@ -114,7 +113,7 @@ export function createHelperPermissions({ threadAccess, threadPolicy, UNSANDBOXE
   // Opens a helper on this connection, under the lower of its known ceiling and `ceiling`.
   const openHelper = (tid: string, d: SavedHelper, ceiling: Ceiling) => {
     let h = helperScope.get(tid);
-    if (!h) helperScope.set(tid, h = { parentThreadId: d.parentThreadId, requested: d.requested, ceiling, owners: new Set() });
+    if (!h) helperScope.set(tid, h = { parentThreadId: d.parentThreadId, requested: d.requested ?? "read-only", ceiling, owners: new Set() });
     h.ceiling = lowest(h.ceiling, ceiling);
     h.model = d.model ?? h.model;
     h.owners.add(restrictHelper);
@@ -135,7 +134,7 @@ export function createHelperPermissions({ threadAccess, threadPolicy, UNSANDBOXE
   };
   // A reopened helper (resumeThread bounded its request): its ceiling, saved if it fell, and its
   // engine checked to be within it. False if the engine could not be brought within it.
-  async function adoptHelper(tid: string, r: SavedHelper & { stored: Ceiling }, bridged: boolean) {
+  async function adoptHelper(tid: string, r: SavedHelper & { ceiling: Ceiling; stored: Ceiling | undefined }, bridged: boolean) {
     const h = openHelper(tid, r, r.ceiling);
     if (explicitChatChoices.has(tid)) return true;
     if (h.ceiling !== r.stored) updateStore((st) => { if (st._delegations?.[tid]) st._delegations[tid].ceiling = h.ceiling; });

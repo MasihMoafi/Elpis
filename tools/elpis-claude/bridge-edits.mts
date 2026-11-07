@@ -1,6 +1,6 @@
 import { createProviderHistory } from "./bridge-history.mts";
 import { Acp } from "./bridge-acp.mts";
-import type { BridgeError,RequestId,BridgeMessage,StartPick,LiveSession,SavedSession,ProviderAgent,BridgeResponses,ThreadRequest } from "./bridge-types.mts";
+import type { EngineCall,BridgeError,RequestId,BridgeMessage,StartPick,LiveSession,SavedSession,ProviderAgent,BridgeResponses,ThreadRequest } from "./bridge-types.mts";
 import type { BridgeEnvironment } from "./bridge-server.mts";
 
 type Dependencies = Pick<BridgeEnvironment, "agentOf" | "claudeAccounts" | "log" | "storeChain" | "loadStoreSnapshot" | "updateStore" | "startingProviders"> & {
@@ -8,7 +8,7 @@ type Dependencies = Pick<BridgeEnvironment, "agentOf" | "claudeAccounts" | "log"
   threadCwd: Map<string, string>;
   ensureAcp: (agent: ProviderAgent) => Promise<Acp>;
   engine: { stdin: { write: (data: string) => unknown } };
-  engineCall: { <K extends keyof BridgeResponses>(method: K, params: object, timeoutMs?: number): Promise<BridgeResponses[K]>; <T = unknown>(method: string, params: object, timeoutMs?: number): Promise<T> };
+  engineCall: EngineCall;
   claudeTurnsOf: ReturnType<typeof createProviderHistory>["claudeTurnsOf"];
   pendingStart: Map<RequestId, StartPick>;
   connectionId: string;
@@ -49,7 +49,7 @@ export function createProviderEdits({ agentOf, claudeModel, claudeAccounts, ensu
         if (cut) {
           const native = (await engineCall("thread/turns/list", { threadId, limit: 200, sortDirection: "asc", itemsView: "notLoaded" }).catch(() => ({ data: [] }))).data ?? [];
           const engineCut = native.find((t) => (t.startedAt ?? 0) >= (cut.startedAt ?? 0));
-          if (engineCut) params.beforeTurnId = engineCut.id;
+          if (engineCut?.id) params.beforeTurnId = engineCut.id;
         }
       }
       const pick = pendingStart.get(msg.id);

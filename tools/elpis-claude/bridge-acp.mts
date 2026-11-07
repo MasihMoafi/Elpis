@@ -1,26 +1,29 @@
 import { spawn } from "node:child_process";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { redactedLines } from "./log-redaction.mts";
-import { wireId,wireObject } from "./bridge-wire.mts";
+import { wireEnvelope,wireObject } from "./bridge-wire.mts";
+import { readAcpEvent,validAcpReply } from "./bridge-acp-events.mts";
 import type { ProviderAgent,AcpHandlers,AcpMessage,AcpResponses,AcpUpdate,AcpPermission } from "./bridge-types.mts";
 
 function acpMessage(line: string): AcpMessage {
   const value: unknown = JSON.parse(line);
-  if (!wireObject(value) || (value.id !== undefined && !wireId(value.id))
-    || (value.method !== undefined && typeof value.method !== "string")) throw new Error("Invalid ACP message envelope");
-  return value as AcpMessage;
+  if (!wireEnvelope(value)) throw new Error("Invalid ACP message envelope");
+  return value;
 }
 
 function acpUpdate(value: unknown): AcpUpdate | null {
-  if (!wireObject(value) || typeof value.sessionId !== "string" || !wireObject(value.update) || typeof value.update.sessionUpdate !== "string") return null;
-  return value as AcpUpdate;
+  if (!wireObject(value) || typeof value.sessionId !== "string") return null;
+  const update = readAcpEvent(value.update);
+  return update ? { sessionId: value.sessionId, update } : null;
 }
 
-function acpPermission(value: unknown): AcpPermission | null {
+function isAcpPermission(value: unknown): value is AcpPermission {
   if (!wireObject(value) || typeof value.sessionId !== "string" || !Array.isArray(value.options)
     || !value.options.every(option => wireObject(option) && typeof option.optionId === "string" && typeof option.kind === "string")
-    || (value.toolCall !== undefined && !wireObject(value.toolCall))) return null;
-  return value as AcpPermission;
+    || (value.toolCall !== undefined && (!wireObject(value.toolCall)
+      || (value.toolCall.toolCallId !== undefined && typeof value.toolCall.toolCallId !== "string")
+      || (value.toolCall.title != null && typeof value.toolCall.title !== "string")))) return false;
+  return true;
 }
 
 export function lineReader(stream: { on: (event: "data", listener: (chunk: string | Buffer) => void) => unknown }, onLine: (line: string) => void) {
@@ -69,27 +72,32 @@ export class Acp {
   }
   send(msg: object) { this.proc.stdin.write(JSON.stringify({ jsonrpc: "2.0", ...msg }) + "\n"); }
   call<K extends keyof AcpResponses>(method: K, params: { sessionId?: string; [key: string]: unknown }, timeoutMs?: number): Promise<AcpResponses[K]>;
-  call<T = unknown>(method: string, params: { sessionId?: string; [key: string]: unknown }, timeoutMs?: number): Promise<T>;
-  call<T>(method: string, params: { sessionId?: string; [key: string]: unknown }, timeoutMs = 0): Promise<T> {
+  call(method: string, params: { sessionId?: string; [key: string]: unknown }, timeoutMs?: number): Promise<unknown>;
+  call(method: string, params: { sessionId?: string; [key: string]: unknown }, timeoutMs = 0): Promise<unknown> {
     if (this.dead) return Promise.reject({ message: this.dead });
-    return new Promise<T>((resolve, reject) => {
+    return new Promise((resolve, reject) => {
       const id = this.nextId++;
       const timer = timeoutMs ? setTimeout(() => { this.pending.delete(id); reject({ message: 'Reading Claude context files timed out.' }); }, timeoutMs) : undefined;
-      this.pending.set(id, { resolve: value => { clearTimeout(timer); resolve(value as T); }, reject: error => { clearTimeout(timer); reject(error); }, method, sessionId: params?.sessionId });
+      this.pending.set(id, { resolve: value => { clearTimeout(timer); resolve(value); }, reject: error => { clearTimeout(timer); reject(error); }, method, sessionId: params?.sessionId });
       this.send({ id, method, params });
     });
   }
   settleRecorded(sessionId: string, method: string, result: unknown) {
     for (const [id, pending] of this.pending) if (pending.sessionId === sessionId && pending.method === method) {
       this.pending.delete(id);
-      pending.resolve(result);
+      if (validAcpReply(pending.method, result)) pending.resolve(result);
+      else pending.reject(new Error(`Invalid ACP response for ${pending.method}`));
     }
   }
   async #handle(msg: AcpMessage) {
     if (msg.id !== undefined && !msg.method) {
       const p = this.pending.get(msg.id);
       this.pending.delete(msg.id);
-      if (p) { if (msg.error) p.reject(msg.error); else p.resolve(msg.result); }
+      if (p) {
+        if (msg.error) p.reject(msg.error);
+        else if (validAcpReply(p.method, msg.result)) p.resolve(msg.result);
+        else p.reject(new Error(`Invalid ACP response for ${p.method}`));
+      }
     } else if (msg.method === "session/update") {
       const params = acpUpdate(msg.params);
       if (params && !this.loading.has(params.sessionId)) this.bySession.get(params.sessionId)?.onUpdate?.(params);
@@ -98,7 +106,7 @@ export class Acp {
       const tools = Array.isArray(msg.params.message.tools) ? msg.params.message.tools : [];
       this.log(`claude tools (session ${msg.params.sessionId}): ${tools.join(", ")}`);
     } else if (msg.method === "session/request_permission") {
-      const params = acpPermission(msg.params);
+      const params = isAcpPermission(msg.params) ? msg.params : null;
       const own = params ? this.bySession.get(params.sessionId) : undefined;
       if (!own) this.log(`approval asked by unknown session ${params?.sessionId} -> refused`);
       const optionId = own?.onPermission && params ? await own.onPermission(params) : null;

@@ -1,4 +1,23 @@
-import type { PromptInput,PatchHunk,ToolState,TranscriptItem } from "./bridge-types.mts";
+import type { PromptInput,PatchHunk,ToolState,TranscriptItem,TranscriptTurn } from "./bridge-types.mts";
+import { wireObject } from "./bridge-wire.mts";
+
+const string = (v: unknown): v is string => typeof v === "string";
+const number = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+const optional = (v: unknown, check: (value: unknown) => boolean) => v === undefined || check(v);
+const nullable = (v: unknown, check: (value: unknown) => boolean) => v === null || check(v);
+const array = (v: unknown, check: (value: unknown) => boolean) => Array.isArray(v) && v.every(check);
+export const isPromptInput = (v: unknown): v is PromptInput => wireObject(v) && string(v.type)
+  && optional(v.text, string) && optional(v.path, string) && optional(v.url, string) && optional(v.name, string)
+  && optional(v.text_elements, Array.isArray);
+export const isTranscriptItem = (v: unknown): v is TranscriptItem => wireObject(v) && string(v.type) && optional(v.id, string)
+  && optional(v.status, string) && optional(v.text, string) && optional(v.review, string)
+  && optional(v.aggregatedOutput, x => nullable(x, string)) && optional(v.content, x => array(x, isPromptInput))
+  && optional(v.commandActions, x => array(x, action => wireObject(action) && string(action.type) && optional(action.path, y => nullable(y, string))))
+  && optional(v.changes, x => array(x, change => wireObject(change) && string(change.path) && string(change.diff)));
+export const isTranscriptTurn = (v: unknown): v is TranscriptTurn => wireObject(v) && optional(v.id, string) && array(v.items, isTranscriptItem)
+  && optional(v.startedAt, x => nullable(x, number)) && optional(v.startedAtMs, x => nullable(x, number))
+  && optional(v.completedAt, x => nullable(x, number)) && optional(v.status, string)
+  && optional(v.claudeMessageId, x => nullable(x, string));
 
 const MIME: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp" };
 export async function toAcpPrompt(input: PromptInput[]) {

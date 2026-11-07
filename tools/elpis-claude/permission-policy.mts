@@ -5,10 +5,10 @@ export const PERMISSION_PRESETS: Record<string, { approval: string; reviewer: st
   auto: { approval: 'on-request', reviewer: 'auto_review', sandbox: 'workspace-write' },
   full: { approval: 'never', reviewer: 'user', sandbox: 'danger-full-access' },
 };
-type Settings = { approvalPolicy?: string | undefined; approvalsReviewer?: string | undefined; permissions?: string | undefined; activePermissionProfile?: { id?: string }; sandboxPolicy?: { type?: string }; sandbox?: { type?: string } | string };
+type Settings = { approvalPolicy?: string | undefined; approvalsReviewer?: string | undefined; permissions?: string | undefined; activePermissionProfile?: { id?: string } | null; sandboxPolicy?: { type?: string } | null; sandbox?: { type?: string } | string | null };
 type Requirements = { allowedApprovalPolicies?: unknown; allowedSandboxModes?: unknown; allowedPermissionProfiles?: unknown; allowedApprovalsReviewers?: unknown; allowedWebSearchModes?: unknown };
 type Config = { [key: string]: unknown };
-type ConfigRead = { config?: Config; layers?: { config?: Config }[] };
+type ConfigRead = { config?: Config; layers?: { config?: Config }[] | null };
 
 export function permissionSettings(mode: string) {
   if (mode === 'bypass') return { approvalPolicy: 'never', approvalsReviewer: 'user', permissions: ':bypass-permissions' };

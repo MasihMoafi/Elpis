@@ -1,6 +1,7 @@
 import { writeJson } from "./bridge-json.mts";
 import type { Acp } from "./bridge-acp.mts";
 import type { AcpOption,BridgeError,Catalog,CatalogResult,EffortLevels,ProviderAgent } from "./bridge-types.mts";
+import { wireObject } from "./bridge-wire.mts";
 
 type Dependencies = { readJson: (path: string) => Promise<Catalog | null>; ensureAcp: (agent: ProviderAgent) => Promise<Acp>; now: () => number; log: (message: string) => void };
 
@@ -31,10 +32,20 @@ export function createProviderCatalog({ readJson, ensureAcp, now, log }: Depende
     try {
       const a = await ensureAcp(agent);
       const s = await a.call("session/new", { cwd: process.cwd(), mcpServers: [] });
-      const opt = (opts: AcpOption[] | undefined, id: string) => (opts ?? []).find((o) => o.id === id);
-      const levelsOf = (opts: AcpOption[] | undefined): EffortLevels => { const e = opt(opts, "effort"); return e ? { levels: e.options.map((o) => ({ reasoningEffort: o.value, description: o.name })), current: e.currentValue } : { levels: [], current: null }; };
-      const models = (opt(s.configOptions, "model")?.options ?? []).filter((m) => m.value !== "default");
-      const first = opt(s.configOptions, "model")?.currentValue;
+      const opt = (opts: AcpOption[] | null | undefined, id: string) => (opts ?? []).find((o) => o.id === id);
+      const values = (option: AcpOption | undefined) => {
+        const choices: { value: string; name: string; description?: string }[] = [];
+        const add = (value: unknown) => { if (wireObject(value) && typeof value.value === "string" && typeof value.name === "string") choices.push({ value: value.value, name: value.name, ...(typeof value.description === "string" ? { description: value.description } : {}) }); };
+        if (Array.isArray(option?.options)) for (const entry of option.options) {
+          if (wireObject(entry) && Array.isArray(entry.options)) entry.options.forEach(add);
+          else add(entry);
+        }
+        return choices;
+      };
+      const levelsOf = (opts: AcpOption[] | null | undefined): EffortLevels => { const e = opt(opts, "effort"); return e ? { levels: values(e).map((o) => ({ reasoningEffort: o.value, description: o.name })), current: typeof e.currentValue === "string" ? e.currentValue : null } : { levels: [], current: null }; };
+      const modelOption = opt(s.configOptions, "model");
+      const models = values(modelOption).filter((m) => m.value !== "default");
+      const first = typeof modelOption?.currentValue === "string" ? modelOption.currentValue : undefined;
       if (first) efforts[first] = levelsOf(s.configOptions);
       const fallback = first ? efforts[first] as EffortLevels : { levels: [], current: null };
       const stale = !saved?.at || now() - saved.at > 86_400_000 || models.some((m) => !efforts[m.value]);

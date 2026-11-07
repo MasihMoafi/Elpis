@@ -1,5 +1,6 @@
 import { attachBridgeConnection } from "./bridge-connection.mts";
 import { createBridgeStore } from "./bridge-store.mts";
+import { wireObject } from "./bridge-wire.mts";
 import { writeJson } from "./bridge-json.mts";
 import type { RequestId,BridgeClient,BridgeMessage,HelperScope,ProviderOwner,RelayReply,Relay,BridgeContext,McpConfig,SavedHelper,ClaudeWindow,AgyBucket,AgyGroup,RateLimit,ProviderAgent,EngineThread,Catalog,Ceiling } from "./bridge-types.mts";
 // Elpis TUI <-ws-> bridge <-stdio-> real `elpis app-server` (everything else)
@@ -94,10 +95,15 @@ const mcpServersFor = (subagents: boolean, parentThreadId: string | null, memory
 // A37: the app hands a chat its own MCP servers (the built-in browser) as `config["mcp_servers.<name>"]`
 // overrides on thread/start, /fork and /resume. A Claude session gets the same servers in ACP's form;
 // Claude's MCP calls carry no `_meta.threadId`, so the server's environment names the thread.
-const appMcpConfig = (config: McpConfig | null | undefined) => {
-  const entries = Object.entries(config ?? {}).filter(([key, s]) =>
-    key.startsWith("mcp_servers.") && key !== "mcp_servers.elpis-agents" && typeof s?.command === "string");
-  return entries.length ? Object.fromEntries(entries) : null;
+const appMcpConfig = (config: Record<string, unknown> | null | undefined) => {
+  const entries: McpConfig = {};
+  for (const [key, value] of Object.entries(config ?? {})) {
+    if (!key.startsWith("mcp_servers.") || key === "mcp_servers.elpis-agents" || !wireObject(value)
+      || typeof value.command !== "string" || (value.args !== undefined && !Array.isArray(value.args))
+      || (value.env !== undefined && !wireObject(value.env))) continue;
+    entries[key] = { ...value, command: value.command, ...(Array.isArray(value.args) ? { args: value.args } : {}), ...(wireObject(value.env) ? { env: value.env } : {}) };
+  }
+  return Object.keys(entries).length ? entries : null;
 };
 const acpServersFrom = (config: McpConfig | null | undefined, threadId: string) => Object.entries(config ?? {}).map(([key, s]) => ({
   name: key.slice("mcp_servers.".length), command: s.command, args: Array.isArray(s.args) ? s.args.map(String) : [],
@@ -186,7 +192,7 @@ const agyLimitsCached = everyMinute(agyLimits, "Antigravity usage");
 
 // The TUI applies a resumed or started thread's collaboration mode after its model, so a bridged
 // chat must name its own model there too, or the engine's default replaces it on screen.
-function nameModel(result: { thread: object; collaborationMode?: { settings?: object } }, model: string, effort: string | null | undefined) {
+function nameModel(result: { thread: object; collaborationMode?: { settings?: object } | null }, model: string, effort: string | null | undefined) {
   Object.assign(result, { model, reasoningEffort: effort ?? null });
   Object.assign(result.thread, { model, reasoningEffort: effort ?? null });
   const settings = result.collaborationMode?.settings;
@@ -207,12 +213,12 @@ function announceLimits(agent: ProviderAgent | undefined, send: (method: string,
 // /usage reads every account's limits at once, but the engine only knows OpenAI's, so a Claude
 // chat showed the GPT plan. Each subscription answers within 5 s or is left out; without a
 // ChatGPT sign-in the engine refuses, and the subscriptions' limits answer instead.
-async function addSubscriptionLimits(answer: { result?: { rateLimits?: RateLimit; rateLimitsByLimitId?: Record<string, RateLimit> }; error?: unknown }) {
+async function addSubscriptionLimits(answer: { result?: Record<string, unknown> | null; error?: unknown }) {
   const within = (limits: Promise<RateLimit[]>) => Promise.race([limits, new Promise<RateLimit[]>((resolve) => setTimeout(resolve, 5000, []))]).catch(() => []);
   const limits = (await Promise.all(AGENTS.map((agent) => within(agent.limits())))).flat();
   if (!limits.length) return;
   const byId = Object.fromEntries(limits.map((one) => [one.limitId, one]));
-  if (answer.result) answer.result.rateLimitsByLimitId = { ...answer.result.rateLimitsByLimitId, ...byId };
+  if (answer.result) answer.result.rateLimitsByLimitId = { ...(wireObject(answer.result.rateLimitsByLimitId) ? answer.result.rateLimitsByLimitId : {}), ...byId };
   else { delete answer.error; answer.result = { rateLimits: limits[0] as RateLimit, rateLimitsByLimitId: byId }; }
 }
 
@@ -285,7 +291,7 @@ const lowest = (...ceilings: [Ceiling, ...Ceiling[]]) => CEILINGS[Math.min(...ce
 const helperCeiling = (requested: string) => requested === 'workspace-write' ? 'danger-full-access' : 'read-only';
 // Explicit delegate scopes stay bounded; automatic writers are reconciled with the
 // current default before reopening or taking another turn.
-const ceilingOf = (threadId: string, d: SavedHelper) => explicitChatChoices.has(threadId) ? 'danger-full-access' : lowest(d.ceiling, helperScope.get(threadId)?.ceiling ?? "danger-full-access", helperCeiling(d.requested));
+const ceilingOf = (threadId: string, d: SavedHelper) => explicitChatChoices.has(threadId) ? 'danger-full-access' : lowest(d.ceiling ?? 'read-only', helperScope.get(threadId)?.ceiling ?? "danger-full-access", helperCeiling(d.requested ?? 'read-only'));
 // Provider turns live in this bridge, while native turns live in the shared engine.
 // A provider thread has one runtime owner. Other terminals subscribe to that runtime;
 // their requests and replies keep their own ids, including when both clients use id 1.
