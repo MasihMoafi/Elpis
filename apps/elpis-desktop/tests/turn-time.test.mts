@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { pauseBefore, turnTime } from '../lib/turn-time.ts';
 
-const at = (day, hour, minute) => new Date(2026, 10, day, hour, minute).getTime();
+const at = (day: number, hour: number, minute: number) => new Date(2026, 10, day, hour, minute).getTime();
 
 test('a long pause or a new day gets a time line; close turns and missing times get none', () => {
   assert.equal(pauseBefore(at(5, 21, 0), at(5, 19, 59)), true, 'an hour or more');
