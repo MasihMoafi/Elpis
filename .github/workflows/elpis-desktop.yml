@@ -50,10 +50,10 @@ jobs:
       - name: Prepare the retained UI checkpoint
         run: |
           bash scripts/fetch-retained.sh
-      - name: Bind the renderer and complete regression plan to six shards
+      - name: Bind the renderer and complete regression plan to eight shards (7 Nov: six took 9.5 min on the slowest)
         id: plan
         run: |
-          node scripts/renderer-artifact-gate.mjs --prepare "$RUNNER_TEMP/elpis-ui-plan" 6
+          node scripts/renderer-artifact-gate.mjs --prepare "$RUNNER_TEMP/elpis-ui-plan" 8
           node --input-type=module -e '
             import fs from "node:fs";
             const { shardCount } = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
