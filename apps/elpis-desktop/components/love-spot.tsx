@@ -446,10 +446,10 @@ function LoveSpotBoard({ dark, toolbarHost }: LoveSpotProps) {
       const version = voiceVersion.current;
       // 5 Nov: a board change must not cut her voice. `ready` holds the next turn until she has finished speaking.
       // Her model is the one shared setting (lib/matilda-settings.ts); the bridge applies it to every message.
-      const reply = await api<{ voice: MatildaVoice }>("/love-spot/talk", { text, persona, revision });
+      const reply = await api<{ voice: MatildaVoice; waitingForPicture?: boolean }>("/love-spot/talk", { text, persona, revision });
       window.dispatchEvent(new Event(MATILDA_CHANGED));
       if (mounted.current && version === voiceVersion.current) { voiceEnabled.current = reply.voice.enabled; }
-      if (mounted.current && voiceEnabled.current && reply.voice.enabled) speech?.stream("matilda");
+      if (mounted.current && !reply.waitingForPicture && voiceEnabled.current && reply.voice.enabled) speech?.stream("matilda");
     }, isCurrent) });
 
   const changed = useCallback((elements: readonly ExcalidrawElement[], appState: AppState, files: BinaryFiles) => {

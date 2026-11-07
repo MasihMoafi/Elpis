@@ -10,6 +10,7 @@ import { createLoveSpotTalk } from './love-spot-talk.mts';
 import { createMatildaCompanion } from './matilda-companion.mjs';
 import { LOVE_SPOT_AUDIO, READ_ALOUD_AUDIO } from '../lib/love-spot-audio.mts';
 import { splitPainting } from './love-spot-painting.cts';
+import { toModel } from './subscription-models.mts';
 
 const enabledAudio = { available: true };
 type ThreadRequest = { name: string; cwd: string; model: string; provider: string; permissions: string; instructions: string; automatic: boolean };
@@ -21,6 +22,7 @@ type MockClient = EventEmitter & {
   readThread: (id: string, options?: { cursor?: string }) => Promise<{ thread: { id: string; name: string; cwd: string }; data: Entry[]; nextCursor: string | null }>;
   send: (id: string, value: Omit<Sent, 'id'>) => Promise<{ turn: { id: string } }>;
   voiceStatus: () => Promise<{ available: boolean; voice?: string }>;
+  models: () => Promise<{ data: { model: string; inputModalities?: string[] }[]; nextCursor: null }>;
   interrupt: (id: string, body: { turnId: string }) => Promise<object>;
 };
 type Talk = ReturnType<typeof createLoveSpotTalk>;
@@ -500,6 +502,34 @@ test('the board picture goes with a message only when the drawing changed since 
   const drew = await send('I drew something on the board.', [shape('box', 2), shape('circle'), note('masih', 'Apricot')]);
   assert.equal(drew.image, true, 'a new drawing goes again'); assert.doesNotMatch(drew.notes, /as it was/);
   await assert.rejects(f.talk.send({ text: 'Stale', model: 'luna', revision: 'stale' }), /drawing changed/, 'a stale board picture is still refused');
+});
+test('a drawing notification waits silently until a picture is available, while written messages still work', async t => {
+  const f = await fixture(t);
+  const shape = (id: string) => ({ ...note(id, ''), type: 'rectangle', text: undefined });
+  await f.store.save({ elements: [shape('box')] });
+  const waiting = await f.talk.send({ text: 'I drew something on the board.', model: 'text' });
+  assert.equal(waiting.waitingForPicture, true, 'the board does not start speech for a silent wait');
+  assert.equal(f.sent.length, 0, 'a drawing alone without a picture does not prompt a reply');
+  await f.talk.send({ text: 'How are you?', model: 'text' });
+  assert.equal(f.sent.length, 1, 'normal written messages still reach Matilda');
+  f.finish(); await f.talk.idle();
+  const { revision } = await f.store.read(); await f.store.picture({ revision, png: PNG });
+  await f.talk.send({ text: 'I drew something on the board.', model: 'luna', revision });
+  assert.equal(f.sent.length, 2, 'a drawing goes through once its picture is available');
+  assert.ok(f.sent[1]!.attachments.some(a => a.type === 'image'));
+  f.finish('turn-2'); await f.talk.idle();
+  const current = await f.store.read(); await f.store.picture({ revision: current.revision, png: PNG });
+  await f.talk.send({ text: 'I drew something on the board.', model: 'luna', revision: current.revision });
+  assert.equal(f.sent.length, 2, 'a repeated drawing signal without a new picture is quiet');
+});
+test('an image-capable subscription model receives the new board picture', async t => {
+  const f = await fixture(t);
+  f.client.models = async () => ({ data: [toModel({ slug: 'luna', visibility: 'list', input_modalities: ['text', 'image'] })], nextCursor: null });
+  await f.store.save({ elements: [{ ...note('drawing', ''), type: 'rectangle', text: undefined }] });
+  const { revision } = await f.store.read(); await f.store.picture({ revision, png: PNG });
+  await f.talk.send({ text: 'I drew something on the board.', model: 'luna', provider: 'openai', revision });
+  assert.equal(f.sent.length, 1);
+  assert.ok(f.sent[0]!.attachments.some(a => a.type === 'image'), 'the model sees the drawing');
 });
 test('replies off stops the reply she is writing, and does nothing when she is quiet', async t => {
   const f = await fixture(t), interrupts: { id: string; turnId: string }[] = [];
