@@ -261,8 +261,6 @@
   "bridge/love-spot.test.mjs:eslint(prefer-const)": 1,
   "bridge/love-spot.test.mjs:typescript(no-floating-promises)": 2,
   "bridge/workflow-coding.test.mjs:eslint(prefer-const)": 2,
-  "components/agents-canvas.tsx:typescript(require-await)": 1,
-  "components/agents-canvas.tsx:unused-disable-directive": 8,
   "components/appearance-settings.tsx:typescript(require-await)": 1,
   "components/approval-card.tsx:typescript(no-misused-promises)": 1,
   "components/archived-view.tsx:typescript(no-misused-promises)": 2,
