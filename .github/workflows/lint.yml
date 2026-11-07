@@ -31,6 +31,8 @@ jobs:
         run: shellcheck -S error scripts/*.sh apps/elpis-desktop/scripts/*.sh
       - name: Node scripts parse
         run: for f in scripts/*.mjs apps/elpis-desktop/scripts/*.mjs apps/elpis-desktop/scripts/*.cjs; do [ -f "$f" ] && node --check "$f"; done
+      - name: JavaScript migration guard
+        run: node scripts/js-guard.mjs && node --test scripts/js-guard.test.mjs
       - name: Website and README page
         run: node --test website/tests/site.test.mjs
   strict:

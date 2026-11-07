@@ -1,9 +1,10 @@
 'use strict';
 
+const errorGuard: typeof import('./main-error-guard.cts') = require('./main-error-guard.cts');
 require('./output-errors.cts');
 
 const electron: typeof import('electron') = require('electron');
-const { app, BrowserWindow, ipcMain, Menu, Tray, nativeImage, globalShortcut, screen, dialog } = electron;
+const { app, BrowserWindow, ipcMain, Menu, Tray, nativeImage, globalShortcut, screen } = electron;
 const path = require('node:path');
 const { closesToTray, quickEntryShortcut }: typeof import('./preferences.cts') = require('./preferences.cts');
 const { createStateStore }: typeof import('./state.cts') = require('./state.cts');
@@ -72,8 +73,8 @@ if (!app.requestSingleInstanceLock(profile.lockData)) {
       ...(process.platform === 'darwin' ? [{ role: 'appMenu' }] : []),
       ...appMenu.template(),
     ] as import('electron').MenuItemConstructorOptions[])));
-    if (loveSpotApp) return void await openWindow(true);
-    if (workflowsApp) return void await openWindow(false, true);
+    if (loveSpotApp) { await openWindow(true); errorGuard.ready(); return; }
+    if (workflowsApp) { await openWindow(false, true); errorGuard.ready(); return; }
     const showWindow = () => void openWindow().catch(showStartupError);
     screenshotPopup = createScreenshotPopup({ BrowserWindow, screen, ipcMain, dark: () => darkTheme });
     const activeQuickEntry = startQuickEntry({ app, globalShortcut, BrowserWindow, screen, ipcMain, dark: () => darkTheme,
@@ -85,6 +86,7 @@ if (!app.requestSingleInstanceLock(profile.lockData)) {
     tray = createTray({ Tray, Menu, nativeImage, icon: ICON, actions: {
       open: showWindow, newChat: () => { void openWindow().then(() => primaryOpeners?.newChats.queue('')).catch(showStartupError); }, quickEntry: () => void activeQuickEntry.toggle(), quit: () => app.quit(),
     } });
+    errorGuard.ready();
   }).catch(showStartupError);
   app.on('activate', () => { void openWindow(loveSpotApp, workflowsApp).catch(showStartupError); });
   app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
@@ -93,15 +95,11 @@ if (!app.requestSingleInstanceLock(profile.lockData)) {
     event.preventDefault();
     if (isQuitting()) return;
     void quitApp().catch((error: unknown) => {
-      console.error('Could not save before quitting:', error);
-      dialog.showErrorBox('Elpis is still open', error instanceof Error ? error.message : String(error));
+      errorGuard.reportError(error, 'Could not save before quitting');
     });
   });
 }
 
 function showStartupError(error: unknown) {
-  const err = error as { stack?: string; message?: string } | null | undefined;
-  console.error('Elpis startup failed:', err?.stack || String(error));
-  dialog.showErrorBox('Elpis could not open', String(err?.message || error));
-  app.quit();
+  errorGuard.reportError(error, 'Elpis could not open');
 }

@@ -16,7 +16,7 @@
     "postbuild": "git rev-parse HEAD > out/.commit && test ! -f $HOME/Desktop/p/skills/web-dev/ui-check/ui-check.mjs || node $HOME/Desktop/p/skills/web-dev/ui-check/ui-check.mjs .",
     "typecheck": "tsc --noEmit",
     "typecheck:strict": "node scripts/strict-baseline.mjs types tsx",
-    "lint": "node scripts/strict-baseline.mjs lint",
+    "lint": "node ../../scripts/js-guard.mjs && node scripts/strict-baseline.mjs lint",
     "duplication": "node scripts/strict-baseline.mjs dup",
     "strict": "node scripts/strict-baseline.mjs",
     "start": "node bridge/server.mts",
