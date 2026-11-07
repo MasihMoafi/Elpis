@@ -84,3 +84,22 @@ test('a created document can be marked or given an edit/removal request without 
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
+
+test('a long list of created files shows the first three and folds the rest behind one button', async () => {
+  const names = ['a', 'b', 'c', 'd', 'e', 'f'];
+  const many = [{ id: 'edit-many', type: 'fileChange', status: 'completed', changes: names.map(name => ({ path: `${CWD}/${name}.md`, kind: { type: 'add' }, diff: `# ${name}\n` })) }];
+  const f = await fixture({ chat: [['t1', 'Write six notes.', 'Six notes written.', many]] });
+  try {
+    const { page } = f;
+    await page.locator('.thread-row[data-thread-id="chat-a"] .thread-link').click();
+    await page.getByText('Six notes written.', { exact: true }).waitFor();
+    const cards = page.getByRole('list', { name: 'Files created', exact: true }).locator('.file-card-name');
+    assert.deepEqual(await cards.allInnerTexts(), ['a', 'b', 'c']);
+    const more = page.getByRole('button', { name: 'Show 3 more files', exact: true });
+    assert.equal(await more.getAttribute('aria-expanded'), 'false');
+    await more.click();
+    assert.deepEqual(await cards.allInnerTexts(), names);
+    await page.getByRole('button', { name: 'Show fewer', exact: true }).click();
+    assert.deepEqual(await cards.allInnerTexts(), ['a', 'b', 'c']);
+  } finally { await f.close(); }
+});

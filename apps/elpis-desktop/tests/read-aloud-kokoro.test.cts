@@ -36,3 +36,81 @@ for (const available of [true, false]) test(`Read aloud ${available ? 'voices a 
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
+
+for (const action of ['toolbar', 'more menu', 'context menu']) test(`Read aloud uses the selected passage through the ${action}, then the full reply without a selection`, async () => {
+  const f = await fixture(), voiced: string[] = [];
+  try {
+    await f.page.route('**/api/read-aloud', async (route: { request(): { method(): string; postData(): string }; fulfill(options: { contentType: string; body: string | Buffer }): Promise<unknown> }) => {
+      if (route.request().method() === 'GET') return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ available: true }) });
+      voiced.push(JSON.parse(route.request().postData()).text);
+      return route.fulfill({ contentType: 'audio/wav', body: silentWav() });
+    });
+    await f.page.reload(); await f.page.locator('.startup-splash').waitFor({ state: 'detached' }); await f.open('chat-a');
+    const reply = f.page.locator('.message.agent').filter({ hasText: 'two passes' }).first();
+    const words = reply.locator('strong').first(); await words.scrollIntoViewIfNeeded(); const box = await words.boundingBox();
+    await f.page.mouse.move(box.x + 1, box.y + box.height / 2); await f.page.mouse.down();
+    await f.page.mouse.move(box.x + box.width - 1, box.y + box.height / 2, { steps: 10 }); await f.page.mouse.up();
+    assert.equal(await f.page.evaluate(() => getSelection()!.toString()), 'two passes'); await f.page.keyboard.press('Escape');
+    const invoke = async () => {
+      if (action === 'toolbar') await reply.getByRole('button', { name: 'Read aloud', exact: true }).click();
+      else {
+        if (action === 'more menu') await reply.getByRole('button', { name: 'More message actions' }).click();
+        else { const area = await reply.boundingBox(); await f.page.mouse.click(area.x + area.width - 3, box.y + box.height / 2, { button: 'right' }); }
+        if (!voiced.length) await f.page.evaluate(() => getSelection()!.removeAllRanges());
+        await f.page.getByRole('menuitem', { name: 'Read aloud', exact: true }).click();
+      }
+      await reply.getByRole('button', { name: 'Stop', exact: true }).waitFor();
+      await reply.getByRole('button', { name: 'Read aloud', exact: true }).waitFor();
+    };
+    await invoke(); assert.deepEqual(voiced, ['two passes']);
+    await f.page.evaluate(() => getSelection()!.removeAllRanges()); await invoke();
+    assert.deepEqual(voiced, ['two passes', 'The parser has two passes. lexing parsing See the guide.']);
+  } finally { await f.close(); }
+});
+
+for (const selected of ['x'.repeat(3799) + '😀', 'hello world '.repeat(60) + 'x_y']) test(`Read aloud preserves long selected text (${selected.length} UTF-16 units)`, async () => {
+  const f = await fixture({ chat: [['t1', 'Explain.', selected]] }), voiced: string[] = [];
+  try {
+    await f.page.route('**/api/read-aloud', async (route: { request(): { method(): string; postData(): string }; fulfill(options: { contentType: string; body: string | Buffer }): Promise<unknown> }) => {
+      if (route.request().method() === 'GET') return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ available: true }) });
+      voiced.push(JSON.parse(route.request().postData()).text);
+      return route.fulfill({ contentType: 'audio/wav', body: silentWav(0.05) });
+    });
+    await f.page.reload(); await f.page.locator('.startup-splash').waitFor({ state: 'detached' }); await f.open('chat-a');
+    const reply = f.page.locator('.message.agent').first();
+    await reply.locator('.message-body p').evaluate((element: Element) => { const range = document.createRange(); range.selectNodeContents(element); const selection = getSelection()!; selection.removeAllRanges(); selection.addRange(range); });
+    await reply.getByRole('button', { name: 'Read aloud', exact: true }).click();
+    await reply.getByRole('button', { name: 'Stop', exact: true }).waitFor(); await reply.getByRole('button', { name: 'Read aloud', exact: true }).waitFor({ timeout: 15000 });
+    assert.equal(voiced.join(''), selected); assert.ok(voiced.every(piece => piece.isWellFormed() && piece.length <= 3800));
+    if (selected.startsWith('hello')) { assert.ok(voiced.length > 1); const first = voiced[0]; assert.ok(first !== undefined && first.length <= 300); assert.ok(voiced.slice(0, -1).every(piece => /\s$/.test(piece))); }
+  } finally { await f.close(); }
+});
+
+for (const activation of ['mouse', 'keyboard']) test(`Read aloud accepts a selected passage by ${activation} without dismissing Quote selection`, async () => {
+  const f = await fixture({ chat: [['t1', 'Explain.', 'Alpha selected words omega.']] }), voiced: string[] = [];
+  try {
+    await f.page.route('**/api/read-aloud', async (route: { request(): { method(): string; postData(): string }; fulfill(options: { contentType: string; body: string | Buffer }): Promise<unknown> }) => {
+      if (route.request().method() === 'GET') return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ available: true }) });
+      voiced.push(JSON.parse(route.request().postData()).text);
+      return route.fulfill({ contentType: 'audio/wav', body: silentWav() });
+    });
+    await f.page.reload(); await f.page.locator('.startup-splash').waitFor({ state: 'detached' }); await f.open('chat-a');
+    const reply = f.page.locator('.message.agent').first(), paragraph = reply.locator('.message-body p');
+    await paragraph.scrollIntoViewIfNeeded();
+    const box = await paragraph.evaluate((element: Element) => { const range = document.createRange(); range.setStart(element.firstChild!, 6); range.setEnd(element.firstChild!, 20); const rect = range.getBoundingClientRect(); return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }; });
+    await f.page.mouse.move(box.x + 1, box.y + box.height / 2); await f.page.mouse.down();
+    await f.page.mouse.move(box.x + box.width - 1, box.y + box.height / 2, { steps: 10 }); await f.page.mouse.up();
+    assert.equal(await f.page.evaluate(() => getSelection()!.toString()), 'selected words');
+    await f.page.getByRole('button', { name: 'Quote selection' }).waitFor();
+    const read = reply.getByRole('button', { name: 'Read aloud', exact: true });
+    if (activation === 'mouse') await read.click({ timeout: 3000 });
+    else {
+      for (let count = 0; count < 20 && !(await read.evaluate((element: Element) => element === document.activeElement)); count++) await f.page.keyboard.press('Tab');
+      assert.ok(await read.evaluate((element: Element) => element === document.activeElement), 'Read aloud is reachable by Tab');
+      assert.equal(await f.page.evaluate(() => getSelection()!.toString()), 'selected words');
+      await f.page.keyboard.press('Enter');
+    }
+    await reply.getByRole('button', { name: 'Stop', exact: true }).waitFor();
+    assert.deepEqual(voiced, ['selected words']);
+  } finally { await f.close(); }
+});

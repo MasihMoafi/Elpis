@@ -26,6 +26,9 @@ test('audio file links play through Matilda without opening the Files preview', 
       assert.deepEqual(opened.at(-1), { action: 'play-file', page: 'global', path: path.join(cwd, `audio/recording with spaces.${ext}`) });
     }
     assert.equal(await f.page.getByRole('region', { name: 'File viewer' }).count(), 0);
+    // A long list of created files folds after three cards (components/file-cards.tsx); unfold it to reach every one.
+    const more = f.page.getByRole('button', { name: /^Show \d+ more files$/ });
+    if (await more.count()) await more.click();
     for (const ext of formats) {
       await f.page.getByRole('button', { name: `Open created recording.${ext}`, exact: true }).click();
       const count = formats.length + formats.indexOf(ext) + 1, deadline = Date.now() + 3000;

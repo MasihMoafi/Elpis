@@ -195,7 +195,7 @@ export default function Home() {
   const { writePrompt, editLastMessage } = createPromptEditing({ composer, session, replacement, editDraft, setMessageEdits, setSlashNotice });
   // The message box's history keys (lib/prompt-history.ts): ↑/↓ and Ctrl+R through what you sent, Esc Esc to edit the last.
   const promptKeys = usePromptKeys(selected?.id ?? newDraftKey.current, { entries, box: () => composerRef.current, read: () => textRef.current, write: writePrompt, editLast: editLastMessage });
-  const { waitingIds, teamRoot, team, workingTeam, shownTeam, agentColours, agentsPanel, awaitingTeam, openAgentsPanel } = useChatTeam({ session, runtime, find, checkedChildren, workingAgentsOnly, agentsPanelState, setAgentsPanelState, panelShown });
+  const { waitingIds, teamRoot, team, workingTeam, shownTeam, agentColours, agentsPanel, awaitingTeam, openAgentsPanel } = useChatTeam({ session, runtime, find, checkedChildren, workingAgentsOnly, agentsPanelState, setAgentsPanelState, panelShown, chatGroups });
 
   const { openNewChat, newChat, showTab, newChatTab, closeChatTab, cycleTabs, goHistory, openInNewTab, keepWorkflowTab } = createChatNavigation({ projectState, composer, conversations, history, drafts: draftStore, attachments: attachmentState, tabsRef, updateTabs, session, newDraftKey, setError, setView, setSidebar, find, openThread, loadThread, showChat, browser, navHistory, show: next => show(next) });
   const clearChat = createClearConversation({ composer, conversations, projectState, runtime, loveActivity, selectedRef, request, setError, threadModes, permissionMode, openNewChat, loadThread, noteStartedMode: (id, mode) => noteStartedMode(id, mode) });
