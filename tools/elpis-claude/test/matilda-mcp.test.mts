@@ -1,0 +1,56 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+
+test('the MCP server discovers sessions and persists goals without exposing known credentials', async t => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'matilda-mcp-'));
+  t.after(() => fs.rm(home, { recursive: true, force: true }));
+  const elpis = path.join(home, '.elpis-next'), directory = path.join(elpis, 'sessions/2026/11/07');
+  await fs.mkdir(directory, { recursive: true });
+  const id = '11111111-1111-4111-8111-111111111111';
+  await fs.writeFile(path.join(directory, `rollout-2026-${id}.jsonl`), [JSON.stringify({ type: 'session_meta', payload: { id, cwd: '/project', originator: 'elpis', source: 'cli' } }), JSON.stringify({ type: 'event_msg', payload: { type: 'user_message', message: 'Look at sk-ant-secretfixture' } })].join('\n') + '\n');
+  const transport = new StdioClientTransport({ command: process.execPath, args: [fileURLToPath(new URL('../elpis-agents-mcp.mjs', import.meta.url))], env: { PATH: process.env.PATH ?? '', HOME: home, ELPIS_HOME: elpis, ELPIS_AGENT_TOOLS: '0', ELPIS_AGENTS_LOG: path.join(home, 'log') } });
+  const client = new Client({ name: 'matilda-test', version: '1' });
+  await client.connect(transport); t.after(() => client.close());
+  const call = (name: string, args: Record<string, unknown>) => client.callTool({ name, arguments: args });
+  const list = await call('sessions_list', { runtime: 'elpis', cwd: '/project' });
+  assert.equal(list.isError, undefined);
+  assert.doesNotMatch(JSON.stringify(list), /sk-ant-secretfixture/);
+  assert.match(JSON.stringify(list), /redacted/);
+  const status = await call('session_status', { id });
+  assert.match(JSON.stringify(status), /11111111/);
+  assert.equal((await call('session_status', { id: 'missing' })).isError, true);
+  const input = { originalRequest: 'Do work', decisions: [], constraints: ['Local only'], tasks: [], messages: [], evidence: [], nextAction: 'Inspect' };
+  const created = await call('goal_create', input);
+  assert.equal(created.isError, undefined);
+  const content = created.content;
+  assert.ok(Array.isArray(content));
+  const first = content[0];
+  assert.ok(first && typeof first === 'object' && 'text' in first && typeof first.text === 'string');
+  const goal = JSON.parse(first.text) as { id: string; revision: number };
+  assert.equal((await call('goal_update', { id: goal.id, revision: goal.revision, changes: { nextAction: 'Verify' } })).isError, undefined);
+  assert.equal((await call('goal_update', { id: goal.id, revision: goal.revision, changes: { nextAction: 'Overwrite' } })).isError, true);
+  assert.match(JSON.stringify(await call('goal_list', {})), /Local only/);
+  assert.equal((await call('goal_create', { ...input, originalRequest: 'sk-ant-secretfixture' })).isError, true);
+});
+
+test('the MCP server loads manager modules from an isolated engine bundle', async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'matilda-bundle-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const bundle = path.join(root, 'tools', 'elpis-claude'), modules = path.join(bundle, 'matilda');
+  await fs.mkdir(modules, { recursive: true });
+  for (const name of ['elpis-agents-mcp.mjs', 'matilda-mcp.mts', 'log-redaction.mts', 'app-server-connection.mjs']) await fs.copyFile(new URL(`../${name}`, import.meta.url), path.join(bundle, name));
+  for (const name of ['matilda-goals.mts', 'matilda-sessions.mts']) await fs.copyFile(new URL(`../../../apps/elpis-desktop/bridge/${name}`, import.meta.url), path.join(modules, name));
+  await fs.symlink(fileURLToPath(new URL('../node_modules', import.meta.url)), path.join(bundle, 'node_modules'));
+  const client = new Client({ name: 'matilda-bundle-test', version: '1' });
+  await client.connect(new StdioClientTransport({ command: process.execPath, args: [path.join(bundle, 'elpis-agents-mcp.mjs')], env: { PATH: process.env.PATH ?? '', HOME: root, ELPIS_HOME: path.join(root, 'home'), ELPIS_AGENT_TOOLS: '0', ELPIS_AGENTS_LOG: path.join(root, 'log') } }));
+  t.after(() => client.close());
+  const answer = await client.callTool({ name: 'goal_list', arguments: {} });
+  assert.equal(answer.isError, undefined);
+  assert.match(JSON.stringify(answer.content), /\[\]/);
+});
