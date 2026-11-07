@@ -82,7 +82,7 @@ for (const selected of ['x'.repeat(3799) + '😀', 'hello world '.repeat(60) + '
     await reply.getByRole('button', { name: 'Read aloud', exact: true }).click();
     await reply.getByRole('button', { name: 'Stop', exact: true }).waitFor(); await reply.getByRole('button', { name: 'Read aloud', exact: true }).waitFor({ timeout: 15000 });
     assert.equal(voiced.join(''), selected); assert.ok(voiced.every(piece => piece.isWellFormed() && piece.length <= 3800));
-    if (selected.startsWith('hello')) { assert.ok(voiced.length > 1); assert.ok(voiced[0].length <= 300); assert.ok(voiced.slice(0, -1).every(piece => /\s$/.test(piece))); }
+    if (selected.startsWith('hello')) { assert.ok(voiced.length > 1); const first = voiced[0]; assert.ok(first !== undefined && first.length <= 300); assert.ok(voiced.slice(0, -1).every(piece => /\s$/.test(piece))); }
   } finally { await f.close(); }
 });
 
