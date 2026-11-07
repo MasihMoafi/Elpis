@@ -9,7 +9,7 @@ import {EventEmitter} from 'node:events';
 import {DesktopClient} from '../bridge/client.mts';
 
 const rootId='00000000-0000-0000-0000-000000000001';
-const fake=fileURLToPath(new URL('../../../tools/elpis-claude/test/fake-acp-agent.mjs',import.meta.url));
+const fake=fileURLToPath(new URL('../../../tools/elpis-claude/test/fake-acp-agent.mts',import.meta.url));
 function fixture(t) {
   const cache=path.join(os.homedir(),'.cache/elpis-tests');fs.mkdirSync(cache,{recursive:true});
   const dir=createTestTempDir(path.join(cache,'elpis-workflow-routing-')), specs=[];

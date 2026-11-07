@@ -12,7 +12,7 @@ import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cts';
 // Every card runs as an ACP agent process. The fake agent is built on the official ACP SDK and logs what reaches it;
 // the end-to-end case uses the real Elpis ACP agent on a scripted app-server.
 const TOOLS = fileURLToPath(new URL('../../../tools/elpis-claude/', import.meta.url));
-const FAKE_AGENT = path.join(TOOLS, 'test/fake-acp-agent.mjs'), FAKE_ENGINE = path.join(TOOLS, 'test/fake-app-server.mjs');
+const FAKE_AGENT = path.join(TOOLS, 'test/fake-acp-agent.mts'), FAKE_ENGINE = path.join(TOOLS, 'test/fake-app-server.mts');
 const ELPIS_AGENT = path.join(TOOLS, 'elpis-acp-agent.mjs');
 // A live Elpis session's bridge must not reach these agents: the scripted app-server answers, never a real model.
 for (const name of ['ELPIS_BRIDGE_SOCKET', 'ELPIS_APP_BRIDGE_SOCKET', 'ELPIS_BRIDGE_URL', 'ELPIS_SHARED_BRIDGE']) delete process.env[name];

@@ -9,7 +9,7 @@ const { guardDesktopStore } = require('./controls.cjs');
 
 // Love Spot cards run as ACP agent processes; here each is the scripted SDK agent, which logs what reaches it.
 // Retained tests live in a scratch checkout whose bridge links to the candidate.
-const FAKE_ACP_AGENT = path.resolve(path.dirname(require.resolve('../bridge/server.mts')), '../../../tools/elpis-claude/test/fake-acp-agent.mjs');
+const FAKE_ACP_AGENT = path.resolve(path.dirname(require.resolve('../bridge/server.mts')), '../../../tools/elpis-claude/test/fake-acp-agent.mts');
 
 // `threadId(n)` names the n-th chat it makes; live voice needs real (UUID) chat IDs.
 async function loveSpotFixture({ threadId, colorScheme = 'light', reply = 'I am here with you.', replyDelay = 80, configureClient, prepareDirectory, agentEnv, prepareScreenshots, newBoard = false, automations = false } = {}) {
@@ -17,7 +17,7 @@ async function loveSpotFixture({ threadId, colorScheme = 'light', reply = 'I am 
   const root = createTestTempDir(path.join(base, 'love-spot-ui-'));
   // The renderer gate installs only desktop dependencies. Run the shared SDK
   // agent beside those dependencies instead of the tools package's node_modules.
-  const fakeAgent = path.join(root, 'fake-acp-agent.mjs');
+  const fakeAgent = path.join(root, 'fake-acp-agent.mts');
   await fs.copyFile(FAKE_ACP_AGENT, fakeAgent);
   await fs.symlink(path.resolve(__dirname, '../node_modules'), path.join(root, 'node_modules'));
   const directory = path.join(root, 'drawing'), screenshots = path.join(root, 'Screenshots');

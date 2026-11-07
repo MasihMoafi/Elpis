@@ -34,7 +34,7 @@ test('real engine and Claude adapter goal set/get/clear through authenticated de
   const log = await fs.open(path.join(root, 'bridge.log'), 'a');
   const env = { PATH: process.env.PATH, HOME: root, ELPIS_HOME: home, CODEX_HOME: home, CODEX_AUTH_HOME: home, CODEX_SQLITE_HOME: home,
     XDG_CONFIG_HOME: root, XDG_RUNTIME_DIR: root, TMPDIR: root, ELPIS_SHARED_BRIDGE: '1', ELPIS_BRIDGE_SOCKET: socketPath,
-    ELPIS_ENGINE_BIN: process.env.ELPIS_GOAL_ENGINE, ACP_ADAPTER: path.join(repo, 'tools/elpis-claude/test/fake-acp-agent.mjs'),
+    ELPIS_ENGINE_BIN: process.env.ELPIS_GOAL_ENGINE, ACP_ADAPTER: path.join(repo, 'tools/elpis-claude/test/fake-acp-agent.mts'),
     ACP_BRIDGE_STORE: path.join(root, 'sessions.json'), ACP_BRIDGE_LOG: path.join(root, 'adapter.log'), ELPIS_NO_AGY: '1', ACP_BRIDGE_NO_AGENTS: '1',
     OPENAI_API_KEY: 'local-protocol-fixture', FAKE_ACP_LOG: path.join(root, 'acp.jsonl'), FAKE_ACP_MODELS: 'sonnet', FAKE_ACP_RELEASE: release };
   const bridge = spawn(process.execPath, [path.join(repo, 'tools/elpis-claude/acp-bridge.mjs')], { env, cwd: project, detached: true, stdio: ['ignore', log.fd, log.fd] });

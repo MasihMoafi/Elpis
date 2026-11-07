@@ -21,8 +21,12 @@
     "noImplicitOverride": true,
     "noFallthroughCasesInSwitch": true,
     "types": ["node"],
-    // The renderer's "@/" imports, which tests load through tests/alias.mts, resolve here too.
-    "paths": { "@/*": ["./*"] }
+    // Desktop tests also import Claude tool tests outside this package; resolve their declared types here.
+    "paths": {
+      "@/*": ["./*"],
+      "ws": ["./node_modules/@types/ws/index.d.mts"],
+      "@modelcontextprotocol/sdk/*": ["./node_modules/@modelcontextprotocol/sdk/dist/esm/*"]
+    }
   },
   "include": ["bridge/**/*.mjs", "bridge/**/*.cjs", "bridge/**/*.mts", "bridge/**/*.cts", "desktop/**/*.mjs", "desktop/**/*.cjs", "desktop/**/*.mts", "desktop/**/*.cts", "lib/**/*.mjs", "lib/**/*.cjs", "lib/**/*.mts", "lib/**/*.cts", "scripts/**/*.mjs", "scripts/**/*.cjs", "scripts/**/*.mts", "scripts/**/*.cts", "tests/**/*.mts", "tests/**/*.cts"],
   "exclude": ["node_modules", "bridge/resources"]

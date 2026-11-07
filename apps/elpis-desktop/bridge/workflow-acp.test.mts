@@ -16,7 +16,7 @@ import { createMemoryBudget } from './memory-budget.mts';
 
 const ROOT = '00000000-0000-0000-0000-000000000001';
 const FATHER = '00000000-0000-0000-0000-00000000000f';
-const FAKE = fileURLToPath(new URL('../../../tools/elpis-claude/test/fake-acp-agent.mjs', import.meta.url));
+const FAKE = fileURLToPath(new URL('../../../tools/elpis-claude/test/fake-acp-agent.mts', import.meta.url));
 type WorkflowRun = Awaited<ReturnType<ReturnType<typeof createWorkflowRuns>['list']>>[number];
 type WorkflowInput = Parameters<ReturnType<typeof createWorkflowRuns>['start']>[0];
 type NodeSpec = NonNullable<NonNullable<Parameters<typeof createWorkflowRuns>[0]>['nodeSpec']>;
@@ -73,7 +73,7 @@ test('an explicit desktop profile reaches the actual workflow agent despite an a
   t.after(() => { for (const [key, value] of Object.entries(ambient)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } });
   for (const key of endpoints) process.env[key] = path.join(home, 'foreign-profile.sock');
   const expected = { ELPIS_HOME: home, ...Object.fromEntries(endpoints.map(key => [key, null])) };
-  const f = fixture(t, { env: { ELPIS_HOME: path.join(home, 'ambient'), ELPIS_NODE_BIN: process.execPath, ELPIS_ENGINE_BIN: fileURLToPath(new URL('../../../tools/elpis-claude/test/fake-app-server.mjs', import.meta.url)), ELPIS_ACP_AGENT: FAKE }, nodeSpec: (node, env) => {
+  const f = fixture(t, { env: { ELPIS_HOME: path.join(home, 'ambient'), ELPIS_NODE_BIN: process.execPath, ELPIS_ENGINE_BIN: fileURLToPath(new URL('../../../tools/elpis-claude/test/fake-app-server.mts', import.meta.url)), ELPIS_ACP_AGENT: FAKE }, nodeSpec: (node, env) => {
     const spec = loveNodeSpec(node, env);
     return { ...spec, env: { ...spec.env, FAKE_ACP_EXPECT_ENV: spec.env.FAKE_ACP_EXPECT_ENV ?? JSON.stringify(expected) } };
   } }, { home });

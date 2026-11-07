@@ -1,6 +1,6 @@
 // The Mother re-plans mid-run (1 Nov, Masih approved "1) yes"; "add" takes a list, confirmed the same day): when a child
 // succeeds she is asked once, with the finished children's summaries and files and the remaining plan, and answers
-// continue, add, cancel or steer. Stand-in ACP agents (tools/elpis-claude/test/fake-acp-agent.mjs), no model calls.
+// continue, add, cancel or steer. Stand-in ACP agents (tools/elpis-claude/test/fake-acp-agent.mts), no model calls.
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -25,7 +25,7 @@ type StartOptions = Omit<Partial<WorkflowParams>, 'replan'> & { replan?: boolean
 function required<T>(value: T | null | undefined): T { assert.ok(value); return value; }
 
 const TEST_ROOT = path.join(os.homedir(), '.cache/elpis-tests'); fs.mkdirSync(TEST_ROOT, { recursive: true });
-const FAKE = fileURLToPath(new URL('../../../tools/elpis-claude/test/fake-acp-agent.mjs', import.meta.url));
+const FAKE = fileURLToPath(new URL('../../../tools/elpis-claude/test/fake-acp-agent.mts', import.meta.url));
 const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const MOTHER = 'Mother agent';
 const task = (id: string, extra: Partial<WorkflowParams['tasks'][number]> = {}): WorkflowParams['tasks'][number] => ({ id, title: id, kind: 'explore', instruction: `Work on ${id}`, dependsOn: [], writeScopes: [], acceptanceCriteria: ['Observed evidence'], ...extra });

@@ -14,6 +14,7 @@ const self = fileURLToPath(import.meta.url);
 
 if (process.argv[2] === "writer") {
   const [file, key, count] = process.argv.slice(3);
+  assert.ok(file !== undefined && key !== undefined && count !== undefined);
   for (let i = 0; i < Number(count); i++) await withFileLock(file, async () => {
     const value = JSON.parse(fs.readFileSync(file, "utf8"));
     value[key] = (value[key] ?? 0) + 1;

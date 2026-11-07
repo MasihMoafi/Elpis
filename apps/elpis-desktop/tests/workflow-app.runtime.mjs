@@ -1,5 +1,5 @@
 // Workflows that run until they finish (SPEC WR3, WR5), as Masih meets them: the packaged app, its own runtime and the
-// real engine in a throwaway home, a local stand-in model (tools/elpis-claude/test/mock-responses.mjs, no account) and
+// real engine in a throwaway home, a local stand-in model (tools/elpis-claude/test/mock-responses.mts, no account) and
 // his settings (Subagents off, Full access). He asks for a workflow in a chat; the app then quits, or the app and its
 // runtime die; the run finishes either way and its result reaches the chat. A chat archived or deleted meanwhile
 // neither loses the result nor stalls the runtime.
@@ -56,7 +56,7 @@ test('a workflow asked for in the app finishes after the app quits or dies, and 
   fs.writeFileSync(path.join(seed, 'config.toml'), ['model = "gpt-5.5"', 'model_provider = "mock"', 'approvals_reviewer = "user"', 'default_permissions = ":danger-full-access"', '',
     '[features]', 'multi_agent = false', '', '[model_providers.mock]', 'name = "Mock"', `base_url = "http://127.0.0.1:${mockPort}/v1"`, 'wire_api = "responses"',
     'request_max_retries = 0', 'stream_max_retries = 0', ''].join('\n'));
-  const mock = spawn(process.execPath, [path.join(fixtures, 'mock-responses.mjs'), String(mockPort), mockDir], { stdio: ['ignore', 'pipe', 'inherit'] });
+  const mock = spawn(process.execPath, [path.join(fixtures, 'mock-responses.mts'), String(mockPort), mockDir], { stdio: ['ignore', 'pipe', 'inherit'] });
   await once(mock.stdout, 'data');
   const asked = prompt => fs.readFileSync(path.join(mockDir, 'requests.jsonl'), 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line)).filter(r => r.kind === 'agent' && r.prompt === prompt).length;
 

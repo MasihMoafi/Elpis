@@ -108,7 +108,9 @@ export function transcriptTokens(jsonl) {
 }
 
 /** transcriptTokens for a Claude transcript file, read cheaply: only from its last compaction (the counts ignore what
- * precedes it), and at most once per `interval` while the file grows. A shorter file is a new one, read from the start. */
+ * precedes it), and at most once per `interval` while the file grows. A shorter file is a new one, read from the start.
+ * @param {{ now?: () => number, interval?: number, onRead?: (bytes: number) => void }} [options]
+ */
 export function transcriptReader({ now = Date.now, interval = 15000, onRead = () => {} } = {}) {
   const seen = new Map(); // file -> { stamp, at, from, tokens }
   const BOUNDARY = Buffer.from('"compact_boundary"');

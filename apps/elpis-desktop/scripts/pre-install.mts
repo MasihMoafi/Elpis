@@ -13,7 +13,7 @@ const inventory: Record<string, string[]> = JSON.parse(fs.readFileSync(new URL('
 const files = process.env.ELPIS_CHECK_FILES ? process.env.ELPIS_CHECK_FILES.split(',') : ['fast', 'bridge', 'desktop'].flatMap(tier => { const entries = inventory[tier]; if (!entries) throw Error(`Missing inventory tier: ${tier}`); return entries; }).filter(file => /\.test\./.test(file));
 const jobs = Math.max(1, Number(process.env.ELPIS_CHECK_JOBS) || 8);
 // A file whose tests each start their own processes: split its tests by name over several runs of the same file.
-const SHARDED: Record<string, { sources: string[]; ways: number }> = { 'bridge/claude-turn-delivery.test.mts': { sources: ['../../../tools/elpis-claude/test/turn-delivery.test.mjs', '../../../tools/elpis-claude/test/claude-turn-record.test.mjs'], ways: 4 } };
+const SHARDED: Record<string, { sources: string[]; ways: number }> = { 'bridge/claude-turn-delivery.test.mts': { sources: ['../../../tools/elpis-claude/test/turn-delivery.test.mts', '../../../tools/elpis-claude/test/claude-turn-record.test.mts'], ways: 4 } };
 const escape = (name: string) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const shardsOf = (file: string) => {
   const shard = SHARDED[file];

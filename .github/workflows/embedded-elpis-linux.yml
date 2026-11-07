@@ -238,14 +238,14 @@ jobs:
         run: |
           node apps/elpis-desktop/bridge/build-resources.mts --bridge-only
           node --test --test-concurrency=1 --test-name-pattern='existing chats are written directly|opening a chat rejoins|opening a completed parent-owned child|a child in a legacy drain' apps/elpis-desktop/bridge/bridge.test.mts
-          node --test tools/elpis-claude/test/handover-subscribe.test.mjs
+          node --test tools/elpis-claude/test/handover-subscribe.test.mts
           node scripts/store-guard.test.cjs
           node scripts/history-list.test.cjs
-          node --test tools/elpis-claude/test/resume-list.test.mjs
-          node --test tools/elpis-claude/test/bridge-idle.test.mjs
-          node --test --test-concurrency=1 tools/elpis-claude/test/approval-review.test.mjs tools/elpis-claude/test/delegate-start.test.mjs
-          node --test --test-concurrency=1 tools/elpis-claude/test/context-agent-worker.test.mjs
-          node --test --test-name-pattern="a Workflows node's chat starts" tools/elpis-claude/test/elpis-acp-agent.test.mjs
+          node --test tools/elpis-claude/test/resume-list.test.mts
+          node --test tools/elpis-claude/test/bridge-idle.test.mts
+          node --test --test-concurrency=1 tools/elpis-claude/test/approval-review.test.mts tools/elpis-claude/test/delegate-start.test.mts
+          node --test --test-concurrency=1 tools/elpis-claude/test/context-agent-worker.test.mts
+          node --test --test-name-pattern="a Workflows node's chat starts" tools/elpis-claude/test/elpis-acp-agent.test.mts
           node scripts/bridge-launcher.test.cjs
           node scripts/agy-steering.test.cjs
           node scripts/build-elpis-local.test.cjs
@@ -338,7 +338,7 @@ jobs:
           cp codex-rs/core/src/prompts/rag.md apps/elpis-desktop/bridge/resources/rag.md
           cp codex-rs/skills/src/assets/personal/SKILL.md apps/elpis-desktop/bridge/resources/personal.md
           cp tools/elpis-claude/permission-policy.mjs apps/elpis-desktop/bridge/resources/permission-policy.mjs
-          node --test --test-reporter=tap tools/elpis-claude/test/claude-turn-record.test.mjs tools/elpis-claude/test/turn-delivery.test.mjs | tee "$RUNNER_TEMP/elpis-claude-turn-checks.log"
+          node --test --test-reporter=tap tools/elpis-claude/test/claude-turn-record.test.mts tools/elpis-claude/test/turn-delivery.test.mts | tee "$RUNNER_TEMP/elpis-claude-turn-checks.log"
       - name: Preserve Claude restart recovery diagnostics
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification != 'build' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

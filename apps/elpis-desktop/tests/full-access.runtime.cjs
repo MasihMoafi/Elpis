@@ -16,7 +16,7 @@ const ready = process.env.ELPIS_TEST_APP && process.env.ELPIS_TEST_ENGINE;
 
 test('inherited permissions follow Settings across restart; explicit Ask stays; GPT, Claude and helpers never ask by default', { skip: !ready, timeout: 300000 }, async t => {
   const root = await fs.mkdtemp(path.join(os.homedir(), '.cache/elpis-tests/full-access-'));
-  const mock = spawn(process.execPath, [path.join(repo, 'tools/elpis-claude/test/mock-responses.mjs'), '0', root], { env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
+  const mock = spawn(process.execPath, [path.join(repo, 'tools/elpis-claude/test/mock-responses.mts'), '0', root], { env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
   let app;
   t.after(async () => { await stopApp(app); mock.kill('SIGTERM'); await run('gio', ['trash', root]); });
   let output = ''; mock.stdout.on('data', b => { output += b; });
@@ -45,7 +45,7 @@ test('inherited permissions follow Settings across restart; explicit Ask stays; 
     for (const row of rows) if (row.type === 'turn_context') { row.payload.approval_policy = 'on-request'; row.payload.active_permission_profile = { id: ':danger-full-access' }; }
     await fs.writeFile(filePath, rows.map(JSON.stringify).join('\n') + '\n');
   }
-  const extra = { ELPIS_E2E_HOME: appHome, ACP_ADAPTER: path.join(repo, 'tools/elpis-claude/test/fake-acp-agent.mjs'), ELPIS_NO_AGY: '1', FAKE_ACP_MODELS: 'haiku', FAKE_ACP_LOG: path.join(root, 'acp.jsonl') };
+  const extra = { ELPIS_E2E_HOME: appHome, ACP_ADAPTER: path.join(repo, 'tools/elpis-claude/test/fake-acp-agent.mts'), ELPIS_NO_AGY: '1', FAKE_ACP_MODELS: 'haiku', FAKE_ACP_LOG: path.join(root, 'acp.jsonl') };
   app = await startApp({ app: process.env.ELPIS_TEST_APP, engine: process.env.ELPIS_TEST_ENGINE, port: Number(process.env.ELPIS_TEST_PORT || 9732), seed, env: extra });
   let page = app.page;
   await page.locator('.startup-splash').waitFor({ state: 'detached', timeout: 60000 }); await skipFirstRun(page);
@@ -187,8 +187,8 @@ test('inherited permissions follow Settings across restart; explicit Ask stays; 
   const WebSocket = require('ws'), peer = new WebSocket(`ws+unix://${socket}:/`), peerPending = new Map(), peerRequests = [];
   t.after(() => peer.close());
   let peerSequence = 0;
-  peer.on('message', data => {
-    const message = JSON.parse(String(data));
+  peer.on('message', (/** @type {Buffer} */ data) => {
+    const message = JSON.parse(data.toString('utf8'));
     if (message.method && message.id !== undefined) peerRequests.push(message);
     else if (peerPending.has(message.id)) { const pending = peerPending.get(message.id); peerPending.delete(message.id); message.error ? pending.reject(message.error) : pending.resolve(message.result); }
   });

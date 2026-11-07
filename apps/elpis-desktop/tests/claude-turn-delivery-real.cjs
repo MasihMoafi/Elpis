@@ -32,7 +32,7 @@ const release = path.join(root, 'release'), toolRelease = path.join(root, 'tools
 const env = { PATH: process.env.PATH, HOME: root, ELPIS_HOME: path.join(root, 'elpis'), CODEX_HOME: path.join(root, 'elpis'), CODEX_AUTH_HOME: path.join(root, 'elpis'),
   ELPIS_CONFIG_DIR: path.join(root, 'elpis'), XDG_CONFIG_HOME: path.join(root, '.config'), XDG_CACHE_HOME: path.join(root, '.cache'), XDG_DATA_HOME: path.join(root, '.local/share'),
   XDG_STATE_HOME: path.join(root, '.local/state'), XDG_RUNTIME_DIR: run, TMPDIR: root, ELPIS_ENGINE_BIN: values.engine, ELPIS_NO_AGY: '1', ACP_BRIDGE_NO_AGENTS: '1',
-  ACP_ADAPTER: path.join(tools, 'test/fake-acp-agent.mjs'), ACP_BRIDGE_STORE: path.join(root, 'sessions.json'), ACP_BRIDGE_LOG: path.join(root, 'bridge.log'),
+  ACP_ADAPTER: path.join(tools, 'test/fake-acp-agent.mts'), ACP_BRIDGE_STORE: path.join(root, 'sessions.json'), ACP_BRIDGE_LOG: path.join(root, 'bridge.log'),
   FAKE_ACP_LOG: agentLog, FAKE_ACP_NAME: 'Claude', FAKE_ACP_MODELS: 'sonnet', FAKE_ACP_RELEASE: release, FAKE_ACP_TOOL_RELEASE: toolRelease,
   FAKE_ACP_NEXT_TOOL_RELEASE: path.join(root, 'next-tool'), FAKE_ACP_STEER_DELAY: '120' };
 const children = [];

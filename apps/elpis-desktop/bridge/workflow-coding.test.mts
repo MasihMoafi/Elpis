@@ -25,7 +25,7 @@ function logPrompt(row: FakeLog | undefined) { return required(required(logParam
 // gio trash refuses /tmp, so test roots live where the trash works.
 const TEST_ROOT = path.join(os.homedir(), '.cache/elpis-tests'); fs.mkdirSync(TEST_ROOT, { recursive: true });
 
-const FAKE = fileURLToPath(new URL('../../../tools/elpis-claude/test/fake-acp-agent.mjs', import.meta.url));
+const FAKE = fileURLToPath(new URL('../../../tools/elpis-claude/test/fake-acp-agent.mts', import.meta.url));
 const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const task = (id: string, extra: Partial<StoredTask> = {}): WorkflowParams['tasks'][number] => ({ id, title: id, kind: 'explore', instruction: 'Tiny evidence', dependsOn: [], writeScopes: [], acceptanceCriteria: ['Observed evidence'], ...extra });
 async function until<T>(read: () => T | Promise<T>, check: (value: T) => unknown): Promise<T> {
