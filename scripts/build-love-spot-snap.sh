@@ -9,9 +9,8 @@ commit=$(git -C "$R" rev-parse HEAD)
 built=$(cat "$APP/out/.commit" 2>/dev/null || true)
 [[ "$built" == "$commit" ]] || { [[ -n "$built" ]] && git -C "$R" diff --quiet "$built" "$commit" -- apps/elpis-desktop ':!apps/elpis-desktop/scripts'; } \
   || { echo "apps/elpis-desktop/out is not built from $commit: run npm run build" >&2; exit 1; }
-installed=$(dirname "$(readlink -f ~/.local/bin/elpis-next)")
 if [[ -n "${ENGINE_DIR:-}" ]]; then codex=$ENGINE_DIR/codex; host=$ENGINE_DIR/codex-code-mode-host; bwrap=$ENGINE_DIR/bwrap
-else codex=$installed/codex; host=$installed/codex-code-mode-host; bwrap=$installed/../codex-resources/bwrap; fi
+else installed=$(dirname "$(readlink -f ~/.local/bin/elpis-next)"); codex=$installed/codex; host=$installed/codex-code-mode-host; bwrap=$installed/../codex-resources/bwrap; fi
 for f in "$codex" "$host" "$bwrap"; do [[ -x "$f" ]] || { echo "missing engine file: $f" >&2; exit 1; }; done
 bridge=$R/tools/elpis-claude
 [[ -d "$bridge/node_modules/@agentclientprotocol/claude-agent-acp" ]] || { echo "run npm ci --omit=dev in tools/elpis-claude" >&2; exit 1; }
@@ -112,7 +111,7 @@ summary: Shared Excalidraw drawing board with Matilda and multi-provider AI acco
 description: |
   Love Spot is a local-first Excalidraw drawing board where Matilda and 12 theme characters chat, draw, and brainstorm with you on a shared canvas.
 
-  • Bring your own AI subscriptions and keys: ChatGPT Plus/Pro, Claude Pro/Max, and OpenRouter or custom Responses API keys
+  • Bring your own AI subscriptions and keys: a ChatGPT Plus/Pro sign-in, and Anthropic, OpenRouter or custom API keys
   • 13 selectable companion characters (Matilda default + 12 theme characters), each with light and dark palettes
   • Multi-page Excalidraw boards, live canvas sync, and voice mode
   • Local-first privacy: no Love Spot account, no server — boards, settings, and model credentials stay in your home folder

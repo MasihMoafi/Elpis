@@ -1,9 +1,11 @@
 #!/usr/bin/env node
-// check-love-spot-deb.mts DEB [SHOTS_DIR]: unpacks the standalone Love Spot .deb, starts it on a private X display
-// (xvfb-run) with a throwaway HOME, and checks that it runs as its own app: its data lands in
-// ~/.local/share/love-spot (never ~/.elpis-next), its window is the board marked as the app, and Models & accounts
-// offers Anthropic by API key with no Claude or Antigravity subscription. Needs ELPIS_PLAYWRIGHT_PACKAGE or playwright.
-// Run as: xvfb-run -a nice -n 19 node scripts/check-love-spot-deb.mts <deb> [shots dir]
+// check-love-spot-package.mts PACKAGE [SHOTS_DIR]: starts the standalone Love Spot on a private X display (xvfb-run)
+// and checks that it runs as its own app: its data lands in its own home (never ~/.elpis-next), its window is the board
+// marked as the app with its launcher's window class (the dock icon), and Models & accounts offers Anthropic by API key
+// with no Claude or Antigravity subscription. A .deb is unpacked and run with a throwaway HOME; a .snap must already be
+// installed (`sudo snap install --dangerous`, as the snap CI job does) and runs confined as the current user.
+// LOVE_SPOT_LIVE_OPENROUTER_KEY adds a live chat with Matilda through OpenRouter. Needs ELPIS_PLAYWRIGHT_PACKAGE or playwright.
+// Run as: xvfb-run -a nice -n 19 node scripts/check-love-spot-package.mts <deb|snap> [shots dir]
 import { spawn, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import net from 'node:net';
@@ -11,19 +13,26 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 
-const [deb, shots] = process.argv.slice(2) as [string | undefined, string | undefined];
-if (!deb || !fs.existsSync(deb)) throw new Error('usage: check-love-spot-deb.mts <love-spot.deb> [screenshots dir]');
+const [pkg, shots] = process.argv.slice(2) as [string | undefined, string | undefined];
+if (!pkg || !fs.existsSync(pkg)) throw new Error('usage: check-love-spot-package.mts <love-spot.deb|love-spot.snap> [screenshots dir]');
+const snap = pkg.endsWith('.snap');
 const { chromium } = createRequire(import.meta.url)(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright') as typeof import('playwright');
 const base = fs.mkdtempSync(path.join(process.env.ELPIS_STAGE_DIR || os.tmpdir(), 'love-spot-check-'));
-const root = path.join(base, 'root'), home = path.join(base, 'home');
-fs.mkdirSync(home);
-execFileSync('dpkg-deb', ['-x', deb, root]);
+const root = path.join(base, 'root'), home = snap ? os.homedir() : path.join(base, 'home');
+if (!snap) { fs.mkdirSync(home); execFileSync('dpkg-deb', ['-x', pkg, root]); }
+// Where each package keeps things. The snap's own data is $SNAP_USER_DATA (XDG_DATA_HOME there); its board is under the
+// real home, in ~/LoveSpot when the confinement refuses hidden folders in the home (scripts/build-love-spot-snap.sh).
+const launcher = snap ? '/snap/bin/love-spot' : path.join(root, 'usr/bin/love-spot');
+const desktopFile = snap ? '/var/lib/snapd/desktop/applications/love-spot_love-spot.desktop' : path.join(root, 'usr/share/applications/love-spot.desktop');
+const ownHomes = snap ? [path.join(home, 'snap/love-spot/current/.local/share/love-spot')] : [path.join(home, '.local/share/love-spot')];
+const boards = [path.join(home, '.local/share/excalidraw-local'), path.join(home, 'LoveSpot/.local/share/excalidraw-local')];
 const port = await new Promise<number>(resolve => { const server = net.createServer().listen(0, '127.0.0.1', () => { const { port } = server.address() as net.AddressInfo; server.close(() => resolve(port)); }); });
-const env = { PATH: process.env.PATH, DISPLAY: process.env.DISPLAY, XAUTHORITY: process.env.XAUTHORITY, HOME: home, LANG: 'C.UTF-8', LOVE_SPOT_ROOT: path.join(root, 'opt/love-spot'),
-  XDG_RUNTIME_DIR: fs.mkdtempSync(path.join(os.tmpdir(), 'love-spot-run-')), NO_PROXY: '127.0.0.1,localhost',
+const env = { PATH: process.env.PATH, DISPLAY: process.env.DISPLAY, XAUTHORITY: process.env.XAUTHORITY, HOME: home, LANG: 'C.UTF-8',
+  ...(snap ? { XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR, DBUS_SESSION_BUS_ADDRESS: process.env.DBUS_SESSION_BUS_ADDRESS } : { LOVE_SPOT_ROOT: path.join(root, 'opt/love-spot'), XDG_RUNTIME_DIR: fs.mkdtempSync(path.join(os.tmpdir(), 'love-spot-run-')) }),
+  NO_PROXY: '127.0.0.1,localhost',
   // Where the internet is reached through a proxy, the app needs it to reach the provider.
   ...Object.fromEntries(['HTTPS_PROXY', 'HTTP_PROXY', 'https_proxy', 'http_proxy', 'ALL_PROXY', 'all_proxy'].flatMap(key => process.env[key] ? [[key, process.env[key]]] : [])) };
-const app = spawn(path.join(root, 'usr/bin/love-spot'), ['--no-sandbox', `--remote-debugging-port=${port}`], { env, stdio: ['ignore', 'ignore', 'pipe'], detached: true });
+const app = spawn(launcher, ['--no-sandbox', `--remote-debugging-port=${port}`], { env, stdio: ['ignore', 'ignore', 'pipe'], detached: true });
 let stderr = ''; app.stderr.on('data', chunk => { stderr += chunk; });
 const results: { name: string; ok: boolean }[] = [];
 const check = (name: string, ok: boolean, detail = '') => { results.push({ name, ok }); console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${detail ? `: ${detail}` : ''}`); };
@@ -43,12 +52,12 @@ try {
   await page.locator('.excalidraw canvas').first().waitFor({ timeout: 60_000 });
   check('window is the board, marked as the Love Spot app', new URL(page.url()).searchParams.get('app') === 'love-spot', page.url());
   // The dock matches a window to its launcher by window class; a mismatch shows a generic icon (7 Nov).
-  const entry = fs.readFileSync(path.join(root, 'usr/share/applications/love-spot.desktop'), 'utf8');
+  const entry = fs.readFileSync(desktopFile, 'utf8');
   const wmClass = /^StartupWMClass=(.+)$/m.exec(entry)?.[1] ?? '';
   const windows = (() => { try { return execFileSync('xdotool', ['search', '--class', `^${wmClass}$`], { env: { ...process.env } }).toString().trim(); } catch { return ''; } })();
   check('window class matches the launcher (dock icon)', !!wmClass && !!windows, wmClass);
-  const own = path.join(home, '.local/share/love-spot');
-  check('data in its own home', fs.existsSync(path.join(own, 'config.toml')), own);
+  const own = ownHomes.find(dir => fs.existsSync(path.join(dir, 'config.toml')));
+  check('data in its own home', !!own, own ?? ownHomes.join(', '));
   check('nothing in Elpis\'s home', !fs.existsSync(path.join(home, '.elpis-next')));
   for (const theme of ['light', 'dark']) {
     await page.emulateMedia({ colorScheme: theme });
@@ -96,8 +105,8 @@ try {
       throw error;
     }
     const bounds = (await page.locator('.excalidraw').boundingBox())!;
-    const boardFile = path.join(home, '.local/share/excalidraw-local/scene.excalidraw');
-    const texts = () => { try { return (JSON.parse(fs.readFileSync(boardFile, 'utf8')).elements as { id: string; type: string; isDeleted?: boolean; text?: string }[]).filter(e => e.type === 'text' && !e.isDeleted); } catch { return []; } };
+    const boardFile = () => boards.map(dir => path.join(dir, 'scene.excalidraw')).find(file => fs.existsSync(file)) ?? '';
+    const texts = () => { try { return (JSON.parse(fs.readFileSync(boardFile(), 'utf8')).elements as { id: string; type: string; isDeleted?: boolean; text?: string }[]).filter(e => e.type === 'text' && !e.isDeleted); } catch { return []; } };
     const before = new Set(texts().map(e => e.id));
     await page.mouse.click(bounds.x + 300, bounds.y + 600); await page.keyboard.press('t');
     await page.mouse.click(bounds.x + 300, bounds.y + 600); await page.keyboard.type('Hi Matilda, say hello in five words.'); await page.keyboard.press('Escape');
@@ -113,8 +122,9 @@ try {
   try { process.kill(-app.pid!, 'SIGTERM'); } catch {}
   await new Promise(r => setTimeout(r, 1500));
   try { process.kill(-app.pid!, 'SIGKILL'); } catch {}
-  execFileSync('gio', ['trash', base]);
+  // gio trash keeps it recoverable; a CI machine without a desktop trash just deletes its scratch folder.
+  try { execFileSync('gio', ['trash', base]); } catch { fs.rmSync(base, { recursive: true, force: true }); }
 }
-const failed = results.filter(item => !item.ok).length;
-console.log(failed ? `STANDALONE_DEB_CHECK_FAIL (${failed})` : 'STANDALONE_DEB_CHECK_PASS');
+const failed = results.filter(item => !item.ok).length, label = snap ? 'STANDALONE_SNAP_CHECK' : 'STANDALONE_DEB_CHECK';
+console.log(failed ? `${label}_FAIL (${failed})` : `${label}_PASS`);
 process.exit(failed ? 1 : 0);

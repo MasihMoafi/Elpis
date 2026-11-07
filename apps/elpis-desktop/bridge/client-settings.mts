@@ -119,12 +119,12 @@ export async function impl_providers(this: DesktopClient, clientState: ClientSta
     const [account, limits, read, models, anthropic] = await Promise.all([
       internal_rpc(this, clientState, 'account/read', { refreshToken: false }).catch(error => ({ error: error.message })),
       internal_rpc(this, clientState, 'account/rateLimits/read', {}).catch(error => ({ error: error.message })),
-      internal_rpc(this, clientState, 'config/read', { includeLayers: false }),
+      internal_rpc(this, clientState, 'config/read', { includeLayers: true }),
       internal_modelList.call(this, clientState, { limit: 100, includeHidden: false }).catch(() => null),
       // Elpis's own Anthropic sign-out; a bridge that predates it has none.
       internal_rpc(this, clientState, 'claudeSubscription/read', {}).catch(() => null),
     ]);
-    return providersSnapshot({ account, limits: limits as Exclude<Parameters<typeof providersSnapshot>[0]['limits'], undefined>, config: read?.config, models: Array.isArray(models?.data) ? models.data : null, anthropic: anthropic as Exclude<Parameters<typeof providersSnapshot>[0]['anthropic'], undefined> });
+    return providersSnapshot({ account, limits: limits as Exclude<Parameters<typeof providersSnapshot>[0]['limits'], undefined>, config: read?.config, models: Array.isArray(models?.data) ? models.data : null, anthropic: anthropic as Exclude<Parameters<typeof providersSnapshot>[0]['anthropic'], undefined>, saved: savedProviderKeyIds(configHome(read)) });
   }
 
 export async function impl_providerSettings(this: DesktopClient, clientState: ClientState) {

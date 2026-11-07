@@ -414,7 +414,7 @@ const usageLimit = (value: (RecordValue & { primary?: RecordValue | null; second
 /** Each provider's own sign-in and usage. Subscription limits arrive keyed by limit ID from the Elpis bridge.
  * `anthropic.signedOut`: Elpis's own sign-out of the Claude subscription, which shows no models or usage while it is on.
  * `models`: the engine's model list, or null when it could not be read. */
-export function providersSnapshot({ account, limits, config, models, anthropic, env = process.env }: { account?: { account?: { type?: unknown; email?: unknown; planType?: unknown } | null; error?: unknown; requiresOpenaiAuth?: unknown } | null; limits?: { rateLimitsByLimitId?: Record<string, RecordValue>; rateLimits?: RecordValue & { limitId?: unknown }; error?: unknown } | null; config?: Config | null | undefined; models?: { model?: unknown; displayName?: unknown }[] | null; anthropic?: { signedOut?: unknown } | null; env?: NodeJS.ProcessEnv }) {
+export function providersSnapshot({ account, limits, config, models, anthropic, env = process.env, saved = new Set<string>() }: { account?: { account?: { type?: unknown; email?: unknown; planType?: unknown } | null; error?: unknown; requiresOpenaiAuth?: unknown } | null; limits?: { rateLimitsByLimitId?: Record<string, RecordValue>; rateLimits?: RecordValue & { limitId?: unknown }; error?: unknown } | null; config?: Config | null | undefined; models?: { model?: unknown; displayName?: unknown }[] | null; anthropic?: { signedOut?: unknown } | null; env?: NodeJS.ProcessEnv; saved?: Set<string> }) {
   const byId = { ...(limits?.rateLimitsByLimitId ?? {}) };
   if (typeof limits?.rateLimits?.limitId === 'string' && !byId[limits.rateLimits.limitId]) byId[limits.rateLimits.limitId] = limits.rateLimits;
   const usage = (prefix: string) => Object.entries(byId).filter(([id]) => id === prefix || id.startsWith(`${prefix}-`)).map(([, value]) => usageLimit(value as RecordValue)).filter(Boolean);
@@ -429,9 +429,11 @@ export function providersSnapshot({ account, limits, config, models, anthropic, 
     : signedIn?.type === 'chatgpt' ? { state: 'signedIn', method: 'ChatGPT', email: string(signedIn.email), plan: string(signedIn.planType) }
     : signedIn ? { state: 'signedIn', method: signedIn.type === 'apiKey' ? 'API key' : string(signedIn.type) }
     : { state: 'signedOut' };
-  const configured = Object.entries(config?.model_providers ?? {}).filter(([, def]) => def && typeof def === 'object');
+  // A built-in key provider with a saved key (Models & accounts, the model picker) is a connection too (7 Nov).
+  const builtIns = Object.entries(BUILT_IN_KEY_PROVIDERS).filter(([id]) => saved.has(id) && !config?.model_providers?.[id]);
+  const configured = [...Object.entries(config?.model_providers ?? {}), ...builtIns].filter(([, def]) => def && typeof def === 'object') as [string, NonNullable<Definition>][];
   const describe = ([id, def]: [string, NonNullable<Definition>]) => ({ id, name: string(def.name) ?? id, baseUrl: publicUrl(def.base_url),
-    envKey: string(def.env_key), keySet: typeof def.env_key === 'string' ? Boolean(env[def.env_key]) : Boolean(def.experimental_bearer_token) });
+    envKey: string(def.env_key), keySet: saved.has(id) || (typeof def.env_key === 'string' ? Boolean(env[def.env_key]) : Boolean(def.experimental_bearer_token)) });
   const codex = usage('codex');
   return {
     openai: { auth, requiresOpenaiAuth: boolean(account?.requiresOpenaiAuth), usage: codex,

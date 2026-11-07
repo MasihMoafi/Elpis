@@ -21,3 +21,11 @@ test('a provider key is saved privately, replaced and cleared without touching t
   assert.deepEqual(loadProviderKeys(home), { anthropic: 'sk-ant-kept' });
   assert.throws(() => saveProviderKey(home, 'openrouter', ''), /API key must be/);
 });
+
+test('a saved OpenRouter key shows as an OpenRouter connection with its key set', async () => {
+  const { providersSnapshot } = await import('./elpis-features.mts');
+  const none = providersSnapshot({ config: { model_providers: {} } as never, models: [] });
+  assert.deepEqual(none.openrouter, []);
+  const saved = providersSnapshot({ config: { model_providers: {} } as never, models: [], saved: new Set(['openrouter']) });
+  assert.deepEqual(saved.openrouter.map(item => [item.id, item.keySet]), [['openrouter', true]]);
+});
