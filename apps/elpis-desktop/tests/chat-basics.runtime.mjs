@@ -59,6 +59,30 @@ test('chat view basics: a long saved chat opens with its messages and loads ten 
   const earlier = page.locator('.load-earlier-messages');
   const redBars = () => page.locator('.error-banner:not(.notice):not(.warning)').allInnerTexts();
 
+  await t.test('a cached partial history stays visible without a spinner during a slow refresh', async () => {
+    await row(long).locator('.thread-link').click();
+    await page.getByText('Answer 45', { exact: true }).waitFor();
+    await earlier.waitFor({ state: 'attached' });
+    await page.waitForTimeout(300);
+    const before = await questions();
+    assert.ok(Math.min(...before) > 1, 'the fixture still has earlier pages to load');
+    await row(ids.One).locator('.thread-link').click();
+    await page.getByText('One question', { exact: true }).first().waitFor();
+    let release;
+    const held = new Promise(resolve => { release = resolve; });
+    const routePattern = `**/api/threads/${long}?*`;
+    await page.route(routePattern, async route => { await held; await route.continue().catch(() => {}); });
+    try {
+      await row(long).locator('.thread-link').click();
+      await page.getByText('Answer 45', { exact: true }).waitFor();
+      assert.deepEqual(await questions(), before, 'the cached page appears before the refresh returns');
+      assert.equal(await page.locator('.chat-loading, .load-earlier-messages[data-loading]').count(), 0, 'the cached page has no loading indicator');
+    } finally {
+      release();
+      await page.unroute(routePattern);
+    }
+  });
+
   await t.test('load earlier: scrolling to the top brings about ten earlier messages, reading position kept, nothing left to load at the start', async () => {
     await row(long).locator('.thread-link').click();
     await page.getByText('Answer 45', { exact: true }).waitFor();
@@ -81,5 +105,47 @@ test('chat view basics: a long saved chat opens with its messages and loads ten 
     }
     assert.equal(Math.min(...shown), 1, 'the chat start is reached'); assert.equal(await earlier.count(), 0, 'nothing is left to load at the start');
     await page.screenshot({ path: path.join(shots, 'load-earlier.png') });
+  });
+
+  await t.test('switching back keeps the loaded history and reading position while it refreshes', async () => {
+    const scroller = page.locator('.chat-scroll');
+    for (let attempt = 0; attempt < 10 && await earlier.count(); attempt++) {
+      const first = Math.min(...await questions());
+      await scroller.evaluate(element => { element.scrollTop = 0; });
+      await page.getByText(`Question ${first - 1}`, { exact: true }).first().waitFor();
+      await page.waitForTimeout(300);
+    }
+    await scroller.evaluate(element => { element.scrollTop = 900; });
+    await page.waitForTimeout(250);
+    const beforeTop = await scroller.evaluate(element => element.scrollTop);
+    const before = await questions();
+    assert.equal(Math.min(...before), 1, 'the complete loaded history is the precondition');
+    await row(ids.One).locator('.thread-link').click();
+    await page.getByText('One question', { exact: true }).first().waitFor();
+    await page.evaluate(() => {
+      window.switchSamples = [];
+      window.sampleSwitch = true;
+      const sample = () => {
+        if (!window.sampleSwitch) return;
+        const content = document.querySelector('.chat-content');
+        if (content?.textContent?.includes('Question 45')) window.switchSamples.push({
+          hasFirst: [...content.querySelectorAll('.message.user')].some(message => message.textContent.trim() === 'Question 1'),
+          users: [...content.querySelectorAll('.message.user')].map(message => message.textContent.trim()),
+          loading: !!document.querySelector('.chat-loading, .load-earlier-messages[data-loading]'),
+        });
+        requestAnimationFrame(sample);
+      };
+      requestAnimationFrame(sample);
+    });
+    await row(long).locator('.thread-link').click();
+    await page.getByText('Answer 45', { exact: true }).waitFor();
+    await page.waitForTimeout(1000);
+    const samples = await page.evaluate(() => { window.sampleSwitch = false; return window.switchSamples; });
+    assert.ok(samples.length, 'the reopened transcript was painted');
+    assert.ok(samples.every(sample => sample.hasFirst), `the loaded first turn never disappears during refresh: ${JSON.stringify(samples.filter((sample, index) => !index || sample.hasFirst !== samples[index - 1].hasFirst).map(sample => ({ first: sample.users[0], count: sample.users.length, loading: sample.loading })))}`);
+    assert.ok(samples.every(sample => !sample.loading), 'a cached transcript does not show a loading indicator');
+    assert.deepEqual(await questions(), before, 'the refresh retains all loaded turns');
+    assert.ok(Math.abs(await scroller.evaluate(element => element.scrollTop) - beforeTop) < 5, 'the reading position is restored');
+    await page.screenshot({ path: path.join(shots, 'chat-switch-restored.png') });
   });
 });

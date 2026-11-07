@@ -27,9 +27,15 @@ export function useTranscriptHistory(selected: Thread | null, loading: boolean, 
   const liveRevision = useRef(0), liveVersions = useRef(new Map<string, number>());
   const liveKeysAfter = useCallback((revision: number) => new Set([...liveVersions.current].filter(([, version]) => version > revision).map(([key]) => key)), []);
   /** Merge a history page with newer live items, and note its cursor and gap. */
-  const applyHistoryPage = useCallback((id: string, page: HistoryPage, revision: number) => {
-    setEntries(previous => mergeHistoryWithLive(previous, inReadingOrder(page), liveKeysAfter(revision))); setItemCursor(page.nextCursor);
-    noteHistoryGap(id, page); heldEarlier.current.delete(id);
+  const applyHistoryPage = useCallback((id: string, page: HistoryPage, revision: number, keepOlder = false) => {
+    const fresh = inReadingOrder(page), cached = keepOlder ? transcripts.current.get(id) : undefined;
+    const keys = new Set(fresh.map(entry => `${entry.turnId}:${entry.item.id}`));
+    const overlap = cached?.entries.findIndex(entry => keys.has(`${entry.turnId}:${entry.item.id}`)) ?? -1;
+    const prefix = overlap > 0 ? cached!.entries.slice(0, overlap) : [];
+    const snapshot = !fresh.length && cached ? cached.entries : [...prefix, ...fresh];
+    setEntries(previous => mergeHistoryWithLive(previous, snapshot, liveKeysAfter(revision)));
+    setItemCursor(cached && (!fresh.length || prefix.length) ? cached.cursor : page.nextCursor);
+    noteHistoryGap(id, page); if (!cached || fresh.length && !prefix.length) heldEarlier.current.delete(id);
   }, [liveKeysAfter, noteHistoryGap, setEntries]);
   return { itemCursor, setItemCursor, historyGaps, noteHistoryGap, heldEarlier, heldCount, setHeldCount, transcripts, prefetching, prefetchThread, liveRevision, liveVersions, liveKeysAfter, applyHistoryPage };
 }

@@ -458,7 +458,7 @@
   "tests/changes-panel.test.cjs:typescript(no-misused-promises)": 1,
   "tests/chat-activity.test.cjs:eslint(no-unused-vars)": 2,
   "tests/chat-activity.test.cjs:typescript(no-misused-promises)": 1,
-  "tests/chat-basics.runtime.mjs:eslint(no-unused-vars)": 2,
+  "tests/chat-basics.runtime.mjs:eslint(no-unused-vars)": 1,
   "tests/chat-folder.test.cjs:typescript(no-misused-promises)": 1,
   "tests/chat-load-layout.test.cjs:typescript(await-thenable)": 2,
   "tests/code-open-electron.cjs:typescript(no-floating-promises)": 1,
