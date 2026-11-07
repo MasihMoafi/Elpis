@@ -39,5 +39,9 @@ Unknown -> {"text":"new instructions"} (role - user)
 new instructions
 </INSTRUCTIONS>
 
-Unknown -> {}
-None
+Unknown -> {} (role - user)
+# AGENTS.md instructions
+
+<INSTRUCTIONS>
+The user withdrew these AGENTS.md instructions from your context. Do not follow the AGENTS.md instructions given earlier in this conversation; they no longer apply.
+</INSTRUCTIONS>

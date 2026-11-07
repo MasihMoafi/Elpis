@@ -191,7 +191,7 @@ async fn failed_global_read_keeps_instructions_until_recovery() -> Result<()> {
     std::fs::remove_file(&source)?;
     write_global_file(&home, GLOBAL_AGENTS_FILENAME, NEW_GLOBAL_INSTRUCTIONS)?;
     test.submit_turn("load recovered instructions").await?;
-    // The recovered file replaces the retained copy; no replacement notice remains.
+    // A failed read keeps the applied snapshot; recovery appends the new instructions once.
     let initial = expected_provider_only_instruction_fragment(GLOBAL_INSTRUCTIONS);
     let replacement = expected_provider_only_instruction_fragment(NEW_GLOBAL_INSTRUCTIONS);
     assert_eq!(
@@ -200,8 +200,15 @@ async fn failed_global_read_keeps_instructions_until_recovery() -> Result<()> {
             .iter()
             .map(instruction_fragments)
             .collect::<Vec<_>>(),
-        vec![vec![initial.clone()], vec![initial], vec![replacement]],
+        vec![
+            vec![initial.clone()],
+            vec![initial.clone()],
+            vec![initial, replacement],
+        ],
     );
+    for pair in requests.requests().windows(2) {
+        assert_input_prefix_preserved(&pair[0], &pair[1], /*forked*/ false);
+    }
     Ok(())
 }
 
@@ -251,7 +258,7 @@ async fn live_global_removal_preserves_repository_instructions(
         cwd,
         &format!("{GLOBAL_INSTRUCTIONS}\n\n{PROJECT_SEPARATOR}\n\n{PROJECT_INSTRUCTIONS}"),
     );
-    // Removing the global file refills the one slot with the repository instructions alone.
+    // The appended snapshot contains repository instructions alone, without repeating it later.
     let replacement = expected_instruction_fragment(cwd, PROJECT_INSTRUCTIONS);
     assert_eq!(
         requests
@@ -259,8 +266,15 @@ async fn live_global_removal_preserves_repository_instructions(
             .iter()
             .map(instruction_fragments)
             .collect::<Vec<_>>(),
-        vec![vec![initial], vec![replacement.clone()], vec![replacement]],
+        vec![
+            vec![initial.clone()],
+            vec![initial.clone(), replacement.clone()],
+            vec![initial, replacement],
+        ],
     );
+    for pair in requests.requests().windows(2) {
+        assert_input_prefix_preserved(&pair[0], &pair[1], /*forked*/ false);
+    }
     Ok(())
 }
 
@@ -334,8 +348,10 @@ async fn global_instructions_refresh_after_a_tool_in_the_same_turn() -> Result<(
             .iter()
             .map(instruction_fragments)
             .collect::<Vec<_>>(),
-        vec![vec![initial], vec![replacement]],
+        vec![vec![initial.clone()], vec![initial, replacement]],
     );
+    let requests = requests.requests();
+    assert_input_prefix_preserved(&requests[0], &requests[1], /*forked*/ false);
     Ok(())
 }
 

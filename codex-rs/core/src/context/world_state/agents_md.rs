@@ -37,8 +37,7 @@ impl WorldStateSection for AgentsMdState {
         role == "user" && UserInstructions::matches_text(text)
     }
 
-    // Elpis: AGENTS.md owns one history slot, so a Context Ledger exclusion removes the
-    // earlier copy from the next request instead of appending a note that it no longer applies.
+    // Recognize earlier copies and withdrawal notes so compaction can remove them.
     fn has_retained_fragment_matcher() -> bool {
         true
     }
@@ -78,6 +77,11 @@ impl WorldStateSection for AgentsMdState {
                     text: AGENTS_MD_WITHDRAWN_NOTE.to_string(),
                 })
             }
+            // A legacy rollout can retain instructions without a section snapshot.
+            (None, PreviousSectionState::Unknown) => Some(UserInstructions {
+                directory: None,
+                text: AGENTS_MD_WITHDRAWN_NOTE.to_string(),
+            }),
             _ => None,
         };
 
