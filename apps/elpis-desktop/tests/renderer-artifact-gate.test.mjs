@@ -87,6 +87,19 @@ test('stable slices are disjoint and cover every planned baseline and candidate 
   }
 });
 
+test('a saved-workspace regression renamed to TypeScript after the checkpoint still runs', async t => {
+  const f = await fixture(t);
+  await fs.rename(path.join(f.root, 'desktop/state.test.cjs'), path.join(f.root, 'desktop/state.test.cts'));
+  await fs.writeFile(path.join(f.root, 'test-inventory.json'), JSON.stringify({ ...f.inventory, desktop: ['desktop/state.test.cts'] }));
+  await f.commitSource();
+  const plan = await planSuite(f.root, f.baseline);
+  assert.deepEqual(plan.files.map(file => file.name), ['desktop/state.test.cts', 'tests/kept.test.cjs']);
+  const prepared = await prepareBaseline(f.root, f.baseline);
+  t.after(() => execFileSync('gio', ['trash', prepared.scratch]));
+  await fs.access(path.join(prepared.root, 'desktop/state.test.cjs'));
+  await assert.rejects(fs.access(path.join(prepared.root, 'desktop/state.test.cts')), { code: 'ENOENT' });
+});
+
 test('prepare writes the renderer and plan identity once without a receipt', async t => {
   const f = await fixture(t);
   const manifest = await gate.prepareGate({ ...f, shardCount: 6 });

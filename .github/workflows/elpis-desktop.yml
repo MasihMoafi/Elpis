@@ -203,7 +203,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends poppler-utils ffmpeg
       - name: Run the gate (${{ matrix.tiers }})
-        run: node scripts/test-gate.mjs ${{ matrix.tiers }}
+        run: node scripts/test-gate.mts ${{ matrix.tiers }}
       - if: ${{ !cancelled() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:

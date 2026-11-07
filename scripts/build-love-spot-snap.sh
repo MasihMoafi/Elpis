@@ -147,7 +147,7 @@ apps:
 YAML
 
 python3 -c 'import sys, yaml; yaml.safe_load(open(sys.argv[1]))' "$S/meta/snap.yaml" || { echo "meta/snap.yaml does not parse" >&2; exit 1; }
-node "$APP/scripts/third-party-notices.mjs" "$S" "$S/THIRD-PARTY-NOTICES.txt"; cp "$R/LICENSE" "$S/LICENSE"
+node "$APP/scripts/third-party-notices.mts" "$S" "$S/THIRD-PARTY-NOTICES.txt"; cp "$R/LICENSE" "$S/LICENSE"
 
 email=$(git -C "$R" config user.email || true)
 if rg -l -F -e "$HOME/" ${email:+-e "$email"} "$S" || find "$S" -type l -lname "$HOME/*" | rg .; then echo "The snap names the builder's home or email; not built." >&2; exit 1; fi

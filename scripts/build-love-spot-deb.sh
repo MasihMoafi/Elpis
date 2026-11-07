@@ -91,7 +91,7 @@ Name=New page
 Exec=love-spot
 LOVEENTRY
 mkdir -p "$ROOT/usr/share/doc/love-spot"
-node "$APP/scripts/third-party-notices.mjs" "$OPT" "$ROOT/usr/share/doc/love-spot/THIRD-PARTY-NOTICES.txt"
+node "$APP/scripts/third-party-notices.mts" "$OPT" "$ROOT/usr/share/doc/love-spot/THIRD-PARTY-NOTICES.txt"
 cp "$R/LICENSE" "$ROOT/usr/share/doc/love-spot/LICENSE"
 cat > "$ROOT/DEBIAN/control" <<CONTROL
 Package: love-spot

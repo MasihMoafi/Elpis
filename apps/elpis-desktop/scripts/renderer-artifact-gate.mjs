@@ -612,7 +612,9 @@ export const retiredPaths = {
   '988aad0e78bd264c00e435be07598e79f08941e8': ['tests/settings-reorder.test.cjs', 'tests/observability.test.cjs', 'tests/temp-root-ui.test.cjs', 'tests/love-agents.test.cjs', 'tests/love-agents-v2.test.cjs', 'tests/love-spot-standalone.test.cjs', 'tests/love-spot-talk.test.cjs', 'tests/workflow-characters.test.cjs'],
 };
 export const receiptName = '.elpis-ui-receipt.json';
-const stateTest = 'desktop/state.test.cjs';
+// The saved-workspace regression; its .cjs name survives in older baselines (moved to TypeScript on 7 Nov).
+const stateTests = ['desktop/state.test.cts', 'desktop/state.test.cjs'];
+const isStateTest = name => stateTests.includes(name);
 const appPrefix = 'apps/elpis-desktop/';
 const appRoot = fileURLToPath(new URL('../', import.meta.url));
 const digest = value => createHash('sha256').update(value).digest('hex');
@@ -692,25 +694,27 @@ export async function planSuite(root = appRoot, baseline = baselineCommit, updat
   const retained = JSON.parse(git(root, ['show', `${baseline}:${appPrefix}test-inventory.json`]));
   const inventory = JSON.parse(await fs.readFile(path.join(root, 'test-inventory.json'), 'utf8'));
   checkInventory(inventory, await discoverTests(root));
-  const oldFiles = trackedFiles(root, baseline, [`${appPrefix}tests/`, `${appPrefix}${stateTest}`]);
+  const oldFiles = trackedFiles(root, baseline, [`${appPrefix}tests/`, ...stateTests.map(name => appPrefix + name)]);
   for (const [name, pin] of Object.entries(updates)) oldFiles.set(name, blob(await retainedUpdate(root, name, pin)));
   for (const name of retiredPaths[baseline] ?? []) oldFiles.delete(name);
   const currentFiles = new Map(await Promise.all((await treeFiles(path.join(root, 'tests'))).map(async name => [`tests/${name}`, blob(await fs.readFile(path.join(root, 'tests', name)))])));
-  try { currentFiles.set(stateTest, blob(await fs.readFile(path.join(root, stateTest)))); }
-  catch (error) { if (error.code !== 'ENOENT') throw error; }
+  for (const name of stateTests) {
+    try { currentFiles.set(name, blob(await fs.readFile(path.join(root, name)))); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+  }
   const testNames = new Set([...Object.values(retained).flat(), ...Object.values(inventory).flat()]);
   const supportHash = files => digest(JSON.stringify([...files].filter(([name]) => !testNames.has(name)).sort()));
   const support = { baseline: supportHash(oldFiles), candidate: supportHash(currentFiles) };
   const item = (source, name, files) => {
-    assert((name.startsWith('tests/') || name === stateTest) && !name.split('/').includes('..'), `Invalid regression path: ${name}`);
+    assert((name.startsWith('tests/') || isStateTest(name)) && !name.split('/').includes('..'), `Invalid regression path: ${name}`);
     assert(files.has(name), `Missing ${source} UI regression: ${name}`);
     return { source, name, blob: files.get(name) };
   };
   assert(retained.ui.length > 0 && inventory.ui.length > 0, 'The UI inventory must not be empty');
-  assert(retained.desktop.includes(stateTest), 'The checkpoint must retain the saved-workspace regression');
+  assert(retained.desktop.some(isStateTest),'The checkpoint must retain the saved-workspace regression');
   // 2 Nov, Masih: "radically delete and reduce the time builds take". Old copies of current tests ran a second
   // time and only re-checked expectations he had since changed; the current tests alone are the regression suite.
-  const files = [...(inventory.desktop.includes(stateTest) ? [stateTest] : []), ...inventory.ui].map(name => item('candidate', name, currentFiles));
+  const files = [...inventory.desktop.filter(isStateTest), ...inventory.ui].map(name => item('candidate', name, currentFiles));
   return { baseline, support, files };
 }
 
@@ -735,7 +739,8 @@ export async function prepareBaseline(root = appRoot, baseline = baselineCommit,
   const scratch = await fs.mkdtemp(path.join(base, 'eu-'));
   try {
     const repository = git(root, ['rev-parse', '--show-toplevel']).trim();
-    const archive = git(repository, ['archive', baseline, `${appPrefix}tests`, `${appPrefix}${stateTest}`], { encoding: 'buffer', maxBuffer: 32 * 1024 * 1024 });
+    const kept = [...trackedFiles(root, baseline, stateTests.map(name => appPrefix + name)).keys()].map(name => appPrefix + name);
+    const archive = git(repository, ['archive', baseline, `${appPrefix}tests`, ...kept],{ encoding: 'buffer', maxBuffer: 32 * 1024 * 1024 });
     execFileSync('tar', ['-x', '-C', scratch], { input: archive });
     const retainedRoot = path.join(scratch, appPrefix);
     for (const [name, pin] of Object.entries(updates)) {
@@ -748,7 +753,7 @@ export async function prepareBaseline(root = appRoot, baseline = baselineCommit,
     await fs.symlink(path.join(repository, 'codex-rs'), path.join(scratch, 'codex-rs'));
     for (const entry of await fs.readdir(root)) {
       if (entry === 'desktop') {
-        for (const child of await fs.readdir(path.join(root, entry))) if (child !== 'state.test.cjs') {
+        for (const child of await fs.readdir(path.join(root, entry))) if (!isStateTest(`desktop/${child}`)) {
           await fs.symlink(path.join(root, entry, child), path.join(retainedRoot, entry, child));
         }
       } else if (entry !== 'tests') await fs.symlink(path.join(root, entry), path.join(retainedRoot, entry));
