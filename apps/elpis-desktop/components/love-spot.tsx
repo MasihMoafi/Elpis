@@ -558,7 +558,7 @@ function LoveSpotBoard({ dark, toolbarHost }: LoveSpotProps) {
     queuedPage.current = undefined;
     if (name !== page?.name) void changePage("switch", name);
   });
-  // Pages not kept go to the system trash after a week untouched (bridge/love-spot-store.cjs, "Page lifecycle").
+  // Pages not kept go to the system trash after a week untouched (bridge/love-spot-store.cts, "Page lifecycle").
   const currentKept = !!pages.find(item => item.name === page?.name)?.kept;
   const tools = <div className="navbar love-spot-tools accent-scope">
       <div className="love-spot-pages">

@@ -1,11 +1,11 @@
 const test = require('node:test');
-const assert = require('node:assert/strict');
-const { splitPainting, paintElements, diagramSvg } = require('./love-spot-painting.cjs');
-const fence = shapes => '```excalidraw\n' + JSON.stringify(shapes) + '\n```';
+const assert: typeof import('node:assert/strict') = require('node:assert/strict');
+const { splitPainting, paintElements, diagramSvg } = require('./love-spot-painting.cts') as typeof import('./love-spot-painting.cts');
+const fence = (shapes: unknown) => '```excalidraw\n' + JSON.stringify(shapes) + '\n```';
 
 test('each approved reply portrait is distinct, and its mood marker stays out of text and speech', () => {
   const { replyPortrait, MATILDA_SHOTS } = require('./matilda-face.cjs');
-  const { withoutPainting } = require('./love-spot-painting.cjs');
+  const { withoutPainting } = require('./love-spot-painting.cts') as typeof import('./love-spot-painting.cts');
   const portraits = [];
   for (const expression of Object.keys(MATILDA_SHOTS)) {
     const raw = `<!--matilda:${expression}--> Hello.`;
@@ -27,11 +27,13 @@ test('positioned connectors and absolute-point connectors produce the same board
   const a = paintElements(positioned, { x: 20, y: 30 }, 'same', undefined, 0);
   const b = paintElements(absolute, { x: 20, y: 30 }, 'same', undefined, 0);
   assert.deepEqual(a, b);
+  assert.ok(a[1] && 'points' in a[1]);
   assert.deepEqual([a[1].x, a[1].y, a[1].points], [120, 90, [[0, 0], [0, 50], [-40, 80]]]);
 });
 
 test('inline SVG uses the same connector positions, escapes labels and refuses broken drawing data', () => {
   const svg = diagramSvg(JSON.stringify([{ type: 'rectangle', x: 0, y: 0, width: 200, height: 60 }, { type: 'arrow', x: 100, y: 60, points: [[0, 0], [0, 50]] }, { type: 'text', x: 20, y: 20, text: '<script>alert(1)</script>', strokeColor: 'url(https://invalid)' }]));
+  assert.ok(svg);
   assert.match(svg, /points="116,76 116,126"/);
   assert.match(svg, /&lt;script&gt;/);
   assert.doesNotMatch(svg, /<script|https:|url\(https/);
@@ -45,6 +47,7 @@ test('a painting keeps the clean styles she chooses and falls back to the board 
     { type: 'text', x: 10, y: 10, text: 'Engine', fontFamily: 7, textAlign: 'center', roughness: 0 },
     { type: 'text', x: 10, y: 40, text: 'Note', fontFamily: 99, textAlign: 'justify', roughness: 9, strokeStyle: 'wavy', fillStyle: 'gradient', opacity: 0 },
   ])).shapes, { x: 0, y: 0 }, 'styles', undefined, 0);
+  assert.ok(box && title && bad && 'fontFamily' in title && 'fontFamily' in bad);
   assert.deepEqual([box.roughness, box.strokeStyle, box.fillStyle, box.opacity], [0, 'dashed', 'hachure', 60]);
   assert.deepEqual([title.fontFamily, title.textAlign, title.roughness], [7, 'center', 0]);
   assert.deepEqual([bad.fontFamily, bad.textAlign, bad.roughness, bad.strokeStyle, bad.fillStyle, bad.opacity], [5, 'left', 2, 'solid', 'solid', 10]);

@@ -13,7 +13,7 @@ export type ServerState = {
   client: import('./client.mts').DesktopClient,
   options: { elpisHome?: string, [key: string]: unknown },
   trash: Awaited<ReturnType<typeof import('./trash.mts').createTrash>>,
-  loveSpot: ReturnType<typeof import('./love-spot-store.cjs').createLoveSpot>,
+  loveSpot: ReturnType<typeof import('./love-spot-store.cts').createLoveSpot>,
   companion: ReturnType<typeof import('./matilda-companion.mjs').createMatildaCompanion>,
   loveTalk: ReturnType<typeof import('./love-spot-talk.mjs').createLoveSpotTalk>,
   loveAgents: ReturnType<typeof import('./love-agents.mjs').createLoveAgents>,

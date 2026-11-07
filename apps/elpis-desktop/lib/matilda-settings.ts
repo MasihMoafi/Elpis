@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, signedIn } from "@/lib/api";
 import { subscribeLoveSpotEvents } from "@/lib/love-spot-events";
 
-/** The one Matilda setting the bridge keeps (bridge/love-spot-store.cjs, matildaSettings): whether she answers, and her
+/** The one Matilda setting the bridge keeps (bridge/love-spot-store.cts, matildaSettings): whether she answers, and her
  * model. The board, the small chat and her chat tab all read this, so she is the same Matilda everywhere. */
 export type MatildaSettings = { replies: boolean; model: string | null; provider: string | null };
 

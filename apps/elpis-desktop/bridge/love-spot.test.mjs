@@ -9,7 +9,7 @@ import { promisify } from 'node:util';
 import { EventEmitter } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { startDesktopServer } from './server.mts';
-import { createLoveSpot } from './love-spot-store.cjs';
+import { createLoveSpot } from './love-spot-store.cts';
 
 const FAKE_ACP_AGENT = fileURLToPath(new URL('../../../tools/elpis-claude/test/fake-acp-agent.mjs', import.meta.url));
 
@@ -41,6 +41,7 @@ test('only a brand-new Love Spot board gets the handwritten welcome and heart', 
   assert.equal(welcome.fontFamily, 5, 'the welcome uses the board handwriting');
   assert.equal(welcome.strokeColor, '#000000');
   assert.equal(heart?.strokeColor, '#e03131');
+  assert.ok(heart.points);
   assert.ok(heart.points.length >= 8, 'the heart is drawn as a hand-shaped path');
   assert.deepEqual(heart.points[0], heart.points.at(-1), 'the hand-drawn heart closes');
   assert.deepEqual((await empty.read()).scene.elements, [], 'a saved empty board stays empty');
@@ -97,7 +98,7 @@ test('Love Spot agent routes authenticate and run saved drawing agents over ACP 
   await assert.rejects(fs.access(log), 'no agent started for a refused request');
   const reply = await f.request('/agents/run', { id: 'agent' });
   const card = async () => (await f.load()).scene.elements[0].customData.loveAgent;
-  assert.equal(reply.status, 200);
+  assert.equal(reply.status, 200, await reply.clone().text());
   assert.equal((await reply.json()).results[0].output, 'route(default) answered: permission: allow_once. [permission] Route seed');
   const saved = await card();
   assert.deepEqual([saved.status, saved.sessionId, saved.permission], ['completed', 'route-session-1', null]);
@@ -172,14 +173,14 @@ test('two Love Spot stores converge on equal-version deletes in either order, bu
     const fromStandalone = e => other.save({ elements: [e], files: {}, page });
     await fromElpis(deleteFirst ? deleted : live);
     await fromStandalone(deleteFirst ? live : deleted);
-    assert.equal((await other.read()).scene.elements.find(e => e.id === id).isDeleted, true,
+    assert.equal((await other.read()).scene.elements.find(e => e.id === id)?.isDeleted, true,
       `delete must win: deleteFirst=${deleteFirst}, liveNonce=${liveNonce}, deletedNonce=${deletedNonce}`);
     await fromStandalone({ ...live, version: 1, versionNonce: 0 });
-    assert.equal((await f.load()).scene.elements.find(e => e.id === id).isDeleted, true);
+    assert.equal((await f.load()).scene.elements.find(e => e.id === id)?.isDeleted, true);
     await fromElpis({ ...live, version: 3 });
-    assert.equal((await other.read()).scene.elements.find(e => e.id === id).isDeleted, false, 'newer undo must restore');
+    assert.equal((await other.read()).scene.elements.find(e => e.id === id)?.isDeleted, false, 'newer undo must restore');
     await fromStandalone({ ...deleted, version: 4 });
-    assert.equal((await f.load()).scene.elements.find(e => e.id === id).isDeleted, true, 'newer redo must delete');
+    assert.equal((await f.load()).scene.elements.find(e => e.id === id)?.isDeleted, true, 'newer redo must delete');
   }
 });
 
@@ -388,7 +389,7 @@ test('independent screenshot watchers consume one choice across page switches an
   };
   await fs.writeFile(path.join(f.screenshots, 'placed-once.png'), PNG);
   await wait(() => a.screenshotsList().length === 1 && b.screenshotsList().length === 1);
-  const shot = a.screenshotsList()[0];
+  const shot = a.screenshotsList()[0]; assert.ok(shot);
   await assert.rejects(a.chooseScreenshot({ id: shot.id, action: 'place', dataURL: 'data:text/plain;base64,cHJpdmF0ZQ==' }), /Invalid drawing image/);
   assert.equal(a.screenshotsList().length, 1, 'a refused import must retain the private screenshot for retry');
   assert.equal((await a.read()).scene.elements.length, 0);
@@ -399,7 +400,7 @@ test('independent screenshot watchers consume one choice across page switches an
   assert.equal((await b.read()).scene.elements.length, 0, 'a stale tray cannot place the same screenshot on another page');
   await fs.writeFile(path.join(f.screenshots, 'dismiss-everywhere.png'), PNG);
   await wait(() => a.screenshotsList().length === 1 && b.screenshotsList().length === 1);
-  await b.chooseScreenshot({ id: b.screenshotsList()[0].id, action: 'dismiss' });
+  await b.chooseScreenshot({ id: b.screenshotsList()[0]?.id, action: 'dismiss' });
   await wait(() => a.screenshotsList().length === 0);
   assert.equal((await a.read()).scene.elements.length, 0);
   assert.ok(JSON.parse(await fs.readFile(path.join(f.directory, '.screenshot-choices.json'), 'utf8')).every(id => /^shot-[a-f0-9]{32}$/.test(id)), 'choice metadata contains no screenshot names or pixels');
@@ -418,7 +419,7 @@ test('a later Love Spot process receives private pending screenshots from the al
       console.log(JSON.stringify({shots:b.screenshotsList(),scene:(await b.read()).scene}));
     } finally { await b.close(); }
   })().catch(e=>{console.error(e);process.exitCode=1});`;
-  const result = JSON.parse((await exec(process.execPath, ['-e', script, fileURLToPath(new URL('./love-spot-store.cjs', import.meta.url)), f.directory, f.screenshots])).stdout);
+  const result = JSON.parse((await exec(process.execPath, ['-e', script, fileURLToPath(new URL('./love-spot-store.cts', import.meta.url)), f.directory, f.screenshots])).stdout);
   assert.deepEqual(result.shots, a.screenshotsList(), 'a new process must not classify the other app\'s pending screenshot as old');
   assert.equal(result.scene.elements.length, 0);
 });
@@ -443,7 +444,7 @@ test('a later app receives a private screenshot backlog larger than one IPC resp
       console.log(JSON.stringify({names,shared:(await b.read()).scene.elements.length}));
     } finally { await b.close(); }
   })().catch(e=>{console.error(e);process.exitCode=1});`;
-  const result = JSON.parse((await exec(process.execPath, ['-e', script, fileURLToPath(new URL('./love-spot-store.cjs', import.meta.url)), f.directory, f.screenshots])).stdout);
+  const result = JSON.parse((await exec(process.execPath, ['-e', script, fileURLToPath(new URL('./love-spot-store.cts', import.meta.url)), f.directory, f.screenshots])).stdout);
   assert.deepEqual(result.names.sort(), expected, 'every pending screenshot must arrive in the later process');
   assert.equal(result.shared, 0);
 });
@@ -507,13 +508,13 @@ test('dismissed screenshots stay dismissed and leave all shared files unchanged'
 
 test('Love Spot independent processes serialize their merges on the same drawing', async t => {
   const f = await fixture(t);
-  const module = fileURLToPath(new URL('./love-spot-store.cjs', import.meta.url));
+  const module = fileURLToPath(new URL('./love-spot-store.cts', import.meta.url));
   await Promise.all(Array.from({ length: 8 }, (_, i) => exec(process.execPath, ['-e', `const {createLoveSpot}=require(${JSON.stringify(module)});createLoveSpot({directory:process.argv[1]}).save(JSON.parse(process.argv[2])).catch(e=>{console.error(e);process.exitCode=1});`, f.directory, JSON.stringify({ elements: [element(`process-${i}`)], files: {} })])));
   assert.equal((await f.load()).scene.elements.length, 8);
 });
 
 for (const barrier of ['owner-read', 'owner-unlink', 'empty-claim']) test(`a stale lock waiter cannot reap its live successor after ${barrier}`, { timeout: 15000 }, async t => {
-  const f = await fixture(t), module = fileURLToPath(new URL('./love-spot-store.cjs', import.meta.url));
+  const f = await fixture(t), module = fileURLToPath(new URL('./love-spot-store.cts', import.meta.url));
   const script = `
     const fs = require('node:fs/promises'), [directory, role, barrier] = process.argv.slice(1);
     const { createLoveSpot } = require(${JSON.stringify(module)});
@@ -734,7 +735,7 @@ test('opening a board replaces her older faces with the raster one and keeps a c
 
 test('pages not kept go to the trash after a week untouched; kept pages and the open page stay', async t => {
   const fsp = (await import('node:fs/promises')).default, pathm = (await import('node:path')).default, osm = (await import('node:os')).default;
-  const { createLoveSpot } = await import('./love-spot-store.cjs');
+  const { createLoveSpot } = await import('./love-spot-store.cts');
   const { createTestTempDir, removeTestTempDir } = await import('../tests/temp-root.cjs');
   const base = pathm.join(osm.homedir(), '.cache/elpis-tests'); await fsp.mkdir(base, { recursive: true });
   const directory = createTestTempDir(pathm.join(base, 'love-pages-'));
@@ -763,7 +764,7 @@ test('pages not kept go to the trash after a week untouched; kept pages and the 
 
 test('delete all pages trashes every page but the open one and the kept ones', async t => {
   const fsp = (await import('node:fs/promises')).default, pathm = (await import('node:path')).default, osm = (await import('node:os')).default;
-  const { createLoveSpot } = await import('./love-spot-store.cjs');
+  const { createLoveSpot } = await import('./love-spot-store.cts');
   const { createTestTempDir, removeTestTempDir } = await import('../tests/temp-root.cjs');
   const base = pathm.join(osm.homedir(), '.cache/elpis-tests'); await fsp.mkdir(base, { recursive: true });
   const directory = createTestTempDir(pathm.join(base, 'love-clear-'));

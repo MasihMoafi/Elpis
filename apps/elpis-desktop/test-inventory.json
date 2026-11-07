@@ -144,7 +144,7 @@
     "bridge/love-spot-voice.test.mjs",
     "bridge/workflow-runs.test.mjs",
     "bridge/matilda-companion.test.mjs",
-    "bridge/love-spot-painting.test.cjs",
+    "bridge/love-spot-painting.test.cts",
     "bridge/agent-output.test.mts",
     "bridge/trajectory-projection.test.mts",
     "bridge/kokoro.test.mts"

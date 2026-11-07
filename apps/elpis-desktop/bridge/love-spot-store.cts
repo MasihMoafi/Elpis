@@ -1,15 +1,20 @@
 // Shared by the bridge and the standalone window. Every writer takes the same directory lock,
 // rereads the drawing, and atomically writes the union, including deletion tombstones.
-const fs = require('node:fs/promises');
-const { watch: watchFolder } = require('node:fs');
+type DrawingElement = { id: string; type: string; version: number; versionNonce: number; x: number; y: number; width: number; height: number; angle?: number; isDeleted?: boolean; fileId?: string | null; groupIds?: string[]; strokeColor: string; updated?: number; text?: string | undefined; originalText?: string | undefined; points?: [number, number][]; customData?: { streaming?: boolean; [key: string]: unknown }; [key: string]: unknown };
+type DrawingFile = { id: string; dataURL: string; mimeType: string; loveSpotResized?: boolean; [key: string]: unknown };
+type Page = { name: string; session: string };
+type Drawing = { elements: DrawingElement[]; files: Record<string, DrawingFile>; appState: Record<string, unknown>; page: Page; [key: string]: unknown };
+type IncomingDrawing = { elements: DrawingElement[]; files?: Record<string, DrawingFile>; appState?: Record<string, unknown>; page?: Page; [key: string]: unknown };
+const fs: typeof import('node:fs/promises') = require('node:fs/promises');
+const { watch: watchFolder } = require('node:fs') as typeof import('node:fs');
 const path = require('node:path');
 const os = require('node:os');
-const net = require('node:net');
+const net: typeof import('node:net') = require('node:net');
 const { createHash, randomUUID } = require('node:crypto');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
-const { newer } = require('./love-spot-order.cts');
-const { paintElements, paintingSize, splitPainting } = require('./love-spot-painting.cjs');
+const { newer: newerImpl } = require('./love-spot-order.cts') as typeof import('./love-spot-order.cts');
+const { paintElements, paintingSize, splitPainting } = require('./love-spot-painting.cts') as typeof import('./love-spot-painting.cts');
 const { BOARD_FACE, OLD_BOARD_FACES, OLD_BOARD_SHOTS, replyPortrait } = require('./matilda-face.cjs');
 const FACE = 96, FACE_SIDE = FACE + 12;
 const WELCOME_SHAPES = splitPainting('```excalidraw\n' + JSON.stringify([
@@ -17,14 +22,14 @@ const WELCOME_SHAPES = splitPainting('```excalidraw\n' + JSON.stringify([
   { type: 'line', x: 144, y: 68, points: [[0, 15], [2, 8], [7, 3], [14, 0], [22, 1], [29, 7], [31, 13], [34, 7], [41, 1], [49, 0], [56, 3], [60, 8], [62, 14], [61, 20], [57, 25], [31, 45], [5, 25], [1, 20], [0, 15]], strokeColor: '#e03131', strokeWidth: 2.5, roughness: 1 },
 ]) + '\n```').shapes;
 const exec = promisify(execFile);
-const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
-const fail = (message, status = 400) => Object.assign(new Error(message), { status, loveSpot: true });
-const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
-const hash = value => createHash('sha256').update(value).digest('hex');
-async function trashFile(file) {
-  await exec('gio', ['trash', file]).catch(async e => {
-    try { await fs.access(file); } catch (missing) { if (missing.code === 'ENOENT') return; throw missing; }
-    if (e.code === 'ENOENT') {
+const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+const fail = (message: string, status = 400) => Object.assign(new Error(message), { status, loveSpot: true });
+const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
+const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
+async function trashFile(file: string) {
+  await exec('gio', ['trash', file]).catch(async (e: NodeJS.ErrnoException) => {
+    try { await fs.access(file); } catch (missing) { if ((missing as NodeJS.ErrnoException & { loveSpot?: boolean }).code === 'ENOENT') return; throw missing; }
+    if ((e as NodeJS.ErrnoException & { loveSpot?: boolean }).code === 'ENOENT') {
       const trash = path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local/share'), 'Trash/files');
       await fs.mkdir(trash, { recursive: true });
       await fs.rename(file, path.join(trash, `${Date.now()}-${path.basename(file)}`));
@@ -34,21 +39,21 @@ async function trashFile(file) {
   });
 }
 const PNG = Buffer.from('89504e470d0a1a0a', 'hex');
-const screenshotId = (name, bytes) => `shot-${hash(Buffer.concat([Buffer.from(name), bytes])).slice(0, 32)}`;
-function validate(scene) {
+const screenshotId = (name: string, bytes: Buffer) => `shot-${hash(Buffer.concat([Buffer.from(name), bytes])).slice(0, 32)}`;
+function validate(scene: unknown): Drawing {
   if (!record(scene) || !Array.isArray(scene.elements) || (scene.files !== undefined && !record(scene.files)) || (scene.appState !== undefined && !record(scene.appState))) throw fail('Invalid drawing');
   for (const e of scene.elements) {
-    if (!record(e) || typeof e.id !== 'string' || !e.id || typeof e.type !== 'string' || !Number.isInteger(e.version) || e.version < 1 || !Number.isInteger(e.versionNonce)
+    if (!record(e) || typeof e.id !== 'string' || !e.id || typeof e.type !== 'string' || !Number.isInteger(e.version) || (e.version as number) < 1 || !Number.isInteger(e.versionNonce)
       || !['x', 'y', 'width', 'height'].every(key => Number.isFinite(e[key]))) throw fail('Invalid drawing element');
   }
   for (const [id, file] of Object.entries(scene.files ?? {})) {
     if (!record(file) || file.id !== id || typeof file.dataURL !== 'string' || !/^data:image\/(png|jpeg|webp|gif|svg\+xml);/.test(file.dataURL) || typeof file.mimeType !== 'string') throw fail('Invalid drawing image');
   }
-  return scene;
+  return scene as Drawing;
 }
-function merge(current, incoming) {
+function mergeImpl(current: Drawing, incoming: IncomingDrawing) {
   const elements = new Map(current.elements.map(e => [e.id, e]));
-  for (const e of incoming.elements) if (!elements.has(e.id) || newer(e, elements.get(e.id))) elements.set(e.id, e);
+  for (const e of incoming.elements) if (!elements.has(e.id) || newerImpl(e, elements.get(e.id)!)) elements.set(e.id, e);
   const files = { ...incoming.files, ...current.files };
   // A normalized image replaces its original, but a stale window cannot put the large bytes back.
   for (const [id, file] of Object.entries(incoming.files ?? {})) {
@@ -58,7 +63,7 @@ function merge(current, incoming) {
   return { ...current, type: 'excalidraw', version: 2, source: 'Love Spot', elements: [...elements.values()],
     appState: { ...current.appState, ...incoming.appState }, files: Object.fromEntries(Object.entries(files).filter(([id]) => referenced.has(id))) };
 }
-function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.join(os.homedir(), '.local/share/excalidraw-local'), screenshots = process.env.EXCALIDRAW_SCREENSHOTS_DIR || path.join(os.homedir(), 'Pictures/Screenshots') } = {}) {
+function createLoveSpotImpl({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.join(os.homedir(), '.local/share/excalidraw-local'), screenshots = process.env.EXCALIDRAW_SCREENSHOTS_DIR || path.join(os.homedir(), 'Pictures/Screenshots') } = {}) {
   const sceneFile = path.join(directory, 'scene.excalidraw'), lock = path.join(directory, '.scene-lock'), inbox = path.join(directory, 'inbox'), pages = path.join(directory, 'pages');
   const choicesFile = path.join(directory, '.screenshot-choices.json');
   // Same-user local IPC keeps private trays available to a later dock process
@@ -67,18 +72,19 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
   // so keep these tiny private sockets under the short system temp root.
   const peerRoot = process.platform === 'linux' ? '/tmp' : os.tmpdir();
   const peerDirectory = path.join(peerRoot, `elpis-shots-${process.getuid?.() ?? 'user'}-${hash(path.resolve(directory)).slice(0, 16)}`);
-  const peerSocket = path.join(peerDirectory, `${randomUUID()}.sock`), sockets = new Set();
+  const peerSocket = path.join(peerDirectory, `${randomUUID()}.sock`), sockets = new Set<import('node:net').Socket>();
   const trayError = 'Love Spot could not sync its private screenshot trays between windows. It will retry.';
-  let peerServer, peerError, nextPeerAttempt = 0;
+  let peerServer: import('node:net').Server | undefined, peerError: string | undefined, nextPeerAttempt = 0;
   // Folder watches wake tick(); a slow check covers a folder that cannot be watched yet (1 Nov: a 150 ms poll from app
   // start cost about 35 file operations a second while nobody drew).
-  const watchers = new Map(); let wakeTimer, again = false;
-  let timer, starting, closed = false, running = false, seen, previous, sceneStamp, lastError, syncError;
-  const listeners = new Set();
+  const watchers = new Map<string, import('node:fs').FSWatcher>(); let wakeTimer: NodeJS.Timeout | undefined, again = false;
+  let timer: NodeJS.Timeout | undefined, starting: Promise<void> | undefined, closed = false, running = false, seen: Set<string> | undefined, previous: string | undefined, sceneStamp: string | undefined, lastError: string | undefined, syncError: string | undefined;
+  type StoreEvent = { type: 'screenshots'; screenshots: ReturnType<typeof screenshotsList> } | { type: 'scene'; scene: Drawing; revision: string } | { type: 'matilda'; matilda: { replies: boolean; model: string | null; provider: string | null } } | { type: 'error'; message: string };
+  const listeners = new Set<(event: StoreEvent) => void>();
   // Pending pixels stay in memory. Only explicit choices persist as opaque IDs,
   // so separate app processes cannot offer an already placed/dismissed screenshot.
-  const pending = new Map();
-  function track(socket) { sockets.add(socket); socket.once('close', () => sockets.delete(socket)); return socket; }
+  const pending = new Map<string, { id: string; name: string; bytes: Buffer; modified: number }>();
+  function track(socket: import("node:net").Socket) { sockets.add(socket); socket.once('close', () => sockets.delete(socket)); return socket; }
   async function shareScreenshots() {
     peerServer = net.createServer(socket => {
       track(socket).setTimeout(5000, () => socket.destroy()); socket.on('error', () => {});
@@ -102,17 +108,17 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
       });
     });
     await fs.mkdir(peerDirectory, { recursive: true, mode: 0o700 });
-    await new Promise((resolve, reject) => { peerServer.once('error', reject); peerServer.listen(peerSocket, resolve); });
+    await new Promise<void>((resolve, reject) => { peerServer!.once('error', reject); peerServer!.listen(peerSocket, resolve); });
     peerServer.unref();
   }
   async function receiveScreenshots() {
     let peers;
     try { peers = (await names(peerDirectory)).filter(name => name.endsWith('.sock') && name !== path.basename(peerSocket)); peerError = undefined; }
     catch { peerError = trayError; return false; }
-    const replies = await Promise.all(peers.map(name => new Promise(resolve => {
+    const replies = await Promise.all(peers.map(name => new Promise<unknown[]>(resolve => {
       const socket = track(net.createConnection(path.join(peerDirectory, name)));
       let data = '', settled = false;
-      const finish = shots => { if (!settled) { settled = true; resolve(shots); socket.destroy(); } };
+      const finish = (shots: unknown[]) => { if (!settled) { settled = true; resolve(shots); socket.destroy(); } };
       socket.setTimeout(5000, () => finish([])); socket.on('error', () => finish([]));
       socket.once('connect', () => socket.write(`${JSON.stringify([...pending.keys()])}\n`));
       socket.on('data', chunk => { data += chunk; });
@@ -124,7 +130,7 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
       if (!record(shot) || typeof shot.name !== 'string' || typeof shot.data !== 'string' || !Number.isFinite(shot.modified)) continue;
       const bytes = Buffer.from(shot.data, 'base64');
       if (shot.id !== screenshotId(shot.name, bytes) || pending.has(shot.id)) continue;
-      pending.set(shot.id, { id: shot.id, name: shot.name, bytes, modified: shot.modified }); added = true;
+      pending.set(shot.id, { id: shot.id, name: shot.name, bytes, modified: shot.modified as number }); added = true;
     }
     return added;
   }
@@ -139,23 +145,23 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
       const ids = JSON.parse(await fs.readFile(choicesFile, 'utf8'));
       if (!Array.isArray(ids) || ids.some(id => typeof id !== 'string' || !/^shot-[a-f0-9]{32}$/.test(id))) throw fail('Screenshot choices could not be read. Please retry.', 409);
       return new Set(ids);
-    } catch (e) { if (e.code === 'ENOENT') return new Set(); throw e; }
+    } catch (e) { if ((e as NodeJS.ErrnoException & { loveSpot?: boolean }).code === 'ENOENT') return new Set(); throw e; }
   }
   const screenshotsList = () => [...pending.values()].sort((a, b) => b.modified - a.modified || b.name.localeCompare(a.name))
     .map(({ id, name, bytes }) => ({ id, name, dataURL: `data:image/png;base64,${bytes.toString('base64')}` }));
   function publishScreenshots() {
-    const update = { type: 'screenshots', screenshots: screenshotsList() };
+    const update: StoreEvent = { type: 'screenshots', screenshots: screenshotsList() };
     for (const listen of listeners) listen(update);
   }
   async function read() {
     let text;
     try { text = await fs.readFile(sceneFile, 'utf8'); }
-    catch (e) { if (e.code !== 'ENOENT') throw e; }
+    catch (e) { if ((e as NodeJS.ErrnoException & { loveSpot?: boolean }).code !== 'ENOENT') throw e; }
     try {
-      const scene = text === undefined ? { type: 'excalidraw', version: 2, elements: [], files: {}, appState: {} } : validate(JSON.parse(text));
+      const scene = (text === undefined ? { type: 'excalidraw', version: 2, elements: [], files: {}, appState: {} } : validate(JSON.parse(text))) as Drawing;
       scene.elements = scene.elements.map(element => {
         if (element.type !== 'text' || !element.id.startsWith('love-reply-')) return element;
-        const redHearts = value => typeof value === 'string' ? value.replaceAll('💙', '❤️') : value;
+        const redHearts = (value: string | undefined) => typeof value === 'string' ? value.replaceAll('💙', '❤️') : value;
         return { ...element, strokeColor: '#000000', text: redHearts(element.text), originalText: redHearts(element.originalText) };
       });
       // Existing replies share this preset asset; an older face is replaced, a custom portrait kept.
@@ -181,15 +187,15 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
     }
     catch { throw fail('The drawing could not be read. It has been left untouched.', 409); }
   }
-  function pageName(name) {
+  function pageName(name: unknown): string {
     if (typeof name !== 'string' || !name.trim() || name !== name.trim() || name.length > 100 || /[/\\\x00-\x1f]/.test(name) || /^\.+$/.test(name)) throw fail('Use a page name of 1–100 characters without slashes.');
     return name;
   }
-  const pageFile = name => path.join(pages, `${pageName(name)}.excalidraw`);
-  function samePage(incoming, current) {
+  const pageFile = (name: unknown) => path.join(pages, `${pageName(name)}.excalidraw`);
+  function samePage(incoming: Page | undefined, current: Page) {
     if ((incoming && incoming.session !== current.session) || (!incoming && current.session !== 'legacy')) throw fail('The page changed in another window. Your old drawing was not added to it.', 409);
   }
-  async function locked(action) {
+  async function locked<T>(action: () => Promise<T>): Promise<T> {
     await fs.mkdir(inbox, { recursive: true });
     // A process crash leaves an empty lock. The pid is part of the owner file; only a dead
     // owner (or an empty lock older than 30 seconds) can be recovered.
@@ -197,7 +203,7 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
     while (true) {
       try { await fs.mkdir(lock); break; }
       catch (e) {
-        if (e.code !== 'EEXIST') throw e;
+        if ((e as NodeJS.ErrnoException & { loveSpot?: boolean }).code !== 'EEXIST') throw e;
         let directoryHandle;
         try {
           // Pin Linux cleanup to the directory whose owner was read. Another
@@ -213,10 +219,10 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
               await fs.rename(ownerFile, claim); await fs.unlink(claim); await fs.rmdir(lock);
             } else {
               try { process.kill(owner, 0); }
-              catch (probe) { if (probe.code === 'ESRCH') { await fs.unlink(ownerFile); await fs.rmdir(lock); } }
+              catch (probe) { if ((probe as NodeJS.ErrnoException & { loveSpot?: boolean }).code === 'ESRCH') { await fs.unlink(ownerFile); await fs.rmdir(lock); } }
             }
           } catch (probe) {
-            if (probe.code === 'ENOENT') {
+            if ((probe as NodeJS.ErrnoException & { loveSpot?: boolean }).code === 'ENOENT') {
               const stat = directoryHandle ? await directoryHandle.stat() : await fs.stat(lock);
               if (Date.now() - stat.mtimeMs > 30000) {
                 // Claim the empty generation before removing it. A handle to
@@ -228,7 +234,7 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
             }
           }
         } catch (probe) {
-          if (!['ENOENT', 'EEXIST', 'ENOTEMPTY'].includes(probe.code)) throw probe;
+          if (!['ENOENT', 'EEXIST', 'ENOTEMPTY'].includes((probe as NodeJS.ErrnoException & { loveSpot?: boolean }).code!)) throw probe;
         } finally { await directoryHandle?.close(); }
         if (Date.now() - started > 5000) throw fail('The drawing is busy. Please retry.', 503);
         await pause(10);
@@ -237,49 +243,49 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
     try { await fs.writeFile(path.join(lock, 'owner'), String(process.pid)); return await action(); }
     finally { await fs.unlink(path.join(lock, 'owner')); await fs.rmdir(lock); }
   }
-  async function atomic(file, data) {
+  async function atomic(file: string, data: string | Buffer) {
     const temp = `${file}.${process.pid}.${randomUUID()}.tmp`;
     try { await fs.writeFile(temp, data); await fs.rename(temp, file); }
-    finally { await fs.unlink(temp).catch(e => { if (e.code !== 'ENOENT') throw e; }); }
+    finally { await fs.unlink(temp).catch(e => { if ((e as NodeJS.ErrnoException & { loveSpot?: boolean }).code !== 'ENOENT') throw e; }); }
   }
-  const droppedEmpty = new Map(); // page name → session of each page left empty and so not kept (changePage, saveText)
-  async function persist(scene) {
+  const droppedEmpty = new Map<string, string>(); // page name → session of each page left empty and so not kept (changePage, saveText)
+  async function persist(scene: Drawing) {
     const text = JSON.stringify(scene);
     await fs.mkdir(pages, { recursive: true });
     await atomic(pageFile(scene.page.name), text);
     await atomic(sceneFile, text);
     return { scene, revision: hash(text) };
   }
-  async function save(incoming) {
-    validate(incoming);
+  async function save(value: unknown) {
+    const incoming = validate(value);
     return locked(async () => {
       const current = await read(); samePage(incoming.page, current.scene.page);
-      const scene = merge(current.scene, incoming), text = JSON.stringify(scene);
+      const scene = mergeImpl(current.scene, incoming), text = JSON.stringify(scene);
       if (hash(text) !== current.revision) return persist(scene);
       return { scene, revision: hash(text) };
     });
   }
   // A closing editor may belong to the page another window just left.
   // Flush only its text to that exact archived page, without switching anyone.
-  async function saveText(incoming) {
-    validate(incoming);
+  async function saveText(value: unknown) {
+    const incoming = validate(value);
     if (Object.keys(incoming).some(key => !['elements', 'page'].includes(key)) || incoming.elements.some(e => e.type !== 'text')
       || !record(incoming.page) || typeof incoming.page.session !== 'string' || !incoming.page.session) throw fail('Invalid text draft');
     pageName(incoming.page.name);
     return locked(async () => {
       const current = await read();
-      if (incoming.page.session === current.scene.page.session) return persist(merge(current.scene, incoming));
+      if (incoming.page.session === current.scene.page.session) return persist(mergeImpl(current.scene, incoming));
       let scene;
       try { scene = validate(JSON.parse(await fs.readFile(pageFile(incoming.page.name), 'utf8'))); }
       catch (e) {
         // A page left empty is not kept (changePage), yet words being typed on it in another window still belong there:
         // they bring it back. Only such a page: one deleted on purpose stays deleted, whatever arrives for it later.
-        if (e.code !== 'ENOENT' || droppedEmpty.get(incoming.page.name) !== incoming.page.session) throw fail('The original text page could not be read. Your draft is still local.', 409);
+        if ((e as NodeJS.ErrnoException & { loveSpot?: boolean }).code !== 'ENOENT' || droppedEmpty.get(incoming.page.name) !== incoming.page.session) throw fail('The original text page could not be read. Your draft is still local.', 409);
         droppedEmpty.delete(incoming.page.name);
         scene = { type: 'excalidraw', version: 2, source: 'Love Spot', elements: [], files: {}, appState: {}, page: incoming.page };
       }
       samePage(incoming.page, scene.page);
-      const merged = merge(scene, incoming), text = JSON.stringify(merged);
+      const merged = mergeImpl(scene, incoming), text = JSON.stringify(merged);
       await fs.mkdir(pages, { recursive: true });
       await atomic(pageFile(scene.page.name), text);
       return { scene: merged, revision: hash(text) };
@@ -292,20 +298,20 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
   async function lifecycle() {
     try {
       const value = JSON.parse(await fs.readFile(lifecycleFile, 'utf8'));
-      if (record(value) && Number.isFinite(value.since) && Array.isArray(value.kept)) return { since: value.since, kept: value.kept.filter(name => typeof name === 'string') };
-    } catch (e) { if (e.code !== 'ENOENT' && !(e instanceof SyntaxError)) throw e; }
+      if (record(value) && Number.isFinite(value.since) && Array.isArray(value.kept)) return { since: value.since as number, kept: value.kept.filter(name => typeof name === 'string') };
+    } catch (e) { if ((e as NodeJS.ErrnoException & { loveSpot?: boolean }).code !== 'ENOENT' && !(e instanceof SyntaxError)) throw e; }
     const fresh = { since: Date.now(), kept: [] };
     await atomic(lifecycleFile, JSON.stringify(fresh));
     return fresh;
   }
-  const expiresAt = (modified, { since }) => Math.max(modified, since) + PAGE_DAYS * DAY;
+  const expiresAt = (modified: number, { since }: { since: number }) => Math.max(modified, since) + PAGE_DAYS * DAY;
   // One Matilda (Masih, 31 Oct: "what happens with Matilda in the chat isn't the same as what happens on the board"): whether
   // she answers, and with which model, is one setting here that the board, the small chat and her chat tab all read.
   const matildaFile = path.join(directory, '.matilda-settings.json');
-  async function matildaSettings(update) {
-    let value = {};
+  async function matildaSettings(update?: Record<string, unknown>) {
+    let value: Record<string, unknown> = {};
     try { const saved = JSON.parse(await fs.readFile(matildaFile, 'utf8')); if (record(saved)) value = saved; }
-    catch (e) { if (e.code !== 'ENOENT' && !(e instanceof SyntaxError)) throw e; }
+    catch (e) { if ((e as NodeJS.ErrnoException & { loveSpot?: boolean }).code !== 'ENOENT' && !(e instanceof SyntaxError)) throw e; }
     if (update) {
       value = { ...value, ...update };
       for (const key of Object.keys(value)) if (value[key] === null) delete value[key];
@@ -330,15 +336,16 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
     for (const file of (await names(pages)).filter(n => n.endsWith('.excalidraw'))) {
       const name = file.slice(0, -11);
       try { pageName(name); const stat = await fs.stat(pageFile(name)); if (stat.isFile()) listed.set(name, { name, modified: stat.mtimeMs }); }
-      catch (e) { if (!e.loveSpot && e.code !== 'ENOENT') throw e; }
+      catch (e) { if (!(e as NodeJS.ErrnoException & { loveSpot?: boolean }).loveSpot && (e as NodeJS.ErrnoException & { loveSpot?: boolean }).code !== 'ENOENT') throw e; }
     }
-    const modified = await fs.stat(sceneFile).then(s => s.mtimeMs).catch(e => { if (e.code === 'ENOENT') return Date.now(); throw e; });
+    const modified = await fs.stat(sceneFile).then(s => s.mtimeMs).catch(e => { if ((e as NodeJS.ErrnoException & { loveSpot?: boolean }).code === 'ENOENT') return Date.now(); throw e; });
     listed.set(current.scene.page.name, { name: current.scene.page.name, modified });
     for (const page of listed.values()) Object.assign(page, life.kept.includes(page.name) ? { kept: true } : { kept: false, expires: expiresAt(page.modified, life) });
     return { current: current.scene.page, // Page 13 before Page 12 before Page 9: the order never depends on which page was touched last, which the person cannot see (Masih, 23 Oct: "the order of these don't make any sense").
     pages: [...listed.values()].sort((a, b) => b.name.localeCompare(a.name, undefined, { numeric: true })) };
   }
-  async function changePage(input) {
+  async function changePage(value: unknown) {
+    const input = value as { action: string; name?: string; page?: Page };
     if (!record(input) || !['new', 'switch', 'rename', 'delete', 'keep', 'release', 'clear'].includes(input.action) || Object.keys(input).some(k => !['action', 'name', 'page'].includes(k))
       || (['delete', 'keep', 'release'].includes(input.action) && (input.name === undefined || !input.page)) || (input.action === 'clear' && (!input.page || input.name !== undefined))) throw fail('Invalid page action');
     // Delete all (Masih, 31 Oct: "so many chats here. I said there should be an option to delete them all"): every page but the
@@ -360,8 +367,8 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
       const life = await lifecycle(), current = (await read()).scene.page.name;
       const from = input.action === 'rename' ? current : input.name, kept = new Set(life.kept);
       // A renamed page stays kept under its new name; the old name stays listed too, in case the rename is refused.
-      if (input.action === 'keep' || input.action === 'rename' && kept.has(from)) kept.add(input.action === 'keep' ? from : input.name);
-      else if (input.action !== 'rename') kept.delete(from);
+      if (input.action === 'keep' || input.action === 'rename' && kept.has(from!)) kept.add((input.action === 'keep' ? from : input.name)!);
+      else if (input.action !== 'rename') kept.delete(from!);
       await atomic(lifecycleFile, JSON.stringify({ since: life.since, kept: [...kept] }));
       if (input.action === 'keep' || input.action === 'release') return read();
     }
@@ -373,7 +380,7 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
       if (input.action === 'delete') {
         const file = pageFile(name);
         try { await fs.access(file); }
-        catch (e) { if (e.code === 'ENOENT') throw fail('That page could not be found.', 404); throw e; }
+        catch (e) { if ((e as NodeJS.ErrnoException & { loveSpot?: boolean }).code === 'ENOENT') throw fail('That page could not be found.', 404); throw e; }
         if (name !== current.scene.page.name) { await trashFile(file); return current; }
         await fs.mkdir(pages, { recursive: true });
         await atomic(file, JSON.stringify(current.scene));
@@ -393,46 +400,46 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
       let scene;
       if (input.action === 'switch') {
         try { scene = validate(JSON.parse(await fs.readFile(pageFile(name), 'utf8'))); }
-        catch (e) { if (e.code === 'ENOENT') throw fail('That page could not be found.', 404); throw fail('That page could not be read. It has been left untouched.', 409); }
+        catch (e) { if ((e as NodeJS.ErrnoException & { loveSpot?: boolean }).code === 'ENOENT') throw fail('That page could not be found.', 404); throw fail('That page could not be read. It has been left untouched.', 409); }
       } else scene = input.action === 'new' ? { type: 'excalidraw', version: 2, elements: [], files: {}, appState: {} } : current.scene;
       await fs.mkdir(pages, { recursive: true });
       // A page left with nothing on it is not kept (Masih, 5 Nov: "the pages are too many and piled up … delete the empty pages").
       const leaving = pageFile(current.scene.page.name);
       if (input.action !== 'rename' && !current.scene.elements.some(e => !e.isDeleted) && !(await lifecycle()).kept.includes(current.scene.page.name)) {
         await fs.rm(leaving, { force: true }); droppedEmpty.set(current.scene.page.name, current.scene.page.session);
-      } else await atomic(leaving, JSON.stringify(merge(current.scene, { elements: [] })));
+      } else await atomic(leaving, JSON.stringify(mergeImpl(current.scene, { elements: [] })));
       if (input.action === 'rename') await fs.rename(pageFile(current.scene.page.name), pageFile(name));
-      return persist(merge({ ...scene, page: { name, session: input.action === 'rename' ? current.scene.page.session : randomUUID() } }, { elements: [] }));
+      return persist(mergeImpl({ ...scene, page: { name: name!, session: input.action === 'rename' ? current.scene.page.session : randomUUID() } }, { elements: [] }));
     });
   }
-  async function picture({ revision, png } = {}) {
+  async function picture({ revision, png }: { revision?: string; png?: string } = {}) {
     if (typeof png !== 'string' || !/^[A-Za-z0-9+/]*={0,2}$/.test(png)) throw fail('Invalid PNG');
     const bytes = Buffer.from(png, 'base64');
     if (bytes.length < 24 || !bytes.subarray(0, 8).equals(PNG) || !bytes.readUInt32BE(16) || !bytes.readUInt32BE(20)) throw fail('Invalid PNG');
     return locked(async () => {
       if (revision !== (await read()).revision) throw fail('The drawing changed. Export its current picture.', 409);
       await atomic(path.join(directory, 'view.png'), bytes);
-      await atomic(path.join(directory, '.view-revision'), revision);
+      await atomic(path.join(directory, '.view-revision'), revision!);
       return { saved: true };
     });
   }
   // The chat and its replies use the same lock as every board writer, including the standalone window.
   // `stale` names a saved chat Elpis no longer has: it is replaced, unless another window already did so.
-  async function chat(create, stale) {
+  async function chat(create?: (directory: string) => Promise<string>, stale?: string) {
     return locked(async () => {
       const file = path.join(directory, '.love-spot-chat.json');
       try {
         const saved = JSON.parse(await fs.readFile(file, 'utf8'));
         if (typeof saved.threadId !== 'string' || !saved.threadId) throw fail('Love Spot chat could not be read.', 409);
         if (saved.threadId !== stale) return saved.threadId;
-      } catch (e) { if (e.code !== 'ENOENT') throw e; }
+      } catch (e) { if ((e as NodeJS.ErrnoException & { loveSpot?: boolean }).code !== 'ENOENT') throw e; }
       if (!create) return null;
       const id = await create(directory);
       await atomic(file, JSON.stringify({ threadId: id }));
       return id;
     });
   }
-  async function boardPicture(revision) {
+  async function boardPicture(revision: string) {
     return locked(async () => {
       const current = await read();
       if (revision !== current.revision || await fs.readFile(path.join(directory, '.view-revision'), 'utf8').catch(() => '') !== revision) throw fail('The drawing changed. Try sending again with its current picture.', 409);
@@ -447,8 +454,8 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
       return (await fs.readFile(path.join(directory, 'view.png')).catch(() => null))?.toString('base64') ?? null;
     });
   }
-  /** Writes the reply as a black note with her face to its left, and draws her painting (shapes from bridge/love-spot-painting.cjs) beneath it; either may be missing. Face, note and painting are one group. */
-  async function reply(turnId, text, agentColor, page, shapes = [], { preview = false } = {}) {
+  /** Writes the reply as a black note with her face to its left, and draws her painting (shapes from bridge/love-spot-painting.cts) beneath it; either may be missing. Face, note and painting are one group. */
+  async function reply(turnId: string, text: string, agentColor: (color: string, id?: string) => boolean, page?: Page, shapes: ReturnType<typeof splitPainting>['shapes'] = [], { preview = false } = {}) {
     if (typeof text === 'string') text = text.replaceAll('💙', '❤️');
     const portrait = replyPortrait(text, preview);
     text = portrait.text;
@@ -465,10 +472,10 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
       const lines = (note ? text.trim() : '').split('\n').flatMap(line => {
         const chars = Array.from(line), wrapped = [];
         // Wide glyphs and expanded tabs need more room than Latin letters when Excalidraw restores the font.
-        const columns = char => char === '\t' ? 8 : char.codePointAt(0) > 127 ? 2 : 1;
+        const columns = (char: string) => char === '\t' ? 8 : char.codePointAt(0)! > 127 ? 2 : 1;
         while (chars.length) {
           let at = 0, used = 0;
-          while (at < chars.length && used + columns(chars[at]) <= 38) used += columns(chars[at++]);
+          while (at < chars.length && used + columns(chars[at]!) <= 38) used += columns(chars[at++]!);
           if (at === chars.length) { wrapped.push(chars.join('')); break; }
           const space = chars.slice(0, at + 1).lastIndexOf(' '); if (space >= 8) at = space;
           wrapped.push(chars.splice(0, at).join('')); if (chars[0] === ' ') chars.shift();
@@ -477,7 +484,7 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
       });
       const noteHeight = note ? Math.max(1, lines.length) * 25 : 0, painted = paintingSize(shapes), gap = note && shapes.length ? 24 : 0;
       const width = FACE_SIDE + Math.max(note ? 480 : 0, painted.width), height = Math.max(FACE, noteHeight + gap + painted.height);
-      const bounds = e => {
+      const bounds = (e: DrawingElement) => {
         const angle = e.angle || 0, w = Math.abs(e.width * Math.cos(angle)) + Math.abs(e.height * Math.sin(angle)), h = Math.abs(e.width * Math.sin(angle)) + Math.abs(e.height * Math.cos(angle));
         return { x: e.x + e.width / 2 - w / 2, y: e.y + e.height / 2 - h / 2, width: w, height: h };
       };
@@ -489,7 +496,7 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
         y = Math.max(...hits.map(e => e.y + e.height)) + 40;
       }
       const now = Date.now(), file = { id: `matilda-face-${portrait.expression}`, ...portrait.board, created: now, lastRetrieved: now };
-      const face = { id: `love-face-${turnId}`, type: 'image', fileId: file.id, x, y, width: FACE, height: FACE, angle: 0, strokeColor: 'transparent', backgroundColor: 'transparent', fillStyle: 'solid', strokeWidth: 1,
+      const face: DrawingElement = { id: `love-face-${turnId}`, type: 'image', fileId: file.id, x, y, width: FACE, height: FACE, angle: 0, strokeColor: 'transparent', backgroundColor: 'transparent', fillStyle: 'solid', strokeWidth: 1,
         strokeStyle: 'solid', roughness: 0, opacity: 100, groupIds: [group], frameId: null, roundness: null, seed: 1, version: 1, versionNonce: 0, isDeleted: false, boundElements: null,
         updated: now, link: null, locked: false, status: 'saved', scale: [1, 1], crop: null };
       const element = !note ? null : { id, type: 'text', x: x + FACE_SIDE, y, width: 480, height: noteHeight, angle: 0, strokeColor: '#000000', backgroundColor: 'transparent', fillStyle: 'solid', strokeWidth: 1,
@@ -501,11 +508,11 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
         const previous = scene.elements.find(old => old.id === e.id);
         return previous ? { ...e, version: previous.version + 1, versionNonce: previous.versionNonce + 1 } : e;
       });
-      await persist(merge(scene, { elements: updated, files: { [file.id]: file } }));
+      await persist(mergeImpl(scene, { elements: updated, files: { [file.id]: file } }));
     });
   }
-  async function names(dir) { try { return await fs.readdir(dir); } catch (e) { if (e.code === 'ENOENT') return []; throw e; } }
-  async function importScreenshot(name, bytes, dataURL) {
+  async function names(dir: string) { try { return await fs.readdir(dir); } catch (e) { if ((e as NodeJS.ErrnoException & { loveSpot?: boolean }).code === 'ENOENT') return []; throw e; } }
+  async function importScreenshot(name: string, bytes: Buffer, dataURL?: string) {
     if (bytes.length < 24 || !bytes.subarray(0, 8).equals(PNG)) return false;
     const width = bytes.readUInt32BE(16), height = bytes.readUInt32BE(20);
     if (!width || !height) return false;
@@ -521,20 +528,20 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
         updated: now, link: null, locked: false, status: 'saved', scale: [1, 1], crop: null };
       const file = { id, dataURL: dataURL ?? `data:image/png;base64,${bytes.toString('base64')}`, mimeType: 'image/png', created: now, lastRetrieved: now };
       validate({ elements: [], files: { [id]: file } });
-      await persist(merge(scene, { elements: [element], files: { [id]: file } }));
+      await persist(mergeImpl(scene, { elements: [element], files: { [id]: file } }));
     }
     return true;
   }
-  async function chooseScreenshot(choice) {
+  async function chooseScreenshot(choice: unknown) {
     if (!record(choice)) throw fail('Invalid screenshot choice');
     const { id, action } = choice;
-    if (typeof id !== 'string' || !['place', 'dismiss'].includes(action)) throw fail('Invalid screenshot choice');
+    if (typeof id !== 'string' || !['place', 'dismiss'].includes(action as string)) throw fail('Invalid screenshot choice');
     const shot = pending.get(id);
     if (!shot) throw fail('This screenshot has already left the tray.', 404);
     await locked(async () => {
       const choices = await screenshotChoices();
       if (choices.has(id)) { pending.delete(id); publishScreenshots(); throw fail('This screenshot has already left the tray.', 404); }
-      if (action !== 'dismiss' && !await importScreenshot(shot.name, shot.bytes, choice.dataURL)) throw fail('Invalid screenshot');
+      if (action !== 'dismiss' && !await importScreenshot(shot.name, shot.bytes, choice.dataURL as string | undefined)) throw fail('Invalid screenshot');
       choices.add(id);
       await atomic(choicesFile, JSON.stringify([...choices]));
     });
@@ -576,11 +583,11 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
       const choices = await screenshotChoices();
       for (const id of pending.keys()) if (choices.has(id)) { pending.delete(id); added = true; }
       if (!seen) seen = new Set(await names(screenshots));
-      for (const name of (await names(screenshots)).filter(n => /\.png$/i.test(n) && !seen.has(n))) {
-        let bytes; try { bytes = await fs.readFile(path.join(screenshots, name)); } catch (e) { if (e.code === 'ENOENT') continue; throw e; }
+      for (const name of (await names(screenshots)).filter(n => /\.png$/i.test(n) && !seen!.has(n))) {
+        let bytes; try { bytes = await fs.readFile(path.join(screenshots, name)); } catch (e) { if ((e as NodeJS.ErrnoException & { loveSpot?: boolean }).code === 'ENOENT') continue; throw e; }
         // Wait for a complete PNG (IEND), so a notification while GNOME is writing retries.
         if (bytes.length < 24 || !bytes.subarray(0, 8).equals(PNG) || bytes.subarray(-8, -4).toString() !== 'IEND' || !bytes.readUInt32BE(16) || !bytes.readUInt32BE(20)) continue;
-        let stat; try { stat = await fs.stat(path.join(screenshots, name)); } catch (e) { if (e.code === 'ENOENT') continue; throw e; }
+        let stat; try { stat = await fs.stat(path.join(screenshots, name)); } catch (e) { if ((e as NodeJS.ErrnoException & { loveSpot?: boolean }).code === 'ENOENT') continue; throw e; }
         const id = screenshotId(name, bytes);
         if (!choices.has(id)) { pending.set(id, { id, name, bytes, modified: stat.mtimeMs }); added = true; }
         seen.add(name);
@@ -588,7 +595,7 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
       if (added) publishScreenshots();
       let stamp;
       try { const stat = await fs.stat(sceneFile); stamp = `${stat.mtimeMs}:${stat.ctimeMs}:${stat.size}:${stat.ino}`; }
-      catch (e) { if (e.code !== 'ENOENT') throw e; stamp = 'missing'; }
+      catch (e) { if ((e as NodeJS.ErrnoException & { loveSpot?: boolean }).code !== 'ENOENT') throw e; stamp = 'missing'; }
       if (stamp !== sceneStamp || previous === undefined) {
         const current = await read(); sceneStamp = stamp;
         if (current.revision !== previous) { previous = current.revision; for (const listen of listeners) listen({ type: 'scene', ...current }); }
@@ -596,8 +603,8 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
       if (peerError && lastError !== peerError) for (const listen of listeners) listen({ type: 'error', message: peerError });
       lastError = peerError; syncError = peerError;
     } catch (e) {
-      syncError = e.loveSpot ? e.message : 'Love Spot could not sync the drawing.';
-      if (lastError !== e.message) { lastError = e.message; for (const listen of listeners) listen({ type: 'error', message: syncError }); }
+      syncError = (e as NodeJS.ErrnoException & { loveSpot?: boolean }).loveSpot ? (e as NodeJS.ErrnoException & { loveSpot?: boolean }).message : 'Love Spot could not sync the drawing.';
+      if (lastError !== (e as NodeJS.ErrnoException & { loveSpot?: boolean }).message) { lastError = (e as NodeJS.ErrnoException & { loveSpot?: boolean }).message; for (const listen of listeners) listen({ type: 'error', message: syncError }); }
     } finally { running = false; if (again) { again = false; wake(); } }
   }
   async function start() {
@@ -611,10 +618,10 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
     })();
     return starting;
   }
-  async function watch(listen) {
+  async function watch(listen: (event: StoreEvent) => void) {
     await start();
     listeners.add(listen);
-    try { listen({ type: 'scene', ...await read() }); } catch (e) { listen({ type: 'error', message: e.message }); }
+    try { listen({ type: 'scene', ...await read() }); } catch (e) { listen({ type: 'error', message: (e as NodeJS.ErrnoException & { loveSpot?: boolean }).message }); }
     listen({ type: 'screenshots', screenshots: screenshotsList() });
     try { listen({ type: 'matilda', matilda: await matildaSettings() }); } catch { /* the setting is read again on its next change */ }
     if (syncError) listen({ type: 'error', message: syncError });
@@ -627,13 +634,13 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
     if (starting) await starting.catch(() => {});
     while (running) await pause(10);
     for (const socket of sockets) socket.destroy();
-    if (peerServer?.listening) await new Promise(resolve => peerServer.close(resolve));
+    if (peerServer?.listening) await new Promise<void>(resolve => peerServer!.close(() => resolve()));
     // Temporary peer cleanup must not prevent the app from quitting.
     await fs.unlink(peerSocket).catch(() => {});
     await fs.rmdir(peerDirectory).catch(() => {});
     pending.clear();
   }
-  async function voice(muted) {
+  async function voice(muted?: boolean) {
     return locked(async () => {
       const file = path.join(directory, '.voice.json');
       if (muted !== undefined) {
@@ -647,23 +654,23 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
         if (typeof saved?.muted !== 'boolean') throw fail('Invalid Voice preference');
         return saved.muted;
       }
-      catch (cause) { if (cause.code !== 'ENOENT') throw cause; return false; }
+      catch (cause) { if ((cause as NodeJS.ErrnoException & { loveSpot?: boolean }).code !== 'ENOENT') throw cause; return false; }
     });
   }
   /** Correct the ignored-origin bug only when the recorded geometry still matches the drawing. */
-  async function repairPaintings(paintings) {
+  async function repairPaintings(paintings: { turnId: string; shapes: ReturnType<typeof splitPainting>['shapes'] }[]) {
     if (!paintings.length) return;
     return locked(async () => {
-      const { scene } = await read(), byId = new Map(scene.elements.map(e => [e.id, e])), updates = [];
+      const { scene } = await read(), byId = new Map(scene.elements.map(e => [e.id, e])), updates: DrawingElement[] = [];
       for (const { turnId, shapes } of paintings) {
-        const id = index => `love-paint-${turnId}-${index}`;
+        const id = (index: number) => `love-paint-${turnId}-${index}`;
         if (scene.elements.some(e => e.id.startsWith(`love-paint-${turnId}-`) && Number(e.id.match(/-(\d+)$/)?.[1]) >= shapes.length)) continue;
         const anchorIndex = shapes.findIndex((shape, index) => {
           const e = byId.get(id(index));
-          return !['line', 'arrow'].includes(shape.type) && e?.type === shape.type && !e.isDeleted && !e.angle;
+          return !['line', 'arrow'].includes(shape.type) && e?.type === shape.type && !e!.isDeleted && !e!.angle;
         });
         if (anchorIndex < 0) continue;
-        const anchor = byId.get(id(anchorIndex)), x = anchor.x - shapes[anchorIndex].x, y = anchor.y - shapes[anchorIndex].y;
+        const anchor = byId.get(id(anchorIndex)), x = anchor!.x - shapes[anchorIndex]!.x, y = anchor!.y - shapes[anchorIndex]!.y;
         if (shapes.some((shape, index) => {
           if (['line', 'arrow'].includes(shape.type)) return false;
           const e = byId.get(id(index));
@@ -673,25 +680,28 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
         shapes.forEach((shape, index) => {
           if (!shape.offsetX && !shape.offsetY) return;
           const e = byId.get(id(index));
-          if (!e || e.isDeleted || e.angle || e.type !== shape.type || JSON.stringify(e.points) !== JSON.stringify(shape.points)) return;
-          if (Math.abs(e.x - (x + shape.x - shape.offsetX)) > 0.001 || Math.abs(e.y - (y + shape.y - shape.offsetY)) > 0.001) return;
+          if (!e || e.isDeleted || e.angle || e.type !== shape.type || JSON.stringify(e.points) !== JSON.stringify((shape as typeof shape & { points?: [number, number][] }).points)) return;
+          if (Math.abs(e.x - (x + shape.x - shape.offsetX!)) > 0.001 || Math.abs(e.y - (y + shape.y - shape.offsetY!)) > 0.001) return;
           updates.push({ ...e, x: x + shape.x, y: y + shape.y, version: e.version + 1, versionNonce: e.versionNonce + 1, updated: Date.now() });
         });
       }
-      if (updates.length) await persist(merge(scene, { elements: updates }));
+      if (updates.length) await persist(mergeImpl(scene, { elements: updates }));
     });
   }
-  async function companion(update) {
+  async function companion(update?: (value: { pinned: unknown[]; favorite: Record<string, unknown> | null; [key: string]: unknown }) => Record<string, unknown>) {
     return locked(async () => {
       const file = path.join(directory, '.matilda-companion.json');
       let value;
       try { value = JSON.parse(await fs.readFile(file, 'utf8')); }
-      catch (cause) { if (cause.code !== 'ENOENT') throw fail('Matilda settings could not be read; they were left untouched.', 409); value = { pinned: [], favorite: null }; }
+      catch (cause) { if ((cause as NodeJS.ErrnoException & { loveSpot?: boolean }).code !== 'ENOENT') throw fail('Matilda settings could not be read; they were left untouched.', 409); value = { pinned: [], favorite: null }; }
       if (!record(value) || !Array.isArray(value.pinned)) throw fail('Matilda settings are invalid; they were left untouched.', 409);
-      if (update) { value = update(value); await atomic(file, JSON.stringify(value)); }
+      if (update) { value = update(value as { pinned: unknown[]; favorite: Record<string, unknown> | null; [key: string]: unknown }); await atomic(file, JSON.stringify(value)); }
       return value;
     });
   }
   return { matildaSettings, read, save, saveText, listPages, changePage, picture, boardPicture, currentPicture, chat, reply, voice, start, watch, screenshotsList, chooseScreenshot, companion, repairPaintings, close };
 }
-module.exports = { createLoveSpot, newer, merge };
+export declare const createLoveSpot: typeof createLoveSpotImpl;
+export declare const merge: typeof mergeImpl;
+export declare const newer: typeof import("./love-spot-order.cts").newer;
+module.exports = { createLoveSpot: createLoveSpotImpl, newer: newerImpl, merge: mergeImpl };

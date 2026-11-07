@@ -10,7 +10,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { DesktopClient } from '../bridge/client.mts';
 import { startDesktopServer } from '../bridge/server.mts';
-import { createLoveSpot } from '../bridge/love-spot-store.cjs';
+import { createLoveSpot } from '../bridge/love-spot-store.cts';
 const require = createRequire(import.meta.url), { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const { fakeDesktop } = require('./fake-desktop.cjs');
 const run = promisify(execFile), barge = process.argv.includes('--barge'), live = barge || process.argv.includes('--call'), written = process.argv.includes('--written');

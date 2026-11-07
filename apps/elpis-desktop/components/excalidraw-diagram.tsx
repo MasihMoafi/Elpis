@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { ReplyableImage } from "@/components/image-reply";
-import { diagramSvg } from "@/bridge/love-spot-painting.cjs";
+import { diagramSvg } from "@/bridge/love-spot-painting.cts";
 
 /** No raw SVG or external resource is admitted: the shared shape validator owns the image. */
 export function ExcalidrawDiagram({ source }: { source: string }) {

@@ -6,7 +6,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { once } from 'node:events';
-import { createLoveSpot } from './love-spot-store.cjs';
+import { createLoveSpot } from './love-spot-store.cts';
 import { createMatildaCompanion, PYTHON } from './matilda-companion.mjs';
 
 async function fixture(t) {

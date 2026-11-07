@@ -1,5 +1,6 @@
 // Scripted engine behind the real desktop client and Elpis ACP adapter. No model calls.
 import fs from 'node:fs/promises';
+import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
 import syncFs from 'node:fs';
@@ -8,7 +9,7 @@ import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { DesktopClient } from '../bridge/client.mts';
 import { createLoveAgents } from '../bridge/love-agents.mjs';
-import { createLoveSpot } from '../bridge/love-spot-store.cjs';
+import { createLoveSpot } from '../bridge/love-spot-store.cts';
 
 export async function interviewRuntime({ toolsDirectory = fileURLToPath(new URL('../../../tools/elpis-claude/', import.meta.url)), seed = true } = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'li-'));
@@ -44,8 +45,12 @@ export async function interviewRuntime({ toolsDirectory = fileURLToPath(new URL(
     env: { ELPIS_HOME: path.join(root, 'elpis'), ELPIS_APP_BRIDGE_SOCKET: socketPath },
     instructions: node.prompt, meta: { elpis: { name: `Love Spot · ${node.name}` } }, elpis: true });
   const runner = createLoveAgents(store, { nodeSpec, timeoutMs: 5000 });
-  // By ID: a new board also holds Matilda's welcome painting (bridge/love-spot-store.cjs).
-  const agent = async () => (await store.read()).scene.elements.find(element => element.id === 'writer').customData.loveAgent;
+  // By ID: a new board also holds Matilda's welcome painting (bridge/love-spot-store.cts).
+  const agent = async () => {
+    const card = (await store.read()).scene.elements.find(element => element.id === 'writer');
+    assert.ok(card?.customData);
+    return /** @type {{ interview: { messages: { role: string, text: string }[], proposal: string, error: string, busy: boolean }, task: string }} */ (card.customData.loveAgent);
+  };
   return { root, socketPath, engine, env, client, store, runner, nodeSpec, visible, agent,
     get requests() { return syncFs.existsSync(requestsFile) ? syncFs.readFileSync(requestsFile, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse) : []; },
     answer(value) { update({ answer: value, failure: null }); }, fail(value) { update({ failure: value }); },

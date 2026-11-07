@@ -7,7 +7,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createLoveSpot } from '../bridge/love-spot-store.cjs';
+import { createLoveSpot } from '../bridge/love-spot-store.cts';
 import { createLoveAgents } from '../bridge/love-agents.mjs';
 const engine = process.argv[2];
 assert(engine && path.isAbsolute(engine), 'Provide the absolute installed engine path');

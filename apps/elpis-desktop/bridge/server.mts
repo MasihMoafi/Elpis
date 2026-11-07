@@ -14,7 +14,7 @@ import { createKokoro } from './kokoro.mts';
 import { createReadAloudProvider } from './read-aloud-provider.mts';
 import { createImportChats } from './import-chats.mts';
 import { createTrash } from './trash.mts';
-import { createLoveSpot } from './love-spot-store.cjs';
+import { createLoveSpot } from './love-spot-store.cts';
 import { createLoveSpotTalk } from './love-spot-talk.mjs';
 import { createMatildaCompanion } from './matilda-companion.mjs';
 import { createLoveAgents } from './love-agents.mjs';

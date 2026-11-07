@@ -5,11 +5,11 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { EventEmitter } from 'node:events';
-import { createLoveSpot } from './love-spot-store.cjs';
+import { createLoveSpot } from './love-spot-store.cts';
 import { createLoveSpotTalk } from './love-spot-talk.mjs';
 import { createMatildaCompanion } from './matilda-companion.mjs';
 import { LOVE_SPOT_AUDIO, READ_ALOUD_AUDIO } from '../lib/love-spot-audio.mts';
-import { splitPainting } from './love-spot-painting.cjs';
+import { splitPainting } from './love-spot-painting.cts';
 
 const enabledAudio = { available: true };
 
@@ -82,9 +82,11 @@ test('a fresh Matilda chat keeps its persona and settings, moves Love Spot forwa
   assert.match(f.created[1].instructions, /Use concise systems design reasoning\./);
   assert.equal(f.sent.length, 1, 'starting the fresh chat sends no message');
   assert.deepEqual(await f.store.read(), board, 'starting a fresh chat leaves every board element unchanged');
-  let snapshot;
-  const stop = await f.talk.watch(value => { snapshot = value; });
+  /** @type {{ thread: { id: string }, entries: unknown[] }[]} */
+  const snapshots = [];
+  const stop = await f.talk.watch(value => { snapshots.push(value); });
   stop();
+  const snapshot = snapshots.at(-1); assert.ok(snapshot);
   assert.equal(snapshot.thread.id, 'chat-fresh');
   assert.deepEqual(snapshot.entries, []);
 });
@@ -93,6 +95,7 @@ test('board commands attach actual action results to the normal reply without tr
   await f.talk.send({ text: 'Matilda, pin yourself.', model: 'text' });
   const result = f.sent[0].attachments.find(a => a.name === 'Matilda action result.txt');
   assert.match(result.text, /"ok":true/);
+  assert.ok(f.presence);
   assert.equal((await f.presence.read('settings')).pinned, true);
   f.finish(); await f.talk.idle();
   await f.talk.send({ text: 'Could you add a pin button?', model: 'text' });
@@ -108,7 +111,7 @@ test('a text-only model does not disable real-time Voice while typed read-aloud 
   assert.equal(READ_ALOUD_AUDIO.available, false, 'automatic typed read-aloud remains unavailable');
   await f.talk.send({ text: 'Keep writing', model: 'text' });
   f.finish('turn-1', 'completed', 'The text reply still arrives.'); await f.talk.idle();
-  assert.equal((await f.store.read()).scene.elements.find(element => element.id === 'love-reply-turn-1').originalText, 'The text reply still arrives.');
+  assert.equal((await f.store.read()).scene.elements.find(element => element.id === 'love-reply-turn-1')?.originalText, 'The text reply still arrives.');
   assert.deepEqual((await f.talk.read()).voice, { enabled: true, available: true, reason: '', error: '' }, 'text-only image support does not disable real-time Voice');
   assert.match((await f.talk.conversation('Be kind.')).context, /Be kind\./, 'real-time Voice keeps its own conversation route');
 });
@@ -184,6 +187,7 @@ test('reopening a recorded painting repairs legacy arrow origins while preservin
   const drawing = await f.store.read();
   const moved = drawing.scene.elements.find(e => e.id === 'love-paint-moved-1');
   const deleted = drawing.scene.elements.find(e => e.id === 'love-paint-deleted-1');
+  assert.ok(moved && deleted);
   await f.store.save({ ...drawing.scene, elements: [{ ...moved, x: moved.x + 13, version: 2, versionNonce: 2 }, { ...deleted, isDeleted: true, version: 2, versionNonce: 2 }] });
   const before = await f.store.read();
   const readRecorded = f.client.readThread;
@@ -195,6 +199,7 @@ test('reopening a recorded painting repairs legacy arrow origins while preservin
   };
   await f.talk.read();
   const after = await f.store.read(), rect = after.scene.elements.find(e => e.id === 'love-paint-legacy-0'), arrow = after.scene.elements.find(e => e.id === 'love-paint-legacy-1');
+  assert.ok(arrow && rect);
   assert.deepEqual([arrow.x - rect.x, arrow.y - rect.y], [100, 60]);
   assert.equal(pages, 2, 'The original diagram can be older than the newest history page');
   for (const id of ['love-paint-moved-1', 'love-paint-deleted-1']) assert.deepEqual(after.scene.elements.find(e => e.id === id), before.scene.elements.find(e => e.id === id));
@@ -206,11 +211,13 @@ test('Matilda paints: a fenced excalidraw block is drawn beneath her note, check
   const reply = `A flower for you.\n\n\`\`\`excalidraw\n${JSON.stringify([...flower, { type: 'rocket' }, { type: 'ellipse', strokeColor: 'red; drop table' }])}\n\`\`\``;
   f.finish('turn-1', 'completed', reply); await f.talk.idle();
   const scene = (await f.store.read()).scene, note = scene.elements.find(e => e.id === 'love-reply-turn-1');
+  assert.ok(note && note.originalText);
   assert.equal(note.text, 'A flower for you.'); assert.doesNotMatch(note.originalText, /excalidraw|ellipse/);
   const painted = scene.elements.filter(e => e.id.startsWith('love-paint-turn-1-'));
   assert.deepEqual(painted.map(e => e.type), ['ellipse', 'line', 'text', 'ellipse'], 'an unknown shape type is skipped; a bad colour falls back');
+  assert.ok(painted[0] && painted[1] && painted[3]);
   assert.equal(painted[3].strokeColor, '#e03131'); assert.equal(painted[0].strokeColor, '#e03131'); assert.equal(painted[0].backgroundColor, '#ffc9c9');
-  assert.deepEqual(painted[1].points, [[0, 0], [0, 56]]); assert.ok(painted.every(e => e.groupIds[0] === 'love-paint-turn-1'), 'one group, so it moves as one');
+  assert.deepEqual(painted[1].points, [[0, 0], [0, 56]]); assert.ok(painted.every(e => e.groupIds?.[0] === 'love-paint-turn-1'), 'one group, so it moves as one');
   assert.ok(Math.min(...painted.map(e => e.y)) >= note.y + note.height, 'beneath the note');
   assert.doesNotMatch(JSON.stringify((await f.talk.read()).entries), /excalidraw/, 'the panel shows the note only');
 });
@@ -223,7 +230,7 @@ test('a painting without a note is still drawn once; a broken or oversized block
   assert.equal(scene.elements.filter(e => e.id.startsWith('love-paint-turn-1-')).length, 3, 'drawn once, though the turn finished twice');
   await f.talk.send({ text: 'Again', model: 'text' });
   f.finish('turn-2', 'completed', 'Still here.\n\n```excalidraw\n{not json'); await f.talk.idle();
-  scene = (await f.store.read()).scene; assert.equal(scene.elements.find(e => e.id === 'love-reply-turn-2').text, 'Still here.');
+  scene = (await f.store.read()).scene; assert.equal(scene.elements.find(e => e.id === 'love-reply-turn-2')?.text, 'Still here.');
   await f.talk.send({ text: 'Lots', model: 'text' });
   f.finish('turn-3', 'completed', `Many.\n\n\`\`\`excalidraw\n${JSON.stringify(Array.from({ length: 200 }, (_, i) => ({ type: 'rectangle', x: i, y: i })))}\n\`\`\``); await f.talk.idle();
   scene = (await f.store.read()).scene; assert.equal(scene.elements.filter(e => e.id.startsWith('love-paint-turn-3-')).length, 60, 'at most 60 shapes');
@@ -236,14 +243,18 @@ test('her face sits beside every reply as one image of one file, moves with the 
   const { scene } = await f.store.read(), live = scene.elements.filter(e => !e.isDeleted);
   const faces = live.filter(e => e.type === 'image'), notes = ['turn-1', 'turn-2'].map(id => live.find(e => e.id === `love-reply-${id}`));
   assert.deepEqual(faces.map(e => e.id), ['love-face-turn-1', 'love-face-turn-2'], 'one face per reply, once, though the turn finished twice');
+  assert.ok(faces[0]?.fileId && faces[1]?.fileId && notes[0] && notes[1]);
   assert.equal(Object.keys(scene.files).length, 1, 'one file for every face'); assert.equal(faces[0].fileId, faces[1].fileId);
-  assert.match(scene.files[faces[0].fileId].dataURL, /^data:image\/webp;base64,/, 'a raster face, which the dark board shows the right way round');
-  assert.equal(scene.files[faces[0].fileId].mimeType, 'image/webp');
+  const portraitFile = scene.files[faces[0].fileId]; assert.ok(portraitFile);
+  assert.match(portraitFile.dataURL, /^data:image\/webp;base64,/, 'a raster face, which the dark board shows the right way round');
+  assert.equal(portraitFile.mimeType, 'image/webp');
   faces.forEach((face, i) => {
+    assert.ok(notes[i] && face.groupIds && notes[i].groupIds);
     assert.ok(face.x + face.width <= notes[i].x, 'the face is to the left of her note'); assert.ok(Math.abs(face.y - notes[i].y) <= 8, 'level with the first line');
     assert.ok(face.groupIds.includes(`love-reply-group-turn-${i + 1}`) && notes[i].groupIds.includes(`love-reply-group-turn-${i + 1}`), 'face and note move as one');
   });
-  assert.ok(live.filter(e => e.id.startsWith('love-paint-turn-1-')).every(e => e.groupIds.includes('love-reply-group-turn-1') && e.x >= notes[0].x), 'her painting joins the group, under the note');
+  const firstNote = notes[0];
+  assert.ok(live.filter(e => e.id.startsWith('love-paint-turn-1-')).every(e => e.groupIds?.includes('love-reply-group-turn-1') && e.x >= firstNote.x), 'her painting joins the group, under the note');
   const unit = e => e.groupIds?.at(-1) ?? e.id;
   for (const a of live) for (const b of live) if (a.id < b.id && unit(a) !== unit(b)) assert.ok(a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y, `${a.id} and ${b.id} overlap`);
   const painting = live.filter(e => e.id.startsWith('love-paint-')); await f.talk.send({ text: 'Third', model: 'text' }); f.finish('turn-3', 'completed', ''); await f.talk.idle();
@@ -385,7 +396,7 @@ test('Matilda feeds speech and one growing board note before completion, excludi
   f.finish(); await f.talk.idle();
   const scene = (await f.store.read()).scene;
   assert.equal(scene.elements.filter(e => e.id === 'love-reply-turn-1').length, 1);
-  assert.equal(scene.elements.find(e => e.id === 'love-reply-turn-1').originalText, 'Hello. \n\nStill here. The tail');
+  assert.equal(scene.elements.find(e => e.id === 'love-reply-turn-1')?.originalText, 'Hello. \n\nStill here. The tail');
   assert.equal(scene.elements.filter(e => e.id.startsWith('love-paint-turn-1-')).length, 1);
 });
 
@@ -422,7 +433,7 @@ test('speech failure and interrupted turns stop voice without losing the text; u
   assert.match((await f.talk.read()).voice.error, /disconnected/);
   assert.doesNotMatch(events.filter(e => e.type === 'text').map(e => e.text).join(''), /retried/);
   f.finish('turn-1', 'completed', 'Still writing. Heard. Not retried.'); await f.talk.idle();
-  assert.equal((await f.store.read()).scene.elements.find(e => e.id === 'love-reply-turn-1').originalText, 'Still writing. Heard. Not retried.');
+  assert.equal((await f.store.read()).scene.elements.find(e => e.id === 'love-reply-turn-1')?.originalText, 'Still writing. Heard. Not retried.');
   await f.talk.send({ text: 'Again', model: 'text' });
   const cancelled = []; (await f.talk.speech()).subscribe(event => cancelled.push(event));
   delta(f, 'DROP TAIL'); f.finish('turn-2', 'interrupted', 'DROP TAIL. A cancelled sentence. '); await f.talk.idle();
@@ -435,7 +446,7 @@ test('unreadable Voice preferences disable speech and report the reason without 
   await f.talk.send({ text: 'Hello', model: 'text' });
   const state = await f.talk.read(); assert.equal(state.voice.enabled, false); assert.match(state.voice.reason, /Voice settings/);
   f.finish(); await f.talk.idle();
-  assert.equal((await f.store.read()).scene.elements.find(e => e.id === 'love-reply-turn-1').originalText, 'Here with you.');
+  assert.equal((await f.store.read()).scene.elements.find(e => e.id === 'love-reply-turn-1')?.originalText, 'Here with you.');
 });
 
 test('one speech queue preserves message order and bounds a backlog while the complete note still saves', async t => {
@@ -451,7 +462,7 @@ test('one speech queue preserves message order and bounds a backlog while the co
   delta(f, long);
   assert.match((await f.talk.read()).voice.error, /fell behind/);
   f.finish('turn-2', 'completed', long); await f.talk.idle();
-  assert.equal((await f.store.read()).scene.elements.find(e => e.id === 'love-reply-turn-2').originalText, long.trim());
+  assert.equal((await f.store.read()).scene.elements.find(e => e.id === 'love-reply-turn-2')?.originalText, long.trim());
 });
 
 // 29 Oct, "love-spot, in the chat, is too slow": a chat resends its whole history, so a picture on every turn made each

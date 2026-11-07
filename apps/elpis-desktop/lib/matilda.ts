@@ -6,7 +6,7 @@ export const MATILDA_CHANGED = "elpis:matilda-changed";
 /** Sent with `detail: true` while her small chat is open on screen and `false` when it closes: her answers there are read. */
 export const MATILDA_CHAT_SHOWN = "elpis:matilda-chat-shown";
 
-/** Matilda: the default agent of Love Spot. She answers on the board, beside her face (bridge/love-spot-store.cjs), to whatever the person writes or draws there
+/** Matilda: the default agent of Love Spot. She answers on the board, beside her face (bridge/love-spot-store.cts), to whatever the person writes or draws there
  * (components/love-spot-matilda.tsx). She is not a character to play: she works by the protocol of a profession, and the person can write her another one. */
 
 /** How she works until the person writes otherwise: the protocol a senior product designer follows (Masih, 23 Oct: "we don't want the model to role-play necessarily; we want it to follow the expert protocols that profession uses"). */
