@@ -1,5 +1,5 @@
 // The chat view's basics, end to end: the packaged app, its own bridge and the real engine in a throwaway home, with a
-// local stand-in model (no account). Long chats are fixtures shaped like real rollouts (tests/seed-chats.cjs).
+// local stand-in model (no account). Long chats are fixtures shaped like real rollouts (tests/seed-chats.cts).
 // ELPIS_TEST_APP=/abs/packaged-app ELPIS_TEST_ENGINE=/abs/elpis-next ELPIS_PLAYWRIGHT_PACKAGE=/abs/playwright \
 //   [ELPIS_TEST_PORT=9481] [ELPIS_TEST_SHOTS=/abs/dir] node --test tests/chat-basics.runtime.mjs
 import { test } from 'node:test';
@@ -11,8 +11,8 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { startApp, stopApp, skipFirstRun } = require('./real-app.cjs');
-const { seedChats, seedLongChat } = require('./seed-chats.cjs');
+const { startApp, stopApp, skipFirstRun } = require('./real-app.cts');
+const { seedChats, seedLongChat } = require('./seed-chats.cts');
 const ready = !!(process.env.ELPIS_TEST_APP && process.env.ELPIS_TEST_ENGINE);
 const port = process.env.ELPIS_TEST_PORT || '9481';
 

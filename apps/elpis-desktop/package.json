@@ -22,7 +22,7 @@
     "start": "node bridge/server.mts",
     "web": "node bridge/server.mts",
     "desktop": "desktop/launch.sh",
-    "test:renderer": "node --test tests/renderer.test.cjs",
+    "test:renderer": "node --test tests/renderer.test.cts",
     "test:drafts": "node --test tests/drafts.test.mts",
     "test:desktop": "node scripts/test-gate.mts desktop",
     "test:ui": "node scripts/test-gate.mts ui",

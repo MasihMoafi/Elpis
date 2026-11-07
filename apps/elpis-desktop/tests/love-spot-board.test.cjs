@@ -1,5 +1,5 @@
 // Love Spot's board is where Matilda answers (Masih, 23 Oct: "I want to type in the draw board, or draw something. and I EXPECT a reply from Matilda."):
-// what reaches her, where her reply lands, and the board's own microphone. Her face, her painting and who she is: tests/matilda.test.cjs.
+// what reaches her, where her reply lands, and the board's own microphone. Her face, her painting and who she is: tests/matilda.test.cts.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { loveSpotFixture } = require('./love-spot-fixture.cjs');

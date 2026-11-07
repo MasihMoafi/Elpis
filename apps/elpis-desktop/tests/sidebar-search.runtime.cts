@@ -1,6 +1,6 @@
-// Real packaged app and engine (tests/real-app.cjs): searching "main" puts the chat named main first, in the sidebar and in
+// Real packaged app and engine (tests/real-app.cts): searching "main" puts the chat named main first, in the sidebar and in
 // the Ctrl+K menu, even when 130 newer chats keep it out of the first page the app loaded (24 Oct: "I literally searched main
-// and it didn't put main on top … Z does it"). Controlled chats only (tests/seed-chats.cjs).
+// and it didn't put main on top … Z does it"). Controlled chats only (tests/seed-chats.cts).
 // ELPIS_TEST_APP=/packaged/app ELPIS_TEST_ENGINE=$HOME/.local/bin/elpis-next ELPIS_PLAYWRIGHT_PACKAGE=... [ELPIS_TEST_PORT=9445]
 //   node --test tests/sidebar-search.runtime.cts
 const { test } = require('node:test');
@@ -8,8 +8,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { seedChats } = require('./seed-chats.cjs');
-const { startApp, stopApp, skipFirstRun } = require('./real-app.cjs');
+const { seedChats } = require('./seed-chats.cts');
+const { startApp, stopApp, skipFirstRun } = require('./real-app.cts');
 
 const ranked = ['main', 'main', 'Main branch cleanup', 'Hermes main setup', 'Domain notes', 'Release checklist'];
 

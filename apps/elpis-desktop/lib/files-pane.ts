@@ -5,7 +5,7 @@
 import { useSyncExternalStore } from "react";
 import { api } from "@/lib/api";
 import { resolveRef, type FileRef } from "@/lib/file-refs";
-import { isAudioPath } from "@/lib/audio-path.mts";
+import { isAudioPath } from "./audio-path.mts";
 import { MATILDA_CHANGED } from "@/lib/matilda";
 import { errorText } from "./error-text.mts";
 
@@ -161,7 +161,7 @@ export function openRef(ref: FileRef, { asText = false, onError }: { asText?: bo
   const found = resolveRef(ref, cwd);
   if (!asText && isAudioPath(found.abs)) {
     void api("/love-spot/companion", { action: "play-file", page: "global", path: found.abs })
-      .then(() => window.dispatchEvent(new Event(MATILDA_CHANGED)), cause => onError?.(message(cause)));
+      .then(() => window.dispatchEvent(new Event(MATILDA_CHANGED)), (cause: unknown) => onError?.(message(cause)));
     return true;
   }
   if (!asText && pageOpener && /\.html?$/i.test(found.abs) && found.line === undefined) { pageOpener(found.abs); for (const request of requests) request(); return true; }

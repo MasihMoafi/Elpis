@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useSyncExternalStore } from "react";
-import { api, unreadable, type PermissionRequirements } from "@/lib/api";
+import { api, unreadable, type PermissionRequirements } from "./api.ts";
 import { errorText } from "./error-text.mts";
 
 /** The bridge's /settings snapshot. Every config-backed Settings page shares this one copy,

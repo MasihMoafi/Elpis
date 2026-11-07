@@ -1,6 +1,6 @@
-// Real packaged app and engine (tests/real-app.cjs): an archived chat (Love Spot's own was archived in a sweep, 24 Oct) opens
+// Real packaged app and engine (tests/real-app.cts): an archived chat (Love Spot's own was archived in a sweep, 24 Oct) opens
 // without the engine's "Run `codex unarchive …`" error, and writing in it brings it back to the chat list and sends
-// (24 Oct: "this is inside of Elpis; there is no codex inside of Elpis!"). Controlled chats only (tests/seed-chats.cjs).
+// (24 Oct: "this is inside of Elpis; there is no codex inside of Elpis!"). Controlled chats only (tests/seed-chats.cts).
 // ELPIS_TEST_APP=/packaged/app ELPIS_TEST_ENGINE=$HOME/.local/bin/elpis-next ELPIS_PLAYWRIGHT_PACKAGE=... [ELPIS_TEST_PORT=9447]
 //   node --test tests/archived-chat.runtime.cts
 const { test } = require('node:test');
@@ -8,8 +8,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { seedChats } = require('./seed-chats.cjs');
-const { startApp, stopApp, skipFirstRun } = require('./real-app.cjs');
+const { seedChats } = require('./seed-chats.cts');
+const { startApp, stopApp, skipFirstRun } = require('./real-app.cts');
 
 test('an archived chat opens without an error; a message in it brings it back and is sent; no error names codex', {
   skip: !process.env.ELPIS_TEST_APP || !process.env.ELPIS_TEST_ENGINE, timeout: 180000,

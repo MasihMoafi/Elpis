@@ -16,7 +16,7 @@ import { promisify } from 'node:util';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { seedChats } = require('./seed-chats.cjs');
+const { seedChats } = require('./seed-chats.cts');
 const run = promisify(execFile);
 const ready = !!(process.env.ELPIS_TEST_APP && process.env.ELPIS_TEST_ENGINE);
 const helper = process.env.ELPIS_E2E_APP_HELPER || path.join(os.homedir(), '.cache/elpis-tests/e2e/app.sh');

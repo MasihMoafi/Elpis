@@ -109,7 +109,7 @@ export const retainedUpdates = {
       "approval": "8e43b6441294365f45d1193358c47cfb0a68da00",
       "reason": "Masih 27 Oct: add real modal/popover annotation without activation or dismissal, and normal interaction after leaving; retain click, drag, text, Space, Escape, marker and inner scrolling checks."
     },
-    "tests/matilda.test.cjs": {
+    "tests/matilda.test.cts": {
       "blob": "91b427823fa751477a298c386695d381a9103714",
       "approval": "8e43b6441294365f45d1193358c47cfb0a68da00",
       "reason": "Masih 27 Oct: an open editor is unfinished even after pasting and long pauses. Supersede forced closure by replies; prove complete dispatch after editing ends, focus during late reply and pending-note retention after cancelled queued picture dispatch. Retain drawing, persona and provider-failure checks."
@@ -179,7 +179,7 @@ export const retainedUpdates = {
       "approval": "54442dcc73bbc892e6771cf881d43a03141affae",
       "reason": "Masih 27 Oct: restore the automatic orange completion/unread marker to the left; manual colour remains separate. Show observed Mother and recursively spawned live team despite a saved failure, keep recorded model evidence historical, and prevent duplicate recovery. Settings must fit beside navigation, hide unsupported Flex, show whole sidebar rows, and simplify chat actions into Organize/Open in with correct singular/bulk wording. Retain paging, keyboard, storage, action outcomes, isolation and alignment; shared test callers follow the same moved submenu actions. Immutable baseline retained."
     },
-    "tests/agent-runs.test.cjs": {
+    "tests/agent-runs.test.cts": {
       "blob": "8747becd55e0f0c09fa77d9cfd126bab7cbad6a2",
       "approval": "d4e60534ad52abd70aa226157bb81158f40a61eb",
       "reason": "Masih 7 Nov: show the model and effort as a small grey line under each agent's name in the Agents panel and at the top of the subagent's own chat. The earlier agent-runs checks remain."
@@ -204,7 +204,7 @@ export const retainedUpdates = {
       "approval": "d7df305f1efcbfb9cbb7227e0ff1d9bb73c552f2",
       "reason": "Wait for opened folded work and its activity body before selecting a tool; scope the long group to that finished turn so a still-loading fold cannot select the live group. Preserve every collapse, focus return, keyboard reopening and reduced-motion assertion. Masih 29 Oct: \"I explicitly told you to create a parity of chatgpt app ... map every style feature of chatgpt app into a clear spec that's reusable and make our design match it\" (specs/chatgpt-chat-style.md). Inline code keeps the reply's ink on a 6% chip; the working rotor is checked at the turn's foot (Masih 29 Oct: \"you can see the working animation changes its place!\"). Every other assertion remains."
     },
-    "tests/composer-consistency.test.cjs": {
+    "tests/composer-consistency.test.cts": {
       "blob": "b33d5c98abbd8ac1b34c7023a7e71bf02af10ac6",
       "approval": "9cfbfc1f07861e4b86ec4b3bf36f62dd63914ac3",
       "reason": "Masih 27 Oct: retain one-row narrow controls and visible thinking, and extend the same idle/running owner check to preserve draft height during width-only resize; both negative cases reproduced before the repair. Immutable baseline retained."
@@ -254,7 +254,7 @@ export const retainedUpdates = {
       "approval": "325dac7f8f719014b25252b0e369bf0e1bee7b2a",
       "reason": "Approved live effort selection persists immediately through the effort route. Preserve queue model, effort and Plan choices and all focus, send and everyday-use assertions."
     },
-    "tests/effort-shortcuts.test.cjs": {
+    "tests/effort-shortcuts.test.cts": {
       "blob": "feb1e6ad351494b73744bb12817951513830f5dc",
       "approval": "83d8782efe44951a031ad62e860228650d5d070f",
       "reason": "Masih 27 Oct: workflow History dismisses outside/on Escape; new drafts remain available during active runs; sandbox and project selection preserve the board; saved runs show their actual team in chat and both views; remove redundant sidebar colour dots; Ctrl/Cmd+A follows explicit board or editor focus. Retain existing behavior checks, aim node-selection journeys at the focused board, and add focused recovery/identity regressions without advancing the retained baseline."
@@ -279,7 +279,7 @@ export const retainedUpdates = {
       "approval": "325dac7f8f719014b25252b0e369bf0e1bee7b2a",
       "reason": "S35 persistent menubar items are separate from popup choices. Scope the exact attachment menu inventory to the open popup, preserving every file, image, cap and send assertion."
     },
-    "tests/bypass-permissions.test.cjs": {
+    "tests/bypass-permissions.test.cts": {
       "blob": "d7a671a20e6c94a584c931d6fdf69615280ee1ce",
       "approval": "325dac7f8f719014b25252b0e369bf0e1bee7b2a",
       "reason": "A233/A251 makes Full access the shared default. Keep Bypass red, distinct and confirmed, Cancel lossless, managed refusals and immediate apply. Scope exact popup choices away from the S35 persistent menubar."
@@ -289,7 +289,7 @@ export const retainedUpdates = {
       "approval": "af885eb4978ee37e98e1df11423d545be9a1c75f",
       "reason": "Masih 27 Oct: \"it's ugly; showing all sorts of things it shouldn't. The workflow particularly.\" then \"Please fix them all\". Workflows drops Kahn's order, the critical path, the reading list, the key strip and wave labels (SPEC.md Workflows, Removed); the minimap starts hidden; the run clock is a small time in the header; patterns open from the pattern menu and the guide sits under the board. Only assertions on removed elements changed; the rest are kept."
     },
-    "tests/sidebar-creators.test.cjs": {
+    "tests/sidebar-creators.test.cts": {
       "blob": "35ac127fbcbb9dfb093a482bdbe68147a272b88f",
       "approval": "75d7eca37cc07cf92a9a648dcaeb0fbda7607b2e",
       "reason": "Masih 29 Oct: \"those extra useless chats like the ones saying Task ID ... or chats I didn't start should not show in my side-bar chats. I want that place to be organized\". S18: Pinned, Projects, Groups and Recents list only his chats; Background runs and the sidebar Workflows section are off by default, so this test turns them on (orphans and broken-lineage chats are reached in Background runs)."
@@ -439,7 +439,7 @@ export const retainedUpdates = {
       "approval": "fbe94e91f9d438cd87bcf582c03ce7f058e14a96",
       "reason": "A126: shared column measurements cover the centred page shells Then, Masih 22 Oct, \"Yes please\" to the page being called Customize; the label follows."
     },
-    "tests/provider-usage.test.cjs": {
+    "tests/provider-usage.test.cts": {
       "blob": "a831c7540406a39077766eb3e531bbe998140484",
       "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
       "reason": "Initial SSE connection refreshes accounts; retain exact request deltas for every subsequent action A233/A251: one Default permissions setting defaults to Full access and respects managed constraints. Retain all provider usage persistence, sign-out, queue and settings-write checks; A125 initial connection reconciliation remains required."
@@ -449,7 +449,7 @@ export const retainedUpdates = {
       "approval": "e0c15cf40197bdb08388bac6f5fbb0d0659db642",
       "reason": "A121, Masih: \"You don't need to ask me that; I'm result-oriented.\" Await native scroll delivery alongside the mocked clock, keeping the last-prompt assertion and adding a no-pullback check. Keep the already approved OBSRM navigation update. Requested menu entries now include Read aloud, Bookmark, Put under, New project from these, Context and /goal. S32/S35, Masih 25 Oct: Fast applies within the current turn and has a lightning toggle. Preserve no-send, on/off, refusal and command coverage; compaction uses one shared label. S35 persistent menubar items are separate from popup choices. Wait for the opened menu and preserve exact message/context actions and all reply-edit checks. Masih 27 Oct: long messages need an option to collapse. Append both-theme shared user/reply folding, complete Copy, keyboard, short controls and streamed-growth checks; retain every existing test and assertion. Masih permits hiding unusable read aloud. Remove only unavailable read-aloud menu expectation; retain all action, copy, folding, context and editing assertions. Masih 29 Oct, of \"Rewind to here\" on a reply: \"This option is nonsensical ... rewind what?\". A reply's menu lists Reply, Copy text, Copy as Markdown and Fork; prompts keep Rewind. Every other assertion remains."
     },
-    "tests/command-menu.test.cjs": {
+    "tests/command-menu.test.cts": {
       "blob": "b5ee4928b92b7c915bc7a78b33fc75c848e8bf06",
       ...pageRemovalApproval,
       "approval": "0a00c2cc125aebb2794e5da274463c5a3f97d57d",
@@ -489,7 +489,7 @@ export const retainedUpdates = {
       "approval": "843fcac1416a9cc485d141e78a381fb6707546e6",
       "reason": "OBSRM page removal (see pageRemovalApproval) plus SETTINGS, Masih 21 Oct 22:45: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" Two shortcut tests added; no existing assertion removed. Junk tests, Masih 22 Oct: \"it's not a thing you run. it's a skill. You identify and delete the junk tests.\" (efb597b8b) The send-hint assertion goes with sendHint, which nothing calls."
     },
-    "tests/renderer.test.cjs": {
+    "tests/renderer.test.cts": {
       "blob": "e53cbff337db8e2d815405626cf8252097c25f12",
       "approval": "325dac7f8f719014b25252b0e369bf0e1bee7b2a",
       "reason": "SPEC O2 project creation uses known folder/chooser first; open Advanced: custom folder before typing. Deferred transcript bodies are opened and awaited before reading, preserving all activity/copy assertions. Masih 24 Oct: all chats start collapsed. Explicitly expand the parent before checking its child; preserve real exported renderer send, steer, interrupt, writable-history, theme and mobile journeys."
@@ -593,7 +593,7 @@ export const retainedUpdates = {
       "approval": "c3b5cca74144936d9d8c92a55be9ab06516e8a30",
       "reason": "Masih 29 Oct: \"what does this mean? the 6 previous messages part. I think it's wrong.\" An untimed fold says what it holds, counted by kind (\"2 messages, browsed the web, ran a command\")."
     },
-    "tests/view-errors.test.cjs": {
+    "tests/view-errors.test.cts": {
       "blob": "3aa697bf47386452b99868dae38662643f8d08fe",
       "approval": "eb6da27de8b27d7b8aaf461cc9078d0ba7444081",
       "reason": "A121/GATE11, Masih: \"never weaken or delete an assertion that still describes wanted behaviour\". dd2ca3576 gave navigation rows accessible names: scope every bad-reply assertion to the Ledger page instead of its same-named shortcut; all error and survival checks remain. Then, Masih 22 Oct, \"Yes please\" to the page being called Customize; the label follows. 23 Oct, Masih: \"we should add the import chats options like cloudroom does. add it.\" Settings gains the page Import chats, so this test lists it (and answers its route)."

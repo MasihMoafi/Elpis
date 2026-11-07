@@ -1,4 +1,4 @@
-// Real packaged app and engine (tests/real-app.cjs): a screenshot taken while Elpis runs shows a thumbnail in the screen's
+// Real packaged app and engine (tests/real-app.cts): a screenshot taken while Elpis runs shows a thumbnail in the screen's
 // corner, as macOS does; clicking it adds that screenshot to the open Love Spot page, and ignoring it does nothing (A239,
 // 24 Oct: "or at least pops up and if I press it it does it"; 5 Nov: "when I want to post a screenshot, it shouldn't open
 // a new page"). GNOME saves screenshots to ~/Pictures/Screenshots;
@@ -9,7 +9,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { startApp, stopApp, skipFirstRun } = require('./real-app.cjs');
+const { startApp, stopApp, skipFirstRun } = require('./real-app.cts');
 const { chooseTheme } = require('./controls.cjs');
 
 /** A screenshot as GNOME writes one: a real PNG drawn in the app's page, saved under the copy's Pictures/Screenshots. */

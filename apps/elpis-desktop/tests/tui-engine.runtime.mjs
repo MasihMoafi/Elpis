@@ -16,7 +16,7 @@ import { setTimeout as pause } from 'node:timers/promises';
 import { createRequire } from 'node:module';
 import { model } from './responses-standin.mjs';
 
-const { seedMissingEarlierChat } = createRequire(import.meta.url)('./seed-chats.cjs');
+const { seedMissingEarlierChat } = createRequire(import.meta.url)('./seed-chats.cts');
 
 const bin = process.env.ELPIS_TUI_BIN;
 const skip = !bin ? 'set ELPIS_TUI_BIN to the elpis binary under test' : false;

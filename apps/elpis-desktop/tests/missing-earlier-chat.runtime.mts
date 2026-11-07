@@ -11,8 +11,8 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { startApp, stopApp, skipFirstRun } = require('./real-app.cjs');
-const { uuid7, seedMissingEarlierChat } = require('./seed-chats.cjs');
+const { startApp, stopApp, skipFirstRun } = require('./real-app.cts');
+const { uuid7, seedMissingEarlierChat } = require('./seed-chats.cts');
 const ready = !!(process.env.ELPIS_TEST_APP && process.env.ELPIS_TEST_ENGINE);
 const port = process.env.ELPIS_TEST_PORT || '9483';
 const refused = /missing source rollout|invalid paginated history|-32600|ELPIS_RUNTIME_ERROR|temporarily unavailable/;
