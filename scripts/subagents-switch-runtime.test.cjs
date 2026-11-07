@@ -83,14 +83,19 @@ async function main() {
     await rpc.request('initialize', { clientInfo: { name: 'elpis_subagents_switch_test', version: '1' }, capabilities: { experimentalApi: true } });
     rpc.send({ method: 'initialized', params: {} });
     const threadId = (await rpc.request('thread/start', { cwd, approvalPolicy: 'never', sandbox: 'read-only' })).thread.id;
+    let turnNumber = 0;
     const turn = async (threadId, expectedEnabled, text = 'Complete the offline test.') => {
       const before = modes(threadId).length, start = events.length, firstRequest = requests.length;
-      await rpc.request('turn/start', { threadId, input: [{ type: 'text', text }] });
+      const marker = `ELPIS_PARENT_TURN_${++turnNumber}_END`;
+      await rpc.request('turn/start', { threadId, input: [{ type: 'text', text: `${text}\n${marker}` }] });
       const completion = await waitFor(() => events.slice(start).find(event => event.method === 'turn/completed' && event.params.threadId === threadId), 'the offline turn');
       assert.equal(completion.params.turn.status, 'completed', `offline turn failed: ${JSON.stringify(completion.params.turn.error)}`);
       const actual = await waitFor(() => { const values = modes(threadId); return values.length > before && values.at(-1); }, 'the turn context');
       assert.equal(actual !== 'disabled', expectedEnabled, `the same chat must follow the subagent switch; got ${actual}`);
-      const turnRequests = requests.slice(firstRequest);
+      const turnRequests = requests.slice(firstRequest).filter(request => JSON.stringify(
+        (request.input || []).filter(item => item.role === 'user').at(-1) || {},
+      ).includes(marker));
+      assert(turnRequests.length, 'the parent turn must make a provider request');
       const tools = turnRequests.flatMap(offeredTools);
       assert.equal(tools.some(tool => tool.name === 'spawn_agent'), expectedEnabled,
         `the model must see delegation only while enabled (mode ${actual}; tools ${tools.map(tool => tool.name).join(', ')})`);
