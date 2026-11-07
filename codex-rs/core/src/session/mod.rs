@@ -782,9 +782,18 @@ impl Session {
             token_budget::apply_model_defaults(Arc::make_mut(&mut config), &model_info);
         }
         let configured_config = Arc::clone(&config);
-        let multi_agent_version = config.multi_agent_version_override().or_else(|| {
-            resolve_multi_agent_version(&conversation_history, inherited_multi_agent_version)
-        });
+        let multi_agent_version = if inherited_multi_agent_version
+            == Some(MultiAgentVersion::Disabled)
+            && (isolation == codex_extension_api::SessionIsolation::Isolated
+                || session_source.is_non_root_agent())
+        {
+            // An internal delegate's inherited restriction must win even over V2.
+            Some(MultiAgentVersion::Disabled)
+        } else {
+            config.multi_agent_version_override().or_else(|| {
+                resolve_multi_agent_version(&conversation_history, inherited_multi_agent_version)
+            })
+        };
         let history_mode = conversation_history.get_history_mode(
             requested_history_mode.unwrap_or_else(|| thread_store.default_history_mode()),
         );
