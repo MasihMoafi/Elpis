@@ -4193,7 +4193,10 @@ impl Session {
     }
 
     pub(crate) fn multi_agent_version(&self) -> Option<MultiAgentVersion> {
-        self.multi_agent_version.get().copied()
+        self.reenabled_multi_agent_version
+            .get()
+            .or_else(|| self.multi_agent_version.get())
+            .copied()
     }
 
     pub(crate) fn set_multi_agent_version_if_unset(
@@ -4207,8 +4210,19 @@ impl Session {
         &self,
         model_info: &ModelInfo,
         config: &Config,
+        session_source: &SessionSource,
     ) -> MultiAgentVersion {
         if let Some(multi_agent_version) = self.multi_agent_version() {
+            if multi_agent_version == MultiAgentVersion::Disabled
+                && !session_source.is_non_root_agent()
+                && config.agents_enabled
+                && config.features.enabled(Feature::Collab)
+            {
+                let selected = config.multi_agent_version_for_model(model_info.multi_agent_version);
+                if selected != MultiAgentVersion::Disabled {
+                    return *self.reenabled_multi_agent_version.get_or_init(|| selected);
+                }
+            }
             return config.multi_agent_version_for_model(Some(multi_agent_version));
         }
 

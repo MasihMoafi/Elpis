@@ -119,6 +119,13 @@ impl Config {
             .features
             .refresh_mcp_features(&features)
             .map_err(std::io::Error::other)?;
+        // Elpis: the Ledger's subagent switch also applies to the next turn of an open chat.
+        if matches!(scope, RuntimeConfigRefresh::UserFiles) {
+            config
+                .features
+                .set_enabled(Feature::Collab, features.enabled(Feature::Collab))
+                .map_err(std::io::Error::other)?;
+        }
         config.mcp_servers =
             constrain_mcp_servers(servers, layers.requirements().mcp_servers.as_ref())
                 .map_err(std::io::Error::other)?;
