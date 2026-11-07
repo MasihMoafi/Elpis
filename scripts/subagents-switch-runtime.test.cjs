@@ -16,15 +16,31 @@ async function main() {
   const root = fs.mkdtempSync(path.join(cache, 'subagents-switch-'));
   const engineHome = path.join(root, 'engine'), cwd = path.join(root, 'project');
   fs.mkdirSync(engineHome); fs.mkdirSync(cwd);
-  const events = [], requests = [];
+  const events = [], requests = [], spawned = new Set();
+  const offeredTools = request => [
+    ...(request.tools || []),
+    ...(request.input || []).filter(item => item.type === 'additional_tools').flatMap(item => item.tools || []),
+  ].flatMap(tool => tool.type === 'namespace'
+    ? (tool.tools || []).map(child => ({ ...child, namespace: tool.name })) : [tool]);
   const server = http.createServer(async (request, response) => {
     if (!request.url.includes('/responses')) { response.writeHead(404); response.end(); return; }
     let body = '';
     for await (const chunk of request) body += chunk;
-    requests.push(JSON.parse(body));
+    const modelRequest = JSON.parse(body);
+    requests.push(modelRequest);
     const id = `offline_${requests.length}`;
-    const item = { type: 'message', id: `message_${requests.length}`, role: 'assistant', status: 'completed',
+    let item = { type: 'message', id: `message_${requests.length}`, role: 'assistant', status: 'completed',
       content: [{ type: 'output_text', text: 'Done.', annotations: [] }] };
+    const latestUser = (modelRequest.input || []).filter(entry => entry.role === 'user').at(-1);
+    const fixture = JSON.stringify(latestUser || {}).match(/SPAWN_SUBAGENT_FIXTURE_(control|existing)/)?.[1];
+    const spawn = offeredTools(modelRequest).find(tool => tool.name === 'spawn_agent');
+    if (fixture && spawn && !spawned.has(fixture)) {
+      spawned.add(fixture);
+      item = { type: 'function_call', id: `spawn_${fixture}`, call_id: `spawn_${fixture}`,
+        name: spawn.name, ...(spawn.namespace && { namespace: spawn.namespace }),
+        arguments: JSON.stringify({ task_name: `fixture_${fixture}`, fork_turns: 'none',
+          message: `CHILD_FIXTURE_${fixture}: Reply done.` }) };
+    }
     response.writeHead(200, { 'content-type': 'text/event-stream' });
     for (const event of [
       { type: 'response.created', response: { id, status: 'in_progress', output: [] } },
@@ -67,21 +83,24 @@ async function main() {
     await rpc.request('initialize', { clientInfo: { name: 'elpis_subagents_switch_test', version: '1' }, capabilities: { experimentalApi: true } });
     rpc.send({ method: 'initialized', params: {} });
     const threadId = (await rpc.request('thread/start', { cwd, approvalPolicy: 'never', sandbox: 'read-only' })).thread.id;
-    const turn = async (threadId, expectedEnabled) => {
+    const turn = async (threadId, expectedEnabled, text = 'Complete the offline test.') => {
       const before = modes(threadId).length, start = events.length, firstRequest = requests.length;
-      await rpc.request('turn/start', { threadId, input: [{ type: 'text', text: 'Complete the offline test.' }] });
+      await rpc.request('turn/start', { threadId, input: [{ type: 'text', text }] });
       const completion = await waitFor(() => events.slice(start).find(event => event.method === 'turn/completed' && event.params.threadId === threadId), 'the offline turn');
       assert.equal(completion.params.turn.status, 'completed', `offline turn failed: ${JSON.stringify(completion.params.turn.error)}`);
       const actual = await waitFor(() => { const values = modes(threadId); return values.length > before && values.at(-1); }, 'the turn context');
       assert.equal(actual !== 'disabled', expectedEnabled, `the same chat must follow the subagent switch; got ${actual}`);
       const turnRequests = requests.slice(firstRequest);
-      const tools = turnRequests.flatMap(request => [
-        ...(request.tools || []),
-        ...(request.input || []).filter(item => item.type === 'additional_tools').flatMap(item => item.tools || []),
-      ])
-        .flatMap(tool => tool.type === 'namespace' ? tool.tools || [] : [tool]);
+      const tools = turnRequests.flatMap(offeredTools);
       assert.equal(tools.some(tool => tool.name === 'spawn_agent'), expectedEnabled,
         `the model must see delegation only while enabled (mode ${actual}; tools ${tools.map(tool => tool.name).join(', ')})`);
+    };
+    const spawnFixture = async (threadId, fixture) => {
+      await turn(threadId, true, `SPAWN_SUBAGENT_FIXTURE_${fixture}`);
+      assert(spawned.has(fixture), 'the offline model requested the native delegation tool');
+      await waitFor(() => requests.some(request => (request.input || []).some(item =>
+        (item.role === 'user' || item.type === 'agent_message') && JSON.stringify(item).includes(`CHILD_FIXTURE_${fixture}`))),
+      'the offline child agent to receive its task');
     };
     await turn(threadId, false);
     let checkedNewChat = false;
@@ -91,11 +110,13 @@ async function main() {
       if (enabled && !checkedNewChat) {
         const control = (await rpc.request('thread/start', { cwd, approvalPolicy: 'never', sandbox: 'read-only' })).thread.id;
         await turn(control, true);
+        await spawnFixture(control, 'control');
         checkedNewChat = true;
         console.log('PASS: a newly opened chat sees the enabled delegation tool.');
       }
       await turn(threadId, enabled);
     }
+    await spawnFixture(threadId, 'existing');
     console.log('PASS: the same chat follows the subagent switch on every turn.');
   } finally {
     const exited = rpc.child.exitCode === null ? once(rpc.child, 'exit') : Promise.resolve();
