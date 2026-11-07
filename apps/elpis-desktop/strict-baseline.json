@@ -379,7 +379,7 @@
   "components/file-tree.tsx:typescript(no-floating-promises)": 1,
   "components/files-pane.tsx:unused-disable-directive": 1,
   "components/live-voice.tsx:unused-disable-directive": 1,
-  "components/love-spot-matilda.tsx:typescript(no-floating-promises)": 2,
+  "components/love-spot-matilda.tsx:typescript(no-floating-promises)": 1,
   "components/love-spot-matilda.tsx:typescript(no-misused-promises)": 7,
   "components/love-spot.tsx:typescript(no-base-to-string)": 1,
   "components/love-spot.tsx:typescript(no-floating-promises)": 3,
