@@ -53,7 +53,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          # Fast path (Masih, 7 Nov: "builds should happen far faster"): reuse any kept engine built from the same
+          # codex-rs tree; only a changed engine waits for a fresh ~20-minute Rust build of this commit.
+          tree=$(git rev-parse HEAD:codex-rs); run=
+          for candidate in $(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=elpis-linux-x86_64&per_page=50" --jq '.artifacts[] | select(.expired | not) | "\(.workflow_run.id):\(.workflow_run.head_sha)"'); do
+            sha=${candidate#*:}
+            git cat-file -e "$sha" 2>/dev/null || git fetch -q --depth=1 origin "$sha" 2>/dev/null || continue
+            if [ "$(git rev-parse "$sha:codex-rs" 2>/dev/null)" = "$tree" ]; then run=${candidate%%:*}; echo "Reusing the engine of run $run ($sha)"; break; fi
+          done
           for attempt in $(seq 1 90); do
+            [ -n "$run" ] && break
             run=$(gh run list -R "$GITHUB_REPOSITORY" --workflow embedded-elpis-linux.yml --commit "$GITHUB_SHA" --status success --json databaseId --jq '.[0].databaseId // empty')
             [ -n "$run" ] && break
             echo "Waiting for an Elpis Linux verification run of $GITHUB_SHA ($attempt/90)"; sleep 60
