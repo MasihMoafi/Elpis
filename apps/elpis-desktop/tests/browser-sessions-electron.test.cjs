@@ -16,7 +16,7 @@ test('session browsers switch, start empty, restore history, isolate concurrent 
   const f = await fixture({ desktop: false, routes: { '/api/trash': body => ({ trashed: body.threadIds }) } });
   const site = http.createServer((req, res) => {
     res.setHeader('content-type', 'text/html');
-    res.end(`<title>Page ${req.url}</title><style>:root{color-scheme:light dark}body{background:Canvas;color:CanvasText}</style><h1>Session page ${req.url}</h1><input aria-label="Session note"><button class="btn" onclick="const heading=document.querySelector('h1');heading.textContent=document.querySelector('input').value;heading.dataset.saved='true'">Save</button>`);
+    res.end(`<title>Page ${req.url}</title><script>window.browserIdentityAtLoad = navigator.userAgentData?.brands.map(item => item.brand)</script><style>:root{color-scheme:light dark}body{background:Canvas;color:CanvasText}</style><h1>Session page ${req.url}</h1><input aria-label="Session note"><button class="btn" onclick="const heading=document.querySelector('h1');heading.textContent=document.querySelector('input').value;heading.dataset.saved='true'">Save</button>`);
   });
   await new Promise(resolve => site.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${site.address().port}`;
@@ -60,7 +60,13 @@ test('session browsers switch, start empty, restore history, isolate concurrent 
     assert.equal((await state()).sessionId, initial.sessionId, 'background input does not switch the shown session');
     assert.equal((await state()).tabs.length, 0);
     await electron.evaluate(() => global.sessionWindows.closeBrowser('first-background'));
-    await select('chat-a'); await newPage(`${base}/a`); await visit(`${base}/a-next`);
+    await select('chat-a'); await newPage(`${base}/a`);
+    const firstHistory = await electron.evaluate(({ webContents }, url) => {
+      const wc = webContents.getAllWebContents().find(contents => contents.getURL() === url);
+      return wc.navigationHistory.getAllEntries().map(entry => entry.url);
+    }, `${base}/a`);
+    assert.deepEqual(firstHistory, ['about:blank', `${base}/a`], 'a new tab keeps exactly its original blank page in history');
+    await visit(`${base}/a-next`);
     const a = (await state()).tabs[0]; assert.equal(a.canGoBack, true);
     await newPage(`${base}/a-extra`); const extra = (await state()).tabs[1];
     await page.getByRole('tab', { name: 'Page /a-next', exact: true }).click();
@@ -135,10 +141,26 @@ test('session browsers switch, start empty, restore history, isolate concurrent 
     assert.equal(await electron.evaluate(({ webContents }, url) => webContents.getAllWebContents().filter(wc => wc.getURL() === url).length, `${base}/a-next`), 1, 'one session keeps one native page across windows');
     await secondWindow.close(); await page.bringToFront();
     await address().waitFor(); assert.equal(await address().inputValue(), `${base}/a-next`);
+    await page.getByRole('form', { name: 'Browser navigation' }).getByRole('button', { name: 'Back', exact: true }).click();
+    await page.getByRole('tab', { name: 'Page /a', exact: true }).waitFor();
     await electron.evaluate(() => global.sessionWindows.flushBrowsers());
     await electron.close(); electron = null; await launch();
-    await select('chat-a'); assert.equal(await address().inputValue(), `${base}/a-next`);
-    assert.equal((await state()).tabs[0].canGoBack, true, 'history survives app restart');
+    await select('chat-a'); assert.equal(await address().inputValue(), `${base}/a`);
+    assert.equal((await state()).tabs[0].canGoForward, true, 'forward history survives app restart');
+    const restored = await electron.evaluate(async ({ webContents }, url) => {
+      const deadline = Date.now() + 10000;
+      let wc;
+      while (!(wc = webContents.getAllWebContents().find(contents => contents.getURL() === url))) {
+        if (Date.now() > deadline) throw Error('The restored page did not load');
+        await new Promise(resolve => setTimeout(resolve, 20));
+      }
+      return { history: wc.navigationHistory.getAllEntries().map(entry => entry.url),
+        brands: await wc.executeJavaScript('window.browserIdentityAtLoad') };
+    }, `${base}/a`);
+    assert.deepEqual(restored.history, ['about:blank', `${base}/a`, `${base}/a-next`], 'restoration leaves no temporary page in history');
+    assert.ok(restored.brands.includes('Google Chrome'), 'the restored page has Chrome identity from its first load');
+    await page.getByRole('form', { name: 'Browser navigation' }).getByRole('button', { name: 'Forward', exact: true }).click();
+    await page.getByRole('tab', { name: 'Page /a-next', exact: true }).waitFor();
     await page.getByRole('form', { name: 'Browser navigation' }).getByRole('button', { name: 'Back', exact: true }).click(); await page.getByRole('tab', { name: 'Page /a', exact: true }).waitFor();
     await select('chat-b'); assert.equal(await address().inputValue(), `${base}/b`);
     await page.getByRole('textbox', { name: 'Message Elpis', exact: true }).focus(); await page.keyboard.press('Control+w');

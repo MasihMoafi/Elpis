@@ -479,10 +479,8 @@ function LoveSpotBoard({ dark, toolbarHost }: LoveSpotProps) {
     const endedEdit = editingId.current && !editing;
     editingId.current = editing?.id;
     if (!remote.current && editing && currentPage.current) journal.current!.record(editing, currentPage.current);
-    if (!editing && deferred.current) {
-      const pending = deferred.current; deferred.current = undefined;
-      queueMicrotask(() => { if (mounted.current) receive(pending); });
-    }
+    const admitRemote = !editing && !!deferred.current;
+    if (admitRemote) deferred.current = undefined;
     // Loading, selection and pointer movement do not need a save or a new PNG.
     const filesChanged = before && (Object.keys(before.files).length !== Object.keys(files).length || Object.entries(files).some(([id, file]) => before.files[id]?.dataURL !== file.dataURL));
     const drawingChanged = before && (filesChanged || versions(before.elements) !== versions(all) || JSON.stringify(before.appState) !== JSON.stringify(latest.current.appState));
@@ -492,8 +490,17 @@ function LoveSpotBoard({ dark, toolbarHost }: LoveSpotProps) {
       clearTimeout(saveTimer.current); saveTimer.current = setTimeout(() => save(), 150);
     }
     if (!remote.current && endedEdit) queueMicrotask(() => void saveLatest.current?.());
+    if (admitRemote) queueMicrotask(() => {
+      // Capture and save the finished edit before admitting remote changes. The
+      // deferred snapshot may predate that save, so read the current scene instead.
+      void saving.current.then(async () => {
+        if (!mounted.current) return;
+        const current = await api<Saved>("/love-spot");
+        if (mounted.current) receive(current);
+      }).catch(report);
+    });
     if (drawingChanged) schedulePicture();
-  }, [editor, matilda, receive, save, schedulePicture, noticeStyle]);
+  }, [editor, matilda, receive, report, save, schedulePicture, noticeStyle]);
 
   async function chooseScreenshot(id: string, action: "place" | "dismiss") {
     if (choosing) return;

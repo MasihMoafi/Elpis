@@ -16,8 +16,22 @@ async function startText(page, text) {
 
 test('a competing edit of the same note cannot replace the active verdict', async () => {
   const f = await loveSpotFixture();
-  let release, held;
+  let release, held, releaseFinal, finalHeld = false, mineId, remoteVersion, finalVersion;
+  const staleAfterFinal = [], finalGate = new Promise(resolve => { releaseFinal = resolve; });
+  await f.page.evaluate(() => {
+    window.__boardEvents = [];
+    const Source = window.EventSource;
+    window.EventSource = class extends Source {
+      constructor(url, options) {
+        super(url, options);
+        if (String(url).includes('/api/love-spot/events')) this.addEventListener('message', event => {
+          try { window.__boardEvents.push(JSON.parse(event.data)); } catch {}
+        });
+      }
+    };
+  });
   try {
+    await f.page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
     await f.open(f.page); await startText(f.page, 'Agent asks for a verdict'); await f.page.keyboard.press('Escape');
     await f.waitFor(s => s.elements.some(e => e.text === 'Agent asks for a verdict'), 'seed did not save');
     const other = await f.newPage(); await f.open(other);
@@ -25,13 +39,20 @@ test('a competing edit of the same note cannot replace the active verdict', asyn
     await f.page.route('**/api/love-spot', async route => {
       if (route.request().method() !== 'POST') return route.continue();
       const drawing = route.request().postDataJSON();
-      if (!held && drawing.elements.some(e => e.text === 'My verdict')) { held = drawing; await gate; }
+      if (!held && drawing.elements.some(e => e.text === 'My verdict')) { held = drawing; await gate; return route.continue(); }
+      const note = drawing.elements.find(e => e.id === mineId);
+      if (note?.text === 'My verdict remains here' && note.version > remoteVersion && !finalHeld) {
+        const response = await route.fetch(); finalHeld = true; finalVersion = note.version;
+        await finalGate; return route.fulfill({ response });
+      }
+      if (finalVersion && note?.text === 'My verdict' && note.version > remoteVersion) staleAfterFinal.push(note.version);
       return route.continue();
     });
     await f.page.keyboard.press('Enter'); await f.page.locator('textarea.excalidraw-wysiwyg').waitFor();
     await f.page.keyboard.press('ControlOrMeta+a'); await f.page.keyboard.type('My verdict');
     await f.waitFor(() => held, 'the local verdict save was not held');
     const mine = held.elements.find(e => e.text === 'My verdict'), remote = await f.scene();
+    mineId = mine.id; remoteVersion = mine.version + 100;
     // Pin a stale editor's empty commit above every local keystroke version.
     // The real store must retain it until this writer explicitly retries.
     remote.elements = remote.elements.map(e => e.id === mine.id
@@ -40,7 +61,7 @@ test('a competing edit of the same note cannot replace the active verdict', asyn
     assert.equal(response.status(), 200);
     const deleted = (await f.scene()).elements.find(e => e.id === mine.id);
     assert.equal(deleted.isDeleted, true); assert.ok(deleted.version > mine.version);
-    await f.page.waitForTimeout(500);
+    await f.page.waitForFunction(({ id, version }) => window.__boardEvents.some(event => event.scene?.elements.some(e => e.id === id && e.isDeleted && e.version === version)), { id: mine.id, version: remoteVersion });
     const input = f.page.locator('textarea.excalidraw-wysiwyg');
     assert.equal(await input.count(), 1, 'remote text replacement ended the active edit');
     assert.equal(await input.inputValue(), 'My verdict', 'remote text replacement erased the active verdict');
@@ -48,8 +69,18 @@ test('a competing edit of the same note cannot replace the active verdict', asyn
     await f.waitFor(s => s.elements.some(e => e.id === mine.id && e.text === 'My verdict' && !e.isDeleted), 'Ctrl+S did not beat the stale deletion');
     await f.page.keyboard.type(' remains here'); await f.page.keyboard.press('Control+s');
     await f.page.keyboard.press('Escape');
+    await f.waitFor(() => finalHeld, 'the final edit save did not start');
+    await f.page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await f.page.keyboard.press('ControlOrMeta+a');
+    await f.page.evaluate(() => navigator.clipboard.writeText(''));
+    await f.page.keyboard.press('ControlOrMeta+c');
+    const copied = JSON.parse(await f.page.evaluate(() => navigator.clipboard.readText())).elements;
+    assert.equal(copied.find(e => e.id === mine.id)?.originalText, 'My verdict remains here', 'a deferred scene must not replace the finished edit while its save is pending');
+    releaseFinal();
+    assert.equal(await f.page.evaluate(() => window.__elpisFlushLoveSpot?.()), true, 'the close flush completed');
+    assert.deepEqual(staleAfterFinal, [], 'a stale deferred scene was saved after the final edit');
     await f.waitFor(s => s.elements.some(e => e.text === 'My verdict remains here' && !e.isDeleted), 'the winning remote version discarded the local verdict');
-  } finally { release?.(); await f.close(); }
+  } finally { release?.(); releaseFinal?.(); await f.close(); }
 });
 
 for (const colorScheme of ['light']) test(`active text survives two-window updates and Ctrl+S · ${colorScheme}`, async () => {

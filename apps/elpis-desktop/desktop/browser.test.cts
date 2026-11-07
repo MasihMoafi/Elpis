@@ -22,7 +22,7 @@ test('a destroyed sign-in popup closes safely after Electron detaches its webCon
   browser.dispose(); await new Promise<void>(resolve => setImmediate(resolve));
 });
 
-function identityFixture(requireBlank = false) {
+function identityFixture(requireBlank = false, initialFailure?: Error) {
   let release!: () => void;
   let blankLoaded = false;
   const identity = new Promise<void>(resolve => { release = resolve; });
@@ -31,8 +31,10 @@ function identityFixture(requireBlank = false) {
   const debuggerApi = Object.assign(new EventEmitter(), { isAttached: () => true,
     sendCommand: (name: string) => name === 'Emulation.setUserAgentOverride' ? requireBlank && !blankLoaded ? awaitingDocument : identity : Promise.resolve() });
   const wc = Object.assign(new EventEmitter(), { debugger: debuggerApi, setWindowOpenHandler() {},
-    navigationHistory: { canGoBack: () => false, canGoForward: () => false }, getURL: () => '', getZoomFactor: () => 1,
-    isDestroyed: () => false, close() {}, focus() {}, send() {}, stop() {}, loadURL: async (url: string) => { if (url === 'about:blank') blankLoaded = true; else loads.push(url); } });
+    navigationHistory: { canGoBack: () => false, canGoForward: () => false,
+      getAllEntries: () => [{ url: 'about:blank', title: 'New tab' }], getActiveIndex: () => 0, restore: async () => {}, goToIndex() {}, removeEntryAtIndex: () => true },
+    getURL: () => '', getZoomFactor: () => 1, setZoomFactor() {},
+    isDestroyed: () => false, close() {}, focus() {}, send() {}, stop() {}, loadURL: async (url: string) => { if (url === 'about:blank') { if (initialFailure) throw initialFailure; blankLoaded = true; } else loads.push(url); } });
   class View { webContents = wc; setVisible() {} setBounds() {} }
   const origin = 'http://127.0.0.1:4000';
   const root = Object.assign(new EventEmitter(), { mainFrame: { url: origin }, isDestroyed: () => false, send() {}, focus() {}, getZoomFactor: () => 1 });
@@ -45,8 +47,29 @@ function identityFixture(requireBlank = false) {
     ipcMain: { handle: (name: string, handler: (event: unknown, input: unknown) => Promise<unknown>) => handlers.set(name, handler), on() {}, removeHandler() {}, removeListener() {} } });
   const command = (id: string, action: string, data: Record<string, string> = {}) =>
     handlers.get('elpis:browser')!({ sender: root, senderFrame: root.mainFrame }, { id, action, ...data });
-  return { browser, command, loads, release };
+  return { browser, command, loads, release, wc };
 }
+
+test('initializing a tab does not replace its requested address with the blank document', async () => {
+  const { browser, release, wc } = identityFixture();
+  try {
+    browser.open('https://example.com/');
+    wc.emit('did-navigate', {}, 'about:blank');
+    assert.equal(browser.snapshot().tabs[0]!.url, 'https://example.com/');
+  } finally { release(); await new Promise<void>(resolve => setImmediate(resolve)); browser.dispose(); }
+});
+
+test('a saved tab keeps its history while its identity is initializing', async () => {
+  const { browser, command, release } = identityFixture();
+  const history = [{ url: 'https://example.com/first', title: 'First' }, { url: 'https://example.com/second', title: 'Second' }];
+  const restoring = browser.restore({ visible: true, activeId: 'tab', tabs: [{ id: 'tab', url: history[1]!.url, title: 'Second', customTitle: '', agent: false, muted: false, zoom: 1, history, historyIndex: 1 }] });
+  try {
+    assert.deepEqual(browser.saved().tabs[0]!.history, history);
+    await command('tab', 'navigate', { url: 'javascript:alert(1)' });
+    assert.deepEqual(browser.saved().tabs[0]!.history, history, 'a rejected address must not discard pending history');
+    assert.equal(browser.saved().tabs[0]!.historyIndex, 1);
+  } finally { release(); await restoring; browser.dispose(); }
+});
 
 test('a new browser tab applies its identity before loading its first page', async () => {
   const { browser, loads, release } = identityFixture();
@@ -55,6 +78,16 @@ test('a new browser tab applies its identity before loading its first page', asy
   release(); await new Promise<void>(resolve => setImmediate(resolve)); browser.dispose();
   assert.deepEqual(premature, []);
   assert.deepEqual(loads, ['https://example.com/']);
+});
+
+test('a failed browser initialization reports the failure without loading the requested page', async () => {
+  const { browser, loads, release } = identityFixture(false, new Error('initialization failed'));
+  try {
+    browser.open('https://example.com/');
+    await new Promise<void>(resolve => setImmediate(resolve));
+    assert.equal(browser.snapshot().tabs[0]!.error, 'The browser could not initialize this tab.');
+    assert.deepEqual(loads, []);
+  } finally { release(); browser.dispose(); }
 });
 
 test('a newer address, Stop, or Close supersedes a pending first page', async () => {

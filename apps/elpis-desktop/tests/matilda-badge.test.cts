@@ -32,8 +32,8 @@ for (const colorScheme of ['light']) test(`an answer read in her small chat leav
 
 for (const first of ['stream', 'send']) test(`a reply stays visible when ${first} beats the first conversation read`, { timeout: 60000 }, async (t: import('node:test').TestContext) => {
   const f = await loveSpotFixture({ reply: 'Here is my answer, love.', replyDelay: 200 });
-  let release = () => {};
-  t.after(async () => { release(); await f.close(); });
+  let release = () => {}, releasePost = () => {};
+  t.after(async () => { release(); releasePost(); await f.close(); });
   const page = f.page;
   const nextReply = () => new Promise<void>(resolve => {
     const onEvent = (event: { data?: { method?: string } }) => {
@@ -51,13 +51,19 @@ for (const first of ['stream', 'send']) test(`a reply stays visible when ${first
   let readStarted: () => void = () => { throw new Error('Read signal not initialized'); };
   let streamStarted: () => void = () => { throw new Error('Stream signal not initialized'); };
   const waiting = new Promise<void>(resolve => { release = resolve; });
+  const postWaiting = new Promise<void>(resolve => { releasePost = resolve; });
   const started = new Promise<void>(resolve => { readStarted = resolve; });
   const stream = new Promise<void>(resolve => { streamStarted = resolve; });
-  type Route = { request(): { method(): string }; continue(): Promise<void> };
+  type Route = { request(): { method(): string }; continue(): Promise<void>; fetch(): Promise<unknown>; fulfill(options: { response: unknown }): Promise<void> };
   await page.route('**/api/love-spot/talk', async (route: Route) => {
     if (route.request().method() === 'GET') {
       readStarted();
       await waiting;
+    }
+    if (route.request().method() === 'POST' && first === 'stream') {
+      const response = await route.fetch();
+      await postWaiting;
+      return route.fulfill({ response });
     }
     await route.continue();
   });
@@ -73,13 +79,19 @@ for (const first of ['stream', 'send']) test(`a reply stays visible when ${first
   if (first === 'stream') await mini.getByRole('button', { name: 'Show earlier messages', exact: true }).waitFor();
   else await stream;
   const completed = nextReply();
-  await mini.getByRole('textbox', { name: 'Message Matilda', exact: true }).fill('How are you?');
+  const input = mini.getByRole('textbox', { name: 'Message Matilda', exact: true });
+  const conversation = mini.getByRole('log', { name: 'Matilda conversation', exact: true });
+  await input.fill('How are you?');
   await mini.getByRole('button', { name: 'Send to Matilda', exact: true }).click();
-  await mini.getByText('How are you?', { exact: true }).waitFor({ timeout: 5000 });
+  await conversation.getByText('How are you?', { exact: true }).waitFor({ timeout: 5000 });
+  if (first === 'stream') assert.equal(await input.inputValue(), 'How are you?', 'the unacknowledged draft is kept');
+  releasePost();
   await completed;
   release();
-  await mini.getByText('Here is my answer, love.', { exact: true }).last().waitFor({ timeout: 5000 });
-  assert.equal(await mini.getByText('How are you?', { exact: true }).count(), 1);
+  await conversation.getByText('Here is my answer, love.', { exact: true }).last().waitFor({ timeout: 5000 });
+  await page.waitForFunction(() => (document.querySelector('textarea[aria-label="Message Matilda"]') as HTMLTextAreaElement | null)?.value === '');
+  assert.equal(await conversation.getByText('How are you?', { exact: true }).count(), 1);
+  assert.equal(f.turns.filter((turn: { text?: string }) => turn.text === 'How are you?').length, 1);
   // 1 Nov (replacing 31 Oct's "show some by default"): earlier messages show only from the pop-up's history icon.
   assert.equal(await mini.getByText('An old question', { exact: true }).count(), 0);
   await mini.getByRole('button', { name: 'Show earlier messages', exact: true }).click();

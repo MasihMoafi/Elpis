@@ -2,7 +2,8 @@
 import type { BrowserWindow, WebContentsView as View, Session, IpcMain, Menu as ElectronMenu, Event as ElectronEvent, IpcMainEvent, IpcMainInvokeEvent, Input, ContextMenuParams, MenuItemConstructorOptions, Rectangle } from 'electron';
 type Pick = ReturnType<typeof import('./browser-annotations.cts').cleanPick>;
 type Comment = { id: string; number: number; kind: string; pageUrl: string; anchor: Pick; body: string; screenshot: string | null; editing: string | null };
-type Tab = { id: string; url: string; title: string; customTitle: string | null; agent: boolean; loading: boolean; error: string | null; failure: ReturnType<typeof import('./browser-policy.cts').loadFailure> | null; view: View; identityReady: Promise<void>; navigation: number; comments: Comment[]; draft: Comment | null; find: { open: boolean; text: string; matches: number; active: number; focus: number } };
+type RestoreHistory = { entries: Electron.NavigationEntry[]; index: number };
+type Tab = { id: string; url: string; title: string; customTitle: string | null; agent: boolean; loading: boolean; error: string | null; failure: ReturnType<typeof import('./browser-policy.cts').loadFailure> | null; view: View; identityReady: Promise<void>; navigation: number; pendingHistory: RestoreHistory | null; comments: Comment[]; draft: Comment | null; find: { open: boolean; text: string; matches: number; active: number; focus: number } };
 type Options = { host: BrowserWindow; origin: string; WebContentsView: typeof View; session: { fromPartition: (partition: string) => Session }; ipcMain: IpcMain; openExternal?: (url: string) => Promise<void>; Menu?: typeof ElectronMenu; clipboard: { writeText: (text: string) => void; writeImage: (image: Electron.NativeImage) => void };  sessionId?: string; onChange?: () => void; presented?: boolean };
 type Command = { action: string; id: string; url: string; body: unknown; text: unknown; value: string | boolean | undefined };
 type Saved = { visible: boolean; activeId: string; tabs: { id: string; url: string; title: string; customTitle: string; agent: boolean; muted: boolean; zoom: number; history: Electron.NavigationEntry[]; historyIndex: number }[] };
@@ -40,7 +41,7 @@ function createBrowserImpl({host,origin,WebContentsView,session,ipcMain,openExte
       annotations:tab?tab.comments.map(item=>commentView(tab,item)):[],
       draft:tab?.draft?{...commentView(tab,tab.draft),editing:!!tab.draft.editing}:null,
       find:tab?{open:tab.find.open,text:tab.find.text,matches:tab.find.matches,active:tab.find.active,focus:tab.find.focus}:{open:false,text:'',matches:0,active:0,focus:0},
-      tabs:[...tabs.values()].map(item=>({id:item.id,url:item.url,title:item.customTitle??item.title,customTitle:item.customTitle,muted:item.view.webContents.isAudioMuted?.()??false,loading:item.loading,error:item.error,failure:item.failure,security:pageSecurity(item.url),zoom:Math.round(item.view.webContents.getZoomFactor()*100),comments:item.comments.length,canGoBack:item.view.webContents.navigationHistory.canGoBack(),canGoForward:item.view.webContents.navigationHistory.canGoForward()}))};
+      tabs:[...tabs.values()].map(item=>({id:item.id,url:item.url,title:item.customTitle??item.title,customTitle:item.customTitle,muted:item.view.webContents.isAudioMuted?.()??false,loading:item.loading,error:item.error,failure:item.failure,security:pageSecurity(item.url),zoom:Math.round(item.view.webContents.getZoomFactor()*100),comments:item.comments.length,canGoBack:item.pendingHistory?item.pendingHistory.index>0:item.view.webContents.navigationHistory.canGoBack(),canGoForward:item.pendingHistory?item.pendingHistory.index<item.pendingHistory.entries.length-1:item.view.webContents.navigationHistory.canGoForward()}))};
   };
   const emit=()=>{if(disposed)return;onChange?.();if(presented&&!host.isDestroyed()&&!host.webContents.isDestroyed())host.webContents.send('elpis:browser:state',snapshot());};
   const agent=createBrowserAgent({tabs,open,origin,emit,prepare(id: string){if(annotating&&id===activeId)setAnnotating(false);}});
@@ -81,14 +82,14 @@ function createBrowserImpl({host,origin,WebContentsView,session,ipcMain,openExte
     place();emit();
   }
   function navigate(tab: Tab,url: string){
-    tab.url=browserUrl(url,origin);tab.error=null;tab.failure=null;tab.title=tab.url==='about:blank'?'New tab':new URL(tab.url).hostname||decodeURIComponent(new URL(tab.url).pathname.split('/').pop()||'File');emit();
-    const target=tab.url,revision=++tab.navigation,wc=tab.view.webContents;
+    const target=browserUrl(url,origin);tab.pendingHistory=null;tab.url=target;tab.error=null;tab.failure=null;tab.title=tab.url==='about:blank'?'New tab':new URL(tab.url).hostname||decodeURIComponent(new URL(tab.url).pathname.split('/').pop()||'File');emit();
+    const revision=++tab.navigation,wc=tab.view.webContents;
     // A new tab (including an OAuth popup) must have its identity before its first document loads.
     // did-fail-load owns page errors; Stop and replaced navigations also reject loadURL.
     void tab.identityReady.then(()=>{if(!disposed&&tabs.has(tab.id)&&!wc.isDestroyed()&&tab.navigation===revision)return wc.loadURL(target);}).catch(()=>{});
   }
   // An agent's tab opens behind the person's tab; it is shown only when he has none.
-  function open(url='about:blank',{focus=false,after=null,id=null,restoring=false,agent:owned=false}: { focus?: boolean; after?: string | null; id?: string | null; restoring?: boolean; agent?: boolean }={}){
+  function open(url='about:blank',{focus=false,after=null,id=null,restoring=null,agent:owned=false}: { focus?: boolean; after?: string | null; id?: string | null; restoring?: RestoreHistory | null; agent?: boolean }={}){
     const target=browserUrl(url,origin);if(tabs.size>=20)throw Error('Close a browser tab before opening another (20 tab limit).');
     // Electron focuses a page on every navigation by default; an agent's page loads must never take the person's keyboard.
     const view=new WebContentsView({webPreferences:{partition:'persist:elpis-browser',preload:PRELOAD,nodeIntegration:false,contextIsolation:true,sandbox:true,webSecurity:true,plugins:true,webviewTag:false,focusOnNavigation:owned!==true,
@@ -98,12 +99,23 @@ function createBrowserImpl({host,origin,WebContentsView,session,ipcMain,openExte
     // A session can receive agent input before its pane has ever been shown.
     const {width,height}=host.getContentBounds();view.setBounds({x:0,y:0,width,height});
     host.contentView.addChildView(view);
-    const tab: Tab={id:typeof id==='string'&&/^[A-Za-z0-9_-]{1,200}$/.test(id)&&!tabs.has(id)?id:randomUUID(),url:'about:blank',title:'New tab',customTitle:null,agent:owned===true,loading:false,error:null,failure:null,view,identityReady:Promise.resolve(),navigation:0,comments:[],draft:null,find:{open:false,text:'',matches:0,active:0,focus:0}};tabs.set(tab.id,tab);
+    const tab: Tab={id:typeof id==='string'&&/^[A-Za-z0-9_-]{1,200}$/.test(id)&&!tabs.has(id)?id:randomUUID(),url:'about:blank',title:'New tab',customTitle:null,agent:owned===true,loading:false,error:null,failure:null,view,identityReady:Promise.resolve(),navigation:0,pendingHistory:restoring,comments:[],draft:null,find:{open:false,text:'',matches:0,active:0,focus:0}};tabs.set(tab.id,tab);
     if(after&&tabs.has(after)){const order=[...tabs.entries()].filter(([id])=>id!==tab.id),at=order.findIndex(([id])=>id===after)+1;order.splice(at,0,[tab.id,tab]);tabs.clear();for(const [id,item] of order)tabs.set(id,item);}
     const wc=view.webContents;tint(tab);
-    // Electron needs an initialized renderer before it can apply a debugger identity override.
-    tab.identityReady=wc.loadURL('about:blank').catch(()=>{}).then(()=>{
+    // Electron needs a renderer for the identity override, but can restore history only before its first load.
+    // Restore onto a temporary blank entry, set the identity, then select the saved entry and remove the temporary one.
+    let initializing=true;
+    const initial=restoring?wc.navigationHistory.restore({entries:[...restoring.entries,{url:'about:blank',title:'New tab'}],index:restoring.entries.length}):wc.loadURL('about:blank');
+    tab.identityReady=initial.then(()=>{
+      initializing=false;
       if(!disposed&&tabs.has(tab.id)&&!wc.isDestroyed())return presentPageAsChrome(wc);
+    }).catch((error: unknown)=>{
+      initializing=false;
+      const aborted=error instanceof Error&&(('code' in error&&error.code==='ERR_ABORTED')||('errno' in error&&error.errno===-3));
+      if(!disposed&&tabs.has(tab.id)&&!wc.isDestroyed()&&!aborted){
+        tab.loading=false;tab.error='The browser could not initialize this tab.';emit();
+      }
+      throw error;
     });
     agent.observe(tab);
     wc.on('will-attach-webview',event=>event.preventDefault());
@@ -117,9 +129,14 @@ function createBrowserImpl({host,origin,WebContentsView,session,ipcMain,openExte
     wc.on('did-start-loading',()=>{tab.loading=true;tab.error=null;emit();});
     wc.on('did-stop-loading',()=>{tab.loading=false;emit();});
     wc.on('did-start-navigation',(_event,_url,inPlace,isMainFrame)=>{if(isMainFrame&&!inPlace&&tab.failure){tab.failure=null;emit();}});
-    const navigated=(_event: ElectronEvent,url: string)=>{tab.url=url;tab.error=null;tab.failure=null;emit();};
+    const navigated=(_event: ElectronEvent,url: string)=>{
+      if(initializing&&url==='about:blank')return;
+      tab.url=url;tab.error=null;tab.failure=null;
+      if(tab.pendingHistory&&wc.navigationHistory.removeEntryAtIndex(tab.pendingHistory.entries.length))tab.pendingHistory=null;
+      emit();
+    };
     wc.on('did-navigate',navigated);wc.on('did-navigate-in-page',(event,url,isMainFrame)=>{if(isMainFrame)navigated(event,url);});
-    wc.on('page-title-updated',(_event,title)=>{tab.title=String(title).slice(0,200)||'New tab';emit();});
+    wc.on('page-title-updated',(_event,title)=>{if(!initializing){tab.title=String(title).slice(0,200)||'New tab';emit();}});
     wc.on('did-fail-load',(_event,code,description,url,isMainFrame)=>{if(isMainFrame&&code!==-3){tab.loading=false;tab.error=description;tab.failure=loadFailure(code,description,url||tab.url);emit();}});
     wc.on('render-process-gone',()=>{tab.loading=false;tab.error='This page stopped responding. Reload to try again.';emit();});
     wc.on('found-in-page',(_event,result)=>{if(result?.finalUpdate){tab.find.matches=result.matches;tab.find.active=result.activeMatchOrdinal;emit();}});
@@ -340,29 +357,33 @@ function createBrowserImpl({host,origin,WebContentsView,session,ipcMain,openExte
       presented=value;if(!value){bounds=null;obscured=true;}place();if(value)emit();
     },
     saved(){return {visible,activeId,tabs:[...tabs.values()].map(tab=>({id:tab.id,url:tab.url,title:tab.title,customTitle:tab.customTitle,agent:tab.agent,muted:tab.view.webContents.isAudioMuted?.()??false,zoom:tab.view.webContents.getZoomFactor(),
-      history:tab.view.webContents.navigationHistory.getAllEntries?.(),historyIndex:tab.view.webContents.navigationHistory.getActiveIndex?.()}))};},
-    // Keep the asynchronous contract even when no history needs restoring.
-    // oxlint-disable-next-line typescript/require-await
+      history:tab.pendingHistory?.entries??tab.view.webContents.navigationHistory.getAllEntries?.(),historyIndex:tab.pendingHistory?.index??tab.view.webContents.navigationHistory.getActiveIndex?.()}))};},
     async restore(saved: Saved){
       if(!saved||!Array.isArray(saved.tabs))return;
+      const preparations: Promise<void>[]=[];
       for(const item of saved.tabs.slice(0,20)){
         try{
           const history=Array.isArray(item.history)&&item.history.length&&Number.isInteger(item.historyIndex)&&item.historyIndex>=0&&item.historyIndex<item.history.length
             ?item.history.map(entry=>({...entry,url:browserUrl(entry.url,origin)})):null;
-          const id=open(item.url,{id:item.id,restoring:!!history,agent:item.agent===true}),tab=tabs.get(id)!,wc=tab.view.webContents;
+          const pending=history?{entries:history,index:item.historyIndex}:null;
+          const id=open(item.url,{id:item.id,restoring:pending,agent:item.agent===true}),tab=tabs.get(id)!,wc=tab.view.webContents;
           if(typeof item.title==='string')tab.title=item.title.slice(0,200);
           if(typeof item.customTitle==='string')tab.customTitle=item.customTitle.trim().slice(0,200)||null;
           if(item.muted===true)wc.setAudioMuted(true);
           if(Number.isFinite(item.zoom)&&item.zoom>=0.25&&item.zoom<=5)wc.setZoomFactor(item.zoom);
-          // restore itself loads the active entry. A separate loadURL would duplicate it.
-          // Do not wait for a remote site before allowing the user to switch chats.
-          if(history&&wc.navigationHistory.restore)void tab.identityReady.then(()=>{
-            if(!disposed&&tabs.has(id)&&!wc.isDestroyed()&&tab.navigation===0)return wc.navigationHistory.restore({entries:history,index:item.historyIndex});
-          }).catch(()=>{});
+          // Start the saved entry after identity setup; do not wait for the remote site to switch chats.
+          if(pending){
+            preparations.push(tab.identityReady.then(()=>{
+              if(!disposed&&tabs.has(id)&&!wc.isDestroyed()&&tab.navigation===0){
+                wc.navigationHistory.goToIndex(pending.index);
+              }
+            }).catch(()=>{}));
+          }
         }catch{ /* An unavailable or previously blocked address must not expose another session. */ }
       }
       if(tabs.has(saved.activeId))activeId=saved.activeId;
       visible=saved.visible===true&&tabs.size>0;place();emit();
+      await Promise.all(preparations);
     },dispose(){
     agent.dispose();
     disposed=true;ipcMain.removeHandler('elpis:browser');ipcMain.removeListener('elpis:browser:layout',layout);ipcMain.removeListener('elpis:browser:page',pageMessage);
