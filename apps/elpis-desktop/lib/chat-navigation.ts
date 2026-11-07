@@ -26,14 +26,14 @@ type NavigationInputs = {
 };
 
 export function createChatNavigation({ projectState, composer, conversations, history, drafts, attachments, tabsRef, updateTabs, session, newDraftKey, setError, setView, setSidebar, find, openThread, loadThread, showChat, browser, navHistory, show }: NavigationInputs) {
-  const { selectedRef, request, stickToBottom, followingBottom, restoreScroll, setEntries, setLoading } = session;
+  const { selectedRef, request, stickToBottom, followingBottom, restoreScroll, pendingPosition, saveScroll, setEntries, setLoading } = session;
   const { setProjectId, setCwd } = projectState;
   const { textRef, setText, composerRef } = composer;
   const { select, upsertThread, hidden } = conversations;
   const { setItemCursor } = history;
   const { saveDraft, savedDraft } = drafts;
   const { restoreAttachments } = attachments;
-  function openNewChat(draftKey = newDraftKey.current) { saveDraft(selectedRef.current?.id || newDraftKey.current, textRef.current); newDraftKey.current = draftKey; request.current++; stickToBottom.current = true; followingBottom.current = false; restoreScroll.current = null; select(null); setEntries([]); setItemCursor(null); setText(savedDraft(draftKey)); setError(""); restoreAttachments(draftKey); setLoading(false); setView("chat"); setSidebar(false); requestAnimationFrame(() => composerRef.current?.focus()); }
+  function openNewChat(draftKey = newDraftKey.current) { saveScroll(); saveDraft(selectedRef.current?.id || newDraftKey.current, textRef.current); newDraftKey.current = draftKey; request.current++; stickToBottom.current = true; followingBottom.current = false; restoreScroll.current = null; pendingPosition.current = null; select(null); setEntries([]); setItemCursor(null); setText(savedDraft(draftKey)); setError(""); restoreAttachments(draftKey); setLoading(false); setView("chat"); setSidebar(false); requestAnimationFrame(() => composerRef.current?.focus()); }
   const newChat = () => { setProjectId(null); setCwd(""); openNewChat(activeTab(tabsRef.current)!.draftKey ?? "new"); };
   /** An empty tab keeps its unsent text under its own key; the first one uses the project's new-chat draft. */
   const tabDraftKey = (tab: ChatTab) => tab.draftKey ?? "new";

@@ -27,7 +27,7 @@ type OpenInputs = {
 };
 
 export function useOpenConversation({ composer, runtime, conversations, history, drafts, attachments, tabsRef, updateTabs, session, newDraftKey, markRead, setView, setSidebar, setError, rememberModes }: OpenInputs) {
-  const { selectedRef, request, stickToBottom, followingBottom, restoreScroll, setLoading, setEntries } = session;
+  const { selectedRef, request, stickToBottom, followingBottom, restoreScroll, scrollPositions, pendingPosition, saveScroll, setLoading, setEntries } = session;
   const { textRef, setText } = composer;
   const { setHistoryOnly, turnRevisions, modeRevisions, setActiveTurns, completedTurns, setLiveError } = runtime;
   const { select, remember, upsertThread, statusRevisions } = conversations;
@@ -52,15 +52,20 @@ export function useOpenConversation({ composer, runtime, conversations, history,
     const owner = tabFor(tabsRef.current, thread.id);
     if (owner && owner.id !== tabsRef.current.activeId) updateTabs(activate(tabsRef.current, owner.id));
     saveDraft(selectedRef.current?.id || newDraftKey.current, textRef.current); setText(savedDraft(thread.id));
-    const id = ++request.current; stickToBottom.current = true; followingBottom.current = false; restoreScroll.current = null;
+    const switching = selectedRef.current?.id !== thread.id;
+    if (switching) saveScroll();
+    const id = ++request.current; followingBottom.current = false; restoreScroll.current = null;
     liveVersions.current.clear(); const historyRevision = liveRevision.current;
     let unread = false;
     const shown = transcripts.current.get(thread.id);
-    select(thread); setView("chat"); setSidebar(false); setEntries(shown?.entries ?? []); setItemCursor(shown?.cursor ?? null); setLoading(true); setError(""); restoreAttachments(thread.id);
+    const position = switching ? scrollPositions.current.get(thread.id) : undefined;
+    pendingPosition.current = position && shown ? { id: thread.id, ...position } : null;
+    if (switching) stickToBottom.current = position?.atBottom ?? true;
+    select(thread); setView("chat"); setSidebar(false); setEntries(shown?.entries ?? []); setItemCursor(shown?.cursor ?? null); setLoading(!shown); setError(""); restoreAttachments(thread.id);
     try {
       const result = await api<HistoryPage & { thread: Thread }>(historyPath(thread.id)); if (!Array.isArray(result.data)) throw unreadable("conversations"); if (!result.thread || typeof result.thread.id !== "string") throw unreadable("conversation");
       if (request.current !== id) return;
-      select(remember(result.thread)); applyHistoryPage(thread.id, result, historyRevision);
+      select(remember(result.thread)); applyHistoryPage(thread.id, result, historyRevision, switching && !!shown);
       // The engine lists a chat's items only once it has loaded the chat; until then a saved chat reads as empty. Like
       // the Codex TUI, which resumes before it reads history, read it again once the resume below has loaded it.
       unread = !result.data.length && !result.nextCursor;
@@ -86,7 +91,7 @@ export function useOpenConversation({ composer, runtime, conversations, history,
       if (turnRevisions.current[thread.id] === turnRevision) reconcileLiveThread(thread.id, live);
       if (unread || live.thread?.canAcceptDirectInput === false) {
         const again = await api<HistoryPage>(historyPath(thread.id));
-        if (request.current === id && Array.isArray(again.data)) { applyHistoryPage(thread.id, again, historyRevision); }
+        if (request.current === id && Array.isArray(again.data)) { applyHistoryPage(thread.id, again, historyRevision, switching && !!shown); }
       }
     } catch (e) { if (request.current === id) setLiveError(prev => ({ ...prev, [thread.id]: errorText(e) })); }
   }, [select, setText, reconcileLiveThread, rememberFollowing, saveDraft, savedDraft, liveKeysAfter, applyHistoryPage, restoreAttachments, updateTabs, markRead, noteHistoryGap]);
