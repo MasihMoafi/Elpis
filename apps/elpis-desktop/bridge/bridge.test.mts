@@ -9,54 +9,149 @@ import path from 'node:path';
 import http from 'node:http';
 import net from 'node:net';
 import { PassThrough, Readable } from 'node:stream';
+import { compileFunction } from 'node:vm';
 import { parseClaudeMcp } from './claude-mcp-import.mts';
 import { DesktopClient, existingSocket } from './client.mts';
 import { startDesktopServer } from './server.mts';
 import { isAgentRun } from '../lib/agent-runs.mts';
 import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cts';
+import type { TestContext } from 'node:test';
+import type { DesktopClientOptions } from './client.mts';
+import type { BrowserConfig } from './client-state.mts';
+
+type FixtureThread = {
+  id: string;
+  name?: string | null;
+  preview?: string | null;
+  agentNickname?: string;
+  source?: string | { subAgent?: { thread_spawn?: { parent_thread_id?: string; agent_path?: string }; other?: string } };
+  cwd?: string;
+  path?: string;
+  model?: string | null;
+  modelProvider?: string;
+  status: { type: string };
+  archived?: boolean;
+  parentThreadId?: string | null;
+  forkedFromId?: string;
+  canAcceptDirectInput?: boolean;
+  collaborationMode?: { mode: string; settings?: object };
+  reasoningEffort?: string;
+};
+type FixtureParams = {
+  threadId?: string;
+  rootThreadId?: string;
+  turnId?: string;
+  expectedTurnId?: string;
+  lastTurnId?: string;
+  name?: string;
+  model?: string;
+  modelProvider?: string;
+  provider?: string;
+  reasoningEffort?: string;
+  cursor?: string | null;
+  limit?: number;
+  archived?: boolean;
+  ancestorThreadId?: string;
+  sourceKinds?: string[];
+  searchTerm?: string;
+  config?: Record<string, unknown>;
+  edits?: { keyPath: string; value: unknown; mergeStrategy?: string }[];
+  input?: { type: string; text?: string }[];
+  includeTurns?: boolean;
+  additionalContext?: Record<string, { kind: string; value: string }>;
+  collaborationMode?: { mode: string; settings: { model: string } };
+  [key: string]: unknown;
+};
+type FixtureRequest = { id?: string | number; method?: string; params?: FixtureParams; result?: unknown; error?: { code: number; message?: string } };
+type FixtureProvider = {
+  name?: string;
+  base_url?: string;
+  env_key?: string;
+  wire_api?: string;
+  experimental_bearer_token?: string;
+  http_headers?: Record<string, string>;
+  requires_openai_auth?: boolean;
+  auth?: { command: string };
+};
+type FixtureLayer = {
+  name: { type: string; file: string };
+  version: string;
+  config: Record<string, unknown>;
+  disabledReason?: string;
+};
+type FixtureGraph = {
+  id: string;
+  rootThreadId: string;
+  name?: string;
+  status?: string;
+  tasks: { id: string; title?: string; assignedThreadId?: string; status?: string }[];
+};
+type ApprovalEvent =
+  | { type: 'approval'; data: { id: string; wireId?: string; ownerThreadId: string; thread: { name: string }; params: { threadId: string } } }
+  | { type: 'approvalResolved'; data: { id: string } };
+type FixtureOptions = {
+  prunerSupported?: boolean;
+  omitWorkflowParentInList?: boolean;
+  replacementPages?: Record<string, unknown>;
+  promptPages?: Record<string, unknown>;
+  browserConfig?: BrowserConfig;
+  threadListPaging?: boolean;
+  archiveDirectory?: string;
+  clientOptions?: DesktopClientOptions;
+};
+function required<T>(value: T | null | undefined): T {
+  assert.ok(value !== null && value !== undefined);
+  return value;
+}
 
 // These requests exercise the same bridge routes as the renderer. The API key and audio are fixtures.
-async function useForSpeechFixture(t, { status = 200, contentType = 'audio/mpeg', bytes = Buffer.from('ID3-test-mp3') } = {}) {
+async function useForSpeechFixture(t: TestContext, { status = 200, contentType = 'audio/mpeg', bytes = Buffer.from('ID3-test-mp3') } = {}) {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-use-for-'));
-  const fetches = [], local = [];
-  const kokoro = { available: () => true, warm() {}, close() {}, async speak(value) { local.push(value); return Buffer.from('local-wav'); } };
-  const readAloudFetch = async (url, options) => {
-    fetches.push({ url: String(url), options });
+  const fetches: { url: string; options: RequestInit & { body: string; headers: HeadersInit } }[] = [], local: string[] = [];
+  const kokoro = { available: () => true, warm() {}, close() {}, async speak(value: string) { local.push(value); return Buffer.from('local-wav'); } };
+  const readAloudFetch: typeof fetch = async (url, options) => {
+    assert.ok(options && typeof options.body === 'string' && options.headers);
+    assert.ok(typeof url === 'string' || url instanceof URL);
+    const checked: RequestInit & { body: string; headers: HeadersInit } = { ...options, body: options.body, headers: options.headers };
+    fetches.push({ url: typeof url === 'string' ? url : url.href, options: checked });
     return status === 200 ? new Response(bytes, { headers: { 'content-type': contentType } }) : new Response('rejected', { status });
   };
-  let app;
+  let app: Awaited<ReturnType<typeof startDesktopServer>> | null = null;
   async function start() {
     const f = fixture(); await f.client.initialize();
-    f.configRead.layers[0].name.file = path.join(home, 'config.toml');
+    required(f.configRead.layers[0]).name.file = path.join(home, 'config.toml');
     f.configRead.config.model_providers.openrouter = { name: 'OpenRouter', base_url: 'https://openrouter.ai/api/v1', wire_api: 'chat', experimental_bearer_token: 'fixture-key' };
     f.configRead.config.model_providers['api-other'] = { name: 'Other API', base_url: 'https://example.test/v1', wire_api: 'responses', experimental_bearer_token: 'other-fixture-key' };
     // Exercise the real HTTP handler without a listening socket (the sandbox can forbid loopback).
-    const original = http.createServer; let handler;
-    http.createServer = callback => {
+    const original = http.createServer; let handler: http.RequestListener | undefined;
+    Object.assign(http, { createServer: (callback: http.RequestListener) => {
       handler = callback;
-      const server = new EventEmitter();
-      server.listen = (_port, _host, ready) => queueMicrotask(ready);
-      server.address = () => ({ port: 43123 });
-      server.close = done => done(); server.closeAllConnections = () => {};
-      return server;
-    };
+      return Object.assign(new EventEmitter(), {
+        listen: (_port: number, _host: string, ready: () => void) => queueMicrotask(ready),
+        address: () => ({ port: 43123 }),
+        close: (done: () => void) => done(), closeAllConnections: () => {},
+      });
+    } });
     try {
       app = await startDesktopServer({ client: f.client, elpisHome: home, kokoro, readAloudFetch,
         loveSpot: { directory: path.join(home, 'drawing'), screenshots: path.join(home, 'screenshots') } });
     } finally { http.createServer = original; }
     const url = new URL(app.url), origin = url.origin;
-    async function dispatch(route, value, cookie) {
-      const req = Readable.from(value === undefined ? [] : [Buffer.from(JSON.stringify(value))]);
-      req.method = value === undefined ? 'GET' : 'POST'; req.url = `/api${route}`;
-      req.headers = { host: url.host, origin, 'content-type': 'application/json', ...(cookie ? { cookie } : {}) };
-      const res = new PassThrough(), headers = new Headers(); let status = 200;
-      res.setHeader = (name, value) => headers.set(name, value);
-      res.removeHeader = name => headers.delete(name);
-      res.getHeader = name => headers.get(name);
-      res.writeHead = (code, fields = {}) => { status = code; for (const [key, value] of Object.entries(fields)) headers.set(key, value); return res; };
-      const bytes = []; res.on('data', chunk => bytes.push(chunk));
-      const finished = new Promise((resolve, reject) => { res.on('end', resolve); res.on('error', reject); });
-      void handler(req, res); await finished;
+    async function dispatch(route: string, value?: unknown, cookie?: string) {
+      const req = Object.assign(Readable.from(value === undefined ? [] : [Buffer.from(JSON.stringify(value))]), {
+        method: value === undefined ? 'GET' : 'POST', url: `/api${route}`,
+        headers: { host: url.host, origin, 'content-type': 'application/json', ...(cookie ? { cookie } : {}) },
+      });
+      const headers = new Headers(); let status = 200;
+      const res = Object.assign(new PassThrough(), {
+        setHeader: (name: string, value: string) => headers.set(name, value),
+        removeHeader: (name: string) => headers.delete(name),
+        getHeader: (name: string) => headers.get(name),
+        writeHead(code: number, fields: Record<string, string> = {}) { status = code; for (const [key, value] of Object.entries(fields)) headers.set(key, value); return this; },
+      });
+      const bytes: Buffer[] = []; res.on('data', (chunk: Buffer) => bytes.push(chunk));
+      const finished = new Promise<void>((resolve, reject) => { res.on('end', resolve); res.on('error', reject); });
+      assert.ok(handler); void Reflect.apply(handler, undefined, [req, res]); await finished;
       const buffer = Buffer.concat(bytes);
       return { status, headers, json: async () => JSON.parse(buffer.toString()), arrayBuffer: async () => buffer };
     }
@@ -65,10 +160,10 @@ async function useForSpeechFixture(t, { status = 200, contentType = 'audio/mpeg'
     const setCookie = session.headers.get('set-cookie');
     assert.ok(setCookie);
     const cookie = setCookie.split(';')[0];
-    return (route, value) => dispatch(route, value, cookie);
+    return (route: string, value?: unknown) => dispatch(route, value, cookie);
   }
   t.after(async () => { if (app) await app.close(); await fs.rm(home, { recursive: true, force: true }); });
-  return { start, stop: async () => { await app.close(); app = null; }, fetches, local };
+  return { start, stop: async () => { await required(app).close(); app = null; }, fetches, local };
 }
 
 test('Use for read aloud sends the selected OpenRouter model and saved key and returns MP3', async t => {
@@ -77,24 +172,24 @@ test('Use for read aloud sends the selected OpenRouter model and saved key and r
   assert.equal(saved.status, 200, 'the selected source can be saved');
   const response = await request('/read-aloud', { text: 'A short reply.' });
   assert.equal(response.status, 200);
-  assert.match(response.headers.get('content-type'), /audio\/mpeg/);
+  assert.match(required(response.headers.get('content-type')), /audio\/mpeg/);
   assert.equal(Buffer.from(await response.arrayBuffer()).toString(), 'ID3-test-mp3');
   assert.equal(f.local.length, 0);
   assert.equal(f.fetches.length, 1);
-  assert.equal(f.fetches[0].url, 'https://openrouter.ai/api/v1/audio/speech');
-  assert.equal(new Headers(f.fetches[0].options.headers).get('authorization'), 'Bearer fixture-key');
-  assert.deepEqual(JSON.parse(f.fetches[0].options.body), { model: 'fish-audio/drama-3', input: 'A short reply.', response_format: 'mp3' });
+  assert.equal(required(f.fetches[0]).url, 'https://openrouter.ai/api/v1/audio/speech');
+  assert.equal(new Headers(required(f.fetches[0]).options.headers).get('authorization'), 'Bearer fixture-key');
+  assert.deepEqual(JSON.parse(required(f.fetches[0]).options.body), { model: 'fish-audio/drama-3', input: 'A short reply.', response_format: 'mp3' });
 });
 
 test('Use for converts documented Gemini PCM into a playable WAV without changing models', async t => {
   const f = await useForSpeechFixture(t, { contentType: 'audio/pcm;rate=24000;channels=1', bytes: Buffer.from([0, 0, 255, 127]) }), request = await f.start();
   assert.equal((await request('/read-aloud/settings', { source: 'openrouter', model: 'google/gemini-3.8-flash-tts', voice: 'Kore' })).status, 200);
   const response = await request('/read-aloud', { text: 'Hello.' });
-  assert.equal(response.status, 200); assert.match(response.headers.get('content-type'), /audio\/wav/);
+  assert.equal(response.status, 200); assert.match(required(response.headers.get('content-type')), /audio\/wav/);
   const wav = Buffer.from(await response.arrayBuffer());
   assert.equal(wav.subarray(0, 4).toString(), 'RIFF'); assert.equal(wav.readUInt32LE(24), 24000);
   assert.deepEqual(wav.subarray(44), Buffer.from([0, 0, 255, 127]));
-  assert.deepEqual(JSON.parse(f.fetches[0].options.body), { model: 'google/gemini-3.8-flash-tts', input: 'Hello.', voice: 'Kore', response_format: 'pcm' });
+  assert.deepEqual(JSON.parse(required(f.fetches[0]).options.body), { model: 'google/gemini-3.8-flash-tts', input: 'Hello.', voice: 'Kore', response_format: 'pcm' });
   assert.deepEqual(f.local, []);
 });
 
@@ -178,14 +273,14 @@ test('Use for dictation saves the same WhisperType settings and applies them to 
   const { client, socket, configRead } = fixture(); await client.initialize();
   try {
     await client.saveMcp({ version: 'user-version', action: 'whispertype', name: 'whispertype', backend: 'openrouter', model: 'openai/whisper-1', everyChat: true });
-    assert.deepEqual(socket.sent.findLast(row => row.method === 'config/batchWrite').params.edits, [
+    assert.deepEqual(required(required(socket.sent.findLast(row => row.method === 'config/batchWrite')).params).edits, [
       { keyPath: 'mcp_servers.whispertype.env.WHISPERTYPE_BACKEND', value: 'openrouter', mergeStrategy: 'replace' },
       { keyPath: 'mcp_servers.whispertype.env.WHISPERTYPE_CLOUD_MODEL', value: 'openai/whisper-1', mergeStrategy: 'replace' },
       { keyPath: 'mcp_servers.whispertype.env.WHISPERTYPE_EVERY_CHAT', value: '1', mergeStrategy: 'replace' },
       { keyPath: 'mcp_servers.whispertype.env.ELPIS_DICTATION_EXPLICIT', value: '1', mergeStrategy: 'replace' },
     ]);
     Object.assign(configRead.config.mcp_servers.whispertype.env, { WHISPERTYPE_BACKEND: 'openrouter', WHISPERTYPE_CLOUD_MODEL: 'openai/whisper-1', WHISPERTYPE_EVERY_CHAT: '1', ELPIS_DICTATION_EXPLICIT: '1' });
-    assert.deepEqual((await client.mcp()).servers.find(server => server.name === 'whispertype').whispertype,
+    assert.deepEqual(required((await client.mcp()).servers.find(server => server.name === 'whispertype')).whispertype,
       { backend: 'openrouter', model: 'openai/whisper-1', everyChat: true, explicit: true });
   } finally { client.close(); }
 });
@@ -194,7 +289,7 @@ test('Use for dictation privately resolves the configured OpenRouter provider ke
   const { client, configRead } = fixture(); await client.initialize();
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-dictation-key-'));
   t.after(async () => { client.close(); await fs.rm(home, { recursive: true, force: true }); });
-  configRead.layers[0].name.file = path.join(home, 'config.toml');
+  required(configRead.layers[0]).name.file = path.join(home, 'config.toml');
   configRead.config.model_providers.openrouter = { base_url: 'https://openrouter.ai/api/v1', experimental_bearer_token: 'fixture-provider-key' };
   const environment = await client.transcriptionEnvironment();
   assert.equal(environment.openrouterKey, 'fixture-provider-key');
@@ -206,8 +301,8 @@ test('Use for chat can return the shared default to ChatGPT from another provide
   try {
     configRead.config.model_provider = 'local';
     await client.saveSettings({ version: 'user-version', main: { provider: 'openai', model: 'test-model' } });
-    const edits = socket.sent.findLast(item => item.method === 'config/batchWrite').params.edits;
-    assert.deepEqual(edits.map(item => [item.keyPath, item.value]), [['model', 'test-model'], ['model_provider', 'openai']]);
+    const edits = required(required(socket.sent.findLast(item => item.method === 'config/batchWrite')).params).edits;
+    assert.deepEqual(required(edits).map(item => [item.keyPath, item.value]), [['model', 'test-model'], ['model_provider', 'openai']]);
   } finally { client.close(); }
 });
 
@@ -217,13 +312,13 @@ const CREATED = '00000000-0000-0000-0000-000000000003';
 const MODEL = 'test-model';
 const FORK = '00000000-0000-0000-0000-000000000007';
 // The engine's built-in permission profiles and the sandbox each one runs.
-const PROFILE_SANDBOX = { ':workspace': { type: 'workspaceWrite' }, ':danger-full-access': { type: 'dangerFullAccess' }, ':bypass-permissions': { type: 'dangerFullAccess' } };
+const PROFILE_SANDBOX: Record<string, { type: string }> = { ':workspace': { type: 'workspaceWrite' }, ':danger-full-access': { type: 'dangerFullAccess' }, ':bypass-permissions': { type: 'dangerFullAccess' } };
 
 test('A32 default effort uses the shared versioned writer and rejects invalid values', async () => {
   const { client, socket } = fixture(); await client.initialize();
   try {
     await client.saveSettings({ version: 'user-version', options: { reasoningEffort: 'high' } });
-    assert.deepEqual(socket.sent.findLast(row => row.method === 'config/batchWrite').params, {
+    assert.deepEqual(required(socket.sent.findLast(row => row.method === 'config/batchWrite')).params, {
       expectedVersion: 'user-version', reloadUserConfig: false,
       edits: [{ keyPath: 'model_reasoning_effort', value: 'high', mergeStrategy: 'replace' }],
     });
@@ -246,9 +341,9 @@ test('A32 feature defaults use native advertised keys and refuse managed or forg
   };
   try {
     const settings = await client.settings();
-    assert.equal(settings.features.data[0].enabled, true);
+    assert.equal(required(settings.features.data[0]).enabled, true);
     await client.saveSettings({ version: 'user-version', features: { shell_tool: false } });
-    assert.deepEqual(socket.sent.findLast(row => row.method === 'config/batchWrite').params.edits,
+    assert.deepEqual(required(required(socket.sent.findLast(row => row.method === 'config/batchWrite')).params).edits,
       [{ keyPath: 'features."shell_tool"', value: false, mergeStrategy: 'replace' }]);
     const writes = () => socket.sent.filter(row => row.method === 'config/batchWrite').length;
     const before = writes();
@@ -263,7 +358,7 @@ test('A32 feature defaults use native advertised keys and refuse managed or forg
 test('A32 missing or disabled writable config layers explain why and write nothing', async () => {
   const { client, socket, configRead } = fixture(); await client.initialize();
   try {
-    configRead.layers[0].disabledReason = 'Read-only policy';
+    required(configRead.layers[0]).disabledReason = 'Read-only policy';
     assert.equal((await client.settings()).write.available, false);
     await assert.rejects(client.saveSettings({ version: 'user-version', options: { webSearch: 'cached' } }), /no writable config/);
     configRead.layers = [];
@@ -271,31 +366,33 @@ test('A32 missing or disabled writable config layers explain why and write nothi
     assert.equal(socket.sent.filter(row => row.method === 'config/batchWrite').length, 0);
   } finally { client.close(); }
 });
-function fixture({ prunerSupported = false, omitWorkflowParentInList = false, replacementPages, promptPages, browserConfig, threadListPaging = false, archiveDirectory = path.join(os.tmpdir(), `bridge-archives-${randomUUID()}`), clientOptions = {} } = {}) {
-  const workflowRecords = [];
-  let pruner = {model:"optimizer-original",provider:"openai",version:"pruner-v1",providers:[{id:"openai",displayName:"OpenAI"}],systemPrompt:"PRIVATE CONFIG SECRET"};
-  const configRead = { config: {
+function fixture({ prunerSupported = false, omitWorkflowParentInList = false, replacementPages, promptPages, browserConfig, threadListPaging = false, archiveDirectory = path.join(os.tmpdir(), `bridge-archives-${randomUUID()}`), clientOptions = {} }: FixtureOptions = {}) {
+  const workflowRecords: FixtureGraph[] = [];
+  let pruner: { model: string; provider: string; version: string; providers: { id: string; displayName: string }[]; systemPrompt: string; reasoningEffort?: string | null } = {model:"optimizer-original",provider:"openai",version:"pruner-v1",providers:[{id:"openai",displayName:"OpenAI"}],systemPrompt:"PRIVATE CONFIG SECRET"};
+  const configRead = { config: Object.assign({
     model: MODEL, model_provider: 'openai', background_model: 'cheap-model', background_provider: 'local',
-    features: { automatic_context_pruning: true }, memories: { use_memories: true, generate_memories: false },
+    features: { automatic_context_pruning: true } as Record<string, boolean | undefined>, memories: { use_memories: true, generate_memories: false } as Record<string, boolean>,
     model_providers: { local: { name: 'Local provider', base_url: 'http://127.0.0.1:1234/v1?key=PRIVATE CONFIG SECRET', http_headers: { Authorization: 'PRIVATE CONFIG SECRET' } },
-      openrouter: { name: 'OpenRouter', base_url: 'https://openrouter.ai/api/v1', env_key: 'APP_TEST_OPENROUTER_KEY' } },
+      openrouter: { name: 'OpenRouter', base_url: 'https://openrouter.ai/api/v1', env_key: 'APP_TEST_OPENROUTER_KEY' } } as Record<string, FixtureProvider> & { local: FixtureProvider; openrouter: FixtureProvider },
     mcp_servers: { rag: { command: '/usr/bin/python', args: ['--token', 'PRIVATE CONFIG SECRET'], env: { OPENROUTER_API_KEY: 'PRIVATE CONFIG SECRET', RAG_MCP_BACKEND: 'lancedb' } },
       whispertype: { command: 'python', env_vars: ['APP_TEST_COMPANY_KEY'], env: { WHISPERTYPE_BACKEND: 'local', WHISPERTYPE_CLOUD_MODEL: 'openai/gpt-4o-mini-transcribe' } },
-      remote: { url: 'https://mcp.example/path?token=PRIVATE CONFIG SECRET', bearer_token_env_var: 'APP_TEST_BEARER', enabled: false } },
+      remote: { url: 'https://mcp.example/path?token=PRIVATE CONFIG SECRET', bearer_token_env_var: 'APP_TEST_BEARER', enabled: false } } as {
+        rag?: { command: string; args: string[]; env: Record<string, string>; enabled?: boolean };
+        whispertype: { command: string; env_vars: string[]; env: Record<string, string> };
+        remote: { url: string; bearer_token_env_var: string; enabled: boolean };
+      },
     api_key: 'PRIVATE CONFIG SECRET',
-  }, layers: [{ name: { type: 'user', file: '/private/config.toml' }, version: 'user-version', config: { secret: 'PRIVATE CONFIG SECRET' } }] };
-  const requirementsRead = { requirements: null };
+  }, {} as { approval_policy?: string; default_permissions?: string; approvals_reviewer?: string }), layers: [{ name: { type: 'user', file: '/private/config.toml' }, version: 'user-version', config: { secret: 'PRIVATE CONFIG SECRET' } }] as FixtureLayer[] };
+  const requirementsRead: { requirements: ({ modelProvider?: string | null } & Record<string, unknown>) | null } = { requirements: null };
   const hooksList = { data: [{ cwd: '/work', warnings: ['hooks.json: unknown field ignored'], errors: [], hooks: [
     { key: 'user:/private/hooks.json:pre_tool_use:0:0', eventName: 'preToolUse', handlerType: 'command', command: 'rtk hook claude', async: false, matcher: '^Bash$', timeoutSec: 5, statusMessage: 'compressing shell output', sourcePath: '/home/person/.elpis-next/hooks.json', source: 'user', pluginId: null, displayOrder: 0, enabled: true, isManaged: false, currentHash: 'sha256:current', trustStatus: 'untrusted' },
     { key: 'managed:/etc/requirements.toml:stop:0:0', eventName: 'stop', handlerType: 'command', command: 'audit', matcher: null, timeoutSec: 30, statusMessage: null, sourcePath: '/etc/requirements.toml', source: 'system', pluginId: null, displayOrder: 1, enabled: true, isManaged: true, currentHash: 'sha256:managed', trustStatus: 'managed' },
   ] }] };
-  /** @type {Map<string, any>} */
-  const threads = new Map([
+  const threads = new Map<string, FixtureThread>([
     [ROOT, { id: ROOT, name: 'Existing root', source: 'cli', cwd: os.tmpdir(), model: MODEL, modelProvider: 'openai', status: { type: 'idle' } }],
     [CHILD, { id: CHILD, name: null, preview: '', agentNickname: 'Sagan', model: MODEL, modelProvider: 'openai', parentThreadId: ROOT, canAcceptDirectInput: false, source: { subAgent: { thread_spawn: { parent_thread_id: ROOT, agent_path: '/root/failure_reporting' } } }, status: { type: 'active' } }],
   ]);
-  /** @type {EventEmitter & {sent: any[], closed: boolean, send: (raw: string) => void, close: () => void}} */
-  const socket = /** @type {any} */ (new EventEmitter()); socket.sent = []; socket.closed = false;
+  const socket = Object.assign(new EventEmitter(), { sent: [] as FixtureRequest[], closed: false, send: (_raw: string) => {}, close: () => {} });
   // A thread's applied permissions, as the engine reports them in thread/settings/updated and thread/resume.
   const engineSettings = new Map();
   socket.send = raw => {
@@ -323,18 +420,18 @@ function fixture({ prunerSupported = false, omitWorkflowParentInList = false, re
           if (end < data.length) nextCursor = String(end);
           data = data.slice(offset, end);
         }
-        result = { data: data.map(thread => ({ ...thread, forkedFromId: null, ...(omitWorkflowParentInList && thread.source?.subAgent?.other?.startsWith('work_graph:') ? {parentThreadId:null} : {}) })), nextCursor }; break;
+        result = { data: data.map(thread => ({ ...thread, forkedFromId: null, ...(omitWorkflowParentInList && thread.source && typeof thread.source === 'object' && thread.source.subAgent?.other?.startsWith('work_graph:') ? {parentThreadId:null} : {}) })), nextCursor }; break;
       }
       case 'thread/read': result = { thread: structuredClone(threads.get(request.params.threadId)) }; break;
       case 'thread/subscribe': result = { thread: structuredClone(threads.get(request.params.threadId)) }; break;
       // Like the engine (thread_processor.rs), an archived chat refuses to resume, naming the terminal's command.
       case 'thread/resume': if (threads.get(request.params.threadId)?.archived) { queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, error: { code: -32600, message: `session ${request.params.threadId} is archived. Run \`codex unarchive ${request.params.threadId}\` to unarchive it first.` } }))); return; }
-        result = { ...(engineSettings.has(request.params.threadId) ? (({ sandboxPolicy, ...rest }) => ({ ...rest, sandbox: sandboxPolicy }))(engineSettings.get(request.params.threadId)) : {}), thread: structuredClone(threads.get(request.params.threadId)), model: threads.get(request.params.threadId).model ?? MODEL, collaborationMode: threads.get(request.params.threadId).collaborationMode, initialTurnsPage: { data: threads.get(request.params.threadId).status?.type === 'active' ? [{ id: 'running-turn', status: 'inProgress' }] : [] } }; break;
-      case 'thread/turns/list': result = { data: threads.get(request.params.threadId).status?.type === 'active' ? [{ id: 'running-turn', status: 'inProgress' }] : [] }; break;
+        result = { ...(engineSettings.has(request.params.threadId) ? (({ sandboxPolicy, ...rest }) => ({ ...rest, sandbox: sandboxPolicy }))(engineSettings.get(request.params.threadId)) : {}), thread: structuredClone(threads.get(request.params.threadId)), model: required(threads.get(request.params.threadId)).model ?? MODEL, collaborationMode: required(threads.get(request.params.threadId)).collaborationMode, initialTurnsPage: { data: required(threads.get(request.params.threadId)).status?.type === 'active' ? [{ id: 'running-turn', status: 'inProgress' }] : [] } }; break;
+      case 'thread/turns/list': result = { data: required(threads.get(request.params.threadId)).status?.type === 'active' ? [{ id: 'running-turn', status: 'inProgress' }] : [] }; break;
       case 'thread/fork': { const thread = { id: FORK, forkedFromId: request.params.threadId, source: 'appServer', canAcceptDirectInput: true, model: request.params.model, modelProvider: request.params.modelProvider, status: { type: 'idle' } }; threads.set(FORK, thread); result = { thread }; break; }
-      case 'thread/name/set': threads.get(request.params.threadId).name = request.params.name; result = {}; break;
-      case 'thread/archive': threads.get(request.params.threadId).archived = true; result = {}; break;
-      case 'thread/unarchive': delete threads.get(request.params.threadId).archived; result = { thread: structuredClone(threads.get(request.params.threadId)) }; break;
+      case 'thread/name/set': required(threads.get(request.params.threadId)).name = request.params.name; result = {}; break;
+      case 'thread/archive': required(threads.get(request.params.threadId)).archived = true; result = {}; break;
+      case 'thread/unarchive': delete required(threads.get(request.params.threadId)).archived; result = { thread: structuredClone(threads.get(request.params.threadId)) }; break;
       case 'thread/revert': result = { thread: { ...structuredClone(threads.get(request.params.threadId)), turns: [] } }; break;
       case 'thread/delete': if (request.params.threadId === ROOT && threads.has(FORK)) { queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, error: { code: -32600, message: `cannot delete thread ${CHILD}: forked history still references it` } }))); return; } threads.delete(request.params.threadId); if (request.params.threadId === ROOT) threads.delete(CHILD); result = {}; break;
       case 'account/read': result = { account: { type: 'chatgpt', email: 'person@example.com', planType: 'pro' }, requiresOpenaiAuth: true }; break;
@@ -352,7 +449,7 @@ function fixture({ prunerSupported = false, omitWorkflowParentInList = false, re
         const thread = { id: CREATED, source: 'cli', canAcceptDirectInput: true, status: { type: 'idle' } };
         threads.set(CREATED, thread); result = { thread }; break;
       }
-      case 'turn/start': threads.get(request.params.threadId).status = { type: 'active' }; result = { turn: { id: 'new-turn', status: 'inProgress', items: [] } }; break;
+      case 'turn/start': required(threads.get(request.params.threadId)).status = { type: 'active' }; result = { turn: { id: 'new-turn', status: 'inProgress', items: [] } }; break;
       case 'turn/steer': result = { turnId: request.params.expectedTurnId }; break;
       case 'turn/settings/update': result = { status: 'applied' }; break;
       case 'thread/settings/update': {
@@ -360,12 +457,12 @@ function fixture({ prunerSupported = false, omitWorkflowParentInList = false, re
         // thread/settings/updated, and only when they changed.
         const p = request.params, before = JSON.stringify(engineSettings.get(p.threadId) ?? null);
         const applied = p.cwd ? { ...engineSettings.get(p.threadId), cwd: p.cwd } : p.effort ? { ...engineSettings.get(p.threadId), reasoningEffort: p.effort } : { approvalPolicy: p.approvalPolicy, approvalsReviewer: p.approvalsReviewer, sandboxPolicy: p.permissions ? PROFILE_SANDBOX[p.permissions] : p.sandboxPolicy, activePermissionProfile: p.permissions ? { id: p.permissions } : null };
-        if (p.cwd) threads.get(p.threadId).cwd = p.cwd;
+        if (p.cwd) required(threads.get(p.threadId)).cwd = p.cwd;
         engineSettings.set(p.threadId, applied); result = {};
-        if (JSON.stringify(applied) !== before) setTimeout(() => socket.emit('message', JSON.stringify({ method: 'thread/settings/updated', params: { threadId: p.threadId, threadSettings: { ...applied, model: threads.get(p.threadId).model ?? MODEL } } })), 5);
+        if (JSON.stringify(applied) !== before) setTimeout(() => socket.emit('message', JSON.stringify({ method: 'thread/settings/updated', params: { threadId: p.threadId, threadSettings: { ...applied, model: required(threads.get(p.threadId)).model ?? MODEL } } })), 5);
         break;
       }
-      case 'turn/interrupt': threads.get(request.params.threadId).status = { type: 'idle' }; result = {}; break;
+      case 'turn/interrupt': required(threads.get(request.params.threadId)).status = { type: 'idle' }; result = {}; break;
       case 'thread/unsubscribe': result = { status: 'unsubscribed' }; break;
       case 'workGraph/list': result = {data:workflowRecords.filter(graph => graph.rootThreadId === request.params.rootThreadId)}; break;
       case 'workGraph/runWithProviders':
@@ -377,7 +474,7 @@ function fixture({ prunerSupported = false, omitWorkflowParentInList = false, re
   socket.close = () => { socket.closed = true; socket.emit('close'); };
   // 156e765a4 adds optional gh instructions. Provider routing tests must not read the operator's connector or credentials.
   const workflowHome = path.join(os.tmpdir(), `bridge-workflows-${randomUUID()}`);
-  const client = new DesktopClient(socket, { home: workflowHome, browserConfig, archiveDirectory, githubConnector: { instructions: async () => null }, workflowOptions: { stateDir: workflowHome, nodeSpec: node => ({ name: node.name, command: process.execPath, args: [fileURLToPath(new URL('../../../tools/elpis-claude/test/fake-acp-agent.mjs', import.meta.url))], env: { FAKE_ACP_MODELS: node.model }, model: node.model }) }, ...clientOptions });
+  const client = new DesktopClient(socket, { home: workflowHome, browserConfig, archiveDirectory, githubConnector: { instructions: async () => null }, workflowOptions: { stateDir: workflowHome, nodeSpec: (node: { name: string; model: string }) => ({ name: node.name, command: process.execPath, args: [fileURLToPath(new URL('../../../tools/elpis-claude/test/fake-acp-agent.mjs', import.meta.url))], env: { FAKE_ACP_MODELS: node.model }, model: node.model }) }, ...clientOptions });
   return { socket, client, threads, configRead, requirementsRead, workflowRecords, hooksList, engineSettings };
 }
 
@@ -408,7 +505,7 @@ test('LEDGER uses native marketplace/catalog/plugin methods and versioned plugin
   const client = new DesktopClient(f.socket, { githubConnector: { snapshot: async () => ({ name: 'GitHub', transport: 'gh', enabled: false }) } });
   await client.initialize();
   try {
-    const last = method => f.socket.sent.findLast(row => row.method === method)?.params;
+    const last = (method: string) => f.socket.sent.findLast(row => row.method === method)?.params;
     for (const source of ['owner/repo', 'https://example.org/catalog.git', 'git@example.org:owner/catalog.git', '/catalog']) {
       await client.changeMarketplace({ action: 'add', source });
       assert.deepEqual(last('marketplace/add'), { source });
@@ -422,7 +519,7 @@ test('LEDGER uses native marketplace/catalog/plugin methods and versioned plugin
     assert.equal(result.plugins.version, 'user-version');
     await client.changePlugin({ action: 'enable', id: plugin.id, enabled: false, version: 'user-version' });
     assert.deepEqual(last('config/batchWrite'), { expectedVersion: 'user-version', reloadUserConfig: true, edits: [{ keyPath: 'plugins."docs@ledger".enabled', value: false, mergeStrategy: 'replace' }] });
-    const writes = () => f.socket.sent.filter(row => ['plugin/install', 'plugin/uninstall', 'config/batchWrite', 'marketplace/add'].includes(row.method)).length;
+    const writes = () => f.socket.sent.filter(row => row.method !== undefined && ['plugin/install', 'plugin/uninstall', 'config/batchWrite', 'marketplace/add'].includes(row.method ?? '')).length;
     const before = writes();
     await assert.rejects(client.changePlugin({ action: 'enable', id: plugin.id, enabled: false, version: 'stale' }), /changed in another client/);
     await assert.rejects(client.changePlugin({ action: 'enable', id: 'forged@market', enabled: false, version: 'user-version' }), /not installed/);
@@ -456,8 +553,8 @@ test('conversation pages keep a full page of chats when recent agent runs outnum
   const { transpileModule, ModuleKind } = await import('typescript');
   const source = await fs.readFile(new URL('../lib/conversation-page.ts', import.meta.url), 'utf8');
   const compiled = transpileModule(source, { compilerOptions: { module: ModuleKind.CommonJS } }).outputText;
-  const loaded = {};
-  new Function('exports', 'require', compiled)(loaded, id => {
+  const loaded = {} as typeof import('../lib/conversation-page.ts');
+  compileFunction(compiled, ['exports', 'require'])(loaded, (id: string) => {
     assert.equal(id, './api'); return { isAgentRun };
   });
   const server = await startDesktopServer({ client: f.client });
@@ -468,8 +565,8 @@ test('conversation pages keep a full page of chats when recent agent runs outnum
     assert.equal(session.status, 200);
     const setCookie = session.headers.get('set-cookie');
     assert.ok(setCookie);
-    const cookie = setCookie.split(';')[0];
-    const request = async route => {
+    const cookie = required(setCookie.split(';')[0]);
+    const request = async (route: string) => {
       const response = await fetch(`${origin}/api${route}`, { headers: { Cookie: cookie } });
       assert.equal(response.status, 200); return response.json();
     };
@@ -482,7 +579,7 @@ test('conversation pages keep a full page of chats when recent agent runs outnum
     assert.deepEqual(second.data.map(thread => thread.id), chats.slice(100).map(thread => thread.id));
     assert.equal(second.nextCursor, null);
     const queries = f.socket.sent.filter(request => request.method === 'thread/list');
-    assert.equal(queries.filter(request => !request.params.sourceKinds?.length || request.params.sourceKinds.includes('exec')).length, 1, 'background runs are refreshed separately from chat pagination');
+    assert.equal(queries.filter(request => !required(request.params).sourceKinds?.length || required(request.params).sourceKinds?.includes('exec')).length, 1, 'background runs are refreshed separately from chat pagination');
   } finally { await server.close(); f.client.close(); }
 });
 
@@ -493,10 +590,11 @@ test('Subagents permits optional delegation and refreshes its policy on the next
     const policies = new Set();
     for (const enabled of [undefined, false, true, true]) {
       configRead.config.features.multi_agent = enabled;
-      threads.get(ROOT).status = { type: 'idle' };
+      required(threads.get(ROOT)).status = { type: 'idle' };
       await client.send(ROOT, { text: 'Please solve this task' });
-      const params = socket.sent.findLast(row => row.method === 'turn/start').params;
-      const policy = params.additionalContext?.['elpis.subagents'];
+      const params = required(socket.sent.findLast(row => row.method === 'turn/start')).params;
+      const policy = required(params).additionalContext?.['elpis.subagents'];
+      assert.ok(policy);
       assert.equal(policy?.kind, 'application', 'the setting reaches the model as application instructions');
       policies.add(policy.value);
       if (enabled === false) {
@@ -512,7 +610,7 @@ test('Subagents permits optional delegation and refreshes its policy on the next
         assert.match(policy.value, /never requires spawning an agent/);
         assert.match(policy.value, /Honor explicit user requests/);
       }
-      assert.equal(params.input[0].text, 'Please solve this task');
+      assert.equal(required(required(required(params).input)[0]).text, 'Please solve this task');
     }
     assert.equal(policies.size, 4, 'native mode hints changing between turns cannot leave a deduplicated, stale policy');
     assert.equal(socket.sent.filter(row => row.method === 'thread/resume').length, 1, 'already-loaded chats get the changed policy without reloading');
@@ -567,27 +665,29 @@ test('desktop browser MCP follows new, resumed and forked desktop chats without 
   const {client,socket}=fixture({browserConfig});
   try {
     await client.initialize();await client.createThread({});
-    assert.deepEqual(socket.sent.find(row=>row.method==='thread/start').params.config,browserConfig);
+    assert.deepEqual(required(required(socket.sent.find(row=>row.method==='thread/start')).params).config,browserConfig);
     await client.resume(ROOT,{});await client.forkThread(ROOT,{});
-    for(const method of ['thread/resume','thread/fork'])assert.deepEqual(socket.sent.find(row=>row.method===method).params.config,browserConfig);
+    for(const method of ['thread/resume','thread/fork'])assert.deepEqual(required(required(socket.sent.find(row=>row.method===method)).params).config,browserConfig);
     assert.equal(socket.sent.some(row=>row.method==='config/batchWrite'),false);
   } finally {client.close();}
 });
 
 test('browser session capabilities are separate on create/resume/fork and revoked on deletion', async () => {
-  const requested = [], bound = [], closed = [];
+  const requested: string[] = [], bound: [string, string][] = [], closed: string[] = [];
   const browserConfig = {
-    forSession(id) { requested.push(id); return { 'mcp_servers.elpis_browser': { env: { ELPIS_BROWSER_CAPABILITY: `scope-${id}` } } }; },
-    bind(from, to) { bound.push([from, to]); }, close(id) { closed.push(id); },
+    forSession(id: string) { requested.push(id); return { 'mcp_servers.elpis_browser': { env: { ELPIS_BROWSER_CAPABILITY: `scope-${id}` } } }; },
+    bind(from: string, to: string) { bound.push([from, to]); }, close(id: string) { closed.push(id); },
   };
   const { client, socket } = fixture({ browserConfig });
   try {
     await client.initialize(); await client.createThread({}); await client.resume(ROOT, {}); await client.forkThread(ROOT, {});
     const start = socket.sent.find(row => row.method === 'thread/start'), resume = socket.sent.find(row => row.method === 'thread/resume'), fork = socket.sent.find(row => row.method === 'thread/fork');
     assert.equal(new Set(requested).size, 3, 'each new or resumed session gets its own scope');
-    assert.equal(resume.params.config['mcp_servers.elpis_browser'].env.ELPIS_BROWSER_CAPABILITY, `scope-${ROOT}`);
+    const browser = required(required(required(resume).params).config)['mcp_servers.elpis_browser'];
+    assert.ok(browser && typeof browser === 'object' && 'env' in browser && browser.env && typeof browser.env === 'object' && 'ELPIS_BROWSER_CAPABILITY' in browser.env);
+    assert.equal(browser.env.ELPIS_BROWSER_CAPABILITY, `scope-${ROOT}`);
     assert.deepEqual(bound, [[requested[0], CREATED], [requested[2], FORK]]);
-    assert.notDeepEqual(start.params.config, fork.params.config);
+    assert.notDeepEqual(required(required(start).params).config, required(required(fork).params).config);
     await client.deleteThread(ROOT, {}); assert.ok(closed.includes(ROOT));
   } finally { client.close(); }
 });
@@ -600,9 +700,9 @@ test('a chat that runs the canvas\'s agents turns the multi-agent runtime on for
   try {
     await client.initialize();
     await client.createThread({cwd:'/tmp/project',agents:true});
-    assert.deepEqual(socket.sent.findLast(row=>row.method==='thread/start').params.config,{...browserConfig,'features.multi_agent':true});
+    assert.deepEqual(required(required(socket.sent.findLast(row=>row.method==='thread/start')).params).config,{...browserConfig,'features.multi_agent':true});
     await client.createThread({cwd:'/tmp/project'});
-    assert.deepEqual(socket.sent.findLast(row=>row.method==='thread/start').params.config,browserConfig,'an ordinary chat keeps the user\'s switch');
+    assert.deepEqual(required(required(socket.sent.findLast(row=>row.method==='thread/start')).params).config,browserConfig,'an ordinary chat keeps the user\'s switch');
     await assert.rejects(client.createThread({agents:'yes'}),/agents must be true or false/);
     assert.equal(socket.sent.some(row=>row.method==='config/batchWrite'||row.method==='config/value/write'),false,'the user config is never written');
   } finally {client.close();}
@@ -611,8 +711,9 @@ test('a chat that runs the canvas\'s agents turns the multi-agent runtime on for
 test('configured connection models use only that endpoint and never authorize the same ID on the main route', async () => {
   const { client, socket, configRead, requirementsRead } = fixture(); await client.initialize();
   configRead.config.model_providers.local = { name: 'gpt-oss', base_url: 'http://127.0.0.1:1234/v1', experimental_bearer_token: 'LOCAL CATALOG KEY' };
-  const original = globalThis.fetch, calls = [];
+  const original = globalThis.fetch, calls: { url: string | URL | Request; authorization: string | null }[] = [];
   globalThis.fetch = async (url, options) => {
+    assert.ok(options?.headers instanceof Headers);
     calls.push({ url, authorization: options.headers.get('authorization') });
     return new Response(JSON.stringify({ data: [{ id: 'unique-local-book-model', name: 'Book model' }] }), { headers: { 'content-type': 'application/json' } });
   };
@@ -621,9 +722,9 @@ test('configured connection models use only that endpoint and never authorize th
     assert.deepEqual(local.data.map(model => model.model), ['unique-local-book-model']);
     assert.deepEqual(calls, [{ url: 'http://127.0.0.1:1234/v1/models', authorization: 'Bearer LOCAL CATALOG KEY' }]);
     assert.doesNotMatch(JSON.stringify(local), /LOCAL CATALOG KEY|Authorization|base_url/);
-    await client.createThread({ provider: 'local', model: local.data[0].model });
+    await client.createThread({ provider: 'local', model: required(local.data[0]).model });
     const sent = socket.sent.findLast(message => message.method === 'thread/start');
-    assert.equal(sent.params.modelProvider, 'local'); assert.equal(sent.params.model, 'unique-local-book-model');
+    assert.equal(required(required(sent).params).modelProvider, 'local'); assert.equal(required(required(sent).params).model, 'unique-local-book-model');
     await assert.rejects(client.createThread({ model: 'unique-local-book-model' }), /current Elpis model list/);
     await assert.rejects(client.models({ provider: 'missing' }), /saved API address/);
     requirementsRead.requirements = { modelProvider: 'openai' };
@@ -654,8 +755,9 @@ test('the current API default loads its own catalog instead of the engine startu
   configRead.config.model = 'claude-opus-5-5';
   configRead.config.model_providers['anthropic-credits'] = { name: 'Anthropic credits', base_url: 'http://127.0.0.1:44103/v1', wire_api: 'responses', requires_openai_auth: false,
     http_headers: { 'x-elpis-gateway-token': 'PRIVATE GATEWAY TOKEN', 'x-elpis-provider': 'anthropic-credits', 'x-elpis-wire': 'anthropic_messages' } };
-  const original = globalThis.fetch, calls = [];
+  const original = globalThis.fetch, calls: { url: string | URL | Request; provider: string | null }[] = [];
   globalThis.fetch = async (url, options) => {
+    assert.ok(options?.headers instanceof Headers);
     calls.push({ url, provider: options.headers.get('x-elpis-provider') });
     return new Response(JSON.stringify({ models: [{ slug: 'claude-opus-5-5', display_name: 'Claude Opus 5.5' }] }), { headers: { 'content-type': 'application/json' } });
   };
@@ -666,13 +768,13 @@ test('the current API default loads its own catalog instead of the engine startu
     assert.deepEqual(calls, [{ url: 'http://127.0.0.1:44103/v1/models', provider: 'anthropic-credits' }]);
     assert.equal(socket.sent.filter(message => message.method === 'model/list').length, before, 'the old engine catalog is not relabeled');
     assert.doesNotMatch(JSON.stringify(credits), /PRIVATE GATEWAY TOKEN|x-elpis-/);
-    await client.createThread({ provider: 'anthropic-credits', model: credits.data[0].model });
+    await client.createThread({ provider: 'anthropic-credits', model: required(credits.data[0]).model });
     const start = socket.sent.findLast(message => message.method === 'thread/start');
-    assert.deepEqual([start.params.modelProvider, start.params.model], ['anthropic-credits', 'claude-opus-5-5']);
+    assert.deepEqual([required(required(start).params).modelProvider, required(required(start).params).model], ['anthropic-credits', 'claude-opus-5-5']);
     await client.createThread({ provider: 'anthropic-credits' });
     const inherited = socket.sent.findLast(message => message.method === 'thread/start');
-    assert.equal(inherited.params.modelProvider, 'anthropic-credits');
-    assert.equal(inherited.params.model, undefined, 'a primary connection can inherit its configured model');
+    assert.equal(required(required(inherited).params).modelProvider, 'anthropic-credits');
+    assert.equal(required(required(inherited).params).model, undefined, 'a primary connection can inherit its configured model');
     requirementsRead.requirements = { modelProvider: 'openai' };
     await assert.rejects(client.models({ provider: 'anthropic-credits' }), /restricted/);
     assert.equal(calls.length, 1, 'managed policy is checked before another endpoint lookup');
@@ -683,8 +785,8 @@ test('saved-conversation search passes its term and cursor to the native list be
   const { client, socket } = fixture(); await client.initialize();
   try {
     await client.listThreads({ searchTerm: 'Augustus', cursor: 'saved-page', limit: 25 });
-    const params = socket.sent.findLast(message => message.method === 'thread/list').params;
-    assert.equal(params.searchTerm, 'Augustus'); assert.equal(params.cursor, 'saved-page'); assert.equal(params.limit, 25);
+    const params = required(socket.sent.findLast(message => message.method === 'thread/list')).params;
+    assert.equal(required(params).searchTerm, 'Augustus'); assert.equal(required(params).cursor, 'saved-page'); assert.equal(required(params).limit, 25);
     const count = socket.sent.filter(message => message.method === 'thread/list').length;
     await assert.rejects(client.listThreads({ searchTerm: ' ' }), /conversation search/);
     assert.equal(socket.sent.filter(message => message.method === 'thread/list').length, count);
@@ -693,7 +795,7 @@ test('saved-conversation search passes its term and cursor to the native list be
 
 test('search finds a chat by its name in any letter case, also past the first page the sidebar loaded', async () => {
   const { client, threads } = fixture({ threadListPaging: true }); await client.initialize();
-  const chat = (id, name, preview, source = 'vscode') => threads.set(id, { id, name, preview, source, status: { type: 'idle' }, cwd: '/work' });
+  const chat = (id: string, name: string, preview: string, source = 'vscode') => threads.set(id, { id, name, preview, source, status: { type: 'idle' }, cwd: '/work' });
   for (let i = 0; i < 230; i++) chat(`filler-${i}`, `Filler chat ${i}`, `lorem ${i}`);
   chat('named-main', 'main', 'Set up the repo'); chat('branch', 'Main branch cleanup', 'tidy the branches');
   chat('hermes', 'Hermes main setup', 'configure hermes'); chat('domain', 'Domain notes', 'dns records');
@@ -715,7 +817,7 @@ test('background sources are excluded from ordinary lists and search, and explic
     for (const options of [{}, { searchTerm: 'Worker' }, { archived: false }]) {
       const listed = await client.listThreads(options);
       assert.deepEqual(listed.data.map(thread => thread.id), [ROOT, FORK]);
-      assert.ok(!socket.sent.findLast(row => row.method === 'thread/list').params.sourceKinds.includes('exec'));
+      assert.ok(!required(required(required(socket.sent.findLast(row => row.method === 'thread/list')).params).sourceKinds).includes('exec'));
     }
     assert.deepEqual((await client.listThreads({ includeAgentRuns: true })).data.map(thread => thread.id), [ROOT, CHILD, CREATED, FORK]);
     assert.deepEqual((await client.listThreads({ ancestorThreadId: ROOT })).data.map(thread => thread.id), [CHILD, CREATED]);
@@ -724,7 +826,7 @@ test('background sources are excluded from ordinary lists and search, and explic
 
 test('listed spawned agents recover their parent from recorded source without grouping independent desktop chats', async () => {
   const { client, threads } = fixture(); await client.initialize();
-  threads.get(CHILD).parentThreadId = null;
+  required(threads.get(CHILD)).parentThreadId = null;
   threads.set(FORK, { id: FORK, source: 'vscode', name: 'Elpis — keyboard shortcuts', status: { type: 'idle' } });
   try {
     const listed = (await client.listThreads({ includeAgentRuns: true })).data;
@@ -732,7 +834,7 @@ test('listed spawned agents recover their parent from recorded source without gr
     assert.ok(agent);
     assert.equal(agent.parentThreadId, ROOT, 'the source records subAgent.thread_spawn.parent_thread_id');
     assert.equal(agent.desktopAccess.writable, false);
-    assert.equal(listed.find(thread => thread.id === FORK).parentThreadId, undefined, 'a name is not evidence of parentage');
+    assert.equal(required(listed.find(thread => thread.id === FORK)).parentThreadId, undefined, 'a name is not evidence of parentage');
   } finally { client.close(); }
 });
 
@@ -746,32 +848,33 @@ test('background runs are read-only; only an idle run may explicitly continue in
       await assert.rejects(client.continueThread(id, {}), /finish/i);
     }
     assert.equal(socket.sent.filter(row => row.method === 'thread/fork' || row.method === 'turn/start').length, 0);
-    threads.get(CREATED).status = { type: 'idle' };
+    required(threads.get(CREATED)).status = { type: 'idle' };
     assert.equal((await client.readThread(CREATED)).thread.desktopAccess.canContinue, true);
     const continued = await client.continueThread(CREATED, {});
     assert.equal(continued.thread.id, FORK);
     assert.equal(continued.thread.desktopAccess.writable, true);
     assert.equal(continued.thread.source, 'appServer');
+    assert.ok('forkedFromId' in continued.thread);
     assert.equal(continued.thread.forkedFromId, CREATED);
-    assert.equal(threads.get(CREATED).source, 'exec');
-    assert.equal(threads.get(CREATED).parentThreadId, ROOT);
+    assert.equal(required(threads.get(CREATED)).source, 'exec');
+    assert.equal(required(threads.get(CREATED)).parentThreadId, ROOT);
     assert.equal(socket.sent.filter(row => row.method === 'turn/start').length, 0);
-    assert.deepEqual(socket.sent.find(row => row.method === 'thread/fork').params, { threadId: CREATED, model: MODEL, modelProvider: 'openai' });
+    assert.deepEqual(required(socket.sent.find(row => row.method === 'thread/fork')).params, { threadId: CREATED, model: MODEL, modelProvider: 'openai' });
     await client.send(FORK, { text: 'Now talk here' });
-    assert.equal(socket.sent.find(row => row.method === 'turn/start').params.threadId, FORK);
+    assert.equal(required(required(socket.sent.find(row => row.method === 'turn/start')).params).threadId, FORK);
   } finally { client.close(); }
 });
 
 test('opening a completed parent-owned child reads history without resuming it', async () => {
   const { client, socket, threads } = fixture(); await client.initialize();
-  threads.get(CHILD).status = { type: 'notLoaded' };
-  delete threads.get(CHILD).canAcceptDirectInput;
+  required(threads.get(CHILD)).status = { type: 'notLoaded' };
+  delete required(threads.get(CHILD)).canAcceptDirectInput;
   try {
     const opened = await client.resume(CHILD, {});
     assert.equal(opened.thread.desktopAccess.writable, false);
     assert.equal(opened.activeTurnId, null);
-    assert.equal((await client.readThread(CHILD)).data[0].item.text, 'Actual fixture transcript');
-    assert.equal(socket.sent.some(row => ['thread/resume', 'thread/subscribe', 'thread/settings/update'].includes(row.method) && row.params.threadId === CHILD), false);
+    assert.equal(required((await client.readThread(CHILD)).data[0]).item.text, 'Actual fixture transcript');
+    assert.equal(socket.sent.some(row => ['thread/resume', 'thread/subscribe', 'thread/settings/update'].includes(row.method ?? '') && required(row.params).threadId === CHILD), false);
   } finally { client.close(); }
 });
 
@@ -785,16 +888,20 @@ test('a child in a legacy drain reports history-only until its viewer reconnects
     queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, result: { thread: structuredClone(threads.get(CHILD)), followingLive: false } })));
   };
   try {
-    assert.equal((await client.resume(CHILD, {})).followingLive, false);
-    assert.equal((await client.resume(CHILD, {})).followingLive, false, 'a second open keeps the truthful state');
-    assert.equal(socket.sent.filter(row => row.method === 'thread/subscribe' && row.params.threadId === CHILD).length, 1);
-    assert.equal(socket.sent.some(row => ['thread/resume', 'thread/settings/update', 'turn/start'].includes(row.method) && row.params.threadId === CHILD), false);
+    const first = await client.resume(CHILD, {});
+    assert.ok('followingLive' in first);
+    assert.equal(first.followingLive, false);
+    const second = await client.resume(CHILD, {});
+    assert.ok('followingLive' in second);
+    assert.equal(second.followingLive, false, 'a second open keeps the truthful state');
+    assert.equal(socket.sent.filter(row => row.method === 'thread/subscribe' && required(row.params).threadId === CHILD).length, 1);
+    assert.equal(socket.sent.some(row => ['thread/resume', 'thread/settings/update', 'turn/start'].includes(row.method ?? '') && required(row.params).threadId === CHILD), false);
   } finally { client.close(); }
 });
 
 test('a finished child can continue from stored history when its parent is not loaded', async () => {
   const { client, socket, threads } = fixture(); await client.initialize();
-  threads.get(CHILD).status = { type: 'notLoaded' };
+  required(threads.get(CHILD)).status = { type: 'notLoaded' };
   const send = socket.send;
   socket.send = raw => {
     const request = JSON.parse(raw);
@@ -815,7 +922,7 @@ test('a finished child can continue from stored history when its parent is not l
 test('the auto-review reviewer\'s own threads are never listed as chats', async () => {
   const { client, threads } = fixture(); await client.initialize();
   const reviewer = 'guardian-review-thread';
-  threads.set(reviewer, { ...threads.get(ROOT), id: reviewer, name: 'Guardian review', source: { subAgent: { other: 'guardian' } } });
+  threads.set(reviewer, { ...required(threads.get(ROOT)), id: reviewer, name: 'Guardian review', source: { subAgent: { other: 'guardian' } } });
   try { assert.deepEqual((await client.listThreads()).data.map(thread => thread.id).filter(id => id === reviewer), []); }
   finally { client.close(); }
 });
@@ -825,29 +932,30 @@ test('existing chats are written directly after a native rejoin; parent-owned ag
   const listed = await client.listThreads({ includeAgentRuns: true });
   assert.equal(listed.data.length, 2);
   assert.deepEqual(listed.data.map(thread => [thread.desktopAccess.writable, thread.desktopAccess.mode]), [[true, 'direct'], [false, 'continue']]);
-  assert.ok(socket.sent.find(row => row.method === 'thread/list').params.sourceKinds.includes('subAgentThreadSpawn'));
+  assert.ok(required(required(required(socket.sent.find(row => row.method === 'thread/list')).params).sourceKinds).includes('subAgentThreadSpawn'));
   await new Promise(resolve => setImmediate(resolve));
-  assert.deepEqual(socket.sent.filter(row => row.method === 'thread/subscribe').map(row => row.params.threadId), [CHILD], 'working agents are followed live without resuming them');
+  assert.deepEqual(socket.sent.filter(row => row.method === 'thread/subscribe').map(row => required(row.params).threadId), [CHILD], 'working agents are followed live without resuming them');
   const liveChild = await client.resume(CHILD, {});
   assert.equal(liveChild.activeTurnId, 'running-turn');
   assert.equal(liveChild.thread.desktopAccess.writable, false);
-  assert.equal(socket.sent.some(row => ['thread/resume', 'thread/settings/update', 'turn/start'].includes(row.method) && row.params.threadId === CHILD), false);
-  const events = []; client.on('event', event => events.push(event));
+  assert.equal(socket.sent.some(row => ['thread/resume', 'thread/settings/update', 'turn/start'].includes(row.method ?? '') && required(row.params).threadId === CHILD), false);
+  const events: { data: { method?: string; params: { delta?: string } } }[] = []; client.on('event', event => events.push(event));
   socket.emit('message', JSON.stringify({ method: 'item/agentMessage/delta', params: { threadId: CHILD, turnId: 'running-turn', itemId: 'child-message', delta: 'live child' } }));
   assert.ok(events.some(event => event.data?.method === 'item/agentMessage/delta' && event.data.params.delta === 'live child'));
   const child = await client.readThread(CHILD);
-  assert.equal(child.data[0].item.text, 'Actual fixture transcript');
+  assert.equal(required(child.data[0]).item.text, 'Actual fixture transcript');
   await client.send(ROOT, { text: 'Continue the root' });
   assert.deepEqual(socket.sent.filter(row => row.method === 'thread/resume').map(row => row.params), [
     { threadId: ROOT, excludeTurns: true, initialTurnsPage: { limit: 1, sortDirection: 'desc', itemsView: 'summary' } }]);
-  assert.deepEqual(socket.sent.filter(row => row.method === 'turn/start').map(row => row.params.threadId), [ROOT]);
+  assert.deepEqual(socket.sent.filter(row => row.method === 'turn/start').map(row => required(row.params).threadId), [ROOT]);
   // Elpis refuses direct turns for a multi-agent v2 agent, so its history continues in a fork with its model.
-  threads.get(CHILD).status = { type: 'idle' };
+  required(threads.get(CHILD)).status = { type: 'idle' };
   await assert.rejects(client.send(CHILD, { text: 'Follow up' }), /continued conversation name/);
   const continued = await client.send(CHILD, { text: 'Follow up', continueAs: 'Failure reporting (continued)' });
+  assert.ok('thread' in continued);
   assert.equal(continued.thread.id, FORK); assert.equal(continued.continuedFrom, CHILD); assert.equal(continued.thread.name, 'Failure reporting (continued)');
-  assert.deepEqual(socket.sent.find(row => row.method === 'thread/fork').params, { threadId: CHILD, model: MODEL, modelProvider: 'openai' });
-  assert.deepEqual(socket.sent.filter(row => row.method === 'turn/start').map(row => row.params.threadId), [ROOT, FORK], 'never a direct turn on the agent');
+  assert.deepEqual(required(socket.sent.find(row => row.method === 'thread/fork')).params, { threadId: CHILD, model: MODEL, modelProvider: 'openai' });
+  assert.deepEqual(socket.sent.filter(row => row.method === 'turn/start').map(row => required(row.params).threadId), [ROOT, FORK], 'never a direct turn on the agent');
   client.close();
 });
 
@@ -855,7 +963,7 @@ test('a continued-agent conversation survives a failed name or first send, and a
   for (const method of ['thread/name/set', 'turn/start']) await t.test(method, async () => {
     const { client, socket, threads } = fixture();
     try {
-      await client.initialize(); threads.get(CHILD).status = { type: 'idle' };
+      await client.initialize(); required(threads.get(CHILD)).status = { type: 'idle' };
       const send = socket.send; let reject = true;
       socket.send = raw => {
         const request = JSON.parse(raw);
@@ -865,16 +973,18 @@ test('a continued-agent conversation survives a failed name or first send, and a
         } else send(raw);
       };
       const result = await client.send(CHILD, { text: 'Follow up', continueAs: 'Failure reporting (continued)' });
+      assert.ok('thread' in result && 'sendError' in result);
       assert.equal(result.thread.id, FORK); assert.equal(result.continuedFrom, CHILD);
-      assert.equal(result.thread.desktopAccess.mode, 'direct'); assert.equal(result.turn, undefined);
+      assert.equal(result.thread.desktopAccess.mode, 'direct'); assert.equal('turn' in result ? result.turn : undefined, undefined);
       assert.match(result.sendError, /Fixture continuation write rejected/);
       assert.equal(result.thread.name, method === 'thread/name/set' ? undefined : 'Failure reporting (continued)');
       assert.equal(socket.sent.filter(row => row.method === 'turn/start').length, method === 'thread/name/set' ? 0 : 1,
         'a naming failure does not send, and a send failure is not automatically retried');
       const retried = await client.send(result.thread.id, { text: 'Follow up' });
+      assert.ok('turn' in retried);
       assert.equal(retried.turn.id, 'new-turn');
       assert.equal(socket.sent.filter(row => row.method === 'thread/fork').length, 1, 'retry stays in the acknowledged conversation');
-      assert.equal(socket.sent.filter(row => row.method === 'turn/start').at(-1).params.threadId, FORK);
+      assert.equal(required(required(socket.sent.filter(row => row.method === 'turn/start').at(-1)).params).threadId, FORK);
     } finally { client.close(); }
   });
 });
@@ -882,7 +992,7 @@ test('a continued-agent conversation survives a failed name or first send, and a
 test('an unknown continued-agent send outcome preserves its fork without replaying the write', async () => {
   const { client, socket, threads } = fixture();
   try {
-    await client.initialize(); client.timeoutMs = 20; threads.get(CHILD).status = { type: 'idle' };
+    await client.initialize(); client.timeoutMs = 20; required(threads.get(CHILD)).status = { type: 'idle' };
     const send = socket.send;
     socket.send = raw => {
       const request = JSON.parse(raw);
@@ -890,7 +1000,8 @@ test('an unknown continued-agent send outcome preserves its fork without replayi
       else send(raw);
     };
     const result = await client.send(CHILD, { text: 'Follow up', continueAs: 'Failure reporting (continued)' });
-    assert.equal(result.thread.id, FORK); assert.equal(result.continuedFrom, CHILD); assert.equal(result.turn, undefined);
+    assert.ok('thread' in result && 'sendError' in result);
+    assert.equal(result.thread.id, FORK); assert.equal(result.continuedFrom, CHILD); assert.equal('turn' in result ? result.turn : undefined, undefined);
     assert.match(result.sendError, /outcome is unknown/);
     assert.equal(socket.sent.filter(row => row.method === 'turn/start').length, 1);
     assert.equal(socket.sent.filter(row => row.method === 'thread/fork').length, 1);
@@ -900,7 +1011,7 @@ test('an unknown continued-agent send outcome preserves its fork without replayi
 test('a failed continuation fork does not report an acknowledged conversation or send a message', async () => {
   const { client, socket, threads } = fixture();
   try {
-    await client.initialize(); threads.get(CHILD).status = { type: 'idle' };
+    await client.initialize(); required(threads.get(CHILD)).status = { type: 'idle' };
     const send = socket.send;
     socket.send = raw => {
       const request = JSON.parse(raw);
@@ -910,7 +1021,7 @@ test('a failed continuation fork does not report an acknowledged conversation or
       } else send(raw);
     };
     await assert.rejects(client.send(CHILD, { text: 'Follow up', continueAs: 'Failure reporting (continued)' }), /Fixture fork rejected/);
-    assert.equal(socket.sent.filter(row => ['thread/name/set', 'turn/start'].includes(row.method)).length, 0);
+    assert.equal(socket.sent.filter(row => ['thread/name/set', 'turn/start'].includes(row.method ?? '')).length, 0);
   } finally { client.close(); }
 });
 
@@ -935,7 +1046,7 @@ for (const found of [true, false]) test(`fork recovers a stale turn only through
     if (found) {
       const result = await client.forkThread(ROOT, { lastTurnId: 'stale-turn', lastItemId: 'selected-answer' });
       assert.equal(result.thread.id, FORK);
-      assert.deepEqual(socket.sent.filter(row => row.method === 'thread/fork').map(row => row.params.lastTurnId), ['stale-turn', 'persisted-turn']);
+      assert.deepEqual(socket.sent.filter(row => row.method === 'thread/fork').map(row => required(row.params).lastTurnId), ['stale-turn', 'persisted-turn']);
     } else {
       await assert.rejects(client.forkThread(ROOT, { lastTurnId: 'stale-turn', lastItemId: 'selected-answer' }), /refresh|reload/i);
       assert.equal(socket.sent.filter(row => row.method === 'thread/fork').length, 1, 'Never fork latest history when the selected message is missing');
@@ -948,24 +1059,24 @@ test('an effort picked in a chat is saved at once; a running native turn takes i
   const { client, socket, threads } = fixture(); await client.initialize(); await client.models();
   await client.createThread({ model: MODEL });
   await client.send(CREATED, { text: 'Do the task', model: MODEL });
-  const sent = method => socket.sent.filter(row => row.method === method).map(row => row.params);
+  const sent = (method: string) => socket.sent.filter(row => row.method === method).map(row => row.params);
   assert.deepEqual(await client.setEffort(CREATED, { effort: 'xhigh' }), { reasoningEffort: 'xhigh' });
   assert.deepEqual(sent('thread/settings/update').at(-1), { threadId: CREATED, effort: 'xhigh' }, 'later turns and a restart keep it');
   assert.deepEqual(sent('turn/settings/update'), [{ threadId: CREATED, turnId: 'running-turn', effort: 'xhigh' }], 'the running turn takes it');
   // A Claude turn is not the engine's: the bridge applies the saved effort to it.
-  Object.assign(threads.get(CREATED), { model: 'claude/opus' });
+  Object.assign(required(threads.get(CREATED)), { model: 'claude/opus' });
   await client.setEffort(CREATED, { effort: 'low' });
   assert.deepEqual(sent('thread/settings/update').at(-1), { threadId: CREATED, effort: 'low' });
   assert.equal(sent('turn/settings/update').length, 1);
   // An idle chat only saves it.
-  Object.assign(threads.get(CREATED), { model: MODEL, status: { type: 'idle' } });
+  Object.assign(required(threads.get(CREATED)), { model: MODEL, status: { type: 'idle' } });
   await client.setEffort(CREATED, { effort: 'medium' });
   assert.equal(sent('turn/settings/update').length, 1);
   const before = socket.sent.length;
   await assert.rejects(client.setEffort(CREATED, { effort: 'very high' }), /reasoning effort/);
   await assert.rejects(client.setEffort(CREATED, {}), /reasoning effort/);
   await assert.rejects(client.setEffort(CHILD, { effort: 'high' }), /parent/);
-  assert.equal(socket.sent.slice(before).some(row => row.method.endsWith('settings/update')), false, 'a refused effort changes nothing');
+  assert.equal(socket.sent.slice(before).some(row => required(row.method).endsWith('settings/update')), false, 'a refused effort changes nothing');
   client.close();
 });
 
@@ -977,15 +1088,18 @@ test('new roots send, steer and interrupt through typed protocol without overrid
   assert.equal(created.thread.desktopAccess.writable, true);
   const first = client.send(CREATED, { text: 'Do the task', model: MODEL });
   const duplicate = assert.rejects(client.send(CREATED, { text: 'Race' }), /Use Steer/);
-  assert.equal(/** @type {{id: string}} */ ((await first).turn).id, 'new-turn');
+  const started = await first; assert.ok('turn' in started);
+  assert.equal(started.turn.id, 'new-turn');
   await duplicate;
   assert.equal(socket.sent.filter(row => row.method === 'turn/start').length, 1, 'a queued duplicate never starts another turn or silently steers');
   await assert.rejects(client.send(CREATED, { text: 'Do not silently steer' }), /Use Steer/);
-  assert.equal(/** @type {{turnId: string}} */ (await client.steer(CREATED, { text: 'Clarify', expectedTurnId: 'new-turn' })).turnId, 'new-turn');
+  const steered = await client.steer(CREATED, { text: 'Clarify', expectedTurnId: 'new-turn' });
+  assert.ok(steered && typeof steered === 'object' && 'turnId' in steered);
+  assert.equal(steered.turnId, 'new-turn');
   await client.interrupt(CREATED, { turnId: 'new-turn' });
   const request = socket.sent.find(row => row.method === 'turn/start');
-  const { additionalContext, ...params } = request.params;
-  assert.equal(additionalContext['elpis.subagents'].kind, 'application');
+  const { additionalContext, ...params } = required(required(request).params);
+  assert.equal(required(required(additionalContext)['elpis.subagents']).kind, 'application');
   assert.deepEqual(params, { threadId: CREATED, input: [{ type: 'text', text: 'Do the task', text_elements: [] }], model: MODEL });
   assert.equal(socket.sent.some(row => row.method === 'thread/resume'), false);
   client.close(); assert.equal(socket.closed, true);
@@ -993,7 +1107,7 @@ test('new roots send, steer and interrupt through typed protocol without overrid
 
 test('opening a chat lets Elpis unload the idle chats left behind, never a working one (A47)', async () => {
   const { client, socket } = fixture(); await client.initialize(); await client.models();
-  const released = () => socket.sent.filter(row => row.method === 'thread/unsubscribe').map(row => row.params.threadId);
+  const released = () => socket.sent.filter(row => row.method === 'thread/unsubscribe').map(row => required(row.params).threadId);
   const settle = async () => { for (let i = 0; i < 20; i++) await new Promise(resolve => setTimeout(resolve, 5)); };
   await client.createThread({ model: MODEL });
   await client.resume(ROOT, {}); await settle();
@@ -1010,7 +1124,7 @@ test('a message to a chat the app wrongly thinks busy is delivered, not refused 
   const { client, socket } = fixture(); await client.initialize(); await client.models();
   await client.createThread({ model: MODEL });
   // As the engine: a steer naming any turn but the running one is refused.
-  const send = socket.send; let running = null;
+  const send = socket.send; let running: string | null = null;
   socket.send = raw => {
     const request = JSON.parse(raw);
     const refusal = request.params?.input?.[0]?.text === 'Review this' ? 'active turn uses a different output schema'
@@ -1019,11 +1133,15 @@ test('a message to a chat the app wrongly thinks busy is delivered, not refused 
     socket.sent.push(request); queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, error: { code: -32600, message: refusal } })));
   };
   // The turn the app saw has finished: the message starts a new turn.
-  assert.equal(/** @type {{turn?: {id: string}}} */ (await client.steer(CREATED, { text: 'Are you there?', expectedTurnId: 'finished-turn' })).turn?.id, 'new-turn');
-  assert.equal(socket.sent.findLast(row => row.method === 'turn/start').params.input[0].text, 'Are you there?');
+  const restarted = await client.steer(CREATED, { text: 'Are you there?', expectedTurnId: 'finished-turn' });
+  assert.ok(restarted && typeof restarted === 'object' && 'turn' in restarted && restarted.turn && typeof restarted.turn === 'object' && 'id' in restarted.turn);
+  assert.equal(restarted.turn.id, 'new-turn');
+  assert.equal(required(required(required(required(socket.sent.findLast(row => row.method === 'turn/start')).params).input)[0]).text, 'Are you there?');
   // Another turn replaced it: the message joins the running turn instead.
   running = 'running-turn';
-  assert.equal(/** @type {{turnId: string}} */ (await client.steer(CREATED, { text: 'Also this', expectedTurnId: 'new-turn' })).turnId, 'running-turn');
+  const steered = await client.steer(CREATED, { text: 'Also this', expectedTurnId: 'new-turn' });
+  assert.ok(steered && typeof steered === 'object' && 'turnId' in steered);
+  assert.equal(steered.turnId, 'running-turn');
   assert.equal(socket.sent.filter(row => row.method === 'turn/start').length, 1);
   // Any other refusal keeps the engine's reason instead of a bare code.
   await assert.rejects(client.steer(CREATED, { text: 'Review this', expectedTurnId: 'running-turn' }), /different output schema/);
@@ -1053,12 +1171,13 @@ test('a message steered into a compaction is handed back for the queue, not refu
 
 test('approvals are only forwarded for owned roots and only accept exact offered decisions, including amendments', async () => {
   const { client, socket } = fixture(); await client.initialize(); await client.createThread({});
-  const events = []; client.on('event', event => events.push(event));
+  const events: ApprovalEvent[] = []; client.on('event', event => events.push(event));
   const always = { acceptWithExecpolicyAmendment: { execpolicy_amendment: ['git', 'diff'] } };
-  const approval = threadId => ({ id: 'approval-native', method: 'item/commandExecution/requestApproval', params: { threadId, turnId: 'turn1', command: 'echo hello', availableDecisions: ['accept', always, 'decline'] } });
+  const approval = (threadId: string) => ({ id: 'approval-native', method: 'item/commandExecution/requestApproval', params: { threadId, turnId: 'turn1', command: 'echo hello', availableDecisions: ['accept', always, 'decline'] } });
   socket.emit('message', JSON.stringify(approval(ROOT))); assert.equal(events.length, 0);
   socket.emit('message', JSON.stringify(approval(CREATED)));
-  const visible = events[0].data; assert.equal(visible.wireId, undefined);
+  const first = required(events[0]); assert.ok(first.type === 'approval');
+  const visible = first.data; assert.equal(visible.wireId, undefined);
   assert.throws(() => client.answerApproval(visible.id, { decision: 'rm -rf' }), /Unsupported/);
   assert.throws(() => client.answerApproval(visible.id, { decision: 'acceptForSession' }), /not offered/);
   assert.throws(() => client.answerApproval(visible.id, { decision: { acceptWithExecpolicyAmendment: { execpolicy_amendment: ['rm'] } } }), /not offered/);
@@ -1066,7 +1185,7 @@ test('approvals are only forwarded for owned roots and only accept exact offered
   assert.deepEqual(socket.sent.at(-1), { id: 'approval-native', result: { decision: always } });
   assert.throws(() => client.answerApproval(visible.id, { decision: 'accept' }), /no longer pending/);
   socket.emit('message', JSON.stringify({ id: 'future', method: 'future/requestApproval', params: { threadId: CREATED } }));
-  assert.equal(socket.sent.at(-1).error.code, -32601);
+  assert.equal(required(required(socket.sent.at(-1)).error).code, -32601);
   client.close();
 });
 
@@ -1074,8 +1193,8 @@ test('worker approvals follow recorded ancestry and name the requester; resolved
   const {client,socket,threads}=fixture(); await client.initialize(); await client.resume(ROOT,{});
   const grandchild='00000000-0000-0000-0000-000000000005';
   threads.set(grandchild,{id:grandchild,name:'Review worker',parentThreadId:CHILD,source:{subAgent:{other:'work_graph:fixture:review'}},status:{type:'active'}});
-  const events=[];client.on('event',event=>events.push(event));
-  const request=(id,wire)=>socket.emit('message',JSON.stringify({id:wire,method:'item/commandExecution/requestApproval',params:{threadId:id,turnId:'worker-turn',command:'inspect evidence',availableDecisions:['accept','decline']}}));
+  const events: ApprovalEvent[]=[];client.on('event',event=>events.push(event));
+  const request=(id: string,wire: string)=>socket.emit('message',JSON.stringify({id:wire,method:'item/commandExecution/requestApproval',params:{threadId:id,turnId:'worker-turn',command:'inspect evidence',availableDecisions:['accept','decline']}}));
   request(grandchild,'worker-approval');
   await new Promise(resolve=>setImmediate(resolve));
   const approval=events.find(event=>event.type==='approval')?.data;
@@ -1092,7 +1211,7 @@ test('worker approvals follow recorded ancestry and name the requester; resolved
   assert.equal(events.filter(event=>event.type==='approval').length,1);
   assert.equal(client.pendingApprovals.length,0);
   request(ROOT,'root-resolved-elsewhere');
-  const last=events.filter(event=>event.type==='approval').at(-1).data;
+  const last=required(events.filter(event=>event.type==='approval').at(-1)).data;
   socket.emit('message',JSON.stringify({method:'serverRequest/resolved',params:{threadId:ROOT,requestId:'root-resolved-elsewhere'}}));
   assert.ok(events.some(event=>event.type==='approvalResolved'&&event.data.id===last.id));
   assert.equal(client.pendingApprovals.length,0);
@@ -1100,7 +1219,7 @@ test('worker approvals follow recorded ancestry and name the requester; resolved
 });
 
 test('prompt index route pages the full thread and returns ordered, bounded prompt and reply previews', async t => {
-  const prompt = (turnId, content) => ({ turnId, item: { id: `u-${turnId}`, type: 'userMessage', content } });
+  const prompt = (turnId: string, content: object[]) => ({ turnId, item: { id: `u-${turnId}`, type: 'userMessage', content } });
   const promptPages = {
     start: { data: [{ turnId: 't5', item: { id: 'reply-later', type: 'agentMessage', text: 'Later fifth answer' } }, { turnId: 't5', item: { id: 'reply', type: 'agentMessage', text: 'Fifth answer' } }, prompt('t5', [{ type: 'text', text: 'Fifth prompt' }]), prompt('t4', [{ type: 'text', text: 'Fourth prompt' }])], nextCursor: 'middle' },
     middle: { data: [{ turnId: 't3', item: { id: 'reply-3', type: 'agentMessage', content: [{ type: 'text', text: 'Third answer' }] } }, prompt('t3', [{ type: 'text', text: 'Third prompt' }]), { turnId: 't2', item: { id: 'reply-2', type: 'agentMessage', text: 'B'.repeat(700) } }, prompt('t2', [{ type: 'text', text: 'Second prompt' }])], nextCursor: 'oldest' },
@@ -1112,23 +1231,23 @@ test('prompt index route pages the full thread and returns ordered, bounded prom
   const token = new URLSearchParams(url.hash.slice(1)).get('token');
   const auth = await fetch(origin + '/api/session', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin }, body: JSON.stringify({ token }) });
   assert.equal(auth.status, 200);
-  const cookie = auth.headers.get('set-cookie').split(';')[0];
+  const cookie = required(required(auth.headers.get('set-cookie')).split(';')[0]);
   const route = `/api/threads/${ROOT}/prompts`;
   const response = await fetch(origin + route, { headers: { Cookie: cookie } });
   assert.equal(response.status, 200);
-  const result = await response.json();
+  const result: { data: { turnId: string; itemId: string; text: string; reply: string }[] } = await response.json();
   assert.deepEqual(result.data.map(row => row.turnId), ['t1', 't2', 't3', 't4', 't5']);
   assert.deepEqual(result.data.map(row => row.itemId), ['u-t1', 'u-t2', 'u-t3', 'u-t4', 'u-t5']);
-  assert.equal(result.data[0].text, 'A'.repeat(200));
+  assert.equal(required(result.data[0]).text, 'A'.repeat(200));
   assert.deepEqual(result.data.slice(1).map(row => row.text), ['Second prompt', 'Third prompt', 'Fourth prompt', 'Fifth prompt']);
   assert.deepEqual(result.data.map(row => row.reply), ['', 'B'.repeat(600), 'Third answer', '', 'Fifth answer']);
   assert.doesNotMatch(JSON.stringify(result), /not text/);
-  assert.deepEqual(socket.sent.filter(row => row.method === 'thread/items/list').map(row => row.params.cursor ?? null), [null, 'middle', 'oldest']);
+  assert.deepEqual(socket.sent.filter(row => row.method === 'thread/items/list').map(row => required(row.params).cursor ?? null), [null, 'middle', 'oldest']);
   assert.equal((await fetch(origin + route, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin, Cookie: cookie }, body: '{}' })).status, 405);
 });
 
 test('the prompt index keeps the original item ID when a turn spans pages of steering messages (A98)', async () => {
-  const prompt = (itemId, text) => ({ turnId: 'long-turn', item: { id: itemId, type: 'userMessage', content: [{ type: 'text', text }] } });
+  const prompt = (itemId: string, text: string) => ({ turnId: 'long-turn', item: { id: itemId, type: 'userMessage', content: [{ type: 'text', text }] } });
   const { client } = fixture({ promptPages: {
     start: { data: [prompt('last-steer', 'Later steering')], nextCursor: 'middle' },
     middle: { data: [prompt('earlier-steer', 'Earlier steering')], nextCursor: 'oldest' },
@@ -1145,7 +1264,7 @@ test('provider history cursors fit the HTTP query and stay bound to their chat (
   // already exceeds pageQuery's 4096-character HTTP limit.
   const cursor = 'acp-page:' + Buffer.from(JSON.stringify({ nativeSeen: Array.from({ length: 100 }, () => randomUUID()) })).toString('base64url');
   assert.ok(cursor.length > 4096);
-  const prompt = turnId => ({ turnId, item: { id: turnId, type: 'userMessage', content: [{ type: 'text', text: turnId }] } });
+  const prompt = (turnId: string) => ({ turnId, item: { id: turnId, type: 'userMessage', content: [{ type: 'text', text: turnId }] } });
   const { client, socket } = fixture({ promptPages: {
     start: { data: [prompt('newest')], nextCursor: cursor },
     [cursor]: { data: [prompt('oldest')], nextCursor: null },
@@ -1155,8 +1274,8 @@ test('provider history cursors fit the HTTP query and stay bound to their chat (
   const url = new URL(app.url), origin = url.origin;
   const token = new URLSearchParams(url.hash.slice(1)).get('token');
   const auth = await fetch(origin + '/api/session', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin }, body: JSON.stringify({ token }) });
-  const headers = { Cookie: auth.headers.get('set-cookie').split(';')[0] };
-  const read = (id, after) => fetch(`${origin}/api/threads/${id}?limit=100${after ? '&cursor=' + encodeURIComponent(after) : ''}`, { headers });
+  const headers = { Cookie: required(required(auth.headers.get('set-cookie')).split(';')[0]) };
+  const read = (id: string, after?: string) => fetch(`${origin}/api/threads/${id}?limit=100${after ? '&cursor=' + encodeURIComponent(after) : ''}`, { headers });
   const first = await (await read(ROOT)).json();
   assert.ok(first.nextCursor.length <= 4096, `HTTP cursor is ${first.nextCursor.length} characters`);
   assert.equal((await (await read(ROOT)).json()).nextCursor, first.nextCursor, 'repeated pages share a continuation');
@@ -1169,19 +1288,21 @@ test('provider history cursors fit the HTTP query and stay bound to their chat (
   assert.equal(socket.sent.filter(row => row.method === 'thread/items/list').length, count, 'unknown continuations never reach the engine');
   const second = await read(ROOT, first.nextCursor);
   assert.equal(second.status, 200);
-  assert.deepEqual((await second.json()).data.map(row => row.turnId), ['oldest']);
-  assert.equal(socket.sent.filter(row => row.method === 'thread/items/list').at(-1).params.cursor, cursor, 'the engine receives its original cursor');
+  assert.deepEqual((await second.json()).data.map((row: { turnId: string }) => row.turnId), ['oldest']);
+  assert.equal(required(required(socket.sent.filter(row => row.method === 'thread/items/list').at(-1)).params).cursor, cursor, 'the engine receives its original cursor');
   const index = await (await fetch(`${origin}/api/threads/${ROOT}/prompts`, { headers })).json();
-  assert.deepEqual(index.data.map(row => row.turnId), ['oldest', 'newest']);
+  assert.deepEqual(index.data.map((row: { turnId: string }) => row.turnId), ['oldest', 'newest']);
 });
 
 test('live voice delivers SDP privately and ends the native call when its window disconnects', async t => {
   const { client, socket } = fixture(); await client.initialize();
   const nativeSend = socket.send;
-  let stopCount = 0, startRequest, holdStart = false, finishStart, chatgpt = true, savedVoice;
+  let stopCount = 0, holdStart = false, chatgpt = true;
+  let startRequest: { params: { transport: { type: string }; voice: string; initialItems: { role: string; text: string }[]; delegationAckFiller: boolean } } | undefined;
+  let finishStart: (() => void) | undefined, savedVoice: unknown;
   socket.send = raw => {
     const request = JSON.parse(raw);
-    const answer = result => queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, result })));
+    const answer = (result: unknown) => queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, result })));
     if (request.method === 'config/read') { answer({ config: { realtime: savedVoice ? { voice: savedVoice } : undefined } }); return; }
     if (request.method === 'config/batchWrite') { socket.sent.push(request); savedVoice = request.params.edits[0].value; answer({}); return; }
     if (request.method === 'account/read' && !chatgpt) { queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, result: { account: { type: 'apiKey' } } }))); return; }
@@ -1198,32 +1319,32 @@ test('live voice delivers SDP privately and ends the native call when its window
   const app = await startDesktopServer({ client }); t.after(() => app.close());
   const url = new URL(app.url), origin = url.origin;
   const auth = await fetch(origin + '/api/session', { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ token: new URLSearchParams(url.hash.slice(1)).get('token') }) });
-  const headers = { Origin: origin, Cookie: auth.headers.get('set-cookie').split(';')[0], 'Content-Type': 'application/json' };
-  const post = (body, signal) => fetch(origin + '/api/voice', { method: 'POST', headers, body: JSON.stringify(body), signal });
+  const headers = { Origin: origin, Cookie: required(required(auth.headers.get('set-cookie')).split(';')[0]), 'Content-Type': 'application/json' };
+  const post = (body: unknown, signal?: AbortSignal) => fetch(origin + '/api/voice', { method: 'POST', headers, body: JSON.stringify(body), ...(signal ? { signal } : {}) });
   const catalog = await (await fetch(origin + '/api/voice', { headers })).json();
   assert.deepEqual(catalog, { available: true, voices: ['cove', 'juniper'], voice: 'cove' }, 'no saved choice: the native default');
-  const choose = voice => fetch(origin + '/api/voice/choice', { method: 'POST', headers, body: JSON.stringify({ voice }) });
+  const choose = (voice: string) => fetch(origin + '/api/voice/choice', { method: 'POST', headers, body: JSON.stringify({ voice }) });
   assert.equal((await post({ threadId: 'invalid', sdp: 'v=0\r\noffer' })).status, 400);
   const unsupported = await choose('alloy'); // a voice of another protocol version
   assert.equal(unsupported.status, 400); assert.match(await unsupported.text(), /Choose one of the listed voices/);
   assert.equal(socket.sent.filter(row => row.method === 'config/batchWrite').length, 0, 'an unlisted voice is never saved');
   assert.deepEqual(await (await choose('juniper')).json(), { available: true, voices: ['cove', 'juniper'], voice: 'juniper' });
-  assert.deepEqual(socket.sent.find(row => row.method === 'config/batchWrite').params.edits, [{ keyPath: 'realtime.voice', value: 'juniper', mergeStrategy: 'replace' }]);
+  assert.deepEqual(required(required(socket.sent.find(row => row.method === 'config/batchWrite')).params).edits, [{ keyPath: 'realtime.voice', value: 'juniper', mergeStrategy: 'replace' }]);
   assert.equal(socket.sent.filter(row => row.method === 'thread/realtime/start').length, 0);
   const abort = new AbortController();
   const response = await post({ threadId: ROOT, sdp: 'v=0\r\noffer' }, abort.signal);
   assert.equal(response.status, 200);
-  assert.match(response.headers.get('content-type'), /ndjson/);
-  const reader = response.body.getReader();
+  assert.match(required(response.headers.get('content-type')), /ndjson/);
+  const reader = required(response.body).getReader();
   let received = ''; while (!received.includes('answer')) received += new TextDecoder().decode((await reader.read()).value);
   assert.doesNotMatch(received, /PRIVATE CONFIG SECRET|auth|token/);
   assert.equal(JSON.parse(received.trim()).sdp, 'v=0\r\nanswer');
-  assert.equal(startRequest.params.transport.type, 'webrtc');
-  assert.equal(startRequest.params.voice, 'juniper', 'the call speaks in the saved voice');
-  assert.equal(startRequest.params.initialItems[0].role, 'developer', 'voice receives the current Elpis execution context');
+  assert.equal(required(startRequest).params.transport.type, 'webrtc');
+  assert.equal(required(startRequest).params.voice, 'juniper', 'the call speaks in the saved voice');
+  assert.equal(required(required(startRequest).params.initialItems[0]).role, 'developer', 'voice receives the current Elpis execution context');
   // 5 Nov: the voice told Masih a finished edit "hit a snag" while it waited. It waits silently and reports only the agent's outcome.
-  assert.equal(startRequest.params.delegationAckFiller, false, 'no filler speech of its own while the agent works');
-  assert.match(startRequest.params.initialItems[0].text, /never say a task failed, hit a snag or could not be done unless its reply says so/);
+  assert.equal(required(startRequest).params.delegationAckFiller, false, 'no filler speech of its own while the agent works');
+  assert.match(required(required(startRequest).params.initialItems[0]).text, /never say a task failed, hit a snag or could not be done unless its reply says so/);
   assert.equal((await post({ threadId: ROOT, sdp: 'v=0\r\noffer' })).status, 409);
   abort.abort(); await reader.cancel().catch(() => {});
   const deadline = Date.now() + 2000;
@@ -1234,7 +1355,7 @@ test('live voice delivers SDP privately and ends the native call when its window
   const startingDeadline = Date.now() + 2000;
   while (!finishStart && Date.now() < startingDeadline) await new Promise(resolve => setTimeout(resolve, 10));
   assert.equal(typeof finishStart, 'function');
-  duringStart.abort(); await pending.body.cancel().catch(() => {}); finishStart();
+  duringStart.abort(); await required(pending.body).cancel().catch(() => {}); required(finishStart)();
   const endedDeadline = Date.now() + 2000;
   while (stopCount < 2 && Date.now() < endedDeadline) await new Promise(resolve => setTimeout(resolve, 10));
   assert.equal(stopCount, 2, 'End during native startup must stop the late call');
@@ -1253,16 +1374,16 @@ test('HTTP requires capability/cookie, strict origin/host, allowlisted routes an
   const app = await startDesktopServer({ client, staticDir: out }); t.after(() => app.close());
   const url = new URL(app.url); const origin = url.origin;
   const token = new URLSearchParams(url.hash.slice(1)).get('token');
-  const post = (pathname, data, headers = {}) => fetch(origin + pathname, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin, ...headers }, body: JSON.stringify(data) });
+  const post = (pathname: string, data: unknown, headers = {}) => fetch(origin + pathname, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin, ...headers }, body: JSON.stringify(data) });
   assert.equal((await fetch(origin + '/')).status, 200);
   assert.equal((await fetch(origin + '/api/threads')).status, 401);
   assert.equal((await post('/api/session', { token: 'wrong' })).status, 403);
   assert.equal((await post('/api/session', { token }, { Origin: 'https://evil.example' })).status, 403);
   const auth = await post('/api/session', { token }); assert.equal(auth.status, 200);
-  assert.match(auth.headers.get('set-cookie'), /HttpOnly; SameSite=Strict/);
-  const cookie = auth.headers.get('set-cookie').split(';')[0];
-  const get = pathname => fetch(origin + pathname, { headers: { Cookie: cookie } });
-  const result = await (await get('/api/threads')).json(); assert.deepEqual(result.data.map(thread => thread.id), [ROOT]);
+  assert.match(required(auth.headers.get('set-cookie')), /HttpOnly; SameSite=Strict/);
+  const cookie = required(required(auth.headers.get('set-cookie')).split(';')[0]);
+  const get = (pathname: string) => fetch(origin + pathname, { headers: { Cookie: cookie } });
+  const result = await (await get('/api/threads')).json(); assert.deepEqual(result.data.map((thread: { id: string }) => thread.id), [ROOT]);
   const all = await (await get('/api/threads?includeAgentRuns=true')).json(); assert.equal(all.data.length, 2);
   assert.equal((await get('/api/threads?includeAgentRuns=yes')).status, 400);
   const child = await (await get(`/api/threads/${CHILD}`)).json(); assert.equal(child.thread.id, CHILD);
@@ -1306,12 +1427,12 @@ test('workflow workers keep recorded task names and lineage when native list omi
   assert.ok(worker);
   assert.equal(worker.workflowTaskTitle,'Inspect actual project');
   assert.equal(worker.parentThreadId,ROOT,'list must preserve the native read and recorded graph lineage');
-  assert.deepEqual(socket.sent.filter(row=>row.method==='thread/read').map(row=>row.params.threadId),[CHILD]);
+  assert.deepEqual(socket.sent.filter(row=>row.method==='thread/read').map(row=>required(row.params).threadId),[CHILD]);
   const again=(await client.listThreads({includeAgentRuns:true})).data.find(thread=>thread.id===CHILD);
   assert.ok(again);
   assert.equal(again.parentThreadId,ROOT);
   assert.equal(socket.sent.filter(row=>row.method==='thread/read').length,1,'verified workflow metadata is reused');
-  threads.get(CHILD).source={subAgent:{other:`work_graph:${graphId}:different-task`}};
+  required(threads.get(CHILD)).source={subAgent:{other:`work_graph:${graphId}:different-task`}};
   const unrelated=(await client.listThreads({includeAgentRuns:true})).data.find(thread=>thread.id===CHILD);
   assert.ok(unrelated);
   assert.equal(unrelated.workflowTaskTitle,undefined);
@@ -1324,7 +1445,7 @@ test('workflow history includes native teams discovered through their task chats
   try {
     await client.initialize();
     const id = '00000000-0000-0000-0000-000000000099';
-    threads.get(CHILD).source = { subAgent: { other: `work_graph:${id}:review` } };
+    required(threads.get(CHILD)).source = { subAgent: { other: `work_graph:${id}:review` } };
     workflowRecords.push({ id, rootThreadId: ROOT, name: 'Native review', status: 'running', tasks: [] });
     const result = await client.workflowHistory();
     assert.equal(result.data.length, 1);
@@ -1334,69 +1455,72 @@ test('workflow history includes native teams discovered through their task chats
   } finally { client.close(); }
 });
 
-test('workflow history Remove and restart Undo are profile-scoped; active work and chats are preserved', async t => {
+test('workflow history Remove and restart Undo are profile-scoped; active work and chats are preserved', async () => {
   const dir = createTestTempDir(path.join(os.tmpdir(), 'elpis-history-'));
   const home = path.join(dir, 'profile'), ambient = path.join(dir, 'ambient');
   const savedId = '00000000-0000-0000-0000-000000000098', activeId = '00000000-0000-0000-0000-000000000099', nativeId = '00000000-0000-0000-0000-000000000096';
   const saved = { id: savedId, rootThreadId: ROOT, name: 'Finished team', status: 'cancelled', tasks: [{ id: 'not-started', status: 'pending' }] };
-  const seed = async (profile, record) => {
+  const seed = async (profile: string, record: FixtureGraph) => {
     await fs.mkdir(path.join(profile, 'desktop-workflows'), { recursive: true });
     const file = path.join(profile, 'desktop-workflows', `${record.id}.json`), bytes = JSON.stringify(record);
     await fs.writeFile(file, bytes); return { file, bytes };
   };
   const original = await seed(home, saved), untouched = await seed(ambient, { ...saved, name: 'Other profile' });
   const beforeHome = process.env.ELPIS_HOME, connect = DesktopClient.connect;
-  let app, first, second;
-  const open = async client => {
+  let app: Awaited<ReturnType<typeof startDesktopServer>> | null = null;
+  const fixtures: { first?: ReturnType<typeof fixture>; second?: ReturnType<typeof fixture> } = {};
+  const open = async (client?: DesktopClient) => {
     const result = await startDesktopServer({ ...(client ? { client } : {}), elpisHome: home, trashFile: path.join(home, 'chat-trash.json'),
       loveSpot: { directory: path.join(home, 'drawing'), screenshots: path.join(home, 'screenshots') } });
     const url = new URL(result.url), origin = url.origin;
     const auth = await fetch(`${origin}/api/session`, { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ token: new URLSearchParams(url.hash.slice(1)).get('token') }) });
     assert.equal(auth.status, 200);
-    const headers = { Origin: origin, 'Content-Type': 'application/json', Cookie: auth.headers.get('set-cookie').split(';')[0] };
+    const headers = { Origin: origin, 'Content-Type': 'application/json', Cookie: required(required(auth.headers.get('set-cookie')).split(';')[0]) };
     return { app: result, request: (route = '', method = 'GET') => fetch(`${origin}/api/workflows/history${route}`, { method, headers, ...(method === 'POST' ? { body: '{}' } : {}) }) };
   };
   try {
     process.env.ELPIS_HOME = ambient;
     // Stand in only for the Unix transport: the server's actual options construct the real client and storage.
     DesktopClient.connect = async options => {
-      first = fixture({ clientOptions: { ...options, home: options.home, workflowOptions: {} } }); await first.client.initialize();
-      first.threads.get(CHILD).source = { subAgent: { other: `work_graph:${activeId}:review` } };
+      const first = fixture({ clientOptions: { ...options, home: required(options).home, workflowOptions: {} } }); fixtures.first = first; await first.client.initialize();
+      required(first.threads.get(CHILD)).source = { subAgent: { other: `work_graph:${activeId}:review` } };
       first.workflowRecords.push({ id: activeId, rootThreadId: ROOT, name: 'Still working', status: 'running', tasks: [] });
       return first.client;
     };
     let opened = await open(); app = opened.app; let request = opened.request;
+    const first = required(fixtures.first);
     DesktopClient.connect = connect;
-    let history = await (await request()).json();
+    let history: { data: { id: string; name: string; removable: boolean }[]; canUndo: boolean } = await (await request()).json();
     assert.deepEqual(history.data.map(run => run.name).sort(), ['Finished team', 'Still working']);
     assert.equal(history.canUndo, false);
     const refused = await request(`/${activeId}/remove`, 'POST');
     assert.equal(refused.status, 409); assert.match((await refused.json()).error, /finish|running/i);
     assert.equal((await request('/00000000-0000-0000-0000-000000000097/remove', 'POST')).status, 404);
-    const continuation = { ...saved, id: nativeId, status: 'succeeded', next: { status: 'waiting' } };
-    first.workflowRecords.push(continuation);
+    const continuation: typeof saved & { next: { status: string | undefined } } = { ...saved, id: nativeId, status: 'succeeded', next: { status: 'waiting' } };
+    required(first).workflowRecords.push(continuation);
     for (const status of ['waiting', 'starting', 'running', 'unknown', undefined]) {
       continuation.next.status = status;
       const blocked = await request(`/${nativeId}/remove`, 'POST');
       assert.equal(blocked.status, 409, `a succeeded parent cannot hide a ${status ?? 'missing-status'} continuation`);
-      const visible = (await (await request()).json()).data.find(run => run.id === nativeId);
+      const visible = (await (await request()).json()).data.find((run: { id: string }) => run.id === nativeId);
       assert.ok(visible); assert.equal(visible.removable, false);
     }
     continuation.next.status = 'succeeded';
     assert.equal((await request(`/${nativeId}/remove`, 'POST')).status, 200, 'only a terminal continuation permits removal');
     assert.equal((await request('/undo', 'POST')).status, 200);
-    first.workflowRecords.pop();
+    required(first).workflowRecords.pop();
     // A second Remove waits behind a held metadata write. Its native run resumes before that queue advances.
-    const resumed = { ...saved, id: nativeId, status: 'completed' }; first.workflowRecords.push(resumed);
-    const gate = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
+    const resumed = { ...saved, id: nativeId, status: 'completed' }; required(first).workflowRecords.push(resumed);
+    const gate = () => { let release: (() => void) | undefined; const promise = new Promise<void>(done => { release = done; }); return { promise, resolve: () => required(release)() }; };
     const writing = gate(), releaseWrite = gate(), queued = gate();
-    const renameBeforeQueue = fs.rename, removeBeforeQueue = first.client.removeWorkflowHistory;
-    let holdWrite = true, firstRemoval, queuedRemoval;
+    const renameBeforeQueue = fs.rename, removeBeforeQueue = required(first).client.removeWorkflowHistory;
+    let holdWrite = true;
+    let firstRemoval: Promise<Response> | undefined, queuedRemoval: Promise<Response> | undefined;
     fs.rename = async (source, target) => {
       if (holdWrite && target === path.join(home, 'desktop-workflow-history.json')) { holdWrite = false; writing.resolve(); await releaseWrite.promise; }
       return renameBeforeQueue(source, target);
     };
-    first.client.removeWorkflowHistory = function(id, body) {
+    required(first).client.removeWorkflowHistory = function(id: unknown, body: unknown) {
       const pending = removeBeforeQueue.call(this, id, body);
       if (id === nativeId) queued.resolve();
       return pending;
@@ -1409,13 +1533,13 @@ test('workflow history Remove and restart Undo are profile-scoped; active work a
       resumed.status = 'running'; releaseWrite.resolve();
       assert.equal((await firstRemoval).status, 200);
       assert.equal((await queuedRemoval).status, 409, 'the queued action must read resumed state, not a pre-queue snapshot');
-      assert.ok((await (await request()).json()).data.some(run => run.id === nativeId), 'resumed work stays in history');
+      assert.ok((await (await request()).json()).data.some((run: { id: string }) => run.id === nativeId), 'resumed work stays in history');
     } finally {
-      releaseWrite.resolve(); fs.rename = renameBeforeQueue; first.client.removeWorkflowHistory = removeBeforeQueue;
-      await Promise.allSettled([firstRemoval, queuedRemoval].filter(Boolean));
+      releaseWrite.resolve(); fs.rename = renameBeforeQueue; required(first).client.removeWorkflowHistory = removeBeforeQueue;
+      await Promise.allSettled([firstRemoval, queuedRemoval].filter((value): value is Promise<Response> => value !== undefined));
     }
     assert.equal((await request('/undo', 'POST')).status, 200);
-    first.workflowRecords.pop();
+    required(first).workflowRecords.pop();
     const rename = fs.rename;
     fs.rename = (source, target) => target === path.join(home, 'desktop-workflow-history.json') ? Promise.reject(Object.assign(new Error('Disk full'), { code: 'ENOSPC' })) : rename(source, target);
     try {
@@ -1428,14 +1552,14 @@ test('workflow history Remove and restart Undo are profile-scoped; active work a
     history = await (await request()).json();
     assert.deepEqual(history.data.map(run => run.id), [activeId]); assert.equal(history.canUndo, true);
     // Even an external resume must make a removed record visible again while it works.
-    const native = { ...saved, id: nativeId, status: 'completed' }; first.workflowRecords.push(native);
+    const native = { ...saved, id: nativeId, status: 'completed' }; required(first).workflowRecords.push(native);
     assert.equal((await request(`/${nativeId}/remove`, 'POST')).status, 200);
     native.status = 'running';
-    assert.ok((await (await request()).json()).data.some(run => run.id === nativeId), 'removal cannot conceal resumed work');
+    assert.ok((await (await request()).json()).data.some((run: { id: string }) => run.id === nativeId), 'removal cannot conceal resumed work');
     assert.equal((await request('/undo', 'POST')).status, 200);
-    first.workflowRecords.pop();
+    required(first).workflowRecords.pop();
     await app.close(); app = null;
-    second = fixture({ clientOptions: { home, workflowOptions: {} } }); await second.client.initialize();
+    const second = fixture({ clientOptions: { home, workflowOptions: {} } }); fixtures.second = second; await second.client.initialize();
     opened = await open(second.client); app = opened.app; request = opened.request;
     history = await (await request()).json(); assert.deepEqual(history.data, []); assert.equal(history.canUndo, true);
     assert.equal((await request('/undo', 'POST')).status, 200);
@@ -1443,11 +1567,11 @@ test('workflow history Remove and restart Undo are profile-scoped; active work a
     assert.deepEqual(history.data.map(run => run.name), ['Finished team']); assert.equal(history.canUndo, false);
     assert.equal(await fs.readFile(original.file, 'utf8'), original.bytes, 'history removal never rewrites the run');
     assert.equal(await fs.readFile(untouched.file, 'utf8'), untouched.bytes, 'the ambient profile is untouched');
-    for (const f of [first, second]) assert.deepEqual(f.socket.sent.filter(row => /thread\/(?:archive|unarchive|delete)|workGraph\/(?:run|stop)|workflowRun\/(?:start|stop|resume)/.test(row.method)), [], 'history actions never mutate chats or execution');
+    for (const f of [first, second]) assert.deepEqual(f.socket.sent.filter(row => /thread\/(?:archive|unarchive|delete)|workGraph\/(?:run|stop)|workflowRun\/(?:start|stop|resume)/.test(row.method ?? '')), [], 'history actions never mutate chats or execution');
   } finally {
     DesktopClient.connect = connect;
     if (beforeHome === undefined) delete process.env.ELPIS_HOME; else process.env.ELPIS_HOME = beforeHome;
-    await app?.close(); first?.client.close(); second?.client.close(); removeTestTempDir(dir);
+    await app?.close(); fixtures.first?.client.close(); fixtures.second?.client.close(); removeTestTempDir(dir);
   }
 });
 
@@ -1457,9 +1581,9 @@ test('manual workflows require an idle root and dispatch the reviewed graph thro
   const draft={rootThreadId:ROOT,name:'Reviewed workflow',maxConcurrency:2,tasks:[task]};
   assert.deepEqual(await client.workflows(ROOT),{data:[]});
   await assert.rejects(client.runWorkflow({...draft,rootThreadId:CHILD}),/root conversation/);
-  threads.get(ROOT).status={type:'active'};
+  required(threads.get(ROOT)).status={type:'active'};
   await assert.rejects(client.runWorkflow(draft),/Wait for/);
-  threads.get(ROOT).status={type:'idle'};
+  required(threads.get(ROOT)).status={type:'idle'};
   await assert.rejects(client.runWorkflow({...draft,approvalPolicy:'never'}),/Unsupported/);
   await assert.rejects(client.runWorkflow({...draft,tasks:[{...task,model:'bad model'}]}),/model ID/);
   assert.equal(socket.sent.some(row=>row.method==='workGraph/run'),false);
@@ -1478,12 +1602,12 @@ test('a task reasoning effort is validated and retained for ACP execution', asyn
   const draft={rootThreadId:ROOT,name:'Effort workflow',tasks:[{...task,reasoningEffort:'high'},{...task,id:'plain',dependsOn:['inspect']}]};
   for(const bad of ['','High','x','high effort','a'.repeat(17),7,null])
     await assert.rejects(client.runWorkflow({...draft,tasks:[{...task,reasoningEffort:bad}]}),/reasoning effort/,JSON.stringify(bad));
-  assert.equal(socket.sent.some(row=>row.method.startsWith('workGraph/run')),false);
+  assert.equal(socket.sent.some(row=>required(row.method).startsWith('workGraph/run')),false);
   const started=await client.runWorkflow(draft);
   const record=(await client.workflows(ROOT)).data.find(row=>row.id===started.graphId);
   assert.ok(record); assert.ok(record.tasks[0]); assert.ok('reasoningEffort' in record.tasks[0]);
   assert.equal(record.tasks[0].reasoningEffort,'high');
-  assert.equal(socket.sent.some(row=>row.method.startsWith('workGraph/run')),false);
+  assert.equal(socket.sent.some(row=>required(row.method).startsWith('workGraph/run')),false);
   client.close();
 });
 
@@ -1493,12 +1617,12 @@ test('worktree isolation is validated and retained by the ACP workflow', async (
   const draft={rootThreadId:ROOT,name:'Isolated workflow',isolation:'worktree',tasks:[task]};
   for(const bad of ['','Worktree','copy',true,null,{}])
     await assert.rejects(client.runWorkflow({...draft,isolation:bad}),/isolation/,JSON.stringify(bad));
-  assert.equal(socket.sent.some(row=>row.method.startsWith('workGraph/run')),false);
+  assert.equal(socket.sent.some(row=>required(row.method).startsWith('workGraph/run')),false);
   const started=await client.runWorkflow(draft);
   const record=(await client.workflows(ROOT)).data.find(row=>row.id===started.graphId);
   assert.ok(record); assert.ok('isolation' in record);
   assert.equal(record.isolation,'worktree');
-  assert.equal(socket.sent.some(row=>row.method.startsWith('workGraph/run')),false);
+  assert.equal(socket.sent.some(row=>required(row.method).startsWith('workGraph/run')),false);
   client.close();
 });
 
@@ -1506,11 +1630,11 @@ test('browser rag command reaches actual native turn input without changing plai
   for (const input of ['/rag', '/rag show', '/ragged show', 'rag show']) {
     const { client, socket } = fixture(); await client.initialize();
     await client.send(ROOT, { text: input });
-    const submitted = socket.sent.findLast(row => row.method === 'turn/start').params.input[0].text;
+    const submitted = required(required(required(required(socket.sent.findLast(row => row.method === 'turn/start')).params).input)[0]).text;
     if (input === '/rag' || input === '/rag show') {
-      assert(submitted.includes('rag config show'));
-      assert(submitted.includes('configured RAG MCP server'));
-      assert(submitted.endsWith(input === '/rag' ? 'RAG request: ' : 'RAG request: show'));
+      assert(required(submitted).includes('rag config show'));
+      assert(required(submitted).includes('configured RAG MCP server'));
+      assert(required(submitted).endsWith(input === '/rag' ? 'RAG request: ' : 'RAG request: show'));
     } else assert.equal(submitted, input);
     client.close();
   }
@@ -1522,29 +1646,29 @@ test('provider settings redact stored keys and apply private versioned native co
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-provider-settings-'));
   const configPath = path.join(root, 'config.toml');
   await fs.writeFile(configPath, 'fixture', { mode: 0o644 });
-  configRead.layers[0].name.file = configPath;
+  required(configRead.layers[0]).name.file = configPath;
   configRead.config.model_providers.saved = { name: 'Stored OpenRouter', base_url: 'https://openrouter.ai/api/v1', experimental_bearer_token: 'provider-fixture-secret' };
   const snapshot = await client.providerSettings();
   assert.equal(snapshot.application.scope, 'newConversations');
   assert(snapshot.application.credentialClearMessage.includes('does not revoke authentication in existing conversations'));
   const saved = snapshot.providers.find(provider => provider.id === 'saved');
-  assert.deepEqual(saved.auth, { source: 'stored', keySet: true, envKey: null, acceptsKey: false });
+  assert.deepEqual(required(saved).auth, { source: 'stored', keySet: true, envKey: null, acceptsKey: false });
   assert(!JSON.stringify(snapshot).includes('provider-fixture-secret'));
-  assert.equal((await client.providers()).openrouter.find(provider => provider.id === 'saved').keySet, true);
+  assert.equal(required((await client.providers()).openrouter.find(provider => provider.id === 'saved')).keySet, true);
   const input = { version: 'user-version', id: 'saved', name: 'Updated OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', credential: { action: 'replace', value: 'provider-fixture-replacement' } };
   const updated = await client.saveProvider(input);
   assert(!JSON.stringify(updated).includes('provider-fixture-replacement'));
   assert.equal((await fs.stat(configPath)).mode & 0o777, 0o600);
   const write = socket.sent.findLast(row => row.method === 'config/batchWrite');
-  assert.equal(write.params.expectedVersion, 'user-version');
-  assert(write.params.edits.some(edit => edit.keyPath === 'model_providers.saved.experimental_bearer_token' && edit.value === 'provider-fixture-replacement'));
-  assert(write.params.edits.some(edit => edit.keyPath === 'model_providers.saved.env_key' && edit.value === null));
+  assert.equal(required(required(write).params).expectedVersion, 'user-version');
+  assert(required(required(required(write).params).edits).some(edit => edit.keyPath === 'model_providers.saved.experimental_bearer_token' && edit.value === 'provider-fixture-replacement'));
+  assert(required(required(required(write).params).edits).some(edit => edit.keyPath === 'model_providers.saved.env_key' && edit.value === null));
   for (const value of ['', '********', '••••••••']) {
     await client.saveProvider({ ...input, credential: { action: 'replace', value } });
-    assert(!socket.sent.findLast(row => row.method === 'config/batchWrite').params.edits.some(edit => /bearer_token|env_key/.test(edit.keyPath)));
+    assert(!required(required(required(socket.sent.findLast(row => row.method === 'config/batchWrite')).params).edits).some(edit => /bearer_token|env_key/.test(edit.keyPath)));
   }
   await client.saveProvider({ ...input, credential: { action: 'clear' } });
-  assert.deepEqual(socket.sent.findLast(row => row.method === 'config/batchWrite').params.edits.slice(-2).map(edit => edit.value), [null, null]);
+  assert.deepEqual(required(required(required(socket.sent.findLast(row => row.method === 'config/batchWrite')).params).edits).slice(-2).map(edit => edit.value), [null, null]);
   client.close();
 });
 
@@ -1556,13 +1680,13 @@ test('custom API models are validated under the selected native provider for cre
   await assert.rejects(client.createThread({ model: 'fixture/custom-model' }), /current Elpis model list/);
   assert.equal(socket.sent.filter(row => row.method === 'thread/start').length, 0);
   await client.createThread({ provider: 'local', model: 'fixture/custom-model' });
-  assert.deepEqual(socket.sent.findLast(row => row.method === 'thread/start').params, { model: 'fixture/custom-model', modelProvider: 'local', approvalPolicy: 'never', approvalsReviewer: 'user', permissions: ':danger-full-access', elpisPermissionSource: 'default' }, 'a new chat starts in the default mode, Full access');
+  assert.deepEqual(required(socket.sent.findLast(row => row.method === 'thread/start')).params, { model: 'fixture/custom-model', modelProvider: 'local', approvalPolicy: 'never', approvalsReviewer: 'user', permissions: ':danger-full-access', elpisPermissionSource: 'default' }, 'a new chat starts in the default mode, Full access');
   // Reflect the native thread/read route rather than trusting the renderer's selection.
-  threads.get(CREATED).modelProvider = 'local'; threads.get(CREATED).model = 'fixture/custom-model';
+  required(threads.get(CREATED)).modelProvider = 'local'; required(threads.get(CREATED)).model = 'fixture/custom-model';
   await client.send(CREATED, { text: 'follow-up', model: 'fixture/custom-model' });
-  assert.equal(socket.sent.findLast(row => row.method === 'turn/start').params.model, 'fixture/custom-model');
+  assert.equal(required(required(socket.sent.findLast(row => row.method === 'turn/start')).params).model, 'fixture/custom-model');
   await client.steer(CREATED, { text: 'steer same route', expectedTurnId: 'new-turn' });
-  assert.equal(socket.sent.findLast(row => row.method === 'turn/steer').params.threadId, CREATED);
+  assert.equal(required(required(socket.sent.findLast(row => row.method === 'turn/steer')).params).threadId, CREATED);
   await assert.rejects(client.send(ROOT, { text: 'default provider stays catalog bound', model: 'fixture/custom-model' }), /current Elpis model list/);
   client.close();
 });
@@ -1572,13 +1696,13 @@ test('provider setup rejects unsafe endpoints, policy, stale versions and altern
   requirementsRead.requirements = { modelProvider: null };
   const input = { version: 'user-version', id: 'custom', name: 'Custom', baseUrl: 'http://localhost:1234/v1', credential: { action: 'preserve' } };
   for (const baseUrl of ['http://example.com/v1', 'https://key@example.com/v1', 'https://example.com/v1?key=secret', 'file:///private', 'http://0.0.0.0:1234/v1']) await assert.rejects(client.saveProvider({ ...input, baseUrl }), /HTTPS/);
-  await assert.rejects(client.saveProvider({ ...input, version: 'stale' }), error => error.status === 409);
+  await assert.rejects(client.saveProvider({ ...input, version: 'stale' }), error => error !== null && typeof error === 'object' && 'status' in error && error.status === 409);
   await assert.rejects(client.saveProvider({ ...input, id: 'openai' }), /custom provider ID/);
   configRead.config.model_providers.custom = { name: 'Command auth', base_url: input.baseUrl, auth: { command: '/bin/true' } };
-  await assert.rejects(client.saveProvider(input), error => error.status === 403);
+  await assert.rejects(client.saveProvider(input), error => error !== null && typeof error === 'object' && 'status' in error && error.status === 403);
   delete configRead.config.model_providers.custom;
   requirementsRead.requirements.modelProvider = 'openai';
-  await assert.rejects(client.saveProvider(input), error => error.status === 403);
+  await assert.rejects(client.saveProvider(input), error => error !== null && typeof error === 'object' && 'status' in error && error.status === 403);
   assert.equal(socket.sent.filter(row => row.method === 'config/batchWrite').length, 0);
   client.close();
 });
@@ -1588,12 +1712,12 @@ test('MCP credentials preserve blanks and masks and never return secrets', async
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-mcp-credential-'));
   const configPath = path.join(root, 'config.toml');
   await fs.writeFile(configPath, 'fixture config', { mode: 0o644 });
-  configRead.layers[0].name.file = configPath;
+  required(configRead.layers[0]).name.file = configPath;
   assert.equal((await client.mcp()).configPath, configPath);
   const saved = await client.saveMcp({ version: 'user-version', action: 'credentials', name: 'whispertype', env: { OPENROUTER_API_KEY_COMPANY: 'new-fixture-key' } });
   assert(!JSON.stringify(saved).includes('new-fixture-key'));
   assert.equal((await fs.stat(configPath)).mode & 0o777, 0o600);
-  assert.deepEqual(socket.sent.findLast(m => m.method === 'config/batchWrite').params.edits, [{ keyPath: 'mcp_servers.whispertype.env.OPENROUTER_API_KEY_COMPANY', value: 'new-fixture-key', mergeStrategy: 'replace' }]);
+  assert.deepEqual(required(required(socket.sent.findLast(m => m.method === 'config/batchWrite')).params).edits, [{ keyPath: 'mcp_servers.whispertype.env.OPENROUTER_API_KEY_COMPANY', value: 'new-fixture-key', mergeStrategy: 'replace' }]);
   const count = socket.sent.filter(m => m.method === 'config/batchWrite').length;
   for (const value of ['', '********', '••••••••']) await client.saveMcp({ version: 'user-version', action: 'credentials', name: 'whispertype', env: { OPENROUTER_API_KEY_COMPANY: value } });
   assert.equal(socket.sent.filter(m => m.method === 'config/batchWrite').length, count);
@@ -1609,12 +1733,12 @@ test('MCP credential writes reject unsafe files before any native write', async 
   await fs.writeFile(target, 'fixture', { mode: 0o644 });
   const link = path.join(root, 'link.toml'); await fs.symlink(target, link);
   for (const file of [link, root, path.join(root, 'missing.toml')]) {
-    configRead.layers[0].name.file = file;
-    await assert.rejects(client.saveMcp({ version: 'user-version', action: 'credentials', name: 'rag', env: { OPENROUTER_API_KEY: 'fixture-key' } }), error => error.status === 403);
+    required(configRead.layers[0]).name.file = file;
+    await assert.rejects(client.saveMcp({ version: 'user-version', action: 'credentials', name: 'rag', env: { OPENROUTER_API_KEY: 'fixture-key' } }), error => error !== null && typeof error === 'object' && 'status' in error && error.status === 403);
   }
   assert.equal(socket.sent.filter(row => row.method === 'config/batchWrite').length, 0);
   assert.equal((await fs.stat(target)).mode & 0o777, 0o644);
-  configRead.layers[0].name.file = target;
+  required(configRead.layers[0]).name.file = target;
   await client.saveMcp({ version: 'user-version', action: 'credentials', name: 'rag', env: { OPENROUTER_API_KEY: '' } });
   assert.equal((await fs.stat(target)).mode & 0o777, 0o644, 'a blank key must not change config or permissions');
   client.close();
@@ -1625,14 +1749,14 @@ test('MCP credential errors never echo submitted keys', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-mcp-credential-error-'));
   const configPath = path.join(root, 'config.toml');
   await fs.writeFile(configPath, 'fixture config', { mode: 0o600 });
-  configRead.layers[0].name.file = configPath;
+  required(configRead.layers[0]).name.file = configPath;
   const send = socket.send;
   socket.send = raw => {
     const request = JSON.parse(raw);
     if (request.method !== 'config/batchWrite') return send(raw);
     queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, error: { code: -32603, message: 'Rejected secret-fixture-leak' } })));
   };
-  await assert.rejects(client.saveMcp({ version: 'user-version', action: 'credentials', name: 'rag', env: { OPENROUTER_API_KEY: 'secret-fixture-leak' } }), error => !error.message.includes('secret-fixture-leak') && error.status === 502);
+  await assert.rejects(client.saveMcp({ version: 'user-version', action: 'credentials', name: 'rag', env: { OPENROUTER_API_KEY: 'secret-fixture-leak' } }), error => error instanceof Error && 'status' in error && !error.message.includes('secret-fixture-leak') && error.status === 502);
   client.close();
 });
 
@@ -1648,7 +1772,7 @@ test('opening a chat rejoins it without overrides, reports its running turn, and
   const { client, socket } = fixture(); await client.initialize();
   const opened = await client.resume(ROOT, {});
   assert.equal(opened.thread.desktopAccess.writable, true); assert.equal(opened.activeTurnId, null);
-  assert.deepEqual(socket.sent.find(message => message.method === 'thread/resume').params,
+  assert.deepEqual(required(socket.sent.find(message => message.method === 'thread/resume')).params,
     { threadId: ROOT, excludeTurns: true, initialTurnsPage: { limit: 1, sortDirection: 'desc', itemsView: 'summary' } });
   const again = await client.resume(ROOT, {});
   assert.equal(again.thread.id, ROOT);
@@ -1658,26 +1782,26 @@ test('opening a chat rejoins it without overrides, reports its running turn, and
   assert.equal(agent.thread.desktopAccess.mode, 'continue');
   await assert.rejects(client.resume(ROOT, { model: 'override' }), /Unsupported/);
   assert.deepEqual(await client.interrupt(CHILD, {}), {});
-  assert.deepEqual(socket.sent.find(message => message.method === 'turn/interrupt').params, { threadId: CHILD, turnId: 'running-turn' }, 'stop finds the running turn');
+  assert.deepEqual(required(socket.sent.find(message => message.method === 'turn/interrupt')).params, { threadId: CHILD, turnId: 'running-turn' }, 'stop finds the running turn');
   client.close();
 });
 
 test('rename, archive, unarchive and edit-and-resend reach native thread methods; agents are never reverted', async () => {
   const { client, socket, threads } = fixture(); await client.initialize(); await client.listThreads();
   assert.equal((await client.renameThread(ROOT, { name: '  Parser fix  ' })).thread.name, 'Parser fix');
-  assert.deepEqual(socket.sent.filter(row => row.method === 'thread/name/set').at(-1).params, { threadId: ROOT, name: 'Parser fix' });
+  assert.deepEqual(required(socket.sent.filter(row => row.method === 'thread/name/set').at(-1)).params, { threadId: ROOT, name: 'Parser fix' });
   await assert.rejects(client.renameThread(ROOT, { name: '   ' }), /Invalid name|Enter a name/);
   assert.deepEqual(await client.archiveThread(ROOT, {}), { archived: true });
   assert.equal((await client.listThreads()).data.some(thread => thread.id === ROOT), false, 'archived chats leave the list');
   assert.deepEqual((await client.listThreads({ archived: true })).data.map(thread => thread.id), [ROOT]);
-  assert.equal(socket.sent.filter(row => row.method === 'thread/list').at(-1).params.archived, true);
+  assert.equal(required(required(socket.sent.filter(row => row.method === 'thread/list').at(-1)).params).archived, true);
   assert.equal((await client.unarchiveThread(ROOT, {})).thread.id, ROOT);
   assert.equal((await client.listThreads()).data.some(thread => thread.id === ROOT), true, 'unarchived chats return');
   await client.revert(ROOT, { beforeTurnId: 'turn-1', text: 'Edited prompt' });
-  assert.deepEqual(socket.sent.filter(row => ['thread/revert', 'turn/start'].includes(row.method)).map(row => row.method), ['thread/revert', 'turn/start']);
-  assert.deepEqual(socket.sent.find(row => row.method === 'thread/revert').params, { threadId: ROOT, beforeTurnId: 'turn-1' });
-  assert.match(JSON.stringify(socket.sent.filter(row => row.method === 'turn/start').at(-1).params.input), /Edited prompt/);
-  threads.get(CHILD).status = { type: 'idle' };
+  assert.deepEqual(socket.sent.filter(row => ['thread/revert', 'turn/start'].includes(row.method ?? '')).map(row => row.method), ['thread/revert', 'turn/start']);
+  assert.deepEqual(required(socket.sent.find(row => row.method === 'thread/revert')).params, { threadId: ROOT, beforeTurnId: 'turn-1' });
+  assert.match(JSON.stringify(required(required(socket.sent.filter(row => row.method === 'turn/start').at(-1)).params).input), /Edited prompt/);
+  required(threads.get(CHILD)).status = { type: 'idle' };
   await assert.rejects(client.revert(CHILD, { beforeTurnId: 'turn-1', text: 'Replace' }), /only from its parent/);
   assert.equal(socket.sent.filter(row => row.method === 'thread/revert').length, 1, 'an agent owned by its parent is never reverted');
   client.close();
@@ -1688,17 +1812,17 @@ test('an archived chat opens without an error, and writing in it brings it back 
   await client.archiveThread(ROOT, {});
   const opened = await client.resume(ROOT, {});
   assert.equal(opened.thread.id, ROOT, 'opening an archived chat shows it, read from the engine');
-  assert.equal(threads.get(ROOT).archived, true, 'opening it leaves it archived');
-  const events = []; client.on('event', event => events.push(event));
+  assert.equal(required(threads.get(ROOT)).archived, true, 'opening it leaves it archived');
+  const events: { data?: { method?: string } }[] = []; client.on('event', event => events.push(event));
   await client.send(ROOT, { text: 'One more thing' });
-  assert.equal(threads.get(ROOT).archived, undefined, 'sending brings it back first');
-  assert.deepEqual(socket.sent.filter(row => ['thread/unarchive', 'turn/start'].includes(row.method) && row.params.threadId === ROOT).map(row => row.method), ['thread/unarchive', 'turn/start']);
-  assert.equal(threads.get(CHILD).archived, undefined, 'its agent comes back with it');
-  assert.match(JSON.stringify(socket.sent.filter(row => row.method === 'turn/start').at(-1).params.input), /One more thing/);
+  assert.equal(required(threads.get(ROOT)).archived, undefined, 'sending brings it back first');
+  assert.deepEqual(socket.sent.filter(row => ['thread/unarchive', 'turn/start'].includes(row.method ?? '') && required(row.params).threadId === ROOT).map(row => row.method), ['thread/unarchive', 'turn/start']);
+  assert.equal(required(threads.get(CHILD)).archived, undefined, 'its agent comes back with it');
+  assert.match(JSON.stringify(required(required(socket.sent.filter(row => row.method === 'turn/start').at(-1)).params).input), /One more thing/);
   assert.equal((await client.listThreads()).data.some(thread => thread.id === ROOT), true, 'it is in the chat list again');
   socket.emit('message', JSON.stringify({ method: 'thread/unarchived', params: { threadId: ROOT } }));
   assert(events.some(event => event.data?.method === 'thread/unarchived'), 'the window hears that a chat came back');
-  threads.get(ROOT).status = { type: 'idle' }; threads.get(ROOT).archived = true;
+  required(threads.get(ROOT)).status = { type: 'idle' }; required(threads.get(ROOT)).archived = true;
   const error = await client.setServiceTier(ROOT, { enabled: true }).then(() => null, error => error);
   assert(error, 'a change other than a message still needs the chat back');
   assert.doesNotMatch(error.message, /codex/i); assert.match(error.message, /archived/i);
@@ -1714,13 +1838,13 @@ test('replacement checks every native page of the selected turn before reverting
   try {
     await client.initialize();
     const result = await client.revert(ROOT, { beforeTurnId: 'turn-1', text: 'Edited prompt' });
-    assert.ok(result);
+    assert.ok(result && 'turn' in result);
     assert.equal(result.turn.id, 'new-turn');
     const reads = socket.sent.filter(row => row.method === 'thread/items/list');
     assert.equal(reads.length, 2);
-    assert.deepEqual(reads.map(row => row.params.turnId), ['turn-1', 'turn-1']);
-    assert.equal(reads[1].params.cursor, 'next');
-    assert(socket.sent.indexOf(reads[1]) < socket.sent.findIndex(row => row.method === 'thread/revert'));
+    assert.deepEqual(reads.map(row => required(row.params).turnId), ['turn-1', 'turn-1']);
+    assert.equal(required(required(reads[1]).params).cursor, 'next');
+    assert(socket.sent.indexOf(required(reads[1])) < socket.sent.findIndex(row => row.method === 'thread/revert'));
   } finally { client.close(); }
 });
 
@@ -1739,7 +1863,7 @@ test('replacement refuses unsafe or incomplete native inputs before any mutation
     try {
       await client.initialize();
       await assert.rejects(client.revert(ROOT, { beforeTurnId: 'turn-1', text: 'Edited prompt' }));
-      assert.equal(socket.sent.filter(row => ['thread/revert', 'turn/start'].includes(row.method)).length, 0);
+      assert.equal(socket.sent.filter(row => ['thread/revert', 'turn/start'].includes(row.method ?? '')).length, 0);
     } finally { client.close(); }
   });
 });
@@ -1756,12 +1880,12 @@ test('replacement resends the edited text with the message\'s attachments and ke
     try {
       await client.initialize();
       const result = await client.revert(ROOT, { beforeTurnId: 'turn-1', text: 'Edited prompt' });
-      assert.ok(result);
+      assert.ok(result && 'turn' in result);
       assert.equal(result.turn.id, 'new-turn');
-      assert.deepEqual(socket.sent.find(row => row.method === 'turn/start').params.input, [{ type: 'text', text: 'Edited prompt', text_elements: [] }, ...kept]);
+      assert.deepEqual(required(required(socket.sent.find(row => row.method === 'turn/start')).params).input, [{ type: 'text', text: 'Edited prompt', text_elements: [] }, ...kept]);
       const order = ['thread/fork', 'thread/archive', 'thread/revert', 'turn/start'].map(method => socket.sent.findIndex(row => row.method === method));
       assert.deepEqual([...order].sort((a, b) => a - b), order, 'the copy is kept and archived before anything is replaced');
-      assert.equal(socket.sent.find(row => row.method === 'thread/fork').params.beforeTurnId, undefined, 'the copy is the whole chat');
+      assert.equal(required(required(socket.sent.find(row => row.method === 'thread/fork')).params).beforeTurnId, undefined, 'the copy is the whole chat');
       assert.deepEqual((await client.versions(ROOT, { action: 'list' })).versions, [{ turnId: 'new-turn', index: 2, count: 2, previous: FORK }]);
       assert.deepEqual((await client.versions(FORK, { action: 'list' })).versions, [{ turnId: 'turn-1', index: 1, count: 2, next: ROOT }]);
     } finally { client.close(); }
@@ -1782,8 +1906,8 @@ test('replacement reports an acknowledged rewind when its new turn is rejected o
         } else send(raw);
       };
       const result = await client.revert(ROOT, { beforeTurnId: 'turn-1', text: 'Edited prompt' });
-      assert.ok(result);
-      assert.equal(result.rewound, true); assert.equal(result.beforeTurnId, 'turn-1'); assert.equal(result.turn, undefined);
+      assert.ok(result && 'rewound' in result && 'sendError' in result && typeof result.sendError === 'string');
+      assert.equal(result.rewound, true); assert.equal(result.beforeTurnId, 'turn-1'); assert.equal('turn' in result ? result.turn : undefined, undefined);
       assert.match(result.sendError, timeout ? /outcome is unknown/ : /Fixture replacement rejected/);
       assert.equal(socket.sent.filter(row => row.method === 'thread/revert').length, 1);
       assert.equal(socket.sent.filter(row => row.method === 'turn/start').length, 1, 'never replay an unconfirmed write');
@@ -1810,14 +1934,14 @@ test('a rejected native rewind never claims success and never starts its replace
 // 3 Nov, Masih: deleting a chat silently deleted the chat continued from it (his working Hermes chat).
 test('deleting a chat that a continued chat was forked from archives it and never deletes the fork', async () => {
   const { client, socket, threads } = fixture(); await client.initialize(); await client.listThreads();
-  threads.get(CHILD).status = { type: 'idle' };
+  required(threads.get(CHILD)).status = { type: 'idle' };
   await client.send(CHILD, { text: 'Follow up', continueAs: 'Failure reporting (continued)' });
-  const events = []; client.on('event', event => events.push(event));
+  const events: { data?: { method?: string } }[] = []; client.on('event', event => events.push(event));
   const result = await client.deleteThread(ROOT, {});
   assert.deepEqual(result, { deleted: true, archived: true, alsoDeleted: [] });
-  assert.deepEqual(socket.sent.filter(row => row.method === 'thread/delete').map(row => row.params.threadId), [ROOT], 'no fork is ever deleted');
+  assert.deepEqual(socket.sent.filter(row => row.method === 'thread/delete').map(row => required(row.params).threadId), [ROOT], 'no fork is ever deleted');
   assert.ok(threads.has(FORK), 'the continued chat stays');
-  assert.equal(threads.get(ROOT).archived, true, 'the deleted chat is archived, keeping the history its fork uses');
+  assert.equal(required(threads.get(ROOT)).archived, true, 'the deleted chat is archived, keeping the history its fork uses');
   socket.emit('message', JSON.stringify({ method: 'thread/deleted', params: { threadId: ROOT } }));
   assert.equal(events.filter(event => event.data?.method === 'thread/deleted').length, 0, 'forgotten chats emit nothing more');
   client.close();
@@ -1825,30 +1949,30 @@ test('deleting a chat that a continued chat was forked from archives it and neve
 
 test('delete locks release across sequential, descendant and bulk deletes, but still reject a concurrent mutation of the same chat', async t => {
   const f = fixture(); t.after(() => f.client.close()); await f.client.initialize(); await f.client.listThreads();
-  f.threads.get(CHILD).status = { type: 'idle' };
+  required(f.threads.get(CHILD)).status = { type: 'idle' };
   await f.client.send(CHILD, { text: 'Follow up', continueAs: 'Failure reporting (continued)' });
   assert.deepEqual(await f.client.deleteThread(ROOT, {}), { deleted: true, archived: true, alsoDeleted: [] });
-  assert.ok(f.threads.has(FORK) && f.threads.get(ROOT).archived, 'the continued fork stays and the root is archived');
+  assert.ok(f.threads.has(FORK) && required(f.threads.get(ROOT)).archived, 'the continued fork stays and the root is archived');
 
   const ids = [8, 9, 10, 11, 12].map(value => `00000000-0000-0000-0000-${String(value).padStart(12, '0')}`);
   for (const id of ids) f.threads.set(id, { id, cwd: os.tmpdir(), source: 'cli', status: { type: 'idle' } });
   assert.deepEqual(await f.client.deleteThread(ids[0], {}), { deleted: true, alsoDeleted: [] }, 'the next delete starts after the first released its lock');
   assert.deepEqual(await Promise.all(ids.slice(1, 4).map(id => f.client.deleteThread(id, {}))), ids.slice(1, 4).map(() => ({ deleted: true, alsoDeleted: [] })), 'independent bulk deletes may run together');
 
-  const held = ids[4], send = f.socket.send; let release;
+  const held = required(ids[4]), send = f.socket.send, release: { current?: () => void } = {};
   f.socket.send = raw => {
     const request = JSON.parse(raw);
-    if (request.method === 'thread/delete' && request.params.threadId === held && !release) {
+    if (request.method === 'thread/delete' && request.params.threadId === held && !release.current) {
       f.socket.sent.push(request);
-      release = () => { f.threads.delete(held); queueMicrotask(() => f.socket.emit('message', JSON.stringify({ id: request.id, result: {} }))); };
+      release.current = () => { f.threads.delete(held); queueMicrotask(() => f.socket.emit('message', JSON.stringify({ id: request.id, result: {} }))); };
       return;
     }
     send(raw);
   };
   const deleting = f.client.deleteThread(held, {});
-  for (let attempt = 0; !release && attempt < 20; attempt++) await new Promise(resolve => setImmediate(resolve));
-  await assert.rejects(f.client.renameThread(held, { name: 'Too soon' }), error => error?.status === 409 && /Another operation/.test(error.message));
-  release(); await deleting;
+  for (let attempt = 0; !release.current && attempt < 20; attempt++) await new Promise(resolve => setImmediate(resolve));
+  await assert.rejects(f.client.renameThread(held, { name: 'Too soon' }), error => error instanceof Error && 'status' in error && error.status === 409 && /Another operation/.test(error.message));
+  required(release.current)(); await deleting;
   assert.deepEqual(await f.client.deleteThread(held, {}), { deleted: true, alsoDeleted: [] }, 'a deleted ID holds no stale lock');
 });
 
@@ -1856,57 +1980,57 @@ test('deleting a chat waits for its pending operation and then releases its lock
   const f = fixture(); t.after(() => f.client.close()); await f.client.initialize(); await f.client.listThreads();
   const id = '00000000-0000-0000-0000-000000000080';
   f.threads.set(id, { id, cwd: os.tmpdir(), source: 'cli', status: { type: 'idle' } });
-  const send = f.socket.send; let release;
+  const send = f.socket.send, release: { current?: () => void } = {};
   f.socket.send = raw => {
     const request = JSON.parse(raw);
     if (request.method === 'thread/name/set' && request.params.threadId === id) {
       f.socket.sent.push(request);
-      release = () => { f.threads.get(id).name = request.params.name; queueMicrotask(() => f.socket.emit('message', JSON.stringify({ id: request.id, result: {} }))); };
+      release.current = () => { required(f.threads.get(id)).name = request.params.name; queueMicrotask(() => f.socket.emit('message', JSON.stringify({ id: request.id, result: {} }))); };
       return;
     }
     send(raw);
   };
   const renaming = f.client.renameThread(id, { name: 'Renamed' });
-  for (let attempt = 0; !release && attempt < 20; attempt++) await new Promise(resolve => setImmediate(resolve));
-  assert.ok(release, 'the earlier operation holds the chat lock');
+  for (let attempt = 0; !release.current && attempt < 20; attempt++) await new Promise(resolve => setImmediate(resolve));
+  assert.ok(release.current, 'the earlier operation holds the chat lock');
   const deleting = f.client.archiveThread(id, {}).then(value => ({ value }), error => ({ error }));
   await new Promise(resolve => setTimeout(resolve, 50));
-  assert.equal(f.socket.sent.some(row => row.method === 'thread/archive' && row.params.threadId === id), false);
-  release(); await renaming;
+  assert.equal(f.socket.sent.some(row => row.method === 'thread/archive' && required(row.params).threadId === id), false);
+  release.current(); await renaming;
   const result = await deleting;
   if ('error' in result) throw result.error;
   assert.equal(result.value.archived, true);
-  assert.equal(f.threads.get(id).archived, true);
+  assert.equal(required(f.threads.get(id)).archived, true);
   await f.client.unarchiveThread(id, {});
   assert.equal((await f.client.archiveThread(id, {})).archived, true, 'the next deletion also works');
 });
 
 test('an annotation waits for a pending chat operation and is sent once', async t => {
   const f = fixture(); t.after(() => f.client.close()); await f.client.initialize(); await f.client.listThreads();
-  const send = f.socket.send; let release;
+  const send = f.socket.send, release: { current?: () => void } = {};
   f.socket.send = raw => {
     const request = JSON.parse(raw);
     if (request.method === 'thread/name/set' && request.params.threadId === ROOT) {
       f.socket.sent.push(request);
-      release = () => { f.threads.get(ROOT).name = request.params.name; queueMicrotask(() => f.socket.emit('message', JSON.stringify({ id: request.id, result: {} }))); };
+      release.current = () => { required(f.threads.get(ROOT)).name = request.params.name; queueMicrotask(() => f.socket.emit('message', JSON.stringify({ id: request.id, result: {} }))); };
       return;
     }
     send(raw);
   };
   const rename = f.client.renameThread(ROOT, { name: 'Renamed' });
-  for (let attempt = 0; !release && attempt < 20; attempt++) await new Promise(resolve => setImmediate(resolve));
-  assert.ok(release, 'the earlier operation holds the chat lock');
+  for (let attempt = 0; !release.current && attempt < 20; attempt++) await new Promise(resolve => setImmediate(resolve));
+  assert.ok(release.current, 'the earlier operation holds the chat lock');
   const attachment = { id: 'annotation', name: 'Browser comments.txt', type: 'text', mimeType: 'text/plain', text: 'Make this heading shorter.' };
   const sent = f.client.send(ROOT, { text: '', attachments: [attachment] }).then(value => ({ value }), error => ({ error }));
   await new Promise(resolve => setTimeout(resolve, 50));
   assert.equal(f.socket.sent.filter(row => row.method === 'turn/start').length, 0);
-  release(); await rename;
+  release.current(); await rename;
   const result = await sent;
-  assert.ifError(result.error);
-  assert.ok(result.value.turn.id);
+  if ('error' in result) assert.ifError(result.error);
+  assert.ok('value' in result && 'turn' in result.value && result.value.turn.id);
   const turns = f.socket.sent.filter(row => row.method === 'turn/start');
   assert.equal(turns.length, 1);
-  assert.match(JSON.stringify(turns[0].params.input), /Make this heading shorter/);
+  assert.match(JSON.stringify(required(required(turns[0]).params).input), /Make this heading shorter/);
   await assert.rejects(f.client.send(ROOT, { text: '', attachments: [{ ...attachment, text: '' }] }), /empty or invalid/);
   assert.equal(f.socket.sent.filter(row => row.method === 'turn/start').length, 1);
 });
@@ -1920,7 +2044,7 @@ test('Claude MCP import previews safely, rejects stale and duplicate entries, an
   const source = { mcpServers: { shadcn: { command: 'npx', args: ['shadcn', 'mcp'], env: { SECRET: 'private-value' } }, rag: { command: 'old' } } };
   await fs.writeFile(file, JSON.stringify(source));
   const { client, socket, configRead } = fixture({ clientOptions: { appHome: home } });
-  configRead.layers[0].name.file = configPath;
+  required(configRead.layers[0]).name.file = configPath;
   await client.initialize();
   const preview = await client.previewClaudeMcp();
   assert.deepEqual(preview.servers.map(row => [row.name, row.status]), [['shadcn','available'],['rag','exists']]);
@@ -1933,8 +2057,8 @@ test('Claude MCP import previews safely, rejects stale and duplicate entries, an
   assert.deepEqual(await client.importClaudeMcp(input), { imported: 1 });
   const writes = socket.sent.filter(row => row.method === 'config/batchWrite');
   assert.equal(writes.length, 1);
-  assert.deepEqual(writes[0].params.edits, [{keyPath:'mcp_servers.shadcn', value:source.mcpServers.shadcn, mergeStrategy:'replace'}]);
-  assert.equal(writes[0].params.reloadUserConfig, false);
+  assert.deepEqual(required(required(writes[0]).params).edits, [{keyPath:'mcp_servers.shadcn', value:source.mcpServers.shadcn, mergeStrategy:'replace'}]);
+  assert.equal(required(required(writes[0]).params).reloadUserConfig, false);
   assert.equal(socket.sent.some(row => row.method === 'config/mcpServer/reload'), false);
 });
 
@@ -1943,25 +2067,25 @@ test('providers report separate sign-in and usage per provider; MCP shows creden
   process.env.APP_TEST_OPENROUTER_KEY = 'PRIVATE CONFIG SECRET'; delete process.env.APP_TEST_COMPANY_KEY;
   const providers = await client.providers();
   assert.deepEqual(providers.openai.auth, { state: 'signedIn', method: 'ChatGPT', email: 'person@example.com', plan: 'pro' });
-  assert.deepEqual(providers.openai.usage.map(limit => limit.limitId), ['codex']);
-  assert.deepEqual(providers.claude.usage.map(limit => [limit.limitId, limit.primary.usedPercent, limit.secondary.windowDurationMins]), [['claude', 40, 10080]]);
+  assert.deepEqual(providers.openai.usage.map(limit => required(limit).limitId), ['codex']);
+  assert.deepEqual(providers.claude.usage.map(limit => [required(limit).limitId, required(required(limit).primary).usedPercent, required(required(limit).secondary).windowDurationMins]), [['claude', 40, 10080]]);
   assert.equal(providers.claude.state, 'connected'); assert.deepEqual(providers.claude.models, ['Opus (Claude subscription)']);
-  assert.deepEqual(providers.gemini.usage.map(limit => limit.limitId), ['antigravity-pro']); assert.equal(providers.gemini.state, 'connected');
+  assert.deepEqual(providers.gemini.usage.map(limit => required(limit).limitId), ['antigravity-pro']); assert.equal(providers.gemini.state, 'connected');
   assert.deepEqual(providers.openrouter, [{ id: 'openrouter', name: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', envKey: 'APP_TEST_OPENROUTER_KEY', keySet: true }]);
   assert.equal('local' in providers, false, 'loopback addresses are not listed as local servers');
   const mcp = await client.mcp();
   assert.deepEqual(mcp.servers.map(server => [server.name, server.enabled, server.transport]), [['rag', true, 'stdio'], ['remote', false, 'http'], ['whispertype', true, 'stdio']]);
-  assert.deepEqual(mcp.servers[0].credentials, [{ name: 'OPENROUTER_API_KEY', source: 'config', set: true }]);
-  assert.deepEqual(mcp.servers[1].credentials, [{ name: 'APP_TEST_BEARER', source: 'environment', set: false }]);
-  assert.equal(mcp.servers[1].url, 'https://mcp.example/path');
-  assert.deepEqual(mcp.servers[2].whispertype, { backend: 'local', model: 'openai/gpt-4o-mini-transcribe' });
+  assert.deepEqual(required(mcp.servers[0]).credentials, [{ name: 'OPENROUTER_API_KEY', source: 'config', set: true }]);
+  assert.deepEqual(required(mcp.servers[1]).credentials, [{ name: 'APP_TEST_BEARER', source: 'environment', set: false }]);
+  assert.equal(required(mcp.servers[1]).url, 'https://mcp.example/path');
+  assert.deepEqual(required(mcp.servers[2]).whispertype, { backend: 'local', model: 'openai/gpt-4o-mini-transcribe' });
   assert.doesNotMatch(JSON.stringify({ providers, mcp }), /PRIVATE CONFIG SECRET|token/);
   // Writes are versioned native config edits; nothing else is accepted.
   await client.saveMcp({ version: 'user-version', action: 'enable', name: 'remote', enabled: true });
   await client.saveMcp({ version: 'user-version', action: 'add', name: 'extra', command: '/bin/true', args: ['--flag'] });
   await client.saveMcp({ version: 'user-version', action: 'whispertype', name: 'whispertype', backend: 'openrouter', model: 'openai/gpt-4o-mini-transcribe' });
   await client.saveMcp({ version: 'user-version', action: 'remove', name: 'rag' });
-  assert.deepEqual(socket.sent.filter(row => row.method === 'config/batchWrite').map(row => row.params.edits), [
+  assert.deepEqual(socket.sent.filter(row => row.method === 'config/batchWrite').map(row => required(row.params).edits), [
     [{ keyPath: 'mcp_servers.remote.enabled', value: true, mergeStrategy: 'replace' }],
     [{ keyPath: 'mcp_servers.extra', value: { command: '/bin/true', args: ['--flag'] }, mergeStrategy: 'replace' }],
     [{ keyPath: 'mcp_servers.whispertype.env.WHISPERTYPE_BACKEND', value: 'openrouter', mergeStrategy: 'replace' }, { keyPath: 'mcp_servers.whispertype.env.WHISPERTYPE_CLOUD_MODEL', value: 'openai/gpt-4o-mini-transcribe', mergeStrategy: 'replace' }],
@@ -1973,7 +2097,7 @@ test('providers report separate sign-in and usage per provider; MCP shows creden
   await assert.rejects(client.saveMcp({ version: 'user-version', action: 'whispertype', name: 'whispertype', backend: 'local', model: 'invalid model' }), { message: 'Choose an OpenRouter model.' });
   assert.equal(socket.sent.filter(row => row.method === 'config/batchWrite').length, 4, 'refused changes write nothing');
   await client.saveMcp({ version: 'user-version', action: 'whispertype', name: 'whispertype', backend: 'codex' });
-  assert.deepEqual(socket.sent.filter(row => row.method === 'config/batchWrite').at(-1).params.edits, [{ keyPath: 'mcp_servers.whispertype.env.WHISPERTYPE_BACKEND', value: 'codex', mergeStrategy: 'replace' }]);
+  assert.deepEqual(required(required(socket.sent.filter(row => row.method === 'config/batchWrite').at(-1)).params).edits, [{ keyPath: 'mcp_servers.whispertype.env.WHISPERTYPE_BACKEND', value: 'codex', mergeStrategy: 'replace' }]);
   delete process.env.APP_TEST_OPENROUTER_KEY;
   client.close();
 });
@@ -1994,7 +2118,7 @@ test('settings expose supported fields; providers require configured identity an
   await assert.rejects(client.createThread({ provider: 'local' }), /model for this provider/);
   assert.equal(socket.sent.filter(message => message.method === 'thread/start').length, 0);
   await client.createThread({ provider: 'local', model: 'remote-model' });
-  assert.deepEqual(socket.sent.find(message => message.method === 'thread/start').params, { model: 'remote-model', modelProvider: 'local', approvalPolicy: 'never', approvalsReviewer: 'user', permissions: ':danger-full-access', elpisPermissionSource: 'default' });
+  assert.deepEqual(required(socket.sent.find(message => message.method === 'thread/start')).params, { model: 'remote-model', modelProvider: 'local', approvalPolicy: 'never', approvalsReviewer: 'user', permissions: ':danger-full-access', elpisPermissionSource: 'default' });
   requirementsRead.requirements = { modelProvider: 'openai', modelProviders: { local: { name: 'Managed', api_key: 'PRIVATE CONFIG SECRET' } } };
   await assert.rejects(client.createThread({ provider: 'local', model: 'remote-model' }), /restricted/);
   assert.equal(socket.sent.filter(message => message.method === 'thread/start').length, 1);
@@ -2019,8 +2143,8 @@ test('context exposes actual scoped events without resuming and strips audit pat
   const { client, socket } = fixture(); await client.initialize();
   const initial = await client.context(ROOT);
   assert.equal(initial.tokenUsage, null); assert.equal(initial.smartPrune, null);
-  const events = []; client.on('event', event => events.push(event));
-  const emit = (method, params) => socket.emit('message', JSON.stringify({ method, params }));
+  const events: unknown[] = []; client.on('event', event => events.push(event));
+  const emit = (method: string, params: unknown) => socket.emit('message', JSON.stringify({ method, params }));
   emit('thread/tokenUsage/updated', { threadId: ROOT, tokenUsage: { total: { inputTokens: 900, cachedInputTokens: 800, cacheWriteInputTokens: 75, outputTokens: 10 }, last: { inputTokens: 100 }, modelContextWindow: 1000,
     contextAttribution: { systemInstructions: 20, developerMessages: 'not a number', toolResults: 0, estimatedTotal: 100, auditPath: '/private/audit', secret: 'PRIVATE AUDIT' }, secret: 'PRIVATE AUDIT' } });
   emit('thread/smartPrune/updated', { threadId: ROOT, smartPrune: { enabled: true, approxSavedTokens: 50, optimizerRequests: 2, latestAttempt: { status: 'failed', modelSlug: 'optimizer-model', failureReason: 'Failed to connect', auditPath: '/private/audit' } } });
@@ -2044,7 +2168,7 @@ test('context exposes actual scoped events without resuming and strips audit pat
 test('the context ledger measures the latest request and reconciles the estimated categories to it, as the TUI ledger does', async () => {
   const { contextLedger } = await import('./elpis-features.mts');
   const attribution = { userMessages: 1000, agentMessages: 3000, reasoning: 0, toolCalls: 500, toolResults: 27000, systemInstructions: 8000, developerMessages: 1500, toolDefinitions: 9000, outputSchema: 1000, unrecognizedItems: 0, estimatedTotal: 51000 };
-  const usage = (last, window, contextAttribution) => ({ total: { totalTokens: 900000 }, last, modelContextWindow: window, contextAttribution });
+  const usage = (last: { inputTokens?: number; outputTokens?: number; totalTokens?: number }, window: number, contextAttribution?: Record<string, number> | null) => ({ total: { totalTokens: 900000 }, last, modelContextWindow: window, ...(contextAttribution === undefined ? {} : { contextAttribution }) });
   const ledger = contextLedger(usage({ inputTokens: 48000, outputTokens: 2000, totalTokens: 50000 }, 200000, attribution));
   assert.equal(ledger.used, 50000, 'measured: the latest request\'s total tokens (tokens_in_context_window), not the cumulative total');
   assert.equal(ledger.window, 200000);
@@ -2060,14 +2184,14 @@ test('the context ledger measures the latest request and reconciles the estimate
 
   const { client, socket } = fixture(); await client.initialize();
   assert.deepEqual((await client.context(ROOT)).ledger, { used: null, window: null, categories: [] });
-  const emit = (method, params) => socket.emit('message', JSON.stringify({ method, params }));
+  const emit = (method: string, params: unknown) => socket.emit('message', JSON.stringify({ method, params }));
   emit('thread/tokenUsage/updated', { threadId: ROOT, tokenUsage: usage({ totalTokens: 51000 }, 200000, attribution) });
   // A replay after resume carries no shares; the last known ones stay, scaled to the new measured total.
   emit('thread/tokenUsage/updated', { threadId: ROOT, tokenUsage: usage({ totalTokens: 50000 }, 200000) });
   const result = await client.context(ROOT);
   assert.equal(result.tokenUsage.contextAttribution.toolResults, 27000);
   assert.equal(result.ledger.used, 50000);
-  assert.equal(result.ledger.categories.find(row => row.id === 'toolResults').tokens, 26471);
+  assert.equal(required(result.ledger.categories.find(row => row.id === 'toolResults')).tokens, 26471);
   assert.deepEqual((await client.context(CHILD)).ledger, { used: null, window: null, categories: [] });
   client.close();
 });
@@ -2076,8 +2200,7 @@ test('agent metadata follows the latest recorded model and effort without invent
   const temp = createTestTempDir(path.join(os.tmpdir(), 'elpis-agent-model-'));
   t.after(() => removeTestTempDir(temp));
   const rollout = path.join(temp, 'rollout.jsonl');
-  /** @param {{model: string, effort: string}} payload */
-  const record = payload => JSON.stringify({ type: 'turn_context', payload }) + '\n';
+  const record = (payload: { model: string; effort: string }) => JSON.stringify({ type: 'turn_context', payload }) + '\n';
   await fs.writeFile(rollout, record({ model: 'gpt-6-luna', effort: 'low' }));
   const { client, threads } = fixture(); t.after(() => client.close()); await client.initialize();
   const child = threads.get(CHILD); assert.ok(child);
@@ -2105,9 +2228,10 @@ test('saved replies use the model recorded in each turn context and never guess 
   ].join('\n'));
   const { rolloutTurnModels } = await import('./elpis-features.mts');
   assert.deepEqual([...await rolloutTurnModels(rollout)], [['t1', 'gpt-6.1-sol']]);
-  const { client, threads } = fixture(); await client.initialize(); threads.get(ROOT).path = rollout;
+  const { client, threads } = fixture(); await client.initialize(); required(threads.get(ROOT)).path = rollout;
   const page = await client.readThread(ROOT);
-  assert.equal(page.data[0].model, 'gpt-6.1-sol');
+  const first = required(page.data[0]); assert.ok('model' in first);
+  assert.equal(first.model, 'gpt-6.1-sol');
   client.close();
 });
 
@@ -2115,8 +2239,8 @@ test('an old chat shows the last usage its rollout recorded, plain or compressed
   const { restoredTokenUsage } = await import('./elpis-features.mts');
   const zlib = await import('node:zlib');
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-rollout-usage-'));
-  const usage = total => ({ input_tokens: total - 100, cached_input_tokens: 10, cache_write_input_tokens: 0, output_tokens: 100, reasoning_output_tokens: 7, total_tokens: total });
-  const line = payload => JSON.stringify({ timestamp: '2026-10-16T00:00:00Z', type: 'event_msg', payload });
+  const usage = (total: number) => ({ input_tokens: total - 100, cached_input_tokens: 10, cache_write_input_tokens: 0, output_tokens: 100, reasoning_output_tokens: 7, total_tokens: total });
+  const line = (payload: unknown) => JSON.stringify({ timestamp: '2026-10-16T00:00:00Z', type: 'event_msg', payload });
   const lines = [JSON.stringify({ type: 'session_meta', payload: { id: ROOT } }),
     line({ type: 'token_count', info: { total_token_usage: usage(30000), last_token_usage: usage(30000), model_context_window: 200000 } }),
     line({ type: 'token_count', info: { total_token_usage: usage(70000), last_token_usage: usage(40000), model_context_window: 200000 }, rate_limits: null }),
@@ -2135,7 +2259,7 @@ test('an old chat shows the last usage its rollout recorded, plain or compressed
   for (const bad of [null, 'rollout.jsonl', path.join(temp, 'missing.jsonl'), path.join(temp, 'notes.txt')]) assert.equal(await restoredTokenUsage(bad), null, `${bad} is not read`);
 
   const { client, socket, threads } = fixture(); await client.initialize();
-  threads.get(ROOT).path = plain;
+  required(threads.get(ROOT)).path = plain;
   const restored = await client.context(ROOT);
   assert.deepEqual(restored.ledger, { used: 40000, window: 200000, categories: [] }, 'measured numbers as soon as the chat opens; shares wait for the next request, as in the TUI');
   assert.equal(restored.availability.tokenUsage, 'restored');
@@ -2149,19 +2273,18 @@ test('an old chat shows the last usage its rollout recorded, plain or compressed
 
 test('encrypted reasoning weighs what the model is sent, as the engine counts it (A225, A260)', async () => {
   const { sizedItem } = await import('./elpis-features.mts');
-  /** @returns {[string, number]} */
-  const tokens = item => { const [key, bytes] = sizedItem(item); return [key, Math.ceil(bytes / 4)]; };
-  const reasoning = length => ({ type: 'reasoning', summary: [], encrypted_content: 'g'.repeat(length) });
-  const old = length => Math.ceil(Math.max(0, Math.floor(length * 3 / 4) - 650) / 4);
+  const tokens = (item: Parameters<typeof sizedItem>[0]): [string, number] => { const [key, bytes] = sizedItem(item); return [key, Math.ceil(bytes / 4)]; };
+  const reasoning = (length: number) => ({ type: 'reasoning', summary: [], encrypted_content: 'g'.repeat(length) });
+  const old = (length: number) => Math.ceil(Math.max(0, Math.floor(length * 3 / 4) - 650) / 4);
   // The same values the engine's tests pin (core elpis_context_attribution_tests.rs).
-  for (const [length, expected] of [[0, 0], [1287, 0], [1288, 1], [2701, 100], [7287, 425], [142687, 10000]]) assert.deepEqual(tokens(reasoning(length)), ['reasoning', expected], `${length} characters`);
+  for (const [length, expected] of [[0, 0], [1287, 0], [1288, 1], [2701, 100], [7287, 425], [142687, 10000]] as [number, number][]) assert.deepEqual(tokens(reasoning(length)), ['reasoning', expected], `${length} characters`);
   assert.deepEqual(tokens({ type: 'reasoning', summary: [{ type: 'summary_text', text: 'plain' }] }), ['reasoning', 0], 'no encrypted content weighs nothing');
   for (const type of ['compaction', 'context_compaction']) assert.deepEqual(tokens({ type, encrypted_content: 'g'.repeat(57272) }), ['reasoning', 3960], `a ${type} at the same rate`);
   // His chats: every gpt-6.1-sol response with reasoning, its reported reasoning tokens then each item's encrypted length.
-  const measured = JSON.parse(await fs.readFile(new URL('../../../codex-rs/core/src/elpis_reasoning_cost.json', import.meta.url), 'utf8'));
+  const measured: { chats: [number, ...number[]][][] } = JSON.parse(await fs.readFile(new URL('../../../codex-rs/core/src/elpis_reasoning_cost.json', import.meta.url), 'utf8'));
   let reported = 0, estimated = 0, before = 0;
   for (const chat of measured.chats) {
-    const sum = rows => rows.reduce((total, value) => total + value, 0);
+    const sum = (rows: number[]) => rows.reduce((total, value) => total + value, 0);
     const chatReported = sum(chat.map(([count]) => count)), chatEstimated = sum(chat.flatMap(([, ...lengths]) => lengths.map(length => tokens(reasoning(length))[1])));
     if (chat.length >= 20) assert.ok(chatEstimated / chatReported >= 0.95 && chatEstimated / chatReported < 1.2, `a chat at ${(chatEstimated / chatReported).toFixed(3)}`);
     reported += chatReported; estimated += chatEstimated; before += sum(chat.flatMap(([, ...lengths]) => lengths.map(old)));
@@ -2183,7 +2306,7 @@ test('encrypted reasoning weighs what the model is sent, as the engine counts it
 test('reasoning cost holds on held-out responses after the fit window', async () => {
   const { sizedItem } = await import('./elpis-features.mts');
   // Independent 25 Oct gpt-6.1-sol replies; numeric-only extraction documented in the core test.
-  const responses = JSON.parse(await fs.readFile(new URL('../../../codex-rs/core/src/elpis_reasoning_cost_heldout.json', import.meta.url), 'utf8'));
+  const responses: [number, ...number[]][] = JSON.parse(await fs.readFile(new URL('../../../codex-rs/core/src/elpis_reasoning_cost_heldout.json', import.meta.url), 'utf8'));
   let reported = 0, estimated = 0;
   for (const [count, ...lengths] of responses) {
     reported += count;
@@ -2201,10 +2324,10 @@ test('reasoning cost holds on held-out responses after the fit window', async ()
 test('an old chat shows category shares estimated from its saved transcript, until the engine sends its own', async () => {
   const { rolloutShares, contextLedger } = await import('./elpis-features.mts');
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-rollout-shares-'));
-  const record = (type, payload) => JSON.stringify({ timestamp: '2026-10-17T00:00:00Z', type, payload });
-  const item = payload => record('response_item', payload);
-  const text = (role, kind, body) => item({ type: 'message', role, content: [{ type: kind, text: body }] });
-  const count = (total, window = 20000) => record('event_msg', { type: 'token_count', info: { total_token_usage: { total_tokens: total }, last_token_usage: { total_tokens: total }, model_context_window: window } });
+  const record = (type: string, payload: unknown) => JSON.stringify({ timestamp: '2026-10-17T00:00:00Z', type, payload });
+  const item = (payload: unknown) => record('response_item', payload);
+  const text = (role: string, kind: string, body: string) => item({ type: 'message', role, content: [{ type: kind, text: body }] });
+  const count = (total: number, window = 20000) => record('event_msg', { type: 'token_count', info: { total_token_usage: { total_tokens: total }, last_token_usage: { total_tokens: total }, model_context_window: window } });
   // The engine's classifier (core elpis_context_attribution.rs) on bytes ÷ 4, rounded up, per item.
   const lines = [record('session_meta', { id: ROOT, base_instructions: { text: 'S'.repeat(400) } }),
     text('developer', 'input_text', 'D'.repeat(800)), text('user', 'input_text', 'U'.repeat(40)), text('assistant', 'output_text', 'A'.repeat(100)),
@@ -2212,19 +2335,19 @@ test('an old chat shows category shares estimated from its saved transcript, unt
     item({ type: 'function_call', name: 'exec', arguments: 'a'.repeat(87), call_id: 'c1' }),
     item({ type: 'function_call_output', call_id: 'c1', output: 'R'.repeat(3998) }),
     count(2000)];
-  const write = async (name, rows) => { const file = path.join(temp, name); await fs.writeFile(file, rows.join('\n') + '\n'); return file; };
+  const write = async (name: string, rows: string[]) => { const file = path.join(temp, name); await fs.writeFile(file, rows.join('\n') + '\n'); return file; };
   const plain = await write('rollout-a.jsonl', lines);
   const shares = await rolloutShares(plain);
   assert.deepEqual(shares, { systemInstructions: 100, developerMessages: 200, userMessages: 10, agentMessages: 25, reasoning: 51, toolCalls: 25, toolResults: 1000, toolDefinitions: 0, outputSchema: 0, unrecognizedItems: 0 },
     'each item counted as the engine counts it: text bytes ÷ 4, a reasoning blob past its 1,287-character overhead at 14.14 characters a token, a call by name, namespace and arguments');
-  const usage = total => ({ last: { totalTokens: total }, modelContextWindow: 20000 });
+  const usage = (total: number) => ({ last: { totalTokens: total }, modelContextWindow: 20000 });
   const ledger = contextLedger(usage(2000), shares);
   assert.deepEqual(ledger.categories.map(row => [row.label, row.tokens]), [
     ['User messages', 10], ['Agent messages', 25], ['Reasoning + compaction', 51], ['Tool calls', 25], ['Tool results', 1000],
     ['System instructions', 100], ['Developer messages', 200], ['Tool definitions + schema', 589]], 'what the transcript cannot hold (the tool definitions) is the rest of the measured total');
-  assert.equal(ledger.basis, 'transcript'); assert.equal(ledger.categories.reduce((sum, row) => sum + row.tokens, 0), 2000);
+  assert.ok('basis' in ledger); assert.equal(ledger.basis, 'transcript'); assert.equal(ledger.categories.reduce((sum, row) => sum + row.tokens, 0), 2000);
   const engine = contextLedger({ ...usage(2000), contextAttribution: { userMessages: 5, toolDefinitions: 5, estimatedTotal: 10 } }, shares);
-  assert.equal(engine.basis, 'engine', 'the engine\'s own shares win over the transcript'); assert.deepEqual(engine.categories.map(row => row.tokens), [1000, 1000]);
+  assert.ok('basis' in engine); assert.equal(engine.basis, 'engine', 'the engine\'s own shares win over the transcript'); assert.deepEqual(engine.categories.map(row => row.tokens), [1000, 1000]);
   assert.deepEqual(contextLedger(usage(2000), null), { used: 2000, window: 20000, categories: [] });
 
   // A transcript that cannot be what the model last saw is not attributed: far more than was measured, a compaction without its
@@ -2233,24 +2356,24 @@ test('an old chat shows category shares estimated from its saved transcript, unt
   assert.equal(await rolloutShares(await write('rollout-b.jsonl', [...lines, record('compacted', { message: 'summary' })])), null);
   assert.equal(await rolloutShares(await write('rollout-c.jsonl', [...lines, record('event_msg', { type: 'thread_rolled_back', num_turns: 1 })])), null);
   const compacted = await rolloutShares(await write('rollout-d.jsonl', [...lines, record('compacted', { message: 'summary', replacement_history: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'U'.repeat(80) }] }], window_number: 2 }), text('assistant', 'output_text', 'A'.repeat(40))]));
-  assert.deepEqual([compacted.userMessages, compacted.agentMessages, compacted.toolResults, compacted.systemInstructions], [20, 10, 0, 100]);
+  assert.deepEqual([required(compacted).userMessages, required(compacted).agentMessages, required(compacted).toolResults, required(compacted).systemInstructions], [20, 10, 0, 100]);
   for (const bad of [null, 'rollout.jsonl', path.join(temp, 'missing.jsonl'), path.join(temp, 'notes.txt')]) assert.equal(await rolloutShares(bad), null, `${bad} is not read`);
 
   // Through the bridge: a chat opened from its rollout has its shares at once, marked as estimated; the engine's replace them.
   const { client, socket, threads } = fixture(); await client.initialize();
-  threads.get(ROOT).path = plain;
+  required(threads.get(ROOT)).path = plain;
   const opened = await client.context(ROOT);
-  assert.equal(opened.ledger.basis, 'transcript'); assert.equal(opened.ledger.used, 2000);
-  assert.equal(opened.ledger.categories.find(row => row.id === 'toolResults').tokens, 1000);
+  assert.ok('basis' in opened.ledger); assert.equal(opened.ledger.basis, 'transcript'); assert.equal(opened.ledger.used, 2000);
+  assert.equal(required(opened.ledger.categories.find(row => row.id === 'toolResults')).tokens, 1000);
   assert.equal(opened.tokenUsage.contextAttribution, null, 'the usage itself still says no shares were reported');
   // The ledger's Compact session, as the terminal's /compact: not while the chat is in the middle of a turn.
   assert.deepEqual(opened.compact, { available: true });
-  threads.get(ROOT).status = { type: 'active' };
+  required(threads.get(ROOT)).status = { type: 'active' };
   assert.deepEqual((await client.context(ROOT)).compact, { available: false, reason: 'Available when Elpis finishes this turn' });
-  threads.get(ROOT).status = { type: 'idle' };
+  required(threads.get(ROOT)).status = { type: 'idle' };
   socket.emit('message', JSON.stringify({ method: 'thread/tokenUsage/updated', params: { threadId: ROOT, tokenUsage: { last: { totalTokens: 2000 }, modelContextWindow: 20000, contextAttribution: { userMessages: 1, toolResults: 3, estimatedTotal: 4 } } } }));
   const live = await client.context(ROOT);
-  assert.equal(live.ledger.basis, 'engine'); assert.deepEqual(live.ledger.categories.map(row => [row.id, row.tokens]), [['userMessages', 500], ['toolResults', 1500]]);
+  assert.ok('basis' in live.ledger); assert.equal(live.ledger.basis, 'engine'); assert.deepEqual(live.ledger.categories.map(row => [row.id, row.tokens]), [['userMessages', 500], ['toolResults', 1500]]);
   client.close();
 });
 
@@ -2267,28 +2390,28 @@ test('the ledger switches write the keys the TUI ledger writes: Smart Prune and 
   ], 'one key per switch, reloaded so open chats use it from their next turn');
   assert.equal(socket.sent.some(message => message.method === 'config/mcpServer/reload'), false);
   await client.saveContextSwitches({ version: 'user-version', rag: false });
-  assert.deepEqual(writes().at(-1).edits, [{ keyPath: 'mcp_servers.rag.enabled', value: false, mergeStrategy: 'replace' }]);
+  assert.deepEqual(required(writes().at(-1)).edits, [{ keyPath: 'mcp_servers.rag.enabled', value: false, mergeStrategy: 'replace' }]);
   assert.equal(socket.sent.some(message => message.method === 'config/mcpServer/reload'), true, 'MCP servers reload after the RAG switch');
-  configRead.config.features.multi_agent = false; configRead.config.mcp_servers.rag.enabled = false;
+  configRead.config.features.multi_agent = false; required(configRead.config.mcp_servers.rag).enabled = false;
   assert.deepEqual(await client.contextSwitches(), { version: 'user-version', write: { available: true }, smartPrune: true, subagents: false, rag: false });
-  await assert.rejects(client.saveContextSwitches({ version: 'old-version', rag: true }), error => error.status === 409);
+  await assert.rejects(client.saveContextSwitches({ version: 'old-version', rag: true }), error => error !== null && typeof error === 'object' && 'status' in error && error.status === 409);
   await assert.rejects(client.saveContextSwitches({ version: 'user-version', rag: 'yes' }), /on or off/);
   await assert.rejects(client.saveContextSwitches({ version: 'user-version', memories: true }), /Unsupported request fields/);
   await assert.rejects(client.saveContextSwitches({ version: 'user-version' }), /No switch/);
   delete configRead.config.mcp_servers.rag;
   assert.equal((await client.contextSwitches()).rag, null, 'no rag server configured: no RAG switch to flip');
-  await assert.rejects(client.saveContextSwitches({ version: 'user-version', rag: true }), error => error.status === 409);
+  await assert.rejects(client.saveContextSwitches({ version: 'user-version', rag: true }), error => error !== null && typeof error === 'object' && 'status' in error && error.status === 409);
 
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-desktop-test-')); const out = path.join(temp, 'out'); await fs.mkdir(out); await fs.writeFile(path.join(out, 'index.html'), '<h1>Elpis</h1>');
   const app = await startDesktopServer({ client, staticDir: out }); t.after(() => app.close());
   const url = new URL(app.url), origin = url.origin, token = new URLSearchParams(url.hash.slice(1)).get('token');
-  const request = (method, data, headers = {}) => fetch(origin + '/api/context/switches', { method, headers: { 'Content-Type': 'application/json', Origin: origin, ...headers }, ...(data ? { body: JSON.stringify(data) } : {}) });
+  const request = (method: string, data?: unknown, headers = {}) => fetch(origin + '/api/context/switches', { method, headers: { 'Content-Type': 'application/json', Origin: origin, ...headers }, ...(data ? { body: JSON.stringify(data) } : {}) });
   assert.equal((await request('GET')).status, 401);
   const auth = await fetch(origin + '/api/session', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin }, body: JSON.stringify({ token }) });
-  const cookie = auth.headers.get('set-cookie').split(';')[0];
+  const cookie = required(required(auth.headers.get('set-cookie')).split(';')[0]);
   assert.equal((await (await request('GET', null, { Cookie: cookie })).json()).subagents, false);
   const saved = await request('POST', { version: 'user-version', subagents: true }, { Cookie: cookie });
-  assert.equal(saved.status, 200); assert.deepEqual(writes().at(-1).edits, [{ keyPath: 'features.multi_agent', value: true, mergeStrategy: 'replace' }]);
+  assert.equal(saved.status, 200); assert.deepEqual(required(writes().at(-1)).edits, [{ keyPath: 'features.multi_agent', value: true, mergeStrategy: 'replace' }]);
   client.close();
 });
 
@@ -2296,7 +2419,7 @@ test('the ledger switches write the keys the TUI ledger writes: Smart Prune and 
 test('the main model is saved where the TUI reads it: model and model_provider in config.toml', async () => {
   const {client,socket}=fixture(); await client.initialize();
   await client.saveSettings({version:'user-version',main:{model:'gpt-6-luna',provider:'openai'}});
-  assert.deepEqual(socket.sent.find(row=>row.method==='config/batchWrite').params.edits, [
+  assert.deepEqual(required(required(socket.sent.find(row=>row.method==='config/batchWrite')).params).edits, [
     {keyPath:'model',value:'gpt-6-luna',mergeStrategy:'replace'},
     {keyPath:'model_provider',value:'openai',mergeStrategy:'replace'},
   ]);
@@ -2307,7 +2430,7 @@ test('the main model is saved where the TUI reads it: model and model_provider i
 test('maintenance edits are narrow, preserve unknowns, and reject stale versions before mutation', async () => {
   const {client,socket,configRead}=fixture(); await client.initialize();
   await client.saveSettings({version:'user-version',background:{model:'gpt-6-luna',provider:'openai'},memory:{use:false}});
-  assert.deepEqual(socket.sent.find(row=>row.method==='config/batchWrite').params, {expectedVersion:'user-version',reloadUserConfig:false,edits:[
+  assert.deepEqual(required(socket.sent.find(row=>row.method==='config/batchWrite')).params, {expectedVersion:'user-version',reloadUserConfig:false,edits:[
     {keyPath:'background_model',value:'gpt-6-luna',mergeStrategy:'replace'},
     {keyPath:'background_provider',value:'openai',mergeStrategy:'replace'},
     {keyPath:'memories.use_memories',value:false,mergeStrategy:'replace'},
@@ -2335,7 +2458,7 @@ test('settings pages read and write only listed native options, respecting manag
   assert.deepEqual(settings.options, { reasoningEffort: null, defaultPermissions: 'custom', webSearch: null, verbosity: null, reasoningSummary: null, serviceTier: 'fast', developerInstructions: 'Be brief.', projectRootMarkers: ['.git', '.hg'], worktreeRoot: '/work/trees' });
   assert.equal(settings.memory.enabled, true); assert.equal(settings.memory.skipExternalContext, true);
   await client.saveSettings({ version: 'user-version', options: { webSearch: null, developerInstructions: '  ', projectRootMarkers: [' .git ', 'package.json'], worktreeRoot: '/tmp/trees' }, memory: { enabled: false, skipExternalContext: false } });
-  assert.deepEqual(socket.sent.findLast(row => row.method === 'config/batchWrite').params, { expectedVersion: 'user-version', reloadUserConfig: false, edits: [
+  assert.deepEqual(required(socket.sent.findLast(row => row.method === 'config/batchWrite')).params, { expectedVersion: 'user-version', reloadUserConfig: false, edits: [
     { keyPath: 'features.memories', value: false, mergeStrategy: 'replace' },
     { keyPath: 'memories.disable_on_external_context', value: false, mergeStrategy: 'replace' },
     { keyPath: 'web_search', value: null, mergeStrategy: 'replace' },
@@ -2351,24 +2474,24 @@ test('settings pages read and write only listed native options, respecting manag
   await assert.rejects(client.saveSettings({ version: 'user-version', options: { projectRootMarkers: ['../up'] } }), /without slashes/);
   await assert.rejects(client.saveSettings({ version: 'user-version', options: { projectRootMarkers: [] } }), /one to sixteen/);
   requirementsRead.requirements = { allowedSandboxModes: ['read-only'] };
-  await assert.rejects(client.saveSettings({ version: 'user-version', options: { defaultPermissions: 'full' } }), error => error.status === 403 && /managed/.test(error.message));
+  await assert.rejects(client.saveSettings({ version: 'user-version', options: { defaultPermissions: 'full' } }), error => error !== null && typeof error === 'object' && 'status' in error && error.status === 403 && 'message' in error && typeof error.message === 'string' && /managed/.test(error.message));
   requirementsRead.requirements = { allowedPermissionProfiles: { ':workspace': true } };
   assert.deepEqual((await client.settings()).managed.allowedPermissionProfiles, { ':workspace': true });
-  await assert.rejects(client.saveSettings({ version: 'user-version', options: { defaultPermissions: 'full' } }), error => error.status === 403 && /managed/.test(error.message));
+  await assert.rejects(client.saveSettings({ version: 'user-version', options: { defaultPermissions: 'full' } }), error => error !== null && typeof error === 'object' && 'status' in error && error.status === 403 && 'message' in error && typeof error.message === 'string' && /managed/.test(error.message));
   requirementsRead.requirements = { allowedApprovalsReviewers: ['user'] };
   assert.deepEqual((await client.settings()).managed.allowedApprovalsReviewers, ['user']);
-  await assert.rejects(client.saveSettings({ version: 'user-version', options: { defaultPermissions: 'auto' } }), error => error.status === 403 && /managed/.test(error.message));
+  await assert.rejects(client.saveSettings({ version: 'user-version', options: { defaultPermissions: 'auto' } }), error => error !== null && typeof error === 'object' && 'status' in error && error.status === 403 && 'message' in error && typeof error.message === 'string' && /managed/.test(error.message));
   assert.equal(writes(), before, 'refused options write nothing');
   client.close();
 });
 
 test('a chat started without a mode gets the default one explicitly, so the engine fallback (asking) never decides it', async () => {
   const { client, socket, configRead } = fixture(); await client.initialize();
-  const started = async (body = {}) => { await client.createThread(body); const { approvalPolicy, approvalsReviewer, permissions } = socket.sent.findLast(row => row.method === 'thread/start').params; return { approvalPolicy, approvalsReviewer, permissions }; };
+  const started = async (body = {}) => { await client.createThread(body); const { approvalPolicy, approvalsReviewer, permissions } = required(required(socket.sent.findLast(row => row.method === 'thread/start')).params); return { approvalPolicy, approvalsReviewer, permissions }; };
   Object.assign(configRead.config, { default_permissions: ':danger-full-access' });
   assert.deepEqual(await started(), { approvalPolicy: 'never', approvalsReviewer: 'user', permissions: ':danger-full-access' });
   assert.deepEqual(await started({ cwd: '/tmp/project' }), { approvalPolicy: 'never', approvalsReviewer: 'user', permissions: ':danger-full-access' });
-  assert.equal(socket.sent.findLast(row => row.method === 'config/read').params.cwd, '/tmp/project', 'the project folder\'s own config layers count');
+  assert.equal(required(required(socket.sent.findLast(row => row.method === 'config/read')).params).cwd, '/tmp/project', 'the project folder\'s own config layers count');
   configRead.config.approval_policy = 'on-request'; configRead.config.default_permissions = ':workspace';
   assert.deepEqual(await started(), { approvalPolicy: 'on-request', approvalsReviewer: 'user', permissions: ':workspace' });
   assert.deepEqual(await started({ permissions: 'bypass' }), { approvalPolicy: 'never', approvalsReviewer: 'user', permissions: ':bypass-permissions' }, 'a chosen mode wins');
@@ -2381,11 +2504,11 @@ test('default permissions: Full access when the config names no approval policy;
   const { client, socket, configRead } = fixture(); await client.initialize();
   const user = configRead.layers[0];
   const mode = async () => (await client.settings()).options.defaultPermissions;
-  const save = async defaultPermissions => { await client.saveSettings({ version: 'user-version', options: { defaultPermissions } }); return socket.sent.findLast(row => row.method === 'config/batchWrite').params.edits; };
+  const save = async (defaultPermissions: string) => { await client.saveSettings({ version: 'user-version', options: { defaultPermissions } }); return required(required(socket.sent.findLast(row => row.method === 'config/batchWrite')).params).edits; };
   // As Masih's config: a full-access profile and no approval policy. The engine alone would ask (on-request).
-  Object.assign(configRead.config, { default_permissions: ':danger-full-access', approvals_reviewer: 'user' }); user.config.default_permissions = ':danger-full-access';
+  Object.assign(configRead.config, { default_permissions: ':danger-full-access', approvals_reviewer: 'user' }); required(user).config.default_permissions = ':danger-full-access';
   assert.equal(await mode(), 'full');
-  configRead.config.default_permissions = user.config.default_permissions = ':workspace';
+  configRead.config.default_permissions = required(user).config.default_permissions = ':workspace';
   assert.equal(await mode(), 'full', 'no approval policy is the Elpis default, Full access');
   configRead.config.approval_policy = 'on-request';
   assert.equal(await mode(), 'ask');
@@ -2397,14 +2520,14 @@ test('default permissions: Full access when the config names no approval policy;
   assert.equal(await mode(), 'custom', 'Bypass is per chat, never a Settings preset');
   configRead.config.default_permissions = ':read-only';
   assert.equal(await mode(), 'custom');
-  const preset = (approval, reviewer, key, sandbox) => [{ keyPath: 'approval_policy', value: approval, mergeStrategy: 'replace' }, { keyPath: 'approvals_reviewer', value: reviewer, mergeStrategy: 'replace' }, { keyPath: key, value: sandbox, mergeStrategy: 'replace' }];
+  const preset = (approval: string, reviewer: string, key: string, sandbox: string) => [{ keyPath: 'approval_policy', value: approval, mergeStrategy: 'replace' }, { keyPath: 'approvals_reviewer', value: reviewer, mergeStrategy: 'replace' }, { keyPath: key, value: sandbox, mergeStrategy: 'replace' }];
   assert.deepEqual(await save('full'), preset('never', 'user', 'default_permissions', ':danger-full-access'));
   assert.deepEqual(await save('ask'), preset('on-request', 'user', 'default_permissions', ':workspace'));
   assert.deepEqual(await save('auto'), preset('on-request', 'auto_review', 'default_permissions', ':workspace'));
   await assert.rejects(client.saveSettings({ version: 'user-version', options: { defaultPermissions: 'bypass' } }), /listed values/);
   await assert.rejects(client.saveSettings({ version: 'user-version', options: { defaultPermissions: null } }), /listed values/);
   // A config without profiles keeps the legacy key.
-  delete configRead.config.default_permissions; delete user.config.default_permissions; Object.assign(configRead.config, { sandbox_mode: 'workspace-write', approval_policy: 'on-request', approvals_reviewer: 'user' }); user.config.sandbox_mode = 'workspace-write';
+  delete configRead.config.default_permissions; delete required(user).config.default_permissions; Object.assign(configRead.config, { sandbox_mode: 'workspace-write', approval_policy: 'on-request', approvals_reviewer: 'user' }); required(user).config.sandbox_mode = 'workspace-write';
   assert.equal(await mode(), 'ask');
   assert.deepEqual(await save('full'), preset('never', 'user', 'sandbox_mode', 'danger-full-access'));
   client.close();
@@ -2417,7 +2540,7 @@ test('a model list that cannot be read leaves the subscriptions unknown, not sig
   const send = socket.send;
   socket.send = raw => {
     const request = JSON.parse(raw);
-    const fail = message => { socket.sent.push(request); queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, error: { code: -32000, message } }))); };
+    const fail = (message: string) => { socket.sent.push(request); queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, error: { code: -32000, message } }))); };
     if (request.method === 'model/list') return fail('model/list timed out');
     // The subscriptions' limits were slower than the bridge waits, so only ChatGPT's came back.
     if (request.method === 'account/rateLimits/read') { socket.sent.push(request); queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, result: { rateLimits: { limitId: 'codex', primary: null }, rateLimitsByLimitId: {} } }))); return; }
@@ -2445,15 +2568,15 @@ test('internal gateway routes are neither local servers nor editable custom prov
   assert.doesNotMatch(JSON.stringify(providers), /anthropic-credits|44103/);
   const settings = await client.providerSettings();
   const credits = settings.providers.find(provider => provider.id === 'anthropic-credits');
-  assert.equal(credits.gateway, true); assert.equal(credits.editable, false); assert.equal(credits.auth.acceptsKey, false);
-  assert.equal(settings.providers.find(provider => provider.id === 'openrouter').gateway, false);
+  assert.equal(required(credits).gateway, true); assert.equal(required(credits).editable, false); assert.equal(required(credits).auth.acceptsKey, false);
+  assert.equal(required(settings.providers.find(provider => provider.id === 'openrouter')).gateway, false);
   assert.doesNotMatch(JSON.stringify(settings), /GATEWAY SECRET/);
-  await assert.rejects(client.saveProvider({ version: 'user-version', id: 'anthropic-credits', name: 'Changed', baseUrl: 'https://api.anthropic.com/v1', credential: { action: 'preserve' } }), error => error.status === 403);
+  await assert.rejects(client.saveProvider({ version: 'user-version', id: 'anthropic-credits', name: 'Changed', baseUrl: 'https://api.anthropic.com/v1', credential: { action: 'preserve' } }), error => error !== null && typeof error === 'object' && 'status' in error && error.status === 403);
   assert.equal(socket.sent.filter(row => row.method === 'config/batchWrite').length, 0, 'an internal route is never rewritten');
   // Its models come from the gateway's own list, so a chat can start on one of them.
   await client.createThread({ provider: 'anthropic-credits', model: 'claude-sonnet-5-5' });
-  const start = socket.sent.findLast(row => row.method === 'thread/start').params;
-  assert.deepEqual([start.model, start.modelProvider], ['claude-sonnet-5-5', 'anthropic-credits']);
+  const start = required(socket.sent.findLast(row => row.method === 'thread/start')).params;
+  assert.deepEqual([required(start).model, required(start).modelProvider], ['claude-sonnet-5-5', 'anthropic-credits']);
   client.close();
 });
 
@@ -2463,14 +2586,14 @@ test('hooks list native discovery and change only hooks.state for a listed, unma
   assert.equal(hooks.version, 'user-version');
   assert.deepEqual(hooks.warnings, ['hooks.json: unknown field ignored']);
   assert.deepEqual(hooks.hooks.map(hook => [hook.event, hook.command, hook.trust, hook.managed]), [['preToolUse', 'rtk hook claude', 'untrusted', false], ['stop', 'audit', 'managed', true]]);
-  const key = hooksList.data[0].hooks[0].key;
+  const key = required(required(hooksList.data[0]).hooks[0]).key;
   await client.saveHook({ version: 'user-version', key, trust: true });
   await client.saveHook({ version: 'user-version', key, enabled: false });
   assert.deepEqual(socket.sent.filter(row => row.method === 'config/batchWrite').map(row => row.params), [
     { edits: [{ keyPath: 'hooks.state', value: { [key]: { trusted_hash: 'sha256:current' } }, mergeStrategy: 'upsert' }], expectedVersion: 'user-version', reloadUserConfig: true },
     { edits: [{ keyPath: 'hooks.state', value: { [key]: { enabled: false } }, mergeStrategy: 'upsert' }], expectedVersion: 'user-version', reloadUserConfig: true },
   ]);
-  await assert.rejects(client.saveHook({ version: 'user-version', key: hooksList.data[0].hooks[1].key, enabled: false }), /Managed hooks/);
+  await assert.rejects(client.saveHook({ version: 'user-version', key: required(required(hooksList.data[0]).hooks[1]).key, enabled: false }), /Managed hooks/);
   await assert.rejects(client.saveHook({ version: 'user-version', key: 'user:/missing:stop:0:0', enabled: false }), /no longer configured/);
   await assert.rejects(client.saveHook({ version: 'outdated', key, enabled: true }), /Reload settings/);
   await assert.rejects(client.saveHook({ version: 'user-version', key, enabled: true, trust: true }), /enable, disable or trust/);
@@ -2493,7 +2616,7 @@ test('pruning override edits preserve separation and reject stale or incomplete 
   assert.equal(socket.sent.some(row=>row.method==='pruner/write'),false);
   const changed=await client.savePruner({version:'pruner-v1',model:'gpt-6-luna',provider:'openai'});
   assert.equal(changed.smartPrune.explicitOverride.model,'gpt-6-luna');
-  assert.deepEqual(socket.sent.find(row=>row.method==='pruner/write').params,{expectedVersion:'pruner-v1',model:'gpt-6-luna',provider:'openai'});
+  assert.deepEqual(required(socket.sent.find(row=>row.method==='pruner/write')).params,{expectedVersion:'pruner-v1',model:'gpt-6-luna',provider:'openai'});
   const cleared=await client.savePruner({version:'pruner-v2',model:null,provider:null});
   assert.equal(cleared.smartPrune.explicitOverride.model,null);
   assert.equal(configRead.config.model,MODEL);assert.equal(configRead.config.background_model,'cheap-model');
@@ -2507,13 +2630,13 @@ test('pruning effort round trips through the shared pruner RPC and Default clear
   await client.initialize();
   const choice = { model: 'gpt-6-luna', provider: 'openai' };
   const saved = await client.savePruner({ version: 'pruner-v1', ...choice, reasoningEffort: 'max' });
-  assert.deepEqual(socket.sent.find(row => row.method === 'pruner/write').params,
+  assert.deepEqual(required(socket.sent.find(row => row.method === 'pruner/write')).params,
     { expectedVersion: 'pruner-v1', ...choice, reasoningEffort: 'max' });
   assert.equal(saved.smartPrune.explicitOverride.reasoningEffort, 'max');
   assert.equal((await client.settings()).smartPrune.explicitOverride.reasoningEffort, 'max');
   const cleared = await client.savePruner({ version: 'pruner-v2', ...choice, reasoningEffort: null });
   assert.equal(cleared.smartPrune.explicitOverride.reasoningEffort, null);
-  assert.equal(socket.sent.filter(row => row.method === 'pruner/write').at(-1).params.reasoningEffort, null);
+  assert.equal(required(required(socket.sent.filter(row => row.method === 'pruner/write').at(-1)).params).reasoningEffort, null);
   assert.equal(configRead.config.model, MODEL);
   assert.equal(socket.sent.some(row => row.method === 'config/batchWrite'), false);
 });
@@ -2530,7 +2653,7 @@ test('pruning effort stays unset when omitted and rejects malformed efforts befo
   assert.equal(socket.sent.some(row => row.method === 'pruner/write'), false);
   const saved = await client.savePruner(choice);
   assert.equal(saved.smartPrune.explicitOverride.reasoningEffort, null);
-  assert.equal(Object.hasOwn(socket.sent.find(row => row.method === 'pruner/write').params, 'reasoningEffort'), false);
+  assert.equal(Object.hasOwn(required(required(socket.sent.find(row => row.method === 'pruner/write')).params), 'reasoningEffort'), false);
 });
 
 test('desktop server closes even when a local request body never finishes', async () => {
@@ -2552,23 +2675,23 @@ test('desktop server closes even when a local request body never finishes', asyn
 test('permission modes become Elpis approval and sandbox settings, and resume reports the mode', async () => {
   const { client, socket, threads } = fixture(); await client.initialize();
   try {
-    threads.get(ROOT).status = { type: 'idle' };
+    required(threads.get(ROOT)).status = { type: 'idle' };
     await client.send(ROOT, { text: 'go', permissions: 'full' });
-    const full = socket.sent.findLast(message => message.method === 'turn/start').params;
+    const full = required(socket.sent.findLast(message => message.method === 'turn/start')).params;
     // Each mode is a named profile: the engine restores a profile id after a restart, not a bare sandbox.
-    assert.deepEqual([full.approvalPolicy, full.approvalsReviewer, full.permissions, 'sandboxPolicy' in full], ['never', 'user', ':danger-full-access', false]);
-    threads.get(ROOT).status = { type: 'idle' };
+    assert.deepEqual([required(full).approvalPolicy, required(full).approvalsReviewer, required(full).permissions, 'sandboxPolicy' in required(full)], ['never', 'user', ':danger-full-access', false]);
+    required(threads.get(ROOT)).status = { type: 'idle' };
     await client.send(ROOT, { text: 'again', permissions: 'auto' });
-    const auto = socket.sent.findLast(message => message.method === 'turn/start').params;
-    assert.deepEqual([auto.approvalPolicy, auto.approvalsReviewer, auto.permissions, 'sandboxPolicy' in auto], ['on-request', 'auto_review', ':workspace', false]);
-    threads.get(ROOT).status = { type: 'idle' };
+    const auto = required(socket.sent.findLast(message => message.method === 'turn/start')).params;
+    assert.deepEqual([required(auto).approvalPolicy, required(auto).approvalsReviewer, required(auto).permissions, 'sandboxPolicy' in required(auto)], ['on-request', 'auto_review', ':workspace', false]);
+    required(threads.get(ROOT)).status = { type: 'idle' };
     await client.send(ROOT, { text: 'plain' });
-    const plain = socket.sent.findLast(message => message.method === 'turn/start').params;
-    assert.equal('approvalPolicy' in plain || 'sandboxPolicy' in plain, false, 'no mode chosen leaves the chat as configured');
+    const plain = required(socket.sent.findLast(message => message.method === 'turn/start')).params;
+    assert.equal('approvalPolicy' in required(plain) || 'sandboxPolicy' in required(plain), false, 'no mode chosen leaves the chat as configured');
     await assert.rejects(client.send(ROOT, { text: 'x', permissions: 'root' }), /permission mode/);
     await client.createThread({ permissions: 'ask' });
-    const started = socket.sent.findLast(message => message.method === 'thread/start').params;
-    assert.deepEqual([started.approvalPolicy, started.approvalsReviewer, started.permissions, 'sandbox' in started], ['on-request', 'user', ':workspace', false]);
+    const started = required(socket.sent.findLast(message => message.method === 'thread/start')).params;
+    assert.deepEqual([required(started).approvalPolicy, required(started).approvalsReviewer, required(started).permissions, 'sandbox' in required(started)], ['on-request', 'user', ':workspace', false]);
   } finally { client.close(); }
 });
 
@@ -2577,7 +2700,7 @@ test('an agent chat can keep its own permission choice without forking or changi
   try {
     const parent = structuredClone(engineSettings.get(ROOT));
     assert.equal((await client.setPermissions(CHILD, { permissions: 'full' })).permissions, 'full');
-    assert.equal(engineSettings.get(CHILD).approvalPolicy, 'never');
+    assert.equal(required(engineSettings.get(CHILD)).approvalPolicy, 'never');
     assert.deepEqual(engineSettings.get(ROOT), parent);
     assert.equal(socket.sent.some(row => row.method === 'thread/fork'), false);
   } finally { client.close(); }
@@ -2586,7 +2709,7 @@ test('an agent chat can keep its own permission choice without forking or changi
 test('a running chat the list already follows still reports its mode, Plan and effort when opened', async () => {
   const { client, threads, engineSettings } = fixture(); await client.initialize();
   try {
-    Object.assign(threads.get(ROOT), { status: { type: 'active' }, collaborationMode: { mode: 'plan' } });
+    Object.assign(required(threads.get(ROOT)), { status: { type: 'active' }, collaborationMode: { mode: 'plan' } });
     engineSettings.set(ROOT, { approvalPolicy: 'never', approvalsReviewer: 'user', sandboxPolicy: { type: 'dangerFullAccess' }, activePermissionProfile: null, reasoningEffort: 'xhigh' });
     await client.listThreads({});
     await new Promise(resolve => setTimeout(resolve, 10)); // the list follows the running chat in the background
@@ -2596,7 +2719,7 @@ test('a running chat the list already follows still reports its mode, Plan and e
     assert.equal(opened.thread.reasoningEffort, 'xhigh');
     assert.equal(opened.activeTurnId, 'running-turn');
     // A chat left as configured reports Ask for approval, not Full access.
-    delete threads.get(ROOT).collaborationMode;
+    delete required(threads.get(ROOT)).collaborationMode;
     engineSettings.set(ROOT, { approvalPolicy: 'on-request', approvalsReviewer: 'user', sandboxPolicy: { type: 'workspaceWrite' }, activePermissionProfile: null, reasoningEffort: null });
     const again = await client.resume(ROOT, {});
     assert.equal(again.permissions, 'ask');
@@ -2607,24 +2730,24 @@ test('a running chat the list already follows still reports its mode, Plan and e
 test('bypass permissions selects the engine profile, never a sandbox, and resume reports it', async () => {
   const { client, socket, threads } = fixture(); await client.initialize();
   try {
-    threads.get(ROOT).status = { type: 'idle' };
+    required(threads.get(ROOT)).status = { type: 'idle' };
     await client.send(ROOT, { text: 'go', permissions: 'bypass' });
-    const turn = socket.sent.findLast(message => message.method === 'turn/start').params;
-    assert.deepEqual([turn.approvalPolicy, turn.approvalsReviewer, turn.permissions], ['never', 'user', ':bypass-permissions']);
-    assert.equal('sandboxPolicy' in turn, false, 'the engine rejects a profile combined with a sandbox');
+    const turn = required(socket.sent.findLast(message => message.method === 'turn/start')).params;
+    assert.deepEqual([required(turn).approvalPolicy, required(turn).approvalsReviewer, required(turn).permissions], ['never', 'user', ':bypass-permissions']);
+    assert.equal('sandboxPolicy' in required(turn), false, 'the engine rejects a profile combined with a sandbox');
     await client.createThread({ permissions: 'bypass' });
-    const started = socket.sent.findLast(message => message.method === 'thread/start').params;
-    assert.deepEqual([started.approvalPolicy, started.approvalsReviewer, started.permissions], ['never', 'user', ':bypass-permissions']);
-    assert.equal('sandbox' in started, false);
+    const started = required(socket.sent.findLast(message => message.method === 'thread/start')).params;
+    assert.deepEqual([required(started).approvalPolicy, required(started).approvalsReviewer, required(started).permissions], ['never', 'user', ':bypass-permissions']);
+    assert.equal('sandbox' in required(started), false);
     // Leaving bypass for Full access selects the full-access profile, which replaces the bypass profile.
-    threads.get(ROOT).status = { type: 'idle' };
+    required(threads.get(ROOT)).status = { type: 'idle' };
     await client.send(ROOT, { text: 'calmer', permissions: 'full' });
-    const full = socket.sent.findLast(message => message.method === 'turn/start').params;
-    assert.deepEqual([full.permissions, 'sandboxPolicy' in full], [':danger-full-access', false]);
+    const full = required(socket.sent.findLast(message => message.method === 'turn/start')).params;
+    assert.deepEqual([required(full).permissions, 'sandboxPolicy' in required(full)], [':danger-full-access', false]);
 
   } finally { client.close(); }
   // A chat reopens in the mode the engine reports; only the bypass profile reads as bypass.
-  const reopened = async reported => {
+  const reopened = async (reported: Record<string, unknown>) => {
     const { client, socket, threads } = fixture(); await client.initialize();
     const send = socket.send;
     socket.send = raw => {
@@ -2648,16 +2771,16 @@ test('a chat can change folders during a turn through native settings for later 
   const nextDir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-move-next-')));
   try {
     assert.deepEqual(await client.setFolder(ROOT, { cwd: dir }), { cwd: dir });
-    assert.deepEqual(socket.sent.findLast(message => message.method === 'thread/settings/update').params, { threadId: ROOT, cwd: dir });
-    assert.equal(threads.get(ROOT).cwd, dir, 'the engine holds the new folder');
+    assert.deepEqual(required(socket.sent.findLast(message => message.method === 'thread/settings/update')).params, { threadId: ROOT, cwd: dir });
+    assert.equal(required(threads.get(ROOT)).cwd, dir, 'the engine holds the new folder');
     for (const cwd of ['relative/folder', path.join(dir, 'missing'), 42]) await assert.rejects(client.setFolder(ROOT, { cwd }), /folder/i);
-    threads.get(ROOT).status = { type: 'active' };
+    required(threads.get(ROOT)).status = { type: 'active' };
     const updates = socket.sent.filter(message => message.method === 'thread/settings/update').length;
     assert.deepEqual(await client.setFolder(ROOT, { cwd: nextDir }), { cwd: nextDir });
-    assert.equal(threads.get(ROOT).status.type, 'active', 'the running turn stays active');
-    assert.equal(threads.get(ROOT).cwd, nextDir, 'the engine saves the new folder for later turns');
+    assert.equal(required(threads.get(ROOT)).status.type, 'active', 'the running turn stays active');
+    assert.equal(required(threads.get(ROOT)).cwd, nextDir, 'the engine saves the new folder for later turns');
     assert.equal(socket.sent.filter(message => message.method === 'thread/settings/update').length, updates + 1);
-    assert.deepEqual(socket.sent.findLast(message => message.method === 'thread/settings/update').params, { threadId: ROOT, cwd: nextDir });
+    assert.deepEqual(required(socket.sent.findLast(message => message.method === 'thread/settings/update')).params, { threadId: ROOT, cwd: nextDir });
   } finally {
     client.close(); await fs.rm(dir, { recursive: true, force: true }); await fs.rm(nextDir, { recursive: true, force: true });
   }
@@ -2665,26 +2788,26 @@ test('a chat can change folders during a turn through native settings for later 
 
 test('changing a chat\'s permissions applies now through the engine settings and reads the mode back', async () => {
   const { client, socket, threads, engineSettings } = fixture(); await client.initialize();
-  const events = []; client.on('event', event => events.push(event));
+  const events: { data: { method?: string; params: { permissions?: string } } }[] = []; client.on('event', event => events.push(event));
   try {
     // Native and bridged (Claude) chats alike, idle or running: the change is a settings update, not a queued turn field.
-    threads.get(ROOT).status = { type: 'active' };
+    required(threads.get(ROOT)).status = { type: 'active' };
     const BRIDGED = '00000000-0000-0000-0000-000000000009';
     threads.set(BRIDGED, { id: BRIDGED, name: 'Claude chat', source: 'cli', model: 'claude/opus', modelProvider: 'openai', status: { type: 'idle' } });
     for (const id of [ROOT, BRIDGED]) {
       assert.deepEqual(await client.setPermissions(id, { permissions: 'full' }), { permissions: 'full' });
-      const update = socket.sent.findLast(message => message.method === 'thread/settings/update').params;
+      const update = required(socket.sent.findLast(message => message.method === 'thread/settings/update')).params;
       assert.deepEqual(update, { threadId: id, approvalPolicy: 'never', approvalsReviewer: 'user', permissions: ':danger-full-access', elpisPermissionSource: 'chat' });
-      assert.equal(engineSettings.get(id).approvalPolicy, 'never', 'the engine holds the new mode');
+      assert.equal(required(engineSettings.get(id)).approvalPolicy, 'never', 'the engine holds the new mode');
       assert.equal(socket.sent.some(message => message.method === 'turn/start'), false, 'nothing waits for the next turn');
     }
     assert.deepEqual(await client.setPermissions(ROOT, { permissions: 'auto' }), { permissions: 'auto' });
-    assert.deepEqual(engineSettings.get(ROOT).approvalsReviewer, 'auto_review');
+    assert.deepEqual(required(engineSettings.get(ROOT)).approvalsReviewer, 'auto_review');
     assert.deepEqual(await client.setPermissions(ROOT, { permissions: 'bypass' }), { permissions: 'bypass' });
-    assert.deepEqual(socket.sent.findLast(message => message.method === 'thread/settings/update').params,
+    assert.deepEqual(required(socket.sent.findLast(message => message.method === 'thread/settings/update')).params,
       { threadId: ROOT, approvalPolicy: 'never', approvalsReviewer: 'user', permissions: ':bypass-permissions', elpisPermissionSource: 'chat' });
     // The app hears the applied mode from the engine's notification.
-    assert.equal(events.filter(event => event.data?.method === 'thread/settings/updated').at(-1).data.params.permissions, 'bypass');
+    assert.equal(required(events.filter(event => event.data?.method === 'thread/settings/updated').at(-1)).data.params.permissions, 'bypass');
     // Choosing the mode a chat already has changes nothing, so no notification comes; the mode is read back instead.
     assert.deepEqual(await client.setPermissions(ROOT, { permissions: 'bypass' }), { permissions: 'bypass' });
     // A refusal is reported, not assumed applied.
@@ -2694,8 +2817,8 @@ test('changing a chat\'s permissions applies now through the engine settings and
 
 test('Full access and Bypass also answer what the chat was already asking; questions and Approve for me still wait', async () => {
   const { client, socket } = fixture(); await client.initialize(); await client.createThread({});
-  const ask = (id, method, params, thread = CREATED) => socket.emit('message', JSON.stringify({ id, method, params: { threadId: thread, turnId: 'turn1', ...params } }));
-  const answered = id => socket.sent.find(message => message.id === id && 'result' in message)?.result;
+  const ask = (id: string, method: string, params: Record<string, unknown>, thread = CREATED) => socket.emit('message', JSON.stringify({ id, method, params: { threadId: thread, turnId: 'turn1', ...params } }));
+  const answered = (id: string) => socket.sent.find(message => message.id === id && 'result' in message)?.result;
   const waiting = () => client.pendingApprovals.map(approval => approval.method).sort();
   try {
     ask('command', 'item/commandExecution/requestApproval', { command: 'npm test', availableDecisions: ['accept', 'decline'] });
@@ -2741,18 +2864,18 @@ test('a permission change the engine refuses is shown as an error', async () => 
 test('plan mode is sent with the chat model only when it changes, and resume reports it', async () => {
   const { client, socket, threads } = fixture(); await client.initialize(); await client.models();
   try {
-    Object.assign(threads.get(ROOT), { status: { type: 'idle' }, model: 'gpt-6-luna', reasoningEffort: 'high', collaborationMode: { mode: 'plan', settings: {} } });
+    Object.assign(required(threads.get(ROOT)), { status: { type: 'idle' }, model: 'gpt-6-luna', reasoningEffort: 'high', collaborationMode: { mode: 'plan', settings: {} } });
     assert.equal((await client.resume(ROOT, {})).planMode, true, 'a chat left in Plan mode reopens in it');
     await client.send(ROOT, { text: 'plan it', mode: 'plan' });
-    const plan = socket.sent.findLast(message => message.method === 'turn/start').params;
-    assert.deepEqual(plan.collaborationMode, { mode: 'plan', settings: { model: 'gpt-6-luna', reasoning_effort: 'high', developer_instructions: null } });
-    threads.get(ROOT).status = { type: 'idle' };
+    const plan = required(socket.sent.findLast(message => message.method === 'turn/start')).params;
+    assert.deepEqual(required(plan).collaborationMode, { mode: 'plan', settings: { model: 'gpt-6-luna', reasoning_effort: 'high', developer_instructions: null } });
+    required(threads.get(ROOT)).status = { type: 'idle' };
     await client.send(ROOT, { text: 'Implement the plan.', mode: 'default', model: MODEL });
-    assert.deepEqual(socket.sent.findLast(message => message.method === 'turn/start').params.collaborationMode.mode, 'default');
-    assert.equal(socket.sent.findLast(message => message.method === 'turn/start').params.collaborationMode.settings.model, MODEL);
-    threads.get(ROOT).status = { type: 'idle' };
+    assert.deepEqual(required(required(required(socket.sent.findLast(message => message.method === 'turn/start')).params).collaborationMode).mode, 'default');
+    assert.equal(required(required(required(socket.sent.findLast(message => message.method === 'turn/start')).params).collaborationMode).settings.model, MODEL);
+    required(threads.get(ROOT)).status = { type: 'idle' };
     await client.send(ROOT, { text: 'plain' });
-    assert.equal('collaborationMode' in socket.sent.findLast(message => message.method === 'turn/start').params, false, 'an unchanged mode is left to the engine');
+    assert.equal('collaborationMode' in required(required(socket.sent.findLast(message => message.method === 'turn/start')).params), false, 'an unchanged mode is left to the engine');
     await assert.rejects(client.send(ROOT, { text: 'x', mode: 'pair' }), /chat mode/);
   } finally { client.close(); }
 });
@@ -2761,11 +2884,11 @@ test('a pasted provider key is saved privately in the Elpis home and never sent 
   const { client, configRead } = fixture(); await client.initialize();
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-provider-key-'));
   try {
-    configRead.layers[0].name.file = path.join(root, 'config.toml');
+    required(configRead.layers[0]).name.file = path.join(root, 'config.toml');
     const before = (await client.providerSettings()).providers.find(provider => provider.id === 'openrouter');
-    assert.deepEqual([before.auth.keySet, before.auth.acceptsKey], [false, true]);
+    assert.deepEqual([required(before).auth.keySet, required(before).auth.acceptsKey], [false, true]);
     const after = await client.saveProviderKey({ provider: 'openrouter', key: '  sk-or-fixture-secret  ' });
-    assert.deepEqual(after.providers.find(provider => provider.id === 'openrouter').auth, { source: 'saved', keySet: true, envKey: 'APP_TEST_OPENROUTER_KEY', acceptsKey: true });
+    assert.deepEqual(required(after.providers.find(provider => provider.id === 'openrouter')).auth, { source: 'saved', keySet: true, envKey: 'APP_TEST_OPENROUTER_KEY', acceptsKey: true });
     assert(!JSON.stringify(after).includes('sk-or-fixture-secret'), 'the key is never returned');
     const file = path.join(root, 'provider-keys.json');
     assert.deepEqual(JSON.parse(await fs.readFile(file, 'utf8')), { openrouter: 'sk-or-fixture-secret' });
@@ -2779,11 +2902,11 @@ test('fork chat from here copies history through the chosen turn and names the c
   const { client, socket } = fixture(); await client.initialize();
   try {
     const result = await client.forkThread(ROOT, { lastTurnId: 'turn-3' });
-    const fork = socket.sent.findLast(message => message.method === 'thread/fork').params;
-    assert.equal(fork.threadId, ROOT); assert.equal(fork.lastTurnId, 'turn-3');
+    const fork = required(socket.sent.findLast(message => message.method === 'thread/fork')).params;
+    assert.equal(required(fork).threadId, ROOT); assert.equal(required(fork).lastTurnId, 'turn-3');
     assert.equal(result.thread.id, FORK); assert.equal(result.thread.name, 'Existing root (fork)');
     await client.forkThread(ROOT, {});
-    assert.equal('lastTurnId' in socket.sent.findLast(message => message.method === 'thread/fork').params, false);
+    assert.equal('lastTurnId' in required(required(socket.sent.findLast(message => message.method === 'thread/fork')).params), false);
   } finally { client.close(); }
 });
 
@@ -2793,12 +2916,12 @@ test('Smart Prune is switched by its feature key, and a writable config gives no
   assert.throws(() => optionEdits({ automaticPruning: 'yes' }), /listed values/);
   const writable = settingsSnapshot({ config: {}, layers: [{ name: { type: 'user', file: '/home/fixture/.elpis/config.toml' }, version: 'v1' }] }, { requirements: {} });
   assert.deepEqual(writable.write, { available: true, reason: null });
-  assert.match(settingsSnapshot({ config: {}, layers: [] }, { requirements: {} }).write.reason, /no writable config\.toml/);
+  assert.match(required(settingsSnapshot({ config: {}, layers: [] }, { requirements: {} }).write.reason), /no writable config\.toml/);
 });
 
 test('the agents a work graph may use follow Elpis: 256 in a graph, and at once its agent threads, never over 32', async () => {
   const { settingsSnapshot } = await import('./elpis-features.mts');
-  const allowed = config => settingsSnapshot({ config, layers: [] }, { requirements: {} }).agents;
+  const allowed = (config: NonNullable<NonNullable<Parameters<typeof settingsSnapshot>[0]>['config']>) => settingsSnapshot({ config, layers: [] }, { requirements: {} }).agents;
   assert.deepEqual(allowed({}), { graph: 256, atOnce: 6, source: 'Elpis default' });
   assert.deepEqual(allowed({ agents: { max_threads: 3 } }), { graph: 256, atOnce: 3, source: 'agents.max_threads' });
   assert.equal(allowed({ agents: { max_threads: 50 } }).atOnce, 32);
@@ -2828,11 +2951,11 @@ test('an operation Elpis does not support (-32601) shows its message, not only t
 
 /** As the engine answers for a chat it keeps only as whole turns (older history, or a new chat before its first
  * message is recorded): no item pages (-32601), as the TUI's LegacyOnly history expects; thread/read has the turns. */
-function wholeTurnHistory(socket, turns) {
+function wholeTurnHistory(socket: ReturnType<typeof fixture>['socket'], turns: { id: string; status: string; items: object[] }[] | null) {
   const answer = socket.send;
   socket.send = raw => {
     const request = JSON.parse(raw);
-    const reply = body => { socket.sent.push(request); queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, ...body }))); };
+    const reply = (body: Record<string, unknown>) => { socket.sent.push(request); queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, ...body }))); };
     if (request.method === 'thread/items/list') return reply({ error: { code: -32601, message: 'thread/items/list is not supported yet' } });
     if (request.method === 'thread/read' && request.params.includeTurns) return reply(turns
       ? { result: { thread: { id: request.params.threadId, name: 'Existing root', status: { type: 'idle' }, turns } } }
@@ -2843,8 +2966,8 @@ function wholeTurnHistory(socket, turns) {
 
 test('-32601 mid-conversation: a chat without item pages opens from its turns, a page at a time', async () => {
   const { client, socket } = fixture(); await client.initialize();
-  const user = (id, text) => ({ type: 'userMessage', id, content: [{ type: 'text', text, text_elements: [] }] });
-  const agent = (id, text) => ({ type: 'agentMessage', id, text });
+  const user = (id: string, text: string) => ({ type: 'userMessage', id, content: [{ type: 'text', text, text_elements: [] }] });
+  const agent = (id: string, text: string) => ({ type: 'agentMessage', id, text });
   wholeTurnHistory(socket, [{ id: 't1', status: 'completed', items: [user('u1', 'first'), agent('a1', 'one')] },
     { id: 't2', status: 'completed', items: [user('u2', 'second'), agent('a2', 'two')] }]);
   try {
@@ -2879,8 +3002,8 @@ test('-32601 mid-conversation: a new chat before its first message is recorded o
 // importer ends the last turn with that marker as an agent message, after the chat's real last reply.
 test('an imported Claude Code chat ends on its own last reply, not the engine import marker', async () => {
   const MARKER = '<EXTERNAL SESSION IMPORTED>';
-  const user = (id, text) => ({ type: 'userMessage', id, content: [{ type: 'text', text, text_elements: [] }] });
-  const agent = (id, text) => ({ type: 'agentMessage', id, text });
+  const user = (id: string, text: string) => ({ type: 'userMessage', id, content: [{ type: 'text', text, text_elements: [] }] });
+  const agent = (id: string, text: string) => ({ type: 'agentMessage', id, text });
   const turns = [{ id: 't1', status: 'completed', items: [user('u1', 'hello import'), agent('a1', 'hi from claude code'), agent('marker', MARKER)] },
     { id: 't2', status: 'completed', items: [user('u2', `What does ${MARKER} mean?`), agent('a2', `${MARKER} is the engine's import note.`)] }];
   const pages = fixture(); await pages.client.initialize();
@@ -2912,8 +3035,8 @@ test('other failures to read a chat are still reported', async () => {
     queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, error: { code: -32603, message: 'failed to list thread items: disk' } })));
   };
   try {
-    await assert.rejects(client.readThread(ROOT, {}), error => error.code === -32603);
-    assert.equal(socket.sent.some(message => message.method === 'thread/read' && message.params.includeTurns), false);
+    await assert.rejects(client.readThread(ROOT, {}), error => error !== null && typeof error === 'object' && 'code' in error && error.code === -32603);
+    assert.equal(socket.sent.some(message => message.method === 'thread/read' && required(message.params).includeTurns), false);
   } finally { client.close(); }
 });
 
@@ -2922,7 +3045,7 @@ test('dictation reads the ChatGPT sign-in, the Elpis home and the Gemini key pri
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-dictation-'));
   const variable = process.env.GEMINI_API_KEY; delete process.env.GEMINI_API_KEY;
   try {
-    configRead.layers[0].name.file = path.join(root, 'config.toml');
+    required(configRead.layers[0]).name.file = path.join(root, 'config.toml');
     assert.deepEqual(await client.transcriptionEnvironment(), { chatgpt: false, home: root, geminiKey: null }, 'signed in, but no sign-in file in the home (a keyring store): the ChatGPT route cannot work');
     await fs.writeFile(path.join(root, 'auth.json'), '{}'); // a placeholder: only its existence is checked, never its contents
     assert.deepEqual(await client.transcriptionEnvironment(), { chatgpt: true, home: root, geminiKey: null });
@@ -2939,11 +3062,11 @@ test('Voice can return the fallback engine to Automatic, which is no explicit ba
   const { client, socket, configRead } = fixture(); await client.initialize();
   try {
     await client.saveMcp({ version: 'user-version', action: 'whispertype', name: 'whispertype', backend: null, model: null });
-    assert.deepEqual(socket.sent.findLast(row => row.method === 'config/batchWrite').params.edits, [
+    assert.deepEqual(required(required(socket.sent.findLast(row => row.method === 'config/batchWrite')).params).edits, [
       { keyPath: 'mcp_servers.whispertype.env.WHISPERTYPE_BACKEND', value: null, mergeStrategy: 'replace' },
       { keyPath: 'mcp_servers.whispertype.env.WHISPERTYPE_CLOUD_MODEL', value: null, mergeStrategy: 'replace' }]);
     delete configRead.config.mcp_servers.whispertype.env.WHISPERTYPE_BACKEND;
-    assert.deepEqual((await client.mcp()).servers.find(server => server.name === 'whispertype').whispertype, { backend: null, model: 'openai/gpt-4o-mini-transcribe' });
+    assert.deepEqual(required((await client.mcp()).servers.find(server => server.name === 'whispertype')).whispertype, { backend: null, model: 'openai/gpt-4o-mini-transcribe' });
     await assert.rejects(client.saveMcp({ version: 'user-version', action: 'whispertype', name: 'whispertype', backend: 'auto' }), /OpenRouter, Codex sign-in or local/);
   } finally { client.close(); }
 });
@@ -2955,12 +3078,12 @@ test('A101 archived view sorts all pages by actual archive date and keeps why ea
   await client.archiveThread(ROOT, {});
   await client.archiveThread(FORK, {});
   const result = await client.listArchivedThreads({ limit: 1 });
-  assert.equal(result.data[0].id, FORK);
-  assert.equal(result.data[0].archiveReason, 'Archived by you.');
-  assert.ok(result.data[0].archivedAt > 0);
+  assert.equal(required(result.data[0]).id, FORK);
+  assert.equal(required(result.data[0]).archiveReason, 'Archived by you.');
+  assert.ok(required(required(result.data[0]).archivedAt) > 0);
   const second = await client.listArchivedThreads({ limit: 1, cursor: result.nextCursor });
-  assert.equal(second.data[0].id, ROOT);
-  assert.equal(second.data[0].archiveReason, 'Archived by you.');
+  assert.equal(required(second.data[0]).id, ROOT);
+  assert.equal(required(second.data[0]).archiveReason, 'Archived by you.');
 });
 
 
@@ -2975,15 +3098,15 @@ test('A101 archive order spans native pages, survives restart, and keeps paginat
     await fs.writeFile(path.join(archiveDirectory, `${id}.json`), JSON.stringify({ archivedAt: 1000 + i, archiveReason: `Reason ${i}` }));
   }
   const first = await h.client.listArchivedThreads({ limit: 100 });
-  assert.equal(first.data[0].name, 'Task 104'); assert.equal(first.data.at(-1).name, 'Task 5');
-  await h.client.unarchiveThread(first.data.at(-1).id, {});
+  assert.equal(required(first.data[0]).name, 'Task 104'); assert.equal(required(first.data.at(-1)).name, 'Task 5');
+  await h.client.unarchiveThread(required(first.data.at(-1)).id, {});
   const last = await h.client.listArchivedThreads({ limit: 100, cursor: first.nextCursor });
   assert.deepEqual(last.data.map(row => row.name), ['Task 4', 'Task 3', 'Task 2', 'Task 1', 'Task 0']);
   assert.equal(last.nextCursor, null);
   const cold = fixture({ archiveDirectory, threadListPaging: true }); await cold.client.initialize(); t.after(() => cold.client.close());
   cold.threads.clear(); for (const [id, row] of h.threads) cold.threads.set(id, structuredClone(row));
   const reloaded = await cold.client.listArchivedThreads({ limit: 1 });
-  assert.equal(reloaded.data[0].archiveReason, 'Reason 104');
+  assert.equal(required(reloaded.data[0]).archiveReason, 'Reason 104');
   await assert.rejects(cold.client.listArchivedThreads({ cursor: 'broken' }), /Invalid archive page cursor/);
   cold.threads.clear(); assert.deepEqual(await cold.client.listArchivedThreads({}), { data: [], nextCursor: null });
 });
@@ -3009,11 +3132,11 @@ test('the Ledger prompt cache share counts cached input once, for OpenAI and Cla
   const { cacheUse } = await import('./elpis-features.mts');
   // The engine's inputTokens include cached and cache-written input (elpis-gateway adds Claude's back in).
   const openai = cacheUse({ last: { inputTokens: 10_200, cachedInputTokens: 9_000, cacheWriteInputTokens: 0 }, total: { inputTokens: 20_400, cachedInputTokens: 9_000 } });
-  assert.deepEqual(openai.last, { prompt: 10_200, cacheRead: 9_000, cacheWrite: 0, uncached: 1_200, hitPercent: 88 });
-  assert.equal(openai.total.hitPercent, 44);
+  assert.deepEqual(required(openai).last, { prompt: 10_200, cacheRead: 9_000, cacheWrite: 0, uncached: 1_200, hitPercent: 88 });
+  assert.equal(required(required(openai).total).hitPercent, 44);
   const claude = cacheUse({ last: { inputTokens: 12_000, cachedInputTokens: 8_000, cacheWriteInputTokens: 3_000 } });
-  assert.deepEqual(claude.last, { prompt: 12_000, cacheRead: 8_000, cacheWrite: 3_000, uncached: 1_000, hitPercent: 67 });
-  assert.equal(claude.total, null);
+  assert.deepEqual(required(claude).last, { prompt: 12_000, cacheRead: 8_000, cacheWrite: 3_000, uncached: 1_000, hitPercent: 67 });
+  assert.equal(required(claude).total, null);
   assert.equal(cacheUse(null), null, 'nothing measured yet');
   assert.equal(cacheUse({ last: { inputTokens: 0 } }), null, 'an empty prompt has no share');
 });

@@ -1,7 +1,3 @@
-apps/elpis-desktop/bridge/bridge.test.mjs
-apps/elpis-desktop/bridge/composer.test.mjs
-apps/elpis-desktop/bridge/file-view.test.mjs
-apps/elpis-desktop/bridge/love-spot.test.mjs
 apps/elpis-desktop/bridge/matilda-companion.mjs
 apps/elpis-desktop/bridge/matilda-companion.test.mjs
 apps/elpis-desktop/bridge/read-aloud.test.mjs
